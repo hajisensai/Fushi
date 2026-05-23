@@ -11,6 +11,7 @@ import 'package:path/path.dart' as p;
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:hibiki/pages.dart';
+import 'package:hibiki/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/epub/epub_book.dart';
 import 'package:hibiki/src/epub/epub_parser.dart';
@@ -924,7 +925,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
   Widget _buildBody() {
     if (!_audioSlotResolved || _book == null || _extractDir == null) {
-      return const Center(child: CircularProgressIndicator());
+      return Center(child: adaptiveIndicator(context: context));
     }
     return _buildWebView();
   }
@@ -1542,8 +1543,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       if (_audiobookController != null) {
         sasayakiCuesJson = await _prepareSasayakiCuesJson();
       }
-      if (_currentChapter != chapterSnapshot ||
-          _navigateGeneration != gen) {
+      if (_currentChapter != chapterSnapshot || _navigateGeneration != gen) {
         return;
       }
       await controller.evaluateJavascript(
@@ -1827,13 +1827,15 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     );
     if (shown || !mounted) return;
     src.setPreference<bool>(key: 'lyrics_mode_hint_shown', value: true);
-    showDialog<void>(
+    showAppDialog<void>(
       context: context,
-      builder: (BuildContext ctx) => AlertDialog(
+      builder: (BuildContext ctx) => adaptiveAlertDialog(
+        context: ctx,
         title: Text(t.lyrics_mode_hint_title),
         content: Text(t.lyrics_mode_hint_body),
         actions: <Widget>[
-          TextButton(
+          adaptiveDialogAction(
+            context: ctx,
             onPressed: () => Navigator.of(ctx).pop(),
             child: Text(MaterialLocalizations.of(ctx).okButtonLabel),
           ),
@@ -2994,13 +2996,13 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
                 child: Row(
                   children: <Widget>[
                     IconButton(
-                      icon: Icon(Icons.headphones, color: _themeTextColor()),
+                      icon: Icon(Icons.headphones_outlined, color: _themeTextColor()),
                       iconSize: 22,
                       onPressed: _openAudioImportDialog,
                     ),
                     const Spacer(),
                     IconButton(
-                      icon: Icon(Icons.tune, color: _themeTextColor()),
+                      icon: Icon(Icons.tune_outlined, color: _themeTextColor()),
                       iconSize: 20,
                       onPressed: _showAppearanceSheet,
                     ),
@@ -3029,7 +3031,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     final String bookUid = ReaderHoshiSource.bookUidFor(widget.bookId);
     final AudiobookRepository repo = AudiobookRepository(appModel.database);
 
-    await showDialog<void>(
+    await showAppDialog<void>(
       context: context,
       builder: (ctx) => AudiobookImportDialog(
         bookUid: bookUid,
@@ -3052,18 +3054,20 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     final SrtBook? book = await repo.findByUid(_srtBookUid!);
     if (book == null || !mounted) return;
 
-    final List<String>? newPaths = await showDialog<List<String>>(
+    final List<String>? newPaths = await showAppDialog<List<String>>(
       context: context,
       builder: (ctx) {
         final String currentLabel =
             book.audioPaths != null && book.audioPaths!.isNotEmpty
                 ? t.srt_import_files_selected(n: book.audioPaths!.length)
                 : (book.audioRoot ?? t.audio_panel_add_audio);
-        return AlertDialog(
+        return adaptiveAlertDialog(
+          context: ctx,
           title: Text(t.srt_book_replace_audio),
           content: Text(currentLabel),
           actions: [
-            TextButton(
+            adaptiveDialogAction(
+              context: ctx,
               onPressed: () => Navigator.pop(ctx),
               child: Text(t.dialog_cancel),
             ),
@@ -3084,7 +3088,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
                   Navigator.pop(ctx, paths);
                 }
               },
-              icon: const Icon(Icons.audio_file, size: 18),
+              icon: const Icon(Icons.audio_file_outlined, size: 18),
               label: Text(t.srt_import_pick_audio_files),
             ),
           ],
@@ -3638,14 +3642,15 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         _isReaderThemeDark ? Brightness.dark : Brightness.light;
     appModel.setOverrideDictionaryColor(bg);
     appModel.setOverrideDictionaryTheme(
-      (brightness == Brightness.dark ? ThemeData.dark() : ThemeData.light())
-          .copyWith(
-              colorScheme: ColorScheme.fromSeed(
-        seedColor: bg,
-        brightness: brightness,
-      ).copyWith(
-        onSurface: textColor,
-      )),
+      ThemeData(
+        useMaterial3: true,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: bg,
+          brightness: brightness,
+        ).copyWith(
+          onSurface: textColor,
+        ),
+      ),
     );
   }
 
@@ -3790,7 +3795,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
             if (hasAudio) ...[
               const SizedBox(width: 8),
               IconButton(
-                icon: const Icon(Icons.replay, size: 20),
+                icon: const Icon(Icons.replay_outlined, size: 20),
                 onPressed: hasCue ? () => ctrl.playCueOnce(cue) : null,
                 tooltip: t.repeat_cue,
                 visualDensity: VisualDensity.compact,
@@ -3798,7 +3803,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
               const SizedBox(width: 8),
               IconButton(
                 icon: Icon(
-                  ctrl.isPlaying ? Icons.pause : Icons.play_arrow,
+                  ctrl.isPlaying ? Icons.pause_outlined : Icons.play_arrow_outlined,
                   size: 24,
                 ),
                 onPressed: ctrl.togglePlayPause,

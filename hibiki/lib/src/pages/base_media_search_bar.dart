@@ -156,7 +156,7 @@ abstract class BaseMediaSearchBarState<T extends BaseMediaSearchBar>
       child: HibikiIconButton(
         size: textTheme.titleLarge?.fontSize,
         tooltip: t.clear_search_title,
-        icon: Icons.manage_search,
+        icon: Icons.manage_search_outlined,
         onTap: showDeleteSearchHistoryPrompt,
       ),
     );
@@ -164,18 +164,17 @@ abstract class BaseMediaSearchBarState<T extends BaseMediaSearchBar>
 
   /// Shows when the clear search history is shown.
   void showDeleteSearchHistoryPrompt() async {
-    Widget alertDialog = AlertDialog(
+    Widget alertDialog = adaptiveAlertDialog(
+      context: context,
       title: Text(t.clear_search_title),
       content: Text(
         t.clear_search_description,
       ),
       actions: <Widget>[
-        TextButton(
+        adaptiveDialogAction(
+          context: context,
           child: Text(
             t.dialog_clear,
-            style: TextStyle(
-              color: theme.colorScheme.primary,
-            ),
           ),
           onPressed: () async {
             appModel.clearSearchHistory(historyKey: mediaSource.uniqueKey);
@@ -185,7 +184,8 @@ abstract class BaseMediaSearchBarState<T extends BaseMediaSearchBar>
             Navigator.pop(context);
           },
         ),
-        TextButton(
+        adaptiveDialogAction(
+          context: context,
           child: Text(t.dialog_cancel),
           onPressed: () => Navigator.pop(context),
         ),

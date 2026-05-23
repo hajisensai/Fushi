@@ -13,7 +13,7 @@ class TagsField extends Field {
           uniqueKey: key,
           label: 'Tags',
           description: 'Organise notes in a deck with space-delimited labels.',
-          icon: Icons.sell,
+          icon: Icons.sell_outlined,
         );
 
   /// Get the singleton instance of this field.

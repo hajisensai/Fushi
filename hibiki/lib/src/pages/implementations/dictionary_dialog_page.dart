@@ -39,7 +39,8 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return adaptiveAlertDialog(
+      context: context,
       contentPadding: MediaQuery.of(context).orientation == Orientation.portrait
           ? Spacing.of(context).insets.exceptBottom.big
           : Spacing.of(context).insets.exceptBottom.normal.copyWith(
@@ -88,17 +89,18 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
       ];
 
   Future<void> showDictionaryClearDialog() async {
-    Widget alertDialog = AlertDialog(
+    Widget alertDialog = adaptiveAlertDialog(
+      context: context,
       title: Text(t.dialog_title_dictionary_clear),
       content: Text(
         t.dialog_content_dictionary_clear,
         textAlign: TextAlign.justify,
       ),
       actions: <Widget>[
-        TextButton(
+        adaptiveDialogAction(
+          context: context,
           child: Text(
             t.dialog_clear,
-            style: TextStyle(color: theme.colorScheme.primary),
           ),
           onPressed: () async {
             showAppDialog(
@@ -120,7 +122,8 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
             }
           },
         ),
-        TextButton(
+        adaptiveDialogAction(
+          context: context,
           child: Text(t.dialog_cancel),
           onPressed: () => Navigator.pop(context),
         ),
@@ -134,17 +137,18 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
   }
 
   Future<void> showDictionaryDeleteDialog(Dictionary dictionary) async {
-    Widget alertDialog = AlertDialog(
+    Widget alertDialog = adaptiveAlertDialog(
+      context: context,
       title: Text(t.dialog_title_dictionary_delete(name: dictionary.name)),
       content: Text(
         t.dialog_content_dictionary_delete,
         textAlign: TextAlign.justify,
       ),
       actions: <Widget>[
-        TextButton(
+        adaptiveDialogAction(
+          context: context,
           child: Text(
             t.dialog_delete,
-            style: TextStyle(color: theme.colorScheme.primary),
           ),
           onPressed: () async {
             showAppDialog(
@@ -167,7 +171,8 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
             }
           },
         ),
-        TextButton(
+        adaptiveDialogAction(
+          context: context,
           child: Text(t.dialog_cancel),
           onPressed: () => Navigator.pop(context),
         ),
@@ -250,13 +255,15 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
     }
 
     if (hadMemoryError && mounted) {
-      showDialog(
+      showAppDialog(
         context: context,
-        builder: (context) => AlertDialog(
+        builder: (context) => adaptiveAlertDialog(
+          context: context,
           title: Text(t.low_memory_mode),
           content: Text(t.low_memory_mode_suggestion),
           actions: [
-            TextButton(
+            adaptiveDialogAction(
+              context: context,
               onPressed: () => Navigator.pop(context),
               child: Text(t.dialog_close),
             ),
@@ -321,7 +328,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
         selectedLang, workingCatalog);
     var checked = Set<int>.from(defaults.difference(installedIndices));
 
-    final selected = await showDialog<Set<int>>(
+    final selected = await showAppDialog<Set<int>>(
       context: context,
       builder: (ctx) {
         return StatefulBuilder(
@@ -330,7 +337,8 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
                 DictionaryDownloader.byCategoryFrom(workingCatalog);
             final int downloadCount =
                 checked.where((i) => !installedIndices.contains(i)).length;
-            return AlertDialog(
+            return adaptiveAlertDialog(
+              context: ctx,
               title: Text(t.dict_download_select_title),
               content: SizedBox(
                 width: double.maxFinite,
@@ -381,11 +389,13 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
                 ),
               ),
               actions: [
-                TextButton(
+                adaptiveDialogAction(
+                  context: ctx,
                   onPressed: () => Navigator.pop(ctx, null),
                   child: Text(t.dialog_cancel),
                 ),
-                TextButton(
+                adaptiveDialogAction(
+                  context: ctx,
                   onPressed: downloadCount > 0
                       ? () => Navigator.pop(ctx, checked)
                       : null,
@@ -421,14 +431,13 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
             style: TextStyle(fontSize: textTheme.bodyMedium?.fontSize)),
         const SizedBox(width: 8),
         Expanded(
-          child: DropdownButton<String>(
-            value: selectedLang,
-            isExpanded: true,
-            isDense: true,
-            items: langs.entries.map((e) {
-              return DropdownMenuItem(value: e.key, child: Text(e.value));
+          child: DropdownMenu<String>(
+            expandedInsets: EdgeInsets.zero,
+            initialSelection: selectedLang,
+            dropdownMenuEntries: langs.entries.map((e) {
+              return DropdownMenuEntry(value: e.key, label: e.value);
             }).toList(),
-            onChanged: (String? val) {
+            onSelected: (String? val) {
               if (val != null) onChanged(val);
             },
           ),
@@ -486,7 +495,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
         rec.name,
         style: TextStyle(
           fontSize: textTheme.bodyMedium?.fontSize,
-          color: installed ? theme.unselectedWidgetColor : null,
+          color: installed ? theme.colorScheme.onSurfaceVariant : null,
         ),
       ),
       subtitle: Text(
@@ -495,7 +504,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
             : '${rec.description}  ${rec.sizeEstimate}',
         style: TextStyle(
           fontSize: textTheme.bodySmall?.fontSize,
-          color: theme.unselectedWidgetColor,
+          color: theme.colorScheme.onSurfaceVariant,
         ),
       ),
     );
@@ -514,7 +523,8 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
       context: context,
       builder: (ctx) => ValueListenableBuilder<String>(
         valueListenable: progressNotifier,
-        builder: (_, String msg, __) => AlertDialog(
+        builder: (ctx, String msg, __) => adaptiveAlertDialog(
+          context: ctx,
           title: Text(msg),
           content: ValueListenableBuilder<double>(
             valueListenable: downloadProgress,
@@ -657,13 +667,15 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
         }
 
         if (hadMemoryError && mounted) {
-          showDialog(
+          showAppDialog(
             context: context,
-            builder: (context) => AlertDialog(
+            builder: (context) => adaptiveAlertDialog(
+              context: context,
               title: Text(t.low_memory_mode),
               content: Text(t.low_memory_mode_suggestion),
               actions: [
-                TextButton(
+                adaptiveDialogAction(
+                  context: context,
                   onPressed: () => Navigator.pop(context),
                   child: Text(t.dialog_close),
                 ),
@@ -681,7 +693,8 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
     );
     showAppDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => adaptiveAlertDialog(
+        context: context,
         title: Text(t.custom_css_title(name: dictName)),
         content: SizedBox(
           width: double.maxFinite,
@@ -702,11 +715,13 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
           ),
         ),
         actions: [
-          TextButton(
+          adaptiveDialogAction(
+            context: context,
             child: Text(t.dialog_cancel),
             onPressed: () => Navigator.pop(context),
           ),
-          TextButton(
+          adaptiveDialogAction(
+            context: context,
             child: Text(t.dialog_save),
             onPressed: () async {
               await appModel.setCustomCSSForDict(dictName, controller.text);
@@ -874,7 +889,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
       return Icon(
         Icons.block,
         size: textTheme.titleLarge?.fontSize,
-        color: theme.unselectedWidgetColor,
+        color: theme.colorScheme.onSurfaceVariant,
       );
     } else {
       return Icon(
@@ -913,7 +928,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
                         style: TextStyle(
                           fontSize: textTheme.bodyMedium?.fontSize,
                           color: dictionary.isHidden(appModel.targetLanguage)
-                              ? theme.unselectedWidgetColor
+                              ? theme.colorScheme.onSurfaceVariant
                               : null,
                         ),
                       ),
@@ -922,7 +937,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
                         style: TextStyle(
                           fontSize: textTheme.bodySmall?.fontSize,
                           color: dictionary.isHidden(appModel.targetLanguage)
-                              ? theme.unselectedWidgetColor
+                              ? theme.colorScheme.onSurfaceVariant
                               : null,
                         ),
                       ),
@@ -1049,14 +1064,14 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
       ),
       buildPopupItem(
         label: t.custom_dict_css,
-        icon: Icons.code,
+        icon: Icons.code_outlined,
         action: () {
           _showCustomCSSDialog(dictionary.name);
         },
       ),
       buildPopupItem(
         label: t.options_delete,
-        icon: Icons.delete,
+        icon: Icons.delete_outline,
         action: () {
           showDictionaryDeleteDialog(dictionary);
         },
@@ -1077,7 +1092,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
             t.import_format,
             style: TextStyle(
               fontSize: 10,
-              color: theme.unselectedWidgetColor,
+              color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
         ),
@@ -1102,7 +1117,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
                 border: Border.fromBorderSide(
                   BorderSide(
                     width: 0.5,
-                    color: Theme.of(context).unselectedWidgetColor,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
               ),

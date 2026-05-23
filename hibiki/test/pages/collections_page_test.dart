@@ -38,7 +38,6 @@ void main() {
   testWidgets('collection item dialog shows all actions', (
     WidgetTester tester,
   ) async {
-
     await tester.pumpWidget(
       buildApp(
         CollectionItemDialogFrame(

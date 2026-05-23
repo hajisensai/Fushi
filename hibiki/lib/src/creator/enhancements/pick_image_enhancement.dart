@@ -18,7 +18,7 @@ class PickImageEnhancement extends ImageEnhancement {
           uniqueKey: key,
           label: 'Pick Image',
           description: 'Pick a new image to use with an external picker.',
-          icon: Icons.upload_file,
+          icon: Icons.upload_file_outlined,
           field: ImageField.instance,
         );
 

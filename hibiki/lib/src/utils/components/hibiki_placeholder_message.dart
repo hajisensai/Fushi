@@ -42,7 +42,7 @@ class HibikiPlaceholderMessage extends StatelessWidget {
           icon,
           size:
               iconSize ?? Theme.of(context).textTheme.headlineMedium?.fontSize,
-          color: color ?? Theme.of(context).unselectedWidgetColor,
+          color: color ?? Theme.of(context).colorScheme.onSurfaceVariant,
         ),
         const Space.small(),
         Text(
@@ -51,7 +51,7 @@ class HibikiPlaceholderMessage extends StatelessWidget {
           style: messageStyle ??
               Theme.of(context).textTheme.titleLarge?.copyWith(
                     fontWeight: FontWeight.normal,
-                    color: color ?? Theme.of(context).unselectedWidgetColor,
+                    color: color ?? Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
         ),
       ],

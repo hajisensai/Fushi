@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/tag_management_page.dart';
+import 'package:hibiki/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 
 final selectedTagIdsProvider = StateProvider<Set<int>>((_) => {});
@@ -98,9 +99,9 @@ class _TagFilterSheetState extends ConsumerState<TagFilterSheet> {
             ),
           ),
           if (_tags == null)
-            const Padding(
-              padding: EdgeInsets.all(32),
-              child: Center(child: CircularProgressIndicator()),
+            Padding(
+              padding: const EdgeInsets.all(32),
+              child: Center(child: adaptiveIndicator(context: context)),
             )
           else if (_tags!.isEmpty)
             Padding(
@@ -155,7 +156,7 @@ class _TagFilterSheetState extends ConsumerState<TagFilterSheet> {
                     Navigator.pop(context);
                     Navigator.push(
                       context,
-                      MaterialPageRoute(
+                      adaptivePageRoute(
                         builder: (_) => const TagManagementPage(),
                       ),
                     );

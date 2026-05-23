@@ -13,7 +13,7 @@ class AudioSentenceField extends BaseAudioField {
           description:
               'Audio pertaining to the sentence. Text field can be used'
               ' to enter search terms for audio sources.',
-          icon: Icons.queue_music,
+          icon: Icons.queue_music_outlined,
         );
 
   /// Get the singleton instance of this field.

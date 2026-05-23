@@ -57,7 +57,8 @@ class _SwitchSettingsPageState<T> extends BasePageState<SwitchSettingsPage<T>> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return adaptiveAlertDialog(
+      context: context,
       contentPadding: MediaQuery.of(context).orientation == Orientation.portrait
           ? Spacing.of(context).insets.all.big
           : Spacing.of(context).insets.all.normal,
@@ -91,8 +92,9 @@ class _SwitchSettingsPageState<T> extends BasePageState<SwitchSettingsPage<T>> {
                     ),
                     ValueListenableBuilder<bool>(
                       valueListenable: notifier,
-                      builder: (_, value, __) {
-                        return Switch(
+                      builder: (context, value, __) {
+                        return adaptiveSwitch(
+                          context: context,
                           value: value,
                           onChanged: (value) {
                             notifier.value = !notifier.value;
@@ -111,14 +113,16 @@ class _SwitchSettingsPageState<T> extends BasePageState<SwitchSettingsPage<T>> {
   }
 
   Widget buildSaveButton() {
-    return TextButton(
+    return adaptiveDialogAction(
+      context: context,
       onPressed: executeSave,
       child: Text(t.dialog_save),
     );
   }
 
   Widget buildCancelButton() {
-    return TextButton(
+    return adaptiveDialogAction(
+      context: context,
       child: Text(t.dialog_cancel),
       onPressed: () {
         Navigator.pop(context);

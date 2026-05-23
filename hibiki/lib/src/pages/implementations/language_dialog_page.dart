@@ -22,7 +22,8 @@ class _LanguageDialogPageState extends BasePageState<LanguageDialogPage> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return adaptiveAlertDialog(
+      context: context,
       contentPadding: MediaQuery.of(context).orientation == Orientation.portrait
           ? Spacing.of(context).insets.exceptBottom.big
           : Spacing.of(context).insets.exceptBottom.normal,
@@ -32,7 +33,8 @@ class _LanguageDialogPageState extends BasePageState<LanguageDialogPage> {
   }
 
   Widget buildCloseButton() {
-    return TextButton(
+    return adaptiveDialogAction(
+      context: context,
       child: Text(t.dialog_close),
       onPressed: () => Navigator.pop(context),
     );
@@ -57,7 +59,7 @@ class _LanguageDialogPageState extends BasePageState<LanguageDialogPage> {
                   t.app_locale,
                   style: TextStyle(
                     fontSize: 10,
-                    color: theme.unselectedWidgetColor,
+                    color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
               ),

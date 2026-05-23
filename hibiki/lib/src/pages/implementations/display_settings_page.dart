@@ -34,7 +34,7 @@ class _DisplaySettingsPageState extends BasePageState {
     final ThemeData theme = Theme.of(context);
     final bool isVertical = _source.ttuWritingMode.startsWith('vertical');
     return Scaffold(
-      appBar: AppBar(title: Text(t.display_settings)),
+      appBar: adaptiveAppBar(context: context, title: Text(t.display_settings)),
       body: ListView(
         padding: EdgeInsets.fromLTRB(
           16,
@@ -43,6 +43,28 @@ class _DisplaySettingsPageState extends BasePageState {
           8 + MediaQuery.of(context).padding.bottom,
         ),
         children: [
+          _settingRow(
+            theme,
+            label: t.design_system_label,
+            hint: t.design_system_hint,
+            child: SegmentedButton<String>(
+              showSelectedIcon: false,
+              segments: [
+                ButtonSegment(
+                    value: 'auto', label: Text(t.design_system_auto)),
+                const ButtonSegment(value: 'material', label: Text('MD3')),
+                const ButtonSegment(value: 'cupertino', label: Text('iOS')),
+              ],
+              selected: {appModel.themeNotifier.designSystem},
+              onSelectionChanged: (sel) {
+                appModel.themeNotifier.setDesignSystem(sel.first);
+              },
+              style: _segmentedStyle(theme),
+            ),
+          ),
+          const Space.small(),
+          const HibikiDivider(),
+          const Space.small(),
           const ProfileSelector(),
           const Divider(),
           _numberStepper(
@@ -220,7 +242,8 @@ class _DisplaySettingsPageState extends BasePageState {
           _settingRow(
             theme,
             label: t.ttu_text_justify,
-            child: Switch(
+            child: adaptiveSwitch(
+              context: context,
               value: _source.ttuEnableTextJustification,
               onChanged: (v) =>
                   _update(() => _source.setTtuEnableTextJustification(v)),
@@ -230,7 +253,8 @@ class _DisplaySettingsPageState extends BasePageState {
             _settingRow(
               theme,
               label: t.ttu_vert_kerning,
-              child: Switch(
+              child: adaptiveSwitch(
+                context: context,
                 value: _source.ttuEnableVerticalFontKerning,
                 onChanged: (v) =>
                     _update(() => _source.setTtuEnableVerticalFontKerning(v)),
@@ -240,7 +264,8 @@ class _DisplaySettingsPageState extends BasePageState {
             _settingRow(
               theme,
               label: t.ttu_font_vpal,
-              child: Switch(
+              child: adaptiveSwitch(
+                context: context,
                 value: _source.ttuEnableFontVPAL,
                 onChanged: (v) =>
                     _update(() => _source.setTtuEnableFontVPAL(v)),
@@ -249,7 +274,8 @@ class _DisplaySettingsPageState extends BasePageState {
           _settingRow(
             theme,
             label: t.ttu_reader_styles,
-            child: Switch(
+            child: adaptiveSwitch(
+              context: context,
               value: _source.ttuPrioritizeReaderStyles,
               onChanged: (v) =>
                   _update(() => _source.setTtuPrioritizeReaderStyles(v)),

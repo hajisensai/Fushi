@@ -20,7 +20,8 @@ class _ProfileManagementPageState extends BasePageState<ProfileManagementPage> {
     final vm = ref.read(profileViewModelProvider.notifier);
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: adaptiveAppBar(
+        context: context,
         title: Text(t.profile_management),
         actions: [
           IconButton(
@@ -99,7 +100,7 @@ class _ProfileManagementPageState extends BasePageState<ProfileManagementPage> {
             mainAxisSize: MainAxisSize.min,
             children: [
               IconButton(
-                icon: const Icon(Icons.copy, size: 20),
+                icon: const Icon(Icons.copy_outlined, size: 20),
                 tooltip: t.profile_copy,
                 visualDensity: VisualDensity.compact,
                 constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
@@ -107,7 +108,7 @@ class _ProfileManagementPageState extends BasePageState<ProfileManagementPage> {
                 onPressed: () => _showCopyDialog(vm, p.id, p.name),
               ),
               IconButton(
-                icon: const Icon(Icons.edit, size: 20),
+                icon: const Icon(Icons.edit_outlined, size: 20),
                 tooltip: t.profile_rename,
                 visualDensity: VisualDensity.compact,
                 constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
@@ -117,7 +118,7 @@ class _ProfileManagementPageState extends BasePageState<ProfileManagementPage> {
               if (!isOnly)
                 IconButton(
                   icon: Icon(
-                    Icons.delete,
+                    Icons.delete_outline,
                     size: 20,
                     color: theme.colorScheme.error,
                   ),
@@ -147,18 +148,21 @@ class _ProfileManagementPageState extends BasePageState<ProfileManagementPage> {
     final boundId = uiState.mediaTypeBindings[mediaType];
     return ListTile(
       title: Text(label),
-      trailing: DropdownButton<int?>(
-        value: boundId,
-        underline: const SizedBox.shrink(),
-        items: [
-          DropdownMenuItem<int?>(
-            value: null,
-            child: Text(t.profile_media_none),
-          ),
-          for (final p in uiState.profiles)
-            DropdownMenuItem<int?>(value: p.id, child: Text(p.name)),
-        ],
-        onChanged: (id) => vm.setMediaTypeBinding(mediaType, id),
+      trailing: SizedBox(
+        width: 160,
+        child: DropdownMenu<int?>(
+          expandedInsets: EdgeInsets.zero,
+          initialSelection: boundId,
+          dropdownMenuEntries: [
+            DropdownMenuEntry<int?>(
+              value: null,
+              label: t.profile_media_none,
+            ),
+            for (final p in uiState.profiles)
+              DropdownMenuEntry<int?>(value: p.id, label: p.name),
+          ],
+          onSelected: (id) => vm.setMediaTypeBinding(mediaType, id),
+        ),
       ),
     );
   }
@@ -168,7 +172,7 @@ class _ProfileManagementPageState extends BasePageState<ProfileManagementPage> {
   // ---------------------------------------------------------------------------
 
   Future<void> _showCreateDialog(ProfileViewModel vm) async {
-    final name = await showDialog<String>(
+    final name = await showAppDialog<String>(
       context: context,
       builder: (ctx) => ProfileNameDialog(
         title: t.profile_create,
@@ -186,7 +190,7 @@ class _ProfileManagementPageState extends BasePageState<ProfileManagementPage> {
     int sourceId,
     String sourceName,
   ) async {
-    final name = await showDialog<String>(
+    final name = await showAppDialog<String>(
       context: context,
       builder: (ctx) => ProfileNameDialog(
         title: t.profile_copy,
@@ -204,7 +208,7 @@ class _ProfileManagementPageState extends BasePageState<ProfileManagementPage> {
     int id,
     String currentName,
   ) async {
-    final name = await showDialog<String>(
+    final name = await showAppDialog<String>(
       context: context,
       builder: (ctx) => ProfileNameDialog(
         title: t.profile_rename,
@@ -222,7 +226,7 @@ class _ProfileManagementPageState extends BasePageState<ProfileManagementPage> {
     int id,
     String name,
   ) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => ProfileDeleteDialog(
         profileName: name,
@@ -250,7 +254,8 @@ class ProfileDeleteDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
 
-    return AlertDialog(
+    return adaptiveAlertDialog(
+      context: context,
       titlePadding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
       contentPadding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
       actionsPadding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
@@ -273,16 +278,15 @@ class ProfileDeleteDialog extends StatelessWidget {
         ),
       ),
       actions: [
-        TextButton(
+        adaptiveDialogAction(
+          context: context,
           onPressed: () => Navigator.pop(context, false),
           child: Text(t.dialog_close),
         ),
-        FilledButton(
+        adaptiveDialogAction(
+          context: context,
+          isDestructiveAction: true,
           onPressed: onConfirm,
-          style: FilledButton.styleFrom(
-            backgroundColor: theme.colorScheme.errorContainer,
-            foregroundColor: theme.colorScheme.onErrorContainer,
-          ),
           child: Text(t.profile_delete),
         ),
       ],
@@ -324,7 +328,8 @@ class _ProfileNameDialogState extends State<ProfileNameDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return adaptiveAlertDialog(
+      context: context,
       titlePadding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
       contentPadding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
       actionsPadding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
@@ -339,11 +344,13 @@ class _ProfileNameDialogState extends State<ProfileNameDialog> {
         onSubmitted: (value) => _submit(context, value),
       ),
       actions: [
-        TextButton(
+        adaptiveDialogAction(
+          context: context,
           onPressed: () => Navigator.pop(context),
           child: Text(t.dialog_close),
         ),
-        TextButton(
+        adaptiveDialogAction(
+          context: context,
           onPressed: () => _submit(context, _controller.text),
           child: Text(widget.submitLabel),
         ),
@@ -367,7 +374,7 @@ class _SectionHeader extends StatelessWidget {
       child: Text(
         title,
         style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              color: Theme.of(context).colorScheme.primary,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
       ),
     );

@@ -158,7 +158,8 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+      appBar: adaptiveAppBar(
+        context: context,
         title: Text(t.reading_statistics),
         actions: [
           IconButton(
@@ -175,7 +176,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
               : _allStats.isEmpty
                   ? Center(
                       child: HibikiPlaceholderMessage(
-                        icon: Icons.bar_chart,
+                        icon: Icons.bar_chart_outlined,
                         message: t.stat_no_data,
                       ),
                     )
@@ -346,7 +347,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
                     value: fraction,
                     minHeight: 8,
                     backgroundColor: colorScheme.surfaceContainerHighest,
-                    valueColor: AlwaysStoppedAnimation(colorScheme.primary),
+                    color: colorScheme.primary,
                   ),
                 ),
               ),

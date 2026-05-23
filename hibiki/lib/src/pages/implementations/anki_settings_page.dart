@@ -21,14 +21,15 @@ class _AnkiSettingsPageState extends BasePageState<AnkiSettingsPage> {
     final settings = uiState.settings;
 
     return Scaffold(
-      appBar: AppBar(title: Text(t.anki_settings_label)),
+      appBar:
+          adaptiveAppBar(context: context, title: Text(t.anki_settings_label)),
       body: ListView(
         padding: EdgeInsets.only(
           bottom: MediaQuery.of(context).padding.bottom + 16,
         ),
         children: [
           const ListTile(
-            leading: Icon(Icons.person),
+            leading: Icon(Icons.person_outline),
             title: ProfileSelector(),
           ),
           const Divider(),
@@ -92,15 +93,15 @@ class _AnkiSettingsPageState extends BasePageState<AnkiSettingsPage> {
 
   Widget _buildFetchTile(AnkiUiState uiState, AnkiViewModel vm) {
     return ListTile(
-      leading: const Icon(Icons.sync),
+      leading: const Icon(Icons.sync_outlined),
       title: Text(
         uiState.isFetching ? t.anki_fetching : t.anki_fetch,
       ),
       trailing: uiState.isFetching
-          ? const SizedBox(
+          ? SizedBox(
               width: 20,
               height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2),
+              child: adaptiveIndicator(context: context, strokeWidth: 2),
             )
           : const Icon(Icons.chevron_right),
       onTap: uiState.isFetching ? null : () => vm.fetchConfiguration(),
@@ -113,16 +114,15 @@ class _AnkiSettingsPageState extends BasePageState<AnkiSettingsPage> {
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: DropdownButtonFormField<int>(
-        decoration: InputDecoration(
-          labelText: t.anki_deck,
-          border: const OutlineInputBorder(),
-        ),
-        initialValue: decks.any((d) => d.id == selectedId) ? selectedId : null,
-        items: decks
-            .map((d) => DropdownMenuItem(value: d.id, child: Text(d.name)))
+      child: DropdownMenu<int>(
+        label: Text(t.anki_deck),
+        expandedInsets: EdgeInsets.zero,
+        initialSelection:
+            decks.any((d) => d.id == selectedId) ? selectedId : null,
+        dropdownMenuEntries: decks
+            .map((d) => DropdownMenuEntry(value: d.id, label: d.name))
             .toList(),
-        onChanged: (id) {
+        onSelected: (id) {
           if (id == null) return;
           final deck = decks.firstWhere((d) => d.id == id);
           vm.selectDeck(deck);
@@ -137,17 +137,15 @@ class _AnkiSettingsPageState extends BasePageState<AnkiSettingsPage> {
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: DropdownButtonFormField<int>(
-        decoration: InputDecoration(
-          labelText: t.anki_note_type,
-          border: const OutlineInputBorder(),
-        ),
-        initialValue:
+      child: DropdownMenu<int>(
+        label: Text(t.anki_note_type),
+        expandedInsets: EdgeInsets.zero,
+        initialSelection:
             noteTypes.any((n) => n.id == selectedId) ? selectedId : null,
-        items: noteTypes
-            .map((n) => DropdownMenuItem(value: n.id, child: Text(n.name)))
+        dropdownMenuEntries: noteTypes
+            .map((n) => DropdownMenuEntry(value: n.id, label: n.name))
             .toList(),
-        onChanged: (id) {
+        onSelected: (id) {
           if (id == null) return;
           final noteType = noteTypes.firstWhere((n) => n.id == id);
           vm.selectNoteType(noteType);
@@ -173,7 +171,7 @@ class _AnkiSettingsPageState extends BasePageState<AnkiSettingsPage> {
                   : theme.colorScheme.onSurface,
             ),
           ),
-          trailing: const Icon(Icons.edit, size: 18),
+          trailing: const Icon(Icons.edit_outlined, size: 18),
           onTap: () => _showHandlebarPicker(field, value, vm),
         );
       }).toList(),
@@ -189,7 +187,7 @@ class _AnkiSettingsPageState extends BasePageState<AnkiSettingsPage> {
         appModel.termDictionaries.map((d) => d.name).toList();
     final options = AnkiHandlebarOptions.forTermDictionaries(dictionaryNames);
 
-    final result = await showDialog<String>(
+    final result = await showAppDialog<String>(
       context: context,
       builder: (ctx) => AnkiHandlebarPickerDialog(
         title: t.anki_select_handlebar(field: field),
@@ -256,7 +254,8 @@ class _AnkiHandlebarPickerDialogState extends State<AnkiHandlebarPickerDialog> {
   Widget build(BuildContext context) {
     final double maxHeight = MediaQuery.of(context).size.height * 0.36;
 
-    return AlertDialog(
+    return adaptiveAlertDialog(
+      context: context,
       titlePadding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
       contentPadding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
       actionsPadding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
@@ -316,15 +315,18 @@ class _AnkiHandlebarPickerDialogState extends State<AnkiHandlebarPickerDialog> {
         ),
       ),
       actions: [
-        TextButton(
+        adaptiveDialogAction(
+          context: context,
           onPressed: () => Navigator.pop(context, ''),
           child: Text(MaterialLocalizations.of(context).deleteButtonTooltip),
         ),
-        TextButton(
+        adaptiveDialogAction(
+          context: context,
           onPressed: () => Navigator.pop(context),
           child: Text(MaterialLocalizations.of(context).cancelButtonLabel),
         ),
-        TextButton(
+        adaptiveDialogAction(
+          context: context,
           onPressed: () => Navigator.pop(context, _controller.text),
           child: Text(MaterialLocalizations.of(context).okButtonLabel),
         ),
@@ -344,7 +346,7 @@ class _SectionHeader extends StatelessWidget {
       child: Text(
         title,
         style: Theme.of(context).textTheme.labelLarge?.copyWith(
-              color: Theme.of(context).colorScheme.primary,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
       ),
     );

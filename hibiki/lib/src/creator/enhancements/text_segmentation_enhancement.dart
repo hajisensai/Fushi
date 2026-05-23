@@ -12,7 +12,7 @@ class TextSegmentationEnhancement extends Enhancement {
           uniqueKey: key,
           label: 'Text Segmentation',
           description: 'Search or select a new term from segmented text.',
-          icon: Icons.account_tree,
+          icon: Icons.account_tree_outlined,
         );
 
   /// Used to identify this enhancement and to allow a constant value for the

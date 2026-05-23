@@ -165,8 +165,7 @@ class _HibikiSelectionToolbar extends StatefulWidget {
       _HibikiSelectionToolbarState();
 }
 
-class _HibikiSelectionToolbarState
-    extends State<_HibikiSelectionToolbar> {
+class _HibikiSelectionToolbarState extends State<_HibikiSelectionToolbar> {
   void _onChangedClipboardStatus() {
     setState(() {});
   }

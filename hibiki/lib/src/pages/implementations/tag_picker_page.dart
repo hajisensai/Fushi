@@ -5,6 +5,7 @@ import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/tag_management_page.dart';
 import 'package:hibiki/i18n/strings.g.dart';
+import 'package:hibiki/utils.dart';
 
 class TagPickerPage extends ConsumerStatefulWidget {
   const TagPickerPage({
@@ -59,7 +60,7 @@ class _TagPickerPageState extends ConsumerState<TagPickerPage> {
   }
 
   Future<void> _quickCreateTag() async {
-    final result = await showDialog<TagEditResult>(
+    final result = await showAppDialog<TagEditResult>(
       context: context,
       builder: (ctx) => TagEditDialog(
         title: t.tag_new,
@@ -88,7 +89,7 @@ class _TagPickerPageState extends ConsumerState<TagPickerPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: Text(t.tag_label)),
+      appBar: adaptiveAppBar(context: context, title: Text(t.tag_label)),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _quickCreateTag,
         icon: const Icon(Icons.add),

@@ -12,7 +12,7 @@ class AudioField extends BaseAudioField {
           label: 'Term Audio',
           description: 'Audio pertaining to the term. Text field can be used'
               ' to enter search terms for audio sources.',
-          icon: Icons.audiotrack,
+          icon: Icons.audiotrack_outlined,
         );
 
   /// Get the singleton instance of this field.

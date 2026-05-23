@@ -33,8 +33,7 @@ class HibikiSearchHistory extends ConsumerStatefulWidget {
       _HibikiSearchHistoryState();
 }
 
-class _HibikiSearchHistoryState
-    extends ConsumerState<HibikiSearchHistory> {
+class _HibikiSearchHistoryState extends ConsumerState<HibikiSearchHistory> {
   AppModel get appModel => ref.watch(appProvider);
 
   @override

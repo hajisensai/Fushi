@@ -19,7 +19,7 @@ class ImageField extends ImageExportField {
           label: 'Image',
           description: 'Visual supplement. Text field can be used to enter'
               ' search terms for image sources.',
-          icon: Icons.image,
+          icon: Icons.image_outlined,
         );
 
   /// Get the singleton instance of this field.
@@ -181,7 +181,7 @@ class ImageField extends ImageExportField {
                 }
                 popup = OverlayEntry(
                   builder: (context) => ColoredBox(
-                    color: Colors.black.withOpacity(0.5),
+                    color: Colors.black.withValues(alpha: 0.5),
                     child: buildImage(image: image, fit: BoxFit.contain),
                   ),
                 );
@@ -241,7 +241,7 @@ class ImageField extends ImageExportField {
               child: Icon(
                 icon,
                 size: fontSize,
-                color: Theme.of(context).unselectedWidgetColor,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
           ),
@@ -250,7 +250,7 @@ class ImageField extends ImageExportField {
               text: t.image_search_label_none_before,
               style: TextStyle(
                 fontSize: fontSize,
-                color: Theme.of(context).unselectedWidgetColor,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
           if (selectedIndex == -1)
@@ -266,7 +266,7 @@ class ImageField extends ImageExportField {
               text: t.image_search_label_before,
               style: TextStyle(
                 fontSize: fontSize,
-                color: Theme.of(context).unselectedWidgetColor,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
           if (selectedIndex != -1)
@@ -281,7 +281,7 @@ class ImageField extends ImageExportField {
             text: t.image_search_label_middle,
             style: TextStyle(
               fontSize: fontSize,
-              color: Theme.of(context).unselectedWidgetColor,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
           ),
           TextSpan(
@@ -296,7 +296,7 @@ class ImageField extends ImageExportField {
               text: t.image_search_label_after,
               style: TextStyle(
                 fontSize: fontSize,
-                color: Theme.of(context).unselectedWidgetColor,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
           if (currentSearchTerm != null && currentSearchTerm!.trim().isNotEmpty)
@@ -305,7 +305,7 @@ class ImageField extends ImageExportField {
               style: TextStyle(
                 fontWeight: FontWeight.bold,
                 fontSize: fontSize,
-                color: Theme.of(context).unselectedWidgetColor,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
           if (currentSearchTerm != null && currentSearchTerm!.trim().isNotEmpty)
@@ -346,7 +346,7 @@ class ImageField extends ImageExportField {
               child: Icon(
                 icon,
                 size: fontSize,
-                color: Theme.of(context).unselectedWidgetColor,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
           ),
@@ -355,7 +355,7 @@ class ImageField extends ImageExportField {
               text: t.searching_in_progress,
               style: TextStyle(
                 fontSize: fontSize,
-                color: Theme.of(context).unselectedWidgetColor,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
           if (currentSearchTerm != null && currentSearchTerm!.trim().isNotEmpty)
@@ -371,7 +371,7 @@ class ImageField extends ImageExportField {
               text: t.processing_in_progress,
               style: TextStyle(
                 fontSize: fontSize,
-                color: Theme.of(context).unselectedWidgetColor,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
           WidgetSpan(

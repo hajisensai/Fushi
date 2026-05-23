@@ -18,7 +18,7 @@ class CameraEnhancement extends ImageEnhancement {
           uniqueKey: key,
           label: 'Camera',
           description: 'Take a new photo to use as the new image.',
-          icon: Icons.camera_alt,
+          icon: Icons.camera_alt_outlined,
           field: ImageField.instance,
         );
 

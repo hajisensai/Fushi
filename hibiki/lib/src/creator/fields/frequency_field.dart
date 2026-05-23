@@ -17,7 +17,7 @@ class FrequencyField extends Field {
           label: 'Frequency',
           description: 'Adds frequency of headword for sorting purposes,'
               ' calculated using the harmonic mean.',
-          icon: Icons.insert_chart,
+          icon: Icons.insert_chart_outlined,
         );
 
   /// Get the singleton instance of this field.

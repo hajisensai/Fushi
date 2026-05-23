@@ -116,18 +116,19 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
     if (!appModel.isInitialised) {
       final brightness =
           WidgetsBinding.instance.platformDispatcher.platformBrightness;
-      final isDark = brightness == Brightness.dark;
+      final cs = ColorScheme.fromSeed(
+        seedColor: const Color(0xFF1F4959),
+        brightness: brightness,
+      );
       return TranslationProvider(
         child: MaterialApp(
           debugShowCheckedModeBanner: false,
-          theme: isDark ? ThemeData.dark() : null,
+          theme: ThemeData(useMaterial3: true, colorScheme: cs),
           builder: _buildWithSpacing,
           home: Scaffold(
             backgroundColor: Colors.transparent,
             body: Center(
-              child: CircularProgressIndicator(
-                color: isDark ? Colors.white70 : null,
-              ),
+              child: CircularProgressIndicator(color: cs.primary),
             ),
           ),
         ),
@@ -159,7 +160,7 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
             : appModel.darkTheme,
         themeMode: appModel.overrideDictionaryTheme != null
             ? ThemeMode.light
-            : (appModel.isDarkMode ? ThemeMode.dark : ThemeMode.light),
+            : appModel.themeMode,
         home: PopupDictionaryPage(
           key: ValueKey('$_searchTerm:$_searchGeneration'),
           searchTerm: _searchTerm,

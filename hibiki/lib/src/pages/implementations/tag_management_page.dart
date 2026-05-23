@@ -5,6 +5,7 @@ import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/tag_filter_sheet.dart';
 import 'package:hibiki/i18n/strings.g.dart';
+import 'package:hibiki/utils.dart';
 
 const List<int> kTagPresetColors = [
   0xFFEF5350, // red
@@ -97,22 +98,22 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
   }
 
   Future<void> _deleteTag(BookTagRow tag) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => adaptiveAlertDialog(
+        context: ctx,
         title: Text(t.dialog_delete),
         content: Text(t.tag_delete_confirm(name: tag.name)),
         actions: [
-          TextButton(
+          adaptiveDialogAction(
+            context: ctx,
             onPressed: () => Navigator.pop(ctx, false),
             child: Text(t.dialog_cancel),
           ),
-          FilledButton(
+          adaptiveDialogAction(
+            context: ctx,
+            isDestructiveAction: true,
             onPressed: () => Navigator.pop(ctx, true),
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(ctx).colorScheme.errorContainer,
-              foregroundColor: Theme.of(ctx).colorScheme.onErrorContainer,
-            ),
             child: Text(t.dialog_delete),
           ),
         ],
@@ -133,7 +134,7 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
     required String initialName,
     required int initialColor,
   }) {
-    return showDialog<TagEditResult>(
+    return showAppDialog<TagEditResult>(
       context: context,
       builder: (ctx) => TagEditDialog(
         title: title,
@@ -147,7 +148,7 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: Text(t.tag_manage_title)),
+      appBar: adaptiveAppBar(context: context, title: Text(t.tag_manage_title)),
       floatingActionButton: FloatingActionButton(
         onPressed: _createTag,
         child: const Icon(Icons.add),
@@ -174,7 +175,7 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
                     padding: const EdgeInsets.only(right: 16),
                     color: theme.colorScheme.errorContainer,
                     child: Icon(
-                      Icons.delete,
+                      Icons.delete_outline,
                       color: theme.colorScheme.onErrorContainer,
                     ),
                   ),
@@ -235,7 +236,8 @@ class TagEditDialogState extends State<TagEditDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return adaptiveAlertDialog(
+      context: context,
       title: Text(widget.title),
       content: Column(
         mainAxisSize: MainAxisSize.min,
@@ -279,11 +281,14 @@ class TagEditDialogState extends State<TagEditDialog> {
         ],
       ),
       actions: [
-        TextButton(
+        adaptiveDialogAction(
+          context: context,
           onPressed: () => Navigator.pop(context),
           child: Text(t.dialog_cancel),
         ),
-        FilledButton(
+        adaptiveDialogAction(
+          context: context,
+          isDefaultAction: true,
           onPressed: () {
             final name = _nameController.text.trim();
             if (name.isEmpty) {

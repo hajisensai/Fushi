@@ -99,7 +99,7 @@ class BasePageState<T extends BasePage> extends ConsumerState<T> {
   }) {
     return Center(
       child: HibikiPlaceholderMessage(
-        icon: Icons.error,
+        icon: Icons.error_outline,
         message: '$error',
       ),
     );
@@ -111,8 +111,9 @@ class BasePageState<T extends BasePage> extends ConsumerState<T> {
       child: SizedBox(
         height: Spacing.of(context).spaces.big,
         width: Spacing.of(context).spaces.big,
-        child: CircularProgressIndicator(
-          valueColor: AlwaysStoppedAnimation<Color>(theme.colorScheme.primary),
+        child: adaptiveIndicator(
+          context: context,
+          color: theme.colorScheme.primary,
         ),
       ),
     );

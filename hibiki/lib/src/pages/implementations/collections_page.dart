@@ -367,7 +367,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
           if (hasAudio)
             TextButton.icon(
               icon: Icon(
-                _playingAudio ? Icons.hourglass_top : Icons.volume_up,
+                _playingAudio ? Icons.hourglass_top : Icons.volume_up_outlined,
                 size: 18,
               ),
               label: Text(t.dialog_play),
@@ -380,7 +380,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
             ),
           if (!isBookmark && item.text != null)
             TextButton.icon(
-              icon: const Icon(Icons.copy, size: 18),
+              icon: const Icon(Icons.copy_outlined, size: 18),
               label: Text(t.copy),
               onPressed: () {
                 Clipboard.setData(ClipboardData(text: item.text!));
@@ -388,7 +388,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
               },
             ),
           TextButton.icon(
-            icon: Icon(Icons.delete, size: 18, color: cs.error),
+            icon: Icon(Icons.delete_outline, size: 18, color: cs.error),
             label: Text(t.dialog_delete, style: TextStyle(color: cs.error)),
             onPressed: () {
               Navigator.pop(ctx);
@@ -397,7 +397,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
           ),
           if (canNavigate)
             FilledButton.icon(
-              icon: const Icon(Icons.menu_book, size: 18),
+              icon: const Icon(Icons.menu_book_outlined, size: 18),
               label: Text(t.dialog_read),
               onPressed: () {
                 Navigator.pop(ctx);
@@ -412,11 +412,9 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(t.collections),
-      ),
+      appBar: adaptiveAppBar(context: context, title: Text(t.collections)),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? Center(child: adaptiveIndicator(context: context))
           : _items.isEmpty
               ? Center(
                   child: Text(
@@ -435,7 +433,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
 
   Widget _buildItem(_CollectionItem item) {
     final isBookmark = item.type == _CollectionType.bookmark;
-    final icon = isBookmark ? Icons.bookmark : Icons.format_quote;
+    final icon = isBookmark ? Icons.bookmark_outline : Icons.format_quote_outlined;
     final typeLabel =
         isBookmark ? t.collection_bookmark : t.collection_sentence;
 
@@ -466,13 +464,13 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 20),
         color: Theme.of(context).colorScheme.error,
-        child: Icon(Icons.delete, color: Theme.of(context).colorScheme.onError),
+        child: Icon(Icons.delete_outline, color: Theme.of(context).colorScheme.onError),
       ),
       confirmDismiss: (_) async {
         final String message = isBookmark
             ? '${t.collection_bookmark}: ${item.label ?? ""}'
             : item.text ?? '';
-        return await showDialog<bool>(
+        return await showAppDialog<bool>(
               context: context,
               builder: (ctx) => CollectionDeleteDialog(
                 message: message,
@@ -520,7 +518,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
             if (_hasAudio(item))
               IconButton(
                 icon: Icon(
-                  _playingAudio ? Icons.hourglass_top : Icons.volume_up,
+                  _playingAudio ? Icons.hourglass_top : Icons.volume_up_outlined,
                   size: 18,
                 ),
                 onPressed: _playingAudio ? null : () => _playItemAudio(item),
@@ -528,7 +526,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
               ),
             if (!isBookmark && item.text != null)
               IconButton(
-                icon: const Icon(Icons.copy, size: 18),
+                icon: const Icon(Icons.copy_outlined, size: 18),
                 onPressed: () {
                   Clipboard.setData(ClipboardData(text: item.text!));
                 },
@@ -563,7 +561,8 @@ class CollectionItemDialogFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return adaptiveAlertDialog(
+      context: context,
       title: DefaultTextStyle.merge(
         maxLines: 3,
         overflow: TextOverflow.ellipsis,
@@ -590,7 +589,8 @@ class CollectionDeleteDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
 
-    return AlertDialog(
+    return adaptiveAlertDialog(
+      context: context,
       contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
       actionsPadding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
       buttonPadding: const EdgeInsets.symmetric(horizontal: 4),
@@ -607,16 +607,15 @@ class CollectionDeleteDialog extends StatelessWidget {
         ),
       ),
       actions: [
-        TextButton(
+        adaptiveDialogAction(
+          context: context,
           onPressed: () => Navigator.pop(context, false),
           child: Text(t.dialog_close),
         ),
-        FilledButton(
+        adaptiveDialogAction(
+          context: context,
+          isDestructiveAction: true,
           onPressed: onConfirm,
-          style: FilledButton.styleFrom(
-            backgroundColor: theme.colorScheme.errorContainer,
-            foregroundColor: theme.colorScheme.onErrorContainer,
-          ),
           child: Text(t.dialog_delete),
         ),
       ],

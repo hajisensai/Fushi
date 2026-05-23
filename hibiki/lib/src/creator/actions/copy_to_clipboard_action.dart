@@ -14,7 +14,7 @@ class CopyToClipboardAction extends QuickAction {
           label: 'Copy To Clipboard',
           description:
               'Copy the headword of a dictionary entry to the clipboard.',
-          icon: Icons.copy,
+          icon: Icons.copy_outlined,
         );
 
   /// Used to identify this enhancement and to allow a constant value for the

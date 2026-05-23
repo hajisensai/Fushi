@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter/material.dart';
+import 'package:hibiki/utils.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:multi_value_listenable_builder/multi_value_listenable_builder.dart';
 // ignore: depend_on_referenced_packages
@@ -55,7 +56,8 @@ class _AudioRecorderDialogPageState
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return adaptiveAlertDialog(
+      context: context,
       contentPadding: Spacing.of(context).insets.all.small,
       content: buildContent(),
       actions: [
@@ -115,15 +117,15 @@ class _AudioRecorderDialogPageState
       builder: (context, values, _) {
         PlayerState? playerState = values.elementAt(0);
 
-        IconData iconData = Icons.play_arrow;
+        IconData iconData = Icons.play_arrow_outlined;
 
         if (playerState == null ||
             playerState.processingState == ProcessingState.completed) {
-          iconData = Icons.play_arrow;
+          iconData = Icons.play_arrow_outlined;
         } else if (playerState.playing) {
-          iconData = Icons.pause;
+          iconData = Icons.pause_outlined;
         } else {
-          iconData = Icons.play_arrow;
+          iconData = Icons.play_arrow_outlined;
         }
 
         return IconButton(
@@ -240,7 +242,8 @@ class _AudioRecorderDialogPageState
           max = 1.0;
         }
 
-        return Slider(
+        return adaptiveSlider(
+          context: context,
           value: sliderValue <= max ? sliderValue : 0.0,
           max: max,
           onChanged: (progress) {
@@ -289,8 +292,9 @@ class _AudioRecorderDialogPageState
                     height: 48,
                     width: 48,
                     padding: const EdgeInsets.all(16),
-                    child: const CircularProgressIndicator(
-                      valueColor: AlwaysStoppedAnimation(Colors.red),
+                    child: adaptiveIndicator(
+                      context: context,
+                      color: Colors.red,
                     ),
                   )
                 else
@@ -300,7 +304,7 @@ class _AudioRecorderDialogPageState
                       icon: Icon(
                         Icons.play_arrow_outlined,
                         size: 24,
-                        color: theme.unselectedWidgetColor,
+                        color: theme.colorScheme.onSurfaceVariant,
                       ),
                       onPressed: null,
                     ),
@@ -315,9 +319,10 @@ class _AudioRecorderDialogPageState
                 Expanded(
                   child: Opacity(
                     opacity: 0.5,
-                    child: Slider(
+                    child: adaptiveSlider(
+                      context: context,
                       value: 0,
-                      thumbColor: Theme.of(context).unselectedWidgetColor,
+                      thumbColor: Theme.of(context).colorScheme.onSurfaceVariant,
                       onChanged: (value) {},
                     ),
                   ),
@@ -331,12 +336,11 @@ class _AudioRecorderDialogPageState
   }
 
   Widget buildStopButton() {
-    return TextButton(
+    return adaptiveDialogAction(
+      context: context,
+      isDestructiveAction: true,
       child: Text(
         t.dialog_stop,
-        style: const TextStyle(
-          color: Colors.red,
-        ),
       ),
       onPressed: () {
         RecordMp3.instance.stop();
@@ -351,7 +355,8 @@ class _AudioRecorderDialogPageState
   }
 
   Widget buildRecordButton() {
-    return TextButton(
+    return adaptiveDialogAction(
+      context: context,
       child: Text(t.dialog_record),
       onPressed: () async {
         await _audioPlayer.stop();
@@ -368,7 +373,8 @@ class _AudioRecorderDialogPageState
   }
 
   Widget buildSaveButton() {
-    return TextButton(
+    return adaptiveDialogAction(
+      context: context,
       onPressed: executeSave,
       child: Text(t.dialog_save),
     );

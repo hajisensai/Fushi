@@ -404,7 +404,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
       child: Text(
         label,
         style: textTheme.labelMedium?.copyWith(
-          color: theme.colorScheme.primary,
+          color: theme.colorScheme.onSurfaceVariant,
           fontWeight: FontWeight.bold,
           letterSpacing: 0.8,
         ),
@@ -632,7 +632,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
     }
     Navigator.push(
       context,
-      MaterialPageRoute<void>(
+      adaptivePageRoute<void>(
         builder: (_) => ReaderHoshiPage(
           bookId: book.ttuBookId,
           item: _srtBookMediaItem(book),
@@ -790,7 +790,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
 
   Future<void> _batchDeleteConfirm() async {
     final int count = _selectedKeys.length;
-    final bool? confirmed = await showDialog<bool>(
+    final bool? confirmed = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => ReaderHistoryDeleteDialog(
         title: t.dialog_delete,
@@ -843,7 +843,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
       HibikiToast.show(msg: t.tag_no_tags_hint);
       return;
     }
-    await showDialog<void>(
+    await showAppDialog<void>(
       context: context,
       builder: (_) => _BatchTagPickerDialog(
         allTags: allTags,
@@ -860,7 +860,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
   }
 
   Future<void> _confirmDeleteSrtBook(SrtBook book) async {
-    final bool? confirmed = await showDialog<bool>(
+    final bool? confirmed = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => ReaderHistoryDeleteDialog(
         title: t.srt_delete_title,
@@ -1020,7 +1020,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
     return LinearProgressIndicator(
       value: value,
       backgroundColor: theme.colorScheme.surfaceContainerHighest,
-      valueColor: AlwaysStoppedAnimation<Color>(theme.colorScheme.primary),
+      color: theme.colorScheme.primary,
       minHeight: 3,
     );
   }
@@ -1044,7 +1044,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
         fg = cs.onSecondaryContainer;
     }
     return _cardBadge(
-      icon: Icons.headphones,
+      icon: Icons.headphones_outlined,
       background: bg,
       foreground: fg,
     );
@@ -1087,7 +1087,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
 
   Future<void> _confirmDeleteEpub(MediaItem item, int bookId) async {
     Navigator.pop(context);
-    final bool? confirmed = await showDialog<bool>(
+    final bool? confirmed = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => ReaderHistoryDeleteDialog(
         title: t.epub_delete_title,
@@ -1118,7 +1118,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
     Navigator.pop(context);
     Navigator.push(
       context,
-      MaterialPageRoute(
+      adaptivePageRoute(
         builder: (_) => IllustrationsViewerPage(
           bookTitle: item.title,
           bookId: bookId,
@@ -1129,7 +1129,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
 
   Future<void> _openAudioImport(MediaItem item, int bookId) async {
     Navigator.pop(context);
-    await showDialog<bool>(
+    await showAppDialog<bool>(
       context: context,
       builder: (_) => AudiobookImportDialog(
         bookUid: item.uniqueKey,
@@ -1145,7 +1145,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
 
   Future<void> _openAudiobookImport(MediaItem item, int bookId) async {
     Navigator.pop(context);
-    await showDialog<bool>(
+    await showAppDialog<bool>(
       context: context,
       builder: (_) => AudiobookImportDialog(
         bookUid: item.uniqueKey,
@@ -1162,7 +1162,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
     Navigator.pop(context);
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => TagPickerPage(bookId: bookId)),
+      adaptivePageRoute(builder: (_) => TagPickerPage(bookId: bookId)),
     ).then((_) {
       ref.invalidate(bookTagMapProvider);
       ref.invalidate(filteredBookIdsProvider);
@@ -1174,7 +1174,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
     Navigator.pop(context);
     Navigator.push(
       context,
-      MaterialPageRoute(
+      adaptivePageRoute(
         builder: (_) => TagPickerPage(bookId: srtBookId, isSrtBook: true),
       ),
     ).then((_) {
@@ -1198,7 +1198,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
     if (mounted) {
       await Navigator.push(
         context,
-        MaterialPageRoute<void>(
+        adaptivePageRoute<void>(
           builder: (_) => BookCssEditorPage(extractDir: extractDir),
         ),
       );
@@ -1211,7 +1211,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
     final ProfileRepository profileRepo = ref.read(profileRepositoryProvider);
     final ProfileUiState profileState = ref.read(profileViewModelProvider);
 
-    showDialog<void>(
+    showAppDialog<void>(
       context: context,
       builder: (ctx) => _BookProfileDialog(
         bookUid: bookUid,
@@ -1272,7 +1272,7 @@ class _TagBarContentState extends ConsumerState<_TagBarContent> {
               child: IconButton(
                 padding: EdgeInsets.zero,
                 icon: Icon(
-                  widget.selectionMode ? Icons.close : Icons.checklist,
+                  widget.selectionMode ? Icons.close : Icons.checklist_outlined,
                   size: 18,
                   color: widget.selectionMode
                       ? theme.colorScheme.primary
@@ -1289,12 +1289,12 @@ class _TagBarContentState extends ConsumerState<_TagBarContent> {
               height: 32,
               child: IconButton(
                 padding: EdgeInsets.zero,
-                icon: Icon(Icons.settings,
+                icon: Icon(Icons.settings_outlined,
                     size: 18, color: theme.colorScheme.onSurfaceVariant),
                 onPressed: () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(
+                    adaptivePageRoute(
                         builder: (_) => const TagManagementPage()),
                   ).then((_) {
                     ref.invalidate(allTagsProvider);
@@ -1491,7 +1491,8 @@ class ReaderHistoryDeleteDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
 
-    return AlertDialog(
+    return adaptiveAlertDialog(
+      context: context,
       titlePadding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
       contentPadding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
       actionsPadding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
@@ -1515,16 +1516,15 @@ class ReaderHistoryDeleteDialog extends StatelessWidget {
         ),
       ),
       actions: [
-        TextButton(
+        adaptiveDialogAction(
+          context: context,
           onPressed: () => Navigator.pop(context, false),
           child: Text(t.dialog_cancel),
         ),
-        FilledButton(
+        adaptiveDialogAction(
+          context: context,
+          isDestructiveAction: true,
           onPressed: onConfirm,
-          style: FilledButton.styleFrom(
-            backgroundColor: theme.colorScheme.errorContainer,
-            foregroundColor: theme.colorScheme.onErrorContainer,
-          ),
           child: Text(t.dialog_delete),
         ),
       ],
@@ -1601,7 +1601,8 @@ class _BookProfileDialogState extends State<_BookProfileDialog> {
   @override
   Widget build(BuildContext context) {
     final t = Translations.of(context);
-    return AlertDialog(
+    return adaptiveAlertDialog(
+      context: context,
       titlePadding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
       contentPadding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
       actionsPadding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
@@ -1613,9 +1614,9 @@ class _BookProfileDialogState extends State<_BookProfileDialog> {
         style: Theme.of(context).textTheme.titleMedium,
       ),
       content: _loading
-          ? const SizedBox(
+          ? SizedBox(
               height: 48,
-              child: Center(child: CircularProgressIndicator()),
+              child: Center(child: adaptiveIndicator(context: context)),
             )
           : BookProfileDialogContent(
               activeProfileName: _activeProfileName,
@@ -1624,7 +1625,8 @@ class _BookProfileDialogState extends State<_BookProfileDialog> {
               onChanged: _onChanged,
             ),
       actions: [
-        TextButton(
+        adaptiveDialogAction(
+          context: context,
           onPressed: () => Navigator.pop(context),
           child: Text(t.dialog_close),
         ),
@@ -1785,7 +1787,8 @@ class _BatchTagPickerDialogState extends State<_BatchTagPickerDialog> {
   Widget build(BuildContext context) {
     final t = Translations.of(context);
     final theme = Theme.of(context);
-    return AlertDialog(
+    return adaptiveAlertDialog(
+      context: context,
       titlePadding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
       contentPadding: const EdgeInsets.fromLTRB(0, 8, 0, 0),
       actionsPadding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
@@ -1829,11 +1832,14 @@ class _BatchTagPickerDialogState extends State<_BatchTagPickerDialog> {
         ),
       ),
       actions: [
-        TextButton(
+        adaptiveDialogAction(
+          context: context,
           onPressed: () => Navigator.pop(context),
           child: Text(t.dialog_cancel),
         ),
-        FilledButton(
+        adaptiveDialogAction(
+          context: context,
+          isDefaultAction: true,
           onPressed:
               _addTagIds.isEmpty && _removeTagIds.isEmpty ? null : _apply,
           child: Text(t.batch_tag_apply),

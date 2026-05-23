@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter/services.dart';
@@ -20,6 +21,7 @@ import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/utils/components/Hibiki_text_selection_controls.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:hibiki/src/utils/misc/hibiki_toast.dart';
+import 'package:hibiki/src/utils/adaptive/adaptive_theme.dart';
 
 Color? _savedSplashColor;
 
@@ -287,11 +289,14 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
     if (appModel.initError != null) {
       final brightness =
           WidgetsBinding.instance.platformDispatcher.platformBrightness;
-      final isDark = brightness == Brightness.dark;
+      final cs = ColorScheme.fromSeed(
+        seedColor: const Color(0xFF1F4959),
+        brightness: brightness,
+      );
       return TranslationProvider(
         child: MaterialApp(
           debugShowCheckedModeBanner: false,
-          theme: isDark ? ThemeData.dark() : null,
+          theme: ThemeData(useMaterial3: true, colorScheme: cs),
           home: Scaffold(
             backgroundColor: _savedSplashColor,
             body: Center(
@@ -300,15 +305,14 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.error_outline,
-                        size: 48, color: Colors.red),
+                    Icon(Icons.error_outline, size: 48, color: cs.error),
                     const SizedBox(height: 16),
                     Text(
                       t.initialization_failed,
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
-                        color: isDark ? Colors.white : Colors.black,
+                        color: cs.onSurface,
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -316,7 +320,7 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
                       appModel.initError!,
                       style: TextStyle(
                         fontSize: 12,
-                        color: isDark ? Colors.white70 : Colors.black87,
+                        color: cs.onSurfaceVariant,
                       ),
                       textAlign: TextAlign.center,
                       selectionControls: HibikiTextSelectionControls(
@@ -338,11 +342,14 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
     if (!appModel.isInitialised) {
       final brightness =
           WidgetsBinding.instance.platformDispatcher.platformBrightness;
-      final isDark = brightness == Brightness.dark;
+      final cs = ColorScheme.fromSeed(
+        seedColor: const Color(0xFF1F4959),
+        brightness: brightness,
+      );
       return TranslationProvider(
         child: MaterialApp(
           debugShowCheckedModeBanner: false,
-          theme: isDark ? ThemeData.dark() : null,
+          theme: ThemeData(useMaterial3: true, colorScheme: cs),
           home: Scaffold(
             backgroundColor: _savedSplashColor,
           ),
@@ -367,12 +374,18 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
         darkTheme: appModel.darkTheme,
         // This is responsible for the initialising the global spacing across
         // the entire project, making use of the [spaces] package.
-        builder: (context, child) => Spacing(
-          dataBuilder: (context) {
-            return SpacingData.generate(10);
-          },
-          child: child!,
-        ),
+        builder: (context, child) {
+          final cs = Theme.of(context).colorScheme;
+          return CupertinoTheme(
+            data: hibikiCupertinoTheme(cs),
+            child: Spacing(
+              dataBuilder: (context) {
+                return SpacingData.generate(10);
+              },
+              child: child!,
+            ),
+          );
+        },
       ),
     );
   }

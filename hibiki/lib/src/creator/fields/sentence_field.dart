@@ -15,7 +15,7 @@ class SentenceField extends Field {
           label: 'Sentence',
           description:
               'Subtitles, book excerpts and other contextual information.',
-          icon: Icons.format_align_center,
+          icon: Icons.format_align_center_outlined,
         );
 
   /// Get the singleton instance of this field.

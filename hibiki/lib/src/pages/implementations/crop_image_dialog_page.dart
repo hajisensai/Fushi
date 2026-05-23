@@ -34,7 +34,8 @@ class _CropImageDialogPageState extends BasePageState<CropImageDialogPage> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return adaptiveAlertDialog(
+      context: context,
       contentPadding: Spacing.of(context).insets.all.normal,
       actionsPadding: Spacing.of(context).insets.horizontal.normal,
       content: SizedBox(
@@ -54,21 +55,23 @@ class _CropImageDialogPageState extends BasePageState<CropImageDialogPage> {
     return Center(
       child: CropImage(
           minimumImageSize: 25,
-          gridColor: Theme.of(context).unselectedWidgetColor,
+          gridColor: Theme.of(context).colorScheme.onSurfaceVariant,
           controller: _controller,
           image: Image(image: FileImage(widget.imageFile))),
     );
   }
 
   Widget buildCropButton() {
-    return TextButton(
+    return adaptiveDialogAction(
+      context: context,
       onPressed: executeCrop,
       child: Text(t.dialog_crop),
     );
   }
 
   Widget buildCancelButton() {
-    return TextButton(
+    return adaptiveDialogAction(
+      context: context,
       child: Text(t.dialog_cancel),
       onPressed: () => Navigator.pop(context),
     );

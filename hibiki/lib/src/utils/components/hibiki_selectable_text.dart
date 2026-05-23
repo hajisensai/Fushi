@@ -519,8 +519,7 @@ class HibikiSelectableText extends StatefulWidget {
   final TextMagnifierConfiguration? magnifierConfiguration;
 
   @override
-  State<HibikiSelectableText> createState() =>
-      _HibikiSelectableTextState();
+  State<HibikiSelectableText> createState() => _HibikiSelectableTextState();
 
   @override
   void debugFillProperties(DiagnosticPropertiesBuilder properties) {
@@ -761,7 +760,7 @@ class _HibikiSelectableTextState extends State<HibikiSelectableText>
             selectionStyle.cursorColor ??
             cupertinoTheme.primaryColor;
         selectionColor = selectionStyle.selectionColor ??
-            cupertinoTheme.primaryColor.withOpacity(0.40);
+            cupertinoTheme.primaryColor.withValues(alpha:0.40);
         cursorRadius ??= const Radius.circular(2);
         cursorOffset = Offset(
             iOSHorizontalOffset / MediaQuery.of(context).devicePixelRatio, 0);
@@ -778,7 +777,7 @@ class _HibikiSelectableTextState extends State<HibikiSelectableText>
             selectionStyle.cursorColor ??
             cupertinoTheme.primaryColor;
         selectionColor = selectionStyle.selectionColor ??
-            cupertinoTheme.primaryColor.withOpacity(0.40);
+            cupertinoTheme.primaryColor.withValues(alpha:0.40);
         cursorRadius ??= const Radius.circular(2);
         cursorOffset = Offset(
             iOSHorizontalOffset / MediaQuery.of(context).devicePixelRatio, 0);
@@ -795,7 +794,7 @@ class _HibikiSelectableTextState extends State<HibikiSelectableText>
             selectionStyle.cursorColor ??
             theme.colorScheme.primary;
         selectionColor = selectionStyle.selectionColor ??
-            theme.colorScheme.primary.withOpacity(0.40);
+            theme.colorScheme.primary.withValues(alpha:0.40);
         break;
 
       case TargetPlatform.linux:
@@ -810,7 +809,7 @@ class _HibikiSelectableTextState extends State<HibikiSelectableText>
             selectionStyle.cursorColor ??
             theme.colorScheme.primary;
         selectionColor = selectionStyle.selectionColor ??
-            theme.colorScheme.primary.withOpacity(0.40);
+            theme.colorScheme.primary.withValues(alpha:0.40);
         break;
     }
 

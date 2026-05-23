@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/epub/book_css_repository.dart';
+import 'package:hibiki/utils.dart';
 
 class BookCssEditorPage extends StatefulWidget {
   const BookCssEditorPage({super.key, required this.extractDir});
@@ -90,7 +91,7 @@ class _BookCssEditorPageState extends State<BookCssEditorPage> {
   Future<bool> _guardUnsaved(int index) async {
     if (!_hasUnsavedChanges(index)) return true;
 
-    final String? result = await showDialog<String>(
+    final String? result = await showAppDialog<String>(
       context: context,
       builder: (ctx) => BookCssConfirmationDialog<String>(
         title: t.book_css_editor_unsaved_changes,
@@ -140,7 +141,7 @@ class _BookCssEditorPageState extends State<BookCssEditorPage> {
     final bool hasEditorChanges = _hasUnsavedChanges(idx);
     if (!hasBackup && !hasEditorChanges) return;
 
-    final bool? confirmed = await showDialog<bool>(
+    final bool? confirmed = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => BookCssConfirmationDialog<bool>(
         title: t.book_css_editor_unsaved_changes,
@@ -183,7 +184,7 @@ class _BookCssEditorPageState extends State<BookCssEditorPage> {
     ).any((v) => v);
     if (!hasAnyBackup && !hasAnyEditorChanges) return;
 
-    final bool? confirmed = await showDialog<bool>(
+    final bool? confirmed = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => BookCssConfirmationDialog<bool>(
         title: t.book_css_editor_unsaved_changes,
@@ -216,7 +217,8 @@ class _BookCssEditorPageState extends State<BookCssEditorPage> {
   Widget build(BuildContext context) {
     if (_entries.isEmpty) {
       return Scaffold(
-        appBar: AppBar(title: Text(t.book_css_editor_title)),
+        appBar: adaptiveAppBar(
+            context: context, title: Text(t.book_css_editor_title)),
         body: Center(child: Text(t.book_css_editor_no_css_files)),
       );
     }
@@ -231,7 +233,8 @@ class _BookCssEditorPageState extends State<BookCssEditorPage> {
         }
       },
       child: Scaffold(
-        appBar: AppBar(
+        appBar: adaptiveAppBar(
+          context: context,
           title: Text(t.book_css_editor_title),
           actions: [
             TextButton(
@@ -337,7 +340,8 @@ class BookCssConfirmationDialog<T> extends StatelessWidget {
   Widget build(BuildContext context) {
     final TextTheme textTheme = Theme.of(context).textTheme;
 
-    return AlertDialog(
+    return adaptiveAlertDialog(
+      context: context,
       titlePadding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
       contentPadding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
       actionsPadding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
@@ -363,11 +367,14 @@ class BookCssConfirmationDialog<T> extends StatelessWidget {
       actions: [
         for (final action in actions)
           action.filled
-              ? FilledButton(
+              ? adaptiveDialogAction(
+                  context: context,
+                  isDefaultAction: true,
                   onPressed: () => Navigator.pop(context, action.value),
                   child: Text(action.label),
                 )
-              : TextButton(
+              : adaptiveDialogAction(
+                  context: context,
                   onPressed: () => Navigator.pop(context, action.value),
                   child: Text(action.label),
                 ),

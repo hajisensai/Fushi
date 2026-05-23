@@ -15,7 +15,7 @@ class CollapsedMeaningField extends Field {
           label: 'Collapsed Meaning',
           description: 'Dictionary definitions only from collapsed'
               ' dictionaries.',
-          icon: Icons.close_fullscreen,
+          icon: Icons.close_fullscreen_outlined,
         );
 
   /// Get the singleton instance of this field.

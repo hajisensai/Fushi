@@ -15,11 +15,12 @@ class ErrorLogPage extends StatelessWidget {
     final count = ErrorLogService.instance.entries.length;
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: adaptiveAppBar(
+        context: context,
         title: Text(t.error_log_label(n: count)),
         actions: [
           IconButton(
-            icon: const Icon(Icons.copy),
+            icon: const Icon(Icons.copy_outlined),
             tooltip: t.copy,
             onPressed: () async {
               await Clipboard.setData(ClipboardData(text: log));
@@ -31,7 +32,7 @@ class ErrorLogPage extends StatelessWidget {
             },
           ),
           IconButton(
-            icon: const Icon(Icons.share),
+            icon: const Icon(Icons.share_outlined),
             tooltip: t.share,
             onPressed: () {
               final bytes = Uint8List.fromList(utf8.encode(log));

@@ -304,7 +304,7 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
           children: [
             const LinearProgressIndicator(
               backgroundColor: Colors.transparent,
-              valueColor: AlwaysStoppedAnimation<Color>(Colors.red),
+              color: Colors.red,
               minHeight: 2.75,
             ),
             Expanded(child: Container()),
@@ -427,7 +427,7 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
                 children: [
                   const LinearProgressIndicator(
                     backgroundColor: Colors.transparent,
-                    valueColor: AlwaysStoppedAnimation<Color>(Colors.red),
+                    color: Colors.red,
                     minHeight: 2.75,
                   ),
                   Expanded(child: Container())

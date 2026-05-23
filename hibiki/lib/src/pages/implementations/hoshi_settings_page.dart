@@ -18,29 +18,22 @@ Widget _buildSwitch({
   String? hint,
   IconData? icon,
 }) {
-  return Padding(
-    padding: const EdgeInsets.symmetric(vertical: 2),
-    child: Row(
+  return SwitchListTile.adaptive(
+    dense: true,
+    contentPadding: EdgeInsets.zero,
+    secondary: icon != null ? Icon(icon, size: 20) : null,
+    title: Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        if (icon != null) ...[
-          Icon(icon, size: 20),
-          const SizedBox(width: 8),
+        Flexible(child: Text(label)),
+        if (hint != null) ...[
+          const SizedBox(width: 4),
+          _HintIcon(hint: hint),
         ],
-        Expanded(
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Flexible(child: Text(label)),
-              if (hint != null) ...[
-                const SizedBox(width: 4),
-                _HintIcon(hint: hint),
-              ],
-            ],
-          ),
-        ),
-        Switch(value: value, onChanged: onChanged),
       ],
     ),
+    value: value,
+    onChanged: onChanged,
   );
 }
 
@@ -165,10 +158,12 @@ class _HintIcon extends StatelessWidget {
     return GestureDetector(
       onTap: () => showAppDialog(
         context: context,
-        builder: (ctx) => AlertDialog(
+        builder: (ctx) => adaptiveAlertDialog(
+          context: ctx,
           content: Text(hint),
           actions: [
-            TextButton(
+            adaptiveDialogAction(
+              context: ctx,
               onPressed: () => Navigator.pop(ctx),
               child: Text(t.dialog_close),
             ),
@@ -255,15 +250,18 @@ List<Widget> _buildReaderOnlySwitches(VoidCallback rebuild,
           Expanded(child: Text(t.dismiss_swipe_sensitivity)),
           SizedBox(
             width: 140,
-            child: Slider(
-              value: _source.dismissSwipeSensitivity,
-              min: 0.1,
-              divisions: 9,
-              label: _source.dismissSwipeSensitivity.toStringAsFixed(1),
-              onChanged: (v) {
-                _source.setDismissSwipeSensitivity(v);
-                rebuild();
-              },
+            child: Builder(
+              builder: (BuildContext context) => adaptiveSlider(
+                context: context,
+                value: _source.dismissSwipeSensitivity,
+                min: 0.1,
+                divisions: 9,
+                label: _source.dismissSwipeSensitivity.toStringAsFixed(1),
+                onChanged: (v) {
+                  _source.setDismissSwipeSensitivity(v);
+                  rebuild();
+                },
+              ),
             ),
           ),
         ],
@@ -282,16 +280,19 @@ Widget _buildPageTurningSpeed(VoidCallback rebuild) {
         Expanded(child: Text(t.volume_button_turning_speed)),
         SizedBox(
           width: 140,
-          child: Slider(
-            value: _source.volumePageTurningSpeed.toDouble(),
-            min: 10,
-            max: 500,
-            divisions: 49,
-            label: '${_source.volumePageTurningSpeed}',
-            onChanged: (v) {
-              _source.setVolumePageTurningSpeed(v.round());
-              rebuild();
-            },
+          child: Builder(
+            builder: (BuildContext context) => adaptiveSlider(
+              context: context,
+              value: _source.volumePageTurningSpeed.toDouble(),
+              min: 10,
+              max: 500,
+              divisions: 49,
+              label: '${_source.volumePageTurningSpeed}',
+              onChanged: (v) {
+                _source.setVolumePageTurningSpeed(v.round());
+                rebuild();
+              },
+            ),
           ),
         ),
       ],
@@ -305,13 +306,13 @@ Widget _buildFontEntry(BuildContext context) {
   final enabledCount = fonts.where((e) => e['enabled'] as bool? ?? true).length;
   return _buildTapRow(
     context: context,
-    icon: Icons.font_download,
+    icon: Icons.font_download_outlined,
     label:
         enabledCount > 0 ? '${t.custom_fonts} ($enabledCount)' : t.custom_fonts,
     onTap: () {
       Navigator.push(
         context,
-        MaterialPageRoute(builder: (_) => const CustomFontsPage()),
+        adaptivePageRoute(builder: (_) => const CustomFontsPage()),
       ).then((_) {
         ReaderHoshiSource.onSettingsChangedLive?.call();
       });
@@ -319,90 +320,97 @@ Widget _buildFontEntry(BuildContext context) {
   );
 }
 
-ChoiceChip _buildThemeChip({
-  required BuildContext context,
-  required String label,
+const double _kSwatchSize = 48.0;
+
+Widget _buildColorSwatch({
+  required Color color,
   required bool selected,
-  required ValueChanged<bool> onSelected,
-  Widget? avatar,
+  required VoidCallback onTap,
+  Widget? overlay,
 }) {
-  final ColorScheme chipCs = Theme.of(context).colorScheme;
-  return ChoiceChip(
-    avatar: avatar,
-    label: Text(label),
-    selected: selected,
-    showCheckmark: false,
-    selectedColor: chipCs.primaryContainer,
-    labelStyle: selected ? TextStyle(color: chipCs.onPrimaryContainer) : null,
-    shape: RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(8),
-      side: BorderSide(
-        color: selected ? chipCs.primaryContainer : chipCs.outline,
+  return GestureDetector(
+    onTap: onTap,
+    child: Container(
+      width: _kSwatchSize,
+      height: _kSwatchSize,
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+        border: selected
+            ? Border.all(
+                color: color,
+                width: 3,
+                strokeAlign: BorderSide.strokeAlignOutside)
+            : null,
       ),
+      child: selected
+          ? Icon(Icons.check,
+              color:
+                  ThemeData.estimateBrightnessForColor(color) == Brightness.dark
+                      ? Colors.white
+                      : Colors.black,
+              size: 20)
+          : overlay,
     ),
-    onSelected: onSelected,
   );
 }
 
-/// Theme selector (6 presets + custom) — calls [AppModel.setAppThemeKey].
+/// Theme selector (color swatches + custom) — calls [AppModel.setAppThemeKey].
 Widget _buildThemeSelector(AppModel appModel,
     {required BuildContext navContext}) {
+  final systemColor = appModel.systemPrimaryColor ?? const Color(0xFF1F4959);
+
   return Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
       Text(t.ttu_theme),
-      const SizedBox(height: 6),
+      const SizedBox(height: 8),
       Wrap(
-        spacing: 6,
-        runSpacing: 6,
+        spacing: 10,
+        runSpacing: 10,
         children: [
-          _buildThemeChip(
-            context: navContext,
-            label: t.theme_system,
+          _buildColorSwatch(
+            color: systemColor,
             selected: appModel.appThemeKey == 'system-theme',
-            avatar: Icon(
-              Icons.wallpaper,
+            overlay: Icon(
+              Icons.auto_awesome_outlined,
               size: 18,
-              color: appModel.appThemeKey == 'system-theme'
-                  ? Theme.of(navContext).colorScheme.onPrimaryContainer
-                  : null,
+              color: ThemeData.estimateBrightnessForColor(systemColor) ==
+                      Brightness.dark
+                  ? Colors.white70
+                  : Colors.black54,
             ),
-            onSelected: (on) {
-              if (!on) return;
+            onTap: () {
               appModel.setAppThemeKey('system-theme');
               ReaderHoshiSource.onSettingsChangedLive?.call();
             },
           ),
           ...AppModel.themePresets.entries.map((e) {
-            final bool selected = appModel.appThemeKey == e.key;
-            return _buildThemeChip(
-              context: navContext,
-              label: AppModel.themeLabel(e.key),
-              selected: selected,
-              onSelected: (on) {
-                if (!on) {
-                  return;
-                }
+            return _buildColorSwatch(
+              color: e.value.seed,
+              selected: appModel.appThemeKey == e.key,
+              onTap: () {
                 appModel.setAppThemeKey(e.key);
                 ReaderHoshiSource.onSettingsChangedLive?.call();
               },
             );
           }),
-          _buildThemeChip(
-            context: navContext,
+          _buildColorSwatch(
+            color: appModel.customThemeSeed,
             selected: appModel.appThemeKey == 'custom-theme',
-            avatar: Icon(
-              Icons.palette,
+            overlay: Icon(
+              Icons.palette_outlined,
               size: 18,
-              color: appModel.appThemeKey == 'custom-theme'
-                  ? Theme.of(navContext).colorScheme.onPrimaryContainer
-                  : null,
+              color: ThemeData.estimateBrightnessForColor(
+                          appModel.customThemeSeed) ==
+                      Brightness.dark
+                  ? Colors.white70
+                  : Colors.black54,
             ),
-            label: t.custom_theme,
-            onSelected: (_) {
+            onTap: () {
               Navigator.push(
                 navContext,
-                MaterialPageRoute(builder: (_) => const CustomThemePage()),
+                adaptivePageRoute(builder: (_) => const CustomThemePage()),
               ).then((_) {
                 ReaderHoshiSource.onSettingsChangedLive?.call();
               });
@@ -430,15 +438,15 @@ Widget _buildBrightnessSelector(AppModel appModel,
         segments: const [
           ButtonSegment(
             value: 'light',
-            icon: Icon(Icons.light_mode, size: 16),
+            icon: Icon(Icons.light_mode_outlined, size: 16),
           ),
           ButtonSegment(
             value: 'system',
-            icon: Icon(Icons.brightness_auto, size: 16),
+            icon: Icon(Icons.brightness_auto_outlined, size: 16),
           ),
           ButtonSegment(
             value: 'dark',
-            icon: Icon(Icons.dark_mode, size: 16),
+            icon: Icon(Icons.dark_mode_outlined, size: 16),
           ),
         ],
         selected: {appModel.brightnessMode},
@@ -471,7 +479,8 @@ class _HoshiSettingsDialogPageState extends BasePageState {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return adaptiveAlertDialog(
+      context: context,
       contentPadding: MediaQuery.of(context).orientation == Orientation.portrait
           ? Spacing.of(context).insets.exceptBottom.big
           : Spacing.of(context).insets.exceptBottom.normal.copyWith(
@@ -486,7 +495,8 @@ class _HoshiSettingsDialogPageState extends BasePageState {
           ),
       content: _buildContent(),
       actions: [
-        TextButton(
+        adaptiveDialogAction(
+          context: context,
           child: Text(t.dialog_close),
           onPressed: () => Navigator.pop(context),
         ),
@@ -518,7 +528,7 @@ class _HoshiSettingsDialogPageState extends BasePageState {
                 onTap: () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(
+                    adaptivePageRoute(
                         builder: (_) => const DisplaySettingsPage()),
                   ).then((_) => setState(() {}));
                 },
@@ -563,40 +573,40 @@ class _HoshiSettingsContentState extends BasePageState {
           ListTile(
             dense: true,
             contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-            leading: const Icon(Icons.person, size: 22),
+            leading: const Icon(Icons.person_outline, size: 22),
             title: const ProfileSelector(),
           ),
           _categoryTile(
             context,
-            icon: Icons.style,
+            icon: Icons.style_outlined,
             label: t.anki_settings_label,
             onTap: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const AnkiSettingsPage()),
+                adaptivePageRoute(builder: (_) => const AnkiSettingsPage()),
               );
             },
           ),
           _categoryTile(
             context,
-            icon: Icons.auto_stories,
+            icon: Icons.auto_stories_outlined,
             label: t.reader_settings_section,
             onTap: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(
+                adaptivePageRoute(
                     builder: (_) => const _ReaderBehaviorSettingsPage()),
               ).then((_) => setState(() {}));
             },
           ),
           _categoryTile(
             context,
-            icon: Icons.system_update,
+            icon: Icons.system_update_outlined,
             label: t.section_update,
             onTap: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const _UpdateSettingsPage()),
+                adaptivePageRoute(builder: (_) => const _UpdateSettingsPage()),
               ).then((_) => setState(() {}));
             },
           ),
@@ -607,33 +617,33 @@ class _HoshiSettingsContentState extends BasePageState {
             onTap: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(
+                adaptivePageRoute(
                     builder: (_) => const MiscellaneousSettingsPage()),
               );
             },
           ),
           _categoryTile(
             context,
-            icon: Icons.bug_report,
+            icon: Icons.bug_report_outlined,
             label:
                 t.error_log_label(n: ErrorLogService.instance.entries.length),
             onTap: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const ErrorLogPage()),
+                adaptivePageRoute(builder: (_) => const ErrorLogPage()),
               ).then((_) => setState(() {}));
             },
           ),
           if (DebugLogService.instance.enabled)
             _categoryTile(
               context,
-              icon: Icons.terminal,
+              icon: Icons.terminal_outlined,
               label: t.debug_log_title(
                   count: DebugLogService.instance.entries.length),
               onTap: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const DebugLogPage()),
+                  adaptivePageRoute(builder: (_) => const DebugLogPage()),
                 ).then((_) => setState(() {}));
               },
             ),
@@ -672,7 +682,8 @@ class _ReaderBehaviorSettingsPageState extends BasePageState {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(t.reader_settings_section)),
+      appBar: adaptiveAppBar(
+          context: context, title: Text(t.reader_settings_section)),
       body: ListView(
         padding: EdgeInsets.fromLTRB(
           16,
@@ -689,18 +700,18 @@ class _ReaderBehaviorSettingsPageState extends BasePageState {
             onTap: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const DisplaySettingsPage()),
+                adaptivePageRoute(builder: (_) => const DisplaySettingsPage()),
               ).then((_) => setState(() {}));
             },
           ),
           _buildTapRow(
             context: context,
-            icon: Icons.audiotrack,
+            icon: Icons.audiotrack_outlined,
             label: t.audiobook_settings,
             onTap: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(
+                adaptivePageRoute(
                     builder: (_) => const _AudiobookSettingsPage()),
               ).then((_) => setState(() {}));
             },
@@ -730,7 +741,8 @@ class _AudiobookSettingsPageState extends BasePageState {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(t.audiobook_settings)),
+      appBar:
+          adaptiveAppBar(context: context, title: Text(t.audiobook_settings)),
       body: ListView(
         padding: EdgeInsets.fromLTRB(
           16,
@@ -807,7 +819,7 @@ class _UpdateSettingsPageState extends BasePageState {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(t.section_update)),
+      appBar: adaptiveAppBar(context: context, title: Text(t.section_update)),
       body: ListView(
         padding: EdgeInsets.fromLTRB(
           16,
@@ -846,17 +858,20 @@ class _UpdateSettingsPageState extends BasePageState {
             value: appModel.updateDebugChannel,
             onChanged: (v) async {
               if (v) {
-                final confirmed = await showDialog<bool>(
+                final confirmed = await showAppDialog<bool>(
                   context: context,
-                  builder: (ctx) => AlertDialog(
+                  builder: (ctx) => adaptiveAlertDialog(
+                    context: ctx,
                     title: Text(t.update_debug_channel),
                     content: Text(t.update_debug_channel_warning),
                     actions: [
-                      TextButton(
+                      adaptiveDialogAction(
+                        context: ctx,
                         onPressed: () => Navigator.pop(ctx, false),
                         child: Text(t.dialog_cancel),
                       ),
-                      TextButton(
+                      adaptiveDialogAction(
+                        context: ctx,
                         onPressed: () => Navigator.pop(ctx, true),
                         child: Text(t.dialog_done),
                       ),
@@ -902,7 +917,8 @@ class _PopupMaxWidthSliderState extends State<_PopupMaxWidthSlider> {
           Expanded(child: Text('${t.popup_max_width} (${_value.round()})')),
           SizedBox(
             width: 140,
-            child: Slider(
+            child: adaptiveSlider(
+              context: context,
               value: _value,
               min: 250,
               max: 1000,

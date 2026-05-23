@@ -188,7 +188,8 @@ class AppModel with ChangeNotifier {
   late final ThemeNotifier themeNotifier;
 
   /// Preference management, extracted from AppModel for testability.
-  late final PreferencesRepository prefsRepo;
+  PreferencesRepository? _prefsRepo;
+  PreferencesRepository get prefsRepo => _prefsRepo!;
 
   /// Media history and search history, extracted for testability.
   late final MediaHistoryRepository mediaHistoryRepo;
@@ -961,7 +962,7 @@ class AppModel with ChangeNotifier {
       _database = HibikiDatabase(_databaseDirectory.path);
 
       /// Load all preferences into memory for synchronous reads.
-      prefsRepo = PreferencesRepository(_database);
+      _prefsRepo = PreferencesRepository(_database);
       await prefsRepo.loadFromDb();
       prefsRepo.addListener(notifyListeners);
       _applyMemoryPolicy();
@@ -1160,7 +1161,7 @@ class AppModel with ChangeNotifier {
       debugPrint('[Hibiki-popup] init: Drift database');
       _database = HibikiDatabase(_databaseDirectory.path);
 
-      prefsRepo = PreferencesRepository(_database);
+      _prefsRepo = PreferencesRepository(_database);
       await prefsRepo.loadFromDb();
       prefsRepo.addListener(notifyListeners);
 
@@ -1486,7 +1487,7 @@ class AppModel with ChangeNotifier {
     if (ctx == null) return;
     await Navigator.push(
       ctx,
-      MaterialPageRoute(
+      adaptivePageRoute(
         builder: (context) => const ProfileManagementPage(),
       ),
     );
@@ -2081,13 +2082,15 @@ class AppModel with ChangeNotifier {
     if (ctx == null || !ctx.mounted) return;
     await showAppDialog(
       context: ctx,
-      builder: (context) => AlertDialog(
+      builder: (context) => adaptiveAlertDialog(
+        context: context,
         title: Text(t.error_ankidroid_api),
         content: Text(
           t.error_ankidroid_api_content,
         ),
         actions: [
-          TextButton(
+          adaptiveDialogAction(
+            context: context,
             child: Text(t.dialog_launch_ankidroid),
             onPressed: () async {
               final navigator = Navigator.of(context);
@@ -2100,7 +2103,8 @@ class AppModel with ChangeNotifier {
               navigator.pop();
             },
           ),
-          TextButton(
+          adaptiveDialogAction(
+            context: context,
             child: Text(t.dialog_close),
             onPressed: () => Navigator.pop(context),
           ),
@@ -2126,13 +2130,15 @@ class AppModel with ChangeNotifier {
       if (ctx == null || !ctx.mounted) return;
       await showAppDialog(
         context: ctx,
-        builder: (context) => AlertDialog(
+        builder: (context) => adaptiveAlertDialog(
+          context: context,
           title: Text(t.info_standard_model),
           content: Text(
             t.info_standard_model_content,
           ),
           actions: [
-            TextButton(
+            adaptiveDialogAction(
+              context: context,
               child: Text(t.dialog_close),
               onPressed: () => Navigator.pop(context),
             ),
@@ -2290,7 +2296,7 @@ class AppModel with ChangeNotifier {
     if (pushReplacement) {
       await Navigator.pushReplacement(
         ctx,
-        MaterialPageRoute(
+        adaptivePageRoute(
           builder: (context) => mediaSource.buildLaunchPage(
               item: item, initialBookmarkJump: initialBookmarkJump),
         ),
@@ -2298,7 +2304,7 @@ class AppModel with ChangeNotifier {
     } else {
       await Navigator.push(
         ctx,
-        MaterialPageRoute(
+        adaptivePageRoute(
           builder: (context) => mediaSource.buildLaunchPage(
               item: item, initialBookmarkJump: initialBookmarkJump),
         ),
@@ -2821,7 +2827,7 @@ class AppModel with ChangeNotifier {
   }
 
   Future<void> closeForPopup() async {
-    prefsRepo.removeListener(notifyListeners);
+    _prefsRepo?.removeListener(notifyListeners);
     databaseCloseNotifier.notifyListeners();
     await _database.close();
     HoshiDicts.disposeInstance();
@@ -2829,7 +2835,7 @@ class AppModel with ChangeNotifier {
 
   @override
   void dispose() {
-    prefsRepo.removeListener(notifyListeners);
+    _prefsRepo?.removeListener(notifyListeners);
     dictionaryEntriesNotifier.dispose();
     dictionarySearchAgainNotifier.dispose();
     dictionaryMenuNotifier.dispose();

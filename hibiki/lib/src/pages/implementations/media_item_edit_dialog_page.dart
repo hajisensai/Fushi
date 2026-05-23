@@ -82,7 +82,7 @@ class _MediaItemEditDialogPageState
               suffixIcon: HibikiIconButton(
                 tooltip: t.undo,
                 isWideTapArea: true,
-                icon: Icons.undo,
+                icon: Icons.undo_outlined,
                 onTap: () async {
                   _nameOverrideController.text = widget.item.title;
                   FocusScope.of(context).unfocus();
@@ -126,14 +126,16 @@ class _MediaItemEditDialogPageState
       ];
 
   Widget buildCancelButton() {
-    return TextButton(
+    return adaptiveDialogAction(
+      context: context,
       onPressed: executeCancel,
       child: Text(t.dialog_cancel),
     );
   }
 
   Widget buildSaveButton() {
-    return TextButton(
+    return adaptiveDialogAction(
+      context: context,
       onPressed: executeSave,
       child: Text(t.dialog_save),
     );
@@ -179,7 +181,8 @@ class MediaItemEditDialogFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return adaptiveAlertDialog(
+      context: context,
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       contentPadding: MediaQuery.of(context).orientation == Orientation.portrait
           ? Spacing.of(context).insets.all.big
@@ -239,13 +242,13 @@ class MediaItemCoverOverrideField extends StatelessWidget {
             HibikiIconButton(
               tooltip: t.pick_image,
               isWideTapArea: true,
-              icon: Icons.file_upload,
+              icon: Icons.file_upload_outlined,
               onTap: onPickImage,
             ),
             HibikiIconButton(
               tooltip: t.undo,
               isWideTapArea: true,
-              icon: Icons.undo,
+              icon: Icons.undo_outlined,
               onTap: onUndo,
             ),
           ],

@@ -77,17 +77,20 @@ class _MiscellaneousSettingsPageState
   }
 
   Future<void> _pickCustomIcon() async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => adaptiveAlertDialog(
+        context: ctx,
         title: Text(t.icon_custom_confirm_title),
         content: Text(t.icon_custom_confirm_body),
         actions: [
-          TextButton(
+          adaptiveDialogAction(
+            context: ctx,
             onPressed: () => Navigator.pop(ctx, false),
             child: Text(MaterialLocalizations.of(ctx).cancelButtonLabel),
           ),
-          TextButton(
+          adaptiveDialogAction(
+            context: ctx,
             onPressed: () => Navigator.pop(ctx, true),
             child: Text(MaterialLocalizations.of(ctx).okButtonLabel),
           ),
@@ -118,7 +121,8 @@ class _MiscellaneousSettingsPageState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(t.miscellaneous_settings)),
+      appBar: adaptiveAppBar(
+          context: context, title: Text(t.miscellaneous_settings)),
       body: ListView(
         padding: EdgeInsets.fromLTRB(
           16,

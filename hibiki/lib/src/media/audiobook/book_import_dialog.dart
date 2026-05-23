@@ -91,20 +91,24 @@ class _BookImportDialogState extends State<BookImportDialog> {
       title: Text(t.srt_import),
       content: _buildForm(),
       actions: [
-        TextButton(
+        adaptiveDialogAction(
+          context: context,
           onPressed: () => Navigator.pop(context),
           child: Text(t.dialog_cancel),
         ),
-        FilledButton(
+        adaptiveDialogAction(
+          context: context,
+          isDefaultAction: true,
           onPressed: _importing ? null : _doImport,
           child: _importing
               ? Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const SizedBox(
+                    SizedBox(
                       width: 16,
                       height: 16,
-                      child: CircularProgressIndicator(
+                      child: adaptiveIndicator(
+                        context: context,
                         strokeWidth: 2,
                         color: Colors.white70,
                       ),
@@ -219,7 +223,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
           ),
         ),
         IconButton(
-          icon: const Icon(Icons.menu_book, size: 20),
+          icon: const Icon(Icons.menu_book_outlined, size: 20),
           tooltip: t.srt_import_pick_epub,
           onPressed: _pickEpub,
         ),
@@ -255,7 +259,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
             }),
           ),
         IconButton(
-          icon: const Icon(Icons.subtitles, size: 20),
+          icon: const Icon(Icons.subtitles_outlined, size: 20),
           tooltip: t.srt_import_pick_subtitle_files,
           onPressed: _pickSubtitle,
         ),
@@ -293,7 +297,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
             }),
           ),
         IconButton(
-          icon: const Icon(Icons.audio_file, size: 20),
+          icon: const Icon(Icons.audio_file_outlined, size: 20),
           tooltip: t.srt_import_pick_audio_files,
           onPressed: _pickAudio,
         ),
@@ -454,7 +458,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
             }),
           ),
         IconButton(
-          icon: const Icon(Icons.image, size: 20),
+          icon: const Icon(Icons.image_outlined, size: 20),
           tooltip: t.srt_import_pick_cover,
           onPressed: _pickCover,
         ),
@@ -896,7 +900,8 @@ class BookImportDialogFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return adaptiveAlertDialog(
+      context: context,
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       titlePadding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
       contentPadding: const EdgeInsets.fromLTRB(16, 0, 16, 8),

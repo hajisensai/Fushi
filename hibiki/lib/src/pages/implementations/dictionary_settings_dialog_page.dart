@@ -45,7 +45,8 @@ class _DictionaryDialogPageState extends BasePageState {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return adaptiveAlertDialog(
+      context: context,
       contentPadding: MediaQuery.of(context).orientation == Orientation.portrait
           ? Spacing.of(context).insets.exceptBottom.big
           : Spacing.of(context).insets.exceptBottom.normal,
@@ -59,7 +60,8 @@ class _DictionaryDialogPageState extends BasePageState {
       ];
 
   Widget buildCloseButton() {
-    return TextButton(
+    return adaptiveDialogAction(
+      context: context,
       child: Text(t.dialog_close),
       onPressed: () => Navigator.pop(context),
     );
@@ -124,7 +126,7 @@ class _DictionaryDialogPageState extends BasePageState {
         padding: const EdgeInsets.symmetric(vertical: 8),
         child: Row(
           children: [
-            Icon(Icons.auto_stories, size: textTheme.bodyMedium?.fontSize),
+            Icon(Icons.auto_stories_outlined, size: textTheme.bodyMedium?.fontSize),
             const SizedBox(width: 8),
             Text(t.dictionaries),
             const Spacer(),
@@ -149,7 +151,7 @@ class _DictionaryDialogPageState extends BasePageState {
         padding: const EdgeInsets.symmetric(vertical: 8),
         child: Row(
           children: [
-            Icon(Icons.code, size: textTheme.bodyMedium?.fontSize),
+            Icon(Icons.code_outlined, size: textTheme.bodyMedium?.fontSize),
             const SizedBox(width: 8),
             Text(t.custom_dict_css),
             const Spacer(),
@@ -173,8 +175,9 @@ class _DictionaryDialogPageState extends BasePageState {
         ),
         ValueListenableBuilder<bool>(
           valueListenable: notifier,
-          builder: (_, value, __) {
-            return Switch(
+          builder: (context, value, __) {
+            return adaptiveSwitch(
+              context: context,
               value: value,
               onChanged: (value) {
                 appModel.toggleAutoSearchEnabled();
@@ -198,8 +201,9 @@ class _DictionaryDialogPageState extends BasePageState {
         ),
         ValueListenableBuilder<bool>(
           valueListenable: notifier,
-          builder: (_, value, __) {
-            return Switch(
+          builder: (context, value, __) {
+            return adaptiveSwitch(
+              context: context,
               value: value,
               onChanged: (value) {
                 appModel.toggleAutoAddBookNameToTags();
@@ -223,8 +227,9 @@ class _DictionaryDialogPageState extends BasePageState {
         ),
         ValueListenableBuilder<bool>(
           valueListenable: notifier,
-          builder: (_, value, __) {
-            return Switch(
+          builder: (context, value, __) {
+            return adaptiveSwitch(
+              context: context,
               value: value,
               onChanged: (value) {
                 appModel.toggleCollapseDictionaries();
@@ -248,8 +253,9 @@ class _DictionaryDialogPageState extends BasePageState {
         ),
         ValueListenableBuilder<bool>(
           valueListenable: notifier,
-          builder: (_, value, __) {
-            return Switch(
+          builder: (context, value, __) {
+            return adaptiveSwitch(
+              context: context,
               value: value,
               onChanged: (value) {
                 appModel.toggleDeduplicatePitchAccents();
@@ -273,8 +279,9 @@ class _DictionaryDialogPageState extends BasePageState {
         ),
         ValueListenableBuilder<bool>(
           valueListenable: notifier,
-          builder: (_, value, __) {
-            return Switch(
+          builder: (context, value, __) {
+            return adaptiveSwitch(
+              context: context,
               value: value,
               onChanged: (value) {
                 appModel.toggleHarmonicFrequency();
@@ -298,8 +305,9 @@ class _DictionaryDialogPageState extends BasePageState {
         ),
         ValueListenableBuilder<bool>(
           valueListenable: notifier,
-          builder: (_, value, __) {
-            return Switch(
+          builder: (context, value, __) {
+            return adaptiveSwitch(
+              context: context,
               value: value,
               onChanged: (value) {
                 appModel.toggleShowExpressionTags();
@@ -339,7 +347,7 @@ class _DictionaryDialogPageState extends BasePageState {
                 .setSearchDebounceDelay(appModel.defaultSearchDebounceDelay);
             FocusScope.of(context).unfocus();
           },
-          icon: Icons.undo,
+          icon: Icons.undo_outlined,
         ),
         labelText: t.auto_search_debounce_delay,
       ),
@@ -372,7 +380,7 @@ class _DictionaryDialogPageState extends BasePageState {
             appModel.setDictionaryFontSize(appModel.defaultDictionaryFontSize);
             FocusScope.of(context).unfocus();
           },
-          icon: Icons.undo,
+          icon: Icons.undo_outlined,
         ),
         labelText: t.dictionary_font_size,
       ),
@@ -406,7 +414,7 @@ class _DictionaryDialogPageState extends BasePageState {
                 appModel.defaultMaximumDictionaryTermsInResult);
             FocusScope.of(context).unfocus();
           },
-          icon: Icons.undo,
+          icon: Icons.undo_outlined,
         ),
         labelText: t.maximum_terms,
       ),
@@ -414,11 +422,11 @@ class _DictionaryDialogPageState extends BasePageState {
   }
 
   Color get activeButtonColor =>
-      Theme.of(context).unselectedWidgetColor.withOpacity(0.1);
+      Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha:0.1);
   Color get inactiveButtonColor =>
-      Theme.of(context).unselectedWidgetColor.withOpacity(0.05);
+      Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha:0.05);
   Color get activeTextColor => Theme.of(context).colorScheme.onSurface;
-  Color get inactiveTextColor => Theme.of(context).unselectedWidgetColor;
+  Color get inactiveTextColor => Theme.of(context).colorScheme.onSurfaceVariant;
 
   Widget buildLocalAudioSwitch() {
     ValueNotifier<bool> notifier =
@@ -431,8 +439,9 @@ class _DictionaryDialogPageState extends BasePageState {
         ),
         ValueListenableBuilder<bool>(
           valueListenable: notifier,
-          builder: (_, value, __) {
-            return Switch(
+          builder: (context, value, __) {
+            return adaptiveSwitch(
+              context: context,
               value: value,
               onChanged: (value) {
                 appModel.toggleLocalAudio();
@@ -492,7 +501,7 @@ class _DictionaryDialogPageState extends BasePageState {
           ),
           const SizedBox(width: 6),
           Icon(
-            enabled ? Icons.storage : Icons.block,
+            enabled ? Icons.storage_outlined : Icons.block,
             size: textTheme.bodyMedium?.fontSize,
             color: enabled ? activeTextColor : inactiveTextColor,
           ),
@@ -520,7 +529,7 @@ class _DictionaryDialogPageState extends BasePageState {
             HibikiIconButton(
               tooltip: '↑',
               size: 18,
-              icon: Icons.arrow_upward,
+              icon: Icons.arrow_upward_outlined,
               onTap: () async {
                 await appModelNoUpdate.reorderLocalAudioDbs(index, index - 1);
                 setState(() {});
@@ -530,7 +539,7 @@ class _DictionaryDialogPageState extends BasePageState {
             HibikiIconButton(
               tooltip: '↓',
               size: 18,
-              icon: Icons.arrow_downward,
+              icon: Icons.arrow_downward_outlined,
               onTap: () async {
                 await appModelNoUpdate.reorderLocalAudioDbs(index, index + 2);
                 setState(() {});
@@ -541,24 +550,23 @@ class _DictionaryDialogPageState extends BasePageState {
             size: 18,
             icon: Icons.delete_outline,
             onTap: () async {
-              final bool? confirmed = await showDialog<bool>(
+              final bool? confirmed = await showAppDialog<bool>(
                 context: context,
-                builder: (ctx) => AlertDialog(
+                builder: (ctx) => adaptiveAlertDialog(
+                  context: ctx,
                   title: Text(t.dialog_delete),
                   content: Text(label),
                   actions: [
-                    TextButton(
+                    adaptiveDialogAction(
+                      context: ctx,
                       onPressed: () => Navigator.pop(ctx, false),
                       child: Text(t.dialog_cancel),
                     ),
-                    FilledButton(
+                    adaptiveDialogAction(
+                      context: ctx,
+                      isDefaultAction: true,
+                      isDestructiveAction: true,
                       onPressed: () => Navigator.pop(ctx, true),
-                      style: FilledButton.styleFrom(
-                        backgroundColor:
-                            Theme.of(context).colorScheme.errorContainer,
-                        foregroundColor:
-                            Theme.of(context).colorScheme.onErrorContainer,
-                      ),
                       child: Text(t.dialog_delete),
                     ),
                   ],
@@ -581,22 +589,25 @@ class _DictionaryDialogPageState extends BasePageState {
     void showImportDialog() {
       if (importDialogShown || !mounted) return;
       importDialogShown = true;
-      showDialog(
+      showAppDialog(
         context: context,
         barrierDismissible: false,
         builder: (_) => PopScope(
           canPop: false,
-          child: AlertDialog(
-            content: Row(
-              children: [
-                const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-                const SizedBox(width: 16),
-                Text(t.dialog_importing),
-              ],
+          child: Builder(
+            builder: (ctx) => adaptiveAlertDialog(
+              context: ctx,
+              content: Row(
+                children: [
+                  SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: adaptiveIndicator(context: ctx, strokeWidth: 2),
+                  ),
+                  const SizedBox(width: 16),
+                  Text(t.dialog_importing),
+                ],
+              ),
             ),
           ),
         ),
@@ -637,7 +648,7 @@ class _DictionaryDialogPageState extends BasePageState {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              Icons.volume_up,
+              Icons.volume_up_outlined,
               size: textTheme.titleSmall?.fontSize,
               color: activeTextColor,
             ),
@@ -703,7 +714,8 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
   Widget build(BuildContext context) {
     final double maxHeight = MediaQuery.of(context).size.height * 0.42;
 
-    return AlertDialog(
+    return adaptiveAlertDialog(
+      context: context,
       titlePadding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
       contentPadding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
       actionsPadding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
@@ -747,7 +759,7 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
                     ),
                     trailing: IconButton(
                       visualDensity: VisualDensity.compact,
-                      icon: const Icon(Icons.delete, size: 18),
+                      icon: const Icon(Icons.delete_outline, size: 18),
                       onPressed: () {
                         setState(() {
                           _sources.removeAt(index);
@@ -782,7 +794,8 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
         ),
       ),
       actions: [
-        TextButton(
+        adaptiveDialogAction(
+          context: context,
           onPressed: () {
             setState(() {
               _sources = List<String>.from(AppModel.defaultAudioSources);
@@ -790,7 +803,8 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
           },
           child: Text(t.reset),
         ),
-        TextButton(
+        adaptiveDialogAction(
+          context: context,
           onPressed: () {
             widget.onSave(_sources);
             Navigator.pop(context);
@@ -866,7 +880,8 @@ class _DictCssEditorDialogState extends State<_DictCssEditorDialog> {
   Widget build(BuildContext context) {
     final maxHeight = MediaQuery.of(context).size.height * 0.55;
 
-    return AlertDialog(
+    return adaptiveAlertDialog(
+      context: context,
       title: Text(t.custom_dict_css),
       content: ConstrainedBox(
         constraints: BoxConstraints(
@@ -876,22 +891,19 @@ class _DictCssEditorDialogState extends State<_DictCssEditorDialog> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            DropdownButton<int>(
-              value: _selectedIndex,
-              isExpanded: true,
-              onChanged: _onScopeChanged,
-              items: [
-                DropdownMenuItem<int>(
+            DropdownMenu<int>(
+              expandedInsets: EdgeInsets.zero,
+              initialSelection: _selectedIndex,
+              onSelected: _onScopeChanged,
+              dropdownMenuEntries: [
+                DropdownMenuEntry<int>(
                   value: 0,
-                  child: Text(t.custom_dict_css_global),
+                  label: t.custom_dict_css_global,
                 ),
                 for (int i = 0; i < _dictNames.length; i++)
-                  DropdownMenuItem<int>(
+                  DropdownMenuEntry<int>(
                     value: i + 1,
-                    child: Text(
-                      _dictNames[i],
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                    label: _dictNames[i],
                   ),
               ],
             ),
@@ -917,7 +929,8 @@ class _DictCssEditorDialogState extends State<_DictCssEditorDialog> {
         ),
       ),
       actions: [
-        TextButton(
+        adaptiveDialogAction(
+          context: context,
           child: Text(t.dialog_close),
           onPressed: () async {
             await _saveCurrentScope();

@@ -12,7 +12,7 @@ class SaveTagsEnhancement extends Enhancement {
           uniqueKey: key,
           label: 'Save Tags',
           description: 'Persist the current text in the Tags field.',
-          icon: Icons.save,
+          icon: Icons.save_outlined,
           field: TagsField.instance,
         );
 

@@ -16,7 +16,8 @@ void main() {
         ),
       ));
 
-      expect(find.text('  Banana'), findsOneWidget);
+      expect(find.byType(DropdownMenu<String>), findsOneWidget);
+      expect(find.text('Banana'), findsOneWidget);
     });
 
     testWidgets('calls onChanged when new option selected', (tester) async {
@@ -30,16 +31,16 @@ void main() {
         ),
       ));
 
-      await tester.tap(find.byType(DropdownButton<String>));
+      await tester.tap(find.byType(DropdownMenu<String>));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('  B').last);
+      await tester.tap(find.text('B').last);
       await tester.pumpAndSettle();
 
       expect(selected, 'B');
     });
 
-    testWidgets('disabled dropdown has null onChanged', (tester) async {
+    testWidgets('disabled dropdown does not call onChanged', (tester) async {
       bool changed = false;
       await tester.pumpWidget(buildTestApp(
         HibikiDropdown<String>(
@@ -51,9 +52,9 @@ void main() {
         ),
       ));
 
-      final DropdownButton<String> dropdown =
-          tester.widget(find.byType(DropdownButton<String>));
-      expect(dropdown.onChanged, isNull);
+      final DropdownMenu<String> dropdown =
+          tester.widget(find.byType(DropdownMenu<String>));
+      expect(dropdown.enabled, isFalse);
       expect(changed, isFalse);
     });
 
@@ -67,12 +68,11 @@ void main() {
         ),
       ));
 
-      await tester.tap(find.byType(DropdownButton<String>));
+      await tester.tap(find.byType(DropdownMenu<String>));
       await tester.pumpAndSettle();
 
-      // 2 unique items: each shown twice (button + overlay)
-      expect(find.text('  A'), findsNWidgets(2));
-      expect(find.text('  B'), findsOneWidget);
+      expect(find.text('A'), findsNWidgets(2));
+      expect(find.text('B'), findsOneWidget);
     });
 
     testWidgets('falls back to first option when initial not in list',
@@ -86,7 +86,7 @@ void main() {
         ),
       ));
 
-      expect(find.text('  X'), findsOneWidget);
+      expect(find.text('X'), findsOneWidget);
     });
   });
 }

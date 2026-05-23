@@ -177,7 +177,7 @@ class ReaderHoshiSource extends ReaderMediaSource {
         tooltip: t.srt_import,
         icon: Icons.library_add_outlined,
         onTap: () async {
-          final bool? imported = await showDialog<bool>(
+          final bool? imported = await showAppDialog<bool>(
             context: context,
             builder: (_) => BookImportDialog(
               repo: SrtBookRepository(appModel.database),
@@ -203,7 +203,7 @@ class ReaderHoshiSource extends ReaderMediaSource {
       child: HibikiIconButton(
         size: Theme.of(context).textTheme.titleLarge?.fontSize,
         tooltip: t.tweaks,
-        icon: Icons.tune,
+        icon: Icons.tune_outlined,
         onTap: () {
           showAppDialog(
             context: context,

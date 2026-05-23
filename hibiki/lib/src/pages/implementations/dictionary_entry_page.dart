@@ -56,7 +56,7 @@ class _DictionaryEntryPageState extends ConsumerState<DictionaryEntryPage> {
           iconRotationAngle: 0,
           expandIcon: Icons.arrow_drop_down,
           collapseIcon: Icons.arrow_drop_down,
-          iconColor: Theme.of(context).unselectedWidgetColor,
+          iconColor: Theme.of(context).colorScheme.onSurfaceVariant,
           headerAlignment: ExpandablePanelHeaderAlignment.center,
         ),
         controller: widget.expandableController,
@@ -111,7 +111,7 @@ class _DictionaryEntryHeaderWrap extends ConsumerWidget {
               padding: EdgeInsets.zero,
               icon: Icon(
                 Icons.more_vert,
-                color: Theme.of(context).unselectedWidgetColor,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
               color: Theme.of(context).popupMenuTheme.color,
               tooltip: t.show_options,

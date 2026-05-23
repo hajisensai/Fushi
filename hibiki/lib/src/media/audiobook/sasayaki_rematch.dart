@@ -165,7 +165,7 @@ class SasayakiRematch {
                   ),
                   const SizedBox(width: 8),
                   FilledButton.icon(
-                    icon: const Icon(Icons.play_arrow, size: 18),
+                    icon: const Icon(Icons.play_arrow_outlined, size: 18),
                     label: Text(t.rematch_run),
                     onPressed: autoBusy
                         ? null
@@ -183,7 +183,7 @@ class SasayakiRematch {
     }
 
     if (isDesktopPlatform) {
-      return showDialog<_MatchParams>(
+      return showAppDialog<_MatchParams>(
         context: context,
         builder: (ctx) => Dialog(
           child: ConstrainedBox(
@@ -356,7 +356,8 @@ class SasayakiWindowSlider extends StatelessWidget {
         Row(
           children: [
             Expanded(
-              child: Slider(
+              child: adaptiveSlider(
+                context: context,
                 min: minWindow.toDouble(),
                 max: maxWindow.toDouble(),
                 divisions: divisions,
@@ -389,12 +390,13 @@ class SasayakiWindowSlider extends StatelessWidget {
               TextButton.icon(
                 onPressed: autoBusy ? null : onAutoTap,
                 icon: autoBusy
-                    ? const SizedBox(
+                    ? SizedBox(
                         width: 14,
                         height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                        child:
+                            adaptiveIndicator(context: context, strokeWidth: 2),
                       )
-                    : const Icon(Icons.auto_awesome, size: 16),
+                    : const Icon(Icons.auto_awesome_outlined, size: 16),
                 label: Text(
                     autoBusy ? t.sasayaki_matching : t.sasayaki_auto_match),
               ),
@@ -436,7 +438,8 @@ class SasayakiThresholdSlider extends StatelessWidget {
         Row(
           children: [
             Expanded(
-              child: Slider(
+              child: adaptiveSlider(
+                context: context,
                 min: 0.1,
                 divisions: 9,
                 value: value,

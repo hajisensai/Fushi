@@ -170,7 +170,7 @@ class _HomePageState extends BasePageState<HomePage>
               labelType: NavigationRailLabelType.all,
               destinations: [
                 NavigationRailDestination(
-                  icon: const Icon(Icons.menu_book),
+                  icon: const Icon(Icons.menu_book_outlined),
                   label: Text(t.books),
                 ),
                 NavigationRailDestination(
@@ -178,7 +178,7 @@ class _HomePageState extends BasePageState<HomePage>
                   label: Text(t.dictionaries),
                 ),
                 NavigationRailDestination(
-                  icon: const Icon(Icons.tune),
+                  icon: const Icon(Icons.tune_outlined),
                   label: Text(t.settings),
                 ),
               ],
@@ -196,21 +196,30 @@ class _HomePageState extends BasePageState<HomePage>
       resizeToAvoidBottomInset: false,
       appBar: buildAppBar(),
       body: SafeArea(child: buildBody()),
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
-          border: const Border(),
-        ),
-        padding:
-            EdgeInsets.only(bottom: MediaQuery.of(context).viewPadding.bottom),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            _buildNavItem(0, Icons.menu_book, t.books),
-            _buildNavItem(1, Icons.search, t.dictionaries),
-            _buildNavItem(2, Icons.tune, t.settings),
-          ],
-        ),
+      bottomNavigationBar: adaptiveBottomBar(
+        context: context,
+        currentIndex: _currentTab,
+        onTap: (int index) {
+          setState(() => _currentTab = index);
+          if (index == 0) _loadIconPreset();
+        },
+        items: [
+          AdaptiveNavItem(
+            icon: Icons.menu_book_outlined,
+            selectedIcon: Icons.menu_book,
+            label: t.books,
+          ),
+          AdaptiveNavItem(
+            icon: Icons.search_outlined,
+            selectedIcon: Icons.search,
+            label: t.dictionaries,
+          ),
+          AdaptiveNavItem(
+            icon: Icons.tune_outlined,
+            selectedIcon: Icons.tune,
+            label: t.settings,
+          ),
+        ],
       ),
     );
   }
@@ -220,14 +229,16 @@ class _HomePageState extends BasePageState<HomePage>
       case 1:
         return null;
       case 2:
-        return AppBar(
+        return adaptiveAppBar(
+          context: context,
           leading: buildLeading(),
           title: buildTitle(),
           actions: buildSettingsActions(),
           titleSpacing: 8,
         );
       default:
-        return AppBar(
+        return adaptiveAppBar(
+          context: context,
           leading: buildLeading(),
           title: buildTitle(),
           actions: buildActions(),
@@ -288,42 +299,16 @@ class _HomePageState extends BasePageState<HomePage>
     ];
   }
 
-  Widget _buildNavItem(int index, IconData icon, String label) {
-    final selected = _currentTab == index;
-    final color = selected
-        ? Theme.of(context).colorScheme.primary
-        : Theme.of(context).colorScheme.onSurfaceVariant;
-    return Expanded(
-      child: InkWell(
-        onTap: () {
-          setState(() => _currentTab = index);
-          if (index == 0) _loadIconPreset();
-        },
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, color: color, size: 24),
-              const SizedBox(height: 4),
-              Text(label, style: textTheme.labelSmall?.copyWith(color: color)),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   List<Widget> buildSettingsActions() {
     return [
       HibikiIconButton(
         tooltip: t.options_language,
-        icon: Icons.translate,
+        icon: Icons.translate_outlined,
         onTap: appModel.showLanguageMenu,
       ),
       HibikiIconButton(
         tooltip: t.options_github,
-        icon: Icons.public,
+        icon: Icons.public_outlined,
         onTap: () {
           launchUrl(
             Uri.parse('https://github.com/hdjsadgfwtg/hibiki'),
@@ -390,11 +375,11 @@ class _HomePageState extends BasePageState<HomePage>
   Widget buildCollectionsButton() {
     return HibikiIconButton(
       tooltip: t.collections,
-      icon: Icons.collections_bookmark,
+      icon: Icons.collections_bookmark_outlined,
       onTap: () {
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (_) => const CollectionsPage()),
+          adaptivePageRoute(builder: (_) => const CollectionsPage()),
         );
       },
     );
@@ -403,11 +388,11 @@ class _HomePageState extends BasePageState<HomePage>
   Widget buildStatisticsButton() {
     return HibikiIconButton(
       tooltip: t.reading_statistics,
-      icon: Icons.bar_chart,
+      icon: Icons.bar_chart_outlined,
       onTap: () {
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (_) => const ReadingStatisticsPage()),
+          adaptivePageRoute(builder: (_) => const ReadingStatisticsPage()),
         );
       },
     );

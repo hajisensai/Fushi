@@ -59,7 +59,8 @@ class _TextSegmentationDialogPage
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return adaptiveAlertDialog(
+      context: context,
       contentPadding: MediaQuery.of(context).orientation == Orientation.portrait
           ? Spacing.of(context).insets.all.big
           : Spacing.of(context).insets.all.normal,
@@ -137,8 +138,8 @@ class _TextSegmentationDialogPage
                 right: Spacing.of(context).spaces.normal,
               ),
               color: _valuesSelected[index]!.value
-                  ? theme.colorScheme.primary.withOpacity(0.3)
-                  : theme.unselectedWidgetColor.withOpacity(0.1),
+                  ? theme.colorScheme.primary.withValues(alpha:0.3)
+                  : theme.colorScheme.onSurfaceVariant.withValues(alpha:0.1),
               child: SizedBox(
                 height: (textTheme.titleLarge?.fontSize)! * 1.3,
                 child: Text(
@@ -161,7 +162,8 @@ class _TextSegmentationDialogPage
   }
 
   Widget buildStashButton() {
-    return TextButton(
+    return adaptiveDialogAction(
+      context: context,
       onPressed: executeStash,
       child: Text(t.dialog_stash),
     );
@@ -174,14 +176,16 @@ class _TextSegmentationDialogPage
       ];
 
   Widget buildSearchButton() {
-    return TextButton(
+    return adaptiveDialogAction(
+      context: context,
       onPressed: executeSearch,
       child: Text(t.dialog_search),
     );
   }
 
   Widget buildSelectButton() {
-    return TextButton(
+    return adaptiveDialogAction(
+      context: context,
       onPressed: executeSelect,
       child: Text(t.dialog_select),
     );

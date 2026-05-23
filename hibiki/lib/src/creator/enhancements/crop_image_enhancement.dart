@@ -9,6 +9,7 @@ import 'package:hibiki/creator.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
+import 'package:hibiki/utils.dart';
 
 /// An enhancement that can be used to crop the current image.
 class CropImageEnhancement extends ImageEnhancement {
@@ -18,7 +19,7 @@ class CropImageEnhancement extends ImageEnhancement {
           uniqueKey: key,
           label: 'Crop Image',
           description: 'Crop the current selected image.',
-          icon: Icons.crop,
+          icon: Icons.crop_outlined,
           field: ImageField.instance,
         );
 
@@ -58,7 +59,7 @@ class CropImageEnhancement extends ImageEnhancement {
     File copyFile = File('$cropImagePath/$timestamp');
     imageFile.copySync(copyFile.path);
     if (context.mounted) {
-      await showDialog<File?>(
+      await showAppDialog<File?>(
         context: context,
         builder: (_) => CropImageDialogPage(
           imageFile: copyFile,

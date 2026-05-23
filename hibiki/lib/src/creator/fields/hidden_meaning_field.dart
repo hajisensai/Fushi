@@ -14,7 +14,7 @@ class HiddenMeaningField extends Field {
           label: 'Hidden Meaning',
           description: 'Dictionary definitions only from hidden'
               ' dictionaries.',
-          icon: Icons.visibility_off,
+          icon: Icons.visibility_off_outlined,
         );
 
   /// Get the singleton instance of this field.

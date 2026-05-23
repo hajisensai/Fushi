@@ -12,7 +12,7 @@ class OpenStashEnhancement extends Enhancement {
           uniqueKey: key,
           label: 'Open Stash',
           description: 'View and manage previously stashed text.',
-          icon: Icons.collections_bookmark,
+          icon: Icons.collections_bookmark_outlined,
         );
 
   /// Used to identify this enhancement and to allow a constant value for the

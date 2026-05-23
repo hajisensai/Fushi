@@ -13,7 +13,7 @@ class NotesField extends Field {
           uniqueKey: key,
           label: 'Notes',
           description: 'Supplementary information or personal observations.',
-          icon: Icons.description,
+          icon: Icons.description_outlined,
         );
 
   /// Get the singleton instance of this field.

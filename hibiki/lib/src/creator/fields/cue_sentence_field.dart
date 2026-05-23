@@ -12,7 +12,7 @@ class CueSentenceField extends Field {
           label: 'Cue Sentence',
           description:
               'Full subtitle cue text without punctuation segmentation.',
-          icon: Icons.subtitles,
+          icon: Icons.subtitles_outlined,
         );
 
   static CueSentenceField get instance => _instance;

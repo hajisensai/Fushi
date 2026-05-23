@@ -42,7 +42,8 @@ class _WebsocketDialogPageState extends BasePageState<WebsocketDialogPage> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return adaptiveAlertDialog(
+      context: context,
       contentPadding: MediaQuery.of(context).orientation == Orientation.portrait
           ? Spacing.of(context).insets.exceptBottom.big
           : Spacing.of(context).insets.exceptBottom.normal.copyWith(
@@ -98,7 +99,8 @@ class _WebsocketDialogPageState extends BasePageState<WebsocketDialogPage> {
   }
 
   Widget buildConnectButton() {
-    return TextButton(
+    return adaptiveDialogAction(
+      context: context,
       onPressed: executeSearch,
       child: Text(t.dialog_connect),
     );

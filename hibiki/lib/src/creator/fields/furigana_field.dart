@@ -14,7 +14,7 @@ class FuriganaField extends Field {
           uniqueKey: key,
           label: 'Furigana',
           description: 'Pre-fills text to export for Furigana.',
-          icon: Icons.data_array,
+          icon: Icons.data_array_outlined,
         );
 
   /// Get the singleton instance of this field.

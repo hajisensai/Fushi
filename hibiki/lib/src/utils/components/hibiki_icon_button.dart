@@ -96,7 +96,7 @@ class _HibikiIconButtonState extends State<HibikiIconButton> {
   Color get enabledColor =>
       widget.enabledColor ?? Theme.of(context).iconTheme.color!;
   Color get disabledColor =>
-      widget.disabledColor ?? Theme.of(context).unselectedWidgetColor;
+      widget.disabledColor ?? Theme.of(context).colorScheme.onSurfaceVariant;
 
   @override
   Widget build(BuildContext context) {

@@ -14,7 +14,7 @@ class ShareAction extends QuickAction {
           uniqueKey: key,
           label: 'Share',
           description: 'Share the details of a dictionary term.',
-          icon: Icons.share,
+          icon: Icons.share_outlined,
         );
 
   /// Used to identify this enhancement and to allow a constant value for the

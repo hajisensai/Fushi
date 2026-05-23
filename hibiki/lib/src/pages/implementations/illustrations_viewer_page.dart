@@ -94,9 +94,7 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.bookTitle),
-      ),
+      appBar: adaptiveAppBar(context: context, title: Text(widget.bookTitle)),
       body: _buildBody(theme),
     );
   }
@@ -107,7 +105,7 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const CircularProgressIndicator(),
+            adaptiveIndicator(context: context),
             const SizedBox(height: 16),
             Text(t.loading_illustrations),
           ],
@@ -174,7 +172,7 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
   void _openFullScreen(int initialIndex) {
     Navigator.push(
       context,
-      MaterialPageRoute(
+      adaptivePageRoute(
         builder: (_) => _FullScreenGallery(
           images: _images,
           initialIndex: initialIndex,
@@ -219,7 +217,8 @@ class _FullScreenGalleryState extends State<_FullScreenGallery> {
     final theme = Theme.of(context);
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
-      appBar: AppBar(
+      appBar: adaptiveAppBar(
+        context: context,
         title: Text(t.image_page_counter(
             current: _currentIndex + 1, total: widget.images.length)),
       ),

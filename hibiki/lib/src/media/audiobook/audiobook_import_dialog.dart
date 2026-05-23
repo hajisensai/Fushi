@@ -132,10 +132,11 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
   @override
   Widget build(BuildContext context) {
     if (!_existingLoaded) {
-      return const AlertDialog(
+      return adaptiveAlertDialog(
+        context: context,
         content: SizedBox(
           height: 64,
-          child: Center(child: CircularProgressIndicator()),
+          child: Center(child: adaptiveIndicator(context: context)),
         ),
       );
     }
@@ -143,7 +144,8 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
     final Audiobook? existing = _existing;
     final bool showImportForm = existing == null || _patchingAudio;
 
-    return AlertDialog(
+    return adaptiveAlertDialog(
+      context: context,
       title: Text(
         showImportForm
             ? (widget.audioOnly ? t.audio_import : t.audiobook_import)
@@ -157,20 +159,24 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       ),
       actions: showImportForm
           ? [
-              TextButton(
+              adaptiveDialogAction(
+                context: context,
                 onPressed: () => Navigator.pop(context),
                 child: Text(t.dialog_cancel),
               ),
-              FilledButton(
+              adaptiveDialogAction(
+                context: context,
+                isDefaultAction: true,
                 onPressed: _importing ? null : _doImport,
                 child: _importing
                     ? Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const SizedBox(
+                          SizedBox(
                             width: 16,
                             height: 16,
-                            child: CircularProgressIndicator(
+                            child: adaptiveIndicator(
+                              context: context,
                               strokeWidth: 2,
                               color: Colors.white70,
                             ),
@@ -183,18 +189,21 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
               ),
             ]
           : [
-              TextButton(
+              adaptiveDialogAction(
+                context: context,
                 onPressed: () => Navigator.pop(context),
                 child: Text(t.dialog_close),
               ),
-              TextButton(
+              adaptiveDialogAction(
+                context: context,
                 onPressed: () => _enterReplaceSubtitleMode(existing),
                 child: Text(t.audio_panel_pick_new_subtitle),
               ),
-              _destructiveFilledButton(
+              adaptiveDialogAction(
                 context: context,
-                label: t.audiobook_remove,
+                isDestructiveAction: true,
                 onPressed: () => _removeAudiobook(existing),
+                child: Text(t.audiobook_remove),
               ),
             ],
     );
@@ -218,8 +227,8 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
           children: [
             _infoRow(
               (ab.audioPaths != null && ab.audioPaths!.isNotEmpty)
-                  ? Icons.audio_file
-                  : Icons.folder_open,
+                  ? Icons.audio_file_outlined
+                  : Icons.folder_open_outlined,
               audioLabel,
             ),
             const SizedBox(height: 8),
@@ -234,7 +243,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
                 alignment: Alignment.centerLeft,
                 child: TextButton.icon(
                   onPressed: _importing ? null : () => _openReMatchSheet(ab),
-                  icon: const Icon(Icons.tune, size: 18),
+                  icon: const Icon(Icons.tune_outlined, size: 18),
                   label: Text(t.rematch_adjust_window),
                 ),
               ),
@@ -393,12 +402,12 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
           ),
         ),
         IconButton(
-          icon: const Icon(Icons.folder_open, size: 20),
+          icon: const Icon(Icons.folder_open_outlined, size: 20),
           tooltip: t.srt_import_pick_audio_dir,
           onPressed: _pickAudioDir,
         ),
         IconButton(
-          icon: const Icon(Icons.audio_file, size: 20),
+          icon: const Icon(Icons.audio_file_outlined, size: 20),
           tooltip: t.srt_import_pick_audio_files,
           onPressed: _pickAudioFiles,
         ),
@@ -967,19 +976,22 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
     final NavigatorState outerNavigator =
         Navigator.of(context, rootNavigator: true);
 
-    final bool? confirm = await showDialog<bool>(
+    final bool? confirm = await showAppDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => adaptiveAlertDialog(
+        context: ctx,
         content: Text(t.audiobook_remove_confirm),
         actions: [
-          TextButton(
+          adaptiveDialogAction(
+            context: ctx,
             onPressed: () => Navigator.of(ctx).pop(false),
             child: Text(t.dialog_cancel),
           ),
-          _destructiveFilledButton(
+          adaptiveDialogAction(
             context: ctx,
-            label: t.audiobook_remove,
+            isDestructiveAction: true,
             onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(t.audiobook_remove),
           ),
         ],
       ),
@@ -1002,24 +1014,6 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
     if (mounted) {
       outerNavigator.pop(false); // false = no audiobook
     }
-  }
-
-  /// 破坏性操作统一样式：FilledButton + errorContainer。把 `Navigator.pop`
-  /// 的 ctx 通过参数传进来，避免子对话框里复用父 widget 的 context。
-  Widget _destructiveFilledButton({
-    required BuildContext context,
-    required String label,
-    required VoidCallback onPressed,
-  }) {
-    final ColorScheme cs = Theme.of(context).colorScheme;
-    return FilledButton(
-      onPressed: onPressed,
-      style: FilledButton.styleFrom(
-        backgroundColor: cs.errorContainer,
-        foregroundColor: cs.onErrorContainer,
-      ),
-      child: Text(label),
-    );
   }
 
   Future<Directory> _ensurePersistDir() =>

@@ -54,7 +54,8 @@ class _ExampleSentencesDialogPageState
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return adaptiveAlertDialog(
+      context: context,
       contentPadding: MediaQuery.of(context).orientation == Orientation.portrait
           ? Spacing.of(context).insets.all.big
           : Spacing.of(context).insets.all.normal,
@@ -119,8 +120,8 @@ class _ExampleSentencesDialogPageState
                   right: Spacing.of(context).spaces.normal,
                 ),
                 color: _valuesSelected[index]!.value
-                    ? theme.colorScheme.primary.withOpacity(0.3)
-                    : theme.unselectedWidgetColor.withOpacity(0.1),
+                    ? theme.colorScheme.primary.withValues(alpha:0.3)
+                    : theme.colorScheme.onSurfaceVariant.withValues(alpha:0.1),
                 child: Text(
                   sentence,
                   style: TextStyle(
@@ -142,14 +143,16 @@ class _ExampleSentencesDialogPageState
       ];
 
   Widget buildAppendButton() {
-    return TextButton(
+    return adaptiveDialogAction(
+      context: context,
       onPressed: executeAppend,
       child: Text(t.dialog_append),
     );
   }
 
   Widget buildSelectButton() {
-    return TextButton(
+    return adaptiveDialogAction(
+      context: context,
       onPressed: executeSelect,
       child: Text(t.dialog_select),
     );

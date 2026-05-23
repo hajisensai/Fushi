@@ -29,7 +29,7 @@ class _PlaceholderSourcePage extends BaseSourcePageState {
 
   Widget buildPlaceholder() {
     return HibikiPlaceholderMessage(
-      icon: Icons.construction,
+      icon: Icons.construction_outlined,
       message: t.unimplemented_source,
     );
   }

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// A helper for creating a [DropdownButton] styled for the application.
+/// A helper for creating a [DropdownMenu] styled for the application.
 class HibikiDropdown<T> extends StatefulWidget {
   /// Define a dropdown with options and an action to do when the selected
   /// option is changed.
@@ -44,45 +44,25 @@ class _HibikiDropdownState<T> extends State<HibikiDropdown<T>> {
 
   @override
   Widget build(BuildContext context) {
-    final uniqueOptions = widget.options.toSet();
+    final uniqueOptions = widget.options.toSet().toList();
     T? dropdownValue = selectedOption;
     if (!uniqueOptions.contains(dropdownValue)) {
       dropdownValue = uniqueOptions.isNotEmpty ? uniqueOptions.first : null;
     }
 
-    return Column(
-      children: [
-        DropdownButton<T>(
-          isExpanded: true,
-          underline: DecoratedBox(
-            decoration: BoxDecoration(
-              border: Border.fromBorderSide(
-                BorderSide(
-                  width: 0.5,
-                  color: Theme.of(context).unselectedWidgetColor,
-                ),
-              ),
-            ),
-          ),
-          focusColor: Theme.of(context).listTileTheme.selectedTileColor,
-          value: dropdownValue,
-          items: uniqueOptions.map((value) {
-            String text = widget.generateLabel(value);
-            return DropdownMenuItem<T>(
-              value: value,
-              child: Text('  $text'),
-            );
-          }).toList(),
-          onChanged: widget.enabled ? onChanged : null,
-        ),
-
-        /// Used to always show the underline.
-        Container(height: 0.1, color: Colors.transparent),
-      ],
+    return DropdownMenu<T>(
+      expandedInsets: EdgeInsets.zero,
+      initialSelection: dropdownValue,
+      enabled: widget.enabled,
+      dropdownMenuEntries: uniqueOptions.map((value) {
+        final String text = widget.generateLabel(value);
+        return DropdownMenuEntry<T>(value: value, label: text);
+      }).toList(),
+      onSelected: widget.enabled ? _onSelected : null,
     );
   }
 
-  void onChanged(T? value) {
+  void _onSelected(T? value) {
     widget.onChanged(value);
 
     setState(() {

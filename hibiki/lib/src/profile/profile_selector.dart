@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/profile/profile_view_model.dart';
 import 'package:hibiki/src/pages/implementations/profile_management_page.dart';
+import 'package:hibiki/src/utils/adaptive/adaptive_widgets.dart';
 
 /// Compact profile selector widget for embedding in settings pages.
 ///
@@ -32,16 +33,14 @@ class ProfileSelector extends ConsumerWidget {
           style: theme.textTheme.bodyMedium,
         ),
         Expanded(
-          child: DropdownButton<int>(
-            value: validId,
-            underline: const SizedBox.shrink(),
-            isDense: true,
-            isExpanded: true,
-            items: [
+          child: DropdownMenu<int>(
+            expandedInsets: EdgeInsets.zero,
+            initialSelection: validId,
+            dropdownMenuEntries: [
               for (final p in uiState.profiles)
-                DropdownMenuItem(value: p.id, child: Text(p.name)),
+                DropdownMenuEntry(value: p.id, label: p.name),
             ],
-            onChanged: (id) {
+            onSelected: (id) {
               if (id != null && id != validId) {
                 vm.switchProfile(id);
               }
@@ -49,14 +48,14 @@ class ProfileSelector extends ConsumerWidget {
           ),
         ),
         IconButton(
-          icon: const Icon(Icons.settings, size: 20),
+          icon: const Icon(Icons.settings_outlined, size: 20),
           tooltip: t.profile_management,
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints(),
           onPressed: () {
             Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const ProfileManagementPage()),
+              adaptivePageRoute(builder: (_) => const ProfileManagementPage()),
             );
           },
         ),

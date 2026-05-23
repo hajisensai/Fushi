@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart';
 
 /// A standard theme divider for use across the applicaton.
 class HibikiDivider extends StatelessWidget {
@@ -7,15 +8,12 @@ class HibikiDivider extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      decoration: BoxDecoration(
-        border: Border.fromBorderSide(
-          BorderSide(
-            width: 0.5,
-            color: Theme.of(context).unselectedWidgetColor,
-          ),
-        ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Divider(
+        height: 1,
+        thickness: isCupertinoPlatform(context) ? 0.33 : 0.5,
+        color: Theme.of(context).colorScheme.outlineVariant,
       ),
     );
   }

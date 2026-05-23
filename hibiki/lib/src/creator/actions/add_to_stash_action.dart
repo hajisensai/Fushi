@@ -14,7 +14,7 @@ class AddToStashAction extends QuickAction {
           label: 'Add To Stash',
           description:
               'Quickly save the headword of a dictionary entry to the Stash.',
-          icon: Icons.bookmark_add,
+          icon: Icons.bookmark_add_outlined,
         );
 
   /// Used to identify this enhancement and to allow a constant value for the

@@ -27,7 +27,8 @@ class _DebugLogPageState extends State<DebugLogPage> {
     final int count = DebugLogService.instance.entries.length;
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: adaptiveAppBar(
+        context: context,
         title: Text(t.debug_log_title(count: count)),
         actions: [
           IconButton(
@@ -38,7 +39,7 @@ class _DebugLogPageState extends State<DebugLogPage> {
             }),
           ),
           IconButton(
-            icon: const Icon(Icons.copy),
+            icon: const Icon(Icons.copy_outlined),
             tooltip: t.copy,
             onPressed: () async {
               await Clipboard.setData(ClipboardData(text: _log));
@@ -50,7 +51,7 @@ class _DebugLogPageState extends State<DebugLogPage> {
             },
           ),
           IconButton(
-            icon: const Icon(Icons.share),
+            icon: const Icon(Icons.share_outlined),
             tooltip: t.share,
             onPressed: () {
               final Uint8List bytes = Uint8List.fromList(utf8.encode(_log));

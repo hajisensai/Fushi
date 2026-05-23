@@ -17,7 +17,7 @@ class PickAudioEnhancement extends AudioEnhancement {
           uniqueKey: key,
           label: 'Pick Audio',
           description: 'Pick an audio file to use with an external picker.',
-          icon: Icons.upload_file,
+          icon: Icons.upload_file_outlined,
         );
 
   /// Used to identify this enhancement and to allow a constant value for the

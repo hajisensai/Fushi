@@ -12,7 +12,7 @@ class SentencePickerEnhancement extends Enhancement {
           uniqueKey: key,
           label: 'Sentence Picker',
           description: 'Pick sentences delimited by punctuation and spacing.',
-          icon: Icons.colorize,
+          icon: Icons.colorize_outlined,
         );
 
   /// Used to identify this enhancement and to allow a constant value for the

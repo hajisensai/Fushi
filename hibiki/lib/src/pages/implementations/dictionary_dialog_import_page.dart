@@ -4,6 +4,7 @@ import 'package:spaces/spaces.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_progress_dialog_content.dart';
+import 'package:hibiki/utils.dart';
 
 /// The content of the dialog used for showing dictionary import progress when
 /// importing a dictionary from the dictionary menu. See the
@@ -38,7 +39,8 @@ class _DictionaryDialogImportPageState
   Widget build(BuildContext context) {
     return WillPopScope(
       onWillPop: () async => false,
-      child: AlertDialog(
+      child: adaptiveAlertDialog(
+        context: context,
         contentPadding: Spacing.of(context).insets.all.small,
         content: buildProgressMessage(),
       ),
@@ -68,7 +70,7 @@ class _DictionaryDialogImportPageState
           progressColor: theme.colorScheme.primary,
           headerStyle: TextStyle(
             fontSize: textTheme.bodySmall?.fontSize,
-            color: theme.unselectedWidgetColor,
+            color: theme.colorScheme.onSurfaceVariant,
           ),
         );
       },

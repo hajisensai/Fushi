@@ -9,6 +9,7 @@ import 'package:hibiki/creator.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
+import 'package:hibiki/utils.dart';
 
 /// An enhancement that can be used to record audio.
 class AudioRecorderEnhancement extends AudioEnhancement {
@@ -19,7 +20,7 @@ class AudioRecorderEnhancement extends AudioEnhancement {
           label: 'Audio Recorder',
           description:
               'Record and use audio captured from the device microphone.',
-          icon: Icons.mic,
+          icon: Icons.mic_outlined,
         );
 
   /// Used to identify this enhancement and to allow a constant value for the
@@ -58,7 +59,7 @@ class AudioRecorderEnhancement extends AudioEnhancement {
       tempTimestampDirectory.createSync(recursive: true);
       String tempFilePath = '${tempTimestampDirectory.path}/audio.mp3';
       if (context.mounted) {
-        await showDialog<File?>(
+        await showAppDialog<File?>(
           context: context,
           builder: (_) => AudioRecorderDialogPage(
             filePath: tempFilePath,

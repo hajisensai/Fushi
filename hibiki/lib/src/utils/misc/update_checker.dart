@@ -230,9 +230,10 @@ class UpdateChecker {
     String releaseNotes,
     String downloadUrl,
   ) {
-    showDialog<void>(
+    showAppDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => adaptiveAlertDialog(
+        context: ctx,
         title: Text(t.update_available),
         content: SingleChildScrollView(
           child: Column(
@@ -263,11 +264,13 @@ class UpdateChecker {
           ),
         ),
         actions: [
-          TextButton(
+          adaptiveDialogAction(
+            context: ctx,
             onPressed: () => Navigator.of(ctx).pop(),
             child: Text(t.update_skip),
           ),
-          TextButton(
+          adaptiveDialogAction(
+            context: ctx,
             onPressed: () {
               Navigator.of(ctx).pop();
               _downloadAndInstall(context, downloadUrl, version);
@@ -286,9 +289,10 @@ class UpdateChecker {
     String releaseNotes,
     String htmlUrl,
   ) {
-    showDialog<void>(
+    showAppDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => adaptiveAlertDialog(
+        context: ctx,
         title: Text(t.update_available),
         content: SingleChildScrollView(
           child: Column(
@@ -319,11 +323,13 @@ class UpdateChecker {
           ),
         ),
         actions: [
-          TextButton(
+          adaptiveDialogAction(
+            context: ctx,
             onPressed: () => Navigator.of(ctx).pop(),
             child: Text(t.update_skip),
           ),
-          TextButton(
+          adaptiveDialogAction(
+            context: ctx,
             onPressed: () {
               Navigator.of(ctx).pop();
               launchUrl(

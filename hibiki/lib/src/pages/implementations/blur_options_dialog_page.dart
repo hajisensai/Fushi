@@ -39,7 +39,8 @@ class _BlurOptionsDialogPageState extends BasePageState<BlurOptionsDialogPage> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return adaptiveAlertDialog(
+      context: context,
       contentPadding: MediaQuery.of(context).orientation == Orientation.portrait
           ? Spacing.of(context).insets.exceptBottom.big
           : Spacing.of(context).insets.exceptBottom.normal.copyWith(
@@ -94,7 +95,7 @@ class _BlurOptionsDialogPageState extends BasePageState<BlurOptionsDialogPage> {
                         _blurrinessController.text = '5.0';
                         FocusScope.of(context).unfocus();
                       },
-                      icon: Icons.undo,
+                      icon: Icons.undo_outlined,
                     ),
                     labelText: t.player_option_blur_radius,
                   ),
@@ -113,14 +114,16 @@ class _BlurOptionsDialogPageState extends BasePageState<BlurOptionsDialogPage> {
       ];
 
   Widget buildCancelButton() {
-    return TextButton(
+    return adaptiveDialogAction(
+      context: context,
       onPressed: executeCancel,
       child: Text(t.dialog_cancel),
     );
   }
 
   Widget buildSaveButton() {
-    return TextButton(
+    return adaptiveDialogAction(
+      context: context,
       onPressed: executeSave,
       child: Text(t.dialog_save),
     );

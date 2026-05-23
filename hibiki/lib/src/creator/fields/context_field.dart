@@ -13,7 +13,7 @@ class ContextField extends Field {
           uniqueKey: key,
           label: 'Context',
           description: 'Name of current source media.',
-          icon: Icons.perm_media,
+          icon: Icons.perm_media_outlined,
         );
 
   /// Get the singleton instance of this field.

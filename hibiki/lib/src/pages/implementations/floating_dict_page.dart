@@ -225,11 +225,11 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
 
   Widget _buildResults() {
     if (_isSearching) {
-      return const Center(
+      return Center(
         child: SizedBox(
           width: 24,
           height: 24,
-          child: CircularProgressIndicator(strokeWidth: 2),
+          child: adaptiveIndicator(context: context, strokeWidth: 2),
         ),
       );
     }

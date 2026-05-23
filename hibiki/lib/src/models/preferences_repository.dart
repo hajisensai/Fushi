@@ -400,16 +400,16 @@ class PreferencesRepository extends ChangeNotifier {
     final double top = getPref('blur_top', defaultValue: -1.0) as double;
 
     final int red =
-        getPref('blur_red', defaultValue: Colors.black.withOpacity(0).red)
+        getPref('blur_red', defaultValue: Colors.black.withValues(alpha: 0).red)
             as int;
     final int green =
-        getPref('blur_green', defaultValue: Colors.black.withOpacity(0).green)
+        getPref('blur_green', defaultValue: Colors.black.withValues(alpha: 0).green)
             as int;
     final int blue =
-        getPref('blur_blue', defaultValue: Colors.black.withOpacity(0).blue)
+        getPref('blur_blue', defaultValue: Colors.black.withValues(alpha: 0).blue)
             as int;
     final double opacity = getPref('blur_opacity',
-        defaultValue: Colors.black.withOpacity(0).opacity) as double;
+        defaultValue: Colors.black.withValues(alpha: 0).opacity) as double;
 
     final Color color = Color.fromRGBO(red, green, blue, opacity);
     final double blurRadius =

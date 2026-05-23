@@ -281,7 +281,8 @@ class _SystemFontPickerPageState extends State<_SystemFontPickerPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+      appBar: adaptiveAppBar(
+        context: context,
         title: Text(t.custom_fonts_add_system),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(56),
@@ -304,7 +305,7 @@ class _SystemFontPickerPageState extends State<_SystemFontPickerPage> {
         ),
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? Center(child: adaptiveIndicator(context: context))
           : _filtered.isEmpty
               ? Center(child: Text(t.custom_fonts_empty))
               : ListView.builder(
@@ -314,7 +315,7 @@ class _SystemFontPickerPageState extends State<_SystemFontPickerPage> {
                     final added = widget.alreadyAdded.contains(name);
                     return ListTile(
                       leading: Icon(
-                        Icons.font_download,
+                        Icons.font_download_outlined,
                         color: added
                             ? Theme.of(context).colorScheme.outline
                             : Theme.of(context).colorScheme.primary,
@@ -725,7 +726,7 @@ class _CustomFontsPageState extends BasePageState {
   }
 
   Future<void> _importFromUrl() async {
-    final url = await showDialog<String>(
+    final url = await showAppDialog<String>(
       context: context,
       builder: (ctx) => const CustomFontUrlImportDialog(),
     );
@@ -745,7 +746,7 @@ class _CustomFontsPageState extends BasePageState {
   Future<void> _openRecommended() async {
     final font = await Navigator.push<_RecommendedFont>(
       context,
-      MaterialPageRoute(
+      adaptivePageRoute(
         builder: (_) => _RecommendedFontsPage(
           alreadyAdded: _fonts.map((e) => e['name'] as String).toSet(),
         ),
@@ -762,7 +763,7 @@ class _CustomFontsPageState extends BasePageState {
         .toSet();
     final selected = await Navigator.push<String>(
       context,
-      MaterialPageRoute(
+      adaptivePageRoute(
         builder: (_) => _SystemFontPickerPage(alreadyAdded: alreadyAdded),
       ),
     );
@@ -809,7 +810,8 @@ class _CustomFontsPageState extends BasePageState {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+      appBar: adaptiveAppBar(
+        context: context,
         title: Text(t.custom_fonts),
         actions: [
           IconButton(
@@ -833,7 +835,7 @@ class _CustomFontsPageState extends BasePageState {
               PopupMenuItem(
                 value: _importFontFile,
                 child: ListTile(
-                  leading: const Icon(Icons.file_open),
+                  leading: const Icon(Icons.file_open_outlined),
                   title: Text(t.custom_fonts_import_file),
                   dense: true,
                   contentPadding: EdgeInsets.zero,
@@ -934,7 +936,8 @@ class CustomFontDownloadProgressDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return adaptiveAlertDialog(
+      context: context,
       titlePadding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
       contentPadding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
       actionsPadding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
@@ -963,7 +966,8 @@ class CustomFontDownloadProgressDialog extends StatelessWidget {
         ),
       ),
       actions: [
-        TextButton(
+        adaptiveDialogAction(
+          context: context,
           onPressed: onCancel,
           child: Text(t.dialog_cancel),
         ),
@@ -992,7 +996,8 @@ class _CustomFontUrlImportDialogState extends State<CustomFontUrlImportDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return adaptiveAlertDialog(
+      context: context,
       titlePadding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
       contentPadding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
       actionsPadding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
@@ -1018,11 +1023,14 @@ class _CustomFontUrlImportDialogState extends State<CustomFontUrlImportDialog> {
         autofocus: true,
       ),
       actions: [
-        TextButton(
+        adaptiveDialogAction(
+          context: context,
           onPressed: () => Navigator.pop(context),
           child: Text(t.dialog_cancel),
         ),
-        FilledButton(
+        adaptiveDialogAction(
+          context: context,
+          isDefaultAction: true,
           onPressed: () => Navigator.pop(context, _urlController.text.trim()),
           child: Text(t.dialog_import),
         ),
@@ -1039,7 +1047,8 @@ class _RecommendedFontsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(title: Text(t.custom_fonts_recommended)),
+      appBar: adaptiveAppBar(
+          context: context, title: Text(t.custom_fonts_recommended)),
       body: ListView.builder(
         padding: const EdgeInsets.symmetric(vertical: 8),
         itemCount: _recommendedFonts.length,
@@ -1052,7 +1061,7 @@ class _RecommendedFontsPage extends StatelessWidget {
             margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
             child: ListTile(
               leading: Icon(
-                Icons.font_download,
+                Icons.font_download_outlined,
                 color: added ? cs.outline : cs.primary,
               ),
               title: Text(font.name),
@@ -1073,7 +1082,7 @@ class _RecommendedFontsPage extends StatelessWidget {
                   ? Icon(Icons.check, color: cs.outline)
                   : FilledButton.tonal(
                       onPressed: () => Navigator.pop(context, font),
-                      child: const Icon(Icons.download, size: 20),
+                      child: const Icon(Icons.download_outlined, size: 20),
                     ),
               isThreeLine: true,
             ),
@@ -1117,7 +1126,7 @@ class _FontTile extends StatelessWidget {
             ),
             const SizedBox(width: 8),
             Icon(
-              isFile ? Icons.file_present : Icons.phone_android,
+              isFile ? Icons.file_present_outlined : Icons.phone_android_outlined,
               color: cs.primary,
             ),
           ],
@@ -1136,7 +1145,8 @@ class _FontTile extends StatelessWidget {
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Switch(
+            adaptiveSwitch(
+              context: context,
               value: enabled,
               onChanged: (_) => onToggle(),
             ),

@@ -197,7 +197,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
             HibikiIconButton(
               size: textTheme.titleLarge?.fontSize,
               tooltip: t.dictionary_settings,
-              icon: Icons.settings,
+              icon: Icons.settings_outlined,
               onTap: () async {
                 double oldFontSize = appModel.dictionaryFontSize;
                 await showAppDialog(
@@ -212,7 +212,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
             HibikiIconButton(
               size: textTheme.titleLarge?.fontSize,
               tooltip: t.clear_dictionary_title,
-              icon: Icons.delete_sweep,
+              icon: Icons.delete_sweep_outlined,
               onTap: _showDeleteDictionaryHistoryPrompt,
             ),
           ],
@@ -236,7 +236,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
       return _buildSearchResultBody();
     }
     if (_isSearching) {
-      return const Center(child: CircularProgressIndicator());
+      return Center(child: adaptiveIndicator(context: context));
     }
     return Center(
       child: HibikiPlaceholderMessage(
@@ -261,7 +261,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
           if (noDictionaries) ...[
             const SizedBox(height: 12),
             FilledButton.icon(
-              icon: const Icon(Icons.auto_stories, size: 18),
+              icon: const Icon(Icons.auto_stories_outlined, size: 18),
               label: Text(t.dialog_import_dictionary),
               onPressed: appModel.showDictionaryMenu,
             ),
@@ -570,14 +570,15 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
   // ── dialogs ────────────────────────────────────────────────────────
 
   void _showDeleteDictionaryHistoryPrompt() async {
-    Widget alertDialog = AlertDialog(
+    Widget alertDialog = adaptiveAlertDialog(
+      context: context,
       title: Text(t.clear_dictionary_title),
       content: Text(t.clear_dictionary_description),
       actions: <Widget>[
-        TextButton(
+        adaptiveDialogAction(
+          context: context,
           child: Text(
             t.dialog_clear,
-            style: TextStyle(color: theme.colorScheme.primary),
           ),
           onPressed: () async {
             Navigator.pop(context);
@@ -585,7 +586,8 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
             setState(() {});
           },
         ),
-        TextButton(
+        adaptiveDialogAction(
+          context: context,
           child: Text(t.dialog_cancel),
           onPressed: () => Navigator.pop(context),
         ),

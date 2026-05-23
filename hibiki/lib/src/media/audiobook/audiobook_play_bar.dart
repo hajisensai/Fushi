@@ -46,21 +46,21 @@ class AudiobookPlayBar extends StatelessWidget {
           child: Row(
             children: [
               IconButton(
-                icon: const Icon(Icons.skip_previous),
+                icon: const Icon(Icons.skip_previous_outlined),
                 iconSize: 22,
                 onPressed: controller.skipToPrevCue,
                 tooltip: t.prev_sentence,
               ),
               IconButton.filledTonal(
                 icon: Icon(
-                  controller.isPlaying ? Icons.pause : Icons.play_arrow,
+                  controller.isPlaying ? Icons.pause_outlined : Icons.play_arrow_outlined,
                 ),
                 iconSize: 24,
                 onPressed: controller.togglePlayPause,
                 tooltip: controller.isPlaying ? t.pause : t.play,
               ),
               IconButton(
-                icon: const Icon(Icons.skip_next),
+                icon: const Icon(Icons.skip_next_outlined),
                 iconSize: 22,
                 onPressed: controller.skipToNextCue,
                 tooltip: t.next_sentence,
@@ -76,7 +76,7 @@ class AudiobookPlayBar extends StatelessWidget {
               ),
               AudiobookFollowAudioButton(controller: controller),
               IconButton(
-                icon: const Icon(Icons.tune),
+                icon: const Icon(Icons.tune_outlined),
                 iconSize: 20,
                 onPressed: onOpenSettings,
                 tooltip: t.audiobook_settings,
@@ -446,20 +446,20 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         const SizedBox(height: 12),
         _categoryTile(
           theme,
-          icon: Icons.menu_book,
+          icon: Icons.menu_book_outlined,
           label: t.section_navigation,
           page: 'navigation',
         ),
         if (widget.controller != null)
           _categoryTile(
             theme,
-            icon: Icons.headphones,
+            icon: Icons.headphones_outlined,
             label: t.section_audiobook,
             page: 'audiobook',
           ),
         _categoryTile(
           theme,
-          icon: Icons.auto_stories,
+          icon: Icons.auto_stories_outlined,
           label: t.reader_settings_section,
           page: 'reader',
         ),
@@ -471,14 +471,14 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         ),
         _categoryTile(
           theme,
-          icon: Icons.view_quilt,
+          icon: Icons.view_quilt_outlined,
           label: t.section_layout,
           page: 'layout',
         ),
         if (widget.controller != null)
           _categoryTile(
             theme,
-            icon: Icons.tune,
+            icon: Icons.tune_outlined,
             label: t.section_interface,
             page: 'interface',
           ),
@@ -517,7 +517,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                     Navigator.pop(context);
                     widget.onAudioImport!();
                   },
-                  icon: const Icon(Icons.swap_horiz, size: 18),
+                  icon: const Icon(Icons.swap_horiz_outlined, size: 18),
                   label: Text(t.srt_book_replace_audio),
                 ),
               ),
@@ -559,13 +559,13 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
               ListTile(
                 dense: true,
                 contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-                leading: const Icon(Icons.code, size: 22),
+                leading: const Icon(Icons.code_outlined, size: 22),
                 title: Text(t.book_css_editor_edit_css),
                 trailing: const Icon(Icons.chevron_right, size: 20),
                 onTap: () async {
                   await Navigator.push(
                     context,
-                    MaterialPageRoute(
+                    adaptivePageRoute(
                       builder: (_) =>
                           BookCssEditorPage(extractDir: widget.extractDir!),
                     ),
@@ -716,10 +716,11 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                   visualDensity: VisualDensity.compact,
                 ),
                 child: _isSearching
-                    ? const SizedBox(
+                    ? SizedBox(
                         width: 18,
                         height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                        child:
+                            adaptiveIndicator(context: context, strokeWidth: 2),
                       )
                     : const Icon(Icons.search, size: 20),
               ),
@@ -1007,9 +1008,10 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         const SizedBox(height: 8),
         Row(
           children: [
-            const Icon(Icons.volume_down, size: 20),
+            const Icon(Icons.volume_down_outlined, size: 20),
             Expanded(
-              child: Slider(
+              child: adaptiveSlider(
+                context: context,
                 value: ctrl.volume,
                 max: 2,
                 onChanged: (v) {
@@ -1018,7 +1020,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                 },
               ),
             ),
-            const Icon(Icons.volume_up, size: 20),
+            const Icon(Icons.volume_up_outlined, size: 20),
           ],
         ),
       ],
@@ -1044,7 +1046,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.restart_alt, size: 18),
+                  icon: const Icon(Icons.restart_alt_outlined, size: 18),
                   onPressed: (current - 1.0).abs() < 0.001
                       ? null
                       : () => ctrl.setSpeed(1),
@@ -1059,7 +1061,8 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
               children: [
                 Text('0.25', style: theme.textTheme.bodySmall),
                 Expanded(
-                  child: Slider(
+                  child: adaptiveSlider(
+                    context: context,
                     value: current.clamp(0.25, 3.0),
                     min: 0.25,
                     max: 3,
@@ -1177,12 +1180,16 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         child: Row(
           children: [
             Expanded(child: Text(label)),
-            Switch(
+            Builder(
+              builder: (BuildContext context) => adaptiveSwitch(
+                context: context,
                 value: value,
                 onChanged: (_) {
                   toggle();
                   setState(() {});
-                }),
+                },
+              ),
+            ),
           ],
         ),
       );
@@ -1226,7 +1233,8 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
             Expanded(child: Text(t.dismiss_swipe_sensitivity)),
             SizedBox(
               width: 140,
-              child: Slider(
+              child: adaptiveSlider(
+                context: context,
                 value: _src.dismissSwipeSensitivity,
                 min: 0.1,
                 divisions: 9,
@@ -1247,7 +1255,8 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
             Expanded(child: Text(t.volume_button_turning_speed)),
             SizedBox(
               width: 140,
-              child: Slider(
+              child: adaptiveSlider(
+                context: context,
                 value: _src.volumePageTurningSpeed.toDouble(),
                 min: 10,
                 max: 500,
@@ -1274,7 +1283,8 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
             Expanded(
                 child: Text(t.show_media_notification,
                     style: theme.textTheme.bodyMedium)),
-            Switch(
+            adaptiveSwitch(
+              context: context,
               value: _localShowMediaNotification,
               onChanged: (_) {
                 widget.onToggleMediaNotification?.call();
@@ -1302,7 +1312,8 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                 ],
               ),
             ),
-            Switch(
+            adaptiveSwitch(
+              context: context,
               value: _localShowFloatingLyric,
               onChanged: (_) async {
                 final bool ok =
@@ -1360,13 +1371,13 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
   Widget _buildTypographySection(ThemeData theme) {
     final TtuReaderSettings? s = _settings;
     if (s == null) {
-      return const Center(
+      return Center(
         child: Padding(
-          padding: EdgeInsets.symmetric(vertical: 12),
+          padding: const EdgeInsets.symmetric(vertical: 12),
           child: SizedBox(
             width: 20,
             height: 20,
-            child: CircularProgressIndicator(strokeWidth: 2),
+            child: adaptiveIndicator(context: context, strokeWidth: 2),
           ),
         ),
       );
@@ -1540,7 +1551,8 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
           theme,
           label: t.ttu_text_justify,
           hint: t.ttu_text_justify_hint,
-          child: Switch(
+          child: adaptiveSwitch(
+            context: context,
             value: _src.ttuEnableTextJustification,
             onChanged: (v) {
               _src.setTtuEnableTextJustification(v);
@@ -1553,7 +1565,8 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
           theme,
           label: t.ttu_vert_kerning,
           hint: t.ttu_vert_kerning_hint,
-          child: Switch(
+          child: adaptiveSwitch(
+            context: context,
             value: _src.ttuEnableVerticalFontKerning,
             onChanged: (v) {
               _src.setTtuEnableVerticalFontKerning(v);
@@ -1566,7 +1579,8 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
           theme,
           label: t.ttu_font_vpal,
           hint: t.ttu_font_vpal_hint,
-          child: Switch(
+          child: adaptiveSwitch(
+            context: context,
             value: _src.ttuEnableFontVPAL,
             onChanged: (v) {
               _src.setTtuEnableFontVPAL(v);
@@ -1579,7 +1593,8 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
           theme,
           label: t.ttu_reader_styles,
           hint: t.ttu_reader_styles_hint,
-          child: Switch(
+          child: adaptiveSwitch(
+            context: context,
             value: _src.ttuPrioritizeReaderStyles,
             onChanged: (v) {
               _src.setTtuPrioritizeReaderStyles(v);
@@ -1800,7 +1815,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
             }),
             buildReaderThemeChip(
               avatar: Icon(
-                Icons.palette,
+                Icons.palette_outlined,
                 size: 18,
                 color: s.theme == 'custom-theme'
                     ? theme.colorScheme.onPrimaryContainer
@@ -1812,7 +1827,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
               onSelected: (_) {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const CustomThemePage()),
+                  adaptivePageRoute(builder: (_) => const CustomThemePage()),
                 ).then((_) async {
                   s.theme = widget.appModel.appThemeKey;
                   setState(() {});
@@ -1972,7 +1987,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                     children: [
                       if (widget.onPlayFavorite != null)
                         IconButton(
-                          icon: const Icon(Icons.volume_up, size: 16),
+                          icon: const Icon(Icons.volume_up_outlined, size: 16),
                           onPressed: () async {
                             await widget.onPlayFavorite?.call(fav);
                           },
@@ -1981,7 +1996,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                       if (fav.sectionIndex != null &&
                           widget.onJumpToFavorite != null)
                         IconButton(
-                          icon: const Icon(Icons.open_in_new, size: 16),
+                          icon: const Icon(Icons.open_in_new_outlined, size: 16),
                           onPressed: () async {
                             Navigator.of(ctx).pop();
                             await widget.onJumpToFavorite?.call(fav);
@@ -1989,7 +2004,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                           tooltip: t.jump_to_cue,
                         ),
                       IconButton(
-                        icon: const Icon(Icons.copy, size: 16),
+                        icon: const Icon(Icons.copy_outlined, size: 16),
                         onPressed: () {
                           Clipboard.setData(ClipboardData(text: fav.text));
                           HibikiToast.show(msg: t.copy);
@@ -2040,7 +2055,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         if (widget.onToggleLyricsMode != null)
           _actionBtn(
             context,
-            icon: widget.lyricsMode ? Icons.auto_stories : Icons.lyrics,
+            icon: widget.lyricsMode ? Icons.auto_stories_outlined : Icons.lyrics_outlined,
             label: widget.lyricsMode ? t.book_mode : t.lyrics_mode,
             onTap: () {
               Navigator.of(context).pop();
@@ -2058,7 +2073,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         ),
         _actionBtn(
           context,
-          icon: Icons.exit_to_app,
+          icon: Icons.exit_to_app_outlined,
           label: t.action_exit,
           onTap: () {
             Navigator.of(context).pop();

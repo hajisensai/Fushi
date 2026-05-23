@@ -17,7 +17,7 @@ class PitchAccentField extends Field {
           uniqueKey: key,
           label: 'Pitch Accent',
           description: 'Pre-fills text to export for pitch accent diagrams.',
-          icon: Icons.swap_vert,
+          icon: Icons.swap_vert_outlined,
         );
 
   /// Get the singleton instance of this field.

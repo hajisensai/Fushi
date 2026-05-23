@@ -64,18 +64,19 @@ abstract class BaseAudioField extends AudioExportField {
                 height: 48,
                 width: 48,
                 padding: const EdgeInsets.all(16),
-                child: CircularProgressIndicator(
-                  valueColor: AlwaysStoppedAnimation(
-                      Theme.of(context).unselectedWidgetColor),
+                child: adaptiveIndicator(
+                  context: context,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
               ),
               const Text(
                 '--:-- / --:--',
               ),
               Expanded(
-                child: Slider(
+                child: adaptiveSlider(
+                  context: context,
                   value: 0,
-                  thumbColor: Theme.of(context).unselectedWidgetColor,
+                  thumbColor: Theme.of(context).colorScheme.onSurfaceVariant,
                   onChanged: (value) {},
                 ),
               ),
@@ -185,15 +186,15 @@ abstract class BaseAudioField extends AudioExportField {
       builder: (context, values, _) {
         PlayerState? playerState = values.elementAt(0);
 
-        IconData iconData = Icons.play_arrow;
+        IconData iconData = Icons.play_arrow_outlined;
 
         if (playerState == null ||
             playerState.processingState == ProcessingState.completed) {
-          iconData = Icons.play_arrow;
+          iconData = Icons.play_arrow_outlined;
         } else if (playerState.playing) {
-          iconData = Icons.pause;
+          iconData = Icons.pause_outlined;
         } else {
-          iconData = Icons.play_arrow;
+          iconData = Icons.play_arrow_outlined;
         }
 
         return IconButton(
@@ -310,7 +311,8 @@ abstract class BaseAudioField extends AudioExportField {
         }
 
         return Expanded(
-          child: Slider(
+          child: adaptiveSlider(
+              context: context,
               value: sliderValue <= max ? sliderValue : 0.0,
               max: max,
               onChanged: (progress) {

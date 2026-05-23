@@ -130,11 +130,11 @@ class DictionaryPopupLayer extends StatelessWidget {
             onScrolledToBottom: onScrolledToBottom,
           ),
           if (isSearching)
-            const Center(
+            Center(
               child: SizedBox(
                 width: 24,
                 height: 24,
-                child: CircularProgressIndicator(strokeWidth: 2.5),
+                child: adaptiveIndicator(context: context, strokeWidth: 2.5),
               ),
             ),
         ],
@@ -142,11 +142,11 @@ class DictionaryPopupLayer extends StatelessWidget {
     }
 
     if (isSearching) {
-      return const Center(
+      return Center(
         child: SizedBox(
           width: 24,
           height: 24,
-          child: CircularProgressIndicator(strokeWidth: 2.5),
+          child: adaptiveIndicator(context: context, strokeWidth: 2.5),
         ),
       );
     }
@@ -159,7 +159,7 @@ class DictionaryPopupLayer extends StatelessWidget {
           message: t.no_search_results,
           iconSize: 20,
           messageStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).unselectedWidgetColor,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
         ),
       ),

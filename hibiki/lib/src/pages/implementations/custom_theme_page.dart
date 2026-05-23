@@ -271,7 +271,8 @@ class _CustomThemePageState extends BasePageState {
     final controller = TextEditingController();
     showAppDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => adaptiveAlertDialog(
+        context: ctx,
         title: Text(t.import_theme),
         content: TextField(
           controller: controller,
@@ -279,11 +280,14 @@ class _CustomThemePageState extends BasePageState {
           autofocus: true,
         ),
         actions: [
-          TextButton(
+          adaptiveDialogAction(
+            context: ctx,
             onPressed: () => Navigator.pop(ctx),
             child: Text(t.dialog_close),
           ),
-          FilledButton(
+          adaptiveDialogAction(
+            context: ctx,
+            isDefaultAction: true,
             onPressed: () {
               final result = _decodeTheme(controller.text);
               if (result == null) {
@@ -323,8 +327,8 @@ class _CustomThemePageState extends BasePageState {
                 _containerColor =
                     result.containerColor ?? generated.primaryContainer;
                 _useContainerColor = result.containerColor != null;
-                _sasayakiColor = result.sasayakiColor ??
-                    HibikiColor.defaultSasayakiColor;
+                _sasayakiColor =
+                    result.sasayakiColor ?? HibikiColor.defaultSasayakiColor;
                 _useSasayakiColor = result.sasayakiColor != null;
                 _linkColor = result.linkColor ?? generated.primary;
                 _useLinkColor = result.linkColor != null;
@@ -347,16 +351,17 @@ class _CustomThemePageState extends BasePageState {
     final ColorScheme cs = _preview;
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: adaptiveAppBar(
+        context: context,
         title: Text(t.custom_theme),
         actions: [
           IconButton(
-            icon: const Icon(Icons.content_paste),
+            icon: const Icon(Icons.content_paste_outlined),
             tooltip: t.import_theme,
             onPressed: _importTheme,
           ),
           IconButton(
-            icon: const Icon(Icons.share),
+            icon: const Icon(Icons.share_outlined),
             tooltip: t.share_theme,
             onPressed: _shareTheme,
           ),
@@ -387,15 +392,15 @@ class _CustomThemePageState extends BasePageState {
                 segments: const [
                   ButtonSegment(
                     value: 'light',
-                    icon: Icon(Icons.light_mode, size: 16),
+                    icon: Icon(Icons.light_mode_outlined, size: 16),
                   ),
                   ButtonSegment(
                     value: 'system',
-                    icon: Icon(Icons.brightness_auto, size: 16),
+                    icon: Icon(Icons.brightness_auto_outlined, size: 16),
                   ),
                   ButtonSegment(
                     value: 'dark',
-                    icon: Icon(Icons.dark_mode, size: 16),
+                    icon: Icon(Icons.dark_mode_outlined, size: 16),
                   ),
                 ],
                 selected: {_brightnessMode},
@@ -931,9 +936,8 @@ class _CustomThemePageState extends BasePageState {
   Widget _buildSasayakiPreview(ColorScheme cs) {
     final Color fc = _useFontColor ? _fontColor! : cs.onSurface;
     final Color bg = _useBgColor ? _bgColor! : cs.surfaceContainerLow;
-    final Color sas = _useSasayakiColor
-        ? _sasayakiColor!
-        : HibikiColor.defaultSasayakiColor;
+    final Color sas =
+        _useSasayakiColor ? _sasayakiColor! : HibikiColor.defaultSasayakiColor;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
@@ -1036,7 +1040,13 @@ class _CustomThemePageState extends BasePageState {
                 ],
               ),
             ),
-            Switch(value: enabled, onChanged: onEnabledChanged),
+            Builder(
+              builder: (BuildContext context) => adaptiveSwitch(
+                context: context,
+                value: enabled,
+                onChanged: onEnabledChanged,
+              ),
+            ),
           ],
         ),
         if (preview != null) ...[

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hibiki/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:spaces/spaces.dart';
 
 class DictionaryProgressDialogContent extends StatelessWidget {
@@ -27,8 +28,9 @@ class DictionaryProgressDialogContent extends StatelessWidget {
             dimension: 36,
             child: Padding(
               padding: const EdgeInsets.all(4),
-              child: CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(progressColor),
+              child: adaptiveIndicator(
+                context: context,
+                color: progressColor,
               ),
             ),
           ),

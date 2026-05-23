@@ -16,7 +16,7 @@ class LocalAudioEnhancement extends AudioEnhancement {
           label: 'Local Audio',
           description:
               'Fetch audio from the local database, online sources, or TTS.',
-          icon: Icons.audio_file,
+          icon: Icons.audio_file_outlined,
         );
 
   static const String key = 'local_audio';

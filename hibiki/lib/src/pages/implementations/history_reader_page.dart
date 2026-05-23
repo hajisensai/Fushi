@@ -112,7 +112,7 @@ class HistoryReaderPageState<T extends BaseHistoryPage>
               padding: const EdgeInsets.fromLTRB(2, 2, 2, 4),
               height: constraints.maxHeight * 0.25,
               width: double.maxFinite,
-              color: Colors.black.withOpacity(0.6),
+              color: Colors.black.withValues(alpha:0.6),
               child: Text(
                 mediaSource.getDisplayTitleFromMediaItem(item),
                 overflow: TextOverflow.ellipsis,
@@ -133,8 +133,8 @@ class HistoryReaderPageState<T extends BaseHistoryPage>
                 : ((item.position / item.duration) > 0.97)
                     ? 1
                     : (item.position / item.duration),
-            backgroundColor: Colors.white.withOpacity(0.6),
-            valueColor: const AlwaysStoppedAnimation<Color>(Colors.red),
+            backgroundColor: Colors.white.withValues(alpha:0.6),
+            color: Colors.red,
             minHeight: 2,
           ),
         ],

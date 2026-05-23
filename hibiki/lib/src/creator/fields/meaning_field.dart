@@ -14,7 +14,7 @@ class MeaningField extends Field {
           uniqueKey: key,
           label: 'Meaning',
           description: 'All dictionary definitions of a term.',
-          icon: Icons.translate_rounded,
+          icon: Icons.translate,
         );
 
   /// Get the singleton instance of this field.

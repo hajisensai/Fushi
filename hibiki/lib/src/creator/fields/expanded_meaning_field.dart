@@ -15,7 +15,7 @@ class ExpandedMeaningField extends Field {
             label: 'Expanded Meaning',
             description: 'Dictionary definitions only from expanded'
                 ' dictionaries.',
-            icon: Icons.open_in_full);
+            icon: Icons.open_in_full_outlined);
 
   /// Get the singleton instance of this field.
   static ExpandedMeaningField get instance => _instance;

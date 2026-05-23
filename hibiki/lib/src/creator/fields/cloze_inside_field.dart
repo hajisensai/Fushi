@@ -13,7 +13,7 @@ class ClozeInsideField extends Field {
           uniqueKey: key,
           label: 'Cloze Inside',
           description: 'Highlighted text in a sentence.',
-          icon: Icons.dehaze,
+          icon: Icons.dehaze_outlined,
         );
 
   /// Get the singleton instance of this field.

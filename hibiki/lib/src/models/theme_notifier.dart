@@ -113,8 +113,8 @@ class ThemeNotifier extends ChangeNotifier {
 
   // ── Theme presets ──────────────────────────────────────────────────
 
-  static const Map<String, ({Color seed, Brightness brightness})>
-      themePresets = {
+  static const Map<String, ({Color seed, Brightness brightness})> themePresets =
+      {
     'light-theme': (seed: Color(0xFF1F4959), brightness: Brightness.light),
     'ecru-theme': (seed: Color(0xFF8B7355), brightness: Brightness.light),
     'water-theme': (seed: Color(0xFF4A7C8F), brightness: Brightness.light),
@@ -177,6 +177,26 @@ class ThemeNotifier extends ChangeNotifier {
     return 'system';
   }
 
+  // ── Design system override ────────────────────────────────────────
+
+  String get designSystem => _get('design_system', defaultValue: 'auto');
+
+  Future<void> setDesignSystem(String value) async {
+    await _set('design_system', value);
+    notifyListeners();
+  }
+
+  TargetPlatform? get _overridePlatform {
+    switch (designSystem) {
+      case 'material':
+        return TargetPlatform.android;
+      case 'cupertino':
+        return TargetPlatform.iOS;
+      default:
+        return null;
+    }
+  }
+
   bool get isDarkMode {
     switch (brightnessMode) {
       case 'light':
@@ -228,10 +248,12 @@ class ThemeNotifier extends ChangeNotifier {
     final TextTheme tt = _textThemeBuilder();
     return ThemeData(
       useMaterial3: true,
+      platform: _overridePlatform,
       colorScheme: cs,
       textTheme: tt,
       appBarTheme: const AppBarTheme(
         elevation: 0,
+        scrolledUnderElevation: 3.0,
         centerTitle: false,
       ),
       switchTheme: SwitchThemeData(
@@ -251,34 +273,30 @@ class ThemeNotifier extends ChangeNotifier {
               : cs.outline;
         }),
       ),
-      bottomNavigationBarTheme: BottomNavigationBarThemeData(
+      navigationBarTheme: NavigationBarThemeData(
         elevation: 0,
-        type: BottomNavigationBarType.fixed,
-        selectedLabelStyle: tt.labelSmall,
-        unselectedLabelStyle: tt.labelSmall,
-        showSelectedLabels: true,
-        showUnselectedLabels: true,
+        labelTextStyle: WidgetStateProperty.all(tt.labelSmall),
       ),
-      popupMenuTheme: const PopupMenuThemeData(
-        shape: RoundedRectangleBorder(),
+      popupMenuTheme: PopupMenuThemeData(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(4),
+        ),
       ),
       dialogTheme: DialogThemeData(
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
         ),
       ),
-      listTileTheme: const ListTileThemeData(
-        dense: true,
-        horizontalTitleGap: 0,
-      ),
+      listTileTheme: const ListTileThemeData(),
       inputDecorationTheme: InputDecorationTheme(
-        enabledBorder: UnderlineInputBorder(
-          borderSide: BorderSide(
-            color: cs.outline,
-          ),
+        border: OutlineInputBorder(
+          borderSide: BorderSide(color: cs.outline),
         ),
-        focusedBorder: UnderlineInputBorder(
-          borderSide: BorderSide(color: cs.primary),
+        enabledBorder: OutlineInputBorder(
+          borderSide: BorderSide(color: cs.outline),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderSide: BorderSide(color: cs.primary, width: 2),
         ),
       ),
       scrollbarTheme: ScrollbarThemeData(
@@ -290,9 +308,12 @@ class ThemeNotifier extends ChangeNotifier {
         thumbColor: cs.primary,
         activeTrackColor: cs.primary,
         inactiveTrackColor: cs.outlineVariant,
-        trackShape: const RectangularSliderTrackShape(),
-        trackHeight: 2,
-        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+      ),
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(4),
+        ),
       ),
     );
   }
