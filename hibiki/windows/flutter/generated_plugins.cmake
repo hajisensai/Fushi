@@ -3,6 +3,7 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
+  dynamic_color
   flutter_inappwebview_windows
   just_audio_windows
   permission_handler_windows
