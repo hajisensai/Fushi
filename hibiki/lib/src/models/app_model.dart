@@ -961,29 +961,28 @@ class AppModel with ChangeNotifier {
       debugPrint('[Hibiki] init: Drift database');
       _database = HibikiDatabase(_databaseDirectory.path);
 
-      /// Load all preferences into memory for synchronous reads.
+      /// Prepare all repositories (objects created first, then loaded in
+      /// parallel to avoid serial await chains).
       _prefsRepo = PreferencesRepository(_database);
-      await prefsRepo.loadFromDb();
+      final BaseAnkiRepository ankiRepo =
+          Platform.isAndroid ? AnkiRepository() : AnkiConnectRepository();
+      final profileRepo = ProfileRepository(_database, ankiRepo);
+      dictRepo = DictionaryRepository(_database,
+          onCacheRebuild: _rebuildDictPathsCache);
+      mediaHistoryRepo = MediaHistoryRepository(_database);
+
+      debugPrint('[Hibiki] init: repositories (parallel)');
+      await Future.wait(<Future<void>>[
+        prefsRepo.loadFromDb(),
+        profileRepo.ensureDefaultProfile(),
+        dictRepo.loadFromDb(),
+        mediaHistoryRepo.loadFromDb(),
+      ]);
       prefsRepo.addListener(notifyListeners);
       _applyMemoryPolicy();
 
       /// Create theme notifier (extracted subsystem).
       themeNotifier = ThemeNotifier(_database, () => textTheme);
-
-      /// Ensure default profile exists on first launch.
-      final BaseAnkiRepository ankiRepo =
-          Platform.isAndroid ? AnkiRepository() : AnkiConnectRepository();
-      final profileRepo = ProfileRepository(_database, ankiRepo);
-      await profileRepo.ensureDefaultProfile();
-
-      /// Load dictionary metadata + history caches.
-      dictRepo = DictionaryRepository(_database,
-          onCacheRebuild: _rebuildDictPathsCache);
-      await dictRepo.loadFromDb();
-
-      /// Load media items and search history caches.
-      mediaHistoryRepo = MediaHistoryRepository(_database);
-      await mediaHistoryRepo.loadFromDb();
 
       /// Permission requests are deferred to the point of use (file import,
       /// Anki export) so they do not block startup.
@@ -1054,67 +1053,37 @@ class AppModel with ChangeNotifier {
       ]);
 
       if (_shouldRunTtuMigration()) {
-        debugPrint('[Hibiki] init: ttu → EpubBooks migration');
-        try {
-          final migServer = await TtuMigrationServer.start(targetLanguage);
-          final int migCount = await TtuMigration.migrateIfNeeded(
-            _database,
-            migServer.boundPort!,
-          );
-          if (migCount > 0) {
-            debugPrint('[Hibiki] ttu migration: $migCount books migrated');
-          }
-          final int blobCount = await TtuMigration.remediateMissingBlobs(
-            _database,
-            migServer.boundPort!,
-          );
-          if (blobCount > 0) {
-            debugPrint('[Hibiki] ttu blob remediation: $blobCount books fixed');
-          }
-          final int tocCount = await TtuMigration.remediateMissingToc(
-            _database,
-            migServer.boundPort!,
-          );
-          if (tocCount > 0) {
-            debugPrint('[Hibiki] ttu TOC remediation: $tocCount books fixed');
-          }
-          final int charCount = await TtuMigration.remediateMissingCharacters(
-            _database,
-          );
-          if (charCount > 0) {
-            debugPrint(
-                '[Hibiki] characters remediation: $charCount books fixed');
-          }
-        } catch (e, stack) {
-          ErrorLogService.instance.log('AppModel.ttuMigration', e, stack);
-          debugPrint('[Hibiki] ttu migration failed (non-fatal): $e');
-        }
+        debugPrint('[Hibiki] init: ttu migration (background, non-blocking)');
+        unawaited(_runTtuMigrationAsync());
       } else {
         debugPrint('[Hibiki] init: ttu migration skipped '
             '(desktop or version >= 0.5.0)');
       }
 
-      debugPrint('[Hibiki] init: search preload');
-
-      /// Preloads the search database in memory.
-      searchDictionary(
-        searchTerm: targetLanguage.helloWorld,
-        searchWithWildcards: false,
-        useCache: false,
-      ).then((_) {
-        /// Preloads for wildcard searches.
+      debugPrint('[Hibiki] init: search preload (parallel)');
+      final String warmupChar =
+          targetLanguage.helloWorld.substring(0, 1);
+      unawaited(Future.wait(<Future<void>>[
         searchDictionary(
-          searchTerm: '${targetLanguage.helloWorld.substring(0, 1)}?',
+          searchTerm: targetLanguage.helloWorld,
+          searchWithWildcards: false,
+          useCache: false,
+        ),
+        searchDictionary(
+          searchTerm: '$warmupChar?',
           searchWithWildcards: true,
           useCache: false,
-        ).then((_) {
-          searchDictionary(
-            searchTerm: '${targetLanguage.helloWorld.substring(0, 1)}*',
-            searchWithWildcards: true,
-            useCache: false,
-          );
-        });
-      });
+        ),
+        searchDictionary(
+          searchTerm: '$warmupChar*',
+          searchWithWildcards: true,
+          useCache: false,
+        ),
+      ]).catchError((Object e, StackTrace stack) {
+        ErrorLogService.instance.log('AppModel.searchWarmup', e, stack);
+        debugPrint('[Hibiki] search warmup failed (non-fatal): $e');
+        return <void>[];
+      }));
 
       debugPrint('[Hibiki] init: DONE');
       _isInitialised = true;
@@ -1126,6 +1095,43 @@ class AppModel with ChangeNotifier {
       ErrorLogService.instance.log('AppModel.initialise', e, stack);
       _initError = '$e';
       notifyListeners();
+    }
+  }
+
+  Future<void> _runTtuMigrationAsync() async {
+    try {
+      final migServer = await TtuMigrationServer.start(targetLanguage);
+      final int migCount = await TtuMigration.migrateIfNeeded(
+        _database,
+        migServer.boundPort!,
+      );
+      if (migCount > 0) {
+        debugPrint('[Hibiki] ttu migration: $migCount books migrated');
+      }
+      final int blobCount = await TtuMigration.remediateMissingBlobs(
+        _database,
+        migServer.boundPort!,
+      );
+      if (blobCount > 0) {
+        debugPrint('[Hibiki] ttu blob remediation: $blobCount books fixed');
+      }
+      final int tocCount = await TtuMigration.remediateMissingToc(
+        _database,
+        migServer.boundPort!,
+      );
+      if (tocCount > 0) {
+        debugPrint('[Hibiki] ttu TOC remediation: $tocCount books fixed');
+      }
+      final int charCount = await TtuMigration.remediateMissingCharacters(
+        _database,
+      );
+      if (charCount > 0) {
+        debugPrint('[Hibiki] characters remediation: $charCount books fixed');
+      }
+      debugPrint('[Hibiki] ttu migration completed in background');
+    } catch (e, stack) {
+      ErrorLogService.instance.log('AppModel.ttuMigration', e, stack);
+      debugPrint('[Hibiki] ttu migration failed (non-fatal): $e');
     }
   }
 
@@ -1967,7 +1973,7 @@ class AppModel with ChangeNotifier {
 
     final int effectiveMaxTerms = overrideMaximumTerms ?? maximumTerms;
     final String cacheKey =
-        '$searchTerm/$effectiveMaxTerms/$maximumDictionarySearchResults';
+        '${searchTerm.length}:$searchTerm/$effectiveMaxTerms/$maximumDictionarySearchResults';
 
     final cached = dictRepo.getCachedSearch(cacheKey);
     if (useCache && cached != null) {

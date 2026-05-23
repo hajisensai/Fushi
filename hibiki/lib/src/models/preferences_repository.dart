@@ -393,53 +393,56 @@ class PreferencesRepository extends ChangeNotifier {
 
   // ── blur options ─────────────────────────────────────────────────────
 
+  static const _defaultBlurJson =
+      '{"w":200,"h":200,"l":-1,"t":-1,"r":0,"g":0,"b":0,"o":0,"br":5,"v":false}';
+
   BlurOptions get blurOptions {
-    final double width = getPref('blur_width', defaultValue: 200.0) as double;
-    final double height = getPref('blur_height', defaultValue: 200.0) as double;
-    final double left = getPref('blur_left', defaultValue: -1.0) as double;
-    final double top = getPref('blur_top', defaultValue: -1.0) as double;
-
-    final int red =
-        getPref('blur_red', defaultValue: Colors.black.withValues(alpha: 0).red)
-            as int;
-    final int green =
-        getPref('blur_green', defaultValue: Colors.black.withValues(alpha: 0).green)
-            as int;
-    final int blue =
-        getPref('blur_blue', defaultValue: Colors.black.withValues(alpha: 0).blue)
-            as int;
-    final double opacity = getPref('blur_opacity',
-        defaultValue: Colors.black.withValues(alpha: 0).opacity) as double;
-
-    final Color color = Color.fromRGBO(red, green, blue, opacity);
-    final double blurRadius =
-        getPref('blur_radius', defaultValue: 5.0) as double;
-    final bool visible = getPref('blur_visible', defaultValue: false) as bool;
-
-    return BlurOptions(
-      width: width,
-      height: height,
-      left: left,
-      top: top,
-      color: color,
-      blurRadius: blurRadius,
-      visible: visible,
-    );
+    final String raw =
+        getPref('blur_options_json', defaultValue: _defaultBlurJson) as String;
+    try {
+      final Map<String, dynamic> m =
+          Map<String, dynamic>.from(jsonDecode(raw) as Map);
+      return BlurOptions(
+        width: (m['w'] as num).toDouble(),
+        height: (m['h'] as num).toDouble(),
+        left: (m['l'] as num).toDouble(),
+        top: (m['t'] as num).toDouble(),
+        color: Color.fromRGBO(
+          (m['r'] as num).toInt(),
+          (m['g'] as num).toInt(),
+          (m['b'] as num).toInt(),
+          (m['o'] as num).toDouble(),
+        ),
+        blurRadius: (m['br'] as num).toDouble(),
+        visible: m['v'] as bool,
+      );
+    } catch (_) {
+      return BlurOptions(
+        width: 200,
+        height: 200,
+        left: -1,
+        top: -1,
+        color: Colors.black.withValues(alpha: 0),
+        blurRadius: 5,
+        visible: false,
+      );
+    }
   }
 
   Future<void> setBlurOptions(BlurOptions options) async {
-    await setPref('blur_width', options.width);
-    await setPref('blur_height', options.height);
-    await setPref('blur_left', options.left);
-    await setPref('blur_top', options.top);
-
-    await setPref('blur_red', options.color.red);
-    await setPref('blur_green', options.color.green);
-    await setPref('blur_blue', options.color.blue);
-    await setPref('blur_opacity', options.color.opacity);
-
-    await setPref('blur_radius', options.blurRadius);
-    await setPref('blur_visible', options.visible);
+    final String json = jsonEncode(<String, dynamic>{
+      'w': options.width,
+      'h': options.height,
+      'l': options.left,
+      't': options.top,
+      'r': options.color.red,
+      'g': options.color.green,
+      'b': options.color.blue,
+      'o': options.color.opacity,
+      'br': options.blurRadius,
+      'v': options.visible,
+    });
+    await setPref('blur_options_json', json);
     notifyListeners();
   }
 
