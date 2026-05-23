@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/utils/misc/hibiki_toast.dart';
@@ -56,7 +57,8 @@ class ReaderHibikiPage extends BaseSourcePage {
   final Bookmark? initialBookmarkJump;
 
   @override
-  BaseSourcePageState<ReaderHibikiPage> createState() => _ReaderHibikiPageState();
+  BaseSourcePageState<ReaderHibikiPage> createState() =>
+      _ReaderHibikiPageState();
 }
 
 class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
@@ -90,6 +92,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
   List<int> _chapterCharCounts = [];
   List<int> _chapterCumulativeChars = [];
+
+  final Map<String, Uint8List> _sanitizedCssCache = {};
+  String? _cachedStyleTag;
 
   Timer? _saveDebounce;
   Timer? _progressPollTimer;
@@ -1008,7 +1013,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       if (!fontFile.existsSync()) {
         return _notFound('font not found: $fontPath');
       }
-      final Uint8List data = fontFile.readAsBytesSync();
+      final Uint8List data = await fontFile.readAsBytes();
       if (!_isValidFontData(data)) {
         return _notFound('font corrupted: $fontPath (${data.length} bytes)');
       }
@@ -1041,13 +1046,15 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       return _notFound('resource not found: $epubPath (resolved: $filePath)');
     }
 
-    Uint8List data = file.readAsBytesSync();
+    Uint8List data = await file.readAsBytes();
     final String mime = fallbackMimeType(filePath);
 
     if (mime == 'text/css') {
-      final String cssText = utf8.decode(data);
-      final String sanitized = ReaderResourceSanitizer.sanitizeCss(cssText);
-      data = Uint8List.fromList(utf8.encode(sanitized));
+      data = _sanitizedCssCache.putIfAbsent(filePath, () {
+        final String cssText = utf8.decode(data);
+        final String sanitized = ReaderResourceSanitizer.sanitizeCss(cssText);
+        return Uint8List.fromList(utf8.encode(sanitized));
+      });
     }
 
     if ((mime == 'text/html' || mime.contains('xhtml')) && _settings != null) {
@@ -1082,6 +1089,10 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   bool get _isCustomTheme => appModel.appThemeKey == 'custom-theme';
 
   String _buildStyleTag() {
+    return _cachedStyleTag ??= _computeStyleTag();
+  }
+
+  String _computeStyleTag() {
     return '<style id="hoshi-reader-style">\n${ReaderContentStyles.css(
       settings: _settings!,
       themeOverride: appModel.appThemeKey,
@@ -1099,8 +1110,13 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     )}\n</style>';
   }
 
+  void _invalidateStyleCache() {
+    _cachedStyleTag = null;
+  }
+
   Future<void> _applyStylesLive() async {
     if (_controller == null || _settings == null) return;
+    _invalidateStyleCache();
     await _syncSettingsFromHive();
     if (!mounted || _controller == null) return;
     if (_lyricsMode) {
@@ -1409,7 +1425,8 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
           callback: (List<dynamic> args) {
             if (args.isEmpty || _lyricsMode) return;
             final String dir = args[0] as String;
-            final bool invert = ReaderHibikiSource.instance.invertSwipeDirection;
+            final bool invert =
+                ReaderHibikiSource.instance.invertSwipeDirection;
             if (dir == 'left') {
               _paginate(invert
                   ? ReaderNavigationDirection.backward
@@ -1524,7 +1541,8 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
           // valid response. The content IS rendered — treat as onLoadStop.
           if (Platform.isWindows &&
               request.url.host == ReaderHibikiSource.kHost) {
-            debugPrint('[ReaderHibiki] Windows: treating intercepted navigation '
+            debugPrint(
+                '[ReaderHibiki] Windows: treating intercepted navigation '
                 'error as successful load');
             _isNavigatingToChapter = false;
             await _onChapterLoadComplete(controller);
@@ -2944,7 +2962,6 @@ window.flutter_inappwebview.callHandler('spreadReady');
     }
     final File file = File(filePath);
     if (!file.existsSync()) return;
-    final Uint8List bytes = file.readAsBytesSync();
     Navigator.push(
       context,
       PageRouteBuilder<void>(
@@ -2957,7 +2974,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
             minScale: 0.5,
             maxScale: 10,
             child: Center(
-              child: Image.memory(bytes, fit: BoxFit.contain),
+              child: Image.file(file, fit: BoxFit.contain),
             ),
           ),
         ),
@@ -3660,6 +3677,8 @@ window.flutter_inappwebview.callHandler('spreadReady');
 
   Future<void> _reloadWithCurrentSettings() async {
     if (_controller == null) return;
+    _sanitizedCssCache.clear();
+    _invalidateStyleCache();
     if (_lyricsMode) {
       await _loadLyricsPage();
       return;

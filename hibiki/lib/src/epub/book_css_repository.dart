@@ -86,8 +86,12 @@ class BookCssRepository {
     return result;
   }
 
-  String readCss(CssFileEntry entry) {
+  String readCssSync(CssFileEntry entry) {
     return File(entry.absolutePath).readAsStringSync();
+  }
+
+  Future<String> readCss(CssFileEntry entry) {
+    return File(entry.absolutePath).readAsString();
   }
 
   /// Safe write: backup original if needed, write via temp+rename,

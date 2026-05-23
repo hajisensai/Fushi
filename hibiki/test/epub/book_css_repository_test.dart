@@ -124,7 +124,7 @@ void main() {
       _createFile(tmpDir, 'style.css', 'body { color: red; }');
       final repo = BookCssRepository(tmpDir.path);
       final entry = repo.discoverCssFiles().first;
-      expect(repo.readCss(entry), 'body { color: red; }');
+      expect(repo.readCssSync(entry), 'body { color: red; }');
     });
   });
 
