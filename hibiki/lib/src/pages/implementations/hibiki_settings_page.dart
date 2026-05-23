@@ -18,144 +18,25 @@ Widget _buildSwitch({
   String? hint,
   IconData? icon,
 }) {
-  return SwitchListTile.adaptive(
-    dense: true,
-    contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-    secondary: icon != null ? Icon(icon, size: 20) : null,
-    title: Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Flexible(child: Text(label)),
-        if (hint != null) ...[
-          const SizedBox(width: 4),
-          _HintIcon(hint: hint),
-        ],
-      ],
-    ),
+  return AdaptiveSettingsSwitchRow(
+    title: label,
+    subtitle: hint,
+    icon: icon,
     value: value,
     onChanged: onChanged,
   );
 }
 
-Widget _buildSegmentedRow<T extends Object>({
-  required BuildContext context,
-  required String label,
-  required List<ButtonSegment<T>> segments,
-  required Set<T> selected,
-  required ValueChanged<Set<T>> onSelectionChanged,
-  String? hint,
-  bool scrollable = false,
-}) {
-  final button = adaptiveSegmentedButton<T>(
-    context: context,
-    segments: segments,
-    selected: selected,
-    onSelectionChanged: onSelectionChanged,
-    style: kSettingsSegmentedStyle,
-  );
-  if (scrollable) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(label),
-              if (hint != null) ...[
-                const SizedBox(width: 4),
-                _HintIcon(hint: hint),
-              ],
-            ],
-          ),
-          const SizedBox(height: 6),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: button,
-          ),
-        ],
-      ),
-    );
-  }
-  return Padding(
-    padding: const EdgeInsets.symmetric(vertical: 4),
-    child: Row(
-      children: [
-        Expanded(
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Flexible(child: Text(label)),
-              if (hint != null) ...[
-                const SizedBox(width: 4),
-                _HintIcon(hint: hint),
-              ],
-            ],
-          ),
-        ),
-        button,
-      ],
-    ),
-  );
-}
-
 Widget _buildTapRow({
-  required BuildContext context,
   required IconData icon,
   required String label,
   required VoidCallback onTap,
 }) {
-  final cs = Theme.of(context).colorScheme;
-  return InkWell(
+  return AdaptiveSettingsNavigationRow(
+    title: label,
+    icon: icon,
     onTap: onTap,
-    child: Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        children: [
-          Icon(icon, size: 24),
-          const Space.normal(),
-          Expanded(child: Text(label)),
-          Icon(Icons.chevron_right, size: 20, color: cs.onSurfaceVariant),
-        ],
-      ),
-    ),
   );
-}
-
-class _HintIcon extends StatelessWidget {
-  const _HintIcon({required this.hint});
-  final String hint;
-
-  @override
-  Widget build(BuildContext context) {
-    final Widget icon = Icon(
-      Icons.info_outline,
-      size: 16,
-      color:
-          Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
-    );
-    if (isDesktopPlatform) {
-      return Tooltip(message: hint, child: icon);
-    }
-    return GestureDetector(
-      onTap: () => showAppDialog(
-        context: context,
-        builder: (ctx) => adaptiveAlertDialog(
-          context: ctx,
-          content: Text(hint),
-          actions: [
-            adaptiveDialogAction(
-              context: ctx,
-              onPressed: () => Navigator.pop(ctx),
-              child: Text(t.dialog_close),
-            ),
-          ],
-        ),
-      ),
-      child: icon,
-    );
-  }
 }
 
 List<Widget> _buildReaderOnlySwitches(VoidCallback rebuild,
@@ -226,28 +107,17 @@ List<Widget> _buildReaderOnlySwitches(VoidCallback rebuild,
         rebuild();
       },
     ),
-    Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          Expanded(child: Text(t.dismiss_swipe_sensitivity)),
-          SizedBox(
-            width: 140,
-            child: Builder(
-              builder: (BuildContext context) => adaptiveSlider(
-                context: context,
-                value: _source.dismissSwipeSensitivity,
-                min: 0.1,
-                divisions: 9,
-                label: _source.dismissSwipeSensitivity.toStringAsFixed(1),
-                onChanged: (v) {
-                  _source.setDismissSwipeSensitivity(v);
-                  rebuild();
-                },
-              ),
-            ),
-          ),
-        ],
+    Builder(
+      builder: (BuildContext context) => AdaptiveSettingsSliderRow(
+        title: t.dismiss_swipe_sensitivity,
+        value: _source.dismissSwipeSensitivity,
+        min: 0.1,
+        divisions: 9,
+        label: _source.dismissSwipeSensitivity.toStringAsFixed(1),
+        onChanged: (v) {
+          _source.setDismissSwipeSensitivity(v);
+          rebuild();
+        },
       ),
     ),
     if (appModel != null)
@@ -256,29 +126,18 @@ List<Widget> _buildReaderOnlySwitches(VoidCallback rebuild,
 }
 
 Widget _buildPageTurningSpeed(VoidCallback rebuild) {
-  return Padding(
-    padding: const EdgeInsets.symmetric(vertical: 4),
-    child: Row(
-      children: [
-        Expanded(child: Text(t.volume_button_turning_speed)),
-        SizedBox(
-          width: 140,
-          child: Builder(
-            builder: (BuildContext context) => adaptiveSlider(
-              context: context,
-              value: _source.volumePageTurningSpeed.toDouble(),
-              min: 10,
-              max: 500,
-              divisions: 49,
-              label: '${_source.volumePageTurningSpeed}',
-              onChanged: (v) {
-                _source.setVolumePageTurningSpeed(v.round());
-                rebuild();
-              },
-            ),
-          ),
-        ),
-      ],
+  return Builder(
+    builder: (BuildContext context) => AdaptiveSettingsSliderRow(
+      title: t.volume_button_turning_speed,
+      value: _source.volumePageTurningSpeed.toDouble(),
+      min: 10,
+      max: 500,
+      divisions: 49,
+      label: '${_source.volumePageTurningSpeed}',
+      onChanged: (v) {
+        _source.setVolumePageTurningSpeed(v.round());
+        rebuild();
+      },
     ),
   );
 }
@@ -288,7 +147,6 @@ Widget _buildFontEntry(BuildContext context) {
   final fonts = _source.customFonts;
   final enabledCount = fonts.where((e) => e['enabled'] as bool? ?? true).length;
   return _buildTapRow(
-    context: context,
     icon: Icons.font_download_outlined,
     label:
         enabledCount > 0 ? '${t.custom_fonts} ($enabledCount)' : t.custom_fonts,
@@ -409,33 +267,27 @@ Widget _buildThemeSelector(AppModel appModel,
 
 Widget _buildBrightnessSelector(AppModel appModel,
     {required BuildContext navContext}) {
-  return Row(
-    children: [
-      Expanded(child: Text(t.dark_mode)),
-      adaptiveSegmentedButton<String>(
-        context: navContext,
-        segments: const [
-          ButtonSegment(
-            value: 'light',
-            icon: Icon(Icons.light_mode_outlined, size: 16),
-          ),
-          ButtonSegment(
-            value: 'system',
-            icon: Icon(Icons.brightness_auto_outlined, size: 16),
-          ),
-          ButtonSegment(
-            value: 'dark',
-            icon: Icon(Icons.dark_mode_outlined, size: 16),
-          ),
-        ],
-        selected: {appModel.brightnessMode},
-        onSelectionChanged: (selected) {
-          appModel.setBrightnessMode(selected.first);
-          ReaderHibikiSource.onSettingsChangedLive?.call();
-        },
-        style: kSettingsSegmentedStyle,
+  return AdaptiveSettingsSegmentedRow<String>(
+    title: t.dark_mode,
+    segments: const [
+      ButtonSegment(
+        value: 'light',
+        icon: Icon(Icons.light_mode_outlined, size: 16),
+      ),
+      ButtonSegment(
+        value: 'system',
+        icon: Icon(Icons.brightness_auto_outlined, size: 16),
+      ),
+      ButtonSegment(
+        value: 'dark',
+        icon: Icon(Icons.dark_mode_outlined, size: 16),
       ),
     ],
+    selected: appModel.brightnessMode,
+    onChanged: (String value) {
+      appModel.setBrightnessMode(value);
+      ReaderHibikiSource.onSettingsChangedLive?.call();
+    },
   );
 }
 
@@ -496,26 +348,37 @@ class _HibikiSettingsDialogPageState extends BasePageState {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _buildThemeSelector(appModel, navContext: context),
-              const HibikiDivider(),
-              _buildFontEntry(context),
-              _buildTapRow(
-                context: context,
-                icon: Icons.text_fields,
-                label: t.display_settings,
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    adaptivePageRoute(
-                        builder: (_) => const DisplaySettingsPage()),
-                  ).then((_) => setState(() {}));
-                },
+              AdaptiveSettingsSection(
+                title: t.section_interface,
+                children: [
+                  _buildThemeSelector(appModel, navContext: context),
+                  _buildFontEntry(context),
+                  _buildTapRow(
+                    icon: Icons.text_fields,
+                    label: t.display_settings,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        adaptivePageRoute(
+                            builder: (_) => const DisplaySettingsPage()),
+                      ).then((_) => setState(() {}));
+                    },
+                  ),
+                ],
               ),
-              const HibikiDivider(),
-              ..._buildReaderOnlySwitches(() => setState(() {}),
-                  appModel: appModel),
-              const HibikiDivider(),
-              _buildPageTurningSpeed(() => setState(() {})),
+              AdaptiveSettingsSection(
+                title: t.section_navigation,
+                children: _buildReaderOnlySwitches(
+                  () => setState(() {}),
+                  appModel: appModel,
+                ),
+              ),
+              AdaptiveSettingsSection(
+                title: t.volume_button_page_turning,
+                children: [
+                  _buildPageTurningSpeed(() => setState(() {})),
+                ],
+              ),
             ],
           ),
         ),
@@ -539,87 +402,104 @@ class _HibikiSettingsContentState extends BasePageState {
     return DesktopContentLayout(
       kind: DesktopContentKind.settings,
       child: ListView(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: EdgeInsets.fromLTRB(
+          16,
+          8,
+          16,
+          8 + MediaQuery.of(context).padding.bottom,
+        ),
         children: [
-          _buildThemeSelector(appModel, navContext: context),
-          const HibikiDivider(),
-          ListTile(
-            dense: true,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-            leading: const Icon(Icons.person_outline, size: 24),
-            title: const ProfileSelector(),
+          AdaptiveSettingsSection(
+            title: t.section_interface,
+            children: [
+              _buildThemeSelector(appModel, navContext: context),
+              AdaptiveSettingsRow(
+                title: t.profile_label,
+                icon: Icons.person_outline,
+                trailing: const ProfileSelector(),
+              ),
+            ],
           ),
-          _categoryTile(
-            context,
-            icon: Icons.style_outlined,
-            label: t.anki_settings_label,
-            onTap: () {
-              Navigator.push(
+          AdaptiveSettingsSection(
+            children: [
+              _categoryTile(
                 context,
-                adaptivePageRoute(builder: (_) => const AnkiSettingsPage()),
-              );
-            },
-          ),
-          _categoryTile(
-            context,
-            icon: Icons.auto_stories_outlined,
-            label: t.reader_settings_section,
-            onTap: () {
-              Navigator.push(
+                icon: Icons.style_outlined,
+                label: t.anki_settings_label,
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    adaptivePageRoute(builder: (_) => const AnkiSettingsPage()),
+                  );
+                },
+              ),
+              _categoryTile(
                 context,
-                adaptivePageRoute(
-                    builder: (_) => const _ReaderBehaviorSettingsPage()),
-              ).then((_) => setState(() {}));
-            },
-          ),
-          _categoryTile(
-            context,
-            icon: Icons.system_update_outlined,
-            label: t.section_update,
-            onTap: () {
-              Navigator.push(
+                icon: Icons.auto_stories_outlined,
+                label: t.reader_settings_section,
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    adaptivePageRoute(
+                        builder: (_) => const _ReaderBehaviorSettingsPage()),
+                  ).then((_) => setState(() {}));
+                },
+              ),
+              _categoryTile(
                 context,
-                adaptivePageRoute(builder: (_) => const _UpdateSettingsPage()),
-              ).then((_) => setState(() {}));
-            },
-          ),
-          _categoryTile(
-            context,
-            icon: Icons.widgets_outlined,
-            label: t.miscellaneous_settings,
-            onTap: () {
-              Navigator.push(
+                icon: Icons.system_update_outlined,
+                label: t.section_update,
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    adaptivePageRoute(
+                        builder: (_) => const _UpdateSettingsPage()),
+                  ).then((_) => setState(() {}));
+                },
+              ),
+              _categoryTile(
                 context,
-                adaptivePageRoute(
-                    builder: (_) => const MiscellaneousSettingsPage()),
-              );
-            },
+                icon: Icons.widgets_outlined,
+                label: t.miscellaneous_settings,
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    adaptivePageRoute(
+                        builder: (_) => const MiscellaneousSettingsPage()),
+                  );
+                },
+              ),
+            ],
           ),
-          _categoryTile(
-            context,
-            icon: Icons.bug_report_outlined,
-            label:
-                t.error_log_label(n: ErrorLogService.instance.entries.length),
-            onTap: () {
-              Navigator.push(
+          AdaptiveSettingsSection(
+            children: [
+              _categoryTile(
                 context,
-                adaptivePageRoute(builder: (_) => const ErrorLogPage()),
-              ).then((_) => setState(() {}));
-            },
-          ),
-          if (DebugLogService.instance.enabled)
-            _categoryTile(
-              context,
-              icon: Icons.terminal_outlined,
-              label: t.debug_log_title(
-                  count: DebugLogService.instance.entries.length),
-              onTap: () {
-                Navigator.push(
+                icon: Icons.bug_report_outlined,
+                label: t.error_log_label(
+                    n: ErrorLogService.instance.entries.length),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    adaptivePageRoute(builder: (_) => const ErrorLogPage()),
+                  ).then((_) => setState(() {}));
+                },
+              ),
+              if (DebugLogService.instance.enabled)
+                _categoryTile(
                   context,
-                  adaptivePageRoute(builder: (_) => const DebugLogPage()),
-                ).then((_) => setState(() {}));
-              },
-            ),
+                  icon: Icons.terminal_outlined,
+                  label: t.debug_log_title(
+                      count: DebugLogService.instance.entries.length),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      adaptivePageRoute(builder: (_) => const DebugLogPage()),
+                    ).then((_) => setState(() {}));
+                  },
+                ),
+            ],
+          ),
         ],
       ),
     );
@@ -631,12 +511,9 @@ class _HibikiSettingsContentState extends BasePageState {
     required String label,
     required VoidCallback onTap,
   }) {
-    return ListTile(
-      dense: true,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-      leading: Icon(icon, size: 24),
-      title: Text(label),
-      trailing: const Icon(Icons.chevron_right, size: 20),
+    return AdaptiveSettingsNavigationRow(
+      title: label,
+      icon: icon,
       onTap: onTap,
     );
   }
@@ -654,48 +531,51 @@ class _ReaderBehaviorSettingsPage extends BasePage {
 class _ReaderBehaviorSettingsPageState extends BasePageState {
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: adaptiveAppBar(
-          context: context, title: Text(t.reader_settings_section)),
-      body: ListView(
-        padding: EdgeInsets.fromLTRB(
-          16,
-          8,
-          16,
-          8 + MediaQuery.of(context).padding.bottom,
+    return AdaptiveSettingsScaffold(
+      title: Text(t.reader_settings_section),
+      children: [
+        AdaptiveSettingsSection(
+          title: t.section_interface,
+          children: [
+            _buildFontEntry(context),
+            _buildTapRow(
+              icon: Icons.text_fields,
+              label: t.display_settings,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  adaptivePageRoute(
+                      builder: (_) => const DisplaySettingsPage()),
+                ).then((_) => setState(() {}));
+              },
+            ),
+            _buildTapRow(
+              icon: Icons.audiotrack_outlined,
+              label: t.audiobook_settings,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  adaptivePageRoute(
+                      builder: (_) => const _AudiobookSettingsPage()),
+                ).then((_) => setState(() {}));
+              },
+            ),
+          ],
         ),
-        children: [
-          _buildFontEntry(context),
-          _buildTapRow(
-            context: context,
-            icon: Icons.text_fields,
-            label: t.display_settings,
-            onTap: () {
-              Navigator.push(
-                context,
-                adaptivePageRoute(builder: (_) => const DisplaySettingsPage()),
-              ).then((_) => setState(() {}));
-            },
+        AdaptiveSettingsSection(
+          title: t.section_navigation,
+          children: _buildReaderOnlySwitches(
+            () => setState(() {}),
+            appModel: appModel,
           ),
-          _buildTapRow(
-            context: context,
-            icon: Icons.audiotrack_outlined,
-            label: t.audiobook_settings,
-            onTap: () {
-              Navigator.push(
-                context,
-                adaptivePageRoute(
-                    builder: (_) => const _AudiobookSettingsPage()),
-              ).then((_) => setState(() {}));
-            },
-          ),
-          const HibikiDivider(),
-          ..._buildReaderOnlySwitches(() => setState(() {}),
-              appModel: appModel),
-          const HibikiDivider(),
-          _buildPageTurningSpeed(() => setState(() {})),
-        ],
-      ),
+        ),
+        AdaptiveSettingsSection(
+          title: t.volume_button_page_turning,
+          children: [
+            _buildPageTurningSpeed(() => setState(() {})),
+          ],
+        ),
+      ],
     );
   }
 }
@@ -710,70 +590,44 @@ class _AudiobookSettingsPage extends BasePage {
 class _AudiobookSettingsPageState extends BasePageState {
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar:
-          adaptiveAppBar(context: context, title: Text(t.audiobook_settings)),
-      body: ListView(
-        padding: EdgeInsets.fromLTRB(
-          16,
-          8,
-          16,
-          8 + MediaQuery.of(context).padding.bottom,
-        ),
-        children: [
-          _buildSwitch(
-            label: t.show_media_notification,
-            value: appModel.showMediaNotification,
-            onChanged: (_) {
-              appModel.toggleShowMediaNotification();
-              setState(() {});
-            },
-          ),
-          _buildSwitch(
-            label: t.show_floating_lyric,
-            value: appModel.showFloatingLyric,
-            onChanged: (_) async {
-              await appModel.setShowFloatingLyric(!appModel.showFloatingLyric);
-              setState(() {});
-            },
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Row(
-              children: [
-                Expanded(child: Text(t.floating_lyric_font_size)),
-                IconButton(
-                  icon: const Icon(Icons.remove, size: 18),
-                  visualDensity: VisualDensity.compact,
-                  onPressed: () async {
-                    final double v =
-                        (appModel.floatingLyricFontSize - 1).clamp(8, 64);
-                    await appModel.setFloatingLyricFontSize(v);
-                    setState(() {});
-                  },
-                ),
-                SizedBox(
-                  width: 42,
-                  child: Text(
-                    appModel.floatingLyricFontSize.round().toString(),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.add, size: 18),
-                  visualDensity: VisualDensity.compact,
-                  onPressed: () async {
-                    final double v =
-                        (appModel.floatingLyricFontSize + 1).clamp(8, 64);
-                    await appModel.setFloatingLyricFontSize(v);
-                    setState(() {});
-                  },
-                ),
-              ],
+    return AdaptiveSettingsScaffold(
+      title: Text(t.audiobook_settings),
+      children: [
+        AdaptiveSettingsSection(
+          title: t.section_audiobook,
+          children: [
+            _buildSwitch(
+              label: t.show_media_notification,
+              value: appModel.showMediaNotification,
+              onChanged: (_) {
+                appModel.toggleShowMediaNotification();
+                setState(() {});
+              },
             ),
-          ),
-        ],
-      ),
+            _buildSwitch(
+              label: t.show_floating_lyric,
+              value: appModel.showFloatingLyric,
+              onChanged: (_) async {
+                await appModel
+                    .setShowFloatingLyric(!appModel.showFloatingLyric);
+                setState(() {});
+              },
+            ),
+            AdaptiveSettingsStepperRow(
+              title: t.floating_lyric_font_size,
+              value: appModel.floatingLyricFontSize,
+              step: 1,
+              min: 8,
+              max: 64,
+              format: (double value) => value.round().toString(),
+              onChanged: (double value) async {
+                await appModel.setFloatingLyricFontSize(value);
+                setState(() {});
+              },
+            ),
+          ],
+        ),
+      ],
     );
   }
 }
@@ -788,74 +642,75 @@ class _UpdateSettingsPage extends BasePage {
 class _UpdateSettingsPageState extends BasePageState {
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: adaptiveAppBar(context: context, title: Text(t.section_update)),
-      body: ListView(
-        padding: EdgeInsets.fromLTRB(
-          16,
-          8,
-          16,
-          8 + MediaQuery.of(context).padding.bottom,
+    return AdaptiveSettingsScaffold(
+      title: Text(t.section_update),
+      children: [
+        AdaptiveSettingsSection(
+          title: t.section_update,
+          children: [
+            _buildSwitch(
+              label: t.update_never_remind,
+              value: appModel.updateNeverRemind,
+              onChanged: (v) {
+                appModel.setUpdateNeverRemind(v);
+                setState(() {});
+              },
+            ),
+            _buildSwitch(
+              label: t.update_auto_install,
+              value: appModel.updateAutoInstall,
+              onChanged: (v) {
+                appModel.setUpdateAutoInstall(v);
+                setState(() {});
+              },
+            ),
+            _buildSwitch(
+              label: t.update_beta_channel,
+              value: appModel.updateBetaChannel,
+              onChanged: (v) {
+                appModel.setUpdateBetaChannel(v);
+                setState(() {});
+              },
+            ),
+          ],
         ),
-        children: [
-          _buildSwitch(
-            label: t.update_never_remind,
-            value: appModel.updateNeverRemind,
-            onChanged: (v) {
-              appModel.setUpdateNeverRemind(v);
-              setState(() {});
-            },
-          ),
-          _buildSwitch(
-            label: t.update_auto_install,
-            value: appModel.updateAutoInstall,
-            onChanged: (v) {
-              appModel.setUpdateAutoInstall(v);
-              setState(() {});
-            },
-          ),
-          _buildSwitch(
-            label: t.update_beta_channel,
-            value: appModel.updateBetaChannel,
-            onChanged: (v) {
-              appModel.setUpdateBetaChannel(v);
-              setState(() {});
-            },
-          ),
-          const HibikiDivider(),
-          _buildSwitch(
-            label: t.update_debug_channel,
-            value: appModel.updateDebugChannel,
-            onChanged: (v) async {
-              if (v) {
-                final confirmed = await showAppDialog<bool>(
-                  context: context,
-                  builder: (ctx) => adaptiveAlertDialog(
-                    context: ctx,
-                    title: Text(t.update_debug_channel),
-                    content: Text(t.update_debug_channel_warning),
-                    actions: [
-                      adaptiveDialogAction(
-                        context: ctx,
-                        onPressed: () => Navigator.pop(ctx, false),
-                        child: Text(t.dialog_cancel),
-                      ),
-                      adaptiveDialogAction(
-                        context: ctx,
-                        onPressed: () => Navigator.pop(ctx, true),
-                        child: Text(t.dialog_done),
-                      ),
-                    ],
-                  ),
-                );
-                if (confirmed != true) return;
-              }
-              appModel.setUpdateDebugChannel(v);
-              setState(() {});
-            },
-          ),
-        ],
-      ),
+        AdaptiveSettingsSection(
+          title: t.section_advanced_colors,
+          children: [
+            _buildSwitch(
+              label: t.update_debug_channel,
+              value: appModel.updateDebugChannel,
+              onChanged: (v) async {
+                if (v) {
+                  final confirmed = await showAppDialog<bool>(
+                    context: context,
+                    builder: (ctx) => adaptiveAlertDialog(
+                      context: ctx,
+                      title: Text(t.update_debug_channel),
+                      content: Text(t.update_debug_channel_warning),
+                      actions: [
+                        adaptiveDialogAction(
+                          context: ctx,
+                          onPressed: () => Navigator.pop(ctx, false),
+                          child: Text(t.dialog_cancel),
+                        ),
+                        adaptiveDialogAction(
+                          context: ctx,
+                          onPressed: () => Navigator.pop(ctx, true),
+                          child: Text(t.dialog_done),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (confirmed != true) return;
+                }
+                appModel.setUpdateDebugChannel(v);
+                setState(() {});
+              },
+            ),
+          ],
+        ),
+      ],
     );
   }
 }
@@ -880,30 +735,19 @@ class _PopupMaxWidthSliderState extends State<_PopupMaxWidthSlider> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          Expanded(child: Text('${t.popup_max_width} (${_value.round()})')),
-          SizedBox(
-            width: 140,
-            child: adaptiveSlider(
-              context: context,
-              value: _value,
-              min: 250,
-              max: 1000,
-              divisions: 75,
-              onChanged: (v) {
-                setState(() => _value = v);
-              },
-              onChangeEnd: (v) {
-                widget.appModel.setPopupMaxWidth(v);
-                widget.rebuild();
-              },
-            ),
-          ),
-        ],
-      ),
+    return AdaptiveSettingsSliderRow(
+      title: '${t.popup_max_width} (${_value.round()})',
+      value: _value,
+      min: 250,
+      max: 1000,
+      divisions: 75,
+      onChanged: (v) {
+        setState(() => _value = v);
+      },
+      onChangeEnd: (v) {
+        widget.appModel.setPopupMaxWidth(v);
+        widget.rebuild();
+      },
     );
   }
 }

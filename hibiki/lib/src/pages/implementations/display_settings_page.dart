@@ -30,285 +30,220 @@ class _DisplaySettingsPageState extends BasePageState {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
     final bool isVertical = _source.ttuWritingMode.startsWith('vertical');
-    return Scaffold(
-      appBar: adaptiveAppBar(context: context, title: Text(t.display_settings)),
-      body: ListView(
-        padding: EdgeInsets.fromLTRB(
-          16,
-          8,
-          16,
-          8 + MediaQuery.of(context).padding.bottom,
-        ),
-        children: [
-          _settingRow(
-            theme,
-            label: t.design_system_label,
-            hint: t.design_system_hint,
-            child: adaptiveSegmentedButton<String>(
-              context: context,
+    return AdaptiveSettingsScaffold(
+      title: Text(t.display_settings),
+      children: [
+        AdaptiveSettingsSection(
+          title: t.section_interface,
+          children: [
+            AdaptiveSettingsSegmentedRow<String>(
+              title: t.design_system_label,
+              subtitle: t.design_system_hint,
               segments: [
                 ButtonSegment(value: 'auto', label: Text(t.design_system_auto)),
                 const ButtonSegment(value: 'material', label: Text('MD3')),
                 const ButtonSegment(value: 'cupertino', label: Text('iOS')),
               ],
-              selected: {appModel.themeNotifier.designSystem},
-              onSelectionChanged: (sel) {
-                appModel.themeNotifier.setDesignSystem(sel.first);
-              },
-              style: kSettingsSegmentedStyle,
+              selected: appModel.themeNotifier.designSystem,
+              onChanged: appModel.themeNotifier.setDesignSystem,
             ),
-          ),
-          const HibikiDivider(),
-          const ProfileSelector(),
-          const HibikiDivider(),
-          SettingsSectionHeader(t.section_typography),
-          _numberStepper(
-            theme,
-            label: t.ttu_font_size,
-            value: _source.ttuFontSize,
-            step: 1,
-            min: 8,
-            max: 64,
-            format: (v) => '${v.round()}',
-            onChanged: (v) => _update(() => _source.setTtuFontSize(v)),
-          ),
-          _numberStepper(
-            theme,
-            label: t.ttu_line_height,
-            value: _source.ttuLineHeight,
-            step: 0.1,
-            min: 1,
-            max: 3,
-            format: (v) => v.toStringAsFixed(2),
-            onChanged: (v) => _update(() =>
-                _source.setTtuLineHeight((v * 100).roundToDouble() / 100)),
-          ),
-          _numberStepper(
-            theme,
-            label: t.ttu_text_indentation,
-            value: _source.ttuTextIndentation,
-            step: 1,
-            min: 0,
-            max: 10,
-            format: (v) => '${v.round()}',
-            onChanged: (v) => _update(() => _source.setTtuTextIndentation(v)),
-          ),
-          _numberStepper(
-            theme,
-            label: t.margin_top,
-            value: _source.ttuMarginTop,
-            step: 1,
-            min: -5,
-            max: 30,
-            format: (v) => '${v.round()}',
-            onChanged: (v) => _update(() => _source.setTtuMarginTop(v)),
-          ),
-          _numberStepper(
-            theme,
-            label: t.margin_bottom,
-            value: _source.ttuMarginBottom,
-            step: 1,
-            min: -5,
-            max: 30,
-            format: (v) => '${v.round()}',
-            onChanged: (v) => _update(() => _source.setTtuMarginBottom(v)),
-          ),
-          _numberStepper(
-            theme,
-            label: t.margin_left,
-            value: _source.ttuMarginLeft,
-            step: 1,
-            min: -5,
-            max: 30,
-            format: (v) => '${v.round()}',
-            onChanged: (v) => _update(() => _source.setTtuMarginLeft(v)),
-          ),
-          _numberStepper(
-            theme,
-            label: t.margin_right,
-            value: _source.ttuMarginRight,
-            step: 1,
-            min: -5,
-            max: 30,
-            format: (v) => '${v.round()}',
-            onChanged: (v) => _update(() => _source.setTtuMarginRight(v)),
-          ),
-          _numberStepper(
-            theme,
-            label: t.columns_per_page,
-            value: _source.ttuPageColumns.toDouble(),
-            step: 1,
-            min: 0,
-            max: 4,
-            format: (v) =>
-                v.round() == 0 ? t.ttu_page_columns_auto : '${v.round()}',
-            onChanged: (v) =>
-                _update(() => _source.setTtuPageColumns(v.round())),
-          ),
-          _settingRow(
-            theme,
-            label: t.spread_mode,
-            child: adaptiveSegmentedButton<String>(
-              context: context,
+            AdaptiveSettingsRow(
+              title: t.profile_label,
+              icon: Icons.person_outline,
+              trailing: const ProfileSelector(),
+            ),
+          ],
+        ),
+        AdaptiveSettingsSection(
+          title: t.section_typography,
+          children: [
+            _numberStepper(
+              label: t.ttu_font_size,
+              value: _source.ttuFontSize,
+              step: 1,
+              min: 8,
+              max: 64,
+              format: (v) => '${v.round()}',
+              onChanged: (v) => _update(() => _source.setTtuFontSize(v)),
+            ),
+            _numberStepper(
+              label: t.ttu_line_height,
+              value: _source.ttuLineHeight,
+              step: 0.1,
+              min: 1,
+              max: 3,
+              format: (v) => v.toStringAsFixed(2),
+              onChanged: (v) => _update(() =>
+                  _source.setTtuLineHeight((v * 100).roundToDouble() / 100)),
+            ),
+            _numberStepper(
+              label: t.ttu_text_indentation,
+              value: _source.ttuTextIndentation,
+              step: 1,
+              min: 0,
+              max: 10,
+              format: (v) => '${v.round()}',
+              onChanged: (v) => _update(() => _source.setTtuTextIndentation(v)),
+            ),
+            _numberStepper(
+              label: t.margin_top,
+              value: _source.ttuMarginTop,
+              step: 1,
+              min: -5,
+              max: 30,
+              format: (v) => '${v.round()}',
+              onChanged: (v) => _update(() => _source.setTtuMarginTop(v)),
+            ),
+            _numberStepper(
+              label: t.margin_bottom,
+              value: _source.ttuMarginBottom,
+              step: 1,
+              min: -5,
+              max: 30,
+              format: (v) => '${v.round()}',
+              onChanged: (v) => _update(() => _source.setTtuMarginBottom(v)),
+            ),
+            _numberStepper(
+              label: t.margin_left,
+              value: _source.ttuMarginLeft,
+              step: 1,
+              min: -5,
+              max: 30,
+              format: (v) => '${v.round()}',
+              onChanged: (v) => _update(() => _source.setTtuMarginLeft(v)),
+            ),
+            _numberStepper(
+              label: t.margin_right,
+              value: _source.ttuMarginRight,
+              step: 1,
+              min: -5,
+              max: 30,
+              format: (v) => '${v.round()}',
+              onChanged: (v) => _update(() => _source.setTtuMarginRight(v)),
+            ),
+            _numberStepper(
+              label: t.columns_per_page,
+              value: _source.ttuPageColumns.toDouble(),
+              step: 1,
+              min: 0,
+              max: 4,
+              format: (v) =>
+                  v.round() == 0 ? t.ttu_page_columns_auto : '${v.round()}',
+              onChanged: (v) =>
+                  _update(() => _source.setTtuPageColumns(v.round())),
+            ),
+          ],
+        ),
+        AdaptiveSettingsSection(
+          title: t.section_layout,
+          children: [
+            AdaptiveSettingsSegmentedRow<String>(
+              title: t.spread_mode,
               segments: [
                 ButtonSegment(value: 'off', label: Text(t.spread_off)),
                 ButtonSegment(value: 'on', label: Text(t.spread_on)),
                 ButtonSegment(value: 'auto', label: Text(t.spread_auto)),
               ],
-              selected: {_source.ttuSpreadMode},
-              onSelectionChanged: (sel) =>
-                  _update(() => _source.setTtuSpreadMode(sel.first)),
-              style: kSettingsSegmentedStyle,
+              selected: _source.ttuSpreadMode,
+              onChanged: (value) =>
+                  _update(() => _source.setTtuSpreadMode(value)),
             ),
-          ),
-          if (_source.ttuSpreadMode != 'off')
-            _settingRow(
-              theme,
-              label: t.spread_direction,
-              child: adaptiveSegmentedButton<String>(
-                context: context,
+            if (_source.ttuSpreadMode != 'off')
+              AdaptiveSettingsSegmentedRow<String>(
+                title: t.spread_direction,
                 segments: const [
                   ButtonSegment(value: 'rtl', label: Text('RTL')),
                   ButtonSegment(value: 'ltr', label: Text('LTR')),
                 ],
-                selected: {_source.ttuSpreadDirection},
-                onSelectionChanged: (sel) =>
-                    _update(() => _source.setTtuSpreadDirection(sel.first)),
-                style: kSettingsSegmentedStyle,
+                selected: _source.ttuSpreadDirection,
+                onChanged: (value) =>
+                    _update(() => _source.setTtuSpreadDirection(value)),
               ),
-            ),
-          const HibikiDivider(),
-          SettingsSectionHeader(t.section_layout),
-          _settingRow(
-            theme,
-            label: t.ttu_writing_direction,
-            child: adaptiveSegmentedButton<String>(
-              context: context,
+            AdaptiveSettingsSegmentedRow<String>(
+              title: t.ttu_writing_direction,
               segments: [
                 ButtonSegment(
                     value: 'horizontal-tb', label: Text(t.ttu_horizontal)),
                 ButtonSegment(
                     value: 'vertical-rl', label: Text(t.ttu_vertical)),
               ],
-              selected: {_source.ttuWritingMode},
-              onSelectionChanged: (sel) =>
-                  _update(() => _source.setTtuWritingMode(sel.first)),
-              style: kSettingsSegmentedStyle,
+              selected: _source.ttuWritingMode,
+              onChanged: (value) =>
+                  _update(() => _source.setTtuWritingMode(value)),
             ),
-          ),
-          _settingRow(
-            theme,
-            label: t.ttu_view_mode_label,
-            child: adaptiveSegmentedButton<String>(
-              context: context,
+            AdaptiveSettingsSegmentedRow<String>(
+              title: t.ttu_view_mode_label,
               segments: [
                 ButtonSegment(value: 'paginated', label: Text(t.ttu_paginated)),
                 ButtonSegment(value: 'continuous', label: Text(t.ttu_scroll)),
               ],
-              selected: {_source.ttuViewMode},
-              onSelectionChanged: (sel) =>
-                  _update(() => _source.setTtuViewMode(sel.first)),
-              style: kSettingsSegmentedStyle,
+              selected: _source.ttuViewMode,
+              onChanged: (value) =>
+                  _update(() => _source.setTtuViewMode(value)),
             ),
-          ),
-          if (isVertical)
-            _settingRow(
-              theme,
-              label: t.ttu_vert_text_orient,
-              child: adaptiveSegmentedButton<String>(
-                context: context,
+            if (isVertical)
+              AdaptiveSettingsSegmentedRow<String>(
+                title: t.ttu_vert_text_orient,
                 segments: [
                   ButtonSegment(
                       value: 'mixed', label: Text(t.ttu_orient_mixed)),
                   ButtonSegment(
                       value: 'upright', label: Text(t.ttu_orient_upright)),
                 ],
-                selected: {_source.ttuVerticalTextOrientation},
-                onSelectionChanged: (sel) => _update(
-                    () => _source.setTtuVerticalTextOrientation(sel.first)),
-                style: kSettingsSegmentedStyle,
+                selected: _source.ttuVerticalTextOrientation,
+                onChanged: (value) =>
+                    _update(() => _source.setTtuVerticalTextOrientation(value)),
               ),
-            ),
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(t.ttu_furigana_mode, style: theme.textTheme.bodyMedium),
-                const SizedBox(height: 6),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: adaptiveSegmentedButton<String>(
-                    context: context,
-                    segments: [
-                      ButtonSegment(
-                          value: 'show', label: Text(t.ttu_furigana_show)),
-                      ButtonSegment(
-                          value: 'hide', label: Text(t.ttu_furigana_hide)),
-                      ButtonSegment(
-                          value: 'partial',
-                          label: Text(t.ttu_furigana_partial)),
-                      ButtonSegment(
-                          value: 'toggle', label: Text(t.ttu_furigana_toggle)),
-                    ],
-                    selected: {_source.ttuFuriganaMode},
-                    onSelectionChanged: (sel) {
-                      if (sel.isEmpty) return;
-                      _update(() => _source.setTtuFuriganaMode(sel.first));
-                    },
-                    style: kSettingsSegmentedStyle,
-                  ),
-                ),
+            AdaptiveSettingsSegmentedRow<String>(
+              title: t.ttu_furigana_mode,
+              controlBelow: true,
+              segments: [
+                ButtonSegment(value: 'show', label: Text(t.ttu_furigana_show)),
+                ButtonSegment(value: 'hide', label: Text(t.ttu_furigana_hide)),
+                ButtonSegment(
+                    value: 'partial', label: Text(t.ttu_furigana_partial)),
+                ButtonSegment(
+                    value: 'toggle', label: Text(t.ttu_furigana_toggle)),
               ],
+              selected: _source.ttuFuriganaMode,
+              onChanged: (value) =>
+                  _update(() => _source.setTtuFuriganaMode(value)),
             ),
-          ),
-          const HibikiDivider(),
-          _settingRow(
-            theme,
-            label: t.ttu_text_justify,
-            child: adaptiveSwitch(
-              context: context,
+          ],
+        ),
+        AdaptiveSettingsSection(
+          title: t.section_advanced_colors,
+          children: [
+            AdaptiveSettingsSwitchRow(
+              title: t.ttu_text_justify,
               value: _source.ttuEnableTextJustification,
               onChanged: (v) =>
                   _update(() => _source.setTtuEnableTextJustification(v)),
             ),
-          ),
-          if (isVertical)
-            _settingRow(
-              theme,
-              label: t.ttu_vert_kerning,
-              child: adaptiveSwitch(
-                context: context,
+            if (isVertical)
+              AdaptiveSettingsSwitchRow(
+                title: t.ttu_vert_kerning,
                 value: _source.ttuEnableVerticalFontKerning,
                 onChanged: (v) =>
                     _update(() => _source.setTtuEnableVerticalFontKerning(v)),
               ),
-            ),
-          if (isVertical)
-            _settingRow(
-              theme,
-              label: t.ttu_font_vpal,
-              child: adaptiveSwitch(
-                context: context,
+            if (isVertical)
+              AdaptiveSettingsSwitchRow(
+                title: t.ttu_font_vpal,
                 value: _source.ttuEnableFontVPAL,
                 onChanged: (v) =>
                     _update(() => _source.setTtuEnableFontVPAL(v)),
               ),
-            ),
-          _settingRow(
-            theme,
-            label: t.ttu_reader_styles,
-            child: adaptiveSwitch(
-              context: context,
+            AdaptiveSettingsSwitchRow(
+              title: t.ttu_reader_styles,
               value: _source.ttuPrioritizeReaderStyles,
               onChanged: (v) =>
                   _update(() => _source.setTtuPrioritizeReaderStyles(v)),
             ),
-          ),
-        ],
-      ),
+          ],
+        ),
+      ],
     );
   }
 
@@ -318,40 +253,7 @@ class _DisplaySettingsPageState extends BasePageState {
     ReaderHibikiSource.onSettingsChangedLive?.call();
   }
 
-  Widget _settingRow(
-    ThemeData theme, {
-    required String label,
-    required Widget child,
-    String? hint,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Flexible(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label, style: theme.textTheme.bodyMedium),
-                if (hint != null && hint.isNotEmpty)
-                  Text(
-                    hint,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          child,
-        ],
-      ),
-    );
-  }
-
-  Widget _numberStepper(
-    ThemeData theme, {
+  Widget _numberStepper({
     required String label,
     required double value,
     required double step,
@@ -360,32 +262,14 @@ class _DisplaySettingsPageState extends BasePageState {
     required String Function(double) format,
     required ValueChanged<double> onChanged,
   }) {
-    return _settingRow(
-      theme,
-      label: label,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            icon: const Icon(Icons.remove, size: 18),
-            visualDensity: VisualDensity.compact,
-            onPressed: () => onChanged((value - step).clamp(min, max)),
-          ),
-          SizedBox(
-            width: 42,
-            child: Text(
-              format(value),
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodyLarge,
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.add, size: 18),
-            visualDensity: VisualDensity.compact,
-            onPressed: () => onChanged((value + step).clamp(min, max)),
-          ),
-        ],
-      ),
+    return AdaptiveSettingsStepperRow(
+      title: label,
+      value: value,
+      step: step,
+      min: min,
+      max: max,
+      format: format,
+      onChanged: onChanged,
     );
   }
 }
