@@ -17,9 +17,9 @@ import 'package:hibiki/src/media/audiobook/book_import_dialog.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/utils.dart';
 
-final hoshiBooksProvider =
+final hibikiBooksProvider =
     FutureProvider.family<List<MediaItem>, Language>((ref, language) {
-  return ReaderHoshiSource.instance.getBooksFromDb(
+  return ReaderHibikiSource.instance.getBooksFromDb(
     appModel: ref.watch(appProvider),
   );
 });
@@ -29,8 +29,8 @@ final srtBooksProvider = FutureProvider<List<SrtBook>>((ref) {
   return SrtBookRepository(db).listAll();
 });
 
-class ReaderHoshiSource extends ReaderMediaSource {
-  ReaderHoshiSource._()
+class ReaderHibikiSource extends ReaderMediaSource {
+  ReaderHibikiSource._()
       : super(
           uniqueKey: 'reader_ttu',
           sourceName: t.source_name_bookshelf,
@@ -41,8 +41,8 @@ class ReaderHoshiSource extends ReaderMediaSource {
           overridesAutoAudio: true,
         );
 
-  static ReaderHoshiSource get instance => _instance;
-  static final ReaderHoshiSource _instance = ReaderHoshiSource._();
+  static ReaderHibikiSource get instance => _instance;
+  static final ReaderHibikiSource _instance = ReaderHibikiSource._();
 
   static int get defaultScrollingSpeed => 100;
 
@@ -128,7 +128,7 @@ class ReaderHoshiSource extends ReaderMediaSource {
     required AppModel appModel,
     required WidgetRef ref,
   }) async {
-    ref.invalidate(hoshiBooksProvider(appModel.targetLanguage));
+    ref.invalidate(hibikiBooksProvider(appModel.targetLanguage));
   }
 
   @override
@@ -144,7 +144,7 @@ class ReaderHoshiSource extends ReaderMediaSource {
     Bookmark? initialBookmarkJump,
   }) {
     final int bookId = _extractBookId(item?.mediaIdentifier ?? '');
-    return ReaderHoshiPage(
+    return ReaderHibikiPage(
       item: item,
       bookId: bookId,
       initialBookmarkJump: initialBookmarkJump,
@@ -186,7 +186,7 @@ class ReaderHoshiSource extends ReaderMediaSource {
             ),
           );
           if (imported == true) {
-            ref.invalidate(hoshiBooksProvider(appModel.targetLanguage));
+            ref.invalidate(hibikiBooksProvider(appModel.targetLanguage));
             ref.invalidate(srtBooksProvider);
           }
         },
@@ -207,7 +207,7 @@ class ReaderHoshiSource extends ReaderMediaSource {
         onTap: () {
           showAppDialog(
             context: context,
-            builder: (context) => const HoshiSettingsDialogPage(),
+            builder: (context) => const HibikiSettingsDialogPage(),
           );
         },
       ),
@@ -216,7 +216,7 @@ class ReaderHoshiSource extends ReaderMediaSource {
 
   @override
   BasePage buildHistoryPage({MediaItem? item}) {
-    return const ReaderHoshiHistoryPage();
+    return const ReaderHibikiHistoryPage();
   }
 
   // ── Book listing from Drift ─────────────────────────────────────────
@@ -246,7 +246,7 @@ class ReaderHoshiSource extends ReaderMediaSource {
               .toList();
         } catch (e, stack) {
           ErrorLogService.instance
-              .log('ReaderHoshiSource.sectionChars', e, stack);
+              .log('ReaderHibikiSource.sectionChars', e, stack);
         }
       }
       final int totalChars = sectionChars.fold<int>(0, (a, b) => a + b);
@@ -327,8 +327,8 @@ class ReaderHoshiSource extends ReaderMediaSource {
       await EpubStorage.deleteBook(bookId);
       return true;
     } catch (e, stack) {
-      ErrorLogService.instance.log('ReaderHoshiSource.deleteBook', e, stack);
-      debugPrint('[ReaderHoshiSource] deleteBook failed: $e');
+      ErrorLogService.instance.log('ReaderHibikiSource.deleteBook', e, stack);
+      debugPrint('[ReaderHibikiSource] deleteBook failed: $e');
       return false;
     }
   }
@@ -696,6 +696,20 @@ class ReaderHoshiSource extends ReaderMediaSource {
       readerSettings?.setPageColumns(v) ??
       setPreference<int>(key: 'ttu_page_columns', value: v);
 
+  String get ttuSpreadMode =>
+      readerSettings?.spreadMode ??
+      getPreference<String>(key: 'ttu_spread_mode', defaultValue: 'auto');
+  Future<void> setTtuSpreadMode(String v) =>
+      readerSettings?.setSpreadMode(v) ??
+      setPreference<String>(key: 'ttu_spread_mode', value: v);
+
+  String get ttuSpreadDirection =>
+      readerSettings?.spreadDirection ??
+      getPreference<String>(key: 'ttu_spread_direction', defaultValue: 'rtl');
+  Future<void> setTtuSpreadDirection(String v) =>
+      readerSettings?.setSpreadDirection(v) ??
+      setPreference<String>(key: 'ttu_spread_direction', value: v);
+
   bool get ttuEnableVerticalFontKerning =>
       readerSettings?.enableVerticalFontKerning ??
       getPreference<bool>(key: 'ttu_vert_kerning', defaultValue: false);
@@ -760,7 +774,7 @@ class ReaderHoshiSource extends ReaderMediaSource {
     try {
       return (jsonDecode(raw) as List<dynamic>).cast<Map<String, dynamic>>();
     } catch (e, stack) {
-      ErrorLogService.instance.log('ReaderHoshiSource.customFonts', e, stack);
+      ErrorLogService.instance.log('ReaderHibikiSource.customFonts', e, stack);
       return <Map<String, dynamic>>[];
     }
   }
@@ -803,7 +817,7 @@ class ReaderHoshiSource extends ReaderMediaSource {
           }
         } catch (e, stack) {
           ErrorLogService.instance
-              .log('ReaderHoshiSource.deleteFont', e, stack);
+              .log('ReaderHibikiSource.deleteFont', e, stack);
           debugPrint(
               '[Hibiki] failed to delete custom font file $filePath: $e');
         }
@@ -825,7 +839,7 @@ class ReaderHoshiSource extends ReaderMediaSource {
           await f.delete();
         }
       } catch (e, stack) {
-        ErrorLogService.instance.log('ReaderHoshiSource.deleteFont', e, stack);
+        ErrorLogService.instance.log('ReaderHibikiSource.deleteFont', e, stack);
         debugPrint('[Hibiki] failed to delete custom font file $filePath: $e');
       }
     }

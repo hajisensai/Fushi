@@ -172,6 +172,15 @@ class ReaderSettings {
   int get pageColumns => _get<int>('ttu_page_columns', 0);
   Future<void> setPageColumns(int v) => _set<int>('ttu_page_columns', v);
 
+  /// `off`, `on`, or `auto`.
+  String get spreadMode => _get<String>('ttu_spread_mode', 'auto');
+  Future<void> setSpreadMode(String v) => _set<String>('ttu_spread_mode', v);
+
+  /// `ltr` or `rtl`.
+  String get spreadDirection => _get<String>('ttu_spread_direction', 'rtl');
+  Future<void> setSpreadDirection(String v) =>
+      _set<String>('ttu_spread_direction', v);
+
   bool get enableVerticalFontKerning => _get<bool>('ttu_vert_kerning', false);
   Future<void> setEnableVerticalFontKerning(bool v) =>
       _set<bool>('ttu_vert_kerning', v);

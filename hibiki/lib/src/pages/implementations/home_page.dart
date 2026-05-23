@@ -7,7 +7,7 @@ import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki/src/media/audiobook/book_import_dialog.dart';
-import 'package:hibiki/src/media/sources/reader_hoshi_source.dart';
+import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:hibiki/utils.dart';
@@ -252,7 +252,7 @@ class _HomePageState extends BasePageState<HomePage>
       case 1:
         return HomeDictionaryPage(focusSignal: _dictFocusSignal);
       case 2:
-        return const HoshiSettingsContent();
+        return const HibikiSettingsContent();
       default:
         return const HomeReaderPage();
     }
@@ -332,7 +332,7 @@ class _HomePageState extends BasePageState<HomePage>
             db: appModel.database,
           ),
         );
-        ref.invalidate(hoshiBooksProvider(appModel.targetLanguage));
+        ref.invalidate(hibikiBooksProvider(appModel.targetLanguage));
         ref.invalidate(srtBooksProvider);
       },
     );
@@ -360,9 +360,8 @@ class _HomePageState extends BasePageState<HomePage>
                 ),
               );
             } else {
-              showModalBottomSheet(
+              adaptiveModalSheet(
                 context: context,
-                isScrollControlled: true,
                 builder: (_) => const TagFilterSheet(),
               );
             }

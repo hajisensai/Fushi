@@ -193,9 +193,8 @@ class SasayakiRematch {
         ),
       );
     }
-    return showModalBottomSheet<_MatchParams>(
+    return adaptiveModalSheet<_MatchParams>(
       context: context,
-      isScrollControlled: true,
       showDragHandle: true,
       builder: (ctx) => StatefulBuilder(builder: buildSheetBody),
     );

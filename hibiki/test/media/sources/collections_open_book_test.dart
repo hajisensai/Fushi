@@ -17,7 +17,7 @@ void main() {
       expect(opened.title, 'MyBook');
       expect(
         opened.mediaSourceIdentifier,
-        ReaderHoshiSource.instance.uniqueKey,
+        ReaderHibikiSource.instance.uniqueKey,
       );
     });
   });

@@ -144,6 +144,54 @@ Widget adaptiveIndicator({
   );
 }
 
+Future<T?> adaptiveModalSheet<T>({
+  required BuildContext context,
+  required WidgetBuilder builder,
+  bool isScrollControlled = true,
+  bool showDragHandle = false,
+}) {
+  if (isCupertinoPlatform(context)) {
+    return showCupertinoModalPopup<T>(
+      context: context,
+      builder: builder,
+    );
+  }
+  return showModalBottomSheet<T>(
+    context: context,
+    isScrollControlled: isScrollControlled,
+    showDragHandle: showDragHandle,
+    builder: builder,
+  );
+}
+
+Widget adaptiveSegmentedButton<T extends Object>({
+  required BuildContext context,
+  required List<ButtonSegment<T>> segments,
+  required Set<T> selected,
+  required ValueChanged<Set<T>> onSelectionChanged,
+  ButtonStyle? style,
+}) {
+  if (isCupertinoPlatform(context)) {
+    final T groupValue = selected.first;
+    return CupertinoSlidingSegmentedControl<T>(
+      groupValue: groupValue,
+      onValueChanged: (v) {
+        if (v != null) onSelectionChanged({v});
+      },
+      children: {
+        for (final seg in segments) seg.value: seg.label ?? seg.icon ?? Text('$seg'),
+      },
+    );
+  }
+  return SegmentedButton<T>(
+    showSelectedIcon: false,
+    segments: segments,
+    selected: selected,
+    onSelectionChanged: onSelectionChanged,
+    style: style,
+  );
+}
+
 Route<T> adaptivePageRoute<T>({
   required WidgetBuilder builder,
   RouteSettings? settings,

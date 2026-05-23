@@ -15,6 +15,8 @@ import 'package:hibiki/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/epub/epub_book.dart';
 import 'package:hibiki/src/epub/epub_parser.dart';
+import 'package:hibiki/src/epub/epub_spread_analyzer.dart';
+import 'package:hibiki/src/epub/epub_spread_map.dart';
 import 'package:hibiki/src/epub/epub_storage.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_bridge.dart';
 import 'package:hibiki/src/media/audiobook/lyrics_mode_html.dart';
@@ -22,7 +24,7 @@ import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki/src/media/audiobook/highlight_bridge.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_play_bar.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_import_dialog.dart';
-import 'package:hibiki/src/media/sources/reader_hoshi_source.dart';
+import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/profile/profile_repository.dart';
 import 'package:hibiki/src/profile/profile_view_model.dart';
 import 'package:hibiki/src/reader/reader_content_styles.dart';
@@ -42,8 +44,8 @@ import 'package:hibiki/src/utils/misc/platform_utils.dart';
 import 'package:hibiki/src/utils/misc/Hibiki_color.dart';
 import 'package:hibiki/src/utils/misc/show_app_dialog.dart';
 
-class ReaderHoshiPage extends BaseSourcePage {
-  const ReaderHoshiPage({
+class ReaderHibikiPage extends BaseSourcePage {
+  const ReaderHibikiPage({
     required this.bookId,
     super.item,
     this.initialBookmarkJump,
@@ -54,13 +56,14 @@ class ReaderHoshiPage extends BaseSourcePage {
   final Bookmark? initialBookmarkJump;
 
   @override
-  BaseSourcePageState<ReaderHoshiPage> createState() => _ReaderHoshiPageState();
+  BaseSourcePageState<ReaderHibikiPage> createState() => _ReaderHibikiPageState();
 }
 
-class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
+class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     with WidgetsBindingObserver {
   InAppWebViewController? _controller;
   EpubBook? _book;
+  EpubSpreadMap? _spreadMap;
   ReaderSettings? _settings;
   String? _extractDir;
 
@@ -150,7 +153,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    ReaderHoshiSource.onSettingsChangedLive = () {
+    ReaderHibikiSource.onSettingsChangedLive = () {
       if (mounted) _applyStylesLive();
     };
     _initBook();
@@ -165,7 +168,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       final ProfileViewModel profileVm =
           ref.read(profileViewModelProvider.notifier);
 
-      final String bookUid = ReaderHoshiSource.bookUidFor(widget.bookId);
+      final String bookUid = ReaderHibikiSource.bookUidFor(widget.bookId);
 
       String mediaType;
       if (mediaTypeOverride != null) {
@@ -193,7 +196,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       }
     } catch (e, st) {
       debugPrint(
-          '[ReaderHoshi] profile resolution failed (non-fatal): $e\n$st');
+          '[ReaderHibiki] profile resolution failed (non-fatal): $e\n$st');
     }
   }
 
@@ -203,15 +206,15 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     await _resolveAndApplyProfile(db);
     if (!mounted) return;
 
-    _settings = ReaderHoshiSource.readerSettings ?? ReaderSettings(db);
-    ReaderHoshiSource.readerSettings = _settings;
+    _settings = ReaderHibikiSource.readerSettings ?? ReaderSettings(db);
+    ReaderHibikiSource.readerSettings = _settings;
     await _settings!.ready;
     if (!mounted) return;
 
     final bool exists = await EpubStorage.bookExists(widget.bookId);
     if (!mounted) return;
     if (!exists) {
-      debugPrint('[ReaderHoshi] book ${widget.bookId} not found on disk');
+      debugPrint('[ReaderHibiki] book ${widget.bookId} not found on disk');
       Navigator.of(context).pop();
       return;
     }
@@ -223,16 +226,16 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     try {
       _book = EpubParser.parseFromExtracted(extractDir);
       debugPrint(
-          '[ReaderHoshi] parsed EPUB: ${_book!.chapters.length} chapters');
+          '[ReaderHibiki] parsed EPUB: ${_book!.chapters.length} chapters');
     } on FormatException catch (e) {
-      debugPrint('[ReaderHoshi] EPUB parse failed ($e), trying DB metadata');
+      debugPrint('[ReaderHibiki] EPUB parse failed ($e), trying DB metadata');
       _book = await _buildBookFromDb(db, widget.bookId, extractDir);
       if (!mounted) return;
       _book ??= _buildLegacyBook(extractDir);
     }
 
     final List<String> hrefs = _book!.chapters.map((ch) => ch.href).toList();
-    debugPrint('[ReaderHoshi] chapter hrefs: $hrefs');
+    debugPrint('[ReaderHibiki] chapter hrefs: $hrefs');
 
     _chapterCharCounts = List<int>.generate(
       _book!.chapters.length,
@@ -245,6 +248,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       cumulative += count;
     }
 
+    await _initSpreadMap(appModelNoUpdate.database);
+
     await _resolveAudioSlot();
     if (!mounted) return;
 
@@ -256,13 +261,13 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       _initialProgress = bm.normCharOffset / 10000.0;
       _lastProgressSection = _currentChapter;
       _lastProgressValue = _initialProgress;
-      debugPrint('[ReaderHoshi] restore from bookmark: '
+      debugPrint('[ReaderHibiki] restore from bookmark: '
           'chapter=$_currentChapter progress=$_initialProgress');
     } else {
       final ReaderPositionRepository repo = ReaderPositionRepository(db);
       final ReaderPosition? saved = await repo.findByTtuBookId(widget.bookId);
       if (!mounted) return;
-      debugPrint('[ReaderHoshi] restore lookup: bookId=${widget.bookId} '
+      debugPrint('[ReaderHibiki] restore lookup: bookId=${widget.bookId} '
           'saved=$saved section=${saved?.sectionIndex} '
           'offset=${saved?.normCharOffset}');
       if (saved != null &&
@@ -283,7 +288,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       } catch (_) {}
     }
 
-    final ReaderHoshiSource src = ReaderHoshiSource.instance;
+    final ReaderHibikiSource src = ReaderHibikiSource.instance;
     if (src.volumePageTurningEnabled) {
       _setupVolumeKeyHandlers();
     }
@@ -291,10 +296,10 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     _syncDictionaryTheme();
 
     final bool savedLyricsMode =
-        _audiobookController != null && ReaderHoshiSource.instance.lyricsMode;
+        _audiobookController != null && ReaderHibikiSource.instance.lyricsMode;
     _lyricsMode = savedLyricsMode;
     if (!savedLyricsMode) {
-      await ReaderHoshiSource.instance.setLyricsMode(false);
+      await ReaderHibikiSource.instance.setLyricsMode(false);
       if (!mounted) return;
     }
 
@@ -304,13 +309,13 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   }
 
   void _setupVolumeKeyHandlers() {
-    final ReaderHoshiSource src = ReaderHoshiSource.instance;
+    final ReaderHibikiSource src = ReaderHibikiSource.instance;
     VolumeKeyChannel.instance.setHandlers(
       onVolumeUp: () => _onVolumeKey(isUp: true),
       onVolumeDown: () => _onVolumeKey(isUp: false),
     );
     VolumeKeyChannel.instance.setInterceptEnabled(true);
-    debugPrint('[ReaderHoshi] volume key handlers installed '
+    debugPrint('[ReaderHibiki] volume key handlers installed '
         '(inverted=${src.volumePageTurningInverted}, '
         'speed=${src.volumePageTurningSpeed}ms)');
   }
@@ -318,7 +323,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   void _onVolumeKey({required bool isUp}) {
     if (_volumeThrottleTimer?.isActive ?? false) return;
 
-    final ReaderHoshiSource src = ReaderHoshiSource.instance;
+    final ReaderHibikiSource src = ReaderHibikiSource.instance;
     final bool inverted = src.volumePageTurningInverted;
     final bool goForward = inverted ? isUp : !isUp;
 
@@ -379,7 +384,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       }).toList();
     }
 
-    debugPrint('[ReaderHoshi] built from DB: ${chapters.length} chapters, '
+    debugPrint('[ReaderHibiki] built from DB: ${chapters.length} chapters, '
         '${toc.length} toc entries');
 
     return EpubBook(
@@ -432,7 +437,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     }
 
     final HibikiDatabase db = appModel.database;
-    final String bookUid = ReaderHoshiSource.bookUidFor(widget.bookId);
+    final String bookUid = ReaderHibikiSource.bookUidFor(widget.bookId);
     final Audiobook? ab =
         (await db.getAudiobookByBookUid(bookUid))?.let(_audiobookFromRow);
     final SrtBook? srt =
@@ -451,7 +456,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
     if (_audiobookController == null && _lyricsMode) {
       _lyricsMode = false;
-      await ReaderHoshiSource.instance.setLyricsMode(false);
+      await ReaderHibikiSource.instance.setLyricsMode(false);
     }
   }
 
@@ -534,7 +539,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
           : 0.0;
       _lastProgressSection = _currentChapter;
       _lastProgressValue = _initialProgress;
-      debugPrint('[ReaderHoshi] restore from audio cue: '
+      debugPrint('[ReaderHibiki] restore from audio cue: '
           'chapter=$_currentChapter progress=$_initialProgress');
       return;
     }
@@ -553,7 +558,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
             : 0.0;
         _lastProgressSection = srtChapter;
         _lastProgressValue = _initialProgress;
-        debugPrint('[ReaderHoshi] restore from SRT cue: '
+        debugPrint('[ReaderHibiki] restore from SRT cue: '
             'chapter=$srtChapter progress=$_initialProgress');
         return;
       }
@@ -567,7 +572,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     _initialProgress = 0.0;
     _lastProgressSection = fallbackChapter;
     _lastProgressValue = 0.0;
-    debugPrint('[ReaderHoshi] restore from audio cue chapter: '
+    debugPrint('[ReaderHibiki] restore from audio cue chapter: '
         'chapter=$_currentChapter href=${cue.chapterHref}');
   }
 
@@ -606,8 +611,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       audioRoot: audiobook.audioRoot,
     );
     if (audioFiles.isEmpty) {
-      debugPrint('[ReaderHoshi] audiobook found but no audio files');
-      debugPrint('[ReaderHoshi] audio slot cleared: no files found');
+      debugPrint('[ReaderHibiki] audiobook found but no audio files');
+      debugPrint('[ReaderHibiki] audio slot cleared: no files found');
       return;
     }
 
@@ -630,8 +635,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         initialImagePauseSec: prefs[4] as int,
       );
     } catch (e, stack) {
-      ErrorLogService.instance.log('ReaderHoshi.loadAudiobook', e, stack);
-      debugPrint('[ReaderHoshi] audiobook load failed: $e');
+      ErrorLogService.instance.log('ReaderHibiki.loadAudiobook', e, stack);
+      debugPrint('[ReaderHibiki] audiobook load failed: $e');
       controller.dispose();
       if (mounted) {
         HibikiToast.show(msg: t.audiobook_load_error);
@@ -678,8 +683,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       audioRoot: srtBook.audioRoot,
     );
     if (audioFiles.isEmpty) {
-      debugPrint('[ReaderHoshi] srt book found but no audio files');
-      debugPrint('[ReaderHoshi] audio slot cleared: no files found');
+      debugPrint('[ReaderHibiki] srt book found but no audio files');
+      debugPrint('[ReaderHibiki] audio slot cleared: no files found');
       return;
     }
 
@@ -712,8 +717,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         initialImagePauseSec: prefs[4] as int,
       );
     } catch (e, stack) {
-      ErrorLogService.instance.log('ReaderHoshi.loadSrtBook', e, stack);
-      debugPrint('[ReaderHoshi] srt book load failed: $e');
+      ErrorLogService.instance.log('ReaderHibiki.loadSrtBook', e, stack);
+      debugPrint('[ReaderHibiki] srt book load failed: $e');
       controller.dispose();
       if (mounted) {
         HibikiToast.show(msg: t.audiobook_load_error);
@@ -783,7 +788,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
   @override
   void dispose() {
-    ReaderHoshiSource.onSettingsChangedLive = null;
+    ReaderHibikiSource.onSettingsChangedLive = null;
     WidgetsBinding.instance.removeObserver(this);
     _progressPollTimer?.cancel();
     _saveDebounce?.cancel();
@@ -936,7 +941,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     if (_book == null || index < 0 || index >= _book!.chapters.length) {
       return 'about:blank';
     }
-    return ReaderHoshiSource.epubUrl(_book!.chapters[index].href);
+    return ReaderHibikiSource.epubUrl(_book!.chapters[index].href);
   }
 
   Future<void> _loadChapterDirectly(int index) async {
@@ -953,7 +958,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   }
 
   static WebResourceResponse _notFound(String reason) {
-    debugPrint('[ReaderHoshi] 404: $reason');
+    debugPrint('[ReaderHibiki] 404: $reason');
     return WebResourceResponse(
       contentType: 'text/plain',
       statusCode: 404,
@@ -964,7 +969,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   }
 
   static WebResourceResponse _forbidden(String reason) {
-    debugPrint('[ReaderHoshi] 403: $reason');
+    debugPrint('[ReaderHibiki] 403: $reason');
     return WebResourceResponse(
       contentType: 'text/plain',
       statusCode: 403,
@@ -975,13 +980,13 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   }
 
   Future<WebResourceResponse?> _interceptRequest(WebUri url) async {
-    if (url.host != ReaderHoshiSource.kHost) return null;
+    if (url.host != ReaderHibikiSource.kHost) return null;
     final String path = url.path;
 
     if (path.startsWith('/fonts/')) {
       final String raw = path.substring('/fonts/'.length);
       final String fontPath = Uri.decodeComponent(raw);
-      final String? safeFontPath = ReaderHoshiSource.safeCustomFontPath(
+      final String? safeFontPath = ReaderHibikiSource.safeCustomFontPath(
         fontPath,
         allowedRoots: <String>[
           p.join(appModel.appDirectory.path, 'custom_fonts')
@@ -1008,7 +1013,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         return _notFound('font corrupted: $fontPath (${data.length} bytes)');
       }
       debugPrint(
-          '[ReaderHoshi] font served: $safeFontPath (${data.length} bytes)');
+          '[ReaderHibiki] font served: $safeFontPath (${data.length} bytes)');
       final String mime = fallbackMimeType(safeFontPath);
       return WebResourceResponse(
         contentType: mime,
@@ -1364,8 +1369,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
               await _handleTextSelected(ReaderSelectionData.fromJson(payload));
             } catch (e, stack) {
               ErrorLogService.instance
-                  .log('ReaderHoshi.onTextSelected', e, stack);
-              debugPrint('[ReaderHoshi] onTextSelected error: $e');
+                  .log('ReaderHibiki.onTextSelected', e, stack);
+              debugPrint('[ReaderHibiki] onTextSelected error: $e');
             }
           },
         );
@@ -1383,7 +1388,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
               _toggleChrome();
               return;
             }
-            if (!ReaderHoshiSource.instance.highlightOnTap) return;
+            if (!ReaderHibikiSource.instance.highlightOnTap) return;
             final double x = _toDouble(args[0]) ?? 0;
             final double y = _toDouble(args[1]) ?? 0;
             _selectTextAt(x, y);
@@ -1393,7 +1398,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         controller.addJavaScriptHandler(
           handlerName: 'onTapEmpty',
           callback: (_) {
-            if (ReaderHoshiSource.instance.tapEmptyToHideChrome) {
+            if (ReaderHibikiSource.instance.tapEmptyToHideChrome) {
               _toggleChrome();
             }
           },
@@ -1404,7 +1409,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
           callback: (List<dynamic> args) {
             if (args.isEmpty || _lyricsMode) return;
             final String dir = args[0] as String;
-            final bool invert = ReaderHoshiSource.instance.invertSwipeDirection;
+            final bool invert = ReaderHibikiSource.instance.invertSwipeDirection;
             if (dir == 'left') {
               _paginate(invert
                   ? ReaderNavigationDirection.backward
@@ -1444,6 +1449,23 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         );
 
         controller.addJavaScriptHandler(
+          handlerName: 'spreadReady',
+          callback: (_) {
+            _isNavigatingToChapter = false;
+            _restoreInFlight = false;
+            if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
+              _restoreCompleter!.complete(true);
+            }
+            _restoreCompleter = null;
+            if (mounted) {
+              setState(() {
+                _readerContentReady = true;
+              });
+            }
+          },
+        );
+
+        controller.addJavaScriptHandler(
           handlerName: 'onCueTap',
           callback: (List<dynamic> args) {
             if (args.isEmpty || _audiobookController == null) return;
@@ -1477,7 +1499,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       onLoadStop: (controller, url) async {
         _isNavigatingToChapter = false;
         final int chapterSnapshot = _currentChapter;
-        debugPrint('[ReaderHoshi] onLoadStop: url=$url '
+        debugPrint('[ReaderHibiki] onLoadStop: url=$url '
             'chapter=$chapterSnapshot progress=$_initialProgress');
         if (_lyricsMode && _isLyricsUrl(url)) {
           await _onChapterLoadComplete(controller);
@@ -1487,22 +1509,22 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         if (url != null &&
             Uri.parse(url.toString()).path != Uri.parse(expectedUrl).path) {
           debugPrint(
-              '[ReaderHoshi] onLoadStop: stale page (expected=$expectedUrl), ignoring');
+              '[ReaderHibiki] onLoadStop: stale page (expected=$expectedUrl), ignoring');
           return;
         }
         await _onChapterLoadComplete(controller);
       },
       onReceivedError: (controller, request, error) async {
         if (request.isForMainFrame ?? false) {
-          debugPrint('[ReaderHoshi] onReceivedError: ${error.description} '
+          debugPrint('[ReaderHibiki] onReceivedError: ${error.description} '
               'url=${request.url}');
           // WebView2 on Windows reports NavigationCompleted with isSuccess=false
           // for intercepted hoshi.local URLs because the domain doesn't resolve
           // at the network layer, even though shouldInterceptRequest provided a
           // valid response. The content IS rendered — treat as onLoadStop.
           if (Platform.isWindows &&
-              request.url.host == ReaderHoshiSource.kHost) {
-            debugPrint('[ReaderHoshi] Windows: treating intercepted navigation '
+              request.url.host == ReaderHibikiSource.kHost) {
+            debugPrint('[ReaderHibiki] Windows: treating intercepted navigation '
                 'error as successful load');
             _isNavigatingToChapter = false;
             await _onChapterLoadComplete(controller);
@@ -1561,8 +1583,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       _lastSyncedWidth = MediaQuery.of(context).size.width;
     } catch (e, stack) {
       ErrorLogService.instance
-          .log('ReaderHoshi._onChapterLoadComplete', e, stack);
-      debugPrint('[ReaderHoshi] _onChapterLoadComplete failed: $e');
+          .log('ReaderHibiki._onChapterLoadComplete', e, stack);
+      debugPrint('[ReaderHibiki] _onChapterLoadComplete failed: $e');
     }
   }
 
@@ -1624,7 +1646,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     _contentReadyTimer = Timer(const Duration(seconds: 8), () {
       if (!mounted || _readerContentReady) return;
       debugPrint(
-          '[ReaderHoshi] content ready timeout — forcing overlay removal');
+          '[ReaderHibiki] content ready timeout — forcing overlay removal');
       setState(() {
         _readerContentReady = true;
         _hasEverLoaded = true;
@@ -1639,7 +1661,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     }
     if (_restoreExpectedGeneration != _navigateGeneration) {
       debugPrint(
-        '[ReaderHoshi] stale onRestoreComplete: '
+        '[ReaderHibiki] stale onRestoreComplete: '
         'expected=$_restoreExpectedGeneration current=$_navigateGeneration',
       );
       return;
@@ -1707,7 +1729,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       await Future<void>.delayed(const Duration(milliseconds: 200));
 
       setState(() => _lyricsMode = entering);
-      await ReaderHoshiSource.instance.setLyricsMode(entering);
+      await ReaderHibikiSource.instance.setLyricsMode(entering);
 
       if (entering) {
         await _resolveAndApplyProfile(
@@ -1736,7 +1758,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
             onTimeout: () => false,
           );
         } catch (e, stack) {
-          ErrorLogService.instance.log('ReaderHoshi.lyricsRestore', e, stack);
+          ErrorLogService.instance.log('ReaderHibiki.lyricsRestore', e, stack);
         }
       }
     } finally {
@@ -1776,11 +1798,11 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       backgroundColor: colorToCss(bg),
       textColor: colorToCss(fg),
       accentColor: colorToCss(accent),
-      fontSize: ReaderHoshiSource.instance.lyricsFontSize,
-      marginTop: ReaderHoshiSource.instance.lyricsMarginTop,
-      marginBottom: ReaderHoshiSource.instance.lyricsMarginBottom,
-      marginLeft: ReaderHoshiSource.instance.lyricsMarginLeft,
-      marginRight: ReaderHoshiSource.instance.lyricsMarginRight,
+      fontSize: ReaderHibikiSource.instance.lyricsFontSize,
+      marginTop: ReaderHibikiSource.instance.lyricsMarginTop,
+      marginBottom: ReaderHibikiSource.instance.lyricsMarginBottom,
+      marginLeft: ReaderHibikiSource.instance.lyricsMarginLeft,
+      marginRight: ReaderHibikiSource.instance.lyricsMarginRight,
     );
 
     await _controller!.loadData(
@@ -1798,7 +1820,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     final Color accent = _isReaderThemeDark
         ? HibikiColor.defaultHighlightYellow
         : Theme.of(context).colorScheme.primary;
-    final double fontSize = ReaderHoshiSource.instance.lyricsFontSize;
+    final double fontSize = ReaderHibikiSource.instance.lyricsFontSize;
 
     String colorToCss(Color c) =>
         'rgba(${(c.r * 255).round()},${(c.g * 255).round()},${(c.b * 255).round()},${c.a.toStringAsFixed(2)})';
@@ -1807,7 +1829,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     final String fgCss = colorToCss(fg);
     final String accentCss = colorToCss(accent);
 
-    final ReaderHoshiSource src = ReaderHoshiSource.instance;
+    final ReaderHibikiSource src = ReaderHibikiSource.instance;
     final double mt = src.lyricsMarginTop;
     final double mb = src.lyricsMarginBottom;
     final double ml = src.lyricsMarginLeft;
@@ -1820,7 +1842,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   }
 
   void _showLyricsModeHintIfNeeded() {
-    final ReaderHoshiSource src = ReaderHoshiSource.instance;
+    final ReaderHibikiSource src = ReaderHibikiSource.instance;
     final bool shown = src.getPreference<bool>(
       key: 'lyrics_mode_hint_shown',
       defaultValue: false,
@@ -1847,7 +1869,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   bool _isLyricsUrl(WebUri? url) {
     if (url == null) return false;
     final Uri uri = Uri.parse(url.toString());
-    return uri.host == ReaderHoshiSource.kHost && uri.path == '/lyrics';
+    return uri.host == ReaderHibikiSource.kHost && uri.path == '/lyrics';
   }
 
   Future<void> _exitLyricsMode() async {
@@ -2240,8 +2262,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     try {
       await _loadChapterDirectly(index);
     } catch (e, stack) {
-      ErrorLogService.instance.log('ReaderHoshi._navigateToChapter', e, stack);
-      debugPrint('[ReaderHoshi] _navigateToChapter loadUrl failed: $e');
+      ErrorLogService.instance.log('ReaderHibiki._navigateToChapter', e, stack);
+      debugPrint('[ReaderHibiki] _navigateToChapter loadUrl failed: $e');
       _restoreInFlight = false;
       if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
         _restoreCompleter!.complete(false);
@@ -2255,7 +2277,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     final bool success = await _restoreCompleter?.future.timeout(
           const Duration(seconds: 10),
           onTimeout: () {
-            debugPrint('[ReaderHoshi] _navigateToChapterAndWait timed out');
+            debugPrint('[ReaderHibiki] _navigateToChapterAndWait timed out');
             _isNavigatingToChapter = false;
             _restoreCompleter = null;
             _restoreInFlight = false;
@@ -2300,9 +2322,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       await _loadChapterDirectly(index);
     } catch (e, stack) {
       ErrorLogService.instance
-          .log('ReaderHoshi._navigateToChapterWithFragment', e, stack);
+          .log('ReaderHibiki._navigateToChapterWithFragment', e, stack);
       debugPrint(
-          '[ReaderHoshi] _navigateToChapterWithFragment loadUrl failed: $e');
+          '[ReaderHibiki] _navigateToChapterWithFragment loadUrl failed: $e');
       _restoreInFlight = false;
       if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
         _restoreCompleter!.complete(false);
@@ -2311,11 +2333,191 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     }
   }
 
+  // ── Spread (two-page) support ──────────────────────────────────────
+
+  Map<int, bool>? _edgeMatchResults;
+
+  void _rebuildSpreadMap() {
+    if (_book == null || _settings == null) return;
+    _spreadMap = EpubSpreadMap.build(
+      book: _book!,
+      spreadMode: _settings!.spreadMode,
+      spreadDirection: _settings!.spreadDirection,
+      edgeMatchResults: _edgeMatchResults,
+    );
+  }
+
+  Future<void> _initSpreadMap(HibikiDatabase db) async {
+    if (_book == null || _settings == null) return;
+    final String bookKey = widget.bookId.toString();
+    if (_settings!.spreadMode == 'auto') {
+      _edgeMatchResults = await EpubSpreadAnalyzer.loadCached(db, bookKey);
+    }
+    _rebuildSpreadMap();
+
+    if (_settings!.spreadMode == 'auto' && _edgeMatchResults == null) {
+      _runEdgeAnalysis(db, bookKey);
+    }
+  }
+
+  Future<void> _runEdgeAnalysis(HibikiDatabase db, String bookKey) async {
+    if (_book == null) return;
+    try {
+      final Map<int, bool> results = await EpubSpreadAnalyzer.analyze(_book!);
+      await EpubSpreadAnalyzer.saveCache(db, bookKey, results);
+      _edgeMatchResults = results;
+      _rebuildSpreadMap();
+      if (mounted) setState(() {});
+    } catch (e, stack) {
+      ErrorLogService.instance.log('ReaderHibiki._runEdgeAnalysis', e, stack);
+    }
+  }
+
+  Future<void> _navigateToVirtualPage(
+    int virtualIndex, {
+    double progress = 0.0,
+  }) async {
+    if (_spreadMap == null) return;
+    if (virtualIndex < 0 || virtualIndex >= _spreadMap!.length) return;
+    final SpreadEntry entry = _spreadMap!.entryAt(virtualIndex);
+    if (entry.isSpread) {
+      await _navigateToSpread(entry);
+    } else {
+      await _navigateToChapter(entry.chapterIndex, progress: progress);
+    }
+  }
+
+  Future<void> _navigateToSpread(SpreadEntry entry) async {
+    if (_book == null || _controller == null || !entry.isSpread) return;
+
+    _progressPollTimer?.cancel();
+    _flushReadingStats();
+
+    final int gen = ++_navigateGeneration;
+    _restoreExpectedGeneration = gen;
+    if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
+      _restoreCompleter!.complete(false);
+    }
+    _restoreCompleter = Completer<bool>();
+
+    _currentChapter = entry.chapterIndex;
+    _initialProgress = 0.0;
+    _displayedProgress = 0.0;
+    _lastProgressSection = entry.chapterIndex;
+    _lastProgressValue = 0.0;
+    _restoreInFlight = true;
+    setState(() {
+      _readerContentReady = false;
+    });
+    _startContentReadyTimeout();
+
+    try {
+      await _loadSpreadPage(entry);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('ReaderHibiki._navigateToSpread', e, stack);
+      debugPrint('[ReaderHibiki] _navigateToSpread failed: $e');
+      _restoreInFlight = false;
+      if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
+        _restoreCompleter!.complete(false);
+      }
+      _restoreCompleter = null;
+    }
+  }
+
+  Future<void> _loadSpreadPage(SpreadEntry entry) async {
+    if (_book == null || !entry.isSpread) return;
+
+    final String? srcA = _book!.chapterImageSrc(entry.chapterIndex);
+    final String? srcB = _book!.chapterImageSrc(entry.secondChapterIndex!);
+    if (srcA == null || srcB == null) {
+      await _loadChapterDirectly(entry.chapterIndex);
+      return;
+    }
+
+    final String urlA = _resolveSpreadImageUrl(
+      _book!.chapters[entry.chapterIndex].href,
+      srcA,
+    );
+    final String urlB = _resolveSpreadImageUrl(
+      _book!.chapters[entry.secondChapterIndex!].href,
+      srcB,
+    );
+
+    final bool rtl = _settings?.spreadDirection != 'ltr';
+    final String leftUrl = rtl ? urlB : urlA;
+    final String rightUrl = rtl ? urlA : urlB;
+
+    final String html = '''
+<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100vw;height:100vh;overflow:hidden;background:#000}
+.spread{display:flex;width:100vw;height:100vh}
+.spread-half{flex:1;display:flex;justify-content:center;align-items:center;overflow:hidden}
+.spread-half img{max-width:100%;max-height:100vh;object-fit:contain;cursor:pointer}
+</style>
+</head><body>
+<div class="spread">
+<div class="spread-half"><img src="$leftUrl" class="block-img"/></div>
+<div class="spread-half"><img src="$rightUrl" class="block-img"/></div>
+</div>
+<script>
+document.querySelectorAll('img').forEach(function(img){
+  img.addEventListener('click',function(){
+    window.flutter_inappwebview.callHandler('onImageTap',img.src);
+  });
+});
+window.flutter_inappwebview.callHandler('spreadReady');
+</script>
+</body></html>
+''';
+
+    _isNavigatingToChapter = true;
+    try {
+      await _controller!.loadData(
+        data: html,
+        mimeType: 'text/html',
+        encoding: 'utf-8',
+        baseUrl: WebUri(
+          ReaderHibikiSource.epubUrl(_book!.chapters[entry.chapterIndex].href),
+        ),
+      );
+    } catch (e) {
+      _isNavigatingToChapter = false;
+      rethrow;
+    }
+  }
+
+  String _resolveSpreadImageUrl(String chapterHref, String imgSrc) {
+    final String chapterDir = p.posix.dirname(chapterHref);
+    final String resolved = p.posix.normalize(p.posix.join(chapterDir, imgSrc));
+    return ReaderHibikiSource.epubUrl(resolved);
+  }
+
   void _handlePageTurnLimit(String direction) {
     if (_book == null) {
       return;
     }
     _audiobookController?.cancelChapterTransition();
+
+    if (_spreadMap != null && _settings?.spreadMode != 'off') {
+      final int currentVirtual =
+          _spreadMap!.virtualPageForChapter(_currentChapter);
+      if (direction == 'forward') {
+        if (currentVirtual + 1 < _spreadMap!.length) {
+          _navigateToVirtualPage(currentVirtual + 1);
+        }
+      } else {
+        if (currentVirtual > 0) {
+          _navigateToVirtualPage(currentVirtual - 1, progress: 0.99);
+        }
+      }
+      return;
+    }
+
     if (direction == 'forward') {
       if (_currentChapter < _book!.chapters.length - 1) {
         _navigateToChapter(_currentChapter + 1);
@@ -2381,7 +2583,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       return;
     }
 
-    final bool shouldPause = ReaderHoshiSource.instance.pauseOnLookup;
+    final bool shouldPause = ReaderHibikiSource.instance.pauseOnLookup;
     final AudiobookPlayerController? abc = _audiobookController;
     if (shouldPause && abc != null && abc.isPlaying) {
       abc.pause();
@@ -2439,7 +2641,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
           }
         } catch (e, stack) {
           ErrorLogService.instance
-              .log('ReaderHoshi.lyricsCueContext', e, stack);
+              .log('ReaderHibiki.lyricsCueContext', e, stack);
         }
       }
       _lookupCue ??= _audiobookController?.currentCue;
@@ -2581,7 +2783,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     _lastSavedProgress = progress;
 
     final int normOffset = (progress * 10000).round();
-    debugPrint('[ReaderHoshi] save position: bookId=${widget.bookId} '
+    debugPrint('[ReaderHibiki] save position: bookId=${widget.bookId} '
         'section=$section normOffset=$normOffset');
     final ReaderPositionRepository repo =
         ReaderPositionRepository(appModel.database);
@@ -2683,7 +2885,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       timeMs: elapsedMs,
     )
         .catchError((Object e) {
-      debugPrint('[ReaderHoshi] stats flush error: $e');
+      debugPrint('[ReaderHibiki] stats flush error: $e');
     });
     _sessionCharsRead = 0;
     _sessionStartTime = DateTime.now();
@@ -2733,7 +2935,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
   void _openImageViewer(String imgUrl) {
     final Uri? uri = Uri.tryParse(imgUrl);
     if (uri == null || _extractDir == null) return;
-    if (uri.host != ReaderHoshiSource.kHost) return;
+    if (uri.host != ReaderHibikiSource.kHost) return;
     final String epubPath =
         Uri.decodeComponent(uri.path.substring('/epub/'.length));
     final String filePath = p.join(_extractDir!, epubPath);
@@ -2753,7 +2955,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
           onTap: () => Navigator.pop(context),
           child: InteractiveViewer(
             minScale: 0.5,
-            maxScale: 5,
+            maxScale: 10,
             child: Center(
               child: Image.memory(bytes, fit: BoxFit.contain),
             ),
@@ -2996,7 +3198,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
                 child: Row(
                   children: <Widget>[
                     IconButton(
-                      icon: Icon(Icons.headphones_outlined, color: _themeTextColor()),
+                      icon: Icon(Icons.headphones_outlined,
+                          color: _themeTextColor()),
                       iconSize: 22,
                       onPressed: _openAudioImportDialog,
                     ),
@@ -3028,7 +3231,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       await _openSrtBookAudioPicker();
       return;
     }
-    final String bookUid = ReaderHoshiSource.bookUidFor(widget.bookId);
+    final String bookUid = ReaderHibikiSource.bookUidFor(widget.bookId);
     final AudiobookRepository repo = AudiobookRepository(appModel.database);
 
     await showAppDialog<void>(
@@ -3043,8 +3246,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     try {
       await _resolveAudioSlot();
     } catch (e, stack) {
-      ErrorLogService.instance.log('ReaderHoshi.openAudioImport', e, stack);
-      debugPrint('[ReaderHoshi] resolveAudioSlot after import failed: $e');
+      ErrorLogService.instance.log('ReaderHibiki.openAudioImport', e, stack);
+      debugPrint('[ReaderHibiki] resolveAudioSlot after import failed: $e');
     }
     if (mounted) setState(() {});
   }
@@ -3122,8 +3325,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         HibikiToast.show(msg: t.audiobook_import_success);
       }
     } catch (e, stack) {
-      ErrorLogService.instance.log('ReaderHoshi.srtBookAudioPicker', e, stack);
-      debugPrint('[ReaderHoshi] srtBookAudioPicker failed: $e');
+      ErrorLogService.instance.log('ReaderHibiki.srtBookAudioPicker', e, stack);
+      debugPrint('[ReaderHibiki] srtBookAudioPicker failed: $e');
       if (mounted) HibikiToast.show(msg: t.audiobook_import_error);
     }
   }
@@ -3172,7 +3375,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
       },
       webViewController: _controller!,
       appModel: appModel,
-      isHoshiReader: true,
+      isHibikiReader: true,
       onStyleChanged: _applyStylesLive,
       onThemeChanged: _onThemeChanged,
       extractDir: _extractDir,
@@ -3306,9 +3509,8 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
         ),
       );
     } else {
-      await showModalBottomSheet<void>(
+      await adaptiveModalSheet<void>(
         context: context,
-        isScrollControlled: true,
         builder: (_) => sheetContent,
       );
     }
@@ -3379,7 +3581,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
   Future<void> _syncSettingsToHive() async {
     final ReaderSettings s = _settings!;
-    final ReaderHoshiSource src = ReaderHoshiSource.instance;
+    final ReaderHibikiSource src = ReaderHibikiSource.instance;
     await Future.wait(<Future<void>>[
       src.setTtuFontSize(s.fontSize),
       src.setTtuLineHeight(s.lineHeight),
@@ -3403,7 +3605,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
 
   Future<void> _syncSettingsFromHive() async {
     final ReaderSettings s = _settings!;
-    final ReaderHoshiSource src = ReaderHoshiSource.instance;
+    final ReaderHibikiSource src = ReaderHibikiSource.instance;
     await Future.wait(<Future<void>>[
       s.setFontSize(src.ttuFontSize),
       s.setLineHeight(src.ttuLineHeight),
@@ -3474,7 +3676,7 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
     final int gen = ++_navigateGeneration;
     _restoreExpectedGeneration = gen;
     _restoreInFlight = true;
-    debugPrint('[ReaderHoshi] reloadWithCurrentSettings: '
+    debugPrint('[ReaderHibiki] reloadWithCurrentSettings: '
         'chapter=$_currentChapter progress=$_initialProgress '
         'generation=$gen continuous=${_settings?.isContinuousMode}');
 
@@ -3803,7 +4005,9 @@ class _ReaderHoshiPageState extends BaseSourcePageState<ReaderHoshiPage>
               const SizedBox(width: 8),
               IconButton(
                 icon: Icon(
-                  ctrl.isPlaying ? Icons.pause_outlined : Icons.play_arrow_outlined,
+                  ctrl.isPlaying
+                      ? Icons.pause_outlined
+                      : Icons.play_arrow_outlined,
                   size: 24,
                 ),
                 onPressed: ctrl.togglePlayPause,

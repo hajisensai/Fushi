@@ -2,7 +2,7 @@
 
 import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki/src/media/sources/reader_hoshi_source.dart';
+import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/profile/profile_repository.dart';
 
@@ -148,7 +148,7 @@ final profileViewModelProvider =
     ref.invalidate(ankiViewModelProvider);
     final appModel = ref.read(appProvider);
     await appModel.refreshPrefCache();
-    ReaderHoshiSource.readerSettings?.refreshFromDb();
+    ReaderHibikiSource.readerSettings?.refreshFromDb();
   }
 
   return ProfileViewModel(repo, onApplied);

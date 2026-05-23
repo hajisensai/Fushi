@@ -32,7 +32,7 @@ class _AnkiSettingsPageState extends BasePageState<AnkiSettingsPage> {
             leading: Icon(Icons.person_outline),
             title: ProfileSelector(),
           ),
-          const Divider(),
+          const HibikiDivider(),
           _buildFetchTile(uiState, vm),
           if (uiState.errorMessage != null)
             Padding(
@@ -55,17 +55,20 @@ class _AnkiSettingsPageState extends BasePageState<AnkiSettingsPage> {
               ),
             ),
           if (uiState.isConfigured) ...[
-            const Divider(),
+            const HibikiDivider(),
             _buildDeckDropdown(settings, vm),
-            const Divider(),
+            const HibikiDivider(),
             _buildNoteTypeDropdown(settings, vm),
-            const Divider(),
-            _SectionHeader(t.anki_field_mappings),
+            const HibikiDivider(),
+            SettingsSectionHeader(
+              t.anki_field_mappings,
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+            ),
             _buildFieldMappings(settings, vm),
-            const Divider(),
+            const HibikiDivider(),
             _buildTagsInput(settings, vm),
-            const Divider(),
-            SwitchListTile(
+            const HibikiDivider(),
+            SwitchListTile.adaptive(
               title: Text(t.anki_allow_duplicates),
               subtitle: Text(
                 t.anki_allow_duplicates_hint,
@@ -75,7 +78,7 @@ class _AnkiSettingsPageState extends BasePageState<AnkiSettingsPage> {
               value: settings.allowDupes,
               onChanged: vm.updateAllowDupes,
             ),
-            SwitchListTile(
+            SwitchListTile.adaptive(
               title: Text(t.anki_compact_glossaries),
               subtitle: Text(
                 t.anki_compact_glossaries_hint,
@@ -331,24 +334,6 @@ class _AnkiHandlebarPickerDialogState extends State<AnkiHandlebarPickerDialog> {
           child: Text(MaterialLocalizations.of(context).okButtonLabel),
         ),
       ],
-    );
-  }
-}
-
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader(this.title);
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-      child: Text(
-        title,
-        style: Theme.of(context).textTheme.labelLarge?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-      ),
     );
   }
 }

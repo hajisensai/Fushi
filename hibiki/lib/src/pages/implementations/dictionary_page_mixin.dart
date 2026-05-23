@@ -240,7 +240,7 @@ mixin DictionaryPageMixin {
         searchTerm: trimmed,
       );
       mixinAppModel.addToDictionaryHistory(result: result);
-      if (autoRead && ReaderHoshiSource.instance.autoReadOnLookup) {
+      if (autoRead && ReaderHibikiSource.instance.autoReadOnLookup) {
         final first = result.entries.first;
         if (first.word.isNotEmpty) {
           autoReadWord(first.word, first.reading);

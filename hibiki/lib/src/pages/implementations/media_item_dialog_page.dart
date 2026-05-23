@@ -271,7 +271,7 @@ class MediaItemDialogFrame extends StatelessWidget {
                     // List actions
                     if (listActions.isNotEmpty) ...[
                       const SizedBox(height: 4),
-                      const Divider(),
+                      const HibikiDivider(),
                       for (final action in listActions)
                         ListTile(
                           contentPadding: EdgeInsets.zero,
@@ -288,7 +288,7 @@ class MediaItemDialogFrame extends StatelessWidget {
 
                     // Danger actions
                     if (dangerActions.isNotEmpty) ...[
-                      const Divider(),
+                      const HibikiDivider(),
                       const SizedBox(height: 4),
                       for (final action in dangerActions)
                         Center(

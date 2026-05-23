@@ -1,11 +1,11 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/sources/reader_hoshi_source.dart';
+import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:path/path.dart' as p;
 
 void main() {
-  group('ReaderHoshiSource custom font helpers', () {
+  group('ReaderHibikiSource custom font helpers', () {
     late Directory tempDir;
 
     setUp(() async {
@@ -24,7 +24,7 @@ void main() {
       await fontFile.writeAsBytes(<int>[0, 1, 0, 0]);
       final rawPath = p.join(fontsDir.path, '..', 'fonts', 'font.ttf');
 
-      final result = ReaderHoshiSource.customFontCssForEntries(
+      final result = ReaderHibikiSource.customFontCssForEntries(
         <Map<String, dynamic>>[
           <String, dynamic>{
             'name': 'Test Font',
@@ -50,7 +50,7 @@ void main() {
       final outsideFont = File(p.join(outsideDir.path, 'font.ttf'));
       await outsideFont.writeAsBytes(<int>[0, 1, 0, 0]);
 
-      final result = ReaderHoshiSource.customFontCssForEntries(
+      final result = ReaderHibikiSource.customFontCssForEntries(
         <Map<String, dynamic>>[
           <String, dynamic>{
             'name': 'Outside Font',

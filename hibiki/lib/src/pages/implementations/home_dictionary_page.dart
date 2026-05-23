@@ -475,7 +475,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
           );
           if (_result!.entries.isNotEmpty) {
             appModel.addToDictionaryHistory(result: _result!);
-            if (ReaderHoshiSource.instance.autoReadOnLookup) {
+            if (ReaderHibikiSource.instance.autoReadOnLookup) {
               final entry = _result!.entries.first;
               if (entry.word.isNotEmpty) {
                 autoReadWord(entry.word, entry.reading);

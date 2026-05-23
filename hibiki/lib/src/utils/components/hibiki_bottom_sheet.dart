@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hibiki/models.dart';
+
 
 /// An option to show in a bottom sheet.
 class HibikiBottomSheetOption {
@@ -45,8 +45,6 @@ class HibikiBottomSheet extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    AppModel appModel = ref.watch(appProvider);
-
     ScrollController scrollController = ScrollController();
     SchedulerBinding.instance.addPostFrameCallback((_) {
       if (scrollController.hasClients && scrollToExtent) {
@@ -56,6 +54,8 @@ class HibikiBottomSheet extends ConsumerWidget {
       }
     });
 
+    final cs = Theme.of(context).colorScheme;
+
     return ListView.builder(
       controller: scrollController,
       shrinkWrap: true,
@@ -64,22 +64,18 @@ class HibikiBottomSheet extends ConsumerWidget {
         HibikiBottomSheetOption option = options[i];
 
         return ListTile(
-          tileColor: Theme.of(context).cardColor,
+          tileColor: cs.surface,
           dense: true,
           leading: Icon(
             option.icon,
             size: 20,
-            color: Colors.red,
+            color: option.active ? cs.error : cs.onSurfaceVariant,
           ),
           title: Text(
             option.label,
             maxLines: 1,
             style: TextStyle(
-              color: (option.active)
-                  ? Colors.red
-                  : appModel.isDarkMode
-                      ? Colors.white
-                      : Colors.black,
+              color: option.active ? cs.error : cs.onSurface,
             ),
           ),
           onTap: () async {

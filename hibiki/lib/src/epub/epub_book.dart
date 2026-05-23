@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:hibiki/src/media/sources/reader_hoshi_source.dart';
+import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:html/parser.dart' as html_parser;
 import 'package:html/dom.dart' as html_dom;
 import 'package:path/path.dart' as p;
@@ -16,11 +16,17 @@ class EpubBook {
     this.rootDirectory,
     this.author,
     this.language,
+    this.renditionSpread,
   });
 
   final String title;
   final String? author;
   final String? language;
+
+  /// Book-level `rendition:spread` value: `landscape`, `both`, `portrait`,
+  /// `none`, or `null` when the OPF does not declare one.
+  final String? renditionSpread;
+
   final List<EpubChapter> chapters;
   final List<EpubTocItem> toc;
   final String? coverHref;
@@ -62,10 +68,27 @@ class EpubBook {
         );
   }
 
+  /// True when chapter [index] contains no readable text and exactly one
+  /// `<img>` element — i.e. a pure image page (scan, manga, illustration).
+  bool isImageOnlyChapter(int index) {
+    if (index < 0 || index >= chapters.length) return false;
+    if (chapterPlainText(index).isNotEmpty) return false;
+    final html_dom.Document doc = html_parser.parse(chapters[index].html);
+    return doc.querySelectorAll('img').length == 1;
+  }
+
+  /// Extract the `src` attribute of the first `<img>` in chapter [index].
+  String? chapterImageSrc(int index) {
+    if (index < 0 || index >= chapters.length) return null;
+    final html_dom.Document doc = html_parser.parse(chapters[index].html);
+    final html_dom.Element? img = doc.querySelector('img');
+    return img?.attributes['src'];
+  }
+
   ({int chapterIndex, String? fragment})? resolveInternalLink(String url) {
     final Uri? uri = Uri.tryParse(url);
     if (uri == null) return null;
-    if (uri.host != ReaderHoshiSource.kHost) return null;
+    if (uri.host != ReaderHibikiSource.kHost) return null;
     if (!uri.path.startsWith('/epub/')) return null;
 
     final String epubPath =
@@ -90,6 +113,7 @@ class EpubChapter {
     required this.html,
     this.spineIndex,
     this.linear = true,
+    this.spreadProperty,
   });
 
   final String id;
@@ -98,6 +122,9 @@ class EpubChapter {
   final String html;
   final int? spineIndex;
   final bool linear;
+
+  /// `page-spread-left`, `page-spread-right`, or `null`.
+  final String? spreadProperty;
 }
 
 class EpubTocItem {

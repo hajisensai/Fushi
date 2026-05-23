@@ -9,7 +9,7 @@ import 'package:hibiki/utils.dart';
 
 // ─── Shared setting-item builders ────────────────────────────────────────────
 
-ReaderHoshiSource get _source => ReaderHoshiSource.instance;
+ReaderHibikiSource get _source => ReaderHibikiSource.instance;
 
 Widget _buildSwitch({
   required String label,
@@ -20,7 +20,7 @@ Widget _buildSwitch({
 }) {
   return SwitchListTile.adaptive(
     dense: true,
-    contentPadding: EdgeInsets.zero,
+    contentPadding: const EdgeInsets.symmetric(horizontal: 4),
     secondary: icon != null ? Icon(icon, size: 20) : null,
     title: Row(
       mainAxisSize: MainAxisSize.min,
@@ -38,6 +38,7 @@ Widget _buildSwitch({
 }
 
 Widget _buildSegmentedRow<T extends Object>({
+  required BuildContext context,
   required String label,
   required List<ButtonSegment<T>> segments,
   required Set<T> selected,
@@ -45,32 +46,12 @@ Widget _buildSegmentedRow<T extends Object>({
   String? hint,
   bool scrollable = false,
 }) {
-  final button = Builder(
-    builder: (context) {
-      final cs = Theme.of(context).colorScheme;
-      return SegmentedButton<T>(
-        showSelectedIcon: false,
-        segments: segments,
-        selected: selected,
-        onSelectionChanged: onSelectionChanged,
-        style: ButtonStyle(
-          visualDensity: VisualDensity.compact,
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          backgroundColor: WidgetStateProperty.resolveWith((states) {
-            if (states.contains(WidgetState.selected)) {
-              return cs.primaryContainer;
-            }
-            return null;
-          }),
-          foregroundColor: WidgetStateProperty.resolveWith((states) {
-            if (states.contains(WidgetState.selected)) {
-              return cs.onPrimaryContainer;
-            }
-            return null;
-          }),
-        ),
-      );
-    },
+  final button = adaptiveSegmentedButton<T>(
+    context: context,
+    segments: segments,
+    selected: selected,
+    onSelectionChanged: onSelectionChanged,
+    style: kSettingsSegmentedStyle,
   );
   if (scrollable) {
     return Padding(
@@ -125,15 +106,17 @@ Widget _buildTapRow({
   required String label,
   required VoidCallback onTap,
 }) {
+  final cs = Theme.of(context).colorScheme;
   return InkWell(
     onTap: onTap,
     child: Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
         children: [
-          Icon(icon, size: Theme.of(context).textTheme.bodyMedium?.fontSize),
+          Icon(icon, size: 24),
           const Space.normal(),
-          Text(label),
+          Expanded(child: Text(label)),
+          Icon(Icons.chevron_right, size: 20, color: cs.onSurfaceVariant),
         ],
       ),
     ),
@@ -314,7 +297,7 @@ Widget _buildFontEntry(BuildContext context) {
         context,
         adaptivePageRoute(builder: (_) => const CustomFontsPage()),
       ).then((_) {
-        ReaderHoshiSource.onSettingsChangedLive?.call();
+        ReaderHibikiSource.onSettingsChangedLive?.call();
       });
     },
   );
@@ -382,7 +365,7 @@ Widget _buildThemeSelector(AppModel appModel,
             ),
             onTap: () {
               appModel.setAppThemeKey('system-theme');
-              ReaderHoshiSource.onSettingsChangedLive?.call();
+              ReaderHibikiSource.onSettingsChangedLive?.call();
             },
           ),
           ...AppModel.themePresets.entries.map((e) {
@@ -391,7 +374,7 @@ Widget _buildThemeSelector(AppModel appModel,
               selected: appModel.appThemeKey == e.key,
               onTap: () {
                 appModel.setAppThemeKey(e.key);
-                ReaderHoshiSource.onSettingsChangedLive?.call();
+                ReaderHibikiSource.onSettingsChangedLive?.call();
               },
             );
           }),
@@ -412,7 +395,7 @@ Widget _buildThemeSelector(AppModel appModel,
                 navContext,
                 adaptivePageRoute(builder: (_) => const CustomThemePage()),
               ).then((_) {
-                ReaderHoshiSource.onSettingsChangedLive?.call();
+                ReaderHibikiSource.onSettingsChangedLive?.call();
               });
             },
           ),
@@ -429,12 +412,8 @@ Widget _buildBrightnessSelector(AppModel appModel,
   return Row(
     children: [
       Expanded(child: Text(t.dark_mode)),
-      SegmentedButton<String>(
-        showSelectedIcon: false,
-        style: const ButtonStyle(
-          visualDensity: VisualDensity.compact,
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        ),
+      adaptiveSegmentedButton<String>(
+        context: navContext,
         segments: const [
           ButtonSegment(
             value: 'light',
@@ -452,8 +431,9 @@ Widget _buildBrightnessSelector(AppModel appModel,
         selected: {appModel.brightnessMode},
         onSelectionChanged: (selected) {
           appModel.setBrightnessMode(selected.first);
-          ReaderHoshiSource.onSettingsChangedLive?.call();
+          ReaderHibikiSource.onSettingsChangedLive?.call();
         },
+        style: kSettingsSegmentedStyle,
       ),
     ],
   );
@@ -461,14 +441,14 @@ Widget _buildBrightnessSelector(AppModel appModel,
 
 // ─── Dialog version (used inside the reader) ─────────────────────────────────
 
-class HoshiSettingsDialogPage extends BasePage {
-  const HoshiSettingsDialogPage({super.key});
+class HibikiSettingsDialogPage extends BasePage {
+  const HibikiSettingsDialogPage({super.key});
 
   @override
-  BasePageState createState() => _HoshiSettingsDialogPageState();
+  BasePageState createState() => _HibikiSettingsDialogPageState();
 }
 
-class _HoshiSettingsDialogPageState extends BasePageState {
+class _HibikiSettingsDialogPageState extends BasePageState {
   final ScrollController _contentScrollController = ScrollController();
 
   @override
@@ -517,9 +497,7 @@ class _HoshiSettingsDialogPageState extends BasePageState {
             mainAxisSize: MainAxisSize.min,
             children: [
               _buildThemeSelector(appModel, navContext: context),
-              const Space.small(),
               const HibikiDivider(),
-              const Space.small(),
               _buildFontEntry(context),
               _buildTapRow(
                 context: context,
@@ -533,12 +511,9 @@ class _HoshiSettingsDialogPageState extends BasePageState {
                   ).then((_) => setState(() {}));
                 },
               ),
-              const Space.small(),
               const HibikiDivider(),
-              const Space.small(),
               ..._buildReaderOnlySwitches(() => setState(() {}),
                   appModel: appModel),
-              const Space.small(),
               const HibikiDivider(),
               _buildPageTurningSpeed(() => setState(() {})),
             ],
@@ -551,14 +526,14 @@ class _HoshiSettingsDialogPageState extends BasePageState {
 
 // ─── Full-page version (home "调整" tab) ──────────────────────────────────────
 
-class HoshiSettingsContent extends BasePage {
-  const HoshiSettingsContent({super.key});
+class HibikiSettingsContent extends BasePage {
+  const HibikiSettingsContent({super.key});
 
   @override
-  BasePageState createState() => _HoshiSettingsContentState();
+  BasePageState createState() => _HibikiSettingsContentState();
 }
 
-class _HoshiSettingsContentState extends BasePageState {
+class _HibikiSettingsContentState extends BasePageState {
   @override
   Widget build(BuildContext context) {
     return DesktopContentLayout(
@@ -567,13 +542,11 @@ class _HoshiSettingsContentState extends BasePageState {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         children: [
           _buildThemeSelector(appModel, navContext: context),
-          const Space.small(),
           const HibikiDivider(),
-          const Space.small(),
           ListTile(
             dense: true,
             contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-            leading: const Icon(Icons.person_outline, size: 22),
+            leading: const Icon(Icons.person_outline, size: 24),
             title: const ProfileSelector(),
           ),
           _categoryTile(
@@ -661,7 +634,7 @@ class _HoshiSettingsContentState extends BasePageState {
     return ListTile(
       dense: true,
       contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-      leading: Icon(icon, size: 22),
+      leading: Icon(icon, size: 24),
       title: Text(label),
       trailing: const Icon(Icons.chevron_right, size: 20),
       onTap: onTap,
@@ -716,12 +689,9 @@ class _ReaderBehaviorSettingsPageState extends BasePageState {
               ).then((_) => setState(() {}));
             },
           ),
-          const Space.small(),
           const HibikiDivider(),
-          const Space.small(),
           ..._buildReaderOnlySwitches(() => setState(() {}),
               appModel: appModel),
-          const Space.small(),
           const HibikiDivider(),
           _buildPageTurningSpeed(() => setState(() {})),
         ],
@@ -783,7 +753,7 @@ class _AudiobookSettingsPageState extends BasePageState {
                   },
                 ),
                 SizedBox(
-                  width: 36,
+                  width: 42,
                   child: Text(
                     appModel.floatingLyricFontSize.round().toString(),
                     textAlign: TextAlign.center,
@@ -852,7 +822,7 @@ class _UpdateSettingsPageState extends BasePageState {
               setState(() {});
             },
           ),
-          const Divider(),
+          const HibikiDivider(),
           _buildSwitch(
             label: t.update_debug_channel,
             value: appModel.updateDebugChannel,

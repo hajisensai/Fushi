@@ -17,10 +17,10 @@ MediaItem buildCollectionReaderMediaItem({
   required String title,
 }) {
   return MediaItem(
-    mediaIdentifier: ReaderHoshiSource.mediaIdentifierFor(ttuId),
+    mediaIdentifier: ReaderHibikiSource.mediaIdentifierFor(ttuId),
     title: title,
-    mediaTypeIdentifier: ReaderHoshiSource.instance.mediaType.uniqueKey,
-    mediaSourceIdentifier: ReaderHoshiSource.instance.uniqueKey,
+    mediaTypeIdentifier: ReaderHibikiSource.instance.mediaType.uniqueKey,
+    mediaSourceIdentifier: ReaderHibikiSource.instance.uniqueKey,
     position: 0,
     duration: 1,
     canDelete: false,
@@ -217,7 +217,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
 
     appModel.openMedia(
       ref: ref,
-      mediaSource: ReaderHoshiSource.instance,
+      mediaSource: ReaderHibikiSource.instance,
       item: mediaItem,
       initialBookmarkJump: bookmark,
     );

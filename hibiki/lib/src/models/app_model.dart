@@ -670,7 +670,7 @@ class AppModel with ChangeNotifier {
     /// A list of media sources that the app will support at runtime.
     final Map<MediaType, List<MediaSource>> availableMediaSources = {
       ReaderMediaType.instance: [
-        ReaderHoshiSource.instance,
+        ReaderHibikiSource.instance,
       ],
       DictionaryMediaType.instance: [],
     };
@@ -1035,7 +1035,7 @@ class AppModel with ChangeNotifier {
       MediaSource.setDatabase(_database);
       final readerSettings = ReaderSettings(_database);
       await readerSettings.ready;
-      ReaderHoshiSource.readerSettings = readerSettings;
+      ReaderHibikiSource.readerSettings = readerSettings;
 
       await Future.wait(<Future<void>>[
         Future.wait(<Future<void>>[
@@ -2280,7 +2280,7 @@ class AppModel with ChangeNotifier {
     _overrideDictionaryColor = null;
     _overrideDictionaryTheme = null;
 
-    if (ReaderHoshiSource.instance.keepScreenAwake) {
+    if (ReaderHibikiSource.instance.keepScreenAwake) {
       try {
         await WakelockPlus.enable();
       } catch (_) {}

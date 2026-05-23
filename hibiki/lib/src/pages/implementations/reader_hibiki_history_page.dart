@@ -19,21 +19,21 @@ import 'package:hibiki/src/profile/profile_repository.dart';
 import 'package:hibiki/src/profile/profile_view_model.dart';
 import 'package:hibiki/utils.dart';
 
-class ReaderHoshiHistoryPage extends HistoryReaderPage {
-  const ReaderHoshiHistoryPage({super.key});
+class ReaderHibikiHistoryPage extends HistoryReaderPage {
+  const ReaderHibikiHistoryPage({super.key});
 
   @override
   BaseHistoryPageState<BaseHistoryPage> createState() =>
-      _ReaderHoshiHistoryPageState();
+      _ReaderHibikiHistoryPageState();
 }
 
-class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
+class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     extends HistoryReaderPageState {
   @override
   MediaType get mediaType => mediaSource.mediaType;
 
   @override
-  ReaderHoshiSource get mediaSource => ReaderHoshiSource.instance;
+  ReaderHibikiSource get mediaSource => ReaderHibikiSource.instance;
 
   final Map<String, Future<_AudiobookInfo>> _audiobookInfoCache = {};
 
@@ -79,7 +79,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
   @override
   Widget build(BuildContext context) {
     final AsyncValue<List<MediaItem>> books =
-        ref.watch(hoshiBooksProvider(appModel.targetLanguage));
+        ref.watch(hibikiBooksProvider(appModel.targetLanguage));
     final AsyncValue<Set<int>?> filteredIds =
         ref.watch(filteredBookIdsProvider);
     final allTags = ref.watch(allTagsProvider);
@@ -109,7 +109,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
                 stack: stack,
                 refresh: () {
                   _refreshSrtBooks();
-                  ref.invalidate(hoshiBooksProvider(appModel.targetLanguage));
+                  ref.invalidate(hibikiBooksProvider(appModel.targetLanguage));
                 },
               ),
               loading: () => const SizedBox.shrink(),
@@ -612,10 +612,10 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
 
   MediaItem _srtBookMediaItem(SrtBook book) {
     return MediaItem(
-      mediaIdentifier: ReaderHoshiSource.mediaIdentifierFor(book.ttuBookId),
+      mediaIdentifier: ReaderHibikiSource.mediaIdentifierFor(book.ttuBookId),
       title: book.title,
-      mediaTypeIdentifier: ReaderHoshiSource.instance.mediaType.uniqueKey,
-      mediaSourceIdentifier: ReaderHoshiSource.instance.uniqueKey,
+      mediaTypeIdentifier: ReaderHibikiSource.instance.mediaType.uniqueKey,
+      mediaSourceIdentifier: ReaderHibikiSource.instance.uniqueKey,
       position: 0,
       duration: 1,
       canDelete: false,
@@ -633,7 +633,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
     Navigator.push(
       context,
       adaptivePageRoute<void>(
-        builder: (_) => ReaderHoshiPage(
+        builder: (_) => ReaderHibikiPage(
           bookId: book.ttuBookId,
           item: _srtBookMediaItem(book),
         ),
@@ -809,7 +809,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
         final SrtBook? book = await repo.findByUid(uid);
         if (book != null) {
           if (book.ttuBookId > 0) {
-            await ReaderHoshiSource.instance.deleteBook(
+            await ReaderHibikiSource.instance.deleteBook(
               db: appModel.database,
               bookId: book.ttuBookId,
             );
@@ -820,7 +820,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
       } else {
         final int? bookId = _parseBookId(key);
         if (bookId != null) {
-          final bool ok = await ReaderHoshiSource.instance.deleteBook(
+          final bool ok = await ReaderHibikiSource.instance.deleteBook(
             db: appModel.database,
             bookId: bookId,
           );
@@ -830,7 +830,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
     }
     if (!mounted) return;
     _refreshSrtBooks();
-    ref.invalidate(hoshiBooksProvider(appModel.targetLanguage));
+    ref.invalidate(hibikiBooksProvider(appModel.targetLanguage));
     ref.invalidate(bookTagMapProvider);
     ref.invalidate(srtBookTagMapProvider);
     _exitSelectionMode();
@@ -871,7 +871,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
     if (confirmed != true || !mounted) return;
 
     if (book.ttuBookId > 0) {
-      await ReaderHoshiSource.instance.deleteBook(
+      await ReaderHibikiSource.instance.deleteBook(
         db: appModel.database,
         bookId: book.ttuBookId,
       );
@@ -879,7 +879,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
     await SrtBookRepository(appModel.database).delete(book.uid);
     if (mounted) {
       _refreshSrtBooks();
-      ref.invalidate(hoshiBooksProvider(appModel.targetLanguage));
+      ref.invalidate(hibikiBooksProvider(appModel.targetLanguage));
       setState(() {});
     }
   }
@@ -1097,7 +1097,7 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
     );
     if (confirmed != true || !mounted) return;
 
-    final bool ok = await ReaderHoshiSource.instance.deleteBook(
+    final bool ok = await ReaderHibikiSource.instance.deleteBook(
       db: appModel.database,
       bookId: bookId,
     );
@@ -1107,12 +1107,12 @@ class _ReaderHoshiHistoryPageState<T extends HistoryReaderPage>
       return;
     }
     _refreshSrtBooks();
-    ref.invalidate(hoshiBooksProvider(appModel.targetLanguage));
+    ref.invalidate(hibikiBooksProvider(appModel.targetLanguage));
     setState(() {});
   }
 
   int? _parseBookId(String mediaIdentifier) =>
-      ReaderHoshiSource.parseBookId(mediaIdentifier);
+      ReaderHibikiSource.parseBookId(mediaIdentifier);
 
   void _openIllustrations(MediaItem item, int bookId) {
     Navigator.pop(context);

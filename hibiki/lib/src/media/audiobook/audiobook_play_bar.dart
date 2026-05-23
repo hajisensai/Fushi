@@ -8,7 +8,7 @@ import 'package:intl/intl.dart';
 import 'package:hibiki/src/epub/epub_book.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_bridge.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
-import 'package:hibiki/src/media/sources/reader_hoshi_source.dart';
+import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/book_css_editor_page.dart';
 import 'package:hibiki/src/pages/implementations/custom_theme_page.dart';
@@ -53,7 +53,9 @@ class AudiobookPlayBar extends StatelessWidget {
               ),
               IconButton.filledTonal(
                 icon: Icon(
-                  controller.isPlaying ? Icons.pause_outlined : Icons.play_arrow_outlined,
+                  controller.isPlaying
+                      ? Icons.pause_outlined
+                      : Icons.play_arrow_outlined,
                 ),
                 iconSize: 24,
                 onPressed: controller.togglePlayPause,
@@ -191,7 +193,7 @@ class AudiobookSettingsSheet extends StatefulWidget {
     this.onJumpToCharOffset,
     this.charProgress,
     this.onPageMarginChanged,
-    this.isHoshiReader = false,
+    this.isHibikiReader = false,
     this.epubBook,
     this.onStyleChanged,
     this.lyricsMode = false,
@@ -239,7 +241,7 @@ class AudiobookSettingsSheet extends StatefulWidget {
   final VoidCallback? onToggleLyricsMode;
 
   /// When true, skip AudiobookBridge JS calls and disable ttu-only features.
-  final bool isHoshiReader;
+  final bool isHibikiReader;
 
   final EpubBook? epubBook;
 
@@ -252,7 +254,7 @@ class AudiobookSettingsSheet extends StatefulWidget {
 }
 
 class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
-  ReaderHoshiSource get _src => ReaderHoshiSource.instance;
+  ReaderHibikiSource get _src => ReaderHibikiSource.instance;
 
   TtuReaderSettings? _settings;
 
@@ -287,7 +289,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
   }
 
   Future<void> _loadSettings() async {
-    if (widget.isHoshiReader) {
+    if (widget.isHibikiReader) {
       final TtuReaderSettings s = TtuReaderSettings(
         fontSize: _src.ttuFontSize,
         lineHeight: _src.ttuLineHeight,
@@ -307,14 +309,14 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
   }
 
   Future<void> _updateSetting(String key, Object value) async {
-    if (!widget.isHoshiReader) {
+    if (!widget.isHibikiReader) {
       await AudiobookBridge.setReaderSetting(
         widget.webViewController,
         key: key,
         value: value,
       );
     }
-    final ReaderHoshiSource src = ReaderHoshiSource.instance;
+    final ReaderHibikiSource src = ReaderHibikiSource.instance;
     switch (key) {
       case 'fontSize':
         await src.setTtuFontSize((value as num).toDouble());
@@ -345,6 +347,10 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         widget.onPageMarginChanged?.call();
       case 'pageColumns':
         await src.setTtuPageColumns((value as num).toInt());
+      case 'spreadMode':
+        await src.setTtuSpreadMode(value as String);
+      case 'spreadDirection':
+        await src.setTtuSpreadDirection(value as String);
       case 'enableVerticalFontKerning':
         await src.setTtuEnableVerticalFontKerning(value as bool);
       case 'enableFontVPAL':
@@ -356,11 +362,13 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
       case 'prioritizeReaderStyles':
         await src.setTtuPrioritizeReaderStyles(value as bool);
     }
-    if (widget.isHoshiReader) {
+    if (widget.isHibikiReader) {
       const layoutKeys = {
         'writingMode',
         'viewMode',
         'pageColumns',
+        'spreadMode',
+        'spreadDirection',
         'prioritizeReaderStyles'
       };
       if (layoutKeys.contains(key)) {
@@ -383,7 +391,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
   }
 
   Future<void> _applyFuriganaMode(String mode) async {
-    if (widget.isHoshiReader) {
+    if (widget.isHibikiReader) {
       await _src.setTtuFuriganaMode(mode);
       await widget.onStyleChanged?.call();
       return;
@@ -1153,8 +1161,8 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
               ),
             ),
             const SizedBox(height: 8),
-            SegmentedButton<int>(
-              showSelectedIcon: false,
+            adaptiveSegmentedButton<int>(
+              context: context,
               segments: _imagePauseOptions
                   .map((s) => ButtonSegment<int>(
                         value: s,
@@ -1165,7 +1173,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
               onSelectionChanged: (sel) {
                 ctrl.setImagePauseSec(sel.first);
               },
-              style: _segmentedStyle(theme),
+              style: kSettingsSegmentedStyle,
             ),
           ],
         );
@@ -1703,8 +1711,8 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         _settingRow(
           theme,
           label: t.ttu_writing_direction,
-          child: SegmentedButton<String>(
-            showSelectedIcon: false,
+          child: adaptiveSegmentedButton<String>(
+            context: context,
             segments: <ButtonSegment<String>>[
               ButtonSegment<String>(
                   value: 'horizontal-tb', label: Text(t.ttu_horizontal)),
@@ -1717,14 +1725,14 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
               setState(() {});
               _updateSetting('writingMode', sel.first);
             },
-            style: _segmentedStyle(theme),
+            style: kSettingsSegmentedStyle,
           ),
         ),
         _settingRow(
           theme,
           label: t.ttu_view_mode_label,
-          child: SegmentedButton<String>(
-            showSelectedIcon: false,
+          child: adaptiveSegmentedButton<String>(
+            context: context,
             segments: <ButtonSegment<String>>[
               ButtonSegment<String>(
                   value: 'paginated', label: Text(t.ttu_paginated)),
@@ -1737,15 +1745,15 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
               setState(() {});
               _updateSetting('viewMode', sel.first);
             },
-            style: _segmentedStyle(theme),
+            style: kSettingsSegmentedStyle,
           ),
         ),
         _settingRow(
           theme,
           label: t.ttu_vert_text_orient,
           hint: t.ttu_vert_text_orient_hint,
-          child: SegmentedButton<String>(
-            showSelectedIcon: false,
+          child: adaptiveSegmentedButton<String>(
+            context: context,
             segments: <ButtonSegment<String>>[
               ButtonSegment<String>(
                   value: 'mixed', label: Text(t.ttu_orient_mixed)),
@@ -1758,7 +1766,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
               setState(() {});
               _updateSetting('verticalTextOrientation', sel.first);
             },
-            style: _segmentedStyle(theme),
+            style: kSettingsSegmentedStyle,
           ),
         ),
         const SizedBox(height: 4),
@@ -1766,8 +1774,8 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
           theme,
           label: t.ttu_furigana_mode,
           hint: t.ttu_furigana_mode_hint,
-          child: SegmentedButton<String>(
-            showSelectedIcon: false,
+          child: adaptiveSegmentedButton<String>(
+            context: context,
             segments: <ButtonSegment<String>>[
               ButtonSegment<String>(
                   value: 'show', label: Text(t.ttu_furigana_show)),
@@ -1787,7 +1795,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
               setState(() {});
               _applyFuriganaMode(mode);
             },
-            style: _segmentedStyle(theme),
+            style: kSettingsSegmentedStyle,
           ),
         ),
         const SizedBox(height: 8),
@@ -1867,29 +1875,6 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
           child,
         ],
       ),
-    );
-  }
-
-  ButtonStyle _segmentedStyle(ThemeData theme) {
-    final cs = theme.colorScheme;
-    return ButtonStyle(
-      visualDensity: VisualDensity.compact,
-      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      padding: const WidgetStatePropertyAll<EdgeInsetsGeometry>(
-        EdgeInsets.symmetric(horizontal: 8),
-      ),
-      backgroundColor: WidgetStateProperty.resolveWith((states) {
-        if (states.contains(WidgetState.selected)) {
-          return cs.primaryContainer;
-        }
-        return null;
-      }),
-      foregroundColor: WidgetStateProperty.resolveWith((states) {
-        if (states.contains(WidgetState.selected)) {
-          return cs.onPrimaryContainer;
-        }
-        return null;
-      }),
     );
   }
 
@@ -1996,7 +1981,8 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                       if (fav.sectionIndex != null &&
                           widget.onJumpToFavorite != null)
                         IconButton(
-                          icon: const Icon(Icons.open_in_new_outlined, size: 16),
+                          icon:
+                              const Icon(Icons.open_in_new_outlined, size: 16),
                           onPressed: () async {
                             Navigator.of(ctx).pop();
                             await widget.onJumpToFavorite?.call(fav);
@@ -2055,7 +2041,9 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         if (widget.onToggleLyricsMode != null)
           _actionBtn(
             context,
-            icon: widget.lyricsMode ? Icons.auto_stories_outlined : Icons.lyrics_outlined,
+            icon: widget.lyricsMode
+                ? Icons.auto_stories_outlined
+                : Icons.lyrics_outlined,
             label: widget.lyricsMode ? t.book_mode : t.lyrics_mode,
             onTap: () {
               Navigator.of(context).pop();

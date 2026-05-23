@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:spaces/spaces.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/profile/profile_selector.dart';
-import 'package:hibiki/src/media/sources/reader_hoshi_source.dart';
+import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 
 class DisplaySettingsPage extends BasePage {
   const DisplaySettingsPage({super.key});
@@ -15,15 +14,15 @@ class DisplaySettingsPage extends BasePage {
 }
 
 class _DisplaySettingsPageState extends BasePageState {
-  ReaderHoshiSource get _source => ReaderHoshiSource.instance;
+  ReaderHibikiSource get _source => ReaderHibikiSource.instance;
   ReaderSettings? _settings;
 
   @override
   void initState() {
     super.initState();
     _settings =
-        ReaderHoshiSource.readerSettings ?? ReaderSettings(appModel.database);
-    ReaderHoshiSource.readerSettings = _settings;
+        ReaderHibikiSource.readerSettings ?? ReaderSettings(appModel.database);
+    ReaderHibikiSource.readerSettings = _settings;
     _settings!.ready.then((_) {
       if (mounted) setState(() {});
     });
@@ -47,11 +46,10 @@ class _DisplaySettingsPageState extends BasePageState {
             theme,
             label: t.design_system_label,
             hint: t.design_system_hint,
-            child: SegmentedButton<String>(
-              showSelectedIcon: false,
+            child: adaptiveSegmentedButton<String>(
+              context: context,
               segments: [
-                ButtonSegment(
-                    value: 'auto', label: Text(t.design_system_auto)),
+                ButtonSegment(value: 'auto', label: Text(t.design_system_auto)),
                 const ButtonSegment(value: 'material', label: Text('MD3')),
                 const ButtonSegment(value: 'cupertino', label: Text('iOS')),
               ],
@@ -59,14 +57,13 @@ class _DisplaySettingsPageState extends BasePageState {
               onSelectionChanged: (sel) {
                 appModel.themeNotifier.setDesignSystem(sel.first);
               },
-              style: _segmentedStyle(theme),
+              style: kSettingsSegmentedStyle,
             ),
           ),
-          const Space.small(),
           const HibikiDivider(),
-          const Space.small(),
           const ProfileSelector(),
-          const Divider(),
+          const HibikiDivider(),
+          SettingsSectionHeader(t.section_typography),
           _numberStepper(
             theme,
             label: t.ttu_font_size,
@@ -150,14 +147,45 @@ class _DisplaySettingsPageState extends BasePageState {
             onChanged: (v) =>
                 _update(() => _source.setTtuPageColumns(v.round())),
           ),
-          const Space.small(),
+          _settingRow(
+            theme,
+            label: t.spread_mode,
+            child: adaptiveSegmentedButton<String>(
+              context: context,
+              segments: [
+                ButtonSegment(value: 'off', label: Text(t.spread_off)),
+                ButtonSegment(value: 'on', label: Text(t.spread_on)),
+                ButtonSegment(value: 'auto', label: Text(t.spread_auto)),
+              ],
+              selected: {_source.ttuSpreadMode},
+              onSelectionChanged: (sel) =>
+                  _update(() => _source.setTtuSpreadMode(sel.first)),
+              style: kSettingsSegmentedStyle,
+            ),
+          ),
+          if (_source.ttuSpreadMode != 'off')
+            _settingRow(
+              theme,
+              label: t.spread_direction,
+              child: adaptiveSegmentedButton<String>(
+                context: context,
+                segments: const [
+                  ButtonSegment(value: 'rtl', label: Text('RTL')),
+                  ButtonSegment(value: 'ltr', label: Text('LTR')),
+                ],
+                selected: {_source.ttuSpreadDirection},
+                onSelectionChanged: (sel) =>
+                    _update(() => _source.setTtuSpreadDirection(sel.first)),
+                style: kSettingsSegmentedStyle,
+              ),
+            ),
           const HibikiDivider(),
-          const Space.small(),
+          SettingsSectionHeader(t.section_layout),
           _settingRow(
             theme,
             label: t.ttu_writing_direction,
-            child: SegmentedButton<String>(
-              showSelectedIcon: false,
+            child: adaptiveSegmentedButton<String>(
+              context: context,
               segments: [
                 ButtonSegment(
                     value: 'horizontal-tb', label: Text(t.ttu_horizontal)),
@@ -167,14 +195,14 @@ class _DisplaySettingsPageState extends BasePageState {
               selected: {_source.ttuWritingMode},
               onSelectionChanged: (sel) =>
                   _update(() => _source.setTtuWritingMode(sel.first)),
-              style: _segmentedStyle(theme),
+              style: kSettingsSegmentedStyle,
             ),
           ),
           _settingRow(
             theme,
             label: t.ttu_view_mode_label,
-            child: SegmentedButton<String>(
-              showSelectedIcon: false,
+            child: adaptiveSegmentedButton<String>(
+              context: context,
               segments: [
                 ButtonSegment(value: 'paginated', label: Text(t.ttu_paginated)),
                 ButtonSegment(value: 'continuous', label: Text(t.ttu_scroll)),
@@ -182,15 +210,15 @@ class _DisplaySettingsPageState extends BasePageState {
               selected: {_source.ttuViewMode},
               onSelectionChanged: (sel) =>
                   _update(() => _source.setTtuViewMode(sel.first)),
-              style: _segmentedStyle(theme),
+              style: kSettingsSegmentedStyle,
             ),
           ),
           if (isVertical)
             _settingRow(
               theme,
               label: t.ttu_vert_text_orient,
-              child: SegmentedButton<String>(
-                showSelectedIcon: false,
+              child: adaptiveSegmentedButton<String>(
+                context: context,
                 segments: [
                   ButtonSegment(
                       value: 'mixed', label: Text(t.ttu_orient_mixed)),
@@ -200,7 +228,7 @@ class _DisplaySettingsPageState extends BasePageState {
                 selected: {_source.ttuVerticalTextOrientation},
                 onSelectionChanged: (sel) => _update(
                     () => _source.setTtuVerticalTextOrientation(sel.first)),
-                style: _segmentedStyle(theme),
+                style: kSettingsSegmentedStyle,
               ),
             ),
           Padding(
@@ -212,8 +240,8 @@ class _DisplaySettingsPageState extends BasePageState {
                 const SizedBox(height: 6),
                 SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
-                  child: SegmentedButton<String>(
-                    showSelectedIcon: false,
+                  child: adaptiveSegmentedButton<String>(
+                    context: context,
                     segments: [
                       ButtonSegment(
                           value: 'show', label: Text(t.ttu_furigana_show)),
@@ -230,15 +258,13 @@ class _DisplaySettingsPageState extends BasePageState {
                       if (sel.isEmpty) return;
                       _update(() => _source.setTtuFuriganaMode(sel.first));
                     },
-                    style: _segmentedStyle(theme),
+                    style: kSettingsSegmentedStyle,
                   ),
                 ),
               ],
             ),
           ),
-          const Space.small(),
           const HibikiDivider(),
-          const Space.small(),
           _settingRow(
             theme,
             label: t.ttu_text_justify,
@@ -289,7 +315,7 @@ class _DisplaySettingsPageState extends BasePageState {
   void _update(VoidCallback fn) {
     fn();
     setState(() {});
-    ReaderHoshiSource.onSettingsChangedLive?.call();
+    ReaderHibikiSource.onSettingsChangedLive?.call();
   }
 
   Widget _settingRow(
@@ -321,26 +347,6 @@ class _DisplaySettingsPageState extends BasePageState {
           child,
         ],
       ),
-    );
-  }
-
-  ButtonStyle _segmentedStyle(ThemeData theme) {
-    final cs = theme.colorScheme;
-    return ButtonStyle(
-      visualDensity: VisualDensity.compact,
-      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      backgroundColor: WidgetStateProperty.resolveWith((states) {
-        if (states.contains(WidgetState.selected)) {
-          return cs.primaryContainer;
-        }
-        return null;
-      }),
-      foregroundColor: WidgetStateProperty.resolveWith((states) {
-        if (states.contains(WidgetState.selected)) {
-          return cs.onPrimaryContainer;
-        }
-        return null;
-      }),
     );
   }
 

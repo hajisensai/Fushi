@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/reader/reader_content_styles.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
-import 'package:hibiki/src/media/sources/reader_hoshi_source.dart';
+import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 
 Future<ReaderSettings> _defaultSettings() async {
   final HibikiDatabase db = HibikiDatabase.forTesting(NativeDatabase.memory());
@@ -181,23 +181,23 @@ void main() {
     });
   });
 
-  group('ReaderHoshiSource live settings callbacks', () {
+  group('ReaderHibikiSource live settings callbacks', () {
     test('style setting writes trigger the live callback', () async {
       final HibikiDatabase db =
           HibikiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.ready;
-      ReaderHoshiSource.readerSettings = settings;
-      addTearDown(() => ReaderHoshiSource.readerSettings = null);
+      ReaderHibikiSource.readerSettings = settings;
+      addTearDown(() => ReaderHibikiSource.readerSettings = null);
 
       int calls = 0;
-      ReaderHoshiSource.onSettingsChangedLive = () => calls++;
-      addTearDown(() => ReaderHoshiSource.onSettingsChangedLive = null);
+      ReaderHibikiSource.onSettingsChangedLive = () => calls++;
+      addTearDown(() => ReaderHibikiSource.onSettingsChangedLive = null);
 
-      await ReaderHoshiSource.instance.setTtuFontSize(25);
-      await ReaderHoshiSource.instance.setTtuPrioritizeReaderStyles(true);
-      await ReaderHoshiSource.instance.addCustomFont(name: 'Test Font');
+      await ReaderHibikiSource.instance.setTtuFontSize(25);
+      await ReaderHibikiSource.instance.setTtuPrioritizeReaderStyles(true);
+      await ReaderHibikiSource.instance.addCustomFont(name: 'Test Font');
 
       expect(calls, 3);
     });

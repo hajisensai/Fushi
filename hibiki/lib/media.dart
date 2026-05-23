@@ -7,4 +7,4 @@ export 'src/media/types/reader_media_type.dart';
 
 export 'src/media/source_types/reader_media_source.dart';
 
-export 'src/media/sources/reader_hoshi_source.dart';
+export 'src/media/sources/reader_hibiki_source.dart';

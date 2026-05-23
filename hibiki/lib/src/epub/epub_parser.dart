@@ -74,6 +74,7 @@ class EpubParser {
         _parseCoverHref(opfXml, manifest, opfDir, extractDir);
     final List<EpubTocItem> toc =
         _parseToc(opfXml, manifest, opfDir, extractDir);
+    final String? renditionSpread = _parseRenditionSpread(opfXml);
 
     final String canonExtract = p.canonicalize(extractDir);
     final Map<String, EpubResource> resources = <String, EpubResource>{};
@@ -99,6 +100,7 @@ class EpubParser {
       coverHref: coverHref,
       resources: resources,
       rootDirectory: extractDir,
+      renditionSpread: renditionSpread,
     );
   }
 
@@ -260,6 +262,16 @@ class EpubParser {
       final String linear =
           itemref.getAttribute('linear')?.toLowerCase() ?? 'yes';
 
+      final String? properties = itemref.getAttribute('properties');
+      String? spreadProperty;
+      if (properties != null) {
+        if (properties.contains('page-spread-left')) {
+          spreadProperty = 'page-spread-left';
+        } else if (properties.contains('page-spread-right')) {
+          spreadProperty = 'page-spread-right';
+        }
+      }
+
       chapters.add(EpubChapter(
         id: item.id,
         href: normalizeHref(relPath),
@@ -267,6 +279,7 @@ class EpubParser {
         html: file.readAsStringSync(),
         spineIndex: index,
         linear: linear != 'no',
+        spreadProperty: spreadProperty,
       ));
       index++;
     }
@@ -532,6 +545,19 @@ class EpubParser {
         p.relative(absPath, from: extractDir).replaceAll('\\', '/');
     final String normalized = normalizeHref(relPath);
     return fragment.isEmpty ? normalized : '$normalized$fragment';
+  }
+
+  static String? _parseRenditionSpread(XmlDocument opf) {
+    for (final XmlElement meta in opf.findAllElements('meta')) {
+      final String? property = meta.getAttribute('property');
+      if (property == 'rendition:spread') {
+        final String value = meta.innerText.trim().toLowerCase();
+        if (const {'landscape', 'both', 'portrait', 'none'}.contains(value)) {
+          return value;
+        }
+      }
+    }
+    return null;
   }
 
   static bool _isHtmlMediaType(String mediaType) {

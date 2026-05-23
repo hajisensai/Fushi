@@ -352,8 +352,8 @@ class _CustomFontsPageState extends BasePageState {
   void initState() {
     super.initState();
     _settings =
-        ReaderHoshiSource.readerSettings ?? ReaderSettings(appModel.database);
-    ReaderHoshiSource.readerSettings = _settings;
+        ReaderHibikiSource.readerSettings ?? ReaderSettings(appModel.database);
+    ReaderHibikiSource.readerSettings = _settings;
     _settings!.ready.then((_) {
       if (!mounted) return;
       setState(() {

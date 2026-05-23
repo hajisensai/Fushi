@@ -39,7 +39,7 @@ class _ProfileManagementPageState extends BasePageState<ProfileManagementPage> {
               ),
               children: [
                 ..._buildProfileTiles(uiState, vm),
-                const Divider(height: 32),
+                const HibikiDivider(),
                 _SectionHeader(t.profile_media_type_bindings),
                 _buildMediaTypeRow(
                   t.profile_media_epub,

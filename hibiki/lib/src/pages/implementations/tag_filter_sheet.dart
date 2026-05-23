@@ -4,6 +4,7 @@ import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/tag_management_page.dart';
 import 'package:hibiki/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:hibiki/src/utils/components/hibiki_divider.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 
 final selectedTagIdsProvider = StateProvider<Set<int>>((_) => {});
@@ -146,7 +147,7 @@ class _TagFilterSheetState extends ConsumerState<TagFilterSheet> {
                 ),
               ),
             ),
-          const Divider(),
+          const HibikiDivider(),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             child: Row(

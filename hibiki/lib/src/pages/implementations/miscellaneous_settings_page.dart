@@ -131,7 +131,7 @@ class _MiscellaneousSettingsPageState
           8 + MediaQuery.of(context).padding.bottom,
         ),
         children: [
-          SwitchListTile(
+          SwitchListTile.adaptive(
             dense: true,
             contentPadding: const EdgeInsets.symmetric(horizontal: 4),
             title: Text(t.debug_log_toggle),
@@ -141,7 +141,7 @@ class _MiscellaneousSettingsPageState
               setState(() {});
             },
           ),
-          SwitchListTile(
+          SwitchListTile.adaptive(
             dense: true,
             contentPadding: const EdgeInsets.symmetric(horizontal: 4),
             title: Text(t.low_memory_mode),
@@ -153,10 +153,8 @@ class _MiscellaneousSettingsPageState
             },
           ),
           if (Platform.isAndroid) ...[
-            const Divider(),
-            const SizedBox(height: 8),
-            Text(t.app_icon_label, style: textTheme.titleMedium),
-            const SizedBox(height: 12),
+            const HibikiDivider(),
+            SettingsSectionHeader(t.app_icon_label),
             _buildIconGrid(),
             if (_customSupported) ...[
               const SizedBox(height: 8),

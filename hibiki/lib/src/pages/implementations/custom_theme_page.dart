@@ -383,12 +383,8 @@ class _CustomThemePageState extends BasePageState {
           Row(
             children: [
               Expanded(child: Text(t.dark_mode)),
-              SegmentedButton<String>(
-                showSelectedIcon: false,
-                style: const ButtonStyle(
-                  visualDensity: VisualDensity.compact,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
+              adaptiveSegmentedButton<String>(
+                context: context,
                 segments: const [
                   ButtonSegment(
                     value: 'light',
@@ -406,6 +402,7 @@ class _CustomThemePageState extends BasePageState {
                 selected: {_brightnessMode},
                 onSelectionChanged: (selected) =>
                     _setBrightnessMode(selected.first),
+                style: kSettingsSegmentedStyle,
               ),
             ],
           ),

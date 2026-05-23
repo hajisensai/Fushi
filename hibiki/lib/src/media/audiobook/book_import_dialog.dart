@@ -15,7 +15,7 @@ import 'package:hibiki/src/epub/epub_book.dart';
 import 'package:hibiki/src/epub/epub_importer.dart';
 import 'package:hibiki/src/epub/epub_parser.dart';
 import 'package:hibiki/src/epub/epub_storage.dart';
-import 'package:hibiki/src/media/sources/reader_hoshi_source.dart';
+import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/utils.dart';
 
 /// 统一"导入书"对话框。EPUB、字幕、音频可按需组合，一次导入。
@@ -158,7 +158,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
         ),
         if (_willRunMatcher) ...[
           const SizedBox(height: 12),
-          SwitchListTile(
+          SwitchListTile.adaptive(
             dense: true,
             contentPadding: EdgeInsets.zero,
             title: Text(t.auto_select_search_window),
@@ -744,7 +744,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
       ErrorLogService.instance.log('BookImportDialog.parseEpub', e, stack);
       debugPrint('[hibiki-import] parseFromExtracted failed: $e');
     }
-    final String bookUid = ReaderHoshiSource.bookUidFor(bookId);
+    final String bookUid = ReaderHibikiSource.bookUidFor(bookId);
 
     _reportProgress(0.45, t.import_step_parsing);
     final String ext = _subtitlePath!.split('.').last.toLowerCase();
