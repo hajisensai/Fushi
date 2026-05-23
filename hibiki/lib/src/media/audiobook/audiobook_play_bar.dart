@@ -233,7 +233,7 @@ class AudiobookSettingsSheet extends StatefulWidget {
   final (int current, int total)? charProgress;
   final VoidCallback? onPageMarginChanged;
 
-  /// Called after any typography/style setting changes so the reader can
+  /// Called after any display/style setting changes so the reader can
   /// live-update CSS without a full page reload.
   final Future<void> Function()? onStyleChanged;
 
@@ -446,52 +446,43 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
   }
 
   Widget _buildMainPage(BuildContext context, ThemeData theme) {
+    final List<Widget> navigationRows = [
+      _categoryTile(
+        icon: Icons.menu_book_outlined,
+        label: t.section_navigation,
+        page: 'navigation',
+      ),
+      _categoryTile(
+        icon: Icons.auto_stories_outlined,
+        label: t.reader_settings_section,
+        page: 'reader',
+      ),
+      _categoryTile(
+        icon: Icons.text_fields,
+        label: t.display_settings,
+        page: 'display',
+      ),
+      if (widget.controller != null)
+        _categoryTile(
+          icon: Icons.headphones_outlined,
+          label: t.section_audiobook,
+          page: 'audiobook',
+        ),
+      if (widget.controller != null)
+        _categoryTile(
+          icon: Icons.widgets_outlined,
+          label: t.section_interface,
+          page: 'interface',
+        ),
+    ];
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildProgressSection(theme),
         const SizedBox(height: 12),
-        _categoryTile(
-          theme,
-          icon: Icons.menu_book_outlined,
-          label: t.section_navigation,
-          page: 'navigation',
-        ),
-        if (widget.controller != null)
-          _categoryTile(
-            theme,
-            icon: Icons.headphones_outlined,
-            label: t.section_audiobook,
-            page: 'audiobook',
-          ),
-        _categoryTile(
-          theme,
-          icon: Icons.auto_stories_outlined,
-          label: t.reader_settings_section,
-          page: 'reader',
-        ),
-        _categoryTile(
-          theme,
-          icon: Icons.text_fields,
-          label: t.section_typography,
-          page: 'typography',
-        ),
-        _categoryTile(
-          theme,
-          icon: Icons.view_quilt_outlined,
-          label: t.section_layout,
-          page: 'layout',
-        ),
-        if (widget.controller != null)
-          _categoryTile(
-            theme,
-            icon: Icons.tune_outlined,
-            label: t.section_interface,
-            page: 'interface',
-          ),
-        const SizedBox(height: 12),
-        const Divider(height: 1),
+        AdaptiveSettingsSection(children: navigationRows),
         const SizedBox(height: 12),
         _buildActionRow(context),
       ],
@@ -508,28 +499,27 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         content = Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildVolumeSection(theme, widget.controller!),
-            const SizedBox(height: 16),
-            _buildSpeedSection(theme, widget.controller!),
-            const SizedBox(height: 16),
-            _buildDelaySection(theme, widget.controller!),
-            const SizedBox(height: 16),
-            _buildImagePauseSection(theme, widget.controller!),
-            if (widget.onAudioImport != null) ...[
-              const SizedBox(height: 16),
-              const Divider(height: 1),
-              const SizedBox(height: 12),
-              Center(
-                child: TextButton.icon(
-                  onPressed: () {
-                    Navigator.pop(context);
-                    widget.onAudioImport!();
-                  },
-                  icon: const Icon(Icons.swap_horiz_outlined, size: 18),
-                  label: Text(t.srt_book_replace_audio),
-                ),
+            AdaptiveSettingsSection(
+              children: [
+                _buildVolumeSection(widget.controller!),
+                _buildSpeedSection(widget.controller!),
+                _buildDelaySection(theme, widget.controller!),
+                _buildImagePauseSection(widget.controller!),
+              ],
+            ),
+            if (widget.onAudioImport != null)
+              AdaptiveSettingsSection(
+                children: [
+                  AdaptiveSettingsNavigationRow(
+                    title: t.srt_book_replace_audio,
+                    icon: Icons.swap_horiz_outlined,
+                    onTap: () {
+                      Navigator.pop(context);
+                      widget.onAudioImport!();
+                    },
+                  ),
+                ],
               ),
-            ],
           ],
         );
       case 'navigation':
@@ -559,17 +549,13 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         );
       case 'reader':
         title = t.reader_settings_section;
-        content = Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        content = AdaptiveSettingsSection(
           children: [
-            ..._buildReaderSwitches(theme),
+            ..._buildReaderSwitches(),
             if (widget.extractDir != null)
-              ListTile(
-                dense: true,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-                leading: const Icon(Icons.code_outlined, size: 22),
-                title: Text(t.book_css_editor_edit_css),
-                trailing: const Icon(Icons.chevron_right, size: 20),
+              AdaptiveSettingsNavigationRow(
+                title: t.book_css_editor_edit_css,
+                icon: Icons.code_outlined,
                 onTap: () async {
                   await Navigator.push(
                     context,
@@ -583,15 +569,12 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
               ),
           ],
         );
-      case 'typography':
-        title = t.section_typography;
-        content = _buildTypographySection(theme);
-      case 'layout':
-        title = t.section_layout;
-        content = _buildLayoutSection(theme);
+      case 'display':
+        title = t.display_settings;
+        content = _buildDisplaySettingsSection(theme);
       case 'interface':
         title = t.section_interface;
-        content = _buildPlayBarToggle(theme);
+        content = _buildPlayBarToggle();
       default:
         title = '';
         content = const SizedBox.shrink();
@@ -616,18 +599,14 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
     );
   }
 
-  Widget _categoryTile(
-    ThemeData theme, {
+  Widget _categoryTile({
     required IconData icon,
     required String label,
     required String page,
   }) {
-    return ListTile(
-      dense: true,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-      leading: Icon(icon, size: 22),
-      title: Text(label),
-      trailing: const Icon(Icons.chevron_right, size: 20),
+    return AdaptiveSettingsNavigationRow(
+      title: label,
+      icon: icon,
       onTap: () => setState(() => _subPage = page),
     );
   }
@@ -1008,83 +987,55 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
     );
   }
 
-  Widget _buildVolumeSection(ThemeData theme, AudiobookPlayerController ctrl) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(t.audio_volume, style: theme.textTheme.titleMedium),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            const Icon(Icons.volume_down_outlined, size: 20),
-            Expanded(
-              child: adaptiveSlider(
-                context: context,
-                value: ctrl.volume,
-                max: 2,
-                onChanged: (v) {
-                  ctrl.setVolume(v);
-                  setState(() {});
-                },
-              ),
-            ),
-            const Icon(Icons.volume_up_outlined, size: 20),
-          ],
-        ),
-      ],
+  Widget _buildVolumeSection(AudiobookPlayerController ctrl) {
+    return AdaptiveSettingsSliderRow(
+      title: t.audio_volume,
+      icon: Icons.volume_up_outlined,
+      value: ctrl.volume,
+      max: 2,
+      onChanged: (v) {
+        ctrl.setVolume(v);
+        setState(() {});
+      },
     );
   }
 
-  Widget _buildSpeedSection(ThemeData theme, AudiobookPlayerController ctrl) {
+  Widget _buildSpeedSection(AudiobookPlayerController ctrl) {
     return ListenableBuilder(
       listenable: ctrl,
       builder: (context, _) {
         final double current = ctrl.speed;
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Text(t.playback_speed, style: theme.textTheme.titleMedium),
-                const Spacer(),
-                Text(
-                  '${current.toStringAsFixed(2)}x',
-                  style: theme.textTheme.bodyLarge?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                IconButton(
+        return AdaptiveSettingsRow(
+          title: '${t.playback_speed} (${current.toStringAsFixed(2)}x)',
+          icon: Icons.speed_outlined,
+          controlBelow: true,
+          trailing: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              adaptiveSlider(
+                context: context,
+                value: current.clamp(0.25, 3.0),
+                min: 0.25,
+                max: 3,
+                divisions: 55,
+                onChanged: (v) {
+                  final double rounded = (v * 20).roundToDouble() / 20;
+                  ctrl.setSpeed(rounded);
+                },
+              ),
+              Align(
+                alignment: Alignment.centerRight,
+                child: IconButton(
                   icon: const Icon(Icons.restart_alt_outlined, size: 18),
                   onPressed: (current - 1.0).abs() < 0.001
                       ? null
                       : () => ctrl.setSpeed(1),
                   visualDensity: VisualDensity.compact,
-                  padding: const EdgeInsets.only(left: 4),
-                  constraints: const BoxConstraints(),
                   tooltip: t.av_sync_reset,
                 ),
-              ],
-            ),
-            Row(
-              children: [
-                Text('0.25', style: theme.textTheme.bodySmall),
-                Expanded(
-                  child: adaptiveSlider(
-                    context: context,
-                    value: current.clamp(0.25, 3.0),
-                    min: 0.25,
-                    max: 3,
-                    divisions: 55,
-                    onChanged: (v) {
-                      final double rounded = (v * 20).roundToDouble() / 20;
-                      ctrl.setSpeed(rounded);
-                    },
-                  ),
-                ),
-                Text('3.0', style: theme.textTheme.bodySmall),
-              ],
-            ),
-          ],
+              ),
+            ],
+          ),
         );
       },
     );
@@ -1102,41 +1053,43 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
     return ValueListenableBuilder<int>(
       valueListenable: ctrl.delayMs,
       builder: (ctx, ms, _) {
-        return Row(
-          children: [
-            Expanded(
-              child: Text(t.av_sync, style: theme.textTheme.titleMedium),
-            ),
-            _RepeatIconButton(
-              icon: const Icon(Icons.keyboard_double_arrow_left, size: 18),
-              onPressed: () => ctrl.setDelayMs(ctrl.delayMs.value - 1000),
-            ),
-            _RepeatIconButton(
-              icon: const Icon(Icons.chevron_left, size: 18),
-              onPressed: () => ctrl.setDelayMs(ctrl.delayMs.value - 50),
-            ),
-            GestureDetector(
-              onTap: ms == 0 ? null : () => ctrl.setDelayMs(0),
-              child: SizedBox(
-                width: 72,
-                child: Text(
-                  _formatDelayMs(ms),
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodyLarge?.copyWith(
-                    fontWeight: FontWeight.w600,
+        return AdaptiveSettingsRow(
+          title: t.av_sync,
+          icon: Icons.sync_outlined,
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _RepeatIconButton(
+                icon: const Icon(Icons.keyboard_double_arrow_left, size: 18),
+                onPressed: () => ctrl.setDelayMs(ctrl.delayMs.value - 1000),
+              ),
+              _RepeatIconButton(
+                icon: const Icon(Icons.chevron_left, size: 18),
+                onPressed: () => ctrl.setDelayMs(ctrl.delayMs.value - 50),
+              ),
+              GestureDetector(
+                onTap: ms == 0 ? null : () => ctrl.setDelayMs(0),
+                child: SizedBox(
+                  width: 72,
+                  child: Text(
+                    _formatDelayMs(ms),
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ),
-            ),
-            _RepeatIconButton(
-              icon: const Icon(Icons.chevron_right, size: 18),
-              onPressed: () => ctrl.setDelayMs(ctrl.delayMs.value + 50),
-            ),
-            _RepeatIconButton(
-              icon: const Icon(Icons.keyboard_double_arrow_right, size: 18),
-              onPressed: () => ctrl.setDelayMs(ctrl.delayMs.value + 1000),
-            ),
-          ],
+              _RepeatIconButton(
+                icon: const Icon(Icons.chevron_right, size: 18),
+                onPressed: () => ctrl.setDelayMs(ctrl.delayMs.value + 50),
+              ),
+              _RepeatIconButton(
+                icon: const Icon(Icons.keyboard_double_arrow_right, size: 18),
+                onPressed: () => ctrl.setDelayMs(ctrl.delayMs.value + 1000),
+              ),
+            ],
+          ),
         );
       },
     );
@@ -1144,62 +1097,37 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
 
   static const List<int> _imagePauseOptions = [0, 5, 10, 15];
 
-  Widget _buildImagePauseSection(
-      ThemeData theme, AudiobookPlayerController ctrl) {
+  Widget _buildImagePauseSection(AudiobookPlayerController ctrl) {
     return ValueListenableBuilder<int>(
       valueListenable: ctrl.imagePauseSec,
       builder: (ctx, sec, _) {
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(t.image_pause, style: theme.textTheme.titleMedium),
-            const SizedBox(height: 4),
-            Text(
-              t.image_pause_hint,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 8),
-            adaptiveSegmentedButton<int>(
-              context: context,
-              segments: _imagePauseOptions
-                  .map((s) => ButtonSegment<int>(
-                        value: s,
-                        label: Text(s == 0 ? t.image_pause_off : '${s}s'),
-                      ))
-                  .toList(),
-              selected: <int>{sec},
-              onSelectionChanged: (sel) {
-                ctrl.setImagePauseSec(sel.first);
-              },
-              style: kSettingsSegmentedStyle,
-            ),
-          ],
+        return AdaptiveSettingsSegmentedRow<int>(
+          title: t.image_pause,
+          subtitle: t.image_pause_hint,
+          icon: Icons.image_outlined,
+          controlBelow: true,
+          segments: _imagePauseOptions
+              .map((s) => ButtonSegment<int>(
+                    value: s,
+                    label: Text(s == 0 ? t.image_pause_off : '${s}s'),
+                  ))
+              .toList(),
+          selected: sec,
+          onChanged: ctrl.setImagePauseSec,
         );
       },
     );
   }
 
-  List<Widget> _buildReaderSwitches(ThemeData theme) {
+  List<Widget> _buildReaderSwitches() {
     Widget sw(String label, bool value, VoidCallback toggle) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 2),
-        child: Row(
-          children: [
-            Expanded(child: Text(label)),
-            Builder(
-              builder: (BuildContext context) => adaptiveSwitch(
-                context: context,
-                value: value,
-                onChanged: (_) {
-                  toggle();
-                  setState(() {});
-                },
-              ),
-            ),
-          ],
-        ),
+      return AdaptiveSettingsSwitchRow(
+        title: label,
+        value: value,
+        onChanged: (_) {
+          toggle();
+          setState(() {});
+        },
       );
     }
 
@@ -1234,149 +1162,75 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         await _src.setPauseOnLookup(value: !_src.pauseOnLookup);
         setState(() {});
       }),
-      Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Row(
-          children: [
-            Expanded(child: Text(t.dismiss_swipe_sensitivity)),
-            SizedBox(
-              width: 140,
-              child: adaptiveSlider(
-                context: context,
-                value: _src.dismissSwipeSensitivity,
-                min: 0.1,
-                divisions: 9,
-                label: _src.dismissSwipeSensitivity.toStringAsFixed(1),
-                onChanged: (v) {
-                  _src.setDismissSwipeSensitivity(v);
-                  setState(() {});
-                },
-              ),
-            ),
-          ],
-        ),
+      AdaptiveSettingsSliderRow(
+        title: t.dismiss_swipe_sensitivity,
+        value: _src.dismissSwipeSensitivity,
+        min: 0.1,
+        divisions: 9,
+        label: _src.dismissSwipeSensitivity.toStringAsFixed(1),
+        onChanged: (v) {
+          _src.setDismissSwipeSensitivity(v);
+          setState(() {});
+        },
       ),
-      Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Row(
-          children: [
-            Expanded(child: Text(t.volume_button_turning_speed)),
-            SizedBox(
-              width: 140,
-              child: adaptiveSlider(
-                context: context,
-                value: _src.volumePageTurningSpeed.toDouble(),
-                min: 10,
-                max: 500,
-                divisions: 49,
-                label: '${_src.volumePageTurningSpeed}',
-                onChanged: (v) {
-                  _src.setVolumePageTurningSpeed(v.round());
-                  setState(() {});
-                },
-              ),
-            ),
-          ],
-        ),
+      AdaptiveSettingsSliderRow(
+        title: t.volume_button_turning_speed,
+        value: _src.volumePageTurningSpeed.toDouble(),
+        min: 10,
+        max: 500,
+        divisions: 49,
+        label: '${_src.volumePageTurningSpeed}',
+        onChanged: (v) {
+          _src.setVolumePageTurningSpeed(v.round());
+          setState(() {});
+        },
       ),
     ];
   }
 
-  Widget _buildPlayBarToggle(ThemeData theme) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
+  Widget _buildPlayBarToggle() {
+    return AdaptiveSettingsSection(
       children: [
-        Row(
-          children: [
-            Expanded(
-                child: Text(t.show_media_notification,
-                    style: theme.textTheme.bodyMedium)),
-            adaptiveSwitch(
-              context: context,
-              value: _localShowMediaNotification,
-              onChanged: (_) {
-                widget.onToggleMediaNotification?.call();
-                setState(() {
-                  _localShowMediaNotification = !_localShowMediaNotification;
-                });
-              },
-            ),
-          ],
+        AdaptiveSettingsSwitchRow(
+          title: t.show_media_notification,
+          value: _localShowMediaNotification,
+          onChanged: (_) {
+            widget.onToggleMediaNotification?.call();
+            setState(() {
+              _localShowMediaNotification = !_localShowMediaNotification;
+            });
+          },
         ),
-        Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(t.show_floating_lyric,
-                      style: theme.textTheme.bodyMedium),
-                  Text(
-                    t.floating_lyric_hint,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            adaptiveSwitch(
-              context: context,
-              value: _localShowFloatingLyric,
-              onChanged: (_) async {
-                final bool ok =
-                    await widget.onToggleFloatingLyric?.call() ?? false;
-                if (ok && mounted) {
-                  setState(() {
-                    _localShowFloatingLyric = !_localShowFloatingLyric;
-                  });
-                }
-              },
-            ),
-          ],
+        AdaptiveSettingsSwitchRow(
+          title: t.show_floating_lyric,
+          subtitle: t.floating_lyric_hint,
+          value: _localShowFloatingLyric,
+          onChanged: (_) async {
+            final bool ok = await widget.onToggleFloatingLyric?.call() ?? false;
+            if (ok && mounted) {
+              setState(() {
+                _localShowFloatingLyric = !_localShowFloatingLyric;
+              });
+            }
+          },
         ),
-        _settingRow(
-          theme,
-          label: t.floating_lyric_font_size,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              IconButton(
-                icon: const Icon(Icons.remove, size: 18),
-                visualDensity: VisualDensity.compact,
-                onPressed: () {
-                  final double value =
-                      (_localFloatingLyricFontSize - 1).clamp(8, 64);
-                  widget.onFloatingLyricFontSizeChanged?.call(value);
-                  setState(() => _localFloatingLyricFontSize = value);
-                },
-              ),
-              SizedBox(
-                width: 36,
-                child: Text(
-                  '${_localFloatingLyricFontSize.round()}',
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodyLarge,
-                ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.add, size: 18),
-                visualDensity: VisualDensity.compact,
-                onPressed: () {
-                  final double value =
-                      (_localFloatingLyricFontSize + 1).clamp(8, 64);
-                  widget.onFloatingLyricFontSizeChanged?.call(value);
-                  setState(() => _localFloatingLyricFontSize = value);
-                },
-              ),
-            ],
-          ),
+        AdaptiveSettingsStepperRow(
+          title: t.floating_lyric_font_size,
+          value: _localFloatingLyricFontSize,
+          step: 1,
+          min: 8,
+          max: 64,
+          format: (double value) => '${value.round()}',
+          onChanged: (double value) {
+            widget.onFloatingLyricFontSizeChanged?.call(value);
+            setState(() => _localFloatingLyricFontSize = value);
+          },
         ),
       ],
     );
   }
 
-  Widget _buildTypographySection(ThemeData theme) {
+  Widget _buildDisplaySettingsSection(ThemeData theme) {
     final TtuReaderSettings? s = _settings;
     if (s == null) {
       return Center(
@@ -1390,246 +1244,365 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
         ),
       );
     }
-    if (widget.lyricsMode) return _buildLyricsTypographySection(theme);
+    if (widget.lyricsMode) return _buildLyricsDisplaySection();
+    final bool isVertical = s.writingMode.startsWith('vertical');
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _settingRow(
-          theme,
-          label: t.ttu_font_size,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              IconButton(
-                icon: const Icon(Icons.remove, size: 18),
-                visualDensity: VisualDensity.compact,
-                onPressed: () {
-                  final double v = (s.fontSize - 1).clamp(8, 64);
-                  s.fontSize = v;
-                  setState(() {});
-                  _updateSetting('fontSize', v);
-                },
+        AdaptiveSettingsSection(
+          children: [
+            AdaptiveSettingsRow(
+              title: t.ttu_theme,
+              controlBelow: true,
+              trailing: Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  ...TtuReaderSettings.availableThemes.map((themeKey) {
+                    final bool selected = s.theme == themeKey;
+                    return buildReaderThemeChip(
+                      context: context,
+                      label:
+                          TtuReaderSettings.themeLabels[themeKey] ?? themeKey,
+                      selected: selected,
+                      onSelected: (bool on) async {
+                        if (!on) return;
+                        s.theme = themeKey;
+                        setState(() {});
+                        await widget.appModel.setAppThemeKey(themeKey);
+                        await _updateSetting('theme', themeKey);
+                        await widget.onThemeChanged?.call();
+                      },
+                    );
+                  }),
+                  buildReaderThemeChip(
+                    avatar: Icon(
+                      Icons.palette_outlined,
+                      size: 18,
+                      color: s.theme == 'custom-theme'
+                          ? theme.colorScheme.onPrimaryContainer
+                          : null,
+                    ),
+                    context: context,
+                    label: t.custom_theme,
+                    selected: s.theme == 'custom-theme',
+                    onSelected: (_) {
+                      Navigator.push(
+                        context,
+                        adaptivePageRoute(
+                          builder: (_) => const CustomThemePage(),
+                        ),
+                      ).then((_) async {
+                        s.theme = widget.appModel.appThemeKey;
+                        setState(() {});
+                        await _updateSetting('theme', s.theme);
+                        await widget.onThemeChanged?.call();
+                      });
+                    },
+                  ),
+                ],
               ),
-              SizedBox(
-                width: 36,
-                child: Text(
-                  '${s.fontSize.round()}',
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodyLarge,
+            ),
+          ],
+        ),
+        AdaptiveSettingsSection(
+          children: [
+            AdaptiveSettingsStepperRow(
+              title: t.ttu_font_size,
+              value: s.fontSize,
+              step: 1,
+              min: 8,
+              max: 64,
+              format: (double value) => '${value.round()}',
+              onChanged: (double value) {
+                s.fontSize = value;
+                setState(() {});
+                _updateSetting('fontSize', value);
+              },
+            ),
+            AdaptiveSettingsStepperRow(
+              title: t.ttu_line_height,
+              value: s.lineHeight,
+              step: 0.1,
+              min: 1,
+              max: 3,
+              format: (double value) => value.toStringAsFixed(2),
+              onChanged: (double value) {
+                s.lineHeight = (value * 100).roundToDouble() / 100;
+                setState(() {});
+                _updateSetting('lineHeight', s.lineHeight);
+              },
+            ),
+            _numberStepper(
+              label: t.ttu_text_indentation,
+              value: _src.ttuTextIndentation,
+              step: 1,
+              min: 0,
+              max: 10,
+              format: (double v) => '${v.round()}',
+              onChanged: (double v) {
+                _src.setTtuTextIndentation(v);
+                setState(() {});
+                _updateSetting('textIndentation', v);
+              },
+            ),
+          ],
+        ),
+        AdaptiveSettingsSection(
+          children: [
+            AdaptiveSettingsSegmentedRow<String>(
+              title: t.spread_mode,
+              segments: <ButtonSegment<String>>[
+                ButtonSegment<String>(
+                  value: 'off',
+                  label: Text(t.spread_off),
                 ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.add, size: 18),
-                visualDensity: VisualDensity.compact,
-                onPressed: () {
-                  final double v = (s.fontSize + 1).clamp(8, 64);
-                  s.fontSize = v;
-                  setState(() {});
-                  _updateSetting('fontSize', v);
-                },
-              ),
-            ],
-          ),
-        ),
-        _settingRow(
-          theme,
-          label: t.ttu_line_height,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              IconButton(
-                icon: const Icon(Icons.remove, size: 18),
-                visualDensity: VisualDensity.compact,
-                onPressed: () {
-                  final double v =
-                      ((s.lineHeight - 0.1) * 100).roundToDouble() / 100;
-                  s.lineHeight = v.clamp(1.0, 3.0);
-                  setState(() {});
-                  _updateSetting('lineHeight', s.lineHeight);
-                },
-              ),
-              SizedBox(
-                width: 42,
-                child: Text(
-                  s.lineHeight.toStringAsFixed(2),
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodyLarge,
+                ButtonSegment<String>(
+                  value: 'on',
+                  label: Text(t.spread_on),
                 ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.add, size: 18),
-                visualDensity: VisualDensity.compact,
-                onPressed: () {
-                  final double v =
-                      ((s.lineHeight + 0.1) * 100).roundToDouble() / 100;
-                  s.lineHeight = v.clamp(1.0, 3.0);
+                ButtonSegment<String>(
+                  value: 'auto',
+                  label: Text(t.spread_auto),
+                ),
+              ],
+              selected: _src.ttuSpreadMode,
+              onChanged: (String value) {
+                _src.setTtuSpreadMode(value);
+                setState(() {});
+                _updateSetting('spreadMode', value);
+              },
+            ),
+            if (_src.ttuSpreadMode != 'off')
+              AdaptiveSettingsSegmentedRow<String>(
+                title: t.spread_direction,
+                segments: const <ButtonSegment<String>>[
+                  ButtonSegment<String>(value: 'rtl', label: Text('RTL')),
+                  ButtonSegment<String>(value: 'ltr', label: Text('LTR')),
+                ],
+                selected: _src.ttuSpreadDirection,
+                onChanged: (String value) {
+                  _src.setTtuSpreadDirection(value);
                   setState(() {});
-                  _updateSetting('lineHeight', s.lineHeight);
+                  _updateSetting('spreadDirection', value);
                 },
               ),
-            ],
-          ),
+            AdaptiveSettingsSegmentedRow<String>(
+              title: t.ttu_writing_direction,
+              segments: <ButtonSegment<String>>[
+                ButtonSegment<String>(
+                  value: 'horizontal-tb',
+                  label: Text(t.ttu_horizontal),
+                ),
+                ButtonSegment<String>(
+                  value: 'vertical-rl',
+                  label: Text(t.ttu_vertical),
+                ),
+              ],
+              selected: s.writingMode,
+              onChanged: (String value) {
+                s.writingMode = value;
+                setState(() {});
+                _updateSetting('writingMode', value);
+              },
+            ),
+            AdaptiveSettingsSegmentedRow<String>(
+              title: t.ttu_view_mode_label,
+              segments: <ButtonSegment<String>>[
+                ButtonSegment<String>(
+                  value: 'paginated',
+                  label: Text(t.ttu_paginated),
+                ),
+                ButtonSegment<String>(
+                  value: 'continuous',
+                  label: Text(t.ttu_scroll),
+                ),
+              ],
+              selected: s.viewMode,
+              onChanged: (String value) {
+                s.viewMode = value;
+                setState(() {});
+                _updateSetting('viewMode', value);
+              },
+            ),
+            if (isVertical)
+              AdaptiveSettingsSegmentedRow<String>(
+                title: t.ttu_vert_text_orient,
+                subtitle: t.ttu_vert_text_orient_hint,
+                segments: <ButtonSegment<String>>[
+                  ButtonSegment<String>(
+                    value: 'mixed',
+                    label: Text(t.ttu_orient_mixed),
+                  ),
+                  ButtonSegment<String>(
+                    value: 'upright',
+                    label: Text(t.ttu_orient_upright),
+                  ),
+                ],
+                selected: _src.ttuVerticalTextOrientation,
+                onChanged: (String value) {
+                  _src.setTtuVerticalTextOrientation(value);
+                  setState(() {});
+                  _updateSetting('verticalTextOrientation', value);
+                },
+              ),
+            AdaptiveSettingsSegmentedRow<String>(
+              title: t.ttu_furigana_mode,
+              subtitle: t.ttu_furigana_mode_hint,
+              controlBelow: true,
+              segments: <ButtonSegment<String>>[
+                ButtonSegment<String>(
+                  value: 'show',
+                  label: Text(t.ttu_furigana_show),
+                ),
+                ButtonSegment<String>(
+                  value: 'hide',
+                  label: Text(t.ttu_furigana_hide),
+                ),
+                ButtonSegment<String>(
+                  value: 'partial',
+                  label: Text(t.ttu_furigana_partial),
+                ),
+                ButtonSegment<String>(
+                  value: 'toggle',
+                  label: Text(t.ttu_furigana_toggle),
+                ),
+              ],
+              selected: _src.ttuFuriganaMode,
+              onChanged: (String mode) {
+                setState(() {});
+                _applyFuriganaMode(mode);
+              },
+            ),
+          ],
         ),
-        _numberStepper(
-          theme,
-          label: t.ttu_text_indentation,
-          value: _src.ttuTextIndentation,
-          step: 1,
-          min: 0,
-          max: 10,
-          format: (v) => '${v.round()}',
-          onChanged: (v) {
-            _src.setTtuTextIndentation(v);
-            setState(() {});
-            _updateSetting('textIndentation', v);
-          },
+        AdaptiveSettingsSection(
+          children: [
+            _numberStepper(
+              label: t.margin_top,
+              value: _src.ttuMarginTop,
+              step: 1,
+              min: -5,
+              max: 30,
+              format: (double v) => '${v.round()}',
+              onChanged: (double v) {
+                _src.setTtuMarginTop(v);
+                setState(() {});
+                _updateSetting('marginTop', v);
+              },
+            ),
+            _numberStepper(
+              label: t.margin_bottom,
+              value: _src.ttuMarginBottom,
+              step: 1,
+              min: -5,
+              max: 30,
+              format: (double v) => '${v.round()}',
+              onChanged: (double v) {
+                _src.setTtuMarginBottom(v);
+                setState(() {});
+                _updateSetting('marginBottom', v);
+              },
+            ),
+            _numberStepper(
+              label: t.margin_left,
+              value: _src.ttuMarginLeft,
+              step: 1,
+              min: -5,
+              max: 30,
+              format: (double v) => '${v.round()}',
+              onChanged: (double v) {
+                _src.setTtuMarginLeft(v);
+                setState(() {});
+                _updateSetting('marginLeft', v);
+              },
+            ),
+            _numberStepper(
+              label: t.margin_right,
+              value: _src.ttuMarginRight,
+              step: 1,
+              min: -5,
+              max: 30,
+              format: (double v) => '${v.round()}',
+              onChanged: (double v) {
+                _src.setTtuMarginRight(v);
+                setState(() {});
+                _updateSetting('marginRight', v);
+              },
+            ),
+            _numberStepper(
+              label: t.columns_per_page,
+              value: _src.ttuPageColumns.toDouble(),
+              step: 1,
+              min: 0,
+              max: 4,
+              format: (double v) =>
+                  v.round() == 0 ? t.ttu_page_columns_auto : '${v.round()}',
+              onChanged: (double v) {
+                _src.setTtuPageColumns(v.round());
+                setState(() {});
+                _updateSetting('pageColumns', v.round());
+              },
+            ),
+          ],
         ),
-        _numberStepper(
-          theme,
-          label: t.margin_top,
-          value: _src.ttuMarginTop,
-          step: 1,
-          min: 0,
-          max: 30,
-          format: (v) => '${v.round()}',
-          onChanged: (v) {
-            _src.setTtuMarginTop(v);
-            setState(() {});
-            _updateSetting('marginTop', v);
-          },
-        ),
-        _numberStepper(
-          theme,
-          label: t.margin_bottom,
-          value: _src.ttuMarginBottom,
-          step: 1,
-          min: 0,
-          max: 30,
-          format: (v) => '${v.round()}',
-          onChanged: (v) {
-            _src.setTtuMarginBottom(v);
-            setState(() {});
-            _updateSetting('marginBottom', v);
-          },
-        ),
-        _numberStepper(
-          theme,
-          label: t.margin_left,
-          value: _src.ttuMarginLeft,
-          step: 1,
-          min: 0,
-          max: 30,
-          format: (v) => '${v.round()}',
-          onChanged: (v) {
-            _src.setTtuMarginLeft(v);
-            setState(() {});
-            _updateSetting('marginLeft', v);
-          },
-        ),
-        _numberStepper(
-          theme,
-          label: t.margin_right,
-          value: _src.ttuMarginRight,
-          step: 1,
-          min: 0,
-          max: 30,
-          format: (v) => '${v.round()}',
-          onChanged: (v) {
-            _src.setTtuMarginRight(v);
-            setState(() {});
-            _updateSetting('marginRight', v);
-          },
-        ),
-        _numberStepper(
-          theme,
-          label: t.columns_per_page,
-          value: _src.ttuPageColumns.toDouble(),
-          step: 1,
-          min: 0,
-          max: 4,
-          format: (v) =>
-              v.round() == 0 ? t.ttu_page_columns_auto : '${v.round()}',
-          onChanged: (v) {
-            _src.setTtuPageColumns(v.round());
-            setState(() {});
-            _updateSetting('pageColumns', v.round());
-          },
-        ),
-        _settingRow(
-          theme,
-          label: t.ttu_text_justify,
-          hint: t.ttu_text_justify_hint,
-          child: adaptiveSwitch(
-            context: context,
-            value: _src.ttuEnableTextJustification,
-            onChanged: (v) {
-              _src.setTtuEnableTextJustification(v);
-              setState(() {});
-              _updateSetting('enableTextJustification', v);
-            },
-          ),
-        ),
-        _settingRow(
-          theme,
-          label: t.ttu_vert_kerning,
-          hint: t.ttu_vert_kerning_hint,
-          child: adaptiveSwitch(
-            context: context,
-            value: _src.ttuEnableVerticalFontKerning,
-            onChanged: (v) {
-              _src.setTtuEnableVerticalFontKerning(v);
-              setState(() {});
-              _updateSetting('enableVerticalFontKerning', v);
-            },
-          ),
-        ),
-        _settingRow(
-          theme,
-          label: t.ttu_font_vpal,
-          hint: t.ttu_font_vpal_hint,
-          child: adaptiveSwitch(
-            context: context,
-            value: _src.ttuEnableFontVPAL,
-            onChanged: (v) {
-              _src.setTtuEnableFontVPAL(v);
-              setState(() {});
-              _updateSetting('enableFontVPAL', v);
-            },
-          ),
-        ),
-        _settingRow(
-          theme,
-          label: t.ttu_reader_styles,
-          hint: t.ttu_reader_styles_hint,
-          child: adaptiveSwitch(
-            context: context,
-            value: _src.ttuPrioritizeReaderStyles,
-            onChanged: (v) {
-              _src.setTtuPrioritizeReaderStyles(v);
-              setState(() {});
-              _updateSetting('prioritizeReaderStyles', v);
-            },
-          ),
+        AdaptiveSettingsSection(
+          children: [
+            AdaptiveSettingsSwitchRow(
+              title: t.ttu_text_justify,
+              subtitle: t.ttu_text_justify_hint,
+              value: _src.ttuEnableTextJustification,
+              onChanged: (bool value) {
+                _src.setTtuEnableTextJustification(value);
+                setState(() {});
+                _updateSetting('enableTextJustification', value);
+              },
+            ),
+            if (isVertical)
+              AdaptiveSettingsSwitchRow(
+                title: t.ttu_vert_kerning,
+                subtitle: t.ttu_vert_kerning_hint,
+                value: _src.ttuEnableVerticalFontKerning,
+                onChanged: (bool value) {
+                  _src.setTtuEnableVerticalFontKerning(value);
+                  setState(() {});
+                  _updateSetting('enableVerticalFontKerning', value);
+                },
+              ),
+            if (isVertical)
+              AdaptiveSettingsSwitchRow(
+                title: t.ttu_font_vpal,
+                subtitle: t.ttu_font_vpal_hint,
+                value: _src.ttuEnableFontVPAL,
+                onChanged: (bool value) {
+                  _src.setTtuEnableFontVPAL(value);
+                  setState(() {});
+                  _updateSetting('enableFontVPAL', value);
+                },
+              ),
+            AdaptiveSettingsSwitchRow(
+              title: t.ttu_reader_styles,
+              subtitle: t.ttu_reader_styles_hint,
+              value: _src.ttuPrioritizeReaderStyles,
+              onChanged: (bool value) {
+                _src.setTtuPrioritizeReaderStyles(value);
+                setState(() {});
+                _updateSetting('prioritizeReaderStyles', value);
+              },
+            ),
+          ],
         ),
       ],
     );
   }
 
-  Widget _buildLyricsTypographySection(ThemeData theme) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildLyricsDisplaySection() {
+    return AdaptiveSettingsSection(
       children: [
-        Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: Text(
-            t.lyrics_font_size_hint,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
+        AdaptiveSettingsRow(
+          title: t.lyrics_font_size_hint,
         ),
         _numberStepper(
-          theme,
           label: t.lyrics_font_size,
           value: _src.lyricsFontSize,
           step: 1,
@@ -1643,7 +1616,6 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
           },
         ),
         _numberStepper(
-          theme,
           label: t.margin_top,
           value: _src.lyricsMarginTop,
           step: 1,
@@ -1657,7 +1629,6 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
           },
         ),
         _numberStepper(
-          theme,
           label: t.margin_bottom,
           value: _src.lyricsMarginBottom,
           step: 1,
@@ -1671,7 +1642,6 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
           },
         ),
         _numberStepper(
-          theme,
           label: t.margin_left,
           value: _src.lyricsMarginLeft,
           step: 1,
@@ -1685,7 +1655,6 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
           },
         ),
         _numberStepper(
-          theme,
           label: t.margin_right,
           value: _src.lyricsMarginRight,
           step: 1,
@@ -1702,184 +1671,7 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
     );
   }
 
-  Widget _buildLayoutSection(ThemeData theme) {
-    final TtuReaderSettings? s = _settings;
-    if (s == null) return const SizedBox.shrink();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _settingRow(
-          theme,
-          label: t.ttu_writing_direction,
-          child: adaptiveSegmentedButton<String>(
-            context: context,
-            segments: <ButtonSegment<String>>[
-              ButtonSegment<String>(
-                  value: 'horizontal-tb', label: Text(t.ttu_horizontal)),
-              ButtonSegment<String>(
-                  value: 'vertical-rl', label: Text(t.ttu_vertical)),
-            ],
-            selected: <String>{s.writingMode},
-            onSelectionChanged: (sel) {
-              s.writingMode = sel.first;
-              setState(() {});
-              _updateSetting('writingMode', sel.first);
-            },
-            style: kSettingsSegmentedStyle,
-          ),
-        ),
-        _settingRow(
-          theme,
-          label: t.ttu_view_mode_label,
-          child: adaptiveSegmentedButton<String>(
-            context: context,
-            segments: <ButtonSegment<String>>[
-              ButtonSegment<String>(
-                  value: 'paginated', label: Text(t.ttu_paginated)),
-              ButtonSegment<String>(
-                  value: 'continuous', label: Text(t.ttu_scroll)),
-            ],
-            selected: <String>{s.viewMode},
-            onSelectionChanged: (sel) {
-              s.viewMode = sel.first;
-              setState(() {});
-              _updateSetting('viewMode', sel.first);
-            },
-            style: kSettingsSegmentedStyle,
-          ),
-        ),
-        _settingRow(
-          theme,
-          label: t.ttu_vert_text_orient,
-          hint: t.ttu_vert_text_orient_hint,
-          child: adaptiveSegmentedButton<String>(
-            context: context,
-            segments: <ButtonSegment<String>>[
-              ButtonSegment<String>(
-                  value: 'mixed', label: Text(t.ttu_orient_mixed)),
-              ButtonSegment<String>(
-                  value: 'upright', label: Text(t.ttu_orient_upright)),
-            ],
-            selected: <String>{_src.ttuVerticalTextOrientation},
-            onSelectionChanged: (sel) {
-              _src.setTtuVerticalTextOrientation(sel.first);
-              setState(() {});
-              _updateSetting('verticalTextOrientation', sel.first);
-            },
-            style: kSettingsSegmentedStyle,
-          ),
-        ),
-        const SizedBox(height: 4),
-        _settingRow(
-          theme,
-          label: t.ttu_furigana_mode,
-          hint: t.ttu_furigana_mode_hint,
-          child: adaptiveSegmentedButton<String>(
-            context: context,
-            segments: <ButtonSegment<String>>[
-              ButtonSegment<String>(
-                  value: 'show', label: Text(t.ttu_furigana_show)),
-              ButtonSegment<String>(
-                  value: 'hide', label: Text(t.ttu_furigana_hide)),
-              ButtonSegment<String>(
-                  value: 'partial', label: Text(t.ttu_furigana_partial)),
-              ButtonSegment<String>(
-                  value: 'toggle', label: Text(t.ttu_furigana_toggle)),
-            ],
-            selected: <String>{_src.ttuFuriganaMode},
-            onSelectionChanged: (sel) {
-              if (sel.isEmpty) {
-                return;
-              }
-              final String mode = sel.first;
-              setState(() {});
-              _applyFuriganaMode(mode);
-            },
-            style: kSettingsSegmentedStyle,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(t.ttu_theme, style: theme.textTheme.bodyMedium),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 6,
-          runSpacing: 6,
-          children: [
-            ...TtuReaderSettings.availableThemes.map((themeKey) {
-              final bool selected = s.theme == themeKey;
-              return buildReaderThemeChip(
-                context: context,
-                label: TtuReaderSettings.themeLabels[themeKey] ?? themeKey,
-                selected: selected,
-                onSelected: (on) async {
-                  if (!on) return;
-                  s.theme = themeKey;
-                  setState(() {});
-                  await widget.appModel.setAppThemeKey(themeKey);
-                  await _updateSetting('theme', themeKey);
-                  await widget.onThemeChanged?.call();
-                },
-              );
-            }),
-            buildReaderThemeChip(
-              avatar: Icon(
-                Icons.palette_outlined,
-                size: 18,
-                color: s.theme == 'custom-theme'
-                    ? theme.colorScheme.onPrimaryContainer
-                    : null,
-              ),
-              context: context,
-              label: t.custom_theme,
-              selected: s.theme == 'custom-theme',
-              onSelected: (_) {
-                Navigator.push(
-                  context,
-                  adaptivePageRoute(builder: (_) => const CustomThemePage()),
-                ).then((_) async {
-                  s.theme = widget.appModel.appThemeKey;
-                  setState(() {});
-                  await _updateSetting('theme', s.theme);
-                  await widget.onThemeChanged?.call();
-                });
-              },
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _settingRow(ThemeData theme,
-      {required String label, required Widget child, String? hint}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Flexible(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label, style: theme.textTheme.bodyMedium),
-                if (hint != null && hint.isNotEmpty)
-                  Text(
-                    hint,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          child,
-        ],
-      ),
-    );
-  }
-
-  Widget _numberStepper(
-    ThemeData theme, {
+  Widget _numberStepper({
     required String label,
     required double value,
     required double step,
@@ -1888,38 +1680,14 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
     required String Function(double) format,
     required ValueChanged<double> onChanged,
   }) {
-    return _settingRow(
-      theme,
-      label: label,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            icon: const Icon(Icons.remove, size: 18),
-            visualDensity: VisualDensity.compact,
-            onPressed: () {
-              final double v = (value - step).clamp(min, max);
-              onChanged(v);
-            },
-          ),
-          SizedBox(
-            width: 42,
-            child: Text(
-              format(value),
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodyLarge,
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.add, size: 18),
-            visualDensity: VisualDensity.compact,
-            onPressed: () {
-              final double v = (value + step).clamp(min, max);
-              onChanged(v);
-            },
-          ),
-        ],
-      ),
+    return AdaptiveSettingsStepperRow(
+      title: label,
+      value: value,
+      step: step,
+      min: min,
+      max: max,
+      format: format,
+      onChanged: onChanged,
     );
   }
 
