@@ -68,6 +68,9 @@ void main() {
 
     expect(find.byType(CupertinoSwitch), findsOneWidget);
     expect(find.byType(Switch), findsNothing);
+    expect(find.byType(CupertinoPageScaffold), findsOneWidget);
+    expect(find.byType(CupertinoSliverNavigationBar), findsOneWidget);
+    expect(find.byType(Scaffold), findsNothing);
     expect(find.text('完成'), findsNothing);
     expect(find.text('Done'), findsNothing);
   });

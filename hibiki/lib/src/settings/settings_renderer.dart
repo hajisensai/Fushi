@@ -27,5 +27,7 @@ abstract class SettingsRenderer {
   Widget buildDetailContent({
     required SettingsContext settingsContext,
     required SettingsDestination destination,
+    ScrollController? scrollController,
+    bool shrinkWrap = false,
   });
 }

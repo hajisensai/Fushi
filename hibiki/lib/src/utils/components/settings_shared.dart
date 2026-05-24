@@ -54,10 +54,31 @@ class AdaptiveSettingsScaffold extends StatelessWidget {
           8 + mediaPadding.bottom,
         );
 
+    if (cupertino) {
+      return CupertinoPageScaffold(
+        backgroundColor: CupertinoColors.systemGroupedBackground.resolveFrom(
+          context,
+        ),
+        child: CustomScrollView(
+          slivers: <Widget>[
+            CupertinoSliverNavigationBar(
+              largeTitle: title,
+              trailing: actions != null && actions!.isNotEmpty
+                  ? Row(mainAxisSize: MainAxisSize.min, children: actions!)
+                  : null,
+            ),
+            SliverPadding(
+              padding: listPadding,
+              sliver: SliverList(
+                delegate: SliverChildListDelegate(children),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Scaffold(
-      backgroundColor: cupertino
-          ? CupertinoColors.systemGroupedBackground.resolveFrom(context)
-          : null,
       appBar: adaptiveAppBar(
         context: context,
         title: title,

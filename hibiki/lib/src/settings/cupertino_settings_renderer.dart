@@ -98,6 +98,8 @@ class CupertinoSettingsRenderer implements SettingsRenderer {
   Widget buildDetailContent({
     required SettingsContext settingsContext,
     required SettingsDestination destination,
+    ScrollController? scrollController,
+    bool shrinkWrap = false,
   }) {
     final List<SettingsSection> sections =
         destination.visibleSections(settingsContext);

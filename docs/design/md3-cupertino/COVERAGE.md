@@ -64,6 +64,7 @@ This file maps current Hibiki UI files to the design boards in this folder. It i
 | `error_log_page.dart` | `15-logs-and-debug.svg` | `16-empty-loading-error-states.svg` |
 | `example_sentences_dialog_page.dart` | `12-media-and-sentences.svg` | `03-dictionary.svg` |
 | `floating_dict_page.dart` | `03-dictionary.svg` | `14-profile-language-system.svg` |
+| `hibiki_settings_page.dart` | `05-settings.svg` | `11-reader-customization.svg` |
 | `history_reader_page.dart` | `02-reader-shelf.svg` | `13-tags-and-filters.svg` |
 | `home_dictionary_page.dart` | `03-dictionary.svg` | `01-home-navigation.svg` |
 | `home_page.dart` | `01-home-navigation.svg` | `05-settings.svg` |
@@ -81,6 +82,8 @@ This file maps current Hibiki UI files to the design boards in this folder. It i
 | `placeholder_source_page.dart` | `16-empty-loading-error-states.svg` | `04-reader.svg` |
 | `popup_dictionary_page.dart` | `03-dictionary.svg` | `14-profile-language-system.svg` |
 | `profile_management_page.dart` | `14-profile-language-system.svg` | `05-settings.svg` |
+| `reader_hibiki_history_page.dart` | `02-reader-shelf.svg` | `13-tags-and-filters.svg` |
+| `reader_hibiki_page.dart` | `04-reader.svg` | `11-reader-customization.svg` |
 | `reader_hoshi_history_page.dart` | `02-reader-shelf.svg` | `13-tags-and-filters.svg` |
 | `reader_hoshi_page.dart` | `04-reader.svg` | `11-reader-customization.svg` |
 | `reading_statistics_page.dart` | `08-collections-stats.svg` | `16-empty-loading-error-states.svg` |
@@ -106,6 +109,8 @@ This file maps current Hibiki UI files to the design boards in this folder. It i
 | `book_import_dialog.dart` | `06-import-and-modals.svg` | `18-component-system.svg` |
 | `sasayaki_rematch.dart` | `06-import-and-modals.svg` | `04-reader.svg` |
 | `profile_selector.dart` | `14-profile-language-system.svg` | `18-component-system.svg` |
+| `adaptive_navigation.dart` | `18-component-system.svg` | `01-home-navigation.svg` |
+| `adaptive_widgets.dart` | `18-component-system.svg` | `06-import-and-modals.svg` |
 | `hibiki_bottom_sheet.dart` | `18-component-system.svg` | `06-import-and-modals.svg` |
 | `hibiki_divider.dart` | `18-component-system.svg` | `05-settings.svg` |
 | `hibiki_dropdown.dart` | `18-component-system.svg` | `05-settings.svg` |
@@ -119,6 +124,12 @@ This file maps current Hibiki UI files to the design boards in this folder. It i
 | `hibiki_tag.dart` | `13-tags-and-filters.svg` | `18-component-system.svg` |
 | `hibiki_text_selection_controls.dart` | `18-component-system.svg` | `03-dictionary.svg` |
 | `hibiki_toast.dart` | `18-component-system.svg` | `15-logs-and-debug.svg` |
+| `cupertino_settings_renderer.dart` | `05-settings.svg` | `18-component-system.svg` |
+| `material_settings_renderer.dart` | `05-settings.svg` | `18-component-system.svg` |
+| `settings_actions.dart` | `05-settings.svg` | `14-profile-language-system.svg` |
+| `settings_detail_page.dart` | `05-settings.svg` | `18-component-system.svg` |
+| `settings_home_page.dart` | `05-settings.svg` | `01-home-navigation.svg` |
+| `settings_shared.dart` | `05-settings.svg` | `18-component-system.svg` |
 | `platform_utils.dart` | `18-component-system.svg` | `01-home-navigation.svg` |
 | `swipe_dismiss_wrapper.dart` | `18-component-system.svg` | `06-import-and-modals.svg` |
 | `update_checker.dart` | `14-profile-language-system.svg` | `15-logs-and-debug.svg` |

@@ -102,12 +102,16 @@ class MaterialSettingsRenderer implements SettingsRenderer {
   Widget buildDetailContent({
     required SettingsContext settingsContext,
     required SettingsDestination destination,
+    ScrollController? scrollController,
+    bool shrinkWrap = false,
   }) {
     final BuildContext context = settingsContext.context;
     final List<SettingsSection> sections =
         destination.visibleSections(settingsContext);
     final EdgeInsets mediaPadding = MediaQuery.of(context).padding;
     return ListView.builder(
+      controller: scrollController,
+      shrinkWrap: shrinkWrap,
       padding: EdgeInsets.fromLTRB(
         _pagePadding.left,
         _pagePadding.top,

@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
+import 'package:hibiki/src/settings/cupertino_settings_renderer.dart';
 import 'package:hibiki/src/settings/material_settings_renderer.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
 import 'package:hibiki/src/settings/settings_home_page.dart';
+import 'package:hibiki/src/settings/settings_renderer.dart';
 import 'package:hibiki/src/settings/settings_schema.dart';
+import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart';
 import 'package:hibiki/utils.dart';
 import 'package:spaces/spaces.dart';
 
@@ -67,6 +70,16 @@ class _HibikiSettingsDialogPageState extends BasePageState {
     final SettingsDestination destination = buildReaderQuickSettingsDestination(
       settingsContext,
     );
+    final bool cupertino = isCupertinoPlatform(context);
+    final SettingsRenderer renderer = cupertino
+        ? const CupertinoSettingsRenderer()
+        : const MaterialSettingsRenderer();
+    final Widget detailContent = renderer.buildDetailContent(
+      settingsContext: settingsContext,
+      destination: destination,
+      scrollController: cupertino ? null : _contentScrollController,
+      shrinkWrap: !cupertino,
+    );
 
     return SizedBox(
       width: double.maxFinite,
@@ -74,12 +87,14 @@ class _HibikiSettingsDialogPageState extends BasePageState {
         thickness: 3,
         thumbVisibility: true,
         controller: _contentScrollController,
-        child: SingleChildScrollView(
+        child: PrimaryScrollController(
           controller: _contentScrollController,
-          child: MaterialSettingsRenderer().buildDetailContent(
-            settingsContext: settingsContext,
-            destination: destination,
-          ),
+          child: cupertino
+              ? SingleChildScrollView(
+                  controller: _contentScrollController,
+                  child: detailContent,
+                )
+              : detailContent,
         ),
       ),
     );

@@ -17,10 +17,10 @@ node docs\design\md3-cupertino\verify-interface-coverage.mjs
 Latest verifier output:
 
 ```text
-nonGeneratedDart=202
-uiMatched=81
-broadUiAdjacentMatched=113
-coverageRows=84
+nonGeneratedDart=221
+uiMatched=89
+broadUiAdjacentMatched=125
+coverageRows=95
 gallerySurfaces=84
 manifestSurfaces=84
 decisionMatrixRows=84
@@ -31,12 +31,12 @@ interfaceCoverage=ok
 
 ## Current scan result
 
-- Total non-generated Dart files under `hibiki/lib`: 202
-- UI-building files matched by scan: 81
-- Broad UI-adjacent files matched by scan: 113
+- Total non-generated Dart files under `hibiki/lib`: 221
+- UI-building files matched by scan: 89
+- Broad UI-adjacent files matched by scan: 125
 - Entry UI files mapped in `COVERAGE.md`: 3
-- Page implementation files mapped in `COVERAGE.md`: 53
-- Shared/base/support UI files mapped in `COVERAGE.md`: 28
+- Page implementation files mapped in `COVERAGE.md`: 56
+- Shared/base/support UI files mapped in `COVERAGE.md`: 36
 - Unmapped UI-building files after this audit: 0
 
 ## Entry files covered by this audit
@@ -55,10 +55,18 @@ interfaceCoverage=ok
 | `base_history_page.dart` | Base media history layout and placeholder behavior. | `02-reader-shelf.svg`, `16-empty-loading-error-states.svg` |
 | `sasayaki_rematch.dart` | Audiobook rematch dialog, bottom sheet, sliders, and toast feedback. | `06-import-and-modals.svg`, `04-reader.svg` |
 | `profile_selector.dart` | Inline active-profile selector. | `14-profile-language-system.svg`, `18-component-system.svg` |
+| `adaptive_navigation.dart` | Shared MD3 NavigationBar and CupertinoTabBar/AppBar selection helpers. | `18-component-system.svg`, `01-home-navigation.svg` |
+| `adaptive_widgets.dart` | Shared dialog, switch, slider, modal sheet, segmented control, and page-route grammar. | `18-component-system.svg`, `06-import-and-modals.svg` |
 | `hibiki_divider.dart` | Shared divider token. | `18-component-system.svg`, `05-settings.svg` |
 | `hibiki_marquee.dart` | Shared overflow title/text behavior. | `18-component-system.svg`, `12-media-and-sentences.svg` |
 | `hibiki_text_selection_controls.dart` | Text-selection toolbar and search/stash/share actions. | `18-component-system.svg`, `03-dictionary.svg` |
 | `hibiki_toast.dart` | Desktop and mobile toast surface. | `18-component-system.svg`, `15-logs-and-debug.svg` |
+| `cupertino_settings_renderer.dart` | Cupertino grouped settings renderer for schema-defined settings. | `05-settings.svg`, `18-component-system.svg` |
+| `material_settings_renderer.dart` | Material 3 settings renderer for schema-defined settings. | `05-settings.svg`, `18-component-system.svg` |
+| `settings_actions.dart` | Shared settings action rows, theme controls, profile selector row, dialogs, and reader side effects. | `05-settings.svg`, `14-profile-language-system.svg` |
+| `settings_detail_page.dart` | Platform-routed detail page for a selected settings destination. | `05-settings.svg`, `18-component-system.svg` |
+| `settings_home_page.dart` | Schema-driven settings home, destination list, and wide master-detail layout. | `05-settings.svg`, `01-home-navigation.svg` |
+| `settings_shared.dart` | Legacy/shared settings scaffold and row controls used by secondary settings pages. | `05-settings.svg`, `18-component-system.svg` |
 | `platform_utils.dart` | Desktop content constraints and adaptive layout utilities. | `18-component-system.svg`, `01-home-navigation.svg` |
 | `swipe_dismiss_wrapper.dart` | Shared gesture dismissal wrapper for transient surfaces. | `18-component-system.svg`, `06-import-and-modals.svg` |
 | `update_checker.dart` | Update dialogs, download overlay, and snackbar failures. | `14-profile-language-system.svg`, `15-logs-and-debug.svg` |
@@ -78,7 +86,9 @@ The strict verifier intentionally matches files that build concrete Flutter surf
 | Creator enhancement commands | `creator/enhancement.dart`, `audio_enhancement.dart`, `enhancements/audio_recorder_enhancement.dart`, `camera_enhancement.dart`, `clear_field_enhancement.dart`, `crop_image_enhancement.dart`, `local_audio_enhancement.dart`, `pick_audio_enhancement.dart`, `pick_from_stash_enhancement.dart`, `pick_image_enhancement.dart`, `pop_from_stash_enhancement.dart`, `save_tags_enhancement.dart`, `search_dictionary_enhancement.dart`, `sentence_picker_enhancement.dart`, `text_segmentation_enhancement.dart` | Mostly command objects. Dialog-launching cases delegate to already mapped dialog pages such as `audio_recorder_page.dart`, `crop_image_dialog_page.dart`, `open_stash_dialog_page.dart`, and `text_segmentation_dialog_page.dart`; toast/error feedback inherits `18-component-system.svg` and `16-empty-loading-error-states.svg`. |
 | Creator visible fields | `creator/audio_export_field.dart`, `creator/fields/base_audio_field.dart`, `creator/image_export_field.dart`, `creator/fields/image_field.dart` | Visible creator fragments, but not routes. They are governed by the Creator/Anki and media-dialog boards: `07-creator-anki.svg`, `12-media-and-sentences.svg`, and `18-component-system.svg`. Implementation must treat audio/image field previews as shared creator components, not page-local decoration. |
 | Media source factories | `media/media_source.dart`, `media/media_type.dart`, `media/source_types/reader_media_source.dart`, `media/types/dictionary_media_type.dart`, `media/types/reader_media_type.dart` | They return already mapped homes/history pages and define icons/source metadata. Covered through `home_dictionary_page.dart`, `home_reader_page.dart`, `history_reader_page.dart`, `reader_hoshi_history_page.dart`, and `18-component-system.svg`. |
-| Hoshi reader source actions | `media/sources/reader_hoshi_source.dart` | Source-level import/tweaks buttons and history factory. Current reader remains Hoshi; visual decisions are covered by `ReaderHoshiPage`, `ReaderHoshiSource` consumers, `book_import_dialog.dart`, `reader_hoshi_history_page.dart`, `04-reader.svg`, `02-reader-shelf.svg`, and `06-import-and-modals.svg`. |
+| Hoshi reader source actions | `media/sources/reader_hoshi_source.dart`, `media/sources/reader_hibiki_source.dart` | Source-level import/tweaks buttons and history factories. Current reader remains Hoshi/Hibiki path; visual decisions are covered by `reader_hoshi_page.dart`, `reader_hibiki_page.dart`, their history pages, `book_import_dialog.dart`, `04-reader.svg`, `02-reader-shelf.svg`, and `06-import-and-modals.svg`. |
+| Settings schema helpers | `settings_context.dart`, `settings_destination.dart`, `settings_renderer.dart` | Schema and renderer contracts, not independent screens. Runtime surfaces are mapped through `settings_home_page.dart`, `settings_detail_page.dart`, `material_settings_renderer.dart`, and `cupertino_settings_renderer.dart`. |
+| Adaptive platform helpers | `utils/adaptive/adaptive_platform.dart` | Platform detection only. Visible surfaces are mapped through `adaptive_navigation.dart`, `adaptive_widgets.dart`, `settings_shared.dart`, and page-level callers. |
 | Dialog helper | `utils/misc/show_app_dialog.dart` | Wrapper around `showDialog`. Not a surface by itself; governed by `06-import-and-modals.svg` and shared component tokens. |
 
 Verifier rule: if the wider heuristic finds new UI-adjacent files, either map them in `COVERAGE.md` when they are independent surfaces, or add them to this wider candidate audit with a concrete parent board decision.
