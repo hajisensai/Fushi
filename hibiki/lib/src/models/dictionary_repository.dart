@@ -18,9 +18,9 @@ class DictionaryRepository extends ChangeNotifier {
   List<Dictionary> _dictionariesCache = [];
   final List<DictionarySearchResult> _dictionaryHistoryResults = [];
   final LruCache<String, DictionarySearchResult> _dictionarySearchCache =
-      LruCache<String, DictionarySearchResult>(500);
+      LruCache<String, DictionarySearchResult>(2000);
   final LruCache<String, List<HoshiLookupResult>> _ffiLookupCache =
-      LruCache<String, List<HoshiLookupResult>>(500);
+      LruCache<String, List<HoshiLookupResult>>(2000);
 
   // ── getters ──────────────────────────────────────────────────────────
 

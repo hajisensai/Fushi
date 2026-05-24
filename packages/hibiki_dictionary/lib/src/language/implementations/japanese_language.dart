@@ -47,7 +47,7 @@ class JapaneseLanguage extends Language {
   final LinkedHashMap<DictionaryEntry, List<RubyTextData>?> segmentsCache =
       LinkedHashMap<DictionaryEntry, List<RubyTextData>?>();
 
-  static const int _maxMatchCache = 2000;
+  static const int _maxMatchCache = 5000;
   static final LinkedHashMap<String, int> _matchLengthCache =
       LinkedHashMap<String, int>();
 

@@ -102,6 +102,21 @@ class HibikiDatabase extends _$HibikiDatabase {
             'CREATE INDEX IF NOT EXISTS idx_search_history_key '
             'ON search_history_items (history_key)',
           );
+          await indexIfTableExists(
+            'audiobooks',
+            'CREATE INDEX IF NOT EXISTS idx_audiobooks_book_uid '
+            'ON audiobooks (book_uid)',
+          );
+          await indexIfTableExists(
+            'srt_books',
+            'CREATE INDEX IF NOT EXISTS idx_srt_books_ttu_book_id '
+            'ON srt_books (ttu_book_id)',
+          );
+          await indexIfTableExists(
+            'book_tag_mappings',
+            'CREATE INDEX IF NOT EXISTS idx_book_tag_mappings_book_id '
+            'ON book_tag_mappings (book_id)',
+          );
         },
         onUpgrade: (m, from, to) async {
           if (from > to) {
