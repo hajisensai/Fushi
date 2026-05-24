@@ -433,6 +433,171 @@ class AdaptiveSettingsSegmentedRow<T extends Object> extends StatelessWidget {
   }
 }
 
+class AdaptiveSettingsPickerOption<T> {
+  const AdaptiveSettingsPickerOption({
+    required this.value,
+    required this.label,
+  });
+
+  final T value;
+  final String label;
+}
+
+class AdaptiveSettingsPickerRow<T> extends StatelessWidget {
+  const AdaptiveSettingsPickerRow({
+    required this.title,
+    required this.options,
+    required this.selected,
+    required this.onChanged,
+    super.key,
+    this.subtitle,
+    this.icon,
+    this.placeholder,
+    this.materialWidth,
+    this.controlBelow = false,
+  });
+
+  final String title;
+  final String? subtitle;
+  final IconData? icon;
+  final List<AdaptiveSettingsPickerOption<T>> options;
+  final T selected;
+  final ValueChanged<T> onChanged;
+  final String? placeholder;
+  final double? materialWidth;
+  final bool controlBelow;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool cupertino = isCupertinoPlatform(context);
+    return AdaptiveSettingsRow(
+      title: title,
+      subtitle: subtitle,
+      icon: icon,
+      controlBelow: cupertino ? false : controlBelow,
+      trailing: cupertino
+          ? _buildCupertinoTrailing(context)
+          : _buildMaterialDropdown(context),
+      onTap: cupertino ? () => _showCupertinoPicker(context) : null,
+    );
+  }
+
+  Widget _buildMaterialDropdown(BuildContext context) {
+    Widget buildDropdown(double width) {
+      return SizedBox(
+        width: width,
+        child: DropdownMenu<int>(
+          label: Text(title),
+          hintText: placeholder,
+          expandedInsets: EdgeInsets.zero,
+          initialSelection: _selectedIndex,
+          dropdownMenuEntries: [
+            for (int i = 0; i < options.length; i++)
+              DropdownMenuEntry<int>(
+                value: i,
+                label: options[i].label,
+              ),
+          ],
+          onSelected: (int? index) {
+            if (index == null) return;
+            onChanged(options[index].value);
+          },
+        ),
+      );
+    }
+
+    if (controlBelow || materialWidth == double.infinity) {
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          final double requestedWidth =
+              materialWidth == null || materialWidth == double.infinity
+                  ? constraints.maxWidth
+                  : materialWidth!;
+          return buildDropdown(requestedWidth.isFinite ? requestedWidth : 240);
+        },
+      );
+    }
+
+    return buildDropdown(materialWidth ?? 220);
+  }
+
+  Widget _buildCupertinoTrailing(BuildContext context) {
+    final Color labelColor = CupertinoColors.secondaryLabel.resolveFrom(
+      context,
+    );
+    final Color chevronColor = CupertinoColors.tertiaryLabel.resolveFrom(
+      context,
+    );
+    final String label = _selectedLabel ?? placeholder ?? '';
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: MediaQuery.of(context).size.width * 0.42,
+          ),
+          child: Text(
+            label,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.right,
+            style: CupertinoTheme.of(context).textTheme.textStyle.copyWith(
+                  color: labelColor,
+                  fontSize: 16,
+                ),
+          ),
+        ),
+        const SizedBox(width: 6),
+        Icon(
+          CupertinoIcons.chevron_down,
+          size: 16,
+          color: chevronColor,
+        ),
+      ],
+    );
+  }
+
+  Future<void> _showCupertinoPicker(BuildContext context) {
+    return showCupertinoModalPopup<void>(
+      context: context,
+      builder: (BuildContext sheetContext) {
+        return CupertinoActionSheet(
+          title: Text(title),
+          message: subtitle == null ? null : Text(subtitle!),
+          actions: [
+            for (final option in options)
+              CupertinoActionSheetAction(
+                isDefaultAction: option.value == selected,
+                onPressed: () {
+                  Navigator.pop(sheetContext);
+                  onChanged(option.value);
+                },
+                child: Text(option.label),
+              ),
+          ],
+          cancelButton: CupertinoActionSheetAction(
+            onPressed: () => Navigator.pop(sheetContext),
+            child: Text(MaterialLocalizations.of(context).cancelButtonLabel),
+          ),
+        );
+      },
+    );
+  }
+
+  String? get _selectedLabel {
+    for (final option in options) {
+      if (option.value == selected) return option.label;
+    }
+    return null;
+  }
+
+  int? get _selectedIndex {
+    for (int i = 0; i < options.length; i++) {
+      if (options[i].value == selected) return i;
+    }
+    return null;
+  }
+}
+
 class AdaptiveSettingsStepperRow extends StatelessWidget {
   const AdaptiveSettingsStepperRow({
     required this.title,

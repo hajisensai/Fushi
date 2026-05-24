@@ -705,21 +705,22 @@ class _DictCssEditorDialogState extends State<_DictCssEditorDialog> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            DropdownMenu<int>(
-              expandedInsets: EdgeInsets.zero,
-              initialSelection: _selectedIndex,
-              onSelected: _onScopeChanged,
-              dropdownMenuEntries: [
-                DropdownMenuEntry<int>(
+            AdaptiveSettingsPickerRow<int>(
+              title: t.custom_dict_css,
+              selected: _selectedIndex,
+              materialWidth: double.infinity,
+              options: [
+                AdaptiveSettingsPickerOption<int>(
                   value: 0,
                   label: t.custom_dict_css_global,
                 ),
                 for (int i = 0; i < _dictNames.length; i++)
-                  DropdownMenuEntry<int>(
+                  AdaptiveSettingsPickerOption<int>(
                     value: i + 1,
                     label: _dictNames[i],
                   ),
               ],
+              onChanged: (index) => _onScopeChanged(index),
             ),
             const SizedBox(height: 8),
             Expanded(

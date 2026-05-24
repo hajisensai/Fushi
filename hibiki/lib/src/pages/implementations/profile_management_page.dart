@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
@@ -19,54 +20,58 @@ class _ProfileManagementPageState extends BasePageState<ProfileManagementPage> {
     final uiState = ref.watch(profileViewModelProvider);
     final vm = ref.read(profileViewModelProvider.notifier);
 
-    return Scaffold(
-      appBar: adaptiveAppBar(
-        context: context,
-        title: Text(t.profile_management),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.add),
-            tooltip: t.profile_create,
-            onPressed: () => _showCreateDialog(vm),
-          ),
-        ],
-      ),
-      body: uiState.isLoading
-          ? buildLoading()
-          : ListView(
-              padding: EdgeInsets.only(
-                bottom: MediaQuery.of(context).padding.bottom + 16,
+    return AdaptiveSettingsScaffold(
+      title: Text(t.profile_management),
+      actions: [
+        _ProfileActionButton(
+          materialIcon: Icons.add,
+          cupertinoIcon: CupertinoIcons.add,
+          tooltip: t.profile_create,
+          onPressed: () => _showCreateDialog(vm),
+        ),
+      ],
+      children: uiState.isLoading
+          ? [
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 48),
+                child: buildLoading(),
               ),
-              children: [
-                ..._buildProfileTiles(uiState, vm),
-                const HibikiDivider(),
-                _SectionHeader(t.profile_media_type_bindings),
-                _buildMediaTypeRow(
-                  t.profile_media_epub,
-                  'epub',
-                  uiState,
-                  vm,
-                ),
-                _buildMediaTypeRow(
-                  t.profile_media_srtbook,
-                  'srtbook',
-                  uiState,
-                  vm,
-                ),
-                _buildMediaTypeRow(
-                  t.profile_media_audiobook,
-                  'audiobook',
-                  uiState,
-                  vm,
-                ),
-                _buildMediaTypeRow(
-                  t.profile_media_lyrics,
-                  'lyrics',
-                  uiState,
-                  vm,
-                ),
-              ],
-            ),
+            ]
+          : [
+              AdaptiveSettingsSection(
+                title: t.profile_label,
+                children: _buildProfileRows(uiState, vm),
+              ),
+              AdaptiveSettingsSection(
+                title: t.profile_media_type_bindings,
+                children: [
+                  _buildMediaTypeRow(
+                    t.profile_media_epub,
+                    'epub',
+                    uiState,
+                    vm,
+                  ),
+                  _buildMediaTypeRow(
+                    t.profile_media_srtbook,
+                    'srtbook',
+                    uiState,
+                    vm,
+                  ),
+                  _buildMediaTypeRow(
+                    t.profile_media_audiobook,
+                    'audiobook',
+                    uiState,
+                    vm,
+                  ),
+                  _buildMediaTypeRow(
+                    t.profile_media_lyrics,
+                    'lyrics',
+                    uiState,
+                    vm,
+                  ),
+                ],
+              ),
+            ],
     );
   }
 
@@ -74,23 +79,21 @@ class _ProfileManagementPageState extends BasePageState<ProfileManagementPage> {
   // Profile tiles
   // ---------------------------------------------------------------------------
 
-  List<Widget> _buildProfileTiles(
+  List<Widget> _buildProfileRows(
     ProfileUiState uiState,
     ProfileViewModel vm,
   ) {
     final isOnly = uiState.profiles.length <= 1;
+    final bool cupertino = isCupertinoPlatform(context);
     return [
       for (final p in uiState.profiles)
-        ListTile(
-          leading: Icon(
-            p.id == uiState.activeProfileId
-                ? Icons.check_circle
-                : Icons.circle_outlined,
-            color: p.id == uiState.activeProfileId
-                ? theme.colorScheme.primary
-                : null,
-          ),
-          title: Text(p.name),
+        AdaptiveSettingsRow(
+          icon: p.id == uiState.activeProfileId
+              ? (cupertino
+                  ? CupertinoIcons.check_mark_circled_solid
+                  : Icons.check_circle)
+              : (cupertino ? CupertinoIcons.circle : Icons.circle_outlined),
+          title: p.name,
           onTap: () {
             if (p.id != uiState.activeProfileId) {
               vm.switchProfile(p.id);
@@ -99,34 +102,24 @@ class _ProfileManagementPageState extends BasePageState<ProfileManagementPage> {
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              IconButton(
-                icon: const Icon(Icons.copy_outlined, size: 20),
+              _ProfileActionButton(
+                materialIcon: Icons.copy_outlined,
+                cupertinoIcon: CupertinoIcons.doc_on_doc,
                 tooltip: t.profile_copy,
-                visualDensity: VisualDensity.compact,
-                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                padding: EdgeInsets.zero,
                 onPressed: () => _showCopyDialog(vm, p.id, p.name),
               ),
-              IconButton(
-                icon: const Icon(Icons.edit_outlined, size: 20),
+              _ProfileActionButton(
+                materialIcon: Icons.edit_outlined,
+                cupertinoIcon: CupertinoIcons.pencil,
                 tooltip: t.profile_rename,
-                visualDensity: VisualDensity.compact,
-                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                padding: EdgeInsets.zero,
                 onPressed: () => _showRenameDialog(vm, p.id, p.name),
               ),
               if (!isOnly)
-                IconButton(
-                  icon: Icon(
-                    Icons.delete_outline,
-                    size: 20,
-                    color: theme.colorScheme.error,
-                  ),
+                _ProfileActionButton(
+                  materialIcon: Icons.delete_outline,
+                  cupertinoIcon: CupertinoIcons.delete,
                   tooltip: t.profile_delete,
-                  visualDensity: VisualDensity.compact,
-                  constraints:
-                      const BoxConstraints(minWidth: 36, minHeight: 36),
-                  padding: EdgeInsets.zero,
+                  destructive: true,
                   onPressed: () => _showDeleteDialog(vm, p.id, p.name),
                 ),
             ],
@@ -146,24 +139,22 @@ class _ProfileManagementPageState extends BasePageState<ProfileManagementPage> {
     ProfileViewModel vm,
   ) {
     final boundId = uiState.mediaTypeBindings[mediaType];
-    return ListTile(
-      title: Text(label),
-      trailing: SizedBox(
-        width: 160,
-        child: DropdownMenu<int?>(
-          expandedInsets: EdgeInsets.zero,
-          initialSelection: boundId,
-          dropdownMenuEntries: [
-            DropdownMenuEntry<int?>(
-              value: null,
-              label: t.profile_media_none,
-            ),
-            for (final p in uiState.profiles)
-              DropdownMenuEntry<int?>(value: p.id, label: p.name),
-          ],
-          onSelected: (id) => vm.setMediaTypeBinding(mediaType, id),
+    return AdaptiveSettingsPickerRow<int?>(
+      title: label,
+      selected: boundId,
+      materialWidth: 176,
+      options: [
+        AdaptiveSettingsPickerOption<int?>(
+          value: null,
+          label: t.profile_media_none,
         ),
-      ),
+        for (final p in uiState.profiles)
+          AdaptiveSettingsPickerOption<int?>(
+            value: p.id,
+            label: p.name,
+          ),
+      ],
+      onChanged: (id) => vm.setMediaTypeBinding(mediaType, id),
     );
   }
 
@@ -236,6 +227,56 @@ class _ProfileManagementPageState extends BasePageState<ProfileManagementPage> {
     if (confirmed == true) {
       await vm.deleteProfile(id);
     }
+  }
+}
+
+class _ProfileActionButton extends StatelessWidget {
+  const _ProfileActionButton({
+    required this.materialIcon,
+    required this.cupertinoIcon,
+    required this.tooltip,
+    required this.onPressed,
+    this.destructive = false,
+  });
+
+  final IconData materialIcon;
+  final IconData cupertinoIcon;
+  final String tooltip;
+  final VoidCallback onPressed;
+  final bool destructive;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool cupertino = isCupertinoPlatform(context);
+    final Color color = destructive
+        ? (cupertino
+            ? CupertinoColors.destructiveRed.resolveFrom(context)
+            : Theme.of(context).colorScheme.error)
+        : (cupertino
+            ? CupertinoTheme.of(context).primaryColor
+            : Theme.of(context).colorScheme.onSurfaceVariant);
+
+    if (cupertino) {
+      return CupertinoButton(
+        padding: EdgeInsets.zero,
+        minSize: 36,
+        onPressed: onPressed,
+        child: Semantics(
+          button: true,
+          label: tooltip,
+          child: Icon(cupertinoIcon, size: 20, color: color),
+        ),
+      );
+    }
+
+    return IconButton(
+      icon: Icon(materialIcon, size: 20, color: color),
+      tooltip: tooltip,
+      visualDensity: VisualDensity.compact,
+      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+      padding: EdgeInsets.zero,
+      onPressed: onPressed,
+    );
   }
 }
 
@@ -360,23 +401,5 @@ class _ProfileNameDialogState extends State<ProfileNameDialog> {
 
   void _submit(BuildContext context, String value) {
     Navigator.pop(context, value.trim());
-  }
-}
-
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader(this.title);
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-      child: Text(
-        title,
-        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-      ),
-    );
   }
 }

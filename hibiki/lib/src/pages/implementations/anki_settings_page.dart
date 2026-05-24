@@ -104,48 +104,48 @@ class _AnkiSettingsPageState extends BasePageState<AnkiSettingsPage> {
   Widget _buildDeckDropdown(AnkiSettings settings, AnkiViewModel vm) {
     final decks = settings.availableDecks;
     final selectedId = settings.selectedDeckId;
+    final int? validSelectedId =
+        decks.any((d) => d.id == selectedId) ? selectedId : null;
 
-    return AdaptiveSettingsRow(
+    return AdaptiveSettingsPickerRow<int?>(
       title: t.anki_deck,
       controlBelow: true,
-      trailing: DropdownMenu<int>(
-        label: Text(t.anki_deck),
-        expandedInsets: EdgeInsets.zero,
-        initialSelection:
-            decks.any((d) => d.id == selectedId) ? selectedId : null,
-        dropdownMenuEntries: decks
-            .map((d) => DropdownMenuEntry(value: d.id, label: d.name))
-            .toList(),
-        onSelected: (id) {
-          if (id == null) return;
-          final deck = decks.firstWhere((d) => d.id == id);
-          vm.selectDeck(deck);
-        },
-      ),
+      selected: validSelectedId,
+      options: decks
+          .map((d) => AdaptiveSettingsPickerOption<int?>(
+                value: d.id,
+                label: d.name,
+              ))
+          .toList(),
+      onChanged: (id) {
+        if (id == null) return;
+        final deck = decks.firstWhere((d) => d.id == id);
+        vm.selectDeck(deck);
+      },
     );
   }
 
   Widget _buildNoteTypeDropdown(AnkiSettings settings, AnkiViewModel vm) {
     final noteTypes = settings.availableNoteTypes;
     final selectedId = settings.selectedNoteTypeId;
+    final int? validSelectedId =
+        noteTypes.any((n) => n.id == selectedId) ? selectedId : null;
 
-    return AdaptiveSettingsRow(
+    return AdaptiveSettingsPickerRow<int?>(
       title: t.anki_note_type,
       controlBelow: true,
-      trailing: DropdownMenu<int>(
-        label: Text(t.anki_note_type),
-        expandedInsets: EdgeInsets.zero,
-        initialSelection:
-            noteTypes.any((n) => n.id == selectedId) ? selectedId : null,
-        dropdownMenuEntries: noteTypes
-            .map((n) => DropdownMenuEntry(value: n.id, label: n.name))
-            .toList(),
-        onSelected: (id) {
-          if (id == null) return;
-          final noteType = noteTypes.firstWhere((n) => n.id == id);
-          vm.selectNoteType(noteType);
-        },
-      ),
+      selected: validSelectedId,
+      options: noteTypes
+          .map((n) => AdaptiveSettingsPickerOption<int?>(
+                value: n.id,
+                label: n.name,
+              ))
+          .toList(),
+      onChanged: (id) {
+        if (id == null) return;
+        final noteType = noteTypes.firstWhere((n) => n.id == id);
+        vm.selectNoteType(noteType);
+      },
     );
   }
 

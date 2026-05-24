@@ -146,4 +146,86 @@ void main() {
     );
     expect(find.byType(SegmentedButton<String>), findsNothing);
   });
+
+  testWidgets('picker rows use Material dropdown on Android', (tester) async {
+    await tester.pumpWidget(
+      _buildHarness(
+        platform: TargetPlatform.android,
+        child: AdaptiveSettingsScaffold(
+          title: const Text('Reader settings'),
+          children: [
+            AdaptiveSettingsSection(
+              children: [
+                AdaptiveSettingsPickerRow<String>(
+                  title: 'Deck',
+                  selected: 'default',
+                  options: const [
+                    AdaptiveSettingsPickerOption(
+                      value: 'default',
+                      label: 'Default',
+                    ),
+                    AdaptiveSettingsPickerOption(
+                      value: 'news',
+                      label: 'News',
+                    ),
+                  ],
+                  onChanged: (_) {},
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+
+    expect(find.byType(DropdownMenu<int>), findsOneWidget);
+    expect(find.byType(CupertinoButton), findsNothing);
+  });
+
+  testWidgets('picker rows use Cupertino action sheet on iOS', (tester) async {
+    String selected = 'default';
+
+    await tester.pumpWidget(
+      _buildHarness(
+        platform: TargetPlatform.iOS,
+        child: AdaptiveSettingsScaffold(
+          title: const Text('Reader settings'),
+          children: [
+            AdaptiveSettingsSection(
+              children: [
+                AdaptiveSettingsPickerRow<String>(
+                  title: 'Deck',
+                  selected: selected,
+                  options: const [
+                    AdaptiveSettingsPickerOption(
+                      value: 'default',
+                      label: 'Default',
+                    ),
+                    AdaptiveSettingsPickerOption(
+                      value: 'news',
+                      label: 'News',
+                    ),
+                  ],
+                  onChanged: (value) => selected = value,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+
+    expect(find.byType(DropdownMenu<int>), findsNothing);
+    expect(find.text('Default'), findsOneWidget);
+
+    await tester.tap(find.text('Deck'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(CupertinoActionSheet), findsOneWidget);
+
+    await tester.tap(find.text('News').last);
+    await tester.pumpAndSettle();
+
+    expect(selected, 'news');
+  });
 }
