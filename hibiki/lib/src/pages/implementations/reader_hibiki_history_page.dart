@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
@@ -1692,33 +1693,62 @@ class BookProfileDialogContent extends StatelessWidget {
         child: ListView(
           shrinkWrap: true,
           children: [
-            RadioListTile<int?>(
-              title: Text(
-                t.profile_follow_default_current(name: activeProfileName),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-              value: null,
-              groupValue: selectedProfileId,
-              onChanged: onChanged,
-              dense: true,
-              visualDensity: VisualDensity.compact,
-            ),
-            for (final profile in profiles)
-              RadioListTile<int?>(
-                title: Text(
-                  profile.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+            AdaptiveSettingsSection(
+              children: [
+                _BookProfileOptionRow(
+                  title: t.profile_follow_default_current(
+                    name: activeProfileName,
+                  ),
+                  selected: selectedProfileId == null,
+                  onTap: () => onChanged(null),
                 ),
-                value: profile.id,
-                groupValue: selectedProfileId,
-                onChanged: onChanged,
-                dense: true,
-                visualDensity: VisualDensity.compact,
-              ),
+                for (final profile in profiles)
+                  _BookProfileOptionRow(
+                    title: profile.name,
+                    selected: selectedProfileId == profile.id,
+                    onTap: () => onChanged(profile.id),
+                  ),
+              ],
+            ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _BookProfileOptionRow extends StatelessWidget {
+  const _BookProfileOptionRow({
+    required this.title,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String title;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool cupertino = isCupertinoPlatform(context);
+    final Color selectedColor = cupertino
+        ? CupertinoTheme.of(context).primaryColor
+        : Theme.of(context).colorScheme.primary;
+    final Color idleColor = cupertino
+        ? CupertinoColors.secondaryLabel.resolveFrom(context)
+        : Theme.of(context).colorScheme.onSurfaceVariant;
+
+    return AdaptiveSettingsRow(
+      title: title,
+      onTap: onTap,
+      trailing: Icon(
+        selected
+            ? (cupertino
+                ? CupertinoIcons.check_mark
+                : Icons.radio_button_checked)
+            : (cupertino ? CupertinoIcons.circle : Icons.radio_button_off),
+        size: cupertino ? 20 : 22,
+        color: selected ? selectedColor : idleColor,
       ),
     );
   }
@@ -1811,6 +1841,27 @@ class _BatchTagPickerDialogState extends State<_BatchTagPickerDialog> {
     return ids;
   }
 
+  void _setTagIntent(BookTagRow tag, _BatchTagIntent intent) {
+    setState(() {
+      _addTagIds.remove(tag.id);
+      _removeTagIds.remove(tag.id);
+      switch (intent) {
+        case _BatchTagIntent.keep:
+          break;
+        case _BatchTagIntent.add:
+          _addTagIds.add(tag.id);
+        case _BatchTagIntent.remove:
+          _removeTagIds.add(tag.id);
+      }
+    });
+  }
+
+  _BatchTagIntent _tagIntent(BookTagRow tag) {
+    if (_addTagIds.contains(tag.id)) return _BatchTagIntent.add;
+    if (_removeTagIds.contains(tag.id)) return _BatchTagIntent.remove;
+    return _BatchTagIntent.keep;
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = Translations.of(context);
@@ -1831,30 +1882,10 @@ class _BatchTagPickerDialogState extends State<_BatchTagPickerDialog> {
           itemCount: widget.allTags.length,
           itemBuilder: (_, i) {
             final tag = widget.allTags[i];
-            final bool adding = _addTagIds.contains(tag.id);
-            final bool removing = _removeTagIds.contains(tag.id);
-            final bool? value = adding ? true : (removing ? false : null);
-            return CheckboxListTile(
-              tristate: true,
-              value: value,
-              onChanged: (v) {
-                setState(() {
-                  _addTagIds.remove(tag.id);
-                  _removeTagIds.remove(tag.id);
-                  if (v == true) {
-                    _addTagIds.add(tag.id);
-                  } else if (v == false) {
-                    _removeTagIds.add(tag.id);
-                  }
-                });
-              },
-              secondary: CircleAvatar(
-                radius: 12,
-                backgroundColor: Color(tag.colorValue),
-              ),
-              title: Text(tag.name),
-              dense: true,
-              visualDensity: VisualDensity.compact,
+            return _BatchTagIntentRow(
+              tag: tag,
+              selected: _tagIntent(tag),
+              onChanged: (intent) => _setTagIntent(tag, intent),
             );
           },
         ),
@@ -1873,6 +1904,87 @@ class _BatchTagPickerDialogState extends State<_BatchTagPickerDialog> {
           child: Text(t.batch_tag_apply),
         ),
       ],
+    );
+  }
+}
+
+enum _BatchTagIntent { keep, add, remove }
+
+class _BatchTagIntentRow extends StatelessWidget {
+  const _BatchTagIntentRow({
+    required this.tag,
+    required this.selected,
+    required this.onChanged,
+  });
+
+  final BookTagRow tag;
+  final _BatchTagIntent selected;
+  final ValueChanged<_BatchTagIntent> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool cupertino = isCupertinoPlatform(context);
+    final ThemeData theme = Theme.of(context);
+    final Color tagColor = Color(tag.colorValue);
+
+    return AdaptiveSettingsRow(
+      title: tag.name,
+      icon: cupertino ? CupertinoIcons.tag : Icons.sell_outlined,
+      controlBelow: true,
+      trailing: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 220),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: tagColor,
+                shape: BoxShape.circle,
+              ),
+              child: const SizedBox(width: 12, height: 12),
+            ),
+            const SizedBox(width: 12),
+            Flexible(
+              child: adaptiveSegmentedButton<_BatchTagIntent>(
+                context: context,
+                segments: [
+                  ButtonSegment<_BatchTagIntent>(
+                    value: _BatchTagIntent.keep,
+                    icon: Icon(
+                      cupertino
+                          ? CupertinoIcons.minus
+                          : Icons.horizontal_rule_outlined,
+                      size: 16,
+                    ),
+                  ),
+                  ButtonSegment<_BatchTagIntent>(
+                    value: _BatchTagIntent.add,
+                    icon: Icon(
+                      cupertino ? CupertinoIcons.plus : Icons.add,
+                      size: 16,
+                    ),
+                  ),
+                  ButtonSegment<_BatchTagIntent>(
+                    value: _BatchTagIntent.remove,
+                    icon: Icon(
+                      cupertino ? CupertinoIcons.xmark : Icons.remove,
+                      size: 16,
+                      color: selected == _BatchTagIntent.remove
+                          ? theme.colorScheme.error
+                          : null,
+                    ),
+                  ),
+                ],
+                selected: {selected},
+                onSelectionChanged: (values) {
+                  if (values.isNotEmpty) onChanged(values.first);
+                },
+                style: kSettingsSegmentedStyle,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

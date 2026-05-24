@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/media/audiobook/audiobook_bridge.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_play_bar.dart';
 import 'package:hibiki/utils.dart';
 
@@ -96,5 +97,63 @@ void main() {
     expect(find.byType(AdaptiveSettingsStepperRow), findsWidgets);
     expect(find.byType(AdaptiveSettingsSwitchRow), findsWidgets);
     expect(find.byType(ListTile), findsNothing);
+  });
+
+  testWidgets('in-book navigation lists avoid legacy Material tiles',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(useMaterial3: true),
+        home: Scaffold(
+          body: AudiobookSettingsSheet(
+            controller: null,
+            toc: const [
+              TtuTocEntry(index: 0, label: 'Opening'),
+              TtuTocEntry(index: 1, label: 'Chapter 1'),
+            ],
+            readerProgress: const (1, 2),
+            onJumpSection: (_) async {},
+            onBookmark: () async {},
+            onExitReader: () {},
+            webViewController: _FakeInAppWebViewController(),
+            appModel: AppModel(),
+            bookmarks: [
+              Bookmark(
+                sectionIndex: 1,
+                normCharOffset: 120,
+                label: 'Saved page',
+                createdAt: DateTime(2026, 5, 25, 12),
+              ),
+            ],
+            favoriteSentences: [
+              FavoriteSentence(
+                text: 'A highlighted sentence from the current book.',
+                bookTitle: 'Current Book',
+                chapterLabel: 'Chapter 1',
+                sectionIndex: 1,
+                normCharOffset: 120,
+                createdAt: DateTime(2026, 5, 25, 12),
+              ),
+            ],
+            onJumpToBookmark: (_) async {},
+            onDeleteBookmark: (_) async {},
+            onJumpToFavorite: (_) async {},
+            onDeleteFavorite: (_) async {},
+            isHibikiReader: true,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.text(t.section_navigation));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Opening'), findsOneWidget);
+    expect(find.text('Saved page'), findsOneWidget);
+    expect(find.textContaining('A highlighted sentence'), findsOneWidget);
+    expect(find.byType(ListTile), findsNothing);
+    expect(find.byType(ExpansionTile), findsNothing);
+    expect(find.byType(AdaptiveSettingsSection), findsWidgets);
   });
 }

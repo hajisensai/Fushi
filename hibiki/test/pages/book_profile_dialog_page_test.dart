@@ -1,7 +1,9 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/pages/implementations/reader_hibiki_history_page.dart';
+import 'package:hibiki/utils.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
 void main() {
@@ -44,6 +46,29 @@ void main() {
     );
 
     expect(tester.takeException(), isNull);
-    expect(find.byType(RadioListTile<int?>), findsWidgets);
+    expect(find.byType(RadioListTile<int?>), findsNothing);
+    expect(find.byType(AdaptiveSettingsRow), findsWidgets);
+  });
+
+  testWidgets('book profile dialog uses Cupertino rows on iOS', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          theme: ThemeData(platform: TargetPlatform.iOS),
+          home: BookProfileDialogContent(
+            activeProfileName: 'Default',
+            profiles: List.generate(3, profile),
+            selectedProfileId: 2,
+            onChanged: (_) {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byType(RadioListTile<int?>), findsNothing);
+    expect(find.byIcon(Icons.radio_button_checked), findsNothing);
+    expect(find.byIcon(CupertinoIcons.check_mark), findsOneWidget);
   });
 }

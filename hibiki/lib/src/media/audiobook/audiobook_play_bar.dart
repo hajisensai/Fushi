@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:flutter/services.dart';
@@ -583,15 +584,9 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            IconButton(
-              icon: const Icon(Icons.arrow_back),
-              onPressed: () => setState(() => _subPage = null),
-            ),
-            const SizedBox(width: 4),
-            Text(title, style: theme.textTheme.titleMedium),
-          ],
+        _InBookSettingsHeader(
+          title: title,
+          onBack: () => setState(() => _subPage = null),
         ),
         const SizedBox(height: 12),
         content,
@@ -746,35 +741,11 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
                     r.context.substring(r.matchStart, matchEnd);
                 final String after = r.context.substring(matchEnd);
 
-                return ListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(
-                    chapterLabel,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.primary,
-                    ),
-                  ),
-                  subtitle: Text.rich(
-                    TextSpan(
-                      children: [
-                        TextSpan(text: before),
-                        TextSpan(
-                          text: match,
-                          style: TextStyle(
-                            backgroundColor: theme.colorScheme.primaryContainer,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        TextSpan(text: after),
-                      ],
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodySmall,
-                  ),
+                return _InBookSearchResultRow(
+                  chapterLabel: chapterLabel,
+                  before: before,
+                  match: match,
+                  after: after,
                   onTap: () async {
                     final String q = _searchResultsQuery;
                     Navigator.pop(context);
@@ -862,128 +833,45 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
 
   Widget _buildTocSection(BuildContext context, ThemeData theme) {
     final int? currentIdx = widget.readerProgress?.$1;
-    return Theme(
-      data: theme.copyWith(dividerColor: Colors.transparent),
-      child: ExpansionTile(
-        tilePadding: EdgeInsets.zero,
-        childrenPadding: EdgeInsets.zero,
-        minTileHeight: 36,
-        title: Text(
-          t.toc_section(n: widget.toc.length),
-          style: theme.textTheme.titleMedium,
-        ),
-        children: [
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 320),
-            child: ListView.builder(
-              shrinkWrap: true,
-              itemCount: widget.toc.length,
-              itemBuilder: (ctx, i) {
-                final TtuTocEntry e = widget.toc[i];
-                final bool isCurrent = currentIdx == i;
-                final bool isChild = e.parent != null;
-                return ListTile(
-                  dense: true,
-                  visualDensity: const VisualDensity(vertical: -3),
-                  contentPadding: EdgeInsets.only(
-                    left: isChild ? 24 : 0,
-                    right: 8,
-                  ),
-                  selected: isCurrent,
-                  selectedTileColor: theme.colorScheme.primaryContainer,
-                  selectedColor: theme.colorScheme.onPrimaryContainer,
-                  shape: isCurrent
-                      ? RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8))
-                      : null,
-                  title: Text(
-                    e.label.isEmpty ? t.untitled_chapter : e.label,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: isCurrent
-                        ? theme.textTheme.bodyMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          )
-                        : theme.textTheme.bodyMedium,
-                  ),
-                  trailing: isCurrent
-                      ? const Icon(Icons.chevron_right, size: 20)
-                      : null,
-                  onTap: () async {
-                    Navigator.of(ctx).pop();
-                    await widget.onJumpSection(e.index);
-                  },
-                );
-              },
-            ),
+    return AdaptiveSettingsSection(
+      title: t.toc_section(n: widget.toc.length),
+      children: [
+        for (final TtuTocEntry entry in widget.toc)
+          _InBookTocRow(
+            entry: entry,
+            selected: currentIdx == entry.index,
+            onTap: () async {
+              Navigator.of(context).pop();
+              await widget.onJumpSection(entry.index);
+            },
           ),
-        ],
-      ),
+      ],
     );
   }
 
   Widget _buildBookmarkSection(BuildContext context, ThemeData theme) {
     final DateFormat fmt = DateFormat('MM/dd HH:mm');
-    return Theme(
-      data: theme.copyWith(dividerColor: Colors.transparent),
-      child: ExpansionTile(
-        tilePadding: EdgeInsets.zero,
-        childrenPadding: EdgeInsets.zero,
-        minTileHeight: 36,
-        title: Text(
-          '${t.action_bookmark} (${_bookmarks.length})',
-          style: theme.textTheme.titleMedium,
-        ),
-        children: [
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 240),
-            child: ListView.builder(
-              shrinkWrap: true,
-              itemCount: _bookmarks.length,
-              itemBuilder: (ctx, i) {
-                final Bookmark bm = _bookmarks[i];
-                final String pageInfo =
-                    bm.pageInChapter != null && bm.totalPagesInChapter != null
-                        ? ' · ${bm.pageInChapter}/${bm.totalPagesInChapter}'
-                        : '';
-                return ListTile(
-                  dense: true,
-                  visualDensity: const VisualDensity(vertical: -3),
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(
-                    '${bm.label}$pageInfo',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodyMedium,
-                  ),
-                  subtitle: Text(
-                    fmt.format(bm.createdAt),
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.delete_outline, size: 18),
-                    onPressed: () async {
-                      await widget.onDeleteBookmark?.call(bm);
-                      if (mounted) {
-                        setState(() {
-                          _bookmarks = List<Bookmark>.of(_bookmarks)
-                            ..removeAt(i);
-                        });
-                      }
-                    },
-                  ),
-                  onTap: () async {
-                    Navigator.of(ctx).pop();
-                    await widget.onJumpToBookmark?.call(bm);
-                  },
-                );
-              },
-            ),
+    return AdaptiveSettingsSection(
+      title: '${t.action_bookmark} (${_bookmarks.length})',
+      children: [
+        for (final Bookmark bookmark in _bookmarks)
+          _InBookBookmarkRow(
+            bookmark: bookmark,
+            dateLabel: fmt.format(bookmark.createdAt),
+            onTap: () async {
+              Navigator.of(context).pop();
+              await widget.onJumpToBookmark?.call(bookmark);
+            },
+            onDelete: () async {
+              await widget.onDeleteBookmark?.call(bookmark);
+              if (mounted) {
+                setState(() {
+                  _bookmarks = List<Bookmark>.of(_bookmarks)..remove(bookmark);
+                });
+              }
+            },
           ),
-        ],
-      ),
+      ],
     );
   }
 
@@ -1693,97 +1581,40 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
 
   Widget _buildFavoritesSection(BuildContext context, ThemeData theme) {
     final DateFormat fmt = DateFormat('MM/dd HH:mm');
-    return Theme(
-      data: theme.copyWith(dividerColor: Colors.transparent),
-      child: ExpansionTile(
-        tilePadding: EdgeInsets.zero,
-        childrenPadding: EdgeInsets.zero,
-        title: Text(
-          t.favorites(n: _favorites.length),
-          style: theme.textTheme.titleMedium,
-        ),
-        children: [
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 300),
-            child: ListView.builder(
-              shrinkWrap: true,
-              itemCount: _favorites.length,
-              itemBuilder: (ctx, i) {
-                final FavoriteSentence fav = _favorites[i];
-                return ListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  leading: Container(
-                    width: 4,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: _highlightColor(fav.color),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                  title: Text(
-                    fav.text,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodyMedium,
-                  ),
-                  subtitle: Text(
-                    '${fav.bookTitle}${fav.chapterLabel != null ? ' · ${fav.chapterLabel}' : ''} · ${fmt.format(fav.createdAt)}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (widget.onPlayFavorite != null)
-                        IconButton(
-                          icon: const Icon(Icons.volume_up_outlined, size: 16),
-                          onPressed: () async {
-                            await widget.onPlayFavorite?.call(fav);
-                          },
-                          tooltip: t.play,
-                        ),
-                      if (fav.sectionIndex != null &&
-                          widget.onJumpToFavorite != null)
-                        IconButton(
-                          icon:
-                              const Icon(Icons.open_in_new_outlined, size: 16),
-                          onPressed: () async {
-                            Navigator.of(ctx).pop();
-                            await widget.onJumpToFavorite?.call(fav);
-                          },
-                          tooltip: t.jump_to_cue,
-                        ),
-                      IconButton(
-                        icon: const Icon(Icons.copy_outlined, size: 16),
-                        onPressed: () {
-                          Clipboard.setData(ClipboardData(text: fav.text));
-                          HibikiToast.show(msg: t.copy);
-                        },
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.delete_outline, size: 16),
-                        onPressed: () async {
-                          await widget.onDeleteFavorite?.call(fav);
-                          if (mounted) {
-                            setState(() {
-                              _favorites = List<FavoriteSentence>.of(_favorites)
-                                ..remove(fav);
-                            });
-                          }
-                        },
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
+    return AdaptiveSettingsSection(
+      title: t.favorites(n: _favorites.length),
+      children: [
+        for (final FavoriteSentence favorite in _favorites)
+          _InBookFavoriteRow(
+            favorite: favorite,
+            metaLabel:
+                '${favorite.bookTitle}${favorite.chapterLabel != null ? ' - ${favorite.chapterLabel}' : ''} - ${fmt.format(favorite.createdAt)}',
+            color: _highlightColor(favorite.color),
+            onPlay: widget.onPlayFavorite == null
+                ? null
+                : () async => widget.onPlayFavorite?.call(favorite),
+            onJump:
+                favorite.sectionIndex == null || widget.onJumpToFavorite == null
+                    ? null
+                    : () async {
+                        Navigator.of(context).pop();
+                        await widget.onJumpToFavorite?.call(favorite);
+                      },
+            onCopy: () {
+              Clipboard.setData(ClipboardData(text: favorite.text));
+              HibikiToast.show(msg: t.copy);
+            },
+            onDelete: () async {
+              await widget.onDeleteFavorite?.call(favorite);
+              if (mounted) {
+                setState(() {
+                  _favorites = List<FavoriteSentence>.of(_favorites)
+                    ..remove(favorite);
+                });
+              }
+            },
           ),
-        ],
-      ),
+      ],
     );
   }
 
@@ -1861,6 +1692,344 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _InBookSettingsHeader extends StatelessWidget {
+  const _InBookSettingsHeader({
+    required this.title,
+    required this.onBack,
+  });
+
+  final String title;
+  final VoidCallback onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool cupertino = isCupertinoPlatform(context);
+    final TextStyle? titleStyle = cupertino
+        ? CupertinoTheme.of(context)
+            .textTheme
+            .navTitleTextStyle
+            .copyWith(fontSize: 17)
+        : Theme.of(context).textTheme.titleMedium;
+    final IconData icon =
+        cupertino ? CupertinoIcons.chevron_back : Icons.arrow_back;
+
+    return Row(
+      children: [
+        if (cupertino)
+          CupertinoButton(
+            padding: EdgeInsets.zero,
+            minSize: 36,
+            onPressed: onBack,
+            child: Icon(icon, size: 22),
+          )
+        else
+          IconButton(
+            icon: Icon(icon),
+            onPressed: onBack,
+            visualDensity: VisualDensity.compact,
+          ),
+        const SizedBox(width: 4),
+        Expanded(
+          child: Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: titleStyle,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _InBookTocRow extends StatelessWidget {
+  const _InBookTocRow({
+    required this.entry,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final TtuTocEntry entry;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool cupertino = isCupertinoPlatform(context);
+    final String title = entry.label.isEmpty ? t.untitled_chapter : entry.label;
+    final Color selectedColor = cupertino
+        ? CupertinoTheme.of(context).primaryColor
+        : Theme.of(context).colorScheme.primary;
+
+    return AdaptiveSettingsRow(
+      title: title,
+      icon: entry.parent == null
+          ? (cupertino ? CupertinoIcons.book : Icons.menu_book_outlined)
+          : (cupertino ? CupertinoIcons.text_alignleft : Icons.notes_outlined),
+      onTap: onTap,
+      trailing: selected
+          ? Icon(
+              cupertino ? CupertinoIcons.check_mark : Icons.check,
+              size: 18,
+              color: selectedColor,
+            )
+          : null,
+    );
+  }
+}
+
+class _InBookSearchResultRow extends StatelessWidget {
+  const _InBookSearchResultRow({
+    required this.chapterLabel,
+    required this.before,
+    required this.match,
+    required this.after,
+    required this.onTap,
+  });
+
+  final String chapterLabel;
+  final String before;
+  final String match;
+  final String after;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool cupertino = isCupertinoPlatform(context);
+    final ThemeData theme = Theme.of(context);
+    final Color primary = cupertino
+        ? CupertinoTheme.of(context).primaryColor
+        : theme.colorScheme.primary;
+    final Color highlight = cupertino
+        ? primary.withValues(alpha: 0.14)
+        : theme.colorScheme.primaryContainer;
+    final Widget child = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            cupertino ? CupertinoIcons.search : Icons.search,
+            size: 18,
+            color: primary,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  chapterLabel,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(color: primary),
+                ),
+                const SizedBox(height: 2),
+                Text.rich(
+                  TextSpan(
+                    children: [
+                      TextSpan(text: before),
+                      TextSpan(
+                        text: match,
+                        style: TextStyle(
+                          backgroundColor: highlight,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      TextSpan(text: after),
+                    ],
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (cupertino) {
+      return CupertinoButton(
+        padding: EdgeInsets.zero,
+        onPressed: onTap,
+        child: Align(alignment: Alignment.centerLeft, child: child),
+      );
+    }
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: onTap,
+      child: child,
+    );
+  }
+}
+
+class _InBookBookmarkRow extends StatelessWidget {
+  const _InBookBookmarkRow({
+    required this.bookmark,
+    required this.dateLabel,
+    required this.onTap,
+    required this.onDelete,
+  });
+
+  final Bookmark bookmark;
+  final String dateLabel;
+  final VoidCallback onTap;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final String pageInfo =
+        bookmark.pageInChapter != null && bookmark.totalPagesInChapter != null
+            ? ' - ${bookmark.pageInChapter}/${bookmark.totalPagesInChapter}'
+            : '';
+
+    return AdaptiveSettingsRow(
+      title: '${bookmark.label}$pageInfo',
+      subtitle: dateLabel,
+      icon: isCupertinoPlatform(context)
+          ? CupertinoIcons.bookmark
+          : Icons.bookmark_outline,
+      onTap: onTap,
+      trailing: _InBookIconButton(
+        materialIcon: Icons.delete_outline,
+        cupertinoIcon: CupertinoIcons.delete,
+        tooltip: t.options_delete,
+        destructive: true,
+        onPressed: onDelete,
+      ),
+    );
+  }
+}
+
+class _InBookFavoriteRow extends StatelessWidget {
+  const _InBookFavoriteRow({
+    required this.favorite,
+    required this.metaLabel,
+    required this.color,
+    required this.onCopy,
+    required this.onDelete,
+    this.onPlay,
+    this.onJump,
+  });
+
+  final FavoriteSentence favorite;
+  final String metaLabel;
+  final Color color;
+  final VoidCallback? onPlay;
+  final VoidCallback? onJump;
+  final VoidCallback onCopy;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    return AdaptiveSettingsRow(
+      title: favorite.text,
+      subtitle: metaLabel,
+      icon: isCupertinoPlatform(context)
+          ? CupertinoIcons.quote_bubble
+          : Icons.format_quote_outlined,
+      onTap: onJump,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 4,
+            height: 32,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          if (onPlay != null)
+            _InBookIconButton(
+              materialIcon: Icons.volume_up_outlined,
+              cupertinoIcon: CupertinoIcons.speaker_2,
+              tooltip: t.play,
+              onPressed: onPlay!,
+            ),
+          if (onJump != null)
+            _InBookIconButton(
+              materialIcon: Icons.open_in_new_outlined,
+              cupertinoIcon: CupertinoIcons.arrow_up_right_square,
+              tooltip: t.jump_to_cue,
+              onPressed: onJump!,
+            ),
+          _InBookIconButton(
+            materialIcon: Icons.copy_outlined,
+            cupertinoIcon: CupertinoIcons.doc_on_doc,
+            tooltip: t.copy,
+            onPressed: onCopy,
+          ),
+          _InBookIconButton(
+            materialIcon: Icons.delete_outline,
+            cupertinoIcon: CupertinoIcons.delete,
+            tooltip: t.options_delete,
+            destructive: true,
+            onPressed: onDelete,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InBookIconButton extends StatelessWidget {
+  const _InBookIconButton({
+    required this.materialIcon,
+    required this.cupertinoIcon,
+    required this.tooltip,
+    required this.onPressed,
+    this.destructive = false,
+  });
+
+  final IconData materialIcon;
+  final IconData cupertinoIcon;
+  final String tooltip;
+  final VoidCallback onPressed;
+  final bool destructive;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool cupertino = isCupertinoPlatform(context);
+    final Color color = destructive
+        ? (cupertino
+            ? CupertinoColors.destructiveRed.resolveFrom(context)
+            : Theme.of(context).colorScheme.error)
+        : (cupertino
+            ? CupertinoTheme.of(context).primaryColor
+            : Theme.of(context).colorScheme.onSurfaceVariant);
+
+    if (cupertino) {
+      return CupertinoButton(
+        padding: EdgeInsets.zero,
+        minSize: 32,
+        onPressed: onPressed,
+        child: Semantics(
+          button: true,
+          label: tooltip,
+          child: Icon(cupertinoIcon, size: 18, color: color),
+        ),
+      );
+    }
+
+    return IconButton(
+      icon: Icon(materialIcon, size: 18, color: color),
+      tooltip: tooltip,
+      visualDensity: VisualDensity.compact,
+      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+      padding: EdgeInsets.zero,
+      onPressed: onPressed,
     );
   }
 }
