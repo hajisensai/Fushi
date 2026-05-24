@@ -62,9 +62,7 @@ ColorScheme buildHibikiColorScheme({
 }
 
 class ThemeNotifier extends ChangeNotifier {
-  ThemeNotifier(this._db, this._textThemeBuilder) {
-    _loadFromDb();
-  }
+  ThemeNotifier(this._db, this._textThemeBuilder);
 
   final HibikiDatabase _db;
   final TextTheme Function() _textThemeBuilder;
@@ -84,15 +82,17 @@ class ThemeNotifier extends ChangeNotifier {
     if (appThemeKey == 'system-theme') notifyListeners();
   }
 
-  Future<void> _loadFromDb() async {
+  void loadFromPrefsSnapshot(Map<String, String> snapshot) {
+    _prefs
+      ..clear()
+      ..addAll(snapshot);
+  }
+
+  Future<void> refreshFromDb() async {
     final all = await _db.getAllPrefs();
     _prefs
       ..clear()
       ..addAll(all);
-  }
-
-  Future<void> refreshFromDb() async {
-    await _loadFromDb();
     notifyListeners();
   }
 

@@ -9,7 +9,7 @@ Future<ReaderSettings> _defaultSettings() async {
   final HibikiDatabase db = HibikiDatabase.forTesting(NativeDatabase.memory());
   addTearDown(db.close);
   final ReaderSettings settings = ReaderSettings(db);
-  await settings.ready;
+  await settings.refreshFromDb();
   return settings;
 }
 
@@ -107,7 +107,7 @@ void main() {
           HibikiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
-      await settings.ready;
+      await settings.refreshFromDb();
       await settings.setWritingMode('horizontal-tb');
 
       final String css = ReaderContentStyles.css(settings: settings);
@@ -120,7 +120,7 @@ void main() {
           HibikiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
-      await settings.ready;
+      await settings.refreshFromDb();
       await settings.setViewMode('continuous');
 
       final String css = ReaderContentStyles.css(settings: settings);
@@ -163,7 +163,7 @@ void main() {
           HibikiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
-      await settings.ready;
+      await settings.refreshFromDb();
       await settings.setFuriganaMode('hide');
 
       final String css = ReaderContentStyles.css(settings: settings);
@@ -187,7 +187,7 @@ void main() {
           HibikiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
-      await settings.ready;
+      await settings.refreshFromDb();
       ReaderHibikiSource.readerSettings = settings;
       addTearDown(() => ReaderHibikiSource.readerSettings = null);
 

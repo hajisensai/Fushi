@@ -19,6 +19,8 @@ class PreferencesRepository extends ChangeNotifier {
       ..addAll(all);
   }
 
+  Map<String, String> get prefsSnapshot => Map<String, String>.unmodifiable(_prefCache);
+
   Future<void> refreshFromDb() async {
     await loadFromDb();
     notifyListeners();

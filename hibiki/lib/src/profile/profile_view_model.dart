@@ -148,7 +148,7 @@ final profileViewModelProvider =
     ref.invalidate(ankiViewModelProvider);
     final appModel = ref.read(appProvider);
     await appModel.refreshPrefCache();
-    ReaderHibikiSource.readerSettings?.refreshFromDb();
+    await ReaderHibikiSource.readerSettings?.refreshFromDb();
   }
 
   return ProfileViewModel(repo, onApplied);

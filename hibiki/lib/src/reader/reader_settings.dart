@@ -11,21 +11,17 @@ import 'package:path/path.dart' as p;
 /// `ReaderTtuSource` so existing user settings migrate automatically.
 /// Key format: `src:reader_ttu:<shortKey>`.
 class ReaderSettings {
-  ReaderSettings(this._db) {
-    ready = _loadAll();
-  }
+  ReaderSettings(this._db);
 
   final HibikiDatabase _db;
   final Map<String, dynamic> _cache = <String, dynamic>{};
-  late final Future<void> ready;
 
   static const String _prefix = 'src:reader_ttu:';
 
   // ── Core persistence ──────────────────────────────────────────────
 
-  Future<void> _loadAll() async {
-    final Map<String, String> all = await _db.getAllPrefs();
-    for (final MapEntry<String, String> entry in all.entries) {
+  Future<void> loadFromPrefsSnapshot(Map<String, String> snapshot) async {
+    for (final MapEntry<String, String> entry in snapshot.entries) {
       if (!entry.key.startsWith(_prefix)) continue;
       final String shortKey = entry.key.substring(_prefix.length);
       _cache[shortKey] = _parseValue(entry.value);
@@ -36,7 +32,8 @@ class ReaderSettings {
   /// Reload all settings from the database, e.g. after a profile switch.
   Future<void> refreshFromDb() async {
     _cache.clear();
-    await _loadAll();
+    final Map<String, String> all = await _db.getAllPrefs();
+    await loadFromPrefsSnapshot(all);
   }
 
   Future<void> _migrateMargins() async {

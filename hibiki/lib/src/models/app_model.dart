@@ -235,8 +235,9 @@ class AppModel with ChangeNotifier {
     dictionaryMenuNotifier.notifyListeners();
   }
 
-  /// Pre-compiled regex from remove_emoji package (avoids per-call RegExp()).
-  static final RegExp _emojiRegex = RegExp(RemoveEmoji().getRegexString());
+  static RegExp? _emojiRegexInstance;
+  static RegExp get _emojiRegex =>
+      _emojiRegexInstance ??= RegExp(RemoveEmoji().getRegexString());
 
   static final RegExp _punctuationRegex =
       RegExp(r'^[\p{P}\p{S}]+|[\p{P}\p{S}]+$', unicode: true);
@@ -438,6 +439,37 @@ class AppModel with ChangeNotifier {
           pitchPaths.add(p);
       }
     }
+    if (termPaths.isNotEmpty || freqPaths.isNotEmpty || pitchPaths.isNotEmpty) {
+      HoshiDicts.initializeTyped(
+        termPaths: termPaths,
+        freqPaths: freqPaths,
+        pitchPaths: pitchPaths,
+      );
+    }
+  }
+
+  Future<void> _rebuildDictPathsCacheAsync() async {
+    _migrateDictionaryTypes();
+    final termPaths = <String>[];
+    final freqPaths = <String>[];
+    final pitchPaths = <String>[];
+    final checks = <Future<void>>[];
+    for (final d in dictRepo.dictionaries) {
+      final p = path.join(dictionaryResourceDirectory.path, d.name);
+      checks.add(Directory(p).exists().then((bool exists) {
+        if (!exists) return;
+        switch (d.type) {
+          case DictionaryType.term:
+          case DictionaryType.kanji:
+            termPaths.add(p);
+          case DictionaryType.frequency:
+            freqPaths.add(p);
+          case DictionaryType.pitch:
+            pitchPaths.add(p);
+        }
+      }));
+    }
+    await Future.wait(checks);
     if (termPaths.isNotEmpty || freqPaths.isNotEmpty || pitchPaths.isNotEmpty) {
       HoshiDicts.initializeTyped(
         termPaths: termPaths,
@@ -981,16 +1013,12 @@ class AppModel with ChangeNotifier {
       prefsRepo.addListener(notifyListeners);
       _applyMemoryPolicy();
 
-      /// Create theme notifier (extracted subsystem).
+      final Map<String, String> prefsSnapshot = prefsRepo.prefsSnapshot;
+
       themeNotifier = ThemeNotifier(_database, () => textTheme);
+      themeNotifier.loadFromPrefsSnapshot(prefsSnapshot);
 
-      /// Permission requests are deferred to the point of use (file import,
-      /// Anki export) so they do not block startup.
-
-      debugPrint('[Hibiki] init: system palette');
-      await refreshSystemPalette();
-
-      debugPrint('[Hibiki] init: directories');
+      debugPrint('[Hibiki] init: directories + system palette (parallel)');
       _browserDirectory = Directory(path.join(appDirectory.path, 'browser'));
       _thumbnailsDirectory =
           Directory(path.join(appDirectory.path, 'thumbnails'));
@@ -1000,40 +1028,44 @@ class AppModel with ChangeNotifier {
 
       _dictionaryImportWorkingDirectory = Directory(
           path.join(appDirectory.path, 'dictionaryImportWorkingDirectory'));
-      _exportDirectory = await prepareFallbackHibikiDirectory();
-      _alternateExportDirectory = _exportDirectory;
       _webArchiveDirectory =
           Directory(path.join(appDirectory.path, 'webArchive'));
 
-      thumbnailsDirectory.createSync();
-      dictionaryImportWorkingDirectory.createSync();
-      dictionaryResourceDirectory.createSync();
-      _rebuildDictPathsCache();
+      await Future.wait(<Future<void>>[
+        thumbnailsDirectory.create(recursive: true),
+        dictionaryImportWorkingDirectory.create(recursive: true),
+        dictionaryResourceDirectory.create(recursive: true),
+        refreshSystemPalette(),
+        () async {
+          _exportDirectory = await prepareFallbackHibikiDirectory();
+          _alternateExportDirectory = _exportDirectory;
+        }(),
+      ]);
 
-      await _bindLocalAudioDbForNativeHandler(clearMissingPath: true);
+      await _rebuildDictPathsCacheAsync();
 
-      debugPrint('[Hibiki] init: populate maps');
+      debugPrint('[Hibiki] init: populate maps + audio DB (parallel)');
       populateLanguages();
       populateLocales();
       LocaleSettings.setLocaleRaw(appLocale.toLanguageTag());
-      await _seedBuiltInTags();
       populateMediaTypes();
       populateMediaSources();
       populateDictionaryFormats();
       populateEnhancements();
       populateQuickActions();
 
-      debugPrint('[Hibiki] init: targetLanguage + licenses (parallel)');
       await Future.wait(<Future<void>>[
         targetLanguage.initialise(),
         injectAssetLicenses(),
+        _seedBuiltInTags(),
+        _bindLocalAudioDbForNativeHandler(clearMissingPath: true),
       ]);
 
       debugPrint(
-          '[Hibiki] init: enhancements + quick actions + media sources (parallel)');
+          '[Hibiki] init: reader settings + enhancements + quick actions + media sources (parallel)');
       MediaSource.setDatabase(_database);
       final readerSettings = ReaderSettings(_database);
-      await readerSettings.ready;
+      await readerSettings.loadFromPrefsSnapshot(prefsSnapshot);
       ReaderHibikiSource.readerSettings = readerSettings;
 
       await Future.wait(<Future<void>>[
@@ -1190,10 +1222,12 @@ class AppModel with ChangeNotifier {
       _webArchiveDirectory =
           Directory(path.join(appDirectory.path, 'webArchive'));
 
-      thumbnailsDirectory.createSync();
-      dictionaryImportWorkingDirectory.createSync();
-      dictionaryResourceDirectory.createSync();
-      _rebuildDictPathsCache();
+      await Future.wait(<Future<void>>[
+        thumbnailsDirectory.create(recursive: true),
+        dictionaryImportWorkingDirectory.create(recursive: true),
+        dictionaryResourceDirectory.create(recursive: true),
+      ]);
+      await _rebuildDictPathsCacheAsync();
 
       await _bindLocalAudioDbForNativeHandler();
 
@@ -1205,13 +1239,14 @@ class AppModel with ChangeNotifier {
       populateDictionaryFormats();
       populateEnhancements();
 
-      await targetLanguage.initialise();
-
-      for (Field field in globalFields) {
-        for (Enhancement enhancement in enhancements[field]!.values) {
-          await enhancement.initialise();
-        }
-      }
+      await Future.wait(<Future<void>>[
+        targetLanguage.initialise(),
+        Future.wait(<Future<void>>[
+          for (Field field in globalFields)
+            for (Enhancement enhancement in enhancements[field]!.values)
+              enhancement.initialise(),
+        ]),
+      ]);
 
       debugPrint('[Hibiki-popup] init: DONE');
       _isInitialised = true;

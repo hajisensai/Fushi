@@ -72,9 +72,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
   }
 
   @override
-  Future<void> prepareResources() async {
-    await readerSettings?.ready;
-  }
+  Future<void> prepareResources() async {}
 
   // ── Sasayaki sentence audio ─────────────────────────────────────────
 
@@ -270,7 +268,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
         String coverRel = book.coverPath!;
         if (coverRel.startsWith('/')) coverRel = coverRel.substring(1);
         final String absPath = p.join(book.extractDir, coverRel);
-        if (File(absPath).existsSync()) {
+        if (await File(absPath).exists()) {
           imageUrl = Uri.file(absPath).toString();
         }
       }
@@ -281,7 +279,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
           'cover.png',
         ]) {
           final String fallback = p.join(book.extractDir, name);
-          if (File(fallback).existsSync()) {
+          if (await File(fallback).exists()) {
             imageUrl = Uri.file(fallback).toString();
             break;
           }
