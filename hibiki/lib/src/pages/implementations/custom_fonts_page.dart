@@ -365,15 +365,18 @@ class _CustomFontsPageState extends BasePageState {
   @override
   void initState() {
     super.initState();
-    _settings =
-        ReaderHibikiSource.readerSettings ?? ReaderSettings(appModel.database);
-    ReaderHibikiSource.readerSettings = _settings;
-    _settings!.ready.then((_) {
-      if (!mounted) return;
-      setState(() {
-        _fonts = _settings!.customFonts;
+    _settings = ReaderHibikiSource.readerSettings;
+    if (_settings == null) {
+      final rs = ReaderSettings(appModel.database);
+      rs.refreshFromDb().then((_) {
+        ReaderHibikiSource.readerSettings = rs;
+        if (!mounted) return;
+        setState(() => _fonts = rs.customFonts);
       });
-    });
+      _settings = rs;
+    } else {
+      _fonts = _settings!.customFonts;
+    }
   }
 
   Future<void> _save() async {

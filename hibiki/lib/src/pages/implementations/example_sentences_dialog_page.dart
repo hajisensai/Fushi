@@ -93,7 +93,7 @@ class _ExampleSentencesDialogPageState
 
   Widget buildTextWidgets() {
     return MasonryGridView.builder(
-      shrinkWrap: true,
+      controller: _scrollController,
       gridDelegate: SliverSimpleGridDelegateWithFixedCrossAxisCount(
           crossAxisCount:
               MediaQuery.of(context).orientation == Orientation.portrait

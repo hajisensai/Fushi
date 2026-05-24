@@ -3,7 +3,6 @@ import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/utils.dart';
-import 'package:hibiki/src/profile/profile_selector.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 
 class DisplaySettingsPage extends BasePage {
@@ -20,12 +19,15 @@ class _DisplaySettingsPageState extends BasePageState {
   @override
   void initState() {
     super.initState();
-    _settings =
-        ReaderHibikiSource.readerSettings ?? ReaderSettings(appModel.database);
-    ReaderHibikiSource.readerSettings = _settings;
-    _settings!.ready.then((_) {
-      if (mounted) setState(() {});
-    });
+    _settings = ReaderHibikiSource.readerSettings;
+    if (_settings == null) {
+      final rs = ReaderSettings(appModel.database);
+      rs.refreshFromDb().then((_) {
+        ReaderHibikiSource.readerSettings = rs;
+        if (mounted) setState(() {});
+      });
+      _settings = rs;
+    }
   }
 
   @override
@@ -34,27 +36,6 @@ class _DisplaySettingsPageState extends BasePageState {
     return AdaptiveSettingsScaffold(
       title: Text(t.display_settings),
       children: [
-        AdaptiveSettingsSection(
-          title: t.section_interface,
-          children: [
-            AdaptiveSettingsSegmentedRow<String>(
-              title: t.design_system_label,
-              subtitle: t.design_system_hint,
-              segments: [
-                ButtonSegment(value: 'auto', label: Text(t.design_system_auto)),
-                const ButtonSegment(value: 'material', label: Text('MD3')),
-                const ButtonSegment(value: 'cupertino', label: Text('iOS')),
-              ],
-              selected: appModel.themeNotifier.designSystem,
-              onChanged: appModel.themeNotifier.setDesignSystem,
-            ),
-            AdaptiveSettingsRow(
-              title: t.profile_label,
-              icon: Icons.person_outline,
-              trailing: const ProfileSelector(),
-            ),
-          ],
-        ),
         AdaptiveSettingsSection(
           title: t.section_typography,
           children: [

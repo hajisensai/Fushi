@@ -90,22 +90,18 @@ class _TextSegmentationDialogPage
     widget.segmentedText.forEachIndexed((index, segment) {
       Widget widget = GestureDetector(
         onTap: () {
-          /// Algorithm for deselecting values that are not adjacent trues to
-          /// the newly selected index.
-
-          _valuesSelected[index]!.value = !_valuesSelected[index]!.value;
+          final bool newValue = !_valuesSelected[index]!.value;
+          _valuesSelected[index]!.value = newValue;
 
           bool rightDeselectFlag = false;
           for (int i = index; i < _valuesSelected.length; i++) {
             if (rightDeselectFlag) {
-              _valuesSelected[i]!.value = false;
+              if (_valuesSelected[i]!.value) {
+                _valuesSelected[i]!.value = false;
+              }
               continue;
             }
-
-            if (_valuesSelected[i]!.value) {
-              continue;
-            } else {
-              _valuesSelected[i]!.value = false;
+            if (!_valuesSelected[i]!.value) {
               rightDeselectFlag = true;
             }
           }
@@ -113,14 +109,12 @@ class _TextSegmentationDialogPage
           bool leftDeselectFlag = false;
           for (int i = index; i >= 0; i--) {
             if (leftDeselectFlag) {
-              _valuesSelected[i]!.value = false;
+              if (_valuesSelected[i]!.value) {
+                _valuesSelected[i]!.value = false;
+              }
               continue;
             }
-
-            if (_valuesSelected[i]!.value) {
-              continue;
-            } else {
-              _valuesSelected[i]!.value = false;
+            if (!_valuesSelected[i]!.value) {
               leftDeselectFlag = true;
             }
           }
