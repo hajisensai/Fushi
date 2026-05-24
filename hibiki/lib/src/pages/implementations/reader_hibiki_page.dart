@@ -45,6 +45,13 @@ import 'package:hibiki/src/utils/misc/platform_utils.dart';
 import 'package:hibiki/src/utils/misc/Hibiki_color.dart';
 import 'package:hibiki/src/utils/misc/show_app_dialog.dart';
 
+List<int> _computeChapterCharCounts(EpubBook book) {
+  return List<int>.generate(
+    book.chapters.length,
+    (i) => book.chapterPlainText(i).length,
+  );
+}
+
 class ReaderHibikiPage extends BaseSourcePage {
   const ReaderHibikiPage({
     required this.bookId,
@@ -211,9 +218,12 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     await _resolveAndApplyProfile(db);
     if (!mounted) return;
 
-    _settings = ReaderHibikiSource.readerSettings ?? ReaderSettings(db);
-    ReaderHibikiSource.readerSettings = _settings;
-    await _settings!.ready;
+    if (ReaderHibikiSource.readerSettings == null) {
+      final rs = ReaderSettings(db);
+      await rs.refreshFromDb();
+      ReaderHibikiSource.readerSettings = rs;
+    }
+    _settings = ReaderHibikiSource.readerSettings;
     if (!mounted) return;
 
     final bool exists = await EpubStorage.bookExists(widget.bookId);
@@ -229,7 +239,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     _extractDir = extractDir;
 
     try {
-      _book = EpubParser.parseFromExtracted(extractDir);
+      _book = await compute(EpubParser.parseFromExtracted, extractDir);
       debugPrint(
           '[ReaderHibiki] parsed EPUB: ${_book!.chapters.length} chapters');
     } on FormatException catch (e) {
@@ -242,9 +252,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     final List<String> hrefs = _book!.chapters.map((ch) => ch.href).toList();
     debugPrint('[ReaderHibiki] chapter hrefs: $hrefs');
 
-    _chapterCharCounts = List<int>.generate(
-      _book!.chapters.length,
-      (i) => _book!.chapterPlainText(i).length,
+    _chapterCharCounts = await compute(
+      _computeChapterCharCounts,
+      _book!,
     );
     int cumulative = 0;
     _chapterCumulativeChars = <int>[];
@@ -1722,7 +1732,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   void _startProgressPoll() {
     _progressPollTimer?.cancel();
     _progressPollTimer = Timer.periodic(
-      const Duration(seconds: 3),
+      const Duration(seconds: 10),
       (_) => _refreshProgress(),
     );
   }
@@ -2768,12 +2778,16 @@ window.flutter_inappwebview.callHandler('spreadReady');
     _debouncedSavePosition(progress);
 
     if (mounted) {
-      setState(() {
-        _progressCurrentChars = absoluteChars;
-        _progressTotalChars = _chapterCumulativeChars.isNotEmpty
-            ? _chapterCumulativeChars.last + _chapterCharCounts.last
-            : total;
-      });
+      final int newTotal = _chapterCumulativeChars.isNotEmpty
+          ? _chapterCumulativeChars.last + _chapterCharCounts.last
+          : total;
+      if (_progressCurrentChars != absoluteChars ||
+          _progressTotalChars != newTotal) {
+        setState(() {
+          _progressCurrentChars = absoluteChars;
+          _progressTotalChars = newTotal;
+        });
+      }
     }
   }
 
