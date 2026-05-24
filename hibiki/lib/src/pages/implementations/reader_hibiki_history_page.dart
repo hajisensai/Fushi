@@ -35,7 +35,36 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   @override
   ReaderHibikiSource get mediaSource => ReaderHibikiSource.instance;
 
-  final Map<String, Future<_AudiobookInfo>> _audiobookInfoCache = {};
+  Future<Map<String, _AudiobookInfo>>? _batchAudiobookInfoFuture;
+  Map<String, _AudiobookInfo> _batchAudiobookInfoResult = const {};
+
+  Future<Map<String, _AudiobookInfo>> _loadAllAudiobookInfo() async {
+    final repo = AudiobookRepository(appModel.database);
+    final allAudiobooks = await repo.buildBookUidMap();
+    final result = <String, _AudiobookInfo>{};
+    final healthFutures = <String, Future<AudiobookHealth>>{};
+    for (final entry in allAudiobooks.entries) {
+      healthFutures[entry.key] = repo.resolveHealth(entry.value);
+    }
+    final healths = <String, AudiobookHealth>{};
+    await Future.wait(healthFutures.entries.map((e) async {
+      healths[e.key] = await e.value;
+    }));
+    for (final entry in allAudiobooks.entries) {
+      result[entry.key] = _AudiobookInfo(
+        hasAudiobook: true,
+        healthKind: healths[entry.key]?.kind ?? HealthKind.notApplicable,
+      );
+    }
+    _batchAudiobookInfoResult = result;
+    return result;
+  }
+
+  _AudiobookInfo _getAudiobookInfo(String bookUid) {
+    return _batchAudiobookInfoResult[bookUid] ??
+        const _AudiobookInfo(
+            hasAudiobook: false, healthKind: HealthKind.notApplicable);
+  }
 
   bool _selectionMode = false;
   final Set<String> _selectedKeys = {};
@@ -51,7 +80,8 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
 
   void _refreshSrtBooks() {
     ref.invalidate(srtBooksProvider);
-    _audiobookInfoCache.clear();
+    _batchAudiobookInfoFuture = null;
+    _batchAudiobookInfoResult = const {};
   }
 
   void _toggleSelectionMode() {
@@ -92,6 +122,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           Expanded(
             child: books.when(
               data: (bookList) {
+                _batchAudiobookInfoFuture ??= _loadAllAudiobookInfo();
                 final Set<int>? filterSet = filteredIds.valueOrNull;
                 final List<MediaItem> filtered;
                 if (filterSet == null) {
@@ -102,7 +133,10 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                     return id != null && filterSet.contains(id);
                   }).toList();
                 }
-                return buildBody(filtered);
+                return FutureBuilder<Map<String, _AudiobookInfo>>(
+                  future: _batchAudiobookInfoFuture,
+                  builder: (context, abSnapshot) => buildBody(filtered),
+                );
               },
               error: (error, stack) => buildError(
                 error: error,
@@ -896,58 +930,52 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
 
   @override
   Widget buildMediaItemContent(MediaItem item) {
-    return FutureBuilder<_AudiobookInfo>(
-      future: _audiobookInfoCache.putIfAbsent(
-          item.uniqueKey, () => _loadAudiobookInfo(item.uniqueKey)),
-      builder: (context, snapshot) {
-        final bool hasAudiobook = snapshot.data?.hasAudiobook ?? false;
-        final HealthKind healthKind =
-            snapshot.data?.healthKind ?? HealthKind.notApplicable;
+    final info = _getAudiobookInfo(item.uniqueKey);
+    final bool hasAudiobook = info.hasAudiobook;
+    final HealthKind healthKind = info.healthKind;
 
-        final int? bookId = _parseBookId(item.mediaIdentifier);
-        final tagWidget = bookId != null ? _buildTagLabels(bookId) : null;
+    final int? bookId = _parseBookId(item.mediaIdentifier);
+    final tagWidget = bookId != null ? _buildTagLabels(bookId) : null;
 
-        return Stack(
-          fit: StackFit.expand,
-          children: [
-            FadeInImage(
-              imageErrorBuilder: (_, __, ___) =>
-                  _coverPlaceholderIcon(Icons.menu_book_outlined),
-              placeholder: MemoryImage(kTransparentImage),
-              image: mediaSource.getDisplayThumbnailFromMediaItem(
-                appModel: appModel,
-                item: item,
-              ),
-              alignment: Alignment.topCenter,
-              fit: BoxFit.fitHeight,
-            ),
-            _titleOverlay(mediaSource.getDisplayTitleFromMediaItem(item)),
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: _progressBar(item),
-            ),
-            Positioned(
-              top: 6,
-              right: 6,
-              child: hasAudiobook
-                  ? _audiobookBadge(healthKind)
-                  : _cardBadge(
-                      icon: Icons.menu_book_outlined,
-                      background: theme.colorScheme.surfaceContainerHighest,
-                      foreground: theme.colorScheme.onSurfaceVariant,
-                    ),
-            ),
-            if (tagWidget != null)
-              Positioned(
-                top: 6,
-                left: 6,
-                child: tagWidget,
-              ),
-          ],
-        );
-      },
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        FadeInImage(
+          imageErrorBuilder: (_, __, ___) =>
+              _coverPlaceholderIcon(Icons.menu_book_outlined),
+          placeholder: MemoryImage(kTransparentImage),
+          image: mediaSource.getDisplayThumbnailFromMediaItem(
+            appModel: appModel,
+            item: item,
+          ),
+          alignment: Alignment.topCenter,
+          fit: BoxFit.fitHeight,
+        ),
+        _titleOverlay(mediaSource.getDisplayTitleFromMediaItem(item)),
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          child: _progressBar(item),
+        ),
+        Positioned(
+          top: 6,
+          right: 6,
+          child: hasAudiobook
+              ? _audiobookBadge(healthKind)
+              : _cardBadge(
+                  icon: Icons.menu_book_outlined,
+                  background: theme.colorScheme.surfaceContainerHighest,
+                  foreground: theme.colorScheme.onSurfaceVariant,
+                ),
+        ),
+        if (tagWidget != null)
+          Positioned(
+            top: 6,
+            left: 6,
+            child: tagWidget,
+          ),
+      ],
     );
   }
 

@@ -20,6 +20,11 @@ class AudiobookRepository {
     return _rowToAudiobook(row);
   }
 
+  Future<Map<String, Audiobook>> buildBookUidMap() async {
+    final rows = await _db.getAllAudiobooks();
+    return {for (final row in rows) row.bookUid: _rowToAudiobook(row)};
+  }
+
   Future<Audiobook?> findByTtuBookId(int ttuBookId) async {
     final map = await buildTtuBookIdMap();
     return map[ttuBookId];
