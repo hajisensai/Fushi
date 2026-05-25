@@ -1042,7 +1042,9 @@ class _AudiobookSettingsSheetState extends State<AudiobookSettingsSheet> {
           } else {
             await WakelockPlus.disable();
           }
-        } catch (_) {}
+        } catch (e) {
+          debugPrint('[Hibiki] wakelock toggle failed: $e');
+        }
       }),
       sw(t.auto_read_on_lookup, _src.autoReadOnLookup,
           _src.toggleAutoReadOnLookup),

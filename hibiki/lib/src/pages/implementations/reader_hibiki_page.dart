@@ -300,7 +300,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     if (_settings!.keepScreenAwake) {
       try {
         WakelockPlus.enable();
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('[Hibiki] wakelock enable failed: $e');
+      }
     }
 
     final ReaderHibikiSource src = ReaderHibikiSource.instance;
@@ -833,7 +835,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     appModel.audioHandler?.clearNotification();
     try {
       WakelockPlus.disable();
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[Hibiki] wakelock disable failed: $e');
+    }
     super.dispose();
   }
 
@@ -1600,6 +1604,16 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         source: _buildReaderSetupScript(sasayakiCuesJson: sasayakiCuesJson),
       );
       if (!mounted || _navigateGeneration != gen) return;
+
+      final Size screen = MediaQuery.of(context).size;
+      final double dartW = screen.width;
+      final double dartH =
+          screen.height - _readerTopOffset - _readerBottomReserve;
+      await controller.evaluateJavascript(
+        source: ReaderPaginationScripts.updatePageSizeInvocation(dartW, dartH),
+      );
+      if (!mounted || _navigateGeneration != gen) return;
+
       _initialFragment = null;
       if (_audiobookController != null) {
         await _injectAudiobookBridge();
@@ -1608,7 +1622,10 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       await HighlightBridge.inject(controller);
       await _applyChapterHighlights();
       if (!mounted || _navigateGeneration != gen) return;
-      _lastSyncedWidth = MediaQuery.of(context).size.width;
+      final Size screenSync = MediaQuery.of(context).size;
+      _lastSyncedWidth = screenSync.width;
+      _lastSyncedHeight =
+          screenSync.height - _readerTopOffset - _readerBottomReserve;
     } catch (e, stack) {
       ErrorLogService.instance
           .log('ReaderHibiki._onChapterLoadComplete', e, stack);
@@ -3764,71 +3781,72 @@ window.flutter_inappwebview.callHandler('spreadReady');
 
   // ── Theme Colors ──────────────────────────────────────────────────
 
+  static const Map<String, ({Color bg, Color fg, Color sasayaki, bool dark})>
+      _themeMap = {
+    'ecru-theme': (
+      bg: Color(0xFFF7F6EB),
+      fg: Color(0xDE000000),
+      sasayaki: Color(0x66A8C68C),
+      dark: false,
+    ),
+    'water-theme': (
+      bg: Color(0xFFDFECF4),
+      fg: Color(0xDE000000),
+      sasayaki: Color(0x6664B4DC),
+      dark: false,
+    ),
+    'gray-theme': (
+      bg: Color(0xFF23272A),
+      fg: Color(0xDEFFFFFF),
+      sasayaki: Color(0x595096C8),
+      dark: true,
+    ),
+    'dark-theme': (
+      bg: Color(0xFF121212),
+      fg: Color(0x99FFFFFF),
+      sasayaki: Color(0x594682B4),
+      dark: true,
+    ),
+    'black-theme': (
+      bg: Color(0xFF000000),
+      fg: Color(0xDEFFFFFF),
+      sasayaki: Color(0x663C78AA),
+      dark: true,
+    ),
+  };
+
   Color _themeBackgroundColor() {
-    final String theme = appModel.appThemeKey;
-    switch (theme) {
-      case 'ecru-theme':
-        return const Color(0xFFF7F6EB);
-      case 'water-theme':
-        return const Color(0xFFDFECF4);
-      case 'gray-theme':
-        return const Color(0xFF23272A);
-      case 'dark-theme':
-        return const Color(0xFF121212);
-      case 'black-theme':
-        return const Color(0xFF000000);
-      case 'custom-theme':
-        return appModel.customThemeBackgroundColor ?? const Color(0xFFFFFFFF);
-      default:
-        return const Color(0xFFFFFFFF);
+    final String key = appModel.appThemeKey;
+    if (key == 'custom-theme') {
+      return appModel.customThemeBackgroundColor ?? const Color(0xFFFFFFFF);
     }
+    return _themeMap[key]?.bg ?? const Color(0xFFFFFFFF);
   }
 
   Color _themeTextColor() {
-    final String theme = appModel.appThemeKey;
-    switch (theme) {
-      case 'gray-theme':
-      case 'black-theme':
-        return const Color(0xDEFFFFFF);
-      case 'dark-theme':
-        return const Color(0x99FFFFFF);
-      case 'custom-theme':
-        final Color? fg = appModel.customThemeFontColor;
-        if (fg != null) return fg;
-        final bool dark = appModel.customThemeDark;
-        return dark ? const Color(0xDEFFFFFF) : const Color(0xDE000000);
-      default:
-        return const Color(0xDE000000);
+    final String key = appModel.appThemeKey;
+    if (key == 'custom-theme') {
+      return appModel.customThemeFontColor ??
+          (appModel.customThemeDark
+              ? const Color(0xDEFFFFFF)
+              : const Color(0xDE000000));
     }
+    return _themeMap[key]?.fg ?? const Color(0xDE000000);
   }
 
   Color _themeSasayakiColor() {
-    final String theme = appModel.appThemeKey;
-    switch (theme) {
-      case 'ecru-theme':
-        return const Color(0x66A8C68C);
-      case 'water-theme':
-        return const Color(0x6664B4DC);
-      case 'gray-theme':
-        return const Color(0x595096C8);
-      case 'dark-theme':
-        return const Color(0x594682B4);
-      case 'black-theme':
-        return const Color(0x663C78AA);
-      case 'custom-theme':
-        return appModel.customThemeSasayakiColor ??
-            HibikiColor.defaultSasayakiColor;
-      default:
-        return HibikiColor.defaultSasayakiColor;
+    final String key = appModel.appThemeKey;
+    if (key == 'custom-theme') {
+      return appModel.customThemeSasayakiColor ??
+          HibikiColor.defaultSasayakiColor;
     }
+    return _themeMap[key]?.sasayaki ?? HibikiColor.defaultSasayakiColor;
   }
 
   bool get _isReaderThemeDark {
-    final String theme = appModel.appThemeKey;
-    if (theme == 'custom-theme') return appModel.customThemeDark;
-    return theme == 'gray-theme' ||
-        theme == 'dark-theme' ||
-        theme == 'black-theme';
+    final String key = appModel.appThemeKey;
+    if (key == 'custom-theme') return appModel.customThemeDark;
+    return _themeMap[key]?.dark ?? false;
   }
 
   String get _readerBackgroundHex {
@@ -3909,6 +3927,27 @@ window.flutter_inappwebview.callHandler('spreadReady');
 
   // ── Popup Audio Controls ───────────────────────────────────────────
 
+  Future<void> _refreshSectionHighlights(int section) async {
+    if (_controller == null) return;
+    if (_lyricsMode) {
+      await _applyLyricsFavorites();
+      return;
+    }
+    final List<FavoriteSentence> all =
+        await FavoriteSentenceRepository(appModel.database).getAll();
+    final List<FavoriteSentence> chapterFavs = all
+        .where(
+            (s) => s.ttuBookId == widget.bookId && s.sectionIndex == section)
+        .toList();
+    await HighlightBridge.applyHighlights(_controller!, chapterFavs,
+        backgroundHex: _readerBackgroundHex,
+        customHighlightCss: _customHighlightCss);
+    await _controller!.evaluateJavascript(
+      source:
+          'if (!window.__hoshiCssHighlightsSupported) { window.hoshiReader && window.hoshiReader.buildNodeOffsets(); }',
+    );
+  }
+
   Future<void> _toggleFavoriteSentence() async {
     if (_controller == null || _book == null) return;
     final String sentence =
@@ -3941,21 +3980,8 @@ window.flutter_inappwebview.callHandler('spreadReady');
         normCharOffset: sentenceRange?.offset,
       );
       setState(() => _currentSentenceIsFavorited = false);
-      if (_lyricsMode) {
-        await _applyLyricsFavorites();
-      } else if (sentenceRange != null) {
-        final List<FavoriteSentence> all = await repo.getAll();
-        final List<FavoriteSentence> chapterFavs = all
-            .where((s) =>
-                s.ttuBookId == widget.bookId && s.sectionIndex == section)
-            .toList();
-        await HighlightBridge.applyHighlights(_controller!, chapterFavs,
-            backgroundHex: _readerBackgroundHex,
-            customHighlightCss: _customHighlightCss);
-        await _controller!.evaluateJavascript(
-          source:
-              'if (!window.__hoshiCssHighlightsSupported) { window.hoshiReader && window.hoshiReader.buildNodeOffsets(); }',
-        );
+      if (sentenceRange != null || _lyricsMode) {
+        await _refreshSectionHighlights(section);
       }
       HibikiToast.show(msg: t.favorite_removed);
       return;
@@ -3975,21 +4001,8 @@ window.flutter_inappwebview.callHandler('spreadReady');
     );
     await repo.add(fav);
     setState(() => _currentSentenceIsFavorited = true);
-    if (_lyricsMode) {
-      await _applyLyricsFavorites();
-    } else if (sentenceRange != null) {
-      final List<FavoriteSentence> all = await repo.getAll();
-      final List<FavoriteSentence> chapterFavs = all
-          .where(
-              (s) => s.ttuBookId == widget.bookId && s.sectionIndex == section)
-          .toList();
-      await HighlightBridge.applyHighlights(_controller!, chapterFavs,
-          backgroundHex: _readerBackgroundHex,
-          customHighlightCss: _customHighlightCss);
-      await _controller!.evaluateJavascript(
-        source:
-            'if (!window.__hoshiCssHighlightsSupported) { window.hoshiReader && window.hoshiReader.buildNodeOffsets(); }',
-      );
+    if (sentenceRange != null || _lyricsMode) {
+      await _refreshSectionHighlights(section);
     }
     HibikiToast.show(msg: t.favorite_added);
   }

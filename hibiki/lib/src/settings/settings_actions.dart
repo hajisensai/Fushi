@@ -47,7 +47,9 @@ Future<void> setKeepScreenAwake(
     } else {
       await WakelockPlus.disable();
     }
-  } catch (_) {}
+  } catch (e) {
+    debugPrint('[Hibiki] wakelock toggle failed: $e');
+  }
   notifyReaderSettingsChanged(settingsContext);
 }
 

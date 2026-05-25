@@ -49,10 +49,14 @@ class UpdateChecker {
         if (!_isNewer(apkVersion, currentVersion)) {
           try {
             f.deleteSync();
-          } catch (_) {}
+          } catch (e) {
+            debugPrint('[UpdateChecker] cleanup delete failed: $e');
+          }
         }
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[UpdateChecker] cleanup scan failed: $e');
+    }
   }
 
   static Future<void> _check(
@@ -193,36 +197,8 @@ class UpdateChecker {
     return list.first as Map<String, dynamic>;
   }
 
-  static String _stripBuild(String version) => version.split('+').first;
-
-  static List<int> _baseVersion(String stripped) {
-    return stripped
-        .split('-')
-        .first
-        .split('.')
-        .map((s) => int.tryParse(s) ?? 0)
-        .toList();
-  }
-
-  static bool _hasPrerelease(String stripped) => stripped.contains('-');
-
-  static bool _isNewer(String remote, String local) {
-    final rs = _stripBuild(remote);
-    final ls = _stripBuild(local);
-    final r = _baseVersion(rs);
-    final l = _baseVersion(ls);
-
-    final len = r.length > l.length ? r.length : l.length;
-    for (int i = 0; i < len; i++) {
-      final rv = i < r.length ? r[i] : 0;
-      final lv = i < l.length ? l[i] : 0;
-      if (rv > lv) return true;
-      if (rv < lv) return false;
-    }
-    // 1.2.3 > 1.2.3-beta.1: stable beats prerelease of same base
-    if (!_hasPrerelease(rs) && _hasPrerelease(ls)) return true;
-    return false;
-  }
+  static bool _isNewer(String remote, String local) =>
+      isVersionNewer(remote, local);
 
   static void _showUpdateDialog(
     BuildContext context,
@@ -444,6 +420,28 @@ class UpdateChecker {
     await sink.flush();
     await sink.close();
   }
+}
+
+bool isVersionNewer(String remote, String local) {
+  String strip(String v) => v.split('+').first;
+  List<int> base(String s) =>
+      s.split('-').first.split('.').map((p) => int.tryParse(p) ?? 0).toList();
+  bool pre(String s) => s.contains('-');
+
+  final String rs = strip(remote);
+  final String ls = strip(local);
+  final List<int> r = base(rs);
+  final List<int> l = base(ls);
+
+  final int len = r.length > l.length ? r.length : l.length;
+  for (int i = 0; i < len; i++) {
+    final int rv = i < r.length ? r[i] : 0;
+    final int lv = i < l.length ? l[i] : 0;
+    if (rv > lv) return true;
+    if (rv < lv) return false;
+  }
+  if (!pre(rs) && pre(ls)) return true;
+  return false;
 }
 
 class _DownloadOverlay extends StatelessWidget {

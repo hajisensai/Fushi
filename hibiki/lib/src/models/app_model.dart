@@ -1,14 +1,13 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 import 'dart:ui';
 
-import 'package:archive/archive_io.dart';
-import 'package:audio_service/audio_service.dart' as ag;
+// archive/archive_io moved to DictionaryImportManager
+// audio_service moved to AudioController
 import 'package:collection/collection.dart';
 import 'package:clipboard/clipboard.dart';
 import 'package:device_info_plus/device_info_plus.dart';
-import 'package:external_app_launcher/external_app_launcher.dart';
+// external_app_launcher moved to AnkiIntegration
 import 'package:external_path/external_path.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -46,6 +45,14 @@ import 'package:hibiki/src/models/media_history_repository.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/models/theme_notifier.dart' as theme_notifier;
 import 'package:hibiki/src/models/theme_notifier.dart' show ThemeNotifier;
+import 'package:hibiki/src/models/audio_controller.dart';
+import 'package:hibiki/src/models/dictionary_import_manager.dart';
+import 'package:hibiki/src/models/file_export_manager.dart';
+import 'package:hibiki/src/models/local_audio_manager.dart';
+import 'package:hibiki/src/models/anki_integration.dart';
+
+export 'package:hibiki/src/models/local_audio_manager.dart'
+    show LocalAudioDbEntry;
 
 /// A list of fields that the app will support at runtime.
 final List<Field> globalFields = List<Field>.unmodifiable(
@@ -82,36 +89,7 @@ final Map<String, Field> fieldsByKey = Map.unmodifiable(
   ),
 );
 
-/// Represents a single local audio database entry with path and display name.
-class LocalAudioDbEntry {
-  const LocalAudioDbEntry({
-    required this.path,
-    required this.displayName,
-    this.enabled = true,
-  });
-
-  factory LocalAudioDbEntry.fromJson(Map<String, dynamic> json) =>
-      LocalAudioDbEntry(
-        path: json['path'] as String? ?? '',
-        displayName: json['displayName'] as String? ?? '',
-        enabled: json['enabled'] as bool? ?? true,
-      );
-  final String path;
-  final String displayName;
-  final bool enabled;
-
-  LocalAudioDbEntry copyWith({bool? enabled}) => LocalAudioDbEntry(
-        path: path,
-        displayName: displayName,
-        enabled: enabled ?? this.enabled,
-      );
-
-  Map<String, dynamic> toJson() => {
-        'path': path,
-        'displayName': displayName,
-        'enabled': enabled,
-      };
-}
+// LocalAudioDbEntry moved to local_audio_manager.dart, re-exported above.
 
 /// A global [Provider] for app-wide configuration and state management.
 final appProvider = ChangeNotifierProvider<AppModel>((ref) {
@@ -186,6 +164,7 @@ class AppModel with ChangeNotifier {
 
   /// Theme management, extracted from AppModel for testability.
   late final ThemeNotifier themeNotifier;
+  bool _themeListenerAdded = false;
 
   /// Preference management, extracted from AppModel for testability.
   PreferencesRepository? _prefsRepo;
@@ -196,6 +175,13 @@ class AppModel with ChangeNotifier {
 
   /// Dictionary metadata, history, and search caches.
   late final DictionaryRepository dictRepo;
+
+  /// Extracted sub-managers.
+  late final AudioController audioCtrl = AudioController();
+  late final AnkiIntegration ankiIntegration = AnkiIntegration();
+  late DictionaryImportManager _dictImportManager;
+  late FileExportManager _fileExportManager;
+  late LocalAudioManager _localAudioManager;
 
   Color? get systemPrimaryColor => themeNotifier.systemPrimaryColor;
 
@@ -482,22 +468,15 @@ class AppModel with ChangeNotifier {
   List<DictionarySearchResult> get dictionaryHistory =>
       dictRepo.dictionaryHistory;
 
-  /// For invoking pauses from media where needed.
+  // ── audio & media streams (delegated to AudioController) ────────────
+
   Stream<void> get currentMediaPauseStream =>
-      _currentMediaPauseController.stream;
-  final StreamController<void> _currentMediaPauseController =
-      StreamController.broadcast();
+      audioCtrl.currentMediaPauseStream;
 
-  /// Allows actions to be performed upon Play/Pause on headset buttons.
   Stream<void> get playPauseHeadsetActionStream =>
-      _playPauseHeadsetActionStreamController.stream;
-  final StreamController<void> _playPauseHeadsetActionStreamController =
-      StreamController.broadcast();
+      audioCtrl.playPauseHeadsetActionStream;
 
-  /// For listening to changes for whether or not the Card Creator is open.
-  Stream<bool> get creatorActiveStream => _creatorActiveController.stream;
-  final StreamController<bool> _creatorActiveController =
-      StreamController.broadcast();
+  Stream<bool> get creatorActiveStream => audioCtrl.creatorActiveStream;
 
   /// Used to check whether or not the app is currently using a media source.
   bool get isMediaOpen => _currentMediaSource != null;
@@ -1017,6 +996,8 @@ class AppModel with ChangeNotifier {
 
       themeNotifier = ThemeNotifier(_database, () => textTheme);
       themeNotifier.loadFromPrefsSnapshot(prefsSnapshot);
+      themeNotifier.addListener(notifyListeners);
+      _themeListenerAdded = true;
 
       debugPrint('[Hibiki] init: directories + system palette (parallel)');
       _browserDirectory = Directory(path.join(appDirectory.path, 'browser'));
@@ -1044,6 +1025,15 @@ class AppModel with ChangeNotifier {
 
       await _rebuildDictPathsCacheAsync();
 
+      _localAudioManager = LocalAudioManager(
+        prefsRepo: prefsRepo,
+        databaseDirectory: _databaseDirectory,
+      );
+      _fileExportManager = FileExportManager(
+        exportDirectory: _exportDirectory,
+        alternateExportDirectory: _alternateExportDirectory,
+      );
+
       debugPrint('[Hibiki] init: populate maps + audio DB (parallel)');
       populateLanguages();
       populateLocales();
@@ -1054,11 +1044,17 @@ class AppModel with ChangeNotifier {
       populateEnhancements();
       populateQuickActions();
 
+      _dictImportManager = DictionaryImportManager(
+        dictRepo: dictRepo,
+        resourceDirectory: _dictionaryResourceDirectory,
+        formats: dictionaryFormats,
+      );
+
       await Future.wait(<Future<void>>[
         targetLanguage.initialise(),
         injectAssetLicenses(),
         _seedBuiltInTags(),
-        _bindLocalAudioDbForNativeHandler(clearMissingPath: true),
+        _localAudioManager.bindForNativeHandler(clearMissingPath: true),
       ]);
 
       debugPrint(
@@ -1093,8 +1089,7 @@ class AppModel with ChangeNotifier {
       }
 
       debugPrint('[Hibiki] init: search preload (parallel)');
-      final String warmupChar =
-          targetLanguage.helloWorld.substring(0, 1);
+      final String warmupChar = targetLanguage.helloWorld.substring(0, 1);
       unawaited(Future.wait(<Future<void>>[
         searchDictionary(
           searchTerm: targetLanguage.helloWorld,
@@ -1181,7 +1176,7 @@ class AppModel with ChangeNotifier {
     if (_isInitialised) {
       debugPrint('[Hibiki-popup] init: already initialised, refreshing prefs');
       await refreshPrefCache();
-      await _bindLocalAudioDbForNativeHandler();
+      await _localAudioManager.bindForNativeHandler();
       return;
     }
     try {
@@ -1229,7 +1224,15 @@ class AppModel with ChangeNotifier {
       ]);
       await _rebuildDictPathsCacheAsync();
 
-      await _bindLocalAudioDbForNativeHandler();
+      _localAudioManager = LocalAudioManager(
+        prefsRepo: prefsRepo,
+        databaseDirectory: _databaseDirectory,
+      );
+      _fileExportManager = FileExportManager(
+        exportDirectory: _exportDirectory,
+        alternateExportDirectory: _alternateExportDirectory,
+      );
+      await _localAudioManager.bindForNativeHandler();
 
       populateLanguages();
       populateLocales();
@@ -1269,7 +1272,6 @@ class AppModel with ChangeNotifier {
       }
     }
     await themeNotifier.refreshFromDb();
-    notifyListeners();
   }
 
   // ── sync pref helpers (delegated to PreferencesRepository) ──────────
@@ -1292,26 +1294,7 @@ class AppModel with ChangeNotifier {
     await _setPref('builtInTagsSeeded', 'true');
   }
 
-  Future<void> _bindLocalAudioDbForNativeHandler({
-    bool clearMissingPath = false,
-  }) async {
-    if (!localAudioEnabled) return;
-    final List<LocalAudioDbEntry> dbs = localAudioDbs;
-    if (dbs.isEmpty) return;
-
-    final List<String> validPaths = <String>[];
-    for (final LocalAudioDbEntry entry in dbs) {
-      if (!entry.enabled) continue;
-      if (await File(entry.path).exists()) {
-        validPaths.add(entry.path);
-      } else {
-        debugPrint('[hibiki-audio] DB missing, skipping: ${entry.path}');
-      }
-    }
-    if (validPaths.isNotEmpty) {
-      await TtsChannel.instance.setLocalAudioDbs(validPaths);
-    }
-  }
+  // _bindLocalAudioDbForNativeHandler moved to LocalAudioManager.bindForNativeHandler
 
   // _rowToDictionary, _dictionaryToCompanion, _persistDictionary
   // moved to DictionaryRepository.
@@ -1535,81 +1518,8 @@ class AppModel with ChangeNotifier {
     notifyListeners();
   }
 
-  DictionaryFormat _detectDictionaryFormat(File file) {
-    final ext = path.extension(file.path).toLowerCase();
-    if (ext == '.dsl') {
-      return dictionaryFormats['abbyy_lingvo']!;
-    }
-    if (ext == '.mdx') {
-      return dictionaryFormats['mdict']!;
-    }
-    if (ext == '.zip') {
-      final fileNames = _readZipFileNames(file);
+  // ── dictionary import (delegated to DictionaryImportManager) ────────
 
-      if (fileNames.isEmpty) {
-        // zip64 or unreadable central directory — default to yomichan
-        return dictionaryFormats['yomichan']!;
-      }
-
-      if (fileNames
-          .any((f) => f == 'index.json' || f.endsWith('/index.json'))) {
-        return dictionaryFormats['yomichan']!;
-      }
-
-      final hasMdx =
-          fileNames.any((f) => f.endsWith('.mdx') || f.endsWith('.mdd'));
-      if (hasMdx) {
-        return dictionaryFormats['mdict']!;
-      }
-
-      final hasJson = fileNames.any((f) => f.endsWith('.json'));
-      if (hasJson) {
-        return dictionaryFormats['migaku']!;
-      }
-
-      // fallback: try yomichan
-      return dictionaryFormats['yomichan']!;
-    }
-    throw Exception(t.import_unsupported_file_format(ext: ext));
-  }
-
-  List<String> _readZipFileNames(File file) {
-    try {
-      final input = InputFileStream(file.path);
-      final dir = ZipDirectory.read(input);
-      final names = dir.fileHeaders
-          .map((h) => h.filename)
-          .where((n) => n.isNotEmpty)
-          .map((n) => n.toLowerCase())
-          .toList();
-      input.closeSync();
-      return names;
-    } catch (e, stack) {
-      ErrorLogService.instance.log('AppModel.fontNamesFromZip', e, stack);
-      return [];
-    }
-  }
-
-  DictionaryFormat _detectDictionaryFormatFromDirectory(Directory dir) {
-    final indexFile = File(path.join(dir.path, 'index.json'));
-    if (indexFile.existsSync()) {
-      return dictionaryFormats['yomichan']!;
-    }
-    final hasJson = dir
-        .listSync()
-        .whereType<File>()
-        .any((f) => f.path.toLowerCase().endsWith('.json'));
-    if (hasJson) {
-      return dictionaryFormats['migaku']!;
-    }
-    throw Exception(t.dictionary_unrecognized_format);
-  }
-
-  /// Import a dictionary from a folder.
-  ///
-  /// Supports two layouts:
-  /// 1. Folder containing zip/dsl/mdx + optional CSS + optional font dirs
-  /// 2. Folder that IS the extracted dictionary (has index.json / *.json)
   Future<void> importDictionaryFromDirectory({
     required Directory directory,
     required ValueNotifier<String> progressNotifier,
@@ -1617,194 +1527,16 @@ class AppModel with ChangeNotifier {
     required ValueNotifier<int?> totalNotifier,
     required Function() onImportSuccess,
     VoidCallback? onMemoryError,
-  }) async {
-    final entities = directory.listSync();
-    final zipFiles = entities.whereType<File>().where((f) {
-      final ext = path.extension(f.path).toLowerCase();
-      return ext == '.zip' || ext == '.dsl' || ext == '.mdx';
-    }).toList();
-
-    if (zipFiles.isNotEmpty) {
-      final cssFiles = entities
-          .whereType<File>()
-          .where((f) => f.path.toLowerCase().endsWith('.css'))
-          .toList();
-      final fontDirs = <Directory>[];
-      for (final d in entities.whereType<Directory>()) {
-        try {
-          final hasFont = d.listSync().whereType<File>().any((f) {
-            final ext = path.extension(f.path).toLowerCase();
-            return ext == '.otf' ||
-                ext == '.ttf' ||
-                ext == '.woff' ||
-                ext == '.woff2';
-          });
-          if (hasFont) fontDirs.add(d);
-        } catch (e, stack) {
-          ErrorLogService.instance.log('AppModel.scanFontDir', e, stack);
-          debugPrint('[Hibiki] error scanning font dir ${d.path}: $e');
-        }
-      }
-
-      totalNotifier.value = zipFiles.length;
-      for (int i = 0; i < zipFiles.length; i++) {
-        countNotifier.value = i + 1;
-        try {
-          await importDictionary(
-            file: zipFiles[i],
-            progressNotifier: progressNotifier,
-            cssFiles: cssFiles,
-            fontDirs: fontDirs,
-            onImportSuccess: onImportSuccess,
-            onMemoryError: onMemoryError,
-          );
-        } catch (e, stack) {
-          ErrorLogService.instance.log('AppModel.importDictZip', e, stack);
-          HibikiToast.show(
-            msg: '${path.basenameWithoutExtension(zipFiles[i].path)}: $e',
-            toastLength: Toast.LENGTH_LONG,
-          );
-        }
-      }
-      return;
-    }
-
-    clearDictionaryResultsCache();
-
-    try {
-      progressNotifier.value = t.import_extract;
-
-      final tempZipPath =
-          path.join(dictionaryResourceDirectory.path, 'import_temp_dir.zip');
-      final tempZip = File(tempZipPath);
-
-      final archive = Archive();
-      for (final entity in directory.listSync(recursive: true)) {
-        if (entity is File) {
-          final relativePath = path.relative(entity.path, from: directory.path);
-          archive.addFile(ArchiveFile(
-              relativePath, entity.lengthSync(), entity.readAsBytesSync()));
-        }
-      }
-      tempZip.writeAsBytesSync(ZipEncoder().encode(archive)!);
-
-      try {
-        final tempOutputDir = Directory(
-            path.join(dictionaryResourceDirectory.path, 'import_temp'));
-        if (tempOutputDir.existsSync()) {
-          tempOutputDir.deleteSync(recursive: true);
-        }
-        tempOutputDir.createSync(recursive: true);
-
-        final result = await importDictionaryViaHoshidicts(
-          zipPath: tempZipPath,
-          outputDir: tempOutputDir.path,
-        );
-
-        if (!result.success) {
-          throw Exception(
-              result.error.isNotEmpty ? result.error : t.import_failed);
-        }
-
-        final name = _sanitizeDictionaryTitle(result.title);
-
-        progressNotifier.value = t.import_name(name: name);
-
-        if (dictRepo.hasDictionaryNamed(name)) {
-          throw Exception(t.import_duplicate(name: name));
-        }
-
-        final currentDictionaries = dictionaries;
-        int order = currentDictionaries.isEmpty
-            ? 1
-            : currentDictionaries
-                    .map((d) => d.order)
-                    .reduce((a, b) => a > b ? a : b) +
-                1;
-
-        final innerDataDir = Directory(path.join(tempOutputDir.path, name));
-        final finalResourceDirectory =
-            Directory(path.join(dictionaryResourceDirectory.path, name));
-        if (!path.isWithin(
-            dictionaryResourceDirectory.path, finalResourceDirectory.path)) {
-          throw Exception('Invalid dictionary title: path traversal detected');
-        }
-        if (finalResourceDirectory.existsSync()) {
-          finalResourceDirectory.deleteSync(recursive: true);
-        }
-
-        if (innerDataDir.existsSync()) {
-          innerDataDir.renameSync(finalResourceDirectory.path);
-        } else {
-          tempOutputDir.renameSync(finalResourceDirectory.path);
-        }
-
-        if (tempOutputDir.existsSync()) {
-          tempOutputDir.deleteSync(recursive: true);
-        }
-
-        final detectedType = _parseDictionaryType(result.detectedType);
-
-        Dictionary dictionary = Dictionary(
-          order: order,
-          name: name,
-          formatKey: 'yomichan',
-          type: detectedType,
-        );
-
-        dictRepo.persistDictionary(dictionary);
-
-        progressNotifier.value = t.import_complete;
-        onImportSuccess();
-      } finally {
-        if (tempZip.existsSync()) tempZip.deleteSync();
-      }
-    } catch (e, stack) {
-      ErrorLogService.instance.log('DictionaryImport(dir)', e, stack);
-      progressNotifier.value = '$e';
-      await Future.delayed(const Duration(seconds: 3), () {});
-      if (_isMemoryError(e) && !lowMemoryMode) {
-        progressNotifier.value = t.low_memory_mode_suggestion;
-        await Future.delayed(const Duration(seconds: 3), () {});
-        onMemoryError?.call();
-      }
-      progressNotifier.value = t.import_failed;
-      await Future.delayed(const Duration(seconds: 1), () {});
-    }
-  }
-
-  void _copyDirectory(Directory source, Directory destination) {
-    destination.createSync(recursive: true);
-    for (final entity in source.listSync()) {
-      final newPath = path.join(destination.path, path.basename(entity.path));
-      if (entity is File) {
-        entity.copySync(newPath);
-      } else if (entity is Directory) {
-        _copyDirectory(entity, Directory(newPath));
-      }
-    }
-  }
-
-  static String _sanitizeDictionaryTitle(String raw) {
-    final cleaned = path.basename(raw.trim()).replaceAll(RegExp(r'[/\\]'), '_');
-    if (cleaned.isEmpty || cleaned == '.' || cleaned == '..') {
-      throw Exception('Dictionary title is empty');
-    }
-    return cleaned;
-  }
-
-  static DictionaryType _parseDictionaryType(String type) {
-    switch (type) {
-      case 'frequency':
-        return DictionaryType.frequency;
-      case 'pitch':
-        return DictionaryType.pitch;
-      case 'kanji':
-        return DictionaryType.kanji;
-      default:
-        return DictionaryType.term;
-    }
-  }
+  }) =>
+      _dictImportManager.importFromDirectory(
+        directory: directory,
+        progressNotifier: progressNotifier,
+        countNotifier: countNotifier,
+        totalNotifier: totalNotifier,
+        onImportSuccess: onImportSuccess,
+        lowMemoryMode: lowMemoryMode,
+        onMemoryError: onMemoryError,
+      );
 
   Future<void> importDictionary({
     required File file,
@@ -1813,111 +1545,16 @@ class AppModel with ChangeNotifier {
     List<File> cssFiles = const [],
     List<Directory> fontDirs = const [],
     VoidCallback? onMemoryError,
-  }) async {
-    clearDictionaryResultsCache();
-
-    try {
-      progressNotifier.value = t.import_extract;
-      await Future<void>.delayed(Duration.zero);
-
-      final tempOutputDir =
-          Directory(path.join(dictionaryResourceDirectory.path, 'import_temp'));
-      if (tempOutputDir.existsSync()) {
-        tempOutputDir.deleteSync(recursive: true);
-      }
-      tempOutputDir.createSync(recursive: true);
-
-      final result = await importDictionaryViaHoshidicts(
-        zipPath: file.path,
-        outputDir: tempOutputDir.path,
+  }) =>
+      _dictImportManager.importFromFile(
+        file: file,
+        progressNotifier: progressNotifier,
+        onImportSuccess: onImportSuccess,
+        lowMemoryMode: lowMemoryMode,
+        cssFiles: cssFiles,
+        fontDirs: fontDirs,
+        onMemoryError: onMemoryError,
       );
-
-      if (!result.success) {
-        throw Exception(
-            result.error.isNotEmpty ? result.error : t.import_failed);
-      }
-
-      final name = _sanitizeDictionaryTitle(result.title);
-
-      progressNotifier.value = t.import_name(name: name);
-
-      if (dictRepo.hasDictionaryNamed(name)) {
-        throw Exception(t.import_duplicate(name: name));
-      }
-
-      final currentDictionaries = dictionaries;
-      int order = currentDictionaries.isEmpty
-          ? 1
-          : currentDictionaries
-                  .map((d) => d.order)
-                  .reduce((a, b) => a > b ? a : b) +
-              1;
-
-      // hoshidicts writes data into outputDir/title/, so the actual data
-      // directory is the inner subdirectory named after the title.
-      final innerDataDir = Directory(path.join(tempOutputDir.path, name));
-      final finalResourceDirectory =
-          Directory(path.join(dictionaryResourceDirectory.path, name));
-      if (!path.isWithin(
-          dictionaryResourceDirectory.path, finalResourceDirectory.path)) {
-        throw Exception('Invalid dictionary title: path traversal detected');
-      }
-      if (finalResourceDirectory.existsSync()) {
-        finalResourceDirectory.deleteSync(recursive: true);
-      }
-
-      if (innerDataDir.existsSync()) {
-        innerDataDir.renameSync(finalResourceDirectory.path);
-      } else {
-        tempOutputDir.renameSync(finalResourceDirectory.path);
-      }
-
-      // Clean up the now-empty temp dir if it still exists
-      if (tempOutputDir.existsSync()) {
-        tempOutputDir.deleteSync(recursive: true);
-      }
-
-      for (final css in cssFiles) {
-        if (css.existsSync()) {
-          css.copySync(
-              path.join(finalResourceDirectory.path, path.basename(css.path)));
-        }
-      }
-      for (final fontDir in fontDirs) {
-        if (fontDir.existsSync()) {
-          _copyDirectory(
-              fontDir,
-              Directory(path.join(
-                  finalResourceDirectory.path, path.basename(fontDir.path))));
-        }
-      }
-
-      final detectedType = _parseDictionaryType(result.detectedType);
-
-      Dictionary dictionary = Dictionary(
-        order: order,
-        name: name,
-        formatKey: 'yomichan',
-        type: detectedType,
-      );
-
-      dictRepo.persistDictionary(dictionary);
-
-      progressNotifier.value = t.import_complete;
-      onImportSuccess();
-    } catch (e, stack) {
-      ErrorLogService.instance.log('DictionaryImport(file)', e, stack);
-      progressNotifier.value = '$e';
-      await Future.delayed(const Duration(seconds: 3), () {});
-      if (_isMemoryError(e) && !lowMemoryMode) {
-        progressNotifier.value = t.low_memory_mode_suggestion;
-        await Future.delayed(const Duration(seconds: 3), () {});
-        onMemoryError?.call();
-      }
-      progressNotifier.value = t.import_failed;
-      await Future.delayed(const Duration(seconds: 1), () {});
-    }
-  }
 
   void toggleDictionaryCollapsed(Dictionary dictionary) => dictRepo
       .toggleDictionaryCollapsed(dictionary, targetLanguage.languageCode);
@@ -2112,181 +1749,47 @@ class AppModel with ChangeNotifier {
     }
   }
 
-  /// Used to communicate back and forth with Dart and native code.
+  // ── Anki integration (delegated to AnkiIntegration) ─────────────────
+
   static const MethodChannel methodChannel = HibikiChannels.anki;
 
-  /// Shows the AnkiDroid API message. Called when an Anki-related API get call
-  /// fails.
-  Future<void> showAnkidroidApiMessage() async {
-    await requestAnkidroidPermissions();
-    final ctx = _ctx;
-    if (ctx == null || !ctx.mounted) return;
-    await showAppDialog(
-      context: ctx,
-      builder: (context) => adaptiveAlertDialog(
-        context: context,
-        title: Text(t.error_ankidroid_api),
-        content: Text(
-          t.error_ankidroid_api_content,
-        ),
-        actions: [
-          adaptiveDialogAction(
-            context: context,
-            child: Text(t.dialog_launch_ankidroid),
-            onPressed: () async {
-              final navigator = Navigator.of(context);
-              if (Platform.isAndroid) {
-                await LaunchApp.openApp(
-                  androidPackageName: 'com.ichi2.anki',
-                  openStore: true,
-                );
-              }
-              navigator.pop();
-            },
-          ),
-          adaptiveDialogAction(
-            context: context,
-            child: Text(t.dialog_close),
-            onPressed: () => Navigator.pop(context),
-          ),
-        ],
-      ),
-    );
-  }
+  Future<void> showAnkidroidApiMessage() =>
+      ankiIntegration.showApiMessage(_ctx);
 
-  /// Used to ask for AnkiDroid database permissions. Should be called at
-  /// startup.
-  Future<void> requestAnkidroidPermissions() async {
-    if (!Platform.isAndroid) return;
-    await methodChannel.invokeMethod('requestAnkidroidPermissions');
-  }
+  Future<void> requestAnkidroidPermissions() =>
+      ankiIntegration.requestPermissions();
 
-  /// Adds the default 'hibiki Kinomoto' model to the list of Anki card types.
-  Future<void> addDefaultModelIfMissing() async {
-    if (!Platform.isAndroid) return;
-    List<String> models = await getModelList();
-    if (!models.contains('Lapis')) {
-      methodChannel.invokeMethod('addDefaultModel');
-      final ctx = _ctx;
-      if (ctx == null || !ctx.mounted) return;
-      await showAppDialog(
-        context: ctx,
-        builder: (context) => adaptiveAlertDialog(
-          context: context,
-          title: Text(t.info_standard_model),
-          content: Text(
-            t.info_standard_model_content,
-          ),
-          actions: [
-            adaptiveDialogAction(
-              context: context,
-              child: Text(t.dialog_close),
-              onPressed: () => Navigator.pop(context),
-            ),
-          ],
-        ),
-      );
-    }
-  }
+  Future<void> addDefaultModelIfMissing() =>
+      ankiIntegration.addDefaultModelIfMissing(_ctx);
 
-  /// Get the file to be written to for image export.
-  File getImageExportFile({bool fallback = false}) {
-    String imagePath = path.join(
-        (fallback ? alternateExportDirectory : exportDirectory).path,
-        'exportImage.jpg');
-    return File(imagePath);
-  }
+  Future<List<String>> getDecks() => ankiIntegration.getDecks(_ctx);
 
-  /// Get the placeholder file to compress for image export.
-  File getImageCompressedFile({bool fallback = false}) {
-    String imagePath = path.join(
-        (fallback ? alternateExportDirectory : exportDirectory).path,
-        'compressedImage.jpg');
-    return File(imagePath);
-  }
+  Future<List<String>> getModelList() => ankiIntegration.getModelList(_ctx);
 
-  /// Get the file to be written to for audio export.
-  File getAudioExportFile({bool fallback = false, String ext = 'mp3'}) {
-    String audioPath = path.join(
-        (fallback ? alternateExportDirectory : exportDirectory).path,
-        'exportAudio.$ext');
-    return File(audioPath);
-  }
+  DictionaryFormat getDictionaryFormat(Dictionary dictionary) =>
+      dictionaryFormats[dictionary.formatKey]!;
 
-  /// Get the file to be written to for image export.
-  File getPreviewImageFile(Directory directory, int index) {
-    String imagePath = path.join(directory.path, 'previewImage$index.jpg');
-    return File(imagePath);
-  }
+  Future<List<String>> getFieldList(String model) =>
+      ankiIntegration.getFieldList(model, _ctx);
 
-  /// Get the file to be written to for audio export.
-  File getAudioPreviewFile(Directory directory, {String ext = 'mp3'}) {
-    String audioPath = path.join(directory.path, 'previewAudio.$ext');
-    return File(audioPath);
-  }
+  // ── file export (delegated to FileExportManager) ───────────────────
 
-  /// Get the file to be written to for thumbnail export.
-  File getThumbnailFile() {
-    String imagePath = path.join(exportDirectory.path, 'thumbnail.jpg');
-    return File(imagePath);
-  }
+  File getImageExportFile({bool fallback = false}) =>
+      _fileExportManager.getImageExportFile(fallback: fallback);
 
-  /// Get a list of decks from the Anki background service that can be used
-  /// for export.
-  Future<List<String>> getDecks() async {
-    try {
-      Map<dynamic, dynamic> result =
-          await methodChannel.invokeMethod('getDecks');
-      List<String> decks = result.values.toList().cast<String>();
+  File getImageCompressedFile({bool fallback = false}) =>
+      _fileExportManager.getImageCompressedFile(fallback: fallback);
 
-      decks.sort((a, b) => a.compareTo(b));
-      return decks;
-    } catch (e) {
-      await showAnkidroidApiMessage();
-      rethrow;
-    }
-  }
+  File getAudioExportFile({bool fallback = false, String ext = 'mp3'}) =>
+      _fileExportManager.getAudioExportFile(fallback: fallback, ext: ext);
 
-  /// Get a list of models from the Anki background service that can be used
-  /// for export.
-  Future<List<String>> getModelList() async {
-    try {
-      Map<dynamic, dynamic> result =
-          await methodChannel.invokeMethod('getModelList');
-      List<String> models = result.values.toList().cast<String>();
+  File getPreviewImageFile(Directory directory, int index) =>
+      _fileExportManager.getPreviewImageFile(directory, index);
 
-      models.sort((a, b) => a.compareTo(b));
-      return models;
-    } catch (e) {
-      await showAnkidroidApiMessage();
-      rethrow;
-    }
-  }
+  File getAudioPreviewFile(Directory directory, {String ext = 'mp3'}) =>
+      _fileExportManager.getAudioPreviewFile(directory, ext: ext);
 
-  /// Get the target language from persisted preferences.
-  DictionaryFormat getDictionaryFormat(Dictionary dictionary) {
-    return dictionaryFormats[dictionary.formatKey]!;
-  }
-
-  /// Get a list of field names for a given [model] name in Anki. This function
-  /// assumes that the model name can be found in [getDecks] and is valid.
-  Future<List<String>> getFieldList(String model) async {
-    try {
-      List<String> fields = List<String>.from(
-        await methodChannel.invokeMethod(
-          'getFieldList',
-          <String, dynamic>{
-            'model': model,
-          },
-        ),
-      );
-
-      return fields;
-    } catch (e) {
-      showAnkidroidApiMessage();
-      rethrow;
-    }
-  }
+  File getThumbnailFile() => _fileExportManager.getThumbnailFile();
 
   /// Refresh all screens and have them respond to new variables.
   Future<void> refresh() async {
@@ -2324,7 +1827,9 @@ class AppModel with ChangeNotifier {
     if (ReaderHibikiSource.instance.keepScreenAwake) {
       try {
         await WakelockPlus.enable();
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('[Hibiki] wakelock enable failed: $e');
+      }
     }
     await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
 
@@ -2359,7 +1864,7 @@ class AppModel with ChangeNotifier {
     required MediaSource mediaSource,
     MediaItem? item,
   }) async {
-    _audioHandler?.mediaItem.add(null);
+    audioCtrl.audioHandler?.mediaItem.add(null);
 
     mediaSource.setShouldGenerateImage(value: true);
     mediaSource.setShouldGenerateAudio(value: true);
@@ -2372,14 +1877,16 @@ class AppModel with ChangeNotifier {
     blockCreatorInitialMedia = false;
     try {
       await WakelockPlus.disable();
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[Hibiki] wakelock disable failed: $e');
+    }
     await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     await mediaSource.onSourceExit(
       appModel: this,
       ref: ref,
     );
 
-    await _audioHandler?.stop();
+    await audioCtrl.audioHandler?.stop();
 
     mediaSource.mediaType.refreshTab();
     DictionaryMediaType.instance.refreshTab();
@@ -2723,87 +2230,18 @@ class AppModel with ChangeNotifier {
   void setPlayerUseOpenSLES({required bool value}) =>
       prefsRepo.setPlayerUseOpenSLES(value: value);
 
-  /// Allows the player screen to listen to play/pause changes.
-  Stream<void> get playStream => _playStreamController.stream;
-  final StreamController<void> _playStreamController =
-      StreamController.broadcast();
+  // ── player streams & audio handler (delegated to AudioController) ───
 
-  /// Allows the player screen to listen to seek changes.
-  Stream<Duration> get seekStream => _seekStreamController.stream;
-  final StreamController<Duration> _seekStreamController =
-      StreamController.broadcast();
+  Stream<void> get playStream => audioCtrl.playStream;
+  Stream<Duration> get seekStream => audioCtrl.seekStream;
+  Stream<void> get rewindStream => audioCtrl.rewindStream;
+  Stream<void> get fastForwardStream => audioCtrl.fastForwardStream;
+  Stream<void> get skipNextStream => audioCtrl.skipNextStream;
+  Stream<void> get skipPreviousStream => audioCtrl.skipPreviousStream;
 
-  /// Allows the player screen to listen to seek backward changes.
-  Stream<void> get rewindStream => _rewindStreamController.stream;
-  final StreamController<void> _rewindStreamController =
-      StreamController.broadcast();
+  HibikiAudioHandler? get audioHandler => audioCtrl.audioHandler;
 
-  /// Allows the player screen to listen to seek forward changes.
-  Stream<void> get fastForwardStream => _fastForwardStreamController.stream;
-  final StreamController<void> _fastForwardStreamController =
-      StreamController.broadcast();
-
-  Stream<void> get skipNextStream => _skipNextStreamController.stream;
-  final StreamController<void> _skipNextStreamController =
-      StreamController.broadcast();
-
-  Stream<void> get skipPreviousStream => _skipPreviousStreamController.stream;
-  final StreamController<void> _skipPreviousStreamController =
-      StreamController.broadcast();
-
-  /// For managing audio session events.
-  HibikiAudioHandler? get audioHandler => _audioHandler;
-  HibikiAudioHandler? _audioHandler;
-
-  /// Initialises the audio service.
-  Future<void> initialiseAudioHandler() async {
-    if (_audioHandler != null) {
-      return;
-    }
-
-    try {
-      _audioHandler = await ag.AudioService.init<HibikiAudioHandler>(
-        builder: () => HibikiAudioHandler(
-          onPlayPause: () {
-            _playStreamController.add(null);
-          },
-          onSeek: (position) {
-            _seekStreamController.add(position);
-          },
-          onRewind: () {
-            _rewindStreamController.add(null);
-          },
-          onFastForward: () {
-            _fastForwardStreamController.add(null);
-          },
-          onSkipToNext: () {
-            _skipNextStreamController.add(null);
-          },
-          onSkipToPrevious: () {
-            _skipPreviousStreamController.add(null);
-          },
-        ),
-        config: const ag.AudioServiceConfig(
-          androidNotificationChannelId: 'app.hibiki.reader.channel.audio',
-          androidNotificationChannelName: 'hibiki',
-          androidNotificationIcon: 'drawable/ic_stat_hibiki',
-          notificationColor: Colors.black,
-          fastForwardInterval: Duration(seconds: 5),
-          rewindInterval: Duration(seconds: 5),
-        ),
-      );
-    } catch (e) {
-      debugPrint('[Hibiki] AudioService.init failed (non-fatal): $e');
-      _audioHandler = HibikiAudioHandler(
-        onPlayPause: () => _playStreamController.add(null),
-        onSeek: (position) => _seekStreamController.add(position),
-        onRewind: () => _rewindStreamController.add(null),
-        onFastForward: () => _fastForwardStreamController.add(null),
-        onSkipToNext: () => _skipNextStreamController.add(null),
-        onSkipToPrevious: () => _skipPreviousStreamController.add(null),
-      );
-    }
-  }
+  Future<void> initialiseAudioHandler() => audioCtrl.initialiseHandler();
 
   // ── search & dictionary display (delegated to PreferencesRepository) ─
 
@@ -2877,20 +2315,13 @@ class AppModel with ChangeNotifier {
   @override
   void dispose() {
     _prefsRepo?.removeListener(notifyListeners);
+    if (_themeListenerAdded) themeNotifier.removeListener(notifyListeners);
     dictionaryEntriesNotifier.dispose();
     dictionarySearchAgainNotifier.dispose();
     dictionaryMenuNotifier.dispose();
     incognitoNotifier.dispose();
     databaseCloseNotifier.dispose();
-    _currentMediaPauseController.close();
-    _playPauseHeadsetActionStreamController.close();
-    _creatorActiveController.close();
-    _playStreamController.close();
-    _seekStreamController.close();
-    _rewindStreamController.close();
-    _fastForwardStreamController.close();
-    _skipNextStreamController.close();
-    _skipPreviousStreamController.close();
+    audioCtrl.dispose();
     super.dispose();
   }
 
@@ -2967,131 +2398,31 @@ class AppModel with ChangeNotifier {
   void setAudioSources(List<String> sources) =>
       prefsRepo.setAudioSources(sources);
 
-  /// All local audio database entries (multi-DB support).
-  List<LocalAudioDbEntry> get localAudioDbs {
-    final String raw = _getPref('local_audio_dbs', defaultValue: '');
-    if (raw.isEmpty) {
-      // Migrate old single-DB preference
-      final String oldPath = _getPref('local_audio_db_path', defaultValue: '');
-      if (oldPath.isNotEmpty) {
-        final String oldName =
-            _getPref('local_audio_db_display_name', defaultValue: '');
-        return [LocalAudioDbEntry(path: oldPath, displayName: oldName)];
-      }
-      return [];
-    }
-    try {
-      final List<dynamic> list = jsonDecode(raw) as List<dynamic>;
-      return list
-          .map((dynamic e) =>
-              LocalAudioDbEntry.fromJson(e as Map<String, dynamic>))
-          .toList();
-    } catch (e) {
-      return [];
-    }
-  }
+  // ── local audio DB (delegated to LocalAudioManager) ─────────────────
 
-  Future<void> setLocalAudioDbs(List<LocalAudioDbEntry> dbs) async {
-    await _setPref(
-        'local_audio_dbs', jsonEncode(dbs.map((e) => e.toJson()).toList()));
-    // Clear legacy single-DB prefs after migration
-    await _setPref('local_audio_db_path', '');
-    await _setPref('local_audio_db_display_name', '');
-    await TtsChannel.instance.setLocalAudioDbs(
-        dbs.where((e) => e.enabled).map((e) => e.path).toList());
-  }
+  List<LocalAudioDbEntry> get localAudioDbs =>
+      _localAudioManager.entries;
 
-  Future<void> toggleLocalAudioDbEnabled(int index) async {
-    final List<LocalAudioDbEntry> dbs =
-        List<LocalAudioDbEntry>.of(localAudioDbs);
-    if (index < 0 || index >= dbs.length) return;
-    dbs[index] = dbs[index].copyWith(enabled: !dbs[index].enabled);
-    await setLocalAudioDbs(dbs);
-  }
+  Future<void> setLocalAudioDbs(List<LocalAudioDbEntry> dbs) =>
+      _localAudioManager.setEntries(dbs);
+
+  Future<void> toggleLocalAudioDbEnabled(int index) =>
+      _localAudioManager.toggleEnabled(index);
 
   Future<void> addLocalAudioDb(String sourcePath,
-      {required String displayName}) async {
-    final String internalName =
-        'local_audio_${DateTime.now().millisecondsSinceEpoch}.db';
-    final String internalPath =
-        path.join(_databaseDirectory.path, internalName);
-    final File sourceFile = File(sourcePath);
-    if (await sourceFile.exists()) {
-      await sourceFile.copy(internalPath);
-    }
-    final List<LocalAudioDbEntry> dbs =
-        List<LocalAudioDbEntry>.of(localAudioDbs);
-    dbs.add(LocalAudioDbEntry(path: internalPath, displayName: displayName));
-    await setLocalAudioDbs(dbs);
-  }
+          {required String displayName}) =>
+      _localAudioManager.add(sourcePath, displayName: displayName);
 
-  Future<void> removeLocalAudioDb(int index) async {
-    final List<LocalAudioDbEntry> dbs =
-        List<LocalAudioDbEntry>.of(localAudioDbs);
-    if (index < 0 || index >= dbs.length) return;
-    final LocalAudioDbEntry entry = dbs.removeAt(index);
-    for (final String suffix in ['', '-wal', '-shm']) {
-      final File f = File('${entry.path}$suffix');
-      if (await f.exists()) await f.delete();
-    }
-    await setLocalAudioDbs(dbs);
-  }
+  Future<void> removeLocalAudioDb(int index) =>
+      _localAudioManager.remove(index);
 
-  Future<void> reorderLocalAudioDbs(int oldIndex, int newIndex) async {
-    final List<LocalAudioDbEntry> dbs =
-        List<LocalAudioDbEntry>.of(localAudioDbs);
-    if (newIndex > oldIndex) newIndex--;
-    final LocalAudioDbEntry entry = dbs.removeAt(oldIndex);
-    dbs.insert(newIndex, entry);
-    await setLocalAudioDbs(dbs);
-  }
+  Future<void> reorderLocalAudioDbs(int oldIndex, int newIndex) =>
+      _localAudioManager.reorder(oldIndex, newIndex);
 
-  /// Backward-compatible getter for the first DB path.
-  @Deprecated('Use localAudioDbs instead')
-  String get localAudioDbPath {
-    final List<LocalAudioDbEntry> dbs = localAudioDbs;
-    return dbs.isNotEmpty ? dbs.first.path : '';
-  }
+  bool get localAudioEnabled => _localAudioManager.localAudioEnabled;
 
-  /// Backward-compatible getter for the first DB display name.
-  @Deprecated('Use localAudioDbs instead')
-  String get localAudioDbDisplayName {
-    final List<LocalAudioDbEntry> dbs = localAudioDbs;
-    return dbs.isNotEmpty ? dbs.first.displayName : '';
-  }
-
-  @Deprecated('Use addLocalAudioDb instead')
-  Future<void> setLocalAudioDbPath(String sourcePath,
-      {required String displayName}) async {
-    await clearLocalAudioDb();
-    await addLocalAudioDb(sourcePath, displayName: displayName);
-  }
-
-  @Deprecated('Use removeLocalAudioDb instead')
-  Future<void> clearLocalAudioDb() async {
-    final List<LocalAudioDbEntry> dbs = localAudioDbs;
-    for (int i = dbs.length - 1; i >= 0; i--) {
-      await removeLocalAudioDb(i);
-    }
-  }
-
-  bool get localAudioEnabled {
-    return _getPref('local_audio_enabled', defaultValue: false);
-  }
-
-  void toggleLocalAudio() async {
-    await _setPref('local_audio_enabled', !localAudioEnabled);
-    if (localAudioEnabled) {
-      final List<String> paths =
-          localAudioDbs.where((e) => e.enabled).map((e) => e.path).toList();
-      if (paths.isNotEmpty) {
-        TtsChannel.instance.setLocalAudioDbs(paths);
-      }
-    } else {
-      TtsChannel.instance.setLocalAudioDbs(<String>[]);
-    }
-    notifyListeners();
-  }
+  void toggleLocalAudio() =>
+      _localAudioManager.toggleLocalAudio(notifyListeners);
 
   // ── UI visibility (delegated) ────────────────────────────────────────
 
@@ -3177,10 +2508,5 @@ class AppModel with ChangeNotifier {
       imageCache.maximumSize = 1000;
       imageCache.maximumSizeBytes = 100 << 20; // 100 MB
     }
-  }
-
-  static bool _isMemoryError(Object e) {
-    final msg = e.toString().toLowerCase();
-    return e is OutOfMemoryError || msg.contains('out of memory');
   }
 }

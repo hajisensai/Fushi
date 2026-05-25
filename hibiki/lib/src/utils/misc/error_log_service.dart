@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -55,7 +56,9 @@ class ErrorLogService {
         }
         _persistedLog = content;
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[ErrorLogService] init failed: $e');
+    }
   }
 
   void log(String source, Object error, [StackTrace? stack]) {
@@ -75,7 +78,9 @@ class ErrorLogService {
   Future<void> _appendToFile(ErrorLogEntry entry) async {
     try {
       await _logFile?.writeAsString(entry.format(), mode: FileMode.append);
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[ErrorLogService] append failed: $e');
+    }
   }
 
   String getFullLog() {
@@ -101,7 +106,8 @@ class ErrorLogService {
       final content = getFullLog();
       await _logFile!.writeAsString(content);
       return _logFile;
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[ErrorLogService] getLogFile failed: $e');
       return null;
     }
   }
@@ -111,6 +117,8 @@ class ErrorLogService {
     _persistedLog = '';
     try {
       await _logFile?.writeAsString('');
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[ErrorLogService] clear failed: $e');
+    }
   }
 }
