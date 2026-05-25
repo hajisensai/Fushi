@@ -150,15 +150,17 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
             itemBuilder: (context, index) {
               return GestureDetector(
                 onTap: () => _openFullScreen(index),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surfaceContainerLow,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  clipBehavior: Clip.antiAlias,
                   child: Image.memory(
                     _images[index],
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(
-                      color: Theme.of(context).colorScheme.surfaceContainerLow,
-                      child: const Icon(Icons.broken_image_outlined),
-                    ),
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) =>
+                        const Center(child: Icon(Icons.broken_image_outlined)),
                   ),
                 ),
               );

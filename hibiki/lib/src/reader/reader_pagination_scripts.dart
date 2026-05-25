@@ -442,21 +442,8 @@ class ReaderPaginationScripts {
           img.classList.add('block-img');
           var wrapper = document.createElement('div');
           wrapper.className = 'block-img-wrapper';
-          var parent = img.parentNode;
-          parent.insertBefore(wrapper, img);
+          img.parentNode.insertBefore(wrapper, img);
           wrapper.appendChild(img);
-          if (parent !== document.body && !wrapper.previousElementSibling && !wrapper.nextElementSibling) {
-            var ancestor = parent;
-            while (ancestor && ancestor !== document.body) {
-              if (ancestor.children.length === 1) {
-                ancestor.style.setProperty('margin', '0', 'important');
-                ancestor.style.setProperty('padding', '0', 'important');
-              } else {
-                break;
-              }
-              ancestor = ancestor.parentElement;
-            }
-          }
         }
         resolve();
       };

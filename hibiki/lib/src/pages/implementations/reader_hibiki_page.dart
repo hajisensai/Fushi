@@ -25,6 +25,7 @@ import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki/src/media/audiobook/highlight_bridge.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_play_bar.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_import_dialog.dart';
+import 'package:hibiki/src/media/audiobook/reader_quick_settings_sheet.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/profile/profile_repository.dart';
 import 'package:hibiki/src/profile/profile_view_model.dart';
@@ -1386,6 +1387,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
               : _audiobookController!.currentCueIdx;
           _loadLyricsPage();
         } else {
+          _restoreInFlight = true;
           _loadChapterDirectly(_currentChapter);
         }
 
@@ -1602,15 +1604,6 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       }
       await controller.evaluateJavascript(
         source: _buildReaderSetupScript(sasayakiCuesJson: sasayakiCuesJson),
-      );
-      if (!mounted || _navigateGeneration != gen) return;
-
-      final Size screen = MediaQuery.of(context).size;
-      final double dartW = screen.width;
-      final double dartH =
-          screen.height - _readerTopOffset - _readerBottomReserve;
-      await controller.evaluateJavascript(
-        source: ReaderPaginationScripts.updatePageSizeInvocation(dartW, dartH),
       );
       if (!mounted || _navigateGeneration != gen) return;
 
@@ -3408,7 +3401,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
 
     if (!mounted) return;
 
-    final Widget sheetContent = AudiobookSettingsSheet(
+    final Widget sheetContent = ReaderQuickSettingsSheet(
       controller: _audiobookController,
       toc: toc,
       readerProgress: (_currentChapter + 1, _book!.chapters.length),

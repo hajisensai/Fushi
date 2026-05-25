@@ -5,6 +5,7 @@ import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_bridge.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_play_bar.dart';
+import 'package:hibiki/src/media/audiobook/reader_quick_settings_sheet.dart';
 import 'package:hibiki/utils.dart';
 
 class _FakeInAppWebViewController implements InAppWebViewController {
@@ -66,7 +67,7 @@ void main() {
       MaterialApp(
         theme: ThemeData(useMaterial3: true),
         home: Scaffold(
-          body: AudiobookSettingsSheet(
+          body: ReaderQuickSettingsSheet(
             controller: null,
             toc: const [],
             readerProgress: const (1, 3),
@@ -83,19 +84,28 @@ void main() {
     await tester.pump();
 
     expect(find.byType(AdaptiveSettingsNavigationRow), findsWidgets);
-    expect(find.text(t.section_typography), findsNothing);
-    expect(find.text(t.section_layout), findsNothing);
-    expect(find.text(t.display_settings), findsOneWidget);
+    expect(find.text(t.settings_destination_appearance), findsOneWidget);
+    expect(find.text(t.section_layout), findsOneWidget);
+    expect(find.text(t.settings_destination_reading_controls), findsOneWidget);
+    expect(find.text(t.section_navigation), findsOneWidget);
+    expect(find.text(t.display_settings), findsNothing);
     expect(find.byType(ListTile), findsNothing);
 
-    await tester.tap(find.text(t.display_settings));
+    await tester.tap(find.text(t.settings_destination_appearance));
     await tester.pumpAndSettle();
 
-    expect(find.text(t.section_typography), findsNothing);
-    expect(find.text(t.section_layout), findsNothing);
+    expect(find.text(t.settings_destination_appearance), findsOneWidget);
+    expect(find.byType(AdaptiveSettingsStepperRow), findsWidgets);
+    expect(find.byType(ChoiceChip), findsWidgets);
+    expect(find.byType(AdaptiveSettingsSwitchRow), findsNothing);
+
+    await tester.tap(find.byIcon(Icons.arrow_back));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.section_layout));
+    await tester.pumpAndSettle();
+
     expect(find.byType(AdaptiveSettingsSegmentedRow<String>), findsWidgets);
     expect(find.byType(AdaptiveSettingsStepperRow), findsWidgets);
-    expect(find.byType(AdaptiveSettingsSwitchRow), findsWidgets);
     expect(find.byType(ListTile), findsNothing);
   });
 
@@ -105,7 +115,7 @@ void main() {
       MaterialApp(
         theme: ThemeData(useMaterial3: true),
         home: Scaffold(
-          body: AudiobookSettingsSheet(
+          body: ReaderQuickSettingsSheet(
             controller: null,
             toc: const [
               TtuTocEntry(index: 0, label: 'Opening'),
