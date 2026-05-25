@@ -135,19 +135,6 @@ class DriveFile {
       );
 }
 
-class DriveFileList {
-  const DriveFileList({required this.files});
-
-  final List<DriveFile> files;
-
-  factory DriveFileList.fromJson(Map<String, dynamic> json) => DriveFileList(
-        files: (json['files'] as List)
-            .cast<Map<String, dynamic>>()
-            .map(DriveFile.fromJson)
-            .toList(),
-      );
-}
-
 class DriveSyncFiles {
   const DriveSyncFiles({this.progress, this.statistics, this.audioBook});
 

@@ -144,24 +144,4 @@ void main() {
       expect(decoded.title, 'Book "with" \\slashes/ and\nnewlines');
     });
   });
-
-  group('DriveFileList', () {
-    test('parses files list', () {
-      final json = {
-        'files': [
-          {'id': 'abc123', 'name': 'progress_1_6_123_0.5.json'},
-          {'id': 'def456', 'name': 'statistics_1_6_123_100.json'},
-        ]
-      };
-      final list = DriveFileList.fromJson(json);
-      expect(list.files.length, 2);
-      expect(list.files.first.id, 'abc123');
-      expect(list.files.last.name, 'statistics_1_6_123_100.json');
-    });
-
-    test('parses empty list', () {
-      final list = DriveFileList.fromJson({'files': []});
-      expect(list.files, isEmpty);
-    });
-  });
 }

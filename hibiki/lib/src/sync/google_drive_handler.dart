@@ -58,6 +58,7 @@ class GoogleDriveHandler {
     } on drive.DetailedApiRequestError catch (e) {
       if (e.status == 401) {
         _cachedApi = null;
+        await GoogleDriveAuth.instance.refreshAuth();
         try {
           return await fn(await _api());
         } on drive.DetailedApiRequestError catch (retry) {
@@ -260,6 +261,8 @@ class GoogleDriveHandler {
 
   // ── Private helpers ───────────────────────────────────────────────
 
+  static const _maxDownloadSize = 10 * 1024 * 1024; // 10 MB
+
   Future<dynamic> _downloadJson(String fileId) async {
     return _call((api) async {
       final media = await api.files.get(
@@ -267,11 +270,14 @@ class GoogleDriveHandler {
         downloadOptions: drive.DownloadOptions.fullMedia,
       ) as drive.Media;
 
-      final bytes = <int>[];
+      final builder = BytesBuilder(copy: false);
       await for (final chunk in media.stream) {
-        bytes.addAll(chunk);
+        builder.add(chunk);
+        if (builder.length > _maxDownloadSize) {
+          throw GoogleDriveError('Response too large');
+        }
       }
-      return jsonDecode(utf8.decode(bytes));
+      return jsonDecode(utf8.decode(builder.takeBytes()));
     });
   }
 
@@ -282,13 +288,14 @@ class GoogleDriveHandler {
     required dynamic data,
   }) async {
     final bytes = utf8.encode(jsonEncode(data));
-    final media = drive.Media(
-      Stream.value(bytes),
-      bytes.length,
-      contentType: 'application/json',
-    );
 
     await _call((api) async {
+      final media = drive.Media(
+        Stream.value(bytes),
+        bytes.length,
+        contentType: 'application/json',
+      );
+
       if (fileId != null) {
         await api.files.update(
           drive.File()..name = fileName,

@@ -37,6 +37,10 @@ class GoogleDriveAuth {
     }
   }
 
+  Future<void> refreshAuth() async {
+    await _googleSignIn.signInSilently(reAuthenticate: true);
+  }
+
   Future<void> signOut() async {
     await _googleSignIn.signOut();
   }
