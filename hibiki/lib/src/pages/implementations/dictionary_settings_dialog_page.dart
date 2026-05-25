@@ -133,7 +133,7 @@ class _DictionaryDialogPageState extends BasePageState {
       onTap: () {
         showAppDialog(
           context: context,
-          builder: (_) => const _DictCssEditorDialog(),
+          builder: (_) => const DictCssEditorDialog(),
         );
       },
     );
@@ -640,14 +640,19 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
   }
 }
 
-class _DictCssEditorDialog extends StatefulWidget {
-  const _DictCssEditorDialog();
+class DictCssEditorDialog extends StatefulWidget {
+  const DictCssEditorDialog({
+    super.key,
+    this.initialDictionaryName,
+  });
+
+  final String? initialDictionaryName;
 
   @override
-  State<_DictCssEditorDialog> createState() => _DictCssEditorDialogState();
+  State<DictCssEditorDialog> createState() => _DictCssEditorDialogState();
 }
 
-class _DictCssEditorDialogState extends State<_DictCssEditorDialog> {
+class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
   late int _selectedIndex;
   late TextEditingController _cssController;
   late List<String> _dictNames;
@@ -659,10 +664,11 @@ class _DictCssEditorDialogState extends State<_DictCssEditorDialog> {
   @override
   void initState() {
     super.initState();
-    _appModel = ProviderScope.containerOf(context).read(appProvider);
+    _appModel =
+        ProviderScope.containerOf(context, listen: false).read(appProvider);
     _dictNames = _appModel.dictionaries.map((d) => d.name).toList();
-    _selectedIndex = 0;
-    _cssController = TextEditingController(text: _appModel.globalDictCSS);
+    _selectedIndex = _initialSelectedIndex();
+    _cssController = TextEditingController(text: _currentCss);
   }
 
   @override
@@ -675,9 +681,7 @@ class _DictCssEditorDialogState extends State<_DictCssEditorDialog> {
     if (index == null || index == _selectedIndex) return;
     await _saveCurrentScope();
     _selectedIndex = index;
-    _cssController.text = _isGlobal
-        ? _appModel.globalDictCSS
-        : _appModel.getCustomCSSForDict(_currentDictName);
+    _cssController.text = _currentCss;
     setState(() {});
   }
 
@@ -690,38 +694,35 @@ class _DictCssEditorDialogState extends State<_DictCssEditorDialog> {
     }
   }
 
+  int _initialSelectedIndex() {
+    final String? initialDictionaryName = widget.initialDictionaryName;
+    if (initialDictionaryName == null) return 0;
+    final int dictIndex = _dictNames.indexOf(initialDictionaryName);
+    return dictIndex < 0 ? 0 : dictIndex + 1;
+  }
+
+  String get _currentCss {
+    return _isGlobal
+        ? _appModel.globalDictCSS
+        : _appModel.getCustomCSSForDict(_currentDictName);
+  }
+
   @override
   Widget build(BuildContext context) {
-    final maxHeight = MediaQuery.of(context).size.height * 0.55;
+    final Size mediaSize = MediaQuery.of(context).size;
+    final double contentHeight = (mediaSize.height * 0.55).clamp(280.0, 480.0);
+    final double contentWidth = desktopDialogContentWidth(mediaSize.width);
 
     return adaptiveAlertDialog(
       context: context,
       title: Text(t.custom_dict_css),
-      content: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: double.maxFinite,
-          maxHeight: maxHeight,
-        ),
+      content: SizedBox(
+        width: contentWidth,
+        height: contentHeight,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            AdaptiveSettingsPickerRow<int>(
-              title: t.custom_dict_css,
-              selected: _selectedIndex,
-              materialWidth: double.infinity,
-              options: [
-                AdaptiveSettingsPickerOption<int>(
-                  value: 0,
-                  label: t.custom_dict_css_global,
-                ),
-                for (int i = 0; i < _dictNames.length; i++)
-                  AdaptiveSettingsPickerOption<int>(
-                    value: i + 1,
-                    label: _dictNames[i],
-                  ),
-              ],
-              onChanged: (index) => _onScopeChanged(index),
-            ),
+            _buildScopeDropdown(context),
             const SizedBox(height: 8),
             Expanded(
               child: TextField(
@@ -753,6 +754,29 @@ class _DictCssEditorDialogState extends State<_DictCssEditorDialog> {
           },
         ),
       ],
+    );
+  }
+
+  Widget _buildScopeDropdown(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      child: DropdownMenu<int>(
+        label: Text(t.custom_dict_css),
+        expandedInsets: EdgeInsets.zero,
+        initialSelection: _selectedIndex,
+        dropdownMenuEntries: [
+          DropdownMenuEntry<int>(
+            value: 0,
+            label: t.custom_dict_css_global,
+          ),
+          for (int i = 0; i < _dictNames.length; i++)
+            DropdownMenuEntry<int>(
+              value: i + 1,
+              label: _dictNames[i],
+            ),
+        ],
+        onSelected: _onScopeChanged,
+      ),
     );
   }
 }

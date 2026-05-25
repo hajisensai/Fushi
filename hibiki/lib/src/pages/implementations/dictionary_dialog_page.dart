@@ -687,52 +687,6 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
     );
   }
 
-  void _showCustomCSSDialog(String dictName) {
-    final controller = TextEditingController(
-      text: appModel.getCustomCSSForDict(dictName),
-    );
-    showAppDialog(
-      context: context,
-      builder: (context) => adaptiveAlertDialog(
-        context: context,
-        title: Text(t.custom_css_title(name: dictName)),
-        content: SizedBox(
-          width: double.maxFinite,
-          height: 300,
-          child: TextField(
-            controller: controller,
-            maxLines: null,
-            expands: true,
-            style: const TextStyle(
-              fontFamily: 'monospace',
-              fontSize: 13,
-            ),
-            decoration: const InputDecoration(
-              hintText: '.gloss-content { font-size: 14px; }',
-              border: OutlineInputBorder(),
-              contentPadding: EdgeInsets.all(8),
-            ),
-          ),
-        ),
-        actions: [
-          adaptiveDialogAction(
-            context: context,
-            child: Text(t.dialog_cancel),
-            onPressed: () => Navigator.pop(context),
-          ),
-          adaptiveDialogAction(
-            context: context,
-            child: Text(t.dialog_save),
-            onPressed: () async {
-              await appModel.setCustomCSSForDict(dictName, controller.text);
-              if (context.mounted) Navigator.pop(context);
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget buildClearButton() {
     return TextButton(
       onPressed: showDictionaryClearDialog,
@@ -1066,7 +1020,12 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
         label: t.custom_dict_css,
         icon: Icons.code_outlined,
         action: () {
-          _showCustomCSSDialog(dictionary.name);
+          showAppDialog(
+            context: context,
+            builder: (_) => DictCssEditorDialog(
+              initialDictionaryName: dictionary.name,
+            ),
+          );
         },
       ),
       buildPopupItem(
