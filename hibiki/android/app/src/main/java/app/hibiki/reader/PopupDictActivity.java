@@ -173,10 +173,10 @@ public class PopupDictActivity extends FlutterActivity {
 
     private String extractProcessText(Intent intent) {
         if (intent == null) return null;
-        String text = intent.getStringExtra(Intent.EXTRA_PROCESS_TEXT);
-        if (text != null) return text;
-        text = intent.getStringExtra(Intent.EXTRA_TEXT);
-        if (text != null) return text;
+        CharSequence cs = intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT);
+        if (cs != null) return cs.toString();
+        cs = intent.getCharSequenceExtra(Intent.EXTRA_TEXT);
+        if (cs != null) return cs.toString();
         android.net.Uri data = intent.getData();
         if (data != null
                 && "hibiki".equals(data.getScheme())

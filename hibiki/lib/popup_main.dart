@@ -23,28 +23,19 @@ String _extractWord(AppModel appModel, String text, int charIndex) {
 void popupMain() {
   runZonedGuarded<Future<void>>(() async {
     WidgetsFlutterBinding.ensureInitialized();
-
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
-    await HoshiDicts.preloadTransforms();
-
     final container = ProviderContainer();
-    final appModel = container.read(appProvider);
-
-    final initialData = await PopupChannel.instance.getInitialProcessText();
-    final String rawText = initialData.text ?? '';
-    final int charIndex = initialData.charIndex;
 
     runApp(
       UncontrolledProviderScope(
         container: container,
-        child: PopupDictApp(
-          initialText: rawText,
-          initialCharIndex: charIndex,
-        ),
+        child: const PopupDictApp(),
       ),
     );
 
+    await HoshiDicts.preloadTransforms();
+    final appModel = container.read(appProvider);
     unawaited(appModel.initialiseForDictionaryPopup());
   }, (exception, stack) {
     debugPrint('[Hibiki-popup] uncaught: $exception\n$stack');
@@ -52,20 +43,14 @@ void popupMain() {
 }
 
 class PopupDictApp extends ConsumerStatefulWidget {
-  const PopupDictApp({
-    required this.initialText,
-    this.initialCharIndex = -1,
-    super.key,
-  });
-  final String initialText;
-  final int initialCharIndex;
+  const PopupDictApp({super.key});
 
   @override
   ConsumerState<PopupDictApp> createState() => _PopupDictAppState();
 }
 
 class _PopupDictAppState extends ConsumerState<PopupDictApp> {
-  late String _searchTerm;
+  String _searchTerm = '';
   int _searchGeneration = 0;
   bool _pendingWordExtraction = false;
   int _pendingCharIndex = -1;
@@ -73,21 +58,21 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
   @override
   void initState() {
     super.initState();
-    _searchTerm = widget.initialText;
-    if (widget.initialCharIndex >= 0) {
-      _pendingWordExtraction = true;
-      _pendingCharIndex = widget.initialCharIndex;
-    }
 
     PopupChannel.instance.init(
-      initialText: widget.initialText,
       onNewProcessText: (String text, int charIndex) async {
         final appModel = ref.read(appProvider);
-        await appModel.refreshPrefCache();
+        if (appModel.isInitialised) {
+          await appModel.refreshPrefCache();
+        }
         if (!mounted) return;
         final String resolved = _extractWord(appModel, text, charIndex);
         setState(() {
           _searchTerm = resolved;
+          if (charIndex >= 0 && !appModel.isInitialised) {
+            _pendingWordExtraction = true;
+            _pendingCharIndex = charIndex;
+          }
           _searchGeneration++;
         });
       },
@@ -99,6 +84,7 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
     final appModel = ref.watch(appProvider);
 
     if (appModel.initError != null) {
+      _pendingWordExtraction = false;
       return TranslationProvider(
         child: MaterialApp(
           debugShowCheckedModeBanner: false,

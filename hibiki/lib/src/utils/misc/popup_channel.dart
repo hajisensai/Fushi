@@ -11,7 +11,6 @@ class PopupChannel {
   void Function(String text, int charIndex)? _onNewProcessText;
 
   void init({
-    String? initialText,
     void Function(String text, int charIndex)? onNewProcessText,
   }) {
     _onNewProcessText = onNewProcessText;
@@ -26,9 +25,7 @@ class PopupChannel {
     });
     if (_onNewProcessText != null) {
       getInitialProcessText().then((data) {
-        if (data.text != null &&
-            data.text!.trim().isNotEmpty &&
-            data.text != initialText) {
+        if (data.text != null && data.text!.trim().isNotEmpty) {
           _onNewProcessText?.call(data.text!, data.charIndex);
         }
       });
