@@ -30,11 +30,48 @@ SettingsDestination buildSyncBackupDestination() {
       SettingsSection(
         title: t.sync_options,
         items: <SettingsItem>[
-          SettingsCustomItem(
-            id: 'sync.options',
-            icon: Icons.tune_outlined,
-            builder: (SettingsContext ctx) =>
-                _SyncOptionsWidget(settingsContext: ctx),
+          SettingsSegmentedItem<String>(
+            id: 'sync.mode',
+            title: t.sync_mode,
+            icon: Icons.sync_alt_outlined,
+            controlBelow: true,
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: 'merge',
+                label: t.sync_mode_merge,
+              ),
+              SettingsSegmentOption<String>(
+                value: 'replace',
+                label: t.sync_mode_replace,
+              ),
+            ],
+            selected: (SettingsContext ctx) => _syncSettings(ctx).syncMode,
+            onChanged: (SettingsContext ctx, String value) async {
+              _syncSettings(ctx).syncMode = value;
+              await SyncRepository(ctx.appModel.database).setSyncMode(value);
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'sync.statistics',
+            title: t.sync_statistics,
+            icon: Icons.query_stats_outlined,
+            value: (SettingsContext ctx) => _syncSettings(ctx).syncStats,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).syncStats = value;
+              await SyncRepository(ctx.appModel.database)
+                  .setSyncStatsEnabled(value);
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'sync.audiobook',
+            title: t.sync_audiobook,
+            icon: Icons.headphones_outlined,
+            value: (SettingsContext ctx) => _syncSettings(ctx).syncAudioBook,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).syncAudioBook = value;
+              await SyncRepository(ctx.appModel.database)
+                  .setSyncAudioBookEnabled(value);
+            },
           ),
         ],
       ),
@@ -61,6 +98,13 @@ SettingsDestination buildSyncBackupDestination() {
 }
 
 bool _syncInProgress = false;
+final Expando<_SyncSettingsState> _syncSettingsByContext =
+    Expando<_SyncSettingsState>('sync settings state');
+
+_SyncSettingsState _syncSettings(SettingsContext ctx) {
+  return _syncSettingsByContext[ctx.context] ??= _SyncSettingsState(ctx)
+    ..load();
+}
 
 Future<void> _performSync(
   SettingsContext ctx, {
@@ -193,17 +237,24 @@ class _SyncAccountWidgetState extends State<_SyncAccountWidget> {
 
   @override
   Widget build(BuildContext context) {
+    final String subtitle =
+        _isAuthenticated ? t.sync_signed_in : t.sync_not_signed_in;
+
     if (_isAuthenticated) {
       return AdaptiveSettingsRow(
         title: _email ?? t.sync_signed_in,
+        subtitle: subtitle,
         icon: Icons.check_circle_outline,
+        controlBelow: true,
         trailing: _signOutButton(context),
       );
     }
 
     return AdaptiveSettingsRow(
       title: t.sync_account,
+      subtitle: subtitle,
       icon: Icons.account_circle_outlined,
+      controlBelow: true,
       trailing: _signInButton(context),
     );
   }
@@ -212,12 +263,17 @@ class _SyncAccountWidgetState extends State<_SyncAccountWidget> {
     final Widget progress = adaptiveIndicator(context: context, strokeWidth: 2);
     if (isCupertinoPlatform(context)) {
       return CupertinoButton.filled(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        minSize: 32,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
         onPressed: _isLoading ? null : _signIn,
         child: _isLoading ? progress : Text(t.sync_sign_in),
       );
     }
     return FilledButton.icon(
+      style: FilledButton.styleFrom(
+        visualDensity: VisualDensity.compact,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
       onPressed: _isLoading ? null : _signIn,
       icon: _isLoading
           ? SizedBox(width: 16, height: 16, child: progress)
@@ -230,11 +286,16 @@ class _SyncAccountWidgetState extends State<_SyncAccountWidget> {
     if (isCupertinoPlatform(context)) {
       return CupertinoButton(
         padding: EdgeInsets.zero,
+        minSize: 32,
         onPressed: _isLoading ? null : _signOut,
         child: Text(t.sync_sign_out),
       );
     }
     return TextButton(
+      style: TextButton.styleFrom(
+        visualDensity: VisualDensity.compact,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
       onPressed: _isLoading ? null : _signOut,
       child: Text(t.sync_sign_out),
     );
@@ -269,87 +330,41 @@ class _SyncAccountWidgetState extends State<_SyncAccountWidget> {
   }
 }
 
-class _SyncOptionsWidget extends StatefulWidget {
-  const _SyncOptionsWidget({required this.settingsContext});
-  final SettingsContext settingsContext;
+class _SyncSettingsState {
+  _SyncSettingsState(this._settingsContext)
+      : _repo = SyncRepository(_settingsContext.appModel.database);
 
-  @override
-  State<_SyncOptionsWidget> createState() => _SyncOptionsWidgetState();
-}
-
-class _SyncOptionsWidgetState extends State<_SyncOptionsWidget> {
-  late final SyncRepository _repo;
+  final SettingsContext _settingsContext;
+  final SyncRepository _repo;
   String _syncMode = 'merge';
   bool _syncStats = true;
   bool _syncAudioBook = true;
   bool _loaded = false;
+  bool _loading = false;
 
-  @override
-  void initState() {
-    super.initState();
-    _repo = SyncRepository(widget.settingsContext.appModel.database);
-    _loadValues();
-  }
+  String get syncMode => _syncMode;
+  set syncMode(String value) => _syncMode = value;
 
-  Future<void> _loadValues() async {
-    final mode = await _repo.getSyncMode();
-    final stats = await _repo.isSyncStatsEnabled();
-    final audio = await _repo.isSyncAudioBookEnabled();
-    if (mounted) {
-      setState(() {
-        _syncMode = mode;
-        _syncStats = stats;
-        _syncAudioBook = audio;
-        _loaded = true;
-      });
+  bool get syncStats => _syncStats;
+  set syncStats(bool value) => _syncStats = value;
+
+  bool get syncAudioBook => _syncAudioBook;
+  set syncAudioBook(bool value) => _syncAudioBook = value;
+
+  bool get loaded => _loaded;
+
+  Future<void> load() async {
+    if (_loaded || _loading) return;
+
+    _loading = true;
+    try {
+      _syncMode = await _repo.getSyncMode();
+      _syncStats = await _repo.isSyncStatsEnabled();
+      _syncAudioBook = await _repo.isSyncAudioBookEnabled();
+      _loaded = true;
+      _settingsContext.refresh();
+    } finally {
+      _loading = false;
     }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (!_loaded) return const SizedBox.shrink();
-
-    return Column(
-      children: <Widget>[
-        AdaptiveSettingsSegmentedRow<String>(
-          title: t.sync_mode,
-          icon: Icons.sync_alt_outlined,
-          controlBelow: true,
-          segments: <ButtonSegment<String>>[
-            ButtonSegment<String>(
-              value: 'merge',
-              label: Text(t.sync_mode_merge),
-            ),
-            ButtonSegment<String>(
-              value: 'replace',
-              label: Text(t.sync_mode_replace),
-            ),
-          ],
-          selected: _syncMode,
-          onChanged: (String value) async {
-            setState(() => _syncMode = value);
-            await _repo.setSyncMode(value);
-          },
-        ),
-        AdaptiveSettingsSwitchRow(
-          title: t.sync_statistics,
-          icon: Icons.query_stats_outlined,
-          value: _syncStats,
-          onChanged: (bool value) async {
-            setState(() => _syncStats = value);
-            await _repo.setSyncStatsEnabled(value);
-          },
-        ),
-        AdaptiveSettingsSwitchRow(
-          title: t.sync_audiobook,
-          icon: Icons.headphones_outlined,
-          value: _syncAudioBook,
-          onChanged: (bool value) async {
-            setState(() => _syncAudioBook = value);
-            await _repo.setSyncAudioBookEnabled(value);
-          },
-        ),
-      ],
-    );
   }
 }

@@ -14,6 +14,10 @@ class SyncRepository {
   static const _keySyncMode = 'sync_mode';
   static const _keyLastSyncMs = 'sync_last_sync_ms';
 
+  static const String syncStatsPreferenceKey = _keySyncStats;
+  static const String syncAudioBookPreferenceKey = _keySyncAudioBook;
+  static const String syncModePreferenceKey = _keySyncMode;
+
   // ── Folder cache ──────────────────────────────────────────────────
 
   Future<String?> getRootFolderId() async {
@@ -59,15 +63,20 @@ class SyncRepository {
 
   // ── Sync settings ─────────────────────────────────────────────────
 
-  Future<bool> isSyncStatsEnabled() => _getBool(_keySyncStats, true);
-  Future<void> setSyncStatsEnabled(bool v) => _setBool(_keySyncStats, v);
+  Future<bool> isSyncStatsEnabled() =>
+      _db.getPrefTyped<bool>(_keySyncStats, true);
+  Future<void> setSyncStatsEnabled(bool v) =>
+      _db.setPrefTyped<bool>(_keySyncStats, v);
 
-  Future<bool> isSyncAudioBookEnabled() => _getBool(_keySyncAudioBook, true);
+  Future<bool> isSyncAudioBookEnabled() =>
+      _db.getPrefTyped<bool>(_keySyncAudioBook, true);
   Future<void> setSyncAudioBookEnabled(bool v) =>
-      _setBool(_keySyncAudioBook, v);
+      _db.setPrefTyped<bool>(_keySyncAudioBook, v);
 
-  Future<String> getSyncMode() => _getString(_keySyncMode, 'merge');
-  Future<void> setSyncMode(String mode) => _setString(_keySyncMode, mode);
+  Future<String> getSyncMode() =>
+      _db.getPrefTyped<String>(_keySyncMode, 'merge');
+  Future<void> setSyncMode(String mode) =>
+      _db.setPrefTyped<String>(_keySyncMode, mode);
 
   Future<int?> getLastSyncMs() async {
     final s = await _getStringOrNull(_keyLastSyncMs);
@@ -78,20 +87,6 @@ class SyncRepository {
       _setString(_keyLastSyncMs, ms.toString());
 
   // ── Helpers ───────────────────────────────────────────────────────
-
-  Future<bool> _getBool(String key, bool defaultValue) async {
-    final row = await (_db.select(_db.preferences)
-          ..where((t) => t.key.equals(key)))
-        .getSingleOrNull();
-    if (row == null) return defaultValue;
-    return row.value == 'true';
-  }
-
-  Future<void> _setBool(String key, bool value) async {
-    await _db.into(_db.preferences).insertOnConflictUpdate(
-          PreferencesCompanion.insert(key: key, value: value.toString()),
-        );
-  }
 
   Future<String> _getString(String key, String defaultValue) async {
     final row = await (_db.select(_db.preferences)
