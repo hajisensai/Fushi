@@ -234,6 +234,7 @@ class _MaterialSettingsItem extends StatelessWidget {
   ) {
     return _tile(
       trailing: const Icon(Icons.chevron_right),
+      showIcon: navigation.showIcon,
       onTap: () async {
         if (navigation.onTap != null) {
           await navigation.onTap!(settingsContext);
@@ -370,12 +371,13 @@ class _MaterialSettingsItem extends StatelessWidget {
     Widget? trailing,
     GestureTapCallback? onTap,
     bool controlBelow = false,
+    bool showIcon = false,
   }) {
     final Widget label = _SettingsLabel(
       title: item.title,
       subtitle: item.subtitle,
     );
-    final Widget? leading = item.icon == null
+    final Widget? leading = !showIcon || item.icon == null
         ? null
         : Padding(
             padding: const EdgeInsets.only(right: 12),

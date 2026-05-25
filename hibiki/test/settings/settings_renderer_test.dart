@@ -30,6 +30,19 @@ SettingsDestination _fixtureDestination() {
       SettingsSection(
         title: 'Controls',
         items: <SettingsItem>[
+          SettingsNavigationItem(
+            id: 'advanced',
+            title: 'Advanced',
+            icon: Icons.tune_outlined,
+            builder: (_) => const SizedBox.shrink(),
+          ),
+          SettingsNavigationItem(
+            id: 'advanced_with_icon',
+            title: 'Advanced with icon',
+            icon: Icons.settings_suggest_outlined,
+            showIcon: true,
+            builder: (_) => const SizedBox.shrink(),
+          ),
           SettingsSwitchItem(
             id: 'toggle',
             title: 'Toggle',
@@ -124,6 +137,9 @@ void main() {
     expect(find.byType(Scaffold), findsOneWidget);
     expect(find.byType(AppBar), findsOneWidget);
     expect(find.byType(Switch), findsOneWidget);
+    expect(find.byIcon(Icons.tune_outlined), findsNothing);
+    expect(find.byIcon(Icons.settings_suggest_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.toggle_on_outlined), findsNothing);
     expect(
       find.byWidgetPredicate((Widget widget) => widget is SegmentedButton),
       findsOneWidget,
@@ -149,7 +165,9 @@ void main() {
     expect(find.byType(CupertinoSliverNavigationBar), findsOneWidget);
     expect(find.byType(CupertinoListSection), findsOneWidget);
     expect(find.byType(CupertinoSwitch), findsOneWidget);
-    expect(find.byIcon(Icons.toggle_on_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.tune_outlined), findsNothing);
+    expect(find.byIcon(Icons.settings_suggest_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.toggle_on_outlined), findsNothing);
     expect(
       find.byWidgetPredicate(
         (Widget widget) => widget is CupertinoSlidingSegmentedControl,
@@ -162,7 +180,7 @@ void main() {
     );
   });
 
-  testWidgets('settings schema gives every visible row a leading icon',
+  testWidgets('settings schema keeps icons on destinations',
       (WidgetTester tester) async {
     await tester.pumpWidget(
       _harness(
@@ -170,26 +188,21 @@ void main() {
         builder: (SettingsContext settingsContext) {
           final List<SettingsDestination> destinations =
               buildSettingsSchema(settingsContext);
-          final List<String> missingIcons = <String>[];
+          final List<String> missingDestinationIcons = <String>[];
           for (final SettingsDestination destination in destinations) {
-            for (final SettingsSection section
-                in destination.visibleSections(settingsContext)) {
-              for (final SettingsItem item in section.items) {
-                if (item.icon == null) {
-                  missingIcons.add('${destination.id.name}/${item.id}');
-                }
-              }
+            if (destination.icon == Icons.help_outline) {
+              missingDestinationIcons.add(destination.id.name);
             }
           }
 
-          expect(missingIcons, isEmpty);
+          expect(missingDestinationIcons, isEmpty);
           return const SizedBox.shrink();
         },
       ),
     );
   });
 
-  testWidgets('appearance custom rows expose Cupertino leading icons',
+  testWidgets('appearance custom rows omit Cupertino leading icons',
       (WidgetTester tester) async {
     await tester.pumpWidget(
       _harness(
@@ -215,8 +228,8 @@ void main() {
       ),
     );
 
-    expect(find.byIcon(Icons.devices_outlined), findsOneWidget);
-    expect(find.byIcon(Icons.color_lens_outlined), findsOneWidget);
-    expect(find.byIcon(Icons.contrast_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.devices_outlined), findsNothing);
+    expect(find.byIcon(Icons.color_lens_outlined), findsNothing);
+    expect(find.byIcon(Icons.contrast_outlined), findsNothing);
   });
 }

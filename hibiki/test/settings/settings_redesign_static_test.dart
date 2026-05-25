@@ -130,6 +130,32 @@ void main() {
     expect(schemaSource, isNot(contains('DictionarySettingsDialogPage')));
   });
 
+  test('settings tab does not duplicate schema-level header actions', () {
+    final String source =
+        File('lib/src/pages/implementations/home_page.dart').readAsStringSync();
+
+    expect(source, isNot(contains('buildSettingsActions')));
+    expect(source, isNot(contains('options_language')));
+    expect(source, isNot(contains('options_github')));
+  });
+
+  test('profile destination uses one picker row for the active profile', () {
+    final String schemaSource =
+        File('lib/src/settings/settings_schema.dart').readAsStringSync();
+    final String actionsSource =
+        File('lib/src/settings/settings_actions.dart').readAsStringSync();
+
+    expect(schemaSource, contains('buildProfilePickerRow'));
+    expect(schemaSource, isNot(contains('buildProfileSelectorRow')));
+    expect(actionsSource, contains('AdaptiveSettingsPickerRow<int>'));
+  });
+
+  test('Cupertino icon font is bundled when CupertinoIcons are used', () {
+    final String pubspec = File('pubspec.yaml').readAsStringSync();
+
+    expect(pubspec, contains('cupertino_icons:'));
+  });
+
   test('profile switching waits for reader settings refresh', () {
     final String source =
         File('lib/src/profile/profile_view_model.dart').readAsStringSync();

@@ -112,6 +112,7 @@ class SettingsNavigationItem extends SettingsItem {
     required super.title,
     this.builder,
     this.onTap,
+    this.showIcon = false,
     super.subtitle,
     super.icon,
     super.visible,
@@ -119,6 +120,7 @@ class SettingsNavigationItem extends SettingsItem {
 
   final WidgetBuilder? builder;
   final SettingsItemAction? onTap;
+  final bool showIcon;
 }
 
 class SettingsActionItem extends SettingsItem {

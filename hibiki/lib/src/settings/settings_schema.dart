@@ -139,7 +139,7 @@ SettingsDestination _profilesDestination() {
           SettingsCustomItem(
             id: 'profiles.current',
             icon: Icons.person_outline,
-            builder: buildProfileSelectorRow,
+            builder: buildProfilePickerRow,
           ),
           SettingsNavigationItem(
             id: 'profiles.management',

@@ -9,7 +9,6 @@ import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki/src/media/audiobook/book_import_dialog.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:hibiki/utils.dart';
 
 class HomePage extends BasePage {
@@ -233,7 +232,6 @@ class _HomePageState extends BasePageState<HomePage>
           context: context,
           leading: buildLeading(),
           title: buildTitle(),
-          actions: buildSettingsActions(),
           titleSpacing: 8,
         );
       default:
@@ -296,26 +294,6 @@ class _HomePageState extends BasePageState<HomePage>
       buildImportButton(),
       buildCollectionsButton(),
       buildStatisticsButton(),
-    ];
-  }
-
-  List<Widget> buildSettingsActions() {
-    return [
-      IconButton(
-        tooltip: t.options_language,
-        icon: const Icon(Icons.translate_outlined),
-        onPressed: appModel.showLanguageMenu,
-      ),
-      IconButton(
-        tooltip: t.options_github,
-        icon: const Icon(Icons.public_outlined),
-        onPressed: () {
-          launchUrl(
-            Uri.parse('https://github.com/hdjsadgfwtg/hibiki'),
-            mode: LaunchMode.externalApplication,
-          );
-        },
-      ),
     ];
   }
 

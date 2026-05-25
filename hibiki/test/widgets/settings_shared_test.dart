@@ -44,6 +44,83 @@ void main() {
     expect(find.byType(CupertinoSwitch), findsNothing);
   });
 
+  testWidgets('leaf setting rows omit leading icons by default',
+      (tester) async {
+    await tester.pumpWidget(
+      _buildHarness(
+        platform: TargetPlatform.android,
+        child: AdaptiveSettingsScaffold(
+          title: const Text('Reader settings'),
+          children: [
+            AdaptiveSettingsSection(
+              children: [
+                AdaptiveSettingsSwitchRow(
+                  title: 'Highlight on tap',
+                  icon: Icons.touch_app_outlined,
+                  value: true,
+                  onChanged: (_) {},
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+
+    expect(find.byIcon(Icons.touch_app_outlined), findsNothing);
+    expect(find.byType(Switch), findsOneWidget);
+  });
+
+  testWidgets('navigation rows omit leading icons by default', (tester) async {
+    await tester.pumpWidget(
+      _buildHarness(
+        platform: TargetPlatform.android,
+        child: AdaptiveSettingsScaffold(
+          title: const Text('Reader settings'),
+          children: [
+            AdaptiveSettingsSection(
+              children: [
+                AdaptiveSettingsNavigationRow(
+                  title: 'Advanced',
+                  icon: Icons.tune_outlined,
+                  onTap: () {},
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+
+    expect(find.byIcon(Icons.tune_outlined), findsNothing);
+    expect(find.byIcon(Icons.chevron_right), findsOneWidget);
+  });
+
+  testWidgets('navigation rows can opt in to leading icons', (tester) async {
+    await tester.pumpWidget(
+      _buildHarness(
+        platform: TargetPlatform.android,
+        child: AdaptiveSettingsScaffold(
+          title: const Text('Reader settings'),
+          children: [
+            AdaptiveSettingsSection(
+              children: [
+                AdaptiveSettingsNavigationRow(
+                  title: 'Advanced',
+                  icon: Icons.tune_outlined,
+                  showIcon: true,
+                  onTap: () {},
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+
+    expect(find.byIcon(Icons.tune_outlined), findsOneWidget);
+  });
+
   testWidgets('switch rows use Cupertino switch on iOS', (tester) async {
     await tester.pumpWidget(
       _buildHarness(

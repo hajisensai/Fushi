@@ -184,6 +184,7 @@ class AdaptiveSettingsRow extends StatelessWidget {
     super.key,
     this.subtitle,
     this.icon,
+    this.showIcon = false,
     this.trailing,
     this.onTap,
     this.controlBelow = false,
@@ -192,6 +193,7 @@ class AdaptiveSettingsRow extends StatelessWidget {
   final String title;
   final String? subtitle;
   final IconData? icon;
+  final bool showIcon;
   final Widget? trailing;
   final VoidCallback? onTap;
   final bool controlBelow;
@@ -229,7 +231,7 @@ class AdaptiveSettingsRow extends StatelessWidget {
       ),
       child: Row(
         children: [
-          if (icon != null) ...[
+          if (showIcon && icon != null) ...[
             _SettingsIcon(icon: icon!),
             const SizedBox(width: 12),
           ],
@@ -253,7 +255,7 @@ class AdaptiveSettingsRow extends StatelessWidget {
         children: [
           Row(
             children: [
-              if (icon != null) ...[
+              if (showIcon && icon != null) ...[
                 _SettingsIcon(icon: icon!),
                 const SizedBox(width: 12),
               ],
@@ -707,11 +709,13 @@ class AdaptiveSettingsNavigationRow extends StatelessWidget {
     super.key,
     this.subtitle,
     this.icon,
+    this.showIcon = false,
   });
 
   final String title;
   final String? subtitle;
   final IconData? icon;
+  final bool showIcon;
   final VoidCallback onTap;
 
   @override
@@ -724,6 +728,7 @@ class AdaptiveSettingsNavigationRow extends StatelessWidget {
       title: title,
       subtitle: subtitle,
       icon: icon,
+      showIcon: showIcon && icon != null,
       onTap: onTap,
       trailing: Icon(
         cupertino ? CupertinoIcons.chevron_right : Icons.chevron_right,

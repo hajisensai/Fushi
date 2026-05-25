@@ -1,10 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
-import 'package:hibiki/src/profile/profile_selector.dart';
+import 'package:hibiki/src/profile/profile_view_model.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/utils.dart';
+import 'package:hibiki_core/hibiki_core.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 const double _swatchSize = 48.0;
@@ -141,11 +144,52 @@ Widget buildDesignSystemSelector(SettingsContext settingsContext) {
   );
 }
 
-Widget buildProfileSelectorRow(SettingsContext settingsContext) {
-  return AdaptiveSettingsRow(
+Widget buildProfilePickerRow(SettingsContext settingsContext) {
+  final ProfileUiState uiState =
+      settingsContext.ref.watch(profileViewModelProvider);
+  final ProfileViewModel viewModel =
+      settingsContext.ref.read(profileViewModelProvider.notifier);
+
+  if (uiState.isLoading || uiState.profiles.isEmpty) {
+    return AdaptiveSettingsRow(
+      title: t.profile_label,
+      icon: Icons.person_outline,
+      trailing: SizedBox(
+        width: 20,
+        height: 20,
+        child: adaptiveIndicator(
+          context: settingsContext.context,
+          strokeWidth: 2,
+        ),
+      ),
+    );
+  }
+
+  final int activeId = uiState.profiles.any(
+    (ProfileRow profile) => profile.id == uiState.activeProfileId,
+  )
+      ? uiState.activeProfileId
+      : uiState.profiles.first.id;
+
+  return AdaptiveSettingsPickerRow<int>(
     title: t.profile_label,
     icon: Icons.person_outline,
-    trailing: const ProfileSelector(),
+    selected: activeId,
+    options: <AdaptiveSettingsPickerOption<int>>[
+      for (final ProfileRow profile in uiState.profiles)
+        AdaptiveSettingsPickerOption<int>(
+          value: profile.id,
+          label: profile.name,
+        ),
+    ],
+    onChanged: (int profileId) {
+      if (profileId == activeId) return;
+      unawaited(
+        viewModel.switchProfile(profileId).then<void>(
+              (_) => settingsContext.refresh(),
+            ),
+      );
+    },
   );
 }
 

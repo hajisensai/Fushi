@@ -167,6 +167,7 @@ class _CupertinoSettingsItem extends StatelessWidget {
   ) {
     return _tile(
       trailing: const CupertinoListTileChevron(),
+      showIcon: navigation.showIcon,
       onTap: () async {
         if (navigation.onTap != null) {
           await navigation.onTap!(settingsContext);
@@ -294,10 +295,13 @@ class _CupertinoSettingsItem extends StatelessWidget {
     Widget? trailing,
     GestureTapCallback? onTap,
     bool controlBelow = false,
+    bool showIcon = false,
   }) {
+    final Widget? leading =
+        showIcon && item.icon != null ? Icon(item.icon) : null;
     if (controlBelow) {
       return CupertinoListTile(
-        leading: item.icon == null ? null : Icon(item.icon),
+        leading: leading,
         title: Text(item.title),
         subtitle: item.subtitle == null ? null : Text(item.subtitle!),
         onTap: onTap,
@@ -307,7 +311,7 @@ class _CupertinoSettingsItem extends StatelessWidget {
       ).withBelow(trailing);
     }
     return CupertinoListTile(
-      leading: item.icon == null ? null : Icon(item.icon),
+      leading: leading,
       title: Text(item.title),
       subtitle: item.subtitle == null ? null : Text(item.subtitle!),
       trailing: trailing,
