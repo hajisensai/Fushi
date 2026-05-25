@@ -583,9 +583,11 @@ class ReaderHibikiSource extends ReaderMediaSource {
         key: 'ttu_writing_mode',
         defaultValue: 'vertical-rl',
       );
-  Future<void> setTtuWritingMode(String v) =>
-      readerSettings?.setWritingMode(v) ??
-      setPreference<String>(key: 'ttu_writing_mode', value: v);
+  Future<void> setTtuWritingMode(String v) async {
+    await (readerSettings?.setWritingMode(v) ??
+        setPreference<String>(key: 'ttu_writing_mode', value: v));
+    onSettingsChangedLive?.call();
+  }
 
   String get ttuViewMode =>
       readerSettings?.viewMode ??
@@ -593,9 +595,11 @@ class ReaderHibikiSource extends ReaderMediaSource {
         key: 'ttu_view_mode',
         defaultValue: 'paginated',
       );
-  Future<void> setTtuViewMode(String v) =>
-      readerSettings?.setViewMode(v) ??
-      setPreference<String>(key: 'ttu_view_mode', value: v);
+  Future<void> setTtuViewMode(String v) async {
+    await (readerSettings?.setViewMode(v) ??
+        setPreference<String>(key: 'ttu_view_mode', value: v));
+    onSettingsChangedLive?.call();
+  }
 
   String get ttuTheme =>
       readerSettings?.theme ??
@@ -690,23 +694,29 @@ class ReaderHibikiSource extends ReaderMediaSource {
   int get ttuPageColumns =>
       readerSettings?.pageColumns ??
       getPreference<int>(key: 'ttu_page_columns', defaultValue: 0);
-  Future<void> setTtuPageColumns(int v) =>
-      readerSettings?.setPageColumns(v) ??
-      setPreference<int>(key: 'ttu_page_columns', value: v);
+  Future<void> setTtuPageColumns(int v) async {
+    await (readerSettings?.setPageColumns(v) ??
+        setPreference<int>(key: 'ttu_page_columns', value: v));
+    onSettingsChangedLive?.call();
+  }
 
   String get ttuSpreadMode =>
       readerSettings?.spreadMode ??
       getPreference<String>(key: 'ttu_spread_mode', defaultValue: 'auto');
-  Future<void> setTtuSpreadMode(String v) =>
-      readerSettings?.setSpreadMode(v) ??
-      setPreference<String>(key: 'ttu_spread_mode', value: v);
+  Future<void> setTtuSpreadMode(String v) async {
+    await (readerSettings?.setSpreadMode(v) ??
+        setPreference<String>(key: 'ttu_spread_mode', value: v));
+    onSettingsChangedLive?.call();
+  }
 
   String get ttuSpreadDirection =>
       readerSettings?.spreadDirection ??
       getPreference<String>(key: 'ttu_spread_direction', defaultValue: 'rtl');
-  Future<void> setTtuSpreadDirection(String v) =>
-      readerSettings?.setSpreadDirection(v) ??
-      setPreference<String>(key: 'ttu_spread_direction', value: v);
+  Future<void> setTtuSpreadDirection(String v) async {
+    await (readerSettings?.setSpreadDirection(v) ??
+        setPreference<String>(key: 'ttu_spread_direction', value: v));
+    onSettingsChangedLive?.call();
+  }
 
   bool get ttuEnableVerticalFontKerning =>
       readerSettings?.enableVerticalFontKerning ??
