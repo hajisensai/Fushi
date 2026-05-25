@@ -288,7 +288,7 @@ class SyncManager {
     // Dirty-flag cache: reuse stored exploredCharCount if local position is unchanged
     final cachedCharOffset = localPosition.ttuCharOffset;
     final int exploredChars;
-    if (cachedCharOffset > 0) {
+    if (cachedCharOffset >= 0) {
       final cachedPos = fromExploredCharCount(
         exploredCharCount: cachedCharOffset,
         chapters: chapters,
@@ -388,41 +388,8 @@ class SyncManager {
     List<TtuStatistics> localStats,
     List<TtuStatistics> externalStats,
     StatisticsSyncMode mode,
-  ) {
-    if (mode == StatisticsSyncMode.replace) return externalStats;
-
-    final grouped = <String, TtuStatistics>{};
-    for (final stat in localStats) {
-      grouped[stat.dateKey] = stat;
-    }
-    for (final stat in externalStats) {
-      final existing = grouped[stat.dateKey];
-      if (existing == null) {
-        grouped[stat.dateKey] = stat;
-      } else {
-        grouped[stat.dateKey] = TtuStatistics(
-          title: stat.title,
-          dateKey: stat.dateKey,
-          charactersRead: max(existing.charactersRead, stat.charactersRead),
-          readingTimeSec: max(existing.readingTimeSec, stat.readingTimeSec),
-          minReadingSpeed:
-              existing.minReadingSpeed > 0 && stat.minReadingSpeed > 0
-                  ? min(existing.minReadingSpeed, stat.minReadingSpeed)
-                  : max(existing.minReadingSpeed, stat.minReadingSpeed),
-          altMinReadingSpeed:
-              existing.altMinReadingSpeed > 0 && stat.altMinReadingSpeed > 0
-                  ? min(existing.altMinReadingSpeed, stat.altMinReadingSpeed)
-                  : max(existing.altMinReadingSpeed, stat.altMinReadingSpeed),
-          lastReadingSpeed:
-              max(existing.lastReadingSpeed, stat.lastReadingSpeed),
-          maxReadingSpeed: max(existing.maxReadingSpeed, stat.maxReadingSpeed),
-          lastStatisticModified:
-              max(existing.lastStatisticModified, stat.lastStatisticModified),
-        );
-      }
-    }
-    return grouped.values.toList();
-  }
+  ) =>
+      mergeStatistics(localStats, externalStats, mode);
 
   // ── DB helpers ────────────────────────────────────────────────────
 
@@ -478,4 +445,43 @@ class SyncManager {
     final cache = _drive.cachedFolderIds;
     if (cache.isNotEmpty) await _repo.setFolderCache(cache);
   }
+}
+
+List<TtuStatistics> mergeStatistics(
+  List<TtuStatistics> localStats,
+  List<TtuStatistics> externalStats,
+  StatisticsSyncMode mode,
+) {
+  if (mode == StatisticsSyncMode.replace) return externalStats;
+
+  final grouped = <String, TtuStatistics>{};
+  for (final stat in localStats) {
+    grouped[stat.dateKey] = stat;
+  }
+  for (final stat in externalStats) {
+    final existing = grouped[stat.dateKey];
+    if (existing == null) {
+      grouped[stat.dateKey] = stat;
+    } else {
+      grouped[stat.dateKey] = TtuStatistics(
+        title: stat.title,
+        dateKey: stat.dateKey,
+        charactersRead: max(existing.charactersRead, stat.charactersRead),
+        readingTimeSec: max(existing.readingTimeSec, stat.readingTimeSec),
+        minReadingSpeed:
+            existing.minReadingSpeed > 0 && stat.minReadingSpeed > 0
+                ? min(existing.minReadingSpeed, stat.minReadingSpeed)
+                : max(existing.minReadingSpeed, stat.minReadingSpeed),
+        altMinReadingSpeed:
+            existing.altMinReadingSpeed > 0 && stat.altMinReadingSpeed > 0
+                ? min(existing.altMinReadingSpeed, stat.altMinReadingSpeed)
+                : max(existing.altMinReadingSpeed, stat.altMinReadingSpeed),
+        lastReadingSpeed: max(existing.lastReadingSpeed, stat.lastReadingSpeed),
+        maxReadingSpeed: max(existing.maxReadingSpeed, stat.maxReadingSpeed),
+        lastStatisticModified:
+            max(existing.lastStatisticModified, stat.lastStatisticModified),
+      );
+    }
+  }
+  return grouped.values.toList();
 }

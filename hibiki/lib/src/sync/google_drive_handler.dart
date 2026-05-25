@@ -142,12 +142,27 @@ class GoogleDriveHandler {
   }
 
   Future<List<DriveFile>> listBooks(String rootFolder) async {
-    final response = await _request('GET', '/drive/v3/files', queryParameters: {
-      'q':
-          "trashed=false and '$rootFolder' in parents and mimeType='application/vnd.google-apps.folder'",
-      'fields': 'files(id, name)',
-    });
-    return DriveFileList.fromJson(response.data as Map<String, dynamic>).files;
+    final qRoot = _escapeQuery(rootFolder);
+    final results = <DriveFile>[];
+    String? pageToken;
+
+    do {
+      final response =
+          await _request('GET', '/drive/v3/files', queryParameters: {
+        'q':
+            "trashed=false and '$qRoot' in parents and mimeType='application/vnd.google-apps.folder'",
+        'fields': 'nextPageToken, files(id, name)',
+        'pageSize': '1000',
+        if (pageToken != null) 'pageToken': pageToken,
+      });
+
+      final data = response.data as Map<String, dynamic>;
+      final list = DriveFileList.fromJson(data);
+      results.addAll(list.files);
+      pageToken = data['nextPageToken'] as String?;
+    } while (pageToken != null);
+
+    return results;
   }
 
   Future<String> ensureBookFolder({
@@ -161,10 +176,13 @@ class GoogleDriveHandler {
       return _titleToFolderId[sanitized]!;
     }
 
+    final qRoot = _escapeQuery(rootFolder);
+    final qName = _escapeQuery(sanitized);
+
     final searchResponse =
         await _request('GET', '/drive/v3/files', queryParameters: {
       'q':
-          '''trashed=false and '$rootFolder' in parents and mimeType='application/vnd.google-apps.folder' and name="$sanitized"''',
+          "trashed=false and '$qRoot' in parents and mimeType='application/vnd.google-apps.folder' and name='$qName'",
       'fields': 'files(id, name)',
     });
 
@@ -192,8 +210,12 @@ class GoogleDriveHandler {
     if (coverData != null) {
       try {
         await _uploadCoverImage(folderId: folderId, coverData: coverData);
-      } catch (_) {
-        // Non-fatal: cover upload failure doesn't block sync
+      } catch (e) {
+        assert(() {
+          // ignore: avoid_print
+          print('Cover upload failed: $e');
+          return true;
+        }());
       }
     }
 
@@ -203,9 +225,10 @@ class GoogleDriveHandler {
   // ── Sync file operations ──────────────────────────────────────────
 
   Future<DriveSyncFiles> listSyncFiles(String folderId) async {
+    final qFolder = _escapeQuery(folderId);
     final response = await _request('GET', '/drive/v3/files', queryParameters: {
       'q':
-          "trashed=false and '$folderId' in parents and mimeType != 'application/vnd.google-apps.folder'",
+          "trashed=false and '$qFolder' in parents and mimeType != 'application/vnd.google-apps.folder'",
       'fields': 'files(id, name)',
     });
 
@@ -245,7 +268,7 @@ class GoogleDriveHandler {
     required String? fileId,
     required TtuProgress progress,
   }) async {
-    final timestamp = (progress.lastBookmarkModified).toInt();
+    final timestamp = progress.lastBookmarkModified;
     final fileName = progressFileName(timestamp, progress.progress);
     await _uploadSyncFile(
       folderId: folderId,
@@ -370,6 +393,8 @@ class GoogleDriveHandler {
       ),
     );
   }
+
+  static String _escapeQuery(String value) => value.replaceAll("'", "\\'");
 
   static DriveFile? _findByPrefix(List<DriveFile> files, String prefix) {
     for (final f in files) {

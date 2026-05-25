@@ -59,7 +59,22 @@ SettingsDestination buildSyncBackupDestination() {
   );
 }
 
+bool _syncInProgress = false;
+
 Future<void> _performSync(
+  SettingsContext ctx, {
+  required bool importOnly,
+}) async {
+  if (_syncInProgress) return;
+  _syncInProgress = true;
+  try {
+    await _performSyncInner(ctx, importOnly: importOnly);
+  } finally {
+    _syncInProgress = false;
+  }
+}
+
+Future<void> _performSyncInner(
   SettingsContext ctx, {
   required bool importOnly,
 }) async {
@@ -153,9 +168,9 @@ class _SyncAccountWidget extends StatefulWidget {
 }
 
 class _SyncAccountWidgetState extends State<_SyncAccountWidget> {
-  final _clientIdController = TextEditingController();
   bool _isAuthenticated = false;
   bool _isLoading = false;
+  String? _email;
 
   @override
   void initState() {
@@ -164,21 +179,22 @@ class _SyncAccountWidgetState extends State<_SyncAccountWidget> {
   }
 
   Future<void> _checkAuth() async {
-    final authed = await GoogleDriveAuth.instance.isAuthenticated;
-    if (mounted) setState(() => _isAuthenticated = authed);
-  }
-
-  @override
-  void dispose() {
-    _clientIdController.dispose();
-    super.dispose();
+    final auth = GoogleDriveAuth.instance;
+    final authed = await auth.isAuthenticated;
+    final email = authed ? await auth.currentEmail : null;
+    if (mounted) {
+      setState(() {
+        _isAuthenticated = authed;
+        _email = email;
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     if (_isAuthenticated) {
       return AdaptiveSettingsRow(
-        title: t.sync_signed_in,
+        title: _email ?? t.sync_signed_in,
         icon: Icons.check_circle_outline,
         trailing: _signOutButton(context),
       );
@@ -187,34 +203,7 @@ class _SyncAccountWidgetState extends State<_SyncAccountWidget> {
     return AdaptiveSettingsRow(
       title: t.sync_account,
       icon: Icons.account_circle_outlined,
-      controlBelow: true,
-      trailing: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          _clientIdField(context),
-          const SizedBox(height: 8),
-          _signInButton(context),
-        ],
-      ),
-    );
-  }
-
-  Widget _clientIdField(BuildContext context) {
-    if (isCupertinoPlatform(context)) {
-      return CupertinoTextField(
-        controller: _clientIdController,
-        placeholder: t.sync_client_id_hint,
-        clearButtonMode: OverlayVisibilityMode.editing,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      );
-    }
-    return TextField(
-      controller: _clientIdController,
-      decoration: InputDecoration(
-        labelText: t.sync_client_id,
-        hintText: t.sync_client_id_hint,
-        border: const OutlineInputBorder(),
-      ),
+      trailing: _signInButton(context),
     );
   }
 
@@ -251,12 +240,9 @@ class _SyncAccountWidgetState extends State<_SyncAccountWidget> {
   }
 
   Future<void> _signIn() async {
-    final clientId = _clientIdController.text.trim();
-    if (clientId.isEmpty) return;
-
     setState(() => _isLoading = true);
     try {
-      await GoogleDriveAuth.instance.authenticate(clientId);
+      await GoogleDriveAuth.instance.authenticate();
       await _checkAuth();
     } on GoogleDriveAuthError catch (e) {
       if (mounted) {
@@ -288,6 +274,7 @@ class _SyncOptionsWidget extends StatefulWidget {
 }
 
 class _SyncOptionsWidgetState extends State<_SyncOptionsWidget> {
+  late final SyncRepository _repo;
   String _syncMode = 'merge';
   bool _syncStats = true;
   bool _syncAudioBook = true;
@@ -296,14 +283,14 @@ class _SyncOptionsWidgetState extends State<_SyncOptionsWidget> {
   @override
   void initState() {
     super.initState();
+    _repo = SyncRepository(widget.settingsContext.appModel.database);
     _loadValues();
   }
 
   Future<void> _loadValues() async {
-    final repo = SyncRepository(widget.settingsContext.appModel.database);
-    final mode = await repo.getSyncMode();
-    final stats = await repo.isSyncStatsEnabled();
-    final audio = await repo.isSyncAudioBookEnabled();
+    final mode = await _repo.getSyncMode();
+    final stats = await _repo.isSyncStatsEnabled();
+    final audio = await _repo.isSyncAudioBookEnabled();
     if (mounted) {
       setState(() {
         _syncMode = mode;
@@ -337,9 +324,7 @@ class _SyncOptionsWidgetState extends State<_SyncOptionsWidget> {
           selected: _syncMode,
           onChanged: (String value) async {
             setState(() => _syncMode = value);
-            final repo =
-                SyncRepository(widget.settingsContext.appModel.database);
-            await repo.setSyncMode(value);
+            await _repo.setSyncMode(value);
           },
         ),
         AdaptiveSettingsSwitchRow(
@@ -348,9 +333,7 @@ class _SyncOptionsWidgetState extends State<_SyncOptionsWidget> {
           value: _syncStats,
           onChanged: (bool value) async {
             setState(() => _syncStats = value);
-            final repo =
-                SyncRepository(widget.settingsContext.appModel.database);
-            await repo.setSyncStatsEnabled(value);
+            await _repo.setSyncStatsEnabled(value);
           },
         ),
         AdaptiveSettingsSwitchRow(
@@ -359,9 +342,7 @@ class _SyncOptionsWidgetState extends State<_SyncOptionsWidget> {
           value: _syncAudioBook,
           onChanged: (bool value) async {
             setState(() => _syncAudioBook = value);
-            final repo =
-                SyncRepository(widget.settingsContext.appModel.database);
-            await repo.setSyncAudioBookEnabled(value);
+            await _repo.setSyncAudioBookEnabled(value);
           },
         ),
       ],
