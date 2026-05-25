@@ -9,6 +9,10 @@ import 'package:hibiki/src/utils/spacing.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 
 class HotPopupTestAppModel extends AppModel {
+  HotPopupTestAppModel({this.lowMemory = false});
+
+  final bool lowMemory;
+
   @override
   int get maximumTerms => 10;
 
@@ -19,7 +23,7 @@ class HotPopupTestAppModel extends AppModel {
   List<String> get enabledAudioSources => const <String>[];
 
   @override
-  bool get lowMemoryMode => false;
+  bool get lowMemoryMode => lowMemory;
 
   @override
   void addToDictionaryHistory({required DictionarySearchResult result}) {}
@@ -134,5 +138,27 @@ void main() {
     final DictionaryPopupLayer secondLayer =
         tester.widget(find.byType(DictionaryPopupLayer));
     expect(secondLayer.webViewKey, same(firstLayer.webViewKey));
+  });
+
+  testWidgets('low memory mode disposes top-level popup on close', (
+    WidgetTester tester,
+  ) async {
+    final appModel = HotPopupTestAppModel(lowMemory: true);
+    final hostKey = GlobalKey<HotPopupHostPageState>();
+
+    await tester.pumpWidget(
+      buildHotPopupTestApp(appModel: appModel, hostKey: hostKey),
+    );
+
+    await hostKey.currentState!.search('first');
+    await tester.pump();
+
+    expect(find.byType(DictionaryPopupLayer), findsOneWidget);
+
+    hostKey.currentState!.clearDictionaryResult();
+    await tester.pump();
+
+    expect(find.byType(DictionaryPopupLayer), findsNothing);
+    expect(hostKey.currentState!.dictionaryPopupShown, isFalse);
   });
 }
