@@ -411,12 +411,10 @@ class SyncManager {
               dateKey: r.dateKey,
               charactersRead: r.charactersRead,
               readingTimeSec: r.readingTimeMs / 1000.0,
-              minReadingSpeed: _computeSpeed(r.charactersRead, r.readingTimeMs),
-              altMinReadingSpeed:
-                  _computeSpeed(r.charactersRead, r.readingTimeMs),
-              lastReadingSpeed:
-                  _computeSpeed(r.charactersRead, r.readingTimeMs),
-              maxReadingSpeed: _computeSpeed(r.charactersRead, r.readingTimeMs),
+              minReadingSpeed: 0,
+              altMinReadingSpeed: 0,
+              lastReadingSpeed: 0,
+              maxReadingSpeed: 0,
               lastStatisticModified: r.lastStatisticModified,
             ))
         .toList();
@@ -432,11 +430,6 @@ class SyncManager {
         lastStatisticModified: Value(stat.lastStatisticModified),
       ));
     }
-  }
-
-  static int _computeSpeed(int chars, int timeMs) {
-    if (timeMs <= 0) return 0;
-    return (3600000.0 * chars / timeMs).ceil();
   }
 
   // ── Drive cache persistence ───────────────────────────────────────
