@@ -1,6 +1,8 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:dio/dio.dart';
+import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 
 typedef LocalAudioQuery = Future<Map<String, dynamic>?> Function(
@@ -95,7 +97,22 @@ class WordAudioResolver {
           .where((value) => value.isNotEmpty)
           .toList(growable: false);
     } catch (e, stack) {
-      ErrorLogService.instance.log('WordAudioResolver.resolve', e, stack);
+      final host = Uri.tryParse(url)?.host ?? url;
+      final String detail;
+      if (e is DioError) {
+        final inner = e.error;
+        if (inner is SocketException) {
+          detail = t.audio_source_dns_error(host: host);
+        } else if (e.type == DioErrorType.connectionTimeout) {
+          detail = t.audio_source_timeout(host: host);
+        } else {
+          detail =
+              t.audio_source_request_error(detail: e.message ?? e.type.name);
+        }
+      } else {
+        detail = t.audio_source_error(detail: '$e');
+      }
+      ErrorLogService.instance.log(detail, e, stack);
       return const <String>[];
     }
   }

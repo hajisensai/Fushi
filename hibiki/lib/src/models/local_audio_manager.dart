@@ -125,8 +125,7 @@ class LocalAudioManager {
   Future<void> toggleLocalAudio(VoidCallback notifyListeners) async {
     await _prefsRepo.setPref('local_audio_enabled', !localAudioEnabled);
     if (localAudioEnabled) {
-      final paths =
-          entries.where((e) => e.enabled).map((e) => e.path).toList();
+      final paths = entries.where((e) => e.enabled).map((e) => e.path).toList();
       if (paths.isNotEmpty) {
         TtsChannel.instance.setLocalAudioDbs(paths);
       }

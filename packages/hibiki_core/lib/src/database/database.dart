@@ -80,42 +80,42 @@ class HibikiDatabase extends _$HibikiDatabase {
           await indexIfTableExists(
             'bookmarks',
             'CREATE INDEX IF NOT EXISTS idx_bookmarks_ttu_book_id_created '
-            'ON bookmarks (ttu_book_id, created_at DESC)',
+                'ON bookmarks (ttu_book_id, created_at DESC)',
           );
           await indexIfTableExists(
             'media_items',
             'CREATE INDEX IF NOT EXISTS idx_media_items_type '
-            'ON media_items (media_type_identifier)',
+                'ON media_items (media_type_identifier)',
           );
           await indexIfTableExists(
             'media_items',
             'CREATE INDEX IF NOT EXISTS idx_media_items_source '
-            'ON media_items (media_source_identifier)',
+                'ON media_items (media_source_identifier)',
           );
           await indexIfTableExists(
             'audio_cues',
             'CREATE INDEX IF NOT EXISTS idx_audio_cues_book_uid '
-            'ON audio_cues (book_uid)',
+                'ON audio_cues (book_uid)',
           );
           await indexIfTableExists(
             'search_history_items',
             'CREATE INDEX IF NOT EXISTS idx_search_history_key '
-            'ON search_history_items (history_key)',
+                'ON search_history_items (history_key)',
           );
           await indexIfTableExists(
             'audiobooks',
             'CREATE INDEX IF NOT EXISTS idx_audiobooks_book_uid '
-            'ON audiobooks (book_uid)',
+                'ON audiobooks (book_uid)',
           );
           await indexIfTableExists(
             'srt_books',
             'CREATE INDEX IF NOT EXISTS idx_srt_books_ttu_book_id '
-            'ON srt_books (ttu_book_id)',
+                'ON srt_books (ttu_book_id)',
           );
           await indexIfTableExists(
             'book_tag_mappings',
             'CREATE INDEX IF NOT EXISTS idx_book_tag_mappings_book_id '
-            'ON book_tag_mappings (book_id)',
+                'ON book_tag_mappings (book_id)',
           );
         },
         onUpgrade: (m, from, to) async {

@@ -192,6 +192,8 @@ img.block-img {
   display: flex !important;
   justify-content: center !important;
   align-items: center !important;
+  margin: 0 !important;
+  padding: 0 !important;
   break-inside: avoid !important;
   -webkit-column-break-inside: avoid !important;
 }

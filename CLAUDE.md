@@ -50,7 +50,7 @@
 | EPUB | `.codex-test/fixtures/kagami/かがみの孤城 (辻村深月) (Z-Library).epub` |
 | 音频 | `.codex-test/fixtures/kagami/かがみの孤城 [audiobook.jp 244083].m4b` |
 | 字幕 | `.codex-test/fixtures/kagami/かがみの孤城 [audiobook.jp 244083].srt` |
-| 字典 | `D:\辞典\` 目录下任意 `.zip`，推荐用体积小的先跑通流程 |
+| 字典 | `D:\辞典\` 目录下任意 `.zip` |
 
 `D:\辞典\` 可用字典清单：
 - `明镜日汉双解词典_Yomitan 1.4.4.zip`

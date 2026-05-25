@@ -32,7 +32,8 @@ class DictionaryImportManager {
 
       if (fileNames.isEmpty) return _formats['yomichan']!;
 
-      if (fileNames.any((f) => f == 'index.json' || f.endsWith('/index.json'))) {
+      if (fileNames
+          .any((f) => f == 'index.json' || f.endsWith('/index.json'))) {
         return _formats['yomichan']!;
       }
       if (fileNames.any((f) => f.endsWith('.mdx') || f.endsWith('.mdd'))) {
@@ -164,8 +165,7 @@ class DictionaryImportManager {
 
         final order = _nextOrder();
         final innerDataDir = Directory(path.join(tempOutputDir.path, name));
-        final finalDir =
-            Directory(path.join(_resourceDirectory.path, name));
+        final finalDir = Directory(path.join(_resourceDirectory.path, name));
         _validatePath(finalDir);
         if (finalDir.existsSync()) finalDir.deleteSync(recursive: true);
 
@@ -246,8 +246,7 @@ class DictionaryImportManager {
 
       final order = _nextOrder();
       final innerDataDir = Directory(path.join(tempOutputDir.path, name));
-      final finalDir =
-          Directory(path.join(_resourceDirectory.path, name));
+      final finalDir = Directory(path.join(_resourceDirectory.path, name));
       _validatePath(finalDir);
       if (finalDir.existsSync()) finalDir.deleteSync(recursive: true);
 
@@ -262,8 +261,7 @@ class DictionaryImportManager {
 
       for (final css in cssFiles) {
         if (css.existsSync()) {
-          css.copySync(
-              path.join(finalDir.path, path.basename(css.path)));
+          css.copySync(path.join(finalDir.path, path.basename(css.path)));
         }
       }
       for (final fontDir in fontDirs) {

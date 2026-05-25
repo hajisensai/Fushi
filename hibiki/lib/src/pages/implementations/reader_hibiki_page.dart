@@ -3936,8 +3936,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
     final List<FavoriteSentence> all =
         await FavoriteSentenceRepository(appModel.database).getAll();
     final List<FavoriteSentence> chapterFavs = all
-        .where(
-            (s) => s.ttuBookId == widget.bookId && s.sectionIndex == section)
+        .where((s) => s.ttuBookId == widget.bookId && s.sectionIndex == section)
         .toList();
     await HighlightBridge.applyHighlights(_controller!, chapterFavs,
         backgroundHex: _readerBackgroundHex,

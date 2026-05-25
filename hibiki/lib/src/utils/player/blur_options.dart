@@ -147,8 +147,7 @@ class _ResizeableWidgetState extends ConsumerState<ResizeableWidget> {
         if (!options.visible) return const SizedBox.shrink();
 
         if (options.top == -1 || options.left == -1) {
-          final Rect defaultRect =
-              defaultBlurRect(MediaQuery.sizeOf(context));
+          final Rect defaultRect = defaultBlurRect(MediaQuery.sizeOf(context));
           _geo.value = _BlurGeometry(
             height: defaultRect.height,
             width: defaultRect.width,

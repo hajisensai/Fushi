@@ -60,8 +60,7 @@ void main() {
 
     test('directories are exposed via getters', () {
       expect(manager.exportDirectory.path, equals(exportDir.path));
-      expect(
-          manager.alternateExportDirectory.path, equals(altDir.path));
+      expect(manager.alternateExportDirectory.path, equals(altDir.path));
     });
   });
 }

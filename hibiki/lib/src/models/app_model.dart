@@ -470,8 +470,7 @@ class AppModel with ChangeNotifier {
 
   // ── audio & media streams (delegated to AudioController) ────────────
 
-  Stream<void> get currentMediaPauseStream =>
-      audioCtrl.currentMediaPauseStream;
+  Stream<void> get currentMediaPauseStream => audioCtrl.currentMediaPauseStream;
 
   Stream<void> get playPauseHeadsetActionStream =>
       audioCtrl.playPauseHeadsetActionStream;
@@ -2400,8 +2399,7 @@ class AppModel with ChangeNotifier {
 
   // ── local audio DB (delegated to LocalAudioManager) ─────────────────
 
-  List<LocalAudioDbEntry> get localAudioDbs =>
-      _localAudioManager.entries;
+  List<LocalAudioDbEntry> get localAudioDbs => _localAudioManager.entries;
 
   Future<void> setLocalAudioDbs(List<LocalAudioDbEntry> dbs) =>
       _localAudioManager.setEntries(dbs);
