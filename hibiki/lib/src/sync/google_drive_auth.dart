@@ -1,4 +1,6 @@
+import 'package:extension_google_sign_in_as_googleapis_auth/extension_google_sign_in_as_googleapis_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:googleapis_auth/googleapis_auth.dart' as auth;
 
 class GoogleDriveAuthError implements Exception {
   GoogleDriveAuthError(this.message);
@@ -22,15 +24,10 @@ class GoogleDriveAuth {
       _googleSignIn.currentUser?.email ??
       (await _googleSignIn.signInSilently())?.email;
 
-  Future<String> getAccessToken() async {
-    final account =
-        _googleSignIn.currentUser ?? await _googleSignIn.signInSilently();
-    if (account == null) throw GoogleDriveAuthError('Not authenticated');
-    final auth = await account.authentication;
-    if (auth.accessToken == null) {
-      throw GoogleDriveAuthError('No access token');
-    }
-    return auth.accessToken!;
+  Future<auth.AuthClient> getAuthClient() async {
+    final client = await _googleSignIn.authenticatedClient();
+    if (client == null) throw GoogleDriveAuthError('Not authenticated');
+    return client;
   }
 
   Future<void> authenticate() async {
@@ -38,18 +35,6 @@ class GoogleDriveAuth {
     if (account == null) {
       throw GoogleDriveAuthError('Sign-in cancelled');
     }
-  }
-
-  Future<String> refreshAccessToken() async {
-    final account = _googleSignIn.currentUser;
-    if (account == null) throw GoogleDriveAuthError('Not authenticated');
-    await account.clearAuthCache();
-    final auth = await account.authentication;
-    if (auth.accessToken == null) {
-      await signOut();
-      throw GoogleDriveAuthError('Token refresh failed');
-    }
-    return auth.accessToken!;
   }
 
   Future<void> signOut() async {
