@@ -4,6 +4,7 @@ import 'package:hibiki/src/pages/implementations/book_css_editor_page.dart';
 import 'package:hibiki/src/settings/settings_actions.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
+import 'package:hibiki/src/sync/sync_settings_schema.dart';
 import 'package:hibiki/utils.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -13,6 +14,7 @@ List<SettingsDestination> buildSettingsSchema(SettingsContext context) {
     _readingDestination(),
     _audiobookDestination(),
     _dictionaryAndCardsDestination(),
+    buildSyncDestination(),
     _systemDestination(),
     _diagnosticsDestination(),
   ];

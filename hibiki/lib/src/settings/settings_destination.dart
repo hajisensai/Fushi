@@ -8,6 +8,7 @@ enum SettingsDestinationId {
   reading,
   audiobook,
   dictionaryAndCards,
+  sync,
   system,
   diagnostics,
 }
