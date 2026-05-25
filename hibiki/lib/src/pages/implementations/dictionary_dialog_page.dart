@@ -39,6 +39,13 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
 
   @override
   Widget build(BuildContext context) {
+    if (isCupertinoPlatform(context)) {
+      return DictionaryManagerDialogFrame(
+        content: buildContent(),
+        actions: actions,
+      );
+    }
+
     return adaptiveAlertDialog(
       context: context,
       contentPadding: MediaQuery.of(context).orientation == Orientation.portrait
@@ -1084,6 +1091,60 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
           ],
         ),
       ],
+    );
+  }
+}
+
+@visibleForTesting
+class DictionaryManagerDialogFrame extends StatelessWidget {
+  const DictionaryManagerDialogFrame({
+    required this.content,
+    required this.actions,
+    super.key,
+  });
+
+  final Widget content;
+  final List<Widget> actions;
+
+  @override
+  Widget build(BuildContext context) {
+    final Size screenSize = MediaQuery.sizeOf(context);
+    final EdgeInsets mediaPadding = MediaQuery.paddingOf(context);
+    final double maxHeight =
+        (screenSize.height - mediaPadding.vertical - 48).clamp(360.0, 720.0);
+    final double maxWidth = (screenSize.width - 48).clamp(320.0, 640.0);
+
+    return Dialog(
+      clipBehavior: Clip.antiAlias,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: maxWidth,
+          maxHeight: maxHeight,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+                child: content,
+              ),
+            ),
+            const HibikiDivider(),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: actions,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
