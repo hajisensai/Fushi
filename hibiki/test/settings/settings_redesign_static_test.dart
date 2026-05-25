@@ -130,6 +130,22 @@ void main() {
     expect(schemaSource, isNot(contains('DictionarySettingsDialogPage')));
   });
 
+  test('sync backup settings use standard schema rows for options', () {
+    final String source =
+        File('lib/src/sync/sync_settings_schema.dart').readAsStringSync();
+
+    expect(
+        source,
+        contains(
+            "SettingsSegmentedItem<String>(\n            id: 'sync.mode'"));
+    expect(source,
+        contains("SettingsSwitchItem(\n            id: 'sync.statistics'"));
+    expect(source,
+        contains("SettingsSwitchItem(\n            id: 'sync.audiobook'"));
+    expect(source, isNot(contains("id: 'sync.options'")));
+    expect(source, isNot(contains('class _SyncOptionsWidget')));
+  });
+
   test('settings tab does not duplicate schema-level header actions', () {
     final String source =
         File('lib/src/pages/implementations/home_page.dart').readAsStringSync();

@@ -9,6 +9,8 @@ import 'package:hibiki/src/settings/settings_destination.dart';
 import 'package:hibiki/src/settings/settings_renderer.dart';
 import 'package:hibiki/src/settings/settings_schema.dart';
 import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart';
+import 'package:hibiki/src/utils/misc/debug_log_service.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/utils.dart';
 
 class SettingsHomePage extends BasePage {
@@ -26,6 +28,24 @@ class SettingsHomePage extends BasePage {
 class _SettingsHomePageState extends BasePageState<SettingsHomePage> {
   SettingsDestinationId _selectedDestinationId =
       SettingsDestinationId.readingDisplay;
+
+  @override
+  void initState() {
+    super.initState();
+    ErrorLogService.instance.addListener(_onLogChanged);
+    DebugLogService.instance.addListener(_onLogChanged);
+  }
+
+  @override
+  void dispose() {
+    ErrorLogService.instance.removeListener(_onLogChanged);
+    DebugLogService.instance.removeListener(_onLogChanged);
+    super.dispose();
+  }
+
+  void _onLogChanged() {
+    if (mounted) setState(() {});
+  }
 
   @override
   Widget build(BuildContext context) {

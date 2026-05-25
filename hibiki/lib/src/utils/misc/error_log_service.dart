@@ -27,7 +27,7 @@ class ErrorLogEntry {
   }
 }
 
-class ErrorLogService {
+class ErrorLogService extends ChangeNotifier {
   ErrorLogService._();
   static final instance = ErrorLogService._();
 
@@ -72,6 +72,7 @@ class ErrorLogService {
     if (_entries.length > _maxEntries) {
       _entries.removeAt(0);
     }
+    notifyListeners();
     _appendToFile(entry);
   }
 
@@ -115,6 +116,7 @@ class ErrorLogService {
   Future<void> clear() async {
     _entries.clear();
     _persistedLog = '';
+    notifyListeners();
     try {
       await _logFile?.writeAsString('');
     } catch (e) {

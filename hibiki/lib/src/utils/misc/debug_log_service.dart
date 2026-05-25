@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:hibiki/utils.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-class DebugLogService {
+class DebugLogService extends ChangeNotifier {
   DebugLogService._();
   static final DebugLogService instance = DebugLogService._();
 
@@ -30,6 +30,7 @@ class DebugLogService {
     if (!value) {
       _entries.clear();
     }
+    notifyListeners();
   }
 
   void _installHook() {
@@ -48,6 +49,7 @@ class DebugLogService {
     if (_entries.length > _maxEntries) {
       _entries.removeRange(0, _entries.length - _maxEntries);
     }
+    notifyListeners();
   }
 
   String getFullLog() {
@@ -65,6 +67,7 @@ class DebugLogService {
 
   void clear() {
     _entries.clear();
+    notifyListeners();
   }
 }
 
