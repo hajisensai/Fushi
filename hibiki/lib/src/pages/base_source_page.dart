@@ -72,7 +72,7 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
 
   int _searchGeneration = 0;
 
-  bool get isDictionaryShown => _popupStack.value.isNotEmpty;
+  bool get isDictionaryShown => _hasVisiblePopup(_popupStack.value);
 
   Widget? buildPopupAudioControls() => null;
 
@@ -128,17 +128,18 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
 
       appModel.addToDictionaryHistory(result: dictionaryResult);
 
-      final item = _PopupStackItem(
+      final item = _buildSearchPopupItem(
         result: dictionaryResult,
         selectionRect: selectionRect,
         searchTerm: searchTerm,
+        visible: !deferDisplay,
       );
 
       if (deferDisplay) {
         _deferredPopupItem = item;
         _deferredGeneration = gen;
       } else {
-        _popupStack.value = [..._popupStack.value, item];
+        _showPopupItem(item);
       }
 
       debugPrint(
@@ -178,7 +179,8 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
       if (selectionRect != null) {
         item.selectionRect = selectionRect;
       }
-      _popupStack.value = [..._popupStack.value, item];
+      item.visible = true;
+      _showPopupItem(item);
     }
     if (_searchGeneration == gen) {
       _isSearchingNotifier.value = false;
@@ -249,27 +251,35 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
           final stack = _popupStack.value;
           final searching = _isSearchingNotifier.value;
           if (stack.isEmpty && !searching) return const SizedBox.shrink();
+          final hasVisiblePopup = _hasVisiblePopup(stack);
+          final visibleTopIndex = _lastVisiblePopupIndex(stack);
 
           final showLoadingPlaceholder =
-              searching && stack.isEmpty && _pendingSelectionRect != null;
+              searching && !hasVisiblePopup && _pendingSelectionRect != null;
 
           return LayoutBuilder(
             builder: (context, constraints) {
               final screen = Size(constraints.maxWidth, constraints.maxHeight);
               return Stack(
                 children: [
-                  Positioned.fill(
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.translucent,
-                      onTap: clearDictionaryResult,
-                      child: Container(
-                        color: Colors.transparent,
+                  if (hasVisiblePopup || searching)
+                    Positioned.fill(
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.translucent,
+                        onTap: clearDictionaryResult,
+                        child: Container(
+                          color: Colors.transparent,
+                        ),
                       ),
                     ),
-                  ),
                   if (showLoadingPlaceholder) _buildLoadingPlaceholder(screen),
                   for (int i = 0; i < stack.length; i++)
-                    _buildPopupLayer(stack, i, screen),
+                    _buildPopupLayer(
+                      stack,
+                      i,
+                      screen,
+                      isTop: i == visibleTopIndex,
+                    ),
                 ],
               );
             },
@@ -314,57 +324,69 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
     );
   }
 
-  Widget _buildPopupLayer(List<_PopupStackItem> stack, int index, Size screen) {
+  Widget _buildPopupLayer(
+    List<_PopupStackItem> stack,
+    int index,
+    Size screen, {
+    required bool isTop,
+  }) {
     final item = stack[index];
     final pos = _calculatePopupPosition(item.selectionRect, screen);
     final isDark = (appModel.overrideDictionaryTheme ?? theme).brightness ==
         Brightness.dark;
-    final isTop = index == stack.length - 1;
 
     return Positioned(
       left: pos.left,
       top: pos.top,
       width: pos.width,
       height: pos.height,
-      child: DictionaryPopupLayer(
-        result: item.result,
-        webViewKey: item.webViewKey,
-        isDark: isDark,
-        overrideFillColor: appModel.overrideDictionaryColor,
-        onDismiss: () => _dismissPopupAt(index),
-        onTapOutside: clearDictionaryResult,
-        headerWidget: index == 0 ? buildPopupAudioControls() : null,
-        overlayWidget: isTop ? buildDictionaryLoading() : null,
-        onTextSelected: (text, localRect) async {
-          final parentPos = _calculatePopupPosition(item.selectionRect, screen);
-          final childRect = localRect == Rect.zero
-              ? item.selectionRect
-              : localRect.shift(Offset(parentPos.left, parentPos.top));
-          _popupStack.value = _popupStack.value.sublist(0, index + 1);
-          final count = await searchDictionaryResult(
-            searchTerm: text,
-            selectionRect: childRect,
-          );
-          if (count > 0) {
-            item.webViewKey.currentState?.highlightSelection(count);
-          }
-        },
-        onLinkClick: (query, localRect) async {
-          final parentPos = _calculatePopupPosition(item.selectionRect, screen);
-          final childRect = localRect == Rect.zero
-              ? item.selectionRect
-              : localRect.shift(Offset(parentPos.left, parentPos.top));
-          _popupStack.value = _popupStack.value.sublist(0, index + 1);
-          await searchDictionaryResult(
-            searchTerm: query,
-            selectionRect: childRect,
-          );
-        },
-        onMineEntry: onMineFromPopup,
-        onDuplicateCheck: (expression, reading) async {
-          final repo = ref.read(ankiRepositoryProvider);
-          return repo.isDuplicate(expression, reading);
-        },
+      child: Visibility(
+        visible: item.visible,
+        maintainState: true,
+        maintainAnimation: true,
+        maintainSize: true,
+        child: DictionaryPopupLayer(
+          result: item.result,
+          webViewKey: item.webViewKey,
+          isDark: isDark,
+          overrideFillColor: appModel.overrideDictionaryColor,
+          onDismiss: () => _dismissPopupAt(index),
+          onTapOutside: clearDictionaryResult,
+          headerWidget: index == 0 ? buildPopupAudioControls() : null,
+          overlayWidget: isTop ? buildDictionaryLoading() : null,
+          onTextSelected: (text, localRect) async {
+            final parentPos =
+                _calculatePopupPosition(item.selectionRect, screen);
+            final childRect = localRect == Rect.zero
+                ? item.selectionRect
+                : localRect.shift(Offset(parentPos.left, parentPos.top));
+            _popupStack.value = _popupStack.value.sublist(0, index + 1);
+            final count = await searchDictionaryResult(
+              searchTerm: text,
+              selectionRect: childRect,
+            );
+            if (count > 0) {
+              item.webViewKey.currentState?.highlightSelection(count);
+            }
+          },
+          onLinkClick: (query, localRect) async {
+            final parentPos =
+                _calculatePopupPosition(item.selectionRect, screen);
+            final childRect = localRect == Rect.zero
+                ? item.selectionRect
+                : localRect.shift(Offset(parentPos.left, parentPos.top));
+            _popupStack.value = _popupStack.value.sublist(0, index + 1);
+            await searchDictionaryResult(
+              searchTerm: query,
+              selectionRect: childRect,
+            );
+          },
+          onMineEntry: onMineFromPopup,
+          onDuplicateCheck: (expression, reading) async {
+            final repo = ref.read(ankiRepositoryProvider);
+            return repo.isDuplicate(expression, reading);
+          },
+        ),
       ),
     );
   }
@@ -379,7 +401,16 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
       parent.webViewKey.currentState?.clearSelection();
     }
     if (index == 0) {
-      _popupStack.value = [];
+      if (_popupStack.value.isNotEmpty && !appModel.lowMemoryMode) {
+        final top = _popupStack.value.first;
+        top
+          ..visible = false
+          ..selectionRect = Rect.zero;
+        top.webViewKey.currentState?.clearSelection();
+        _popupStack.value = [top];
+      } else {
+        _popupStack.value = [];
+      }
       appModel.currentMediaSource?.clearCurrentSentence();
       appModel.currentMediaSource?.clearExtraData();
       onAllPopupsDismissed();
@@ -404,7 +435,7 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
     );
   }
 
-  bool get dictionaryPopupShown => _popupStack.value.isNotEmpty;
+  bool get dictionaryPopupShown => _hasVisiblePopup(_popupStack.value);
 
   void onDictionaryDismiss() {
     clearDictionaryResult();
@@ -455,7 +486,64 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
   }
 
   DictionarySearchResult? get currentResult =>
-      _popupStack.value.isNotEmpty ? _popupStack.value.last.result : null;
+      _lastVisiblePopup(_popupStack.value)?.result;
+
+  _PopupStackItem _buildSearchPopupItem({
+    required DictionarySearchResult result,
+    required Rect selectionRect,
+    required String searchTerm,
+    required bool visible,
+  }) {
+    final reusable = _reusableHiddenTopPopup();
+    if (reusable == null) {
+      return _PopupStackItem(
+        result: result,
+        selectionRect: selectionRect,
+        searchTerm: searchTerm,
+        visible: visible,
+      );
+    }
+    reusable
+      ..result = result
+      ..selectionRect = selectionRect
+      ..searchTerm = searchTerm
+      ..visible = visible;
+    return reusable;
+  }
+
+  void _showPopupItem(_PopupStackItem item) {
+    final stack = _popupStack.value;
+    if (stack.contains(item)) {
+      _popupStack.value = List<_PopupStackItem>.of(stack);
+    } else {
+      _popupStack.value = [...stack, item];
+    }
+  }
+
+  _PopupStackItem? _reusableHiddenTopPopup() {
+    final stack = _popupStack.value;
+    if (appModel.lowMemoryMode || stack.length != 1 || stack.first.visible) {
+      return null;
+    }
+    return stack.first;
+  }
+
+  bool _hasVisiblePopup(List<_PopupStackItem> stack) {
+    return stack.any((item) => item.visible);
+  }
+
+  int _lastVisiblePopupIndex(List<_PopupStackItem> stack) {
+    for (int i = stack.length - 1; i >= 0; i--) {
+      if (stack[i].visible) return i;
+    }
+    return -1;
+  }
+
+  _PopupStackItem? _lastVisiblePopup(List<_PopupStackItem> stack) {
+    final index = _lastVisiblePopupIndex(stack);
+    if (index < 0) return null;
+    return stack[index];
+  }
 
   /// Action upon selecting the Search option.
   @override
@@ -481,11 +569,13 @@ class _PopupStackItem {
     required this.result,
     required this.selectionRect,
     required this.searchTerm,
+    this.visible = true,
   });
 
-  final DictionarySearchResult result;
+  DictionarySearchResult result;
   Rect selectionRect;
-  final String searchTerm;
+  String searchTerm;
+  bool visible;
   final GlobalKey<DictionaryPopupWebViewState> webViewKey =
       GlobalKey<DictionaryPopupWebViewState>();
 }

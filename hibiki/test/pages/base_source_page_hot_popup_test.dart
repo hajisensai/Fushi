@@ -19,6 +19,9 @@ class HotPopupTestAppModel extends AppModel {
   List<String> get enabledAudioSources => const <String>[];
 
   @override
+  bool get lowMemoryMode => false;
+
+  @override
   void addToDictionaryHistory({required DictionarySearchResult result}) {}
 
   @override
