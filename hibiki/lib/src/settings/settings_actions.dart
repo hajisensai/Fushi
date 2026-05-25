@@ -89,6 +89,7 @@ Widget buildDesignSystemSelector(SettingsContext settingsContext) {
   return AdaptiveSettingsSegmentedRow<String>(
     title: t.design_system_label,
     subtitle: t.design_system_hint,
+    icon: Icons.devices_outlined,
     segments: <ButtonSegment<String>>[
       ButtonSegment<String>(
         value: 'auto',
@@ -118,60 +119,54 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
   final Color systemColor =
       appModel.systemPrimaryColor ?? const Color(0xFF1F4959);
 
-  return Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+  return AdaptiveSettingsRow(
+    title: t.ttu_theme,
+    icon: Icons.color_lens_outlined,
+    controlBelow: true,
+    trailing: Wrap(
+      spacing: 10,
+      runSpacing: 10,
       children: <Widget>[
-        Text(t.ttu_theme),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          children: <Widget>[
-            _ColorSwatch(
-              color: systemColor,
-              selected: appModel.appThemeKey == 'system-theme',
-              overlay: Icon(
-                Icons.auto_awesome_outlined,
-                size: 18,
-                color: _onSwatch(systemColor).withValues(alpha: 0.72),
-              ),
+        _ColorSwatch(
+          color: systemColor,
+          selected: appModel.appThemeKey == 'system-theme',
+          overlay: Icon(
+            Icons.auto_awesome_outlined,
+            size: 18,
+            color: _onSwatch(systemColor).withValues(alpha: 0.72),
+          ),
+          onTap: () async {
+            await appModel.setAppThemeKey('system-theme');
+            notifyReaderSettingsChanged(settingsContext);
+          },
+        ),
+        ...AppModel.themePresets.entries.map(
+          (MapEntry<String, ({Color seed, Brightness brightness})> entry) {
+            return _ColorSwatch(
+              color: entry.value.seed,
+              selected: appModel.appThemeKey == entry.key,
               onTap: () async {
-                await appModel.setAppThemeKey('system-theme');
+                await appModel.setAppThemeKey(entry.key);
                 notifyReaderSettingsChanged(settingsContext);
               },
-            ),
-            ...AppModel.themePresets.entries.map(
-              (MapEntry<String, ({Color seed, Brightness brightness})> entry) {
-                return _ColorSwatch(
-                  color: entry.value.seed,
-                  selected: appModel.appThemeKey == entry.key,
-                  onTap: () async {
-                    await appModel.setAppThemeKey(entry.key);
-                    notifyReaderSettingsChanged(settingsContext);
-                  },
-                );
-              },
-            ),
-            _ColorSwatch(
-              color: appModel.customThemeSeed,
-              selected: appModel.appThemeKey == 'custom-theme',
-              overlay: Icon(
-                Icons.palette_outlined,
-                size: 18,
-                color:
-                    _onSwatch(appModel.customThemeSeed).withValues(alpha: 0.72),
-              ),
-              onTap: () async {
-                await pushSettingsPage(
-                  settingsContext,
-                  (_) => const CustomThemePage(),
-                );
-                notifyReaderSettingsChanged(settingsContext);
-              },
-            ),
-          ],
+            );
+          },
+        ),
+        _ColorSwatch(
+          color: appModel.customThemeSeed,
+          selected: appModel.appThemeKey == 'custom-theme',
+          overlay: Icon(
+            Icons.palette_outlined,
+            size: 18,
+            color: _onSwatch(appModel.customThemeSeed).withValues(alpha: 0.72),
+          ),
+          onTap: () async {
+            await pushSettingsPage(
+              settingsContext,
+              (_) => const CustomThemePage(),
+            );
+            notifyReaderSettingsChanged(settingsContext);
+          },
         ),
       ],
     ),
@@ -181,6 +176,7 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
 Widget buildBrightnessSelector(SettingsContext settingsContext) {
   return AdaptiveSettingsSegmentedRow<String>(
     title: t.dark_mode,
+    icon: Icons.contrast_outlined,
     segments: const <ButtonSegment<String>>[
       ButtonSegment<String>(
         value: 'light',
