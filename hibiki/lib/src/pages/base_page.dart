@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:spaces/spaces.dart';
+import 'package:hibiki/src/utils/spacing.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/utils.dart';
 

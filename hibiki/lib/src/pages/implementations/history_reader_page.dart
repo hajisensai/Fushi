@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:spaces/spaces.dart';
+import 'package:hibiki/src/utils/spacing.dart';
 import 'package:transparent_image/transparent_image.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';

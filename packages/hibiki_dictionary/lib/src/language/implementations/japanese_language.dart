@@ -4,7 +4,7 @@ import 'dart:collection';
 import 'package:flutter/material.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:kana_kit/kana_kit.dart';
-import 'package:ruby_text/ruby_text.dart';
+import 'package:hibiki_dictionary/src/language/ruby_text.dart';
 
 import '../../engine/hoshidicts.dart';
 import '../../formats/yomichan_dictionary_format.dart';

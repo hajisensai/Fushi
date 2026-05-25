@@ -3,7 +3,7 @@ import 'package:change_notifier_builder/change_notifier_builder.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:progress_indicators/progress_indicators.dart';
-import 'package:spaces/spaces.dart';
+import 'package:hibiki/src/utils/spacing.dart';
 import 'package:transparent_image/transparent_image.dart';
 import 'package:hibiki/creator.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';

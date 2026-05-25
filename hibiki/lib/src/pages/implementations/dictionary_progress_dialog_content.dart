@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hibiki/src/utils/adaptive/adaptive_widgets.dart';
-import 'package:spaces/spaces.dart';
+import 'package:hibiki/src/utils/spacing.dart';
 
 class DictionaryProgressDialogContent extends StatelessWidget {
   const DictionaryProgressDialogContent({

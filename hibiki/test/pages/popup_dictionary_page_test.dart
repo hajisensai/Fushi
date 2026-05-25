@@ -9,7 +9,7 @@ import 'package:hibiki/models.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:hibiki/src/pages/implementations/popup_dictionary_page.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
-import 'package:spaces/spaces.dart';
+import 'package:hibiki/src/utils/spacing.dart';
 
 class PopupTestAppModel extends AppModel {
   @override

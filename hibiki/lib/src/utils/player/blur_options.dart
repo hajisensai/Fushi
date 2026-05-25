@@ -1,6 +1,6 @@
 import 'dart:async';
+import 'dart:ui';
 
-import 'package:blurrycontainer/blurrycontainer.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/models.dart';
@@ -170,13 +170,18 @@ class _ResizeableWidgetState extends ConsumerState<ResizeableWidget> {
                   left: g.left,
                   child: GestureDetector(
                     onTap: _showAndHide,
-                    child: BlurryContainer(
-                      borderRadius: BorderRadius.zero,
-                      blur: blurRadius,
-                      height: g.height,
-                      width: g.width,
-                      bgColor: color,
-                      child: const SizedBox.shrink(),
+                    child: ClipRect(
+                      child: BackdropFilter(
+                        filter: ImageFilter.blur(
+                          sigmaX: blurRadius,
+                          sigmaY: blurRadius,
+                        ),
+                        child: Container(
+                          height: g.height,
+                          width: g.width,
+                          color: color,
+                        ),
+                      ),
                     ),
                   ),
                 ),

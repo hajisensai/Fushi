@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:spaces/spaces.dart';
+import 'package:hibiki/src/utils/spacing.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_progress_dialog_content.dart';

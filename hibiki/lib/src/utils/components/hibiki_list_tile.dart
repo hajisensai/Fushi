@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:spaces/spaces.dart';
+import 'package:hibiki/src/utils/spacing.dart';
 import 'package:hibiki/utils.dart';
 
 /// Used for various dialogs, such as the dictionary, profiles and enhancements

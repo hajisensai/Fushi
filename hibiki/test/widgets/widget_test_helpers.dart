@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:spaces/spaces.dart';
+import 'package:hibiki/src/utils/spacing.dart';
 
 Widget buildTestApp(Widget child, {ThemeData? theme}) {
   return MaterialApp(

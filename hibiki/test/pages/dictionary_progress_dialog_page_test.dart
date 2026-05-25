@@ -5,7 +5,7 @@ import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_dialog_delete_page.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_dialog_import_page.dart';
-import 'package:spaces/spaces.dart';
+import 'package:hibiki/src/utils/spacing.dart';
 
 void main() {
   setUp(() {

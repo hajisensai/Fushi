@@ -5,7 +5,7 @@ import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/pages/implementations/media_source_picker_dialog_page.dart';
-import 'package:spaces/spaces.dart';
+import 'package:hibiki/src/utils/spacing.dart';
 
 class PickerTestAppModel extends AppModel {
   PickerTestAppModel() {

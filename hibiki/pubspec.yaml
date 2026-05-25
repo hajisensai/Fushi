@@ -12,10 +12,6 @@ dependencies:
   audio_service: ^0.18.9
   audio_session: ^0.1.13
   beautiful_soup_dart: ^0.3.0
-  blurrycontainer:
-    git:
-      url: https://github.com/arianneorpilla/blurry_container/
-      ref: fb26dd1fa81edeb048b14703f1c1f28e93ee43d0
   cached_network_image: ^3.4.1
   carousel_slider: ^4.2.1
   change_notifier_builder: ^1.1.2
@@ -47,6 +43,8 @@ dependencies:
     path: ../packages/hibiki_audio
   hibiki_platform:
     path: ../packages/hibiki_platform
+  flutter_secure_storage: ^9.2.4
+  flutter_web_auth_2: ^4.1.0
   flutter_archive: ^5.0.0
   flutter_cache_manager: ^3.3.0
   flutter_charset_detector: ^1.0.2
@@ -67,6 +65,7 @@ dependencies:
   drift: ^2.23.0
   sqlite3_flutter_libs: ^0.5.28
   ffi: ^2.1.3
+  gap: ^3.0.1
   html: ^0.15.2
   image: ^4.3.0
   image_picker: ^0.8.7
@@ -100,19 +99,11 @@ dependencies:
       ref: 3854d07f8f4e9d5a78589639b18b5d454ddf54a0
   remove_emoji: ^0.0.7
   restart_app: ^1.1.2
-  ruby_text:
-    git:
-      url: https://github.com/arianneorpilla/RubyText
-      ref: cb723f87c9ac575aa735b40016c0ffb3242d921e
   share_plus: ^7.2.2
   shared_preferences: ^2.2.2
   slang: ^3.13.0
   slang_flutter: ^3.13.0
   sliver_tools: ^0.2.12
-  spaces:
-    git:
-      url: https://github.com/arianneorpilla/spaces
-      ref: b6a1387abaafd36e94e9290806a00a53ca89683f
   stack_trace: ^1.11.1
   transparent_image: ^2.0.1
   url_launcher: ^6.0.20
@@ -120,11 +111,6 @@ dependencies:
   xml: ^6.3.0
   wakelock_plus: ^1.1.4
 dependency_overrides:
-  freezed_annotation: ^2.2.0 # Caused by spaces git dep pinned to old commit
-  gap: ^3.0.1 # Caused by spaces git dep pinned to old commit
-  wakelock_plus_platform_interface: 1.1.0 # Pigeon v10/v17 channel mismatch with wakelock_plus 1.1.4
-  file_picker:
-    path: ../packages/file_picker
   flutter_inappwebview_windows:
     path: ../packages/flutter_inappwebview_windows
 
