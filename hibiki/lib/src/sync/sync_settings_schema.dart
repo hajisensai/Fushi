@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
 import 'package:hibiki/src/sync/google_drive_auth.dart';
+import 'package:hibiki/src/sync/google_drive_handler.dart';
 import 'package:hibiki/src/sync/sync_manager.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
@@ -260,6 +261,9 @@ class _SyncAccountWidgetState extends State<_SyncAccountWidget> {
   Future<void> _signOut() async {
     setState(() => _isLoading = true);
     await GoogleDriveAuth.instance.signOut();
+    GoogleDriveHandler.instance.clearCache();
+    await SyncRepository(widget.settingsContext.appModel.database)
+        .clearFolderCache();
     await _checkAuth();
     if (mounted) setState(() => _isLoading = false);
   }

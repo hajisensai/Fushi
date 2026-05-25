@@ -3,6 +3,7 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:drift/drift.dart';
+import 'package:hibiki/src/sync/google_drive_auth.dart';
 import 'package:hibiki/src/sync/google_drive_handler.dart';
 import 'package:hibiki/src/sync/position_converter.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
@@ -81,6 +82,14 @@ class SyncManager {
         direction: SyncResult.skipped,
         title: book.title,
         error: e.message,
+      );
+    } on GoogleDriveAuthError {
+      rethrow;
+    } catch (e) {
+      return SyncBookResult(
+        direction: SyncResult.skipped,
+        title: book.title,
+        error: e.toString(),
       );
     }
   }
