@@ -22,11 +22,19 @@ void main() {
       'List<SettingsDestination> buildSettingsSchema',
       'SettingsDestination buildReaderQuickSettingsDestination',
       'SettingsDestinationId.appearance',
-      'SettingsDestinationId.reading',
-      'SettingsDestinationId.audiobook',
-      'SettingsDestinationId.dictionaryAndCards',
+      'SettingsDestinationId.profiles',
+      'SettingsDestinationId.readingDisplay',
+      'SettingsDestinationId.readingControls',
+      'SettingsDestinationId.lookup',
+      'SettingsDestinationId.cardCreation',
+      'SettingsDestinationId.listening',
+      'buildSyncBackupDestination',
       'SettingsDestinationId.system',
       'SettingsDestinationId.diagnostics',
+    ],
+    'lib/src/sync/sync_settings_schema.dart': <String>[
+      'SettingsDestination buildSyncBackupDestination',
+      'SettingsDestinationId.syncBackup',
     ],
     'lib/src/settings/material_settings_renderer.dart': <String>[
       'class MaterialSettingsRenderer',
@@ -90,6 +98,36 @@ void main() {
 
     expect(source, isNot(contains('design_system_label')));
     expect(source, isNot(contains('ProfileSelector')));
+  });
+
+  test('settings schema uses task-oriented destinations', () {
+    final String destinationSource =
+        File('lib/src/settings/settings_destination.dart').readAsStringSync();
+    final String schemaSource =
+        File('lib/src/settings/settings_schema.dart').readAsStringSync();
+    final String syncSource =
+        File('lib/src/sync/sync_settings_schema.dart').readAsStringSync();
+    final String combined = '$destinationSource\n$schemaSource\n$syncSource';
+
+    for (final String token in <String>[
+      'SettingsDestinationId.appearance',
+      'SettingsDestinationId.profiles',
+      'SettingsDestinationId.readingDisplay',
+      'SettingsDestinationId.readingControls',
+      'SettingsDestinationId.lookup',
+      'SettingsDestinationId.cardCreation',
+      'SettingsDestinationId.listening',
+      'SettingsDestinationId.syncBackup',
+      'SettingsDestinationId.system',
+      'SettingsDestinationId.diagnostics',
+    ]) {
+      expect(combined, contains(token), reason: 'missing $token');
+    }
+
+    expect(
+        combined, isNot(contains('SettingsDestinationId.dictionaryAndCards')));
+    expect(combined, isNot(contains('SettingsDestinationId.audiobook')));
+    expect(schemaSource, isNot(contains('DictionarySettingsDialogPage')));
   });
 
   test('profile switching waits for reader settings refresh', () {

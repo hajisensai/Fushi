@@ -24,7 +24,8 @@ class SettingsHomePage extends BasePage {
 }
 
 class _SettingsHomePageState extends BasePageState<SettingsHomePage> {
-  SettingsDestinationId _selectedDestinationId = SettingsDestinationId.reading;
+  SettingsDestinationId _selectedDestinationId =
+      SettingsDestinationId.readingDisplay;
 
   @override
   Widget build(BuildContext context) {

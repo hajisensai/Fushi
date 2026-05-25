@@ -85,6 +85,41 @@ Future<void> confirmDebugChannel(
   settingsContext.refresh();
 }
 
+Future<void> setUpdateChannel(
+  SettingsContext settingsContext,
+  String value,
+) async {
+  final bool debug = value == 'debug';
+  if (debug && !settingsContext.appModel.updateDebugChannel) {
+    final BuildContext context = settingsContext.context;
+    final bool? confirmed = await showAppDialog<bool>(
+      context: context,
+      builder: (BuildContext ctx) => adaptiveAlertDialog(
+        context: ctx,
+        title: Text(t.update_debug_channel),
+        content: Text(t.update_debug_channel_warning),
+        actions: <Widget>[
+          adaptiveDialogAction(
+            context: ctx,
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(t.dialog_cancel),
+          ),
+          adaptiveDialogAction(
+            context: ctx,
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(t.dialog_done),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+  }
+
+  await settingsContext.appModel.setUpdateDebugChannel(debug);
+  await settingsContext.appModel.setUpdateBetaChannel(value == 'beta' || debug);
+  settingsContext.refresh();
+}
+
 Widget buildDesignSystemSelector(SettingsContext settingsContext) {
   return AdaptiveSettingsSegmentedRow<String>(
     title: t.design_system_label,

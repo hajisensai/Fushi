@@ -1,4 +1,8 @@
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/pages/implementations/book_css_editor_page.dart';
 import 'package:hibiki/src/settings/settings_actions.dart';
@@ -11,46 +15,59 @@ import 'package:url_launcher/url_launcher.dart';
 List<SettingsDestination> buildSettingsSchema(SettingsContext context) {
   return <SettingsDestination>[
     _appearanceDestination(),
-    _readingDestination(),
-    _audiobookDestination(),
-    _dictionaryAndCardsDestination(),
-    buildSyncDestination(),
+    _profilesDestination(),
+    _readingDisplayDestination(),
+    _readingControlsDestination(),
+    _lookupDestination(),
+    _cardCreationDestination(),
+    _listeningDestination(),
+    buildSyncBackupDestination(),
     _systemDestination(),
     _diagnosticsDestination(),
   ];
 }
 
 SettingsDestination buildReaderQuickSettingsDestination(
-    SettingsContext context) {
+  SettingsContext context,
+) {
   final List<SettingsDestination> destinations = buildSettingsSchema(context);
   final SettingsDestination appearance = destinations.firstWhere(
     (SettingsDestination destination) =>
         destination.id == SettingsDestinationId.appearance,
   );
-  final SettingsDestination reading = destinations.firstWhere(
+  final SettingsDestination readingDisplay = destinations.firstWhere(
     (SettingsDestination destination) =>
-        destination.id == SettingsDestinationId.reading,
+        destination.id == SettingsDestinationId.readingDisplay,
   );
-  final SettingsSection readingEntrySection = reading.sections.first;
-  final List<SettingsItem> readingEntries = readingEntrySection.items
-      .where(
-        (SettingsItem item) =>
-            item.id == 'reading.display' || item.id == 'reading.fonts',
-      )
-      .toList(growable: false);
+  final SettingsDestination readingControls = destinations.firstWhere(
+    (SettingsDestination destination) =>
+        destination.id == SettingsDestinationId.readingControls,
+  );
+  final SettingsDestination lookup = destinations.firstWhere(
+    (SettingsDestination destination) =>
+        destination.id == SettingsDestinationId.lookup,
+  );
+  final List<SettingsItem> quickLookupItems =
+      lookup.sections.expand((SettingsSection section) => section.items).where(
+    (SettingsItem item) {
+      return item.id == 'lookup.auto_read_on_lookup' ||
+          item.id == 'lookup.popup_max_width';
+    },
+  ).toList(growable: false);
 
   return SettingsDestination(
-    id: SettingsDestinationId.reading,
+    id: SettingsDestinationId.readingDisplay,
     title: t.reader_settings_section,
     summary: t.source_description_epub,
     icon: Icons.tune_outlined,
     sections: <SettingsSection>[
       appearance.sections.first,
+      ...readingDisplay.sections,
+      ...readingControls.sections,
       SettingsSection(
-        title: readingEntrySection.title,
-        items: readingEntries,
+        title: t.settings_section_lookup_behavior,
+        items: quickLookupItems,
       ),
-      ...reading.sections.skip(1),
     ],
   );
 }
@@ -58,7 +75,7 @@ SettingsDestination buildReaderQuickSettingsDestination(
 SettingsDestination _appearanceDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.appearance,
-    title: t.section_interface,
+    title: t.settings_destination_appearance,
     summary: t.design_system_hint,
     icon: Icons.palette_outlined,
     sections: <SettingsSection>[
@@ -83,19 +100,8 @@ SettingsDestination _appearanceDestination() {
         ],
       ),
       SettingsSection(
-        title: t.profile_label,
+        title: t.settings_section_app_shell,
         items: <SettingsItem>[
-          SettingsCustomItem(
-            id: 'appearance.profile_selector',
-            icon: Icons.person_outline,
-            builder: buildProfileSelectorRow,
-          ),
-          SettingsNavigationItem(
-            id: 'appearance.profile_management',
-            title: t.profile_management,
-            icon: Icons.manage_accounts_outlined,
-            builder: (_) => const ProfileManagementPage(),
-          ),
           SettingsActionItem(
             id: 'appearance.language',
             title: t.options_language,
@@ -107,30 +113,64 @@ SettingsDestination _appearanceDestination() {
               );
             },
           ),
+          SettingsNavigationItem(
+            id: 'appearance.app_icon',
+            title: t.app_icon_label,
+            icon: Icons.widgets_outlined,
+            visible: (_) => Platform.isAndroid,
+            builder: (_) => const MiscellaneousSettingsPage(),
+          ),
         ],
       ),
     ],
   );
 }
 
-SettingsDestination _readingDestination() {
+SettingsDestination _profilesDestination() {
   return SettingsDestination(
-    id: SettingsDestinationId.reading,
-    title: t.reader_settings_section,
-    summary: t.source_description_epub,
+    id: SettingsDestinationId.profiles,
+    title: t.settings_destination_profiles,
+    summary: t.profile_management,
+    icon: Icons.manage_accounts_outlined,
+    sections: <SettingsSection>[
+      SettingsSection(
+        title: t.profile_label,
+        items: <SettingsItem>[
+          SettingsCustomItem(
+            id: 'profiles.current',
+            icon: Icons.person_outline,
+            builder: buildProfileSelectorRow,
+          ),
+          SettingsNavigationItem(
+            id: 'profiles.management',
+            title: t.profile_management,
+            icon: Icons.manage_accounts_outlined,
+            builder: (_) => const ProfileManagementPage(),
+          ),
+        ],
+      ),
+    ],
+  );
+}
+
+SettingsDestination _readingDisplayDestination() {
+  return SettingsDestination(
+    id: SettingsDestinationId.readingDisplay,
+    title: t.settings_destination_reading_display,
+    summary: t.section_layout,
     icon: Icons.auto_stories_outlined,
     sections: <SettingsSection>[
       SettingsSection(
         title: t.section_typography,
         items: <SettingsItem>[
           SettingsNavigationItem(
-            id: 'reading.display',
+            id: 'reading_display.display',
             title: t.display_settings,
             icon: Icons.text_fields,
             builder: (_) => const DisplaySettingsPage(),
           ),
           SettingsNavigationItem(
-            id: 'reading.fonts',
+            id: 'reading_display.fonts',
             title: customFontsTitlePlaceholder,
             icon: Icons.font_download_outlined,
             onTap: (SettingsContext settingsContext) async {
@@ -142,7 +182,7 @@ SettingsDestination _readingDestination() {
             },
           ),
           SettingsNavigationItem(
-            id: 'reading.book_css',
+            id: 'reading_display.book_css',
             title: t.book_css_editor_title,
             subtitle: t.book_css_editor_no_extract_dir,
             icon: Icons.code_outlined,
@@ -151,11 +191,22 @@ SettingsDestination _readingDestination() {
           ),
         ],
       ),
+    ],
+  );
+}
+
+SettingsDestination _readingControlsDestination() {
+  return SettingsDestination(
+    id: SettingsDestinationId.readingControls,
+    title: t.settings_destination_reading_controls,
+    summary: t.section_navigation,
+    icon: Icons.touch_app_outlined,
+    sections: <SettingsSection>[
       SettingsSection(
         title: t.section_navigation,
         items: <SettingsItem>[
           SettingsSwitchItem(
-            id: 'reading.highlight_on_tap',
+            id: 'reading_controls.highlight_on_tap',
             title: t.highlight_on_tap,
             icon: Icons.touch_app_outlined,
             value: (SettingsContext settingsContext) =>
@@ -166,7 +217,7 @@ SettingsDestination _readingDestination() {
             },
           ),
           SettingsSwitchItem(
-            id: 'reading.volume_page_turning',
+            id: 'reading_controls.volume_page_turning',
             title: t.volume_button_page_turning,
             icon: Icons.volume_up_outlined,
             value: (SettingsContext settingsContext) =>
@@ -180,7 +231,7 @@ SettingsDestination _readingDestination() {
             },
           ),
           SettingsSwitchItem(
-            id: 'reading.invert_volume_buttons',
+            id: 'reading_controls.invert_volume_buttons',
             title: t.invert_volume_buttons,
             icon: Icons.swap_vert_outlined,
             value: (SettingsContext settingsContext) =>
@@ -191,7 +242,7 @@ SettingsDestination _readingDestination() {
             },
           ),
           SettingsSwitchItem(
-            id: 'reading.invert_swipe_direction',
+            id: 'reading_controls.invert_swipe_direction',
             title: t.invert_swipe_direction,
             icon: Icons.swipe_outlined,
             value: (SettingsContext settingsContext) =>
@@ -202,7 +253,7 @@ SettingsDestination _readingDestination() {
             },
           ),
           SettingsSliderItem(
-            id: 'reading.volume_page_turning_speed',
+            id: 'reading_controls.volume_page_turning_speed',
             title: t.volume_button_turning_speed,
             icon: Icons.speed_outlined,
             min: 10,
@@ -218,7 +269,7 @@ SettingsDestination _readingDestination() {
             },
           ),
           SettingsSliderItem(
-            id: 'reading.dismiss_swipe_sensitivity',
+            id: 'reading_controls.dismiss_swipe_sensitivity',
             title: t.dismiss_swipe_sensitivity,
             icon: Icons.swipe_down_outlined,
             min: 0.1,
@@ -233,13 +284,87 @@ SettingsDestination _readingDestination() {
               notifyReaderSettingsChanged(settingsContext);
             },
           ),
+          SettingsSwitchItem(
+            id: 'reading_controls.keep_screen_awake',
+            title: t.keep_screen_awake,
+            icon: Icons.lightbulb_outline,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.keepScreenAwake,
+            onChanged: setKeepScreenAwake,
+          ),
+        ],
+      ),
+    ],
+  );
+}
+
+SettingsDestination _lookupDestination() {
+  return SettingsDestination(
+    id: SettingsDestinationId.lookup,
+    title: t.settings_destination_lookup,
+    summary: t.dictionary_settings,
+    icon: Icons.manage_search_outlined,
+    sections: <SettingsSection>[
+      SettingsSection(
+        title: t.manager,
+        items: <SettingsItem>[
+          SettingsActionItem(
+            id: 'lookup.dictionaries',
+            title: t.dictionaries,
+            icon: Icons.auto_stories_outlined,
+            onTap: (SettingsContext settingsContext) async {
+              await showAppDialog(
+                context: settingsContext.context,
+                builder: (_) => const DictionaryDialogPage(),
+              );
+              settingsContext.refresh();
+            },
+          ),
+          SettingsActionItem(
+            id: 'lookup.custom_css',
+            title: t.custom_dict_css,
+            icon: Icons.code_outlined,
+            onTap: (SettingsContext settingsContext) {
+              return showSettingsDialog(
+                settingsContext,
+                (_) => const DictCssEditorDialog(),
+              );
+            },
+          ),
+          SettingsActionItem(
+            id: 'lookup.audio_sources',
+            title: t.manage_audio_sources,
+            icon: Icons.volume_up_outlined,
+            onTap: (SettingsContext settingsContext) {
+              return showSettingsDialog(
+                settingsContext,
+                (_) => AudioSourcesDialog(
+                  sources: List<String>.from(
+                    settingsContext.appModel.audioSources,
+                  ),
+                  onSave: settingsContext.appModel.setAudioSources,
+                ),
+              );
+            },
+          ),
         ],
       ),
       SettingsSection(
-        title: t.dictionary_media_type,
+        title: t.settings_section_lookup_behavior,
         items: <SettingsItem>[
           SettingsSwitchItem(
-            id: 'reading.auto_read_on_lookup',
+            id: 'lookup.auto_search',
+            title: t.auto_search,
+            icon: Icons.manage_search_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.autoSearchEnabled,
+            onChanged: (SettingsContext settingsContext, bool value) {
+              settingsContext.appModel.toggleAutoSearchEnabled();
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'lookup.auto_read_on_lookup',
             title: t.auto_read_on_lookup,
             icon: Icons.record_voice_over_outlined,
             value: (SettingsContext settingsContext) =>
@@ -249,8 +374,83 @@ SettingsDestination _readingDestination() {
               notifyReaderSettingsChanged(settingsContext);
             },
           ),
+          SettingsSwitchItem(
+            id: 'lookup.pause_on_lookup',
+            title: t.pause_on_lookup,
+            icon: Icons.pause_circle_outline,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.pauseOnLookup,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.readerSource.setPauseOnLookup(value: value);
+              notifyReaderSettingsChanged(settingsContext);
+            },
+          ),
+          SettingsCustomItem(
+            id: 'lookup.auto_search_debounce_delay',
+            icon: Icons.timer_outlined,
+            builder: _buildSearchDebounceField,
+          ),
+          SettingsCustomItem(
+            id: 'lookup.maximum_terms',
+            icon: Icons.format_list_numbered_outlined,
+            builder: _buildMaximumTermsField,
+          ),
+        ],
+      ),
+      SettingsSection(
+        title: t.settings_section_lookup_display,
+        items: <SettingsItem>[
+          SettingsSwitchItem(
+            id: 'lookup.collapse_dictionaries',
+            title: t.collapse_dictionaries,
+            icon: Icons.unfold_less_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.collapseDictionaries,
+            onChanged: (SettingsContext settingsContext, bool value) {
+              settingsContext.appModel.toggleCollapseDictionaries();
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'lookup.show_expression_tags',
+            title: t.show_expression_tags,
+            icon: Icons.sell_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.showExpressionTags,
+            onChanged: (SettingsContext settingsContext, bool value) {
+              settingsContext.appModel.toggleShowExpressionTags();
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'lookup.deduplicate_pitch_accents',
+            title: t.deduplicate_pitch_accents,
+            icon: Icons.filter_alt_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.deduplicatePitchAccents,
+            onChanged: (SettingsContext settingsContext, bool value) {
+              settingsContext.appModel.toggleDeduplicatePitchAccents();
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'lookup.harmonic_frequency',
+            title: t.harmonic_frequency,
+            icon: Icons.bar_chart_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.harmonicFrequency,
+            onChanged: (SettingsContext settingsContext, bool value) {
+              settingsContext.appModel.toggleHarmonicFrequency();
+              settingsContext.refresh();
+            },
+          ),
+          SettingsCustomItem(
+            id: 'lookup.dictionary_font_size',
+            icon: Icons.format_size,
+            builder: _buildDictionaryFontSizeField,
+          ),
           SettingsSliderItem(
-            id: 'reading.popup_max_width',
+            id: 'lookup.popup_max_width',
             title: t.popup_max_width,
             icon: Icons.open_in_full_outlined,
             min: 250,
@@ -264,13 +464,27 @@ SettingsDestination _readingDestination() {
               settingsContext.refresh();
             },
           ),
+        ],
+      ),
+      SettingsSection(
+        title: t.local_audio,
+        items: <SettingsItem>[
           SettingsSwitchItem(
-            id: 'reading.keep_screen_awake',
-            title: t.keep_screen_awake,
-            icon: Icons.lightbulb_outline,
+            id: 'lookup.local_audio',
+            title: t.local_audio,
+            icon: Icons.library_music_outlined,
             value: (SettingsContext settingsContext) =>
-                settingsContext.readerSource.keepScreenAwake,
-            onChanged: setKeepScreenAwake,
+                settingsContext.appModel.localAudioEnabled,
+            onChanged: (SettingsContext settingsContext, bool value) {
+              settingsContext.appModel.toggleLocalAudio();
+              settingsContext.refresh();
+            },
+          ),
+          SettingsCustomItem(
+            id: 'lookup.local_audio_databases',
+            icon: Icons.storage_outlined,
+            builder: (SettingsContext settingsContext) =>
+                _LocalAudioDatabasesRow(settingsContext: settingsContext),
           ),
         ],
       ),
@@ -278,10 +492,43 @@ SettingsDestination _readingDestination() {
   );
 }
 
-SettingsDestination _audiobookDestination() {
+SettingsDestination _cardCreationDestination() {
   return SettingsDestination(
-    id: SettingsDestinationId.audiobook,
-    title: t.audiobook_settings,
+    id: SettingsDestinationId.cardCreation,
+    title: t.settings_destination_card_creation,
+    summary: t.anki_settings_label,
+    icon: Icons.style_outlined,
+    sections: <SettingsSection>[
+      SettingsSection(
+        title: t.anki_settings_label,
+        items: <SettingsItem>[
+          SettingsNavigationItem(
+            id: 'card_creation.anki',
+            title: t.anki_settings_label,
+            icon: Icons.style_outlined,
+            builder: (_) => const AnkiSettingsPage(),
+          ),
+          SettingsSwitchItem(
+            id: 'card_creation.auto_add_book_name_to_tags',
+            title: t.auto_add_book_name_to_tags,
+            icon: Icons.label_outline,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.autoAddBookNameToTags,
+            onChanged: (SettingsContext settingsContext, bool value) {
+              settingsContext.appModel.toggleAutoAddBookNameToTags();
+              settingsContext.refresh();
+            },
+          ),
+        ],
+      ),
+    ],
+  );
+}
+
+SettingsDestination _listeningDestination() {
+  return SettingsDestination(
+    id: SettingsDestinationId.listening,
+    title: t.settings_destination_listening,
     summary: t.floating_lyric_hint,
     icon: Icons.headphones_outlined,
     sections: <SettingsSection>[
@@ -289,7 +536,7 @@ SettingsDestination _audiobookDestination() {
         title: t.section_audiobook,
         items: <SettingsItem>[
           SettingsSwitchItem(
-            id: 'audiobook.media_notification',
+            id: 'listening.media_notification',
             title: t.show_media_notification,
             icon: Icons.notifications_outlined,
             value: (SettingsContext settingsContext) =>
@@ -300,7 +547,7 @@ SettingsDestination _audiobookDestination() {
             },
           ),
           SettingsSwitchItem(
-            id: 'audiobook.floating_lyric',
+            id: 'listening.floating_lyric',
             title: t.show_floating_lyric,
             subtitle: t.floating_lyric_hint,
             icon: Icons.subtitles_outlined,
@@ -312,7 +559,7 @@ SettingsDestination _audiobookDestination() {
             },
           ),
           SettingsStepperItem(
-            id: 'audiobook.floating_lyric_font_size',
+            id: 'listening.floating_lyric_font_size',
             title: t.floating_lyric_font_size,
             icon: Icons.format_size,
             min: 8,
@@ -327,7 +574,7 @@ SettingsDestination _audiobookDestination() {
             },
           ),
           SettingsSwitchItem(
-            id: 'audiobook.volume_key_sentence_nav',
+            id: 'listening.volume_key_sentence_nav',
             title: t.volume_key_sentence_nav,
             icon: Icons.skip_next_outlined,
             value: (SettingsContext settingsContext) =>
@@ -343,148 +590,41 @@ SettingsDestination _audiobookDestination() {
   );
 }
 
-SettingsDestination _dictionaryAndCardsDestination() {
-  return SettingsDestination(
-    id: SettingsDestinationId.dictionaryAndCards,
-    title: '${t.dictionaries} / ${t.anki_settings_label}',
-    summary: t.card_creator,
-    icon: Icons.style_outlined,
-    sections: <SettingsSection>[
-      SettingsSection(
-        title: t.anki_settings_label,
-        items: <SettingsItem>[
-          SettingsNavigationItem(
-            id: 'dictionary_cards.anki',
-            title: t.anki_settings_label,
-            icon: Icons.style_outlined,
-            builder: (_) => const AnkiSettingsPage(),
-          ),
-          SettingsNavigationItem(
-            id: 'dictionary_cards.anki_profiles',
-            title: t.anki_manage_profiles,
-            subtitle: t.anki_manage_profiles_hint,
-            icon: Icons.account_tree_outlined,
-            builder: (_) => const ProfileManagementPage(),
-          ),
-        ],
-      ),
-      SettingsSection(
-        title: t.dictionary_settings,
-        items: <SettingsItem>[
-          SettingsActionItem(
-            id: 'dictionary_cards.dictionary_settings',
-            title: t.dictionary_settings,
-            icon: Icons.auto_stories_outlined,
-            onTap: (SettingsContext settingsContext) {
-              return showSettingsDialog(
-                settingsContext,
-                (_) => const DictionarySettingsDialogPage(),
-              );
-            },
-          ),
-          SettingsSwitchItem(
-            id: 'dictionary_cards.auto_search',
-            title: t.auto_search,
-            icon: Icons.manage_search_outlined,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.autoSearchEnabled,
-            onChanged: (SettingsContext settingsContext, bool value) {
-              settingsContext.appModel.toggleAutoSearchEnabled();
-              settingsContext.refresh();
-            },
-          ),
-          SettingsSwitchItem(
-            id: 'dictionary_cards.collapse_dictionaries',
-            title: t.collapse_dictionaries,
-            icon: Icons.unfold_less_outlined,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.collapseDictionaries,
-            onChanged: (SettingsContext settingsContext, bool value) {
-              settingsContext.appModel.toggleCollapseDictionaries();
-              settingsContext.refresh();
-            },
-          ),
-          SettingsSwitchItem(
-            id: 'dictionary_cards.show_expression_tags',
-            title: t.show_expression_tags,
-            icon: Icons.sell_outlined,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.showExpressionTags,
-            onChanged: (SettingsContext settingsContext, bool value) {
-              settingsContext.appModel.toggleShowExpressionTags();
-              settingsContext.refresh();
-            },
-          ),
-          SettingsSwitchItem(
-            id: 'dictionary_cards.deduplicate_pitch_accents',
-            title: t.deduplicate_pitch_accents,
-            icon: Icons.filter_alt_outlined,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.deduplicatePitchAccents,
-            onChanged: (SettingsContext settingsContext, bool value) {
-              settingsContext.appModel.toggleDeduplicatePitchAccents();
-              settingsContext.refresh();
-            },
-          ),
-          SettingsSwitchItem(
-            id: 'dictionary_cards.harmonic_frequency',
-            title: t.harmonic_frequency,
-            icon: Icons.bar_chart_outlined,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.harmonicFrequency,
-            onChanged: (SettingsContext settingsContext, bool value) {
-              settingsContext.appModel.toggleHarmonicFrequency();
-              settingsContext.refresh();
-            },
-          ),
-        ],
-      ),
-      SettingsSection(
-        title: t.local_audio,
-        items: <SettingsItem>[
-          SettingsActionItem(
-            id: 'dictionary_cards.audio_sources',
-            title: t.manage_audio_sources,
-            icon: Icons.volume_up_outlined,
-            onTap: (SettingsContext settingsContext) {
-              return showSettingsDialog(
-                settingsContext,
-                (_) => AudioSourcesDialog(
-                  sources: List<String>.from(
-                    settingsContext.appModel.audioSources,
-                  ),
-                  onSave: settingsContext.appModel.setAudioSources,
-                ),
-              );
-            },
-          ),
-          SettingsSwitchItem(
-            id: 'dictionary_cards.local_audio',
-            title: t.local_audio,
-            icon: Icons.library_music_outlined,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.localAudioEnabled,
-            onChanged: (SettingsContext settingsContext, bool value) {
-              settingsContext.appModel.toggleLocalAudio();
-              settingsContext.refresh();
-            },
-          ),
-        ],
-      ),
-    ],
-  );
-}
-
 SettingsDestination _systemDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.system,
-    title: t.miscellaneous_settings,
+    title: t.settings_destination_system,
     summary: t.section_update,
     icon: Icons.settings_suggest_outlined,
     sections: <SettingsSection>[
       SettingsSection(
         title: t.section_update,
         items: <SettingsItem>[
+          SettingsSegmentedItem<String>(
+            id: 'system.update_channel',
+            title: t.settings_section_update_channel,
+            icon: Icons.system_update_alt_outlined,
+            controlBelow: true,
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: 'stable',
+                label: t.update_channel_stable,
+                icon: Icons.verified_outlined,
+              ),
+              SettingsSegmentOption<String>(
+                value: 'beta',
+                label: t.update_channel_beta,
+                icon: Icons.science_outlined,
+              ),
+              SettingsSegmentOption<String>(
+                value: 'debug',
+                label: t.update_channel_debug,
+                icon: Icons.bug_report_outlined,
+              ),
+            ],
+            selected: _selectedUpdateChannel,
+            onChanged: setUpdateChannel,
+          ),
           SettingsSwitchItem(
             id: 'system.update_never_remind',
             title: t.update_never_remind,
@@ -499,7 +639,7 @@ SettingsDestination _systemDestination() {
           SettingsSwitchItem(
             id: 'system.update_auto_install',
             title: t.update_auto_install,
-            icon: Icons.system_update_alt_outlined,
+            icon: Icons.download_done_outlined,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.updateAutoInstall,
             onChanged: (SettingsContext settingsContext, bool value) async {
@@ -507,29 +647,10 @@ SettingsDestination _systemDestination() {
               settingsContext.refresh();
             },
           ),
-          SettingsSwitchItem(
-            id: 'system.update_beta_channel',
-            title: t.update_beta_channel,
-            icon: Icons.science_outlined,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.updateBetaChannel,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.setUpdateBetaChannel(value);
-              settingsContext.refresh();
-            },
-          ),
-          SettingsSwitchItem(
-            id: 'system.update_debug_channel',
-            title: t.update_debug_channel,
-            icon: Icons.bug_report_outlined,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.updateDebugChannel,
-            onChanged: confirmDebugChannel,
-          ),
         ],
       ),
       SettingsSection(
-        title: t.miscellaneous_settings,
+        title: t.settings_destination_system,
         items: <SettingsItem>[
           SettingsSwitchItem(
             id: 'system.low_memory_mode',
@@ -542,12 +663,6 @@ SettingsDestination _systemDestination() {
               await settingsContext.appModel.setLowMemoryMode(value);
               settingsContext.refresh();
             },
-          ),
-          SettingsNavigationItem(
-            id: 'system.app_icon',
-            title: t.app_icon_label,
-            icon: Icons.widgets_outlined,
-            builder: (_) => const MiscellaneousSettingsPage(),
           ),
           SettingsActionItem(
             id: 'system.github',
@@ -569,18 +684,18 @@ SettingsDestination _systemDestination() {
 SettingsDestination _diagnosticsDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.diagnostics,
-    title: t.debug_log_toggle,
+    title: t.settings_destination_diagnostics,
     summary: t.error_log_label(n: ErrorLogService.instance.entries.length),
     icon: Icons.bug_report_outlined,
     sections: <SettingsSection>[
       SettingsSection(
-        title: t.debug_log_toggle,
+        title: t.settings_destination_diagnostics,
         items: <SettingsItem>[
           SettingsNavigationItem(
             id: 'diagnostics.error_log',
             title:
                 t.error_log_label(n: ErrorLogService.instance.entries.length),
-            icon: Icons.bug_report_outlined,
+            icon: Icons.report_problem_outlined,
             builder: (_) => const ErrorLogPage(),
           ),
           SettingsSwitchItem(
@@ -608,6 +723,340 @@ SettingsDestination _diagnosticsDestination() {
       ),
     ],
   );
+}
+
+String _selectedUpdateChannel(SettingsContext settingsContext) {
+  if (settingsContext.appModel.updateDebugChannel) return 'debug';
+  if (settingsContext.appModel.updateBetaChannel) return 'beta';
+  return 'stable';
+}
+
+Widget _buildSearchDebounceField(SettingsContext settingsContext) {
+  final AppModel appModel = settingsContext.appModel;
+  return _SettingsNumberField(
+    title: t.auto_search_debounce_delay,
+    icon: Icons.timer_outlined,
+    suffixText: t.unit_milliseconds,
+    initialValue: appModel.searchDebounceDelay.toString(),
+    resetValue: appModel.defaultSearchDebounceDelay.toString(),
+    onChanged: (String value) {
+      int newDelay = int.tryParse(value) ?? appModel.defaultSearchDebounceDelay;
+      if (newDelay.isNegative) newDelay = appModel.defaultSearchDebounceDelay;
+      appModel.setSearchDebounceDelay(newDelay);
+      settingsContext.refresh();
+    },
+    onReset: () {
+      appModel.setSearchDebounceDelay(appModel.defaultSearchDebounceDelay);
+      settingsContext.refresh();
+    },
+  );
+}
+
+Widget _buildDictionaryFontSizeField(SettingsContext settingsContext) {
+  final AppModel appModel = settingsContext.appModel;
+  return _SettingsNumberField(
+    title: t.dictionary_font_size,
+    icon: Icons.format_size,
+    suffixText: t.unit_pixels,
+    initialValue: appModel.dictionaryFontSize.toString(),
+    resetValue: appModel.defaultDictionaryFontSize.toString(),
+    onChanged: (String value) {
+      double newSize =
+          double.tryParse(value) ?? appModel.defaultDictionaryFontSize;
+      if (newSize.isNegative) newSize = appModel.defaultDictionaryFontSize;
+      appModel.setDictionaryFontSize(newSize);
+      settingsContext.refresh();
+    },
+    onReset: () {
+      appModel.setDictionaryFontSize(appModel.defaultDictionaryFontSize);
+      settingsContext.refresh();
+    },
+  );
+}
+
+Widget _buildMaximumTermsField(SettingsContext settingsContext) {
+  final AppModel appModel = settingsContext.appModel;
+  return _SettingsNumberField(
+    title: t.maximum_terms,
+    icon: Icons.format_list_numbered_outlined,
+    initialValue: appModel.maximumTerms.toString(),
+    resetValue: appModel.defaultMaximumDictionaryTermsInResult.toString(),
+    onChanged: (String value) {
+      int newAmount =
+          int.tryParse(value) ?? appModel.defaultMaximumDictionaryTermsInResult;
+      if (newAmount.isNegative) {
+        newAmount = appModel.defaultMaximumDictionaryTermsInResult;
+      }
+      appModel.setMaximumTerms(newAmount);
+      appModel.clearDictionaryResultsCache();
+      settingsContext.refresh();
+    },
+    onReset: () {
+      appModel.setMaximumTerms(appModel.defaultMaximumDictionaryTermsInResult);
+      appModel.clearDictionaryResultsCache();
+      settingsContext.refresh();
+    },
+  );
+}
+
+class _SettingsNumberField extends StatefulWidget {
+  const _SettingsNumberField({
+    required this.title,
+    required this.icon,
+    required this.initialValue,
+    required this.resetValue,
+    required this.onChanged,
+    required this.onReset,
+    this.suffixText,
+  });
+
+  final String title;
+  final IconData icon;
+  final String initialValue;
+  final String resetValue;
+  final String? suffixText;
+  final ValueChanged<String> onChanged;
+  final VoidCallback onReset;
+
+  @override
+  State<_SettingsNumberField> createState() => _SettingsNumberFieldState();
+}
+
+class _SettingsNumberFieldState extends State<_SettingsNumberField> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialValue);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AdaptiveSettingsRow(
+      title: widget.title,
+      icon: widget.icon,
+      controlBelow: true,
+      trailing: TextField(
+        controller: _controller,
+        keyboardType: TextInputType.number,
+        decoration: InputDecoration(
+          floatingLabelBehavior: FloatingLabelBehavior.always,
+          suffixText: widget.suffixText,
+          suffixIcon: HibikiIconButton(
+            tooltip: t.reset,
+            size: 18,
+            icon: Icons.undo_outlined,
+            onTap: () {
+              _controller.text = widget.resetValue;
+              widget.onReset();
+              FocusScope.of(context).unfocus();
+            },
+          ),
+          labelText: widget.title,
+        ),
+        onChanged: widget.onChanged,
+      ),
+    );
+  }
+}
+
+class _LocalAudioDatabasesRow extends StatefulWidget {
+  const _LocalAudioDatabasesRow({required this.settingsContext});
+
+  final SettingsContext settingsContext;
+
+  @override
+  State<_LocalAudioDatabasesRow> createState() =>
+      _LocalAudioDatabasesRowState();
+}
+
+class _LocalAudioDatabasesRowState extends State<_LocalAudioDatabasesRow> {
+  SettingsContext get settingsContext => widget.settingsContext;
+  AppModel get appModel => settingsContext.appModel;
+
+  @override
+  Widget build(BuildContext context) {
+    final List<LocalAudioDbEntry> dbs = appModel.localAudioDbs;
+    return AdaptiveSettingsRow(
+      title: t.local_audio_add_db,
+      icon: Icons.storage_outlined,
+      controlBelow: true,
+      trailing: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          if (dbs.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Text(
+                t.local_audio_not_set,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+              ),
+            ),
+          for (int index = 0; index < dbs.length; index++)
+            _buildDbTile(dbs, index),
+          const SizedBox(height: 4),
+          TextButton.icon(
+            icon: Icon(
+              Icons.add,
+              size: Theme.of(context).textTheme.bodyMedium?.fontSize,
+            ),
+            label: Text(t.local_audio_add_db),
+            onPressed: _pickAndAddAudioDb,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDbTile(List<LocalAudioDbEntry> dbs, int index) {
+    final LocalAudioDbEntry entry = dbs[index];
+    final String label = entry.displayName.isNotEmpty
+        ? entry.displayName
+        : entry.path.split('/').last;
+    final bool enabled = entry.enabled;
+    final TextStyle? counterStyle = Theme.of(context).textTheme.bodySmall;
+
+    return AdaptiveSettingsRow(
+      title: label,
+      icon: enabled ? Icons.storage_outlined : Icons.block,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Text('${index + 1}', style: counterStyle),
+          HibikiIconButton(
+            tooltip: enabled ? t.options_hide : t.options_show,
+            size: 18,
+            icon: enabled ? Icons.check_circle_outline : Icons.block,
+            onTap: () async {
+              await appModel.toggleLocalAudioDbEnabled(index);
+              _refresh();
+            },
+          ),
+          if (index > 0)
+            HibikiIconButton(
+              tooltip: t.increase,
+              size: 18,
+              icon: Icons.arrow_upward_outlined,
+              onTap: () async {
+                await appModel.reorderLocalAudioDbs(index, index - 1);
+                _refresh();
+              },
+            ),
+          if (index < dbs.length - 1)
+            HibikiIconButton(
+              tooltip: t.decrease,
+              size: 18,
+              icon: Icons.arrow_downward_outlined,
+              onTap: () async {
+                await appModel.reorderLocalAudioDbs(index, index + 2);
+                _refresh();
+              },
+            ),
+          HibikiIconButton(
+            tooltip: t.dialog_delete,
+            size: 18,
+            icon: Icons.delete_outline,
+            onTap: () => _confirmRemove(index, label),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _confirmRemove(int index, String label) async {
+    final bool? confirmed = await showAppDialog<bool>(
+      context: context,
+      builder: (BuildContext ctx) => adaptiveAlertDialog(
+        context: ctx,
+        title: Text(t.dialog_delete),
+        content: Text(label),
+        actions: <Widget>[
+          adaptiveDialogAction(
+            context: ctx,
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(t.dialog_cancel),
+          ),
+          adaptiveDialogAction(
+            context: ctx,
+            isDefaultAction: true,
+            isDestructiveAction: true,
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(t.dialog_delete),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await appModel.removeLocalAudioDb(index);
+    _refresh();
+  }
+
+  Future<void> _pickAndAddAudioDb() async {
+    bool importDialogShown = false;
+
+    void showImportDialog() {
+      if (importDialogShown || !mounted) return;
+      importDialogShown = true;
+      showAppDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => PopScope(
+          canPop: false,
+          child: Builder(
+            builder: (BuildContext ctx) => adaptiveAlertDialog(
+              context: ctx,
+              content: Row(
+                children: <Widget>[
+                  SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: adaptiveIndicator(context: ctx, strokeWidth: 2),
+                  ),
+                  const SizedBox(width: 16),
+                  Text(t.dialog_importing),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    try {
+      final FilePickerResult? result = await FilePicker.platform.pickFiles(
+        onFileLoading: (FilePickerStatus status) {
+          if (status == FilePickerStatus.picking) showImportDialog();
+        },
+      );
+      if (result != null && result.files.single.path != null && mounted) {
+        final PlatformFile file = result.files.single;
+        showImportDialog();
+        await appModel.addLocalAudioDb(
+          file.path!,
+          displayName: file.name,
+        );
+        _refresh();
+      }
+    } finally {
+      if (importDialogShown && mounted) {
+        Navigator.of(context).pop();
+      }
+    }
+  }
+
+  void _refresh() {
+    if (mounted) setState(() {});
+    settingsContext.refresh();
+  }
 }
 
 String get customFontsTitlePlaceholder => t.custom_fonts;

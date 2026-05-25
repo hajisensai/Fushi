@@ -8,10 +8,10 @@ import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 import 'package:hibiki/utils.dart';
 
-SettingsDestination buildSyncDestination() {
+SettingsDestination buildSyncBackupDestination() {
   return SettingsDestination(
-    id: SettingsDestinationId.sync,
-    title: t.sync_title,
+    id: SettingsDestinationId.syncBackup,
+    title: t.settings_destination_sync_backup,
     summary: t.sync_summary,
     icon: Icons.sync,
     sections: <SettingsSection>[

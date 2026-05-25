@@ -121,29 +121,8 @@ class _MiscellaneousSettingsPageState
   @override
   Widget build(BuildContext context) {
     return AdaptiveSettingsScaffold(
-      title: Text(t.miscellaneous_settings),
+      title: Text(t.app_icon_label),
       children: [
-        AdaptiveSettingsSection(
-          children: [
-            AdaptiveSettingsSwitchRow(
-              title: t.debug_log_toggle,
-              value: DebugLogService.instance.enabled,
-              onChanged: (bool v) async {
-                await DebugLogService.instance.setEnabled(v);
-                setState(() {});
-              },
-            ),
-            AdaptiveSettingsSwitchRow(
-              title: t.low_memory_mode,
-              subtitle: t.low_memory_mode_hint,
-              value: appModel.lowMemoryMode,
-              onChanged: (bool v) async {
-                await appModel.setLowMemoryMode(v);
-                setState(() {});
-              },
-            ),
-          ],
-        ),
         if (Platform.isAndroid)
           AdaptiveSettingsSection(
             title: t.app_icon_label,

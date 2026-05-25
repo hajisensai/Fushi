@@ -5,10 +5,13 @@ import 'package:hibiki/src/settings/settings_context.dart';
 
 enum SettingsDestinationId {
   appearance,
-  reading,
-  audiobook,
-  dictionaryAndCards,
-  sync,
+  profiles,
+  readingDisplay,
+  readingControls,
+  lookup,
+  cardCreation,
+  listening,
+  syncBackup,
   system,
   diagnostics,
 }
