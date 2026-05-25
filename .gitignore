@@ -78,3 +78,10 @@ flutter_run_*.txt
 docs/superpowers/
 docs/REGRESSION_BUGS.md
 docs/TODO.md
+
+# AI tooling config
+.ccg/
+.claude/index.json
+.superpowers/
+.codex-test/screenshots/
+.codex-test/verify-freq.html
