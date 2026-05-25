@@ -47,7 +47,7 @@ class FloatingDictChannel {
             .map((e) => <String, String>{
                   'word': e.word,
                   'reading': e.reading,
-                  'meaning': e.meaning,
+                  'meaning': DictionaryEntry.meaningToPlainText(e.meaning),
                 })
             .toList();
         await _channel.invokeMethod<void>('searchResult', jsonEncode(entries));

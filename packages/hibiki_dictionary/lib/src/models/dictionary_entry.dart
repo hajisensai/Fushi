@@ -38,6 +38,35 @@ class DictionaryEntry {
 
   int get wordLength => word.length;
 
+  String get plainMeaning => meaningToPlainText(meaning);
+
+  static String meaningToPlainText(String meaning) {
+    if (meaning.isEmpty) return meaning;
+    try {
+      final dynamic parsed = jsonDecode(meaning);
+      return _structuredToText(parsed).trim();
+    } catch (_) {
+      return meaning;
+    }
+  }
+
+  static String _structuredToText(dynamic content) {
+    if (content is String) return content;
+    if (content is List) {
+      return content.map(_structuredToText).join();
+    }
+    if (content is Map) {
+      final dynamic tag = content['tag'];
+      final dynamic inner = content['content'];
+      final String childText = inner != null ? _structuredToText(inner) : '';
+      if (tag == 'br') return '\n';
+      if (tag == 'li') return '• $childText\n';
+      if (tag == 'img') return (content['description'] ?? '') as String;
+      return childText;
+    }
+    return content?.toString() ?? '';
+  }
+
   Map<dynamic, dynamic> workingArea = {};
 
   String toJson() {

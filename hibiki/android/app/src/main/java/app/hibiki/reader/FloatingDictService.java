@@ -111,11 +111,19 @@ public class FloatingDictService extends BaseFloatingService {
 
         String monitorLabel = monitoringEnabled ? "Pause" : "Resume";
 
+        String contentText;
+        if (!monitoringEnabled) {
+            contentText = "Clipboard monitoring paused";
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                && !isAccessibilityEnabled()) {
+            contentText = "Use search bar or enable accessibility service";
+        } else {
+            contentText = "Clipboard monitoring active";
+        }
+
         return builder
                 .setContentTitle("Hibiki Dictionary")
-                .setContentText(monitoringEnabled
-                        ? "Clipboard monitoring active"
-                        : "Clipboard monitoring paused")
+                .setContentText(contentText)
                 .setSmallIcon(R.drawable.ic_stat_hibiki)
                 .setOngoing(true)
                 .addAction(new Notification.Action.Builder(
@@ -318,8 +326,18 @@ public class FloatingDictService extends BaseFloatingService {
 
     private void onClipboardChanged() {
         if (!monitoringEnabled) return;
-        ClipData clip = clipboardManager.getPrimaryClip();
-        if (clip == null || clip.getItemCount() == 0) return;
+        ClipData clip = null;
+        try {
+            clip = clipboardManager.getPrimaryClip();
+        } catch (SecurityException e) {
+            // Android 13+ restricts clipboard access for non-foreground apps
+        }
+        if (clip == null || clip.getItemCount() == 0) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                showClipboardRestrictionHint();
+            }
+            return;
+        }
         CharSequence text = clip.getItemAt(0).getText();
         if (text == null) return;
         String trimmed = text.toString().trim();
@@ -329,6 +347,35 @@ public class FloatingDictService extends BaseFloatingService {
             searchInput.setText(trimmed);
             triggerSearch(trimmed);
         });
+    }
+
+    private boolean clipboardHintShown = false;
+
+    private void showClipboardRestrictionHint() {
+        if (clipboardHintShown) return;
+        clipboardHintShown = true;
+        boolean a11yEnabled = isAccessibilityEnabled();
+        if (a11yEnabled) return;
+        new Handler(Looper.getMainLooper()).post(() -> {
+            if (resultView != null && (resultView.getText() == null
+                    || resultView.getText().length() == 0)) {
+                resultView.setText(
+                    "Android 13+ restricts clipboard access.\n\n"
+                    + "Enable Hibiki accessibility service in "
+                    + "Settings → Accessibility for automatic text detection,"
+                    + " or use the search bar to look up words manually.");
+            }
+        });
+    }
+
+    private boolean isAccessibilityEnabled() {
+        String prefString = android.provider.Settings.Secure.getString(
+                getContentResolver(),
+                android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
+        if (prefString == null) return false;
+        String flatName = getPackageName() + "/"
+                + DictAccessibilityService.class.getName();
+        return prefString.contains(flatName);
     }
 
     private void triggerSearch(String term) {

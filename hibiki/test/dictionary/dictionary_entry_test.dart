@@ -174,4 +174,109 @@ void main() {
       expect(restored.meaning.length, 10000);
     });
   });
+
+  group('meaningToPlainText', () {
+    test('plain text passes through unchanged', () {
+      expect(DictionaryEntry.meaningToPlainText('cat'), 'cat');
+      expect(DictionaryEntry.meaningToPlainText('犬'), '犬');
+    });
+
+    test('empty string passes through', () {
+      expect(DictionaryEntry.meaningToPlainText(''), '');
+    });
+
+    test('JSON string value is extracted', () {
+      expect(
+        DictionaryEntry.meaningToPlainText(jsonEncode('a definition')),
+        'a definition',
+      );
+    });
+
+    test('JSON array of strings is joined', () {
+      expect(
+        DictionaryEntry.meaningToPlainText(jsonEncode(['first', ' second'])),
+        'first second',
+      );
+    });
+
+    test('br tag converts to newline', () {
+      expect(
+        DictionaryEntry.meaningToPlainText(
+          jsonEncode([
+            'line1',
+            {'tag': 'br'},
+            'line2'
+          ]),
+        ),
+        'line1\nline2',
+      );
+    });
+
+    test('li tag converts to bullet', () {
+      expect(
+        DictionaryEntry.meaningToPlainText(
+          jsonEncode({'tag': 'li', 'content': 'item'}),
+        ),
+        '• item',
+      );
+    });
+
+    test('img tag uses description', () {
+      expect(
+        DictionaryEntry.meaningToPlainText(
+          jsonEncode({'tag': 'img', 'description': 'icon'}),
+        ),
+        'icon',
+      );
+    });
+
+    test('img tag without description returns empty', () {
+      expect(
+        DictionaryEntry.meaningToPlainText(
+          jsonEncode({'tag': 'img'}),
+        ),
+        '',
+      );
+    });
+
+    test('nested structured content flattens', () {
+      final content = [
+        'prefix ',
+        {
+          'tag': 'span',
+          'content': [
+            'inner',
+            {'tag': 'br'},
+            'more',
+          ],
+        },
+      ];
+      expect(
+        DictionaryEntry.meaningToPlainText(jsonEncode(content)),
+        'prefix inner\nmore',
+      );
+    });
+
+    test('invalid JSON falls back to raw string', () {
+      expect(
+        DictionaryEntry.meaningToPlainText('not {valid json'),
+        'not {valid json',
+      );
+    });
+
+    test('numeric JSON is converted to string', () {
+      expect(DictionaryEntry.meaningToPlainText('42'), '42');
+    });
+
+    test('plainMeaning getter delegates to meaningToPlainText', () {
+      final entry = DictionaryEntry(
+        meaning: jsonEncode([
+          'hello',
+          {'tag': 'br'},
+          'world'
+        ]),
+      );
+      expect(entry.plainMeaning, 'hello\nworld');
+    });
+  });
 }

@@ -70,17 +70,17 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
     final Map<String, _GroupedEntry> grouped = {};
 
     for (final entry in result.entries) {
+      Map<String, dynamic>? extraData;
+      if (entry.extra.isNotEmpty) {
+        try {
+          extraData = jsonDecode(entry.extra) as Map<String, dynamic>;
+        } catch (e, stack) {
+          ErrorLogService.instance.log('DictPopupNative.extraData', e, stack);
+        }
+      }
+
       final key = '${entry.word}\n${entry.reading}';
       if (!grouped.containsKey(key)) {
-        Map<String, dynamic>? extraData;
-        if (entry.extra.isNotEmpty) {
-          try {
-            extraData = jsonDecode(entry.extra) as Map<String, dynamic>;
-          } catch (e, stack) {
-            ErrorLogService.instance.log('DictPopupNative.extraData', e, stack);
-          }
-        }
-
         final trace = <Map<String, String>>[];
         if (extraData != null && extraData.containsKey('deinflected')) {
           final matched = extraData['matched'] as String? ?? '';
@@ -99,51 +99,17 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
         );
       }
 
-      String contentText;
-      try {
-        final parsed = jsonDecode(entry.meaning);
-        contentText = _structuredContentToText(parsed);
-      } catch (e, stack) {
-        ErrorLogService.instance.log('DictPopupNative.meaning', e, stack);
-        contentText = entry.meaning;
-      }
-
-      String defTags = '';
-      if (entry.extra.isNotEmpty) {
-        try {
-          final data = jsonDecode(entry.extra) as Map<String, dynamic>;
-          defTags = data['definitionTags']?.toString() ?? '';
-        } catch (e, stack) {
-          ErrorLogService.instance
-              .log('DictPopupNative.definitionTags', e, stack);
-        }
-      }
+      final String contentText =
+          DictionaryEntry.meaningToPlainText(entry.meaning);
 
       grouped[key]!.glossaries.add(_GlossaryItem(
             dictionary: entry.dictionaryName,
             content: contentText,
-            definitionTags: defTags,
+            definitionTags: extraData?['definitionTags']?.toString() ?? '',
           ));
     }
 
     return grouped.values.toList();
-  }
-
-  static String _structuredContentToText(dynamic content) {
-    if (content is String) return content;
-    if (content is List) {
-      return content.map(_structuredContentToText).join();
-    }
-    if (content is Map) {
-      final tag = content['tag'];
-      final inner = content['content'];
-      final childText = inner != null ? _structuredContentToText(inner) : '';
-      if (tag == 'br') return '\n';
-      if (tag == 'li') return '• $childText\n';
-      if (tag == 'img') return content['description'] ?? '';
-      return childText;
-    }
-    return content?.toString() ?? '';
   }
 
   @override

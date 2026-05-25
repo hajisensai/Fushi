@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:ui';
 
@@ -2458,10 +2459,36 @@ class AppModel with ChangeNotifier {
       },
       onAnkiExport: (String word, String reading, String meaning) async {
         debugPrint('[FloatingDict] Anki export: $word / $reading');
-        HibikiToast.show(
-          msg: t.anki_export_not_implemented,
-          toastLength: Toast.LENGTH_SHORT,
-        );
+        final BaseAnkiRepository repo =
+            Platform.isAndroid ? AnkiRepository() : AnkiConnectRepository();
+        final Map<String, String> fields = <String, String>{
+          'expression': word,
+          'reading': reading,
+          'glossary': DictionaryEntry.meaningToPlainText(meaning),
+        };
+        try {
+          final MineResult result = await repo.mineEntry(
+            rawPayloadJson: jsonEncode(fields),
+            context: const AnkiMiningContext(sentence: ''),
+          );
+          switch (result) {
+            case MineResult.success:
+              final AnkiSettings settings = await repo.loadSettings();
+              HibikiToast.show(
+                msg: t.card_exported(deck: settings.selectedDeckName ?? ''),
+                toastLength: Toast.LENGTH_SHORT,
+              );
+            case MineResult.duplicate:
+              HibikiToast.show(msg: t.card_duplicate);
+            case MineResult.notConfigured:
+              HibikiToast.show(msg: t.card_export_not_configured);
+            case MineResult.error:
+              HibikiToast.show(msg: t.card_export_failed);
+          }
+        } catch (e, stack) {
+          ErrorLogService.instance.log('FloatingDict.ankiExport', e, stack);
+          HibikiToast.show(msg: t.card_export_failed);
+        }
       },
     );
   }
