@@ -49,7 +49,6 @@ abstract class BaseTabPageState<T extends BaseTabPage> extends BasePageState {
     _isSearchBarFocused = focused;
 
     if (!_isSearchBarFocused) {
-      mediaType.floatingSearchBarController.close();
       setState(() {});
     } else {
       if (!mediaSource.implementsSearch) {

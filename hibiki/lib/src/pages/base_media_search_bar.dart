@@ -138,13 +138,29 @@ abstract class BaseMediaSearchBarState<T extends BaseMediaSearchBar>
     });
   }
 
-  /// Changes between search and clear when focused.
+  /// Clear button that only clears text without closing the search bar.
   Widget buildSearchButton() {
-    return FloatingSearchBarAction.searchToClear(
-      color: theme.appBarTheme.foregroundColor,
-      size: textTheme.titleLarge!.fontSize!,
-      searchButtonSemanticLabel: t.search,
-      clearButtonSemanticLabel: t.clear,
+    return FloatingSearchBarAction(
+      showIfOpened: true,
+      showIfClosed: false,
+      builder: (context, animation) {
+        final bar = FloatingSearchAppBar.of(context)!;
+        return ValueListenableBuilder<String>(
+          valueListenable: bar.queryNotifer,
+          builder: (context, query, _) {
+            if (query.isEmpty) return const SizedBox.shrink();
+            return HibikiIconButton(
+              size: textTheme.titleLarge?.fontSize,
+              tooltip: t.clear,
+              icon: Icons.close,
+              onTap: () {
+                bar.clear();
+                bar.hasFocus = true;
+              },
+            );
+          },
+        );
+      },
     );
   }
 
