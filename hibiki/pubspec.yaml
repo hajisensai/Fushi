@@ -43,8 +43,7 @@ dependencies:
     path: ../packages/hibiki_audio
   hibiki_platform:
     path: ../packages/hibiki_platform
-  flutter_secure_storage: ^9.2.4
-  flutter_web_auth_2: ^4.1.0
+  google_sign_in: ^6.2.2
   flutter_archive: ^5.0.0
   flutter_cache_manager: ^3.3.0
   flutter_charset_detector: ^1.0.2
