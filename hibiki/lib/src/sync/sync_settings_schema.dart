@@ -351,8 +351,6 @@ class _SyncSettingsState {
   bool get syncAudioBook => _syncAudioBook;
   set syncAudioBook(bool value) => _syncAudioBook = value;
 
-  bool get loaded => _loaded;
-
   Future<void> load() async {
     if (_loaded || _loading) return;
 
