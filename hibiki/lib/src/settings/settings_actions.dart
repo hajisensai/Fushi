@@ -132,9 +132,18 @@ Widget buildDesignSystemSelector(SettingsContext settingsContext) {
       ButtonSegment<String>(
         value: 'auto',
         label: Text(t.design_system_auto),
+        tooltip: t.design_system_auto,
       ),
-      const ButtonSegment<String>(value: 'material', label: Text('MD3')),
-      const ButtonSegment<String>(value: 'cupertino', label: Text('iOS')),
+      const ButtonSegment<String>(
+        value: 'material',
+        label: Text('MD3'),
+        tooltip: 'Material Design 3',
+      ),
+      const ButtonSegment<String>(
+        value: 'cupertino',
+        label: Text('iOS'),
+        tooltip: 'iOS (Cupertino)',
+      ),
     ],
     selected: settingsContext.appModel.themeNotifier.designSystem,
     onChanged: (String value) async {
@@ -256,18 +265,21 @@ Widget buildBrightnessSelector(SettingsContext settingsContext) {
   return AdaptiveSettingsSegmentedRow<String>(
     title: t.dark_mode,
     icon: Icons.contrast_outlined,
-    segments: const <ButtonSegment<String>>[
+    segments: <ButtonSegment<String>>[
       ButtonSegment<String>(
         value: 'light',
-        icon: Icon(Icons.light_mode_outlined, size: 16),
+        icon: const Icon(Icons.light_mode_outlined, size: 16),
+        tooltip: t.dark_mode_light,
       ),
       ButtonSegment<String>(
         value: 'system',
-        icon: Icon(Icons.brightness_auto_outlined, size: 16),
+        icon: const Icon(Icons.brightness_auto_outlined, size: 16),
+        tooltip: t.dark_mode_system,
       ),
       ButtonSegment<String>(
         value: 'dark',
-        icon: Icon(Icons.dark_mode_outlined, size: 16),
+        icon: const Icon(Icons.dark_mode_outlined, size: 16),
+        tooltip: t.dark_mode_dark,
       ),
     ],
     selected: settingsContext.appModel.brightnessMode,

@@ -165,9 +165,9 @@ void main() {
                 AdaptiveSettingsSegmentedRow<String>(
                   title: 'Spread mode',
                   segments: const [
-                    ButtonSegment(value: 'off', label: Text('Off')),
-                    ButtonSegment(value: 'on', label: Text('On')),
-                    ButtonSegment(value: 'auto', label: Text('Auto')),
+                    ButtonSegment(value: 'off', label: Text('Off'), tooltip: 'Off'),
+                    ButtonSegment(value: 'on', label: Text('On'), tooltip: 'On'),
+                    ButtonSegment(value: 'auto', label: Text('Auto'), tooltip: 'Auto'),
                   ],
                   selected: 'auto',
                   onChanged: (_) {},
@@ -201,9 +201,9 @@ void main() {
                 AdaptiveSettingsSegmentedRow<String>(
                   title: 'Spread mode',
                   segments: const [
-                    ButtonSegment(value: 'off', label: Text('Off')),
-                    ButtonSegment(value: 'on', label: Text('On')),
-                    ButtonSegment(value: 'auto', label: Text('Auto')),
+                    ButtonSegment(value: 'off', label: Text('Off'), tooltip: 'Off'),
+                    ButtonSegment(value: 'on', label: Text('On'), tooltip: 'On'),
+                    ButtonSegment(value: 'auto', label: Text('Auto'), tooltip: 'Auto'),
                   ],
                   selected: 'auto',
                   onChanged: (_) {},

@@ -377,18 +377,21 @@ class _CustomThemePageState extends BasePageState {
               title: t.dark_mode,
               icon: Icons.dark_mode_outlined,
               controlBelow: true,
-              segments: const [
+              segments: [
                 ButtonSegment<String>(
                   value: 'light',
-                  icon: Icon(Icons.light_mode_outlined, size: 16),
+                  icon: const Icon(Icons.light_mode_outlined, size: 16),
+                  tooltip: t.dark_mode_light,
                 ),
                 ButtonSegment<String>(
                   value: 'system',
-                  icon: Icon(Icons.brightness_auto_outlined, size: 16),
+                  icon: const Icon(Icons.brightness_auto_outlined, size: 16),
+                  tooltip: t.dark_mode_system,
                 ),
                 ButtonSegment<String>(
                   value: 'dark',
-                  icon: Icon(Icons.dark_mode_outlined, size: 16),
+                  icon: const Icon(Icons.dark_mode_outlined, size: 16),
+                  tooltip: t.dark_mode_dark,
                 ),
               ],
               selected: _brightnessMode,

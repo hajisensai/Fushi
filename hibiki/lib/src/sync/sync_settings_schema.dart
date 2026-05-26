@@ -40,10 +40,12 @@ SettingsDestination buildSyncBackupDestination() {
               SettingsSegmentOption<String>(
                 value: 'merge',
                 label: t.sync_mode_merge,
+                tooltip: t.sync_mode_merge,
               ),
               SettingsSegmentOption<String>(
                 value: 'replace',
                 label: t.sync_mode_replace,
+                tooltip: t.sync_mode_replace,
               ),
             ],
             selected: (SettingsContext ctx) => _syncSettings(ctx).syncMode,

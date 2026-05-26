@@ -287,6 +287,7 @@ class _MaterialSettingsItem extends StatelessWidget {
             value: value,
             label: Text(option.label),
             icon: option.icon != null ? Icon(option.icon, size: 16) : null,
+            tooltip: option.tooltip ?? option.label,
           );
         }).toList(growable: false),
         selected: <Object>{selected},

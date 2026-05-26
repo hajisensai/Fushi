@@ -156,11 +156,13 @@ class SettingsSegmentOption<T extends Object> {
     required this.value,
     required this.label,
     this.icon,
+    this.tooltip,
   });
 
   final T value;
   final String label;
   final IconData? icon;
+  final String? tooltip;
 }
 
 class SettingsSegmentedItem<T extends Object> extends SettingsItem {

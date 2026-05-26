@@ -1950,6 +1950,7 @@ class _BatchTagIntentRow extends StatelessWidget {
                 segments: [
                   ButtonSegment<_BatchTagIntent>(
                     value: _BatchTagIntent.keep,
+                    tooltip: t.batch_tag_keep,
                     icon: Icon(
                       cupertino
                           ? CupertinoIcons.minus
@@ -1959,6 +1960,7 @@ class _BatchTagIntentRow extends StatelessWidget {
                   ),
                   ButtonSegment<_BatchTagIntent>(
                     value: _BatchTagIntent.add,
+                    tooltip: t.batch_tag_add,
                     icon: Icon(
                       cupertino ? CupertinoIcons.plus : Icons.add,
                       size: 16,
@@ -1966,6 +1968,7 @@ class _BatchTagIntentRow extends StatelessWidget {
                   ),
                   ButtonSegment<_BatchTagIntent>(
                     value: _BatchTagIntent.remove,
+                    tooltip: t.batch_tag_remove,
                     icon: Icon(
                       cupertino ? CupertinoIcons.xmark : Icons.remove,
                       size: 16,

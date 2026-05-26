@@ -122,9 +122,21 @@ class _DisplaySettingsPageState extends BasePageState {
             AdaptiveSettingsSegmentedRow<String>(
               title: t.spread_mode,
               segments: [
-                ButtonSegment(value: 'off', label: Text(t.spread_off)),
-                ButtonSegment(value: 'on', label: Text(t.spread_on)),
-                ButtonSegment(value: 'auto', label: Text(t.spread_auto)),
+                ButtonSegment(
+                  value: 'off',
+                  label: Text(t.spread_off),
+                  tooltip: t.spread_off,
+                ),
+                ButtonSegment(
+                  value: 'on',
+                  label: Text(t.spread_on),
+                  tooltip: t.spread_on,
+                ),
+                ButtonSegment(
+                  value: 'auto',
+                  label: Text(t.spread_auto),
+                  tooltip: t.spread_auto,
+                ),
               ],
               selected: _source.ttuSpreadMode,
               onChanged: (value) =>
@@ -134,8 +146,16 @@ class _DisplaySettingsPageState extends BasePageState {
               AdaptiveSettingsSegmentedRow<String>(
                 title: t.spread_direction,
                 segments: const [
-                  ButtonSegment(value: 'rtl', label: Text('RTL')),
-                  ButtonSegment(value: 'ltr', label: Text('LTR')),
+                  ButtonSegment(
+                    value: 'rtl',
+                    label: Text('RTL'),
+                    tooltip: 'Right to Left',
+                  ),
+                  ButtonSegment(
+                    value: 'ltr',
+                    label: Text('LTR'),
+                    tooltip: 'Left to Right',
+                  ),
                 ],
                 selected: _source.ttuSpreadDirection,
                 onChanged: (value) =>
@@ -145,9 +165,15 @@ class _DisplaySettingsPageState extends BasePageState {
               title: t.ttu_writing_direction,
               segments: [
                 ButtonSegment(
-                    value: 'horizontal-tb', label: Text(t.ttu_horizontal)),
+                  value: 'horizontal-tb',
+                  label: Text(t.ttu_horizontal),
+                  tooltip: t.ttu_horizontal,
+                ),
                 ButtonSegment(
-                    value: 'vertical-rl', label: Text(t.ttu_vertical)),
+                  value: 'vertical-rl',
+                  label: Text(t.ttu_vertical),
+                  tooltip: t.ttu_vertical,
+                ),
               ],
               selected: _source.ttuWritingMode,
               onChanged: (value) =>
@@ -156,8 +182,16 @@ class _DisplaySettingsPageState extends BasePageState {
             AdaptiveSettingsSegmentedRow<String>(
               title: t.ttu_view_mode_label,
               segments: [
-                ButtonSegment(value: 'paginated', label: Text(t.ttu_paginated)),
-                ButtonSegment(value: 'continuous', label: Text(t.ttu_scroll)),
+                ButtonSegment(
+                  value: 'paginated',
+                  label: Text(t.ttu_paginated),
+                  tooltip: t.ttu_paginated,
+                ),
+                ButtonSegment(
+                  value: 'continuous',
+                  label: Text(t.ttu_scroll),
+                  tooltip: t.ttu_scroll,
+                ),
               ],
               selected: _source.ttuViewMode,
               onChanged: (value) =>
@@ -168,9 +202,15 @@ class _DisplaySettingsPageState extends BasePageState {
                 title: t.ttu_vert_text_orient,
                 segments: [
                   ButtonSegment(
-                      value: 'mixed', label: Text(t.ttu_orient_mixed)),
+                    value: 'mixed',
+                    label: Text(t.ttu_orient_mixed),
+                    tooltip: t.ttu_orient_mixed,
+                  ),
                   ButtonSegment(
-                      value: 'upright', label: Text(t.ttu_orient_upright)),
+                    value: 'upright',
+                    label: Text(t.ttu_orient_upright),
+                    tooltip: t.ttu_orient_upright,
+                  ),
                 ],
                 selected: _source.ttuVerticalTextOrientation,
                 onChanged: (value) =>
@@ -180,12 +220,26 @@ class _DisplaySettingsPageState extends BasePageState {
               title: t.ttu_furigana_mode,
               controlBelow: true,
               segments: [
-                ButtonSegment(value: 'show', label: Text(t.ttu_furigana_show)),
-                ButtonSegment(value: 'hide', label: Text(t.ttu_furigana_hide)),
                 ButtonSegment(
-                    value: 'partial', label: Text(t.ttu_furigana_partial)),
+                  value: 'show',
+                  label: Text(t.ttu_furigana_show),
+                  tooltip: t.ttu_furigana_show,
+                ),
                 ButtonSegment(
-                    value: 'toggle', label: Text(t.ttu_furigana_toggle)),
+                  value: 'hide',
+                  label: Text(t.ttu_furigana_hide),
+                  tooltip: t.ttu_furigana_hide,
+                ),
+                ButtonSegment(
+                  value: 'partial',
+                  label: Text(t.ttu_furigana_partial),
+                  tooltip: t.ttu_furigana_partial,
+                ),
+                ButtonSegment(
+                  value: 'toggle',
+                  label: Text(t.ttu_furigana_toggle),
+                  tooltip: t.ttu_furigana_toggle,
+                ),
               ],
               selected: _source.ttuFuriganaMode,
               onChanged: (value) =>

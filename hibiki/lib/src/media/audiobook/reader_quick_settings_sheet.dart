@@ -809,6 +809,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
               .map((s) => ButtonSegment<int>(
                     value: s,
                     label: Text(s == 0 ? t.image_pause_off : '${s}s'),
+                    tooltip: s == 0 ? t.image_pause_off : '${s}s',
                   ))
               .toList(),
           selected: sec,
@@ -1127,14 +1128,17 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
                 ButtonSegment<String>(
                   value: 'off',
                   label: Text(t.spread_off),
+                  tooltip: t.spread_off,
                 ),
                 ButtonSegment<String>(
                   value: 'on',
                   label: Text(t.spread_on),
+                  tooltip: t.spread_on,
                 ),
                 ButtonSegment<String>(
                   value: 'auto',
                   label: Text(t.spread_auto),
+                  tooltip: t.spread_auto,
                 ),
               ],
               selected: _src.ttuSpreadMode,
@@ -1148,8 +1152,16 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
               AdaptiveSettingsSegmentedRow<String>(
                 title: t.spread_direction,
                 segments: const <ButtonSegment<String>>[
-                  ButtonSegment<String>(value: 'rtl', label: Text('RTL')),
-                  ButtonSegment<String>(value: 'ltr', label: Text('LTR')),
+                  ButtonSegment<String>(
+                    value: 'rtl',
+                    label: Text('RTL'),
+                    tooltip: 'Right to Left',
+                  ),
+                  ButtonSegment<String>(
+                    value: 'ltr',
+                    label: Text('LTR'),
+                    tooltip: 'Left to Right',
+                  ),
                 ],
                 selected: _src.ttuSpreadDirection,
                 onChanged: (String value) {
@@ -1164,10 +1176,12 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
                 ButtonSegment<String>(
                   value: 'horizontal-tb',
                   label: Text(t.ttu_horizontal),
+                  tooltip: t.ttu_horizontal,
                 ),
                 ButtonSegment<String>(
                   value: 'vertical-rl',
                   label: Text(t.ttu_vertical),
+                  tooltip: t.ttu_vertical,
                 ),
               ],
               selected: s.writingMode,
@@ -1183,10 +1197,12 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
                 ButtonSegment<String>(
                   value: 'paginated',
                   label: Text(t.ttu_paginated),
+                  tooltip: t.ttu_paginated,
                 ),
                 ButtonSegment<String>(
                   value: 'continuous',
                   label: Text(t.ttu_scroll),
+                  tooltip: t.ttu_scroll,
                 ),
               ],
               selected: s.viewMode,
@@ -1204,10 +1220,12 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
                   ButtonSegment<String>(
                     value: 'mixed',
                     label: Text(t.ttu_orient_mixed),
+                    tooltip: t.ttu_orient_mixed,
                   ),
                   ButtonSegment<String>(
                     value: 'upright',
                     label: Text(t.ttu_orient_upright),
+                    tooltip: t.ttu_orient_upright,
                   ),
                 ],
                 selected: _src.ttuVerticalTextOrientation,
@@ -1225,18 +1243,22 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
                 ButtonSegment<String>(
                   value: 'show',
                   label: Text(t.ttu_furigana_show),
+                  tooltip: t.ttu_furigana_show,
                 ),
                 ButtonSegment<String>(
                   value: 'hide',
                   label: Text(t.ttu_furigana_hide),
+                  tooltip: t.ttu_furigana_hide,
                 ),
                 ButtonSegment<String>(
                   value: 'partial',
                   label: Text(t.ttu_furigana_partial),
+                  tooltip: t.ttu_furigana_partial,
                 ),
                 ButtonSegment<String>(
                   value: 'toggle',
                   label: Text(t.ttu_furigana_toggle),
+                  tooltip: t.ttu_furigana_toggle,
                 ),
               ],
               selected: _src.ttuFuriganaMode,
