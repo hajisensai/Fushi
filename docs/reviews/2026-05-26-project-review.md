@@ -195,3 +195,171 @@ But the runtime design system is incomplete. The real problem is local visual de
 2. 第二轮聚焦 search surfaces：`BaseMediaSearchBar`、`HomeDictionaryPage`、dictionary popup lookup。
 3. 第三轮聚焦 list/card surfaces：reader shelf、dictionary history、collections、statistics、media source picker。
 4. 第四轮补截图验证：Android Material path light/dark/custom theme，确认视觉层级和 MD3 味道，而不是只看代码 token。
+
+## Round 2 - Material 3 repair verification
+
+### Scope
+
+- Commits reviewed:
+  - `69d45558c feat(ui): add HibikiDesignTokens + HibikiCard/ListItem/SectionHeader components`
+  - `6a6c73f39 refactor(ui): migrate pages + settings renderer to HibikiCard/ListItem`
+- Current working-tree repairs reviewed:
+  - `hibiki/lib/src/pages/base_media_search_bar.dart`
+  - `hibiki/lib/src/pages/base_tab_page.dart`
+  - `hibiki/lib/src/media/media_type.dart`
+  - `hibiki/lib/src/media/sources/reader_hibiki_source.dart`
+  - `hibiki/pubspec.yaml`
+  - `hibiki/test/settings/md3_design_system_static_test.dart`
+- Verification guards:
+  - `hibiki/test/settings/md3_design_system_static_test.dart`
+  - `hibiki/test/pages/media_source_picker_dialog_page_test.dart`
+  - `hibiki/test/settings/settings_renderer_test.dart`
+  - `hibiki/test/i18n/i18n_completeness_test.dart`
+
+### Findings
+
+#### HBK-AUDIT-001 - Token layer missing
+
+- severity: HIGH
+- status: resolved
+- files/lines:
+  - `hibiki/lib/src/utils/components/hibiki_design_tokens.dart`
+  - `hibiki/lib/src/utils/components/hibiki_material_components.dart`
+  - `hibiki/test/settings/md3_design_system_static_test.dart`
+- root cause:
+  - Round 1 was right: `useMaterial3` alone did not give the app a component contract.
+- impact:
+  - Fixed for migrated Material surfaces. Feature pages now have shared surface, radius, spacing, typography and row/card/search/menu primitives instead of each page inventing local visual rules.
+- fix:
+  - Added `HibikiDesignTokens`, `HibikiCard`, `HibikiListItem`, `HibikiSearchField`, and `HibikiOverflowMenu`.
+  - Added static checks that require high-exposure pages to consume those primitives.
+- verification:
+  - `flutter test test/settings/md3_design_system_static_test.dart` passed.
+
+#### HBK-AUDIT-002 - Search shell used legacy floating search
+
+- severity: HIGH
+- status: resolved
+- files/lines:
+  - `hibiki/lib/src/pages/base_media_search_bar.dart`
+  - `hibiki/lib/src/pages/base_tab_page.dart`
+  - `hibiki/lib/src/media/media_type.dart`
+  - `hibiki/lib/src/media/sources/reader_hibiki_source.dart`
+  - `hibiki/pubspec.yaml`
+- root cause:
+  - The old `material_floating_search_bar` dependency controlled page search state and actions, so the app still carried an MD2-era search shell even after the dictionary page moved to `HibikiSearchField`.
+- impact:
+  - Fixed. Media search now uses the shared MD3 search field, local `TextEditingController` / `FocusNode` state, and plain Hibiki icon actions. The dead dependency was removed from `pubspec.yaml` and `pubspec.lock`.
+- fix:
+  - Replaced `FloatingSearchBar` and `FloatingSearchBarAction` usage in the shared media search path.
+  - Removed `FloatingSearchBarController` from `MediaType`.
+  - Kept existing search data flow: submit, suggestions, search history, paging controller, source actions, and change-source dialog.
+- verification:
+  - `rg -n "material_floating_search_bar|FloatingSearchBar|floatingSearchBarController" hibiki/lib hibiki/test -g "*.dart"` only finds test guard strings.
+  - `flutter test test/settings/md3_design_system_static_test.dart` passed.
+
+#### HBK-AUDIT-003 - Page-local ListTile/Card grammar
+
+- severity: HIGH
+- status: resolved for audited high-exposure surfaces
+- files/lines:
+  - `hibiki/lib/src/settings/material_settings_renderer.dart`
+  - `hibiki/lib/src/utils/components/hibiki_list_tile.dart`
+  - `hibiki/lib/src/utils/components/hibiki_bottom_sheet.dart`
+  - `hibiki/lib/src/pages/implementations/home_dictionary_page.dart`
+  - `hibiki/lib/src/pages/implementations/media_source_picker_dialog_page.dart`
+  - `hibiki/lib/src/pages/implementations/reading_statistics_page.dart`
+- root cause:
+  - Settings rows, dictionary history, statistics panels and picker rows were still built as local `Card` / `ListTile` / custom rows.
+- impact:
+  - Fixed for the surfaces above. Static tests now block direct old primitive use in those files.
+- fix:
+  - Migrated to `HibikiCard` and `HibikiListItem`.
+  - Updated media source picker test so it asserts rendered source identity, not the obsolete `ListTile` implementation type.
+- verification:
+  - `flutter test test/settings/md3_design_system_static_test.dart` passed.
+  - `flutter test test/widgets/hibiki_list_tile_test.dart` passed.
+  - `flutter test test/pages/media_source_picker_dialog_page_test.dart --plain-name "media source picker fits a compact desktop window"` passed.
+
+#### HBK-AUDIT-004 - PopupMenu/Card menus
+
+- severity: MEDIUM
+- status: resolved for audited dictionary and text-selection surfaces
+- files/lines:
+  - `hibiki/lib/src/pages/implementations/dictionary_dialog_page.dart`
+  - `hibiki/lib/src/pages/implementations/dictionary_entry_page.dart`
+  - `hibiki/lib/src/utils/components/hibiki_text_selection_controls.dart`
+  - `hibiki/lib/src/pages/base_source_page.dart`
+  - `hibiki/lib/src/pages/implementations/dictionary_term_page.dart`
+- root cause:
+  - Dictionary management and selection toolbar actions used direct `PopupMenuButton` / `Card` surfaces.
+- impact:
+  - Fixed for the audited paths. `PopupMenuButton` is now behind `HibikiOverflowMenu`, and toolbar/loading/term surfaces use `HibikiCard`.
+- fix:
+  - Replaced direct menu/card construction with shared MD3 primitives.
+- verification:
+  - `flutter test test/settings/md3_design_system_static_test.dart` passed.
+
+#### HBK-AUDIT-005 - Typography hand sizing
+
+- severity: MEDIUM
+- status: partially resolved
+- files/lines:
+  - `hibiki/lib/src/utils/components/hibiki_design_tokens.dart`
+  - `hibiki/lib/src/utils/components/hibiki_material_components.dart`
+  - `hibiki/lib/src/utils/components/hibiki_list_tile.dart`
+  - `hibiki/lib/src/pages/implementations/home_dictionary_page.dart`
+- root cause:
+  - The worst row/card/search surfaces had hand-sized text instead of shared type roles.
+- impact:
+  - Fixed on migrated row/search/card surfaces by using `HibikiTypeRoles`.
+  - Still intentionally open for content-preview/editor surfaces such as custom theme previews, dictionary popup native rendering, debug logs and reader chrome, where literal font sizes may be content-specific.
+- fix:
+  - Centralized list title, subtitle, metadata, section label and control label styles in `HibikiTypeRoles`.
+- verification:
+  - Static guard blocks the old hand-sized values in migrated surfaces.
+
+#### HBK-AUDIT-006 - Page-local surface roles
+
+- severity: MEDIUM
+- status: partially resolved
+- files/lines:
+  - `hibiki/lib/src/utils/components/hibiki_design_tokens.dart`
+  - `hibiki/lib/src/utils/components/hibiki_material_components.dart`
+  - migrated dictionary/settings/statistics/source-picker surfaces
+- root cause:
+  - Round 1 found direct `surfaceContainer*` choices scattered through high-exposure pages.
+- impact:
+  - Fixed for migrated shared component surfaces. Remaining direct `surfaceContainer*` references are either token definitions, Cupertino/shared settings internals, custom theme preview surfaces, reader chrome, or later non-audited pages.
+- fix:
+  - Centralized page/group/card/selected/search/overlay colors in `HibikiSurfaceColors`.
+- verification:
+  - Static guard blocks `surfaceContainerHigh` and selected direct surface roles in audited files.
+
+### Overall Judgment
+
+【品味评分】
+
+🟢 好品味，仍有后续普通页面债务。
+
+The important part is fixed: the app no longer merely flips `useMaterial3` while high-exposure Material pages keep drawing MD2 rows, cards, menus and search bars by hand. The data structure is now sane: tokens feed shared components, and pages consume the components.
+
+This does not mean every single page in `lib/src/pages` is pixel-perfect MD3. It means the audited high-risk surfaces now have a contract and a regression guard. Remaining raw widgets are mostly editor/content-preview/dialog-specialized surfaces and should be migrated page by page, not by a blind rewrite.
+
+### Verification
+
+- Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test test\settings\md3_design_system_static_test.dart --reporter expanded`
+- Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test test\widgets\hibiki_list_tile_test.dart --reporter expanded`
+- Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test test\settings\settings_renderer_test.dart --reporter expanded`
+- Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test test\pages\media_source_picker_dialog_page_test.dart --plain-name "media source picker fits a compact desktop window" --reporter expanded`
+- Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test test\i18n\i18n_completeness_test.dart --plain-name "i18n completeness every translation covers 100% of base keys" --reporter expanded`
+- Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test` (1130 tests)
+- Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat tool\i18n_sync.dart`
+- Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat run slang`
+- Blocked by existing generated build directory state: `D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat format .` still fails while listing `build\flutter_inappwebview_android\.transforms\...\headless_in_app_webview\*`. Targeted formatting of touched Dart files passed.
+
+### Next Scope
+
+1. Do not reopen the MD2 search shell. Keep `material_floating_search_bar` out of runtime code.
+2. Next cleanup should target the remaining non-audited high-visibility page families in this order: collections/tag management, custom theme preview, native popup dictionary, reader history cards.
+3. For those pages, add a failing static/widget check first, then migrate to existing `HibikiCard`, `HibikiListItem`, `HibikiSearchField`, or add one missing shared primitive if the existing component is the wrong data structure.

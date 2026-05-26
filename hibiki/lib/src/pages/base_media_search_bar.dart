@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:infinite_scroll_pagination/infinite_scroll_pagination.dart';
-import 'package:material_floating_search_bar/material_floating_search_bar.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
@@ -19,6 +18,8 @@ abstract class BaseMediaSearchBarState<T extends BaseMediaSearchBar>
 
   bool _isSearching = false;
 
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
   final ScrollController _scrollController = ScrollController();
   List<String> _searchSuggestions = [];
 
@@ -26,45 +27,60 @@ abstract class BaseMediaSearchBarState<T extends BaseMediaSearchBar>
   Duration get searchDelay;
 
   @override
+  void initState() {
+    super.initState();
+    _searchFocusNode.addListener(_onSearchFocusChanged);
+  }
+
+  @override
   void dispose() {
+    _searchFocusNode.removeListener(_onSearchFocusChanged);
+    _searchController.dispose();
+    _searchFocusNode.dispose();
     _scrollController.dispose();
     super.dispose();
   }
 
+  void _onSearchFocusChanged() {
+    onFocusChanged(focused: _searchFocusNode.hasFocus);
+  }
+
   @override
   Widget build(BuildContext context) {
-    return FloatingSearchBar(
-      isScrollControlled: true,
-      hint: mediaSource.getLocalisedSourceName(appModel),
-      controller: mediaType.floatingSearchBarController,
-      onSubmitted: onSubmitted,
-      onQueryChanged: onQueryChanged,
-      builder: buildFloatingSearchBody,
-      borderRadius: BorderRadius.zero,
-      elevation: 0,
-      backgroundColor: Theme.of(context).colorScheme.surfaceContainerHigh,
-      backdropColor: Colors.transparent,
-      accentColor: theme.colorScheme.primary,
-      scrollPadding: const EdgeInsets.only(top: 6, bottom: 56),
-      transitionDuration: Duration.zero,
-      margins: const EdgeInsets.symmetric(horizontal: 6),
-      progress: _isSearching,
-      width: double.maxFinite,
-      transition: SlideFadeFloatingSearchBarTransition(),
-      automaticallyImplyBackButton: false,
-      onFocusChanged: (focused) => onFocusChanged(focused: focused),
-      leadingActions: [
-        buildChangeSourceButton(),
-        buildBackButton(),
-      ],
-      actions: [
-        buildSearchClearButton(),
-        ...mediaSource.getActions(
-          context: context,
-          ref: ref,
-          appModel: appModel,
+    return Column(
+      children: <Widget>[
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: SizedBox(
+            height: kToolbarHeight,
+            child: Row(
+              children: <Widget>[
+                buildChangeSourceButton(),
+                if (_searchFocusNode.hasFocus ||
+                    _searchController.text.isNotEmpty)
+                  buildBackButton(onTap: _clearSearch),
+                Expanded(
+                  child: HibikiSearchField(
+                    controller: _searchController,
+                    focusNode: _searchFocusNode,
+                    hintText: mediaSource.getLocalisedSourceName(appModel),
+                    onChanged: onQueryChanged,
+                    onSubmitted: onSubmitted,
+                  ),
+                ),
+                buildSearchClearButton(),
+                ...mediaSource.getActions(
+                  context: context,
+                  ref: ref,
+                  appModel: appModel,
+                ),
+                buildSearchButton(),
+              ],
+            ),
+          ),
         ),
-        buildSearchButton(),
+        if (_isSearching) const LinearProgressIndicator(minHeight: 2),
+        Expanded(child: buildSearchBody(context)),
       ],
     );
   }
@@ -111,7 +127,7 @@ abstract class BaseMediaSearchBarState<T extends BaseMediaSearchBar>
       });
       appModel.addToSearchHistory(
         historyKey: mediaSource.uniqueKey,
-        searchTerm: mediaType.floatingSearchBarController.query,
+        searchTerm: _searchController.text,
       );
 
       setState(() {
@@ -140,24 +156,18 @@ abstract class BaseMediaSearchBarState<T extends BaseMediaSearchBar>
 
   /// Clear button that only clears text without closing the search bar.
   Widget buildSearchButton() {
-    return FloatingSearchBarAction(
-      showIfOpened: true,
-      showIfClosed: false,
-      builder: (context, animation) {
-        final bar = FloatingSearchAppBar.of(context)!;
-        return ValueListenableBuilder<String>(
-          valueListenable: bar.queryNotifer,
-          builder: (context, query, _) {
-            if (query.isEmpty) return const SizedBox.shrink();
-            return HibikiIconButton(
-              size: textTheme.titleLarge?.fontSize,
-              tooltip: t.clear,
-              icon: Icons.close,
-              onTap: () {
-                bar.clear();
-                bar.hasFocus = true;
-              },
-            );
+    return ValueListenableBuilder<TextEditingValue>(
+      valueListenable: _searchController,
+      builder: (context, value, _) {
+        if (value.text.isEmpty) return const SizedBox.shrink();
+        return HibikiIconButton(
+          size: textTheme.titleLarge?.fontSize,
+          tooltip: t.clear,
+          icon: Icons.close,
+          onTap: () {
+            _searchController.clear();
+            onQueryChanged('');
+            _searchFocusNode.requestFocus();
           },
         );
       },
@@ -166,15 +176,11 @@ abstract class BaseMediaSearchBarState<T extends BaseMediaSearchBar>
 
   /// Shows when the user has focused the search bar.
   Widget buildSearchClearButton() {
-    return FloatingSearchBarAction(
-      showIfOpened: true,
-      showIfClosed: false,
-      child: HibikiIconButton(
-        size: textTheme.titleLarge?.fontSize,
-        tooltip: t.clear_search_title,
-        icon: Icons.manage_search_outlined,
-        onTap: showDeleteSearchHistoryPrompt,
-      ),
+    return HibikiIconButton(
+      size: textTheme.titleLarge?.fontSize,
+      tooltip: t.clear_search_title,
+      icon: Icons.manage_search_outlined,
+      onTap: showDeleteSearchHistoryPrompt,
     );
   }
 
@@ -194,7 +200,7 @@ abstract class BaseMediaSearchBarState<T extends BaseMediaSearchBar>
           ),
           onPressed: () async {
             appModel.clearSearchHistory(historyKey: mediaSource.uniqueKey);
-            mediaType.floatingSearchBarController.clear();
+            _searchController.clear();
 
             setState(() {});
             Navigator.pop(context);
@@ -215,11 +221,8 @@ abstract class BaseMediaSearchBarState<T extends BaseMediaSearchBar>
   }
 
   /// Shows when the user taps on the floating search bar.
-  Widget buildFloatingSearchBody(
-    BuildContext context,
-    Animation<double> transition,
-  ) {
-    String query = mediaType.floatingSearchBarController.query.trim();
+  Widget buildSearchBody(BuildContext context) {
+    String query = _searchController.text.trim();
 
     if (query.isEmpty) {
       List<String> searchHistory =
@@ -230,11 +233,7 @@ abstract class BaseMediaSearchBarState<T extends BaseMediaSearchBar>
       } else {
         return HibikiSearchHistory(
           uniqueKey: mediaSource.uniqueKey,
-          onSearchTermSelect: (searchTerm) {
-            setState(() {
-              mediaType.floatingSearchBarController.query = searchTerm;
-            });
-          },
+          onSearchTermSelect: _selectSearchTerm,
           onUpdate: () {
             setState(() {});
           },
@@ -246,11 +245,7 @@ abstract class BaseMediaSearchBarState<T extends BaseMediaSearchBar>
       return HibikiSearchHistory(
         uniqueKey: mediaSource.uniqueKey,
         searchSuggestions: _searchSuggestions,
-        onSearchTermSelect: (searchTerm) {
-          setState(() {
-            mediaType.floatingSearchBarController.query = searchTerm;
-          });
-        },
+        onSearchTermSelect: _selectSearchTerm,
         onUpdate: () {
           setState(() {});
         },
@@ -292,5 +287,22 @@ abstract class BaseMediaSearchBarState<T extends BaseMediaSearchBar>
         message: t.no_search_results,
       ),
     );
+  }
+
+  void _clearSearch() {
+    _searchController.clear();
+    onQueryChanged('');
+    _searchFocusNode.unfocus();
+  }
+
+  void _selectSearchTerm(String searchTerm) {
+    setState(() {
+      _searchController.text = searchTerm;
+      _searchController.selection = TextSelection.collapsed(
+        offset: searchTerm.length,
+      );
+    });
+    onQueryChanged(searchTerm);
+    _searchFocusNode.requestFocus();
   }
 }

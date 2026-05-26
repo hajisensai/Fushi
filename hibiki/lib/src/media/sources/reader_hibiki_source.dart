@@ -4,7 +4,6 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:material_floating_search_bar/material_floating_search_bar.dart';
 
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/media.dart';
@@ -168,27 +167,24 @@ class ReaderHibikiSource extends ReaderMediaSource {
     required WidgetRef ref,
     required AppModel appModel,
   }) {
-    return FloatingSearchBarAction(
-      showIfOpened: true,
-      child: HibikiIconButton(
-        size: Theme.of(context).textTheme.titleLarge?.fontSize,
-        tooltip: t.srt_import,
-        icon: Icons.library_add_outlined,
-        onTap: () async {
-          final bool? imported = await showAppDialog<bool>(
-            context: context,
-            builder: (_) => BookImportDialog(
-              repo: SrtBookRepository(appModel.database),
-              audiobookRepo: AudiobookRepository(appModel.database),
-              db: appModel.database,
-            ),
-          );
-          if (imported == true) {
-            ref.invalidate(hibikiBooksProvider(appModel.targetLanguage));
-            ref.invalidate(srtBooksProvider);
-          }
-        },
-      ),
+    return HibikiIconButton(
+      size: Theme.of(context).textTheme.titleLarge?.fontSize,
+      tooltip: t.srt_import,
+      icon: Icons.library_add_outlined,
+      onTap: () async {
+        final bool? imported = await showAppDialog<bool>(
+          context: context,
+          builder: (_) => BookImportDialog(
+            repo: SrtBookRepository(appModel.database),
+            audiobookRepo: AudiobookRepository(appModel.database),
+            db: appModel.database,
+          ),
+        );
+        if (imported == true) {
+          ref.invalidate(hibikiBooksProvider(appModel.targetLanguage));
+          ref.invalidate(srtBooksProvider);
+        }
+      },
     );
   }
 
@@ -197,18 +193,16 @@ class ReaderHibikiSource extends ReaderMediaSource {
     required WidgetRef ref,
     required AppModel appModel,
   }) {
-    return FloatingSearchBarAction(
-      child: HibikiIconButton(
-        size: Theme.of(context).textTheme.titleLarge?.fontSize,
-        tooltip: t.tweaks,
-        icon: Icons.tune_outlined,
-        onTap: () {
-          showAppDialog(
-            context: context,
-            builder: (context) => const HibikiSettingsDialogPage(),
-          );
-        },
-      ),
+    return HibikiIconButton(
+      size: Theme.of(context).textTheme.titleLarge?.fontSize,
+      tooltip: t.tweaks,
+      icon: Icons.tune_outlined,
+      onTap: () {
+        showAppDialog(
+          context: context,
+          builder: (context) => const HibikiSettingsDialogPage(),
+        );
+      },
     );
   }
 

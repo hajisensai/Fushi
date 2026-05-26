@@ -84,10 +84,6 @@ dependencies:
   local_assets_server: ^2.0.2+12
   material_color_utilities: ^0.13.0
   marquee: ^2.2.3
-  material_floating_search_bar:
-    git:
-      url: https://github.com/hdjsadgfwtg/material_floating_search_bar
-      ref: ec7e87dbb015b7116c303a4b60b90ec07ca4900b
   multi_value_listenable_builder: ^0.0.2
   network_to_file_image: ^4.0.1
   package_info_plus: ^4.0.2

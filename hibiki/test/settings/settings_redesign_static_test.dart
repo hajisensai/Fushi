@@ -2,6 +2,10 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+String readNormalizedSource(String path) {
+  return File(path).readAsStringSync().replaceAll('\r\n', '\n');
+}
+
 void main() {
   const Map<String, List<String>> requiredFiles = <String, List<String>>{
     'lib/src/settings/settings_context.dart': <String>[
@@ -67,7 +71,7 @@ void main() {
       final File file = File(entry.key);
       expect(file.existsSync(), isTrue, reason: '${entry.key} must exist');
 
-      final String source = file.readAsStringSync();
+      final String source = readNormalizedSource(entry.key);
       for (final String token in entry.value) {
         expect(
           source,
@@ -79,9 +83,8 @@ void main() {
   });
 
   test('settings home no longer uses the old linear adaptive page', () {
-    final String source =
-        File('lib/src/pages/implementations/hibiki_settings_page.dart')
-            .readAsStringSync();
+    final String source = readNormalizedSource(
+        'lib/src/pages/implementations/hibiki_settings_page.dart');
 
     expect(source, contains('SettingsHomePage'));
     expect(source, contains('buildReaderQuickSettingsDestination'));
@@ -92,9 +95,8 @@ void main() {
   });
 
   test('display settings contains reader layout only', () {
-    final String source =
-        File('lib/src/pages/implementations/display_settings_page.dart')
-            .readAsStringSync();
+    final String source = readNormalizedSource(
+        'lib/src/pages/implementations/display_settings_page.dart');
 
     expect(source, isNot(contains('design_system_label')));
     expect(source, isNot(contains('ProfileSelector')));
@@ -102,11 +104,11 @@ void main() {
 
   test('settings schema uses task-oriented destinations', () {
     final String destinationSource =
-        File('lib/src/settings/settings_destination.dart').readAsStringSync();
+        readNormalizedSource('lib/src/settings/settings_destination.dart');
     final String schemaSource =
-        File('lib/src/settings/settings_schema.dart').readAsStringSync();
+        readNormalizedSource('lib/src/settings/settings_schema.dart');
     final String syncSource =
-        File('lib/src/sync/sync_settings_schema.dart').readAsStringSync();
+        readNormalizedSource('lib/src/sync/sync_settings_schema.dart');
     final String combined = '$destinationSource\n$schemaSource\n$syncSource';
 
     for (final String token in <String>[
@@ -132,7 +134,7 @@ void main() {
 
   test('sync backup settings use standard schema rows for options', () {
     final String source =
-        File('lib/src/sync/sync_settings_schema.dart').readAsStringSync();
+        readNormalizedSource('lib/src/sync/sync_settings_schema.dart');
 
     expect(
         source,
@@ -148,7 +150,7 @@ void main() {
 
   test('settings tab does not duplicate schema-level header actions', () {
     final String source =
-        File('lib/src/pages/implementations/home_page.dart').readAsStringSync();
+        readNormalizedSource('lib/src/pages/implementations/home_page.dart');
 
     expect(source, isNot(contains('buildSettingsActions')));
     expect(source, isNot(contains('options_language')));
@@ -157,9 +159,9 @@ void main() {
 
   test('profile destination uses one picker row for the active profile', () {
     final String schemaSource =
-        File('lib/src/settings/settings_schema.dart').readAsStringSync();
+        readNormalizedSource('lib/src/settings/settings_schema.dart');
     final String actionsSource =
-        File('lib/src/settings/settings_actions.dart').readAsStringSync();
+        readNormalizedSource('lib/src/settings/settings_actions.dart');
 
     expect(schemaSource, contains('buildProfilePickerRow'));
     expect(schemaSource, isNot(contains('buildProfileSelectorRow')));
@@ -167,14 +169,14 @@ void main() {
   });
 
   test('Cupertino icon font is bundled when CupertinoIcons are used', () {
-    final String pubspec = File('pubspec.yaml').readAsStringSync();
+    final String pubspec = readNormalizedSource('pubspec.yaml');
 
     expect(pubspec, contains('cupertino_icons:'));
   });
 
   test('profile switching waits for reader settings refresh', () {
     final String source =
-        File('lib/src/profile/profile_view_model.dart').readAsStringSync();
+        readNormalizedSource('lib/src/profile/profile_view_model.dart');
 
     expect(
       source,

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:material_floating_search_bar/material_floating_search_bar.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
@@ -58,8 +57,6 @@ abstract class BaseTabPageState<T extends BaseTabPage> extends BasePageState {
           ref: ref,
           appModel: appModel,
         );
-        mediaType.floatingSearchBarController.clear();
-        mediaType.floatingSearchBarController.close();
         setState(() {});
         focusScope.unfocus();
       }
@@ -67,36 +64,30 @@ abstract class BaseTabPageState<T extends BaseTabPage> extends BasePageState {
   }
 
   Widget buildChangeSourceButton() {
-    return FloatingSearchBarAction(
-      child: HibikiIconButton(
-        size: textTheme.titleLarge?.fontSize,
-        tooltip: t.change_source,
-        icon: mediaSource.icon,
-        onTap: () async {
-          await showAppDialog(
-            context: context,
-            builder: (context) => MediaSourcePickerDialogPage(
-              mediaType: mediaType,
-            ),
-          );
-          mediaType.refreshTab();
-        },
-      ),
+    return HibikiIconButton(
+      size: textTheme.titleLarge?.fontSize,
+      tooltip: t.change_source,
+      icon: mediaSource.icon,
+      onTap: () async {
+        await showAppDialog(
+          context: context,
+          builder: (context) => MediaSourcePickerDialogPage(
+            mediaType: mediaType,
+          ),
+        );
+        mediaType.refreshTab();
+      },
     );
   }
 
-  Widget buildBackButton() {
-    return FloatingSearchBarAction(
-      showIfOpened: true,
-      showIfClosed: false,
-      child: HibikiIconButton(
-        size: textTheme.titleLarge?.fontSize,
-        tooltip: t.back,
-        icon: Icons.arrow_back,
-        onTap: () {
-          mediaType.floatingSearchBarController.close();
-        },
-      ),
+  Widget buildBackButton({
+    required VoidCallback onTap,
+  }) {
+    return HibikiIconButton(
+      size: textTheme.titleLarge?.fontSize,
+      tooltip: t.back,
+      icon: Icons.arrow_back,
+      onTap: onTap,
     );
   }
 }

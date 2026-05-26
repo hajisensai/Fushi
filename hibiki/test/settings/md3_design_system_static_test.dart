@@ -44,6 +44,11 @@ void main() {
         <String>[
       'HibikiListItem',
     ],
+    'lib/src/pages/base_media_search_bar.dart': <String>[
+      'HibikiSearchField',
+      'TextEditingController',
+      'FocusNode',
+    ],
     'lib/src/pages/implementations/reading_statistics_page.dart': <String>[
       'HibikiCard',
     ],
@@ -106,6 +111,12 @@ void main() {
           <String>[
         'ListTile(',
         'fontSize:',
+      ],
+      'lib/src/pages/base_media_search_bar.dart': <String>[
+        'material_floating_search_bar',
+        'FloatingSearchBar',
+        'FloatingSearchBarAction',
+        'surfaceContainerHigh',
       ],
       'lib/src/pages/implementations/reading_statistics_page.dart': <String>[
         'Card(',
@@ -177,6 +188,20 @@ void main() {
     ).readAsStringSync();
     expect(termSource, contains('HibikiCard('));
     expect(_withoutSharedComponentNames(termSource), isNot(contains('Card(')));
+  });
+
+  test('media search shell no longer depends on legacy floating search', () {
+    for (final String path in <String>[
+      'lib/src/pages/base_tab_page.dart',
+      'lib/src/media/media_type.dart',
+      'lib/src/media/sources/reader_hibiki_source.dart',
+    ]) {
+      final String source = File(path).readAsStringSync();
+      expect(source, isNot(contains('material_floating_search_bar')),
+          reason: '$path still imports legacy floating search');
+      expect(source, isNot(contains('FloatingSearchBar')),
+          reason: '$path still depends on legacy floating search widgets');
+    }
   });
 }
 

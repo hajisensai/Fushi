@@ -1,5 +1,4 @@
 import 'package:flutter/widgets.dart';
-import 'package:material_floating_search_bar/material_floating_search_bar.dart';
 
 /// A type of media that is significantly distinguishable from other media such
 /// that it is deserving of its own core functionality when viewing media items.
@@ -30,10 +29,6 @@ abstract class MediaType with ChangeNotifier {
   /// The controller to be used for this media type's home tab when it has
   /// enough media items to display that require the tab to be scrollable.
   ScrollController scrollController = ScrollController();
-
-  /// The floating search bar controller for this media type's tab page.
-  final FloatingSearchBarController floatingSearchBarController =
-      FloatingSearchBarController();
 
   /// Used to notify the media type tab to refresh.
   final ChangeNotifier tabRefreshNotifier = ChangeNotifier();
