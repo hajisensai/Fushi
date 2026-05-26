@@ -1350,6 +1350,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
                 width: 1,
                 height: 1,
               );
+              prunePopupStack(0);
               await searchDictionaryResult(
                 searchTerm: text,
                 selectionRect: rect,
@@ -2713,6 +2714,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
       }
       _lookupCue ??= _audiobookController?.currentCue;
       _syncCueSentence();
+      prunePopupStack(0);
       final int highlightCount = await searchDictionaryResult(
         searchTerm: data.text,
         selectionRect: selectionRect,
@@ -2731,6 +2733,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
     }
     _syncCueSentence();
 
+    prunePopupStack(0);
     final int highlightCount = await searchDictionaryResult(
       searchTerm: data.text,
       selectionRect: selectionRect,
@@ -2988,6 +2991,27 @@ window.flutter_inappwebview.callHandler('spreadReady');
     return KeyEventResult.handled;
   }
 
+  // ── Shift+Hover over dismiss barrier ──────────────────────────────
+
+  double _barrierHoverLastDx = -1;
+  double _barrierHoverLastDy = -1;
+
+  @override
+  void onDismissBarrierHover(PointerHoverEvent event) {
+    if (!HardwareKeyboard.instance.isShiftPressed) {
+      _barrierHoverLastDx = -1;
+      _barrierHoverLastDy = -1;
+      return;
+    }
+    final double dx = event.localPosition.dx - _barrierHoverLastDx;
+    final double dy = event.localPosition.dy - _barrierHoverLastDy;
+    if (dx * dx + dy * dy < 64) return;
+    _barrierHoverLastDx = event.localPosition.dx;
+    _barrierHoverLastDy = event.localPosition.dy;
+    _selectTextAt(
+        event.localPosition.dx, event.localPosition.dy - _readerTopOffset);
+  }
+
   // ── Page Turn ─────────────────────────────────────────────────────
 
   Future<void> _paginate(ReaderNavigationDirection direction) async {
@@ -3033,7 +3057,8 @@ window.flutter_inappwebview.callHandler('spreadReady');
       context,
       PageRouteBuilder<void>(
         opaque: false,
-        barrierColor: Colors.black87,
+        barrierColor:
+            Theme.of(context).colorScheme.scrim.withValues(alpha: 0.87),
         barrierDismissible: true,
         pageBuilder: (_, __, ___) => GestureDetector(
           onTap: () => Navigator.pop(context),

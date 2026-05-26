@@ -114,11 +114,10 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final textColor = isDark ? Colors.white : Colors.black;
-    final subColor = isDark ? Colors.white70 : Colors.black54;
-    final tagBg =
-        isDark ? Colors.white12 : Colors.black.withValues(alpha: 0.08);
+    final cs = Theme.of(context).colorScheme;
+    final textColor = cs.onSurface;
+    final subColor = cs.onSurfaceVariant;
+    final tagBg = cs.surfaceContainerHighest;
 
     if (_grouped.isEmpty) {
       return const SizedBox.shrink();
@@ -129,7 +128,7 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
       itemCount: _grouped.length,
       separatorBuilder: (_, __) => Divider(
         height: 1,
-        color: isDark ? Colors.white24 : Colors.black12,
+        color: cs.outlineVariant,
       ),
       itemBuilder: (context, idx) {
         final entry = _grouped[idx];

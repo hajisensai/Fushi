@@ -142,13 +142,8 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
 
   Widget _buildSearchHeader() {
     final ColorScheme colors = theme.colorScheme;
-    final bool dark = theme.brightness == Brightness.dark;
-    final Color searchFill = dark
-        ? Colors.white.withValues(alpha: 0.08)
-        : Colors.white.withValues(alpha: 0.82);
-    final Color borderColor = dark
-        ? Colors.white.withValues(alpha: 0.14)
-        : Colors.black.withValues(alpha: 0.12);
+    final Color searchFill = colors.surfaceContainerHigh;
+    final Color borderColor = colors.outlineVariant;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -193,20 +188,6 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
                   onSubmitted: _search,
                 ),
               ),
-            ),
-            IconButton(
-              tooltip: t.dictionary_settings,
-              icon: const Icon(Icons.settings_outlined),
-              onPressed: () async {
-                double oldFontSize = appModel.dictionaryFontSize;
-                await showAppDialog(
-                  context: context,
-                  builder: (context) => const DictionarySettingsDialogPage(),
-                );
-                if (appModel.dictionaryFontSize != oldFontSize) {
-                  appModel.refresh();
-                }
-              },
             ),
             IconButton(
               tooltip: t.clear_dictionary_title,

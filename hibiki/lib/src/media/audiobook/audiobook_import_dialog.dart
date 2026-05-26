@@ -178,7 +178,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
                             child: adaptiveIndicator(
                               context: context,
                               strokeWidth: 2,
-                              color: Colors.white70,
+                              color: Theme.of(context).colorScheme.primary,
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -283,18 +283,19 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
     final String pctStr = health.ratePct?.toString() ?? '?';
     final String? reason = health.reason;
     final String tail = (reason == null || reason.isEmpty) ? '' : ' · $reason';
+    final cs = Theme.of(context).colorScheme;
     switch (health.kind) {
       case HealthKind.ok:
         icon = Icons.check_circle;
-        color = Colors.green;
+        color = cs.tertiary;
         label = t.sasayaki_health_label(pct: '$pctStr%', detail: tail);
       case HealthKind.partial:
         icon = Icons.warning_amber;
-        color = Colors.amber;
+        color = cs.secondary;
         label = t.sasayaki_health_label(pct: '$pctStr%', detail: tail);
       case HealthKind.failed:
         icon = Icons.error_outline;
-        color = Colors.red;
+        color = cs.error;
         label = t.sasayaki_health_label(pct: '$pctStr%', detail: tail);
       case HealthKind.running:
       case HealthKind.unrun:
@@ -369,7 +370,9 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
             valueListenable: _progressMsg,
             builder: (_, msg, __) => Text(
               msg,
-              style: const TextStyle(fontSize: 11, color: Colors.grey),
+              style: TextStyle(
+                  fontSize: 11,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant),
             ),
           ),
         ],
@@ -394,7 +397,9 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
               if (_hasAudioSource)
                 Text(
                   _audioSourceLabel,
-                  style: const TextStyle(fontSize: 11, color: Colors.grey),
+                  style: TextStyle(
+                      fontSize: 11,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant),
                   overflow: TextOverflow.ellipsis,
                   maxLines: 1,
                 ),
@@ -430,7 +435,9 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
               if (_alignmentPath != null)
                 Text(
                   _alignmentName ?? p.basename(_alignmentPath!),
-                  style: const TextStyle(fontSize: 11, color: Colors.grey),
+                  style: TextStyle(
+                      fontSize: 11,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant),
                   overflow: TextOverflow.ellipsis,
                   maxLines: 1,
                 ),

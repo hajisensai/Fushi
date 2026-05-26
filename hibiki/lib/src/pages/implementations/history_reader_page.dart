@@ -112,7 +112,7 @@ class HistoryReaderPageState<T extends BaseHistoryPage>
               padding: const EdgeInsets.fromLTRB(2, 2, 2, 4),
               height: constraints.maxHeight * 0.25,
               width: double.maxFinite,
-              color: Colors.black.withValues(alpha: 0.6),
+              color: theme.colorScheme.scrim.withValues(alpha: 0.6),
               child: Text(
                 mediaSource.getDisplayTitleFromMediaItem(item),
                 overflow: TextOverflow.ellipsis,
@@ -120,7 +120,7 @@ class HistoryReaderPageState<T extends BaseHistoryPage>
                 textAlign: TextAlign.center,
                 softWrap: true,
                 style: textTheme.bodySmall!.copyWith(
-                    color: Colors.white,
+                    color: theme.colorScheme.onInverseSurface,
                     fontSize: textTheme.bodySmall!.fontSize! * 0.9),
               ),
             );
@@ -133,8 +133,9 @@ class HistoryReaderPageState<T extends BaseHistoryPage>
                 : ((item.position / item.duration) > 0.97)
                     ? 1
                     : (item.position / item.duration),
-            backgroundColor: Colors.white.withValues(alpha: 0.6),
-            color: Colors.red,
+            backgroundColor: theme.colorScheme.surfaceContainerHighest
+                .withValues(alpha: 0.6),
+            color: theme.colorScheme.primary,
             minHeight: 2,
           ),
         ],

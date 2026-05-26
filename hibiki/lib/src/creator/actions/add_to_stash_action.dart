@@ -30,7 +30,10 @@ class AddToStashAction extends QuickAction {
     required DictionaryEntry entry,
   }) async {
     if (appModel.isTermInStash(entry.word)) {
-      return Colors.red;
+      final cs = appModel.isDarkMode
+          ? appModel.darkTheme.colorScheme
+          : appModel.theme.colorScheme;
+      return cs.error;
     } else {
       return null;
     }

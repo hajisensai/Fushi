@@ -110,7 +110,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
                       child: adaptiveIndicator(
                         context: context,
                         strokeWidth: 2,
-                        color: Colors.white70,
+                        color: Theme.of(context).colorScheme.primary,
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -129,7 +129,9 @@ class _BookImportDialogState extends State<BookImportDialog> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(t.srt_import_hint_epub_or_srt,
-            style: const TextStyle(fontSize: 11, color: Colors.grey)),
+            style: TextStyle(
+                fontSize: 11,
+                color: Theme.of(context).colorScheme.onSurfaceVariant)),
         const SizedBox(height: 4),
         _epubRow(),
         const SizedBox(height: 8),
@@ -195,7 +197,9 @@ class _BookImportDialogState extends State<BookImportDialog> {
             valueListenable: _progressMsg,
             builder: (_, msg, __) => Text(
               msg,
-              style: const TextStyle(fontSize: 11, color: Colors.grey),
+              style: TextStyle(
+                  fontSize: 11,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant),
             ),
           ),
         ],
@@ -215,7 +219,9 @@ class _BookImportDialogState extends State<BookImportDialog> {
               if (_epubPath != null)
                 Text(
                   _epubName ?? p.basename(_epubPath!),
-                  style: const TextStyle(fontSize: 11, color: Colors.grey),
+                  style: TextStyle(
+                      fontSize: 11,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant),
                   overflow: TextOverflow.ellipsis,
                   maxLines: 1,
                 ),
@@ -243,7 +249,9 @@ class _BookImportDialogState extends State<BookImportDialog> {
               if (_subtitlePath != null)
                 Text(
                   _subtitleName ?? p.basename(_subtitlePath!),
-                  style: const TextStyle(fontSize: 11, color: Colors.grey),
+                  style: TextStyle(
+                      fontSize: 11,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant),
                   overflow: TextOverflow.ellipsis,
                   maxLines: 1,
                 ),
@@ -252,7 +260,9 @@ class _BookImportDialogState extends State<BookImportDialog> {
         ),
         if (_subtitlePath != null)
           IconButton(
-            icon: const Icon(Icons.close, size: 18, color: Colors.grey),
+            icon: Icon(Icons.close,
+                size: 18,
+                color: Theme.of(context).colorScheme.onSurfaceVariant),
             onPressed: () => setState(() {
               _subtitlePath = null;
               _subtitleName = null;
@@ -281,7 +291,9 @@ class _BookImportDialogState extends State<BookImportDialog> {
                   _audioPaths.length == 1
                       ? p.basename(_audioPaths.first)
                       : t.file_count(count: _audioPaths.length),
-                  style: const TextStyle(fontSize: 11, color: Colors.grey),
+                  style: TextStyle(
+                      fontSize: 11,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant),
                   overflow: TextOverflow.ellipsis,
                   maxLines: 1,
                 ),
@@ -290,7 +302,9 @@ class _BookImportDialogState extends State<BookImportDialog> {
         ),
         if (_audioPaths.isNotEmpty)
           IconButton(
-            icon: const Icon(Icons.close, size: 18, color: Colors.grey),
+            icon: Icon(Icons.close,
+                size: 18,
+                color: Theme.of(context).colorScheme.onSurfaceVariant),
             onPressed: () => setState(() {
               _audioPaths = [];
               _audioCoverPath = null;
@@ -442,7 +456,9 @@ class _BookImportDialogState extends State<BookImportDialog> {
               if (effectiveCover != null)
                 Text(
                   p.basename(effectiveCover),
-                  style: const TextStyle(fontSize: 11, color: Colors.grey),
+                  style: TextStyle(
+                      fontSize: 11,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant),
                   overflow: TextOverflow.ellipsis,
                   maxLines: 1,
                 ),
@@ -451,7 +467,9 @@ class _BookImportDialogState extends State<BookImportDialog> {
         ),
         if (effectiveCover != null)
           IconButton(
-            icon: const Icon(Icons.close, size: 18, color: Colors.grey),
+            icon: Icon(Icons.close,
+                size: 18,
+                color: Theme.of(context).colorScheme.onSurfaceVariant),
             onPressed: () => setState(() {
               _coverPath = null;
               _audioCoverPath = null;

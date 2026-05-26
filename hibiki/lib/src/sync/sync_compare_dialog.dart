@@ -41,8 +41,10 @@ class SyncCompareEntry {
 
   bool get hasLocal => localUpdatedAt != null;
   bool get hasRemote => remoteUpdatedAt != null;
-  bool get hasConflict => hasLocal && hasRemote && localUpdatedAt != remoteUpdatedAt;
-  bool get isSynced => hasLocal && hasRemote && localUpdatedAt == remoteUpdatedAt;
+  bool get hasConflict =>
+      hasLocal && hasRemote && localUpdatedAt != remoteUpdatedAt;
+  bool get isSynced =>
+      hasLocal && hasRemote && localUpdatedAt == remoteUpdatedAt;
 
   SyncDirection get autoDirection {
     if (!hasLocal && !hasRemote) return SyncDirection.synced;
@@ -110,7 +112,8 @@ Future<List<SyncCompareEntry>> _fetchCompareData(HibikiDatabase db) async {
           localUpdatedAt = pos.updatedAt;
         }
         localStatsCount = statCountByTitle[title];
-        localAudioMs = await db.getPrefTyped<int>('audiobook_pos_${local.id}', 0);
+        localAudioMs =
+            await db.getPrefTyped<int>('audiobook_pos_${local.id}', 0);
         if (localAudioMs == 0) localAudioMs = null;
       } catch (e) {
         developer.log(
@@ -365,7 +368,8 @@ class _SyncCompareDialogState extends State<_SyncCompareDialog> {
       body = Center(
         child: Padding(
           padding: const EdgeInsets.all(16),
-          child: Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
+          child:
+              Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
         ),
       );
     } else if (_entries == null) {
@@ -411,7 +415,7 @@ class _SyncCompareDialogState extends State<_SyncCompareDialog> {
               onSelected: (choice) {
                 setState(() {
                   for (final e in _entries!) {
-                    if (!e.isSynced && e.bookId != null) {
+                    if (e.bookId != null) {
                       _choices[e.title] = choice;
                     }
                   }
@@ -458,19 +462,23 @@ class _SyncCompareDialogState extends State<_SyncCompareDialog> {
     );
   }
 
-  Widget _sectionHeader(String text, ThemeData theme, {bool isConflict = false}) {
+  Widget _sectionHeader(String text, ThemeData theme,
+      {bool isConflict = false}) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
       child: Row(
         children: [
           if (isConflict) ...[
-            Icon(Icons.warning_amber_rounded, size: 16, color: theme.colorScheme.error),
+            Icon(Icons.warning_amber_rounded,
+                size: 16, color: theme.colorScheme.error),
             const SizedBox(width: 4),
           ],
           Text(
             text,
             style: theme.textTheme.labelLarge?.copyWith(
-              color: isConflict ? theme.colorScheme.error : theme.colorScheme.primary,
+              color: isConflict
+                  ? theme.colorScheme.error
+                  : theme.colorScheme.primary,
             ),
           ),
         ],
@@ -527,7 +535,7 @@ class _SyncCompareDialogState extends State<_SyncCompareDialog> {
               ],
             ),
           ),
-          if (!entry.isSynced && entry.bookId != null) ...[
+          if (entry.bookId != null) ...[
             const SizedBox(height: 6),
             _choiceRow(entry.title, choice, theme),
           ],
@@ -537,12 +545,13 @@ class _SyncCompareDialogState extends State<_SyncCompareDialog> {
   }
 
   Widget _directionIcon(SyncCompareEntry entry, ThemeData theme) {
+    final cs = theme.colorScheme;
     final choice = _choices[entry.title] ?? SyncChoice.skip;
     if (choice == SyncChoice.useLocal) {
-      return const Icon(Icons.cloud_upload_outlined, size: 18, color: Colors.orange);
+      return Icon(Icons.cloud_upload_outlined, size: 18, color: cs.tertiary);
     }
     if (choice == SyncChoice.useRemote) {
-      return const Icon(Icons.cloud_download_outlined, size: 18, color: Colors.blue);
+      return Icon(Icons.cloud_download_outlined, size: 18, color: cs.primary);
     }
     final icon = switch (entry.autoDirection) {
       SyncDirection.importFromTtu => Icons.cloud_download_outlined,
@@ -550,9 +559,9 @@ class _SyncCompareDialogState extends State<_SyncCompareDialog> {
       SyncDirection.synced => Icons.check_circle_outline,
     };
     final color = switch (entry.autoDirection) {
-      SyncDirection.importFromTtu => Colors.blue,
-      SyncDirection.exportToTtu => Colors.orange,
-      SyncDirection.synced => Colors.green,
+      SyncDirection.importFromTtu => cs.primary,
+      SyncDirection.exportToTtu => cs.tertiary,
+      SyncDirection.synced => cs.onSurfaceVariant,
     };
     return Icon(icon, size: 18, color: color);
   }
@@ -569,17 +578,17 @@ class _SyncCompareDialogState extends State<_SyncCompareDialog> {
         ButtonSegment(
           value: SyncChoice.useLocal,
           label: Text(t.sync_compare_use_local),
-          icon: const Icon(Icons.phone_android, size: 14),
+          tooltip: t.sync_compare_use_local,
         ),
         ButtonSegment(
           value: SyncChoice.skip,
           label: Text(t.sync_compare_skip),
-          icon: const Icon(Icons.skip_next, size: 14),
+          tooltip: t.sync_compare_skip,
         ),
         ButtonSegment(
           value: SyncChoice.useRemote,
           label: Text(t.sync_compare_use_remote),
-          icon: const Icon(Icons.cloud_outlined, size: 14),
+          tooltip: t.sync_compare_use_remote,
         ),
       ],
       selected: {choice},
@@ -593,7 +602,8 @@ class _SyncCompareDialogState extends State<_SyncCompareDialog> {
     final progress = isLocal ? e.localProgress : e.remoteProgress;
     final updatedAt = isLocal ? e.localUpdatedAt : e.remoteUpdatedAt;
     final statsCount = isLocal ? e.localStatsCount : e.remoteStatsCount;
-    final hasAudio = isLocal ? e.localAudioPosMs != null : e.remoteAudioPosSec != null;
+    final hasAudio =
+        isLocal ? e.localAudioPosMs != null : e.remoteAudioPosSec != null;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

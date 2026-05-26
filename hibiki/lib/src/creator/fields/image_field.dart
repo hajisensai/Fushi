@@ -152,7 +152,10 @@ class ImageField extends ImageExportField {
           itemBuilder: (context, index, realIndex) {
             if (index == itemCount) {
               return Container(
-                color: appModel.isDarkMode ? Colors.white10 : Colors.black12,
+                color: Theme.of(context)
+                    .colorScheme
+                    .outlineVariant
+                    .withValues(alpha: 0.12),
               );
             }
 
@@ -181,7 +184,10 @@ class ImageField extends ImageExportField {
                 }
                 popup = OverlayEntry(
                   builder: (context) => ColoredBox(
-                    color: Colors.black.withValues(alpha: 0.5),
+                    color: Theme.of(context)
+                        .colorScheme
+                        .scrim
+                        .withValues(alpha: 0.5),
                     child: buildImage(image: image, fit: BoxFit.contain),
                   ),
                 );

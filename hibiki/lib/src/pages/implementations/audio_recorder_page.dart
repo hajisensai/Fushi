@@ -294,7 +294,7 @@ class _AudioRecorderDialogPageState
                     padding: const EdgeInsets.all(16),
                     child: adaptiveIndicator(
                       context: context,
-                      color: Colors.red,
+                      color: Theme.of(context).colorScheme.error,
                     ),
                   )
                 else

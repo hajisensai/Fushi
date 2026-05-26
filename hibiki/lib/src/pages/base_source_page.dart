@@ -74,6 +74,9 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
 
   bool get isDictionaryShown => _hasVisiblePopup(_popupStack.value);
 
+  @protected
+  void onDismissBarrierHover(PointerHoverEvent event) {}
+
   Widget? buildPopupAudioControls() => null;
 
   /// Handles leaving a source page. All sources should
@@ -264,11 +267,14 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
                 children: [
                   if (hasVisiblePopup || searching)
                     Positioned.fill(
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.translucent,
-                        onTap: clearDictionaryResult,
-                        child: Container(
-                          color: Colors.transparent,
+                      child: Listener(
+                        onPointerHover: onDismissBarrierHover,
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.translucent,
+                          onTap: clearDictionaryResult,
+                          child: Container(
+                            color: Colors.transparent,
+                          ),
                         ),
                       ),
                     ),
@@ -291,13 +297,9 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
 
   Widget _buildLoadingPlaceholder(Size screen) {
     final pos = _calculatePopupPosition(_pendingSelectionRect!, screen);
-    final isDark = (appModel.overrideDictionaryTheme ?? theme).brightness ==
-        Brightness.dark;
-    final fillColor = appModel.overrideDictionaryColor ??
-        (isDark ? Colors.black : Colors.white);
-    final borderColor = isDark
-        ? Colors.white.withValues(alpha: 0.15)
-        : Colors.black.withValues(alpha: 0.18);
+    final effectiveCs = (appModel.overrideDictionaryTheme ?? theme).colorScheme;
+    final fillColor = appModel.overrideDictionaryColor ?? effectiveCs.surface;
+    final borderColor = effectiveCs.outlineVariant;
 
     return Positioned(
       left: pos.left,
@@ -312,9 +314,9 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
         ),
         child: Column(
           children: [
-            const LinearProgressIndicator(
+            LinearProgressIndicator(
               backgroundColor: Colors.transparent,
-              color: Colors.red,
+              color: effectiveCs.primary,
               minHeight: 2.75,
             ),
             Expanded(child: Container()),
@@ -360,7 +362,7 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
             final childRect = localRect == Rect.zero
                 ? item.selectionRect
                 : localRect.shift(Offset(parentPos.left, parentPos.top));
-            _popupStack.value = _popupStack.value.sublist(0, index + 1);
+            prunePopupStack(index + 1);
             final count = await searchDictionaryResult(
               searchTerm: text,
               selectionRect: childRect,
@@ -375,7 +377,7 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
             final childRect = localRect == Rect.zero
                 ? item.selectionRect
                 : localRect.shift(Offset(parentPos.left, parentPos.top));
-            _popupStack.value = _popupStack.value.sublist(0, index + 1);
+            prunePopupStack(index + 1);
             await searchDictionaryResult(
               searchTerm: query,
               selectionRect: childRect,
@@ -456,9 +458,9 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
               shape: const RoundedRectangleBorder(),
               child: Column(
                 children: [
-                  const LinearProgressIndicator(
+                  LinearProgressIndicator(
                     backgroundColor: Colors.transparent,
-                    color: Colors.red,
+                    color: theme.colorScheme.primary,
                     minHeight: 2.75,
                   ),
                   Expanded(child: Container())
@@ -509,6 +511,15 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
       ..searchTerm = searchTerm
       ..visible = visible;
     return reusable;
+  }
+
+  @protected
+  void prunePopupStack(int keepCount) {
+    if (_popupStack.value.length > keepCount) {
+      _popupStack.value = keepCount > 0
+          ? _popupStack.value.sublist(0, keepCount)
+          : <_PopupStackItem>[];
+    }
   }
 
   void _showPopupItem(_PopupStackItem item) {

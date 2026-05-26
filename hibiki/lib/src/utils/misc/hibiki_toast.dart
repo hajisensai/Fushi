@@ -126,20 +126,15 @@ class _DesktopToastWidgetState extends State<_DesktopToastWidget>
               constraints: const BoxConstraints(maxWidth: 400),
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               decoration: BoxDecoration(
-                color: widget.backgroundColor ??
-                    (theme.brightness == Brightness.dark
-                        ? Colors.grey.shade300
-                        : Colors.grey.shade800),
+                color:
+                    widget.backgroundColor ?? theme.colorScheme.inverseSurface,
                 borderRadius: BorderRadius.circular(24),
               ),
               child: Text(
                 widget.msg,
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  color: widget.textColor ??
-                      (theme.brightness == Brightness.dark
-                          ? Colors.black87
-                          : Colors.white),
+                  color: widget.textColor ?? theme.colorScheme.onInverseSurface,
                   fontSize: 14,
                 ),
               ),

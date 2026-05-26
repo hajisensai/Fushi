@@ -458,7 +458,7 @@ class _DownloadOverlay extends StatelessWidget {
   Widget build(BuildContext context) {
     return Positioned.fill(
       child: Material(
-        color: Colors.black54,
+        color: Theme.of(context).colorScheme.scrim.withValues(alpha: 0.54),
         child: Center(
           child: Card(
             margin: const EdgeInsets.symmetric(horizontal: 48),

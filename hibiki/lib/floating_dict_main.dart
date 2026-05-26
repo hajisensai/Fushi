@@ -80,6 +80,7 @@ class _FloatingDictAppState extends ConsumerState<FloatingDictApp> {
       debugShowCheckedModeBanner: false,
       theme: appModel.overrideDictionaryTheme ??
           ThemeData(
+            useMaterial3: true,
             colorSchemeSeed: const Color(0xFF1F4959),
             brightness:
                 appModel.isDarkMode ? Brightness.dark : Brightness.light,
