@@ -18,6 +18,11 @@ scripts:
     run: melos exec -- "flutter test"
     description: Run tests in all packages
 
+  dev:
+    run: |
+      cd hibiki && flutter run --dart-define-from-file=dart_defines.env
+    description: Run Hibiki in debug mode with secrets injected
+
   build:android:
     run: |
       cd hibiki && flutter build apk --release --target-platform android-arm64 --split-per-abi --dart-define-from-file=dart_defines.env
