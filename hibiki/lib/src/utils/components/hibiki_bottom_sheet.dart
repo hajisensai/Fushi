@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 
 /// An option to show in a bottom sheet.
 class HibikiBottomSheetOption {
@@ -66,9 +67,7 @@ class _HibikiBottomSheetState extends State<HibikiBottomSheet> {
       itemBuilder: (context, i) {
         final HibikiBottomSheetOption option = widget.options[i];
 
-        return ListTile(
-          tileColor: cs.surface,
-          dense: true,
+        return HibikiListItem(
           leading: Icon(
             option.icon,
             size: 20,
@@ -77,9 +76,7 @@ class _HibikiBottomSheetState extends State<HibikiBottomSheet> {
           title: Text(
             option.label,
             maxLines: 1,
-            style: TextStyle(
-              color: option.active ? cs.error : cs.onSurface,
-            ),
+            style: TextStyle(color: option.active ? cs.error : cs.onSurface),
           ),
           onTap: () async {
             Navigator.of(context).pop();

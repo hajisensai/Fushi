@@ -60,7 +60,7 @@ void main() {
         ),
       ));
 
-      await tester.tap(find.byType(ListTile));
+      await tester.tap(find.text('Tap Me'));
       expect(tapped, isTrue);
     });
   });

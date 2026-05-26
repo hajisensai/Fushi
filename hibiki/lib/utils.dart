@@ -15,6 +15,8 @@ export 'src/utils/components/Hibiki_search_history.dart';
 export 'src/utils/components/Hibiki_popup_position.dart';
 export 'src/utils/components/Hibiki_selectable_text.dart';
 export 'src/utils/components/Hibiki_list_tile.dart';
+export 'src/utils/components/hibiki_design_tokens.dart';
+export 'src/utils/components/hibiki_material_components.dart';
 export 'src/utils/components/settings_shared.dart';
 
 export 'src/utils/converters/immutable_string_map_converter.dart';

@@ -223,7 +223,10 @@ class _HibikiSelectionToolbarState extends State<_HibikiSelectionToolbar> {
     return TextSelectionToolbar(
       anchorAbove: widget.anchorAbove,
       anchorBelow: widget.anchorBelow,
-      toolbarBuilder: (context, child) => Card(child: child),
+      toolbarBuilder: (context, child) => HibikiCard(
+        padding: EdgeInsets.zero,
+        child: child,
+      ),
       children: [
         ...primaryItems.map((item) {
           return TextSelectionToolbarTextButton(
@@ -234,12 +237,10 @@ class _HibikiSelectionToolbarState extends State<_HibikiSelectionToolbar> {
           );
         }),
         if (overflowItems.isNotEmpty)
-          PopupMenuButton<int>(
-            padding: EdgeInsets.zero,
-            icon: const Icon(Icons.more_vert, size: 20),
-            constraints: const BoxConstraints(minHeight: 36),
+          HibikiOverflowMenu<int>(
+            iconSize: 20,
             onSelected: (i) => overflowItems[i].onPressed?.call(),
-            itemBuilder: (_) => [
+            items: [
               for (int i = 0; i < overflowItems.length; i++)
                 PopupMenuItem<int>(
                     value: i, child: Text(overflowItems[i].label)),

@@ -40,46 +40,32 @@ class HibikiListTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      type: MaterialType.transparency,
-      child: ListTile(
-        contentPadding: Spacing.of(context).insets.onlyLeft.semiBig,
-        dense: true,
-        selected: selected,
-        leading: Icon(
-          icon,
-          color:
-              foregroundColor ?? Theme.of(context).textTheme.bodyMedium?.color,
-        ),
-        title: Row(
-          children: [
-            Expanded(
-              child: Column(
-                children: [
-                  HibikiMarquee(
-                    text: title,
-                    style: TextStyle(
-                        fontSize:
-                            Theme.of(context).textTheme.bodyMedium?.fontSize,
-                        color: foregroundColor),
-                  ),
-                  HibikiMarquee(
-                    text: subtitle,
-                    style: TextStyle(
-                      fontSize:
-                          Theme.of(context).textTheme.labelSmall?.fontSize,
-                      color: foregroundColor,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (trailing != null && selected) trailing!,
-            const Space.semiSmall(),
-          ],
-        ),
-        onTap: onTap,
+    return HibikiListItem(
+      selected: selected,
+      onTap: onTap,
+      leading: Icon(
+        icon,
+        color: foregroundColor,
       ),
+      title: HibikiMarquee(
+        text: title,
+        style:
+            foregroundColor == null ? null : TextStyle(color: foregroundColor),
+      ),
+      subtitle: HibikiMarquee(
+        text: subtitle,
+        style:
+            foregroundColor == null ? null : TextStyle(color: foregroundColor),
+      ),
+      trailing: trailing != null && selected
+          ? Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                trailing!,
+                const Space.semiSmall(),
+              ],
+            )
+          : const Space.semiSmall(),
     );
   }
 }
