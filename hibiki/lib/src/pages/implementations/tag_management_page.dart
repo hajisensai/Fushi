@@ -183,7 +183,7 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
                     await _deleteTag(tag);
                     return false;
                   },
-                  child: ListTile(
+                  child: HibikiListItem(
                     leading: CircleAvatar(
                       backgroundColor: Color(tag.colorValue),
                       radius: 14,

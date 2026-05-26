@@ -410,8 +410,8 @@ class _SyncCompareDialogState extends State<_SyncCompareDialog> {
         children: [
           Expanded(child: Text(t.sync_compare_title)),
           if (_entries != null && _entries!.isNotEmpty)
-            PopupMenuButton<SyncChoice>(
-              icon: const Icon(Icons.checklist, size: 20),
+            HibikiOverflowMenu<SyncChoice>(
+              iconWidget: const Icon(Icons.checklist, size: 20),
               tooltip: t.sync_compare_select_all,
               onSelected: (choice) {
                 setState(() {
@@ -422,7 +422,7 @@ class _SyncCompareDialogState extends State<_SyncCompareDialog> {
                   }
                 });
               },
-              itemBuilder: (_) => [
+              items: [
                 PopupMenuItem(
                   value: SyncChoice.useLocal,
                   child: Text(t.sync_compare_all_local),

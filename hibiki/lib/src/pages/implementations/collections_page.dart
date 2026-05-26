@@ -482,69 +482,69 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
             false;
       },
       onDismissed: (_) => _deleteItem(item),
-      child: ListTile(
-        leading: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon,
-                size: 20,
-                color: isBookmark
-                    ? Theme.of(context).colorScheme.primary
-                    : Theme.of(context).colorScheme.tertiary),
-            Text(
-              typeLabel,
-              style: textTheme.labelSmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                fontSize: 10,
-              ),
-            ),
-          ],
-        ),
-        title: Text(
-          title,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-        ),
-        subtitle: Text(
-          [
-            if (subtitle != null && subtitle.isNotEmpty) subtitle,
-            _dateFmt.format(item.createdAt),
-          ].join(' · '),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: textTheme.bodySmall,
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (_hasAudio(item))
-              IconButton(
-                icon: Icon(
-                  _playingAudio
-                      ? Icons.hourglass_top
-                      : Icons.volume_up_outlined,
-                  size: 18,
-                ),
-                onPressed: _playingAudio ? null : () => _playItemAudio(item),
-                visualDensity: VisualDensity.compact,
-              ),
-            if (!isBookmark && item.text != null)
-              IconButton(
-                icon: const Icon(Icons.copy_outlined, size: 18),
-                onPressed: () {
-                  Clipboard.setData(ClipboardData(text: item.text!));
-                },
-                visualDensity: VisualDensity.compact,
-              ),
-            if (canNavigate)
-              Icon(
-                Icons.chevron_right,
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-          ],
-        ),
-        onTap: canNavigate ? () => _openBook(item) : null,
+      child: GestureDetector(
         onLongPress: () => _showItemDialog(item),
+        child: HibikiListItem(
+          leading: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
+              Icon(icon,
+                  size: 20,
+                  color: isBookmark
+                      ? Theme.of(context).colorScheme.primary
+                      : Theme.of(context).colorScheme.tertiary),
+              Text(
+                typeLabel,
+                style: textTheme.labelSmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+          title: Text(
+            title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          subtitle: Text(
+            [
+              if (subtitle != null && subtitle.isNotEmpty) subtitle,
+              _dateFmt.format(item.createdAt),
+            ].join(' · '),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_hasAudio(item))
+                IconButton(
+                  icon: Icon(
+                    _playingAudio
+                        ? Icons.hourglass_top
+                        : Icons.volume_up_outlined,
+                    size: 18,
+                  ),
+                  onPressed: _playingAudio ? null : () => _playItemAudio(item),
+                  visualDensity: VisualDensity.compact,
+                ),
+              if (!isBookmark && item.text != null)
+                IconButton(
+                  icon: const Icon(Icons.copy_outlined, size: 18),
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: item.text!));
+                  },
+                  visualDensity: VisualDensity.compact,
+                ),
+              if (canNavigate)
+                Icon(
+                  Icons.chevron_right,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+            ],
+          ),
+          onTap: canNavigate ? () => _openBook(item) : null,
+        ),
       ),
     );
   }

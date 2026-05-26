@@ -273,10 +273,9 @@ class MediaItemDialogFrame extends StatelessWidget {
                       const SizedBox(height: 4),
                       const HibikiDivider(),
                       for (final action in listActions)
-                        ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          dense: true,
-                          visualDensity: VisualDensity.compact,
+                        HibikiListItem(
+                          minHeight: 44,
+                          padding: EdgeInsets.zero,
                           title: Text(action.label),
                           trailing: Icon(
                             Icons.chevron_right,

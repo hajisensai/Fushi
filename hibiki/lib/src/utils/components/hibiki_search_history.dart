@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hibiki/src/utils/spacing.dart';
 import 'package:hibiki/models.dart';
+import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
+import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 
 /// Used in a floating search bar body for showing search history items for
 /// a certain collection named [uniqueKey].
@@ -38,6 +39,7 @@ class _HibikiSearchHistoryState extends ConsumerState<HibikiSearchHistory> {
 
   @override
   Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     late List<String> searchHistory;
     if (widget.searchSuggestions.isNotEmpty) {
       searchHistory = widget.searchSuggestions;
@@ -58,7 +60,7 @@ class _HibikiSearchHistoryState extends ConsumerState<HibikiSearchHistory> {
           itemCount: searchHistory.length + 1,
           itemBuilder: (context, index) {
             if (index == 0) {
-              return const Space.normal();
+              return SizedBox(height: tokens.spacing.gap * 2);
             }
 
             return buildSearchHistoryItem(
@@ -77,8 +79,8 @@ class _HibikiSearchHistoryState extends ConsumerState<HibikiSearchHistory> {
     required String searchTerm,
     required Function(String) onSearchTermSelect,
   }) {
-    return InkWell(
-      onTap: () => onSearchTermSelect(searchTerm),
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return GestureDetector(
       onLongPress: () {
         if (widget.searchSuggestions.isNotEmpty) {
           return;
@@ -91,39 +93,19 @@ class _HibikiSearchHistoryState extends ConsumerState<HibikiSearchHistory> {
         setState(() {});
         widget.onUpdate();
       },
-      child: Padding(
-        padding: EdgeInsets.only(
-          top: Spacing.of(context).spaces.normal,
-          bottom: Spacing.of(context).spaces.semiBig,
-          left: Spacing.of(context).spaces.big,
-          right: Spacing.of(context).spaces.big,
+      child: HibikiListItem(
+        leading: Icon(
+          widget.searchSuggestions.isNotEmpty
+              ? Icons.search
+              : Icons.youtube_searched_for_outlined,
         ),
-        child: Row(
-          children: [
-            Padding(
-              padding: EdgeInsets.only(
-                top: Spacing.of(context).spaces.small,
-              ),
-              child: Icon(
-                widget.searchSuggestions.isNotEmpty
-                    ? Icons.search
-                    : Icons.youtube_searched_for_outlined,
-                size: Theme.of(context).textTheme.titleMedium?.fontSize,
-              ),
-            ),
-            const SizedBox(width: 20),
-            Flexible(
-              child: Text(
-                searchTerm,
-                style: TextStyle(
-                  fontSize: Theme.of(context).textTheme.titleMedium?.fontSize,
-                ),
-                overflow: TextOverflow.ellipsis,
-                maxLines: 1,
-              ),
-            ),
-          ],
+        title: Text(searchTerm),
+        titleMaxLines: 1,
+        padding: EdgeInsets.symmetric(
+          horizontal: tokens.spacing.page,
+          vertical: tokens.spacing.rowVertical + 2,
         ),
+        onTap: () => onSearchTermSelect(searchTerm),
       ),
     );
   }

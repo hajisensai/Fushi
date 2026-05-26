@@ -303,38 +303,47 @@ But the runtime design system is incomplete. The real problem is local visual de
 #### HBK-AUDIT-005 - Typography hand sizing
 
 - severity: MEDIUM
-- status: partially resolved
+- status: resolved for app chrome and audited feature rows
 - files/lines:
   - `hibiki/lib/src/utils/components/hibiki_design_tokens.dart`
   - `hibiki/lib/src/utils/components/hibiki_material_components.dart`
   - `hibiki/lib/src/utils/components/hibiki_list_tile.dart`
+  - `hibiki/lib/src/utils/components/hibiki_search_history.dart`
   - `hibiki/lib/src/pages/implementations/home_dictionary_page.dart`
+  - `hibiki/lib/src/pages/implementations/collections_page.dart`
 - root cause:
   - The worst row/card/search surfaces had hand-sized text instead of shared type roles.
+  - Search history and collection rows still carried old copied `fontSize` decisions after the first migration.
 - impact:
   - Fixed on migrated row/search/card surfaces by using `HibikiTypeRoles`.
-  - Still intentionally open for content-preview/editor surfaces such as custom theme previews, dictionary popup native rendering, debug logs and reader chrome, where literal font sizes may be content-specific.
+  - Remaining literal `fontSize` usage is scoped to content-specific rendering and previews: reader typography, logs, dictionary native content, CSS/editor fields, audio import diagnostics, charts, and theme color previews. Those are not list/card/menu chrome and should not be forced into one app row type scale.
 - fix:
   - Centralized list title, subtitle, metadata, section label and control label styles in `HibikiTypeRoles`.
+  - Migrated search history and collections list rows to `HibikiListItem`, removing their page-local row text sizing.
 - verification:
-  - Static guard blocks the old hand-sized values in migrated surfaces.
+  - Static guard blocks old hand-sized row values in migrated app chrome surfaces.
+  - `flutter test test/settings/md3_design_system_static_test.dart` passed.
 
 #### HBK-AUDIT-006 - Page-local surface roles
 
 - severity: MEDIUM
-- status: partially resolved
+- status: resolved for app chrome and audited feature rows
 - files/lines:
   - `hibiki/lib/src/utils/components/hibiki_design_tokens.dart`
   - `hibiki/lib/src/utils/components/hibiki_material_components.dart`
-  - migrated dictionary/settings/statistics/source-picker surfaces
+  - migrated dictionary/settings/statistics/source-picker/collections/tag/media-dialog/update/sync surfaces
 - root cause:
   - Round 1 found direct `surfaceContainer*` choices scattered through high-exposure pages.
+  - Several ordinary chrome surfaces still used direct `Card`, `ListTile`, or `PopupMenuButton` even after the initial high-exposure pass.
 - impact:
-  - Fixed for migrated shared component surfaces. Remaining direct `surfaceContainer*` references are either token definitions, Cupertino/shared settings internals, custom theme preview surfaces, reader chrome, or later non-audited pages.
+  - Fixed for migrated shared component surfaces. Ordinary app chrome now routes list/card/menu surfaces through `HibikiCard`, `HibikiListItem`, and `HibikiOverflowMenu`.
+  - Remaining direct `surfaceContainer*` references are token definitions, adaptive/settings internals, reader chrome, content rendering, charts, or explicit custom-theme previews where the surface itself is being demonstrated.
 - fix:
   - Centralized page/group/card/selected/search/overlay colors in `HibikiSurfaceColors`.
+  - Added a second static guard covering collections, tag management, media item dialog actions, update download overlay, sync compare select-all menu, search history rows, and custom theme preview shell.
 - verification:
-  - Static guard blocks `surfaceContainerHigh` and selected direct surface roles in audited files.
+  - Static guard blocks direct old list/card/menu/surface roles in audited app chrome files.
+  - `flutter test test/settings/md3_design_system_static_test.dart` passed.
 
 ### Overall Judgment
 
@@ -353,7 +362,7 @@ This does not mean every single page in `lib/src/pages` is pixel-perfect MD3. It
 - Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test test\settings\settings_renderer_test.dart --reporter expanded`
 - Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test test\pages\media_source_picker_dialog_page_test.dart --plain-name "media source picker fits a compact desktop window" --reporter expanded`
 - Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test test\i18n\i18n_completeness_test.dart --plain-name "i18n completeness every translation covers 100% of base keys" --reporter expanded`
-- Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test` (1130 tests)
+- Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test` (1131 tests)
 - Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat tool\i18n_sync.dart`
 - Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat run slang`
 - Blocked by existing generated build directory state: `D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat format .` still fails while listing `build\flutter_inappwebview_android\.transforms\...\headless_in_app_webview\*`. Targeted formatting of touched Dart files passed.

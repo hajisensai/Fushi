@@ -622,151 +622,148 @@ class _CustomThemePageState extends BasePageState {
     final Color textColor = _useFontColor ? _fontColor! : cs.onSurface;
     final Color bgColor = _useBgColor ? _bgColor! : cs.surfaceContainerLow;
 
-    return Card(
+    return HibikiCard(
       color: cs.surface,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(t.preview,
-                style: TextStyle(
-                    color: cs.onSurface,
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                _swatch(cs.primary, t.color_primary, cs.onSurface),
-                const SizedBox(width: 8),
-                _swatch(cs.secondary, t.color_secondary, cs.onSurface),
-                const SizedBox(width: 8),
-                _swatch(cs.tertiary, t.color_tertiary, cs.onSurface),
-                const SizedBox(width: 8),
-                _swatch(cs.primaryContainer, t.color_container, cs.onSurface),
-              ],
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(t.preview,
+              style: TextStyle(
+                  color: cs.onSurface,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              _swatch(cs.primary, t.color_primary, cs.onSurface),
+              const SizedBox(width: 8),
+              _swatch(cs.secondary, t.color_secondary, cs.onSurface),
+              const SizedBox(width: 8),
+              _swatch(cs.tertiary, t.color_tertiary, cs.onSurface),
+              const SizedBox(width: 8),
+              _swatch(cs.primaryContainer, t.color_container, cs.onSurface),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: bgColor,
+              borderRadius: BorderRadius.circular(8),
             ),
-            const SizedBox(height: 12),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: bgColor,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  RichText(
-                    text: TextSpan(
-                      style: TextStyle(color: textColor, fontSize: 15),
-                      children: [
-                        const TextSpan(text: '日本語の'),
-                        TextSpan(
-                          text: 'テキスト',
-                          style: TextStyle(
-                            backgroundColor:
-                                _useSelectionColor ? _selectionColor : null,
-                          ),
-                        ),
-                        const TextSpan(text: 'プレビュー'),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: _useSasayakiColor
-                          ? _sasayakiColor
-                          : HibikiColor.defaultSasayakiColor,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      '♪ 音声ハイライト',
-                      style: TextStyle(color: textColor, fontSize: 13),
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  RichText(
-                    text: TextSpan(
-                      style: TextStyle(color: textColor, fontSize: 13),
-                      children: [
-                        const TextSpan(text: '♪ '),
-                        TextSpan(
-                          text: '字幕同期',
-                          style: TextStyle(
-                            backgroundColor: _useSasayakiColor
-                                ? _sasayakiColor
-                                : HibikiColor.defaultSasayakiColor,
-                          ),
-                        ),
-                        const TextSpan(text: 'テスト　'),
-                        TextSpan(
-                          text: 'リンク',
-                          style: TextStyle(
-                            color: _useLinkColor ? _linkColor! : cs.primary,
-                            decoration: TextDecoration.underline,
-                            decorationColor:
-                                _useLinkColor ? _linkColor! : cs.primary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-            Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  width: 40,
-                  height: 22,
-                  decoration: BoxDecoration(
-                    color: cs.primaryContainer,
-                    borderRadius: BorderRadius.circular(11),
-                  ),
-                  alignment: Alignment.centerRight,
-                  padding: const EdgeInsets.all(2),
-                  child: Container(
-                    width: 18,
-                    height: 18,
-                    decoration: BoxDecoration(
-                      color: cs.primary,
-                      shape: BoxShape.circle,
-                    ),
+                RichText(
+                  text: TextSpan(
+                    style: TextStyle(color: textColor, fontSize: 15),
+                    children: [
+                      const TextSpan(text: '日本語の'),
+                      TextSpan(
+                        text: 'テキスト',
+                        style: TextStyle(
+                          backgroundColor:
+                              _useSelectionColor ? _selectionColor : null,
+                        ),
+                      ),
+                      const TextSpan(text: 'プレビュー'),
+                    ],
                   ),
                 ),
-                const SizedBox(width: 8),
-                Text(t.preview_switch,
-                    style: TextStyle(color: cs.onSurface, fontSize: 12)),
-                const SizedBox(width: 16),
+                const SizedBox(height: 8),
                 Container(
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(
-                    color: cs.secondaryContainer,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(t.preview_badge,
-                      style: TextStyle(
-                          color: cs.onSecondaryContainer, fontSize: 11)),
-                ),
-                const SizedBox(width: 8),
-                Container(
-                  width: 40,
-                  height: 8,
-                  decoration: BoxDecoration(
-                    color: cs.tertiary,
+                    color: _useSasayakiColor
+                        ? _sasayakiColor
+                        : HibikiColor.defaultSasayakiColor,
                     borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    '♪ 音声ハイライト',
+                    style: TextStyle(color: textColor, fontSize: 13),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                RichText(
+                  text: TextSpan(
+                    style: TextStyle(color: textColor, fontSize: 13),
+                    children: [
+                      const TextSpan(text: '♪ '),
+                      TextSpan(
+                        text: '字幕同期',
+                        style: TextStyle(
+                          backgroundColor: _useSasayakiColor
+                              ? _sasayakiColor
+                              : HibikiColor.defaultSasayakiColor,
+                        ),
+                      ),
+                      const TextSpan(text: 'テスト　'),
+                      TextSpan(
+                        text: 'リンク',
+                        style: TextStyle(
+                          color: _useLinkColor ? _linkColor! : cs.primary,
+                          decoration: TextDecoration.underline,
+                          decorationColor:
+                              _useLinkColor ? _linkColor! : cs.primary,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Container(
+                width: 40,
+                height: 22,
+                decoration: BoxDecoration(
+                  color: cs.primaryContainer,
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                alignment: Alignment.centerRight,
+                padding: const EdgeInsets.all(2),
+                child: Container(
+                  width: 18,
+                  height: 18,
+                  decoration: BoxDecoration(
+                    color: cs.primary,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(t.preview_switch,
+                  style: TextStyle(color: cs.onSurface, fontSize: 12)),
+              const SizedBox(width: 16),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: cs.secondaryContainer,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(t.preview_badge,
+                    style: TextStyle(
+                        color: cs.onSecondaryContainer, fontSize: 11)),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                width: 40,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: cs.tertiary,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

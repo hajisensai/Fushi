@@ -460,39 +460,37 @@ class _DownloadOverlay extends StatelessWidget {
       child: Material(
         color: Theme.of(context).colorScheme.scrim.withValues(alpha: 0.54),
         child: Center(
-          child: Card(
+          child: HibikiCard(
             margin: const EdgeInsets.symmetric(horizontal: 48),
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  ValueListenableBuilder<String>(
-                    valueListenable: status,
-                    builder: (_, s, __) => Text(
-                      s,
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ValueListenableBuilder<String>(
+                  valueListenable: status,
+                  builder: (_, s, __) => Text(
+                    s,
+                    style: Theme.of(context).textTheme.titleMedium,
                   ),
-                  const SizedBox(height: 16),
-                  ValueListenableBuilder<double>(
-                    valueListenable: progress,
-                    builder: (_, p, __) => Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        LinearProgressIndicator(value: p > 0 ? p : null),
-                        const SizedBox(height: 8),
-                        Text('${(p * 100).toStringAsFixed(0)}%'),
-                      ],
-                    ),
+                ),
+                const SizedBox(height: 16),
+                ValueListenableBuilder<double>(
+                  valueListenable: progress,
+                  builder: (_, p, __) => Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      LinearProgressIndicator(value: p > 0 ? p : null),
+                      const SizedBox(height: 8),
+                      Text('${(p * 100).toStringAsFixed(0)}%'),
+                    ],
                   ),
-                  const SizedBox(height: 16),
-                  TextButton(
-                    onPressed: onHide,
-                    child: Text(t.update_hide),
-                  ),
-                ],
-              ),
+                ),
+                const SizedBox(height: 16),
+                TextButton(
+                  onPressed: onHide,
+                  child: Text(t.update_hide),
+                ),
+              ],
             ),
           ),
         ),

@@ -52,6 +52,25 @@ void main() {
     'lib/src/pages/implementations/reading_statistics_page.dart': <String>[
       'HibikiCard',
     ],
+    'lib/src/utils/components/hibiki_search_history.dart': <String>[
+      'HibikiListItem',
+      'HibikiDesignTokens',
+    ],
+    'lib/src/pages/implementations/collections_page.dart': <String>[
+      'HibikiListItem',
+    ],
+    'lib/src/pages/implementations/tag_management_page.dart': <String>[
+      'HibikiListItem',
+    ],
+    'lib/src/pages/implementations/media_item_dialog_page.dart': <String>[
+      'HibikiListItem',
+    ],
+    'lib/src/utils/misc/update_checker.dart': <String>[
+      'HibikiCard',
+    ],
+    'lib/src/sync/sync_compare_dialog.dart': <String>[
+      'HibikiOverflowMenu',
+    ],
   };
 
   test('MD3 design token and shared component files exist', () {
@@ -121,6 +140,27 @@ void main() {
       'lib/src/pages/implementations/reading_statistics_page.dart': <String>[
         'Card(',
         'surfaceContainerHighest.withValues',
+      ],
+      'lib/src/utils/components/hibiki_search_history.dart': <String>[
+        'fontSize:',
+        'TextStyle(',
+      ],
+      'lib/src/pages/implementations/collections_page.dart': <String>[
+        'ListTile(',
+        'fontSize: 10',
+      ],
+      'lib/src/pages/implementations/tag_management_page.dart': <String>[
+        'ListTile(',
+      ],
+      'lib/src/pages/implementations/media_item_dialog_page.dart': <String>[
+        'ListTile(',
+        'dense: true',
+      ],
+      'lib/src/utils/misc/update_checker.dart': <String>[
+        'child: Card(',
+      ],
+      'lib/src/sync/sync_compare_dialog.dart': <String>[
+        'PopupMenuButton',
       ],
     };
 
@@ -202,6 +242,21 @@ void main() {
       expect(source, isNot(contains('FloatingSearchBar')),
           reason: '$path still depends on legacy floating search widgets');
     }
+  });
+
+  test('custom theme preview uses shared MD3 card shell', () {
+    final String source = File(
+      'lib/src/pages/implementations/custom_theme_page.dart',
+    ).readAsStringSync();
+    final String previewCard = _functionSource(
+      source,
+      'Widget _buildPreviewCard(ColorScheme cs)',
+      'Widget _swatch(',
+    );
+    expect(previewCard, contains('HibikiCard('));
+    final String normalized = _withoutSharedComponentNames(previewCard);
+    expect(normalized, isNot(contains('return Card(')));
+    expect(normalized, isNot(contains('child: Card(')));
   });
 }
 

@@ -199,6 +199,7 @@ class HibikiOverflowMenu<T> extends StatelessWidget {
     required this.onSelected,
     super.key,
     this.icon = Icons.more_vert,
+    this.iconWidget,
     this.tooltip,
     this.iconSize,
     this.padding = const EdgeInsets.all(8),
@@ -208,6 +209,7 @@ class HibikiOverflowMenu<T> extends StatelessWidget {
   final List<PopupMenuEntry<T>> items;
   final ValueChanged<T> onSelected;
   final IconData icon;
+  final Widget? iconWidget;
   final String? tooltip;
   final double? iconSize;
   final EdgeInsetsGeometry padding;
@@ -218,7 +220,7 @@ class HibikiOverflowMenu<T> extends StatelessWidget {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return PopupMenuButton<T>(
       tooltip: tooltip,
-      icon: Icon(icon, size: iconSize),
+      icon: iconWidget ?? Icon(icon, size: iconSize),
       shape: RoundedRectangleBorder(borderRadius: tokens.radii.menuRadius),
       color: tokens.surfaces.overlay,
       padding: padding,
