@@ -33,11 +33,11 @@ class AudiobookPlayerController extends ChangeNotifier {
   AudioPlayer? _clipPlayer;
   StreamSubscription<PlayerState>? _clipStateSub;
 
-  /// playCueOnce 用：播放到此全局 ms 后自动暂停；null = 不限制。
-  int? _stopAtGlobalMs;
+  /// playCueOnce 用：播放到当前音频文件内此 ms 后自动暂停；null = 不限制。
+  int? _stopAtPositionMs;
 
-  /// playCueOnce 完成后恢复到的位置（全局 ms）；null = 不恢复。
-  int? _returnToGlobalMs;
+  /// playCueOnce 完成后恢复到的位置；null = 不恢复。
+  ({int audioFileIndex, int positionMs})? _returnToPosition;
 
   /// load() 完成前为未完成状态；seek 方法先 await 此 Completer 以避免
   /// 在音频源尚未就绪时 seek 导致位置归零。
@@ -63,9 +63,6 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// clip 播放前主播放器是否正在播放，clip 结束后恢复。
   bool _resumeMainAfterClip = false;
 
-  /// 多文件时每个文件的全局起始毫秒偏移量（index → offsetMs）。
-  List<int> _fileOffsets = [];
-
   // ── 对外暴露的状态 ─────────────────────────────────────────────────────────
 
   /// 当前正在朗读的 cue，null = 未定位到句子。
@@ -75,22 +72,15 @@ class AudiobookPlayerController extends ChangeNotifier {
 
   AudioCue? cueAtCurrentPositionInBook() {
     if (_allBookCues.isEmpty) return _currentCue;
+    final int audioFileIndex = _player.currentIndex ?? 0;
     final int effectiveMs =
         (_player.position.inMilliseconds - delayMs.value).clamp(0, 1 << 30);
     AudioCue? best;
     int bestStart = -1;
     for (final AudioCue cue in _allBookCues) {
-      final int? start = _globalMsForCue(
-        audioFileIndex: cue.audioFileIndex,
-        startMs: cue.startMs,
-        fileOffsets: _fileOffsets,
-      );
-      final int? end = _globalMsForCue(
-        audioFileIndex: cue.audioFileIndex,
-        startMs: cue.endMs,
-        fileOffsets: _fileOffsets,
-      );
-      if (start == null || end == null) continue;
+      if (cue.audioFileIndex != audioFileIndex) continue;
+      final int start = cue.startMs;
+      final int end = cue.endMs;
       if (start <= effectiveMs && end > effectiveMs) return cue;
       if (start <= effectiveMs && start > bestStart) {
         best = cue;
@@ -297,6 +287,7 @@ class AudiobookPlayerController extends ChangeNotifier {
         await _player
             .setAudioSource(
               AudioSource.file(audioFiles.first.path),
+              preload: false,
             )
             .timeout(const Duration(seconds: 60));
       } catch (e, stack) {
@@ -305,22 +296,16 @@ class AudiobookPlayerController extends ChangeNotifier {
         _loadReady.complete();
         rethrow;
       }
-      _fileOffsets = [0];
     } else {
-      // 多文件：先逐个设置以获取时长，计算累计偏移
-      _fileOffsets = [];
-      int cumulative = 0;
       final List<AudioSource> sources = [];
       for (final File f in audioFiles) {
-        _fileOffsets.add(cumulative);
-        final Duration? dur = await _durationOf(f);
-        cumulative += dur?.inMilliseconds ?? 0;
         sources.add(AudioSource.file(f.path));
       }
       try {
         await _player
             .setAudioSource(
               ConcatenatingAudioSource(children: sources),
+              preload: false,
             )
             .timeout(const Duration(seconds: 60));
       } catch (e, stack) {
@@ -444,8 +429,8 @@ class AudiobookPlayerController extends ChangeNotifier {
   }
 
   Future<void> togglePlayPause() async {
-    _stopAtGlobalMs = null;
-    _returnToGlobalMs = null;
+    _stopAtPositionMs = null;
+    _returnToPosition = null;
     if (_player.playing) {
       await pause();
     } else {
@@ -483,19 +468,21 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 播放态下 positionStream 稍后 tick 到新位置，_updateCurrentCue 判断
   /// cue 已变化就不再 notify，天然幂等。
   Future<void> skipToCue(AudioCue cue) async {
-    _stopAtGlobalMs = null;
-    _returnToGlobalMs = null;
+    _stopAtPositionMs = null;
+    _returnToPosition = null;
     await _loadReady.future;
-    final Duration? dur = _player.duration;
-    if (dur == null || dur.inMilliseconds <= 0) return;
-    final int? mappedMs = _toGlobalMs(cue);
-    if (mappedMs == null) {
+    final ({int audioFileIndex, int positionMs})? mappedPosition =
+        _positionForCue(cue);
+    if (mappedPosition == null) {
       // Invalid alignment data should fail closed; falling back to 0 makes
       // tap-to-seek look like it jumped to the start of the audiobook.
       return;
     }
-    final int globalMs = mappedMs.clamp(0, dur.inMilliseconds);
-    await _player.seek(Duration(milliseconds: globalMs));
+    final int positionMs = _clampToKnownDuration(mappedPosition.positionMs);
+    await _player.seek(
+      Duration(milliseconds: positionMs),
+      index: mappedPosition.audioFileIndex,
+    );
     _chapterTransition = false;
     final int idx = _chapterCues.indexOf(cue);
     if (idx >= 0) {
@@ -514,23 +501,22 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// cue.endMs 自动暂停，恢复主播放器位置到调用前。
   Future<void> playCueOnce(AudioCue cue) async {
     await _loadReady.future;
-    final Duration? dur = _player.duration;
-    if (dur == null || dur.inMilliseconds <= 0) return;
-    final int? startGlobal = _toGlobalMs(cue);
-    if (startGlobal == null) return;
+    final ({int audioFileIndex, int positionMs})? startPosition =
+        _positionForCue(cue);
+    if (startPosition == null) return;
 
-    final int? endGlobal = _globalMsForCue(
-      audioFileIndex: cue.audioFileIndex,
-      startMs: cue.endMs,
-      fileOffsets: _fileOffsets,
+    _returnToPosition = (
+      audioFileIndex: _player.currentIndex ?? 0,
+      positionMs: _player.position.inMilliseconds,
     );
-    if (endGlobal == null) return;
+    _stopAtPositionMs = cue.endMs;
 
-    _returnToGlobalMs = _player.position.inMilliseconds;
-    _stopAtGlobalMs = endGlobal;
-
-    await _player
-        .seek(Duration(milliseconds: startGlobal.clamp(0, dur.inMilliseconds)));
+    await _player.seek(
+      Duration(
+        milliseconds: _clampToKnownDuration(startPosition.positionMs),
+      ),
+      index: startPosition.audioFileIndex,
+    );
     _chapterTransition = false;
     final int idx = _chapterCues.indexOf(cue);
     if (idx >= 0) {
@@ -546,8 +532,8 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 对齐 Hoshi `playCue(cue, stop: false)`：seek 到 cue.startMs
   /// 然后持续播放，不设 endMs 限制。
   Future<void> playCueAndContinue(AudioCue cue) async {
-    _stopAtGlobalMs = null;
-    _returnToGlobalMs = null;
+    _stopAtPositionMs = null;
+    _returnToPosition = null;
     await skipToCue(cue);
     if (!_player.playing) {
       _hasPlayedOnce = true;
@@ -701,13 +687,17 @@ class AudiobookPlayerController extends ChangeNotifier {
     // 写 Hive。
     _maybeSavePosition();
     // playCueOnce: 到达 endMs 后暂停并恢复位置。
-    if (_stopAtGlobalMs != null && posMs >= _stopAtGlobalMs!) {
-      final int? returnTo = _returnToGlobalMs;
-      _stopAtGlobalMs = null;
-      _returnToGlobalMs = null;
+    if (_stopAtPositionMs != null && posMs >= _stopAtPositionMs!) {
+      final ({int audioFileIndex, int positionMs})? returnTo =
+          _returnToPosition;
+      _stopAtPositionMs = null;
+      _returnToPosition = null;
       unawaited(_player.pause());
       if (returnTo != null) {
-        unawaited(_player.seek(Duration(milliseconds: returnTo)));
+        unawaited(_player.seek(
+          Duration(milliseconds: returnTo.positionMs),
+          index: returnTo.audioFileIndex,
+        ));
       }
       notifyListeners();
       return;
@@ -722,17 +712,22 @@ class AudiobookPlayerController extends ChangeNotifier {
     // cue 时要把位置往回拨；负值相反。下界 clamp 到 0 避免负位置查询。
     // 上界不 clamp（_player.duration 可能暂未就绪），超出时 findCueIndex
     // 自行返回最后一个 cue 即可。
+    final int audioFileIndex = _player.currentIndex ?? 0;
+    final List<AudioCue> fileCues = _chapterCuesForAudioFile(audioFileIndex);
+    if (fileCues.isEmpty) return;
     final int effectiveMs = (posMs - delayMs.value).clamp(0, 1 << 30);
     final int idx = JsonAlignmentParser.findCueIndex(
-      cues: _chapterCues,
+      cues: fileCues,
       positionMs: effectiveMs,
     );
     // Gap（两条 cue 之间的静音）：保持上一条 cue 不清高亮，避免闪烁。
     // 用 index 而非 textFragmentId 比较，防止重复短句 id 相同时短路。
     if (idx < 0) return;
-    if (idx == _currentCueIndex) return;
-    _currentCueIndex = idx;
-    _currentCue = _chapterCues[idx];
+    final AudioCue cue = fileCues[idx];
+    final int chapterIdx = _chapterCues.indexOf(cue);
+    if (chapterIdx == _currentCueIndex) return;
+    _currentCueIndex = chapterIdx;
+    _currentCue = cue;
     _maybeEmitCrossChapter(_currentCue);
     notifyListeners();
   }
@@ -748,7 +743,7 @@ class AudiobookPlayerController extends ChangeNotifier {
       followAudio.value &&
       _hasPlayedOnce &&
       _player.playing &&
-      _stopAtGlobalMs == null;
+      _stopAtPositionMs == null;
 
   /// 诊断用：暴露 `_hasPlayedOnce` 供 reader 日志打印，不参与业务判断。
   bool get hasPlayedOnce => _hasPlayedOnce;
@@ -914,24 +909,35 @@ class AudiobookPlayerController extends ChangeNotifier {
     }
   }
 
-  /// 将 cue 的 per-file 毫秒转换为全局毫秒（多文件场景）。
-  int? _toGlobalMs(AudioCue cue) {
-    return _globalMsForCue(
-      audioFileIndex: cue.audioFileIndex,
-      startMs: cue.startMs,
-      fileOffsets: _fileOffsets,
-    );
-  }
-
-  static int? _globalMsForCue({
-    required int audioFileIndex,
-    required int startMs,
-    required List<int> fileOffsets,
-  }) {
-    if (audioFileIndex < 0 || audioFileIndex >= fileOffsets.length) {
+  /// 将 cue 映射到 just_audio playlist index + 文件内毫秒。
+  ({int audioFileIndex, int positionMs})? _positionForCue(AudioCue cue) {
+    if (cue.audioFileIndex < 0 || cue.audioFileIndex >= _audioFiles.length) {
       return null;
     }
-    return fileOffsets[audioFileIndex] + startMs;
+    return (audioFileIndex: cue.audioFileIndex, positionMs: cue.startMs);
+  }
+
+  int _clampToKnownDuration(int positionMs) {
+    final Duration? dur = _player.duration;
+    if (dur == null || dur.inMilliseconds <= 0) return positionMs;
+    return positionMs.clamp(0, dur.inMilliseconds);
+  }
+
+  List<AudioCue> _chapterCuesForAudioFile(int audioFileIndex) {
+    return _chapterCues
+        .where((AudioCue cue) => cue.audioFileIndex == audioFileIndex)
+        .toList();
+  }
+
+  static int? _positionMsForCue({
+    required int audioFileIndex,
+    required int startMs,
+    required int audioFileCount,
+  }) {
+    if (audioFileIndex < 0 || audioFileIndex >= audioFileCount) {
+      return null;
+    }
+    return startMs;
   }
 
   static int? _nextCueIndex({
@@ -979,15 +985,15 @@ class AudiobookPlayerController extends ChangeNotifier {
   }
 
   @visibleForTesting
-  static int? globalMsForCueForTesting({
+  static int? positionMsForCueForTesting({
     required int audioFileIndex,
     required int startMs,
-    required List<int> fileOffsets,
+    required int audioFileCount,
   }) {
-    return _globalMsForCue(
+    return _positionMsForCue(
       audioFileIndex: audioFileIndex,
       startMs: startMs,
-      fileOffsets: fileOffsets,
+      audioFileCount: audioFileCount,
     );
   }
 
@@ -1013,20 +1019,6 @@ class AudiobookPlayerController extends ChangeNotifier {
       allBookCues: allBookCues,
       currentCue: currentCue,
     );
-  }
-
-  /// 读取音频文件时长（用于多文件累计偏移计算）。
-  static Future<Duration?> _durationOf(File file) async {
-    final AudioPlayer probe = AudioPlayer();
-    try {
-      final Duration? d = await probe.setFilePath(file.path);
-      return d;
-    } catch (e, stack) {
-      debugPrint('AudiobookController.durationOf: $e\n$stack');
-      return null;
-    } finally {
-      await probe.dispose();
-    }
   }
 
   // ── 生命周期 ───────────────────────────────────────────────────────────────
