@@ -183,7 +183,7 @@ claude mcp add spec-workflow-mcp -s user -- npx -y spec-workflow-mcp@latest
 
 - 使用 Slang 框架，源文件在 `hibiki/lib/i18n/*.i18n.json`，生成文件是 `strings.g.dart`。
 - 共 17 种语言：基础语言英文 (`strings.i18n.json`) + 16 种翻译（ar / de / es / fr / id / it / ja / ko / nl / pt-BR / ru / th / tr / vi / zh-CN / zh-HK）。
-- 新增字符串时，先在基础英文文件和中文文件 (`strings_zh-CN.i18n.json`) 中添加；其余语言可暂留空，后续批量翻译补齐。
+- 新增字符串时，必须在全部 17 个语言文件中添加同一个 key（Slang 要求 key 完整，缺 key 会报错）。先写好英文和中文，其余 15 种语言用中文文本占位，后续批量翻译替换。
 - 修改或新增 key 后运行 `dart run slang` 重新生成 `strings.g.dart`；不要手动编辑生成文件。
 
 ## Hibiki 阅读器调试
