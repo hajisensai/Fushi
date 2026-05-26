@@ -213,6 +213,8 @@ class DictionaryPopupWebViewState
       _winPopupJs = _readPopupAsset('popup.js');
     } catch (e, stack) {
       _winAssetsLoadFailed = true;
+      debugPrint('[PopupWebView] Windows asset inlining failed, '
+          'falling back to file:// URL loading: $e');
       ErrorLogService.instance
           .log('PopupWebView._ensureWindowsAssetsLoaded', e, stack);
     }

@@ -1557,10 +1557,20 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
           // valid response. The content IS rendered — treat as onLoadStop.
           if (Platform.isWindows &&
               request.url.host == ReaderHibikiSource.kHost) {
-            debugPrint(
-                '[ReaderHibiki] Windows: treating intercepted navigation '
-                'error as successful load');
             _isNavigatingToChapter = false;
+            final int chapterSnapshot = _currentChapter;
+            if (_lyricsMode && _isLyricsUrl(request.url)) {
+              await _onChapterLoadComplete(controller);
+              return;
+            }
+            final String expectedUrl = _chapterUrl(chapterSnapshot);
+            if (Uri.parse(request.url.toString()).path !=
+                Uri.parse(expectedUrl).path) {
+              debugPrint(
+                  '[ReaderHibiki] Windows onReceivedError: stale page '
+                  '(expected=$expectedUrl), ignoring');
+              return;
+            }
             await _onChapterLoadComplete(controller);
             return;
           }

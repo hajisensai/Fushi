@@ -192,7 +192,7 @@ StardictResult stardict_reader::parse_from_data(
             while (dpos + len < entry_size && dict_data[offset + dpos + len] != 0) len++;
             if (!definition.empty()) definition += '\n';
             definition.append(start, len);
-            dpos += (dpos + len < entry_size) ? len + 1 : len;
+            dpos += static_cast<uint32_t>((dpos + len < entry_size) ? len + 1 : len);
           }
         } else {
           if (last_field) {

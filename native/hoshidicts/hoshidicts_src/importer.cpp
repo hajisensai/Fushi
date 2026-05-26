@@ -253,7 +253,7 @@ ProcessedFile process_term_bank(const std::string& content) {
     }
 
     uint64_t offset = processed.data.size();
-    uint32_t blob_size = processed.glossaries[glossary_hash].size();
+    uint32_t blob_size = static_cast<uint32_t>(processed.glossaries[glossary_hash].size());
     std::string_view expr = term.expression;
     std::string_view reading = term.reading.empty() ? expr : term.reading;
     std::string_view definition_tags = term.definition_tags.value_or("");
@@ -266,11 +266,17 @@ ProcessedFile process_term_bank(const std::string& content) {
       HOSHI_LOGW("reading too long (%zu bytes), skipping entry", reading.size());
       continue;
     }
+    if (definition_tags.size() > std::numeric_limits<uint8_t>::max() ||
+        term.rules.size() > std::numeric_limits<uint8_t>::max() ||
+        term.term_tags.size() > std::numeric_limits<uint8_t>::max()) {
+      HOSHI_LOGW("tags/rules too long, skipping entry");
+      continue;
+    }
 
     write_val<uint8_t>(processed.data, 0);
-    write_val<uint16_t>(processed.data, expr.size());
+    write_val<uint16_t>(processed.data, static_cast<uint16_t>(expr.size()));
     write_str(processed.data, expr);
-    write_val<uint16_t>(processed.data, reading.size());
+    write_val<uint16_t>(processed.data, static_cast<uint16_t>(reading.size()));
     write_str(processed.data, reading);
 
     uint64_t glossary_offset = processed.data.size();
@@ -278,11 +284,11 @@ ProcessedFile process_term_bank(const std::string& content) {
     write_val<uint32_t>(processed.data, blob_size);
     processed.glossary_offsets.emplace_back(glossary_hash, glossary_offset);
 
-    write_val<uint8_t>(processed.data, definition_tags.size());
+    write_val<uint8_t>(processed.data, static_cast<uint8_t>(definition_tags.size()));
     write_str(processed.data, definition_tags);
-    write_val<uint8_t>(processed.data, term.rules.size());
+    write_val<uint8_t>(processed.data, static_cast<uint8_t>(term.rules.size()));
     write_str(processed.data, term.rules);
-    write_val<uint8_t>(processed.data, term.term_tags.size());
+    write_val<uint8_t>(processed.data, static_cast<uint8_t>(term.term_tags.size()));
     write_str(processed.data, term.term_tags);
 
     processed.offsets.emplace_back(XXH3_64bits(expr.data(), expr.size()), offset);
@@ -323,11 +329,11 @@ ProcessedFile process_meta_bank(const std::string& content) {
     std::string_view data = meta.data.str;
 
     write_val<uint8_t>(processed.data, 1);
-    write_val<uint16_t>(processed.data, expr.size());
+    write_val<uint16_t>(processed.data, static_cast<uint16_t>(expr.size()));
     write_str(processed.data, expr);
-    write_val<uint8_t>(processed.data, mode.size());
+    write_val<uint8_t>(processed.data, static_cast<uint8_t>(mode.size()));
     write_str(processed.data, mode);
-    write_val<uint32_t>(processed.data, data.size());
+    write_val<uint32_t>(processed.data, static_cast<uint32_t>(data.size()));
     write_str(processed.data, data);
 
     processed.offsets.emplace_back(XXH3_64bits(expr.data(), expr.size()), offset);
@@ -501,13 +507,17 @@ size_t write_media(const std::string& path, const Zip& zip, const std::vector<in
 
     uint32_t record_start = write_pos;
     media_file->path = hoshidicts::normalize_media_path(std::move(media_file->path));
+    if (media_file->path.size() > std::numeric_limits<uint16_t>::max()) {
+      HOSHI_LOGW("media path too long (%zu bytes), skipping", media_file->path.size());
+      continue;
+    }
     buf.clear();
-    write_val<uint16_t>(buf, media_file->path.size());
+    write_val<uint16_t>(buf, static_cast<uint16_t>(media_file->path.size()));
     write_str(buf, media_file->path);
-    write_val<uint32_t>(buf, media_file->blob.size());
+    write_val<uint32_t>(buf, static_cast<uint32_t>(media_file->blob.size()));
     write_bytes(buf, media_file->blob.data(), media_file->blob.size());
     media.write(buf.data(), static_cast<std::streamsize>(buf.size()));
-    write_pos += buf.size();
+    write_pos += static_cast<uint32_t>(buf.size());
 
     index_entries.emplace_back(std::move(media_file->path), record_start);
     media_count++;
@@ -515,7 +525,7 @@ size_t write_media(const std::string& path, const Zip& zip, const std::vector<in
 
   std::ranges::sort(index_entries);
   std::vector<char> index_buf;
-  write_val<uint32_t>(index_buf, index_entries.size());
+  write_val<uint32_t>(index_buf, static_cast<uint32_t>(index_entries.size()));
   for (const auto& [name, offset] : index_entries) {
     write_val<uint64_t>(index_buf, offset);
   }
@@ -568,7 +578,7 @@ ProcessedFile process_simple_entries(const std::vector<SimpleEntry>& entries) {
     }
 
     uint64_t offset = processed.data.size();
-    uint32_t blob_size = processed.glossaries[glossary_hash].size();
+    uint32_t blob_size = static_cast<uint32_t>(processed.glossaries[glossary_hash].size());
     std::string_view expr = entry.headword;
 
     if (expr.size() > std::numeric_limits<uint16_t>::max()) {
@@ -577,7 +587,7 @@ ProcessedFile process_simple_entries(const std::vector<SimpleEntry>& entries) {
     }
 
     write_val<uint8_t>(processed.data, 0);
-    write_val<uint16_t>(processed.data, expr.size());
+    write_val<uint16_t>(processed.data, static_cast<uint16_t>(expr.size()));
     write_str(processed.data, expr);
     write_val<uint16_t>(processed.data, 0);  // reading_len = 0
 

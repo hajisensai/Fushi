@@ -48,10 +48,13 @@ void main() {
       }
     });
 
-    /// Ensure the top and bottom bars are shown at launch and wake prevention
-    /// is disabled if not reverted from entering a media source.
-    if (Platform.isAndroid || Platform.isIOS) {
+    /// Ensure wake prevention is disabled if not reverted from entering a
+    /// media source.  WakelockPlus supports all desktop and mobile platforms,
+    /// so clear it unconditionally; the try-catch handles unsupported targets.
+    try {
       WakelockPlus.disable();
+    } catch (e) {
+      debugPrint('[Hibiki] wakelock disable on startup failed: $e');
     }
     if (Platform.isAndroid || Platform.isIOS) {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
