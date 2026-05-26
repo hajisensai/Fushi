@@ -349,11 +349,11 @@ But the runtime design system is incomplete. The real problem is local visual de
 
 【品味评分】
 
-🟢 好品味，仍有后续普通页面债务。
+🟢 好品味，仍有内容渲染与专项页面债务。
 
 The important part is fixed: the app no longer merely flips `useMaterial3` while high-exposure Material pages keep drawing MD2 rows, cards, menus and search bars by hand. The data structure is now sane: tokens feed shared components, and pages consume the components.
 
-This does not mean every single page in `lib/src/pages` is pixel-perfect MD3. It means the audited high-risk surfaces now have a contract and a regression guard. Remaining raw widgets are mostly editor/content-preview/dialog-specialized surfaces and should be migrated page by page, not by a blind rewrite.
+This does not mean every single page in `lib/src/pages` is pixel-perfect MD3. It means the audited high-risk surfaces now have a contract and a regression guard. Remaining raw widgets are content-rendering or specialized surfaces: native popup dictionary content, reader history cards, editor fields, diagnostics, logs, charts, and explicit theme previews. Those should be migrated page by page with a failing guard first, not by a blind rewrite.
 
 ### Verification
 
@@ -370,5 +370,6 @@ This does not mean every single page in `lib/src/pages` is pixel-perfect MD3. It
 ### Next Scope
 
 1. Do not reopen the MD2 search shell. Keep `material_floating_search_bar` out of runtime code.
-2. Next cleanup should target the remaining non-audited high-visibility page families in this order: collections/tag management, custom theme preview, native popup dictionary, reader history cards.
-3. For those pages, add a failing static/widget check first, then migrate to existing `HibikiCard`, `HibikiListItem`, `HibikiSearchField`, or add one missing shared primitive if the existing component is the wrong data structure.
+2. Next cleanup should target the remaining non-audited high-visibility page families in this order: native popup dictionary, reader history cards, media edit/import dialogs, and editor/diagnostic shells.
+3. For those pages, add a failing static/widget check first, then migrate ordinary app chrome to existing `HibikiCard`, `HibikiListItem`, `HibikiSearchField`, or add one missing shared primitive if the existing component is the wrong data structure.
+4. Treat content-rendering typography as a deliberate exception only when the font size is the user content being previewed or rendered, not chrome text pretending to be content.

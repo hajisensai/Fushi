@@ -258,6 +258,29 @@ void main() {
     expect(normalized, isNot(contains('return Card(')));
     expect(normalized, isNot(contains('child: Card(')));
   });
+
+  test('MD3 review report does not reopen completed app chrome scope', () {
+    final String report = File(
+      '../docs/reviews/2026-05-26-project-review.md',
+    ).readAsStringSync();
+    final String finalJudgment = _sectionSource(
+      report,
+      '### Overall Judgment',
+      '### Verification',
+    );
+    final String finalNextScope = _sectionSource(
+      report,
+      '### Next Scope',
+      report.length,
+    );
+
+    expect(finalJudgment, isNot(contains('仍有后续普通页面债务')));
+    expect(finalJudgment, contains('内容渲染'));
+    expect(finalNextScope, isNot(contains('collections/tag management')));
+    expect(finalNextScope, isNot(contains('custom theme preview')));
+    expect(finalNextScope, contains('native popup dictionary'));
+    expect(finalNextScope, contains('reader history cards'));
+  });
 }
 
 String _withoutSharedComponentNames(String source) {
@@ -277,6 +300,23 @@ String _functionSource(
   final int start = source.indexOf(startToken);
   final int end = source.indexOf(endToken, start + startToken.length);
   expect(start, isNonNegative, reason: 'missing $startToken');
+  expect(end, greaterThan(start),
+      reason: 'missing $endToken after $startToken');
+  return source.substring(start, end);
+}
+
+String _sectionSource(
+  String source,
+  String startToken,
+  Object endToken,
+) {
+  final int start = source.lastIndexOf(startToken);
+  expect(start, isNonNegative, reason: 'missing final $startToken');
+  final int end = switch (endToken) {
+    final int endIndex => endIndex,
+    final String token => source.indexOf(token, start + startToken.length),
+    _ => throw ArgumentError.value(endToken, 'endToken'),
+  };
   expect(end, greaterThan(start),
       reason: 'missing $endToken after $startToken');
   return source.substring(start, end);
