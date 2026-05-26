@@ -179,6 +179,13 @@ claude mcp add --transport http grep https://mcp.grep.app
 claude mcp add spec-workflow-mcp -s user -- npx -y spec-workflow-mcp@latest
 ```
 
+## Hibiki 国际化 (i18n)
+
+- 使用 Slang 框架，源文件在 `hibiki/lib/i18n/*.i18n.json`，生成文件是 `strings.g.dart`。
+- 共 17 种语言：基础语言英文 (`strings.i18n.json`) + 16 种翻译（ar / de / es / fr / id / it / ja / ko / nl / pt-BR / ru / th / tr / vi / zh-CN / zh-HK）。
+- 新增字符串时，先在基础英文文件和中文文件 (`strings_zh-CN.i18n.json`) 中添加；其余语言可暂留空，后续批量翻译补齐。
+- 修改或新增 key 后运行 `dart run slang` 重新生成 `strings.g.dart`；不要手动编辑生成文件。
+
 ## Hibiki 阅读器调试
 
 - 当前 EPUB 阅读器是 Hoshi 路径：`ReaderHoshiPage`、`ReaderHoshiSource`、`reader_pagination_scripts.dart`、`reader_content_styles.dart`、`reader_selection_scripts.dart` 和 Hoshi 资源拦截。不要把当前阅读器问题带去 `D:\ttu-fork` 修。
