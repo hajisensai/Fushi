@@ -1019,6 +1019,7 @@
     "sync_mode_merge": "Combinar",
     "sync_mode_replace": "Reemplazar",
     "sync_not_signed_in": "No conectado",
+    "sync_checking_account": "Verificando cuenta…",
     "sync_options": "Opciones de sincronización",
     "sync_sign_in": "Iniciar sesión",
     "sync_sign_out": "Cerrar sesión",

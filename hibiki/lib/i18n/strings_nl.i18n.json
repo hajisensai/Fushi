@@ -1019,6 +1019,7 @@
     "sync_mode_merge": "Samenvoegen",
     "sync_mode_replace": "Vervangen",
     "sync_not_signed_in": "Niet aangemeld",
+    "sync_checking_account": "Account controleren…",
     "sync_options": "Synchronisatieopties",
     "sync_sign_in": "Aanmelden",
     "sync_sign_out": "Afmelden",

@@ -1019,6 +1019,7 @@
     "sync_mode_merge": "병합",
     "sync_mode_replace": "교체",
     "sync_not_signed_in": "로그인되지 않음",
+    "sync_checking_account": "계정 확인 중…",
     "sync_options": "동기화 옵션",
     "sync_sign_in": "로그인",
     "sync_sign_out": "로그아웃",

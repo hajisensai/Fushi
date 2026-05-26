@@ -1019,6 +1019,7 @@
     "sync_mode_merge": "Hợp nhất",
     "sync_mode_replace": "Thay thế",
     "sync_not_signed_in": "Chưa đăng nhập",
+    "sync_checking_account": "Đang kiểm tra tài khoản…",
     "sync_options": "Tùy chọn đồng bộ",
     "sync_sign_in": "Đăng nhập",
     "sync_sign_out": "Đăng xuất",

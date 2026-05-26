@@ -1019,6 +1019,7 @@
     "sync_mode_merge": "合併",
     "sync_mode_replace": "取代",
     "sync_not_signed_in": "未登入",
+    "sync_checking_account": "正在檢查帳戶…",
     "sync_options": "同步選項",
     "sync_sign_in": "登入",
     "sync_sign_out": "登出",

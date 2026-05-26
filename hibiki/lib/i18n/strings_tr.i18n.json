@@ -1019,6 +1019,7 @@
     "sync_mode_merge": "Birleştir",
     "sync_mode_replace": "Değiştir",
     "sync_not_signed_in": "Oturum açılmadı",
+    "sync_checking_account": "Hesap kontrol ediliyor…",
     "sync_options": "Senkronizasyon Seçenekleri",
     "sync_sign_in": "Oturum Aç",
     "sync_sign_out": "Oturumu Kapat",

@@ -1019,6 +1019,7 @@
     "sync_mode_merge": "マージ",
     "sync_mode_replace": "置換",
     "sync_not_signed_in": "未ログイン",
+    "sync_checking_account": "アカウント確認中…",
     "sync_options": "同期オプション",
     "sync_sign_in": "ログイン",
     "sync_sign_out": "ログアウト",

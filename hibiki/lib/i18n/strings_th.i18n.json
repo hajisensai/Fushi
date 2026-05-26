@@ -1019,6 +1019,7 @@
     "sync_mode_merge": "รวม",
     "sync_mode_replace": "แทนที่",
     "sync_not_signed_in": "ยังไม่ได้เข้าสู่ระบบ",
+    "sync_checking_account": "กำลังตรวจสอบบัญชี…",
     "sync_options": "ตัวเลือกซิงค์",
     "sync_sign_in": "เข้าสู่ระบบ",
     "sync_sign_out": "ออกจากระบบ",

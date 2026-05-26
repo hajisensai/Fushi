@@ -1019,6 +1019,7 @@
     "sync_mode_merge": "دمج",
     "sync_mode_replace": "استبدال",
     "sync_not_signed_in": "لم يتم تسجيل الدخول",
+    "sync_checking_account": "جارٍ التحقق من الحساب…",
     "sync_options": "خيارات المزامنة",
     "sync_sign_in": "تسجيل الدخول",
     "sync_sign_out": "تسجيل الخروج",

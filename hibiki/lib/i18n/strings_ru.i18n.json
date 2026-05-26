@@ -1019,6 +1019,7 @@
     "sync_mode_merge": "Объединить",
     "sync_mode_replace": "Заменить",
     "sync_not_signed_in": "Не авторизован",
+    "sync_checking_account": "Проверка аккаунта…",
     "sync_options": "Параметры синхронизации",
     "sync_sign_in": "Войти",
     "sync_sign_out": "Выйти",

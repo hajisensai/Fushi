@@ -227,6 +227,7 @@ class _SyncAccountWidget extends StatefulWidget {
 class _SyncAccountWidgetState extends State<_SyncAccountWidget> {
   bool _isAuthenticated = false;
   bool _isLoading = false;
+  bool _initialCheckDone = false;
   String? _email;
 
   @override
@@ -236,25 +237,44 @@ class _SyncAccountWidgetState extends State<_SyncAccountWidget> {
   }
 
   Future<void> _checkAuth() async {
-    final auth = GoogleDriveAuth.instance;
+    try {
+      final auth = GoogleDriveAuth.instance;
 
-    if (!GoogleDriveAuth.useMobileAuth && !await auth.isAuthenticated) {
-      final repo = SyncRepository(widget.settingsContext.appModel.database);
-      await auth.restoreDesktopAuth(repo);
-    }
+      if (!GoogleDriveAuth.useMobileAuth && !await auth.isAuthenticated) {
+        final repo = SyncRepository(widget.settingsContext.appModel.database);
+        await auth.restoreDesktopAuth(repo);
+      }
 
-    final authed = await auth.isAuthenticated;
-    final email = authed ? await auth.currentEmail : null;
-    if (mounted) {
-      setState(() {
-        _isAuthenticated = authed;
-        _email = email;
-      });
+      final authed = await auth.isAuthenticated;
+      final email = authed ? await auth.currentEmail : null;
+      if (mounted) {
+        setState(() {
+          _isAuthenticated = authed;
+          _email = email;
+        });
+      }
+    } catch (_) {
+    } finally {
+      if (mounted) setState(() => _initialCheckDone = true);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    if (!_initialCheckDone) {
+      return AdaptiveSettingsRow(
+        title: t.sync_account,
+        subtitle: t.sync_checking_account,
+        icon: Icons.account_circle_outlined,
+        controlBelow: true,
+        trailing: SizedBox(
+          width: 24,
+          height: 24,
+          child: adaptiveIndicator(context: context, strokeWidth: 2),
+        ),
+      );
+    }
+
     final String subtitle =
         _isAuthenticated ? t.sync_signed_in : t.sync_not_signed_in;
 
@@ -340,12 +360,19 @@ class _SyncAccountWidgetState extends State<_SyncAccountWidget> {
 
   Future<void> _signOut() async {
     setState(() => _isLoading = true);
-    final repo = SyncRepository(widget.settingsContext.appModel.database);
-    await GoogleDriveAuth.instance.signOut(repo: repo);
-    GoogleDriveHandler.instance.clearCache();
-    await repo.clearFolderCache();
-    await _checkAuth();
-    if (mounted) setState(() => _isLoading = false);
+    try {
+      final repo = SyncRepository(widget.settingsContext.appModel.database);
+      await GoogleDriveAuth.instance.signOut(repo: repo);
+      GoogleDriveHandler.instance.clearCache();
+      await repo.clearFolderCache();
+      await _checkAuth();
+    } catch (e) {
+      if (mounted) {
+        _showSnackBar(context, t.sync_error(message: e.toString()));
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 }
 

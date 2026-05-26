@@ -1019,6 +1019,7 @@
     "sync_mode_merge": "Zusammenführen",
     "sync_mode_replace": "Ersetzen",
     "sync_not_signed_in": "Nicht angemeldet",
+    "sync_checking_account": "Konto wird überprüft…",
     "sync_options": "Synchronisierungsoptionen",
     "sync_sign_in": "Anmelden",
     "sync_sign_out": "Abmelden",
