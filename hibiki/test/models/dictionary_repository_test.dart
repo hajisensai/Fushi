@@ -393,6 +393,93 @@ void main() {
     });
   });
 
+  // ── baseName / findUpdatable / deleteDictionaryMeta ──────────────────
+
+  group('baseName', () {
+    test('strips date suffix', () {
+      expect(DictionaryRepository.baseName('JMdict [2026-05-17]'), 'JMdict');
+    });
+
+    test('strips date with leading space', () {
+      expect(
+        DictionaryRepository.baseName('KANJIDIC (English) [2026-01-01]'),
+        'KANJIDIC (English)',
+      );
+    });
+
+    test('returns name unchanged if no date suffix', () {
+      expect(DictionaryRepository.baseName('JMdict'), 'JMdict');
+      expect(DictionaryRepository.baseName('Pixiv'), 'Pixiv');
+    });
+
+    test('does not strip non-date brackets', () {
+      expect(
+        DictionaryRepository.baseName('dict [abc]'),
+        'dict [abc]',
+      );
+    });
+  });
+
+  group('findUpdatable', () {
+    test('finds older version with different date', () {
+      repo.persistDictionary(_dict(name: 'JMdict [2026-05-17]', order: 0));
+      final result = repo.findUpdatable('JMdict [2026-05-19]');
+      expect(result, isNotNull);
+      expect(result!.name, 'JMdict [2026-05-17]');
+    });
+
+    test('returns null for exact same name', () {
+      repo.persistDictionary(_dict(name: 'JMdict [2026-05-17]', order: 0));
+      expect(repo.findUpdatable('JMdict [2026-05-17]'), isNull);
+    });
+
+    test('returns null for two identical undated names', () {
+      repo.persistDictionary(_dict(name: 'Pixiv', order: 0));
+      expect(repo.findUpdatable('Pixiv'), isNull);
+    });
+
+    test('finds dated version when importing undated name', () {
+      repo.persistDictionary(_dict(name: 'JMdict [2026-05-17]', order: 0));
+      final result = repo.findUpdatable('JMdict');
+      expect(result, isNotNull);
+      expect(result!.name, 'JMdict [2026-05-17]');
+    });
+
+    test('finds undated version when importing dated name', () {
+      repo.persistDictionary(_dict(name: 'JMdict', order: 0));
+      final result = repo.findUpdatable('JMdict [2026-05-19]');
+      expect(result, isNotNull);
+      expect(result!.name, 'JMdict');
+    });
+
+    test('returns null when no match exists', () {
+      repo.persistDictionary(_dict(name: 'JMdict [2026-05-17]', order: 0));
+      expect(repo.findUpdatable('KANJIDIC [2026-05-19]'), isNull);
+    });
+
+    test('does not match different base names', () {
+      repo.persistDictionary(
+          _dict(name: 'JMdict (Dutch) [2026-05-17]', order: 0));
+      expect(repo.findUpdatable('JMdict [2026-05-19]'), isNull);
+    });
+  });
+
+  group('deleteDictionaryMeta', () {
+    test('removes from cache and DB', () async {
+      repo.persistDictionary(_dict(name: 'ToDelete', order: 0));
+      await _settle();
+      expect(repo.hasDictionaryNamed('ToDelete'), true);
+
+      await repo.deleteDictionaryMeta('ToDelete');
+      expect(repo.hasDictionaryNamed('ToDelete'), false);
+
+      final repo2 = DictionaryRepository(db);
+      await repo2.loadFromDb();
+      expect(repo2.hasDictionaryNamed('ToDelete'), false);
+      repo2.dispose();
+    });
+  });
+
   // ── row conversion round-trip ────────────────────────────────────────
 
   group('row conversion round-trip', () {

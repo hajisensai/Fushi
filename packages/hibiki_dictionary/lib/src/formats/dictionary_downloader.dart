@@ -146,7 +146,7 @@ class DictionaryDownloader {
       name: 'JMdict (English)',
       url: '$_jmdictBase/JMdict_english.zip',
       description: 'Japanese-English dictionary',
-      matchPrefix: 'JMdict (English)',
+      matchPrefix: 'JMdict',
       category: DictionaryCategory.jaEn,
       sizeEstimate: '~22 MB',
       langCode: 'en',

@@ -159,11 +159,30 @@ class DictionaryImportManager {
         final name = _sanitizeTitle(result.title);
         progressNotifier.value = t.import_name(name: name);
 
-        if (_dictRepo.hasDictionaryNamed(name)) {
-          throw Exception(t.import_duplicate(name: name));
+        final _UpdateDecision decision = _decideUpdate(name);
+        if (decision == _UpdateDecision.alreadyUpToDate) {
+          progressNotifier.value = t.import_duplicate(name: name);
+          await Future.delayed(const Duration(seconds: 2));
+          if (tempOutputDir.existsSync()) {
+            tempOutputDir.deleteSync(recursive: true);
+          }
+          return;
         }
 
-        final order = _nextOrder();
+        final int order;
+        Dictionary? preservedSettings;
+        if (decision == _UpdateDecision.replaceOldVersion) {
+          final Dictionary existing = _dictRepo.findUpdatable(name)!;
+          order = existing.order;
+          preservedSettings = existing;
+          final oldDir =
+              Directory(path.join(_resourceDirectory.path, existing.name));
+          if (oldDir.existsSync()) oldDir.deleteSync(recursive: true);
+          await _dictRepo.deleteDictionaryMeta(existing.name);
+        } else {
+          order = _nextOrder();
+        }
+
         final innerDataDir = Directory(path.join(tempOutputDir.path, name));
         final finalDir = Directory(path.join(_resourceDirectory.path, name));
         _validatePath(finalDir);
@@ -184,6 +203,8 @@ class DictionaryImportManager {
           name: name,
           formatKey: 'yomichan',
           type: detectedType,
+          hiddenLanguages: preservedSettings?.hiddenLanguages ?? const [],
+          collapsedLanguages: preservedSettings?.collapsedLanguages ?? const [],
         ));
 
         progressNotifier.value = t.import_complete;
@@ -240,11 +261,30 @@ class DictionaryImportManager {
       final name = _sanitizeTitle(result.title);
       progressNotifier.value = t.import_name(name: name);
 
-      if (_dictRepo.hasDictionaryNamed(name)) {
-        throw Exception(t.import_duplicate(name: name));
+      final _UpdateDecision decision = _decideUpdate(name);
+      if (decision == _UpdateDecision.alreadyUpToDate) {
+        progressNotifier.value = t.import_duplicate(name: name);
+        await Future.delayed(const Duration(seconds: 2));
+        if (tempOutputDir.existsSync()) {
+          tempOutputDir.deleteSync(recursive: true);
+        }
+        return;
       }
 
-      final order = _nextOrder();
+      final int order;
+      Dictionary? preservedSettings;
+      if (decision == _UpdateDecision.replaceOldVersion) {
+        final Dictionary existing = _dictRepo.findUpdatable(name)!;
+        order = existing.order;
+        preservedSettings = existing;
+        final oldDir =
+            Directory(path.join(_resourceDirectory.path, existing.name));
+        if (oldDir.existsSync()) oldDir.deleteSync(recursive: true);
+        await _dictRepo.deleteDictionaryMeta(existing.name);
+      } else {
+        order = _nextOrder();
+      }
+
       final innerDataDir = Directory(path.join(tempOutputDir.path, name));
       final finalDir = Directory(path.join(_resourceDirectory.path, name));
       _validatePath(finalDir);
@@ -277,6 +317,8 @@ class DictionaryImportManager {
         name: name,
         formatKey: 'yomichan',
         type: detectedType,
+        hiddenLanguages: preservedSettings?.hiddenLanguages ?? const [],
+        collapsedLanguages: preservedSettings?.collapsedLanguages ?? const [],
       ));
 
       progressNotifier.value = t.import_complete;
@@ -359,8 +401,20 @@ class DictionaryImportManager {
     }
   }
 
+  _UpdateDecision _decideUpdate(String newName) {
+    if (_dictRepo.hasDictionaryNamed(newName)) {
+      return _UpdateDecision.alreadyUpToDate;
+    }
+    if (_dictRepo.findUpdatable(newName) != null) {
+      return _UpdateDecision.replaceOldVersion;
+    }
+    return _UpdateDecision.newDictionary;
+  }
+
   static bool _isMemoryError(Object e) {
     final msg = e.toString().toLowerCase();
     return e is OutOfMemoryError || msg.contains('out of memory');
   }
 }
+
+enum _UpdateDecision { newDictionary, alreadyUpToDate, replaceOldVersion }

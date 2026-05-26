@@ -170,6 +170,31 @@ class DictionaryRepository extends ChangeNotifier {
   bool hasDictionaryNamed(String name) =>
       _dictionariesCache.any((d) => d.name == name);
 
+  static final RegExp _dateSuffixPattern =
+      RegExp(r'\s*\[\d{4}-\d{2}-\d{2}\]$');
+
+  /// Strips trailing date brackets: "JMdict [2026-05-17]" → "JMdict".
+  static String baseName(String name) =>
+      name.replaceFirst(_dateSuffixPattern, '').trim();
+
+  /// Finds an existing dictionary whose base name matches [newName]'s but
+  /// whose full name differs (i.e. a different dated version, or one has a
+  /// date suffix and the other does not).
+  Dictionary? findUpdatable(String newName) {
+    final String newBase = baseName(newName);
+    if (newBase.isEmpty) return null;
+    for (final Dictionary d in _dictionariesCache) {
+      if (d.name == newName) continue;
+      if (baseName(d.name) == newBase) return d;
+    }
+    return null;
+  }
+
+  Future<void> deleteDictionaryMeta(String name) async {
+    _dictionariesCache.removeWhere((d) => d.name == name);
+    await _db.deleteDictionaryMeta(name);
+  }
+
   void removeDictionaryFromCache(String name) {
     _dictionariesCache.removeWhere((d) => d.name == name);
   }
