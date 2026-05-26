@@ -25,6 +25,8 @@ class DictionarySearchResult {
   final int bestLength;
   int scrollPosition;
 
+  String? popupJson;
+
   String toJson() {
     return jsonEncode({
       'searchTerm': searchTerm,

@@ -43,6 +43,7 @@ add_library(hoshidicts STATIC
     hoshidicts_src/deinflector.cpp
     hoshidicts_src/query.cpp
     hoshidicts_src/lookup.cpp
+    hoshidicts_src/popup_json.cpp
 )
 
 target_include_directories(hoshidicts PUBLIC
@@ -83,5 +84,21 @@ if(WIN32)
   set_target_properties(hoshidicts_ffi PROPERTIES
       PREFIX ""
       OUTPUT_NAME "hoshidicts_ffi"
+  )
+endif()
+
+# JNI bridge for Android Kotlin popup (only built on Android)
+if(ANDROID)
+  add_library(hoshidicts_jni SHARED
+      hoshidicts_jni.cpp
+  )
+
+  target_include_directories(hoshidicts_jni PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/hoshidicts_include
+  )
+
+  target_link_libraries(hoshidicts_jni PRIVATE
+      hoshidicts
+      log
   )
 endif()

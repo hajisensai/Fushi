@@ -1672,9 +1672,14 @@ class AppModel with ChangeNotifier {
         results: ffiResults,
         maximumTerms: effectiveMaxTerms,
       );
+      result.popupJson = HoshiDicts.instance.lookupPopupJson(
+        searchTerm,
+        maxResults: maximumDictionarySearchResults,
+        maxTerms: effectiveMaxTerms,
+      );
       swBuild.stop();
       debugPrint(
-          '[dict-perf] FFI cache HIT, buildResultFromLookup: ${swBuild.elapsedMilliseconds}ms entries=${result.entries.length}');
+          '[dict-perf] FFI cache HIT, buildResult+popupJson: ${swBuild.elapsedMilliseconds}ms entries=${result.entries.length}');
     } else {
       final swLookup = Stopwatch()..start();
       ffiResults = HoshiDicts.instance.lookup(
@@ -1688,10 +1693,15 @@ class AppModel with ChangeNotifier {
           results: ffiResults,
           maximumTerms: effectiveMaxTerms,
         );
+        result.popupJson = HoshiDicts.instance.lookupPopupJson(
+          searchTerm,
+          maxResults: maximumDictionarySearchResults,
+          maxTerms: effectiveMaxTerms,
+        );
       }
       swLookup.stop();
       debugPrint(
-          '[dict-perf] FFI lookup + build: ${swLookup.elapsedMilliseconds}ms entries=${result?.entries.length ?? 0}');
+          '[dict-perf] FFI lookup + build + popupJson: ${swLookup.elapsedMilliseconds}ms entries=${result?.entries.length ?? 0}');
     }
 
     swTotal.stop();

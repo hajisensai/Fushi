@@ -432,6 +432,28 @@ class HoshiDicts {
     }
   }
 
+  // ── popup JSON (single source of truth — same C++ as JNI) ───────
+  String lookupPopupJson(
+    String text, {
+    int maxResults = defaultMaxResults,
+    int scanLength = defaultScanLength,
+    int maxTerms = 100,
+  }) {
+    final tp = text.toNativeUtf8(allocator: calloc);
+    try {
+      final ptr = _bindings!.lookupPopupJson(
+          _handle!, tp, maxResults, scanLength, maxTerms);
+      if (ptr == nullptr) return '[]';
+      try {
+        return ptr.toDartString();
+      } finally {
+        _bindings!.freeString(ptr);
+      }
+    } finally {
+      calloc.free(tp);
+    }
+  }
+
   // ── styles ──────────────────────────────────────────────────────
   List<HoshiDictStyle> getStyles() {
     final r = _bindings!.getStyles(_handle!);

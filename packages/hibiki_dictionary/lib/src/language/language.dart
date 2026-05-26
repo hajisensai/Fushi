@@ -487,6 +487,154 @@ DictionarySearchResult buildResultFromLookup({
   );
 }
 
+String buildPopupJsonFromLookup({
+  required List<HoshiLookupResult> results,
+  required int maximumTerms,
+}) {
+  if (results.isEmpty) return '[]';
+
+  final groupKeys = <String>[];
+  final groupExpression = <String, String>{};
+  final groupReading = <String, String>{};
+  final groupMatched = <String, String>{};
+  final groupDeinflected = <String, String>{};
+  final groupFrequencies = <String, List<HoshiFrequencyEntry>>{};
+  final groupPitches = <String, List<HoshiPitchEntry>>{};
+  final seenFreqs = <String, Set<String>>{};
+  final seenPitches = <String, Set<String>>{};
+  final groupGlossaries = <String,
+      List<
+          ({
+            String dictionary,
+            String contentJson,
+            String defTags,
+            String termTags,
+          })>>{};
+
+  int entryCount = 0;
+  outer:
+  for (final r in results) {
+    for (final g in r.term.glossaries) {
+      if (entryCount >= maximumTerms) break outer;
+      entryCount++;
+
+      final key = '${r.term.expression}\n${r.term.reading}';
+      if (!groupExpression.containsKey(key)) {
+        groupKeys.add(key);
+        groupExpression[key] = r.term.expression;
+        groupReading[key] = r.term.reading;
+        groupMatched[key] = r.matched;
+        groupDeinflected[key] = r.deinflected;
+        groupFrequencies[key] = [];
+        groupPitches[key] = [];
+        seenFreqs[key] = {};
+        seenPitches[key] = {};
+        groupGlossaries[key] = [];
+      } else if (groupMatched[key] == groupExpression[key] &&
+          r.matched != r.term.expression) {
+        // Unlike the fallback path (buildLookupEntriesJson), the last
+        // qualifying deinflection wins here. This is intentional: matched
+        // and trace stay consistent on the same HoshiLookupResult.
+        groupMatched[key] = r.matched;
+        groupDeinflected[key] = r.deinflected;
+      }
+
+      for (final f in r.term.frequencies) {
+        final fKey =
+            '${f.dictName}:${f.frequencies.map((v) => '${v.value}:${v.displayValue}').join(',')}';
+        if (seenFreqs[key]!.add(fKey)) {
+          groupFrequencies[key]!.add(f);
+        }
+      }
+      for (final p in r.term.pitches) {
+        final pKey = '${p.dictName}:${p.pitchPositions.join(',')}';
+        if (seenPitches[key]!.add(pKey)) {
+          groupPitches[key]!.add(p);
+        }
+      }
+
+      final String m = g.glossary;
+      final String contentJson =
+          (m.isNotEmpty && (m[0] == '[' || m[0] == '{'))
+              ? m
+              : jsonEncode(m);
+      groupGlossaries[key]!.add((
+        dictionary: g.dictName,
+        contentJson: contentJson,
+        defTags: g.definitionTags,
+        termTags: g.termTags,
+      ));
+    }
+  }
+
+  final sb = StringBuffer('[');
+  for (var i = 0; i < groupKeys.length; i++) {
+    if (i > 0) sb.write(',');
+    final key = groupKeys[i];
+    sb.write('{"expression":');
+    sb.write(jsonEncode(groupExpression[key]));
+    sb.write(',"reading":');
+    sb.write(jsonEncode(groupReading[key]));
+    sb.write(',"matched":');
+    sb.write(jsonEncode(groupMatched[key]));
+    sb.write(',"rules":[],"deinflectionTrace":');
+    final matched = groupMatched[key]!;
+    final deinflected = groupDeinflected[key]!;
+    if (matched != deinflected && deinflected.isNotEmpty) {
+      sb.write('[{"name":');
+      sb.write(jsonEncode('$matched → $deinflected'));
+      sb.write(',"description":""}]');
+    } else {
+      sb.write('[]');
+    }
+    sb.write(',"glossaries":[');
+    final gl = groupGlossaries[key]!;
+    for (var j = 0; j < gl.length; j++) {
+      if (j > 0) sb.write(',');
+      sb.write('{"dictionary":');
+      sb.write(jsonEncode(gl[j].dictionary));
+      sb.write(',"content":');
+      sb.write(gl[j].contentJson);
+      sb.write(',"definitionTags":');
+      sb.write(jsonEncode(gl[j].defTags));
+      sb.write(',"termTags":');
+      sb.write(jsonEncode(gl[j].termTags));
+      sb.write('}');
+    }
+    sb.write('],"frequencies":[');
+    final freqs = groupFrequencies[key]!;
+    for (var fi = 0; fi < freqs.length; fi++) {
+      if (fi > 0) sb.write(',');
+      sb.write('{"dictionary":');
+      sb.write(jsonEncode(freqs[fi].dictName));
+      sb.write(',"frequencies":[');
+      final fvals = freqs[fi].frequencies;
+      for (var k = 0; k < fvals.length; k++) {
+        if (k > 0) sb.write(',');
+        sb.write('{"value":');
+        sb.write(fvals[k].value);
+        sb.write(',"displayValue":');
+        sb.write(jsonEncode(fvals[k].displayValue));
+        sb.write('}');
+      }
+      sb.write(']}');
+    }
+    sb.write('],"pitches":[');
+    final pitches = groupPitches[key]!;
+    for (var pi = 0; pi < pitches.length; pi++) {
+      if (pi > 0) sb.write(',');
+      sb.write('{"dictionary":');
+      sb.write(jsonEncode(pitches[pi].dictName));
+      sb.write(',"pitchPositions":');
+      sb.write(jsonEncode(pitches[pi].pitchPositions));
+      sb.write('}');
+    }
+    sb.write(']}');
+  }
+  sb.write(']');
+  return sb.toString();
+}
+
 Future<DictionarySearchResult?> prepareSearchResultsStandard(
     DictionarySearchParams params) async {
   if (params.dictionaryPaths.isEmpty) return null;

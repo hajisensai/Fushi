@@ -7,6 +7,7 @@
 #include "hoshidicts/importer.hpp"
 #include "hoshidicts/lookup.hpp"
 #include "hoshidicts/query.hpp"
+#include "hoshidicts/popup_json.hpp"
 
 // ── helpers ──────────────────────────────────────────────────────────
 static char* dup(const std::string& s) {
@@ -391,6 +392,25 @@ HOSHI_EXPORT
 void hoshidicts_free_media(FfiMediaFile* r) {
   if (!r) return;
   free(r->data);
+}
+
+// ── popup JSON (single source of truth for both FFI and JNI) ───────
+
+HOSHI_EXPORT
+char* hoshidicts_lookup_popup_json(void* handle, const char* text,
+                                   int32_t max_results, int32_t scan_length,
+                                   int32_t max_terms) {
+  auto* h = static_cast<HoshidictsHandle*>(handle);
+  Lookup lookup(h->query, h->deinflector);
+  auto results = lookup.lookup(text, max_results,
+                               static_cast<size_t>(scan_length));
+  std::string json = build_popup_json(results, max_terms);
+  return dup(json);
+}
+
+HOSHI_EXPORT
+void hoshidicts_free_string(char* s) {
+  free(s);
 }
 
 } // extern "C"

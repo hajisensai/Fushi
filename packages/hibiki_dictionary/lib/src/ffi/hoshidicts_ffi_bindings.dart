@@ -151,6 +151,12 @@ typedef _GetMediaDart = FfiMediaFile Function(
 
 typedef _FreeMediaDart = void Function(Pointer<FfiMediaFile> r);
 
+typedef _LookupPopupJsonDart = Pointer<Utf8> Function(
+    Pointer<Void> handle, Pointer<Utf8> text, int maxResults, int scanLength,
+    int maxTerms);
+
+typedef _FreeStringDart = void Function(Pointer<Utf8> s);
+
 // ── bindings class ──────────────────────────────────────────────────
 
 class HoshidictsFfiBindings {
@@ -197,6 +203,11 @@ class HoshidictsFfiBindings {
         _GetMediaDart>('hoshidicts_get_media');
     freeMedia = _lib.lookupFunction<Void Function(Pointer<FfiMediaFile>),
         _FreeMediaDart>('hoshidicts_free_media');
+    lookupPopupJson = _lib.lookupFunction<
+        Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Int32, Int32, Int32),
+        _LookupPopupJsonDart>('hoshidicts_lookup_popup_json');
+    freeString = _lib.lookupFunction<Void Function(Pointer<Utf8>),
+        _FreeStringDart>('hoshidicts_free_string');
   }
   late final DynamicLibrary _lib;
 
@@ -216,4 +227,6 @@ class HoshidictsFfiBindings {
   late final _FreeStylesDart freeStyles;
   late final _GetMediaDart getMedia;
   late final _FreeMediaDart freeMedia;
+  late final _LookupPopupJsonDart lookupPopupJson;
+  late final _FreeStringDart freeString;
 }
