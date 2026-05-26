@@ -1027,5 +1027,7 @@
     "sync_title": "Sincronizzazione",
     "update_channel_beta": "Beta",
     "update_channel_debug": "Debug",
-    "update_channel_stable": "Stabile"
+    "update_channel_stable": "Stabile",
+    "anki_connect_host": "Host",
+    "anki_connect_port": "Port"
 }

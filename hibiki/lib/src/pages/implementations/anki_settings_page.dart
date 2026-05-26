@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
@@ -33,6 +35,25 @@ class _AnkiSettingsPageState extends BasePageState<AnkiSettingsPage> {
             _buildFetchTile(uiState, vm),
           ],
         ),
+        if (!Platform.isAndroid)
+          AdaptiveSettingsSection(
+            title: 'AnkiConnect',
+            children: [
+              _buildConnectionField(
+                label: t.anki_connect_host,
+                value: settings.ankiConnectHost,
+                hint: 'localhost',
+                onSubmitted: vm.updateAnkiConnectHost,
+              ),
+              _buildConnectionField(
+                label: t.anki_connect_port,
+                value: settings.ankiConnectPort.toString(),
+                hint: '8765',
+                keyboardType: TextInputType.number,
+                onSubmitted: vm.updateAnkiConnectPort,
+              ),
+            ],
+          ),
         if (uiState.errorMessage != null)
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
@@ -185,6 +206,29 @@ class _AnkiSettingsPageState extends BasePageState<AnkiSettingsPage> {
     if (result != null) {
       vm.updateFieldMapping(field, result);
     }
+  }
+
+  Widget _buildConnectionField({
+    required String label,
+    required String value,
+    required String hint,
+    required ValueChanged<String> onSubmitted,
+    TextInputType keyboardType = TextInputType.text,
+  }) {
+    return AdaptiveSettingsRow(
+      title: label,
+      controlBelow: true,
+      trailing: TextFormField(
+        key: ValueKey('$label-$value'),
+        initialValue: value,
+        keyboardType: keyboardType,
+        decoration: InputDecoration(
+          hintText: hint,
+          border: const OutlineInputBorder(),
+        ),
+        onFieldSubmitted: onSubmitted,
+      ),
+    );
   }
 
   Widget _buildTagsInput(AnkiSettings settings, AnkiViewModel vm) {

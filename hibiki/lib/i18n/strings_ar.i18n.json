@@ -1027,5 +1027,7 @@
     "sync_title": "المزامنة",
     "update_channel_beta": "تجريبي",
     "update_channel_debug": "تصحيح",
-    "update_channel_stable": "مستقر"
+    "update_channel_stable": "مستقر",
+    "anki_connect_host": "Host",
+    "anki_connect_port": "Port"
 }

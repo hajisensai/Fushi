@@ -1027,5 +1027,7 @@
     "sync_title": "동기화",
     "update_channel_beta": "베타",
     "update_channel_debug": "디버그",
-    "update_channel_stable": "안정"
+    "update_channel_stable": "안정",
+    "anki_connect_host": "Host",
+    "anki_connect_port": "Port"
 }

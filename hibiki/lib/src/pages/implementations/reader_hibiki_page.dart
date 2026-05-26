@@ -1261,7 +1261,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       if (target && target.tagName === 'IMG' && target.src) {
         window.flutter_inappwebview.callHandler('onImageTap', target.src);
       } else {
-        window.flutter_inappwebview.callHandler('onTap', x, y);
+        window.flutter_inappwebview.callHandler('onTap', x, y, !!(e && e.shiftKey));
       }
     }
   }
@@ -1292,6 +1292,14 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     window.flutter_inappwebview.callHandler('onSwipe', forward ? 'left' : 'right');
     e.preventDefault();
   }, {passive: false});
+  var _shiftHoverLastX = -1, _shiftHoverLastY = -1;
+  document.addEventListener('mousemove', function(e) {
+    if (!e.shiftKey) { _shiftHoverLastX = -1; _shiftHoverLastY = -1; return; }
+    var dx = e.clientX - _shiftHoverLastX, dy = e.clientY - _shiftHoverLastY;
+    if (dx * dx + dy * dy < 64) return;
+    _shiftHoverLastX = e.clientX; _shiftHoverLastY = e.clientY;
+    window.flutter_inappwebview.callHandler('onShiftHover', e.clientX, e.clientY);
+  }, {passive: true});
   window.hoshiProgressDetails = function() {
     var r = window.hoshiReader;
     if (!r) return '';
@@ -1416,11 +1424,23 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
           handlerName: 'onTap',
           callback: (args) {
             if (args.length < 2) return;
-            if (!_showChrome) {
+            final bool shiftKey = args.length >= 3 && args[2] == true;
+            if (!_showChrome && !shiftKey) {
               _toggleChrome();
               return;
             }
-            if (!ReaderHibikiSource.instance.highlightOnTap) return;
+            if (!shiftKey && !ReaderHibikiSource.instance.highlightOnTap)
+              return;
+            final double x = _toDouble(args[0]) ?? 0;
+            final double y = _toDouble(args[1]) ?? 0;
+            _selectTextAt(x, y);
+          },
+        );
+
+        controller.addJavaScriptHandler(
+          handlerName: 'onShiftHover',
+          callback: (args) {
+            if (args.length < 2) return;
             final double x = _toDouble(args[0]) ?? 0;
             final double y = _toDouble(args[1]) ?? 0;
             _selectTextAt(x, y);
@@ -1566,8 +1586,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
             final String expectedUrl = _chapterUrl(chapterSnapshot);
             if (Uri.parse(request.url.toString()).path !=
                 Uri.parse(expectedUrl).path) {
-              debugPrint(
-                  '[ReaderHibiki] Windows onReceivedError: stale page '
+              debugPrint('[ReaderHibiki] Windows onReceivedError: stale page '
                   '(expected=$expectedUrl), ignoring');
               return;
             }
@@ -2948,8 +2967,22 @@ window.flutter_inappwebview.callHandler('spreadReady');
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
 
+    if (event.logicalKey == LogicalKeyboardKey.escape) {
+      if (isDictionaryShown) {
+        clearDictionaryResult();
+        return KeyEventResult.handled;
+      }
+      if (_showChrome) {
+        _toggleChrome();
+        return KeyEventResult.handled;
+      }
+    }
+
     final ReaderNavigationDirection? direction =
-        ReaderPaginationScripts.navigationDirectionForKey(event.logicalKey);
+        ReaderPaginationScripts.navigationDirectionForKey(
+      event.logicalKey,
+      shiftPressed: HardwareKeyboard.instance.isShiftPressed,
+    );
     if (direction == null) return KeyEventResult.ignored;
     _paginate(direction);
     return KeyEventResult.handled;

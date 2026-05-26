@@ -773,6 +773,8 @@
     "anki_allow_duplicates_hint": "Skip duplicate check when adding cards",
     "anki_compact_glossaries": "Compact Glossaries",
     "anki_compact_glossaries_hint": "Use compact format for glossary entries",
+    "anki_connect_host": "Host",
+    "anki_connect_port": "Port",
     "anki_not_configured": "Tap Fetch to load decks and note types from AnkiDroid.",
     "anki_field_not_mapped": "Not mapped",
     "anki_select_handlebar": "Select value for $field",

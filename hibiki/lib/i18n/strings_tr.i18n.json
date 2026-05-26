@@ -1027,5 +1027,7 @@
     "sync_title": "Senkronizasyon",
     "update_channel_beta": "Beta",
     "update_channel_debug": "Hata Ayıklama",
-    "update_channel_stable": "Kararlı"
+    "update_channel_stable": "Kararlı",
+    "anki_connect_host": "Host",
+    "anki_connect_port": "Port"
 }

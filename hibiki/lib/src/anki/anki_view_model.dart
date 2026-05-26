@@ -109,6 +109,27 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
         .updateSettings((s) => s.copyWith(compactGlossaries: value));
     state = state.copyWith(settings: updated);
   }
+
+  Future<void> updateAnkiConnectHost(String host) async {
+    final trimmed = host.trim();
+    if (trimmed.isEmpty ||
+        trimmed.contains('/') ||
+        trimmed.contains('?') ||
+        trimmed.contains('#')) {
+      return;
+    }
+    final updated = await _repository
+        .updateSettings((s) => s.copyWith(ankiConnectHost: trimmed));
+    state = state.copyWith(settings: updated);
+  }
+
+  Future<void> updateAnkiConnectPort(String portStr) async {
+    final port = int.tryParse(portStr.trim());
+    if (port == null || port <= 0 || port > 65535) return;
+    final updated = await _repository
+        .updateSettings((s) => s.copyWith(ankiConnectPort: port));
+    state = state.copyWith(settings: updated);
+  }
 }
 
 final ankiRepositoryProvider = Provider<BaseAnkiRepository>((_) {

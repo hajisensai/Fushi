@@ -1027,5 +1027,7 @@
     "sync_title": "同步",
     "update_channel_beta": "測試版",
     "update_channel_debug": "除錯版",
-    "update_channel_stable": "穩定版"
+    "update_channel_stable": "穩定版",
+    "anki_connect_host": "Host",
+    "anki_connect_port": "Port"
 }

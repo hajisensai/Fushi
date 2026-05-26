@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
 import '../anki_service.dart';
 
@@ -36,6 +38,23 @@ class AnkiConnectService implements AnkiService {
       return true;
     } catch (_) {
       return false;
+    }
+  }
+
+  Future<String?> checkConnection() async {
+    try {
+      await _request('version');
+      return null;
+    } on SocketException {
+      return 'Connection refused — is Anki Desktop running?\n'
+          'Check that AnkiConnect add-on (2055492159) is installed.';
+    } on TimeoutException {
+      return 'Connection timed out ($host:$port).\n'
+          'Check firewall settings or verify the host and port.';
+    } on http.ClientException catch (e) {
+      return 'HTTP error: $e';
+    } catch (e) {
+      return 'Cannot connect to AnkiConnect: $e';
     }
   }
 

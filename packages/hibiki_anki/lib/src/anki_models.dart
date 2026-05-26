@@ -46,6 +46,8 @@ class AnkiSettings {
     this.allowDupes = false,
     this.compactGlossaries = false,
     this.embedMedia = true,
+    this.ankiConnectHost = 'localhost',
+    this.ankiConnectPort = 8765,
   });
 
   factory AnkiSettings.fromJson(Map<String, dynamic> json) => AnkiSettings(
@@ -67,6 +69,8 @@ class AnkiSettings {
         allowDupes: json['allowDupes'] as bool? ?? false,
         compactGlossaries: json['compactGlossaries'] as bool? ?? false,
         embedMedia: json['embedMedia'] as bool? ?? true,
+        ankiConnectHost: json['ankiConnectHost'] as String? ?? 'localhost',
+        ankiConnectPort: json['ankiConnectPort'] as int? ?? 8765,
       );
   final int? selectedDeckId;
   final String? selectedDeckName;
@@ -79,6 +83,8 @@ class AnkiSettings {
   final bool allowDupes;
   final bool compactGlossaries;
   final bool embedMedia;
+  final String ankiConnectHost;
+  final int ankiConnectPort;
 
   bool get isConfigured => selectedDeckId != null && selectedNoteTypeId != null;
 
@@ -101,6 +107,8 @@ class AnkiSettings {
     bool? allowDupes,
     bool? compactGlossaries,
     bool? embedMedia,
+    String? ankiConnectHost,
+    int? ankiConnectPort,
   }) =>
       AnkiSettings(
         selectedDeckId: selectedDeckId ?? this.selectedDeckId,
@@ -114,6 +122,8 @@ class AnkiSettings {
         allowDupes: allowDupes ?? this.allowDupes,
         compactGlossaries: compactGlossaries ?? this.compactGlossaries,
         embedMedia: embedMedia ?? this.embedMedia,
+        ankiConnectHost: ankiConnectHost ?? this.ankiConnectHost,
+        ankiConnectPort: ankiConnectPort ?? this.ankiConnectPort,
       );
 
   Map<String, dynamic> toJson() => {
@@ -129,6 +139,8 @@ class AnkiSettings {
         'allowDupes': allowDupes,
         'compactGlossaries': compactGlossaries,
         'embedMedia': embedMedia,
+        'ankiConnectHost': ankiConnectHost,
+        'ankiConnectPort': ankiConnectPort,
       };
 }
 

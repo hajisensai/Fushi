@@ -1027,5 +1027,7 @@
     "sync_title": "ซิงค์",
     "update_channel_beta": "เบต้า",
     "update_channel_debug": "ดีบัก",
-    "update_channel_stable": "เสถียร"
+    "update_channel_stable": "เสถียร",
+    "anki_connect_host": "Host",
+    "anki_connect_port": "Port"
 }

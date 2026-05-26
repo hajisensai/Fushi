@@ -24,16 +24,19 @@ class ReaderPaginationScripts {
       'window.hoshiReader && window.hoshiReader.updatePageSize($width, $height)';
 
   static ReaderNavigationDirection? navigationDirectionForKey(
-    LogicalKeyboardKey key,
-  ) {
+    LogicalKeyboardKey key, {
+    bool shiftPressed = false,
+  }) {
     if (key == LogicalKeyboardKey.pageDown ||
         key == LogicalKeyboardKey.arrowRight ||
-        key == LogicalKeyboardKey.arrowDown) {
+        key == LogicalKeyboardKey.arrowDown ||
+        (key == LogicalKeyboardKey.space && !shiftPressed)) {
       return ReaderNavigationDirection.forward;
     }
     if (key == LogicalKeyboardKey.pageUp ||
         key == LogicalKeyboardKey.arrowLeft ||
-        key == LogicalKeyboardKey.arrowUp) {
+        key == LogicalKeyboardKey.arrowUp ||
+        (key == LogicalKeyboardKey.space && shiftPressed)) {
       return ReaderNavigationDirection.backward;
     }
     return null;

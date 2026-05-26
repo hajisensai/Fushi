@@ -1027,5 +1027,7 @@
     "sync_title": "Đồng bộ",
     "update_channel_beta": "Beta",
     "update_channel_debug": "Debug",
-    "update_channel_stable": "Ổn định"
+    "update_channel_stable": "Ổn định",
+    "anki_connect_host": "Host",
+    "anki_connect_port": "Port"
 }
