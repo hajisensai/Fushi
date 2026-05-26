@@ -3,6 +3,10 @@ import 'dart:convert';
 import 'package:hibiki_core/hibiki_core.dart';
 
 /// 同步配置和缓存的持久化层（基于 Preferences 表）。
+///
+/// 桌面 OAuth 凭据（refresh token, client secret）存储在用户级 SQLite 数据库中，
+/// 采用 base64 编码。安全模型与 gcloud/aws-cli 等桌面 CLI 工具一致：
+/// 依赖操作系统文件权限保护用户数据目录。
 class SyncRepository {
   SyncRepository(this._db);
   final HibikiDatabase _db;
@@ -13,6 +17,7 @@ class SyncRepository {
   static const _keySyncAudioBook = 'sync_audiobook_enabled';
   static const _keySyncMode = 'sync_mode';
   static const _keyLastSyncMs = 'sync_last_sync_ms';
+  static const _keyDesktopCredentials = 'sync_desktop_credentials';
 
   static const String syncStatsPreferenceKey = _keySyncStats;
   static const String syncAudioBookPreferenceKey = _keySyncAudioBook;
@@ -86,14 +91,42 @@ class SyncRepository {
   Future<void> setLastSyncMs(int ms) =>
       _setString(_keyLastSyncMs, ms.toString());
 
-  // ── Helpers ───────────────────────────────────────────────────────
+  // ── Desktop OAuth credentials ──────────────────────────────────────
 
-  Future<String> _getString(String key, String defaultValue) async {
-    final row = await (_db.select(_db.preferences)
-          ..where((t) => t.key.equals(key)))
-        .getSingleOrNull();
-    return row?.value ?? defaultValue;
+  Future<String?> getDesktopCredentials() async {
+    final encoded = await _getStringOrNull(_keyDesktopCredentials);
+    return encoded != null ? _decodeSecret(encoded) : null;
   }
+
+  Future<void> setDesktopCredentials(String? json) async {
+    if (json == null) {
+      await (_db.delete(_db.preferences)
+            ..where((t) => t.key.equals(_keyDesktopCredentials)))
+          .go();
+      return;
+    }
+    await _setString(_keyDesktopCredentials, _encodeSecret(json));
+  }
+
+  Future<void> clearDesktopSession() async {
+    await (_db.delete(_db.preferences)
+          ..where((t) => t.key.equals(_keyDesktopCredentials)))
+        .go();
+  }
+
+  // ── Encoding ─────────────────────────────────────────────────────
+
+  static String _encodeSecret(String value) => base64Encode(utf8.encode(value));
+
+  static String _decodeSecret(String encoded) {
+    try {
+      return utf8.decode(base64Decode(encoded));
+    } catch (_) {
+      return encoded;
+    }
+  }
+
+  // ── Helpers ───────────────────────────────────────────────────────
 
   Future<String?> _getStringOrNull(String key) async {
     final row = await (_db.select(_db.preferences)

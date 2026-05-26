@@ -4,6 +4,7 @@ import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
 import 'package:hibiki/src/sync/google_drive_auth.dart';
 import 'package:hibiki/src/sync/google_drive_handler.dart';
+import 'package:hibiki/src/sync/sync_compare_dialog.dart';
 import 'package:hibiki/src/sync/sync_manager.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
@@ -90,6 +91,15 @@ SettingsDestination buildSyncBackupDestination() {
             title: t.sync_import_only,
             icon: Icons.cloud_download_outlined,
             onTap: (SettingsContext ctx) => _performSync(ctx, importOnly: true),
+          ),
+          SettingsActionItem(
+            id: 'sync.compare',
+            title: t.sync_compare,
+            icon: Icons.compare_arrows,
+            onTap: (SettingsContext ctx) => showSyncCompareDialog(
+              ctx.context,
+              ctx.appModel.database,
+            ),
           ),
         ],
       ),
@@ -204,6 +214,8 @@ void _showSnackBar(BuildContext context, String message) {
     ..showSnackBar(SnackBar(content: Text(message)));
 }
 
+// ── Sync account widget ──────────────────────────────────────────────
+
 class _SyncAccountWidget extends StatefulWidget {
   const _SyncAccountWidget({required this.settingsContext});
   final SettingsContext settingsContext;
@@ -225,6 +237,12 @@ class _SyncAccountWidgetState extends State<_SyncAccountWidget> {
 
   Future<void> _checkAuth() async {
     final auth = GoogleDriveAuth.instance;
+
+    if (!GoogleDriveAuth.useMobileAuth && !await auth.isAuthenticated) {
+      final repo = SyncRepository(widget.settingsContext.appModel.database);
+      await auth.restoreDesktopAuth(repo);
+    }
+
     final authed = await auth.isAuthenticated;
     final email = authed ? await auth.currentEmail : null;
     if (mounted) {
@@ -304,7 +322,8 @@ class _SyncAccountWidgetState extends State<_SyncAccountWidget> {
   Future<void> _signIn() async {
     setState(() => _isLoading = true);
     try {
-      await GoogleDriveAuth.instance.authenticate();
+      final repo = SyncRepository(widget.settingsContext.appModel.database);
+      await GoogleDriveAuth.instance.authenticate(repo: repo);
       await _checkAuth();
     } on GoogleDriveAuthError catch (e) {
       if (mounted) {
@@ -321,10 +340,10 @@ class _SyncAccountWidgetState extends State<_SyncAccountWidget> {
 
   Future<void> _signOut() async {
     setState(() => _isLoading = true);
-    await GoogleDriveAuth.instance.signOut();
+    final repo = SyncRepository(widget.settingsContext.appModel.database);
+    await GoogleDriveAuth.instance.signOut(repo: repo);
     GoogleDriveHandler.instance.clearCache();
-    await SyncRepository(widget.settingsContext.appModel.database)
-        .clearFolderCache();
+    await repo.clearFolderCache();
     await _checkAuth();
     if (mounted) setState(() => _isLoading = false);
   }
