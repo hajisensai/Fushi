@@ -6,6 +6,7 @@ import 'package:path/path.dart' as path;
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
+import 'package:hibiki/src/models/dictionary_repository.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/utils.dart';
 
@@ -167,7 +168,9 @@ class _DictionaryDialogPageState extends BasePageState {
       debugPrint('[Dictionary Import] ${progressNotifier.value}');
     });
 
-    await FilePicker.platform.clearTemporaryFiles();
+    if (Platform.isAndroid || Platform.isIOS) {
+      await FilePicker.platform.clearTemporaryFiles();
+    }
 
     FilePickerResult? result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
@@ -221,7 +224,9 @@ class _DictionaryDialogPageState extends BasePageState {
       );
     }
 
-    await FilePicker.platform.clearTemporaryFiles();
+    if (Platform.isAndroid || Platform.isIOS) {
+      await FilePicker.platform.clearTemporaryFiles();
+    }
 
     if (mounted) {
       Navigator.pop(context);
@@ -275,9 +280,16 @@ class _DictionaryDialogPageState extends BasePageState {
   }
 
   bool _isDictInstalled(RecommendedDictionary rec) {
-    return appModel.dictionaries.any(
-      (d) => d.name.startsWith(rec.matchPrefix),
-    );
+    return appModel.dictionaries.any((d) {
+      final String base = DictionaryRepository.baseName(d.name);
+      if (base == rec.matchPrefix) return true;
+      if (d.name == rec.matchPrefix) return true;
+      if (d.name.startsWith(rec.matchPrefix) &&
+          d.name.substring(rec.matchPrefix.length).trimLeft().startsWith('[')) {
+        return true;
+      }
+      return false;
+    });
   }
 
   Set<int> _computeInstalledIndices(List<RecommendedDictionary> cat) {
@@ -308,8 +320,7 @@ class _DictionaryDialogPageState extends BasePageState {
           builder: (ctx, setDialogState) {
             final byCategory =
                 DictionaryDownloader.byCategoryFrom(workingCatalog);
-            final int downloadCount =
-                checked.where((i) => !installedIndices.contains(i)).length;
+            final int downloadCount = checked.length;
             return adaptiveAlertDialog(
               context: ctx,
               title: Text(t.dict_download_select_title),
@@ -384,10 +395,7 @@ class _DictionaryDialogPageState extends BasePageState {
 
     if (selected == null || selected.isEmpty || !mounted) return;
 
-    final toDownload = selected
-        .where((i) => !installedIndices.contains(i))
-        .map((i) => workingCatalog[i])
-        .toList();
+    final toDownload = selected.map((i) => workingCatalog[i]).toList();
 
     if (toDownload.isEmpty) return;
     await _downloadSelectedDictionaries(toDownload);
@@ -462,8 +470,8 @@ class _DictionaryDialogPageState extends BasePageState {
     return CheckboxListTile(
       dense: true,
       contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-      value: installed || checked.contains(idx),
-      onChanged: installed ? null : (bool? val) => onChanged(idx, val ?? false),
+      value: checked.contains(idx),
+      onChanged: (bool? val) => onChanged(idx, val ?? false),
       title: Text(
         rec.name,
         style: TextStyle(
@@ -473,7 +481,7 @@ class _DictionaryDialogPageState extends BasePageState {
       ),
       subtitle: Text(
         installed
-            ? t.dict_download_installed
+            ? '${t.dict_download_installed}  ${rec.sizeEstimate}'
             : '${rec.description}  ${rec.sizeEstimate}',
         style: TextStyle(
           fontSize: textTheme.bodySmall?.fontSize,
@@ -681,18 +689,22 @@ class _DictionaryDialogPageState extends BasePageState {
                   ButtonSegment<DictionaryType>(
                     value: DictionaryType.term,
                     label: Text(t.dictionary_type_term),
+                    tooltip: t.dictionary_type_term,
                   ),
                   ButtonSegment<DictionaryType>(
                     value: DictionaryType.kanji,
                     label: Text(t.dictionary_section_kanji),
+                    tooltip: t.dictionary_section_kanji,
                   ),
                   ButtonSegment<DictionaryType>(
                     value: DictionaryType.frequency,
                     label: Text(t.dictionary_type_frequency),
+                    tooltip: t.dictionary_type_frequency,
                   ),
                   ButtonSegment<DictionaryType>(
                     value: DictionaryType.pitch,
                     label: Text(t.dictionary_type_pitch),
+                    tooltip: t.dictionary_type_pitch,
                   ),
                 ],
                 selected: {_selectedType},

@@ -1667,41 +1667,52 @@ function applyCustomCSS() {
     }
 }
 
+window._renderGeneration = 0;
+
 window.renderPopup = function() {
+    const t0 = performance.now();
     const container = document.getElementById('entries-container');
     if (!container) return;
 
-    if (!window.lookupEntries || !window.lookupEntries.length) {
+    const entries = window.lookupEntries;
+    if (!entries || !entries.length) {
         container.innerHTML = '';
         window._renderedGlossaryCounts = [];
         return;
     }
 
-    (async () => {
-        const fragment = document.createDocumentFragment();
+    const gen = ++window._renderGeneration;
+    container.innerHTML = '';
 
-        for (let idx = 0; idx < window.lookupEntries.length; idx++) {
-            const entry = window.lookupEntries[idx];
-            if (!entry) continue;
+    const firstEntry = buildEntryElement(entries[0], 0);
+    container.appendChild(firstEntry);
+    postProcessRuby(firstEntry);
+    applyCustomCSS();
 
-            if (idx > 0) {
-                fragment.appendChild(document.createElement('hr'));
-            }
-
-            fragment.appendChild(buildEntryElement(entry, idx));
-        }
-
-        container.innerHTML = '';
-        container.appendChild(fragment);
-        window._renderedGlossaryCounts = window.lookupEntries.map(
-            e => e.glossaries.length);
-
-        postProcessRuby(container);
-        applyCustomCSS();
-
+    if (entries.length === 1) {
+        window._renderedGlossaryCounts = [entries[0].glossaries.length];
+        console.log('[popup-perf] renderPopup: ' + (performance.now() - t0).toFixed(1) + 'ms entries=1');
         window.flutter_inappwebview.callHandler('popupRendered',
             document.body.scrollHeight);
-    })();
+        return;
+    }
+
+    setTimeout(() => {
+        if (gen !== window._renderGeneration) return;
+        const fragment = document.createDocumentFragment();
+        for (let idx = 1; idx < entries.length; idx++) {
+            const entry = entries[idx];
+            if (!entry) continue;
+            fragment.appendChild(document.createElement('hr'));
+            fragment.appendChild(buildEntryElement(entry, idx));
+        }
+        container.appendChild(fragment);
+        postProcessRuby(container);
+        window._renderedGlossaryCounts = entries.map(e => e.glossaries.length);
+        console.log('[popup-perf] renderPopup: ' + (performance.now() - t0).toFixed(1) + 'ms entries=' + entries.length);
+        window.flutter_inappwebview.callHandler('popupRendered',
+            document.body.scrollHeight);
+    }, 0);
 };
 
 window.updatePopupIncremental = function() {
@@ -1792,3 +1803,14 @@ document.addEventListener('click', (e) => {
         window.flutter_inappwebview.callHandler('tapOutside');
     }
 });
+
+var _popupShiftLastX = -1, _popupShiftLastY = -1;
+document.addEventListener('mousemove', function(e) {
+    if (!e.shiftKey) { _popupShiftLastX = -1; _popupShiftLastY = -1; return; }
+    var dx = e.clientX - _popupShiftLastX, dy = e.clientY - _popupShiftLastY;
+    if (dx * dx + dy * dy < 64) return;
+    _popupShiftLastX = e.clientX; _popupShiftLastY = e.clientY;
+    if (window.hoshiSelection) {
+        window.hoshiSelection.selectText(e.clientX, e.clientY, 20);
+    }
+}, {passive: true});

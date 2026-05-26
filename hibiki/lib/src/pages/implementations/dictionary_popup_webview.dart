@@ -123,12 +123,20 @@ class DictionaryPopupWebViewState
     _lastEntryCount = widget.result.entries.length;
 
     final swJson = Stopwatch()..start();
-    final entriesJson = buildLookupEntriesJson(widget.result);
-    swJson.stop();
-    debugPrint(
-        '[dict-perf] buildLookupEntriesJson: ${swJson.elapsedMilliseconds}ms len=${entriesJson.length} loadMore=$isLoadMore');
+    final String entriesJson;
+    if (widget.result.popupJson != null) {
+      entriesJson = widget.result.popupJson!;
+      swJson.stop();
+      debugPrint(
+          '[dict-perf] popupJson (pre-built): ${swJson.elapsedMilliseconds}ms len=${entriesJson.length} loadMore=$isLoadMore');
+    } else {
+      entriesJson = buildLookupEntriesJson(widget.result);
+      swJson.stop();
+      debugPrint(
+          '[dict-perf] buildLookupEntriesJson (fallback): ${swJson.elapsedMilliseconds}ms len=${entriesJson.length} loadMore=$isLoadMore');
+    }
 
-    final stylesJson = jsonEncode(HoshiDicts.dictionaryStyles);
+    final stylesJson = _getStylesJson();
     final ThemeData theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final Color primary = theme.colorScheme.primary;
@@ -174,7 +182,10 @@ class DictionaryPopupWebViewState
       window.showExpressionTags = $showExprTags;
       window.collapseDictionaries = $collapseDict;
       window.collapsedDictionaryNames = ${jsonEncode(appModel.dictionaries.where((d) => d.isCollapsed(appModel.targetLanguage)).map((d) => d.name).toList())};
-      window.lookupEntries = $entriesJson;
+      try { window.lookupEntries = $entriesJson; } catch(e) {
+        console.error('[popup] lookupEntries parse error', e);
+        window.lookupEntries = [];
+      }
       window.dictionaryStyles = $stylesJson;
       window.globalDictCSS = ${jsonEncode(appModel.globalDictCSS)};
       window.customDictCSS = ${jsonEncode(appModel.customDictCSS)};
@@ -491,53 +502,113 @@ class DictionaryPopupWebViewState
     );
   }
 
+  static String? _cachedStylesJson;
+  static Map<String, String>? _cachedStylesRef;
+
+  // _rebuildStylesCache() always assigns a new Map, so identity change == content change.
+  static String _getStylesJson() {
+    final Map<String, String> styles = HoshiDicts.dictionaryStyles;
+    if (!identical(styles, _cachedStylesRef)) {
+      _cachedStylesJson = jsonEncode(styles);
+      _cachedStylesRef = styles;
+    }
+    return _cachedStylesJson!;
+  }
+
   static String buildLookupEntriesJson(DictionarySearchResult result) {
-    final Map<String, Map<String, dynamic>> grouped = {};
+    final List<DictionaryEntry> entries = result.entries;
+    if (entries.isEmpty) return '[]';
+
+    final List<String> groupKeys = [];
+    final Map<String, Map<String, dynamic>> groups = {};
     final Map<String, Set<String>> seenFrequencies = {};
     final Map<String, Set<String>> seenPitches = {};
+    final Map<
+        String,
+        List<
+            ({
+              String dictionary,
+              String contentJson,
+              String defTags,
+              String termTags,
+            })>> rawGlossaries = {};
 
-    for (final entry in result.entries) {
+    for (final entry in entries) {
       final key = '${entry.word}\n${entry.reading}';
       final extraData = _decodeExtra(entry);
-      if (!grouped.containsKey(key)) {
-        grouped[key] = {
+      if (!groups.containsKey(key)) {
+        groupKeys.add(key);
+        groups[key] = {
           'expression': entry.word,
           'reading': entry.reading,
           'matched': extraData?['matched'] ?? entry.word,
-          'rules': <String>[],
           'deinflectionTrace': <Map<String, String>>[],
-          'glossaries': <Map<String, dynamic>>[],
           'frequencies': <Map<String, dynamic>>[],
           'pitches': <Map<String, dynamic>>[],
         };
         seenFrequencies[key] = <String>{};
         seenPitches[key] = <String>{};
+        rawGlossaries[key] = [];
       }
 
       _mergeLookupMetadata(
-        group: grouped[key]!,
+        group: groups[key]!,
         extraData: extraData,
         seenFrequencies: seenFrequencies[key]!,
         seenPitches: seenPitches[key]!,
       );
 
-      dynamic contentValue;
-      try {
-        contentValue = jsonDecode(entry.meaning);
-      } catch (e, stack) {
-        ErrorLogService.instance.log('DictPopupWebview.meaning', e, stack);
-        contentValue = entry.meaning;
-      }
+      // entry.meaning from hoshidicts FFI is valid JSON (structured content).
+      // Embed raw to skip the jsonDecode + jsonEncode roundtrip.
+      final String m = entry.meaning;
+      final String contentJson =
+          (m.isNotEmpty && (m[0] == '[' || m[0] == '{'))
+              ? m
+              : jsonEncode(m);
 
-      grouped[key]!['glossaries'].add({
-        'dictionary': entry.dictionaryName,
-        'content': contentValue,
-        'definitionTags': extraData?['definitionTags']?.toString() ?? '',
-        'termTags': extraData?['termTags']?.toString() ?? '',
-      });
+      rawGlossaries[key]!.add((
+        dictionary: entry.dictionaryName,
+        contentJson: contentJson,
+        defTags: extraData?['definitionTags']?.toString() ?? '',
+        termTags: extraData?['termTags']?.toString() ?? '',
+      ));
     }
 
-    return jsonEncode(grouped.values.toList());
+    final sb = StringBuffer('[');
+    for (var i = 0; i < groupKeys.length; i++) {
+      if (i > 0) sb.write(',');
+      final key = groupKeys[i];
+      final g = groups[key]!;
+      sb.write('{"expression":');
+      sb.write(jsonEncode(g['expression']));
+      sb.write(',"reading":');
+      sb.write(jsonEncode(g['reading']));
+      sb.write(',"matched":');
+      sb.write(jsonEncode(g['matched']));
+      sb.write(',"rules":[],"deinflectionTrace":');
+      sb.write(jsonEncode(g['deinflectionTrace']));
+      sb.write(',"glossaries":[');
+      final gl = rawGlossaries[key]!;
+      for (var j = 0; j < gl.length; j++) {
+        if (j > 0) sb.write(',');
+        sb.write('{"dictionary":');
+        sb.write(jsonEncode(gl[j].dictionary));
+        sb.write(',"content":');
+        sb.write(gl[j].contentJson);
+        sb.write(',"definitionTags":');
+        sb.write(jsonEncode(gl[j].defTags));
+        sb.write(',"termTags":');
+        sb.write(jsonEncode(gl[j].termTags));
+        sb.write('}');
+      }
+      sb.write('],"frequencies":');
+      sb.write(jsonEncode(g['frequencies']));
+      sb.write(',"pitches":');
+      sb.write(jsonEncode(g['pitches']));
+      sb.write('}');
+    }
+    sb.write(']');
+    return sb.toString();
   }
 
   static Map<String, dynamic>? _decodeExtra(DictionaryEntry entry) {
