@@ -71,7 +71,10 @@ jobs:
 
     - name: Build release APK (split per ABI)
       working-directory: hibiki
-      run: flutter build apk --split-per-abi --release
+      run: >-
+        flutter build apk --split-per-abi --release
+        --dart-define=GOOGLE_OAUTH_CLIENT_ID=${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+        --dart-define=GOOGLE_OAUTH_CLIENT_SECRET=${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
 
     - name: Rename APKs
       working-directory: hibiki

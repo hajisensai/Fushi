@@ -1,3 +1,6 @@
+# Secrets / build-time defines
+dart_defines.env
+
 # Miscellaneous
 *.class
 *.log

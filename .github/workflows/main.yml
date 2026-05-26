@@ -57,7 +57,10 @@ jobs:
 
     - name: Build debug APK
       working-directory: hibiki
-      run: flutter build apk --debug
+      run: >-
+        flutter build apk --debug
+        --dart-define=GOOGLE_OAUTH_CLIENT_ID=${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+        --dart-define=GOOGLE_OAUTH_CLIENT_SECRET=${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
 
     - name: Decode keystore
       if: env.HAS_KEYSTORE == 'true'
@@ -82,7 +85,10 @@ jobs:
     - name: Build release APK
       if: env.HAS_KEYSTORE == 'true'
       working-directory: hibiki
-      run: flutter build apk --release
+      run: >-
+        flutter build apk --release
+        --dart-define=GOOGLE_OAUTH_CLIENT_ID=${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+        --dart-define=GOOGLE_OAUTH_CLIENT_SECRET=${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
       env:
         HAS_KEYSTORE: ${{ secrets.KEYSTORE_BASE64 != '' }}
 
