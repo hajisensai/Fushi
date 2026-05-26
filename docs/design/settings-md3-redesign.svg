@@ -1,0 +1,255 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="1080" viewBox="0 0 1440 1080" role="img" aria-label="Hibiki Material Design 3 settings page redesign">
+  <defs>
+    <filter id="phoneShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="20" stdDeviation="24" flood-color="#1D1B20" flood-opacity="0.16"/>
+    </filter>
+    <clipPath id="phoneClipA">
+      <rect x="188" y="54" width="430" height="932" rx="42"/>
+    </clipPath>
+    <clipPath id="phoneClipB">
+      <rect x="822" y="54" width="430" height="932" rx="42"/>
+    </clipPath>
+    <style>
+      .bg { fill: #F5F7F9; }
+      .phone { fill: #FCFDF8; stroke: #DDE3EA; stroke-width: 1; }
+      .surface { fill: #FCFDF8; }
+      .container-lowest { fill: #FFFFFF; }
+      .container-low { fill: #F1F4F7; }
+      .container { fill: #ECEFF3; }
+      .container-high { fill: #E6EBEF; }
+      .primary { fill: #006B5F; }
+      .primary-text { fill: #003731; }
+      .on-primary-container { fill: #00201C; }
+      .primary-container { fill: #C8FFF3; }
+      .secondary-container { fill: #FFE1C0; }
+      .tertiary-container { fill: #D7E8FF; }
+      .error-container { fill: #FFDAD6; }
+      .outline { stroke: #C1C7CE; stroke-width: 1; }
+      .divider { stroke: #D9DEE4; stroke-width: 1; }
+      .text-title { fill: #191C1C; font-family: "Noto Sans SC", "Microsoft YaHei", "Roboto", sans-serif; font-weight: 600; }
+      .text-body { fill: #42474A; font-family: "Noto Sans SC", "Microsoft YaHei", "Roboto", sans-serif; font-weight: 400; }
+      .text-muted { fill: #687174; font-family: "Noto Sans SC", "Microsoft YaHei", "Roboto", sans-serif; font-weight: 400; }
+      .text-label { fill: #4F585B; font-family: "Noto Sans SC", "Microsoft YaHei", "Roboto", sans-serif; font-weight: 600; letter-spacing: 0; }
+      .icon { fill: none; stroke: #42474A; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+      .icon-primary { fill: none; stroke: #006B5F; stroke-width: 2.8; stroke-linecap: round; stroke-linejoin: round; }
+      .icon-filled { fill: #42474A; }
+      .bar { fill: #F1F4F7; }
+      .nav-pill { fill: #C8FFF3; }
+      .active-row { fill: #DFF7F0; }
+      .chip { fill: #E6EBEF; stroke: #C1C7CE; stroke-width: 1; }
+      .chip-active { fill: #C8FFF3; stroke: #006B5F; stroke-width: 1.4; }
+      .swatch-border { fill: none; stroke: #FCFDF8; stroke-width: 4; }
+      .screen-note { fill: #6F797B; font-family: "Roboto", "Noto Sans SC", sans-serif; font-weight: 600; }
+    </style>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1440" height="1080"/>
+  <text class="screen-note" x="220" y="36" font-size="18">Settings home</text>
+  <text class="screen-note" x="854" y="36" font-size="18">Appearance detail</text>
+
+  <g filter="url(#phoneShadow)">
+    <rect class="phone" x="188" y="54" width="430" height="932" rx="42"/>
+  </g>
+  <g clip-path="url(#phoneClipA)">
+    <rect class="surface" x="188" y="54" width="430" height="932"/>
+
+    <g transform="translate(188 54)">
+      <rect class="surface" x="0" y="0" width="430" height="932"/>
+      <text class="text-muted" x="38" y="31" font-size="13">9:41</text>
+      <g transform="translate(338 19)">
+        <rect x="0" y="0" width="24" height="10" rx="2" fill="none" stroke="#191C1C" stroke-width="1.3"/>
+        <rect x="26" y="3" width="2.5" height="4" rx="1" fill="#191C1C"/>
+        <rect x="3" y="3" width="17" height="4" rx="1" fill="#191C1C"/>
+      </g>
+
+      <g transform="translate(24 58)">
+        <rect x="0" y="0" width="382" height="56" rx="8" fill="#FCFDF8"/>
+        <text class="text-title" x="0" y="39" font-size="35">设置</text>
+        <circle cx="344" cy="28" r="20" class="container-low"/>
+        <path class="icon" d="M336 28h16M344 20v16M338 22l12 12M350 22l-12 12"/>
+      </g>
+
+      <g transform="translate(24 128)">
+        <rect class="container-low" x="0" y="0" width="382" height="92" rx="8"/>
+        <text class="text-title" x="20" y="37" font-size="24">Hibiki</text>
+        <text class="text-muted" x="20" y="64" font-size="14">0.4.1 · Material You</text>
+        <rect class="primary-container" x="254" y="18" width="108" height="40" rx="20"/>
+        <text class="primary-text" x="281" y="44" font-size="15" font-family="Roboto, sans-serif" font-weight="700">MD3</text>
+        <path class="icon-primary" d="M334 31l7 7 14-15"/>
+      </g>
+
+      <g transform="translate(24 246)">
+        <text class="text-label" x="0" y="0" font-size="13">阅读</text>
+        <rect class="container-lowest outline" x="0" y="12" width="382" height="250" rx="8"/>
+        <g transform="translate(0 12)">
+          <rect class="active-row" x="8" y="8" width="366" height="68" rx="8"/>
+          <rect class="primary-container" x="20" y="20" width="44" height="44" rx="8"/>
+          <path class="icon-primary" d="M36 32c10-10 25-4 25 9 0 12-14 12-18 7l-7 5c-5 4-12-2-8-8l4-6c-1-3 0-5 4-7zM45 33h.1M53 38h.1M39 43h.1"/>
+          <text class="text-title" x="80" y="38" font-size="19">外观</text>
+          <text class="text-muted" x="80" y="60" font-size="13">主题、颜色、语言</text>
+          <path class="icon-primary" d="M344 34l8 8-8 8"/>
+
+          <line class="divider" x1="80" y1="84" x2="362" y2="84"/>
+          <rect class="container" x="20" y="100" width="44" height="44" rx="8"/>
+          <path class="icon" d="M32 130h20M35 112h16l8 9v17H35zM51 112v10h8"/>
+          <text class="text-title" x="80" y="118" font-size="19">配置方案</text>
+          <text class="text-muted" x="80" y="140" font-size="13">配置管理</text>
+          <path class="icon" d="M344 116l8 8-8 8"/>
+
+          <line class="divider" x1="80" y1="168" x2="362" y2="168"/>
+          <rect class="container" x="20" y="184" width="44" height="44" rx="8"/>
+          <path class="icon" d="M31 195v28c8-6 16-6 24 0v-28c-8 6-16 6-24 0zM55 195v28c7-6 14-6 21 0v-28c-7 6-14 6-21 0z" transform="scale(.76) translate(10 60)"/>
+          <text class="text-title" x="80" y="202" font-size="19">阅读显示</text>
+          <text class="text-muted" x="80" y="224" font-size="13">字体、排版、CSS</text>
+          <path class="icon" d="M344 200l8 8-8 8"/>
+        </g>
+      </g>
+
+      <g transform="translate(24 540)">
+        <text class="text-label" x="0" y="0" font-size="13">学习</text>
+        <rect class="container-lowest outline" x="0" y="12" width="382" height="166" rx="8"/>
+        <g transform="translate(0 12)">
+          <rect class="container" x="20" y="20" width="44" height="44" rx="8"/>
+          <path class="icon" d="M33 44h16M33 36h16M33 52h10M54 35l8 8-8 8" transform="translate(-3 -2)"/>
+          <text class="text-title" x="80" y="38" font-size="19">查词</text>
+          <text class="text-muted" x="80" y="60" font-size="13">词典、弹窗、音频</text>
+          <rect x="278" y="22" width="58" height="24" rx="12" class="primary-container"/>
+          <text class="primary-text" x="294" y="39" font-size="12" font-family="Roboto, sans-serif" font-weight="700">常用</text>
+          <path class="icon" d="M344 34l8 8-8 8"/>
+
+          <line class="divider" x1="80" y1="84" x2="362" y2="84"/>
+          <rect class="container" x="20" y="100" width="44" height="44" rx="8"/>
+          <path class="icon" d="M36 116l24-8 10 30-24 8zM42 121l18 16M34 134l11 10"/>
+          <text class="text-title" x="80" y="118" font-size="19">制卡</text>
+          <text class="text-muted" x="80" y="140" font-size="13">Anki 设置</text>
+          <path class="icon" d="M344 116l8 8-8 8"/>
+        </g>
+      </g>
+
+      <g transform="translate(24 748)">
+        <text class="text-label" x="0" y="0" font-size="13">应用</text>
+        <rect class="container-lowest outline" x="0" y="12" width="382" height="82" rx="8"/>
+        <g transform="translate(0 12)">
+          <rect class="container" x="20" y="20" width="44" height="44" rx="8"/>
+          <path class="icon" d="M42 49c0-12 18-12 18 0v8H42zM35 55h32M35 55c0 8 7 14 16 14s16-6 16-14"/>
+          <text class="text-title" x="80" y="34" font-size="19">听书</text>
+          <text class="text-muted" x="80" y="57" font-size="13">通知、悬浮字幕、句子导航</text>
+          <path class="icon" d="M344 34l8 8-8 8"/>
+        </g>
+      </g>
+
+      <g transform="translate(0 852)">
+        <rect class="bar" x="0" y="0" width="430" height="80"/>
+        <rect class="nav-pill" x="312" y="11" width="76" height="40" rx="20"/>
+        <path class="icon" d="M92 24v28c10-7 20-7 30 0V24c-10 7-20 7-30 0zM122 24v28c9-7 18-7 27 0V24c-9 7-18 7-27 0z" transform="scale(.7) translate(12 10)"/>
+        <text class="text-body" x="78" y="69" font-size="13">书架</text>
+        <path class="icon" d="M210 32a14 14 0 1 0 10 24l13 13M226 48h.1"/>
+        <text class="text-body" x="182" y="69" font-size="13">词典管理</text>
+        <path class="icon-primary" d="M336 24h42M346 24v28M368 24v28M336 52h42M346 52v14M368 52v14"/>
+        <text class="text-title" x="332" y="69" font-size="13">设置</text>
+      </g>
+    </g>
+  </g>
+
+  <g filter="url(#phoneShadow)">
+    <rect class="phone" x="822" y="54" width="430" height="932" rx="42"/>
+  </g>
+  <g clip-path="url(#phoneClipB)">
+    <rect class="surface" x="822" y="54" width="430" height="932"/>
+
+    <g transform="translate(822 54)">
+      <rect class="surface" x="0" y="0" width="430" height="932"/>
+      <text class="text-muted" x="38" y="31" font-size="13">9:41</text>
+      <g transform="translate(338 19)">
+        <rect x="0" y="0" width="24" height="10" rx="2" fill="none" stroke="#191C1C" stroke-width="1.3"/>
+        <rect x="26" y="3" width="2.5" height="4" rx="1" fill="#191C1C"/>
+        <rect x="3" y="3" width="17" height="4" rx="1" fill="#191C1C"/>
+      </g>
+
+      <g transform="translate(12 58)">
+        <circle cx="28" cy="28" r="24" fill="#FCFDF8"/>
+        <path class="icon" d="M34 18L24 28l10 10"/>
+        <text class="text-title" x="72" y="39" font-size="34">外观</text>
+      </g>
+
+      <g transform="translate(24 128)">
+        <rect class="container-low" x="0" y="0" width="382" height="118" rx="8"/>
+        <rect class="primary-container" x="18" y="18" width="64" height="64" rx="8"/>
+        <path class="icon-primary" d="M42 42c10-10 25-4 25 9 0 12-14 12-18 7l-7 5c-5 4-12-2-8-8l4-6c-1-3 0-5 4-7zM51 43h.1M59 48h.1M45 53h.1"/>
+        <text class="text-title" x="98" y="45" font-size="22">Material 3 外观</text>
+        <text class="text-muted" x="98" y="70" font-size="13">使用动态颜色、容器层级和原生 MD3 控件</text>
+        <rect class="chip-active" x="98" y="84" width="70" height="26" rx="13"/>
+        <text class="primary-text" x="119" y="102" font-size="12" font-family="Roboto, sans-serif" font-weight="700">MD3</text>
+        <rect class="chip" x="176" y="84" width="70" height="26" rx="13"/>
+        <text class="text-muted" x="193" y="102" font-size="12">自动</text>
+      </g>
+
+      <g transform="translate(24 278)">
+        <text class="text-label" x="0" y="0" font-size="13">界面</text>
+        <rect class="container-lowest outline" x="0" y="12" width="382" height="158" rx="8"/>
+        <g transform="translate(16 28)">
+          <text class="text-title" x="0" y="22" font-size="18">设计系统</text>
+          <text class="text-muted" x="0" y="45" font-size="13">切换应用的视觉风格</text>
+          <g transform="translate(144 0)">
+            <rect x="0" y="0" width="206" height="42" rx="21" fill="#FFFFFF" stroke="#8B9198" stroke-width="1.4"/>
+            <rect x="70" y="2" width="66" height="38" fill="#C8FFF3"/>
+            <line x1="70" y1="1" x2="70" y2="41" stroke="#8B9198" stroke-width="1"/>
+            <line x1="136" y1="1" x2="136" y2="41" stroke="#8B9198" stroke-width="1"/>
+            <text class="text-body" x="20" y="27" font-size="13" font-weight="600">自动</text>
+            <text class="primary-text" x="90" y="28" font-size="15" font-family="Roboto, sans-serif" font-weight="700">MD3</text>
+            <text class="text-body" x="158" y="28" font-size="15" font-family="Roboto, sans-serif" font-weight="700">iOS</text>
+          </g>
+        </g>
+        <line class="divider" x1="16" y1="90" x2="366" y2="90"/>
+        <g transform="translate(16 106)">
+          <text class="text-title" x="0" y="22" font-size="18">深色模式</text>
+          <g transform="translate(144 -3)">
+            <rect x="0" y="0" width="206" height="42" rx="21" fill="#FFFFFF" stroke="#8B9198" stroke-width="1.4"/>
+            <rect x="70" y="2" width="66" height="38" fill="#C8FFF3"/>
+            <line x1="70" y1="1" x2="70" y2="41" stroke="#8B9198" stroke-width="1"/>
+            <line x1="136" y1="1" x2="136" y2="41" stroke="#8B9198" stroke-width="1"/>
+            <path class="icon" d="M29 14v14M22 21h14M24 16l10 10M34 16L24 26"/>
+            <path class="icon-primary" d="M101 12l4 7 8 1-6 5 2 8-8-4-8 4 2-8-6-5 8-1z"/>
+            <path class="icon" d="M174 13c-7 4-8 15 0 20 6 4 14 1 17-5-8 3-16-5-12-15z"/>
+          </g>
+        </g>
+      </g>
+
+      <g transform="translate(24 476)">
+        <text class="text-label" x="0" y="0" font-size="13">主题</text>
+        <rect class="container-lowest outline" x="0" y="12" width="382" height="218" rx="8"/>
+        <g transform="translate(18 32)">
+          <circle cx="38" cy="38" r="34" fill="#006B5F"/>
+          <circle cx="38" cy="38" r="38" fill="none" stroke="#006B5F" stroke-width="2"/>
+          <path d="M24 38l10 10 20-22" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="126" cy="38" r="34" fill="#345DA8"/>
+          <circle cx="214" cy="38" r="34" fill="#8B6F47"/>
+          <circle cx="302" cy="38" r="34" fill="#7B4E7D"/>
+          <circle cx="38" cy="126" r="34" fill="#4F6F67"/>
+          <circle cx="126" cy="126" r="34" fill="#263238"/>
+          <circle cx="214" cy="126" r="34" fill="#C8FFF3"/>
+          <path class="icon-primary" d="M202 126c0-7 6-13 14-13s14 5 14 12c0 9-9 9-11 6l-5 4c-4 3-9-1-6-6l3-4c0-2 1-4 3-5M217 119h.1M224 124h.1M211 129h.1"/>
+        </g>
+      </g>
+
+      <g transform="translate(24 724)">
+        <text class="text-label" x="0" y="0" font-size="13">应用</text>
+        <rect class="container-lowest outline" x="0" y="12" width="382" height="166" rx="8"/>
+        <g transform="translate(0 12)">
+          <rect class="container" x="20" y="20" width="44" height="44" rx="8"/>
+          <path class="icon" d="M38 42h28M42 33h22M42 51h22M48 60h10"/>
+          <text class="text-title" x="80" y="38" font-size="18">语言设置</text>
+          <text class="text-muted" x="80" y="60" font-size="13">简体中文</text>
+          <path class="icon" d="M344 34l8 8-8 8"/>
+
+          <line class="divider" x1="80" y1="84" x2="362" y2="84"/>
+          <rect class="container" x="20" y="100" width="44" height="44" rx="8"/>
+          <path class="icon" d="M38 108h20v20H38zM46 116h20v20H46zM54 124h20v20H54z"/>
+          <text class="text-title" x="80" y="118" font-size="18">应用图标</text>
+          <text class="text-muted" x="80" y="140" font-size="13">默认</text>
+          <path class="icon" d="M344 116l8 8-8 8"/>
+        </g>
+      </g>
+    </g>
+  </g>
+</svg>
