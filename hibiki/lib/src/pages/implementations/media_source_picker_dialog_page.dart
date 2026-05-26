@@ -82,10 +82,9 @@ class _MediaSourcePickerDialogPageState
   }
 
   Widget buildSourceTile(MediaSource mediaSource) {
-    return Material(
-      type: MaterialType.transparency,
+    return KeyedSubtree(
       key: ValueKey(mediaSource.uniqueKey),
-      child: ListTile(
+      child: HibikiListItem(
         leading: Icon(
           mediaSource.icon,
           color: theme.appBarTheme.foregroundColor,
@@ -94,25 +93,8 @@ class _MediaSourcePickerDialogPageState
             appModel
                 .getCurrentSourceForMediaType(mediaType: widget.mediaType)
                 .uniqueKey,
-        title: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    mediaSource.getLocalisedSourceName(appModel),
-                    style: TextStyle(fontSize: textTheme.bodyMedium?.fontSize),
-                  ),
-                  Text(
-                    mediaSource.getLocalisedDescription(appModel),
-                    style: TextStyle(fontSize: textTheme.bodySmall?.fontSize),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
+        title: Text(mediaSource.getLocalisedSourceName(appModel)),
+        subtitle: Text(mediaSource.getLocalisedDescription(appModel)),
         onTap: () {
           appModel.setCurrentSourceForMediaType(
             mediaType: widget.mediaType,

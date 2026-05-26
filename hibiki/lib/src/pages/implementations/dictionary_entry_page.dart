@@ -106,17 +106,12 @@ class _DictionaryEntryHeaderWrap extends ConsumerWidget {
           SizedBox(
             height: 22,
             width: 22,
-            child: PopupMenuButton<VoidCallback>(
+            child: HibikiOverflowMenu<VoidCallback>(
               iconSize: 16,
               padding: EdgeInsets.zero,
-              icon: Icon(
-                Icons.more_vert,
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-              color: Theme.of(context).popupMenuTheme.color,
               tooltip: t.show_options,
               onSelected: (value) => value(),
-              itemBuilder: (context) => getMenuItems(
+              items: getMenuItems(
                 context: context,
                 dictionaryName: dictionaryName,
                 ref: ref,

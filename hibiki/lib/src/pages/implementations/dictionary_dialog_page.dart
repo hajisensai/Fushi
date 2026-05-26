@@ -736,20 +736,12 @@ class _DictionaryDialogPageState extends BasePageState {
   }
 
   Widget _buildEmptyCategoryRow() {
-    final ColorScheme scheme = theme.colorScheme;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: scheme.outlineVariant),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 18),
-        child: Text(
-          t.dictionaries_menu_empty,
-          style: textTheme.bodyMedium?.copyWith(
-            color: scheme.onSurfaceVariant,
-          ),
+    return HibikiCard(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 18),
+      child: Text(
+        t.dictionaries_menu_empty,
+        style: textTheme.bodyMedium?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
         ),
       ),
     );
@@ -771,62 +763,42 @@ class _DictionaryDialogPageState extends BasePageState {
     return Padding(
       key: key,
       padding: EdgeInsets.only(bottom: isLast ? 0 : 10),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: scheme.surfaceContainerLowest,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: scheme.outlineVariant),
-        ),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 70),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            child: Row(
-              children: [
-                ReorderableDragStartListener(
-                  index: index,
-                  child: Icon(
-                    Icons.drag_handle,
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        dictionary.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: textTheme.bodyLarge?.copyWith(
-                          color: titleColor,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        _subtitleForDictionary(dictionary, dictionaryFormat),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: textTheme.bodySmall?.copyWith(
-                          color: subtitleColor,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                buildDictionaryTileTrailing(dictionary),
-                const SizedBox(width: 4),
-                adaptiveSwitch(
-                  context: context,
-                  value: enabled,
-                  onChanged: (_) => _toggleDictionaryHidden(dictionary),
-                ),
-              ],
+      child: HibikiCard(
+        padding: EdgeInsets.zero,
+        child: HibikiListItem(
+          minHeight: 70,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          leading: ReorderableDragStartListener(
+            index: index,
+            child: Icon(
+              Icons.drag_handle,
+              color: scheme.onSurfaceVariant,
             ),
+          ),
+          title: Text(
+            dictionary.name,
+            style: textTheme.bodyLarge?.copyWith(
+              color: titleColor,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          subtitle: Text(
+            _subtitleForDictionary(dictionary, dictionaryFormat),
+            style: textTheme.bodySmall?.copyWith(
+              color: subtitleColor,
+            ),
+          ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              buildDictionaryTileTrailing(dictionary),
+              const SizedBox(width: 4),
+              adaptiveSwitch(
+                context: context,
+                value: enabled,
+                onChanged: (_) => _toggleDictionaryHidden(dictionary),
+              ),
+            ],
           ),
         ),
       ),
@@ -906,23 +878,13 @@ class _DictionaryDialogPageState extends BasePageState {
       borderRadius: BorderRadius.circular(24),
       child: Material(
         color: Colors.transparent,
-        child: PopupMenuButton<VoidCallback>(
+        child: HibikiOverflowMenu<VoidCallback>(
           splashRadius: 20,
           padding: EdgeInsets.zero,
           tooltip: t.show_options,
-          color: Theme.of(context).popupMenuTheme.color,
           onSelected: (value) => value(),
-          itemBuilder: (context) => getMenuItems(dictionary),
-          child: Container(
-            height: 30,
-            width: 30,
-            alignment: Alignment.center,
-            child: Icon(
-              Icons.more_vert,
-              color: theme.iconTheme.color,
-              size: 24,
-            ),
-          ),
+          items: getMenuItems(dictionary),
+          iconSize: 24,
         ),
       ),
     );

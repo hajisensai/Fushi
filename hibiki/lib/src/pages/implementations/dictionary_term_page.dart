@@ -80,11 +80,13 @@ class DictionaryTermPage extends ConsumerWidget {
     return SliverStack(
       children: [
         SliverPositioned.fill(
-          child: Card(
+          child: HibikiCard(
             color: cardColor?.withValues(alpha: opacity) ??
                 scheme.surfaceContainerHigh.withValues(alpha: opacity),
-            elevation: 0,
-            shape: const RoundedRectangleBorder(),
+            borderColor: Colors.transparent,
+            borderRadius: BorderRadius.zero,
+            padding: EdgeInsets.zero,
+            child: const SizedBox.expand(),
           ),
         ),
         SliverPadding(

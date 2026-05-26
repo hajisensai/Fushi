@@ -452,10 +452,11 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
           child: SizedBox(
             height: double.infinity,
             width: double.infinity,
-            child: Card(
+            child: HibikiCard(
+              padding: EdgeInsets.zero,
               color: Colors.transparent,
-              elevation: 0,
-              shape: const RoundedRectangleBorder(),
+              borderColor: Colors.transparent,
+              borderRadius: BorderRadius.zero,
               child: Column(
                 children: [
                   LinearProgressIndicator(

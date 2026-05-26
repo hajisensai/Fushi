@@ -74,6 +74,8 @@ void main() {
     );
 
     expect(tester.takeException(), isNull);
-    expect(find.byType(ListTile), findsOneWidget);
+    final String sourceKey =
+        appModel.mediaSources[ReaderMediaType.instance]!.values.first.uniqueKey;
+    expect(find.byKey(ValueKey<String>(sourceKey)), findsOneWidget);
   });
 }

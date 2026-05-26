@@ -4,6 +4,8 @@ import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
 import 'package:hibiki/src/settings/settings_detail_page.dart';
 import 'package:hibiki/src/settings/settings_renderer.dart';
+import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
+import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 
 class MaterialSettingsRenderer implements SettingsRenderer {
   const MaterialSettingsRenderer();
@@ -54,31 +56,22 @@ class MaterialSettingsRenderer implements SettingsRenderer {
       itemBuilder: (BuildContext context, int index) {
         final SettingsDestination destination = destinations[index];
         final bool selected = destination.id == selectedDestinationId;
-        return Material(
-          color: selected
-              ? Theme.of(context).colorScheme.secondaryContainer
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
-          child: ListTile(
-            leading: Icon(destination.icon),
-            title: Text(destination.title),
-            subtitle:
-                destination.summary != null ? Text(destination.summary!) : null,
-            trailing: const Icon(Icons.chevron_right),
-            selected: selected,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-            onTap: () {
-              onDestinationSelected(destination.id);
-              if (!pushRoutes) return;
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => SettingsDetailPage(destination: destination),
-                ),
-              );
-            },
-          ),
+        return HibikiListItem(
+          selected: selected,
+          leading: Icon(destination.icon),
+          title: Text(destination.title),
+          subtitle:
+              destination.summary != null ? Text(destination.summary!) : null,
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () {
+            onDestinationSelected(destination.id);
+            if (!pushRoutes) return;
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => SettingsDetailPage(destination: destination),
+              ),
+            );
+          },
         );
       },
     );
@@ -141,7 +134,7 @@ class _MaterialSettingsSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (section.items.isEmpty) return const SizedBox.shrink();
-    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Column(
@@ -153,16 +146,12 @@ class _MaterialSettingsSection extends StatelessWidget {
               child: Text(
                 section.title!,
                 style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      color: scheme.onSurfaceVariant,
+                      color: tokens.surfaces.onVariant,
                     ),
               ),
             ),
-          DecoratedBox(
-            decoration: BoxDecoration(
-              color: scheme.surfaceContainerLowest,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: scheme.outlineVariant),
-            ),
+          HibikiCard(
+            padding: EdgeInsets.zero,
             child: Column(
               children: _withDividers(
                 context,
@@ -181,7 +170,7 @@ class _MaterialSettingsSection extends StatelessWidget {
               child: Text(
                 section.footer!,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
+                      color: tokens.surfaces.onVariant,
                     ),
               ),
             ),
@@ -384,41 +373,27 @@ class _MaterialSettingsItem extends StatelessWidget {
             padding: const EdgeInsets.only(right: 12),
             child: Icon(item.icon, size: 22),
           );
-    final Widget child = Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: controlBelow
-          ? Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Row(
-                  children: <Widget>[
-                    if (leading != null) leading,
-                    Expanded(child: label),
-                  ],
-                ),
-                if (trailing != null) ...<Widget>[
-                  const SizedBox(height: 8),
-                  Align(alignment: Alignment.centerLeft, child: trailing),
-                ],
-              ],
-            )
-          : Row(
-              children: <Widget>[
-                if (leading != null) leading,
-                Expanded(child: label),
-                if (trailing != null) ...<Widget>[
-                  const SizedBox(width: 12),
-                  trailing,
-                ],
-              ],
-            ),
-    );
-    return InkWell(
+    if (controlBelow) {
+      return HibikiListItem(
+        onTap: onTap,
+        leading: leading,
+        title: label,
+        subtitle: trailing == null
+            ? null
+            : Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Align(alignment: Alignment.centerLeft, child: trailing),
+              ),
+        subtitleMaxLines: 10,
+        minHeight: 56,
+      );
+    }
+    return HibikiListItem(
       onTap: onTap,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 48),
-        child: child,
-      ),
+      leading: leading,
+      title: label,
+      trailing: trailing,
+      minHeight: 56,
     );
   }
 }

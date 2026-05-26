@@ -141,10 +141,6 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
   }
 
   Widget _buildSearchHeader() {
-    final ColorScheme colors = theme.colorScheme;
-    final Color searchFill = colors.surfaceContainerHigh;
-    final Color borderColor = colors.outlineVariant;
-
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8),
       child: SizedBox(
@@ -152,41 +148,14 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
         child: Row(
           children: [
             Expanded(
-              child: SizedBox(
-                height: 42,
-                child: TextField(
-                  key: const ValueKey<String>('home_dictionary_search_field'),
-                  controller: _controller,
-                  focusNode: _searchFocusNode,
-                  textInputAction: TextInputAction.search,
-                  cursorColor: colors.primary,
-                  style: textTheme.bodyMedium,
-                  decoration: InputDecoration(
-                    hintText: t.search_ellipsis,
-                    prefixIcon: Icon(
-                      Icons.search,
-                      size: 18,
-                      color: colors.onSurfaceVariant,
-                    ),
-                    isDense: true,
-                    filled: true,
-                    fillColor: searchFill,
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 10,
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide: BorderSide(color: borderColor),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide: BorderSide(color: colors.primary),
-                    ),
-                  ),
-                  onChanged: _onQueryChanged,
-                  onSubmitted: _search,
-                ),
+              child: HibikiSearchField(
+                fieldKey:
+                    const ValueKey<String>('home_dictionary_search_field'),
+                controller: _controller,
+                focusNode: _searchFocusNode,
+                hintText: t.search_ellipsis,
+                onChanged: _onQueryChanged,
+                onSubmitted: _search,
               ),
             ),
             IconButton(
@@ -275,80 +244,30 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
             reading.isNotEmpty && reading != word && reading != searchTerm;
         final dictCount =
             result.entries.map((e) => e.dictionaryName).toSet().length;
-        return InkWell(
+        return HibikiCard(
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
           onTap: () {
             _controller.text = searchTerm;
             _controller.selection =
                 TextSelection.collapsed(offset: searchTerm.length);
             _showCachedResult(result);
           },
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-            child: Card(
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-                side: BorderSide(
-                  color: Theme.of(context).colorScheme.outlineVariant,
-                  width: 0.5,
-                ),
-              ),
-              child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            searchTerm.replaceAll('\n', ' '),
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w500,
-                              color: Theme.of(context).colorScheme.onSurface,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          if (hasWordInfo || hasReading) ...[
-                            const SizedBox(height: 2),
-                            Text(
-                              [
-                                if (hasWordInfo) word,
-                                if (hasReading) reading,
-                              ].join('  '),
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurfaceVariant,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                    Text(
-                      '$dictCount',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Icon(
-                      Icons.chevron_right,
-                      size: 20,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ],
-                ),
-              ),
+          padding: EdgeInsets.zero,
+          child: HibikiListItem(
+            title: Text(searchTerm.replaceAll('\n', ' ')),
+            subtitle: hasWordInfo || hasReading
+                ? Text([
+                    if (hasWordInfo) word,
+                    if (hasReading) reading,
+                  ].join('  '))
+                : null,
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('$dictCount'),
+                const SizedBox(width: 4),
+                const Icon(Icons.chevron_right, size: 20),
+              ],
             ),
           ),
         );

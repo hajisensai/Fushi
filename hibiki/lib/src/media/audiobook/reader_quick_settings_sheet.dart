@@ -643,7 +643,9 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
   }
 
   Widget _buildTocSection(BuildContext context, ThemeData theme) {
-    final int? currentIdx = widget.readerProgress?.$1;
+    final int? currentIdx = widget.readerProgress != null
+        ? widget.readerProgress!.$1 - 1
+        : null;
     return AdaptiveSettingsSection(
       title: t.toc_section(n: widget.toc.length),
       children: [

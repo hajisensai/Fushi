@@ -216,20 +216,23 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
           Row(
             children: [
               Expanded(
-                  child: _summaryCard(t.stat_today, _todayChars, _todayMs)),
+                  child:
+                      _summaryStatPanel(t.stat_today, _todayChars, _todayMs)),
               const SizedBox(width: 12),
               Expanded(
-                  child: _summaryCard(t.stat_this_week, _weekChars, _weekMs)),
+                  child:
+                      _summaryStatPanel(t.stat_this_week, _weekChars, _weekMs)),
             ],
           ),
           const SizedBox(height: 12),
           Row(
             children: [
               Expanded(
-                  child:
-                      _summaryCard(t.stat_this_month, _monthChars, _monthMs)),
+                  child: _summaryStatPanel(
+                      t.stat_this_month, _monthChars, _monthMs)),
               const SizedBox(width: 12),
-              Expanded(child: _summaryCard(t.stat_all_time, _allChars, _allMs)),
+              Expanded(
+                  child: _summaryStatPanel(t.stat_all_time, _allChars, _allMs)),
             ],
           ),
         ],
@@ -237,14 +240,11 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     );
   }
 
-  Widget _summaryCard(String label, int chars, int ms) {
+  Widget _summaryStatPanel(String label, int chars, int ms) {
     final colorScheme = Theme.of(context).colorScheme;
-    return Card(
-      elevation: 0,
-      color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    return HibikiCard(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.zero,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
