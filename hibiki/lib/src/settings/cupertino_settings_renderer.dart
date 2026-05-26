@@ -44,13 +44,15 @@ class CupertinoSettingsRenderer implements SettingsRenderer {
     required ValueChanged<SettingsDestinationId> onDestinationSelected,
     bool pushRoutes = true,
   }) {
+    final Color primaryColor =
+        CupertinoTheme.of(settingsContext.context).primaryColor;
     return CupertinoListSection.insetGrouped(
       backgroundColor: CupertinoColors.systemGroupedBackground.resolveFrom(
         settingsContext.context,
       ),
       children: destinations.map((SettingsDestination destination) {
         return CupertinoListTile(
-          leading: Icon(destination.icon),
+          leading: Icon(destination.icon, color: primaryColor),
           title: Text(destination.title),
           subtitle:
               destination.summary != null ? Text(destination.summary!) : null,
@@ -153,7 +155,7 @@ class _CupertinoSettingsItem extends StatelessWidget {
     return switch (item) {
       SettingsNavigationItem navigation => _navigation(context, navigation),
       SettingsActionItem action => _action(action),
-      SettingsSwitchItem toggle => _switch(toggle),
+      SettingsSwitchItem toggle => _switch(context, toggle),
       SettingsSegmentedItem<dynamic> segmented => _segmented(segmented),
       SettingsSliderItem slider => _slider(slider),
       SettingsStepperItem stepper => _stepper(stepper),
@@ -184,11 +186,12 @@ class _CupertinoSettingsItem extends StatelessWidget {
     return _tile(onTap: () async => action.onTap(settingsContext));
   }
 
-  Widget _switch(SettingsSwitchItem toggle) {
+  Widget _switch(BuildContext context, SettingsSwitchItem toggle) {
     final bool value = toggle.value(settingsContext);
     return _tile(
       trailing: CupertinoSwitch(
         value: value,
+        activeTrackColor: CupertinoTheme.of(context).primaryColor,
         onChanged: (bool next) async {
           await toggle.onChanged(settingsContext, next);
           settingsContext.refresh();
@@ -297,8 +300,10 @@ class _CupertinoSettingsItem extends StatelessWidget {
     bool controlBelow = false,
     bool showIcon = false,
   }) {
-    final Widget? leading =
-        showIcon && item.icon != null ? Icon(item.icon) : null;
+    final Widget? leading = showIcon && item.icon != null
+        ? Icon(item.icon,
+            color: CupertinoTheme.of(settingsContext.context).primaryColor)
+        : null;
     if (controlBelow) {
       return CupertinoListTile(
         leading: leading,

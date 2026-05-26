@@ -74,9 +74,33 @@ SettingsDestination _fixtureDestination() {
   );
 }
 
+Widget _buildHome(
+  CupertinoThemeData? cupertinoTheme,
+  Widget Function(SettingsContext) builder,
+) {
+  Widget child = Consumer(
+    builder: (BuildContext context, WidgetRef ref, _) {
+      return builder(
+        SettingsContext(
+          context: context,
+          appModel: ref.read(appProvider),
+          ref: ref,
+          readerSource: ReaderHibikiSource.instance,
+          refresh: () {},
+        ),
+      );
+    },
+  );
+  if (cupertinoTheme != null) {
+    child = CupertinoTheme(data: cupertinoTheme, child: child);
+  }
+  return child;
+}
+
 Widget _harness({
   required TargetPlatform platform,
   required Widget Function(SettingsContext) builder,
+  CupertinoThemeData? cupertinoTheme,
 }) {
   final HibikiDatabase db = _testDb();
   final ThemeNotifier themeNotifier = ThemeNotifier(db, () => const TextTheme())
@@ -102,19 +126,7 @@ Widget _harness({
         platform: platform,
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF386A58)),
       ),
-      home: Consumer(
-        builder: (BuildContext context, WidgetRef ref, _) {
-          return builder(
-            SettingsContext(
-              context: context,
-              appModel: ref.read(appProvider),
-              ref: ref,
-              readerSource: ReaderHibikiSource.instance,
-              refresh: () {},
-            ),
-          );
-        },
-      ),
+      home: _buildHome(cupertinoTheme, builder),
     ),
   );
 }
@@ -178,6 +190,54 @@ void main() {
       find.byWidgetPredicate((Widget widget) => widget is SegmentedButton),
       findsNothing,
     );
+  });
+
+  testWidgets('cupertino switch uses theme primary color', (
+    WidgetTester tester,
+  ) async {
+    const Color customPrimary = Color(0xFFE91E63);
+    await tester.pumpWidget(
+      _harness(
+        platform: TargetPlatform.iOS,
+        cupertinoTheme: const CupertinoThemeData(primaryColor: customPrimary),
+        builder: (SettingsContext settingsContext) {
+          return CupertinoSettingsRenderer().buildDetailPage(
+            settingsContext: settingsContext,
+            destination: _fixtureDestination(),
+          );
+        },
+      ),
+    );
+
+    final CupertinoSwitch sw = tester.widget<CupertinoSwitch>(
+      find.byType(CupertinoSwitch),
+    );
+    expect(sw.activeTrackColor, customPrimary);
+  });
+
+  testWidgets('cupertino destination icons use theme primary color', (
+    WidgetTester tester,
+  ) async {
+    const Color customPrimary = Color(0xFFE91E63);
+    await tester.pumpWidget(
+      _harness(
+        platform: TargetPlatform.iOS,
+        cupertinoTheme: const CupertinoThemeData(primaryColor: customPrimary),
+        builder: (SettingsContext settingsContext) {
+          return CupertinoSettingsRenderer().buildDestinationList(
+            settingsContext: settingsContext,
+            destinations: <SettingsDestination>[_fixtureDestination()],
+            selectedDestinationId: SettingsDestinationId.appearance,
+            onDestinationSelected: (_) {},
+          );
+        },
+      ),
+    );
+
+    final Icon icon = tester.widget<Icon>(
+      find.byIcon(Icons.palette_outlined),
+    );
+    expect(icon.color, customPrimary);
   });
 
   testWidgets('settings schema keeps icons on destinations',

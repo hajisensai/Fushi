@@ -80,7 +80,8 @@ Widget adaptiveSwitch({
     return CupertinoSwitch(
       value: value,
       onChanged: onChanged,
-      activeTrackColor: activeColor,
+      activeTrackColor:
+          activeColor ?? CupertinoTheme.of(context).primaryColor,
     );
   }
   return Switch(
