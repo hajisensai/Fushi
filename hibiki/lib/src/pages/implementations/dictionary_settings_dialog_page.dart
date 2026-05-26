@@ -115,13 +115,15 @@ class _DictionaryDialogPageState extends BasePageState {
     return AdaptiveSettingsNavigationRow(
       title: t.dictionaries,
       icon: Icons.auto_stories_outlined,
-      onTap: () {
-        showAppDialog(
-          context: context,
-          builder: (_) => const DictionaryDialogPage(),
-        ).then((_) {
-          if (mounted) setState(() {});
-        });
+      onTap: () async {
+        await Navigator.push(
+          context,
+          adaptivePageRoute(
+            context: context,
+            builder: (_) => const DictionaryDialogPage(),
+          ),
+        );
+        if (mounted) setState(() {});
       },
     );
   }

@@ -308,14 +308,14 @@ SettingsDestination _lookupDestination() {
       SettingsSection(
         title: t.manager,
         items: <SettingsItem>[
-          SettingsActionItem(
+          SettingsNavigationItem(
             id: 'lookup.dictionaries',
             title: t.dictionaries,
             icon: Icons.auto_stories_outlined,
             onTap: (SettingsContext settingsContext) async {
-              await showAppDialog(
-                context: settingsContext.context,
-                builder: (_) => const DictionaryDialogPage(),
+              await pushSettingsPage(
+                settingsContext,
+                (_) => const DictionaryDialogPage(),
               );
               settingsContext.refresh();
             },

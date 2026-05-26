@@ -1485,9 +1485,12 @@ class AppModel with ChangeNotifier {
   Future<void> showDictionaryMenu() async {
     final ctx = _ctx;
     if (ctx == null) return;
-    await showAppDialog(
-      context: ctx,
-      builder: (context) => const DictionaryDialogPage(),
+    await Navigator.push(
+      ctx,
+      adaptivePageRoute(
+        context: ctx,
+        builder: (context) => const DictionaryDialogPage(),
+      ),
     );
 
     notifyListeners();

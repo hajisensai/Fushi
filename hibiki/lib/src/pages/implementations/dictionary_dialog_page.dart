@@ -1,18 +1,15 @@
 import 'dart:io';
 
-import 'package:change_notifier_builder/change_notifier_builder.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as path;
-import 'package:hibiki/src/utils/spacing.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/utils.dart';
-import 'package:collection/collection.dart';
 
-/// The content of the dialog used for managing dictionaries.
+/// Page used for managing installed dictionaries.
 class DictionaryDialogPage extends BasePage {
   /// Create an instance of this page.
   const DictionaryDialogPage({super.key});
@@ -21,79 +18,50 @@ class DictionaryDialogPage extends BasePage {
   BasePageState createState() => _DictionaryDialogPageState();
 }
 
-class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
-  int? _selectedOrder;
+class _DictionaryDialogPageState extends BasePageState {
+  DictionaryType _selectedType = DictionaryType.term;
   bool _isDownloading = false;
-  final ScrollController _contentScrollController = ScrollController();
-
-  @override
-  void dispose() {
-    _contentScrollController.dispose();
-    for (final notifier in _notifiersByDictionary.values) {
-      notifier.dispose();
-    }
-    _notifiersByDictionary.clear();
-    _formatNotifier.dispose();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
-    if (isCupertinoPlatform(context)) {
-      return DictionaryManagerDialogFrame(
-        content: buildContent(),
-        actions: actions,
-      );
-    }
-
-    return adaptiveAlertDialog(
-      context: context,
-      contentPadding: MediaQuery.of(context).orientation == Orientation.portrait
-          ? Spacing.of(context).insets.exceptBottom.big
-          : Spacing.of(context).insets.exceptBottom.normal.copyWith(
-                left: Spacing.of(context).spaces.semiBig,
-                right: Spacing.of(context).spaces.semiBig,
-              ),
-      actionsPadding: Spacing.of(context).insets.exceptBottom.normal.copyWith(
-            left: Spacing.of(context).spaces.normal,
-            right: Spacing.of(context).spaces.normal,
-            bottom: Spacing.of(context).spaces.normal,
-            top: Spacing.of(context).spaces.extraSmall,
-          ),
-      content: buildContent(),
-      actions: actions,
+    return AdaptiveSettingsScaffold(
+      title: Text(t.dictionaries),
+      actions: _buildPageActions(),
+      children: [
+        _buildCategorySelector(),
+        buildContent(),
+      ],
     );
   }
 
-  List<Widget> get actions => [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                Flexible(child: _buildDownloadRecommendedButton()),
-                const SizedBox(width: 8),
-                Flexible(child: buildImportFolderButton()),
-              ],
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                Flexible(child: buildImportButton()),
-                const SizedBox(width: 8),
-                Flexible(child: buildClearButton()),
-              ],
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                Flexible(child: buildCloseButton()),
-              ],
-            ),
-          ],
+  List<Widget> _buildPageActions() {
+    return [
+      IconButton(
+        tooltip: t.dict_download_browse,
+        icon: const Icon(Icons.cloud_download_outlined),
+        onPressed: _showDownloadSelectionDialog,
+      ),
+      if (Platform.isAndroid)
+        IconButton(
+          tooltip: t.dialog_import_folder,
+          icon: const Icon(Icons.drive_folder_upload_outlined),
+          onPressed: _importDictionaryFolder,
         ),
-      ];
+      IconButton(
+        tooltip: t.dialog_import_dictionary,
+        icon: const Icon(Icons.upload_file_outlined),
+        onPressed: _importDictionaryFiles,
+      ),
+      IconButton(
+        tooltip: t.dialog_clear_all_dictionaries,
+        icon: Icon(
+          Icons.delete_sweep_outlined,
+          color: theme.colorScheme.error,
+        ),
+        onPressed: showDictionaryClearDialog,
+      ),
+    ];
+  }
 
   Future<void> showDictionaryClearDialog() async {
     Widget alertDialog = adaptiveAlertDialog(
@@ -124,7 +92,6 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
 
             if (mounted) {
               Navigator.pop(context);
-              _selectedOrder = -1;
               setState(() {});
             }
           },
@@ -173,7 +140,6 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
 
             if (mounted) {
               Navigator.pop(context);
-              _selectedOrder = -1;
               setState(() {});
             }
           },
@@ -246,7 +212,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
         cssFiles: cssFiles,
         onImportSuccess: () {
           if (!mounted) return;
-          _selectedOrder = appModel.dictionaries.last.order;
+          _selectedType = appModel.dictionaries.last.type;
           setState(() {});
         },
         onMemoryError: () {
@@ -596,231 +562,278 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
     }
   }
 
-  Widget buildImportButton() {
-    return TextButton(
-      onPressed: _importDictionaryFiles,
-      child: Text(t.dialog_import_dictionary),
-    );
-  }
-
   static const _safChannel = HibikiChannels.saf;
 
-  Widget buildImportFolderButton() {
-    return TextButton(
-      child: Text(t.dialog_import_folder),
-      onPressed: () async {
-        ValueNotifier<String> progressNotifier =
-            ValueNotifier<String>(t.import_start);
-        ValueNotifier<int?> countNotifier = ValueNotifier<int?>(null);
-        ValueNotifier<int?> totalNotifier = ValueNotifier<int?>(null);
-        progressNotifier.addListener(() {
-          debugPrint('[Dictionary Import] ${progressNotifier.value}');
-        });
+  Future<void> _importDictionaryFolder() async {
+    ValueNotifier<String> progressNotifier =
+        ValueNotifier<String>(t.import_start);
+    ValueNotifier<int?> countNotifier = ValueNotifier<int?>(null);
+    ValueNotifier<int?> totalNotifier = ValueNotifier<int?>(null);
+    progressNotifier.addListener(() {
+      debugPrint('[Dictionary Import] ${progressNotifier.value}');
+    });
 
-        final tempDir = Directory(
-          '${appModel.dictionaryResourceDirectory.path}/saf_import_temp',
-        );
-
-        if (!Platform.isAndroid) return;
-        final result = await _safChannel.invokeMethod<String>(
-          'pickAndCopyDirectory',
-          {'destPath': tempDir.path},
-        );
-        if (result == null) return;
-
-        if (mounted) {
-          showAppDialog(
-            context: context,
-            barrierDismissible: false,
-            builder: (context) => DictionaryDialogImportPage(
-              progressNotifier: progressNotifier,
-              countNotifier: countNotifier,
-              totalNotifier: totalNotifier,
-            ),
-          );
-        }
-
-        bool hadMemoryError = false;
-
-        try {
-          await appModel.importDictionaryFromDirectory(
-            directory: tempDir,
-            progressNotifier: progressNotifier,
-            countNotifier: countNotifier,
-            totalNotifier: totalNotifier,
-            onImportSuccess: () {
-              if (!mounted) return;
-              _selectedOrder = appModel.dictionaries.last.order;
-              setState(() {});
-            },
-            onMemoryError: () {
-              hadMemoryError = true;
-            },
-          );
-        } catch (e, stack) {
-          ErrorLogService.instance
-              .log('DictionaryDialog.folderImport', e, stack);
-          debugPrint('[Dictionary Import] folder import error: $e');
-          progressNotifier.value = '$e';
-          await Future.delayed(const Duration(seconds: 3));
-        } finally {
-          if (tempDir.existsSync()) {
-            tempDir.deleteSync(recursive: true);
-          }
-        }
-
-        if (mounted) {
-          Navigator.pop(context);
-        }
-
-        if (hadMemoryError && mounted) {
-          showAppDialog(
-            context: context,
-            builder: (context) => adaptiveAlertDialog(
-              context: context,
-              title: Text(t.low_memory_mode),
-              content: Text(t.low_memory_mode_suggestion),
-              actions: [
-                adaptiveDialogAction(
-                  context: context,
-                  onPressed: () => Navigator.pop(context),
-                  child: Text(t.dialog_close),
-                ),
-              ],
-            ),
-          );
-        }
-      },
+    final tempDir = Directory(
+      '${appModel.dictionaryResourceDirectory.path}/saf_import_temp',
     );
-  }
 
-  Widget buildClearButton() {
-    return TextButton(
-      onPressed: showDictionaryClearDialog,
-      child: Text(
-        t.dialog_clear_all_dictionaries,
-        style: TextStyle(
-          color: Theme.of(context).colorScheme.error,
+    if (!Platform.isAndroid) return;
+    final result = await _safChannel.invokeMethod<String>(
+      'pickAndCopyDirectory',
+      {'destPath': tempDir.path},
+    );
+    if (result == null) return;
+
+    if (mounted) {
+      showAppDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => DictionaryDialogImportPage(
+          progressNotifier: progressNotifier,
+          countNotifier: countNotifier,
+          totalNotifier: totalNotifier,
         ),
-      ),
-    );
-  }
+      );
+    }
 
-  Widget buildCloseButton() {
-    return TextButton(
-      child: Text(t.dialog_close),
-      onPressed: () => Navigator.pop(context),
-    );
+    bool hadMemoryError = false;
+
+    try {
+      await appModel.importDictionaryFromDirectory(
+        directory: tempDir,
+        progressNotifier: progressNotifier,
+        countNotifier: countNotifier,
+        totalNotifier: totalNotifier,
+        onImportSuccess: () {
+          if (!mounted) return;
+          _selectedType = appModel.dictionaries.last.type;
+          setState(() {});
+        },
+        onMemoryError: () {
+          hadMemoryError = true;
+        },
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log('DictionaryDialog.folderImport', e, stack);
+      debugPrint('[Dictionary Import] folder import error: $e');
+      progressNotifier.value = '$e';
+      await Future.delayed(const Duration(seconds: 3));
+    } finally {
+      if (tempDir.existsSync()) {
+        tempDir.deleteSync(recursive: true);
+      }
+    }
+
+    if (mounted) {
+      Navigator.pop(context);
+    }
+
+    if (hadMemoryError && mounted) {
+      showAppDialog(
+        context: context,
+        builder: (context) => adaptiveAlertDialog(
+          context: context,
+          title: Text(t.low_memory_mode),
+          content: Text(t.low_memory_mode_suggestion),
+          actions: [
+            adaptiveDialogAction(
+              context: context,
+              onPressed: () => Navigator.pop(context),
+              child: Text(t.dialog_close),
+            ),
+          ],
+        ),
+      );
+    }
   }
 
   Widget buildContent() {
-    final termDicts = appModel.termDictionaries;
-    final freqDicts = appModel.freqDictionaries;
-    final pitchDicts = appModel.pitchDictionaries;
-    final kanjiDicts = appModel.kanjiDictionaries;
-    final allEmpty = termDicts.isEmpty &&
-        freqDicts.isEmpty &&
-        pitchDicts.isEmpty &&
-        kanjiDicts.isEmpty;
-    return SizedBox(
-      width: double.maxFinite,
-      child: RawScrollbar(
-        thickness: 3,
-        thumbVisibility: true,
-        controller: _contentScrollController,
-        child: Padding(
-          padding: _contentScrollController.hasClients
-              ? Spacing.of(context).insets.onlyRight.normal
-              : EdgeInsets.zero,
-          child: SingleChildScrollView(
-            controller: _contentScrollController,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (allEmpty)
-                  buildEmptyMessage()
-                else ...[
-                  _buildSection(
-                    title: t.dictionary_section_term,
-                    dictionaries: termDicts,
-                  ),
-                  _buildSection(
-                    title: t.dictionary_section_kanji,
-                    dictionaries: kanjiDicts,
-                  ),
-                  _buildSection(
-                    title: t.dictionary_section_frequency,
-                    dictionaries: freqDicts,
-                  ),
-                  _buildSection(
-                    title: t.dictionary_section_pitch,
-                    dictionaries: pitchDicts,
-                  ),
-                ],
-                const HibikiDivider(),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSection({
-    required String title,
-    required List<Dictionary> dictionaries,
-  }) {
-    if (dictionaries.isEmpty) return const SizedBox.shrink();
+    final List<Dictionary> selectedDictionaries =
+        _dictionariesForType(_selectedType);
+    if (appModel.dictionaries.isEmpty) return buildEmptyMessage();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
       children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Text(
-            title,
-            style: TextStyle(
-              fontSize: textTheme.titleSmall?.fontSize,
-              fontWeight: FontWeight.bold,
-              color: theme.colorScheme.primary,
-            ),
-          ),
+        SettingsSectionHeader(
+          _labelForType(_selectedType),
+          padding: const EdgeInsets.only(bottom: 6),
         ),
-        buildDictionaryList(dictionaries),
+        if (selectedDictionaries.isEmpty)
+          _buildEmptyCategoryRow()
+        else
+          _buildDictionaryList(selectedDictionaries),
       ],
     );
   }
 
-  Widget buildEmptyMessage() {
+  Widget _buildCategorySelector() {
     return Padding(
-      padding: EdgeInsets.only(
-        bottom: Spacing.of(context).spaces.normal,
-      ),
-      child: HibikiPlaceholderMessage(
-        icon: DictionaryMediaType.instance.outlinedIcon,
-        message: t.dictionaries_menu_empty,
+      padding: const EdgeInsets.only(bottom: 12),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          return SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minWidth: constraints.maxWidth),
+              child: adaptiveSegmentedButton<DictionaryType>(
+                context: context,
+                segments: [
+                  ButtonSegment<DictionaryType>(
+                    value: DictionaryType.term,
+                    label: Text(t.dictionary_type_term),
+                  ),
+                  ButtonSegment<DictionaryType>(
+                    value: DictionaryType.kanji,
+                    label: Text(t.dictionary_section_kanji),
+                  ),
+                  ButtonSegment<DictionaryType>(
+                    value: DictionaryType.frequency,
+                    label: Text(t.dictionary_type_frequency),
+                  ),
+                  ButtonSegment<DictionaryType>(
+                    value: DictionaryType.pitch,
+                    label: Text(t.dictionary_type_pitch),
+                  ),
+                ],
+                selected: {_selectedType},
+                onSelectionChanged: (Set<DictionaryType> selection) {
+                  if (selection.isEmpty) return;
+                  setState(() => _selectedType = selection.first);
+                },
+                style: kSettingsSegmentedStyle,
+              ),
+            ),
+          );
+        },
       ),
     );
   }
 
-  final Map<String, ValueNotifier<bool>> _notifiersByDictionary = {};
+  Widget buildEmptyMessage() {
+    return AdaptiveSettingsSection(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 24),
+          child: HibikiPlaceholderMessage(
+            icon: DictionaryMediaType.instance.outlinedIcon,
+            message: t.dictionaries_menu_empty,
+          ),
+        ),
+      ],
+    );
+  }
 
-  Widget buildDictionaryList(List<Dictionary> dictionaries) {
-    _selectedOrder ??= dictionaries.firstOrNull?.order;
+  Widget _buildEmptyCategoryRow() {
+    final ColorScheme scheme = theme.colorScheme;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: scheme.outlineVariant),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 18),
+        child: Text(
+          t.dictionaries_menu_empty,
+          style: textTheme.bodyMedium?.copyWith(
+            color: scheme.onSurfaceVariant,
+          ),
+        ),
+      ),
+    );
+  }
 
+  Widget _buildDictionaryTile({
+    required Dictionary dictionary,
+    required int index,
+    required Key key,
+    required bool isLast,
+  }) {
+    DictionaryFormat dictionaryFormat =
+        appModel.dictionaryFormats[dictionary.formatKey]!;
+    final bool enabled = !dictionary.isHidden(appModel.targetLanguage);
+    final ColorScheme scheme = theme.colorScheme;
+    final Color titleColor =
+        enabled ? scheme.onSurface : scheme.onSurfaceVariant;
+    final Color subtitleColor = scheme.onSurfaceVariant;
+    return Padding(
+      key: key,
+      padding: EdgeInsets.only(bottom: isLast ? 0 : 10),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerLowest,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: scheme.outlineVariant),
+        ),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 70),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Row(
+              children: [
+                ReorderableDragStartListener(
+                  index: index,
+                  child: Icon(
+                    Icons.drag_handle,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        dictionary.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: textTheme.bodyLarge?.copyWith(
+                          color: titleColor,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        _subtitleForDictionary(dictionary, dictionaryFormat),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: textTheme.bodySmall?.copyWith(
+                          color: subtitleColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                buildDictionaryTileTrailing(dictionary),
+                const SizedBox(width: 4),
+                adaptiveSwitch(
+                  context: context,
+                  value: enabled,
+                  onChanged: (_) => _toggleDictionaryHidden(dictionary),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDictionaryList(List<Dictionary> dictionaries) {
     return ReorderableListView.builder(
+      buildDefaultDragHandles: false,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       itemCount: dictionaries.length,
       itemBuilder: (context, index) {
         Dictionary dictionary = dictionaries[index];
-        _notifiersByDictionary.putIfAbsent(
-          dictionary.name,
-          () => ValueNotifier<bool>(dictionary.order == _selectedOrder),
-        );
-        return buildDictionaryTile(
-          dictionary,
-          _notifiersByDictionary[dictionary.name]!,
+        return _buildDictionaryTile(
+          dictionary: dictionary,
+          index: index,
+          key: ValueKey(dictionary.name),
+          isLast: index == dictionaries.length - 1,
         );
       },
       onReorder: (oldIndex, newIndex) {
@@ -830,11 +843,10 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
         Dictionary item = cloneDictionaries.removeAt(oldIndex);
         cloneDictionaries.insert(newIndex, item);
 
-        cloneDictionaries.forEachIndexed((index, dictionary) {
+        for (int index = 0; index < cloneDictionaries.length; index++) {
+          final Dictionary dictionary = cloneDictionaries[index];
           dictionary.order = index;
-        });
-
-        _selectedOrder = newIndex;
+        }
 
         appModel.updateDictionaryOrder(cloneDictionaries);
         setState(() {});
@@ -842,85 +854,39 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
     );
   }
 
-  Icon getIcon({
-    required Dictionary dictionary,
-    required DictionaryFormat dictionaryFormat,
-  }) {
-    if (dictionary.isHidden(appModel.targetLanguage)) {
-      return Icon(
-        Icons.block,
-        size: textTheme.titleLarge?.fontSize,
-        color: theme.colorScheme.onSurfaceVariant,
-      );
-    } else {
-      return Icon(
-        dictionaryFormat.icon,
-        size: textTheme.titleLarge?.fontSize,
-      );
-    }
+  String _subtitleForDictionary(
+    Dictionary dictionary,
+    DictionaryFormat dictionaryFormat,
+  ) {
+    final String revision = dictionary.metadata['revision'] ??
+        dictionary.metadata['version'] ??
+        dictionary.metadata['formatVersion'] ??
+        '';
+    if (revision.isNotEmpty) return revision;
+    return dictionaryFormat.name;
   }
 
-  Widget buildDictionaryTile(
-    Dictionary dictionary,
-    ValueNotifier<bool> notifier,
-  ) {
-    DictionaryFormat dictionaryFormat =
-        appModel.dictionaryFormats[dictionary.formatKey]!;
+  List<Dictionary> _dictionariesForType(DictionaryType type) {
+    return switch (type) {
+      DictionaryType.term => appModel.termDictionaries,
+      DictionaryType.kanji => appModel.kanjiDictionaries,
+      DictionaryType.frequency => appModel.freqDictionaries,
+      DictionaryType.pitch => appModel.pitchDictionaries,
+    };
+  }
 
-    return ValueListenableBuilder<bool>(
-      key: ValueKey(dictionary.name),
-      valueListenable: notifier,
-      builder: (context, value, _) {
-        return Material(
-          type: MaterialType.transparency,
-          child: ListTile(
-            selected: _selectedOrder == dictionary.order,
-            leading: getIcon(
-              dictionary: dictionary,
-              dictionaryFormat: dictionaryFormat,
-            ),
-            title: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    children: [
-                      HibikiMarquee(
-                        text: dictionary.name,
-                        style: TextStyle(
-                          fontSize: textTheme.bodyMedium?.fontSize,
-                          color: dictionary.isHidden(appModel.targetLanguage)
-                              ? theme.colorScheme.onSurfaceVariant
-                              : null,
-                        ),
-                      ),
-                      HibikiMarquee(
-                        text: dictionaryFormat.name,
-                        style: TextStyle(
-                          fontSize: textTheme.bodySmall?.fontSize,
-                          color: dictionary.isHidden(appModel.targetLanguage)
-                              ? theme.colorScheme.onSurfaceVariant
-                              : null,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const Space.normal(),
-                buildDictionaryTileTrailing(dictionary)
-              ],
-            ),
-            onTap: () {
-              _selectedOrder = dictionary.order;
+  String _labelForType(DictionaryType type) {
+    return switch (type) {
+      DictionaryType.term => t.dictionary_section_term,
+      DictionaryType.kanji => t.dictionary_section_kanji,
+      DictionaryType.frequency => t.dictionary_section_frequency,
+      DictionaryType.pitch => t.dictionary_section_pitch,
+    };
+  }
 
-              for (int i = 0; i < _notifiersByDictionary.length; i++) {
-                _notifiersByDictionary.entries.elementAt(i).value.value = false;
-              }
-              notifier.value = true;
-            },
-          ),
-        );
-      },
-    );
+  void _toggleDictionaryHidden(Dictionary dictionary) {
+    appModel.toggleDictionaryHidden(dictionary);
+    setState(() {});
   }
 
   Widget buildDictionaryTileTrailing(Dictionary dictionary) {
@@ -966,7 +932,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
               size: textTheme.bodyMedium?.fontSize,
               color: color,
             ),
-          if (icon != null) const Space.normal(),
+          if (icon != null) const SizedBox(width: 8),
           Text(
             label,
             style: TextStyle(color: color),
@@ -999,12 +965,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
             ? Icons.check_circle_outline
             : Icons.block,
         action: () {
-          appModel.toggleDictionaryHidden(dictionary);
-          final notifier = _notifiersByDictionary[dictionary.name];
-          if (notifier != null) {
-            notifier.value = !notifier.value;
-            notifier.value = !notifier.value;
-          }
+          _toggleDictionaryHidden(dictionary);
         },
       ),
       buildPopupItem(
@@ -1016,11 +977,7 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
             : Icons.unfold_less,
         action: () {
           appModel.toggleDictionaryCollapsed(dictionary);
-          final notifier = _notifiersByDictionary[dictionary.name];
-          if (notifier != null) {
-            notifier.value = !notifier.value;
-            notifier.value = !notifier.value;
-          }
+          setState(() {});
         },
       ),
       buildPopupItem(
@@ -1044,107 +1001,5 @@ class _DictionaryDialogPageState extends BasePageState with ChangeNotifier {
         color: theme.colorScheme.primary,
       ),
     ];
-  }
-
-  final _formatNotifier = ChangeNotifier();
-
-  Widget buildImportDropdown() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: Spacing.of(context).insets.onlyLeft.small,
-          child: Text(
-            t.import_format,
-            style: TextStyle(
-              fontSize: 10,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ),
-        Stack(
-          alignment: Alignment.bottomCenter,
-          children: [
-            ChangeNotifierBuilder(
-              notifier: _formatNotifier,
-              builder: (_, __, ___) => HibikiDropdown<DictionaryFormat>(
-                options: appModel.dictionaryFormats.values.toList(),
-                initialOption: appModel.lastSelectedDictionaryFormat,
-                generateLabel: (format) => format.name,
-                onChanged: (format) {
-                  appModel.setLastSelectedDictionaryFormat(format!);
-                  _formatNotifier.notifyListeners();
-                },
-              ),
-            ),
-            Container(
-              margin: const EdgeInsets.symmetric(vertical: 8),
-              decoration: BoxDecoration(
-                border: Border.fromBorderSide(
-                  BorderSide(
-                    width: 0.5,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-}
-
-@visibleForTesting
-class DictionaryManagerDialogFrame extends StatelessWidget {
-  const DictionaryManagerDialogFrame({
-    required this.content,
-    required this.actions,
-    super.key,
-  });
-
-  final Widget content;
-  final List<Widget> actions;
-
-  @override
-  Widget build(BuildContext context) {
-    final Size screenSize = MediaQuery.sizeOf(context);
-    final EdgeInsets mediaPadding = MediaQuery.paddingOf(context);
-    final double maxHeight =
-        (screenSize.height - mediaPadding.vertical - 48).clamp(360.0, 720.0);
-    final double maxWidth = (screenSize.width - 48).clamp(320.0, 640.0);
-
-    return Dialog(
-      clipBehavior: Clip.antiAlias,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: maxWidth,
-          maxHeight: maxHeight,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
-                child: content,
-              ),
-            ),
-            const HibikiDivider(),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: actions,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }
