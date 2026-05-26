@@ -183,11 +183,10 @@ claude mcp add spec-workflow-mcp -s user -- npx -y spec-workflow-mcp@latest
 
 - 使用 Slang 框架，源文件在 `hibiki/lib/i18n/*.i18n.json`，生成文件是 `strings.g.dart`。
 - 共 17 种语言：基础语言英文 (`strings.i18n.json`) + 16 种翻译（ar / de / es / fr / id / it / ja / ko / nl / pt-BR / ru / th / tr / vi / zh-CN / zh-HK）。
-- 新增字符串时，必须在全部 17 个语言文件中添加同一个 key（Slang 要求 key 完整，缺 key 会报错）。先写好英文和中文，其余 15 种语言用中文文本占位，后续批量翻译替换。
-- 批量操作使用 `tool/i18n_sync.dart`：
-  - `dart tool/i18n_sync.dart` — 自动补全所有翻译文件中缺失的 key（用 zh-CN 值占位，无 zh-CN 则用英文）。
-  - `dart tool/i18n_sync.dart --add <key> <en> <zh>` — 向全部 17 个文件添加新 key。
+- **新增/删除 i18n key 时，禁止手动逐文件编辑，必须使用 `tool/i18n_sync.dart` 脚本**（Slang 要求全部 17 个文件 key 完整，缺 key 会报错）：
+  - `dart tool/i18n_sync.dart --add <key> <en> <zh>` — 向全部 17 个文件添加新 key（base 写英文，zh-CN 写中文，其余用中文占位）。
   - `dart tool/i18n_sync.dart --remove <key>` — 从全部文件删除 key。
+  - `dart tool/i18n_sync.dart` — 自动补全所有翻译文件中缺失的 key。
   - 加 `--dry-run` 预览不写入。
 - 修改或新增 key 后运行 `dart run slang` 重新生成 `strings.g.dart`；不要手动编辑生成文件。
 

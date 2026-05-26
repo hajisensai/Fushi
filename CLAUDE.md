@@ -260,7 +260,7 @@ cd hibiki && flutter test
 
 - Dart 函数必须有类型签名。
 - 使用 `flutter_lints` 静态分析。
-- 国际化字符串放 `lib/i18n/*.i18n.json`，运行 `slang` 生成。
+- 国际化字符串放 `lib/i18n/*.i18n.json`（共 17 种语言），运行 `slang` 生成。**新增/删除 i18n key 时禁止手动逐文件编辑，必须使用 `hibiki/tool/i18n_sync.dart` 脚本**（`--add <key> <en> <zh>` 添加 / `--remove <key>` 删除 / 无参数自动补全缺失 key）。
 - 数据库变更必须增加 `schemaVersion` 并编写迁移代码。
 - 代码生成文件（`*.g.dart` / `*.mapper.dart`）不手动修改。
 
