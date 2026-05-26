@@ -3472,7 +3472,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
     final Widget sheetContent = ReaderQuickSettingsSheet(
       controller: _audiobookController,
       toc: toc,
-      readerProgress: (_currentChapter + 1, _book!.chapters.length),
+      readerProgress: (_currentChapter, _book!.chapters.length),
       onJumpSection: (index) async {
         _navigateToChapter(index);
       },

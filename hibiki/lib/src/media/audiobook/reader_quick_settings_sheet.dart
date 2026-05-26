@@ -58,6 +58,7 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
 
   final AudiobookPlayerController? controller;
   final List<TtuTocEntry> toc;
+  /// 0-indexed section index and total chapter count.
   final (int section, int total)? readerProgress;
   final (int current, int total)? pageProgress;
   final Future<void> Function(int sectionIndex) onJumpSection;
@@ -422,9 +423,10 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
 
     final (int, int)? rp = widget.readerProgress;
     if (rp != null && rp.$2 > 0) {
-      final double pct = (rp.$1 / rp.$2) * 100;
+      final int displayIdx = rp.$1 + 1;
+      final double pct = (displayIdx / rp.$2) * 100;
       lines.add(t.chapter_progress(
-        idx: rp.$1,
+        idx: displayIdx,
         total: rp.$2,
         suffix: '',
         pct: pct.toStringAsFixed(1),
@@ -643,9 +645,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
   }
 
   Widget _buildTocSection(BuildContext context, ThemeData theme) {
-    final int? currentIdx = widget.readerProgress != null
-        ? widget.readerProgress!.$1 - 1
-        : null;
+    final int? currentIdx = widget.readerProgress?.$1;
     return AdaptiveSettingsSection(
       title: t.toc_section(n: widget.toc.length),
       children: [
