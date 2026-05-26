@@ -828,40 +828,6 @@ class _CustomFontsPageState extends BasePageState {
   Widget build(BuildContext context) {
     return AdaptiveSettingsScaffold(
       title: Text(t.custom_fonts),
-      actions: [
-        IconButton(
-          icon: const Icon(Icons.star_outline),
-          tooltip: t.custom_fonts_recommended,
-          onPressed: _openRecommended,
-        ),
-        PopupMenuButton<VoidCallback>(
-          icon: const Icon(Icons.add),
-          onSelected: (VoidCallback fn) => fn(),
-          itemBuilder: (_) => [
-            PopupMenuItem(
-              value: _addSystemFont,
-              child: _PopupActionLabel(
-                icon: Icons.text_fields,
-                label: t.custom_fonts_add_system,
-              ),
-            ),
-            PopupMenuItem(
-              value: _importFontFile,
-              child: _PopupActionLabel(
-                icon: Icons.file_open_outlined,
-                label: t.custom_fonts_import_file,
-              ),
-            ),
-            PopupMenuItem(
-              value: _importFromUrl,
-              child: _PopupActionLabel(
-                icon: Icons.link,
-                label: t.custom_fonts_import_url,
-              ),
-            ),
-          ],
-        ),
-      ],
       children: [
         AdaptiveSettingsSection(
           children: [
@@ -1091,24 +1057,6 @@ class _RecommendedFontsPage extends StatelessWidget {
   }
 }
 
-class _PopupActionLabel extends StatelessWidget {
-  const _PopupActionLabel({required this.icon, required this.label});
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 20),
-        const SizedBox(width: 12),
-        Flexible(child: Text(label)),
-      ],
-    );
-  }
-}
 
 class _FontTile extends StatelessWidget {
   const _FontTile({

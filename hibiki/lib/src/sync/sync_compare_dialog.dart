@@ -45,6 +45,7 @@ class SyncCompareEntry {
       hasLocal && hasRemote && localUpdatedAt != remoteUpdatedAt;
   bool get isSynced =>
       hasLocal && hasRemote && localUpdatedAt == remoteUpdatedAt;
+  bool get needsManualChoice => hasConflict;
 
   SyncDirection get autoDirection {
     if (!hasLocal && !hasRemote) return SyncDirection.synced;
@@ -415,7 +416,7 @@ class _SyncCompareDialogState extends State<_SyncCompareDialog> {
               onSelected: (choice) {
                 setState(() {
                   for (final e in _entries!) {
-                    if (e.bookId != null) {
+                    if (e.bookId != null && e.needsManualChoice) {
                       _choices[e.title] = choice;
                     }
                   }
@@ -439,7 +440,10 @@ class _SyncCompareDialogState extends State<_SyncCompareDialog> {
         ],
       ),
       content: ConstrainedBox(
-        constraints: const BoxConstraints(maxHeight: 480, maxWidth: 500),
+        constraints: BoxConstraints(
+          maxHeight: (MediaQuery.sizeOf(context).height * 0.7).clamp(400, 640),
+          maxWidth: (MediaQuery.sizeOf(context).width * 0.7).clamp(400, 720),
+        ),
         child: body,
       ),
       actions: [
@@ -535,7 +539,7 @@ class _SyncCompareDialogState extends State<_SyncCompareDialog> {
               ],
             ),
           ),
-          if (entry.bookId != null) ...[
+          if (entry.bookId != null && entry.needsManualChoice) ...[
             const SizedBox(height: 6),
             _choiceRow(entry.title, choice, theme),
           ],

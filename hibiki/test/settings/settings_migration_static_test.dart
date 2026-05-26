@@ -8,10 +8,6 @@ void main() {
       'AdaptiveSettingsScaffold',
       'AdaptiveSettingsSection',
     ],
-    'dictionary_settings_dialog_page.dart': <String>[
-      'AdaptiveSettingsSection',
-      'AdaptiveSettingsSwitchRow',
-    ],
     'switch_settings_page.dart': <String>[
       'AdaptiveSettingsSection',
       'AdaptiveSettingsSwitchRow',
@@ -31,7 +27,6 @@ void main() {
   };
   final Set<String> noLegacySwitchRows = <String>{
     'anki_settings_page.dart',
-    'dictionary_settings_dialog_page.dart',
     'switch_settings_page.dart',
     'miscellaneous_settings_page.dart',
     'custom_fonts_page.dart',
