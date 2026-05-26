@@ -20,5 +20,5 @@ scripts:
 
   build:android:
     run: |
-      cd hibiki && flutter build apk --release --target-platform android-arm64 --split-per-abi
+      cd hibiki && flutter build apk --release --target-platform android-arm64 --split-per-abi --dart-define-from-file=dart_defines.env
     description: Build Android release APK
