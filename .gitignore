@@ -67,8 +67,8 @@ debug_screenshot.png
 # Claude agent worktrees
 .claude/worktrees/
 
-# Codex test fixtures (large binaries)
-.codex-test/fixtures/
+# Codex test artifacts (fixtures, screenshots, evidence)
+.codex-test/
 
 # Codex test outputs (flutter run logs, temp files)
 flutter_run_*.txt
@@ -83,5 +83,3 @@ docs/TODO.md
 .ccg/
 .claude/index.json
 .superpowers/
-.codex-test/screenshots/
-.codex-test/verify-freq.html
