@@ -82,31 +82,25 @@ class _LyricsDialogPageState extends BasePageState<LyricsDialogPage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              TextField(
+              HibikiTextField(
                 autofocus: true,
                 controller: _titleController,
-                decoration: InputDecoration(
-                  floatingLabelBehavior: FloatingLabelBehavior.always,
-                  labelText: t.lyrics_title,
-                  suffixIcon: HibikiIconButton(
-                    size: 18,
-                    tooltip: t.clear,
-                    onTap: _titleController.clear,
-                    icon: Icons.clear,
-                  ),
+                labelText: t.lyrics_title,
+                suffixIcon: HibikiIconButton(
+                  size: 18,
+                  tooltip: t.clear,
+                  onTap: _titleController.clear,
+                  icon: Icons.clear,
                 ),
               ),
-              TextField(
+              HibikiTextField(
                 controller: _artistController,
-                decoration: InputDecoration(
-                  floatingLabelBehavior: FloatingLabelBehavior.always,
-                  labelText: t.lyrics_artist,
-                  suffixIcon: HibikiIconButton(
-                    size: 18,
-                    tooltip: t.clear,
-                    onTap: _artistController.clear,
-                    icon: Icons.clear,
-                  ),
+                labelText: t.lyrics_artist,
+                suffixIcon: HibikiIconButton(
+                  size: 18,
+                  tooltip: t.clear,
+                  onTap: _artistController.clear,
+                  icon: Icons.clear,
                 ),
               ),
               const SizedBox(height: 10),

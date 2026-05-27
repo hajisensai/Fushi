@@ -253,10 +253,15 @@ class ThemeNotifier extends ChangeNotifier {
       textTheme: tt,
       appBarTheme: const AppBarTheme(
         elevation: 0,
-        scrolledUnderElevation: 3.0,
+        scrolledUnderElevation: 0,
         centerTitle: false,
       ),
       switchTheme: SwitchThemeData(
+        thumbIcon: WidgetStateProperty.resolveWith((states) {
+          return states.contains(WidgetState.selected)
+              ? const Icon(Icons.check, size: 14)
+              : null;
+        }),
         thumbColor: WidgetStateColor.resolveWith((states) {
           return states.contains(WidgetState.selected)
               ? cs.primary
@@ -275,27 +280,33 @@ class ThemeNotifier extends ChangeNotifier {
       ),
       navigationBarTheme: NavigationBarThemeData(
         elevation: 0,
+        indicatorShape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
         labelTextStyle: WidgetStateProperty.all(tt.labelSmall),
       ),
       popupMenuTheme: PopupMenuThemeData(
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(4),
+          borderRadius: BorderRadius.circular(12),
         ),
       ),
       dialogTheme: DialogThemeData(
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(28),
         ),
       ),
       listTileTheme: const ListTileThemeData(),
       inputDecorationTheme: InputDecorationTheme(
         border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide(color: cs.outline),
         ),
         enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide(color: cs.outline),
         ),
         focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide(color: cs.primary, width: 2),
         ),
       ),
@@ -312,8 +323,59 @@ class ThemeNotifier extends ChangeNotifier {
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(4),
+          borderRadius: BorderRadius.circular(12),
         ),
+      ),
+      cardTheme: CardThemeData(
+        elevation: 0,
+        color: cs.surfaceContainerLow,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+      ),
+      bottomSheetTheme: const BottomSheetThemeData(
+        showDragHandle: true,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        surfaceTintColor: Colors.transparent,
+      ),
+      floatingActionButtonTheme: FloatingActionButtonThemeData(
+        elevation: 0,
+        highlightElevation: 0,
+        backgroundColor: cs.primaryContainer,
+        foregroundColor: cs.onPrimaryContainer,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+      ),
+      chipTheme: ChipThemeData(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+        ),
+        side: BorderSide(color: cs.outlineVariant),
+        selectedColor: cs.secondaryContainer,
+        showCheckmark: false,
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          shape: const StadiumBorder(),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          shape: const StadiumBorder(),
+          side: BorderSide(color: cs.outline),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          shape: const StadiumBorder(),
+        ),
+      ),
+      dividerTheme: DividerThemeData(
+        color: cs.outlineVariant,
+        thickness: 0.5,
       ),
     );
   }

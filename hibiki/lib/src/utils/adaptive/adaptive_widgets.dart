@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart';
+import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 
 Widget adaptiveAlertDialog({
   required BuildContext context,
@@ -20,15 +21,23 @@ Widget adaptiveAlertDialog({
       actions: actions ?? const [],
     );
   }
-  return AlertDialog(
-    title: title,
-    content: content,
-    actions: actions,
-    contentPadding: contentPadding,
-    titlePadding: titlePadding,
-    actionsPadding: actionsPadding,
-    buttonPadding: buttonPadding,
-    insetPadding: insetPadding,
+  final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+  return ConstrainedBox(
+    constraints: const BoxConstraints(maxWidth: 560),
+    child: AlertDialog(
+      title: title,
+      content: content,
+      actions: actions,
+      shape: RoundedRectangleBorder(borderRadius: tokens.radii.dialogRadius),
+      backgroundColor: tokens.surfaces.overlay,
+      surfaceTintColor: Colors.transparent,
+      contentPadding: contentPadding,
+      titlePadding: titlePadding,
+      actionsPadding:
+          actionsPadding ?? const EdgeInsetsDirectional.fromSTEB(24, 0, 24, 20),
+      buttonPadding: buttonPadding,
+      insetPadding: insetPadding,
+    ),
   );
 }
 
@@ -80,8 +89,7 @@ Widget adaptiveSwitch({
     return CupertinoSwitch(
       value: value,
       onChanged: onChanged,
-      activeTrackColor:
-          activeColor ?? CupertinoTheme.of(context).primaryColor,
+      activeTrackColor: activeColor ?? CupertinoTheme.of(context).primaryColor,
     );
   }
   return Switch(
@@ -149,7 +157,7 @@ Future<T?> adaptiveModalSheet<T>({
   required BuildContext context,
   required WidgetBuilder builder,
   bool isScrollControlled = true,
-  bool showDragHandle = false,
+  bool showDragHandle = true,
 }) {
   if (isCupertinoPlatform(context)) {
     return showCupertinoModalPopup<T>(

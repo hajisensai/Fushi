@@ -243,12 +243,9 @@ class TagEditDialogState extends State<TagEditDialog> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          TextField(
+          HibikiTextField(
             controller: _nameController,
-            decoration: InputDecoration(
-              labelText: t.tag_name_hint,
-              border: const OutlineInputBorder(),
-            ),
+            labelText: t.tag_name_hint,
             autofocus: true,
           ),
           const SizedBox(height: 16),

@@ -323,18 +323,12 @@ class _SystemFontPickerPageState extends State<_SystemFontPickerPage> {
               controlBelow: true,
               trailing: SizedBox(
                 width: double.infinity,
-                child: TextField(
+                child: HibikiTextField(
                   controller: _searchController,
-                  decoration: InputDecoration(
-                    hintText: t.custom_fonts_search_hint,
-                    isDense: true,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(28),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 10,
-                    ),
+                  hintText: t.custom_fonts_search_hint,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
                   ),
                   onChanged: _onSearch,
                 ),
@@ -992,16 +986,12 @@ class _CustomFontUrlImportDialogState extends State<CustomFontUrlImportDialog> {
         overflow: TextOverflow.ellipsis,
         style: Theme.of(context).textTheme.titleMedium,
       ),
-      content: TextField(
+      content: HibikiTextField(
         controller: _urlController,
-        decoration: const InputDecoration(
-          hintText: 'https://example.com/fonts.zip',
-          border: OutlineInputBorder(),
-          isDense: true,
-          contentPadding: EdgeInsets.symmetric(
-            horizontal: 8,
-            vertical: 8,
-          ),
+        hintText: 'https://example.com/fonts.zip',
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 8,
+          vertical: 8,
         ),
         keyboardType: TextInputType.url,
         autofocus: true,
@@ -1056,7 +1046,6 @@ class _RecommendedFontsPage extends StatelessWidget {
     );
   }
 }
-
 
 class _FontTile extends StatelessWidget {
   const _FontTile({

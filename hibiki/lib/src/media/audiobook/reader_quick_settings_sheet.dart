@@ -58,6 +58,7 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
 
   final AudiobookPlayerController? controller;
   final List<TtuTocEntry> toc;
+
   /// 0-indexed section index and total chapter count.
   final (int section, int total)? readerProgress;
   final (int current, int total)? pageProgress;
@@ -486,16 +487,12 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
         Row(
           children: [
             Expanded(
-              child: TextField(
+              child: HibikiTextField(
                 controller: _searchController,
-                decoration: InputDecoration(
-                  hintText: t.book_search_hint,
-                  isDense: true,
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 10,
-                  ),
-                  border: const OutlineInputBorder(),
+                hintText: t.book_search_hint,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
                 ),
                 style: theme.textTheme.bodyMedium,
                 onSubmitted: (_) => _doSearch(),
@@ -601,17 +598,13 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
         Row(
           children: [
             Expanded(
-              child: TextField(
+              child: HibikiTextField(
                 controller: _charJumpController,
                 keyboardType: TextInputType.number,
-                decoration: InputDecoration(
-                  hintText: t.jump_to_char_hint,
-                  isDense: true,
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 10,
-                  ),
-                  border: const OutlineInputBorder(),
+                hintText: t.jump_to_char_hint,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
                 ),
                 style: theme.textTheme.bodyMedium,
                 onSubmitted: (_) => _doCharJump(context),
@@ -652,11 +645,13 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
         for (final TtuTocEntry entry in widget.toc)
           _InBookTocRow(
             entry: entry,
-            selected: currentIdx == entry.index,
-            onTap: () async {
-              Navigator.of(context).pop();
-              await widget.onJumpSection(entry.index);
-            },
+            selected: !entry.isHeader && currentIdx == entry.index,
+            onTap: entry.isHeader
+                ? null
+                : () async {
+                    Navigator.of(context).pop();
+                    await widget.onJumpSection(entry.index);
+                  },
           ),
       ],
     );
@@ -1657,34 +1652,57 @@ class _InBookTocRow extends StatelessWidget {
   const _InBookTocRow({
     required this.entry,
     required this.selected,
-    required this.onTap,
+    this.onTap,
   });
 
   final TtuTocEntry entry;
   final bool selected;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final bool cupertino = isCupertinoPlatform(context);
     final String title = entry.label.isEmpty ? t.untitled_chapter : entry.label;
+    final double indent = entry.depth * 16.0;
+
+    if (entry.isHeader) {
+      final ThemeData theme = Theme.of(context);
+      return Padding(
+        padding: EdgeInsetsDirectional.only(
+          start: (cupertino ? 16 : 12) + indent,
+          top: 12,
+          bottom: 4,
+        ),
+        child: Text(
+          title,
+          style: theme.textTheme.labelLarge?.copyWith(
+            color: theme.colorScheme.primary,
+          ),
+        ),
+      );
+    }
+
     final Color selectedColor = cupertino
         ? CupertinoTheme.of(context).primaryColor
         : Theme.of(context).colorScheme.primary;
 
-    return AdaptiveSettingsRow(
-      title: title,
-      icon: entry.parent == null
-          ? (cupertino ? CupertinoIcons.book : Icons.menu_book_outlined)
-          : (cupertino ? CupertinoIcons.text_alignleft : Icons.notes_outlined),
-      onTap: onTap,
-      trailing: selected
-          ? Icon(
-              cupertino ? CupertinoIcons.check_mark : Icons.check,
-              size: 18,
-              color: selectedColor,
-            )
-          : null,
+    return Padding(
+      padding: EdgeInsetsDirectional.only(start: indent),
+      child: AdaptiveSettingsRow(
+        title: title,
+        icon: entry.depth > 0
+            ? (cupertino ? CupertinoIcons.text_alignleft : Icons.notes_outlined)
+            : (cupertino ? CupertinoIcons.book : Icons.menu_book_outlined),
+        showIcon: true,
+        onTap: onTap,
+        trailing: selected
+            ? Icon(
+                cupertino ? CupertinoIcons.check_mark : Icons.check,
+                size: 18,
+                color: selectedColor,
+              )
+            : null,
+      ),
     );
   }
 }

@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:hibiki/src/utils/adaptive/adaptive_navigation.dart';
 import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart';
 import 'package:hibiki/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
+import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 
 class SettingsSectionHeader extends StatelessWidget {
   const SettingsSectionHeader(this.text, {super.key, this.padding});
@@ -15,9 +17,7 @@ class SettingsSectionHeader extends StatelessWidget {
       padding: padding ?? const EdgeInsets.only(top: 16, bottom: 4),
       child: Text(
         text,
-        style: Theme.of(context).textTheme.labelLarge?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
+        style: HibikiDesignTokens.of(context).type.sectionLabel,
       ),
     );
   }
@@ -108,18 +108,17 @@ class AdaptiveSettingsSection extends StatelessWidget {
 
     final bool cupertino = isCupertinoPlatform(context);
     final ColorScheme scheme = Theme.of(context).colorScheme;
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final Widget group = ClipRRect(
-      borderRadius: BorderRadius.circular(cupertino ? 12 : 8),
+      borderRadius: BorderRadius.circular(cupertino ? 12 : tokens.radii.group),
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: cupertino
               ? CupertinoColors.secondarySystemGroupedBackground
                   .resolveFrom(context)
               : scheme.surfaceContainerLowest,
-          border: cupertino
-              ? null
-              : Border.all(color: scheme.outlineVariant.withValues(alpha: 0.7)),
-          borderRadius: BorderRadius.circular(cupertino ? 12 : 8),
+          borderRadius:
+              BorderRadius.circular(cupertino ? 12 : tokens.radii.group),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -597,6 +596,46 @@ class AdaptiveSettingsPickerRow<T> extends StatelessWidget {
       if (options[i].value == selected) return i;
     }
     return null;
+  }
+}
+
+class AdaptiveSettingsTextField extends StatelessWidget {
+  const AdaptiveSettingsTextField({
+    super.key,
+    this.controller,
+    this.initialValue,
+    this.hintText,
+    this.labelText,
+    this.keyboardType = TextInputType.text,
+    this.textInputAction,
+    this.onChanged,
+    this.onSubmitted,
+    this.suffixIcon,
+  }) : assert(controller == null || initialValue == null);
+
+  final TextEditingController? controller;
+  final String? initialValue;
+  final String? hintText;
+  final String? labelText;
+  final TextInputType keyboardType;
+  final TextInputAction? textInputAction;
+  final ValueChanged<String>? onChanged;
+  final ValueChanged<String>? onSubmitted;
+  final Widget? suffixIcon;
+
+  @override
+  Widget build(BuildContext context) {
+    return HibikiTextField(
+      controller: controller,
+      initialValue: initialValue,
+      hintText: hintText,
+      labelText: labelText,
+      keyboardType: keyboardType,
+      textInputAction: textInputAction,
+      onChanged: onChanged,
+      onSubmitted: onSubmitted,
+      suffixIcon: suffixIcon,
+    );
   }
 }
 

@@ -75,19 +75,16 @@ class _WebsocketDialogPageState extends BasePageState<WebsocketDialogPage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              TextField(
+              HibikiTextField(
                 autofocus: true,
                 controller: _addressController,
-                decoration: InputDecoration(
-                  hintText: 'wss://',
-                  floatingLabelBehavior: FloatingLabelBehavior.always,
-                  labelText: t.server_address,
-                  suffixIcon: HibikiIconButton(
-                    size: 18,
-                    tooltip: t.clear,
-                    onTap: _addressController.clear,
-                    icon: Icons.clear,
-                  ),
+                hintText: 'wss://',
+                labelText: t.server_address,
+                suffixIcon: HibikiIconButton(
+                  size: 18,
+                  tooltip: t.clear,
+                  onTap: _addressController.clear,
+                  icon: Icons.clear,
                 ),
               ),
               const SizedBox(height: 10),

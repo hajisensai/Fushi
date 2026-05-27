@@ -218,15 +218,12 @@ class _AnkiSettingsPageState extends BasePageState<AnkiSettingsPage> {
     return AdaptiveSettingsRow(
       title: label,
       controlBelow: true,
-      trailing: TextFormField(
+      trailing: AdaptiveSettingsTextField(
         key: ValueKey('$label-$value'),
         initialValue: value,
         keyboardType: keyboardType,
-        decoration: InputDecoration(
-          hintText: hint,
-          border: const OutlineInputBorder(),
-        ),
-        onFieldSubmitted: onSubmitted,
+        hintText: hint,
+        onSubmitted: onSubmitted,
       ),
     );
   }
@@ -235,13 +232,10 @@ class _AnkiSettingsPageState extends BasePageState<AnkiSettingsPage> {
     return AdaptiveSettingsRow(
       title: t.anki_tags,
       controlBelow: true,
-      trailing: TextFormField(
+      trailing: AdaptiveSettingsTextField(
         initialValue: settings.tags,
-        decoration: InputDecoration(
-          labelText: t.anki_tags,
-          hintText: t.anki_tags_hint,
-          border: const OutlineInputBorder(),
-        ),
+        labelText: t.anki_tags,
+        hintText: t.anki_tags_hint,
         onChanged: (v) => vm.updateTags(v),
       ),
     );
@@ -305,18 +299,9 @@ class _AnkiHandlebarPickerDialogState extends State<AnkiHandlebarPickerDialog> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(
+            AdaptiveSettingsTextField(
               controller: _controller,
-              style: Theme.of(context).textTheme.bodySmall,
-              decoration: InputDecoration(
-                hintText: t.anki_field_not_mapped,
-                border: const OutlineInputBorder(),
-                isDense: true,
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 8,
-                ),
-              ),
+              hintText: t.anki_field_not_mapped,
             ),
             const SizedBox(height: 4),
             Flexible(

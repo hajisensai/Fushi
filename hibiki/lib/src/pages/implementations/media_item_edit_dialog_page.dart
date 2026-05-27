@@ -75,19 +75,17 @@ class _MediaItemEditDialogPageState
         mainAxisSize: MainAxisSize.min,
         children: [
           const SizedBox(width: double.maxFinite, height: 1),
-          TextField(
+          HibikiTextField(
             controller: _nameOverrideController,
             maxLines: null,
-            decoration: InputDecoration(
-              suffixIcon: HibikiIconButton(
-                tooltip: t.undo,
-                isWideTapArea: true,
-                icon: Icons.undo_outlined,
-                onTap: () async {
-                  _nameOverrideController.text = widget.item.title;
-                  FocusScope.of(context).unfocus();
-                },
-              ),
+            suffixIcon: HibikiIconButton(
+              tooltip: t.undo,
+              isWideTapArea: true,
+              icon: Icons.undo_outlined,
+              onTap: () async {
+                _nameOverrideController.text = widget.item.title;
+                FocusScope.of(context).unfocus();
+              },
             ),
           ),
           MediaItemCoverOverrideField(
@@ -216,18 +214,18 @@ class MediaItemCoverOverrideField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return TextField(
+    return HibikiTextField(
       readOnly: true,
       style: const TextStyle(color: Colors.transparent),
-      decoration: InputDecoration(
-        floatingLabelBehavior: FloatingLabelBehavior.always,
-        suffixIconConstraints: const BoxConstraints(
-          minHeight: 48,
-          maxHeight: 56,
+      contentPadding: EdgeInsets.zero,
+      suffixIcon: ConstrainedBox(
+        constraints: const BoxConstraints(
+          minHeight: 56,
+          maxHeight: 64,
           minWidth: 144,
           maxWidth: 180,
         ),
-        suffixIcon: Row(
+        child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Flexible(

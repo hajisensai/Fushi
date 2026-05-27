@@ -145,9 +145,7 @@ class _MaterialSettingsSection extends StatelessWidget {
               padding: const EdgeInsets.only(bottom: 6),
               child: Text(
                 section.title!,
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      color: tokens.surfaces.onVariant,
-                    ),
+                style: tokens.type.sectionLabel,
               ),
             ),
           HibikiCard(

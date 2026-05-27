@@ -274,9 +274,9 @@ class _CustomThemePageState extends BasePageState {
       builder: (ctx) => adaptiveAlertDialog(
         context: ctx,
         title: Text(t.import_theme),
-        content: TextField(
+        content: HibikiTextField(
           controller: controller,
-          decoration: InputDecoration(hintText: t.import_theme_hint),
+          hintText: t.import_theme_hint,
           autofocus: true,
         ),
         actions: [

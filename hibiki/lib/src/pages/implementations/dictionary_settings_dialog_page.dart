@@ -88,23 +88,14 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
               ),
             ),
             const SizedBox(height: 4),
-            TextField(
+            AdaptiveSettingsTextField(
               controller: _controller,
-              decoration: InputDecoration(
-                hintText: 'https://...{term}...{reading}',
-                hintStyle: Theme.of(context).textTheme.bodySmall,
-                isDense: true,
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 8,
-                ),
-                suffixIcon: IconButton(
-                  visualDensity: VisualDensity.compact,
-                  icon: const Icon(Icons.add),
-                  onPressed: _addSource,
-                ),
+              hintText: 'https://...{term}...{reading}',
+              suffixIcon: IconButton(
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.add),
+                onPressed: _addSource,
               ),
-              style: Theme.of(context).textTheme.bodySmall,
               onSubmitted: (_) => _addSource(),
             ),
           ],
@@ -228,20 +219,8 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
             _buildScopeDropdown(context),
             const SizedBox(height: 8),
             Expanded(
-              child: TextField(
+              child: HibikiEditorPanel(
                 controller: _cssController,
-                maxLines: null,
-                expands: true,
-                textAlignVertical: TextAlignVertical.top,
-                style: const TextStyle(
-                  fontFamily: 'monospace',
-                  fontSize: 13,
-                ),
-                decoration: const InputDecoration(
-                  hintText: '.glossary-content { font-size: 18px; }',
-                  border: OutlineInputBorder(),
-                  contentPadding: EdgeInsets.all(8),
-                ),
               ),
             ),
           ],

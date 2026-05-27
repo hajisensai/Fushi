@@ -27,12 +27,13 @@ class HibikiDesignTokens {
 
 class HibikiRadii {
   const HibikiRadii({
-    this.group = 8,
-    this.card = 8,
+    this.group = 12,
+    this.card = 12,
     this.control = 16,
     this.chip = 8,
-    this.menu = 8,
-    this.dialog = 16,
+    this.menu = 12,
+    this.dialog = 28,
+    this.sheet = 28,
   });
 
   final double group;
@@ -41,6 +42,7 @@ class HibikiRadii {
   final double chip;
   final double menu;
   final double dialog;
+  final double sheet;
 
   BorderRadius get groupRadius => BorderRadius.circular(group);
   BorderRadius get cardRadius => BorderRadius.circular(card);
@@ -48,10 +50,14 @@ class HibikiRadii {
   BorderRadius get chipRadius => BorderRadius.circular(chip);
   BorderRadius get menuRadius => BorderRadius.circular(menu);
   BorderRadius get dialogRadius => BorderRadius.circular(dialog);
+  BorderRadius get sheetRadius =>
+      BorderRadius.vertical(top: Radius.circular(sheet));
 }
 
 class HibikiSurfaceColors {
   const HibikiSurfaceColors({
+    required this.primary,
+    required this.primaryContainer,
     required this.page,
     required this.group,
     required this.card,
@@ -63,6 +69,8 @@ class HibikiSurfaceColors {
     required this.onVariant,
   });
 
+  final Color primary;
+  final Color primaryContainer;
   final Color page;
   final Color group;
   final Color card;
@@ -75,6 +83,8 @@ class HibikiSurfaceColors {
 
   factory HibikiSurfaceColors.fromScheme(ColorScheme scheme) {
     return HibikiSurfaceColors(
+      primary: scheme.primary,
+      primaryContainer: scheme.primaryContainer,
       page: scheme.surface,
       group: scheme.surfaceContainerLow,
       card: scheme.surfaceContainer,
@@ -90,6 +100,7 @@ class HibikiSurfaceColors {
 
 class HibikiTypeRoles {
   const HibikiTypeRoles({
+    required this.pageTitle,
     required this.listTitle,
     required this.listSubtitle,
     required this.metadata,
@@ -97,6 +108,7 @@ class HibikiTypeRoles {
     required this.controlLabel,
   });
 
+  final TextStyle pageTitle;
   final TextStyle listTitle;
   final TextStyle listSubtitle;
   final TextStyle metadata;
@@ -117,8 +129,13 @@ class HibikiTypeRoles {
       metadata: (textTheme.labelMedium ?? const TextStyle()).copyWith(
         color: scheme.onSurfaceVariant,
       ),
+      pageTitle: (textTheme.headlineMedium ?? const TextStyle()).copyWith(
+        color: scheme.onSurface,
+        fontWeight: FontWeight.w600,
+      ),
       sectionLabel: (textTheme.labelLarge ?? const TextStyle()).copyWith(
-        color: scheme.onSurfaceVariant,
+        color: scheme.primary,
+        fontWeight: FontWeight.w600,
       ),
       controlLabel: textTheme.labelLarge ?? const TextStyle(),
     );

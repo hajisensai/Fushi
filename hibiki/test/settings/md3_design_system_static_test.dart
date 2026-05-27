@@ -16,6 +16,7 @@ void main() {
       'class HibikiCard',
       'class HibikiListItem',
       'class HibikiSearchField',
+      'class HibikiTextField',
       'class HibikiOverflowMenu',
       'class HibikiFilePickerRow',
       'class HibikiLogPanel',
@@ -23,6 +24,9 @@ void main() {
       'class HibikiCompactSearchRow',
       'class HibikiEditorPanel',
       'onLongPress',
+    ],
+    'lib/src/utils/components/settings_shared.dart': <String>[
+      'class AdaptiveSettingsTextField',
     ],
   };
 
@@ -67,6 +71,7 @@ void main() {
     ],
     'lib/src/pages/implementations/tag_management_page.dart': <String>[
       'HibikiListItem',
+      'HibikiTextField',
     ],
     'lib/src/pages/implementations/media_item_dialog_page.dart': <String>[
       'HibikiListItem',
@@ -81,6 +86,7 @@ void main() {
       'AdaptiveSettingsSection',
       'AdaptiveSettingsSwitchRow',
       'HibikiFilePickerRow',
+      'HibikiTextField',
     ],
     'lib/src/media/audiobook/audiobook_import_dialog.dart': <String>[
       'AdaptiveSettingsSection',
@@ -126,6 +132,35 @@ void main() {
     'lib/src/pages/implementations/book_css_editor_page.dart': <String>[
       'HibikiEditorPanel',
       'HibikiPlaceholderMessage',
+    ],
+    'lib/src/pages/implementations/anki_settings_page.dart': <String>[
+      'AdaptiveSettingsTextField',
+    ],
+    'lib/src/pages/implementations/dictionary_settings_dialog_page.dart':
+        <String>[
+      'AdaptiveSettingsTextField',
+      'HibikiEditorPanel',
+    ],
+    'lib/src/settings/settings_schema.dart': <String>[
+      'HibikiTextField',
+    ],
+    'lib/src/sync/sync_settings_schema.dart': <String>[
+      'HibikiTextField',
+    ],
+    'lib/src/pages/implementations/custom_theme_page.dart': <String>[
+      'HibikiTextField',
+    ],
+    'lib/src/pages/implementations/custom_fonts_page.dart': <String>[
+      'HibikiTextField',
+    ],
+    'lib/src/pages/implementations/lyrics_dialog_page.dart': <String>[
+      'HibikiTextField',
+    ],
+    'lib/src/pages/implementations/profile_management_page.dart': <String>[
+      'HibikiTextField',
+    ],
+    'lib/src/media/audiobook/reader_quick_settings_sheet.dart': <String>[
+      'HibikiTextField',
     ],
   };
 
@@ -207,6 +242,7 @@ void main() {
       ],
       'lib/src/pages/implementations/tag_management_page.dart': <String>[
         'ListTile(',
+        'OutlineInputBorder',
       ],
       'lib/src/pages/implementations/media_item_dialog_page.dart': <String>[
         'ListTile(',
@@ -222,6 +258,7 @@ void main() {
         'SwitchListTile',
         'fontSize: 13',
         'fontSize: 11',
+        'OutlineInputBorder',
       ],
       'lib/src/media/audiobook/audiobook_import_dialog.dart': <String>[
         'fontSize: 13',
@@ -278,6 +315,49 @@ void main() {
         'fontSize: 13',
         'OutlineInputBorder',
         'Center(child: Text(',
+      ],
+      'lib/src/pages/implementations/anki_settings_page.dart': <String>[
+        'OutlineInputBorder',
+      ],
+      'lib/src/pages/implementations/dictionary_settings_dialog_page.dart':
+          <String>[
+        'fontSize: 13',
+        'OutlineInputBorder',
+      ],
+      'lib/src/pages/implementations/blur_options_dialog_page.dart': <String>[
+        'TextField(',
+        'OutlineInputBorder',
+      ],
+      'lib/src/pages/implementations/media_item_edit_dialog_page.dart':
+          <String>[
+        'TextField(',
+      ],
+      'lib/src/pages/implementations/websocket_dialog_page.dart': <String>[
+        'TextField(',
+      ],
+      'lib/src/settings/settings_schema.dart': <String>[
+        'TextField(',
+      ],
+      'lib/src/sync/sync_settings_schema.dart': <String>[
+        'TextField(',
+        'OutlineInputBorder',
+      ],
+      'lib/src/pages/implementations/custom_theme_page.dart': <String>[
+        'TextField(',
+      ],
+      'lib/src/pages/implementations/custom_fonts_page.dart': <String>[
+        'TextField(',
+        'OutlineInputBorder',
+      ],
+      'lib/src/pages/implementations/lyrics_dialog_page.dart': <String>[
+        'TextField(',
+      ],
+      'lib/src/pages/implementations/profile_management_page.dart': <String>[
+        'TextField(',
+      ],
+      'lib/src/media/audiobook/reader_quick_settings_sheet.dart': <String>[
+        'TextField(',
+        'OutlineInputBorder',
       ],
     };
 
@@ -433,6 +513,7 @@ String _withoutSharedComponentNames(String source) {
       .replaceAll('HibikiListItem(', 'HibikiSharedRow(')
       .replaceAll('HibikiListTile(', 'HibikiSharedTile(')
       .replaceAll('HibikiSearchField(', 'HibikiSharedSearch(')
+      .replaceAll('HibikiTextField(', 'HibikiSharedField(')
       .replaceAll('HibikiOverflowMenu(', 'HibikiSharedOverflow(');
 }
 

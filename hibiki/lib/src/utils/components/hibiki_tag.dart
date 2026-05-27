@@ -1,12 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/utils/spacing.dart';
-
+import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 import 'package:hibiki/src/utils/misc/hibiki_toast.dart';
 
-/// A tag that can be clicked on for more information. Used in dictionary
-/// entries to indicate information about a definition or term.
+/// A clickable MD3-style tag used in dictionary entries.
 class HibikiTag extends StatelessWidget {
-  /// Create a tag that can be clicked on for more information.
   const HibikiTag({
     required this.text,
     required this.backgroundColor,
@@ -19,95 +16,98 @@ class HibikiTag extends StatelessWidget {
     super.key,
   });
 
-  /// The icon to display on the tag.
   final IconData? icon;
-
-  /// The text to display on the tag.
   final String text;
-
-  /// The message to show when the tag has been clicked on.
   final String? message;
-
-  /// An extra bit to put on a rectangle on the right of the message.
   final String? trailingText;
-
-  /// The color of the tag background.
   final Color backgroundColor;
-
-  /// The color of the icon and text. `null` falls back to
-  /// `colorScheme.onSecondaryContainer`，适用于 M3 secondaryContainer 背景。
   final Color? foregroundColor;
-
-  /// The display size for the [icon].
   final double? iconSize;
-
-  /// Text style to use for the [text] of the tag.
   final TextStyle? style;
 
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final Color effectiveForeground =
         foregroundColor ?? scheme.onSecondaryContainer;
-    // trailingText 常用来显示频率等级等附加信息，用 tertiaryContainer 区分主标签。
-    final Color trailingBg = scheme.tertiaryContainer;
-    final Color trailingFg = scheme.onTertiaryContainer;
+    final TextStyle effectiveStyle = style ??
+        Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: effectiveForeground,
+            ) ??
+        TextStyle(color: effectiveForeground);
+
     return Padding(
-      padding: Spacing.of(context).insets.onlyRight.small,
-      child: InkWell(
-        onTap: message != null
-            ? () {
-                HibikiToast.show(
-                  backgroundColor: backgroundColor,
-                  textColor: effectiveForeground,
-                  msg: message!,
-                  toastLength: Toast.LENGTH_SHORT,
-                  gravity: ToastGravity.BOTTOM,
-                );
-              }
-            : null,
-        child: Container(
-          color: backgroundColor,
-          padding: Spacing.of(context).insets.all.small,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (icon != null)
-                Icon(
-                  icon,
-                  color: effectiveForeground,
-                  size: Theme.of(context).textTheme.labelSmall?.fontSize,
-                ),
-              if (icon != null) const Space.small(),
-              Flexible(
-                child: Text(
-                  text,
-                  style: Theme.of(context)
-                      .textTheme
-                      .labelSmall
-                      ?.copyWith(color: effectiveForeground),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              if (trailingText != null) const Space.small(),
-              if (trailingText != null)
+      padding: EdgeInsetsDirectional.only(end: tokens.spacing.gap / 2),
+      child: Material(
+        color: backgroundColor,
+        shape: RoundedRectangleBorder(borderRadius: tokens.radii.chipRadius),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: message == null
+              ? null
+              : () {
+                  HibikiToast.show(
+                    backgroundColor: backgroundColor,
+                    textColor: effectiveForeground,
+                    msg: message!,
+                    toastLength: Toast.LENGTH_SHORT,
+                    gravity: ToastGravity.BOTTOM,
+                  );
+                },
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: tokens.spacing.gap,
+              vertical: tokens.spacing.gap / 2,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (icon != null) ...[
+                  Icon(
+                    icon,
+                    color: effectiveForeground,
+                    size: iconSize ??
+                        Theme.of(context).textTheme.labelSmall?.fontSize,
+                  ),
+                  SizedBox(width: tokens.spacing.gap / 2),
+                ],
                 Flexible(
-                  child: Container(
-                    padding: Spacing.of(context).insets.all.extraSmall,
-                    color: trailingBg,
-                    child: Text(
-                      trailingText!,
-                      style: Theme.of(context)
-                          .textTheme
-                          .labelSmall
-                          ?.copyWith(color: trailingFg),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                  child: Text(
+                    text,
+                    style: effectiveStyle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
-            ],
+                if (trailingText != null) ...[
+                  SizedBox(width: tokens.spacing.gap / 2),
+                  Flexible(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: scheme.tertiaryContainer,
+                        borderRadius: BorderRadius.circular(tokens.radii.chip),
+                      ),
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: tokens.spacing.gap / 2,
+                          vertical: tokens.spacing.gap / 4,
+                        ),
+                        child: Text(
+                          trailingText!,
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelSmall
+                              ?.copyWith(color: scheme.onTertiaryContainer),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
           ),
         ),
       ),

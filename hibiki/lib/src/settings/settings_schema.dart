@@ -846,24 +846,21 @@ class _SettingsNumberFieldState extends State<_SettingsNumberField> {
       title: widget.title,
       icon: widget.icon,
       controlBelow: true,
-      trailing: TextField(
+      trailing: HibikiTextField(
         controller: _controller,
         keyboardType: TextInputType.number,
-        decoration: InputDecoration(
-          floatingLabelBehavior: FloatingLabelBehavior.always,
-          suffixText: widget.suffixText,
-          suffixIcon: HibikiIconButton(
-            tooltip: t.reset,
-            size: 18,
-            icon: Icons.undo_outlined,
-            onTap: () {
-              _controller.text = widget.resetValue;
-              widget.onReset();
-              FocusScope.of(context).unfocus();
-            },
-          ),
-          labelText: widget.title,
+        suffixText: widget.suffixText,
+        suffixIcon: HibikiIconButton(
+          tooltip: t.reset,
+          size: 18,
+          icon: Icons.undo_outlined,
+          onTap: () {
+            _controller.text = widget.resetValue;
+            widget.onReset();
+            FocusScope.of(context).unfocus();
+          },
         ),
+        labelText: widget.title,
         onChanged: widget.onChanged,
       ),
     );

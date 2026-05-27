@@ -573,11 +573,15 @@ class TtuTocEntry {
     required this.index,
     required this.label,
     this.parent,
+    this.depth = 0,
   });
 
   final int index;
   final String label;
   final String? parent;
+  final int depth;
+
+  bool get isHeader => index < 0;
 }
 
 /// Reader 当前视口在全书中的位置。

@@ -144,22 +144,14 @@ class _BookImportDialogState extends State<BookImportDialog> {
           ],
         ),
         const SizedBox(height: 12),
-        TextField(
+        HibikiTextField(
           controller: _titleCtrl,
-          decoration: InputDecoration(
-            labelText: t.srt_import_title_hint,
-            isDense: true,
-            border: const OutlineInputBorder(),
-          ),
+          labelText: t.srt_import_title_hint,
         ),
         const SizedBox(height: 8),
-        TextField(
+        HibikiTextField(
           controller: _authorCtrl,
-          decoration: InputDecoration(
-            labelText: t.srt_import_author_hint,
-            isDense: true,
-            border: const OutlineInputBorder(),
-          ),
+          labelText: t.srt_import_author_hint,
         ),
         if (_willRunMatcher) ...[
           const SizedBox(height: 12),

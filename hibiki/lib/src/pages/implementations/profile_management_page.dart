@@ -375,13 +375,10 @@ class _ProfileNameDialogState extends State<ProfileNameDialog> {
       contentPadding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
       actionsPadding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
       title: Text(widget.title),
-      content: TextField(
+      content: HibikiTextField(
         controller: _controller,
         autofocus: true,
-        decoration: InputDecoration(
-          hintText: t.profile_name_hint,
-          isDense: true,
-        ),
+        hintText: t.profile_name_hint,
         onSubmitted: (value) => _submit(context, value),
       ),
       actions: [

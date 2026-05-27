@@ -43,7 +43,9 @@ class HibikiCard extends StatelessWidget {
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: radius,
-          side: BorderSide(color: borderColor ?? tokens.surfaces.outline),
+          side: borderColor != null
+              ? BorderSide(color: borderColor!)
+              : BorderSide.none,
         ),
         clipBehavior: Clip.antiAlias,
         child: onTap == null && onLongPress == null
@@ -193,6 +195,103 @@ class HibikiSearchField extends StatelessWidget {
       hintStyle: WidgetStatePropertyAll<TextStyle>(tokens.type.listSubtitle),
       onChanged: onChanged,
       onSubmitted: onSubmitted,
+    );
+  }
+}
+
+class HibikiTextField extends StatelessWidget {
+  const HibikiTextField({
+    super.key,
+    this.controller,
+    this.initialValue,
+    this.focusNode,
+    this.autofocus = false,
+    this.readOnly = false,
+    this.obscureText = false,
+    this.hintText,
+    this.labelText,
+    this.suffixText,
+    this.keyboardType = TextInputType.text,
+    this.textInputAction,
+    this.onChanged,
+    this.onSubmitted,
+    this.suffixIcon,
+    this.prefixIcon,
+    this.maxLines = 1,
+    this.minLines,
+    this.expands = false,
+    this.textAlignVertical,
+    this.style,
+    this.contentPadding,
+  }) : assert(controller == null || initialValue == null);
+
+  final TextEditingController? controller;
+  final String? initialValue;
+  final FocusNode? focusNode;
+  final bool autofocus;
+  final bool readOnly;
+  final bool obscureText;
+  final String? hintText;
+  final String? labelText;
+  final String? suffixText;
+  final TextInputType keyboardType;
+  final TextInputAction? textInputAction;
+  final ValueChanged<String>? onChanged;
+  final ValueChanged<String>? onSubmitted;
+  final Widget? suffixIcon;
+  final Widget? prefixIcon;
+  final int? maxLines;
+  final int? minLines;
+  final bool expands;
+  final TextAlignVertical? textAlignVertical;
+  final TextStyle? style;
+  final EdgeInsetsGeometry? contentPadding;
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final OutlineInputBorder border = OutlineInputBorder(
+      borderRadius: tokens.radii.cardRadius,
+      borderSide: BorderSide(color: tokens.surfaces.outline),
+    );
+    return TextFormField(
+      controller: controller,
+      initialValue: initialValue,
+      focusNode: focusNode,
+      autofocus: autofocus,
+      readOnly: readOnly,
+      obscureText: obscureText,
+      keyboardType: keyboardType,
+      textInputAction: textInputAction,
+      maxLines: expands ? null : maxLines,
+      minLines: minLines,
+      expands: expands,
+      textAlignVertical: textAlignVertical,
+      style: style ?? tokens.type.listTitle,
+      decoration: InputDecoration(
+        hintText: hintText,
+        labelText: labelText,
+        suffixText: suffixText,
+        hintStyle: tokens.type.listSubtitle,
+        labelStyle: tokens.type.metadata,
+        floatingLabelStyle: tokens.type.sectionLabel,
+        filled: true,
+        fillColor: tokens.surfaces.search,
+        border: border,
+        enabledBorder: border,
+        focusedBorder: border.copyWith(
+          borderSide: BorderSide(color: tokens.surfaces.primary, width: 2),
+        ),
+        contentPadding: contentPadding ??
+            EdgeInsets.symmetric(
+              horizontal: tokens.spacing.rowHorizontal,
+              vertical: tokens.spacing.rowVertical,
+            ),
+        suffixIcon: suffixIcon,
+        prefixIcon: prefixIcon,
+      ),
+      onChanged: onChanged,
+      onFieldSubmitted: onSubmitted,
     );
   }
 }

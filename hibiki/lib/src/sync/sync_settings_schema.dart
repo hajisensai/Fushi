@@ -417,13 +417,11 @@ class _WebDavConfigWidgetState extends State<_WebDavConfigWidget> {
       if (mounted) _showSnackBar(context, t.sync_webdav_test_success);
     } on SyncAuthError catch (e) {
       if (mounted) {
-        _showSnackBar(
-            context, t.sync_webdav_test_failed(message: e.message));
+        _showSnackBar(context, t.sync_webdav_test_failed(message: e.message));
       }
     } on SyncBackendError catch (e) {
       if (mounted) {
-        _showSnackBar(
-            context, t.sync_webdav_test_failed(message: e.message));
+        _showSnackBar(context, t.sync_webdav_test_failed(message: e.message));
       }
     } catch (e) {
       if (mounted) {
@@ -444,35 +442,23 @@ class _WebDavConfigWidgetState extends State<_WebDavConfigWidget> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          TextField(
+          HibikiTextField(
             controller: _urlController,
-            decoration: InputDecoration(
-              labelText: t.sync_webdav_url,
-              hintText: 'https://cloud.example.com/remote.php/dav/files/user',
-              border: const OutlineInputBorder(),
-              isDense: true,
-            ),
+            labelText: t.sync_webdav_url,
+            hintText: 'https://cloud.example.com/remote.php/dav/files/user',
             keyboardType: TextInputType.url,
             onChanged: (_) => _saveCredentials(),
           ),
           const SizedBox(height: 12),
-          TextField(
+          HibikiTextField(
             controller: _usernameController,
-            decoration: InputDecoration(
-              labelText: t.sync_webdav_username,
-              border: const OutlineInputBorder(),
-              isDense: true,
-            ),
+            labelText: t.sync_webdav_username,
             onChanged: (_) => _saveCredentials(),
           ),
           const SizedBox(height: 12),
-          TextField(
+          HibikiTextField(
             controller: _passwordController,
-            decoration: InputDecoration(
-              labelText: t.sync_webdav_password,
-              border: const OutlineInputBorder(),
-              isDense: true,
-            ),
+            labelText: t.sync_webdav_password,
             obscureText: true,
             onChanged: (_) => _saveCredentials(),
           ),

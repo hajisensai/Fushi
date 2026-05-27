@@ -1,6 +1,9 @@
+@TestOn('windows')
+library;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:file_picker/file_picker.dart';
+import 'package:file_picker/src/file_picker.dart';
 import 'package:file_picker/src/windows/file_picker_windows.dart';
 import 'package:hibiki/src/media/audiobook/book_import_dialog.dart';
 

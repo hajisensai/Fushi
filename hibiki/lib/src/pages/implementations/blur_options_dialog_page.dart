@@ -80,25 +80,22 @@ class _BlurOptionsDialogPageState extends BasePageState<BlurOptionsDialogPage> {
                   colorPickerWidth: 200,
                   pickerAreaHeightPercent: 0.8,
                 ),
-                TextField(
+                HibikiTextField(
                   controller: _blurrinessController,
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
-                  decoration: InputDecoration(
-                    floatingLabelBehavior: FloatingLabelBehavior.always,
-                    suffixText: t.unit_pixels,
-                    suffixIcon: HibikiIconButton(
-                      tooltip: t.reset,
-                      size: 18,
-                      onTap: () async {
-                        _blurrinessController.text = '5.0';
-                        FocusScope.of(context).unfocus();
-                      },
-                      icon: Icons.undo_outlined,
-                    ),
-                    labelText: t.player_option_blur_radius,
+                  suffixIcon: HibikiIconButton(
+                    tooltip: t.reset,
+                    size: 18,
+                    onTap: () async {
+                      _blurrinessController.text = '5.0';
+                      FocusScope.of(context).unfocus();
+                    },
+                    icon: Icons.undo_outlined,
                   ),
+                  labelText:
+                      '${t.player_option_blur_radius} (${t.unit_pixels})',
                 ),
               ],
             ),

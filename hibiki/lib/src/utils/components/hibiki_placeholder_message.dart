@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/utils/spacing.dart';
+import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 
 /// Used to show information or error messages across the application.
 /// For example, this is used for the empty placeholder messages on the home
@@ -35,27 +35,41 @@ class HibikiPlaceholderMessage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Icon(
-          icon,
-          size:
-              iconSize ?? Theme.of(context).textTheme.headlineMedium?.fontSize,
-          color: color ?? Theme.of(context).colorScheme.onSurfaceVariant,
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final Color foreground = color ?? tokens.surfaces.onVariant;
+    return Center(
+      child: Padding(
+        padding: EdgeInsets.all(tokens.spacing.page),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: tokens.surfaces.group,
+            borderRadius: tokens.radii.cardRadius,
+          ),
+          child: Padding(
+            padding: EdgeInsets.all(tokens.spacing.card),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  icon,
+                  size: iconSize ??
+                      Theme.of(context).textTheme.headlineMedium?.fontSize,
+                  color: foreground,
+                ),
+                SizedBox(height: tokens.spacing.gap),
+                Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: messageStyle ??
+                      Theme.of(context).textTheme.bodyLarge?.copyWith(
+                            color: foreground,
+                          ),
+                ),
+              ],
+            ),
+          ),
         ),
-        const Space.small(),
-        Text(
-          message,
-          textAlign: TextAlign.center,
-          style: messageStyle ??
-              Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.normal,
-                    color:
-                        color ?? Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-        ),
-      ],
+      ),
     );
   }
 }

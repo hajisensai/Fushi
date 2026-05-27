@@ -107,10 +107,15 @@ This file maps current Hibiki UI files to the design boards in this folder. It i
 | `audiobook_import_dialog.dart` | `06-import-and-modals.svg` | `18-component-system.svg` |
 | `audiobook_play_bar.dart` | `04-reader.svg` | `18-component-system.svg` |
 | `book_import_dialog.dart` | `06-import-and-modals.svg` | `18-component-system.svg` |
+| `reader_quick_settings_sheet.dart` | `04-reader.svg` | `11-reader-customization.svg` |
 | `sasayaki_rematch.dart` | `06-import-and-modals.svg` | `04-reader.svg` |
+| `anki_integration.dart` | `07-creator-anki.svg` | `14-profile-language-system.svg` |
+| `theme_notifier.dart` | `18-component-system.svg` | `05-settings.svg` |
 | `profile_selector.dart` | `14-profile-language-system.svg` | `18-component-system.svg` |
 | `adaptive_navigation.dart` | `18-component-system.svg` | `01-home-navigation.svg` |
 | `adaptive_widgets.dart` | `18-component-system.svg` | `06-import-and-modals.svg` |
+| `hibiki_design_tokens.dart` | `18-component-system.svg` | `05-settings.svg` |
+| `hibiki_material_components.dart` | `18-component-system.svg` | `05-settings.svg` |
 | `hibiki_bottom_sheet.dart` | `18-component-system.svg` | `06-import-and-modals.svg` |
 | `hibiki_divider.dart` | `18-component-system.svg` | `05-settings.svg` |
 | `hibiki_dropdown.dart` | `18-component-system.svg` | `05-settings.svg` |
@@ -127,17 +132,21 @@ This file maps current Hibiki UI files to the design boards in this folder. It i
 | `cupertino_settings_renderer.dart` | `05-settings.svg` | `18-component-system.svg` |
 | `material_settings_renderer.dart` | `05-settings.svg` | `18-component-system.svg` |
 | `settings_actions.dart` | `05-settings.svg` | `14-profile-language-system.svg` |
+| `settings_schema.dart` | `05-settings.svg` | `18-component-system.svg` |
 | `settings_detail_page.dart` | `05-settings.svg` | `18-component-system.svg` |
 | `settings_home_page.dart` | `05-settings.svg` | `01-home-navigation.svg` |
 | `settings_shared.dart` | `05-settings.svg` | `18-component-system.svg` |
+| `sync_compare_dialog.dart` | `05-settings.svg` | `06-import-and-modals.svg` |
+| `sync_settings_schema.dart` | `05-settings.svg` | `18-component-system.svg` |
 | `platform_utils.dart` | `18-component-system.svg` | `01-home-navigation.svg` |
+| `spacing.dart` | `18-component-system.svg` | `01-home-navigation.svg` |
 | `swipe_dismiss_wrapper.dart` | `18-component-system.svg` | `06-import-and-modals.svg` |
 | `update_checker.dart` | `14-profile-language-system.svg` | `15-logs-and-debug.svg` |
 | `blur_options.dart` | `11-reader-customization.svg` | `18-component-system.svg` |
 
 ## Full UI scan audit
 
-See [UI_COVERAGE_AUDIT.md](UI_COVERAGE_AUDIT.md). The latest scan matched 81 UI-building Dart files under `hibiki/lib` and all 81 are mapped above. The mapping table intentionally has 84 rows because it also keeps 3 manual UI support files in scope: `dictionary_page_mixin.dart`, `dictionary_webview_media.dart`, and `hibiki_popup_position.dart`.
+See [UI_COVERAGE_AUDIT.md](UI_COVERAGE_AUDIT.md). The latest scan matched 89 UI-building Dart files under `hibiki/lib` and all 89 are mapped above. The mapping table intentionally has 104 rows because it also keeps manual UI support and broad shared UI-adjacent files in scope, including schema, sync, token, spacing, and component files whose visual behavior is governed by shared MD3 boards.
 
 ## Current gap after this batch
 
