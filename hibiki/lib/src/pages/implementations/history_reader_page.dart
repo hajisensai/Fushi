@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/utils/spacing.dart';
 import 'package:transparent_image/transparent_image.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/utils/misc/platform_utils.dart';
+import 'package:hibiki/utils.dart';
 
 /// A default page for a [ReaderMediaSource]'s tab body content when selected
 /// as a source in the main menu.
@@ -66,10 +66,12 @@ class HistoryReaderPageState<T extends BaseHistoryPage>
       controller: mediaType.scrollController,
       child: LayoutBuilder(
         builder: (context, constraints) => GridView.builder(
-          padding: const EdgeInsets.only(top: 48),
+          padding: const EdgeInsets.fromLTRB(16, 48, 16, 16),
           gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
             maxCrossAxisExtent: _gridExtent(context, constraints),
             childAspectRatio: mediaSource.aspectRatio,
+            mainAxisSpacing: 12,
+            crossAxisSpacing: 12,
           ),
           physics: const AlwaysScrollableScrollPhysics(
             parent: BouncingScrollPhysics(),
@@ -85,61 +87,57 @@ class HistoryReaderPageState<T extends BaseHistoryPage>
   /// Build the widget visually representing the [MediaItem]'s history tile.
   @override
   Widget buildMediaItemContent(MediaItem item) {
-    return Container(
-      padding: Spacing.of(context).insets.all.normal,
-      child: Stack(
-        alignment: Alignment.bottomLeft,
-        children: [
-          ColoredBox(
-            color: Theme.of(context).colorScheme.surfaceContainerLowest,
-            child: AspectRatio(
-              aspectRatio: mediaSource.aspectRatio,
-              child: FadeInImage(
-                imageErrorBuilder: (_, __, ___) => const SizedBox.shrink(),
-                placeholder: MemoryImage(kTransparentImage),
-                image: mediaSource.getDisplayThumbnailFromMediaItem(
-                  appModel: appModel,
-                  item: item,
-                ),
-                alignment: Alignment.topCenter,
-                fit: BoxFit.fitHeight,
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return Stack(
+      alignment: Alignment.bottomLeft,
+      fit: StackFit.expand,
+      children: [
+        AspectRatio(
+          aspectRatio: mediaSource.aspectRatio,
+          child: FadeInImage(
+            imageErrorBuilder: (_, __, ___) => const SizedBox.shrink(),
+            placeholder: MemoryImage(kTransparentImage),
+            image: mediaSource.getDisplayThumbnailFromMediaItem(
+              appModel: appModel,
+              item: item,
+            ),
+            alignment: Alignment.topCenter,
+            fit: BoxFit.fitHeight,
+          ),
+        ),
+        LayoutBuilder(builder: (context, constraints) {
+          return Container(
+            alignment: Alignment.center,
+            padding: const EdgeInsets.fromLTRB(2, 2, 2, 4),
+            height: constraints.maxHeight * 0.25,
+            width: double.maxFinite,
+            color: theme.colorScheme.scrim.withValues(alpha: 0.6),
+            child: Text(
+              mediaSource.getDisplayTitleFromMediaItem(item),
+              overflow: TextOverflow.ellipsis,
+              maxLines: 2,
+              textAlign: TextAlign.center,
+              softWrap: true,
+              style: tokens.type.metadata.copyWith(
+                color: theme.colorScheme.onInverseSurface,
               ),
             ),
-          ),
-          LayoutBuilder(builder: (context, constraints) {
-            return Container(
-              alignment: Alignment.center,
-              padding: const EdgeInsets.fromLTRB(2, 2, 2, 4),
-              height: constraints.maxHeight * 0.25,
-              width: double.maxFinite,
-              color: theme.colorScheme.scrim.withValues(alpha: 0.6),
-              child: Text(
-                mediaSource.getDisplayTitleFromMediaItem(item),
-                overflow: TextOverflow.ellipsis,
-                maxLines: 2,
-                textAlign: TextAlign.center,
-                softWrap: true,
-                style: textTheme.bodySmall!.copyWith(
-                    color: theme.colorScheme.onInverseSurface,
-                    fontSize: textTheme.bodySmall!.fontSize! * 0.9),
-              ),
-            );
-          }),
-          LinearProgressIndicator(
-            value: (item.position / item.duration).isNaN ||
-                    (item.position / item.duration) == double.infinity ||
-                    (item.position == 0 && item.duration == 0)
-                ? 0
-                : ((item.position / item.duration) > 0.97)
-                    ? 1
-                    : (item.position / item.duration),
-            backgroundColor: theme.colorScheme.surfaceContainerHighest
-                .withValues(alpha: 0.6),
-            color: theme.colorScheme.primary,
-            minHeight: 2,
-          ),
-        ],
-      ),
+          );
+        }),
+        LinearProgressIndicator(
+          value: (item.position / item.duration).isNaN ||
+                  (item.position / item.duration) == double.infinity ||
+                  (item.position == 0 && item.duration == 0)
+              ? 0
+              : ((item.position / item.duration) > 0.97)
+                  ? 1
+                  : (item.position / item.duration),
+          backgroundColor:
+              theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
+          color: theme.colorScheme.primary,
+          minHeight: 2,
+        ),
+      ],
     );
   }
 }

@@ -99,6 +99,12 @@ void main() {
     'lib/src/pages/implementations/illustrations_viewer_page.dart': <String>[
       'HibikiCard',
     ],
+    'lib/src/pages/base_history_page.dart': <String>[
+      'HibikiCard',
+    ],
+    'lib/src/pages/implementations/history_reader_page.dart': <String>[
+      'HibikiDesignTokens',
+    ],
   };
 
   test('MD3 design token and shared component files exist', () {
@@ -216,6 +222,14 @@ void main() {
       'lib/src/pages/implementations/illustrations_viewer_page.dart': <String>[
         'surfaceContainerLow',
         'BorderRadius.circular(8)',
+      ],
+      'lib/src/pages/base_history_page.dart': <String>[
+        'return Material(',
+        'InkWell(',
+      ],
+      'lib/src/pages/implementations/history_reader_page.dart': <String>[
+        'surfaceContainerLowest',
+        'fontSize: textTheme',
       ],
     };
 

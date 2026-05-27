@@ -55,33 +55,32 @@ abstract class BaseHistoryPageState<T extends BaseHistoryPage>
   /// Wraps the [MediaItem] and adds interaction functionality for tapping
   /// and long pressing.
   Widget buildMediaItem(MediaItem item) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () async {
-          MediaSource mediaSource = item.getMediaSource(appModel: appModel);
+    return HibikiCard(
+      padding: EdgeInsets.zero,
+      borderColor: Colors.transparent,
+      onTap: () async {
+        MediaSource mediaSource = item.getMediaSource(appModel: appModel);
 
-          await appModel.openMedia(
-            ref: ref,
-            mediaSource: mediaSource,
+        await appModel.openMedia(
+          ref: ref,
+          mediaSource: mediaSource,
+          item: item,
+        );
+      },
+      onLongPress: () async {
+        await showAppDialog(
+          context: context,
+          builder: (context) => MediaItemDialogPage(
             item: item,
-          );
-        },
-        onLongPress: () async {
-          await showAppDialog(
-            context: context,
-            builder: (context) => MediaItemDialogPage(
-              item: item,
-              isHistory: isHistory,
-              extraActions: extraActions,
-            ),
-          );
-          if (isHistory) {
-            setState(() {});
-          }
-        },
-        child: buildMediaItemContent(item),
-      ),
+            isHistory: isHistory,
+            extraActions: extraActions,
+          ),
+        );
+        if (isHistory) {
+          setState(() {});
+        }
+      },
+      child: buildMediaItemContent(item),
     );
   }
 

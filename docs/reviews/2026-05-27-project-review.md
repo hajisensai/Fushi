@@ -116,6 +116,29 @@
   - Static guard was written failing-first and failed on `surfaceContainerLow`, missing `HibikiCard`, and missing design tokens in the reader hover overlay.
   - Passed after migration with the focused verification command listed below.
 
+#### HBK-AUDIT-012 - Default reader history fallback tile used raw Material and local surface roles
+
+- severity: MEDIUM
+- status: resolved in working tree
+- files/lines:
+  - `hibiki/lib/src/pages/base_history_page.dart`
+  - `hibiki/lib/src/pages/implementations/history_reader_page.dart`
+  - `hibiki/test/settings/md3_design_system_static_test.dart`
+  - `hibiki/test/pages/history_reader_page_static_test.dart`
+- root cause:
+  - `BaseHistoryPage.buildMediaItem()` wrapped history items in raw `Material` and `InkWell`.
+  - The fallback `HistoryReaderPage` tile used `surfaceContainerLowest` and hand-scaled `bodySmall` typography for ordinary shelf chrome.
+- impact:
+  - `ReaderHibikiHistoryPage` already owns the main Hoshi shelf, but `ReaderMediaSource` still exposes this fallback path. If used, it would reopen the exact old card/list grammar the MD3 pass is trying to close.
+- fix:
+  - Moved default history item interaction to `HibikiCard` with `onTap`/`onLongPress`.
+  - Kept the default reader tile content as image/title/progress only, so the shared card shell owns the surface and clipping.
+  - Replaced hand-scaled title text with `HibikiDesignTokens.type.metadata`.
+  - Added a compile guard for `HistoryReaderPage`.
+- verification:
+  - Static guard was written failing-first and failed on raw `Material`/`InkWell`, `surfaceContainerLowest`, and local font sizing.
+  - Passed after migration with the focused verification command listed below.
+
 ### Verification
 
 - Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat format lib\src\utils\components\hibiki_material_components.dart lib\src\media\audiobook\book_import_dialog.dart lib\src\media\audiobook\audiobook_import_dialog.dart lib\src\pages\implementations\reader_hibiki_history_page.dart lib\src\pages\implementations\dictionary_dialog_page.dart test\settings\md3_design_system_static_test.dart`
@@ -126,6 +149,8 @@
 - Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test test\settings\md3_design_system_static_test.dart test\pages\tag_picker_page_static_test.dart --reporter expanded`
 - Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat format lib\src\pages\implementations\illustrations_viewer_page.dart lib\src\pages\implementations\reader_hibiki_history_page.dart test\settings\md3_design_system_static_test.dart test\pages\illustrations_viewer_page_static_test.dart`
 - Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test test\settings\md3_design_system_static_test.dart test\pages\illustrations_viewer_page_static_test.dart test\pages\book_profile_dialog_page_test.dart test\pages\reader_history_delete_dialog_test.dart --reporter expanded`
+- Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat format lib\src\pages\base_history_page.dart lib\src\pages\implementations\history_reader_page.dart test\settings\md3_design_system_static_test.dart test\pages\history_reader_page_static_test.dart`
+- Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test test\settings\md3_design_system_static_test.dart test\pages\history_reader_page_static_test.dart --reporter expanded`
 - Passed: `git diff --cached --check`
 
 ### Next Scope
