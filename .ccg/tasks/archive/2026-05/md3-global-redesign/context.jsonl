@@ -1,0 +1,3 @@
+{"_example": "Fill with {\"file\": \"path\", \"reason\": \"why\"}. Seed rows are skipped."}
+{"file": ".codex-test/reference/seal/1-9.jpg", "reason": "Seal MD3 reference screenshots"}
+{"file": ".ccg/tasks/design-system-manual-switch/analysis.md", "reason": "Existing design system switch analysis"}

@@ -1,0 +1,15 @@
+{
+  "id": "md3-global-redesign",
+  "title": "参照 Seal 应用 MD3 设计语言，全局重设计 Hibiki UI",
+  "status": "completed",
+  "strategy": "full-collaborate",
+  "complexity": "L+",
+  "risk": "medium",
+  "domain": "frontend",
+  "currentPhase": "completed",
+  "nextAction": "Archive task after committing verified MD3 implementation",
+  "gate": null,
+  "branch": "develop",
+  "scope": "md3-global-redesign",
+  "createdAt": "2026-05-27T00:00:00Z"
+}
