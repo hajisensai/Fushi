@@ -282,7 +282,7 @@ class _MaterialSettingsItem extends StatelessWidget {
         selected: <Object>{selected},
         onSelectionChanged: (Set<Object> values) async {
           if (values.isEmpty) return;
-          await segmented.onChanged(settingsContext, values.first);
+          await (segmented.onChanged as Function)(settingsContext, values.first);
           settingsContext.refresh();
         },
       ),

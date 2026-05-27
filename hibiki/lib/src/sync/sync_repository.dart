@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
 /// 同步配置和缓存的持久化层（基于 Preferences 表）。
@@ -15,13 +16,17 @@ class SyncRepository {
   static const _keyFolderCache = 'sync_folder_cache';
   static const _keySyncStats = 'sync_stats_enabled';
   static const _keySyncAudioBook = 'sync_audiobook_enabled';
-  static const _keySyncMode = 'sync_mode';
+  static const _keyAutoSync = 'sync_auto_enabled';
   static const _keyLastSyncMs = 'sync_last_sync_ms';
   static const _keyDesktopCredentials = 'sync_desktop_credentials';
+  static const _keyBackendType = 'sync_backend_type';
+  static const _keySyncContent = 'sync_content_enabled';
+  static const _keyWebDavUrl = 'sync_webdav_url';
+  static const _keyWebDavUsername = 'sync_webdav_username';
+  static const _keyWebDavPassword = 'sync_webdav_password';
 
   static const String syncStatsPreferenceKey = _keySyncStats;
   static const String syncAudioBookPreferenceKey = _keySyncAudioBook;
-  static const String syncModePreferenceKey = _keySyncMode;
 
   // ── Folder cache ──────────────────────────────────────────────────
 
@@ -78,10 +83,10 @@ class SyncRepository {
   Future<void> setSyncAudioBookEnabled(bool v) =>
       _db.setPrefTyped<bool>(_keySyncAudioBook, v);
 
-  Future<String> getSyncMode() =>
-      _db.getPrefTyped<String>(_keySyncMode, 'merge');
-  Future<void> setSyncMode(String mode) =>
-      _db.setPrefTyped<String>(_keySyncMode, mode);
+  Future<bool> isAutoSyncEnabled() =>
+      _db.getPrefTyped<bool>(_keyAutoSync, false);
+  Future<void> setAutoSyncEnabled(bool v) =>
+      _db.setPrefTyped<bool>(_keyAutoSync, v);
 
   Future<int?> getLastSyncMs() async {
     final s = await _getStringOrNull(_keyLastSyncMs);
@@ -112,6 +117,63 @@ class SyncRepository {
     await (_db.delete(_db.preferences)
           ..where((t) => t.key.equals(_keyDesktopCredentials)))
         .go();
+  }
+
+  // ── Backend type ───────────────────────────────────────────────────
+
+  Future<SyncBackendType> getBackendType() async {
+    final raw = await _getStringOrNull(_keyBackendType);
+    if (raw == 'webDav') return SyncBackendType.webDav;
+    return SyncBackendType.googleDrive;
+  }
+
+  Future<void> setBackendType(SyncBackendType type) =>
+      _setString(_keyBackendType, type.name);
+
+  // ── Content sync ──────────────────────────────────────────────────
+
+  Future<bool> isSyncContentEnabled() =>
+      _db.getPrefTyped<bool>(_keySyncContent, false);
+  Future<void> setSyncContentEnabled(bool v) =>
+      _db.setPrefTyped<bool>(_keySyncContent, v);
+
+  // ── WebDAV credentials ────────────────────────────────────────────
+
+  Future<String?> getWebDavUrl() => _getStringOrNull(_keyWebDavUrl);
+  Future<void> setWebDavUrl(String? url) async {
+    if (url == null) {
+      await (_db.delete(_db.preferences)
+            ..where((t) => t.key.equals(_keyWebDavUrl)))
+          .go();
+      return;
+    }
+    await _setString(_keyWebDavUrl, url);
+  }
+
+  Future<String?> getWebDavUsername() => _getStringOrNull(_keyWebDavUsername);
+  Future<void> setWebDavUsername(String? username) async {
+    if (username == null) {
+      await (_db.delete(_db.preferences)
+            ..where((t) => t.key.equals(_keyWebDavUsername)))
+          .go();
+      return;
+    }
+    await _setString(_keyWebDavUsername, username);
+  }
+
+  Future<String?> getWebDavPassword() async {
+    final encoded = await _getStringOrNull(_keyWebDavPassword);
+    return encoded != null ? _decodeSecret(encoded) : null;
+  }
+
+  Future<void> setWebDavPassword(String? password) async {
+    if (password == null) {
+      await (_db.delete(_db.preferences)
+            ..where((t) => t.key.equals(_keyWebDavPassword)))
+          .go();
+      return;
+    }
+    await _setString(_keyWebDavPassword, _encodeSecret(password));
   }
 
   // ── Encoding ─────────────────────────────────────────────────────

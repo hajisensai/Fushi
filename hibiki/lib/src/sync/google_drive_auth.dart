@@ -28,8 +28,10 @@ class GoogleDriveAuth {
   static const _driveFileScope = 'https://www.googleapis.com/auth/drive.file';
   static const _emailScope = 'https://www.googleapis.com/auth/userinfo.email';
 
-  static const _oauthClientId = String.fromEnvironment('GOOGLE_OAUTH_CLIENT_ID');
-  static const _oauthClientSecret = String.fromEnvironment('GOOGLE_OAUTH_CLIENT_SECRET');
+  static const _oauthClientId =
+      String.fromEnvironment('GOOGLE_OAUTH_CLIENT_ID');
+  static const _oauthClientSecret =
+      String.fromEnvironment('GOOGLE_OAUTH_CLIENT_SECRET');
 
   static final _desktopClientId = auth.ClientId(
     _oauthClientId,
@@ -192,8 +194,7 @@ class GoogleDriveAuth {
 
   // ── Desktop user info ─────────────────────────────────────────────
 
-  static const _userinfoUrl =
-      'https://www.googleapis.com/oauth2/v2/userinfo';
+  static const _userinfoUrl = 'https://www.googleapis.com/oauth2/v2/userinfo';
 
   Future<void> _fetchDesktopEmail(http.Client client) async {
     try {

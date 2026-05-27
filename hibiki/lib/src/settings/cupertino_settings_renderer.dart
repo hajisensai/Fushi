@@ -219,7 +219,7 @@ class _CupertinoSettingsItem extends StatelessWidget {
       },
       onValueChanged: (Object? value) async {
         if (value == null) return;
-        await segmented.onChanged(settingsContext, value);
+        await (segmented.onChanged as Function)(settingsContext, value);
         settingsContext.refresh();
       },
     );

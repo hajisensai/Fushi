@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:googleapis/drive/v3.dart' as drive;
@@ -42,6 +43,12 @@ class GoogleDriveHandler {
 
   String? get cachedRootFolderId => _rootFolderId;
   FolderCache get cachedFolderIds => Map.unmodifiable(_titleToFolderId);
+
+  void cacheBookFolderIds(List<DriveFile> folders) {
+    for (final f in folders) {
+      _titleToFolderId[f.name] = f.id;
+    }
+  }
 
   // ── API client ────────────────────────────────────────────────────
 
@@ -332,6 +339,123 @@ class GoogleDriveHandler {
         ..parents = [folderId],
       uploadMedia: media,
     );
+  }
+
+  // ── Content file operations ────────────────────────────────────────
+
+  Future<void> uploadContentFile({
+    required String folderId,
+    required String fileName,
+    required File file,
+    void Function(double progress)? onProgress,
+  }) async {
+    final length = await file.length();
+    final contentType = _guessContentType(fileName);
+
+    final existingId = await _findFileId(folderId, fileName);
+
+    await _call((api) async {
+      int bytesUploaded = 0;
+      final stream = file.openRead().map((chunk) {
+        bytesUploaded += chunk.length;
+        onProgress?.call(length > 0 ? bytesUploaded / length : 0);
+        return chunk;
+      });
+      final media = drive.Media(stream, length, contentType: contentType);
+
+      if (existingId != null) {
+        await api.files.update(
+          drive.File()..name = fileName,
+          existingId,
+          uploadMedia: media,
+        );
+      } else {
+        await api.files.create(
+          drive.File()
+            ..name = fileName
+            ..parents = [folderId],
+          uploadMedia: media,
+        );
+      }
+    });
+  }
+
+  Future<void> downloadContentFile({
+    required String fileId,
+    required File destination,
+    void Function(double progress)? onProgress,
+  }) async {
+    await _call((api) async {
+      final metadata = await api.files.get(
+        fileId,
+        $fields: 'size',
+      ) as drive.File;
+      final totalSize =
+          metadata.size != null ? int.tryParse(metadata.size!) : null;
+
+      final media = await api.files.get(
+        fileId,
+        downloadOptions: drive.DownloadOptions.fullMedia,
+      ) as drive.Media;
+
+      final sink = destination.openWrite();
+      int bytesDownloaded = 0;
+      bool success = false;
+      try {
+        await for (final chunk in media.stream) {
+          sink.add(chunk);
+          bytesDownloaded += chunk.length;
+          if (totalSize != null && totalSize > 0) {
+            onProgress?.call(bytesDownloaded / totalSize);
+          }
+        }
+        success = true;
+      } finally {
+        await sink.close();
+        if (!success) {
+          try {
+            destination.deleteSync();
+          } catch (_) {}
+        }
+      }
+    });
+  }
+
+  Future<DriveFile?> findContentFile(
+    String folderId,
+    String fileName,
+  ) async {
+    return _findFile(folderId, fileName);
+  }
+
+  Future<DriveFile?> _findFile(String folderId, String fileName) async {
+    final qFolder = _escapeQuery(folderId);
+    final qName = _escapeQuery(fileName);
+    return _call((api) async {
+      final list = await api.files.list(
+        q: "trashed=false and '$qFolder' in parents and name='$qName'",
+        $fields: 'files(id,name)',
+      );
+      if (list.files != null && list.files!.isNotEmpty) {
+        return _toDriveFile(list.files!.first);
+      }
+      return null;
+    });
+  }
+
+  Future<String?> _findFileId(String folderId, String fileName) async {
+    final file = await _findFile(folderId, fileName);
+    return file?.id;
+  }
+
+  static String _guessContentType(String fileName) {
+    final lower = fileName.toLowerCase();
+    if (lower.endsWith('.epub')) return 'application/epub+zip';
+    if (lower.endsWith('.m4b') || lower.endsWith('.m4a')) return 'audio/mp4';
+    if (lower.endsWith('.mp3')) return 'audio/mpeg';
+    if (lower.endsWith('.ogg')) return 'audio/ogg';
+    if (lower.endsWith('.flac')) return 'audio/flac';
+    return 'application/octet-stream';
   }
 
   static String _escapeQuery(String value) => value.replaceAll("'", "\\'");

@@ -2,6 +2,7 @@ import 'package:change_notifier_builder/change_notifier_builder.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hibiki/src/sync/sync_auto_trigger.dart';
 import 'package:hibiki/src/utils/spacing.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
@@ -55,6 +56,8 @@ class _HomePageState extends BasePageState<HomePage>
           debugChannel: appModel.updateDebugChannel,
         );
       }
+
+      triggerAutoSyncOnAppOpen(db: appModel.database);
     });
   }
 
@@ -89,8 +92,17 @@ class _HomePageState extends BasePageState<HomePage>
         searchWithWildcards: false,
         useCache: false,
       );
-    } else if (AppLifecycleState.paused == state && appModel.lowMemoryMode) {
-      PaintingBinding.instance.imageCache.clear();
+    } else if (AppLifecycleState.paused == state) {
+      if (appModel.lowMemoryMode) {
+        PaintingBinding.instance.imageCache.clear();
+      }
+      final item = appModel.currentMediaItem;
+      if (item != null) {
+        triggerAutoSyncOnBackground(
+          db: appModel.database,
+          mediaIdentifier: item.mediaIdentifier,
+        );
+      }
     }
   }
 
@@ -124,11 +136,40 @@ class _HomePageState extends BasePageState<HomePage>
       return const SizedBox.shrink();
     }
 
-    return Focus(
-      autofocus: isDesktopPlatform,
-      focusNode: _keyboardFocusNode,
-      onKeyEvent: _handleKeyEvent,
-      child: GestureDetector(
+    return ValueListenableBuilder<bool>(
+      valueListenable: syncInProgress,
+      builder: (context, syncing, child) => PopScope(
+        canPop: !syncing,
+        onPopInvokedWithResult: (didPop, _) async {
+          if (didPop) return;
+          final confirmed = await showDialog<bool>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: Text(t.sync_exit_warning_title),
+              content: Text(t.sync_exit_warning),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: Text(t.dialog_cancel),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: Text(t.dialog_exit),
+                ),
+              ],
+            ),
+          );
+          if (confirmed == true) {
+            SystemNavigator.pop();
+          }
+        },
+        child: child!,
+      ),
+      child: Focus(
+        autofocus: isDesktopPlatform,
+        focusNode: _keyboardFocusNode,
+        onKeyEvent: _handleKeyEvent,
+        child: GestureDetector(
         onTap: () {
           final FocusNode? current = FocusManager.instance.primaryFocus;
           if (current != null && current != _keyboardFocusNode) {
@@ -149,7 +190,7 @@ class _HomePageState extends BasePageState<HomePage>
           },
         ),
       ),
-    );
+    ));
   }
 
   Widget _buildDesktopLayout(WindowSizeClass sizeClass) {

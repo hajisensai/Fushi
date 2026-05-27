@@ -2,9 +2,9 @@ import 'dart:developer' as developer;
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/sync/google_drive_auth.dart';
-import 'package:hibiki/src/sync/google_drive_handler.dart';
+import 'package:hibiki/src/sync/google_drive_sync_backend.dart';
 import 'package:hibiki/src/sync/position_converter.dart';
+import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_manager.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
@@ -57,12 +57,15 @@ class SyncCompareEntry {
   }
 }
 
-Future<List<SyncCompareEntry>> _fetchCompareData(HibikiDatabase db) async {
-  final drive = GoogleDriveHandler.instance;
+Future<List<SyncCompareEntry>> _fetchCompareData(
+  HibikiDatabase db,
+  SyncBackend backend,
+) async {
   final repo = SyncRepository(db);
 
-  final rootId = await _ensureRoot(drive, repo);
-  final remoteBooks = await drive.listBooks(rootId);
+  final rootId = await _ensureRoot(backend, repo);
+  final remoteBooks = await backend.listBooks(rootId);
+  backend.cacheBookFolderIds(remoteBooks);
   final localBooks = await db.getAllEpubBooks();
 
   final allTitles = <String>{};
@@ -86,12 +89,31 @@ Future<List<SyncCompareEntry>> _fetchCompareData(HibikiDatabase db) async {
     statCountByTitle[r.title] = (statCountByTitle[r.title] ?? 0) + 1;
   }
 
+  // Fetch remote data in parallel batches to avoid Drive API rate limits
+  final remoteDataMap = <String, _RemoteBookData>{};
+  final remoteJobs = <MapEntry<String, String>>[];
+  for (final title in allTitles) {
+    final sanitized = sanitizeTtuFilename(title);
+    final remote = remoteByTitle[title] ?? remoteByTitle[sanitized];
+    if (remote != null && !remoteJobs.any((e) => e.key == title)) {
+      remoteJobs.add(MapEntry(title, remote.id));
+    }
+  }
+  const batchSize = 5;
+  for (var i = 0; i < remoteJobs.length; i += batchSize) {
+    final batch = remoteJobs.skip(i).take(batchSize).toList();
+    final results = await Future.wait(
+      batch.map((e) => _fetchRemoteBookData(backend, e.value)),
+    );
+    for (var j = 0; j < batch.length; j++) {
+      remoteDataMap[batch[j].key] = results[j];
+    }
+  }
+
   final entries = <SyncCompareEntry>[];
 
   for (final title in allTitles) {
     final local = localByTitle[title];
-    final sanitized = sanitizeTtuFilename(title);
-    final remote = remoteByTitle[title] ?? remoteByTitle[sanitized];
 
     double? localProg;
     int? localUpdatedAt;
@@ -125,67 +147,102 @@ Future<List<SyncCompareEntry>> _fetchCompareData(HibikiDatabase db) async {
       }
     }
 
-    double? remoteProg;
-    int? remoteUpdatedAt;
-    int? remoteStatsCount;
-    double? remoteAudioSec;
-
-    if (remote != null) {
-      try {
-        final syncFiles = await drive.listSyncFiles(remote.id);
-        if (syncFiles.progress != null) {
-          final progress = await drive.getProgressFile(syncFiles.progress!.id);
-          remoteProg = progress.progress;
-          remoteUpdatedAt = progress.lastBookmarkModified;
-        }
-        if (syncFiles.statistics != null) {
-          final stats = await drive.getStatsFile(syncFiles.statistics!.id);
-          remoteStatsCount = stats.length;
-        }
-        if (syncFiles.audioBook != null) {
-          final audio = await drive.getAudioBookFile(syncFiles.audioBook!.id);
-          remoteAudioSec = audio.playbackPositionSec;
-        }
-      } catch (e) {
-        developer.log(
-          'Failed to fetch remote data for "$title"',
-          error: e,
-          name: 'SyncCompare',
-        );
-      }
-    }
+    final remoteData = remoteDataMap[title];
 
     entries.add(SyncCompareEntry(
       title: title,
       bookId: local?.id,
       localProgress: localProg,
       localUpdatedAt: localUpdatedAt,
-      remoteProgress: remoteProg,
-      remoteUpdatedAt: remoteUpdatedAt,
+      remoteProgress: remoteData?.progress,
+      remoteUpdatedAt: remoteData?.updatedAt,
       localStatsCount: localStatsCount,
-      remoteStatsCount: remoteStatsCount,
+      remoteStatsCount: remoteData?.statsCount,
       localAudioPosMs: localAudioMs,
-      remoteAudioPosSec: remoteAudioSec,
+      remoteAudioPosSec: remoteData?.audioPosSec,
     ));
   }
 
-  final rootIdNow = drive.cachedRootFolderId;
+  final rootIdNow = backend.cachedRootFolderId;
   if (rootIdNow != null) await repo.setRootFolderId(rootIdNow);
-  final cache = drive.cachedFolderIds;
+  final cache = backend.cachedFolderIds;
   if (cache.isNotEmpty) await repo.setFolderCache(cache);
 
   return entries;
 }
 
+class _RemoteBookData {
+  const _RemoteBookData({
+    this.progress,
+    this.updatedAt,
+    this.statsCount,
+    this.audioPosSec,
+  });
+
+  final double? progress;
+  final int? updatedAt;
+  final int? statsCount;
+  final double? audioPosSec;
+}
+
+Future<_RemoteBookData> _fetchRemoteBookData(
+  SyncBackend backend,
+  String folderId,
+) async {
+  try {
+    final syncFiles = await backend.listSyncFiles(folderId);
+
+    double? progress;
+    int? updatedAt;
+    int? statsCount;
+    double? audioPosSec;
+
+    final futures = <Future<void>>[];
+
+    if (syncFiles.progress != null) {
+      futures.add(backend.getProgressFile(syncFiles.progress!.id).then((p) {
+        progress = p.progress;
+        updatedAt = p.lastBookmarkModified;
+      }));
+    }
+    if (syncFiles.statistics != null) {
+      futures.add(backend.getStatsFile(syncFiles.statistics!.id).then((s) {
+        statsCount = s.length;
+      }));
+    }
+    if (syncFiles.audioBook != null) {
+      futures.add(backend.getAudioBookFile(syncFiles.audioBook!.id).then((a) {
+        audioPosSec = a.playbackPositionSec;
+      }));
+    }
+
+    await Future.wait(futures);
+
+    return _RemoteBookData(
+      progress: progress,
+      updatedAt: updatedAt,
+      statsCount: statsCount,
+      audioPosSec: audioPosSec,
+    );
+  } catch (e) {
+    developer.log(
+      'Failed to fetch remote data for folder $folderId',
+      error: e,
+      name: 'SyncCompare',
+    );
+    return const _RemoteBookData();
+  }
+}
+
 Future<String> _ensureRoot(
-  GoogleDriveHandler drive,
+  SyncBackend backend,
   SyncRepository repo,
 ) async {
-  if (drive.cachedRootFolderId != null) return drive.cachedRootFolderId!;
+  if (backend.cachedRootFolderId != null) return backend.cachedRootFolderId!;
   final savedRoot = await repo.getRootFolderId();
   final savedCache = await repo.getFolderCache();
-  drive.restoreCache(rootFolderId: savedRoot, titleToFolderId: savedCache);
-  return drive.findOrCreateRootFolder();
+  backend.restoreCache(rootFolderId: savedRoot, titleToFolderId: savedCache);
+  return backend.findOrCreateRootFolder();
 }
 
 String _unsanitize(String name) {
@@ -203,8 +260,9 @@ Future<void> showSyncCompareDialog(
   BuildContext context,
   HibikiDatabase db,
 ) async {
-  final auth = GoogleDriveAuth.instance;
-  if (!await auth.isAuthenticated) {
+  final repo = SyncRepository(db);
+  final backend = resolveSyncBackend(await repo.getBackendType());
+  if (!await backend.isAuthenticated) {
     if (!context.mounted) return;
     _showMessage(context, t.sync_not_signed_in);
     return;
@@ -215,7 +273,7 @@ Future<void> showSyncCompareDialog(
   final applied = await showDialog<int>(
     context: context,
     barrierDismissible: false,
-    builder: (_) => _SyncCompareDialog(db: db),
+    builder: (_) => _SyncCompareDialog(db: db, backend: backend),
   );
   if (applied != null && applied > 0 && context.mounted) {
     _showMessage(context, t.sync_compare_applied(count: applied));
@@ -244,8 +302,9 @@ void _showMessage(BuildContext context, String msg) {
 }
 
 class _SyncCompareDialog extends StatefulWidget {
-  const _SyncCompareDialog({required this.db});
+  const _SyncCompareDialog({required this.db, required this.backend});
   final HibikiDatabase db;
+  final SyncBackend backend;
 
   @override
   State<_SyncCompareDialog> createState() => _SyncCompareDialogState();
@@ -265,12 +324,10 @@ class _SyncCompareDialogState extends State<_SyncCompareDialog> {
 
   Future<void> _load() async {
     try {
-      final entries = await _fetchCompareData(widget.db);
+      final entries = await _fetchCompareData(widget.db, widget.backend);
       final choices = <String, SyncChoice>{};
       for (final e in entries) {
-        if (e.isSynced) {
-          choices[e.title] = SyncChoice.skip;
-        } else if (e.hasConflict) {
+        if (e.bookId == null || e.isSynced) {
           choices[e.title] = SyncChoice.skip;
         } else if (e.autoDirection == SyncDirection.importFromTtu) {
           choices[e.title] = SyncChoice.useRemote;
@@ -297,14 +354,10 @@ class _SyncCompareDialogState extends State<_SyncCompareDialog> {
 
     setState(() => _applying = true);
     try {
-      final manager = SyncManager(db: widget.db);
+      final manager = SyncManager(db: widget.db, backend: widget.backend);
       final repo = SyncRepository(widget.db);
       final syncStats = await repo.isSyncStatsEnabled();
       final syncAudioBook = await repo.isSyncAudioBookEnabled();
-      final syncModeStr = await repo.getSyncMode();
-      final statsSyncMode = syncModeStr == 'replace'
-          ? StatisticsSyncMode.replace
-          : StatisticsSyncMode.merge;
 
       int applied = 0;
       final errors = <String>[];
@@ -321,14 +374,18 @@ class _SyncCompareDialogState extends State<_SyncCompareDialog> {
             : SyncDirection.importFromTtu;
 
         try {
-          await manager.syncBook(
+          final result = await manager.syncBook(
             book: book,
             direction: direction,
             syncStats: syncStats,
-            statsSyncMode: statsSyncMode,
+            statsSyncMode: StatisticsSyncMode.merge,
             syncAudioBook: syncAudioBook,
           );
-          applied++;
+          if (result.direction != SyncResult.skipped) {
+            applied++;
+          } else {
+            errors.add(entry.title);
+          }
         } catch (e) {
           errors.add(entry.title);
           developer.log(
@@ -340,6 +397,12 @@ class _SyncCompareDialogState extends State<_SyncCompareDialog> {
       }
 
       if (mounted) {
+        if (errors.isNotEmpty) {
+          _showMessage(
+            context,
+            t.sync_error(message: errors.join(', ')),
+          );
+        }
         Navigator.pop(context, applied);
       }
     } catch (e) {
@@ -356,7 +419,7 @@ class _SyncCompareDialogState extends State<_SyncCompareDialog> {
     if (_entries == null) return 0;
     return _entries!.where((e) {
       final c = _choices[e.title];
-      return c != null && c != SyncChoice.skip;
+      return c != null && c != SyncChoice.skip && e.bookId != null;
     }).length;
   }
 

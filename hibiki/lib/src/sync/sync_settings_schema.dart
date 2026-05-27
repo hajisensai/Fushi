@@ -2,12 +2,11 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
-import 'package:hibiki/src/sync/google_drive_auth.dart';
-import 'package:hibiki/src/sync/google_drive_handler.dart';
+import 'package:hibiki/src/sync/google_drive_sync_backend.dart';
+import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_compare_dialog.dart';
-import 'package:hibiki/src/sync/sync_manager.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
-import 'package:hibiki/src/sync/ttu_models.dart';
+import 'package:hibiki/src/sync/webdav_sync_backend.dart';
 import 'package:hibiki/utils.dart';
 
 SettingsDestination buildSyncBackupDestination() {
@@ -17,6 +16,46 @@ SettingsDestination buildSyncBackupDestination() {
     summary: t.sync_summary,
     icon: Icons.sync,
     sections: <SettingsSection>[
+      SettingsSection(
+        title: t.sync_backend,
+        items: <SettingsItem>[
+          SettingsSegmentedItem<String>(
+            id: 'sync.mode',
+            title: t.sync_backend,
+            icon: Icons.cloud_outlined,
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption(
+                value: SyncBackendType.googleDrive.name,
+                label: t.sync_backend_google_drive,
+              ),
+              SettingsSegmentOption(
+                value: SyncBackendType.webDav.name,
+                label: t.sync_backend_webdav,
+              ),
+            ],
+            selected: (SettingsContext ctx) =>
+                _syncSettings(ctx).backendType.name,
+            onChanged: (SettingsContext ctx, String value) async {
+              final type = value == SyncBackendType.webDav.name
+                  ? SyncBackendType.webDav
+                  : SyncBackendType.googleDrive;
+              _syncSettings(ctx).backendType = type;
+              final repo = SyncRepository(ctx.appModel.database);
+              await repo.setBackendType(type);
+              await repo.clearFolderCache();
+            },
+            controlBelow: true,
+          ),
+          SettingsCustomItem(
+            id: 'sync.webdav_config',
+            icon: Icons.dns_outlined,
+            visible: (SettingsContext ctx) =>
+                _syncSettings(ctx).backendType == SyncBackendType.webDav,
+            builder: (SettingsContext ctx) =>
+                _WebDavConfigWidget(settingsContext: ctx),
+          ),
+        ],
+      ),
       SettingsSection(
         title: t.sync_account,
         items: <SettingsItem>[
@@ -31,27 +70,15 @@ SettingsDestination buildSyncBackupDestination() {
       SettingsSection(
         title: t.sync_options,
         items: <SettingsItem>[
-          SettingsSegmentedItem<String>(
-            id: 'sync.mode',
-            title: t.sync_mode,
-            icon: Icons.sync_alt_outlined,
-            controlBelow: true,
-            options: <SettingsSegmentOption<String>>[
-              SettingsSegmentOption<String>(
-                value: 'merge',
-                label: t.sync_mode_merge,
-                tooltip: t.sync_mode_merge,
-              ),
-              SettingsSegmentOption<String>(
-                value: 'replace',
-                label: t.sync_mode_replace,
-                tooltip: t.sync_mode_replace,
-              ),
-            ],
-            selected: (SettingsContext ctx) => _syncSettings(ctx).syncMode,
-            onChanged: (SettingsContext ctx, String value) async {
-              _syncSettings(ctx).syncMode = value;
-              await SyncRepository(ctx.appModel.database).setSyncMode(value);
+          SettingsSwitchItem(
+            id: 'sync.auto_sync',
+            title: t.sync_auto_sync,
+            icon: Icons.sync_outlined,
+            value: (SettingsContext ctx) => _syncSettings(ctx).autoSync,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).autoSync = value;
+              await SyncRepository(ctx.appModel.database)
+                  .setAutoSyncEnabled(value);
             },
           ),
           SettingsSwitchItem(
@@ -76,24 +103,23 @@ SettingsDestination buildSyncBackupDestination() {
                   .setSyncAudioBookEnabled(value);
             },
           ),
+          SettingsSwitchItem(
+            id: 'sync.content',
+            title: t.sync_content,
+            subtitle: t.sync_content_warning,
+            icon: Icons.book_outlined,
+            value: (SettingsContext ctx) => _syncSettings(ctx).syncContent,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).syncContent = value;
+              await SyncRepository(ctx.appModel.database)
+                  .setSyncContentEnabled(value);
+            },
+          ),
         ],
       ),
       SettingsSection(
         title: t.sync_actions,
         items: <SettingsItem>[
-          SettingsActionItem(
-            id: 'sync.sync_all',
-            title: t.sync_all,
-            icon: Icons.sync,
-            onTap: (SettingsContext ctx) =>
-                _performSync(ctx, importOnly: false),
-          ),
-          SettingsActionItem(
-            id: 'sync.import_only',
-            title: t.sync_import_only,
-            icon: Icons.cloud_download_outlined,
-            onTap: (SettingsContext ctx) => _performSync(ctx, importOnly: true),
-          ),
           SettingsActionItem(
             id: 'sync.compare',
             title: t.sync_compare,
@@ -109,90 +135,12 @@ SettingsDestination buildSyncBackupDestination() {
   );
 }
 
-bool _syncInProgress = false;
 final Expando<_SyncSettingsState> _syncSettingsByContext =
     Expando<_SyncSettingsState>('sync settings state');
 
 _SyncSettingsState _syncSettings(SettingsContext ctx) {
   return _syncSettingsByContext[ctx.context] ??= _SyncSettingsState(ctx)
     ..load();
-}
-
-Future<void> _performSync(
-  SettingsContext ctx, {
-  required bool importOnly,
-}) async {
-  if (_syncInProgress) return;
-  _syncInProgress = true;
-  try {
-    await _performSyncInner(ctx, importOnly: importOnly);
-  } finally {
-    _syncInProgress = false;
-  }
-}
-
-Future<void> _performSyncInner(
-  SettingsContext ctx, {
-  required bool importOnly,
-}) async {
-  final context = ctx.context;
-  final auth = GoogleDriveAuth.instance;
-  if (!await auth.isAuthenticated) {
-    if (!context.mounted) return;
-    _showSnackBar(context, t.sync_not_signed_in);
-    return;
-  }
-
-  if (!context.mounted) return;
-  _showSnackBar(context, t.sync_in_progress);
-
-  try {
-    final repo = SyncRepository(ctx.appModel.database);
-    final syncStats = await repo.isSyncStatsEnabled();
-    final syncAudioBook = await repo.isSyncAudioBookEnabled();
-    final syncModeStr = await repo.getSyncMode();
-    final syncMode = syncModeStr == 'replace'
-        ? StatisticsSyncMode.replace
-        : StatisticsSyncMode.merge;
-
-    final manager = SyncManager(db: ctx.appModel.database);
-    final results = await manager.syncAllBooks(
-      syncStats: syncStats,
-      statsSyncMode: syncMode,
-      syncAudioBook: syncAudioBook,
-      importOnly: importOnly,
-    );
-
-    int imported = 0, exported = 0, synced = 0;
-    for (final r in results) {
-      switch (r.direction) {
-        case SyncResult.imported:
-          imported++;
-        case SyncResult.exported:
-          exported++;
-        case SyncResult.synced:
-          synced++;
-        case SyncResult.skipped:
-          break;
-      }
-    }
-
-    if (context.mounted) {
-      _showSnackBar(
-        context,
-        t.sync_complete(imported: imported, exported: exported, synced: synced),
-      );
-      ctx.refresh();
-    }
-  } on GoogleDriveAuthError catch (e) {
-    if (context.mounted) {
-      _showSnackBar(context, t.sync_auth_error(message: e.message));
-    }
-  } catch (e) {
-    if (context.mounted) {
-      _showSnackBar(context, t.sync_error(message: e.toString()));
-    }
-  }
 }
 
 void _showSnackBar(BuildContext context, String message) {
@@ -231,6 +179,7 @@ class _SyncAccountWidgetState extends State<_SyncAccountWidget> {
   bool _isLoading = false;
   bool _initialCheckDone = false;
   String? _email;
+  SyncBackend? _backend;
 
   @override
   void initState() {
@@ -238,17 +187,23 @@ class _SyncAccountWidgetState extends State<_SyncAccountWidget> {
     _checkAuth();
   }
 
+  Future<SyncBackend> _resolveBackend() async {
+    final repo = SyncRepository(widget.settingsContext.appModel.database);
+    final currentType = await repo.getBackendType();
+    final expected = resolveSyncBackend(currentType);
+    if (_backend != null && _backend == expected) return _backend!;
+    _backend = expected;
+    return _backend!;
+  }
+
   Future<void> _checkAuth() async {
     try {
-      final auth = GoogleDriveAuth.instance;
+      final backend = await _resolveBackend();
+      final repo = SyncRepository(widget.settingsContext.appModel.database);
+      await backend.restoreAuth(repo);
 
-      if (!GoogleDriveAuth.useMobileAuth && !await auth.isAuthenticated) {
-        final repo = SyncRepository(widget.settingsContext.appModel.database);
-        await auth.restoreDesktopAuth(repo);
-      }
-
-      final authed = await auth.isAuthenticated;
-      final email = authed ? await auth.currentEmail : null;
+      final authed = await backend.isAuthenticated;
+      final email = authed ? await backend.currentEmail : null;
       if (mounted) {
         setState(() {
           _isAuthenticated = authed;
@@ -344,10 +299,11 @@ class _SyncAccountWidgetState extends State<_SyncAccountWidget> {
   Future<void> _signIn() async {
     setState(() => _isLoading = true);
     try {
+      final backend = await _resolveBackend();
       final repo = SyncRepository(widget.settingsContext.appModel.database);
-      await GoogleDriveAuth.instance.authenticate(repo: repo);
+      await backend.authenticate(repo: repo);
       await _checkAuth();
-    } on GoogleDriveAuthError catch (e) {
+    } on SyncAuthError catch (e) {
       if (mounted) {
         _showSnackBar(context, t.sync_auth_error(message: e.message));
       }
@@ -363,10 +319,12 @@ class _SyncAccountWidgetState extends State<_SyncAccountWidget> {
   Future<void> _signOut() async {
     setState(() => _isLoading = true);
     try {
+      final backend = await _resolveBackend();
       final repo = SyncRepository(widget.settingsContext.appModel.database);
-      await GoogleDriveAuth.instance.signOut(repo: repo);
-      GoogleDriveHandler.instance.clearCache();
+      await backend.signOut(repo: repo);
+      backend.clearCache();
       await repo.clearFolderCache();
+      _backend = null;
       await _checkAuth();
     } catch (e) {
       if (mounted) {
@@ -378,35 +336,197 @@ class _SyncAccountWidgetState extends State<_SyncAccountWidget> {
   }
 }
 
+// ── WebDAV config widget ─────────────────────────────────────────────
+
+class _WebDavConfigWidget extends StatefulWidget {
+  const _WebDavConfigWidget({required this.settingsContext});
+  final SettingsContext settingsContext;
+
+  @override
+  State<_WebDavConfigWidget> createState() => _WebDavConfigWidgetState();
+}
+
+class _WebDavConfigWidgetState extends State<_WebDavConfigWidget> {
+  late final TextEditingController _urlController;
+  late final TextEditingController _usernameController;
+  late final TextEditingController _passwordController;
+  bool _isTesting = false;
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _urlController = TextEditingController();
+    _usernameController = TextEditingController();
+    _passwordController = TextEditingController();
+    _loadCredentials();
+  }
+
+  @override
+  void dispose() {
+    _urlController.dispose();
+    _usernameController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadCredentials() async {
+    final repo = SyncRepository(widget.settingsContext.appModel.database);
+    final url = await repo.getWebDavUrl();
+    final username = await repo.getWebDavUsername();
+    final password = await repo.getWebDavPassword();
+    if (mounted) {
+      setState(() {
+        _urlController.text = url ?? '';
+        _usernameController.text = username ?? '';
+        _passwordController.text = password ?? '';
+        _loaded = true;
+      });
+    }
+  }
+
+  Future<void> _saveCredentials() async {
+    final repo = SyncRepository(widget.settingsContext.appModel.database);
+    final url = _urlController.text.trim();
+    final username = _usernameController.text.trim();
+    final password = _passwordController.text;
+    await repo.setWebDavUrl(url.isEmpty ? null : url);
+    await repo.setWebDavUsername(username.isEmpty ? null : username);
+    await repo.setWebDavPassword(password.isEmpty ? null : password);
+  }
+
+  Future<void> _testConnection() async {
+    await _saveCredentials();
+    setState(() => _isTesting = true);
+    try {
+      final url = _urlController.text.trim();
+      final username = _usernameController.text.trim();
+      final password = _passwordController.text;
+      if (url.isEmpty || username.isEmpty || password.isEmpty) {
+        if (mounted) {
+          _showSnackBar(
+              context, t.sync_webdav_test_failed(message: 'Missing fields'));
+        }
+        return;
+      }
+      await WebDavSyncBackend.instance.testConnection(
+        url: url,
+        username: username,
+        password: password,
+      );
+      if (mounted) _showSnackBar(context, t.sync_webdav_test_success);
+    } on SyncAuthError catch (e) {
+      if (mounted) {
+        _showSnackBar(
+            context, t.sync_webdav_test_failed(message: e.message));
+      }
+    } on SyncBackendError catch (e) {
+      if (mounted) {
+        _showSnackBar(
+            context, t.sync_webdav_test_failed(message: e.message));
+      }
+    } catch (e) {
+      if (mounted) {
+        _showSnackBar(
+            context, t.sync_webdav_test_failed(message: e.toString()));
+      }
+    } finally {
+      if (mounted) setState(() => _isTesting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_loaded) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          TextField(
+            controller: _urlController,
+            decoration: InputDecoration(
+              labelText: t.sync_webdav_url,
+              hintText: 'https://cloud.example.com/remote.php/dav/files/user',
+              border: const OutlineInputBorder(),
+              isDense: true,
+            ),
+            keyboardType: TextInputType.url,
+            onChanged: (_) => _saveCredentials(),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _usernameController,
+            decoration: InputDecoration(
+              labelText: t.sync_webdav_username,
+              border: const OutlineInputBorder(),
+              isDense: true,
+            ),
+            onChanged: (_) => _saveCredentials(),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _passwordController,
+            decoration: InputDecoration(
+              labelText: t.sync_webdav_password,
+              border: const OutlineInputBorder(),
+              isDense: true,
+            ),
+            obscureText: true,
+            onChanged: (_) => _saveCredentials(),
+          ),
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerRight,
+            child: _isTesting
+                ? SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: adaptiveIndicator(context: context, strokeWidth: 2),
+                  )
+                : FilledButton.tonal(
+                    onPressed: _testConnection,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        const Icon(Icons.wifi_find, size: 18),
+                        const SizedBox(width: 8),
+                        Text(t.sync_webdav_test),
+                      ],
+                    ),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _SyncSettingsState {
   _SyncSettingsState(this._settingsContext)
       : _repo = SyncRepository(_settingsContext.appModel.database);
 
   final SettingsContext _settingsContext;
   final SyncRepository _repo;
-  String _syncMode = 'merge';
-  bool _syncStats = true;
-  bool _syncAudioBook = true;
+  SyncBackendType backendType = SyncBackendType.googleDrive;
+  bool autoSync = false;
+  bool syncStats = true;
+  bool syncAudioBook = true;
+  bool syncContent = false;
   bool _loaded = false;
   bool _loading = false;
-
-  String get syncMode => _syncMode;
-  set syncMode(String value) => _syncMode = value;
-
-  bool get syncStats => _syncStats;
-  set syncStats(bool value) => _syncStats = value;
-
-  bool get syncAudioBook => _syncAudioBook;
-  set syncAudioBook(bool value) => _syncAudioBook = value;
 
   Future<void> load() async {
     if (_loaded || _loading) return;
 
     _loading = true;
     try {
-      _syncMode = await _repo.getSyncMode();
-      _syncStats = await _repo.isSyncStatsEnabled();
-      _syncAudioBook = await _repo.isSyncAudioBookEnabled();
+      backendType = await _repo.getBackendType();
+      autoSync = await _repo.isAutoSyncEnabled();
+      syncStats = await _repo.isSyncStatsEnabled();
+      syncAudioBook = await _repo.isSyncAudioBookEnabled();
+      syncContent = await _repo.isSyncContentEnabled();
       _loaded = true;
       _settingsContext.refresh();
     } finally {

@@ -48,7 +48,7 @@ void _addKey(List<String> args, int idx, bool dryRun) {
       continue;
     }
 
-    final String value = _isZhCn(file) ? zhValue : _isBase(file) ? enValue : zhValue;
+    final String value = _isZhCn(file) ? zhValue : enValue;
     json[key] = value;
     changed++;
 

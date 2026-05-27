@@ -1,15 +1,16 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:drift/drift.dart';
-import 'package:hibiki/src/sync/google_drive_auth.dart';
-import 'package:hibiki/src/sync/google_drive_handler.dart';
 import 'package:hibiki/src/sync/position_converter.dart';
+import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 import 'package:hibiki_core/hibiki_core.dart';
+import 'package:path/path.dart' as p;
 
 class SyncBookResult {
   const SyncBookResult({
@@ -26,14 +27,14 @@ class SyncBookResult {
 }
 
 class SyncManager {
-  SyncManager({required HibikiDatabase db})
+  SyncManager({required HibikiDatabase db, required SyncBackend backend})
       : _db = db,
         _repo = SyncRepository(db),
-        _drive = GoogleDriveHandler.instance;
+        _backend = backend;
 
   final HibikiDatabase _db;
   final SyncRepository _repo;
-  final GoogleDriveHandler _drive;
+  final SyncBackend _backend;
 
   /// 同步单本书。返回同步结果。
   Future<SyncBookResult> syncBook({
@@ -42,6 +43,7 @@ class SyncManager {
     required bool syncStats,
     required StatisticsSyncMode statsSyncMode,
     required bool syncAudioBook,
+    bool syncContent = false,
     bool importOnly = false,
   }) async {
     try {
@@ -51,13 +53,14 @@ class SyncManager {
         syncStats: syncStats,
         statsSyncMode: statsSyncMode,
         syncAudioBook: syncAudioBook,
+        syncContent: syncContent,
         importOnly: importOnly,
       );
       await _persistDriveCache();
       return result;
-    } on GoogleDriveError catch (e) {
-      if (e.isStaleCacheError) {
-        _drive.clearCache();
+    } on SyncBackendError catch (e) {
+      if (e.isRetryable) {
+        _backend.clearCache();
         await _repo.clearFolderCache();
         try {
           final result = await _syncBookOnce(
@@ -66,11 +69,12 @@ class SyncManager {
             syncStats: syncStats,
             statsSyncMode: statsSyncMode,
             syncAudioBook: syncAudioBook,
+            syncContent: syncContent,
             importOnly: importOnly,
           );
           await _persistDriveCache();
           return result;
-        } on GoogleDriveError catch (retryError) {
+        } on SyncBackendError catch (retryError) {
           return SyncBookResult(
             direction: SyncResult.skipped,
             title: book.title,
@@ -83,7 +87,7 @@ class SyncManager {
         title: book.title,
         error: e.message,
       );
-    } on GoogleDriveAuthError {
+    } on SyncAuthError {
       rethrow;
     } catch (e) {
       return SyncBookResult(
@@ -99,6 +103,7 @@ class SyncManager {
     required bool syncStats,
     required StatisticsSyncMode statsSyncMode,
     required bool syncAudioBook,
+    bool syncContent = false,
     bool importOnly = false,
   }) async {
     final books = await _db.getAllEpubBooks();
@@ -109,6 +114,7 @@ class SyncManager {
         syncStats: syncStats,
         statsSyncMode: statsSyncMode,
         syncAudioBook: syncAudioBook,
+        syncContent: syncContent,
         importOnly: importOnly,
       );
       results.add(result);
@@ -124,11 +130,12 @@ class SyncManager {
     required bool syncStats,
     required StatisticsSyncMode statsSyncMode,
     required bool syncAudioBook,
+    bool syncContent = false,
     bool importOnly = false,
   }) async {
     await _restoreDriveCache();
 
-    final rootId = await _drive.findOrCreateRootFolder();
+    final rootId = await _backend.findOrCreateRootFolder();
 
     Uint8List? coverData;
     if (book.coverPath != null) {
@@ -138,13 +145,13 @@ class SyncManager {
       } catch (_) {}
     }
 
-    final folderId = await _drive.ensureBookFolder(
+    final folderId = await _backend.ensureBookFolder(
       bookTitle: book.title,
-      rootFolder: rootId,
+      rootFolderId: rootId,
       coverData: coverData,
     );
 
-    final syncFiles = await _drive.listSyncFiles(folderId);
+    final syncFiles = await _backend.listSyncFiles(folderId);
 
     final localPosition = await _db.getReaderPosition(book.id);
     final chapters = parseChaptersJson(book.chaptersJson);
@@ -178,10 +185,11 @@ class SyncManager {
           statsSyncMode: statsSyncMode,
           syncStats: syncStats,
           syncAudioBook: syncAudioBook,
+          syncContent: syncContent,
         );
 
       case SyncDirection.exportToTtu:
-        if (localPosition == null) {
+        if (localPosition == null && !syncContent) {
           return SyncBookResult(
               direction: SyncResult.skipped, title: book.title);
         }
@@ -196,6 +204,7 @@ class SyncManager {
           syncStats: syncStats,
           syncAudioBook: syncAudioBook,
           statsSyncMode: statsSyncMode,
+          syncContent: syncContent,
         );
 
       case SyncDirection.synced:
@@ -236,10 +245,11 @@ class SyncManager {
     required StatisticsSyncMode statsSyncMode,
     required bool syncStats,
     required bool syncAudioBook,
+    bool syncContent = false,
   }) async {
     TtuProgress? remoteProgress;
     if (progressFileId != null) {
-      remoteProgress = await _drive.getProgressFile(progressFileId);
+      remoteProgress = await _backend.getProgressFile(progressFileId);
     }
     if (remoteProgress == null) {
       return SyncBookResult(direction: SyncResult.skipped, title: book.title);
@@ -260,7 +270,7 @@ class SyncManager {
 
     // Import statistics
     if (syncStats && statsFileId != null) {
-      final remoteStats = await _drive.getStatsFile(statsFileId);
+      final remoteStats = await _backend.getStatsFile(statsFileId);
       final localStats = await _getLocalStatsForBook(book.title);
       final merged = _mergeStatistics(localStats, remoteStats, statsSyncMode);
       await _writeStatisticsToDb(merged);
@@ -268,9 +278,14 @@ class SyncManager {
 
     // Import audiobook position
     if (syncAudioBook && audioBookFileId != null) {
-      final remoteAudio = await _drive.getAudioBookFile(audioBookFileId);
+      final remoteAudio = await _backend.getAudioBookFile(audioBookFileId);
       final posMs = (remoteAudio.playbackPositionSec * 1000).round();
       await _db.setPrefTyped('audiobook_pos_${book.id}', posMs);
+    }
+
+    // Import EPUB file if content sync is enabled and local file is missing
+    if (syncContent) {
+      await _importContentIfMissing(book: book, folderId: folderId);
     }
 
     return SyncBookResult(
@@ -286,109 +301,221 @@ class SyncManager {
     required EpubBookRow book,
     required String folderId,
     required List<ChapterCharInfo> chapters,
-    required ReaderPositionRow localPosition,
+    required ReaderPositionRow? localPosition,
     required String? progressFileId,
     required String? statsFileId,
     required String? audioBookFileId,
     required bool syncStats,
     required bool syncAudioBook,
     required StatisticsSyncMode statsSyncMode,
+    bool syncContent = false,
   }) async {
-    // Dirty-flag cache: reuse stored exploredCharCount if local position is unchanged
-    final cachedCharOffset = localPosition.ttuCharOffset;
-    final int exploredChars;
-    if (cachedCharOffset >= 0) {
-      final cachedPos = fromExploredCharCount(
-        exploredCharCount: cachedCharOffset,
-        chapters: chapters,
+    int? exploredChars;
+
+    // Export progress (only if we have a local reading position)
+    if (localPosition != null) {
+      // Dirty-flag cache: reuse stored exploredCharCount if local position is unchanged
+      final cachedCharOffset = localPosition.ttuCharOffset;
+      if (cachedCharOffset >= 0) {
+        final cachedPos = fromExploredCharCount(
+          exploredCharCount: cachedCharOffset,
+          chapters: chapters,
+        );
+        final positionUnchanged = cachedPos.sectionIndex ==
+                localPosition.sectionIndex &&
+            (cachedPos.normCharOffset - localPosition.normCharOffset).abs() < 2;
+        exploredChars = positionUnchanged
+            ? cachedCharOffset
+            : toExploredCharCount(
+                sectionIndex: localPosition.sectionIndex,
+                normCharOffset: localPosition.normCharOffset,
+                chapters: chapters,
+              );
+      } else {
+        exploredChars = toExploredCharCount(
+          sectionIndex: localPosition.sectionIndex,
+          normCharOffset: localPosition.normCharOffset,
+          chapters: chapters,
+        );
+      }
+
+      final total = totalCharacterCount(chapters);
+      final progress = total > 0 ? exploredChars / total : 0.0;
+      final timestampMs = localPosition.updatedAt;
+
+      final ttuProgress = TtuProgress(
+        dataId: 0,
+        exploredCharCount: exploredChars,
+        progress: progress,
+        lastBookmarkModified: timestampMs,
       );
-      final positionUnchanged = cachedPos.sectionIndex ==
-              localPosition.sectionIndex &&
-          (cachedPos.normCharOffset - localPosition.normCharOffset).abs() < 2;
-      exploredChars = positionUnchanged
-          ? cachedCharOffset
-          : toExploredCharCount(
-              sectionIndex: localPosition.sectionIndex,
-              normCharOffset: localPosition.normCharOffset,
-              chapters: chapters,
-            );
-    } else {
-      exploredChars = toExploredCharCount(
-        sectionIndex: localPosition.sectionIndex,
-        normCharOffset: localPosition.normCharOffset,
-        chapters: chapters,
+
+      await _backend.updateProgressFile(
+        folderId: folderId,
+        fileId: progressFileId,
+        progress: ttuProgress,
       );
+
+      // Export statistics
+      if (syncStats) {
+        final localStats = await _getLocalStatsForBook(book.title);
+        List<TtuStatistics>? remoteStats;
+        if (statsFileId != null) {
+          remoteStats = await _backend.getStatsFile(statsFileId);
+        }
+        final merged =
+            _mergeStatistics(remoteStats ?? [], localStats, statsSyncMode);
+        if (merged.isNotEmpty) {
+          await _backend.updateStatsFile(
+            folderId: folderId,
+            fileId: statsFileId,
+            stats: merged,
+          );
+        }
+      }
+
+      // Export audiobook position
+      if (syncAudioBook) {
+        final posMs =
+            await _db.getPrefTyped<int>('audiobook_pos_${book.id}', 0);
+        if (posMs > 0) {
+          final audioBook = TtuAudioBook(
+            title: book.title,
+            playbackPositionSec: posMs / 1000.0,
+            lastAudioBookModified: DateTime.now().millisecondsSinceEpoch,
+          );
+          await _backend.updateAudioBookFile(
+            folderId: folderId,
+            fileId: audioBookFileId,
+            audioBook: audioBook,
+          );
+        }
+      }
+
+      // Update local record: store exported exploredChars for dirty-flag cache
+      await _db.upsertReaderPosition(ReaderPositionsCompanion(
+        ttuBookId: Value(book.id),
+        sectionIndex: Value(localPosition.sectionIndex),
+        normCharOffset: Value(localPosition.normCharOffset),
+        ttuCharOffset: Value(exploredChars),
+        updatedAt: Value(timestampMs),
+      ));
     }
 
-    final total = totalCharacterCount(chapters);
-    final progress = total > 0 ? exploredChars / total : 0.0;
-
-    // Round timestamp for consistency with Hoshi
-    final timestampMs = localPosition.updatedAt;
-
-    final ttuProgress = TtuProgress(
-      dataId: 0,
-      exploredCharCount: exploredChars,
-      progress: progress,
-      lastBookmarkModified: timestampMs,
-    );
-
-    // Export progress
-    await _drive.updateProgressFile(
-      folderId: folderId,
-      fileId: progressFileId,
-      progress: ttuProgress,
-    );
-
-    // Export statistics
-    if (syncStats) {
-      final localStats = await _getLocalStatsForBook(book.title);
-      List<TtuStatistics>? remoteStats;
-      if (statsFileId != null) {
-        remoteStats = await _drive.getStatsFile(statsFileId);
-      }
-      final merged =
-          _mergeStatistics(remoteStats ?? [], localStats, statsSyncMode);
-      if (merged.isNotEmpty) {
-        await _drive.updateStatsFile(
-          folderId: folderId,
-          fileId: statsFileId,
-          stats: merged,
-        );
-      }
+    // Export EPUB file if content sync is enabled
+    if (syncContent) {
+      await _exportContentIfMissing(book: book, folderId: folderId);
     }
-
-    // Export audiobook position
-    if (syncAudioBook) {
-      final posMs = await _db.getPrefTyped<int>('audiobook_pos_${book.id}', 0);
-      if (posMs > 0) {
-        final audioBook = TtuAudioBook(
-          title: book.title,
-          playbackPositionSec: posMs / 1000.0,
-          lastAudioBookModified: DateTime.now().millisecondsSinceEpoch,
-        );
-        await _drive.updateAudioBookFile(
-          folderId: folderId,
-          fileId: audioBookFileId,
-          audioBook: audioBook,
-        );
-      }
-    }
-
-    // Update local record: store exported exploredChars for dirty-flag cache
-    await _db.upsertReaderPosition(ReaderPositionsCompanion(
-      ttuBookId: Value(book.id),
-      sectionIndex: Value(localPosition.sectionIndex),
-      normCharOffset: Value(localPosition.normCharOffset),
-      ttuCharOffset: Value(exploredChars),
-      updatedAt: Value(timestampMs),
-    ));
 
     return SyncBookResult(
       direction: SyncResult.exported,
       title: book.title,
       characterCount: exploredChars,
     );
+  }
+
+  // ── Content file sync ─────────────────────────────────────────────
+
+  Future<void> _exportContentIfMissing({
+    required EpubBookRow book,
+    required String folderId,
+  }) async {
+    // Export EPUB
+    final epubFile = File(book.epubPath);
+    if (epubFile.existsSync()) {
+      final fileName = '${sanitizeTtuFilename(book.title)}.epub';
+      final existing = await _backend.findContentFile(folderId, fileName);
+      if (existing == null) {
+        await _backend.uploadContentFile(
+          folderId: folderId,
+          fileName: fileName,
+          file: epubFile,
+        );
+      }
+    }
+
+    // Export audio files
+    final audioPaths = await _resolveAudioPaths(book.id);
+    for (final audioPath in audioPaths) {
+      final audioFile = File(audioPath);
+      if (!audioFile.existsSync()) continue;
+      final audioName = p.basename(audioPath);
+      final existing = await _backend.findContentFile(folderId, audioName);
+      if (existing != null) continue;
+      await _backend.uploadContentFile(
+        folderId: folderId,
+        fileName: audioName,
+        file: audioFile,
+      );
+    }
+  }
+
+  Future<void> _importContentIfMissing({
+    required EpubBookRow book,
+    required String folderId,
+  }) async {
+    // Import EPUB
+    if (!File(book.epubPath).existsSync()) {
+      final fileName = '${sanitizeTtuFilename(book.title)}.epub';
+      final remote = await _backend.findContentFile(folderId, fileName);
+      if (remote != null) {
+        final destination = File(book.epubPath);
+        final parentDir = destination.parent;
+        if (!parentDir.existsSync()) parentDir.createSync(recursive: true);
+        await _backend.downloadContentFile(
+          fileId: remote.id,
+          destination: destination,
+        );
+      }
+    }
+
+    // Import audio files
+    final audioPaths = await _resolveAudioPaths(book.id);
+    for (final audioPath in audioPaths) {
+      if (File(audioPath).existsSync()) continue;
+      final audioName = p.basename(audioPath);
+      final remote = await _backend.findContentFile(folderId, audioName);
+      if (remote == null) continue;
+      final destination = File(audioPath);
+      final parentDir = destination.parent;
+      if (!parentDir.existsSync()) parentDir.createSync(recursive: true);
+      await _backend.downloadContentFile(
+        fileId: remote.id,
+        destination: destination,
+      );
+    }
+  }
+
+  static const _audioExtensions = {
+    '.mp3', '.m4a', '.m4b', '.aac', '.ogg',
+    '.opus', '.flac', '.wav', '.wma', '.ac3', '.eac3', '.mp4',
+  };
+
+  Future<List<String>> _resolveAudioPaths(int bookId) async {
+    final bookUid = 'reader_ttu/hoshi://book/$bookId';
+    final row = await _db.getAudiobookByBookUid(bookUid);
+    if (row == null) return const [];
+
+    if (row.audioPathsJson != null) {
+      return (jsonDecode(row.audioPathsJson!) as List).cast<String>();
+    }
+
+    if (row.audioRoot != null) {
+      final dir = Directory(row.audioRoot!);
+      if (dir.existsSync()) {
+        final paths = dir
+            .listSync()
+            .whereType<File>()
+            .where((f) =>
+                _audioExtensions.contains(p.extension(f.path).toLowerCase()))
+            .map((f) => f.path)
+            .toList()
+          ..sort();
+        return paths;
+      }
+    }
+
+    return const [];
   }
 
   // ── Statistics merge ──────────────────────────────────────────────
@@ -435,16 +562,16 @@ class SyncManager {
   // ── Drive cache persistence ───────────────────────────────────────
 
   Future<void> _restoreDriveCache() async {
-    if (_drive.cachedRootFolderId != null) return;
+    if (_backend.cachedRootFolderId != null) return;
     final rootId = await _repo.getRootFolderId();
     final folderCache = await _repo.getFolderCache();
-    _drive.restoreCache(rootFolderId: rootId, titleToFolderId: folderCache);
+    _backend.restoreCache(rootFolderId: rootId, titleToFolderId: folderCache);
   }
 
   Future<void> _persistDriveCache() async {
-    final rootId = _drive.cachedRootFolderId;
+    final rootId = _backend.cachedRootFolderId;
     if (rootId != null) await _repo.setRootFolderId(rootId);
-    final cache = _drive.cachedFolderIds;
+    final cache = _backend.cachedFolderIds;
     if (cache.isNotEmpty) await _repo.setFolderCache(cache);
   }
 }
