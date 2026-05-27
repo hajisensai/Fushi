@@ -40,13 +40,11 @@ class PopupDbReader {
     }
 
     private fun dbPath(context: Context): String {
-        val supportDir = context.filesDir.parentFile?.resolve("app_flutter")
-            ?: context.filesDir
-        return File(supportDir, "hibiki.db").absolutePath
+        return File(context.filesDir, "hibiki.db").absolutePath
     }
 
     private fun dictionaryResourceDir(context: Context): String {
-        val docsDir = File(context.filesDir.parentFile, "app_flutter")
+        val docsDir = context.getDir("flutter", Context.MODE_PRIVATE)
         return File(docsDir, "dictionaryResources").absolutePath
     }
 
