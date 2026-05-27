@@ -94,6 +94,28 @@
   - Static guard was written failing-first and failed on `CheckboxListTile`.
   - Passed after migration with the focused tag picker verification command listed below.
 
+#### HBK-AUDIT-011 - Reader hover and illustration grid still hard-coded surfaces
+
+- severity: LOW
+- status: resolved in working tree
+- files/lines:
+  - `hibiki/lib/src/pages/implementations/reader_hibiki_history_page.dart`
+  - `hibiki/lib/src/pages/implementations/illustrations_viewer_page.dart`
+  - `hibiki/test/settings/md3_design_system_static_test.dart`
+  - `hibiki/test/pages/illustrations_viewer_page_static_test.dart`
+- root cause:
+  - Reader tag-drop hover overlay used a local `BorderRadius.circular(12)`.
+  - Illustration thumbnails used local `surfaceContainerLow` and `BorderRadius.circular(8)` instead of the shared card surface.
+- impact:
+  - These were small but visible remnants of page-local visual decisions. They weakened the Seal-style rule that cards and state overlays should use one token layer.
+- fix:
+  - Reader tag-drop overlay now reads `HibikiDesignTokens.of(context)` and uses `tokens.radii.cardRadius`.
+  - Illustration grid items now use `HibikiCard` with zero padding and preserve tap-to-fullscreen image behavior.
+  - Added a compile guard for `IllustrationsViewerPage`.
+- verification:
+  - Static guard was written failing-first and failed on `surfaceContainerLow`, missing `HibikiCard`, and missing design tokens in the reader hover overlay.
+  - Passed after migration with the focused verification command listed below.
+
 ### Verification
 
 - Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat format lib\src\utils\components\hibiki_material_components.dart lib\src\media\audiobook\book_import_dialog.dart lib\src\media\audiobook\audiobook_import_dialog.dart lib\src\pages\implementations\reader_hibiki_history_page.dart lib\src\pages\implementations\dictionary_dialog_page.dart test\settings\md3_design_system_static_test.dart`
@@ -102,6 +124,8 @@
 - Blocked: `D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat analyze ...` timed out twice, once at 180 seconds and once at 300 seconds. A compile guard was added to `dictionary_dialog_layout_static_test.dart` to import and instantiate `DictionaryDialogPage` directly.
 - Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat format lib\src\pages\implementations\tag_picker_page.dart test\settings\md3_design_system_static_test.dart test\pages\tag_picker_page_static_test.dart`
 - Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test test\settings\md3_design_system_static_test.dart test\pages\tag_picker_page_static_test.dart --reporter expanded`
+- Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat format lib\src\pages\implementations\illustrations_viewer_page.dart lib\src\pages\implementations\reader_hibiki_history_page.dart test\settings\md3_design_system_static_test.dart test\pages\illustrations_viewer_page_static_test.dart`
+- Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test test\settings\md3_design_system_static_test.dart test\pages\illustrations_viewer_page_static_test.dart test\pages\book_profile_dialog_page_test.dart test\pages\reader_history_delete_dialog_test.dart --reporter expanded`
 - Passed: `git diff --cached --check`
 
 ### Next Scope

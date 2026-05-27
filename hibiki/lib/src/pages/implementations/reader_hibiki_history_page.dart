@@ -1451,6 +1451,8 @@ class _BookDragTargetState extends State<_BookDragTarget> {
 
   @override
   Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return DragTarget<BookTagRow>(
       onWillAcceptWithDetails: (_) => true,
       onAcceptWithDetails: (details) {
@@ -1471,20 +1473,17 @@ class _BookDragTargetState extends State<_BookDragTarget> {
               Positioned.fill(
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .primary
-                        .withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(12),
+                    color: theme.colorScheme.primary.withValues(alpha: 0.2),
+                    borderRadius: tokens.radii.cardRadius,
                     border: Border.all(
-                      color: Theme.of(context).colorScheme.primary,
+                      color: theme.colorScheme.primary,
                       width: 2,
                     ),
                   ),
                   child: Center(
                     child: Icon(
                       Icons.add_circle_outline,
-                      color: Theme.of(context).colorScheme.primary,
+                      color: theme.colorScheme.primary,
                       size: 32,
                     ),
                   ),

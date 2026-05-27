@@ -148,20 +148,14 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
             ),
             itemCount: _images.length,
             itemBuilder: (context, index) {
-              return GestureDetector(
+              return HibikiCard(
+                padding: EdgeInsets.zero,
                 onTap: () => _openFullScreen(index),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surfaceContainerLow,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  clipBehavior: Clip.antiAlias,
-                  child: Image.memory(
-                    _images[index],
-                    fit: BoxFit.contain,
-                    errorBuilder: (_, __, ___) =>
-                        const Center(child: Icon(Icons.broken_image_outlined)),
-                  ),
+                child: Image.memory(
+                  _images[index],
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, __, ___) =>
+                      const Center(child: Icon(Icons.broken_image_outlined)),
                 ),
               );
             },

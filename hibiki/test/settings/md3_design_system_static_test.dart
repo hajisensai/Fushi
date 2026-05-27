@@ -96,6 +96,9 @@ void main() {
       'HibikiCard',
       'HibikiListItem',
     ],
+    'lib/src/pages/implementations/illustrations_viewer_page.dart': <String>[
+      'HibikiCard',
+    ],
   };
 
   test('MD3 design token and shared component files exist', () {
@@ -210,6 +213,10 @@ void main() {
         'CheckboxListTile',
         'ListTile(',
       ],
+      'lib/src/pages/implementations/illustrations_viewer_page.dart': <String>[
+        'surfaceContainerLow',
+        'BorderRadius.circular(8)',
+      ],
     };
 
     for (final MapEntry<String, List<String>> entry in bannedByFile.entries) {
@@ -233,6 +240,20 @@ void main() {
             reason: '${entry.key} still contains $banned');
       }
     }
+  });
+
+  test('reader history hover overlays use design tokens', () {
+    final String source = File(
+      'lib/src/pages/implementations/reader_hibiki_history_page.dart',
+    ).readAsStringSync();
+    final String tagDropTarget = _functionSource(
+      source,
+      'class _BookDragTarget extends StatefulWidget',
+      'class BookProfileDialogContent',
+    );
+
+    expect(tagDropTarget, contains('HibikiDesignTokens.of(context)'));
+    expect(tagDropTarget, isNot(contains('BorderRadius.circular(12)')));
   });
 
   test('dictionary and popup surfaces use shared MD3 primitives', () {
