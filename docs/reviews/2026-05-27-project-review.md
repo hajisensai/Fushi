@@ -212,6 +212,28 @@
   - `:app:assembleRelease` reached `:app:compileReleaseKotlin`; the native Kotlin file compiled with only existing deprecated WebView-setting warnings.
   - Full Android release build remains blocked later at `:app:compileReleaseJavaWithJavac` by generated registration of `dev.flutter.plugins.integration_test.IntegrationTestPlugin`, caused by the current integration-test dependency state rather than this popup Kotlin code.
 
+#### HBK-AUDIT-016 - Book CSS editor kept page-local editor chrome
+
+- severity: LOW
+- status: resolved in working tree
+- files/lines:
+  - `hibiki/lib/src/pages/implementations/book_css_editor_page.dart`
+  - `hibiki/lib/src/utils/components/hibiki_material_components.dart`
+  - `hibiki/test/settings/md3_design_system_static_test.dart`
+- root cause:
+  - The CSS editor page still owned its own empty state, editor padding, outlined input border, and monospace text size.
+  - CSS text is content and can stay monospace, but the editor shell is ordinary app chrome and should not fork the MD3 surface grammar.
+- impact:
+  - The in-book CSS editing workflow looked like a utility form instead of the same Seal-style surface system used by the repaired settings, popup, and history pages.
+- fix:
+  - Added `HibikiEditorPanel`, a shared MD3 editor surface that owns page padding, `HibikiCard`, token typography, and borderless text editing.
+  - Replaced the CSS editor's raw `TextField`/`OutlineInputBorder` with the shared panel.
+  - Replaced the empty state with `HibikiPlaceholderMessage`.
+  - Preserved tab switching, unsaved-change guarding, reset, and save behavior.
+- verification:
+  - Static guard was written failing-first and failed on missing `HibikiEditorPanel`, direct `fontSize: 13`, `OutlineInputBorder`, and `Center(child: Text(...))`.
+  - Passed after migration with the focused verification command listed below.
+
 ### Verification
 
 - Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat format lib\src\utils\components\hibiki_material_components.dart lib\src\media\audiobook\book_import_dialog.dart lib\src\media\audiobook\audiobook_import_dialog.dart lib\src\pages\implementations\reader_hibiki_history_page.dart lib\src\pages\implementations\dictionary_dialog_page.dart test\settings\md3_design_system_static_test.dart`
@@ -231,10 +253,12 @@
 - Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat format test\pages\native_popup_dictionary_static_test.dart`
 - Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test test\pages\native_popup_dictionary_static_test.dart --reporter expanded`
 - Blocked: `.\gradlew.bat :app:assembleRelease` initially failed inside the sandbox while downloading Gradle 8.12 (`SSLHandshakeException`). After approved network escalation, Gradle downloaded and the build reached `:app:compileReleaseKotlin`, but the full release build failed later at `:app:compileReleaseJavaWithJavac` because `GeneratedPluginRegistrant.java` references `dev.flutter.plugins.integration_test.IntegrationTestPlugin` while the release Java classpath does not contain that package.
+- Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat format lib\src\pages\implementations\book_css_editor_page.dart lib\src\utils\components\hibiki_material_components.dart test\settings\md3_design_system_static_test.dart`
+- Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test test\settings\md3_design_system_static_test.dart test\pages\book_css_editor_page_test.dart --reporter expanded`
 - Passed: `git diff --cached --check`
 
 ### Next Scope
 
-1. Continue with the remaining ordinary chrome debt: editor shells, in-book quick-settings controls, and any non-content `CheckboxListTile`/`ExpansionTile` use.
+1. Continue with the remaining ordinary chrome debt: in-book quick-settings controls, settings form fields, and any non-content `CheckboxListTile`/`ExpansionTile` use.
 2. Keep direct typography exceptions limited to rendered content, theme previews, logs, code/CSS editors, and reader content; ordinary rows must use shared component typography.
-3. After each page-family migration, add or extend a failing static/widget guard first, then migrate to `HibikiCard`, `HibikiListItem`, `HibikiSearchField`, `HibikiOverflowMenu`, `HibikiFilePickerRow`, or a new shared primitive only if the data shape genuinely differs.
+3. After each page-family migration, add or extend a failing static/widget guard first, then migrate to `HibikiCard`, `HibikiListItem`, `HibikiSearchField`, `HibikiOverflowMenu`, `HibikiFilePickerRow`, `HibikiEditorPanel`, or a new shared primitive only if the data shape genuinely differs.

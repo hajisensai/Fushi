@@ -219,7 +219,10 @@ class _BookCssEditorPageState extends State<BookCssEditorPage> {
       return Scaffold(
         appBar: adaptiveAppBar(
             context: context, title: Text(t.book_css_editor_title)),
-        body: Center(child: Text(t.book_css_editor_no_css_files)),
+        body: HibikiPlaceholderMessage(
+          icon: Icons.code,
+          message: t.book_css_editor_no_css_files,
+        ),
       );
     }
 
@@ -265,23 +268,7 @@ class _BookCssEditorPageState extends State<BookCssEditorPage> {
         body: IndexedStack(
           index: _selectedIndex,
           children: List.generate(_entries.length, (i) {
-            return Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: TextField(
-                controller: _textControllers[i],
-                maxLines: null,
-                expands: true,
-                textAlignVertical: TextAlignVertical.top,
-                style: const TextStyle(
-                  fontFamily: 'monospace',
-                  fontSize: 13,
-                ),
-                decoration: const InputDecoration(
-                  border: OutlineInputBorder(),
-                  contentPadding: EdgeInsets.all(12),
-                ),
-              ),
-            );
+            return HibikiEditorPanel(controller: _textControllers[i]!);
           }),
         ),
         bottomNavigationBar: SafeArea(

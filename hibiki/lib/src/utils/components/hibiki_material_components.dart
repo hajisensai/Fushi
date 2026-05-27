@@ -317,6 +317,46 @@ class HibikiLogPanel extends StatelessWidget {
   }
 }
 
+class HibikiEditorPanel extends StatelessWidget {
+  const HibikiEditorPanel({
+    required this.controller,
+    super.key,
+    this.focusNode,
+  });
+
+  final TextEditingController controller;
+  final FocusNode? focusNode;
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return Padding(
+      padding: EdgeInsets.all(tokens.spacing.page),
+      child: HibikiCard(
+        padding: EdgeInsets.zero,
+        child: TextField(
+          controller: controller,
+          focusNode: focusNode,
+          maxLines: null,
+          expands: true,
+          textAlignVertical: TextAlignVertical.top,
+          style: tokens.type.listSubtitle.copyWith(
+            color: tokens.surfaces.onSurface,
+            fontFamily: 'monospace',
+            fontSize: 12,
+          ),
+          decoration: InputDecoration(
+            border: InputBorder.none,
+            enabledBorder: InputBorder.none,
+            focusedBorder: InputBorder.none,
+            contentPadding: EdgeInsets.all(tokens.spacing.card),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class HibikiPopupSurface extends StatelessWidget {
   const HibikiPopupSurface({
     required this.child,

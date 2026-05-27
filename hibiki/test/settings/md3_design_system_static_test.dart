@@ -21,6 +21,7 @@ void main() {
       'class HibikiLogPanel',
       'class HibikiPopupSurface',
       'class HibikiCompactSearchRow',
+      'class HibikiEditorPanel',
       'onLongPress',
     ],
   };
@@ -121,6 +122,10 @@ void main() {
     'lib/src/pages/implementations/floating_dict_page.dart': <String>[
       'HibikiPopupSurface',
       'HibikiCompactSearchRow',
+    ],
+    'lib/src/pages/implementations/book_css_editor_page.dart': <String>[
+      'HibikiEditorPanel',
+      'HibikiPlaceholderMessage',
     ],
   };
 
@@ -268,6 +273,11 @@ void main() {
         'TextField(',
         'BorderRadius.circular(',
         'fontSize:',
+      ],
+      'lib/src/pages/implementations/book_css_editor_page.dart': <String>[
+        'fontSize: 13',
+        'OutlineInputBorder',
+        'Center(child: Text(',
       ],
     };
 
