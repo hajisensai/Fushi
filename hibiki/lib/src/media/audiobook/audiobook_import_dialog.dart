@@ -225,14 +225,24 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _infoRow(
-              (ab.audioPaths != null && ab.audioPaths!.isNotEmpty)
-                  ? Icons.audio_file_outlined
-                  : Icons.folder_open_outlined,
-              audioLabel,
+            AdaptiveSettingsSection(
+              children: [
+                HibikiFilePickerRow(
+                  title: (ab.audioPaths != null && ab.audioPaths!.isNotEmpty)
+                      ? t.srt_import_pick_audio_files
+                      : t.srt_import_pick_audio_dir,
+                  subtitle: audioLabel,
+                  icon: (ab.audioPaths != null && ab.audioPaths!.isNotEmpty)
+                      ? Icons.audio_file_outlined
+                      : Icons.folder_open_outlined,
+                ),
+                HibikiFilePickerRow(
+                  title: t.audiobook_pick_alignment,
+                  subtitle: ab.alignmentPath,
+                  icon: Icons.align_horizontal_left,
+                ),
+              ],
             ),
-            const SizedBox(height: 8),
-            _infoRow(Icons.align_horizontal_left, ab.alignmentPath),
             if (healthRow != null) ...[
               const SizedBox(height: 8),
               healthRow,
@@ -309,26 +319,11 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
         Expanded(
           child: Text(
             label,
-            style: TextStyle(fontSize: 12, color: color),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: color,
+                ),
             maxLines: 3,
             overflow: TextOverflow.ellipsis,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _infoRow(IconData icon, String text) {
-    return Row(
-      children: [
-        Icon(icon, size: 16),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            text,
-            style: const TextStyle(fontSize: 12),
-            overflow: TextOverflow.ellipsis,
-            maxLines: 2,
           ),
         ),
       ],
@@ -340,11 +335,12 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _audioSourceRow(),
-        if (!widget.audioOnly) ...[
-          const SizedBox(height: 12),
-          _alignmentRow(),
-        ],
+        AdaptiveSettingsSection(
+          children: [
+            _audioSourceRow(),
+            if (!widget.audioOnly) _alignmentRow(),
+          ],
+        ),
         if (!widget.audioOnly && _willRunMatcher) ...[
           const SizedBox(height: 12),
           SasayakiWindowSlider(
@@ -370,9 +366,9 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
             valueListenable: _progressMsg,
             builder: (_, msg, __) => Text(
               msg,
-              style: TextStyle(
-                  fontSize: 11,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
             ),
           ),
         ],
@@ -382,30 +378,15 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
 
   /// 音频来源行：标签 + [选目录] [选文件] 两个按钮。
   Widget _audioSourceRow() {
-    return Row(
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                _audioPaths != null
-                    ? t.srt_import_pick_audio_files
-                    : t.srt_import_pick_audio_dir,
-                style: const TextStyle(fontSize: 13),
-              ),
-              if (_hasAudioSource)
-                Text(
-                  _audioSourceLabel,
-                  style: TextStyle(
-                      fontSize: 11,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant),
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
-                ),
-            ],
-          ),
-        ),
+    return HibikiFilePickerRow(
+      title: _audioPaths != null
+          ? t.srt_import_pick_audio_files
+          : t.srt_import_pick_audio_dir,
+      subtitle: _hasAudioSource ? _audioSourceLabel : null,
+      icon: _audioPaths != null
+          ? Icons.audio_file_outlined
+          : Icons.folder_open_outlined,
+      actions: [
         IconButton(
           icon: const Icon(Icons.folder_open_outlined, size: 20),
           tooltip: t.srt_import_pick_audio_dir,
@@ -422,28 +403,13 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
 
   /// 对齐文件行：标签 + [选文件] 按钮。
   Widget _alignmentRow() {
-    return Row(
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                t.audiobook_pick_alignment,
-                style: const TextStyle(fontSize: 13),
-              ),
-              if (_alignmentPath != null)
-                Text(
-                  _alignmentName ?? p.basename(_alignmentPath!),
-                  style: TextStyle(
-                      fontSize: 11,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant),
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
-                ),
-            ],
-          ),
-        ),
+    return HibikiFilePickerRow(
+      title: t.audiobook_pick_alignment,
+      subtitle: _alignmentPath == null
+          ? null
+          : _alignmentName ?? p.basename(_alignmentPath!),
+      icon: Icons.align_horizontal_left,
+      actions: [
         IconButton(
           icon: const Icon(Icons.align_horizontal_left, size: 20),
           tooltip: t.audiobook_pick_alignment,

@@ -312,6 +312,10 @@ class _DictionaryDialogPageState extends BasePageState {
     var defaults = DictionaryDownloader.defaultSelectionForLang(
         selectedLang, workingCatalog);
     var checked = Set<int>.from(defaults.difference(installedIndices));
+    final Set<DictionaryCategory> expandedCategories = <DictionaryCategory>{
+      DictionaryCategory.jaEn,
+      DictionaryCategory.jaJa,
+    };
 
     final selected = await showAppDialog<Set<int>>(
       context: context,
@@ -356,8 +360,16 @@ class _DictionaryDialogPageState extends BasePageState {
                             catalog: workingCatalog,
                             checked: checked,
                             installedIndices: installedIndices,
-                            initiallyExpanded: cat == DictionaryCategory.jaEn ||
-                                cat == DictionaryCategory.jaJa,
+                            expanded: expandedCategories.contains(cat),
+                            onExpansionChanged: (bool expanded) {
+                              setDialogState(() {
+                                if (expanded) {
+                                  expandedCategories.add(cat);
+                                } else {
+                                  expandedCategories.remove(cat);
+                                }
+                              });
+                            },
                             onChanged: (int idx, bool val) {
                               setDialogState(() {
                                 if (val) {
@@ -433,27 +445,43 @@ class _DictionaryDialogPageState extends BasePageState {
     required List<RecommendedDictionary> catalog,
     required Set<int> checked,
     required Set<int> installedIndices,
-    required bool initiallyExpanded,
+    required bool expanded,
+    required ValueChanged<bool> onExpansionChanged,
     required void Function(int idx, bool val) onChanged,
   }) {
-    return Theme(
-      data: theme.copyWith(dividerColor: Colors.transparent),
-      child: ExpansionTile(
-        title: Text(_categoryLabel(cat),
-            style: TextStyle(fontSize: textTheme.titleSmall?.fontSize)),
-        tilePadding: EdgeInsets.zero,
-        childrenPadding: EdgeInsets.zero,
-        initiallyExpanded: initiallyExpanded,
-        children: [
-          for (final rec in items)
-            _buildDictCheckbox(
-              rec: rec,
-              catalog: catalog,
-              checked: checked,
-              installedIndices: installedIndices,
-              onChanged: onChanged,
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: HibikiCard(
+        padding: EdgeInsets.zero,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            HibikiListItem(
+              minHeight: 52,
+              title: Text(
+                _categoryLabel(cat),
+                style: textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              trailing: Icon(
+                expanded ? Icons.expand_less : Icons.expand_more,
+                color: tokens.surfaces.onVariant,
+              ),
+              onTap: () => onExpansionChanged(!expanded),
             ),
-        ],
+            if (expanded)
+              for (final rec in items)
+                _buildDictCheckbox(
+                  rec: rec,
+                  catalog: catalog,
+                  checked: checked,
+                  installedIndices: installedIndices,
+                  onChanged: onChanged,
+                ),
+          ],
+        ),
       ),
     );
   }
@@ -465,26 +493,30 @@ class _DictionaryDialogPageState extends BasePageState {
     required Set<int> installedIndices,
     required void Function(int idx, bool val) onChanged,
   }) {
-    final idx = catalog.indexOf(rec);
-    final installed = installedIndices.contains(idx);
-    return CheckboxListTile(
-      dense: true,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-      value: checked.contains(idx),
-      onChanged: (bool? val) => onChanged(idx, val ?? false),
+    final int idx = catalog.indexOf(rec);
+    final bool installed = installedIndices.contains(idx);
+    final bool selected = checked.contains(idx);
+    return HibikiListItem(
+      minHeight: 68,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      selected: selected,
+      onTap: () => onChanged(idx, !selected),
+      leading: Checkbox(
+        value: selected,
+        onChanged: (bool? value) => onChanged(idx, value ?? false),
+      ),
       title: Text(
         rec.name,
-        style: TextStyle(
-          fontSize: textTheme.bodyMedium?.fontSize,
+        style: textTheme.bodyMedium?.copyWith(
           color: installed ? theme.colorScheme.onSurfaceVariant : null,
+          fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
         ),
       ),
       subtitle: Text(
         installed
             ? '${t.dict_download_installed}  ${rec.sizeEstimate}'
             : '${rec.description}  ${rec.sizeEstimate}',
-        style: TextStyle(
-          fontSize: textTheme.bodySmall?.fontSize,
+        style: textTheme.bodySmall?.copyWith(
           color: theme.colorScheme.onSurfaceVariant,
         ),
       ),

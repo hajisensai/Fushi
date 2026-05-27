@@ -128,18 +128,21 @@ class _BookImportDialogState extends State<BookImportDialog> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(t.srt_import_hint_epub_or_srt,
-            style: TextStyle(
-                fontSize: 11,
-                color: Theme.of(context).colorScheme.onSurfaceVariant)),
-        const SizedBox(height: 4),
-        _epubRow(),
+        Text(
+          t.srt_import_hint_epub_or_srt,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+        ),
         const SizedBox(height: 8),
-        _subtitleRow(),
-        const SizedBox(height: 8),
-        _audioRow(),
-        const SizedBox(height: 8),
-        _coverRow(),
+        AdaptiveSettingsSection(
+          children: [
+            _epubRow(),
+            _subtitleRow(),
+            _audioRow(),
+            _coverRow(),
+          ],
+        ),
         const SizedBox(height: 12),
         TextField(
           controller: _titleCtrl,
@@ -160,31 +163,30 @@ class _BookImportDialogState extends State<BookImportDialog> {
         ),
         if (_willRunMatcher) ...[
           const SizedBox(height: 12),
-          SwitchListTile.adaptive(
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-            title: Text(t.auto_select_search_window),
-            subtitle: Text(
-              t.auto_select_search_window_hint,
-              style: const TextStyle(fontSize: 11),
-            ),
-            value: _autoWindow,
-            onChanged:
-                _importing ? null : (v) => setState(() => _autoWindow = v),
+          AdaptiveSettingsSection(
+            children: [
+              AdaptiveSettingsSwitchRow(
+                title: t.auto_select_search_window,
+                subtitle: t.auto_select_search_window_hint,
+                value: _autoWindow,
+                onChanged: _importing
+                    ? null
+                    : (bool value) => setState(() => _autoWindow = value),
+              ),
+            ],
           ),
-          if (!_autoWindow)
+          if (!_autoWindow) ...[
+            const SizedBox(height: 8),
             SasayakiWindowSlider(
               value: _searchWindow,
               onChanged: (v) => setState(() => _searchWindow = v),
             ),
-          if (!_autoWindow)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: SasayakiThresholdSlider(
-                value: _similarityThreshold,
-                onChanged: (v) => setState(() => _similarityThreshold = v),
-              ),
+            const SizedBox(height: 8),
+            SasayakiThresholdSlider(
+              value: _similarityThreshold,
+              onChanged: (v) => setState(() => _similarityThreshold = v),
             ),
+          ],
         ],
         if (_importing) ...[
           const SizedBox(height: 16),
@@ -197,9 +199,9 @@ class _BookImportDialogState extends State<BookImportDialog> {
             valueListenable: _progressMsg,
             builder: (_, msg, __) => Text(
               msg,
-              style: TextStyle(
-                  fontSize: 11,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
             ),
           ),
         ],
@@ -208,26 +210,11 @@ class _BookImportDialogState extends State<BookImportDialog> {
   }
 
   Widget _epubRow() {
-    return Row(
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(t.srt_import_pick_epub,
-                  style: const TextStyle(fontSize: 13)),
-              if (_epubPath != null)
-                Text(
-                  _epubName ?? p.basename(_epubPath!),
-                  style: TextStyle(
-                      fontSize: 11,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant),
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
-                ),
-            ],
-          ),
-        ),
+    return HibikiFilePickerRow(
+      title: t.srt_import_pick_epub,
+      subtitle: _epubPath == null ? null : _epubName ?? p.basename(_epubPath!),
+      icon: Icons.menu_book_outlined,
+      actions: [
         IconButton(
           icon: const Icon(Icons.menu_book_outlined, size: 20),
           tooltip: t.srt_import_pick_epub,
@@ -238,26 +225,13 @@ class _BookImportDialogState extends State<BookImportDialog> {
   }
 
   Widget _subtitleRow() {
-    return Row(
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(t.srt_import_pick_subtitle_files,
-                  style: const TextStyle(fontSize: 13)),
-              if (_subtitlePath != null)
-                Text(
-                  _subtitleName ?? p.basename(_subtitlePath!),
-                  style: TextStyle(
-                      fontSize: 11,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant),
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
-                ),
-            ],
-          ),
-        ),
+    return HibikiFilePickerRow(
+      title: t.srt_import_pick_subtitle_files,
+      subtitle: _subtitlePath == null
+          ? null
+          : _subtitleName ?? p.basename(_subtitlePath!),
+      icon: Icons.subtitles_outlined,
+      actions: [
         if (_subtitlePath != null)
           IconButton(
             icon: Icon(Icons.close,
@@ -278,28 +252,15 @@ class _BookImportDialogState extends State<BookImportDialog> {
   }
 
   Widget _audioRow() {
-    return Row(
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(t.srt_import_pick_audio_files,
-                  style: const TextStyle(fontSize: 13)),
-              if (_audioPaths.isNotEmpty)
-                Text(
-                  _audioPaths.length == 1
-                      ? p.basename(_audioPaths.first)
-                      : t.file_count(count: _audioPaths.length),
-                  style: TextStyle(
-                      fontSize: 11,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant),
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
-                ),
-            ],
-          ),
-        ),
+    return HibikiFilePickerRow(
+      title: t.srt_import_pick_audio_files,
+      subtitle: _audioPaths.isEmpty
+          ? null
+          : _audioPaths.length == 1
+              ? p.basename(_audioPaths.first)
+              : t.file_count(count: _audioPaths.length),
+      icon: Icons.audio_file_outlined,
+      actions: [
         if (_audioPaths.isNotEmpty)
           IconButton(
             icon: Icon(Icons.close,
@@ -445,26 +406,11 @@ class _BookImportDialogState extends State<BookImportDialog> {
 
   Widget _coverRow() {
     final String? effectiveCover = _coverPath ?? _audioCoverPath;
-    return Row(
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(t.srt_import_pick_cover,
-                  style: const TextStyle(fontSize: 13)),
-              if (effectiveCover != null)
-                Text(
-                  p.basename(effectiveCover),
-                  style: TextStyle(
-                      fontSize: 11,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant),
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
-                ),
-            ],
-          ),
-        ),
+    return HibikiFilePickerRow(
+      title: t.srt_import_pick_cover,
+      subtitle: effectiveCover == null ? null : p.basename(effectiveCover),
+      icon: Icons.image_outlined,
+      actions: [
         if (effectiveCover != null)
           IconButton(
             icon: Icon(Icons.close,

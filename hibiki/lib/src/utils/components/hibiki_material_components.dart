@@ -12,6 +12,7 @@ class HibikiCard extends StatelessWidget {
     this.borderRadius,
     this.selected = false,
     this.onTap,
+    this.onLongPress,
   });
 
   final Widget child;
@@ -22,6 +23,7 @@ class HibikiCard extends StatelessWidget {
   final BorderRadius? borderRadius;
   final bool selected;
   final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context) {
@@ -43,10 +45,11 @@ class HibikiCard extends StatelessWidget {
           side: BorderSide(color: borderColor ?? tokens.surfaces.outline),
         ),
         clipBehavior: Clip.antiAlias,
-        child: onTap == null
+        child: onTap == null && onLongPress == null
             ? content
             : InkWell(
                 onTap: onTap,
+                onLongPress: onLongPress,
                 child: content,
               ),
       ),
@@ -189,6 +192,46 @@ class HibikiSearchField extends StatelessWidget {
       hintStyle: WidgetStatePropertyAll<TextStyle>(tokens.type.listSubtitle),
       onChanged: onChanged,
       onSubmitted: onSubmitted,
+    );
+  }
+}
+
+class HibikiFilePickerRow extends StatelessWidget {
+  const HibikiFilePickerRow({
+    required this.title,
+    required this.icon,
+    super.key,
+    this.subtitle,
+    this.actions = const <Widget>[],
+    this.onTap,
+    this.enabled = true,
+  });
+
+  final String title;
+  final String? subtitle;
+  final IconData icon;
+  final List<Widget> actions;
+  final VoidCallback? onTap;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final Color foreground = enabled
+        ? tokens.surfaces.onVariant
+        : tokens.surfaces.onVariant.withValues(alpha: 0.38);
+    return HibikiListItem(
+      onTap: enabled ? onTap : null,
+      minHeight: 60,
+      leading: Icon(icon, size: 22, color: foreground),
+      title: Text(title),
+      subtitle: subtitle == null || subtitle!.isEmpty ? null : Text(subtitle!),
+      trailing: actions.isEmpty
+          ? null
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              children: actions,
+            ),
     );
   }
 }

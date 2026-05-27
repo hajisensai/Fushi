@@ -17,6 +17,8 @@ void main() {
       'class HibikiListItem',
       'class HibikiSearchField',
       'class HibikiOverflowMenu',
+      'class HibikiFilePickerRow',
+      'onLongPress',
     ],
   };
 
@@ -70,6 +72,25 @@ void main() {
     ],
     'lib/src/sync/sync_compare_dialog.dart': <String>[
       'HibikiOverflowMenu',
+    ],
+    'lib/src/media/audiobook/book_import_dialog.dart': <String>[
+      'AdaptiveSettingsSection',
+      'AdaptiveSettingsSwitchRow',
+      'HibikiFilePickerRow',
+    ],
+    'lib/src/media/audiobook/audiobook_import_dialog.dart': <String>[
+      'AdaptiveSettingsSection',
+      'HibikiFilePickerRow',
+    ],
+    'lib/src/pages/implementations/reader_hibiki_history_page.dart': <String>[
+      'HibikiCard',
+      '_bookCardShell',
+    ],
+    'lib/src/pages/implementations/dictionary_dialog_page.dart': <String>[
+      'HibikiCard',
+      'HibikiListItem',
+      '_buildCategoryTile',
+      '_buildDictCheckbox',
     ],
   };
 
@@ -162,11 +183,43 @@ void main() {
       'lib/src/sync/sync_compare_dialog.dart': <String>[
         'PopupMenuButton',
       ],
+      'lib/src/media/audiobook/book_import_dialog.dart': <String>[
+        'SwitchListTile',
+        'fontSize: 13',
+        'fontSize: 11',
+      ],
+      'lib/src/media/audiobook/audiobook_import_dialog.dart': <String>[
+        'fontSize: 13',
+        'fontSize: 11',
+      ],
+      'lib/src/pages/implementations/reader_hibiki_history_page.dart': <String>[
+        'Material(',
+        'surfaceContainerLow',
+        'BorderRadius.circular(12)',
+      ],
+      'lib/src/pages/implementations/dictionary_dialog_page.dart': <String>[
+        'ExpansionTile',
+        'CheckboxListTile',
+        'fontSize: textTheme',
+      ],
     };
 
     for (final MapEntry<String, List<String>> entry in bannedByFile.entries) {
+      final String fileSource = File(entry.key).readAsStringSync();
       final String source =
-          _withoutSharedComponentNames(File(entry.key).readAsStringSync());
+          entry.key.endsWith('reader_hibiki_history_page.dart')
+              ? _functionSource(
+                  fileSource,
+                  'Widget _bookCardShell({',
+                  'Widget _titleOverlay(String title)',
+                )
+              : entry.key.endsWith('dictionary_dialog_page.dart')
+                  ? _functionSource(
+                      fileSource,
+                      'Widget _buildCategoryTile({',
+                      'Future<void> _downloadSelectedDictionaries(',
+                    )
+                  : _withoutSharedComponentNames(fileSource);
       for (final String banned in entry.value) {
         expect(source, isNot(contains(banned)),
             reason: '${entry.key} still contains $banned');

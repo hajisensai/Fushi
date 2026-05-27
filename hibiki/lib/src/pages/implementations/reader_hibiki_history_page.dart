@@ -528,69 +528,63 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   }) {
     final bool selected =
         selectionKey != null && _selectedKeys.contains(selectionKey);
-    return Padding(
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return HibikiCard(
       key: cardKey,
-      padding: Spacing.of(context).insets.all.normal,
-      child: Material(
-        color: theme.colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(12),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: _selectionMode && selectionKey != null
-              ? () => _toggleSelection(selectionKey)
-              : onTap,
-          onLongPress: _selectionMode ? null : onLongPress,
-          child: AspectRatio(
-            aspectRatio: mediaSource.aspectRatio,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                child,
-                if (_selectionMode && selectionKey != null)
-                  Positioned(
-                    top: 4,
-                    left: 4,
-                    child: IgnorePointer(
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: selected
-                              ? theme.colorScheme.primary
-                              : theme.colorScheme.surface
-                                  .withValues(alpha: 0.7),
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: selected
-                                ? theme.colorScheme.primary
-                                : theme.colorScheme.outline,
-                            width: 1.5,
-                          ),
-                        ),
-                        padding: const EdgeInsets.all(2),
-                        child: Icon(
-                          Icons.check,
-                          size: 14,
-                          color: selected
-                              ? theme.colorScheme.onPrimary
-                              : Colors.transparent,
-                        ),
+      padding: EdgeInsets.zero,
+      margin: Spacing.of(context).insets.all.normal,
+      selected: selected,
+      onTap: _selectionMode && selectionKey != null
+          ? () => _toggleSelection(selectionKey)
+          : onTap,
+      onLongPress: _selectionMode ? null : onLongPress,
+      child: AspectRatio(
+        aspectRatio: mediaSource.aspectRatio,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            child,
+            if (_selectionMode && selectionKey != null)
+              Positioned(
+                top: 4,
+                left: 4,
+                child: IgnorePointer(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: selected
+                          ? theme.colorScheme.primary
+                          : theme.colorScheme.surface.withValues(alpha: 0.7),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: selected
+                            ? theme.colorScheme.primary
+                            : theme.colorScheme.outline,
+                        width: 1.5,
                       ),
                     ),
-                  ),
-                if (selected)
-                  Positioned.fill(
-                    child: IgnorePointer(
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color:
-                              theme.colorScheme.primary.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
+                    padding: const EdgeInsets.all(2),
+                    child: Icon(
+                      Icons.check,
+                      size: 14,
+                      color: selected
+                          ? theme.colorScheme.onPrimary
+                          : Colors.transparent,
                     ),
                   ),
-              ],
-            ),
-          ),
+                ),
+              ),
+            if (selected)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primary.withValues(alpha: 0.12),
+                      borderRadius: tokens.radii.cardRadius,
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );

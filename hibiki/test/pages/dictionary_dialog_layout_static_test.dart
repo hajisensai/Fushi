@@ -1,8 +1,13 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/pages/implementations/dictionary_dialog_page.dart';
 
 void main() {
+  test('dictionary manager page library compiles', () {
+    expect(const DictionaryDialogPage(), isA<DictionaryDialogPage>());
+  });
+
   test('dictionary manager is a settings page, not a settings dialog', () {
     final String source =
         File('lib/src/pages/implementations/dictionary_dialog_page.dart')
