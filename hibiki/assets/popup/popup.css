@@ -28,6 +28,11 @@ body {
     --text-color-light3: #777777;
     --text-color-light4: #888888;
     --background-color-dark1: #eeeeee;
+    --surface-container: rgba(128, 128, 128, 0.10);
+    --surface-container-high: rgba(128, 128, 128, 0.14);
+    --outline-variant: rgba(128, 128, 128, 0.32);
+    --primary-color: #386A58;
+    --on-surface-variant: #44483F;
     color: var(--text-color);
     background-color: var(--background-color, transparent);
     font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", sans-serif !important;
@@ -38,11 +43,11 @@ body {
 
 body {
     overflow-x: hidden;
-    padding: 0 10px;
+    padding: 0 10px 10px;
 }
 
 .entry {
-    padding: 4px 0;
+    padding: 8px 0;
 }
 
 .entry-header {
@@ -198,12 +203,12 @@ body {
 
 hr {
     border: none;
-    border-top: 1px solid rgba(128, 128, 128, 0.4);
-    margin: 0;
+    border-top: 1px solid var(--outline-variant);
+    margin: 4px 0;
 }
 
 a {
-    color: rgba(66, 108, 245, 1);
+    color: var(--primary-color);
 }
 
 .gloss-image-container {
@@ -422,7 +427,7 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
 
 .dict-label.selected {
     opacity: 1;
-    color: #2196F3;
+    color: var(--primary-color);
     font-weight: bold;
 }
 
@@ -434,9 +439,12 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
     width: 100%;
     max-height: 80%;
     overflow-y: auto;
-    padding: 10px;
+    padding: 16px;
     z-index: 727;
-    background: #eee;
+    background: var(--surface-container-high);
+    border-top: 1px solid var(--outline-variant);
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.18);
 }
 
 .overlay-content {
@@ -447,10 +455,11 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
 
 .overlay-close {
     position: absolute;
-    top: 5px;
-    right: 10px;
+    top: 10px;
+    right: 12px;
     font-size: 20px;
     line-height: 1;
+    color: var(--on-surface-variant);
 }
 
 .category-section {
@@ -538,6 +547,11 @@ html[data-theme="light"] {
     --background-color: #fff;
     --background-color-light: #fff;
     --text-color: #000;
+    --surface-container: #F0F1EC;
+    --surface-container-high: #EAEBE5;
+    --outline-variant: #C4C8BE;
+    --primary-color: #386A58;
+    --on-surface-variant: #44483F;
 }
 
 html[data-theme="dark"] {
@@ -549,9 +563,10 @@ html[data-theme="dark"] {
     --text-color-light3: #888888;
     --text-color-light4: #777777;
     --background-color-dark1: #333333;
-}
-
-html[data-theme="dark"] .overlay {
-    background: #222;
+    --surface-container: #1D211D;
+    --surface-container-high: #282B27;
+    --outline-variant: #44483F;
+    --primary-color: #9DD7B8;
+    --on-surface-variant: #C4C8BE;
 }
 
