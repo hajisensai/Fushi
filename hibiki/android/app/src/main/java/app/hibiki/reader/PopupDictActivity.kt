@@ -113,6 +113,7 @@ class PopupDictActivity : Activity() {
     private val ioExecutor = Executors.newSingleThreadExecutor()
     private var currentSearchTerm = ""
     private var cachedPrefs: PopupDbReader.PopupPrefs? = null
+    @Volatile
     private var bridgeError: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -460,12 +461,16 @@ class PopupDictActivity : Activity() {
     }
 
     private fun injectError(message: String) {
-        val escaped = message.replace("'", "\\'").replace("\n", "\\n")
+        val htmlEscaped = message
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+        val jsEscaped = htmlEscaped.replace("'", "\\'").replace("\n", "\\n")
         val js = """
             var c = document.getElementById('entries-container');
             if (c) c.innerHTML = '<div class="no-results">'
                 + '<div class="no-results-icon">&#x26A0;</div>'
-                + '<div>' + '$escaped' + '</div></div>';
+                + '<div>' + '$jsEscaped' + '</div></div>';
         """.trimIndent()
         webView.evaluateJavascript(js, null)
     }
