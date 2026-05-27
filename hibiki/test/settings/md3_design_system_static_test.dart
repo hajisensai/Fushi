@@ -19,6 +19,8 @@ void main() {
       'class HibikiOverflowMenu',
       'class HibikiFilePickerRow',
       'class HibikiLogPanel',
+      'class HibikiPopupSurface',
+      'class HibikiCompactSearchRow',
       'onLongPress',
     ],
   };
@@ -111,6 +113,14 @@ void main() {
     ],
     'lib/src/pages/implementations/error_log_page.dart': <String>[
       'HibikiLogPanel',
+    ],
+    'lib/src/pages/implementations/popup_dictionary_page.dart': <String>[
+      'HibikiPopupSurface',
+      'HibikiCompactSearchRow',
+    ],
+    'lib/src/pages/implementations/floating_dict_page.dart': <String>[
+      'HibikiPopupSurface',
+      'HibikiCompactSearchRow',
     ],
   };
 
@@ -247,6 +257,17 @@ void main() {
         'SingleChildScrollView(',
         'SelectableText(',
         'fontSize: 12',
+      ],
+      'lib/src/pages/implementations/popup_dictionary_page.dart': <String>[
+        'TextField(',
+        'BorderRadius.circular(8)',
+        'fontSize:',
+      ],
+      'lib/src/pages/implementations/floating_dict_page.dart': <String>[
+        'DecoratedBox(',
+        'TextField(',
+        'BorderRadius.circular(',
+        'fontSize:',
       ],
     };
 

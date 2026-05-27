@@ -113,19 +113,13 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final bgColor = cs.surfaceContainerHigh.withValues(alpha: 0.94);
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: DecoratedBox(
-        decoration: BoxDecoration(
-          color: bgColor,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: cs.outlineVariant.withValues(alpha: 0.3),
-          ),
-        ),
+      body: HibikiPopupSurface(
+        color: tokens.surfaces.search.withValues(alpha: 0.94),
+        padding: EdgeInsets.all(tokens.spacing.gap),
         child: Column(
           children: [
             _buildTitleBar(),
@@ -139,7 +133,7 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
   }
 
   Widget _buildTitleBar() {
-    final cs = Theme.of(context).colorScheme;
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return GestureDetector(
       onPanUpdate: (details) {
         _invoke('drag', {
@@ -157,17 +151,18 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
             Expanded(
               child: Text(
                 t.floating_dict_title,
-                style: TextStyle(
-                  color: cs.onSurface,
-                  fontSize: 14,
-                ),
+                style: tokens.type.listTitle,
               ),
             ),
             SizedBox(
               width: 28,
               height: 28,
               child: IconButton(
-                icon: Icon(Icons.close, size: 16, color: cs.onSurfaceVariant),
+                icon: Icon(
+                  Icons.close,
+                  size: 16,
+                  color: tokens.surfaces.onVariant,
+                ),
                 padding: EdgeInsets.zero,
                 onPressed: () => _invoke('close'),
               ),
@@ -179,46 +174,13 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
   }
 
   Widget _buildSearchBar() {
-    final cs = Theme.of(context).colorScheme;
-    final textColor = cs.onSurface;
-    final hintColor = cs.onSurfaceVariant;
-
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              controller: _searchController,
-              focusNode: _searchFocusNode,
-              style: TextStyle(color: textColor, fontSize: 14),
-              decoration: InputDecoration(
-                hintText: t.search_ellipsis,
-                hintStyle: TextStyle(color: hintColor, fontSize: 14),
-                isDense: true,
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                filled: true,
-                fillColor: cs.surfaceContainerHighest.withValues(alpha: 0.5),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(6),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-              textInputAction: TextInputAction.search,
-              onSubmitted: _doSearch,
-            ),
-          ),
-          SizedBox(
-            width: 36,
-            height: 36,
-            child: IconButton(
-              icon: Icon(Icons.search, color: hintColor, size: 20),
-              padding: EdgeInsets.zero,
-              onPressed: () => _doSearch(_searchController.text),
-            ),
-          ),
-        ],
+      child: HibikiCompactSearchRow(
+        controller: _searchController,
+        focusNode: _searchFocusNode,
+        hintText: t.search_ellipsis,
+        onSubmit: _doSearch,
       ),
     );
   }
@@ -234,14 +196,11 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
       );
     }
     if (_result == null || _result!.entries.isEmpty) {
-      final cs = Theme.of(context).colorScheme;
+      final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
       return Center(
         child: Text(
           _lastSearch.isEmpty ? '' : t.no_results_found,
-          style: TextStyle(
-            color: cs.onSurfaceVariant,
-            fontSize: 13,
-          ),
+          style: tokens.type.metadata,
         ),
       );
     }

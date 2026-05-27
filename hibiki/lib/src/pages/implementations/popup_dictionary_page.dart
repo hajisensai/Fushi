@@ -114,21 +114,13 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   }
 
   Widget _buildOuterContainer() {
-    final colorScheme = Theme.of(context).colorScheme;
-    final fillColor = appModel.overrideDictionaryColor ?? colorScheme.surface;
-    final borderColor = colorScheme.outlineVariant.withValues(alpha: 0.5);
-
-    return Container(
-      decoration: BoxDecoration(
-        color: fillColor,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: borderColor),
-      ),
-      clipBehavior: Clip.antiAlias,
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return HibikiPopupSurface(
+      color: appModel.overrideDictionaryColor ?? tokens.surfaces.page,
       child: Column(
         children: [
           _buildSearchBar(),
-          Divider(height: 1, thickness: 1, color: borderColor),
+          Divider(height: 1, thickness: 1, color: tokens.surfaces.outline),
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
@@ -225,63 +217,17 @@ class PopupDictionarySearchBar extends StatelessWidget {
   final ValueChanged<String> onSubmit;
   final VoidCallback? onClose;
 
-  void _submit() {
-    final String query = controller.text.trim();
-    if (query.isEmpty) return;
-    onSubmit(query);
-  }
-
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final textColor = colorScheme.onSurface;
-    final hintColor = colorScheme.onSurfaceVariant;
-
-    return Row(
-      children: [
-        if (onClose != null)
-          SizedBox(
-            width: 36,
-            height: 36,
-            child: IconButton(
-              key: const ValueKey<String>('popup_dictionary_close_button'),
-              icon: Icon(Icons.close, color: hintColor, size: 20),
-              tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
-              padding: EdgeInsets.zero,
-              onPressed: onClose,
-            ),
-          ),
-        Expanded(
-          child: TextField(
-            key: const ValueKey<String>('popup_dictionary_search_field'),
-            controller: controller,
-            focusNode: focusNode,
-            style: TextStyle(color: textColor, fontSize: 14),
-            decoration: InputDecoration(
-              hintText: t.search,
-              hintStyle: TextStyle(color: hintColor, fontSize: 14),
-              isDense: true,
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              border: InputBorder.none,
-              enabledBorder: InputBorder.none,
-              focusedBorder: InputBorder.none,
-            ),
-            textInputAction: TextInputAction.search,
-            onSubmitted: (_) => _submit(),
-          ),
-        ),
-        SizedBox(
-          width: 36,
-          height: 36,
-          child: IconButton(
-            key: const ValueKey<String>('popup_dictionary_search_button'),
-            icon: Icon(Icons.search, color: hintColor, size: 20),
-            padding: EdgeInsets.zero,
-            onPressed: _submit,
-          ),
-        ),
-      ],
+    return HibikiCompactSearchRow(
+      controller: controller,
+      focusNode: focusNode,
+      hintText: t.search,
+      onSubmit: onSubmit,
+      onClose: onClose,
+      closeButtonKey: const ValueKey<String>('popup_dictionary_close_button'),
+      fieldKey: const ValueKey<String>('popup_dictionary_search_field'),
+      searchButtonKey: const ValueKey<String>('popup_dictionary_search_button'),
     );
   }
 }

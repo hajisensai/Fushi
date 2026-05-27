@@ -316,3 +316,144 @@ class HibikiLogPanel extends StatelessWidget {
     );
   }
 }
+
+class HibikiPopupSurface extends StatelessWidget {
+  const HibikiPopupSurface({
+    required this.child,
+    super.key,
+    this.color,
+    this.padding = EdgeInsets.zero,
+    this.elevation = 0,
+  });
+
+  final Widget child;
+  final Color? color;
+  final EdgeInsetsGeometry padding;
+  final double elevation;
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return Material(
+      color: color ?? tokens.surfaces.card,
+      elevation: elevation,
+      shape: RoundedRectangleBorder(
+        borderRadius: tokens.radii.cardRadius,
+        side: BorderSide(color: tokens.surfaces.outline),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        padding: padding,
+        child: child,
+      ),
+    );
+  }
+}
+
+class HibikiCompactSearchRow extends StatelessWidget {
+  const HibikiCompactSearchRow({
+    required this.controller,
+    required this.focusNode,
+    required this.hintText,
+    required this.onSubmit,
+    super.key,
+    this.onClose,
+    this.fieldKey,
+    this.closeButtonKey,
+    this.searchButtonKey,
+  });
+
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final String hintText;
+  final ValueChanged<String> onSubmit;
+  final VoidCallback? onClose;
+  final Key? fieldKey;
+  final Key? closeButtonKey;
+  final Key? searchButtonKey;
+
+  void _submit() {
+    final String query = controller.text.trim();
+    if (query.isEmpty) return;
+    onSubmit(query);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final String closeTooltip =
+        MaterialLocalizations.of(context).closeButtonTooltip;
+    return HibikiCard(
+      color: tokens.surfaces.search,
+      borderRadius: tokens.radii.controlRadius,
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: SizedBox(
+        height: 44,
+        child: Row(
+          children: <Widget>[
+            if (onClose != null)
+              _CompactSearchIconButton(
+                key: closeButtonKey,
+                icon: Icons.close,
+                tooltip: closeTooltip,
+                onPressed: onClose!,
+              ),
+            Expanded(
+              child: TextField(
+                key: fieldKey,
+                controller: controller,
+                focusNode: focusNode,
+                style: tokens.type.listTitle,
+                decoration: InputDecoration(
+                  hintText: hintText,
+                  hintStyle: tokens.type.listSubtitle,
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                ),
+                textInputAction: TextInputAction.search,
+                onSubmitted: (_) => _submit(),
+              ),
+            ),
+            _CompactSearchIconButton(
+              key: searchButtonKey,
+              icon: Icons.search,
+              tooltip: MaterialLocalizations.of(context).searchFieldLabel,
+              onPressed: _submit,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CompactSearchIconButton extends StatelessWidget {
+  const _CompactSearchIconButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+    super.key,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return SizedBox(
+      width: 36,
+      height: 36,
+      child: IconButton(
+        icon: Icon(icon, color: tokens.surfaces.onVariant, size: 20),
+        tooltip: tooltip,
+        padding: EdgeInsets.zero,
+        onPressed: onPressed,
+      ),
+    );
+  }
+}

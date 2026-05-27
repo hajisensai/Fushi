@@ -162,6 +162,30 @@
   - Static guard was written failing-first and failed on missing `HibikiLogPanel`, direct `SingleChildScrollView`, direct `SelectableText`, and page-local font sizes.
   - Passed after migration with the focused verification command listed below.
 
+#### HBK-AUDIT-014 - Popup dictionary shells kept local input and surface styling
+
+- severity: MEDIUM
+- status: resolved in working tree
+- files/lines:
+  - `hibiki/lib/src/pages/implementations/popup_dictionary_page.dart`
+  - `hibiki/lib/src/pages/implementations/floating_dict_page.dart`
+  - `hibiki/lib/src/utils/components/hibiki_material_components.dart`
+  - `hibiki/test/settings/md3_design_system_static_test.dart`
+  - `hibiki/test/pages/popup_dictionary_page_test.dart`
+  - `hibiki/test/pages/floating_dict_page_static_test.dart`
+- root cause:
+  - Popup dictionary and floating dictionary shells both hand-built rounded surfaces, search text fields, icon buttons, local font sizes, and local radius values.
+  - Dictionary entry typography is rendered content and can remain specialized; the shell/search chrome is ordinary app UI and should not fork the MD3 grammar.
+- impact:
+  - The popup lookup flows still looked and behaved like separate mini-apps after the main dictionary/search chrome had been migrated.
+- fix:
+  - Added `HibikiPopupSurface` for compact bordered popup windows.
+  - Added `HibikiCompactSearchRow` for close/search controls with stable keys, trim-submit behavior, and shared token typography.
+  - Migrated `PopupDictionarySearchBar` and `FloatingDictPage` shell/search UI to those shared primitives without changing lookup, nested popup, drag, resize, or mining behavior.
+- verification:
+  - Static guard was written failing-first and failed on missing shared popup primitives, local `TextField`, local `DecoratedBox`, local radius, and page-local font sizes.
+  - Existing popup widget tests plus a floating dictionary compile guard passed after migration.
+
 ### Verification
 
 - Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat format lib\src\utils\components\hibiki_material_components.dart lib\src\media\audiobook\book_import_dialog.dart lib\src\media\audiobook\audiobook_import_dialog.dart lib\src\pages\implementations\reader_hibiki_history_page.dart lib\src\pages\implementations\dictionary_dialog_page.dart test\settings\md3_design_system_static_test.dart`
@@ -176,10 +200,12 @@
 - Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test test\settings\md3_design_system_static_test.dart test\pages\history_reader_page_static_test.dart --reporter expanded`
 - Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat format lib\src\utils\components\hibiki_material_components.dart lib\src\pages\implementations\debug_log_page.dart lib\src\pages\implementations\error_log_page.dart test\settings\md3_design_system_static_test.dart test\pages\log_pages_static_test.dart`
 - Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test test\settings\md3_design_system_static_test.dart test\pages\log_pages_static_test.dart --reporter expanded`
+- Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat format lib\src\utils\components\hibiki_material_components.dart lib\src\pages\implementations\popup_dictionary_page.dart lib\src\pages\implementations\floating_dict_page.dart test\settings\md3_design_system_static_test.dart test\pages\floating_dict_page_static_test.dart`
+- Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test test\settings\md3_design_system_static_test.dart test\pages\popup_dictionary_page_test.dart test\pages\floating_dict_page_static_test.dart --reporter expanded`
 - Passed: `git diff --cached --check`
 
 ### Next Scope
 
-1. Continue with the remaining ordinary chrome debt: editor shells, native/floating dictionary shells, and any non-content `CheckboxListTile`/`ExpansionTile` use.
+1. Continue with the remaining ordinary chrome debt: editor shells, native Android popup shell, and any non-content `CheckboxListTile`/`ExpansionTile` use.
 2. Keep direct typography exceptions limited to rendered content, theme previews, logs, code/CSS editors, and reader content; ordinary rows must use shared component typography.
 3. After each page-family migration, add or extend a failing static/widget guard first, then migrate to `HibikiCard`, `HibikiListItem`, `HibikiSearchField`, `HibikiOverflowMenu`, `HibikiFilePickerRow`, or a new shared primitive only if the data shape genuinely differs.
