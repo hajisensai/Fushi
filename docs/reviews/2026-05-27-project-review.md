@@ -74,12 +74,34 @@
   - The static guard was written failing-first, then passed after migration.
   - Final verification must include the static design-system test before commit.
 
+#### HBK-AUDIT-010 - Tag picker used framework-default checkbox rows
+
+- severity: MEDIUM
+- status: resolved in working tree
+- files/lines:
+  - `hibiki/lib/src/pages/implementations/tag_picker_page.dart`
+  - `hibiki/test/settings/md3_design_system_static_test.dart`
+  - `hibiki/test/pages/tag_picker_page_static_test.dart`
+- root cause:
+  - Tag selection used `CheckboxListTile`, which hard-coded the page into framework-default list styling instead of the shared MD3 row/card grammar.
+- impact:
+  - Tag selection is launched from reader history and book management flows. Leaving it as a stock checkbox list made the page visually inconsistent with the repaired reader history cards.
+- fix:
+  - Replaced the checkbox list with `ListView.separated`, `HibikiCard`, `HibikiListItem`, and a trailing `Checkbox`.
+  - Moved the empty state into a shared `HibikiCard` plus `HibikiPlaceholderMessage`.
+  - Added a compile guard that imports and instantiates `TagPickerPage`.
+- verification:
+  - Static guard was written failing-first and failed on `CheckboxListTile`.
+  - Passed after migration with the focused tag picker verification command listed below.
+
 ### Verification
 
 - Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat format lib\src\utils\components\hibiki_material_components.dart lib\src\media\audiobook\book_import_dialog.dart lib\src\media\audiobook\audiobook_import_dialog.dart lib\src\pages\implementations\reader_hibiki_history_page.dart lib\src\pages\implementations\dictionary_dialog_page.dart test\settings\md3_design_system_static_test.dart`
 - Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat format test\pages\dictionary_dialog_layout_static_test.dart`
 - Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test test\settings\md3_design_system_static_test.dart test\media\audiobook\book_import_dialog_test.dart test\pages\dictionary_dialog_layout_static_test.dart test\pages\book_profile_dialog_page_test.dart test\pages\reader_history_delete_dialog_test.dart --reporter expanded`
 - Blocked: `D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat analyze ...` timed out twice, once at 180 seconds and once at 300 seconds. A compile guard was added to `dictionary_dialog_layout_static_test.dart` to import and instantiate `DictionaryDialogPage` directly.
+- Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat format lib\src\pages\implementations\tag_picker_page.dart test\settings\md3_design_system_static_test.dart test\pages\tag_picker_page_static_test.dart`
+- Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test test\settings\md3_design_system_static_test.dart test\pages\tag_picker_page_static_test.dart --reporter expanded`
 - Passed: `git diff --cached --check`
 
 ### Next Scope

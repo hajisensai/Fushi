@@ -87,7 +87,6 @@ class _TagPickerPageState extends ConsumerState<TagPickerPage> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Scaffold(
       appBar: adaptiveAppBar(context: context, title: Text(t.tag_label)),
       floatingActionButton: FloatingActionButton.extended(
@@ -97,26 +96,41 @@ class _TagPickerPageState extends ConsumerState<TagPickerPage> {
       ),
       body: _allTags.isEmpty
           ? Center(
-              child: Text(
-                t.tag_no_tags_hint,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: HibikiCard(
+                  child: HibikiPlaceholderMessage(
+                    icon: Icons.label_outline,
+                    message: t.tag_no_tags_hint,
+                  ),
                 ),
               ),
             )
-          : ListView.builder(
+          : ListView.separated(
+              padding: const EdgeInsets.all(16),
               itemCount: _allTags.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 8),
               itemBuilder: (context, index) {
-                final tag = _allTags[index];
-                final isChecked = _selectedTagIds.contains(tag.id);
-                return CheckboxListTile(
-                  value: isChecked,
-                  onChanged: (v) => _toggle(tag.id, v ?? false),
-                  secondary: CircleAvatar(
-                    backgroundColor: Color(tag.colorValue),
-                    radius: 14,
+                final BookTagRow tag = _allTags[index];
+                final bool selected = _selectedTagIds.contains(tag.id);
+                return HibikiCard(
+                  padding: EdgeInsets.zero,
+                  selected: selected,
+                  child: HibikiListItem(
+                    minHeight: 64,
+                    selected: selected,
+                    onTap: () => _toggle(tag.id, !selected),
+                    leading: CircleAvatar(
+                      backgroundColor: Color(tag.colorValue),
+                      radius: 14,
+                    ),
+                    title: Text(tag.name),
+                    trailing: Checkbox(
+                      value: selected,
+                      onChanged: (bool? value) =>
+                          _toggle(tag.id, value ?? false),
+                    ),
                   ),
-                  title: Text(tag.name),
                 );
               },
             ),

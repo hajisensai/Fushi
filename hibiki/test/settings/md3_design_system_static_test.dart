@@ -92,6 +92,10 @@ void main() {
       '_buildCategoryTile',
       '_buildDictCheckbox',
     ],
+    'lib/src/pages/implementations/tag_picker_page.dart': <String>[
+      'HibikiCard',
+      'HibikiListItem',
+    ],
   };
 
   test('MD3 design token and shared component files exist', () {
@@ -201,6 +205,10 @@ void main() {
         'ExpansionTile',
         'CheckboxListTile',
         'fontSize: textTheme',
+      ],
+      'lib/src/pages/implementations/tag_picker_page.dart': <String>[
+        'CheckboxListTile',
+        'ListTile(',
       ],
     };
 
