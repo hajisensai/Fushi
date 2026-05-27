@@ -113,6 +113,7 @@ class PopupDictActivity : Activity() {
     private val ioExecutor = Executors.newSingleThreadExecutor()
     private var currentSearchTerm = ""
     private var cachedPrefs: PopupDbReader.PopupPrefs? = null
+    private var bridgeError: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         configureWebViewDataDir()
@@ -125,9 +126,14 @@ class PopupDictActivity : Activity() {
 
         ioExecutor.execute {
             val t0 = System.currentTimeMillis()
-            initBridge()
+            try {
+                initBridge()
+            } catch (e: Exception) {
+                Log.e(TAG, "bridge init failed", e)
+                bridgeError = "Dictionary engine failed to initialize: ${e.message}"
+            }
             val elapsed = System.currentTimeMillis() - t0
-            Log.d(TAG, "bridge init: ${elapsed}ms")
+            Log.d(TAG, "bridge init: ${elapsed}ms error=${bridgeError}")
         }
 
         ankiDroid = AnkiDroidHelper(this)
@@ -381,18 +387,27 @@ class PopupDictActivity : Activity() {
     private fun performSearch(query: String) {
         currentSearchTerm = query
         ioExecutor.execute {
+            val error = bridgeError
+            if (error != null) {
+                runOnUiThread { injectError(error) }
+                return@execute
+            }
             val t0 = System.currentTimeMillis()
-            val prefs = cachedPrefs ?: dbReader.readPrefs(applicationContext).also { cachedPrefs = it }
-            val entriesJson = HoshiBridge.lookupJson(
-                query,
-                maxResults = prefs.maximumSearchResults,
-                maxTerms = prefs.maximumTerms
-            )
-            val stylesJson = HoshiBridge.getStylesJson()
-            val elapsed = System.currentTimeMillis() - t0
-            Log.d(TAG, "lookup: ${elapsed}ms query=$query")
-
-            runOnUiThread { injectResults(entriesJson, stylesJson, prefs) }
+            try {
+                val prefs = cachedPrefs ?: dbReader.readPrefs(applicationContext).also { cachedPrefs = it }
+                val entriesJson = HoshiBridge.lookupJson(
+                    query,
+                    maxResults = prefs.maximumSearchResults,
+                    maxTerms = prefs.maximumTerms
+                )
+                val stylesJson = HoshiBridge.getStylesJson()
+                val elapsed = System.currentTimeMillis() - t0
+                Log.d(TAG, "lookup: ${elapsed}ms query=$query len=${entriesJson.length}")
+                runOnUiThread { injectResults(entriesJson, stylesJson, prefs) }
+            } catch (e: Exception) {
+                Log.e(TAG, "performSearch failed", e)
+                runOnUiThread { injectError("Search failed: ${e.message}") }
+            }
         }
     }
 
@@ -437,9 +452,21 @@ class PopupDictActivity : Activity() {
             window.dictionaryStyles = $stylesJson;
             window.globalDictCSS = ${escapeForJs(prefs.globalDictCSS)};
             window.customDictCSS = $safeCustomCss;
+            window._noResultsMessage = '検索結果が見つかりません。';
             window.renderPopup();
         """.trimIndent()
 
+        webView.evaluateJavascript(js, null)
+    }
+
+    private fun injectError(message: String) {
+        val escaped = message.replace("'", "\\'").replace("\n", "\\n")
+        val js = """
+            var c = document.getElementById('entries-container');
+            if (c) c.innerHTML = '<div class="no-results">'
+                + '<div class="no-results-icon">&#x26A0;</div>'
+                + '<div>' + '$escaped' + '</div></div>';
+        """.trimIndent()
         webView.evaluateJavascript(js, null)
     }
 

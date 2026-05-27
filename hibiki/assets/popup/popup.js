@@ -1676,8 +1676,13 @@ window.renderPopup = function() {
 
     const entries = window.lookupEntries;
     if (!entries || !entries.length) {
-        container.innerHTML = '';
+        container.innerHTML = '<div class="no-results">'
+            + '<div class="no-results-icon">&#x1F50D;</div>'
+            + '<div>' + (window._noResultsMessage || 'No results found.') + '</div>'
+            + '</div>';
         window._renderedGlossaryCounts = [];
+        window.flutter_inappwebview.callHandler('popupRendered',
+            document.body.scrollHeight);
         return;
     }
 
