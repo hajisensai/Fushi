@@ -17,6 +17,8 @@ void main() {
       'class HibikiListItem',
       'class HibikiSearchField',
       'class HibikiTextField',
+      'class HibikiPageHeader',
+      'class HibikiPageScaffold',
       'class HibikiOverflowMenu',
       'class HibikiFilePickerRow',
       'class HibikiLogPanel',
@@ -34,6 +36,10 @@ void main() {
     'lib/src/settings/material_settings_renderer.dart': <String>[
       'HibikiListItem',
       'HibikiCard',
+      'HibikiPageScaffold',
+    ],
+    'lib/src/settings/settings_home_page.dart': <String>[
+      'HibikiPageHeader',
     ],
     'lib/src/utils/components/hibiki_list_tile.dart': <String>[
       'HibikiListItem',
@@ -46,6 +52,7 @@ void main() {
       'HibikiOverflowMenu',
     ],
     'lib/src/pages/implementations/home_dictionary_page.dart': <String>[
+      'HibikiPageHeader',
       'HibikiSearchField',
       'HibikiCard',
       'HibikiListItem',
@@ -60,6 +67,7 @@ void main() {
       'FocusNode',
     ],
     'lib/src/pages/implementations/reading_statistics_page.dart': <String>[
+      'HibikiPageScaffold',
       'HibikiCard',
     ],
     'lib/src/utils/components/hibiki_search_history.dart': <String>[
@@ -67,9 +75,11 @@ void main() {
       'HibikiDesignTokens',
     ],
     'lib/src/pages/implementations/collections_page.dart': <String>[
+      'HibikiPageScaffold',
       'HibikiListItem',
     ],
     'lib/src/pages/implementations/tag_management_page.dart': <String>[
+      'HibikiPageScaffold',
       'HibikiListItem',
       'HibikiTextField',
     ],
@@ -93,6 +103,7 @@ void main() {
       'HibikiFilePickerRow',
     ],
     'lib/src/pages/implementations/reader_hibiki_history_page.dart': <String>[
+      'HibikiPageHeader',
       'HibikiCard',
       '_bookCardShell',
     ],
@@ -103,10 +114,12 @@ void main() {
       '_buildDictCheckbox',
     ],
     'lib/src/pages/implementations/tag_picker_page.dart': <String>[
+      'HibikiPageScaffold',
       'HibikiCard',
       'HibikiListItem',
     ],
     'lib/src/pages/implementations/illustrations_viewer_page.dart': <String>[
+      'HibikiPageScaffold',
       'HibikiCard',
     ],
     'lib/src/pages/base_history_page.dart': <String>[
@@ -116,9 +129,11 @@ void main() {
       'HibikiDesignTokens',
     ],
     'lib/src/pages/implementations/debug_log_page.dart': <String>[
+      'HibikiPageScaffold',
       'HibikiLogPanel',
     ],
     'lib/src/pages/implementations/error_log_page.dart': <String>[
+      'HibikiPageScaffold',
       'HibikiLogPanel',
     ],
     'lib/src/pages/implementations/popup_dictionary_page.dart': <String>[

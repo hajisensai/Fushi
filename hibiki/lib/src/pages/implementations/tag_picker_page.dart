@@ -87,8 +87,8 @@ class _TagPickerPageState extends ConsumerState<TagPickerPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: adaptiveAppBar(context: context, title: Text(t.tag_label)),
+    return HibikiPageScaffold(
+      title: t.tag_label,
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _quickCreateTag,
         icon: const Icon(Icons.add),

@@ -27,8 +27,8 @@ class MaterialSettingsRenderer implements SettingsRenderer {
       onDestinationSelected: onDestinationSelected,
     );
     if (embedded) return list;
-    return Scaffold(
-      appBar: AppBar(title: Text(settingsContext.context.t.settings)),
+    return HibikiPageScaffold(
+      title: settingsContext.context.t.settings,
       body: list,
     );
   }
@@ -82,8 +82,9 @@ class MaterialSettingsRenderer implements SettingsRenderer {
     required SettingsContext settingsContext,
     required SettingsDestination destination,
   }) {
-    return Scaffold(
-      appBar: AppBar(title: Text(destination.title)),
+    return HibikiPageScaffold(
+      title: destination.title,
+      subtitle: destination.summary,
       body: buildDetailContent(
         settingsContext: settingsContext,
         destination: destination,
@@ -280,7 +281,8 @@ class _MaterialSettingsItem extends StatelessWidget {
         selected: <Object>{selected},
         onSelectionChanged: (Set<Object> values) async {
           if (values.isEmpty) return;
-          await (segmented.onChanged as Function)(settingsContext, values.first);
+          await (segmented.onChanged as Function)(
+              settingsContext, values.first);
           settingsContext.refresh();
         },
       ),

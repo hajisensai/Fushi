@@ -74,26 +74,40 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage> {
         ? const CupertinoSettingsRenderer()
         : const MaterialSettingsRenderer();
 
+    final Widget content = LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        if (constraints.maxWidth >= 720) {
+          return _buildWideLayout(
+            settingsContext: settingsContext,
+            renderer: renderer,
+            destinations: destinations,
+          );
+        }
+        return renderer.buildHomePage(
+          settingsContext: settingsContext,
+          destinations: destinations,
+          selectedDestinationId: _selectedDestinationId,
+          onDestinationSelected: _selectDestination,
+          embedded: widget.embedded,
+        );
+      },
+    );
     return DesktopContentLayout(
       kind: DesktopContentKind.settings,
-      child: LayoutBuilder(
-        builder: (BuildContext context, BoxConstraints constraints) {
-          if (constraints.maxWidth >= 720) {
-            return _buildWideLayout(
-              settingsContext: settingsContext,
-              renderer: renderer,
-              destinations: destinations,
-            );
-          }
-          return renderer.buildHomePage(
-            settingsContext: settingsContext,
-            destinations: destinations,
-            selectedDestinationId: _selectedDestinationId,
-            onDestinationSelected: _selectDestination,
-            embedded: widget.embedded,
-          );
-        },
-      ),
+      child: _buildEmbeddedMaterialShell(content),
+    );
+  }
+
+  Widget _buildEmbeddedMaterialShell(Widget content) {
+    if (!widget.embedded || isCupertinoPlatform(context)) {
+      return content;
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        HibikiPageHeader(title: t.settings),
+        Expanded(child: content),
+      ],
     );
   }
 

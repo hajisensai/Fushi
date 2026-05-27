@@ -132,6 +132,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
         kind: DesktopContentKind.dictionary,
         child: Column(
           children: [
+            if (!isCupertinoPlatform(context)) _buildPageHeader(),
             _buildSearchHeader(),
             Expanded(child: _buildBody()),
           ],
@@ -140,9 +141,27 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
     );
   }
 
+  Widget _buildPageHeader() {
+    return HibikiPageHeader(
+      title: t.dictionaries,
+      actions: <Widget>[
+        HibikiIconButton(
+          tooltip: t.clear_dictionary_title,
+          icon: Icons.delete_sweep_outlined,
+          onTap: _showDeleteDictionaryHistoryPrompt,
+        ),
+      ],
+    );
+  }
+
   Widget _buildSearchHeader() {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8),
+      padding: EdgeInsets.fromLTRB(
+        isCupertinoPlatform(context) ? 8 : 16,
+        0,
+        isCupertinoPlatform(context) ? 8 : 16,
+        8,
+      ),
       child: SizedBox(
         height: kToolbarHeight,
         child: Row(
@@ -158,11 +177,12 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
                 onSubmitted: _search,
               ),
             ),
-            IconButton(
-              tooltip: t.clear_dictionary_title,
-              icon: const Icon(Icons.delete_sweep_outlined),
-              onPressed: _showDeleteDictionaryHistoryPrompt,
-            ),
+            if (isCupertinoPlatform(context))
+              IconButton(
+                tooltip: t.clear_dictionary_title,
+                icon: const Icon(Icons.delete_sweep_outlined),
+                onPressed: _showDeleteDictionaryHistoryPrompt,
+              ),
           ],
         ),
       ),

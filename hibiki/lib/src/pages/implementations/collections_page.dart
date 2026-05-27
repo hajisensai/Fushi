@@ -411,17 +411,15 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: adaptiveAppBar(context: context, title: Text(t.collections)),
+    return HibikiPageScaffold(
+      title: t.collections,
       body: _loading
           ? Center(child: adaptiveIndicator(context: context))
           : _items.isEmpty
               ? Center(
-                  child: Text(
-                    t.no_collections,
-                    style: textTheme.bodyLarge?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
+                  child: HibikiPlaceholderMessage(
+                    icon: Icons.collections_bookmark_outlined,
+                    message: t.no_collections,
                   ),
                 )
               : ListView.builder(

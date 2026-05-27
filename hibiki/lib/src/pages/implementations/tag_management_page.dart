@@ -147,19 +147,17 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Scaffold(
-      appBar: adaptiveAppBar(context: context, title: Text(t.tag_manage_title)),
+    return HibikiPageScaffold(
+      title: t.tag_manage_title,
       floatingActionButton: FloatingActionButton(
         onPressed: _createTag,
         child: const Icon(Icons.add),
       ),
       body: _tags.isEmpty
           ? Center(
-              child: Text(
-                t.tag_no_tags_hint,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
+              child: HibikiPlaceholderMessage(
+                icon: Icons.label_outline,
+                message: t.tag_no_tags_hint,
               ),
             )
           : ListView.builder(

@@ -45,7 +45,7 @@ void main() {
       'SegmentedButton',
       'Switch',
       'Slider',
-      'AppBar',
+      'HibikiPageScaffold',
     ],
     'lib/src/settings/cupertino_settings_renderer.dart': <String>[
       'class CupertinoSettingsRenderer',

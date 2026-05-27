@@ -13,46 +13,43 @@ class ErrorLogPage extends StatelessWidget {
     final log = ErrorLogService.instance.getFullLog();
     final count = ErrorLogService.instance.entries.length;
 
-    return Scaffold(
-      appBar: adaptiveAppBar(
-        context: context,
-        title: Text(t.error_log_label(n: count)),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.copy_outlined),
-            tooltip: t.copy,
-            onPressed: () async {
-              await Clipboard.setData(ClipboardData(text: log));
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(t.copied_to_clipboard)),
-                );
-              }
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.share_outlined),
-            tooltip: t.share,
-            onPressed: () {
-              final bytes = Uint8List.fromList(utf8.encode(log));
-              final xFile = XFile.fromData(
-                bytes,
-                name: 'hibiki_error_log.txt',
-                mimeType: 'text/plain',
+    return HibikiPageScaffold(
+      title: t.error_log_label(n: count),
+      actions: <Widget>[
+        HibikiIconButton(
+          icon: Icons.copy_outlined,
+          tooltip: t.copy,
+          onTap: () async {
+            await Clipboard.setData(ClipboardData(text: log));
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(t.copied_to_clipboard)),
               );
-              Share.shareXFiles([xFile], subject: t.error_log_share_subject);
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.delete_outline),
-            tooltip: t.clear,
-            onPressed: () {
-              ErrorLogService.instance.clear();
-              Navigator.pop(context);
-            },
-          ),
-        ],
-      ),
+            }
+          },
+        ),
+        HibikiIconButton(
+          icon: Icons.share_outlined,
+          tooltip: t.share,
+          onTap: () {
+            final bytes = Uint8List.fromList(utf8.encode(log));
+            final xFile = XFile.fromData(
+              bytes,
+              name: 'hibiki_error_log.txt',
+              mimeType: 'text/plain',
+            );
+            Share.shareXFiles([xFile], subject: t.error_log_share_subject);
+          },
+        ),
+        HibikiIconButton(
+          icon: Icons.delete_outline,
+          tooltip: t.clear,
+          onTap: () {
+            ErrorLogService.instance.clear();
+            Navigator.pop(context);
+          },
+        ),
+      ],
       body: HibikiLogPanel(
         log: log,
         shareAction: (text) => Share.share(text),

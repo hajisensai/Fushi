@@ -93,8 +93,8 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Scaffold(
-      appBar: adaptiveAppBar(context: context, title: Text(widget.bookTitle)),
+    return HibikiPageScaffold(
+      title: widget.bookTitle,
       body: _buildBody(theme),
     );
   }

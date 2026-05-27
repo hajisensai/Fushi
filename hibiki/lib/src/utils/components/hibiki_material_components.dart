@@ -296,6 +296,173 @@ class HibikiTextField extends StatelessWidget {
   }
 }
 
+class HibikiPageHeader extends StatelessWidget {
+  const HibikiPageHeader({
+    required this.title,
+    super.key,
+    this.subtitle,
+    this.leading,
+    this.actions = const <Widget>[],
+    this.bottom,
+    this.padding,
+    this.compact = false,
+  });
+
+  final String title;
+  final String? subtitle;
+  final Widget? leading;
+  final List<Widget> actions;
+  final Widget? bottom;
+  final EdgeInsetsGeometry? padding;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final EdgeInsetsGeometry resolvedPadding = padding ??
+        EdgeInsets.fromLTRB(
+          tokens.spacing.page,
+          compact ? tokens.spacing.gap : tokens.spacing.page + 8,
+          tokens.spacing.page,
+          bottom == null ? tokens.spacing.gap + 4 : tokens.spacing.gap,
+        );
+    final String? resolvedSubtitle =
+        subtitle == null || subtitle!.trim().isEmpty ? null : subtitle;
+
+    return Padding(
+      padding: resolvedPadding,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              if (leading != null) ...<Widget>[
+                Padding(
+                  padding: EdgeInsets.only(
+                    top: tokens.spacing.gap / 2,
+                    right: tokens.spacing.gap + 4,
+                  ),
+                  child: leading!,
+                ),
+              ],
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: tokens.type.pageTitle,
+                    ),
+                    if (resolvedSubtitle != null)
+                      Padding(
+                        padding: EdgeInsets.only(top: tokens.spacing.gap / 2),
+                        child: Text(
+                          resolvedSubtitle,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: tokens.type.listSubtitle,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              if (actions.isNotEmpty) ...<Widget>[
+                SizedBox(width: tokens.spacing.gap),
+                Flexible(
+                  child: Align(
+                    alignment: Alignment.topRight,
+                    child: Wrap(
+                      spacing: tokens.spacing.gap / 2,
+                      runSpacing: tokens.spacing.gap / 2,
+                      alignment: WrapAlignment.end,
+                      children: actions,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          if (bottom != null)
+            Padding(
+              padding: EdgeInsets.only(top: tokens.spacing.gap + 4),
+              child: bottom!,
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class HibikiPageScaffold extends StatelessWidget {
+  const HibikiPageScaffold({
+    required this.title,
+    required this.body,
+    super.key,
+    this.subtitle,
+    this.actions = const <Widget>[],
+    this.leading,
+    this.showAppBar = true,
+    this.floatingActionButton,
+    this.floatingActionButtonLocation,
+    this.headerBottom,
+    this.bottomNavigationBar,
+    this.headerCompact,
+  });
+
+  final String title;
+  final String? subtitle;
+  final Widget body;
+  final List<Widget> actions;
+  final Widget? leading;
+  final bool showAppBar;
+  final Widget? floatingActionButton;
+  final FloatingActionButtonLocation? floatingActionButtonLocation;
+  final Widget? headerBottom;
+  final Widget? bottomNavigationBar;
+  final bool? headerCompact;
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return Scaffold(
+      backgroundColor: tokens.surfaces.page,
+      appBar: showAppBar
+          ? AppBar(
+              leading: leading,
+              title: const SizedBox.shrink(),
+              backgroundColor: tokens.surfaces.page,
+              surfaceTintColor: Colors.transparent,
+              elevation: 0,
+              scrolledUnderElevation: 0,
+            )
+          : null,
+      floatingActionButton: floatingActionButton,
+      floatingActionButtonLocation: floatingActionButtonLocation,
+      bottomNavigationBar: bottomNavigationBar,
+      body: SafeArea(
+        top: !showAppBar,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            HibikiPageHeader(
+              title: title,
+              subtitle: subtitle,
+              leading: showAppBar ? null : leading,
+              actions: actions,
+              bottom: headerBottom,
+              compact: headerCompact ?? showAppBar,
+            ),
+            Expanded(child: body),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class HibikiFilePickerRow extends StatelessWidget {
   const HibikiFilePickerRow({
     required this.title,

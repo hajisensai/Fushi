@@ -157,18 +157,16 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: adaptiveAppBar(
-        context: context,
-        title: Text(t.reading_statistics),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: t.stat_refresh,
-            onPressed: _loading ? null : _syncAndLoad,
-          ),
-        ],
-      ),
+    return HibikiPageScaffold(
+      title: t.reading_statistics,
+      actions: <Widget>[
+        HibikiIconButton(
+          icon: Icons.refresh,
+          tooltip: t.stat_refresh,
+          enabled: !_loading,
+          onTap: _syncAndLoad,
+        ),
+      ],
       body: _loading
           ? buildLoading()
           : _error != null

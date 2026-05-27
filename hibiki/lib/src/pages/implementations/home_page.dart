@@ -137,60 +137,60 @@ class _HomePageState extends BasePageState<HomePage>
     }
 
     return ValueListenableBuilder<bool>(
-      valueListenable: syncInProgress,
-      builder: (context, syncing, child) => PopScope(
-        canPop: !syncing,
-        onPopInvokedWithResult: (didPop, _) async {
-          if (didPop) return;
-          final confirmed = await showDialog<bool>(
-            context: context,
-            builder: (ctx) => AlertDialog(
-              title: Text(t.sync_exit_warning_title),
-              content: Text(t.sync_exit_warning),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx, false),
-                  child: Text(t.dialog_cancel),
-                ),
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx, true),
-                  child: Text(t.dialog_exit),
-                ),
-              ],
+        valueListenable: syncInProgress,
+        builder: (context, syncing, child) => PopScope(
+              canPop: !syncing,
+              onPopInvokedWithResult: (didPop, _) async {
+                if (didPop) return;
+                final confirmed = await showDialog<bool>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    title: Text(t.sync_exit_warning_title),
+                    content: Text(t.sync_exit_warning),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, false),
+                        child: Text(t.dialog_cancel),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, true),
+                        child: Text(t.dialog_exit),
+                      ),
+                    ],
+                  ),
+                );
+                if (confirmed == true) {
+                  SystemNavigator.pop();
+                }
+              },
+              child: child!,
             ),
-          );
-          if (confirmed == true) {
-            SystemNavigator.pop();
-          }
-        },
-        child: child!,
-      ),
-      child: Focus(
-        autofocus: isDesktopPlatform,
-        focusNode: _keyboardFocusNode,
-        onKeyEvent: _handleKeyEvent,
-        child: GestureDetector(
-        onTap: () {
-          final FocusNode? current = FocusManager.instance.primaryFocus;
-          if (current != null && current != _keyboardFocusNode) {
-            current.unfocus();
-          }
-        },
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final sizeClass = windowSizeClassOf(constraints);
-            if (sizeClass == WindowSizeClass.compact) {
-              return _buildMobileLayout();
-            }
-            if (!isDesktopPlatform &&
-                constraints.maxWidth <= constraints.maxHeight) {
-              return _buildMobileLayout();
-            }
-            return _buildDesktopLayout(sizeClass);
-          },
-        ),
-      ),
-    ));
+        child: Focus(
+          autofocus: isDesktopPlatform,
+          focusNode: _keyboardFocusNode,
+          onKeyEvent: _handleKeyEvent,
+          child: GestureDetector(
+            onTap: () {
+              final FocusNode? current = FocusManager.instance.primaryFocus;
+              if (current != null && current != _keyboardFocusNode) {
+                current.unfocus();
+              }
+            },
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final sizeClass = windowSizeClassOf(constraints);
+                if (sizeClass == WindowSizeClass.compact) {
+                  return _buildMobileLayout();
+                }
+                if (!isDesktopPlatform &&
+                    constraints.maxWidth <= constraints.maxHeight) {
+                  return _buildMobileLayout();
+                }
+                return _buildDesktopLayout(sizeClass);
+              },
+            ),
+          ),
+        ));
   }
 
   Widget _buildDesktopLayout(WindowSizeClass sizeClass) {
@@ -201,6 +201,7 @@ class _HomePageState extends BasePageState<HomePage>
         child: Row(
           children: [
             NavigationRail(
+              leading: _buildRailLeading(),
               groupAlignment: 0.0,
               selectedIndex: _currentTab,
               onDestinationSelected: (int index) {
@@ -265,6 +266,9 @@ class _HomePageState extends BasePageState<HomePage>
   }
 
   PreferredSizeWidget? buildAppBar() {
+    if (!isCupertinoPlatform(context)) {
+      return null;
+    }
     switch (_currentTab) {
       case 1:
         return null;
@@ -310,6 +314,22 @@ class _HomePageState extends BasePageState<HomePage>
           ),
         );
       },
+    );
+  }
+
+  Widget _buildRailLeading() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+      child: ChangeNotifierBuilder(
+        notifier: appModel.incognitoNotifier,
+        builder: (context, notifier, _) {
+          return Image.asset(
+            _iconAsset,
+            width: 36,
+            height: 36,
+          );
+        },
+      ),
     );
   }
 

@@ -119,6 +119,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       kind: DesktopContentKind.readerShelf,
       child: Column(
         children: [
+          if (!isCupertinoPlatform(context)) _buildPageHeader(),
           _buildTagBar(allTags.valueOrNull ?? const []),
           Expanded(
             child: books.when(
@@ -163,6 +164,61 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       onReorder: _reorderTags,
       selectionMode: _selectionMode,
       onToggleSelectionMode: _toggleSelectionMode,
+    );
+  }
+
+  Widget _buildPageHeader() {
+    return HibikiPageHeader(
+      title: t.books,
+      subtitle: mediaSource.getLocalisedDescription(appModel),
+      actions: <Widget>[
+        mediaSource.buildBookImportButton(
+          context: context,
+          ref: ref,
+          appModel: appModel,
+        ),
+        _headerAction(
+          tooltip: t.collections,
+          icon: Icons.collections_bookmark_outlined,
+          onTap: _openCollections,
+        ),
+        _headerAction(
+          tooltip: t.reading_statistics,
+          icon: Icons.bar_chart_outlined,
+          onTap: _openReadingStatistics,
+        ),
+        mediaSource.buildTweaksButton(
+          context: context,
+          ref: ref,
+          appModel: appModel,
+        ),
+      ],
+    );
+  }
+
+  Widget _headerAction({
+    required String tooltip,
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return HibikiIconButton(
+      tooltip: tooltip,
+      icon: icon,
+      onTap: onTap,
+    );
+  }
+
+  void _openCollections() {
+    Navigator.push(
+      context,
+      adaptivePageRoute(builder: (_) => const CollectionsPage()),
+    );
+  }
+
+  void _openReadingStatistics() {
+    Navigator.push(
+      context,
+      adaptivePageRoute(builder: (_) => const ReadingStatisticsPage()),
     );
   }
 
