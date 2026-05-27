@@ -465,7 +465,11 @@ class PopupDictActivity : Activity() {
             .replace("&", "&amp;")
             .replace("<", "&lt;")
             .replace(">", "&gt;")
-        val jsEscaped = htmlEscaped.replace("'", "\\'").replace("\n", "\\n")
+        val jsEscaped = htmlEscaped
+            .replace("\\", "\\\\")
+            .replace("'", "\\'")
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
         val js = """
             var c = document.getElementById('entries-container');
             if (c) c.innerHTML = '<div class="no-results">'
