@@ -186,6 +186,32 @@
   - Static guard was written failing-first and failed on missing shared popup primitives, local `TextField`, local `DecoratedBox`, local radius, and page-local font sizes.
   - Existing popup widget tests plus a floating dictionary compile guard passed after migration.
 
+#### HBK-AUDIT-015 - Native Android popup dictionary shell used pre-MD3 widgets and colors
+
+- severity: MEDIUM
+- status: resolved in working tree
+- files/lines:
+  - `hibiki/android/app/src/main/java/app/hibiki/reader/PopupDictActivity.kt`
+  - `hibiki/android/app/src/main/res/drawable/ic_popup_close_24.xml`
+  - `hibiki/android/app/src/main/res/drawable/ic_popup_search_24.xml`
+  - `hibiki/test/pages/native_popup_dictionary_static_test.dart`
+- root cause:
+  - The native PROCESS_TEXT popup built its search row with framework default `EditText`, `android.R.drawable.ic_menu_search`, transparent root styling, and hard-coded light/dark content colors.
+  - Native popup rendering lives outside Flutter, so Flutter MD3 token work did not automatically reach this shell.
+- impact:
+  - Android's native lookup entry point visually diverged from the Seal-style MD3 target and from the repaired Flutter popup dictionary shell.
+  - The initial lookup term was also set after layout creation, leaving a timing hole before WebView callbacks.
+- fix:
+  - Added a native `PopupMaterialColors` token layer with light/dark MD3-style surface, outline, primary, and text colors.
+  - Rebuilt the root container and search bar as rounded MD3-style surfaces with close/search icon buttons.
+  - Injected MD3 CSS variables into the popup WebView and marked the shell as loaded.
+  - Set `currentSearchTerm` before layout construction and preserved it through new intents.
+  - Added vector close/search drawables; they are intentionally force-added because the repository ignores `*.xml`.
+- verification:
+  - Static guard passed for initial-text ordering, native shell MD3 surface/search controls, and injected CSS tokens.
+  - `:app:assembleRelease` reached `:app:compileReleaseKotlin`; the native Kotlin file compiled with only existing deprecated WebView-setting warnings.
+  - Full Android release build remains blocked later at `:app:compileReleaseJavaWithJavac` by generated registration of `dev.flutter.plugins.integration_test.IntegrationTestPlugin`, caused by the current integration-test dependency state rather than this popup Kotlin code.
+
 ### Verification
 
 - Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat format lib\src\utils\components\hibiki_material_components.dart lib\src\media\audiobook\book_import_dialog.dart lib\src\media\audiobook\audiobook_import_dialog.dart lib\src\pages\implementations\reader_hibiki_history_page.dart lib\src\pages\implementations\dictionary_dialog_page.dart test\settings\md3_design_system_static_test.dart`
@@ -202,10 +228,13 @@
 - Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test test\settings\md3_design_system_static_test.dart test\pages\log_pages_static_test.dart --reporter expanded`
 - Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat format lib\src\utils\components\hibiki_material_components.dart lib\src\pages\implementations\popup_dictionary_page.dart lib\src\pages\implementations\floating_dict_page.dart test\settings\md3_design_system_static_test.dart test\pages\floating_dict_page_static_test.dart`
 - Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test test\settings\md3_design_system_static_test.dart test\pages\popup_dictionary_page_test.dart test\pages\floating_dict_page_static_test.dart --reporter expanded`
+- Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat format test\pages\native_popup_dictionary_static_test.dart`
+- Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test test\pages\native_popup_dictionary_static_test.dart --reporter expanded`
+- Blocked: `.\gradlew.bat :app:assembleRelease` initially failed inside the sandbox while downloading Gradle 8.12 (`SSLHandshakeException`). After approved network escalation, Gradle downloaded and the build reached `:app:compileReleaseKotlin`, but the full release build failed later at `:app:compileReleaseJavaWithJavac` because `GeneratedPluginRegistrant.java` references `dev.flutter.plugins.integration_test.IntegrationTestPlugin` while the release Java classpath does not contain that package.
 - Passed: `git diff --cached --check`
 
 ### Next Scope
 
-1. Continue with the remaining ordinary chrome debt: editor shells, native Android popup shell, and any non-content `CheckboxListTile`/`ExpansionTile` use.
+1. Continue with the remaining ordinary chrome debt: editor shells, in-book quick-settings controls, and any non-content `CheckboxListTile`/`ExpansionTile` use.
 2. Keep direct typography exceptions limited to rendered content, theme previews, logs, code/CSS editors, and reader content; ordinary rows must use shared component typography.
 3. After each page-family migration, add or extend a failing static/widget guard first, then migrate to `HibikiCard`, `HibikiListItem`, `HibikiSearchField`, `HibikiOverflowMenu`, `HibikiFilePickerRow`, or a new shared primitive only if the data shape genuinely differs.

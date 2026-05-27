@@ -2,10 +2,14 @@ package app.hibiki.reader
 
 import android.annotation.SuppressLint
 import android.content.Intent
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.StateListDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.speech.tts.TextToSpeech
+import android.util.TypedValue
 import android.util.DisplayMetrics
 import android.util.Log
 import android.view.Gravity
@@ -19,6 +23,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.EditText
 import android.widget.ImageButton
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.app.Activity
 import org.json.JSONArray
@@ -29,12 +34,74 @@ import java.util.concurrent.Executors
 class PopupDictActivity : Activity() {
     companion object {
         private const val TAG = "PopupDictActivity"
+        private const val MD3_PRIMARY_LIGHT = "#386A58"
+        private const val MD3_PRIMARY_DARK = "#9DD7B8"
+        private const val MD3_SURFACE_LIGHT = "#FCFDF8"
+        private const val MD3_SURFACE_DARK = "#111411"
+        private const val MD3_SURFACE_CONTAINER_LIGHT = "#F0F1EC"
+        private const val MD3_SURFACE_CONTAINER_DARK = "#1D211D"
+        private const val MD3_SURFACE_CONTAINER_HIGH_LIGHT = "#EAEBE5"
+        private const val MD3_SURFACE_CONTAINER_HIGH_DARK = "#282B27"
+        private const val MD3_ON_SURFACE_LIGHT = "#1A1C19"
+        private const val MD3_ON_SURFACE_DARK = "#E1E3DD"
+        private const val MD3_ON_SURFACE_VARIANT_LIGHT = "#44483F"
+        private const val MD3_ON_SURFACE_VARIANT_DARK = "#C4C8BE"
+        private const val MD3_OUTLINE_VARIANT_LIGHT = "#C4C8BE"
+        private const val MD3_OUTLINE_VARIANT_DARK = "#44483F"
 
         @Volatile
         private var bridgeInitialized = false
 
         @Volatile
         private var webViewDataDirConfigured = false
+    }
+
+    private data class PopupMaterialColors(
+        val primary: Int,
+        val surface: Int,
+        val surfaceContainer: Int,
+        val surfaceContainerHigh: Int,
+        val onSurface: Int,
+        val onSurfaceVariant: Int,
+        val outlineVariant: Int,
+    ) {
+        val cssPrimary: String get() = toCssColor(primary)
+        val cssSurface: String get() = toCssColor(surface)
+        val cssSurfaceContainer: String get() = toCssColor(surfaceContainer)
+        val cssSurfaceContainerHigh: String get() = toCssColor(surfaceContainerHigh)
+        val cssOnSurface: String get() = toCssColor(onSurface)
+        val cssOnSurfaceVariant: String get() = toCssColor(onSurfaceVariant)
+        val cssOutlineVariant: String get() = toCssColor(outlineVariant)
+
+        private fun toCssColor(color: Int): String {
+            val r = Color.red(color)
+            val g = Color.green(color)
+            val b = Color.blue(color)
+            return "rgb($r,$g,$b)"
+        }
+
+        companion object {
+            fun fromPrefs(prefs: PopupDbReader.PopupPrefs): PopupMaterialColors {
+                val isDark = prefs.isDarkMode
+                return PopupMaterialColors(
+                    primary = Color.parseColor(if (isDark) MD3_PRIMARY_DARK else MD3_PRIMARY_LIGHT),
+                    surface = Color.parseColor(if (isDark) MD3_SURFACE_DARK else MD3_SURFACE_LIGHT),
+                    surfaceContainer = Color.parseColor(
+                        if (isDark) MD3_SURFACE_CONTAINER_DARK else MD3_SURFACE_CONTAINER_LIGHT
+                    ),
+                    surfaceContainerHigh = Color.parseColor(
+                        if (isDark) MD3_SURFACE_CONTAINER_HIGH_DARK else MD3_SURFACE_CONTAINER_HIGH_LIGHT
+                    ),
+                    onSurface = Color.parseColor(if (isDark) MD3_ON_SURFACE_DARK else MD3_ON_SURFACE_LIGHT),
+                    onSurfaceVariant = Color.parseColor(
+                        if (isDark) MD3_ON_SURFACE_VARIANT_DARK else MD3_ON_SURFACE_VARIANT_LIGHT
+                    ),
+                    outlineVariant = Color.parseColor(
+                        if (isDark) MD3_OUTLINE_VARIANT_DARK else MD3_OUTLINE_VARIANT_LIGHT
+                    ),
+                )
+            }
+        }
     }
 
     private lateinit var webView: WebView
@@ -52,6 +119,9 @@ class PopupDictActivity : Activity() {
         super.onCreate(savedInstanceState)
 
         val processText = extractProcessText(intent)
+        if (processText != null) {
+            currentSearchTerm = processText
+        }
 
         ioExecutor.execute {
             val t0 = System.currentTimeMillis()
@@ -71,17 +141,14 @@ class PopupDictActivity : Activity() {
 
         buildLayout()
         applyPopupWindowSize()
-
-        if (processText != null) {
-            searchField.setText(processText)
-            currentSearchTerm = processText
-        }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        setIntent(intent)
         val text = extractProcessText(intent)
         if (text != null) {
+            currentSearchTerm = text
             searchField.setText(text)
             performSearch(text)
         }
@@ -105,42 +172,23 @@ class PopupDictActivity : Activity() {
 
     @SuppressLint("SetJavaScriptEnabled")
     private fun buildLayout() {
+        val prefs = cachedPrefs ?: dbReader.readPrefs(applicationContext).also { cachedPrefs = it }
+        val colors = PopupMaterialColors.fromPrefs(prefs)
+
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(0x00000000)
+            setPadding(dp(10f), dp(10f), dp(10f), dp(10f))
+            background = roundedRect(
+                color = colors.surface,
+                radiusDp = 24f,
+                strokeColor = colors.outlineVariant,
+                strokeDp = 1f,
+            )
+            elevation = dp(6f).toFloat()
+            clipToOutline = true
         }
 
-        val searchBar = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(8, 4, 8, 4)
-        }
-
-        searchField = EditText(this).apply {
-            hint = "Search"
-            isSingleLine = true
-            imeOptions = EditorInfo.IME_ACTION_SEARCH
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            setOnEditorActionListener { _, actionId, event ->
-                if (actionId == EditorInfo.IME_ACTION_SEARCH ||
-                    (event?.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN)
-                ) {
-                    val q = text?.toString()?.trim() ?: ""
-                    if (q.isNotEmpty()) performSearch(q)
-                    true
-                } else false
-            }
-        }
-
-        val searchBtn = ImageButton(this).apply {
-            setImageResource(android.R.drawable.ic_menu_search)
-            setOnClickListener {
-                val q = searchField.text?.toString()?.trim() ?: ""
-                if (q.isNotEmpty()) performSearch(q)
-            }
-        }
-
-        searchBar.addView(searchField)
-        searchBar.addView(searchBtn)
+        val searchBar = buildMaterialSearchBar(colors)
         root.addView(searchBar)
 
         webView = WebView(this).apply {
@@ -152,6 +200,7 @@ class PopupDictActivity : Activity() {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
             )
+            setBackgroundColor(colors.surface)
         }
         webView.addJavascriptInterface(PopupJsInterface(), "androidBridge")
         webView.webViewClient = object : WebViewClient() {
@@ -181,6 +230,99 @@ class PopupDictActivity : Activity() {
 
         root.addView(webView)
         setContentView(root)
+    }
+
+    private fun buildMaterialSearchBar(colors: PopupMaterialColors): LinearLayout {
+        val searchBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(4f), 0, dp(4f), 0)
+            background = roundedRect(
+                color = colors.surfaceContainerHigh,
+                radiusDp = 24f,
+                strokeColor = colors.outlineVariant,
+                strokeDp = 1f,
+            )
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(48f),
+            ).apply {
+                bottomMargin = dp(8f)
+            }
+        }
+
+        val closeBtn = buildIconButton(
+            iconResId = R.drawable.ic_popup_close_24,
+            contentDescription = "Close",
+            colors = colors,
+        ) {
+            finish()
+        }
+
+        searchField = EditText(this).apply {
+            hint = "Search"
+            isSingleLine = true
+            imeOptions = EditorInfo.IME_ACTION_SEARCH
+            setSingleLine(true)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+            setTextColor(colors.onSurface)
+            setHintTextColor(colors.onSurfaceVariant)
+            includeFontPadding = false
+            background = null
+            setPadding(dp(8f), 0, dp(8f), 0)
+            if (currentSearchTerm.isNotEmpty()) {
+                setText(currentSearchTerm)
+                setSelection(text?.length ?: 0)
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                1f,
+            )
+            setOnEditorActionListener { _, actionId, event ->
+                if (actionId == EditorInfo.IME_ACTION_SEARCH ||
+                    (event?.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN)
+                ) {
+                    submitSearchFromField()
+                    true
+                } else false
+            }
+        }
+
+        val searchBtn = buildIconButton(
+            iconResId = R.drawable.ic_popup_search_24,
+            contentDescription = "Search",
+            colors = colors,
+        ) {
+            submitSearchFromField()
+        }
+
+        searchBar.addView(closeBtn)
+        searchBar.addView(searchField)
+        searchBar.addView(searchBtn)
+        return searchBar
+    }
+
+    private fun buildIconButton(
+        iconResId: Int,
+        contentDescription: String,
+        colors: PopupMaterialColors,
+        onClick: () -> Unit,
+    ): ImageButton {
+        return ImageButton(this).apply {
+            setImageResource(iconResId)
+            setColorFilter(colors.onSurfaceVariant)
+            this.contentDescription = contentDescription
+            background = iconButtonBackground(colors)
+            scaleType = ImageView.ScaleType.CENTER
+            layoutParams = LinearLayout.LayoutParams(dp(40f), dp(40f))
+            setOnClickListener { onClick() }
+        }
+    }
+
+    private fun submitSearchFromField() {
+        val query = searchField.text?.toString()?.trim() ?: ""
+        if (query.isNotEmpty()) performSearch(query)
     }
 
     private fun buildPopupHtml(): String {
@@ -261,11 +403,12 @@ class PopupDictActivity : Activity() {
     ) {
         val isDark = prefs.isDarkMode
         val theme = if (isDark) "dark" else "light"
+        val colors = PopupMaterialColors.fromPrefs(prefs)
         val safeDictColor = prefs.overrideDictColor?.takeIf {
             it.matches(Regex("^(rgb\\(\\d{1,3},\\s*\\d{1,3},\\s*\\d{1,3}\\)|#[0-9a-fA-F]{3,8})$"))
         }
-        val bgColor = safeDictColor ?: if (isDark) "rgb(30,30,30)" else "rgb(255,255,255)"
-        val textColor = if (isDark) "rgb(230,230,230)" else "rgb(30,30,30)"
+        val bgColor = safeDictColor ?: colors.cssSurface
+        val textColor = colors.cssOnSurface
         val collapsedJson = JSONArray(prefs.collapsedDictNames).toString()
         val safeCustomCss = try {
             org.json.JSONObject(prefs.customDictCSS).toString()
@@ -275,6 +418,12 @@ class PopupDictActivity : Activity() {
             document.documentElement.setAttribute('data-theme', '$theme');
             document.documentElement.style.setProperty('--text-color', '$textColor');
             document.documentElement.style.setProperty('--background-color', '$bgColor');
+            document.documentElement.style.setProperty('--surface-container', '${colors.cssSurfaceContainer}');
+            document.documentElement.style.setProperty('--surface-container-high', '${colors.cssSurfaceContainerHigh}');
+            document.documentElement.style.setProperty('--outline-variant', '${colors.cssOutlineVariant}');
+            document.documentElement.style.setProperty('--primary-color', '${colors.cssPrimary}');
+            document.documentElement.style.setProperty('--on-surface-variant', '${colors.cssOnSurfaceVariant}');
+            document.body.classList.add('popup-shell-loaded');
             window.deduplicatePitchAccents = ${prefs.deduplicatePitch};
             window.harmonicFrequency = ${prefs.harmonicFrequency};
             window.showExpressionTags = ${prefs.showExpressionTags};
@@ -336,6 +485,46 @@ class PopupDictActivity : Activity() {
             "text/plain", "utf-8", 404, "Not Found",
             emptyMap(), ByteArrayInputStream(ByteArray(0))
         )
+    }
+
+    private fun dp(value: Float): Int {
+        return (value * resources.displayMetrics.density + 0.5f).toInt()
+    }
+
+    private fun roundedRect(
+        color: Int,
+        radiusDp: Float,
+        strokeColor: Int? = null,
+        strokeDp: Float = 0f,
+    ): GradientDrawable {
+        return GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            setColor(color)
+            cornerRadius = dp(radiusDp).toFloat()
+            if (strokeColor != null && strokeDp > 0f) {
+                setStroke(dp(strokeDp), strokeColor)
+            }
+        }
+    }
+
+    private fun iconButtonBackground(colors: PopupMaterialColors): StateListDrawable {
+        val pressed = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(withAlpha(colors.primary, 0x24))
+        }
+        val normal = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(Color.TRANSPARENT)
+        }
+        return StateListDrawable().apply {
+            addState(intArrayOf(android.R.attr.state_pressed), pressed)
+            addState(intArrayOf(android.R.attr.state_focused), pressed)
+            addState(intArrayOf(), normal)
+        }
+    }
+
+    private fun withAlpha(color: Int, alpha: Int): Int {
+        return (color and 0x00FFFFFF) or (alpha shl 24)
     }
 
     private fun extractProcessText(intent: Intent?): String? {
