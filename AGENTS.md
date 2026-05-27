@@ -216,6 +216,7 @@ claude mcp add spec-workflow-mcp -s user -- npx -y spec-workflow-mcp@latest
 - 命令行辅助时，可以先把样本推送到模拟器 Downloads，再通过 DocumentsUI 选择。大文件推送后必须用 `adb shell ls -lh` 确认大小，不要只信 `adb push` 的一行输出。
 - 默认保留模拟器 app 数据；除非目标要求首启、空库、重复导入、迁移、损坏数据恢复，或用户明确要求干净导入，否则不要 `pm clear`。如果确实清数据，必须在回复中说明。
 - 安装包测试先确认设备 ABI 和 APK variant：`x86_64` 模拟器优先装 `app-x86_64-release.apk`，arm64 真机装 `app-arm64-v8a-release.apk`。不要用本地源码状态代替已安装 APK 的行为。
+- 降级安装（不卸载）：Android 16 user build 上 `adb install -d` 和 `pm install -d` 均被拒绝。必须用 `cmd package install`：先 `adb push app.apk /data/local/tmp/downgrade.apk`，再 `adb shell "cmd package install -d -r /data/local/tmp/downgrade.apk"`。
 - 真机锁屏、权限弹窗、DocumentsUI 不可达、文件未显示等都要当作测试阻塞明确说出来；不要把未测到的路径说成通过。
 
 ## Hibiki 测试记录

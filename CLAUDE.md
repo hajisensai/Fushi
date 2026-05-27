@@ -91,6 +91,26 @@
 - 导入验证优先用 `DB-Query` 查数据库（`run-as app.hibiki.reader sqlite3 files/hibiki.db`），不依赖 UI dump 匹配文字。
 - 需要新增测试流程时，先判断属于哪一层，不要在错误的层做事。
 
+### ADB 降级安装（不卸载）
+
+Android 14+ 的 `adb install -d` 在 user build 真机上会被拒绝（`INSTALL_FAILED_VERSION_DOWNGRADE`）。使用 `cmd package install` 替代：
+
+```bash
+# 先推送 APK 到设备
+adb push app.apk /data/local/tmp/downgrade.apk
+
+# 用 cmd package install 降级（不卸载、保留数据）
+adb shell "cmd package install -d -r /data/local/tmp/downgrade.apk"
+```
+
+| 方法 | Android 15 模拟器 | Android 16 真机 (user build) |
+|------|-------------------|------------------------------|
+| `adb install -r -d` | 成功 | 失败 |
+| `pm install -r -d` | 成功 | 失败 |
+| `cmd package install -d -r` | 成功 | 成功 |
+
+注意：`pm uninstall -k`（保留数据卸载）后再装低版本同样会被 Android 16 拒绝，必须用 `cmd package install -d` 或完全卸载。
+
 ### 一键运行
 
 ```powershell
