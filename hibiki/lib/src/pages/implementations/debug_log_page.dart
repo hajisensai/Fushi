@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:hibiki/utils.dart';
-import 'package:hibiki/src/utils/components/Hibiki_text_selection_controls.dart';
 
 class DebugLogPage extends StatefulWidget {
   const DebugLogPage({super.key});
@@ -75,24 +74,9 @@ class _DebugLogPageState extends State<DebugLogPage> {
           ),
         ],
       ),
-      body: SingleChildScrollView(
-        padding: EdgeInsets.fromLTRB(
-          12,
-          12,
-          12,
-          12 + MediaQuery.of(context).padding.bottom,
-        ),
-        child: SelectableText(
-          _log,
-          style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
-          selectionControls: HibikiTextSelectionControls(
-            shareAction: (text) => Share.share(text),
-            allowCopy: true,
-            allowCut: false,
-            allowPaste: false,
-            allowSelectAll: true,
-          ),
-        ),
+      body: HibikiLogPanel(
+        log: _log,
+        shareAction: (text) => Share.share(text),
       ),
     );
   }

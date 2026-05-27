@@ -18,6 +18,7 @@ void main() {
       'class HibikiSearchField',
       'class HibikiOverflowMenu',
       'class HibikiFilePickerRow',
+      'class HibikiLogPanel',
       'onLongPress',
     ],
   };
@@ -104,6 +105,12 @@ void main() {
     ],
     'lib/src/pages/implementations/history_reader_page.dart': <String>[
       'HibikiDesignTokens',
+    ],
+    'lib/src/pages/implementations/debug_log_page.dart': <String>[
+      'HibikiLogPanel',
+    ],
+    'lib/src/pages/implementations/error_log_page.dart': <String>[
+      'HibikiLogPanel',
     ],
   };
 
@@ -230,6 +237,16 @@ void main() {
       'lib/src/pages/implementations/history_reader_page.dart': <String>[
         'surfaceContainerLowest',
         'fontSize: textTheme',
+      ],
+      'lib/src/pages/implementations/debug_log_page.dart': <String>[
+        'SingleChildScrollView(',
+        'SelectableText(',
+        'fontSize: 11',
+      ],
+      'lib/src/pages/implementations/error_log_page.dart': <String>[
+        'SingleChildScrollView(',
+        'SelectableText(',
+        'fontSize: 12',
       ],
     };
 

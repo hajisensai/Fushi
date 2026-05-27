@@ -139,6 +139,29 @@
   - Static guard was written failing-first and failed on raw `Material`/`InkWell`, `surfaceContainerLowest`, and local font sizing.
   - Passed after migration with the focused verification command listed below.
 
+#### HBK-AUDIT-013 - Diagnostic log pages duplicated raw scrollable text chrome
+
+- severity: LOW
+- status: resolved in working tree
+- files/lines:
+  - `hibiki/lib/src/pages/implementations/debug_log_page.dart`
+  - `hibiki/lib/src/pages/implementations/error_log_page.dart`
+  - `hibiki/lib/src/utils/components/hibiki_material_components.dart`
+  - `hibiki/test/settings/md3_design_system_static_test.dart`
+  - `hibiki/test/pages/log_pages_static_test.dart`
+- root cause:
+  - Debug and error log pages duplicated `SingleChildScrollView`, raw padding, `SelectableText`, selection controls, and local monospace sizes.
+  - The monospace log text is content, but the container chrome should still use the shared MD3 surface grammar.
+- impact:
+  - Settings diagnostics still looked like old utility pages even after the main settings chrome was migrated.
+- fix:
+  - Added `HibikiLogPanel`, which owns safe-area padding, `HibikiCard`, scrolling, selectable log text, and selection controls.
+  - Replaced both log page bodies with the shared panel while preserving copy, share, refresh, and clear actions.
+  - Kept the monospace text decision inside the shared panel as a content-specific exception.
+- verification:
+  - Static guard was written failing-first and failed on missing `HibikiLogPanel`, direct `SingleChildScrollView`, direct `SelectableText`, and page-local font sizes.
+  - Passed after migration with the focused verification command listed below.
+
 ### Verification
 
 - Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat format lib\src\utils\components\hibiki_material_components.dart lib\src\media\audiobook\book_import_dialog.dart lib\src\media\audiobook\audiobook_import_dialog.dart lib\src\pages\implementations\reader_hibiki_history_page.dart lib\src\pages\implementations\dictionary_dialog_page.dart test\settings\md3_design_system_static_test.dart`
@@ -151,10 +174,12 @@
 - Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test test\settings\md3_design_system_static_test.dart test\pages\illustrations_viewer_page_static_test.dart test\pages\book_profile_dialog_page_test.dart test\pages\reader_history_delete_dialog_test.dart --reporter expanded`
 - Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat format lib\src\pages\base_history_page.dart lib\src\pages\implementations\history_reader_page.dart test\settings\md3_design_system_static_test.dart test\pages\history_reader_page_static_test.dart`
 - Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test test\settings\md3_design_system_static_test.dart test\pages\history_reader_page_static_test.dart --reporter expanded`
+- Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat format lib\src\utils\components\hibiki_material_components.dart lib\src\pages\implementations\debug_log_page.dart lib\src\pages\implementations\error_log_page.dart test\settings\md3_design_system_static_test.dart test\pages\log_pages_static_test.dart`
+- Passed: `D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test test\settings\md3_design_system_static_test.dart test\pages\log_pages_static_test.dart --reporter expanded`
 - Passed: `git diff --cached --check`
 
 ### Next Scope
 
-1. Continue with the remaining ordinary chrome debt: `tag_picker_page.dart`, editor shells, diagnostic/log shells, and any non-content `CheckboxListTile`/`ExpansionTile` use.
+1. Continue with the remaining ordinary chrome debt: editor shells, native/floating dictionary shells, and any non-content `CheckboxListTile`/`ExpansionTile` use.
 2. Keep direct typography exceptions limited to rendered content, theme previews, logs, code/CSS editors, and reader content; ordinary rows must use shared component typography.
 3. After each page-family migration, add or extend a failing static/widget guard first, then migrate to `HibikiCard`, `HibikiListItem`, `HibikiSearchField`, `HibikiOverflowMenu`, `HibikiFilePickerRow`, or a new shared primitive only if the data shape genuinely differs.

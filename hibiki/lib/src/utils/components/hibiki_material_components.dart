@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hibiki/src/utils/components/hibiki_text_selection_controls.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 
 class HibikiCard extends StatelessWidget {
@@ -270,6 +271,48 @@ class HibikiOverflowMenu<T> extends StatelessWidget {
       splashRadius: splashRadius,
       onSelected: onSelected,
       itemBuilder: (BuildContext context) => items,
+    );
+  }
+}
+
+class HibikiLogPanel extends StatelessWidget {
+  const HibikiLogPanel({
+    required this.log,
+    required this.shareAction,
+    super.key,
+  });
+
+  final String log;
+  final ValueChanged<String> shareAction;
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: EdgeInsets.all(tokens.spacing.page),
+        child: HibikiCard(
+          padding: EdgeInsets.all(tokens.spacing.card),
+          child: SingleChildScrollView(
+            child: SelectableText(
+              log,
+              style: TextStyle(
+                color: tokens.surfaces.onSurface,
+                fontFamily: 'monospace',
+                fontSize: 12,
+              ),
+              selectionControls: HibikiTextSelectionControls(
+                shareAction: shareAction,
+                allowCopy: true,
+                allowCut: false,
+                allowPaste: false,
+                allowSelectAll: true,
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
