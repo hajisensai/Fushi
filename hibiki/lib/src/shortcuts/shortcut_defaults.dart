@@ -91,8 +91,6 @@ class ShortcutDefaults {
     ]),
     ShortcutAction.globalBack: _kb([
       _key(LogicalKeyboardKey.arrowLeft, {ModifierKey.alt}),
-    ], [
-      _gB
     ]),
     ShortcutAction.audiobookPlayPause: _kb([
       _key(LogicalKeyboardKey.space, {ModifierKey.ctrl}),

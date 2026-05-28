@@ -60,5 +60,13 @@ void main() {
       final homeBooks = android[ShortcutAction.homeTabBooks]!;
       expect(homeBooks.keyboardBindings, isEmpty);
     });
+
+    test(
+        'globalBack has no gamepad binding by default (avoids Android B=back double-trigger)',
+        () {
+      final win = ShortcutDefaults.forPlatform(TargetPlatform.windows);
+      final globalBack = win[ShortcutAction.globalBack]!;
+      expect(globalBack.gamepadBindings, isEmpty);
+    });
   });
 }

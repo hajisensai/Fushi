@@ -105,6 +105,10 @@ void main() {
       expect(GamepadBinding.deserialize('RB')?.button, GamepadButton.rb);
       expect(GamepadBinding.deserialize('DpadLeft')?.button,
           GamepadButton.dpadLeft);
+      expect(GamepadBinding.deserialize('L3')?.button, GamepadButton.thumbLeft);
+      expect(
+          GamepadBinding.deserialize('R3')?.button, GamepadButton.thumbRight);
+      expect(GamepadBinding.deserialize('Mode')?.button, GamepadButton.mode);
     });
 
     test('deserialize returns null for unknown', () {

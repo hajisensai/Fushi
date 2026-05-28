@@ -152,8 +152,11 @@ class InputBinding {
     LogicalKeyboardKey.gameButtonRight1: 'GameRB',
     LogicalKeyboardKey.gameButtonLeft2: 'GameLT',
     LogicalKeyboardKey.gameButtonRight2: 'GameRT',
+    LogicalKeyboardKey.gameButtonThumbLeft: 'GameL3',
+    LogicalKeyboardKey.gameButtonThumbRight: 'GameR3',
     LogicalKeyboardKey.gameButtonStart: 'GameStart',
     LogicalKeyboardKey.gameButtonSelect: 'GameSelect',
+    LogicalKeyboardKey.gameButtonMode: 'GameMode',
   };
 
   String _keyLabel(LogicalKeyboardKey k) => _knownKeys[k] ?? k.keyLabel;
@@ -225,8 +228,11 @@ enum GamepadButton {
   dpadDown('DpadDown'),
   dpadLeft('DpadLeft'),
   dpadRight('DpadRight'),
+  thumbLeft('L3'),
+  thumbRight('R3'),
   start('Start'),
-  select('Select');
+  select('Select'),
+  mode('Mode');
 
   const GamepadButton(this.label);
   final String label;
@@ -264,10 +270,16 @@ enum GamepadButton {
         return LogicalKeyboardKey.arrowLeft;
       case dpadRight:
         return LogicalKeyboardKey.arrowRight;
+      case thumbLeft:
+        return LogicalKeyboardKey.gameButtonThumbLeft;
+      case thumbRight:
+        return LogicalKeyboardKey.gameButtonThumbRight;
       case start:
         return LogicalKeyboardKey.gameButtonStart;
       case select:
         return LogicalKeyboardKey.gameButtonSelect;
+      case mode:
+        return LogicalKeyboardKey.gameButtonMode;
     }
   }
 }
