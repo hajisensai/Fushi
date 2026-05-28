@@ -9,13 +9,17 @@ Future<void> loadShortcutRegistry(
   ReaderHibikiSource source,
   TargetPlatform platform,
 ) async {
-  registry.loadDefaults(platform);
   final String? json = source.getPreference<String?>(
     key: _prefKey,
     defaultValue: null,
   );
+  // Both branches reset to platform defaults first and notify listeners, so a
+  // reload (e.g. on profile switch) fully swaps bindings and refreshes any open
+  // settings UI.
   if (json != null) {
     registry.loadFromJsonString(json, platform);
+  } else {
+    registry.resetToDefaults(platform);
   }
 }
 

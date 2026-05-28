@@ -231,5 +231,35 @@ void main() {
       reg.resetToDefaults(TargetPlatform.windows);
       expect(reg.toJson().containsKey('future_action_v99'), isFalse);
     });
+
+    test('loadFromJsonString reload fully swaps bindings (profile switch)', () {
+      // Profile A: custom binding for readerPageForward.
+      final profileA = jsonEncode({
+        'reader_page_forward': {
+          'keyboard': ['KeyN'],
+          'gamepad': <String>[],
+        },
+      });
+      registry.loadFromJsonString(profileA, TargetPlatform.windows);
+      expect(
+        registry.resolveKeyboard(LogicalKeyboardKey.keyN,
+            modifiers: {}, scope: ShortcutScope.reader),
+        ShortcutAction.readerPageForward,
+      );
+
+      // Switch to Profile B with no custom shortcuts: reloading must drop
+      // Profile A's KeyN binding and restore defaults.
+      registry.loadFromJsonString('{}', TargetPlatform.windows);
+      expect(
+        registry.resolveKeyboard(LogicalKeyboardKey.keyN,
+            modifiers: {}, scope: ShortcutScope.reader),
+        isNull,
+      );
+      expect(
+        registry.resolveKeyboard(LogicalKeyboardKey.pageDown,
+            modifiers: {}, scope: ShortcutScope.reader),
+        ShortcutAction.readerPageForward,
+      );
+    });
   });
 }
