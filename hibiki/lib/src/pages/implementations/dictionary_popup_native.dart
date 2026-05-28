@@ -153,7 +153,7 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildHeader(entry, idx, textColor, subColor),
+          _buildHeader(entry, idx, textColor, subColor, tokens),
           if (entry.deinflectionTrace.isNotEmpty)
             _buildDeinflection(entry, tagBg),
           const SizedBox(height: 2),
@@ -168,13 +168,19 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
     int idx,
     Color textColor,
     Color subColor,
+    HibikiDesignTokens tokens,
   ) {
     return Row(
       children: [
         Expanded(
-          child: _buildExpressionWithReading(entry, textColor, subColor),
+          child: _buildExpressionWithReading(
+            entry,
+            textColor,
+            subColor,
+            tokens,
+          ),
         ),
-        _buildMineButton(entry, idx, subColor),
+        _buildMineButton(entry, idx, subColor, tokens),
       ],
     );
   }
@@ -183,22 +189,34 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
     _GroupedEntry entry,
     Color textColor,
     Color subColor,
+    HibikiDesignTokens tokens,
   ) {
+    final TextStyle expressionStyle = tokens.type.pageTitle.copyWith(
+      color: textColor,
+    );
+    final TextStyle readingStyle = tokens.type.metadata.copyWith(
+      color: subColor,
+    );
     if (entry.reading.isNotEmpty && entry.reading != entry.expression) {
       return _FuriganaText(
         expression: entry.expression,
         reading: entry.reading,
-        expressionStyle: TextStyle(fontSize: 26, color: textColor),
-        readingStyle: TextStyle(fontSize: 12, color: subColor),
+        expressionStyle: expressionStyle,
+        readingStyle: readingStyle,
       );
     }
     return Text(
       entry.expression,
-      style: TextStyle(fontSize: 26, color: textColor),
+      style: expressionStyle,
     );
   }
 
-  Widget _buildMineButton(_GroupedEntry entry, int idx, Color subColor) {
+  Widget _buildMineButton(
+    _GroupedEntry entry,
+    int idx,
+    Color subColor,
+    HibikiDesignTokens tokens,
+  ) {
     return GestureDetector(
       onTap: () {
         if (widget.onMineEntry != null) {
@@ -210,7 +228,10 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
       },
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4),
-        child: Text('+', style: TextStyle(fontSize: 18, color: subColor)),
+        child: Text(
+          '+',
+          style: tokens.type.controlLabel.copyWith(color: subColor),
+        ),
       ),
     );
   }
@@ -268,8 +289,7 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
                   onTap: () => _onGlossaryTap(item.content),
                   child: Text(
                     '$num${item.content}',
-                    style: TextStyle(
-                      fontSize: 14,
+                    style: tokens.type.listTitle.copyWith(
                       color: textColor,
                       height: 1.4,
                     ),
@@ -303,14 +323,22 @@ class _FuriganaText extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final segments = _buildFuriganaSegments(expression, reading);
+    final double readingFontSize = readingStyle.fontSize ??
+        DefaultTextStyle.of(context).style.fontSize ??
+        12;
+    final double readingGap = readingFontSize + 2;
+    final segments = _buildFuriganaSegments(expression, reading, readingGap);
     return Wrap(
       crossAxisAlignment: WrapCrossAlignment.end,
       children: segments,
     );
   }
 
-  List<Widget> _buildFuriganaSegments(String expr, String read) {
+  List<Widget> _buildFuriganaSegments(
+    String expr,
+    String read,
+    double readingGap,
+  ) {
     final kanjiPattern = RegExp('[一-鿿㐀-䶿豈-﫿々]+');
     final matches = kanjiPattern.allMatches(expr).toList();
 
@@ -339,7 +367,7 @@ class _FuriganaText extends StatelessWidget {
         }
         segments.add(
           Padding(
-            padding: EdgeInsets.only(top: readingStyle.fontSize! + 2),
+            padding: EdgeInsets.only(top: readingGap),
             child: Text(kana, style: expressionStyle),
           ),
         );
@@ -380,7 +408,7 @@ class _FuriganaText extends StatelessWidget {
       final trailing = expr.substring(exprIdx);
       segments.add(
         Padding(
-          padding: EdgeInsets.only(top: readingStyle.fontSize! + 2),
+          padding: EdgeInsets.only(top: readingGap),
           child: Text(trailing, style: expressionStyle),
         ),
       );

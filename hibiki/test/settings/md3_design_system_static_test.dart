@@ -344,6 +344,7 @@ void main() {
         'fontSize: 9',
       ],
       'lib/src/pages/implementations/dictionary_popup_native.dart': <String>[
+        'TextStyle(',
         'BorderRadius.circular(4)',
         'fontSize: 10',
         'fontSize: 11',
