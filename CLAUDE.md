@@ -90,6 +90,8 @@
 - ADB 脚本（`test-flows.ps1`）**不得**尝试向 Flutter 文本框输入 CJK——`input text` 在 Android 上不支持 Unicode，`settext.jar` 找不到 Flutter 的 EditText。CJK 文字输入只能通过 `tester.enterText()` 在 Flutter 集成测试里完成。
 - 导入验证优先用 `DB-Query` 查数据库（`run-as app.hibiki.reader sqlite3 files/hibiki.db`），不依赖 UI dump 匹配文字。
 - 需要新增测试流程时，先判断属于哪一层，不要在错误的层做事。
+- **禁止通过截图猜坐标点击 UI 元素。** 如果必须通过 ADB 点击（而非 `flutter drive`），必须先 `uiautomator dump` → 解析 XML 找到 `content-desc` 或 `text` 匹配的元素 → 从 `bounds` 属性计算中心坐标 → `input tap`。可用辅助脚本：`.codex-test/tools/tap-element.sh <content-desc>` 和 `.codex-test/tools/list-elements.sh`。
+- **ADB 路径：** 始终使用 `D:/android_sdk/platform-tools/adb.exe`，不依赖 PATH 中的 adb。
 
 ### ADB 降级安装（不卸载）
 

@@ -8,6 +8,7 @@ import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:hibiki/src/sync/sync_auto_trigger.dart';
 import 'package:hibiki/utils.dart';
 
 /// A page template which assumes use of [BaseSourcePageState] by which all
@@ -83,13 +84,23 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
   /// use this and wrap their [build] function with a [WillPopScope].
   Future<bool> onWillPop() async {
     final mediaSource = appModel.currentMediaSource;
+    final item = widget.item;
+    final messenger = ScaffoldMessenger.maybeOf(context);
     await onSourcePagePop();
 
     if (mediaSource != null) {
       await appModel.closeMedia(
         ref: ref,
         mediaSource: mediaSource,
-        item: widget.item,
+        item: item,
+      );
+    }
+
+    if (item != null && messenger != null) {
+      triggerAutoSyncAfterClose(
+        db: appModel.database,
+        mediaIdentifier: item.mediaIdentifier,
+        messenger: messenger,
       );
     }
     return true;

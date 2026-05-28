@@ -19,6 +19,7 @@ void main() {
       'class HibikiTextField',
       'class HibikiPageHeader',
       'class HibikiPageScaffold',
+      'class HibikiToolScaffold',
       'class HibikiOverflowMenu',
       'class HibikiFilePickerRow',
       'class HibikiLogPanel',
@@ -120,6 +121,7 @@ void main() {
     ],
     'lib/src/pages/implementations/illustrations_viewer_page.dart': <String>[
       'HibikiPageScaffold',
+      'HibikiToolScaffold',
       'HibikiCard',
     ],
     'lib/src/pages/base_history_page.dart': <String>[
@@ -145,6 +147,7 @@ void main() {
       'HibikiCompactSearchRow',
     ],
     'lib/src/pages/implementations/book_css_editor_page.dart': <String>[
+      'HibikiToolScaffold',
       'HibikiEditorPanel',
       'HibikiPlaceholderMessage',
     ],
@@ -294,6 +297,7 @@ void main() {
         'ListTile(',
       ],
       'lib/src/pages/implementations/illustrations_viewer_page.dart': <String>[
+        'adaptiveAppBar',
         'surfaceContainerLow',
         'BorderRadius.circular(8)',
       ],
@@ -327,6 +331,7 @@ void main() {
         'fontSize:',
       ],
       'lib/src/pages/implementations/book_css_editor_page.dart': <String>[
+        'adaptiveAppBar',
         'fontSize: 13',
         'OutlineInputBorder',
         'Center(child: Text(',

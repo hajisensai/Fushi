@@ -216,9 +216,8 @@ class _BookCssEditorPageState extends State<BookCssEditorPage> {
   @override
   Widget build(BuildContext context) {
     if (_entries.isEmpty) {
-      return Scaffold(
-        appBar: adaptiveAppBar(
-            context: context, title: Text(t.book_css_editor_title)),
+      return HibikiToolScaffold(
+        title: t.book_css_editor_title,
         body: HibikiPlaceholderMessage(
           icon: Icons.code,
           message: t.book_css_editor_no_css_files,
@@ -235,33 +234,29 @@ class _BookCssEditorPageState extends State<BookCssEditorPage> {
           Navigator.of(context).pop();
         }
       },
-      child: Scaffold(
-        appBar: adaptiveAppBar(
-          context: context,
-          title: Text(t.book_css_editor_title),
-          actions: [
-            TextButton(
-              onPressed: _doResetAll,
-              child: Text(t.book_css_editor_reset_all),
-            ),
-          ],
-          bottom: PreferredSize(
-            preferredSize: const Size.fromHeight(48),
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Row(
-                children: List.generate(_entries.length, (i) {
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 6),
-                    child: ChoiceChip(
-                      label: Text(_tabLabel(i)),
-                      selected: i == _selectedIndex,
-                      onSelected: (_) => _attemptSwitchTab(i),
-                    ),
-                  );
-                }),
-              ),
+      child: HibikiToolScaffold(
+        title: t.book_css_editor_title,
+        actions: [
+          TextButton(
+            onPressed: _doResetAll,
+            child: Text(t.book_css_editor_reset_all),
+          ),
+        ],
+        bottom: SizedBox(
+          height: 40,
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: List.generate(_entries.length, (i) {
+                return Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: ChoiceChip(
+                    label: Text(_tabLabel(i)),
+                    selected: i == _selectedIndex,
+                    onSelected: (_) => _attemptSwitchTab(i),
+                  ),
+                );
+              }),
             ),
           ),
         ),

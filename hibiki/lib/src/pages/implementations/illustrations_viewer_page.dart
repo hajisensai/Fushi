@@ -211,12 +211,10 @@ class _FullScreenGalleryState extends State<_FullScreenGallery> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Scaffold(
-      backgroundColor: theme.scaffoldBackgroundColor,
-      appBar: adaptiveAppBar(
-        context: context,
-        title: Text(t.image_page_counter(
-            current: _currentIndex + 1, total: widget.images.length)),
+    return HibikiToolScaffold(
+      title: t.image_page_counter(
+        current: _currentIndex + 1,
+        total: widget.images.length,
       ),
       body: PageView.builder(
         controller: _pageController,

@@ -1,6 +1,5 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/utils/adaptive/adaptive_navigation.dart';
 import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart';
 import 'package:hibiki/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
@@ -78,12 +77,9 @@ class AdaptiveSettingsScaffold extends StatelessWidget {
       );
     }
 
-    return Scaffold(
-      appBar: adaptiveAppBar(
-        context: context,
-        title: title,
-        actions: actions,
-      ),
+    return HibikiToolScaffold.customTitle(
+      title: title,
+      actions: actions ?? const <Widget>[],
       body: ListView(
         padding: listPadding,
         children: children,

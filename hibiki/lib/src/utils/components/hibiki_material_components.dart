@@ -463,6 +463,142 @@ class HibikiPageScaffold extends StatelessWidget {
   }
 }
 
+class HibikiToolScaffold extends StatelessWidget {
+  const HibikiToolScaffold({
+    required this.title,
+    required this.body,
+    super.key,
+    this.leading,
+    this.actions = const <Widget>[],
+    this.bottom,
+    this.bottomNavigationBar,
+    this.backgroundColor,
+  }) : titleWidget = null;
+
+  const HibikiToolScaffold.customTitle({
+    required Widget title,
+    required this.body,
+    super.key,
+    this.leading,
+    this.actions = const <Widget>[],
+    this.bottom,
+    this.bottomNavigationBar,
+    this.backgroundColor,
+  })  : title = null,
+        titleWidget = title;
+
+  final String? title;
+  final Widget? titleWidget;
+  final Widget body;
+  final Widget? leading;
+  final List<Widget> actions;
+  final Widget? bottom;
+  final Widget? bottomNavigationBar;
+  final Color? backgroundColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final Widget? effectiveLeading = leading ?? _defaultLeading(context);
+
+    return Scaffold(
+      backgroundColor: backgroundColor ?? tokens.surfaces.page,
+      bottomNavigationBar: bottomNavigationBar,
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Padding(
+              padding: EdgeInsets.fromLTRB(
+                tokens.spacing.gap,
+                4,
+                tokens.spacing.gap,
+                2,
+              ),
+              child: SizedBox(
+                height: 44,
+                child: Row(
+                  children: <Widget>[
+                    if (effectiveLeading != null) ...<Widget>[
+                      SizedBox.square(
+                        dimension: 40,
+                        child: effectiveLeading,
+                      ),
+                      SizedBox(width: tokens.spacing.gap / 2),
+                    ],
+                    Expanded(
+                      child: _buildTitle(tokens),
+                    ),
+                    if (actions.isNotEmpty) ...<Widget>[
+                      SizedBox(width: tokens.spacing.gap / 2),
+                      ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxWidth: MediaQuery.sizeOf(context).width * 0.48,
+                        ),
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          reverse: true,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: actions,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            if (bottom != null)
+              Padding(
+                padding: EdgeInsets.fromLTRB(
+                  tokens.spacing.gap,
+                  0,
+                  tokens.spacing.gap,
+                  tokens.spacing.gap / 2,
+                ),
+                child: bottom!,
+              ),
+            Expanded(child: body),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget? _defaultLeading(BuildContext context) {
+    if (!Navigator.of(context).canPop()) return null;
+    return IconButton(
+      tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+      icon: const Icon(Icons.arrow_back),
+      constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+      padding: EdgeInsets.zero,
+      onPressed: () => Navigator.of(context).maybePop(),
+    );
+  }
+
+  Widget _buildTitle(HibikiDesignTokens tokens) {
+    final TextStyle titleStyle = tokens.type.listTitle.copyWith(
+      color: tokens.surfaces.onSurface,
+    );
+    final Widget? customTitle = titleWidget;
+    if (customTitle != null) {
+      return DefaultTextStyle.merge(
+        style: titleStyle,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        child: customTitle,
+      );
+    }
+    return Text(
+      title!,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: titleStyle,
+    );
+  }
+}
+
 class HibikiFilePickerRow extends StatelessWidget {
   const HibikiFilePickerRow({
     required this.title,
