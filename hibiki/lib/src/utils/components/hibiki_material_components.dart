@@ -480,6 +480,89 @@ class HibikiBadge extends StatelessWidget {
   }
 }
 
+enum HibikiColorSwatchShape { block, dot }
+
+class HibikiColorSwatch extends StatelessWidget {
+  const HibikiColorSwatch({
+    required this.color,
+    super.key,
+    this.size = 20,
+    this.width,
+    this.height,
+    this.shape = HibikiColorSwatchShape.block,
+    this.selected = false,
+    this.onTap,
+    this.label,
+    this.textColor,
+    this.borderColor,
+  });
+
+  final Color color;
+  final double size;
+  final double? width;
+  final double? height;
+  final HibikiColorSwatchShape shape;
+  final bool selected;
+  final VoidCallback? onTap;
+  final String? label;
+  final Color? textColor;
+  final Color? borderColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final bool isDot = shape == HibikiColorSwatchShape.dot;
+    final double resolvedWidth = width ?? size;
+    final double resolvedHeight = height ?? size;
+    final BorderRadius inkRadius = isDot
+        ? BorderRadius.circular(resolvedHeight / 2)
+        : tokens.radii.chipRadius;
+    final BorderSide borderSide = BorderSide(
+      color: selected ? colors.primary : borderColor ?? colors.outlineVariant,
+      width: selected ? 3 : 1,
+    );
+    final Widget swatch = Container(
+      width: resolvedWidth,
+      height: resolvedHeight,
+      decoration: BoxDecoration(
+        color: color,
+        shape: isDot ? BoxShape.circle : BoxShape.rectangle,
+        borderRadius: isDot ? null : tokens.radii.chipRadius,
+        border: Border.fromBorderSide(borderSide),
+      ),
+    );
+    final Widget interactiveSwatch = onTap == null
+        ? swatch
+        : InkWell(
+            borderRadius: inkRadius,
+            onTap: onTap,
+            child: swatch,
+          );
+    final Widget semanticSwatch = Semantics(
+      button: onTap != null,
+      selected: selected,
+      child: interactiveSwatch,
+    );
+    if (label == null) return semanticSwatch;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        semanticSwatch,
+        SizedBox(height: tokens.spacing.gap / 2),
+        Text(
+          label!,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: tokens.type.metadata.copyWith(
+            color: textColor ?? tokens.surfaces.onSurface,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class HibikiPageHeader extends StatelessWidget {
   const HibikiPageHeader({
     required this.title,

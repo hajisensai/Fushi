@@ -20,6 +20,7 @@ void main() {
       'class HibikiSelectableChip',
       'class HibikiTagChip',
       'class HibikiBadge',
+      'class HibikiColorSwatch',
       'class HibikiPageHeader',
       'class HibikiPageScaffold',
       'class HibikiToolScaffold',
@@ -94,6 +95,7 @@ void main() {
       'HibikiPageScaffold',
       'HibikiListItem',
       'HibikiTextField',
+      'HibikiColorSwatch',
     ],
     'lib/src/pages/implementations/media_item_dialog_page.dart': <String>[
       'HibikiListItem',
@@ -187,6 +189,7 @@ void main() {
     'lib/src/pages/implementations/custom_theme_page.dart': <String>[
       'HibikiTextField',
       'HibikiDesignTokens',
+      'HibikiColorSwatch',
     ],
     'lib/src/pages/implementations/custom_fonts_page.dart': <String>[
       'HibikiTextField',
@@ -314,6 +317,7 @@ void main() {
       'lib/src/pages/implementations/tag_management_page.dart': <String>[
         'ListTile(',
         'OutlineInputBorder',
+        'shape: BoxShape.circle',
       ],
       'lib/src/pages/implementations/language_dialog_page.dart': <String>[
         'fontSize: 10',
@@ -445,6 +449,7 @@ void main() {
         'TextField(',
         'BorderRadius.circular(',
         'fontSize:',
+        'Widget _colorDot(',
       ],
       'lib/src/pages/implementations/custom_fonts_page.dart': <String>[
         'TextField(',

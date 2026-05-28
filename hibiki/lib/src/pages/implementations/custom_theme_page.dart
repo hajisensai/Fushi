@@ -1030,7 +1030,12 @@ class _CustomThemePageState extends BasePageState {
       onChanged: onEnabledChanged,
       body: Row(
         children: [
-          _colorDot(color),
+          HibikiColorSwatch(
+            color: color,
+            size: 20,
+            shape: HibikiColorSwatchShape.dot,
+            borderColor: Theme.of(context).dividerColor,
+          ),
           if (preview != null) ...[
             const SizedBox(width: 8),
             Expanded(child: preview),
@@ -1047,37 +1052,14 @@ class _CustomThemePageState extends BasePageState {
     );
   }
 
-  Widget _colorDot(Color color) {
-    return Container(
-      width: 20,
-      height: 20,
-      decoration: BoxDecoration(
-        color: color,
-        shape: BoxShape.circle,
-        border: Border.all(color: Theme.of(context).dividerColor),
-      ),
-    );
-  }
-
   Widget _swatch(Color color, String label, Color textColor) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return Expanded(
-      child: Column(
-        children: [
-          Container(
-            height: 36,
-            decoration: BoxDecoration(
-              color: color,
-              borderRadius: tokens.radii.chipRadius,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: tokens.type.metadata.copyWith(color: textColor),
-            overflow: TextOverflow.ellipsis,
-          ),
-        ],
+      child: HibikiColorSwatch(
+        color: color,
+        width: double.infinity,
+        height: 36,
+        label: label,
+        textColor: textColor,
       ),
     );
   }

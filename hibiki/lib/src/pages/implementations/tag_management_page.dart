@@ -254,22 +254,12 @@ class TagEditDialogState extends State<TagEditDialog> {
             runSpacing: 8,
             children: kTagPresetColors.map((color) {
               final isSelected = _selectedColor == color;
-              return GestureDetector(
+              return HibikiColorSwatch(
+                color: Color(color),
+                size: 32,
+                shape: HibikiColorSwatchShape.dot,
+                selected: isSelected,
                 onTap: () => setState(() => _selectedColor = color),
-                child: Container(
-                  width: 32,
-                  height: 32,
-                  decoration: BoxDecoration(
-                    color: Color(color),
-                    shape: BoxShape.circle,
-                    border: isSelected
-                        ? Border.all(
-                            color: Theme.of(context).colorScheme.onSurface,
-                            width: 3,
-                          )
-                        : null,
-                  ),
-                ),
               );
             }).toList(),
           ),

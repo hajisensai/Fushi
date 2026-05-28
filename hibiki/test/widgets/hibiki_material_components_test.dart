@@ -128,6 +128,30 @@ void main() {
     expect(find.byIcon(Icons.headphones_outlined), findsOneWidget);
   });
 
+  testWidgets('HibikiColorSwatch uses token radius and selected border',
+      (WidgetTester tester) async {
+    bool tapped = false;
+    await tester.pumpWidget(
+      buildSubject(
+        HibikiColorSwatch(
+          color: Colors.green,
+          selected: true,
+          onTap: () => tapped = true,
+        ),
+      ),
+    );
+
+    final Container swatch = tester.widget<Container>(find.byType(Container));
+    final BoxDecoration decoration = swatch.decoration! as BoxDecoration;
+
+    expect(decoration.color, Colors.green);
+    expect(decoration.borderRadius, BorderRadius.circular(8));
+    expect(decoration.border, isNotNull);
+
+    await tester.tap(find.byType(HibikiColorSwatch));
+    expect(tapped, isTrue);
+  });
+
   testWidgets('HibikiTransientScaffold uses the page surface',
       (WidgetTester tester) async {
     await tester.pumpWidget(
