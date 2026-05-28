@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
-import 'package:hibiki/src/utils/spacing.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
 
@@ -39,66 +38,78 @@ class _BlurOptionsDialogPageState extends BasePageState<BlurOptionsDialogPage> {
 
   @override
   Widget build(BuildContext context) {
-    return adaptiveAlertDialog(
-      context: context,
-      contentPadding: MediaQuery.of(context).orientation == Orientation.portrait
-          ? Spacing.of(context).insets.exceptBottom.big
-          : Spacing.of(context).insets.exceptBottom.normal.copyWith(
-                left: Spacing.of(context).spaces.semiBig,
-                right: Spacing.of(context).spaces.semiBig,
-              ),
-      actionsPadding: Spacing.of(context).insets.exceptBottom.normal.copyWith(
-            left: Spacing.of(context).spaces.normal,
-            right: Spacing.of(context).spaces.normal,
-            bottom: Spacing.of(context).spaces.normal,
-            top: Spacing.of(context).spaces.extraSmall,
-          ),
-      content: buildContent(),
-      actions: actions,
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
+    return HibikiDialogFrame(
+      maxWidth: 560,
+      maxHeightFactor: 0.82,
+      scrollable: false,
+      child: HibikiModalSheetFrame(
+        title: t.player_option_blur_radius,
+        leadingIcon: Icons.blur_on_outlined,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: buildContent(),
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: actions,
+        ),
+      ),
     );
   }
 
   Widget buildContent() {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
     return RawScrollbar(
       thickness: 3,
       thumbVisibility: true,
       controller: _contentScrollController,
-      child: Padding(
-        padding: Spacing.of(context).insets.onlyRight.normal,
-        child: SingleChildScrollView(
-          controller: _contentScrollController,
-          child: SizedBox(
-            width: desktopDialogContentWidth(MediaQuery.sizeOf(context).width),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ColorPicker(
-                  pickerColor: _pendingColor,
-                  onColorChanged: (color) async {
-                    _pendingColor = color;
+      child: SingleChildScrollView(
+        controller: _contentScrollController,
+        child: SizedBox(
+          width: desktopDialogContentWidth(MediaQuery.sizeOf(context).width),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ColorPicker(
+                pickerColor: _pendingColor,
+                onColorChanged: (color) async {
+                  _pendingColor = color;
+                },
+                colorPickerWidth: 200,
+                pickerAreaHeightPercent: 0.8,
+              ),
+              SizedBox(height: tokens.spacing.gap),
+              HibikiTextField(
+                controller: _blurrinessController,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                suffixIcon: HibikiIconButton(
+                  tooltip: t.reset,
+                  size: 18,
+                  onTap: () async {
+                    _blurrinessController.text = '5.0';
+                    FocusScope.of(context).unfocus();
                   },
-                  colorPickerWidth: 200,
-                  pickerAreaHeightPercent: 0.8,
+                  icon: Icons.undo_outlined,
                 ),
-                HibikiTextField(
-                  controller: _blurrinessController,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  suffixIcon: HibikiIconButton(
-                    tooltip: t.reset,
-                    size: 18,
-                    onTap: () async {
-                      _blurrinessController.text = '5.0';
-                      FocusScope.of(context).unfocus();
-                    },
-                    icon: Icons.undo_outlined,
-                  ),
-                  labelText:
-                      '${t.player_option_blur_radius} (${t.unit_pixels})',
-                ),
-              ],
-            ),
+                labelText: '${t.player_option_blur_radius} (${t.unit_pixels})',
+              ),
+            ],
           ),
         ),
       ),
