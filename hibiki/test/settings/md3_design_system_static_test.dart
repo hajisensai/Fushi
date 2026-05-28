@@ -228,6 +228,7 @@ void main() {
     ],
     'lib/src/media/audiobook/sasayaki_rematch.dart': <String>[
       'HibikiModalSheetFrame',
+      'HibikiDialogFrame',
     ],
     'lib/src/pages/implementations/dictionary_popup_native.dart': <String>[
       'HibikiTagChip',
@@ -507,6 +508,7 @@ void main() {
         'HibikiDivider()',
       ],
       'lib/src/media/audiobook/sasayaki_rematch.dart': <String>[
+        '=> Dialog(',
         'SafeArea(',
       ],
       'lib/src/utils/misc/hibiki_toast.dart': <String>[

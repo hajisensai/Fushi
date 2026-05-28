@@ -179,11 +179,11 @@ class SasayakiRematch {
     if (isDesktopPlatform) {
       return showAppDialog<_MatchParams>(
         context: context,
-        builder: (ctx) => Dialog(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 480, maxHeight: 400),
-            child: StatefulBuilder(builder: buildSheetBody),
-          ),
+        builder: (ctx) => HibikiDialogFrame(
+          maxWidth: 480,
+          maxHeightFactor: 0.62,
+          scrollable: false,
+          child: StatefulBuilder(builder: buildSheetBody),
         ),
       );
     }
