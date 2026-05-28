@@ -868,7 +868,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     if (_controller == null || !_readerContentReady || _lyricsMode) return;
     final Size screen = MediaQuery.of(context).size;
     final double w = screen.width;
-    final double h = screen.height - _readerTopOffset - _readerBottomReserve;
+    final double h = screen.height;
     final bool widthChanged = _lastSyncedWidth > 0 && w != _lastSyncedWidth;
     final bool heightChanged = (h - _lastSyncedHeight).abs() >= 1;
     if (!widthChanged && !heightChanged) return;
@@ -925,14 +925,10 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
             fit: StackFit.expand,
             children: <Widget>[
               Positioned.fill(
-                top: _readerTopOffset,
-                bottom: _readerBottomReserve,
                 child: _buildBody(),
               ),
               if (!_readerContentReady)
                 Positioned.fill(
-                  top: _hasEverLoaded ? _readerTopOffset : _stableTopInset,
-                  bottom: _hasEverLoaded ? _readerBottomReserve : 0,
                   child: ColoredBox(color: bgColor),
                 ),
               AnimatedOpacity(
@@ -1088,11 +1084,22 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       final String styleTag = _buildStyleTag();
       const String hideUntilReady =
           '<style id="hoshi-cloak">body{visibility:hidden!important}</style>';
-      final RegExp headPattern = RegExp('<head[^>]*>', caseSensitive: false);
-      final RegExpMatch? headMatch = headPattern.firstMatch(html);
-      if (headMatch != null) {
+      // Cloak goes early (right after <head>) to hide FOUC.
+      // Reader style goes last (before </head>) so it wins over EPUB
+      // CSS in !important specificity ties (later declaration wins).
+      final RegExp headOpenPattern =
+          RegExp('<head[^>]*>', caseSensitive: false);
+      final RegExp headClosePattern =
+          RegExp(r'</head\s*>', caseSensitive: false);
+      final RegExpMatch? headOpen = headOpenPattern.firstMatch(html);
+      final RegExpMatch? headClose = headClosePattern.firstMatch(html);
+      if (headOpen != null && headClose != null) {
+        html = '${html.substring(0, headOpen.end)}\n$hideUntilReady'
+            '${html.substring(headOpen.end, headClose.start)}\n$styleTag\n'
+            '${html.substring(headClose.start)}';
+      } else if (headOpen != null) {
         html =
-            '${html.substring(0, headMatch.end)}\n$hideUntilReady\n$styleTag${html.substring(headMatch.end)}';
+            '${html.substring(0, headOpen.end)}\n$hideUntilReady\n$styleTag${html.substring(headOpen.end)}';
       } else {
         html = '$hideUntilReady\n$styleTag\n$html';
       }
@@ -1232,6 +1239,10 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         fontSize: s.fontSize.round(),
         initialFragment: _initialFragment,
         sasayakiCuesJson: sasayakiCuesJson,
+        chromeTopInset: _readerTopOffset,
+        chromeBottomInset: _showChrome
+            ? _readerChromeHeight + _stableBottomInset
+            : _stableBottomInset,
       ),
     );
 
@@ -1658,8 +1669,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       if (!mounted || _navigateGeneration != gen) return;
       final Size screenSync = MediaQuery.of(context).size;
       _lastSyncedWidth = screenSync.width;
-      _lastSyncedHeight =
-          screenSync.height - _readerTopOffset - _readerBottomReserve;
+      _lastSyncedHeight = screenSync.height;
     } catch (e, stack) {
       ErrorLogService.instance
           .log('ReaderHibiki._onChapterLoadComplete', e, stack);
@@ -1755,8 +1765,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     if (!_readerContentReady) {
       final Size screen = MediaQuery.of(context).size;
       _lastSyncedWidth = screen.width;
-      _lastSyncedHeight =
-          screen.height - _readerTopOffset - _readerBottomReserve;
+      _lastSyncedHeight = screen.height;
       setState(() {
         _readerContentReady = true;
         _hasEverLoaded = true;
@@ -2642,7 +2651,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
         if (mounted) {
           final rect = ReaderSelectionScripts.highlightRectFromResult(
             raw,
-            topOffset: _readerTopOffset,
+            topOffset: 0,
           );
           if (rect != null) finalRect = rect;
         }
@@ -2668,7 +2677,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
     final Rect selectionRect = rect != null
         ? Rect.fromLTWH(
             rect['x'] ?? 0,
-            (rect['y'] ?? 0) + _readerTopOffset,
+            rect['y'] ?? 0,
             rect['width'] ?? 0,
             rect['height'] ?? 0,
           )
@@ -3014,8 +3023,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
     if (dx * dx + dy * dy < 64) return;
     _barrierHoverLastDx = event.localPosition.dx;
     _barrierHoverLastDy = event.localPosition.dy;
-    _selectTextAt(
-        event.localPosition.dx, event.localPosition.dy - _readerTopOffset);
+    _selectTextAt(event.localPosition.dx, event.localPosition.dy);
   }
 
   // ── Page Turn ─────────────────────────────────────────────────────
@@ -3252,6 +3260,18 @@ window.flutter_inappwebview.callHandler('spreadReady');
     setState(() {
       _showChrome = !_showChrome;
     });
+    _applyChromeInsets();
+  }
+
+  Future<void> _applyChromeInsets() async {
+    if (_controller == null || !_readerContentReady || _lyricsMode) return;
+    final double top = _readerTopOffset;
+    final double bottom = _showChrome
+        ? _readerChromeHeight + _stableBottomInset
+        : _stableBottomInset;
+    await _controller!.evaluateJavascript(
+      source: ReaderPaginationScripts.setChromeInsetsInvocation(top, bottom),
+    );
   }
 
   Widget _buildBottomChrome() {

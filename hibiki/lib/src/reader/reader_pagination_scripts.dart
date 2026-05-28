@@ -60,8 +60,27 @@ class ReaderPaginationScripts {
   static String clearSearchHighlightInvocation() =>
       'window.hoshiReader.clearSearchHighlight()';
 
+  static String getFirstVisibleCharOffsetInvocation() =>
+      'window.hoshiReader && window.hoshiReader.getFirstVisibleCharOffset()';
+
+  static String scrollToCharOffsetInvocation(int charOffset) =>
+      'window.hoshiReader && window.hoshiReader.scrollToCharOffset($charOffset)';
+
+  static String setChromeInsetsInvocation(double topPx, double bottomPx) =>
+      'window.hoshiReader && window.hoshiReader.setChromeInsets($topPx, $bottomPx)';
+
   static bool didScroll(String? result) =>
       result?.trim().replaceAll('"', '') == 'scrolled';
+
+  static int? intResult(dynamic result) {
+    if (result == null) return null;
+    if (result is int) return result;
+    if (result is num) return result.toInt();
+    if (result is String) {
+      return int.tryParse(result.trim().replaceAll('"', ''));
+    }
+    return null;
+  }
 
   static double? doubleResult(dynamic result) {
     if (result == null) return null;
@@ -79,12 +98,16 @@ class ReaderPaginationScripts {
     int fontSize = ReaderLayoutDefaults.fontSizePx,
     String? sasayakiCuesJson,
     String? initialFragment,
+    double chromeTopInset = 0.0,
+    double chromeBottomInset = 0.0,
   }) {
     if (continuousMode) {
       return _continuousShellScript(
         initialProgress: initialProgress,
         sasayakiCuesJson: sasayakiCuesJson,
         initialFragment: initialFragment,
+        chromeTopInset: chromeTopInset,
+        chromeBottomInset: chromeBottomInset,
       );
     }
     return _paginatedShellScript(
@@ -92,6 +115,8 @@ class ReaderPaginationScripts {
       fontSize: fontSize,
       sasayakiCuesJson: sasayakiCuesJson,
       initialFragment: initialFragment,
+      chromeTopInset: chromeTopInset,
+      chromeBottomInset: chromeBottomInset,
     );
   }
 
@@ -476,6 +501,8 @@ if (document.readyState === 'complete') {
     int fontSize = ReaderLayoutDefaults.fontSizePx,
     String? sasayakiCuesJson,
     String? initialFragment,
+    double chromeTopInset = 0.0,
+    double chromeBottomInset = 0.0,
   }) {
     final String initialRestoreScript = initialFragment != null
         ? 'window.hoshiReader.jumpToFragment(${_jsStringLiteral(initialFragment)});'
@@ -780,6 +807,96 @@ $_sharedJs
       }
       return "limit";
     }
+  },
+  getFirstVisibleCharOffset: function() {
+    var context = this.getScrollContext();
+    var cs = getComputedStyle(document.body);
+    var pt = parseFloat(cs.paddingTop) || 0;
+    var pl = parseFloat(cs.paddingLeft) || 0;
+    var pr = parseFloat(cs.paddingRight) || 0;
+    var x = context.vertical ? (document.body.clientWidth - pr - 2) : (pl + 2);
+    var y = pt + 2;
+    var range = document.caretRangeFromPoint(x, y);
+    if (!range || !range.startContainer) return -1;
+    var target = range.startContainer;
+    if (target.nodeType !== Node.TEXT_NODE) {
+      var walker = this.createWalker(target);
+      target = walker.nextNode();
+      if (!target) return -1;
+    }
+    var baseOffset = this.nodeStartOffsets.get(target);
+    if (baseOffset === undefined) {
+      this.buildNodeOffsets();
+      baseOffset = this.nodeStartOffsets.get(target);
+      if (baseOffset === undefined) return -1;
+    }
+    var localChars = 0;
+    var text = target.textContent;
+    var limit = Math.min(range.startOffset, text.length);
+    for (var i = 0; i < limit; i++) {
+      var cp = text.codePointAt(i);
+      var char = String.fromCodePoint(cp);
+      if (this.isMatchableChar(char)) localChars++;
+      if (cp > 0xFFFF) i++;
+    }
+    return baseOffset + localChars;
+  },
+  scrollToCharOffset: function(charOffset, hintScroll) {
+    var walker = this.createWalker();
+    var node;
+    var runningOffset = 0;
+    var targetNode = null;
+    var remaining = 0;
+    while (node = walker.nextNode()) {
+      var nodeChars = this.countChars(node.textContent);
+      if (runningOffset + nodeChars > charOffset) {
+        targetNode = node;
+        remaining = charOffset - runningOffset;
+        break;
+      }
+      runningOffset += nodeChars;
+    }
+    if (!targetNode) return;
+    var charIdx = 0;
+    var textOffset = 0;
+    var text = targetNode.textContent;
+    for (var i = 0; i < text.length && charIdx < remaining; i++) {
+      var cp = text.codePointAt(i);
+      var ch = String.fromCodePoint(cp);
+      if (this.isMatchableChar(ch)) charIdx++;
+      if (cp > 0xFFFF) i++;
+      textOffset = i + 1;
+    }
+    var range = document.createRange();
+    range.setStart(targetNode, Math.min(textOffset, text.length));
+    range.collapse(true);
+    var rect = range.getBoundingClientRect();
+    var context = this.getScrollContext();
+    var scrollOffset = context.vertical
+      ? (context.scrollEl.scrollTop + rect.top)
+      : (context.scrollEl.scrollLeft + rect.left);
+    var charPage = Math.floor(Math.max(0, scrollOffset) / context.columnPitch);
+    var aligned;
+    if (hintScroll !== undefined) {
+      var origPage = Math.round(hintScroll / context.columnPitch);
+      aligned = (Math.abs(charPage - origPage) <= 1)
+        ? origPage * context.columnPitch
+        : charPage * context.columnPitch;
+    } else {
+      aligned = charPage * context.columnPitch;
+    }
+    this.setPagePosition(context, aligned);
+  },
+  setChromeInsets: function(topPx, bottomPx) {
+    var charOffset = this.getFirstVisibleCharOffset();
+    var scrollBefore = this.getPagePosition(this.getScrollContext());
+    document.documentElement.style.setProperty('--chrome-top-inset', topPx + 'px');
+    document.documentElement.style.setProperty('--chrome-bottom-inset', bottomPx + 'px');
+    if (charOffset < 0) return;
+    var self = this;
+    requestAnimationFrame(function() {
+      self.scrollToCharOffset(charOffset, scrollBefore);
+    });
   }
 };
 window.hoshiReader._contentSize = function() {
@@ -793,6 +910,8 @@ window.hoshiReader._contentSize = function() {
 window.hoshiReader.initialize = function() {
   if (window.hoshiReader.didInitialize) return;
   window.hoshiReader.didInitialize = true;
+  document.documentElement.style.setProperty('--chrome-top-inset', '${chromeTopInset}px');
+  document.documentElement.style.setProperty('--chrome-bottom-inset', '${chromeBottomInset}px');
 $_sharedInitViewport
   var pageHeight = window.innerHeight + $bottomOverlapPx;
   var pageWidth = window.innerWidth;
@@ -844,6 +963,8 @@ $_sharedInitBoot
     required double initialProgress,
     String? sasayakiCuesJson,
     String? initialFragment,
+    double chromeTopInset = 0.0,
+    double chromeBottomInset = 0.0,
   }) {
     final String initialRestoreScript = initialFragment != null
         ? 'window.hoshiReader.jumpToFragment(${_jsStringLiteral(initialFragment)});'
@@ -959,6 +1080,87 @@ $_sharedJs
       return window.scrollX >= -2 ? "limit" : "scrolled";
     }
     return root.scrollTop <= 2 ? "limit" : "scrolled";
+  },
+  getFirstVisibleCharOffset: function() {
+    var vertical = this.isVertical();
+    var cs = getComputedStyle(document.body);
+    var pt = parseFloat(cs.paddingTop) || 0;
+    var pl = parseFloat(cs.paddingLeft) || 0;
+    var pr = parseFloat(cs.paddingRight) || 0;
+    var x = vertical ? (document.body.clientWidth - pr - 2) : (pl + 2);
+    var y = pt + 2;
+    var range = document.caretRangeFromPoint(x, y);
+    if (!range || !range.startContainer) return -1;
+    var target = range.startContainer;
+    if (target.nodeType !== Node.TEXT_NODE) {
+      var walker = this.createWalker(target);
+      target = walker.nextNode();
+      if (!target) return -1;
+    }
+    var baseOffset = this.nodeStartOffsets.get(target);
+    if (baseOffset === undefined) {
+      this.buildNodeOffsets();
+      baseOffset = this.nodeStartOffsets.get(target);
+      if (baseOffset === undefined) return -1;
+    }
+    var localChars = 0;
+    var text = target.textContent;
+    var limit = Math.min(range.startOffset, text.length);
+    for (var i = 0; i < limit; i++) {
+      var cp = text.codePointAt(i);
+      var char = String.fromCodePoint(cp);
+      if (this.isMatchableChar(char)) localChars++;
+      if (cp > 0xFFFF) i++;
+    }
+    return baseOffset + localChars;
+  },
+  setChromeInsets: function(topPx, bottomPx) {
+    var charOffset = this.getFirstVisibleCharOffset();
+    document.documentElement.style.setProperty('--chrome-top-inset', topPx + 'px');
+    document.documentElement.style.setProperty('--chrome-bottom-inset', bottomPx + 'px');
+    if (charOffset < 0) return;
+    var self = this;
+    requestAnimationFrame(function() {
+      var walker = self.createWalker();
+      var node;
+      var runningOffset = 0;
+      var targetNode = null;
+      while (node = walker.nextNode()) {
+        var nodeChars = self.countChars(node.textContent);
+        if (runningOffset + nodeChars > charOffset) {
+          targetNode = node;
+          break;
+        }
+        runningOffset += nodeChars;
+      }
+      if (!targetNode) return;
+      var remaining = charOffset - runningOffset;
+      var charIdx = 0;
+      var textOffset = 0;
+      var text = targetNode.textContent;
+      for (var i = 0; i < text.length && charIdx < remaining; i++) {
+        var cp = text.codePointAt(i);
+        var ch = String.fromCodePoint(cp);
+        if (self.isMatchableChar(ch)) charIdx++;
+        if (cp > 0xFFFF) i++;
+        textOffset = i + 1;
+      }
+      var range = document.createRange();
+      range.setStart(targetNode, Math.min(textOffset, text.length));
+      range.collapse(true);
+      var rect = range.getBoundingClientRect();
+      var vertical = self.isVertical();
+      var root = document.scrollingElement || document.documentElement;
+      var cs = getComputedStyle(document.body);
+      if (vertical) {
+        var pr = parseFloat(cs.paddingRight) || 0;
+        var targetX = document.body.clientWidth - pr;
+        root.scrollLeft += rect.left - targetX;
+      } else {
+        var pt = parseFloat(cs.paddingTop) || 0;
+        root.scrollTop += rect.top - pt;
+      }
+    });
   }
 };
 window.hoshiReader._contentSize = function() {
@@ -972,6 +1174,8 @@ window.hoshiReader._contentSize = function() {
 window.hoshiReader.initialize = function() {
   if (window.hoshiReader.didInitialize) return;
   window.hoshiReader.didInitialize = true;
+  document.documentElement.style.setProperty('--chrome-top-inset', '${chromeTopInset}px');
+  document.documentElement.style.setProperty('--chrome-bottom-inset', '${chromeBottomInset}px');
 $_sharedInitViewport
   document.documentElement.style.setProperty('--hoshi-continuous-height', window.innerHeight + 'px');
   var cs = this._contentSize();

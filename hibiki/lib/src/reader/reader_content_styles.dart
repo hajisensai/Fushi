@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:hibiki/src/reader/reader_settings.dart';
 
 class ReaderLayoutDefaults {
@@ -8,7 +10,6 @@ class ReaderLayoutDefaults {
   static const double imageWidthViewportRatio = 0.95;
 
   static const String pagePaddingCss = '0vh 2.5vw';
-  static const String bottomPaddingCss = 'calc(0vh + 22px)';
   static const String imageMaxWidthFallbackCss = '95vw';
   static const String imageMaxHeightFallbackCss =
       'calc(var(--page-height, 100vh) - 22px)';
@@ -72,17 +73,16 @@ class ReaderContentStyles {
     }
 
     final bool isVertical = settings.writingMode.startsWith('vertical');
-    final double mt = settings.marginTop;
-    final double mb = settings.marginBottom;
-    final double ml = settings.marginLeft;
-    final double mr = settings.marginRight;
+    // CSS padding does not accept negative values; clamp to 0.
+    final double mt = math.max(0, settings.marginTop);
+    final double mb = math.max(0, settings.marginBottom);
+    final double ml = math.max(0, settings.marginLeft);
+    final double mr = math.max(0, settings.marginRight);
 
     final String paddingCss = '${mt}vh ${mr}vw ${mb}vh ${ml}vw';
     final String columnGapCss = isVertical
         ? 'calc(${mt}vh + ${mb}vh + ${settings.fontSize.round()}px)'
         : 'calc(${ml}vw + ${mr}vw + ${settings.fontSize.round()}px)';
-    final String bottomPaddingCss =
-        'calc(${mb}vh + ${settings.fontSize.round()}px)';
 
     final String textSpacingCss =
         'line-height: ${settings.lineHeight} !important;';
@@ -135,12 +135,13 @@ p {
             resolvedFontFamily: resolvedFontFamily,
             textSpacingCss: textSpacingCss,
             paddingCss: paddingCss,
-            bottomPaddingCss: bottomPaddingCss,
             gridCss: gridCss,
             textIndentCss: textIndentCss,
             vertKerningCss: vertKerningCss,
             vpalCss: vpalCss,
             textOrientCss: textOrientCss,
+            clampedMarginTop: mt,
+            clampedMarginBottom: mb,
           )
         : _paginatedLayoutCss(
             settings: settings,
@@ -149,7 +150,6 @@ p {
             resolvedFontFamily: resolvedFontFamily,
             textSpacingCss: textSpacingCss,
             paddingCss: paddingCss,
-            bottomPaddingCss: bottomPaddingCss,
             columnGapCss: columnGapCss,
             gridCss: gridCss,
             textIndentCss: textIndentCss,
@@ -157,6 +157,8 @@ p {
             vpalCss: vpalCss,
             textOrientCss: textOrientCss,
             columnsCss: columnsCss,
+            clampedMarginTop: mt,
+            clampedMarginBottom: mb,
           );
 
     final String readerStylePriority =
@@ -270,7 +272,6 @@ a {
     required String resolvedFontFamily,
     required String textSpacingCss,
     required String paddingCss,
-    required String bottomPaddingCss,
     required String columnGapCss,
     required String gridCss,
     required String textIndentCss,
@@ -278,6 +279,8 @@ a {
     required String vpalCss,
     required String textOrientCss,
     required String columnsCss,
+    required double clampedMarginTop,
+    required double clampedMarginBottom,
   }) {
     return '''
 html, body {
@@ -294,12 +297,14 @@ body {
   font-family: $resolvedFontFamily !important;
   font-size: ${settings.fontSize}px !important;
   -webkit-text-size-adjust: none !important;
+  overflow-wrap: anywhere !important;
   $textSpacingCss
   box-sizing: border-box !important;
   column-width: var(--page-width, 100vw) !important;
   column-gap: $columnGapCss !important;
   padding: $paddingCss !important;
-  padding-bottom: $bottomPaddingCss !important;
+  padding-top: calc(${clampedMarginTop}vh + var(--chrome-top-inset, 0px)) !important;
+  padding-bottom: calc(${clampedMarginBottom}vh + ${settings.fontSize.round()}px + var(--chrome-bottom-inset, 0px)) !important;
   $gridCss
   $textOrientCss
   $textIndentCss
@@ -316,12 +321,13 @@ body {
     required String resolvedFontFamily,
     required String textSpacingCss,
     required String paddingCss,
-    required String bottomPaddingCss,
     required String gridCss,
     required String textIndentCss,
     required String vertKerningCss,
     required String vpalCss,
     required String textOrientCss,
+    required double clampedMarginTop,
+    required double clampedMarginBottom,
   }) {
     final String hiddenOverflowAxis = isVertical ? 'overflow-y' : 'overflow-x';
     final String viewportConstraintCss = isVertical
@@ -343,11 +349,13 @@ body {
   font-family: $resolvedFontFamily !important;
   font-size: ${settings.fontSize}px !important;
   -webkit-text-size-adjust: none !important;
+  overflow-wrap: anywhere !important;
   $textSpacingCss
   box-sizing: border-box !important;
   $viewportConstraintCss
   padding: $paddingCss !important;
-  padding-bottom: $bottomPaddingCss !important;
+  padding-top: calc(${clampedMarginTop}vh + var(--chrome-top-inset, 0px)) !important;
+  padding-bottom: calc(${clampedMarginBottom}vh + ${settings.fontSize.round()}px + var(--chrome-bottom-inset, 0px)) !important;
   $gridCss
   $textOrientCss
   $textIndentCss

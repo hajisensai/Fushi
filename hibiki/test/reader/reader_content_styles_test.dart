@@ -181,6 +181,119 @@ void main() {
     });
   });
 
+  group('ReaderContentStyles chrome inset CSS variables', () {
+    test('paginated layout contains --chrome-top-inset in padding-top',
+        () async {
+      final ReaderSettings settings = await _defaultSettings();
+      // Default is paginated mode
+      final String css = ReaderContentStyles.css(settings: settings);
+      expect(css, contains('--chrome-top-inset'));
+      expect(css, contains('padding-top:'));
+    });
+
+    test('paginated layout contains --chrome-bottom-inset in padding-bottom',
+        () async {
+      final ReaderSettings settings = await _defaultSettings();
+      final String css = ReaderContentStyles.css(settings: settings);
+      expect(css, contains('--chrome-bottom-inset'));
+      expect(css, contains('padding-bottom:'));
+    });
+
+    test('paginated layout padding-top uses calc with vh and var fallback 0px',
+        () async {
+      final ReaderSettings settings = await _defaultSettings();
+      final String css = ReaderContentStyles.css(settings: settings);
+      expect(
+          css,
+          contains(
+              'padding-top: calc(${settings.marginTop}vh + var(--chrome-top-inset, 0px))'));
+    });
+
+    test(
+        'paginated layout padding-bottom uses calc with vh, fontSize, and var fallback 0px',
+        () async {
+      final ReaderSettings settings = await _defaultSettings();
+      final String css = ReaderContentStyles.css(settings: settings);
+      expect(
+          css,
+          contains(
+              'padding-bottom: calc(${settings.marginBottom}vh + ${settings.fontSize.round()}px + var(--chrome-bottom-inset, 0px))'));
+    });
+
+    test('continuous layout contains --chrome-top-inset in padding-top',
+        () async {
+      final HibikiDatabase db =
+          HibikiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final ReaderSettings settings = ReaderSettings(db);
+      await settings.refreshFromDb();
+      await settings.setViewMode('continuous');
+
+      final String css = ReaderContentStyles.css(settings: settings);
+      expect(css, contains('--chrome-top-inset'));
+      expect(css, contains('padding-top:'));
+    });
+
+    test('continuous layout contains --chrome-bottom-inset in padding-bottom',
+        () async {
+      final HibikiDatabase db =
+          HibikiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final ReaderSettings settings = ReaderSettings(db);
+      await settings.refreshFromDb();
+      await settings.setViewMode('continuous');
+
+      final String css = ReaderContentStyles.css(settings: settings);
+      expect(css, contains('--chrome-bottom-inset'));
+      expect(css, contains('padding-bottom:'));
+    });
+
+    test(
+        'continuous layout padding-bottom includes fontSize and chrome-bottom-inset',
+        () async {
+      final HibikiDatabase db =
+          HibikiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final ReaderSettings settings = ReaderSettings(db);
+      await settings.refreshFromDb();
+      await settings.setViewMode('continuous');
+
+      final String css = ReaderContentStyles.css(settings: settings);
+      expect(
+          css,
+          contains(
+              'padding-bottom: calc(${settings.marginBottom}vh + ${settings.fontSize.round()}px + var(--chrome-bottom-inset, 0px))'));
+    });
+  });
+
+  group('ReaderContentStyles negative margin clamping', () {
+    test('negative margins are clamped to 0 in padding CSS', () async {
+      final HibikiDatabase db =
+          HibikiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final ReaderSettings settings = ReaderSettings(db);
+      await settings.refreshFromDb();
+      await settings.setMarginTop(-5);
+      await settings.setMarginBottom(-3);
+      await settings.setMarginLeft(-2);
+      await settings.setMarginRight(-4);
+
+      final String css = ReaderContentStyles.css(settings: settings);
+      // Negative values must not appear in padding declarations
+      expect(css, isNot(contains('padding: -')));
+      expect(css, isNot(contains('padding-top: calc(-')));
+      expect(css, isNot(contains('padding-bottom: calc(-')));
+      // Column-gap must not go negative either (0vh + 0vh + fontSize for vertical)
+      expect(css, contains('calc(0.0vh + 0.0vh'));
+    });
+
+    test('overflow-wrap: anywhere is present in body', () async {
+      final ReaderSettings settings = await _defaultSettings();
+      final String css = ReaderContentStyles.css(settings: settings);
+      expect(css, contains('overflow-wrap: anywhere'));
+    });
+  });
+
   group('ReaderHibikiSource live settings callbacks', () {
     test('style setting writes trigger the live callback', () async {
       final HibikiDatabase db =
