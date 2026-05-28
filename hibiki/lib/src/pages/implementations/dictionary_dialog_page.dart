@@ -906,19 +906,13 @@ class _DictionaryDialogPageState extends BasePageState {
   }
 
   Widget buildDictionaryTileTrailing(Dictionary dictionary) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
-      child: Material(
-        color: Colors.transparent,
-        child: HibikiOverflowMenu<VoidCallback>(
-          splashRadius: 20,
-          padding: EdgeInsets.zero,
-          tooltip: t.show_options,
-          onSelected: (value) => value(),
-          items: getMenuItems(dictionary),
-          iconSize: 24,
-        ),
-      ),
+    return HibikiOverflowMenu<VoidCallback>(
+      splashRadius: 20,
+      padding: EdgeInsets.zero,
+      tooltip: t.show_options,
+      onSelected: (value) => value(),
+      items: getMenuItems(dictionary),
+      iconSize: 24,
     );
   }
 

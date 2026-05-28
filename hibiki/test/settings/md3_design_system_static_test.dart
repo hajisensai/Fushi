@@ -383,6 +383,8 @@ void main() {
       'lib/src/pages/implementations/dictionary_dialog_page.dart': <String>[
         'ExpansionTile',
         'CheckboxListTile',
+        'Material(',
+        'BorderRadius.circular(24)',
         'fontSize: textTheme',
       ],
       'lib/src/pages/implementations/tag_picker_page.dart': <String>[
@@ -598,6 +600,8 @@ void main() {
     expect(managerTile, isNot(contains('surfaceContainerLowest')));
     expect(managerMenu, contains('HibikiOverflowMenu<VoidCallback>('));
     expect(managerMenu, isNot(contains('PopupMenuButton')));
+    expect(managerMenu, isNot(contains('Material(')));
+    expect(managerMenu, isNot(contains('BorderRadius.circular(24)')));
 
     final String entrySource = File(
       'lib/src/pages/implementations/dictionary_entry_page.dart',
