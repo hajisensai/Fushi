@@ -1,5 +1,6 @@
 import 'dart:io' show Platform;
 
+import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki_platform/hibiki_platform.dart';
 
 import 'package:hibiki/src/platform/android/android_directory_service.dart';
@@ -24,14 +25,27 @@ class PlatformServices {
   final PlatformClipboardService clipboard;
   final PlatformPermissionService permission;
   final PlatformDeviceInfoService deviceInfo;
+  final BaseAnkiRepository Function() createAnkiRepository;
 
-  const PlatformServices({
+  PlatformServices({
     required this.directory,
     required this.lifecycle,
     required this.clipboard,
     required this.permission,
     required this.deviceInfo,
+    required this.createAnkiRepository,
   });
+
+  /// Cross-service wiring that requires async initialisation.
+  ///
+  /// Must be called once during app startup (e.g. in [AppModel.initialise])
+  /// after all services are constructed.
+  Future<void> init() async {
+    final sdk = await deviceInfo.sdkVersion;
+    if (sdk != null && clipboard is AndroidClipboardService) {
+      (clipboard as AndroidClipboardService).updateSdkVersion(sdk);
+    }
+  }
 
   /// Constructs the correct service bundle for the current platform.
   factory PlatformServices.forCurrentPlatform() {
@@ -42,6 +56,7 @@ class PlatformServices {
         clipboard: AndroidClipboardService(),
         permission: AndroidPermissionService(),
         deviceInfo: AndroidDeviceInfoService(),
+        createAnkiRepository: AnkiRepository.new,
       );
     }
     // iOS will be added later — for now, desktop defaults cover all
@@ -52,6 +67,7 @@ class PlatformServices {
       clipboard: DesktopClipboardService(),
       permission: DesktopPermissionService(),
       deviceInfo: DesktopDeviceInfoService(),
+      createAnkiRepository: AnkiConnectRepository.new,
     );
   }
 }

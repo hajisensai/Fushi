@@ -1,16 +1,18 @@
 import 'package:hibiki/src/platform/platform_services.dart';
+import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki_platform/hibiki_platform.dart';
 
 /// Returns a [PlatformServices] suitable for unit tests.
 ///
 /// All services are no-op desktop stubs that do not require a running Android
 /// environment.
-PlatformServices testPlatformServices() => const PlatformServices(
-      directory: _StubDirectoryService(),
-      lifecycle: _StubLifecycleService(),
-      clipboard: _StubClipboardService(),
-      permission: _StubPermissionService(),
-      deviceInfo: _StubDeviceInfoService(),
+PlatformServices testPlatformServices() => PlatformServices(
+      directory: const _StubDirectoryService(),
+      lifecycle: const _StubLifecycleService(),
+      clipboard: const _StubClipboardService(),
+      permission: const _StubPermissionService(),
+      deviceInfo: const _StubDeviceInfoService(),
+      createAnkiRepository: AnkiConnectRepository.new,
     );
 
 // ── Lightweight stubs ──────────────────────────────────────────────────────

@@ -6,23 +6,17 @@ import 'dart:ui';
 // archive/archive_io moved to DictionaryImportManager
 // audio_service moved to AudioController
 import 'package:collection/collection.dart';
-import 'package:clipboard/clipboard.dart';
-import 'package:device_info_plus/device_info_plus.dart';
 // external_app_launcher moved to AnkiIntegration
-import 'package:external_path/external_path.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
-import 'package:flutter_exit_app/flutter_exit_app.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as path;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:remove_emoji/remove_emoji.dart';
-import 'package:restart_app/restart_app.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:hibiki/creator.dart';
@@ -201,10 +195,6 @@ class AppModel with ChangeNotifier {
   /// Used to get the versioning metadata of the app. See [initialise].
   PackageInfo get packageInfo => _packageInfo;
   late final PackageInfo _packageInfo;
-
-  /// Used to get information on the Android version of the device.
-  AndroidDeviceInfo? get androidDeviceInfo => _androidDeviceInfo;
-  AndroidDeviceInfo? _androidDeviceInfo;
 
   /// Whether [initialise] has completed successfully.
   bool get isInitialised => _isInitialised;
@@ -900,26 +890,12 @@ class AppModel with ChangeNotifier {
   /// This path also initialises the folder if it does not exist, and includes
   /// a .nomedia file within the folder.
   Future<Directory> prepareHibikiDirectory() async {
-    if (!Platform.isAndroid) {
-      return prepareFallbackHibikiDirectory();
-    }
-    String publicDirectory =
-        await ExternalPath.getExternalStoragePublicDirectory(
-            ExternalPath.DIRECTORY_DCIM);
     try {
-      String directoryPath = path.join(publicDirectory, 'hibiki');
-      String noMediaFilePath = path.join(publicDirectory, 'hibiki', '.nomedia');
-
-      Directory hibikiDirectory = Directory(directoryPath);
-      File noMediaFile = File(noMediaFilePath);
-
-      if (!hibikiDirectory.existsSync()) {
-        hibikiDirectory.createSync(recursive: true);
-      }
-      if (!noMediaFile.existsSync()) {
-        noMediaFile.createSync();
-      }
-
+      final String dirPath =
+          await platformServices.directory.getHibikiExportDirectory();
+      final Directory hibikiDirectory = Directory(dirPath);
+      await platformServices.directory
+          .excludeFromMediaScanner(hibikiDirectory.path);
       return hibikiDirectory;
     } catch (e, stack) {
       ErrorLogService.instance.log('AppModel.prepareHibikiDirectory', e, stack);
@@ -939,14 +915,8 @@ class AppModel with ChangeNotifier {
     if (!hibikiDirectory.existsSync()) {
       hibikiDirectory.createSync(recursive: true);
     }
-    if (Platform.isAndroid) {
-      String noMediaFilePath =
-          path.join(appDirectory.path, 'hibikiExport', '.nomedia');
-      File noMediaFile = File(noMediaFilePath);
-      if (!noMediaFile.existsSync()) {
-        noMediaFile.createSync();
-      }
-    }
+    await platformServices.directory
+        .excludeFromMediaScanner(hibikiDirectory.path);
 
     return hibikiDirectory;
   }
@@ -983,9 +953,7 @@ class AppModel with ChangeNotifier {
 
       /// Prepare entities that may be repeatedly used at runtime.
       _packageInfo = await PackageInfo.fromPlatform();
-      if (Platform.isAndroid) {
-        _androidDeviceInfo = await DeviceInfoPlugin().androidInfo;
-      }
+      await platformServices.init();
 
       debugPrint('[Hibiki] init: directories (early, needed for DB)');
       _temporaryDirectory = await getTemporaryDirectory();
@@ -999,7 +967,7 @@ class AppModel with ChangeNotifier {
       /// parallel to avoid serial await chains).
       _prefsRepo = PreferencesRepository(_database);
       final BaseAnkiRepository ankiRepo =
-          Platform.isAndroid ? AnkiRepository() : AnkiConnectRepository();
+          platformServices.createAnkiRepository();
       final profileRepo = ProfileRepository(_database, ankiRepo);
       dictRepo = DictionaryRepository(_database,
           onCacheRebuild: _rebuildDictPathsCache);
@@ -1211,9 +1179,7 @@ class AppModel with ChangeNotifier {
     try {
       debugPrint('[Hibiki-popup] init: PackageInfo + DeviceInfo');
       _packageInfo = await PackageInfo.fromPlatform();
-      if (Platform.isAndroid) {
-        _androidDeviceInfo = await DeviceInfoPlugin().androidInfo;
-      }
+      await platformServices.init();
 
       debugPrint('[Hibiki-popup] init: directories');
       _temporaryDirectory = await getTemporaryDirectory();
@@ -1483,8 +1449,8 @@ class AppModel with ChangeNotifier {
   Future<void> setAppLocale(String localeTag) async {
     await _setPref('app_locale', localeTag);
     LocaleSettings.setLocaleRaw(localeTag);
-    if (Platform.isAndroid || Platform.isIOS) {
-      Restart.restartApp();
+    if (platformServices.lifecycle.supportsRestart) {
+      await platformServices.lifecycle.restartApp();
     } else {
       notifyListeners();
     }
@@ -1766,7 +1732,10 @@ class AppModel with ChangeNotifier {
   /// Requests for full external storage permissions. Required to handle video
   /// files and their subtitle files in the same directory.
   Future<void> requestExternalStoragePermissions() async {
-    if (!Platform.isAndroid) return;
+    if (await platformServices.permission.hasExternalStoragePermission() &&
+        await platformServices.permission.hasCameraPermission()) {
+      return;
+    }
     if (isFirstTimeSetup) {
       HibikiToast.show(
         msg: t.storage_permissions,
@@ -1775,23 +1744,8 @@ class AppModel with ChangeNotifier {
       );
     }
 
-    final cameraGranted = await Permission.camera.isGranted;
-    if (!cameraGranted) {
-      await Permission.camera.request();
-    }
-
-    final storageGranted = await Permission.storage.isGranted;
-    if (!storageGranted) {
-      await Permission.storage.request();
-    }
-
-    if ((_androidDeviceInfo?.version.sdkInt ?? 0) >= 30) {
-      final manageStorageGranted =
-          await Permission.manageExternalStorage.isGranted;
-      if (!manageStorageGranted) {
-        await Permission.manageExternalStorage.request();
-      }
-    }
+    await platformServices.permission.requestCameraPermission();
+    await platformServices.permission.requestExternalStoragePermission();
   }
 
   // ── Anki integration (delegated to AnkiIntegration) ─────────────────
@@ -2140,10 +2094,10 @@ class AppModel with ChangeNotifier {
 
   /// Copies a [term] to clipboard and shows an appropriate toast.
   void copyToClipboard(String term) {
-    FlutterClipboard.copy(term);
+    platformServices.clipboard.copyToClipboard(term);
 
     /// Redundant to do this with the share notification on Android 33+
-    if (!Platform.isAndroid || (_androidDeviceInfo?.version.sdkInt ?? 0) < 33) {
+    if (platformServices.clipboard.shouldShowCopyToast) {
       HibikiToast.show(
         msg: t.copied_to_clipboard,
         toastLength: Toast.LENGTH_SHORT,
@@ -2215,24 +2169,12 @@ class AppModel with ChangeNotifier {
       directories.add(lastPickedDirectory);
     }
 
-    if (Platform.isAndroid) {
-      List<String> paths =
-          (await ExternalPath.getExternalStorageDirectories()) ?? [];
-      for (String path in paths) {
-        Directory directory = Directory(path);
-        if (!directories.contains(directory)) {
-          directories.add(directory);
-        }
-      }
-    } else if (Platform.isWindows) {
-      final String? userProfile = Platform.environment['USERPROFILE'];
-      if (userProfile != null) {
-        for (final subDir in ['Documents', 'Downloads']) {
-          final directory = Directory(path.join(userProfile, subDir));
-          if (directory.existsSync() && !directories.contains(directory)) {
-            directories.add(directory);
-          }
-        }
+    final List<String> defaultPaths = await platformServices.directory
+        .getDefaultPickerDirectories(type.uniqueKey);
+    for (final String dirPath in defaultPaths) {
+      final Directory directory = Directory(dirPath);
+      if (!directories.contains(directory)) {
+        directories.add(directory);
       }
     }
 
@@ -2355,11 +2297,7 @@ class AppModel with ChangeNotifier {
   /// Safely shutdown and stop database operations.
   Future<void> shutdown() async {
     await closeDatabase();
-    if (Platform.isAndroid || Platform.isIOS) {
-      FlutterExitApp.exitApp();
-    } else {
-      exit(0);
-    }
+    await platformServices.lifecycle.exitApp();
   }
 
   Future<void> closeForPopup() async {
@@ -2382,12 +2320,9 @@ class AppModel with ChangeNotifier {
     super.dispose();
   }
 
-  static const _lifecycleChannel = HibikiChannels.lifecycle;
-
   Future<void> moveToBack() async {
-    if (!Platform.isAndroid) return;
     try {
-      await _lifecycleChannel.invokeMethod<void>('moveTaskToBack');
+      await platformServices.lifecycle.moveTaskToBack();
     } catch (e, stack) {
       ErrorLogService.instance.log('AppModel.moveToBack', e, stack);
       debugPrint('[Hibiki] moveToBack failed: $e');
@@ -2516,8 +2451,7 @@ class AppModel with ChangeNotifier {
       },
       onAnkiExport: (String word, String reading, String meaning) async {
         debugPrint('[FloatingDict] Anki export: $word / $reading');
-        final BaseAnkiRepository repo =
-            Platform.isAndroid ? AnkiRepository() : AnkiConnectRepository();
+        final BaseAnkiRepository repo = platformServices.createAnkiRepository();
         final Map<String, String> fields = <String, String>{
           'expression': word,
           'reading': reading,
