@@ -1961,18 +1961,14 @@ class AppModel with ChangeNotifier {
       if (ctx == null || !ctx.mounted) return;
       await showAppDialog(
         context: ctx,
-        builder: (dialogContext) => Dialog(
+        builder: (dialogContext) => HibikiDialogFrame(
+          maxWidth: 520,
+          maxHeightFactor: 0.80,
           insetPadding: const EdgeInsets.all(24),
-          clipBehavior: Clip.antiAlias,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(
-              maxWidth: 520,
-              maxHeight: 640,
-            ),
-            child: PopupDictionaryPage(
-              searchTerm: trimmed,
-              closeInApp: () => Navigator.of(dialogContext).pop(),
-            ),
+          scrollable: false,
+          child: PopupDictionaryPage(
+            searchTerm: trimmed,
+            closeInApp: () => Navigator.of(dialogContext).pop(),
           ),
         ),
       );
