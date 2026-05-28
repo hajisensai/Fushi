@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/utils/spacing.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
 
@@ -42,22 +41,35 @@ class _WebsocketDialogPageState extends BasePageState<WebsocketDialogPage> {
 
   @override
   Widget build(BuildContext context) {
-    return adaptiveAlertDialog(
-      context: context,
-      contentPadding: MediaQuery.of(context).orientation == Orientation.portrait
-          ? Spacing.of(context).insets.exceptBottom.big
-          : Spacing.of(context).insets.exceptBottom.normal.copyWith(
-                left: Spacing.of(context).spaces.semiBig,
-                right: Spacing.of(context).spaces.semiBig,
-              ),
-      actionsPadding: Spacing.of(context).insets.exceptBottom.normal.copyWith(
-            left: Spacing.of(context).spaces.normal,
-            right: Spacing.of(context).spaces.normal,
-            bottom: Spacing.of(context).spaces.normal,
-            top: Spacing.of(context).spaces.extraSmall,
-          ),
-      content: buildContent(),
-      actions: actions,
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
+    return HibikiDialogFrame(
+      maxWidth: 520,
+      maxHeightFactor: 0.72,
+      scrollable: false,
+      child: HibikiModalSheetFrame(
+        title: t.server_address,
+        leadingIcon: Icons.sensors_outlined,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: buildContent(),
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: actions,
+        ),
+      ),
     );
   }
 
@@ -87,7 +99,6 @@ class _WebsocketDialogPageState extends BasePageState<WebsocketDialogPage> {
                   icon: Icons.clear,
                 ),
               ),
-              const SizedBox(height: 10),
             ],
           ),
         ),
