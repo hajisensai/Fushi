@@ -197,6 +197,10 @@ void main() {
     'lib/src/pages/implementations/profile_management_page.dart': <String>[
       'HibikiTextField',
     ],
+    'lib/src/pages/implementations/miscellaneous_settings_page.dart': <String>[
+      'HibikiCard',
+      'HibikiBadge',
+    ],
     'lib/src/media/audiobook/reader_quick_settings_sheet.dart': <String>[
       'HibikiTextField',
     ],
@@ -451,6 +455,12 @@ void main() {
       ],
       'lib/src/pages/implementations/profile_management_page.dart': <String>[
         'TextField(',
+      ],
+      'lib/src/pages/implementations/miscellaneous_settings_page.dart':
+          <String>[
+        'BorderRadius.circular(16)',
+        'BorderRadius.circular(13)',
+        'shape: BoxShape.circle',
       ],
       'lib/src/media/audiobook/reader_quick_settings_sheet.dart': <String>[
         'TextField(',

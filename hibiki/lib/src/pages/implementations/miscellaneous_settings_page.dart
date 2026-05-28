@@ -182,89 +182,94 @@ class _MiscellaneousSettingsPageState
   }
 
   Widget _buildPresetTile(_IconOption option) {
-    final selected = _currentIcon == option.key;
-    return GestureDetector(
-      onTap: _switching ? null : () => _switchPreset(option.key),
+    final bool selected = _currentIcon == option.key;
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return _AppIconTile(
+      label: option.label,
+      selected: selected,
+      enabled: !_switching,
+      onTap: () => _switchPreset(option.key),
+      child: ClipRRect(
+        borderRadius: tokens.radii.chipRadius,
+        child: Image.asset(option.asset, fit: BoxFit.cover),
+      ),
+    );
+  }
+
+  Widget _buildCustomTile() {
+    return _AppIconTile(
+      label: t.icon_custom,
+      enabled: !_switching,
+      onTap: _pickCustomIcon,
+      child: Icon(
+        Icons.add_photo_alternate_outlined,
+        size: 32,
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
+    );
+  }
+}
+
+class _AppIconTile extends StatelessWidget {
+  const _AppIconTile({
+    required this.label,
+    required this.child,
+    required this.onTap,
+    this.selected = false,
+    this.enabled = true,
+  });
+
+  final String label;
+  final Widget child;
+  final VoidCallback onTap;
+  final bool selected;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final TextTheme textTheme = theme.textTheme;
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return SizedBox(
+      width: 80,
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            width: 72,
-            height: 72,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: selected
-                    ? theme.colorScheme.primary
-                    : theme.colorScheme.outlineVariant,
-                width: selected ? 3 : 1,
-              ),
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(13),
+          SizedBox.square(
+            dimension: 72,
+            child: HibikiCard(
+              padding: EdgeInsets.all(tokens.spacing.gap / 2),
+              selected: selected,
+              borderColor: selected
+                  ? theme.colorScheme.primary
+                  : theme.colorScheme.outlineVariant,
+              onTap: enabled ? onTap : null,
               child: Stack(
+                fit: StackFit.expand,
                 children: [
-                  Image.asset(option.asset, fit: BoxFit.cover),
+                  child,
                   if (selected)
-                    Positioned(
-                      right: 4,
-                      bottom: 4,
-                      child: Container(
-                        padding: const EdgeInsets.all(2),
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.primary,
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(
-                          Icons.check,
-                          size: 14,
-                          color: theme.colorScheme.onPrimary,
-                        ),
+                    Align(
+                      alignment: Alignment.bottomRight,
+                      child: HibikiBadge(
+                        icon: Icons.check,
+                        background: theme.colorScheme.primary,
+                        foreground: theme.colorScheme.onPrimary,
                       ),
                     ),
                 ],
               ),
             ),
           ),
-          const SizedBox(height: 4),
+          SizedBox(height: tokens.spacing.gap / 2),
           Text(
-            option.label,
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: textTheme.labelSmall?.copyWith(
               color: selected
                   ? theme.colorScheme.primary
                   : theme.colorScheme.onSurface,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCustomTile() {
-    return GestureDetector(
-      onTap: _switching ? null : _pickCustomIcon,
-      child: Column(
-        children: [
-          Container(
-            width: 72,
-            height: 72,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: theme.colorScheme.outlineVariant,
-              ),
-            ),
-            child: Icon(
-              Icons.add_photo_alternate_outlined,
-              size: 32,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            t.icon_custom,
-            style: textTheme.labelSmall?.copyWith(
-              color: theme.colorScheme.onSurface,
             ),
           ),
         ],
