@@ -85,7 +85,7 @@ void main() {
     expect(find.byType(HibikiPopupSurface), findsOneWidget);
   });
 
-  testWidgets('swipeDismissible false leaves the layer unwrapped', (
+  testWidgets('borderless popup layer still uses shared popup surface', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(
@@ -97,6 +97,7 @@ void main() {
             result: null,
             isSearching: false,
             webViewKey: GlobalKey<DictionaryPopupWebViewState>(),
+            showBorder: false,
             swipeDismissible: false,
             onDismiss: () {},
             onTextSelected: (text, rect) {},
@@ -110,5 +111,6 @@ void main() {
 
     expect(find.byType(DictionaryPopupLayer), findsOneWidget);
     expect(find.byType(SwipeDismissWrapper), findsNothing);
+    expect(find.byType(HibikiPopupSurface), findsOneWidget);
   });
 }

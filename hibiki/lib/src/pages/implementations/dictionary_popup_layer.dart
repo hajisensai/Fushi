@@ -95,16 +95,12 @@ class DictionaryPopupLayer extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     final fillColor = overrideFillColor ?? colorScheme.surface;
 
-    final Widget content = showBorder
-        ? HibikiPopupSurface(
-            color: fillColor,
-            child: _buildContent(context),
-          )
-        : Material(
-            color: fillColor,
-            clipBehavior: Clip.none,
-            child: _buildContent(context),
-          );
+    final Widget content = HibikiPopupSurface(
+      color: fillColor,
+      showBorder: showBorder,
+      clipBehavior: showBorder ? Clip.antiAlias : Clip.none,
+      child: _buildContent(context),
+    );
 
     if (!swipeDismissible) return content;
 

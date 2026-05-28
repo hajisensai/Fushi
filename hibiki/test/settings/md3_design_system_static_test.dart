@@ -411,6 +411,7 @@ void main() {
         'fontSize:',
       ],
       'lib/src/pages/implementations/dictionary_popup_layer.dart': <String>[
+        'Material(',
         'Container(',
         'BoxDecoration(',
         'BorderRadius.circular(8)',

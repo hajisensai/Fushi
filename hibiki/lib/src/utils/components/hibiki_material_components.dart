@@ -1258,12 +1258,16 @@ class HibikiPopupSurface extends StatelessWidget {
     this.color,
     this.padding = EdgeInsets.zero,
     this.elevation = 0,
+    this.showBorder = true,
+    this.clipBehavior = Clip.antiAlias,
   });
 
   final Widget child;
   final Color? color;
   final EdgeInsetsGeometry padding;
   final double elevation;
+  final bool showBorder;
+  final Clip clipBehavior;
 
   @override
   Widget build(BuildContext context) {
@@ -1273,9 +1277,11 @@ class HibikiPopupSurface extends StatelessWidget {
       elevation: elevation,
       shape: RoundedRectangleBorder(
         borderRadius: tokens.radii.cardRadius,
-        side: BorderSide(color: tokens.surfaces.outline),
+        side: showBorder
+            ? BorderSide(color: tokens.surfaces.outline)
+            : BorderSide.none,
       ),
-      clipBehavior: Clip.antiAlias,
+      clipBehavior: clipBehavior,
       child: Padding(
         padding: padding,
         child: child,

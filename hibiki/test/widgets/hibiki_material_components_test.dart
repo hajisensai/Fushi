@@ -279,4 +279,29 @@ void main() {
     expect(find.byType(SingleChildScrollView), findsOneWidget);
     expect(find.text('Long sheet'), findsOneWidget);
   });
+
+  testWidgets('HibikiPopupSurface can render a borderless popup shell',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      buildSubject(
+        const HibikiPopupSurface(
+          showBorder: false,
+          clipBehavior: Clip.none,
+          child: Text('Popup'),
+        ),
+      ),
+    );
+
+    final Finder surfaceMaterial = find.descendant(
+      of: find.byType(HibikiPopupSurface),
+      matching: find.byType(Material),
+    );
+    final Material material = tester.widget<Material>(surfaceMaterial);
+    final RoundedRectangleBorder shape =
+        material.shape! as RoundedRectangleBorder;
+
+    expect(find.text('Popup'), findsOneWidget);
+    expect(material.clipBehavior, Clip.none);
+    expect(shape.side, BorderSide.none);
+  });
 }
