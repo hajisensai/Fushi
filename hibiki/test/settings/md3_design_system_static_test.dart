@@ -18,6 +18,7 @@ void main() {
       'class HibikiSearchField',
       'class HibikiTextField',
       'class HibikiSelectableChip',
+      'class HibikiActionChip',
       'class HibikiTagChip',
       'class HibikiBadge',
       'class HibikiColorSwatch',
@@ -100,6 +101,7 @@ void main() {
     ],
     'lib/src/pages/implementations/media_item_dialog_page.dart': <String>[
       'HibikiListItem',
+      'HibikiActionChip',
     ],
     'lib/src/utils/misc/update_checker.dart': <String>[
       'HibikiCard',
@@ -327,6 +329,8 @@ void main() {
       'lib/src/pages/implementations/media_item_dialog_page.dart': <String>[
         'ListTile(',
         'dense: true',
+        '_QuickActionChip',
+        'OutlinedButton.icon(',
       ],
       'lib/src/utils/misc/update_checker.dart': <String>[
         'child: Card(',

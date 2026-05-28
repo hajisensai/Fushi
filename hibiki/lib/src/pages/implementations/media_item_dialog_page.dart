@@ -316,26 +316,13 @@ class MediaItemDialogFrame extends StatelessWidget {
       spacing: 8,
       runSpacing: 8,
       children: [
-        for (final action in quickActions) _QuickActionChip(action: action),
+        for (final action in quickActions)
+          HibikiActionChip(
+            label: action.label,
+            icon: action.icon,
+            onPressed: action.onPressed,
+          ),
       ],
-    );
-  }
-}
-
-class _QuickActionChip extends StatelessWidget {
-  const _QuickActionChip({required this.action});
-  final DialogQuickAction action;
-
-  @override
-  Widget build(BuildContext context) {
-    return OutlinedButton.icon(
-      onPressed: action.onPressed,
-      icon: Icon(action.icon, size: 18),
-      label: Text(
-        action.label,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
     );
   }
 }

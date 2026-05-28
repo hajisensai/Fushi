@@ -43,6 +43,31 @@ void main() {
     expect(selected, isFalse);
   });
 
+  testWidgets('HibikiActionChip uses shared outline action styling',
+      (WidgetTester tester) async {
+    bool tapped = false;
+    await tester.pumpWidget(
+      buildSubject(
+        HibikiActionChip(
+          label: 'Open',
+          icon: Icons.open_in_new,
+          onPressed: () => tapped = true,
+        ),
+      ),
+    );
+
+    final OutlinedButton button =
+        tester.widget<OutlinedButton>(find.byType(OutlinedButton));
+    final RoundedRectangleBorder shape = button.style!.shape!
+        .resolve(<WidgetState>{})! as RoundedRectangleBorder;
+
+    expect(shape.borderRadius, BorderRadius.circular(8));
+    expect(find.byIcon(Icons.open_in_new), findsOneWidget);
+
+    await tester.tap(find.byType(HibikiActionChip));
+    expect(tapped, isTrue);
+  });
+
   testWidgets('HibikiTagChip derives readable text color from tag color',
       (WidgetTester tester) async {
     await tester.pumpWidget(
