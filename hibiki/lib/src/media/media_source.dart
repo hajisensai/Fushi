@@ -110,6 +110,11 @@ abstract class MediaSource {
   Future<void> _loadPreferencesFromDb() async {
     final db = _sharedDb;
     if (db == null) return;
+    // Clear first so keys deleted by a profile switch (applyProfile deletes
+    // pref rows absent from the new profile) don't survive as stale cache
+    // entries. Every in-memory pref is written through to the DB on set, so
+    // nothing is lost by reloading from the authoritative DB state.
+    _preferences.clear();
     final prefix = 'src:$uniqueKey:';
     final all = await db.getAllPrefs();
     for (final entry in all.entries) {

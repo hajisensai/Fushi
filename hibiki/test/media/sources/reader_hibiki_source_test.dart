@@ -1,7 +1,9 @@
 import 'dart:io';
 
+import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
+import 'package:hibiki/media.dart';
+import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
 
 void main() {
@@ -63,6 +65,42 @@ void main() {
 
       expect(result.fontFamily, isEmpty);
       expect(result.fontFaces, isEmpty);
+    });
+  });
+
+  group('MediaSource preference cache invalidation', () {
+    test(
+        'refreshPreferencesFromDb drops keys deleted from the DB '
+        '(profile switch with no custom value restores default)', () async {
+      final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      MediaSource.setDatabase(db);
+
+      final source = ReaderHibikiSource.instance;
+      await source.refreshPreferencesFromDb();
+
+      // Profile A: a custom shortcut binding is persisted.
+      await source.setPreference<String>(
+        key: 'shortcut_bindings_json',
+        value: '{"reader_page_forward":{"keyboard":["KeyN"],"gamepad":[]}}',
+      );
+      expect(
+        source.getPreference<String?>(
+            key: 'shortcut_bindings_json', defaultValue: null),
+        isNotNull,
+      );
+
+      // Switching to Profile B (no custom shortcuts): applyProfile deletes the
+      // pref row that is absent from the new profile.
+      await db.deletePref('src:reader_ttu:shortcut_bindings_json');
+      await source.refreshPreferencesFromDb();
+
+      // The stale Profile A value must not survive in the in-memory cache.
+      expect(
+        source.getPreference<String?>(
+            key: 'shortcut_bindings_json', defaultValue: null),
+        isNull,
+      );
     });
   });
 }
