@@ -516,6 +516,130 @@ class HibikiBadge extends StatelessWidget {
   }
 }
 
+class HibikiModalSheetFrame extends StatelessWidget {
+  const HibikiModalSheetFrame({
+    required this.body,
+    super.key,
+    this.title,
+    this.subtitle,
+    this.leadingIcon,
+    this.footer,
+    this.bodyPadding,
+    this.footerPadding,
+    this.scrollable = false,
+  });
+
+  final Widget body;
+  final String? title;
+  final String? subtitle;
+  final IconData? leadingIcon;
+  final Widget? footer;
+  final EdgeInsetsGeometry? bodyPadding;
+  final EdgeInsetsGeometry? footerPadding;
+  final bool scrollable;
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final List<Widget> children = <Widget>[
+      if (_hasHeader) _buildHeader(tokens, colors),
+      _buildBody(tokens),
+      if (footer != null) ...<Widget>[
+        Divider(height: 1, thickness: 1, color: tokens.surfaces.outline),
+        Padding(
+          padding: footerPadding ??
+              EdgeInsets.fromLTRB(
+                tokens.spacing.page,
+                0,
+                tokens.spacing.page,
+                tokens.spacing.page,
+              ),
+          child: footer!,
+        ),
+      ],
+    ];
+
+    return SafeArea(
+      top: false,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: children,
+      ),
+    );
+  }
+
+  bool get _hasHeader =>
+      title != null || subtitle != null || leadingIcon != null;
+
+  Widget _buildHeader(HibikiDesignTokens tokens, ColorScheme colors) {
+    final Widget text = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        if (title != null)
+          Text(
+            title!,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: tokens.type.listTitle.copyWith(fontWeight: FontWeight.w600),
+          ),
+        if (subtitle != null)
+          Padding(
+            padding: EdgeInsets.only(top: tokens.spacing.gap / 2),
+            child: Text(
+              subtitle!,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: tokens.type.listSubtitle,
+            ),
+          ),
+      ],
+    );
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        tokens.spacing.page,
+        tokens.spacing.page,
+        tokens.spacing.page,
+        tokens.spacing.gap,
+      ),
+      child: Row(
+        children: <Widget>[
+          if (leadingIcon != null) ...<Widget>[
+            Container(
+              padding: EdgeInsets.all(tokens.spacing.gap),
+              decoration: BoxDecoration(
+                color: colors.primaryContainer,
+                borderRadius: tokens.radii.controlRadius,
+              ),
+              child: Icon(
+                leadingIcon,
+                color: colors.onPrimaryContainer,
+                size: 20,
+              ),
+            ),
+            SizedBox(width: tokens.spacing.gap + 4),
+          ],
+          Expanded(child: text),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBody(HibikiDesignTokens tokens) {
+    final Widget padded = Padding(
+      padding: bodyPadding ?? EdgeInsets.zero,
+      child: body,
+    );
+    if (!scrollable) return padded;
+    return Flexible(
+      child: SingleChildScrollView(child: padded),
+    );
+  }
+}
+
 enum HibikiColorSwatchShape { block, dot }
 
 class HibikiColorSwatch extends StatelessWidget {

@@ -233,4 +233,28 @@ void main() {
     expect(scaffold.backgroundColor, Colors.transparent);
     expect(find.text('popup'), findsOneWidget);
   });
+
+  testWidgets('HibikiModalSheetFrame owns sheet header and footer chrome',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      buildSubject(
+        const HibikiModalSheetFrame(
+          title: 'Filters',
+          leadingIcon: Icons.sell_outlined,
+          body: Text('Body'),
+          footer: Text('Footer'),
+        ),
+      ),
+    );
+
+    final Icon icon = tester.widget<Icon>(find.byIcon(Icons.sell_outlined));
+    final Divider divider = tester.widget<Divider>(find.byType(Divider));
+
+    expect(find.byType(SafeArea), findsOneWidget);
+    expect(find.text('Filters'), findsOneWidget);
+    expect(find.text('Body'), findsOneWidget);
+    expect(find.text('Footer'), findsOneWidget);
+    expect(icon.size, 20);
+    expect(divider.height, 1);
+  });
 }

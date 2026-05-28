@@ -28,6 +28,7 @@ void main() {
       'class HibikiToolScaffold',
       'class HibikiTransientScaffold',
       'class HibikiOverlayScaffold',
+      'class HibikiModalSheetFrame',
       'class HibikiOverflowMenu',
       'class HibikiFilePickerRow',
       'class HibikiLogPanel',
@@ -219,6 +220,7 @@ void main() {
     ],
     'lib/src/pages/implementations/tag_filter_sheet.dart': <String>[
       'HibikiSelectableChip',
+      'HibikiModalSheetFrame',
     ],
     'lib/src/pages/implementations/dictionary_popup_native.dart': <String>[
       'HibikiTagChip',
@@ -488,6 +490,8 @@ void main() {
       'lib/src/pages/implementations/tag_filter_sheet.dart': <String>[
         'FilterChip(',
         'ChoiceChip(',
+        'SafeArea(',
+        'HibikiDivider()',
       ],
       'lib/src/utils/misc/hibiki_toast.dart': <String>[
         'BorderRadius.circular(24)',
