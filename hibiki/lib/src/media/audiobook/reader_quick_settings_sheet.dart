@@ -273,28 +273,21 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
           setState(() => _subPage = null);
         }
       },
-      child: SafeArea(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(context).size.height * 0.80,
-          ),
-          child: SingleChildScrollView(
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(
-                20,
-                4,
-                20,
-                24 + MediaQuery.of(context).viewInsets.bottom,
-              ),
-              child: AnimatedSize(
-                duration: const Duration(milliseconds: 200),
-                alignment: Alignment.topCenter,
-                child: _subPage != null
-                    ? _buildSubPage(context, theme)
-                    : _buildMainPage(context, theme),
-              ),
-            ),
-          ),
+      child: HibikiModalSheetFrame(
+        maxHeightFactor: 0.80,
+        scrollable: true,
+        bodyPadding: EdgeInsets.fromLTRB(
+          20,
+          4,
+          20,
+          24 + MediaQuery.of(context).viewInsets.bottom,
+        ),
+        body: AnimatedSize(
+          duration: const Duration(milliseconds: 200),
+          alignment: Alignment.topCenter,
+          child: _subPage != null
+              ? _buildSubPage(context, theme)
+              : _buildMainPage(context, theme),
         ),
       ),
     );
@@ -1891,16 +1884,7 @@ class _InBookFavoriteRow extends StatelessWidget {
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          SizedBox(
-            width: 4,
-            height: 32,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: color,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
+          _buildColorRail(context, color),
           const SizedBox(width: 6),
           if (onPlay != null)
             _InBookIconButton(
@@ -1930,6 +1914,18 @@ class _InBookFavoriteRow extends StatelessWidget {
             onPressed: onDelete,
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildColorRail(BuildContext context, Color railColor) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return Container(
+      width: 4,
+      height: 32,
+      decoration: BoxDecoration(
+        color: railColor,
+        borderRadius: tokens.radii.chipRadius,
       ),
     );
   }

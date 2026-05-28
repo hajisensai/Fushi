@@ -280,6 +280,28 @@ void main() {
     expect(find.text('Long sheet'), findsOneWidget);
   });
 
+  testWidgets('HibikiModalSheetFrame can constrain tall sheet height', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      buildSubject(
+        const HibikiModalSheetFrame(
+          maxHeightFactor: 0.5,
+          scrollable: true,
+          body: SizedBox(height: 1000, child: Text('Tall body')),
+        ),
+      ),
+    );
+
+    final bool hasFrameConstraint =
+        tester.widgetList<ConstrainedBox>(find.byType(ConstrainedBox)).any(
+              (ConstrainedBox box) => box.constraints.maxHeight == 300,
+            );
+    expect(hasFrameConstraint, isTrue);
+    expect(find.byType(SingleChildScrollView), findsOneWidget);
+    expect(find.text('Tall body'), findsOneWidget);
+  });
+
   testWidgets('HibikiDialogFrame owns MD3 dialog shell chrome', (
     WidgetTester tester,
   ) async {

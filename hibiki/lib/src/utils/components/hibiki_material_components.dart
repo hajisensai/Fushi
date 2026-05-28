@@ -524,6 +524,7 @@ class HibikiModalSheetFrame extends StatelessWidget {
     this.subtitle,
     this.leadingIcon,
     this.footer,
+    this.maxHeightFactor,
     this.bodyPadding,
     this.footerPadding,
     this.scrollable = false,
@@ -534,6 +535,7 @@ class HibikiModalSheetFrame extends StatelessWidget {
   final String? subtitle;
   final IconData? leadingIcon;
   final Widget? footer;
+  final double? maxHeightFactor;
   final EdgeInsetsGeometry? bodyPadding;
   final EdgeInsetsGeometry? footerPadding;
   final bool scrollable;
@@ -560,13 +562,21 @@ class HibikiModalSheetFrame extends StatelessWidget {
       ],
     ];
 
-    return SafeArea(
+    final Widget sheet = SafeArea(
       top: false,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: children,
       ),
+    );
+    final double? heightFactor = maxHeightFactor;
+    if (heightFactor == null) return sheet;
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * heightFactor,
+      ),
+      child: sheet,
     );
   }
 
