@@ -1,10 +1,12 @@
 import 'package:change_notifier_builder/change_notifier_builder.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:hibiki/src/sync/sync_auto_trigger.dart';
 import 'package:hibiki/pages.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:hibiki/utils.dart';
+import 'package:hibiki/src/shortcuts/input_binding.dart' show ModifierKey;
+import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 
 class HomePage extends BasePage {
   const HomePage({super.key});
@@ -101,26 +103,56 @@ class _HomePageState extends BasePageState<HomePage>
 
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
-    final bool ctrl = HardwareKeyboard.instance.isControlPressed;
-    if (ctrl) {
-      switch (event.logicalKey) {
-        case LogicalKeyboardKey.digit1:
-          setState(() => _currentTab = 0);
-          _loadIconPreset();
-          return KeyEventResult.handled;
-        case LogicalKeyboardKey.digit2:
-          setState(() => _currentTab = 1);
-          return KeyEventResult.handled;
-        case LogicalKeyboardKey.digit3:
-          setState(() => _currentTab = 2);
-          return KeyEventResult.handled;
-        case LogicalKeyboardKey.keyF:
-          setState(() => _currentTab = 1);
-          _dictFocusSignal.value++;
-          return KeyEventResult.handled;
-      }
+
+    final modifiers = <ModifierKey>{};
+    if (HardwareKeyboard.instance.isControlPressed) {
+      modifiers.add(ModifierKey.ctrl);
     }
-    return KeyEventResult.ignored;
+    if (HardwareKeyboard.instance.isShiftPressed) {
+      modifiers.add(ModifierKey.shift);
+    }
+    if (HardwareKeyboard.instance.isAltPressed) {
+      modifiers.add(ModifierKey.alt);
+    }
+    if (HardwareKeyboard.instance.isMetaPressed) {
+      modifiers.add(ModifierKey.meta);
+    }
+
+    final ShortcutAction? action =
+        appModel.shortcutRegistry.resolveKeyboard(
+          event.logicalKey,
+          modifiers: modifiers,
+          scope: ShortcutScope.home,
+        ) ??
+        appModel.shortcutRegistry.resolveKeyboard(
+          event.logicalKey,
+          modifiers: modifiers,
+          scope: ShortcutScope.global,
+        );
+
+    if (action == null) return KeyEventResult.ignored;
+
+    switch (action) {
+      case ShortcutAction.homeTabBooks:
+        setState(() => _currentTab = 0);
+        _loadIconPreset();
+        return KeyEventResult.handled;
+      case ShortcutAction.homeTabDict:
+        setState(() => _currentTab = 1);
+        return KeyEventResult.handled;
+      case ShortcutAction.homeTabSettings:
+        setState(() => _currentTab = 2);
+        return KeyEventResult.handled;
+      case ShortcutAction.homeFocusSearch:
+        setState(() => _currentTab = 1);
+        _dictFocusSignal.value++;
+        return KeyEventResult.handled;
+      case ShortcutAction.globalBack:
+        Navigator.of(context).maybePop();
+        return KeyEventResult.handled;
+      default:
+        return KeyEventResult.ignored;
+    }
   }
 
   @override
@@ -135,21 +167,11 @@ class _HomePageState extends BasePageState<HomePage>
               canPop: !syncing,
               onPopInvokedWithResult: (didPop, _) async {
                 if (didPop) return;
-                final confirmed = await showDialog<bool>(
+                final bool? confirmed = await showDialog<bool>(
                   context: context,
-                  builder: (ctx) => AlertDialog(
-                    title: Text(t.sync_exit_warning_title),
-                    content: Text(t.sync_exit_warning),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(ctx, false),
-                        child: Text(t.dialog_cancel),
-                      ),
-                      TextButton(
-                        onPressed: () => Navigator.pop(ctx, true),
-                        child: Text(t.dialog_exit),
-                      ),
-                    ],
+                  builder: (BuildContext ctx) => _SyncExitWarningDialog(
+                    onCancel: () => Navigator.pop(ctx, false),
+                    onExit: () => Navigator.pop(ctx, true),
                   ),
                 );
                 if (confirmed == true) {
@@ -297,6 +319,62 @@ class _HomePageState extends BasePageState<HomePage>
             height: 36,
           );
         },
+      ),
+    );
+  }
+}
+
+class _SyncExitWarningDialog extends StatelessWidget {
+  const _SyncExitWarningDialog({
+    required this.onCancel,
+    required this.onExit,
+  });
+
+  final VoidCallback onCancel;
+  final VoidCallback onExit;
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final TextTheme textTheme = Theme.of(context).textTheme;
+
+    return HibikiDialogFrame(
+      maxWidth: 380,
+      padding: EdgeInsets.all(tokens.spacing.card + 4),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            t.sync_exit_warning_title,
+            style: textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          SizedBox(height: tokens.spacing.gap + 4),
+          Text(
+            t.sync_exit_warning,
+            style: textTheme.bodyMedium?.copyWith(
+              color: colors.onSurfaceVariant,
+            ),
+          ),
+          SizedBox(height: tokens.spacing.card + tokens.spacing.gap),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: <Widget>[
+              TextButton(
+                onPressed: onCancel,
+                child: Text(t.dialog_cancel),
+              ),
+              SizedBox(width: tokens.spacing.gap),
+              TextButton(
+                onPressed: onExit,
+                child: Text(t.dialog_exit),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
