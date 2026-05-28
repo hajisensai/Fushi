@@ -36,90 +36,106 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final double maxHeight = MediaQuery.of(context).size.height * 0.42;
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final double maxHeight =
+        (MediaQuery.of(context).size.height * 0.24).clamp(56.0, 320.0);
 
-    return adaptiveAlertDialog(
-      context: context,
-      titlePadding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-      contentPadding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-      actionsPadding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
-      buttonPadding: const EdgeInsets.symmetric(horizontal: 4),
-      title: Text(
-        t.manage_audio_sources,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: Theme.of(context).textTheme.titleMedium,
-      ),
-      content: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: double.maxFinite,
-          maxHeight: maxHeight,
+    return HibikiDialogFrame(
+      maxWidth: 560,
+      maxHeightFactor: 0.92,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      scrollable: false,
+      child: HibikiModalSheetFrame(
+        title: t.manage_audio_sources,
+        leadingIcon: Icons.graphic_eq_outlined,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: double.maxFinite,
+            maxHeight: maxHeight,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(
+                child: ReorderableListView.builder(
+                  shrinkWrap: true,
+                  itemCount: _sources.length,
+                  onReorder: (int oldIndex, int newIndex) {
+                    setState(() {
+                      if (newIndex > oldIndex) newIndex--;
+                      final item = _sources.removeAt(oldIndex);
+                      _sources.insert(newIndex, item);
+                    });
+                  },
+                  itemBuilder: (context, index) {
+                    return AdaptiveSettingsRow(
+                      key: ValueKey('audio_src_$index'),
+                      title: _sources[index],
+                      icon: Icons.drag_handle,
+                      trailing: IconButton(
+                        visualDensity: VisualDensity.compact,
+                        icon: const Icon(Icons.delete_outline, size: 18),
+                        onPressed: () {
+                          setState(() {
+                            _sources.removeAt(index);
+                          });
+                        },
+                      ),
+                    );
+                  },
+                ),
+              ),
+              SizedBox(height: tokens.spacing.gap),
+              AdaptiveSettingsTextField(
+                controller: _controller,
+                hintText: 'https://...{term}...{reading}',
+                suffixIcon: IconButton(
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.add),
+                  onPressed: _addSource,
+                ),
+                onSubmitted: (_) => _addSource(),
+              ),
+            ],
+          ),
+        ),
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
           children: [
-            Flexible(
-              child: ReorderableListView.builder(
-                shrinkWrap: true,
-                itemCount: _sources.length,
-                onReorder: (int oldIndex, int newIndex) {
-                  setState(() {
-                    if (newIndex > oldIndex) newIndex--;
-                    final item = _sources.removeAt(oldIndex);
-                    _sources.insert(newIndex, item);
-                  });
-                },
-                itemBuilder: (context, index) {
-                  return AdaptiveSettingsRow(
-                    key: ValueKey('audio_src_$index'),
-                    title: _sources[index],
-                    icon: Icons.drag_handle,
-                    trailing: IconButton(
-                      visualDensity: VisualDensity.compact,
-                      icon: const Icon(Icons.delete_outline, size: 18),
-                      onPressed: () {
-                        setState(() {
-                          _sources.removeAt(index);
-                        });
-                      },
-                    ),
-                  );
-                },
-              ),
+            adaptiveDialogAction(
+              context: context,
+              onPressed: () {
+                setState(() {
+                  _sources = List<String>.from(AppModel.defaultAudioSources);
+                });
+              },
+              child: Text(t.reset),
             ),
-            const SizedBox(height: 4),
-            AdaptiveSettingsTextField(
-              controller: _controller,
-              hintText: 'https://...{term}...{reading}',
-              suffixIcon: IconButton(
-                visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.add),
-                onPressed: _addSource,
-              ),
-              onSubmitted: (_) => _addSource(),
+            adaptiveDialogAction(
+              context: context,
+              onPressed: () {
+                widget.onSave(_sources);
+                Navigator.pop(context);
+              },
+              child: Text(t.dialog_close),
             ),
           ],
         ),
       ),
-      actions: [
-        adaptiveDialogAction(
-          context: context,
-          onPressed: () {
-            setState(() {
-              _sources = List<String>.from(AppModel.defaultAudioSources);
-            });
-          },
-          child: Text(t.reset),
-        ),
-        adaptiveDialogAction(
-          context: context,
-          onPressed: () {
-            widget.onSave(_sources);
-            Navigator.pop(context);
-          },
-          child: Text(t.dialog_close),
-        ),
-      ],
     );
   }
 
@@ -203,39 +219,62 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final Size mediaSize = MediaQuery.of(context).size;
     final double contentHeight = (mediaSize.height * 0.55).clamp(280.0, 480.0);
-    final double contentWidth = desktopDialogContentWidth(mediaSize.width);
 
-    return adaptiveAlertDialog(
-      context: context,
-      title: Text(t.custom_dict_css),
-      content: SizedBox(
-        width: contentWidth,
-        height: contentHeight,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildScopeDropdown(context),
-            const SizedBox(height: 8),
-            Expanded(
-              child: HibikiEditorPanel(
-                controller: _cssController,
+    return HibikiDialogFrame(
+      maxWidth: 640,
+      maxHeightFactor: 0.88,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      scrollable: false,
+      child: HibikiModalSheetFrame(
+        title: t.custom_dict_css,
+        leadingIcon: Icons.code_outlined,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: SizedBox(
+          width: double.maxFinite,
+          height: contentHeight,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildScopeDropdown(context),
+              SizedBox(height: tokens.spacing.gap),
+              Expanded(
+                child: HibikiEditorPanel(
+                  controller: _cssController,
+                ),
               ),
+            ],
+          ),
+        ),
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: [
+            adaptiveDialogAction(
+              context: context,
+              child: Text(t.dialog_close),
+              onPressed: () async {
+                await _saveCurrentScope();
+                if (context.mounted) Navigator.pop(context);
+              },
             ),
           ],
         ),
       ),
-      actions: [
-        adaptiveDialogAction(
-          context: context,
-          child: Text(t.dialog_close),
-          onPressed: () async {
-            await _saveCurrentScope();
-            if (context.mounted) Navigator.pop(context);
-          },
-        ),
-      ],
     );
   }
 

@@ -105,7 +105,7 @@ void main() {
 
     expect(tester.takeException(), isNull);
 
-    final Rect dialogRect = tester.getRect(find.byType(AlertDialog));
+    final Rect dialogRect = tester.getRect(find.byType(Dialog));
     expect(dialogRect.left, greaterThanOrEqualTo(0));
     expect(dialogRect.right, lessThanOrEqualTo(393));
 
