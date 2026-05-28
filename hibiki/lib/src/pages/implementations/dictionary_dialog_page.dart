@@ -42,7 +42,7 @@ class _DictionaryDialogPageState extends BasePageState {
         icon: const Icon(Icons.cloud_download_outlined),
         onPressed: _showDownloadSelectionDialog,
       ),
-      if (Platform.isAndroid)
+      if (!Platform.isIOS)
         IconButton(
           tooltip: t.dialog_import_folder,
           icon: const Icon(Icons.drive_folder_upload_outlined),

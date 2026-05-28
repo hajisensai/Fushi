@@ -411,21 +411,23 @@ class _CustomPlatformViewState extends State<CustomPlatformView> {
   }
 
   void _reportSurfaceSize() async {
-    final box = _key.currentContext?.findRenderObject() as RenderBox?;
-    if (box != null) {
+    final context = _key.currentContext;
+    final box = context?.findRenderObject() as RenderBox?;
+    if (box != null && context != null) {
       await _controller.ready;
       unawaited(_controller._setSize(
-          box.size, widget.scaleFactor ?? window.devicePixelRatio));
+          box.size, widget.scaleFactor ?? View.of(context).devicePixelRatio));
     }
   }
 
   void _reportWidgetPosition() async {
-    final box = _key.currentContext?.findRenderObject() as RenderBox?;
-    if (box != null) {
+    final context = _key.currentContext;
+    final box = context?.findRenderObject() as RenderBox?;
+    if (box != null && context != null) {
       await _controller.ready;
       final position = box.localToGlobal(Offset.zero);
       unawaited(_controller._setPosition(
-          position, widget.scaleFactor ?? window.devicePixelRatio));
+          position, widget.scaleFactor ?? View.of(context).devicePixelRatio));
     }
   }
 

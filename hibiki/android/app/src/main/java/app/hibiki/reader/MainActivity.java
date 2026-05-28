@@ -103,7 +103,6 @@ public class MainActivity extends AudioServiceActivity {
         ttsChannelHandler = new TtsChannelHandler(context);
 
         super.onCreate(savedInstanceState);
-        isAppRunning = false;
     }
 
     @Override
@@ -113,12 +112,6 @@ public class MainActivity extends AudioServiceActivity {
         }
         ioExecutor.shutdownNow();
         super.onDestroy();
-    }
-
-    private static boolean isAppRunning;
-
-    public static boolean getIsAppRunning() {
-        return isAppRunning;
     }
 
     public static void notifyFloatingLyricEvent(String method, Map<String, Object> arguments) {

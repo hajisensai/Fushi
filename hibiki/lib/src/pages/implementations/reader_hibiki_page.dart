@@ -231,6 +231,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     if (!mounted) return;
     if (!exists) {
       debugPrint('[ReaderHibiki] book ${widget.bookId} not found on disk');
+      HibikiToast.show(msg: t.book_file_not_found);
       Navigator.of(context).pop();
       return;
     }
@@ -248,6 +249,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       _book = await _buildBookFromDb(db, widget.bookId, extractDir);
       if (!mounted) return;
       _book ??= _buildLegacyBook(extractDir);
+      HibikiToast.show(msg: t.epub_parse_fallback);
     }
 
     final List<String> hrefs = _book!.chapters.map((ch) => ch.href).toList();
@@ -851,6 +853,15 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _syncPageSize();
     });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      _flushPosition();
+      _flushReadingStats();
+    }
   }
 
   Future<void> _syncPageSize() async {
@@ -1719,6 +1730,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         _readerContentReady = true;
         _hasEverLoaded = true;
       });
+      HibikiToast.show(msg: t.reader_content_timeout);
     });
   }
 

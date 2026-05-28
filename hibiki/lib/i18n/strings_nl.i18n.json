@@ -1064,5 +1064,12 @@
     "sync_webdav_password": "Password",
     "sync_webdav_test": "Test connection",
     "sync_webdav_test_success": "Connection successful",
-    "sync_webdav_test_failed": "Connection failed: $message"
+    "sync_webdav_test_failed": "Connection failed: $message",
+    "book_file_not_found": "Book file not found",
+    "epub_parse_fallback": "Book metadata repaired from database",
+    "retry": "Retry",
+    "copy_error": "Copy Error",
+    "error_copied": "Error copied to clipboard",
+    "dict_import_failed_summary": "Failed to import $n dictionary(s)",
+    "reader_content_timeout": "Content loading timed out. Reopen if display is abnormal"
 }

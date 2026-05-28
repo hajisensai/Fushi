@@ -96,6 +96,7 @@ class DictionaryImportManager {
       }
 
       totalNotifier.value = zipFiles.length;
+      final List<String> failedNames = [];
       for (int i = 0; i < zipFiles.length; i++) {
         countNotifier.value = i + 1;
         try {
@@ -110,11 +111,14 @@ class DictionaryImportManager {
           );
         } catch (e, stack) {
           ErrorLogService.instance.log('DictImport.importZip', e, stack);
-          HibikiToast.show(
-            msg: '${path.basenameWithoutExtension(zipFiles[i].path)}: $e',
-            toastLength: Toast.LENGTH_LONG,
-          );
+          failedNames.add(path.basenameWithoutExtension(zipFiles[i].path));
         }
+      }
+      if (failedNames.isNotEmpty) {
+        final String summary = failedNames.length == 1
+            ? '${t.srt_import_error}: ${failedNames.first}'
+            : '${t.dict_import_failed_summary(n: failedNames.length)}\n${failedNames.join(', ')}';
+        HibikiToast.show(msg: summary, toastLength: Toast.LENGTH_LONG);
       }
       return;
     }

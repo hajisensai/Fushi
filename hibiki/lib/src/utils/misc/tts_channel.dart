@@ -12,6 +12,10 @@ class TtsChannel {
   static final TtsChannel instance = TtsChannel._();
 
   static final bool _isSupported = Platform.isAndroid;
+
+  /// Whether TTS is available on the current platform.
+  /// UI code can use this to show/hide TTS buttons.
+  static bool get isSupported => _isSupported;
   static const _channel = HibikiChannels.tts;
 
   Future<void> speak(String text, {String locale = 'ja-JP'}) async {

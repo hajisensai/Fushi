@@ -81,7 +81,7 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
   Widget? buildPopupAudioControls() => null;
 
   /// Handles leaving a source page. All sources should
-  /// use this and wrap their [build] function with a [WillPopScope].
+  /// use this and wrap their [build] function with a [PopScope].
   Future<bool> onWillPop() async {
     final mediaSource = appModel.currentMediaSource;
     final item = widget.item;

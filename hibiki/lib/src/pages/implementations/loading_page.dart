@@ -15,8 +15,8 @@ class LoadingPage extends BasePage {
 class _LoadingPageState extends BasePageState<LoadingPage> {
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: () async => false,
+    return PopScope(
+      canPop: false,
       child: Scaffold(body: buildLoading()),
     );
   }

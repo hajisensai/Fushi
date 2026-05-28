@@ -18,6 +18,7 @@ LazyDatabase _openDb(String dbDirectory) {
       setup: (db) {
         db.execute('PRAGMA journal_mode=WAL');
         db.execute('PRAGMA foreign_keys = ON');
+        db.execute('PRAGMA busy_timeout = 5000');
       },
     );
   });
@@ -727,6 +728,11 @@ class HibikiDatabase extends _$HibikiDatabase {
             .go();
         await (delete(bookmarks)..where((t) => t.ttuBookId.equals(id))).go();
         await (delete(srtBooks)..where((t) => t.ttuBookId.equals(id))).go();
+        final String bookUid = 'reader_ttu/hoshi://book/$id';
+        await (delete(audioCues)..where((t) => t.bookUid.equals(bookUid)))
+            .go();
+        await (delete(audiobooks)..where((t) => t.bookUid.equals(bookUid)))
+            .go();
         return (delete(epubBooks)..where((t) => t.id.equals(id))).go();
       });
 

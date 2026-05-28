@@ -334,6 +334,29 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
                         allowSelectAll: true,
                       ),
                     ),
+                    const SizedBox(height: 20),
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 8,
+                      alignment: WrapAlignment.center,
+                      children: [
+                        FilledButton.icon(
+                          icon: const Icon(Icons.refresh, size: 18),
+                          label: Text(t.retry),
+                          onPressed: () => appModel.retryInitialise(),
+                        ),
+                        OutlinedButton.icon(
+                          icon: const Icon(Icons.copy, size: 18),
+                          label: Text(t.copy_error),
+                          onPressed: () {
+                            Clipboard.setData(
+                              ClipboardData(text: appModel.initError!),
+                            );
+                            HibikiToast.show(msg: t.error_copied);
+                          },
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ),
@@ -355,6 +378,9 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
           theme: ThemeData(useMaterial3: true, colorScheme: cs),
           home: Scaffold(
             backgroundColor: _savedSplashColor,
+            body: Center(
+              child: CircularProgressIndicator(color: cs.primary),
+            ),
           ),
         ),
       );

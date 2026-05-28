@@ -85,7 +85,7 @@ class MediaHistoryRepository extends ChangeNotifier {
 
   // ── media item CRUD ──────────────────────────────────────────────────
 
-  void addMediaItem(MediaItem item) async {
+  Future<void> addMediaItem(MediaItem item) async {
     _mediaItemsCache.removeWhere((m) => m.uniqueKey == item.uniqueKey);
     item.id = null;
     _mediaItemsCache.insert(0, item);
@@ -99,14 +99,14 @@ class MediaHistoryRepository extends ChangeNotifier {
     _mediaItemsCache = rows.map(_rowToMediaItem).toList();
   }
 
-  void updateMediaItem(MediaItem item) async {
+  Future<void> updateMediaItem(MediaItem item) async {
     final idx =
         _mediaItemsCache.indexWhere((m) => m.uniqueKey == item.uniqueKey);
     if (idx >= 0) _mediaItemsCache[idx] = item;
     await _db.upsertMediaItem(_mediaItemToCompanion(item));
   }
 
-  void removeFromReadingList(String mediaIdentifier) async {
+  Future<void> removeFromReadingList(String mediaIdentifier) async {
     _mediaItemsCache.removeWhere((m) => m.mediaIdentifier == mediaIdentifier);
     await _db.deleteMediaItemsByIdentifier(mediaIdentifier);
   }
@@ -134,7 +134,7 @@ class MediaHistoryRepository extends ChangeNotifier {
 
   // ── search history ───────────────────────────────────────────────────
 
-  void addToSearchHistory({
+  Future<void> addToSearchHistory({
     required String historyKey,
     required String searchTerm,
   }) async {
@@ -166,7 +166,7 @@ class MediaHistoryRepository extends ChangeNotifier {
     await _db.deleteSearchHistoryByUniqueKey(uk);
   }
 
-  void clearSearchHistory({required String historyKey}) async {
+  Future<void> clearSearchHistory({required String historyKey}) async {
     _searchHistoryCache.remove(historyKey);
     await _db.clearSearchHistory(historyKey);
   }

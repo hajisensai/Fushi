@@ -11,6 +11,7 @@ import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_import_dialog.dart';
+import 'package:hibiki/src/media/audiobook/book_import_dialog.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/epub/epub_storage.dart';
@@ -972,9 +973,33 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   @override
   Widget buildPlaceholder() {
     return Center(
-      child: HibikiPlaceholderMessage(
-        icon: mediaSource.icon,
-        message: t.ttu_no_books_added,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          HibikiPlaceholderMessage(
+            icon: mediaSource.icon,
+            message: t.ttu_no_books_added,
+          ),
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            icon: const Icon(Icons.library_add_outlined, size: 18),
+            label: Text(t.srt_import),
+            onPressed: () async {
+              final bool? imported = await showAppDialog<bool>(
+                context: context,
+                builder: (_) => BookImportDialog(
+                  repo: SrtBookRepository(appModel.database),
+                  audiobookRepo: AudiobookRepository(appModel.database),
+                  db: appModel.database,
+                ),
+              );
+              if (imported == true) {
+                ref.invalidate(hibikiBooksProvider(appModel.targetLanguage));
+                ref.invalidate(srtBooksProvider);
+              }
+            },
+          ),
+        ],
       ),
     );
   }

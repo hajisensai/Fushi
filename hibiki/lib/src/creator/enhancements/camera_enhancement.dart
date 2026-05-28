@@ -26,6 +26,9 @@ class CameraEnhancement extends ImageEnhancement {
   /// default mappings value of [AnkiMapping].
   static const String key = 'camera';
 
+  /// Whether the camera is available on the current platform.
+  static bool get isAvailable => Platform.isAndroid || Platform.isIOS;
+
   @override
   String getLocalisedLabel(AppModel appModel) => t.creator_enhancement_camera;
 

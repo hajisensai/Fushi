@@ -138,6 +138,15 @@ class _MiscellaneousSettingsPageState
                 ),
               ],
             ],
+          )
+        else
+          AdaptiveSettingsSection(
+            title: t.app_icon_label,
+            children: [
+              AdaptiveSettingsRow(
+                title: t.icon_shortcut_unsupported,
+              ),
+            ],
           ),
       ],
     );

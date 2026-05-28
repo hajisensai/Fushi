@@ -204,6 +204,14 @@ class AppModel with ChangeNotifier {
   String? get initError => _initError;
   String? _initError;
 
+  /// Clears the error state and re-runs [initialise].
+  Future<void> retryInitialise() async {
+    _initError = null;
+    _isInitialised = false;
+    notifyListeners();
+    await initialise();
+  }
+
   /// Used for caching images and audio produced from media seeds.
   DefaultCacheManager get cacheManager => _cacheManager;
   final _cacheManager = DefaultCacheManager();
@@ -437,26 +445,27 @@ class AppModel with ChangeNotifier {
 
   Future<void> _rebuildDictPathsCacheAsync() async {
     _migrateDictionaryTypes();
+    final dictList = dictRepo.dictionaries;
+    final existsResults = await Future.wait([
+      for (final d in dictList)
+        Directory(path.join(dictionaryResourceDirectory.path, d.name)).exists(),
+    ]);
     final termPaths = <String>[];
     final freqPaths = <String>[];
     final pitchPaths = <String>[];
-    final checks = <Future<void>>[];
-    for (final d in dictRepo.dictionaries) {
-      final p = path.join(dictionaryResourceDirectory.path, d.name);
-      checks.add(Directory(p).exists().then((bool exists) {
-        if (!exists) return;
-        switch (d.type) {
-          case DictionaryType.term:
-          case DictionaryType.kanji:
-            termPaths.add(p);
-          case DictionaryType.frequency:
-            freqPaths.add(p);
-          case DictionaryType.pitch:
-            pitchPaths.add(p);
-        }
-      }));
+    for (var i = 0; i < dictList.length; i++) {
+      if (!existsResults[i]) continue;
+      final p = path.join(dictionaryResourceDirectory.path, dictList[i].name);
+      switch (dictList[i].type) {
+        case DictionaryType.term:
+        case DictionaryType.kanji:
+          termPaths.add(p);
+        case DictionaryType.frequency:
+          freqPaths.add(p);
+        case DictionaryType.pitch:
+          pitchPaths.add(p);
+      }
     }
-    await Future.wait(checks);
     if (termPaths.isNotEmpty || freqPaths.isNotEmpty || pitchPaths.isNotEmpty) {
       HoshiDicts.initializeTyped(
         termPaths: termPaths,
@@ -746,12 +755,14 @@ class AppModel with ChangeNotifier {
         ClearFieldEnhancement(field: AudioField.instance),
         LocalAudioEnhancement(field: AudioField.instance),
         PickAudioEnhancement(field: AudioField.instance),
-        AudioRecorderEnhancement(field: AudioField.instance),
+        if (AudioRecorderEnhancement.isAvailable)
+          AudioRecorderEnhancement(field: AudioField.instance),
       ],
       AudioSentenceField.instance: [
         ClearFieldEnhancement(field: AudioSentenceField.instance),
         PickAudioEnhancement(field: AudioSentenceField.instance),
-        AudioRecorderEnhancement(field: AudioSentenceField.instance),
+        if (AudioRecorderEnhancement.isAvailable)
+          AudioRecorderEnhancement(field: AudioSentenceField.instance),
       ],
       NotesField.instance: [
         ClearFieldEnhancement(field: NotesField.instance),
@@ -763,7 +774,7 @@ class AppModel with ChangeNotifier {
         ClearFieldEnhancement(field: ImageField.instance),
         CropImageEnhancement(),
         PickImageEnhancement(),
-        CameraEnhancement(),
+        if (CameraEnhancement.isAvailable) CameraEnhancement(),
       ],
       MeaningField.instance: [
         ClearFieldEnhancement(field: MeaningField.instance),
@@ -912,17 +923,19 @@ class AppModel with ChangeNotifier {
   /// a .nomedia file within the folder.
   Future<Directory> prepareFallbackHibikiDirectory() async {
     String directoryPath = path.join(appDirectory.path, 'hibikiExport');
-    String noMediaFilePath =
-        path.join(appDirectory.path, 'hibikiExport', '.nomedia');
 
     Directory hibikiDirectory = Directory(directoryPath);
-    File noMediaFile = File(noMediaFilePath);
 
     if (!hibikiDirectory.existsSync()) {
       hibikiDirectory.createSync(recursive: true);
     }
-    if (!noMediaFile.existsSync()) {
-      noMediaFile.createSync();
+    if (Platform.isAndroid) {
+      String noMediaFilePath =
+          path.join(appDirectory.path, 'hibikiExport', '.nomedia');
+      File noMediaFile = File(noMediaFilePath);
+      if (!noMediaFile.existsSync()) {
+        noMediaFile.createSync();
+      }
     }
 
     return hibikiDirectory;
@@ -2196,6 +2209,16 @@ class AppModel with ChangeNotifier {
           directories.add(directory);
         }
       }
+    } else if (Platform.isWindows) {
+      final String? userProfile = Platform.environment['USERPROFILE'];
+      if (userProfile != null) {
+        for (final subDir in ['Documents', 'Downloads']) {
+          final directory = Directory(path.join(userProfile, subDir));
+          if (directory.existsSync() && !directories.contains(directory)) {
+            directories.add(directory);
+          }
+        }
+      }
     }
 
     return directories;
@@ -2308,7 +2331,7 @@ class AppModel with ChangeNotifier {
   HibikiDatabase get database => _database;
 
   /// Safely shutdown and stop database operations.
-  void shutdown() async {
+  Future<void> shutdown() async {
     databaseCloseNotifier.notifyListeners();
     await _database.close();
     if (Platform.isAndroid || Platform.isIOS) {

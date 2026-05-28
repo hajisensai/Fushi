@@ -17,8 +17,16 @@ class PlaceholderSourcePage extends BaseSourcePage {
 class _PlaceholderSourcePage extends BaseSourcePageState {
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: onWillPop,
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (!didPop) {
+          final bool shouldPop = await onWillPop();
+          if (shouldPop && context.mounted) {
+            Navigator.of(context).pop();
+          }
+        }
+      },
       child: Scaffold(
         body: Center(
           child: buildPlaceholder(),

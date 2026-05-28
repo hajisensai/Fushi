@@ -30,9 +30,6 @@ class PreferencesRepository extends ChangeNotifier {
   dynamic getPref(String key, {dynamic defaultValue}) {
     final raw = _prefCache[key];
     if (raw == null) {
-      if (defaultValue != null) {
-        setPref(key, defaultValue);
-      }
       return defaultValue;
     }
     return PrefCodec.decode(raw, defaultValue);

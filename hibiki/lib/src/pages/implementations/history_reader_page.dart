@@ -37,7 +37,8 @@ class HistoryReaderPageState<T extends BaseHistoryPage>
       appModel.getCurrentSourceForMediaType(mediaType: mediaType);
 
   @override
-  bool get shouldPlaceholderBeShown => true;
+  bool get shouldPlaceholderBeShown =>
+      appModel.getMediaTypeHistory(mediaType: mediaType).isEmpty;
 
   @override
   Widget build(BuildContext context) {

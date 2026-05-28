@@ -27,6 +27,9 @@ class AudioRecorderEnhancement extends AudioEnhancement {
   /// default mappings value of [AnkiMapping].
   static const String key = 'audio_recorder';
 
+  /// Whether audio recording is available on the current platform.
+  static bool get isAvailable => Platform.isAndroid;
+
   @override
   String getLocalisedLabel(AppModel appModel) =>
       t.creator_enhancement_audio_recorder;

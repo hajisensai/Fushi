@@ -551,6 +551,7 @@ SettingsDestination _listeningDestination() {
             title: t.show_floating_lyric,
             subtitle: t.floating_lyric_hint,
             icon: Icons.subtitles_outlined,
+            visible: (_) => Platform.isAndroid,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.showFloatingLyric,
             onChanged: (SettingsContext settingsContext, bool value) async {
@@ -562,6 +563,7 @@ SettingsDestination _listeningDestination() {
             id: 'listening.floating_lyric_font_size',
             title: t.floating_lyric_font_size,
             icon: Icons.format_size,
+            visible: (_) => Platform.isAndroid,
             min: 8,
             max: 64,
             step: 1,

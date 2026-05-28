@@ -1064,5 +1064,12 @@
     "sync_webdav_password": "密码",
     "sync_webdav_test": "测试连接",
     "sync_webdav_test_success": "连接成功",
-    "sync_webdav_test_failed": "连接失败: $message"
+    "sync_webdav_test_failed": "连接失败: $message",
+    "book_file_not_found": "找不到书籍文件",
+    "epub_parse_fallback": "已从数据库修复书籍元数据",
+    "retry": "重试",
+    "copy_error": "复制错误",
+    "error_copied": "错误已复制到剪贴板",
+    "dict_import_failed_summary": "导入 $n 个词典失败",
+    "reader_content_timeout": "内容加载超时，如显示异常请重新打开"
 }

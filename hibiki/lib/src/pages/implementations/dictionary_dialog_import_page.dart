@@ -37,8 +37,8 @@ class _DictionaryDialogImportPageState
     extends BasePageState<DictionaryDialogImportPage> {
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: () async => false,
+    return PopScope(
+      canPop: false,
       child: adaptiveAlertDialog(
         context: context,
         contentPadding: Spacing.of(context).insets.all.small,

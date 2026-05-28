@@ -26,8 +26,8 @@ class _DictionaryDialogDeletePageState
     extends BasePageState<DictionaryDialogDeletePage> {
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: () async => false,
+    return PopScope(
+      canPop: false,
       child: adaptiveAlertDialog(
         context: context,
         contentPadding: Spacing.of(context).insets.all.small,

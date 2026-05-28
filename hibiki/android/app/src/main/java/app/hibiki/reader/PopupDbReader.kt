@@ -1,6 +1,7 @@
 package app.hibiki.reader
 
 import android.content.Context
+import android.content.res.Configuration
 import android.database.sqlite.SQLiteDatabase
 import android.util.Log
 import org.json.JSONObject
@@ -164,7 +165,12 @@ class PopupDbReader {
             globalDictCSS = prefs["global_dict_css"] ?: "",
             customDictCSS = prefs["custom_dict_css"] ?: "{}",
             targetLanguage = targetLang,
-            isDarkMode = prefs["theme_mode"] == "dark",
+            isDarkMode = when (prefs["brightness_mode"]) {
+                "dark" -> true
+                "light" -> false
+                else -> (context.resources.configuration.uiMode and
+                         Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+            },
             overrideDictColor = prefs["dictionary_color"],
             collapsedDictNames = readCollapsedDictNames(context, targetLang),
             maximumTerms = (prefs["maximum_terms"]?.toIntOrNull() ?: 100),

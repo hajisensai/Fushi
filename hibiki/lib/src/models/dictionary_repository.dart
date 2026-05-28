@@ -117,7 +117,7 @@ class DictionaryRepository extends ChangeNotifier {
 
   // ── dictionary metadata CRUD ─────────────────────────────────────────
 
-  void persistDictionary(Dictionary dictionary) async {
+  Future<void> persistDictionary(Dictionary dictionary) async {
     final idx = _dictionariesCache.indexWhere((d) => d.name == dictionary.name);
     if (idx >= 0) {
       _dictionariesCache[idx] = dictionary;
@@ -129,7 +129,7 @@ class DictionaryRepository extends ChangeNotifier {
     await _db.upsertDictionaryMeta(_dictionaryToCompanion(dictionary));
   }
 
-  void updateDictionaryOrder(List<Dictionary> newDictionaries) async {
+  Future<void> updateDictionaryOrder(List<Dictionary> newDictionaries) async {
     final updatedNames = newDictionaries.map((d) => d.name).toSet();
     final others =
         _dictionariesCache.where((d) => !updatedNames.contains(d.name));
@@ -253,7 +253,7 @@ class DictionaryRepository extends ChangeNotifier {
     _dictionaryHistoryResults.clear();
   }
 
-  void _persistDictionaryHistory() async {
+  Future<void> _persistDictionaryHistory() async {
     final swPersist = Stopwatch()..start();
     final items = <DictionaryHistoryCompanion>[];
     for (int i = 0; i < _dictionaryHistoryResults.length; i++) {
