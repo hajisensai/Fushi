@@ -122,6 +122,29 @@ void main() {
         expect(restored?.button, button);
       }
     });
+
+    test('fromLogicalKey maps gamepad keys correctly', () {
+      expect(GamepadButton.fromLogicalKey(LogicalKeyboardKey.gameButtonA),
+          GamepadButton.a);
+      expect(GamepadButton.fromLogicalKey(LogicalKeyboardKey.gameButtonLeft1),
+          GamepadButton.lb);
+      expect(
+          GamepadButton.fromLogicalKey(LogicalKeyboardKey.gameButtonThumbLeft),
+          GamepadButton.thumbLeft);
+      expect(GamepadButton.fromLogicalKey(LogicalKeyboardKey.gameButtonMode),
+          GamepadButton.mode);
+    });
+
+    test('fromLogicalKey returns null for non-gamepad keys', () {
+      expect(GamepadButton.fromLogicalKey(LogicalKeyboardKey.space), isNull);
+      expect(GamepadButton.fromLogicalKey(LogicalKeyboardKey.escape), isNull);
+    });
+
+    test('fromLogicalKey excludes D-Pad (shared with arrow keys)', () {
+      expect(GamepadButton.fromLogicalKey(LogicalKeyboardKey.arrowUp), isNull);
+      expect(
+          GamepadButton.fromLogicalKey(LogicalKeyboardKey.arrowDown), isNull);
+    });
   });
 
   group('ShortcutBindingSet', () {

@@ -5,7 +5,8 @@ import 'package:hibiki/src/sync/sync_auto_trigger.dart';
 import 'package:hibiki/pages.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:hibiki/utils.dart';
-import 'package:hibiki/src/shortcuts/input_binding.dart' show ModifierKey;
+import 'package:hibiki/src/shortcuts/input_binding.dart'
+    show GamepadButton, ModifierKey;
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 
 class HomePage extends BasePage {
@@ -118,7 +119,7 @@ class _HomePageState extends BasePageState<HomePage>
       modifiers.add(ModifierKey.meta);
     }
 
-    final ShortcutAction? action = appModel.shortcutRegistry.resolveKeyboard(
+    ShortcutAction? action = appModel.shortcutRegistry.resolveKeyboard(
           event.logicalKey,
           modifiers: modifiers,
           scope: ShortcutScope.home,
@@ -128,6 +129,20 @@ class _HomePageState extends BasePageState<HomePage>
           modifiers: modifiers,
           scope: ShortcutScope.global,
         );
+
+    if (action == null) {
+      final gamepad = GamepadButton.fromLogicalKey(event.logicalKey);
+      if (gamepad != null) {
+        action = appModel.shortcutRegistry.resolveGamepad(
+              gamepad,
+              scope: ShortcutScope.home,
+            ) ??
+            appModel.shortcutRegistry.resolveGamepad(
+              gamepad,
+              scope: ShortcutScope.global,
+            );
+      }
+    }
 
     if (action == null) return KeyEventResult.ignored;
 

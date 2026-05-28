@@ -237,6 +237,15 @@ enum GamepadButton {
   const GamepadButton(this.label);
   final String label;
 
+  static final Map<LogicalKeyboardKey, GamepadButton> _byLogicalKey = {
+    for (final b in values)
+      if (b != dpadUp && b != dpadDown && b != dpadLeft && b != dpadRight)
+        b.logicalKey: b,
+  };
+
+  static GamepadButton? fromLogicalKey(LogicalKeyboardKey key) =>
+      _byLogicalKey[key];
+
   static GamepadButton? fromLabel(String label) {
     for (final button in values) {
       if (button.label == label) return button;

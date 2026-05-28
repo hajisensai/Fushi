@@ -46,7 +46,8 @@ import 'package:hibiki/src/utils/misc/platform_utils.dart';
 import 'package:hibiki/src/utils/misc/Hibiki_color.dart';
 import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 import 'package:hibiki/src/utils/misc/show_app_dialog.dart';
-import 'package:hibiki/src/shortcuts/input_binding.dart' show ModifierKey;
+import 'package:hibiki/src/shortcuts/input_binding.dart'
+    show GamepadButton, ModifierKey;
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 
 List<int> _computeChapterCharCounts(EpubBook book) {
@@ -3004,7 +3005,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
       modifiers.add(ModifierKey.meta);
     }
 
-    final ShortcutAction? action = appModel.shortcutRegistry.resolveKeyboard(
+    ShortcutAction? action = appModel.shortcutRegistry.resolveKeyboard(
           event.logicalKey,
           modifiers: modifiers,
           scope: ShortcutScope.reader,
@@ -3014,6 +3015,20 @@ window.flutter_inappwebview.callHandler('spreadReady');
           modifiers: modifiers,
           scope: ShortcutScope.audiobook,
         );
+
+    if (action == null) {
+      final gamepad = GamepadButton.fromLogicalKey(event.logicalKey);
+      if (gamepad != null) {
+        action = appModel.shortcutRegistry.resolveGamepad(
+              gamepad,
+              scope: ShortcutScope.reader,
+            ) ??
+            appModel.shortcutRegistry.resolveGamepad(
+              gamepad,
+              scope: ShortcutScope.audiobook,
+            );
+      }
+    }
 
     if (action == null) return KeyEventResult.ignored;
     return _executeShortcutAction(action);
