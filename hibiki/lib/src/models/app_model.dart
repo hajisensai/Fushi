@@ -49,6 +49,8 @@ import 'package:hibiki/src/models/dictionary_import_manager.dart';
 import 'package:hibiki/src/models/file_export_manager.dart';
 import 'package:hibiki/src/models/local_audio_manager.dart';
 import 'package:hibiki/src/models/anki_integration.dart';
+import 'package:hibiki/src/shortcuts/shortcut_preferences.dart';
+import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
 
 export 'package:hibiki/src/models/local_audio_manager.dart'
     show LocalAudioDbEntry;
@@ -181,6 +183,9 @@ class AppModel with ChangeNotifier {
   late DictionaryImportManager _dictImportManager;
   late FileExportManager _fileExportManager;
   late LocalAudioManager _localAudioManager;
+
+  /// Keyboard / gamepad shortcut bindings, persisted in preferences.
+  final HibikiShortcutRegistry shortcutRegistry = HibikiShortcutRegistry();
 
   Color? get systemPrimaryColor => themeNotifier.systemPrimaryColor;
 
@@ -1074,6 +1079,12 @@ class AppModel with ChangeNotifier {
       final readerSettings = ReaderSettings(_database);
       await readerSettings.loadFromPrefsSnapshot(prefsSnapshot);
       ReaderHibikiSource.readerSettings = readerSettings;
+
+      await loadShortcutRegistry(
+        shortcutRegistry,
+        ReaderHibikiSource.instance,
+        defaultTargetPlatform,
+      );
 
       await Future.wait(<Future<void>>[
         Future.wait(<Future<void>>[
