@@ -13,6 +13,11 @@ import 'package:hibiki/src/platform/desktop/desktop_lifecycle_service.dart';
 import 'package:hibiki/src/platform/desktop/desktop_clipboard_service.dart';
 import 'package:hibiki/src/platform/desktop/desktop_permission_service.dart';
 import 'package:hibiki/src/platform/desktop/desktop_device_info_service.dart';
+import 'package:hibiki/src/platform/ios/ios_directory_service.dart';
+import 'package:hibiki/src/platform/ios/ios_lifecycle_service.dart';
+import 'package:hibiki/src/platform/ios/ios_clipboard_service.dart';
+import 'package:hibiki/src/platform/ios/ios_permission_service.dart';
+import 'package:hibiki/src/platform/ios/ios_device_info_service.dart';
 
 /// Holds all platform-specific service implementations.
 ///
@@ -59,8 +64,16 @@ class PlatformServices {
         createAnkiRepository: AnkiRepository.new,
       );
     }
-    // iOS will be added later — for now, desktop defaults cover all
-    // non-Android platforms (Windows, macOS, Linux, iOS fallback).
+    if (Platform.isIOS) {
+      return PlatformServices(
+        directory: IosDirectoryService(),
+        lifecycle: IosLifecycleService(),
+        clipboard: IosClipboardService(),
+        permission: IosPermissionService(),
+        deviceInfo: IosDeviceInfoService(),
+        createAnkiRepository: AnkiRepository.new,
+      );
+    }
     return PlatformServices(
       directory: DesktopDirectoryService(),
       lifecycle: DesktopLifecycleService(),
