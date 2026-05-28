@@ -113,27 +113,18 @@ class AudiobookFollowAudioButton extends StatelessWidget {
   }
 }
 
-ChoiceChip buildReaderThemeChip({
+Widget buildReaderThemeChip({
   required BuildContext context,
   required String label,
   required bool selected,
   required ValueChanged<bool> onSelected,
   Widget? avatar,
 }) {
-  final ColorScheme colors = Theme.of(context).colorScheme;
-  return ChoiceChip(
+  return HibikiSelectableChip(
+    tooltip: label,
     avatar: avatar,
-    label: Text(label),
+    label: label,
     selected: selected,
-    showCheckmark: false,
-    selectedColor: colors.primaryContainer,
-    labelStyle: selected ? TextStyle(color: colors.onPrimaryContainer) : null,
-    shape: RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(8),
-      side: BorderSide(
-        color: selected ? colors.primaryContainer : colors.outline,
-      ),
-    ),
     onSelected: onSelected,
   );
 }

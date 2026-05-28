@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
+import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
+import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/utils.dart';
 
@@ -115,6 +117,7 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final tokens = HibikiDesignTokens.of(context);
     final textColor = cs.onSurface;
     final subColor = cs.onSurfaceVariant;
     final tagBg = cs.surfaceContainerHighest;
@@ -132,7 +135,7 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
       ),
       itemBuilder: (context, idx) {
         final entry = _grouped[idx];
-        return _buildEntry(entry, idx, textColor, subColor, tagBg);
+        return _buildEntry(entry, idx, textColor, subColor, tagBg, tokens);
       },
     );
   }
@@ -143,6 +146,7 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
     Color textColor,
     Color subColor,
     Color tagBg,
+    HibikiDesignTokens tokens,
   ) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -151,9 +155,9 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
         children: [
           _buildHeader(entry, idx, textColor, subColor),
           if (entry.deinflectionTrace.isNotEmpty)
-            _buildDeinflection(entry, tagBg, subColor),
+            _buildDeinflection(entry, tagBg),
           const SizedBox(height: 2),
-          ..._buildGlossaries(entry, textColor, subColor, tagBg),
+          ..._buildGlossaries(entry, textColor, subColor, tagBg, tokens),
         ],
       ),
     );
@@ -214,23 +218,15 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
   Widget _buildDeinflection(
     _GroupedEntry entry,
     Color tagBg,
-    Color subColor,
   ) {
     return Padding(
       padding: const EdgeInsets.only(top: 2),
       child: Wrap(
         spacing: 2,
         children: entry.deinflectionTrace.map((trace) {
-          return Container(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-            decoration: BoxDecoration(
-              color: tagBg,
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Text(
-              trace['name'] ?? '',
-              style: TextStyle(fontSize: 11, color: subColor),
-            ),
+          return HibikiTagChip(
+            label: trace['name'] ?? '',
+            color: tagBg,
           );
         }).toList(),
       ),
@@ -242,6 +238,7 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
     Color textColor,
     Color subColor,
     Color tagBg,
+    HibikiDesignTokens tokens,
   ) {
     final Map<String, List<_GlossaryItem>> byDict = {};
     for (final g in entry.glossaries) {
@@ -259,7 +256,7 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
           children: [
             Text(
               dictName,
-              style: TextStyle(fontSize: 10, color: subColor),
+              style: tokens.type.metadata.copyWith(color: subColor),
             ),
             const SizedBox(height: 2),
             ...items.asMap().entries.map((itemEntry) {

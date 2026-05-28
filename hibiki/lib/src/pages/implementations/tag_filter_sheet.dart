@@ -5,6 +5,7 @@ import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/tag_management_page.dart';
 import 'package:hibiki/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:hibiki/src/utils/components/hibiki_divider.dart';
+import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 
 final selectedTagIdsProvider = StateProvider<Set<int>>((_) => {});
@@ -124,13 +125,13 @@ class _TagFilterSheetState extends ConsumerState<TagFilterSheet> {
                   runSpacing: 4,
                   children: _tags!.map((tag) {
                     final isSelected = selectedIds.contains(tag.id);
-                    return FilterChip(
+                    return HibikiSelectableChip(
                       selected: isSelected,
                       avatar: CircleAvatar(
                         backgroundColor: Color(tag.colorValue),
                         radius: 6,
                       ),
-                      label: Text(tag.name),
+                      label: tag.name,
                       onSelected: (selected) {
                         final current =
                             Set<int>.from(ref.read(selectedTagIdsProvider));

@@ -250,8 +250,8 @@ class _BookCssEditorPageState extends State<BookCssEditorPage> {
               children: List.generate(_entries.length, (i) {
                 return Padding(
                   padding: const EdgeInsets.only(right: 6),
-                  child: ChoiceChip(
-                    label: Text(_tabLabel(i)),
+                  child: HibikiSelectableChip(
+                    label: _tabLabel(i),
                     selected: i == _selectedIndex,
                     onSelected: (_) => _attemptSwitchTab(i),
                   ),

@@ -296,6 +296,153 @@ class HibikiTextField extends StatelessWidget {
   }
 }
 
+class HibikiSelectableChip extends StatelessWidget {
+  const HibikiSelectableChip({
+    required this.label,
+    required this.selected,
+    required this.onSelected,
+    super.key,
+    this.avatar,
+    this.leadingIcon,
+    this.tooltip,
+  });
+
+  final String label;
+  final bool selected;
+  final ValueChanged<bool>? onSelected;
+  final Widget? avatar;
+  final IconData? leadingIcon;
+  final String? tooltip;
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final Color foreground =
+        selected ? colors.onPrimaryContainer : tokens.surfaces.onSurface;
+    final Widget? effectiveAvatar =
+        avatar ?? (leadingIcon == null ? null : Icon(leadingIcon, size: 18));
+    final ChoiceChip chip = ChoiceChip(
+      avatar: effectiveAvatar,
+      label: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      selected: selected,
+      showCheckmark: false,
+      selectedColor: colors.primaryContainer,
+      backgroundColor: Colors.transparent,
+      labelStyle: tokens.type.controlLabel.copyWith(color: foreground),
+      side: BorderSide(
+        color: selected ? colors.primaryContainer : colors.outlineVariant,
+      ),
+      shape: RoundedRectangleBorder(borderRadius: tokens.radii.chipRadius),
+      visualDensity: VisualDensity.compact,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      onSelected: onSelected,
+    );
+    if (tooltip == null) return chip;
+    return Tooltip(message: tooltip!, child: chip);
+  }
+}
+
+class HibikiTagChip extends StatelessWidget {
+  const HibikiTagChip({
+    required this.label,
+    super.key,
+    this.color,
+    this.selected = false,
+    this.dimmed = false,
+    this.onTap,
+  });
+
+  final String label;
+  final Color? color;
+  final bool selected;
+  final bool dimmed;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final Color baseColor =
+        color ?? (selected ? colors.primaryContainer : tokens.surfaces.overlay);
+    final Color background = dimmed
+        ? baseColor.withValues(alpha: 0.44)
+        : baseColor.withValues(alpha: color == null ? 1 : 0.88);
+    final Color foreground = _foregroundFor(background);
+    final Widget chip = Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: tokens.spacing.gap,
+        vertical: 3,
+      ),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: tokens.radii.chipRadius,
+        border: selected ? Border.all(color: colors.primary) : null,
+      ),
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: tokens.type.metadata.copyWith(
+          color: foreground,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+    if (onTap == null) return chip;
+    return InkWell(
+      borderRadius: tokens.radii.chipRadius,
+      onTap: onTap,
+      child: chip,
+    );
+  }
+
+  static Color _foregroundFor(Color background) {
+    return ThemeData.estimateBrightnessForColor(background) == Brightness.dark
+        ? Colors.white
+        : Colors.black;
+  }
+}
+
+class HibikiBadge extends StatelessWidget {
+  const HibikiBadge({
+    required this.icon,
+    super.key,
+    this.background,
+    this.foreground,
+    this.size = 14,
+    this.padding,
+  });
+
+  final IconData icon;
+  final Color? background;
+  final Color? foreground;
+  final double size;
+  final EdgeInsetsGeometry? padding;
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    return Container(
+      padding: padding ?? EdgeInsets.all(tokens.spacing.gap / 2),
+      decoration: BoxDecoration(
+        color: background ?? colors.primaryContainer,
+        borderRadius: tokens.radii.chipRadius,
+      ),
+      child: Icon(
+        icon,
+        size: size,
+        color: foreground ?? colors.onPrimaryContainer,
+      ),
+    );
+  }
+}
+
 class HibikiPageHeader extends StatelessWidget {
   const HibikiPageHeader({
     required this.title,

@@ -284,44 +284,20 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   }
 
   Widget _tagChip(BookTagRow tag) {
-    return Container(
-      margin: const EdgeInsets.only(right: 3, bottom: 2),
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-      decoration: BoxDecoration(
-        color: Color(tag.colorValue).withValues(alpha: 0.85),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Text(
-        tag.name,
-        style: TextStyle(
-          fontSize: 9,
-          color: ThemeData.estimateBrightnessForColor(Color(tag.colorValue)) ==
-                  Brightness.dark
-              ? Colors.white
-              : Colors.black,
-          fontWeight: FontWeight.w600,
-        ),
-        overflow: TextOverflow.ellipsis,
+    return Padding(
+      padding: const EdgeInsets.only(right: 3, bottom: 2),
+      child: HibikiTagChip(
+        label: tag.name,
+        color: Color(tag.colorValue),
       ),
     );
   }
 
   Widget _overflowChip(int count) {
-    return Container(
-      margin: const EdgeInsets.only(right: 3, bottom: 2),
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-      decoration: BoxDecoration(
-        color:
-            theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.85),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Text(
-        '+$count',
-        style: TextStyle(
-          fontSize: 9,
-          color: theme.colorScheme.onSurfaceVariant,
-          fontWeight: FontWeight.w600,
-        ),
+    return Padding(
+      padding: const EdgeInsets.only(right: 3, bottom: 2),
+      child: HibikiTagChip(
+        label: '+$count',
       ),
     );
   }
@@ -329,7 +305,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   Widget _adaptiveTagColumn(List<BookTagRow> tags) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        const double chipHeight = 15.0;
+        const double chipHeight = 22.0;
         final double usable = constraints.maxHeight * 0.55;
         final int maxSlots =
             (usable / chipHeight).floor().clamp(1, tags.length);
@@ -686,13 +662,10 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     required Color background,
     required Color foreground,
   }) {
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: background,
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Icon(icon, size: 14, color: foreground),
+    return HibikiBadge(
+      icon: icon,
+      background: background,
+      foreground: foreground,
     );
   }
 

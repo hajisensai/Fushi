@@ -6,6 +6,7 @@ import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_bridge.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_play_bar.dart';
 import 'package:hibiki/src/media/audiobook/reader_quick_settings_sheet.dart';
+import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 import 'package:hibiki/utils.dart';
 
 class _FakeInAppWebViewController implements InAppWebViewController {
@@ -14,7 +15,7 @@ class _FakeInAppWebViewController implements InAppWebViewController {
 }
 
 void main() {
-  testWidgets('reader settings custom theme chip uses selected ChoiceChip',
+  testWidgets('reader settings custom theme chip uses shared MD3 chip',
       (tester) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -34,10 +35,10 @@ void main() {
       ),
     );
 
-    final Finder chip = find.byType(ChoiceChip);
+    final Finder chip = find.byType(HibikiSelectableChip);
 
     expect(chip, findsOneWidget);
-    expect(tester.widget<ChoiceChip>(chip).selected, isTrue);
+    expect(tester.widget<HibikiSelectableChip>(chip).selected, isTrue);
     expect(find.byType(ActionChip), findsNothing);
   });
 

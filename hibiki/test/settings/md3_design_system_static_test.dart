@@ -17,6 +17,9 @@ void main() {
       'class HibikiListItem',
       'class HibikiSearchField',
       'class HibikiTextField',
+      'class HibikiSelectableChip',
+      'class HibikiTagChip',
+      'class HibikiBadge',
       'class HibikiPageHeader',
       'class HibikiPageScaffold',
       'class HibikiToolScaffold',
@@ -106,6 +109,8 @@ void main() {
     'lib/src/pages/implementations/reader_hibiki_history_page.dart': <String>[
       'HibikiPageHeader',
       'HibikiCard',
+      'HibikiTagChip',
+      'HibikiBadge',
       '_bookCardShell',
     ],
     'lib/src/pages/implementations/dictionary_dialog_page.dart': <String>[
@@ -149,6 +154,7 @@ void main() {
     'lib/src/pages/implementations/book_css_editor_page.dart': <String>[
       'HibikiToolScaffold',
       'HibikiEditorPanel',
+      'HibikiSelectableChip',
       'HibikiPlaceholderMessage',
     ],
     'lib/src/pages/implementations/anki_settings_page.dart': <String>[
@@ -179,6 +185,16 @@ void main() {
     ],
     'lib/src/media/audiobook/reader_quick_settings_sheet.dart': <String>[
       'HibikiTextField',
+    ],
+    'lib/src/media/audiobook/audiobook_play_bar.dart': <String>[
+      'HibikiSelectableChip',
+    ],
+    'lib/src/pages/implementations/tag_filter_sheet.dart': <String>[
+      'HibikiSelectableChip',
+    ],
+    'lib/src/pages/implementations/dictionary_popup_native.dart': <String>[
+      'HibikiTagChip',
+      'HibikiDesignTokens',
     ],
   };
 
@@ -286,6 +302,14 @@ void main() {
         'Material(',
         'surfaceContainerLow',
         'BorderRadius.circular(12)',
+        'BorderRadius.circular(4)',
+        'BorderRadius.circular(6)',
+        'fontSize: 9',
+      ],
+      'lib/src/pages/implementations/dictionary_popup_native.dart': <String>[
+        'BorderRadius.circular(4)',
+        'fontSize: 10',
+        'fontSize: 11',
       ],
       'lib/src/pages/implementations/dictionary_dialog_page.dart': <String>[
         'ExpansionTile',
@@ -332,6 +356,7 @@ void main() {
       ],
       'lib/src/pages/implementations/book_css_editor_page.dart': <String>[
         'adaptiveAppBar',
+        'ChoiceChip(',
         'fontSize: 13',
         'OutlineInputBorder',
         'Center(child: Text(',
@@ -378,6 +403,13 @@ void main() {
       'lib/src/media/audiobook/reader_quick_settings_sheet.dart': <String>[
         'TextField(',
         'OutlineInputBorder',
+      ],
+      'lib/src/media/audiobook/audiobook_play_bar.dart': <String>[
+        'ChoiceChip(',
+      ],
+      'lib/src/pages/implementations/tag_filter_sheet.dart': <String>[
+        'FilterChip(',
+        'ChoiceChip(',
       ],
     };
 
