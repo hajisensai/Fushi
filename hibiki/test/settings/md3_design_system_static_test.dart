@@ -155,6 +155,9 @@ void main() {
       'HibikiCompactSearchRow',
       'HibikiOverlayScaffold',
     ],
+    'lib/src/pages/implementations/dictionary_popup_layer.dart': <String>[
+      'HibikiPopupSurface',
+    ],
     'lib/src/pages/implementations/floating_dict_page.dart': <String>[
       'HibikiPopupSurface',
       'HibikiCompactSearchRow',
@@ -377,6 +380,11 @@ void main() {
         'TextField(',
         'BorderRadius.circular(8)',
         'fontSize:',
+      ],
+      'lib/src/pages/implementations/dictionary_popup_layer.dart': <String>[
+        'Container(',
+        'BoxDecoration(',
+        'BorderRadius.circular(8)',
       ],
       'lib/src/pages/implementations/loading_page.dart': <String>[
         'Scaffold(',

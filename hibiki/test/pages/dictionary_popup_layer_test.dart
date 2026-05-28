@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 import 'package:hibiki/src/utils/misc/swipe_dismiss_wrapper.dart';
 
 import '../widgets/widget_test_helpers.dart';
@@ -81,6 +82,7 @@ void main() {
     );
 
     expect(tester.takeException(), isNull);
+    expect(find.byType(HibikiPopupSurface), findsOneWidget);
   });
 
   testWidgets('swipeDismissible false leaves the layer unwrapped', (
