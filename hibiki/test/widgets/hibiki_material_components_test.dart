@@ -152,6 +152,31 @@ void main() {
     expect(tapped, isTrue);
   });
 
+  testWidgets('HibikiPreviewSwitch renders a real disabled MD3 switch',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      buildSubject(
+        const HibikiPreviewSwitch(
+          trackColor: Colors.blue,
+          thumbColor: Colors.white,
+        ),
+      ),
+    );
+
+    final Switch previewSwitch = tester.widget<Switch>(find.byType(Switch));
+    final Color trackColor = previewSwitch.trackColor!.resolve(
+      <WidgetState>{WidgetState.disabled, WidgetState.selected},
+    )!;
+    final Color thumbColor = previewSwitch.thumbColor!.resolve(
+      <WidgetState>{WidgetState.disabled, WidgetState.selected},
+    )!;
+
+    expect(previewSwitch.value, isTrue);
+    expect(previewSwitch.onChanged, isNull);
+    expect(trackColor, Colors.blue);
+    expect(thumbColor, Colors.white);
+  });
+
   testWidgets('HibikiTransientScaffold uses the page surface',
       (WidgetTester tester) async {
     await tester.pumpWidget(

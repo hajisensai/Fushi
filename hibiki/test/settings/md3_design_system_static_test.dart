@@ -21,6 +21,7 @@ void main() {
       'class HibikiTagChip',
       'class HibikiBadge',
       'class HibikiColorSwatch',
+      'class HibikiPreviewSwitch',
       'class HibikiPageHeader',
       'class HibikiPageScaffold',
       'class HibikiToolScaffold',
@@ -190,6 +191,7 @@ void main() {
       'HibikiTextField',
       'HibikiDesignTokens',
       'HibikiColorSwatch',
+      'HibikiPreviewSwitch',
     ],
     'lib/src/pages/implementations/custom_fonts_page.dart': <String>[
       'HibikiTextField',
@@ -450,6 +452,7 @@ void main() {
         'BorderRadius.circular(',
         'fontSize:',
         'Widget _colorDot(',
+        'shape: BoxShape.circle',
       ],
       'lib/src/pages/implementations/custom_fonts_page.dart': <String>[
         'TextField(',

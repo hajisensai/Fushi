@@ -563,6 +563,28 @@ class HibikiColorSwatch extends StatelessWidget {
   }
 }
 
+class HibikiPreviewSwitch extends StatelessWidget {
+  const HibikiPreviewSwitch({
+    required this.trackColor,
+    required this.thumbColor,
+    super.key,
+  });
+
+  final Color trackColor;
+  final Color thumbColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Switch(
+      value: true,
+      onChanged: null,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      thumbColor: WidgetStatePropertyAll<Color>(thumbColor),
+      trackColor: WidgetStatePropertyAll<Color>(trackColor),
+    );
+  }
+}
+
 class HibikiPageHeader extends StatelessWidget {
   const HibikiPageHeader({
     required this.title,

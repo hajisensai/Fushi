@@ -730,23 +730,9 @@ class _CustomThemePageState extends BasePageState {
           const SizedBox(height: 8),
           Row(
             children: [
-              Container(
-                width: 40,
-                height: 22,
-                decoration: BoxDecoration(
-                  color: cs.primaryContainer,
-                  borderRadius: tokens.radii.controlRadius,
-                ),
-                alignment: Alignment.centerRight,
-                padding: const EdgeInsets.all(2),
-                child: Container(
-                  width: 18,
-                  height: 18,
-                  decoration: BoxDecoration(
-                    color: cs.primary,
-                    shape: BoxShape.circle,
-                  ),
-                ),
+              HibikiPreviewSwitch(
+                trackColor: cs.primaryContainer,
+                thumbColor: cs.primary,
               ),
               const SizedBox(width: 8),
               Text(t.preview_switch, style: metaStyle),
@@ -837,6 +823,10 @@ class _CustomThemePageState extends BasePageState {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final Color primary = _primaryColor!;
     final Color fc = _useFontColor ? _fontColor! : cs.onSurface;
+    final Color track = (_useContainerColor
+            ? _containerColor
+            : _generatedScheme.primaryContainer) ??
+        cs.primaryContainer;
     return Row(
       children: [
         Container(
@@ -851,26 +841,9 @@ class _CustomThemePageState extends BasePageState {
           ),
         ),
         const SizedBox(width: 8),
-        Container(
-          width: 32,
-          height: 18,
-          decoration: BoxDecoration(
-            color: (_useContainerColor
-                    ? _containerColor
-                    : _generatedScheme.primaryContainer) ??
-                cs.primaryContainer,
-            borderRadius: tokens.radii.controlRadius,
-          ),
-          alignment: Alignment.centerRight,
-          padding: const EdgeInsets.all(2),
-          child: Container(
-            width: 14,
-            height: 14,
-            decoration: BoxDecoration(
-              color: primary,
-              shape: BoxShape.circle,
-            ),
-          ),
+        HibikiPreviewSwitch(
+          trackColor: track,
+          thumbColor: primary,
         ),
       ],
     );
@@ -919,24 +892,9 @@ class _CustomThemePageState extends BasePageState {
   }
 
   Widget _buildContainerPreview(ColorScheme cs) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return Container(
-      width: 40,
-      height: 22,
-      decoration: BoxDecoration(
-        color: _containerColor,
-        borderRadius: tokens.radii.controlRadius,
-      ),
-      alignment: Alignment.centerRight,
-      padding: const EdgeInsets.all(2),
-      child: Container(
-        width: 18,
-        height: 18,
-        decoration: BoxDecoration(
-          color: _primaryColor,
-          shape: BoxShape.circle,
-        ),
-      ),
+    return HibikiPreviewSwitch(
+      trackColor: _containerColor ?? cs.primaryContainer,
+      thumbColor: _primaryColor ?? cs.primary,
     );
   }
 
