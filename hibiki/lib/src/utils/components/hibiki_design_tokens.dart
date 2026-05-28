@@ -52,6 +52,7 @@ class HibikiRadii {
   BorderRadius get dialogRadius => BorderRadius.circular(dialog);
   BorderRadius get sheetRadius =>
       BorderRadius.vertical(top: Radius.circular(sheet));
+  Radius get chipCorner => Radius.circular(chip);
 }
 
 class HibikiSurfaceColors {

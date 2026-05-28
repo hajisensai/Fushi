@@ -619,8 +619,22 @@ class _CustomThemePageState extends BasePageState {
   // ── 预览卡片 ──
 
   Widget _buildPreviewCard(ColorScheme cs) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final Color textColor = _useFontColor ? _fontColor! : cs.onSurface;
     final Color bgColor = _useBgColor ? _bgColor! : cs.surfaceContainerLow;
+    final TextStyle titleStyle = tokens.type.listTitle.copyWith(
+      color: cs.onSurface,
+      fontWeight: FontWeight.bold,
+    );
+    final TextStyle bodyStyle = tokens.type.listSubtitle.copyWith(
+      color: textColor,
+    );
+    final TextStyle metaStyle = tokens.type.metadata.copyWith(
+      color: cs.onSurface,
+    );
+    final TextStyle badgeStyle = tokens.type.metadata.copyWith(
+      color: cs.onSecondaryContainer,
+    );
 
     return HibikiCard(
       color: cs.surface,
@@ -628,11 +642,7 @@ class _CustomThemePageState extends BasePageState {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(t.preview,
-              style: TextStyle(
-                  color: cs.onSurface,
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold)),
+          Text(t.preview, style: titleStyle),
           const SizedBox(height: 8),
           Row(
             children: [
@@ -651,14 +661,14 @@ class _CustomThemePageState extends BasePageState {
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: bgColor,
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: tokens.radii.chipRadius,
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 RichText(
                   text: TextSpan(
-                    style: TextStyle(color: textColor, fontSize: 15),
+                    style: bodyStyle,
                     children: [
                       const TextSpan(text: '日本語の'),
                       TextSpan(
@@ -680,17 +690,17 @@ class _CustomThemePageState extends BasePageState {
                     color: _useSasayakiColor
                         ? _sasayakiColor
                         : HibikiColor.defaultSasayakiColor,
-                    borderRadius: BorderRadius.circular(4),
+                    borderRadius: tokens.radii.chipRadius,
                   ),
                   child: Text(
                     '♪ 音声ハイライト',
-                    style: TextStyle(color: textColor, fontSize: 13),
+                    style: bodyStyle,
                   ),
                 ),
                 const SizedBox(height: 6),
                 RichText(
                   text: TextSpan(
-                    style: TextStyle(color: textColor, fontSize: 13),
+                    style: bodyStyle,
                     children: [
                       const TextSpan(text: '♪ '),
                       TextSpan(
@@ -725,7 +735,7 @@ class _CustomThemePageState extends BasePageState {
                 height: 22,
                 decoration: BoxDecoration(
                   color: cs.primaryContainer,
-                  borderRadius: BorderRadius.circular(11),
+                  borderRadius: tokens.radii.controlRadius,
                 ),
                 alignment: Alignment.centerRight,
                 padding: const EdgeInsets.all(2),
@@ -739,18 +749,15 @@ class _CustomThemePageState extends BasePageState {
                 ),
               ),
               const SizedBox(width: 8),
-              Text(t.preview_switch,
-                  style: TextStyle(color: cs.onSurface, fontSize: 12)),
+              Text(t.preview_switch, style: metaStyle),
               const SizedBox(width: 16),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
                   color: cs.secondaryContainer,
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: tokens.radii.controlRadius,
                 ),
-                child: Text(t.preview_badge,
-                    style: TextStyle(
-                        color: cs.onSecondaryContainer, fontSize: 11)),
+                child: Text(t.preview_badge, style: badgeStyle),
               ),
               const SizedBox(width: 8),
               Container(
@@ -758,7 +765,7 @@ class _CustomThemePageState extends BasePageState {
                 height: 8,
                 decoration: BoxDecoration(
                   color: cs.tertiary,
-                  borderRadius: BorderRadius.circular(4),
+                  borderRadius: tokens.radii.chipRadius,
                 ),
               ),
             ],
@@ -771,40 +778,49 @@ class _CustomThemePageState extends BasePageState {
   // ── 每种颜色的使用场景迷你预览 ──
 
   Widget _buildFontColorPreview(ColorScheme cs) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final Color fc = _useFontColor ? _fontColor! : cs.onSurface;
     final Color bg = _useBgColor ? _bgColor! : cs.surfaceContainerLow;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         color: bg,
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: tokens.radii.chipRadius,
       ),
-      child: Text('あいうえお', style: TextStyle(color: fc, fontSize: 13)),
+      child: Text(
+        'あいうえお',
+        style: tokens.type.listSubtitle.copyWith(color: fc),
+      ),
     );
   }
 
   Widget _buildBgColorPreview(ColorScheme cs) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final Color fc = _useFontColor ? _fontColor! : cs.onSurface;
     final Color bg = _useBgColor ? _bgColor! : cs.surfaceContainerLow;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         color: bg,
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: tokens.radii.chipRadius,
         border: Border.all(
           color: Theme.of(context).dividerColor.withValues(alpha: 0.3),
         ),
       ),
-      child: Text('日本語', style: TextStyle(color: fc, fontSize: 13)),
+      child: Text(
+        '日本語',
+        style: tokens.type.listSubtitle.copyWith(color: fc),
+      ),
     );
   }
 
   Widget _buildSelectionPreview(ColorScheme cs) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final Color fc = _useFontColor ? _fontColor! : cs.onSurface;
     final Color sel = _useSelectionColor ? _selectionColor! : Colors.grey;
     return RichText(
       text: TextSpan(
-        style: TextStyle(color: fc, fontSize: 13),
+        style: tokens.type.listSubtitle.copyWith(color: fc),
         children: [
           const TextSpan(text: '読み'),
           TextSpan(
@@ -818,6 +834,7 @@ class _CustomThemePageState extends BasePageState {
   }
 
   Widget _buildPrimaryPreview(ColorScheme cs) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final Color primary = _primaryColor!;
     final Color fc = _useFontColor ? _fontColor! : cs.onSurface;
     return Row(
@@ -826,9 +843,12 @@ class _CustomThemePageState extends BasePageState {
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
           decoration: BoxDecoration(
             color: primary.withValues(alpha: 0.34),
-            borderRadius: BorderRadius.circular(4),
+            borderRadius: tokens.radii.chipRadius,
           ),
-          child: Text('♪ ハイライト', style: TextStyle(color: fc, fontSize: 12)),
+          child: Text(
+            '♪ ハイライト',
+            style: tokens.type.metadata.copyWith(color: fc),
+          ),
         ),
         const SizedBox(width: 8),
         Container(
@@ -839,7 +859,7 @@ class _CustomThemePageState extends BasePageState {
                     ? _containerColor
                     : _generatedScheme.primaryContainer) ??
                 cs.primaryContainer,
-            borderRadius: BorderRadius.circular(9),
+            borderRadius: tokens.radii.controlRadius,
           ),
           alignment: Alignment.centerRight,
           padding: const EdgeInsets.all(2),
@@ -857,18 +877,24 @@ class _CustomThemePageState extends BasePageState {
   }
 
   Widget _buildSecondaryPreview(ColorScheme cs) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
         color: cs.secondaryContainer,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: tokens.radii.controlRadius,
       ),
-      child: Text('辞書',
-          style: TextStyle(color: cs.onSecondaryContainer, fontSize: 11)),
+      child: Text(
+        '辞書',
+        style: tokens.type.metadata.copyWith(
+          color: cs.onSecondaryContainer,
+        ),
+      ),
     );
   }
 
   Widget _buildTertiaryPreview(ColorScheme cs) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return Row(
       children: [
         Container(
@@ -876,7 +902,7 @@ class _CustomThemePageState extends BasePageState {
           height: 8,
           decoration: BoxDecoration(
             color: _tertiaryColor,
-            borderRadius: BorderRadius.circular(4),
+            borderRadius: tokens.radii.chipRadius,
           ),
         ),
         const SizedBox(width: 4),
@@ -885,7 +911,7 @@ class _CustomThemePageState extends BasePageState {
           height: 8,
           decoration: BoxDecoration(
             color: _tertiaryColor?.withValues(alpha: 0.5),
-            borderRadius: BorderRadius.circular(4),
+            borderRadius: tokens.radii.chipRadius,
           ),
         ),
       ],
@@ -893,12 +919,13 @@ class _CustomThemePageState extends BasePageState {
   }
 
   Widget _buildContainerPreview(ColorScheme cs) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return Container(
       width: 40,
       height: 22,
       decoration: BoxDecoration(
         color: _containerColor,
-        borderRadius: BorderRadius.circular(11),
+        borderRadius: tokens.radii.controlRadius,
       ),
       alignment: Alignment.centerRight,
       padding: const EdgeInsets.all(2),
@@ -914,6 +941,7 @@ class _CustomThemePageState extends BasePageState {
   }
 
   Widget _buildSasayakiPreview(ColorScheme cs) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final Color fc = _useFontColor ? _fontColor! : cs.onSurface;
     final Color bg = _useBgColor ? _bgColor! : cs.surfaceContainerLow;
     final Color sas =
@@ -922,11 +950,11 @@ class _CustomThemePageState extends BasePageState {
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         color: bg,
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: tokens.radii.chipRadius,
       ),
       child: RichText(
         text: TextSpan(
-          style: TextStyle(color: fc, fontSize: 13),
+          style: tokens.type.listSubtitle.copyWith(color: fc),
           children: [
             const TextSpan(text: '♪ '),
             TextSpan(
@@ -941,12 +969,12 @@ class _CustomThemePageState extends BasePageState {
   }
 
   Widget _buildLinkPreview(ColorScheme cs) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final Color lc = _useLinkColor ? _linkColor! : cs.primary;
     return Text(
       'リンク',
-      style: TextStyle(
+      style: tokens.type.listSubtitle.copyWith(
         color: lc,
-        fontSize: 13,
         decoration: TextDecoration.underline,
         decorationColor: lc,
       ),
@@ -1032,6 +1060,7 @@ class _CustomThemePageState extends BasePageState {
   }
 
   Widget _swatch(Color color, String label, Color textColor) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return Expanded(
       child: Column(
         children: [
@@ -1039,13 +1068,15 @@ class _CustomThemePageState extends BasePageState {
             height: 36,
             decoration: BoxDecoration(
               color: color,
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: tokens.radii.chipRadius,
             ),
           ),
           const SizedBox(height: 4),
-          Text(label,
-              style: TextStyle(fontSize: 10, color: textColor),
-              overflow: TextOverflow.ellipsis),
+          Text(
+            label,
+            style: tokens.type.metadata.copyWith(color: textColor),
+            overflow: TextOverflow.ellipsis,
+          ),
         ],
       ),
     );

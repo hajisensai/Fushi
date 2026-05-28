@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hibiki/pages.dart';
+import 'package:hibiki/utils.dart';
 
 /// Shows a bare loading circle.
 class LoadingPage extends BasePage {
@@ -17,7 +18,7 @@ class _LoadingPageState extends BasePageState<LoadingPage> {
   Widget build(BuildContext context) {
     return PopScope(
       canPop: false,
-      child: Scaffold(body: buildLoading()),
+      child: HibikiTransientScaffold(body: buildLoading()),
     );
   }
 }

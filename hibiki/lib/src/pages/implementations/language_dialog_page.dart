@@ -41,6 +41,7 @@ class _LanguageDialogPageState extends BasePageState<LanguageDialogPage> {
   }
 
   Widget buildContent() {
+    final tokens = HibikiDesignTokens.of(context);
     return SizedBox(
       width: double.maxFinite,
       child: RawScrollbar(
@@ -57,8 +58,7 @@ class _LanguageDialogPageState extends BasePageState<LanguageDialogPage> {
                 padding: Spacing.of(context).insets.onlyLeft.small,
                 child: Text(
                   t.app_locale,
-                  style: TextStyle(
-                    fontSize: 10,
+                  style: tokens.type.sectionLabel.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),

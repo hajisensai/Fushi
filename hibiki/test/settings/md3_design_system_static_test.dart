@@ -23,6 +23,8 @@ void main() {
       'class HibikiPageHeader',
       'class HibikiPageScaffold',
       'class HibikiToolScaffold',
+      'class HibikiTransientScaffold',
+      'class HibikiOverlayScaffold',
       'class HibikiOverflowMenu',
       'class HibikiFilePickerRow',
       'class HibikiLogPanel',
@@ -73,6 +75,7 @@ void main() {
     'lib/src/pages/implementations/reading_statistics_page.dart': <String>[
       'HibikiPageScaffold',
       'HibikiCard',
+      'HibikiDesignTokens',
     ],
     'lib/src/utils/components/hibiki_search_history.dart': <String>[
       'HibikiListItem',
@@ -146,6 +149,7 @@ void main() {
     'lib/src/pages/implementations/popup_dictionary_page.dart': <String>[
       'HibikiPopupSurface',
       'HibikiCompactSearchRow',
+      'HibikiOverlayScaffold',
     ],
     'lib/src/pages/implementations/floating_dict_page.dart': <String>[
       'HibikiPopupSurface',
@@ -173,6 +177,7 @@ void main() {
     ],
     'lib/src/pages/implementations/custom_theme_page.dart': <String>[
       'HibikiTextField',
+      'HibikiDesignTokens',
     ],
     'lib/src/pages/implementations/custom_fonts_page.dart': <String>[
       'HibikiTextField',
@@ -186,6 +191,9 @@ void main() {
     'lib/src/media/audiobook/reader_quick_settings_sheet.dart': <String>[
       'HibikiTextField',
     ],
+    'lib/src/pages/implementations/language_dialog_page.dart': <String>[
+      'HibikiDesignTokens',
+    ],
     'lib/src/media/audiobook/audiobook_play_bar.dart': <String>[
       'HibikiSelectableChip',
     ],
@@ -195,6 +203,12 @@ void main() {
     'lib/src/pages/implementations/dictionary_popup_native.dart': <String>[
       'HibikiTagChip',
       'HibikiDesignTokens',
+    ],
+    'lib/src/pages/implementations/loading_page.dart': <String>[
+      'HibikiTransientScaffold',
+    ],
+    'lib/src/pages/implementations/placeholder_source_page.dart': <String>[
+      'HibikiTransientScaffold',
     ],
   };
 
@@ -265,6 +279,9 @@ void main() {
       'lib/src/pages/implementations/reading_statistics_page.dart': <String>[
         'Card(',
         'surfaceContainerHighest.withValues',
+        'BorderRadius.circular(4)',
+        'Radius.circular(2)',
+        'fontSize: 9',
       ],
       'lib/src/utils/components/hibiki_search_history.dart': <String>[
         'fontSize:',
@@ -277,6 +294,9 @@ void main() {
       'lib/src/pages/implementations/tag_management_page.dart': <String>[
         'ListTile(',
         'OutlineInputBorder',
+      ],
+      'lib/src/pages/implementations/language_dialog_page.dart': <String>[
+        'fontSize: 10',
       ],
       'lib/src/pages/implementations/media_item_dialog_page.dart': <String>[
         'ListTile(',
@@ -344,9 +364,16 @@ void main() {
         'fontSize: 12',
       ],
       'lib/src/pages/implementations/popup_dictionary_page.dart': <String>[
+        'Scaffold(',
         'TextField(',
         'BorderRadius.circular(8)',
         'fontSize:',
+      ],
+      'lib/src/pages/implementations/loading_page.dart': <String>[
+        'Scaffold(',
+      ],
+      'lib/src/pages/implementations/placeholder_source_page.dart': <String>[
+        'Scaffold(',
       ],
       'lib/src/pages/implementations/floating_dict_page.dart': <String>[
         'DecoratedBox(',
@@ -389,6 +416,8 @@ void main() {
       ],
       'lib/src/pages/implementations/custom_theme_page.dart': <String>[
         'TextField(',
+        'BorderRadius.circular(',
+        'fontSize:',
       ],
       'lib/src/pages/implementations/custom_fonts_page.dart': <String>[
         'TextField(',
@@ -566,7 +595,9 @@ String _withoutSharedComponentNames(String source) {
       .replaceAll('HibikiListTile(', 'HibikiSharedTile(')
       .replaceAll('HibikiSearchField(', 'HibikiSharedSearch(')
       .replaceAll('HibikiTextField(', 'HibikiSharedField(')
-      .replaceAll('HibikiOverflowMenu(', 'HibikiSharedOverflow(');
+      .replaceAll('HibikiOverflowMenu(', 'HibikiSharedOverflow(')
+      .replaceAll('HibikiTransientScaffold(', 'HibikiSharedTransient(')
+      .replaceAll('HibikiOverlayScaffold(', 'HibikiSharedOverlay(');
 }
 
 String _functionSource(

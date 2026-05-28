@@ -268,6 +268,8 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   }
 
   Widget _buildHourlyChart() {
+    final tokens = HibikiDesignTokens.of(context);
+    final colorScheme = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(
@@ -282,8 +284,12 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
               size: Size.infinite,
               painter: _HourlyChartPainter(
                 hourlyMs: _hourlyMs,
-                barColor: Theme.of(context).colorScheme.tertiary,
-                labelColor: Theme.of(context).colorScheme.onSurfaceVariant,
+                barColor: colorScheme.tertiary,
+                barRadius: tokens.radii.chipCorner,
+                labelColor: colorScheme.onSurfaceVariant,
+                labelStyle: tokens.type.metadata.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
               ),
             ),
           ),
@@ -294,6 +300,8 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   }
 
   Widget _buildDailyChart() {
+    final tokens = HibikiDesignTokens.of(context);
+    final colorScheme = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(
@@ -308,8 +316,12 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
               size: Size.infinite,
               painter: _BarChartPainter(
                 data: _dailyData,
-                barColor: Theme.of(context).colorScheme.primary,
-                labelColor: Theme.of(context).colorScheme.onSurfaceVariant,
+                barColor: colorScheme.primary,
+                barRadius: tokens.radii.chipCorner,
+                labelColor: colorScheme.onSurfaceVariant,
+                labelStyle: tokens.type.metadata.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
               ),
             ),
           ),
@@ -323,6 +335,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
         _bookData.isEmpty ? 1 : _bookData.first.chars.clamp(1, 1 << 50);
     final fraction = book.chars / maxChars;
     final colorScheme = Theme.of(context).colorScheme;
+    final tokens = HibikiDesignTokens.of(context);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -340,7 +353,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
             children: [
               Expanded(
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
+                  borderRadius: tokens.radii.chipRadius,
                   child: LinearProgressIndicator(
                     value: fraction,
                     minHeight: 8,
@@ -383,12 +396,16 @@ class _HourlyChartPainter extends CustomPainter {
   _HourlyChartPainter({
     required this.hourlyMs,
     required this.barColor,
+    required this.barRadius,
     required this.labelColor,
+    required this.labelStyle,
   });
 
   final List<int> hourlyMs;
   final Color barColor;
+  final Radius barRadius;
   final Color labelColor;
+  final TextStyle labelStyle;
 
   static String _formatMs(int ms) {
     final minutes = ms ~/ 60000;
@@ -421,8 +438,6 @@ class _HourlyChartPainter extends CustomPainter {
       ..color = labelColor.withValues(alpha: 0.16)
       ..strokeWidth = 1;
 
-    final labelStyle = TextStyle(fontSize: 9, color: labelColor);
-
     canvas.drawLine(
       const Offset(leftPadding, 0),
       Offset(leftPadding, chartHeight),
@@ -453,7 +468,7 @@ class _HourlyChartPainter extends CustomPainter {
       if (hourlyMs[i] > 0) {
         final rect = RRect.fromRectAndRadius(
           Rect.fromLTWH(x, chartHeight - barHeight, barWidth, barHeight),
-          const Radius.circular(2),
+          barRadius,
         );
         canvas.drawRRect(rect, paint);
       }
@@ -476,19 +491,27 @@ class _HourlyChartPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _HourlyChartPainter oldDelegate) =>
-      !listEquals(hourlyMs, oldDelegate.hourlyMs);
+      !listEquals(hourlyMs, oldDelegate.hourlyMs) ||
+      barColor != oldDelegate.barColor ||
+      barRadius != oldDelegate.barRadius ||
+      labelColor != oldDelegate.labelColor ||
+      labelStyle != oldDelegate.labelStyle;
 }
 
 class _BarChartPainter extends CustomPainter {
   _BarChartPainter({
     required this.data,
     required this.barColor,
+    required this.barRadius,
     required this.labelColor,
+    required this.labelStyle,
   });
 
   final List<_DayData> data;
   final Color barColor;
+  final Radius barRadius;
   final Color labelColor;
+  final TextStyle labelStyle;
 
   static String _formatChars(int chars) {
     if (chars >= 10000) return '${(chars / 10000).toStringAsFixed(1)}万';
@@ -522,8 +545,6 @@ class _BarChartPainter extends CustomPainter {
       ..color = labelColor.withValues(alpha: 0.16)
       ..strokeWidth = 1;
 
-    final labelStyle = TextStyle(fontSize: 9, color: labelColor);
-
     canvas.drawLine(
       const Offset(leftPadding, 0),
       Offset(leftPadding, chartHeight),
@@ -555,7 +576,7 @@ class _BarChartPainter extends CustomPainter {
       if (d.chars > 0) {
         final rect = RRect.fromRectAndRadius(
           Rect.fromLTWH(x, chartHeight - barHeight, barWidth, barHeight),
-          const Radius.circular(2),
+          barRadius,
         );
         canvas.drawRRect(rect, paint);
       }
@@ -580,5 +601,7 @@ class _BarChartPainter extends CustomPainter {
   bool shouldRepaint(covariant _BarChartPainter oldDelegate) =>
       !listEquals(data, oldDelegate.data) ||
       barColor != oldDelegate.barColor ||
-      labelColor != oldDelegate.labelColor;
+      barRadius != oldDelegate.barRadius ||
+      labelColor != oldDelegate.labelColor ||
+      labelStyle != oldDelegate.labelStyle;
 }

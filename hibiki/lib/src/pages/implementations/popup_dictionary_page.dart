@@ -104,11 +104,8 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
           _close();
         }
       },
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        body: SafeArea(
-          child: _buildOuterContainer(),
-        ),
+      child: HibikiOverlayScaffold(
+        body: _buildOuterContainer(),
       ),
     );
   }

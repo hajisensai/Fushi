@@ -8,6 +8,7 @@ import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:hibiki/src/pages/implementations/popup_dictionary_page.dart';
+import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/src/utils/spacing.dart';
 
@@ -202,6 +203,7 @@ void main() {
       find.byKey(const ValueKey<String>('popup_dictionary_search_button')),
       findsOneWidget,
     );
+    expect(find.byType(HibikiOverlayScaffold), findsOneWidget);
   });
 
   testWidgets('popup search bar submits trimmed query from button', (

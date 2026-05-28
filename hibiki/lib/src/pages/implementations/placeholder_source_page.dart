@@ -27,7 +27,7 @@ class _PlaceholderSourcePage extends BaseSourcePageState {
           }
         }
       },
-      child: Scaffold(
+      child: HibikiTransientScaffold(
         body: Center(
           child: buildPlaceholder(),
         ),

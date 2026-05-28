@@ -746,6 +746,49 @@ class HibikiToolScaffold extends StatelessWidget {
   }
 }
 
+class HibikiTransientScaffold extends StatelessWidget {
+  const HibikiTransientScaffold({
+    required this.body,
+    super.key,
+    this.backgroundColor,
+    this.safeArea = true,
+  });
+
+  final Widget body;
+  final Color? backgroundColor;
+  final bool safeArea;
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final Widget content = safeArea ? SafeArea(child: body) : body;
+    return Scaffold(
+      backgroundColor: backgroundColor ?? tokens.surfaces.page,
+      body: content,
+    );
+  }
+}
+
+class HibikiOverlayScaffold extends StatelessWidget {
+  const HibikiOverlayScaffold({
+    required this.body,
+    super.key,
+    this.safeArea = true,
+  });
+
+  final Widget body;
+  final bool safeArea;
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget content = safeArea ? SafeArea(child: body) : body;
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: content,
+    );
+  }
+}
+
 class HibikiFilePickerRow extends StatelessWidget {
   const HibikiFilePickerRow({
     required this.title,

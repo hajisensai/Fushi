@@ -91,4 +91,36 @@ void main() {
     );
     expect(find.byIcon(Icons.headphones_outlined), findsOneWidget);
   });
+
+  testWidgets('HibikiTransientScaffold uses the page surface',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: HibikiTransientScaffold(
+          body: Text('loading'),
+        ),
+      ),
+    );
+
+    final Scaffold scaffold = tester.widget<Scaffold>(find.byType(Scaffold));
+
+    expect(scaffold.backgroundColor, ThemeData().colorScheme.surface);
+    expect(find.text('loading'), findsOneWidget);
+  });
+
+  testWidgets('HibikiOverlayScaffold preserves transparent overlay chrome',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: HibikiOverlayScaffold(
+          body: Text('popup'),
+        ),
+      ),
+    );
+
+    final Scaffold scaffold = tester.widget<Scaffold>(find.byType(Scaffold));
+
+    expect(scaffold.backgroundColor, Colors.transparent);
+    expect(find.text('popup'), findsOneWidget);
+  });
 }
