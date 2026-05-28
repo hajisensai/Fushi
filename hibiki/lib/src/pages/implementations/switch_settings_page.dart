@@ -56,11 +56,34 @@ class _SwitchSettingsPageState<T> extends BasePageState<SwitchSettingsPage<T>> {
 
   @override
   Widget build(BuildContext context) {
-    return adaptiveAlertDialog(
-      context: context,
-      contentPadding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-      content: buildContent(),
-      actions: actions,
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
+    return HibikiDialogFrame(
+      maxWidth: 560,
+      maxHeightFactor: 0.78,
+      scrollable: false,
+      child: HibikiModalSheetFrame(
+        leadingIcon: Icons.tune_outlined,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: buildContent(),
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: actions,
+        ),
+      ),
     );
   }
 
