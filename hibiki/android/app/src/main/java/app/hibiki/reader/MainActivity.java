@@ -20,25 +20,24 @@ import android.content.SharedPreferences;
 import android.graphics.drawable.ColorDrawable;
 import androidx.core.content.FileProvider;
 
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-
-import app.hibiki.reader.constants.FloatingColors;
-import app.hibiki.reader.constants.PreferenceKeys;
 import java.util.TreeSet;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.InputStreamReader;
-import java.io.InputStream;
-import java.io.OutputStream;
+import app.hibiki.reader.constants.FloatingColors;
+import app.hibiki.reader.constants.PreferenceKeys;
 
 import androidx.documentfile.provider.DocumentFile;
 

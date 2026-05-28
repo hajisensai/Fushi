@@ -16,4 +16,10 @@ public final class NotificationIds {
 
     /** Foreground notification for {@code FloatingLyricService}. */
     public static final int FLOATING_LYRIC = 9527;
+
+    /** Notification channel ID for {@code FloatingDictService}. */
+    public static final String CHANNEL_FLOATING_DICT = "hibiki_floating_dict";
+
+    /** Notification channel ID for {@code FloatingLyricService}. */
+    public static final String CHANNEL_FLOATING_LYRIC = "hibiki_floating_lyric";
 }

@@ -33,10 +33,14 @@ public final class FloatingColors {
     /** Search-input hint text: white at 50 % opacity. */
     public static final int DICT_SEARCH_HINT = 0x80FFFFFF;
 
-    /** Search-input field background: white at ~20 % opacity. */
+    /** Search-input field background: white at ~20 % opacity.
+     *  Same value as {@link #DICT_ANKI_BUTTON_BG} today; kept separate so
+     *  their styling can diverge independently. */
     public static final int DICT_SEARCH_INPUT_BG = 0x33FFFFFF;
 
-    /** Anki export button background: white at ~20 % opacity. */
+    /** Anki export button background: white at ~20 % opacity.
+     *  Same value as {@link #DICT_SEARCH_INPUT_BG} today; kept separate so
+     *  their styling can diverge independently. */
     public static final int DICT_ANKI_BUTTON_BG = 0x33FFFFFF;
 
     // ── FloatingLyricService (defaults) ─────────────────────────────────────

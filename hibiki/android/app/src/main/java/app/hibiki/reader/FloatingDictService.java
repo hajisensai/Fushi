@@ -84,7 +84,7 @@ public class FloatingDictService extends BaseFloatingService {
     protected String getPreferencePrefix() { return PreferenceKeys.FILE_FLOATING_DICT; }
 
     @Override
-    protected String getNotificationChannelId() { return "hibiki_floating_dict"; }
+    protected String getNotificationChannelId() { return NotificationIds.CHANNEL_FLOATING_DICT; }
 
     @Override
     protected String getNotificationChannelName() { return "Floating Dictionary"; }

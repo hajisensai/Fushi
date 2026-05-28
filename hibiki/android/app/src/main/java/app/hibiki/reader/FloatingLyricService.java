@@ -120,7 +120,7 @@ public class FloatingLyricService extends BaseFloatingService {
 
     @Override
     protected String getNotificationChannelId() {
-        return "hibiki_floating_lyric";
+        return NotificationIds.CHANNEL_FLOATING_LYRIC;
     }
 
     @Override
