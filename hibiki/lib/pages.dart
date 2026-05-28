@@ -39,6 +39,7 @@ export 'src/pages/implementations/anki_settings_page.dart';
 export 'src/pages/implementations/profile_management_page.dart';
 export 'src/pages/implementations/display_settings_page.dart';
 export 'src/pages/implementations/miscellaneous_settings_page.dart';
+export 'src/pages/implementations/shortcut_settings_page.dart';
 
 export 'src/pages/base_page.dart';
 export 'src/pages/base_history_page.dart';
