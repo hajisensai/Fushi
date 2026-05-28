@@ -4,12 +4,44 @@ import android.content.Context
 import android.content.res.Configuration
 import android.database.sqlite.SQLiteDatabase
 import android.util.Log
-import org.json.JSONObject
 import java.io.File
 
+/**
+ * Read-only SQLite access to the Drift database from the `:popup` process,
+ * which has no Flutter engine and therefore no Drift instance.
+ *
+ * This is a parallel read path that MUST stay in sync with the Drift schema in
+ * `packages/hibiki_core/lib/src/database/`. The column names below mirror the
+ * Drift table definitions; [EXPECTED_SCHEMA_VERSION] guards against silent
+ * divergence when a migration bumps the schema.
+ */
 class PopupDbReader {
     companion object {
         private const val TAG = "PopupDbReader"
+
+        /**
+         * MUST match `HibikiDatabase.schemaVersion` in
+         * `packages/hibiki_core/lib/src/database/database.dart`.
+         * Bump this in lockstep with any Drift migration.
+         */
+        const val EXPECTED_SCHEMA_VERSION = 13
+    }
+
+    /** Named queries mirroring the Drift schema. */
+    private object PopupQueries {
+        // Corresponds to DictionaryMetadataTable in tables.dart
+        // (columns: name, type, hidden_languages_json, "order").
+        const val DICT_PATHS =
+            "SELECT name, type, hidden_languages_json, \"order\" " +
+                "FROM dictionary_metadata ORDER BY \"order\" ASC"
+
+        // Corresponds to DictionaryMetadataTable in tables.dart
+        // (columns: name, collapsed_languages_json).
+        const val DICT_COLLAPSED =
+            "SELECT name, collapsed_languages_json FROM dictionary_metadata"
+
+        // Corresponds to PreferencesTable in tables.dart (columns: key, value).
+        const val PREFERENCES = "SELECT key, value FROM preferences"
     }
 
     data class DictPath(val path: String, val type: String)
@@ -49,26 +81,39 @@ class PopupDbReader {
         return File(docsDir, "dictionaryResources").absolutePath
     }
 
-    fun readDictionaryPaths(context: Context, targetLanguage: String = "ja"): List<DictPath> {
-        val paths = mutableListOf<DictPath>()
+    /**
+     * Opens the Drift database read-only, or returns null if it does not exist.
+     * Logs a warning when the on-disk schema version diverges from
+     * [EXPECTED_SCHEMA_VERSION] so a stale read path surfaces in logs instead of
+     * returning silently wrong data.
+     */
+    private fun openDb(context: Context): SQLiteDatabase? {
         val dbFile = File(dbPath(context))
         if (!dbFile.exists()) {
             Log.w(TAG, "DB not found: ${dbFile.absolutePath}")
-            return paths
+            return null
         }
+        val db = SQLiteDatabase.openDatabase(
+            dbFile.absolutePath, null,
+            SQLiteDatabase.OPEN_READONLY or SQLiteDatabase.NO_LOCALIZED_COLLATORS
+        )
+        if (db.version != EXPECTED_SCHEMA_VERSION) {
+            Log.w(
+                TAG,
+                "Schema mismatch: expected $EXPECTED_SCHEMA_VERSION, got ${db.version}; " +
+                    "popup queries may be stale"
+            )
+        }
+        return db
+    }
 
+    fun readDictionaryPaths(context: Context, targetLanguage: String = "ja"): List<DictPath> {
+        val paths = mutableListOf<DictPath>()
         val resDir = dictionaryResourceDir(context)
         var db: SQLiteDatabase? = null
         try {
-            db = SQLiteDatabase.openDatabase(
-                dbFile.absolutePath, null,
-                SQLiteDatabase.OPEN_READONLY or SQLiteDatabase.NO_LOCALIZED_COLLATORS
-            )
-            val cursor = db.rawQuery(
-                "SELECT name, type, hidden_languages_json, \"order\" " +
-                        "FROM dictionary_metadata ORDER BY \"order\" ASC",
-                null
-            )
+            db = openDb(context) ?: return paths
+            val cursor = db.rawQuery(PopupQueries.DICT_PATHS, null)
             cursor.use {
                 while (it.moveToNext()) {
                     val name = it.getString(0)
@@ -98,18 +143,10 @@ class PopupDbReader {
 
     fun readCollapsedDictNames(context: Context, targetLang: String): List<String> {
         val collapsed = mutableListOf<String>()
-        val dbFile = File(dbPath(context))
-        if (!dbFile.exists()) return collapsed
-
         var db: SQLiteDatabase? = null
         try {
-            db = SQLiteDatabase.openDatabase(
-                dbFile.absolutePath, null,
-                SQLiteDatabase.OPEN_READONLY or SQLiteDatabase.NO_LOCALIZED_COLLATORS
-            )
-            val cursor = db.rawQuery(
-                "SELECT name, collapsed_languages_json FROM dictionary_metadata", null
-            )
+            db = openDb(context) ?: return collapsed
+            val cursor = db.rawQuery(PopupQueries.DICT_COLLAPSED, null)
             cursor.use {
                 while (it.moveToNext()) {
                     val name = it.getString(0)
@@ -134,17 +171,11 @@ class PopupDbReader {
     }
 
     fun readPrefs(context: Context): PopupPrefs {
-        val dbFile = File(dbPath(context))
-        if (!dbFile.exists()) return PopupPrefs()
-
         val prefs = mutableMapOf<String, String>()
         var db: SQLiteDatabase? = null
         try {
-            db = SQLiteDatabase.openDatabase(
-                dbFile.absolutePath, null,
-                SQLiteDatabase.OPEN_READONLY or SQLiteDatabase.NO_LOCALIZED_COLLATORS
-            )
-            val cursor = db.rawQuery("SELECT key, value FROM preferences", null)
+            db = openDb(context) ?: return PopupPrefs()
+            val cursor = db.rawQuery(PopupQueries.PREFERENCES, null)
             cursor.use {
                 while (it.moveToNext()) {
                     prefs[it.getString(0)] = it.getString(1)
