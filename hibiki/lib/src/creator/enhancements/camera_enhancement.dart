@@ -7,8 +7,8 @@ import 'package:intl/intl.dart';
 import 'package:network_to_file_image/network_to_file_image.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:hibiki/creator.dart';
-import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
+import 'package:hibiki/utils.dart';
 
 /// An enhancement that can be used to take a picture to set a new image.
 class CameraEnhancement extends ImageEnhancement {
@@ -27,7 +27,7 @@ class CameraEnhancement extends ImageEnhancement {
   static const String key = 'camera';
 
   /// Whether the camera is available on the current platform.
-  static bool get isAvailable => Platform.isAndroid || Platform.isIOS;
+  static bool get isAvailable => isMobilePlatform;
 
   @override
   String getLocalisedLabel(AppModel appModel) => t.creator_enhancement_camera;
@@ -40,7 +40,7 @@ class CameraEnhancement extends ImageEnhancement {
     required CreatorModel creatorModel,
     required EnhancementTriggerCause cause,
   }) async {
-    if (!Platform.isAndroid && !Platform.isIOS) return;
+    if (!isMobilePlatform) return;
     ImageExportField imageField = field as ImageExportField;
     XFile? pickedFile =
         await ImagePicker().pickImage(source: ImageSource.camera);

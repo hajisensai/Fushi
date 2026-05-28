@@ -254,7 +254,7 @@ class DictionaryPopupWebViewState
     final String themeAttr = isDark ? 'dark' : 'light';
 
     InAppWebViewInitialData? winData;
-    if (Platform.isWindows) {
+    if (isWindowsPlatform) {
       _ensureWindowsAssetsLoaded();
       if (_winCss != null) {
         winData = InAppWebViewInitialData(

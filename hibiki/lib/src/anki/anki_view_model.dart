@@ -1,8 +1,7 @@
-import 'dart:io';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:hibiki_anki/hibiki_anki.dart';
+import 'package:hibiki/utils.dart';
 
 class AnkiUiState {
   const AnkiUiState({
@@ -133,7 +132,7 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
 }
 
 final ankiRepositoryProvider = Provider<BaseAnkiRepository>((_) {
-  if (Platform.isAndroid) return AnkiRepository();
+  if (isAndroidPlatform) return AnkiRepository();
   return AnkiConnectRepository();
 });
 

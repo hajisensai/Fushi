@@ -73,7 +73,7 @@ class PlayAudioAction extends QuickAction {
           await _audioPlayer.setFilePath(file.path);
 
           AudioSession? session;
-          if (Platform.isAndroid || Platform.isIOS || Platform.isMacOS) {
+          if (supportsNativeAudio) {
             session = await AudioSession.instance;
             await session.configure(
               const AudioSessionConfiguration(

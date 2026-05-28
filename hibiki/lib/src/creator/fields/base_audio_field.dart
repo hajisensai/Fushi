@@ -203,7 +203,7 @@ abstract class BaseAudioField extends AudioExportField {
           icon: Icon(iconData, size: 24),
           onPressed: () async {
             AudioSession? session;
-            if (Platform.isAndroid || Platform.isIOS || Platform.isMacOS) {
+            if (supportsNativeAudio) {
               session = await AudioSession.instance;
               await session.configure(
                 const AudioSessionConfiguration(

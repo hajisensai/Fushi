@@ -5,6 +5,19 @@ import 'package:flutter/widgets.dart';
 bool get isDesktopPlatform =>
     Platform.isWindows || Platform.isMacOS || Platform.isLinux;
 
+bool get isMobilePlatform => Platform.isAndroid || Platform.isIOS;
+
+bool get isAndroidPlatform => Platform.isAndroid;
+
+bool get isIOSPlatform => Platform.isIOS;
+
+bool get supportsNativeAudio =>
+    Platform.isAndroid || Platform.isIOS || Platform.isMacOS;
+
+bool get supportsFloatingOverlay => Platform.isAndroid;
+
+bool get isWindowsPlatform => Platform.isWindows;
+
 enum WindowSizeClass { compact, medium, expanded }
 
 enum DesktopContentKind { readerShelf, dictionary, settings }

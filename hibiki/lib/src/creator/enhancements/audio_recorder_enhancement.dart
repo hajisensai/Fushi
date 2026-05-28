@@ -27,7 +27,7 @@ class AudioRecorderEnhancement extends AudioEnhancement {
   static const String key = 'audio_recorder';
 
   /// Whether audio recording is available on the current platform.
-  static bool get isAvailable => Platform.isAndroid;
+  static bool get isAvailable => isAndroidPlatform;
 
   @override
   String getLocalisedLabel(AppModel appModel) =>
@@ -41,7 +41,7 @@ class AudioRecorderEnhancement extends AudioEnhancement {
     required CreatorModel creatorModel,
     required EnhancementTriggerCause cause,
   }) async {
-    if (!Platform.isAndroid) return;
+    if (!isAndroidPlatform) return;
     AudioExportField audioField = field as AudioExportField;
 
     bool permissionGranted = await Permission.microphone.isGranted;
