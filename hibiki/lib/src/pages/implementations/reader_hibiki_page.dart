@@ -9,7 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/utils/misc/hibiki_toast.dart';
 import 'package:path/path.dart' as p;
-import 'package:flutter/services.dart';
+import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/utils/adaptive/adaptive_widgets.dart';
@@ -45,6 +45,8 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:hibiki/src/utils/misc/platform_utils.dart';
 import 'package:hibiki/src/utils/misc/Hibiki_color.dart';
 import 'package:hibiki/src/utils/misc/show_app_dialog.dart';
+import 'package:hibiki/src/shortcuts/input_binding.dart' show ModifierKey;
+import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 
 List<int> _computeChapterCharCounts(EpubBook book) {
   return List<int>.generate(
@@ -2987,25 +2989,67 @@ window.flutter_inappwebview.callHandler('spreadReady');
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
 
-    if (event.logicalKey == LogicalKeyboardKey.escape) {
-      if (isDictionaryShown) {
-        clearDictionaryResult();
-        return KeyEventResult.handled;
-      }
-      if (_showChrome) {
-        _toggleChrome();
-        return KeyEventResult.handled;
-      }
+    final modifiers = <ModifierKey>{};
+    if (HardwareKeyboard.instance.isControlPressed) {
+      modifiers.add(ModifierKey.ctrl);
+    }
+    if (HardwareKeyboard.instance.isShiftPressed) {
+      modifiers.add(ModifierKey.shift);
+    }
+    if (HardwareKeyboard.instance.isAltPressed) {
+      modifiers.add(ModifierKey.alt);
+    }
+    if (HardwareKeyboard.instance.isMetaPressed) {
+      modifiers.add(ModifierKey.meta);
     }
 
-    final ReaderNavigationDirection? direction =
-        ReaderPaginationScripts.navigationDirectionForKey(
-      event.logicalKey,
-      shiftPressed: HardwareKeyboard.instance.isShiftPressed,
-    );
-    if (direction == null) return KeyEventResult.ignored;
-    _paginate(direction);
-    return KeyEventResult.handled;
+    final ShortcutAction? action =
+        appModel.shortcutRegistry.resolveKeyboard(
+          event.logicalKey,
+          modifiers: modifiers,
+          scope: ShortcutScope.reader,
+        ) ??
+        appModel.shortcutRegistry.resolveKeyboard(
+          event.logicalKey,
+          modifiers: modifiers,
+          scope: ShortcutScope.audiobook,
+        );
+
+    if (action == null) return KeyEventResult.ignored;
+    return _executeShortcutAction(action);
+  }
+
+  KeyEventResult _executeShortcutAction(ShortcutAction action) {
+    switch (action) {
+      case ShortcutAction.readerPageForward:
+        _paginate(ReaderNavigationDirection.forward);
+        return KeyEventResult.handled;
+      case ShortcutAction.readerPageBackward:
+        _paginate(ReaderNavigationDirection.backward);
+        return KeyEventResult.handled;
+      case ShortcutAction.readerDismissDict:
+        if (isDictionaryShown) {
+          clearDictionaryResult();
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      case ShortcutAction.readerToggleChrome:
+        _toggleChrome();
+        return KeyEventResult.handled;
+      case ShortcutAction.readerToggleBookmark:
+        return KeyEventResult.ignored;
+      case ShortcutAction.audiobookPlayPause:
+        _audiobookController?.togglePlayPause();
+        return KeyEventResult.handled;
+      case ShortcutAction.audiobookNextSentence:
+        _audiobookController?.skipToNextCue();
+        return KeyEventResult.handled;
+      case ShortcutAction.audiobookPrevSentence:
+        _audiobookController?.skipToPrevCue();
+        return KeyEventResult.handled;
+      default:
+        return KeyEventResult.ignored;
+    }
   }
 
   // ── Shift+Hover over dismiss barrier ──────────────────────────────
