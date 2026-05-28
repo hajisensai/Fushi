@@ -78,7 +78,8 @@ dependencies:
   json_annotation: ^4.8.1
   json_serializable: ^6.6.1
   just_audio: ^0.9.31
-  just_audio_windows: ^0.2.0
+  just_audio_media_kit: ^2.1.0
+  media_kit_libs_windows_audio: any
   kana_kit: ^2.0.0
   list_counter: ^1.0.2
   local_assets_server: ^2.0.2+12
