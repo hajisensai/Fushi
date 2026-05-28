@@ -170,7 +170,7 @@ flutter {
 }
 
 dependencies {
-    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.9.23"
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.2.20"
     implementation 'androidx.multidex:multidex:2.0.1'
     implementation 'com.github.ankidroid:Anki-Android:2.17alpha14'
     implementation 'com.github.umair13adil:RxLogs:v1.0.18'
