@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/utils/spacing.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_progress_dialog_content.dart';
 import 'package:hibiki/utils.dart';
@@ -25,12 +24,17 @@ class _DictionaryDialogDeletePageState
     extends BasePageState<DictionaryDialogDeletePage> {
   @override
   Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
     return PopScope(
       canPop: false,
-      child: adaptiveAlertDialog(
-        context: context,
-        contentPadding: Spacing.of(context).insets.all.small,
-        content: buildProgressMessage(),
+      child: HibikiDialogFrame(
+        maxWidth: 420,
+        scrollable: false,
+        child: HibikiModalSheetFrame(
+          bodyPadding: EdgeInsets.all(tokens.spacing.card),
+          body: buildProgressMessage(),
+        ),
       ),
     );
   }
