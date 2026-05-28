@@ -2,6 +2,13 @@ import 'dart:io' show Platform;
 
 import 'package:flutter/widgets.dart';
 
+// Architecture decision: platform branching uses runtime Platform.is* checks
+// centralized in this file, not Dart conditional imports.
+// Conditional imports (if (dart.library.io)) only distinguish web vs native,
+// which this app does not target. For platform-specific behavior beyond simple
+// boolean checks, use the service abstractions in package:hibiki_platform with
+// implementations under lib/src/platform/{android,ios,desktop}/.
+
 bool get isDesktopPlatform =>
     Platform.isWindows || Platform.isMacOS || Platform.isLinux;
 
