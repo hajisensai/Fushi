@@ -15,14 +15,17 @@ other reasons.
 
 ## Constant Classes (`constants/`)
 
-Shared constants are centralized here. Each has a Dart or Drift counterpart that
-MUST stay in sync:
+Shared constants are centralized here:
 
-- `ChannelNames.java` — MethodChannel name constants. Dart counterpart:
-  `lib/src/utils/misc/channel_constants.dart` (`HibikiChannels`).
-- `FloatingColors.java` — ARGB color values for the floating overlay services.
-- `NotificationIds.java` — Foreground-service notification + channel IDs.
-- `PreferenceKeys.java` — SharedPreferences key strings.
+- `ChannelNames.java` — MethodChannel name constants. Has a Dart counterpart
+  that MUST stay in sync: `lib/src/utils/misc/channel_constants.dart`
+  (`HibikiChannels`).
+- `PreferenceKeys.java` — SharedPreferences key strings. These name the same
+  keys the Flutter side persists, so renames must be coordinated.
+- `FloatingColors.java` — ARGB color values for the floating overlay services
+  (native-only, no counterpart).
+- `NotificationIds.java` — Foreground-service notification + channel IDs
+  (native-only, no counterpart).
 
 ## Architecture
 
