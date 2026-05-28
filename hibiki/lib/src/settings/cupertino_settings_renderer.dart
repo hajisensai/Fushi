@@ -1,5 +1,4 @@
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';

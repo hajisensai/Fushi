@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:transparent_image/transparent_image.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
-import 'package:hibiki/src/utils/misc/platform_utils.dart';
 import 'package:hibiki/utils.dart';
 
 /// A default page for a [ReaderMediaSource]'s tab body content when selected

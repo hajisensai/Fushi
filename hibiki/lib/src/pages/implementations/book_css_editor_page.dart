@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/epub/book_css_repository.dart';
 import 'package:hibiki/utils.dart';
 

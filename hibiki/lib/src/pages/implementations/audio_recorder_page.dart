@@ -9,10 +9,7 @@ import 'package:multi_value_listenable_builder/multi_value_listenable_builder.da
 // ignore: depend_on_referenced_packages
 import 'package:record_mp3_plus/record_mp3_plus.dart';
 import 'package:hibiki/src/utils/spacing.dart';
-import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/utils/misc/hibiki_toast.dart';
 import 'package:hibiki/pages.dart';
-import 'package:hibiki/src/utils/misc/Hibiki_time_format.dart';
 
 /// The content of the dialog used for selecting segmented units of a source
 /// text.
@@ -43,10 +40,16 @@ class _AudioRecorderDialogPageState
   bool _isRecording = false;
   bool _initialised = false;
   StreamSubscription<void>? _noisySub;
+  StreamSubscription<Duration?>? _durationSub;
+  StreamSubscription<Duration>? _positionSub;
+  StreamSubscription<PlayerState>? _playerStateSub;
 
   @override
   void dispose() {
     _noisySub?.cancel();
+    _durationSub?.cancel();
+    _positionSub?.cancel();
+    _playerStateSub?.cancel();
     _audioPlayer.dispose();
     _positionNotifier.dispose();
     _durationNotifier.dispose();
@@ -262,13 +265,13 @@ class _AudioRecorderDialogPageState
     _durationNotifier.value = _audioPlayer.duration ?? Duration.zero;
 
     if (!_initialised) {
-      _audioPlayer.durationStream.listen((duration) {
+      _durationSub = _audioPlayer.durationStream.listen((duration) {
         _durationNotifier.value = duration;
       });
-      _audioPlayer.positionStream.listen((position) {
+      _positionSub = _audioPlayer.positionStream.listen((position) {
         _positionNotifier.value = position;
       });
-      _audioPlayer.playerStateStream.listen((playerState) {
+      _playerStateSub = _audioPlayer.playerStateStream.listen((playerState) {
         _playerStateNotifier.value = playerState;
       });
       _initialised = true;

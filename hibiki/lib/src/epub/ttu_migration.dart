@@ -12,7 +12,6 @@ import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/epub/epub_storage.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki/src/media/audiobook/ttu_idb_reader.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/utils.dart';
 
 class TtuMigration {

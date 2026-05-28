@@ -1,9 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
-import 'dart:typed_data';
 
 import 'package:drift/drift.dart';
+import 'package:flutter/foundation.dart';
 import 'package:hibiki/src/sync/position_converter.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
@@ -142,7 +142,9 @@ class SyncManager {
       try {
         final file = File(book.coverPath!);
         if (file.existsSync()) coverData = file.readAsBytesSync();
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('[sync] cover image read failed: $e');
+      }
     }
 
     final folderId = await _backend.ensureBookFolder(
@@ -487,8 +489,18 @@ class SyncManager {
   }
 
   static const _audioExtensions = {
-    '.mp3', '.m4a', '.m4b', '.aac', '.ogg',
-    '.opus', '.flac', '.wav', '.wma', '.ac3', '.eac3', '.mp4',
+    '.mp3',
+    '.m4a',
+    '.m4b',
+    '.aac',
+    '.ogg',
+    '.opus',
+    '.flac',
+    '.wav',
+    '.wma',
+    '.ac3',
+    '.eac3',
+    '.mp4',
   };
 
   Future<List<String>> _resolveAudioPaths(int bookId) async {

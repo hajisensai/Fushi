@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
@@ -117,7 +117,9 @@ class WebDavSyncBackend extends SyncBackend {
         if (!existing) {
           await _putBytes(coverPath, coverData, format.mimeType);
         }
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('[webdav] cover upload failed: $e');
+      }
     }
 
     return path;
@@ -181,7 +183,8 @@ class WebDavSyncBackend extends SyncBackend {
   }) async {
     if (fileId != null) await _deleteFile(fileId);
     final fileName = statisticsFileName(stats);
-    await _uploadJson(folderId, fileName, stats.map((s) => s.toJson()).toList());
+    await _uploadJson(
+        folderId, fileName, stats.map((s) => s.toJson()).toList());
   }
 
   @override
@@ -249,7 +252,9 @@ class WebDavSyncBackend extends SyncBackend {
       if (!success) {
         try {
           destination.deleteSync();
-        } catch (_) {}
+        } catch (e) {
+          debugPrint('[webdav] failed to clean up temp file: $e');
+        }
       }
     }
   }
@@ -318,8 +323,7 @@ class WebDavSyncBackend extends SyncBackend {
         throw SyncAuthError('Authentication failed');
       }
       if (response.statusCode >= 400) {
-        throw SyncBackendError(
-            'Server returned ${response.statusCode}');
+        throw SyncBackendError('Server returned ${response.statusCode}');
       }
     } on SyncAuthError {
       rethrow;
@@ -376,8 +380,7 @@ class WebDavSyncBackend extends SyncBackend {
         throw SyncAuthError('Authentication failed');
       }
       if (response.statusCode >= 400) {
-        throw SyncBackendError(
-            'Server returned ${response.statusCode}');
+        throw SyncBackendError('Server returned ${response.statusCode}');
       }
     } on SyncAuthError {
       rethrow;
@@ -427,8 +430,7 @@ class WebDavSyncBackend extends SyncBackend {
 
     final body = await response.transform(utf8.decoder).join();
     if (response.statusCode != 207) {
-      throw SyncBackendError(
-          'PROPFIND failed: ${response.statusCode}',
+      throw SyncBackendError('PROPFIND failed: ${response.statusCode}',
           isRetryable: response.statusCode == 404);
     }
     return _parsePropfindResponse(body, path);
@@ -436,15 +438,14 @@ class WebDavSyncBackend extends SyncBackend {
 
   List<_DavEntry> _parsePropfindResponse(String xml, String basePath) {
     final entries = <_DavEntry>[];
-    final responsePattern =
-        RegExp(r'<(?:[a-zA-Z0-9]+:)?response[>\s](.*?)</(?:[a-zA-Z0-9]+:)?response>',
-            dotAll: true);
+    final responsePattern = RegExp(
+        r'<(?:[a-zA-Z0-9]+:)?response[>\s](.*?)</(?:[a-zA-Z0-9]+:)?response>',
+        dotAll: true);
     final hrefPattern =
         RegExp(r'<(?:[a-zA-Z0-9]+:)?href>(.*?)</(?:[a-zA-Z0-9]+:)?href>');
-    final collectionPattern =
-        RegExp(r'<(?:[a-zA-Z0-9]+:)?collection\s*/?>');
-    final displayNamePattern =
-        RegExp(r'<(?:[a-zA-Z0-9]+:)?displayname>(.*?)</(?:[a-zA-Z0-9]+:)?displayname>');
+    final collectionPattern = RegExp(r'<(?:[a-zA-Z0-9]+:)?collection\s*/?>');
+    final displayNamePattern = RegExp(
+        r'<(?:[a-zA-Z0-9]+:)?displayname>(.*?)</(?:[a-zA-Z0-9]+:)?displayname>');
 
     for (final match in responsePattern.allMatches(xml)) {
       final block = match.group(1)!;
@@ -485,8 +486,7 @@ class WebDavSyncBackend extends SyncBackend {
       }
       return href;
     }
-    final isDefaultPort =
-        (baseUri.scheme == 'http' && baseUri.port == 80) ||
+    final isDefaultPort = (baseUri.scheme == 'http' && baseUri.port == 80) ||
         (baseUri.scheme == 'https' && baseUri.port == 443);
     final portSuffix = isDefaultPort ? '' : ':${baseUri.port}';
     return '${baseUri.scheme}://${baseUri.host}$portSuffix$href';

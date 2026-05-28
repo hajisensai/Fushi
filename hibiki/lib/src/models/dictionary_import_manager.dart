@@ -5,8 +5,6 @@ import 'package:flutter/foundation.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:path/path.dart' as path;
 
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
-import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/models/dictionary_repository.dart';
 

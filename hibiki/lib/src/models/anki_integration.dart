@@ -4,7 +4,6 @@ import 'package:external_app_launcher/external_app_launcher.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 

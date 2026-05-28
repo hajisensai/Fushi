@@ -1028,26 +1028,6 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     );
   }
 
-  Future<_AudiobookInfo> _loadAudiobookInfo(String bookUid) async {
-    try {
-      final AudiobookRepository repo = AudiobookRepository(appModel.database);
-      final ab = await repo.findByBookUid(bookUid);
-      if (ab == null) {
-        return const _AudiobookInfo(
-            hasAudiobook: false, healthKind: HealthKind.notApplicable);
-      }
-      final health = await repo.resolveHealth(ab);
-      return _AudiobookInfo(hasAudiobook: true, healthKind: health.kind);
-    } catch (e, st) {
-      debugPrint(
-        '[hibiki-audiobook] findByBookUid crashed for '
-        'bookUid=$bookUid: $e\n$st',
-      );
-      return const _AudiobookInfo(
-          hasAudiobook: false, healthKind: HealthKind.notApplicable);
-    }
-  }
-
   @override
   Widget buildMediaItem(MediaItem item) {
     final int? bookId = _parseBookId(item.mediaIdentifier);

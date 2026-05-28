@@ -18,9 +18,8 @@ analyzer:
     deprecated_member_use: ignore
     library_private_types_in_public_api: ignore
     prefer_const_constructors: ignore
-    unnecessary_import: ignore
-    unused_element: ignore
-    unused_element_parameter: ignore
+    unnecessary_import: warning
+    unused_element: warning
     use_build_context_synchronously: warning
 
 linter:

@@ -6,7 +6,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:hibiki/i18n/strings.g.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/src/models/app_model.dart';
@@ -103,6 +102,12 @@ class DictionaryPopupWebViewState
       reading: reading,
       sources: appModel.enabledAudioSources,
     );
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
   }
 
   @override

@@ -793,6 +793,30 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
 
   static const List<int> _imagePauseOptions = [0, 5, 10, 15];
 
+  static const List<int> _skipActionOptions = [0, 5, 10, 15, 30];
+
+  Widget _buildSkipActionSection() {
+    final int current = _src.skipActionSeconds;
+    return AdaptiveSettingsPickerRow<int>(
+      title: t.skip_action,
+      icon: Icons.skip_next_outlined,
+      options: _skipActionOptions
+          .map((s) => AdaptiveSettingsPickerOption<int>(
+                value: s,
+                label: s == 0
+                    ? t.skip_action_sentence
+                    : t.skip_action_seconds(n: s),
+              ))
+          .toList(),
+      selected: current,
+      onChanged: (int value) {
+        _src.setSkipActionSeconds(value);
+        widget.controller?.notifyListeners();
+        setState(() {});
+      },
+    );
+  }
+
   Widget _buildImagePauseSection(AudiobookPlayerController ctrl) {
     return ValueListenableBuilder<int>(
       valueListenable: ctrl.imagePauseSec,
@@ -961,6 +985,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
             _buildSpeedSection(widget.controller!),
             _buildDelaySection(theme, widget.controller!),
             _buildImagePauseSection(widget.controller!),
+            _buildSkipActionSection(),
           ],
         ),
         _buildPlayBarToggle(),
@@ -1965,14 +1990,13 @@ class _RepeatIconButton extends StatefulWidget {
   const _RepeatIconButton({
     required this.icon,
     required this.onPressed,
-    this.initialDelay = const Duration(milliseconds: 500),
-    this.repeatInterval = const Duration(milliseconds: 100),
   });
 
   final Widget icon;
   final VoidCallback onPressed;
-  final Duration initialDelay;
-  final Duration repeatInterval;
+
+  static const Duration _initialDelay = Duration(milliseconds: 500);
+  static const Duration _repeatInterval = Duration(milliseconds: 100);
 
   @override
   State<_RepeatIconButton> createState() => _RepeatIconButtonState();
@@ -1983,8 +2007,8 @@ class _RepeatIconButtonState extends State<_RepeatIconButton> {
 
   void _start() {
     widget.onPressed();
-    _timer = Timer(widget.initialDelay, () {
-      _timer = Timer.periodic(widget.repeatInterval, (_) {
+    _timer = Timer(_RepeatIconButton._initialDelay, () {
+      _timer = Timer.periodic(_RepeatIconButton._repeatInterval, (_) {
         widget.onPressed();
       });
     });

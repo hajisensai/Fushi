@@ -3,9 +3,6 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
-import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
-import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/utils.dart';
 
 class _GroupedEntry {

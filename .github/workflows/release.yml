@@ -65,9 +65,19 @@ jobs:
       working-directory: hibiki
       run: flutter analyze
 
-    - name: Run unit tests
+    - name: Run unit tests (main app)
       working-directory: hibiki
       run: flutter test
+
+    - name: Run package tests
+      run: |
+        for pkg in packages/hibiki_core packages/hibiki_dictionary packages/hibiki_anki packages/hibiki_audio packages/hibiki_platform; do
+          if [ -d "$pkg/test" ]; then
+            echo "::group::Testing $pkg"
+            (cd "$pkg" && flutter test)
+            echo "::endgroup::"
+          fi
+        done
 
     - name: Build release APK (split per ABI)
       working-directory: hibiki

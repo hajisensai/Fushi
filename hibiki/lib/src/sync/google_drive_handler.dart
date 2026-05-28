@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:googleapis/drive/v3.dart' as drive;
 import 'package:hibiki/src/sync/google_drive_auth.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
@@ -415,7 +416,9 @@ class GoogleDriveHandler {
         if (!success) {
           try {
             destination.deleteSync();
-          } catch (_) {}
+          } catch (e) {
+            debugPrint('[sync] failed to clean up temp file: $e');
+          }
         }
       }
     });

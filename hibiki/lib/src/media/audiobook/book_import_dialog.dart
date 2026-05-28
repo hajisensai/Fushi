@@ -9,7 +9,6 @@ import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:path/path.dart' as p;
 import 'package:hibiki/src/media/audiobook/sasayaki_rematch.dart';
 import 'package:hibiki/src/media/audiobook/text_to_epub.dart';
-import 'package:hibiki/src/utils/misc/tts_channel.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/epub/epub_book.dart';
 import 'package:hibiki/src/epub/epub_importer.dart';

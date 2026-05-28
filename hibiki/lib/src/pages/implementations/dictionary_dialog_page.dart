@@ -251,13 +251,6 @@ class _DictionaryDialogPageState extends BasePageState {
     }
   }
 
-  Widget _buildDownloadRecommendedButton() {
-    return TextButton(
-      onPressed: _showDownloadSelectionDialog,
-      child: Text(t.dict_download_browse),
-    );
-  }
-
   String _categoryLabel(DictionaryCategory cat) {
     switch (cat) {
       case DictionaryCategory.jaEn:

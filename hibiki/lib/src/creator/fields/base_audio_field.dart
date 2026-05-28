@@ -106,7 +106,9 @@ abstract class BaseAudioField extends AudioExportField {
   Future<void> initialiseAudio(File file) {
     final int generation = ++_audioLoadGeneration;
     _audioLoadQueue = _audioLoadQueue
-        .catchError((Object _) {})
+        .catchError((Object e) {
+          debugPrint('[creator-audio] previous load failed: $e');
+        })
         .then((_) => _replaceAudioPlayer(file, generation));
     return _audioLoadQueue;
   }
@@ -363,7 +365,9 @@ abstract class BaseAudioField extends AudioExportField {
   void onCreatorClose() {
     _audioLoadGeneration++;
     _audioLoadQueue = _audioLoadQueue
-        .catchError((Object _) {})
+        .catchError((Object e) {
+          debugPrint('[creator-audio] pending load failed on close: $e');
+        })
         .then((_) => _disposeAudioPlayer());
     unawaited(_audioLoadQueue);
   }

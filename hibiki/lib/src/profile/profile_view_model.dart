@@ -1,4 +1,5 @@
-﻿import 'package:flutter_riverpod/flutter_riverpod.dart';
+﻿import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -47,7 +48,9 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
 
   @override
   void dispose() {
-    _repo.snapshotCurrentSettings(state.activeProfileId).catchError((_) {});
+    _repo.snapshotCurrentSettings(state.activeProfileId).catchError((Object e) {
+      debugPrint('[profile] snapshot on dispose failed: $e');
+    });
     super.dispose();
   }
 

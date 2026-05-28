@@ -5,7 +5,6 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/pages/base_page.dart';
 import 'package:hibiki/utils.dart';
 

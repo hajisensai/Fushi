@@ -19,10 +19,7 @@ import 'package:hibiki/pages.dart';
 import 'package:hibiki/popup_main.dart' as popup_entrypoint;
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/utils.dart';
-import 'package:hibiki/src/utils/components/Hibiki_text_selection_controls.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:hibiki/src/utils/misc/hibiki_toast.dart';
-import 'package:hibiki/src/utils/adaptive/adaptive_theme.dart';
 
 Color? _savedSplashColor;
 

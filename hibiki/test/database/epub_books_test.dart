@@ -10,7 +10,6 @@ Future<HibikiDatabase> _openDb() async {
 
 EpubBooksCompanion _book({
   String title = 'Test Book',
-  String author = 'Author',
 }) {
   return EpubBooksCompanion.insert(
     title: title,

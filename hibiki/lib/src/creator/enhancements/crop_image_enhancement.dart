@@ -6,7 +6,6 @@ import 'package:intl/intl.dart';
 import 'package:network_to_file_image/network_to_file_image.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:hibiki/creator.dart';
-import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';

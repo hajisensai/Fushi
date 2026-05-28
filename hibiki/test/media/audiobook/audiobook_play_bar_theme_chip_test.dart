@@ -6,7 +6,6 @@ import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_bridge.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_play_bar.dart';
 import 'package:hibiki/src/media/audiobook/reader_quick_settings_sheet.dart';
-import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 import 'package:hibiki/utils.dart';
 
 class _FakeInAppWebViewController implements InAppWebViewController {

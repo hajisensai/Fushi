@@ -1403,7 +1403,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         databaseEnabled: false,
         domStorageEnabled: false,
         useShouldInterceptRequest: true,
-        mixedContentMode: MixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
+        mixedContentMode: MixedContentMode.MIXED_CONTENT_COMPATIBILITY_MODE,
         useShouldOverrideUrlLoading: true,
       ),
       onWebViewCreated: (controller) {
@@ -1455,8 +1455,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
               _toggleChrome();
               return;
             }
-            if (!shiftKey && !ReaderHibikiSource.instance.highlightOnTap)
+            if (!shiftKey && !ReaderHibikiSource.instance.highlightOnTap) {
               return;
+            }
             final double x = _toDouble(args[0]) ?? 0;
             final double y = _toDouble(args[1]) ?? 0;
             _selectTextAt(x, y);
@@ -2311,11 +2312,6 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
   // ── Chapter Navigation ────────────────────────────────────────────
 
-  Future<void> _reloadAtCurrentProgress() async {
-    if (_controller == null) return;
-    await _navigateToChapter(_currentChapter, progress: _displayedProgress);
-  }
-
   Future<void> _navigateToChapter(int index, {double progress = 0.0}) async {
     if (_book == null || index < 0 || index >= _book!.chapters.length) {
       return;
@@ -3120,10 +3116,20 @@ window.flutter_inappwebview.callHandler('spreadReady');
       ctrl.seekMs(pos.inMilliseconds);
     });
     _skipNextSub = appModel.skipNextStream.listen((_) {
-      ctrl.skipToNextCue();
+      final int s = ReaderHibikiSource.instance.skipActionSeconds;
+      if (s == 0) {
+        ctrl.skipToNextCue();
+      } else {
+        ctrl.seekRelative(s);
+      }
     });
     _skipPrevSub = appModel.skipPreviousStream.listen((_) {
-      ctrl.skipToPrevCue();
+      final int s = ReaderHibikiSource.instance.skipActionSeconds;
+      if (s == 0) {
+        ctrl.skipToPrevCue();
+      } else {
+        ctrl.seekRelative(-s);
+      }
     });
   }
 
@@ -3302,6 +3308,8 @@ window.flutter_inappwebview.callHandler('spreadReady');
             children: <Widget>[
               AudiobookPlayBar(
                 controller: ctrl,
+                skipActionSeconds:
+                    ReaderHibikiSource.instance.skipActionSeconds,
                 onOpenSettings: _showAppearanceSheet,
                 backgroundColor: _themeBackgroundColor(),
               ),
@@ -3815,6 +3823,10 @@ window.flutter_inappwebview.callHandler('spreadReady');
 
     final int gen = ++_navigateGeneration;
     _restoreExpectedGeneration = gen;
+    if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
+      _restoreCompleter!.complete(false);
+    }
+    _restoreCompleter = Completer<bool>();
     _restoreInFlight = true;
     debugPrint('[ReaderHibiki] reloadWithCurrentSettings: '
         'chapter=$_currentChapter progress=$_initialProgress '
@@ -3825,7 +3837,18 @@ window.flutter_inappwebview.callHandler('spreadReady');
     });
     _startContentReadyTimeout();
 
-    await _loadChapterDirectly(_currentChapter);
+    try {
+      await _loadChapterDirectly(_currentChapter);
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('ReaderHibiki.reloadWithCurrentSettings', e, stack);
+      debugPrint('[ReaderHibiki] reloadWithCurrentSettings failed: $e');
+      _restoreInFlight = false;
+      if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
+        _restoreCompleter!.complete(false);
+      }
+      _restoreCompleter = null;
+    }
   }
 
   // ── Top Progress Bar ──────────────────────────────────────────────

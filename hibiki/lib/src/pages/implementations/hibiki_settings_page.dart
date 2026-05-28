@@ -8,7 +8,6 @@ import 'package:hibiki/src/settings/settings_destination.dart';
 import 'package:hibiki/src/settings/settings_home_page.dart';
 import 'package:hibiki/src/settings/settings_renderer.dart';
 import 'package:hibiki/src/settings/settings_schema.dart';
-import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/utils/spacing.dart';
 

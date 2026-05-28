@@ -8,9 +8,6 @@ import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
 import 'package:hibiki/src/settings/settings_renderer.dart';
 import 'package:hibiki/src/settings/settings_schema.dart';
-import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart';
-import 'package:hibiki/src/utils/misc/debug_log_service.dart';
-import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/utils.dart';
 
 class SettingsHomePage extends BasePage {

@@ -513,7 +513,9 @@ class ThemeNotifier extends ChangeNotifier {
     _splashChannel.invokeMethod('setSplashColor', {
       'color': surface.toARGB32(),
       'isDark': isDarkMode,
-    }).catchError((_) {});
+    }).catchError((Object e) {
+      debugPrint('[theme] setSplashColor failed: $e');
+    });
   }
 }
 
