@@ -3650,11 +3650,11 @@ window.flutter_inappwebview.callHandler('spreadReady');
     if (isDesktopPlatform) {
       await showAppDialog(
         context: context,
-        builder: (_) => Dialog(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 520),
-            child: sheetContent,
-          ),
+        builder: (_) => HibikiDialogFrame(
+          maxWidth: 520,
+          maxHeightFactor: 0.80,
+          scrollable: false,
+          child: sheetContent,
         ),
       );
     } else {

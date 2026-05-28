@@ -40,4 +40,25 @@ void main() {
     expect(readerSource, isNot(contains('AudiobookSettingsSheet(')));
     expect(playBarSource, isNot(contains('class AudiobookSettingsSheet')));
   });
+
+  test('reader page uses shared MD3 dialog frame for desktop quick settings',
+      () {
+    final String readerSource =
+        File('lib/src/pages/implementations/reader_hibiki_page.dart')
+            .readAsStringSync();
+
+    final int desktopBranch = readerSource.indexOf('if (isDesktopPlatform)');
+    final int mobileBranch =
+        readerSource.indexOf('await adaptiveModalSheet<void>', desktopBranch);
+    expect(desktopBranch, isNonNegative);
+    expect(mobileBranch, greaterThan(desktopBranch));
+
+    final String desktopSource =
+        readerSource.substring(desktopBranch, mobileBranch);
+    expect(desktopSource, contains('HibikiDialogFrame('));
+    expect(desktopSource, contains('maxWidth: 520'));
+    expect(desktopSource, contains('maxHeightFactor: 0.80'));
+    expect(desktopSource, isNot(contains('=> Dialog(')));
+    expect(desktopSource, isNot(contains('ConstrainedBox(')));
+  });
 }
