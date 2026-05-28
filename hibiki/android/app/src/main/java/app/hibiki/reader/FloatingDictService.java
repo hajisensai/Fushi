@@ -13,7 +13,6 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.TypedValue;
 import android.view.Gravity;
-import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
@@ -34,6 +33,14 @@ import app.hibiki.reader.constants.NotificationIds;
 import app.hibiki.reader.constants.PreferenceKeys;
 
 public class FloatingDictService extends BaseFloatingService {
+
+    public FloatingDictService() {
+        super(
+                PreferenceKeys.FILE_FLOATING_DICT,
+                NotificationIds.CHANNEL_FLOATING_DICT,
+                "Floating Dictionary",
+                NotificationIds.FLOATING_DICT);
+    }
 
     private EditText searchInput;
     private TextView resultView;
@@ -79,18 +86,6 @@ public class FloatingDictService extends BaseFloatingService {
         }
         super.onDestroy();
     }
-
-    @Override
-    protected String getPreferencePrefix() { return PreferenceKeys.FILE_FLOATING_DICT; }
-
-    @Override
-    protected String getNotificationChannelId() { return NotificationIds.CHANNEL_FLOATING_DICT; }
-
-    @Override
-    protected String getNotificationChannelName() { return "Floating Dictionary"; }
-
-    @Override
-    protected int getNotificationId() { return NotificationIds.FLOATING_DICT; }
 
     @Override
     protected Notification buildNotification() {
@@ -275,41 +270,14 @@ public class FloatingDictService extends BaseFloatingService {
     }
 
     @Override
-    protected void setupDragListener() {
-        View titleBar = ((LinearLayout) rootView).getChildAt(0);
-        titleBar.setOnTouchListener(new View.OnTouchListener() {
-            private int initialX, initialY;
-            private float initialTouchX, initialTouchY;
-            private boolean isDragging = false;
+    protected DragMode getDragMode() {
+        return DragMode.FREE;
+    }
 
-            @Override
-            public boolean onTouch(View v, MotionEvent event) {
-                switch (event.getAction()) {
-                    case MotionEvent.ACTION_DOWN:
-                        initialX = layoutParams.x;
-                        initialY = layoutParams.y;
-                        initialTouchX = event.getRawX();
-                        initialTouchY = event.getRawY();
-                        isDragging = false;
-                        return true;
-                    case MotionEvent.ACTION_MOVE:
-                        float dx = event.getRawX() - initialTouchX;
-                        float dy = event.getRawY() - initialTouchY;
-                        if (Math.abs(dx) > 10 || Math.abs(dy) > 10)
-                            isDragging = true;
-                        if (isDragging) {
-                            layoutParams.x = initialX + (int) dx;
-                            layoutParams.y = initialY + (int) dy;
-                            windowManager.updateViewLayout(rootView, layoutParams);
-                        }
-                        return true;
-                    case MotionEvent.ACTION_UP:
-                        if (isDragging) savePosition();
-                        return true;
-                }
-                return false;
-            }
-        });
+    @Override
+    protected View getDragHandle() {
+        // Only the title bar is draggable; the rest of the view handles input events.
+        return ((LinearLayout) rootView).getChildAt(0);
     }
 
     @Override

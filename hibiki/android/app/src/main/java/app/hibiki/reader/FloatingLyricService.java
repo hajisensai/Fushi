@@ -2,6 +2,7 @@ package app.hibiki.reader;
 
 import android.app.Notification;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
@@ -28,6 +29,14 @@ import app.hibiki.reader.constants.PreferenceKeys;
 
 public class FloatingLyricService extends BaseFloatingService {
 
+    public FloatingLyricService() {
+        super(
+                PreferenceKeys.FILE_FLOATING_LYRIC,
+                NotificationIds.CHANNEL_FLOATING_LYRIC,
+                "Floating Lyric",
+                NotificationIds.FLOATING_LYRIC);
+    }
+
     private static final int DP_PAD_H = 16;
     private static final int DP_PAD_V = 8;
     private static final int DP_CONTROLS_BOTTOM = 6;
@@ -36,7 +45,6 @@ public class FloatingLyricService extends BaseFloatingService {
     private static final int DP_BTN_MARGIN = 4;
     private static final int DP_BTN_MIN_W = 44;
     private static final int DP_BTN_MIN_H = 36;
-    private static final int DRAG_THRESHOLD = 10;
 
     private TextView lyricText;
     private ImageButton previousButton;
@@ -114,26 +122,6 @@ public class FloatingLyricService extends BaseFloatingService {
     }
 
     @Override
-    protected String getPreferencePrefix() {
-        return PreferenceKeys.FILE_FLOATING_LYRIC;
-    }
-
-    @Override
-    protected String getNotificationChannelId() {
-        return NotificationIds.CHANNEL_FLOATING_LYRIC;
-    }
-
-    @Override
-    protected String getNotificationChannelName() {
-        return "Floating Lyric";
-    }
-
-    @Override
-    protected int getNotificationId() {
-        return NotificationIds.FLOATING_LYRIC;
-    }
-
-    @Override
     protected Notification buildNotification() {
         Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                 ? new Notification.Builder(this, getNotificationChannelId())
@@ -165,66 +153,42 @@ public class FloatingLyricService extends BaseFloatingService {
         super.onDestroy();
     }
 
-    // ── Drag listener (lock-aware) ──
+    // ── Drag hooks ──────────────────────────────────────────────────────────
 
     @Override
-    protected void setupDragListener() {
-        rootView.setOnTouchListener(new View.OnTouchListener() {
-            private int initialY;
-            private float initialTouchY;
-            private boolean isDragging;
-
-            @Override
-            public boolean onTouch(View v, MotionEvent event) {
-                if (isLocked) return true;
-                switch (event.getAction()) {
-                    case MotionEvent.ACTION_DOWN:
-                        initialY = layoutParams.y;
-                        initialTouchY = event.getRawY();
-                        isDragging = false;
-                        return true;
-                    case MotionEvent.ACTION_MOVE:
-                        float dy = event.getRawY() - initialTouchY;
-                        if (Math.abs(dy) > DRAG_THRESHOLD) isDragging = true;
-                        if (isDragging) {
-                            layoutParams.y = initialY + (int) dy;
-                            windowManager.updateViewLayout(rootView, layoutParams);
-                        }
-                        return true;
-                    case MotionEvent.ACTION_UP:
-                        if (isDragging) {
-                            savePosition();
-                        } else {
-                            handleTap(event);
-                        }
-                        return true;
-                }
-                return false;
-            }
-        });
-    }
-
-    // ── Saved position uses posYTop key for backward compat ──
-
-    @Override
-    protected void setupOverlay() {
-        int savedY = getSharedPreferences(getPreferencePrefix(), MODE_PRIVATE)
-                .getInt(PreferenceKeys.POS_Y_TOP, 100);
-
-        layoutParams = createLayoutParams();
-        layoutParams.x = 0;
-        layoutParams.y = savedY;
-
-        setupDragListener();
-        windowManager.addView(rootView, layoutParams);
+    protected DragMode getDragMode() {
+        return DragMode.VERTICAL_ONLY;
     }
 
     @Override
-    protected void savePosition() {
-        if (layoutParams == null) return;
-        getSharedPreferences(getPreferencePrefix(), MODE_PRIVATE).edit()
-                .putInt(PreferenceKeys.POS_Y_TOP, layoutParams.y)
-                .apply();
+    protected boolean isDragLocked() {
+        return isLocked;
+    }
+
+    @Override
+    protected void onOverlayTapped(MotionEvent event) {
+        handleTap(event);
+    }
+
+    // ── Position hooks (backward-compatible with posYTop key) ───────────────
+
+    /** X is always 0 for the lyric overlay; do not read/restore from prefs. */
+    @Override
+    protected int readSavedX(SharedPreferences prefs) {
+        return 0;
+    }
+
+    /**
+     * Read Y from the standard {@code posY} key.
+     * Fall back to the legacy {@code posYTop} key for older installs.
+     * Writes use only the standard key (via {@link #savePosition()}).
+     */
+    @Override
+    protected int readSavedY(SharedPreferences prefs) {
+        if (prefs.contains(PreferenceKeys.POS_Y)) {
+            return prefs.getInt(PreferenceKeys.POS_Y, 100);
+        }
+        return prefs.getInt(PreferenceKeys.POS_Y_TOP, 100);
     }
 
     // ── Public API (called from MainActivity) ──
