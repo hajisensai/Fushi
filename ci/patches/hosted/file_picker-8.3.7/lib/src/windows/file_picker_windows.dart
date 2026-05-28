@@ -223,7 +223,7 @@ class FilePickerWindows extends FilePicker {
       case FileType.any:
         return 'All Files (*.*)\x00*.*\x00\x00';
       case FileType.audio:
-        return 'Audios (*.aac,*.midi,*.mp3,*.ogg,*.wav,*.m4a)\x00*.aac;*.midi;*.mp3;*.ogg;*.wav;*.m4a\x00All Files (*.*)\x00*.*\x00\x00';
+        return 'Audios (*.aac,*.ac3,*.eac3,*.flac,*.m4a,*.m4b,*.mp3,*.mp4,*.ogg,*.opus,*.wav,*.wma)\x00*.aac;*.ac3;*.eac3;*.flac;*.m4a;*.m4b;*.mp3;*.mp4;*.ogg;*.opus;*.wav;*.wma\x00All Files (*.*)\x00*.*\x00\x00';
       case FileType.custom:
         return 'Files (*.${allowedExtensions!.join(',*.')})\x00*.${allowedExtensions.join(';*.')}\x00\x00';
       case FileType.image:

@@ -52,8 +52,8 @@ void main() {
 
     expect(
       filter,
-      'Audios (*.aac,*.midi,*.mp3,*.ogg,*.wav,*.m4a)\x00'
-      '*.aac;*.midi;*.mp3;*.ogg;*.wav;*.m4a\x00'
+      'Audios (*.aac,*.ac3,*.eac3,*.flac,*.m4a,*.m4b,*.mp3,*.mp4,*.ogg,*.opus,*.wav,*.wma)\x00'
+      '*.aac;*.ac3;*.eac3;*.flac;*.m4a;*.m4b;*.mp3;*.mp4;*.ogg;*.opus;*.wav;*.wma\x00'
       'All Files (*.*)\x00'
       '*.*\x00\x00',
     );
