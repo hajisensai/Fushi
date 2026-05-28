@@ -187,6 +187,26 @@ class _HomePageState extends BasePageState<HomePage>
   }
 
   Widget _buildDesktopLayout(WindowSizeClass sizeClass) {
+    final bool reversed = appModel.reverseNavigationBar;
+    final List<NavigationRailDestination> destinations = [
+      NavigationRailDestination(
+        icon: const Icon(Icons.menu_book_outlined),
+        label: Text(t.books),
+      ),
+      NavigationRailDestination(
+        icon: const Icon(Icons.search),
+        label: Text(t.dictionaries),
+      ),
+      NavigationRailDestination(
+        icon: const Icon(Icons.tune_outlined),
+        label: Text(t.settings),
+      ),
+    ];
+    final List<NavigationRailDestination> displayDestinations =
+        reversed ? destinations.reversed.toList() : destinations;
+    final int visualIndex =
+        reversed ? (destinations.length - 1 - _currentTab) : _currentTab;
+
     return Scaffold(
       resizeToAvoidBottomInset: false,
       body: SafeArea(
@@ -195,26 +215,15 @@ class _HomePageState extends BasePageState<HomePage>
             NavigationRail(
               leading: _buildRailLeading(),
               groupAlignment: 0.0,
-              selectedIndex: _currentTab,
+              selectedIndex: visualIndex,
               onDestinationSelected: (int index) {
-                setState(() => _currentTab = index);
-                if (index == 0) _loadIconPreset();
+                final int logicalIndex =
+                    reversed ? (destinations.length - 1 - index) : index;
+                setState(() => _currentTab = logicalIndex);
+                if (logicalIndex == 0) _loadIconPreset();
               },
               labelType: NavigationRailLabelType.all,
-              destinations: [
-                NavigationRailDestination(
-                  icon: const Icon(Icons.menu_book_outlined),
-                  label: Text(t.books),
-                ),
-                NavigationRailDestination(
-                  icon: const Icon(Icons.search),
-                  label: Text(t.dictionaries),
-                ),
-                NavigationRailDestination(
-                  icon: const Icon(Icons.tune_outlined),
-                  label: Text(t.settings),
-                ),
-              ],
+              destinations: displayDestinations,
             ),
             const VerticalDivider(thickness: 1, width: 1),
             Expanded(child: buildBody()),

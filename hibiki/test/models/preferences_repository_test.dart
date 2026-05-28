@@ -111,6 +111,10 @@ void main() {
     test('lastSelectedModel defaults to null', () {
       expect(repo.lastSelectedModel, isNull);
     });
+
+    test('reverseNavigationBar defaults to false', () {
+      expect(repo.reverseNavigationBar, false);
+    });
   });
 
   // ── round-trip persistence ───────────────────────────────────────────
@@ -228,6 +232,16 @@ void main() {
       repo.setMediaItemPreferredAudioIndex('item-1', 3);
       await Future<void>.delayed(Duration.zero);
       expect(repo.getMediaItemPreferredAudioIndex('item-1'), 3);
+    });
+
+    test('toggleReverseNavigationBar cycles correctly', () async {
+      expect(repo.reverseNavigationBar, false);
+      repo.toggleReverseNavigationBar();
+      await Future<void>.delayed(Duration.zero);
+      expect(repo.reverseNavigationBar, true);
+      repo.toggleReverseNavigationBar();
+      await Future<void>.delayed(Duration.zero);
+      expect(repo.reverseNavigationBar, false);
     });
   });
 
