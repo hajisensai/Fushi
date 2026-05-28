@@ -503,6 +503,21 @@ void main() {
     expect(tagDropTarget, isNot(contains('BorderRadius.circular(12)')));
   });
 
+  test('reader history tag bar uses shared MD3 tag chips', () {
+    final String source = File(
+      'lib/src/pages/implementations/reader_hibiki_history_page.dart',
+    ).readAsStringSync();
+    final String tagBar = _functionSource(
+      source,
+      'class _TagBarContent extends ConsumerStatefulWidget',
+      'class _BookDragTarget extends StatefulWidget',
+    );
+
+    expect(tagBar, contains('HibikiTagChip('));
+    expect(tagBar, isNot(contains('class _TagChip')));
+    expect(tagBar, isNot(contains('BorderRadius.circular(16)')));
+  });
+
   test('dictionary and popup surfaces use shared MD3 primitives', () {
     final String dictionaryManager = File(
       'lib/src/pages/implementations/dictionary_dialog_page.dart',

@@ -73,6 +73,42 @@ void main() {
     );
   });
 
+  testWidgets('HibikiTagChip surface tone keeps a tag color swatch',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      buildSubject(
+        const HibikiTagChip(
+          label: 'Fiction',
+          color: Colors.red,
+          selected: true,
+          tone: HibikiTagChipTone.surface,
+        ),
+      ),
+    );
+
+    final Iterable<Container> containers =
+        tester.widgetList<Container>(find.byType(Container));
+    final Container chip = containers.firstWhere((Container widget) {
+      final Decoration? decoration = widget.decoration;
+      return decoration is BoxDecoration && decoration.border != null;
+    });
+    final DecoratedBox swatch = tester
+        .widgetList<DecoratedBox>(find.byType(DecoratedBox))
+        .firstWhere((DecoratedBox widget) {
+      final Decoration decoration = widget.decoration;
+      return decoration is BoxDecoration &&
+          decoration.color == Colors.red &&
+          decoration.shape == BoxShape.circle;
+    });
+    final BoxDecoration chipDecoration = chip.decoration! as BoxDecoration;
+    final BoxDecoration swatchDecoration = swatch.decoration as BoxDecoration;
+
+    expect(chipDecoration.borderRadius, BorderRadius.circular(8));
+    expect(chipDecoration.border, isNotNull);
+    expect(swatchDecoration.color, Colors.red);
+    expect(swatchDecoration.shape, BoxShape.circle);
+  });
+
   testWidgets('HibikiBadge uses the shared compact radius',
       (WidgetTester tester) async {
     await tester.pumpWidget(

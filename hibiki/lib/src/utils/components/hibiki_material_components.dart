@@ -347,6 +347,8 @@ class HibikiSelectableChip extends StatelessWidget {
   }
 }
 
+enum HibikiTagChipTone { filled, surface }
+
 class HibikiTagChip extends StatelessWidget {
   const HibikiTagChip({
     required this.label,
@@ -354,6 +356,7 @@ class HibikiTagChip extends StatelessWidget {
     this.color,
     this.selected = false,
     this.dimmed = false,
+    this.tone = HibikiTagChipTone.filled,
     this.onTap,
   });
 
@@ -361,18 +364,60 @@ class HibikiTagChip extends StatelessWidget {
   final Color? color;
   final bool selected;
   final bool dimmed;
+  final HibikiTagChipTone tone;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
+    final Color tagColor = color ?? colors.primary;
     final Color baseColor =
         color ?? (selected ? colors.primaryContainer : tokens.surfaces.overlay);
-    final Color background = dimmed
-        ? baseColor.withValues(alpha: 0.44)
-        : baseColor.withValues(alpha: color == null ? 1 : 0.88);
-    final Color foreground = _foregroundFor(background);
+    final Color background = switch (tone) {
+      HibikiTagChipTone.filled => dimmed
+          ? baseColor.withValues(alpha: 0.44)
+          : baseColor.withValues(alpha: color == null ? 1 : 0.88),
+      HibikiTagChipTone.surface => selected
+          ? tagColor.withValues(alpha: dimmed ? 0.12 : 0.2)
+          : tokens.surfaces.overlay.withValues(alpha: dimmed ? 0.44 : 1),
+    };
+    final Color foreground = switch (tone) {
+      HibikiTagChipTone.filled => _foregroundFor(background),
+      HibikiTagChipTone.surface =>
+        dimmed ? colors.onSurface.withValues(alpha: 0.4) : colors.onSurface,
+    };
+    final BoxBorder? border = selected
+        ? Border.all(
+            color:
+                tone == HibikiTagChipTone.surface ? tagColor : colors.primary,
+          )
+        : null;
+    final Text labelText = Text(
+      label,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: tokens.type.metadata.copyWith(
+        color: foreground,
+        fontWeight: FontWeight.w600,
+      ),
+    );
+    final Widget content = tone == HibikiTagChipTone.surface && color != null
+        ? Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  color: color,
+                  shape: BoxShape.circle,
+                ),
+                child: const SizedBox(width: 10, height: 10),
+              ),
+              SizedBox(width: tokens.spacing.gap * 0.625),
+              labelText,
+            ],
+          )
+        : labelText;
     final Widget chip = Container(
       padding: EdgeInsets.symmetric(
         horizontal: tokens.spacing.gap,
@@ -381,17 +426,9 @@ class HibikiTagChip extends StatelessWidget {
       decoration: BoxDecoration(
         color: background,
         borderRadius: tokens.radii.chipRadius,
-        border: selected ? Border.all(color: colors.primary) : null,
+        border: border,
       ),
-      child: Text(
-        label,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: tokens.type.metadata.copyWith(
-          color: foreground,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
+      child: content,
     );
     if (onTap == null) return chip;
     return InkWell(

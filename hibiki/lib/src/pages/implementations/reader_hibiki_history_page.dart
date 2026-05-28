@@ -1324,6 +1324,7 @@ class _TagBarContentState extends ConsumerState<_TagBarContent> {
     final selectedIds = ref.watch(selectedTagIdsProvider);
     final theme = Theme.of(context);
     final t = Translations.of(context);
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
 
     final int trailingCount = widget.tags.isEmpty ? 1 : 2;
 
@@ -1384,26 +1385,35 @@ class _TagBarContentState extends ConsumerState<_TagBarContent> {
           final tag = widget.tags[index];
           final isSelected = selectedIds.contains(tag.id);
           if (widget.selectionMode) {
-            return GestureDetector(
+            return _tagFilterChip(
+              tag: tag,
+              isSelected: isSelected,
+              isDimmed: false,
               onTap: () => widget.onToggleFilter(tag.id),
-              child: _TagChip(
-                tag: tag,
-                isSelected: isSelected,
-                isDimmed: false,
-              ),
             );
           }
           return LongPressDraggable<BookTagRow>(
             data: tag,
             feedback: Material(
+              color: Colors.transparent,
               elevation: 4,
-              borderRadius: BorderRadius.circular(16),
-              child: _TagChip(tag: tag, isSelected: true, isDimmed: false),
+              shape: RoundedRectangleBorder(
+                borderRadius: tokens.radii.chipRadius,
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: _tagFilterChip(
+                tag: tag,
+                isSelected: true,
+                isDimmed: false,
+              ),
             ),
             childWhenDragging: Opacity(
               opacity: 0.3,
-              child:
-                  _TagChip(tag: tag, isSelected: isSelected, isDimmed: false),
+              child: _tagFilterChip(
+                tag: tag,
+                isSelected: isSelected,
+                isDimmed: false,
+              ),
             ),
             child: DragTarget<BookTagRow>(
               onWillAcceptWithDetails: (details) => details.data.id != tag.id,
@@ -1417,13 +1427,11 @@ class _TagBarContentState extends ConsumerState<_TagBarContent> {
                 }
               },
               builder: (context, candidateData, rejectedData) {
-                return GestureDetector(
+                return _tagFilterChip(
+                  tag: tag,
+                  isSelected: isSelected,
+                  isDimmed: candidateData.isNotEmpty,
                   onTap: () => widget.onToggleFilter(tag.id),
-                  child: _TagChip(
-                    tag: tag,
-                    isSelected: isSelected,
-                    isDimmed: candidateData.isNotEmpty,
-                  ),
                 );
               },
             ),
@@ -1432,56 +1440,20 @@ class _TagBarContentState extends ConsumerState<_TagBarContent> {
       ),
     );
   }
-}
 
-class _TagChip extends StatelessWidget {
-  const _TagChip({
-    required this.tag,
-    required this.isSelected,
-    required this.isDimmed,
-  });
-  final BookTagRow tag;
-  final bool isSelected;
-  final bool isDimmed;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final tagColor = Color(tag.colorValue);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: isSelected
-            ? tagColor.withValues(alpha: 0.2)
-            : theme.colorScheme.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isSelected ? tagColor : Colors.transparent,
-          width: 1.5,
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 10,
-            height: 10,
-            decoration: BoxDecoration(
-              color: tagColor,
-              shape: BoxShape.circle,
-            ),
-          ),
-          const SizedBox(width: 5),
-          Text(
-            tag.name,
-            style: theme.textTheme.labelMedium?.copyWith(
-              color: isDimmed
-                  ? theme.colorScheme.onSurface.withValues(alpha: 0.4)
-                  : theme.colorScheme.onSurface,
-            ),
-          ),
-        ],
-      ),
+  Widget _tagFilterChip({
+    required BookTagRow tag,
+    required bool isSelected,
+    required bool isDimmed,
+    VoidCallback? onTap,
+  }) {
+    return HibikiTagChip(
+      label: tag.name,
+      color: Color(tag.colorValue),
+      selected: isSelected,
+      dimmed: isDimmed,
+      tone: HibikiTagChipTone.surface,
+      onTap: onTap,
     );
   }
 }
