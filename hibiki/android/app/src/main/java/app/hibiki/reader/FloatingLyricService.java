@@ -22,6 +22,10 @@ import android.widget.TextView;
 import java.lang.ref.WeakReference;
 import java.util.Map;
 
+import app.hibiki.reader.constants.FloatingColors;
+import app.hibiki.reader.constants.NotificationIds;
+import app.hibiki.reader.constants.PreferenceKeys;
+
 public class FloatingLyricService extends BaseFloatingService {
 
     private static final int DP_PAD_H = 16;
@@ -42,12 +46,12 @@ public class FloatingLyricService extends BaseFloatingService {
     private ImageButton closeButton;
 
     private float fontSize = 16f;
-    private int textColor = Color.WHITE;
-    private int bgColor = 0xCC000000;
-    private int buttonTextColor = Color.WHITE;
-    private int buttonBgColor = 0x33000000;
-    private int highlightColor = 0x80FFD54F;
-    private int activeColor = 0xFFFFD54F;
+    private int textColor = FloatingColors.LYRIC_TEXT;
+    private int bgColor = FloatingColors.LYRIC_BACKGROUND;
+    private int buttonTextColor = FloatingColors.LYRIC_BUTTON_TEXT;
+    private int buttonBgColor = FloatingColors.LYRIC_BUTTON_BG;
+    private int highlightColor = FloatingColors.LYRIC_HIGHLIGHT;
+    private int activeColor = FloatingColors.LYRIC_ACTIVE;
     private boolean isLocked = false;
     private boolean isPlaying = false;
     private String currentText = "";
@@ -111,7 +115,7 @@ public class FloatingLyricService extends BaseFloatingService {
 
     @Override
     protected String getPreferencePrefix() {
-        return "floating_lyric_prefs";
+        return PreferenceKeys.FILE_FLOATING_LYRIC;
     }
 
     @Override
@@ -126,7 +130,7 @@ public class FloatingLyricService extends BaseFloatingService {
 
     @Override
     protected int getNotificationId() {
-        return 9527;
+        return NotificationIds.FLOATING_LYRIC;
     }
 
     @Override
@@ -205,7 +209,7 @@ public class FloatingLyricService extends BaseFloatingService {
     @Override
     protected void setupOverlay() {
         int savedY = getSharedPreferences(getPreferencePrefix(), MODE_PRIVATE)
-                .getInt("posYTop", 100);
+                .getInt(PreferenceKeys.POS_Y_TOP, 100);
 
         layoutParams = createLayoutParams();
         layoutParams.x = 0;
@@ -219,7 +223,7 @@ public class FloatingLyricService extends BaseFloatingService {
     protected void savePosition() {
         if (layoutParams == null) return;
         getSharedPreferences(getPreferencePrefix(), MODE_PRIVATE).edit()
-                .putInt("posYTop", layoutParams.y)
+                .putInt(PreferenceKeys.POS_Y_TOP, layoutParams.y)
                 .apply();
     }
 

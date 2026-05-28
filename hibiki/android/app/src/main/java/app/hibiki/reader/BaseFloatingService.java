@@ -17,6 +17,8 @@ import android.view.WindowManager;
 
 import androidx.annotation.Nullable;
 
+import app.hibiki.reader.constants.PreferenceKeys;
+
 public abstract class BaseFloatingService extends Service {
 
     protected WindowManager windowManager;
@@ -73,8 +75,8 @@ public abstract class BaseFloatingService extends Service {
 
     protected void setupOverlay() {
         SharedPreferences prefs = getSharedPreferences(getPreferencePrefix(), MODE_PRIVATE);
-        int savedX = prefs.getInt("posX", 0);
-        int savedY = prefs.getInt("posY", 100);
+        int savedX = prefs.getInt(PreferenceKeys.POS_X, 0);
+        int savedY = prefs.getInt(PreferenceKeys.POS_Y, 100);
 
         layoutParams = createLayoutParams();
         layoutParams.x = savedX;
@@ -137,8 +139,8 @@ public abstract class BaseFloatingService extends Service {
         if (layoutParams == null) return;
         getSharedPreferences(getPreferencePrefix(), MODE_PRIVATE)
                 .edit()
-                .putInt("posX", layoutParams.x)
-                .putInt("posY", layoutParams.y)
+                .putInt(PreferenceKeys.POS_X, layoutParams.x)
+                .putInt(PreferenceKeys.POS_Y, layoutParams.y)
                 .apply();
     }
 

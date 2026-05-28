@@ -29,9 +29,11 @@ import org.json.JSONObject;
 
 import java.lang.ref.WeakReference;
 
-public class FloatingDictService extends BaseFloatingService {
+import app.hibiki.reader.constants.FloatingColors;
+import app.hibiki.reader.constants.NotificationIds;
+import app.hibiki.reader.constants.PreferenceKeys;
 
-    private static final int NOTIFICATION_ID = 9528;
+public class FloatingDictService extends BaseFloatingService {
 
     private EditText searchInput;
     private TextView resultView;
@@ -79,7 +81,7 @@ public class FloatingDictService extends BaseFloatingService {
     }
 
     @Override
-    protected String getPreferencePrefix() { return "floating_dict_prefs"; }
+    protected String getPreferencePrefix() { return PreferenceKeys.FILE_FLOATING_DICT; }
 
     @Override
     protected String getNotificationChannelId() { return "hibiki_floating_dict"; }
@@ -88,7 +90,7 @@ public class FloatingDictService extends BaseFloatingService {
     protected String getNotificationChannelName() { return "Floating Dictionary"; }
 
     @Override
-    protected int getNotificationId() { return NOTIFICATION_ID; }
+    protected int getNotificationId() { return NotificationIds.FLOATING_DICT; }
 
     @Override
     protected Notification buildNotification() {
@@ -166,7 +168,7 @@ public class FloatingDictService extends BaseFloatingService {
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(0xF01E1E2E);
+        root.setBackgroundColor(FloatingColors.DICT_BACKGROUND);
         root.setPadding(dp8, dp4, dp8, dp4);
 
         LinearLayout titleBar = new LinearLayout(this);
@@ -202,10 +204,10 @@ public class FloatingDictService extends BaseFloatingService {
         searchInput = new EditText(this);
         searchInput.setHint("Search...");
         searchInput.setTextColor(Color.WHITE);
-        searchInput.setHintTextColor(0x80FFFFFF);
+        searchInput.setHintTextColor(FloatingColors.DICT_SEARCH_HINT);
         searchInput.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
         searchInput.setSingleLine(true);
-        searchInput.setBackgroundColor(0x33FFFFFF);
+        searchInput.setBackgroundColor(FloatingColors.DICT_SEARCH_INPUT_BG);
         searchInput.setPadding(dp8, dp4, dp8, dp4);
         searchInput.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
         searchInput.setOnFocusChangeListener((v, hasFocus) -> {
@@ -256,7 +258,7 @@ public class FloatingDictService extends BaseFloatingService {
 
         ankiButton = new ImageButton(this);
         ankiButton.setImageResource(android.R.drawable.ic_input_add);
-        ankiButton.setBackgroundColor(0x33FFFFFF);
+        ankiButton.setBackgroundColor(FloatingColors.DICT_ANKI_BUTTON_BG);
         ankiButton.getDrawable().mutate().setTint(Color.WHITE);
         ankiButton.setContentDescription("Anki");
         ankiButton.setPadding(dp12, dp4, dp12, dp4);
@@ -315,12 +317,12 @@ public class FloatingDictService extends BaseFloatingService {
         String action = intent.getStringExtra("action");
         if ("toggle_monitoring".equals(action)) {
             monitoringEnabled = !monitoringEnabled;
-            startForeground(NOTIFICATION_ID, buildNotification());
+            startForeground(NotificationIds.FLOATING_DICT, buildNotification());
         } else if ("close".equals(action)) {
             stopSelf();
         } else if ("setClipboardMonitoring".equals(action)) {
             monitoringEnabled = intent.getBooleanExtra("enabled", true);
-            startForeground(NOTIFICATION_ID, buildNotification());
+            startForeground(NotificationIds.FLOATING_DICT, buildNotification());
         }
     }
 
@@ -440,7 +442,7 @@ public class FloatingDictService extends BaseFloatingService {
 
     public void setClipboardMonitoring(boolean enabled) {
         monitoringEnabled = enabled;
-        startForeground(NOTIFICATION_ID, buildNotification());
+        startForeground(NotificationIds.FLOATING_DICT, buildNotification());
     }
 
     public void setSearchText(String text) {

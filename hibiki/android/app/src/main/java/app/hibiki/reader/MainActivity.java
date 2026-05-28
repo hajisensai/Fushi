@@ -23,6 +23,9 @@ import androidx.core.content.FileProvider;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+
+import app.hibiki.reader.constants.FloatingColors;
+import app.hibiki.reader.constants.PreferenceKeys;
 import java.util.TreeSet;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -53,7 +56,7 @@ public class MainActivity extends AudioServiceActivity {
     private static final String SPLASH_CHANNEL = "app.hibiki.reader/splash";
     private static final String LIFECYCLE_CHANNEL = "app.hibiki.reader/lifecycle";
     private static final String ICON_CHANNEL = "app.hibiki.reader/icon_switch";
-    private static final String SPLASH_PREFS = "hibiki_splash";
+    private static final String SPLASH_PREFS = PreferenceKeys.FILE_SPLASH;
     private static final int SAF_PICK_DIR_REQUEST = 1001;
     private static MethodChannel floatingLyricChannel;
     private static MethodChannel floatingDictChannel;
@@ -73,8 +76,8 @@ public class MainActivity extends AudioServiceActivity {
     @Override
     protected void attachBaseContext(Context newBase) {
         SharedPreferences prefs = newBase.getSharedPreferences(SPLASH_PREFS, MODE_PRIVATE);
-        if (prefs.contains("is_dark")) {
-            boolean isDark = prefs.getBoolean("is_dark", false);
+        if (prefs.contains(PreferenceKeys.SPLASH_IS_DARK)) {
+            boolean isDark = prefs.getBoolean(PreferenceKeys.SPLASH_IS_DARK, false);
             int currentNight = newBase.getResources().getConfiguration().uiMode
                     & Configuration.UI_MODE_NIGHT_MASK;
             boolean systemDark = currentNight == Configuration.UI_MODE_NIGHT_YES;
@@ -94,7 +97,7 @@ public class MainActivity extends AudioServiceActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         SharedPreferences splashPrefs = getSharedPreferences(SPLASH_PREFS, MODE_PRIVATE);
-        int bgColor = splashPrefs.getInt("bg_color", 0);
+        int bgColor = splashPrefs.getInt(PreferenceKeys.SPLASH_BG_COLOR, 0);
         if (bgColor != 0) {
             getWindow().setBackgroundDrawable(new ColorDrawable(bgColor));
         }
@@ -314,15 +317,15 @@ public class MainActivity extends AudioServiceActivity {
                         int color = ((Number) colorObj).intValue();
                         boolean isDark = (Boolean) isDarkObj;
                         prefs.edit()
-                             .putInt("bg_color", color)
-                             .putBoolean("is_dark", isDark)
+                             .putInt(PreferenceKeys.SPLASH_BG_COLOR, color)
+                             .putBoolean(PreferenceKeys.SPLASH_IS_DARK, isDark)
                              .apply();
                         getWindow().setBackgroundDrawable(new ColorDrawable(color));
                         result.success(null);
                         break;
                     }
                     case "getSplashColor": {
-                        int color = prefs.getInt("bg_color", 0);
+                        int color = prefs.getInt(PreferenceKeys.SPLASH_BG_COLOR, 0);
                         result.success(color);
                         break;
                     }
@@ -379,12 +382,12 @@ public class MainActivity extends AudioServiceActivity {
                         if (svc != null) {
                             svc.updateStyle(
                                     size != null ? size.floatValue() : 16f,
-                                    color != null ? color.intValue() : 0xFFFFFFFF,
-                                    bg != null ? bg.intValue() : 0xCC000000,
-                                    buttonTextColor != null ? buttonTextColor.intValue() : 0xFFFFFFFF,
-                                    buttonBgColor != null ? buttonBgColor.intValue() : 0x33000000,
-                                    highlightColor != null ? highlightColor.intValue() : 0x80FFD54F,
-                                    activeColor != null ? activeColor.intValue() : 0xFFFFD54F);
+                                    color != null ? color.intValue() : FloatingColors.LYRIC_TEXT,
+                                    bg != null ? bg.intValue() : FloatingColors.LYRIC_BACKGROUND,
+                                    buttonTextColor != null ? buttonTextColor.intValue() : FloatingColors.LYRIC_BUTTON_TEXT,
+                                    buttonBgColor != null ? buttonBgColor.intValue() : FloatingColors.LYRIC_BUTTON_BG,
+                                    highlightColor != null ? highlightColor.intValue() : FloatingColors.LYRIC_HIGHLIGHT,
+                                    activeColor != null ? activeColor.intValue() : FloatingColors.LYRIC_ACTIVE);
                         }
                         result.success(null);
                         break;
