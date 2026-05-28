@@ -139,7 +139,7 @@ void main() {
     expect(
         source,
         contains(
-            "SettingsSegmentedItem<String>(\n            id: 'sync.mode'"));
+            "SettingsCustomItem(\n            id: 'sync.mode'"));
     expect(source,
         contains("SettingsSwitchItem(\n            id: 'sync.statistics'"));
     expect(source,
