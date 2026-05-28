@@ -257,4 +257,26 @@ void main() {
     expect(icon.size, 20);
     expect(divider.height, 1);
   });
+
+  testWidgets('HibikiModalSheetFrame makes long sheet bodies scrollable',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      buildSubject(
+        HibikiModalSheetFrame(
+          title: 'Long sheet',
+          scrollable: true,
+          body: Column(
+            children: List<Widget>.generate(
+              20,
+              (int index) => Text('Row $index'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byType(Flexible), findsOneWidget);
+    expect(find.byType(SingleChildScrollView), findsOneWidget);
+    expect(find.text('Long sheet'), findsOneWidget);
+  });
 }

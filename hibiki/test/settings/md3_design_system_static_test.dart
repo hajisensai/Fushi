@@ -222,6 +222,9 @@ void main() {
       'HibikiSelectableChip',
       'HibikiModalSheetFrame',
     ],
+    'lib/src/media/audiobook/sasayaki_rematch.dart': <String>[
+      'HibikiModalSheetFrame',
+    ],
     'lib/src/pages/implementations/dictionary_popup_native.dart': <String>[
       'HibikiTagChip',
       'HibikiDesignTokens',
@@ -492,6 +495,9 @@ void main() {
         'ChoiceChip(',
         'SafeArea(',
         'HibikiDivider()',
+      ],
+      'lib/src/media/audiobook/sasayaki_rematch.dart': <String>[
+        'SafeArea(',
       ],
       'lib/src/utils/misc/hibiki_toast.dart': <String>[
         'BorderRadius.circular(24)',

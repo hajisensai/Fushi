@@ -132,52 +132,46 @@ class SasayakiRematch {
         }
       }
 
-      return SafeArea(
-        child: Padding(
-          padding: EdgeInsets.only(
-            left: 20,
-            right: 20,
-            top: 4,
-            bottom: MediaQuery.of(sheetCtx).viewInsets.bottom + 16,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SasayakiWindowSlider(
-                value: window,
-                onChanged: (v) => setSheet(() => window = v),
-                onAutoTap: handleAuto,
-                autoBusy: autoBusy,
-              ),
-              const SizedBox(height: 12),
-              SasayakiThresholdSlider(
-                value: threshold,
-                onChanged: (v) => setSheet(() => threshold = v),
-              ),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(
-                    onPressed: autoBusy ? null : () => Navigator.pop(sheetCtx),
-                    child: Text(t.cancel),
-                  ),
-                  const SizedBox(width: 8),
-                  FilledButton.icon(
-                    icon: const Icon(Icons.play_arrow_outlined, size: 18),
-                    label: Text(t.rematch_run),
-                    onPressed: autoBusy
-                        ? null
-                        : () => Navigator.pop(
-                              sheetCtx,
-                              _MatchParams(window, threshold),
-                            ),
-                  ),
-                ],
-              ),
-            ],
-          ),
+      return HibikiModalSheetFrame(
+        title: t.rematch_adjust_window,
+        leadingIcon: Icons.manage_search_outlined,
+        bodyPadding: const EdgeInsets.symmetric(horizontal: 20),
+        body: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SasayakiWindowSlider(
+              value: window,
+              onChanged: (v) => setSheet(() => window = v),
+              onAutoTap: handleAuto,
+              autoBusy: autoBusy,
+            ),
+            const SizedBox(height: 12),
+            SasayakiThresholdSlider(
+              value: threshold,
+              onChanged: (v) => setSheet(() => threshold = v),
+            ),
+          ],
+        ),
+        footer: Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            TextButton(
+              onPressed: autoBusy ? null : () => Navigator.pop(sheetCtx),
+              child: Text(t.cancel),
+            ),
+            const SizedBox(width: 8),
+            FilledButton.icon(
+              icon: const Icon(Icons.play_arrow_outlined, size: 18),
+              label: Text(t.rematch_run),
+              onPressed: autoBusy
+                  ? null
+                  : () => Navigator.pop(
+                        sheetCtx,
+                        _MatchParams(window, threshold),
+                      ),
+            ),
+          ],
         ),
       );
     }
