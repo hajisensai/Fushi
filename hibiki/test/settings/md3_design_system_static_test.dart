@@ -230,6 +230,9 @@ void main() {
     'lib/src/pages/implementations/placeholder_source_page.dart': <String>[
       'HibikiTransientScaffold',
     ],
+    'lib/src/utils/misc/hibiki_toast.dart': <String>[
+      'HibikiDesignTokens',
+    ],
   };
 
   test('MD3 design token and shared component files exist', () {
@@ -485,6 +488,10 @@ void main() {
       'lib/src/pages/implementations/tag_filter_sheet.dart': <String>[
         'FilterChip(',
         'ChoiceChip(',
+      ],
+      'lib/src/utils/misc/hibiki_toast.dart': <String>[
+        'BorderRadius.circular(24)',
+        'fontSize: 14',
       ],
     };
 

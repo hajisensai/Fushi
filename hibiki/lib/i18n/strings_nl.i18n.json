@@ -1071,5 +1071,19 @@
     "copy_error": "Copy Error",
     "error_copied": "Error copied to clipboard",
     "dict_import_failed_summary": "Failed to import $n dictionary(s)",
-    "reader_content_timeout": "Content loading timed out. Reopen if display is abnormal"
+    "reader_content_timeout": "Content loading timed out. Reopen if display is abnormal",
+    "backup_local": "Local Backup",
+    "backup_export": "Export Backup",
+    "backup_export_hint": "Save all settings, reading progress, and statistics to a file",
+    "backup_import": "Import Backup",
+    "backup_import_hint": "Restore from a backup file. The app will restart.",
+    "backup_export_success": "Backup exported successfully",
+    "backup_export_failed": "Backup export failed: $message",
+    "backup_import_confirm_title": "Restore Backup?",
+    "backup_import_confirm": "This will replace all current data with the backup from $date.\\n\\n$bookCount books, $statsCount statistics records.\\n\\nThe app will restart after restore.",
+    "backup_import_success": "Backup restored. Restarting…",
+    "backup_import_failed": "Backup import failed: $message",
+    "backup_import_invalid": "Invalid backup file",
+    "backup_exporting": "Creating backup…",
+    "backup_schema_newer": "This backup requires a newer version of the app (schema $version). Please update first."
 }

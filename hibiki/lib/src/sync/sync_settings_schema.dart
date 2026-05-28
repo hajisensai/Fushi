@@ -1,13 +1,21 @@
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_exit_app/flutter_exit_app.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
+import 'package:hibiki/src/sync/backup_service.dart';
 import 'package:hibiki/src/sync/google_drive_sync_backend.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_compare_dialog.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/webdav_sync_backend.dart';
 import 'package:hibiki/utils.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 SettingsDestination buildSyncBackupDestination() {
   return SettingsDestination(
@@ -128,6 +136,23 @@ SettingsDestination buildSyncBackupDestination() {
               ctx.context,
               ctx.appModel.database,
             ),
+          ),
+        ],
+      ),
+      SettingsSection(
+        title: t.backup_local,
+        items: <SettingsItem>[
+          SettingsCustomItem(
+            id: 'sync.backup_export',
+            icon: Icons.upload_file_outlined,
+            builder: (SettingsContext ctx) =>
+                _BackupExportWidget(settingsContext: ctx),
+          ),
+          SettingsCustomItem(
+            id: 'sync.backup_import',
+            icon: Icons.download_outlined,
+            builder: (SettingsContext ctx) =>
+                _BackupImportWidget(settingsContext: ctx),
           ),
         ],
       ),
@@ -485,6 +510,246 @@ class _WebDavConfigWidgetState extends State<_WebDavConfigWidget> {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ── Backup export widget ─────────────────────────────────────────────
+
+class _BackupExportWidget extends StatefulWidget {
+  const _BackupExportWidget({required this.settingsContext});
+  final SettingsContext settingsContext;
+
+  @override
+  State<_BackupExportWidget> createState() => _BackupExportWidgetState();
+}
+
+class _BackupExportWidgetState extends State<_BackupExportWidget> {
+  bool _isExporting = false;
+
+  Future<void> _export() async {
+    setState(() => _isExporting = true);
+    try {
+      final appModel = widget.settingsContext.appModel;
+      final service = BackupService(
+        db: appModel.database,
+        dbDirectory: appModel.databaseDirectory.path,
+        appVersion: appModel.packageInfo.version,
+      );
+
+      final tmpDir = await getTemporaryDirectory();
+      final filename = service.defaultFilename();
+      final tmpPath = p.join(tmpDir.path, filename);
+      await service.exportBackup(tmpPath);
+
+      if (!mounted) return;
+
+      if (Platform.isAndroid || Platform.isIOS) {
+        await Share.shareXFiles(
+          [XFile(tmpPath, mimeType: 'application/zip')],
+          subject: filename,
+        );
+      } else {
+        final savePath = await FilePicker.platform.saveFile(
+          dialogTitle: t.backup_export,
+          fileName: filename,
+          type: FileType.custom,
+          allowedExtensions: ['zip'],
+        );
+        if (savePath != null) {
+          await File(tmpPath).copy(savePath);
+        }
+        await File(tmpPath).delete();
+      }
+
+      if (mounted) {
+        _showSnackBar(context, t.backup_export_success);
+      }
+    } catch (e) {
+      if (mounted) {
+        _showSnackBar(context, t.backup_export_failed(message: e.toString()));
+      }
+    } finally {
+      if (mounted) setState(() => _isExporting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AdaptiveSettingsRow(
+      title: t.backup_export,
+      subtitle: t.backup_export_hint,
+      icon: Icons.upload_file_outlined,
+      controlBelow: true,
+      trailing: _isExporting
+          ? Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: adaptiveIndicator(context: context, strokeWidth: 2),
+                ),
+                const SizedBox(width: 8),
+                Text(t.backup_exporting),
+              ],
+            )
+          : FilledButton.tonal(
+              onPressed: _export,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  const Icon(Icons.upload_file_outlined, size: 18),
+                  const SizedBox(width: 8),
+                  Text(t.backup_export),
+                ],
+              ),
+            ),
+    );
+  }
+}
+
+// ── Backup import widget ─────────────────────────────────────────────
+
+class _BackupImportWidget extends StatefulWidget {
+  const _BackupImportWidget({required this.settingsContext});
+  final SettingsContext settingsContext;
+
+  @override
+  State<_BackupImportWidget> createState() => _BackupImportWidgetState();
+}
+
+class _BackupImportWidgetState extends State<_BackupImportWidget> {
+  bool _isImporting = false;
+
+  Future<void> _import() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['zip'],
+    );
+    if (result == null || result.files.single.path == null) return;
+    if (!mounted) return;
+
+    setState(() => _isImporting = true);
+    try {
+      final filePath = result.files.single.path!;
+      final appModel = widget.settingsContext.appModel;
+      final service = BackupService(
+        db: appModel.database,
+        dbDirectory: appModel.databaseDirectory.path,
+        appVersion: appModel.packageInfo.version,
+      );
+
+      final meta = await service.validateBackup(filePath);
+      if (meta == null) {
+        if (mounted) _showSnackBar(context, t.backup_import_invalid);
+        return;
+      }
+
+      if (meta.schemaVersion > appModel.database.schemaVersion) {
+        if (mounted) {
+          _showSnackBar(
+            context,
+            t.backup_schema_newer(version: meta.schemaVersion.toString()),
+          );
+        }
+        return;
+      }
+
+      if (!mounted) return;
+
+      final confirmed = await _showConfirmDialog(meta);
+      if (confirmed != true || !mounted) return;
+
+      await appModel.closeDatabase();
+      await BackupService.importBackupFiles(
+        dbDirectory: appModel.databaseDirectory.path,
+        zipPath: filePath,
+      );
+
+      if (mounted) {
+        _showSnackBar(context, t.backup_import_success);
+      }
+
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+      if (Platform.isAndroid || Platform.isIOS) {
+        FlutterExitApp.exitApp();
+      } else {
+        exit(0);
+      }
+    } catch (e) {
+      if (mounted) {
+        _showSnackBar(context, t.backup_import_failed(message: e.toString()));
+      }
+      // DB is already closed — must exit regardless to avoid dead state.
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+      if (Platform.isAndroid || Platform.isIOS) {
+        FlutterExitApp.exitApp();
+      } else {
+        exit(0);
+      }
+    } finally {
+      if (mounted) setState(() => _isImporting = false);
+    }
+  }
+
+  Future<bool?> _showConfirmDialog(BackupMeta meta) {
+    final dateStr =
+        '${meta.createdAt.year}-${meta.createdAt.month.toString().padLeft(2, '0')}-${meta.createdAt.day.toString().padLeft(2, '0')}';
+    return showAppDialog<bool>(
+      context: context,
+      builder: (BuildContext ctx) => adaptiveAlertDialog(
+        context: ctx,
+        title: Text(t.backup_import_confirm_title),
+        content: Text(
+          t.backup_import_confirm(
+            date: dateStr,
+            bookCount: meta.bookCount.toString(),
+            statsCount: meta.statsCount.toString(),
+          ),
+        ),
+        actions: <Widget>[
+          adaptiveDialogAction(
+            context: ctx,
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(t.dialog_cancel),
+          ),
+          adaptiveDialogAction(
+            context: ctx,
+            isDefaultAction: true,
+            isDestructiveAction: true,
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(t.dialog_ok),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AdaptiveSettingsRow(
+      title: t.backup_import,
+      subtitle: t.backup_import_hint,
+      icon: Icons.download_outlined,
+      controlBelow: true,
+      trailing: _isImporting
+          ? SizedBox(
+              width: 24,
+              height: 24,
+              child: adaptiveIndicator(context: context, strokeWidth: 2),
+            )
+          : FilledButton.tonal(
+              onPressed: _import,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  const Icon(Icons.download_outlined, size: 18),
+                  const SizedBox(width: 8),
+                  Text(t.backup_import),
+                ],
+              ),
+            ),
     );
   }
 }

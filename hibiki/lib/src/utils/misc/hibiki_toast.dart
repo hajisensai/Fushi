@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
+import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 
 export 'package:fluttertoast/fluttertoast.dart' show Toast, ToastGravity;
 
@@ -114,6 +115,7 @@ class _DesktopToastWidgetState extends State<_DesktopToastWidget>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final tokens = HibikiDesignTokens.of(context);
     return Positioned(
       bottom: 50,
       left: 0,
@@ -128,14 +130,13 @@ class _DesktopToastWidgetState extends State<_DesktopToastWidget>
               decoration: BoxDecoration(
                 color:
                     widget.backgroundColor ?? theme.colorScheme.inverseSurface,
-                borderRadius: BorderRadius.circular(24),
+                borderRadius: tokens.radii.controlRadius,
               ),
               child: Text(
                 widget.msg,
                 textAlign: TextAlign.center,
-                style: TextStyle(
+                style: tokens.type.controlLabel.copyWith(
                   color: widget.textColor ?? theme.colorScheme.onInverseSurface,
-                  fontSize: 14,
                 ),
               ),
             ),

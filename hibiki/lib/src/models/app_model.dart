@@ -2330,10 +2330,16 @@ class AppModel with ChangeNotifier {
   /// Direct access to the Drift database instance.
   HibikiDatabase get database => _database;
 
-  /// Safely shutdown and stop database operations.
-  Future<void> shutdown() async {
+  /// Close the database and notify listeners, without exiting the app.
+  Future<void> closeDatabase() async {
+    _isInitialised = false;
     databaseCloseNotifier.notifyListeners();
     await _database.close();
+  }
+
+  /// Safely shutdown and stop database operations.
+  Future<void> shutdown() async {
+    await closeDatabase();
     if (Platform.isAndroid || Platform.isIOS) {
       FlutterExitApp.exitApp();
     } else {
