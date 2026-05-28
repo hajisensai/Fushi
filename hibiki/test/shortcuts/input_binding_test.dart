@@ -103,7 +103,8 @@ void main() {
     test('deserialize', () {
       expect(GamepadBinding.deserialize('A')?.button, GamepadButton.a);
       expect(GamepadBinding.deserialize('RB')?.button, GamepadButton.rb);
-      expect(GamepadBinding.deserialize('DpadLeft')?.button, GamepadButton.dpadLeft);
+      expect(GamepadBinding.deserialize('DpadLeft')?.button,
+          GamepadButton.dpadLeft);
     });
 
     test('deserialize returns null for unknown', () {

@@ -147,13 +147,13 @@ void main() {
       reg.loadDefaults(TargetPlatform.windows);
       reg.loadFromJson(partial);
       expect(
-        reg.resolveKeyboard(LogicalKeyboardKey.keyN, modifiers: {},
-            scope: ShortcutScope.reader),
+        reg.resolveKeyboard(LogicalKeyboardKey.keyN,
+            modifiers: {}, scope: ShortcutScope.reader),
         ShortcutAction.readerPageForward,
       );
       expect(
-        reg.resolveKeyboard(LogicalKeyboardKey.pageUp, modifiers: {},
-            scope: ShortcutScope.reader),
+        reg.resolveKeyboard(LogicalKeyboardKey.pageUp,
+            modifiers: {}, scope: ShortcutScope.reader),
         ShortcutAction.readerPageBackward,
       );
     });

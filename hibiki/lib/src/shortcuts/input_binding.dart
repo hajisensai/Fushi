@@ -54,10 +54,10 @@ enum ModifierKey {
 
 @immutable
 class InputBinding {
-  InputBinding({
+  const InputBinding({
     required this.key,
-    Set<ModifierKey>? modifiers,
-  }) : modifiers = modifiers ?? const {};
+    this.modifiers = const {},
+  });
 
   final LogicalKeyboardKey key;
   final Set<ModifierKey> modifiers;
@@ -156,8 +156,7 @@ class InputBinding {
     LogicalKeyboardKey.gameButtonSelect: 'GameSelect',
   };
 
-  String _keyLabel(LogicalKeyboardKey k) =>
-      _knownKeys[k] ?? k.keyLabel;
+  String _keyLabel(LogicalKeyboardKey k) => _knownKeys[k] ?? k.keyLabel;
 
   String serialize() {
     final sortedMods = modifiers.toList()

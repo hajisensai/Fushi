@@ -3,7 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 import 'package:hibiki/src/shortcuts/shortcut_defaults.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart' hide ModifierKey;
-import 'package:hibiki/src/shortcuts/input_binding.dart' as bindings show ModifierKey;
+import 'package:hibiki/src/shortcuts/input_binding.dart' as bindings
+    show ModifierKey;
 
 void main() {
   group('ShortcutDefaults', () {
@@ -33,13 +34,13 @@ void main() {
       final mac = ShortcutDefaults.forPlatform(TargetPlatform.macOS);
       final homeBooks = mac[ShortcutAction.homeTabBooks]!;
       expect(
-        homeBooks.keyboardBindings.any(
-            (b) => b.modifiers.contains(bindings.ModifierKey.meta)),
+        homeBooks.keyboardBindings
+            .any((b) => b.modifiers.contains(bindings.ModifierKey.meta)),
         isTrue,
       );
       expect(
-        homeBooks.keyboardBindings.any(
-            (b) => b.modifiers.contains(bindings.ModifierKey.ctrl)),
+        homeBooks.keyboardBindings
+            .any((b) => b.modifiers.contains(bindings.ModifierKey.ctrl)),
         isFalse,
       );
     });
@@ -48,8 +49,8 @@ void main() {
       final win = ShortcutDefaults.forPlatform(TargetPlatform.windows);
       final homeBooks = win[ShortcutAction.homeTabBooks]!;
       expect(
-        homeBooks.keyboardBindings.any(
-            (b) => b.modifiers.contains(bindings.ModifierKey.ctrl)),
+        homeBooks.keyboardBindings
+            .any((b) => b.modifiers.contains(bindings.ModifierKey.ctrl)),
         isTrue,
       );
     });

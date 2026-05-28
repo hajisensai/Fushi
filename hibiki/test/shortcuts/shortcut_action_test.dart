@@ -31,7 +31,8 @@ void main() {
     });
 
     test('actionsForScope filters correctly', () {
-      final readerActions = ShortcutAction.actionsForScope(ShortcutScope.reader);
+      final readerActions =
+          ShortcutAction.actionsForScope(ShortcutScope.reader);
       expect(readerActions, isNotEmpty);
       for (final action in readerActions) {
         expect(action.scope, ShortcutScope.reader);

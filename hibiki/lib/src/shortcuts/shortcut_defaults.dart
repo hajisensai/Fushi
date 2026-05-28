@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:hibiki/src/shortcuts/input_binding.dart';
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
@@ -32,7 +31,7 @@ class ShortcutDefaults {
       );
 
   static InputBinding _key(LogicalKeyboardKey key,
-          [Set<ModifierKey>? modifiers]) =>
+          [Set<ModifierKey> modifiers = const {}]) =>
       InputBinding(key: key, modifiers: modifiers);
 
   static const _gRB = GamepadBinding(GamepadButton.rb);
@@ -50,22 +49,34 @@ class ShortcutDefaults {
       _key(LogicalKeyboardKey.arrowRight),
       _key(LogicalKeyboardKey.arrowDown),
       _key(LogicalKeyboardKey.space),
-    ], [_gRB, _gDpadRight]),
+    ], [
+      _gRB,
+      _gDpadRight
+    ]),
     ShortcutAction.readerPageBackward: _kb([
       _key(LogicalKeyboardKey.pageUp),
       _key(LogicalKeyboardKey.arrowLeft),
       _key(LogicalKeyboardKey.arrowUp),
       _key(LogicalKeyboardKey.space, {ModifierKey.shift}),
-    ], [_gLB, _gDpadLeft]),
+    ], [
+      _gLB,
+      _gDpadLeft
+    ]),
     ShortcutAction.readerToggleChrome: _kb([
       _key(LogicalKeyboardKey.escape),
-    ], [_gY]),
+    ], [
+      _gY
+    ]),
     ShortcutAction.readerDismissDict: _kb([
       _key(LogicalKeyboardKey.escape),
-    ], [_gB]),
+    ], [
+      _gB
+    ]),
     ShortcutAction.readerToggleBookmark: _kb([
       _key(LogicalKeyboardKey.keyD, {ModifierKey.ctrl}),
-    ], [_gX]),
+    ], [
+      _gX
+    ]),
     ShortcutAction.homeTabBooks: _kb([
       _key(LogicalKeyboardKey.digit1, {ModifierKey.ctrl}),
     ]),
@@ -80,16 +91,24 @@ class ShortcutDefaults {
     ]),
     ShortcutAction.globalBack: _kb([
       _key(LogicalKeyboardKey.arrowLeft, {ModifierKey.alt}),
-    ], [_gB]),
+    ], [
+      _gB
+    ]),
     ShortcutAction.audiobookPlayPause: _kb([
       _key(LogicalKeyboardKey.space, {ModifierKey.ctrl}),
-    ], [_gA]),
+    ], [
+      _gA
+    ]),
     ShortcutAction.audiobookNextSentence: _kb([
       _key(LogicalKeyboardKey.arrowRight, {ModifierKey.ctrl}),
-    ], [_gRB]),
+    ], [
+      _gRB
+    ]),
     ShortcutAction.audiobookPrevSentence: _kb([
       _key(LogicalKeyboardKey.arrowLeft, {ModifierKey.ctrl}),
-    ], [_gLB]),
+    ], [
+      _gLB
+    ]),
   };
 
   static final Map<ShortcutAction, ShortcutBindingSet> _macOS = {
