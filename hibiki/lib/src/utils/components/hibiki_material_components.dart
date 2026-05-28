@@ -640,6 +640,50 @@ class HibikiModalSheetFrame extends StatelessWidget {
   }
 }
 
+class HibikiDialogFrame extends StatelessWidget {
+  const HibikiDialogFrame({
+    required this.child,
+    super.key,
+    this.maxWidth = 420,
+    this.maxHeightFactor = 0.82,
+    this.insetPadding = const EdgeInsets.symmetric(
+      horizontal: 40,
+      vertical: 24,
+    ),
+    this.padding = EdgeInsets.zero,
+    this.scrollable = true,
+  });
+
+  final Widget child;
+  final double maxWidth;
+  final double maxHeightFactor;
+  final EdgeInsets insetPadding;
+  final EdgeInsetsGeometry padding;
+  final bool scrollable;
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final double screenHeight = MediaQuery.sizeOf(context).height;
+    final Widget padded = Padding(
+      padding: padding,
+      child: child,
+    );
+    return Dialog(
+      clipBehavior: Clip.antiAlias,
+      insetPadding: insetPadding,
+      shape: RoundedRectangleBorder(borderRadius: tokens.radii.dialogRadius),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: maxWidth,
+          maxHeight: screenHeight * maxHeightFactor,
+        ),
+        child: scrollable ? SingleChildScrollView(child: padded) : padded,
+      ),
+    );
+  }
+}
+
 enum HibikiColorSwatchShape { block, dot }
 
 class HibikiColorSwatch extends StatelessWidget {

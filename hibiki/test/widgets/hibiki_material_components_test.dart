@@ -280,6 +280,27 @@ void main() {
     expect(find.text('Long sheet'), findsOneWidget);
   });
 
+  testWidgets('HibikiDialogFrame owns MD3 dialog shell chrome', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      buildSubject(
+        const HibikiDialogFrame(
+          child: Text('Dialog body'),
+        ),
+      ),
+    );
+
+    final Dialog dialog = tester.widget<Dialog>(find.byType(Dialog));
+    final RoundedRectangleBorder shape =
+        dialog.shape! as RoundedRectangleBorder;
+
+    expect(find.text('Dialog body'), findsOneWidget);
+    expect(shape.borderRadius, BorderRadius.circular(28));
+    expect(dialog.clipBehavior, Clip.antiAlias);
+    expect(find.byType(SingleChildScrollView), findsOneWidget);
+  });
+
   testWidgets('HibikiPopupSurface can render a borderless popup shell',
       (WidgetTester tester) async {
     await tester.pumpWidget(

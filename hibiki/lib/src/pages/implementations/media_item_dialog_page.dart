@@ -194,129 +194,118 @@ class MediaItemDialogFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final screenHeight = MediaQuery.sizeOf(context).height;
-    final cs = Theme.of(context).colorScheme;
-    final tt = Theme.of(context).textTheme;
+    final double screenHeight = MediaQuery.sizeOf(context).height;
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final ColorScheme colors = Theme.of(context).colorScheme;
 
-    return Dialog(
-      clipBehavior: Clip.antiAlias,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: 420,
-          maxHeight: screenHeight * 0.82,
-        ),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // -- Cover --
-              if (cover != null)
-                ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxHeight: screenHeight * 0.28,
-                  ),
-                  child: Container(
-                    color: cs.surfaceContainerHighest,
-                    child: cover,
-                  ),
-                ),
-
-              // -- Text + actions area --
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Title
-                    Text(
-                      title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: tt.titleMedium,
-                    ),
-
-                    // Author
-                    if (author != null) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        author!,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: tt.bodySmall?.copyWith(
-                          color: cs.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-
-                    const SizedBox(height: 16),
-
-                    // Primary action (Read)
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton(
-                        onPressed: onLaunch,
-                        child: Text(launchLabel),
-                      ),
-                    ),
-
-                    // Quick actions
-                    if (quickActions.isNotEmpty) ...[
-                      const SizedBox(height: 12),
-                      _buildQuickActions(),
-                    ],
-
-                    // List actions
-                    if (listActions.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      const HibikiDivider(),
-                      for (final action in listActions)
-                        HibikiListItem(
-                          minHeight: 44,
-                          padding: EdgeInsets.zero,
-                          title: Text(action.label),
-                          trailing: Icon(
-                            Icons.chevron_right,
-                            color: cs.onSurfaceVariant,
-                          ),
-                          onTap: action.onPressed,
-                        ),
-                    ],
-
-                    // Danger actions
-                    if (dangerActions.isNotEmpty) ...[
-                      const HibikiDivider(),
-                      const SizedBox(height: 4),
-                      for (final action in dangerActions)
-                        Center(
-                          child: TextButton(
-                            onPressed: action.onPressed,
-                            style: TextButton.styleFrom(
-                              foregroundColor:
-                                  action.muted ? cs.onSurfaceVariant : cs.error,
-                            ),
-                            child: Text(action.label),
-                          ),
-                        ),
-                    ],
-                  ],
-                ),
+    return HibikiDialogFrame(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          if (cover != null)
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: screenHeight * 0.28,
               ),
-            ],
+              child: ColoredBox(
+                color: tokens.surfaces.overlay,
+                child: cover!,
+              ),
+            ),
+          Padding(
+            padding: EdgeInsets.fromLTRB(
+              tokens.spacing.card + 4,
+              tokens.spacing.card,
+              tokens.spacing.card + 4,
+              tokens.spacing.card - 4,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: tokens.type.listTitle.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                if (author != null) ...<Widget>[
+                  SizedBox(height: tokens.spacing.gap / 2),
+                  Text(
+                    author!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: tokens.type.listSubtitle,
+                  ),
+                ],
+                SizedBox(height: tokens.spacing.card),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: onLaunch,
+                    child: Text(
+                      launchLabel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
+                if (quickActions.isNotEmpty) ...<Widget>[
+                  SizedBox(height: tokens.spacing.gap + 4),
+                  _buildQuickActions(tokens),
+                ],
+                if (listActions.isNotEmpty) ...<Widget>[
+                  SizedBox(height: tokens.spacing.gap / 2),
+                  const HibikiDivider(),
+                  for (final DialogListAction action in listActions)
+                    HibikiListItem(
+                      minHeight: 44,
+                      padding: EdgeInsets.zero,
+                      title: Text(action.label),
+                      trailing: Icon(
+                        Icons.chevron_right,
+                        color: colors.onSurfaceVariant,
+                      ),
+                      onTap: action.onPressed,
+                    ),
+                ],
+                if (dangerActions.isNotEmpty) ...<Widget>[
+                  const HibikiDivider(),
+                  SizedBox(height: tokens.spacing.gap / 2),
+                  for (final DialogDangerAction action in dangerActions)
+                    Center(
+                      child: TextButton(
+                        onPressed: action.onPressed,
+                        style: TextButton.styleFrom(
+                          foregroundColor: action.muted
+                              ? colors.onSurfaceVariant
+                              : colors.error,
+                        ),
+                        child: Text(
+                          action.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ),
+                ],
+              ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
 
-  Widget _buildQuickActions() {
+  Widget _buildQuickActions(HibikiDesignTokens tokens) {
     return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: [
-        for (final action in quickActions)
+      spacing: tokens.spacing.gap,
+      runSpacing: tokens.spacing.gap,
+      children: <Widget>[
+        for (final DialogQuickAction action in quickActions)
           HibikiActionChip(
             label: action.label,
             icon: action.icon,

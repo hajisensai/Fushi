@@ -29,6 +29,7 @@ void main() {
       'class HibikiTransientScaffold',
       'class HibikiOverlayScaffold',
       'class HibikiModalSheetFrame',
+      'class HibikiDialogFrame',
       'class HibikiOverflowMenu',
       'class HibikiFilePickerRow',
       'class HibikiLogPanel',
@@ -103,6 +104,7 @@ void main() {
     'lib/src/pages/implementations/media_item_dialog_page.dart': <String>[
       'HibikiListItem',
       'HibikiActionChip',
+      'HibikiDialogFrame',
     ],
     'lib/src/utils/misc/update_checker.dart': <String>[
       'HibikiCard',
@@ -336,6 +338,9 @@ void main() {
         'fontSize: 10',
       ],
       'lib/src/pages/implementations/media_item_dialog_page.dart': <String>[
+        'return Dialog(',
+        '=> Dialog(',
+        'SingleChildScrollView(',
         'ListTile(',
         'dense: true',
         '_QuickActionChip',
