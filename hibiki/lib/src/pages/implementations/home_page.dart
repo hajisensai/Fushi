@@ -118,8 +118,7 @@ class _HomePageState extends BasePageState<HomePage>
       modifiers.add(ModifierKey.meta);
     }
 
-    final ShortcutAction? action =
-        appModel.shortcutRegistry.resolveKeyboard(
+    final ShortcutAction? action = appModel.shortcutRegistry.resolveKeyboard(
           event.logicalKey,
           modifiers: modifiers,
           scope: ShortcutScope.home,

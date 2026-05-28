@@ -331,12 +331,18 @@ class _EditBindingDialogState extends State<_EditBindingDialog> {
       exclude: widget.action,
     );
 
+    if (conflict != null) {
+      setState(() {
+        _capturing = false;
+        _conflictWarning = t.shortcut_conflict(s: _actionLabel(conflict));
+      });
+      return;
+    }
+
     setState(() {
       _keyboard.add(binding);
       _capturing = false;
-      _conflictWarning = conflict != null
-          ? t.shortcut_conflict.replaceAll('{s}', _actionLabel(conflict))
-          : null;
+      _conflictWarning = null;
     });
   }
 
@@ -350,11 +356,16 @@ class _EditBindingDialogState extends State<_EditBindingDialog> {
       exclude: widget.action,
     );
 
+    if (conflict != null) {
+      setState(() {
+        _conflictWarning = t.shortcut_conflict(s: _actionLabel(conflict));
+      });
+      return;
+    }
+
     setState(() {
       _gamepad.add(binding);
-      _conflictWarning = conflict != null
-          ? t.shortcut_conflict.replaceAll('{s}', _actionLabel(conflict))
-          : null;
+      _conflictWarning = null;
     });
   }
 

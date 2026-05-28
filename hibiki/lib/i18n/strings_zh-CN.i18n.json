@@ -1137,7 +1137,7 @@
     "shortcut_action_audiobook_prev_sentence": "上一句",
     "shortcut_press_key": "请按下快捷键组合...",
     "shortcut_press_gamepad": "请按下手柄按钮...",
-    "shortcut_conflict": "已被占用：{s}",
+    "shortcut_conflict": "已被占用：$s",
     "shortcut_reset_defaults": "恢复默认",
     "shortcut_reset_confirm": "确定要将此部分的所有快捷键恢复为默认值吗？",
     "shortcut_keyboard": "键盘",

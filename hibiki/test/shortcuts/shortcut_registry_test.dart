@@ -181,5 +181,55 @@ void main() {
         ShortcutAction.readerPageForward,
       );
     });
+
+    test('resolveKeyboard Escape returns first matching action by enum order',
+        () {
+      // Both readerToggleChrome and readerDismissDict bind to Escape.
+      // resolveKeyboard returns the first match in enum declaration order.
+      final result = registry.resolveKeyboard(
+        LogicalKeyboardKey.escape,
+        modifiers: {},
+        scope: ShortcutScope.reader,
+      );
+      expect(result, ShortcutAction.readerToggleChrome);
+    });
+
+    test('loadFromJson preserves unknown action keys for forward compatibility',
+        () {
+      final jsonWithUnknown = <String, dynamic>{
+        'reader_page_forward': {
+          'keyboard': ['PageDown'],
+          'gamepad': <String>[],
+        },
+        'future_action_v99': {
+          'keyboard': ['F13'],
+          'gamepad': ['A'],
+        },
+      };
+      final reg = HibikiShortcutRegistry();
+      reg.loadDefaults(TargetPlatform.windows);
+      reg.loadFromJson(jsonWithUnknown);
+
+      final exported = reg.toJson();
+      expect(exported.containsKey('future_action_v99'), isTrue);
+      final preserved = exported['future_action_v99'] as Map<String, dynamic>;
+      expect((preserved['keyboard'] as List).contains('F13'), isTrue);
+    });
+
+    test('resetToDefaults clears unknown entries', () {
+      final jsonWithUnknown = <String, dynamic>{
+        'future_action_v99': {
+          'keyboard': ['F13'],
+          'gamepad': <String>[],
+        },
+      };
+      final reg = HibikiShortcutRegistry();
+      reg.loadDefaults(TargetPlatform.windows);
+      reg.loadFromJson(jsonWithUnknown);
+      expect(reg.toJson().containsKey('future_action_v99'), isTrue);
+
+      reg.resetToDefaults(TargetPlatform.windows);
+      expect(reg.toJson().containsKey('future_action_v99'), isFalse);
+    });
   });
 }

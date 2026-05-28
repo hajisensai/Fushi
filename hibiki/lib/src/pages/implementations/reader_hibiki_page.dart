@@ -3004,8 +3004,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
       modifiers.add(ModifierKey.meta);
     }
 
-    final ShortcutAction? action =
-        appModel.shortcutRegistry.resolveKeyboard(
+    final ShortcutAction? action = appModel.shortcutRegistry.resolveKeyboard(
           event.logicalKey,
           modifiers: modifiers,
           scope: ShortcutScope.reader,
@@ -3035,10 +3034,15 @@ window.flutter_inappwebview.callHandler('spreadReady');
         }
         return KeyEventResult.ignored;
       case ShortcutAction.readerToggleChrome:
+        if (isDictionaryShown) {
+          clearDictionaryResult();
+          return KeyEventResult.handled;
+        }
         _toggleChrome();
         return KeyEventResult.handled;
       case ShortcutAction.readerToggleBookmark:
-        return KeyEventResult.ignored;
+        _addBookmarkAtCurrentPosition();
+        return KeyEventResult.handled;
       case ShortcutAction.audiobookPlayPause:
         _audiobookController?.togglePlayPause();
         return KeyEventResult.handled;

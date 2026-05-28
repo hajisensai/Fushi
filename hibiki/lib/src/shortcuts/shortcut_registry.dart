@@ -8,6 +8,7 @@ import 'package:hibiki/src/shortcuts/shortcut_defaults.dart';
 
 class HibikiShortcutRegistry extends ChangeNotifier {
   final Map<ShortcutAction, ShortcutBindingSet> _bindings = {};
+  final Map<String, dynamic> _unknownEntries = {};
 
   ShortcutBindingSet bindingsFor(ShortcutAction action) =>
       _bindings[action] ?? const ShortcutBindingSet();
@@ -16,12 +17,16 @@ class HibikiShortcutRegistry extends ChangeNotifier {
     _bindings
       ..clear()
       ..addAll(ShortcutDefaults.forPlatform(platform));
+    _unknownEntries.clear();
   }
 
   void loadFromJson(Map<String, dynamic> json) {
     for (final entry in json.entries) {
       final action = ShortcutAction.fromKey(entry.key);
-      if (action == null) continue;
+      if (action == null) {
+        _unknownEntries[entry.key] = entry.value;
+        continue;
+      }
       final value = entry.value;
       if (value is Map<String, dynamic>) {
         _bindings[action] = ShortcutBindingSet.fromJson(value);
@@ -34,6 +39,7 @@ class HibikiShortcutRegistry extends ChangeNotifier {
     return {
       for (final entry in _bindings.entries)
         entry.key.key: entry.value.toJson(),
+      ..._unknownEntries,
     };
   }
 

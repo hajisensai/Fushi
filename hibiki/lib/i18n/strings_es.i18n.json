@@ -1137,7 +1137,7 @@
     "shortcut_action_audiobook_prev_sentence": "Previous Sentence",
     "shortcut_press_key": "Press a key combination...",
     "shortcut_press_gamepad": "Press a gamepad button...",
-    "shortcut_conflict": "Already used by: {s}",
+    "shortcut_conflict": "Already used by: $s",
     "shortcut_reset_defaults": "Reset to Defaults",
     "shortcut_reset_confirm": "Reset all shortcuts in this section to defaults?",
     "shortcut_keyboard": "Keyboard",
