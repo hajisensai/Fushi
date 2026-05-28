@@ -1,7 +1,6 @@
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
-import 'package:hibiki/src/utils/spacing.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
 
@@ -54,25 +53,46 @@ class _ExampleSentencesDialogPageState
 
   @override
   Widget build(BuildContext context) {
-    return adaptiveAlertDialog(
-      context: context,
-      contentPadding: MediaQuery.of(context).orientation == Orientation.portrait
-          ? Spacing.of(context).insets.all.big
-          : Spacing.of(context).insets.all.normal,
-      content: buildContent(),
-      actions: widget.exampleSentences.isEmpty ? null : actions,
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
+    return HibikiDialogFrame(
+      maxWidth: 720,
+      maxHeightFactor: 0.82,
+      scrollable: false,
+      child: HibikiModalSheetFrame(
+        title: t.creator_enhancement_sentence_picker,
+        leadingIcon: Icons.format_quote_outlined,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          widget.exampleSentences.isEmpty
+              ? tokens.spacing.card
+              : tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: buildContent(),
+        footer: widget.exampleSentences.isEmpty
+            ? null
+            : Wrap(
+                alignment: WrapAlignment.end,
+                spacing: tokens.spacing.gap,
+                runSpacing: tokens.spacing.gap,
+                children: actions,
+              ),
+      ),
     );
   }
 
   Widget buildEmptyMessage() {
-    return Padding(
-      padding: EdgeInsets.only(
-        bottom: Spacing.of(context).spaces.normal,
-      ),
-      child: HibikiPlaceholderMessage(
-        icon: Icons.search_off,
-        message: t.no_sentences_found,
-      ),
+    return HibikiPlaceholderMessage(
+      icon: Icons.search_off,
+      message: t.no_sentences_found,
     );
   }
 
@@ -99,39 +119,23 @@ class _ExampleSentencesDialogPageState
               MediaQuery.of(context).orientation == Orientation.portrait
                   ? 1
                   : 3),
+      mainAxisSpacing: HibikiDesignTokens.of(context).spacing.gap,
+      crossAxisSpacing: HibikiDesignTokens.of(context).spacing.gap,
       itemCount: widget.exampleSentences.length,
       itemBuilder: (context, index) {
         String sentence = widget.exampleSentences[index];
 
-        return GestureDetector(
-          onTap: () {
-            _valuesSelected[index]!.value = !_valuesSelected[index]!.value;
+        return ValueListenableBuilder<bool>(
+          valueListenable: _valuesSelected[index]!,
+          builder: (context, value, child) {
+            return _SentenceCard(
+              sentence: sentence,
+              selected: value,
+              onTap: () {
+                _valuesSelected[index]!.value = !_valuesSelected[index]!.value;
+              },
+            );
           },
-          child: ValueListenableBuilder<bool>(
-            valueListenable: _valuesSelected[index]!,
-            builder: (context, value, child) {
-              return Container(
-                padding: EdgeInsets.symmetric(
-                  vertical: Spacing.of(context).spaces.small,
-                  horizontal: Spacing.of(context).spaces.semiSmall,
-                ),
-                margin: EdgeInsets.only(
-                  top: Spacing.of(context).spaces.normal,
-                  right: Spacing.of(context).spaces.normal,
-                ),
-                color: _valuesSelected[index]!.value
-                    ? theme.colorScheme.primary.withValues(alpha: 0.3)
-                    : theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.1),
-                child: Text(
-                  sentence,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w500,
-                    fontSize: textTheme.titleMedium?.fontSize,
-                  ),
-                ),
-              );
-            },
-          ),
         );
       },
     );
@@ -178,5 +182,37 @@ class _ExampleSentencesDialogPageState
   void executeSelect() {
     Navigator.pop(context);
     widget.onSelect(selection);
+  }
+}
+
+class _SentenceCard extends StatelessWidget {
+  const _SentenceCard({
+    required this.sentence,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String sentence;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final ColorScheme colors = Theme.of(context).colorScheme;
+
+    return HibikiCard(
+      onTap: onTap,
+      padding: EdgeInsets.all(tokens.spacing.card),
+      color: selected ? colors.primaryContainer : null,
+      borderColor: selected ? colors.primary : null,
+      child: Text(
+        sentence,
+        style: tokens.type.listTitle.copyWith(
+          color: selected ? colors.onPrimaryContainer : null,
+          fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+        ),
+      ),
+    );
   }
 }
