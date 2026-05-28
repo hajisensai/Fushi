@@ -1232,6 +1232,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   String _buildReaderSetupScript({String? sasayakiCuesJson}) {
     final ReaderSettings s = _settings!;
     final String selectionJs = ReaderSelectionScripts.source();
+    final Size screenSize = MediaQuery.of(context).size;
     final String paginationJs = _stripScriptTags(
       ReaderPaginationScripts.shellScript(
         initialProgress: _initialProgress,
@@ -1243,6 +1244,8 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         chromeBottomInset: _showChrome
             ? _readerChromeHeight + _stableBottomInset
             : _stableBottomInset,
+        dartPageWidth: screenSize.width,
+        dartPageHeight: screenSize.height,
       ),
     );
 

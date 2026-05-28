@@ -100,6 +100,8 @@ class ReaderPaginationScripts {
     String? initialFragment,
     double chromeTopInset = 0.0,
     double chromeBottomInset = 0.0,
+    double? dartPageWidth,
+    double? dartPageHeight,
   }) {
     if (continuousMode) {
       return _continuousShellScript(
@@ -108,6 +110,8 @@ class ReaderPaginationScripts {
         initialFragment: initialFragment,
         chromeTopInset: chromeTopInset,
         chromeBottomInset: chromeBottomInset,
+        dartPageWidth: dartPageWidth,
+        dartPageHeight: dartPageHeight,
       );
     }
     return _paginatedShellScript(
@@ -117,6 +121,8 @@ class ReaderPaginationScripts {
       initialFragment: initialFragment,
       chromeTopInset: chromeTopInset,
       chromeBottomInset: chromeBottomInset,
+      dartPageWidth: dartPageWidth,
+      dartPageHeight: dartPageHeight,
     );
   }
 
@@ -503,6 +509,8 @@ if (document.readyState === 'complete') {
     String? initialFragment,
     double chromeTopInset = 0.0,
     double chromeBottomInset = 0.0,
+    double? dartPageWidth,
+    double? dartPageHeight,
   }) {
     final String initialRestoreScript = initialFragment != null
         ? 'window.hoshiReader.jumpToFragment(${_jsStringLiteral(initialFragment)});'
@@ -879,9 +887,11 @@ $_sharedJs
     var aligned;
     if (hintScroll !== undefined) {
       var origPage = Math.round(hintScroll / context.columnPitch);
+      console.log('[HINT_DBG] scrollToCharOffset charOffset=' + charOffset + ' scrollOffset=' + scrollOffset.toFixed(1) + ' pitch=' + context.columnPitch + ' charPage=' + charPage + ' origPage=' + origPage + ' delta=' + Math.abs(charPage - origPage));
       aligned = (Math.abs(charPage - origPage) <= 1)
         ? origPage * context.columnPitch
         : charPage * context.columnPitch;
+      console.log('[HINT_DBG] decision: ' + (Math.abs(charPage - origPage) <= 1 ? 'STAY origPage=' + origPage : 'JUMP charPage=' + charPage) + ' aligned=' + aligned);
     } else {
       aligned = charPage * context.columnPitch;
     }
@@ -889,12 +899,17 @@ $_sharedJs
   },
   setChromeInsets: function(topPx, bottomPx) {
     var charOffset = this.getFirstVisibleCharOffset();
-    var scrollBefore = this.getPagePosition(this.getScrollContext());
+    var context = this.getScrollContext();
+    var scrollBefore = this.getPagePosition(context);
+    var pitchBefore = context.columnPitch;
+    console.log('[HINT_DBG] setChromeInsets top=' + topPx + ' bottom=' + bottomPx + ' charOffset=' + charOffset + ' scrollBefore=' + scrollBefore + ' pitchBefore=' + pitchBefore);
     document.documentElement.style.setProperty('--chrome-top-inset', topPx + 'px');
     document.documentElement.style.setProperty('--chrome-bottom-inset', bottomPx + 'px');
     if (charOffset < 0) return;
     var self = this;
     requestAnimationFrame(function() {
+      var ctx2 = self.getScrollContext();
+      console.log('[HINT_DBG] rAF pitchAfter=' + ctx2.columnPitch + ' scrollTopNow=' + ctx2.scrollEl.scrollTop);
       self.scrollToCharOffset(charOffset, scrollBefore);
     });
   }
@@ -913,8 +928,13 @@ window.hoshiReader.initialize = function() {
   document.documentElement.style.setProperty('--chrome-top-inset', '${chromeTopInset}px');
   document.documentElement.style.setProperty('--chrome-bottom-inset', '${chromeBottomInset}px');
 $_sharedInitViewport
-  var pageHeight = window.innerHeight + $bottomOverlapPx;
-  var pageWidth = window.innerWidth;
+  var dartW = ${dartPageWidth != null ? '${dartPageWidth.round()}' : 'null'};
+  var dartH = ${dartPageHeight != null ? '${dartPageHeight.round()}' : 'null'};
+  var pageWidth = dartW || window.innerWidth;
+  var pageHeight = (dartH || window.innerHeight) + $bottomOverlapPx;
+  console.log('[HoshiInit] dartW=' + dartW + ' dartH=' + dartH
+    + ' innerW=' + window.innerWidth + ' innerH=' + window.innerHeight
+    + ' usedW=' + pageWidth + ' usedH=' + pageHeight);
   document.documentElement.style.setProperty('--page-height', pageHeight + 'px');
   document.documentElement.style.setProperty('--page-width', pageWidth + 'px');
   var cs = this._contentSize();
@@ -965,6 +985,8 @@ $_sharedInitBoot
     String? initialFragment,
     double chromeTopInset = 0.0,
     double chromeBottomInset = 0.0,
+    double? dartPageWidth,
+    double? dartPageHeight,
   }) {
     final String initialRestoreScript = initialFragment != null
         ? 'window.hoshiReader.jumpToFragment(${_jsStringLiteral(initialFragment)});'
@@ -1177,7 +1199,9 @@ window.hoshiReader.initialize = function() {
   document.documentElement.style.setProperty('--chrome-top-inset', '${chromeTopInset}px');
   document.documentElement.style.setProperty('--chrome-bottom-inset', '${chromeBottomInset}px');
 $_sharedInitViewport
-  document.documentElement.style.setProperty('--hoshi-continuous-height', window.innerHeight + 'px');
+  var dartH = ${dartPageHeight != null ? '${dartPageHeight.round()}' : 'null'};
+  var contHeight = dartH || window.innerHeight;
+  document.documentElement.style.setProperty('--hoshi-continuous-height', contHeight + 'px');
   var cs = this._contentSize();
   document.documentElement.style.setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(cs.w * $imageWidthRatio)) + 'px');
   document.documentElement.style.setProperty('--hoshi-image-max-height', Math.max(1, cs.h) + 'px');
