@@ -112,6 +112,7 @@ void main() {
     'lib/src/sync/sync_compare_dialog.dart': <String>[
       'HibikiOverflowMenu',
       'HibikiCard',
+      'HibikiDialogFrame',
     ],
     'lib/src/media/audiobook/book_import_dialog.dart': <String>[
       'AdaptiveSettingsSection',
@@ -350,6 +351,7 @@ void main() {
         'child: Card(',
       ],
       'lib/src/sync/sync_compare_dialog.dart': <String>[
+        'return AlertDialog(',
         'PopupMenuButton',
         'BorderRadius.circular(8)',
       ],

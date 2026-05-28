@@ -426,6 +426,8 @@ class _SyncCompareDialogState extends State<_SyncCompareDialog> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final tokens = HibikiDesignTokens.of(context);
+    final size = MediaQuery.sizeOf(context);
 
     Widget body;
     if (_error != null) {
@@ -467,65 +469,91 @@ class _SyncCompareDialogState extends State<_SyncCompareDialog> {
 
     final applyCount = _actionableCount;
     final canApply = applyCount > 0 && !_applying && _entries != null;
+    final maxWidth = (size.width * 0.7).clamp(400.0, 720.0);
+    final maxBodyHeight = (size.height * 0.7).clamp(400.0, 640.0);
 
-    return AlertDialog(
-      title: Row(
+    return HibikiDialogFrame(
+      maxWidth: maxWidth,
+      scrollable: false,
+      padding: EdgeInsets.all(tokens.spacing.card + 4),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(child: Text(t.sync_compare_title)),
-          if (_entries != null && _entries!.isNotEmpty)
-            HibikiOverflowMenu<SyncChoice>(
-              iconWidget: const Icon(Icons.checklist, size: 20),
-              tooltip: t.sync_compare_select_all,
-              onSelected: (choice) {
-                setState(() {
-                  for (final e in _entries!) {
-                    if (e.bookId != null && e.needsManualChoice) {
-                      _choices[e.title] = choice;
-                    }
-                  }
-                });
-              },
-              items: [
-                PopupMenuItem(
-                  value: SyncChoice.useLocal,
-                  child: Text(t.sync_compare_all_local),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  t.sync_compare_title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: tokens.type.listTitle.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-                PopupMenuItem(
-                  value: SyncChoice.useRemote,
-                  child: Text(t.sync_compare_all_remote),
+              ),
+              if (_entries != null && _entries!.isNotEmpty)
+                HibikiOverflowMenu<SyncChoice>(
+                  iconWidget: const Icon(Icons.checklist, size: 20),
+                  tooltip: t.sync_compare_select_all,
+                  onSelected: (choice) {
+                    setState(() {
+                      for (final e in _entries!) {
+                        if (e.bookId != null && e.needsManualChoice) {
+                          _choices[e.title] = choice;
+                        }
+                      }
+                    });
+                  },
+                  items: [
+                    PopupMenuItem(
+                      value: SyncChoice.useLocal,
+                      child: Text(t.sync_compare_all_local),
+                    ),
+                    PopupMenuItem(
+                      value: SyncChoice.useRemote,
+                      child: Text(t.sync_compare_all_remote),
+                    ),
+                    PopupMenuItem(
+                      value: SyncChoice.skip,
+                      child: Text(t.sync_compare_all_skip),
+                    ),
+                  ],
                 ),
-                PopupMenuItem(
-                  value: SyncChoice.skip,
-                  child: Text(t.sync_compare_all_skip),
-                ),
-              ],
+            ],
+          ),
+          SizedBox(height: tokens.spacing.card),
+          Flexible(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: maxBodyHeight),
+              child: body,
             ),
+          ),
+          SizedBox(height: tokens.spacing.card),
+          OverflowBar(
+            alignment: MainAxisAlignment.end,
+            spacing: tokens.spacing.gap,
+            overflowSpacing: tokens.spacing.gap,
+            children: [
+              TextButton(
+                onPressed: _applying ? null : () => Navigator.pop(context),
+                child: Text(t.dialog_done),
+              ),
+              if (_entries != null && _entries!.isNotEmpty)
+                FilledButton(
+                  onPressed: canApply ? _applyChoices : null,
+                  child: _applying
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Text(t.sync_compare_apply(count: applyCount)),
+                ),
+            ],
+          ),
         ],
       ),
-      content: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxHeight: (MediaQuery.sizeOf(context).height * 0.7).clamp(400, 640),
-          maxWidth: (MediaQuery.sizeOf(context).width * 0.7).clamp(400, 720),
-        ),
-        child: body,
-      ),
-      actions: [
-        TextButton(
-          onPressed: _applying ? null : () => Navigator.pop(context),
-          child: Text(t.dialog_done),
-        ),
-        if (_entries != null && _entries!.isNotEmpty)
-          FilledButton(
-            onPressed: canApply ? _applyChoices : null,
-            child: _applying
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : Text(t.sync_compare_apply(count: applyCount)),
-          ),
-      ],
     );
   }
 
