@@ -40,6 +40,7 @@ void main() {
     /// Necessary to initialise Flutter when running native code before
     /// starting the application.
     final binding = WidgetsFlutterBinding.ensureInitialized();
+    JustAudioMediaKit.title = 'Hibiki';
     JustAudioMediaKit.ensureInitialized();
 
     /// Ensure no pop-in for the app icon.
