@@ -71,7 +71,7 @@ class PlatformServices {
         clipboard: IosClipboardService(),
         permission: IosPermissionService(),
         deviceInfo: IosDeviceInfoService(),
-        createAnkiRepository: AnkiRepository.new,
+        createAnkiRepository: AnkiConnectRepository.new,
       );
     }
     return PlatformServices(
