@@ -72,6 +72,9 @@ void main() {
       'TextEditingController',
       'FocusNode',
     ],
+    'lib/src/pages/base_source_page.dart': <String>[
+      'HibikiPopupSurface',
+    ],
     'lib/src/pages/implementations/reading_statistics_page.dart': <String>[
       'HibikiPageScaffold',
       'HibikiCard',
@@ -98,6 +101,7 @@ void main() {
     ],
     'lib/src/sync/sync_compare_dialog.dart': <String>[
       'HibikiOverflowMenu',
+      'HibikiCard',
     ],
     'lib/src/media/audiobook/book_import_dialog.dart': <String>[
       'AdaptiveSettingsSection',
@@ -276,6 +280,10 @@ void main() {
         'FloatingSearchBarAction',
         'surfaceContainerHigh',
       ],
+      'lib/src/pages/base_source_page.dart': <String>[
+        'DecoratedBox(',
+        'BorderRadius.circular(8)',
+      ],
       'lib/src/pages/implementations/reading_statistics_page.dart': <String>[
         'Card(',
         'surfaceContainerHighest.withValues',
@@ -307,6 +315,7 @@ void main() {
       ],
       'lib/src/sync/sync_compare_dialog.dart': <String>[
         'PopupMenuButton',
+        'BorderRadius.circular(8)',
       ],
       'lib/src/media/audiobook/book_import_dialog.dart': <String>[
         'SwitchListTile',

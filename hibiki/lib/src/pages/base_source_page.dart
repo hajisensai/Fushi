@@ -310,19 +310,14 @@ class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
     final pos = _calculatePopupPosition(_pendingSelectionRect!, screen);
     final effectiveCs = (appModel.overrideDictionaryTheme ?? theme).colorScheme;
     final fillColor = appModel.overrideDictionaryColor ?? effectiveCs.surface;
-    final borderColor = effectiveCs.outlineVariant;
 
     return Positioned(
       left: pos.left,
       top: pos.top,
       width: pos.width,
       height: pos.height,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: fillColor,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: borderColor),
-        ),
+      child: HibikiPopupSurface(
+        color: fillColor,
         child: Column(
           children: [
             LinearProgressIndicator(

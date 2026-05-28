@@ -557,15 +557,13 @@ class _SyncCompareDialogState extends State<_SyncCompareDialog> {
     final choice = _choices[entry.title] ?? SyncChoice.skip;
     final isConflict = entry.hasConflict;
 
-    return Container(
-      decoration: isConflict
-          ? BoxDecoration(
-              color: theme.colorScheme.errorContainer.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(8),
-            )
-          : null,
+    return HibikiCard(
+      color: isConflict
+          ? theme.colorScheme.errorContainer.withValues(alpha: 0.15)
+          : Colors.transparent,
       margin: const EdgeInsets.symmetric(vertical: 2),
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+      borderColor: isConflict ? theme.colorScheme.errorContainer : null,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
