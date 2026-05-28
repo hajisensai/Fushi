@@ -237,10 +237,13 @@ enum GamepadButton {
   const GamepadButton(this.label);
   final String label;
 
+  // D-Pad buttons share LogicalKeyboardKey with the arrow keys, so this reverse
+  // map intentionally includes them. Resolution is sequential (keyboard first,
+  // gamepad fallback), so a keyboard arrow binding always wins over a D-Pad
+  // gamepad binding for the same key — no ambiguity. Including D-Pad here is
+  // what makes a standalone D-Pad gamepad binding actually resolve.
   static final Map<LogicalKeyboardKey, GamepadButton> _byLogicalKey = {
-    for (final b in values)
-      if (b != dpadUp && b != dpadDown && b != dpadLeft && b != dpadRight)
-        b.logicalKey: b,
+    for (final b in values) b.logicalKey: b,
   };
 
   static GamepadButton? fromLogicalKey(LogicalKeyboardKey key) =>

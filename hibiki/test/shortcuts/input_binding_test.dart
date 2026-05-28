@@ -140,10 +140,20 @@ void main() {
       expect(GamepadButton.fromLogicalKey(LogicalKeyboardKey.escape), isNull);
     });
 
-    test('fromLogicalKey excludes D-Pad (shared with arrow keys)', () {
-      expect(GamepadButton.fromLogicalKey(LogicalKeyboardKey.arrowUp), isNull);
-      expect(
-          GamepadButton.fromLogicalKey(LogicalKeyboardKey.arrowDown), isNull);
+    test('fromLogicalKey maps D-Pad arrow keys (keyboard wins on conflict)',
+        () {
+      // D-Pad shares LogicalKeyboardKey with arrow keys. fromLogicalKey returns
+      // the D-Pad button so a standalone D-Pad gamepad binding can resolve via
+      // the gamepad fallback path. Keyboard arrow bindings still take priority
+      // because resolveKeyboard runs first.
+      expect(GamepadButton.fromLogicalKey(LogicalKeyboardKey.arrowUp),
+          GamepadButton.dpadUp);
+      expect(GamepadButton.fromLogicalKey(LogicalKeyboardKey.arrowDown),
+          GamepadButton.dpadDown);
+      expect(GamepadButton.fromLogicalKey(LogicalKeyboardKey.arrowLeft),
+          GamepadButton.dpadLeft);
+      expect(GamepadButton.fromLogicalKey(LogicalKeyboardKey.arrowRight),
+          GamepadButton.dpadRight);
     });
   });
 
