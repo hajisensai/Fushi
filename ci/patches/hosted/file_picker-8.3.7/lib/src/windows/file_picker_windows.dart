@@ -227,9 +227,9 @@ class FilePickerWindows extends FilePicker {
       case FileType.custom:
         return 'Files (*.${allowedExtensions!.join(',*.')})\x00*.${allowedExtensions.join(';*.')}\x00\x00';
       case FileType.image:
-        return 'Images (*.bmp,*.gif,*.jpeg,*.jpg,*.png)\x00*.bmp;*.gif;*.jpeg;*.jpg;*.png\x00\x00';
+        return 'Images (*.avif,*.bmp,*.gif,*.jpeg,*.jpg,*.png,*.svg,*.webp)\x00*.avif;*.bmp;*.gif;*.jpeg;*.jpg;*.png;*.svg;*.webp\x00All Files (*.*)\x00*.*\x00\x00';
       case FileType.media:
-        return 'Videos (*.avi,*.flv,*.mkv,*.mov,*.mp4,*.mpeg,*.webm,*.wmv)\x00*.avi;*.flv;*.mkv;*.mov;*.mp4;*.mpeg;*.webm;*.wmv\x00Images (*.bmp,*.gif,*.jpeg,*.jpg,*.png)\x00*.bmp;*.gif;*.jpeg;*.jpg;*.png\x00\x00';
+        return 'Videos (*.avi,*.flv,*.mkv,*.mov,*.mp4,*.mpeg,*.webm,*.wmv)\x00*.avi;*.flv;*.mkv;*.mov;*.mp4;*.mpeg;*.webm;*.wmv\x00Images (*.avif,*.bmp,*.gif,*.jpeg,*.jpg,*.png,*.svg,*.webp)\x00*.avif;*.bmp;*.gif;*.jpeg;*.jpg;*.png;*.svg;*.webp\x00\x00';
       case FileType.video:
         return 'Videos (*.avi,*.flv,*.mkv,*.mov,*.mp4,*.mpeg,*.webm,*.wmv)\x00*.avi;*.flv;*.mkv;*.mov;*.mp4;*.mpeg;*.webm;*.wmv\x00\x00';
     }

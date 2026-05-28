@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 import 'package:hibiki/src/utils/components/settings_shared.dart';
 
 Widget _buildHarness({
@@ -42,6 +43,54 @@ void main() {
 
     expect(find.byType(Switch), findsOneWidget);
     expect(find.byType(CupertinoSwitch), findsNothing);
+  });
+
+  testWidgets('Material settings sections use shared MD3 card shell',
+      (tester) async {
+    await tester.pumpWidget(
+      _buildHarness(
+        platform: TargetPlatform.android,
+        child: Scaffold(
+          body: AdaptiveSettingsSection(
+            title: 'Behavior',
+            children: [
+              AdaptiveSettingsSwitchRow(
+                title: 'Highlight on tap',
+                value: true,
+                onChanged: (_) {},
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byType(HibikiCard), findsOneWidget);
+    expect(find.byType(Switch), findsOneWidget);
+  });
+
+  testWidgets('Material setting leading icons use shared MD3 badge shell',
+      (tester) async {
+    await tester.pumpWidget(
+      _buildHarness(
+        platform: TargetPlatform.android,
+        child: Scaffold(
+          body: AdaptiveSettingsSection(
+            children: [
+              AdaptiveSettingsNavigationRow(
+                title: 'Advanced',
+                icon: Icons.tune_outlined,
+                showIcon: true,
+                onTap: () {},
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byType(HibikiBadge), findsOneWidget);
+    expect(find.byIcon(Icons.tune_outlined), findsOneWidget);
   });
 
   testWidgets('leaf setting rows omit leading icons by default',
@@ -165,9 +214,12 @@ void main() {
                 AdaptiveSettingsSegmentedRow<String>(
                   title: 'Spread mode',
                   segments: const [
-                    ButtonSegment(value: 'off', label: Text('Off'), tooltip: 'Off'),
-                    ButtonSegment(value: 'on', label: Text('On'), tooltip: 'On'),
-                    ButtonSegment(value: 'auto', label: Text('Auto'), tooltip: 'Auto'),
+                    ButtonSegment(
+                        value: 'off', label: Text('Off'), tooltip: 'Off'),
+                    ButtonSegment(
+                        value: 'on', label: Text('On'), tooltip: 'On'),
+                    ButtonSegment(
+                        value: 'auto', label: Text('Auto'), tooltip: 'Auto'),
                   ],
                   selected: 'auto',
                   onChanged: (_) {},
@@ -201,9 +253,12 @@ void main() {
                 AdaptiveSettingsSegmentedRow<String>(
                   title: 'Spread mode',
                   segments: const [
-                    ButtonSegment(value: 'off', label: Text('Off'), tooltip: 'Off'),
-                    ButtonSegment(value: 'on', label: Text('On'), tooltip: 'On'),
-                    ButtonSegment(value: 'auto', label: Text('Auto'), tooltip: 'Auto'),
+                    ButtonSegment(
+                        value: 'off', label: Text('Off'), tooltip: 'Off'),
+                    ButtonSegment(
+                        value: 'on', label: Text('On'), tooltip: 'On'),
+                    ButtonSegment(
+                        value: 'auto', label: Text('Auto'), tooltip: 'Auto'),
                   ],
                   selected: 'auto',
                   onChanged: (_) {},

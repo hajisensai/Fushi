@@ -103,25 +103,32 @@ class AdaptiveSettingsSection extends StatelessWidget {
     if (children.isEmpty) return const SizedBox.shrink();
 
     final bool cupertino = isCupertinoPlatform(context);
-    final ColorScheme scheme = Theme.of(context).colorScheme;
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    final Widget group = ClipRRect(
-      borderRadius: BorderRadius.circular(cupertino ? 12 : tokens.radii.group),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: cupertino
-              ? CupertinoColors.secondarySystemGroupedBackground
-                  .resolveFrom(context)
-              : scheme.surfaceContainerLowest,
-          borderRadius:
-              BorderRadius.circular(cupertino ? 12 : tokens.radii.group),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: _withDividers(context, children),
-        ),
-      ),
-    );
+    final List<Widget> rows = _withDividers(context, children);
+    final Widget group = cupertino
+        ? ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: CupertinoColors.secondarySystemGroupedBackground
+                    .resolveFrom(context),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: rows,
+              ),
+            ),
+          )
+        : HibikiCard(
+            padding: EdgeInsets.zero,
+            borderRadius: tokens.radii.groupRadius,
+            color: tokens.surfaces.group,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: rows,
+            ),
+          );
 
     return Padding(
       padding: EdgeInsets.only(bottom: cupertino ? 14 : 12),
@@ -821,18 +828,28 @@ class _SettingsIcon extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool cupertino = isCupertinoPlatform(context);
     final ColorScheme scheme = Theme.of(context).colorScheme;
+    if (!cupertino) {
+      return HibikiBadge(
+        icon: icon,
+        background: scheme.secondaryContainer,
+        foreground: scheme.onSecondaryContainer,
+        padding: const EdgeInsets.all(6),
+        size: 18,
+      );
+    }
+
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: cupertino ? scheme.primary : scheme.secondaryContainer,
-        borderRadius: BorderRadius.circular(cupertino ? 7 : 8),
+        color: scheme.primary,
+        borderRadius: BorderRadius.circular(7),
       ),
       child: SizedBox(
-        width: cupertino ? 28 : 30,
-        height: cupertino ? 28 : 30,
+        width: 28,
+        height: 28,
         child: Icon(
           icon,
           size: 18,
-          color: cupertino ? scheme.onPrimary : scheme.onSecondaryContainer,
+          color: scheme.onPrimary,
         ),
       ),
     );

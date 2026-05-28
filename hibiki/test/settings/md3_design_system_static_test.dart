@@ -35,6 +35,8 @@ void main() {
     ],
     'lib/src/utils/components/settings_shared.dart': <String>[
       'class AdaptiveSettingsTextField',
+      'HibikiCard(',
+      'HibikiBadge(',
     ],
   };
 
@@ -298,6 +300,9 @@ void main() {
         'fontSize:',
         'TextStyle(',
       ],
+      'lib/src/utils/components/settings_shared.dart': <String>[
+        'surfaceContainerLowest',
+      ],
       'lib/src/pages/implementations/collections_page.dart': <String>[
         'ListTile(',
         'fontSize: 10',
@@ -449,6 +454,7 @@ void main() {
       'lib/src/media/audiobook/reader_quick_settings_sheet.dart': <String>[
         'TextField(',
         'OutlineInputBorder',
+        'BorderRadius.circular(8)',
       ],
       'lib/src/media/audiobook/audiobook_play_bar.dart': <String>[
         'ChoiceChip(',

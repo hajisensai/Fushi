@@ -1580,9 +1580,10 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
     required VoidCallback onTap,
   }) {
     final ThemeData theme = Theme.of(context);
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: tokens.radii.controlRadius,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         child: Column(
@@ -1726,6 +1727,7 @@ class _InBookSearchResultRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool cupertino = isCupertinoPlatform(context);
     final ThemeData theme = Theme.of(context);
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final Color primary = cupertino
         ? CupertinoTheme.of(context).primaryColor
         : theme.colorScheme.primary;
@@ -1789,7 +1791,7 @@ class _InBookSearchResultRow extends StatelessWidget {
     }
 
     return InkWell(
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: tokens.radii.controlRadius,
       onTap: onTap,
       child: child,
     );
