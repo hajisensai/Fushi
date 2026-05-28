@@ -1,6 +1,5 @@
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/utils/spacing.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
 
@@ -59,13 +58,35 @@ class _TextSegmentationDialogPage
 
   @override
   Widget build(BuildContext context) {
-    return adaptiveAlertDialog(
-      context: context,
-      contentPadding: MediaQuery.of(context).orientation == Orientation.portrait
-          ? Spacing.of(context).insets.all.big
-          : Spacing.of(context).insets.all.normal,
-      content: buildContent(),
-      actions: actions,
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
+    return HibikiDialogFrame(
+      maxWidth: 560,
+      maxHeightFactor: 0.82,
+      scrollable: false,
+      child: HibikiModalSheetFrame(
+        title: t.text_segmentation,
+        leadingIcon: Icons.text_fields_outlined,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: buildContent(),
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: actions,
+        ),
+      ),
     );
   }
 
@@ -88,71 +109,52 @@ class _TextSegmentationDialogPage
     List<Widget> widgets = [];
 
     widget.segmentedText.forEachIndexed((index, segment) {
-      Widget widget = GestureDetector(
-        onTap: () {
-          final bool newValue = !_valuesSelected[index]!.value;
-          _valuesSelected[index]!.value = newValue;
-
-          bool rightDeselectFlag = false;
-          for (int i = index; i < _valuesSelected.length; i++) {
-            if (rightDeselectFlag) {
-              if (_valuesSelected[i]!.value) {
-                _valuesSelected[i]!.value = false;
-              }
-              continue;
-            }
-            if (!_valuesSelected[i]!.value) {
-              rightDeselectFlag = true;
-            }
-          }
-
-          bool leftDeselectFlag = false;
-          for (int i = index; i >= 0; i--) {
-            if (leftDeselectFlag) {
-              if (_valuesSelected[i]!.value) {
-                _valuesSelected[i]!.value = false;
-              }
-              continue;
-            }
-            if (!_valuesSelected[i]!.value) {
-              leftDeselectFlag = true;
-            }
-          }
+      Widget widget = ValueListenableBuilder<bool>(
+        valueListenable: _valuesSelected[index]!,
+        builder: (context, value, child) {
+          return HibikiSelectableChip(
+            label: segment.trim(),
+            selected: value,
+            onSelected: (_) => _toggleSegment(index),
+          );
         },
-        child: ValueListenableBuilder<bool>(
-          valueListenable: _valuesSelected[index]!,
-          builder: (context, value, child) {
-            return Container(
-              padding: EdgeInsets.symmetric(
-                vertical: Spacing.of(context).spaces.small,
-                horizontal: Spacing.of(context).spaces.semiSmall,
-              ),
-              margin: EdgeInsets.only(
-                top: Spacing.of(context).spaces.normal,
-                right: Spacing.of(context).spaces.normal,
-              ),
-              color: _valuesSelected[index]!.value
-                  ? theme.colorScheme.primary.withValues(alpha: 0.3)
-                  : theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.1),
-              child: SizedBox(
-                height: (textTheme.titleLarge?.fontSize)! * 1.3,
-                child: Text(
-                  segment.trim(),
-                  style: TextStyle(
-                    fontWeight: FontWeight.w500,
-                    fontSize: textTheme.titleMedium?.fontSize,
-                  ),
-                ),
-              ),
-            );
-          },
-        ),
       );
 
       widgets.add(widget);
     });
 
     return widgets;
+  }
+
+  void _toggleSegment(int index) {
+    final bool newValue = !_valuesSelected[index]!.value;
+    _valuesSelected[index]!.value = newValue;
+
+    bool rightDeselectFlag = false;
+    for (int i = index; i < _valuesSelected.length; i++) {
+      if (rightDeselectFlag) {
+        if (_valuesSelected[i]!.value) {
+          _valuesSelected[i]!.value = false;
+        }
+        continue;
+      }
+      if (!_valuesSelected[i]!.value) {
+        rightDeselectFlag = true;
+      }
+    }
+
+    bool leftDeselectFlag = false;
+    for (int i = index; i >= 0; i--) {
+      if (leftDeselectFlag) {
+        if (_valuesSelected[i]!.value) {
+          _valuesSelected[i]!.value = false;
+        }
+        continue;
+      }
+      if (!_valuesSelected[i]!.value) {
+        leftDeselectFlag = true;
+      }
+    }
   }
 
   Widget buildStashButton() {
