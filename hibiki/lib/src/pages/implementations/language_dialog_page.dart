@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/utils/spacing.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
 
@@ -22,13 +21,35 @@ class _LanguageDialogPageState extends BasePageState<LanguageDialogPage> {
 
   @override
   Widget build(BuildContext context) {
-    return adaptiveAlertDialog(
-      context: context,
-      contentPadding: MediaQuery.of(context).orientation == Orientation.portrait
-          ? Spacing.of(context).insets.exceptBottom.big
-          : Spacing.of(context).insets.exceptBottom.normal,
-      content: buildContent(),
-      actions: [buildCloseButton()],
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
+    return HibikiDialogFrame(
+      maxWidth: 520,
+      maxHeightFactor: 0.76,
+      scrollable: false,
+      child: HibikiModalSheetFrame(
+        title: t.options_language,
+        leadingIcon: Icons.language_outlined,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: buildContent(),
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: [buildCloseButton()],
+        ),
+      ),
     );
   }
 
@@ -41,7 +62,7 @@ class _LanguageDialogPageState extends BasePageState<LanguageDialogPage> {
   }
 
   Widget buildContent() {
-    final tokens = HibikiDesignTokens.of(context);
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return SizedBox(
       width: double.maxFinite,
       child: RawScrollbar(
@@ -55,7 +76,7 @@ class _LanguageDialogPageState extends BasePageState<LanguageDialogPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Padding(
-                padding: Spacing.of(context).insets.onlyLeft.small,
+                padding: EdgeInsets.only(left: tokens.spacing.gap),
                 child: Text(
                   t.app_locale,
                   style: tokens.type.sectionLabel.copyWith(
