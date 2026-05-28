@@ -1566,7 +1566,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         final int chapterSnapshot = _currentChapter;
         debugPrint('[ReaderHibiki] onLoadStop: url=$url '
             'chapter=$chapterSnapshot progress=$_initialProgress');
-        if (_lyricsMode && _isLyricsUrl(url)) {
+        if (_lyricsMode) {
           await _onChapterLoadComplete(controller);
           return;
         }
@@ -1591,7 +1591,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
               request.url.host == ReaderHibikiSource.kHost) {
             _isNavigatingToChapter = false;
             final int chapterSnapshot = _currentChapter;
-            if (_lyricsMode && _isLyricsUrl(request.url)) {
+            if (_lyricsMode) {
               await _onChapterLoadComplete(controller);
               return;
             }
@@ -1944,12 +1944,6 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         ],
       ),
     );
-  }
-
-  bool _isLyricsUrl(WebUri? url) {
-    if (url == null) return false;
-    final Uri uri = Uri.parse(url.toString());
-    return uri.host == ReaderHibikiSource.kHost && uri.path == '/lyrics';
   }
 
   Future<void> _exitLyricsMode() async {
