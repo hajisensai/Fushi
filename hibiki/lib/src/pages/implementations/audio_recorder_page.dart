@@ -8,7 +8,6 @@ import 'package:just_audio/just_audio.dart';
 import 'package:multi_value_listenable_builder/multi_value_listenable_builder.dart';
 // ignore: depend_on_referenced_packages
 import 'package:record_mp3_plus/record_mp3_plus.dart';
-import 'package:hibiki/src/utils/spacing.dart';
 import 'package:hibiki/pages.dart';
 
 /// The content of the dialog used for selecting segmented units of a source
@@ -59,16 +58,43 @@ class _AudioRecorderDialogPageState
 
   @override
   Widget build(BuildContext context) {
-    return adaptiveAlertDialog(
-      context: context,
-      contentPadding: Spacing.of(context).insets.all.small,
-      content: buildContent(),
-      actions: [
-        if (_isRecording) buildStopButton() else buildRecordButton(),
-        buildSaveButton(),
-      ],
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
+    return HibikiDialogFrame(
+      maxWidth: 520,
+      maxHeightFactor: 0.92,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      scrollable: false,
+      child: HibikiModalSheetFrame(
+        title: t.creator_enhancement_audio_recorder,
+        leadingIcon: Icons.mic_none_outlined,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: buildContent(),
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: actions,
+        ),
+      ),
     );
   }
+
+  List<Widget> get actions => [
+        if (_isRecording) buildStopButton() else buildRecordButton(),
+        buildSaveButton(),
+      ];
 
   Widget buildContent() {
     return SizedBox(
