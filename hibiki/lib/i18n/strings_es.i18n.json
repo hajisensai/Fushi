@@ -1085,5 +1085,6 @@
     "backup_import_failed": "Backup import failed: $message",
     "backup_import_invalid": "Invalid backup file",
     "backup_exporting": "Creating backup…",
-    "backup_schema_newer": "This backup requires a newer version of the app (schema $version). Please update first."
+    "backup_schema_newer": "This backup requires a newer version of the app (schema $version). Please update first.",
+    "reverse_navigation_bar": "Reverse navigation bar"
 }

@@ -120,6 +120,17 @@ SettingsDestination _appearanceDestination() {
             visible: (_) => Platform.isAndroid,
             builder: (_) => const MiscellaneousSettingsPage(),
           ),
+          SettingsSwitchItem(
+            id: 'appearance.reverse_navigation_bar',
+            title: t.reverse_navigation_bar,
+            icon: Icons.swap_horiz_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.reverseNavigationBar,
+            onChanged: (SettingsContext settingsContext, bool value) {
+              settingsContext.appModel.toggleReverseNavigationBar();
+              settingsContext.refresh();
+            },
+          ),
         ],
       ),
     ],

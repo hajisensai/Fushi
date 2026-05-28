@@ -179,6 +179,14 @@ class PreferencesRepository extends ChangeNotifier {
     await setPref('current_home_tab_index', index);
   }
 
+  bool get reverseNavigationBar =>
+      getPref('reverse_navigation_bar', defaultValue: false) as bool;
+
+  void toggleReverseNavigationBar() async {
+    await setPref('reverse_navigation_bar', !reverseNavigationBar);
+    notifyListeners();
+  }
+
   // ── transcript ───────────────────────────────────────────────────────
 
   bool get isTranscriptPlayerMode =>

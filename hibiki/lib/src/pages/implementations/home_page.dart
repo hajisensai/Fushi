@@ -225,33 +225,42 @@ class _HomePageState extends BasePageState<HomePage>
   }
 
   Widget _buildMobileLayout() {
+    final bool reversed = appModel.reverseNavigationBar;
+    final List<AdaptiveNavItem> items = [
+      AdaptiveNavItem(
+        icon: Icons.menu_book_outlined,
+        selectedIcon: Icons.menu_book,
+        label: t.books,
+      ),
+      AdaptiveNavItem(
+        icon: Icons.search_outlined,
+        selectedIcon: Icons.search,
+        label: t.dictionaries,
+      ),
+      AdaptiveNavItem(
+        icon: Icons.tune_outlined,
+        selectedIcon: Icons.tune,
+        label: t.settings,
+      ),
+    ];
+    final List<AdaptiveNavItem> displayItems =
+        reversed ? items.reversed.toList() : items;
+    final int visualIndex =
+        reversed ? (items.length - 1 - _currentTab) : _currentTab;
+
     return Scaffold(
       resizeToAvoidBottomInset: false,
       body: SafeArea(child: buildBody()),
       bottomNavigationBar: adaptiveBottomBar(
         context: context,
-        currentIndex: _currentTab,
+        currentIndex: visualIndex,
         onTap: (int index) {
-          setState(() => _currentTab = index);
-          if (index == 0) _loadIconPreset();
+          final int logicalIndex =
+              reversed ? (items.length - 1 - index) : index;
+          setState(() => _currentTab = logicalIndex);
+          if (logicalIndex == 0) _loadIconPreset();
         },
-        items: [
-          AdaptiveNavItem(
-            icon: Icons.menu_book_outlined,
-            selectedIcon: Icons.menu_book,
-            label: t.books,
-          ),
-          AdaptiveNavItem(
-            icon: Icons.search_outlined,
-            selectedIcon: Icons.search,
-            label: t.dictionaries,
-          ),
-          AdaptiveNavItem(
-            icon: Icons.tune_outlined,
-            selectedIcon: Icons.tune,
-            label: t.settings,
-          ),
-        ],
+        items: displayItems,
       ),
     );
   }

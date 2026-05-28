@@ -1493,6 +1493,9 @@ class AppModel with ChangeNotifier {
   Future<void> setCurrentHomeTabIndex(int index) =>
       prefsRepo.setCurrentHomeTabIndex(index);
 
+  bool get reverseNavigationBar => prefsRepo.reverseNavigationBar;
+  void toggleReverseNavigationBar() => prefsRepo.toggleReverseNavigationBar();
+
   /// Show the dictionary menu. This should be callable from many parts of the
   /// app, so it is appropriately handled by the model.
   Future<void> showDictionaryMenu() async {
