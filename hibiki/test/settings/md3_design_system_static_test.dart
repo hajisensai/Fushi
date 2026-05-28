@@ -169,6 +169,7 @@ void main() {
     'lib/src/pages/implementations/floating_dict_page.dart': <String>[
       'HibikiPopupSurface',
       'HibikiCompactSearchRow',
+      'HibikiOverlayScaffold',
     ],
     'lib/src/pages/implementations/book_css_editor_page.dart': <String>[
       'HibikiToolScaffold',
@@ -421,6 +422,7 @@ void main() {
         'Scaffold(',
       ],
       'lib/src/pages/implementations/floating_dict_page.dart': <String>[
+        'Scaffold(',
         'DecoratedBox(',
         'TextField(',
         'BorderRadius.circular(',

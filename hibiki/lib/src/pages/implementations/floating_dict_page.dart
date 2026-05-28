@@ -115,8 +115,8 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
   Widget build(BuildContext context) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
+    return HibikiOverlayScaffold(
+      safeArea: false,
       body: HibikiPopupSurface(
         color: tokens.surfaces.search.withValues(alpha: 0.94),
         padding: EdgeInsets.all(tokens.spacing.gap),
