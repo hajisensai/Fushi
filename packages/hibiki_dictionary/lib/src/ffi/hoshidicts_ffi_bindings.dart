@@ -7,6 +7,7 @@ DynamicLibrary _openNativeLib() {
   if (Platform.isAndroid) return DynamicLibrary.open('libhoshidicts_ffi.so');
   if (Platform.isWindows) return DynamicLibrary.open('hoshidicts_ffi.dll');
   if (Platform.isMacOS) return DynamicLibrary.open('libhoshidicts_ffi.dylib');
+  if (Platform.isLinux) return DynamicLibrary.open('libhoshidicts_ffi.so');
   if (Platform.isIOS) return DynamicLibrary.process();
   throw UnsupportedError(
       'hoshidicts: unsupported platform ${Platform.operatingSystem}');
