@@ -12,7 +12,11 @@ import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/src/utils/spacing.dart';
 
+import '../helpers/test_platform_services.dart';
+
 class PopupTestAppModel extends AppModel {
+  PopupTestAppModel() : super(testPlatformServices());
+
   @override
   int get maximumTerms => 10;
 
@@ -94,7 +98,7 @@ void main() {
     WidgetTester tester,
   ) async {
     bool closed = false;
-    final AppModel appModel = AppModel();
+    final AppModel appModel = AppModel(testPlatformServices());
 
     await tester.pumpWidget(
       buildTestApp(
@@ -124,7 +128,7 @@ void main() {
   testWidgets('desktop lookup opens in-app instead of launching hibiki url', (
     WidgetTester tester,
   ) async {
-    final AppModel appModel = AppModel();
+    final AppModel appModel = AppModel(testPlatformServices());
 
     await tester.pumpWidget(
       buildTestApp(
@@ -155,7 +159,7 @@ void main() {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(320, 240);
     addTearDown(tester.view.reset);
-    final AppModel appModel = AppModel();
+    final AppModel appModel = AppModel(testPlatformServices());
 
     await tester.pumpWidget(
       buildTestApp(
@@ -181,7 +185,7 @@ void main() {
   testWidgets('exposes stable popup search targets for desktop drive', (
     WidgetTester tester,
   ) async {
-    final AppModel appModel = AppModel();
+    final AppModel appModel = AppModel(testPlatformServices());
 
     await tester.pumpWidget(
       buildTestApp(
@@ -209,7 +213,7 @@ void main() {
   testWidgets('popup search bar submits trimmed query from button', (
     WidgetTester tester,
   ) async {
-    final AppModel appModel = AppModel();
+    final AppModel appModel = AppModel(testPlatformServices());
     final TextEditingController controller =
         TextEditingController(text: '  日本語  ');
     final FocusNode focusNode = FocusNode();
@@ -242,7 +246,7 @@ void main() {
   testWidgets('popup search bar submits trimmed query from keyboard action', (
     WidgetTester tester,
   ) async {
-    final AppModel appModel = AppModel();
+    final AppModel appModel = AppModel(testPlatformServices());
     final TextEditingController controller = TextEditingController();
     final FocusNode focusNode = FocusNode();
     final List<String> submitted = <String>[];

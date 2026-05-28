@@ -8,6 +8,8 @@ import 'package:hibiki/src/media/audiobook/audiobook_play_bar.dart';
 import 'package:hibiki/src/media/audiobook/reader_quick_settings_sheet.dart';
 import 'package:hibiki/utils.dart';
 
+import '../../helpers/test_platform_services.dart';
+
 class _FakeInAppWebViewController implements InAppWebViewController {
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -75,7 +77,7 @@ void main() {
             onBookmark: () async {},
             onExitReader: () {},
             webViewController: _FakeInAppWebViewController(),
-            appModel: AppModel(),
+            appModel: AppModel(testPlatformServices()),
             isHibikiReader: true,
           ),
         ),
@@ -126,7 +128,7 @@ void main() {
             onBookmark: () async {},
             onExitReader: () {},
             webViewController: _FakeInAppWebViewController(),
-            appModel: AppModel(),
+            appModel: AppModel(testPlatformServices()),
             bookmarks: [
               Bookmark(
                 sectionIndex: 1,

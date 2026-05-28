@@ -51,6 +51,8 @@ import 'package:hibiki/src/models/local_audio_manager.dart';
 import 'package:hibiki/src/models/anki_integration.dart';
 import 'package:hibiki/src/shortcuts/shortcut_preferences.dart';
 import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
+import 'package:hibiki/src/platform/platform_services.dart';
+import 'package:hibiki/src/platform/platform_providers.dart';
 
 export 'package:hibiki/src/models/local_audio_manager.dart'
     show LocalAudioDbEntry;
@@ -94,7 +96,7 @@ final Map<String, Field> fieldsByKey = Map.unmodifiable(
 
 /// A global [Provider] for app-wide configuration and state management.
 final appProvider = ChangeNotifierProvider<AppModel>((ref) {
-  return AppModel();
+  return AppModel(ref.read(platformServicesProvider));
 });
 
 /// Provides color for all quick actions.
@@ -149,6 +151,11 @@ ColorScheme buildHibikiColorScheme({
 /// RiverPod is used for global state management across multiple layers,
 /// especially for preferences that persist across application restarts.
 class AppModel with ChangeNotifier {
+  /// Platform-specific service implementations, injected at construction.
+  final PlatformServices platformServices;
+
+  AppModel(this.platformServices);
+
   /// Used for showing dialogs without needing to pass around a [BuildContext].
   GlobalKey<NavigatorState> get navigatorKey => _navigatorKey;
   late final GlobalKey<NavigatorState> _navigatorKey =

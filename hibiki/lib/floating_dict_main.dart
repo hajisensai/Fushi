@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/pages/implementations/floating_dict_page.dart';
+import 'package:hibiki/src/platform/platform_services.dart';
+import 'package:hibiki/src/platform/platform_providers.dart';
 
 const _overlayChannel = MethodChannel('app.hibiki.reader/floating_overlay');
 
@@ -13,7 +15,12 @@ void floatingDictMain() {
   runZonedGuarded<Future<void>>(() async {
     WidgetsFlutterBinding.ensureInitialized();
 
-    final container = ProviderContainer();
+    final platformServices = PlatformServices.forCurrentPlatform();
+    final container = ProviderContainer(
+      overrides: [
+        platformServicesProvider.overrideWithValue(platformServices),
+      ],
+    );
     final appModel = container.read(appProvider);
 
     runApp(

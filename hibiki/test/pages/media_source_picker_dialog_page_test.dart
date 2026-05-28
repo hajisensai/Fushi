@@ -7,8 +7,10 @@ import 'package:hibiki/models.dart';
 import 'package:hibiki/src/pages/implementations/media_source_picker_dialog_page.dart';
 import 'package:hibiki/src/utils/spacing.dart';
 
+import '../helpers/test_platform_services.dart';
+
 class PickerTestAppModel extends AppModel {
-  PickerTestAppModel() {
+  PickerTestAppModel() : super(testPlatformServices()) {
     populateMediaTypes();
     populateMediaSources();
   }

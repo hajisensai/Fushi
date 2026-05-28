@@ -6,6 +6,8 @@ import 'package:hibiki/models.dart';
 import 'package:hibiki/src/pages/implementations/switch_settings_page.dart';
 import 'package:hibiki/src/utils/spacing.dart';
 
+import '../helpers/test_platform_services.dart';
+
 void main() {
   setUp(() {
     LocaleSettings.setLocale(AppLocale.en);
@@ -14,7 +16,7 @@ void main() {
   Widget buildApp(Widget home) {
     return ProviderScope(
       overrides: [
-        appProvider.overrideWith((ref) => AppModel()),
+        appProvider.overrideWith((ref) => AppModel(testPlatformServices())),
       ],
       child: TranslationProvider(
         child: MaterialApp(

@@ -7,6 +7,8 @@ import 'package:hibiki/src/pages/implementations/dictionary_dialog_delete_page.d
 import 'package:hibiki/src/pages/implementations/dictionary_dialog_import_page.dart';
 import 'package:hibiki/src/utils/spacing.dart';
 
+import '../helpers/test_platform_services.dart';
+
 void main() {
   setUp(() {
     LocaleSettings.setLocale(AppLocale.en);
@@ -15,7 +17,7 @@ void main() {
   Widget buildApp(Widget home) {
     return ProviderScope(
       overrides: [
-        appProvider.overrideWith((ref) => AppModel()),
+        appProvider.overrideWith((ref) => AppModel(testPlatformServices())),
       ],
       child: TranslationProvider(
         child: MaterialApp(

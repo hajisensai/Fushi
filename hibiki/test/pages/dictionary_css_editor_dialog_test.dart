@@ -9,6 +9,8 @@ import 'package:hibiki/src/pages/implementations/dictionary_settings_dialog_page
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 
+import '../helpers/test_platform_services.dart';
+
 class _FakeCssAppModel extends AppModel {
   _FakeCssAppModel()
       : _dictionaries = [
@@ -18,7 +20,8 @@ class _FakeCssAppModel extends AppModel {
             formatKey: 'yomichan',
             order: 1,
           ),
-        ];
+        ],
+        super(testPlatformServices());
 
   final List<Dictionary> _dictionaries;
   final Map<String, String> savedCustomCss = <String, String>{};

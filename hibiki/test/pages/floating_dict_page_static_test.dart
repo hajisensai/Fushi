@@ -6,6 +6,8 @@ import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/floating_dict_page.dart';
 import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 
+import '../helpers/test_platform_services.dart';
+
 void main() {
   test('floating dictionary page compiles with shared popup chrome', () {
     expect(
@@ -19,7 +21,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          appProvider.overrideWith((ref) => AppModel()),
+          appProvider.overrideWith((ref) => AppModel(testPlatformServices())),
         ],
         child: const MaterialApp(
           home: FloatingDictPage(

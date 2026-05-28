@@ -7,6 +7,8 @@ import 'package:hibiki/models.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/src/pages/implementations/popup_dictionary_page.dart';
+import 'package:hibiki/src/platform/platform_services.dart';
+import 'package:hibiki/src/platform/platform_providers.dart';
 import 'package:hibiki/src/utils/misc/popup_channel.dart';
 import 'package:hibiki/src/utils/spacing.dart';
 
@@ -25,7 +27,12 @@ void popupMain() {
     WidgetsFlutterBinding.ensureInitialized();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
-    final container = ProviderContainer();
+    final platformServices = PlatformServices.forCurrentPlatform();
+    final container = ProviderContainer(
+      overrides: [
+        platformServicesProvider.overrideWithValue(platformServices),
+      ],
+    );
 
     runApp(
       UncontrolledProviderScope(

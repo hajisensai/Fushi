@@ -19,6 +19,8 @@ import 'package:hibiki/pages.dart';
 import 'package:hibiki/popup_main.dart' as popup_entrypoint;
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/utils.dart';
+import 'package:hibiki/src/platform/platform_services.dart';
+import 'package:hibiki/src/platform/platform_providers.dart';
 import 'package:share_plus/share_plus.dart';
 
 Color? _savedSplashColor;
@@ -108,10 +110,20 @@ void main() {
       return stack;
     };
 
+    /// Construct platform-specific service implementations once, before the
+    /// provider container is created.  This value object is injected into both
+    /// [platformServicesProvider] (for widget-layer access) and [AppModel]
+    /// (via [appProvider]).
+    final platformServices = PlatformServices.forCurrentPlatform();
+
     /// Create the provider container before running the app so the same
     /// [AppModel] instance is shared between the widget tree and the
     /// initialisation call below.
-    final container = ProviderContainer();
+    final container = ProviderContainer(
+      overrides: [
+        platformServicesProvider.overrideWithValue(platformServices),
+      ],
+    );
 
     /// Start the application immediately so the user sees the loading page
     /// rather than a blank white screen while initialisation is in progress.

@@ -8,8 +8,11 @@ import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:hibiki/src/utils/spacing.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 
+import '../helpers/test_platform_services.dart';
+
 class HotPopupTestAppModel extends AppModel {
-  HotPopupTestAppModel({this.lowMemory = false});
+  HotPopupTestAppModel({this.lowMemory = false})
+      : super(testPlatformServices());
 
   final bool lowMemory;
 

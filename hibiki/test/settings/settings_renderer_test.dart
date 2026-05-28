@@ -14,6 +14,8 @@ import 'package:hibiki/src/settings/settings_destination.dart';
 import 'package:hibiki/src/settings/settings_schema.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
+import '../helpers/test_platform_services.dart';
+
 HibikiDatabase _testDb() {
   return HibikiDatabase.forTesting(
     DatabaseConnection(NativeDatabase.memory()),
@@ -110,7 +112,8 @@ Widget _harness({
       'brightness_mode': PrefCodec.encode('system'),
       'custom_theme_seed': PrefCodec.encode(0xFF1F4959),
     });
-  final AppModel appModel = AppModel()..themeNotifier = themeNotifier;
+  final AppModel appModel = AppModel(testPlatformServices())
+    ..themeNotifier = themeNotifier;
   addTearDown(() async {
     themeNotifier.dispose();
     await db.close();
