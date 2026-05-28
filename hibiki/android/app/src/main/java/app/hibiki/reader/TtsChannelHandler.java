@@ -25,12 +25,13 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import app.hibiki.reader.constants.ChannelNames;
 import io.flutter.embedding.engine.FlutterEngine;
 import io.flutter.plugin.common.MethodCall;
 import io.flutter.plugin.common.MethodChannel;
 
 public class TtsChannelHandler {
-    private static final String CHANNEL = "app.hibiki.reader/tts";
+    private static final String CHANNEL = ChannelNames.TTS;
 
     private final Activity activity;
     private TextToSpeech tts;

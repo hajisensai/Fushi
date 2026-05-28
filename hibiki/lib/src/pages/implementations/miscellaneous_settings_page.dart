@@ -1,11 +1,11 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:hibiki/src/pages/base_page.dart';
+import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/utils.dart';
 
 const iconPresetKey = 'app_icon_preset';
@@ -15,8 +15,6 @@ const iconAssetMap = <String, String>{
   'hibiki_full': 'assets/meta/launcher_icon_full.png',
   'hibiki_minimal': 'assets/meta/launcher_icon_minimal.png',
 };
-
-const _iconChannel = MethodChannel('app.hibiki.reader/icon_switch');
 
 class MiscellaneousSettingsPage extends BasePage {
   const MiscellaneousSettingsPage({super.key});
@@ -41,8 +39,8 @@ class _MiscellaneousSettingsPageState
   Future<void> _loadCurrentIcon() async {
     if (!Platform.isAndroid) return;
     final results = await Future.wait([
-      _iconChannel.invokeMethod<String>('getCurrentIcon'),
-      _iconChannel.invokeMethod<bool>('isCustomShortcutSupported'),
+      HibikiChannels.iconSwitch.invokeMethod<String>('getCurrentIcon'),
+      HibikiChannels.iconSwitch.invokeMethod<bool>('isCustomShortcutSupported'),
     ]);
     if (!mounted) return;
     setState(() {
@@ -56,7 +54,7 @@ class _MiscellaneousSettingsPageState
     setState(() => _switching = true);
 
     try {
-      final ok = await _iconChannel.invokeMethod<bool>(
+      final ok = await HibikiChannels.iconSwitch.invokeMethod<bool>(
         'switchPresetIcon',
         {'alias': key},
       );
@@ -103,7 +101,7 @@ class _MiscellaneousSettingsPageState
     if (file == null) return;
 
     final bytes = await file.readAsBytes();
-    final ok = await _iconChannel.invokeMethod<bool>(
+    final ok = await HibikiChannels.iconSwitch.invokeMethod<bool>(
       'createCustomShortcut',
       {'imageBytes': bytes},
     );

@@ -1628,37 +1628,78 @@ class _BookProfileDialogState extends State<_BookProfileDialog> {
 
   @override
   Widget build(BuildContext context) {
+    return BookProfileDialogFrame(
+      loading: _loading,
+      activeProfileName: _activeProfileName,
+      profiles: _profiles,
+      selectedProfileId: _selectedProfileId,
+      onChanged: _onChanged,
+      onClose: () => Navigator.pop(context),
+    );
+  }
+}
+
+@visibleForTesting
+class BookProfileDialogFrame extends StatelessWidget {
+  const BookProfileDialogFrame({
+    required this.loading,
+    required this.activeProfileName,
+    required this.profiles,
+    required this.selectedProfileId,
+    required this.onChanged,
+    required this.onClose,
+    super.key,
+  });
+
+  final bool loading;
+  final String activeProfileName;
+  final List<ProfileRow> profiles;
+  final int? selectedProfileId;
+  final ValueChanged<int?> onChanged;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
     final t = Translations.of(context);
-    return adaptiveAlertDialog(
-      context: context,
-      titlePadding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-      contentPadding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-      actionsPadding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
-      buttonPadding: const EdgeInsets.symmetric(horizontal: 4),
-      title: Text(
-        t.profile_book_profile,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: Theme.of(context).textTheme.titleMedium,
-      ),
-      content: _loading
-          ? SizedBox(
-              height: 48,
-              child: Center(child: adaptiveIndicator(context: context)),
-            )
-          : BookProfileDialogContent(
-              activeProfileName: _activeProfileName,
-              profiles: _profiles,
-              selectedProfileId: _selectedProfileId,
-              onChanged: _onChanged,
-            ),
-      actions: [
-        adaptiveDialogAction(
-          context: context,
-          onPressed: () => Navigator.pop(context),
-          child: Text(t.dialog_close),
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
+    return HibikiDialogFrame(
+      maxWidth: 500,
+      maxHeightFactor: 0.86,
+      child: HibikiModalSheetFrame(
+        title: t.profile_book_profile,
+        leadingIcon: Icons.manage_accounts_outlined,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
         ),
-      ],
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: loading
+            ? SizedBox(
+                height: 64,
+                child: Center(child: adaptiveIndicator(context: context)),
+              )
+            : BookProfileDialogContent(
+                activeProfileName: activeProfileName,
+                profiles: profiles,
+                selectedProfileId: selectedProfileId,
+                onChanged: onChanged,
+              ),
+        footer: Align(
+          alignment: Alignment.centerRight,
+          child: TextButton(
+            onPressed: onClose,
+            child: Text(t.dialog_close),
+          ),
+        ),
+      ),
     );
   }
 }

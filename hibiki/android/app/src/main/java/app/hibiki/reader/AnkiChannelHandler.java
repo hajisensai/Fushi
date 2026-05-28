@@ -22,11 +22,12 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+import app.hibiki.reader.constants.ChannelNames;
 import io.flutter.embedding.engine.FlutterEngine;
 import io.flutter.plugin.common.MethodChannel;
 
 public class AnkiChannelHandler {
-    private static final String CHANNEL = "app.hibiki.reader/anki";
+    private static final String CHANNEL = ChannelNames.ANKI;
     private static final int AD_PERM_REQUEST = 0;
 
     private final Activity activity;

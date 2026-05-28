@@ -36,6 +36,7 @@ import java.util.concurrent.Executors;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import app.hibiki.reader.constants.ChannelNames;
 import app.hibiki.reader.constants.FloatingColors;
 import app.hibiki.reader.constants.PreferenceKeys;
 
@@ -46,15 +47,15 @@ import android.content.Context;
 import android.content.res.Configuration;
 
 public class MainActivity extends AudioServiceActivity {
-    private static final String VOLUME_KEY_CHANNEL = "app.hibiki.reader/volume_keys";
-    private static final String SAF_CHANNEL = "app.hibiki.reader/saf";
-    private static final String UPDATE_CHANNEL = "app.hibiki.reader/update";
-    private static final String FONTS_CHANNEL = "app.hibiki.reader/fonts";
-    private static final String FLOATING_LYRIC_CHANNEL = "app.hibiki.reader/floating_lyric";
-    private static final String FLOATING_DICT_CHANNEL = "app.hibiki.reader/floating_dict";
-    private static final String SPLASH_CHANNEL = "app.hibiki.reader/splash";
-    private static final String LIFECYCLE_CHANNEL = "app.hibiki.reader/lifecycle";
-    private static final String ICON_CHANNEL = "app.hibiki.reader/icon_switch";
+    private static final String VOLUME_KEY_CHANNEL = ChannelNames.VOLUME_KEYS;
+    private static final String SAF_CHANNEL = ChannelNames.SAF;
+    private static final String UPDATE_CHANNEL = ChannelNames.UPDATE;
+    private static final String FONTS_CHANNEL = ChannelNames.FONTS;
+    private static final String FLOATING_LYRIC_CHANNEL = ChannelNames.FLOATING_LYRIC;
+    private static final String FLOATING_DICT_CHANNEL = ChannelNames.FLOATING_DICT;
+    private static final String SPLASH_CHANNEL = ChannelNames.SPLASH;
+    private static final String LIFECYCLE_CHANNEL = ChannelNames.LIFECYCLE;
+    private static final String ICON_CHANNEL = ChannelNames.ICON_SWITCH;
     private static final String SPLASH_PREFS = PreferenceKeys.FILE_SPLASH;
     private static final int SAF_PICK_DIR_REQUEST = 1001;
     private static MethodChannel floatingLyricChannel;

@@ -1,3 +1,6 @@
+// Java counterpart: app.hibiki.reader.constants.ChannelNames
+// Both files MUST stay in sync. If you add a channel here, add it there too.
+
 import 'package:flutter/services.dart';
 
 abstract final class HibikiChannels {
@@ -16,4 +19,5 @@ abstract final class HibikiChannels {
   static const MethodChannel lifecycle = MethodChannel('$_prefix/lifecycle');
   static const MethodChannel fonts = MethodChannel('$_prefix/fonts');
   static const MethodChannel saf = MethodChannel('$_prefix/saf');
+  static const MethodChannel iconSwitch = MethodChannel('$_prefix/icon_switch');
 }
