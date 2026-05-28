@@ -1267,6 +1267,14 @@ class AppModel with ChangeNotifier {
       }
     }
     await themeNotifier.refreshFromDb();
+    // Shortcut bindings are profile-scoped: reload the live registry from the
+    // (now-refreshed) source preference so a profile switch takes effect
+    // immediately instead of only after an app restart.
+    await loadShortcutRegistry(
+      shortcutRegistry,
+      ReaderHibikiSource.instance,
+      defaultTargetPlatform,
+    );
   }
 
   // ── sync pref helpers (delegated to PreferencesRepository) ──────────

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/utils/spacing.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
 
@@ -49,28 +48,43 @@ class _LyricsDialogPageState extends BasePageState<LyricsDialogPage> {
 
   @override
   Widget build(BuildContext context) {
-    return adaptiveAlertDialog(
-      context: context,
-      contentPadding: MediaQuery.of(context).orientation == Orientation.portrait
-          ? Spacing.of(context).insets.exceptBottom.big
-          : Spacing.of(context).insets.exceptBottom.normal.copyWith(
-                left: Spacing.of(context).spaces.semiBig,
-                right: Spacing.of(context).spaces.semiBig,
-              ),
-      actionsPadding: Spacing.of(context).insets.exceptBottom.normal.copyWith(
-            left: Spacing.of(context).spaces.normal,
-            right: Spacing.of(context).spaces.normal,
-            bottom: Spacing.of(context).spaces.normal,
-            top: Spacing.of(context).spaces.extraSmall,
-          ),
-      content: buildContent(),
-      actions: actions,
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
+    return HibikiDialogFrame(
+      maxWidth: 520,
+      maxHeightFactor: 0.76,
+      scrollable: false,
+      child: HibikiModalSheetFrame(
+        title: t.lyrics_mode,
+        leadingIcon: Icons.lyrics_outlined,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: buildContent(),
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: actions,
+        ),
+      ),
     );
   }
 
   List<Widget> get actions => [buildSearchButton()];
 
   Widget buildContent() {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
     return RawScrollbar(
       thickness: 3,
       thumbVisibility: true,
@@ -93,6 +107,7 @@ class _LyricsDialogPageState extends BasePageState<LyricsDialogPage> {
                   icon: Icons.clear,
                 ),
               ),
+              SizedBox(height: tokens.spacing.gap),
               HibikiTextField(
                 controller: _artistController,
                 labelText: t.lyrics_artist,
@@ -103,7 +118,6 @@ class _LyricsDialogPageState extends BasePageState<LyricsDialogPage> {
                   icon: Icons.clear,
                 ),
               ),
-              const SizedBox(height: 10),
             ],
           ),
         ),
