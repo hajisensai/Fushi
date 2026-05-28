@@ -10,7 +10,7 @@ class AndroidDirectoryService implements PlatformDirectoryService {
     final dcim = await ExternalPath.getExternalStoragePublicDirectory(
       ExternalPath.DIRECTORY_DCIM,
     );
-    final hibikiDir = Directory(p.join(dcim, 'Hibiki'));
+    final hibikiDir = Directory(p.join(dcim, 'hibiki'));
     if (!hibikiDir.existsSync()) {
       hibikiDir.createSync(recursive: true);
     }
@@ -24,13 +24,7 @@ class AndroidDirectoryService implements PlatformDirectoryService {
 
   @override
   Future<List<String>> getDefaultPickerDirectories(String mediaType) async {
-    final dirs = await getExternalStorageDirectories();
-    final result = <String>[];
-    for (final dir in dirs) {
-      result.add(p.join(dir, 'Download'));
-      result.add(p.join(dir, 'Documents'));
-    }
-    return result.where((d) => Directory(d).existsSync()).toList();
+    return getExternalStorageDirectories();
   }
 
   @override
