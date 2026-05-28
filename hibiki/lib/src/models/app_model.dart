@@ -1160,7 +1160,7 @@ class AppModel with ChangeNotifier {
   }
 
   bool _shouldRunTtuMigration() {
-    if (!Platform.isAndroid && !Platform.isIOS) return false;
+    if (!isMobilePlatform) return false;
     final parts = _packageInfo.version.split('.');
     final int major = int.tryParse(parts.elementAtOrNull(0) ?? '') ?? 0;
     final int minor = int.tryParse(parts.elementAtOrNull(1) ?? '') ?? 0;
@@ -1267,6 +1267,14 @@ class AppModel with ChangeNotifier {
       }
     }
     await themeNotifier.refreshFromDb();
+    // Shortcut bindings are profile-scoped: reload the live registry from the
+    // (now-refreshed) source preference so a profile switch takes effect
+    // immediately instead of only after an app restart.
+    await loadShortcutRegistry(
+      shortcutRegistry,
+      ReaderHibikiSource.instance,
+      defaultTargetPlatform,
+    );
   }
 
   // ── sync pref helpers (delegated to PreferencesRepository) ──────────
@@ -1917,7 +1925,7 @@ class AppModel with ChangeNotifier {
   }) async {
     final String trimmed = searchTerm.trim();
     if (trimmed.isEmpty) return;
-    if (!Platform.isAndroid) {
+    if (!isAndroidPlatform) {
       final ctx = _ctx;
       if (ctx == null || !ctx.mounted) return;
       await showAppDialog(
