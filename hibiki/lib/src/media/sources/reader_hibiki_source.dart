@@ -432,6 +432,15 @@ class ReaderHibikiSource extends ReaderMediaSource {
     await setPreference<bool>(key: 'pause_on_lookup', value: value);
   }
 
+  /// 0 = skip by sentence (default), 5/10/15/30 = skip by N seconds.
+  int get skipActionSeconds =>
+      getPreference<int>(key: 'skip_action_seconds', defaultValue: 0);
+
+  Future<void> setSkipActionSeconds(int value) async {
+    await setPreference<int>(key: 'skip_action_seconds', value: value);
+    onSettingsChangedLive?.call();
+  }
+
   double get dismissSwipeSensitivity =>
       readerSettings?.dismissSwipeSensitivity ??
       getPreference<double>(

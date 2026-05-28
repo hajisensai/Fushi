@@ -12,12 +12,16 @@ class AudiobookPlayBar extends StatelessWidget {
   const AudiobookPlayBar({
     required this.controller,
     required this.onOpenSettings,
+    this.skipActionSeconds = 0,
     this.backgroundColor,
     super.key,
   });
 
   final AudiobookPlayerController controller;
   final Color? backgroundColor;
+
+  /// 0 = skip by sentence, 5/10/15/30 = skip by N seconds.
+  final int skipActionSeconds;
 
   /// 用户点 ⚙ 设置按钮后触发。由 reader 页面侧注入，因为设置面板要
   /// 访问 WebView controller 才能 probe ttu 当前章节 / TOC、触发书签。
@@ -34,10 +38,20 @@ class AudiobookPlayBar extends StatelessWidget {
           child: Row(
             children: [
               IconButton(
-                icon: const Icon(Icons.skip_previous_outlined),
+                icon: Icon(skipActionSeconds == 0
+                    ? Icons.skip_previous_outlined
+                    : Icons.fast_rewind_outlined),
                 iconSize: 22,
-                onPressed: controller.skipToPrevCue,
-                tooltip: t.prev_sentence,
+                onPressed: () {
+                  if (skipActionSeconds == 0) {
+                    controller.skipToPrevCue();
+                  } else {
+                    controller.seekRelative(-skipActionSeconds);
+                  }
+                },
+                tooltip: skipActionSeconds == 0
+                    ? t.prev_sentence
+                    : '-${skipActionSeconds}s',
               ),
               IconButton.filledTonal(
                 icon: Icon(
@@ -50,10 +64,20 @@ class AudiobookPlayBar extends StatelessWidget {
                 tooltip: controller.isPlaying ? t.pause : t.play,
               ),
               IconButton(
-                icon: const Icon(Icons.skip_next_outlined),
+                icon: Icon(skipActionSeconds == 0
+                    ? Icons.skip_next_outlined
+                    : Icons.fast_forward_outlined),
                 iconSize: 22,
-                onPressed: controller.skipToNextCue,
-                tooltip: t.next_sentence,
+                onPressed: () {
+                  if (skipActionSeconds == 0) {
+                    controller.skipToNextCue();
+                  } else {
+                    controller.seekRelative(skipActionSeconds);
+                  }
+                },
+                tooltip: skipActionSeconds == 0
+                    ? t.next_sentence
+                    : '+${skipActionSeconds}s',
               ),
               const SizedBox(width: 4),
               Expanded(

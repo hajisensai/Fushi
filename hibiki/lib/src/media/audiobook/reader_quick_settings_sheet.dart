@@ -811,7 +811,6 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
       selected: current,
       onChanged: (int value) {
         _src.setSkipActionSeconds(value);
-        widget.controller?.notifyListeners();
         setState(() {});
       },
     );

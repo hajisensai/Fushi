@@ -167,7 +167,10 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     ReaderHibikiSource.onSettingsChangedLive = () {
-      if (mounted) _applyStylesLive();
+      if (mounted) {
+        _applyStylesLive();
+        setState(() {});
+      }
     };
     _initBook();
   }
