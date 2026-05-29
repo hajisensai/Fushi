@@ -20,6 +20,32 @@ import 'package:shelf/shelf_io.dart' as shelf_io;
 /// coordinated server+client+discovery protocol change that must be designed
 /// and verified on real devices; it is intentionally NOT bolted on here. Until
 /// then, treat LAN sync as unencrypted and only use it on a network you trust.
+
+/// Thrown by [HibikiSyncServer.start] when the requested port is already bound
+/// by another process. Carries the [port] so the UI can name it.
+class SyncServerPortInUseException implements Exception {
+  SyncServerPortInUseException(this.port);
+  final int port;
+  @override
+  String toString() => 'SyncServerPortInUseException: port $port is in use';
+}
+
+/// True when [e] reports "address already in use": errno 98 (Linux),
+/// 10048 (Windows WSAEADDRINUSE) or 48 (macOS), with a message fallback for
+/// platforms that omit a numeric code.
+bool isAddressInUseError(SocketException e) {
+  final int? code = e.osError?.errorCode;
+  if (code == 98 || code == 10048 || code == 48) return true;
+  // Fall back to the message: cross-process conflicts carry an errno above,
+  // but a same-process re-bind raises Dart's "shared flag" guard with no code,
+  // and some platforms phrase EADDRINUSE without a numeric code.
+  final String message = '${e.osError?.message ?? ''} ${e.message}'.toLowerCase();
+  return message.contains('address already in use') ||
+      message.contains('address in use') ||
+      message.contains('only one usage of each socket address') ||
+      message.contains('shared flag to bind');
+}
+
 class HibikiSyncServer {
   HibikiSyncServer({
     required String syncDataDir,
@@ -51,11 +77,18 @@ class HibikiSyncServer {
     final handler = const shelf.Pipeline()
         .addMiddleware(_authMiddleware())
         .addHandler(_handleRequest);
-    _server = await shelf_io.serve(
-      handler,
-      _allowLan ? InternetAddress.anyIPv4 : InternetAddress.loopbackIPv4,
-      _requestedPort,
-    );
+    try {
+      _server = await shelf_io.serve(
+        handler,
+        _allowLan ? InternetAddress.anyIPv4 : InternetAddress.loopbackIPv4,
+        _requestedPort,
+      );
+    } on SocketException catch (e) {
+      if (isAddressInUseError(e)) {
+        throw SyncServerPortInUseException(_requestedPort);
+      }
+      rethrow;
+    }
   }
 
   Future<void> stop() async {

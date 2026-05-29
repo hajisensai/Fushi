@@ -1627,16 +1627,19 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
   int _port = 8765;
   String? _token;
   HibikiSyncServer? _server;
+  late final TextEditingController _portController;
   bool _loaded = false;
 
   @override
   void initState() {
     super.initState();
+    _portController = TextEditingController(text: '$_port');
     _loadSettings();
   }
 
   @override
   void dispose() {
+    _portController.dispose();
     _server?.stop();
     super.dispose();
   }
@@ -1654,11 +1657,33 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
       setState(() {
         _enabled = enabled;
         _port = port;
+        _portController.text = '$port';
         _token = token;
         _loaded = true;
       });
       if (enabled) await _startServer();
     }
+  }
+
+  /// Persist an edited port (no live restart — the new port applies next time
+  /// the server starts, so a half-typed value never bounces the running one).
+  Future<void> _setPort(String raw) async {
+    final int? parsed = int.tryParse(raw.trim());
+    if (parsed == null || parsed < 1 || parsed > 65535 || parsed == _port) {
+      return;
+    }
+    setState(() => _port = parsed);
+    await SyncRepository(widget.settingsContext.appModel.database)
+        .setServerPort(parsed);
+  }
+
+  /// A failed bind must not leave the toggle stuck "on" — it would re-fail on
+  /// every launch. Reset to off and persist so the user can change the port
+  /// and re-enable.
+  Future<void> _disableAfterStartFailure() async {
+    await SyncRepository(widget.settingsContext.appModel.database)
+        .setServerEnabled(false);
+    if (mounted) setState(() => _enabled = false);
   }
 
   Future<void> _startServer() async {
@@ -1673,7 +1698,15 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
     try {
       await _server!.start();
       if (mounted) setState(() {});
+    } on SyncServerPortInUseException catch (e) {
+      _server = null;
+      await _disableAfterStartFailure();
+      if (mounted) {
+        _showSnackBar(context, t.sync_server_port_in_use(port: e.port));
+      }
     } catch (e) {
+      _server = null;
+      await _disableAfterStartFailure();
       if (mounted) {
         _showSnackBar(
             context, t.sync_error(message: friendlySyncErrorDetail(e)));
@@ -1727,15 +1760,18 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
           ),
           if (_enabled) ...<Widget>[
             const SizedBox(height: 8),
-            Row(
-              children: <Widget>[
-                Text('${t.sync_server_port}: $_port',
-                    style: Theme.of(context).textTheme.bodyMedium),
-                if (running)
-                  Text('  (${_server!.port})',
-                      style: Theme.of(context).textTheme.bodySmall),
-              ],
+            HibikiTextField(
+              controller: _portController,
+              labelText: t.sync_server_port,
+              keyboardType: TextInputType.number,
+              onChanged: _setPort,
             ),
+            if (running)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text('${t.sync_server_running}: ${_server!.port}',
+                    style: Theme.of(context).textTheme.bodySmall),
+              ),
             const SizedBox(height: 12),
             Text(t.sync_server_token,
                 style: Theme.of(context).textTheme.labelSmall),

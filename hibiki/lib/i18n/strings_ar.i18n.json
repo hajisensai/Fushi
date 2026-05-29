@@ -1148,5 +1148,6 @@
     "sync_err_network": "Cannot reach the server — check your network or proxy settings.",
     "sync_err_timeout": "Connection timed out — the server did not respond in time.",
     "sync_err_quota": "Cloud storage is full (quota reached).",
-    "sync_err_auth_expired": "Sign-in expired — please sign in again."
+    "sync_err_auth_expired": "Sign-in expired — please sign in again.",
+    "sync_server_port_in_use": "Port $port is already in use — pick a different port."
 }
