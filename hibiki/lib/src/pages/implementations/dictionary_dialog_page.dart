@@ -65,8 +65,7 @@ class _DictionaryDialogPageState extends BasePageState {
   }
 
   Future<void> showDictionaryClearDialog() async {
-    Widget alertDialog = adaptiveAlertDialog(
-      context: context,
+    final Widget dialog = DictionaryConfirmationDialog(
       title: Text(t.dialog_title_dictionary_clear),
       content: Text(
         t.dialog_content_dictionary_clear,
@@ -107,13 +106,12 @@ class _DictionaryDialogPageState extends BasePageState {
 
     showAppDialog(
       context: context,
-      builder: (context) => alertDialog,
+      builder: (context) => dialog,
     );
   }
 
   Future<void> showDictionaryDeleteDialog(Dictionary dictionary) async {
-    Widget alertDialog = adaptiveAlertDialog(
-      context: context,
+    final Widget dialog = DictionaryConfirmationDialog(
       title: Text(t.dialog_title_dictionary_delete(name: dictionary.name)),
       content: Text(
         t.dialog_content_dictionary_delete,
@@ -155,7 +153,7 @@ class _DictionaryDialogPageState extends BasePageState {
 
     showAppDialog(
       context: context,
-      builder: (context) => alertDialog,
+      builder: (context) => dialog,
     );
   }
 
@@ -235,18 +233,7 @@ class _DictionaryDialogPageState extends BasePageState {
     if (hadMemoryError && mounted) {
       showAppDialog(
         context: context,
-        builder: (context) => adaptiveAlertDialog(
-          context: context,
-          title: Text(t.low_memory_mode),
-          content: Text(t.low_memory_mode_suggestion),
-          actions: [
-            adaptiveDialogAction(
-              context: context,
-              onPressed: () => Navigator.pop(context),
-              child: Text(t.dialog_close),
-            ),
-          ],
-        ),
+        builder: (context) => const DictionaryLowMemoryDialog(),
       );
     }
   }
@@ -688,18 +675,7 @@ class _DictionaryDialogPageState extends BasePageState {
     if (hadMemoryError && mounted) {
       showAppDialog(
         context: context,
-        builder: (context) => adaptiveAlertDialog(
-          context: context,
-          title: Text(t.low_memory_mode),
-          content: Text(t.low_memory_mode_suggestion),
-          actions: [
-            adaptiveDialogAction(
-              context: context,
-              onPressed: () => Navigator.pop(context),
-              child: Text(t.dialog_close),
-            ),
-          ],
-        ),
+        builder: (context) => const DictionaryLowMemoryDialog(),
       );
     }
   }
@@ -1010,5 +986,116 @@ class _DictionaryDialogPageState extends BasePageState {
         color: theme.colorScheme.primary,
       ),
     ];
+  }
+}
+
+@visibleForTesting
+class DictionaryConfirmationDialog extends StatelessWidget {
+  const DictionaryConfirmationDialog({
+    required this.title,
+    required this.content,
+    required this.actions,
+    super.key,
+  });
+
+  final Widget title;
+  final Widget content;
+  final List<Widget> actions;
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
+    return HibikiDialogFrame(
+      maxWidth: 440,
+      maxHeightFactor: 0.78,
+      child: HibikiModalSheetFrame(
+        leadingIcon: Icons.warning_amber_outlined,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.card,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            DefaultTextStyle.merge(
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: tokens.type.listTitle.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+              child: title,
+            ),
+            SizedBox(height: tokens.spacing.gap),
+            DefaultTextStyle.merge(
+              style: tokens.type.listSubtitle,
+              child: content,
+            ),
+          ],
+        ),
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: actions,
+        ),
+      ),
+    );
+  }
+}
+
+@visibleForTesting
+class DictionaryLowMemoryDialog extends StatelessWidget {
+  const DictionaryLowMemoryDialog({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
+    return HibikiDialogFrame(
+      maxWidth: 420,
+      maxHeightFactor: 0.72,
+      child: HibikiModalSheetFrame(
+        title: t.low_memory_mode,
+        leadingIcon: Icons.memory_outlined,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: Text(
+          t.low_memory_mode_suggestion,
+          style: tokens.type.listSubtitle,
+        ),
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: <Widget>[
+            adaptiveDialogAction(
+              context: context,
+              onPressed: () => Navigator.pop(context),
+              child: Text(t.dialog_close),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

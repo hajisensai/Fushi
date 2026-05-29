@@ -793,6 +793,46 @@ void main() {
     expect(source, isNot(contains('adaptiveAlertDialog(')));
   });
 
+  test('dictionary confirmation dialogs use shared MD3 dialog chrome', () {
+    final String source = File(
+      'lib/src/pages/implementations/dictionary_dialog_page.dart',
+    ).readAsStringSync();
+    final String clearDialog = _functionSource(
+      source,
+      'Future<void> showDictionaryClearDialog()',
+      '  Future<void> showDictionaryDeleteDialog(Dictionary dictionary)',
+    );
+    final String deleteDialog = _functionSource(
+      source,
+      'Future<void> showDictionaryDeleteDialog(Dictionary dictionary)',
+      '  Future<void> _importDictionaryFiles()',
+    );
+    final String confirmationFrame = _sectionSource(
+      source,
+      'class DictionaryConfirmationDialog',
+      'class DictionaryLowMemoryDialog',
+    );
+    final String lowMemoryDialog = _sectionSource(
+      source,
+      'class DictionaryLowMemoryDialog',
+      source.length,
+    );
+
+    for (final String dialogSource in <String>[clearDialog, deleteDialog]) {
+      expect(dialogSource, contains('DictionaryConfirmationDialog('));
+      expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
+    }
+
+    for (final String dialogSource in <String>[
+      confirmationFrame,
+      lowMemoryDialog,
+    ]) {
+      expect(dialogSource, contains('HibikiDialogFrame('));
+      expect(dialogSource, contains('HibikiModalSheetFrame('));
+      expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
+    }
+  });
+
   test('MD3 review report does not reopen completed app chrome scope', () {
     final String report = File(
       '../docs/reviews/2026-05-26-project-review.md',
