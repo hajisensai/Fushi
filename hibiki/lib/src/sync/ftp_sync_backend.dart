@@ -140,8 +140,7 @@ class FtpSyncBackend extends SyncBackend {
         } catch (e) {
           if (e is SyncBackendError || e is SyncAuthError) rethrow;
           _resetConnection();
-          throw SyncBackendError('Failed to list books: $e',
-              isRetryable: true);
+          throw SyncBackendError('Failed to list books: $e', isRetryable: true);
         }
       });
 
@@ -489,8 +488,15 @@ class FtpSyncBackend extends SyncBackend {
   /// reusing a stale socket. Pairs with throwing a retryable error so the
   /// SyncManager retry reconnects within the same sync.
   void _resetConnection() {
+    final stale = _client;
     _client = null;
     _connected = false;
+    // Best-effort close the (possibly half-open) control socket so its file
+    // descriptor is released. Fire-and-forget: the connection may be dead and
+    // disconnect() could block, so we never await it here.
+    if (stale != null) {
+      unawaited(stale.disconnect().then<void>((_) {}, onError: (_) {}));
+    }
   }
 
   // ── Private helpers ───────────────────────────────────────────────
@@ -578,5 +584,4 @@ class FtpSyncBackend extends SyncBackend {
     if (idx < 0) return path;
     return path.substring(idx + 1);
   }
-
 }

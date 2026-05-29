@@ -470,18 +470,7 @@ class DropboxSyncBackend extends SyncBackend {
     request.headers['Dropbox-API-Arg'] = apiArg;
     request.contentLength = fileLength;
 
-    var sent = 0;
-    file.openRead().listen(
-      (chunk) {
-        request.sink.add(chunk);
-        sent += chunk.length;
-        onProgress?.call(fileLength > 0 ? sent / fileLength : 0);
-      },
-      onDone: () => request.sink.close(),
-      onError: (Object e) => request.sink.addError(e),
-    );
-
-    final response = await http.Response.fromStream(await syncHttpClient.send(request));
+    final response = await streamUpload(request, file, fileLength, onProgress);
     if (response.statusCode != 200) {
       throw SyncBackendError(
           'Dropbox upload failed: ${response.statusCode} ${response.body}');

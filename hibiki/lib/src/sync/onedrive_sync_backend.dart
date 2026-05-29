@@ -487,18 +487,7 @@ class OneDriveSyncBackend extends SyncBackend {
     request.headers['Content-Type'] = _guessContentType(fileName);
     request.contentLength = fileLength;
 
-    var sent = 0;
-    file.openRead().listen(
-      (chunk) {
-        request.sink.add(chunk);
-        sent += chunk.length;
-        onProgress?.call(fileLength > 0 ? sent / fileLength : 0);
-      },
-      onDone: () => request.sink.close(),
-      onError: (Object e) => request.sink.addError(e),
-    );
-
-    final response = await http.Response.fromStream(await syncHttpClient.send(request));
+    final response = await streamUpload(request, file, fileLength, onProgress);
     _checkResponse(response, 'PUT upload $fileName');
   }
 
@@ -597,7 +586,8 @@ class OneDriveSyncBackend extends SyncBackend {
     String? url = '$_apiBase$firstPath';
 
     while (url != null) {
-      final resp = await syncHttpClient.get(Uri.parse(url), headers: _authHeaders);
+      final resp =
+          await syncHttpClient.get(Uri.parse(url), headers: _authHeaders);
       _checkResponse(resp, 'GET $firstPath');
       final json = jsonDecode(resp.body) as Map<String, dynamic>;
       items.addAll((json['value'] as List).cast<Map<String, dynamic>>());
