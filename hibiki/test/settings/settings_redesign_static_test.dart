@@ -104,6 +104,22 @@ void main() {
     expect(source, isNot(contains('adaptiveAlertDialog(')));
   });
 
+  test('settings shared actions use MD3 dialog chrome', () {
+    final String actionsSource =
+        readNormalizedSource('lib/src/settings/settings_actions.dart');
+    final String schemaSource =
+        readNormalizedSource('lib/src/settings/settings_schema.dart');
+    final String combined = '$actionsSource\n$schemaSource';
+
+    expect(actionsSource, contains('HibikiDialogFrame('));
+    expect(actionsSource, contains('HibikiModalSheetFrame('));
+
+    expect(actionsSource, isNot(contains('adaptiveAlertDialog(')));
+    expect(schemaSource, isNot(contains('adaptiveAlertDialog(')));
+    expect(combined, contains('showSettingsConfirmationDialog('));
+    expect(combined, contains('showSettingsProgressDialog('));
+  });
+
   test('display settings contains reader layout only', () {
     final String source = readNormalizedSource(
         'lib/src/pages/implementations/display_settings_page.dart');

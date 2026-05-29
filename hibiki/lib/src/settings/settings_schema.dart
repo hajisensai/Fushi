@@ -992,29 +992,14 @@ class _LocalAudioDatabasesRowState extends State<_LocalAudioDatabasesRow> {
   }
 
   Future<void> _confirmRemove(int index, String label) async {
-    final bool? confirmed = await showAppDialog<bool>(
-      context: context,
-      builder: (BuildContext ctx) => adaptiveAlertDialog(
-        context: ctx,
-        title: Text(t.dialog_delete),
-        content: Text(label),
-        actions: <Widget>[
-          adaptiveDialogAction(
-            context: ctx,
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(t.dialog_cancel),
-          ),
-          adaptiveDialogAction(
-            context: ctx,
-            isDefaultAction: true,
-            isDestructiveAction: true,
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(t.dialog_delete),
-          ),
-        ],
-      ),
+    final bool confirmed = await showSettingsConfirmationDialog(
+      settingsContext,
+      title: t.dialog_delete,
+      body: label,
+      confirmLabel: t.dialog_delete,
+      destructive: true,
     );
-    if (confirmed != true || !mounted) return;
+    if (!confirmed || !mounted) return;
     await appModel.removeLocalAudioDb(index);
     _refresh();
   }
@@ -1025,28 +1010,9 @@ class _LocalAudioDatabasesRowState extends State<_LocalAudioDatabasesRow> {
     void showImportDialog() {
       if (importDialogShown || !mounted) return;
       importDialogShown = true;
-      showAppDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (_) => PopScope(
-          canPop: false,
-          child: Builder(
-            builder: (BuildContext ctx) => adaptiveAlertDialog(
-              context: ctx,
-              content: Row(
-                children: <Widget>[
-                  SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: adaptiveIndicator(context: ctx, strokeWidth: 2),
-                  ),
-                  const SizedBox(width: 16),
-                  Text(t.dialog_importing),
-                ],
-              ),
-            ),
-          ),
-        ),
+      showSettingsProgressDialog(
+        settingsContext,
+        message: t.dialog_importing,
       );
     }
 
