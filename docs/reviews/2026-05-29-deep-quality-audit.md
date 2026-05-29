@@ -3291,3 +3291,30 @@ static void scheduleCheck(... bool betaChannel = false, bool debugChannel = fals
 
 **结论**：已修复的 Critical/High/reader/settings/import 路径在真机验证通过，从"代码路径确认"升级为"真机验证"（CLAUDE.md 三态最高级）。`reader_pagination_test` 自带 EPUB 导入，故 import→parse→reader 全链路在设备上跑通无崩溃。
 - 注：`regression_test` 需预置书架（push-fixtures + import），`test-flows.ps1` 已不在 `.codex-test/tools/`（并行 dev 移除）；reader_pagination_test 自带导入已覆盖等价路径。
+
+---
+# 修复进度日志 — 第三轮 (Round 3, 2026-05-29)
+
+> 模拟器接入后继续：第三轮并行 fanout（5 组）+ 跨文件手工修复，把修复总数提升到 **117/156**。
+
+## 第三轮修复
+- 082（low）：删除 ImageEnhancement.fetchImages 死契约（2/3 子类抛错，零调用方）。
+- 128（low）：getBooksFromDb 串行 N+1 查询/封面探测 → Future.wait 并发（顺序不变）。
+- 131（low）：reader 快捷设置目的地复用 readingDisplay id → 新增专用 SettingsDestinationId.readerQuickSettings。
+- 134（low）：用构造注入替换 AndroidClipboardService 的 is/as 降级 SDK 接线（改名/替换变编译期错误）。
+- 136（low）：删除 3 个死接口 TtsEngine/StoragePaths/PlatformIntegration + barrel 导出。
+- 137（low）：去掉所有实现都忽略的 getDefaultPickerDirectories(mediaType) dead 参数（接口+3 实现+调用方+2 测试）。
+- **048（med，数据丢失）**：WebDAV/FTP/Dropbox/OneDrive 的元数据更新原先"先删后传"，上传失败即永久丢进度；改为**先传后删**（上传成功后才删旧文件）。Google Drive 已是 in-place 更新。需 sync-server 集成复测。
+
+## 最终处置（117/156）
+- **FIXED 117**：1 Critical · 10 High · ~30 Medium · ~72 Low · 3 Info。
+- **REJECTED 3**：034/149/156（验证为误报）。
+- **DEFERRED 3**：009（FFI isolate，需原生线程安全+真机）、011（LAN TLS，协议+真机）、021（god-object，架构迁移）。
+- **REMAINING ~33**：原生 Kotlin/C++/gradle/manifest（需 NDK 构建+特定设备：014/015/020/055-058/071/076 等）、密钥轮换（072 用户操作，dart_defines.env 已 gitignored）、大重构（031/105/114/121/123）、测试编写（050/051/052）、配置（025/073/074/075/077）、sync 去重/wire（085/090/091）、产品决策（027/046/079）。
+
+## 测试状态澄清（重要）
+`flutter test` = **1383 passed**，2 个失败**均为并行开发（focus-ring/MD3）的在途工作，非本轮修复所致**，且不可触碰（会 clobber 未提交工作）：
+1. `switch_settings_page_test`（已跟踪）：失败源自并行 MD3 提交 `e26f9d1e2`（HibikiModalSheetFrame 在 240px 视口溢出）；与本轮改动无 import/逻辑重叠。
+2. `settings_focus_traversal_test`（**未跟踪 WIP**）：测试并行 dev 正在构建的 stepper a11y 语义；其被测实现 `_KeyboardStepper`/`_StepperIncrementIntent` 在 settings_shared.dart 中是**未提交的并行改动**（feature 尚未完成）。
+
+本轮所有提交在真机（emulator-5556）构建 + app_smoke + settings_validation + reader_pagination 集成测试通过。
