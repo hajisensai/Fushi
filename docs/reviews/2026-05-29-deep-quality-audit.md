@@ -3249,3 +3249,30 @@ static void scheduleCheck(... bool betaChannel = false, bool debugChannel = fals
 - **驳回（误报）**：1 条。
 - **剩余建议处置**：110 条（23 Medium + 87 Low/Info）。
 - 验证：`flutter analyze lib` 干净；`flutter test` 1357 passed（唯一失败 `switch_settings_page_test` 为并行 MD3 工作回归，非本轮改动，已记录）。
+
+---
+# 修复进度日志 — 第二轮 (Round 2, 2026-05-29)
+
+> 在第一轮（36 修复）基础上，用并行 fix workflow（12 个 opus agent 修互不相交文件组）+ 跨文件手工修复，把修复总数提升到 **110/156**。全程 `flutter analyze lib` 干净，`flutter test` **1368 通过 / 1 失败**（唯一失败 `switch_settings_page_test` 为并行 MD3 工作回归，opus 审查确认与本轮改动无 import/逻辑重叠）。两轮 opus 代码审查：第二轮发现 1 个阻塞 FAIL（041 deleteBook 漏删 SRT-linked cue），已根因修复（deleteEpubBook 事务内补删 srt.uid 的 cue）+ 回归测试，其余全 PASS。
+
+## 最终处置（覆盖全部 156 条）
+
+| 状态 | 数量 | 说明 |
+|---|--:|---|
+| **FIXED** | **110** | 1 Critical · 10 High · 27 Medium · 69 Low · 3 Info；均验证 + 双轮 opus 审查 |
+| **REJECTED（误报）** | 3 | 034（删合法 EPUB 占位条目）、149（3 个转换器实际有 17/7/9 引用，非死代码）、156（debugChannel 实际被 home_page 使用） |
+| **DEFERRED（有据硬暂缓）** | 3 | 009 FFI 移后台 isolate（需验证原生线程安全+真机）、011 LAN TLS/HMAC（协议特性+真机握手）、021 AppModel god-object（架构级增量迁移） |
+| **REMAINING-followup** | 25 | 大重构（031 去重类、114 共享卡片、121 reader 性能、105 TTU DOM、128 批查询）、测试编写（050/051/052）、sync 并行开发区（048/140/141）、跨文件/契约（082/085/090/131/134/136）、文件重命名（079）等 |
+| **NATIVE/config** | 15 | Kotlin/Java/C++/gradle/manifest/CI/secret（014/015/020/025/055/056/057/058/071/073/074/075/076/077 + **072 工作树内的 OAuth client secret**）——需 NDK 构建或真机验证、或属配置/密钥轮换（本环境无法 build-verify） |
+
+## 第二轮重点修复（节选）
+- reader：037 fragment 重置、038 外链经 url_launcher + 同章锚点原地跳、118 chapter allowMalformed 解码、120 时间戳音量节流、122 lyrics 后台持久化。
+- reader source：040 deleteBook 清 override title pref、041 单一所有权原子删除（+ 041 follow-up 补 SRT cue）、042/124 删死 generateAudio/portForLanguage、125 furigana deletePreference、126 记录不可解析 id、127 编码 epub href、039 uid 常量去重。
+- sync：028 surface VACUUM 失败、047 时间戳相等冲突 tie-break、049 AsyncMutex 串行化、067/108/132/133 加固。
+- dict：099 中文匹配长度 LRU 缓存（与日文对齐）、098/100。
+- anki：060/062/063 加固；audio：069/070 + ass_parser；creator：083 死分支、078 isExportable 回退（全局状态耦合）保留防御性拷贝。
+- 死代码：删除 084/088/113/115（含 base_media_search_bar 308 行、LoadingPage）+ MediaSource.buildBar；epub：035/102/103/106。
+- 测试质量：053/143/146/155 + 新增回归测试（SRT cue 迁移、deleteEpub SRT 级联、audio 去重、backup 凭证、bookmark FK-ON、SMIL 单位、epub TOC/非UTF8、Chinese 缓存等）。
+
+## 安全提示（NATIVE/config 中需用户行动）
+- **HBK-AUDIT-072**：`hibiki/dart_defines.env` 内含真实 Google OAuth client secret 且在工作树中——应轮换该密钥并移出版本控制（加入 .gitignore / 用 CI secret 注入）。这是密钥治理动作，非代码可自动修复。
