@@ -211,6 +211,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         modelName: noteType.name,
         fields: fields,
         tags: tags,
+        allowDuplicate: settings.allowDupes,
       );
       return MineResult.success;
     } on AnkiConnectException catch (e) {
