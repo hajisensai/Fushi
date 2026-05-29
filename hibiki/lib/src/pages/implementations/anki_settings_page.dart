@@ -277,74 +277,90 @@ class _AnkiHandlebarPickerDialogState extends State<AnkiHandlebarPickerDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final double maxHeight = MediaQuery.of(context).size.height * 0.36;
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final double maxHeight =
+        (MediaQuery.of(context).size.height * 0.24).clamp(56.0, 320.0);
 
-    return adaptiveAlertDialog(
-      context: context,
-      titlePadding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-      contentPadding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-      actionsPadding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
-      buttonPadding: const EdgeInsets.symmetric(horizontal: 4),
-      title: Text(
-        widget.title,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: Theme.of(context).textTheme.titleMedium,
-      ),
-      content: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: double.maxFinite,
-          maxHeight: maxHeight,
+    return HibikiDialogFrame(
+      maxWidth: 560,
+      maxHeightFactor: 0.96,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      scrollable: false,
+      child: HibikiModalSheetFrame(
+        title: widget.title,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          0,
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            AdaptiveSettingsTextField(
-              controller: _controller,
-              hintText: t.anki_field_not_mapped,
-            ),
-            const SizedBox(height: 4),
-            Flexible(
-              child: ListView.builder(
-                shrinkWrap: true,
-                itemCount: widget.options.length,
-                itemBuilder: (_, i) {
-                  final opt = widget.options[i];
-                  if (opt == '-') return const Divider(height: 1);
-                  final isSelected = widget.initialValue == opt;
-                  return AdaptiveSettingsRow(
-                    title: opt,
-                    trailing: isSelected
-                        ? Icon(
-                            Icons.check,
-                            color: Theme.of(context).colorScheme.primary,
-                          )
-                        : null,
-                    onTap: () => Navigator.pop(context, opt),
-                  );
-                },
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        body: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: double.maxFinite,
+            maxHeight: maxHeight,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AdaptiveSettingsTextField(
+                controller: _controller,
+                hintText: t.anki_field_not_mapped,
               ),
+              SizedBox(height: tokens.spacing.gap),
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: widget.options.length,
+                  itemBuilder: (_, i) {
+                    final opt = widget.options[i];
+                    if (opt == '-') return const Divider(height: 1);
+                    final isSelected = widget.initialValue == opt;
+                    return AdaptiveSettingsRow(
+                      title: opt,
+                      trailing: isSelected
+                          ? Icon(
+                              Icons.check,
+                              color: Theme.of(context).colorScheme.primary,
+                            )
+                          : null,
+                      onTap: () => Navigator.pop(context, opt),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: [
+            adaptiveDialogAction(
+              context: context,
+              onPressed: () => Navigator.pop(context, ''),
+              child:
+                  Text(MaterialLocalizations.of(context).deleteButtonTooltip),
+            ),
+            adaptiveDialogAction(
+              context: context,
+              onPressed: () => Navigator.pop(context),
+              child: Text(MaterialLocalizations.of(context).cancelButtonLabel),
+            ),
+            adaptiveDialogAction(
+              context: context,
+              onPressed: () => Navigator.pop(context, _controller.text),
+              child: Text(MaterialLocalizations.of(context).okButtonLabel),
             ),
           ],
         ),
       ),
-      actions: [
-        adaptiveDialogAction(
-          context: context,
-          onPressed: () => Navigator.pop(context, ''),
-          child: Text(MaterialLocalizations.of(context).deleteButtonTooltip),
-        ),
-        adaptiveDialogAction(
-          context: context,
-          onPressed: () => Navigator.pop(context),
-          child: Text(MaterialLocalizations.of(context).cancelButtonLabel),
-        ),
-        adaptiveDialogAction(
-          context: context,
-          onPressed: () => Navigator.pop(context, _controller.text),
-          child: Text(MaterialLocalizations.of(context).okButtonLabel),
-        ),
-      ],
     );
   }
 }
