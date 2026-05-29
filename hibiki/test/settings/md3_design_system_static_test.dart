@@ -729,6 +729,21 @@ void main() {
     }
   });
 
+  test('book CSS confirmation dialog uses shared MD3 dialog chrome', () {
+    final String source = File(
+      'lib/src/pages/implementations/book_css_editor_page.dart',
+    ).readAsStringSync();
+    final String dialogSource = _sectionSource(
+      source,
+      'class BookCssConfirmationDialog<T>',
+      source.length,
+    );
+
+    expect(dialogSource, contains('HibikiDialogFrame('));
+    expect(dialogSource, contains('HibikiModalSheetFrame('));
+    expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
+  });
+
   test('MD3 review report does not reopen completed app chrome scope', () {
     final String report = File(
       '../docs/reviews/2026-05-26-project-review.md',
