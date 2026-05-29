@@ -2,10 +2,17 @@ name: Build Android APK
 on:
   push:
     branches: ['main']
-    paths: ['hibiki/**', 'ci/**']
+    paths: &ci_paths
+      - 'hibiki/**'
+      - 'packages/**'
+      - 'ci/**'
+      - '.github/workflows/**'
+      - 'melos.yaml'
+      - 'pubspec.yaml'
+      - 'pubspec.lock'
   pull_request:
     branches: ['main']
-    paths: ['hibiki/**', 'ci/**']
+    paths: *ci_paths
   workflow_dispatch:
 
 jobs:
@@ -71,6 +78,38 @@ jobs:
         flutter build apk --debug
         --dart-define=GOOGLE_OAUTH_CLIENT_ID=${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
         --dart-define=GOOGLE_OAUTH_CLIENT_SECRET=${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+
+    # The release build (minify/R8/proguard + C++23 native) is the variant that
+    # ships; without a keystore it was never exercised on PRs, so R8/keep-rule
+    # regressions stayed invisible until a tagged release (HBK-AUDIT-026).
+    # build.gradle refuses debug-signed release APKs, so we mint a throwaway
+    # keystore to run the full release pipeline (artifact is NOT distributable).
+    - name: Generate throwaway keystore (no signing secret present)
+      if: env.HAS_KEYSTORE != 'true'
+      working-directory: hibiki/android
+      run: |
+        keytool -genkeypair -v -keystore hibiki-release.jks \
+          -storepass ci_throwaway -keypass ci_throwaway -alias ci \
+          -keyalg RSA -keysize 2048 -validity 1 \
+          -dname "CN=Hibiki CI, O=CI, C=US"
+        cat > key.properties <<EOF
+        storePassword=ci_throwaway
+        keyPassword=ci_throwaway
+        keyAlias=ci
+        storeFile=hibiki-release.jks
+        EOF
+      env:
+        HAS_KEYSTORE: ${{ secrets.KEYSTORE_BASE64 != '' }}
+
+    - name: Verify release build (minify/R8/proguard/native)
+      if: env.HAS_KEYSTORE != 'true'
+      working-directory: hibiki
+      run: >-
+        flutter build apk --release
+        --dart-define=GOOGLE_OAUTH_CLIENT_ID=${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+        --dart-define=GOOGLE_OAUTH_CLIENT_SECRET=${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+      env:
+        HAS_KEYSTORE: ${{ secrets.KEYSTORE_BASE64 != '' }}
 
     - name: Decode keystore
       if: env.HAS_KEYSTORE == 'true'
