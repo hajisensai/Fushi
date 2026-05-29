@@ -1143,5 +1143,6 @@
     "shortcut_gamepad": "手柄",
     "shortcut_none": "无",
     "shortcut_clear": "清除",
-    "shortcut_stop_capture": "停止捕获"
+    "shortcut_stop_capture": "停止捕获",
+    "section_advanced_typography": "高级选项"
 }

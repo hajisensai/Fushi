@@ -1143,5 +1143,6 @@
     "shortcut_gamepad": "Gamepad",
     "shortcut_none": "None",
     "shortcut_clear": "Clear",
-    "shortcut_stop_capture": "Stop"
+    "shortcut_stop_capture": "Stop",
+    "section_advanced_typography": "Advanced"
 }
