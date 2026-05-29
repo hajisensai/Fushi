@@ -371,6 +371,13 @@ void main() {
         'BorderRadius.circular(4)',
         'fontSize: 10',
         'fontSize: 11',
+        'EdgeInsets.symmetric(horizontal: 10, vertical: 4)',
+        'EdgeInsets.symmetric(vertical: 4)',
+        'EdgeInsets.symmetric(horizontal: 4)',
+        'EdgeInsets.only(top: 2)',
+        'EdgeInsets.only(top: 3)',
+        'EdgeInsets.only(left: 8, bottom: 2)',
+        'spacing: 2',
       ],
       'lib/src/pages/implementations/dictionary_dialog_page.dart': <String>[
         'ExpansionTile',
