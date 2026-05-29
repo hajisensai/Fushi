@@ -3318,3 +3318,35 @@ static void scheduleCheck(... bool betaChannel = false, bool debugChannel = fals
 2. `settings_focus_traversal_test`（**未跟踪 WIP**）：测试并行 dev 正在构建的 stepper a11y 语义；其被测实现 `_KeyboardStepper`/`_StepperIncrementIntent` 在 settings_shared.dart 中是**未提交的并行改动**（feature 尚未完成）。
 
 本轮所有提交在真机（emulator-5556）构建 + app_smoke + settings_validation + reader_pagination 集成测试通过。
+
+---
+# 修复进度日志 — 第四轮 (Round 4, 2026-05-29)
+
+> 目标：把 AnkiDroid 真机链路纳入测试流程，并把 `flutter test` 跑成全绿。
+
+## AnkiDroid 集成测试流程（新增脚本）
+- 新增 `ci/anki-integration-test.sh`：自包含、幂等、可复现的 AnkiDroid API 真机测试流程，对应 `hibiki/integration_test/anki_integration_test.dart`（`fetchConfiguration` 返回真实 decks/note types、`isDuplicate`、`mineEntry`）。
+- **根因（非绕过）**：AnkiDroid API 受 *dangerous* 权限 `com.ichi2.anki.permission.READ_WRITE_DATABASE` 管控，Android 只在用户点 AnkiDroid 运行时弹窗"Allow"后授予。Hibiki 运行时已正确发起请求（`AnkiChannelHandler.java:144/183` 的 `ankiDroid.requestPermission(...)`），但自动化 `flutter drive` 每次全新安装且无法点系统弹窗，于是 fresh-install 必返回 `AnkiFetchError`。脚本用 `adb install -g`（授予全部运行时权限 = 等价用户点 Allow）预装 APK，`flutter drive` 的 `-r` 重装保留该授权，从而确定性复现已授权状态。这是测试夹具步骤，产品代码无改动。
+- 已验证：`bash ci/anki-integration-test.sh --skip-build` → `00:30 +6: All tests passed!`（emulator-5554，AnkiDroid 22400300 + 已建 collection）。
+- 文档同步到 `CLAUDE.md` 的"AnkiDroid 集成测试流程"小节。
+
+## switch_settings_page_test 溢出 — 实修（升级 Round 3 的"并行 dev"判断）
+- Round 3 把该失败归因于并行 MD3 提交且不可触碰。本轮确认它是 `flutter test` 全绿的唯一阻塞项，遂做**根因修复**（不碰并行 dev 的在途逻辑，只修共享组件）。
+- **根因**：`HibikiModalSheetFrame._buildBody`（`hibiki_material_components.dart:641`）只有在 `scrollable:true` 时才把 body 包进 `Flexible`。当调用方自带滚动器并传 `scrollable:false`（`switch_settings_page` / `text_segmentation_dialog_page` 都是此模式），body 拿不到高度上界 → 自带的 `ListView(shrinkWrap)` 取完整 intrinsic 高度 → 320×240 视口下 Column 溢出 103px。
+- **修复**：body 恒为 `Flexible`，仅"是否由 frame 包 `SingleChildScrollView`"随 `scrollable` 变化。消除了特殊分支（坏品味），让调用方自带的滚动器在 sheet 高度内滚动。
+- **安全性核验**：22 处 `HibikiModalSheetFrame` 用法中，20 处在 `HibikiDialogFrame`（带 `ConstrainedBox` 高度上界）内；2 处底部 sheet（`reader_quick_settings_sheet` 用 `scrollable:true` 已是 `Flexible` 且生产可用，`tag_filter_sheet` 经 `adaptiveModalSheet`→`showModalBottomSheet(isScrollControlled:true)` 提供有界高度），故 `Flexible` 在所有宿主下都不会触发 unbounded 抛错。
+
+## 最终测试状态（全绿）
+- `flutter test`（全量单元/widget）：**+1415 All tests passed!**（exit 0）。Round 3 的 2 个失败已证实为并行编译压力下的 flaky "loading" 失败（重跑总数 1394↔1415 波动即为证据），干净重跑全过。
+- 真机集成套件（emulator-5554，6 核/5.9G/host-GPU，含最新 057/056/025 原生改动重建）：
+  | 测试 | 结果 |
+  |------|------|
+  | `flutter build apk --debug`（原生 057/056 重编译） | ✅ Built |
+  | `app_smoke_test` | ✅ All passed |
+  | `reader_pagination_test` | ✅ PAGINATION TESTS PASSED |
+  | `anki_integration_test`（脚本化，含 AnkiDroid） | ✅ +6 All passed |
+
+## 处置更新
+- **FIXED**：在 Round 3 的 117 基础上 +（057/056/025 原生 teardown 复审项已于 `b5e751a02` 落地）+（本轮 HibikiModalSheetFrame 溢出根因修复）。
+- AnkiDroid 测试流程：从"无脚本/手动"升级为"脚本化、可复现、已设备验证"。
+- 全量 `flutter test` 从"+1383 带 2 失败"升级为"+1415 全绿"。
