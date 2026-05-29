@@ -1,7 +1,6 @@
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:hibiki/src/utils/spacing.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
 
@@ -38,11 +37,7 @@ class _OpenStashDialogPage extends BasePageState<OpenStashDialogPage> {
 
   @override
   Widget build(BuildContext context) {
-    return adaptiveAlertDialog(
-      context: context,
-      contentPadding: MediaQuery.of(context).orientation == Orientation.portrait
-          ? Spacing.of(context).insets.all.big
-          : Spacing.of(context).insets.all.normal,
+    return OpenStashDialogFrame(
       content: buildContent(),
       actions: appModel.getStash().isEmpty ? null : actions,
     );
@@ -50,9 +45,8 @@ class _OpenStashDialogPage extends BasePageState<OpenStashDialogPage> {
 
   Widget buildEmptyMessage() {
     return Padding(
-      padding: EdgeInsets.only(
-        bottom: Spacing.of(context).spaces.normal,
-      ),
+      padding:
+          EdgeInsets.only(bottom: HibikiDesignTokens.of(context).spacing.gap),
       child: HibikiPlaceholderMessage(
         icon: Icons.inventory_2_outlined,
         message: t.stash_placeholder,
@@ -92,24 +86,27 @@ class _OpenStashDialogPage extends BasePageState<OpenStashDialogPage> {
         child: ValueListenableBuilder<int?>(
           valueListenable: _selectionNotifier,
           builder: (context, value, child) {
+            final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
             return Container(
               padding: EdgeInsets.symmetric(
-                vertical: Spacing.of(context).spaces.small,
-                horizontal: Spacing.of(context).spaces.semiSmall,
+                vertical: tokens.spacing.gap,
+                horizontal: tokens.spacing.gap + 4,
               ),
               margin: EdgeInsets.only(
-                top: Spacing.of(context).spaces.normal,
-                right: Spacing.of(context).spaces.normal,
+                top: tokens.spacing.gap,
+                right: tokens.spacing.gap,
               ),
-              color: index == _selectionNotifier.value
-                  ? theme.colorScheme.primary.withValues(alpha: 0.3)
-                  : theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.1),
+              decoration: BoxDecoration(
+                color: index == _selectionNotifier.value
+                    ? theme.colorScheme.secondaryContainer
+                    : tokens.surfaces.card,
+                borderRadius: tokens.radii.chipRadius,
+              ),
               child: SizedBox(
                 child: Text(
                   segment,
-                  style: TextStyle(
+                  style: tokens.type.controlLabel.copyWith(
                     fontWeight: FontWeight.w500,
-                    fontSize: textTheme.titleMedium?.fontSize,
                   ),
                 ),
               ),
@@ -188,27 +185,117 @@ class _OpenStashDialogPage extends BasePageState<OpenStashDialogPage> {
   void executeClear() async {
     await showAppDialog(
       context: context,
-      builder: (context) => adaptiveAlertDialog(
-        context: context,
-        title: Text(t.stash_clear_title),
-        content: Text(t.stash_clear_description),
-        actions: [
-          adaptiveDialogAction(
-              context: context,
-              child: Text(
-                t.dialog_clear,
+      builder: (context) => OpenStashClearDialog(
+        onConfirm: () {
+          appModel.clearStash();
+          Navigator.pop(context);
+          setState(() {});
+        },
+      ),
+    );
+  }
+}
+
+@visibleForTesting
+class OpenStashDialogFrame extends StatelessWidget {
+  const OpenStashDialogFrame({
+    required this.content,
+    this.actions,
+    super.key,
+  });
+
+  final Widget content;
+  final List<Widget>? actions;
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
+    return HibikiDialogFrame(
+      maxWidth: 520,
+      maxHeightFactor: 0.82,
+      child: HibikiModalSheetFrame(
+        title: t.creator_enhancement_open_stash,
+        leadingIcon: Icons.inventory_2_outlined,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: content,
+        footer: actions == null
+            ? null
+            : Wrap(
+                alignment: WrapAlignment.end,
+                spacing: tokens.spacing.gap,
+                runSpacing: tokens.spacing.gap,
+                children: actions!,
               ),
-              onPressed: () {
-                appModel.clearStash();
-                Navigator.pop(context);
-                setState(() {});
-              }),
-          adaptiveDialogAction(
-            context: context,
-            child: Text(t.dialog_close),
-            onPressed: () => Navigator.pop(context),
-          ),
-        ],
+      ),
+    );
+  }
+}
+
+@visibleForTesting
+class OpenStashClearDialog extends StatelessWidget {
+  const OpenStashClearDialog({
+    required this.onConfirm,
+    super.key,
+  });
+
+  final VoidCallback onConfirm;
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
+    return HibikiDialogFrame(
+      maxWidth: 420,
+      maxHeightFactor: 0.72,
+      child: HibikiModalSheetFrame(
+        title: t.stash_clear_title,
+        leadingIcon: Icons.delete_sweep_outlined,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: Text(
+          t.stash_clear_description,
+          style: tokens.type.listSubtitle,
+        ),
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: <Widget>[
+            adaptiveDialogAction(
+              context: context,
+              child: Text(t.dialog_close),
+              onPressed: () => Navigator.pop(context),
+            ),
+            adaptiveDialogAction(
+              context: context,
+              isDestructiveAction: true,
+              child: Text(t.dialog_clear),
+              onPressed: onConfirm,
+            ),
+          ],
+        ),
       ),
     );
   }

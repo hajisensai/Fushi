@@ -781,6 +781,18 @@ void main() {
     expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
   });
 
+  test('open stash dialogs use shared MD3 dialog chrome', () {
+    final String source = File(
+      'lib/src/pages/implementations/open_stash_dialog_page.dart',
+    ).readAsStringSync();
+
+    expect(source, contains('class OpenStashDialogFrame'));
+    expect(source, contains('class OpenStashClearDialog'));
+    expect(source, contains('HibikiDialogFrame('));
+    expect(source, contains('HibikiModalSheetFrame('));
+    expect(source, isNot(contains('adaptiveAlertDialog(')));
+  });
+
   test('MD3 review report does not reopen completed app chrome scope', () {
     final String report = File(
       '../docs/reviews/2026-05-26-project-review.md',
