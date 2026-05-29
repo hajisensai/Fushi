@@ -3455,3 +3455,17 @@ opus 审查 `2bf6affa0` 后提出 1 个 Critical：`HibikiModalSheetFrame` 恒 `
 **采纳的审查 Warning**：本轮"安全性核验"段原把 reader_hibiki_history 误判为"有界宿主"，实为无界但因 min+loose 而安全——以本勘误为准。审查另指出 `TagFilterSheet` 为死代码（全仓库无实例化，已核实），属并行 dev 既有问题，本任务不在范围内处理，仅记录。
 
 `flutter test` 全量：**+1419 All tests passed!**
+
+---
+
+## Round 4 处置更新 (2026-05-29) — 全部根因修复
+
+应用户指令"换未分配端口（无需保留旧数据）+ 根因修复 + 尽量永不复发"，HBK-AUDIT-157~168 已**全部修复**并提交：
+
+- **默认端口**：8765 → **38765**（IANA 未分配 User Port，避开 8xxx dev 拥挤段与 49152+ 临时区），集中为 `SyncRepository.defaultServerPort` 单一来源，杜绝跨调用点漂移。
+- **157**（本会话回归）：`HibikiClientSyncBackend.clearCache()` 重置 `_sessionResolved`，重试时重探、失败转移恢复。commit `3ffe4c9`。
+- **158**：WebDAV/SMB `authenticate()` 调 `clearCache()`。**159**：Dropbox/OneDrive `restoreAuth()` 失败清 token。**160**：WebDAV `resolveHref` 跨源校验含端口。**161**：SFTP `_guarded()` 把 `SftpStatusError`/传输失败统一译为可重试。**168**：GoogleDrive 401 重试再失败清 `_cachedApi`。commit `7ca4c07`。
+- **162**：凭据/token 保存 try-catch + 记日志（不再 fire-and-forget 静默丢弃）。**163/164/165/166**：静默 catch 改为 `ErrorLogService`/`debugPrint` 记录；LAN 发现新增可见"扫描失败"态（i18n `sync_lan_scan_failed`）。**167**：服务开关在 bind 成功后才持久化 `enabled`。commit `f205ed7`。
+- **永不复发机制**：新增静态守卫测试 `test/sync/no_bare_empty_catch_test.dart` —— 禁止 `lib/src/sync` 出现裸空 `catch {}`，强制每个 catch 要么记录/重抛，要么用注释声明 best-effort 意图；现有 14 处正当 best-effort 空 catch 已逐一注释化。
+
+验证：`flutter analyze lib/src/sync` 干净；新增/相关单测全绿；`flutter test` 全量 **+1424 All tests passed!**（此前并行 dev 的手柄重构编译错误也已在工作区修复）。
