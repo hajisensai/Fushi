@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/components/Hibiki_marquee.dart';
+import 'package:hibiki/src/utils/components/hibiki_marquee.dart';
 
 import 'golden_test_helpers.dart';
 

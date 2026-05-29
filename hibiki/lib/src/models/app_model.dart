@@ -98,18 +98,17 @@ final quickActionColorProvider =
     FutureProvider.family<Map<String, Color?>, DictionaryEntry>(
         (ref, entry) async {
   AppModel appModel = ref.watch(appProvider);
-  List<Future<Color?>> futures = appModel.quickActions.values.map((e) async {
-    return e.getIconColor(
-      appModel: appModel,
-      entry: entry,
+  // Key each color to its action's uniqueKey in a single pass; a positional
+  // colors[i] join would silently mismap if iteration order ever diverged.
+  List<Future<MapEntry<String, Color?>>> futures =
+      appModel.quickActions.values.map((e) async {
+    return MapEntry(
+      e.uniqueKey,
+      await e.getIconColor(appModel: appModel, entry: entry),
     );
   }).toList();
 
-  List<Color?> colors = await Future.wait(futures);
-  return Map<String, Color?>.fromEntries(
-      appModel.quickActions.values.mapIndexed((i, action) {
-    return MapEntry(action.uniqueKey, colors[i]);
-  }));
+  return Map<String, Color?>.fromEntries(await Future.wait(futures));
 });
 
 /// A global [Provider] for maintaining visible once state.
@@ -162,10 +161,15 @@ class AppModel with ChangeNotifier {
   final RouteObserver<PageRoute> _routeObserver = RouteObserver<PageRoute>();
 
   /// Persistent database (Drift/SQLite).
-  late final HibikiDatabase _database;
+  late HibikiDatabase _database;
+
+  /// True once [_database] has been opened in an init path. Used by
+  /// [retryInitialise] to close a stale connection before re-running init
+  /// (the late fields are reassigned, so the old DB would otherwise leak).
+  bool _databaseOpened = false;
 
   /// Theme management, extracted from AppModel for testability.
-  late final ThemeNotifier themeNotifier;
+  late ThemeNotifier themeNotifier;
   bool _themeListenerAdded = false;
 
   /// Preference management, extracted from AppModel for testability.
@@ -173,10 +177,10 @@ class AppModel with ChangeNotifier {
   PreferencesRepository get prefsRepo => _prefsRepo!;
 
   /// Media history and search history, extracted for testability.
-  late final MediaHistoryRepository mediaHistoryRepo;
+  late MediaHistoryRepository mediaHistoryRepo;
 
   /// Dictionary metadata, history, and search caches.
-  late final DictionaryRepository dictRepo;
+  late DictionaryRepository dictRepo;
 
   /// Extracted sub-managers.
   late final AudioController audioCtrl = AudioController();
@@ -194,7 +198,7 @@ class AppModel with ChangeNotifier {
 
   /// Used to get the versioning metadata of the app. See [initialise].
   PackageInfo get packageInfo => _packageInfo;
-  late final PackageInfo _packageInfo;
+  late PackageInfo _packageInfo;
 
   /// Whether [initialise] has completed successfully.
   bool get isInitialised => _isInitialised;
@@ -206,6 +210,23 @@ class AppModel with ChangeNotifier {
 
   /// Clears the error state and re-runs [initialise].
   Future<void> retryInitialise() async {
+    // A previous attempt may have partially initialised resources. Tear down
+    // the ones that would otherwise leak or double-register before re-running
+    // (the late fields below are reassigned by initialise()).
+    if (_databaseOpened) {
+      _prefsRepo?.removeListener(notifyListeners);
+      if (_themeListenerAdded) {
+        themeNotifier.removeListener(notifyListeners);
+        _themeListenerAdded = false;
+      }
+      try {
+        await _database.close();
+      } catch (e, stack) {
+        ErrorLogService.instance
+            .log('AppModel.retryInitialise.close', e, stack);
+      }
+      _databaseOpened = false;
+    }
     _initError = null;
     _isInitialised = false;
     notifyListeners();
@@ -251,79 +272,79 @@ class AppModel with ChangeNotifier {
   /// in actual runtime.
   /// Directory where data that may be dumped is stored.
   Directory get temporaryDirectory => _temporaryDirectory;
-  late final Directory _temporaryDirectory;
+  late Directory _temporaryDirectory;
 
   /// Directory where data may be persisted.
   Directory get appDirectory => _appDirectory;
-  late final Directory _appDirectory;
+  late Directory _appDirectory;
 
   /// Directory where database data is persisted.
   Directory get databaseDirectory => _databaseDirectory;
-  late final Directory _databaseDirectory;
+  late Directory _databaseDirectory;
 
   /// Directory where database data is persisted.
   Directory get dictionaryResourceDirectory => _dictionaryResourceDirectory;
-  late final Directory _dictionaryResourceDirectory;
+  late Directory _dictionaryResourceDirectory;
 
   /// Directory where browser cache data may be persisted.
   Directory get browserDirectory => _browserDirectory;
-  late final Directory _browserDirectory;
+  late Directory _browserDirectory;
 
   /// Directory where media source thumbnails may be persisted.
   Directory get thumbnailsDirectory => _thumbnailsDirectory;
-  late final Directory _thumbnailsDirectory;
+  late Directory _thumbnailsDirectory;
 
   /// Directory where media for export is stored for communication with
   /// third-party APIs.
   Directory get exportDirectory => _exportDirectory;
-  late final Directory _exportDirectory;
+  late Directory _exportDirectory;
 
   /// Directory where the browser media source saves web archives for offline
   /// use.
   Directory get webArchiveDirectory => _webArchiveDirectory;
-  late final Directory _webArchiveDirectory;
+  late Directory _webArchiveDirectory;
 
   /// Directory where media for export is stored for communication with
   /// third-party APIs. Fallback for failure.
   Directory get alternateExportDirectory => _alternateExportDirectory;
-  late final Directory _alternateExportDirectory;
+  late Directory _alternateExportDirectory;
 
   /// Directory used as a working directory for dictionary imports.
   Directory get dictionaryImportWorkingDirectory =>
       _dictionaryImportWorkingDirectory;
-  late final Directory _dictionaryImportWorkingDirectory;
+  late Directory _dictionaryImportWorkingDirectory;
 
   /// Used to fetch a language by its locale tag with constant time performance.
   /// Initialised with [populateLanguages] at startup.
-  late final Map<String, Language> languages;
+  late Map<String, Language> languages;
 
   /// Used to fetch an app locale by its locale tag with constant time
   /// performance. Initialised with [populateLocales] at startup.
-  late final Map<String, Locale> locales;
+  late Map<String, Locale> locales;
 
   /// Used to fetch a dictionary format by its unique key with constant time
   /// performance. Initialised with [populateDictionaryFormats] at startup.
-  late final Map<String, DictionaryFormat> dictionaryFormats;
+  late Map<String, DictionaryFormat> dictionaryFormats;
 
   /// Used to fetch a media type by its unique key with constant time
   /// performance. Initialised with [populateMediaTypes] at startup.
-  late final Map<String, MediaType> mediaTypes;
+  late Map<String, MediaType> mediaTypes;
 
   /// Used to fetch initialised fields by their unique key with constant
   /// time performance. Initialised with [populateEnhancements] at startup.
-  late final Map<String, Field> fields;
+  late Map<String, Field> fields;
 
   /// Used to fetch initialised enhancements by their unique key with constant
   /// time performance. Initialised with [populateEnhancements] at startup.
-  late final Map<Field, Map<String, Enhancement>> enhancements;
+  late Map<Field, Map<String, Enhancement>> enhancements;
 
   /// Used to fetch initialised actions by their unique key with constant
   /// time performance. Initialised with [populateQuickActions] at startup.
-  late final Map<String, QuickAction> quickActions;
+  late Map<String, QuickAction> quickActions;
 
   /// Used to fetch initialised sources by their unique key with constant
   /// time performance. Initialised with [populateMediaSources] at startup.
-  late final Map<MediaType, Map<String, MediaSource>> mediaSources;
+  late Map<MediaType, Map<String, MediaSource>> mediaSources;
 
   /// Maximum number of manual enhancements in a field.
   final int maximumFieldEnhancements = 5;
@@ -962,6 +983,7 @@ class AppModel with ChangeNotifier {
 
       debugPrint('[Hibiki] init: Drift database');
       _database = HibikiDatabase(_databaseDirectory.path);
+      _databaseOpened = true;
 
       /// Prepare all repositories (objects created first, then loaded in
       /// parallel to avoid serial await chains).
@@ -1188,6 +1210,7 @@ class AppModel with ChangeNotifier {
 
       debugPrint('[Hibiki-popup] init: Drift database');
       _database = HibikiDatabase(_databaseDirectory.path);
+      _databaseOpened = true;
 
       _prefsRepo = PreferencesRepository(_database);
       await prefsRepo.loadFromDb();
@@ -1199,6 +1222,16 @@ class AppModel with ChangeNotifier {
 
       mediaHistoryRepo = MediaHistoryRepository(_database);
       await mediaHistoryRepo.loadFromDb();
+
+      // The popup process always runs this full branch (separate :popup
+      // process, _isInitialised starts false). PopupDictApp.build() reads
+      // appModel.theme/darkTheme/themeMode which delegate to themeNotifier,
+      // so it MUST be constructed here exactly as in initialise() — otherwise
+      // the late final throws LateInitializationError (HBK-AUDIT-003).
+      themeNotifier = ThemeNotifier(_database, () => textTheme);
+      themeNotifier.loadFromPrefsSnapshot(prefsRepo.prefsSnapshot);
+      themeNotifier.addListener(notifyListeners);
+      _themeListenerAdded = true;
 
       _browserDirectory = Directory(path.join(appDirectory.path, 'browser'));
       _thumbnailsDirectory =
@@ -2318,13 +2351,24 @@ class AppModel with ChangeNotifier {
   @override
   void dispose() {
     _prefsRepo?.removeListener(notifyListeners);
-    if (_themeListenerAdded) themeNotifier.removeListener(notifyListeners);
+    if (_themeListenerAdded) {
+      themeNotifier.removeListener(notifyListeners);
+      themeNotifier.dispose();
+    }
     dictionaryEntriesNotifier.dispose();
     dictionarySearchAgainNotifier.dispose();
     dictionaryMenuNotifier.dispose();
     incognitoNotifier.dispose();
     databaseCloseNotifier.dispose();
     audioCtrl.dispose();
+    // Dispose the extracted repository notifiers (all ChangeNotifiers). Only
+    // when fully initialised — a failed/partial init leaves these `late`
+    // fields unassigned, and reading them would throw.
+    _prefsRepo?.dispose();
+    if (_isInitialised) {
+      dictRepo.dispose();
+      mediaHistoryRepo.dispose();
+    }
     super.dispose();
   }
 

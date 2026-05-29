@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/misc/Hibiki_audio_handler.dart';
+import 'package:hibiki/src/utils/misc/hibiki_audio_handler.dart';
 
 void main() {
   group('HibikiAudioHandler notification subtitles', () {

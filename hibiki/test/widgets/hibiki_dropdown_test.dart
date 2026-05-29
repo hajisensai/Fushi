@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/components/Hibiki_dropdown.dart';
+import 'package:hibiki/src/utils/components/hibiki_dropdown.dart';
 
 import 'widget_test_helpers.dart';
 

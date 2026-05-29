@@ -7,7 +7,7 @@ import 'package:html/dom.dart' as html_dom;
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:hibiki/src/epub/epub_book.dart';
-import 'package:hibiki/src/utils/misc/Hibiki_color.dart';
+import 'package:hibiki/src/utils/misc/hibiki_color.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 

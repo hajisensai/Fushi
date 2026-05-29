@@ -22,6 +22,7 @@ import 'package:hibiki/src/sync/onedrive_sync_backend.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/utils.dart';
+import 'package:hibiki/src/shortcuts/global_navigation.dart';
 import 'package:hibiki/src/platform/platform_services.dart';
 import 'package:hibiki/src/platform/platform_providers.dart';
 import 'package:share_plus/share_plus.dart';
@@ -464,7 +465,14 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
               dataBuilder: (context) {
                 return SpacingData.generate(10);
               },
-              child: child!,
+              // Universal gamepad/keyboard navigation: a visible focus ring for
+              // observability, wrapping a global gamepad-B back/dismiss intent.
+              child: HibikiFocusRing(
+                child: wrapWithGlobalNavigation(
+                  navigatorKey: appModel.navigatorKey,
+                  child: child!,
+                ),
+              ),
             ),
           );
         },

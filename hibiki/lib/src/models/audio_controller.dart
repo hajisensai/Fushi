@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:audio_service/audio_service.dart' as ag;
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/utils/misc/Hibiki_audio_handler.dart';
+import 'package:hibiki/src/utils/misc/hibiki_audio_handler.dart';
 
 class AudioController {
   Stream<void> get playStream => _playController.stream;

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/utils/misc/Hibiki_color.dart';
+import 'package:hibiki/src/utils/misc/hibiki_color.dart';
 
 void main() {
   group('HibikiColor.darken', () {
