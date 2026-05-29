@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:hibiki/src/sync/google_drive_sync_backend.dart';
 import 'package:hibiki/src/sync/position_converter.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
+import 'package:hibiki/src/sync/sync_error_messages.dart';
 import 'package:hibiki/src/sync/sync_manager.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
@@ -346,7 +347,7 @@ class _SyncCompareDialogState extends State<_SyncCompareDialog> {
         });
       }
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
+      if (mounted) setState(() => _error = friendlySyncError(e));
     }
   }
 
@@ -447,7 +448,7 @@ class _SyncCompareDialogState extends State<_SyncCompareDialog> {
       if (mounted) {
         setState(() {
           _applying = false;
-          _error = e.toString();
+          _error = friendlySyncError(e);
         });
       }
     }

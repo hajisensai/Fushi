@@ -1143,5 +1143,10 @@
     "shortcut_gamepad": "手柄",
     "shortcut_none": "无",
     "shortcut_clear": "清除",
-    "shortcut_stop_capture": "停止捕获"
+    "shortcut_stop_capture": "停止捕获",
+    "section_advanced_typography": "高级选项",
+    "sync_err_network": "无法连接服务器——请检查网络或代理设置。",
+    "sync_err_timeout": "连接超时——服务器未在限定时间内响应。",
+    "sync_err_quota": "云端存储空间已满（配额已用尽）。",
+    "sync_err_auth_expired": "登录已过期，请重新登录。"
 }

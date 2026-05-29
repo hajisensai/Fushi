@@ -21,6 +21,7 @@ import 'package:hibiki/src/sync/sftp_sync_backend.dart';
 import 'package:hibiki/src/sync/smb_sync_backend.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_compare_dialog.dart';
+import 'package:hibiki/src/sync/sync_error_messages.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/webdav_sync_backend.dart';
 import 'package:hibiki/utils.dart';
@@ -391,7 +392,7 @@ class _SyncAccountWidgetState extends State<_SyncAccountWidget> {
       }
     } catch (e) {
       if (mounted) {
-        _showSnackBar(context, t.sync_error(message: e.toString()));
+        _showSnackBar(context, friendlySyncError(e));
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -410,7 +411,7 @@ class _SyncAccountWidgetState extends State<_SyncAccountWidget> {
       await _checkAuth();
     } catch (e) {
       if (mounted) {
-        _showSnackBar(context, t.sync_error(message: e.toString()));
+        _showSnackBar(context, friendlySyncError(e));
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
