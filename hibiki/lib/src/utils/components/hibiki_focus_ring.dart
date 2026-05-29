@@ -17,33 +17,52 @@ class HibikiFocusRing extends StatefulWidget {
 class _HibikiFocusRingState extends State<HibikiFocusRing> {
   final FocusManager _fm = FocusManager.instance;
 
+  // Cached focus rectangle, recomputed in a post-frame callback only. NEVER
+  // read render geometry during build: the focused node's element can be
+  // *inactive* mid-build (e.g. a route swap at startup), and findRenderObject()
+  // asserts on inactive elements ("Cannot get renderObject of inactive
+  // element"). On desktop the keyboard highlight mode is on from launch, so
+  // that path runs immediately — which is why this only ever crashed there.
+  Rect? _rect;
+  bool _recomputeScheduled = false;
+
   @override
   void initState() {
     super.initState();
-    _fm.addListener(_onChange);
+    _fm.addListener(_scheduleRecompute);
     _fm.addHighlightModeListener(_onHighlight);
+    _scheduleRecompute();
   }
 
   @override
   void dispose() {
-    _fm.removeListener(_onChange);
+    _fm.removeListener(_scheduleRecompute);
     _fm.removeHighlightModeListener(_onHighlight);
     super.dispose();
   }
 
-  void _onChange() {
-    if (mounted) setState(() {});
+  void _onHighlight(FocusHighlightMode _) => _scheduleRecompute();
+
+  void _scheduleRecompute() {
+    if (_recomputeScheduled || !mounted) return;
+    _recomputeScheduled = true;
+    // By post-frame time the element tree is finalized: every element is either
+    // active (safe to query) or unmounted/defunct (caught by ctx.mounted).
+    // Inactive elements no longer exist, so the geometry read cannot assert.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _recomputeScheduled = false;
+      if (!mounted) return;
+      final Rect? next = _computeFocusRect();
+      if (next != _rect) {
+        setState(() => _rect = next);
+      }
+    });
   }
 
-  void _onHighlight(FocusHighlightMode _) {
-    if (mounted) setState(() {});
-  }
-
-  Rect? _focusRect() {
+  Rect? _computeFocusRect() {
     if (_fm.highlightMode != FocusHighlightMode.traditional) return null;
-    final FocusNode? node = _fm.primaryFocus;
-    final BuildContext? ctx = node?.context;
-    if (ctx == null) return null;
+    final BuildContext? ctx = _fm.primaryFocus?.context;
+    if (ctx == null || !ctx.mounted) return null;
     final RenderObject? ro = ctx.findRenderObject();
     if (ro is! RenderBox || !ro.hasSize || !ro.attached) return null;
     final Offset topLeft = ro.localToGlobal(Offset.zero);
@@ -52,7 +71,7 @@ class _HibikiFocusRingState extends State<HibikiFocusRing> {
 
   @override
   Widget build(BuildContext context) {
-    final Rect? rect = _focusRect();
+    final Rect? rect = _rect;
     final Color color = Theme.of(context).colorScheme.primary;
     return Stack(
       children: <Widget>[
