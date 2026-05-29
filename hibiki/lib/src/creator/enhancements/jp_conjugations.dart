@@ -201,7 +201,7 @@ const Map<String, Set<String>> godanConjugations = {
     'きたくない', 'きたくなくて',
     'きたかった',
     'きたくなかった',
-    'もう',
+    'こう',
   },
   'ぐ': <String>{
     'ぐ',
