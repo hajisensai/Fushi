@@ -677,6 +677,21 @@ void main() {
     expect(confirmDialog, isNot(contains('adaptiveAlertDialog(')));
   });
 
+  test('shortcut reset confirmation uses shared MD3 dialog chrome', () {
+    final String source = File(
+      'lib/src/pages/implementations/shortcut_settings_page.dart',
+    ).readAsStringSync();
+    final String confirmDialog = _functionSource(
+      source,
+      'Future<void> _confirmResetScope(ShortcutScope scope)',
+      '  Future<void> _editBinding(ShortcutAction action)',
+    );
+
+    expect(confirmDialog, contains('HibikiDialogFrame('));
+    expect(confirmDialog, contains('HibikiModalSheetFrame('));
+    expect(confirmDialog, isNot(contains('adaptiveAlertDialog(')));
+  });
+
   test('MD3 review report does not reopen completed app chrome scope', () {
     final String report = File(
       '../docs/reviews/2026-05-26-project-review.md',
