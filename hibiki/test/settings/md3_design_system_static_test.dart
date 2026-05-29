@@ -662,6 +662,21 @@ void main() {
     expect(importDialog, isNot(contains('adaptiveAlertDialog(')));
   });
 
+  test('app icon custom confirmation uses shared MD3 dialog chrome', () {
+    final String source = File(
+      'lib/src/pages/implementations/miscellaneous_settings_page.dart',
+    ).readAsStringSync();
+    final String confirmDialog = _functionSource(
+      source,
+      'Future<void> _pickCustomIcon()',
+      '  @override',
+    );
+
+    expect(confirmDialog, contains('HibikiDialogFrame('));
+    expect(confirmDialog, contains('HibikiModalSheetFrame('));
+    expect(confirmDialog, isNot(contains('adaptiveAlertDialog(')));
+  });
+
   test('MD3 review report does not reopen completed app chrome scope', () {
     final String report = File(
       '../docs/reviews/2026-05-26-project-review.md',

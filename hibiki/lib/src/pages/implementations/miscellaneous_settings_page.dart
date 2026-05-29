@@ -76,23 +76,49 @@ class _MiscellaneousSettingsPageState
   Future<void> _pickCustomIcon() async {
     final confirmed = await showAppDialog<bool>(
       context: context,
-      builder: (ctx) => adaptiveAlertDialog(
-        context: ctx,
-        title: Text(t.icon_custom_confirm_title),
-        content: Text(t.icon_custom_confirm_body),
-        actions: [
-          adaptiveDialogAction(
-            context: ctx,
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(MaterialLocalizations.of(ctx).cancelButtonLabel),
+      builder: (ctx) {
+        final HibikiDesignTokens tokens = HibikiDesignTokens.of(ctx);
+        return HibikiDialogFrame(
+          maxWidth: 420,
+          maxHeightFactor: 0.78,
+          scrollable: false,
+          child: HibikiModalSheetFrame(
+            title: t.icon_custom_confirm_title,
+            leadingIcon: Icons.add_photo_alternate_outlined,
+            scrollable: true,
+            bodyPadding: EdgeInsets.fromLTRB(
+              tokens.spacing.card,
+              0,
+              tokens.spacing.card,
+              tokens.spacing.gap,
+            ),
+            footerPadding: EdgeInsets.fromLTRB(
+              tokens.spacing.card,
+              tokens.spacing.gap,
+              tokens.spacing.card,
+              tokens.spacing.card,
+            ),
+            body: Text(t.icon_custom_confirm_body),
+            footer: Wrap(
+              alignment: WrapAlignment.end,
+              spacing: tokens.spacing.gap,
+              runSpacing: tokens.spacing.gap,
+              children: [
+                adaptiveDialogAction(
+                  context: ctx,
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: Text(MaterialLocalizations.of(ctx).cancelButtonLabel),
+                ),
+                adaptiveDialogAction(
+                  context: ctx,
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: Text(MaterialLocalizations.of(ctx).okButtonLabel),
+                ),
+              ],
+            ),
           ),
-          adaptiveDialogAction(
-            context: ctx,
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(MaterialLocalizations.of(ctx).okButtonLabel),
-          ),
-        ],
-      ),
+        );
+      },
     );
     if (confirmed != true) return;
 
