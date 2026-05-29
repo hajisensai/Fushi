@@ -195,7 +195,12 @@ class _HomePageState extends BasePageState<HomePage>
               child: child!,
             ),
         child: Focus(
-          autofocus: isDesktopPlatform,
+          // Autofocus on every platform: on mobile no field on the home tabs
+          // grabs focus at mount, so without this the FocusManager has no
+          // primary focus and hardware-keyboard / gamepad shortcuts never reach
+          // _handleKeyEvent until the user taps something. The home search
+          // field focuses on demand, so this never fights an editable.
+          autofocus: true,
           focusNode: _keyboardFocusNode,
           onKeyEvent: _handleKeyEvent,
           child: GestureDetector(
