@@ -267,79 +267,123 @@ class _CustomThemePageState extends BasePageState {
     HibikiToast.show(msg: t.theme_code_copied);
   }
 
-  void _importTheme() {
+  void _applyImportedTheme(
+      ({
+        Color seed,
+        String brightnessMode,
+        Color? fontColor,
+        Color? bgColor,
+        Color? selectionColor,
+        Color? primaryColor,
+        Color? secondaryColor,
+        Color? tertiaryColor,
+        Color? containerColor,
+        Color? sasayakiColor,
+        Color? linkColor,
+      }) result) {
+    setState(() {
+      _seed = result.seed;
+      _brightnessMode = result.brightnessMode;
+      _fontColor = result.fontColor ?? Colors.black;
+      _useFontColor = result.fontColor != null;
+      _bgColor = result.bgColor ?? Colors.white;
+      _useBgColor = result.bgColor != null;
+      _selectionColor = result.selectionColor ?? Colors.grey;
+      _useSelectionColor = result.selectionColor != null;
+      final Brightness brightness;
+      switch (result.brightnessMode) {
+        case 'dark':
+          brightness = Brightness.dark;
+        case 'light':
+          brightness = Brightness.light;
+        default:
+          brightness =
+              WidgetsBinding.instance.platformDispatcher.platformBrightness;
+      }
+      final ColorScheme generated = buildHibikiColorScheme(
+        seedColor: result.seed,
+        brightness: brightness,
+      );
+      _primaryColor = result.primaryColor ?? generated.primary;
+      _usePrimaryColor = result.primaryColor != null;
+      _secondaryColor = result.secondaryColor ?? generated.secondary;
+      _useSecondaryColor = result.secondaryColor != null;
+      _tertiaryColor = result.tertiaryColor ?? generated.tertiary;
+      _useTertiaryColor = result.tertiaryColor != null;
+      _containerColor = result.containerColor ?? generated.primaryContainer;
+      _useContainerColor = result.containerColor != null;
+      _sasayakiColor = result.sasayakiColor ?? HibikiColor.defaultSasayakiColor;
+      _useSasayakiColor = result.sasayakiColor != null;
+      _linkColor = result.linkColor ?? generated.primary;
+      _useLinkColor = result.linkColor != null;
+    });
+  }
+
+  Future<void> _importTheme() async {
     final controller = TextEditingController();
-    showAppDialog(
-      context: context,
-      builder: (ctx) => adaptiveAlertDialog(
-        context: ctx,
-        title: Text(t.import_theme),
-        content: HibikiTextField(
-          controller: controller,
-          hintText: t.import_theme_hint,
-          autofocus: true,
-        ),
-        actions: [
-          adaptiveDialogAction(
-            context: ctx,
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(t.dialog_close),
-          ),
-          adaptiveDialogAction(
-            context: ctx,
-            isDefaultAction: true,
-            onPressed: () {
-              final result = _decodeTheme(controller.text);
-              if (result == null) {
-                HibikiToast.show(msg: t.import_theme_invalid);
-                return;
-              }
-              Navigator.pop(ctx);
-              setState(() {
-                _seed = result.seed;
-                _brightnessMode = result.brightnessMode;
-                _fontColor = result.fontColor ?? Colors.black;
-                _useFontColor = result.fontColor != null;
-                _bgColor = result.bgColor ?? Colors.white;
-                _useBgColor = result.bgColor != null;
-                _selectionColor = result.selectionColor ?? Colors.grey;
-                _useSelectionColor = result.selectionColor != null;
-                final Brightness brightness;
-                switch (result.brightnessMode) {
-                  case 'dark':
-                    brightness = Brightness.dark;
-                  case 'light':
-                    brightness = Brightness.light;
-                  default:
-                    brightness = WidgetsBinding
-                        .instance.platformDispatcher.platformBrightness;
-                }
-                final ColorScheme generated = buildHibikiColorScheme(
-                  seedColor: result.seed,
-                  brightness: brightness,
-                );
-                _primaryColor = result.primaryColor ?? generated.primary;
-                _usePrimaryColor = result.primaryColor != null;
-                _secondaryColor = result.secondaryColor ?? generated.secondary;
-                _useSecondaryColor = result.secondaryColor != null;
-                _tertiaryColor = result.tertiaryColor ?? generated.tertiary;
-                _useTertiaryColor = result.tertiaryColor != null;
-                _containerColor =
-                    result.containerColor ?? generated.primaryContainer;
-                _useContainerColor = result.containerColor != null;
-                _sasayakiColor =
-                    result.sasayakiColor ?? HibikiColor.defaultSasayakiColor;
-                _useSasayakiColor = result.sasayakiColor != null;
-                _linkColor = result.linkColor ?? generated.primary;
-                _useLinkColor = result.linkColor != null;
-              });
-              HibikiToast.show(msg: t.import_theme_success);
-            },
-            child: Text(t.dialog_import),
-          ),
-        ],
-      ),
-    );
+    try {
+      await showAppDialog(
+        context: context,
+        builder: (ctx) {
+          final HibikiDesignTokens tokens = HibikiDesignTokens.of(ctx);
+          return HibikiDialogFrame(
+            maxWidth: 480,
+            maxHeightFactor: 0.78,
+            scrollable: false,
+            child: HibikiModalSheetFrame(
+              title: t.import_theme,
+              leadingIcon: Icons.content_paste_outlined,
+              bodyPadding: EdgeInsets.fromLTRB(
+                tokens.spacing.card,
+                0,
+                tokens.spacing.card,
+                tokens.spacing.gap,
+              ),
+              footerPadding: EdgeInsets.fromLTRB(
+                tokens.spacing.card,
+                tokens.spacing.gap,
+                tokens.spacing.card,
+                tokens.spacing.card,
+              ),
+              body: HibikiTextField(
+                controller: controller,
+                hintText: t.import_theme_hint,
+                autofocus: true,
+              ),
+              footer: Wrap(
+                alignment: WrapAlignment.end,
+                spacing: tokens.spacing.gap,
+                runSpacing: tokens.spacing.gap,
+                children: [
+                  adaptiveDialogAction(
+                    context: ctx,
+                    onPressed: () => Navigator.pop(ctx),
+                    child: Text(t.dialog_close),
+                  ),
+                  adaptiveDialogAction(
+                    context: ctx,
+                    isDefaultAction: true,
+                    onPressed: () {
+                      final result = _decodeTheme(controller.text);
+                      if (result == null) {
+                        HibikiToast.show(msg: t.import_theme_invalid);
+                        return;
+                      }
+                      Navigator.pop(ctx);
+                      _applyImportedTheme(result);
+                      HibikiToast.show(msg: t.import_theme_success);
+                    },
+                    child: Text(t.dialog_import),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    } finally {
+      controller.dispose();
+    }
   }
 
   @override

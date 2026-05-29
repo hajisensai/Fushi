@@ -647,6 +647,21 @@ void main() {
     expect(normalized, isNot(contains('child: Card(')));
   });
 
+  test('custom theme import dialog uses shared MD3 dialog chrome', () {
+    final String source = File(
+      'lib/src/pages/implementations/custom_theme_page.dart',
+    ).readAsStringSync();
+    final String importDialog = _functionSource(
+      source,
+      'Future<void> _importTheme()',
+      '  Widget _buildPreviewCard(ColorScheme cs)',
+    );
+
+    expect(importDialog, contains('HibikiDialogFrame('));
+    expect(importDialog, contains('HibikiModalSheetFrame('));
+    expect(importDialog, isNot(contains('adaptiveAlertDialog(')));
+  });
+
   test('MD3 review report does not reopen completed app chrome scope', () {
     final String report = File(
       '../docs/reviews/2026-05-26-project-review.md',
