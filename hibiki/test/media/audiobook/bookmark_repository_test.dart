@@ -110,9 +110,20 @@ void main() {
   test(
       'skips legacy bookmarks whose book is gone without aborting the '
       'migration (HBK-AUDIT-007)', () async {
-    // No epub_books row for id 42. With foreign_keys ON (production), an
-    // INSERT OR IGNORE would hit a FK violation and abort the whole upgrade
-    // transaction. The migration must skip the orphan and still clean the key.
+    // Enforce FK exactly like production (_openDb sets foreign_keys = ON); the
+    // shared in-memory db above runs with FK OFF. With FK ON, an INSERT OR
+    // IGNORE of a bookmark whose ttu_book_id has no epub_books row hits a FK
+    // violation (OR IGNORE does NOT suppress FK) and aborts the transaction.
+    // The fix must skip the orphan before inserting so migration completes and
+    // the source key is still cleaned.
+    final fkDb = HibikiDatabase.forTesting(
+      NativeDatabase.memory(
+        setup: (raw) => raw.execute('PRAGMA foreign_keys = ON'),
+      ),
+    );
+    addTearDown(fkDb.close);
+    final fkRepo = BookmarkRepository(fkDb);
+
     final legacy = [
       Bookmark(
         sectionIndex: 1,
@@ -123,12 +134,12 @@ void main() {
         bookTitle: 'Deleted Book',
       ).toJson(),
     ];
-    await db.setPref('bookmarks_42', jsonEncode(legacy));
+    await fkDb.setPref('bookmarks_42', jsonEncode(legacy));
 
-    // Must not throw.
-    await db.migrateLegacyBookmarkPreferences();
+    // Must not throw (pre-fix: FK violation aborts the whole migration).
+    await fkDb.migrateLegacyBookmarkPreferences();
 
-    expect(await repo.getBookmarks(42), isEmpty);
-    expect(await db.getPref('bookmarks_42'), isNull);
+    expect(await fkRepo.getBookmarks(42), isEmpty);
+    expect(await fkDb.getPref('bookmarks_42'), isNull);
   });
 }
