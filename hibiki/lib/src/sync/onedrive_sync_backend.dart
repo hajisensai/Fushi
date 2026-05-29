@@ -311,11 +311,13 @@ class OneDriveSyncBackend extends SyncBackend {
       if (!e.isRetryable) rethrow; // Only catch 404.
     }
 
-    // Create the folder.
+    // Create the folder. (GET above already handled the existing case;
+    // 'fail' is the only valid conflictBehavior here — 'useExisting' is not
+    // a valid Graph value and returns HTTP 400.)
     final resp = await _graphPost('/me/drive/root/children', {
       'name': _rootFolderName,
       'folder': <String, dynamic>{},
-      '@microsoft.graph.conflictBehavior': 'useExisting',
+      '@microsoft.graph.conflictBehavior': 'fail',
     });
     final json = jsonDecode(resp.body) as Map<String, dynamic>;
     _rootFolderId = json['id'] as String;
@@ -346,14 +348,28 @@ class OneDriveSyncBackend extends SyncBackend {
       return _titleToFolderId[sanitized]!;
     }
 
-    // Try to find or create.
-    final resp = await _graphPost('/me/drive/items/$rootFolderId/children', {
-      'name': sanitized,
-      'folder': <String, dynamic>{},
-      '@microsoft.graph.conflictBehavior': 'useExisting',
-    });
-    final json = jsonDecode(resp.body) as Map<String, dynamic>;
-    final folderId = json['id'] as String;
+    // Find the existing book folder first (idempotent); only create on 404.
+    // 'useExisting' is not a valid conflictBehavior (HTTP 400), so we cannot
+    // rely on a single create-or-reuse POST.
+    String? folderId;
+    try {
+      final resp = await _graphGet(
+          '/me/drive/items/$rootFolderId:/${Uri.encodeComponent(sanitized)}');
+      final json = jsonDecode(resp.body) as Map<String, dynamic>;
+      folderId = json['id'] as String;
+    } on SyncBackendError catch (e) {
+      if (!e.isRetryable) rethrow; // Only catch 404.
+    }
+
+    if (folderId == null) {
+      final resp = await _graphPost('/me/drive/items/$rootFolderId/children', {
+        'name': sanitized,
+        'folder': <String, dynamic>{},
+        '@microsoft.graph.conflictBehavior': 'fail',
+      });
+      final json = jsonDecode(resp.body) as Map<String, dynamic>;
+      folderId = json['id'] as String;
+    }
     _titleToFolderId[sanitized] = folderId;
 
     if (coverData != null) {
