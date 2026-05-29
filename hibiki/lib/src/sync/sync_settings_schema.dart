@@ -1004,10 +1004,9 @@ class _FtpConfigWidgetState extends State<_FtpConfigWidget> {
             onChanged: (_) => _saveCredentials(),
           ),
           const SizedBox(height: 8),
-          SwitchListTile.adaptive(
-            title: Text(t.sync_use_tls),
+          AdaptiveSettingsSwitchRow(
+            title: t.sync_use_tls,
             value: _useTls,
-            contentPadding: EdgeInsets.zero,
             onChanged: (bool v) {
               setState(() => _useTls = v);
               _saveCredentials();
@@ -1526,12 +1525,10 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          SwitchListTile.adaptive(
-            title: Text(t.sync_server_enable),
-            subtitle:
-                Text(running ? t.sync_server_running : t.sync_server_stopped),
+          AdaptiveSettingsSwitchRow(
+            title: t.sync_server_enable,
+            subtitle: running ? t.sync_server_running : t.sync_server_stopped,
             value: _enabled,
-            contentPadding: EdgeInsets.zero,
             onChanged: (bool v) async {
               final repo =
                   SyncRepository(widget.settingsContext.appModel.database);
@@ -1678,12 +1675,12 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget> {
             Text(t.sync_lan_no_devices,
                 style: Theme.of(context).textTheme.bodySmall),
           for (final HibikiDevice device in _devices)
-            ListTile(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.devices, size: 20),
+            HibikiListItem(
+              leading: const Icon(Icons.devices_outlined, size: 20),
               title: Text(device.name),
               subtitle: Text(device.webDavUrl),
+              minHeight: 52,
+              padding: EdgeInsets.zero,
               onTap: () => _connectToDevice(device),
             ),
         ],

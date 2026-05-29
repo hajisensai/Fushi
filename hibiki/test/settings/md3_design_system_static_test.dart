@@ -759,6 +759,16 @@ void main() {
     expect(combined, isNot(contains('adaptiveAlertDialog(')));
   });
 
+  test('sync settings custom controls use shared MD3 rows', () {
+    final String source =
+        File('lib/src/sync/sync_settings_schema.dart').readAsStringSync();
+
+    expect(source, contains('AdaptiveSettingsSwitchRow('));
+    expect(source, contains('HibikiListItem('));
+    expect(source, isNot(contains('SwitchListTile')));
+    expect(source, isNot(contains('ListTile(')));
+  });
+
   test('dictionary and popup surfaces use shared MD3 primitives', () {
     final String dictionaryManager = File(
       'lib/src/pages/implementations/dictionary_dialog_page.dart',
