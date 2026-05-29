@@ -3,6 +3,26 @@ import 'dart:convert';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
+/// 触达一台 Hibiki 同步服务器的一个候选地址。同一台服务器通常可经多条路由
+/// 触达（局域网、外网），它们共享同一个 token，按列表顺序尝试、第一个可达者胜出。
+class HibikiClientUrl {
+  const HibikiClientUrl({required this.url, this.enabled = true});
+
+  final String url;
+  final bool enabled;
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'url': url,
+        'enabled': enabled,
+      };
+
+  factory HibikiClientUrl.fromJson(Map<String, dynamic> json) =>
+      HibikiClientUrl(
+        url: json['url'] as String,
+        enabled: json['enabled'] as bool? ?? true,
+      );
+}
+
 /// 同步配置和缓存的持久化层（基于 Preferences 表）。
 ///
 /// 桌面 OAuth 凭据（refresh token, client secret）存储在用户级 SQLite 数据库中，
@@ -363,11 +383,54 @@ class SyncRepository {
   // ── Hibiki Client (connect to another Hibiki instance) ─────────
 
   static const _keyHibikiClientUrl = 'sync_hibiki_client_url';
+  static const _keyHibikiClientUrls = 'sync_hibiki_client_urls';
   static const _keyHibikiClientToken = 'sync_hibiki_client_token';
 
+  /// 旧的单地址 API，仅为向后兼容保留；新代码请用 [getHibikiClientUrls]。
+  @Deprecated('Use getHibikiClientUrls / setHibikiClientUrls')
   Future<String?> getHibikiClientUrl() => _getStringOrNull(_keyHibikiClientUrl);
+  @Deprecated('Use getHibikiClientUrls / setHibikiClientUrls')
   Future<void> setHibikiClientUrl(String? v) =>
       _setOrDelete(_keyHibikiClientUrl, v);
+
+  /// 有序候选地址列表（下标即优先级）。新键缺失时，从旧的单地址键迁移种子，
+  /// 保证老用户无感。
+  Future<List<HibikiClientUrl>> getHibikiClientUrls() async {
+    final raw = await _getStringOrNull(_keyHibikiClientUrls);
+    if (raw != null) {
+      final list = (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
+      return list.map(HibikiClientUrl.fromJson).toList();
+    }
+    final legacy = await _getStringOrNull(_keyHibikiClientUrl);
+    if (legacy != null && legacy.isNotEmpty) {
+      return <HibikiClientUrl>[HibikiClientUrl(url: legacy)];
+    }
+    return const <HibikiClientUrl>[];
+  }
+
+  Future<void> setHibikiClientUrls(List<HibikiClientUrl> urls) async {
+    if (urls.isEmpty) {
+      await _deleteKey(_keyHibikiClientUrls);
+      return;
+    }
+    await _setString(
+      _keyHibikiClientUrls,
+      jsonEncode(urls.map((HibikiClientUrl u) => u.toJson()).toList()),
+    );
+  }
+
+  /// 追加一个候选地址（已存在则去重），保持原有顺序与 token 不变。返回最终列表。
+  /// 用于 LAN 发现：点设备把它的地址加入列表，而不是覆盖整套配置。
+  Future<List<HibikiClientUrl>> addHibikiClientUrl(String url) async {
+    final List<HibikiClientUrl> urls = await getHibikiClientUrls();
+    if (urls.any((HibikiClientUrl u) => u.url == url)) return urls;
+    final List<HibikiClientUrl> updated = <HibikiClientUrl>[
+      ...urls,
+      HibikiClientUrl(url: url),
+    ];
+    await setHibikiClientUrls(updated);
+    return updated;
+  }
 
   Future<String?> getHibikiClientToken() async {
     final encoded = await _getStringOrNull(_keyHibikiClientToken);
@@ -381,28 +444,6 @@ class SyncRepository {
     }
     await _setString(_keyHibikiClientToken, _encodeSecret(v));
   }
-
-  // ── Fallback config ─────────────────────────────────────────────
-
-  static const _keyFallbackOrder = 'sync_fallback_order';
-
-  Future<List<SyncBackendType>> getFallbackOrder() async {
-    final raw = await _getStringOrNull(_keyFallbackOrder);
-    if (raw == null) return [];
-    final list = (jsonDecode(raw) as List).cast<String>();
-    return list
-        .map((name) {
-          for (final t in SyncBackendType.values) {
-            if (t.name == name) return t;
-          }
-          return null;
-        })
-        .whereType<SyncBackendType>()
-        .toList();
-  }
-
-  Future<void> setFallbackOrder(List<SyncBackendType> order) => _setString(
-      _keyFallbackOrder, jsonEncode(order.map((t) => t.name).toList()));
 
   // ── Helpers ───────────────────────────────────────────────────────
 

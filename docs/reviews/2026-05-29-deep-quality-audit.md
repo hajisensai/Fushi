@@ -1901,7 +1901,7 @@ google_drive_handler.dart:178 "print('Cover upload failed: $e');"
 ### HBK-AUDIT-090 — SyncBackendRegistry and FallbackSyncBackend are fully-built, tested, but wired to nothing in production (pseudo-extensibility / dead code)
 
 - **Severity**: LOW (审查者报 MEDIUM，验证后修正)
-- **Status**: Open — 对抗式代码路径审查已确认，未在设备复现、未修复
+- **Status**: Resolved (2026-05-29) — 死代码已删除：`fallback_sync_backend.dart` / `backend_registry.dart` 及其测试、`SyncRepository.getFallbackOrder/setFallbackOrder` 全部移除。多地址 fallback 的真实需求改由 `HibikiClientSyncBackend` 的会话级、按可用性的"内网优先外网兜底"地址列表承载（每地址独立缓存、整次会话锁定一个 URL，规避了原 FallbackSyncBackend 逐操作切换导致 folderId 串台的潜在 bug）。设计见 `docs/specs/2026-05-29-hibiki-server-lan-wan-failover-design.md`。
 - **单元 / 维度 / AI-异味**: `cross-cutting-ai-smells` / dead-code / over-engineered abstraction + orchestrator built speculatively, never instantiated
 - **位置**: `hibiki/lib/src/sync/backend_registry.dart, hibiki/lib/src/sync/fallback_sync_backend.dart` : backend_registry.dart:5-23; fallback_sync_backend.dart:8-194
 - **审查者置信度**: high

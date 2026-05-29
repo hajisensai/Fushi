@@ -7,19 +7,88 @@ import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 import 'package:hibiki/src/sync/webdav_ops.dart';
 
+/// Probes whether a single Hibiki server URL is reachable with [token].
+/// Returns true if reachable, false on connectivity failure/timeout, and
+/// throws [SyncAuthError] if the server rejects the token.
+typedef HibikiProbe = Future<bool> Function(String url, String token);
+
+/// Picks the first reachable URL from [candidates] (in order, skipping
+/// disabled ones). A [SyncAuthError] from a probe propagates immediately —
+/// every candidate shares one token, so one rejection means all fail. Throws
+/// a retryable [SyncBackendError] when no enabled candidate is reachable.
+Future<String> resolveReachableHibikiUrl(
+  List<HibikiClientUrl> candidates,
+  String token,
+  HibikiProbe probe,
+) async {
+  for (final HibikiClientUrl candidate in candidates) {
+    if (!candidate.enabled) continue;
+    if (await probe(candidate.url, token)) return candidate.url;
+  }
+  throw SyncBackendError(
+    'No reachable Hibiki server address',
+    isRetryable: true,
+  );
+}
+
+/// Default probe: a short-timeout WebDAV connection test. Connectivity
+/// failures and timeouts map to `false` (unreachable); a rejected token
+/// surfaces as [SyncAuthError] so the resolver stops trying other addresses.
+Future<bool> _defaultHibikiProbe(String url, String token) async {
+  WebDavOps? ops;
+  try {
+    ops = WebDavOps(
+      baseUrl: WebDavOps.normalizeUrl(url),
+      username: 'hibiki',
+      password: token,
+    );
+    await ops.testConnection().timeout(HibikiClientSyncBackend.probeTimeout);
+    return true;
+  } on SyncAuthError {
+    rethrow;
+  } catch (_) {
+    return false;
+  } finally {
+    ops?.close();
+  }
+}
+
 /// Sync backend for connecting to another Hibiki instance's embedded server.
 ///
 /// Uses the WebDAV protocol (same as [WebDavSyncBackend]) but stores
 /// credentials in dedicated keys to avoid collision with the user's
 /// standalone WebDAV config.
 class HibikiClientSyncBackend extends SyncBackend {
-  HibikiClientSyncBackend._();
+  HibikiClientSyncBackend._({HibikiProbe? probe})
+      : _probe = probe ?? _defaultHibikiProbe;
   static final HibikiClientSyncBackend instance =
       HibikiClientSyncBackend._();
+
+  /// Test seam: inject a fake reachability probe.
+  @visibleForTesting
+  HibikiClientSyncBackend.withProbe(HibikiProbe probe) : _probe = probe;
+
+  /// How long to wait for a single address probe before treating it as
+  /// unreachable and trying the next candidate. Short so LAN-first failover
+  /// to WAN is quick when you are away from home.
+  static const Duration probeTimeout = Duration(seconds: 2);
+
+  final HibikiProbe _probe;
+  List<HibikiClientUrl> _candidates = const <HibikiClientUrl>[];
+  String? _token;
+  bool _sessionResolved = false;
 
   WebDavOps? _ops;
   String? _rootFolderId;
   final Map<String, String> _titleToFolderId = {};
+
+  /// Test seam: force address resolution without performing a folder op.
+  @visibleForTesting
+  Future<void> ensureResolved() => _ensureResolved();
+
+  /// Test seam: the base URL the session has settled on.
+  @visibleForTesting
+  String? get activeBaseUrl => _ops?.baseUrl;
 
   // ── Auth ──────────────────────────────────────────────────────────
 
@@ -29,41 +98,92 @@ class HibikiClientSyncBackend extends SyncBackend {
   @override
   Future<String?> get currentEmail async => 'hibiki';
 
-  @override
-  Future<void> authenticate({required SyncRepository repo}) async {
-    final url = await repo.getHibikiClientUrl();
-    final token = await repo.getHibikiClientToken();
+  Future<void> _loadConfig(SyncRepository repo) async {
+    _candidates = (await repo.getHibikiClientUrls())
+        .where((HibikiClientUrl u) => u.enabled)
+        .toList();
+    _token = await repo.getHibikiClientToken();
+    _sessionResolved = false;
+  }
 
-    if (url == null || token == null) {
+  /// Builds a provisional [WebDavOps] on the first well-formed candidate so
+  /// [isAuthenticated] reflects "configured". The actually-reachable address
+  /// is chosen later by [_ensureResolved] on the first network operation.
+  void _buildProvisionalOps() {
+    _ops?.close();
+    _ops = null;
+    if (_token == null) return;
+    for (final HibikiClientUrl candidate in _candidates) {
+      try {
+        _ops = WebDavOps(
+          baseUrl: WebDavOps.normalizeUrl(candidate.url),
+          username: 'hibiki',
+          password: _token!,
+        );
+        return;
+      } on SyncBackendError {
+        continue; // malformed URL — keep looking for a usable handle
+      }
+    }
+  }
+
+  /// Probes the candidate addresses (in order) and settles the session on the
+  /// first reachable one. Switching addresses rebuilds [_ops] and clears the
+  /// folder cache, whose paths embed the previous base URL.
+  Future<void> _ensureResolved() async {
+    if (_sessionResolved) return;
+    final String? token = _token;
+    if (token == null) {
       throw SyncAuthError('Hibiki server credentials not configured');
     }
+    final String chosen =
+        await resolveReachableHibikiUrl(_candidates, token, _probe);
+    final String normalized = WebDavOps.normalizeUrl(chosen);
+    if (_ops == null || _ops!.baseUrl != normalized) {
+      _ops?.close();
+      _ops =
+          WebDavOps(baseUrl: normalized, username: 'hibiki', password: token);
+      clearCache();
+    }
+    _sessionResolved = true;
+  }
 
-    final normalized = WebDavOps.normalizeUrl(url);
-    _ops = WebDavOps(
-        baseUrl: normalized, username: 'hibiki', password: token);
-
-    await _ops!.testConnection();
+  @override
+  Future<void> authenticate({required SyncRepository repo}) async {
+    await _loadConfig(repo);
+    if (_candidates.isEmpty || _token == null) {
+      throw SyncAuthError('Hibiki server credentials not configured');
+    }
+    // Probes + selects a reachable address (or throws), confirming the token
+    // is accepted by the server.
+    await _ensureResolved();
   }
 
   @override
   Future<void> signOut({required SyncRepository repo}) async {
     _ops?.close();
     _ops = null;
+    _candidates = const <HibikiClientUrl>[];
+    _token = null;
+    _sessionResolved = false;
+    await repo.setHibikiClientUrls(const <HibikiClientUrl>[]);
+    // Also wipe the legacy single-url key, else getHibikiClientUrls would
+    // migrate it back on the next read.
+    // ignore: deprecated_member_use_from_same_package
     await repo.setHibikiClientUrl(null);
     await repo.setHibikiClientToken(null);
   }
 
   @override
   Future<bool> restoreAuth(SyncRepository repo) async {
-    final url = await repo.getHibikiClientUrl();
-    final token = await repo.getHibikiClientToken();
-
-    if (url == null || token == null) return false;
-
-    final normalized = WebDavOps.normalizeUrl(url);
-    _ops = WebDavOps(
-        baseUrl: normalized, username: 'hibiki', password: token);
-    return true;
+    await _loadConfig(repo);
+    if (_candidates.isEmpty || _token == null) {
+      _ops?.close();
+      _ops = null;
+      return false;
+    }
+    _buildProvisionalOps();
+    return _ops != null;
   }
 
   @override
@@ -73,6 +193,7 @@ class HibikiClientSyncBackend extends SyncBackend {
 
   @override
   Future<String> findOrCreateRootFolder() async {
+    await _ensureResolved();
     if (_rootFolderId != null) return _rootFolderId!;
 
     final path = '${_ops!.baseUrl}/ttu-reader-data/';

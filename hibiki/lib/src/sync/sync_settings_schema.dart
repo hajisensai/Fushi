@@ -1369,86 +1369,231 @@ class _HibikiServerConfigWidget extends StatefulWidget {
 }
 
 class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget> {
-  late final TextEditingController _urlController;
   late final TextEditingController _tokenController;
+  List<HibikiClientUrl> _urls = <HibikiClientUrl>[];
+  // url -> last test-connection result (null = not tested this session).
+  final Map<String, bool> _reachable = <String, bool>{};
   bool _isTesting = false;
   bool _loaded = false;
+
+  SyncRepository get _repo =>
+      SyncRepository(widget.settingsContext.appModel.database);
 
   @override
   void initState() {
     super.initState();
-    _urlController = TextEditingController();
     _tokenController = TextEditingController();
-    _loadCredentials();
+    _load();
   }
 
   @override
   void dispose() {
-    _urlController.dispose();
     _tokenController.dispose();
     super.dispose();
   }
 
-  Future<void> _loadCredentials() async {
-    final repo = SyncRepository(widget.settingsContext.appModel.database);
-    final url = await repo.getHibikiClientUrl();
-    final token = await repo.getHibikiClientToken();
-    if (mounted) {
-      setState(() {
-        _urlController.text = url ?? '';
-        _tokenController.text = token ?? '';
-        _loaded = true;
-      });
-    }
+  Future<void> _load() async {
+    final List<HibikiClientUrl> urls = await _repo.getHibikiClientUrls();
+    final String? token = await _repo.getHibikiClientToken();
+    if (!mounted) return;
+    setState(() {
+      _urls = urls;
+      _tokenController.text = token ?? '';
+      _loaded = true;
+    });
   }
 
-  Future<void> _saveCredentials() async {
-    final repo = SyncRepository(widget.settingsContext.appModel.database);
-    final url = _urlController.text.trim();
-    final token = _tokenController.text.trim();
-    await repo.setHibikiClientUrl(url.isEmpty ? null : url);
-    await repo.setHibikiClientToken(token.isEmpty ? null : token);
+  Future<void> _persistUrls() => _repo.setHibikiClientUrls(_urls);
+
+  Future<void> _saveToken() async {
+    final String token = _tokenController.text.trim();
+    await _repo.setHibikiClientToken(token.isEmpty ? null : token);
   }
 
-  Future<void> _testConnection() async {
-    await _saveCredentials();
-    setState(() => _isTesting = true);
-    try {
-      await HibikiClientSyncBackend.instance.testConnection(
-        url: _urlController.text.trim(),
-        token: _tokenController.text.trim(),
-      );
-      if (mounted) _showSnackBar(context, t.sync_connection_success);
-    } catch (e) {
-      if (mounted) {
-        _showSnackBar(context,
-            '${t.sync_connection_failed}: ${friendlySyncErrorDetail(e)}');
+  /// Add a new address, or edit the one at [index]. Reuses the URL field
+  /// labels/actions that already exist in i18n (no new keys).
+  Future<void> _addOrEditUrl({int? index}) async {
+    final TextEditingController controller = TextEditingController(
+      text: index != null ? _urls[index].url : '',
+    );
+    final String? result = await showAppDialog<String>(
+      context: context,
+      builder: (BuildContext ctx) => adaptiveAlertDialog(
+        context: ctx,
+        title: const Text('URL'),
+        content: HibikiTextField(
+          controller: controller,
+          labelText: 'URL',
+          hintText: 'http://192.168.1.100:8765',
+          keyboardType: TextInputType.url,
+        ),
+        actions: <Widget>[
+          adaptiveDialogAction(
+            context: ctx,
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(t.dialog_cancel),
+          ),
+          adaptiveDialogAction(
+            context: ctx,
+            isDefaultAction: true,
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: Text(t.dialog_ok),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (result == null || result.isEmpty) return;
+
+    setState(() {
+      final List<HibikiClientUrl> copy = <HibikiClientUrl>[..._urls];
+      if (index != null) {
+        final bool dupElsewhere = copy.asMap().entries.any(
+            (MapEntry<int, HibikiClientUrl> e) =>
+                e.key != index && e.value.url == result);
+        if (!dupElsewhere) {
+          copy[index] =
+              HibikiClientUrl(url: result, enabled: copy[index].enabled);
+        }
+      } else if (!copy.any((HibikiClientUrl u) => u.url == result)) {
+        copy.add(HibikiClientUrl(url: result));
       }
-    } finally {
-      if (mounted) setState(() => _isTesting = false);
+      _urls = copy;
+    });
+    await _persistUrls();
+  }
+
+  Future<void> _toggleUrl(int index) async {
+    setState(() {
+      final List<HibikiClientUrl> copy = <HibikiClientUrl>[..._urls];
+      final HibikiClientUrl u = copy[index];
+      copy[index] = HibikiClientUrl(url: u.url, enabled: !u.enabled);
+      _urls = copy;
+    });
+    await _persistUrls();
+  }
+
+  Future<void> _deleteUrl(int index) async {
+    setState(() {
+      _urls = <HibikiClientUrl>[..._urls]..removeAt(index);
+    });
+    await _persistUrls();
+  }
+
+  Future<void> _reorderUrls(int oldIndex, int newIndex) async {
+    setState(() {
+      if (newIndex > oldIndex) newIndex--;
+      final List<HibikiClientUrl> copy = <HibikiClientUrl>[..._urls];
+      final HibikiClientUrl item = copy.removeAt(oldIndex);
+      copy.insert(newIndex, item);
+      _urls = copy;
+    });
+    await _persistUrls();
+  }
+
+  Future<void> _testAll() async {
+    await _saveToken();
+    final String token = _tokenController.text.trim();
+    if (_urls.isEmpty || token.isEmpty) {
+      if (mounted) _showSnackBar(context, t.sync_connection_failed);
+      return;
     }
+    setState(() => _isTesting = true);
+    for (final HibikiClientUrl u in _urls) {
+      bool ok;
+      try {
+        await HibikiClientSyncBackend.instance
+            .testConnection(url: u.url, token: token)
+            .timeout(const Duration(seconds: 5));
+        ok = true;
+      } catch (_) {
+        ok = false;
+      }
+      if (!mounted) return;
+      setState(() => _reachable[u.url] = ok);
+    }
+    if (mounted) setState(() => _isTesting = false);
   }
 
   @override
   Widget build(BuildContext context) {
     if (!_loaded) return const SizedBox.shrink();
+    final ThemeData theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          HibikiTextField(
-            controller: _urlController,
-            labelText: 'URL',
-            hintText: 'http://192.168.1.100:8765',
-            keyboardType: TextInputType.url,
-            onChanged: (_) => _saveCredentials(),
+          if (_urls.isNotEmpty)
+            ReorderableListView.builder(
+              buildDefaultDragHandles: false,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _urls.length,
+              onReorder: _reorderUrls,
+              itemBuilder: (BuildContext context, int index) {
+                final HibikiClientUrl u = _urls[index];
+                final bool? ok = _reachable[u.url];
+                return ListTile(
+                  key: ValueKey<String>(u.url),
+                  contentPadding: EdgeInsets.zero,
+                  leading: ReorderableDragStartListener(
+                    index: index,
+                    child: Icon(Icons.drag_handle,
+                        color: theme.colorScheme.onSurfaceVariant),
+                  ),
+                  title: Text(
+                    u.url,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: u.enabled
+                          ? theme.colorScheme.onSurface
+                          : theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  subtitle: ok == null
+                      ? null
+                      : Text(
+                          ok
+                              ? t.sync_connection_success
+                              : t.sync_connection_failed,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: ok
+                                ? Colors.green
+                                : theme.colorScheme.error,
+                          ),
+                        ),
+                  onTap: () => _addOrEditUrl(index: index),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Switch.adaptive(
+                        value: u.enabled,
+                        onChanged: (_) => _toggleUrl(index),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline),
+                        onPressed: () => _deleteUrl(index),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () => _addOrEditUrl(),
+              icon: const Icon(Icons.add, size: 18),
+              label: Text(t.dialog_add),
+            ),
           ),
           const SizedBox(height: 12),
           HibikiTextField(
             controller: _tokenController,
             labelText: t.sync_server_token,
-            onChanged: (_) => _saveCredentials(),
+            onChanged: (_) => _saveToken(),
           ),
           const SizedBox(height: 12),
           Align(
@@ -1460,7 +1605,7 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget> {
                     child: adaptiveIndicator(context: context, strokeWidth: 2),
                   )
                 : FilledButton.tonal(
-                    onPressed: _testConnection,
+                    onPressed: _testAll,
                     child: Text(t.sync_test_connection),
                   ),
           ),
@@ -1686,8 +1831,9 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget> {
     state.backendType = SyncBackendType.hibikiServer;
     final repo = SyncRepository(widget.settingsContext.appModel.database);
     await repo.setBackendType(SyncBackendType.hibikiServer);
-    await repo.setHibikiClientUrl(device.webDavUrl);
-    await repo.setHibikiClientToken(null);
+    // Add the discovered address to the candidate list (deduped) instead of
+    // overwriting the whole config — and keep any token the user already set.
+    await repo.addHibikiClientUrl(device.webDavUrl);
     widget.settingsContext.refresh();
     if (mounted) _showSnackBar(context, '${device.name} (${device.webDavUrl})');
   }
