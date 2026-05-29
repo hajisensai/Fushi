@@ -91,3 +91,18 @@
 - 复审发现：`AndroidManifest.xml` 仅注册 `hibiki://lookup`，未注册 `hibiki://auth/*`；`main.dart` 的 `handleIntent` 只处理 `action.MAIN`，从不调用各 backend 的 `handleAuthCode(code)`。
 - 即拿到真实 client ID，浏览器授权后的回调也无法回到 App。打通需改 manifest（触发 `gradlew assembleRelease` 验证）+ 在 `handleIntent` 解析 auth code，且需真机验证浏览器→App 跳转；属外部依赖，留待用户提供 ID 后一并实现复测。
 - Box 额外注意：当前 token 交换未发 `client_secret`，若 Box 应用类型强制要求 secret，需相应调整。
+
+---
+
+## Round 3 — 移除 Box backend（用户决策）
+
+用户决定彻底删除 Box backend（Box OAuth 摩擦最大：多半强制 `client_secret`、对自定义 scheme 回调限制更严）。本轮做完整移除，经 `dart analyze lib test`（无 error/warning）与 `flutter test test/sync test/i18n` 验证。
+
+- 删除文件：`lib/src/sync/box_sync_backend.dart`、`test/sync` 中 Box 相关断言。
+- `sync_backend.dart`：从 `SyncBackendType` 枚举移除 `box`。
+- `google_drive_sync_backend.dart`：`resolveSyncBackend` 移除 box 分支与 import。
+- `sync_settings_schema.dart`：`_isBackendSelectable`/`_backendLabel` 移除 box 分支与 import。
+- `sync_repository.dart`：移除 Box 凭据存取（`_keyBoxToken`/`getBoxToken`/`setBoxToken`）。
+- `oauth_backend_config_test.dart`：移除 Box 契约测试。
+- i18n：用 `tool/i18n_sync.dart --remove sync_backend_box` 删除全部 17 语言 key，并 `dart run slang` 重新生成 `strings.g.dart`。
+- 影响：枚举无遗留穷举分支报错；剩余 OAuth backend 仅 OneDrive/Dropbox（仍待真实 client ID + 回调链路）。
