@@ -17,6 +17,13 @@ class FtpSyncBackend extends SyncBackend {
 
   /// The login directory captured via PWD on connect (the user's home, or the
   /// chroot root). Defaults to '/' until connected.
+  ///
+  /// NOTE: the persisted folder cache (rootFolderId / titleToFolderId) embeds
+  /// this home-anchored absolute path. If the same (host, user) ever reports a
+  /// different home across sessions, restored cache entries become stale — but
+  /// the op then throws a retryable error and SyncManager clears the cache and
+  /// reconnects, which re-captures PWD. So it self-heals; it is not persisted
+  /// data loss.
   String _homeDir = '/';
 
   /// Sync root, anchored UNDER the login home — never the raw server root. A
