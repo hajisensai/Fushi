@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart';
 import 'package:hibiki/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
@@ -676,26 +677,119 @@ class AdaptiveSettingsStepperRow extends StatelessWidget {
       title: title,
       subtitle: subtitle,
       icon: icon,
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _SettingsStepButton(
-            icon: Icons.remove,
-            onPressed: () => onChanged((value - step).clamp(min, max)),
+      trailing: _KeyboardStepper(
+        value: value,
+        step: step,
+        min: min,
+        max: max,
+        format: format,
+        onChanged: onChanged,
+      ),
+    );
+  }
+}
+
+class _StepperIncrementIntent extends Intent {
+  const _StepperIncrementIntent();
+}
+
+class _StepperDecrementIntent extends Intent {
+  const _StepperDecrementIntent();
+}
+
+/// The +/- controls of a stepper row, wrapped as a SINGLE keyboard/gamepad
+/// focus stop. Tab lands here once (not once per button), and the arrow keys
+/// adjust the value in place (Up/Right increment, Down/Left decrement) instead
+/// of leaking into directional focus traversal. The inner buttons stay
+/// mouse-clickable but are removed from focus traversal so they never become
+/// separate, value-less tab stops.
+///
+/// The focus highlight comes from the app-wide [HibikiFocusRing] (drawn around
+/// whichever widget holds primary focus in keyboard/gamepad mode), so no local
+/// border is reserved here — the control's layout is unchanged.
+class _KeyboardStepper extends StatelessWidget {
+  const _KeyboardStepper({
+    required this.value,
+    required this.step,
+    required this.min,
+    required this.max,
+    required this.format,
+    required this.onChanged,
+  });
+
+  final double value;
+  final double step;
+  final double min;
+  final double max;
+  final String Function(double) format;
+  final ValueChanged<double> onChanged;
+
+  void _increment() => onChanged((value + step).clamp(min, max));
+
+  void _decrement() => onChanged((value - step).clamp(min, max));
+
+  @override
+  Widget build(BuildContext context) {
+    final double clampedUp = (value + step).clamp(min, max);
+    final double clampedDown = (value - step).clamp(min, max);
+    // Expose a single "adjustable" node so screen readers (TalkBack / VoiceOver
+    // / Narrator) can raise and lower the value via the platform increment /
+    // decrement actions — the keyboard arrow shortcuts below are invisible to
+    // assistive tech, and the +/- buttons are no longer separate focus stops.
+    // excludeSemantics collapses the inner buttons/label into this one node.
+    return Semantics(
+      container: true,
+      slider: true,
+      value: format(value),
+      increasedValue: format(clampedUp),
+      decreasedValue: format(clampedDown),
+      onIncrease: value < max ? _increment : null,
+      onDecrease: value > min ? _decrement : null,
+      excludeSemantics: true,
+      child: FocusableActionDetector(
+        // The buttons stay tappable by mouse, but they must not be separate tab
+        // stops — the detector itself is the one focus stop for the whole
+        // stepper.
+        descendantsAreFocusable: false,
+        shortcuts: const <ShortcutActivator, Intent>{
+          SingleActivator(LogicalKeyboardKey.arrowUp):
+              _StepperIncrementIntent(),
+          SingleActivator(LogicalKeyboardKey.arrowRight):
+              _StepperIncrementIntent(),
+          SingleActivator(LogicalKeyboardKey.arrowDown):
+              _StepperDecrementIntent(),
+          SingleActivator(LogicalKeyboardKey.arrowLeft):
+              _StepperDecrementIntent(),
+        },
+        actions: <Type, Action<Intent>>{
+          _StepperIncrementIntent: CallbackAction<_StepperIncrementIntent>(
+            onInvoke: (_) {
+              _increment();
+              return null;
+            },
           ),
-          SizedBox(
-            width: 46,
-            child: Text(
-              format(value),
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyLarge,
+          _StepperDecrementIntent: CallbackAction<_StepperDecrementIntent>(
+            onInvoke: (_) {
+              _decrement();
+              return null;
+            },
+          ),
+        },
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _SettingsStepButton(icon: Icons.remove, onPressed: _decrement),
+            SizedBox(
+              width: 46,
+              child: Text(
+                format(value),
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodyLarge,
+              ),
             ),
-          ),
-          _SettingsStepButton(
-            icon: Icons.add,
-            onPressed: () => onChanged((value + step).clamp(min, max)),
-          ),
-        ],
+            _SettingsStepButton(icon: Icons.add, onPressed: _increment),
+          ],
+        ),
       ),
     );
   }
