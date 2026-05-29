@@ -629,6 +629,55 @@ void main() {
     }
   });
 
+  test('audiobook import dialogs use shared MD3 dialog chrome', () {
+    final String bookImportSource = File(
+      'lib/src/media/audiobook/book_import_dialog.dart',
+    ).readAsStringSync();
+    final String audiobookImportSource = File(
+      'lib/src/media/audiobook/audiobook_import_dialog.dart',
+    ).readAsStringSync();
+    final String bookImportFrame = _sectionSource(
+      bookImportSource,
+      'class BookImportDialogFrame',
+      bookImportSource.length,
+    );
+    final String audiobookBuild = _functionSource(
+      audiobookImportSource,
+      'Widget build(BuildContext context)',
+      '  Widget _buildAttachedView(Audiobook ab)',
+    );
+    final String removeDialog = _functionSource(
+      audiobookImportSource,
+      'Future<void> _removeAudiobook(Audiobook ab) async',
+      '  Future<Directory> _ensurePersistDir()',
+    );
+    final String audiobookFrame = _sectionSource(
+      audiobookImportSource,
+      'class AudiobookImportDialogFrame',
+      'class AudiobookRemoveConfirmationDialog',
+    );
+    final String removeFrame = _sectionSource(
+      audiobookImportSource,
+      'class AudiobookRemoveConfirmationDialog',
+      audiobookImportSource.length,
+    );
+
+    expect(audiobookBuild, contains('AudiobookImportDialogFrame('));
+    expect(removeDialog, contains('AudiobookRemoveConfirmationDialog('));
+    expect(audiobookBuild, isNot(contains('adaptiveAlertDialog(')));
+    expect(removeDialog, isNot(contains('adaptiveAlertDialog(')));
+
+    for (final String dialogSource in <String>[
+      bookImportFrame,
+      audiobookFrame,
+      removeFrame,
+    ]) {
+      expect(dialogSource, contains('HibikiDialogFrame('));
+      expect(dialogSource, contains('HibikiModalSheetFrame('));
+      expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
+    }
+  });
+
   test('dictionary and popup surfaces use shared MD3 primitives', () {
     final String dictionaryManager = File(
       'lib/src/pages/implementations/dictionary_dialog_page.dart',

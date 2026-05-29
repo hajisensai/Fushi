@@ -132,31 +132,25 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
   @override
   Widget build(BuildContext context) {
     if (!_existingLoaded) {
-      return adaptiveAlertDialog(
-        context: context,
+      return AudiobookImportDialogFrame(
+        title: widget.audioOnly ? t.audio_import : t.audiobook_import,
         content: SizedBox(
           height: 64,
           child: Center(child: adaptiveIndicator(context: context)),
         ),
+        actions: const <Widget>[],
       );
     }
 
     final Audiobook? existing = _existing;
     final bool showImportForm = existing == null || _patchingAudio;
 
-    return adaptiveAlertDialog(
-      context: context,
-      title: Text(
-        showImportForm
-            ? (widget.audioOnly ? t.audio_import : t.audiobook_import)
-            : t.audiobook_attached,
-      ),
-      content: SizedBox(
-        width: double.maxFinite,
-        child: showImportForm
-            ? SingleChildScrollView(child: _buildImportForm())
-            : _buildAttachedView(existing),
-      ),
+    return AudiobookImportDialogFrame(
+      title: showImportForm
+          ? (widget.audioOnly ? t.audio_import : t.audiobook_import)
+          : t.audiobook_attached,
+      content:
+          showImportForm ? _buildImportForm() : _buildAttachedView(existing),
       actions: showImportForm
           ? [
               adaptiveDialogAction(
@@ -969,22 +963,8 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
 
     final bool? confirm = await showAppDialog<bool>(
       context: context,
-      builder: (ctx) => adaptiveAlertDialog(
-        context: ctx,
-        content: Text(t.audiobook_remove_confirm),
-        actions: [
-          adaptiveDialogAction(
-            context: ctx,
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(t.dialog_cancel),
-          ),
-          adaptiveDialogAction(
-            context: ctx,
-            isDestructiveAction: true,
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(t.audiobook_remove),
-          ),
-        ],
+      builder: (ctx) => AudiobookRemoveConfirmationDialog(
+        onConfirm: () => Navigator.of(ctx).pop(true),
       ),
     );
     debugPrint('AudiobookImportDialog: confirm=$confirm');
@@ -1017,5 +997,114 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       return '${(bytes / 1024 / 1024).toStringAsFixed(1)} MB';
     }
     return '${(bytes / 1024 / 1024 / 1024).toStringAsFixed(2)} GB';
+  }
+}
+
+@visibleForTesting
+class AudiobookImportDialogFrame extends StatelessWidget {
+  const AudiobookImportDialogFrame({
+    required this.title,
+    required this.content,
+    required this.actions,
+    super.key,
+  });
+
+  final String title;
+  final Widget content;
+  final List<Widget> actions;
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
+    return HibikiDialogFrame(
+      maxWidth: 560,
+      maxHeightFactor: 0.86,
+      scrollable: false,
+      child: HibikiModalSheetFrame(
+        title: title,
+        leadingIcon: Icons.headphones_outlined,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        scrollable: true,
+        body: content,
+        footer: actions.isEmpty
+            ? null
+            : Wrap(
+                alignment: WrapAlignment.end,
+                spacing: tokens.spacing.gap,
+                runSpacing: tokens.spacing.gap,
+                children: actions,
+              ),
+      ),
+    );
+  }
+}
+
+@visibleForTesting
+class AudiobookRemoveConfirmationDialog extends StatelessWidget {
+  const AudiobookRemoveConfirmationDialog({
+    required this.onConfirm,
+    super.key,
+  });
+
+  final VoidCallback onConfirm;
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
+    return HibikiDialogFrame(
+      maxWidth: 420,
+      maxHeightFactor: 0.72,
+      child: HibikiModalSheetFrame(
+        title: t.dialog_delete,
+        leadingIcon: Icons.delete_outline,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: Text(
+          t.audiobook_remove_confirm,
+          style: tokens.type.listSubtitle,
+        ),
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: <Widget>[
+            adaptiveDialogAction(
+              context: context,
+              onPressed: () => Navigator.of(context).pop(false),
+              child: Text(t.dialog_cancel),
+            ),
+            adaptiveDialogAction(
+              context: context,
+              isDestructiveAction: true,
+              onPressed: onConfirm,
+              child: Text(t.audiobook_remove),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
