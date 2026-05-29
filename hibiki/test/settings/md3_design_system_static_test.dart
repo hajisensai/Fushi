@@ -563,8 +563,14 @@ void main() {
     );
 
     expect(tagBar, contains('HibikiTagChip('));
+    expect(tagBar, contains('tokens.spacing'));
+    expect(tagBar, contains('tokens.surfaces.outline'));
     expect(tagBar, isNot(contains('class _TagChip')));
     expect(tagBar, isNot(contains('BorderRadius.circular(16)')));
+    expect(tagBar, isNot(contains('height: 44')));
+    expect(tagBar,
+        isNot(contains('EdgeInsets.symmetric(horizontal: 12, vertical: 6)')));
+    expect(tagBar, isNot(contains('const SizedBox(width: 6)')));
   });
 
   test('reader history action dialogs use shared MD3 dialog chrome', () {

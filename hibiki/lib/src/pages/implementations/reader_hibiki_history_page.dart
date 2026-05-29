@@ -1312,19 +1312,22 @@ class _TagBarContentState extends ConsumerState<_TagBarContent> {
     final int trailingCount = widget.tags.isEmpty ? 1 : 2;
 
     return Container(
-      height: 44,
+      height: tokens.spacing.gap * 5.5,
       decoration: BoxDecoration(
         border: Border(
           bottom: BorderSide(
-            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
+            color: tokens.surfaces.outline.withValues(alpha: 0.3),
           ),
         ),
       ),
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: EdgeInsets.symmetric(
+          horizontal: tokens.spacing.rowHorizontal,
+          vertical: tokens.spacing.gap * 0.75,
+        ),
         itemCount: widget.tags.length + trailingCount,
-        separatorBuilder: (_, __) => const SizedBox(width: 6),
+        separatorBuilder: (_, __) => SizedBox(width: tokens.spacing.gap * 0.75),
         itemBuilder: (context, index) {
           if (index == widget.tags.length + trailingCount - 1) {
             return SizedBox(
