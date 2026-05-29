@@ -419,12 +419,29 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
   @override
   Widget build(BuildContext context) {
     final ThemeData themeData = Theme.of(context);
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
 
-    return adaptiveAlertDialog(
-      context: context,
-      title: Text(_actionLabel(widget.action)),
-      content: SingleChildScrollView(
-        child: Column(
+    return HibikiDialogFrame(
+      maxWidth: 520,
+      maxHeightFactor: 0.86,
+      scrollable: false,
+      child: HibikiModalSheetFrame(
+        title: _actionLabel(widget.action),
+        leadingIcon: Icons.keyboard_outlined,
+        scrollable: true,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
@@ -559,30 +576,35 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
             ],
           ],
         ),
-      ),
-      actions: <Widget>[
-        TextButton(
-          onPressed: _clearAll,
-          child: Text(t.shortcut_clear),
-        ),
-        adaptiveDialogAction(
-          context: context,
-          onPressed: () => Navigator.pop(context),
-          child: Text(t.dialog_cancel),
-        ),
-        adaptiveDialogAction(
-          context: context,
-          isDefaultAction: true,
-          onPressed: () => Navigator.pop(
-            context,
-            ShortcutBindingSet(
-              keyboardBindings: List<InputBinding>.unmodifiable(_keyboard),
-              gamepadBindings: List<GamepadBinding>.unmodifiable(_gamepad),
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: <Widget>[
+            TextButton(
+              onPressed: _clearAll,
+              child: Text(t.shortcut_clear),
             ),
-          ),
-          child: Text(MaterialLocalizations.of(context).okButtonLabel),
+            adaptiveDialogAction(
+              context: context,
+              onPressed: () => Navigator.pop(context),
+              child: Text(t.dialog_cancel),
+            ),
+            adaptiveDialogAction(
+              context: context,
+              isDefaultAction: true,
+              onPressed: () => Navigator.pop(
+                context,
+                ShortcutBindingSet(
+                  keyboardBindings: List<InputBinding>.unmodifiable(_keyboard),
+                  gamepadBindings: List<GamepadBinding>.unmodifiable(_gamepad),
+                ),
+              ),
+              child: Text(MaterialLocalizations.of(context).okButtonLabel),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }

@@ -692,6 +692,21 @@ void main() {
     expect(confirmDialog, isNot(contains('adaptiveAlertDialog(')));
   });
 
+  test('shortcut binding editor uses shared MD3 dialog chrome', () {
+    final String source = File(
+      'lib/src/pages/implementations/shortcut_settings_page.dart',
+    ).readAsStringSync();
+    final String editDialog = _sectionSource(
+      source,
+      'class _ShortcutBindingEditDialogState',
+      source.length,
+    );
+
+    expect(editDialog, contains('HibikiDialogFrame('));
+    expect(editDialog, contains('HibikiModalSheetFrame('));
+    expect(editDialog, isNot(contains('adaptiveAlertDialog(')));
+  });
+
   test('MD3 review report does not reopen completed app chrome scope', () {
     final String report = File(
       '../docs/reviews/2026-05-26-project-review.md',
