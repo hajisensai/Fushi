@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
+import 'package:hibiki/src/sync/desktop_oauth.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/sync_utils.dart';
@@ -63,6 +64,21 @@ class DropboxSyncBackend extends SyncBackend {
   String? _pendingVerifier;
   SyncRepository? _pendingRepo;
 
+  /// Fixed loopback port for desktop OAuth. Dropbox requires an exact
+  /// redirect-URI match, so this must be registered verbatim in the Dropbox
+  /// app console as `http://localhost:9004`.
+  static const int _desktopLoopbackPort = 9004;
+
+  Uri _buildAuthUrl(String challenge, String redirectUri) =>
+      Uri.parse(_authorizeEndpoint).replace(queryParameters: {
+        'client_id': _clientId,
+        'response_type': 'code',
+        'redirect_uri': redirectUri,
+        'code_challenge': challenge,
+        'code_challenge_method': 'S256',
+        'token_access_type': 'offline',
+      });
+
   @override
   Future<void> authenticate({required SyncRepository repo}) async {
     if (_clientId.startsWith('YOUR_')) {
@@ -74,15 +90,23 @@ class DropboxSyncBackend extends SyncBackend {
     final verifier = _generateCodeVerifier();
     final challenge = _generateCodeChallenge(verifier);
 
-    final authUrl = Uri.parse(_authorizeEndpoint).replace(queryParameters: {
-      'client_id': _clientId,
-      'response_type': 'code',
-      'redirect_uri': _redirectUri,
-      'code_challenge': challenge,
-      'code_challenge_method': 'S256',
-      'token_access_type': 'offline',
-    });
+    // Desktop: loopback HTTP redirect (RFC 8252), exchange inline.
+    if (isDesktopOAuthPlatform) {
+      final result = await runDesktopOAuthLoopback(
+        buildAuthUrl: (redirectUri) => _buildAuthUrl(challenge, redirectUri),
+        port: _desktopLoopbackPort,
+      );
+      await _exchangeCode(
+        code: result.code,
+        verifier: verifier,
+        redirectUri: result.redirectUri,
+        repo: repo,
+      );
+      return;
+    }
 
+    // Mobile: custom-URI-scheme redirect handled later by [handleAuthCode].
+    final authUrl = _buildAuthUrl(challenge, _redirectUri);
     if (!await launchUrl(authUrl, mode: LaunchMode.externalApplication)) {
       throw SyncAuthError('Failed to launch browser for Dropbox auth');
     }
@@ -91,7 +115,8 @@ class DropboxSyncBackend extends SyncBackend {
     _pendingRepo = repo;
   }
 
-  /// Called when the app receives the redirect URI with an auth code.
+  /// Called when the app receives the redirect URI with an auth code (mobile
+  /// custom-scheme flow).
   Future<void> handleAuthCode(String code) async {
     final verifier = _pendingVerifier;
     final repo = _pendingRepo;
@@ -101,13 +126,30 @@ class DropboxSyncBackend extends SyncBackend {
     _pendingVerifier = null;
     _pendingRepo = null;
 
+    await _exchangeCode(
+      code: code,
+      verifier: verifier,
+      redirectUri: _redirectUri,
+      repo: repo,
+    );
+  }
+
+  /// Exchange an authorization code for tokens. [redirectUri] must match the
+  /// value sent in the authorization request (custom scheme on mobile, the
+  /// loopback URL on desktop).
+  Future<void> _exchangeCode({
+    required String code,
+    required String verifier,
+    required String redirectUri,
+    required SyncRepository repo,
+  }) async {
     final response = await http.post(
       Uri.parse(_tokenEndpoint),
       headers: {'Content-Type': 'application/x-www-form-urlencoded'},
       body: {
         'client_id': _clientId,
         'code': code,
-        'redirect_uri': _redirectUri,
+        'redirect_uri': redirectUri,
         'grant_type': 'authorization_code',
         'code_verifier': verifier,
       },
