@@ -208,52 +208,14 @@ class UpdateChecker {
   ) {
     showAppDialog<void>(
       context: context,
-      builder: (ctx) => adaptiveAlertDialog(
-        context: ctx,
-        title: Text(t.update_available),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(t.update_message(version: version)),
-              if (releaseNotes.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                MarkdownBody(
-                  data: releaseNotes,
-                  selectable: true,
-                  onTapLink: (_, href, __) {
-                    if (href != null) {
-                      launchUrl(
-                        Uri.parse(href),
-                        mode: LaunchMode.externalApplication,
-                      );
-                    }
-                  },
-                  styleSheet:
-                      MarkdownStyleSheet.fromTheme(Theme.of(ctx)).copyWith(
-                    p: Theme.of(ctx).textTheme.bodySmall,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-        actions: [
-          adaptiveDialogAction(
-            context: ctx,
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text(t.update_skip),
-          ),
-          adaptiveDialogAction(
-            context: ctx,
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              _downloadAndInstall(context, downloadUrl, version);
-            },
-            child: Text(t.update_download),
-          ),
-        ],
+      builder: (ctx) => UpdateAvailableDialog(
+        version: version,
+        releaseNotes: releaseNotes,
+        primaryLabel: t.update_download,
+        onPrimary: () {
+          Navigator.of(ctx).pop();
+          _downloadAndInstall(context, downloadUrl, version);
+        },
       ),
     );
   }
@@ -267,55 +229,17 @@ class UpdateChecker {
   ) {
     showAppDialog<void>(
       context: context,
-      builder: (ctx) => adaptiveAlertDialog(
-        context: ctx,
-        title: Text(t.update_available),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(t.update_message(version: version)),
-              if (releaseNotes.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                MarkdownBody(
-                  data: releaseNotes,
-                  selectable: true,
-                  onTapLink: (_, href, __) {
-                    if (href != null) {
-                      launchUrl(
-                        Uri.parse(href),
-                        mode: LaunchMode.externalApplication,
-                      );
-                    }
-                  },
-                  styleSheet:
-                      MarkdownStyleSheet.fromTheme(Theme.of(ctx)).copyWith(
-                    p: Theme.of(ctx).textTheme.bodySmall,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-        actions: [
-          adaptiveDialogAction(
-            context: ctx,
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text(t.update_skip),
-          ),
-          adaptiveDialogAction(
-            context: ctx,
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              launchUrl(
-                Uri.parse(htmlUrl),
-                mode: LaunchMode.externalApplication,
-              );
-            },
-            child: Text(t.update_download),
-          ),
-        ],
+      builder: (ctx) => UpdateAvailableDialog(
+        version: version,
+        releaseNotes: releaseNotes,
+        primaryLabel: t.update_download,
+        onPrimary: () {
+          Navigator.of(ctx).pop();
+          launchUrl(
+            Uri.parse(htmlUrl),
+            mode: LaunchMode.externalApplication,
+          );
+        },
       ),
     );
   }
@@ -442,6 +366,97 @@ bool isVersionNewer(String remote, String local) {
   }
   if (!pre(rs) && pre(ls)) return true;
   return false;
+}
+
+@visibleForTesting
+class UpdateAvailableDialog extends StatelessWidget {
+  const UpdateAvailableDialog({
+    required this.version,
+    required this.releaseNotes,
+    required this.primaryLabel,
+    required this.onPrimary,
+    super.key,
+  });
+
+  final String version;
+  final String releaseNotes;
+  final String primaryLabel;
+  final VoidCallback onPrimary;
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final ThemeData theme = Theme.of(context);
+
+    return HibikiDialogFrame(
+      maxWidth: 520,
+      maxHeightFactor: 0.9,
+      scrollable: false,
+      insetPadding: EdgeInsets.all(tokens.spacing.gap),
+      child: HibikiModalSheetFrame(
+        title: t.update_available,
+        leadingIcon: Icons.system_update_alt_outlined,
+        scrollable: true,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(
+              t.update_message(version: version),
+              style: tokens.type.listSubtitle,
+            ),
+            if (releaseNotes.isNotEmpty) ...<Widget>[
+              SizedBox(height: tokens.spacing.gap),
+              MarkdownBody(
+                data: releaseNotes,
+                selectable: true,
+                onTapLink: (_, href, __) {
+                  if (href == null) return;
+                  launchUrl(
+                    Uri.parse(href),
+                    mode: LaunchMode.externalApplication,
+                  );
+                },
+                styleSheet: MarkdownStyleSheet.fromTheme(theme).copyWith(
+                  p: tokens.type.listSubtitle,
+                ),
+              ),
+            ],
+          ],
+        ),
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: <Widget>[
+            adaptiveDialogAction(
+              context: context,
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text(t.update_skip),
+            ),
+            adaptiveDialogAction(
+              context: context,
+              isDefaultAction: true,
+              onPressed: onPrimary,
+              child: Text(primaryLabel),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _DownloadOverlay extends StatelessWidget {

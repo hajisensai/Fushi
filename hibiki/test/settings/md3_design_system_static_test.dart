@@ -713,6 +713,34 @@ void main() {
     }
   });
 
+  test('update checker dialogs use shared MD3 dialog chrome', () {
+    final String source =
+        File('lib/src/utils/misc/update_checker.dart').readAsStringSync();
+    final String updateFlow = _functionSource(
+      source,
+      'static void _showUpdateDialog(',
+      '  /// Fallback dialog for when no APK asset exists',
+    );
+    final String fallbackFlow = _functionSource(
+      source,
+      'static void _showFallbackDialog(',
+      '  static Future<void> _downloadAndInstall(',
+    );
+    final String dialogSource = _sectionSource(
+      source,
+      'class UpdateAvailableDialog',
+      'class _DownloadOverlay',
+    );
+
+    expect(updateFlow, contains('UpdateAvailableDialog('));
+    expect(fallbackFlow, contains('UpdateAvailableDialog('));
+    expect(updateFlow, isNot(contains('adaptiveAlertDialog(')));
+    expect(fallbackFlow, isNot(contains('adaptiveAlertDialog(')));
+    expect(dialogSource, contains('HibikiDialogFrame('));
+    expect(dialogSource, contains('HibikiModalSheetFrame('));
+    expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
+  });
+
   test('dictionary and popup surfaces use shared MD3 primitives', () {
     final String dictionaryManager = File(
       'lib/src/pages/implementations/dictionary_dialog_page.dart',
