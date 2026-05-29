@@ -10,9 +10,8 @@ import 'package:hibiki/src/sync/onedrive_sync_backend.dart';
 /// now selectable.
 void main() {
   group('OAuth backend isConfigured', () {
-    test('OneDrive reports not configured while client ID is a placeholder',
-        () {
-      expect(OneDriveSyncBackend.isConfigured, isFalse);
+    test('OneDrive reports configured once a real client ID is filled in', () {
+      expect(OneDriveSyncBackend.isConfigured, isTrue);
     });
 
     test('Dropbox reports configured once a real app key is filled in', () {

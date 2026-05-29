@@ -20,7 +20,7 @@ class OneDriveSyncBackend extends SyncBackend {
   OneDriveSyncBackend._();
   static final OneDriveSyncBackend instance = OneDriveSyncBackend._();
 
-  static const _clientId = 'YOUR_ONEDRIVE_CLIENT_ID';
+  static const _clientId = '49f7e6d1-fab5-48ef-90ab-13ce04986b46';
 
   /// Whether a real OAuth client ID has been configured. Until it is, the
   /// backend cannot authenticate, so the UI hides it from the picker.
