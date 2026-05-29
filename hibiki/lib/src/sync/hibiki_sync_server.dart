@@ -7,6 +7,19 @@ import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:shelf/shelf_io.dart' as shelf_io;
 
+/// Embedded WebDAV-style server used for device-to-device LAN sync.
+///
+/// SECURITY (HBK-AUDIT-011): transport is plain HTTP and auth is HTTP Basic,
+/// so the bearer token travels in reversible base64 over the wire. This is
+/// acceptable only on a trusted LAN, and is gated behind [_allowLan] — when
+/// false (the default) the server binds to loopback only and is never exposed
+/// to the network. Enabling LAN sync therefore requires an explicit opt-in.
+///
+/// The proper hardening (TLS with a token-pinned self-signed certificate, or
+/// an HMAC challenge-response so the raw token is never transmitted) is a
+/// coordinated server+client+discovery protocol change that must be designed
+/// and verified on real devices; it is intentionally NOT bolted on here. Until
+/// then, treat LAN sync as unencrypted and only use it on a network you trust.
 class HibikiSyncServer {
   HibikiSyncServer({
     required String syncDataDir,
@@ -216,8 +229,23 @@ class HibikiSyncServer {
     final file = File(fsPath);
     final existed = file.existsSync();
     final sink = file.openWrite();
-    await request.read().forEach(sink.add);
-    await sink.close();
+    try {
+      await request.read().forEach(sink.add);
+      await sink.close();
+    } catch (e) {
+      // The request stream errored mid-body. Close the sink and remove the
+      // truncated file rather than leaving a corrupt file behind a 201/204
+      // response — matching the download paths' cleanup (HBK-AUDIT-029).
+      try {
+        await sink.close();
+      } catch (_) {}
+      if (file.existsSync()) {
+        try {
+          file.deleteSync();
+        } catch (_) {}
+      }
+      return shelf.Response(500, body: 'Write failed');
+    }
     return shelf.Response(existed ? 204 : 201);
   }
 
