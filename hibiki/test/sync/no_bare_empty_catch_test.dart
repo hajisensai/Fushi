@@ -13,9 +13,12 @@ void main() {
     final Directory dir = Directory('lib/src/sync');
     expect(dir.existsSync(), isTrue, reason: 'run from the hibiki/ package root');
 
-    // Matches `catch (...) {}`, `catch (...) { }`, `catch (...) {\n}` — i.e. a
-    // body that is only whitespace. A `{/* reason */}` body does NOT match.
-    final RegExp bareCatch = RegExp(r'catch\s*\([^)]*\)\s*\{\s*\}');
+    // Matches an empty (whitespace-only) catch body in either form:
+    //   `catch (...) {}` / `catch (...) { }` / `catch (...) {\n}`
+    //   `on SomeType {}` (parenthesis-less typed catch, also swallows silently)
+    // A `{/* reason */}` body does NOT match.
+    final RegExp bareCatch =
+        RegExp(r'(?:catch\s*\([^)]*\)|on\s+[\w.<>]+)\s*\{\s*\}');
     final List<String> offenders = <String>[];
 
     for (final FileSystemEntity entity in dir.listSync(recursive: true)) {

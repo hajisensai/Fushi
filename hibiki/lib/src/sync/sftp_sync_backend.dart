@@ -483,8 +483,9 @@ class SftpSyncBackend extends SyncBackend {
         // Per-file failure; the connection is still usable, so keep it.
         throw SyncBackendError('SFTP error: $e', isRetryable: true);
       } catch (e) {
-        // Transport/IO failure — drop the (likely dead) connection so the
-        // retry reconnects.
+        // Everything reaching here is a transport/IO failure (SocketException,
+        // etc.) — SyncAuthError/SyncBackendError were already rethrown above.
+        // Drop the (likely dead) connection so the retry reconnects.
         _disconnect();
         throw SyncBackendError('SFTP operation failed: $e', isRetryable: true);
       }
