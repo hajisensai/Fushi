@@ -1,5 +1,21 @@
 allprojects {
     repositories {
+        // The Flutter integration_test plugin requests dynamic test deps
+        // (androidx.test:runner/rules:1.2+, espresso-core:3.3+). Listing a
+        // dynamic version needs maven-metadata.xml, but dl.google.com /
+        // repo.maven.apache.org answer that with 405 in this environment,
+        // which aborts the whole resolution. Resolve those groups EXCLUSIVELY
+        // from the Aliyun Google mirror (directly reachable, returns proper
+        // metadata) so the 405 hosts are never queried for them.
+        exclusiveContent {
+            forRepository {
+                maven { url 'https://maven.aliyun.com/repository/google' }
+            }
+            filter {
+                includeGroup 'androidx.test'
+                includeGroup 'androidx.test.espresso'
+            }
+        }
         google()
         mavenCentral()
         maven { url "https://jitpack.io" }

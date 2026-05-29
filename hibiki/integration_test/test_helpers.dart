@@ -40,8 +40,13 @@ Future<int> takeScreenshot(
 void assertStrictErrors(List<FlutterErrorDetails> errors) {
   final List<FlutterErrorDetails> unexpected = errors.where((e) {
     final String msg = e.exceptionAsString().toLowerCase();
+    // Ignore only network-layer failures (e.g. the offline GitHub update
+    // check). A bare "timeout" is NOT filtered, so a stuck WebView/render
+    // timeout stays fatal.
     if (msg.contains('socketexception')) return false;
-    if (msg.contains('tls') || msg.contains('timeout')) return false;
+    if (msg.contains('handshakeexception') || msg.contains('tlsexception')) {
+      return false;
+    }
     return true;
   }).toList();
 

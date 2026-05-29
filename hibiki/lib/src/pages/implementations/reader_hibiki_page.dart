@@ -68,6 +68,16 @@ class ReaderHibikiPage extends BaseSourcePage {
   final int bookId;
   final Bookmark? initialBookmarkJump;
 
+  /// Debug-only hook for integration tests to evaluate JS inside the reader
+  /// WebView. Set when the controller is created, cleared on dispose. Guarded
+  /// by `assert` so it is tree-shaken out of release builds.
+  ///
+  /// Assumes a single live reader at a time (the normal case — the reader is a
+  /// full-screen route). The reentrancy `assert` in [onWebViewCreated] fires in
+  /// debug if a second reader is created before the first disposes.
+  @visibleForTesting
+  static Future<dynamic> Function(String source)? debugEvaluateJavascript;
+
   @override
   BaseSourcePageState<ReaderHibikiPage> createState() =>
       _ReaderHibikiPageState();
@@ -815,6 +825,10 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
   @override
   void dispose() {
+    assert(() {
+      ReaderHibikiPage.debugEvaluateJavascript = null;
+      return true;
+    }());
     ReaderHibikiSource.onSettingsChangedLive = null;
     WidgetsBinding.instance.removeObserver(this);
     _progressPollTimer?.cancel();
@@ -1415,6 +1429,16 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       ),
       onWebViewCreated: (controller) {
         _controller = controller;
+        assert(() {
+          assert(
+            ReaderHibikiPage.debugEvaluateJavascript == null,
+            'debugEvaluateJavascript already set — a previous reader did not '
+            'clear it on dispose, or two readers are live at once.',
+          );
+          ReaderHibikiPage.debugEvaluateJavascript =
+              (String source) => controller.evaluateJavascript(source: source);
+          return true;
+        }());
         _startContentReadyTimeout();
         if (_lyricsMode && _audiobookController != null) {
           final List<AudioCue> allCues =
