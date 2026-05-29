@@ -50,12 +50,17 @@ class _HibikiFocusRingState extends State<HibikiFocusRing> {
     // active (safe to query) or unmounted/defunct (caught by ctx.mounted).
     // Inactive elements no longer exist, so the geometry read cannot assert.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _recomputeScheduled = false;
-      if (!mounted) return;
+      if (!mounted) {
+        _recomputeScheduled = false;
+        return;
+      }
       final Rect? next = _computeFocusRect();
       if (next != _rect) {
         setState(() => _rect = next);
       }
+      // Clear at the end so the "scheduled" window spans the whole read, not
+      // just up to entry — independent of when focus changes are delivered.
+      _recomputeScheduled = false;
     });
   }
 
