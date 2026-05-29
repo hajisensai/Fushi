@@ -293,44 +293,51 @@ class ProfileDeleteDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
 
-    return adaptiveAlertDialog(
-      context: context,
-      titlePadding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-      contentPadding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-      actionsPadding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-      buttonPadding: const EdgeInsets.symmetric(horizontal: 4),
-      title: Text(
-        t.profile_delete,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
+    return HibikiDialogFrame(
+      maxWidth: 420,
+      maxHeightFactor: 0.9,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      scrollable: false,
+      child: HibikiModalSheetFrame(
+        title: t.profile_delete,
+        scrollable: true,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: Text(
+          t.profile_confirm_delete(name: profileName),
+          style: tokens.type.listSubtitle,
+        ),
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: [
+            adaptiveDialogAction(
+              context: context,
+              onPressed: () => Navigator.pop(context, false),
+              child: Text(t.dialog_close),
+            ),
+            adaptiveDialogAction(
+              context: context,
+              isDestructiveAction: true,
+              onPressed: onConfirm,
+              child: Text(t.profile_delete),
+            ),
+          ],
+        ),
       ),
-      content: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: double.maxFinite,
-          maxHeight: MediaQuery.of(context).size.height * 0.34,
-        ),
-        child: SingleChildScrollView(
-          child: Text(
-            t.profile_confirm_delete(name: profileName),
-            style: theme.textTheme.bodySmall,
-          ),
-        ),
-      ),
-      actions: [
-        adaptiveDialogAction(
-          context: context,
-          onPressed: () => Navigator.pop(context, false),
-          child: Text(t.dialog_close),
-        ),
-        adaptiveDialogAction(
-          context: context,
-          isDestructiveAction: true,
-          onPressed: onConfirm,
-          child: Text(t.profile_delete),
-        ),
-      ],
     );
   }
 }
@@ -369,30 +376,51 @@ class _ProfileNameDialogState extends State<ProfileNameDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return adaptiveAlertDialog(
-      context: context,
-      titlePadding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-      contentPadding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-      actionsPadding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-      title: Text(widget.title),
-      content: HibikiTextField(
-        controller: _controller,
-        autofocus: true,
-        hintText: t.profile_name_hint,
-        onSubmitted: (value) => _submit(context, value),
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
+    return HibikiDialogFrame(
+      maxWidth: 420,
+      maxHeightFactor: 0.9,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      scrollable: false,
+      child: HibikiModalSheetFrame(
+        title: widget.title,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: HibikiTextField(
+          controller: _controller,
+          autofocus: true,
+          hintText: t.profile_name_hint,
+          onSubmitted: (value) => _submit(context, value),
+        ),
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: [
+            adaptiveDialogAction(
+              context: context,
+              onPressed: () => Navigator.pop(context),
+              child: Text(t.dialog_close),
+            ),
+            adaptiveDialogAction(
+              context: context,
+              onPressed: () => _submit(context, _controller.text),
+              child: Text(widget.submitLabel),
+            ),
+          ],
+        ),
       ),
-      actions: [
-        adaptiveDialogAction(
-          context: context,
-          onPressed: () => Navigator.pop(context),
-          child: Text(t.dialog_close),
-        ),
-        adaptiveDialogAction(
-          context: context,
-          onPressed: () => _submit(context, _controller.text),
-          child: Text(widget.submitLabel),
-        ),
-      ],
     );
   }
 
