@@ -40,6 +40,44 @@ void main() {
         FileSystemEntityType.directory,
       );
     });
+
+    test(
+        'percent-encoded TOC hrefs resolve to non-ASCII chapter files '
+        '(HBK-AUDIT-010)', () {
+      final Uint8List bytes = _encodeArchive(<ArchiveFile>[
+        _textFile('META-INF/container.xml', _containerXml),
+        _textFile('OEBPS/content.opf', _opfWithNav),
+        _textFile('OEBPS/nav.xhtml', _navXhtmlEncoded),
+        _textFile('OEBPS/第1章.xhtml', _chapterXhtml),
+      ]);
+
+      final EpubBook book = EpubParser.parseSync(bytes, extractDir.path);
+
+      expect(book.chapters, hasLength(1));
+      expect(book.toc, isNotEmpty);
+      // The nav href is the percent-encoded form (%E7%AC%AC1%E7%AB%A0.xhtml)
+      // but must resolve to the same decoded href as the chapter.
+      expect(book.toc.first.href, book.chapters.first.href);
+    });
+
+    test('non-UTF-8 chapter bytes do not crash the parse (HBK-AUDIT-033)', () {
+      final List<int> malformed = <int>[
+        ...utf8.encode('<?xml version="1.0"?>'
+            '<html xmlns="http://www.w3.org/1999/xhtml"><body><p>'),
+        0x82, 0xA0, // lone Shift_JIS-style bytes: invalid as standalone UTF-8
+        ...utf8.encode('</p></body></html>'),
+      ];
+      final Uint8List bytes = _encodeArchive(<ArchiveFile>[
+        _textFile('META-INF/container.xml', _containerXml),
+        _textFile('OEBPS/content.opf', _contentOpf),
+        _binFile('OEBPS/chapter.xhtml', malformed),
+      ]);
+
+      // Strict utf8 decoding would throw FormatException and abort the import;
+      // the parser must degrade gracefully instead.
+      final EpubBook book = EpubParser.parseSync(bytes, extractDir.path);
+      expect(book.chapters, hasLength(1));
+    });
   });
 }
 
@@ -55,6 +93,36 @@ ArchiveFile _textFile(String name, String content) {
   final List<int> bytes = utf8.encode(content);
   return ArchiveFile(name, bytes.length, bytes);
 }
+
+ArchiveFile _binFile(String name, List<int> bytes) =>
+    ArchiveFile(name, bytes.length, bytes);
+
+const String _opfWithNav = '''
+<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="book-id">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:title>Encoded TOC Book</dc:title>
+  </metadata>
+  <manifest>
+    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+    <item id="ch1" href="第1章.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine>
+    <itemref idref="ch1"/>
+  </spine>
+</package>
+''';
+
+const String _navXhtmlEncoded = '''
+<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+  <body>
+    <nav epub:type="toc">
+      <ol><li><a href="%E7%AC%AC1%E7%AB%A0.xhtml">Chapter 1</a></li></ol>
+    </nav>
+  </body>
+</html>
+''';
 
 const String _containerXml = '''
 <?xml version="1.0" encoding="UTF-8"?>

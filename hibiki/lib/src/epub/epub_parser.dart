@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -45,7 +46,7 @@ class EpubParser {
           'Invalid EPUB: missing META-INF/container.xml');
     }
     final XmlDocument containerXml =
-        XmlDocument.parse(containerFile.readAsStringSync());
+        XmlDocument.parse(_readText(containerFile));
     final String? rootfilePath = _findRootfilePath(containerXml);
     if (rootfilePath == null) {
       throw const FormatException('Invalid EPUB: no rootfile in container.xml');
@@ -56,7 +57,7 @@ class EpubParser {
       throw FormatException('Invalid EPUB: OPF not found: $rootfilePath');
     }
     final String opfDir = p.dirname(opfFile.path);
-    final XmlDocument opfXml = XmlDocument.parse(opfFile.readAsStringSync());
+    final XmlDocument opfXml = XmlDocument.parse(_readText(opfFile));
 
     final Map<String, _ManifestItem> manifest =
         _parseManifest(opfXml, opfDir, extractDir);
@@ -131,6 +132,15 @@ class EpubParser {
     }
   }
 
+  // NOTE on HBK-AUDIT-034: the audit suggested only treating EXPLICIT non-file
+  // entries as directories. That regresses valid EPUBs: many archives mark a
+  // directory with a zero-byte FILE entry (e.g. "META-INF" with no trailing
+  // slash, isFile==true) that is also the parent of real entries. A path that
+  // is the parent of another entry MUST be a directory on the filesystem — a
+  // path cannot be both a file and a directory — so the "file with content
+  // that is also a parent" case the audit describes is unrepresentable for a
+  // valid archive. Treating implied parents as directories is therefore
+  // correct and is kept.
   static Set<String> _archiveDirectoryPaths(
     Archive archive,
     String extractDir,
@@ -192,7 +202,9 @@ class EpubParser {
     for (final XmlElement el in container.findAllElements('rootfile')) {
       final String? fullPath = el.getAttribute('full-path');
       if (fullPath != null && fullPath.isNotEmpty) {
-        return fullPath;
+        // Percent-decode to match the decoded manifest/chapter hrefs
+        // (HBK-AUDIT-010).
+        return _decodeHrefPath(fullPath);
       }
     }
     return null;
@@ -215,7 +227,7 @@ class EpubParser {
       }
       result[id] = _ManifestItem(
         id: id,
-        href: Uri.decodeFull(href),
+        href: _decodeHrefPath(href),
         mediaType: mediaType,
         properties: item.getAttribute('properties'),
       );
@@ -276,7 +288,7 @@ class EpubParser {
         id: item.id,
         href: normalizeHref(relPath),
         mediaType: item.mediaType,
-        html: file.readAsStringSync(),
+        html: _readText(file),
         spineIndex: index,
         linear: linear != 'no',
         spreadProperty: spreadProperty,
@@ -364,7 +376,7 @@ class EpubParser {
         final File navFile = File(navPath);
         if (navFile.existsSync()) {
           final List<EpubTocItem> toc = _parseNavDoc(
-            navFile.readAsStringSync(),
+            _readText(navFile),
             p.dirname(navFile.path),
             extractDir,
           );
@@ -386,7 +398,7 @@ class EpubParser {
         final File ncxFile = File(ncxPath);
         if (ncxFile.existsSync()) {
           return _parseNcx(
-            ncxFile.readAsStringSync(),
+            _readText(ncxFile),
             p.dirname(ncxFile.path),
             extractDir,
           );
@@ -540,7 +552,10 @@ class EpubParser {
       return fragment.isEmpty ? null : fragment;
     }
 
-    final String absPath = p.join(baseDir, base);
+    // Manifest/chapter hrefs are percent-decoded (_parseManifest), but TOC
+    // src/href were not — a TOC pointing at %E7%AC%AC1.xhtml then never matched
+    // the decoded chapter key. Decode the path part here too (HBK-AUDIT-010).
+    final String absPath = p.join(baseDir, _decodeHrefPath(base));
     final String relPath =
         p.relative(absPath, from: extractDir).replaceAll('\\', '/');
     final String normalized = normalizeHref(relPath);
@@ -558,6 +573,35 @@ class EpubParser {
       }
     }
     return null;
+  }
+
+  /// Reads a text file as UTF-8, degrading gracefully instead of throwing on
+  /// non-UTF-8 bytes. EPUB mandates UTF-8 for its XML, but legacy Japanese
+  /// books/raw XHTML sometimes carry Shift_JIS/EUC-JP; strict utf8 decoding
+  /// would throw FormatException and abort the whole import (HBK-AUDIT-033).
+  /// A UTF-8 BOM is stripped; malformed bytes become U+FFFD rather than a
+  /// crash. (Full Shift_JIS/EUC-JP transcoding needs a charset converter dep
+  /// and is out of scope here.)
+  static String _readText(File file) {
+    List<int> bytes = file.readAsBytesSync();
+    if (bytes.length >= 3 &&
+        bytes[0] == 0xEF &&
+        bytes[1] == 0xBB &&
+        bytes[2] == 0xBF) {
+      bytes = bytes.sublist(3);
+    }
+    return utf8.decode(bytes, allowMalformed: true);
+  }
+
+  /// Percent-decodes an href/path, tolerating malformed sequences (a literal
+  /// '%' that is not valid percent-encoding) by returning the raw input rather
+  /// than throwing ArgumentError and aborting the parse.
+  static String _decodeHrefPath(String href) {
+    try {
+      return Uri.decodeFull(href);
+    } on ArgumentError {
+      return href;
+    }
   }
 
   static bool _isHtmlMediaType(String mediaType) {
