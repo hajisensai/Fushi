@@ -11,14 +11,17 @@ abstract class BasePage extends ConsumerStatefulWidget {
   /// Create an instance of this page.
   const BasePage({super.key});
 
+  // Abstract: every concrete page must supply its own state. A default
+  // `=> BasePageState()` let `class Foo extends BasePage {}` compile and then
+  // crash at runtime in the throwing build() (HBK-AUDIT-036).
   @override
-  BasePageState<BasePage> createState() => BasePageState();
+  BasePageState<BasePage> createState();
 }
 
 /// A base class for providing all pages in the app with a collection
 /// of shared functions and variables. In large part, this was implemented to
 /// define shortcuts for common lengthy methods across UI code.
-class BasePageState<T extends BasePage> extends ConsumerState<T> {
+abstract class BasePageState<T extends BasePage> extends ConsumerState<T> {
   late final AppModel _cachedAppModel;
   late final CreatorModel _cachedCreatorModel;
 
@@ -85,10 +88,9 @@ class BasePageState<T extends BasePage> extends ConsumerState<T> {
     appModel.addToStash(terms: [searchTerm]);
   }
 
-  @override
-  Widget build(BuildContext context) {
-    throw UnimplementedError();
-  }
+  // build() is intentionally NOT implemented here — it is abstract (inherited
+  // from State). Subclasses must provide it; a missing override is now a
+  // compile error instead of a runtime UnimplementedError (HBK-AUDIT-036).
 
   /// Standard error message for use across the application.
   /// General widget for showing an error or a retry screen.

@@ -31,7 +31,8 @@ abstract class BaseSourcePage extends BasePage {
 /// A base class for providing all pages used for media in the app with a
 /// collection of shared functions and variables. In large part, this was
 /// implemented to define shortcuts for common lengthy methods across UI code.
-class BaseSourcePageState<T extends BaseSourcePage> extends BasePageState<T> {
+abstract class BaseSourcePageState<T extends BaseSourcePage>
+    extends BasePageState<T> {
   @override
   void initState() {
     super.initState();
