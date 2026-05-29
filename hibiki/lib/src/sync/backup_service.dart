@@ -81,6 +81,14 @@ class BackupService {
         await File(_dbPath).copy(cleanDbPath);
       }
 
+      // Strip sync credentials from the copy before it leaves the device.
+      // The backup ZIP is shared/saved anywhere the user picks, and the
+      // preferences table holds OAuth refresh tokens and FTP/SFTP/WebDAV/SMB/
+      // server passwords (base64 = encoding, not encryption). VACUUM after the
+      // delete so the secrets are not recoverable from freelist pages.
+      // (HBK-AUDIT-012)
+      await _stripCredentials(tmpDir.path);
+
       final books = await _db.getAllEpubBooks();
       final stats = await _db.getAllReadingStatistics();
       final meta = BackupMeta(
@@ -106,6 +114,28 @@ class BackupService {
       return meta;
     } finally {
       if (tmpDir.existsSync()) await tmpDir.delete(recursive: true);
+    }
+  }
+
+  /// Removes sync credential rows from the standalone DB copy in [dbDirectory].
+  /// Opened via [HibikiDatabase] (the copy is already at the current schema, so
+  /// no migration runs). Keyed by the `sync_` prefix + secret-shaped suffixes
+  /// so newly added credential prefs are covered without an exact allow-list to
+  /// keep in sync. VACUUM + checkpoint so secrets are not recoverable from
+  /// freelist/WAL pages.
+  static Future<void> _stripCredentials(String dbDirectory) async {
+    final db = HibikiDatabase(dbDirectory);
+    try {
+      await db.customStatement(
+        "DELETE FROM preferences WHERE key LIKE 'sync_%password%'"
+        " OR key LIKE 'sync_%token%' OR key LIKE 'sync_%secret%'"
+        " OR key LIKE 'sync_%private_key%'"
+        " OR key = 'sync_desktop_credentials'",
+      );
+      await db.customStatement('VACUUM');
+      await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
+    } finally {
+      await db.close();
     }
   }
 

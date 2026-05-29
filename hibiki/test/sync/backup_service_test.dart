@@ -261,6 +261,54 @@ void main() {
       }
     });
 
+    test(
+        'exportBackup strips sync credentials from the DB copy '
+        '(HBK-AUDIT-012)', () async {
+      final dbDir = await Directory.systemTemp.createTemp('backup_creds_');
+      final onDiskDb = HibikiDatabase(dbDir.path);
+      try {
+        await onDiskDb.setPref('sync_dropbox_token', 's:SECRET_TOKEN');
+        await onDiskDb.setPref('sync_ftp_password', 's:hunter2');
+        await onDiskDb.setPref('sync_desktop_credentials', 's:{"refresh":"x"}');
+        await onDiskDb.setPref('sync_stats_enabled', 'b:true'); // non-secret
+        await onDiskDb.setPref('reader_font_size', 'i:18'); // non-sync pref
+
+        final service = BackupService(
+          db: onDiskDb,
+          dbDirectory: dbDir.path,
+          appVersion: '2.0.0',
+        );
+        final outputPath = '${tmpDir.path}/creds_test.zip';
+        await service.exportBackup(outputPath);
+
+        // Extract the exported DB and inspect its preferences table.
+        final archive =
+            ZipDecoder().decodeBytes(await File(outputPath).readAsBytes());
+        final dbBytes = archive.findFile('hibiki.db')!.content as List<int>;
+        final restoreDir =
+            await Directory.systemTemp.createTemp('backup_creds_r_');
+        await File('${restoreDir.path}/hibiki.db').writeAsBytes(dbBytes);
+        final restored = HibikiDatabase(restoreDir.path);
+        try {
+          // Credentials must be gone.
+          expect(await restored.getPref('sync_dropbox_token'), isNull);
+          expect(await restored.getPref('sync_ftp_password'), isNull);
+          expect(await restored.getPref('sync_desktop_credentials'), isNull);
+          // Non-credential prefs must survive.
+          expect(await restored.getPref('sync_stats_enabled'), isNotNull);
+          expect(await restored.getPref('reader_font_size'), isNotNull);
+        } finally {
+          await restored.close();
+          if (restoreDir.existsSync()) {
+            await restoreDir.delete(recursive: true);
+          }
+        }
+      } finally {
+        await onDiskDb.close();
+        if (dbDir.existsSync()) await dbDir.delete(recursive: true);
+      }
+    });
+
     test('export then import round-trip preserves database content', () async {
       // Source DB on disk: insert a book and a reading statistic.
       final srcDir = await Directory.systemTemp.createTemp('backup_src_');
