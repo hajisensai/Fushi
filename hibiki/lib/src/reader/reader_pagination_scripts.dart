@@ -557,10 +557,19 @@ $_sharedJs
     var clientSize = vertical
       ? (this.pageHeight || scrollEl.clientHeight || window.innerHeight)
       : (scrollEl.clientWidth || this.pageWidth || window.innerWidth);
-    var columnPitch = vertical ? clientSize : (clientSize + $fontSize);
+    var gap = parseFloat(cs.columnGap) || 0;
+    // Column pitch = one page worth of column(s). The CSS column period is
+    // (column-width + column-gap); the single column expands to fill the content
+    // box, so that equals (content size + gap) = pageSize + gap. pageSize already
+    // subtracts body padding. Using the full clientSize here (the old behaviour)
+    // ignored padding, so once chrome insets enlarged padding-top/bottom the
+    // vertical pitch over-scrolled by exactly (chrome-top + chrome-bottom) every
+    // page and the text drifted further each turn. For horizontal this equals the
+    // old "clientSize + fontSize" because the gap already carries the left/right
+    // margins that pageSize's padding subtraction cancels out.
+    var columnPitch = pageSize + gap;
     var totalSize = vertical ? scrollEl.scrollHeight : scrollEl.scrollWidth;
     var maxScroll = Math.max(0, totalSize - clientSize);
-    var gap = parseFloat(cs.columnGap) || 0;
     var pageHeightVar = getComputedStyle(document.documentElement).getPropertyValue('--page-height');
     var bodyRect = scrollEl.getBoundingClientRect();
     var htmlCH = document.documentElement.clientHeight;
@@ -886,31 +895,42 @@ $_sharedJs
     var charPage = Math.floor(Math.max(0, scrollOffset) / context.columnPitch);
     var aligned;
     if (hintScroll !== undefined) {
+      // Page-stable hint: if the target char is within one page of where we
+      // started, keep the original page so a ±1-column repagination doesn't
+      // visibly shift the reader; otherwise jump to the char's actual page.
       var origPage = Math.round(hintScroll / context.columnPitch);
-      console.log('[HINT_DBG] scrollToCharOffset charOffset=' + charOffset + ' scrollOffset=' + scrollOffset.toFixed(1) + ' pitch=' + context.columnPitch + ' charPage=' + charPage + ' origPage=' + origPage + ' delta=' + Math.abs(charPage - origPage));
       aligned = (Math.abs(charPage - origPage) <= 1)
         ? origPage * context.columnPitch
         : charPage * context.columnPitch;
-      console.log('[HINT_DBG] decision: ' + (Math.abs(charPage - origPage) <= 1 ? 'STAY origPage=' + origPage : 'JUMP charPage=' + charPage) + ' aligned=' + aligned);
     } else {
       aligned = charPage * context.columnPitch;
     }
     this.setPagePosition(context, aligned);
   },
   setChromeInsets: function(topPx, bottomPx) {
-    var charOffset = this.getFirstVisibleCharOffset();
-    var context = this.getScrollContext();
-    var scrollBefore = this.getPagePosition(context);
-    var pitchBefore = context.columnPitch;
-    console.log('[HINT_DBG] setChromeInsets top=' + topPx + ' bottom=' + bottomPx + ' charOffset=' + charOffset + ' scrollBefore=' + scrollBefore + ' pitchBefore=' + pitchBefore);
+    // Re-anchoring (after a chrome-inset OR a page-size change) is serialised
+    // through one shared in-flight flag, _reanchorPending. A layout change
+    // transiently resets scrollTop to 0; if a re-anchor rAF is already pending
+    // (from this handler or updatePageSize), reading a fresh char offset now
+    // would sample that reset as the chapter start and snap there. So when one
+    // is in flight we only apply the new CSS and let the pending rAF restore
+    // position once the layout settles. This serialises without masking via a
+    // delay, and covers both rapid toggles and toggle/resize interleaving.
+    // (HBK-REG-004)
+    var inFlight = this._reanchorPending === true;
+    var charOffset = inFlight ? -1 : this.getFirstVisibleCharOffset();
+    var scrollBefore = inFlight ? 0 : this.getPagePosition(this.getScrollContext());
     document.documentElement.style.setProperty('--chrome-top-inset', topPx + 'px');
     document.documentElement.style.setProperty('--chrome-bottom-inset', bottomPx + 'px');
-    if (charOffset < 0) return;
+    if (inFlight || charOffset < 0) return;
+    this._reanchorPending = true;
     var self = this;
     requestAnimationFrame(function() {
-      var ctx2 = self.getScrollContext();
-      console.log('[HINT_DBG] rAF pitchAfter=' + ctx2.columnPitch + ' scrollTopNow=' + ctx2.scrollEl.scrollTop);
-      self.scrollToCharOffset(charOffset, scrollBefore);
+      try {
+        self.scrollToCharOffset(charOffset, scrollBefore);
+      } finally {
+        self._reanchorPending = false;
+      }
     });
   }
 };
@@ -959,7 +979,12 @@ window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
   var newHeight = Math.round(cssHeight) + $bottomOverlapPx;
   var newWidth = Math.round(cssWidth);
   if (newHeight === this.pageHeight && newWidth === this.pageWidth) return;
-  var progress = this.calculateProgress();
+  // Shares the _reanchorPending flag with setChromeInsets (see there). If a
+  // re-anchor rAF is already pending, reading calculateProgress now would read a
+  // transiently reset scrollTop as progress 0 and snap to the chapter start, so
+  // we only update the page metrics and let the pending rAF restore position.
+  var inFlight = this._reanchorPending === true;
+  var progress = inFlight ? 0 : this.calculateProgress();
   document.documentElement.style.setProperty('--page-height', newHeight + 'px');
   document.documentElement.style.setProperty('--page-width', newWidth + 'px');
   var cs = this._contentSize();
@@ -968,9 +993,15 @@ window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
   this.pageHeight = newHeight;
   this.pageWidth = newWidth;
   this.paginationMetrics = null;
+  if (inFlight) return;
+  this._reanchorPending = true;
   var self = this;
   requestAnimationFrame(function() {
-    self.scrollToProgressPaged(self.getScrollContext(), progress);
+    try {
+      self.scrollToProgressPaged(self.getScrollContext(), progress);
+    } finally {
+      self._reanchorPending = false;
+    }
   });
 };
 $_sharedInitBoot
@@ -1137,50 +1168,61 @@ $_sharedJs
     return baseOffset + localChars;
   },
   setChromeInsets: function(topPx, bottomPx) {
-    var charOffset = this.getFirstVisibleCharOffset();
+    // See the paginated setChromeInsets: re-anchoring is serialised through the
+    // shared _reanchorPending flag so a transiently reset scrollTop (from a
+    // previous inset/size change's relayout) is never sampled as the chapter
+    // start. The rAF clears the flag in a finally{} so an early return from a
+    // failed node lookup can never leave the flag stuck. (HBK-REG-004)
+    var inFlight = this._reanchorPending === true;
+    var charOffset = inFlight ? -1 : this.getFirstVisibleCharOffset();
     document.documentElement.style.setProperty('--chrome-top-inset', topPx + 'px');
     document.documentElement.style.setProperty('--chrome-bottom-inset', bottomPx + 'px');
-    if (charOffset < 0) return;
+    if (inFlight || charOffset < 0) return;
+    this._reanchorPending = true;
     var self = this;
     requestAnimationFrame(function() {
-      var walker = self.createWalker();
-      var node;
-      var runningOffset = 0;
-      var targetNode = null;
-      while (node = walker.nextNode()) {
-        var nodeChars = self.countChars(node.textContent);
-        if (runningOffset + nodeChars > charOffset) {
-          targetNode = node;
-          break;
+      try {
+        var walker = self.createWalker();
+        var node;
+        var runningOffset = 0;
+        var targetNode = null;
+        while (node = walker.nextNode()) {
+          var nodeChars = self.countChars(node.textContent);
+          if (runningOffset + nodeChars > charOffset) {
+            targetNode = node;
+            break;
+          }
+          runningOffset += nodeChars;
         }
-        runningOffset += nodeChars;
-      }
-      if (!targetNode) return;
-      var remaining = charOffset - runningOffset;
-      var charIdx = 0;
-      var textOffset = 0;
-      var text = targetNode.textContent;
-      for (var i = 0; i < text.length && charIdx < remaining; i++) {
-        var cp = text.codePointAt(i);
-        var ch = String.fromCodePoint(cp);
-        if (self.isMatchableChar(ch)) charIdx++;
-        if (cp > 0xFFFF) i++;
-        textOffset = i + 1;
-      }
-      var range = document.createRange();
-      range.setStart(targetNode, Math.min(textOffset, text.length));
-      range.collapse(true);
-      var rect = range.getBoundingClientRect();
-      var vertical = self.isVertical();
-      var root = document.scrollingElement || document.documentElement;
-      var cs = getComputedStyle(document.body);
-      if (vertical) {
-        var pr = parseFloat(cs.paddingRight) || 0;
-        var targetX = document.body.clientWidth - pr;
-        root.scrollLeft += rect.left - targetX;
-      } else {
-        var pt = parseFloat(cs.paddingTop) || 0;
-        root.scrollTop += rect.top - pt;
+        if (!targetNode) return;
+        var remaining = charOffset - runningOffset;
+        var charIdx = 0;
+        var textOffset = 0;
+        var text = targetNode.textContent;
+        for (var i = 0; i < text.length && charIdx < remaining; i++) {
+          var cp = text.codePointAt(i);
+          var ch = String.fromCodePoint(cp);
+          if (self.isMatchableChar(ch)) charIdx++;
+          if (cp > 0xFFFF) i++;
+          textOffset = i + 1;
+        }
+        var range = document.createRange();
+        range.setStart(targetNode, Math.min(textOffset, text.length));
+        range.collapse(true);
+        var rect = range.getBoundingClientRect();
+        var vertical = self.isVertical();
+        var root = document.scrollingElement || document.documentElement;
+        var cs = getComputedStyle(document.body);
+        if (vertical) {
+          var pr = parseFloat(cs.paddingRight) || 0;
+          var targetX = document.body.clientWidth - pr;
+          root.scrollLeft += rect.left - targetX;
+        } else {
+          var pt = parseFloat(cs.paddingTop) || 0;
+          root.scrollTop += rect.top - pt;
+        }
+      } finally {
+        self._reanchorPending = false;
       }
     });
   }
@@ -1218,15 +1260,23 @@ window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
   var changed = (newHeight !== this._contH || newWidth !== this._contW);
   this._contH = newHeight;
   this._contW = newWidth;
-  var progress = changed ? this.calculateProgress() : 0;
+  // Shares _reanchorPending with setChromeInsets (see there): while a re-anchor
+  // rAF is in flight, only update the layout and let it restore position.
+  var inFlight = this._reanchorPending === true;
+  var progress = (changed && !inFlight) ? this.calculateProgress() : 0;
   document.documentElement.style.setProperty('--hoshi-continuous-height', newHeight + 'px');
   var cs = this._contentSize();
   document.documentElement.style.setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(cs.w * $imageWidthRatio)) + 'px');
   document.documentElement.style.setProperty('--hoshi-image-max-height', Math.max(1, cs.h) + 'px');
-  if (progress <= 0) return;
+  if (inFlight || progress <= 0) return;
+  this._reanchorPending = true;
   var self = this;
   requestAnimationFrame(function() {
-    self.scrollToProgressContinuous(progress);
+    try {
+      self.scrollToProgressContinuous(progress);
+    } finally {
+      self._reanchorPending = false;
+    }
   });
 };
 (function() {

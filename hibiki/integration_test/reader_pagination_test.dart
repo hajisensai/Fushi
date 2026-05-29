@@ -269,6 +269,58 @@ void main() {
         debugPrint('[M1] ✓ I9: scroll within one pitch ($drift px)');
       }
 
+      // === I10: position survives RAPID chrome toggles ===
+      // Symptom "快速变动UI回章节开头": rapid toggles fire setChromeInsets again
+      // before the previous inset relayout settles, which transiently reset
+      // scrollTop to 0 — the stale read then snapped the reader to the chapter
+      // start. Unlike I9 (a single settled toggle), this taps repeatedly with
+      // only one frame between taps to exercise the race.
+      debugPrint('[M1] === I10: Rapid Chrome Toggle ===');
+      // Page back into the middle so a regression to chapter start is
+      // unambiguous (the I9 step left us at the chapter end).
+      for (int i = 0; i < 18; i++) {
+        await eval('window.hoshiReader.paginate("backward");');
+      }
+      await tester.pump(const Duration(milliseconds: 300));
+      final midState = PaginationState.fromJson(
+        _decode(await eval(
+            'window.hoshiTestHarness.getPaginationState();') as String),
+      );
+      final midMarkers = parseMarkers(
+          await eval('window.hoshiTestHarness.getVisibleMarkers();')
+              as String);
+      expect(midState.scroll, greaterThan(0),
+          reason: 'I10 setup: reader must be mid-chapter before rapid toggle');
+      debugPrint('[M1] I10 mid scroll=${midState.scroll} '
+          'markers=${midMarkers.join(",")}');
+
+      // Fire 8 chrome toggles with only one frame between taps (no settle).
+      for (int i = 0; i < 8; i++) {
+        await tester.tapAt(centerTap);
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      await tester.pump(const Duration(seconds: 1));
+
+      final afterRapid = PaginationState.fromJson(
+        _decode(await eval(
+            'window.hoshiTestHarness.getPaginationState();') as String),
+      );
+      final afterRapidMarkers = parseMarkers(
+          await eval('window.hoshiTestHarness.getVisibleMarkers();')
+              as String);
+      debugPrint('[M1] I10 after rapid toggle scroll=${afterRapid.scroll} '
+          'markers=${afterRapidMarkers.join(",")}');
+      expect(afterRapid.scroll, greaterThan(0),
+          reason: 'I10: rapid chrome toggle reset the reader to the chapter '
+              'start (scroll=${afterRapid.scroll}, was ${midState.scroll})');
+      final i10 = validatePositionRestoration(
+        beforeMarkers: midMarkers,
+        afterMarkers: afterRapidMarkers,
+      );
+      expect(i10, isEmpty,
+          reason: 'I10 rapid-toggle restoration: ${i10.join("; ")}');
+      debugPrint('[M1] ✓ I10: position survived rapid chrome toggles');
+
       // Navigate back
       final NavigatorState nav = Navigator.of(
         tester.element(find.byType(Scaffold).first),
