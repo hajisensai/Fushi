@@ -394,6 +394,7 @@ class HibikiTagChip extends StatelessWidget {
     this.dimmed = false,
     this.tone = HibikiTagChipTone.filled,
     this.onTap,
+    this.onDeleted,
   });
 
   final String label;
@@ -402,6 +403,7 @@ class HibikiTagChip extends StatelessWidget {
   final bool dimmed;
   final HibikiTagChipTone tone;
   final VoidCallback? onTap;
+  final VoidCallback? onDeleted;
 
   @override
   Widget build(BuildContext context) {
@@ -438,22 +440,35 @@ class HibikiTagChip extends StatelessWidget {
         fontWeight: FontWeight.w600,
       ),
     );
-    final Widget content = tone == HibikiTagChipTone.surface && color != null
-        ? Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  color: color,
-                  shape: BoxShape.circle,
-                ),
-                child: const SizedBox(width: 10, height: 10),
-              ),
-              SizedBox(width: tokens.spacing.gap * 0.625),
-              labelText,
-            ],
-          )
-        : labelText;
+    final List<Widget> contentChildren = <Widget>[
+      if (tone == HibikiTagChipTone.surface && color != null) ...<Widget>[
+        DecoratedBox(
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+          ),
+          child: const SizedBox(width: 10, height: 10),
+        ),
+        SizedBox(width: tokens.spacing.gap * 0.625),
+      ],
+      Flexible(child: labelText),
+      if (onDeleted != null) ...<Widget>[
+        SizedBox(width: tokens.spacing.gap * 0.375),
+        InkWell(
+          borderRadius: tokens.radii.chipRadius,
+          onTap: onDeleted,
+          child: Icon(
+            Icons.close,
+            size: 14,
+            color: foreground,
+          ),
+        ),
+      ],
+    ];
+    final Widget content = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: contentChildren,
+    );
     final Widget chip = Container(
       padding: EdgeInsets.symmetric(
         horizontal: tokens.spacing.gap,

@@ -6,6 +6,7 @@ import 'package:hibiki/src/pages/implementations/shortcut_settings_page.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart';
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
+import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 
 void main() {
   setUp(() {
@@ -52,7 +53,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // Tab recorded as a chip, capture prompt gone, dialog still open.
-    expect(find.widgetWithText(Chip, 'Tab'), findsOneWidget);
+    expect(find.widgetWithText(HibikiTagChip, 'Tab'), findsOneWidget);
     expect(find.text(t.shortcut_press_key), findsNothing);
     expect(find.byType(ShortcutBindingEditDialog), findsOneWidget);
   });
@@ -69,7 +70,7 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
 
-    expect(find.widgetWithText(Chip, 'Escape'), findsOneWidget);
+    expect(find.widgetWithText(HibikiTagChip, 'Escape'), findsOneWidget);
     expect(find.byType(ShortcutBindingEditDialog), findsOneWidget);
   });
 
@@ -84,7 +85,7 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
 
-    expect(find.widgetWithText(Chip, 'Escape'), findsNothing);
+    expect(find.widgetWithText(HibikiTagChip, 'Escape'), findsNothing);
     expect(
       find.text(t.shortcut_conflict(s: t.shortcut_action_reader_toggle_chrome)),
       findsOneWidget,
@@ -101,7 +102,7 @@ void main() {
     await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
     await tester.pumpAndSettle();
 
-    expect(find.widgetWithText(Chip, 'Ctrl+KeyB'), findsOneWidget);
+    expect(find.widgetWithText(HibikiTagChip, 'Ctrl+KeyB'), findsOneWidget);
   });
 
   testWidgets('stop-capture control exits capture without binding a key',
@@ -115,7 +116,7 @@ void main() {
 
     // Capture aborted: prompt gone, no chips added, dialog still open.
     expect(find.text(t.shortcut_press_key), findsNothing);
-    expect(find.byType(Chip), findsNothing);
+    expect(find.byType(HibikiTagChip), findsNothing);
     expect(find.byType(ShortcutBindingEditDialog), findsOneWidget);
   });
 }

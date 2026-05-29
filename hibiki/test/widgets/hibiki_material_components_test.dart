@@ -134,6 +134,25 @@ void main() {
     expect(swatchDecoration.shape, BoxShape.circle);
   });
 
+  testWidgets('HibikiTagChip exposes a compact delete affordance',
+      (WidgetTester tester) async {
+    bool deleted = false;
+    await tester.pumpWidget(
+      buildSubject(
+        HibikiTagChip(
+          label: 'Ctrl+K',
+          tone: HibikiTagChipTone.surface,
+          onDeleted: () => deleted = true,
+        ),
+      ),
+    );
+
+    expect(find.byIcon(Icons.close), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.close));
+    expect(deleted, isTrue);
+  });
+
   testWidgets('HibikiBadge uses the shared compact radius',
       (WidgetTester tester) async {
     await tester.pumpWidget(

@@ -448,17 +448,14 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
             ),
             const SizedBox(height: 4),
             Wrap(
-              spacing: 4,
-              runSpacing: 4,
+              spacing: tokens.spacing.gap / 2,
+              runSpacing: tokens.spacing.gap / 2,
               children: <Widget>[
                 for (int i = 0; i < _keyboard.length; i++)
-                  Chip(
-                    label: Text(_keyboard[i].displayLabel),
+                  HibikiTagChip(
+                    label: _keyboard[i].displayLabel,
+                    tone: HibikiTagChipTone.surface,
                     onDeleted: () => _removeKeyboard(i),
-                    deleteIconColor: themeData.colorScheme.error,
-                    visualDensity: VisualDensity.compact,
-                    padding: EdgeInsets.zero,
-                    labelPadding: const EdgeInsets.symmetric(horizontal: 6),
                   ),
               ],
             ),
@@ -474,12 +471,14 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
                     onKeyEvent: _onKeyEvent,
                     child: Container(
                       width: double.infinity,
-                      padding: const EdgeInsets.symmetric(
-                          vertical: 12, horizontal: 8),
+                      padding: EdgeInsets.symmetric(
+                        vertical: tokens.spacing.gap + 4,
+                        horizontal: tokens.spacing.gap,
+                      ),
                       decoration: BoxDecoration(
                         border:
                             Border.all(color: themeData.colorScheme.primary),
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: tokens.radii.controlRadius,
                       ),
                       child: Text(
                         t.shortcut_press_key,
@@ -516,17 +515,14 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
             ),
             const SizedBox(height: 4),
             Wrap(
-              spacing: 4,
-              runSpacing: 4,
+              spacing: tokens.spacing.gap / 2,
+              runSpacing: tokens.spacing.gap / 2,
               children: <Widget>[
                 for (int i = 0; i < _gamepad.length; i++)
-                  Chip(
-                    label: Text(_gamepad[i].button.label),
+                  HibikiTagChip(
+                    label: _gamepad[i].button.label,
+                    tone: HibikiTagChipTone.surface,
                     onDeleted: () => _removeGamepad(i),
-                    deleteIconColor: themeData.colorScheme.error,
-                    visualDensity: VisualDensity.compact,
-                    padding: EdgeInsets.zero,
-                    labelPadding: const EdgeInsets.symmetric(horizontal: 6),
                   ),
               ],
             ),

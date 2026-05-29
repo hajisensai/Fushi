@@ -933,6 +933,23 @@ void main() {
     expect(tileSource, isNot(contains('child: Chip(')));
   });
 
+  test('shortcut binding editor uses shared MD3 tag chips', () {
+    final String source = File(
+      'lib/src/pages/implementations/shortcut_settings_page.dart',
+    ).readAsStringSync();
+    final String editDialog = _sectionSource(
+      source,
+      'class _ShortcutBindingEditDialogState',
+      source.length,
+    );
+
+    expect(editDialog, contains('HibikiTagChip('));
+    expect(editDialog, contains('onDeleted:'));
+    expect(editDialog, contains('tokens.radii.controlRadius'));
+    expect(editDialog, isNot(contains('=> Chip(')));
+    expect(editDialog, isNot(contains('BorderRadius.circular(8)')));
+  });
+
   test('custom font dialogs use shared MD3 dialog chrome', () {
     final String source = File(
       'lib/src/pages/implementations/custom_fonts_page.dart',
