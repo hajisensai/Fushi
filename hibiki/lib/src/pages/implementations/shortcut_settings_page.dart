@@ -301,13 +301,25 @@ class _EditBindingDialogState extends State<_EditBindingDialog> {
     _captureFocusNode.requestFocus();
   }
 
-  void _onKeyEvent(KeyEvent event) {
-    if (event is! KeyDownEvent && event is! KeyRepeatEvent) return;
+  void _cancelCapture() {
+    setState(() => _capturing = false);
+  }
+
+  // While capturing, every key event is consumed (KeyEventResult.handled) so
+  // keys such as Tab, Enter and Escape are recorded as bindings instead of
+  // leaking to focus traversal, the dialog's default button or the dismiss
+  // intent. Capture is aborted via the explicit cancel control, not a key.
+  KeyEventResult _onKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.handled;
+    }
 
     final LogicalKeyboardKey key = event.logicalKey;
 
-    // Ignore bare modifier presses.
-    if (ModifierKey.fromKeyboardKey(key) != null) return;
+    // Wait for a non-modifier key; a bare modifier press keeps capturing.
+    if (ModifierKey.fromKeyboardKey(key) != null) {
+      return KeyEventResult.handled;
+    }
 
     final Set<ModifierKey> modifiers = <ModifierKey>{};
     final HardwareKeyboard hw = HardwareKeyboard.instance;
@@ -321,7 +333,7 @@ class _EditBindingDialogState extends State<_EditBindingDialog> {
     // Check for duplicates within the current draft.
     if (_keyboard.contains(binding)) {
       setState(() => _capturing = false);
-      return;
+      return KeyEventResult.handled;
     }
 
     // Check for conflicts in the same scope.
@@ -336,7 +348,7 @@ class _EditBindingDialogState extends State<_EditBindingDialog> {
         _capturing = false;
         _conflictWarning = t.shortcut_conflict(s: _actionLabel(conflict));
       });
-      return;
+      return KeyEventResult.handled;
     }
 
     setState(() {
@@ -344,6 +356,7 @@ class _EditBindingDialogState extends State<_EditBindingDialog> {
       _capturing = false;
       _conflictWarning = null;
     });
+    return KeyEventResult.handled;
   }
 
   void _addGamepad(GamepadButton button) {
@@ -404,26 +417,40 @@ class _EditBindingDialogState extends State<_EditBindingDialog> {
             ),
             const SizedBox(height: 8),
             if (_capturing)
-              KeyboardListener(
-                focusNode: _captureFocusNode,
-                autofocus: true,
-                onKeyEvent: _onKeyEvent,
-                child: Container(
-                  width: double.infinity,
-                  padding:
-                      const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: themeData.colorScheme.primary),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    t.shortcut_press_key,
-                    textAlign: TextAlign.center,
-                    style: themeData.textTheme.bodyMedium?.copyWith(
-                      color: themeData.colorScheme.primary,
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  Focus(
+                    focusNode: _captureFocusNode,
+                    autofocus: true,
+                    onKeyEvent: _onKeyEvent,
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 12, horizontal: 8),
+                      decoration: BoxDecoration(
+                        border:
+                            Border.all(color: themeData.colorScheme.primary),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        t.shortcut_press_key,
+                        textAlign: TextAlign.center,
+                        style: themeData.textTheme.bodyMedium?.copyWith(
+                          color: themeData.colorScheme.primary,
+                        ),
+                      ),
                     ),
                   ),
-                ),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: _cancelCapture,
+                      child: Text(t.dialog_cancel),
+                    ),
+                  ),
+                ],
               )
             else
               TextButton.icon(
