@@ -563,15 +563,52 @@ class CollectionItemDialogFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return adaptiveAlertDialog(
-      context: context,
-      title: DefaultTextStyle.merge(
-        maxLines: 3,
-        overflow: TextOverflow.ellipsis,
-        child: title,
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
+    return HibikiDialogFrame(
+      maxWidth: 440,
+      maxHeightFactor: 0.78,
+      child: HibikiModalSheetFrame(
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.card,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            DefaultTextStyle.merge(
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: tokens.type.listTitle.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+              child: title,
+            ),
+            if (content != null) ...<Widget>[
+              SizedBox(height: tokens.spacing.gap),
+              DefaultTextStyle.merge(
+                style: tokens.type.listSubtitle,
+                child: content!,
+              ),
+            ],
+          ],
+        ),
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: actions,
+        ),
       ),
-      content: content,
-      actions: actions,
     );
   }
 }
@@ -589,38 +626,68 @@ class CollectionDeleteDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final ColorScheme colors = Theme.of(context).colorScheme;
 
-    return adaptiveAlertDialog(
-      context: context,
-      contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-      actionsPadding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-      buttonPadding: const EdgeInsets.symmetric(horizontal: 4),
-      content: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: double.maxFinite,
-          maxHeight: MediaQuery.of(context).size.height * 0.42,
+    return HibikiDialogFrame(
+      maxWidth: 420,
+      maxHeightFactor: 0.72,
+      child: HibikiModalSheetFrame(
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.card,
+          tokens.spacing.card,
+          tokens.spacing.gap,
         ),
-        child: SingleChildScrollView(
-          child: Text(
-            message,
-            style: theme.textTheme.bodySmall,
-          ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Container(
+              padding: EdgeInsets.all(tokens.spacing.gap),
+              decoration: BoxDecoration(
+                color: colors.errorContainer,
+                borderRadius: tokens.radii.controlRadius,
+              ),
+              child: Icon(
+                Icons.delete_outline,
+                color: colors.onErrorContainer,
+                size: 20,
+              ),
+            ),
+            SizedBox(width: tokens.spacing.gap + 4),
+            Expanded(
+              child: Text(
+                message,
+                style: tokens.type.listSubtitle,
+              ),
+            ),
+          ],
+        ),
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: <Widget>[
+            adaptiveDialogAction(
+              context: context,
+              onPressed: () => Navigator.pop(context, false),
+              child: Text(t.dialog_close),
+            ),
+            adaptiveDialogAction(
+              context: context,
+              isDestructiveAction: true,
+              onPressed: onConfirm,
+              child: Text(t.dialog_delete),
+            ),
+          ],
         ),
       ),
-      actions: [
-        adaptiveDialogAction(
-          context: context,
-          onPressed: () => Navigator.pop(context, false),
-          child: Text(t.dialog_close),
-        ),
-        adaptiveDialogAction(
-          context: context,
-          isDestructiveAction: true,
-          onPressed: onConfirm,
-          child: Text(t.dialog_delete),
-        ),
-      ],
     );
   }
 }

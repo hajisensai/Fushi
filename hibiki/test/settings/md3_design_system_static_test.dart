@@ -744,6 +744,28 @@ void main() {
     expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
   });
 
+  test('collection dialogs use shared MD3 dialog chrome', () {
+    final String source = File(
+      'lib/src/pages/implementations/collections_page.dart',
+    ).readAsStringSync();
+    final String itemDialog = _sectionSource(
+      source,
+      'class CollectionItemDialogFrame',
+      'class CollectionDeleteDialog',
+    );
+    final String deleteDialog = _sectionSource(
+      source,
+      'class CollectionDeleteDialog',
+      source.length,
+    );
+
+    for (final String dialogSource in <String>[itemDialog, deleteDialog]) {
+      expect(dialogSource, contains('HibikiDialogFrame('));
+      expect(dialogSource, contains('HibikiModalSheetFrame('));
+      expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
+    }
+  });
+
   test('MD3 review report does not reopen completed app chrome scope', () {
     final String report = File(
       '../docs/reviews/2026-05-26-project-review.md',
