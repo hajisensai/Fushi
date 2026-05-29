@@ -119,6 +119,10 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
 
   @override
   Widget build(BuildContext context) {
+    // Gamepad is mobile-only; on desktop/macOS the registry reports no gamepad
+    // support, so the gamepad chips/section are hidden and this page is a pure
+    // keyboard-shortcut editor (matching its "Keyboard Shortcuts" title).
+    final bool showGamepad = _registry.gamepadSupported;
     return Scaffold(
       appBar: AppBar(title: Text(t.shortcut_settings_title)),
       body: ListView(
@@ -133,6 +137,7 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
               _ActionTile(
                 action: action,
                 bindings: _registry.bindingsFor(action),
+                showGamepad: showGamepad,
                 onEdit: () => _editBinding(action),
               ),
           ],
@@ -189,18 +194,21 @@ class _ActionTile extends StatelessWidget {
   const _ActionTile({
     required this.action,
     required this.bindings,
+    required this.showGamepad,
     required this.onEdit,
   });
 
   final ShortcutAction action;
   final ShortcutBindingSet bindings;
+  final bool showGamepad;
   final VoidCallback onEdit;
 
   @override
   Widget build(BuildContext context) {
     final List<String> labels = <String>[
       ...bindings.keyboardBindings.map((InputBinding b) => b.displayLabel),
-      ...bindings.gamepadBindings.map((GamepadBinding b) => b.button.label),
+      if (showGamepad)
+        ...bindings.gamepadBindings.map((GamepadBinding b) => b.button.label),
     ];
 
     return ListTile(
@@ -290,7 +298,13 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
   void _clearAll() {
     setState(() {
       _keyboard.clear();
-      _gamepad.clear();
+      // Only clear gamepad bindings where the gamepad section is actually
+      // visible. On desktop the section is hidden, so a "Clear" aimed at the
+      // visible keyboard chips must not silently wipe gamepad bindings that
+      // were synced from a phone (they round-trip back unchanged on OK).
+      if (widget.registry.gamepadSupported) {
+        _gamepad.clear();
+      }
       _conflictWarning = null;
     });
   }
@@ -468,58 +482,61 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
                 onPressed: _startCapture,
               ),
 
-            const Divider(height: 24),
-
-            // Gamepad section
-            Text(
-              t.shortcut_gamepad,
-              style: themeData.textTheme.labelLarge,
-            ),
-            const SizedBox(height: 4),
-            Wrap(
-              spacing: 4,
-              runSpacing: 4,
-              children: <Widget>[
-                for (int i = 0; i < _gamepad.length; i++)
-                  Chip(
-                    label: Text(_gamepad[i].button.label),
-                    onDeleted: () => _removeGamepad(i),
-                    deleteIconColor: themeData.colorScheme.error,
-                    visualDensity: VisualDensity.compact,
-                    padding: EdgeInsets.zero,
-                    labelPadding: const EdgeInsets.symmetric(horizontal: 6),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            PopupMenuButton<GamepadButton>(
-              onSelected: _addGamepad,
-              itemBuilder: (_) => <PopupMenuEntry<GamepadButton>>[
-                for (final GamepadButton btn in GamepadButton.values)
-                  PopupMenuItem<GamepadButton>(
-                    value: btn,
-                    child: Text(btn.label),
-                  ),
-              ],
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Icon(
-                      Icons.add,
-                      size: 18,
-                      color: themeData.colorScheme.primary,
+            // Gamepad section — mobile-only. On desktop/macOS the registry
+            // reports no gamepad support and this whole block is omitted, so the
+            // dialog edits keyboard bindings only.
+            if (widget.registry.gamepadSupported) ...[
+              const Divider(height: 24),
+              Text(
+                t.shortcut_gamepad,
+                style: themeData.textTheme.labelLarge,
+              ),
+              const SizedBox(height: 4),
+              Wrap(
+                spacing: 4,
+                runSpacing: 4,
+                children: <Widget>[
+                  for (int i = 0; i < _gamepad.length; i++)
+                    Chip(
+                      label: Text(_gamepad[i].button.label),
+                      onDeleted: () => _removeGamepad(i),
+                      deleteIconColor: themeData.colorScheme.error,
+                      visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                      labelPadding: const EdgeInsets.symmetric(horizontal: 6),
                     ),
-                    const SizedBox(width: 4),
-                    Text(
-                      t.shortcut_gamepad,
-                      style: TextStyle(color: themeData.colorScheme.primary),
+                ],
+              ),
+              const SizedBox(height: 8),
+              PopupMenuButton<GamepadButton>(
+                onSelected: _addGamepad,
+                itemBuilder: (_) => <PopupMenuEntry<GamepadButton>>[
+                  for (final GamepadButton btn in GamepadButton.values)
+                    PopupMenuItem<GamepadButton>(
+                      value: btn,
+                      child: Text(btn.label),
                     ),
-                  ],
+                ],
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Icon(
+                        Icons.add,
+                        size: 18,
+                        color: themeData.colorScheme.primary,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        t.shortcut_gamepad,
+                        style: TextStyle(color: themeData.colorScheme.primary),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
+            ],
 
             // Conflict warning
             if (_conflictWarning != null) ...[

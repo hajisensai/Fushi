@@ -23,10 +23,16 @@ class HibikiPopAction extends Action<HibikiPopIntent> {
 /// button triggers a global back/dismiss. Escape is intentionally NOT bound
 /// here so the framework's default Escape -> DismissIntent keeps closing
 /// dialogs and dropdowns.
+///
+/// [enableGamepad] gates the gamepad-B mapping: it is mobile-only (Android/iOS),
+/// since desktop embedders never deliver gameButton* logical keys. When false
+/// the wrapper is a no-op and [child] is returned unwrapped.
 Widget wrapWithGlobalNavigation({
   required GlobalKey<NavigatorState> navigatorKey,
   required Widget child,
+  bool enableGamepad = true,
 }) {
+  if (!enableGamepad) return child;
   return Shortcuts(
     shortcuts: const <ShortcutActivator, Intent>{
       SingleActivator(LogicalKeyboardKey.gameButtonB): HibikiPopIntent(),

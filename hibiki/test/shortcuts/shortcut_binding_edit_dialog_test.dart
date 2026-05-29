@@ -12,8 +12,9 @@ void main() {
     LocaleSettings.setLocale(AppLocale.en);
   });
 
-  HibikiShortcutRegistry buildRegistry() =>
-      HibikiShortcutRegistry()..loadDefaults(TargetPlatform.windows);
+  HibikiShortcutRegistry buildRegistry(
+          [TargetPlatform platform = TargetPlatform.windows]) =>
+      HibikiShortcutRegistry()..loadDefaults(platform);
 
   Future<void> pumpDialog(
     WidgetTester tester,
@@ -117,5 +118,19 @@ void main() {
     expect(find.text(t.shortcut_press_key), findsNothing);
     expect(find.byType(Chip), findsNothing);
     expect(find.byType(ShortcutBindingEditDialog), findsOneWidget);
+  });
+
+  testWidgets('gamepad section is hidden on a desktop registry',
+      (WidgetTester tester) async {
+    await pumpDialog(tester, buildRegistry(TargetPlatform.windows));
+    // Keyboard section stays; gamepad section (label + add button) is gone.
+    expect(find.text(t.shortcut_keyboard), findsWidgets);
+    expect(find.text(t.shortcut_gamepad), findsNothing);
+  });
+
+  testWidgets('gamepad section is shown on a mobile registry',
+      (WidgetTester tester) async {
+    await pumpDialog(tester, buildRegistry(TargetPlatform.android));
+    expect(find.text(t.shortcut_gamepad), findsWidgets);
   });
 }
