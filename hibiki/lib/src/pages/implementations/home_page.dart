@@ -7,6 +7,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart'
     show GamepadButton, ModifierKey;
+import 'package:hibiki/src/shortcuts/gamepad_service.dart'
+    show GamepadButtonIntent, gamepadMoveFocusInDirection;
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 
 class HomePage extends BasePage {
@@ -144,8 +146,34 @@ class _HomePageState extends BasePageState<HomePage>
       }
     }
 
-    if (action == null) return KeyEventResult.ignored;
+    if (action != null) return _executeShortcutAction(action);
 
+    // Arrow keys are unbound on home, so drive robust directional focus
+    // navigation through the SAME helper the gamepad D-pad/stick uses — keyboard
+    // and gamepad therefore behave identically. Skipped while a text field is
+    // focused so the field's own cursor movement keeps working.
+    final TraversalDirection? dir = _arrowDirection(event.logicalKey);
+    if (dir != null && !_isEditableFocused()) {
+      gamepadMoveFocusInDirection(context, dir);
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  static TraversalDirection? _arrowDirection(LogicalKeyboardKey key) {
+    if (key == LogicalKeyboardKey.arrowUp) return TraversalDirection.up;
+    if (key == LogicalKeyboardKey.arrowDown) return TraversalDirection.down;
+    if (key == LogicalKeyboardKey.arrowLeft) return TraversalDirection.left;
+    if (key == LogicalKeyboardKey.arrowRight) return TraversalDirection.right;
+    return null;
+  }
+
+  static bool _isEditableFocused() {
+    final BuildContext? c = FocusManager.instance.primaryFocus?.context;
+    return c != null && c.widget is EditableText;
+  }
+
+  KeyEventResult _executeShortcutAction(ShortcutAction action) {
     switch (action) {
       case ShortcutAction.homeTabBooks:
         setState(() => _currentTab = 0);
@@ -167,6 +195,23 @@ class _HomePageState extends BasePageState<HomePage>
       default:
         return KeyEventResult.ignored;
     }
+  }
+
+  /// Handles a gamepad button delivered via [GamepadButtonIntent] (desktop
+  /// polled path), routing it through the same actions as the key-event path.
+  /// Returns true when consumed; false lets the GamepadService fall back to
+  /// directional focus / activate / global back.
+  bool _handleGamepadButton(GamepadButton button) {
+    final ShortcutAction? action = appModel.shortcutRegistry.resolveGamepad(
+          button,
+          scope: ShortcutScope.home,
+        ) ??
+        appModel.shortcutRegistry.resolveGamepad(
+          button,
+          scope: ShortcutScope.global,
+        );
+    if (action == null) return false;
+    return _executeShortcutAction(action) == KeyEventResult.handled;
   }
 
   @override
@@ -194,37 +239,55 @@ class _HomePageState extends BasePageState<HomePage>
               },
               child: child!,
             ),
-        child: Focus(
-          // Autofocus on every platform: on mobile no field on the home tabs
-          // grabs focus at mount, so without this the FocusManager has no
-          // primary focus and hardware-keyboard / gamepad shortcuts never reach
-          // _handleKeyEvent until the user taps something. The home search
-          // field focuses on demand, so this never fights an editable.
-          autofocus: true,
-          focusNode: _keyboardFocusNode,
-          onKeyEvent: _handleKeyEvent,
-          child: GestureDetector(
-            onTap: () {
-              final FocusNode? current = FocusManager.instance.primaryFocus;
-              if (current != null && current != _keyboardFocusNode) {
-                current.unfocus();
-              }
+        child: Actions(
+            // Desktop gamepad path: the GamepadService dispatches
+            // GamepadButtonIntent here (no gameButton* key events on desktop).
+            // Resolving it against home/global routes polled controller input
+            // through the same actions as the key-event path.
+            actions: <Type, Action<Intent>>{
+              GamepadButtonIntent: CallbackAction<GamepadButtonIntent>(
+                onInvoke: (GamepadButtonIntent intent) =>
+                    _handleGamepadButton(intent.button),
+              ),
             },
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final sizeClass = windowSizeClassOf(constraints);
-                if (sizeClass == WindowSizeClass.compact) {
-                  return _buildMobileLayout();
-                }
-                if (!isDesktopPlatform &&
-                    constraints.maxWidth <= constraints.maxHeight) {
-                  return _buildMobileLayout();
-                }
-                return _buildDesktopLayout(sizeClass);
-              },
-            ),
-          ),
-        ));
+            child: Focus(
+              // Autofocus on every platform: on mobile no field on the home tabs
+              // grabs focus at mount, so without this the FocusManager has no
+              // primary focus and hardware-keyboard / gamepad shortcuts never
+              // reach _handleKeyEvent until the user taps something. The home
+              // search field focuses on demand, so this never fights an editable.
+              autofocus: true,
+              // But this wrapper spans the whole page, so it must NOT be a
+              // traversal target: otherwise directional (keyboard arrow /
+              // gamepad) navigation lands on it and the focus ring covers the
+              // entire window. skipTraversal keeps it as a key-event sink only;
+              // Tab/arrow/D-pad traversal moves between the real controls and
+              // the ring follows them. Shortcut keys still bubble up here.
+              skipTraversal: true,
+              focusNode: _keyboardFocusNode,
+              onKeyEvent: _handleKeyEvent,
+              child: GestureDetector(
+                onTap: () {
+                  final FocusNode? current = FocusManager.instance.primaryFocus;
+                  if (current != null && current != _keyboardFocusNode) {
+                    current.unfocus();
+                  }
+                },
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final sizeClass = windowSizeClassOf(constraints);
+                    if (sizeClass == WindowSizeClass.compact) {
+                      return _buildMobileLayout();
+                    }
+                    if (!isDesktopPlatform &&
+                        constraints.maxWidth <= constraints.maxHeight) {
+                      return _buildMobileLayout();
+                    }
+                    return _buildDesktopLayout(sizeClass);
+                  },
+                ),
+              ),
+            )));
   }
 
   Widget _buildDesktopLayout(WindowSizeClass sizeClass) {
@@ -251,23 +314,28 @@ class _HomePageState extends BasePageState<HomePage>
     return Scaffold(
       resizeToAvoidBottomInset: false,
       body: SafeArea(
+        // Two traversal groups so Tab / Shift+Tab walk each region as one block
+        // in visual order (whole rail, then whole content) instead of zig-zagging
+        // between the rail and the content pane row-by-row.
         child: Row(
           children: [
-            NavigationRail(
-              leading: _buildRailLeading(),
-              groupAlignment: 0.0,
-              selectedIndex: visualIndex,
-              onDestinationSelected: (int index) {
-                final int logicalIndex =
-                    reversed ? (destinations.length - 1 - index) : index;
-                setState(() => _currentTab = logicalIndex);
-                if (logicalIndex == 0) _loadIconPreset();
-              },
-              labelType: NavigationRailLabelType.all,
-              destinations: displayDestinations,
+            FocusTraversalGroup(
+              child: NavigationRail(
+                leading: _buildRailLeading(),
+                groupAlignment: 0.0,
+                selectedIndex: visualIndex,
+                onDestinationSelected: (int index) {
+                  final int logicalIndex =
+                      reversed ? (destinations.length - 1 - index) : index;
+                  setState(() => _currentTab = logicalIndex);
+                  if (logicalIndex == 0) _loadIconPreset();
+                },
+                labelType: NavigationRailLabelType.all,
+                destinations: displayDestinations,
+              ),
             ),
             const VerticalDivider(thickness: 1, width: 1),
-            Expanded(child: buildBody()),
+            Expanded(child: FocusTraversalGroup(child: buildBody())),
           ],
         ),
       ),

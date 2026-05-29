@@ -24,7 +24,6 @@ import 'package:hibiki/src/sync/sync_error_messages.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/shortcuts/global_navigation.dart';
-import 'package:hibiki/src/shortcuts/shortcut_defaults.dart';
 import 'package:hibiki/src/platform/platform_services.dart';
 import 'package:hibiki/src/platform/platform_providers.dart';
 import 'package:share_plus/share_plus.dart';
@@ -469,16 +468,11 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
               dataBuilder: (context) {
                 return SpacingData.generate(10);
               },
-              // Keyboard/gamepad navigation: a visible focus ring for
-              // observability (keyboard + gamepad), wrapping the global
-              // gamepad-B back/dismiss intent. The B-button mapping is
-              // mobile-only — desktop never emits gameButton* keys — so it is
-              // gated on the same predicate as the rest of the gamepad layer.
+              // Universal gamepad/keyboard navigation: a visible focus ring for
+              // observability, wrapping a global gamepad-B back/dismiss intent.
               child: HibikiFocusRing(
                 child: wrapWithGlobalNavigation(
                   navigatorKey: appModel.navigatorKey,
-                  enableGamepad:
-                      ShortcutDefaults.gamepadSupported(defaultTargetPlatform),
                   child: child!,
                 ),
               ),

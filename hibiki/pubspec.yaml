@@ -30,6 +30,7 @@ dependencies:
   external_path: ^2.2.0
   file_picker: ^8.0.0
   float_column: ^4.0.3
+  win32: ^5.0.0
   flutter:
     sdk: flutter
   flutter_localizations:

@@ -49,6 +49,8 @@ import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 import 'package:hibiki/src/utils/misc/show_app_dialog.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart'
     show GamepadButton, ModifierKey;
+import 'package:hibiki/src/shortcuts/gamepad_service.dart'
+    show GamepadButtonIntent;
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 
 List<int> _computeChapterCharCounts(EpubBook book) {
@@ -948,49 +950,66 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   Widget build(BuildContext context) {
     final Color bgColor = _themeBackgroundColor();
 
-    return Focus(
-      autofocus: true,
-      focusNode: _focusNode,
-      onKeyEvent: _handleKeyEvent,
-      child: PopScope(
-        canPop: false,
-        onPopInvokedWithResult: (didPop, dynamic result) async {
-          if (didPop) return;
-          final nav = Navigator.of(context);
-          final bool allow = await onWillPop();
-          if (allow && mounted) nav.pop();
-        },
-        child: Scaffold(
-          backgroundColor: bgColor,
-          resizeToAvoidBottomInset: false,
-          body: Stack(
-            fit: StackFit.expand,
-            children: <Widget>[
-              Positioned.fill(
-                child: _buildBody(),
-              ),
-              if (!_readerContentReady)
+    return Actions(
+      // Desktop gamepad path: the GamepadService dispatches GamepadButtonIntent
+      // here (no gameButton* key events on desktop). Resolving it against the
+      // reader/audiobook scopes routes polled controller input through the exact
+      // same actions as the Android key-event path.
+      actions: <Type, Action<Intent>>{
+        GamepadButtonIntent: CallbackAction<GamepadButtonIntent>(
+          onInvoke: (GamepadButtonIntent intent) =>
+              _handleGamepadButton(intent.button),
+        ),
+      },
+      child: Focus(
+        autofocus: true,
+        focusNode: _focusNode,
+        onKeyEvent: _handleKeyEvent,
+        child: PopScope(
+          canPop: false,
+          onPopInvokedWithResult: (didPop, dynamic result) async {
+            if (didPop) return;
+            final nav = Navigator.of(context);
+            final bool allow = await onWillPop();
+            if (allow && mounted) nav.pop();
+          },
+          child: Scaffold(
+            backgroundColor: bgColor,
+            resizeToAvoidBottomInset: false,
+            body: Stack(
+              fit: StackFit.expand,
+              children: <Widget>[
                 Positioned.fill(
-                  child: ColoredBox(color: bgColor),
+                  child: _buildBody(),
                 ),
-              AnimatedOpacity(
-                opacity: _lyricsModeTransition ? 1.0 : 0.0,
-                duration: const Duration(milliseconds: 200),
-                child: IgnorePointer(
-                  ignoring: !_lyricsModeTransition,
-                  child: ColoredBox(
-                    color: _themeBackgroundColor(),
-                    child: const SizedBox.expand(),
+                if (!_readerContentReady)
+                  Positioned.fill(
+                    child: ColoredBox(color: bgColor),
+                  ),
+                AnimatedOpacity(
+                  opacity: _lyricsModeTransition ? 1.0 : 0.0,
+                  duration: const Duration(milliseconds: 200),
+                  child: IgnorePointer(
+                    ignoring: !_lyricsModeTransition,
+                    child: ColoredBox(
+                      color: _themeBackgroundColor(),
+                      child: const SizedBox.expand(),
+                    ),
                   ),
                 ),
-              ),
-              if (_readerContentReady)
-                const SizedBox.shrink(
-                    key: ValueKey<String>('hoshi_content_ready')),
-              _buildTopProgressBar(),
-              buildDictionary(),
-              FocusScope(node: _chromeFocusScope, child: _buildBottomChrome()),
-            ],
+                if (_readerContentReady)
+                  const SizedBox.shrink(
+                      key: ValueKey<String>('hoshi_content_ready')),
+                _buildTopProgressBar(),
+                buildDictionary(),
+                // The bottom chrome returns a Positioned; it MUST stay a direct
+                // child of this Stack. The chrome FocusScope is mounted INSIDE
+                // the Positioned (see _buildAudiobookBar / _buildSettingsBar) so
+                // it never detaches the Positioned's StackParentData (which would
+                // drop the bar to the Stack's top-start alignment).
+                _buildBottomChrome(),
+              ],
+            ),
           ),
         ),
       ),
@@ -3173,6 +3192,32 @@ window.flutter_inappwebview.callHandler('spreadReady');
     return _executeShortcutAction(action);
   }
 
+  /// Handles a gamepad button delivered via [GamepadButtonIntent] (desktop
+  /// polled path). Mirrors the gamepad branch of [_handleKeyEvent] so polled
+  /// input behaves identically to Android's native gameButton key events.
+  /// Returns true when consumed; false lets the GamepadService apply its
+  /// directional-focus / activate / global-back fallback.
+  bool _handleGamepadButton(GamepadButton button) {
+    if (_chromeFocusScope.hasFocus) {
+      if (button == GamepadButton.b) {
+        if (_showChrome) _toggleChrome();
+        return true;
+      }
+      // Let directional traversal / activate flow to the chrome controls.
+      return false;
+    }
+    final ShortcutAction? action = appModel.shortcutRegistry.resolveGamepad(
+          button,
+          scope: ShortcutScope.reader,
+        ) ??
+        appModel.shortcutRegistry.resolveGamepad(
+          button,
+          scope: ShortcutScope.audiobook,
+        );
+    if (action == null) return false;
+    return _executeShortcutAction(action) == KeyEventResult.handled;
+  }
+
   KeyEventResult _executeShortcutAction(ShortcutAction action) {
     switch (action) {
       case ShortcutAction.readerPageForward:
@@ -3523,24 +3568,27 @@ window.flutter_inappwebview.callHandler('spreadReady');
           left: 0,
           right: 0,
           bottom: 0,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              AudiobookPlayBar(
-                controller: ctrl,
-                skipActionSeconds:
-                    ReaderHibikiSource.instance.skipActionSeconds,
-                onOpenSettings: _showAppearanceSheet,
-                backgroundColor: _themeBackgroundColor(),
-              ),
-              ColoredBox(
-                color: _themeBackgroundColor(),
-                child: SizedBox(
-                  height: _stableBottomInset,
-                  width: double.infinity,
+          child: FocusScope(
+            node: _chromeFocusScope,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                AudiobookPlayBar(
+                  controller: ctrl,
+                  skipActionSeconds:
+                      ReaderHibikiSource.instance.skipActionSeconds,
+                  onOpenSettings: _showAppearanceSheet,
+                  backgroundColor: _themeBackgroundColor(),
                 ),
-              ),
-            ],
+                ColoredBox(
+                  color: _themeBackgroundColor(),
+                  child: SizedBox(
+                    height: _stableBottomInset,
+                    width: double.infinity,
+                  ),
+                ),
+              ],
+            ),
           ),
         );
       },
@@ -3552,42 +3600,46 @@ window.flutter_inappwebview.callHandler('spreadReady');
       left: 0,
       right: 0,
       bottom: 0,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          ColoredBox(
-            color: _themeBackgroundColor(),
-            child: SizedBox(
-              height: _readerChromeHeight,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: Row(
-                  children: <Widget>[
-                    IconButton(
-                      icon: Icon(Icons.headphones_outlined,
-                          color: _themeTextColor()),
-                      iconSize: 22,
-                      onPressed: _openAudioImportDialog,
-                    ),
-                    const Spacer(),
-                    IconButton(
-                      icon: Icon(Icons.tune_outlined, color: _themeTextColor()),
-                      iconSize: 20,
-                      onPressed: _showAppearanceSheet,
-                    ),
-                  ],
+      child: FocusScope(
+        node: _chromeFocusScope,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            ColoredBox(
+              color: _themeBackgroundColor(),
+              child: SizedBox(
+                height: _readerChromeHeight,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Row(
+                    children: <Widget>[
+                      IconButton(
+                        icon: Icon(Icons.headphones_outlined,
+                            color: _themeTextColor()),
+                        iconSize: 22,
+                        onPressed: _openAudioImportDialog,
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        icon:
+                            Icon(Icons.tune_outlined, color: _themeTextColor()),
+                        iconSize: 20,
+                        onPressed: _showAppearanceSheet,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
-          ColoredBox(
-            color: _themeBackgroundColor(),
-            child: SizedBox(
-              height: _stableBottomInset,
-              width: double.infinity,
+            ColoredBox(
+              color: _themeBackgroundColor(),
+              child: SizedBox(
+                height: _stableBottomInset,
+                width: double.infinity,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

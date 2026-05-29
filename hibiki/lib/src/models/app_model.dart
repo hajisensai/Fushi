@@ -43,6 +43,7 @@ import 'package:hibiki/src/models/dictionary_import_manager.dart';
 import 'package:hibiki/src/models/file_export_manager.dart';
 import 'package:hibiki/src/models/local_audio_manager.dart';
 import 'package:hibiki/src/models/anki_integration.dart';
+import 'package:hibiki/src/shortcuts/gamepad_service.dart';
 import 'package:hibiki/src/shortcuts/shortcut_preferences.dart';
 import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
 import 'package:hibiki/src/platform/platform_services.dart';
@@ -191,6 +192,13 @@ class AppModel with ChangeNotifier {
 
   /// Keyboard / gamepad shortcut bindings, persisted in preferences.
   final HibikiShortcutRegistry shortcutRegistry = HibikiShortcutRegistry();
+
+  /// Polls physical game controllers and dispatches them into the shortcut /
+  /// focus pipeline on platforms where the Flutter engine does not deliver
+  /// gameButton* key events (desktop). No-op on Android/iOS (native key events)
+  /// and on desktops without an implemented input source.
+  late final GamepadService gamepadService =
+      GamepadService(navigatorKey: navigatorKey);
 
   Color? get systemPrimaryColor => themeNotifier.systemPrimaryColor;
 
@@ -1082,6 +1090,10 @@ class AppModel with ChangeNotifier {
         ReaderHibikiSource.instance,
         defaultTargetPlatform,
       );
+
+      // Start polling physical controllers on platforms that need it (desktop);
+      // start() is a no-op where the engine already delivers gameButton* keys.
+      gamepadService.start();
 
       await Future.wait(<Future<void>>[
         Future.wait(<Future<void>>[
@@ -2361,6 +2373,7 @@ class AppModel with ChangeNotifier {
     incognitoNotifier.dispose();
     databaseCloseNotifier.dispose();
     audioCtrl.dispose();
+    gamepadService.dispose();
     // Dispose the extracted repository notifiers (all ChangeNotifiers). Only
     // when fully initialised — a failed/partial init leaves these `late`
     // fields unassigned, and reading them would throw.
