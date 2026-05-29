@@ -22,6 +22,7 @@ import 'package:hibiki/src/sync/sftp_sync_backend.dart';
 import 'package:hibiki/src/sync/smb_sync_backend.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_compare_dialog.dart';
+import 'package:hibiki/src/sync/sync_message_dialog.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/webdav_sync_backend.dart';
 import 'package:hibiki/utils.dart';
@@ -227,24 +228,7 @@ _SyncSettingsState _syncSettings(SettingsContext ctx) {
 }
 
 void _showSnackBar(BuildContext context, String message) {
-  if (isCupertinoPlatform(context)) {
-    showCupertinoDialog<void>(
-      context: context,
-      builder: (BuildContext dialogContext) => CupertinoAlertDialog(
-        content: Text(message),
-        actions: <Widget>[
-          CupertinoDialogAction(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: Text(t.dialog_done),
-          ),
-        ],
-      ),
-    );
-    return;
-  }
-  ScaffoldMessenger.of(context)
-    ..hideCurrentSnackBar()
-    ..showSnackBar(SnackBar(content: Text(message)));
+  showSyncMessage(context, message);
 }
 
 // ── Sync account widget ──────────────────────────────────────────────

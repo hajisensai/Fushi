@@ -741,6 +741,24 @@ void main() {
     expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
   });
 
+  test('sync feedback dialogs use shared MD3 dialog chrome', () {
+    final String messageSource =
+        File('lib/src/sync/sync_message_dialog.dart').readAsStringSync();
+    final String compareSource =
+        File('lib/src/sync/sync_compare_dialog.dart').readAsStringSync();
+    final String settingsSource =
+        File('lib/src/sync/sync_settings_schema.dart').readAsStringSync();
+    final String combined = '$messageSource\n$compareSource\n$settingsSource';
+
+    expect(messageSource, contains('class SyncMessageDialog'));
+    expect(messageSource, contains('HibikiDialogFrame('));
+    expect(messageSource, contains('HibikiModalSheetFrame('));
+    expect(compareSource, contains('showSyncMessage('));
+    expect(settingsSource, contains('showSyncMessage('));
+    expect(combined, isNot(contains('CupertinoAlertDialog(')));
+    expect(combined, isNot(contains('adaptiveAlertDialog(')));
+  });
+
   test('dictionary and popup surfaces use shared MD3 primitives', () {
     final String dictionaryManager = File(
       'lib/src/pages/implementations/dictionary_dialog_page.dart',
