@@ -35,7 +35,7 @@ platform :android do
       tag_name: version_name,
       description: (File.read("../../CHANGELOG.md") rescue "No changelog provided"),
       commitish: "main",
-      upload_assets: Dir["../../build/app/outputs/flutter-apk/*.apk"]
+      upload_assets: Dir["../build/app/outputs/flutter-apk/*.apk"]
     )
   end
 end

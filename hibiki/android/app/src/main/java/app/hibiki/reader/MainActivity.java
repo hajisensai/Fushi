@@ -129,29 +129,30 @@ public class MainActivity extends AudioServiceActivity {
         super.onDestroy();
     }
 
+    // HBK-AUDIT-057: capture the static channel into a final local before
+    // posting; the posted lambda must not re-read the field, which onDestroy
+    // may null in between (TOCTOU NPE). invokeMethod on a detached channel is a
+    // benign no-op.
     public static void notifyFloatingLyricEvent(String method, Map<String, Object> arguments) {
-        if (floatingLyricChannel == null) return;
-        new Handler(Looper.getMainLooper()).post(() -> {
-            floatingLyricChannel.invokeMethod(method, arguments);
-        });
+        final MethodChannel ch = floatingLyricChannel;
+        if (ch == null) return;
+        new Handler(Looper.getMainLooper()).post(() -> ch.invokeMethod(method, arguments));
     }
 
     public static void notifyFloatingDictEvent(String method, Object arguments) {
-        if (floatingDictChannel == null) return;
-        new Handler(Looper.getMainLooper()).post(() -> {
-            floatingDictChannel.invokeMethod(method, arguments);
-        });
+        final MethodChannel ch = floatingDictChannel;
+        if (ch == null) return;
+        new Handler(Looper.getMainLooper()).post(() -> ch.invokeMethod(method, arguments));
     }
 
     public static void notifyFloatingDictAnki(String word, String reading, String meaning) {
-        if (floatingDictChannel == null) return;
+        final MethodChannel ch = floatingDictChannel;
+        if (ch == null) return;
         java.util.HashMap<String, Object> args = new java.util.HashMap<>();
         args.put("word", word);
         args.put("reading", reading);
         args.put("meaning", meaning);
-        new Handler(Looper.getMainLooper()).post(() -> {
-            floatingDictChannel.invokeMethod("ankiExport", args);
-        });
+        new Handler(Looper.getMainLooper()).post(() -> ch.invokeMethod("ankiExport", args));
     }
 
     @Override

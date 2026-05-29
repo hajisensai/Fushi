@@ -87,6 +87,11 @@ public class FloatingDictService extends BaseFloatingService {
             clipListener = null;
         }
         instanceRef = null;
+        // HBK-AUDIT-056: null the view refs so the null-guards in the callbacks
+        // (onClipboardChanged/triggerSearch/setSearchText/onTextSelected/
+        // onSearchResult) actually fire if a posted event runs after teardown.
+        searchInput = null;
+        resultView = null;
         super.onDestroy();
     }
 
@@ -363,6 +368,7 @@ public class FloatingDictService extends BaseFloatingService {
 
     public void onSearchResult(String json) {
         new Handler(Looper.getMainLooper()).post(() -> {
+            if (resultView == null) return; // HBK-AUDIT-056: view torn down
             if (json == null) {
                 resultView.setText("No results found.");
                 currentWord = "";
