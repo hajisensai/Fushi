@@ -77,11 +77,6 @@ void main() {
         <String>[
       'HibikiListItem',
     ],
-    'lib/src/pages/base_media_search_bar.dart': <String>[
-      'HibikiSearchField',
-      'TextEditingController',
-      'FocusNode',
-    ],
     'lib/src/pages/base_source_page.dart': <String>[
       'HibikiPopupSurface',
     ],
@@ -237,9 +232,6 @@ void main() {
       'HibikiTagChip',
       'HibikiDesignTokens',
     ],
-    'lib/src/pages/implementations/loading_page.dart': <String>[
-      'HibikiTransientScaffold',
-    ],
     'lib/src/pages/implementations/placeholder_source_page.dart': <String>[
       'HibikiTransientScaffold',
     ],
@@ -308,12 +300,6 @@ void main() {
           <String>[
         'ListTile(',
         'fontSize:',
-      ],
-      'lib/src/pages/base_media_search_bar.dart': <String>[
-        'material_floating_search_bar',
-        'FloatingSearchBar',
-        'FloatingSearchBarAction',
-        'surfaceContainerHigh',
       ],
       'lib/src/pages/base_source_page.dart': <String>[
         'DecoratedBox(',
@@ -431,9 +417,6 @@ void main() {
         'Container(',
         'BoxDecoration(',
         'BorderRadius.circular(8)',
-      ],
-      'lib/src/pages/implementations/loading_page.dart': <String>[
-        'Scaffold(',
       ],
       'lib/src/pages/implementations/placeholder_source_page.dart': <String>[
         'Scaffold(',
