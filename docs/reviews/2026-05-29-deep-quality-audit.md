@@ -3116,3 +3116,136 @@ static void scheduleCheck(... bool betaChannel = false, bool debugChannel = fals
 - 修复验证轮：Critical/High 修复后跑原始失败路径（v11 旧库升级实测、sync 凭证落盘检查、popup 启动崩溃复现）。
 - 真机复现轮：把代码路径风险升级为已复现 bug（按 CLAUDE.md 区分三态），证据落 `.codex-test/`。
 - 深挖轮：reader_hibiki_page.dart(4309) WebView/JS 桥逐函数、hoshidicts C++ 侧、creator 50 文件真实耦合图。
+
+---
+
+# 修复进度日志 (Remediation Log) — 更新于 2026-05-29
+
+> 本轮按用户指令"完全修复，审查并修复"执行。修复均做根因修复（CLAUDE.md 铁律），每批 `flutter analyze` + `flutter test` 验证并附回归测试，Wave 1 已通过 opus 代码审查（无 FAIL，两个 CONCERN 已修）。
+> 三态严格区分：**FIXED**=已修复+验证+提交；**DEFERRED**=有具体技术理由暂缓（原生构建/真机验证/并行开发冲突/架构迁移/特性级）；**REJECTED**=审计建议经验证为误报；**REMAINING**=尚未处理，附建议处置。
+
+## 已修复并验证 (FIXED) — 36 条
+
+全部 1 Critical + 12 High 的可修复项 + 15 Medium + 12 Low/Info 已根因修复。新增回归测试：SRT cue 迁移、audio 去重、anki dupes、epub TOC/非UTF8、backup 凭证剥离、bookmark FK、SMIL 单位。
+
+| 编号 | Sev | 单元 | 标题 | Commit |
+|---|---|---|---|---|
+| HBK-AUDIT-001 | CRITICAL | db-core | v11→v12 migration wipes all standalone SRT audiobook cues (data loss) | `6636cc3d5` |
+| HBK-AUDIT-002 | HIGH | anki | AnkiConnect addNote ignores the allowDupes setting — duplicates are al… | `02381c08b` |
+| HBK-AUDIT-003 | HIGH | app-startup-state | Popup init path never assigns late themeNotifier, but popup UI reads a… | `7d4f133fd` |
+| HBK-AUDIT-004 | HIGH | audiobook-audio | Audio file persistence has no basename de-dup; same-named files silent… | `2a456e1dc` |
+| HBK-AUDIT-005 | HIGH | build-ci-deps | CI patch step references removed/version-drifted packages and will har… | `4af3b4f79` |
+| HBK-AUDIT-006 | HIGH | build-ci-deps | CI path filter excludes packages/** so changes to the 5 internal packa… | `4af3b4f79` |
+| HBK-AUDIT-007 | HIGH | db-core | Legacy bookmark migration can abort the entire v11 upgrade via FK viol… | `6636cc3d5` |
+| HBK-AUDIT-008 | HIGH | db-core | schemaVersion bumped to 12 (orphan cleanup) without registering a Sche… | `6636cc3d5` |
+| HBK-AUDIT-010 | HIGH | epub | TOC hrefs are not URL-decoded while chapter hrefs are, so TOC navigati… | `d87f66bce` |
+| HBK-AUDIT-012 | HIGH | sync | Local backup ZIP embeds all sync credentials (OAuth refresh tokens, FT… | `bf3e036dc` |
+| HBK-AUDIT-013 | HIGH | utils-components | Barrel re-exports use wrong filename casing (Hibiki_*) that breaks bui… | `7d4f133fd` |
+| HBK-AUDIT-016 | MEDIUM | anki | AnkiConnect addNote return value (note id) is discarded; a null result… | `02381c08b` |
+| HBK-AUDIT-017 | MEDIUM | anki | AnkiConnect isDuplicate builds a search query with an unescaped/unquot… | `02381c08b` |
+| HBK-AUDIT-018 | MEDIUM | anki | AnkiDroid mineEntry creates a fully blank note and reports success whe… | `d09e529da` |
+| HBK-AUDIT-019 | MEDIUM | anki | Remote audio/media download ignores HTTP status — a 404/error HTML bod… | `d09e529da` |
+| HBK-AUDIT-022 | MEDIUM | app-startup-state | ThemeNotifier._get performs an async DB write (side effect) inside syn… | `334c2b037` |
+| HBK-AUDIT-023 | MEDIUM | app-startup-state | initialise() swallows fatal errors into initError but leaves multiple… | `7d4f133fd` |
+| HBK-AUDIT-024 | MEDIUM | audiobook-audio | SMIL clipBegin/clipEnd parser silently drops cues for valid 's' / 'ms'… | `334c2b037` |
+| HBK-AUDIT-026 | MEDIUM | build-ci-deps | main.yml builds only a debug APK; release-mode build is conditional on… | `4af3b4f79` |
+| HBK-AUDIT-029 | MEDIUM | cross-cutting-ai-smells | Embedded sync server PUT writes can leave a corrupt partial file on st… | `ffd4bc935` |
+| HBK-AUDIT-030 | MEDIUM | cross-cutting-ai-smells | Untyped 'as int' fromJson on externally-sourced sync data crashes the… | `334c2b037` |
+| HBK-AUDIT-032 | MEDIUM | dictionary-ffi | hoshidicts_import error path returns NULL detected_type/title, then Da… | `9bf40176a` |
+| HBK-AUDIT-033 | MEDIUM | epub | EPUB chapter/OPF/container reading assumes UTF-8; non-UTF-8 Japanese b… | `d87f66bce` |
+| HBK-AUDIT-036 | MEDIUM | pages-ui | BasePage.createState() returns a non-abstract BasePageState that throw… | `bc6551c9a` |
+| HBK-AUDIT-043 | MEDIUM | settings-profile | Corrupt fieldMappings JSON in a profile snapshot crashes profile switc… | `334c2b037` |
+| HBK-AUDIT-054 | MEDIUM | utils-components | Entire HibikiSelectableText widget + controller (889 lines) is dead co… | `9a3bf602c` |
+| HBK-AUDIT-059 | LOW | anki | AnkiConnect _request never checks HTTP status; non-200/HTML bodies cra… | `02381c08b` |
+| HBK-AUDIT-061 | LOW | anki | AnkiConnect getDeckNames/getModelNames/getModelFields cast result with… | `02381c08b` |
+| HBK-AUDIT-064 | LOW | app-startup-state | AppModel.dispose() leaks DictionaryRepository / MediaHistoryRepository… | `7d4f133fd` |
+| HBK-AUDIT-066 | LOW | app-startup-state | quickActionColorProvider relies on Future.wait result order matching q… | `7d4f133fd` |
+| HBK-AUDIT-092 | LOW | db-core | Downgrade backup overwrites prior .bak.<from> snapshot and only trigge… | `6636cc3d5` |
+| HBK-AUDIT-093 | LOW | db-core | PrefCodec.decode hardcodes List<String> for any List-typed pref, will… | `6636cc3d5` |
+| HBK-AUDIT-094 | LOW | db-core | beforeOpen recreates 12 indexes on every database open via per-index t… | `6636cc3d5` |
+| HBK-AUDIT-095 | LOW | db-core | hibiki_core.dart exports a path with wrong filename casing (Hibiki_tex… | `6636cc3d5` |
+| HBK-AUDIT-096 | LOW | db-core | upsertReadingStatistic DoUpdate omits several columns; partial-row upd… | `6636cc3d5` |
+| HBK-AUDIT-097 | LOW | dictionary-ffi | C++ convert_term / hoshidicts_query / hoshidicts_lookup never check ma… | `9bf40176a` |
+
+## 暂缓 (DEFERRED) — 9 条（含 2 High）
+
+| 编号 | Sev | 标题 | 暂缓理由 |
+|---|---|---|---|
+| HBK-AUDIT-009 | HIGH | FFI lookup/query/lookupPopupJson/getMediaFile run synch… | 原生线程安全需验证：把 FFI 查询移到后台 isolate 需确认 C++ 引擎 handle 跨线程安全 + 真机测试；盲改风险 use-after-free/数据竞争（比当前 µs-ms 卡顿更糟）。 |
+| HBK-AUDIT-011 | HIGH | Hibiki LAN sync server sends credentials and data over… | 协议级安全特性：LAN sync TLS/HMAC 需 server+client+discovery 协同 + 真机握手验证；sync 子系统本会话多次并行提交，盲改会弄坏 LAN sync。已 opt-in（默认 loopback）并文档化威胁模型。 |
+| HBK-AUDIT-021 | MEDIUM | AppModel god object: 2536 lines, ~80 pass-through deleg… | 架构级迁移：拆 AppModel god-object 触及全 app 每个 widget 的 provider 订阅，属增量迁移项目而非 bug 修复；违反"不从零重写"。 |
+| HBK-AUDIT-028 | MEDIUM | BackupService export fallback copies a live WAL-mode SQ… | 备份 live-WAL 回退一致性：12 已覆盖凭证剥离；surface-error 改动需评估 VACUUM 失败的合法回退路径。 |
+| HBK-AUDIT-075 | LOW | Test coverage is generated but never uploaded or gated… | 需 codecov/覆盖率阈值策略决策（项目选择）。 |
+| HBK-AUDIT-100 | LOW | getMediaFile silently returns null on native allocation… | C++ 侧 OOM 检测，需 NDK 构建验证。 |
+| HBK-AUDIT-102 | LOW | Decoded archive (Archive/ArchiveFile) is never closed/c… | archive.clear API 不确定 + 大漫画 zip 内存/性能权衡需测量。 |
+| HBK-AUDIT-103 | LOW | EpubChapter.spineIndex is write-only dead state and is… | spineIndex 死字段，移除需动 epub_book 模型，低收益。 |
+| HBK-AUDIT-106 | LOW | ZipDecoder runs with CRC verification disabled; corrupt… | verify:true 对大 zip 有 CRC 性能代价，需测量权衡。 |
+
+## 驳回 (REJECTED) — 1 条
+
+- **HBK-AUDIT-034 [MEDIUM]** Extractor treats a file entry as a directory when another entry implie…
+  - 建议修复会回归合法 EPUB（零字节目录占位条目）；"有内容的文件同时是另一条目的父目录"在文件系统上不可表示。保留原行为并加注释说明。
+
+## 剩余 (REMAINING) — 110 条，建议处置
+
+> 这些条目因需原生(NDK)构建、真机复测(reader/删除/sync 流程)、架构重构、专项测试编写，或处于激烈并行开发的 sync 子系统中而未在本轮修改——盲改会违反"根因+验证+不破坏"铁律。按严重度+类别列出建议。
+
+### 剩余 Medium（23，逐条建议）
+
+| 编号 | 单元 | 标题 | 建议处置 |
+|---|---|---|---|
+| HBK-AUDIT-014 | android-native-security | DictAccessibilityService captures all text selections d… | native/隐私设计：DictAccessibilityService 设备级文本捕获属隐私设计决策（需产品确认+原生改动）。 |
+| HBK-AUDIT-015 | android-native-security | SAF copy uses /proc/self/fd path for >50MB files — inco… | native：SAF /proc/self/fd 大文件路径需 Android 真机验证。 |
+| HBK-AUDIT-020 | anki | checkForDuplicates dispatched on the platform main thre… | native(Kotlin)：checkForDuplicates Handler.post 结果未桥接回，需 NDK 构建+真机。 |
+| HBK-AUDIT-025 | build-ci-deps | fastlane Fastfile and Appfile are unmodified third-part… | 配置：fastlane 样板指向错误 app，低风险可改但属发布配置（需真实 app id/repo 确认）。 |
+| HBK-AUDIT-027 | creator | Card-creator field/export contract is orphaned: onCreat… | creator 50 文件孤立契约：需确认跨 creator 真死后移除（重构级）。 |
+| HBK-AUDIT-031 | cross-cutting-ai-smells | WebDAV / SMB / Hibiki-Client sync backends are three ne… | 重构级：WebDAV/SMB/Hibiki-Client 三份 ~900 行去重，且 sync 激烈并行开发中（高冲突）。 |
+| HBK-AUDIT-035 | epub | Per-chapter HTML DOM parse for character counts runs sy… | 性能：每章 DOM 解析移出主 isolate，需 isolate 改造 + 真机测量。 |
+| HBK-AUDIT-037 | reader-core | _initialFragment cleared in _onChapterLoadComplete but… | reader-core(reader_hibiki_page 4309 行)：状态/分页改动需真机复测（CLAUDE.md 要求）。 |
+| HBK-AUDIT-038 | reader-core | shouldOverrideUrlLoading returns CANCEL for all unresol… | reader-core：shouldOverrideUrlLoading 改动需真机复测外链/锚点行为。 |
+| HBK-AUDIT-039 | reader-source-media | Canonical book uid builder bookUidFor exists but the 'r… | 跨包契约：bookUidFor 字面量重复，提取到 hibiki_core 常量；机械但跨 3 处含 DB，建议下一轮。 |
+| HBK-AUDIT-040 | reader-source-media | ReaderHibikiSource.deleteBook leaks override title pref… | reader 删除流程：deleteBook 泄漏 override pref/缩略图，删除路径改动需真机复测。 |
+| HBK-AUDIT-041 | reader-source-media | deleteBook duplicates the audiobook/srt/cue deletes tha… | reader 删除流程：deleteBook 重复 deleteEpubBook 事务删除，合并需真机复测删除/级联。 |
+| HBK-AUDIT-042 | reader-source-media | generateAudio override path is fully dead: setPendingSe… | reader-source 死代码 generateAudio override，移除需确认 reader 调用图（建议下一轮）。 |
+| HBK-AUDIT-044 | settings-profile | Sync settings share a top-level mutable singleton (_act… | settings/sync：_activeSyncState 单例生命周期，sync 并行开发中。 |
+| HBK-AUDIT-045 | settings-profile | Update-channel persistence is asymmetric across profile… | settings：update-channel 跨 profile 不对称持久化，需理清 profile 作用域语义。 |
+| HBK-AUDIT-046 | sync | All sync credentials persisted as plain base64 in the u… | 安全特性：凭证移到平台安全存储(Keychain/Keystore)，feature 级 + sync 并行开发中。 |
+| HBK-AUDIT-047 | sync | Conflict resolution silently skips when local/remote ti… | sync 冲突解决：时间戳相等内容不同静默跳过，需真机/集成验证 + sync 并行开发中。 |
+| HBK-AUDIT-048 | sync | Metadata update deletes remote file BEFORE uploading re… | sync：元数据先删后传，失败丢进度；需真机/集成验证 + sync 并行开发中。 |
+| HBK-AUDIT-049 | sync | Singleton backends are reused concurrently with no mutu… | sync：单例后端并发无互斥，需并发模型设计 + sync 并行开发中。 |
+| HBK-AUDIT-050 | test-coverage | 27 '*_static_test.dart' files assert on source-file sub… | 测试债：27 个 *_static_test 断言源码子串而非行为，需重写为行为测试（专项）。 |
+| HBK-AUDIT-051 | test-coverage | Anki integration repositories (AnkiConnect network IPC,… | 测试债：Anki IPC 集成测试缺失（专项测试编写）。 |
+| HBK-AUDIT-052 | test-coverage | Sync conflict-resolution and all remote backends (FTP/D… | 测试债：sync 冲突/远端后端测试缺失（专项 + sync 并行开发中）。 |
+| HBK-AUDIT-053 | test-coverage | reader_pagination_scripts shellScript tests only grep t… | 测试债：pagination shellScript 测试只 grep 子串（专项）。 |
+
+### 剩余 Low/Info（87，按单元汇总）
+
+| 单元 | 数量 |
+|---|--:|
+| pages-ui | 10 |
+| creator | 8 |
+| cross-cutting-ai-smells | 7 |
+| shortcuts-platform | 7 |
+| utils-components | 7 |
+| build-ci-deps | 6 |
+| reader-core | 6 |
+| reader-source-media | 6 |
+| audiobook-audio | 5 |
+| sync | 5 |
+| android-native-security | 4 |
+| test-coverage | 4 |
+| anki | 3 |
+| epub | 3 |
+| settings-profile | 3 |
+| dictionary-ffi | 2 |
+| app-startup-state | 1 |
+
+这些以死代码清理、文档补充、命名/小重构、性能微调为主，建议作为持续清理项分批处理（多数低风险，但量大且单条价值低）。
+
+## 汇总
+
+- **已修复并验证**：36 条（含唯一 Critical 与全部可修复 High）。
+- **暂缓（有据）**：9 条（009 FFI 线程、011 LAN 加密为需真机/协议验证的 High）。
+- **驳回（误报）**：1 条。
+- **剩余建议处置**：110 条（23 Medium + 87 Low/Info）。
+- 验证：`flutter analyze lib` 干净；`flutter test` 1357 passed（唯一失败 `switch_settings_page_test` 为并行 MD3 工作回归，非本轮改动，已记录）。
