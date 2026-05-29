@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart';
 import 'package:hibiki/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
+import 'package:hibiki/src/utils/components/hibiki_focusable.dart';
 import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 
 class SettingsSectionHeader extends StatelessWidget {
@@ -214,9 +215,12 @@ class AdaptiveSettingsRow extends StatelessWidget {
 
     if (onTap == null) return content;
     if (cupertino) {
-      return GestureDetector(
-        behavior: HitTestBehavior.opaque,
+      // Cupertino has no InkWell; HibikiFocusable keeps the row reachable by
+      // directional focus navigation (gamepad/keyboard) instead of a bare,
+      // unfocusable GestureDetector.
+      return HibikiFocusable(
         onTap: onTap,
+        borderRadius: BorderRadius.zero,
         child: content,
       );
     }

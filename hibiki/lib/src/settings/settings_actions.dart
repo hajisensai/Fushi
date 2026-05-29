@@ -322,8 +322,9 @@ class _ColorSwatch extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return HibikiFocusable(
       onTap: onTap,
+      borderRadius: const BorderRadius.all(Radius.circular(_swatchSize)),
       child: Container(
         width: _swatchSize,
         height: _swatchSize,

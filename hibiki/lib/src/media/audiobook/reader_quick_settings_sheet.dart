@@ -756,7 +756,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
                 icon: const Icon(Icons.chevron_left, size: 18),
                 onPressed: () => ctrl.setDelayMs(ctrl.delayMs.value - 50),
               ),
-              GestureDetector(
+              HibikiFocusable(
                 onTap: ms == 0 ? null : () => ctrl.setDelayMs(0),
                 child: SizedBox(
                   width: 72,

@@ -296,24 +296,22 @@ class _DictionaryTermTopRow extends ConsumerWidget {
         ),
         Floatable(
           float: FCFloat.start,
-          child: GestureDetector(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                entry.word,
+                style: Theme.of(context)
+                    .textTheme
+                    .titleLarge!
+                    .copyWith(fontWeight: FontWeight.bold),
+              ),
+              if (entry.reading.isNotEmpty)
                 Text(
-                  entry.word,
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleLarge!
-                      .copyWith(fontWeight: FontWeight.bold),
+                  entry.reading,
+                  style: Theme.of(context).textTheme.titleMedium,
                 ),
-                if (entry.reading.isNotEmpty)
-                  Text(
-                    entry.reading,
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-              ],
-            ),
+            ],
           ),
         ),
       ],

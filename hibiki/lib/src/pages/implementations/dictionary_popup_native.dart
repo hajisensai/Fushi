@@ -214,7 +214,7 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
     Color subColor,
     HibikiDesignTokens tokens,
   ) {
-    return GestureDetector(
+    return HibikiFocusable(
       onTap: () {
         if (widget.onMineEntry != null) {
           widget.onMineEntry!({
