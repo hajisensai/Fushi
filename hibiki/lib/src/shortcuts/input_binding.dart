@@ -190,17 +190,6 @@ class InputBinding {
     return InputBinding(key: key, modifiers: mods);
   }
 
-  bool matchesEvent(KeyEvent event) {
-    if (event.logicalKey != key) return false;
-    final hw = HardwareKeyboard.instance;
-    final activeModifiers = <ModifierKey>{};
-    if (hw.isControlPressed) activeModifiers.add(ModifierKey.ctrl);
-    if (hw.isShiftPressed) activeModifiers.add(ModifierKey.shift);
-    if (hw.isAltPressed) activeModifiers.add(ModifierKey.alt);
-    if (hw.isMetaPressed) activeModifiers.add(ModifierKey.meta);
-    return setEquals(activeModifiers, modifiers);
-  }
-
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||

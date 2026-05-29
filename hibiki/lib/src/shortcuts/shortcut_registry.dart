@@ -109,12 +109,14 @@ class HibikiShortcutRegistry extends ChangeNotifier {
     InputBinding binding, {
     required ShortcutAction? exclude,
   }) {
-    for (final action in ShortcutAction.actionsForScope(scope)) {
-      if (action == exclude) continue;
-      final bindings = _bindings[action];
-      if (bindings == null) continue;
-      for (final kb in bindings.keyboardBindings) {
-        if (kb == binding) return action;
+    for (final coactive in scope.coactiveScopes) {
+      for (final action in ShortcutAction.actionsForScope(coactive)) {
+        if (action == exclude) continue;
+        final bindings = _bindings[action];
+        if (bindings == null) continue;
+        for (final kb in bindings.keyboardBindings) {
+          if (kb == binding) return action;
+        }
       }
     }
     return null;
@@ -125,12 +127,14 @@ class HibikiShortcutRegistry extends ChangeNotifier {
     GamepadBinding binding, {
     required ShortcutAction? exclude,
   }) {
-    for (final action in ShortcutAction.actionsForScope(scope)) {
-      if (action == exclude) continue;
-      final bindings = _bindings[action];
-      if (bindings == null) continue;
-      for (final gp in bindings.gamepadBindings) {
-        if (gp == binding) return action;
+    for (final coactive in scope.coactiveScopes) {
+      for (final action in ShortcutAction.actionsForScope(coactive)) {
+        if (action == exclude) continue;
+        final bindings = _bindings[action];
+        if (bindings == null) continue;
+        for (final gp in bindings.gamepadBindings) {
+          if (gp == binding) return action;
+        }
       }
     }
     return null;

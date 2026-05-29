@@ -39,4 +39,36 @@ void main() {
       }
     });
   });
+
+  group('ShortcutScope.coactiveScopes', () {
+    test('reader and audiobook share one co-active group', () {
+      expect(
+          ShortcutScope.reader.coactiveScopes,
+          containsAll(
+              <ShortcutScope>[ShortcutScope.reader, ShortcutScope.audiobook]));
+      expect(ShortcutScope.audiobook.coactiveScopes,
+          ShortcutScope.reader.coactiveScopes);
+    });
+
+    test('home and global share one co-active group', () {
+      expect(
+          ShortcutScope.home.coactiveScopes,
+          containsAll(
+              <ShortcutScope>[ShortcutScope.home, ShortcutScope.global]));
+      expect(ShortcutScope.global.coactiveScopes,
+          ShortcutScope.home.coactiveScopes);
+    });
+
+    test('the two groups are disjoint', () {
+      final readerGroup = ShortcutScope.reader.coactiveScopes.toSet();
+      final homeGroup = ShortcutScope.home.coactiveScopes.toSet();
+      expect(readerGroup.intersection(homeGroup), isEmpty);
+    });
+
+    test('every scope belongs to its own co-active group', () {
+      for (final scope in ShortcutScope.values) {
+        expect(scope.coactiveScopes, contains(scope));
+      }
+    });
+  });
 }

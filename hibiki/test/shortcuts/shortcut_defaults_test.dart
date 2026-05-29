@@ -68,5 +68,40 @@ void main() {
       final globalBack = win[ShortcutAction.globalBack]!;
       expect(globalBack.gamepadBindings, isEmpty);
     });
+
+    test(
+        'audiobook sentence navigation has no gamepad default (would be shadowed '
+        'by reader RB/LB page-turn on the reader page)', () {
+      for (final platform in <TargetPlatform>[
+        TargetPlatform.windows,
+        TargetPlatform.macOS,
+        TargetPlatform.android,
+      ]) {
+        final defaults = ShortcutDefaults.forPlatform(platform);
+        expect(defaults[ShortcutAction.audiobookNextSentence]!.gamepadBindings,
+            isEmpty,
+            reason: 'next sentence on $platform');
+        expect(defaults[ShortcutAction.audiobookPrevSentence]!.gamepadBindings,
+            isEmpty,
+            reason: 'prev sentence on $platform');
+      }
+    });
+
+    test(
+        'no reader-group gamepad button is owned by more than one action '
+        '(no shadowed gamepad default on the reader page)', () {
+      final defaults = ShortcutDefaults.forPlatform(TargetPlatform.windows);
+      final seen = <GamepadButton, ShortcutAction>{};
+      for (final scope in ShortcutScope.reader.coactiveScopes) {
+        for (final action in ShortcutAction.actionsForScope(scope)) {
+          for (final gp in defaults[action]!.gamepadBindings) {
+            expect(seen.containsKey(gp.button), isFalse,
+                reason: '${gp.button} bound to both ${seen[gp.button]?.key} '
+                    'and ${action.key} — the later one is shadowed');
+            seen[gp.button] = action;
+          }
+        }
+      }
+    });
   });
 }

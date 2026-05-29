@@ -120,6 +120,92 @@ void main() {
       expect(conflict, isNull);
     });
 
+    test('hasKeyboardConflict detects conflict across co-active scopes', () {
+      // reader + audiobook resolve together on the reader page. Bind an
+      // audiobook action's default key (Ctrl+Space = audiobookPlayPause) and
+      // check from the reader scope: it must surface as a conflict, otherwise
+      // the audiobook binding would silently never fire on the reader page.
+      final binding = InputBinding(
+        key: LogicalKeyboardKey.space,
+        modifiers: {ModifierKey.ctrl},
+      );
+      expect(
+        registry.hasKeyboardConflict(
+          ShortcutScope.reader,
+          binding,
+          exclude: null,
+        ),
+        ShortcutAction.audiobookPlayPause,
+      );
+      // Symmetric: checking from the audiobook scope finds the reader binding.
+      final readerBinding = InputBinding(key: LogicalKeyboardKey.pageDown);
+      expect(
+        registry.hasKeyboardConflict(
+          ShortcutScope.audiobook,
+          readerBinding,
+          exclude: null,
+        ),
+        ShortcutAction.readerPageForward,
+      );
+    });
+
+    test('hasKeyboardConflict detects conflict across home/global co-active',
+        () {
+      // home + global resolve together on the home page. globalBack default is
+      // Alt+ArrowLeft; checking from the home scope must find it.
+      final binding = InputBinding(
+        key: LogicalKeyboardKey.arrowLeft,
+        modifiers: {ModifierKey.alt},
+      );
+      expect(
+        registry.hasKeyboardConflict(
+          ShortcutScope.home,
+          binding,
+          exclude: null,
+        ),
+        ShortcutAction.globalBack,
+      );
+    });
+
+    test('hasKeyboardConflict does not bridge unrelated scope groups', () {
+      // reader group must not see home-group bindings. Ctrl+Digit1 is
+      // homeTabBooks; from the reader scope it stays clear of conflict.
+      final binding = InputBinding(
+        key: LogicalKeyboardKey.digit1,
+        modifiers: {ModifierKey.ctrl},
+      );
+      expect(
+        registry.hasKeyboardConflict(
+          ShortcutScope.reader,
+          binding,
+          exclude: null,
+        ),
+        isNull,
+      );
+    });
+
+    test('hasGamepadConflict detects conflict across co-active scopes', () {
+      // Construct the conflict explicitly rather than rely on default overlap:
+      // bind audiobookPlayPause to RB (which readerPageForward owns by default).
+      // From the audiobook scope, RB must surface the reader binding as a
+      // co-active conflict.
+      registry.updateBinding(
+        ShortcutAction.audiobookPlayPause,
+        const ShortcutBindingSet(
+          gamepadBindings: [GamepadBinding(GamepadButton.rb)],
+        ),
+      );
+      const binding = GamepadBinding(GamepadButton.rb);
+      expect(
+        registry.hasGamepadConflict(
+          ShortcutScope.audiobook,
+          binding,
+          exclude: ShortcutAction.audiobookPlayPause,
+        ),
+        ShortcutAction.readerPageForward,
+      );
+    });
+
     test('toJson and loadFromJson round-trip', () {
       final json = registry.toJson();
       final jsonString = jsonEncode(json);

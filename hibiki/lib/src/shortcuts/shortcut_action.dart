@@ -2,7 +2,25 @@ enum ShortcutScope {
   reader,
   home,
   global,
-  audiobook,
+  audiobook;
+
+  // Scopes that are resolved together on the same page. The reader page
+  // resolves reader + audiobook bindings; the home page resolves home + global.
+  // Because the page tries these scopes in sequence, a single physical key can
+  // only ever trigger one of them, so a binding shared across a co-active group
+  // is a real conflict (the later scope silently never fires). Conflict
+  // detection must therefore scan the whole group, not just one scope. This is
+  // the single source of truth both the pages and the registry rely on.
+  List<ShortcutScope> get coactiveScopes {
+    switch (this) {
+      case reader:
+      case audiobook:
+        return const <ShortcutScope>[reader, audiobook];
+      case home:
+      case global:
+        return const <ShortcutScope>[home, global];
+    }
+  }
 }
 
 enum ShortcutAction {

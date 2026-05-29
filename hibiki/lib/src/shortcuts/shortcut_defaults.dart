@@ -97,15 +97,16 @@ class ShortcutDefaults {
     ], [
       _gA
     ]),
+    // No gamepad default: RB/LB are already reader page-turn, and the reader
+    // page resolves the reader scope before audiobook, so an RB/LB binding here
+    // would be permanently shadowed (never fire). Sentence navigation stays on
+    // the keyboard Ctrl+Arrow bindings. Same philosophy as globalBack leaving
+    // its gamepad empty to avoid a shadowed/double-trigger binding.
     ShortcutAction.audiobookNextSentence: _kb([
       _key(LogicalKeyboardKey.arrowRight, {ModifierKey.ctrl}),
-    ], [
-      _gRB
     ]),
     ShortcutAction.audiobookPrevSentence: _kb([
       _key(LogicalKeyboardKey.arrowLeft, {ModifierKey.ctrl}),
-    ], [
-      _gLB
     ]),
   };
 
