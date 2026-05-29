@@ -96,12 +96,14 @@ class ThemeNotifier extends ChangeNotifier {
     notifyListeners();
   }
 
+  // Pure read. Theme getters (theme/darkTheme/themeMode) run inside
+  // MaterialApp.build(); previously an absent key triggered a fire-and-forget
+  // DB write (_set) from the getter, a side effect on every first build
+  // (HBK-AUDIT-022). Defaults are returned without persisting; a value is only
+  // written when explicitly set via a setter.
   dynamic _get(String key, {dynamic defaultValue}) {
     final raw = _prefs[key];
-    if (raw == null) {
-      if (defaultValue != null) _set(key, defaultValue);
-      return defaultValue;
-    }
+    if (raw == null) return defaultValue;
     return PrefCodec.decode(raw, defaultValue);
   }
 

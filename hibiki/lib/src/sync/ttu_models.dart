@@ -17,11 +17,15 @@ class TtuProgress {
   final double progress;
   final int lastBookmarkModified;
 
+  // Integer fields use tolerant coercion: this format is shared three-way with
+  // ッツ/Hoshi, so an int may arrive as a JSON float/null/string. A bare
+  // `as int` would throw TypeError and abort the whole decode (HBK-AUDIT-030).
   factory TtuProgress.fromJson(Map<String, dynamic> json) => TtuProgress(
-        dataId: json['dataId'] as int,
-        exploredCharCount: json['exploredCharCount'] as int,
-        progress: (json['progress'] as num).toDouble(),
-        lastBookmarkModified: json['lastBookmarkModified'] as int,
+        dataId: (json['dataId'] as num?)?.toInt() ?? 0,
+        exploredCharCount: (json['exploredCharCount'] as num?)?.toInt() ?? 0,
+        progress: (json['progress'] as num?)?.toDouble() ?? 0,
+        lastBookmarkModified:
+            (json['lastBookmarkModified'] as num?)?.toInt() ?? 0,
       );
 
   Map<String, dynamic> toJson() => {
@@ -63,13 +67,14 @@ class TtuStatistics {
   factory TtuStatistics.fromJson(Map<String, dynamic> json) => TtuStatistics(
         title: json['title'] as String,
         dateKey: json['dateKey'] as String,
-        charactersRead: json['charactersRead'] as int,
-        readingTimeSec: (json['readingTime'] as num).toDouble(),
-        minReadingSpeed: json['minReadingSpeed'] as int,
-        altMinReadingSpeed: json['altMinReadingSpeed'] as int,
-        lastReadingSpeed: json['lastReadingSpeed'] as int,
-        maxReadingSpeed: json['maxReadingSpeed'] as int,
-        lastStatisticModified: json['lastStatisticModified'] as int,
+        charactersRead: (json['charactersRead'] as num?)?.toInt() ?? 0,
+        readingTimeSec: (json['readingTime'] as num?)?.toDouble() ?? 0,
+        minReadingSpeed: (json['minReadingSpeed'] as num?)?.toInt() ?? 0,
+        altMinReadingSpeed: (json['altMinReadingSpeed'] as num?)?.toInt() ?? 0,
+        lastReadingSpeed: (json['lastReadingSpeed'] as num?)?.toInt() ?? 0,
+        maxReadingSpeed: (json['maxReadingSpeed'] as num?)?.toInt() ?? 0,
+        lastStatisticModified:
+            (json['lastStatisticModified'] as num?)?.toInt() ?? 0,
       );
 
   Map<String, dynamic> toJson() => {
@@ -107,8 +112,10 @@ class TtuAudioBook {
 
   factory TtuAudioBook.fromJson(Map<String, dynamic> json) => TtuAudioBook(
         title: json['title'] as String,
-        playbackPositionSec: (json['playbackPosition'] as num).toDouble(),
-        lastAudioBookModified: json['lastAudioBookModified'] as int,
+        playbackPositionSec:
+            (json['playbackPosition'] as num?)?.toDouble() ?? 0,
+        lastAudioBookModified:
+            (json['lastAudioBookModified'] as num?)?.toInt() ?? 0,
       );
 
   Map<String, dynamic> toJson() => {

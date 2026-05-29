@@ -68,14 +68,34 @@ class ProfileKeys {
           : null,
       availableDecks: current.availableDecks,
       availableNoteTypes: current.availableNoteTypes,
-      fieldMappings: m.containsKey('fieldMappings')
-          ? Map<String, String>.from(jsonDecode(m['fieldMappings']!) as Map)
-          : const {},
+      fieldMappings:
+          _parseFieldMappings(m['fieldMappings'], current.fieldMappings),
       tags: m['tags'] ?? '',
       allowDupes: m['allowDupes'] == 'true',
       compactGlossaries: m['compactGlossaries'] == 'true',
       embedMedia:
           m.containsKey('embedMedia') ? m['embedMedia'] == 'true' : true,
     );
+  }
+
+  /// Parses the stored fieldMappings JSON defensively. The value comes from the
+  /// profile_settings DB table, which can hold malformed data (manual edit,
+  /// aborted snapshot write, cross-version backup import). A single bad row
+  /// must not throw and abort the entire profile-apply flow (HBK-AUDIT-043).
+  static Map<String, String> _parseFieldMappings(
+    String? raw,
+    Map<String, String> fallback,
+  ) {
+    if (raw == null || raw.isEmpty) return const {};
+    try {
+      final dynamic decoded = jsonDecode(raw);
+      if (decoded is Map) {
+        return decoded.map(
+            (dynamic k, dynamic v) => MapEntry(k.toString(), v.toString()));
+      }
+    } catch (_) {
+      // Fall through to the fallback below.
+    }
+    return fallback;
   }
 }

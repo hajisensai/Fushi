@@ -115,9 +115,33 @@ class SmilParser {
       if (m == null || s == null) return null;
       seconds = m * 60 + s;
     } else {
-      seconds = double.tryParse(parts[0]);
+      seconds = _parseOffsetSeconds(parts[0]);
     }
     if (seconds == null) return null;
     return (seconds * 1000).round();
+  }
+
+  /// Parses a SMIL clock offset value to seconds. The grammar allows a unit
+  /// suffix on the non-colon form: '4230ms', '4.5s', '1.2min', '1.5h', or a
+  /// bare number (seconds). Previously only bare numbers parsed, so unit-tagged
+  /// values returned null and the cue was silently dropped (HBK-AUDIT-024).
+  static double? _parseOffsetSeconds(String raw) {
+    final String t = raw.trim();
+    if (t.endsWith('ms')) {
+      final double? v = double.tryParse(t.substring(0, t.length - 2));
+      return v == null ? null : v / 1000;
+    }
+    if (t.endsWith('min')) {
+      final double? v = double.tryParse(t.substring(0, t.length - 3));
+      return v == null ? null : v * 60;
+    }
+    if (t.endsWith('h')) {
+      final double? v = double.tryParse(t.substring(0, t.length - 1));
+      return v == null ? null : v * 3600;
+    }
+    if (t.endsWith('s')) {
+      return double.tryParse(t.substring(0, t.length - 1));
+    }
+    return double.tryParse(t);
   }
 }

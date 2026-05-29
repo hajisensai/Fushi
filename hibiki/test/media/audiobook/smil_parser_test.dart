@@ -198,6 +198,34 @@ void main() {
       expect(cues[0].endMs, 10000);
     });
 
+    test('handles unit-suffixed clock values s/ms/min (HBK-AUDIT-024)', () {
+      const smil = '''<smil xmlns="http://www.w3.org/ns/SMIL">
+  <body>
+    <par>
+      <text src="ch.xhtml#p1"/>
+      <audio src="a.mp3" clipBegin="4.5s" clipEnd="4230ms"/>
+    </par>
+    <par>
+      <text src="ch.xhtml#p2"/>
+      <audio src="a.mp3" clipBegin="0.1min" clipEnd="7s"/>
+    </par>
+  </body>
+</smil>''';
+
+      final cues = SmilParser.parseString(
+        content: smil,
+        bookUid: 'b',
+        chapterHref: 'ch.xhtml',
+      );
+      // Previously these unit-tagged values returned null and the cues were
+      // dropped; now they parse.
+      expect(cues, hasLength(2));
+      expect(cues[0].startMs, 4500); // 4.5s
+      expect(cues[0].endMs, 4230); // 4230ms
+      expect(cues[1].startMs, 6000); // 0.1min
+      expect(cues[1].endMs, 7000); // 7s
+    });
+
     test('empty body returns empty list', () {
       const smil = '''<smil xmlns="http://www.w3.org/ns/SMIL">
   <body/>
