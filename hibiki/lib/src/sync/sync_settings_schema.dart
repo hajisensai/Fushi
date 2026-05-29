@@ -1677,6 +1677,16 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
         .setServerPort(parsed);
   }
 
+  /// On commit, snap the field back to the persisted port when the typed value
+  /// is non-numeric or out of range, so the field text can't drift away from
+  /// the effective port (e.g. typing 70000 leaves the stored 7000 visible).
+  void _reconcilePortField(String raw) {
+    final int? parsed = int.tryParse(raw.trim());
+    if (parsed == null || parsed < 1 || parsed > 65535) {
+      if (_portController.text != '$_port') _portController.text = '$_port';
+    }
+  }
+
   /// A failed bind must not leave the toggle stuck "on" — it would re-fail on
   /// every launch. Reset to off and persist so the user can change the port
   /// and re-enable.
@@ -1765,6 +1775,7 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
               labelText: t.sync_server_port,
               keyboardType: TextInputType.number,
               onChanged: _setPort,
+              onSubmitted: _reconcilePortField,
             ),
             if (running)
               Padding(
