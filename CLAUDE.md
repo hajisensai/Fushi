@@ -5,6 +5,7 @@
 ## 基本规则
 
 - 始终用中文回复。
+- 代码审查（code review）spawn subagent 时，必须显式指定 `model: "opus"`，确保审查走 Opus 模型。
 - 开始分析、修改、测试、提交或 PR 前，先读取最近层级的 `AGENTS.md`；如果子目录里还有更近的 `AGENTS.md`，按更近层级执行。
 - 遇到功能异常、测试失败、运行时报错或用户要求修复时，必须做根因修复：先复现或沿真实代码路径定位，再修数据结构、状态同步、生命周期、平台边界或依赖契约。
 - 不允许用延迟、重试、吞异常、硬编码、特例分支来掩盖症状。只有外部系统或平台限制不可控时，才允许临时兼容层，并说明影响范围和清理条件。
@@ -39,7 +40,7 @@
 
 ### 平台自适应架构
 
-支持两种架构 Android 走 Material Design 3，iOS 走 Cupertino。架构分两层：
+Hibiki 是基于 Flutter 的多平台应用。UI 支持两种架构：Android 走 Material Design 3，iOS 走 Cupertino；Windows 桌面端复用 Material 架构并依赖 fork 的 `flutter_inappwebview_windows` 渲染 EPUB。架构分两层：
 
 ## 集成测试素材
 
@@ -184,7 +185,7 @@ SELECT name FROM profiles;
 
 ## 项目愿景
 
-Hibiki 是一个专注于日语学习的 EPUB 阅读器应用，提供划词查词、有声书音频同步、Anki 卡片创建和阅读统计功能。支持 Android（Material Design 3）和 iOS（Cupertino）平台自适应 UI，目标是为日语学习者提供沉浸式阅读体验。
+Hibiki 是一个专注于日语学习的多平台 EPUB 阅读器应用，提供划词查词、有声书音频同步、Anki 卡片创建和阅读统计功能。基于 Flutter 跨平台框架开发，支持 Android（Material Design 3）和 iOS（Cupertino）平台自适应 UI，并通过 fork 的 `flutter_inappwebview_windows` 支持 Windows 桌面端。目标是为日语学习者提供沉浸式阅读体验。
 
 ## 架构总览
 

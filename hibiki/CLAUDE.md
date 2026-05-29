@@ -4,7 +4,7 @@
 
 ## 模块职责
 
-Hibiki 的 Flutter 主应用：日语 EPUB 阅读器，集成划词查词、有声书同步、Anki 卡片创建、阅读统计。Android 走 Material Design 3 / iOS 走 Cupertino 平台自适应 UI。
+Hibiki 的 Flutter 多平台主应用：日语 EPUB 阅读器，集成划词查词、有声书同步、Anki 卡片创建、阅读统计。基于 Flutter 跨平台框架，Android 走 Material Design 3 / iOS 走 Cupertino 平台自适应 UI，并通过 fork 的 `flutter_inappwebview_windows` 支持 Windows 桌面端。
 
 ## 入口与启动
 
