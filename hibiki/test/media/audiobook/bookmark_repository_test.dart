@@ -48,6 +48,14 @@ void main() {
   });
 
   test('migrates legacy JSON preference and deletes source key', () async {
+    // bookmarks.ttu_book_id is a FK to epub_books(id); a real legacy bookmark
+    // belongs to an imported book, so seed the backing row.
+    await db.customStatement(
+      'INSERT INTO epub_books '
+      '(id, title, epub_path, extract_dir, chapter_count, chapters_json, '
+      'imported_at) VALUES (9, ?, ?, ?, 1, ?, 0)',
+      ['Legacy Book', '/x.epub', '/x', '[]'],
+    );
     final legacy = [
       Bookmark(
         sectionIndex: 3,
@@ -97,5 +105,30 @@ void main() {
     final bookmarks = await repo.getBookmarks(9);
     expect(bookmarks, hasLength(1));
     expect(bookmarks.single.label, 'already migrated');
+  });
+
+  test(
+      'skips legacy bookmarks whose book is gone without aborting the '
+      'migration (HBK-AUDIT-007)', () async {
+    // No epub_books row for id 42. With foreign_keys ON (production), an
+    // INSERT OR IGNORE would hit a FK violation and abort the whole upgrade
+    // transaction. The migration must skip the orphan and still clean the key.
+    final legacy = [
+      Bookmark(
+        sectionIndex: 1,
+        normCharOffset: 100,
+        label: 'orphan',
+        createdAt: DateTime.utc(2026, 5, 15, 4),
+        ttuBookId: 42,
+        bookTitle: 'Deleted Book',
+      ).toJson(),
+    ];
+    await db.setPref('bookmarks_42', jsonEncode(legacy));
+
+    // Must not throw.
+    await db.migrateLegacyBookmarkPreferences();
+
+    expect(await repo.getBookmarks(42), isEmpty);
+    expect(await db.getPref('bookmarks_42'), isNull);
   });
 }
