@@ -278,10 +278,12 @@ class FtpSyncBackend extends SyncBackend {
   }) =>
       _opLock.withLock(() async {
         await _ensureConnected();
-        if (fileId != null) await _deleteRemoteFileImpl(fileId);
         final fileName =
             progressFileName(progress.lastBookmarkModified, progress.progress);
         await _uploadJsonImpl(folderId, fileName, progress.toJson());
+        // Upload-then-delete: keep the old file until the new one is uploaded
+        // so a failed upload never loses the only copy (HBK-AUDIT-048).
+        if (fileId != null) await _deleteRemoteFileImpl(fileId);
       });
 
   @override
@@ -292,10 +294,11 @@ class FtpSyncBackend extends SyncBackend {
   }) =>
       _opLock.withLock(() async {
         await _ensureConnected();
-        if (fileId != null) await _deleteRemoteFileImpl(fileId);
         final fileName = statisticsFileName(stats);
         await _uploadJsonImpl(
             folderId, fileName, stats.map((s) => s.toJson()).toList());
+        // Upload-then-delete (HBK-AUDIT-048).
+        if (fileId != null) await _deleteRemoteFileImpl(fileId);
       });
 
   @override
@@ -306,10 +309,11 @@ class FtpSyncBackend extends SyncBackend {
   }) =>
       _opLock.withLock(() async {
         await _ensureConnected();
-        if (fileId != null) await _deleteRemoteFileImpl(fileId);
         final fileName = audioBookFileName(
             audioBook.lastAudioBookModified, audioBook.playbackPositionSec);
         await _uploadJsonImpl(folderId, fileName, audioBook.toJson());
+        // Upload-then-delete (HBK-AUDIT-048).
+        if (fileId != null) await _deleteRemoteFileImpl(fileId);
       });
 
   // ── Content file sync ─────────────────────────────────────────────

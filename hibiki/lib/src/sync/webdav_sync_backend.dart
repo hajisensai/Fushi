@@ -165,10 +165,12 @@ class WebDavSyncBackend extends SyncBackend {
     required String? fileId,
     required TtuProgress progress,
   }) async {
-    if (fileId != null) await _ops!.deleteFile(fileId);
     final fileName =
         progressFileName(progress.lastBookmarkModified, progress.progress);
     await _ops!.uploadJson(folderId, fileName, progress.toJson());
+    // Upload-then-delete: remove the old file only after the new one is safely
+    // uploaded, so a failed upload never destroys the only copy (HBK-AUDIT-048).
+    if (fileId != null) await _ops!.deleteFile(fileId);
   }
 
   @override
@@ -177,10 +179,11 @@ class WebDavSyncBackend extends SyncBackend {
     required String? fileId,
     required List<TtuStatistics> stats,
   }) async {
-    if (fileId != null) await _ops!.deleteFile(fileId);
     final fileName = statisticsFileName(stats);
-    await _ops!.uploadJson(
-        folderId, fileName, stats.map((s) => s.toJson()).toList());
+    await _ops!
+        .uploadJson(folderId, fileName, stats.map((s) => s.toJson()).toList());
+    // Upload-then-delete (HBK-AUDIT-048).
+    if (fileId != null) await _ops!.deleteFile(fileId);
   }
 
   @override
@@ -189,10 +192,11 @@ class WebDavSyncBackend extends SyncBackend {
     required String? fileId,
     required TtuAudioBook audioBook,
   }) async {
-    if (fileId != null) await _ops!.deleteFile(fileId);
     final fileName = audioBookFileName(
         audioBook.lastAudioBookModified, audioBook.playbackPositionSec);
     await _ops!.uploadJson(folderId, fileName, audioBook.toJson());
+    // Upload-then-delete (HBK-AUDIT-048).
+    if (fileId != null) await _ops!.deleteFile(fileId);
   }
 
   // ── Content file sync ─────────────────────────────────────────────

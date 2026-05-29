@@ -415,10 +415,12 @@ class DropboxSyncBackend extends SyncBackend {
     required String? fileId,
     required TtuProgress progress,
   }) async {
-    if (fileId != null) await _deleteFile(fileId);
     final fileName =
         progressFileName(progress.lastBookmarkModified, progress.progress);
     await _uploadJsonFile(folderId, fileName, progress.toJson());
+    // Upload-then-delete: keep the old file until the new one is uploaded so a
+    // failed upload never destroys the only copy (HBK-AUDIT-048).
+    if (fileId != null) await _deleteFile(fileId);
   }
 
   @override
@@ -427,10 +429,11 @@ class DropboxSyncBackend extends SyncBackend {
     required String? fileId,
     required List<TtuStatistics> stats,
   }) async {
-    if (fileId != null) await _deleteFile(fileId);
     final fileName = statisticsFileName(stats);
     await _uploadJsonFile(
         folderId, fileName, stats.map((s) => s.toJson()).toList());
+    // Upload-then-delete (HBK-AUDIT-048).
+    if (fileId != null) await _deleteFile(fileId);
   }
 
   @override
@@ -439,10 +442,11 @@ class DropboxSyncBackend extends SyncBackend {
     required String? fileId,
     required TtuAudioBook audioBook,
   }) async {
-    if (fileId != null) await _deleteFile(fileId);
     final fileName = audioBookFileName(
         audioBook.lastAudioBookModified, audioBook.playbackPositionSec);
     await _uploadJsonFile(folderId, fileName, audioBook.toJson());
+    // Upload-then-delete (HBK-AUDIT-048).
+    if (fileId != null) await _deleteFile(fileId);
   }
 
   // ── Content file sync ─────────────────────────────────────────────

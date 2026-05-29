@@ -438,10 +438,12 @@ class OneDriveSyncBackend extends SyncBackend {
     required String? fileId,
     required TtuProgress progress,
   }) async {
-    if (fileId != null) await _deleteItem(fileId);
     final fileName =
         progressFileName(progress.lastBookmarkModified, progress.progress);
     await _uploadJson(folderId, fileName, progress.toJson());
+    // Upload-then-delete: keep the old file until the new one is uploaded so a
+    // failed upload never destroys the only copy (HBK-AUDIT-048).
+    if (fileId != null) await _deleteItem(fileId);
   }
 
   @override
@@ -450,10 +452,11 @@ class OneDriveSyncBackend extends SyncBackend {
     required String? fileId,
     required List<TtuStatistics> stats,
   }) async {
-    if (fileId != null) await _deleteItem(fileId);
     final fileName = statisticsFileName(stats);
     await _uploadJson(
         folderId, fileName, stats.map((s) => s.toJson()).toList());
+    // Upload-then-delete (HBK-AUDIT-048).
+    if (fileId != null) await _deleteItem(fileId);
   }
 
   @override
@@ -462,10 +465,11 @@ class OneDriveSyncBackend extends SyncBackend {
     required String? fileId,
     required TtuAudioBook audioBook,
   }) async {
-    if (fileId != null) await _deleteItem(fileId);
     final fileName = audioBookFileName(
         audioBook.lastAudioBookModified, audioBook.playbackPositionSec);
     await _uploadJson(folderId, fileName, audioBook.toJson());
+    // Upload-then-delete (HBK-AUDIT-048).
+    if (fileId != null) await _deleteItem(fileId);
   }
 
   // ── Content file sync ─────────────────────────────────────────────
