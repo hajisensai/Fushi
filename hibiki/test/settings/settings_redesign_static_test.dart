@@ -123,6 +123,15 @@ void main() {
     expect(combined, contains('showSettingsProgressDialog('));
   });
 
+  test('legacy adaptive alert factory is removed', () {
+    final String source =
+        readNormalizedSource('lib/src/utils/adaptive/adaptive_widgets.dart');
+
+    expect(source, isNot(contains('adaptiveAlertDialog(')));
+    expect(source, isNot(contains('CupertinoAlertDialog(')));
+    expect(source, isNot(contains('AlertDialog(')));
+  });
+
   test('display settings contains reader layout only', () {
     final String source = readNormalizedSource(
         'lib/src/pages/implementations/display_settings_page.dart');

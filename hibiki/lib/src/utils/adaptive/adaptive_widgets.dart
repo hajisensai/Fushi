@@ -1,45 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart';
-import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
-
-Widget adaptiveAlertDialog({
-  required BuildContext context,
-  Widget? title,
-  Widget? content,
-  List<Widget>? actions,
-  EdgeInsetsGeometry? contentPadding,
-  EdgeInsetsGeometry? titlePadding,
-  EdgeInsetsGeometry? actionsPadding,
-  EdgeInsetsGeometry? buttonPadding,
-  EdgeInsets? insetPadding,
-}) {
-  if (isCupertinoPlatform(context)) {
-    return CupertinoAlertDialog(
-      title: title,
-      content: content,
-      actions: actions ?? const [],
-    );
-  }
-  final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-  return ConstrainedBox(
-    constraints: const BoxConstraints(maxWidth: 560),
-    child: AlertDialog(
-      title: title,
-      content: content,
-      actions: actions,
-      shape: RoundedRectangleBorder(borderRadius: tokens.radii.dialogRadius),
-      backgroundColor: tokens.surfaces.overlay,
-      surfaceTintColor: Colors.transparent,
-      contentPadding: contentPadding,
-      titlePadding: titlePadding,
-      actionsPadding:
-          actionsPadding ?? const EdgeInsetsDirectional.fromSTEB(24, 0, 24, 20),
-      buttonPadding: buttonPadding,
-      insetPadding: insetPadding,
-    ),
-  );
-}
 
 Widget adaptiveDialogAction({
   required BuildContext context,
