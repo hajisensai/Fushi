@@ -2,9 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
-import 'dart:typed_data';
 
 import 'package:ftpconnect/ftpconnect.dart';
+import 'package:flutter/foundation.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/sync_utils.dart';
@@ -15,7 +15,33 @@ class FtpSyncBackend extends SyncBackend {
   FtpSyncBackend._();
   static final FtpSyncBackend instance = FtpSyncBackend._();
 
-  static const String _rootPath = '/ttu-reader-data';
+  /// The login directory captured via PWD on connect (the user's home, or the
+  /// chroot root). Defaults to '/' until connected.
+  String _homeDir = '/';
+
+  /// Sync root, anchored UNDER the login home — never the raw server root. A
+  /// chrooted server reports PWD '/', so this reproduces the legacy
+  /// '/ttu-reader-data' exactly (no data move); a normal server reports the
+  /// real home, so the folder lands there instead of failing at '/'.
+  String get _rootPath => ftpRootPath(_homeDir);
+
+  /// Pure helper for [_rootPath]; exposed for testing.
+  @visibleForTesting
+  static String ftpRootPath(String home) {
+    final String trimmed = home.replaceAll(RegExp(r'/+$'), '');
+    return trimmed.isEmpty ? '/ttu-reader-data' : '$trimmed/ttu-reader-data';
+  }
+
+  /// Normalize a PWD reply into a clean directory path (strip surrounding
+  /// quotes and trailing slashes; fall back to '/').
+  static String _normalizeFtpDir(String raw) {
+    var dir = raw.trim();
+    if (dir.length >= 2 && dir.startsWith('"') && dir.endsWith('"')) {
+      dir = dir.substring(1, dir.length - 1);
+    }
+    dir = dir.replaceAll(RegExp(r'/+$'), '');
+    return dir.isEmpty ? '/' : dir;
+  }
 
   final _opLock = AsyncMutex();
   FTPConnect? _client;
@@ -133,7 +159,7 @@ class FtpSyncBackend extends SyncBackend {
                   'Failed to create root folder: $_rootPath');
             }
           }
-          await _client!.changeDirectory('/');
+          await _client!.changeDirectory(_homeDir);
           _rootFolderId = _rootPath;
           return _rootPath;
         } catch (e) {
@@ -190,7 +216,7 @@ class FtpSyncBackend extends SyncBackend {
                   'Failed to create book folder: $folderPath');
             }
           }
-          await _client!.changeDirectory('/');
+          await _client!.changeDirectory(_homeDir);
           _titleToFolderId[sanitized] = folderPath;
 
           if (coverData != null) {
@@ -207,7 +233,7 @@ class FtpSyncBackend extends SyncBackend {
                   await _deleteTempFile(tmpFile);
                 }
               }
-              await _client!.changeDirectory('/');
+              await _client!.changeDirectory(_homeDir);
             } catch (_) {
               // Cover upload is best-effort.
             }
@@ -483,6 +509,13 @@ class FtpSyncBackend extends SyncBackend {
         throw SyncAuthError('FTP authentication failed');
       }
       _connected = true;
+      // Anchor all paths under the login directory rather than the raw server
+      // root. Best-effort: if PWD fails, fall back to '/' (legacy behavior).
+      try {
+        _homeDir = _normalizeFtpDir(await _client!.currentDirectory());
+      } catch (_) {
+        _homeDir = '/';
+      }
     } on FTPConnectException catch (e) {
       _client = null;
       _connected = false;

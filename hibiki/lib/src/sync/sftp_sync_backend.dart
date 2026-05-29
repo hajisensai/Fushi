@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:dartssh2/dartssh2.dart';
+import 'package:flutter/foundation.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/sync_utils.dart';
@@ -14,7 +14,12 @@ class SftpSyncBackend extends SyncBackend {
   SftpSyncBackend._();
   static final SftpSyncBackend instance = SftpSyncBackend._();
 
-  static const _rootPath = '/ttu-reader-data';
+  /// Sync root folder, RELATIVE to the SFTP login directory (the user's home),
+  /// never the server filesystem root. An absolute '/ttu-reader-data' fails on
+  /// a normal non-chrooted sshd (permission denied at '/'). The name is kept
+  /// identical to the other backends so one library syncs across them.
+  @visibleForTesting
+  static const String rootFolderName = 'ttu-reader-data';
 
   final _opLock = AsyncMutex();
   SSHClient? _sshClient;
@@ -111,9 +116,9 @@ class SftpSyncBackend extends SyncBackend {
         if (_rootFolderId != null) return _rootFolderId!;
 
         final sftp = await _ensureConnected();
-        await _mkdirIfAbsent(sftp, _rootPath);
-        _rootFolderId = _rootPath;
-        return _rootPath;
+        await _mkdirIfAbsent(sftp, rootFolderName);
+        _rootFolderId = rootFolderName;
+        return rootFolderName;
       });
 
   @override
