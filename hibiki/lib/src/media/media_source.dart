@@ -307,7 +307,12 @@ abstract class MediaSource {
   /// should be uniquely implemented for each source. Some sources may want
   /// to generate their media item based on current playback information or
   /// progress.
-  MediaItem get currentMediaItem => throw UnimplementedError();
+  ///
+  /// HBK-AUDIT-123: the base default is an UnsupportedError rather than a bare
+  /// UnimplementedError so a contract violation names the source and the method
+  /// that was not overridden, instead of surfacing an opaque runtime trap.
+  MediaItem get currentMediaItem => throw UnsupportedError(
+      '$runtimeType does not implement currentMediaItem');
 
   /// The body widget to show in the tab when this source's media type and this
   /// source is selected.
@@ -515,7 +520,12 @@ abstract class MediaSource {
     required MediaItem item,
     String? data,
   }) {
-    throw UnimplementedError();
+    // HBK-AUDIT-123: gated by overridesAutoImage; a source that sets that flag
+    // must override this. The UnsupportedError names the offending source so
+    // the missing override is debuggable rather than an opaque trap.
+    throw UnsupportedError(
+      '$runtimeType set overridesAutoImage but did not override generateImages',
+    );
   }
 
   /// If this source is non-null, this will be used as the initial function
@@ -525,7 +535,12 @@ abstract class MediaSource {
     required MediaItem item,
     String? data,
   }) {
-    throw UnimplementedError();
+    // HBK-AUDIT-123: gated by overridesAutoAudio; a source that sets that flag
+    // must override this. The UnsupportedError names the offending source so
+    // the missing override is debuggable rather than an opaque trap.
+    throw UnsupportedError(
+      '$runtimeType set overridesAutoAudio but did not override generateAudio',
+    );
   }
 
   /// This returns a list of [MediaItem], and is performed to search the media
@@ -535,13 +550,23 @@ abstract class MediaSource {
     required String searchTerm,
     required int pageKey,
   }) async {
-    throw UnimplementedError();
+    // HBK-AUDIT-123: gated by implementsSearch; a source that sets that flag
+    // must override this. The UnsupportedError names the offending source so
+    // the missing override is debuggable rather than an opaque trap.
+    throw UnsupportedError(
+      '$runtimeType set implementsSearch but did not override searchMediaItems',
+    );
   }
 
   /// Given a search term, this source may give search suggestions. If the
   /// empty list is returned, then search history will be shown instead.
+  ///
+  /// HBK-AUDIT-123: suggestions are optional (an empty list already means
+  /// "show history"), so the base default returns an empty list instead of
+  /// throwing UnimplementedError. This removes a latent unhandled-async-error
+  /// surface for any source that implements search but not suggestions.
   Future<List<String>> generateSearchSuggestions(String searchTerm) async {
-    throw UnimplementedError();
+    return const <String>[];
   }
 
   /// Aspect ratio of media items.

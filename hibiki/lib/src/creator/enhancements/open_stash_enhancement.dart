@@ -5,6 +5,9 @@ import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
 
 /// An enhancement used to view and manage the Stash.
+///
+/// HBK-AUDIT-079: file renamed from pick_from_stash_enhancement.dart to match
+/// this class name and its `open_stash` key.
 class OpenStashEnhancement extends Enhancement {
   /// Initialise this enhancement with the hardset parameters.
   OpenStashEnhancement({required super.field})

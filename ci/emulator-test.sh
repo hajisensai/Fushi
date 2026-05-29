@@ -9,11 +9,13 @@
 
 set -euo pipefail
 
-ADB="/d/android_sdk/platform-tools/adb"
-EMULATOR="/d/android_sdk/emulator/emulator"
-FLUTTER="/d/flutter_sdk/flutter_extracted/flutter/bin/flutter"
-DEVICE="emulator-5554"
-PKG="app.hibiki.reader"
+# HBK-AUDIT-077: discover tools (PATH first) and allow env overrides instead of
+# hardcoding one machine's absolute paths. Defaults match the original setup.
+ADB="${ADB:-$(command -v adb 2>/dev/null || echo /d/android_sdk/platform-tools/adb)}"
+EMULATOR="${EMULATOR:-$(command -v emulator 2>/dev/null || echo /d/android_sdk/emulator/emulator)}"
+FLUTTER="${FLUTTER:-$(command -v flutter 2>/dev/null || echo /d/flutter_sdk/flutter_extracted/flutter/bin/flutter)}"
+DEVICE="${DEVICE:-emulator-5554}"
+PKG="${PKG:-app.hibiki.reader}"
 APK="build/app/outputs/flutter-apk/app-release.apk"
 SCREENSHOT_DIR="../test_screenshots"
 
@@ -61,14 +63,14 @@ if [ "$SKIP_PUSH" = false ]; then
   TMPDIR_LOCAL="/d/tmp_hibiki_test"
   mkdir -p "$TMPDIR_LOCAL"
 
-  # Dictionary
-  cp "/d/辞典/[JA-JA] 明鏡国語辞典 第三版[2025-08-18].zip" "$TMPDIR_LOCAL/meikyo3.zip"
-  # EPUB
-  cp "/c/Users/wrds/Downloads/転生王女と天才令嬢の魔法革命 01 .epub" "$TMPDIR_LOCAL/tensei01.epub"
-  # SRT
-  cp "/c/Users/wrds/Downloads/[01] 転生王女と天才令嬢の魔法革命 【オーディオブック特典付き】 [B0CC5WC1PK](2).srt" "$TMPDIR_LOCAL/tensei01.srt"
-  # M4B audiobook
-  cp "/d/downloads/Bangumi/Audiobook Collection/[鴉 ぴえろ] 転生王女と天才令嬢の魔法革命/[01] 転生王女と天才令嬢の魔法革命 【オーディオブック特典付き】 [B0CC5WC1PK].m4b" "$TMPDIR_LOCAL/tensei01.m4b"
+  # HBK-AUDIT-077: source fixtures from env-overridable paths; defaults point at
+  # the repo's documented fixtures dir (see hibiki/CLAUDE.md) instead of one
+  # developer's personal media. Missing files warn rather than hard-fail.
+  FIXTURES_DIR="${FIXTURES_DIR:-$(cd "$(dirname "$0")/.." && pwd)/.codex-test/fixtures/kagami}"
+  cp "${DICT_ZIP:-/d/辞典/[JA-JA] 明鏡国語辞典 第三版[2025-08-18].zip}" "$TMPDIR_LOCAL/meikyo3.zip" 2>/dev/null || echo "WARN: set DICT_ZIP to a dictionary .zip"
+  cp "${EPUB_FILE:-$FIXTURES_DIR/かがみの孤城 (辻村深月) (Z-Library).epub}" "$TMPDIR_LOCAL/tensei01.epub" 2>/dev/null || echo "WARN: set EPUB_FILE"
+  cp "${SRT_FILE:-$FIXTURES_DIR/かがみの孤城 [audiobook.jp 244083].srt}" "$TMPDIR_LOCAL/tensei01.srt" 2>/dev/null || echo "WARN: set SRT_FILE"
+  cp "${M4B_FILE:-$FIXTURES_DIR/かがみの孤城 [audiobook.jp 244083].m4b}" "$TMPDIR_LOCAL/tensei01.m4b" 2>/dev/null || echo "WARN: set M4B_FILE"
 
   MSYS_NO_PATHCONV=1 $ADB -s $DEVICE push "$TMPDIR_LOCAL/meikyo3.zip"    /sdcard/Download/meikyo3.zip
   MSYS_NO_PATHCONV=1 $ADB -s $DEVICE push "$TMPDIR_LOCAL/tensei01.epub"  /sdcard/Download/tensei01.epub

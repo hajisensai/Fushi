@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:hibiki/src/sync/sync_backend.dart';
+import 'package:hibiki/src/sync/sync_utils.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 
 class DavEntry {
@@ -257,12 +258,11 @@ class WebDavOps {
     return 'application/octet-stream';
   }
 
-  static DriveFile? findByPrefix(List<DriveFile> files, String prefix) {
-    for (final f in files) {
-      if (f.name.startsWith(prefix)) return f;
-    }
-    return null;
-  }
+  // HBK-AUDIT-085: delegate to the single canonical matcher in sync_utils so
+  // file-matching semantics live in one place. Kept as a thin shim only for the
+  // remaining external caller (webdav_sync_backend.dart).
+  static DriveFile? findByPrefix(List<DriveFile> files, String prefix) =>
+      findSyncFileByPrefix(files, prefix);
 
   static String normalizeUrl(String url) {
     var normalized = url.trim();

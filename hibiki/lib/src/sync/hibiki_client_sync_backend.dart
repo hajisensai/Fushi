@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
+import 'package:hibiki/src/sync/sync_utils.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 import 'package:hibiki/src/sync/webdav_ops.dart';
@@ -66,8 +67,7 @@ Future<bool> _defaultHibikiProbe(String url, String token) async {
 class HibikiClientSyncBackend extends SyncBackend {
   HibikiClientSyncBackend._({HibikiProbe? probe})
       : _probe = probe ?? _defaultHibikiProbe;
-  static final HibikiClientSyncBackend instance =
-      HibikiClientSyncBackend._();
+  static final HibikiClientSyncBackend instance = HibikiClientSyncBackend._();
 
   /// Test seam: inject a fake reachability probe.
   @visibleForTesting
@@ -258,10 +258,11 @@ class HibikiClientSyncBackend extends SyncBackend {
         .map((e) => DriveFile(id: e.href, name: e.displayName))
         .toList();
 
+    // HBK-AUDIT-085: route through the single canonical matcher in sync_utils.
     return DriveSyncFiles(
-      progress: WebDavOps.findByPrefix(files, 'progress_'),
-      statistics: WebDavOps.findByPrefix(files, 'statistics_'),
-      audioBook: WebDavOps.findByPrefix(files, 'audioBook_'),
+      progress: findSyncFileByPrefix(files, 'progress_'),
+      statistics: findSyncFileByPrefix(files, 'statistics_'),
+      audioBook: findSyncFileByPrefix(files, 'audioBook_'),
     );
   }
 
@@ -306,8 +307,8 @@ class HibikiClientSyncBackend extends SyncBackend {
   }) async {
     if (fileId != null) await _ops!.deleteFile(fileId);
     final fileName = statisticsFileName(stats);
-    await _ops!.uploadJson(
-        folderId, fileName, stats.map((s) => s.toJson()).toList());
+    await _ops!
+        .uploadJson(folderId, fileName, stats.map((s) => s.toJson()).toList());
   }
 
   @override

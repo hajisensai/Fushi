@@ -16,20 +16,26 @@
 default_platform(:android)
 
 platform :android do
-  desc "Build APKs and rename with version number."
+  # HBK-AUDIT-025: this lane was unadapted fastlane example boilerplate — it
+  # published to fastlane/fastlane, had a `verson_name` typo, and uploaded
+  # nonexistent iOS/gem assets. Rewritten to build the real split-per-abi
+  # Hibiki APKs and (optionally) publish them to this repo. The primary deploy
+  # path is GitHub Actions (.github/workflows/release.yml); this lane is a
+  # local convenience and is NOT wired into CI.
+  desc "Build split-per-abi release APKs and publish a GitHub release."
   lane :apk do
-    verson_name = flutter_version()["version_name"];
+    version_name = flutter_version()["version_name"]
     sh("flutter", "clean")
-    sh("flutter", "build", "apk", "--split-per-abi")
+    sh("flutter", "build", "apk", "--release", "--split-per-abi")
 
-    github_release = set_github_release(
-      repository_name: "fastlane/fastlane",
+    set_github_release(
+      repository_name: "hdjsadgfwtg/hibiki",
       api_token: ENV["GITHUB_TOKEN"],
-      name: "Super New actions",
-      tag_name: verson_name,
-      description: (File.read("changelog") rescue "No changelog provided"),
-      commitish: "master",
-      upload_assets: ["example_integration.ipa", "./pkg/built.gem"]
+      name: "Hibiki #{version_name}",
+      tag_name: version_name,
+      description: (File.read("../../CHANGELOG.md") rescue "No changelog provided"),
+      commitish: "main",
+      upload_assets: Dir["../../build/app/outputs/flutter-apk/*.apk"]
     )
   end
 end

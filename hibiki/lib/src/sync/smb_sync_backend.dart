@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
+import 'package:hibiki/src/sync/sync_utils.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 import 'package:hibiki/src/sync/webdav_ops.dart';
@@ -142,10 +143,11 @@ class SmbSyncBackend extends SyncBackend {
         .map((e) => DriveFile(id: e.href, name: e.displayName))
         .toList();
 
+    // HBK-AUDIT-085: route through the single canonical matcher in sync_utils.
     return DriveSyncFiles(
-      progress: WebDavOps.findByPrefix(files, 'progress_'),
-      statistics: WebDavOps.findByPrefix(files, 'statistics_'),
-      audioBook: WebDavOps.findByPrefix(files, 'audioBook_'),
+      progress: findSyncFileByPrefix(files, 'progress_'),
+      statistics: findSyncFileByPrefix(files, 'statistics_'),
+      audioBook: findSyncFileByPrefix(files, 'audioBook_'),
     );
   }
 

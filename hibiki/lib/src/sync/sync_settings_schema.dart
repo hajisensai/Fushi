@@ -12,7 +12,6 @@ import 'package:hibiki/src/settings/settings_destination.dart';
 import 'package:hibiki/src/sync/backup_service.dart';
 import 'package:hibiki/src/sync/dropbox_sync_backend.dart';
 import 'package:hibiki/src/sync/ftp_sync_backend.dart';
-import 'package:hibiki/src/sync/google_drive_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
 import 'package:hibiki/src/sync/onedrive_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
@@ -1559,9 +1558,7 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget> {
                               ? t.sync_connection_success
                               : t.sync_connection_failed,
                           style: theme.textTheme.bodySmall?.copyWith(
-                            color: ok
-                                ? Colors.green
-                                : theme.colorScheme.error,
+                            color: ok ? Colors.green : theme.colorScheme.error,
                           ),
                         ),
                   onTap: () => _addOrEditUrl(index: index),

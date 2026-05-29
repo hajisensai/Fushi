@@ -141,6 +141,10 @@ android {
                 } else {
                     newName = "${appName}_${defaultConfig.versionName}.apk"
                 }
+                // HBK-AUDIT-071: the fat-APK branch computed newName but never
+                // applied it, so the fat APK kept the default app-<type>.apk
+                // name. Assign it like the split-ABI branch does.
+                outputFileName = newName
                 output.versionCodeOverride = (100 * project.android.defaultConfig.versionCode)
             } else {
                 if (buildType == 'debug') {

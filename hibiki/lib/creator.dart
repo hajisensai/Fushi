@@ -16,7 +16,7 @@ export 'src/creator/actions/copy_to_clipboard_action.dart';
 export 'src/creator/enhancements/clear_field_enhancement.dart';
 export 'src/creator/enhancements/search_dictionary_enhancement.dart';
 export 'src/creator/enhancements/sentence_picker_enhancement.dart';
-export 'src/creator/enhancements/pick_from_stash_enhancement.dart';
+export 'src/creator/enhancements/open_stash_enhancement.dart';
 export 'src/creator/enhancements/pop_from_stash_enhancement.dart';
 export 'src/creator/enhancements/crop_image_enhancement.dart';
 export 'src/creator/enhancements/pick_image_enhancement.dart';
