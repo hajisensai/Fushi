@@ -261,6 +261,69 @@ void main() {
       }
     });
 
+    test('export then import round-trip preserves database content', () async {
+      // Source DB on disk: insert a book and a reading statistic.
+      final srcDir = await Directory.systemTemp.createTemp('backup_src_');
+      final srcDb = HibikiDatabase(srcDir.path);
+      try {
+        await srcDb.insertEpubBook(EpubBooksCompanion.insert(
+          title: 'かがみの孤城',
+          epubPath: '/fake/kagami.epub',
+          extractDir: '/fake/extract',
+          chapterCount: 12,
+          chaptersJson: '[]',
+          importedAt: DateTime.now().millisecondsSinceEpoch,
+        ));
+        await srcDb.upsertReadingStatistic(ReadingStatisticsCompanion.insert(
+          title: 'かがみの孤城',
+          dateKey: '2026-05-29',
+          charactersRead: 3456,
+          readingTimeMs: 1800000,
+          lastStatisticModified: DateTime.now().millisecondsSinceEpoch,
+        ));
+
+        final service = BackupService(
+          db: srcDb,
+          dbDirectory: srcDir.path,
+          appVersion: '3.0.0',
+        );
+        final zipPath = '${tmpDir.path}/round_trip.zip';
+        final meta = await service.exportBackup(zipPath);
+        expect(meta.bookCount, 1);
+        expect(meta.statsCount, 1);
+      } finally {
+        await srcDb.close();
+        if (srcDir.existsSync()) await srcDir.delete(recursive: true);
+      }
+
+      // Restore into a fresh directory and reopen — data must survive.
+      final dstDir = await Directory.systemTemp.createTemp('backup_dst_');
+      try {
+        await BackupService.importBackupFiles(
+          dbDirectory: dstDir.path,
+          zipPath: '${tmpDir.path}/round_trip.zip',
+        );
+
+        final restored = HibikiDatabase(dstDir.path);
+        try {
+          final books = await restored.getAllEpubBooks();
+          expect(books, hasLength(1));
+          expect(books.single.title, 'かがみの孤城');
+          expect(books.single.chapterCount, 12);
+
+          final stats = await restored.getAllReadingStatistics();
+          expect(stats, hasLength(1));
+          expect(stats.single.title, 'かがみの孤城');
+          expect(stats.single.charactersRead, 3456);
+          expect(stats.single.readingTimeMs, 1800000);
+        } finally {
+          await restored.close();
+        }
+      } finally {
+        if (dstDir.existsSync()) await dstDir.delete(recursive: true);
+      }
+    });
+
     test('validateBackup rejects oversized files', () async {
       final service = BackupService(
         db: db,
