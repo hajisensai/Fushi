@@ -129,6 +129,31 @@ cd hibiki
 flutter drive --driver=test_driver/integration_test.dart --target=integration_test/reader_dictionary_test.dart
 ```
 
+### AnkiDroid 集成测试流程
+
+AnkiDroid API（`AddContentApi` ContentProvider）的真实链路验证必须走脚本
+`ci/anki-integration-test.sh`，不要手动拼 `flutter drive`：
+
+```bash
+bash ci/anki-integration-test.sh              # 完整：装 AnkiDroid -> 建 collection -> 建 APK -> 授权安装 -> 跑测试
+bash ci/anki-integration-test.sh --skip-build # 复用已构建的 app-debug.apk
+```
+
+脚本覆盖的步骤（对应 `hibiki/integration_test/anki_integration_test.dart`）：
+`fetchConfiguration()` 返回真实 decks/note types、`isDuplicate()`、`mineEntry()` add-or-duplicate。
+
+**为什么需要独立脚本（关键约束）：** AnkiDroid API 受 *dangerous* 权限
+`com.ichi2.anki.permission.READ_WRITE_DATABASE` 管控，Android 只在用户点了
+AnkiDroid 运行时弹窗“Allow”后才授予。Hibiki 在运行时正确发起了请求
+（`AnkiChannelHandler.java` 的 `ankiDroid.requestPermission(...)`），但自动化
+`flutter drive` 每次都全新安装且无法点系统弹窗，于是 fresh-install 一律返回
+`AnkiFetchError`。脚本用 `adb install -g`（授予全部运行时权限 = 等价用户点
+Allow）预装 APK，`flutter drive` 的 `-r` 重装会**保留**该授权，从而确定性复现
+已授权状态。这是测试夹具步骤，**不是**产品代码里的绕过。
+
+`adb install -g` 不可省略：`flutter drive` 在收尾时会卸载 app，下一次运行是
+全新安装、无授权——所以每轮都要先 `-g` 预装。脚本已做幂等处理。
+
 ### 可用 DB 验证查询
 
 ```sql

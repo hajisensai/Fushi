@@ -643,9 +643,15 @@ class HibikiModalSheetFrame extends StatelessWidget {
       padding: bodyPadding ?? EdgeInsets.zero,
       child: body,
     );
-    if (!scrollable) return padded;
+    // The body is always [Flexible] so it is bounded by the sheet's height
+    // constraint rather than overflowing the Column. The only difference is who
+    // provides the scroll viewport: with [scrollable] the frame wraps it in a
+    // SingleChildScrollView; without it the caller supplies its own scroller
+    // (ListView/SingleChildScrollView) which then scrolls within the bound.
+    // Returning a non-flexible body here let a caller-scroller take its full
+    // intrinsic height and overflow on short screens (HBK-AUDIT, switch dialog).
     return Flexible(
-      child: SingleChildScrollView(child: padded),
+      child: scrollable ? SingleChildScrollView(child: padded) : padded,
     );
   }
 }
