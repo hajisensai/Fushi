@@ -560,6 +560,31 @@ void main() {
     expect(tagBar, isNot(contains('BorderRadius.circular(16)')));
   });
 
+  test('reader history action dialogs use shared MD3 dialog chrome', () {
+    final String source = File(
+      'lib/src/pages/implementations/reader_hibiki_history_page.dart',
+    ).readAsStringSync();
+    final String deleteDialog = _sectionSource(
+      source,
+      'class ReaderHistoryDeleteDialog',
+      'class _BookProfileDialog',
+    );
+    final String batchTagDialog = _sectionSource(
+      source,
+      'class _BatchTagPickerDialog',
+      'enum _BatchTagIntent',
+    );
+
+    for (final String dialogSource in <String>[
+      deleteDialog,
+      batchTagDialog,
+    ]) {
+      expect(dialogSource, contains('HibikiDialogFrame('));
+      expect(dialogSource, contains('HibikiModalSheetFrame('));
+      expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
+    }
+  });
+
   test('dictionary and popup surfaces use shared MD3 primitives', () {
     final String dictionaryManager = File(
       'lib/src/pages/implementations/dictionary_dialog_page.dart',

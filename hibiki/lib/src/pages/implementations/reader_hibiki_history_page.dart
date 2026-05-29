@@ -1523,45 +1523,49 @@ class ReaderHistoryDeleteDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
 
-    return adaptiveAlertDialog(
-      context: context,
-      titlePadding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-      contentPadding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-      actionsPadding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
-      buttonPadding: const EdgeInsets.symmetric(horizontal: 4),
-      title: Text(
-        title,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: theme.textTheme.titleMedium,
+    return HibikiDialogFrame(
+      maxWidth: 420,
+      maxHeightFactor: 0.74,
+      child: HibikiModalSheetFrame(
+        title: title,
+        leadingIcon: Icons.delete_outline,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: Text(
+          message,
+          style: tokens.type.listSubtitle,
+        ),
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: [
+            adaptiveDialogAction(
+              context: context,
+              onPressed: () => Navigator.pop(context, false),
+              child: Text(t.dialog_cancel),
+            ),
+            adaptiveDialogAction(
+              context: context,
+              isDestructiveAction: true,
+              onPressed: onConfirm,
+              child: Text(t.dialog_delete),
+            ),
+          ],
+        ),
       ),
-      content: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: double.maxFinite,
-          maxHeight: MediaQuery.of(context).size.height * 0.34,
-        ),
-        child: SingleChildScrollView(
-          child: Text(
-            message,
-            style: theme.textTheme.bodySmall,
-          ),
-        ),
-      ),
-      actions: [
-        adaptiveDialogAction(
-          context: context,
-          onPressed: () => Navigator.pop(context, false),
-          child: Text(t.dialog_cancel),
-        ),
-        adaptiveDialogAction(
-          context: context,
-          isDestructiveAction: true,
-          onPressed: onConfirm,
-          child: Text(t.dialog_delete),
-        ),
-      ],
     );
   }
 }
@@ -1910,46 +1914,83 @@ class _BatchTagPickerDialogState extends State<_BatchTagPickerDialog> {
 
   @override
   Widget build(BuildContext context) {
+    return ReaderHistoryBatchTagDialogFrame(
+      canApply: _addTagIds.isNotEmpty || _removeTagIds.isNotEmpty,
+      onApply: _apply,
+      body: ListView.builder(
+        shrinkWrap: true,
+        itemCount: widget.allTags.length,
+        itemBuilder: (_, i) {
+          final tag = widget.allTags[i];
+          return _BatchTagIntentRow(
+            tag: tag,
+            selected: _tagIntent(tag),
+            onChanged: (intent) => _setTagIntent(tag, intent),
+          );
+        },
+      ),
+    );
+  }
+}
+
+@visibleForTesting
+class ReaderHistoryBatchTagDialogFrame extends StatelessWidget {
+  const ReaderHistoryBatchTagDialogFrame({
+    required this.body,
+    required this.canApply,
+    required this.onApply,
+    super.key,
+  });
+
+  final Widget body;
+  final bool canApply;
+  final VoidCallback onApply;
+
+  @override
+  Widget build(BuildContext context) {
     final t = Translations.of(context);
-    final theme = Theme.of(context);
-    return adaptiveAlertDialog(
-      context: context,
-      titlePadding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-      contentPadding: const EdgeInsets.fromLTRB(0, 8, 0, 0),
-      actionsPadding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
-      title: Text(
-        t.batch_tag_title,
-        style: theme.textTheme.titleMedium,
-      ),
-      content: SizedBox(
-        width: double.maxFinite,
-        child: ListView.builder(
-          shrinkWrap: true,
-          itemCount: widget.allTags.length,
-          itemBuilder: (_, i) {
-            final tag = widget.allTags[i];
-            return _BatchTagIntentRow(
-              tag: tag,
-              selected: _tagIntent(tag),
-              onChanged: (intent) => _setTagIntent(tag, intent),
-            );
-          },
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
+    return HibikiDialogFrame(
+      maxWidth: 520,
+      maxHeightFactor: 0.86,
+      scrollable: false,
+      child: HibikiModalSheetFrame(
+        title: t.batch_tag_title,
+        leadingIcon: Icons.sell_outlined,
+        scrollable: true,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: body,
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: [
+            adaptiveDialogAction(
+              context: context,
+              onPressed: () => Navigator.pop(context),
+              child: Text(t.dialog_cancel),
+            ),
+            adaptiveDialogAction(
+              context: context,
+              isDefaultAction: true,
+              onPressed: canApply ? onApply : null,
+              child: Text(t.batch_tag_apply),
+            ),
+          ],
         ),
       ),
-      actions: [
-        adaptiveDialogAction(
-          context: context,
-          onPressed: () => Navigator.pop(context),
-          child: Text(t.dialog_cancel),
-        ),
-        adaptiveDialogAction(
-          context: context,
-          isDefaultAction: true,
-          onPressed:
-              _addTagIds.isEmpty && _removeTagIds.isEmpty ? null : _apply,
-          child: Text(t.batch_tag_apply),
-        ),
-      ],
     );
   }
 }
