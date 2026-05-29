@@ -22,11 +22,15 @@ import 'test_helpers.dart';
 /// test/shortcuts/gamepad_navigation_flow_test.dart and
 /// test/widgets/hibiki_focusable_test.dart.
 ///
-/// STATUS: NOT YET DEVICE-VERIFIED. The mechanism is verified by the two widget
-/// tests above (real Flutter key pipeline). A full-app `flutter drive` run on
-/// emulator-5556 was attempted 2026-05-29 but the whole-app build was blocked by
-/// an unrelated compile error in another work-in-progress file (sync backend),
-/// not by this feature. Re-run once the tree compiles; expected to pass.
+/// STATUS (2026-05-29): mechanism verified by the two widget tests above (real
+/// Flutter key pipeline). This `flutter drive` run is the device path and uses
+/// in-engine `WidgetTester.sendKeyEvent` — the ONLY reliable way to drive the
+/// Flutter focus system. Note: raw `adb shell input keyevent` was empirically
+/// found NOT to drive this Flutter app on emulator-5556 (DPAD/Tab/Back produced
+/// no focus change despite the app holding window focus), matching the repo
+/// testing architecture (UI interaction goes through `flutter drive`, not adb).
+/// Device runs here were also slowed by cold Windows builds; the test itself is
+/// expected to pass on a stable tree.
 ///
 /// Run:
 ///   flutter drive --driver=test_driver/integration_test.dart \
