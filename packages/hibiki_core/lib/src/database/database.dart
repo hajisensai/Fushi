@@ -770,6 +770,18 @@ class HibikiDatabase extends _$HibikiDatabase {
         await (delete(readerPositions)..where((t) => t.ttuBookId.equals(id)))
             .go();
         await (delete(bookmarks)..where((t) => t.ttuBookId.equals(id))).go();
+        // SRT books linked to this epub key their cues on srt_books.uid, NOT
+        // the epub book uid, so delete those cues before dropping the srt rows.
+        // (HBK-AUDIT-041 follow-up: deleteEpubBook owns the full cascade; the
+        // reader source no longer deletes these rows itself.)
+        final List<String> srtUids = await (selectOnly(srtBooks)
+              ..addColumns([srtBooks.uid])
+              ..where(srtBooks.ttuBookId.equals(id)))
+            .map((r) => r.read(srtBooks.uid)!)
+            .get();
+        for (final String uid in srtUids) {
+          await (delete(audioCues)..where((t) => t.bookUid.equals(uid))).go();
+        }
         await (delete(srtBooks)..where((t) => t.ttuBookId.equals(id))).go();
         final String bookUid = buildLegacyBookUid(id);
         await (delete(audioCues)..where((t) => t.bookUid.equals(bookUid))).go();
