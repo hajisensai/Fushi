@@ -707,6 +707,28 @@ void main() {
     expect(editDialog, isNot(contains('adaptiveAlertDialog(')));
   });
 
+  test('custom font dialogs use shared MD3 dialog chrome', () {
+    final String source = File(
+      'lib/src/pages/implementations/custom_fonts_page.dart',
+    ).readAsStringSync();
+    final String progressDialog = _sectionSource(
+      source,
+      'class CustomFontDownloadProgressDialog',
+      'class CustomFontUrlImportDialog',
+    );
+    final String urlDialog = _sectionSource(
+      source,
+      'class _CustomFontUrlImportDialogState',
+      'class _RecommendedFontsPage',
+    );
+
+    for (final String dialogSource in <String>[progressDialog, urlDialog]) {
+      expect(dialogSource, contains('HibikiDialogFrame('));
+      expect(dialogSource, contains('HibikiModalSheetFrame('));
+      expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
+    }
+  });
+
   test('MD3 review report does not reopen completed app chrome scope', () {
     final String report = File(
       '../docs/reviews/2026-05-26-project-review.md',
