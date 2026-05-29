@@ -86,4 +86,30 @@ void main() {
     expect(backend.activeBaseUrl, WebDavOps.normalizeUrl('http://lan:8765'));
     expect(backend.cachedRootFolderId, 'http://lan:8765/ttu-reader-data/');
   });
+
+  test('clearCache forces re-probe so failover works on a retry (HBK-AUDIT-157)',
+      () async {
+    final HibikiDatabase db = _testDb();
+    addTearDown(db.close);
+    final SyncRepository repo = SyncRepository(db);
+    await _seed(repo, urls: const <HibikiClientUrl>[
+      HibikiClientUrl(url: 'http://lan:8765'),
+      HibikiClientUrl(url: 'http://wan:8765'),
+    ]);
+    bool lanUp = true;
+    final HibikiClientSyncBackend backend = HibikiClientSyncBackend.withProbe(
+      (String u, String t) async => u.contains('lan') ? lanUp : true,
+    );
+
+    await backend.restoreAuth(repo);
+    await backend.ensureResolved();
+    expect(backend.activeBaseUrl, WebDavOps.normalizeUrl('http://lan:8765'));
+
+    // LAN drops mid-session; SyncManager clears the cache and retries. The
+    // session must re-probe and fail over to WAN, not stay locked on LAN.
+    lanUp = false;
+    backend.clearCache();
+    await backend.ensureResolved();
+    expect(backend.activeBaseUrl, WebDavOps.normalizeUrl('http://wan:8765'));
+  });
 }

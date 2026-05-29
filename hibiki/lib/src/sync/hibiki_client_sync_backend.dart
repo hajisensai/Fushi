@@ -397,6 +397,12 @@ class HibikiClientSyncBackend extends SyncBackend {
   void clearCache() {
     _rootFolderId = null;
     _titleToFolderId.clear();
+    // Re-probe the candidate addresses on the next op. SyncManager calls
+    // clearCache() before retrying a retryable failure; if the resolved
+    // address just went down, the retry must be free to fail over to the next
+    // one (HBK-AUDIT-157). The folder cache is cleared here too, so switching
+    // addresses is safe — no stale base-URL-coupled paths survive.
+    _sessionResolved = false;
   }
 
   @override
