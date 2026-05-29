@@ -321,69 +321,65 @@ class _DictionaryDialogPageState extends BasePageState {
         return StatefulBuilder(
           builder: (ctx, setDialogState) {
             final int downloadCount = checked.length;
-            return adaptiveAlertDialog(
-              context: ctx,
-              title: Text(t.dict_download_select_title),
+            return DictionaryDownloadSelectionDialogFrame(
               content: SizedBox(
                 width: double.maxFinite,
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _buildLanguageSelector(
-                        selectedLang: selectedLang,
-                        onChanged: (String lang) {
-                          setDialogState(() {
-                            selectedLang = lang;
-                            workingCatalog =
-                                DictionaryDownloader.catalogForLang(lang);
-                            // HBK-AUDIT-110: recompute the catalog-derived
-                            // structures only when the language (hence catalog)
-                            // actually changes.
-                            byCategory = DictionaryDownloader.byCategoryFrom(
-                                workingCatalog);
-                            recIndex = _computeRecIndices(workingCatalog);
-                            installedIndices =
-                                _computeInstalledIndices(workingCatalog);
-                            defaults =
-                                DictionaryDownloader.defaultSelectionForLang(
-                                    lang, workingCatalog);
-                            checked = Set<int>.from(
-                                defaults.difference(installedIndices));
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 8),
-                      for (final cat in DictionaryCategory.values)
-                        if (byCategory.containsKey(cat))
-                          _buildCategoryTile(
-                            cat: cat,
-                            items: byCategory[cat]!,
-                            recIndex: recIndex,
-                            checked: checked,
-                            installedIndices: installedIndices,
-                            expanded: expandedCategories.contains(cat),
-                            onExpansionChanged: (bool expanded) {
-                              setDialogState(() {
-                                if (expanded) {
-                                  expandedCategories.add(cat);
-                                } else {
-                                  expandedCategories.remove(cat);
-                                }
-                              });
-                            },
-                            onChanged: (int idx, bool val) {
-                              setDialogState(() {
-                                if (val) {
-                                  checked.add(idx);
-                                } else {
-                                  checked.remove(idx);
-                                }
-                              });
-                            },
-                          ),
-                    ],
-                  ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildLanguageSelector(
+                      selectedLang: selectedLang,
+                      onChanged: (String lang) {
+                        setDialogState(() {
+                          selectedLang = lang;
+                          workingCatalog =
+                              DictionaryDownloader.catalogForLang(lang);
+                          // HBK-AUDIT-110: recompute the catalog-derived
+                          // structures only when the language (hence catalog)
+                          // actually changes.
+                          byCategory = DictionaryDownloader.byCategoryFrom(
+                              workingCatalog);
+                          recIndex = _computeRecIndices(workingCatalog);
+                          installedIndices =
+                              _computeInstalledIndices(workingCatalog);
+                          defaults =
+                              DictionaryDownloader.defaultSelectionForLang(
+                                  lang, workingCatalog);
+                          checked = Set<int>.from(
+                              defaults.difference(installedIndices));
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    for (final cat in DictionaryCategory.values)
+                      if (byCategory.containsKey(cat))
+                        _buildCategoryTile(
+                          cat: cat,
+                          items: byCategory[cat]!,
+                          recIndex: recIndex,
+                          checked: checked,
+                          installedIndices: installedIndices,
+                          expanded: expandedCategories.contains(cat),
+                          onExpansionChanged: (bool expanded) {
+                            setDialogState(() {
+                              if (expanded) {
+                                expandedCategories.add(cat);
+                              } else {
+                                expandedCategories.remove(cat);
+                              }
+                            });
+                          },
+                          onChanged: (int idx, bool val) {
+                            setDialogState(() {
+                              if (val) {
+                                checked.add(idx);
+                              } else {
+                                checked.remove(idx);
+                              }
+                            });
+                          },
+                        ),
+                  ],
                 ),
               ),
               actions: [
@@ -540,14 +536,9 @@ class _DictionaryDialogPageState extends BasePageState {
       context: context,
       builder: (ctx) => ValueListenableBuilder<String>(
         valueListenable: progressNotifier,
-        builder: (ctx, String msg, __) => adaptiveAlertDialog(
-          context: ctx,
-          title: Text(msg),
-          content: ValueListenableBuilder<double>(
-            valueListenable: downloadProgress,
-            builder: (_, double progress, __) =>
-                LinearProgressIndicator(value: progress > 0 ? progress : null),
-          ),
+        builder: (ctx, String msg, __) => DictionaryDownloadProgressDialog(
+          message: msg,
+          progressListenable: downloadProgress,
         ),
       ),
     );
@@ -1047,6 +1038,92 @@ class DictionaryConfirmationDialog extends StatelessWidget {
           spacing: tokens.spacing.gap,
           runSpacing: tokens.spacing.gap,
           children: actions,
+        ),
+      ),
+    );
+  }
+}
+
+@visibleForTesting
+class DictionaryDownloadSelectionDialogFrame extends StatelessWidget {
+  const DictionaryDownloadSelectionDialogFrame({
+    required this.content,
+    required this.actions,
+    super.key,
+  });
+
+  final Widget content;
+  final List<Widget> actions;
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
+    return HibikiDialogFrame(
+      maxWidth: 560,
+      maxHeightFactor: 0.86,
+      scrollable: false,
+      child: HibikiModalSheetFrame(
+        title: t.dict_download_select_title,
+        leadingIcon: Icons.cloud_download_outlined,
+        scrollable: true,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: content,
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: actions,
+        ),
+      ),
+    );
+  }
+}
+
+@visibleForTesting
+class DictionaryDownloadProgressDialog extends StatelessWidget {
+  const DictionaryDownloadProgressDialog({
+    required this.message,
+    required this.progressListenable,
+    super.key,
+  });
+
+  final String message;
+  final ValueNotifier<double> progressListenable;
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
+    return HibikiDialogFrame(
+      maxWidth: 420,
+      maxHeightFactor: 0.72,
+      scrollable: false,
+      child: HibikiModalSheetFrame(
+        title: message,
+        leadingIcon: Icons.cloud_download_outlined,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: ValueListenableBuilder<double>(
+          valueListenable: progressListenable,
+          builder: (_, double progress, __) => LinearProgressIndicator(
+            value: progress > 0 ? progress : null,
+          ),
         ),
       ),
     );

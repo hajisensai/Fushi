@@ -833,6 +833,49 @@ void main() {
     }
   });
 
+  test('dictionary download dialogs use shared MD3 dialog chrome', () {
+    final String source = File(
+      'lib/src/pages/implementations/dictionary_dialog_page.dart',
+    ).readAsStringSync();
+    final String selectionFlow = _functionSource(
+      source,
+      'Future<void> _showDownloadSelectionDialog()',
+      '  Widget _buildLanguageSelector({',
+    );
+    final String progressFlow = _functionSource(
+      source,
+      'Future<void> _downloadSelectedDictionaries(',
+      '  static const _safChannel = HibikiChannels.saf;',
+    );
+    final String selectionFrame = _sectionSource(
+      source,
+      'class DictionaryDownloadSelectionDialogFrame',
+      'class DictionaryDownloadProgressDialog',
+    );
+    final String progressFrame = _sectionSource(
+      source,
+      'class DictionaryDownloadProgressDialog',
+      source.length,
+    );
+
+    expect(
+      selectionFlow,
+      contains('DictionaryDownloadSelectionDialogFrame('),
+    );
+    expect(selectionFlow, isNot(contains('adaptiveAlertDialog(')));
+    expect(progressFlow, contains('DictionaryDownloadProgressDialog('));
+    expect(progressFlow, isNot(contains('adaptiveAlertDialog(')));
+
+    for (final String dialogSource in <String>[
+      selectionFrame,
+      progressFrame,
+    ]) {
+      expect(dialogSource, contains('HibikiDialogFrame('));
+      expect(dialogSource, contains('HibikiModalSheetFrame('));
+      expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
+    }
+  });
+
   test('MD3 review report does not reopen completed app chrome scope', () {
     final String report = File(
       '../docs/reviews/2026-05-26-project-review.md',
