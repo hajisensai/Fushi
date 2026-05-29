@@ -28,6 +28,20 @@ void main() {
     expect(source, isNot(contains('BorderRadius.circular(2)')));
   });
 
+  test('in-book settings header uses theme typography without hardcoded size',
+      () {
+    final String source =
+        File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
+            .readAsStringSync();
+    final String headerSource = source.substring(
+      source.indexOf('class _InBookSettingsHeader'),
+      source.indexOf('class _InBookTocRow'),
+    );
+
+    expect(headerSource, contains('navTitleTextStyle'));
+    expect(headerSource, isNot(contains('fontSize: 17')));
+  });
+
   test('reader page opens the reader quick settings sheet', () {
     final String readerSource =
         File('lib/src/pages/implementations/reader_hibiki_page.dart')

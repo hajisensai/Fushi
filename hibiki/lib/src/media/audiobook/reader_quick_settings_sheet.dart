@@ -1629,10 +1629,7 @@ class _InBookSettingsHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool cupertino = isCupertinoPlatform(context);
     final TextStyle? titleStyle = cupertino
-        ? CupertinoTheme.of(context)
-            .textTheme
-            .navTitleTextStyle
-            .copyWith(fontSize: 17)
+        ? CupertinoTheme.of(context).textTheme.navTitleTextStyle
         : Theme.of(context).textTheme.titleMedium;
     final IconData icon =
         cupertino ? CupertinoIcons.chevron_back : Icons.arrow_back;
