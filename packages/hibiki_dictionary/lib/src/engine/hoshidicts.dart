@@ -111,16 +111,21 @@ class HoshiDictStyle {
 
 // ── conversion helpers ──────────────────────────────────────────────
 
+/// Converts a possibly-null native UTF-8 pointer to a Dart string, treating
+/// nullptr as '' so a native OOM/error path that left a string field NULL
+/// cannot crash the Dart side with a null dereference (HBK-AUDIT-032/097).
+String _utf8OrEmpty(Pointer<Utf8> p) => p == nullptr ? '' : p.toDartString();
+
 HoshiTermResult _convertTerm(FfiTermResult ffi) {
   final glossaries = <HoshiGlossaryEntry>[];
   if (ffi.glossaryCount > 0 && ffi.glossaries != nullptr) {
     for (int i = 0; i < ffi.glossaryCount; i++) {
       final g = ffi.glossaries[i];
       glossaries.add(HoshiGlossaryEntry(
-        dictName: g.dictName.toDartString(),
-        glossary: g.glossary.toDartString(),
-        definitionTags: g.definitionTags.toDartString(),
-        termTags: g.termTags.toDartString(),
+        dictName: _utf8OrEmpty(g.dictName),
+        glossary: _utf8OrEmpty(g.glossary),
+        definitionTags: _utf8OrEmpty(g.definitionTags),
+        termTags: _utf8OrEmpty(g.termTags),
       ));
     }
   }
@@ -133,11 +138,11 @@ HoshiTermResult _convertTerm(FfiTermResult ffi) {
       for (int j = 0; j < f.count; j++) {
         freqs.add(HoshiFrequency(
           value: f.values[j],
-          displayValue: f.displayValues[j].toDartString(),
+          displayValue: _utf8OrEmpty(f.displayValues[j]),
         ));
       }
       frequencies.add(HoshiFrequencyEntry(
-        dictName: f.dictName.toDartString(),
+        dictName: _utf8OrEmpty(f.dictName),
         frequencies: freqs,
       ));
     }
@@ -152,16 +157,16 @@ HoshiTermResult _convertTerm(FfiTermResult ffi) {
         positions.add(p.positions[j]);
       }
       pitches.add(HoshiPitchEntry(
-        dictName: p.dictName.toDartString(),
+        dictName: _utf8OrEmpty(p.dictName),
         pitchPositions: positions,
       ));
     }
   }
 
   return HoshiTermResult(
-    expression: ffi.expression.toDartString(),
-    reading: ffi.reading.toDartString(),
-    rules: ffi.rules.toDartString(),
+    expression: _utf8OrEmpty(ffi.expression),
+    reading: _utf8OrEmpty(ffi.reading),
+    rules: _utf8OrEmpty(ffi.rules),
     glossaries: glossaries,
     frequencies: frequencies,
     pitches: pitches,
@@ -336,16 +341,20 @@ class HoshiDicts {
         final rPtr = calloc<FfiImportResult>();
         rPtr.ref = r;
         try {
+          // Error/early-return branches in native hoshidicts_import can leave
+          // detected_type/title/error NULL; guard every conversion so a failed
+          // import reports cleanly instead of crashing on null deref
+          // (HBK-AUDIT-032).
           return HoshiImportResult(
             success: r.success != 0,
-            title: r.title.toDartString(),
+            title: _utf8OrEmpty(r.title),
             termCount: r.termCount,
             metaCount: r.metaCount,
             freqCount: r.freqCount,
             pitchCount: r.pitchCount,
             mediaCount: r.mediaCount,
-            detectedType: r.detectedType.toDartString(),
-            error: r.error.toDartString(),
+            detectedType: _utf8OrEmpty(r.detectedType),
+            error: _utf8OrEmpty(r.error),
           );
         } finally {
           _bindings!.freeImportResult(rPtr);
@@ -407,13 +416,13 @@ class HoshiDicts {
           final trace = <HoshiTransformGroup>[];
           for (int j = 0; j < src.traceCount; j++) {
             trace.add(HoshiTransformGroup(
-              name: src.trace[j].name.toDartString(),
-              description: src.trace[j].description.toDartString(),
+              name: _utf8OrEmpty(src.trace[j].name),
+              description: _utf8OrEmpty(src.trace[j].description),
             ));
           }
           results.add(HoshiLookupResult(
-            matched: src.matched.toDartString(),
-            deinflected: src.deinflected.toDartString(),
+            matched: _utf8OrEmpty(src.matched),
+            deinflected: _utf8OrEmpty(src.deinflected),
             trace: trace,
             term: _convertTerm(src.term),
             preprocessorSteps: src.preprocessorSteps,
@@ -441,8 +450,8 @@ class HoshiDicts {
   }) {
     final tp = text.toNativeUtf8(allocator: calloc);
     try {
-      final ptr = _bindings!.lookupPopupJson(
-          _handle!, tp, maxResults, scanLength, maxTerms);
+      final ptr = _bindings!
+          .lookupPopupJson(_handle!, tp, maxResults, scanLength, maxTerms);
       if (ptr == nullptr) return '[]';
       try {
         return ptr.toDartString();
@@ -463,8 +472,8 @@ class HoshiDicts {
       final styles = <HoshiDictStyle>[];
       for (int i = 0; i < r.count; i++) {
         styles.add(HoshiDictStyle(
-          dictName: r.items[i].dictName.toDartString(),
-          styles: r.items[i].styles.toDartString(),
+          dictName: _utf8OrEmpty(r.items[i].dictName),
+          styles: _utf8OrEmpty(r.items[i].styles),
         ));
       }
       return styles;
