@@ -91,6 +91,63 @@ void main() {
       expect(a, equals(b));
       expect(a.hashCode, b.hashCode);
     });
+
+    test('non-whitelisted keys survive a serialize/deserialize round-trip', () {
+      // Regression: keys outside the display whitelist (numpad, F13, media,
+      // CapsLock, …) used to serialize to a label that deserialize could not
+      // resolve, so the binding was silently dropped on the next launch. They
+      // now persist by keyId behind a '#' sentinel.
+      for (final key in <LogicalKeyboardKey>[
+        LogicalKeyboardKey.numpad1,
+        LogicalKeyboardKey.numpadEnter,
+        LogicalKeyboardKey.f13,
+        LogicalKeyboardKey.capsLock,
+        LogicalKeyboardKey.mediaPlayPause,
+      ]) {
+        final original = InputBinding(
+          key: key,
+          modifiers: {ModifierKey.ctrl},
+        );
+        final restored = InputBinding.deserialize(original.serialize());
+        expect(restored, isNotNull, reason: '${key.keyLabel} dropped');
+        expect(restored!.key, key);
+        expect(restored.modifiers, {ModifierKey.ctrl});
+      }
+    });
+
+    test('serialize keeps readable labels for whitelisted keys', () {
+      // Whitelisted keys must NOT switch to the keyId sentinel, so existing
+      // saved JSON stays valid and human-readable.
+      expect(InputBinding(key: LogicalKeyboardKey.pageDown).serialize(),
+          'PageDown');
+      expect(
+        InputBinding(
+          key: LogicalKeyboardKey.keyD,
+          modifiers: {ModifierKey.ctrl},
+        ).serialize(),
+        'Ctrl+KeyD',
+      );
+    });
+
+    test('deserialize still reads legacy label format', () {
+      // Backward compatibility: JSON saved before the keyId change used labels.
+      final b = InputBinding.deserialize('Ctrl+Shift+ArrowRight');
+      expect(b, isNotNull);
+      expect(b!.key, LogicalKeyboardKey.arrowRight);
+      expect(b.modifiers, {ModifierKey.ctrl, ModifierKey.shift});
+    });
+
+    test('displayLabel is human-readable for non-whitelisted keys', () {
+      // The persistence token may be '#<keyId>', but the UI must show a label.
+      final binding = InputBinding(key: LogicalKeyboardKey.numpad1);
+      expect(binding.serialize().startsWith('#'), isTrue);
+      expect(binding.displayLabel, LogicalKeyboardKey.numpad1.keyLabel);
+      expect(binding.displayLabel.startsWith('#'), isFalse);
+    });
+
+    test('deserialize returns null for malformed keyId token', () {
+      expect(InputBinding.deserialize('#notanumber'), isNull);
+    });
   });
 
   group('GamepadBinding', () {

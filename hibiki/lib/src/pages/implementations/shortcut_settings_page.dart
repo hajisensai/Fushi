@@ -199,7 +199,7 @@ class _ActionTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final List<String> labels = <String>[
-      ...bindings.keyboardBindings.map((InputBinding b) => b.serialize()),
+      ...bindings.keyboardBindings.map((InputBinding b) => b.displayLabel),
       ...bindings.gamepadBindings.map((GamepadBinding b) => b.button.label),
     ];
 
@@ -393,7 +393,7 @@ class _EditBindingDialogState extends State<_EditBindingDialog> {
               children: <Widget>[
                 for (int i = 0; i < _keyboard.length; i++)
                   Chip(
-                    label: Text(_keyboard[i].serialize()),
+                    label: Text(_keyboard[i].displayLabel),
                     onDeleted: () => _removeKeyboard(i),
                     deleteIconColor: themeData.colorScheme.error,
                     visualDensity: VisualDensity.compact,

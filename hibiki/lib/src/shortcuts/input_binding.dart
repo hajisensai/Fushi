@@ -159,17 +159,29 @@ class InputBinding {
     LogicalKeyboardKey.gameButtonMode: 'GameMode',
   };
 
+  List<String> get _sortedModifierLabels =>
+      (modifiers.toList()..sort((a, b) => a.index.compareTo(b.index)))
+          .map((m) => m.label)
+          .toList(growable: false);
+
+  // Persistence token for the key part. Known keys keep their human-readable
+  // label (keeps existing JSON valid and readable); any other key falls back to
+  // its stable keyId behind a '#' sentinel so it survives a save/reload round
+  // trip instead of being silently dropped on the next launch.
+  String _keyToken(LogicalKeyboardKey k) => _knownKeys[k] ?? '#${k.keyId}';
+
+  // Human-readable label for the key part, used only for display in the UI.
   String _keyLabel(LogicalKeyboardKey k) => _knownKeys[k] ?? k.keyLabel;
 
-  String serialize() {
-    final sortedMods = modifiers.toList()
-      ..sort((a, b) => a.index.compareTo(b.index));
-    final parts = <String>[
-      ...sortedMods.map((m) => m.label),
-      _keyLabel(key),
-    ];
-    return parts.join('+');
-  }
+  String serialize() => <String>[
+        ..._sortedModifierLabels,
+        _keyToken(key),
+      ].join('+');
+
+  String get displayLabel => <String>[
+        ..._sortedModifierLabels,
+        _keyLabel(key),
+      ].join('+');
 
   static InputBinding? deserialize(String s) {
     if (s.isEmpty) return null;
@@ -185,9 +197,17 @@ class InputBinding {
       }
     }
     if (keyPart == null) return null;
-    final key = _keyByLabel[keyPart];
+    final key = _resolveKeyToken(keyPart);
     if (key == null) return null;
     return InputBinding(key: key, modifiers: mods);
+  }
+
+  static LogicalKeyboardKey? _resolveKeyToken(String token) {
+    if (token.startsWith('#')) {
+      final id = int.tryParse(token.substring(1));
+      return id == null ? null : LogicalKeyboardKey(id);
+    }
+    return _keyByLabel[token];
   }
 
   @override
