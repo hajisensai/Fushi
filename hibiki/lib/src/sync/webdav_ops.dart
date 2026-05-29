@@ -22,25 +22,32 @@ class WebDavOps {
     required String baseUrl,
     required String username,
     required String password,
+    Duration connectionTimeout = const Duration(seconds: 60),
   })  : _baseUrl = baseUrl,
+        _connectionTimeout = connectionTimeout,
         _authHeader =
             'Basic ${base64Encode(utf8.encode('$username:$password'))}';
 
   final String _baseUrl;
   final String _authHeader;
+  final Duration _connectionTimeout;
   HttpClient? _httpClient;
 
   String get baseUrl => _baseUrl;
 
-  void close() {
-    _httpClient?.close();
+  /// [force] aborts in-flight connections (used by short-timeout reachability
+  /// probes so a hung connect doesn't linger; plain close only stops accepting
+  /// new requests and won't cancel a socket stuck on connect).
+  void close({bool force = false}) {
+    _httpClient?.close(force: force);
     _httpClient = null;
   }
 
   HttpClient _client() => _httpClient ??= (HttpClient()
-    // 60s applies to connection establishment only; body transfer is not
-    // time-bounded so large uploads/downloads run to completion.
-    ..connectionTimeout = const Duration(seconds: 60));
+    // connectionTimeout applies to connection establishment only; body
+    // transfer is not time-bounded so large uploads/downloads run to
+    // completion. Defaults to 60s; probes pass a short value.
+    ..connectionTimeout = _connectionTimeout);
 
   Future<HttpClientRequest> buildRequest(String method, String url) async {
     final request = await _client().openUrl(method, Uri.parse(url));

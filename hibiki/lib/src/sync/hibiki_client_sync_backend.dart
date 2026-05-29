@@ -41,6 +41,9 @@ Future<bool> _defaultHibikiProbe(String url, String token) async {
       baseUrl: WebDavOps.normalizeUrl(url),
       username: 'hibiki',
       password: token,
+      // Bound the socket connect itself (WebDavOps defaults to 60s); the outer
+      // .timeout only bounds the awaited future, not the underlying connect.
+      connectionTimeout: HibikiClientSyncBackend.probeTimeout,
     );
     await ops.testConnection().timeout(HibikiClientSyncBackend.probeTimeout);
     return true;
@@ -49,7 +52,9 @@ Future<bool> _defaultHibikiProbe(String url, String token) async {
   } catch (_) {
     return false;
   } finally {
-    ops?.close();
+    // force: abort any connect still in flight when we timed out, so an
+    // unreachable address never leaks a socket lingering up to 60s.
+    ops?.close(force: true);
   }
 }
 
