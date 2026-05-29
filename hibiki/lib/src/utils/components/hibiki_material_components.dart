@@ -1260,10 +1260,9 @@ class HibikiLogPanel extends StatelessWidget {
           child: SingleChildScrollView(
             child: SelectableText(
               log,
-              style: TextStyle(
+              style: tokens.type.metadata.copyWith(
                 color: tokens.surfaces.onSurface,
                 fontFamily: 'monospace',
-                fontSize: 12,
               ),
               selectionControls: HibikiTextSelectionControls(
                 shareAction: shareAction,
@@ -1306,7 +1305,6 @@ class HibikiEditorPanel extends StatelessWidget {
           style: tokens.type.listSubtitle.copyWith(
             color: tokens.surfaces.onSurface,
             fontFamily: 'monospace',
-            fontSize: 12,
           ),
           decoration: InputDecoration(
             border: InputBorder.none,

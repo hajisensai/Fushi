@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/utils/components/hibiki_tag.dart';
@@ -6,6 +8,15 @@ import 'widget_test_helpers.dart';
 
 void main() {
   group('HibikiTag', () {
+    test('uses design token chip radius for every rounded tag surface', () {
+      final String source =
+          File('lib/src/utils/components/hibiki_tag.dart').readAsStringSync();
+
+      expect(source, contains('tokens.radii.chipRadius'));
+      expect(
+          source, isNot(contains('BorderRadius.circular(tokens.radii.chip)')));
+    });
+
     testWidgets('renders text label', (tester) async {
       await tester.pumpWidget(buildTestApp(
         const HibikiTag(

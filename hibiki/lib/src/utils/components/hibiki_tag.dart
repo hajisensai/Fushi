@@ -86,7 +86,7 @@ class HibikiTag extends StatelessWidget {
                     child: DecoratedBox(
                       decoration: BoxDecoration(
                         color: scheme.tertiaryContainer,
-                        borderRadius: BorderRadius.circular(tokens.radii.chip),
+                        borderRadius: tokens.radii.chipRadius,
                       ),
                       child: Padding(
                         padding: EdgeInsets.symmetric(

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 
 /// App-level overlay that paints a high-contrast ring around the widget that
 /// currently holds primary focus — but ONLY in keyboard/gamepad highlight mode
@@ -53,6 +54,7 @@ class _HibikiFocusRingState extends State<HibikiFocusRing> {
   @override
   Widget build(BuildContext context) {
     final Rect? rect = _focusRect();
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final Color color = Theme.of(context).colorScheme.primary;
     return Stack(
       children: <Widget>[
@@ -63,7 +65,7 @@ class _HibikiFocusRingState extends State<HibikiFocusRing> {
             child: IgnorePointer(
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: tokens.radii.chipRadius,
                   border: Border.all(color: color, width: 2.5),
                 ),
               ),
