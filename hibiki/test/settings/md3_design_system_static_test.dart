@@ -766,6 +766,21 @@ void main() {
     }
   });
 
+  test('media item edit dialog uses shared MD3 dialog chrome', () {
+    final String source = File(
+      'lib/src/pages/implementations/media_item_edit_dialog_page.dart',
+    ).readAsStringSync();
+    final String dialogSource = _sectionSource(
+      source,
+      'class MediaItemEditDialogFrame',
+      'class MediaItemCoverOverrideField',
+    );
+
+    expect(dialogSource, contains('HibikiDialogFrame('));
+    expect(dialogSource, contains('HibikiModalSheetFrame('));
+    expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
+  });
+
   test('MD3 review report does not reopen completed app chrome scope', () {
     final String report = File(
       '../docs/reviews/2026-05-26-project-review.md',

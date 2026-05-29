@@ -179,22 +179,35 @@ class MediaItemEditDialogFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return adaptiveAlertDialog(
-      context: context,
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
+    return HibikiDialogFrame(
+      maxWidth: 440,
+      maxHeightFactor: 0.72,
+      scrollable: false,
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      contentPadding: MediaQuery.of(context).orientation == Orientation.portrait
-          ? Spacing.of(context).insets.all.big
-          : Spacing.of(context).insets.all.normal,
-      actionsPadding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-      buttonPadding: const EdgeInsets.symmetric(horizontal: 4),
-      content: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: double.maxFinite,
-          maxHeight: MediaQuery.of(context).size.height * 0.54,
+      child: HibikiModalSheetFrame(
+        scrollable: true,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.card,
+          tokens.spacing.card,
+          tokens.spacing.gap,
         ),
-        child: SingleChildScrollView(child: content),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: content,
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: actions,
+        ),
       ),
-      actions: actions,
     );
   }
 }
