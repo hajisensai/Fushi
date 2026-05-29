@@ -36,7 +36,10 @@ class WebDavOps {
     _httpClient = null;
   }
 
-  HttpClient _client() => _httpClient ??= HttpClient();
+  HttpClient _client() => _httpClient ??= (HttpClient()
+    // 60s applies to connection establishment only; body transfer is not
+    // time-bounded so large uploads/downloads run to completion.
+    ..connectionTimeout = const Duration(seconds: 60));
 
   Future<HttpClientRequest> buildRequest(String method, String url) async {
     final request = await _client().openUrl(method, Uri.parse(url));

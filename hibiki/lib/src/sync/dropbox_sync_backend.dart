@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 import 'package:hibiki/src/sync/desktop_oauth.dart';
+import 'package:hibiki/src/sync/sync_http.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/sync_utils.dart';
@@ -143,7 +144,7 @@ class DropboxSyncBackend extends SyncBackend {
     required String redirectUri,
     required SyncRepository repo,
   }) async {
-    final response = await http.post(
+    final response = await syncHttpClient.post(
       Uri.parse(_tokenEndpoint),
       headers: {'Content-Type': 'application/x-www-form-urlencoded'},
       body: {
@@ -173,7 +174,7 @@ class DropboxSyncBackend extends SyncBackend {
     // Revoke the token.
     if (_accessToken != null) {
       try {
-        await http.post(
+        await syncHttpClient.post(
           Uri.parse('$_apiBase/auth/token/revoke'),
           headers: {'Authorization': 'Bearer $_accessToken'},
         );
@@ -210,7 +211,7 @@ class DropboxSyncBackend extends SyncBackend {
       throw SyncAuthError('No refresh token available');
     }
 
-    final response = await http.post(
+    final response = await syncHttpClient.post(
       Uri.parse(_tokenEndpoint),
       headers: {'Content-Type': 'application/x-www-form-urlencoded'},
       body: {
@@ -251,7 +252,7 @@ class DropboxSyncBackend extends SyncBackend {
 
   Future<http.Response> _apiPost(
       String endpoint, Map<String, dynamic>? body) async {
-    final resp = await http.post(
+    final resp = await syncHttpClient.post(
       Uri.parse('$_apiBase$endpoint'),
       headers: _authHeaders,
       body: body != null ? jsonEncode(body) : null,
@@ -480,7 +481,7 @@ class DropboxSyncBackend extends SyncBackend {
       onError: (Object e) => request.sink.addError(e),
     );
 
-    final response = await http.Response.fromStream(await request.send());
+    final response = await http.Response.fromStream(await syncHttpClient.send(request));
     if (response.statusCode != 200) {
       throw SyncBackendError(
           'Dropbox upload failed: ${response.statusCode} ${response.body}');
@@ -501,7 +502,7 @@ class DropboxSyncBackend extends SyncBackend {
     request.headers['Authorization'] = 'Bearer $_accessToken';
     request.headers['Dropbox-API-Arg'] = apiArg;
 
-    final streamedResp = await request.send();
+    final streamedResp = await syncHttpClient.send(request);
     if (streamedResp.statusCode >= 400) {
       throw SyncBackendError(
           'Download failed: HTTP ${streamedResp.statusCode}');
@@ -601,7 +602,7 @@ class DropboxSyncBackend extends SyncBackend {
 
   Future<dynamic> _downloadFileJson(String fileId) async {
     final apiArg = jsonEncode({'path': fileId});
-    final resp = await http.post(
+    final resp = await syncHttpClient.post(
       Uri.parse('$_contentBase/files/download'),
       headers: {
         'Authorization': 'Bearer $_accessToken',
@@ -637,7 +638,7 @@ class DropboxSyncBackend extends SyncBackend {
       'mute': true,
     });
 
-    final resp = await http.post(
+    final resp = await syncHttpClient.post(
       Uri.parse('$_contentBase/files/upload'),
       headers: {
         'Authorization': 'Bearer $_accessToken',

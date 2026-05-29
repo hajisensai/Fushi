@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 import 'package:hibiki/src/sync/desktop_oauth.dart';
+import 'package:hibiki/src/sync/sync_http.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/sync_utils.dart';
@@ -139,7 +140,7 @@ class OneDriveSyncBackend extends SyncBackend {
     required String redirectUri,
     required SyncRepository repo,
   }) async {
-    final response = await http.post(
+    final response = await syncHttpClient.post(
       Uri.parse(_tokenEndpoint),
       headers: {'Content-Type': 'application/x-www-form-urlencoded'},
       body: {
@@ -197,7 +198,7 @@ class OneDriveSyncBackend extends SyncBackend {
       throw SyncAuthError('No refresh token available');
     }
 
-    final response = await http.post(
+    final response = await syncHttpClient.post(
       Uri.parse(_tokenEndpoint),
       headers: {'Content-Type': 'application/x-www-form-urlencoded'},
       body: {
@@ -237,7 +238,7 @@ class OneDriveSyncBackend extends SyncBackend {
       };
 
   Future<http.Response> _graphGet(String path) async {
-    final resp = await http.get(
+    final resp = await syncHttpClient.get(
       Uri.parse('$_apiBase$path'),
       headers: _authHeaders,
     );
@@ -247,7 +248,7 @@ class OneDriveSyncBackend extends SyncBackend {
 
   Future<http.Response> _graphPost(
       String path, Map<String, dynamic> body) async {
-    final resp = await http.post(
+    final resp = await syncHttpClient.post(
       Uri.parse('$_apiBase$path'),
       headers: _authHeaders,
       body: jsonEncode(body),
@@ -258,7 +259,7 @@ class OneDriveSyncBackend extends SyncBackend {
 
   Future<http.Response> _graphPut(String path, List<int> bytes,
       {String contentType = 'application/octet-stream'}) async {
-    final resp = await http.put(
+    final resp = await syncHttpClient.put(
       Uri.parse('$_apiBase$path'),
       headers: {
         'Authorization': 'Bearer $_accessToken',
@@ -271,7 +272,7 @@ class OneDriveSyncBackend extends SyncBackend {
   }
 
   Future<http.Response> _graphDelete(String path) async {
-    final resp = await http.delete(
+    final resp = await syncHttpClient.delete(
       Uri.parse('$_apiBase$path'),
       headers: {'Authorization': 'Bearer $_accessToken'},
     );
@@ -497,7 +498,7 @@ class OneDriveSyncBackend extends SyncBackend {
       onError: (Object e) => request.sink.addError(e),
     );
 
-    final response = await http.Response.fromStream(await request.send());
+    final response = await http.Response.fromStream(await syncHttpClient.send(request));
     _checkResponse(response, 'PUT upload $fileName');
   }
 
@@ -516,7 +517,7 @@ class OneDriveSyncBackend extends SyncBackend {
     }
 
     final request = http.Request('GET', Uri.parse(downloadUrl));
-    final streamedResp = await request.send();
+    final streamedResp = await syncHttpClient.send(request);
     if (streamedResp.statusCode >= 400) {
       throw SyncBackendError(
           'Download failed: HTTP ${streamedResp.statusCode}');
@@ -596,7 +597,7 @@ class OneDriveSyncBackend extends SyncBackend {
     String? url = '$_apiBase$firstPath';
 
     while (url != null) {
-      final resp = await http.get(Uri.parse(url), headers: _authHeaders);
+      final resp = await syncHttpClient.get(Uri.parse(url), headers: _authHeaders);
       _checkResponse(resp, 'GET $firstPath');
       final json = jsonDecode(resp.body) as Map<String, dynamic>;
       items.addAll((json['value'] as List).cast<Map<String, dynamic>>());
@@ -614,7 +615,7 @@ class OneDriveSyncBackend extends SyncBackend {
       throw SyncBackendError('No download URL for item $fileId');
     }
 
-    final resp = await http.get(Uri.parse(downloadUrl));
+    final resp = await syncHttpClient.get(Uri.parse(downloadUrl));
     if (resp.statusCode >= 400) {
       throw SyncBackendError('Download failed: HTTP ${resp.statusCode}');
     }
