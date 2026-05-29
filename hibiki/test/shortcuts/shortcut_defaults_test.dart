@@ -62,6 +62,37 @@ void main() {
     });
 
     test(
+        'iOS defaults cover all actions and match the mobile (android) mapping',
+        () {
+      // iOS routes to Cupertino but mounts the same shortcut-wired pages, and
+      // forPlatform maps both iOS and android to the _mobile profile, so their
+      // default bindings must be identical for every action.
+      final ios = ShortcutDefaults.forPlatform(TargetPlatform.iOS);
+      final android = ShortcutDefaults.forPlatform(TargetPlatform.android);
+      for (final action in ShortcutAction.values) {
+        expect(ios.containsKey(action), isTrue,
+            reason: 'Missing iOS default for ${action.key}');
+        final ShortcutBindingSet iosSet = ios[action]!;
+        final ShortcutBindingSet androidSet = android[action]!;
+        expect(
+          iosSet.keyboardBindings.map((b) => b.serialize()).toList(),
+          androidSet.keyboardBindings.map((b) => b.serialize()).toList(),
+          reason: 'iOS keyboard bindings differ from android for ${action.key}',
+        );
+        expect(
+          iosSet.gamepadBindings.map((b) => b.serialize()).toList(),
+          androidSet.gamepadBindings.map((b) => b.serialize()).toList(),
+          reason: 'iOS gamepad bindings differ from android for ${action.key}',
+        );
+      }
+    });
+
+    test('iOS home actions have empty keyboard bindings (mobile profile)', () {
+      final ios = ShortcutDefaults.forPlatform(TargetPlatform.iOS);
+      expect(ios[ShortcutAction.homeTabBooks]!.keyboardBindings, isEmpty);
+    });
+
+    test(
         'globalBack has no gamepad binding by default (avoids Android B=back double-trigger)',
         () {
       final win = ShortcutDefaults.forPlatform(TargetPlatform.windows);
@@ -76,6 +107,8 @@ void main() {
         TargetPlatform.windows,
         TargetPlatform.macOS,
         TargetPlatform.android,
+        TargetPlatform.iOS,
+        TargetPlatform.linux,
       ]) {
         final defaults = ShortcutDefaults.forPlatform(platform);
         expect(defaults[ShortcutAction.audiobookNextSentence]!.gamepadBindings,
