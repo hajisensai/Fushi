@@ -1089,7 +1089,6 @@
     "reverse_navigation_bar": "Reverse navigation bar",
     "sync_backend_onedrive": "OneDrive",
     "sync_backend_dropbox": "Dropbox",
-    "sync_backend_box": "Box",
     "sync_backend_ftp": "FTP",
     "sync_backend_sftp": "SFTP",
     "sync_backend_smb": "SMB/CIFS",
@@ -1143,5 +1142,6 @@
     "shortcut_keyboard": "Keyboard",
     "shortcut_gamepad": "Gamepad",
     "shortcut_none": "None",
-    "shortcut_clear": "Clear"
+    "shortcut_clear": "Clear",
+    "shortcut_stop_capture": "Stop"
 }

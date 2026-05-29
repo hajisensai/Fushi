@@ -105,7 +105,7 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
   Future<void> _editBinding(ShortcutAction action) async {
     final ShortcutBindingSet? result = await showAppDialog<ShortcutBindingSet>(
       context: context,
-      builder: (BuildContext ctx) => _EditBindingDialog(
+      builder: (BuildContext ctx) => ShortcutBindingEditDialog(
         action: action,
         registry: _registry,
         initial: _registry.bindingsFor(action),
@@ -236,8 +236,9 @@ class _ActionTile extends StatelessWidget {
 // Edit binding dialog
 // ---------------------------------------------------------------------------
 
-class _EditBindingDialog extends StatefulWidget {
-  const _EditBindingDialog({
+class ShortcutBindingEditDialog extends StatefulWidget {
+  const ShortcutBindingEditDialog({
+    super.key,
     required this.action,
     required this.registry,
     required this.initial,
@@ -248,10 +249,11 @@ class _EditBindingDialog extends StatefulWidget {
   final ShortcutBindingSet initial;
 
   @override
-  State<_EditBindingDialog> createState() => _EditBindingDialogState();
+  State<ShortcutBindingEditDialog> createState() =>
+      _ShortcutBindingEditDialogState();
 }
 
-class _EditBindingDialogState extends State<_EditBindingDialog> {
+class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
   late List<InputBinding> _keyboard;
   late List<GamepadBinding> _gamepad;
   String? _conflictWarning;
@@ -446,8 +448,9 @@ class _EditBindingDialogState extends State<_EditBindingDialog> {
                   Align(
                     alignment: Alignment.centerRight,
                     child: TextButton(
+                      key: const Key('shortcut_stop_capture'),
                       onPressed: _cancelCapture,
-                      child: Text(t.dialog_cancel),
+                      child: Text(t.shortcut_stop_capture),
                     ),
                   ),
                 ],
