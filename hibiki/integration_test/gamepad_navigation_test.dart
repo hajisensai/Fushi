@@ -54,9 +54,12 @@ void main() {
       LogicalKeyboardKey.arrowUp,
       LogicalKeyboardKey.arrowLeft,
     ];
+    // Bounded pumps (NOT pumpAndSettle): the live home may host a perpetual
+    // animation (sync indicator, image fade) that never settles, which would
+    // hang pumpAndSettle until its 10-minute timeout.
     for (final LogicalKeyboardKey k in dirs) {
       await tester.sendKeyEvent(k);
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 400));
       seen.add(FocusManager.instance.primaryFocus);
     }
     expect(seen.length, greaterThan(1),
@@ -68,12 +71,13 @@ void main() {
     Navigator.of(ctx).push(MaterialPageRoute<void>(
       builder: (_) => const ShortcutSettingsPage(),
     ));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 1));
     expect(find.byType(ShortcutSettingsPage), findsOneWidget,
         reason: 'a route is pushed to be popped by gamepad B');
 
     await tester.sendKeyEvent(LogicalKeyboardKey.gameButtonB);
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump(const Duration(seconds: 1));
     expect(find.byType(ShortcutSettingsPage), findsNothing,
         reason: 'gameButtonB must pop the route via HibikiPopIntent');
     expect(find.byType(HomePage), findsOneWidget);
