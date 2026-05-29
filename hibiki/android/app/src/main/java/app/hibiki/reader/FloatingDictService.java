@@ -80,10 +80,13 @@ public class FloatingDictService extends BaseFloatingService {
 
     @Override
     public void onDestroy() {
-        instanceRef = null;
+        // HBK-AUDIT-056: remove the clipboard listener FIRST so no callback can
+        // fire while super.onDestroy() tears down the views.
         if (clipboardManager != null && clipListener != null) {
             clipboardManager.removePrimaryClipChangedListener(clipListener);
+            clipListener = null;
         }
+        instanceRef = null;
         super.onDestroy();
     }
 
@@ -314,6 +317,9 @@ public class FloatingDictService extends BaseFloatingService {
         if (trimmed.isEmpty() || trimmed.equals(lastClipText)) return;
         lastClipText = trimmed;
         new Handler(Looper.getMainLooper()).post(() -> {
+            // HBK-AUDIT-056: a clip event posted before teardown can run after
+            // the views are gone; bail if the content view no longer exists.
+            if (searchInput == null) return;
             searchInput.setText(trimmed);
             triggerSearch(trimmed);
         });
@@ -350,6 +356,7 @@ public class FloatingDictService extends BaseFloatingService {
 
     private void triggerSearch(String term) {
         if (term == null || term.trim().isEmpty()) return;
+        if (resultView == null) return; // HBK-AUDIT-056: view may be torn down
         resultView.setText("Searching...");
         MainActivity.notifyFloatingDictEvent("searchTerm", term);
     }
@@ -415,12 +422,15 @@ public class FloatingDictService extends BaseFloatingService {
 
     public void setSearchText(String text) {
         if (text == null) return;
-        new Handler(Looper.getMainLooper()).post(() -> searchInput.setText(text));
+        new Handler(Looper.getMainLooper()).post(() -> {
+            if (searchInput != null) searchInput.setText(text); // HBK-AUDIT-056
+        });
     }
 
     public void onTextSelected(String text) {
         if (text == null || text.trim().isEmpty()) return;
         new Handler(Looper.getMainLooper()).post(() -> {
+            if (searchInput == null) return; // HBK-AUDIT-056
             searchInput.setText(text);
             triggerSearch(text);
         });

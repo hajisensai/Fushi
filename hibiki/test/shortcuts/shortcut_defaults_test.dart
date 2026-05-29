@@ -95,63 +95,9 @@ void main() {
     test(
         'globalBack has no gamepad binding by default (avoids Android B=back double-trigger)',
         () {
-      // Checked on android — the platform where gamepad bindings actually
-      // exist — so this proves globalBack stays gamepad-free even there.
-      final android = ShortcutDefaults.forPlatform(TargetPlatform.android);
-      final globalBack = android[ShortcutAction.globalBack]!;
+      final win = ShortcutDefaults.forPlatform(TargetPlatform.windows);
+      final globalBack = win[ShortcutAction.globalBack]!;
       expect(globalBack.gamepadBindings, isEmpty);
-    });
-
-    test('gamepadSupported is true only for android and iOS', () {
-      expect(ShortcutDefaults.gamepadSupported(TargetPlatform.android), isTrue);
-      expect(ShortcutDefaults.gamepadSupported(TargetPlatform.iOS), isTrue);
-      expect(
-          ShortcutDefaults.gamepadSupported(TargetPlatform.windows), isFalse);
-      expect(ShortcutDefaults.gamepadSupported(TargetPlatform.macOS), isFalse);
-      expect(ShortcutDefaults.gamepadSupported(TargetPlatform.linux), isFalse);
-      expect(
-          ShortcutDefaults.gamepadSupported(TargetPlatform.fuchsia), isFalse);
-    });
-
-    test('desktop & macOS platforms have zero gamepad bindings (mobile-only)',
-        () {
-      for (final platform in <TargetPlatform>[
-        TargetPlatform.windows,
-        TargetPlatform.macOS,
-        TargetPlatform.linux,
-        TargetPlatform.fuchsia,
-      ]) {
-        final defaults = ShortcutDefaults.forPlatform(platform);
-        for (final action in ShortcutAction.values) {
-          expect(defaults[action]!.gamepadBindings, isEmpty,
-              reason:
-                  '${action.key} on $platform must have no gamepad binding');
-        }
-      }
-    });
-
-    test('mobile platforms keep gamepad bindings (reader page-turn has RB/LB)',
-        () {
-      for (final platform in <TargetPlatform>[
-        TargetPlatform.android,
-        TargetPlatform.iOS,
-      ]) {
-        final defaults = ShortcutDefaults.forPlatform(platform);
-        expect(
-          defaults[ShortcutAction.readerPageForward]!
-              .gamepadBindings
-              .any((b) => b.button == GamepadButton.rb),
-          isTrue,
-          reason: 'reader page forward must keep RB on $platform',
-        );
-        expect(
-          defaults[ShortcutAction.readerPageBackward]!
-              .gamepadBindings
-              .any((b) => b.button == GamepadButton.lb),
-          isTrue,
-          reason: 'reader page backward must keep LB on $platform',
-        );
-      }
     });
 
     test(
@@ -177,8 +123,7 @@ void main() {
     test(
         'no reader-group gamepad button is owned by more than one action '
         '(no shadowed gamepad default on the reader page)', () {
-      // Gamepad defaults only exist on mobile now, so check android.
-      final defaults = ShortcutDefaults.forPlatform(TargetPlatform.android);
+      final defaults = ShortcutDefaults.forPlatform(TargetPlatform.windows);
       final seen = <GamepadButton, ShortcutAction>{};
       for (final scope in ShortcutScope.reader.coactiveScopes) {
         for (final action in ShortcutAction.actionsForScope(scope)) {

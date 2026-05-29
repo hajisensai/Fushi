@@ -78,18 +78,41 @@ public class AnkiChannelHandler {
                         } else if (ankiDroid.shouldRequestPermission()) {
                             result.success(false);
                         } else {
-                            new Handler(Looper.getMainLooper()).post(() ->
-                                result.success(checkForDuplicates(models, key, reading, readingFieldIndices)));
+                            // HBK-AUDIT-020: the dupe-check queries the AnkiDroid
+                            // ContentProvider, which can throw (provider disabled
+                            // mid-session, SecurityException, null cursor). Without
+                            // this guard the exception escaped the posted Runnable
+                            // and the Dart Future never completed (hang). Always
+                            // complete the result.
+                            new Handler(Looper.getMainLooper()).post(() -> {
+                                try {
+                                    result.success(checkForDuplicates(
+                                        models, key, reading, readingFieldIndices));
+                                } catch (Exception e) {
+                                    result.error("DUPE_CHECK_FAILED",
+                                        e.getMessage(), null);
+                                }
+                            });
                         }
                         break;
                     case "getDecks":
                         if (requirePermission(result)) {
-                            result.success(api.getDeckList());
+                            try {
+                                result.success(api.getDeckList());
+                            } catch (Exception e) {
+                                result.error("ANKI_PROVIDER_ERROR",
+                                    e.getMessage(), null);
+                            }
                         }
                         break;
                     case "getModelList":
                         if (requirePermission(result)) {
-                            result.success(api.getModelList());
+                            try {
+                                result.success(api.getModelList());
+                            } catch (Exception e) {
+                                result.error("ANKI_PROVIDER_ERROR",
+                                    e.getMessage(), null);
+                            }
                         }
                         break;
                     case "getFieldList":
@@ -97,12 +120,18 @@ public class AnkiChannelHandler {
                             result.error("MISSING_ARG",
                                 "model is required", null);
                         } else if (requirePermission(result)) {
-                            Long mid = ankiDroid.findModelIdByName(model, 1);
-                            if (mid == null) {
-                                result.error("MODEL_NOT_FOUND",
-                                    "Note type not found: " + model, null);
-                            } else {
-                                result.success(Arrays.asList(api.getFieldList(mid)));
+                            try {
+                                Long mid = ankiDroid.findModelIdByName(model, 1);
+                                if (mid == null) {
+                                    result.error("MODEL_NOT_FOUND",
+                                        "Note type not found: " + model, null);
+                                } else {
+                                    result.success(
+                                        Arrays.asList(api.getFieldList(mid)));
+                                }
+                            } catch (Exception e) {
+                                result.error("ANKI_PROVIDER_ERROR",
+                                    e.getMessage(), null);
                             }
                         }
                         break;

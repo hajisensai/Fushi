@@ -113,6 +113,18 @@ public class MainActivity extends AudioServiceActivity {
         if (ttsChannelHandler != null) {
             ttsChannelHandler.destroy();
         }
+        // HBK-AUDIT-057: the static floating-service channels are bound to this
+        // engine's messenger; clear their handlers and null them so stale
+        // notify*() calls after teardown become safe no-ops instead of
+        // targeting a dead FlutterEngine.
+        if (floatingLyricChannel != null) {
+            floatingLyricChannel.setMethodCallHandler(null);
+            floatingLyricChannel = null;
+        }
+        if (floatingDictChannel != null) {
+            floatingDictChannel.setMethodCallHandler(null);
+            floatingDictChannel = null;
+        }
         ioExecutor.shutdownNow();
         super.onDestroy();
     }
@@ -277,6 +289,31 @@ public class MainActivity extends AudioServiceActivity {
                     }
                     try {
                         File apkFile = new File(path);
+                        // HBK-AUDIT-058: only install an APK that lives in our
+                        // own cache dir (the updater downloads there); never
+                        // trust an arbitrary caller-supplied path. And ensure we
+                        // may request installs, routing the user to the system
+                        // setting otherwise instead of silently failing.
+                        String apkCanon = apkFile.getCanonicalPath();
+                        String cacheCanon = context.getCacheDir().getCanonicalPath();
+                        if (!apkCanon.startsWith(cacheCanon + File.separator)) {
+                            result.error("INVALID_PATH",
+                                "APK is not in the app cache directory", null);
+                            return;
+                        }
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                                && !context.getPackageManager()
+                                        .canRequestPackageInstalls()) {
+                            Intent settings = new Intent(
+                                Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                Uri.parse("package:" + context.getPackageName()));
+                            settings.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                            context.startActivity(settings);
+                            result.error("INSTALL_PERMISSION_REQUIRED",
+                                "Enable installing unknown apps for Hibiki, then retry",
+                                null);
+                            return;
+                        }
                         Uri apkUri = FileProvider.getUriForFile(
                                 context,
                                 BuildConfig.APPLICATION_ID + ".provider",
@@ -606,42 +643,30 @@ public class MainActivity extends AudioServiceActivity {
     }
 
     private void copyDocumentTree(DocumentFile srcDir, File destDir) throws Exception {
+        final String destCanon = destDir.getCanonicalPath();
         for (DocumentFile child : srcDir.listFiles()) {
             String name = child.getName();
             if (name == null) continue;
+            // HBK-AUDIT-015: a hostile/odd document name ('../x', 'a/b') could
+            // escape destDir (zip-slip). Reject path separators and dot names,
+            // and verify the resolved target stays under destDir.
+            if (name.contains("/") || name.contains("\\")
+                    || name.equals("..") || name.equals(".")) {
+                continue;
+            }
+            File target = new File(destDir, name);
+            if (!target.getCanonicalPath().startsWith(destCanon + File.separator)) {
+                continue;
+            }
             if (child.isDirectory()) {
-                File subDir = new File(destDir, name);
-                subDir.mkdirs();
-                copyDocumentTree(child, subDir);
+                target.mkdirs();
+                copyDocumentTree(child, target);
             } else {
-                long size = child.length();
-                if (size > 50 * 1024 * 1024) {
-                    // Large file: create a symlink-like proxy by opening a
-                    // FileDescriptor and hard-linking via /proc/self/fd.
-                    try {
-                        android.os.ParcelFileDescriptor pfd =
-                            getContentResolver().openFileDescriptor(child.getUri(), "r");
-                        if (pfd != null) {
-                            String fdPath = "/proc/self/fd/" + pfd.getFd();
-                            File destFile = new File(destDir, name);
-                            // Copy via fd path which bypasses SAF permission issues
-                            try (InputStream in = new java.io.FileInputStream(fdPath);
-                                 OutputStream out = new FileOutputStream(destFile)) {
-                                byte[] buf = new byte[65536];
-                                int len;
-                                while ((len = in.read(buf)) > 0) {
-                                    out.write(buf, 0, len);
-                                }
-                            }
-                            pfd.close();
-                        }
-                    } catch (Exception e) {
-                        // Fallback: copy via ContentResolver stream
-                        copyFile(child, new File(destDir, name));
-                    }
-                } else {
-                    copyFile(child, new File(destDir, name));
-                }
+                // HBK-AUDIT-015: removed the >50MB "/proc/self/fd symlink"
+                // special case — it copied the same bytes as the stream path
+                // (no hard-link, no SAF bypass) and silently swallowed errors.
+                // Always stream via ContentResolver.
+                copyFile(child, target);
             }
         }
     }

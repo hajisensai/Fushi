@@ -58,35 +58,12 @@ void main() {
       expect(result, ShortcutAction.homeTabBooks);
     });
 
-    test('resolveGamepad finds action by button (mobile)', () {
-      // Gamepad is mobile-only, so load the android defaults where RB is bound.
-      final mobile = HibikiShortcutRegistry()
-        ..loadDefaults(TargetPlatform.android);
-      final result = mobile.resolveGamepad(
+    test('resolveGamepad finds action by button', () {
+      final result = registry.resolveGamepad(
         GamepadButton.rb,
         scope: ShortcutScope.reader,
       );
       expect(result, ShortcutAction.readerPageForward);
-    });
-
-    test('resolveGamepad returns null on desktop even with a gamepad binding',
-        () {
-      // The windows registry from setUp reports no gamepad support. Force a
-      // gamepad binding into the bindings map and confirm resolution still
-      // short-circuits — the platform gate, not just empty defaults, is what
-      // keeps desktop gamepad-free (covers synced/persisted mobile JSON and the
-      // D-Pad↔arrow logical-key alias).
-      registry.updateBinding(
-        ShortcutAction.readerPageForward,
-        const ShortcutBindingSet(
-          gamepadBindings: [GamepadBinding(GamepadButton.rb)],
-        ),
-      );
-      expect(registry.gamepadSupported, isFalse);
-      expect(
-        registry.resolveGamepad(GamepadButton.rb, scope: ShortcutScope.reader),
-        isNull,
-      );
     });
 
     test('updateBinding replaces bindings', () {
@@ -208,12 +185,11 @@ void main() {
     });
 
     test('hasGamepadConflict detects conflict across co-active scopes', () {
-      // Gamepad defaults are mobile-only, so load android where readerPageForward
-      // owns RB. Bind audiobookPlayPause to RB; from the audiobook scope, RB must
-      // surface the reader binding as a co-active conflict.
-      final mobile = HibikiShortcutRegistry()
-        ..loadDefaults(TargetPlatform.android);
-      mobile.updateBinding(
+      // Construct the conflict explicitly rather than rely on default overlap:
+      // bind audiobookPlayPause to RB (which readerPageForward owns by default).
+      // From the audiobook scope, RB must surface the reader binding as a
+      // co-active conflict.
+      registry.updateBinding(
         ShortcutAction.audiobookPlayPause,
         const ShortcutBindingSet(
           gamepadBindings: [GamepadBinding(GamepadButton.rb)],
@@ -221,7 +197,7 @@ void main() {
       );
       const binding = GamepadBinding(GamepadButton.rb);
       expect(
-        mobile.hasGamepadConflict(
+        registry.hasGamepadConflict(
           ShortcutScope.audiobook,
           binding,
           exclude: ShortcutAction.audiobookPlayPause,

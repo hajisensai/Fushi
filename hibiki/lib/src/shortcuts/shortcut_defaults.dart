@@ -5,15 +5,6 @@ import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 class ShortcutDefaults {
   ShortcutDefaults._();
 
-  /// Gamepad is a mobile-only input modality in Hibiki: physical controllers
-  /// (and Android's gamepad→keyevent translation) only exist on Android/iOS.
-  /// Desktop embedders do not deliver gameButton* logical keys, so desktop and
-  /// macOS get keyboard shortcuts only. This is the single source of truth that
-  /// the defaults, the registry's runtime resolution, the settings UI and the
-  /// global gameButton-B pop all gate on.
-  static bool gamepadSupported(TargetPlatform platform) =>
-      platform == TargetPlatform.android || platform == TargetPlatform.iOS;
-
   static Map<ShortcutAction, ShortcutBindingSet> forPlatform(
     TargetPlatform platform,
   ) {
@@ -52,11 +43,7 @@ class ShortcutDefaults {
   static const _gDpadRight = GamepadBinding(GamepadButton.dpadRight);
   static const _gDpadLeft = GamepadBinding(GamepadButton.dpadLeft);
 
-  // Canonical full binding set: keyboard + gamepad for every action. This is
-  // the source the per-platform maps are derived from — it is NOT returned to
-  // any platform directly. Desktop/macOS strip the gamepad half; mobile keeps
-  // gamepad and (outside the reader scope) drops keyboard.
-  static final Map<ShortcutAction, ShortcutBindingSet> _canonical = {
+  static final Map<ShortcutAction, ShortcutBindingSet> _desktop = {
     ShortcutAction.readerPageForward: _kb([
       _key(LogicalKeyboardKey.pageDown),
       _key(LogicalKeyboardKey.arrowRight),
@@ -123,16 +110,6 @@ class ShortcutDefaults {
     ]),
   };
 
-  // Desktop (Windows/Linux/Fuchsia): keyboard only — gamepad is mobile-only.
-  static final Map<ShortcutAction, ShortcutBindingSet> _desktop = {
-    for (final entry in _canonical.entries)
-      entry.key: ShortcutBindingSet(
-        keyboardBindings: entry.value.keyboardBindings,
-      ),
-  };
-
-  // macOS derives from the (already gamepad-free) desktop map, swapping ctrl for
-  // the command/meta modifier on modified shortcuts.
   static final Map<ShortcutAction, ShortcutBindingSet> _macOS = {
     for (final entry in _desktop.entries)
       entry.key: ShortcutBindingSet(
@@ -145,30 +122,28 @@ class ShortcutDefaults {
           }
           return b;
         }).toList(growable: false),
+        gamepadBindings: entry.value.gamepadBindings,
       ),
   };
 
-  // Mobile (Android/iOS): keeps gamepad everywhere it exists. The reader scope
-  // also keeps its keyboard bindings (bluetooth keyboards are common while
-  // reading); home/global/audiobook expose gamepad only.
   static final Map<ShortcutAction, ShortcutBindingSet> _mobile = {
     for (final action in ShortcutAction.values)
       action: () {
-        final canonical = _canonical[action]!;
+        final desktop = _desktop[action]!;
         switch (action.scope) {
           case ShortcutScope.reader:
             return ShortcutBindingSet(
-              keyboardBindings: canonical.keyboardBindings,
-              gamepadBindings: canonical.gamepadBindings,
+              keyboardBindings: desktop.keyboardBindings,
+              gamepadBindings: desktop.gamepadBindings,
             );
           case ShortcutScope.audiobook:
             return ShortcutBindingSet(
-              gamepadBindings: canonical.gamepadBindings,
+              gamepadBindings: desktop.gamepadBindings,
             );
           case ShortcutScope.home:
           case ShortcutScope.global:
             return ShortcutBindingSet(
-              gamepadBindings: canonical.gamepadBindings,
+              gamepadBindings: desktop.gamepadBindings,
             );
         }
       }(),

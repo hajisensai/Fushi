@@ -10,20 +10,12 @@ import 'package:hibiki/src/utils/components/hibiki_focus_ring.dart';
 /// device-independent proof of the "gamepad operates everything" mechanism;
 /// the integration test exercises the same flow on a real device.
 void main() {
-  Widget appWithLayer(
-    Widget home,
-    GlobalKey<NavigatorState> navKey, {
-    bool enableGamepad = true,
-  }) {
+  Widget appWithLayer(Widget home, GlobalKey<NavigatorState> navKey) {
     return MaterialApp(
       navigatorKey: navKey,
       home: home,
       builder: (context, child) => HibikiFocusRing(
-        child: wrapWithGlobalNavigation(
-          navigatorKey: navKey,
-          enableGamepad: enableGamepad,
-          child: child!,
-        ),
+        child: wrapWithGlobalNavigation(navigatorKey: navKey, child: child!),
       ),
     );
   }
@@ -81,42 +73,5 @@ void main() {
     expect(find.text('detail'), findsNothing,
         reason: 'gameButtonB pops the route');
     expect(find.text('one'), findsOneWidget);
-  });
-
-  testWidgets('with enableGamepad:false, gameButtonB does NOT pop (desktop)',
-      (WidgetTester tester) async {
-    final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
-    final FocusNode first = FocusNode(debugLabel: 'first');
-    addTearDown(first.dispose);
-
-    await tester.pumpWidget(appWithLayer(
-      Scaffold(
-        body: ElevatedButton(
-          focusNode: first,
-          autofocus: true,
-          onPressed: () {
-            navKey.currentState!.push(MaterialPageRoute<void>(
-              builder: (_) => const Scaffold(body: Text('detail')),
-            ));
-          },
-          child: const Text('one'),
-        ),
-      ),
-      navKey,
-      enableGamepad: false,
-    ));
-    await tester.pump();
-
-    navKey.currentState!.push(MaterialPageRoute<void>(
-      builder: (_) => const Scaffold(body: Text('detail')),
-    ));
-    await tester.pumpAndSettle();
-    expect(find.text('detail'), findsOneWidget);
-
-    // No global gamepad-B mapping is installed, so B must not pop the route.
-    await tester.sendKeyEvent(LogicalKeyboardKey.gameButtonB);
-    await tester.pumpAndSettle();
-    expect(find.text('detail'), findsOneWidget,
-        reason: 'gameButtonB must be inert when gamepad is disabled');
   });
 }

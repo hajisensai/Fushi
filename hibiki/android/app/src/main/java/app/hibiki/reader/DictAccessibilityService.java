@@ -27,7 +27,8 @@ public class DictAccessibilityService extends AccessibilityService {
             if (text != null && start >= 0 && end > start && end <= text.length()) {
                 String selected = text.subSequence(start, end).toString().trim();
                 if (!selected.isEmpty()) {
-                    Log.d(TAG, "selected: " + selected);
+                    // HBK-AUDIT-014: do NOT log device-wide selected text
+                    // (privacy — this captures selections from any app).
                     svc.onTextSelected(selected);
                 }
             }

@@ -10,21 +10,10 @@ class HibikiShortcutRegistry extends ChangeNotifier {
   final Map<ShortcutAction, ShortcutBindingSet> _bindings = {};
   final Map<String, dynamic> _unknownEntries = {};
 
-  // Whether the platform the registry was last loaded for supports gamepad
-  // input. Gamepad is mobile-only; on desktop this stays false so gamepad
-  // resolution short-circuits even if persisted/synced JSON (e.g. profile
-  // bindings authored on a phone) carried gamepad entries into _bindings.
-  // The bindings themselves are kept intact (toJson round-trips them) so
-  // syncing back to a phone never loses the user's gamepad config.
-  bool _gamepadSupported = false;
-
-  bool get gamepadSupported => _gamepadSupported;
-
   ShortcutBindingSet bindingsFor(ShortcutAction action) =>
       _bindings[action] ?? const ShortcutBindingSet();
 
   void loadDefaults(TargetPlatform platform) {
-    _gamepadSupported = ShortcutDefaults.gamepadSupported(platform);
     _bindings
       ..clear()
       ..addAll(ShortcutDefaults.forPlatform(platform));
@@ -114,11 +103,6 @@ class HibikiShortcutRegistry extends ChangeNotifier {
     GamepadButton button, {
     required ShortcutScope scope,
   }) {
-    // Gamepad is mobile-only: on desktop/macOS never resolve a gamepad action,
-    // even if _bindings holds gamepad entries from synced/persisted JSON. This
-    // also defuses the D-Pad↔arrow-key logical-key alias on desktop (arrow keys
-    // would otherwise map to dpad* GamepadButtons).
-    if (!_gamepadSupported) return null;
     final target = GamepadBinding(button);
     for (final action in ShortcutAction.actionsForScope(scope)) {
       final bindings = _bindings[action];

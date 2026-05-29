@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -474,16 +473,12 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
               // observability (keyboard + gamepad), wrapping the global
               // gamepad-B back/dismiss intent. The B-button mapping is
               // mobile-only — desktop never emits gameButton* keys — so it is
-              // gated on the same predicate (driven by the real platform, NOT
-              // the user-overridable Theme.platform/Design-System) as the rest
-              // of the gamepad layer, keeping a single source of truth with the
-              // registry which is also loaded for defaultTargetPlatform.
+              // gated on the same predicate as the rest of the gamepad layer.
               child: HibikiFocusRing(
                 child: wrapWithGlobalNavigation(
                   navigatorKey: appModel.navigatorKey,
-                  enableGamepad: ShortcutDefaults.gamepadSupported(
-                    defaultTargetPlatform,
-                  ),
+                  enableGamepad:
+                      ShortcutDefaults.gamepadSupported(defaultTargetPlatform),
                   child: child!,
                 ),
               ),
