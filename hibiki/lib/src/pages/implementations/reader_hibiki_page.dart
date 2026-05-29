@@ -159,6 +159,14 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
   final FocusNode _focusNode = FocusNode();
 
+  // Focus scope for the bottom chrome (settings/audiobook bar). When a chrome
+  // control holds focus, directional keys must traverse the chrome instead of
+  // turning the page — gated in [_handleKeyEvent] via this scope's [hasFocus].
+  // This intentionally keys off chrome focus (not root focus) so page-turn keys
+  // keep working after a tap lands focus inside the WebView (HBK #1).
+  final FocusScopeNode _chromeFocusScope =
+      FocusScopeNode(debugLabel: 'readerChrome');
+
   bool get _showTopProgress =>
       _readerContentReady &&
       _progressCurrentChars != null &&
@@ -848,6 +856,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     _audiobookController?.dispose();
     _readingTimeTracker?.dispose();
     _focusNode.dispose();
+    _chromeFocusScope.dispose();
     _playStreamSub?.cancel();
     _seekStreamSub?.cancel();
     _skipNextSub?.cancel();
@@ -968,7 +977,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
                     key: ValueKey<String>('hoshi_content_ready')),
               _buildTopProgressBar(),
               buildDictionary(),
-              _buildBottomChrome(),
+              FocusScope(node: _chromeFocusScope, child: _buildBottomChrome()),
             ],
           ),
         ),
@@ -3015,6 +3024,20 @@ window.flutter_inappwebview.callHandler('spreadReady');
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
 
+    // While a bottom-chrome control holds focus, let directional traversal and
+    // Activate flow through to the framework (gamepad/keyboard operation of the
+    // chrome buttons) instead of resolving reader page-turn shortcuts. B/Escape
+    // closes the chrome and returns focus to the reading content rather than
+    // bubbling up to the global pop (which would exit the reader).
+    if (_chromeFocusScope.hasFocus) {
+      if (event.logicalKey == LogicalKeyboardKey.gameButtonB ||
+          event.logicalKey == LogicalKeyboardKey.escape) {
+        if (_showChrome) _toggleChrome();
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    }
+
     final modifiers = <ModifierKey>{};
     if (HardwareKeyboard.instance.isControlPressed) {
       modifiers.add(ModifierKey.ctrl);
@@ -3077,7 +3100,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
           clearDictionaryResult();
           return KeyEventResult.handled;
         }
-        _toggleChrome();
+        _toggleChrome(moveFocusToChrome: true);
         return KeyEventResult.handled;
       case ShortcutAction.readerToggleBookmark:
         _addBookmarkAtCurrentPosition();
@@ -3356,11 +3379,25 @@ window.flutter_inappwebview.callHandler('spreadReady');
 
   // ── Bottom Chrome ─────────────────────────────────────────────────
 
-  void _toggleChrome() {
+  void _toggleChrome({bool moveFocusToChrome = false}) {
     setState(() {
       _showChrome = !_showChrome;
     });
     _applyChromeInsets();
+    if (!_showChrome) {
+      // Chrome hidden: return focus to the reading content so directional keys
+      // resume turning the page.
+      _focusNode.requestFocus();
+    } else if (moveFocusToChrome) {
+      // Chrome shown via keyboard/gamepad: move focus into the chrome so its
+      // controls are reachable by directional navigation. The bar mounts fresh
+      // on this frame, so wait one frame before requesting focus.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_showChrome) return;
+        _chromeFocusScope.requestFocus();
+        _chromeFocusScope.nextFocus();
+      });
+    }
   }
 
   Future<void> _applyChromeInsets() async {
