@@ -117,7 +117,9 @@ class FtpSyncBackend extends SyncBackend {
           return _rootPath;
         } catch (e) {
           if (e is SyncBackendError || e is SyncAuthError) rethrow;
-          throw SyncBackendError('Failed to find/create root folder: $e');
+          _resetConnection();
+          throw SyncBackendError('Failed to find/create root folder: $e',
+              isRetryable: true);
         }
       });
 
@@ -137,7 +139,9 @@ class FtpSyncBackend extends SyncBackend {
               .toList();
         } catch (e) {
           if (e is SyncBackendError || e is SyncAuthError) rethrow;
-          throw SyncBackendError('Failed to list books: $e');
+          _resetConnection();
+          throw SyncBackendError('Failed to list books: $e',
+              isRetryable: true);
         }
       });
 
@@ -192,7 +196,9 @@ class FtpSyncBackend extends SyncBackend {
           return folderPath;
         } catch (e) {
           if (e is SyncBackendError || e is SyncAuthError) rethrow;
-          throw SyncBackendError('Failed to ensure book folder: $e');
+          _resetConnection();
+          throw SyncBackendError('Failed to ensure book folder: $e',
+              isRetryable: true);
         }
       });
 
@@ -217,7 +223,9 @@ class FtpSyncBackend extends SyncBackend {
           );
         } catch (e) {
           if (e is SyncBackendError || e is SyncAuthError) rethrow;
-          throw SyncBackendError('Failed to list sync files: $e');
+          _resetConnection();
+          throw SyncBackendError('Failed to list sync files: $e',
+              isRetryable: true);
         }
       });
 
@@ -306,7 +314,9 @@ class FtpSyncBackend extends SyncBackend {
           );
         } catch (e) {
           if (e is SyncBackendError || e is SyncAuthError) rethrow;
-          throw SyncBackendError('Failed to upload content file: $e');
+          _resetConnection();
+          throw SyncBackendError('Failed to upload content file: $e',
+              isRetryable: true);
         }
       });
 
@@ -331,7 +341,9 @@ class FtpSyncBackend extends SyncBackend {
           );
         } catch (e) {
           if (e is SyncBackendError || e is SyncAuthError) rethrow;
-          throw SyncBackendError('Failed to download content file: $e');
+          _resetConnection();
+          throw SyncBackendError('Failed to download content file: $e',
+              isRetryable: true);
         }
       });
 
@@ -346,7 +358,9 @@ class FtpSyncBackend extends SyncBackend {
           return DriveFile(id: '$folderId/$fileName', name: fileName);
         } catch (e) {
           if (e is SyncBackendError || e is SyncAuthError) rethrow;
-          throw SyncBackendError('Failed to find content file: $e');
+          _resetConnection();
+          throw SyncBackendError('Failed to find content file: $e',
+              isRetryable: true);
         }
       });
 
@@ -469,6 +483,16 @@ class FtpSyncBackend extends SyncBackend {
     await _connect();
   }
 
+  /// Drop the current connection handle without network I/O. Called when an
+  /// operation fails on a possibly-dead control socket (FTP servers close
+  /// idle connections) so the next [_ensureConnected] reconnects instead of
+  /// reusing a stale socket. Pairs with throwing a retryable error so the
+  /// SyncManager retry reconnects within the same sync.
+  void _resetConnection() {
+    _client = null;
+    _connected = false;
+  }
+
   // ── Private helpers ───────────────────────────────────────────────
 
   Future<dynamic> _downloadJson(String fileId) => _opLock.withLock(() async {
@@ -488,7 +512,9 @@ class FtpSyncBackend extends SyncBackend {
           return jsonDecode(content);
         } catch (e) {
           if (e is SyncBackendError || e is SyncAuthError) rethrow;
-          throw SyncBackendError('Failed to download JSON: $e');
+          _resetConnection();
+          throw SyncBackendError('Failed to download JSON: $e',
+              isRetryable: true);
         } finally {
           await _deleteTempFile(tmpFile);
         }
@@ -506,7 +532,8 @@ class FtpSyncBackend extends SyncBackend {
       }
     } catch (e) {
       if (e is SyncBackendError || e is SyncAuthError) rethrow;
-      throw SyncBackendError('Failed to upload JSON: $e');
+      _resetConnection();
+      throw SyncBackendError('Failed to upload JSON: $e', isRetryable: true);
     } finally {
       await _deleteTempFile(tmpFile);
     }
