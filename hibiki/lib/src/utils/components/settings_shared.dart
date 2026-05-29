@@ -529,6 +529,7 @@ class AdaptiveSettingsPickerRow<T> extends StatelessWidget {
   }
 
   Widget _buildCupertinoTrailing(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final Color labelColor = CupertinoColors.secondaryLabel.resolveFrom(
       context,
     );
@@ -547,10 +548,7 @@ class AdaptiveSettingsPickerRow<T> extends StatelessWidget {
             label,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.right,
-            style: CupertinoTheme.of(context).textTheme.textStyle.copyWith(
-                  color: labelColor,
-                  fontSize: 16,
-                ),
+            style: tokens.type.metadata.copyWith(color: labelColor),
           ),
         ),
         const SizedBox(width: 6),
@@ -793,8 +791,9 @@ class _SettingsLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool cupertino = isCupertinoPlatform(context);
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final TextStyle? titleStyle = cupertino
-        ? CupertinoTheme.of(context).textTheme.textStyle.copyWith(fontSize: 16)
+        ? tokens.type.listTitle
         : Theme.of(context).textTheme.bodyMedium;
     final Color subtitleColor = cupertino
         ? CupertinoColors.secondaryLabel.resolveFrom(context)

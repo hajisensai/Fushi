@@ -31,6 +31,7 @@ void main() {
     expect(source, isNot(contains('BorderRadius.circular(12)')));
     expect(source, isNot(contains('BorderRadius.circular(7)')));
     expect(source, isNot(contains('fontSize: 12')));
+    expect(source, isNot(contains('fontSize: 16')));
   });
 
   testWidgets('switch rows use Material switch on Android', (tester) async {
