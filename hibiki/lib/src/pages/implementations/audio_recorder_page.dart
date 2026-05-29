@@ -109,7 +109,10 @@ class _AudioRecorderDialogPageState
 
   final ValueNotifier<Duration> _positionNotifier =
       ValueNotifier<Duration>(Duration.zero);
-  final ValueNotifier<Duration?> _durationNotifier =
+  // Consumers (buildSlider/buildDurationAndPosition) always treat this as a
+  // non-null Duration, so the notifier is non-nullable and stream nulls are
+  // mapped to Duration.zero at the listener (HBK-AUDIT-107).
+  final ValueNotifier<Duration> _durationNotifier =
       ValueNotifier<Duration>(Duration.zero);
   final ValueNotifier<PlayerState?> _playerStateNotifier =
       ValueNotifier<PlayerState?>(null);
@@ -292,7 +295,7 @@ class _AudioRecorderDialogPageState
 
     if (!_initialised) {
       _durationSub = _audioPlayer.durationStream.listen((duration) {
-        _durationNotifier.value = duration;
+        _durationNotifier.value = duration ?? Duration.zero;
       });
       _positionSub = _audioPlayer.positionStream.listen((position) {
         _positionNotifier.value = position;

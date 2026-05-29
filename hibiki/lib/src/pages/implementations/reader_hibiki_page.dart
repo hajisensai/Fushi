@@ -41,6 +41,7 @@ import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/utils/misc/tts_channel.dart';
 import 'package:hibiki/src/utils/misc/volume_key_channel.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:hibiki/src/utils/misc/platform_utils.dart';
 import 'package:hibiki/src/utils/misc/hibiki_color.dart';
@@ -120,8 +121,11 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
   Timer? _saveDebounce;
   Timer? _progressPollTimer;
-  Timer? _volumeThrottleTimer;
   Timer? _contentReadyTimer;
+  // HBK-AUDIT-120: volume-key throttle uses a last-fire timestamp instead of an
+  // empty-callback Timer. The old timer-as-flag pattern obscured intent and left
+  // a stale timer gating the next press after a speed-setting change.
+  DateTime? _lastVolumeKeyTime;
   int _lastSavedSection = -1;
   double _lastSavedProgress = -1;
   int _lastProgressSection = -1;
@@ -366,9 +370,17 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   }
 
   void _onVolumeKey({required bool isUp}) {
-    if (_volumeThrottleTimer?.isActive ?? false) return;
-
     final ReaderHibikiSource src = ReaderHibikiSource.instance;
+    final int speedMs = src.volumePageTurningSpeed;
+    // HBK-AUDIT-120: throttle by elapsed time since the last accepted press.
+    // speedMs<=0 disables throttling; reading speedMs here means a speed-setting
+    // change takes effect immediately (no stale timer gating the next press).
+    if (speedMs > 0 && _lastVolumeKeyTime != null) {
+      final int elapsedMs =
+          DateTime.now().difference(_lastVolumeKeyTime!).inMilliseconds;
+      if (elapsedMs < speedMs) return;
+    }
+
     final bool inverted = src.volumePageTurningInverted;
     final bool goForward = inverted ? isUp : !isUp;
 
@@ -384,9 +396,10 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
           : ReaderNavigationDirection.backward);
     }
 
-    final int speedMs = src.volumePageTurningSpeed;
+    // HBK-AUDIT-120: record the accepted-press time so the next press is gated
+    // by elapsed time rather than an empty-body Timer.
     if (speedMs > 0) {
-      _volumeThrottleTimer = Timer(Duration(milliseconds: speedMs), () {});
+      _lastVolumeKeyTime = DateTime.now();
     }
   }
 
@@ -841,16 +854,13 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     WidgetsBinding.instance.removeObserver(this);
     _progressPollTimer?.cancel();
     _saveDebounce?.cancel();
-    _volumeThrottleTimer?.cancel();
     _contentReadyTimer?.cancel();
     VolumeKeyChannel.instance.setHandlers();
     VolumeKeyChannel.instance.setInterceptEnabled(false);
     appModel.setOverrideDictionaryTheme(null);
     appModel.setOverrideDictionaryColor(null);
-    if (_lyricsMode) {
-      _syncPositionFromCurrentCue();
-    }
-    _flushPosition();
+    // HBK-AUDIT-122: shared sync-then-flush (also used by lifecycle handler).
+    _syncAndFlushPosition();
     _flushReadingStats();
     _audiobookController?.removeListener(_onCueChanged);
     _audiobookController?.dispose();
@@ -889,7 +899,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive) {
-      _flushPosition();
+      // HBK-AUDIT-122: sync lyrics cue position before flushing so backgrounding
+      // in lyrics mode persists the current playback position, not a stale scroll.
+      _syncAndFlushPosition();
       _flushReadingStats();
     }
   }
@@ -1103,14 +1115,19 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
     if (mime == 'text/css') {
       data = _sanitizedCssCache.putIfAbsent(filePath, () {
-        final String cssText = utf8.decode(data);
+        // HBK-AUDIT-118: tolerate non-UTF-8 CSS bytes instead of throwing.
+        final String cssText = utf8.decode(data, allowMalformed: true);
         final String sanitized = ReaderResourceSanitizer.sanitizeCss(cssText);
         return Uint8List.fromList(utf8.encode(sanitized));
       });
     }
 
     if ((mime == 'text/html' || mime.contains('xhtml')) && _settings != null) {
-      String html = utf8.decode(data);
+      // HBK-AUDIT-118: legacy Japanese XHTML can be Shift_JIS/EUC-JP; strict
+      // utf8.decode throws FormatException here and the chapter fails to load.
+      // Degrade gracefully (malformed bytes -> U+FFFD) to match epub_parser's
+      // _readText contract (HBK-AUDIT-033) instead of crashing the load.
+      String html = utf8.decode(data, allowMalformed: true);
       final String styleTag = _buildStyleTag();
       const String hideUntilReady =
           '<style id="hoshi-cloak">body{visibility:hidden!important}</style>';
@@ -1611,9 +1628,21 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         final ({int chapterIndex, String? fragment})? link =
             _book?.resolveInternalLink(url);
         if (link != null) {
-          _navigateToChapterWithFragment(link.chapterIndex, link.fragment);
+          // HBK-AUDIT-038: a same-document anchor (e.g. href="#note1") resolves
+          // to the current chapter's path plus a fragment. Reloading the whole
+          // chapter just to scroll to an in-page anchor causes a visible flash
+          // and loses scroll context — jump in place instead of reloading.
+          if (link.chapterIndex == _currentChapter && link.fragment != null) {
+            _jumpToFragmentInPlace(link.fragment!);
+          } else {
+            _navigateToChapterWithFragment(link.chapterIndex, link.fragment);
+          }
           return NavigationActionPolicy.CANCEL;
         }
+        // HBK-AUDIT-038: external links (http/https/mailto) used to fall through
+        // to a blanket CANCEL and were silently swallowed. Route real external
+        // schemes to the OS handler so footnote/source links work.
+        await _openExternalUrl(url);
         return NavigationActionPolicy.CANCEL;
       },
       onLoadStop: (controller, url) async {
@@ -1745,8 +1774,8 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         source:
             'if (!window.__hoshiCssHighlightsSupported) { window.hoshiReader && window.hoshiReader.buildNodeOffsets(); }',
       );
-      if (!mounted) return;
-      await _settings!.setTheme(appModel.appThemeKey);
+      // HBK-AUDIT-117: theme persistence moved to _onThemeChanged — it is
+      // unrelated to highlight application and must not be gated on favorites.
     }
   }
 
@@ -2375,6 +2404,12 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     _displayedProgress = progress;
     _lastProgressSection = index;
     _lastProgressValue = progress;
+    // HBK-AUDIT-037: ordinary navigation does not want a fragment jump. Clear
+    // it at the start of every fragment-less navigation so a stale fragment
+    // from a prior internal-link nav can never leak into this chapter's setup
+    // script (the old post-await reset in _onChapterLoadComplete was skipped on
+    // lyrics/spread/early-return/throw paths).
+    _initialFragment = null;
     _restoreInFlight = true;
     setState(() {
       _readerContentReady = false;
@@ -2455,6 +2490,40 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     }
   }
 
+  // HBK-AUDIT-038: scroll to an in-page anchor without reloading the chapter.
+  // Used when an internal link resolves to the chapter already on screen.
+  Future<void> _jumpToFragmentInPlace(String fragment) async {
+    if (_controller == null || !_readerContentReady) return;
+    // jsonEncode produces a valid, escaped JS string literal for the fragment.
+    final String literal = jsonEncode(fragment);
+    try {
+      await _controller!.evaluateJavascript(
+        source: 'window.hoshiReader && '
+            'window.hoshiReader.jumpToFragment($literal);',
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('ReaderHibiki._jumpToFragmentInPlace', e, stack);
+      debugPrint('[ReaderHibiki] _jumpToFragmentInPlace failed: $e');
+    }
+  }
+
+  // HBK-AUDIT-038: open a genuinely external link (http/https/mailto/tel) in the
+  // OS handler instead of silently cancelling it. Non-external schemes are
+  // ignored so we never hand the OS an internal hoshi.local URL.
+  Future<void> _openExternalUrl(String url) async {
+    final Uri? uri = Uri.tryParse(url);
+    if (uri == null) return;
+    const Set<String> externalSchemes = {'http', 'https', 'mailto', 'tel'};
+    if (!externalSchemes.contains(uri.scheme)) return;
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('ReaderHibiki._openExternalUrl', e, stack);
+      debugPrint('[ReaderHibiki] _openExternalUrl failed for $url: $e');
+    }
+  }
+
   // ── Spread (two-page) support ──────────────────────────────────────
 
   Map<int, bool>? _edgeMatchResults;
@@ -2527,6 +2596,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     _displayedProgress = 0.0;
     _lastProgressSection = entry.chapterIndex;
     _lastProgressValue = 0.0;
+    // HBK-AUDIT-037: spread navigation does not want a fragment jump; clear any
+    // leftover fragment so it cannot leak into the spread setup script.
+    _initialFragment = null;
     _restoreInFlight = true;
     setState(() {
       _readerContentReady = false;
@@ -2856,10 +2928,18 @@ window.flutter_inappwebview.callHandler('spreadReady');
     if (str.isEmpty) return;
 
     final List<String> parts = str.split(',');
-    if (parts.length != 2) return;
+    if (parts.length != 2) {
+      // HBK-AUDIT-119: surface bridge format drift instead of silently no-oping.
+      debugPrint('[ReaderHibiki] _refreshProgress unexpected result: "$str"');
+      return;
+    }
     final int? current = int.tryParse(parts[0]);
     final int? total = int.tryParse(parts[1]);
-    if (current == null || total == null || total <= 0) return;
+    if (current == null || total == null || total <= 0) {
+      // HBK-AUDIT-119: unparseable / non-positive total — log so drift is visible.
+      debugPrint('[ReaderHibiki] _refreshProgress unparseable result: "$str"');
+      return;
+    }
 
     final double progress = current / total;
     _displayedProgress = progress;
@@ -2953,6 +3033,18 @@ window.flutter_inappwebview.callHandler('spreadReady');
         _debouncedSaveReaderPosition(_lastProgressSection, _lastProgressValue);
       }
     }
+  }
+
+  // HBK-AUDIT-122: in lyrics mode the persisted position must be derived from
+  // the current audio cue before flushing, otherwise a stale reader-scroll
+  // position is saved. dispose did this but didChangeAppLifecycleState did not,
+  // so backgrounding while in lyrics mode lost playback progress. Both paths
+  // now share this helper.
+  Future<void> _syncAndFlushPosition() async {
+    if (_lyricsMode) {
+      _syncPositionFromCurrentCue();
+    }
+    await _flushPosition();
   }
 
   Future<void> _flushPosition() async {
@@ -4119,6 +4211,10 @@ window.flutter_inappwebview.callHandler('spreadReady');
   }
 
   Future<void> _onThemeChanged() async {
+    // HBK-AUDIT-117: persist the reader theme here, in the theme-change flow,
+    // instead of as a hidden side effect of _applyChapterHighlights (which only
+    // ran when the chapter had favorites).
+    await _settings?.setTheme(appModel.appThemeKey);
     _syncDictionaryTheme();
     if (appModel.showFloatingLyric) {
       await _applyFloatingLyricStyle();

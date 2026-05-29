@@ -290,16 +290,11 @@ Widget buildBrightnessSelector(SettingsContext settingsContext) {
   );
 }
 
-String customFontsTitle(SettingsContext settingsContext) {
-  final List<Map<String, dynamic>> fonts =
-      settingsContext.readerSource.customFonts;
-  final int enabledCount = fonts
-      .where((Map<String, dynamic> font) => font['enabled'] as bool? ?? true)
-      .length;
-  return enabledCount > 0
-      ? '${t.custom_fonts} ($enabledCount)'
-      : t.custom_fonts;
-}
+// HBK-AUDIT-129: removed dead `customFontsTitle`. It computed a count-aware
+// title ('${t.custom_fonts} (N)') but had zero callers — the custom-fonts row
+// uses `customFontsTitlePlaceholder` (settings_schema.dart). Keeping both a
+// static placeholder and an unused dynamic title is a maintenance trap, so the
+// disconnected dynamic helper is deleted.
 
 Color _onSwatch(Color color) {
   return ThemeData.estimateBrightnessForColor(color) == Brightness.dark

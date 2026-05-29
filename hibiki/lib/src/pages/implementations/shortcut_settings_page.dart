@@ -333,8 +333,14 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
     final InputBinding binding = InputBinding(key: key, modifiers: modifiers);
 
     // Check for duplicates within the current draft.
+    // HBK-AUDIT-155: explain the abort instead of silently stopping capture
+    // (mirrors the cross-action conflict branch below). A duplicate here means
+    // the binding is already assigned to THIS action, so surface that.
     if (_keyboard.contains(binding)) {
-      setState(() => _capturing = false);
+      setState(() {
+        _capturing = false;
+        _conflictWarning = t.shortcut_conflict(s: _actionLabel(widget.action));
+      });
       return KeyEventResult.handled;
     }
 

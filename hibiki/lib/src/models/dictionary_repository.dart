@@ -8,7 +8,11 @@ import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/utils/misc/lru_cache.dart';
 
-class DictionaryRepository extends ChangeNotifier {
+/// Plain repository over the dictionary tables. It is intentionally NOT a
+/// [ChangeNotifier]: it never called notifyListeners and nothing ever
+/// subscribed to it, so the reactive base was dead theatre. AppModel pokes its
+/// own ad-hoc notifiers after mutations instead (HBK-AUDIT-065).
+class DictionaryRepository {
   DictionaryRepository(this._db, {VoidCallback? onCacheRebuild})
       : _onCacheRebuild = onCacheRebuild;
 
@@ -170,8 +174,7 @@ class DictionaryRepository extends ChangeNotifier {
   bool hasDictionaryNamed(String name) =>
       _dictionariesCache.any((d) => d.name == name);
 
-  static final RegExp _dateSuffixPattern =
-      RegExp(r'\s*\[\d{4}-\d{2}-\d{2}\]$');
+  static final RegExp _dateSuffixPattern = RegExp(r'\s*\[\d{4}-\d{2}-\d{2}\]$');
 
   /// Strips trailing date brackets: "JMdict [2026-05-17]" → "JMdict".
   static String baseName(String name) =>
@@ -267,5 +270,14 @@ class DictionaryRepository extends ChangeNotifier {
     swPersist.stop();
     debugPrint(
         '[dict-perf] persistHistory: serialize=${swSerialize}ms dbWrite=${swPersist.elapsedMilliseconds - swSerialize}ms total=${swPersist.elapsedMilliseconds}ms items=${items.length}');
+  }
+
+  /// Release in-memory caches. Replaces the inherited ChangeNotifier.dispose
+  /// that AppModel.dispose still calls (HBK-AUDIT-065).
+  void dispose() {
+    _dictionariesCache = const [];
+    _dictionaryHistoryResults.clear();
+    _dictionarySearchCache.clear();
+    _ffiLookupCache.clear();
   }
 }

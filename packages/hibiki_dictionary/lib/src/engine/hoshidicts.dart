@@ -495,6 +495,20 @@ class HoshiDicts {
         Uint8List? bytes;
         if (r.size > 0 && r.data != nullptr) {
           bytes = Uint8List.fromList(r.data.asTypedList(r.size));
+        } else if (r.size > 0 && r.data == nullptr) {
+          // HBK-AUDIT-100: native kept the real size but data is NULL — this is
+          // an allocation failure (malloc returned NULL for a large media
+          // file), NOT a genuine miss (which reports size == 0). Surface a
+          // diagnostic so OOM is distinguishable from not-found instead of
+          // collapsing both into the same silent null. The contract stays
+          // `Uint8List?` so the unguarded WebView callers keep degrading to a
+          // 404 rather than crashing; the true fix (size=0 / error flag on
+          // alloc failure) belongs in hoshidicts_ffi.cpp.
+          debugPrint(
+            '[hoshidicts] getMediaFile: native allocation failed for '
+            '"$dictName/$mediaPath" (size=${r.size}, data=null); reporting '
+            'as not-found.',
+          );
         }
         return bytes;
       } finally {

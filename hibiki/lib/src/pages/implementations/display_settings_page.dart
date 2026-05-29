@@ -248,7 +248,10 @@ class _DisplaySettingsPageState extends BasePageState {
           ],
         ),
         AdaptiveSettingsSection(
-          title: t.section_advanced_colors,
+          // HBK-AUDIT-112: this section holds reader typography toggles, not
+          // colors — use a dedicated key so future edits to the theme color
+          // section's wording can't silently change this section's title.
+          title: t.section_advanced_typography,
           children: [
             AdaptiveSettingsSwitchRow(
               title: t.ttu_text_justify,

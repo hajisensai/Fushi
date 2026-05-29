@@ -281,8 +281,12 @@ class _MaterialSettingsItem extends StatelessWidget {
         selected: <Object>{selected},
         onSelectionChanged: (Set<Object> values) async {
           if (values.isEmpty) return;
-          await (segmented.onChanged as Function)(
-              settingsContext, values.first);
+          // HBK-AUDIT-130: invoke the real SettingsValueChanged callback
+          // instead of casting to a bare `Function`. The dynamic-typed
+          // callback still accepts the selected Object, but keeping the
+          // typedef preserves the parameter contract the `as Function`
+          // bypass discarded.
+          await segmented.onChanged(settingsContext, values.first);
           settingsContext.refresh();
         },
       ),

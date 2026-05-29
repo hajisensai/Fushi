@@ -1,3 +1,5 @@
+import 'dart:collection';
+
 import 'package:flutter/material.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
@@ -27,11 +29,30 @@ class ChineseLanguage extends Language {
   static final ChineseLanguage _instance =
       ChineseLanguage._privateConstructor();
 
+  // HBK-AUDIT-099: mirror JapaneseLanguage's match-length cache so Chinese
+  // segmentation does not re-run the synchronous native FFI lookup for every
+  // repeated prefix (e.g. textToWords + wordFromIndex/getWordRange hitting the
+  // same text). Keyed on the first 20 chars with LRU eviction at 5000 entries,
+  // identical to japanese_language.dart to keep the two paths from drifting.
+  static const int _maxMatchCache = 5000;
+  static final LinkedHashMap<String, int> _matchLengthCache =
+      LinkedHashMap<String, int>();
+
   static int _lookupMatchedLength(String text) {
     if (!HoshiDicts.isInitialized) return 0;
+    final String key = text.length > 20 ? text.substring(0, 20) : text;
+    final int? cached = _matchLengthCache.remove(key);
+    if (cached != null) {
+      _matchLengthCache[key] = cached;
+      return cached;
+    }
     final results = HoshiDicts.instance.lookup(text, maxResults: 1);
-    if (results.isEmpty) return 0;
-    return results.first.matched.length;
+    final int len = results.isEmpty ? 0 : results.first.matched.length;
+    _matchLengthCache[key] = len;
+    while (_matchLengthCache.length > _maxMatchCache) {
+      _matchLengthCache.remove(_matchLengthCache.keys.first);
+    }
+    return len;
   }
 
   @override

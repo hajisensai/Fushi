@@ -13,9 +13,11 @@ import 'package:hibiki/src/sync/webdav_ops.dart';
 /// SMB-to-WebDAV bridge (e.g. `rclone serve webdav`, NAS built-in WebDAV,
 /// or any reverse proxy) and provides the resulting WebDAV endpoint URL.
 ///
-/// SMB-specific credentials (host, share, domain) are stored for display
-/// and future native SMB support. All actual I/O goes through standard
-/// WebDAV (PROPFIND / GET / PUT / MKCOL / DELETE) via [WebDavOps].
+/// This is a WebDAV-bridge-only facade: the only credentials it reads/writes
+/// are the WebDAV endpoint URL, username and password. SMB host/share/domain
+/// are NOT captured by the settings form and are never read, so they are not
+/// touched here (HBK-AUDIT-086). All actual I/O goes through standard WebDAV
+/// (PROPFIND / GET / PUT / MKCOL / DELETE) via [WebDavOps].
 class SmbSyncBackend extends SyncBackend {
   SmbSyncBackend._();
   static final SmbSyncBackend instance = SmbSyncBackend._();
@@ -55,11 +57,10 @@ class SmbSyncBackend extends SyncBackend {
     _ops?.close();
     _ops = null;
     _username = null;
-    await repo.setSmbHost(null);
-    await repo.setSmbShare(null);
+    // Only WebDAV-bridge credentials are ever set, so clear only those.
+    // host/share/domain are write-null-only ghosts; not cleared (HBK-AUDIT-086).
     await repo.setSmbUsername(null);
     await repo.setSmbPassword(null);
-    await repo.setSmbDomain(null);
     await repo.setSmbWebDavUrl(null);
   }
 
@@ -189,8 +190,8 @@ class SmbSyncBackend extends SyncBackend {
   }) async {
     if (fileId != null) await _ops!.deleteFile(fileId);
     final fileName = statisticsFileName(stats);
-    await _ops!.uploadJson(
-        folderId, fileName, stats.map((s) => s.toJson()).toList());
+    await _ops!
+        .uploadJson(folderId, fileName, stats.map((s) => s.toJson()).toList());
   }
 
   @override

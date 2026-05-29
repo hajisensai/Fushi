@@ -23,7 +23,10 @@ class EpubParser {
 
   /// Synchronous parse — safe for use in `compute()` isolates.
   static EpubBook parseSync(Uint8List bytes, String extractDir) {
-    final Archive archive = ZipDecoder().decodeBytes(bytes);
+    // HBK-AUDIT-106: verify: true enables per-entry CRC32 checks so a corrupt
+    // deflate stream surfaces as an error instead of being extracted as silent
+    // garbage (mojibake / broken images).
+    final Archive archive = ZipDecoder().decodeBytes(bytes, verify: true);
     _extractArchive(archive, extractDir);
     return parseFromExtracted(extractDir);
   }
@@ -32,7 +35,8 @@ class EpubParser {
   /// serializing large byte arrays across the isolate boundary.
   static EpubBook parseSyncFromPath(String filePath, String extractDir) {
     final Uint8List bytes = File(filePath).readAsBytesSync();
-    final Archive archive = ZipDecoder().decodeBytes(bytes);
+    // HBK-AUDIT-106: see parseSync — CRC verification on extraction.
+    final Archive archive = ZipDecoder().decodeBytes(bytes, verify: true);
     _extractArchive(archive, extractDir);
     return parseFromExtracted(extractDir);
   }
@@ -130,6 +134,12 @@ class EpubParser {
         _ensureDirectory(filePath);
       }
     }
+
+    // HBK-AUDIT-102: release the decompressed/raw byte buffers cached on each
+    // ArchiveFile (and the source InputStream views) instead of waiting for GC.
+    // For large image-heavy manga EPUBs this bounds the import-time peak heap
+    // and avoids OOM pressure inside the compute() isolate.
+    archive.clearSync();
   }
 
   // NOTE on HBK-AUDIT-034: the audit suggested only treating EXPLICIT non-file
@@ -244,8 +254,16 @@ class EpubParser {
     String extractDir,
   ) {
     final List<EpubChapter> chapters = <EpubChapter>[];
-    int index = 0;
-    for (final XmlElement itemref in opf.findAllElements('itemref')) {
+    // HBK-AUDIT-103: spineIndex must reflect the itemref's true position in the
+    // spine. The ordinal is derived from the itemref's index in the document
+    // (`asMap()`), so it increments exactly once per itemref regardless of
+    // which skip branch a malformed/non-HTML entry takes — the previous code
+    // incremented `index` on only some `continue` paths, producing
+    // inconsistent stored values.
+    final List<XmlElement> itemrefs =
+        opf.findAllElements('itemref').toList(growable: false);
+    for (int index = 0; index < itemrefs.length; index++) {
+      final XmlElement itemref = itemrefs[index];
       final String? idref = itemref.getAttribute('idref');
       if (idref == null) {
         continue;
@@ -260,12 +278,10 @@ class EpubParser {
 
       final String absPath = p.canonicalize(p.join(opfDir, item.href));
       if (!p.isWithin(p.canonicalize(extractDir), absPath)) {
-        index++;
         continue;
       }
       final File file = File(absPath);
       if (!file.existsSync()) {
-        index++;
         continue;
       }
 
@@ -293,7 +309,6 @@ class EpubParser {
         linear: linear != 'no',
         spreadProperty: spreadProperty,
       ));
-      index++;
     }
     return chapters;
   }

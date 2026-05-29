@@ -1,6 +1,7 @@
-@TestOn('windows')
-library;
-
+// HBK-AUDIT-143: the file-level @TestOn('windows') gate meant this whole file
+// was silently skipped on the project's primary platform (Android) and on CI.
+// The dialog-frame layout test is platform-independent, so it now runs
+// everywhere; only the Windows file-filter test stays gated via `testOn`.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:file_picker/src/file_picker.dart';
@@ -46,16 +47,21 @@ void main() {
     expect(find.text('Import'), findsWidgets);
   });
 
-  test('windows audio file filter includes an all files option', () {
-    final String filter =
-        FilePickerWindows().fileTypeToFileFilter(FileType.audio, null);
+  test(
+    'windows audio file filter includes an all files option',
+    () {
+      final String filter =
+          FilePickerWindows().fileTypeToFileFilter(FileType.audio, null);
 
-    expect(
-      filter,
-      'Audios (*.aac,*.ac3,*.eac3,*.flac,*.m4a,*.m4b,*.mp3,*.mp4,*.ogg,*.opus,*.wav,*.wma)\x00'
-      '*.aac;*.ac3;*.eac3;*.flac;*.m4a;*.m4b;*.mp3;*.mp4;*.ogg;*.opus;*.wav;*.wma\x00'
-      'All Files (*.*)\x00'
-      '*.*\x00\x00',
-    );
-  });
+      expect(
+        filter,
+        'Audios (*.aac,*.ac3,*.eac3,*.flac,*.m4a,*.m4b,*.mp3,*.mp4,*.ogg,*.opus,*.wav,*.wma)\x00'
+        '*.aac;*.ac3;*.eac3;*.flac;*.m4a;*.m4b;*.mp3;*.mp4;*.ogg;*.opus;*.wav;*.wma\x00'
+        'All Files (*.*)\x00'
+        '*.*\x00\x00',
+      );
+    },
+    // HBK-AUDIT-143: this assertion exercises the Windows-only file picker.
+    testOn: 'windows',
+  );
 }

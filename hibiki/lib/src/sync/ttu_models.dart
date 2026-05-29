@@ -64,9 +64,14 @@ class TtuStatistics {
   final int maxReadingSpeed;
   final int lastStatisticModified;
 
+  // HBK-AUDIT-142: required string fields use `as String?` with an empty
+  // fallback. This format is shared three-way with ッツ/Hoshi cloud APIs; a
+  // malformed/partial payload that omits a field (or a 200-but-error body)
+  // would make a bare `as String` throw a CastError that bypasses the
+  // SyncBackendError contract. Coercing to '' keeps the decode total.
   factory TtuStatistics.fromJson(Map<String, dynamic> json) => TtuStatistics(
-        title: json['title'] as String,
-        dateKey: json['dateKey'] as String,
+        title: json['title'] as String? ?? '',
+        dateKey: json['dateKey'] as String? ?? '',
         charactersRead: (json['charactersRead'] as num?)?.toInt() ?? 0,
         readingTimeSec: (json['readingTime'] as num?)?.toDouble() ?? 0,
         minReadingSpeed: (json['minReadingSpeed'] as num?)?.toInt() ?? 0,
@@ -110,8 +115,9 @@ class TtuAudioBook {
   final double playbackPositionSec;
   final int lastAudioBookModified;
 
+  // HBK-AUDIT-142: tolerant `as String?` fallback (see TtuStatistics.fromJson).
   factory TtuAudioBook.fromJson(Map<String, dynamic> json) => TtuAudioBook(
-        title: json['title'] as String,
+        title: json['title'] as String? ?? '',
         playbackPositionSec:
             (json['playbackPosition'] as num?)?.toDouble() ?? 0,
         lastAudioBookModified:

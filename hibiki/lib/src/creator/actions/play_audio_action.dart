@@ -44,70 +44,57 @@ class PlayAudioAction extends QuickAction {
   }) async {
     _audioPlayer.stop();
 
-    List<Enhancement> audioEnhancements = [
-      LocalAudioEnhancement(field: AudioField.instance),
-    ];
+    // HBK-AUDIT-083: removed dead branches. The previous code built a literal
+    // single-element `List<Enhancement>`, then checked `isEmpty` (never true)
+    // and iterated `Enhancement?` null-checking each element (a non-nullable
+    // list cannot contain null). Collapsed to the single audio enhancement
+    // this action actually previews.
+    final AudioEnhancement enhancement =
+        LocalAudioEnhancement(field: AudioField.instance);
 
-    if (audioEnhancements.isEmpty) {
-      HibikiToast.show(
-        msg: t.no_audio_enhancements,
-        toastLength: Toast.LENGTH_SHORT,
-        gravity: ToastGravity.BOTTOM,
-      );
-    }
+    final File? file = await enhancement.fetchAudio(
+      appModel: appModel,
+      context: context,
+      term: entry.word,
+      reading: entry.reading,
+    );
 
-    for (Enhancement? enhancement in audioEnhancements) {
-      if (enhancement == null) {
-        continue;
-      }
+    if (file != null) {
+      await _audioPlayer.setFilePath(file.path);
 
-      if (enhancement is AudioEnhancement) {
-        File? file = await enhancement.fetchAudio(
-          appModel: appModel,
-          context: context,
-          term: entry.word,
-          reading: entry.reading,
+      AudioSession? session;
+      if (supportsNativeAudio) {
+        session = await AudioSession.instance;
+        await session.configure(
+          const AudioSessionConfiguration(
+            avAudioSessionCategory: AVAudioSessionCategory.playback,
+            avAudioSessionCategoryOptions:
+                AVAudioSessionCategoryOptions.duckOthers,
+            avAudioSessionMode: AVAudioSessionMode.defaultMode,
+            avAudioSessionRouteSharingPolicy:
+                AVAudioSessionRouteSharingPolicy.defaultPolicy,
+            avAudioSessionSetActiveOptions: AVAudioSessionSetActiveOptions.none,
+            androidAudioAttributes: AndroidAudioAttributes(
+              contentType: AndroidAudioContentType.music,
+              usage: AndroidAudioUsage.media,
+            ),
+            androidAudioFocusGainType:
+                AndroidAudioFocusGainType.gainTransientMayDuck,
+            androidWillPauseWhenDucked: true,
+          ),
         );
 
-        if (file != null) {
-          await _audioPlayer.setFilePath(file.path);
-
-          AudioSession? session;
-          if (supportsNativeAudio) {
-            session = await AudioSession.instance;
-            await session.configure(
-              const AudioSessionConfiguration(
-                avAudioSessionCategory: AVAudioSessionCategory.playback,
-                avAudioSessionCategoryOptions:
-                    AVAudioSessionCategoryOptions.duckOthers,
-                avAudioSessionMode: AVAudioSessionMode.defaultMode,
-                avAudioSessionRouteSharingPolicy:
-                    AVAudioSessionRouteSharingPolicy.defaultPolicy,
-                avAudioSessionSetActiveOptions:
-                    AVAudioSessionSetActiveOptions.none,
-                androidAudioAttributes: AndroidAudioAttributes(
-                  contentType: AndroidAudioContentType.music,
-                  usage: AndroidAudioUsage.media,
-                ),
-                androidAudioFocusGainType:
-                    AndroidAudioFocusGainType.gainTransientMayDuck,
-                androidWillPauseWhenDucked: true,
-              ),
-            );
-
-            _noisySub?.cancel();
-            _noisySub = session.becomingNoisyEventStream.listen((event) async {
-              await _audioPlayer.stop();
-              session?.setActive(false);
-            });
-          }
-
-          session?.setActive(true);
-          await _audioPlayer.play();
+        _noisySub?.cancel();
+        _noisySub = session.becomingNoisyEventStream.listen((event) async {
+          await _audioPlayer.stop();
           session?.setActive(false);
-          return;
-        }
+        });
       }
+
+      session?.setActive(true);
+      await _audioPlayer.play();
+      session?.setActive(false);
+      return;
     }
 
     HibikiToast.show(

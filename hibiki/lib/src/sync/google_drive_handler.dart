@@ -173,11 +173,9 @@ class GoogleDriveHandler {
         try {
           await _uploadCover(api, folderId: folderId, coverData: coverData);
         } catch (e) {
-          assert(() {
-            // ignore: avoid_print
-            print('Cover upload failed: $e');
-            return true;
-          }());
+          // HBK-AUDIT-089: 与 sync 模块其余文件统一用 debugPrint，
+          // 避免 release 构建里残留 print 写平台日志。
+          debugPrint('Cover upload failed: $e');
         }
       }
 

@@ -26,7 +26,20 @@ class TtuMigration {
     List<int> allIds;
     final String? cachedIdsJson = prefs.getString(_idsKey);
     if (cachedIdsJson != null) {
-      allIds = (jsonDecode(cachedIdsJson) as List<dynamic>).cast<int>();
+      // HBK-AUDIT-104: a corrupt SharedPreferences value must not throw out of
+      // migrateIfNeeded. Decode defensively and fall back to re-reading IDB.
+      final List<int>? cached = _decodeIds(cachedIdsJson);
+      if (cached != null) {
+        allIds = cached;
+      } else {
+        debugPrint('[ttu-migration] cached ids corrupt, re-reading IDB');
+        final List<int>? ids = await TtuIdbReader.readAllBookIds(ttuServerPort);
+        if (ids == null) {
+          return 0;
+        }
+        await prefs.setString(_idsKey, jsonEncode(ids));
+        allIds = ids;
+      }
     } else {
       final List<int>? ids = await TtuIdbReader.readAllBookIds(ttuServerPort);
       if (ids == null) {
@@ -66,8 +79,18 @@ class TtuMigration {
         }
 
         final String extractDir = await EpubStorage.bookDirectory(ttuId);
-        final List<dynamic> sections = bookData['sections'] as List<dynamic>;
-        String elementHtml = bookData['elementHtml'] as String;
+        // HBK-AUDIT-104: legacy IDB fields may be missing or wrongly typed.
+        // Coerce defensively so odd shapes degrade gracefully instead of
+        // raising a hard ClassCastError.
+        final dynamic rawSections = bookData['sections'];
+        final List<dynamic> sections =
+            rawSections is List ? rawSections : const <dynamic>[];
+        final dynamic rawElementHtml = bookData['elementHtml'];
+        if (rawElementHtml is! String) {
+          debugPrint('[ttu-migration] book $ttuId: missing elementHtml, skip');
+          continue;
+        }
+        String elementHtml = rawElementHtml;
 
         final dynamic rawBlobs = bookData['blobsBase64'];
         if (rawBlobs is Map<String, dynamic> && rawBlobs.isNotEmpty) {
@@ -143,6 +166,29 @@ class TtuMigration {
     return migrated;
   }
 
+  /// HBK-AUDIT-104: defensively decode the cached ttu id list. Returns null
+  /// (rather than throwing) when the stored JSON is corrupt or contains a
+  /// non-int element, so callers can recover instead of aborting.
+  static List<int>? _decodeIds(String json) {
+    try {
+      final dynamic decoded = jsonDecode(json);
+      if (decoded is! List) return null;
+      final List<int> ids = <int>[];
+      for (final dynamic e in decoded) {
+        if (e is int) {
+          ids.add(e);
+        } else if (e is num) {
+          ids.add(e.toInt());
+        } else {
+          return null;
+        }
+      }
+      return ids;
+    } catch (_) {
+      return null;
+    }
+  }
+
   static int _writeSectionFiles(
     String extractDir,
     String elementHtml,
@@ -158,8 +204,13 @@ class TtuMigration {
 
     final List<_SectionSpan> spans = <_SectionSpan>[];
     for (int i = 0; i < sections.length; i++) {
-      final Map<String, dynamic> sec = sections[i] as Map<String, dynamic>;
-      final String ref = sec['reference'] as String? ?? '';
+      // HBK-AUDIT-104: tolerate non-map / malformed section entries.
+      final dynamic rawSec = sections[i];
+      if (rawSec is! Map) {
+        spans.add(const _SectionSpan(start: -1, end: -1));
+        continue;
+      }
+      final String ref = rawSec['reference'] as String? ?? '';
       if (ref.isEmpty) {
         spans.add(const _SectionSpan(start: -1, end: -1));
         continue;
@@ -366,8 +417,9 @@ class TtuMigration {
     final String? cachedIdsJson = prefs.getString(_idsKey);
     if (cachedIdsJson == null) return 0;
 
-    final List<int> allIds =
-        (jsonDecode(cachedIdsJson) as List<dynamic>).cast<int>();
+    // HBK-AUDIT-104: corrupt cached ids must not throw out of remediation.
+    final List<int>? allIds = _decodeIds(cachedIdsJson);
+    if (allIds == null) return 0;
 
     int remediated = 0;
     for (final int ttuId in allIds) {
@@ -398,9 +450,16 @@ class TtuMigration {
         }
 
         final int written = await _writeBlobs(existing.extractDir, rawBlobs);
-        final String rewrittenHtml =
-            _rewriteBlobRefs(bookData['elementHtml'] as String);
-        final List<dynamic> sections = bookData['sections'] as List<dynamic>;
+        // HBK-AUDIT-104: coerce required fields defensively.
+        final dynamic rawElementHtml = bookData['elementHtml'];
+        if (rawElementHtml is! String) {
+          await prefs.setBool(blobFlag, true);
+          continue;
+        }
+        final String rewrittenHtml = _rewriteBlobRefs(rawElementHtml);
+        final dynamic rawSections = bookData['sections'];
+        final List<dynamic> sections =
+            rawSections is List ? rawSections : const <dynamic>[];
         _writeSectionFiles(existing.extractDir, rewrittenHtml, sections);
 
         await prefs.setBool(blobFlag, true);
@@ -418,9 +477,11 @@ class TtuMigration {
   static String? _buildTocJson(List<dynamic> sections, int actualChapters) {
     final List<Map<String, String?>> entries = <Map<String, String?>>[];
     for (int i = 0; i < sections.length && i < actualChapters; i++) {
-      final Map<String, dynamic> sec = sections[i] as Map<String, dynamic>;
-      final String label = sec['label'] as String? ?? '';
-      final String parentChapter = sec['parentChapter'] as String? ?? '';
+      // HBK-AUDIT-104: tolerate non-map / malformed section entries.
+      final dynamic rawSec = sections[i];
+      if (rawSec is! Map) continue;
+      final String label = rawSec['label'] as String? ?? '';
+      final String parentChapter = rawSec['parentChapter'] as String? ?? '';
       if (label.isEmpty || parentChapter.isNotEmpty) continue;
       entries.add(<String, String?>{
         'title': label,
@@ -439,8 +500,9 @@ class TtuMigration {
     final String? cachedIdsJson = prefs.getString(_idsKey);
     if (cachedIdsJson == null) return 0;
 
-    final List<int> allIds =
-        (jsonDecode(cachedIdsJson) as List<dynamic>).cast<int>();
+    // HBK-AUDIT-104: corrupt cached ids must not throw out of remediation.
+    final List<int>? allIds = _decodeIds(cachedIdsJson);
+    if (allIds == null) return 0;
 
     int remediated = 0;
     for (final int ttuId in allIds) {
@@ -455,7 +517,10 @@ class TtuMigration {
         );
         if (bookData == null) continue;
 
-        final List<dynamic> sections = bookData['sections'] as List<dynamic>;
+        // HBK-AUDIT-104: coerce sections defensively.
+        final dynamic rawSections = bookData['sections'];
+        final List<dynamic> sections =
+            rawSections is List ? rawSections : const <dynamic>[];
         final String? tocJson = _buildTocJson(sections, existing.chapterCount);
         if (tocJson == null) continue;
 

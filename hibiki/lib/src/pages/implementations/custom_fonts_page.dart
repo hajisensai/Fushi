@@ -13,6 +13,54 @@ import 'package:path/path.dart' as p;
 
 const _fontExtensions = {'.ttf', '.otf', '.ttc', '.woff', '.woff2'};
 
+// HBK-AUDIT-116: typed model for a managed font entry. Replaces the untyped
+// `Map<String, dynamic>` that was poked with scattered `as` casts. Parsing a
+// persisted map is now confined to [CustomFontEntry.fromMap], so a malformed
+// stored value (e.g. `enabled` written as int) degrades gracefully here instead
+// of throwing a CastError at a random access site.
+class CustomFontEntry {
+  const CustomFontEntry({
+    required this.name,
+    required this.path,
+    required this.enabled,
+  });
+
+  /// Display name of the font. Doubles as the CSS family for system fonts.
+  final String name;
+
+  /// Absolute path to the imported font file; `null` for system fonts.
+  final String? path;
+
+  /// Whether this font is active in the reader.
+  final bool enabled;
+
+  /// True when this entry references an imported file (vs a system font).
+  bool get isFile => path != null;
+
+  factory CustomFontEntry.fromMap(Map<String, dynamic> map) {
+    final Object? rawName = map['name'];
+    final Object? rawPath = map['path'];
+    final Object? rawEnabled = map['enabled'];
+    return CustomFontEntry(
+      name: rawName is String ? rawName : rawName?.toString() ?? '',
+      path: rawPath is String ? rawPath : null,
+      enabled: rawEnabled is bool ? rawEnabled : true,
+    );
+  }
+
+  Map<String, dynamic> toMap() => <String, dynamic>{
+        'name': name,
+        'path': path,
+        'enabled': enabled,
+      };
+
+  CustomFontEntry copyWith({bool? enabled}) => CustomFontEntry(
+        name: name,
+        path: path,
+        enabled: enabled ?? this.enabled,
+      );
+}
+
 class _RecommendedFont {
   _RecommendedFont({
     required this.name,
@@ -354,7 +402,12 @@ class CustomFontsPage extends BasePage {
 class _CustomFontsPageState extends BasePageState {
   ReaderSettings? _settings;
 
-  List<Map<String, dynamic>> _fonts = [];
+  // HBK-AUDIT-116: typed in-memory model; converted to/from the persisted
+  // `List<Map<String, dynamic>>` only at the ReaderSettings boundary below.
+  List<CustomFontEntry> _fonts = [];
+
+  static List<CustomFontEntry> _entriesFromSettings(ReaderSettings settings) =>
+      settings.customFonts.map(CustomFontEntry.fromMap).toList();
 
   @override
   void initState() {
@@ -365,16 +418,16 @@ class _CustomFontsPageState extends BasePageState {
       rs.refreshFromDb().then((_) {
         ReaderHibikiSource.readerSettings = rs;
         if (!mounted) return;
-        setState(() => _fonts = rs.customFonts);
+        setState(() => _fonts = _entriesFromSettings(rs));
       });
       _settings = rs;
     } else {
-      _fonts = _settings!.customFonts;
+      _fonts = _entriesFromSettings(_settings!);
     }
   }
 
   Future<void> _save() async {
-    await _settings!.setCustomFonts(_fonts);
+    await _settings!.setCustomFonts(_fonts.map((e) => e.toMap()).toList());
   }
 
   Directory get _fontsDir {
@@ -433,12 +486,11 @@ class _CustomFontsPageState extends BasePageState {
     final destPath = p.join(
         _fontsDir.path, '${name}_${DateTime.now().millisecondsSinceEpoch}$ext');
     await srcFile.copy(destPath);
+    final entry = CustomFontEntry(name: name, path: destPath, enabled: true);
     if (mounted) {
-      setState(() {
-        _fonts.add({'name': name, 'path': destPath, 'enabled': true});
-      });
+      setState(() => _fonts.add(entry));
     } else {
-      _fonts.add({'name': name, 'path': destPath, 'enabled': true});
+      _fonts.add(entry);
     }
     return 1;
   }
@@ -539,13 +591,12 @@ class _CustomFontsPageState extends BasePageState {
           '${overrideName.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_')}_${DateTime.now().millisecondsSinceEpoch}$ext',
         );
         File(destPath).writeAsBytesSync(entry.content as List<int>);
+        final fontEntry =
+            CustomFontEntry(name: overrideName, path: destPath, enabled: true);
         if (mounted) {
-          setState(() {
-            _fonts
-                .add({'name': overrideName, 'path': destPath, 'enabled': true});
-          });
+          setState(() => _fonts.add(fontEntry));
         } else {
-          _fonts.add({'name': overrideName, 'path': destPath, 'enabled': true});
+          _fonts.add(fontEntry);
         }
         return 1;
       }
@@ -557,12 +608,12 @@ class _CustomFontsPageState extends BasePageState {
         final ext = p.extension(entry.name);
         final destPath = p.join(_fontsDir.path, '${baseName}_$ts$ext');
         File(destPath).writeAsBytesSync(entry.content as List<int>);
+        final fontEntry =
+            CustomFontEntry(name: baseName, path: destPath, enabled: true);
         if (mounted) {
-          setState(() {
-            _fonts.add({'name': baseName, 'path': destPath, 'enabled': true});
-          });
+          setState(() => _fonts.add(fontEntry));
         } else {
-          _fonts.add({'name': baseName, 'path': destPath, 'enabled': true});
+          _fonts.add(fontEntry);
         }
         count++;
       }
@@ -754,12 +805,19 @@ class _CustomFontsPageState extends BasePageState {
     );
   }
 
+  // HBK-AUDIT-109: one canonical dedupe key (the display name) shared by both
+  // pickers. Previously the recommended picker keyed on ALL names while the
+  // system picker keyed only on system fonts (`path == null`), so a file font
+  // and a system font sharing a name disagreed about what was "already added".
+  Set<String> get _addedFontNames =>
+      _fonts.map((CustomFontEntry e) => e.name).toSet();
+
   Future<void> _openRecommended() async {
     final font = await Navigator.push<_RecommendedFont>(
       context,
       adaptivePageRoute(
         builder: (_) => _RecommendedFontsPage(
-          alreadyAdded: _fonts.map((e) => e['name'] as String).toSet(),
+          alreadyAdded: _addedFontNames,
         ),
       ),
     );
@@ -768,26 +826,22 @@ class _CustomFontsPageState extends BasePageState {
   }
 
   Future<void> _addSystemFont() async {
-    final alreadyAdded = _fonts
-        .where((e) => e['path'] == null)
-        .map((e) => e['name'] as String)
-        .toSet();
     final selected = await Navigator.push<String>(
       context,
       adaptivePageRoute(
-        builder: (_) => _SystemFontPickerPage(alreadyAdded: alreadyAdded),
+        builder: (_) => _SystemFontPickerPage(alreadyAdded: _addedFontNames),
       ),
     );
     if (selected == null || !mounted) return;
     setState(() {
-      _fonts.add({'name': selected, 'path': null, 'enabled': true});
+      _fonts.add(CustomFontEntry(name: selected, path: null, enabled: true));
     });
     _save();
   }
 
   Future<void> _removeFont(int index) async {
-    final entry = _fonts[index];
-    final filePath = entry['path'] as String?;
+    final CustomFontEntry entry = _fonts[index];
+    final String? filePath = entry.path;
     setState(() => _fonts.removeAt(index));
     await _save();
     if (filePath != null) {
@@ -813,7 +867,7 @@ class _CustomFontsPageState extends BasePageState {
 
   void _toggleFont(int index) {
     setState(() {
-      _fonts[index]['enabled'] = !(_fonts[index]['enabled'] as bool? ?? true);
+      _fonts[index] = _fonts[index].copyWith(enabled: !_fonts[index].enabled);
     });
     _save();
   }
@@ -876,15 +930,12 @@ class _CustomFontsPageState extends BasePageState {
                   itemCount: _fonts.length,
                   onReorder: _onReorder,
                   itemBuilder: (context, index) {
-                    final Map<String, dynamic> entry = _fonts[index];
-                    final String name = entry['name'] as String;
-                    final bool isFile = entry['path'] != null;
-                    final bool enabled = entry['enabled'] as bool? ?? true;
+                    final CustomFontEntry entry = _fonts[index];
                     return _FontTile(
-                      key: ValueKey('$name-$index'),
-                      name: name,
-                      isFile: isFile,
-                      enabled: enabled,
+                      key: ValueKey('${entry.name}-$index'),
+                      name: entry.name,
+                      isFile: entry.isFile,
+                      enabled: entry.enabled,
                       index: index,
                       onToggle: () => _toggleFont(index),
                       onDelete: () => _removeFont(index),

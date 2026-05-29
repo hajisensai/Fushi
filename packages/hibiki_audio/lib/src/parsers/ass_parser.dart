@@ -89,8 +89,10 @@ class AssParser {
     int endCol = -1;
     int textCol = -1;
 
-    // 收集 (startMs, endMs, text)，最后按 startMs 排序
-    final List<(int, int, String)> rawCues = [];
+    // 收集 (startMs, endMs?, text)，最后按 startMs 排序。
+    // endMs 为 null 表示 End 列缺失/无法解析，留待排序后用下一条 cue 的
+    // startMs 推断（HBK-AUDIT-067），而不是当场伪造固定的 5s 时长。
+    final List<(int, int?, String)> rawCues = [];
 
     for (final String line in lines) {
       final String trimmed = line.trim();
@@ -136,9 +138,11 @@ class AssParser {
           continue;
         }
 
-        final int endMs = endCol >= 0 && endCol < parts.length
-            ? _parseAssTime(parts[endCol].trim()) ?? startMs + 5000
-            : startMs + 5000;
+        // End 列缺失或无法解析时保持 null，排序后再用下一条 cue 推断时长，
+        // 而非伪造固定 5s（HBK-AUDIT-067）。
+        final int? endMs = endCol >= 0 && endCol < parts.length
+            ? _parseAssTime(parts[endCol].trim())
+            : null;
 
         // Text 列及其后所有列重新拼合（Text 本身可能含逗号）
         final String rawText = parts.sublist(textCol).join(',');
@@ -153,18 +157,33 @@ class AssParser {
 
     rawCues.sort((a, b) => a.$1.compareTo(b.$1));
 
-    return List.generate(rawCues.length, (i) {
-      final (int start, int end, String text) = rawCues[i];
-      return AudioCue()
+    // 解析 endMs：缺失的用下一条 cue 的 startMs 收口（最后一条退回 5s）；
+    // 同时丢弃 end <= start 的反向/零长 cue，避免静默产出永不命中的高亮区间
+    // （HBK-AUDIT-067）。
+    final List<AudioCue> cues = [];
+    for (int i = 0; i < rawCues.length; i++) {
+      final (int start, int? rawEnd, String text) = rawCues[i];
+      final int fallbackEnd =
+          i + 1 < rawCues.length ? rawCues[i + 1].$1 : start + 5000;
+      final int end = rawEnd ?? fallbackEnd;
+      if (end <= start) {
+        if (kDebugMode) {
+          debugPrint(
+              'AssParser: skip cue with end<=start (start=$start end=$end): $text');
+        }
+        continue;
+      }
+      cues.add(AudioCue()
         ..bookUid = bookUid
         ..chapterHref = chapterHref
-        ..sentenceIndex = i
-        ..textFragmentId = '[data-cue-id="$i"]'
+        ..sentenceIndex = cues.length
+        ..textFragmentId = '[data-cue-id="${cues.length}"]'
         ..text = text
         ..startMs = start
         ..endMs = end
-        ..audioFileIndex = audioFileIndex;
-    });
+        ..audioFileIndex = audioFileIndex);
+    }
+    return cues;
   }
 
   /// 将 ASS 时间码 `H:MM:SS.cc`（厘秒）转换为毫秒。

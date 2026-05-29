@@ -44,7 +44,8 @@ class SpacingInsetsData {
           normal: fn(s.normal),
           semiBig: fn(s.semiBig),
           big: fn(s.big),
-          extraBig: fn(s.big),
+          // HBK-AUDIT-152: fix copy-paste bug — extraBig was mapped to s.big.
+          extraBig: fn(s.extraBig),
         );
 
     return SpacingInsetsData(

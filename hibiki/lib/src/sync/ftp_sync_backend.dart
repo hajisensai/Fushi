@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:ftpconnect/ftpconnect.dart';
@@ -27,6 +28,26 @@ class FtpSyncBackend extends SyncBackend {
 
   String? _rootFolderId;
   final Map<String, String> _titleToFolderId = {};
+
+  // Collision-proof temp-file naming (HBK-AUDIT-087). A millisecond timestamp
+  // is not unique: two ops in the same ms — or a second isolate/app instance
+  // sharing systemTemp — produce identical paths and clobber each other's
+  // in-flight transfer. The secure-random token + per-instance counter make
+  // the name unique regardless of clock resolution or concurrent callers.
+  static final Random _tempRng = Random.secure();
+  int _tempCounter = 0;
+
+  /// Build a collision-proof temp path under [Directory.systemTemp] for the
+  /// given [prefix]/[extension]. Combines a per-instance counter with a
+  /// secure-random suffix so concurrent or sub-millisecond callers never
+  /// collide (HBK-AUDIT-087).
+  File _uniqueTempFile(String prefix, String extension) {
+    final int seq = _tempCounter++;
+    final int token = _tempRng.nextInt(1 << 32);
+    final String name =
+        'hibiki_${prefix}_${seq}_${token.toRadixString(16)}$extension';
+    return File('${Directory.systemTemp.path}/$name');
+  }
 
   // ── Auth ──────────────────────────────────────────────────────────
 
@@ -505,8 +526,7 @@ class FtpSyncBackend extends SyncBackend {
         await _ensureConnected();
         final dir = _parentPath(fileId);
         final name = _fileName(fileId);
-        final tmpFile = File(
-            '${Directory.systemTemp.path}/hibiki_ftp_dl_${DateTime.now().millisecondsSinceEpoch}.json');
+        final tmpFile = _uniqueTempFile('ftp_dl', '.json');
         try {
           await _client!.changeDirectory(dir);
           final ok = await _client!.downloadFile(name, tmpFile);
@@ -558,9 +578,7 @@ class FtpSyncBackend extends SyncBackend {
 
   /// Write [bytes] to a uniquely-named temp file and return it.
   Future<File> _writeTempFile(List<int> bytes, String prefix) async {
-    final path =
-        '${Directory.systemTemp.path}/hibiki_${prefix}_${DateTime.now().millisecondsSinceEpoch}.tmp';
-    final file = File(path);
+    final file = _uniqueTempFile(prefix, '.tmp');
     await file.writeAsBytes(bytes, flush: true);
     return file;
   }

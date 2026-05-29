@@ -355,10 +355,6 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 一般实现为写 Drift database preferences。
   void Function(String bookUid, int positionMs)? onPositionWrite;
 
-  /// 由 reader 页面提供：异步返回当前视口的 section + 归一化字符偏移。
-  /// [snapAudioToReader] 用它定位视口对应的 cue 并 seek 过去。
-  Future<({int section, int offset})?> Function()? getReaderViewportPos;
-
   /// 把当前播放位置写入持久化存储。对齐上游：**每整秒变化一次**就写。
   /// 125ms tick 触发 8 次里只有 1 次真的落库，IO 成本和上游等价。
   ///
@@ -654,6 +650,10 @@ class AudiobookPlayerController extends ChangeNotifier {
         androidWillPauseWhenDucked: false,
       ),
     );
+    // HBK-AUDIT-069: load() 可被重复调用并重新进入此方法，必须先取消上一个
+    // becomingNoisy 订阅，否则每次 re-load 都会泄漏一个仍会 _player.pause() 的
+    // 监听器（对齐 audio_recorder_page 的 cancel-before-resubscribe 写法）。
+    _noisySub?.cancel();
     _noisySub = session.becomingNoisyEventStream.listen((_) {
       _player.pause();
     });
@@ -858,40 +858,11 @@ class AudiobookPlayerController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 把音频跳转到当前阅读页面对应的 cue（[snapReaderToAudio] 的反向操作）。
-  ///
-  /// 流程：通过 [getReaderViewportPos] 拿到视口的 section + normChar 偏移，
-  /// 在 _chapterCues 中找 normCharStart <= offset 的最后一条 cue，seek 过去。
-  /// 若视口所在 section 与当前 cue 列表不同章，先切章再 seek。
-  Future<void> snapAudioToReader() async {
-    final Future<({int section, int offset})?> Function()? getter =
-        getReaderViewportPos;
-    if (getter == null) return;
-    final ({int section, int offset})? pos = await getter();
-    if (pos == null) return;
-    final int viewSection = pos.section;
-    final int viewOffset = pos.offset;
-
-    AudioCue? best;
-    int bestDist = 1 << 30;
-    for (final AudioCue cue in _chapterCues) {
-      final SasayakiFragment? frag =
-          SasayakiMatchCodec.tryDecode(cue.textFragmentId);
-      if (frag == null) continue;
-      if (frag.sectionIndex != viewSection) continue;
-      final int dist = (frag.normCharStart - viewOffset).abs();
-      if (dist < bestDist) {
-        bestDist = dist;
-        best = cue;
-      }
-      if (frag.normCharStart <= viewOffset && frag.normCharEnd > viewOffset) {
-        best = cue;
-        break;
-      }
-    }
-    if (best == null) return;
-    await skipToCue(best);
-  }
+  // HBK-AUDIT-070: snapAudioToReader / getReaderViewportPos 是从未被装配的死
+  // 伪功能——没有任何生产者给 getReaderViewportPos 赋值，也没有调用方调用
+  // snapAudioToReader；且唯一可能的视口生产者 AudiobookBridge.getViewportNormOffset
+  // 输出的是 0..10000 进度分数而非 cue 的 normChar 偏移，坐标空间不兼容。
+  // 在出现真实生产者前删除该半成品，避免误导维护者。
 
   /// 设置音画延迟（毫秒），带边界夹取。对齐上游 Sasayaki sheet 的 ±2s
   /// slider 范围；超出这个范围几乎不可能是有意义的对齐偏移。

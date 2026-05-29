@@ -48,18 +48,24 @@ class AnkiRepository extends BaseAnkiRepository {
         return const AnkiFetchResult.error('AnkiDroid is not available.');
       }
 
+      // HBK-AUDIT-063: AnkiDroid deck/model ids are 13-digit epoch longs. The
+      // StandardMessageCodec normally decodes them as Dart int, but a JSON
+      // string id (or any contract drift) would make an unchecked `as int`
+      // throw a CastError that escapes the PlatformException-only catch. Parse
+      // ids and names defensively instead.
       final decks = decksRaw.entries
-          .map((e) => AnkiDeck(id: e.key as int, name: e.value as String))
+          .map((e) =>
+              AnkiDeck(id: _asInt(e.key), name: e.value?.toString() ?? ''))
           .toList();
 
       final noteTypes = <AnkiNoteType>[];
       for (final entry in modelsRaw.entries) {
-        final name = entry.value as String;
+        final name = entry.value?.toString() ?? '';
         final fieldsRaw =
             await _channel.invokeMethod('getFieldList', {'model': name});
         final fields = List<String>.from(fieldsRaw as List? ?? []);
         noteTypes.add(
-            AnkiNoteType(id: entry.key as int, name: name, fields: fields));
+            AnkiNoteType(id: _asInt(entry.key), name: name, fields: fields));
       }
 
       if (decks.isEmpty || noteTypes.isEmpty) {
@@ -87,7 +93,22 @@ class AnkiRepository extends BaseAnkiRepository {
     } on PlatformException catch (e) {
       return AnkiFetchResult.error(e.message ??
           'Could not access AnkiDroid. Grant permission and retry.');
+    } catch (e, stack) {
+      // HBK-AUDIT-063: a malformed/typed channel response (TypeError,
+      // FormatException, etc.) must not crash the fetch out of the provider;
+      // surface it as a fetch error instead.
+      debugPrint('AnkiRepository.fetchConfiguration: $e\n$stack');
+      return const AnkiFetchResult.error(
+          'Unexpected response from AnkiDroid. Update AnkiDroid and retry.');
     }
+  }
+
+  /// HBK-AUDIT-063: coerce an untyped platform-channel id to int. AnkiDroid
+  /// deck/model ids are epoch-based longs; accept either a Dart int or a
+  /// stringified long without throwing an uncaught CastError.
+  static int _asInt(Object? value) {
+    if (value is int) return value;
+    return int.parse(value.toString());
   }
 
   @override

@@ -21,17 +21,27 @@ class HibikiShortcutRegistry extends ChangeNotifier {
   }
 
   void loadFromJson(Map<String, dynamic> json) {
+    // HBK-AUDIT-135: 先把整段 JSON 解析进本地 map，全部成功后再原子地提交到
+    // _bindings/_unknownEntries。之前是逐条写入 _bindings，一旦
+    // ShortcutBindingSet.fromJson 在中途抛错（如 cast<String>() 命中非字符串
+    // 元素），就会留下 "defaults + 已解析的部分条目" 的混合状态，与
+    // loadFromJsonString 中 "keep defaults" 的契约矛盾。
+    final Map<ShortcutAction, ShortcutBindingSet> parsedBindings = {};
+    final Map<String, dynamic> parsedUnknown = {};
     for (final entry in json.entries) {
       final action = ShortcutAction.fromKey(entry.key);
       if (action == null) {
-        _unknownEntries[entry.key] = entry.value;
+        parsedUnknown[entry.key] = entry.value;
         continue;
       }
       final value = entry.value;
       if (value is Map<String, dynamic>) {
-        _bindings[action] = ShortcutBindingSet.fromJson(value);
+        parsedBindings[action] = ShortcutBindingSet.fromJson(value);
       }
     }
+    // 解析全部成功，覆盖默认值中被显式声明的条目（保留未在 JSON 中出现的默认）。
+    _bindings.addAll(parsedBindings);
+    _unknownEntries.addAll(parsedUnknown);
     notifyListeners();
   }
 

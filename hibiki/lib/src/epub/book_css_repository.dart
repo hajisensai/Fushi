@@ -1,6 +1,14 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:path/path.dart' as p;
+
+/// HBK-AUDIT-101: read a (possibly non-UTF-8) CSS file as text without throwing
+/// a FormatException. Malformed bytes are replaced rather than crashing the
+/// in-app CSS editor. Callers must check [File.existsSync] beforehand.
+String _readTextLenient(File file) {
+  return utf8.decode(file.readAsBytesSync(), allowMalformed: true);
+}
 
 class CssFileEntry {
   CssFileEntry({
@@ -18,9 +26,11 @@ class CssFileEntry {
 
   bool isDifferentFromOriginal() {
     if (!hasOriginal) return false;
-    final String current = File(absolutePath).readAsStringSync();
-    final String original = File(originalPath).readAsStringSync();
-    return current != original;
+    // HBK-AUDIT-101: tolerate a missing/non-UTF-8 current CSS file instead of
+    // throwing FileSystemException/FormatException.
+    final File current = File(absolutePath);
+    if (!current.existsSync()) return false;
+    return _readTextLenient(current) != _readTextLenient(File(originalPath));
   }
 }
 
@@ -100,9 +110,13 @@ class BookCssRepository {
     final File target = File(entry.absolutePath);
     final File original = File(entry.originalPath);
 
-    // Step 1: backup if no .original exists and content actually differs
-    if (!original.existsSync()) {
-      final String currentContent = target.readAsStringSync();
+    // Step 1: backup if no .original exists and content actually differs.
+    // HBK-AUDIT-101: guard a missing target (book re-extracted/partially
+    // deleted) and read with malformed-tolerant UTF-8 so non-UTF-8 CSS does
+    // not throw a FileSystemException/FormatException out of saveCss. When the
+    // target is absent there is nothing to back up; just proceed to write.
+    if (!original.existsSync() && target.existsSync()) {
+      final String currentContent = _readTextLenient(target);
       if (currentContent == content) return; // no-op
       original.writeAsStringSync(currentContent, flush: true);
     }
@@ -114,7 +128,7 @@ class BookCssRepository {
 
     // Step 3: if content equals original, delete .original
     if (original.existsSync()) {
-      final String originalContent = original.readAsStringSync();
+      final String originalContent = _readTextLenient(original);
       if (originalContent == content) {
         original.deleteSync();
       }
@@ -125,7 +139,9 @@ class BookCssRepository {
     final File original = File(entry.originalPath);
     if (!original.existsSync()) return;
     final File temp = File('${entry.absolutePath}.tmp');
-    temp.writeAsStringSync(original.readAsStringSync(), flush: true);
+    // HBK-AUDIT-101: read the backup leniently so a non-UTF-8 original does not
+    // throw FormatException mid-reset.
+    temp.writeAsStringSync(_readTextLenient(original), flush: true);
     temp.renameSync(entry.absolutePath);
     original.deleteSync();
   }

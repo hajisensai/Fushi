@@ -189,6 +189,9 @@ class AnkiConnectRepository extends BaseAnkiRepository {
           ? (fields[noteType.fields.first] ?? '')
           : '';
       if (firstFieldValue.isNotEmpty) {
+        // HBK-AUDIT-060: fail closed. A failed dupe query must not fall through
+        // to addNote as if the entry were unique — that silently bypasses the
+        // no-duplicates guarantee. Surface the failure as an error instead.
         try {
           final isDupe = await service.isDuplicate(
             deckName: deck.name,
@@ -198,6 +201,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
           if (isDupe) return MineResult.duplicate;
         } catch (e, stack) {
           debugPrint('AnkiConnectRepository.mineEntry.dupeCheck: $e\n$stack');
+          return MineResult.error;
         }
       }
     }
@@ -303,7 +307,11 @@ class AnkiConnectRepository extends BaseAnkiRepository {
           final cacheDir = Directory('${Directory.systemTemp.path}/anki-media');
           if (!cacheDir.existsSync()) cacheDir.createSync(recursive: true);
           final urlHash = url.hashCode.toUnsigned(32).toRadixString(16);
-          audioFile = File('${cacheDir.path}/hibiki_audio_$urlHash.mp3');
+          // HBK-AUDIT-062: derive the real extension from the response
+          // Content-Type (falling back to the URL path, then mp3) so non-mp3
+          // audio is not mislabeled as .mp3 in Anki.
+          final ext = _audioExtension(response.headers.contentType, url);
+          audioFile = File('${cacheDir.path}/hibiki_audio_$urlHash.$ext');
           await audioFile.writeAsBytes(bytes);
         } finally {
           client.close();
@@ -323,13 +331,51 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     }
   }
 
+  /// HBK-AUDIT-062: resolve a remote audio file extension from the response
+  /// Content-Type, falling back to the URL path extension, then `mp3`.
+  String _audioExtension(ContentType? contentType, String url) {
+    switch (contentType?.mimeType) {
+      case 'audio/mpeg':
+        return 'mp3';
+      case 'audio/aac':
+        return 'aac';
+      case 'audio/mp4':
+      case 'audio/x-m4a':
+        return 'm4a';
+      case 'audio/wav':
+      case 'audio/x-wav':
+        return 'wav';
+      case 'audio/ogg':
+      case 'audio/opus':
+        return 'ogg';
+      case 'audio/webm':
+        return 'webm';
+      case 'audio/flac':
+      case 'audio/x-flac':
+        return 'flac';
+    }
+    // Fall back to the extension embedded in the URL path, then mp3.
+    final path = Uri.tryParse(url)?.path ?? url;
+    final lastDot = path.lastIndexOf('.');
+    final lastSlash = path.lastIndexOf('/');
+    if (lastDot > lastSlash && lastDot < path.length - 1) {
+      return path.substring(lastDot + 1).toLowerCase();
+    }
+    return 'mp3';
+  }
+
   Future<String?> _storeDictionaryMedia(
     AnkiConnectService service,
     DictionaryMedia media,
   ) async {
     try {
       final cacheDir = Directory('${Directory.systemTemp.path}/anki-media');
-      final ext = media.path.split('.').last;
+      // HBK-AUDIT-062: split('.').last returns the whole path when there is no
+      // dot, producing a bogus extension. Guard for the no-extension case.
+      final lastDot = media.path.lastIndexOf('.');
+      final ext = (lastDot >= 0 && lastDot < media.path.length - 1)
+          ? media.path.substring(lastDot + 1)
+          : 'bin';
       final filename = 'hibiki_dict_${media.path.hashCode}.$ext';
       final file = File('${cacheDir.path}/$filename');
       if (!file.existsSync()) return null;

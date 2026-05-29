@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
@@ -165,12 +166,24 @@ class WebDavOps {
     return '${baseUri.scheme}://${baseUri.host}$portSuffix$href';
   }
 
+  // Metadata JSON files (progress/stats/audiobook) are tiny by spec; cap the
+  // download so a hostile/buggy remote can't OOM the app by streaming a giant
+  // body before jsonDecode. Mirrors GoogleDriveHandler._downloadJson.
+  // HBK-AUDIT-139.
+  static const int maxJsonDownloadSize = 10 * 1024 * 1024; // 10 MB
+
   Future<dynamic> downloadJson(String fileId) async {
     final request = await buildRequest('GET', fileId);
     final response = await request.close();
     checkStatus(response.statusCode, 'GET $fileId');
-    final body = await response.transform(utf8.decoder).join();
-    return jsonDecode(body);
+    final BytesBuilder builder = BytesBuilder(copy: false);
+    await for (final List<int> chunk in response) {
+      builder.add(chunk);
+      if (builder.length > maxJsonDownloadSize) {
+        throw SyncBackendError('GET $fileId failed: response too large');
+      }
+    }
+    return jsonDecode(utf8.decode(builder.takeBytes()));
   }
 
   Future<void> uploadJson(

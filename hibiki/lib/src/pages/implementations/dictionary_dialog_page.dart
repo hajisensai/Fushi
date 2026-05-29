@@ -293,6 +293,18 @@ class _DictionaryDialogPageState extends BasePageState {
     return indices;
   }
 
+  // HBK-AUDIT-110: build a rec->index map once per catalog so checkbox tiles do
+  // an O(1) lookup instead of List.indexOf (O(n)) per checkbox per rebuild.
+  Map<RecommendedDictionary, int> _computeRecIndices(
+      List<RecommendedDictionary> cat) {
+    final Map<RecommendedDictionary, int> indices =
+        <RecommendedDictionary, int>{};
+    for (int i = 0; i < cat.length; i++) {
+      indices[cat[i]] = i;
+    }
+    return indices;
+  }
+
   Future<void> _showDownloadSelectionDialog() async {
     if (_isDownloading) return;
 
@@ -305,6 +317,12 @@ class _DictionaryDialogPageState extends BasePageState {
     var defaults = DictionaryDownloader.defaultSelectionForLang(
         selectedLang, workingCatalog);
     var checked = Set<int>.from(defaults.difference(installedIndices));
+    // HBK-AUDIT-110: byCategory and the rec->index map depend only on
+    // workingCatalog, not on checkbox toggles. Compute them here (and again
+    // only when the language changes) so per-toggle setDialogState rebuilds
+    // don't re-derive the grouping or run O(n) catalog.indexOf per checkbox.
+    var byCategory = DictionaryDownloader.byCategoryFrom(workingCatalog);
+    var recIndex = _computeRecIndices(workingCatalog);
     final Set<DictionaryCategory> expandedCategories = <DictionaryCategory>{
       DictionaryCategory.jaEn,
       DictionaryCategory.jaJa,
@@ -315,8 +333,6 @@ class _DictionaryDialogPageState extends BasePageState {
       builder: (ctx) {
         return StatefulBuilder(
           builder: (ctx, setDialogState) {
-            final byCategory =
-                DictionaryDownloader.byCategoryFrom(workingCatalog);
             final int downloadCount = checked.length;
             return adaptiveAlertDialog(
               context: ctx,
@@ -334,6 +350,12 @@ class _DictionaryDialogPageState extends BasePageState {
                             selectedLang = lang;
                             workingCatalog =
                                 DictionaryDownloader.catalogForLang(lang);
+                            // HBK-AUDIT-110: recompute the catalog-derived
+                            // structures only when the language (hence catalog)
+                            // actually changes.
+                            byCategory = DictionaryDownloader.byCategoryFrom(
+                                workingCatalog);
+                            recIndex = _computeRecIndices(workingCatalog);
                             installedIndices =
                                 _computeInstalledIndices(workingCatalog);
                             defaults =
@@ -350,7 +372,7 @@ class _DictionaryDialogPageState extends BasePageState {
                           _buildCategoryTile(
                             cat: cat,
                             items: byCategory[cat]!,
-                            catalog: workingCatalog,
+                            recIndex: recIndex,
                             checked: checked,
                             installedIndices: installedIndices,
                             expanded: expandedCategories.contains(cat),
@@ -435,7 +457,7 @@ class _DictionaryDialogPageState extends BasePageState {
   Widget _buildCategoryTile({
     required DictionaryCategory cat,
     required List<RecommendedDictionary> items,
-    required List<RecommendedDictionary> catalog,
+    required Map<RecommendedDictionary, int> recIndex,
     required Set<int> checked,
     required Set<int> installedIndices,
     required bool expanded,
@@ -468,7 +490,7 @@ class _DictionaryDialogPageState extends BasePageState {
               for (final rec in items)
                 _buildDictCheckbox(
                   rec: rec,
-                  catalog: catalog,
+                  recIndex: recIndex,
                   checked: checked,
                   installedIndices: installedIndices,
                   onChanged: onChanged,
@@ -481,12 +503,14 @@ class _DictionaryDialogPageState extends BasePageState {
 
   Widget _buildDictCheckbox({
     required RecommendedDictionary rec,
-    required List<RecommendedDictionary> catalog,
+    required Map<RecommendedDictionary, int> recIndex,
     required Set<int> checked,
     required Set<int> installedIndices,
     required void Function(int idx, bool val) onChanged,
   }) {
-    final int idx = catalog.indexOf(rec);
+    // HBK-AUDIT-110: O(1) lookup from a precomputed map instead of the former
+    // per-checkbox catalog.indexOf(rec) linear scan on every rebuild.
+    final int idx = recIndex[rec] ?? -1;
     final bool installed = installedIndices.contains(idx);
     final bool selected = checked.contains(idx);
     return HibikiListItem(
@@ -935,18 +959,10 @@ class _DictionaryDialogPageState extends BasePageState {
     );
   }
 
-  void openDictionaryOptionsMenu(
-      {required TapDownDetails details, required Dictionary dictionary}) async {
-    RelativeRect position = RelativeRect.fromLTRB(
-        details.globalPosition.dx, details.globalPosition.dy, 0, 0);
-    Function()? selectedAction = await showMenu(
-      context: context,
-      position: position,
-      items: getMenuItems(dictionary),
-    );
-
-    selectedAction?.call();
-  }
+  // HBK-AUDIT-111: removed the dead openDictionaryOptionsMenu (an unused
+  // showMenu-based duplicate of the live overflow-menu path). The dictionary
+  // tile opens this same getMenuItems list via buildDictionaryTileTrailing()
+  // / HibikiOverflowMenu; the showMenu variant was never wired to any gesture.
 
   List<PopupMenuItem<VoidCallback>> getMenuItems(Dictionary dictionary) {
     return [

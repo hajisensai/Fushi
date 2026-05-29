@@ -81,16 +81,52 @@ class HibikiIconButton extends StatefulWidget {
 class _HibikiIconButtonState extends State<HibikiIconButton> {
   late bool enabled;
 
+  /// HBK-AUDIT-151: true while a busy [onTap] action is awaiting completion.
+  /// Used so [didUpdateWidget] does not re-enable the button mid-action when
+  /// the parent rebuilds during the await.
+  bool _busyInFlight = false;
+
   @override
-  void didUpdateWidget(oldWidget) {
+  void didUpdateWidget(HibikiIconButton oldWidget) {
     super.didUpdateWidget(oldWidget);
-    enabled = widget.enabled;
+    // HBK-AUDIT-151: only sync enabled from widget.enabled when not currently
+    // mid-busy; otherwise a parent rebuild during the await would clobber the
+    // busy lock and re-enable the button before its action finished.
+    if (!_busyInFlight) {
+      enabled = widget.enabled;
+    }
   }
 
   @override
   void initState() {
     super.initState();
     enabled = widget.enabled;
+  }
+
+  /// HBK-AUDIT-151: single busy-guard tap handler shared by both the
+  /// [IconButton] (wide tap area) and [InkWell] branches, replacing the two
+  /// previously byte-identical inline closures.
+  Future<void> _handleTap() async {
+    if (widget.busy) {
+      if (enabled) {
+        enabled = false;
+        _busyInFlight = true;
+        if (mounted) {
+          setState(() {});
+        }
+        try {
+          await widget.onTap?.call();
+        } finally {
+          enabled = true;
+          _busyInFlight = false;
+          if (mounted) {
+            setState(() {});
+          }
+        }
+      }
+    } else {
+      await widget.onTap?.call();
+    }
   }
 
   Color get enabledColor =>
@@ -114,28 +150,7 @@ class _HibikiIconButtonState extends State<HibikiIconButton> {
             color: enabled ? enabledColor : disabledColor,
             size: widget.size,
           ),
-          onPressed: enabled
-              ? () async {
-                  if (widget.busy) {
-                    if (enabled) {
-                      enabled = false;
-                      if (mounted) {
-                        setState(() {});
-                      }
-                      try {
-                        await widget.onTap?.call();
-                      } finally {
-                        enabled = true;
-                        if (mounted) {
-                          setState(() {});
-                        }
-                      }
-                    }
-                  } else {
-                    await widget.onTap?.call();
-                  }
-                }
-              : null,
+          onPressed: enabled ? _handleTap : null,
         ),
       );
     }
@@ -146,28 +161,7 @@ class _HibikiIconButtonState extends State<HibikiIconButton> {
       child: InkWell(
         enableFeedback: enabled,
         customBorder: widget.shapeBorder,
-        onTap: enabled
-            ? () async {
-                if (widget.busy) {
-                  if (enabled) {
-                    enabled = false;
-                    if (mounted) {
-                      setState(() {});
-                    }
-                    try {
-                      await widget.onTap?.call();
-                    } finally {
-                      enabled = true;
-                      if (mounted) {
-                        setState(() {});
-                      }
-                    }
-                  }
-                } else {
-                  await widget.onTap?.call();
-                }
-              }
-            : null,
+        onTap: enabled ? _handleTap : null,
         onTapDown: widget.onTapDown,
         child: ColoredBox(
           color: widget.backgroundColor ?? Colors.transparent,

@@ -207,4 +207,74 @@ void main() {
       expect(script, contains('addEventListener'));
     });
   });
+
+  // HBK-AUDIT-053: the shellScript group above only greps generated JS for
+  // substrings. These tests instead exercise real Dart behaviour — the
+  // string-literal escaping used when injecting user/data values into JS
+  // invocations — so a regression that breaks the generated JS (or opens an
+  // injection hole) actually fails here, not just at flutter-drive time.
+  group('ReaderPaginationScripts invocation escaping', () {
+    test('scrollToSearchMatchInvocation escapes a double quote', () {
+      final String result =
+          ReaderPaginationScripts.scrollToSearchMatchInvocation('a"b', 7);
+      // The query must be emitted as a single, properly escaped JS string
+      // literal so the raw quote cannot terminate the argument early.
+      expect(result, 'window.hoshiReader.scrollToSearchMatch("a\\"b", 7)');
+      expect(result, isNot(contains('"a"b"')));
+    });
+
+    test('scrollToSearchMatchInvocation escapes backslash and newline', () {
+      final String result =
+          ReaderPaginationScripts.scrollToSearchMatchInvocation(
+        'a\\b\nc',
+        0,
+      );
+      // jsonEncode escapes backslash -> \\ and newline -> \n; the produced
+      // literal must contain no raw newline that would break the one-line eval.
+      expect(result, contains(r'\\'));
+      expect(result, contains(r'\n'));
+      expect(result, isNot(contains('\n')));
+    });
+
+    test('scrollToSearchMatchInvocation preserves CJK query verbatim', () {
+      final String result =
+          ReaderPaginationScripts.scrollToSearchMatchInvocation('猫', 100);
+      expect(result, 'window.hoshiReader.scrollToSearchMatch("猫", 100)');
+    });
+
+    test('highlightSasayakiCueInvocation escapes cue id and embeds bool', () {
+      final String result =
+          ReaderPaginationScripts.highlightSasayakiCueInvocation(
+        'cue"1',
+        reveal: true,
+      );
+      expect(
+        result,
+        'window.hoshiReader.highlightSasayakiCue("cue\\"1", true)',
+      );
+    });
+  });
+
+  // HBK-AUDIT-053: intResult is the JS-channel parser used for restore
+  // offsets (getFirstVisibleCharOffset) — cover the conversion the same way
+  // doubleResult is covered, so a broken parse cannot reopen the book at the
+  // wrong character offset silently.
+  group('ReaderPaginationScripts.intResult', () {
+    test('parses int from int value', () {
+      expect(ReaderPaginationScripts.intResult(42), 42);
+    });
+
+    test('truncates double value to int', () {
+      expect(ReaderPaginationScripts.intResult(42.9), 42);
+    });
+
+    test('parses int from quoted string value', () {
+      expect(ReaderPaginationScripts.intResult('"123"'), 123);
+    });
+
+    test('returns null for null and non-numeric input', () {
+      expect(ReaderPaginationScripts.intResult(null), isNull);
+      expect(ReaderPaginationScripts.intResult('abc'), isNull);
+    });
+  });
 }

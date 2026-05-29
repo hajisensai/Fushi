@@ -37,7 +37,6 @@ class ReaderHibikiSource extends ReaderMediaSource {
           icon: Icons.auto_stories_outlined,
           implementsSearch: false,
           implementsHistory: false,
-          overridesAutoAudio: true,
         );
 
   static ReaderHibikiSource get instance => _instance;
@@ -53,7 +52,16 @@ class ReaderHibikiSource extends ReaderMediaSource {
 
   static String bookUidFor(int bookId) => 'reader_ttu/hoshi://book/$bookId';
 
-  static String epubUrl(String href) => 'https://$kHost/epub/$href';
+  // HBK-AUDIT-127: percent-encode the href when building the URL so it is
+  // symmetric with the consumer side, which decodes the whole post-'/epub/'
+  // path with Uri.decodeComponent (reader_hibiki_page.dart, epub_book.dart).
+  // Encoding per path segment (and rejoining with '/') preserves the path
+  // structure while escaping spaces and literal '%' (which a raw href would
+  // leave to be mis-decoded or to throw on decode). Mirrors fontUrl's encoding.
+  static String epubUrl(String href) {
+    final String encoded = href.split('/').map(Uri.encodeComponent).join('/');
+    return 'https://$kHost/epub/$encoded';
+  }
 
   static String fontUrl(String path) => ReaderCustomFontCss.fontUrl(path);
 
@@ -73,52 +81,12 @@ class ReaderHibikiSource extends ReaderMediaSource {
   @override
   Future<void> prepareResources() async {}
 
-  // ── Sasayaki sentence audio ─────────────────────────────────────────
-
-  AudioCue? _pendingCue;
-  List<File>? _pendingAudioFiles;
-
-  void setPendingSentenceAudio({
-    required AudioCue cue,
-    required List<File> audioFiles,
-  }) {
-    _pendingCue = cue;
-    _pendingAudioFiles = audioFiles;
-  }
-
-  void clearPendingSentenceAudio() {
-    _pendingCue = null;
-    _pendingAudioFiles = null;
-  }
-
-  @override
-  Future<File?> generateAudio({
-    required AppModel appModel,
-    required MediaItem item,
-    String? data,
-  }) async {
-    final AudioCue? cue = _pendingCue;
-    final List<File>? audioFiles = _pendingAudioFiles;
-    if (cue == null || audioFiles == null) {
-      return null;
-    }
-    if (cue.audioFileIndex >= audioFiles.length) {
-      return null;
-    }
-    final File inputFile = audioFiles[cue.audioFileIndex];
-    final String outputPath =
-        '${Directory.systemTemp.path}/mine_sentence_audio.aac';
-    final String? result = await TtsChannel.instance.extractAudioSegment(
-      inputPath: inputFile.path,
-      startMs: cue.startMs,
-      endMs: cue.endMs,
-      outputPath: outputPath,
-    );
-    if (result != null) {
-      return File(result);
-    }
-    return null;
-  }
+  // HBK-AUDIT-042 / HBK-AUDIT-124: removed the dead generateAudio override and
+  // its _pendingCue/_pendingAudioFiles + setPendingSentenceAudio/
+  // clearPendingSentenceAudio machinery. They had zero callers, so the override
+  // always returned null; the live sentence-audio mining is done inline in
+  // reader_hibiki_page.dart. The misleading overridesAutoAudio:true flag was
+  // dropped from the constructor (now defaults to false) for the same reason.
 
   @override
   Future<void> onSourceExit({
@@ -148,7 +116,25 @@ class ReaderHibikiSource extends ReaderMediaSource {
     );
   }
 
-  static int _extractBookId(String identifier) => parseBookId(identifier) ?? 0;
+  // HBK-AUDIT-126: parseBookId returns null for an empty/unknown identifier.
+  // Previously this silently coerced null to the 0 sentinel, launching the
+  // reader against bookUidFor(0) (a nonexistent book) and hiding genuine
+  // identifier corruption behind an empty/error reader screen. We now log the
+  // failure so the corruption is observable instead of swallowed; the 0
+  // sentinel remains only because ReaderHibikiPage.bookId is a non-null int and
+  // ReaderHibikiPage already renders an empty/error state for an unknown id.
+  static int _extractBookId(String identifier) {
+    final int? bookId = parseBookId(identifier);
+    if (bookId == null) {
+      ErrorLogService.instance.log(
+        'ReaderHibikiSource._extractBookId',
+        'unparseable media identifier: "$identifier"',
+        StackTrace.current,
+      );
+      return 0;
+    }
+    return bookId;
+  }
 
   @override
   List<Widget> getActions({
@@ -296,27 +282,61 @@ class ReaderHibikiSource extends ReaderMediaSource {
     return items;
   }
 
+  /// Delete a book and all of its associated data.
+  ///
+  /// Pass [appModel] to also clear the override thumbnail file (it is needed to
+  /// resolve the thumbnails directory); the override title preference is always
+  /// cleared regardless (HBK-AUDIT-040).
   Future<bool> deleteBook({
     required HibikiDatabase db,
     required int bookId,
+    AppModel? appModel,
   }) async {
     try {
       final String bookUid = bookUidFor(bookId);
 
-      final audiobookRepo = AudiobookRepository(db);
-      final ab = await audiobookRepo.findByBookUid(bookUid);
-      if (ab != null) {
-        await audiobookRepo.deleteAudiobook(bookUid);
-      }
-
-      final srtRepo = SrtBookRepository(db);
-      final srt = await srtRepo.findByTtuBookId(bookId);
-      if (srt != null) {
-        await srtRepo.delete(srt.uid);
-      }
+      // HBK-AUDIT-041: db.deleteEpubBook removes every associated DB row
+      // (readerPositions, bookmarks, srtBooks, audioCues, audiobooks for the
+      // same bookUid) inside one transaction. Previously deleteBook ALSO
+      // deleted the audiobook/srt rows via the repos, double-deleting the same
+      // rows and splitting the deletion across non-atomic layers. We now let
+      // the transaction own all row deletes and only run the non-redundant
+      // on-disk cleanups (deletePersistDir, extracted dir) afterwards.
+      //
+      // The srt uid must be resolved BEFORE the transaction, because
+      // deleteEpubBook deletes the srtBooks row it lives on.
+      final SrtBookRepository srtRepo = SrtBookRepository(db);
+      final SrtBook? srt = await srtRepo.findByTtuBookId(bookId);
 
       await db.deleteEpubBook(bookId);
+
+      // On-disk cleanups (not covered by the DB transaction).
+      await AudiobookStorage.deletePersistDir(bookUid);
+      if (srt != null) {
+        await AudiobookStorage.deletePersistDir(srt.uid);
+      }
       await EpubStorage.deleteBook(bookId);
+
+      // HBK-AUDIT-040: these books are created with canDelete:false, so the
+      // generic AppModel.deleteMediaItem cleanup (clearOverrideValues) never
+      // runs for them. Clear the override title preference here, and the
+      // override thumbnail file when an AppModel is available, so renamed/
+      // recovered books do not leave orphaned override rows/files behind.
+      final MediaItem item = MediaItem(
+        mediaIdentifier: mediaIdentifierFor(bookId),
+        title: '',
+        mediaTypeIdentifier: mediaType.uniqueKey,
+        mediaSourceIdentifier: uniqueKey,
+        position: 0,
+        duration: 1,
+        canDelete: false,
+        canEdit: true,
+      );
+      if (appModel != null) {
+        await clearOverrideValues(appModel: appModel, item: item);
+      } else {
+        await deletePreference(key: getOverrideTitleKey(item));
+      }
       return true;
     } catch (e, stack) {
       ErrorLogService.instance.log('ReaderHibikiSource.deleteBook', e, stack);
@@ -331,15 +351,9 @@ class ReaderHibikiSource extends ReaderMediaSource {
 
   static VoidCallback? onSettingsChangedLive;
 
-  int portForLanguage(Language language) {
-    if (language is JapaneseLanguage) {
-      return 52059;
-    }
-    if (language is EnglishLanguage) {
-      return 52060;
-    }
-    throw UnimplementedError();
-  }
+  // HBK-AUDIT-124: removed the dead instance portForLanguage. It had zero call
+  // sites and duplicated the live TtuMigrationServer.portForLanguage; for any
+  // third language it would have thrown UnimplementedError.
 
   bool get volumePageTurningEnabled => getPreference<bool>(
       key: 'volume_page_turning_enabled', defaultValue: true);
@@ -632,7 +646,11 @@ class ReaderHibikiSource extends ReaderMediaSource {
             : mode,
       );
       setPreference<String>(key: 'ttu_furigana_mode', value: merged);
-      setPreference<bool?>(key: 'ttu_hide_furigana', value: null);
+      // HBK-AUDIT-125: remove the legacy key via deletePreference. The old
+      // setPreference<bool?>(value: null) could not represent null through
+      // PrefCodec.encode and persisted the literal string 's:null', leaving a
+      // junk row that was re-decoded as the String 'null' on every read.
+      deletePreference(key: 'ttu_hide_furigana');
       return merged;
     }
     return normalizeFuriganaMode(

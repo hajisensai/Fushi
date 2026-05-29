@@ -70,6 +70,9 @@ void main() {
       'HibikiCard',
       'HibikiListItem',
     ],
+    'lib/src/pages/implementations/home_page.dart': <String>[
+      'HibikiDialogFrame',
+    ],
     'lib/src/pages/implementations/media_source_picker_dialog_page.dart':
         <String>[
       'HibikiListItem',
@@ -297,6 +300,9 @@ void main() {
         'fontSize: 13',
         'fontSize: 12',
         'surfaceContainerHigh',
+      ],
+      'lib/src/pages/implementations/home_page.dart': <String>[
+        'AlertDialog(',
       ],
       'lib/src/pages/implementations/media_source_picker_dialog_page.dart':
           <String>[
@@ -548,7 +554,7 @@ void main() {
     ).readAsStringSync();
     final String tagDropTarget = _functionSource(
       source,
-      'class _BookDragTarget extends StatefulWidget',
+      'class BookDragTarget extends StatefulWidget',
       'class BookProfileDialogContent',
     );
 
@@ -563,7 +569,7 @@ void main() {
     final String tagBar = _functionSource(
       source,
       'class _TagBarContent extends ConsumerStatefulWidget',
-      'class _BookDragTarget extends StatefulWidget',
+      'class BookDragTarget extends StatefulWidget',
     );
 
     expect(tagBar, contains('HibikiTagChip('));

@@ -6,6 +6,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_exit_app/flutter_exit_app.dart';
+import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
 import 'package:hibiki/src/sync/backup_service.dart';
@@ -203,10 +204,25 @@ SettingsDestination buildSyncBackupDestination() {
   );
 }
 
+// HBK-AUDIT-044: 同步设置的内存态由所有者 AppModel（持有 database）拥有，
+// 而不是某个 widget。之前 _activeSyncState 的生命周期挂在 _BackendSelectorWidget
+// 上（initState 创建、dispose 置 null），其它开关和 _LanDiscoveryWidget 却共享同一
+// 全局；当选择器在 master-detail 宽布局或任意 rebuild 中被 dispose 后重建时，全局被
+// 置 null 再用硬编码默认值（googleDrive/autoSync=false/syncStats=true/...）懒重建，
+// 在异步 load() 落地前，开关会短暂读到默认值而非持久化值。
+//
+// 改为按 AppModel 身份缓存：只要数据库实例不变就复用已加载的状态，不再随 widget
+// dispose 而失效，从根本上消除 "重建即回退默认值" 的竞态窗口。
 _SyncSettingsState? _activeSyncState;
+AppModel? _activeSyncOwner;
 
 _SyncSettingsState _syncSettings(SettingsContext ctx) {
-  return _activeSyncState ??= _SyncSettingsState(ctx)..load();
+  final AppModel owner = ctx.appModel;
+  if (_activeSyncState == null || !identical(_activeSyncOwner, owner)) {
+    _activeSyncOwner = owner;
+    _activeSyncState = _SyncSettingsState(ctx)..load();
+  }
+  return _activeSyncState!;
 }
 
 void _showSnackBar(BuildContext context, String message) {
@@ -859,13 +875,9 @@ class _BackendSelectorWidgetState extends State<_BackendSelectorWidget> {
   @override
   void initState() {
     super.initState();
-    _activeSyncState ??= _SyncSettingsState(widget.settingsContext)..load();
-  }
-
-  @override
-  void dispose() {
-    _activeSyncState = null;
-    super.dispose();
+    // HBK-AUDIT-044: 仅触发按 AppModel 缓存的状态创建/加载；不再独占其生命周期，
+    // 也不在 dispose 时置 null（避免 dispose→重建窗口里回退硬编码默认值）。
+    _syncSettings(widget.settingsContext);
   }
 
   @override

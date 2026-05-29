@@ -184,9 +184,14 @@ void main() {
   });
 
   group('Interleaved ReaderPositions writes', () {
-    test('rapid upserts to same book converge', () async {
+    test('rapid upserts to same book converge to the last writer', () async {
       final db = await _openDb();
       const int n = 30;
+      // HBK-AUDIT-144: deterministic, strictly-increasing values per writer so
+      // the converged row can be asserted (not just non-null). upsertReaderPosition
+      // is an unconditional insert-or-replace on a single serialized connection,
+      // so the last submitted write (i == n-1) executes last and must win.
+      const int baseUpdatedAt = 1700000000000;
 
       await Future.wait(
         List.generate(
@@ -196,7 +201,7 @@ void main() {
               ttuBookId: 1,
               sectionIndex: i % 10,
               normCharOffset: i * 100,
-              updatedAt: DateTime.now().millisecondsSinceEpoch + i,
+              updatedAt: baseUpdatedAt + i,
             ),
           ),
         ),
@@ -204,6 +209,10 @@ void main() {
 
       final row = await db.getReaderPosition(1);
       expect(row, isNotNull);
+      // Last-write-wins: the final row reflects the i == n-1 writer's values.
+      expect(row!.sectionIndex, (n - 1) % 10);
+      expect(row.normCharOffset, (n - 1) * 100);
+      expect(row.updatedAt, baseUpdatedAt + (n - 1));
     });
 
     test('interleaved upserts to different books all persist', () async {

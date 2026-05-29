@@ -611,25 +611,38 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
 
       if (!widget.audioOnly && _alignmentPath != null) {
         final String ext = _alignmentPath!.split('.').last.toLowerCase();
-        const Set<String> cueFormats = {
-          'smil',
-          'srt',
-          'lrc',
-          'vtt',
-          'ass',
-          'ssa'
-        };
-        final String format = cueFormats.contains(ext) ? ext : 'json';
+        // HBK-AUDIT-068: re-validate the extension against the supported set
+        // at import time. A path reaching here via a non-picker route (e.g.
+        // an existing book's persisted alignment) might carry an extension
+        // that never went through the picker's allow-list, and force-routing
+        // it through the json parser would only surface as a generic decode
+        // error. Bail early with a format-specific message instead.
+        if (!_alignmentExtensions.contains(ext)) {
+          if (mounted) {
+            HibikiToast.show(
+              msg: t.import_unsupported_file_format(ext: '.$ext'),
+            );
+          }
+          return;
+        }
+        // After validation every ext is a supported format that _parseCues
+        // routes 1:1 to its parser (smil/json via the else/json branches).
+        final String format = ext;
 
         _reportProgress(0.05, t.import_step_persisting);
+        // HBK-AUDIT-068: keep the persisted path in a local instead of
+        // mutating the stateful _alignmentPath, so a retry after a failure
+        // re-reads the user-picked source rather than a stale persisted copy.
         persistedAlignment = await AudiobookStorage.persistFileWithProgress(
           File(_alignmentPath!),
           persistDir,
         );
-        _alignmentPath = persistedAlignment;
 
         _reportProgress(0.1, t.import_step_parsing);
-        parsed = await _parseCues(format);
+        parsed = await _parseCues(
+          format: format,
+          alignmentFilePath: persistedAlignment,
+        );
       }
 
       _reportProgress(0.5, t.import_step_persisting);
@@ -844,9 +857,14 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
   /// 解析字幕文件并运行 matcher（如适用）。返回 cues 和 health，
   /// 但 **不写入数据库**——调用方在 saveAudiobook 之后再 saveCues，
   /// 避免中途失败留下孤立 cue。
-  Future<({AudiobookHealth health, List<AudioCue> cues})> _parseCues(
-      String format) async {
-    final File alignFile = File(_alignmentPath!);
+  // HBK-AUDIT-068: parse from an explicit file path passed by the caller
+  // instead of reading the mutable _alignmentPath field, so the persisted
+  // copy is threaded as data rather than via shared state.
+  Future<({AudiobookHealth health, List<AudioCue> cues})> _parseCues({
+    required String format,
+    required String alignmentFilePath,
+  }) async {
+    final File alignFile = File(alignmentFilePath);
 
     List<AudioCue> cues;
     bool useFragmentHealth = false;
@@ -866,7 +884,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       useFragmentHealth = true;
     } else {
       final String fileName =
-          _alignmentPath!.split(Platform.pathSeparator).last;
+          alignmentFilePath.split(Platform.pathSeparator).last;
       final String chapterHref = fileName.replaceAll(
           RegExp(r'\.smil$', caseSensitive: false), '.xhtml');
       cues = await SmilParser.parse(

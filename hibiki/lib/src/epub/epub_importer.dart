@@ -28,10 +28,15 @@ class EpubImporter {
     int? insertedBookId;
 
     try {
-      final EpubBook book = await compute(
+      // HBK-AUDIT-035: parse AND compute per-chapter character counts inside
+      // the isolate. The main isolate only serializes the precomputed ints,
+      // so no html_parser.parse() runs on the UI thread per chapter.
+      final _ParseResult result = await compute(
         _parseInIsolate,
         _ParseArgs(bytes: bytes, extractDir: extractDir),
       );
+      final EpubBook book = result.book;
+      final List<int> characterCounts = result.characterCounts;
 
       final String chaptersJson = jsonEncode(
         book.chapters
@@ -41,7 +46,7 @@ class EpubImporter {
                   'id': entry.value.id,
                   'href': entry.value.href,
                   'mediaType': entry.value.mediaType,
-                  'characters': book.chapterPlainText(entry.key).length,
+                  'characters': characterCounts[entry.key],
                 })
             .toList(),
       );
@@ -156,10 +161,15 @@ class EpubImporter {
     int? insertedBookId;
 
     try {
-      final EpubBook book = await compute(
+      // HBK-AUDIT-035: parse AND compute per-chapter character counts inside
+      // the isolate. The main isolate only serializes the precomputed ints,
+      // so no html_parser.parse() runs on the UI thread per chapter.
+      final _ParseResult result = await compute(
         _parseFromPathInIsolate,
         _ParseArgsFromPath(filePath: filePath, extractDir: extractDir),
       );
+      final EpubBook book = result.book;
+      final List<int> characterCounts = result.characterCounts;
 
       final String chaptersJson = jsonEncode(
         book.chapters
@@ -169,7 +179,7 @@ class EpubImporter {
                   'id': entry.value.id,
                   'href': entry.value.href,
                   'mediaType': entry.value.mediaType,
-                  'characters': book.chapterPlainText(entry.key).length,
+                  'characters': characterCounts[entry.key],
                 })
             .toList(),
       );
@@ -258,10 +268,37 @@ class _ParseArgsFromPath {
   final String extractDir;
 }
 
-EpubBook _parseInIsolate(_ParseArgs args) {
-  return EpubParser.parseSync(args.bytes, args.extractDir);
+/// HBK-AUDIT-035: result carried back from the parse isolate — the parsed
+/// [book] plus per-chapter plain-text character counts computed in-isolate.
+class _ParseResult {
+  const _ParseResult({required this.book, required this.characterCounts});
+  final EpubBook book;
+  final List<int> characterCounts;
 }
 
-EpubBook _parseFromPathInIsolate(_ParseArgsFromPath args) {
-  return EpubParser.parseSyncFromPath(args.filePath, args.extractDir);
+/// Compute the per-chapter character counts inside the isolate so the
+/// expensive html_parser DOM build never runs on the main/UI isolate.
+List<int> _computeCharacterCounts(EpubBook book) {
+  return List<int>.generate(
+    book.chapters.length,
+    (int index) => book.chapterPlainText(index).length,
+    growable: false,
+  );
+}
+
+_ParseResult _parseInIsolate(_ParseArgs args) {
+  final EpubBook book = EpubParser.parseSync(args.bytes, args.extractDir);
+  return _ParseResult(
+    book: book,
+    characterCounts: _computeCharacterCounts(book),
+  );
+}
+
+_ParseResult _parseFromPathInIsolate(_ParseArgsFromPath args) {
+  final EpubBook book =
+      EpubParser.parseSyncFromPath(args.filePath, args.extractDir);
+  return _ParseResult(
+    book: book,
+    characterCounts: _computeCharacterCounts(book),
+  );
 }

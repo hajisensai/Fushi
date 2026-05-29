@@ -7,10 +7,14 @@ import 'package:hibiki/src/models/app_model.dart';
 /// the creator.
 class CreatorFieldValues {
   /// Initialise an immutable collection of the final parameters.
+  ///
+  /// HBK-AUDIT-078: 防御性复制两张 map，使 [textValues]/[extraValues] 真正
+  /// 不可被外部别名修改（文档声称 "immutable collection"，此前却直接存引用）。
   CreatorFieldValues({
-    this.textValues = const {},
-    this.extraValues = const {},
-  });
+    Map<Field, String> textValues = const {},
+    Map<String, String> extraValues = const {},
+  })  : textValues = Map<Field, String>.unmodifiable(textValues),
+        extraValues = Map<String, String>.unmodifiable(extraValues);
 
   /// Builds creator values from the dictionary popup's mining payload.
   factory CreatorFieldValues.fromMineFields({
@@ -65,18 +69,16 @@ class CreatorFieldValues {
 
   /// Creates a deep copy of this context but with the given fields replaced
   /// with the new values.
+  ///
+  /// HBK-AUDIT-078: 两张 map 都交给构造函数做防御性复制（之前只复制
+  /// textValues，extraValues 直接按引用透传，导致拷贝与原对象共享同一张
+  /// extraValues，违反文档承诺的 deep copy 语义）。
   CreatorFieldValues copyWith({
     Map<Field, String>? textValues,
     Map<String, String>? extraValues,
   }) {
-    Map<Field, String>? newTextValues;
-    if (textValues != null) {
-      newTextValues = {};
-      newTextValues.addAll(textValues);
-    }
-
     return CreatorFieldValues(
-      textValues: newTextValues ?? this.textValues,
+      textValues: textValues ?? this.textValues,
       extraValues: extraValues ?? this.extraValues,
     );
   }
@@ -118,6 +120,13 @@ class CreatorFieldValues {
   }
 
   /// Whether or not to allow the export button to be pressed.
+  ///
+  /// Instance-deterministic: depends only on this object's text values. The
+  /// image/audio-only-card idea from HBK-AUDIT-078 was reverted because
+  /// imagesToExport/audioToExport read GLOBAL field state (globalFields), which
+  /// would make an empty CreatorFieldValues report exportable from unrelated
+  /// global state and is non-deterministic in tests. Supporting media-only
+  /// cards needs an instance-scoped design, deferred.
   bool get isExportable {
     for (String value in textValues.values) {
       if (value.isNotEmpty) {

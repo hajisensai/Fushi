@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:archive/archive.dart';
+import 'package:flutter/foundation.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
 
@@ -76,8 +77,20 @@ class BackupService {
         final safePath =
             cleanDbPath.replaceAll(r'\', '/').replaceAll("'", "''");
         await _db.customStatement("VACUUM INTO '$safePath'");
-      } catch (_) {
+      } catch (e, st) {
+        // HBK-AUDIT-028: do NOT swallow the VACUUM INTO failure. The original
+        // reason (disk full, locked, read-only temp, unsupported SQLite) is
+        // the only diagnostic we have, so surface it before falling back.
+        debugPrint('BackupService: VACUUM INTO failed, '
+            'falling back to checkpoint+copy: $e\n$st');
+        // Best-effort fallback: flush the WAL into the main DB file, then copy.
+        // A raw copy of a still-open WAL database cannot be made fully torn-free
+        // from Dart (that needs the SQLite C backup API or a closed DB); the
+        // TRUNCATE checkpoint substantially reduces the window. We do an extra
+        // PASSIVE checkpoint after the truncate to flush any frames committed
+        // between the two awaits before reading bytes.
         await _db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
+        await _db.customStatement('PRAGMA wal_checkpoint(PASSIVE)');
         await File(_dbPath).copy(cleanDbPath);
       }
 

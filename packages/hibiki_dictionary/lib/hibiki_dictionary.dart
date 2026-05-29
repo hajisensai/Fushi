@@ -3,7 +3,12 @@ library hibiki_dictionary;
 export 'src/engine/dictionary.dart';
 export 'src/engine/dictionary_utils.dart';
 export 'src/engine/hoshidicts.dart';
-export 'src/ffi/hoshidicts_ffi_bindings.dart';
+// HBK-AUDIT-098: do NOT export the raw FFI bindings. The Ffi* Struct mirrors
+// hold Pointer<Utf8> fields owned by native malloc/free and are only valid
+// between an FFI call and its matching free. Exposing them as package public
+// API would let consumers hold pointers past the free boundary (use-after-free
+// the type system presents as valid). hoshidicts.dart imports the bindings via
+// a relative path; only the safe HoshiDicts wrapper + Hoshi* data classes are public.
 export 'src/formats/dictionary_format.dart';
 export 'src/formats/dictionary_downloader.dart';
 export 'src/formats/yomichan_dictionary_format.dart';

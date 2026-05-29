@@ -86,10 +86,14 @@ class JsonAlignmentParser {
       ..sort((a, b) => a.sentenceIndex.compareTo(b.sentenceIndex));
   }
 
-  /// 二分查找：返回 [positionMs] 落在其 `[startMs, endMs]` 区间内的 cue 下标。
+  /// 二分查找：返回 [positionMs] 落在其闭区间 `[startMs, endMs]` 内的 cue 下标。
   ///
-  /// 对齐上游 Sasayaki `CueTimeline.cue(at:)`：位置严格在两条 cue 之间的静音
-  /// gap（`prev.endMs < positionMs < next.startMs`）时返回 -1，让上层清高亮。
+  /// HBK-AUDIT-153：endMs 是 **inclusive** 的——`positionMs == prev.endMs` 仍
+  /// 返回 prev（见 `findCueIndex` 测试 'position at endMs returns that cue'）。
+  /// 静音 gap 因此为 `prev.endMs < positionMs < next.startMs`，落入 gap 返回
+  /// -1 让上层清高亮。这与上游 Sasayaki `CueTimeline.cue(at:)` 仅在 endMs 这
+  /// 1ms 边界点上有差异（上游 exclusive），不可感知，故保留闭区间契约并与文档
+  /// 对齐，避免无意义地翻转行为破坏既有测试。
   /// 旧实现曾采用 "sustain"（gap 保持上一句）避免 SRT 字幕轻微抖动，但会让
   /// 重复短句在 cue 切换时因 `textFragmentId` 相同而 `_updateCurrentCue`
   /// 短路，表现为"高亮偶尔不出现"。

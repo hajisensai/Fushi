@@ -13,15 +13,37 @@ class HibikiDesignTokens {
   final HibikiTypeRoles type;
   final HibikiSpacingTokens spacing;
 
+  // HBK-AUDIT-150: `of` is named like an O(1) lookup but used to build a fresh
+  // token graph (11 Color reads + 6 TextStyle.copyWith allocations) on every
+  // call — i.e. on every build of every component that reads it, several of
+  // which call it more than once per build. ColorScheme/TextTheme are immutable
+  // and Theme.of returns the same instance until the theme changes, so we
+  // memoize by (scheme, textTheme) identity: the graph is rebuilt only when the
+  // theme actually changes, and repeat calls within a frame return the cache.
+  static ColorScheme? _cachedScheme;
+  static TextTheme? _cachedTextTheme;
+  static HibikiDesignTokens? _cached;
+
   static HibikiDesignTokens of(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme scheme = theme.colorScheme;
-    return HibikiDesignTokens(
+    final TextTheme textTheme = theme.textTheme;
+    final HibikiDesignTokens? cached = _cached;
+    if (cached != null &&
+        identical(_cachedScheme, scheme) &&
+        identical(_cachedTextTheme, textTheme)) {
+      return cached;
+    }
+    final HibikiDesignTokens tokens = HibikiDesignTokens(
       radii: const HibikiRadii(),
       surfaces: HibikiSurfaceColors.fromScheme(scheme),
       type: HibikiTypeRoles.fromTheme(theme),
       spacing: const HibikiSpacingTokens(),
     );
+    _cachedScheme = scheme;
+    _cachedTextTheme = textTheme;
+    _cached = tokens;
+    return tokens;
   }
 }
 

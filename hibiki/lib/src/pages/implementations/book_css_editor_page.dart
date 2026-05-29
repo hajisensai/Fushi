@@ -129,9 +129,14 @@ class _BookCssEditorPageState extends State<BookCssEditorPage> {
     _diskContent[index] = content;
     _entries = _repo.discoverCssFiles();
     setState(() {});
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(t.book_css_editor_saved)),
-    );
+    // _doSave is reached after an awaited unsaved-changes dialog in
+    // _guardUnsaved, so the page may already be popped/disposed. Guard the
+    // snackbar like _doResetCurrent/_doResetAll (HBK-AUDIT-108).
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t.book_css_editor_saved)),
+      );
+    }
   }
 
   Future<void> _doResetCurrent() async {

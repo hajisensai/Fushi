@@ -165,9 +165,16 @@ class SyncManager {
     final localPosition = await _db.getReaderPosition(book.id);
     final chapters = parseChaptersJson(book.chaptersJson);
 
+    // HBK-AUDIT-047: compute the local progress fraction so a timestamp tie
+    // can be broken by actual content instead of silently declaring 'synced'.
+    final double? localProgress = localPosition != null
+        ? _localProgressFraction(localPosition, chapters)
+        : null;
+
     final syncDir = direction ??
         _determineSyncDirection(
           localUpdatedAt: localPosition?.updatedAt,
+          localProgress: localProgress,
           remoteProgressFile: syncFiles.progress,
         );
 
@@ -225,6 +232,7 @@ class SyncManager {
 
   SyncDirection _determineSyncDirection({
     required int? localUpdatedAt,
+    required double? localProgress,
     required DriveFile? remoteProgressFile,
   }) {
     final int? remoteTimestamp = remoteProgressFile != null
@@ -239,7 +247,55 @@ class SyncManager {
 
     if (localUpdatedAt > remoteTimestamp) return SyncDirection.exportToTtu;
     if (remoteTimestamp > localUpdatedAt) return SyncDirection.importFromTtu;
-    return SyncDirection.synced;
+
+    // HBK-AUDIT-047: timestamps collide to the same millisecond. Wall-clock
+    // ties are realistic (two devices saving within the same ms, clock-equal
+    // restores), and the progress fraction is encoded in the remote filename,
+    // so break the tie on actual content instead of silently skipping. Whoever
+    // has read further wins — the larger reading position is the value worth
+    // keeping. Only fall back to 'synced' when both sides genuinely agree (or
+    // the remote fraction is unparseable / local content unknown).
+    final double? remoteProgress =
+        _parseRemoteProgressFraction(remoteProgressFile!.name);
+    if (localProgress == null || remoteProgress == null) {
+      return SyncDirection.synced;
+    }
+    const double epsilon = 1e-6;
+    final double delta = localProgress - remoteProgress;
+    if (delta.abs() <= epsilon) return SyncDirection.synced;
+    return delta > 0 ? SyncDirection.exportToTtu : SyncDirection.importFromTtu;
+  }
+
+  /// HBK-AUDIT-047: local reading progress as a 0..1 fraction, mirroring the
+  /// fraction embedded in the remote progress filename. Uses the dirty-flag
+  /// cache (`ttuCharOffset`) when valid, otherwise converts the live position.
+  double? _localProgressFraction(
+    ReaderPositionRow localPosition,
+    List<ChapterCharInfo> chapters,
+  ) {
+    final int total = totalCharacterCount(chapters);
+    if (total <= 0) return null;
+    final int cachedCharOffset = localPosition.ttuCharOffset;
+    final int exploredChars = cachedCharOffset >= 0
+        ? cachedCharOffset
+        : toExploredCharCount(
+            sectionIndex: localPosition.sectionIndex,
+            normCharOffset: localPosition.normCharOffset,
+            chapters: chapters,
+          );
+    return exploredChars / total;
+  }
+
+  /// HBK-AUDIT-047: progress filenames are `progress_1_6_{timestamp}_{fraction}.json`;
+  /// extract the trailing fraction so a timestamp tie can compare content.
+  double? _parseRemoteProgressFraction(String fileName) {
+    if (!fileName.startsWith('progress_')) return null;
+    final String base = fileName.endsWith('.json')
+        ? fileName.substring(0, fileName.length - '.json'.length)
+        : fileName;
+    final List<String> parts = base.split('_');
+    if (parts.length < 5) return null;
+    return double.tryParse(parts[4]);
   }
 
   // ── Import ────────────────────────────────────────────────────────
@@ -520,7 +576,17 @@ class SyncManager {
     if (row == null) return const [];
 
     if (row.audioPathsJson != null) {
-      return (jsonDecode(row.audioPathsJson!) as List).cast<String>();
+      // HBK-AUDIT-138: a malformed audioPathsJson row must not throw an
+      // unguarded Format/CastError that aborts content sync for the book.
+      // Parse defensively and fall through to the audioRoot scan on failure.
+      try {
+        final dynamic decoded = jsonDecode(row.audioPathsJson!);
+        if (decoded is List) {
+          return decoded.whereType<String>().toList();
+        }
+      } on FormatException catch (e) {
+        debugPrint('[sync] audioPathsJson decode failed for book $bookId: $e');
+      }
     }
 
     if (row.audioRoot != null) {
