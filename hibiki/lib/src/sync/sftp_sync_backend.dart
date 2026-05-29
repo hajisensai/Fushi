@@ -161,7 +161,7 @@ class SftpSyncBackend extends SyncBackend {
             if (!await _fileExists(sftp, coverPath)) {
               await _writeBytes(sftp, coverPath, coverData);
             }
-          } catch (_) {}
+          } catch (_) {/* best-effort: failure is non-critical here */}
         }
 
         return path;
@@ -314,7 +314,7 @@ class SftpSyncBackend extends SyncBackend {
           if (!success) {
             try {
               destination.deleteSync();
-            } catch (_) {}
+            } catch (_) {/* best-effort: failure is non-critical here */}
           }
         }
       });
@@ -457,10 +457,10 @@ class SftpSyncBackend extends SyncBackend {
   void _disconnect() {
     try {
       _sftpClient?.close();
-    } catch (_) {}
+    } catch (_) {/* best-effort: failure is non-critical here */}
     try {
       _sshClient?.close();
-    } catch (_) {}
+    } catch (_) {/* best-effort: failure is non-critical here */}
     _sftpClient = null;
     _sshClient = null;
   }

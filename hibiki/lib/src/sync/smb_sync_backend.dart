@@ -130,7 +130,7 @@ class SmbSyncBackend extends SyncBackend {
         if (!existing) {
           await _ops!.putBytes(coverPath, coverData, format.mimeType);
         }
-      } catch (_) {}
+      } catch (_) {/* best-effort: failure is non-critical here */}
     }
 
     return path;
@@ -264,7 +264,7 @@ class SmbSyncBackend extends SyncBackend {
       if (!success) {
         try {
           destination.deleteSync();
-        } catch (_) {}
+        } catch (_) {/* best-effort: failure is non-critical here */}
       }
     }
   }

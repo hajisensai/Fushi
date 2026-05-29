@@ -630,7 +630,7 @@ class FtpSyncBackend extends SyncBackend {
   Future<void> _deleteTempFile(File file) async {
     try {
       if (await file.exists()) await file.delete();
-    } catch (_) {}
+    } catch (_) {/* best-effort: failure is non-critical here */}
   }
 
   /// Extract the parent directory from an FTP path.

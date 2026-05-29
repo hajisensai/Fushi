@@ -390,7 +390,7 @@ class OneDriveSyncBackend extends SyncBackend {
             contentType: format.mimeType,
           );
         }
-      } catch (_) {}
+      } catch (_) {/* best-effort: failure is non-critical here */}
     }
 
     return folderId;
@@ -539,7 +539,7 @@ class OneDriveSyncBackend extends SyncBackend {
       if (!success) {
         try {
           destination.deleteSync();
-        } catch (_) {}
+        } catch (_) {/* best-effort: failure is non-critical here */}
       }
     }
   }

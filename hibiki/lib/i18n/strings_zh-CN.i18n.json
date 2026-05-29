@@ -1149,5 +1149,6 @@
     "sync_err_timeout": "连接超时——服务器未在限定时间内响应。",
     "sync_err_quota": "云端存储空间已满（配额已用尽）。",
     "sync_err_auth_expired": "登录已过期，请重新登录。",
-    "sync_server_port_in_use": "端口 $port 已被占用，请换一个端口。"
+    "sync_server_port_in_use": "端口 $port 已被占用，请换一个端口。",
+    "sync_lan_scan_failed": "扫描失败——请检查网络权限或防火墙。"
 }

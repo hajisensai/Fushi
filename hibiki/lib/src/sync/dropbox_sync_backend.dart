@@ -178,7 +178,7 @@ class DropboxSyncBackend extends SyncBackend {
           Uri.parse('$_apiBase/auth/token/revoke'),
           headers: {'Authorization': 'Bearer $_accessToken'},
         );
-      } catch (_) {}
+      } catch (_) {/* best-effort: failure is non-critical here */}
     }
     _accessToken = null;
     _refreshToken = null;
@@ -367,7 +367,7 @@ class DropboxSyncBackend extends SyncBackend {
             mode: 'add',
           );
         }
-      } catch (_) {}
+      } catch (_) {/* best-effort: failure is non-critical here */}
     }
 
     return folderPath;
@@ -524,7 +524,7 @@ class DropboxSyncBackend extends SyncBackend {
       if (!success) {
         try {
           destination.deleteSync();
-        } catch (_) {}
+        } catch (_) {/* best-effort: failure is non-critical here */}
       }
     }
   }

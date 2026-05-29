@@ -50,7 +50,11 @@ Future<bool> _defaultHibikiProbe(String url, String token) async {
     return true;
   } on SyncAuthError {
     rethrow;
-  } catch (_) {
+  } catch (e) {
+    // Unreachable, timed out, or the server returned an error — skip this
+    // address, but log why so a running-but-erroring server is distinguishable
+    // from "down" (HBK-AUDIT-166).
+    debugPrint('[hibiki-client] probe failed for $url: $e');
     return false;
   } finally {
     // force: abort any connect still in flight when we timed out, so an

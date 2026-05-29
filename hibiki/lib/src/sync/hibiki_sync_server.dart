@@ -271,11 +271,11 @@ class HibikiSyncServer {
       // response — matching the download paths' cleanup (HBK-AUDIT-029).
       try {
         await sink.close();
-      } catch (_) {}
+      } catch (_) {/* best-effort: failure is non-critical here */}
       if (file.existsSync()) {
         try {
           file.deleteSync();
-        } catch (_) {}
+        } catch (_) {/* best-effort: failure is non-critical here */}
       }
       return shelf.Response(500, body: 'Write failed');
     }

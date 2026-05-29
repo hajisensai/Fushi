@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:multicast_dns/multicast_dns.dart';
 
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
+
 class HibikiDevice {
   HibikiDevice({
     required this.name,
@@ -93,8 +95,11 @@ class LanDiscoveryService {
         }
       }
       _deviceStream.add(currentDevices);
-    } catch (_) {
-      // mDNS scan can fail on some networks — silently ignore
+    } catch (e, stack) {
+      // A periodic mDNS scan can fail (transient network/interface state).
+      // Record it rather than swallowing so repeated failures are diagnosable
+      // (HBK-AUDIT-164). Startup failures surface separately via startDiscovery.
+      ErrorLogService.instance.log('LanDiscovery.mdnsScan', e, stack);
     }
   }
 

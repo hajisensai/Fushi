@@ -292,7 +292,10 @@ class _SyncAccountWidgetState extends State<_SyncAccountWidget> {
           _email = email;
         });
       }
-    } catch (_) {
+    } catch (e, stack) {
+      // Don't silently show "not signed in" on a transient check failure —
+      // record it so the cause is diagnosable (HBK-AUDIT-163).
+      ErrorLogService.instance.log('SyncAccount.checkAuth', e, stack);
     } finally {
       if (mounted) setState(() => _initialCheckDone = true);
     }
@@ -469,13 +472,19 @@ class _WebDavConfigWidgetState extends State<_WebDavConfigWidget> {
   }
 
   Future<void> _saveCredentials() async {
-    final repo = SyncRepository(widget.settingsContext.appModel.database);
-    final url = _urlController.text.trim();
-    final username = _usernameController.text.trim();
-    final password = _passwordController.text;
-    await repo.setWebDavUrl(url.isEmpty ? null : url);
-    await repo.setWebDavUsername(username.isEmpty ? null : username);
-    await repo.setWebDavPassword(password.isEmpty ? null : password);
+    // Called fire-and-forget from onChanged; log write failures so they are
+    // not silently dropped (HBK-AUDIT-162).
+    try {
+      final repo = SyncRepository(widget.settingsContext.appModel.database);
+      final url = _urlController.text.trim();
+      final username = _usernameController.text.trim();
+      final password = _passwordController.text;
+      await repo.setWebDavUrl(url.isEmpty ? null : url);
+      await repo.setWebDavUsername(username.isEmpty ? null : username);
+      await repo.setWebDavPassword(password.isEmpty ? null : password);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SyncConfig.saveWebDav', e, stack);
+    }
   }
 
   Future<void> _testConnection() async {
@@ -972,16 +981,20 @@ class _FtpConfigWidgetState extends State<_FtpConfigWidget> {
   }
 
   Future<void> _saveCredentials() async {
-    final repo = SyncRepository(widget.settingsContext.appModel.database);
-    final host = _hostController.text.trim();
-    final user = _usernameController.text.trim();
-    final pass = _passwordController.text;
-    final port = int.tryParse(_portController.text.trim()) ?? 21;
-    await repo.setFtpHost(host.isEmpty ? null : host);
-    await repo.setFtpPort(port);
-    await repo.setFtpUsername(user.isEmpty ? null : user);
-    await repo.setFtpPassword(pass.isEmpty ? null : pass);
-    await repo.setFtpTlsEnabled(_useTls);
+    try {
+      final repo = SyncRepository(widget.settingsContext.appModel.database);
+      final host = _hostController.text.trim();
+      final user = _usernameController.text.trim();
+      final pass = _passwordController.text;
+      final port = int.tryParse(_portController.text.trim()) ?? 21;
+      await repo.setFtpHost(host.isEmpty ? null : host);
+      await repo.setFtpPort(port);
+      await repo.setFtpUsername(user.isEmpty ? null : user);
+      await repo.setFtpPassword(pass.isEmpty ? null : pass);
+      await repo.setFtpTlsEnabled(_useTls);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SyncConfig.saveFtp', e, stack);
+    }
   }
 
   Future<void> _testConnection() async {
@@ -1130,17 +1143,21 @@ class _SftpConfigWidgetState extends State<_SftpConfigWidget> {
   }
 
   Future<void> _saveCredentials() async {
-    final repo = SyncRepository(widget.settingsContext.appModel.database);
-    final host = _hostController.text.trim();
-    final user = _usernameController.text.trim();
-    final pass = _passwordController.text;
-    final port = int.tryParse(_portController.text.trim()) ?? 22;
-    final key = _keyController.text.trim();
-    await repo.setSftpHost(host.isEmpty ? null : host);
-    await repo.setSftpPort(port);
-    await repo.setSftpUsername(user.isEmpty ? null : user);
-    await repo.setSftpPassword(pass.isEmpty ? null : pass);
-    await repo.setSftpPrivateKey(key.isEmpty ? null : key);
+    try {
+      final repo = SyncRepository(widget.settingsContext.appModel.database);
+      final host = _hostController.text.trim();
+      final user = _usernameController.text.trim();
+      final pass = _passwordController.text;
+      final port = int.tryParse(_portController.text.trim()) ?? 22;
+      final key = _keyController.text.trim();
+      await repo.setSftpHost(host.isEmpty ? null : host);
+      await repo.setSftpPort(port);
+      await repo.setSftpUsername(user.isEmpty ? null : user);
+      await repo.setSftpPassword(pass.isEmpty ? null : pass);
+      await repo.setSftpPrivateKey(key.isEmpty ? null : key);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SyncConfig.saveSftp', e, stack);
+    }
   }
 
   Future<void> _testConnection() async {
@@ -1279,13 +1296,17 @@ class _SmbConfigWidgetState extends State<_SmbConfigWidget> {
   }
 
   Future<void> _saveCredentials() async {
-    final repo = SyncRepository(widget.settingsContext.appModel.database);
-    final url = _urlController.text.trim();
-    final user = _usernameController.text.trim();
-    final pass = _passwordController.text;
-    await repo.setSmbWebDavUrl(url.isEmpty ? null : url);
-    await repo.setSmbUsername(user.isEmpty ? null : user);
-    await repo.setSmbPassword(pass.isEmpty ? null : pass);
+    try {
+      final repo = SyncRepository(widget.settingsContext.appModel.database);
+      final url = _urlController.text.trim();
+      final user = _usernameController.text.trim();
+      final pass = _passwordController.text;
+      await repo.setSmbWebDavUrl(url.isEmpty ? null : url);
+      await repo.setSmbUsername(user.isEmpty ? null : user);
+      await repo.setSmbPassword(pass.isEmpty ? null : pass);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SyncConfig.saveSmb', e, stack);
+    }
   }
 
   Future<void> _testConnection() async {
@@ -1405,8 +1426,12 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget> {
   Future<void> _persistUrls() => _repo.setHibikiClientUrls(_urls);
 
   Future<void> _saveToken() async {
-    final String token = _tokenController.text.trim();
-    await _repo.setHibikiClientToken(token.isEmpty ? null : token);
+    try {
+      final String token = _tokenController.text.trim();
+      await _repo.setHibikiClientToken(token.isEmpty ? null : token);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SyncConfig.saveHibikiToken', e, stack);
+    }
   }
 
   /// Add a new address, or edit the one at [index]. Reuses the URL field
@@ -1505,7 +1530,10 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget> {
             .testConnection(url: u.url, token: token)
             .timeout(const Duration(seconds: 5));
         ok = true;
-      } catch (_) {
+      } catch (e, stack) {
+        // Record why an address probe failed (auth vs network vs timeout)
+        // instead of only showing a generic ✗ (HBK-AUDIT-165).
+        ErrorLogService.instance.log('SyncTestAll:${u.url}', e, stack);
         ok = false;
       }
       if (!mounted) return;
@@ -1707,6 +1735,11 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
     );
     try {
       await _server!.start();
+      // Persist enabled only once the bind actually succeeded, so a failed
+      // start never leaves a stuck "on" flag that re-fails every launch
+      // (HBK-AUDIT-167).
+      await SyncRepository(widget.settingsContext.appModel.database)
+          .setServerEnabled(true);
       if (mounted) setState(() {});
     } on SyncServerPortInUseException catch (e) {
       _server = null;
@@ -1757,13 +1790,15 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
             value: _enabled,
             contentPadding: EdgeInsets.zero,
             onChanged: (bool v) async {
-              final repo =
-                  SyncRepository(widget.settingsContext.appModel.database);
-              await repo.setServerEnabled(v);
-              setState(() => _enabled = v);
               if (v) {
+                // Reflect the toggle while starting; _startServer persists
+                // enabled on success and resets it on failure (HBK-AUDIT-167).
+                setState(() => _enabled = true);
                 await _startServer();
               } else {
+                setState(() => _enabled = false);
+                await SyncRepository(widget.settingsContext.appModel.database)
+                    .setServerEnabled(false);
                 await _stopServer();
               }
             },
@@ -1837,6 +1872,7 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget> {
   late LanDiscoveryService _discovery;
   List<HibikiDevice> _devices = <HibikiDevice>[];
   bool _scanning = false;
+  bool _scanFailed = false;
   StreamSubscription<List<HibikiDevice>>? _devicesSub;
 
   @override
@@ -1858,13 +1894,20 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget> {
   }
 
   Future<void> _startScan() async {
-    setState(() => _scanning = true);
+    setState(() {
+      _scanning = true;
+      _scanFailed = false;
+    });
     _devicesSub = _discovery.devices.listen((List<HibikiDevice> devices) {
       if (mounted) setState(() => _devices = devices);
     });
     try {
       await _discovery.startDiscovery();
-    } catch (_) {
+    } catch (e, stack) {
+      // Surface the failure instead of showing an empty "no devices" list with
+      // no hint that the scan itself failed (permissions/firewall) — HBK-AUDIT-164.
+      ErrorLogService.instance.log('LanDiscovery.scan', e, stack);
+      if (mounted) setState(() => _scanFailed = true);
     } finally {
       if (mounted) setState(() => _scanning = false);
     }
@@ -1903,7 +1946,12 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget> {
             ],
           ),
           const SizedBox(height: 8),
-          if (_devices.isEmpty)
+          if (_scanFailed)
+            Text(t.sync_lan_scan_failed,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.error,
+                    ))
+          else if (_devices.isEmpty)
             Text(t.sync_lan_no_devices,
                 style: Theme.of(context).textTheme.bodySmall),
           for (final HibikiDevice device in _devices)
