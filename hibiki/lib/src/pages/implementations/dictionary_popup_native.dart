@@ -280,16 +280,16 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
             ...items.asMap().entries.map((itemEntry) {
               final item = itemEntry.value;
               final num = items.length > 1 ? '${itemEntry.key + 1}. ' : '';
+              // Glossary lines are not interactive in the native popup
+              // (recursive lookup on tap is WebView-only), so there is no tap
+              // target to make focusable — plain Text, no dead GestureDetector.
               return Padding(
                 padding: const EdgeInsets.only(left: 8, bottom: 2),
-                child: GestureDetector(
-                  onTap: () => _onGlossaryTap(item.content),
-                  child: Text(
-                    '$num${item.content}',
-                    style: tokens.type.listTitle.copyWith(
-                      color: textColor,
-                      height: 1.4,
-                    ),
+                child: Text(
+                  '$num${item.content}',
+                  style: tokens.type.listTitle.copyWith(
+                    color: textColor,
+                    height: 1.4,
                   ),
                 ),
               );
@@ -298,10 +298,6 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
         ),
       );
     }).toList();
-  }
-
-  void _onGlossaryTap(String text) {
-    // no-op for now; recursive lookup on tap is WebView-only
   }
 }
 
