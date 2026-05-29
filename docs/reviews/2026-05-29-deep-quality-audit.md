@@ -3350,3 +3350,97 @@ static void scheduleCheck(... bool betaChannel = false, bool debugChannel = fals
 - **FIXED**：在 Round 3 的 117 基础上 +（057/056/025 原生 teardown 复审项已于 `b5e751a02` 落地）+（本轮 HibikiModalSheetFrame 溢出根因修复）。
 - AnkiDroid 测试流程：从"无脚本/手动"升级为"脚本化、可复现、已设备验证"。
 - 全量 `flutter test` 从"+1383 带 2 失败"升级为"+1415 全绿"。
+
+---
+
+## Round 4 — Sync 子系统"同类隐患"专项审计 (2026-05-29)
+
+### Scope
+应用户"还有类似问题吗"，对 `hibiki/lib/src/sync/` 全部后端 + 同步设置 UI 做针对性审计，专找本会话已修问题的同类：服务器根污染/绝对路径、持久化后失败导致的卡死/脏态、应可配置却写死的值、跨重连/会话失效的状态、静默吞异常。方法：4 维度并行 finder → 每条 finding 对抗式复核（27 agent）。共确认 18 条（去重后约 12 条 distinct），驳回 5 条。
+
+### Findings
+
+#### HBK-AUDIT-157 — HibikiClientSyncBackend `_sessionResolved` 在 clearCache() 后未重置 → 重试不再重探、失败转移失效
+- **Severity**: Important / **Status**: Resolved (本轮修复) / **类**: reconnect-fragile
+- **位置**: `hibiki/lib/src/sync/hibiki_client_sync_backend.dart` `_ensureResolved`/`clearCache`
+- **根因**: SyncManager 遇可重试错误时 `clearCache()` 清掉 folder 缓存并重试，但 `_sessionResolved` 仍为 true，`_ensureResolved()` 直接返回不重探，整个会话锁死在已不可达的旧地址。**这是本会话 LAN→WAN 失败转移特性自身引入的回归**（之前两轮 review 误判"锁定即正确"）。
+- **影响**: 出门后 LAN 中断 → 本次同步可重试错误 → 重试仍打死掉的 LAN，永不切到 WAN，需手动干预。
+- **修复**: `clearCache()` 同时 `_sessionResolved=false`（clearCache 已清空 folder 缓存，重探+换址此时安全，符合"每地址独立缓存"设计）。
+
+#### HBK-AUDIT-158 — WebDAV / SMB `authenticate()` 改 baseUrl 时未 clearCache() → 缓存的旧 host 全 URL 路径打到旧服务器
+- **Severity**: Important / **Status**: Open / **类**: root-pollution（host 耦合缓存）
+- **位置**: `webdav_sync_backend.dart:28-42`、`smb_sync_backend.dart:40-54`
+- **根因**: 与 HibikiClient `_ensureResolved` 不同，WebDAV/SMB 的 authenticate 换 baseUrl 后不清 `_rootFolderId`/`_titleToFolderId`（内含旧 baseUrl 的完整 URL）。
+- **影响**: 用户改 WebDAV/SMB URL 后，缓存的旧路径被复用，操作打到旧服务器；多服务器场景元数据错位。经 404→可重试→SyncManager 清缓存自愈，但存在危险窗口。
+- **修复**: authenticate 建好新 `_ops` 后调用 `clearCache()`（仿 signOut 模式）。
+
+#### HBK-AUDIT-159 — Dropbox / OneDrive `restoreAuth()` 刷新失败未清 token → isAuthenticated 仍 true，用过期 token 静默 401 死循环
+- **Severity**: Important / **Status**: Open / **类**: silent-failure
+- **位置**: `dropbox_sync_backend.dart:191-206`、`onedrive_sync_backend.dart:178-195`
+- **根因**: `refreshAuth()` 抛异常时 catch 直接 `return false`，未清 `_accessToken`/`_refreshToken`；`isAuthenticated` 只判 `_accessToken!=null` → 仍 true。
+- **影响**: 后台 token 过期后每次自动同步用陈旧 token 命中 401（非可重试 SyncAuthError），auto-trigger 静默吞掉，用户无感，需手动重新登录才恢复。
+- **修复**: catch 块清空 `_accessToken`/`_refreshToken`（仿 signOut）。
+
+#### HBK-AUDIT-160 — WebDAV `resolveHref` 跨源校验漏判端口 → 非标端口服务器返回省略端口的 href 时 URL 重建到错端口
+- **Severity**: Important / **Status**: Open / **类**: cross-origin
+- **位置**: `webdav_ops.dart:162-175`（line 166 只比 host/scheme，不比 port）
+- **影响**: 服务器跑 :8080 但 PROPFIND 返回省略端口的绝对 href 时，校验通过但重建 URL 端口错（默认 80/443）→ 连接失败/打错服务器。多数服务器返回相对路径，实际影响有限。
+- **修复**: 校验扩展为同时比 `hrefUri.port == baseUri.port`（默认端口等价处理）。
+
+#### HBK-AUDIT-161 — SFTP 操作未把 `SftpStatusError` 包装成可重试 SyncBackendError（FTP/WebDAV 都包了）→ 失败逃逸到 catch-all，同步被跳过不重试
+- **Severity**: Important / **Status**: Open / **类**: error-misclassification（数据风险）
+- **位置**: `sftp_sync_backend.dart` listBooks/listSyncFiles/uploadContentFile/downloadContentFile/_downloadJson
+- **影响**: 同样的远端临时缺失/网络抖动，WebDAV/FTP 自动重试恢复，SFTP 却 `SftpStatusError` 裸抛 → `sync_manager` 走 catch-all（非 isRetryable 分支）→ skipped 不重试。主路径先 ensureBookFolder 重建，概率低，但非预期失败时同步卡住。
+- **修复**: SFTP 各操作捕获 `SftpStatusError` 并包成 `SyncBackendError(isRetryable: ...)`，与 FTP/WebDAV 对齐。
+
+#### HBK-AUDIT-162 — 各 config widget 凭据/token 每次按键 fire-and-forget 保存、无校验无错误处理；WebDAV testConnection 先存后验 → 无效配置"粘住"
+- **Severity**: Important / **Status**: Open / **类**: persist-then-fail
+- **位置**: `sync_settings_schema.dart` WebDAV(535/541/548)、FTP(1021/1028/1034/1041)、SFTP(1182/1189/1195/1202/1210)、SMB(1324/1330/1337)、HibikiServer token(1593)；testConnection 481-482 先存后验
+- **影响**: 输错/半截 URL 即写库；DB 写失败被静默丢弃，UI/DB 漂移；无效配置在重启后反复同步失败直到手动改对。
+- **修复**: 改为 debounce 或失焦/提交时保存 + try-catch 反馈；testConnection 成功后再持久化。
+
+#### HBK-AUDIT-163 — `_SyncAccountWidget._checkAuth` 空 catch + 无条件 `_initialCheckDone=true` → 瞬时错误下 UI 假显"未登录"
+- **Severity**: Important / **Status**: Open / **类**: silent-failure
+- **位置**: `sync_settings_schema.dart:281-299`（catch 在 295，finally 无条件置位）
+- **影响**: DB/网络/后端解析瞬时异常被吞，UI 退出 loading 显示"未登录"（实际未知），按钮行为误导，无任何错误线索。
+- **修复**: catch 内 `debugPrint`/`ErrorLogService` 记录，并区分"未配置"与"检查失败"两态。
+
+#### HBK-AUDIT-164 — LAN 发现两层空 catch（widget `_startScan` + service `_scan`）→ mDNS/权限失败被完全掩盖
+- **Severity**: Important / **Status**: Open / **类**: silent-failure
+- **位置**: `sync_settings_schema.dart:1865-1870`、`lan_discovery_service.dart:96-98`
+- **影响**: 权限缺失/网络受限时扫描失败，用户只看到"无设备"，无法区分"真没设备"与"扫描失败"，无从排障（iOS16+/受限网络常见）。
+- **修复**: 记录异常 + 设错误态显示"扫描失败（可能权限/防火墙）"。
+
+#### HBK-AUDIT-165 — `_testAll()` 空 catch 吞掉每个地址的探测异常、无日志无分类
+- **Severity**: Important / **Status**: Open / **类**: error-misclassification
+- **位置**: `sync_settings_schema.dart:1502-1510`
+- **影响**: 仅显示笼统 ✓/✗，无法区分 auth 失败/网络不可达/超时（WebDAV 测试用 `friendlySyncErrorDetail` 有详情，此处不一致）。
+- **修复**: 记录异常并按类型分别提示。
+
+#### HBK-AUDIT-166 — HibikiClient `_defaultHibikiProbe` catch 吞掉 4xx/5xx 服务器错误、无日志（本会话代码）
+- **Severity**: Minor / **Status**: Open / **类**: error-misclassification
+- **位置**: `hibiki_client_sync_backend.dart:38-60`（catch 在 53）
+- **影响**: 服务器在跑但返回 5xx，被当"不可达"跳过，无任何调试痕迹；与 SocketException 不可区分。
+- **修复**: 探测失败时 `debugPrint` 记录地址+错误（仍返回 false 不改失败转移语义）。
+
+#### HBK-AUDIT-167 — 服务器开关在 `_startServer()` 成功前就持久化 `enabled`（本会话代码，残留）
+- **Severity**: Minor / **Status**: Open（已被本会话 snackbar+复位部分缓解）/ **类**: persist-then-fail
+- **位置**: `sync_settings_schema.dart` `_ServerModeWidget.onChanged`（`setServerEnabled(v)` 在 `_startServer()` await 之前）
+- **影响**: 端口占用时开关先亮再弹回，视觉跳动；已有 snackbar + 失败复位，故仅残留观感问题。
+- **修复**: 改为 `_startServer()` 成功后再 `setServerEnabled(true)`。
+
+#### HBK-AUDIT-168 — GoogleDrive `_cachedApi` 在 401 重试再失败后未清 → 毒化缓存，后续操作持续 401 直到重新登录
+- **Severity**: Minor / **Status**: Open / **类**: stuck-state
+- **位置**: `google_drive_handler.dart:63-81`（重试 rethrow 前未再清 `_cachedApi`）
+- **影响**: refresh 后的新 token 又被拒时，旧 `_cachedApi` 留存，后续手动同步反复 401（401 非可重试，不会自动循环，但需重新登录恢复）。
+- **修复**: 重试分支 rethrow 前 `_cachedApi = null`。
+
+### 已驳回（对抗复核判定不可达/by-design，记录以免重复上报）
+- 切换后端类型后旧凭据"残留"：不可达——sync 只按当前 backendType 解析并只读自己的凭据，旧 widget 不实例化、isAuthenticated 守卫优雅退出。
+- FTP `_homeDir` 跨会话陈旧：已在 `1b32106` 文档化的自愈路径覆盖（可重试→清缓存→重连重抓 PWD），by-design。
+- LanDiscovery 写死 `port: 8765`：死参数，类内从不读取（端口取自 mDNS SRV 记录），零功能影响。
+- `_ServerModeWidget` 初值 8765：`_loaded` 为假时 build 返回 SizedBox.shrink，初值从不渲染。
+- SMB host/share/domain 的 getter/setter：dormant by-design（WebDAV-bridge facade，留作未来原生 SMB），生产从不调用。
+
+### Next Scope
+按风险优先修复：158/159（数据错位/静默登录死循环）→ 161（SFTP 重试一致性）→ 160（端口校验）→ 162/163/164/165（静默吞异常 + persist-then-fail，需统一"错误可见化 + 失焦保存"小设计）→ 166/167/168（Minor）。
