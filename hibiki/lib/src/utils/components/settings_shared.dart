@@ -108,12 +108,12 @@ class AdaptiveSettingsSection extends StatelessWidget {
     final List<Widget> rows = _withDividers(context, children);
     final Widget group = cupertino
         ? ClipRRect(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: tokens.radii.groupRadius,
             child: DecoratedBox(
               decoration: BoxDecoration(
                 color: CupertinoColors.secondarySystemGroupedBackground
                     .resolveFrom(context),
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: tokens.radii.groupRadius,
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -142,10 +142,9 @@ class AdaptiveSettingsSection extends StatelessWidget {
                     padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
                     child: Text(
                       title!.toUpperCase(),
-                      style: TextStyle(
+                      style: tokens.type.metadata.copyWith(
                         color:
                             CupertinoColors.secondaryLabel.resolveFrom(context),
-                        fontSize: 12,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -831,6 +830,7 @@ class _SettingsIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool cupertino = isCupertinoPlatform(context);
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final ColorScheme scheme = Theme.of(context).colorScheme;
     if (!cupertino) {
       return HibikiBadge(
@@ -845,7 +845,7 @@ class _SettingsIcon extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         color: scheme.primary,
-        borderRadius: BorderRadius.circular(7),
+        borderRadius: tokens.radii.controlRadius,
       ),
       child: SizedBox(
         width: 28,

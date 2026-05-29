@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -19,6 +21,18 @@ Widget _buildHarness({
 }
 
 void main() {
+  test('settings shared chrome uses design token radii and typography', () {
+    final String source = File('lib/src/utils/components/settings_shared.dart')
+        .readAsStringSync();
+
+    expect(source, contains('tokens.radii.groupRadius'));
+    expect(source, contains('tokens.radii.controlRadius'));
+    expect(source, contains('tokens.type.metadata'));
+    expect(source, isNot(contains('BorderRadius.circular(12)')));
+    expect(source, isNot(contains('BorderRadius.circular(7)')));
+    expect(source, isNot(contains('fontSize: 12')));
+  });
+
   testWidgets('switch rows use Material switch on Android', (tester) async {
     await tester.pumpWidget(
       _buildHarness(
