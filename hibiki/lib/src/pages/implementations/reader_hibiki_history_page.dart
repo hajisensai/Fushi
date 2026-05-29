@@ -491,9 +491,13 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   Widget _buildSrtCard(SrtBook book) {
     final String selKey = 'srt_${book.uid}';
     final tagWidget = book.id != null ? _buildSrtBookTagLabels(book.id!) : null;
-    final card = _bookCardShell(
+    final int? srtBookId = book.id;
+    return _bookCardShell(
       cardKey: ValueKey<String>('srt_entry_${book.ttuBookId}'),
       selectionKey: selKey,
+      dragBookId: srtBookId,
+      onTagDropped:
+          srtBookId == null ? null : (tag) => _addTagToSrtBook(srtBookId, tag),
       onTap: () => _openSrtBook(book),
       onLongPress: () => _showSrtBookDialog(book),
       child: Stack(
@@ -518,12 +522,6 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
             ),
         ],
       ),
-    );
-    if (book.id == null || _selectionMode) return card;
-    return _BookDragTarget(
-      bookId: book.id!,
-      onTagDropped: (tag) => _addTagToSrtBook(book.id!, tag),
-      child: card,
     );
   }
 
@@ -558,11 +556,13 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     required Widget child,
     Key? cardKey,
     String? selectionKey,
+    int? dragBookId,
+    void Function(BookTagRow tag)? onTagDropped,
   }) {
     final bool selected =
         selectionKey != null && _selectedKeys.contains(selectionKey);
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return HibikiCard(
+    final Widget card = HibikiCard(
       key: cardKey,
       padding: EdgeInsets.zero,
       margin: Spacing.of(context).insets.all.normal,
@@ -620,6 +620,14 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           ],
         ),
       ),
+    );
+    if (dragBookId == null || onTagDropped == null || _selectionMode) {
+      return card;
+    }
+    return BookDragTarget(
+      bookId: dragBookId,
+      onTagDropped: onTagDropped,
+      child: card,
     );
   }
 
@@ -1031,9 +1039,11 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   @override
   Widget buildMediaItem(MediaItem item) {
     final int? bookId = _parseBookId(item.mediaIdentifier);
-    final card = _bookCardShell(
+    return _bookCardShell(
       cardKey: ValueKey<String>('book_entry_${item.mediaIdentifier}'),
       selectionKey: item.mediaIdentifier,
+      dragBookId: bookId,
+      onTagDropped: bookId == null ? null : (tag) => _addTagToBook(bookId, tag),
       onTap: () async {
         final MediaSource source = item.getMediaSource(appModel: appModel);
         await appModel.openMedia(
@@ -1056,13 +1066,6 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         }
       },
       child: buildMediaItemContent(item),
-    );
-    if (bookId == null) return card;
-    if (_selectionMode) return card;
-    return _BookDragTarget(
-      bookId: bookId,
-      onTagDropped: (tag) => _addTagToBook(bookId, tag),
-      child: card,
     );
   }
 
@@ -1438,21 +1441,23 @@ class _TagBarContentState extends ConsumerState<_TagBarContent> {
   }
 }
 
-class _BookDragTarget extends StatefulWidget {
-  const _BookDragTarget({
+@visibleForTesting
+class BookDragTarget extends StatefulWidget {
+  const BookDragTarget({
     required this.bookId,
     required this.onTagDropped,
     required this.child,
+    super.key,
   });
   final int bookId;
   final void Function(BookTagRow tag) onTagDropped;
   final Widget child;
 
   @override
-  State<_BookDragTarget> createState() => _BookDragTargetState();
+  State<BookDragTarget> createState() => _BookDragTargetState();
 }
 
-class _BookDragTargetState extends State<_BookDragTarget> {
+class _BookDragTargetState extends State<BookDragTarget> {
   bool _isHovering = false;
 
   @override
@@ -1473,6 +1478,7 @@ class _BookDragTargetState extends State<_BookDragTarget> {
       },
       builder: (context, candidateData, rejectedData) {
         return Stack(
+          fit: StackFit.expand,
           children: [
             widget.child,
             if (_isHovering)

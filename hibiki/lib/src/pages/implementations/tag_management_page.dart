@@ -99,23 +99,8 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
   Future<void> _deleteTag(BookTagRow tag) async {
     final confirmed = await showAppDialog<bool>(
       context: context,
-      builder: (ctx) => adaptiveAlertDialog(
-        context: ctx,
-        title: Text(t.dialog_delete),
-        content: Text(t.tag_delete_confirm(name: tag.name)),
-        actions: [
-          adaptiveDialogAction(
-            context: ctx,
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(t.dialog_cancel),
-          ),
-          adaptiveDialogAction(
-            context: ctx,
-            isDestructiveAction: true,
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(t.dialog_delete),
-          ),
-        ],
+      builder: (ctx) => TagDeleteConfirmationDialog(
+        tagName: tag.name,
       ),
     );
     if (confirmed != true) return;
@@ -199,6 +184,64 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
   }
 }
 
+class TagDeleteConfirmationDialog extends StatelessWidget {
+  const TagDeleteConfirmationDialog({
+    required this.tagName,
+    super.key,
+  });
+
+  final String tagName;
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
+    return HibikiDialogFrame(
+      maxWidth: 420,
+      maxHeightFactor: 0.92,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      scrollable: false,
+      child: HibikiModalSheetFrame(
+        title: t.dialog_delete,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: Text(
+          t.tag_delete_confirm(name: tagName),
+          style: tokens.type.listSubtitle,
+        ),
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: [
+            adaptiveDialogAction(
+              context: context,
+              onPressed: () => Navigator.pop(context, false),
+              child: Text(t.dialog_cancel),
+            ),
+            adaptiveDialogAction(
+              context: context,
+              isDestructiveAction: true,
+              onPressed: () => Navigator.pop(context, true),
+              child: Text(t.dialog_delete),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class TagEditDialog extends StatefulWidget {
   const TagEditDialog({
     required this.title,
@@ -233,62 +276,87 @@ class TagEditDialogState extends State<TagEditDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return adaptiveAlertDialog(
-      context: context,
-      title: Text(widget.title),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          HibikiTextField(
-            controller: _nameController,
-            labelText: t.tag_name_hint,
-            autofocus: true,
-          ),
-          const SizedBox(height: 16),
-          Text(t.tag_color, style: Theme.of(context).textTheme.labelMedium),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: kTagPresetColors.map((color) {
-              final isSelected = _selectedColor == color;
-              return HibikiColorSwatch(
-                color: Color(color),
-                size: 32,
-                shape: HibikiColorSwatchShape.dot,
-                selected: isSelected,
-                onTap: () => setState(() => _selectedColor = color),
-              );
-            }).toList(),
-          ),
-        ],
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
+    return HibikiDialogFrame(
+      maxWidth: 420,
+      maxHeightFactor: 0.96,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      scrollable: false,
+      child: HibikiModalSheetFrame(
+        title: widget.title,
+        scrollable: true,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        body: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            HibikiTextField(
+              controller: _nameController,
+              labelText: t.tag_name_hint,
+              autofocus: true,
+            ),
+            SizedBox(height: tokens.spacing.gap + 4),
+            Text(t.tag_color, style: tokens.type.sectionLabel),
+            SizedBox(height: tokens.spacing.gap),
+            Wrap(
+              spacing: tokens.spacing.gap,
+              runSpacing: tokens.spacing.gap,
+              children: kTagPresetColors.map((color) {
+                final isSelected = _selectedColor == color;
+                return HibikiColorSwatch(
+                  color: Color(color),
+                  size: 32,
+                  shape: HibikiColorSwatchShape.dot,
+                  selected: isSelected,
+                  onTap: () => setState(() => _selectedColor = color),
+                );
+              }).toList(),
+            ),
+          ],
+        ),
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: [
+            adaptiveDialogAction(
+              context: context,
+              onPressed: () => Navigator.pop(context),
+              child: Text(t.dialog_cancel),
+            ),
+            adaptiveDialogAction(
+              context: context,
+              isDefaultAction: true,
+              onPressed: () {
+                final name = _nameController.text.trim();
+                if (name.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(t.tag_name_empty)),
+                  );
+                  return;
+                }
+                Navigator.pop(
+                  context,
+                  TagEditResult(name: name, color: _selectedColor),
+                );
+              },
+              child: Text(t.dialog_ok),
+            ),
+          ],
+        ),
       ),
-      actions: [
-        adaptiveDialogAction(
-          context: context,
-          onPressed: () => Navigator.pop(context),
-          child: Text(t.dialog_cancel),
-        ),
-        adaptiveDialogAction(
-          context: context,
-          isDefaultAction: true,
-          onPressed: () {
-            final name = _nameController.text.trim();
-            if (name.isEmpty) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(t.tag_name_empty)),
-              );
-              return;
-            }
-            Navigator.pop(
-              context,
-              TagEditResult(name: name, color: _selectedColor),
-            );
-          },
-          child: Text(t.dialog_ok),
-        ),
-      ],
     );
   }
 }
