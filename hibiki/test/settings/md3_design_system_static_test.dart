@@ -585,6 +585,50 @@ void main() {
     }
   });
 
+  test('reader page prompt dialogs use shared MD3 dialog chrome', () {
+    final String source = File(
+      'lib/src/pages/implementations/reader_hibiki_page.dart',
+    ).readAsStringSync();
+    final String lyricsHint = _sectionSource(
+      source,
+      'class ReaderLyricsModeHintDialog',
+      'class ReaderSrtAudioPickerDialog',
+    );
+    final String srtAudioPicker = _sectionSource(
+      source,
+      'class ReaderSrtAudioPickerDialog',
+      source.length,
+    );
+    final String lyricsFlow = _functionSource(
+      source,
+      'void _showLyricsModeHintIfNeeded()',
+      '  Future<void> _exitLyricsMode() async',
+    );
+    final String pickerFlow = _functionSource(
+      source,
+      'Future<void> _openSrtBookAudioPicker() async',
+      '  int _tocHrefToChapterIndex(String? href)',
+    );
+
+    expect(lyricsFlow, contains('ReaderLyricsModeHintDialog('));
+    expect(pickerFlow, contains('ReaderSrtAudioPickerDialog('));
+    for (final String dialogSource in <String>[
+      lyricsHint,
+      srtAudioPicker,
+      lyricsFlow,
+      pickerFlow,
+    ]) {
+      expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
+    }
+    for (final String dialogSource in <String>[
+      lyricsHint,
+      srtAudioPicker,
+    ]) {
+      expect(dialogSource, contains('HibikiDialogFrame('));
+      expect(dialogSource, contains('HibikiModalSheetFrame('));
+    }
+  });
+
   test('dictionary and popup surfaces use shared MD3 primitives', () {
     final String dictionaryManager = File(
       'lib/src/pages/implementations/dictionary_dialog_page.dart',

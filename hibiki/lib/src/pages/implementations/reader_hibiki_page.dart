@@ -45,6 +45,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:hibiki/src/utils/misc/platform_utils.dart';
 import 'package:hibiki/src/utils/misc/hibiki_color.dart';
+import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 import 'package:hibiki/src/utils/misc/show_app_dialog.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart'
@@ -2013,17 +2014,8 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     src.setPreference<bool>(key: 'lyrics_mode_hint_shown', value: true);
     showAppDialog<void>(
       context: context,
-      builder: (BuildContext ctx) => adaptiveAlertDialog(
-        context: ctx,
-        title: Text(t.lyrics_mode_hint_title),
-        content: Text(t.lyrics_mode_hint_body),
-        actions: <Widget>[
-          adaptiveDialogAction(
-            context: ctx,
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text(MaterialLocalizations.of(ctx).okButtonLabel),
-          ),
-        ],
+      builder: (BuildContext ctx) => ReaderLyricsModeHintDialog(
+        onClose: () => Navigator.of(ctx).pop(),
       ),
     );
   }
@@ -3630,37 +3622,9 @@ window.flutter_inappwebview.callHandler('spreadReady');
             book.audioPaths != null && book.audioPaths!.isNotEmpty
                 ? t.srt_import_files_selected(n: book.audioPaths!.length)
                 : (book.audioRoot ?? t.audio_panel_add_audio);
-        return adaptiveAlertDialog(
-          context: ctx,
-          title: Text(t.srt_book_replace_audio),
-          content: Text(currentLabel),
-          actions: [
-            adaptiveDialogAction(
-              context: ctx,
-              onPressed: () => Navigator.pop(ctx),
-              child: Text(t.dialog_cancel),
-            ),
-            FilledButton.icon(
-              onPressed: () async {
-                final FilePickerResult? result =
-                    await FilePicker.platform.pickFiles(
-                  type: FileType.audio,
-                  allowMultiple: true,
-                );
-                if (result == null) return;
-                final List<String> paths = result.files
-                    .map((f) => f.path)
-                    .whereType<String>()
-                    .toList()
-                  ..sort(compareAudioFilePath);
-                if (paths.isNotEmpty && ctx.mounted) {
-                  Navigator.pop(ctx, paths);
-                }
-              },
-              icon: const Icon(Icons.audio_file_outlined, size: 18),
-              label: Text(t.srt_import_pick_audio_files),
-            ),
-          ],
+        return ReaderSrtAudioPickerDialog(
+          currentLabel: currentLabel,
+          onPickFiles: () => _pickSrtAudioFiles(ctx),
         );
       },
     );
@@ -3694,6 +3658,22 @@ window.flutter_inappwebview.callHandler('spreadReady');
       ErrorLogService.instance.log('ReaderHibiki.srtBookAudioPicker', e, stack);
       debugPrint('[ReaderHibiki] srtBookAudioPicker failed: $e');
       if (mounted) HibikiToast.show(msg: t.audiobook_import_error);
+    }
+  }
+
+  Future<void> _pickSrtAudioFiles(BuildContext dialogContext) async {
+    final FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.audio,
+      allowMultiple: true,
+    );
+    if (result == null) return;
+    final List<String> paths = result.files
+        .map((f) => f.path)
+        .whereType<String>()
+        .toList()
+      ..sort(compareAudioFilePath);
+    if (paths.isNotEmpty && dialogContext.mounted) {
+      Navigator.pop(dialogContext, paths);
     }
   }
 
@@ -4458,6 +4438,113 @@ window.flutter_inappwebview.callHandler('spreadReady');
           (jsonDecode(row.audioPathsJson!) as List<dynamic>).cast<String>();
     }
     return book;
+  }
+}
+
+@visibleForTesting
+class ReaderLyricsModeHintDialog extends StatelessWidget {
+  const ReaderLyricsModeHintDialog({
+    required this.onClose,
+    super.key,
+  });
+
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
+    return HibikiDialogFrame(
+      maxWidth: 420,
+      maxHeightFactor: 0.74,
+      child: HibikiModalSheetFrame(
+        title: t.lyrics_mode_hint_title,
+        leadingIcon: Icons.lyrics_outlined,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: Text(
+          t.lyrics_mode_hint_body,
+          style: tokens.type.listSubtitle,
+        ),
+        footer: Align(
+          alignment: Alignment.centerRight,
+          child: adaptiveDialogAction(
+            context: context,
+            onPressed: onClose,
+            child: Text(MaterialLocalizations.of(context).okButtonLabel),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+@visibleForTesting
+class ReaderSrtAudioPickerDialog extends StatelessWidget {
+  const ReaderSrtAudioPickerDialog({
+    required this.currentLabel,
+    required this.onPickFiles,
+    super.key,
+  });
+
+  final String currentLabel;
+  final VoidCallback onPickFiles;
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
+    return HibikiDialogFrame(
+      maxWidth: 460,
+      maxHeightFactor: 0.76,
+      child: HibikiModalSheetFrame(
+        title: t.srt_book_replace_audio,
+        leadingIcon: Icons.audio_file_outlined,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: Text(
+          currentLabel,
+          style: tokens.type.listSubtitle,
+        ),
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: [
+            adaptiveDialogAction(
+              context: context,
+              onPressed: () => Navigator.pop(context),
+              child: Text(t.dialog_cancel),
+            ),
+            FilledButton.icon(
+              onPressed: onPickFiles,
+              icon: const Icon(Icons.audio_file_outlined, size: 18),
+              label: Text(t.srt_import_pick_audio_files),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
