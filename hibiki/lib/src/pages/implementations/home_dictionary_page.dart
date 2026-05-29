@@ -488,33 +488,73 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
   // ── dialogs ────────────────────────────────────────────────────────
 
   void _showDeleteDictionaryHistoryPrompt() async {
-    Widget alertDialog = adaptiveAlertDialog(
-      context: context,
-      title: Text(t.clear_dictionary_title),
-      content: Text(t.clear_dictionary_description),
-      actions: <Widget>[
-        adaptiveDialogAction(
-          context: context,
-          child: Text(
-            t.dialog_clear,
-          ),
-          onPressed: () async {
-            Navigator.pop(context);
-            await appModel.clearDictionaryHistory();
-            setState(() {});
-          },
-        ),
-        adaptiveDialogAction(
-          context: context,
-          child: Text(t.dialog_cancel),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ],
-    );
-
     await showAppDialog(
       context: context,
-      builder: (context) => alertDialog,
+      builder: (context) => HomeDictionaryClearHistoryDialog(
+        onConfirm: () async {
+          Navigator.pop(context);
+          await appModel.clearDictionaryHistory();
+          if (mounted) setState(() {});
+        },
+      ),
+    );
+  }
+}
+
+@visibleForTesting
+class HomeDictionaryClearHistoryDialog extends StatelessWidget {
+  const HomeDictionaryClearHistoryDialog({
+    required this.onConfirm,
+    super.key,
+  });
+
+  final VoidCallback onConfirm;
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
+    return HibikiDialogFrame(
+      maxWidth: 420,
+      maxHeightFactor: 0.72,
+      child: HibikiModalSheetFrame(
+        title: t.clear_dictionary_title,
+        leadingIcon: Icons.delete_sweep_outlined,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: Text(
+          t.clear_dictionary_description,
+          style: tokens.type.listSubtitle,
+        ),
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: <Widget>[
+            adaptiveDialogAction(
+              context: context,
+              child: Text(t.dialog_cancel),
+              onPressed: () => Navigator.pop(context),
+            ),
+            adaptiveDialogAction(
+              context: context,
+              isDestructiveAction: true,
+              child: Text(t.dialog_clear),
+              onPressed: onConfirm,
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

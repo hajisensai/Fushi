@@ -793,6 +793,28 @@ void main() {
     expect(source, isNot(contains('adaptiveAlertDialog(')));
   });
 
+  test('home dictionary clear dialog uses shared MD3 dialog chrome', () {
+    final String source = File(
+      'lib/src/pages/implementations/home_dictionary_page.dart',
+    ).readAsStringSync();
+    final String flow = _functionSource(
+      source,
+      'void _showDeleteDictionaryHistoryPrompt() async',
+      'class HomeDictionaryClearHistoryDialog',
+    );
+    final String dialogSource = _sectionSource(
+      source,
+      'class HomeDictionaryClearHistoryDialog',
+      source.length,
+    );
+
+    expect(flow, contains('HomeDictionaryClearHistoryDialog('));
+    expect(flow, isNot(contains('adaptiveAlertDialog(')));
+    expect(dialogSource, contains('HibikiDialogFrame('));
+    expect(dialogSource, contains('HibikiModalSheetFrame('));
+    expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
+  });
+
   test('dictionary confirmation dialogs use shared MD3 dialog chrome', () {
     final String source = File(
       'lib/src/pages/implementations/dictionary_dialog_page.dart',
