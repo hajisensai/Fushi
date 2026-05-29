@@ -313,7 +313,8 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
     final String? code = uri.queryParameters['code'];
     final String? error = uri.queryParameters['error'];
     if (code == null) {
-      HibikiToast.show(msg: t.sync_auth_error(message: error ?? 'missing code'));
+      HibikiToast.show(
+          msg: t.sync_auth_error(message: error ?? 'missing code'));
       return;
     }
 

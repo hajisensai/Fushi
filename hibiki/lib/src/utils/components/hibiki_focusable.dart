@@ -30,8 +30,7 @@ class HibikiFocusable extends StatelessWidget {
       focusNode: focusNode,
       autofocus: autofocus,
       enabled: onTap != null,
-      mouseCursor:
-          onTap == null ? MouseCursor.defer : SystemMouseCursors.click,
+      mouseCursor: onTap == null ? MouseCursor.defer : SystemMouseCursors.click,
       actions: <Type, Action<Intent>>{
         ActivateIntent: CallbackAction<ActivateIntent>(
           onInvoke: (_) {
