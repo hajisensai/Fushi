@@ -7,6 +7,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_exit_app/flutter_exit_app.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/settings/settings_actions.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
 import 'package:hibiki/src/sync/backup_service.dart';
@@ -715,8 +716,8 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
 
       if (!mounted) return;
 
-      final confirmed = await _showConfirmDialog(meta);
-      if (confirmed != true || !mounted) return;
+      final bool confirmed = await _showConfirmDialog(meta);
+      if (!confirmed || !mounted) return;
 
       await appModel.closeDatabase();
       await BackupService.importBackupFiles(
@@ -750,36 +751,19 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
     }
   }
 
-  Future<bool?> _showConfirmDialog(BackupMeta meta) {
+  Future<bool> _showConfirmDialog(BackupMeta meta) {
     final dateStr =
         '${meta.createdAt.year}-${meta.createdAt.month.toString().padLeft(2, '0')}-${meta.createdAt.day.toString().padLeft(2, '0')}';
-    return showAppDialog<bool>(
-      context: context,
-      builder: (BuildContext ctx) => adaptiveAlertDialog(
-        context: ctx,
-        title: Text(t.backup_import_confirm_title),
-        content: Text(
-          t.backup_import_confirm(
-            date: dateStr,
-            bookCount: meta.bookCount.toString(),
-            statsCount: meta.statsCount.toString(),
-          ),
-        ),
-        actions: <Widget>[
-          adaptiveDialogAction(
-            context: ctx,
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(t.dialog_cancel),
-          ),
-          adaptiveDialogAction(
-            context: ctx,
-            isDefaultAction: true,
-            isDestructiveAction: true,
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(t.dialog_ok),
-          ),
-        ],
+    return showSettingsConfirmationDialog(
+      widget.settingsContext,
+      title: t.backup_import_confirm_title,
+      body: t.backup_import_confirm(
+        date: dateStr,
+        bookCount: meta.bookCount.toString(),
+        statsCount: meta.statsCount.toString(),
       ),
+      confirmLabel: t.dialog_ok,
+      destructive: true,
     );
   }
 

@@ -109,13 +109,16 @@ void main() {
         readNormalizedSource('lib/src/settings/settings_actions.dart');
     final String schemaSource =
         readNormalizedSource('lib/src/settings/settings_schema.dart');
-    final String combined = '$actionsSource\n$schemaSource';
+    final String syncSource =
+        readNormalizedSource('lib/src/sync/sync_settings_schema.dart');
+    final String combined = '$actionsSource\n$schemaSource\n$syncSource';
 
     expect(actionsSource, contains('HibikiDialogFrame('));
     expect(actionsSource, contains('HibikiModalSheetFrame('));
 
     expect(actionsSource, isNot(contains('adaptiveAlertDialog(')));
     expect(schemaSource, isNot(contains('adaptiveAlertDialog(')));
+    expect(syncSource, isNot(contains('adaptiveAlertDialog(')));
     expect(combined, contains('showSettingsConfirmationDialog('));
     expect(combined, contains('showSettingsProgressDialog('));
   });
