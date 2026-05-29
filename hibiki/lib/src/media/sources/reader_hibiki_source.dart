@@ -50,7 +50,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
 
   static String mediaIdentifierFor(int bookId) => 'hoshi://book/$bookId';
 
-  static String bookUidFor(int bookId) => 'reader_ttu/hoshi://book/$bookId';
+  static String bookUidFor(int bookId) => buildLegacyBookUid(bookId);
 
   // HBK-AUDIT-127: percent-encode the href when building the URL so it is
   // symmetric with the consumer side, which decodes the whole post-'/epub/'

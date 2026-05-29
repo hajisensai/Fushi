@@ -5,6 +5,7 @@ import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:path/path.dart' as p;
 
+import '../legacy_book_uid.dart';
 import 'pref_codec.dart';
 import 'tables.dart';
 
@@ -770,7 +771,7 @@ class HibikiDatabase extends _$HibikiDatabase {
             .go();
         await (delete(bookmarks)..where((t) => t.ttuBookId.equals(id))).go();
         await (delete(srtBooks)..where((t) => t.ttuBookId.equals(id))).go();
-        final String bookUid = 'reader_ttu/hoshi://book/$id';
+        final String bookUid = buildLegacyBookUid(id);
         await (delete(audioCues)..where((t) => t.bookUid.equals(bookUid))).go();
         await (delete(audiobooks)..where((t) => t.bookUid.equals(bookUid)))
             .go();

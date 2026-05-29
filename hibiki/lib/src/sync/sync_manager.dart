@@ -571,7 +571,7 @@ class SyncManager {
   };
 
   Future<List<String>> _resolveAudioPaths(int bookId) async {
-    final bookUid = 'reader_ttu/hoshi://book/$bookId';
+    final bookUid = buildLegacyBookUid(bookId);
     final row = await _db.getAudiobookByBookUid(bookUid);
     if (row == null) return const [];
 

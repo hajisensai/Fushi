@@ -544,11 +544,6 @@ abstract class MediaSource {
     throw UnimplementedError();
   }
 
-  /// Used to override the search bar if needed by a source that implements search.
-  BaseMediaSearchBar? buildBar() {
-    return null;
-  }
-
   /// Aspect ratio of media items.
   double get aspectRatio;
 }

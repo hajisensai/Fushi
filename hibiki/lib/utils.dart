@@ -23,7 +23,6 @@ export 'src/utils/components/settings_shared.dart';
 export 'src/utils/converters/immutable_string_map_converter.dart';
 export 'src/utils/converters/quick_actions_converter.dart';
 export 'src/utils/converters/enhancements_converter.dart';
-export 'src/utils/converters/media_item_converter.dart';
 
 export 'src/utils/player/blur_options.dart';
 
