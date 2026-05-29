@@ -224,29 +224,25 @@ class _ActionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final List<String> labels = <String>[
       ...bindings.keyboardBindings.map((InputBinding b) => b.displayLabel),
       ...bindings.gamepadBindings.map((GamepadBinding b) => b.button.label),
     ];
 
-    return ListTile(
+    return HibikiListItem(
       title: Text(_actionLabel(action)),
       subtitle: labels.isEmpty
           ? Text(
               t.shortcut_none,
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
             )
           : Wrap(
-              spacing: 4,
-              runSpacing: 4,
+              spacing: tokens.spacing.gap / 2,
+              runSpacing: tokens.spacing.gap / 2,
               children: labels
-                  .map((String label) => Chip(
-                        label: Text(label),
-                        visualDensity: VisualDensity.compact,
-                        padding: EdgeInsets.zero,
-                        labelPadding: const EdgeInsets.symmetric(horizontal: 6),
+                  .map((String label) => HibikiTagChip(
+                        label: label,
+                        tone: HibikiTagChipTone.surface,
                       ))
                   .toList(growable: false),
             ),

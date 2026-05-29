@@ -916,6 +916,23 @@ void main() {
     expect(editDialog, isNot(contains('adaptiveAlertDialog(')));
   });
 
+  test('shortcut action rows use shared MD3 list and tag chips', () {
+    final String source = File(
+      'lib/src/pages/implementations/shortcut_settings_page.dart',
+    ).readAsStringSync();
+    final String tileSource = _sectionSource(
+      source,
+      'class _ActionTile',
+      'class ShortcutBindingEditDialog',
+    );
+
+    expect(tileSource, contains('HibikiListItem('));
+    expect(tileSource, contains('HibikiTagChip('));
+    expect(tileSource, isNot(contains('ListTile(')));
+    expect(tileSource, isNot(contains('=> Chip(')));
+    expect(tileSource, isNot(contains('child: Chip(')));
+  });
+
   test('custom font dialogs use shared MD3 dialog chrome', () {
     final String source = File(
       'lib/src/pages/implementations/custom_fonts_page.dart',
