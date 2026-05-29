@@ -94,6 +94,16 @@ void main() {
     expect(source, isNot(contains('_buildReaderOnlySwitches')));
   });
 
+  test('reader settings dialog uses shared MD3 dialog chrome', () {
+    final String source = readNormalizedSource(
+        'lib/src/pages/implementations/hibiki_settings_page.dart');
+
+    expect(source, contains('HibikiDialogFrame('));
+    expect(source, contains('HibikiModalSheetFrame('));
+    expect(source, contains('HibikiDesignTokens.of(context)'));
+    expect(source, isNot(contains('adaptiveAlertDialog(')));
+  });
+
   test('display settings contains reader layout only', () {
     final String source = readNormalizedSource(
         'lib/src/pages/implementations/display_settings_page.dart');
@@ -137,9 +147,7 @@ void main() {
         readNormalizedSource('lib/src/sync/sync_settings_schema.dart');
 
     expect(
-        source,
-        contains(
-            "SettingsCustomItem(\n            id: 'sync.mode'"));
+        source, contains("SettingsCustomItem(\n            id: 'sync.mode'"));
     expect(source,
         contains("SettingsSwitchItem(\n            id: 'sync.statistics'"));
     expect(source,
