@@ -388,7 +388,8 @@ class _SyncAccountWidgetState extends State<_SyncAccountWidget> {
       await _checkAuth();
     } on SyncAuthError catch (e) {
       if (mounted) {
-        _showSnackBar(context, t.sync_auth_error(message: e.message));
+        _showSnackBar(
+            context, t.sync_auth_error(message: friendlySyncErrorDetail(e)));
       }
     } catch (e) {
       if (mounted) {
@@ -500,16 +501,18 @@ class _WebDavConfigWidgetState extends State<_WebDavConfigWidget> {
       if (mounted) _showSnackBar(context, t.sync_webdav_test_success);
     } on SyncAuthError catch (e) {
       if (mounted) {
-        _showSnackBar(context, t.sync_webdav_test_failed(message: e.message));
+        _showSnackBar(context,
+            t.sync_webdav_test_failed(message: friendlySyncErrorDetail(e)));
       }
     } on SyncBackendError catch (e) {
       if (mounted) {
-        _showSnackBar(context, t.sync_webdav_test_failed(message: e.message));
+        _showSnackBar(context,
+            t.sync_webdav_test_failed(message: friendlySyncErrorDetail(e)));
       }
     } catch (e) {
       if (mounted) {
-        _showSnackBar(
-            context, t.sync_webdav_test_failed(message: e.toString()));
+        _showSnackBar(context,
+            t.sync_webdav_test_failed(message: friendlySyncErrorDetail(e)));
       }
     } finally {
       if (mounted) setState(() => _isTesting = false);
@@ -625,7 +628,8 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
       }
     } catch (e) {
       if (mounted) {
-        _showSnackBar(context, t.backup_export_failed(message: e.toString()));
+        _showSnackBar(context,
+            t.backup_export_failed(message: friendlySyncErrorDetail(e)));
       }
     } finally {
       if (mounted) setState(() => _isExporting = false);
@@ -737,7 +741,8 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
       }
     } catch (e) {
       if (mounted) {
-        _showSnackBar(context, t.backup_import_failed(message: e.toString()));
+        _showSnackBar(context,
+            t.backup_import_failed(message: friendlySyncErrorDetail(e)));
       }
       // DB is already closed — must exit regardless to avoid dead state.
       await Future<void>.delayed(const Duration(milliseconds: 500));
@@ -995,7 +1000,7 @@ class _FtpConfigWidgetState extends State<_FtpConfigWidget> {
     } catch (e) {
       if (mounted) {
         _showSnackBar(context,
-            '${t.sync_connection_failed}: ${e is SyncBackendError ? e.message : e}');
+            '${t.sync_connection_failed}: ${friendlySyncErrorDetail(e)}');
       }
     } finally {
       if (mounted) setState(() => _isTesting = false);
@@ -1156,7 +1161,7 @@ class _SftpConfigWidgetState extends State<_SftpConfigWidget> {
     } catch (e) {
       if (mounted) {
         _showSnackBar(context,
-            '${t.sync_connection_failed}: ${e is SyncBackendError ? e.message : (e is SyncAuthError ? e.message : e)}');
+            '${t.sync_connection_failed}: ${friendlySyncErrorDetail(e)}');
       }
     } finally {
       if (mounted) setState(() => _isTesting = false);
@@ -1297,7 +1302,7 @@ class _SmbConfigWidgetState extends State<_SmbConfigWidget> {
     } catch (e) {
       if (mounted) {
         _showSnackBar(context,
-            '${t.sync_connection_failed}: ${e is SyncBackendError ? e.message : e}');
+            '${t.sync_connection_failed}: ${friendlySyncErrorDetail(e)}');
       }
     } finally {
       if (mounted) setState(() => _isTesting = false);
@@ -1417,7 +1422,7 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget> {
     } catch (e) {
       if (mounted) {
         _showSnackBar(context,
-            '${t.sync_connection_failed}: ${e is SyncBackendError ? e.message : e}');
+            '${t.sync_connection_failed}: ${friendlySyncErrorDetail(e)}');
       }
     } finally {
       if (mounted) setState(() => _isTesting = false);
@@ -1528,7 +1533,8 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
       if (mounted) setState(() {});
     } catch (e) {
       if (mounted) {
-        _showSnackBar(context, 'Server error: $e');
+        _showSnackBar(
+            context, t.sync_error(message: friendlySyncErrorDetail(e)));
       }
     }
   }

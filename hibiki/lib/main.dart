@@ -20,9 +20,11 @@ import 'package:hibiki/popup_main.dart' as popup_entrypoint;
 import 'package:hibiki/src/sync/dropbox_sync_backend.dart';
 import 'package:hibiki/src/sync/onedrive_sync_backend.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
+import 'package:hibiki/src/sync/sync_error_messages.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/shortcuts/global_navigation.dart';
+import 'package:hibiki/src/shortcuts/shortcut_defaults.dart';
 import 'package:hibiki/src/platform/platform_services.dart';
 import 'package:hibiki/src/platform/platform_providers.dart';
 import 'package:share_plus/share_plus.dart';
@@ -329,9 +331,10 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
       }
       HibikiToast.show(msg: t.sync_signed_in);
     } on SyncAuthError catch (e) {
-      HibikiToast.show(msg: t.sync_auth_error(message: e.message));
+      HibikiToast.show(
+          msg: t.sync_auth_error(message: friendlySyncErrorDetail(e)));
     } catch (e) {
-      HibikiToast.show(msg: t.sync_error(message: e.toString()));
+      HibikiToast.show(msg: friendlySyncError(e));
     }
   }
 
@@ -466,11 +469,16 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
               dataBuilder: (context) {
                 return SpacingData.generate(10);
               },
-              // Universal gamepad/keyboard navigation: a visible focus ring for
-              // observability, wrapping a global gamepad-B back/dismiss intent.
+              // Keyboard/gamepad navigation: a visible focus ring for
+              // observability (keyboard + gamepad), wrapping the global
+              // gamepad-B back/dismiss intent. The B-button mapping is
+              // mobile-only — desktop never emits gameButton* keys — so it is
+              // gated on the same predicate as the rest of the gamepad layer.
               child: HibikiFocusRing(
                 child: wrapWithGlobalNavigation(
                   navigatorKey: appModel.navigatorKey,
+                  enableGamepad:
+                      ShortcutDefaults.gamepadSupported(defaultTargetPlatform),
                   child: child!,
                 ),
               ),
