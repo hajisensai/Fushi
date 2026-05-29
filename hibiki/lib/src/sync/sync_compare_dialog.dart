@@ -315,6 +315,8 @@ class _SyncCompareDialogState extends State<_SyncCompareDialog> {
   Map<String, SyncChoice> _choices = {};
   String? _error;
   bool _applying = false;
+  double? _progress;
+  String? _progressLabel;
 
   @override
   void initState() {
@@ -352,22 +354,55 @@ class _SyncCompareDialogState extends State<_SyncCompareDialog> {
     final entries = _entries;
     if (entries == null) return;
 
-    setState(() => _applying = true);
+    // Only the books the user chose to sync count toward progress.
+    final actionable = entries.where((e) {
+      final c = _choices[e.title];
+      return c != null && c != SyncChoice.skip && e.bookId != null;
+    }).toList();
+    final total = actionable.length;
+
+    setState(() {
+      _applying = true;
+      _progress = total == 0 ? null : 0.0;
+      _progressLabel = null;
+    });
     try {
-      final manager = SyncManager(db: widget.db, backend: widget.backend);
       final repo = SyncRepository(widget.db);
       final syncStats = await repo.isSyncStatsEnabled();
       final syncAudioBook = await repo.isSyncAudioBookEnabled();
+      final syncContent = await repo.isSyncContentEnabled();
+
+      var done = 0;
+      // Blend per-file transfer fraction into the overall book progress so the
+      // bar advances smoothly during large content downloads/uploads.
+      final manager = SyncManager(
+        db: widget.db,
+        backend: widget.backend,
+        onContentProgress: (fraction) {
+          if (mounted && total > 0) {
+            setState(
+                () => _progress = (done + fraction.clamp(0.0, 1.0)) / total);
+          }
+        },
+      );
 
       int applied = 0;
       final errors = <String>[];
-      for (final entry in entries) {
-        final choice = _choices[entry.title];
-        if (choice == null || choice == SyncChoice.skip) continue;
-        if (entry.bookId == null) continue;
+      for (final entry in actionable) {
+        final choice = _choices[entry.title]!;
 
         final book = await widget.db.getEpubBook(entry.bookId!);
-        if (book == null) continue;
+        if (book == null) {
+          done++;
+          continue;
+        }
+
+        if (mounted) {
+          setState(() {
+            _progressLabel = '(${done + 1}/$total) ${entry.title}';
+            _progress = done / total;
+          });
+        }
 
         final direction = choice == SyncChoice.useLocal
             ? SyncDirection.exportToTtu
@@ -380,6 +415,7 @@ class _SyncCompareDialogState extends State<_SyncCompareDialog> {
             syncStats: syncStats,
             statsSyncMode: StatisticsSyncMode.merge,
             syncAudioBook: syncAudioBook,
+            syncContent: syncContent,
           );
           if (result.direction != SyncResult.skipped) {
             applied++;
@@ -394,6 +430,8 @@ class _SyncCompareDialogState extends State<_SyncCompareDialog> {
             name: 'SyncCompare',
           );
         }
+        done++;
+        if (mounted) setState(() => _progress = done / total);
       }
 
       if (mounted) {
@@ -530,6 +568,19 @@ class _SyncCompareDialogState extends State<_SyncCompareDialog> {
             ),
           ),
           SizedBox(height: tokens.spacing.card),
+          if (_applying) ...[
+            LinearProgressIndicator(value: _progress),
+            const SizedBox(height: 6),
+            Text(
+              _progressLabel ?? t.sync_compare_apply(count: _actionableCount),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            SizedBox(height: tokens.spacing.card),
+          ],
           OverflowBar(
             alignment: MainAxisAlignment.end,
             spacing: tokens.spacing.gap,

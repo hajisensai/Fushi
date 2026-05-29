@@ -274,7 +274,7 @@ void main() {
           chaptersJson: '[]',
           importedAt: DateTime.now().millisecondsSinceEpoch,
         ));
-        await srcDb.upsertReadingStatistic(ReadingStatisticsCompanion.insert(
+        await srcDb.setReadingStatistic(ReadingStatisticsCompanion.insert(
           title: 'かがみの孤城',
           dateKey: '2026-05-29',
           charactersRead: 3456,

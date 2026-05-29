@@ -27,14 +27,21 @@ class SyncBookResult {
 }
 
 class SyncManager {
-  SyncManager({required HibikiDatabase db, required SyncBackend backend})
-      : _db = db,
+  SyncManager({
+    required HibikiDatabase db,
+    required SyncBackend backend,
+    this.onContentProgress,
+  })  : _db = db,
         _repo = SyncRepository(db),
         _backend = backend;
 
   final HibikiDatabase _db;
   final SyncRepository _repo;
   final SyncBackend _backend;
+
+  /// Reports content-file (EPUB/audio) transfer progress as a fraction 0..1.
+  /// Only fires when content sync is enabled and a file is being transferred.
+  final void Function(double fraction)? onContentProgress;
 
   /// 同步单本书。返回同步结果。
   Future<SyncBookResult> syncBook({
@@ -432,6 +439,7 @@ class SyncManager {
           folderId: folderId,
           fileName: fileName,
           file: epubFile,
+          onProgress: onContentProgress,
         );
       }
     }
@@ -448,6 +456,7 @@ class SyncManager {
         folderId: folderId,
         fileName: audioName,
         file: audioFile,
+        onProgress: onContentProgress,
       );
     }
   }
@@ -467,6 +476,7 @@ class SyncManager {
         await _backend.downloadContentFile(
           fileId: remote.id,
           destination: destination,
+          onProgress: onContentProgress,
         );
       }
     }
@@ -484,6 +494,7 @@ class SyncManager {
       await _backend.downloadContentFile(
         fileId: remote.id,
         destination: destination,
+        onProgress: onContentProgress,
       );
     }
   }
