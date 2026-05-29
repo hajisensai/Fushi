@@ -106,3 +106,30 @@
 - `oauth_backend_config_test.dart`：移除 Box 契约测试。
 - i18n：用 `tool/i18n_sync.dart --remove sync_backend_box` 删除全部 17 语言 key，并 `dart run slang` 重新生成 `strings.g.dart`。
 - 影响：枚举无遗留穷举分支报错；剩余 OAuth backend 仅 OneDrive/Dropbox（仍待真实 client ID + 回调链路）。
+
+---
+
+## Round 4 — 打通 OAuth 回调链路（S01 根因基建）
+
+Round 1 复审指出的"回调链路断裂"（拿到 client ID 也无法完成授权）本轮接通。这是代码层基建，不依赖真实 client ID，可用 analyzer + gradle 构建验证；真实 e2e（浏览器→App→token 交换）仍需用户填入 client ID 后在真机验证。
+
+- `AndroidManifest.xml`：给 `MainActivity` 新增 `hibiki://auth`（scheme=hibiki, host=auth）的 VIEW + BROWSABLE intent-filter，覆盖 `hibiki://auth/onedrive`、`hibiki://auth/dropbox`。
+- `main.dart`：`handleIntent` 新增分支——收到 `data` 以 `hibiki://auth/` 开头的 intent 时，解析 provider 段与 `code` 查询参数，路由到 `OneDriveSyncBackend`/`DropboxSyncBackend` 的 `handleAuthCode(code)`，成功/失败用 `HibikiToast` 提示（复用现有 `sync_signed_in`/`sync_auth_error`/`sync_error` i18n key，未新增 key）。
+- 流程闭环：用户点登录 → backend `authenticate()` 拉起浏览器并暂存 PKCE verifier+repo → 浏览器回跳 `hibiki://auth/<provider>?code=...` → Android 路由回 `MainActivity` → `receive_intent` 投递 → `handleIntent` → `handleAuthCode` 用暂存的 PKCE 状态换 token。
+- 验证：`dart analyze lib/main.dart lib/src/sync` 无报错；`gradlew :app:assembleDebug` → BUILD SUCCESSFUL；合并后的 release manifest 确认含 `android:host="auth"`（`processReleaseManifest` 任务通过）。
+  - 注：`gradlew :app:assembleRelease` 在 `compileReleaseJavaWithJavac` 阶段失败，根因是预存且无关的 `GeneratedPluginRegistrant.java` 引用了 `integration_test` 插件（dev 依赖，不在 release classpath）——manifest 处理任务在此之前已通过，与本轮改动无关。
+
+### 备份/同步功能 — 最终状态
+
+| 项 | 状态 |
+|----|------|
+| 本地全库备份（核心） | ✅ 审查通过 + round-trip 测试，逻辑健全 |
+| S01 隐藏未配置 backend | ✅ FIXED & VERIFIED |
+| S03 OneDrive 文件名编码 | ✅ FIXED & VERIFIED |
+| Box backend 移除 | ✅ DONE & VERIFIED |
+| OAuth 回调链路 | ✅ 接线完成，构建验证通过；e2e 待用户 client ID + 真机 |
+| WebDAV/FTP/SFTP/SMB/Hibiki LAN | ✅ 代码路径审查无缺陷 |
+| S02 FTP 断链重连 | ⏳ 外部依赖：需真实 FTP 服务器复现原始失败路径 |
+| S04 OAuth 大文件分块上传 | ⏳ 外部依赖：需 client ID + 开启内容同步推大文件方可达 |
+
+可在我控制范围内的项已全部修复并验证。剩余 S02/S04 + OAuth e2e 受真实服务器/凭据/真机的外部依赖阻塞，已逐条说明。
