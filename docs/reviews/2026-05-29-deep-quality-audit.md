@@ -3444,3 +3444,14 @@ static void scheduleCheck(... bool betaChannel = false, bool debugChannel = fals
 
 ### Next Scope
 按风险优先修复：158/159（数据错位/静默登录死循环）→ 161（SFTP 重试一致性）→ 160（端口校验）→ 162/163/164/165（静默吞异常 + persist-then-fail，需统一"错误可见化 + 失焦保存"小设计）→ 166/167/168（Minor）。
+
+## Round 4 复审与勘误（opus review loop）
+opus 审查 `2bf6affa0` 后提出 1 个 Critical：`HibikiModalSheetFrame` 恒 `Flexible` 会在 `reader_hibiki_history_page.dart:1672`（BookProfileDialogFrame）抛 unbounded 异常——因为该处 `HibikiDialogFrame` 漏传 `scrollable:false`，默认 `scrollable:true` 会用 `SingleChildScrollView` 包住内层 sheet，使其 Column 无界。
+
+**实测勘误（不轻信审查结论，按 CLAUDE.md 验证原始失败路径）**：补了一个挂载完整 `BookProfileDialogFrame` 链、320×240 视口的 widget 测试，在**未加修复**时运行——结果 `+4 All tests passed`，**并不崩溃**。根因：`HibikiModalSheetFrame` 的 Column 用 `MainAxisSize.min`，且 `_buildBody` 的 `Flexible` 默认 `FlexFit.loose`；Flutter RenderFlex 只有在 `!canFlex && (mainAxisSize==max || fit==tight)` 时才抛 unbounded 断言，二者都不成立，故无界父节点下 loose Flexible 只是按内容尺寸布局（内层 `BookProfileDialogContent` 自带 `ConstrainedBox(h*0.46)` 兜底）。所以原 frame 改动在所有宿主下都安全；审查的 Critical 是**误报**。
+
+**仍采纳的改进**：给 `reader_hibiki_history_page.dart:1672` 补 `scrollable:false`。它不是修崩溃，而是消除"外层 SingleChildScrollView + 内层 ListView"的嵌套双滚动，并与其余 17 个 `HibikiDialogFrame(scrollable:false)+HibikiModalSheetFrame` 调用点对齐（这 3 个 MISS 中，`home_page.dart:429`、`media_item_dialog_page.dart:201` 的 child 是普通 Column，`scrollable:true` 合理，不受影响）。新增 2 个全链路 widget 测试覆盖此前从未测过的 frame 装配路径。
+
+**采纳的审查 Warning**：本轮"安全性核验"段原把 reader_hibiki_history 误判为"有界宿主"，实为无界但因 min+loose 而安全——以本勘误为准。审查另指出 `TagFilterSheet` 为死代码（全仓库无实例化，已核实），属并行 dev 既有问题，本任务不在范围内处理，仅记录。
+
+`flutter test` 全量：**+1419 All tests passed!**

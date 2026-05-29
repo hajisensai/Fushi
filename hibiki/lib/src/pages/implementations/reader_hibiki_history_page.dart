@@ -1672,6 +1672,12 @@ class BookProfileDialogFrame extends StatelessWidget {
     return HibikiDialogFrame(
       maxWidth: 500,
       maxHeightFactor: 0.86,
+      // HibikiModalSheetFrame manages its own header/body/footer layout and
+      // scrolls its body internally. Leaving the dialog frame's default
+      // scrollable:true would wrap it in a second SingleChildScrollView, giving
+      // a confusing nested outer+inner double scroll. scrollable:false makes the
+      // ConstrainedBox bound the sheet directly, matching every other dialog.
+      scrollable: false,
       child: HibikiModalSheetFrame(
         title: t.profile_book_profile,
         leadingIcon: Icons.manage_accounts_outlined,

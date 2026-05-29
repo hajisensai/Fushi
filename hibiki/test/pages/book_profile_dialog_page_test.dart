@@ -49,6 +49,57 @@ void main() {
     expect(find.byType(AdaptiveSettingsRow), findsWidgets);
   });
 
+  testWidgets('book profile dialog frame fits a compact window', (
+    WidgetTester tester,
+  ) async {
+    // Mounts the full HibikiDialogFrame -> HibikiModalSheetFrame chain (not just
+    // the inner content) on a short screen. Regression for the unbounded-height
+    // crash: the dialog frame must pass scrollable:false so the sheet's Flexible
+    // body gets a bounded height instead of throwing inside a SingleChildScrollView.
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(320, 240);
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      buildApp(
+        BookProfileDialogFrame(
+          loading: false,
+          activeProfileName: 'Default',
+          profiles: List.generate(16, profile),
+          selectedProfileId: null,
+          onChanged: (_) {},
+          onClose: () {},
+        ),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(find.byType(BookProfileDialogContent), findsOneWidget);
+  });
+
+  testWidgets('book profile dialog frame fits while loading', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(320, 240);
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      buildApp(
+        BookProfileDialogFrame(
+          loading: true,
+          activeProfileName: 'Default',
+          profiles: const [],
+          selectedProfileId: null,
+          onChanged: (_) {},
+          onClose: () {},
+        ),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('book profile dialog uses Cupertino rows on iOS', (
     WidgetTester tester,
   ) async {
