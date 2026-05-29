@@ -19,8 +19,7 @@ class IosDirectoryService implements PlatformDirectoryService {
   Future<List<String>> getExternalStorageDirectories() async => [];
 
   @override
-  Future<List<String>> getDefaultPickerDirectories(String mediaType) async =>
-      [];
+  Future<List<String>> getDefaultPickerDirectories() async => [];
 
   @override
   Future<void> excludeFromMediaScanner(String directoryPath) async {}

@@ -32,6 +32,12 @@ class PlatformServices {
   final PlatformDeviceInfoService deviceInfo;
   final BaseAnkiRepository Function() createAnkiRepository;
 
+  /// Typed reference to the Android clipboard impl, when running on Android.
+  /// Holding the concrete type here (rather than an `is`/`as` downcast in
+  /// [init]) makes the SDK-version dependency explicit and turns an impl
+  /// rename/swap into a compile error instead of a silent no-op (HBK-AUDIT-134).
+  final AndroidClipboardService? _androidClipboard;
+
   PlatformServices({
     required this.directory,
     required this.lifecycle,
@@ -39,29 +45,31 @@ class PlatformServices {
     required this.permission,
     required this.deviceInfo,
     required this.createAnkiRepository,
-  });
+    AndroidClipboardService? androidClipboard,
+  }) : _androidClipboard = androidClipboard;
 
   /// Cross-service wiring that requires async initialisation.
   ///
   /// Must be called once during app startup (e.g. in [AppModel.initialise])
   /// after all services are constructed.
   Future<void> init() async {
-    final sdk = await deviceInfo.sdkVersion;
-    if (sdk != null && clipboard is AndroidClipboardService) {
-      (clipboard as AndroidClipboardService).updateSdkVersion(sdk);
-    }
+    await _androidClipboard?.init();
   }
 
   /// Constructs the correct service bundle for the current platform.
   factory PlatformServices.forCurrentPlatform() {
     if (Platform.isAndroid) {
+      final AndroidDeviceInfoService deviceInfo = AndroidDeviceInfoService();
+      final AndroidClipboardService clipboard =
+          AndroidClipboardService(deviceInfo);
       return PlatformServices(
         directory: AndroidDirectoryService(),
         lifecycle: AndroidLifecycleService(),
-        clipboard: AndroidClipboardService(),
+        clipboard: clipboard,
         permission: AndroidPermissionService(),
-        deviceInfo: AndroidDeviceInfoService(),
+        deviceInfo: deviceInfo,
         createAnkiRepository: AnkiRepository.new,
+        androidClipboard: clipboard,
       );
     }
     if (Platform.isIOS) {

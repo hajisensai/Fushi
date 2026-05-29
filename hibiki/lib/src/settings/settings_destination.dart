@@ -14,6 +14,9 @@ enum SettingsDestinationId {
   syncBackup,
   system,
   diagnostics,
+  // Synthetic destination for the reader quick-settings dialog; its own id so
+  // it never collides with the real readingDisplay destination (HBK-AUDIT-131).
+  readerQuickSettings,
 }
 
 typedef SettingsVisibility = bool Function(SettingsContext context);

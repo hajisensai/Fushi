@@ -2210,8 +2210,8 @@ class AppModel with ChangeNotifier {
       directories.add(lastPickedDirectory);
     }
 
-    final List<String> defaultPaths = await platformServices.directory
-        .getDefaultPickerDirectories(type.uniqueKey);
+    final List<String> defaultPaths =
+        await platformServices.directory.getDefaultPickerDirectories();
     for (final String dirPath in defaultPaths) {
       final Directory directory = Directory(dirPath);
       if (!directories.contains(directory)) {

@@ -76,12 +76,4 @@ class PickImageEnhancement extends ImageEnhancement {
       },
     );
   }
-
-  @override
-  Future<List<NetworkToFileImage>> fetchImages({
-    required AppModel appModel,
-    String? searchTerm,
-  }) async {
-    throw UnimplementedError();
-  }
 }

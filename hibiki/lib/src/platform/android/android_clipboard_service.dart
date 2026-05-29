@@ -2,9 +2,20 @@ import 'package:flutter/services.dart';
 import 'package:hibiki_platform/hibiki_platform.dart';
 
 class AndroidClipboardService implements PlatformClipboardService {
+  /// SDK version is resolved from [_deviceInfo] during [init], making the
+  /// dependency explicit at construction instead of via a runtime downcast in
+  /// PlatformServices.init (HBK-AUDIT-134).
+  AndroidClipboardService(this._deviceInfo);
+
+  final PlatformDeviceInfoService _deviceInfo;
   int _sdkVersion = 0;
 
-  void updateSdkVersion(int version) => _sdkVersion = version;
+  /// Resolves and caches the running SDK version. Must be awaited once during
+  /// startup (via PlatformServices.init) before [shouldShowCopyToast] is read.
+  Future<void> init() async {
+    final int? sdk = await _deviceInfo.sdkVersion;
+    if (sdk != null) _sdkVersion = sdk;
+  }
 
   @override
   Future<void> copyToClipboard(String text) async =>

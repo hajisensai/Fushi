@@ -16,8 +16,7 @@ class FakeDirectoryService implements PlatformDirectoryService {
   Future<List<String>> getExternalStorageDirectories() async => const [];
 
   @override
-  Future<List<String>> getDefaultPickerDirectories(String mediaType) async =>
-      const [];
+  Future<List<String>> getDefaultPickerDirectories() async => const [];
 
   @override
   Future<void> excludeFromMediaScanner(String directoryPath) async {}

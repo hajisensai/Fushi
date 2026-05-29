@@ -206,80 +206,102 @@ class ReaderHibikiSource extends ReaderMediaSource {
     final List<EpubBookRow> books = await db.getAllEpubBooks();
     final ReaderPositionRepository posRepo = ReaderPositionRepository(db);
 
-    final List<MediaItem> items = <MediaItem>[];
-    for (final EpubBookRow book in books) {
-      int position = 0;
-      int duration = 1;
+    // HBK-AUDIT-128: previously this was a serial for-loop where every book
+    // awaited posRepo.findByTtuBookId(book.id) and up to four File.exists()
+    // cover probes one after another, so shelf latency scaled linearly with
+    // library size. Map each book to a Future and resolve them with
+    // Future.wait so the per-book DB query and cover probes overlap; Drift
+    // serialises the queries on its own connection, and Future.wait preserves
+    // input order so the shelf ordering is unchanged.
+    return Future.wait<MediaItem>(
+      books.map((EpubBookRow book) => _bookToMediaItem(book, posRepo)),
+    );
+  }
 
-      List<int> sectionChars = const <int>[];
-      if (book.chaptersJson.isNotEmpty) {
-        try {
-          final List<dynamic> chapters =
-              jsonDecode(book.chaptersJson) as List<dynamic>;
-          sectionChars = chapters
-              .map((dynamic c) =>
-                  ((c as Map<String, dynamic>)['characters'] as num?)
-                      ?.toInt() ??
-                  0)
-              .toList();
-        } catch (e, stack) {
-          ErrorLogService.instance
-              .log('ReaderHibikiSource.sectionChars', e, stack);
-        }
-      }
-      final int totalChars = sectionChars.fold<int>(0, (a, b) => a + b);
-      if (totalChars > 0) {
-        duration = totalChars;
-      }
+  /// Resolve a single [EpubBookRow] into a [MediaItem], reading its reader
+  /// position and cover concurrently with sibling books (HBK-AUDIT-128).
+  Future<MediaItem> _bookToMediaItem(
+    EpubBookRow book,
+    ReaderPositionRepository posRepo,
+  ) async {
+    int position = 0;
+    int duration = 1;
 
-      final pos = await posRepo.findByTtuBookId(book.id);
-      if (pos != null && sectionChars.isNotEmpty) {
-        final int clampedSection =
-            pos.sectionIndex.clamp(0, sectionChars.length - 1);
-        int charsRead = 0;
-        for (int i = 0; i < clampedSection; i++) {
-          charsRead += sectionChars[i];
-        }
-        position = charsRead;
+    List<int> sectionChars = const <int>[];
+    if (book.chaptersJson.isNotEmpty) {
+      try {
+        final List<dynamic> chapters =
+            jsonDecode(book.chaptersJson) as List<dynamic>;
+        sectionChars = chapters
+            .map((dynamic c) =>
+                ((c as Map<String, dynamic>)['characters'] as num?)?.toInt() ??
+                0)
+            .toList();
+      } catch (e, stack) {
+        ErrorLogService.instance
+            .log('ReaderHibikiSource.sectionChars', e, stack);
       }
-
-      String? imageUrl;
-      if (book.coverPath != null && book.coverPath!.isNotEmpty) {
-        String coverRel = book.coverPath!;
-        if (coverRel.startsWith('/')) coverRel = coverRel.substring(1);
-        final String absPath = p.join(book.extractDir, coverRel);
-        if (await File(absPath).exists()) {
-          imageUrl = Uri.file(absPath).toString();
-        }
-      }
-      if (imageUrl == null) {
-        for (final String name in const [
-          'cover.jpg',
-          'cover.jpeg',
-          'cover.png',
-        ]) {
-          final String fallback = p.join(book.extractDir, name);
-          if (await File(fallback).exists()) {
-            imageUrl = Uri.file(fallback).toString();
-            break;
-          }
-        }
-      }
-
-      items.add(MediaItem(
-        mediaIdentifier: mediaIdentifierFor(book.id),
-        title: book.title,
-        imageUrl: imageUrl,
-        mediaTypeIdentifier: mediaType.uniqueKey,
-        mediaSourceIdentifier: uniqueKey,
-        position: position,
-        duration: duration,
-        canDelete: false,
-        canEdit: true,
-        sourceMetadata: totalChars > 0 ? jsonEncode(sectionChars) : null,
-      ));
     }
-    return items;
+    final int totalChars = sectionChars.fold<int>(0, (a, b) => a + b);
+    if (totalChars > 0) {
+      duration = totalChars;
+    }
+
+    final pos = await posRepo.findByTtuBookId(book.id);
+    if (pos != null && sectionChars.isNotEmpty) {
+      final int clampedSection =
+          pos.sectionIndex.clamp(0, sectionChars.length - 1);
+      int charsRead = 0;
+      for (int i = 0; i < clampedSection; i++) {
+        charsRead += sectionChars[i];
+      }
+      position = charsRead;
+    }
+
+    final String? imageUrl = await _resolveCoverUrl(book);
+
+    return MediaItem(
+      mediaIdentifier: mediaIdentifierFor(book.id),
+      title: book.title,
+      imageUrl: imageUrl,
+      mediaTypeIdentifier: mediaType.uniqueKey,
+      mediaSourceIdentifier: uniqueKey,
+      position: position,
+      duration: duration,
+      canDelete: false,
+      canEdit: true,
+      sourceMetadata: totalChars > 0 ? jsonEncode(sectionChars) : null,
+    );
+  }
+
+  /// Resolve a book's cover image URL, probing the declared cover path and the
+  /// conventional fallback names concurrently (HBK-AUDIT-128).
+  Future<String?> _resolveCoverUrl(EpubBookRow book) async {
+    final List<String> candidates = <String>[];
+    if (book.coverPath != null && book.coverPath!.isNotEmpty) {
+      String coverRel = book.coverPath!;
+      if (coverRel.startsWith('/')) coverRel = coverRel.substring(1);
+      candidates.add(p.join(book.extractDir, coverRel));
+    }
+    for (final String name in const <String>[
+      'cover.jpg',
+      'cover.jpeg',
+      'cover.png',
+    ]) {
+      candidates.add(p.join(book.extractDir, name));
+    }
+
+    // Probe all candidate paths concurrently, then keep the first existing one
+    // in declared priority order (declared cover path wins over fallbacks).
+    final List<bool> existed = await Future.wait<bool>(
+      candidates.map((String path) => File(path).exists()),
+    );
+    for (int i = 0; i < candidates.length; i++) {
+      if (existed[i]) {
+        return Uri.file(candidates[i]).toString();
+      }
+    }
+    return null;
   }
 
   /// Delete a book and all of its associated data.

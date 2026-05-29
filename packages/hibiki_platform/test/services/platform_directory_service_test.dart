@@ -7,8 +7,7 @@ class FakePlatformDirectoryService implements PlatformDirectoryService {
   @override
   Future<List<String>> getExternalStorageDirectories() async => ['/fake/sd'];
   @override
-  Future<List<String>> getDefaultPickerDirectories(String mediaType) async =>
-      ['/fake'];
+  Future<List<String>> getDefaultPickerDirectories() async => ['/fake'];
   @override
   Future<void> excludeFromMediaScanner(String directoryPath) async {}
 }
@@ -18,6 +17,6 @@ void main() {
     final svc = FakePlatformDirectoryService();
     expect(await svc.getHibikiExportDirectory(), '/fake/export');
     expect(await svc.getExternalStorageDirectories(), ['/fake/sd']);
-    expect(await svc.getDefaultPickerDirectories('epub'), ['/fake']);
+    expect(await svc.getDefaultPickerDirectories(), ['/fake']);
   });
 }

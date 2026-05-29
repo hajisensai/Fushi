@@ -56,7 +56,7 @@ SettingsDestination buildReaderQuickSettingsDestination(
   ).toList(growable: false);
 
   return SettingsDestination(
-    id: SettingsDestinationId.readingDisplay,
+    id: SettingsDestinationId.readerQuickSettings,
     title: t.reader_settings_section,
     summary: t.source_description_epub,
     icon: Icons.tune_outlined,

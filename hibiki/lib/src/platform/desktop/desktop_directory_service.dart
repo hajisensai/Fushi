@@ -19,7 +19,7 @@ class DesktopDirectoryService implements PlatformDirectoryService {
   Future<List<String>> getExternalStorageDirectories() async => [];
 
   @override
-  Future<List<String>> getDefaultPickerDirectories(String mediaType) async {
+  Future<List<String>> getDefaultPickerDirectories() async {
     // Resolve the user's real Documents/Downloads folders via the OS rather
     // than joining literal English names, which silently miss localized
     // installs (e.g. German 'Dokumente') and Linux XDG layouts (HBK-AUDIT-132).
