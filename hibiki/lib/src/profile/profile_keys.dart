@@ -23,6 +23,9 @@ class ProfileKeys {
     'update_never_remind',
     'update_auto_install',
     'update_beta_channel',
+    // HBK-AUDIT-045: keep ALL update-channel/policy keys app-global so the
+    // debug channel isn't asymmetrically profile-scoped vs the others.
+    'update_debug_channel',
   };
 
   static const List<String> _excludedPrefPrefixes = [

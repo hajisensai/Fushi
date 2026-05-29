@@ -137,12 +137,17 @@ abstract class ImageExportField extends Field with ChangeNotifier {
     int newSelectedSuggestionIndex = 0,
   }) {
     creatorModel.getFieldController(this).clear();
+    // HBK-AUDIT-081: the old guard `idx < 0 && idx >= length` is always false
+    // (can't be both), so it only fired on empty AND fell through to
+    // `images.first` — crashing on an empty list. Use `||` for real bounds and
+    // return so we don't dereference images.first when there is nothing valid.
     if (images.isEmpty ||
-        newSelectedSuggestionIndex < 0 &&
-            newSelectedSuggestionIndex >= images.length) {
+        newSelectedSuggestionIndex < 0 ||
+        newSelectedSuggestionIndex >= images.length) {
       clearFieldState(
         creatorModel: creatorModel,
       );
+      return;
     }
 
     _imageSuggestions = images;
