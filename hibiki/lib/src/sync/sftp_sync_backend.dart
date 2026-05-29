@@ -112,7 +112,7 @@ class SftpSyncBackend extends SyncBackend {
   // ── Folder operations ─────────────────────────────────────────────
 
   @override
-  Future<String> findOrCreateRootFolder() => _opLock.withLock(() async {
+  Future<String> findOrCreateRootFolder() => _guarded(() async {
         if (_rootFolderId != null) return _rootFolderId!;
 
         final sftp = await _ensureConnected();
@@ -123,7 +123,7 @@ class SftpSyncBackend extends SyncBackend {
 
   @override
   Future<List<DriveFile>> listBooks(String rootFolderId) =>
-      _opLock.withLock(() async {
+      _guarded(() async {
         final sftp = await _ensureConnected();
         final entries = await sftp.listdir(rootFolderId);
         return entries
@@ -142,7 +142,7 @@ class SftpSyncBackend extends SyncBackend {
     required String rootFolderId,
     Uint8List? coverData,
   }) =>
-      _opLock.withLock(() async {
+      _guarded(() async {
         final sanitized = sanitizeTtuFilename(bookTitle);
 
         if (_titleToFolderId.containsKey(sanitized)) {
@@ -171,7 +171,7 @@ class SftpSyncBackend extends SyncBackend {
 
   @override
   Future<DriveSyncFiles> listSyncFiles(String folderId) =>
-      _opLock.withLock(() async {
+      _guarded(() async {
         final sftp = await _ensureConnected();
         final entries = await sftp.listdir(folderId);
         final files = entries
@@ -217,7 +217,7 @@ class SftpSyncBackend extends SyncBackend {
     required String? fileId,
     required TtuProgress progress,
   }) =>
-      _opLock.withLock(() async {
+      _guarded(() async {
         final sftp = await _ensureConnected();
         if (fileId != null) await _deleteIfExists(sftp, fileId);
         final fileName =
@@ -231,7 +231,7 @@ class SftpSyncBackend extends SyncBackend {
     required String? fileId,
     required List<TtuStatistics> stats,
   }) =>
-      _opLock.withLock(() async {
+      _guarded(() async {
         final sftp = await _ensureConnected();
         if (fileId != null) await _deleteIfExists(sftp, fileId);
         final fileName = statisticsFileName(stats);
@@ -245,7 +245,7 @@ class SftpSyncBackend extends SyncBackend {
     required String? fileId,
     required TtuAudioBook audioBook,
   }) =>
-      _opLock.withLock(() async {
+      _guarded(() async {
         final sftp = await _ensureConnected();
         if (fileId != null) await _deleteIfExists(sftp, fileId);
         final fileName = audioBookFileName(
@@ -262,7 +262,7 @@ class SftpSyncBackend extends SyncBackend {
     required File file,
     void Function(double progress)? onProgress,
   }) =>
-      _opLock.withLock(() async {
+      _guarded(() async {
         final sftp = await _ensureConnected();
         final remotePath = '$folderId/$fileName';
         final length = await file.length();
@@ -292,7 +292,7 @@ class SftpSyncBackend extends SyncBackend {
     required File destination,
     void Function(double progress)? onProgress,
   }) =>
-      _opLock.withLock(() async {
+      _guarded(() async {
         final sftp = await _ensureConnected();
         final stat = await sftp.stat(fileId);
         final totalSize = stat.size ?? 0;
@@ -322,7 +322,7 @@ class SftpSyncBackend extends SyncBackend {
   @override
   Future<DriveFile?> findContentFile(
           String folderId, String fileName) =>
-      _opLock.withLock(() async {
+      _guarded(() async {
         final sftp = await _ensureConnected();
         final path = '$folderId/$fileName';
         if (!await _fileExists(sftp, path)) return null;
@@ -465,6 +465,32 @@ class SftpSyncBackend extends SyncBackend {
     _sshClient = null;
   }
 
+  /// Runs [op] under the op lock and translates raw SFTP failures into the
+  /// SyncBackend error contract. SyncAuthError/SyncBackendError pass through;
+  /// a per-file [SftpStatusError] or any other transport failure becomes a
+  /// RETRYABLE SyncBackendError so SyncManager retries (recreating folders as
+  /// needed) — matching FTP/WebDAV — instead of escaping uncaught and the sync
+  /// being silently skipped (HBK-AUDIT-161).
+  Future<T> _guarded<T>(Future<T> Function() op) {
+    return _opLock.withLock(() async {
+      try {
+        return await op();
+      } on SyncAuthError {
+        rethrow;
+      } on SyncBackendError {
+        rethrow;
+      } on SftpStatusError catch (e) {
+        // Per-file failure; the connection is still usable, so keep it.
+        throw SyncBackendError('SFTP error: $e', isRetryable: true);
+      } catch (e) {
+        // Transport/IO failure — drop the (likely dead) connection so the
+        // retry reconnects.
+        _disconnect();
+        throw SyncBackendError('SFTP operation failed: $e', isRetryable: true);
+      }
+    });
+  }
+
   List<SSHKeyPair> _parseIdentities(String pem) {
     try {
       return SSHKeyPair.fromPem(pem);
@@ -508,7 +534,7 @@ class SftpSyncBackend extends SyncBackend {
     }
   }
 
-  Future<dynamic> _downloadJson(String fileId) => _opLock.withLock(() async {
+  Future<dynamic> _downloadJson(String fileId) => _guarded(() async {
         final sftp = await _ensureConnected();
         final handle = await sftp.open(fileId, mode: SftpFileOpenMode.read);
         try {

@@ -188,6 +188,11 @@ class OneDriveSyncBackend extends SyncBackend {
       await _fetchUserEmail();
       return true;
     } catch (_) {
+      // Refresh failed — drop the stale tokens so isAuthenticated reports
+      // false instead of letting sync proceed with an expired token and loop
+      // on non-retryable 401s (HBK-AUDIT-159).
+      _accessToken = null;
+      _refreshToken = null;
       return false;
     }
   }

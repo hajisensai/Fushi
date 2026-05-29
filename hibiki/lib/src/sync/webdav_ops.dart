@@ -163,7 +163,13 @@ class WebDavOps {
     final baseUri = Uri.parse(basePath);
     if (href.startsWith('http://') || href.startsWith('https://')) {
       final hrefUri = Uri.parse(href);
-      if (hrefUri.host != baseUri.host || hrefUri.scheme != baseUri.scheme) {
+      // Port is part of the origin: a server on :8080 that returns a
+      // default-port (implicit :80) href must not be treated as same-origin,
+      // else the reconstructed URL would target the wrong port (HBK-AUDIT-160).
+      // Uri.port fills in the scheme default, so this compares effective ports.
+      if (hrefUri.host != baseUri.host ||
+          hrefUri.scheme != baseUri.scheme ||
+          hrefUri.port != baseUri.port) {
         throw SyncBackendError('Server returned cross-origin href: $href');
       }
       return href;

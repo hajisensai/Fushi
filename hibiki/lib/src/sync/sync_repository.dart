@@ -360,11 +360,19 @@ class SyncRepository {
   static const _keyServerPort = 'sync_server_port';
   static const _keyServerPassword = 'sync_server_password';
 
+  /// Single source of truth for the default Hibiki sync-server port.
+  /// 38765 is in the IANA User Ports range (1024–49151) but unassigned and
+  /// clear of the crowded 8xxx dev-server band and the 49152+ ephemeral range,
+  /// so initial bind conflicts are unlikely. Referenced everywhere the default
+  /// is needed so the value can never drift between call sites.
+  static const int defaultServerPort = 38765;
+
   Future<bool> isServerEnabled() =>
       _db.getPrefTyped<bool>(_keyServerEnabled, false);
   Future<void> setServerEnabled(bool v) =>
       _db.setPrefTyped<bool>(_keyServerEnabled, v);
-  Future<int> getServerPort() => _db.getPrefTyped<int>(_keyServerPort, 8765);
+  Future<int> getServerPort() =>
+      _db.getPrefTyped<int>(_keyServerPort, defaultServerPort);
   Future<void> setServerPort(int v) => _db.setPrefTyped<int>(_keyServerPort, v);
 
   Future<String?> getServerPassword() async {

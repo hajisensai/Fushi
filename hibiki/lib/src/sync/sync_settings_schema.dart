@@ -1423,7 +1423,7 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget> {
         content: HibikiTextField(
           controller: controller,
           labelText: 'URL',
-          hintText: 'http://192.168.1.100:8765',
+          hintText: 'http://192.168.1.100:38765',
           keyboardType: TextInputType.url,
         ),
         actions: <Widget>[
@@ -1624,7 +1624,7 @@ class _ServerModeWidget extends StatefulWidget {
 
 class _ServerModeWidgetState extends State<_ServerModeWidget> {
   bool _enabled = false;
-  int _port = 8765;
+  int _port = SyncRepository.defaultServerPort;
   String? _token;
   HibikiSyncServer? _server;
   late final TextEditingController _portController;
@@ -1844,7 +1844,7 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget> {
     super.initState();
     _discovery = LanDiscoveryService(
       deviceName: 'Hibiki',
-      port: 8765,
+      port: SyncRepository.defaultServerPort,
       deviceId: 'settings-scan',
     );
     _startScan();

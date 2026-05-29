@@ -70,6 +70,10 @@ class GoogleDriveHandler {
         try {
           return await fn(await _api());
         } on drive.DetailedApiRequestError catch (retry) {
+          // The refreshed token was also rejected — drop the cached api so the
+          // next call rebuilds it instead of reusing the poisoned client
+          // (HBK-AUDIT-168).
+          _cachedApi = null;
           throw GoogleDriveError(retry.message ?? 'Retry failed',
               statusCode: retry.status);
         }

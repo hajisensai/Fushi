@@ -49,6 +49,9 @@ class SmbSyncBackend extends SyncBackend {
     final normalized = WebDavOps.normalizeUrl(webDavUrl);
     _ops = WebDavOps(baseUrl: normalized, username: user, password: pass);
     _username = user;
+    // The URL may have changed; drop folder ids cached against the old base
+    // URL so we never target the previous server (HBK-AUDIT-158).
+    clearCache();
 
     await _ops!.testConnection();
   }
