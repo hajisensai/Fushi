@@ -3276,3 +3276,18 @@ static void scheduleCheck(... bool betaChannel = false, bool debugChannel = fals
 
 ## 安全提示（NATIVE/config 中需用户行动）
 - **HBK-AUDIT-072**：`hibiki/dart_defines.env` 内含真实 Google OAuth client secret 且在工作树中——应轮换该密钥并移出版本控制（加入 .gitignore / 用 CI secret 注入）。这是密钥治理动作，非代码可自动修复。
+
+---
+# 真机验证 (Device Verification, 2026-05-29, emulator-5556 / Android 15 API 35)
+
+构建 `flutter build apk --debug --target-platform android-x64` **成功**（编译了 analyze 覆盖不到的原生 C++23 hoshidicts CMake + FFI 边界），装机后跑集成测试：
+
+| 测试 | 结果 | 验证的修复路径 |
+|------|------|----------------|
+| `flutter build apk` | ✅ Built | 110 处改动在真实构建中编译（含原生/FFI/casing/BasePage abstract） |
+| `app_smoke_test` | ✅ All passed | 启动+AppModel 初始化无崩溃；schema v14 + _ensureIndexes |
+| `settings_validation_test` | ✅ 16 开关 + 6 页持久化, 0 失败 | 022（theme getter 纯读，设置正确持久化无副作用）、147、112、settings_shared |
+| `reader_pagination_test` | ✅ All passed（导入 かがみの孤城 EPUB + 解析 + 前向分页 drift≈0） | epub_parser 010/033/102/106、reader_hibiki_page 037/038/118/120/122、import 路径 |
+
+**结论**：已修复的 Critical/High/reader/settings/import 路径在真机验证通过，从"代码路径确认"升级为"真机验证"（CLAUDE.md 三态最高级）。`reader_pagination_test` 自带 EPUB 导入，故 import→parse→reader 全链路在设备上跑通无崩溃。
+- 注：`regression_test` 需预置书架（push-fixtures + import），`test-flows.ps1` 已不在 `.codex-test/tools/`（并行 dev 移除）；reader_pagination_test 自带导入已覆盖等价路径。
