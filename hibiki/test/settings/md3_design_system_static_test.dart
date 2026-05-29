@@ -678,6 +678,41 @@ void main() {
     }
   });
 
+  test('anki integration dialogs use shared MD3 dialog chrome', () {
+    final String source =
+        File('lib/src/models/anki_integration.dart').readAsStringSync();
+    final String apiFlow = _functionSource(
+      source,
+      'Future<void> showApiMessage(BuildContext? ctx) async',
+      '  Future<void> addDefaultModelIfMissing(BuildContext? ctx) async',
+    );
+    final String modelFlow = _functionSource(
+      source,
+      'Future<void> addDefaultModelIfMissing(BuildContext? ctx) async',
+      '  Future<List<String>> getDecks(BuildContext? ctx) async',
+    );
+    final String apiDialog = _sectionSource(
+      source,
+      'class AnkiApiMessageDialog',
+      'class AnkiDefaultModelDialog',
+    );
+    final String modelDialog = _sectionSource(
+      source,
+      'class AnkiDefaultModelDialog',
+      source.length,
+    );
+
+    expect(apiFlow, contains('AnkiApiMessageDialog('));
+    expect(modelFlow, contains('AnkiDefaultModelDialog('));
+    expect(apiFlow, isNot(contains('adaptiveAlertDialog(')));
+    expect(modelFlow, isNot(contains('adaptiveAlertDialog(')));
+    for (final String dialogSource in <String>[apiDialog, modelDialog]) {
+      expect(dialogSource, contains('HibikiDialogFrame('));
+      expect(dialogSource, contains('HibikiModalSheetFrame('));
+      expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
+    }
+  });
+
   test('dictionary and popup surfaces use shared MD3 primitives', () {
     final String dictionaryManager = File(
       'lib/src/pages/implementations/dictionary_dialog_page.dart',
