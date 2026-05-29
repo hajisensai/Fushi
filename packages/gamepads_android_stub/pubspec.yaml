@@ -1,0 +1,29 @@
+name: gamepads_android
+description: >-
+  Local no-op Android implementation of the `gamepads` federated plugin. Hibiki
+  handles Android controllers through the engine's native key-event path (it
+  already delivers gameButton*/arrow keys), so the real gamepads_android must
+  NOT be registered: its onAttachedToActivity casts the host Activity to
+  GamepadsCompatibleActivity unconditionally and crashes any app whose
+  MainActivity does not implement it (ClassCastException at launch). This
+  Dart-only stub satisfies the umbrella's Android implementation without any
+  native ActivityAware plugin, so nothing is registered and nothing crashes.
+version: 0.1.7
+publish_to: none
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+  flutter: ">=3.0.0"
+
+flutter:
+  plugin:
+    implements: gamepads
+    platforms:
+      android:
+        # Dart-only implementation (no pluginClass) → no native plugin / no cast.
+        dartPluginClass: GamepadsAndroidStub
+
+dependencies:
+  flutter:
+    sdk: flutter
+  gamepads_platform_interface: ^0.1.3

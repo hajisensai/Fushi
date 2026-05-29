@@ -30,7 +30,12 @@ dependencies:
   external_path: ^2.2.0
   file_picker: ^8.0.0
   float_column: ^4.0.3
-  win32: ^5.0.0
+  # Cross-platform game controllers (GameInput / GameController / evdev).
+  # BUILD PREREQ: the Windows backend (gamepads_windows) #includes <GameInput.h>,
+  # which ships only in Windows SDK >= 10.0.26100 — every Windows build
+  # machine/CI must have that SDK installed. (Android is overridden to a no-op
+  # below; see dependency_overrides.)
+  gamepads: ^0.1.10+2
   flutter:
     sdk: flutter
   flutter_localizations:
@@ -120,6 +125,12 @@ dependencies:
 dependency_overrides:
   flutter_inappwebview_windows:
     path: ../packages/flutter_inappwebview_windows
+  # Android uses the engine's native key-event path for controllers, NOT the
+  # gamepads plugin. The real gamepads_android crashes at launch (it casts
+  # MainActivity to GamepadsCompatibleActivity unconditionally), so override it
+  # with a Dart-only no-op so no native ActivityAware plugin is registered.
+  gamepads_android:
+    path: ../packages/gamepads_android_stub
 
 dev_dependencies:
   build_runner: ^2.3.3
