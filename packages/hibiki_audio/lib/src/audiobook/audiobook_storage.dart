@@ -86,9 +86,22 @@ abstract final class AudiobookStorage {
     if (baseName.contains('..')) {
       throw ArgumentError('Invalid filename: $baseName');
     }
-    final String dest = p.join(persistDir.path, baseName);
+    String dest = p.join(persistDir.path, baseName);
     if (!p.isWithin(p.canonicalize(persistDir.path), p.canonicalize(dest))) {
       throw ArgumentError('Path traversal detected: $dest');
+    }
+    // Avoid silently overwriting a same-basename file already persisted in
+    // this batch (e.g. disc1/01.m4a vs disc2/01.m4a from a split audiobook).
+    // Append a counter on collision so the positional audioFileIndex maps to
+    // distinct files instead of both entries pointing at the last writer.
+    if (File(dest).existsSync()) {
+      final String ext = p.extension(baseName);
+      final String stem = p.basenameWithoutExtension(baseName);
+      int counter = 1;
+      do {
+        dest = p.join(persistDir.path, '$stem _$counter$ext');
+        counter++;
+      } while (File(dest).existsSync());
     }
     final int totalBytes = await src.length();
 
