@@ -13,7 +13,6 @@ export 'src/utils/components/hibiki_placeholder_message.dart';
 export 'src/utils/components/hibiki_text_selection_controls.dart';
 export 'src/utils/components/hibiki_search_history.dart';
 export 'src/utils/components/hibiki_popup_position.dart';
-export 'src/utils/components/hibiki_selectable_text.dart';
 export 'src/utils/components/hibiki_list_tile.dart';
 export 'src/utils/components/hibiki_focusable.dart';
 export 'src/utils/components/hibiki_focus_ring.dart';
