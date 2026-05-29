@@ -6,6 +6,12 @@ import 'dart:convert';
 /// Tags: `b` (bool), `i` (int), `d` (double), `s` (string), `j` (JSON list).
 /// Untagged values (written by older code) fall through to heuristic parsing
 /// for backward compatibility.
+///
+/// List support is limited to `List<String>`: [decode] always rebuilds list
+/// prefs as `List<String>`. Storing a `List<int>`/`List<double>` and reading
+/// it back with a matching default is NOT supported and will throw on the
+/// cast. No typed-list pref exists in the codebase; do not add generic
+/// `List<T>` support unless a concrete need appears.
 class PrefCodec {
   PrefCodec._();
 

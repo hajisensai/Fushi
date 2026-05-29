@@ -55,85 +55,26 @@ class HibikiDatabase extends _$HibikiDatabase {
   HibikiDatabase.forTesting(super.e) : _dbDirectory = '';
 
   @override
-  int get schemaVersion => 13;
+  int get schemaVersion => 14;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
-        beforeOpen: (details) async {
-          Future<void> indexIfTableExists(String table, String sql) async {
-            if (await _tableExists(table)) {
-              await customStatement(sql);
-            }
-          }
-
-          await indexIfTableExists(
-            'profile_settings',
-            'CREATE INDEX IF NOT EXISTS idx_profile_settings_profile ON profile_settings (profile_id)',
-          );
-          await indexIfTableExists(
-            'media_type_profiles',
-            'CREATE INDEX IF NOT EXISTS idx_media_type_profiles_profile ON media_type_profiles (profile_id)',
-          );
-          await indexIfTableExists(
-            'book_profiles',
-            'CREATE INDEX IF NOT EXISTS idx_book_profiles_profile ON book_profiles (profile_id)',
-          );
-          await indexIfTableExists(
-            'bookmarks',
-            'CREATE INDEX IF NOT EXISTS idx_bookmarks_ttu_book_id_created '
-                'ON bookmarks (ttu_book_id, created_at DESC)',
-          );
-          await indexIfTableExists(
-            'media_items',
-            'CREATE INDEX IF NOT EXISTS idx_media_items_type '
-                'ON media_items (media_type_identifier)',
-          );
-          await indexIfTableExists(
-            'media_items',
-            'CREATE INDEX IF NOT EXISTS idx_media_items_source '
-                'ON media_items (media_source_identifier)',
-          );
-          await indexIfTableExists(
-            'audio_cues',
-            'CREATE INDEX IF NOT EXISTS idx_audio_cues_book_uid '
-                'ON audio_cues (book_uid)',
-          );
-          await indexIfTableExists(
-            'search_history_items',
-            'CREATE INDEX IF NOT EXISTS idx_search_history_key '
-                'ON search_history_items (history_key)',
-          );
-          await indexIfTableExists(
-            'audiobooks',
-            'CREATE INDEX IF NOT EXISTS idx_audiobooks_book_uid '
-                'ON audiobooks (book_uid)',
-          );
-          await indexIfTableExists(
-            'srt_books',
-            'CREATE INDEX IF NOT EXISTS idx_srt_books_ttu_book_id '
-                'ON srt_books (ttu_book_id)',
-          );
-          await indexIfTableExists(
-            'book_tag_mappings',
-            'CREATE INDEX IF NOT EXISTS idx_book_tag_mappings_book_id '
-                'ON book_tag_mappings (book_id)',
-          );
-        },
         onUpgrade: (m, from, to) async {
           if (from > to) {
             if (_dbDirectory.isNotEmpty) {
-              try {
-                final String base = p.join(_dbDirectory, 'hibiki.db');
-                final String suffix = '.bak.$from';
-                for (final String ext in ['', '-wal', '-shm']) {
-                  final File src = File('$base$ext');
-                  if (await src.exists()) {
-                    await src.copy('$base$ext$suffix');
-                  }
+              // Back up before the destructive drop-and-recreate. A failed
+              // backup MUST abort the downgrade (let the error propagate)
+              // rather than proceed to wipe user data. Timestamped suffix so
+              // repeat downgrades from the same version don't clobber an
+              // earlier backup.
+              final String base = p.join(_dbDirectory, 'hibiki.db');
+              final String suffix =
+                  '.bak.v$from.${DateTime.now().millisecondsSinceEpoch}';
+              for (final String ext in ['', '-wal', '-shm']) {
+                final File src = File('$base$ext');
+                if (await src.exists()) {
+                  await src.copy('$base$ext$suffix');
                 }
-              } catch (e) {
-                print(
-                    '[HibikiDB] backup before downgrade failed: $e'); // ignore: avoid_print
               }
             }
             for (final table in allTables) {
@@ -236,19 +177,28 @@ class HibikiDatabase extends _$HibikiDatabase {
                 'WHERE ttu_book_id NOT IN (SELECT id FROM epub_books)',
               );
             }
-            if (await tableExists('audio_cues') &&
-                await tableExists('audiobooks')) {
-              await customStatement(
-                'DELETE FROM audio_cues '
-                'WHERE book_uid NOT IN (SELECT book_uid FROM audiobooks)',
-              );
-            }
+            // Remove srt_books whose backing epub is gone (standalone SRT
+            // books keep ttu_book_id = 0 and are preserved). Run BEFORE the
+            // audio_cues cleanup so cues of removed srt_books become orphans.
             if (await tableExists('srt_books') &&
                 await tableExists('epub_books')) {
               await customStatement(
                 'DELETE FROM srt_books '
                 'WHERE ttu_book_id > 0 '
                 'AND ttu_book_id NOT IN (SELECT id FROM epub_books)',
+              );
+            }
+            // audio_cues.book_uid is owned by EITHER audiobooks.book_uid OR
+            // srt_books.uid. Only delete cues orphaned from BOTH owners; the
+            // previous audiobooks-only predicate silently wiped every SRT
+            // book's cues on upgrade (data loss, HBK-AUDIT-001).
+            if (await tableExists('audio_cues') &&
+                await tableExists('audiobooks') &&
+                await tableExists('srt_books')) {
+              await customStatement(
+                'DELETE FROM audio_cues '
+                'WHERE book_uid NOT IN (SELECT book_uid FROM audiobooks) '
+                'AND book_uid NOT IN (SELECT uid FROM srt_books)',
               );
             }
             if (await tableExists('bookmarks') &&
@@ -262,11 +212,86 @@ class HibikiDatabase extends _$HibikiDatabase {
           if (from < 13) {
             await m.createTable(srtBookTagMappings);
           }
+          if (from < 14) {
+            // Indexes were previously (re)created in beforeOpen on every open
+            // (12 extra sqlite_master probes per launch). Create them once on
+            // upgrade so existing DBs gain any missing index; fresh DBs get
+            // them in onCreate.
+            await _ensureIndexes();
+          }
         },
         onCreate: (m) async {
           await m.createAll();
+          await _ensureIndexes();
         },
       );
+
+  /// Creates all secondary indexes idempotently. Called from onCreate (fresh
+  /// install) and the one-time v14 onUpgrade step — NOT on every open. Each
+  /// index is guarded by a table-existence check because a partially-migrated
+  /// legacy DB may lack some v1 baseline tables (those are created only in
+  /// onCreate, never in the onUpgrade ladder).
+  Future<void> _ensureIndexes() async {
+    const List<List<String>> indexes = <List<String>>[
+      [
+        'profile_settings',
+        'CREATE INDEX IF NOT EXISTS idx_profile_settings_profile ON profile_settings (profile_id)'
+      ],
+      [
+        'media_type_profiles',
+        'CREATE INDEX IF NOT EXISTS idx_media_type_profiles_profile ON media_type_profiles (profile_id)'
+      ],
+      [
+        'book_profiles',
+        'CREATE INDEX IF NOT EXISTS idx_book_profiles_profile ON book_profiles (profile_id)'
+      ],
+      [
+        'bookmarks',
+        'CREATE INDEX IF NOT EXISTS idx_bookmarks_ttu_book_id_created '
+            'ON bookmarks (ttu_book_id, created_at DESC)'
+      ],
+      [
+        'media_items',
+        'CREATE INDEX IF NOT EXISTS idx_media_items_type '
+            'ON media_items (media_type_identifier)'
+      ],
+      [
+        'media_items',
+        'CREATE INDEX IF NOT EXISTS idx_media_items_source '
+            'ON media_items (media_source_identifier)'
+      ],
+      [
+        'audio_cues',
+        'CREATE INDEX IF NOT EXISTS idx_audio_cues_book_uid '
+            'ON audio_cues (book_uid)'
+      ],
+      [
+        'search_history_items',
+        'CREATE INDEX IF NOT EXISTS idx_search_history_key '
+            'ON search_history_items (history_key)'
+      ],
+      [
+        'audiobooks',
+        'CREATE INDEX IF NOT EXISTS idx_audiobooks_book_uid '
+            'ON audiobooks (book_uid)'
+      ],
+      [
+        'srt_books',
+        'CREATE INDEX IF NOT EXISTS idx_srt_books_ttu_book_id '
+            'ON srt_books (ttu_book_id)'
+      ],
+      [
+        'book_tag_mappings',
+        'CREATE INDEX IF NOT EXISTS idx_book_tag_mappings_book_id '
+            'ON book_tag_mappings (book_id)'
+      ],
+    ];
+    for (final List<String> entry in indexes) {
+      if (await _tableExists(entry[0])) {
+        await customStatement(entry[1]);
+      }
+    }
+  }
 
   static final RegExp _identifierRe = RegExp(r'^[a-zA-Z_]\w*$');
 
@@ -366,6 +391,15 @@ class HibikiDatabase extends _$HibikiDatabase {
                 ) ??
                 DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
             final int rowBookId = raw['ttuBookId'] as int? ?? ttuBookId;
+            // bookmarks.ttu_book_id is a FK to epub_books(id). Legacy TTU ids
+            // need not map to an imported epub, and INSERT OR IGNORE does NOT
+            // suppress FK violations — an unmatched id would abort the whole
+            // upgrade transaction (app can't open the DB). Skip orphans.
+            final bookExists = await customSelect(
+              'SELECT 1 FROM epub_books WHERE id = ? LIMIT 1',
+              variables: [Variable<int>(rowBookId)],
+            ).getSingleOrNull();
+            if (bookExists == null) continue;
             await customStatement(
               'INSERT OR IGNORE INTO bookmarks '
               '(ttu_book_id, section_index, norm_char_offset, label, '
@@ -592,7 +626,12 @@ class HibikiDatabase extends _$HibikiDatabase {
           .go();
 
   // ── reading statistics ──────────────────────────────────────────
-  Future<void> upsertReadingStatistic(ReadingStatisticsCompanion stat) =>
+  /// OVERWRITE semantics: sets the row for (title, dateKey) to the absolute
+  /// values in [stat]. Use this when the caller already holds the final total
+  /// (e.g. sync merge). For incremental session deltas use
+  /// [addReadingStatistic], which accumulates. Passing a delta here would
+  /// silently reset the totals.
+  Future<void> setReadingStatistic(ReadingStatisticsCompanion stat) =>
       into(readingStatistics).insert(
         stat,
         onConflict: DoUpdate(
@@ -605,6 +644,9 @@ class HibikiDatabase extends _$HibikiDatabase {
         ),
       );
 
+  /// ACCUMULATE semantics: adds [charsRead]/[timeMs] to the existing totals
+  /// for (title, dateKey). Use for reading-session deltas. For setting an
+  /// absolute total (e.g. sync merge) use [setReadingStatistic].
   Future<void> addReadingStatistic({
     required String title,
     required String dateKey,
@@ -729,8 +771,7 @@ class HibikiDatabase extends _$HibikiDatabase {
         await (delete(bookmarks)..where((t) => t.ttuBookId.equals(id))).go();
         await (delete(srtBooks)..where((t) => t.ttuBookId.equals(id))).go();
         final String bookUid = 'reader_ttu/hoshi://book/$id';
-        await (delete(audioCues)..where((t) => t.bookUid.equals(bookUid)))
-            .go();
+        await (delete(audioCues)..where((t) => t.bookUid.equals(bookUid))).go();
         await (delete(audiobooks)..where((t) => t.bookUid.equals(bookUid)))
             .go();
         return (delete(epubBooks)..where((t) => t.id.equals(id))).go();

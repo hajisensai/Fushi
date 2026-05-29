@@ -561,7 +561,7 @@ class SyncManager {
 
   Future<void> _writeStatisticsToDb(List<TtuStatistics> stats) async {
     for (final stat in stats) {
-      await _db.upsertReadingStatistic(ReadingStatisticsCompanion(
+      await _db.setReadingStatistic(ReadingStatisticsCompanion(
         title: Value(stat.title),
         dateKey: Value(stat.dateKey),
         charactersRead: Value(stat.charactersRead),

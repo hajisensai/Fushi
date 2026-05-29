@@ -13,7 +13,7 @@ void main() {
     test('fresh database has expected schema version', () async {
       final db = await _openDb();
       final version = await db.customSelect('PRAGMA user_version').getSingle();
-      expect(version.data['user_version'], 13);
+      expect(version.data['user_version'], 14);
     });
 
     test('all expected tables exist', () async {
