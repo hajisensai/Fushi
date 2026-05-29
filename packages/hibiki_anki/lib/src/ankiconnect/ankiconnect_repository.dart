@@ -205,6 +205,14 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     final tags =
         settings.tags.split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList();
 
+    // `fields` only holds entries that rendered to a non-empty value; if it is
+    // empty, nothing rendered and adding the note would create a blank card
+    // reported as success (HBK-AUDIT-018).
+    if (fields.isEmpty) {
+      debugPrint(
+          'AnkiConnectRepository.mineEntry: all fields empty, refusing blank note');
+      return MineResult.error;
+    }
     try {
       await service.addNote(
         deckName: deck.name,
@@ -282,6 +290,14 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         try {
           final request = await client.getUrl(Uri.parse(url));
           final response = await request.close();
+          // A non-200 returns an HTML/JSON error body; writing it verbatim to
+          // .mp3 would embed a broken "audio" file into the card
+          // (HBK-AUDIT-019).
+          if (response.statusCode != 200) {
+            debugPrint(
+                'AnkiConnectRepository._storeRemoteAudio: HTTP ${response.statusCode} for $url');
+            return null;
+          }
           final bytes =
               await response.fold<List<int>>([], (a, b) => a..addAll(b));
           final cacheDir = Directory('${Directory.systemTemp.path}/anki-media');

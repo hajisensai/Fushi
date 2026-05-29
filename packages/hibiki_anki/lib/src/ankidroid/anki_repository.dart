@@ -200,6 +200,14 @@ class AnkiRepository extends BaseAnkiRepository {
     }
 
     final fieldArray = noteType.fields.map((f) => fields[f] ?? '').toList();
+    // AddContentApi accepts an array of empty strings and creates a blank note
+    // that the channel reports as success. Refuse if nothing rendered into any
+    // field (HBK-AUDIT-018).
+    if (fieldArray.every((v) => v.trim().isEmpty)) {
+      debugPrint(
+          'AnkiRepository.mineEntry: all fields empty, refusing blank note');
+      return MineResult.error;
+    }
     final tags =
         settings.tags.split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList();
 
@@ -265,6 +273,14 @@ class AnkiRepository extends BaseAnkiRepository {
         try {
           final request = await client.getUrl(Uri.parse(url));
           final response = await request.close();
+          // A non-200 returns an HTML/JSON error body; writing it verbatim to
+          // .mp3 would embed a broken "audio" file into the card
+          // (HBK-AUDIT-019).
+          if (response.statusCode != 200) {
+            debugPrint(
+                'AnkiRepository._addRemoteAudio: HTTP ${response.statusCode} for $url');
+            return null;
+          }
           final bytes =
               await response.fold<List<int>>([], (a, b) => a..addAll(b));
           final cacheDir = await _mediaCacheDir();
