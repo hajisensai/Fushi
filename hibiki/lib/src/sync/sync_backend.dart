@@ -4,7 +4,16 @@ import 'dart:typed_data';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 
-enum SyncBackendType { googleDrive, webDav }
+enum SyncBackendType {
+  googleDrive,
+  webDav,
+  oneDrive,
+  dropbox,
+  ftp,
+  sftp,
+  smb,
+  hibikiServer,
+}
 
 class SyncBackendError implements Exception {
   SyncBackendError(this.message, {this.isRetryable = false});

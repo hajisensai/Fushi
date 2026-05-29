@@ -123,7 +123,10 @@ class SyncRepository {
 
   Future<SyncBackendType> getBackendType() async {
     final raw = await _getStringOrNull(_keyBackendType);
-    if (raw == 'webDav') return SyncBackendType.webDav;
+    if (raw == null) return SyncBackendType.googleDrive;
+    for (final type in SyncBackendType.values) {
+      if (type.name == raw) return type;
+    }
     return SyncBackendType.googleDrive;
   }
 
@@ -188,7 +191,232 @@ class SyncRepository {
     }
   }
 
+  // ── OneDrive credentials ────────────────────────────────────────
+
+  static const _keyOneDriveToken = 'sync_onedrive_token';
+
+  Future<String?> getOneDriveToken() async {
+    final encoded = await _getStringOrNull(_keyOneDriveToken);
+    return encoded != null ? _decodeSecret(encoded) : null;
+  }
+
+  Future<void> setOneDriveToken(String? token) async {
+    if (token == null) {
+      await _deleteKey(_keyOneDriveToken);
+      return;
+    }
+    await _setString(_keyOneDriveToken, _encodeSecret(token));
+  }
+
+  // ── Dropbox credentials ─────────────────────────────────────────
+
+  static const _keyDropboxToken = 'sync_dropbox_token';
+
+  Future<String?> getDropboxToken() async {
+    final encoded = await _getStringOrNull(_keyDropboxToken);
+    return encoded != null ? _decodeSecret(encoded) : null;
+  }
+
+  Future<void> setDropboxToken(String? token) async {
+    if (token == null) {
+      await _deleteKey(_keyDropboxToken);
+      return;
+    }
+    await _setString(_keyDropboxToken, _encodeSecret(token));
+  }
+
+  // ── FTP credentials ─────────────────────────────────────────────
+
+  static const _keyFtpHost = 'sync_ftp_host';
+  static const _keyFtpPort = 'sync_ftp_port';
+  static const _keyFtpUsername = 'sync_ftp_username';
+  static const _keyFtpPassword = 'sync_ftp_password';
+  static const _keyFtpUseTls = 'sync_ftp_use_tls';
+
+  Future<String?> getFtpHost() => _getStringOrNull(_keyFtpHost);
+  Future<void> setFtpHost(String? v) => _setOrDelete(_keyFtpHost, v);
+  Future<int> getFtpPort() => _db.getPrefTyped<int>(_keyFtpPort, 21);
+  Future<void> setFtpPort(int v) => _db.setPrefTyped<int>(_keyFtpPort, v);
+  Future<String?> getFtpUsername() => _getStringOrNull(_keyFtpUsername);
+  Future<void> setFtpUsername(String? v) => _setOrDelete(_keyFtpUsername, v);
+
+  Future<String?> getFtpPassword() async {
+    final encoded = await _getStringOrNull(_keyFtpPassword);
+    return encoded != null ? _decodeSecret(encoded) : null;
+  }
+
+  Future<void> setFtpPassword(String? v) async {
+    if (v == null) {
+      await _deleteKey(_keyFtpPassword);
+      return;
+    }
+    await _setString(_keyFtpPassword, _encodeSecret(v));
+  }
+
+  Future<bool> isFtpTlsEnabled() =>
+      _db.getPrefTyped<bool>(_keyFtpUseTls, false);
+  Future<void> setFtpTlsEnabled(bool v) =>
+      _db.setPrefTyped<bool>(_keyFtpUseTls, v);
+
+  // ── SFTP credentials ────────────────────────────────────────────
+
+  static const _keySftpHost = 'sync_sftp_host';
+  static const _keySftpPort = 'sync_sftp_port';
+  static const _keySftpUsername = 'sync_sftp_username';
+  static const _keySftpPassword = 'sync_sftp_password';
+  static const _keySftpPrivateKey = 'sync_sftp_private_key';
+
+  Future<String?> getSftpHost() => _getStringOrNull(_keySftpHost);
+  Future<void> setSftpHost(String? v) => _setOrDelete(_keySftpHost, v);
+  Future<int> getSftpPort() => _db.getPrefTyped<int>(_keySftpPort, 22);
+  Future<void> setSftpPort(int v) => _db.setPrefTyped<int>(_keySftpPort, v);
+  Future<String?> getSftpUsername() => _getStringOrNull(_keySftpUsername);
+  Future<void> setSftpUsername(String? v) => _setOrDelete(_keySftpUsername, v);
+
+  Future<String?> getSftpPassword() async {
+    final encoded = await _getStringOrNull(_keySftpPassword);
+    return encoded != null ? _decodeSecret(encoded) : null;
+  }
+
+  Future<void> setSftpPassword(String? v) async {
+    if (v == null) {
+      await _deleteKey(_keySftpPassword);
+      return;
+    }
+    await _setString(_keySftpPassword, _encodeSecret(v));
+  }
+
+  Future<String?> getSftpPrivateKey() async {
+    final encoded = await _getStringOrNull(_keySftpPrivateKey);
+    return encoded != null ? _decodeSecret(encoded) : null;
+  }
+
+  Future<void> setSftpPrivateKey(String? v) async {
+    if (v == null) {
+      await _deleteKey(_keySftpPrivateKey);
+      return;
+    }
+    await _setString(_keySftpPrivateKey, _encodeSecret(v));
+  }
+
+  // ── SMB credentials ─────────────────────────────────────────────
+
+  static const _keySmbHost = 'sync_smb_host';
+  static const _keySmbShare = 'sync_smb_share';
+  static const _keySmbUsername = 'sync_smb_username';
+  static const _keySmbPassword = 'sync_smb_password';
+  static const _keySmbDomain = 'sync_smb_domain';
+  static const _keySmbWebDavUrl = 'sync_smb_webdav_url';
+
+  Future<String?> getSmbHost() => _getStringOrNull(_keySmbHost);
+  Future<void> setSmbHost(String? v) => _setOrDelete(_keySmbHost, v);
+  Future<String?> getSmbShare() => _getStringOrNull(_keySmbShare);
+  Future<void> setSmbShare(String? v) => _setOrDelete(_keySmbShare, v);
+  Future<String?> getSmbUsername() => _getStringOrNull(_keySmbUsername);
+  Future<void> setSmbUsername(String? v) => _setOrDelete(_keySmbUsername, v);
+
+  Future<String?> getSmbPassword() async {
+    final encoded = await _getStringOrNull(_keySmbPassword);
+    return encoded != null ? _decodeSecret(encoded) : null;
+  }
+
+  Future<void> setSmbPassword(String? v) async {
+    if (v == null) {
+      await _deleteKey(_keySmbPassword);
+      return;
+    }
+    await _setString(_keySmbPassword, _encodeSecret(v));
+  }
+
+  Future<String?> getSmbDomain() => _getStringOrNull(_keySmbDomain);
+  Future<void> setSmbDomain(String? v) => _setOrDelete(_keySmbDomain, v);
+
+  Future<String?> getSmbWebDavUrl() => _getStringOrNull(_keySmbWebDavUrl);
+  Future<void> setSmbWebDavUrl(String? v) => _setOrDelete(_keySmbWebDavUrl, v);
+
+  // ── Hibiki Server config ────────────────────────────────────────
+
+  static const _keyServerEnabled = 'sync_server_enabled';
+  static const _keyServerPort = 'sync_server_port';
+  static const _keyServerPassword = 'sync_server_password';
+
+  Future<bool> isServerEnabled() =>
+      _db.getPrefTyped<bool>(_keyServerEnabled, false);
+  Future<void> setServerEnabled(bool v) =>
+      _db.setPrefTyped<bool>(_keyServerEnabled, v);
+  Future<int> getServerPort() => _db.getPrefTyped<int>(_keyServerPort, 8765);
+  Future<void> setServerPort(int v) => _db.setPrefTyped<int>(_keyServerPort, v);
+
+  Future<String?> getServerPassword() async {
+    final encoded = await _getStringOrNull(_keyServerPassword);
+    return encoded != null ? _decodeSecret(encoded) : null;
+  }
+
+  Future<void> setServerPassword(String? v) async {
+    if (v == null) {
+      await _deleteKey(_keyServerPassword);
+      return;
+    }
+    await _setString(_keyServerPassword, _encodeSecret(v));
+  }
+
+  // ── Hibiki Client (connect to another Hibiki instance) ─────────
+
+  static const _keyHibikiClientUrl = 'sync_hibiki_client_url';
+  static const _keyHibikiClientToken = 'sync_hibiki_client_token';
+
+  Future<String?> getHibikiClientUrl() => _getStringOrNull(_keyHibikiClientUrl);
+  Future<void> setHibikiClientUrl(String? v) =>
+      _setOrDelete(_keyHibikiClientUrl, v);
+
+  Future<String?> getHibikiClientToken() async {
+    final encoded = await _getStringOrNull(_keyHibikiClientToken);
+    return encoded != null ? _decodeSecret(encoded) : null;
+  }
+
+  Future<void> setHibikiClientToken(String? v) async {
+    if (v == null) {
+      await _deleteKey(_keyHibikiClientToken);
+      return;
+    }
+    await _setString(_keyHibikiClientToken, _encodeSecret(v));
+  }
+
+  // ── Fallback config ─────────────────────────────────────────────
+
+  static const _keyFallbackOrder = 'sync_fallback_order';
+
+  Future<List<SyncBackendType>> getFallbackOrder() async {
+    final raw = await _getStringOrNull(_keyFallbackOrder);
+    if (raw == null) return [];
+    final list = (jsonDecode(raw) as List).cast<String>();
+    return list
+        .map((name) {
+          for (final t in SyncBackendType.values) {
+            if (t.name == name) return t;
+          }
+          return null;
+        })
+        .whereType<SyncBackendType>()
+        .toList();
+  }
+
+  Future<void> setFallbackOrder(List<SyncBackendType> order) => _setString(
+      _keyFallbackOrder, jsonEncode(order.map((t) => t.name).toList()));
+
   // ── Helpers ───────────────────────────────────────────────────────
+
+  Future<void> _setOrDelete(String key, String? value) async {
+    if (value == null || value.isEmpty) {
+      await _deleteKey(key);
+      return;
+    }
+    await _setString(key, value);
+  }
+
+  Future<void> _deleteKey(String key) async {
+    await (_db.delete(_db.preferences)..where((t) => t.key.equals(key))).go();
+  }
 
   Future<String?> _getStringOrNull(String key) async {
     final row = await (_db.select(_db.preferences)

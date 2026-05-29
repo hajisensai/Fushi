@@ -35,6 +35,14 @@
                 android:name="io.flutter.embedding.android.NormalTheme"
                 android:resource="@style/NormalTheme"
                 />
+            <!-- OAuth redirect callback for cloud sync backends
+                 (hibiki://auth/onedrive, hibiki://auth/dropbox). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="hibiki" android:host="auth" />
+            </intent-filter>
         </activity>
 
         <!-- Launcher icon aliases for runtime icon switching -->

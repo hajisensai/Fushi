@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:io';
 
+import 'package:clipboard/clipboard.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -7,7 +9,15 @@ import 'package:flutter_exit_app/flutter_exit_app.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
 import 'package:hibiki/src/sync/backup_service.dart';
+import 'package:hibiki/src/sync/dropbox_sync_backend.dart';
+import 'package:hibiki/src/sync/ftp_sync_backend.dart';
 import 'package:hibiki/src/sync/google_drive_sync_backend.dart';
+import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
+import 'package:hibiki/src/sync/onedrive_sync_backend.dart';
+import 'package:hibiki/src/sync/hibiki_sync_server.dart';
+import 'package:hibiki/src/sync/lan_discovery_service.dart';
+import 'package:hibiki/src/sync/sftp_sync_backend.dart';
+import 'package:hibiki/src/sync/smb_sync_backend.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_compare_dialog.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
@@ -27,32 +37,11 @@ SettingsDestination buildSyncBackupDestination() {
       SettingsSection(
         title: t.sync_backend,
         items: <SettingsItem>[
-          SettingsSegmentedItem<String>(
+          SettingsCustomItem(
             id: 'sync.mode',
-            title: t.sync_backend,
             icon: Icons.cloud_outlined,
-            options: <SettingsSegmentOption<String>>[
-              SettingsSegmentOption(
-                value: SyncBackendType.googleDrive.name,
-                label: t.sync_backend_google_drive,
-              ),
-              SettingsSegmentOption(
-                value: SyncBackendType.webDav.name,
-                label: t.sync_backend_webdav,
-              ),
-            ],
-            selected: (SettingsContext ctx) =>
-                _syncSettings(ctx).backendType.name,
-            onChanged: (SettingsContext ctx, String value) async {
-              final type = value == SyncBackendType.webDav.name
-                  ? SyncBackendType.webDav
-                  : SyncBackendType.googleDrive;
-              _syncSettings(ctx).backendType = type;
-              final repo = SyncRepository(ctx.appModel.database);
-              await repo.setBackendType(type);
-              await repo.clearFolderCache();
-            },
-            controlBelow: true,
+            builder: (SettingsContext ctx) =>
+                _BackendSelectorWidget(settingsContext: ctx),
           ),
           SettingsCustomItem(
             id: 'sync.webdav_config',
@@ -61,6 +50,60 @@ SettingsDestination buildSyncBackupDestination() {
                 _syncSettings(ctx).backendType == SyncBackendType.webDav,
             builder: (SettingsContext ctx) =>
                 _WebDavConfigWidget(settingsContext: ctx),
+          ),
+          SettingsCustomItem(
+            id: 'sync.ftp_config',
+            icon: Icons.dns_outlined,
+            visible: (SettingsContext ctx) =>
+                _syncSettings(ctx).backendType == SyncBackendType.ftp,
+            builder: (SettingsContext ctx) =>
+                _FtpConfigWidget(settingsContext: ctx),
+          ),
+          SettingsCustomItem(
+            id: 'sync.sftp_config',
+            icon: Icons.dns_outlined,
+            visible: (SettingsContext ctx) =>
+                _syncSettings(ctx).backendType == SyncBackendType.sftp,
+            builder: (SettingsContext ctx) =>
+                _SftpConfigWidget(settingsContext: ctx),
+          ),
+          SettingsCustomItem(
+            id: 'sync.smb_config',
+            icon: Icons.dns_outlined,
+            visible: (SettingsContext ctx) =>
+                _syncSettings(ctx).backendType == SyncBackendType.smb,
+            builder: (SettingsContext ctx) =>
+                _SmbConfigWidget(settingsContext: ctx),
+          ),
+          SettingsCustomItem(
+            id: 'sync.hibiki_server_config',
+            icon: Icons.devices_outlined,
+            visible: (SettingsContext ctx) =>
+                _syncSettings(ctx).backendType == SyncBackendType.hibikiServer,
+            builder: (SettingsContext ctx) =>
+                _HibikiServerConfigWidget(settingsContext: ctx),
+          ),
+        ],
+      ),
+      SettingsSection(
+        title: t.sync_server_enable,
+        items: <SettingsItem>[
+          SettingsCustomItem(
+            id: 'sync.server_mode',
+            icon: Icons.router_outlined,
+            builder: (SettingsContext ctx) =>
+                _ServerModeWidget(settingsContext: ctx),
+          ),
+        ],
+      ),
+      SettingsSection(
+        title: t.sync_lan_discovery,
+        items: <SettingsItem>[
+          SettingsCustomItem(
+            id: 'sync.lan_devices',
+            icon: Icons.wifi_find_outlined,
+            builder: (SettingsContext ctx) =>
+                _LanDiscoveryWidget(settingsContext: ctx),
           ),
         ],
       ),
@@ -160,12 +203,10 @@ SettingsDestination buildSyncBackupDestination() {
   );
 }
 
-final Expando<_SyncSettingsState> _syncSettingsByContext =
-    Expando<_SyncSettingsState>('sync settings state');
+_SyncSettingsState? _activeSyncState;
 
 _SyncSettingsState _syncSettings(SettingsContext ctx) {
-  return _syncSettingsByContext[ctx.context] ??= _SyncSettingsState(ctx)
-    ..load();
+  return _activeSyncState ??= _SyncSettingsState(ctx)..load();
 }
 
 void _showSnackBar(BuildContext context, String message) {
@@ -750,6 +791,923 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
                 ],
               ),
             ),
+    );
+  }
+}
+
+/// OAuth backends ship with placeholder client IDs until real credentials
+/// are configured. Hide those from the picker so users never select a
+/// backend that can only ever fail with "not configured". A backend
+/// re-appears automatically once its client ID is filled in.
+bool _isBackendSelectable(SyncBackendType type) {
+  switch (type) {
+    case SyncBackendType.oneDrive:
+      return OneDriveSyncBackend.isConfigured;
+    case SyncBackendType.dropbox:
+      return DropboxSyncBackend.isConfigured;
+    case SyncBackendType.googleDrive:
+    case SyncBackendType.webDav:
+    case SyncBackendType.ftp:
+    case SyncBackendType.sftp:
+    case SyncBackendType.smb:
+    case SyncBackendType.hibikiServer:
+      return true;
+  }
+}
+
+/// Backends shown in the picker: all selectable ones, plus [current] if a
+/// previously-persisted value would otherwise be filtered out (DropdownButton
+/// requires its value to be present in its items).
+List<SyncBackendType> _selectableBackends(SyncBackendType current) {
+  final list = SyncBackendType.values.where(_isBackendSelectable).toList();
+  if (!list.contains(current)) list.insert(0, current);
+  return list;
+}
+
+String _backendLabel(SyncBackendType type) {
+  switch (type) {
+    case SyncBackendType.googleDrive:
+      return t.sync_backend_google_drive;
+    case SyncBackendType.webDav:
+      return t.sync_backend_webdav;
+    case SyncBackendType.oneDrive:
+      return t.sync_backend_onedrive;
+    case SyncBackendType.dropbox:
+      return t.sync_backend_dropbox;
+    case SyncBackendType.ftp:
+      return t.sync_backend_ftp;
+    case SyncBackendType.sftp:
+      return t.sync_backend_sftp;
+    case SyncBackendType.smb:
+      return t.sync_backend_smb;
+    case SyncBackendType.hibikiServer:
+      return t.sync_backend_hibiki_server;
+  }
+}
+
+// ── Backend selector dropdown ───────────────────────────────────────
+
+class _BackendSelectorWidget extends StatefulWidget {
+  const _BackendSelectorWidget({required this.settingsContext});
+  final SettingsContext settingsContext;
+
+  @override
+  State<_BackendSelectorWidget> createState() => _BackendSelectorWidgetState();
+}
+
+class _BackendSelectorWidgetState extends State<_BackendSelectorWidget> {
+  @override
+  void initState() {
+    super.initState();
+    _activeSyncState ??= _SyncSettingsState(widget.settingsContext)..load();
+  }
+
+  @override
+  void dispose() {
+    _activeSyncState = null;
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final state = _syncSettings(widget.settingsContext);
+    return AdaptiveSettingsRow(
+      title: t.sync_backend,
+      icon: Icons.cloud_outlined,
+      controlBelow: true,
+      trailing: DropdownButton<SyncBackendType>(
+        value: state.backendType,
+        underline: const SizedBox.shrink(),
+        items: _selectableBackends(state.backendType)
+            .map((SyncBackendType type) => DropdownMenuItem<SyncBackendType>(
+                  value: type,
+                  child: Text(_backendLabel(type)),
+                ))
+            .toList(),
+        onChanged: (SyncBackendType? value) async {
+          if (value == null || value == state.backendType) return;
+          state.backendType = value;
+          final repo = SyncRepository(widget.settingsContext.appModel.database);
+          await repo.setBackendType(value);
+          await repo.clearFolderCache();
+          widget.settingsContext.refresh();
+        },
+      ),
+    );
+  }
+}
+
+// ── FTP config widget ───────────────────────────────────────────────
+
+class _FtpConfigWidget extends StatefulWidget {
+  const _FtpConfigWidget({required this.settingsContext});
+  final SettingsContext settingsContext;
+
+  @override
+  State<_FtpConfigWidget> createState() => _FtpConfigWidgetState();
+}
+
+class _FtpConfigWidgetState extends State<_FtpConfigWidget> {
+  late final TextEditingController _hostController;
+  late final TextEditingController _portController;
+  late final TextEditingController _usernameController;
+  late final TextEditingController _passwordController;
+  bool _useTls = false;
+  bool _isTesting = false;
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _hostController = TextEditingController();
+    _portController = TextEditingController(text: '21');
+    _usernameController = TextEditingController();
+    _passwordController = TextEditingController();
+    _loadCredentials();
+  }
+
+  @override
+  void dispose() {
+    _hostController.dispose();
+    _portController.dispose();
+    _usernameController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadCredentials() async {
+    final repo = SyncRepository(widget.settingsContext.appModel.database);
+    final host = await repo.getFtpHost();
+    final port = await repo.getFtpPort();
+    final user = await repo.getFtpUsername();
+    final pass = await repo.getFtpPassword();
+    final tls = await repo.isFtpTlsEnabled();
+    if (mounted) {
+      setState(() {
+        _hostController.text = host ?? '';
+        _portController.text = port.toString();
+        _usernameController.text = user ?? '';
+        _passwordController.text = pass ?? '';
+        _useTls = tls;
+        _loaded = true;
+      });
+    }
+  }
+
+  Future<void> _saveCredentials() async {
+    final repo = SyncRepository(widget.settingsContext.appModel.database);
+    final host = _hostController.text.trim();
+    final user = _usernameController.text.trim();
+    final pass = _passwordController.text;
+    final port = int.tryParse(_portController.text.trim()) ?? 21;
+    await repo.setFtpHost(host.isEmpty ? null : host);
+    await repo.setFtpPort(port);
+    await repo.setFtpUsername(user.isEmpty ? null : user);
+    await repo.setFtpPassword(pass.isEmpty ? null : pass);
+    await repo.setFtpTlsEnabled(_useTls);
+  }
+
+  Future<void> _testConnection() async {
+    await _saveCredentials();
+    setState(() => _isTesting = true);
+    try {
+      await FtpSyncBackend.testConnection(
+        host: _hostController.text.trim(),
+        port: int.tryParse(_portController.text.trim()) ?? 21,
+        username: _usernameController.text.trim(),
+        password: _passwordController.text,
+        useTls: _useTls,
+      );
+      if (mounted) _showSnackBar(context, t.sync_connection_success);
+    } catch (e) {
+      if (mounted) {
+        _showSnackBar(context,
+            '${t.sync_connection_failed}: ${e is SyncBackendError ? e.message : e}');
+      }
+    } finally {
+      if (mounted) setState(() => _isTesting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_loaded) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          HibikiTextField(
+            controller: _hostController,
+            labelText: t.sync_host,
+            hintText: 'ftp.example.com',
+            onChanged: (_) => _saveCredentials(),
+          ),
+          const SizedBox(height: 12),
+          HibikiTextField(
+            controller: _portController,
+            labelText: t.sync_port,
+            keyboardType: TextInputType.number,
+            onChanged: (_) => _saveCredentials(),
+          ),
+          const SizedBox(height: 12),
+          HibikiTextField(
+            controller: _usernameController,
+            labelText: t.sync_username,
+            onChanged: (_) => _saveCredentials(),
+          ),
+          const SizedBox(height: 12),
+          HibikiTextField(
+            controller: _passwordController,
+            labelText: t.sync_password,
+            obscureText: true,
+            onChanged: (_) => _saveCredentials(),
+          ),
+          const SizedBox(height: 8),
+          SwitchListTile.adaptive(
+            title: Text(t.sync_use_tls),
+            value: _useTls,
+            contentPadding: EdgeInsets.zero,
+            onChanged: (bool v) {
+              setState(() => _useTls = v);
+              _saveCredentials();
+            },
+          ),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerRight,
+            child: _isTesting
+                ? SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: adaptiveIndicator(context: context, strokeWidth: 2),
+                  )
+                : FilledButton.tonal(
+                    onPressed: _testConnection,
+                    child: Text(t.sync_test_connection),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── SFTP config widget ──────────────────────────────────────────────
+
+class _SftpConfigWidget extends StatefulWidget {
+  const _SftpConfigWidget({required this.settingsContext});
+  final SettingsContext settingsContext;
+
+  @override
+  State<_SftpConfigWidget> createState() => _SftpConfigWidgetState();
+}
+
+class _SftpConfigWidgetState extends State<_SftpConfigWidget> {
+  late final TextEditingController _hostController;
+  late final TextEditingController _portController;
+  late final TextEditingController _usernameController;
+  late final TextEditingController _passwordController;
+  late final TextEditingController _keyController;
+  bool _isTesting = false;
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _hostController = TextEditingController();
+    _portController = TextEditingController(text: '22');
+    _usernameController = TextEditingController();
+    _passwordController = TextEditingController();
+    _keyController = TextEditingController();
+    _loadCredentials();
+  }
+
+  @override
+  void dispose() {
+    _hostController.dispose();
+    _portController.dispose();
+    _usernameController.dispose();
+    _passwordController.dispose();
+    _keyController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadCredentials() async {
+    final repo = SyncRepository(widget.settingsContext.appModel.database);
+    final host = await repo.getSftpHost();
+    final port = await repo.getSftpPort();
+    final user = await repo.getSftpUsername();
+    final pass = await repo.getSftpPassword();
+    final key = await repo.getSftpPrivateKey();
+    if (mounted) {
+      setState(() {
+        _hostController.text = host ?? '';
+        _portController.text = port.toString();
+        _usernameController.text = user ?? '';
+        _passwordController.text = pass ?? '';
+        _keyController.text = key ?? '';
+        _loaded = true;
+      });
+    }
+  }
+
+  Future<void> _saveCredentials() async {
+    final repo = SyncRepository(widget.settingsContext.appModel.database);
+    final host = _hostController.text.trim();
+    final user = _usernameController.text.trim();
+    final pass = _passwordController.text;
+    final port = int.tryParse(_portController.text.trim()) ?? 22;
+    final key = _keyController.text.trim();
+    await repo.setSftpHost(host.isEmpty ? null : host);
+    await repo.setSftpPort(port);
+    await repo.setSftpUsername(user.isEmpty ? null : user);
+    await repo.setSftpPassword(pass.isEmpty ? null : pass);
+    await repo.setSftpPrivateKey(key.isEmpty ? null : key);
+  }
+
+  Future<void> _testConnection() async {
+    await _saveCredentials();
+    setState(() => _isTesting = true);
+    try {
+      final pass = _passwordController.text;
+      final key = _keyController.text.trim();
+      await SftpSyncBackend.instance.testConnection(
+        host: _hostController.text.trim(),
+        port: int.tryParse(_portController.text.trim()) ?? 22,
+        username: _usernameController.text.trim(),
+        password: pass.isEmpty ? null : pass,
+        privateKey: key.isEmpty ? null : key,
+      );
+      if (mounted) _showSnackBar(context, t.sync_connection_success);
+    } catch (e) {
+      if (mounted) {
+        _showSnackBar(context,
+            '${t.sync_connection_failed}: ${e is SyncBackendError ? e.message : (e is SyncAuthError ? e.message : e)}');
+      }
+    } finally {
+      if (mounted) setState(() => _isTesting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_loaded) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          HibikiTextField(
+            controller: _hostController,
+            labelText: t.sync_host,
+            hintText: 'ssh.example.com',
+            onChanged: (_) => _saveCredentials(),
+          ),
+          const SizedBox(height: 12),
+          HibikiTextField(
+            controller: _portController,
+            labelText: t.sync_port,
+            keyboardType: TextInputType.number,
+            onChanged: (_) => _saveCredentials(),
+          ),
+          const SizedBox(height: 12),
+          HibikiTextField(
+            controller: _usernameController,
+            labelText: t.sync_username,
+            onChanged: (_) => _saveCredentials(),
+          ),
+          const SizedBox(height: 12),
+          HibikiTextField(
+            controller: _passwordController,
+            labelText: t.sync_password,
+            obscureText: true,
+            onChanged: (_) => _saveCredentials(),
+          ),
+          const SizedBox(height: 12),
+          HibikiTextField(
+            controller: _keyController,
+            labelText: t.sync_private_key,
+            hintText: '-----BEGIN OPENSSH PRIVATE KEY-----',
+            maxLines: 4,
+            onChanged: (_) => _saveCredentials(),
+          ),
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerRight,
+            child: _isTesting
+                ? SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: adaptiveIndicator(context: context, strokeWidth: 2),
+                  )
+                : FilledButton.tonal(
+                    onPressed: _testConnection,
+                    child: Text(t.sync_test_connection),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── SMB config widget ───────────────────────────────────────────────
+
+class _SmbConfigWidget extends StatefulWidget {
+  const _SmbConfigWidget({required this.settingsContext});
+  final SettingsContext settingsContext;
+
+  @override
+  State<_SmbConfigWidget> createState() => _SmbConfigWidgetState();
+}
+
+class _SmbConfigWidgetState extends State<_SmbConfigWidget> {
+  late final TextEditingController _urlController;
+  late final TextEditingController _usernameController;
+  late final TextEditingController _passwordController;
+  bool _isTesting = false;
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _urlController = TextEditingController();
+    _usernameController = TextEditingController();
+    _passwordController = TextEditingController();
+    _loadCredentials();
+  }
+
+  @override
+  void dispose() {
+    _urlController.dispose();
+    _usernameController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadCredentials() async {
+    final repo = SyncRepository(widget.settingsContext.appModel.database);
+    final url = await repo.getSmbWebDavUrl();
+    final user = await repo.getSmbUsername();
+    final pass = await repo.getSmbPassword();
+    if (mounted) {
+      setState(() {
+        _urlController.text = url ?? '';
+        _usernameController.text = user ?? '';
+        _passwordController.text = pass ?? '';
+        _loaded = true;
+      });
+    }
+  }
+
+  Future<void> _saveCredentials() async {
+    final repo = SyncRepository(widget.settingsContext.appModel.database);
+    final url = _urlController.text.trim();
+    final user = _usernameController.text.trim();
+    final pass = _passwordController.text;
+    await repo.setSmbWebDavUrl(url.isEmpty ? null : url);
+    await repo.setSmbUsername(user.isEmpty ? null : user);
+    await repo.setSmbPassword(pass.isEmpty ? null : pass);
+  }
+
+  Future<void> _testConnection() async {
+    await _saveCredentials();
+    setState(() => _isTesting = true);
+    try {
+      await SmbSyncBackend.instance.testConnection(
+        url: _urlController.text.trim(),
+        username: _usernameController.text.trim(),
+        password: _passwordController.text,
+      );
+      if (mounted) _showSnackBar(context, t.sync_connection_success);
+    } catch (e) {
+      if (mounted) {
+        _showSnackBar(context,
+            '${t.sync_connection_failed}: ${e is SyncBackendError ? e.message : e}');
+      }
+    } finally {
+      if (mounted) setState(() => _isTesting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_loaded) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          HibikiTextField(
+            controller: _urlController,
+            labelText: 'WebDAV URL',
+            hintText: 'http://nas.local:5005/webdav',
+            keyboardType: TextInputType.url,
+            onChanged: (_) => _saveCredentials(),
+          ),
+          const SizedBox(height: 12),
+          HibikiTextField(
+            controller: _usernameController,
+            labelText: t.sync_username,
+            onChanged: (_) => _saveCredentials(),
+          ),
+          const SizedBox(height: 12),
+          HibikiTextField(
+            controller: _passwordController,
+            labelText: t.sync_password,
+            obscureText: true,
+            onChanged: (_) => _saveCredentials(),
+          ),
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerRight,
+            child: _isTesting
+                ? SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: adaptiveIndicator(context: context, strokeWidth: 2),
+                  )
+                : FilledButton.tonal(
+                    onPressed: _testConnection,
+                    child: Text(t.sync_test_connection),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Hibiki server config widget (connect to another Hibiki instance) ─
+
+class _HibikiServerConfigWidget extends StatefulWidget {
+  const _HibikiServerConfigWidget({required this.settingsContext});
+  final SettingsContext settingsContext;
+
+  @override
+  State<_HibikiServerConfigWidget> createState() =>
+      _HibikiServerConfigWidgetState();
+}
+
+class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget> {
+  late final TextEditingController _urlController;
+  late final TextEditingController _tokenController;
+  bool _isTesting = false;
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _urlController = TextEditingController();
+    _tokenController = TextEditingController();
+    _loadCredentials();
+  }
+
+  @override
+  void dispose() {
+    _urlController.dispose();
+    _tokenController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadCredentials() async {
+    final repo = SyncRepository(widget.settingsContext.appModel.database);
+    final url = await repo.getHibikiClientUrl();
+    final token = await repo.getHibikiClientToken();
+    if (mounted) {
+      setState(() {
+        _urlController.text = url ?? '';
+        _tokenController.text = token ?? '';
+        _loaded = true;
+      });
+    }
+  }
+
+  Future<void> _saveCredentials() async {
+    final repo = SyncRepository(widget.settingsContext.appModel.database);
+    final url = _urlController.text.trim();
+    final token = _tokenController.text.trim();
+    await repo.setHibikiClientUrl(url.isEmpty ? null : url);
+    await repo.setHibikiClientToken(token.isEmpty ? null : token);
+  }
+
+  Future<void> _testConnection() async {
+    await _saveCredentials();
+    setState(() => _isTesting = true);
+    try {
+      await HibikiClientSyncBackend.instance.testConnection(
+        url: _urlController.text.trim(),
+        token: _tokenController.text.trim(),
+      );
+      if (mounted) _showSnackBar(context, t.sync_connection_success);
+    } catch (e) {
+      if (mounted) {
+        _showSnackBar(context,
+            '${t.sync_connection_failed}: ${e is SyncBackendError ? e.message : e}');
+      }
+    } finally {
+      if (mounted) setState(() => _isTesting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_loaded) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          HibikiTextField(
+            controller: _urlController,
+            labelText: 'URL',
+            hintText: 'http://192.168.1.100:8765',
+            keyboardType: TextInputType.url,
+            onChanged: (_) => _saveCredentials(),
+          ),
+          const SizedBox(height: 12),
+          HibikiTextField(
+            controller: _tokenController,
+            labelText: t.sync_server_token,
+            onChanged: (_) => _saveCredentials(),
+          ),
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerRight,
+            child: _isTesting
+                ? SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: adaptiveIndicator(context: context, strokeWidth: 2),
+                  )
+                : FilledButton.tonal(
+                    onPressed: _testConnection,
+                    child: Text(t.sync_test_connection),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Server mode widget ──────────────────────────────────────────────
+
+class _ServerModeWidget extends StatefulWidget {
+  const _ServerModeWidget({required this.settingsContext});
+  final SettingsContext settingsContext;
+
+  @override
+  State<_ServerModeWidget> createState() => _ServerModeWidgetState();
+}
+
+class _ServerModeWidgetState extends State<_ServerModeWidget> {
+  bool _enabled = false;
+  int _port = 8765;
+  String? _token;
+  HibikiSyncServer? _server;
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSettings();
+  }
+
+  @override
+  void dispose() {
+    _server?.stop();
+    super.dispose();
+  }
+
+  Future<void> _loadSettings() async {
+    final repo = SyncRepository(widget.settingsContext.appModel.database);
+    final enabled = await repo.isServerEnabled();
+    final port = await repo.getServerPort();
+    var token = await repo.getServerPassword();
+    if (token == null) {
+      token = HibikiSyncServer.generateToken();
+      await repo.setServerPassword(token);
+    }
+    if (mounted) {
+      setState(() {
+        _enabled = enabled;
+        _port = port;
+        _token = token;
+        _loaded = true;
+      });
+      if (enabled) await _startServer();
+    }
+  }
+
+  Future<void> _startServer() async {
+    if (_server != null && _server!.isRunning) return;
+    final appModel = widget.settingsContext.appModel;
+    _server = HibikiSyncServer(
+      syncDataDir: appModel.databaseDirectory.path,
+      port: _port,
+      token: _token!,
+      allowLan: true,
+    );
+    try {
+      await _server!.start();
+      if (mounted) setState(() {});
+    } catch (e) {
+      if (mounted) {
+        _showSnackBar(context, 'Server error: $e');
+      }
+    }
+  }
+
+  Future<void> _stopServer() async {
+    await _server?.stop();
+    _server = null;
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _regenerateToken() async {
+    final newToken = HibikiSyncServer.generateToken();
+    final repo = SyncRepository(widget.settingsContext.appModel.database);
+    await repo.setServerPassword(newToken);
+    setState(() => _token = newToken);
+    if (_server != null && _server!.isRunning) {
+      await _stopServer();
+      await _startServer();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_loaded) return const SizedBox.shrink();
+    final bool running = _server != null && _server!.isRunning;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          SwitchListTile.adaptive(
+            title: Text(t.sync_server_enable),
+            subtitle:
+                Text(running ? t.sync_server_running : t.sync_server_stopped),
+            value: _enabled,
+            contentPadding: EdgeInsets.zero,
+            onChanged: (bool v) async {
+              final repo =
+                  SyncRepository(widget.settingsContext.appModel.database);
+              await repo.setServerEnabled(v);
+              setState(() => _enabled = v);
+              if (v) {
+                await _startServer();
+              } else {
+                await _stopServer();
+              }
+            },
+          ),
+          if (_enabled) ...<Widget>[
+            const SizedBox(height: 8),
+            Row(
+              children: <Widget>[
+                Text('${t.sync_server_port}: $_port',
+                    style: Theme.of(context).textTheme.bodyMedium),
+                if (running)
+                  Text('  (${_server!.port})',
+                      style: Theme.of(context).textTheme.bodySmall),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(t.sync_server_token,
+                style: Theme.of(context).textTheme.labelSmall),
+            const SizedBox(height: 4),
+            SelectableText(
+              _token ?? '',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    fontFamily: 'monospace',
+                  ),
+              maxLines: 2,
+            ),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: <Widget>[
+                TextButton.icon(
+                  onPressed: () {
+                    if (_token != null) {
+                      FlutterClipboard.copy(_token!);
+                      _showSnackBar(context, t.sync_server_copy_token);
+                    }
+                  },
+                  icon: const Icon(Icons.copy, size: 18),
+                  label: Text(t.sync_server_copy_token),
+                ),
+                const SizedBox(width: 8),
+                TextButton.icon(
+                  onPressed: _regenerateToken,
+                  icon: const Icon(Icons.refresh, size: 18),
+                  label: Text(t.sync_server_regenerate_token),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// ── LAN discovery widget ────────────────────────────────────────────
+
+class _LanDiscoveryWidget extends StatefulWidget {
+  const _LanDiscoveryWidget({required this.settingsContext});
+  final SettingsContext settingsContext;
+
+  @override
+  State<_LanDiscoveryWidget> createState() => _LanDiscoveryWidgetState();
+}
+
+class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget> {
+  late LanDiscoveryService _discovery;
+  List<HibikiDevice> _devices = <HibikiDevice>[];
+  bool _scanning = false;
+  StreamSubscription<List<HibikiDevice>>? _devicesSub;
+
+  @override
+  void initState() {
+    super.initState();
+    _discovery = LanDiscoveryService(
+      deviceName: 'Hibiki',
+      port: 8765,
+      deviceId: 'settings-scan',
+    );
+    _startScan();
+  }
+
+  @override
+  void dispose() {
+    _devicesSub?.cancel();
+    _discovery.dispose();
+    super.dispose();
+  }
+
+  Future<void> _startScan() async {
+    setState(() => _scanning = true);
+    _devicesSub = _discovery.devices.listen((List<HibikiDevice> devices) {
+      if (mounted) setState(() => _devices = devices);
+    });
+    try {
+      await _discovery.startDiscovery();
+    } catch (_) {
+    } finally {
+      if (mounted) setState(() => _scanning = false);
+    }
+  }
+
+  Future<void> _connectToDevice(HibikiDevice device) async {
+    final state = _syncSettings(widget.settingsContext);
+    state.backendType = SyncBackendType.hibikiServer;
+    final repo = SyncRepository(widget.settingsContext.appModel.database);
+    await repo.setBackendType(SyncBackendType.hibikiServer);
+    await repo.setHibikiClientUrl(device.webDavUrl);
+    await repo.setHibikiClientToken(null);
+    widget.settingsContext.refresh();
+    if (mounted) _showSnackBar(context, '${device.name} (${device.webDavUrl})');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Text(t.sync_lan_discovery,
+                  style: Theme.of(context).textTheme.titleSmall),
+              const Spacer(),
+              if (_scanning)
+                SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: adaptiveIndicator(context: context, strokeWidth: 2),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (_devices.isEmpty)
+            Text(t.sync_lan_no_devices,
+                style: Theme.of(context).textTheme.bodySmall),
+          for (final HibikiDevice device in _devices)
+            ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.devices, size: 20),
+              title: Text(device.name),
+              subtitle: Text(device.webDavUrl),
+              onTap: () => _connectToDevice(device),
+            ),
+        ],
+      ),
     );
   }
 }

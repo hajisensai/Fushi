@@ -17,6 +17,9 @@ import 'package:hibiki/models.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/popup_main.dart' as popup_entrypoint;
+import 'package:hibiki/src/sync/dropbox_sync_backend.dart';
+import 'package:hibiki/src/sync/onedrive_sync_backend.dart';
+import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/platform/platform_services.dart';
@@ -283,12 +286,50 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
       return;
     }
 
+    final String? data = intent.data;
+    if (data != null && data.startsWith('hibiki://auth/')) {
+      await _handleOAuthRedirect(data);
+      return;
+    }
+
     switch (intent.action) {
       case 'android.intent.action.MAIN':
         setState(() {
           _isMainIntent = true;
         });
         return;
+    }
+  }
+
+  /// Completes a cloud-sync OAuth flow when the browser redirects back via
+  /// `hibiki://auth/<provider>?code=...`. The pending PKCE verifier/repo were
+  /// stored by the backend's `authenticate()` call before the browser opened.
+  Future<void> _handleOAuthRedirect(String data) async {
+    final Uri? uri = Uri.tryParse(data);
+    if (uri == null || uri.host != 'auth' || uri.pathSegments.isEmpty) return;
+
+    final String provider = uri.pathSegments.first;
+    final String? code = uri.queryParameters['code'];
+    final String? error = uri.queryParameters['error'];
+    if (code == null) {
+      HibikiToast.show(msg: t.sync_auth_error(message: error ?? 'missing code'));
+      return;
+    }
+
+    try {
+      switch (provider) {
+        case 'onedrive':
+          await OneDriveSyncBackend.instance.handleAuthCode(code);
+        case 'dropbox':
+          await DropboxSyncBackend.instance.handleAuthCode(code);
+        default:
+          return;
+      }
+      HibikiToast.show(msg: t.sync_signed_in);
+    } on SyncAuthError catch (e) {
+      HibikiToast.show(msg: t.sync_auth_error(message: e.message));
+    } catch (e) {
+      HibikiToast.show(msg: t.sync_error(message: e.toString()));
     }
   }
 
