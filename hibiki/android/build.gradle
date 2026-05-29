@@ -1,11 +1,11 @@
 allprojects {
     repositories {
+        maven { url 'https://maven.aliyun.com/repository/google' }
+        maven { url 'https://maven.aliyun.com/repository/central' }
+        maven { url 'https://maven.aliyun.com/repository/public' }
         google()
         mavenCentral()
         maven { url "https://jitpack.io" }
-        maven { url 'https://maven.aliyun.com/repository/public' }
-        maven { url 'https://maven.aliyun.com/repository/central' }
-        maven { url 'https://maven.aliyun.com/repository/google' }
         maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
         maven { url 'https://maven.aliyun.com/repository/apache-snapshots' }
     }
@@ -29,6 +29,29 @@ subprojects {
         resolutionStrategy.eachDependency { details ->
             if (details.requested.group == 'org.jetbrains.kotlin') {
                 details.useVersion '2.2.20'
+            }
+            // TEMPORARY network-workaround (only affects the androidTest
+            // classpath, never release): the Flutter integration_test plugin
+            // declares dynamic versions androidx.test:runner/rules:1.2+ and
+            // espresso-core:3.3+. Resolving a dynamic version needs
+            // maven-metadata.xml, which times out in this environment. Pin to
+            // the cached lower bounds so no metadata fetch is needed.
+            // Cleanup: remove these forces once the build host has network
+            // access to dl.google.com / repo.maven.apache.org, OR when the
+            // integration_test plugin requires a newer runner (re-check the
+            // versions then — a silent conflict would surface as a compile
+            // failure in :integration_test).
+            if (details.requested.group == 'androidx.test' &&
+                    details.requested.name == 'runner') {
+                details.useVersion '1.2.0'
+            }
+            if (details.requested.group == 'androidx.test' &&
+                    details.requested.name == 'rules') {
+                details.useVersion '1.2.0'
+            }
+            if (details.requested.group == 'androidx.test.espresso' &&
+                    details.requested.name == 'espresso-core') {
+                details.useVersion '3.3.0'
             }
         }
     }
