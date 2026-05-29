@@ -173,3 +173,31 @@ Round 4 的 OAuth 回调只接了 Android（`receive_intent` + `hibiki://` inten
   - Entra（OneDrive）：在"移动和桌面应用"平台加 `http://localhost`（loopback，任意端口）。
   - Dropbox：加精确 `http://localhost:9004`。
 - 剩余 e2e：桌面/移动各点一次登录走完浏览器授权（需用户操作）。
+
+---
+
+## Round 7 — 连接超时 + 传输进度条（用户目标）+ Opus 审查修复
+
+实机 OneDrive 登录 e2e 暴露并修掉了一个真实代码 bug（见上 conflictBehavior），随后用户在弱网下命中"连不上 graph/dropbox 端点"的 socket 超时（外部网络限制，非代码缺陷，curl 实测两端点均不可达）。据此用户提出目标：连接 60s 超时 + 传输进度条。
+
+### 连接超时（只限连接、不限传输）— FIXED & VERIFIED
+- 新增 `sync_http.dart`：`syncHttpClient = IOClient(HttpClient()..connectionTimeout=60s)`。`connectionTimeout` 仅覆盖 DNS+TCP+TLS 建连，**不限制响应体传输**——正合"只有连接 60s 超时"的要求。OneDrive/Dropbox 所有 http 调用改走该 client；WebDAV/SMB 的 `HttpClient` 同设 60s。
+- 效果：连不上时 60s 内明确失败，而非挂 ~20s 给晦涩 OS 错误；大文件传输不受时长限制。
+
+### 传输进度条 — FIXED & VERIFIED
+- `SyncManager` 构造新增 `onContentProgress`，转发给 `uploadContentFile`/`downloadContentFile`（backend 已有 0..1 回调）。
+- `sync_compare_dialog` 的 apply 现按选中书构建可执行列表，`LinearProgressIndicator` 由 `(done+fileFraction)/total` 驱动，显示 `(i/N) 标题`；并按用户偏好传入 `syncContent`（之前恒为 false），使大文件传输真正上报进度。
+
+### Opus 代码审查结论与处置
+- **C1（Critical）FIXED**：内容上传原为 `file.openRead().listen + sink.addError` 的 fire-and-forget，读文件出错会被吞/可能截断上传/可能成为未处理异步错误。改为共享 `streamUpload()`：`sink.addStream` 传播读错误，且始终 await 响应 future（不悬挂）。OneDrive/Dropbox 共用。
+- **M2（Medium）FIXED**：FTP `_resetConnection` 现 best-effort 关闭旧控制 socket（fire-and-forget），释放 FD，避免反复断链重连时的句柄泄漏。
+- **H1（OneDrive 桌面 redirect 无尾斜杠可能不匹配）已被实测证伪**：用户 OneDrive 桌面登录成功并走到需 access token 的 Graph 调用，证明 Entra 接受该 redirect 双腿一致。
+- **M1（多内容文件时进度条小幅回跳）**：审查者认可可接受（单书通常 1 epub + ≤1 音频），保留。
+
+### 验证
+- `dart analyze lib/src/sync` 无报错；`flutter test test/sync` → 112 passed；`flutter run -d windows` 正常启动运行。
+
+### 外部依赖（非代码可解，已如实告知用户）
+- 弱网下连不上 graph.microsoft.com / api.dropboxapi.com（curl 实测不可达）——需 VPN/代理或更好网络。
+- OneDrive 507 quotaLimitReached——账户侧配额/未开通，需在 onedrive.com 激活/确认空间。
+- 这两项不在 Hibiki 代码控制范围；本地备份与局域网/自建后端不依赖境外端点，可在当前环境可靠使用。
