@@ -724,13 +724,14 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
 
       if (!mounted) return;
 
-      final confirmed = await _showConfirmDialog(meta);
-      if (confirmed != true || !mounted) return;
+      final bool? importSettings = await _showConfirmDialog(meta);
+      if (importSettings == null || !mounted) return;
 
       await appModel.closeDatabase();
       await BackupService.importBackupFiles(
         dbDirectory: appModel.databaseDirectory.path,
         zipPath: filePath,
+        importSettings: importSettings,
       );
 
       if (mounted) {
@@ -760,48 +761,66 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
     }
   }
 
-  Future<bool?> _showConfirmDialog(BackupMeta meta) {
+  /// Returns the chosen import mode: `false` = keep this device's settings &
+  /// profiles and restore only content (default); `true` = full restore.
+  /// Returns `null` if the user cancels.
+  Future<bool?> _showConfirmDialog(BackupMeta meta) async {
     final dateStr =
         '${meta.createdAt.year}-${meta.createdAt.month.toString().padLeft(2, '0')}-${meta.createdAt.day.toString().padLeft(2, '0')}';
-    return showAppDialog<bool>(
+    bool importSettings = false; // default: keep this device's settings
+    final bool? confirmed = await showAppDialog<bool>(
       context: context,
-      builder: (BuildContext ctx) => adaptiveAlertDialog(
-        context: ctx,
-        title: Text(t.backup_import_confirm_title),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Text(
-              t.backup_import_confirm(
-                date: dateStr,
-                bookCount: meta.bookCount.toString(),
-                statsCount: meta.statsCount.toString(),
+      builder: (BuildContext ctx) => StatefulBuilder(
+        builder: (BuildContext ctx, StateSetter setLocal) =>
+            adaptiveAlertDialog(
+          context: ctx,
+          title: Text(t.backup_import_confirm_title),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                t.backup_import_confirm(
+                  date: dateStr,
+                  bookCount: meta.bookCount.toString(),
+                  statsCount: meta.statsCount.toString(),
+                ),
               ),
+              const SizedBox(height: 4),
+              SwitchListTile.adaptive(
+                contentPadding: EdgeInsets.zero,
+                title: Text(t.backup_import_settings_toggle),
+                subtitle: Text(importSettings
+                    ? t.backup_import_settings_on_hint
+                    : t.backup_import_settings_off_hint),
+                value: importSettings,
+                onChanged: (bool v) => setLocal(() => importSettings = v),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                t.backup_import_preserve_sync_note,
+                style: Theme.of(ctx).textTheme.bodySmall,
+              ),
+            ],
+          ),
+          actions: <Widget>[
+            adaptiveDialogAction(
+              context: ctx,
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(t.dialog_cancel),
             ),
-            const SizedBox(height: 12),
-            Text(
-              t.backup_import_preserve_sync_note,
-              style: Theme.of(ctx).textTheme.bodySmall,
+            adaptiveDialogAction(
+              context: ctx,
+              isDefaultAction: true,
+              isDestructiveAction: true,
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(t.dialog_ok),
             ),
           ],
         ),
-        actions: <Widget>[
-          adaptiveDialogAction(
-            context: ctx,
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(t.dialog_cancel),
-          ),
-          adaptiveDialogAction(
-            context: ctx,
-            isDefaultAction: true,
-            isDestructiveAction: true,
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(t.dialog_ok),
-          ),
-        ],
       ),
     );
+    return confirmed == true ? importSettings : null;
   }
 
   @override

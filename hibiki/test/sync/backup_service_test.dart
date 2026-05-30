@@ -484,4 +484,103 @@ void main() {
       }
     });
   });
+
+  group('import keeping local settings (importSettings:false)', () {
+    test('keeps local settings/profiles; content + audiobook pos from backup',
+        () async {
+      // ── This device: UI pref + profile + binding + sync + local book ──
+      final curDir = await Directory.systemTemp.createTemp('hibiki_keep_cur_');
+      addTearDown(() => curDir.delete(recursive: true));
+      final curDb = HibikiDatabase(curDir.path);
+      await curDb.setPref('reader_appearance', 'LOCAL'); // UI pref (keep)
+      await curDb.setPref('sync_backend_type', 'webDav'); // device-local (keep)
+      await curDb.setPrefTyped<int>('audiobook_pos_99', 999); // content (drop)
+      final int localProfileId = await curDb.insertProfile(
+          ProfilesCompanion.insert(
+              name: 'LocalProfile', createdAt: 1, updatedAt: 1));
+      await curDb.upsertProfileSetting(ProfileSettingsCompanion.insert(
+        profileId: localProfileId,
+        category: 'pref',
+        key: 'reader_appearance',
+        value: 'LOCAL',
+      ));
+      await curDb.setBookProfile('book-local', localProfileId);
+      await curDb.setPref('active_profile_id', localProfileId.toString());
+      await curDb.insertEpubBook(EpubBooksCompanion.insert(
+        title: 'LocalBook',
+        epubPath: '/l.epub',
+        extractDir: '/l',
+        chapterCount: 1,
+        chaptersJson: '[]',
+        importedAt: 1,
+      ));
+      await curDb.close();
+
+      // ── Backup from another device: different settings/profile/book ──
+      final srcDir = await Directory.systemTemp.createTemp('hibiki_keep_src_');
+      addTearDown(() => srcDir.delete(recursive: true));
+      final srcDb = HibikiDatabase(srcDir.path);
+      await srcDb.setPref('reader_appearance', 'BACKUP');
+      await srcDb.insertProfile(ProfilesCompanion.insert(
+          name: 'BackupProfile', createdAt: 2, updatedAt: 2));
+      await srcDb.insertEpubBook(EpubBooksCompanion.insert(
+        title: 'BackupBook',
+        epubPath: '/b.epub',
+        extractDir: '/b',
+        chapterCount: 5,
+        chaptersJson: '[]',
+        importedAt: 2,
+      ));
+      final int backupBookId = (await srcDb.getAllEpubBooks()).single.id;
+      await srcDb.setPrefTyped<int>('audiobook_pos_$backupBookId', 4242);
+      final zipDir = await Directory.systemTemp.createTemp('hibiki_keep_zip_');
+      addTearDown(() => zipDir.delete(recursive: true));
+      final zipPath = '${zipDir.path}/b.zip';
+      await BackupService(
+        db: srcDb,
+        dbDirectory: srcDir.path,
+        appVersion: '1.0.0',
+      ).exportBackup(zipPath);
+      await srcDb.close();
+
+      // ── Import keeping local settings, then simulate the startup restore ──
+      await BackupService.importBackupFiles(
+        dbDirectory: curDir.path,
+        zipPath: zipPath,
+        importSettings: false,
+      );
+      await BackupService.recoverPendingImport(curDir.path);
+
+      final after = HibikiDatabase(curDir.path);
+      addTearDown(after.close);
+
+      // Settings + profiles + binding kept local:
+      expect(await after.getPref('reader_appearance'), 'LOCAL');
+      expect(await after.getPref('sync_backend_type'), 'webDav');
+      final profileNames =
+          (await after.getAllProfiles()).map((p) => p.name).toList();
+      expect(profileNames, contains('LocalProfile'));
+      expect(profileNames, isNot(contains('BackupProfile')));
+      expect(await after.getBookProfile('book-local'), isNotNull);
+
+      // Content from backup:
+      final bookTitles =
+          (await after.getAllEpubBooks()).map((b) => b.title).toList();
+      expect(bookTitles, contains('BackupBook'));
+      expect(bookTitles, isNot(contains('LocalBook')));
+
+      // audiobook position is content → follows the backup, local one dropped:
+      expect(await after.getPrefTyped<int>('audiobook_pos_$backupBookId', 0),
+          4242);
+      expect(await after.getPrefTyped<int>('audiobook_pos_99', 0), 0);
+
+      // No FK violations, and the scratch files are cleaned up:
+      final fk = await after.customSelect('PRAGMA foreign_key_check').get();
+      expect(fk, isEmpty);
+      expect(File('${curDir.path}/hibiki.db.pre-restore.bak').existsSync(),
+          isFalse);
+      expect(File('${curDir.path}/hibiki.db.sync-preserve.json').existsSync(),
+          isFalse);
+    });
+  });
 }

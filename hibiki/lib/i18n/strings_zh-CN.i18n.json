@@ -1156,5 +1156,8 @@
     "sync_section_content": "同步内容",
     "sync_section_actions": "同步操作",
     "sync_section_backup": "本地备份",
-    "backup_import_preserve_sync_note": "本设备的同步配置（账户与凭据）将保留。"
+    "backup_import_preserve_sync_note": "本设备的同步配置（账户与凭据）将保留。",
+    "backup_import_settings_toggle": "导入设置与 Profile",
+    "backup_import_settings_on_hint": "完整恢复：字体、外观、Profile 都来自备份。",
+    "backup_import_settings_off_hint": "保留本机字体/外观/Profile，只恢复书籍与阅读数据。"
 }

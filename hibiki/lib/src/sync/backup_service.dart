@@ -207,9 +207,37 @@ class BackupService {
   /// intentionally NOT preserved — they come from the backup / rebuild on next
   /// sync. The preserved keys are flushed to a sidecar BEFORE the overwrite so a
   /// mid-import crash is recoverable via [recoverPendingImport].
+  /// Settings-layer tables restored from THIS device when [importBackupFiles]
+  /// runs with importSettings=false. Order matters: `profiles` first (FK target
+  /// of the rest). `preferences` is handled separately (audiobook positions are
+  /// content and follow the backup). No content table FKs into these, and
+  /// `book_profiles.bookUid` is plain text, so a wholesale swap is FK-safe.
+  static const List<String> _settingsLayerTables = <String>[
+    'profiles',
+    'profile_settings',
+    'media_type_profiles',
+    'book_profiles',
+  ];
+
+  /// Import a backup, replacing the current database files.
+  ///
+  /// This is a static method because the database must already be closed
+  /// before calling — the caller is responsible for closing the DB first.
+  ///
+  /// [importSettings] (default true = full restore):
+  /// - true: everything comes from the backup, EXCEPT device-local sync config
+  ///   ([SyncRepository.deviceLocalPrefKeys]) which is always preserved (the
+  ///   backup has none — they're stripped on export — so a naive swap would log
+  ///   you out). Re-applied immediately; crash-recoverable via the sidecar.
+  /// - false: keep THIS device's settings layer (preferences + profiles +
+  ///   bindings = fonts/appearance/reading/profiles); only CONTENT comes from
+  ///   the backup. The settings restore happens at startup ([recoverPendingImport])
+  ///   from pre-restore.bak, AFTER the imported DB has migrated to the current
+  ///   schema — so the column-aligned table copy is always schema-safe.
   static Future<void> importBackupFiles({
     required String dbDirectory,
     required String zipPath,
+    bool importSettings = true,
   }) async {
     final dbPath = p.join(dbDirectory, _dbName);
     final bytes = await File(zipPath).readAsBytes();
@@ -218,17 +246,26 @@ class BackupService {
     if (dbFile == null) throw StateError('No $_dbName in backup archive');
 
     final sidecar = File(p.join(dbDirectory, _preserveSidecar));
+    final String bakPath = '$dbPath.pre-restore.bak';
     final currentDb = File(dbPath);
+    final bool haveCurrent = currentDb.existsSync();
 
-    // 1) Read device-local sync config from the current DB and persist it to
-    //    the sidecar BEFORE anything destructive happens (crash safety).
-    Map<String, String> preserved = const <String, String>{};
-    if (currentDb.existsSync()) {
-      preserved = await _readDeviceLocalPrefs(dbDirectory);
-      if (preserved.isNotEmpty) {
-        await sidecar.writeAsString(jsonEncode(preserved));
+    // 1) Snapshot the current DB (crash safety) + record what to preserve.
+    //    Skipped on a fresh install (no current DB) → backup applied verbatim,
+    //    so the toggle is moot there.
+    Map<String, String> preservedSync = const <String, String>{};
+    if (haveCurrent) {
+      if (importSettings) {
+        preservedSync = await _readDeviceLocalPrefs(dbDirectory);
+        if (preservedSync.isNotEmpty) {
+          await sidecar.writeAsString(jsonEncode(
+              <String, dynamic>{'mode': 'prefs', 'prefs': preservedSync}));
+        }
+      } else {
+        await sidecar
+            .writeAsString(jsonEncode(<String, dynamic>{'mode': 'settings'}));
       }
-      await currentDb.copy('$dbPath.pre-restore.bak');
+      await currentDb.copy(bakPath);
     }
 
     // Must delete -wal/-shm AFTER reading prefs (step 1 opened+closed a WAL
@@ -243,33 +280,77 @@ class BackupService {
     // 2) Overwrite with the backup DB bytes.
     await currentDb.writeAsBytes(dbFile.content as List<int>);
 
-    // 3) Re-apply the preserved device-local config to the imported DB.
-    if (preserved.isNotEmpty) {
-      await _applyPreservedConfig(dbDirectory, preserved);
+    if (importSettings) {
+      // 3) Re-apply device-local sync config now (preferences is schema-stable).
+      if (preservedSync.isNotEmpty) {
+        await _applyPreservedConfig(dbDirectory, preservedSync);
+      }
+      // 4) Success: drop the sidecar and the pre-restore copy (no disk leak).
+      await _safeDelete(sidecar.path);
+      await _safeDelete(bakPath);
     }
-
-    // 4) Success: drop the sidecar and the pre-restore copy (no disk leak).
-    await _safeDelete(sidecar.path);
-    await _safeDelete('$dbPath.pre-restore.bak');
+    // importSettings=false: leave sidecar + pre-restore.bak in place — the
+    // settings-layer restore runs at next startup against the migrated DB.
   }
 
-  /// Re-apply preserved sync config if a previous import crashed after the
-  /// overwrite but before re-applying (sidecar still present). Called once at
-  /// startup, before any sync code reads preferences. No-op when no sidecar.
+  /// Finish a pending import at startup, before any sync code reads prefs.
+  /// Handles both: (a) re-applying device-local sync prefs if a full-restore
+  /// import crashed mid-way; (b) restoring this device's settings layer for a
+  /// keep-settings import. No-op when no sidecar is present.
   static Future<void> recoverPendingImport(String dbDirectory) async {
     final sidecar = File(p.join(dbDirectory, _preserveSidecar));
     if (!sidecar.existsSync()) return;
     try {
       final raw = await sidecar.readAsString();
       final decoded = jsonDecode(raw) as Map<String, dynamic>;
-      final prefs = decoded.map((k, v) => MapEntry(k, v as String));
-      if (prefs.isNotEmpty) await _applyPreservedConfig(dbDirectory, prefs);
+      if (decoded['mode'] == 'settings') {
+        await _restoreSettingsLayer(dbDirectory);
+      } else {
+        // 'prefs' mode, or a legacy bare-map sidecar (no 'mode' field).
+        final Map<String, dynamic> prefsRaw =
+            (decoded['prefs'] as Map<String, dynamic>?) ?? decoded;
+        final prefs = prefsRaw.map((k, v) => MapEntry(k, v as String));
+        if (prefs.isNotEmpty) await _applyPreservedConfig(dbDirectory, prefs);
+      }
     } catch (e, st) {
       // Corrupt sidecar: drop it rather than blocking startup forever.
       debugPrint('BackupService.recoverPendingImport failed: $e\n$st');
     }
     await _safeDelete(sidecar.path);
     await _safeDelete(p.join(dbDirectory, '$_dbName.pre-restore.bak'));
+  }
+
+  /// Restores the settings layer (preferences + profiles + bindings) from
+  /// pre-restore.bak into the freshly-imported DB, keeping the backup's content.
+  /// Runs at startup, so both DBs are at the current schema → `SELECT *` columns
+  /// align. audiobook positions are content and stay from the backup.
+  static Future<void> _restoreSettingsLayer(String dbDirectory) async {
+    final String bakPath = p.join(dbDirectory, '$_dbName.pre-restore.bak');
+    if (!File(bakPath).existsSync()) return;
+    final db = HibikiDatabase(dbDirectory);
+    try {
+      final String safeBak =
+          bakPath.replaceAll(r'\', '/').replaceAll("'", "''");
+      await db.customStatement("ATTACH DATABASE '$safeBak' AS bak");
+      await db.transaction(() async {
+        // preferences: keep local settings, but let audiobook positions (per
+        // book content) follow the imported books.
+        await db.customStatement(
+            "DELETE FROM preferences WHERE key NOT LIKE 'audiobook_pos_%'");
+        await db.customStatement(
+            'INSERT INTO preferences SELECT * FROM bak.preferences '
+            "WHERE key NOT LIKE 'audiobook_pos_%'");
+        // profiles before its FK dependents.
+        for (final String t in _settingsLayerTables) {
+          await db.customStatement('DELETE FROM $t');
+          await db.customStatement('INSERT INTO $t SELECT * FROM bak.$t');
+        }
+      });
+      await db.customStatement('DETACH DATABASE bak');
+      await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
+    } finally {
+      await db.close();
+    }
   }
 
   /// Reads the device-local sync prefs (only the keys in
