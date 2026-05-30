@@ -182,11 +182,15 @@ window.hoshiCaret = {
     if (offset < 0 || offset >= text.length) return false;
     var ch = text[offset];
     if (/^[\s　]$/.test(ch)) return false; // skip whitespace/newlines
-    // Text inside an interactive element is not its own stop — the element is an
-    // atomic stop (the ring covers the whole control, e.g. a <summary> collapse
-    // toggle) so the cursor never lands on a single glyph inside it. Popup-only:
-    // the reader reaches links via their text stops (see _interactiveEls).
     if (!window.hoshiReader) {
+      // Popup-only: a lone punctuation/symbol glyph (the " | " separator between
+      // source links, list bullets, brackets) is not a useful lookup target —
+      // don't stop on it, so the cursor never lands on a thin separator sliver.
+      // Words/kanji (the real targets) are unaffected.
+      if (/^[\p{P}\p{S}]$/u.test(ch)) return false;
+      // Text inside an interactive element is not its own stop — the element is
+      // an atomic stop (the ring covers the whole control, e.g. a <summary>
+      // collapse toggle). The reader reaches links via their text stops.
       var ie = node.parentElement;
       if (ie && ie.closest(this._interactiveSelector)) return false;
     }
@@ -517,11 +521,20 @@ window.hoshiCaret = {
   _drawRing: function(rect) {
     var r = this._ensureRing();
     var pad = 1;
+    // Clamp the ring to the current viewport: a stop whose rect overflows the
+    // host (e.g. a popup-edge element taller than the popup) must never paint a
+    // ring outside it. _viewport() is the host client area (the whole popup,
+    // since the popup passes zero insets; the reading viewport in the reader).
+    var vp = this._viewport();
+    var left = Math.max(rect.left - pad, vp.left);
+    var top = Math.max(rect.top - pad, vp.top);
+    var right = Math.min(rect.left + rect.width + pad, vp.right);
+    var bottom = Math.min(rect.top + rect.height + pad, vp.bottom);
     r.style.display = 'block';
-    r.style.left = (rect.left - pad) + 'px';
-    r.style.top = (rect.top - pad) + 'px';
-    r.style.width = (rect.width + pad * 2) + 'px';
-    r.style.height = (rect.height + pad * 2) + 'px';
+    r.style.left = left + 'px';
+    r.style.top = top + 'px';
+    r.style.width = Math.max(0, right - left) + 'px';
+    r.style.height = Math.max(0, bottom - top) + 'px';
   },
   _hideRing: function() {
     if (this._ring) this._ring.style.display = 'none';

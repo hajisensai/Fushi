@@ -160,6 +160,24 @@ void main() {
       expect(js, contains('position:fixed'));
     });
 
+    test('ring is clamped to the viewport so it never paints outside the host',
+        () {
+      // _drawRing must intersect the drawn rect with _viewport() before
+      // painting, so a stop near the popup edge cannot draw a ring outside the
+      // popup.
+      expect(js, contains('_viewport()'));
+      expect(js, contains('Math.max(rect.left'));
+      expect(js, contains('Math.min(rect.left + rect.width'));
+    });
+
+    test('popup caret skips lone punctuation/symbol glyphs (e.g. " | ")', () {
+      // In the popup (no hoshiReader) a single punctuation/symbol char is not a
+      // useful lookup target and must not be a stop, so the caret never lands on
+      // the thin "|" separator between source links.
+      expect(js, contains(r'\p{P}'));
+      expect(js, contains(r'\p{S}'));
+    });
+
     test('scopeSelector restricts stops to matching elements (popup scope)',
         () {
       expect(js, contains('scopeSelector'));
