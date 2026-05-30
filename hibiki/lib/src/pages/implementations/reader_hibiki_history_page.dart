@@ -284,8 +284,9 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   }
 
   Widget _tagChip(BookTagRow tag) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return Padding(
-      padding: const EdgeInsets.only(right: 3, bottom: 2),
+      padding: _cardTagChipPadding(tokens),
       child: HibikiTagChip(
         label: tag.name,
         color: Color(tag.colorValue),
@@ -294,11 +295,19 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   }
 
   Widget _overflowChip(int count) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return Padding(
-      padding: const EdgeInsets.only(right: 3, bottom: 2),
+      padding: _cardTagChipPadding(tokens),
       child: HibikiTagChip(
         label: '+$count',
       ),
+    );
+  }
+
+  EdgeInsetsDirectional _cardTagChipPadding(HibikiDesignTokens tokens) {
+    return EdgeInsetsDirectional.only(
+      end: tokens.spacing.gap / 2,
+      bottom: tokens.spacing.gap / 4,
     );
   }
 
@@ -467,8 +476,14 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   }
 
   Widget _buildSectionHeader(String label) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 2),
+      padding: EdgeInsetsDirectional.fromSTEB(
+        tokens.spacing.rowHorizontal * 0.75,
+        tokens.spacing.gap,
+        tokens.spacing.rowHorizontal * 0.75,
+        tokens.spacing.gap / 4,
+      ),
       child: Text(
         label,
         style: textTheme.labelMedium?.copyWith(
@@ -489,6 +504,8 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   }
 
   Widget _buildSrtCard(SrtBook book) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final double overlayInset = tokens.spacing.gap * 0.75;
     final String selKey = 'srt_${book.uid}';
     final tagWidget = book.id != null ? _buildSrtBookTagLabels(book.id!) : null;
     final int? srtBookId = book.id;
@@ -506,8 +523,8 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           _buildSrtCover(book),
           _titleOverlay(book.title),
           Positioned(
-            top: 6,
-            right: 6,
+            top: overlayInset,
+            right: overlayInset,
             child: _cardBadge(
               icon: Icons.subtitles_outlined,
               background: theme.colorScheme.secondaryContainer,
@@ -516,8 +533,8 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           ),
           if (tagWidget != null)
             Positioned(
-              top: 6,
-              left: 6,
+              top: overlayInset,
+              left: overlayInset,
               child: tagWidget,
             ),
         ],
@@ -987,6 +1004,8 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
 
   @override
   Widget buildMediaItemContent(MediaItem item) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final double overlayInset = tokens.spacing.gap * 0.75;
     final info = _getAudiobookInfo(item.uniqueKey);
     final bool hasAudiobook = info.hasAudiobook;
     final HealthKind healthKind = info.healthKind;
@@ -1016,8 +1035,8 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           child: _progressBar(item),
         ),
         Positioned(
-          top: 6,
-          right: 6,
+          top: overlayInset,
+          right: overlayInset,
           child: hasAudiobook
               ? _audiobookBadge(healthKind)
               : _cardBadge(
@@ -1028,8 +1047,8 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         ),
         if (tagWidget != null)
           Positioned(
-            top: 6,
-            left: 6,
+            top: overlayInset,
+            left: overlayInset,
             child: tagWidget,
           ),
       ],

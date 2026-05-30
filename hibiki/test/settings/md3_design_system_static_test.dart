@@ -573,6 +573,36 @@ void main() {
     expect(tagBar, isNot(contains('const SizedBox(width: 6)')));
   });
 
+  test('reader history card overlays use shared MD3 spacing tokens', () {
+    final String source = File(
+      'lib/src/pages/implementations/reader_hibiki_history_page.dart',
+    ).readAsStringSync();
+    final String srtCardChrome = _functionSource(
+      source,
+      'Widget? _buildTagLabels(int bookId)',
+      '  Widget _buildSrtCover(SrtBook book)',
+    );
+    final String epubCardChrome = _functionSource(
+      source,
+      'Widget buildMediaItemContent(MediaItem item)',
+      'Widget buildMediaItem(MediaItem item)',
+    );
+
+    for (final String cardChrome in <String>[
+      srtCardChrome,
+      epubCardChrome,
+    ]) {
+      expect(cardChrome, contains('HibikiDesignTokens.of(context)'));
+      expect(cardChrome, contains('tokens.spacing'));
+      expect(
+          cardChrome, isNot(contains('EdgeInsets.only(right: 3, bottom: 2)')));
+      expect(cardChrome, isNot(contains('EdgeInsets.fromLTRB(12, 8, 12, 2)')));
+      expect(cardChrome, isNot(contains('top: 6,')));
+      expect(cardChrome, isNot(contains('right: 6,')));
+      expect(cardChrome, isNot(contains('left: 6,')));
+    }
+  });
+
   test('reader history action dialogs use shared MD3 dialog chrome', () {
     final String source = File(
       'lib/src/pages/implementations/reader_hibiki_history_page.dart',
