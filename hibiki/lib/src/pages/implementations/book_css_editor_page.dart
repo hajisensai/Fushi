@@ -219,6 +219,7 @@ class _BookCssEditorPageState extends State<BookCssEditorPage> {
 
   @override
   Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     if (_entries.isEmpty) {
       return HibikiToolScaffold(
         title: t.book_css_editor_title,
@@ -247,13 +248,13 @@ class _BookCssEditorPageState extends State<BookCssEditorPage> {
           ),
         ],
         bottom: SizedBox(
-          height: 40,
+          height: tokens.spacing.card * 2.5,
           child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
               children: List.generate(_entries.length, (i) {
                 return Padding(
-                  padding: const EdgeInsets.only(right: 6),
+                  padding: EdgeInsets.only(right: tokens.spacing.gap),
                   child: HibikiSelectableChip(
                     label: _tabLabel(i),
                     selected: i == _selectedIndex,
@@ -272,12 +273,15 @@ class _BookCssEditorPageState extends State<BookCssEditorPage> {
         ),
         bottomNavigationBar: SafeArea(
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            padding: EdgeInsets.symmetric(
+              horizontal: tokens.spacing.card,
+              vertical: tokens.spacing.gap,
+            ),
             child: Wrap(
               alignment: WrapAlignment.spaceBetween,
               crossAxisAlignment: WrapCrossAlignment.center,
-              spacing: 8,
-              runSpacing: 4,
+              spacing: tokens.spacing.gap,
+              runSpacing: tokens.spacing.gap / 2,
               children: [
                 OutlinedButton(
                   onPressed: _currentTabCanReset() ? _doResetCurrent : null,

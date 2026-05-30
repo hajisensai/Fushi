@@ -1208,6 +1208,35 @@ void main() {
     expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
   });
 
+  test('book CSS editor shell uses shared MD3 spacing tokens', () {
+    final String source = File(
+      'lib/src/pages/implementations/book_css_editor_page.dart',
+    ).readAsStringSync();
+    final String editorBuild = _functionSource(
+      source,
+      'Widget build(BuildContext context)',
+      '@visibleForTesting',
+    );
+
+    expect(editorBuild, contains('HibikiDesignTokens.of(context)'));
+    expect(editorBuild, contains('tokens.spacing'));
+    expect(editorBuild, contains('HibikiSelectableChip('));
+    expect(editorBuild, contains('HibikiEditorPanel('));
+    expect(editorBuild, isNot(contains('height: 40')));
+    expect(
+      editorBuild,
+      isNot(contains('const EdgeInsets.only(right: 6)')),
+    );
+    expect(
+      editorBuild,
+      isNot(
+        contains('const EdgeInsets.symmetric(horizontal: 12, vertical: 6)'),
+      ),
+    );
+    expect(editorBuild, isNot(contains('spacing: 8')));
+    expect(editorBuild, isNot(contains('runSpacing: 4')));
+  });
+
   test('collection dialogs use shared MD3 dialog chrome', () {
     final String source = File(
       'lib/src/pages/implementations/collections_page.dart',
