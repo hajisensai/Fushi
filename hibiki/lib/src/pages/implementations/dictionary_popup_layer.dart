@@ -114,6 +114,8 @@ class DictionaryPopupLayer extends StatelessWidget {
   }
 
   Widget _buildBody(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
     if (result != null && result!.entries.isNotEmpty) {
       return Stack(
         children: [
@@ -152,7 +154,7 @@ class DictionaryPopupLayer extends StatelessWidget {
 
     return Center(
       child: SingleChildScrollView(
-        padding: const EdgeInsets.all(8),
+        padding: EdgeInsets.all(tokens.spacing.gap),
         child: HibikiPlaceholderMessage(
           icon: Icons.search_off,
           message: t.no_search_results,

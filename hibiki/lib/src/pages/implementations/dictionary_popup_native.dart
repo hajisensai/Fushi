@@ -124,36 +124,38 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
     }
 
     return ListView.separated(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      padding: EdgeInsets.symmetric(
+        horizontal: tokens.spacing.rowHorizontal,
+        vertical: tokens.spacing.gap / 2,
+      ),
       itemCount: _grouped.length,
       separatorBuilder: (_, __) => Divider(
         height: 1,
-        color: cs.outlineVariant,
+        color: tokens.surfaces.outline,
       ),
       itemBuilder: (context, idx) {
         final entry = _grouped[idx];
-        return _buildEntry(entry, idx, textColor, subColor, tagBg, tokens);
+        return _buildEntry(entry, textColor, subColor, tagBg, tokens);
       },
     );
   }
 
   Widget _buildEntry(
     _GroupedEntry entry,
-    int idx,
     Color textColor,
     Color subColor,
     Color tagBg,
     HibikiDesignTokens tokens,
   ) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildHeader(entry, idx, textColor, subColor, tokens),
+          _buildHeader(entry, textColor, subColor, tokens),
           if (entry.deinflectionTrace.isNotEmpty)
-            _buildDeinflection(entry, tagBg),
-          const SizedBox(height: 2),
+            _buildDeinflection(entry, tagBg, tokens),
+          SizedBox(height: tokens.spacing.gap / 4),
           ..._buildGlossaries(entry, textColor, subColor, tagBg, tokens),
         ],
       ),
@@ -162,7 +164,6 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
 
   Widget _buildHeader(
     _GroupedEntry entry,
-    int idx,
     Color textColor,
     Color subColor,
     HibikiDesignTokens tokens,
@@ -177,7 +178,7 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
             tokens,
           ),
         ),
-        _buildMineButton(entry, idx, subColor, tokens),
+        _buildMineButton(entry, subColor, tokens),
       ],
     );
   }
@@ -210,37 +211,46 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
 
   Widget _buildMineButton(
     _GroupedEntry entry,
-    int idx,
     Color subColor,
     HibikiDesignTokens tokens,
   ) {
-    return HibikiFocusable(
-      onTap: () {
-        if (widget.onMineEntry != null) {
-          widget.onMineEntry!({
-            'expression': entry.expression,
-            'reading': entry.reading,
-          });
-        }
-      },
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        child: Text(
-          '+',
-          style: tokens.type.controlLabel.copyWith(color: subColor),
-        ),
+    return IconButton(
+      tooltip: t.creator_export_card,
+      visualDensity: VisualDensity.compact,
+      padding: EdgeInsets.all(tokens.spacing.gap / 2),
+      constraints: BoxConstraints.tightFor(
+        width: tokens.spacing.card * 2,
+        height: tokens.spacing.card * 2,
       ),
+      style: IconButton.styleFrom(
+        foregroundColor: subColor,
+        disabledForegroundColor: subColor.withValues(alpha: 0.38),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+      icon: Icon(
+        Icons.add_circle_outline,
+        size: tokens.spacing.card + tokens.spacing.gap / 2,
+      ),
+      onPressed: widget.onMineEntry == null
+          ? null
+          : () {
+              widget.onMineEntry!({
+                'expression': entry.expression,
+                'reading': entry.reading,
+              });
+            },
     );
   }
 
   Widget _buildDeinflection(
     _GroupedEntry entry,
     Color tagBg,
+    HibikiDesignTokens tokens,
   ) {
     return Padding(
-      padding: const EdgeInsets.only(top: 2),
+      padding: EdgeInsets.only(top: tokens.spacing.gap / 4),
       child: Wrap(
-        spacing: 2,
+        spacing: tokens.spacing.gap / 4,
         children: entry.deinflectionTrace.map((trace) {
           return HibikiTagChip(
             label: trace['name'] ?? '',
@@ -268,7 +278,7 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
       final items = e.value;
 
       return Padding(
-        padding: const EdgeInsets.only(top: 3),
+        padding: EdgeInsets.only(top: tokens.spacing.gap / 2),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -276,7 +286,7 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
               dictName,
               style: tokens.type.metadata.copyWith(color: subColor),
             ),
-            const SizedBox(height: 2),
+            SizedBox(height: tokens.spacing.gap / 4),
             ...items.asMap().entries.map((itemEntry) {
               final item = itemEntry.value;
               final num = items.length > 1 ? '${itemEntry.key + 1}. ' : '';
@@ -284,7 +294,10 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
               // (recursive lookup on tap is WebView-only), so there is no tap
               // target to make focusable — plain Text, no dead GestureDetector.
               return Padding(
-                padding: const EdgeInsets.only(left: 8, bottom: 2),
+                padding: EdgeInsetsDirectional.only(
+                  start: tokens.spacing.gap,
+                  bottom: tokens.spacing.gap / 4,
+                ),
                 child: Text(
                   '$num${item.content}',
                   style: tokens.type.listTitle.copyWith(

@@ -91,22 +91,23 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final ThemeData theme = Theme.of(context);
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
 
     return HibikiPageScaffold(
       title: widget.bookTitle,
-      body: _buildBody(theme),
+      body: _buildBody(theme, tokens),
     );
   }
 
-  Widget _buildBody(ThemeData theme) {
+  Widget _buildBody(ThemeData theme, HibikiDesignTokens tokens) {
     if (_loading && _images.isEmpty) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             adaptiveIndicator(context: context),
-            const SizedBox(height: 16),
+            SizedBox(height: tokens.spacing.card),
             Text(t.loading_illustrations),
           ],
         ),
@@ -116,7 +117,7 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
     if (_error != null && _images.isEmpty) {
       return Center(
         child: Padding(
-          padding: const EdgeInsets.all(32),
+          padding: EdgeInsets.all(tokens.spacing.page + tokens.spacing.card),
           child: Text(
             _error!,
             textAlign: TextAlign.center,
@@ -140,11 +141,11 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
         if (_loading) const LinearProgressIndicator(),
         Expanded(
           child: GridView.builder(
-            padding: const EdgeInsets.all(8),
-            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+            padding: EdgeInsets.all(tokens.spacing.gap),
+            gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
               maxCrossAxisExtent: 200,
-              mainAxisSpacing: 8,
-              crossAxisSpacing: 8,
+              mainAxisSpacing: tokens.spacing.gap,
+              crossAxisSpacing: tokens.spacing.gap,
             ),
             itemCount: _images.length,
             itemBuilder: (context, index) {

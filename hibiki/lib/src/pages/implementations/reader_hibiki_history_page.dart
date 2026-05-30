@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:transparent_image/transparent_image.dart';
-import 'package:hibiki/src/utils/spacing.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
@@ -284,8 +283,9 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   }
 
   Widget _tagChip(BookTagRow tag) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return Padding(
-      padding: const EdgeInsets.only(right: 3, bottom: 2),
+      padding: _cardTagChipPadding(tokens),
       child: HibikiTagChip(
         label: tag.name,
         color: Color(tag.colorValue),
@@ -294,11 +294,19 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   }
 
   Widget _overflowChip(int count) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return Padding(
-      padding: const EdgeInsets.only(right: 3, bottom: 2),
+      padding: _cardTagChipPadding(tokens),
       child: HibikiTagChip(
         label: '+$count',
       ),
+    );
+  }
+
+  EdgeInsetsDirectional _cardTagChipPadding(HibikiDesignTokens tokens) {
+    return EdgeInsetsDirectional.only(
+      end: tokens.spacing.gap / 2,
+      bottom: tokens.spacing.gap / 4,
     );
   }
 
@@ -340,6 +348,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
 
   Widget _buildBodyWithSrtBooks(
       List<MediaItem> books, List<SrtBook> allSrtBooks) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final Set<int> srtTtuIds = {
       for (final b in allSrtBooks)
         if (b.ttuBookId > 0) b.ttuBookId,
@@ -406,7 +415,8 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
               ],
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.all(24),
+                  padding:
+                      EdgeInsets.all(tokens.spacing.card + tokens.spacing.gap),
                   child: Text(
                     t.tag_no_books_for_filter,
                     textAlign: TextAlign.center,
@@ -467,8 +477,14 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   }
 
   Widget _buildSectionHeader(String label) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 2),
+      padding: EdgeInsetsDirectional.fromSTEB(
+        tokens.spacing.rowHorizontal * 0.75,
+        tokens.spacing.gap,
+        tokens.spacing.rowHorizontal * 0.75,
+        tokens.spacing.gap / 4,
+      ),
       child: Text(
         label,
         style: textTheme.labelMedium?.copyWith(
@@ -489,6 +505,8 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   }
 
   Widget _buildSrtCard(SrtBook book) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final double overlayInset = tokens.spacing.gap * 0.75;
     final String selKey = 'srt_${book.uid}';
     final tagWidget = book.id != null ? _buildSrtBookTagLabels(book.id!) : null;
     final int? srtBookId = book.id;
@@ -506,8 +524,8 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           _buildSrtCover(book),
           _titleOverlay(book.title),
           Positioned(
-            top: 6,
-            right: 6,
+            top: overlayInset,
+            right: overlayInset,
             child: _cardBadge(
               icon: Icons.subtitles_outlined,
               background: theme.colorScheme.secondaryContainer,
@@ -516,8 +534,8 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           ),
           if (tagWidget != null)
             Positioned(
-              top: 6,
-              left: 6,
+              top: overlayInset,
+              left: overlayInset,
               child: tagWidget,
             ),
         ],
@@ -562,10 +580,14 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     final bool selected =
         selectionKey != null && _selectedKeys.contains(selectionKey);
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final Color selectionColor = tokens.surfaces.primary;
+    final double selectionInset = tokens.spacing.gap / 2;
+    final double selectionPadding = tokens.spacing.gap / 4;
+    final double selectionIconSize = tokens.spacing.gap * 1.75;
     final Widget card = HibikiCard(
       key: cardKey,
       padding: EdgeInsets.zero,
-      margin: Spacing.of(context).insets.all.normal,
+      margin: EdgeInsets.all(tokens.spacing.rowVertical),
       selected: selected,
       onTap: _selectionMode && selectionKey != null
           ? () => _toggleSelection(selectionKey)
@@ -579,26 +601,25 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
             child,
             if (_selectionMode && selectionKey != null)
               Positioned(
-                top: 4,
-                left: 4,
+                top: selectionInset,
+                left: selectionInset,
                 child: IgnorePointer(
                   child: Container(
                     decoration: BoxDecoration(
                       color: selected
-                          ? theme.colorScheme.primary
-                          : theme.colorScheme.surface.withValues(alpha: 0.7),
+                          ? selectionColor
+                          : tokens.surfaces.page.withValues(alpha: 0.7),
                       shape: BoxShape.circle,
                       border: Border.all(
-                        color: selected
-                            ? theme.colorScheme.primary
-                            : theme.colorScheme.outline,
+                        color:
+                            selected ? selectionColor : tokens.surfaces.outline,
                         width: 1.5,
                       ),
                     ),
-                    padding: const EdgeInsets.all(2),
+                    padding: EdgeInsets.all(selectionPadding),
                     child: Icon(
                       Icons.check,
-                      size: 14,
+                      size: selectionIconSize,
                       color: selected
                           ? theme.colorScheme.onPrimary
                           : Colors.transparent,
@@ -611,7 +632,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                 child: IgnorePointer(
                   child: DecoratedBox(
                     decoration: BoxDecoration(
-                      color: theme.colorScheme.primary.withValues(alpha: 0.12),
+                      color: tokens.surfaces.primary.withValues(alpha: 0.12),
                       borderRadius: tokens.radii.cardRadius,
                     ),
                   ),
@@ -633,20 +654,26 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
 
   Widget _titleOverlay(String title) {
     return LayoutBuilder(builder: (context, constraints) {
+      final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
       return Align(
         alignment: Alignment.bottomCenter,
         child: Container(
           height: constraints.maxHeight * 0.38,
           width: double.infinity,
           alignment: Alignment.bottomCenter,
-          padding: const EdgeInsets.fromLTRB(6, 4, 6, 6),
+          padding: EdgeInsetsDirectional.fromSTEB(
+            tokens.spacing.gap * 0.75,
+            tokens.spacing.gap / 2,
+            tokens.spacing.gap * 0.75,
+            tokens.spacing.gap * 0.75,
+          ),
           decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
               colors: [
-                theme.colorScheme.surface.withValues(alpha: 0),
-                theme.colorScheme.surface.withValues(alpha: 0.85),
+                tokens.surfaces.page.withValues(alpha: 0),
+                tokens.surfaces.page.withValues(alpha: 0.85),
               ],
             ),
           ),
@@ -657,7 +684,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
             textAlign: TextAlign.center,
             softWrap: true,
             style: textTheme.labelSmall?.copyWith(
-              color: theme.colorScheme.onSurface,
+              color: tokens.surfaces.onSurface,
             ),
           ),
         ),
@@ -811,13 +838,18 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   }
 
   Widget _buildBatchActionBar() {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
     return Material(
       elevation: 6,
       color: theme.colorScheme.surfaceContainer,
       child: SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: EdgeInsets.symmetric(
+            horizontal: tokens.spacing.card - tokens.spacing.gap / 2,
+            vertical: tokens.spacing.gap,
+          ),
           child: Row(
             children: [
               Text(
@@ -826,7 +858,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              const SizedBox(width: 8),
+              SizedBox(width: tokens.spacing.gap),
               TextButton(
                 onPressed: _selectAll,
                 child: Text(t.batch_select_all),
@@ -841,7 +873,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                 icon: const Icon(Icons.sell_outlined),
                 tooltip: t.tag_label,
               ),
-              const SizedBox(width: 4),
+              SizedBox(width: tokens.spacing.gap / 2),
               IconButton(
                 onPressed: _selectedKeys.isEmpty ? null : _batchDeleteConfirm,
                 icon: const Icon(Icons.delete_outline),
@@ -953,6 +985,8 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
 
   @override
   Widget buildPlaceholder() {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -961,7 +995,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
             icon: mediaSource.icon,
             message: t.ttu_no_books_added,
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
           FilledButton.icon(
             icon: const Icon(Icons.library_add_outlined, size: 18),
             label: Text(t.srt_import),
@@ -987,6 +1021,8 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
 
   @override
   Widget buildMediaItemContent(MediaItem item) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final double overlayInset = tokens.spacing.gap * 0.75;
     final info = _getAudiobookInfo(item.uniqueKey);
     final bool hasAudiobook = info.hasAudiobook;
     final HealthKind healthKind = info.healthKind;
@@ -1016,8 +1052,8 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           child: _progressBar(item),
         ),
         Positioned(
-          top: 6,
-          right: 6,
+          top: overlayInset,
+          right: overlayInset,
           child: hasAudiobook
               ? _audiobookBadge(healthKind)
               : _cardBadge(
@@ -1028,8 +1064,8 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         ),
         if (tagWidget != null)
           Positioned(
-            top: 6,
-            left: 6,
+            top: overlayInset,
+            left: overlayInset,
             child: tagWidget,
           ),
       ],
@@ -1305,64 +1341,53 @@ class _TagBarContentState extends ConsumerState<_TagBarContent> {
   @override
   Widget build(BuildContext context) {
     final selectedIds = ref.watch(selectedTagIdsProvider);
-    final theme = Theme.of(context);
     final t = Translations.of(context);
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
 
     final int trailingCount = widget.tags.isEmpty ? 1 : 2;
 
     return Container(
-      height: 44,
+      height: tokens.spacing.gap * 5.5,
       decoration: BoxDecoration(
         border: Border(
           bottom: BorderSide(
-            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
+            color: tokens.surfaces.outline.withValues(alpha: 0.3),
           ),
         ),
       ),
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: EdgeInsets.symmetric(
+          horizontal: tokens.spacing.rowHorizontal,
+          vertical: tokens.spacing.gap * 0.75,
+        ),
         itemCount: widget.tags.length + trailingCount,
-        separatorBuilder: (_, __) => const SizedBox(width: 6),
+        separatorBuilder: (_, __) => SizedBox(width: tokens.spacing.gap * 0.75),
         itemBuilder: (context, index) {
           if (index == widget.tags.length + trailingCount - 1) {
-            return SizedBox(
-              width: 32,
-              height: 32,
-              child: IconButton(
-                padding: EdgeInsets.zero,
-                icon: Icon(
+            return _tagBarAction(
+              icon:
                   widget.selectionMode ? Icons.close : Icons.checklist_outlined,
-                  size: 18,
-                  color: widget.selectionMode
-                      ? theme.colorScheme.primary
-                      : theme.colorScheme.onSurfaceVariant,
-                ),
-                tooltip: widget.selectionMode ? null : t.batch_select,
-                onPressed: widget.onToggleSelectionMode,
-              ),
+              tooltip: widget.selectionMode
+                  ? MaterialLocalizations.of(context).closeButtonTooltip
+                  : t.batch_select,
+              selected: widget.selectionMode,
+              onTap: widget.onToggleSelectionMode,
             );
           }
           if (index == widget.tags.length && widget.tags.isNotEmpty) {
-            return SizedBox(
-              width: 32,
-              height: 32,
-              child: IconButton(
-                padding: EdgeInsets.zero,
-                icon: Icon(Icons.settings_outlined,
-                    size: 18, color: theme.colorScheme.onSurfaceVariant),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    adaptivePageRoute(
-                        builder: (_) => const TagManagementPage()),
-                  ).then((_) {
-                    ref.invalidate(allTagsProvider);
-                    ref.invalidate(bookTagMapProvider);
-                  });
-                },
-              ),
+            return _tagBarAction(
+              icon: Icons.settings_outlined,
+              tooltip: t.tag_manage,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  adaptivePageRoute(builder: (_) => const TagManagementPage()),
+                ).then((_) {
+                  ref.invalidate(allTagsProvider);
+                  ref.invalidate(bookTagMapProvider);
+                });
+              },
             );
           }
           final tag = widget.tags[index];
@@ -1424,6 +1449,24 @@ class _TagBarContentState extends ConsumerState<_TagBarContent> {
     );
   }
 
+  Widget _tagBarAction({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback onTap,
+    bool selected = false,
+  }) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return HibikiIconButton(
+      icon: icon,
+      tooltip: tooltip,
+      size: tokens.spacing.gap * 2.25,
+      padding: EdgeInsets.all(tokens.spacing.gap * 0.875),
+      enabledColor:
+          selected ? tokens.surfaces.primary : tokens.surfaces.onVariant,
+      onTap: onTap,
+    );
+  }
+
   Widget _tagFilterChip({
     required BookTagRow tag,
     required bool isSelected,
@@ -1462,8 +1505,8 @@ class _BookDragTargetState extends State<BookDragTarget> {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final Color hoverColor = tokens.surfaces.primary;
     return DragTarget<BookTagRow>(
       onWillAcceptWithDetails: (_) => true,
       onAcceptWithDetails: (details) {
@@ -1485,18 +1528,18 @@ class _BookDragTargetState extends State<BookDragTarget> {
               Positioned.fill(
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    color: theme.colorScheme.primary.withValues(alpha: 0.2),
+                    color: hoverColor.withValues(alpha: 0.2),
                     borderRadius: tokens.radii.cardRadius,
                     border: Border.all(
-                      color: theme.colorScheme.primary,
-                      width: 2,
+                      color: hoverColor,
+                      width: tokens.spacing.gap / 4,
                     ),
                   ),
                   child: Center(
                     child: Icon(
                       Icons.add_circle_outline,
-                      color: theme.colorScheme.primary,
-                      size: 32,
+                      color: hoverColor,
+                      size: tokens.spacing.gap * 4,
                     ),
                   ),
                 ),
@@ -1523,45 +1566,49 @@ class ReaderHistoryDeleteDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
 
-    return adaptiveAlertDialog(
-      context: context,
-      titlePadding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-      contentPadding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-      actionsPadding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
-      buttonPadding: const EdgeInsets.symmetric(horizontal: 4),
-      title: Text(
-        title,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: theme.textTheme.titleMedium,
+    return HibikiDialogFrame(
+      maxWidth: 420,
+      maxHeightFactor: 0.74,
+      child: HibikiModalSheetFrame(
+        title: title,
+        leadingIcon: Icons.delete_outline,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: Text(
+          message,
+          style: tokens.type.listSubtitle,
+        ),
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: [
+            adaptiveDialogAction(
+              context: context,
+              onPressed: () => Navigator.pop(context, false),
+              child: Text(t.dialog_cancel),
+            ),
+            adaptiveDialogAction(
+              context: context,
+              isDestructiveAction: true,
+              onPressed: onConfirm,
+              child: Text(t.dialog_delete),
+            ),
+          ],
+        ),
       ),
-      content: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: double.maxFinite,
-          maxHeight: MediaQuery.of(context).size.height * 0.34,
-        ),
-        child: SingleChildScrollView(
-          child: Text(
-            message,
-            style: theme.textTheme.bodySmall,
-          ),
-        ),
-      ),
-      actions: [
-        adaptiveDialogAction(
-          context: context,
-          onPressed: () => Navigator.pop(context, false),
-          child: Text(t.dialog_cancel),
-        ),
-        adaptiveDialogAction(
-          context: context,
-          isDestructiveAction: true,
-          onPressed: onConfirm,
-          child: Text(t.dialog_delete),
-        ),
-      ],
     );
   }
 }
@@ -1916,46 +1963,83 @@ class _BatchTagPickerDialogState extends State<_BatchTagPickerDialog> {
 
   @override
   Widget build(BuildContext context) {
+    return ReaderHistoryBatchTagDialogFrame(
+      canApply: _addTagIds.isNotEmpty || _removeTagIds.isNotEmpty,
+      onApply: _apply,
+      body: ListView.builder(
+        shrinkWrap: true,
+        itemCount: widget.allTags.length,
+        itemBuilder: (_, i) {
+          final tag = widget.allTags[i];
+          return _BatchTagIntentRow(
+            tag: tag,
+            selected: _tagIntent(tag),
+            onChanged: (intent) => _setTagIntent(tag, intent),
+          );
+        },
+      ),
+    );
+  }
+}
+
+@visibleForTesting
+class ReaderHistoryBatchTagDialogFrame extends StatelessWidget {
+  const ReaderHistoryBatchTagDialogFrame({
+    required this.body,
+    required this.canApply,
+    required this.onApply,
+    super.key,
+  });
+
+  final Widget body;
+  final bool canApply;
+  final VoidCallback onApply;
+
+  @override
+  Widget build(BuildContext context) {
     final t = Translations.of(context);
-    final theme = Theme.of(context);
-    return adaptiveAlertDialog(
-      context: context,
-      titlePadding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-      contentPadding: const EdgeInsets.fromLTRB(0, 8, 0, 0),
-      actionsPadding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
-      title: Text(
-        t.batch_tag_title,
-        style: theme.textTheme.titleMedium,
-      ),
-      content: SizedBox(
-        width: double.maxFinite,
-        child: ListView.builder(
-          shrinkWrap: true,
-          itemCount: widget.allTags.length,
-          itemBuilder: (_, i) {
-            final tag = widget.allTags[i];
-            return _BatchTagIntentRow(
-              tag: tag,
-              selected: _tagIntent(tag),
-              onChanged: (intent) => _setTagIntent(tag, intent),
-            );
-          },
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
+    return HibikiDialogFrame(
+      maxWidth: 520,
+      maxHeightFactor: 0.86,
+      scrollable: false,
+      child: HibikiModalSheetFrame(
+        title: t.batch_tag_title,
+        leadingIcon: Icons.sell_outlined,
+        scrollable: true,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: body,
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: [
+            adaptiveDialogAction(
+              context: context,
+              onPressed: () => Navigator.pop(context),
+              child: Text(t.dialog_cancel),
+            ),
+            adaptiveDialogAction(
+              context: context,
+              isDefaultAction: true,
+              onPressed: canApply ? onApply : null,
+              child: Text(t.batch_tag_apply),
+            ),
+          ],
         ),
       ),
-      actions: [
-        adaptiveDialogAction(
-          context: context,
-          onPressed: () => Navigator.pop(context),
-          child: Text(t.dialog_cancel),
-        ),
-        adaptiveDialogAction(
-          context: context,
-          isDefaultAction: true,
-          onPressed:
-              _addTagIds.isEmpty && _removeTagIds.isEmpty ? null : _apply,
-          child: Text(t.batch_tag_apply),
-        ),
-      ],
     );
   }
 }
@@ -1978,6 +2062,7 @@ class _BatchTagIntentRow extends StatelessWidget {
     final bool cupertino = isCupertinoPlatform(context);
     final ThemeData theme = Theme.of(context);
     final Color tagColor = Color(tag.colorValue);
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
 
     return AdaptiveSettingsRow(
       title: tag.name,
@@ -1995,7 +2080,7 @@ class _BatchTagIntentRow extends StatelessWidget {
               ),
               child: const SizedBox(width: 12, height: 12),
             ),
-            const SizedBox(width: 12),
+            SizedBox(width: tokens.spacing.gap + tokens.spacing.gap / 2),
             Flexible(
               child: adaptiveSegmentedButton<_BatchTagIntent>(
                 context: context,

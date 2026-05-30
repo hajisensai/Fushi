@@ -113,6 +113,7 @@ class SasayakiRematch {
     List<EpubSection>? probedSections;
     List<AudioCue>? probedCues;
     Widget buildSheetBody(BuildContext sheetCtx, StateSetter setSheet) {
+      final HibikiDesignTokens tokens = HibikiDesignTokens.of(sheetCtx);
       Future<void> handleAuto() async {
         setSheet(() => autoBusy = true);
         try {
@@ -135,7 +136,7 @@ class SasayakiRematch {
       return HibikiModalSheetFrame(
         title: t.rematch_adjust_window,
         leadingIcon: Icons.manage_search_outlined,
-        bodyPadding: const EdgeInsets.symmetric(horizontal: 20),
+        bodyPadding: EdgeInsets.symmetric(horizontal: tokens.spacing.card),
         body: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -146,7 +147,7 @@ class SasayakiRematch {
               onAutoTap: handleAuto,
               autoBusy: autoBusy,
             ),
-            const SizedBox(height: 12),
+            SizedBox(height: tokens.spacing.rowVertical),
             SasayakiThresholdSlider(
               value: threshold,
               onChanged: (v) => setSheet(() => threshold = v),
@@ -160,7 +161,7 @@ class SasayakiRematch {
               onPressed: autoBusy ? null : () => Navigator.pop(sheetCtx),
               child: Text(t.cancel),
             ),
-            const SizedBox(width: 8),
+            SizedBox(width: tokens.spacing.gap),
             FilledButton.icon(
               icon: const Icon(Icons.play_arrow_outlined, size: 18),
               label: Text(t.rematch_run),
@@ -332,20 +333,18 @@ class SasayakiWindowSlider extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(t.sasayaki_search_window, style: theme.textTheme.titleMedium),
-        const SizedBox(height: 4),
+        Text(t.sasayaki_search_window, style: tokens.type.listTitle),
+        SizedBox(height: tokens.spacing.gap / 2),
         Text(
           t.sasayaki_window_hint,
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
+          style: tokens.type.metadata,
         ),
-        const SizedBox(height: 8),
+        SizedBox(height: tokens.spacing.gap),
         Row(
           children: [
             Expanded(
@@ -364,7 +363,7 @@ class SasayakiWindowSlider extends StatelessWidget {
               child: Text(
                 '$value',
                 textAlign: TextAlign.end,
-                style: theme.textTheme.titleMedium,
+                style: tokens.type.listTitle,
               ),
             ),
           ],
@@ -374,9 +373,7 @@ class SasayakiWindowSlider extends StatelessWidget {
             Expanded(
               child: Text(
                 t.sasayaki_default_value(n: EpubSrtMatcher.defaultSearchWindow),
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
+                style: tokens.type.metadata,
               ),
             ),
             if (onAutoTap != null)
@@ -413,21 +410,18 @@ class SasayakiThresholdSlider extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(t.sasayaki_similarity_threshold,
-            style: theme.textTheme.titleMedium),
-        const SizedBox(height: 4),
+        Text(t.sasayaki_similarity_threshold, style: tokens.type.listTitle),
+        SizedBox(height: tokens.spacing.gap / 2),
         Text(
           t.sasayaki_threshold_hint,
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
+          style: tokens.type.metadata,
         ),
-        const SizedBox(height: 8),
+        SizedBox(height: tokens.spacing.gap),
         Row(
           children: [
             Expanded(
@@ -445,7 +439,7 @@ class SasayakiThresholdSlider extends StatelessWidget {
               child: Text(
                 value.toStringAsFixed(1),
                 textAlign: TextAlign.end,
-                style: theme.textTheme.titleMedium,
+                style: tokens.type.listTitle,
               ),
             ),
           ],
@@ -453,9 +447,7 @@ class SasayakiThresholdSlider extends StatelessWidget {
         Text(
           t.sasayaki_default_value(
               n: EpubSrtMatcher.defaultSimilarityThreshold),
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
+          style: tokens.type.metadata,
         ),
       ],
     );

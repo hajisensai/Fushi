@@ -1,11 +1,11 @@
 import 'dart:developer' as developer;
 
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:hibiki/src/sync/position_converter.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_error_messages.dart';
 import 'package:hibiki/src/sync/sync_manager.dart';
+import 'package:hibiki/src/sync/sync_message_dialog.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
@@ -263,7 +263,7 @@ Future<void> showSyncCompareDialog(
   final backend = resolveSyncBackend(await repo.getBackendType());
   if (!await backend.isAuthenticated) {
     if (!context.mounted) return;
-    _showMessage(context, t.sync_not_signed_in);
+    showSyncMessage(context, t.sync_not_signed_in);
     return;
   }
 
@@ -275,29 +275,8 @@ Future<void> showSyncCompareDialog(
     builder: (_) => _SyncCompareDialog(db: db, backend: backend),
   );
   if (applied != null && applied > 0 && context.mounted) {
-    _showMessage(context, t.sync_compare_applied(count: applied));
+    showSyncMessage(context, t.sync_compare_applied(count: applied));
   }
-}
-
-void _showMessage(BuildContext context, String msg) {
-  if (isCupertinoPlatform(context)) {
-    showCupertinoDialog<void>(
-      context: context,
-      builder: (ctx) => CupertinoAlertDialog(
-        content: Text(msg),
-        actions: [
-          CupertinoDialogAction(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(t.dialog_done),
-          ),
-        ],
-      ),
-    );
-    return;
-  }
-  ScaffoldMessenger.of(context)
-    ..hideCurrentSnackBar()
-    ..showSnackBar(SnackBar(content: Text(msg)));
 }
 
 class _SyncCompareDialog extends StatefulWidget {
@@ -435,7 +414,7 @@ class _SyncCompareDialogState extends State<_SyncCompareDialog> {
 
       if (mounted) {
         if (errors.isNotEmpty) {
-          _showMessage(
+          showSyncMessage(
             context,
             t.sync_error(message: errors.join(', ')),
           );

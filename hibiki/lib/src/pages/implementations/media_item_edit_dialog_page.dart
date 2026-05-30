@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:hibiki/src/utils/spacing.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
@@ -179,22 +178,38 @@ class MediaItemEditDialogFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return adaptiveAlertDialog(
-      context: context,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      contentPadding: MediaQuery.of(context).orientation == Orientation.portrait
-          ? Spacing.of(context).insets.all.big
-          : Spacing.of(context).insets.all.normal,
-      actionsPadding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-      buttonPadding: const EdgeInsets.symmetric(horizontal: 4),
-      content: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: double.maxFinite,
-          maxHeight: MediaQuery.of(context).size.height * 0.54,
-        ),
-        child: SingleChildScrollView(child: content),
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
+    return HibikiDialogFrame(
+      maxWidth: 440,
+      maxHeightFactor: 0.72,
+      scrollable: false,
+      insetPadding: EdgeInsets.symmetric(
+        horizontal: tokens.spacing.card,
+        vertical: tokens.spacing.gap,
       ),
-      actions: actions,
+      child: HibikiModalSheetFrame(
+        scrollable: true,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.card,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: content,
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: actions,
+        ),
+      ),
     );
   }
 }
@@ -214,35 +229,43 @@ class MediaItemCoverOverrideField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return HibikiTextField(
-      readOnly: true,
-      style: const TextStyle(color: Colors.transparent),
-      contentPadding: EdgeInsets.zero,
-      suffixIcon: ConstrainedBox(
-        constraints: const BoxConstraints(
-          minHeight: 56,
-          maxHeight: 64,
-          minWidth: 144,
-          maxWidth: 180,
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return HibikiCard(
+      padding: EdgeInsets.symmetric(
+        horizontal: tokens.spacing.rowHorizontal,
+        vertical: tokens.spacing.gap,
+      ),
+      color: tokens.surfaces.search,
+      borderColor: tokens.surfaces.outline,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          minHeight: tokens.spacing.gap * 7,
+          maxHeight: tokens.spacing.gap * 8,
         ),
         child: Row(
-          mainAxisSize: MainAxisSize.min,
           children: [
-            Flexible(
-              child: Padding(
-                padding: Spacing.of(context).insets.all.small,
-                child: Image(
-                  image: imageProvider,
-                  fit: BoxFit.contain,
+            Expanded(
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: ClipRRect(
+                  borderRadius: tokens.radii.chipRadius,
+                  child: Image(
+                    height: tokens.spacing.gap * 6,
+                    width: tokens.spacing.gap * 6,
+                    image: imageProvider,
+                    fit: BoxFit.contain,
+                  ),
                 ),
               ),
             ),
+            SizedBox(width: tokens.spacing.gap),
             HibikiIconButton(
               tooltip: t.pick_image,
               isWideTapArea: true,
               icon: Icons.file_upload_outlined,
               onTap: onPickImage,
             ),
+            SizedBox(width: tokens.spacing.gap / 2),
             HibikiIconButton(
               tooltip: t.undo,
               isWideTapArea: true,

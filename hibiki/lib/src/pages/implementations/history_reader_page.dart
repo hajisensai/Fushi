@@ -60,18 +60,24 @@ class HistoryReaderPageState<T extends BaseHistoryPage>
   /// This is shown as the body when [shouldPlaceholderBeShown] is false.
   @override
   Widget buildHistory(List<MediaItem> items) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return RawScrollbar(
       thumbVisibility: true,
       thickness: 3,
       controller: mediaType.scrollController,
       child: LayoutBuilder(
         builder: (context, constraints) => GridView.builder(
-          padding: const EdgeInsets.fromLTRB(16, 48, 16, 16),
+          padding: EdgeInsets.fromLTRB(
+            tokens.spacing.page,
+            tokens.spacing.page * 3,
+            tokens.spacing.page,
+            tokens.spacing.page,
+          ),
           gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
             maxCrossAxisExtent: _gridExtent(context, constraints),
             childAspectRatio: mediaSource.aspectRatio,
-            mainAxisSpacing: 12,
-            crossAxisSpacing: 12,
+            mainAxisSpacing: tokens.spacing.gap + tokens.spacing.gap / 2,
+            crossAxisSpacing: tokens.spacing.gap + tokens.spacing.gap / 2,
           ),
           physics: const AlwaysScrollableScrollPhysics(
             parent: BouncingScrollPhysics(),
@@ -108,7 +114,12 @@ class HistoryReaderPageState<T extends BaseHistoryPage>
         LayoutBuilder(builder: (context, constraints) {
           return Container(
             alignment: Alignment.center,
-            padding: const EdgeInsets.fromLTRB(2, 2, 2, 4),
+            padding: EdgeInsets.fromLTRB(
+              tokens.spacing.gap / 4,
+              tokens.spacing.gap / 4,
+              tokens.spacing.gap / 4,
+              tokens.spacing.gap / 2,
+            ),
             height: constraints.maxHeight * 0.25,
             width: double.maxFinite,
             color: theme.colorScheme.scrim.withValues(alpha: 0.6),

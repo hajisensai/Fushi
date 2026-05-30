@@ -46,6 +46,27 @@ void main() {
     }
   });
 
+  test('dictionary manager uses MD3 spacing tokens for page states', () {
+    final String source =
+        File('lib/src/pages/implementations/dictionary_dialog_page.dart')
+            .readAsStringSync();
+
+    expect(source, contains('HibikiDesignTokens.of(context)'));
+    expect(
+        source, isNot(contains('padding: const EdgeInsets.only(bottom: 12)')));
+    expect(
+      source,
+      isNot(contains('padding: const EdgeInsets.symmetric(vertical: 24)')),
+    );
+    expect(
+      source,
+      isNot(
+        contains(
+            'padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 18)'),
+      ),
+    );
+  });
+
   test('dictionary manager settings entry pushes a page route', () {
     final String schemaSource =
         File('lib/src/settings/settings_schema.dart').readAsStringSync();

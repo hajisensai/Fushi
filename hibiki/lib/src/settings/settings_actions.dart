@@ -34,6 +34,110 @@ Future<void> showSettingsDialog(
   );
 }
 
+Future<bool> showSettingsConfirmationDialog(
+  SettingsContext settingsContext, {
+  required String title,
+  required String body,
+  String? cancelLabel,
+  String? confirmLabel,
+  bool destructive = false,
+}) async {
+  final BuildContext context = settingsContext.context;
+  final bool? confirmed = await showAppDialog<bool>(
+    context: context,
+    builder: (BuildContext ctx) {
+      final HibikiDesignTokens tokens = HibikiDesignTokens.of(ctx);
+      return HibikiDialogFrame(
+        maxWidth: 420,
+        maxHeightFactor: 0.86,
+        insetPadding: EdgeInsets.symmetric(
+          horizontal: tokens.spacing.card,
+          vertical: tokens.spacing.card,
+        ),
+        scrollable: false,
+        child: HibikiModalSheetFrame(
+          title: title,
+          scrollable: true,
+          bodyPadding: EdgeInsets.fromLTRB(
+            tokens.spacing.card,
+            0,
+            tokens.spacing.card,
+            tokens.spacing.gap,
+          ),
+          footerPadding: EdgeInsets.fromLTRB(
+            tokens.spacing.card,
+            tokens.spacing.gap,
+            tokens.spacing.card,
+            tokens.spacing.card,
+          ),
+          body: Text(body, style: tokens.type.listSubtitle),
+          footer: Wrap(
+            alignment: WrapAlignment.end,
+            spacing: tokens.spacing.gap,
+            runSpacing: tokens.spacing.gap,
+            children: <Widget>[
+              adaptiveDialogAction(
+                context: ctx,
+                onPressed: () => Navigator.pop(ctx, false),
+                child: Text(cancelLabel ?? t.dialog_cancel),
+              ),
+              adaptiveDialogAction(
+                context: ctx,
+                isDefaultAction: true,
+                isDestructiveAction: destructive,
+                onPressed: () => Navigator.pop(ctx, true),
+                child: Text(confirmLabel ?? t.dialog_done),
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+  return confirmed == true;
+}
+
+Future<void> showSettingsProgressDialog(
+  SettingsContext settingsContext, {
+  required String message,
+}) {
+  return showAppDialog<void>(
+    context: settingsContext.context,
+    barrierDismissible: false,
+    builder: (BuildContext ctx) {
+      final HibikiDesignTokens tokens = HibikiDesignTokens.of(ctx);
+      return PopScope(
+        canPop: false,
+        child: HibikiDialogFrame(
+          maxWidth: 360,
+          maxHeightFactor: 0.72,
+          insetPadding: EdgeInsets.symmetric(
+            horizontal: tokens.spacing.card,
+            vertical: tokens.spacing.card,
+          ),
+          scrollable: false,
+          child: HibikiModalSheetFrame(
+            bodyPadding: EdgeInsets.all(tokens.spacing.card),
+            body: Row(
+              children: <Widget>[
+                SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: adaptiveIndicator(context: ctx, strokeWidth: 2),
+                ),
+                SizedBox(width: tokens.spacing.gap + 4),
+                Expanded(
+                  child: Text(message, style: tokens.type.listSubtitle),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    },
+  );
+}
+
 void notifyReaderSettingsChanged(SettingsContext settingsContext) {
   ReaderHibikiSource.onSettingsChangedLive?.call();
   settingsContext.refresh();
@@ -60,29 +164,13 @@ Future<void> confirmDebugChannel(
   SettingsContext settingsContext,
   bool value,
 ) async {
-  final BuildContext context = settingsContext.context;
   if (value) {
-    final bool? confirmed = await showAppDialog<bool>(
-      context: context,
-      builder: (BuildContext ctx) => adaptiveAlertDialog(
-        context: ctx,
-        title: Text(t.update_debug_channel),
-        content: Text(t.update_debug_channel_warning),
-        actions: <Widget>[
-          adaptiveDialogAction(
-            context: ctx,
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(t.dialog_cancel),
-          ),
-          adaptiveDialogAction(
-            context: ctx,
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(t.dialog_done),
-          ),
-        ],
-      ),
+    final bool confirmed = await showSettingsConfirmationDialog(
+      settingsContext,
+      title: t.update_debug_channel,
+      body: t.update_debug_channel_warning,
     );
-    if (confirmed != true) return;
+    if (!confirmed) return;
   }
   await settingsContext.appModel.setUpdateDebugChannel(value);
   settingsContext.refresh();
@@ -94,28 +182,12 @@ Future<void> setUpdateChannel(
 ) async {
   final bool debug = value == 'debug';
   if (debug && !settingsContext.appModel.updateDebugChannel) {
-    final BuildContext context = settingsContext.context;
-    final bool? confirmed = await showAppDialog<bool>(
-      context: context,
-      builder: (BuildContext ctx) => adaptiveAlertDialog(
-        context: ctx,
-        title: Text(t.update_debug_channel),
-        content: Text(t.update_debug_channel_warning),
-        actions: <Widget>[
-          adaptiveDialogAction(
-            context: ctx,
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(t.dialog_cancel),
-          ),
-          adaptiveDialogAction(
-            context: ctx,
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(t.dialog_done),
-          ),
-        ],
-      ),
+    final bool confirmed = await showSettingsConfirmationDialog(
+      settingsContext,
+      title: t.update_debug_channel,
+      body: t.update_debug_channel_warning,
     );
-    if (confirmed != true) return;
+    if (!confirmed) return;
   }
 
   await settingsContext.appModel.setUpdateDebugChannel(debug);

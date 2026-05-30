@@ -292,6 +292,7 @@ void main() {
         'fontSize: 13',
         'fontSize: 12',
         'surfaceContainerHigh',
+        'const SizedBox(height: 12)',
       ],
       'lib/src/pages/implementations/home_page.dart': <String>[
         'AlertDialog(',
@@ -311,6 +312,13 @@ void main() {
         'BorderRadius.circular(4)',
         'Radius.circular(2)',
         'fontSize: 9',
+        'const EdgeInsets.all(16)',
+        'const EdgeInsets.symmetric(horizontal: 16)',
+        'const EdgeInsets.symmetric(horizontal: 16, vertical: 4)',
+        'const SizedBox(width: 12)',
+        'const SizedBox(height: 8)',
+        'const SizedBox(height: 12)',
+        'const SizedBox(height: 24)',
       ],
       'lib/src/utils/components/hibiki_search_history.dart': <String>[
         'fontSize:',
@@ -369,8 +377,17 @@ void main() {
       'lib/src/pages/implementations/dictionary_popup_native.dart': <String>[
         'TextStyle(',
         'BorderRadius.circular(4)',
+        "Text('+",
+        'HibikiFocusable(',
         'fontSize: 10',
         'fontSize: 11',
+        'EdgeInsets.symmetric(horizontal: 10, vertical: 4)',
+        'EdgeInsets.symmetric(vertical: 4)',
+        'EdgeInsets.symmetric(horizontal: 4)',
+        'EdgeInsets.only(top: 2)',
+        'EdgeInsets.only(top: 3)',
+        'EdgeInsets.only(left: 8, bottom: 2)',
+        'spacing: 2',
       ],
       'lib/src/pages/implementations/dictionary_dialog_page.dart': <String>[
         'ExpansionTile',
@@ -382,11 +399,15 @@ void main() {
       'lib/src/pages/implementations/tag_picker_page.dart': <String>[
         'CheckboxListTile',
         'ListTile(',
+        'const EdgeInsets.all(16)',
+        'const SizedBox(height: 8)',
       ],
       'lib/src/pages/implementations/illustrations_viewer_page.dart': <String>[
         'adaptiveAppBar',
         'surfaceContainerLow',
         'BorderRadius.circular(8)',
+        'const SizedBox(height: 16)',
+        'const EdgeInsets.all(8)',
       ],
       'lib/src/pages/base_history_page.dart': <String>[
         'return Material(',
@@ -417,6 +438,7 @@ void main() {
         'Container(',
         'BoxDecoration(',
         'BorderRadius.circular(8)',
+        'padding: const EdgeInsets.all(8)',
       ],
       'lib/src/pages/implementations/placeholder_source_page.dart': <String>[
         'Scaffold(',
@@ -556,8 +578,586 @@ void main() {
     );
 
     expect(tagBar, contains('HibikiTagChip('));
+    expect(tagBar, contains('HibikiIconButton('));
+    expect(tagBar, contains('tokens.spacing'));
+    expect(tagBar, contains('tokens.surfaces.outline'));
     expect(tagBar, isNot(contains('class _TagChip')));
+    expect(tagBar, isNot(contains('child: IconButton(')));
+    expect(tagBar, isNot(contains('width: 32')));
+    expect(tagBar, isNot(contains('height: 32')));
+    expect(tagBar, isNot(contains('size: 18')));
     expect(tagBar, isNot(contains('BorderRadius.circular(16)')));
+    expect(tagBar, isNot(contains('height: 44')));
+    expect(tagBar,
+        isNot(contains('EdgeInsets.symmetric(horizontal: 12, vertical: 6)')));
+    expect(tagBar, isNot(contains('const SizedBox(width: 6)')));
+  });
+
+  test('shared icon button uses MD3 design tokens', () {
+    final String source = File(
+      'lib/src/utils/components/hibiki_icon_button.dart',
+    ).readAsStringSync();
+    final String buildSource = _sectionSource(
+      source,
+      '  Widget build(BuildContext context) {',
+      source.length,
+    );
+
+    expect(buildSource, contains('HibikiDesignTokens.of(context)'));
+    expect(buildSource, contains('tokens.spacing'));
+    expect(buildSource, isNot(contains('Spacing.of(context)')));
+    expect(buildSource, isNot(contains('const EdgeInsets.all(8)')));
+  });
+
+  test('reader history card overlays use shared MD3 spacing tokens', () {
+    final String source = File(
+      'lib/src/pages/implementations/reader_hibiki_history_page.dart',
+    ).readAsStringSync();
+    final String srtCardChrome = _functionSource(
+      source,
+      'Widget? _buildTagLabels(int bookId)',
+      '  Widget _buildSrtCover(SrtBook book)',
+    );
+    final String epubCardChrome = _functionSource(
+      source,
+      'Widget buildMediaItemContent(MediaItem item)',
+      'Widget buildMediaItem(MediaItem item)',
+    );
+
+    for (final String cardChrome in <String>[
+      srtCardChrome,
+      epubCardChrome,
+    ]) {
+      expect(cardChrome, contains('HibikiDesignTokens.of(context)'));
+      expect(cardChrome, contains('tokens.spacing'));
+      expect(
+          cardChrome, isNot(contains('EdgeInsets.only(right: 3, bottom: 2)')));
+      expect(cardChrome, isNot(contains('EdgeInsets.fromLTRB(12, 8, 12, 2)')));
+      expect(cardChrome, isNot(contains('top: 6,')));
+      expect(cardChrome, isNot(contains('right: 6,')));
+      expect(cardChrome, isNot(contains('left: 6,')));
+    }
+  });
+
+  test('material settings labels use shared MD3 micro spacing tokens', () {
+    final String source = File(
+      'lib/src/settings/material_settings_renderer.dart',
+    ).readAsStringSync();
+    final String labelSource = _sectionSource(
+      source,
+      'class _SettingsLabel',
+      source.length,
+    );
+
+    expect(labelSource, contains('HibikiDesignTokens.of(context)'));
+    expect(labelSource, contains('tokens.spacing'));
+    expect(
+      labelSource,
+      isNot(contains('padding: const EdgeInsets.only(top: 2)')),
+    );
+  });
+
+  test('reader history selection chrome uses shared MD3 tokens', () {
+    final String source = File(
+      'lib/src/pages/implementations/reader_hibiki_history_page.dart',
+    ).readAsStringSync();
+    final String cardShell = _functionSource(
+      source,
+      'Widget _bookCardShell({',
+      'Widget _titleOverlay(String title)',
+    );
+
+    expect(cardShell, contains('HibikiDesignTokens.of(context)'));
+    expect(cardShell, contains('tokens.spacing'));
+    expect(cardShell, contains('tokens.surfaces'));
+    expect(cardShell, isNot(contains('Spacing.of(context)')));
+    expect(cardShell, isNot(contains('top: 4,')));
+    expect(cardShell, isNot(contains('left: 4,')));
+    expect(cardShell, isNot(contains('EdgeInsets.all(2)')));
+    expect(cardShell, isNot(contains('size: 14')));
+    expect(cardShell, isNot(contains('theme.colorScheme.surface.withValues')));
+    expect(cardShell, isNot(contains('theme.colorScheme.outline')));
+    expect(cardShell, isNot(contains('theme.colorScheme.primary.withValues')));
+  });
+
+  test('reader history batch actions use shared MD3 spacing tokens', () {
+    final String source = File(
+      'lib/src/pages/implementations/reader_hibiki_history_page.dart',
+    ).readAsStringSync();
+    final String batchActionBar = _functionSource(
+      source,
+      'Widget _buildBatchActionBar()',
+      '  Future<void> _batchDeleteConfirm()',
+    );
+    final String placeholder = _functionSource(
+      source,
+      'Widget buildPlaceholder()',
+      'Widget buildMediaItemContent(MediaItem item)',
+    );
+    final String batchTagIntentRow = _sectionSource(
+      source,
+      'class _BatchTagIntentRow',
+      source.length,
+    );
+
+    for (final String section in <String>[
+      batchActionBar,
+      placeholder,
+      batchTagIntentRow,
+    ]) {
+      expect(section, contains('HibikiDesignTokens'));
+      expect(section, contains('tokens.spacing'));
+      expect(section, isNot(contains('const SizedBox(height: 12)')));
+      expect(section, isNot(contains('const SizedBox(width: 12)')));
+      expect(section, isNot(contains('const SizedBox(width: 8)')));
+      expect(
+        section,
+        isNot(
+          contains('const EdgeInsets.symmetric(horizontal: 12, vertical: 8)'),
+        ),
+      );
+    }
+    expect(batchActionBar, isNot(contains('const SizedBox(width: 4)')));
+    expect(
+      source,
+      isNot(contains('padding: const EdgeInsets.all(24)')),
+    );
+  });
+
+  test('reader history title and drag overlays use shared MD3 tokens', () {
+    final String source = File(
+      'lib/src/pages/implementations/reader_hibiki_history_page.dart',
+    ).readAsStringSync();
+    final String titleOverlay = _functionSource(
+      source,
+      'Widget _titleOverlay(String title)',
+      'Widget _cardBadge({',
+    );
+    final String dragTarget = _functionSource(
+      source,
+      'class BookDragTarget extends StatefulWidget',
+      'class ReaderHistoryDeleteDialog',
+    );
+
+    expect(titleOverlay, contains('HibikiDesignTokens.of(context)'));
+    expect(titleOverlay, contains('tokens.spacing'));
+    expect(titleOverlay, contains('tokens.surfaces'));
+    expect(titleOverlay, isNot(contains('EdgeInsets.fromLTRB(6, 4, 6, 6)')));
+    expect(titleOverlay, isNot(contains('theme.colorScheme.surface')));
+    expect(titleOverlay, isNot(contains('theme.colorScheme.onSurface')));
+
+    expect(dragTarget, contains('HibikiDesignTokens.of(context)'));
+    expect(dragTarget, contains('tokens.spacing'));
+    expect(dragTarget, contains('tokens.surfaces'));
+    expect(dragTarget, isNot(contains('final ThemeData theme')));
+    expect(dragTarget, isNot(contains('theme.colorScheme.primary')));
+    expect(dragTarget, isNot(contains('width: 2')));
+    expect(dragTarget, isNot(contains('size: 32')));
+  });
+
+  test('reader history action dialogs use shared MD3 dialog chrome', () {
+    final String source = File(
+      'lib/src/pages/implementations/reader_hibiki_history_page.dart',
+    ).readAsStringSync();
+    final String deleteDialog = _sectionSource(
+      source,
+      'class ReaderHistoryDeleteDialog',
+      'class _BookProfileDialog',
+    );
+    final String batchTagDialog = _sectionSource(
+      source,
+      'class _BatchTagPickerDialog',
+      'enum _BatchTagIntent',
+    );
+
+    for (final String dialogSource in <String>[
+      deleteDialog,
+      batchTagDialog,
+    ]) {
+      expect(dialogSource, contains('HibikiDialogFrame('));
+      expect(dialogSource, contains('HibikiModalSheetFrame('));
+      expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
+    }
+  });
+
+  test('reader page prompt dialogs use shared MD3 dialog chrome', () {
+    final String source = File(
+      'lib/src/pages/implementations/reader_hibiki_page.dart',
+    ).readAsStringSync();
+    final String sentenceActionBar = _functionSource(
+      source,
+      'Widget buildRow(ThemeData theme)',
+      '    if (!hasAudio) {',
+    );
+    final String lyricsHint = _sectionSource(
+      source,
+      'class ReaderLyricsModeHintDialog',
+      'class ReaderSrtAudioPickerDialog',
+    );
+    final String srtAudioPicker = _sectionSource(
+      source,
+      'class ReaderSrtAudioPickerDialog',
+      source.length,
+    );
+    final String lyricsFlow = _functionSource(
+      source,
+      'void _showLyricsModeHintIfNeeded()',
+      '  Future<void> _exitLyricsMode() async',
+    );
+    final String pickerFlow = _functionSource(
+      source,
+      'Future<void> _openSrtBookAudioPicker() async',
+      '  int _tocHrefToChapterIndex(String? href)',
+    );
+    final String settingsBar = _functionSource(
+      source,
+      'Widget _buildSettingsBar()',
+      '  Future<void> _openAudioImportDialog() async',
+    );
+
+    expect(lyricsFlow, contains('ReaderLyricsModeHintDialog('));
+    expect(pickerFlow, contains('ReaderSrtAudioPickerDialog('));
+    expect(settingsBar, contains('HibikiDesignTokens.of(context)'));
+    expect(settingsBar, contains('tokens.spacing'));
+    expect(
+      settingsBar,
+      isNot(contains('padding: const EdgeInsets.symmetric(horizontal: 8)')),
+    );
+    for (final String dialogSource in <String>[
+      lyricsHint,
+      srtAudioPicker,
+      lyricsFlow,
+      pickerFlow,
+    ]) {
+      expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
+    }
+    for (final String dialogSource in <String>[
+      lyricsHint,
+      srtAudioPicker,
+    ]) {
+      expect(dialogSource, contains('HibikiDialogFrame('));
+      expect(dialogSource, contains('HibikiModalSheetFrame('));
+    }
+    expect(sentenceActionBar, contains('HibikiDesignTokens.of(context)'));
+    expect(sentenceActionBar, contains('tokens.spacing'));
+    expect(sentenceActionBar, isNot(contains('const SizedBox(width: 8)')));
+  });
+
+  test('audiobook import dialogs use shared MD3 dialog chrome', () {
+    final String bookImportSource = File(
+      'lib/src/media/audiobook/book_import_dialog.dart',
+    ).readAsStringSync();
+    final String audiobookImportSource = File(
+      'lib/src/media/audiobook/audiobook_import_dialog.dart',
+    ).readAsStringSync();
+    final String bookImportFrame = _sectionSource(
+      bookImportSource,
+      'class BookImportDialogFrame',
+      bookImportSource.length,
+    );
+    final String audiobookBuild = _functionSource(
+      audiobookImportSource,
+      'Widget build(BuildContext context)',
+      '  Widget _buildAttachedView(Audiobook ab)',
+    );
+    final String removeDialog = _functionSource(
+      audiobookImportSource,
+      'Future<void> _removeAudiobook(Audiobook ab) async',
+      '  Future<Directory> _ensurePersistDir()',
+    );
+    final String audiobookFrame = _sectionSource(
+      audiobookImportSource,
+      'class AudiobookImportDialogFrame',
+      'class AudiobookRemoveConfirmationDialog',
+    );
+    final String removeFrame = _sectionSource(
+      audiobookImportSource,
+      'class AudiobookRemoveConfirmationDialog',
+      audiobookImportSource.length,
+    );
+
+    expect(audiobookBuild, contains('AudiobookImportDialogFrame('));
+    expect(removeDialog, contains('AudiobookRemoveConfirmationDialog('));
+    expect(audiobookBuild, isNot(contains('adaptiveAlertDialog(')));
+    expect(removeDialog, isNot(contains('adaptiveAlertDialog(')));
+
+    for (final String dialogSource in <String>[
+      bookImportFrame,
+      audiobookFrame,
+      removeFrame,
+    ]) {
+      expect(dialogSource, contains('HibikiDialogFrame('));
+      expect(dialogSource, contains('HibikiModalSheetFrame('));
+      expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
+    }
+  });
+
+  test('audiobook import file rows use shared MD3 icon buttons', () {
+    final Map<String, List<String>> rowSections = <String, List<String>>{
+      'lib/src/media/audiobook/book_import_dialog.dart': <String>[
+        'Widget _epubRow()',
+        'Widget _subtitleRow()',
+        'Widget _audioRow()',
+        'Widget _coverRow()',
+      ],
+      'lib/src/media/audiobook/audiobook_import_dialog.dart': <String>[
+        'Widget _audioSourceRow()',
+        'Widget _alignmentRow()',
+      ],
+    };
+
+    for (final MapEntry<String, List<String>> entry in rowSections.entries) {
+      final String source = File(entry.key).readAsStringSync();
+      for (final String startToken in entry.value) {
+        final String section = _functionSource(
+          source,
+          startToken,
+          _nextWidgetAfter(source, startToken),
+        );
+
+        expect(section, contains('HibikiFilePickerRow('));
+        expect(section, contains('HibikiIconButton('));
+        expect(
+          section.replaceAll('HibikiIconButton(', 'HibikiSharedAction('),
+          isNot(contains('IconButton(')),
+        );
+        expect(section, isNot(contains('Theme.of(context).colorScheme')));
+        expect(section, isNot(contains('size: 18')));
+        expect(section, isNot(contains('size: 20')));
+      }
+    }
+  });
+
+  test('audiobook import progress chrome uses shared MD3 tokens', () {
+    final String bookImportSource = File(
+      'lib/src/media/audiobook/book_import_dialog.dart',
+    ).readAsStringSync();
+    final String audiobookImportSource = File(
+      'lib/src/media/audiobook/audiobook_import_dialog.dart',
+    ).readAsStringSync();
+    final String bookImportFlow = _functionSource(
+      bookImportSource,
+      'Widget build(BuildContext context)',
+      '  Widget _epubRow()',
+    );
+    final String audiobookImportFlow = _functionSource(
+      audiobookImportSource,
+      'Widget build(BuildContext context)',
+      '  Widget _audioSourceRow()',
+    );
+
+    for (final String section in <String>[
+      bookImportFlow,
+      audiobookImportFlow,
+    ]) {
+      expect(section, contains('HibikiDesignTokens.of(context)'));
+      expect(section, contains('tokens.spacing'));
+      expect(section, contains('tokens.type.metadata'));
+      expect(section, contains('tokens.surfaces.primary'));
+      expect(section, isNot(contains('Theme.of(context).textTheme.bodySmall')));
+      expect(
+        section,
+        isNot(contains('Theme.of(context).colorScheme.primary')),
+      );
+      expect(
+        section,
+        isNot(contains('Theme.of(context).colorScheme.onSurfaceVariant')),
+      );
+      expect(section, isNot(contains('const SizedBox(width: 8)')));
+      expect(section, isNot(contains('const SizedBox(height: 4)')));
+      expect(section, isNot(contains('const SizedBox(height: 8)')));
+      expect(section, isNot(contains('const SizedBox(height: 12)')));
+      expect(section, isNot(contains('const SizedBox(height: 16)')));
+      expect(section, isNot(contains('height: 64')));
+    }
+  });
+
+  test('sasayaki rematch controls use shared MD3 tokens', () {
+    final String source = File('lib/src/media/audiobook/sasayaki_rematch.dart')
+        .readAsStringSync();
+    final String rematchSheet = _functionSource(
+      source,
+      'Widget buildSheetBody(BuildContext sheetCtx, StateSetter setSheet)',
+      '  static Future<int?> runAutoProbe({',
+    );
+    final String windowSlider = _sectionSource(
+      source,
+      'class SasayakiWindowSlider extends StatelessWidget',
+      'class SasayakiThresholdSlider extends StatelessWidget',
+    );
+    final String thresholdSlider = _sectionSource(
+      source,
+      'class SasayakiThresholdSlider extends StatelessWidget',
+      source.length,
+    );
+
+    for (final String section in <String>[
+      rematchSheet,
+      windowSlider,
+      thresholdSlider,
+    ]) {
+      expect(section, contains('HibikiDesignTokens.of('));
+      expect(section, contains('tokens.spacing'));
+      expect(section, isNot(contains('const SizedBox(height: 4)')));
+      expect(section, isNot(contains('const SizedBox(height: 8)')));
+      expect(section, isNot(contains('const SizedBox(height: 12)')));
+      expect(section, isNot(contains('const SizedBox(width: 8)')));
+      expect(
+        section,
+        isNot(contains('const EdgeInsets.symmetric(horizontal: 20)')),
+      );
+    }
+    for (final String slider in <String>[windowSlider, thresholdSlider]) {
+      expect(slider, contains('tokens.type.listTitle'));
+      expect(slider, contains('tokens.type.metadata'));
+      expect(slider, isNot(contains('final ThemeData theme')));
+      expect(slider, isNot(contains('theme.textTheme.titleMedium')));
+      expect(slider, isNot(contains('theme.textTheme.bodySmall')));
+      expect(slider, isNot(contains('theme.colorScheme.onSurfaceVariant')));
+    }
+  });
+
+  test('audiobook play bar uses shared MD3 spacing tokens', () {
+    final String source = File(
+      'lib/src/media/audiobook/audiobook_play_bar.dart',
+    ).readAsStringSync();
+    final String playBarBuild = _functionSource(
+      source,
+      'Widget build(BuildContext context) {',
+      '/// Follow audio',
+    );
+
+    expect(playBarBuild, contains('HibikiDesignTokens.of(context)'));
+    expect(playBarBuild, contains('tokens.spacing'));
+    expect(
+      playBarBuild,
+      isNot(contains('padding: const EdgeInsets.symmetric(horizontal: 8)')),
+    );
+    expect(playBarBuild, isNot(contains('const SizedBox(width: 4)')));
+  });
+
+  test('anki integration dialogs use shared MD3 dialog chrome', () {
+    final String source =
+        File('lib/src/models/anki_integration.dart').readAsStringSync();
+    final String apiFlow = _functionSource(
+      source,
+      'Future<void> showApiMessage(BuildContext? ctx) async',
+      '  Future<void> addDefaultModelIfMissing(BuildContext? ctx) async',
+    );
+    final String modelFlow = _functionSource(
+      source,
+      'Future<void> addDefaultModelIfMissing(BuildContext? ctx) async',
+      '  Future<List<String>> getDecks(BuildContext? ctx) async',
+    );
+    final String apiDialog = _sectionSource(
+      source,
+      'class AnkiApiMessageDialog',
+      'class AnkiDefaultModelDialog',
+    );
+    final String modelDialog = _sectionSource(
+      source,
+      'class AnkiDefaultModelDialog',
+      source.length,
+    );
+
+    expect(apiFlow, contains('AnkiApiMessageDialog('));
+    expect(modelFlow, contains('AnkiDefaultModelDialog('));
+    expect(apiFlow, isNot(contains('adaptiveAlertDialog(')));
+    expect(modelFlow, isNot(contains('adaptiveAlertDialog(')));
+    for (final String dialogSource in <String>[apiDialog, modelDialog]) {
+      expect(dialogSource, contains('HibikiDialogFrame('));
+      expect(dialogSource, contains('HibikiModalSheetFrame('));
+      expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
+    }
+  });
+
+  test('update checker dialogs use shared MD3 dialog chrome', () {
+    final String source =
+        File('lib/src/utils/misc/update_checker.dart').readAsStringSync();
+    final String updateFlow = _functionSource(
+      source,
+      'static void _showUpdateDialog(',
+      '  /// Fallback dialog for when no APK asset exists',
+    );
+    final String fallbackFlow = _functionSource(
+      source,
+      'static void _showFallbackDialog(',
+      '  static Future<void> _downloadAndInstall(',
+    );
+    final String dialogSource = _sectionSource(
+      source,
+      'class UpdateAvailableDialog',
+      'class _DownloadOverlay',
+    );
+
+    expect(updateFlow, contains('UpdateAvailableDialog('));
+    expect(fallbackFlow, contains('UpdateAvailableDialog('));
+    expect(updateFlow, isNot(contains('adaptiveAlertDialog(')));
+    expect(fallbackFlow, isNot(contains('adaptiveAlertDialog(')));
+    expect(dialogSource, contains('HibikiDialogFrame('));
+    expect(dialogSource, contains('HibikiModalSheetFrame('));
+    expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
+  });
+
+  test('sync feedback dialogs use shared MD3 dialog chrome', () {
+    final String messageSource =
+        File('lib/src/sync/sync_message_dialog.dart').readAsStringSync();
+    final String compareSource =
+        File('lib/src/sync/sync_compare_dialog.dart').readAsStringSync();
+    final String settingsSource =
+        File('lib/src/sync/sync_settings_schema.dart').readAsStringSync();
+    final String combined = '$messageSource\n$compareSource\n$settingsSource';
+
+    expect(messageSource, contains('class SyncMessageDialog'));
+    expect(messageSource, contains('HibikiDialogFrame('));
+    expect(messageSource, contains('HibikiModalSheetFrame('));
+    expect(compareSource, contains('showSyncMessage('));
+    expect(settingsSource, contains('showSyncMessage('));
+    expect(combined, isNot(contains('CupertinoAlertDialog(')));
+    expect(combined, isNot(contains('adaptiveAlertDialog(')));
+  });
+
+  test('settings action dialogs use shared MD3 inset tokens', () {
+    final String source =
+        File('lib/src/settings/settings_actions.dart').readAsStringSync();
+    final String confirmationDialog = _functionSource(
+      source,
+      'Future<bool> showSettingsConfirmationDialog(',
+      'Future<void> showSettingsProgressDialog(',
+    );
+    final String progressDialog = _functionSource(
+      source,
+      'Future<void> showSettingsProgressDialog(',
+      'void notifyReaderSettingsChanged(',
+    );
+
+    for (final String dialogSource in <String>[
+      confirmationDialog,
+      progressDialog,
+    ]) {
+      expect(dialogSource, contains('HibikiDialogFrame('));
+      expect(dialogSource, contains('HibikiModalSheetFrame('));
+      expect(dialogSource, contains('HibikiDesignTokens.of(ctx)'));
+      expect(dialogSource, contains('insetPadding: EdgeInsets.symmetric('));
+      expect(dialogSource, contains('horizontal: tokens.spacing.card'));
+      expect(dialogSource, contains('vertical: tokens.spacing.card'));
+      expect(
+        dialogSource,
+        isNot(
+          contains('const EdgeInsets.symmetric(horizontal: 16, vertical: 16)'),
+        ),
+      );
+    }
+  });
+
+  test('sync settings custom controls use shared MD3 rows', () {
+    final String source =
+        File('lib/src/sync/sync_settings_schema.dart').readAsStringSync();
+
+    expect(source, contains('AdaptiveSettingsSwitchRow('));
+    expect(source, contains('HibikiListItem('));
+    expect(source, isNot(contains('SwitchListTile')));
+    expect(source, isNot(contains('ListTile(')));
   });
 
   test('dictionary and popup surfaces use shared MD3 primitives', () {
@@ -579,18 +1179,36 @@ void main() {
       'Widget buildDictionaryTileTrailing(',
       'PopupMenuItem<VoidCallback> buildPopupItem({',
     );
+    final String managerPopupItem = _functionSource(
+      dictionaryManager,
+      'PopupMenuItem<VoidCallback> buildPopupItem({',
+      '  // HBK-AUDIT-111:',
+    );
 
     expect(managerEmptyState, contains('HibikiCard('));
     expect(managerEmptyState, isNot(contains('DecoratedBox(')));
     expect(managerEmptyState, isNot(contains('surfaceContainerLowest')));
     expect(managerTile, contains('HibikiCard('));
     expect(managerTile, contains('HibikiListItem('));
+    expect(managerTile, contains('HibikiDesignTokens.of(context)'));
+    expect(managerTile, contains('tokens.spacing'));
     expect(managerTile, isNot(contains('DecoratedBox(')));
     expect(managerTile, isNot(contains('surfaceContainerLowest')));
+    expect(
+      managerTile,
+      isNot(
+          contains('const EdgeInsets.symmetric(horizontal: 12, vertical: 8)')),
+    );
+    expect(managerTile, isNot(contains('const SizedBox(width: 8)')));
+    expect(managerTile, isNot(contains('const SizedBox(height: 8)')));
     expect(managerMenu, contains('HibikiOverflowMenu<VoidCallback>('));
     expect(managerMenu, isNot(contains('PopupMenuButton')));
     expect(managerMenu, isNot(contains('Material(')));
     expect(managerMenu, isNot(contains('BorderRadius.circular(24)')));
+    expect(managerPopupItem, contains('HibikiDesignTokens.of(context)'));
+    expect(managerPopupItem, contains('tokens.spacing'));
+    expect(managerPopupItem, isNot(contains('const SizedBox(width: 8)')));
+    expect(managerMenu, isNot(contains('const SizedBox(width: 8)')));
 
     final String entrySource = File(
       'lib/src/pages/implementations/dictionary_entry_page.dart',
@@ -616,6 +1234,40 @@ void main() {
     ).readAsStringSync();
     expect(termSource, contains('HibikiCard('));
     expect(_withoutSharedComponentNames(termSource), isNot(contains('Card(')));
+
+    final String popupNativeSource = File(
+      'lib/src/pages/implementations/dictionary_popup_native.dart',
+    ).readAsStringSync();
+    final String mineButton = _functionSource(
+      popupNativeSource,
+      'Widget _buildMineButton(',
+      '  Widget _buildDeinflection(',
+    );
+    expect(mineButton, contains('IconButton('));
+    expect(mineButton, contains('Icons.add_circle_outline'));
+    expect(mineButton, contains('tokens.spacing'));
+    expect(mineButton, contains('creator_export_card'));
+    expect(mineButton, isNot(contains("Text('+")));
+    expect(mineButton, isNot(contains('HibikiFocusable(')));
+
+    final String floatingSource = File(
+      'lib/src/pages/implementations/floating_dict_page.dart',
+    ).readAsStringSync();
+    final String floatingTitle = _functionSource(
+      floatingSource,
+      'Widget _buildTitleBar()',
+      'Widget _buildSearchBar()',
+    );
+    final String floatingSearch = _functionSource(
+      floatingSource,
+      'Widget _buildSearchBar()',
+      'Widget _buildResults()',
+    );
+    for (final String section in <String>[floatingTitle, floatingSearch]) {
+      expect(section, contains('HibikiDesignTokens.of(context)'));
+      expect(section, contains('tokens.spacing'));
+      expect(section, isNot(contains('const EdgeInsets.symmetric(')));
+    }
   });
 
   test('media search shell no longer depends on legacy floating search', () {
@@ -645,6 +1297,581 @@ void main() {
     final String normalized = _withoutSharedComponentNames(previewCard);
     expect(normalized, isNot(contains('return Card(')));
     expect(normalized, isNot(contains('child: Card(')));
+  });
+
+  test('custom theme page uses shared MD3 spacing tokens', () {
+    final String source = File(
+      'lib/src/pages/implementations/custom_theme_page.dart',
+    ).readAsStringSync();
+
+    expect(source, contains('HibikiDesignTokens.of(context)'));
+    expect(source, isNot(contains('const SizedBox(height: 16)')));
+    expect(source, isNot(contains('const SizedBox(height: 12)')));
+    expect(source, isNot(contains('const SizedBox(height: 8)')));
+    expect(source, isNot(contains('const SizedBox(width: 16)')));
+    expect(source, isNot(contains('const SizedBox(width: 8)')));
+    expect(source, isNot(contains('padding: const EdgeInsets.all(16)')));
+    expect(source, isNot(contains('padding: const EdgeInsets.all(12)')));
+    expect(source, isNot(contains('const EdgeInsets.symmetric(horizontal: 8')));
+    expect(source, isNot(contains('const EdgeInsets.symmetric(horizontal: 6')));
+  });
+
+  test('custom theme import dialog uses shared MD3 dialog chrome', () {
+    final String source = File(
+      'lib/src/pages/implementations/custom_theme_page.dart',
+    ).readAsStringSync();
+    final String importDialog = _functionSource(
+      source,
+      'Future<void> _importTheme()',
+      '  Widget _buildPreviewCard(ColorScheme cs)',
+    );
+
+    expect(importDialog, contains('HibikiDialogFrame('));
+    expect(importDialog, contains('HibikiModalSheetFrame('));
+    expect(importDialog, isNot(contains('adaptiveAlertDialog(')));
+  });
+
+  test('tag filter sheet uses shared MD3 spacing tokens', () {
+    final String source = File(
+      'lib/src/pages/implementations/tag_filter_sheet.dart',
+    ).readAsStringSync();
+
+    expect(source, contains('HibikiDesignTokens.of(context)'));
+    expect(source, contains('tokens.spacing'));
+    expect(
+      source,
+      isNot(contains('const EdgeInsets.symmetric(horizontal: 16)')),
+    );
+    expect(source, isNot(contains('padding: const EdgeInsets.all(32)')));
+    expect(source, isNot(contains('padding: const EdgeInsets.all(24)')));
+    expect(source, isNot(contains('spacing: 8')));
+    expect(source, isNot(contains('runSpacing: 4')));
+  });
+
+  test('app icon custom confirmation uses shared MD3 dialog chrome', () {
+    final String source = File(
+      'lib/src/pages/implementations/miscellaneous_settings_page.dart',
+    ).readAsStringSync();
+    final String confirmDialog = _functionSource(
+      source,
+      'Future<void> _pickCustomIcon()',
+      '  @override',
+    );
+
+    expect(confirmDialog, contains('HibikiDialogFrame('));
+    expect(confirmDialog, contains('HibikiModalSheetFrame('));
+    expect(confirmDialog, isNot(contains('adaptiveAlertDialog(')));
+  });
+
+  test('shortcut reset confirmation uses shared MD3 dialog chrome', () {
+    final String source = File(
+      'lib/src/pages/implementations/shortcut_settings_page.dart',
+    ).readAsStringSync();
+    final String confirmDialog = _functionSource(
+      source,
+      'Future<void> _confirmResetScope(ShortcutScope scope)',
+      '  Future<void> _editBinding(ShortcutAction action)',
+    );
+
+    expect(confirmDialog, contains('HibikiDialogFrame('));
+    expect(confirmDialog, contains('HibikiModalSheetFrame('));
+    expect(confirmDialog, isNot(contains('adaptiveAlertDialog(')));
+  });
+
+  test('shortcut binding editor uses shared MD3 dialog chrome', () {
+    final String source = File(
+      'lib/src/pages/implementations/shortcut_settings_page.dart',
+    ).readAsStringSync();
+    final String editDialog = _sectionSource(
+      source,
+      'class _ShortcutBindingEditDialogState',
+      source.length,
+    );
+
+    expect(editDialog, contains('HibikiDialogFrame('));
+    expect(editDialog, contains('HibikiModalSheetFrame('));
+    expect(editDialog, isNot(contains('adaptiveAlertDialog(')));
+  });
+
+  test('shortcut action rows use shared MD3 list and tag chips', () {
+    final String source = File(
+      'lib/src/pages/implementations/shortcut_settings_page.dart',
+    ).readAsStringSync();
+    final String tileSource = _sectionSource(
+      source,
+      'class _ActionTile',
+      'class ShortcutBindingEditDialog',
+    );
+
+    expect(tileSource, contains('HibikiListItem('));
+    expect(tileSource, contains('HibikiTagChip('));
+    expect(tileSource, isNot(contains('ListTile(')));
+    expect(tileSource, isNot(contains('=> Chip(')));
+    expect(tileSource, isNot(contains('child: Chip(')));
+  });
+
+  test('shortcut section headers use shared MD3 spacing tokens', () {
+    final String source = File(
+      'lib/src/pages/implementations/shortcut_settings_page.dart',
+    ).readAsStringSync();
+    final String headerSource = _sectionSource(
+      source,
+      'class _ScopeSectionHeader',
+      'class _ActionTile',
+    );
+
+    expect(headerSource, contains('HibikiDesignTokens.of(context)'));
+    expect(headerSource, contains('tokens.spacing'));
+    expect(
+      headerSource,
+      isNot(contains('const EdgeInsets.fromLTRB(16, 16, 8, 4)')),
+    );
+  });
+
+  test('shortcut binding editor uses shared MD3 tag chips', () {
+    final String source = File(
+      'lib/src/pages/implementations/shortcut_settings_page.dart',
+    ).readAsStringSync();
+    final String editDialog = _sectionSource(
+      source,
+      'class _ShortcutBindingEditDialogState',
+      source.length,
+    );
+
+    expect(editDialog, contains('HibikiTagChip('));
+    expect(editDialog, contains('onDeleted:'));
+    expect(editDialog, contains('HibikiOverflowMenu<GamepadButton>('));
+    expect(editDialog, contains('tokens.radii.controlRadius'));
+    expect(editDialog, contains('tokens.spacing'));
+    expect(editDialog, isNot(contains('PopupMenuButton')));
+    expect(editDialog, isNot(contains('=> Chip(')));
+    expect(editDialog, isNot(contains('BorderRadius.circular(8)')));
+    expect(editDialog, isNot(contains('const SizedBox(height: 8)')));
+    expect(editDialog, isNot(contains('const SizedBox(width: 4)')));
+    expect(
+      editDialog,
+      isNot(contains('const EdgeInsets.symmetric(vertical: 4)')),
+    );
+  });
+
+  test('custom font dialogs use shared MD3 dialog chrome', () {
+    final String source = File(
+      'lib/src/pages/implementations/custom_fonts_page.dart',
+    ).readAsStringSync();
+    final String progressDialog = _sectionSource(
+      source,
+      'class CustomFontDownloadProgressDialog',
+      'class CustomFontUrlImportDialog',
+    );
+    final String urlDialog = _sectionSource(
+      source,
+      'class _CustomFontUrlImportDialogState',
+      'class _RecommendedFontsPage',
+    );
+
+    for (final String dialogSource in <String>[progressDialog, urlDialog]) {
+      expect(dialogSource, contains('HibikiDialogFrame('));
+      expect(dialogSource, contains('HibikiModalSheetFrame('));
+      expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
+    }
+  });
+
+  test('system font picker search uses shared MD3 spacing tokens', () {
+    final String source = File(
+      'lib/src/pages/implementations/custom_fonts_page.dart',
+    ).readAsStringSync();
+    final String pickerSource = _sectionSource(
+      source,
+      'class _SystemFontPickerPageState',
+      'class CustomFontsPage',
+    );
+
+    expect(pickerSource, contains('HibikiDesignTokens.of(context)'));
+    expect(pickerSource, contains('tokens.spacing'));
+    expect(
+      pickerSource,
+      isNot(contains('contentPadding: const EdgeInsets.symmetric(')),
+    );
+  });
+
+  test('book CSS confirmation dialog uses shared MD3 dialog chrome', () {
+    final String source = File(
+      'lib/src/pages/implementations/book_css_editor_page.dart',
+    ).readAsStringSync();
+    final String dialogSource = _sectionSource(
+      source,
+      'class BookCssConfirmationDialog<T>',
+      source.length,
+    );
+
+    expect(dialogSource, contains('HibikiDialogFrame('));
+    expect(dialogSource, contains('HibikiModalSheetFrame('));
+    expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
+  });
+
+  test('book CSS editor shell uses shared MD3 spacing tokens', () {
+    final String source = File(
+      'lib/src/pages/implementations/book_css_editor_page.dart',
+    ).readAsStringSync();
+    final String editorBuild = _functionSource(
+      source,
+      'Widget build(BuildContext context)',
+      '@visibleForTesting',
+    );
+
+    expect(editorBuild, contains('HibikiDesignTokens.of(context)'));
+    expect(editorBuild, contains('tokens.spacing'));
+    expect(editorBuild, contains('HibikiSelectableChip('));
+    expect(editorBuild, contains('HibikiEditorPanel('));
+    expect(editorBuild, isNot(contains('height: 40')));
+    expect(
+      editorBuild,
+      isNot(contains('const EdgeInsets.only(right: 6)')),
+    );
+    expect(
+      editorBuild,
+      isNot(
+        contains('const EdgeInsets.symmetric(horizontal: 12, vertical: 6)'),
+      ),
+    );
+    expect(editorBuild, isNot(contains('spacing: 8')));
+    expect(editorBuild, isNot(contains('runSpacing: 4')));
+  });
+
+  test('collection dialogs use shared MD3 dialog chrome', () {
+    final String source = File(
+      'lib/src/pages/implementations/collections_page.dart',
+    ).readAsStringSync();
+    final String itemDialog = _sectionSource(
+      source,
+      'class CollectionItemDialogFrame',
+      'class CollectionDeleteDialog',
+    );
+    final String deleteDialog = _sectionSource(
+      source,
+      'class CollectionDeleteDialog',
+      source.length,
+    );
+
+    for (final String dialogSource in <String>[itemDialog, deleteDialog]) {
+      expect(dialogSource, contains('HibikiDialogFrame('));
+      expect(dialogSource, contains('HibikiModalSheetFrame('));
+      expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
+    }
+  });
+
+  test('media item edit dialog uses shared MD3 dialog chrome', () {
+    final String source = File(
+      'lib/src/pages/implementations/media_item_edit_dialog_page.dart',
+    ).readAsStringSync();
+    final String dialogSource = _sectionSource(
+      source,
+      'class MediaItemEditDialogFrame',
+      'class MediaItemCoverOverrideField',
+    );
+
+    expect(dialogSource, contains('HibikiDialogFrame('));
+    expect(dialogSource, contains('HibikiModalSheetFrame('));
+    expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
+  });
+
+  test('media item cover override uses MD3 card chrome instead of fake input',
+      () {
+    final String source = File(
+      'lib/src/pages/implementations/media_item_edit_dialog_page.dart',
+    ).readAsStringSync();
+    final String coverField = _sectionSource(
+      source,
+      'class MediaItemCoverOverrideField',
+      source.length,
+    );
+
+    expect(coverField, contains('HibikiCard('));
+    expect(coverField, contains('HibikiDesignTokens.of(context)'));
+    expect(coverField, contains('tokens.spacing'));
+    expect(coverField, isNot(contains('HibikiTextField(')));
+    expect(coverField, isNot(contains('TextStyle(color: Colors.transparent)')));
+    expect(coverField, isNot(contains('contentPadding: EdgeInsets.zero')));
+    expect(coverField, isNot(contains('const BoxConstraints(')));
+    expect(coverField, isNot(contains('Spacing.of(context)')));
+  });
+
+  test('page chrome surfaces use shared MD3 spacing tokens', () {
+    final String homeSource = File(
+      'lib/src/pages/implementations/home_page.dart',
+    ).readAsStringSync();
+    final String railLeading = _functionSource(
+      homeSource,
+      'Widget _buildRailLeading()',
+      'class _SyncExitWarningDialog',
+    );
+    expect(railLeading, contains('HibikiDesignTokens.of(context)'));
+    expect(railLeading, contains('tokens.spacing'));
+    expect(
+      railLeading,
+      isNot(contains('const EdgeInsets.fromLTRB(12, 12, 12, 24)')),
+    );
+
+    final String collectionsSource = File(
+      'lib/src/pages/implementations/collections_page.dart',
+    ).readAsStringSync();
+    final String collectionItem = _functionSource(
+      collectionsSource,
+      'Widget _buildItem(_CollectionItem item)',
+      '@visibleForTesting',
+    );
+    expect(collectionItem, contains('HibikiDesignTokens.of(context)'));
+    expect(collectionItem, contains('tokens.spacing'));
+    expect(
+      collectionItem,
+      isNot(contains('padding: const EdgeInsets.only(right: 20)')),
+    );
+
+    final String tagSource = File(
+      'lib/src/pages/implementations/tag_management_page.dart',
+    ).readAsStringSync();
+    final String tagList = _functionSource(
+      tagSource,
+      'Widget build(BuildContext context)',
+      'class TagDeleteConfirmationDialog',
+    );
+    expect(tagList, contains('HibikiDesignTokens.of(context)'));
+    expect(tagList, contains('tokens.spacing'));
+    expect(
+      tagList,
+      isNot(contains('padding: const EdgeInsets.only(right: 16)')),
+    );
+
+    final String historySource = File(
+      'lib/src/pages/implementations/history_reader_page.dart',
+    ).readAsStringSync();
+    final String historyGrid = _functionSource(
+      historySource,
+      'Widget buildHistory(List<MediaItem> items)',
+      '/// Build the widget visually',
+    );
+    expect(historyGrid, contains('HibikiDesignTokens.of(context)'));
+    expect(historyGrid, contains('tokens.spacing'));
+    expect(
+      historyGrid,
+      isNot(contains('const EdgeInsets.fromLTRB(16, 48, 16, 16)')),
+    );
+    expect(historyGrid, isNot(contains('mainAxisSpacing: 12')));
+    expect(historyGrid, isNot(contains('crossAxisSpacing: 12')));
+    final String historyTile = _sectionSource(
+      historySource,
+      'Widget buildMediaItemContent(MediaItem item)',
+      historySource.length,
+    );
+    expect(historyTile, contains('HibikiDesignTokens.of(context)'));
+    expect(historyTile, contains('tokens.spacing'));
+    expect(
+      historyTile,
+      isNot(contains('const EdgeInsets.fromLTRB(2, 2, 2, 4)')),
+    );
+
+    final String illustrationsSource = File(
+      'lib/src/pages/implementations/illustrations_viewer_page.dart',
+    ).readAsStringSync();
+    final String illustrationsBody = _functionSource(
+      illustrationsSource,
+      'Widget _buildBody(ThemeData theme, HibikiDesignTokens tokens)',
+      'class _FullScreenGallery',
+    );
+    expect(illustrationsBody, contains('tokens.spacing'));
+    expect(
+      illustrationsBody,
+      isNot(contains('padding: const EdgeInsets.all(32)')),
+    );
+
+    final String profileSource = File(
+      'lib/src/pages/implementations/profile_management_page.dart',
+    ).readAsStringSync();
+    final String profileState = _sectionSource(
+      profileSource,
+      'class _ProfileManagementPageState',
+      'class _ProfileActionButton',
+    );
+    expect(profileState, contains('HibikiDesignTokens.of(context)'));
+    expect(profileState, contains('tokens.spacing'));
+    expect(
+      profileState,
+      isNot(contains('padding: const EdgeInsets.symmetric(vertical: 48)')),
+    );
+  });
+
+  test('open stash dialogs use shared MD3 dialog chrome', () {
+    final String source = File(
+      'lib/src/pages/implementations/open_stash_dialog_page.dart',
+    ).readAsStringSync();
+
+    expect(source, contains('class OpenStashDialogFrame'));
+    expect(source, contains('class OpenStashClearDialog'));
+    expect(source, contains('HibikiDialogFrame('));
+    expect(source, contains('HibikiModalSheetFrame('));
+    expect(source, isNot(contains('adaptiveAlertDialog(')));
+  });
+
+  test('home dictionary clear dialog uses shared MD3 dialog chrome', () {
+    final String source = File(
+      'lib/src/pages/implementations/home_dictionary_page.dart',
+    ).readAsStringSync();
+    final String flow = _functionSource(
+      source,
+      'void _showDeleteDictionaryHistoryPrompt() async',
+      'class HomeDictionaryClearHistoryDialog',
+    );
+    final String dialogSource = _sectionSource(
+      source,
+      'class HomeDictionaryClearHistoryDialog',
+      source.length,
+    );
+
+    expect(flow, contains('HomeDictionaryClearHistoryDialog('));
+    expect(flow, isNot(contains('adaptiveAlertDialog(')));
+    expect(dialogSource, contains('HibikiDialogFrame('));
+    expect(dialogSource, contains('HibikiModalSheetFrame('));
+    expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
+  });
+
+  test('home dictionary list chrome uses shared MD3 spacing tokens', () {
+    final String source = File(
+      'lib/src/pages/implementations/home_dictionary_page.dart',
+    ).readAsStringSync();
+    final String searchHeader = _functionSource(
+      source,
+      'Widget _buildSearchHeader()',
+      'Widget _buildBody()',
+    );
+    final String historyList = _functionSource(
+      source,
+      'Widget _buildDictionaryHistory()',
+      'void _onQueryChanged(String query)',
+    );
+
+    for (final String section in <String>[searchHeader, historyList]) {
+      expect(section, contains('HibikiDesignTokens.of(context)'));
+      expect(section, contains('tokens.spacing'));
+    }
+    expect(
+      searchHeader,
+      isNot(
+        contains('isCupertinoPlatform(context) ? 8 : 16'),
+      ),
+    );
+    expect(
+      historyList,
+      isNot(contains('padding: const EdgeInsets.only(top: 4, bottom: 16)')),
+    );
+    expect(
+      historyList,
+      isNot(
+        contains(
+            'margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 2)'),
+      ),
+    );
+    expect(historyList, isNot(contains('const SizedBox(width: 4)')));
+  });
+
+  test('dictionary confirmation dialogs use shared MD3 dialog chrome', () {
+    final String source = File(
+      'lib/src/pages/implementations/dictionary_dialog_page.dart',
+    ).readAsStringSync();
+    final String clearDialog = _functionSource(
+      source,
+      'Future<void> showDictionaryClearDialog()',
+      '  Future<void> showDictionaryDeleteDialog(Dictionary dictionary)',
+    );
+    final String deleteDialog = _functionSource(
+      source,
+      'Future<void> showDictionaryDeleteDialog(Dictionary dictionary)',
+      '  Future<void> _importDictionaryFiles()',
+    );
+    final String confirmationFrame = _sectionSource(
+      source,
+      'class DictionaryConfirmationDialog',
+      'class DictionaryLowMemoryDialog',
+    );
+    final String lowMemoryDialog = _sectionSource(
+      source,
+      'class DictionaryLowMemoryDialog',
+      source.length,
+    );
+
+    for (final String dialogSource in <String>[clearDialog, deleteDialog]) {
+      expect(dialogSource, contains('DictionaryConfirmationDialog('));
+      expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
+    }
+
+    for (final String dialogSource in <String>[
+      confirmationFrame,
+      lowMemoryDialog,
+    ]) {
+      expect(dialogSource, contains('HibikiDialogFrame('));
+      expect(dialogSource, contains('HibikiModalSheetFrame('));
+      expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
+    }
+  });
+
+  test('dictionary download dialogs use shared MD3 dialog chrome', () {
+    final String source = File(
+      'lib/src/pages/implementations/dictionary_dialog_page.dart',
+    ).readAsStringSync();
+    final String selectionFlow = _functionSource(
+      source,
+      'Future<void> _showDownloadSelectionDialog()',
+      '  Widget _buildLanguageSelector({',
+    );
+    final String progressFlow = _functionSource(
+      source,
+      'Future<void> _downloadSelectedDictionaries(',
+      '  static const _safChannel = HibikiChannels.saf;',
+    );
+    final String selectionFrame = _sectionSource(
+      source,
+      'class DictionaryDownloadSelectionDialogFrame',
+      'class DictionaryDownloadProgressDialog',
+    );
+    final String progressFrame = _sectionSource(
+      source,
+      'class DictionaryDownloadProgressDialog',
+      source.length,
+    );
+
+    expect(
+      selectionFlow,
+      contains('DictionaryDownloadSelectionDialogFrame('),
+    );
+    expect(selectionFlow, isNot(contains('adaptiveAlertDialog(')));
+    expect(progressFlow, contains('DictionaryDownloadProgressDialog('));
+    expect(progressFlow, isNot(contains('adaptiveAlertDialog(')));
+
+    for (final String dialogSource in <String>[
+      selectionFrame,
+      progressFrame,
+    ]) {
+      expect(dialogSource, contains('HibikiDialogFrame('));
+      expect(dialogSource, contains('HibikiModalSheetFrame('));
+      expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
+    }
+  });
+
+  test('reader popup audio controls use shared MD3 micro spacing tokens', () {
+    final String source = File(
+      'lib/src/pages/implementations/reader_hibiki_page.dart',
+    ).readAsStringSync();
+    final String popupAudio = _functionSource(
+      source,
+      'Widget? buildPopupAudioControls()',
+      '  Audiobook _audiobookFromRow',
+    );
+
+    expect(popupAudio, contains('HibikiDesignTokens.of(context)'));
+    expect(popupAudio, contains('tokens.spacing'));
+    expect(
+      popupAudio,
+      isNot(contains('padding: const EdgeInsets.symmetric(vertical: 2)')),
+    );
   });
 
   test('MD3 review report does not reopen completed app chrome scope', () {
@@ -711,4 +1938,16 @@ String _sectionSource(
   expect(end, greaterThan(start),
       reason: 'missing $endToken after $startToken');
   return source.substring(start, end);
+}
+
+String _nextWidgetAfter(String source, String startToken) {
+  final int start = source.indexOf(startToken);
+  expect(start, isNonNegative, reason: 'missing $startToken');
+  final RegExp widgetFunction = RegExp(r'\n  Widget [_A-Za-z0-9]+\(');
+  final RegExpMatch? match = widgetFunction.firstMatch(
+    source.substring(start + startToken.length),
+  );
+  expect(match, isNotNull, reason: 'missing next Widget after $startToken');
+  return source.substring(start + startToken.length + match!.start + 1,
+      start + startToken.length + match.start + match.group(0)!.length);
 }

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
@@ -12,6 +14,25 @@ void main() {
       home: Scaffold(body: Center(child: child)),
     );
   }
+
+  test('log and editor panels use token typography for monospace text', () {
+    final String source = File(
+      'lib/src/utils/components/hibiki_material_components.dart',
+    ).readAsStringSync();
+    final String logPanel = source.substring(
+      source.indexOf('class HibikiLogPanel'),
+      source.indexOf('class HibikiEditorPanel'),
+    );
+    final String editorPanel = source.substring(
+      source.indexOf('class HibikiEditorPanel'),
+      source.indexOf('class HibikiPopupSurface'),
+    );
+
+    expect(logPanel, contains('tokens.type.metadata.copyWith'));
+    expect(editorPanel, contains('tokens.type.listSubtitle.copyWith'));
+    expect(logPanel, isNot(contains('fontSize: 12')));
+    expect(editorPanel, isNot(contains('fontSize: 12')));
+  });
 
   testWidgets('HibikiSelectableChip uses MD3 selected and outline tokens',
       (WidgetTester tester) async {
@@ -132,6 +153,25 @@ void main() {
     expect(chipDecoration.border, isNotNull);
     expect(swatchDecoration.color, Colors.red);
     expect(swatchDecoration.shape, BoxShape.circle);
+  });
+
+  testWidgets('HibikiTagChip exposes a compact delete affordance',
+      (WidgetTester tester) async {
+    bool deleted = false;
+    await tester.pumpWidget(
+      buildSubject(
+        HibikiTagChip(
+          label: 'Ctrl+K',
+          tone: HibikiTagChipTone.surface,
+          onDeleted: () => deleted = true,
+        ),
+      ),
+    );
+
+    expect(find.byIcon(Icons.close), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.close));
+    expect(deleted, isTrue);
   });
 
   testWidgets('HibikiBadge uses the shared compact radius',

@@ -11,7 +11,17 @@ void main() {
     expect(source, contains('HibikiDialogFrame('));
     expect(source, contains('HibikiModalSheetFrame('));
     expect(source, contains('HibikiDesignTokens.of(context)'));
+    expect(source, contains('insetPadding: EdgeInsets.symmetric('));
+    expect(source, contains('horizontal: tokens.spacing.card'));
+    expect(source, contains('vertical: tokens.spacing.card'));
     expect(source, isNot(contains('adaptiveAlertDialog(')));
     expect(source, isNot(contains('Spacing.of(context)')));
+    expect(
+      source,
+      isNot(
+        contains('const EdgeInsets.symmetric(horizontal: 16, vertical: 16)'),
+      ),
+    );
+    expect(source, isNot(contains('const EdgeInsets.all(16)')));
   });
 }

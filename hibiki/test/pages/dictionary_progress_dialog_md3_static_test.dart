@@ -8,16 +8,25 @@ void main() {
     final List<String> paths = <String>[
       'lib/src/pages/implementations/dictionary_dialog_import_page.dart',
       'lib/src/pages/implementations/dictionary_dialog_delete_page.dart',
+      'lib/src/pages/implementations/dictionary_progress_dialog_content.dart',
     ];
 
     for (final String path in paths) {
       final String source = File(path).readAsStringSync();
 
-      expect(source, contains('HibikiDialogFrame('), reason: path);
-      expect(source, contains('HibikiModalSheetFrame('), reason: path);
+      if (!path.endsWith('dictionary_progress_dialog_content.dart')) {
+        expect(source, contains('HibikiDialogFrame('), reason: path);
+        expect(source, contains('HibikiModalSheetFrame('), reason: path);
+      }
       expect(source, contains('HibikiDesignTokens.of(context)'), reason: path);
+      expect(source, contains('tokens.spacing'), reason: path);
       expect(source, isNot(contains('adaptiveAlertDialog(')), reason: path);
       expect(source, isNot(contains('Spacing.of(context)')), reason: path);
+      expect(source, isNot(contains('package:hibiki/src/utils/spacing.dart')),
+          reason: path);
+      expect(source, isNot(contains('Space.')), reason: path);
+      expect(source, isNot(contains('padding: const EdgeInsets.all(4)')),
+          reason: path);
     }
   });
 }

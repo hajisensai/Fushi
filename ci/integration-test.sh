@@ -126,8 +126,12 @@ if [ -n "$ONLY" ]; then
 else
   TARGETS=("${ALL_TARGETS[@]}")
 fi
+if [ ${#TARGETS[@]} -eq 0 ]; then
+  echo ">>> FAIL: no targets to run (empty --only?)." >&2
+  exit 2
+fi
 
-PASS=(); FAIL=(); SKIP=()
+PASS=(); FAIL=(); SKIP=(); NOTES=()
 LOGDIR="$REPO_ROOT/.codex-test/itest-logs"
 mkdir -p "$LOGDIR"
 
@@ -141,12 +145,22 @@ run_target() {
   fi
   echo ">>> RUN  $t"
   local log="$LOGDIR/${t}.log"
+  # A target passes only if flutter drive exits 0, the log shows "All tests
+  # passed", and it does NOT also report "Some tests failed" (belt-and-
+  # suspenders against a 0-test run that exits 0 with no clear verdict).
   if "$FLUTTER" drive \
         --driver=test_driver/integration_test.dart \
         --target="$file" -d "$DEVICE" >"$log" 2>&1 \
-     && grep -q "All tests passed" "$log"; then
+     && grep -q "All tests passed" "$log" \
+     && ! grep -q "Some tests failed" "$log"; then
     echo ">>> PASS $t"
     PASS+=("$t")
+    # Surface intentionally-skipped sub-assertions (e.g. regression's
+    # HBK-REG-001 play-bar geometry, which only runs with a real audiobook) so
+    # a green PASS is not mistaken for full coverage.
+    local skipped
+    skipped=$(grep -ioE "SKIP [A-Z0-9_-]+" "$log" | sort -u | tr '\n' ' ')
+    [ -n "$skipped" ] && NOTES+=("$t: ${skipped% }")
   else
     echo ">>> FAIL $t  (see $log)"
     FAIL+=("$t")
@@ -166,6 +180,10 @@ echo "Dictionary   : $([ "$DICT_OK" = true ] && echo pushed || echo NOT-pushed)"
 echo "PASS (${#PASS[@]}): ${PASS[*]:-none}"
 echo "SKIP (${#SKIP[@]}): ${SKIP[*]:-none}"
 echo "FAIL (${#FAIL[@]}): ${FAIL[*]:-none}"
+if [ ${#NOTES[@]} -gt 0 ]; then
+  echo "NOTES (partial coverage — passed but with skipped sub-assertions):"
+  printf '  - %s\n' "${NOTES[@]}"
+fi
 echo "Logs         : $LOGDIR"
 echo "============================================================"
 

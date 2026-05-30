@@ -1,4 +1,4 @@
-﻿import 'package:drift/native.dart';
+import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -130,7 +130,8 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final ThemeData theme = Theme.of(context);
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return HibikiPageScaffold(
       title: t.tag_manage_title,
       floatingActionButton: FloatingActionButton(
@@ -154,7 +155,7 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
                   direction: DismissDirection.endToStart,
                   background: Container(
                     alignment: Alignment.centerRight,
-                    padding: const EdgeInsets.only(right: 16),
+                    padding: EdgeInsets.only(right: tokens.spacing.card),
                     color: theme.colorScheme.errorContainer,
                     child: Icon(
                       Icons.delete_outline,
@@ -199,7 +200,10 @@ class TagDeleteConfirmationDialog extends StatelessWidget {
     return HibikiDialogFrame(
       maxWidth: 420,
       maxHeightFactor: 0.92,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      insetPadding: EdgeInsets.symmetric(
+        horizontal: tokens.spacing.card,
+        vertical: tokens.spacing.card,
+      ),
       scrollable: false,
       child: HibikiModalSheetFrame(
         title: t.dialog_delete,
@@ -281,7 +285,10 @@ class TagEditDialogState extends State<TagEditDialog> {
     return HibikiDialogFrame(
       maxWidth: 420,
       maxHeightFactor: 0.96,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      insetPadding: EdgeInsets.symmetric(
+        horizontal: tokens.spacing.card,
+        vertical: tokens.spacing.card,
+      ),
       scrollable: false,
       child: HibikiModalSheetFrame(
         title: widget.title,

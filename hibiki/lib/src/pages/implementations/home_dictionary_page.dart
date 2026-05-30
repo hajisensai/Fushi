@@ -155,12 +155,15 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
   }
 
   Widget _buildSearchHeader() {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final double horizontalPadding =
+        isCupertinoPlatform(context) ? tokens.spacing.gap : tokens.spacing.page;
     return Padding(
       padding: EdgeInsets.fromLTRB(
-        isCupertinoPlatform(context) ? 8 : 16,
+        horizontalPadding,
         0,
-        isCupertinoPlatform(context) ? 8 : 16,
-        8,
+        horizontalPadding,
+        tokens.spacing.gap,
       ),
       child: SizedBox(
         height: kToolbarHeight,
@@ -215,6 +218,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
   }
 
   Widget _buildPlaceholder() {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final noDictionaries = appModel.dictionaries.isEmpty;
     return Center(
       child: Column(
@@ -227,7 +231,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
                 : t.info_empty_home_tab,
           ),
           if (noDictionaries) ...[
-            const SizedBox(height: 12),
+            SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
             FilledButton.icon(
               icon: const Icon(Icons.auto_stories_outlined, size: 18),
               label: Text(t.dialog_import_dictionary),
@@ -242,12 +246,16 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
   // ── dictionary history list ────────────────────────────────────────
 
   Widget _buildDictionaryHistory() {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final historyResults = appModel.dictionaryHistory.reversed.toList();
     if (historyResults.every((r) => r.entries.isEmpty)) {
       return _buildPlaceholder();
     }
     return ListView.builder(
-      padding: const EdgeInsets.only(top: 4, bottom: 16),
+      padding: EdgeInsets.only(
+        top: tokens.spacing.gap / 2,
+        bottom: tokens.spacing.page,
+      ),
       controller: DictionaryMediaType.instance.scrollController,
       itemCount: historyResults.length,
       itemBuilder: (context, index) {
@@ -265,7 +273,10 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
         final dictCount =
             result.entries.map((e) => e.dictionaryName).toSet().length;
         return HibikiCard(
-          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+          margin: EdgeInsets.symmetric(
+            horizontal: tokens.spacing.page,
+            vertical: tokens.spacing.gap / 4,
+          ),
           onTap: () {
             _controller.text = searchTerm;
             _controller.selection =
@@ -285,7 +296,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text('$dictCount'),
-                const SizedBox(width: 4),
+                SizedBox(width: tokens.spacing.gap / 2),
                 const Icon(Icons.chevron_right, size: 20),
               ],
             ),
@@ -488,33 +499,73 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
   // ── dialogs ────────────────────────────────────────────────────────
 
   void _showDeleteDictionaryHistoryPrompt() async {
-    Widget alertDialog = adaptiveAlertDialog(
-      context: context,
-      title: Text(t.clear_dictionary_title),
-      content: Text(t.clear_dictionary_description),
-      actions: <Widget>[
-        adaptiveDialogAction(
-          context: context,
-          child: Text(
-            t.dialog_clear,
-          ),
-          onPressed: () async {
-            Navigator.pop(context);
-            await appModel.clearDictionaryHistory();
-            setState(() {});
-          },
-        ),
-        adaptiveDialogAction(
-          context: context,
-          child: Text(t.dialog_cancel),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ],
-    );
-
     await showAppDialog(
       context: context,
-      builder: (context) => alertDialog,
+      builder: (context) => HomeDictionaryClearHistoryDialog(
+        onConfirm: () async {
+          Navigator.pop(context);
+          await appModel.clearDictionaryHistory();
+          if (mounted) setState(() {});
+        },
+      ),
+    );
+  }
+}
+
+@visibleForTesting
+class HomeDictionaryClearHistoryDialog extends StatelessWidget {
+  const HomeDictionaryClearHistoryDialog({
+    required this.onConfirm,
+    super.key,
+  });
+
+  final VoidCallback onConfirm;
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
+    return HibikiDialogFrame(
+      maxWidth: 420,
+      maxHeightFactor: 0.72,
+      child: HibikiModalSheetFrame(
+        title: t.clear_dictionary_title,
+        leadingIcon: Icons.delete_sweep_outlined,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: Text(
+          t.clear_dictionary_description,
+          style: tokens.type.listSubtitle,
+        ),
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: <Widget>[
+            adaptiveDialogAction(
+              context: context,
+              child: Text(t.dialog_cancel),
+              onPressed: () => Navigator.pop(context),
+            ),
+            adaptiveDialogAction(
+              context: context,
+              isDestructiveAction: true,
+              child: Text(t.dialog_clear),
+              onPressed: onConfirm,
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

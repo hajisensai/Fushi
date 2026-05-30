@@ -9,7 +9,6 @@ import 'package:hibiki/src/settings/settings_home_page.dart';
 import 'package:hibiki/src/settings/settings_renderer.dart';
 import 'package:hibiki/src/settings/settings_schema.dart';
 import 'package:hibiki/utils.dart';
-import 'package:hibiki/src/utils/spacing.dart';
 
 // ─── Dialog version (used inside the reader) ─────────────────────────────────
 
@@ -31,28 +30,36 @@ class _HibikiSettingsDialogPageState extends BasePageState {
 
   @override
   Widget build(BuildContext context) {
-    return adaptiveAlertDialog(
-      context: context,
-      contentPadding: MediaQuery.of(context).orientation == Orientation.portrait
-          ? Spacing.of(context).insets.exceptBottom.big
-          : Spacing.of(context).insets.exceptBottom.normal.copyWith(
-                left: Spacing.of(context).spaces.semiBig,
-                right: Spacing.of(context).spaces.semiBig,
-              ),
-      actionsPadding: Spacing.of(context).insets.exceptBottom.normal.copyWith(
-            left: Spacing.of(context).spaces.normal,
-            right: Spacing.of(context).spaces.normal,
-            bottom: Spacing.of(context).spaces.normal,
-            top: Spacing.of(context).spaces.extraSmall,
-          ),
-      content: _buildContent(),
-      actions: [
-        adaptiveDialogAction(
-          context: context,
-          child: Text(t.dialog_close),
-          onPressed: () => Navigator.pop(context),
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
+    return HibikiDialogFrame(
+      maxWidth: 560,
+      maxHeightFactor: 0.86,
+      insetPadding: EdgeInsets.symmetric(
+        horizontal: tokens.spacing.card,
+        vertical: tokens.spacing.card,
+      ),
+      scrollable: false,
+      child: HibikiModalSheetFrame(
+        title: t.reader_settings_section,
+        scrollable: true,
+        bodyPadding: EdgeInsets.zero,
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
         ),
-      ],
+        body: _buildContent(),
+        footer: Align(
+          alignment: Alignment.centerRight,
+          child: adaptiveDialogAction(
+            context: context,
+            child: Text(t.dialog_close),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ),
+      ),
     );
   }
 

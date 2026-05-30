@@ -21,6 +21,7 @@ class _AnkiSettingsPageState extends BasePageState<AnkiSettingsPage> {
     final uiState = ref.watch(ankiViewModelProvider);
     final vm = ref.read(ankiViewModelProvider.notifier);
     final settings = uiState.settings;
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
 
     return AdaptiveSettingsScaffold(
       title: Text(t.anki_settings_label),
@@ -56,7 +57,12 @@ class _AnkiSettingsPageState extends BasePageState<AnkiSettingsPage> {
           ),
         if (uiState.errorMessage != null)
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            padding: EdgeInsets.fromLTRB(
+              tokens.spacing.gap + tokens.spacing.gap / 2,
+              0,
+              tokens.spacing.gap + tokens.spacing.gap / 2,
+              tokens.spacing.gap + tokens.spacing.gap / 2,
+            ),
             child: Text(
               uiState.errorMessage!,
               style:
@@ -65,7 +71,12 @@ class _AnkiSettingsPageState extends BasePageState<AnkiSettingsPage> {
           ),
         if (!uiState.isConfigured && uiState.errorMessage == null)
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+            padding: EdgeInsets.fromLTRB(
+              tokens.spacing.page,
+              tokens.spacing.gap,
+              tokens.spacing.page,
+              tokens.spacing.page + tokens.spacing.gap / 2,
+            ),
             child: Text(
               t.anki_not_configured,
               textAlign: TextAlign.center,
@@ -284,7 +295,10 @@ class _AnkiHandlebarPickerDialogState extends State<AnkiHandlebarPickerDialog> {
     return HibikiDialogFrame(
       maxWidth: 560,
       maxHeightFactor: 0.96,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      insetPadding: EdgeInsets.symmetric(
+        horizontal: tokens.spacing.card,
+        vertical: tokens.spacing.gap,
+      ),
       scrollable: false,
       child: HibikiModalSheetFrame(
         title: widget.title,

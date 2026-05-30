@@ -20,31 +20,17 @@ class AnkiIntegration {
     if (ctx == null || !ctx.mounted) return;
     await showAppDialog(
       context: ctx,
-      builder: (context) => adaptiveAlertDialog(
-        context: context,
-        title: Text(t.error_ankidroid_api),
-        content: Text(t.error_ankidroid_api_content),
-        actions: [
-          adaptiveDialogAction(
-            context: context,
-            child: Text(t.dialog_launch_ankidroid),
-            onPressed: () async {
-              final navigator = Navigator.of(context);
-              if (Platform.isAndroid) {
-                await LaunchApp.openApp(
-                  androidPackageName: 'com.ichi2.anki',
-                  openStore: true,
-                );
-              }
-              navigator.pop();
-            },
-          ),
-          adaptiveDialogAction(
-            context: context,
-            child: Text(t.dialog_close),
-            onPressed: () => Navigator.pop(context),
-          ),
-        ],
+      builder: (context) => AnkiApiMessageDialog(
+        onLaunch: () async {
+          final navigator = Navigator.of(context);
+          if (Platform.isAndroid) {
+            await LaunchApp.openApp(
+              androidPackageName: 'com.ichi2.anki',
+              openStore: true,
+            );
+          }
+          navigator.pop();
+        },
       ),
     );
   }
@@ -57,17 +43,8 @@ class AnkiIntegration {
       if (ctx == null || !ctx.mounted) return;
       await showAppDialog(
         context: ctx,
-        builder: (context) => adaptiveAlertDialog(
-          context: context,
-          title: Text(t.info_standard_model),
-          content: Text(t.info_standard_model_content),
-          actions: [
-            adaptiveDialogAction(
-              context: context,
-              child: Text(t.dialog_close),
-              onPressed: () => Navigator.pop(context),
-            ),
-          ],
+        builder: (context) => AnkiDefaultModelDialog(
+          onClose: () => Navigator.pop(context),
         ),
       );
     }
@@ -111,5 +88,110 @@ class AnkiIntegration {
       if (ctx != null && ctx.mounted) showApiMessage(ctx);
       rethrow;
     }
+  }
+}
+
+@visibleForTesting
+class AnkiApiMessageDialog extends StatelessWidget {
+  const AnkiApiMessageDialog({
+    required this.onLaunch,
+    super.key,
+  });
+
+  final VoidCallback onLaunch;
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
+    return HibikiDialogFrame(
+      maxWidth: 460,
+      maxHeightFactor: 0.78,
+      child: HibikiModalSheetFrame(
+        title: t.error_ankidroid_api,
+        leadingIcon: Icons.error_outline,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: Text(
+          t.error_ankidroid_api_content,
+          style: tokens.type.listSubtitle,
+        ),
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: <Widget>[
+            adaptiveDialogAction(
+              context: context,
+              child: Text(t.dialog_close),
+              onPressed: () => Navigator.pop(context),
+            ),
+            adaptiveDialogAction(
+              context: context,
+              child: Text(t.dialog_launch_ankidroid),
+              onPressed: onLaunch,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+@visibleForTesting
+class AnkiDefaultModelDialog extends StatelessWidget {
+  const AnkiDefaultModelDialog({
+    required this.onClose,
+    super.key,
+  });
+
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
+    return HibikiDialogFrame(
+      maxWidth: 460,
+      maxHeightFactor: 0.76,
+      child: HibikiModalSheetFrame(
+        title: t.info_standard_model,
+        leadingIcon: Icons.note_add_outlined,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: Text(
+          t.info_standard_model_content,
+          style: tokens.type.listSubtitle,
+        ),
+        footer: Align(
+          alignment: Alignment.centerRight,
+          child: adaptiveDialogAction(
+            context: context,
+            child: Text(t.dialog_close),
+            onPressed: onClose,
+          ),
+        ),
+      ),
+    );
   }
 }

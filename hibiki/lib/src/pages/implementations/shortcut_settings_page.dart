@@ -76,25 +76,51 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
   Future<void> _confirmResetScope(ShortcutScope scope) async {
     final bool? confirmed = await showAppDialog<bool>(
       context: context,
-      builder: (BuildContext ctx) => adaptiveAlertDialog(
-        context: ctx,
-        title: Text(t.shortcut_reset_defaults),
-        content: Text(t.shortcut_reset_confirm),
-        actions: <Widget>[
-          adaptiveDialogAction(
-            context: ctx,
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(t.dialog_cancel),
+      builder: (BuildContext ctx) {
+        final HibikiDesignTokens tokens = HibikiDesignTokens.of(ctx);
+        return HibikiDialogFrame(
+          maxWidth: 420,
+          maxHeightFactor: 0.78,
+          scrollable: false,
+          child: HibikiModalSheetFrame(
+            title: t.shortcut_reset_defaults,
+            leadingIcon: Icons.restore_outlined,
+            scrollable: true,
+            bodyPadding: EdgeInsets.fromLTRB(
+              tokens.spacing.card,
+              0,
+              tokens.spacing.card,
+              tokens.spacing.gap,
+            ),
+            footerPadding: EdgeInsets.fromLTRB(
+              tokens.spacing.card,
+              tokens.spacing.gap,
+              tokens.spacing.card,
+              tokens.spacing.card,
+            ),
+            body: Text(t.shortcut_reset_confirm),
+            footer: Wrap(
+              alignment: WrapAlignment.end,
+              spacing: tokens.spacing.gap,
+              runSpacing: tokens.spacing.gap,
+              children: <Widget>[
+                adaptiveDialogAction(
+                  context: ctx,
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: Text(t.dialog_cancel),
+                ),
+                adaptiveDialogAction(
+                  context: ctx,
+                  isDefaultAction: true,
+                  isDestructiveAction: true,
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: Text(t.shortcut_reset_defaults),
+                ),
+              ],
+            ),
           ),
-          adaptiveDialogAction(
-            context: ctx,
-            isDefaultAction: true,
-            isDestructiveAction: true,
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(t.shortcut_reset_defaults),
-          ),
-        ],
-      ),
+        );
+      },
     );
     if (confirmed != true || !mounted) return;
     _registry.resetScopeToDefaults(scope, defaultTargetPlatform);
@@ -157,9 +183,15 @@ class _ScopeSectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 8, 4),
+      padding: EdgeInsets.fromLTRB(
+        tokens.spacing.page,
+        tokens.spacing.page,
+        tokens.spacing.gap,
+        tokens.spacing.gap / 2,
+      ),
       child: Row(
         children: <Widget>[
           Expanded(
@@ -198,29 +230,25 @@ class _ActionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final List<String> labels = <String>[
       ...bindings.keyboardBindings.map((InputBinding b) => b.displayLabel),
       ...bindings.gamepadBindings.map((GamepadBinding b) => b.button.label),
     ];
 
-    return ListTile(
+    return HibikiListItem(
       title: Text(_actionLabel(action)),
       subtitle: labels.isEmpty
           ? Text(
               t.shortcut_none,
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
             )
           : Wrap(
-              spacing: 4,
-              runSpacing: 4,
+              spacing: tokens.spacing.gap / 2,
+              runSpacing: tokens.spacing.gap / 2,
               children: labels
-                  .map((String label) => Chip(
-                        label: Text(label),
-                        visualDensity: VisualDensity.compact,
-                        padding: EdgeInsets.zero,
-                        labelPadding: const EdgeInsets.symmetric(horizontal: 6),
+                  .map((String label) => HibikiTagChip(
+                        label: label,
+                        tone: HibikiTagChipTone.surface,
                       ))
                   .toList(growable: false),
             ),
@@ -393,12 +421,29 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
   @override
   Widget build(BuildContext context) {
     final ThemeData themeData = Theme.of(context);
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
 
-    return adaptiveAlertDialog(
-      context: context,
-      title: Text(_actionLabel(widget.action)),
-      content: SingleChildScrollView(
-        child: Column(
+    return HibikiDialogFrame(
+      maxWidth: 520,
+      maxHeightFactor: 0.86,
+      scrollable: false,
+      child: HibikiModalSheetFrame(
+        title: _actionLabel(widget.action),
+        leadingIcon: Icons.keyboard_outlined,
+        scrollable: true,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
@@ -407,23 +452,20 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
               t.shortcut_keyboard,
               style: themeData.textTheme.labelLarge,
             ),
-            const SizedBox(height: 4),
+            SizedBox(height: tokens.spacing.gap / 2),
             Wrap(
-              spacing: 4,
-              runSpacing: 4,
+              spacing: tokens.spacing.gap / 2,
+              runSpacing: tokens.spacing.gap / 2,
               children: <Widget>[
                 for (int i = 0; i < _keyboard.length; i++)
-                  Chip(
-                    label: Text(_keyboard[i].displayLabel),
+                  HibikiTagChip(
+                    label: _keyboard[i].displayLabel,
+                    tone: HibikiTagChipTone.surface,
                     onDeleted: () => _removeKeyboard(i),
-                    deleteIconColor: themeData.colorScheme.error,
-                    visualDensity: VisualDensity.compact,
-                    padding: EdgeInsets.zero,
-                    labelPadding: const EdgeInsets.symmetric(horizontal: 6),
                   ),
               ],
             ),
-            const SizedBox(height: 8),
+            SizedBox(height: tokens.spacing.gap),
             if (_capturing)
               Column(
                 mainAxisSize: MainAxisSize.min,
@@ -435,12 +477,14 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
                     onKeyEvent: _onKeyEvent,
                     child: Container(
                       width: double.infinity,
-                      padding: const EdgeInsets.symmetric(
-                          vertical: 12, horizontal: 8),
+                      padding: EdgeInsets.symmetric(
+                        vertical: tokens.spacing.gap + 4,
+                        horizontal: tokens.spacing.gap,
+                      ),
                       decoration: BoxDecoration(
                         border:
                             Border.all(color: themeData.colorScheme.primary),
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: tokens.radii.controlRadius,
                       ),
                       child: Text(
                         t.shortcut_press_key,
@@ -475,34 +519,32 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
               t.shortcut_gamepad,
               style: themeData.textTheme.labelLarge,
             ),
-            const SizedBox(height: 4),
+            SizedBox(height: tokens.spacing.gap / 2),
             Wrap(
-              spacing: 4,
-              runSpacing: 4,
+              spacing: tokens.spacing.gap / 2,
+              runSpacing: tokens.spacing.gap / 2,
               children: <Widget>[
                 for (int i = 0; i < _gamepad.length; i++)
-                  Chip(
-                    label: Text(_gamepad[i].button.label),
+                  HibikiTagChip(
+                    label: _gamepad[i].button.label,
+                    tone: HibikiTagChipTone.surface,
                     onDeleted: () => _removeGamepad(i),
-                    deleteIconColor: themeData.colorScheme.error,
-                    visualDensity: VisualDensity.compact,
-                    padding: EdgeInsets.zero,
-                    labelPadding: const EdgeInsets.symmetric(horizontal: 6),
                   ),
               ],
             ),
-            const SizedBox(height: 8),
-            PopupMenuButton<GamepadButton>(
+            SizedBox(height: tokens.spacing.gap),
+            HibikiOverflowMenu<GamepadButton>(
               onSelected: _addGamepad,
-              itemBuilder: (_) => <PopupMenuEntry<GamepadButton>>[
+              items: <PopupMenuEntry<GamepadButton>>[
                 for (final GamepadButton btn in GamepadButton.values)
                   PopupMenuItem<GamepadButton>(
                     value: btn,
                     child: Text(btn.label),
                   ),
               ],
+              padding: EdgeInsets.zero,
               child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
+                padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
@@ -511,7 +553,7 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
                       size: 18,
                       color: themeData.colorScheme.primary,
                     ),
-                    const SizedBox(width: 4),
+                    SizedBox(width: tokens.spacing.gap / 2),
                     Text(
                       t.shortcut_gamepad,
                       style: TextStyle(color: themeData.colorScheme.primary),
@@ -523,7 +565,7 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
 
             // Conflict warning
             if (_conflictWarning != null) ...[
-              const SizedBox(height: 8),
+              SizedBox(height: tokens.spacing.gap),
               Text(
                 _conflictWarning!,
                 style: themeData.textTheme.bodySmall?.copyWith(
@@ -533,30 +575,35 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
             ],
           ],
         ),
-      ),
-      actions: <Widget>[
-        TextButton(
-          onPressed: _clearAll,
-          child: Text(t.shortcut_clear),
-        ),
-        adaptiveDialogAction(
-          context: context,
-          onPressed: () => Navigator.pop(context),
-          child: Text(t.dialog_cancel),
-        ),
-        adaptiveDialogAction(
-          context: context,
-          isDefaultAction: true,
-          onPressed: () => Navigator.pop(
-            context,
-            ShortcutBindingSet(
-              keyboardBindings: List<InputBinding>.unmodifiable(_keyboard),
-              gamepadBindings: List<GamepadBinding>.unmodifiable(_gamepad),
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: <Widget>[
+            TextButton(
+              onPressed: _clearAll,
+              child: Text(t.shortcut_clear),
             ),
-          ),
-          child: Text(MaterialLocalizations.of(context).okButtonLabel),
+            adaptiveDialogAction(
+              context: context,
+              onPressed: () => Navigator.pop(context),
+              child: Text(t.dialog_cancel),
+            ),
+            adaptiveDialogAction(
+              context: context,
+              isDefaultAction: true,
+              onPressed: () => Navigator.pop(
+                context,
+                ShortcutBindingSet(
+                  keyboardBindings: List<InputBinding>.unmodifiable(_keyboard),
+                  gamepadBindings: List<GamepadBinding>.unmodifiable(_gamepad),
+                ),
+              ),
+              child: Text(MaterialLocalizations.of(context).okButtonLabel),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }

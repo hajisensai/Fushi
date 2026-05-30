@@ -328,6 +328,7 @@ class _SystemFontPickerPageState extends State<_SystemFontPickerPage> {
 
   @override
   Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final List<Widget> fontRows = _loading
         ? <Widget>[
@@ -374,9 +375,9 @@ class _SystemFontPickerPageState extends State<_SystemFontPickerPage> {
                 child: HibikiTextField(
                   controller: _searchController,
                   hintText: t.custom_fonts_search_hint,
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 10,
+                  contentPadding: EdgeInsets.symmetric(
+                    horizontal: tokens.spacing.rowHorizontal,
+                    vertical: tokens.spacing.rowVertical,
                   ),
                   onChanged: _onSearch,
                 ),
@@ -965,42 +966,57 @@ class CustomFontDownloadProgressDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return adaptiveAlertDialog(
-      context: context,
-      titlePadding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-      contentPadding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-      actionsPadding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
-      buttonPadding: const EdgeInsets.symmetric(horizontal: 4),
-      title: Text(
-        title,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: Theme.of(context).textTheme.titleMedium,
-      ),
-      content: ValueListenableBuilder<double?>(
-        valueListenable: progressNotifier,
-        builder: (_, progress, __) => Column(
-          mainAxisSize: MainAxisSize.min,
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return HibikiDialogFrame(
+      maxWidth: 420,
+      maxHeightFactor: 0.72,
+      scrollable: false,
+      child: HibikiModalSheetFrame(
+        title: title,
+        leadingIcon: Icons.download_outlined,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: ValueListenableBuilder<double?>(
+          valueListenable: progressNotifier,
+          builder: (_, progress, __) => Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              LinearProgressIndicator(value: progress),
+              SizedBox(height: tokens.spacing.gap),
+              Text(
+                progress != null
+                    ? '${(progress * 100).toStringAsFixed(0)}%'
+                    : t.custom_fonts_downloading,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: tokens.type.listSubtitle,
+              ),
+            ],
+          ),
+        ),
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
           children: [
-            LinearProgressIndicator(value: progress),
-            const SizedBox(height: 4),
-            Text(
-              progress != null
-                  ? '${(progress * 100).toStringAsFixed(0)}%'
-                  : t.custom_fonts_downloading,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+            adaptiveDialogAction(
+              context: context,
+              onPressed: onCancel,
+              child: Text(t.dialog_cancel),
             ),
           ],
         ),
       ),
-      actions: [
-        adaptiveDialogAction(
-          context: context,
-          onPressed: onCancel,
-          child: Text(t.dialog_cancel),
-        ),
-      ],
     );
   }
 }
@@ -1025,41 +1041,51 @@ class _CustomFontUrlImportDialogState extends State<CustomFontUrlImportDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return adaptiveAlertDialog(
-      context: context,
-      titlePadding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-      contentPadding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-      actionsPadding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
-      buttonPadding: const EdgeInsets.symmetric(horizontal: 4),
-      title: Text(
-        t.custom_fonts_import_url,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: Theme.of(context).textTheme.titleMedium,
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return HibikiDialogFrame(
+      maxWidth: 480,
+      maxHeightFactor: 0.72,
+      child: HibikiModalSheetFrame(
+        title: t.custom_fonts_import_url,
+        leadingIcon: Icons.link_outlined,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: HibikiTextField(
+          controller: _urlController,
+          hintText: 'https://example.com/fonts.zip',
+          keyboardType: TextInputType.url,
+          autofocus: true,
+        ),
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: [
+            adaptiveDialogAction(
+              context: context,
+              onPressed: () => Navigator.pop(context),
+              child: Text(t.dialog_cancel),
+            ),
+            adaptiveDialogAction(
+              context: context,
+              isDefaultAction: true,
+              onPressed: () =>
+                  Navigator.pop(context, _urlController.text.trim()),
+              child: Text(t.dialog_import),
+            ),
+          ],
+        ),
       ),
-      content: HibikiTextField(
-        controller: _urlController,
-        hintText: 'https://example.com/fonts.zip',
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 8,
-          vertical: 8,
-        ),
-        keyboardType: TextInputType.url,
-        autofocus: true,
-      ),
-      actions: [
-        adaptiveDialogAction(
-          context: context,
-          onPressed: () => Navigator.pop(context),
-          child: Text(t.dialog_cancel),
-        ),
-        adaptiveDialogAction(
-          context: context,
-          isDefaultAction: true,
-          onPressed: () => Navigator.pop(context, _urlController.text.trim()),
-          child: Text(t.dialog_import),
-        ),
-      ],
     );
   }
 }

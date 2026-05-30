@@ -219,6 +219,7 @@ class _BookCssEditorPageState extends State<BookCssEditorPage> {
 
   @override
   Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     if (_entries.isEmpty) {
       return HibikiToolScaffold(
         title: t.book_css_editor_title,
@@ -247,13 +248,13 @@ class _BookCssEditorPageState extends State<BookCssEditorPage> {
           ),
         ],
         bottom: SizedBox(
-          height: 40,
+          height: tokens.spacing.card * 2.5,
           child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
               children: List.generate(_entries.length, (i) {
                 return Padding(
-                  padding: const EdgeInsets.only(right: 6),
+                  padding: EdgeInsets.only(right: tokens.spacing.gap),
                   child: HibikiSelectableChip(
                     label: _tabLabel(i),
                     selected: i == _selectedIndex,
@@ -272,12 +273,15 @@ class _BookCssEditorPageState extends State<BookCssEditorPage> {
         ),
         bottomNavigationBar: SafeArea(
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            padding: EdgeInsets.symmetric(
+              horizontal: tokens.spacing.card,
+              vertical: tokens.spacing.gap,
+            ),
             child: Wrap(
               alignment: WrapAlignment.spaceBetween,
               crossAxisAlignment: WrapCrossAlignment.center,
-              spacing: 8,
-              runSpacing: 4,
+              spacing: tokens.spacing.gap,
+              runSpacing: tokens.spacing.gap / 2,
               children: [
                 OutlinedButton(
                   onPressed: _currentTabCanReset() ? _doResetCurrent : null,
@@ -324,47 +328,45 @@ class BookCssConfirmationDialog<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final TextTheme textTheme = Theme.of(context).textTheme;
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
 
-    return adaptiveAlertDialog(
-      context: context,
-      titlePadding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-      contentPadding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-      actionsPadding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
-      buttonPadding: const EdgeInsets.symmetric(horizontal: 4),
-      title: Text(
-        title,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: textTheme.titleMedium,
-      ),
-      content: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: double.maxFinite,
-          maxHeight: MediaQuery.of(context).size.height * 0.3,
+    return HibikiDialogFrame(
+      maxWidth: 420,
+      maxHeightFactor: 0.78,
+      child: HibikiModalSheetFrame(
+        title: title,
+        leadingIcon: Icons.code_outlined,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
         ),
-        child: SingleChildScrollView(
-          child: Text(
-            message,
-            style: textTheme.bodySmall,
-          ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: Text(
+          message,
+          style: tokens.type.listSubtitle,
+        ),
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: [
+            for (final action in actions)
+              adaptiveDialogAction(
+                context: context,
+                isDefaultAction: action.filled,
+                onPressed: () => Navigator.pop(context, action.value),
+                child: Text(action.label),
+              ),
+          ],
         ),
       ),
-      actions: [
-        for (final action in actions)
-          action.filled
-              ? adaptiveDialogAction(
-                  context: context,
-                  isDefaultAction: true,
-                  onPressed: () => Navigator.pop(context, action.value),
-                  child: Text(action.label),
-                )
-              : adaptiveDialogAction(
-                  context: context,
-                  onPressed: () => Navigator.pop(context, action.value),
-                  child: Text(action.label),
-                ),
-      ],
     );
   }
 }

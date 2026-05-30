@@ -94,6 +94,82 @@ void main() {
     expect(source, isNot(contains('_buildReaderOnlySwitches')));
   });
 
+  test('reader settings dialog uses shared MD3 dialog chrome', () {
+    final String source = readNormalizedSource(
+        'lib/src/pages/implementations/hibiki_settings_page.dart');
+
+    expect(source, contains('HibikiDialogFrame('));
+    expect(source, contains('HibikiModalSheetFrame('));
+    expect(source, contains('HibikiDesignTokens.of(context)'));
+    expect(source, isNot(contains('adaptiveAlertDialog(')));
+  });
+
+  test('settings shared actions use MD3 dialog chrome', () {
+    final String actionsSource =
+        readNormalizedSource('lib/src/settings/settings_actions.dart');
+    final String schemaSource =
+        readNormalizedSource('lib/src/settings/settings_schema.dart');
+    final String syncSource =
+        readNormalizedSource('lib/src/sync/sync_settings_schema.dart');
+    final String combined = '$actionsSource\n$schemaSource\n$syncSource';
+
+    expect(actionsSource, contains('HibikiDialogFrame('));
+    expect(actionsSource, contains('HibikiModalSheetFrame('));
+
+    expect(actionsSource, isNot(contains('adaptiveAlertDialog(')));
+    expect(schemaSource, isNot(contains('adaptiveAlertDialog(')));
+    expect(syncSource, isNot(contains('adaptiveAlertDialog(')));
+    expect(combined, contains('showSettingsConfirmationDialog('));
+    expect(combined, contains('showSettingsProgressDialog('));
+  });
+
+  test('settings renderers use shared MD3 spacing tokens', () {
+    final String materialSource = readNormalizedSource(
+        'lib/src/settings/material_settings_renderer.dart');
+    final String cupertinoSource = readNormalizedSource(
+        'lib/src/settings/cupertino_settings_renderer.dart');
+
+    expect(materialSource, contains('HibikiDesignTokens.of(context)'));
+    expect(cupertinoSource, contains('HibikiDesignTokens.of('));
+
+    for (final String source in <String>[materialSource, cupertinoSource]) {
+      expect(source, isNot(contains('EdgeInsets.fromLTRB(16, 8, 16, 16)')));
+      expect(
+          source, isNot(contains('const EdgeInsets.symmetric(horizontal: 16')));
+      expect(
+          source, isNot(contains('const EdgeInsets.symmetric(horizontal: 8')));
+      expect(source, isNot(contains('const EdgeInsets.only(bottom: 12)')));
+      expect(source, isNot(contains('const EdgeInsets.only(bottom: 6)')));
+      expect(
+          source, isNot(contains('const EdgeInsets.fromLTRB(12, 6, 12, 0)')));
+      expect(source, isNot(contains('const EdgeInsets.only(right: 12)')));
+      expect(source, isNot(contains('const EdgeInsets.only(top: 8)')));
+      expect(source, isNot(contains('const SizedBox(height: 4)')));
+    }
+  });
+
+  test('settings schema custom rows use shared MD3 spacing tokens', () {
+    final String schemaSource =
+        readNormalizedSource('lib/src/settings/settings_schema.dart');
+
+    expect(schemaSource, contains('HibikiDesignTokens.of(context)'));
+    expect(schemaSource, contains('tokens.spacing'));
+    expect(
+      schemaSource,
+      isNot(contains('const EdgeInsets.symmetric(vertical: 4)')),
+    );
+    expect(schemaSource, isNot(contains('const SizedBox(height: 4)')));
+  });
+
+  test('legacy adaptive alert factory is removed', () {
+    final String source =
+        readNormalizedSource('lib/src/utils/adaptive/adaptive_widgets.dart');
+
+    expect(source, isNot(contains('adaptiveAlertDialog(')));
+    expect(source, isNot(contains('CupertinoAlertDialog(')));
+    expect(source, isNot(contains('AlertDialog(')));
+  });
+
   test('display settings contains reader layout only', () {
     final String source = readNormalizedSource(
         'lib/src/pages/implementations/display_settings_page.dart');
@@ -137,9 +213,7 @@ void main() {
         readNormalizedSource('lib/src/sync/sync_settings_schema.dart');
 
     expect(
-        source,
-        contains(
-            "SettingsCustomItem(\n            id: 'sync.mode'"));
+        source, contains("SettingsCustomItem(\n            id: 'sync.mode'"));
     expect(source,
         contains("SettingsSwitchItem(\n            id: 'sync.statistics'"));
     expect(source,

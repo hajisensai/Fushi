@@ -902,6 +902,7 @@ class _LocalAudioDatabasesRowState extends State<_LocalAudioDatabasesRow> {
 
   @override
   Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final List<LocalAudioDbEntry> dbs = appModel.localAudioDbs;
     return AdaptiveSettingsRow(
       title: t.local_audio_add_db,
@@ -912,7 +913,7 @@ class _LocalAudioDatabasesRowState extends State<_LocalAudioDatabasesRow> {
         children: <Widget>[
           if (dbs.isEmpty)
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
+              padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
               child: Text(
                 t.local_audio_not_set,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -922,7 +923,7 @@ class _LocalAudioDatabasesRowState extends State<_LocalAudioDatabasesRow> {
             ),
           for (int index = 0; index < dbs.length; index++)
             _buildDbTile(dbs, index),
-          const SizedBox(height: 4),
+          SizedBox(height: tokens.spacing.gap / 2),
           TextButton.icon(
             icon: Icon(
               Icons.add,
@@ -992,29 +993,14 @@ class _LocalAudioDatabasesRowState extends State<_LocalAudioDatabasesRow> {
   }
 
   Future<void> _confirmRemove(int index, String label) async {
-    final bool? confirmed = await showAppDialog<bool>(
-      context: context,
-      builder: (BuildContext ctx) => adaptiveAlertDialog(
-        context: ctx,
-        title: Text(t.dialog_delete),
-        content: Text(label),
-        actions: <Widget>[
-          adaptiveDialogAction(
-            context: ctx,
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(t.dialog_cancel),
-          ),
-          adaptiveDialogAction(
-            context: ctx,
-            isDefaultAction: true,
-            isDestructiveAction: true,
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(t.dialog_delete),
-          ),
-        ],
-      ),
+    final bool confirmed = await showSettingsConfirmationDialog(
+      settingsContext,
+      title: t.dialog_delete,
+      body: label,
+      confirmLabel: t.dialog_delete,
+      destructive: true,
     );
-    if (confirmed != true || !mounted) return;
+    if (!confirmed || !mounted) return;
     await appModel.removeLocalAudioDb(index);
     _refresh();
   }
@@ -1025,28 +1011,9 @@ class _LocalAudioDatabasesRowState extends State<_LocalAudioDatabasesRow> {
     void showImportDialog() {
       if (importDialogShown || !mounted) return;
       importDialogShown = true;
-      showAppDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (_) => PopScope(
-          canPop: false,
-          child: Builder(
-            builder: (BuildContext ctx) => adaptiveAlertDialog(
-              context: ctx,
-              content: Row(
-                children: <Widget>[
-                  SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: adaptiveIndicator(context: ctx, strokeWidth: 2),
-                  ),
-                  const SizedBox(width: 16),
-                  Text(t.dialog_importing),
-                ],
-              ),
-            ),
-          ),
-        ),
+      showSettingsProgressDialog(
+        settingsContext,
+        message: t.dialog_importing,
       );
     }
 

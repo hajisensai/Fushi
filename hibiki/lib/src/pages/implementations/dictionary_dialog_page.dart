@@ -65,8 +65,7 @@ class _DictionaryDialogPageState extends BasePageState {
   }
 
   Future<void> showDictionaryClearDialog() async {
-    Widget alertDialog = adaptiveAlertDialog(
-      context: context,
+    final Widget dialog = DictionaryConfirmationDialog(
       title: Text(t.dialog_title_dictionary_clear),
       content: Text(
         t.dialog_content_dictionary_clear,
@@ -107,13 +106,12 @@ class _DictionaryDialogPageState extends BasePageState {
 
     showAppDialog(
       context: context,
-      builder: (context) => alertDialog,
+      builder: (context) => dialog,
     );
   }
 
   Future<void> showDictionaryDeleteDialog(Dictionary dictionary) async {
-    Widget alertDialog = adaptiveAlertDialog(
-      context: context,
+    final Widget dialog = DictionaryConfirmationDialog(
       title: Text(t.dialog_title_dictionary_delete(name: dictionary.name)),
       content: Text(
         t.dialog_content_dictionary_delete,
@@ -155,7 +153,7 @@ class _DictionaryDialogPageState extends BasePageState {
 
     showAppDialog(
       context: context,
-      builder: (context) => alertDialog,
+      builder: (context) => dialog,
     );
   }
 
@@ -235,18 +233,7 @@ class _DictionaryDialogPageState extends BasePageState {
     if (hadMemoryError && mounted) {
       showAppDialog(
         context: context,
-        builder: (context) => adaptiveAlertDialog(
-          context: context,
-          title: Text(t.low_memory_mode),
-          content: Text(t.low_memory_mode_suggestion),
-          actions: [
-            adaptiveDialogAction(
-              context: context,
-              onPressed: () => Navigator.pop(context),
-              child: Text(t.dialog_close),
-            ),
-          ],
-        ),
+        builder: (context) => const DictionaryLowMemoryDialog(),
       );
     }
   }
@@ -334,69 +321,66 @@ class _DictionaryDialogPageState extends BasePageState {
         return StatefulBuilder(
           builder: (ctx, setDialogState) {
             final int downloadCount = checked.length;
-            return adaptiveAlertDialog(
-              context: ctx,
-              title: Text(t.dict_download_select_title),
+            final HibikiDesignTokens tokens = HibikiDesignTokens.of(ctx);
+            return DictionaryDownloadSelectionDialogFrame(
               content: SizedBox(
                 width: double.maxFinite,
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _buildLanguageSelector(
-                        selectedLang: selectedLang,
-                        onChanged: (String lang) {
-                          setDialogState(() {
-                            selectedLang = lang;
-                            workingCatalog =
-                                DictionaryDownloader.catalogForLang(lang);
-                            // HBK-AUDIT-110: recompute the catalog-derived
-                            // structures only when the language (hence catalog)
-                            // actually changes.
-                            byCategory = DictionaryDownloader.byCategoryFrom(
-                                workingCatalog);
-                            recIndex = _computeRecIndices(workingCatalog);
-                            installedIndices =
-                                _computeInstalledIndices(workingCatalog);
-                            defaults =
-                                DictionaryDownloader.defaultSelectionForLang(
-                                    lang, workingCatalog);
-                            checked = Set<int>.from(
-                                defaults.difference(installedIndices));
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 8),
-                      for (final cat in DictionaryCategory.values)
-                        if (byCategory.containsKey(cat))
-                          _buildCategoryTile(
-                            cat: cat,
-                            items: byCategory[cat]!,
-                            recIndex: recIndex,
-                            checked: checked,
-                            installedIndices: installedIndices,
-                            expanded: expandedCategories.contains(cat),
-                            onExpansionChanged: (bool expanded) {
-                              setDialogState(() {
-                                if (expanded) {
-                                  expandedCategories.add(cat);
-                                } else {
-                                  expandedCategories.remove(cat);
-                                }
-                              });
-                            },
-                            onChanged: (int idx, bool val) {
-                              setDialogState(() {
-                                if (val) {
-                                  checked.add(idx);
-                                } else {
-                                  checked.remove(idx);
-                                }
-                              });
-                            },
-                          ),
-                    ],
-                  ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildLanguageSelector(
+                      selectedLang: selectedLang,
+                      onChanged: (String lang) {
+                        setDialogState(() {
+                          selectedLang = lang;
+                          workingCatalog =
+                              DictionaryDownloader.catalogForLang(lang);
+                          // HBK-AUDIT-110: recompute the catalog-derived
+                          // structures only when the language (hence catalog)
+                          // actually changes.
+                          byCategory = DictionaryDownloader.byCategoryFrom(
+                              workingCatalog);
+                          recIndex = _computeRecIndices(workingCatalog);
+                          installedIndices =
+                              _computeInstalledIndices(workingCatalog);
+                          defaults =
+                              DictionaryDownloader.defaultSelectionForLang(
+                                  lang, workingCatalog);
+                          checked = Set<int>.from(
+                              defaults.difference(installedIndices));
+                        });
+                      },
+                    ),
+                    SizedBox(height: tokens.spacing.gap),
+                    for (final cat in DictionaryCategory.values)
+                      if (byCategory.containsKey(cat))
+                        _buildCategoryTile(
+                          cat: cat,
+                          items: byCategory[cat]!,
+                          recIndex: recIndex,
+                          checked: checked,
+                          installedIndices: installedIndices,
+                          expanded: expandedCategories.contains(cat),
+                          onExpansionChanged: (bool expanded) {
+                            setDialogState(() {
+                              if (expanded) {
+                                expandedCategories.add(cat);
+                              } else {
+                                expandedCategories.remove(cat);
+                              }
+                            });
+                          },
+                          onChanged: (int idx, bool val) {
+                            setDialogState(() {
+                              if (val) {
+                                checked.add(idx);
+                              } else {
+                                checked.remove(idx);
+                              }
+                            });
+                          },
+                        ),
+                  ],
                 ),
               ),
               actions: [
@@ -433,11 +417,12 @@ class _DictionaryDialogPageState extends BasePageState {
     required ValueChanged<String> onChanged,
   }) {
     const Map<String, String> langs = DictionaryDownloader.availableLanguages;
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return Row(
       children: [
         Text(t.dict_download_language,
             style: TextStyle(fontSize: textTheme.bodyMedium?.fontSize)),
-        const SizedBox(width: 8),
+        SizedBox(width: tokens.spacing.gap),
         Expanded(
           child: DropdownMenu<String>(
             expandedInsets: EdgeInsets.zero,
@@ -466,7 +451,7 @@ class _DictionaryDialogPageState extends BasePageState {
   }) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: EdgeInsets.only(bottom: tokens.spacing.gap),
       child: HibikiCard(
         padding: EdgeInsets.zero,
         child: Column(
@@ -513,9 +498,13 @@ class _DictionaryDialogPageState extends BasePageState {
     final int idx = recIndex[rec] ?? -1;
     final bool installed = installedIndices.contains(idx);
     final bool selected = checked.contains(idx);
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return HibikiListItem(
       minHeight: 68,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: EdgeInsets.symmetric(
+        horizontal: tokens.spacing.rowHorizontal - tokens.spacing.gap / 2,
+        vertical: tokens.spacing.gap,
+      ),
       selected: selected,
       onTap: () => onChanged(idx, !selected),
       leading: Checkbox(
@@ -553,14 +542,9 @@ class _DictionaryDialogPageState extends BasePageState {
       context: context,
       builder: (ctx) => ValueListenableBuilder<String>(
         valueListenable: progressNotifier,
-        builder: (ctx, String msg, __) => adaptiveAlertDialog(
-          context: ctx,
-          title: Text(msg),
-          content: ValueListenableBuilder<double>(
-            valueListenable: downloadProgress,
-            builder: (_, double progress, __) =>
-                LinearProgressIndicator(value: progress > 0 ? progress : null),
-          ),
+        builder: (ctx, String msg, __) => DictionaryDownloadProgressDialog(
+          message: msg,
+          progressListenable: downloadProgress,
         ),
       ),
     );
@@ -688,18 +672,7 @@ class _DictionaryDialogPageState extends BasePageState {
     if (hadMemoryError && mounted) {
       showAppDialog(
         context: context,
-        builder: (context) => adaptiveAlertDialog(
-          context: context,
-          title: Text(t.low_memory_mode),
-          content: Text(t.low_memory_mode_suggestion),
-          actions: [
-            adaptiveDialogAction(
-              context: context,
-              onPressed: () => Navigator.pop(context),
-              child: Text(t.dialog_close),
-            ),
-          ],
-        ),
+        builder: (context) => const DictionaryLowMemoryDialog(),
       );
     }
   }
@@ -724,8 +697,11 @@ class _DictionaryDialogPageState extends BasePageState {
   }
 
   Widget _buildCategorySelector() {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: EdgeInsets.only(
+        bottom: tokens.spacing.gap + tokens.spacing.gap / 2,
+      ),
       child: LayoutBuilder(
         builder: (context, constraints) {
           return SingleChildScrollView(
@@ -771,10 +747,13 @@ class _DictionaryDialogPageState extends BasePageState {
   }
 
   Widget buildEmptyMessage() {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return AdaptiveSettingsSection(
       children: [
         Padding(
-          padding: const EdgeInsets.symmetric(vertical: 24),
+          padding: EdgeInsets.symmetric(
+            vertical: tokens.spacing.card + tokens.spacing.gap,
+          ),
           child: HibikiPlaceholderMessage(
             icon: DictionaryMediaType.instance.outlinedIcon,
             message: t.dictionaries_menu_empty,
@@ -785,8 +764,12 @@ class _DictionaryDialogPageState extends BasePageState {
   }
 
   Widget _buildEmptyCategoryRow() {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return HibikiCard(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 18),
+      padding: EdgeInsets.symmetric(
+        horizontal: tokens.spacing.gap + tokens.spacing.gap / 2,
+        vertical: tokens.spacing.card + tokens.spacing.gap / 4,
+      ),
       child: Text(
         t.dictionaries_menu_empty,
         style: textTheme.bodyMedium?.copyWith(
@@ -806,17 +789,21 @@ class _DictionaryDialogPageState extends BasePageState {
         appModel.dictionaryFormats[dictionary.formatKey]!;
     final bool enabled = !dictionary.isHidden(appModel.targetLanguage);
     final ColorScheme scheme = theme.colorScheme;
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final Color titleColor =
         enabled ? scheme.onSurface : scheme.onSurfaceVariant;
     final Color subtitleColor = scheme.onSurfaceVariant;
     return Padding(
       key: key,
-      padding: EdgeInsets.only(bottom: isLast ? 0 : 10),
+      padding: EdgeInsets.only(bottom: isLast ? 0 : tokens.spacing.rowVertical),
       child: HibikiCard(
         padding: EdgeInsets.zero,
         child: HibikiListItem(
           minHeight: 70,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          padding: EdgeInsets.symmetric(
+            horizontal: tokens.spacing.rowHorizontal - tokens.spacing.gap / 2,
+            vertical: tokens.spacing.rowVertical,
+          ),
           leading: ReorderableDragStartListener(
             index: index,
             child: Icon(
@@ -841,7 +828,7 @@ class _DictionaryDialogPageState extends BasePageState {
             mainAxisSize: MainAxisSize.min,
             children: [
               buildDictionaryTileTrailing(dictionary),
-              const SizedBox(width: 4),
+              SizedBox(width: tokens.spacing.gap / 2),
               adaptiveSwitch(
                 context: context,
                 value: enabled,
@@ -939,6 +926,7 @@ class _DictionaryDialogPageState extends BasePageState {
     IconData? icon,
     Color? color,
   }) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return PopupMenuItem<VoidCallback>(
       value: action,
       child: Row(
@@ -949,7 +937,7 @@ class _DictionaryDialogPageState extends BasePageState {
               size: textTheme.bodyMedium?.fontSize,
               color: color,
             ),
-          if (icon != null) const SizedBox(width: 8),
+          if (icon != null) SizedBox(width: tokens.spacing.gap),
           Text(
             label,
             style: TextStyle(color: color),
@@ -1010,5 +998,202 @@ class _DictionaryDialogPageState extends BasePageState {
         color: theme.colorScheme.primary,
       ),
     ];
+  }
+}
+
+@visibleForTesting
+class DictionaryConfirmationDialog extends StatelessWidget {
+  const DictionaryConfirmationDialog({
+    required this.title,
+    required this.content,
+    required this.actions,
+    super.key,
+  });
+
+  final Widget title;
+  final Widget content;
+  final List<Widget> actions;
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
+    return HibikiDialogFrame(
+      maxWidth: 440,
+      maxHeightFactor: 0.78,
+      child: HibikiModalSheetFrame(
+        leadingIcon: Icons.warning_amber_outlined,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.card,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            DefaultTextStyle.merge(
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: tokens.type.listTitle.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+              child: title,
+            ),
+            SizedBox(height: tokens.spacing.gap),
+            DefaultTextStyle.merge(
+              style: tokens.type.listSubtitle,
+              child: content,
+            ),
+          ],
+        ),
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: actions,
+        ),
+      ),
+    );
+  }
+}
+
+@visibleForTesting
+class DictionaryDownloadSelectionDialogFrame extends StatelessWidget {
+  const DictionaryDownloadSelectionDialogFrame({
+    required this.content,
+    required this.actions,
+    super.key,
+  });
+
+  final Widget content;
+  final List<Widget> actions;
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
+    return HibikiDialogFrame(
+      maxWidth: 560,
+      maxHeightFactor: 0.86,
+      scrollable: false,
+      child: HibikiModalSheetFrame(
+        title: t.dict_download_select_title,
+        leadingIcon: Icons.cloud_download_outlined,
+        scrollable: true,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: content,
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: actions,
+        ),
+      ),
+    );
+  }
+}
+
+@visibleForTesting
+class DictionaryDownloadProgressDialog extends StatelessWidget {
+  const DictionaryDownloadProgressDialog({
+    required this.message,
+    required this.progressListenable,
+    super.key,
+  });
+
+  final String message;
+  final ValueNotifier<double> progressListenable;
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
+    return HibikiDialogFrame(
+      maxWidth: 420,
+      maxHeightFactor: 0.72,
+      scrollable: false,
+      child: HibikiModalSheetFrame(
+        title: message,
+        leadingIcon: Icons.cloud_download_outlined,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: ValueListenableBuilder<double>(
+          valueListenable: progressListenable,
+          builder: (_, double progress, __) => LinearProgressIndicator(
+            value: progress > 0 ? progress : null,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+@visibleForTesting
+class DictionaryLowMemoryDialog extends StatelessWidget {
+  const DictionaryLowMemoryDialog({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
+    return HibikiDialogFrame(
+      maxWidth: 420,
+      maxHeightFactor: 0.72,
+      child: HibikiModalSheetFrame(
+        title: t.low_memory_mode,
+        leadingIcon: Icons.memory_outlined,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: Text(
+          t.low_memory_mode_suggestion,
+          style: tokens.type.listSubtitle,
+        ),
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: <Widget>[
+            adaptiveDialogAction(
+              context: context,
+              onPressed: () => Navigator.pop(context),
+              child: Text(t.dialog_close),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

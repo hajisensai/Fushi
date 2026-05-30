@@ -1,8 +1,8 @@
 import 'package:expandable/expandable.dart';
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/utils/spacing.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/pages.dart';
+import 'package:hibiki/utils.dart';
 
 /// Returns the widget for a [DictionarySearchResult] which returns a
 /// scrollable list of each [DictionaryEntry] in its mappings.
@@ -87,6 +87,8 @@ class _DictionaryResultPageState extends BasePageState<DictionaryResultPage> {
 
   @override
   Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
     /// Group entries by (word, reading) to form term groups.
     final Map<String, List<DictionaryEntry>> groupedEntries = {};
     for (final entry in widget.result.entries) {
@@ -125,7 +127,7 @@ class _DictionaryResultPageState extends BasePageState<DictionaryResultPage> {
         thickness: 3,
         controller: _scrollController,
         child: Padding(
-          padding: Spacing.of(context).insets.onlyRight.extraSmall,
+          padding: EdgeInsets.only(right: tokens.spacing.gap / 4),
           child: CustomScrollView(
             cacheExtent: appModel.lowMemoryMode ? 300 : 999999999999999,
             controller: _scrollController,
@@ -134,9 +136,10 @@ class _DictionaryResultPageState extends BasePageState<DictionaryResultPage> {
             ),
             slivers: [
               SliverPadding(
-                  padding: widget.spaceBeforeFirstResult
-                      ? Spacing.of(context).insets.onlyTop.normal
-                      : EdgeInsets.zero),
+                padding: widget.spaceBeforeFirstResult
+                    ? EdgeInsets.only(top: tokens.spacing.rowVertical)
+                    : EdgeInsets.zero,
+              ),
               ...termKeys
                   .map((termKey) => DictionaryTermPage(
                         opacity: widget.opacity,

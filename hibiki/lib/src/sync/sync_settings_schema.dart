@@ -20,6 +20,7 @@ import 'package:hibiki/src/sync/sftp_sync_backend.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_compare_dialog.dart';
 import 'package:hibiki/src/sync/sync_error_messages.dart';
+import 'package:hibiki/src/sync/sync_message_dialog.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/webdav_sync_backend.dart';
 import 'package:hibiki/utils.dart';
@@ -222,24 +223,7 @@ _SyncSettingsState _syncSettings(SettingsContext ctx) {
 }
 
 void _showSnackBar(BuildContext context, String message) {
-  if (isCupertinoPlatform(context)) {
-    showCupertinoDialog<void>(
-      context: context,
-      builder: (BuildContext dialogContext) => CupertinoAlertDialog(
-        content: Text(message),
-        actions: <Widget>[
-          CupertinoDialogAction(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: Text(t.dialog_done),
-          ),
-        ],
-      ),
-    );
-    return;
-  }
-  ScaffoldMessenger.of(context)
-    ..hideCurrentSnackBar()
-    ..showSnackBar(SnackBar(content: Text(message)));
+  showSyncMessage(context, message);
 }
 
 // ── Sync account widget ──────────────────────────────────────────────
@@ -771,53 +755,78 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
     final bool? confirmed = await showAppDialog<bool>(
       context: context,
       builder: (BuildContext ctx) => StatefulBuilder(
-        builder: (BuildContext ctx, StateSetter setLocal) =>
-            adaptiveAlertDialog(
-          context: ctx,
-          title: Text(t.backup_import_confirm_title),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Text(
-                t.backup_import_confirm(
-                  date: dateStr,
-                  bookCount: meta.bookCount.toString(),
-                  statsCount: meta.statsCount.toString(),
-                ),
-              ),
-              const SizedBox(height: 4),
-              SwitchListTile.adaptive(
-                contentPadding: EdgeInsets.zero,
-                title: Text(t.backup_import_settings_toggle),
-                subtitle: Text(importSettings
-                    ? t.backup_import_settings_on_hint
-                    : t.backup_import_settings_off_hint),
-                value: importSettings,
-                onChanged: (bool v) => setLocal(() => importSettings = v),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                t.backup_import_preserve_sync_note,
-                style: Theme.of(ctx).textTheme.bodySmall,
-              ),
-            ],
-          ),
-          actions: <Widget>[
-            adaptiveDialogAction(
-              context: ctx,
-              onPressed: () => Navigator.pop(ctx, false),
-              child: Text(t.dialog_cancel),
+        builder: (BuildContext ctx, StateSetter setLocal) {
+          final HibikiDesignTokens tokens = HibikiDesignTokens.of(ctx);
+          return HibikiDialogFrame(
+            maxWidth: 420,
+            insetPadding: EdgeInsets.symmetric(
+              horizontal: tokens.spacing.card,
+              vertical: tokens.spacing.card,
             ),
-            adaptiveDialogAction(
-              context: ctx,
-              isDefaultAction: true,
-              isDestructiveAction: true,
-              onPressed: () => Navigator.pop(ctx, true),
-              child: Text(t.dialog_ok),
+            scrollable: false,
+            child: HibikiModalSheetFrame(
+              title: t.backup_import_confirm_title,
+              scrollable: true,
+              bodyPadding: EdgeInsets.fromLTRB(
+                tokens.spacing.card,
+                0,
+                tokens.spacing.card,
+                tokens.spacing.gap,
+              ),
+              footerPadding: EdgeInsets.fromLTRB(
+                tokens.spacing.card,
+                tokens.spacing.gap,
+                tokens.spacing.card,
+                tokens.spacing.card,
+              ),
+              body: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    t.backup_import_confirm(
+                      date: dateStr,
+                      bookCount: meta.bookCount.toString(),
+                      statsCount: meta.statsCount.toString(),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  AdaptiveSettingsSwitchRow(
+                    title: t.backup_import_settings_toggle,
+                    subtitle: importSettings
+                        ? t.backup_import_settings_on_hint
+                        : t.backup_import_settings_off_hint,
+                    value: importSettings,
+                    onChanged: (bool v) => setLocal(() => importSettings = v),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    t.backup_import_preserve_sync_note,
+                    style: Theme.of(ctx).textTheme.bodySmall,
+                  ),
+                ],
+              ),
+              footer: Wrap(
+                alignment: WrapAlignment.end,
+                spacing: tokens.spacing.gap,
+                children: <Widget>[
+                  adaptiveDialogAction(
+                    context: ctx,
+                    onPressed: () => Navigator.pop(ctx, false),
+                    child: Text(t.dialog_cancel),
+                  ),
+                  adaptiveDialogAction(
+                    context: ctx,
+                    isDefaultAction: true,
+                    isDestructiveAction: true,
+                    onPressed: () => Navigator.pop(ctx, true),
+                    child: Text(t.dialog_ok),
+                  ),
+                ],
+              ),
             ),
-          ],
-        ),
+          );
+        },
       ),
     );
     return confirmed == true ? importSettings : null;
@@ -1091,10 +1100,9 @@ class _FtpConfigWidgetState extends State<_FtpConfigWidget> {
             onChanged: (_) => _saveCredentials(),
           ),
           const SizedBox(height: 8),
-          SwitchListTile.adaptive(
-            title: Text(t.sync_use_tls),
+          AdaptiveSettingsSwitchRow(
+            title: t.sync_use_tls,
             value: _useTls,
-            contentPadding: EdgeInsets.zero,
             onChanged: (bool v) {
               setState(() => _useTls = v);
               _saveCredentials();
@@ -1348,29 +1356,56 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget> {
     );
     final String? result = await showAppDialog<String>(
       context: context,
-      builder: (BuildContext ctx) => adaptiveAlertDialog(
-        context: ctx,
-        title: const Text('URL'),
-        content: HibikiTextField(
-          controller: controller,
-          labelText: 'URL',
-          hintText: 'http://192.168.1.100:38765',
-          keyboardType: TextInputType.url,
-        ),
-        actions: <Widget>[
-          adaptiveDialogAction(
-            context: ctx,
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(t.dialog_cancel),
+      builder: (BuildContext ctx) {
+        final HibikiDesignTokens tokens = HibikiDesignTokens.of(ctx);
+        return HibikiDialogFrame(
+          maxWidth: 420,
+          insetPadding: EdgeInsets.symmetric(
+            horizontal: tokens.spacing.card,
+            vertical: tokens.spacing.card,
           ),
-          adaptiveDialogAction(
-            context: ctx,
-            isDefaultAction: true,
-            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            child: Text(t.dialog_ok),
+          scrollable: false,
+          child: HibikiModalSheetFrame(
+            title: 'URL',
+            scrollable: true,
+            bodyPadding: EdgeInsets.fromLTRB(
+              tokens.spacing.card,
+              0,
+              tokens.spacing.card,
+              tokens.spacing.gap,
+            ),
+            footerPadding: EdgeInsets.fromLTRB(
+              tokens.spacing.card,
+              tokens.spacing.gap,
+              tokens.spacing.card,
+              tokens.spacing.card,
+            ),
+            body: HibikiTextField(
+              controller: controller,
+              labelText: 'URL',
+              hintText: 'http://192.168.1.100:38765',
+              keyboardType: TextInputType.url,
+            ),
+            footer: Wrap(
+              alignment: WrapAlignment.end,
+              spacing: tokens.spacing.gap,
+              children: <Widget>[
+                adaptiveDialogAction(
+                  context: ctx,
+                  onPressed: () => Navigator.pop(ctx),
+                  child: Text(t.dialog_cancel),
+                ),
+                adaptiveDialogAction(
+                  context: ctx,
+                  isDefaultAction: true,
+                  onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+                  child: Text(t.dialog_ok),
+                ),
+              ],
+            ),
           ),
-        ],
-      ),
+        );
+      },
     );
     controller.dispose();
     if (result == null || result.isEmpty) return;
@@ -1467,9 +1502,9 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget> {
               itemBuilder: (BuildContext context, int index) {
                 final HibikiClientUrl u = _urls[index];
                 final bool? ok = _reachable[u.url];
-                return ListTile(
+                return HibikiListItem(
                   key: ValueKey<String>(u.url),
-                  contentPadding: EdgeInsets.zero,
+                  padding: EdgeInsets.zero,
                   leading: ReorderableDragStartListener(
                     index: index,
                     child: Icon(Icons.drag_handle,
@@ -1689,12 +1724,10 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          SwitchListTile.adaptive(
-            title: Text(t.sync_server_enable),
-            subtitle:
-                Text(running ? t.sync_server_running : t.sync_server_stopped),
+          AdaptiveSettingsSwitchRow(
+            title: t.sync_server_enable,
+            subtitle: running ? t.sync_server_running : t.sync_server_stopped,
             value: _enabled,
-            contentPadding: EdgeInsets.zero,
             onChanged: (bool v) async {
               if (v) {
                 // Reflect the toggle while starting; _startServer persists
@@ -1861,12 +1894,12 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget> {
             Text(t.sync_lan_no_devices,
                 style: Theme.of(context).textTheme.bodySmall),
           for (final HibikiDevice device in _devices)
-            ListTile(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.devices, size: 20),
+            HibikiListItem(
+              leading: const Icon(Icons.devices_outlined, size: 20),
               title: Text(device.name),
               subtitle: Text(device.webDavUrl),
+              minHeight: 52,
+              padding: EdgeInsets.zero,
               onTap: () => _connectToDevice(device),
             ),
         ],
