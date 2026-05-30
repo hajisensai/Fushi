@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/utils/adaptive/adaptive_widgets.dart';
-import 'package:hibiki/src/utils/spacing.dart';
+import 'package:hibiki/utils.dart';
 
 class DictionaryProgressDialogContent extends StatelessWidget {
   const DictionaryProgressDialogContent({
@@ -18,6 +17,8 @@ class DictionaryProgressDialogContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
     return ConstrainedBox(
       constraints: const BoxConstraints(maxHeight: 156),
       child: Row(
@@ -34,7 +35,7 @@ class DictionaryProgressDialogContent extends StatelessWidget {
               ),
             ),
           ),
-          const Space.small(),
+          SizedBox(width: tokens.spacing.gap / 2),
           Flexible(
             child: SingleChildScrollView(
               child: Column(
@@ -47,7 +48,7 @@ class DictionaryProgressDialogContent extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: headerStyle,
                   ),
-                  const Space.extraSmall(),
+                  SizedBox(height: tokens.spacing.gap / 4),
                   Text(
                     message,
                     maxLines: 5,
