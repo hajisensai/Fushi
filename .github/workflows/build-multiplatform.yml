@@ -1,13 +1,17 @@
-name: Build iOS / macOS / Linux
+name: Build iOS / macOS / Linux / Windows
 
-# Verifies the app (incl. the gamepads plugin backends: GameController on
-# iOS/macOS, evdev/GTK on Linux) compiles on platforms that can't be built on a
-# Windows dev host. Triggered manually or by pushing a `ci/**` branch, so it
-# does not run on every develop push.
+# Verifies the app compiles on the four non-Android shipped platforms:
+#  - iOS/macOS gamepads = GameController; Linux = evdev/GTK
+#  - Windows = the forked flutter_inappwebview_windows C++ EPUB renderer, which
+#    is otherwise only built on the dev host and was never gated by CI.
+# Runs on PRs to main/develop (so a per-platform native break blocks the merge),
+# on manual dispatch, and on `ci/**` branch pushes for ad-hoc runs.
 on:
   workflow_dispatch:
   push:
     branches: ['ci/**']
+  pull_request:
+    branches: ['main', 'develop']
 
 jobs:
   linux:
@@ -81,5 +85,30 @@ jobs:
         working-directory: hibiki
         run: >-
           flutter build ios --debug --no-codesign
+          --dart-define=GOOGLE_OAUTH_CLIENT_ID=${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+          --dart-define=GOOGLE_OAUTH_CLIENT_SECRET=${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.41.6'
+      - name: Flutter pub get
+        working-directory: hibiki
+        run: flutter pub get
+      - name: Apply pub cache patches
+        shell: bash
+        run: |
+          chmod +x ci/apply-patches.sh
+          bash ci/apply-patches.sh
+      # Windows is the ONLY platform that renders EPUB via the forked
+      # flutter_inappwebview_windows C++ plugin; an MSVC/native break here was
+      # previously invisible to CI (the audit: Windows never built anywhere).
+      - name: Build Windows (debug)
+        working-directory: hibiki
+        run: >-
+          flutter build windows --debug
           --dart-define=GOOGLE_OAUTH_CLIENT_ID=${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
           --dart-define=GOOGLE_OAUTH_CLIENT_SECRET=${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
