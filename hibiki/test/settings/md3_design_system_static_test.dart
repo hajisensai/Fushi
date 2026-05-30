@@ -396,6 +396,8 @@ void main() {
       'lib/src/pages/implementations/tag_picker_page.dart': <String>[
         'CheckboxListTile',
         'ListTile(',
+        'const EdgeInsets.all(16)',
+        'const SizedBox(height: 8)',
       ],
       'lib/src/pages/implementations/illustrations_viewer_page.dart': <String>[
         'adaptiveAppBar',

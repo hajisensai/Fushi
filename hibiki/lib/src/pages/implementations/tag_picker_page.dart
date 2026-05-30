@@ -1,4 +1,4 @@
-﻿import 'package:drift/native.dart';
+import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -86,6 +86,8 @@ class _TagPickerPageState extends ConsumerState<TagPickerPage> {
 
   @override
   Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
     return HibikiPageScaffold(
       title: t.tag_label,
       floatingActionButton: FloatingActionButton.extended(
@@ -96,7 +98,7 @@ class _TagPickerPageState extends ConsumerState<TagPickerPage> {
       body: _allTags.isEmpty
           ? Center(
               child: Padding(
-                padding: const EdgeInsets.all(16),
+                padding: EdgeInsets.all(tokens.spacing.card),
                 child: HibikiCard(
                   child: HibikiPlaceholderMessage(
                     icon: Icons.label_outline,
@@ -106,9 +108,9 @@ class _TagPickerPageState extends ConsumerState<TagPickerPage> {
               ),
             )
           : ListView.separated(
-              padding: const EdgeInsets.all(16),
+              padding: EdgeInsets.all(tokens.spacing.card),
               itemCount: _allTags.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 8),
+              separatorBuilder: (_, __) => SizedBox(height: tokens.spacing.gap),
               itemBuilder: (context, index) {
                 final BookTagRow tag = _allTags[index];
                 final bool selected = _selectedTagIds.contains(tag.id);
