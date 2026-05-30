@@ -207,10 +207,21 @@ void main() {
       );
 
       // ── lookup() reuses the selection pipeline ────────────────────────
-      await eval(ReaderCaretScripts.enterInvocation()); // re-seed if needed
+      // Re-anchor to the first visible character first: the moves above may have
+      // parked the caret on a punctuation/boundary glyph, where look-up correctly
+      // returns nothing (same as tapping punctuation). The page's first visible
+      // char is a content glyph (logged as a kanji on entry), so look-up there is
+      // a real word.
+      await eval(ReaderCaretScripts.reanchorInvocation('forward'));
+      final caretChar = await eval(
+        '(window.hoshiCaret.node?window.hoshiCaret.node.textContent'
+        '.substr(window.hoshiCaret.offset,1):null)',
+      );
+      debugPrint('[CARET] lookup at char=$caretChar');
       final lookupOk = await eval(ReaderCaretScripts.lookupInvocation());
       expect(lookupOk == true, isTrue,
-          reason: 'lookup() must select the word at the caret');
+          reason: 'lookup() must select the word at the caret '
+              '(char=$caretChar)');
       final selText = await eval(
         'JSON.stringify(window.hoshiSelection && window.hoshiSelection.selection'
         ' ? window.hoshiSelection.selection.text : null)',
@@ -224,6 +235,13 @@ void main() {
       await eval(ReaderCaretScripts.exitInvocation());
       expect((await sig())['active'], isFalse);
       expect(await ringDisplay(), 'none', reason: 'ring hidden after exit');
+
+      // The eval-direct lookup() above opened a real dictionary popup (lookup
+      // fires the same onTextSelected pipeline). Dismiss it via Escape so the key
+      // path starts clean — with no popup, Escape leaves the cursor in one press
+      // rather than first closing the popup (which is the correct B/Esc order).
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pump(const Duration(milliseconds: 400));
 
       await takeScreenshot(binding, 'caret_js_verified');
 
