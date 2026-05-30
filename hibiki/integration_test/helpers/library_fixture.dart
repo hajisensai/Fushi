@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'package:hibiki/src/epub/epub_importer.dart';
+import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/models/app_model.dart';
 
 import 'generate_test_epub.dart' show EpubGenerator;
