@@ -164,7 +164,9 @@ class _HibikiFocusRingState extends State<HibikiFocusRing>
     // Don't ring a (near) full-screen focusable: the ring would sit at/beyond the
     // window edge — clipped, and occluded by any overlaid chrome (e.g. a reader
     // bottom bar). Such a node draws its own inset focus indicator instead.
-    final view = WidgetsBinding.instance.platformDispatcher.views.first;
+    final views = WidgetsBinding.instance.platformDispatcher.views;
+    if (views.isEmpty) return rect; // no view to size against — keep the ring
+    final view = views.first;
     final double sw = view.physicalSize.width / view.devicePixelRatio;
     final double sh = view.physicalSize.height / view.devicePixelRatio;
     if (rect.width >= sw * 0.92 && rect.height >= sh * 0.92) return null;
