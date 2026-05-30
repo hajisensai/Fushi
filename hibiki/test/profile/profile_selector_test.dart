@@ -16,11 +16,50 @@ import 'package:hibiki_core/hibiki_core.dart';
 /// on the Anki settings page. AdaptiveSettingsRow's Row places a non-flex
 /// trailing beside an `Expanded(label)` sibling, so RenderFlex measures the
 /// trailing with UNBOUNDED main-axis width. ProfileSelector's Material branch
-/// used to wrap its dropdown in an `Expanded`, which under unbounded width
-/// threw "RenderFlex children have non-zero flex but incoming width constraints
-/// are unbounded" — blanking the whole route in debug builds and leaving the
-/// un-laid-out subtree unable to hit-test (clicks dead). This test pumps the
-/// real widget in the real trailing slot and asserts no exception.
+/// used to wrap its dropdown in an `Expanded`, which under unbounded width threw
+/// "RenderFlex children have non-zero flex but incoming width constraints are
+/// unbounded" — blanking the whole route in debug builds and leaving the
+/// un-laid-out subtree unable to hit-test (clicks dead). These tests pump the
+/// real widget in the real trailing slot and assert no exception — both at a
+/// normal width and at a narrow (320px) window where a fixed-width trailing
+/// would overflow.
+Future<void> _pumpProfileSelectorRow(WidgetTester tester) async {
+  final HibikiDatabase db = HibikiDatabase.forTesting(NativeDatabase.memory());
+  addTearDown(db.close);
+  // Guarantee a non-empty profile list so ProfileSelector builds the real
+  // dropdown row instead of short-circuiting to SizedBox.shrink().
+  final int now = DateTime.now().millisecondsSinceEpoch;
+  await db.insertProfile(
+    ProfilesCompanion.insert(name: 'Default', createdAt: now, updatedAt: now),
+  );
+  final ProfileRepository repo = ProfileRepository(db, AnkiConnectRepository());
+
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: <Override>[
+        profileRepositoryProvider.overrideWithValue(repo),
+      ],
+      child: TranslationProvider(
+        child: MaterialApp(
+          home: Scaffold(
+            body: ListView(
+              children: const <Widget>[
+                AdaptiveSettingsRow(
+                  title: 'Profile',
+                  trailing: ProfileSelector(),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+
+  // Let ProfileViewModel._load() populate profiles and rebuild.
+  await tester.pumpAndSettle();
+}
+
 void main() {
   setUp(() {
     LocaleSettings.setLocale(AppLocale.en);
@@ -29,44 +68,24 @@ void main() {
   testWidgets(
     'ProfileSelector survives unbounded-width trailing measurement',
     (WidgetTester tester) async {
-      final HibikiDatabase db =
-          HibikiDatabase.forTesting(NativeDatabase.memory());
-      addTearDown(db.close);
-      // Guarantee a non-empty profile list so ProfileSelector builds the real
-      // dropdown row instead of short-circuiting to SizedBox.shrink().
-      final int now = DateTime.now().millisecondsSinceEpoch;
-      await db.insertProfile(
-        ProfilesCompanion.insert(
-            name: 'Default', createdAt: now, updatedAt: now),
-      );
-      final ProfileRepository repo =
-          ProfileRepository(db, AnkiConnectRepository());
+      await _pumpProfileSelectorRow(tester);
 
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: <Override>[
-            profileRepositoryProvider.overrideWithValue(repo),
-          ],
-          child: TranslationProvider(
-            child: MaterialApp(
-              home: Scaffold(
-                body: ListView(
-                  children: const <Widget>[
-                    AdaptiveSettingsRow(
-                      title: 'Profile',
-                      trailing: ProfileSelector(),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
+      expect(tester.takeException(), isNull);
+      expect(find.byType(DropdownMenu<int>), findsOneWidget);
+    },
+  );
 
-      // Let ProfileViewModel._load() populate profiles and rebuild.
-      await tester.pumpAndSettle();
+  testWidgets(
+    'ProfileSelector trailing does not overflow a narrow (320px) row',
+    (WidgetTester tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(320, 640);
+      addTearDown(tester.view.reset);
 
+      await _pumpProfileSelectorRow(tester);
+
+      // A fixed/greedy-width trailing would trip a RenderFlex overflow here,
+      // surfaced via takeException().
       expect(tester.takeException(), isNull);
       expect(find.byType(DropdownMenu<int>), findsOneWidget);
     },

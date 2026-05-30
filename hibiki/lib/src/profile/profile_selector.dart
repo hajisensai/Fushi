@@ -36,26 +36,24 @@ class ProfileSelector extends ConsumerWidget {
       );
     }
 
-    final TextTheme textTheme = Theme.of(context).textTheme;
     // This selector is embedded as the `trailing` of an AdaptiveSettingsRow,
     // whose Row lays out a non-flex trailing beside an Expanded(label) sibling
-    // and therefore measures the trailing with UNBOUNDED main-axis width. An
-    // `Expanded` (FlexFit.tight) here demands infinite width and throws
-    // "RenderFlex children have non-zero flex but incoming width constraints
-    // are unbounded" (debug), blanking the Anki settings page. So the row must
-    // shrink-wrap (mainAxisSize.min) and the dropdown must take a bounded width
-    // — mirroring AdaptiveSettingsPickerRow and this widget's Cupertino branch.
+    // and therefore measures the trailing with UNBOUNDED main-axis width. The
+    // old code wrapped the dropdown in an `Expanded` (a flex child), which under
+    // unbounded width threw "RenderFlex children have non-zero flex but incoming
+    // width constraints are unbounded" (debug), blanking the Anki settings page.
+    // The fix is to remove the flex child: the dropdown sizes to its content and
+    // is capped by a ConstrainedBox (mirroring AdaptiveSettingsPickerRow's
+    // bounded dropdown), so it never demands unbounded width and stays narrow
+    // enough not to overflow tight rows. `mainAxisSize.min` keeps the row
+    // shrink-wrapping (matching this widget's Cupertino branch). The row title
+    // already shows the profile label, so no in-widget label prefix is needed.
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
-          '${t.profile_label}: ',
-          style: textTheme.bodyMedium,
-        ),
-        SizedBox(
-          width: 200,
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 220),
           child: DropdownMenu<int>(
-            expandedInsets: EdgeInsets.zero,
             initialSelection: validId,
             dropdownMenuEntries: [
               for (final p in uiState.profiles)

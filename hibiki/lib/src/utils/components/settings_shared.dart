@@ -197,6 +197,15 @@ class AdaptiveSettingsRow extends StatelessWidget {
   final String? subtitle;
   final IconData? icon;
   final bool showIcon;
+
+  /// CONTRACT: [trailing] must be self-sizing. With [controlBelow] false it is
+  /// placed as a NON-flex child of a Row that also has an `Expanded` label, so
+  /// RenderFlex measures it with UNBOUNDED main-axis width. A trailing whose
+  /// top-level layout demands width (a bare `Expanded`/`Flexible(tight)`, or a
+  /// `DropdownMenu(expandedInsets: …)` without a bounding `SizedBox`) throws
+  /// "RenderFlex children have non-zero flex but incoming width constraints are
+  /// unbounded". Bound such controls (e.g. `SizedBox(width: …)`, as
+  /// [AdaptiveSettingsPickerRow] does) or pass them via [controlBelow] instead.
   final Widget? trailing;
   final VoidCallback? onTap;
   final bool controlBelow;
