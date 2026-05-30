@@ -118,6 +118,25 @@ void main() {
       expect(prev, isNull);
     });
 
+    test(
+        'prev cue: a current cue absent from the list falls through to the '
+        'position search', () {
+      // currentCue is set but its fragmentId is not in cues and the tracked
+      // index is stale (-1): the faithful fallthrough must use the position
+      // search (→ index 1 at pos 1700), not a boundary/first-cue shortcut.
+      final List<AudioCue> cues = [_cue(0), _cue(1000), _cue(2000)];
+      final AudioCue orphan = _cue(9999); // fragmentId 'cue-9999' not in cues
+
+      final int? prev = AudiobookPlayerController.prevCueIndexForTesting(
+        cues: cues,
+        currentCueIndex: -1,
+        currentCue: orphan,
+        positionMs: 1700,
+      );
+
+      expect(prev, 1);
+    });
+
     test('all-book cue lookup does not collapse duplicate selectors', () {
       final List<AudioCue> cues = [
         _cue(0, id: 1, fragmentId: ''),
