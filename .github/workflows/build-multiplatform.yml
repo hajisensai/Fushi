@@ -72,11 +72,14 @@ jobs:
         run: |
           chmod +x ci/apply-patches.sh
           bash ci/apply-patches.sh
-      # Simulator build needs no signing/Development Team — a pure compile check
-      # that still exercises gamepads_ios (GameController) and all iOS plugins.
-      - name: Build iOS (debug, simulator)
+      # Unsigned DEVICE build: needs no Development Team and links the device
+      # arch of all plugins (incl. gamepads_ios / record_ios). The --simulator
+      # path was wrong before — record_mp3_plus shipped a device-only static lib
+      # with no simulator slice; record now ships proper xcframeworks, but the
+      # device no-codesign build is the meaningful headless verification.
+      - name: Build iOS (debug, no codesign)
         working-directory: hibiki
         run: >-
-          flutter build ios --debug --simulator
+          flutter build ios --debug --no-codesign
           --dart-define=GOOGLE_OAUTH_CLIENT_ID=${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
           --dart-define=GOOGLE_OAUTH_CLIENT_SECRET=${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
