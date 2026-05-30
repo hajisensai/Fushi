@@ -27,6 +27,8 @@ import 'package:hibiki/src/media/audiobook/audiobook_play_bar.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:hibiki/src/media/audiobook/reader_quick_settings_sheet.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
+import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart'
+    show DictionaryPopupWebViewState;
 import 'package:hibiki/src/profile/profile_repository.dart';
 import 'package:hibiki/src/profile/profile_view_model.dart';
 import 'package:hibiki/src/reader/reader_caret_scripts.dart';
@@ -54,6 +56,11 @@ import 'package:hibiki/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent;
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 import 'package:hibiki/src/shortcuts/reader_caret_router.dart';
+
+/// Which WebView surface the char-level reading cursor lives on. The cursor is
+/// on the reader content, or — after a dictionary lookup — on the top popup,
+/// following the popup stack as the user looks up deeper words and backs out.
+enum CaretSurface { none, reader, popup }
 
 List<int> _computeChapterCharCounts(EpubBook book) {
   return List<int>.generate(
@@ -175,12 +182,21 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   final FocusScopeNode _chromeFocusScope =
       FocusScopeNode(debugLabel: 'readerChrome');
 
-  // Whether the char-level reading cursor (a focused character inside the EPUB
-  // DOM, driven from JS via [ReaderCaretScripts]) is active. While active, A/Enter
-  // looks up the word at the cursor, B/Esc leaves it, and directional keys / Tab
-  // step the cursor instead of turning the page. Entered with A/Enter when the
-  // book (not the bottom chrome) holds focus.
-  bool _caretActive = false;
+  // Which surface holds the char-level reading cursor (a focused character inside
+  // a WebView's DOM, driven from JS via [ReaderCaretScripts]). The cursor lives
+  // on the reader content, or — after a lookup — on the top dictionary popup, and
+  // follows the popup stack as the user goes deeper / backs out. While active,
+  // A/Enter looks up the word at the cursor, B/Esc backs out a layer, and
+  // directional keys / Tab step the cursor.
+  CaretSurface _caretSurface = CaretSurface.none;
+
+  // The popup-WebView state that currently holds the cursor (when _caretSurface
+  // == popup), so a re-render of the SAME popup (load-more) only re-measures the
+  // ring instead of re-seeding the cursor.
+  DictionaryPopupWebViewState? _caretPopupState;
+
+  bool get _caretActive => _caretSurface != CaretSurface.none;
+  bool get _caretOnReader => _caretSurface == CaretSurface.reader;
 
   // Serializes the cursor's async JS operations. A gamepad D-pad auto-repeats
   // ~9×/s and a move that turns the page (move → _paginate → reanchor) round-
@@ -1782,8 +1798,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       if (!mounted || _navigateGeneration != gen) return;
 
       // The setup script rebuilds window.hoshiCaret fresh (inactive). If the
-      // reading cursor was active, restore it on the new chapter's first page.
-      if (_caretActive) {
+      // reading cursor was on the reader, restore it on the new chapter's first
+      // page. (If it's on a popup, the reader ring is already hidden — leave it.)
+      if (_caretOnReader) {
         await _caretReanchor(ReaderNavigationDirection.forward);
         if (!mounted || _navigateGeneration != gen) return;
       }
@@ -2793,6 +2810,13 @@ window.flutter_inappwebview.callHandler('spreadReady');
   void onAllPopupsDismissed() {
     if (!mounted) return;
     _clearLookupState();
+    // If the cursor was living in a popup (controller/keyboard flow), the popup
+    // it was in is gone — bring it back to the reader at its remembered word.
+    // This covers every dismiss path (B/Esc, tap-outside, swipe).
+    if (_caretSurface == CaretSurface.popup) {
+      _caretPopupState = null;
+      unawaited(_enterCaret());
+    }
   }
 
   void _clearLookupState() {
@@ -3333,6 +3357,9 @@ window.flutter_inappwebview.callHandler('spreadReady');
         '${(accent.b * 255).round()},0.98)';
   }
 
+  /// Enter the cursor on the READER content (A/Enter in the book with no cursor,
+  /// or returning from a dismissed popup). The reader's own hoshiCaret restores
+  /// its remembered position, so this re-shows the ring where the user left it.
   Future<void> _enterCaret() async {
     if (_controller == null || !_readerContentReady || _caretBusy) return;
     _caretBusy = true;
@@ -3342,27 +3369,36 @@ window.flutter_inappwebview.callHandler('spreadReady');
       if (!mounted) return;
       // enter() returns {ok:false} on an empty page (no visible character).
       if (ReaderCaretScripts.moveStatus(raw) != 'moved') return;
-      if (!_caretActive) setState(() => _caretActive = true);
+      setState(() => _caretSurface = CaretSurface.reader);
     } finally {
       _caretBusy = false;
     }
   }
 
+  /// Fully leave cursor mode — hide the ring on whichever surface holds it.
   void _exitCaret() {
-    if (!_caretActive) return;
-    _controller?.evaluateJavascript(source: ReaderCaretScripts.exitInvocation());
-    setState(() => _caretActive = false);
+    switch (_caretSurface) {
+      case CaretSurface.none:
+        return;
+      case CaretSurface.reader:
+        _controller
+            ?.evaluateJavascript(source: ReaderCaretScripts.exitInvocation());
+        break;
+      case CaretSurface.popup:
+        topPopupState?.caretExit();
+        break;
+    }
+    setState(() {
+      _caretSurface = CaretSurface.none;
+      _caretPopupState = null;
+    });
   }
 
   Future<void> _runCaretAction(CaretAction action) async {
     // Leaving is always allowed, even mid-operation — it must never be dropped
     // by the in-flight guard, or the user could get stuck unable to back out.
     if (action == CaretAction.dismissOrExit) {
-      if (isDictionaryShown) {
-        clearDictionaryResult();
-      } else {
-        _exitCaret();
-      }
+      await _caretDismissOrExit();
       return;
     }
     if (_caretBusy) return;
@@ -3398,11 +3434,39 @@ window.flutter_inappwebview.callHandler('spreadReady');
     }
   }
 
-  /// Drive one cursor move. JS resolves the writing-mode and either moves within
-  /// the page (status 'moved'), scrolls in continuous mode, or — in paged mode at
-  /// a page edge — asks Dart to turn the page (which re-anchors the cursor on the
-  /// new page via [_paginate]). 'blocked' = book start/end, stay put.
+  /// B/Esc while the cursor is active. On the popup it walks one layer back (and
+  /// the cursor follows to the parent popup or the reader); on the reader it
+  /// dismisses a touch-opened popup or, with none, leaves cursor mode.
+  Future<void> _caretDismissOrExit() async {
+    if (_caretSurface == CaretSurface.popup) {
+      dismissTopPopup();
+      if (!mounted) return;
+      if (topVisiblePopupIndex >= 0) {
+        // A parent popup remains; its cursor is still active behind the one we
+        // just closed — keep the surface on the popup and re-measure its ring.
+        setState(() => _caretPopupState = topPopupState);
+        unawaited(topPopupState?.caretRefresh());
+      }
+      // else: the stack emptied → onAllPopupsDismissed returns the cursor to the
+      // reader.
+      return;
+    }
+    if (isDictionaryShown) {
+      clearDictionaryResult();
+    } else {
+      _exitCaret();
+    }
+  }
+
+  /// Drive one cursor move on the active surface. On the reader, a paged
+  /// page-edge ('pageForward'/'pageBackward') asks Dart to turn the page (which
+  /// re-anchors the cursor). The popup has no hoshiReader, so its cursor scrolls
+  /// internally and only ever returns 'moved'/'blocked'.
   Future<void> _caretMove(String physicalDir) async {
+    if (_caretSurface == CaretSurface.popup) {
+      await topPopupState?.caretMove(physicalDir);
+      return;
+    }
     if (_controller == null) return;
     final Object? raw = await _controller!.evaluateJavascript(
         source: ReaderCaretScripts.moveInvocation(physicalDir));
@@ -3415,16 +3479,23 @@ window.flutter_inappwebview.callHandler('spreadReady');
     }
   }
 
+  /// Look up the word at the cursor. On the reader it fires onTextSelected → a
+  /// popup; on the popup it fires the popup's textSelected → a deeper popup.
+  /// Either way the new popup's onRendered hands the cursor to it.
   Future<void> _caretLookup() async {
+    if (_caretSurface == CaretSurface.popup) {
+      await topPopupState?.caretLookup();
+      return;
+    }
     if (_controller == null) return;
     await _controller!
         .evaluateJavascript(source: ReaderCaretScripts.lookupInvocation());
-    // JS fires onTextSelected → _handleTextSelected (the tap pipeline).
   }
 
-  /// Place the cursor at the entering edge of the freshly paginated page.
+  /// Place the reader cursor at the entering edge of the freshly paginated page.
+  /// Reader-only — the popup never paginates.
   Future<void> _caretReanchor(ReaderNavigationDirection direction) async {
-    if (!_caretActive || _controller == null) return;
+    if (!_caretOnReader || _controller == null) return;
     final String edge = direction == ReaderNavigationDirection.forward
         ? 'forward'
         : 'backward';
@@ -3432,12 +3503,48 @@ window.flutter_inappwebview.callHandler('spreadReady');
         .evaluateJavascript(source: ReaderCaretScripts.reanchorInvocation(edge));
   }
 
-  /// Re-measure the ring after a relayout (chrome toggle, font/size change). If
+  /// Re-measure the reader ring after a relayout (chrome toggle, font/size). If
   /// the cursor's node detached, JS re-anchors to the first visible character.
+  /// Reader-only.
   Future<void> _caretRefresh() async {
-    if (!_caretActive || _controller == null) return;
+    if (!_caretOnReader || _controller == null) return;
     await _controller!
         .evaluateJavascript(source: ReaderCaretScripts.refreshInvocation());
+  }
+
+  /// Hand the char-level cursor to the freshly rendered top popup when in cursor
+  /// mode. Pure-touch users (surface == none) are unaffected.
+  @override
+  void onDictionaryPopupRendered(int index) {
+    if (_caretSurface == CaretSurface.none) return;
+    if (index != topVisiblePopupIndex) return;
+    final state = topPopupState;
+    if (state == null) return;
+    if (_caretSurface == CaretSurface.popup && identical(state, _caretPopupState)) {
+      // Same popup re-rendered (e.g. load-more) — just re-measure its ring.
+      unawaited(state.caretRefresh());
+      return;
+    }
+    unawaited(_transferCaretToTopPopup(state));
+  }
+
+  Future<void> _transferCaretToTopPopup(DictionaryPopupWebViewState state) async {
+    // Hide the reader ring when leaving the reader (it's the large background).
+    // A parent popup's ring is occluded by the new top, so leave it for the
+    // return trip (it re-shows when the top is dismissed).
+    if (_caretSurface == CaretSurface.reader) {
+      _controller
+          ?.evaluateJavascript(source: ReaderCaretScripts.exitInvocation());
+    }
+    await state.caretInit();
+    final String status = await state.caretEnter();
+    if (!mounted) return;
+    if (status == 'moved') {
+      setState(() {
+        _caretSurface = CaretSurface.popup;
+        _caretPopupState = state;
+      });
+    }
   }
 
   // ── Shift+Hover over dismiss barrier ──────────────────────────────
