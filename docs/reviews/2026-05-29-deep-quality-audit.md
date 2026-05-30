@@ -3469,3 +3469,12 @@ opus 审查 `2bf6affa0` 后提出 1 个 Critical：`HibikiModalSheetFrame` 恒 `
 - **永不复发机制**：新增静态守卫测试 `test/sync/no_bare_empty_catch_test.dart` —— 禁止 `lib/src/sync` 出现裸空 `catch {}`，强制每个 catch 要么记录/重抛，要么用注释声明 best-effort 意图；现有 14 处正当 best-effort 空 catch 已逐一注释化。
 
 验证：`flutter analyze lib/src/sync` 干净；新增/相关单测全绿；`flutter test` 全量 **+1424 All tests passed!**（此前并行 dev 的手柄重构编译错误也已在工作区修复）。
+
+## Round 4 续 — 测试债 051（AnkiConnect 网络 IPC）落地
+`AnkiConnectService`（AnkiConnect 的 HTTP IPC 层）此前零测试，仅 model JSON round-trip 被覆盖。新增 `packages/hibiki_anki/test/ankiconnect_service_test.dart`（19 个用例，`flutter test` 全过），通过服务自带的 `clientFactory` 注入点 + 手写 fake `HttpClient`（不开真实 socket）覆盖：
+- 请求信封：host/port/path、`action` + `version:6` 协议、params 有无；
+- 结果解析：deckNames/modelFields 列表；
+- 错误映射：非 200 → `AnkiConnectException`、`error` 字段 → 原文消息、`checkConnection` 对非 Anki 异常的兜底包装；
+- `isDuplicate` 查询构造 + 双引号转义；`addNote`/`storeMediaFile` payload 结构 + `allowDuplicate` 标志。
+
+051 现状更新：**AnkiConnect 网络 IPC = 已测**（本次）；**AnkiDroid ContentProvider IPC = 已测**（`hibiki/integration_test/anki_integration_test.dart` 真机 +6）。仅剩 `AnkiConnectRepository` 编排逻辑（mineEntry 字段渲染/060 fail-closed/018 blank-note）因 `loadSettings/updateSettings` 在包内为抽象、具体实现在 app 层，需 app 侧夹具，留作后续。`hibiki_anki` 包本次无并行开发冲突。
