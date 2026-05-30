@@ -676,6 +676,11 @@ void main() {
         ),
       );
     }
+    expect(batchActionBar, isNot(contains('const SizedBox(width: 4)')));
+    expect(
+      source,
+      isNot(contains('padding: const EdgeInsets.all(24)')),
+    );
   });
 
   test('reader history title and drag overlays use shared MD3 tokens', () {
@@ -763,9 +768,20 @@ void main() {
       'Future<void> _openSrtBookAudioPicker() async',
       '  int _tocHrefToChapterIndex(String? href)',
     );
+    final String settingsBar = _functionSource(
+      source,
+      'Widget _buildSettingsBar()',
+      '  Future<void> _openAudioImportDialog() async',
+    );
 
     expect(lyricsFlow, contains('ReaderLyricsModeHintDialog('));
     expect(pickerFlow, contains('ReaderSrtAudioPickerDialog('));
+    expect(settingsBar, contains('HibikiDesignTokens.of(context)'));
+    expect(settingsBar, contains('tokens.spacing'));
+    expect(
+      settingsBar,
+      isNot(contains('padding: const EdgeInsets.symmetric(horizontal: 8)')),
+    );
     for (final String dialogSource in <String>[
       lyricsHint,
       srtAudioPicker,

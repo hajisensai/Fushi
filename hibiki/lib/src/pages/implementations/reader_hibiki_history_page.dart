@@ -348,6 +348,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
 
   Widget _buildBodyWithSrtBooks(
       List<MediaItem> books, List<SrtBook> allSrtBooks) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final Set<int> srtTtuIds = {
       for (final b in allSrtBooks)
         if (b.ttuBookId > 0) b.ttuBookId,
@@ -414,7 +415,8 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
               ],
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.all(24),
+                  padding:
+                      EdgeInsets.all(tokens.spacing.card + tokens.spacing.gap),
                   child: Text(
                     t.tag_no_books_for_filter,
                     textAlign: TextAlign.center,
@@ -871,7 +873,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                 icon: const Icon(Icons.sell_outlined),
                 tooltip: t.tag_label,
               ),
-              const SizedBox(width: 4),
+              SizedBox(width: tokens.spacing.gap / 2),
               IconButton(
                 onPressed: _selectedKeys.isEmpty ? null : _batchDeleteConfirm,
                 icon: const Icon(Icons.delete_outline),

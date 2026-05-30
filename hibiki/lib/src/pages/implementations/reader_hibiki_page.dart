@@ -3540,6 +3540,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
   }
 
   Widget _buildSettingsBar() {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return Positioned(
       left: 0,
       right: 0,
@@ -3552,7 +3553,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
             child: SizedBox(
               height: _readerChromeHeight,
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
+                padding: EdgeInsets.symmetric(horizontal: tokens.spacing.gap),
                 child: Row(
                   children: <Widget>[
                     IconButton(
