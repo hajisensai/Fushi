@@ -578,14 +578,35 @@ void main() {
     );
 
     expect(tagBar, contains('HibikiTagChip('));
+    expect(tagBar, contains('HibikiIconButton('));
     expect(tagBar, contains('tokens.spacing'));
     expect(tagBar, contains('tokens.surfaces.outline'));
     expect(tagBar, isNot(contains('class _TagChip')));
+    expect(tagBar, isNot(contains('child: IconButton(')));
+    expect(tagBar, isNot(contains('width: 32')));
+    expect(tagBar, isNot(contains('height: 32')));
+    expect(tagBar, isNot(contains('size: 18')));
     expect(tagBar, isNot(contains('BorderRadius.circular(16)')));
     expect(tagBar, isNot(contains('height: 44')));
     expect(tagBar,
         isNot(contains('EdgeInsets.symmetric(horizontal: 12, vertical: 6)')));
     expect(tagBar, isNot(contains('const SizedBox(width: 6)')));
+  });
+
+  test('shared icon button uses MD3 design tokens', () {
+    final String source = File(
+      'lib/src/utils/components/hibiki_icon_button.dart',
+    ).readAsStringSync();
+    final String buildSource = _sectionSource(
+      source,
+      '  Widget build(BuildContext context) {',
+      source.length,
+    );
+
+    expect(buildSource, contains('HibikiDesignTokens.of(context)'));
+    expect(buildSource, contains('tokens.spacing'));
+    expect(buildSource, isNot(contains('Spacing.of(context)')));
+    expect(buildSource, isNot(contains('const EdgeInsets.all(8)')));
   });
 
   test('reader history card overlays use shared MD3 spacing tokens', () {

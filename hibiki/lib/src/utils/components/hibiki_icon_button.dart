@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:hibiki/src/utils/spacing.dart';
+import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 
 /// A button that can be set as busy. When busy, the icon is faded out when its
 /// [onTap] action is on-going and processing, which can be used to
@@ -136,14 +136,15 @@ class _HibikiIconButtonState extends State<HibikiIconButton> {
 
   @override
   Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     if (widget.isWideTapArea) {
       return Semantics(
         label: widget.tooltip,
         button: true,
         child: IconButton(
           constraints: BoxConstraints(
-            maxWidth: Spacing.of(context).spaces.extraBig,
-            maxHeight: Spacing.of(context).spaces.extraBig,
+            maxWidth: tokens.spacing.gap * 6,
+            maxHeight: tokens.spacing.gap * 6,
           ),
           icon: Icon(
             widget.icon,
@@ -166,7 +167,7 @@ class _HibikiIconButtonState extends State<HibikiIconButton> {
         child: ColoredBox(
           color: widget.backgroundColor ?? Colors.transparent,
           child: Padding(
-            padding: widget.padding ?? const EdgeInsets.all(8),
+            padding: widget.padding ?? EdgeInsets.all(tokens.spacing.gap),
             child: Icon(
               widget.icon,
               size: widget.size,

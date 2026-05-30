@@ -1341,7 +1341,6 @@ class _TagBarContentState extends ConsumerState<_TagBarContent> {
   @override
   Widget build(BuildContext context) {
     final selectedIds = ref.watch(selectedTagIdsProvider);
-    final theme = Theme.of(context);
     final t = Translations.of(context);
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
 
@@ -1366,42 +1365,29 @@ class _TagBarContentState extends ConsumerState<_TagBarContent> {
         separatorBuilder: (_, __) => SizedBox(width: tokens.spacing.gap * 0.75),
         itemBuilder: (context, index) {
           if (index == widget.tags.length + trailingCount - 1) {
-            return SizedBox(
-              width: 32,
-              height: 32,
-              child: IconButton(
-                padding: EdgeInsets.zero,
-                icon: Icon(
+            return _tagBarAction(
+              icon:
                   widget.selectionMode ? Icons.close : Icons.checklist_outlined,
-                  size: 18,
-                  color: widget.selectionMode
-                      ? theme.colorScheme.primary
-                      : theme.colorScheme.onSurfaceVariant,
-                ),
-                tooltip: widget.selectionMode ? null : t.batch_select,
-                onPressed: widget.onToggleSelectionMode,
-              ),
+              tooltip: widget.selectionMode
+                  ? MaterialLocalizations.of(context).closeButtonTooltip
+                  : t.batch_select,
+              selected: widget.selectionMode,
+              onTap: widget.onToggleSelectionMode,
             );
           }
           if (index == widget.tags.length && widget.tags.isNotEmpty) {
-            return SizedBox(
-              width: 32,
-              height: 32,
-              child: IconButton(
-                padding: EdgeInsets.zero,
-                icon: Icon(Icons.settings_outlined,
-                    size: 18, color: theme.colorScheme.onSurfaceVariant),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    adaptivePageRoute(
-                        builder: (_) => const TagManagementPage()),
-                  ).then((_) {
-                    ref.invalidate(allTagsProvider);
-                    ref.invalidate(bookTagMapProvider);
-                  });
-                },
-              ),
+            return _tagBarAction(
+              icon: Icons.settings_outlined,
+              tooltip: t.tag_manage,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  adaptivePageRoute(builder: (_) => const TagManagementPage()),
+                ).then((_) {
+                  ref.invalidate(allTagsProvider);
+                  ref.invalidate(bookTagMapProvider);
+                });
+              },
             );
           }
           final tag = widget.tags[index];
@@ -1460,6 +1446,24 @@ class _TagBarContentState extends ConsumerState<_TagBarContent> {
           );
         },
       ),
+    );
+  }
+
+  Widget _tagBarAction({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback onTap,
+    bool selected = false,
+  }) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return HibikiIconButton(
+      icon: icon,
+      tooltip: tooltip,
+      size: tokens.spacing.gap * 2.25,
+      padding: EdgeInsets.all(tokens.spacing.gap * 0.875),
+      enabledColor:
+          selected ? tokens.surfaces.primary : tokens.surfaces.onVariant,
+      onTap: onTap,
     );
   }
 
