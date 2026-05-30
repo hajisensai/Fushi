@@ -25,7 +25,12 @@ EMULATOR="${EMULATOR:-$(command -v emulator 2>/dev/null || echo /d/android_sdk/e
 FLUTTER="${FLUTTER:-$(command -v flutter 2>/dev/null || echo /d/flutter_sdk/flutter_extracted/flutter/bin/flutter)}"
 AVD="${AVD:-hoshi_test_api35}"
 PKG="${PKG:-app.hibiki.reader}"
-DICT_ZIP="${DICT_ZIP:-/d/辞典/[JA-JA] 明鏡国語辞典 第三版[2025-08-18].zip}"
+# Dictionary fixture for popup_dictionary / reader_dictionary. The default file
+# name contains [..] glob brackets + CJK, so a hardcoded literal can fail to
+# byte-match the real on-disk name; if DICT_ZIP isn't an existing file we locate
+# any zip under DICT_DIR via find (brackets-safe) below.
+DICT_DIR="${DICT_DIR:-/d/辞典}"
+DICT_ZIP="${DICT_ZIP:-}"
 APK_REL="build/app/outputs/flutter-apk/app-debug.apk"
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
@@ -102,13 +107,19 @@ else
 fi
 
 DICT_OK=false
-if [ -f "$DICT_ZIP" ]; then
-  echo ">>> Pushing dictionary fixture to /sdcard/Download/test_dict.zip..."
+# Resolve the dictionary fixture: prefer an explicit DICT_ZIP, else find the
+# first .zip under DICT_DIR (find tolerates the [..]/CJK characters that break
+# a literal path match).
+if [ -z "$DICT_ZIP" ] || [ ! -f "$DICT_ZIP" ]; then
+  DICT_ZIP="$(find "$DICT_DIR" -maxdepth 1 -name '*.zip' 2>/dev/null | head -1)"
+fi
+if [ -n "$DICT_ZIP" ] && [ -f "$DICT_ZIP" ]; then
+  echo ">>> Pushing dictionary fixture ($(basename "$DICT_ZIP")) to /sdcard/Download/test_dict.zip..."
   if MSYS_NO_PATHCONV=1 $ADBD push "$DICT_ZIP" /sdcard/Download/test_dict.zip >/dev/null; then
     DICT_OK=true
   fi
 else
-  echo ">>> WARN: DICT_ZIP not found ($DICT_ZIP) — popup_dictionary may fail." >&2
+  echo ">>> WARN: no dictionary zip found under $DICT_DIR — popup_dictionary may fail." >&2
 fi
 
 # ── Target list (classified by prerequisite for the summary) ──
@@ -187,4 +198,7 @@ fi
 echo "Logs         : $LOGDIR"
 echo "============================================================"
 
-[ ${#FAIL[@]} -eq 0 ]
+# Green only if nothing failed AND at least one target actually passed — so a
+# run where every requested target was skipped (e.g. a mistyped --only) does
+# not report a misleading success (review W1).
+[ ${#FAIL[@]} -eq 0 ] && [ ${#PASS[@]} -gt 0 ]
