@@ -311,6 +311,13 @@ void main() {
         'BorderRadius.circular(4)',
         'Radius.circular(2)',
         'fontSize: 9',
+        'const EdgeInsets.all(16)',
+        'const EdgeInsets.symmetric(horizontal: 16)',
+        'const EdgeInsets.symmetric(horizontal: 16, vertical: 4)',
+        'const SizedBox(width: 12)',
+        'const SizedBox(height: 8)',
+        'const SizedBox(height: 12)',
+        'const SizedBox(height: 24)',
       ],
       'lib/src/utils/components/hibiki_search_history.dart': <String>[
         'fontSize:',

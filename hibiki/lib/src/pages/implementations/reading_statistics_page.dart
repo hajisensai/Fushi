@@ -183,6 +183,8 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   }
 
   Widget _buildContent() {
+    final tokens = HibikiDesignTokens.of(context);
+
     return CustomScrollView(
       slivers: [
         SliverToBoxAdapter(child: _buildSummaryCards()),
@@ -190,7 +192,12 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
         SliverToBoxAdapter(child: _buildDailyChart()),
         SliverToBoxAdapter(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
+            padding: EdgeInsets.fromLTRB(
+              tokens.spacing.card,
+              tokens.spacing.card + tokens.spacing.gap,
+              tokens.spacing.card,
+              tokens.spacing.gap,
+            ),
             child: Text(t.stat_by_book,
                 style: Theme.of(context).textTheme.titleMedium),
           ),
@@ -201,14 +208,17 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
             childCount: _bookData.length,
           ),
         ),
-        const SliverPadding(padding: EdgeInsets.only(bottom: 32)),
+        SliverPadding(
+            padding: EdgeInsets.only(bottom: tokens.spacing.card * 2)),
       ],
     );
   }
 
   Widget _buildSummaryCards() {
+    final tokens = HibikiDesignTokens.of(context);
+
     return Padding(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.all(tokens.spacing.card),
       child: Column(
         children: [
           Row(
@@ -216,19 +226,19 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
               Expanded(
                   child:
                       _summaryStatPanel(t.stat_today, _todayChars, _todayMs)),
-              const SizedBox(width: 12),
+              SizedBox(width: tokens.spacing.gap + tokens.spacing.gap / 2),
               Expanded(
                   child:
                       _summaryStatPanel(t.stat_this_week, _weekChars, _weekMs)),
             ],
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
           Row(
             children: [
               Expanded(
                   child: _summaryStatPanel(
                       t.stat_this_month, _monthChars, _monthMs)),
-              const SizedBox(width: 12),
+              SizedBox(width: tokens.spacing.gap + tokens.spacing.gap / 2),
               Expanded(
                   child: _summaryStatPanel(t.stat_all_time, _allChars, _allMs)),
             ],
@@ -240,6 +250,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
 
   Widget _summaryStatPanel(String label, int chars, int ms) {
     final colorScheme = Theme.of(context).colorScheme;
+    final tokens = HibikiDesignTokens.of(context);
     return HibikiCard(
       child: Padding(
         padding: EdgeInsets.zero,
@@ -250,13 +261,13 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
                 style: Theme.of(context).textTheme.labelLarge?.copyWith(
                       color: colorScheme.onSurfaceVariant,
                     )),
-            const SizedBox(height: 8),
+            SizedBox(height: tokens.spacing.gap),
             Text(_formatChars(chars),
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
                       color: colorScheme.onSurface,
                       fontWeight: FontWeight.bold,
                     )),
-            const SizedBox(height: 4),
+            SizedBox(height: tokens.spacing.gap / 2),
             Text(_formatTime(ms),
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: colorScheme.onSurfaceVariant,
@@ -271,13 +282,13 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     final tokens = HibikiDesignTokens.of(context);
     final colorScheme = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      padding: EdgeInsets.symmetric(horizontal: tokens.spacing.card),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(t.stat_today_hourly,
               style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 12),
+          SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
           SizedBox(
             height: 140,
             child: CustomPaint(
@@ -293,7 +304,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
               ),
             ),
           ),
-          const SizedBox(height: 24),
+          SizedBox(height: tokens.spacing.card + tokens.spacing.gap),
         ],
       ),
     );
@@ -303,13 +314,13 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     final tokens = HibikiDesignTokens.of(context);
     final colorScheme = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      padding: EdgeInsets.symmetric(horizontal: tokens.spacing.card),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(t.stat_last_30_days,
               style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 12),
+          SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
           SizedBox(
             height: 160,
             child: CustomPaint(
@@ -338,7 +349,10 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     final tokens = HibikiDesignTokens.of(context);
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      padding: EdgeInsets.symmetric(
+        horizontal: tokens.spacing.card,
+        vertical: tokens.spacing.gap / 2,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -348,7 +362,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
             overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.bodyMedium,
           ),
-          const SizedBox(height: 4),
+          SizedBox(height: tokens.spacing.gap / 2),
           Row(
             children: [
               Expanded(
@@ -362,7 +376,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
                   ),
                 ),
               ),
-              const SizedBox(width: 12),
+              SizedBox(width: tokens.spacing.gap + tokens.spacing.gap / 2),
               Text(
                 '${_formatChars(book.chars)} · ${_formatTime(book.ms)}',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -371,7 +385,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
               ),
             ],
           ),
-          const SizedBox(height: 4),
+          SizedBox(height: tokens.spacing.gap / 2),
         ],
       ),
     );
