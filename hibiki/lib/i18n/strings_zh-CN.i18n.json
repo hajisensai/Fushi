@@ -1091,7 +1091,6 @@
     "sync_backend_dropbox": "Dropbox",
     "sync_backend_ftp": "FTP",
     "sync_backend_sftp": "SFTP",
-    "sync_backend_smb": "SMB/CIFS",
     "sync_backend_hibiki_server": "Hibiki 互联",
     "sync_server_enable": "启用同步服务",
     "sync_server_port": "服务端口",
@@ -1150,5 +1149,12 @@
     "sync_err_quota": "云端存储空间已满（配额已用尽）。",
     "sync_err_auth_expired": "登录已过期，请重新登录。",
     "sync_server_port_in_use": "端口 $port 已被占用，请换一个端口。",
-    "sync_lan_scan_failed": "扫描失败——请检查网络权限或防火墙。"
+    "sync_lan_scan_failed": "扫描失败——请检查网络权限或防火墙。",
+    "sync_section_method": "同步方式",
+    "sync_section_host_server": "本机作为同步服务器",
+    "sync_section_host_server_footer": "让其他设备从本机同步，与上面选择的同步后端互不影响。",
+    "sync_section_content": "同步内容",
+    "sync_section_actions": "同步操作",
+    "sync_section_backup": "本地备份",
+    "backup_import_preserve_sync_note": "本设备的同步配置（账户与凭据）将保留。"
 }

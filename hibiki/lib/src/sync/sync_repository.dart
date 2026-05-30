@@ -374,41 +374,6 @@ class SyncRepository {
     await _setString(_keySftpPrivateKey, _encodeSecret(v));
   }
 
-  // ── SMB credentials ─────────────────────────────────────────────
-
-  static const _keySmbHost = 'sync_smb_host';
-  static const _keySmbShare = 'sync_smb_share';
-  static const _keySmbUsername = 'sync_smb_username';
-  static const _keySmbPassword = 'sync_smb_password';
-  static const _keySmbDomain = 'sync_smb_domain';
-  static const _keySmbWebDavUrl = 'sync_smb_webdav_url';
-
-  Future<String?> getSmbHost() => _getStringOrNull(_keySmbHost);
-  Future<void> setSmbHost(String? v) => _setOrDelete(_keySmbHost, v);
-  Future<String?> getSmbShare() => _getStringOrNull(_keySmbShare);
-  Future<void> setSmbShare(String? v) => _setOrDelete(_keySmbShare, v);
-  Future<String?> getSmbUsername() => _getStringOrNull(_keySmbUsername);
-  Future<void> setSmbUsername(String? v) => _setOrDelete(_keySmbUsername, v);
-
-  Future<String?> getSmbPassword() async {
-    final encoded = await _getStringOrNull(_keySmbPassword);
-    return encoded != null ? _decodeSecret(encoded) : null;
-  }
-
-  Future<void> setSmbPassword(String? v) async {
-    if (v == null) {
-      await _deleteKey(_keySmbPassword);
-      return;
-    }
-    await _setString(_keySmbPassword, _encodeSecret(v));
-  }
-
-  Future<String?> getSmbDomain() => _getStringOrNull(_keySmbDomain);
-  Future<void> setSmbDomain(String? v) => _setOrDelete(_keySmbDomain, v);
-
-  Future<String?> getSmbWebDavUrl() => _getStringOrNull(_keySmbWebDavUrl);
-  Future<void> setSmbWebDavUrl(String? v) => _setOrDelete(_keySmbWebDavUrl, v);
-
   // ── Hibiki Server config ────────────────────────────────────────
 
   static const _keyServerEnabled = 'sync_server_enabled';

@@ -1091,7 +1091,6 @@
     "sync_backend_dropbox": "Dropbox",
     "sync_backend_ftp": "FTP",
     "sync_backend_sftp": "SFTP",
-    "sync_backend_smb": "SMB/CIFS",
     "sync_backend_hibiki_server": "Hibiki P2P",
     "sync_server_enable": "Enable sync server",
     "sync_server_port": "Server port",
@@ -1150,5 +1149,12 @@
     "sync_err_quota": "Cloud storage is full (quota reached).",
     "sync_err_auth_expired": "Sign-in expired — please sign in again.",
     "sync_server_port_in_use": "Port $port is already in use — pick a different port.",
-    "sync_lan_scan_failed": "Scan failed — check network permissions or firewall."
+    "sync_lan_scan_failed": "Scan failed — check network permissions or firewall.",
+    "sync_section_method": "Sync method",
+    "sync_section_host_server": "This device as a sync server",
+    "sync_section_host_server_footer": "Let other devices sync from this device. Independent of the sync backend above.",
+    "sync_section_content": "What to sync",
+    "sync_section_actions": "Sync actions",
+    "sync_section_backup": "Local backup",
+    "backup_import_preserve_sync_note": "Your sync settings on this device (account and credentials) will be kept."
 }

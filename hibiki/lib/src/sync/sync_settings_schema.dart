@@ -17,7 +17,6 @@ import 'package:hibiki/src/sync/onedrive_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 import 'package:hibiki/src/sync/lan_discovery_service.dart';
 import 'package:hibiki/src/sync/sftp_sync_backend.dart';
-import 'package:hibiki/src/sync/smb_sync_backend.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_compare_dialog.dart';
 import 'package:hibiki/src/sync/sync_error_messages.dart';
@@ -35,14 +34,26 @@ SettingsDestination buildSyncBackupDestination() {
     summary: t.sync_summary,
     icon: Icons.sync,
     sections: <SettingsSection>[
+      // ── Group 1: Sync method — the backend + its own auth/config ──────
+      // Each control is scoped to the backend it actually applies to:
+      // OAuth account row for cloud backends; credential box for WebDAV/FTP/
+      // SFTP; URL list + LAN discovery for the Hibiki P2P backend.
       SettingsSection(
-        title: t.sync_backend,
+        title: t.sync_section_method,
         items: <SettingsItem>[
           SettingsCustomItem(
             id: 'sync.mode',
             icon: Icons.cloud_outlined,
             builder: (SettingsContext ctx) =>
                 _BackendSelectorWidget(settingsContext: ctx),
+          ),
+          SettingsCustomItem(
+            id: 'sync.account_status',
+            icon: Icons.account_circle_outlined,
+            visible: (SettingsContext ctx) =>
+                isOAuthSyncBackend(_syncSettings(ctx).backendType),
+            builder: (SettingsContext ctx) =>
+                _SyncAccountWidget(settingsContext: ctx),
           ),
           SettingsCustomItem(
             id: 'sync.webdav_config',
@@ -69,14 +80,6 @@ SettingsDestination buildSyncBackupDestination() {
                 _SftpConfigWidget(settingsContext: ctx),
           ),
           SettingsCustomItem(
-            id: 'sync.smb_config',
-            icon: Icons.dns_outlined,
-            visible: (SettingsContext ctx) =>
-                _syncSettings(ctx).backendType == SyncBackendType.smb,
-            builder: (SettingsContext ctx) =>
-                _SmbConfigWidget(settingsContext: ctx),
-          ),
-          SettingsCustomItem(
             id: 'sync.hibiki_server_config',
             icon: Icons.devices_outlined,
             visible: (SettingsContext ctx) =>
@@ -84,10 +87,22 @@ SettingsDestination buildSyncBackupDestination() {
             builder: (SettingsContext ctx) =>
                 _HibikiServerConfigWidget(settingsContext: ctx),
           ),
+          SettingsCustomItem(
+            id: 'sync.lan_devices',
+            icon: Icons.wifi_find_outlined,
+            visible: (SettingsContext ctx) =>
+                _syncSettings(ctx).backendType == SyncBackendType.hibikiServer,
+            builder: (SettingsContext ctx) =>
+                _LanDiscoveryWidget(settingsContext: ctx),
+          ),
         ],
       ),
+      // ── Group 2: This device as a sync server ─────────────────────────
+      // Independent of the chosen backend (you can host regardless of where
+      // you sync your own data). Always shown.
       SettingsSection(
-        title: t.sync_server_enable,
+        title: t.sync_section_host_server,
+        footer: t.sync_section_host_server_footer,
         items: <SettingsItem>[
           SettingsCustomItem(
             id: 'sync.server_mode',
@@ -97,30 +112,9 @@ SettingsDestination buildSyncBackupDestination() {
           ),
         ],
       ),
+      // ── Group 3: What to sync — global, applies to every backend ──────
       SettingsSection(
-        title: t.sync_lan_discovery,
-        items: <SettingsItem>[
-          SettingsCustomItem(
-            id: 'sync.lan_devices',
-            icon: Icons.wifi_find_outlined,
-            builder: (SettingsContext ctx) =>
-                _LanDiscoveryWidget(settingsContext: ctx),
-          ),
-        ],
-      ),
-      SettingsSection(
-        title: t.sync_account,
-        items: <SettingsItem>[
-          SettingsCustomItem(
-            id: 'sync.account_status',
-            icon: Icons.account_circle_outlined,
-            builder: (SettingsContext ctx) =>
-                _SyncAccountWidget(settingsContext: ctx),
-          ),
-        ],
-      ),
-      SettingsSection(
-        title: t.sync_options,
+        title: t.sync_section_content,
         items: <SettingsItem>[
           SettingsSwitchItem(
             id: 'sync.auto_sync',
@@ -169,8 +163,9 @@ SettingsDestination buildSyncBackupDestination() {
           ),
         ],
       ),
+      // ── Group 4: Manual sync actions — global ────────────────────────
       SettingsSection(
-        title: t.sync_actions,
+        title: t.sync_section_actions,
         items: <SettingsItem>[
           SettingsActionItem(
             id: 'sync.compare',
@@ -183,8 +178,9 @@ SettingsDestination buildSyncBackupDestination() {
           ),
         ],
       ),
+      // ── Group 5: Local backup — independent of sync ──────────────────
       SettingsSection(
-        title: t.backup_local,
+        title: t.sync_section_backup,
         items: <SettingsItem>[
           SettingsCustomItem(
             id: 'sync.backup_export',
@@ -772,12 +768,23 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
       builder: (BuildContext ctx) => adaptiveAlertDialog(
         context: ctx,
         title: Text(t.backup_import_confirm_title),
-        content: Text(
-          t.backup_import_confirm(
-            date: dateStr,
-            bookCount: meta.bookCount.toString(),
-            statsCount: meta.statsCount.toString(),
-          ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(
+              t.backup_import_confirm(
+                date: dateStr,
+                bookCount: meta.bookCount.toString(),
+                statsCount: meta.statsCount.toString(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              t.backup_import_preserve_sync_note,
+              style: Theme.of(ctx).textTheme.bodySmall,
+            ),
+          ],
         ),
         actions: <Widget>[
           adaptiveDialogAction(
@@ -839,11 +846,19 @@ bool _isBackendSelectable(SyncBackendType type) {
     case SyncBackendType.webDav:
     case SyncBackendType.ftp:
     case SyncBackendType.sftp:
-    case SyncBackendType.smb:
     case SyncBackendType.hibikiServer:
       return true;
   }
 }
+
+/// OAuth cloud backends authenticate via a browser sign-in (handled by the
+/// account row) rather than an inline credential box. Drives whether the
+/// account/sign-in row appears in the sync-method group.
+@visibleForTesting
+bool isOAuthSyncBackend(SyncBackendType type) =>
+    type == SyncBackendType.googleDrive ||
+    type == SyncBackendType.oneDrive ||
+    type == SyncBackendType.dropbox;
 
 /// Backends shown in the picker: all selectable ones, plus [current] if a
 /// previously-persisted value would otherwise be filtered out (DropdownButton
@@ -868,8 +883,6 @@ String _backendLabel(SyncBackendType type) {
       return t.sync_backend_ftp;
     case SyncBackendType.sftp:
       return t.sync_backend_sftp;
-    case SyncBackendType.smb:
-      return t.sync_backend_smb;
     case SyncBackendType.hibikiServer:
       return t.sync_backend_hibiki_server;
   }
@@ -911,11 +924,17 @@ class _BackendSelectorWidgetState extends State<_BackendSelectorWidget> {
                 ))
             .toList(),
         onChanged: (SyncBackendType? value) async {
-          if (value == null || value == state.backendType) return;
+          final SyncBackendType previous = state.backendType;
+          if (value == null || value == previous) return;
           state.backendType = value;
           final repo = SyncRepository(widget.settingsContext.appModel.database);
           await repo.setBackendType(value);
           await repo.clearFolderCache();
+          // The TLS flag is FTP-only; don't let it linger after switching away.
+          if (previous == SyncBackendType.ftp &&
+              value != SyncBackendType.ftp) {
+            await repo.setFtpTlsEnabled(false);
+          }
           widget.settingsContext.refresh();
         },
       ),
@@ -1224,137 +1243,6 @@ class _SftpConfigWidgetState extends State<_SftpConfigWidget> {
             labelText: t.sync_private_key,
             hintText: '-----BEGIN OPENSSH PRIVATE KEY-----',
             maxLines: 4,
-            onChanged: (_) => _saveCredentials(),
-          ),
-          const SizedBox(height: 12),
-          Align(
-            alignment: Alignment.centerRight,
-            child: _isTesting
-                ? SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: adaptiveIndicator(context: context, strokeWidth: 2),
-                  )
-                : FilledButton.tonal(
-                    onPressed: _testConnection,
-                    child: Text(t.sync_test_connection),
-                  ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ── SMB config widget ───────────────────────────────────────────────
-
-class _SmbConfigWidget extends StatefulWidget {
-  const _SmbConfigWidget({required this.settingsContext});
-  final SettingsContext settingsContext;
-
-  @override
-  State<_SmbConfigWidget> createState() => _SmbConfigWidgetState();
-}
-
-class _SmbConfigWidgetState extends State<_SmbConfigWidget> {
-  late final TextEditingController _urlController;
-  late final TextEditingController _usernameController;
-  late final TextEditingController _passwordController;
-  bool _isTesting = false;
-  bool _loaded = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _urlController = TextEditingController();
-    _usernameController = TextEditingController();
-    _passwordController = TextEditingController();
-    _loadCredentials();
-  }
-
-  @override
-  void dispose() {
-    _urlController.dispose();
-    _usernameController.dispose();
-    _passwordController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _loadCredentials() async {
-    final repo = SyncRepository(widget.settingsContext.appModel.database);
-    final url = await repo.getSmbWebDavUrl();
-    final user = await repo.getSmbUsername();
-    final pass = await repo.getSmbPassword();
-    if (mounted) {
-      setState(() {
-        _urlController.text = url ?? '';
-        _usernameController.text = user ?? '';
-        _passwordController.text = pass ?? '';
-        _loaded = true;
-      });
-    }
-  }
-
-  Future<void> _saveCredentials() async {
-    try {
-      final repo = SyncRepository(widget.settingsContext.appModel.database);
-      final url = _urlController.text.trim();
-      final user = _usernameController.text.trim();
-      final pass = _passwordController.text;
-      await repo.setSmbWebDavUrl(url.isEmpty ? null : url);
-      await repo.setSmbUsername(user.isEmpty ? null : user);
-      await repo.setSmbPassword(pass.isEmpty ? null : pass);
-    } catch (e, stack) {
-      ErrorLogService.instance.log('SyncConfig.saveSmb', e, stack);
-    }
-  }
-
-  Future<void> _testConnection() async {
-    await _saveCredentials();
-    setState(() => _isTesting = true);
-    try {
-      await SmbSyncBackend.instance.testConnection(
-        url: _urlController.text.trim(),
-        username: _usernameController.text.trim(),
-        password: _passwordController.text,
-      );
-      if (mounted) _showSnackBar(context, t.sync_connection_success);
-    } catch (e) {
-      if (mounted) {
-        _showSnackBar(context,
-            '${t.sync_connection_failed}: ${friendlySyncErrorDetail(e)}');
-      }
-    } finally {
-      if (mounted) setState(() => _isTesting = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (!_loaded) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          HibikiTextField(
-            controller: _urlController,
-            labelText: 'WebDAV URL',
-            hintText: 'http://nas.local:5005/webdav',
-            keyboardType: TextInputType.url,
-            onChanged: (_) => _saveCredentials(),
-          ),
-          const SizedBox(height: 12),
-          HibikiTextField(
-            controller: _usernameController,
-            labelText: t.sync_username,
-            onChanged: (_) => _saveCredentials(),
-          ),
-          const SizedBox(height: 12),
-          HibikiTextField(
-            controller: _passwordController,
-            labelText: t.sync_password,
-            obscureText: true,
             onChanged: (_) => _saveCredentials(),
           ),
           const SizedBox(height: 12),

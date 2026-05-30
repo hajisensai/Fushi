@@ -7,7 +7,6 @@ import 'package:hibiki/src/sync/google_drive_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
 import 'package:hibiki/src/sync/onedrive_sync_backend.dart';
 import 'package:hibiki/src/sync/sftp_sync_backend.dart';
-import 'package:hibiki/src/sync/smb_sync_backend.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 import 'package:hibiki/src/sync/webdav_sync_backend.dart';
@@ -19,7 +18,6 @@ enum SyncBackendType {
   dropbox,
   ftp,
   sftp,
-  smb,
   hibikiServer,
 }
 
@@ -128,7 +126,5 @@ SyncBackend resolveSyncBackend(SyncBackendType type) {
       return FtpSyncBackend.instance;
     case SyncBackendType.sftp:
       return SftpSyncBackend.instance;
-    case SyncBackendType.smb:
-      return SmbSyncBackend.instance;
   }
 }
