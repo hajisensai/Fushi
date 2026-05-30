@@ -3,6 +3,16 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 
+AudioCue _cue(int startMs, int endMs) => AudioCue()
+  ..bookUid = 'b'
+  ..chapterHref = 'ch'
+  ..sentenceIndex = 0
+  ..textFragmentId = ''
+  ..text = ''
+  ..startMs = startMs
+  ..endMs = endMs
+  ..audioFileIndex = 0;
+
 void main() {
   group('JsonAlignmentParser.parseString', () {
     test('parses basic alignment JSON', () {
@@ -273,6 +283,46 @@ void main() {
         JsonAlignmentParser.findCueIndex(cues: cues, positionMs: 7000),
         -1,
       );
+    });
+  });
+
+  group('JsonAlignmentParser.findCueIndex boundary cases', () {
+    // A single-cue list exercises the lo==0 and lo==length branches that the
+    // 3-cue fixture above never reaches.
+    test('single cue: before start -1, [start..endMs] returns 0, after -1', () {
+      final single = [_cue(1000, 2000)];
+      expect(
+          JsonAlignmentParser.findCueIndex(cues: single, positionMs: 500), -1);
+      expect(
+          JsonAlignmentParser.findCueIndex(cues: single, positionMs: 1000), 0);
+      expect(
+          JsonAlignmentParser.findCueIndex(cues: single, positionMs: 1500), 0);
+      expect(
+          JsonAlignmentParser.findCueIndex(cues: single, positionMs: 2000), 0);
+      expect(
+          JsonAlignmentParser.findCueIndex(cues: single, positionMs: 2500), -1);
+    });
+
+    // Touching cues (prev.endMs == next.startMs): the later cue owns the seam
+    // via the exact-startMs short-circuit, so a gap-less SRT never blanks the
+    // highlight at the boundary tick.
+    test('adjacent cues: the later cue owns the shared seam', () {
+      final adj = [_cue(1000, 2000), _cue(2000, 3000)];
+      expect(JsonAlignmentParser.findCueIndex(cues: adj, positionMs: 1999), 0);
+      expect(JsonAlignmentParser.findCueIndex(cues: adj, positionMs: 2000), 1);
+      expect(JsonAlignmentParser.findCueIndex(cues: adj, positionMs: 2001), 1);
+    });
+
+    // Overlapping cues (common in real .srt where line N's end overruns line
+    // N+1's start): inside the overlap the later (higher startMs) cue wins;
+    // outside it the sole covering cue wins; past every endMs returns -1.
+    test('overlapping cues: the later cue wins inside the overlap', () {
+      final ov = [_cue(1000, 3000), _cue(2000, 4000)];
+      expect(JsonAlignmentParser.findCueIndex(cues: ov, positionMs: 1500), 0);
+      expect(JsonAlignmentParser.findCueIndex(cues: ov, positionMs: 2000), 1);
+      expect(JsonAlignmentParser.findCueIndex(cues: ov, positionMs: 2500), 1);
+      expect(JsonAlignmentParser.findCueIndex(cues: ov, positionMs: 3500), 1);
+      expect(JsonAlignmentParser.findCueIndex(cues: ov, positionMs: 4500), -1);
     });
   });
 }
