@@ -980,6 +980,39 @@ void main() {
     expect(combined, isNot(contains('adaptiveAlertDialog(')));
   });
 
+  test('settings action dialogs use shared MD3 inset tokens', () {
+    final String source =
+        File('lib/src/settings/settings_actions.dart').readAsStringSync();
+    final String confirmationDialog = _functionSource(
+      source,
+      'Future<bool> showSettingsConfirmationDialog(',
+      'Future<void> showSettingsProgressDialog(',
+    );
+    final String progressDialog = _functionSource(
+      source,
+      'Future<void> showSettingsProgressDialog(',
+      'void notifyReaderSettingsChanged(',
+    );
+
+    for (final String dialogSource in <String>[
+      confirmationDialog,
+      progressDialog,
+    ]) {
+      expect(dialogSource, contains('HibikiDialogFrame('));
+      expect(dialogSource, contains('HibikiModalSheetFrame('));
+      expect(dialogSource, contains('HibikiDesignTokens.of(ctx)'));
+      expect(dialogSource, contains('insetPadding: EdgeInsets.symmetric('));
+      expect(dialogSource, contains('horizontal: tokens.spacing.card'));
+      expect(dialogSource, contains('vertical: tokens.spacing.card'));
+      expect(
+        dialogSource,
+        isNot(
+          contains('const EdgeInsets.symmetric(horizontal: 16, vertical: 16)'),
+        ),
+      );
+    }
+  });
+
   test('sync settings custom controls use shared MD3 rows', () {
     final String source =
         File('lib/src/sync/sync_settings_schema.dart').readAsStringSync();

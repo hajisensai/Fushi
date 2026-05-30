@@ -50,7 +50,10 @@ Future<bool> showSettingsConfirmationDialog(
       return HibikiDialogFrame(
         maxWidth: 420,
         maxHeightFactor: 0.86,
-        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        insetPadding: EdgeInsets.symmetric(
+          horizontal: tokens.spacing.card,
+          vertical: tokens.spacing.card,
+        ),
         scrollable: false,
         child: HibikiModalSheetFrame(
           title: title,
@@ -108,8 +111,10 @@ Future<void> showSettingsProgressDialog(
         child: HibikiDialogFrame(
           maxWidth: 360,
           maxHeightFactor: 0.72,
-          insetPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          insetPadding: EdgeInsets.symmetric(
+            horizontal: tokens.spacing.card,
+            vertical: tokens.spacing.card,
+          ),
           scrollable: false,
           child: HibikiModalSheetFrame(
             bodyPadding: EdgeInsets.all(tokens.spacing.card),
