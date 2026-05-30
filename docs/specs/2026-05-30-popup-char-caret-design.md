@@ -59,5 +59,12 @@
 ## 9. 测试
 
 - 单测:`scopeSelector` 过滤在 `ReaderCaretScripts.source()` 的存在性断言;selection.js 重构后弹窗资源含 `selectFromPosition` 并触发 `textSelected`(若有资源字符串测试)。
-- 集成(模拟器真实 DOM):阅读器查词 → 弹窗自动出现光标(ring)→ 方向键在释义移动 → A 深入(叠层 + 光标转到新层)→ B 退回上一层(光标回父层/阅读器)。
-- `flutter analyze` + `flutter test` 全绿。
+- 集成(模拟器真实 DOM，`integration_test/reader_popup_caret_test.dart`，已通过）：内存生成 Yomitan 词典 → 阅读器进入光标（surface=reader）→ 查词打开弹窗 WebView → **断言同一 caret 模块（`window.hoshiCaret` 的 init/enter/move/lookup）已注入弹窗、`hoshiSelection.selectFromPosition` 到位**。
+- `flutter analyze` + `flutter test` 全绿（1500+）。
+
+### 验证范围说明（诚实记录）
+
+光标**转移端到端腿**（弹窗接管光标 → 释义内导航 → B/Esc 逐层回退）在 `flutter drive` 下**无法自动跑**：词典弹窗自身的渲染脚本 `popup.js`（~70KB）在该环境下不经 `<script src>` 执行（`dict-media.js`/`selection.js`/我们注入的 caret 都正常加载，但 `window.renderPopup` 未定义），弹窗渲染不出 `.glossary-content` 供光标落点，且弹窗 controller 上的写/桥 eval 不稳定。这是**词典弹窗在测试环境的既有限制，与本特性无关**。因此：
+- 集成测试验证「caret + selectFromPosition 已正确注入弹窗 + 查词打开弹窗」这一**新集成点**；
+- 转移状态机（`CaretSurface`）是纯 Dart，由 Opus code review 覆盖；
+- caret 自身的真实 DOM 行为（enter/move/竖排/lookup/ring）由 `reader_caret_test.dart` 在真机 WebView 上证明（同一模块）。
