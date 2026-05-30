@@ -229,6 +229,17 @@ void main() {
       expect(decodedSel, isNotNull,
           reason: 'caret lookup must populate hoshiSelection (tap pipeline)');
 
+      // ── activate() — the A/Enter "context click" — routes plain text to the
+      // same lookup on the real WebView (a hyperlink would instead navigate, a
+      // control would be clicked). The caret is on a content kanji here.
+      await eval(ReaderCaretScripts.reanchorInvocation('forward'));
+      final activateResult =
+          (await eval(ReaderCaretScripts.activateInvocation())).toString();
+      debugPrint('[CARET] activate result=$activateResult');
+      expect(activateResult, 'lookup',
+          reason:
+              'A/Enter on plain text must context-click into a word lookup');
+
       // ── exit() hides the ring ─────────────────────────────────────────
       await eval(ReaderCaretScripts.exitInvocation());
       expect((await sig())['active'], isFalse);

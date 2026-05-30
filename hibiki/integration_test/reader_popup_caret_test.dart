@@ -215,8 +215,10 @@ void main() {
                 true,
             isTrue,
             reason: 'popup cursor active after transfer [$d]');
-        expect((await popupEval('window.hoshiCaret.scopeSelector'))?.toString(),
-            '.glossary-content');
+        // The popup cursor now navigates the whole popup (no scopeSelector), so
+        // a gamepad can reach interactive controls and every kanji, not just the
+        // definition body.
+        expect(await popupEval('window.hoshiCaret.scopeSelector'), isNull);
 
         // Arrow keys move the popup cursor; it stays on the popup.
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);

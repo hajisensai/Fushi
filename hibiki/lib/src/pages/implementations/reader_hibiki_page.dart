@@ -2840,6 +2840,10 @@ window.flutter_inappwebview.callHandler('spreadReady');
   void onAllPopupsDismissed() {
     if (!mounted) return;
     _clearLookupState();
+    // Return Flutter focus to the reading content. The dismissed popup's WebView
+    // held the keyboard/gamepad focus, so without this the reader receives no key
+    // events after the popup closes and the user is stuck with no way back in.
+    _focusNode.requestFocus();
     // If the cursor was living in a popup (controller/keyboard flow), the popup
     // it was in is gone — bring it back to the reader at its remembered word.
     // This covers every dismiss path (B/Esc, tap-outside, swipe).
@@ -3411,8 +3415,8 @@ window.flutter_inappwebview.callHandler('spreadReady');
       case CaretSurface.none:
         return;
       case CaretSurface.reader:
-        _controller
-            ?.evaluateJavascript(source: ReaderCaretScripts.exitInvocation());
+        _controller?.evaluateJavascript(
+            source: ReaderCaretScripts.exitInvocation());
         break;
       case CaretSurface.popup:
         topPopupState?.caretExit();
@@ -3452,6 +3456,9 @@ window.flutter_inappwebview.callHandler('spreadReady');
           break;
         case CaretAction.moveRight:
           await _caretMove('right');
+          break;
+        case CaretAction.activate:
+          await _caretActivate();
           break;
         case CaretAction.lookup:
           await _caretLookup();
@@ -3529,15 +3536,29 @@ window.flutter_inappwebview.callHandler('spreadReady');
         .evaluateJavascript(source: ReaderCaretScripts.lookupInvocation());
   }
 
+  /// A / Enter "context click" at the cursor: follow a hyperlink, click an
+  /// interactive control, or look up plain text — [ReaderCaretScripts.activate]
+  /// decides. A followed link navigates the WebView (→ shouldOverrideUrlLoading);
+  /// a lookup fires the existing onTextSelected pipeline. Fire-and-forget either
+  /// way, like [_caretLookup].
+  Future<void> _caretActivate() async {
+    if (_caretSurface == CaretSurface.popup) {
+      await topPopupState?.caretActivate();
+      return;
+    }
+    if (_controller == null) return;
+    await _controller!
+        .evaluateJavascript(source: ReaderCaretScripts.activateInvocation());
+  }
+
   /// Place the reader cursor at the entering edge of the freshly paginated page.
   /// Reader-only — the popup never paginates.
   Future<void> _caretReanchor(ReaderNavigationDirection direction) async {
     if (!_caretOnReader || _controller == null) return;
-    final String edge = direction == ReaderNavigationDirection.forward
-        ? 'forward'
-        : 'backward';
-    await _controller!
-        .evaluateJavascript(source: ReaderCaretScripts.reanchorInvocation(edge));
+    final String edge =
+        direction == ReaderNavigationDirection.forward ? 'forward' : 'backward';
+    await _controller!.evaluateJavascript(
+        source: ReaderCaretScripts.reanchorInvocation(edge));
   }
 
   /// Re-measure the reader ring after a relayout (chrome toggle, font/size). If
@@ -3557,7 +3578,8 @@ window.flutter_inappwebview.callHandler('spreadReady');
     if (index != topVisiblePopupIndex) return;
     final state = topPopupState;
     if (state == null) return;
-    if (_caretSurface == CaretSurface.popup && identical(state, _caretPopupState)) {
+    if (_caretSurface == CaretSurface.popup &&
+        identical(state, _caretPopupState)) {
       // Same popup re-rendered (e.g. load-more) — just re-measure its ring.
       unawaited(state.caretRefresh());
       return;
@@ -3565,7 +3587,8 @@ window.flutter_inappwebview.callHandler('spreadReady');
     unawaited(_transferCaretToTopPopup(state));
   }
 
-  Future<void> _transferCaretToTopPopup(DictionaryPopupWebViewState state) async {
+  Future<void> _transferCaretToTopPopup(
+      DictionaryPopupWebViewState state) async {
     await state.caretInit();
     String status = await state.caretEnter();
     if (!mounted || topPopupState != state) return;
@@ -3585,8 +3608,8 @@ window.flutter_inappwebview.callHandler('spreadReady');
     // background). A parent popup's ring is occluded by the new top, so leave it
     // for the return trip (it re-shows when the top is dismissed).
     if (_caretSurface == CaretSurface.reader) {
-      _controller
-          ?.evaluateJavascript(source: ReaderCaretScripts.exitInvocation());
+      _controller?.evaluateJavascript(
+          source: ReaderCaretScripts.exitInvocation());
     }
     setState(() {
       _caretSurface = CaretSurface.popup;

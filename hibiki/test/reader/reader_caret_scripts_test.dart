@@ -7,7 +7,10 @@ void main() {
       expect(ReaderCaretScripts.enterInvocation(),
           'JSON.stringify(window.hoshiCaret.enter())');
       expect(ReaderCaretScripts.exitInvocation(), 'window.hoshiCaret.exit()');
-      expect(ReaderCaretScripts.lookupInvocation(), 'window.hoshiCaret.lookup()');
+      expect(
+          ReaderCaretScripts.lookupInvocation(), 'window.hoshiCaret.lookup()');
+      expect(ReaderCaretScripts.activateInvocation(),
+          'window.hoshiCaret.activate()');
       expect(ReaderCaretScripts.refreshInvocation(),
           'JSON.stringify(window.hoshiCaret.refresh())');
     });
@@ -111,9 +114,20 @@ void main() {
       expect(js, contains('move:'));
       expect(js, contains('reanchor:'));
       expect(js, contains('lookup:'));
+      expect(js, contains('activate:'));
       expect(js, contains('refresh:'));
       expect(js, contains('init:'));
       expect(js, contains('isActive:'));
+    });
+
+    test('activate is a context click: link/control click else lookup', () {
+      // A hyperlink is followed, an interactive control is clicked, and plain
+      // text falls back to the lookup pipeline.
+      expect(js, contains("closest('a[href]')"));
+      expect(js, contains('link.click()'));
+      expect(js,
+          contains("closest('button, [role=\"button\"], [role=\"link\"]')"));
+      expect(js, contains('control.click()'));
     });
 
     test('resolves writing-mode and paged vs continuous from live state', () {
@@ -144,7 +158,8 @@ void main() {
       expect(js, contains('position:fixed'));
     });
 
-    test('scopeSelector restricts stops to matching elements (popup scope)', () {
+    test('scopeSelector restricts stops to matching elements (popup scope)',
+        () {
       expect(js, contains('scopeSelector'));
       expect(js, contains('closest(this.scopeSelector)'));
     });

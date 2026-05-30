@@ -109,12 +109,14 @@ class DictionaryPopupWebViewState
 
   Future<void> caretInit() async {
     if (!mounted) return;
+    // No scopeSelector: the cursor navigates the whole popup (definition body,
+    // headword, tags, and interactive controls), so gamepad users can reach
+    // every kanji and every clickable control, not just the definition body.
     await _controller?.evaluateJavascript(
       source: ReaderCaretScripts.initInvocation(
         color: _caretRingColorCss(),
         insetTop: 0,
         insetBottom: 0,
-        scopeSelector: '.glossary-content',
       ),
     );
   }
@@ -145,6 +147,14 @@ class DictionaryPopupWebViewState
   Future<void> caretLookup() async {
     await _controller?.evaluateJavascript(
         source: ReaderCaretScripts.lookupInvocation());
+  }
+
+  /// A / Enter "context click" at the cursor: follow a cross-reference link,
+  /// click an interactive control, or look up plain text — decided by
+  /// [ReaderCaretScripts.activate].
+  Future<void> caretActivate() async {
+    await _controller?.evaluateJavascript(
+        source: ReaderCaretScripts.activateInvocation());
   }
 
   Future<void> caretRefresh() async {
@@ -643,9 +653,7 @@ class DictionaryPopupWebViewState
       // Embed raw to skip the jsonDecode + jsonEncode roundtrip.
       final String m = entry.meaning;
       final String contentJson =
-          (m.isNotEmpty && (m[0] == '[' || m[0] == '{'))
-              ? m
-              : jsonEncode(m);
+          (m.isNotEmpty && (m[0] == '[' || m[0] == '{')) ? m : jsonEncode(m);
 
       rawGlossaries[key]!.add((
         dictionary: entry.dictionaryName,

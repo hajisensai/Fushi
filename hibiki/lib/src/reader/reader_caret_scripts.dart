@@ -42,6 +42,11 @@ class ReaderCaretScripts {
   /// Look up the word at the caret (reuses the tap dictionary pipeline).
   static String lookupInvocation() => 'window.hoshiCaret.lookup()';
 
+  /// Context "click" at the caret: follow a hyperlink, click an interactive
+  /// control (popup audio/expand buttons), or — on plain text — look up the
+  /// word. Returns `'link'` | `'activated'` | `'lookup'` | `'none'`.
+  static String activateInvocation() => 'window.hoshiCaret.activate()';
+
   /// Re-measure the ring after a relayout; re-anchors if the node detached.
   static String refreshInvocation() =>
       'JSON.stringify(window.hoshiCaret.refresh())';
@@ -56,8 +61,7 @@ class ReaderCaretScripts {
     required double insetBottom,
     String? scopeSelector,
   }) {
-    final String scope =
-        scopeSelector == null ? 'null' : "'$scopeSelector'";
+    final String scope = scopeSelector == null ? 'null' : "'$scopeSelector'";
     return "window.hoshiCaret.init({color:'$color',insetTop:$insetTop,"
         'insetBottom:$insetBottom,scopeSelector:$scope})';
   }
@@ -88,7 +92,8 @@ class ReaderCaretScripts {
     final num? h = rect['height'] as num?;
     if (x == null || y == null || w == null || h == null) return null;
     if (w <= 0 || h <= 0) return null;
-    return Rect.fromLTWH(x.toDouble(), y.toDouble(), w.toDouble(), h.toDouble());
+    return Rect.fromLTWH(
+        x.toDouble(), y.toDouble(), w.toDouble(), h.toDouble());
   }
 
   static Map<String, dynamic>? _decode(Object? raw) {
@@ -512,6 +517,24 @@ window.hoshiCaret = {
     s.clearSelection();
     var text = s.selectFromPosition(this.node, this.offset, 400);
     return !!text;
+  },
+
+  // Context "click" at the caret, like a mouse click / Enter on whatever the
+  // cursor sits on:
+  //  - a hyperlink is followed (a.click() → native navigation, reusing the
+  //    reader's shouldOverrideUrlLoading routing);
+  //  - an interactive control is clicked (popup image overlays / buttons);
+  //  - plain text (words, kanji) is looked up directly via the selection
+  //    pipeline. Looking up directly — rather than synthesising a tap — avoids
+  //    the reader tap handler toggling the (hidden) chrome instead of looking up.
+  activate: function() {
+    if (!this.active || !this.node) return 'none';
+    var el = this.node.parentElement;
+    var link = el && el.closest('a[href]');
+    if (link) { link.click(); return 'link'; }
+    var control = el && el.closest('button, [role="button"], [role="link"]');
+    if (control) { control.click(); return 'activated'; }
+    return this.lookup() ? 'lookup' : 'none';
   }
 };
 """;

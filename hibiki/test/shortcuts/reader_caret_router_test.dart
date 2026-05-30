@@ -39,16 +39,16 @@ void main() {
       );
     });
 
-    test('Enter / game A look up; Escape / game B dismiss-or-exit', () {
+    test('Enter / game A activate; Escape / game B dismiss-or-exit', () {
       expect(
         ReaderCaretRouter.decideKeyboard(LogicalKeyboardKey.enter,
             shift: false),
-        CaretAction.lookup,
+        CaretAction.activate,
       );
       expect(
         ReaderCaretRouter.decideKeyboard(LogicalKeyboardKey.gameButtonA,
             shift: false),
-        CaretAction.lookup,
+        CaretAction.activate,
       );
       expect(
         ReaderCaretRouter.decideKeyboard(LogicalKeyboardKey.escape,
@@ -68,7 +68,8 @@ void main() {
         isNull,
       );
       expect(
-        ReaderCaretRouter.decideKeyboard(LogicalKeyboardKey.space, shift: false),
+        ReaderCaretRouter.decideKeyboard(LogicalKeyboardKey.space,
+            shift: false),
         isNull,
       );
     });
@@ -86,9 +87,9 @@ void main() {
           CaretAction.moveRight);
     });
 
-    test('A looks up, B dismiss-or-exit', () {
+    test('A activates, B dismiss-or-exit', () {
       expect(ReaderCaretRouter.decideGamepad(GamepadButton.a),
-          CaretAction.lookup);
+          CaretAction.activate);
       expect(ReaderCaretRouter.decideGamepad(GamepadButton.b),
           CaretAction.dismissOrExit);
     });
@@ -104,8 +105,7 @@ void main() {
 
   group('ReaderCaretRouter enter triggers (cursor inactive)', () {
     test('Enter and game A enter the cursor from the keyboard path', () {
-      expect(
-          ReaderCaretRouter.isEnterTriggerKeyboard(LogicalKeyboardKey.enter),
+      expect(ReaderCaretRouter.isEnterTriggerKeyboard(LogicalKeyboardKey.enter),
           isTrue);
       expect(
           ReaderCaretRouter.isEnterTriggerKeyboard(
@@ -114,15 +114,13 @@ void main() {
     });
 
     test('other keys are not enter triggers', () {
-      expect(
-          ReaderCaretRouter.isEnterTriggerKeyboard(LogicalKeyboardKey.tab),
+      expect(ReaderCaretRouter.isEnterTriggerKeyboard(LogicalKeyboardKey.tab),
           isFalse);
       expect(
           ReaderCaretRouter.isEnterTriggerKeyboard(
               LogicalKeyboardKey.arrowRight),
           isFalse);
-      expect(
-          ReaderCaretRouter.isEnterTriggerKeyboard(LogicalKeyboardKey.space),
+      expect(ReaderCaretRouter.isEnterTriggerKeyboard(LogicalKeyboardKey.space),
           isFalse);
     });
 
@@ -130,8 +128,7 @@ void main() {
       expect(ReaderCaretRouter.isEnterTriggerGamepad(GamepadButton.a), isTrue);
       expect(ReaderCaretRouter.isEnterTriggerGamepad(GamepadButton.b), isFalse);
       expect(ReaderCaretRouter.isEnterTriggerGamepad(GamepadButton.x), isFalse);
-      expect(
-          ReaderCaretRouter.isEnterTriggerGamepad(GamepadButton.dpadRight),
+      expect(ReaderCaretRouter.isEnterTriggerGamepad(GamepadButton.dpadRight),
           isFalse);
     });
   });

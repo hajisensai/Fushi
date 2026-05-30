@@ -16,6 +16,15 @@ enum CaretAction {
   moveDown,
   moveLeft,
   moveRight,
+
+  /// Context "click" at the cursor (A / Enter): follow a hyperlink, click an
+  /// interactive control (popup audio/expand buttons), or — on plain text —
+  /// look up the word. The JS [hoshiCaret.activate] decides which, mirroring a
+  /// mouse click / Enter on whatever the cursor sits on.
+  activate,
+
+  /// Plain word lookup. Kept as the fallback that [activate] performs on plain
+  /// text; no input maps directly to it any more.
   lookup,
   dismissOrExit,
 }
@@ -40,7 +49,7 @@ class ReaderCaretRouter {
     if (key == LogicalKeyboardKey.arrowRight) return CaretAction.moveRight;
     if (key == LogicalKeyboardKey.enter ||
         key == LogicalKeyboardKey.gameButtonA) {
-      return CaretAction.lookup;
+      return CaretAction.activate;
     }
     if (key == LogicalKeyboardKey.escape ||
         key == LogicalKeyboardKey.gameButtonB) {
@@ -62,7 +71,7 @@ class ReaderCaretRouter {
       case GamepadButton.dpadRight:
         return CaretAction.moveRight;
       case GamepadButton.a:
-        return CaretAction.lookup;
+        return CaretAction.activate;
       case GamepadButton.b:
         return CaretAction.dismissOrExit;
       // ignore: no_default_cases
@@ -74,8 +83,7 @@ class ReaderCaretRouter {
   /// Whether a keyboard key should ENTER the cursor when it is inactive and the
   /// book (not the bottom chrome) holds focus. A / Enter = "activate / enter".
   static bool isEnterTriggerKeyboard(LogicalKeyboardKey key) =>
-      key == LogicalKeyboardKey.enter ||
-      key == LogicalKeyboardKey.gameButtonA;
+      key == LogicalKeyboardKey.enter || key == LogicalKeyboardKey.gameButtonA;
 
   /// Whether a gamepad button should ENTER the cursor when it is inactive. Only
   /// A (the "activate" button) enters; B is reserved for back/dismiss.
