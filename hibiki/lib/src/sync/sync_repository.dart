@@ -160,6 +160,17 @@ class SyncRepository {
   Future<void> setSyncContentEnabled(bool v) =>
       _db.setPrefTyped<bool>(_keySyncContent, v);
 
+  // ── Per-book audiobook position (synced) ──────────────────────────
+
+  static const _keyAudiobookPositionPrefix = 'audiobook_pos_';
+
+  /// 每本书的有声书播放位置（毫秒）。默认 0 表示无记录。集中走仓库层，避免
+  /// 散落的 `_db.getPrefTyped('audiobook_pos_...')` 字面量与类型漂移。
+  Future<int> getAudiobookPosition(int bookId) =>
+      _db.getPrefTyped<int>('$_keyAudiobookPositionPrefix$bookId', 0);
+  Future<void> setAudiobookPosition(int bookId, int positionMs) =>
+      _db.setPrefTyped<int>('$_keyAudiobookPositionPrefix$bookId', positionMs);
+
   // ── WebDAV credentials ────────────────────────────────────────────
 
   Future<String?> getWebDavUrl() => _getStringOrNull(_keyWebDavUrl);

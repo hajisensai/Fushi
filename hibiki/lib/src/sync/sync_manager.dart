@@ -345,7 +345,7 @@ class SyncManager {
     if (syncAudioBook && audioBookFileId != null) {
       final remoteAudio = await _backend.getAudioBookFile(audioBookFileId);
       final posMs = (remoteAudio.playbackPositionSec * 1000).round();
-      await _db.setPrefTyped('audiobook_pos_${book.id}', posMs);
+      await _repo.setAudiobookPosition(book.id, posMs);
     }
 
     // Import EPUB file if content sync is enabled and local file is missing
@@ -441,8 +441,7 @@ class SyncManager {
 
       // Export audiobook position
       if (syncAudioBook) {
-        final posMs =
-            await _db.getPrefTyped<int>('audiobook_pos_${book.id}', 0);
+        final posMs = await _repo.getAudiobookPosition(book.id);
         if (posMs > 0) {
           final audioBook = TtuAudioBook(
             title: book.title,

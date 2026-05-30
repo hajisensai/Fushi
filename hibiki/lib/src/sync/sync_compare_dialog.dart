@@ -135,8 +135,7 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
           localUpdatedAt = pos.updatedAt;
         }
         localStatsCount = statCountByTitle[title];
-        localAudioMs =
-            await db.getPrefTyped<int>('audiobook_pos_${local.id}', 0);
+        localAudioMs = await repo.getAudiobookPosition(local.id);
         if (localAudioMs == 0) localAudioMs = null;
       } catch (e) {
         developer.log(
