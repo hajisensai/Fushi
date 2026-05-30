@@ -215,6 +215,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
   }
 
   Widget _buildPlaceholder() {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final noDictionaries = appModel.dictionaries.isEmpty;
     return Center(
       child: Column(
@@ -227,7 +228,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
                 : t.info_empty_home_tab,
           ),
           if (noDictionaries) ...[
-            const SizedBox(height: 12),
+            SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
             FilledButton.icon(
               icon: const Icon(Icons.auto_stories_outlined, size: 18),
               label: Text(t.dialog_import_dictionary),

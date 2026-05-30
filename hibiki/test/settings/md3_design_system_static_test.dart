@@ -292,6 +292,7 @@ void main() {
         'fontSize: 13',
         'fontSize: 12',
         'surfaceContainerHigh',
+        'const SizedBox(height: 12)',
       ],
       'lib/src/pages/implementations/home_page.dart': <String>[
         'AlertDialog(',
@@ -403,6 +404,8 @@ void main() {
         'adaptiveAppBar',
         'surfaceContainerLow',
         'BorderRadius.circular(8)',
+        'const SizedBox(height: 16)',
+        'const EdgeInsets.all(8)',
       ],
       'lib/src/pages/base_history_page.dart': <String>[
         'return Material(',
@@ -433,6 +436,7 @@ void main() {
         'Container(',
         'BoxDecoration(',
         'BorderRadius.circular(8)',
+        'padding: const EdgeInsets.all(8)',
       ],
       'lib/src/pages/implementations/placeholder_source_page.dart': <String>[
         'Scaffold(',
