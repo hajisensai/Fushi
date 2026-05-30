@@ -160,7 +160,15 @@ class _HibikiFocusRingState extends State<HibikiFocusRing>
     final RenderObject? ro = ctx.findRenderObject();
     if (ro is! RenderBox || !ro.hasSize || !ro.attached) return null;
     final Offset topLeft = ro.localToGlobal(Offset.zero);
-    return topLeft & ro.size;
+    final Rect rect = topLeft & ro.size;
+    // Don't ring a (near) full-screen focusable: the ring would sit at/beyond the
+    // window edge — clipped, and occluded by any overlaid chrome (e.g. a reader
+    // bottom bar). Such a node draws its own inset focus indicator instead.
+    final view = WidgetsBinding.instance.platformDispatcher.views.first;
+    final double sw = view.physicalSize.width / view.devicePixelRatio;
+    final double sh = view.physicalSize.height / view.devicePixelRatio;
+    if (rect.width >= sw * 0.92 && rect.height >= sh * 0.92) return null;
+    return rect;
   }
 
   @override

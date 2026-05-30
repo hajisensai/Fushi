@@ -125,8 +125,10 @@ void main() {
       // text falls back to the lookup pipeline.
       expect(js, contains("closest('a[href]')"));
       expect(js, contains('link.click()'));
-      expect(js,
-          contains("closest('button, [role=\"button\"], [role=\"link\"]')"));
+      expect(
+          js,
+          contains(
+              "closest('button, summary, [role=\"button\"], [role=\"link\"]')"));
       expect(js, contains('control.click()'));
     });
 

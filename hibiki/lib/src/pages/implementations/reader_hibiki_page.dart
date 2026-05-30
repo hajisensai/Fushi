@@ -237,6 +237,10 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // The inset reading-content focus ring only paints in traditional
+    // (keyboard/gamepad) highlight mode; rebuild it when the mode flips so it
+    // appears/disappears with the input device, not only on focus changes.
+    FocusManager.instance.addHighlightModeListener(_onHighlightModeChanged);
     ReaderHibikiSource.onSettingsChangedLive = () {
       if (mounted) {
         _applyStylesLive();
@@ -898,6 +902,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       return true;
     }());
     ReaderHibikiSource.onSettingsChangedLive = null;
+    FocusManager.instance.removeHighlightModeListener(_onHighlightModeChanged);
     WidgetsBinding.instance.removeObserver(this);
     _progressPollTimer?.cancel();
     _saveDebounce?.cancel();
@@ -929,6 +934,12 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       debugPrint('[Hibiki] wakelock disable failed: $e');
     }
     super.dispose();
+  }
+
+  // Repaint the inset reading-content focus ring when the input device flips
+  // between touch and keyboard/gamepad (the ring is traditional-mode only).
+  void _onHighlightModeChanged(FocusHighlightMode mode) {
+    if (mounted) setState(() {});
   }
 
   @override
@@ -1047,25 +1058,42 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
                 if (_readerContentReady)
                   const SizedBox.shrink(
                       key: ValueKey<String>('hoshi_content_ready')),
-                // On-screen focus indicator for the "reading content" layer: a
-                // red ring shown while the reader content holds primary focus and
-                // no char cursor is active (the cursor draws its own ring). This
-                // replaces the native WebView focus outline, which was invisible
-                // or drawn off-screen (e.g. at the scrolled document position).
+                // On-screen focus indicator for the "reading content" layer,
+                // matching the app's standard focus ring (HibikiFocusRing:
+                // colorScheme.primary, 2.5px, 8px radius). Shown while the reader
+                // content holds primary focus and no char cursor is active (the
+                // cursor draws its own ring). Inset by the chrome insets so the
+                // ring sits inside the reading viewport and the bottom bar never
+                // occludes it — and so it is always on-screen (unlike the native
+                // WebView focus outline, which drew off-screen at the scroll pos).
                 if (_readerContentReady && !_lyricsMode)
                   Positioned.fill(
                     child: IgnorePointer(
                       child: AnimatedBuilder(
                         animation: _focusNode,
                         builder: (context, _) {
+                          // Only in keyboard/gamepad highlight mode — matches the
+                          // app-wide HibikiFocusRing convention (no focus ring in
+                          // touch mode). Rebuilt on highlight change via
+                          // _onHighlightModeChanged.
                           final bool show = _focusNode.hasPrimaryFocus &&
-                              _caretSurface == CaretSurface.none;
+                              _caretSurface == CaretSurface.none &&
+                              FocusManager.instance.highlightMode ==
+                                  FocusHighlightMode.traditional;
                           if (!show) return const SizedBox.shrink();
-                          return DecoratedBox(
-                            decoration: BoxDecoration(
-                              border: Border.all(
-                                color: const Color(0xFFE53935),
-                                width: 3,
+                          final double bottomInset = _showChrome
+                              ? _readerChromeHeight + _stableBottomInset
+                              : _stableBottomInset;
+                          return Padding(
+                            padding: EdgeInsets.fromLTRB(
+                                1.5, _readerTopOffset, 1.5, bottomInset),
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: Theme.of(context).colorScheme.primary,
+                                  width: 2.5,
+                                ),
                               ),
                             ),
                           );
@@ -3262,15 +3290,18 @@ window.flutter_inappwebview.callHandler('spreadReady');
     // closes the chrome and returns focus to the reading content rather than
     // bubbling up to the global pop (which would exit the reader).
     if (_chromeFocusScope.hasFocus) {
-      // B / Escape / Up move focus back up to the reading content (the sibling
-      // layer above the bar). The bar stays visible — only Y toggles its
-      // visibility, so B must not hide it. (Both chrome bars are single rows, so
-      // intercepting Up to exit never strands intra-bar vertical traversal; a
-      // future multi-row bar would need to traverse within the bar first.)
-      if (event.logicalKey == LogicalKeyboardKey.gameButtonB ||
-          event.logicalKey == LogicalKeyboardKey.escape ||
-          event.logicalKey == LogicalKeyboardKey.arrowUp) {
+      // The bar and the reading content are the same (top) layer. Up moves focus
+      // back to the reading content; B/Escape exit the reader (top-level back).
+      // The bar's visibility is controlled only by Y, so B must not hide it.
+      // (Both chrome bars are single rows, so intercepting Up never strands
+      // intra-bar vertical traversal.)
+      if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
         _focusNode.requestFocus();
+        return KeyEventResult.handled;
+      }
+      if (event.logicalKey == LogicalKeyboardKey.gameButtonB ||
+          event.logicalKey == LogicalKeyboardKey.escape) {
+        unawaited(Navigator.of(context).maybePop());
         return KeyEventResult.handled;
       }
       return KeyEventResult.ignored;
@@ -3343,13 +3374,17 @@ window.flutter_inappwebview.callHandler('spreadReady');
   /// directional-focus / activate / global-back fallback.
   bool _handleGamepadButton(GamepadButton button) {
     if (_chromeFocusScope.hasFocus) {
-      // B / D-pad Up move focus back up to the reading content; the bar stays
-      // visible (only Y toggles its visibility).
-      if (button == GamepadButton.b || button == GamepadButton.dpadUp) {
+      // D-pad Up moves focus back to the reading content (sibling layer above).
+      if (button == GamepadButton.dpadUp) {
         _focusNode.requestFocus();
         return true;
       }
-      // Let directional traversal / activate flow to the chrome controls.
+      // B exits the reader (top-level back); the bar's visibility is Y-only, so
+      // B must not hide it. Left/Right traverse the bar's buttons.
+      if (button == GamepadButton.b) {
+        unawaited(Navigator.of(context).maybePop());
+        return true;
+      }
       return false;
     }
     // Char-level reading cursor — same contextual routing as the keyboard path.
@@ -3362,6 +3397,18 @@ window.flutter_inappwebview.callHandler('spreadReady');
     } else if (ReaderCaretRouter.isEnterTriggerGamepad(button)) {
       unawaited(_enterCaret());
       return true;
+    }
+    // Top level (cursor inactive): D-pad Down moves focus into the bottom bar
+    // (the sibling layer below the reading content). The bar must be visible
+    // (its visibility is Y-controlled). D-pad Up/Down are free on the gamepad —
+    // page-turn is on RB/LB + D-pad Left/Right — so this never shadows paging.
+    if (button == GamepadButton.dpadDown && _showChrome) {
+      _chromeFocusScope.requestFocus();
+      // Only consume Down if focus actually advanced into a bar control. If the
+      // bar has no focusable child (nextFocus() == false), fall through so the
+      // GamepadService directional-focus fallback runs instead of stranding the
+      // press on the (focus-less) reading content.
+      if (_chromeFocusScope.nextFocus()) return true;
     }
     final ShortcutAction? action = appModel.shortcutRegistry.resolveGamepad(
           button,

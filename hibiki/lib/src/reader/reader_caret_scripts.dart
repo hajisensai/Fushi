@@ -182,6 +182,14 @@ window.hoshiCaret = {
     if (offset < 0 || offset >= text.length) return false;
     var ch = text[offset];
     if (/^[\s　]$/.test(ch)) return false; // skip whitespace/newlines
+    // Text inside an interactive element is not its own stop — the element is an
+    // atomic stop (the ring covers the whole control, e.g. a <summary> collapse
+    // toggle) so the cursor never lands on a single glyph inside it. Popup-only:
+    // the reader reaches links via their text stops (see _interactiveEls).
+    if (!window.hoshiReader) {
+      var ie = node.parentElement;
+      if (ie && ie.closest(this._interactiveSelector)) return false;
+    }
     if (this.scopeSelector) {
       var el = node.parentElement;
       if (!el || !el.closest(this.scopeSelector)) return false;

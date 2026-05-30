@@ -263,7 +263,10 @@ void main() {
           break;
         }
         await tester.sendKeyEvent(LogicalKeyboardKey.escape);
-        for (int i = 0; i < 14; i++) {
+        // Generous per-Escape wait: a single press should fully dismiss the
+        // popup before the outer loop considers another, so a stray Escape never
+        // leaks to the reader (where Escape toggles the chrome) and steals focus.
+        for (int i = 0; i < 40; i++) {
           await tester.pump(const Duration(milliseconds: 150));
           if (find.byType(DictionaryPopupWebView).evaluate().isEmpty) {
             popupDismissed = true;
@@ -273,20 +276,30 @@ void main() {
       }
       expect(popupDismissed, isTrue,
           reason: 'the eval-lookup popup must dismiss before the key path');
+      // Let onAllPopupsDismissed return Flutter focus to the reading content
+      // before the key path, so Enter enters the cursor (not a chrome button).
+      await tester.pump(const Duration(milliseconds: 500));
 
       await takeScreenshot(binding, 'caret_js_verified');
 
       // ── Flutter Enter key drives the cursor end-to-end ────────────────
       // Sends a real key event through _handleKeyEvent → _enterCaret → JS.
-      // _enterCaret is an async evaluateJavascript round-trip, so poll for the
-      // active state instead of assuming a single pump is enough.
-      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      // The earlier eval-lookup + Escape dismissal can transiently leave focus on
+      // the bottom bar (where Enter would activate a chrome button, not the
+      // cursor). Up deterministically returns focus to the reading content (from
+      // the bar; on the content it just pages back, which is harmless), so press
+      // Up then Enter, and retry — _enterCaret is an async round-trip, so poll.
       bool activeAfterEnter = false;
-      for (int i = 0; i < 40; i++) {
-        await tester.pump(const Duration(milliseconds: 150));
-        if ((await eval('window.hoshiCaret.isActive()')) == true) {
-          activeAfterEnter = true;
-          break;
+      for (int attempt = 0; attempt < 4 && !activeAfterEnter; attempt++) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pump(const Duration(milliseconds: 200));
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        for (int i = 0; i < 20; i++) {
+          await tester.pump(const Duration(milliseconds: 150));
+          if ((await eval('window.hoshiCaret.isActive()')) == true) {
+            activeAfterEnter = true;
+            break;
+          }
         }
       }
       debugPrint('[CARET] active after Flutter Enter=$activeAfterEnter');
