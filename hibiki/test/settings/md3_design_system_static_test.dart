@@ -1504,6 +1504,99 @@ void main() {
     expect(coverField, isNot(contains('Spacing.of(context)')));
   });
 
+  test('page chrome surfaces use shared MD3 spacing tokens', () {
+    final String homeSource = File(
+      'lib/src/pages/implementations/home_page.dart',
+    ).readAsStringSync();
+    final String railLeading = _functionSource(
+      homeSource,
+      'Widget _buildRailLeading()',
+      'class _SyncExitWarningDialog',
+    );
+    expect(railLeading, contains('HibikiDesignTokens.of(context)'));
+    expect(railLeading, contains('tokens.spacing'));
+    expect(
+      railLeading,
+      isNot(contains('const EdgeInsets.fromLTRB(12, 12, 12, 24)')),
+    );
+
+    final String collectionsSource = File(
+      'lib/src/pages/implementations/collections_page.dart',
+    ).readAsStringSync();
+    final String collectionItem = _functionSource(
+      collectionsSource,
+      'Widget _buildItem(_CollectionItem item)',
+      '@visibleForTesting',
+    );
+    expect(collectionItem, contains('HibikiDesignTokens.of(context)'));
+    expect(collectionItem, contains('tokens.spacing'));
+    expect(
+      collectionItem,
+      isNot(contains('padding: const EdgeInsets.only(right: 20)')),
+    );
+
+    final String tagSource = File(
+      'lib/src/pages/implementations/tag_management_page.dart',
+    ).readAsStringSync();
+    final String tagList = _functionSource(
+      tagSource,
+      'Widget build(BuildContext context)',
+      'class TagDeleteConfirmationDialog',
+    );
+    expect(tagList, contains('HibikiDesignTokens.of(context)'));
+    expect(tagList, contains('tokens.spacing'));
+    expect(
+      tagList,
+      isNot(contains('padding: const EdgeInsets.only(right: 16)')),
+    );
+
+    final String historySource = File(
+      'lib/src/pages/implementations/history_reader_page.dart',
+    ).readAsStringSync();
+    final String historyGrid = _functionSource(
+      historySource,
+      'Widget buildHistory(List<MediaItem> items)',
+      '/// Build the widget visually',
+    );
+    expect(historyGrid, contains('HibikiDesignTokens.of(context)'));
+    expect(historyGrid, contains('tokens.spacing'));
+    expect(
+      historyGrid,
+      isNot(contains('const EdgeInsets.fromLTRB(16, 48, 16, 16)')),
+    );
+    expect(historyGrid, isNot(contains('mainAxisSpacing: 12')));
+    expect(historyGrid, isNot(contains('crossAxisSpacing: 12')));
+
+    final String illustrationsSource = File(
+      'lib/src/pages/implementations/illustrations_viewer_page.dart',
+    ).readAsStringSync();
+    final String illustrationsBody = _functionSource(
+      illustrationsSource,
+      'Widget _buildBody(ThemeData theme, HibikiDesignTokens tokens)',
+      'class _FullScreenGallery',
+    );
+    expect(illustrationsBody, contains('tokens.spacing'));
+    expect(
+      illustrationsBody,
+      isNot(contains('padding: const EdgeInsets.all(32)')),
+    );
+
+    final String profileSource = File(
+      'lib/src/pages/implementations/profile_management_page.dart',
+    ).readAsStringSync();
+    final String profileState = _sectionSource(
+      profileSource,
+      'class _ProfileManagementPageState',
+      'class _ProfileActionButton',
+    );
+    expect(profileState, contains('HibikiDesignTokens.of(context)'));
+    expect(profileState, contains('tokens.spacing'));
+    expect(
+      profileState,
+      isNot(contains('padding: const EdgeInsets.symmetric(vertical: 48)')),
+    );
+  });
+
   test('open stash dialogs use shared MD3 dialog chrome', () {
     final String source = File(
       'lib/src/pages/implementations/open_stash_dialog_page.dart',

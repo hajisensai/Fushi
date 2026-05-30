@@ -130,7 +130,8 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final ThemeData theme = Theme.of(context);
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return HibikiPageScaffold(
       title: t.tag_manage_title,
       floatingActionButton: FloatingActionButton(
@@ -154,7 +155,7 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
                   direction: DismissDirection.endToStart,
                   background: Container(
                     alignment: Alignment.centerRight,
-                    padding: const EdgeInsets.only(right: 16),
+                    padding: EdgeInsets.only(right: tokens.spacing.card),
                     color: theme.colorScheme.errorContainer,
                     child: Icon(
                       Icons.delete_outline,

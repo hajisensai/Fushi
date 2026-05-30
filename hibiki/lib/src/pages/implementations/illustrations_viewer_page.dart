@@ -91,8 +91,8 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final tokens = HibikiDesignTokens.of(context);
+    final ThemeData theme = Theme.of(context);
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
 
     return HibikiPageScaffold(
       title: widget.bookTitle,
@@ -117,7 +117,7 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
     if (_error != null && _images.isEmpty) {
       return Center(
         child: Padding(
-          padding: const EdgeInsets.all(32),
+          padding: EdgeInsets.all(tokens.spacing.page + tokens.spacing.card),
           child: Text(
             _error!,
             textAlign: TextAlign.center,

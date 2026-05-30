@@ -327,8 +327,14 @@ class _HomePageState extends BasePageState<HomePage>
   }
 
   Widget _buildRailLeading() {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+      padding: EdgeInsets.fromLTRB(
+        tokens.spacing.gap + tokens.spacing.gap / 2,
+        tokens.spacing.gap + tokens.spacing.gap / 2,
+        tokens.spacing.gap + tokens.spacing.gap / 2,
+        tokens.spacing.card + tokens.spacing.gap,
+      ),
       child: ChangeNotifierBuilder(
         notifier: appModel.incognitoNotifier,
         builder: (context, notifier, _) {

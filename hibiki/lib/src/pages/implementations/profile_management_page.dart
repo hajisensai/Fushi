@@ -17,6 +17,7 @@ class ProfileManagementPage extends BasePage {
 class _ProfileManagementPageState extends BasePageState<ProfileManagementPage> {
   @override
   Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final uiState = ref.watch(profileViewModelProvider);
     final vm = ref.read(profileViewModelProvider.notifier);
 
@@ -33,7 +34,8 @@ class _ProfileManagementPageState extends BasePageState<ProfileManagementPage> {
       children: uiState.isLoading
           ? [
               Padding(
-                padding: const EdgeInsets.symmetric(vertical: 48),
+                padding:
+                    EdgeInsets.symmetric(vertical: tokens.spacing.page * 3),
                 child: buildLoading(),
               ),
             ]

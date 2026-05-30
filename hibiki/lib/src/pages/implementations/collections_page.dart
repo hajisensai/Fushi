@@ -430,6 +430,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   }
 
   Widget _buildItem(_CollectionItem item) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final isBookmark = item.type == _CollectionType.bookmark;
     final icon =
         isBookmark ? Icons.bookmark_outline : Icons.format_quote_outlined;
@@ -461,7 +462,9 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       direction: DismissDirection.endToStart,
       background: Container(
         alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: 20),
+        padding: EdgeInsets.only(
+          right: tokens.spacing.card + tokens.spacing.gap / 2,
+        ),
         color: Theme.of(context).colorScheme.error,
         child: Icon(Icons.delete_outline,
             color: Theme.of(context).colorScheme.onError),
