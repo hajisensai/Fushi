@@ -639,6 +639,45 @@ void main() {
     expect(cardShell, isNot(contains('theme.colorScheme.primary.withValues')));
   });
 
+  test('reader history batch actions use shared MD3 spacing tokens', () {
+    final String source = File(
+      'lib/src/pages/implementations/reader_hibiki_history_page.dart',
+    ).readAsStringSync();
+    final String batchActionBar = _functionSource(
+      source,
+      'Widget _buildBatchActionBar()',
+      '  Future<void> _batchDeleteConfirm()',
+    );
+    final String placeholder = _functionSource(
+      source,
+      'Widget buildPlaceholder()',
+      'Widget buildMediaItemContent(MediaItem item)',
+    );
+    final String batchTagIntentRow = _sectionSource(
+      source,
+      'class _BatchTagIntentRow',
+      source.length,
+    );
+
+    for (final String section in <String>[
+      batchActionBar,
+      placeholder,
+      batchTagIntentRow,
+    ]) {
+      expect(section, contains('HibikiDesignTokens'));
+      expect(section, contains('tokens.spacing'));
+      expect(section, isNot(contains('const SizedBox(height: 12)')));
+      expect(section, isNot(contains('const SizedBox(width: 12)')));
+      expect(section, isNot(contains('const SizedBox(width: 8)')));
+      expect(
+        section,
+        isNot(
+          contains('const EdgeInsets.symmetric(horizontal: 12, vertical: 8)'),
+        ),
+      );
+    }
+  });
+
   test('reader history title and drag overlays use shared MD3 tokens', () {
     final String source = File(
       'lib/src/pages/implementations/reader_hibiki_history_page.dart',

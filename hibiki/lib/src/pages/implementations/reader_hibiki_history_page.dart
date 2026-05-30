@@ -836,13 +836,18 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   }
 
   Widget _buildBatchActionBar() {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
     return Material(
       elevation: 6,
       color: theme.colorScheme.surfaceContainer,
       child: SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: EdgeInsets.symmetric(
+            horizontal: tokens.spacing.card - tokens.spacing.gap / 2,
+            vertical: tokens.spacing.gap,
+          ),
           child: Row(
             children: [
               Text(
@@ -851,7 +856,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              const SizedBox(width: 8),
+              SizedBox(width: tokens.spacing.gap),
               TextButton(
                 onPressed: _selectAll,
                 child: Text(t.batch_select_all),
@@ -978,6 +983,8 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
 
   @override
   Widget buildPlaceholder() {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -986,7 +993,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
             icon: mediaSource.icon,
             message: t.ttu_no_books_added,
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
           FilledButton.icon(
             icon: const Icon(Icons.library_add_outlined, size: 18),
             label: Text(t.srt_import),
@@ -2043,6 +2050,7 @@ class _BatchTagIntentRow extends StatelessWidget {
     final bool cupertino = isCupertinoPlatform(context);
     final ThemeData theme = Theme.of(context);
     final Color tagColor = Color(tag.colorValue);
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
 
     return AdaptiveSettingsRow(
       title: tag.name,
@@ -2060,7 +2068,7 @@ class _BatchTagIntentRow extends StatelessWidget {
               ),
               child: const SizedBox(width: 12, height: 12),
             ),
-            const SizedBox(width: 12),
+            SizedBox(width: tokens.spacing.gap + tokens.spacing.gap / 2),
             Flexible(
               child: adaptiveSegmentedButton<_BatchTagIntent>(
                 context: context,
