@@ -29,12 +29,13 @@ class AudiobookPlayBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return ColoredBox(
       color: backgroundColor ?? Theme.of(context).colorScheme.surface,
       child: SizedBox(
         height: 56,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
+          padding: EdgeInsets.symmetric(horizontal: tokens.spacing.gap),
           child: Row(
             children: [
               IconButton(
@@ -79,7 +80,7 @@ class AudiobookPlayBar extends StatelessWidget {
                     ? t.next_sentence
                     : '+${skipActionSeconds}s',
               ),
-              const SizedBox(width: 4),
+              SizedBox(width: tokens.spacing.gap / 2),
               Expanded(
                 child: Text(
                   controller.currentCue?.text ?? '',

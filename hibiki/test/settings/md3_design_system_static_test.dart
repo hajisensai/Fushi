@@ -960,6 +960,25 @@ void main() {
     }
   });
 
+  test('audiobook play bar uses shared MD3 spacing tokens', () {
+    final String source = File(
+      'lib/src/media/audiobook/audiobook_play_bar.dart',
+    ).readAsStringSync();
+    final String playBarBuild = _functionSource(
+      source,
+      'Widget build(BuildContext context) {',
+      '/// Follow audio',
+    );
+
+    expect(playBarBuild, contains('HibikiDesignTokens.of(context)'));
+    expect(playBarBuild, contains('tokens.spacing'));
+    expect(
+      playBarBuild,
+      isNot(contains('padding: const EdgeInsets.symmetric(horizontal: 8)')),
+    );
+    expect(playBarBuild, isNot(contains('const SizedBox(width: 4)')));
+  });
+
   test('anki integration dialogs use shared MD3 dialog chrome', () {
     final String source =
         File('lib/src/models/anki_integration.dart').readAsStringSync();
@@ -1463,6 +1482,45 @@ void main() {
     expect(dialogSource, contains('HibikiDialogFrame('));
     expect(dialogSource, contains('HibikiModalSheetFrame('));
     expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
+  });
+
+  test('home dictionary list chrome uses shared MD3 spacing tokens', () {
+    final String source = File(
+      'lib/src/pages/implementations/home_dictionary_page.dart',
+    ).readAsStringSync();
+    final String searchHeader = _functionSource(
+      source,
+      'Widget _buildSearchHeader()',
+      'Widget _buildBody()',
+    );
+    final String historyList = _functionSource(
+      source,
+      'Widget _buildDictionaryHistory()',
+      'void _onQueryChanged(String query)',
+    );
+
+    for (final String section in <String>[searchHeader, historyList]) {
+      expect(section, contains('HibikiDesignTokens.of(context)'));
+      expect(section, contains('tokens.spacing'));
+    }
+    expect(
+      searchHeader,
+      isNot(
+        contains('isCupertinoPlatform(context) ? 8 : 16'),
+      ),
+    );
+    expect(
+      historyList,
+      isNot(contains('padding: const EdgeInsets.only(top: 4, bottom: 16)')),
+    );
+    expect(
+      historyList,
+      isNot(
+        contains(
+            'margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 2)'),
+      ),
+    );
+    expect(historyList, isNot(contains('const SizedBox(width: 4)')));
   });
 
   test('dictionary confirmation dialogs use shared MD3 dialog chrome', () {

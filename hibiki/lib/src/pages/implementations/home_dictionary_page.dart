@@ -155,12 +155,15 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
   }
 
   Widget _buildSearchHeader() {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final double horizontalPadding =
+        isCupertinoPlatform(context) ? tokens.spacing.gap : tokens.spacing.page;
     return Padding(
       padding: EdgeInsets.fromLTRB(
-        isCupertinoPlatform(context) ? 8 : 16,
+        horizontalPadding,
         0,
-        isCupertinoPlatform(context) ? 8 : 16,
-        8,
+        horizontalPadding,
+        tokens.spacing.gap,
       ),
       child: SizedBox(
         height: kToolbarHeight,
@@ -243,12 +246,16 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
   // ── dictionary history list ────────────────────────────────────────
 
   Widget _buildDictionaryHistory() {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final historyResults = appModel.dictionaryHistory.reversed.toList();
     if (historyResults.every((r) => r.entries.isEmpty)) {
       return _buildPlaceholder();
     }
     return ListView.builder(
-      padding: const EdgeInsets.only(top: 4, bottom: 16),
+      padding: EdgeInsets.only(
+        top: tokens.spacing.gap / 2,
+        bottom: tokens.spacing.page,
+      ),
       controller: DictionaryMediaType.instance.scrollController,
       itemCount: historyResults.length,
       itemBuilder: (context, index) {
@@ -266,7 +273,10 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
         final dictCount =
             result.entries.map((e) => e.dictionaryName).toSet().length;
         return HibikiCard(
-          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+          margin: EdgeInsets.symmetric(
+            horizontal: tokens.spacing.page,
+            vertical: tokens.spacing.gap / 4,
+          ),
           onTap: () {
             _controller.text = searchTerm;
             _controller.selection =
@@ -286,7 +296,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text('$dictCount'),
-                const SizedBox(width: 4),
+                SizedBox(width: tokens.spacing.gap / 2),
                 const Icon(Icons.chevron_right, size: 20),
               ],
             ),
