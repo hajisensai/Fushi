@@ -544,41 +544,17 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 当前位置"的前一条。始终跳立即邻居，不做 "1.5s 内 restart" 的语义扩展。
   Future<void> skipToPrevCue() async {
     if (_chapterCues.isEmpty) return;
-    final AudioCue? cur = _currentCue;
-    if (cur != null) {
-      final int curIdx = _currentCueIndex >= 0
-          ? _currentCueIndex
-          : _chapterCues.indexWhere(
-              (c) => c.textFragmentId == cur.textFragmentId,
-            );
-      if (curIdx > 0) {
-        await skipToCue(_chapterCues[curIdx - 1]);
-        return;
-      }
-      if (curIdx == 0) {
-        unawaited(onBoundarySkip?.call(-1));
-        return;
-      }
-    }
-    // currentCue 为空（gap / 开头 / 未定位）：按位置找最近 startMs <= pos 的 cue
-    // 作为"上一条"。早于所有 cue 则跳第一句。
-    final int posMs = position.inMilliseconds;
-    int lo = 0;
-    int hi = _chapterCues.length;
-    while (lo < hi) {
-      final int mid = (lo + hi) >>> 1;
-      if (_chapterCues[mid].startMs < posMs) {
-        lo = mid + 1;
-      } else {
-        hi = mid;
-      }
-    }
-    // lo 是第一条 startMs >= posMs；上一条 = lo - 1（若存在）。
-    if (lo == 0) {
-      await skipToCue(_chapterCues.first);
+    final int? target = _prevCueIndex(
+      cues: _chapterCues,
+      currentCueIndex: _currentCueIndex,
+      currentCue: _currentCue,
+      positionMs: position.inMilliseconds,
+    );
+    if (target == null) {
+      unawaited(onBoundarySkip?.call(-1));
       return;
     }
-    await skipToCue(_chapterCues[lo - 1]);
+    await skipToCue(_chapterCues[target]);
   }
 
   /// 跳到下一句（当前章节 cue 列表内）。
@@ -929,6 +905,46 @@ class AudiobookPlayerController extends ChangeNotifier {
     return idx + 1;
   }
 
+  /// [skipToPrevCue] 的纯决策（与 [_nextCueIndex] 对称）。对齐上游 Sasayaki
+  /// `prevCue()`：
+  ///  - 已定位到当前 cue：取它的前一条；已在首句返回 null（= 触发跨章边界）。
+  ///  - 未定位到 cue（gap / 开头）：按位置二分，取"最近一条起点早于当前位置"的
+  ///    cue；早于全部 cue 时回到首句（索引 0）。
+  ///
+  /// 注意：这里的 gap 回退**刻意**不等同于 [JsonAlignmentParser.findCueIndex]
+  /// ——后者在 gap 内返回 -1（无高亮），而"上一句"导航需要落到 gap 之前的那条
+  /// cue，二者是不同语义，不能互相替代。
+  static int? _prevCueIndex({
+    required List<AudioCue> cues,
+    required int currentCueIndex,
+    required AudioCue? currentCue,
+    required int positionMs,
+  }) {
+    if (cues.isEmpty) return null;
+    if (currentCue != null) {
+      final int curIdx = currentCueIndex >= 0
+          ? currentCueIndex
+          : cues.indexWhere(
+              (c) => c.textFragmentId == currentCue.textFragmentId,
+            );
+      if (curIdx > 0) return curIdx - 1;
+      if (curIdx == 0) return null; // 已在首句 → 跨章边界
+      // curIdx == -1（未按 fragmentId 命中）：落到下面按位置查找。
+    }
+    // 二分找第一条 startMs >= positionMs；上一条即为目标。
+    int lo = 0;
+    int hi = cues.length;
+    while (lo < hi) {
+      final int mid = (lo + hi) >>> 1;
+      if (cues[mid].startMs < positionMs) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    return lo == 0 ? 0 : lo - 1;
+  }
+
   static int _allBookCueIndex({
     required List<AudioCue> allBookCues,
     required AudioCue currentCue,
@@ -977,6 +993,21 @@ class AudiobookPlayerController extends ChangeNotifier {
     return _nextCueIndex(
       cues: cues,
       currentCueIndex: currentCueIndex,
+      positionMs: positionMs,
+    );
+  }
+
+  @visibleForTesting
+  static int? prevCueIndexForTesting({
+    required List<AudioCue> cues,
+    required int currentCueIndex,
+    required AudioCue? currentCue,
+    required int positionMs,
+  }) {
+    return _prevCueIndex(
+      cues: cues,
+      currentCueIndex: currentCueIndex,
+      currentCue: currentCue,
       positionMs: positionMs,
     );
   }

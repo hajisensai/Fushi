@@ -50,6 +50,74 @@ void main() {
       expect(nextIndex, 3);
     });
 
+    test('prev cue: with a current cue jumps to the immediately previous one',
+        () {
+      final List<AudioCue> cues = [_cue(0), _cue(1000), _cue(2000), _cue(3000)];
+
+      final int? prev = AudiobookPlayerController.prevCueIndexForTesting(
+        cues: cues,
+        currentCueIndex: 2,
+        currentCue: cues[2],
+        positionMs: 2100,
+      );
+
+      expect(prev, 1);
+    });
+
+    test('prev cue: at the first cue returns null (chapter boundary)', () {
+      final List<AudioCue> cues = [_cue(0), _cue(1000)];
+
+      final int? prev = AudiobookPlayerController.prevCueIndexForTesting(
+        cues: cues,
+        currentCueIndex: 0,
+        currentCue: cues[0],
+        positionMs: 100,
+      );
+
+      expect(prev, isNull);
+    });
+
+    test(
+        'prev cue: in a gap (no current cue) jumps to the last cue started '
+        'before now', () {
+      // _cue(n) spans [n, n+500]; position 1700 falls in the gap after cue 1
+      // ([1000,1500]) and before cue 2 starts (2000), so "previous" is index 1.
+      final List<AudioCue> cues = [_cue(0), _cue(1000), _cue(2000)];
+
+      final int? prev = AudiobookPlayerController.prevCueIndexForTesting(
+        cues: cues,
+        currentCueIndex: -1,
+        currentCue: null,
+        positionMs: 1700,
+      );
+
+      expect(prev, 1);
+    });
+
+    test('prev cue: before the first cue starts jumps to the first cue', () {
+      final List<AudioCue> cues = [_cue(1000), _cue(2000)];
+
+      final int? prev = AudiobookPlayerController.prevCueIndexForTesting(
+        cues: cues,
+        currentCueIndex: -1,
+        currentCue: null,
+        positionMs: 200,
+      );
+
+      expect(prev, 0);
+    });
+
+    test('prev cue: empty cue list returns null', () {
+      final int? prev = AudiobookPlayerController.prevCueIndexForTesting(
+        cues: const <AudioCue>[],
+        currentCueIndex: -1,
+        currentCue: null,
+        positionMs: 0,
+      );
+
+      expect(prev, isNull);
+    });
+
     test('all-book cue lookup does not collapse duplicate selectors', () {
       final List<AudioCue> cues = [
         _cue(0, id: 1, fragmentId: ''),
