@@ -426,12 +426,18 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       onAllPopupsDismissed();
     } else {
       _popupStack.value = _popupStack.value.sublist(0, index);
+      onDictionaryStackChanged();
     }
   }
 
   /// Called when all dictionary popups are dismissed (stack becomes empty).
   /// Override in subclasses to hook post-dismiss logic.
   void onAllPopupsDismissed() {}
+
+  /// Called when a non-last popup layer is dismissed (the stack shrinks but a
+  /// parent popup remains). Override (reader) to keep the char cursor following
+  /// the new top popup — covers both B/Esc and swipe dismissal of a deeper layer.
+  void onDictionaryStackChanged() {}
 
   /// Called after the popup at [index] finishes rendering. Override (reader) to
   /// hand the char-level cursor to the freshly shown top popup.

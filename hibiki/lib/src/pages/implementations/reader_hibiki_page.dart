@@ -96,6 +96,11 @@ class ReaderHibikiPage extends BaseSourcePage {
   @visibleForTesting
   static String Function()? debugCaretSurface;
 
+  /// Test hook: evaluate JS on the top visible dictionary popup (resolved via
+  /// `topPopupState`, the same path production uses). Null when no popup is up.
+  @visibleForTesting
+  static Future<dynamic> Function(String source)? debugEvaluateTopPopup;
+
   @override
   BaseSourcePageState<ReaderHibikiPage> createState() =>
       _ReaderHibikiPageState();
@@ -889,6 +894,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     assert(() {
       ReaderHibikiPage.debugEvaluateJavascript = null;
       ReaderHibikiPage.debugCaretSurface = null;
+      ReaderHibikiPage.debugEvaluateTopPopup = null;
       return true;
     }());
     ReaderHibikiSource.onSettingsChangedLive = null;
@@ -1536,6 +1542,8 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
           ReaderHibikiPage.debugEvaluateJavascript =
               (String source) => controller.evaluateJavascript(source: source);
           ReaderHibikiPage.debugCaretSurface = () => _caretSurface.name;
+          ReaderHibikiPage.debugEvaluateTopPopup =
+              (String source) async => topPopupState?.debugEval(source);
           return true;
         }());
         _startContentReadyTimeout();
@@ -3442,27 +3450,34 @@ window.flutter_inappwebview.callHandler('spreadReady');
     }
   }
 
-  /// B/Esc while the cursor is active. On the popup it walks one layer back (and
-  /// the cursor follows to the parent popup or the reader); on the reader it
+  /// B/Esc while the cursor is active. On the popup it walks one layer back; the
+  /// cursor then follows to the parent popup ([onDictionaryStackChanged]) or back
+  /// to the reader ([onAllPopupsDismissed]) — the same hooks that fire on a swipe
+  /// dismissal, so every back path is handled in one place. On the reader it
   /// dismisses a touch-opened popup or, with none, leaves cursor mode.
   Future<void> _caretDismissOrExit() async {
     if (_caretSurface == CaretSurface.popup) {
       dismissTopPopup();
-      if (!mounted) return;
-      if (topVisiblePopupIndex >= 0) {
-        // A parent popup remains; its cursor is still active behind the one we
-        // just closed — keep the surface on the popup and re-measure its ring.
-        setState(() => _caretPopupState = topPopupState);
-        unawaited(topPopupState?.caretRefresh());
-      }
-      // else: the stack emptied → onAllPopupsDismissed returns the cursor to the
-      // reader.
       return;
     }
     if (isDictionaryShown) {
       clearDictionaryResult();
     } else {
       _exitCaret();
+    }
+  }
+
+  /// A deeper popup layer was dismissed (B/Esc or swipe) but a parent popup
+  /// remains: keep the cursor on the popup surface, follow it to the new top, and
+  /// re-measure its ring.
+  @override
+  void onDictionaryStackChanged() {
+    if (!mounted || _caretSurface != CaretSurface.popup) return;
+    final DictionaryPopupWebViewState? newTop = topPopupState;
+    if (newTop == null) return;
+    if (!identical(newTop, _caretPopupState)) {
+      setState(() => _caretPopupState = newTop);
+      unawaited(newTop.caretRefresh());
     }
   }
 
@@ -3537,22 +3552,32 @@ window.flutter_inappwebview.callHandler('spreadReady');
   }
 
   Future<void> _transferCaretToTopPopup(DictionaryPopupWebViewState state) async {
-    // Hide the reader ring when leaving the reader (it's the large background).
-    // A parent popup's ring is occluded by the new top, so leave it for the
-    // return trip (it re-shows when the top is dismissed).
+    await state.caretInit();
+    String status = await state.caretEnter();
+    if (!mounted || topPopupState != state) return;
+    if (status != 'moved') {
+      // The popup may not have laid out its definition body yet (the cursor only
+      // stops inside .glossary-content). Give it a frame and retry once.
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      if (!mounted || topPopupState != state) return;
+      status = await state.caretEnter();
+      if (!mounted) return;
+    }
+    if (status != 'moved') {
+      debugPrint('[ReaderHibiki] caret transfer to popup failed: $status');
+      return; // leave the cursor on its current surface (ring still shown)
+    }
+    // Success: hide the reader ring when leaving the reader (it's the large
+    // background). A parent popup's ring is occluded by the new top, so leave it
+    // for the return trip (it re-shows when the top is dismissed).
     if (_caretSurface == CaretSurface.reader) {
       _controller
           ?.evaluateJavascript(source: ReaderCaretScripts.exitInvocation());
     }
-    await state.caretInit();
-    final String status = await state.caretEnter();
-    if (!mounted) return;
-    if (status == 'moved') {
-      setState(() {
-        _caretSurface = CaretSurface.popup;
-        _caretPopupState = state;
-      });
-    }
+    setState(() {
+      _caretSurface = CaretSurface.popup;
+      _caretPopupState = state;
+    });
   }
 
   // ── Shift+Hover over dismiss barrier ──────────────────────────────
