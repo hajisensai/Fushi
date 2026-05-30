@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:hibiki/creator.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
@@ -27,7 +26,11 @@ class AudioRecorderEnhancement extends AudioEnhancement {
   static const String key = 'audio_recorder';
 
   /// Whether audio recording is available on the current platform.
-  static bool get isAvailable => isAndroidPlatform;
+  ///
+  /// record supports Android/iOS/macOS/Windows/Linux. On Linux the encoder
+  /// needs system tools (parecord/pactl/ffmpeg) present; without them start()
+  /// throws at runtime and the recorder dialog falls back gracefully.
+  static bool get isAvailable => true;
 
   @override
   String getLocalisedLabel(AppModel appModel) =>
@@ -41,64 +44,56 @@ class AudioRecorderEnhancement extends AudioEnhancement {
     required CreatorModel creatorModel,
     required EnhancementTriggerCause cause,
   }) async {
-    if (!isAndroidPlatform) return;
     AudioExportField audioField = field as AudioExportField;
 
-    bool permissionGranted = await Permission.microphone.isGranted;
-    if (!permissionGranted) {
-      await Permission.microphone.request();
-    } else {
-      Directory appDirDoc = await getApplicationSupportDirectory();
-      String tempAudioPath =
-          '${appDirDoc.path}/${field.uniqueKey}/audioRecorderTemp';
-      Directory tempAudioDirectory = Directory(tempAudioPath);
+    Directory appDirDoc = await getApplicationSupportDirectory();
+    String tempAudioPath =
+        '${appDirDoc.path}/${field.uniqueKey}/audioRecorderTemp';
+    Directory tempAudioDirectory = Directory(tempAudioPath);
 
-      String tempTimestamp =
-          DateFormat('yyyyMMddTkkmmss').format(DateTime.now());
+    String tempTimestamp = DateFormat('yyyyMMddTkkmmss').format(DateTime.now());
 
-      Directory tempTimestampDirectory =
-          Directory('$tempAudioPath/$tempTimestamp');
-      tempTimestampDirectory.createSync(recursive: true);
-      String tempFilePath = '${tempTimestampDirectory.path}/audio.mp3';
-      if (context.mounted) {
-        await showAppDialog<File?>(
-          context: context,
-          builder: (_) => AudioRecorderDialogPage(
-            filePath: tempFilePath,
-            onSave: (tempFile) {
-              String audioRecorderPath =
-                  '${appDirDoc.path}/${field.uniqueKey}/audioRecorder';
-              Directory audioRecorderDirectory = Directory(audioRecorderPath);
-              if (audioRecorderDirectory.existsSync()) {
-                audioRecorderDirectory.deleteSync(recursive: true);
-              }
-              audioRecorderDirectory.createSync(recursive: true);
+    Directory tempTimestampDirectory =
+        Directory('$tempAudioPath/$tempTimestamp');
+    tempTimestampDirectory.createSync(recursive: true);
+    String tempFilePath = '${tempTimestampDirectory.path}/audio.m4a';
+    if (context.mounted) {
+      await showAppDialog<File?>(
+        context: context,
+        builder: (_) => AudioRecorderDialogPage(
+          filePath: tempFilePath,
+          onSave: (tempFile) {
+            String audioRecorderPath =
+                '${appDirDoc.path}/${field.uniqueKey}/audioRecorder';
+            Directory audioRecorderDirectory = Directory(audioRecorderPath);
+            if (audioRecorderDirectory.existsSync()) {
+              audioRecorderDirectory.deleteSync(recursive: true);
+            }
+            audioRecorderDirectory.createSync(recursive: true);
 
-              String finalTimestamp =
-                  DateFormat('yyyyMMddTkkmmss').format(DateTime.now());
-              Directory finalTimestampDirectory =
-                  Directory('$audioRecorderPath/$finalTimestamp');
-              String finalFilePath =
-                  '${finalTimestampDirectory.path}/audio.mp3';
+            String finalTimestamp =
+                DateFormat('yyyyMMddTkkmmss').format(DateTime.now());
+            Directory finalTimestampDirectory =
+                Directory('$audioRecorderPath/$finalTimestamp');
+            String finalFilePath = '${finalTimestampDirectory.path}/audio.m4a';
 
-              finalTimestampDirectory.createSync(recursive: true);
-              tempFile.copySync(finalFilePath);
+            finalTimestampDirectory.createSync(recursive: true);
+            tempFile.copySync(finalFilePath);
 
-              tempAudioDirectory.deleteSync(recursive: true);
+            tempAudioDirectory.deleteSync(recursive: true);
 
-              audioField.setAudio(
-                cause: cause,
-                appModel: appModel,
-                creatorModel: creatorModel,
-                newAutoCannotOverride: false,
-                generateAudio: () async {
-                  return File(finalFilePath);
-                },
-              );
-            },
-          ),
-        );
-      }
+            audioField.setAudio(
+              cause: cause,
+              appModel: appModel,
+              creatorModel: creatorModel,
+              newAutoCannotOverride: false,
+              generateAudio: () async {
+                return File(finalFilePath);
+              },
+            );
+          },
+        ),
+      );
     }
   }
 
