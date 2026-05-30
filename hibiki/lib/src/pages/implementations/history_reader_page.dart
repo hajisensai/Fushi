@@ -114,7 +114,12 @@ class HistoryReaderPageState<T extends BaseHistoryPage>
         LayoutBuilder(builder: (context, constraints) {
           return Container(
             alignment: Alignment.center,
-            padding: const EdgeInsets.fromLTRB(2, 2, 2, 4),
+            padding: EdgeInsets.fromLTRB(
+              tokens.spacing.gap / 4,
+              tokens.spacing.gap / 4,
+              tokens.spacing.gap / 4,
+              tokens.spacing.gap / 2,
+            ),
             height: constraints.maxHeight * 0.25,
             width: double.maxFinite,
             color: theme.colorScheme.scrim.withValues(alpha: 0.6),

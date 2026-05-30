@@ -28,7 +28,7 @@ class DictionaryProgressDialogContent extends StatelessWidget {
           SizedBox.square(
             dimension: 36,
             child: Padding(
-              padding: const EdgeInsets.all(4),
+              padding: EdgeInsets.all(tokens.spacing.gap / 2),
               child: adaptiveIndicator(
                 context: context,
                 color: progressColor,

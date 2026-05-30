@@ -616,6 +616,24 @@ void main() {
     }
   });
 
+  test('material settings labels use shared MD3 micro spacing tokens', () {
+    final String source = File(
+      'lib/src/settings/material_settings_renderer.dart',
+    ).readAsStringSync();
+    final String labelSource = _sectionSource(
+      source,
+      'class _SettingsLabel',
+      source.length,
+    );
+
+    expect(labelSource, contains('HibikiDesignTokens.of(context)'));
+    expect(labelSource, contains('tokens.spacing'));
+    expect(
+      labelSource,
+      isNot(contains('padding: const EdgeInsets.only(top: 2)')),
+    );
+  });
+
   test('reader history selection chrome uses shared MD3 tokens', () {
     final String source = File(
       'lib/src/pages/implementations/reader_hibiki_history_page.dart',
@@ -1420,6 +1438,24 @@ void main() {
     }
   });
 
+  test('system font picker search uses shared MD3 spacing tokens', () {
+    final String source = File(
+      'lib/src/pages/implementations/custom_fonts_page.dart',
+    ).readAsStringSync();
+    final String pickerSource = _sectionSource(
+      source,
+      'class _SystemFontPickerPageState',
+      'class CustomFontsPage',
+    );
+
+    expect(pickerSource, contains('HibikiDesignTokens.of(context)'));
+    expect(pickerSource, contains('tokens.spacing'));
+    expect(
+      pickerSource,
+      isNot(contains('contentPadding: const EdgeInsets.symmetric(')),
+    );
+  });
+
   test('book CSS confirmation dialog uses shared MD3 dialog chrome', () {
     final String source = File(
       'lib/src/pages/implementations/book_css_editor_page.dart',
@@ -1584,6 +1620,17 @@ void main() {
     );
     expect(historyGrid, isNot(contains('mainAxisSpacing: 12')));
     expect(historyGrid, isNot(contains('crossAxisSpacing: 12')));
+    final String historyTile = _sectionSource(
+      historySource,
+      'Widget buildMediaItemContent(MediaItem item)',
+      historySource.length,
+    );
+    expect(historyTile, contains('HibikiDesignTokens.of(context)'));
+    expect(historyTile, contains('tokens.spacing'));
+    expect(
+      historyTile,
+      isNot(contains('const EdgeInsets.fromLTRB(2, 2, 2, 4)')),
+    );
 
     final String illustrationsSource = File(
       'lib/src/pages/implementations/illustrations_viewer_page.dart',
@@ -1769,6 +1816,24 @@ void main() {
       expect(dialogSource, contains('HibikiModalSheetFrame('));
       expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
     }
+  });
+
+  test('reader popup audio controls use shared MD3 micro spacing tokens', () {
+    final String source = File(
+      'lib/src/pages/implementations/reader_hibiki_page.dart',
+    ).readAsStringSync();
+    final String popupAudio = _functionSource(
+      source,
+      'Widget? buildPopupAudioControls()',
+      '  Audiobook _audiobookFromRow',
+    );
+
+    expect(popupAudio, contains('HibikiDesignTokens.of(context)'));
+    expect(popupAudio, contains('tokens.spacing'));
+    expect(
+      popupAudio,
+      isNot(contains('padding: const EdgeInsets.symmetric(vertical: 2)')),
+    );
   });
 
   test('MD3 review report does not reopen completed app chrome scope', () {

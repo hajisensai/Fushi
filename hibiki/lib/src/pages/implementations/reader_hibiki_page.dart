@@ -4342,7 +4342,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
             ),
           ),
         ),
-        padding: const EdgeInsets.symmetric(vertical: 2),
+        padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 4),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [

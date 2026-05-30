@@ -328,6 +328,7 @@ class _SystemFontPickerPageState extends State<_SystemFontPickerPage> {
 
   @override
   Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final List<Widget> fontRows = _loading
         ? <Widget>[
@@ -374,9 +375,9 @@ class _SystemFontPickerPageState extends State<_SystemFontPickerPage> {
                 child: HibikiTextField(
                   controller: _searchController,
                   hintText: t.custom_fonts_search_hint,
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 10,
+                  contentPadding: EdgeInsets.symmetric(
+                    horizontal: tokens.spacing.rowHorizontal,
+                    vertical: tokens.spacing.rowVertical,
                   ),
                   onChanged: _onSearch,
                 ),
