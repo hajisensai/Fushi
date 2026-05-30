@@ -206,10 +206,11 @@ class _BookImportDialogState extends State<BookImportDialog> {
       subtitle: _epubPath == null ? null : _epubName ?? p.basename(_epubPath!),
       icon: Icons.menu_book_outlined,
       actions: [
-        IconButton(
-          icon: const Icon(Icons.menu_book_outlined, size: 20),
+        HibikiIconButton(
+          icon: Icons.menu_book_outlined,
           tooltip: t.srt_import_pick_epub,
-          onPressed: _pickEpub,
+          isWideTapArea: true,
+          onTap: _pickEpub,
         ),
       ],
     );
@@ -224,19 +225,20 @@ class _BookImportDialogState extends State<BookImportDialog> {
       icon: Icons.subtitles_outlined,
       actions: [
         if (_subtitlePath != null)
-          IconButton(
-            icon: Icon(Icons.close,
-                size: 18,
-                color: Theme.of(context).colorScheme.onSurfaceVariant),
-            onPressed: () => setState(() {
+          HibikiIconButton(
+            icon: Icons.close,
+            tooltip: t.dialog_clear,
+            isWideTapArea: true,
+            onTap: () async => setState(() {
               _subtitlePath = null;
               _subtitleName = null;
             }),
           ),
-        IconButton(
-          icon: const Icon(Icons.subtitles_outlined, size: 20),
+        HibikiIconButton(
+          icon: Icons.subtitles_outlined,
           tooltip: t.srt_import_pick_subtitle_files,
-          onPressed: _pickSubtitle,
+          isWideTapArea: true,
+          onTap: _pickSubtitle,
         ),
       ],
     );
@@ -253,19 +255,20 @@ class _BookImportDialogState extends State<BookImportDialog> {
       icon: Icons.audio_file_outlined,
       actions: [
         if (_audioPaths.isNotEmpty)
-          IconButton(
-            icon: Icon(Icons.close,
-                size: 18,
-                color: Theme.of(context).colorScheme.onSurfaceVariant),
-            onPressed: () => setState(() {
+          HibikiIconButton(
+            icon: Icons.close,
+            tooltip: t.dialog_clear,
+            isWideTapArea: true,
+            onTap: () async => setState(() {
               _audioPaths = [];
               _audioCoverPath = null;
             }),
           ),
-        IconButton(
-          icon: const Icon(Icons.audio_file_outlined, size: 20),
+        HibikiIconButton(
+          icon: Icons.audio_file_outlined,
           tooltip: t.srt_import_pick_audio_files,
-          onPressed: _pickAudio,
+          isWideTapArea: true,
+          onTap: _pickAudio,
         ),
       ],
     );
@@ -403,19 +406,20 @@ class _BookImportDialogState extends State<BookImportDialog> {
       icon: Icons.image_outlined,
       actions: [
         if (effectiveCover != null)
-          IconButton(
-            icon: Icon(Icons.close,
-                size: 18,
-                color: Theme.of(context).colorScheme.onSurfaceVariant),
-            onPressed: () => setState(() {
+          HibikiIconButton(
+            icon: Icons.close,
+            tooltip: t.dialog_clear,
+            isWideTapArea: true,
+            onTap: () async => setState(() {
               _coverPath = null;
               _audioCoverPath = null;
             }),
           ),
-        IconButton(
-          icon: const Icon(Icons.image_outlined, size: 20),
+        HibikiIconButton(
+          icon: Icons.image_outlined,
           tooltip: t.srt_import_pick_cover,
-          onPressed: _pickCover,
+          isWideTapArea: true,
+          onTap: _pickCover,
         ),
       ],
     );

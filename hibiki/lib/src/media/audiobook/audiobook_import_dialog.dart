@@ -381,15 +381,17 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
           ? Icons.audio_file_outlined
           : Icons.folder_open_outlined,
       actions: [
-        IconButton(
-          icon: const Icon(Icons.folder_open_outlined, size: 20),
+        HibikiIconButton(
+          icon: Icons.folder_open_outlined,
           tooltip: t.srt_import_pick_audio_dir,
-          onPressed: _pickAudioDir,
+          isWideTapArea: true,
+          onTap: _pickAudioDir,
         ),
-        IconButton(
-          icon: const Icon(Icons.audio_file_outlined, size: 20),
+        HibikiIconButton(
+          icon: Icons.audio_file_outlined,
           tooltip: t.srt_import_pick_audio_files,
-          onPressed: _pickAudioFiles,
+          isWideTapArea: true,
+          onTap: _pickAudioFiles,
         ),
       ],
     );
@@ -404,10 +406,11 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
           : _alignmentName ?? p.basename(_alignmentPath!),
       icon: Icons.align_horizontal_left,
       actions: [
-        IconButton(
-          icon: const Icon(Icons.align_horizontal_left, size: 20),
+        HibikiIconButton(
+          icon: Icons.align_horizontal_left,
           tooltip: t.audiobook_pick_alignment,
-          onPressed: _pickAlignment,
+          isWideTapArea: true,
+          onTap: _pickAlignment,
         ),
       ],
     );

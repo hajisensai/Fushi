@@ -774,6 +774,42 @@ void main() {
     }
   });
 
+  test('audiobook import file rows use shared MD3 icon buttons', () {
+    final Map<String, List<String>> rowSections = <String, List<String>>{
+      'lib/src/media/audiobook/book_import_dialog.dart': <String>[
+        'Widget _epubRow()',
+        'Widget _subtitleRow()',
+        'Widget _audioRow()',
+        'Widget _coverRow()',
+      ],
+      'lib/src/media/audiobook/audiobook_import_dialog.dart': <String>[
+        'Widget _audioSourceRow()',
+        'Widget _alignmentRow()',
+      ],
+    };
+
+    for (final MapEntry<String, List<String>> entry in rowSections.entries) {
+      final String source = File(entry.key).readAsStringSync();
+      for (final String startToken in entry.value) {
+        final String section = _functionSource(
+          source,
+          startToken,
+          _nextWidgetAfter(source, startToken),
+        );
+
+        expect(section, contains('HibikiFilePickerRow('));
+        expect(section, contains('HibikiIconButton('));
+        expect(
+          section.replaceAll('HibikiIconButton(', 'HibikiSharedAction('),
+          isNot(contains('IconButton(')),
+        );
+        expect(section, isNot(contains('Theme.of(context).colorScheme')));
+        expect(section, isNot(contains('size: 18')));
+        expect(section, isNot(contains('size: 20')));
+      }
+    }
+  });
+
   test('anki integration dialogs use shared MD3 dialog chrome', () {
     final String source =
         File('lib/src/models/anki_integration.dart').readAsStringSync();
@@ -1322,4 +1358,16 @@ String _sectionSource(
   expect(end, greaterThan(start),
       reason: 'missing $endToken after $startToken');
   return source.substring(start, end);
+}
+
+String _nextWidgetAfter(String source, String startToken) {
+  final int start = source.indexOf(startToken);
+  expect(start, isNonNegative, reason: 'missing $startToken');
+  final RegExp widgetFunction = RegExp(r'\n  Widget [_A-Za-z0-9]+\(');
+  final RegExpMatch? match = widgetFunction.firstMatch(
+    source.substring(start + startToken.length),
+  );
+  expect(match, isNotNull, reason: 'missing next Widget after $startToken');
+  return source.substring(start + startToken.length + match!.start + 1,
+      start + startToken.length + match.start + match.group(0)!.length);
 }
