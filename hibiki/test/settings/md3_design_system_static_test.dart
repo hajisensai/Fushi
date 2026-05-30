@@ -1120,6 +1120,27 @@ void main() {
     expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
   });
 
+  test('media item cover override uses MD3 card chrome instead of fake input',
+      () {
+    final String source = File(
+      'lib/src/pages/implementations/media_item_edit_dialog_page.dart',
+    ).readAsStringSync();
+    final String coverField = _sectionSource(
+      source,
+      'class MediaItemCoverOverrideField',
+      source.length,
+    );
+
+    expect(coverField, contains('HibikiCard('));
+    expect(coverField, contains('HibikiDesignTokens.of(context)'));
+    expect(coverField, contains('tokens.spacing'));
+    expect(coverField, isNot(contains('HibikiTextField(')));
+    expect(coverField, isNot(contains('TextStyle(color: Colors.transparent)')));
+    expect(coverField, isNot(contains('contentPadding: EdgeInsets.zero')));
+    expect(coverField, isNot(contains('const BoxConstraints(')));
+    expect(coverField, isNot(contains('Spacing.of(context)')));
+  });
+
   test('open stash dialogs use shared MD3 dialog chrome', () {
     final String source = File(
       'lib/src/pages/implementations/open_stash_dialog_page.dart',
