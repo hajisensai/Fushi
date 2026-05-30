@@ -17,11 +17,16 @@
 - 默认排版 `vertical-rl`（日文竖排），存在 `hoshiReader.isVertical()`；存在分页 / 连续滚动两种模式。方向移动必须区分横竖排与两种模式。
 - 输入系统：`HibikiShortcutRegistry` 按 scope 顺序解析（reader → audiobook）。reader scope 现有：翻页(方向键/LB/RB)、ToggleChrome(Esc/Y)、DismissDict(Esc/B)、ToggleBookmark(Ctrl+D/X)。gamepad A 当前解析到 audiobookPlayPause。Tab 未注册。
 
-## 3. 用户已确认的 3 个决策
+## 3. 用户已确认的决策（含 2026-05-30 两次修订，以下为最终态）
 
-1. **手柄进入键 = X**。X 原为「书签」的手柄绑定；为不丢失「手柄加书签」能力，把书签的 gamepad 绑定迁到未占用的 **R3 (thumbRight)**，X 专用于「切换字级光标模式」。
-2. **Tab = 逐字前进**。焦点不在书内时按 Tab → 进入并落到当前页首个可见字；之后 Tab = 下一字、Shift+Tab = 上一字；走到书末/书首再 Tab/Shift+Tab → 退出书籍，把焦点交还框架（chrome 等）。Esc/B 可随时快速退出。
-3. **全支持**：横排 + 竖排、分页 + 连续滚动。
+1. **进入 = A / 退出 = B（上下文，非固定键）**。焦点在书籍正文（**非底栏 chrome**）且光标未激活时，按 **A（手柄）/ Enter（键盘）** 进入字级光标；按 **B（手柄）/ Esc（键盘）** 返回（退出光标）。键盘 A↔Enter、B↔Esc 对应。底栏聚焦时 A/B 仍作用于底栏控件（不进入光标）。
+   - 不再有专用 toggle 键，**移除** `readerCaretToggle` action；A/B 的含义依赖「光标状态 + 焦点是否在底栏」，由阅读器页面在 registry 解析**之前**做上下文拦截。
+   - A 原是有声书播放/暂停（手柄）。被「A=进入/查词」抢占，播放/暂停手柄键迁到空闲 **L3 (thumbLeft)**（键盘 Ctrl+Space 不变）。书签手柄键保持 **X**。
+2. **光标激活时**：A/Enter = 查当前字所在词；B/Esc = 退出（有词典弹窗则先关弹窗，保留光标）。方向键/D-pad = 逐字/换行；Tab = 下一字、Shift+Tab = 上一字。
+3. **Tab 仅在光标激活时逐字**：未激活时 Tab = 框架正常焦点遍历（不进入书籍）。
+4. **进入落点**：光标记忆上次位置，若该字仍在文档且在当前页可见则回到原处，否则落到当前页首个可见字（不「总是落首字」）。
+5. **边界不退出**：走到书首/书末时 `blocked`，原地不动。退出只靠 B / Esc。
+6. **全支持**：横排 + 竖排、分页 + 连续滚动。
 
 ## 4. 核心数据结构：JS 层「字光标」`window.hoshiCaret`
 
@@ -33,7 +38,7 @@
 - 一个绝对定位的焦点环覆盖层 `#hoshi-caret-ring`（`position: fixed; pointer-events:none`），每次移动后按当前字 `getBoundingClientRect()` 重新定位。**不切割 DOM 节点**（不 wrap，避免 offset 失效）。环样式用强对比 accent，由 Dart 经 setup script 注入颜色。
 
 JS API（全部经 `evaluateJavascript` 同步取返回值，除查词复用 push handler）：
-- `enter(atEnd)`：激活；把光标放到当前页**视口内**第一个（`atEnd` 时最后一个）可见字；渲染环；返回 `{ok, rect}`。「视口内」= 字 rect 与 `[0,innerWidth]x[insetTop, innerHeight-insetBottom]` 相交。
+- `enter()`：激活；若记忆的 `node/offset` 仍在文档且在当前页**视口内**则回到原处，否则放到当前页视口内第一个可见字；渲染环；返回 `{ok, rect}`。「视口内」= 字 rect 与 `[0,innerWidth]x[insetTop, innerHeight-insetBottom]` 相交。退出/翻页时不清空记忆位置，以便下次 `enter()` 复位。
 - `exit()`：清环，`active=false`。
 - `move(dir)`：`dir ∈ {forward,backward,lineNext,linePrev, up,down,left,right}`。物理方向(up/down/left/right)由 JS 用 `isVertical()` 映射成逻辑方向（单一真相在 JS，因为它握有 computed style）：
   - 横排：right=forward,left=backward,down=lineNext,up=linePrev。
@@ -61,19 +66,23 @@ JS API（全部经 `evaluateJavascript` 同步取返回值，除查词复用 pus
 `reader_hibiki_page.dart` 增加：
 - 状态 `bool _caretActive`（+ 必要的串行化，复用既有 re-anchor 串行机制以避免与翻页/重排竞态）。
 - 方法：`_enterCaret({bool atEnd})` / `_exitCaret()` / `_caretMovePhysical(TraversalDirection)` / `_caretTab({bool backward})` / `_caretLookup()` / `_caretReanchor(...)` / `_caretRefresh()`。
-- 新增一个 reader scope action `readerCaretToggle`：键盘默认空（Tab 走专门处理），gamepad 默认 **X**。`readerToggleBookmark` 的 gamepad 改为 **R3**，键盘保留 Ctrl+D。
+- **不**新增 registry action。绑定层只有两处副作用：书签手柄键保持 **X**；有声书播放/暂停手柄键 **A→L3**（A 让位给「进入/查词」）。
 
-路由策略（在 `_handleKeyEvent` / `_handleGamepadButton` 内，**先于** registry 解析做上下文拦截）：
-- `readerCaretToggle`(X) 命中 → 切换：未激活则 `_enterCaret()`，已激活则 `_exitCaret()`。两个平台路径（Android key / desktop intent）都解析到此 action。
+纯 Dart 路由 `ReaderCaretRouter`（可单测）：
+- `decideKeyboard(key, {shift})` / `decideGamepad(button)`：**光标激活时**一次输入 → `CaretAction`（move*/stepF/stepB/lookup/dismissOrExit），非光标键返回 null。
+- `isEnterTriggerKeyboard(key)` = `key==enter || key==gameButtonA`；`isEnterTriggerGamepad(button)` = `button==a`：**光标未激活时**判断是否「进入光标」触发。
+
+路由策略（在 `_handleKeyEvent` / `_handleGamepadButton`，chrome 分支之后、registry 解析之前；chrome 聚焦时早返回 = 底栏不进入光标）：
 - 当 `_caretActive == true`：
-  - 方向键 / D-pad → `_caretMovePhysical(dir)`（physical 方向交给 JS 映射）；若 JS 返回 pageForward/pageBackward 则 `await _paginate(...)` 后 `reanchor`。
-  - Tab → `_caretTab(backward:false)`；Shift+Tab → `_caretTab(backward:true)`。`_caretTab` 调 `move('forward'/'backward')`；返回 `blocked` 时 `_exitCaret()` 并把焦点交还框架（`focusInDirection`/`nextFocus`，使 Tab 自然移出书籍区）。
-  - A(gameButtonA) / Enter → `_caretLookup()`，返回 handled（拦截在 audiobookPlayPause 之前）。
-  - B(gameButtonB) / Esc → 若有词典弹窗先 DismissDict（保留光标）；否则 `_exitCaret()`（**不**冒泡到全局 pop，避免退出阅读器）。
-  - LB/RB / PageUp/PageDown → 仍翻页（既有），翻页后 `reanchor` 让光标跟到新页。
+  - `decideKeyboard/decideGamepad` 命中 → 执行对应 `CaretAction` → handled：
+    - 方向键 / D-pad → `_caretMovePhysical(dir)`；JS 返回 pageForward/pageBackward 则 `await _paginate(...)`（翻页后统一 reanchor）。
+    - Tab/Shift+Tab → `_caretTab(...)` 调 `move('forward'/'backward')`；`blocked` 原地不动。
+    - A/Enter → `_caretLookup()`；B/Esc → 有弹窗先 DismissDict 否则 `_exitCaret()`（不冒泡全局 pop）。
+  - 未命中（如 X/Y/LB/RB）→ 落到 registry：X=书签、Y=chrome、LB/RB=翻页（翻页后 reanchor）。
 - 当 `_caretActive == false`：
-  - Tab（无修饰）→ `_enterCaret()`（落到首字）。Shift+Tab → 交给框架默认遍历（不强行进入）。
-  - 其余维持现状（方向键翻页、A 播放/暂停、B 返回 等）。
+  - `isEnterTrigger*` 命中（A / Enter）→ `_enterCaret()` → handled（抢占有声书 A，但 A 已迁 L3，registry 里 A 本就无绑定）。
+  - 其余维持现状（方向键翻页、B 返回/关弹窗、X 书签、Y chrome、L3 播放暂停 等）。
+- 翻页后（无论手动 LB/RB 还是光标越界自动翻页）统一在 `_paginate` 末尾 `if (_caretActive) _caretReanchor(方向)`。
 
 物理→逻辑写作模式映射的**单一真相在 JS**；Dart 侧只做「physical 方向 + 状态门」路由，便于纯 Dart 单测。
 

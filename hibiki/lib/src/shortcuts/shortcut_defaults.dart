@@ -36,12 +36,12 @@ class ShortcutDefaults {
 
   static const _gRB = GamepadBinding(GamepadButton.rb);
   static const _gLB = GamepadBinding(GamepadButton.lb);
-  static const _gA = GamepadBinding(GamepadButton.a);
   static const _gB = GamepadBinding(GamepadButton.b);
   static const _gX = GamepadBinding(GamepadButton.x);
   static const _gY = GamepadBinding(GamepadButton.y);
   static const _gDpadRight = GamepadBinding(GamepadButton.dpadRight);
   static const _gDpadLeft = GamepadBinding(GamepadButton.dpadLeft);
+  static const _gL3 = GamepadBinding(GamepadButton.thumbLeft);
 
   static final Map<ShortcutAction, ShortcutBindingSet> _desktop = {
     ShortcutAction.readerPageForward: _kb([
@@ -92,10 +92,15 @@ class ShortcutDefaults {
     ShortcutAction.globalBack: _kb([
       _key(LogicalKeyboardKey.arrowLeft, {ModifierKey.alt}),
     ]),
+    // Play/pause moved off controller A → L3: on the reader page A is now
+    // "enter the char-level reading cursor" (and, once inside, "look up the word
+    // at the cursor"), which the page intercepts before the audiobook scope is
+    // consulted. Keeping A here would be a permanently shadowed binding. Keyboard
+    // stays on Ctrl+Space.
     ShortcutAction.audiobookPlayPause: _kb([
       _key(LogicalKeyboardKey.space, {ModifierKey.ctrl}),
     ], [
-      _gA
+      _gL3
     ]),
     // No gamepad default: RB/LB are already reader page-turn, and the reader
     // page resolves the reader scope before audiobook, so an RB/LB binding here
