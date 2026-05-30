@@ -697,8 +697,11 @@ class _DictionaryDialogPageState extends BasePageState {
   }
 
   Widget _buildCategorySelector() {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: EdgeInsets.only(
+        bottom: tokens.spacing.gap + tokens.spacing.gap / 2,
+      ),
       child: LayoutBuilder(
         builder: (context, constraints) {
           return SingleChildScrollView(
@@ -744,10 +747,13 @@ class _DictionaryDialogPageState extends BasePageState {
   }
 
   Widget buildEmptyMessage() {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return AdaptiveSettingsSection(
       children: [
         Padding(
-          padding: const EdgeInsets.symmetric(vertical: 24),
+          padding: EdgeInsets.symmetric(
+            vertical: tokens.spacing.card + tokens.spacing.gap,
+          ),
           child: HibikiPlaceholderMessage(
             icon: DictionaryMediaType.instance.outlinedIcon,
             message: t.dictionaries_menu_empty,
@@ -758,8 +764,12 @@ class _DictionaryDialogPageState extends BasePageState {
   }
 
   Widget _buildEmptyCategoryRow() {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return HibikiCard(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 18),
+      padding: EdgeInsets.symmetric(
+        horizontal: tokens.spacing.gap + tokens.spacing.gap / 2,
+        vertical: tokens.spacing.card + tokens.spacing.gap / 4,
+      ),
       child: Text(
         t.dictionaries_menu_empty,
         style: textTheme.bodyMedium?.copyWith(
