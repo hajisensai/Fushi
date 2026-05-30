@@ -1,4 +1,4 @@
-﻿import 'package:drift/native.dart';
+import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -199,7 +199,10 @@ class TagDeleteConfirmationDialog extends StatelessWidget {
     return HibikiDialogFrame(
       maxWidth: 420,
       maxHeightFactor: 0.92,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      insetPadding: EdgeInsets.symmetric(
+        horizontal: tokens.spacing.card,
+        vertical: tokens.spacing.card,
+      ),
       scrollable: false,
       child: HibikiModalSheetFrame(
         title: t.dialog_delete,
@@ -281,7 +284,10 @@ class TagEditDialogState extends State<TagEditDialog> {
     return HibikiDialogFrame(
       maxWidth: 420,
       maxHeightFactor: 0.96,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      insetPadding: EdgeInsets.symmetric(
+        horizontal: tokens.spacing.card,
+        vertical: tokens.spacing.card,
+      ),
       scrollable: false,
       child: HibikiModalSheetFrame(
         title: widget.title,

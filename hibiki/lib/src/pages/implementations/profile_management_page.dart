@@ -298,7 +298,10 @@ class ProfileDeleteDialog extends StatelessWidget {
     return HibikiDialogFrame(
       maxWidth: 420,
       maxHeightFactor: 0.9,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      insetPadding: EdgeInsets.symmetric(
+        horizontal: tokens.spacing.card,
+        vertical: tokens.spacing.card,
+      ),
       scrollable: false,
       child: HibikiModalSheetFrame(
         title: t.profile_delete,
@@ -381,7 +384,10 @@ class _ProfileNameDialogState extends State<ProfileNameDialog> {
     return HibikiDialogFrame(
       maxWidth: 420,
       maxHeightFactor: 0.9,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      insetPadding: EdgeInsets.symmetric(
+        horizontal: tokens.spacing.card,
+        vertical: tokens.spacing.card,
+      ),
       scrollable: false,
       child: HibikiModalSheetFrame(
         title: widget.title,

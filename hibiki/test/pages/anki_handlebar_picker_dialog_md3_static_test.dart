@@ -14,6 +14,15 @@ void main() {
     expect(dialogSource, contains('HibikiDialogFrame('));
     expect(dialogSource, contains('HibikiModalSheetFrame('));
     expect(dialogSource, contains('HibikiDesignTokens.of(context)'));
+    expect(dialogSource, contains('insetPadding: EdgeInsets.symmetric('));
+    expect(dialogSource, contains('horizontal: tokens.spacing.card'));
+    expect(dialogSource, contains('vertical: tokens.spacing.gap'));
     expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
+    expect(
+      dialogSource,
+      isNot(
+        contains('const EdgeInsets.symmetric(horizontal: 12, vertical: 8)'),
+      ),
+    );
   });
 }

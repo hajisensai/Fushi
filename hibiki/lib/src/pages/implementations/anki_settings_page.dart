@@ -284,7 +284,10 @@ class _AnkiHandlebarPickerDialogState extends State<AnkiHandlebarPickerDialog> {
     return HibikiDialogFrame(
       maxWidth: 560,
       maxHeightFactor: 0.96,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      insetPadding: EdgeInsets.symmetric(
+        horizontal: tokens.spacing.card,
+        vertical: tokens.spacing.gap,
+      ),
       scrollable: false,
       child: HibikiModalSheetFrame(
         title: widget.title,
