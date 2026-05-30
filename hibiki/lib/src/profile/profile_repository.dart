@@ -51,6 +51,12 @@ class ProfileRepository {
   }
 
   Future<void> snapshotCurrentSettings(int profileId) async {
+    // Profile ids are autoincrement (always >= 1); a non-positive id is the
+    // "no active profile" sentinel (e.g. ProfileViewModel.dispose fires before
+    // _load assigns a real id, so state.activeProfileId is still -1).
+    // Snapshotting it would write orphan profile_settings rows / trip the FK.
+    if (profileId <= 0) return;
+
     final entries = <ProfileSettingsCompanion>[];
 
     // Anki settings (SharedPreferences)
@@ -81,6 +87,11 @@ class ProfileRepository {
   }
 
   Future<void> applyProfile(int profileId) async {
+    // A non-positive (sentinel) id has no snapshot rows, so the prune step
+    // below would delete EVERY non-excluded live pref — silent settings wipe.
+    // Ids are always >= 1, so guard the sentinel instead of nuking prefs.
+    if (profileId <= 0) return;
+
     final rows = await _db.getProfileSettings(profileId);
 
     final ankiMap = <String, String>{};
