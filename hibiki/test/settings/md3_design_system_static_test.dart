@@ -738,6 +738,11 @@ void main() {
     final String source = File(
       'lib/src/pages/implementations/reader_hibiki_page.dart',
     ).readAsStringSync();
+    final String sentenceActionBar = _functionSource(
+      source,
+      'Widget buildRow(ThemeData theme)',
+      '    if (!hasAudio) {',
+    );
     final String lyricsHint = _sectionSource(
       source,
       'class ReaderLyricsModeHintDialog',
@@ -776,6 +781,9 @@ void main() {
       expect(dialogSource, contains('HibikiDialogFrame('));
       expect(dialogSource, contains('HibikiModalSheetFrame('));
     }
+    expect(sentenceActionBar, contains('HibikiDesignTokens.of(context)'));
+    expect(sentenceActionBar, contains('tokens.spacing'));
+    expect(sentenceActionBar, isNot(contains('const SizedBox(width: 8)')));
   });
 
   test('audiobook import dialogs use shared MD3 dialog chrome', () {

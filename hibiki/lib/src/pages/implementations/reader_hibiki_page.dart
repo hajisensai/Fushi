@@ -4329,6 +4329,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
     final bool hasAudio = ctrl != null && ctrl.chapterCueCount > 0;
 
     Widget buildRow(ThemeData theme) {
+      final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
       final AudioCue? cue = _lookupCue;
       final bool hasCue = cue != null;
       return Container(
@@ -4357,14 +4358,14 @@ window.flutter_inappwebview.callHandler('spreadReady');
               visualDensity: VisualDensity.compact,
             ),
             if (hasAudio) ...[
-              const SizedBox(width: 8),
+              SizedBox(width: tokens.spacing.gap),
               IconButton(
                 icon: const Icon(Icons.replay_outlined, size: 20),
                 onPressed: hasCue ? () => ctrl.playCueOnce(cue) : null,
                 tooltip: t.repeat_cue,
                 visualDensity: VisualDensity.compact,
               ),
-              const SizedBox(width: 8),
+              SizedBox(width: tokens.spacing.gap),
               IconButton(
                 icon: Icon(
                   ctrl.isPlaying
@@ -4375,7 +4376,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
                 onPressed: ctrl.togglePlayPause,
                 visualDensity: VisualDensity.compact,
               ),
-              const SizedBox(width: 8),
+              SizedBox(width: tokens.spacing.gap),
               IconButton(
                 icon: const Icon(Icons.play_circle_outline, size: 20),
                 onPressed: hasCue
