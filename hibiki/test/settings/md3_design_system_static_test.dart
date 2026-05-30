@@ -377,6 +377,8 @@ void main() {
       'lib/src/pages/implementations/dictionary_popup_native.dart': <String>[
         'TextStyle(',
         'BorderRadius.circular(4)',
+        "Text('+",
+        'HibikiFocusable(',
         'fontSize: 10',
         'fontSize: 11',
         'EdgeInsets.symmetric(horizontal: 10, vertical: 4)',
@@ -1211,6 +1213,21 @@ void main() {
     ).readAsStringSync();
     expect(termSource, contains('HibikiCard('));
     expect(_withoutSharedComponentNames(termSource), isNot(contains('Card(')));
+
+    final String popupNativeSource = File(
+      'lib/src/pages/implementations/dictionary_popup_native.dart',
+    ).readAsStringSync();
+    final String mineButton = _functionSource(
+      popupNativeSource,
+      'Widget _buildMineButton(',
+      '  Widget _buildDeinflection(',
+    );
+    expect(mineButton, contains('IconButton('));
+    expect(mineButton, contains('Icons.add_circle_outline'));
+    expect(mineButton, contains('tokens.spacing'));
+    expect(mineButton, contains('creator_export_card'));
+    expect(mineButton, isNot(contains("Text('+")));
+    expect(mineButton, isNot(contains('HibikiFocusable(')));
 
     final String floatingSource = File(
       'lib/src/pages/implementations/floating_dict_page.dart',

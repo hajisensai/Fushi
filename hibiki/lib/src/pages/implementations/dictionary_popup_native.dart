@@ -135,14 +135,13 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
       ),
       itemBuilder: (context, idx) {
         final entry = _grouped[idx];
-        return _buildEntry(entry, idx, textColor, subColor, tagBg, tokens);
+        return _buildEntry(entry, textColor, subColor, tagBg, tokens);
       },
     );
   }
 
   Widget _buildEntry(
     _GroupedEntry entry,
-    int idx,
     Color textColor,
     Color subColor,
     Color tagBg,
@@ -153,7 +152,7 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildHeader(entry, idx, textColor, subColor, tokens),
+          _buildHeader(entry, textColor, subColor, tokens),
           if (entry.deinflectionTrace.isNotEmpty)
             _buildDeinflection(entry, tagBg, tokens),
           SizedBox(height: tokens.spacing.gap / 4),
@@ -165,7 +164,6 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
 
   Widget _buildHeader(
     _GroupedEntry entry,
-    int idx,
     Color textColor,
     Color subColor,
     HibikiDesignTokens tokens,
@@ -180,7 +178,7 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
             tokens,
           ),
         ),
-        _buildMineButton(entry, idx, subColor, tokens),
+        _buildMineButton(entry, subColor, tokens),
       ],
     );
   }
@@ -213,26 +211,34 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
 
   Widget _buildMineButton(
     _GroupedEntry entry,
-    int idx,
     Color subColor,
     HibikiDesignTokens tokens,
   ) {
-    return HibikiFocusable(
-      onTap: () {
-        if (widget.onMineEntry != null) {
-          widget.onMineEntry!({
-            'expression': entry.expression,
-            'reading': entry.reading,
-          });
-        }
-      },
-      child: Padding(
-        padding: EdgeInsets.symmetric(horizontal: tokens.spacing.gap / 2),
-        child: Text(
-          '+',
-          style: tokens.type.controlLabel.copyWith(color: subColor),
-        ),
+    return IconButton(
+      tooltip: t.creator_export_card,
+      visualDensity: VisualDensity.compact,
+      padding: EdgeInsets.all(tokens.spacing.gap / 2),
+      constraints: BoxConstraints.tightFor(
+        width: tokens.spacing.card * 2,
+        height: tokens.spacing.card * 2,
       ),
+      style: IconButton.styleFrom(
+        foregroundColor: subColor,
+        disabledForegroundColor: subColor.withValues(alpha: 0.38),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+      icon: Icon(
+        Icons.add_circle_outline,
+        size: tokens.spacing.card + tokens.spacing.gap / 2,
+      ),
+      onPressed: widget.onMineEntry == null
+          ? null
+          : () {
+              widget.onMineEntry!({
+                'expression': entry.expression,
+                'reading': entry.reading,
+              });
+            },
     );
   }
 
