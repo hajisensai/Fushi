@@ -19,7 +19,6 @@
 # Required env (set by the caller before sourcing):
 #   ADBD       full "adb -s <serial>" command
 #   PKG        Hibiki application id (app.hibiki.reader)
-#   REPO_ROOT  repository root (for tap-element.sh)
 # Optional:
 #   ANKI_APK_URL  override the AnkiDroid APK mirror
 
@@ -34,9 +33,6 @@ ANKI_APK_URL="${ANKI_APK_URL:-https://mirrors.tuna.tsinghua.edu.cn/fdroid/repo/c
 # that is fatal — for the all-targets runner it just means anki_integration
 # will be reported as failed, not that the whole run aborts).
 provision_ankidroid() {
-  local tap="$REPO_ROOT/.codex-test/tools/tap-element.sh"
-  local serial="${ADBD##* }"
-
   # 1. Install AnkiDroid if absent.
   if ! MSYS_NO_PATHCONV=1 $ADBD shell pm path "$ANKI_PKG" >/dev/null 2>&1; then
     echo ">>> AnkiDroid not installed; downloading from mirror..."
