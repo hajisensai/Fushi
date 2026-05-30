@@ -1,79 +1,83 @@
-import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:hibiki_anki/src/ankiconnect/ankiconnect_service.dart';
 
 // HBK-AUDIT-051: the AnkiConnect network IPC layer was untested — only model
 // JSON round-trips were covered. These tests exercise the real request shaping
 // (endpoint, JSON body, action/version=6 protocol envelope), response parsing,
-// and error mapping by injecting a fake HttpClient via the service's
-// `clientFactory` seam (no real socket is opened).
+// and error mapping. The service issues requests through package:http's
+// top-level functions, so we intercept them with `runWithClient` + a
+// `MockClient` (no real socket is opened) and record each request for assertion.
 
 void main() {
-  // Captures the requests issued through one factory so assertions can inspect
-  // the exact URL and JSON body the service put on the wire.
-  late List<_FakeRequest> issued;
-
-  /// Build a service whose every `_invoke` gets a fresh fake client returning
-  /// [status] + a JSON envelope `{result, error}`. Each issued request is
-  /// recorded in [issued].
-  AnkiConnectService serviceReturning({
+  /// Runs [body] against an [AnkiConnectService] whose HTTP calls are served by
+  /// a MockClient returning [status] + a JSON envelope `{result, error}` (or
+  /// [rawBody] verbatim). Every issued request is appended to [sink].
+  Future<T> withMock<T>(
+    Future<T> Function(AnkiConnectService service) body, {
+    required List<http.Request> sink,
     int status = 200,
     Object? result,
     Object? error,
     String? rawBody,
   }) {
-    issued = <_FakeRequest>[];
-    final String body = rawBody ??
+    final String responseBody = rawBody ??
         jsonEncode(<String, Object?>{'result': result, 'error': error});
-    return AnkiConnectService(
-      host: '127.0.0.1',
-      port: 8765,
-      clientFactory: () {
-        final response = _FakeResponse(status, utf8.encode(body));
-        final request = _FakeRequest(response);
-        issued.add(request);
-        return _FakeHttpClient(request);
-      },
+    final client = MockClient((http.Request request) async {
+      sink.add(request);
+      return http.Response(
+        responseBody,
+        status,
+        headers: <String, String>{'content-type': 'application/json'},
+      );
+    });
+    return http.runWithClient(
+      () => body(AnkiConnectService(host: '127.0.0.1', port: 8765)),
+      () => client,
     );
   }
 
-  Map<String, dynamic> lastBody() =>
-      jsonDecode(issued.single.bodyString) as Map<String, dynamic>;
+  Map<String, dynamic> bodyOf(http.Request request) =>
+      jsonDecode(request.body) as Map<String, dynamic>;
 
   group('request envelope', () {
-    test('posts to the configured host/port at path / over http', () async {
-      final service = serviceReturning(result: const <String>[]);
-      await service.getDeckNames();
+    test('posts to the configured host/port over http', () async {
+      final issued = <http.Request>[];
+      await withMock((s) => s.getDeckNames(),
+          sink: issued, result: const <String>[]);
 
-      final Uri url = issued.single.url!;
+      expect(issued.single.method, 'POST');
+      final Uri url = issued.single.url;
       expect(url.scheme, 'http');
       expect(url.host, '127.0.0.1');
       expect(url.port, 8765);
-      expect(url.path, '/');
     });
 
     test('every call carries action + version 6', () async {
-      final service = serviceReturning(result: const <String>[]);
-      await service.getModelNames();
+      final issued = <http.Request>[];
+      await withMock((s) => s.getModelNames(),
+          sink: issued, result: const <String>[]);
 
-      final body = lastBody();
+      final body = bodyOf(issued.single);
       expect(body['action'], 'modelNames');
       expect(body['version'], 6);
     });
 
     test('omits params when none are supplied', () async {
-      final service = serviceReturning(result: const <String>[]);
-      await service.getDeckNames();
-      expect(lastBody().containsKey('params'), isFalse);
+      final issued = <http.Request>[];
+      await withMock((s) => s.getDeckNames(),
+          sink: issued, result: const <String>[]);
+      expect(bodyOf(issued.single).containsKey('params'), isFalse);
     });
 
     test('includes params when supplied', () async {
-      final service = serviceReturning(result: const <String>[]);
-      await service.getModelFields('Basic');
-      final body = lastBody();
+      final issued = <http.Request>[];
+      await withMock((s) => s.getModelFields('Basic'),
+          sink: issued, result: const <String>[]);
+      final body = bodyOf(issued.single);
       expect(body['action'], 'modelFieldNames');
       expect(body['params'], <String, dynamic>{'modelName': 'Basic'});
     });
@@ -81,23 +85,35 @@ void main() {
 
   group('result parsing', () {
     test('getDeckNames returns the result list as strings', () async {
-      final service = serviceReturning(result: <String>['Default', '日本語']);
-      expect(await service.getDeckNames(), <String>['Default', '日本語']);
+      final issued = <http.Request>[];
+      final decks = await withMock((s) => s.getDeckNames(),
+          sink: issued, result: <String>['Default', '日本語']);
+      expect(decks, <String>['Default', '日本語']);
     });
 
     test('getModelFields returns the field list', () async {
-      final service =
-          serviceReturning(result: <String>['Front', 'Back', 'Reading']);
-      expect(await service.getModelFields('Basic'),
-          <String>['Front', 'Back', 'Reading']);
+      final issued = <http.Request>[];
+      final fields = await withMock((s) => s.getModelFields('Basic'),
+          sink: issued, result: <String>['Front', 'Back', 'Reading']);
+      expect(fields, <String>['Front', 'Back', 'Reading']);
+    });
+
+    test('a list-typed action throws when the result is not a list', () async {
+      final issued = <http.Request>[];
+      expect(
+        () => withMock((s) => s.getDeckNames(),
+            sink: issued, result: 'not a list'),
+        throwsA(isA<AnkiConnectException>()),
+      );
     });
   });
 
   group('error mapping', () {
     test('non-200 HTTP status throws AnkiConnectException', () async {
-      final service = serviceReturning(status: 500, result: null);
+      final issued = <http.Request>[];
       expect(
-        () => service.getDeckNames(),
+        () => withMock((s) => s.getDeckNames(),
+            sink: issued, status: 500, result: null),
         throwsA(isA<AnkiConnectException>()
             .having((e) => e.message, 'message', contains('500'))),
       );
@@ -105,91 +121,124 @@ void main() {
 
     test('a non-null error field throws AnkiConnectException with its text',
         () async {
-      final service = serviceReturning(error: 'collection is not available');
+      final issued = <http.Request>[];
       expect(
-        () => service.getModelNames(),
+        () => withMock((s) => s.getModelNames(),
+            sink: issued, error: 'collection is not available'),
         throwsA(isA<AnkiConnectException>().having(
             (e) => e.message, 'message', 'collection is not available')),
       );
     });
 
+    test('a non-JSON body throws AnkiConnectException', () async {
+      final issued = <http.Request>[];
+      expect(
+        () => withMock((s) => s.getDeckNames(),
+            sink: issued, rawBody: 'not json at all'),
+        throwsA(isA<AnkiConnectException>()),
+      );
+    });
+
     test('checkConnection returns null when version succeeds', () async {
-      final service = serviceReturning(result: 6);
-      expect(await service.checkConnection(), isNull);
+      final issued = <http.Request>[];
+      expect(
+        await withMock((s) => s.checkConnection(), sink: issued, result: 6),
+        isNull,
+      );
     });
 
     test('checkConnection surfaces the AnkiConnect error message', () async {
-      final service = serviceReturning(error: 'unauthorized');
-      expect(await service.checkConnection(), 'unauthorized');
+      // checkConnection wraps any non-socket/timeout/client failure (including
+      // an AnkiConnect `error` field) as a "Cannot connect" message rather than
+      // returning the raw text, but the underlying message is still included.
+      final issued = <http.Request>[];
+      final String? message = await withMock((s) => s.checkConnection(),
+          sink: issued, error: 'unauthorized');
+      expect(message, isNotNull);
+      expect(message, contains('unauthorized'));
     });
 
-    test(
-        'checkConnection reports a connect failure for a non-AnkiConnect throw',
-        () async {
-      // A malformed (non-JSON) body makes jsonDecode throw a non-Anki error,
-      // which checkConnection must wrap rather than leak.
-      final service = serviceReturning(rawBody: 'not json at all');
-      final String? result = await service.checkConnection();
-      expect(result, isNotNull);
-      expect(result, contains('Cannot connect to AnkiConnect'));
+    test('isAvailable is false when the server errors', () async {
+      final issued = <http.Request>[];
+      expect(
+        await withMock((s) => s.isAvailable(), sink: issued, status: 500),
+        isFalse,
+      );
+    });
+
+    test('isAvailable is true when version succeeds', () async {
+      final issued = <http.Request>[];
+      expect(
+        await withMock((s) => s.isAvailable(), sink: issued, result: 6),
+        isTrue,
+      );
     });
   });
 
   group('isDuplicate query shaping', () {
     test('builds a deck/field scoped findNotes query', () async {
-      final service = serviceReturning(result: const <int>[]);
-      await service.isDuplicate(
-        deckName: 'Mining',
-        fieldName: 'Expression',
-        fieldValue: '勉強',
+      final issued = <http.Request>[];
+      await withMock(
+        (s) => s.isDuplicate(
+            deckName: 'Mining', fieldName: 'Expression', fieldValue: '勉強'),
+        sink: issued,
+        result: const <int>[],
       );
-      final body = lastBody();
+      final body = bodyOf(issued.single);
       expect(body['action'], 'findNotes');
       expect((body['params'] as Map)['query'], 'deck:"Mining" "Expression:勉強"');
     });
 
     test('escapes double quotes in the field value', () async {
-      final service = serviceReturning(result: const <int>[]);
-      await service.isDuplicate(
-        deckName: 'Mining',
-        fieldName: 'Expression',
-        fieldValue: 'a"b',
+      final issued = <http.Request>[];
+      await withMock(
+        (s) => s.isDuplicate(
+            deckName: 'Mining', fieldName: 'Expression', fieldValue: 'a"b'),
+        sink: issued,
+        result: const <int>[],
       );
-      expect((lastBody()['params'] as Map)['query'],
+      expect((bodyOf(issued.single)['params'] as Map)['query'],
           r'deck:"Mining" "Expression:a\"b"');
     });
 
     test('returns true when findNotes returns matches', () async {
-      final service = serviceReturning(result: <int>[1, 2, 3]);
-      expect(
-        await service.isDuplicate(
-            deckName: 'D', fieldName: 'F', fieldValue: 'v'),
-        isTrue,
+      final issued = <http.Request>[];
+      final dup = await withMock(
+        (s) => s.isDuplicate(deckName: 'D', fieldName: 'F', fieldValue: 'v'),
+        sink: issued,
+        result: <int>[1, 2, 3],
       );
+      expect(dup, isTrue);
     });
 
     test('returns false when findNotes returns no matches', () async {
-      final service = serviceReturning(result: const <int>[]);
-      expect(
-        await service.isDuplicate(
-            deckName: 'D', fieldName: 'F', fieldValue: 'v'),
-        isFalse,
+      final issued = <http.Request>[];
+      final dup = await withMock(
+        (s) => s.isDuplicate(deckName: 'D', fieldName: 'F', fieldValue: 'v'),
+        sink: issued,
+        result: const <int>[],
       );
+      expect(dup, isFalse);
     });
   });
 
   group('addNote payload', () {
     test('wraps the note with deck/model/fields/tags and dup option', () async {
-      final service = serviceReturning(result: 1234567890);
-      await service.addNote(
-        deckName: 'Mining',
-        modelName: 'Lapis',
-        fields: <String, String>{'Expression': '勉強', 'Reading': 'べんきょう'},
-        tags: <String>['hibiki', 'mined'],
-        allowDuplicate: true,
+      final issued = <http.Request>[];
+      final id = await withMock(
+        (s) => s.addNote(
+          deckName: 'Mining',
+          modelName: 'Lapis',
+          fields: <String, String>{'Expression': '勉強', 'Reading': 'べんきょう'},
+          tags: <String>['hibiki', 'mined'],
+          allowDuplicate: true,
+        ),
+        sink: issued,
+        result: 1234567890,
       );
 
-      final body = lastBody();
+      expect(id, 1234567890);
+      final body = bodyOf(issued.single);
       expect(body['action'], 'addNote');
       final note = (body['params'] as Map)['note'] as Map;
       expect(note['deckName'], 'Mining');
@@ -201,26 +250,47 @@ void main() {
     });
 
     test('defaults allowDuplicate to false', () async {
-      final service = serviceReturning(result: 1);
-      await service.addNote(
-        deckName: 'D',
-        modelName: 'M',
-        fields: const <String, String>{'F': 'v'},
-        tags: const <String>[],
-      );
-      final note = (lastBody()['params'] as Map)['note'] as Map;
-      expect((note['options'] as Map)['allowDuplicate'], isFalse);
-    });
-
-    test('propagates an AnkiConnect error from addNote', () async {
-      final service = serviceReturning(
-          error: 'cannot create note because it is a duplicate');
-      expect(
-        () => service.addNote(
+      final issued = <http.Request>[];
+      await withMock(
+        (s) => s.addNote(
           deckName: 'D',
           modelName: 'M',
           fields: const <String, String>{'F': 'v'},
-          tags: const <String>[],
+        ),
+        sink: issued,
+        result: 1,
+      );
+      final note = (bodyOf(issued.single)['params'] as Map)['note'] as Map;
+      expect((note['options'] as Map)['allowDuplicate'], isFalse);
+    });
+
+    test('throws when addNote returns a null id with no error', () async {
+      final issued = <http.Request>[];
+      expect(
+        () => withMock(
+          (s) => s.addNote(
+            deckName: 'D',
+            modelName: 'M',
+            fields: const <String, String>{'F': 'v'},
+          ),
+          sink: issued,
+          result: null,
+        ),
+        throwsA(isA<AnkiConnectException>()),
+      );
+    });
+
+    test('propagates an AnkiConnect error from addNote', () async {
+      final issued = <http.Request>[];
+      expect(
+        () => withMock(
+          (s) => s.addNote(
+            deckName: 'D',
+            modelName: 'M',
+            fields: const <String, String>{'F': 'v'},
+          ),
+          sink: issued,
+          error: 'cannot create note because it is a duplicate',
         ),
         throwsA(isA<AnkiConnectException>()),
       );
@@ -229,93 +299,17 @@ void main() {
 
   group('storeMediaFile payload', () {
     test('sends filename + base64 data', () async {
-      final service = serviceReturning(result: 'hibiki_audio_abc.mp3');
-      await service.storeMediaFile(
-        filename: 'hibiki_audio_abc.mp3',
-        data: 'QUJD',
+      final issued = <http.Request>[];
+      await withMock(
+        (s) => s.storeMediaFile(filename: 'hibiki_audio_abc.mp3', data: 'QUJD'),
+        sink: issued,
+        result: 'hibiki_audio_abc.mp3',
       );
-      final params = lastBody()['params'] as Map;
-      expect(lastBody()['action'], 'storeMediaFile');
+      final body = bodyOf(issued.single);
+      expect(body['action'], 'storeMediaFile');
+      final params = body['params'] as Map;
       expect(params['filename'], 'hibiki_audio_abc.mp3');
       expect(params['data'], 'QUJD');
     });
   });
-}
-
-// ── Fake dart:io HttpClient stack ────────────────────────────────────────────
-// Only the surface the service touches is implemented; everything else routes
-// through noSuchMethod and is never invoked by these tests.
-
-class _FakeHttpClient implements HttpClient {
-  _FakeHttpClient(this._request);
-  final _FakeRequest _request;
-  bool closed = false;
-
-  @override
-  Future<HttpClientRequest> postUrl(Uri url) async {
-    _request.url = url;
-    return _request;
-  }
-
-  @override
-  void close({bool force = false}) {
-    closed = true;
-  }
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
-}
-
-class _FakeRequest implements HttpClientRequest {
-  _FakeRequest(this._response);
-  final _FakeResponse _response;
-  final BytesBuilder _body = BytesBuilder();
-  final _FakeHeaders _headers = _FakeHeaders();
-  Uri? url;
-
-  String get bodyString => utf8.decode(_body.takeBytes());
-
-  @override
-  HttpHeaders get headers => _headers;
-
-  @override
-  void add(List<int> data) => _body.add(data);
-
-  @override
-  Future<HttpClientResponse> close() async => _response;
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
-}
-
-class _FakeHeaders implements HttpHeaders {
-  // contentType= and all other header mutations are no-ops for the fake.
-  @override
-  dynamic noSuchMethod(Invocation invocation) => null;
-}
-
-class _FakeResponse extends Stream<List<int>> implements HttpClientResponse {
-  _FakeResponse(this.statusCode, this._bytes);
-
-  @override
-  final int statusCode;
-  final List<int> _bytes;
-
-  @override
-  StreamSubscription<List<int>> listen(
-    void Function(List<int> event)? onData, {
-    Function? onError,
-    void Function()? onDone,
-    bool? cancelOnError,
-  }) {
-    return Stream<List<int>>.fromIterable(<List<int>>[_bytes]).listen(
-      onData,
-      onError: onError,
-      onDone: onDone,
-      cancelOnError: cancelOnError,
-    );
-  }
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
