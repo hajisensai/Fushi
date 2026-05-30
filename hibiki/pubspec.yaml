@@ -99,7 +99,6 @@ dependencies:
   permission_handler: ^10.2.0
   progress_indicators: ^1.0.0
   recase: ^4.1.0
-  record_mp3_plus: ^1.2.0
   receive_intent:
     git:
       url: https://github.com/arianneorpilla/receive_intent
@@ -122,6 +121,7 @@ dependencies:
   visibility_detector: ^0.4.0+2
   xml: ^6.3.0
   wakelock_plus: ^1.1.4
+  record: 6.0.0
 dependency_overrides:
   flutter_inappwebview_windows:
     path: ../packages/flutter_inappwebview_windows

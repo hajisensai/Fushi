@@ -5,8 +5,10 @@
 list(APPEND FLUTTER_PLUGIN_LIST
   dynamic_color
   flutter_inappwebview_windows
+  gamepads_windows
   media_kit_libs_windows_audio
   permission_handler_windows
+  record_windows
   share_plus
   sqlite3_flutter_libs
   url_launcher_windows
