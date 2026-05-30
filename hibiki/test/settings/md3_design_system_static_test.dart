@@ -616,6 +616,7 @@ void main() {
     expect(cardShell, contains('HibikiDesignTokens.of(context)'));
     expect(cardShell, contains('tokens.spacing'));
     expect(cardShell, contains('tokens.surfaces'));
+    expect(cardShell, isNot(contains('Spacing.of(context)')));
     expect(cardShell, isNot(contains('top: 4,')));
     expect(cardShell, isNot(contains('left: 4,')));
     expect(cardShell, isNot(contains('EdgeInsets.all(2)')));

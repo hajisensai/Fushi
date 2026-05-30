@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:transparent_image/transparent_image.dart';
-import 'package:hibiki/src/utils/spacing.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
@@ -586,7 +585,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     final Widget card = HibikiCard(
       key: cardKey,
       padding: EdgeInsets.zero,
-      margin: Spacing.of(context).insets.all.normal,
+      margin: EdgeInsets.all(tokens.spacing.rowVertical),
       selected: selected,
       onTap: _selectionMode && selectionKey != null
           ? () => _toggleSelection(selectionKey)
