@@ -265,6 +265,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
 
     return PopScope(
       canPop: _subPage == null,
@@ -277,10 +278,12 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
         maxHeightFactor: 0.80,
         scrollable: true,
         bodyPadding: EdgeInsets.fromLTRB(
-          20,
-          4,
-          20,
-          24 + MediaQuery.of(context).viewInsets.bottom,
+          tokens.spacing.page + tokens.spacing.gap / 2,
+          tokens.spacing.gap / 2,
+          tokens.spacing.page + tokens.spacing.gap / 2,
+          tokens.spacing.card +
+              tokens.spacing.gap +
+              MediaQuery.of(context).viewInsets.bottom,
         ),
         body: AnimatedSize(
           duration: const Duration(milliseconds: 200),
@@ -294,6 +297,8 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
   }
 
   Widget _buildMainPage(BuildContext context, ThemeData theme) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final double sectionGap = tokens.spacing.gap + tokens.spacing.gap / 2;
     final List<Widget> navigationRows = [
       _categoryTile(
         icon: Icons.palette_outlined,
@@ -328,15 +333,16 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildProgressSection(theme),
-        const SizedBox(height: 12),
+        SizedBox(height: sectionGap),
         AdaptiveSettingsSection(children: navigationRows),
-        const SizedBox(height: 12),
+        SizedBox(height: sectionGap),
         _buildActionRow(context),
       ],
     );
   }
 
   Widget _buildSubPage(BuildContext context, ThemeData theme) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final String page = _subPage!;
     String title;
     Widget content;
@@ -368,32 +374,34 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
           title: title,
           onBack: () => setState(() => _subPage = null),
         ),
-        const SizedBox(height: 12),
+        SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
         content,
       ],
     );
   }
 
   Widget _buildLocationSection(ThemeData theme) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final double sectionGap = tokens.spacing.gap + tokens.spacing.gap / 2;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (widget.epubBook != null && widget.onSearchJump != null)
           _buildSearchSection(theme),
         if (widget.onJumpToCharOffset != null) ...[
-          const SizedBox(height: 12),
+          SizedBox(height: sectionGap),
           _buildCharJumpSection(theme),
         ],
         if (widget.toc.isNotEmpty) ...[
-          const SizedBox(height: 12),
+          SizedBox(height: sectionGap),
           _buildTocSection(context, theme),
         ],
         if (_bookmarks.isNotEmpty) ...[
-          const SizedBox(height: 12),
+          SizedBox(height: sectionGap),
           _buildBookmarkSection(context, theme),
         ],
         if (_favorites.isNotEmpty) ...[
-          const SizedBox(height: 12),
+          SizedBox(height: sectionGap),
           _buildFavoritesSection(context, theme),
         ],
       ],
@@ -433,11 +441,12 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
     }
 
     if (lines.isEmpty) return const SizedBox.shrink();
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(t.reading_progress, style: theme.textTheme.titleMedium),
-        const SizedBox(height: 8),
+        SizedBox(height: tokens.spacing.gap),
         for (final String line in lines)
           Text(line, style: theme.textTheme.bodyMedium),
       ],
@@ -472,32 +481,35 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
   }
 
   Widget _buildSearchSection(ThemeData theme) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(t.book_search, style: theme.textTheme.titleMedium),
-        const SizedBox(height: 8),
+        SizedBox(height: tokens.spacing.gap),
         Row(
           children: [
             Expanded(
               child: HibikiTextField(
                 controller: _searchController,
                 hintText: t.book_search_hint,
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: tokens.spacing.rowHorizontal,
+                  vertical: tokens.spacing.rowVertical,
                 ),
                 style: theme.textTheme.bodyMedium,
                 onSubmitted: (_) => _doSearch(),
               ),
             ),
-            const SizedBox(width: 8),
+            SizedBox(width: tokens.spacing.gap),
             SizedBox(
               height: 40,
               child: FilledButton.tonal(
                 onPressed: _isSearching ? null : _doSearch,
                 style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: tokens.spacing.gap + tokens.spacing.gap / 2,
+                  ),
                   visualDensity: VisualDensity.compact,
                 ),
                 child: _isSearching
@@ -513,12 +525,12 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
           ],
         ),
         if (_searchResults.isNotEmpty) ...[
-          const SizedBox(height: 8),
+          SizedBox(height: tokens.spacing.gap),
           Text(
             t.book_search_results(n: _searchResults.length),
             style: theme.textTheme.bodySmall,
           ),
-          const SizedBox(height: 4),
+          SizedBox(height: tokens.spacing.gap / 2),
           ConstrainedBox(
             constraints: const BoxConstraints(maxHeight: 280),
             child: ListView.builder(
@@ -560,7 +572,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
           ),
         ] else if (!_isSearching &&
             _searchController.text.trim().isNotEmpty) ...[
-          const SizedBox(height: 8),
+          SizedBox(height: tokens.spacing.gap),
           Text(
             t.book_search_no_results,
             style: theme.textTheme.bodySmall,
@@ -574,15 +586,16 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
     final int? current = widget.charProgress?.$1;
     final int? total = widget.charProgress?.$2;
     final bool hasProgress = current != null && total != null && total > 0;
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(t.jump_to_char, style: theme.textTheme.titleMedium),
-        const SizedBox(height: 8),
+        SizedBox(height: tokens.spacing.gap),
         if (hasProgress)
           Padding(
-            padding: const EdgeInsets.only(bottom: 8),
+            padding: EdgeInsets.only(bottom: tokens.spacing.gap),
             child: Text(
               t.jump_to_char_current(current: current, total: total),
               style: theme.textTheme.bodySmall,
@@ -595,21 +608,23 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
                 controller: _charJumpController,
                 keyboardType: TextInputType.number,
                 hintText: t.jump_to_char_hint,
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: tokens.spacing.rowHorizontal,
+                  vertical: tokens.spacing.rowVertical,
                 ),
                 style: theme.textTheme.bodyMedium,
                 onSubmitted: (_) => _doCharJump(context),
               ),
             ),
-            const SizedBox(width: 8),
+            SizedBox(width: tokens.spacing.gap),
             SizedBox(
               height: 40,
               child: FilledButton.tonal(
                 onPressed: () => _doCharJump(context),
                 style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: tokens.spacing.gap + tokens.spacing.gap / 2,
+                  ),
                   visualDensity: VisualDensity.compact,
                 ),
                 child: const Icon(Icons.arrow_forward, size: 20),
@@ -952,9 +967,12 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
   }
 
   Widget _buildSettingsLoading() {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return Center(
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12),
+        padding: EdgeInsets.symmetric(
+          vertical: tokens.spacing.gap + tokens.spacing.gap / 2,
+        ),
         child: SizedBox(
           width: 20,
           height: 20,
@@ -1003,6 +1021,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
     if (s == null) {
       return _buildSettingsLoading();
     }
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1012,8 +1031,8 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
               title: t.ttu_theme,
               controlBelow: true,
               trailing: Wrap(
-                spacing: 6,
-                runSpacing: 6,
+                spacing: tokens.spacing.gap * 0.75,
+                runSpacing: tokens.spacing.gap * 0.75,
                 children: [
                   ...TtuReaderSettings.availableThemes.map((themeKey) {
                     final bool selected = s.theme == themeKey;
@@ -1602,12 +1621,15 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
       onTap: onTap,
       borderRadius: tokens.radii.controlRadius,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: EdgeInsets.symmetric(
+          horizontal: tokens.spacing.gap + tokens.spacing.gap / 2,
+          vertical: tokens.spacing.gap * 0.75,
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(icon, size: 20, color: theme.colorScheme.onSurface),
-            const SizedBox(height: 4),
+            SizedBox(height: tokens.spacing.gap / 2),
             Text(label, style: theme.textTheme.labelSmall),
           ],
         ),
@@ -1628,6 +1650,7 @@ class _InBookSettingsHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool cupertino = isCupertinoPlatform(context);
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final TextStyle? titleStyle = cupertino
         ? CupertinoTheme.of(context).textTheme.navTitleTextStyle
         : Theme.of(context).textTheme.titleMedium;
@@ -1649,7 +1672,7 @@ class _InBookSettingsHeader extends StatelessWidget {
             onPressed: onBack,
             visualDensity: VisualDensity.compact,
           ),
-        const SizedBox(width: 4),
+        SizedBox(width: tokens.spacing.gap / 2),
         Expanded(
           child: Text(
             title,
@@ -1677,16 +1700,20 @@ class _InBookTocRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool cupertino = isCupertinoPlatform(context);
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final String title = entry.label.isEmpty ? t.untitled_chapter : entry.label;
-    final double indent = entry.depth * 16.0;
+    final double indent = entry.depth * tokens.spacing.card;
 
     if (entry.isHeader) {
       final ThemeData theme = Theme.of(context);
       return Padding(
         padding: EdgeInsetsDirectional.only(
-          start: (cupertino ? 16 : 12) + indent,
-          top: 12,
-          bottom: 4,
+          start: (cupertino
+                  ? tokens.spacing.rowHorizontal
+                  : tokens.spacing.gap + tokens.spacing.gap / 2) +
+              indent,
+          top: tokens.spacing.gap + tokens.spacing.gap / 2,
+          bottom: tokens.spacing.gap / 2,
         ),
         child: Text(
           title,
@@ -1749,7 +1776,10 @@ class _InBookSearchResultRow extends StatelessWidget {
         ? primary.withValues(alpha: 0.14)
         : theme.colorScheme.primaryContainer;
     final Widget child = Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      padding: EdgeInsets.symmetric(
+        horizontal: tokens.spacing.gap + tokens.spacing.gap / 2,
+        vertical: tokens.spacing.gap + tokens.spacing.gap / 8,
+      ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1758,7 +1788,7 @@ class _InBookSearchResultRow extends StatelessWidget {
             size: 18,
             color: primary,
           ),
-          const SizedBox(width: 10),
+          SizedBox(width: tokens.spacing.gap + tokens.spacing.gap / 4),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1770,7 +1800,7 @@ class _InBookSearchResultRow extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.bodySmall?.copyWith(color: primary),
                 ),
-                const SizedBox(height: 2),
+                SizedBox(height: tokens.spacing.gap / 4),
                 Text.rich(
                   TextSpan(
                     children: [
@@ -1871,6 +1901,7 @@ class _InBookFavoriteRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return AdaptiveSettingsRow(
       title: favorite.text,
       subtitle: metaLabel,
@@ -1882,7 +1913,7 @@ class _InBookFavoriteRow extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           _buildColorRail(context, color),
-          const SizedBox(width: 6),
+          SizedBox(width: tokens.spacing.gap * 0.75),
           if (onPlay != null)
             _InBookIconButton(
               materialIcon: Icons.volume_up_outlined,

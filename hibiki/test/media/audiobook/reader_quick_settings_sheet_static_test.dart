@@ -28,6 +28,35 @@ void main() {
     expect(source, isNot(contains('BorderRadius.circular(2)')));
   });
 
+  test('reader quick settings sheet uses MD3 spacing tokens', () {
+    final String source =
+        File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
+            .readAsStringSync();
+
+    expect(source, contains('HibikiDesignTokens.of(context)'));
+    expect(source, isNot(contains('const SizedBox(height: 12)')));
+    expect(source, isNot(contains('const SizedBox(height: 8)')));
+    expect(source, isNot(contains('const SizedBox(width: 8)')));
+    expect(
+        source, isNot(contains('padding: const EdgeInsets.only(bottom: 8)')));
+    expect(
+        source, isNot(contains('contentPadding: const EdgeInsets.symmetric(')));
+    expect(source,
+        isNot(contains('padding: const EdgeInsets.symmetric(horizontal: 12')));
+    expect(source,
+        isNot(contains('padding: const EdgeInsets.symmetric(vertical: 12')));
+    expect(source, isNot(contains('spacing: 6')));
+    expect(source, isNot(contains('runSpacing: 6')));
+    expect(source, isNot(contains('const SizedBox(height: 4)')));
+    expect(source, isNot(contains('const SizedBox(width: 4)')));
+    expect(source, isNot(contains('const SizedBox(width: 6)')));
+    expect(source, isNot(contains('const SizedBox(width: 10)')));
+    expect(source, isNot(contains('const SizedBox(height: 2)')));
+    expect(source, isNot(contains('top: 12,')));
+    expect(source, isNot(contains('bottom: 4,')));
+    expect(source, isNot(contains('start: (cupertino ? 16 : 12)')));
+  });
+
   test('in-book settings header uses theme typography without hardcoded size',
       () {
     final String source =
