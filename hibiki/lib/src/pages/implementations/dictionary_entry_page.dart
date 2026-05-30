@@ -1,7 +1,6 @@
 import 'package:expandable/expandable.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hibiki/src/utils/spacing.dart';
 import 'package:hibiki/creator.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/models.dart';
@@ -44,10 +43,12 @@ class DictionaryEntryPage extends ConsumerStatefulWidget {
 class _DictionaryEntryPageState extends ConsumerState<DictionaryEntryPage> {
   @override
   Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
     return Padding(
       padding: EdgeInsets.only(
-        top: Spacing.of(context).spaces.extraSmall,
-        bottom: Spacing.of(context).spaces.normal,
+        top: tokens.spacing.gap / 4,
+        bottom: tokens.spacing.rowVertical,
       ),
       child: ExpandablePanel(
         theme: ExpandableThemeData(
@@ -64,8 +65,8 @@ class _DictionaryEntryPageState extends ConsumerState<DictionaryEntryPage> {
         collapsed: const SizedBox.shrink(),
         expanded: Padding(
           padding: EdgeInsets.only(
-            top: Spacing.of(context).spaces.small,
-            left: Spacing.of(context).spaces.normal,
+            top: tokens.spacing.gap / 2,
+            left: tokens.spacing.rowVertical,
           ),
           child: DictionaryHtmlWidget(
             entry: widget.entry,
@@ -136,6 +137,7 @@ class _DictionaryEntryHeaderWrap extends ConsumerWidget {
   }) {
     AppModel appModel = ref.read(appProvider);
     CreatorModel creatorModel = ref.read(creatorProvider);
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
 
     List<QuickAction> filteredActions = appModel.quickActions.values
         .where((e) => e.showInSingleDictionary)
@@ -162,7 +164,7 @@ class _DictionaryEntryHeaderWrap extends ConsumerWidget {
                 quickAction.icon,
                 size: Theme.of(context).textTheme.bodyMedium?.fontSize,
               ),
-              const Space.normal(),
+              SizedBox(width: tokens.spacing.gap),
               Text(
                 quickAction.getLocalisedLabel(appModel),
                 style: Theme.of(context).textTheme.bodyMedium,

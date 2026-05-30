@@ -3,7 +3,6 @@ import 'package:float_column/float_column.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sliver_tools/sliver_tools.dart';
-import 'package:hibiki/src/utils/spacing.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/pages.dart';
@@ -60,6 +59,7 @@ class DictionaryTermPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     List<DictionaryEntry> visibleEntries = entries
         .where((entry) =>
             !(dictionaryNamesByHidden[entry.dictionaryName] ?? false))
@@ -91,10 +91,10 @@ class DictionaryTermPage extends ConsumerWidget {
         ),
         SliverPadding(
           padding: EdgeInsets.only(
-            left: Spacing.of(context).spaces.semiBig,
-            top: Spacing.of(context).spaces.normal,
-            right: Spacing.of(context).spaces.normal,
-            bottom: Spacing.of(context).spaces.normal,
+            left: tokens.spacing.card,
+            top: tokens.spacing.rowVertical,
+            right: tokens.spacing.rowVertical,
+            bottom: tokens.spacing.rowVertical,
           ),
           sliver: MultiSliver(
             children: [
@@ -105,7 +105,7 @@ class DictionaryTermPage extends ConsumerWidget {
                       entry: primaryEntry,
                       onSearch: onSearch,
                     ),
-                    const Space.normal(),
+                    SizedBox(height: tokens.spacing.rowVertical),
                   ],
                 ),
               ),
@@ -223,6 +223,7 @@ class _DictionaryTermActionsRowState
     required WidgetRef ref,
     required Map<String, Color?> colors,
   }) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     List<Widget> buttons = [];
     final allActions = appModel.quickActions.values.toList();
     for (final quickAction in allActions) {
@@ -230,14 +231,14 @@ class _DictionaryTermActionsRowState
       final Color enabledColor =
           colors[quickAction.uniqueKey] ?? scheme.onSurface;
       final Widget button = Padding(
-        padding: Spacing.of(context).insets.onlyLeft.semiSmall,
+        padding: EdgeInsets.only(left: tokens.spacing.gap * 0.75),
         child: HibikiIconButton(
           busy: true,
           enabledColor: enabledColor,
           disabledColor: enabledColor.withValues(alpha: 0.5),
           shapeBorder: const RoundedRectangleBorder(),
           backgroundColor: scheme.surfaceContainerHighest,
-          size: Spacing.of(context).spaces.semiBig,
+          size: tokens.spacing.card,
           tooltip: quickAction.getLocalisedLabel(appModel),
           icon: quickAction.icon,
           onTap: () async {
@@ -281,14 +282,16 @@ class _DictionaryTermTopRow extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
     return FloatColumn(
       children: [
         Floatable(
           float: FCFloat.end,
           padding: EdgeInsets.only(
-            top: Spacing.of(context).spaces.small,
-            right: Spacing.of(context).spaces.small,
-            bottom: Spacing.of(context).spaces.small,
+            top: tokens.spacing.gap / 2,
+            right: tokens.spacing.gap / 2,
+            bottom: tokens.spacing.gap / 2,
           ),
           child: _DictionaryTermActionsRow(
             entry: entry,
