@@ -117,6 +117,10 @@ window.hoshiCaret = {
   active: false,
   node: null,
   offset: 0,
+  // When the cursor sits on an interactive element (a button / link / control
+  // with no usable text glyph — e.g. an icon-only popup action), `el` holds it
+  // and `node` is null. Plain text stops set `node`/`offset` and leave `el` null.
+  el: null,
   insetTop: 0,
   insetBottom: 0,
   ringColor: 'rgba(255,138,0,0.98)',
@@ -204,6 +208,56 @@ window.hoshiCaret = {
     return range.getBoundingClientRect();
   },
 
+  // ── Interactive element stops ──────────────────────────────────────
+  // Besides text glyphs, the cursor can land on interactive elements so a
+  // gamepad can reach buttons/links/controls (e.g. the dictionary popup's
+  // collapse toggles, audio/pitch controls and action buttons — many of which
+  // are icon-only with no text glyph to land on). A then clicks them.
+  _interactiveSelector: 'a[href], button, [role="button"], [role="link"]',
+  _interactiveEls: function() {
+    // Element stops are a popup-only concern. In the reader the only interactive
+    // text is <a href>, which is already reachable as a text stop (and activate()
+    // promotes a text stop inside an <a href> to a link click) — collecting links
+    // as elements too would duplicate every link stop and make line-moves stutter.
+    if (window.hoshiReader) return [];
+    var out = [];
+    var seen = new Set();
+    var explicit = document.body.querySelectorAll(this._interactiveSelector);
+    for (var i = 0; i < explicit.length; i++) { out.push(explicit[i]); seen.add(explicit[i]); }
+    // Controls bound via addEventListener/onclick have no attribute selector but
+    // style themselves clickable. Collect each pointer-cursored *leaf* region (no
+    // pointer-cursored descendant) that isn't already inside an explicit control,
+    // so the cursor lands on the actual icon/button — not a giant pointer
+    // container wrapping it, and not a redundant child of a <button>.
+    var all = document.body.querySelectorAll('*');
+    var pointer = [];
+    for (var j = 0; j < all.length; j++) {
+      try { if (window.getComputedStyle(all[j]).cursor === 'pointer') pointer.push(all[j]); } catch (x) {}
+    }
+    for (var p = 0; p < pointer.length; p++) {
+      var e = pointer[p];
+      if (seen.has(e)) continue;
+      if (e.closest(this._interactiveSelector)) continue; // covered by an explicit control
+      var hasPointerChild = false;
+      for (var q = 0; q < pointer.length; q++) {
+        if (q !== p && e.contains(pointer[q])) { hasPointerChild = true; break; }
+      }
+      if (hasPointerChild) continue; // not a leaf — descend to the real control
+      out.push(e);
+      seen.add(e);
+    }
+    return out;
+  },
+  _stopRect: function(stop) {
+    if (stop.el) return stop.el.getBoundingClientRect();
+    return this._charRect(stop.node, stop.offset);
+  },
+  _anchorRect: function() {
+    if (this.el && document.contains(this.el)) return this.el.getBoundingClientRect();
+    if (this.node && document.contains(this.node)) return this._charRect(this.node, this.offset);
+    return null;
+  },
+
   // ── Viewport (current page) ────────────────────────────────────────
   _viewport: function() {
     return {
@@ -263,7 +317,7 @@ window.hoshiCaret = {
           var rect = this._charRect(node, i);
           if (this._inViewport(rect)) {
             out.push({
-              node: node, offset: i, rect: rect,
+              node: node, offset: i, el: null, rect: rect,
               cx: rect.left + rect.width / 2,
               cy: rect.top + rect.height / 2
             });
@@ -272,7 +326,50 @@ window.hoshiCaret = {
         i += len;
       }
     }
+    var els = this._interactiveEls();
+    for (var k = 0; k < els.length; k++) {
+      var er = els[k].getBoundingClientRect();
+      if (this._inViewport(er)) {
+        out.push({
+          node: null, offset: 0, el: els[k], rect: er,
+          cx: er.left + er.width / 2,
+          cy: er.top + er.height / 2
+        });
+      }
+    }
     return out;
+  },
+  _geomMove: function(physicalDir) {
+    var a = this._anchorRect();
+    if (!a) return null;
+    var acx = a.left + a.width / 2;
+    var acy = a.top + a.height / 2;
+    var stops = this._collectVisibleStops();
+    var eps = 2;
+    var best = null;
+    var bestScore = Infinity;
+    for (var i = 0; i < stops.length; i++) {
+      var s = stops[i];
+      if (s.el && this.el && s.el === this.el) continue;
+      if (!s.el && this.node && s.node === this.node && s.offset === this.offset) continue;
+      var dx = s.cx - acx, dy = s.cy - acy, ahead, along, cross;
+      if (physicalDir === 'up') { ahead = dy < -eps; along = -dy; cross = Math.abs(dx); }
+      else if (physicalDir === 'down') { ahead = dy > eps; along = dy; cross = Math.abs(dx); }
+      else if (physicalDir === 'left') { ahead = dx < -eps; along = -dx; cross = Math.abs(dy); }
+      else { ahead = dx > eps; along = dx; cross = Math.abs(dy); } // right
+      if (!ahead) continue;
+      var score = along + cross * 3; // prefer same line/column, penalise cross
+      if (score < bestScore) { bestScore = score; best = s; }
+    }
+    return best;
+  },
+  _physicalDir: function(dir, vertical, logical) {
+    if (dir === 'up' || dir === 'down' || dir === 'left' || dir === 'right') return dir;
+    // logical → physical for the current writing-mode
+    if (logical === 'forward') return vertical ? 'down' : 'right';
+    if (logical === 'backward') return vertical ? 'up' : 'left';
+    if (logical === 'lineNext') return vertical ? 'left' : 'down';
+    return vertical ? 'right' : 'up'; // linePrev
   },
   _firstVisibleStop: function() {
     var walker = this._walker();
@@ -294,12 +391,13 @@ window.hoshiCaret = {
     var stops = this._collectVisibleStops();
     if (!stops.length) return null;
     var s = stops[stops.length - 1];
-    return { node: s.node, offset: s.offset, rect: s.rect };
+    return { node: s.node, offset: s.offset, el: s.el, rect: s.rect };
   },
 
   // ── Geometric line move ────────────────────────────────────────────
   _lineMove: function(isNext, vertical) {
-    var anchor = this._charRect(this.node, this.offset);
+    var anchor = this._anchorRect();
+    if (!anchor) return null;
     var acx = anchor.left + anchor.width / 2;
     var acy = anchor.top + anchor.height / 2;
     var stops = this._collectVisibleStops();
@@ -332,7 +430,7 @@ window.hoshiCaret = {
         best = s; bestCross = cross;
       }
     }
-    return best ? { node: best.node, offset: best.offset } : null;
+    return best || null;
   },
 
   // ── Page / scroll handling ─────────────────────────────────────────
@@ -340,9 +438,9 @@ window.hoshiCaret = {
     if (this._paged()) {
       return { status: forwardish ? 'pageForward' : 'pageBackward' };
     }
-    this._scrollIntoView(this._charRect(target.node, target.offset));
-    var rect = this._charRect(target.node, target.offset);
-    this._place(target.node, target.offset, rect);
+    this._scrollIntoView(this._stopRect(target));
+    var rect = this._stopRect(target);
+    this._place({ node: target.node, offset: target.offset, el: target.el, rect: rect });
     return { status: 'moved', rect: this._rectJson(rect) };
   },
   _pageOrScroll: function(forwardish) {
@@ -352,8 +450,8 @@ window.hoshiCaret = {
     this._scrollViewport(forwardish);
     var target = this._lineMove(forwardish, this._vertical());
     if (target) {
-      var rect = this._charRect(target.node, target.offset);
-      this._place(target.node, target.offset, rect);
+      var rect = this._stopRect(target);
+      this._place({ node: target.node, offset: target.offset, el: target.el, rect: rect });
       return { status: 'moved', rect: this._rectJson(rect) };
     }
     return { status: 'blocked' };
@@ -418,12 +516,17 @@ window.hoshiCaret = {
   _rectJson: function(rect) {
     return { x: rect.left, y: rect.top, width: rect.width, height: rect.height };
   },
-  _place: function(node, offset, rect) {
-    this.node = node;
-    this.offset = offset;
-    this._memNode = node;
-    this._memOffset = offset;
-    this._drawRing(rect || this._charRect(node, offset));
+  _place: function(stop) {
+    this.node = stop.node || null;
+    this.offset = stop.offset || 0;
+    this.el = stop.el || null;
+    // Only text stops are remembered for restore-on-re-enter; an interactive
+    // element stop is transient (the cursor returns to text on the next enter).
+    if (!this.el) {
+      this._memNode = this.node;
+      this._memOffset = this.offset;
+    }
+    this._drawRing(stop.rect || this._stopRect(stop));
   },
 
   // ── Public API ─────────────────────────────────────────────────────
@@ -436,9 +539,9 @@ window.hoshiCaret = {
     if (opts.insetBottom != null) this.insetBottom = opts.insetBottom;
     if (opts.scopeSelector !== undefined) this.scopeSelector = opts.scopeSelector;
     this._applyRingStyle();
-    if (this.active && this.node && document.contains(this.node)) {
-      var rect = this._charRect(this.node, this.offset);
-      if (this._inViewport(rect)) this._drawRing(rect);
+    if (this.active) {
+      var rect = this._anchorRect();
+      if (rect && this._inViewport(rect)) this._drawRing(rect);
     }
     return true;
   },
@@ -454,8 +557,8 @@ window.hoshiCaret = {
     if (!pos) pos = this._firstVisibleStop();
     if (!pos) { this.active = false; return { ok: false }; }
     this.active = true;
-    this._place(pos.node, pos.offset, pos.rect);
-    return { ok: true, rect: this._rectJson(pos.rect || this._charRect(pos.node, pos.offset)) };
+    this._place(pos);
+    return { ok: true, rect: this._rectJson(pos.rect || this._stopRect(pos)) };
   },
 
   exit: function() {
@@ -469,13 +572,15 @@ window.hoshiCaret = {
     var pos = (edge === 'backward') ? this._lastVisibleStop() : this._firstVisibleStop();
     if (!pos) return { ok: false }; // empty page — leave active state untouched
     this.active = true;
-    this._place(pos.node, pos.offset, pos.rect);
+    this._place(pos);
     return { ok: true, rect: this._rectJson(pos.rect) };
   },
 
   move: function(dir) {
-    if (!this.active || !this.node) return { status: 'blocked' };
-    if (!document.contains(this.node)) {
+    if (!this.active || (!this.node && !this.el)) return { status: 'blocked' };
+    var detached = this.el ? !document.contains(this.el)
+                           : !document.contains(this.node);
+    if (detached) {
       var re = this.reanchor('forward');
       return re.ok ? { status: 'moved', rect: re.rect } : { status: 'blocked' };
     }
@@ -483,16 +588,26 @@ window.hoshiCaret = {
     var logical = this._logicalDir(dir, vertical);
     var forwardish = (logical === 'forward' || logical === 'lineNext');
     var target = null;
-    if (logical === 'forward') target = this._nextStop(this.node, this.offset);
-    else if (logical === 'backward') target = this._prevStop(this.node, this.offset);
-    else target = this._lineMove(logical === 'lineNext', vertical);
+    if (this.el) {
+      // No text offset to step from an element stop — every move is geometric:
+      // jump to the nearest stop (text or element) in the physical direction.
+      target = this._geomMove(this._physicalDir(dir, vertical, logical));
+    } else if (logical === 'forward') {
+      target = this._nextStop(this.node, this.offset);
+    } else if (logical === 'backward') {
+      target = this._prevStop(this.node, this.offset);
+    } else {
+      target = this._lineMove(logical === 'lineNext', vertical);
+    }
     if (!target) {
-      if (logical === 'forward' || logical === 'backward') return { status: 'blocked' };
+      if (!this.el && (logical === 'forward' || logical === 'backward')) {
+        return { status: 'blocked' };
+      }
       return this._pageOrScroll(forwardish); // line move ran out on this page
     }
-    var rect = this._charRect(target.node, target.offset);
+    var rect = this._stopRect(target);
     if (this._inViewport(rect)) {
-      this._place(target.node, target.offset, rect);
+      this._place({ node: target.node, offset: target.offset, el: target.el, rect: rect });
       return { status: 'moved', rect: this._rectJson(rect) };
     }
     return this._offPage(target, forwardish);
@@ -500,13 +615,16 @@ window.hoshiCaret = {
 
   refresh: function() {
     if (!this.active) return { ok: false };
-    if (this.node && document.contains(this.node) && this._isStop(this.node, this.offset)) {
+    if (this.el && document.contains(this.el)) {
+      var er = this.el.getBoundingClientRect();
+      if (this._inViewport(er)) { this._drawRing(er); return { ok: true, rect: this._rectJson(er) }; }
+    } else if (this.node && document.contains(this.node) && this._isStop(this.node, this.offset)) {
       var rect = this._charRect(this.node, this.offset);
       if (this._inViewport(rect)) { this._drawRing(rect); return { ok: true, rect: this._rectJson(rect) }; }
     }
     var pos = this._firstVisibleStop();
     if (!pos) { this._hideRing(); return { ok: false }; }
-    this._place(pos.node, pos.offset, pos.rect);
+    this._place(pos);
     return { ok: true, rect: this._rectJson(pos.rect) };
   },
 
@@ -521,14 +639,21 @@ window.hoshiCaret = {
 
   // Context "click" at the caret, like a mouse click / Enter on whatever the
   // cursor sits on:
-  //  - a hyperlink is followed (a.click() → native navigation, reusing the
-  //    reader's shouldOverrideUrlLoading routing);
-  //  - an interactive control is clicked (popup image overlays / buttons);
+  //  - a hyperlink is followed (a.click() → the host WebView's URL routing: the
+  //    reader's shouldOverrideUrlLoading, or the popup's cross-reference handler);
+  //  - an interactive control is clicked (popup buttons / collapse / audio etc.);
   //  - plain text (words, kanji) is looked up directly via the selection
   //    pipeline. Looking up directly — rather than synthesising a tap — avoids
   //    the reader tap handler toggling the (hidden) chrome instead of looking up.
   activate: function() {
-    if (!this.active || !this.node) return 'none';
+    if (!this.active) return 'none';
+    // On an interactive element stop, click it directly.
+    if (this.el && document.contains(this.el)) {
+      var asLink = this.el.matches('a[href]') || !!this.el.closest('a[href]');
+      this.el.click();
+      return asLink ? 'link' : 'activated';
+    }
+    if (!this.node) return 'none';
     var el = this.node.parentElement;
     var link = el && el.closest('a[href]');
     if (link) { link.click(); return 'link'; }
