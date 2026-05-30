@@ -244,54 +244,64 @@ window.hoshiSelection = {
         }
 
         this.clearSelection();
+        return this.selectFromPosition(hit.node, hit.offset, maxLength, x, y);
+    },
 
-        const hitContent = hit.node.textContent;
-        if (hit.offset < hitContent.length && !this.isCodePointJapanese(hitContent.codePointAt(hit.offset))) {
-            while (hit.offset > 0 && !this.isScanBoundary(hitContent[hit.offset - 1])) {
-                hit.offset--;
+    // Build the popup word selection starting at (node, offset): expand a
+    // non-Japanese hit left to its token start, scan forward up to maxLength
+    // chars, and fire textSelected (→ a deeper lookup). Shared by the tap path
+    // (selectText) and the keyboard/gamepad caret (window.hoshiCaret.lookup).
+    // x/y are optional — the caret omits them, so the rect falls back to the
+    // first char's bounding box. Caller clears any prior selection first.
+    selectFromPosition(node, offset, maxLength, x, y) {
+        const startNode = node;
+        let startOffset = offset;
+        const hitContent = startNode.textContent;
+        if (startOffset < hitContent.length && !this.isCodePointJapanese(hitContent.codePointAt(startOffset))) {
+            while (startOffset > 0 && !this.isScanBoundary(hitContent[startOffset - 1])) {
+                startOffset--;
             }
         }
 
-        const container = this.findParagraph(hit.node) || document.body;
+        const container = this.findParagraph(startNode) || document.body;
         const walker = this.createWalker(container);
 
         let text = '';
-        let node = hit.node;
-        let offset = hit.offset;
+        let scanNode = startNode;
+        let scanOffset = startOffset;
         let ranges = [];
 
-        walker.currentNode = node;
-        while (text.length < maxLength && node) {
-            const content = node.textContent;
-            const start = offset;
+        walker.currentNode = scanNode;
+        while (text.length < maxLength && scanNode) {
+            const content = scanNode.textContent;
+            const start = scanOffset;
 
-            while (offset < content.length && text.length < maxLength) {
-                const char = content[offset];
+            while (scanOffset < content.length && text.length < maxLength) {
+                const char = content[scanOffset];
                 if (this.isScanBoundary(char)) break;
                 text += char;
-                offset++;
+                scanOffset++;
             }
 
-            if (offset > start) {
-                ranges.push({ node, start, end: offset });
+            if (scanOffset > start) {
+                ranges.push({ node: scanNode, start, end: scanOffset });
             }
 
-            if (offset < content.length || text.length >= maxLength) break;
+            if (scanOffset < content.length || text.length >= maxLength) break;
 
-            node = walker.nextNode();
-            offset = 0;
+            scanNode = walker.nextNode();
+            scanOffset = 0;
         }
 
         if (!text) return null;
 
         this.selection = {
-            startNode: hit.node,
-            startOffset: hit.offset,
+            startNode,
+            startOffset,
             ranges,
             text
         };
 
-        const sentence = this.getSentence(hit.node, hit.offset);
         const rect = this.getSelectionRect(x, y);
         window.flutter_inappwebview.callHandler('textSelected', text, rect);
 

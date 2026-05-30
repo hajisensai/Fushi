@@ -26,12 +26,25 @@ void main() {
           "JSON.stringify(window.hoshiCaret.reanchor('backward'))");
     });
 
-    test('init embeds colour + insets', () {
+    test('init embeds colour + insets, scopeSelector defaults to null', () {
       expect(
         ReaderCaretScripts.initInvocation(
             color: '#ff8a00', insetTop: 24.0, insetBottom: 48.0),
         "window.hoshiCaret.init({color:'#ff8a00',insetTop:24.0,"
-        'insetBottom:48.0})',
+        'insetBottom:48.0,scopeSelector:null})',
+      );
+    });
+
+    test('init embeds a scopeSelector when given (popup definition body)', () {
+      expect(
+        ReaderCaretScripts.initInvocation(
+          color: '#ff8a00',
+          insetTop: 0,
+          insetBottom: 0,
+          scopeSelector: '.glossary-content',
+        ),
+        "window.hoshiCaret.init({color:'#ff8a00',insetTop:0.0,"
+        "insetBottom:0.0,scopeSelector:'.glossary-content'})",
       );
     });
   });
@@ -129,6 +142,11 @@ void main() {
     test('draws a fixed focus ring without mutating the text DOM', () {
       expect(js, contains('hoshi-caret-ring'));
       expect(js, contains('position:fixed'));
+    });
+
+    test('scopeSelector restricts stops to matching elements (popup scope)', () {
+      expect(js, contains('scopeSelector'));
+      expect(js, contains('closest(this.scopeSelector)'));
     });
   });
 }

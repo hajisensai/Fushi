@@ -47,14 +47,20 @@ class ReaderCaretScripts {
       'JSON.stringify(window.hoshiCaret.refresh())';
 
   /// Configure the ring colour and the chrome insets used for the
-  /// "is on the current page" viewport test.
+  /// "is on the current page" viewport test. [scopeSelector] (a CSS selector)
+  /// restricts the cursor to text inside matching elements — the dictionary
+  /// popup passes `.glossary-content`; the reader omits it (whole document).
   static String initInvocation({
     required String color,
     required double insetTop,
     required double insetBottom,
-  }) =>
-      "window.hoshiCaret.init({color:'$color',insetTop:$insetTop,"
-      'insetBottom:$insetBottom})';
+    String? scopeSelector,
+  }) {
+    final String scope =
+        scopeSelector == null ? 'null' : "'$scopeSelector'";
+    return "window.hoshiCaret.init({color:'$color',insetTop:$insetTop,"
+        'insetBottom:$insetBottom,scopeSelector:$scope})';
+  }
 
   /// Status field of a [moveInvocation] / [reanchorInvocation] / [enterInvocation]
   /// result; defaults to `blocked` when the payload is missing/unparseable.
@@ -109,6 +115,11 @@ window.hoshiCaret = {
   insetTop: 0,
   insetBottom: 0,
   ringColor: 'rgba(255,138,0,0.98)',
+  // When set (a CSS selector), the cursor only stops on text whose nearest
+  // element ancestor matches it — used in the dictionary popup to keep the
+  // cursor inside the definition body (.glossary-content), exactly like the tap
+  // path. Empty/null = stop on any text (reader content).
+  scopeSelector: null,
   _ring: null,
   _memNode: null,
   _memOffset: null,
@@ -162,6 +173,10 @@ window.hoshiCaret = {
     if (offset < 0 || offset >= text.length) return false;
     var ch = text[offset];
     if (/^[\s　]$/.test(ch)) return false; // skip whitespace/newlines
+    if (this.scopeSelector) {
+      var el = node.parentElement;
+      if (!el || !el.closest(this.scopeSelector)) return false;
+    }
     return true;
   },
   _walker: function() {
@@ -414,6 +429,7 @@ window.hoshiCaret = {
     if (opts.color) this.ringColor = opts.color;
     if (opts.insetTop != null) this.insetTop = opts.insetTop;
     if (opts.insetBottom != null) this.insetBottom = opts.insetBottom;
+    if (opts.scopeSelector !== undefined) this.scopeSelector = opts.scopeSelector;
     this._applyRingStyle();
     if (this.active && this.node && document.contains(this.node)) {
       var rect = this._charRect(this.node, this.offset);
