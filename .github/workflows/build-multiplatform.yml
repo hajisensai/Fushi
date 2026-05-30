@@ -72,9 +72,11 @@ jobs:
         run: |
           chmod +x ci/apply-patches.sh
           bash ci/apply-patches.sh
-      - name: Build iOS (debug, no codesign)
+      # Simulator build needs no signing/Development Team — a pure compile check
+      # that still exercises gamepads_ios (GameController) and all iOS plugins.
+      - name: Build iOS (debug, simulator)
         working-directory: hibiki
         run: >-
-          flutter build ios --debug --no-codesign
+          flutter build ios --debug --simulator
           --dart-define=GOOGLE_OAUTH_CLIENT_ID=${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
           --dart-define=GOOGLE_OAUTH_CLIENT_SECRET=${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
