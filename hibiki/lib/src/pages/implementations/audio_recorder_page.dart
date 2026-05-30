@@ -312,6 +312,8 @@ class _AudioRecorderDialogPageState
 
   /// Buiid the audio player.
   Widget buildDisabledPlayer() {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+
     return SizedBox(
       height: 48,
       child: IgnorePointer(
@@ -326,7 +328,7 @@ class _AudioRecorderDialogPageState
                   Container(
                     height: 48,
                     width: 48,
-                    padding: const EdgeInsets.all(16),
+                    padding: EdgeInsets.all(tokens.spacing.card),
                     child: adaptiveIndicator(
                       context: context,
                       color: Theme.of(context).colorScheme.error,

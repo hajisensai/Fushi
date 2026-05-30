@@ -22,5 +22,6 @@ void main() {
         contains('const EdgeInsets.symmetric(horizontal: 16, vertical: 16)'),
       ),
     );
+    expect(source, isNot(contains('const EdgeInsets.all(16)')));
   });
 }
