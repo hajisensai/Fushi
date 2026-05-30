@@ -184,7 +184,10 @@ class MediaItemEditDialogFrame extends StatelessWidget {
       maxWidth: 440,
       maxHeightFactor: 0.72,
       scrollable: false,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      insetPadding: EdgeInsets.symmetric(
+        horizontal: tokens.spacing.card,
+        vertical: tokens.spacing.gap,
+      ),
       child: HibikiModalSheetFrame(
         scrollable: true,
         bodyPadding: EdgeInsets.fromLTRB(

@@ -35,7 +35,10 @@ class _HibikiSettingsDialogPageState extends BasePageState {
     return HibikiDialogFrame(
       maxWidth: 560,
       maxHeightFactor: 0.86,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      insetPadding: EdgeInsets.symmetric(
+        horizontal: tokens.spacing.card,
+        vertical: tokens.spacing.card,
+      ),
       scrollable: false,
       child: HibikiModalSheetFrame(
         title: t.reader_settings_section,
