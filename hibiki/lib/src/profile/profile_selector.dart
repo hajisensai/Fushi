@@ -37,13 +37,23 @@ class ProfileSelector extends ConsumerWidget {
     }
 
     final TextTheme textTheme = Theme.of(context).textTheme;
+    // This selector is embedded as the `trailing` of an AdaptiveSettingsRow,
+    // whose Row lays out a non-flex trailing beside an Expanded(label) sibling
+    // and therefore measures the trailing with UNBOUNDED main-axis width. An
+    // `Expanded` (FlexFit.tight) here demands infinite width and throws
+    // "RenderFlex children have non-zero flex but incoming width constraints
+    // are unbounded" (debug), blanking the Anki settings page. So the row must
+    // shrink-wrap (mainAxisSize.min) and the dropdown must take a bounded width
+    // — mirroring AdaptiveSettingsPickerRow and this widget's Cupertino branch.
     return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
         Text(
           '${t.profile_label}: ',
           style: textTheme.bodyMedium,
         ),
-        Expanded(
+        SizedBox(
+          width: 200,
           child: DropdownMenu<int>(
             expandedInsets: EdgeInsets.zero,
             initialSelection: validId,
