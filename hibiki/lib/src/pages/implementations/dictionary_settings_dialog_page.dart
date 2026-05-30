@@ -43,7 +43,10 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
     return HibikiDialogFrame(
       maxWidth: 560,
       maxHeightFactor: 0.92,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      insetPadding: EdgeInsets.symmetric(
+        horizontal: tokens.spacing.card,
+        vertical: tokens.spacing.card,
+      ),
       scrollable: false,
       child: HibikiModalSheetFrame(
         title: t.manage_audio_sources,
@@ -226,7 +229,10 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
     return HibikiDialogFrame(
       maxWidth: 640,
       maxHeightFactor: 0.88,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      insetPadding: EdgeInsets.symmetric(
+        horizontal: tokens.spacing.card,
+        vertical: tokens.spacing.card,
+      ),
       scrollable: false,
       child: HibikiModalSheetFrame(
         title: t.custom_dict_css,
