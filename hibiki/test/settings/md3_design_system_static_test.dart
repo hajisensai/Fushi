@@ -1228,8 +1228,15 @@ void main() {
     expect(editDialog, contains('HibikiTagChip('));
     expect(editDialog, contains('onDeleted:'));
     expect(editDialog, contains('tokens.radii.controlRadius'));
+    expect(editDialog, contains('tokens.spacing'));
     expect(editDialog, isNot(contains('=> Chip(')));
     expect(editDialog, isNot(contains('BorderRadius.circular(8)')));
+    expect(editDialog, isNot(contains('const SizedBox(height: 8)')));
+    expect(editDialog, isNot(contains('const SizedBox(width: 4)')));
+    expect(
+      editDialog,
+      isNot(contains('const EdgeInsets.symmetric(vertical: 4)')),
+    );
   });
 
   test('custom font dialogs use shared MD3 dialog chrome', () {

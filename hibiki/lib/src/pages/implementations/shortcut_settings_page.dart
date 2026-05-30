@@ -446,7 +446,7 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
               t.shortcut_keyboard,
               style: themeData.textTheme.labelLarge,
             ),
-            const SizedBox(height: 4),
+            SizedBox(height: tokens.spacing.gap / 2),
             Wrap(
               spacing: tokens.spacing.gap / 2,
               runSpacing: tokens.spacing.gap / 2,
@@ -459,7 +459,7 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
                   ),
               ],
             ),
-            const SizedBox(height: 8),
+            SizedBox(height: tokens.spacing.gap),
             if (_capturing)
               Column(
                 mainAxisSize: MainAxisSize.min,
@@ -513,7 +513,7 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
               t.shortcut_gamepad,
               style: themeData.textTheme.labelLarge,
             ),
-            const SizedBox(height: 4),
+            SizedBox(height: tokens.spacing.gap / 2),
             Wrap(
               spacing: tokens.spacing.gap / 2,
               runSpacing: tokens.spacing.gap / 2,
@@ -526,7 +526,7 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
                   ),
               ],
             ),
-            const SizedBox(height: 8),
+            SizedBox(height: tokens.spacing.gap),
             PopupMenuButton<GamepadButton>(
               onSelected: _addGamepad,
               itemBuilder: (_) => <PopupMenuEntry<GamepadButton>>[
@@ -537,7 +537,7 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
                   ),
               ],
               child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
+                padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
@@ -546,7 +546,7 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
                       size: 18,
                       color: themeData.colorScheme.primary,
                     ),
-                    const SizedBox(width: 4),
+                    SizedBox(width: tokens.spacing.gap / 2),
                     Text(
                       t.shortcut_gamepad,
                       style: TextStyle(color: themeData.colorScheme.primary),
@@ -558,7 +558,7 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
 
             // Conflict warning
             if (_conflictWarning != null) ...[
-              const SizedBox(height: 8),
+              SizedBox(height: tokens.spacing.gap),
               Text(
                 _conflictWarning!,
                 style: themeData.textTheme.bodySmall?.copyWith(
