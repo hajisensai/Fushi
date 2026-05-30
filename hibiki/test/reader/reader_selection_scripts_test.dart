@@ -163,11 +163,25 @@ void main() {
 
     test('defines all selection methods', () {
       expect(js, contains('selectText:'));
+      expect(js, contains('selectFromPosition:'));
       expect(js, contains('clearSelection:'));
       expect(js, contains('highlightSelection:'));
       expect(js, contains('getCharacterAtPoint:'));
       expect(js, contains('getSentenceContext:'));
       expect(js, contains('getNormalizedOffset:'));
+    });
+
+    test('selectText delegates to selectFromPosition (shared core for the '
+        'coordinate and caret paths)', () {
+      expect(js, contains('return this.selectFromPosition(hit.node, hit.offset'));
+    });
+
+    test('selectFromPosition fires the onTextSelected handler (caret lookup '
+        'reuses the same dictionary pipeline)', () {
+      // Single onTextSelected emitter lives in selectFromPosition.
+      final int emitters =
+          "callHandler('onTextSelected'".allMatches(js).length;
+      expect(emitters, 1);
     });
 
     test('defines sentence delimiters', () {

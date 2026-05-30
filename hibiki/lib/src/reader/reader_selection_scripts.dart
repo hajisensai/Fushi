@@ -269,37 +269,49 @@ window.hoshiSelection = {
       return null;
     }
     this.clearSelection();
-    var hitContent = hit.node.textContent;
-    if (hit.offset < hitContent.length && !this.isCodePointJapanese(hitContent.codePointAt(hit.offset))) {
-      while (hit.offset > 0 && !this.isScanBoundary(hitContent[hit.offset - 1])) {
-        hit.offset--;
+    return this.selectFromPosition(hit.node, hit.offset, maxLength, x, y);
+  },
+  // Build the dictionary selection starting at (node, offset): expand a
+  // non-Japanese hit left to its token start, scan forward up to maxLength
+  // characters, compute the sentence + whole-book normalized offsets, and fire
+  // onTextSelected. Shared by the coordinate (tap) path and the keyboard/gamepad
+  // caret path. x/y are optional — the caret path omits them, in which case the
+  // selection rect falls back to the first character's bounding box. The caller
+  // is responsible for clearing any prior selection first.
+  selectFromPosition: function(node, offset, maxLength, x, y) {
+    var startNode = node;
+    var startOffset = offset;
+    var hitContent = startNode.textContent;
+    if (startOffset < hitContent.length && !this.isCodePointJapanese(hitContent.codePointAt(startOffset))) {
+      while (startOffset > 0 && !this.isScanBoundary(hitContent[startOffset - 1])) {
+        startOffset--;
       }
     }
-    var container = this.findParagraph(hit.node) || document.body;
+    var container = this.findParagraph(startNode) || document.body;
     var walker = this.createWalker(container);
     var text = '';
-    var node = hit.node;
-    var offset = hit.offset;
+    var scanNode = startNode;
+    var scanOffset = startOffset;
     var ranges = [];
-    walker.currentNode = node;
-    while (text.length < maxLength && node) {
-      var content = node.textContent;
-      var start = offset;
-      while (offset < content.length && text.length < maxLength) {
-        var char = content[offset];
+    walker.currentNode = scanNode;
+    while (text.length < maxLength && scanNode) {
+      var content = scanNode.textContent;
+      var start = scanOffset;
+      while (scanOffset < content.length && text.length < maxLength) {
+        var char = content[scanOffset];
         if (this.isScanBoundary(char)) break;
         text += char;
-        offset++;
+        scanOffset++;
       }
-      if (offset > start) ranges.push({ node: node, start: start, end: offset });
-      if (offset < content.length || text.length >= maxLength) break;
-      node = walker.nextNode();
-      offset = 0;
+      if (scanOffset > start) ranges.push({ node: scanNode, start: start, end: scanOffset });
+      if (scanOffset < content.length || text.length >= maxLength) break;
+      scanNode = walker.nextNode();
+      scanOffset = 0;
     }
     if (!text) return null;
-    this.selection = { startNode: hit.node, startOffset: hit.offset, ranges: ranges, text: text };
-    var sentenceContext = this.getSentenceContext(hit.node, hit.offset);
-    var normalizedOffset = window.hoshiReader ? this.getNormalizedOffset(hit.node, hit.offset) : null;
+    this.selection = { startNode: startNode, startOffset: startOffset, ranges: ranges, text: text };
+    var sentenceContext = this.getSentenceContext(startNode, startOffset);
+    var normalizedOffset = window.hoshiReader ? this.getNormalizedOffset(startNode, startOffset) : null;
     var normalizedLength = null;
     if (normalizedOffset !== null && ranges.length > 0) {
       var lastRange = ranges[ranges.length - 1];
