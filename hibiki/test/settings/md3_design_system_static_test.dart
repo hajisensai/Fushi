@@ -1042,18 +1042,36 @@ void main() {
       'Widget buildDictionaryTileTrailing(',
       'PopupMenuItem<VoidCallback> buildPopupItem({',
     );
+    final String managerPopupItem = _functionSource(
+      dictionaryManager,
+      'PopupMenuItem<VoidCallback> buildPopupItem({',
+      '  // HBK-AUDIT-111:',
+    );
 
     expect(managerEmptyState, contains('HibikiCard('));
     expect(managerEmptyState, isNot(contains('DecoratedBox(')));
     expect(managerEmptyState, isNot(contains('surfaceContainerLowest')));
     expect(managerTile, contains('HibikiCard('));
     expect(managerTile, contains('HibikiListItem('));
+    expect(managerTile, contains('HibikiDesignTokens.of(context)'));
+    expect(managerTile, contains('tokens.spacing'));
     expect(managerTile, isNot(contains('DecoratedBox(')));
     expect(managerTile, isNot(contains('surfaceContainerLowest')));
+    expect(
+      managerTile,
+      isNot(
+          contains('const EdgeInsets.symmetric(horizontal: 12, vertical: 8)')),
+    );
+    expect(managerTile, isNot(contains('const SizedBox(width: 8)')));
+    expect(managerTile, isNot(contains('const SizedBox(height: 8)')));
     expect(managerMenu, contains('HibikiOverflowMenu<VoidCallback>('));
     expect(managerMenu, isNot(contains('PopupMenuButton')));
     expect(managerMenu, isNot(contains('Material(')));
     expect(managerMenu, isNot(contains('BorderRadius.circular(24)')));
+    expect(managerPopupItem, contains('HibikiDesignTokens.of(context)'));
+    expect(managerPopupItem, contains('tokens.spacing'));
+    expect(managerPopupItem, isNot(contains('const SizedBox(width: 8)')));
+    expect(managerMenu, isNot(contains('const SizedBox(width: 8)')));
 
     final String entrySource = File(
       'lib/src/pages/implementations/dictionary_entry_page.dart',

@@ -321,6 +321,7 @@ class _DictionaryDialogPageState extends BasePageState {
         return StatefulBuilder(
           builder: (ctx, setDialogState) {
             final int downloadCount = checked.length;
+            final HibikiDesignTokens tokens = HibikiDesignTokens.of(ctx);
             return DictionaryDownloadSelectionDialogFrame(
               content: SizedBox(
                 width: double.maxFinite,
@@ -350,7 +351,7 @@ class _DictionaryDialogPageState extends BasePageState {
                         });
                       },
                     ),
-                    const SizedBox(height: 8),
+                    SizedBox(height: tokens.spacing.gap),
                     for (final cat in DictionaryCategory.values)
                       if (byCategory.containsKey(cat))
                         _buildCategoryTile(
@@ -416,11 +417,12 @@ class _DictionaryDialogPageState extends BasePageState {
     required ValueChanged<String> onChanged,
   }) {
     const Map<String, String> langs = DictionaryDownloader.availableLanguages;
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return Row(
       children: [
         Text(t.dict_download_language,
             style: TextStyle(fontSize: textTheme.bodyMedium?.fontSize)),
-        const SizedBox(width: 8),
+        SizedBox(width: tokens.spacing.gap),
         Expanded(
           child: DropdownMenu<String>(
             expandedInsets: EdgeInsets.zero,
@@ -449,7 +451,7 @@ class _DictionaryDialogPageState extends BasePageState {
   }) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: EdgeInsets.only(bottom: tokens.spacing.gap),
       child: HibikiCard(
         padding: EdgeInsets.zero,
         child: Column(
@@ -496,9 +498,13 @@ class _DictionaryDialogPageState extends BasePageState {
     final int idx = recIndex[rec] ?? -1;
     final bool installed = installedIndices.contains(idx);
     final bool selected = checked.contains(idx);
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return HibikiListItem(
       minHeight: 68,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: EdgeInsets.symmetric(
+        horizontal: tokens.spacing.rowHorizontal - tokens.spacing.gap / 2,
+        vertical: tokens.spacing.gap,
+      ),
       selected: selected,
       onTap: () => onChanged(idx, !selected),
       leading: Checkbox(
@@ -773,17 +779,21 @@ class _DictionaryDialogPageState extends BasePageState {
         appModel.dictionaryFormats[dictionary.formatKey]!;
     final bool enabled = !dictionary.isHidden(appModel.targetLanguage);
     final ColorScheme scheme = theme.colorScheme;
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final Color titleColor =
         enabled ? scheme.onSurface : scheme.onSurfaceVariant;
     final Color subtitleColor = scheme.onSurfaceVariant;
     return Padding(
       key: key,
-      padding: EdgeInsets.only(bottom: isLast ? 0 : 10),
+      padding: EdgeInsets.only(bottom: isLast ? 0 : tokens.spacing.rowVertical),
       child: HibikiCard(
         padding: EdgeInsets.zero,
         child: HibikiListItem(
           minHeight: 70,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          padding: EdgeInsets.symmetric(
+            horizontal: tokens.spacing.rowHorizontal - tokens.spacing.gap / 2,
+            vertical: tokens.spacing.rowVertical,
+          ),
           leading: ReorderableDragStartListener(
             index: index,
             child: Icon(
@@ -808,7 +818,7 @@ class _DictionaryDialogPageState extends BasePageState {
             mainAxisSize: MainAxisSize.min,
             children: [
               buildDictionaryTileTrailing(dictionary),
-              const SizedBox(width: 4),
+              SizedBox(width: tokens.spacing.gap / 2),
               adaptiveSwitch(
                 context: context,
                 value: enabled,
@@ -906,6 +916,7 @@ class _DictionaryDialogPageState extends BasePageState {
     IconData? icon,
     Color? color,
   }) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return PopupMenuItem<VoidCallback>(
       value: action,
       child: Row(
@@ -916,7 +927,7 @@ class _DictionaryDialogPageState extends BasePageState {
               size: textTheme.bodyMedium?.fontSize,
               color: color,
             ),
-          if (icon != null) const SizedBox(width: 8),
+          if (icon != null) SizedBox(width: tokens.spacing.gap),
           Text(
             label,
             style: TextStyle(color: color),
