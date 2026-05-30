@@ -194,6 +194,13 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   final FocusScopeNode _chromeFocusScope =
       FocusScopeNode(debugLabel: 'readerChrome');
 
+  // The dictionary popup's Flutter header toolbar (favourite / replay / play /
+  // play-from-cue) is a sibling layer of the popup WebView content, reached by
+  // Up at the top of the content — exactly like the reader bottom bar relative
+  // to the reading content. Its own scope so focus can move into it and back.
+  final FocusScopeNode _popupHeaderScope =
+      FocusScopeNode(debugLabel: 'popupHeader');
+
   // Which surface holds the char-level reading cursor (a focused character inside
   // a WebView's DOM, driven from JS via [ReaderCaretScripts]). The cursor lives
   // on the reader content, or — after a lookup — on the top dictionary popup, and
@@ -920,6 +927,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     _readingTimeTracker?.dispose();
     _focusNode.dispose();
     _chromeFocusScope.dispose();
+    _popupHeaderScope.dispose();
     _playStreamSub?.cancel();
     _seekStreamSub?.cancel();
     _skipNextSub?.cancel();
@@ -3276,6 +3284,23 @@ window.flutter_inappwebview.callHandler('spreadReady');
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
 
+    // The popup header toolbar (sibling of the popup content). Down returns to
+    // the content caret; B/Escape dismiss the popup (ascend out of it). Left/
+    // Right/Enter fall through to the framework so the buttons traverse and
+    // activate natively (the global HibikiFocusRing rings the focused one).
+    if (_popupHeaderScope.hasFocus) {
+      if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+        _returnToPopupContent();
+        return KeyEventResult.handled;
+      }
+      if (event.logicalKey == LogicalKeyboardKey.gameButtonB ||
+          event.logicalKey == LogicalKeyboardKey.escape) {
+        unawaited(_caretDismissOrExit()); // popup surface → dismissTopPopup()
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    }
+
     // While a bottom-chrome control holds focus, let directional traversal and
     // Activate flow through to the framework (gamepad/keyboard operation of the
     // chrome buttons) instead of resolving reader page-turn shortcuts. B/Escape
@@ -3365,6 +3390,20 @@ window.flutter_inappwebview.callHandler('spreadReady');
   /// Returns true when consumed; false lets the GamepadService apply its
   /// directional-focus / activate / global-back fallback.
   bool _handleGamepadButton(GamepadButton button) {
+    // Popup header toolbar (sibling of the popup content). Down → content caret;
+    // B → dismiss the popup. Left/Right/A fall through (return false) so the
+    // GamepadService traverses the buttons and activates the focused one.
+    if (_popupHeaderScope.hasFocus) {
+      if (button == GamepadButton.dpadDown) {
+        _returnToPopupContent();
+        return true;
+      }
+      if (button == GamepadButton.b) {
+        unawaited(_caretDismissOrExit());
+        return true;
+      }
+      return false;
+    }
     if (_chromeFocusScope.hasFocus) {
       // D-pad Up moves focus back to the reading content (sibling layer above).
       if (button == GamepadButton.dpadUp) {
@@ -3561,6 +3600,36 @@ window.flutter_inappwebview.callHandler('spreadReady');
     }
   }
 
+  /// Move focus from the popup content caret UP to the Flutter header toolbar
+  /// (sibling layer). Called when the caret is at the top of the popup content
+  /// and Up is pressed. Hides the popup caret ring so the header's standard
+  /// HibikiFocusRing is the single indicator. No-op (focus stays on content) if
+  /// the header has no focusable button.
+  void _focusPopupHeader() {
+    if (!mounted || _caretSurface != CaretSurface.popup) return;
+    // The header toolbar exists only on the bottom popup (index 0, see
+    // base_source_page._buildPopupLayer). When the caret is on a deeper
+    // sub-lookup popup there is no header for it — don't grab the (occluded)
+    // bottom popup's toolbar; Up at the top simply blocks.
+    if (topVisiblePopupIndex != 0) return;
+    _popupHeaderScope.requestFocus();
+    if (_popupHeaderScope.nextFocus()) {
+      topPopupState
+          ?.caretExit(); // header owns focus → hide the popup caret ring
+    } else {
+      _focusNode.requestFocus(); // nothing focusable in the header — undo
+    }
+  }
+
+  /// Move focus from the header toolbar back DOWN to the popup content caret
+  /// (sibling layer). Re-shows the popup caret ring at its remembered position.
+  void _returnToPopupContent() {
+    if (!mounted || _caretSurface != CaretSurface.popup) return;
+    _focusNode.requestFocus(); // take Flutter focus off the header buttons
+    unawaited(
+        topPopupState?.caretEnter()); // re-show + re-place the popup caret
+  }
+
   /// A deeper popup layer was dismissed (B/Esc or swipe) but a parent popup
   /// remains: keep the cursor on the popup surface, follow it to the new top, and
   /// re-measure its ring.
@@ -3581,7 +3650,16 @@ window.flutter_inappwebview.callHandler('spreadReady');
   /// internally and only ever returns 'moved'/'blocked'.
   Future<void> _caretMove(String physicalDir) async {
     if (_caretSurface == CaretSurface.popup) {
-      await topPopupState?.caretMove(physicalDir);
+      final String status =
+          await topPopupState?.caretMove(physicalDir) ?? 'blocked';
+      if (!mounted) return;
+      // At the top edge of the popup content, an upward move is blocked. Treat
+      // that as crossing into the sibling header layer (like reader content →
+      // bottom bar, but upward). Only 'up' promotes; left/right/down that block
+      // simply stay put.
+      if (status == 'blocked' && physicalDir == 'up') {
+        _focusPopupHeader();
+      }
       return;
     }
     if (_controller == null) return;
@@ -4904,17 +4982,22 @@ window.flutter_inappwebview.callHandler('spreadReady');
       );
     }
 
+    // Own focus scope so the gamepad can move focus into the header (Up from the
+    // popup content top) and the buttons traverse with Left/Right. The node is a
+    // State field (stable across rebuilds); only the index==0 popup gets a
+    // header, so exactly one widget ever uses this node at a time.
     if (!hasAudio) {
-      return Builder(
-        builder: (context) => buildRow(Theme.of(context)),
+      return FocusScope(
+        node: _popupHeaderScope,
+        child: Builder(builder: (context) => buildRow(Theme.of(context))),
       );
     }
-
-    return ListenableBuilder(
-      listenable: ctrl,
-      builder: (context, _) {
-        return buildRow(Theme.of(context));
-      },
+    return FocusScope(
+      node: _popupHeaderScope,
+      child: ListenableBuilder(
+        listenable: ctrl,
+        builder: (context, _) => buildRow(Theme.of(context)),
+      ),
     );
   }
 
