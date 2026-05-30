@@ -183,9 +183,15 @@ class _ScopeSectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 8, 4),
+      padding: EdgeInsets.fromLTRB(
+        tokens.spacing.page,
+        tokens.spacing.page,
+        tokens.spacing.gap,
+        tokens.spacing.gap / 2,
+      ),
       child: Row(
         children: <Widget>[
           Expanded(

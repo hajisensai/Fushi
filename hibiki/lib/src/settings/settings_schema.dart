@@ -902,6 +902,7 @@ class _LocalAudioDatabasesRowState extends State<_LocalAudioDatabasesRow> {
 
   @override
   Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final List<LocalAudioDbEntry> dbs = appModel.localAudioDbs;
     return AdaptiveSettingsRow(
       title: t.local_audio_add_db,
@@ -912,7 +913,7 @@ class _LocalAudioDatabasesRowState extends State<_LocalAudioDatabasesRow> {
         children: <Widget>[
           if (dbs.isEmpty)
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
+              padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
               child: Text(
                 t.local_audio_not_set,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -922,7 +923,7 @@ class _LocalAudioDatabasesRowState extends State<_LocalAudioDatabasesRow> {
             ),
           for (int index = 0; index < dbs.length; index++)
             _buildDbTile(dbs, index),
-          const SizedBox(height: 4),
+          SizedBox(height: tokens.spacing.gap / 2),
           TextButton.icon(
             icon: Icon(
               Icons.add,

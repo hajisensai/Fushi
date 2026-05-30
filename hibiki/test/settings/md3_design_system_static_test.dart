@@ -1338,6 +1338,24 @@ void main() {
     expect(tileSource, isNot(contains('child: Chip(')));
   });
 
+  test('shortcut section headers use shared MD3 spacing tokens', () {
+    final String source = File(
+      'lib/src/pages/implementations/shortcut_settings_page.dart',
+    ).readAsStringSync();
+    final String headerSource = _sectionSource(
+      source,
+      'class _ScopeSectionHeader',
+      'class _ActionTile',
+    );
+
+    expect(headerSource, contains('HibikiDesignTokens.of(context)'));
+    expect(headerSource, contains('tokens.spacing'));
+    expect(
+      headerSource,
+      isNot(contains('const EdgeInsets.fromLTRB(16, 16, 8, 4)')),
+    );
+  });
+
   test('shortcut binding editor uses shared MD3 tag chips', () {
     final String source = File(
       'lib/src/pages/implementations/shortcut_settings_page.dart',
