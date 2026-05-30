@@ -117,6 +117,9 @@ void main() {
       String? surface() => ReaderHibikiPage.debugCaretSurface?.call();
 
       // ── Enter the reader cursor (the CaretSurface machine's entry) ───
+      // (Reveals a Windows-only gap: the reader's setup IIFE throws on WebView2
+      // at the pagination shell, so window.hoshiReader — and the caret — are not
+      // defined there; this leg passes on Android where the caret is verified.)
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       await tester.pump(const Duration(milliseconds: 500));
       expect(surface(), 'reader', reason: 'Enter enters the reader cursor');
@@ -166,18 +169,67 @@ void main() {
           reason: 'popup selection.js exposes selectFromPosition (caret lookup '
               'reuses it)');
 
-      // NOTE (verification scope): the cursor-TRANSFER end-to-end leg (the popup
-      // taking the cursor, in-popup navigation, B/Esc walking back) cannot be
-      // exercised under `flutter drive`: the popup's own renderer (popup.js,
-      // ~70KB) does not execute via its <script src> on the asset file:// URL in
-      // this environment, so the popup renders no .glossary-content for the
-      // cursor to land on, and writes via the popup's JS bridge are unreliable
-      // here. dict-media.js + selection.js + our injected caret DO load (asserted
-      // above). The transfer state machine is pure Dart (CaretSurface in
-      // reader_hibiki_page.dart) and is covered by code review; the caret's own
-      // DOM behaviour is proven on a real WebView by reader_caret_test.dart.
-
       await takeScreenshot(binding, 'popup_caret_injected');
+
+      // ── Full transfer — only where the popup's own renderer runs ─────
+      // On Windows desktop the popup inlines its scripts (popup.js executes), so
+      // it renders .glossary-content and the cursor auto-transfers onto it; we
+      // then verify in-popup navigation and B/Esc walking back to the reader.
+      // Under `flutter drive` on Android that renderer (popup.js, ~70KB) does NOT
+      // execute via its <script src> on the asset file:// URL — dict-media.js +
+      // selection.js + our injected caret DO load (asserted above) but
+      // window.renderPopup is undefined, so the popup renders nothing for the
+      // cursor to land on and this leg is skipped there. The transfer state
+      // machine (CaretSurface) is pure Dart and is also covered by code review;
+      // the caret's DOM behaviour is proven on a real WebView by
+      // reader_caret_test.dart.
+      final String renderType =
+          (await popupEval('typeof window.renderPopup')).toString();
+      if (renderType == 'function') {
+        bool transferred = false;
+        for (int i = 0; i < 60; i++) {
+          await tester.pump(const Duration(milliseconds: 300));
+          if (surface() == 'popup') {
+            transferred = true;
+            break;
+          }
+        }
+        final String d = 'surface=${surface()} '
+            "gc=${await popupEval("document.querySelectorAll('.glossary-content').length")} "
+            'active=${await popupEval('!!(window.hoshiCaret&&window.hoshiCaret.isActive())')}';
+        expect(transferred, isTrue,
+            reason: 'cursor must auto-transfer onto the rendered popup [$d]');
+        expect(
+            (await popupEval(
+                    '!!(window.hoshiCaret&&window.hoshiCaret.isActive())')) ==
+                true,
+            isTrue,
+            reason: 'popup cursor active after transfer [$d]');
+        expect(
+            (await popupEval('window.hoshiCaret.scopeSelector'))?.toString(),
+            '.glossary-content');
+
+        // Arrow keys move the popup cursor; it stays on the popup.
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pump(const Duration(milliseconds: 400));
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pump(const Duration(milliseconds: 400));
+        expect(surface(), 'popup', reason: 'arrows move the popup cursor');
+
+        // Escape walks the cursor back to the reader.
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        bool back = false;
+        for (int i = 0; i < 24; i++) {
+          await tester.pump(const Duration(milliseconds: 300));
+          if (surface() == 'reader') {
+            back = true;
+            break;
+          }
+        }
+        expect(back, isTrue, reason: 'Escape returns the cursor to the reader');
+        await takeScreenshot(binding, 'popup_caret_full_transfer');
+        debugPrint('[POPUP-CARET] === FULL TRANSFER VERIFIED (rendered popup)');
+      }
 
       // Leave cursor mode cleanly.
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
