@@ -210,7 +210,9 @@ class BackupService {
     Map<String, String> preserved = const <String, String>{};
     if (currentDb.existsSync()) {
       preserved = await _readDeviceLocalPrefs(dbDirectory);
-      await sidecar.writeAsString(jsonEncode(preserved));
+      if (preserved.isNotEmpty) {
+        await sidecar.writeAsString(jsonEncode(preserved));
+      }
       await currentDb.copy('$dbPath.pre-restore.bak');
     }
 
@@ -256,8 +258,9 @@ class BackupService {
   /// [SyncRepository.deviceLocalPrefKeys]) from the DB in [dbDirectory].
   static Future<Map<String, String>> _readDeviceLocalPrefs(
       String dbDirectory) async {
-    final db = HibikiDatabase(dbDirectory);
+    HibikiDatabase? db;
     try {
+      db = HibikiDatabase(dbDirectory);
       final all = await db.getAllPrefs();
       final out = <String, String>{};
       for (final key in SyncRepository.deviceLocalPrefKeys) {
@@ -265,8 +268,15 @@ class BackupService {
         if (value != null) out[key] = value;
       }
       return out;
+    } catch (e, st) {
+      // Current DB unreadable/corrupt: nothing to preserve. Import the backup
+      // as-is rather than aborting — a broken local DB shouldn't block restore.
+      debugPrint('BackupService._readDeviceLocalPrefs failed: $e\n$st');
+      return const <String, String>{};
     } finally {
-      await db.close();
+      try {
+        await db?.close();
+      } catch (_) {/* db may have failed to open */}
     }
   }
 
