@@ -123,6 +123,31 @@ void main() {
     expect(combined, contains('showSettingsProgressDialog('));
   });
 
+  test('settings renderers use shared MD3 spacing tokens', () {
+    final String materialSource = readNormalizedSource(
+        'lib/src/settings/material_settings_renderer.dart');
+    final String cupertinoSource = readNormalizedSource(
+        'lib/src/settings/cupertino_settings_renderer.dart');
+
+    expect(materialSource, contains('HibikiDesignTokens.of(context)'));
+    expect(cupertinoSource, contains('HibikiDesignTokens.of('));
+
+    for (final String source in <String>[materialSource, cupertinoSource]) {
+      expect(source, isNot(contains('EdgeInsets.fromLTRB(16, 8, 16, 16)')));
+      expect(
+          source, isNot(contains('const EdgeInsets.symmetric(horizontal: 16')));
+      expect(
+          source, isNot(contains('const EdgeInsets.symmetric(horizontal: 8')));
+      expect(source, isNot(contains('const EdgeInsets.only(bottom: 12)')));
+      expect(source, isNot(contains('const EdgeInsets.only(bottom: 6)')));
+      expect(
+          source, isNot(contains('const EdgeInsets.fromLTRB(12, 6, 12, 0)')));
+      expect(source, isNot(contains('const EdgeInsets.only(right: 12)')));
+      expect(source, isNot(contains('const EdgeInsets.only(top: 8)')));
+      expect(source, isNot(contains('const SizedBox(height: 4)')));
+    }
+  });
+
   test('legacy adaptive alert factory is removed', () {
     final String source =
         readNormalizedSource('lib/src/utils/adaptive/adaptive_widgets.dart');

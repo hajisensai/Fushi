@@ -10,8 +10,6 @@ import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 class MaterialSettingsRenderer implements SettingsRenderer {
   const MaterialSettingsRenderer();
 
-  static const EdgeInsets _pagePadding = EdgeInsets.fromLTRB(16, 8, 16, 16);
-
   @override
   Widget buildHomePage({
     required SettingsContext settingsContext,
@@ -42,17 +40,18 @@ class MaterialSettingsRenderer implements SettingsRenderer {
     bool pushRoutes = true,
   }) {
     final BuildContext context = settingsContext.context;
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final EdgeInsets mediaPadding = MediaQuery.of(context).padding;
     return ListView.separated(
       padding: EdgeInsets.fromLTRB(
-        _pagePadding.left,
-        _pagePadding.top,
-        _pagePadding.right,
-        _pagePadding.bottom + mediaPadding.bottom,
+        tokens.spacing.page,
+        tokens.spacing.gap,
+        tokens.spacing.page,
+        tokens.spacing.page + mediaPadding.bottom,
       ),
       itemCount: destinations.length,
       separatorBuilder: (BuildContext context, int index) =>
-          const SizedBox(height: 4),
+          SizedBox(height: tokens.spacing.gap / 2),
       itemBuilder: (BuildContext context, int index) {
         final SettingsDestination destination = destinations[index];
         final bool selected = destination.id == selectedDestinationId;
@@ -100,6 +99,7 @@ class MaterialSettingsRenderer implements SettingsRenderer {
     bool shrinkWrap = false,
   }) {
     final BuildContext context = settingsContext.context;
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final List<SettingsSection> sections =
         destination.visibleSections(settingsContext);
     final EdgeInsets mediaPadding = MediaQuery.of(context).padding;
@@ -107,10 +107,10 @@ class MaterialSettingsRenderer implements SettingsRenderer {
       controller: scrollController,
       shrinkWrap: shrinkWrap,
       padding: EdgeInsets.fromLTRB(
-        _pagePadding.left,
-        _pagePadding.top,
-        _pagePadding.right,
-        _pagePadding.bottom + mediaPadding.bottom,
+        tokens.spacing.page,
+        tokens.spacing.gap,
+        tokens.spacing.page,
+        tokens.spacing.page + mediaPadding.bottom,
       ),
       itemCount: sections.length,
       itemBuilder: (BuildContext context, int index) {
@@ -137,13 +137,15 @@ class _MaterialSettingsSection extends StatelessWidget {
     if (section.items.isEmpty) return const SizedBox.shrink();
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: EdgeInsets.only(
+        bottom: tokens.spacing.gap + tokens.spacing.gap / 2,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           if (section.title != null && section.title!.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.only(bottom: 6),
+              padding: EdgeInsets.only(bottom: tokens.spacing.gap * 0.75),
               child: Text(
                 section.title!,
                 style: tokens.type.sectionLabel,
@@ -165,7 +167,12 @@ class _MaterialSettingsSection extends StatelessWidget {
           ),
           if (section.footer != null && section.footer!.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+              padding: EdgeInsets.fromLTRB(
+                tokens.spacing.gap + tokens.spacing.gap / 2,
+                tokens.spacing.gap * 0.75,
+                tokens.spacing.gap + tokens.spacing.gap / 2,
+                0,
+              ),
               child: Text(
                 section.footer!,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -367,6 +374,9 @@ class _MaterialSettingsItem extends StatelessWidget {
     bool controlBelow = false,
     bool showIcon = false,
   }) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(
+      settingsContext.context,
+    );
     final Widget label = _SettingsLabel(
       title: item.title,
       subtitle: item.subtitle,
@@ -374,7 +384,9 @@ class _MaterialSettingsItem extends StatelessWidget {
     final Widget? leading = !showIcon || item.icon == null
         ? null
         : Padding(
-            padding: const EdgeInsets.only(right: 12),
+            padding: EdgeInsets.only(
+              right: tokens.spacing.gap + tokens.spacing.gap / 2,
+            ),
             child: Icon(item.icon, size: 22),
           );
     if (controlBelow) {
@@ -385,7 +397,7 @@ class _MaterialSettingsItem extends StatelessWidget {
         subtitle: trailing == null
             ? null
             : Padding(
-                padding: const EdgeInsets.only(top: 8),
+                padding: EdgeInsets.only(top: tokens.spacing.gap),
                 child: Align(alignment: Alignment.centerLeft, child: trailing),
               ),
         subtitleMaxLines: 10,

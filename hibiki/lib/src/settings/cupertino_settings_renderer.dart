@@ -4,6 +4,7 @@ import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
 import 'package:hibiki/src/settings/settings_detail_page.dart';
 import 'package:hibiki/src/settings/settings_renderer.dart';
+import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 
 class CupertinoSettingsRenderer implements SettingsRenderer {
   const CupertinoSettingsRenderer();
@@ -204,13 +205,15 @@ class _CupertinoSettingsItem extends StatelessWidget {
   }
 
   Widget _segmented(SettingsSegmentedItem<dynamic> segmented) {
+    final HibikiDesignTokens tokens =
+        HibikiDesignTokens.of(settingsContext.context);
     final Object selected = segmented.selected(settingsContext) as Object;
     final Widget control = CupertinoSlidingSegmentedControl<Object>(
       groupValue: selected,
       children: <Object, Widget>{
         for (final SettingsSegmentOption<dynamic> option in segmented.options)
           option.value as Object: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
+            padding: EdgeInsets.symmetric(horizontal: tokens.spacing.gap),
             child: option.icon == null
                 ? Text(option.label)
                 : Icon(option.icon, size: 16),
@@ -299,6 +302,8 @@ class _CupertinoSettingsItem extends StatelessWidget {
     bool controlBelow = false,
     bool showIcon = false,
   }) {
+    final HibikiDesignTokens tokens =
+        HibikiDesignTokens.of(settingsContext.context);
     final Widget? leading = showIcon && item.icon != null
         ? Icon(item.icon,
             color: CupertinoTheme.of(settingsContext.context).primaryColor)
@@ -311,8 +316,11 @@ class _CupertinoSettingsItem extends StatelessWidget {
         onTap: onTap,
         trailing: null,
         additionalInfo: null,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      ).withBelow(trailing);
+        padding: EdgeInsets.symmetric(
+          horizontal: tokens.spacing.rowHorizontal,
+          vertical: tokens.spacing.rowVertical,
+        ),
+      ).withBelow(trailing, tokens);
     }
     return CupertinoListTile(
       leading: leading,
@@ -325,14 +333,19 @@ class _CupertinoSettingsItem extends StatelessWidget {
 }
 
 extension _CupertinoTileBelow on CupertinoListTile {
-  Widget withBelow(Widget? child) {
+  Widget withBelow(Widget? child, HibikiDesignTokens tokens) {
     if (child == null) return this;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         this,
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          padding: EdgeInsets.fromLTRB(
+            tokens.spacing.rowHorizontal,
+            0,
+            tokens.spacing.rowHorizontal,
+            tokens.spacing.gap + tokens.spacing.gap / 2,
+          ),
           child: Align(alignment: Alignment.centerLeft, child: child),
         ),
       ],
