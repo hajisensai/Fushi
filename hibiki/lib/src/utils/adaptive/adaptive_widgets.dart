@@ -15,9 +15,14 @@ Widget adaptiveAlertDialog({
   EdgeInsets? insetPadding,
 }) {
   if (isCupertinoPlatform(context)) {
+    // CupertinoAlertDialog 不提供 Material 祖先；content 里若含 Material 组件
+    // (如 HibikiTextField) 会抛 "No Material widget found"。包一层透明 Material
+    // 只提供祖先、不改外观，使所有 Cupertino 对话框的 Material 内容可用。
     return CupertinoAlertDialog(
       title: title,
-      content: content,
+      content: content == null
+          ? null
+          : Material(type: MaterialType.transparency, child: content),
       actions: actions ?? const [],
     );
   }
