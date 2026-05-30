@@ -86,6 +86,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return BookImportDialogFrame(
       title: Text(t.srt_import),
       content: _buildForm(),
@@ -104,15 +105,15 @@ class _BookImportDialogState extends State<BookImportDialog> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     SizedBox(
-                      width: 16,
-                      height: 16,
+                      width: tokens.spacing.gap * 2,
+                      height: tokens.spacing.gap * 2,
                       child: adaptiveIndicator(
                         context: context,
                         strokeWidth: 2,
-                        color: Theme.of(context).colorScheme.primary,
+                        color: tokens.surfaces.primary,
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    SizedBox(width: tokens.spacing.gap),
                     Text(t.dialog_importing),
                   ],
                 )
@@ -123,17 +124,16 @@ class _BookImportDialogState extends State<BookImportDialog> {
   }
 
   Widget _buildForm() {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
           t.srt_import_hint_epub_or_srt,
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
+          style: tokens.type.metadata,
         ),
-        const SizedBox(height: 8),
+        SizedBox(height: tokens.spacing.gap),
         AdaptiveSettingsSection(
           children: [
             _epubRow(),
@@ -142,18 +142,18 @@ class _BookImportDialogState extends State<BookImportDialog> {
             _coverRow(),
           ],
         ),
-        const SizedBox(height: 12),
+        SizedBox(height: tokens.spacing.rowVertical),
         HibikiTextField(
           controller: _titleCtrl,
           labelText: t.srt_import_title_hint,
         ),
-        const SizedBox(height: 8),
+        SizedBox(height: tokens.spacing.gap),
         HibikiTextField(
           controller: _authorCtrl,
           labelText: t.srt_import_author_hint,
         ),
         if (_willRunMatcher) ...[
-          const SizedBox(height: 12),
+          SizedBox(height: tokens.spacing.rowVertical),
           AdaptiveSettingsSection(
             children: [
               AdaptiveSettingsSwitchRow(
@@ -167,12 +167,12 @@ class _BookImportDialogState extends State<BookImportDialog> {
             ],
           ),
           if (!_autoWindow) ...[
-            const SizedBox(height: 8),
+            SizedBox(height: tokens.spacing.gap),
             SasayakiWindowSlider(
               value: _searchWindow,
               onChanged: (v) => setState(() => _searchWindow = v),
             ),
-            const SizedBox(height: 8),
+            SizedBox(height: tokens.spacing.gap),
             SasayakiThresholdSlider(
               value: _similarityThreshold,
               onChanged: (v) => setState(() => _similarityThreshold = v),
@@ -180,19 +180,17 @@ class _BookImportDialogState extends State<BookImportDialog> {
           ],
         ],
         if (_importing) ...[
-          const SizedBox(height: 16),
+          SizedBox(height: tokens.spacing.card),
           ValueListenableBuilder<double>(
             valueListenable: _progress,
             builder: (_, value, __) => LinearProgressIndicator(value: value),
           ),
-          const SizedBox(height: 4),
+          SizedBox(height: tokens.spacing.gap / 2),
           ValueListenableBuilder<String>(
             valueListenable: _progressMsg,
             builder: (_, msg, __) => Text(
               msg,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
+              style: tokens.type.metadata,
             ),
           ),
         ],

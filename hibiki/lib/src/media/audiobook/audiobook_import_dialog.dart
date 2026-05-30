@@ -131,11 +131,12 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     if (!_existingLoaded) {
       return AudiobookImportDialogFrame(
         title: widget.audioOnly ? t.audio_import : t.audiobook_import,
         content: SizedBox(
-          height: 64,
+          height: tokens.spacing.card * 4,
           child: Center(child: adaptiveIndicator(context: context)),
         ),
         actions: const <Widget>[],
@@ -167,15 +168,15 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           SizedBox(
-                            width: 16,
-                            height: 16,
+                            width: tokens.spacing.gap * 2,
+                            height: tokens.spacing.gap * 2,
                             child: adaptiveIndicator(
                               context: context,
                               strokeWidth: 2,
-                              color: Theme.of(context).colorScheme.primary,
+                              color: tokens.surfaces.primary,
                             ),
                           ),
-                          const SizedBox(width: 8),
+                          SizedBox(width: tokens.spacing.gap),
                           Text(t.dialog_importing),
                         ],
                       )
@@ -204,6 +205,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
   }
 
   Widget _buildAttachedView(Audiobook ab) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final String audioLabel =
         (ab.audioPaths != null && ab.audioPaths!.isNotEmpty)
             ? t.srt_import_files_selected(n: ab.audioPaths!.length)
@@ -238,11 +240,11 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
               ],
             ),
             if (healthRow != null) ...[
-              const SizedBox(height: 8),
+              SizedBox(height: tokens.spacing.gap),
               healthRow,
             ],
             if (canReMatch) ...[
-              const SizedBox(height: 12),
+              SizedBox(height: tokens.spacing.rowVertical),
               Align(
                 alignment: Alignment.centerLeft,
                 child: TextButton.icon(
@@ -279,6 +281,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
   /// 已附加有声书时展示匹配状态。notApplicable / unrun → 不渲染（无信息可看）。
   /// reason 来自 matcher（如 "123/140 cues matched"），直接展示给用户。
   Widget? _buildHealthRow(AudiobookHealth health) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     IconData icon;
     Color color;
     String label;
@@ -309,13 +312,11 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
     return Row(
       children: [
         Icon(icon, size: 16, color: color),
-        const SizedBox(width: 8),
+        SizedBox(width: tokens.spacing.gap),
         Expanded(
           child: Text(
             label,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: color,
-                ),
+            style: tokens.type.metadata.copyWith(color: color),
             maxLines: 3,
             overflow: TextOverflow.ellipsis,
           ),
@@ -325,6 +326,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
   }
 
   Widget _buildImportForm() {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -336,33 +338,31 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
           ],
         ),
         if (!widget.audioOnly && _willRunMatcher) ...[
-          const SizedBox(height: 12),
+          SizedBox(height: tokens.spacing.rowVertical),
           SasayakiWindowSlider(
             value: _searchWindow,
             onChanged: (v) => setState(() => _searchWindow = v),
             onAutoTap: _canAutoProbe ? _handleAutoProbe : null,
             autoBusy: _autoProbing,
           ),
-          const SizedBox(height: 8),
+          SizedBox(height: tokens.spacing.gap),
           SasayakiThresholdSlider(
             value: _similarityThreshold,
             onChanged: (v) => setState(() => _similarityThreshold = v),
           ),
         ],
         if (_importing) ...[
-          const SizedBox(height: 16),
+          SizedBox(height: tokens.spacing.card),
           ValueListenableBuilder<double>(
             valueListenable: _progress,
             builder: (_, value, __) => LinearProgressIndicator(value: value),
           ),
-          const SizedBox(height: 4),
+          SizedBox(height: tokens.spacing.gap / 2),
           ValueListenableBuilder<String>(
             valueListenable: _progressMsg,
             builder: (_, msg, __) => Text(
               msg,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
+              style: tokens.type.metadata,
             ),
           ),
         ],

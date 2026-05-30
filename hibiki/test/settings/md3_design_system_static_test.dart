@@ -810,6 +810,50 @@ void main() {
     }
   });
 
+  test('audiobook import progress chrome uses shared MD3 tokens', () {
+    final String bookImportSource = File(
+      'lib/src/media/audiobook/book_import_dialog.dart',
+    ).readAsStringSync();
+    final String audiobookImportSource = File(
+      'lib/src/media/audiobook/audiobook_import_dialog.dart',
+    ).readAsStringSync();
+    final String bookImportFlow = _functionSource(
+      bookImportSource,
+      'Widget build(BuildContext context)',
+      '  Widget _epubRow()',
+    );
+    final String audiobookImportFlow = _functionSource(
+      audiobookImportSource,
+      'Widget build(BuildContext context)',
+      '  Widget _audioSourceRow()',
+    );
+
+    for (final String section in <String>[
+      bookImportFlow,
+      audiobookImportFlow,
+    ]) {
+      expect(section, contains('HibikiDesignTokens.of(context)'));
+      expect(section, contains('tokens.spacing'));
+      expect(section, contains('tokens.type.metadata'));
+      expect(section, contains('tokens.surfaces.primary'));
+      expect(section, isNot(contains('Theme.of(context).textTheme.bodySmall')));
+      expect(
+        section,
+        isNot(contains('Theme.of(context).colorScheme.primary')),
+      );
+      expect(
+        section,
+        isNot(contains('Theme.of(context).colorScheme.onSurfaceVariant')),
+      );
+      expect(section, isNot(contains('const SizedBox(width: 8)')));
+      expect(section, isNot(contains('const SizedBox(height: 4)')));
+      expect(section, isNot(contains('const SizedBox(height: 8)')));
+      expect(section, isNot(contains('const SizedBox(height: 12)')));
+      expect(section, isNot(contains('const SizedBox(height: 16)')));
+      expect(section, isNot(contains('height: 64')));
+    }
+  });
+
   test('anki integration dialogs use shared MD3 dialog chrome', () {
     final String source =
         File('lib/src/models/anki_integration.dart').readAsStringSync();
