@@ -62,23 +62,36 @@ Future<int> seedReaderBook(
   return bookId;
 }
 
-/// Import the dictionary the runner pushed to /sdcard/Download/test_dict.zip
+/// Import the dictionary the runner pushed into the app's external-files dir
 /// (copied into the app cache first, as the importer reads from app storage).
-/// Returns true if the import succeeded; false (with a debug log) if the
-/// fixture is absent or the import threw — callers decide whether that is fatal.
+/// The app reads its own external-files dir with no permission;
+/// /sdcard/Download is a legacy fallback but is blocked for the app uid under
+/// scoped storage. Returns true if the import succeeded; false (with a debug
+/// log) if the fixture is absent or the import threw.
 Future<bool> seedDictionary(WidgetTester tester) async {
   final AppModel appModel = await _readyAppModel(tester);
 
   final Directory cacheDir = await getTemporaryDirectory();
   final File dictFile = File('${cacheDir.path}/test_dict.zip');
   if (!dictFile.existsSync()) {
-    final File sdcardFile = File('/sdcard/Download/test_dict.zip');
-    if (!sdcardFile.existsSync()) {
-      debugPrint('[fixture] No dictionary fixture at '
-          '/sdcard/Download/test_dict.zip — skipping dictionary seed');
+    final Directory? extDir = await getExternalStorageDirectory();
+    final List<File> candidates = <File>[
+      if (extDir != null) File('${extDir.path}/test_dict.zip'),
+      File('/sdcard/Download/test_dict.zip'),
+    ];
+    File? src;
+    for (final File f in candidates) {
+      if (f.existsSync()) {
+        src = f;
+        break;
+      }
+    }
+    if (src == null) {
+      debugPrint('[fixture] No dictionary fixture in the app external-files '
+          'dir or /sdcard/Download — skipping dictionary seed');
       return false;
     }
-    sdcardFile.copySync(dictFile.path);
+    src.copySync(dictFile.path);
   }
 
   final ValueNotifier<String> progress = ValueNotifier<String>('');

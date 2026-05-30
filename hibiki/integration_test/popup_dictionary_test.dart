@@ -58,14 +58,27 @@ void main() {
       final File dictFile = File('${cacheDir.path}/test_dict.zip');
 
       if (!dictFile.existsSync()) {
-        final File sdcardFile = File('/sdcard/Download/test_dict.zip');
-        if (sdcardFile.existsSync()) {
-          sdcardFile.copySync(dictFile.path);
-          debugPrint('[popup-test] Copied dict from sdcard to cache');
+        // The runner pushes the fixture into the app's own external-files dir
+        // (readable with no permission); /sdcard/Download is a legacy fallback
+        // but is blocked for the app uid under scoped storage.
+        final Directory? extDir = await getExternalStorageDirectory();
+        final List<File> candidates = <File>[
+          if (extDir != null) File('${extDir.path}/test_dict.zip'),
+          File('/sdcard/Download/test_dict.zip'),
+        ];
+        File? src;
+        for (final File f in candidates) {
+          if (f.existsSync()) {
+            src = f;
+            break;
+          }
+        }
+        if (src != null) {
+          src.copySync(dictFile.path);
+          debugPrint('[popup-test] Copied dict from ${src.path} to cache');
         } else {
-          fail('Dictionary fixture not found. '
-              'Push a Yomitan zip first:\n'
-              '  adb push "path/to/dict.zip" /sdcard/Download/test_dict.zip');
+          fail('Dictionary fixture not found. The runner pushes it to '
+              "the app's external-files dir; run via ci/integration-test.sh.");
         }
       }
 

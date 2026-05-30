@@ -111,6 +111,14 @@ fi
 echo ">>> Pre-installing Hibiki with runtime permissions granted..."
 MSYS_NO_PATHCONV=1 $ADBD install -r -g "$APK_REL"
 
+# All-Files-Access (MANAGE_EXTERNAL_STORAGE) is an appop, NOT a runtime
+# permission, so `install -g` does not grant it. Without it the app process gets
+# "Permission denied" reading the dictionary fixture the runner pushed to
+# /sdcard/Download (scoped storage blocks the app uid even though adb's shell
+# uid could write there). Grant the appop so popup_dictionary / reader_dictionary
+# can read the fixture; the grant survives flutter drive's -r reinstall.
+MSYS_NO_PATHCONV=1 $ADBD shell appops set "$PKG" MANAGE_EXTERNAL_STORAGE allow >/dev/null 2>&1 || true
+
 # ── Provision external prerequisites (best effort; failures only affect the
 #    targets that need them, reported in the summary). ──
 ANKI_OK=false
@@ -133,9 +141,17 @@ if [ -z "$DICT_ZIP" ] || [ ! -f "$DICT_ZIP" ]; then
     DICT_ZIP="$(find "$DICT_DIR" -maxdepth 1 -name '*.zip' 2>/dev/null | head -1)"
 fi
 if [ -n "$DICT_ZIP" ] && [ -f "$DICT_ZIP" ]; then
-  echo ">>> Pushing dictionary fixture ($(basename "$DICT_ZIP")) to /sdcard/Download/test_dict.zip..."
+  # Push into the app's OWN external-files dir, which the app process reads with
+  # NO permission (getExternalStorageDirectory()). /sdcard/Download is blocked
+  # for the app uid under scoped storage even though adb's shell uid can write
+  # there, which is why the dict tests previously failed with "Permission
+  # denied" (the app — not the shell — opens the file). The app must already be
+  # installed (it is: pre-install ran above) so the dir exists.
+  DICT_DEST="/sdcard/Android/data/$PKG/files/test_dict.zip"
+  echo ">>> Pushing dictionary fixture ($(basename "$DICT_ZIP")) to $DICT_DEST..."
+  MSYS_NO_PATHCONV=1 $ADBD shell mkdir -p "/sdcard/Android/data/$PKG/files" >/dev/null 2>&1 || true
   # Push from a Windows-form source path (see win_path) under MSYS_NO_PATHCONV.
-  if MSYS_NO_PATHCONV=1 $ADBD push "$(win_path "$DICT_ZIP")" /sdcard/Download/test_dict.zip >/dev/null; then
+  if MSYS_NO_PATHCONV=1 $ADBD push "$(win_path "$DICT_ZIP")" "$DICT_DEST" >/dev/null; then
     DICT_OK=true
   fi
 else
