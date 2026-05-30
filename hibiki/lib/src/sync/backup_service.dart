@@ -243,8 +243,7 @@ class BackupService {
     try {
       final raw = await sidecar.readAsString();
       final decoded = jsonDecode(raw) as Map<String, dynamic>;
-      final prefs =
-          decoded.map((k, v) => MapEntry(k, v as String));
+      final prefs = decoded.map((k, v) => MapEntry(k, v as String));
       if (prefs.isNotEmpty) await _applyPreservedConfig(dbDirectory, prefs);
     } catch (e, st) {
       // Corrupt sidecar: drop it rather than blocking startup forever.

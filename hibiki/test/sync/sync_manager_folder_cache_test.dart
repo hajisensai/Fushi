@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
@@ -27,7 +26,8 @@ class _AlwaysRetryableBackend implements SyncBackend {
   void clearCache() => clearCacheCalls++;
 
   @override
-  void restoreCache({String? rootFolderId, Map<String, String>? titleToFolderId}) {}
+  void restoreCache(
+      {String? rootFolderId, Map<String, String>? titleToFolderId}) {}
 
   @override
   String? get cachedRootFolderId => null;

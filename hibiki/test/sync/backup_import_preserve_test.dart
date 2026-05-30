@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/sync/backup_service.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
@@ -83,8 +82,7 @@ void main() {
     // Sidecar + pre-restore copy cleaned up (no disk leak):
     expect(File('${currentDir.path}/hibiki.db.sync-preserve.json').existsSync(),
         isFalse);
-    expect(
-        File('${currentDir.path}/hibiki.db.pre-restore.bak').existsSync(),
+    expect(File('${currentDir.path}/hibiki.db.pre-restore.bak').existsSync(),
         isFalse);
   });
 
@@ -114,7 +112,7 @@ void main() {
     expect(await repo.getBackendType(), SyncBackendType.dropbox);
     expect(await repo.getWebDavPassword(), 'recovered');
     expect(await db2.getPref('sync_root_folder_id'), isNull); // cache cleared
-    expect(File('${dir.path}/hibiki.db.sync-preserve.json').existsSync(),
-        isFalse);
+    expect(
+        File('${dir.path}/hibiki.db.sync-preserve.json').existsSync(), isFalse);
   });
 }

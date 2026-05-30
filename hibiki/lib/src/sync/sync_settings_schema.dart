@@ -931,8 +931,7 @@ class _BackendSelectorWidgetState extends State<_BackendSelectorWidget> {
           await repo.setBackendType(value);
           await repo.clearFolderCache();
           // The TLS flag is FTP-only; don't let it linger after switching away.
-          if (previous == SyncBackendType.ftp &&
-              value != SyncBackendType.ftp) {
+          if (previous == SyncBackendType.ftp && value != SyncBackendType.ftp) {
             await repo.setFtpTlsEnabled(false);
           }
           widget.settingsContext.refresh();
