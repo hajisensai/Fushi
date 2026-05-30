@@ -1259,6 +1259,23 @@ void main() {
     expect(importDialog, isNot(contains('adaptiveAlertDialog(')));
   });
 
+  test('tag filter sheet uses shared MD3 spacing tokens', () {
+    final String source = File(
+      'lib/src/pages/implementations/tag_filter_sheet.dart',
+    ).readAsStringSync();
+
+    expect(source, contains('HibikiDesignTokens.of(context)'));
+    expect(source, contains('tokens.spacing'));
+    expect(
+      source,
+      isNot(contains('const EdgeInsets.symmetric(horizontal: 16)')),
+    );
+    expect(source, isNot(contains('padding: const EdgeInsets.all(32)')));
+    expect(source, isNot(contains('padding: const EdgeInsets.all(24)')));
+    expect(source, isNot(contains('spacing: 8')));
+    expect(source, isNot(contains('runSpacing: 4')));
+  });
+
   test('app icon custom confirmation uses shared MD3 dialog chrome', () {
     final String source = File(
       'lib/src/pages/implementations/miscellaneous_settings_page.dart',

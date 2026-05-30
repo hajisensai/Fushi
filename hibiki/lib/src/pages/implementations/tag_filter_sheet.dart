@@ -1,9 +1,10 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/tag_management_page.dart';
 import 'package:hibiki/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 
@@ -84,6 +85,7 @@ class _TagFilterSheetState extends ConsumerState<TagFilterSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final selectedIds = ref.watch(selectedTagIdsProvider);
     final bool hasScrollableTags = _tags != null && _tags!.isNotEmpty;
 
@@ -92,7 +94,7 @@ class _TagFilterSheetState extends ConsumerState<TagFilterSheet> {
       leadingIcon: Icons.sell_outlined,
       scrollable: hasScrollableTags,
       bodyPadding: hasScrollableTags
-          ? const EdgeInsets.symmetric(horizontal: 16)
+          ? EdgeInsets.symmetric(horizontal: tokens.spacing.page)
           : EdgeInsets.zero,
       body: _buildBody(context, selectedIds),
       footer: Row(
@@ -123,17 +125,18 @@ class _TagFilterSheetState extends ConsumerState<TagFilterSheet> {
   }
 
   Widget _buildBody(BuildContext context, Set<int> selectedIds) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final ThemeData theme = Theme.of(context);
     final List<BookTagRow>? tags = _tags;
     if (tags == null) {
       return Padding(
-        padding: const EdgeInsets.all(32),
+        padding: EdgeInsets.all(tokens.spacing.page + tokens.spacing.card),
         child: Center(child: adaptiveIndicator(context: context)),
       );
     }
     if (tags.isEmpty) {
       return Padding(
-        padding: const EdgeInsets.all(24),
+        padding: EdgeInsets.all(tokens.spacing.card + tokens.spacing.gap),
         child: Text(
           t.tag_no_tags_hint,
           textAlign: TextAlign.center,
@@ -144,8 +147,8 @@ class _TagFilterSheetState extends ConsumerState<TagFilterSheet> {
       );
     }
     return Wrap(
-      spacing: 8,
-      runSpacing: 4,
+      spacing: tokens.spacing.gap,
+      runSpacing: tokens.spacing.gap / 2,
       children: tags.map((tag) {
         final isSelected = selectedIds.contains(tag.id);
         return HibikiSelectableChip(
