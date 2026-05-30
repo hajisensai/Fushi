@@ -63,6 +63,9 @@ qa-*.png
 qa-*-summary.txt
 popup_*.png
 debug_screenshot.png
+# Root-level UI appearance/comparison debug screenshots (root-anchored so it
+# never shadows a real asset named hibiki_*.png in a subdir)
+/hibiki_*.png
 
 # Claude agent worktrees
 .claude/worktrees/
