@@ -361,6 +361,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
           overrideFillColor: appModel.overrideDictionaryColor,
           onDismiss: () => _dismissPopupAt(index),
           onTapOutside: clearDictionaryResult,
+          onRendered: () => onDictionaryPopupRendered(index),
           headerWidget: index == 0 ? buildPopupAudioControls() : null,
           overlayWidget: isTop ? buildDictionaryLoading() : null,
           onTextSelected: (text, localRect) async {
@@ -431,6 +432,29 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   /// Called when all dictionary popups are dismissed (stack becomes empty).
   /// Override in subclasses to hook post-dismiss logic.
   void onAllPopupsDismissed() {}
+
+  /// Called after the popup at [index] finishes rendering. Override (reader) to
+  /// hand the char-level cursor to the freshly shown top popup.
+  void onDictionaryPopupRendered(int index) {}
+
+  /// The currently top-most VISIBLE popup's WebView state — the surface the
+  /// char-level cursor drives when it lives in the dictionary. Null when no
+  /// popup is visible.
+  @protected
+  DictionaryPopupWebViewState? get topPopupState =>
+      _lastVisiblePopup(_popupStack.value)?.webViewKey.currentState;
+
+  /// Index of the top-most visible popup in the stack, or -1.
+  @protected
+  int get topVisiblePopupIndex => _lastVisiblePopupIndex(_popupStack.value);
+
+  /// Dismiss only the top-most visible popup (one layer), leaving any parent
+  /// popup in place — used by the cursor's B/Esc "back one layer".
+  @protected
+  void dismissTopPopup() {
+    final int index = _lastVisiblePopupIndex(_popupStack.value);
+    if (index >= 0) _dismissPopupAt(index);
+  }
 
   Rect _calculatePopupPosition(Rect sel, Size screen) {
     return calcPopupPosition(

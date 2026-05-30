@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_webview_media.dart';
+import 'package:hibiki/src/reader/reader_caret_scripts.dart';
 import 'package:hibiki/utils.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -23,6 +24,7 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
     this.onMineEntry,
     this.onDuplicateCheck,
     this.onScrolledToBottom,
+    this.onRendered,
   });
 
   final DictionarySearchResult result;
@@ -33,6 +35,10 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
   final Future<bool> Function(String expression, String reading)?
       onDuplicateCheck;
   final VoidCallback? onScrolledToBottom;
+
+  /// Fired after the popup content finishes rendering (the `popupRendered` JS
+  /// handler). Used by the reader to hand the char-level cursor to this popup.
+  final VoidCallback? onRendered;
 
   @override
   ConsumerState<DictionaryPopupWebView> createState() =>
@@ -80,6 +86,63 @@ class DictionaryPopupWebViewState
     _controller?.evaluateJavascript(
       source: 'window.hoshiSelection.clearSelection()',
     );
+  }
+
+  // ── Char-level reading cursor (driven from the reader page) ──────────
+  // The same window.hoshiCaret as the reader, injected on load and scoped to the
+  // definition body. The popup has no chrome insets (the WebView IS the popup)
+  // and no hoshiReader, so the cursor runs in horizontal + continuous-scroll
+  // mode automatically. The reader reaches these via the popup's webViewKey.
+
+  String _caretRingColorCss() {
+    final Color accent = Theme.of(context).colorScheme.primary;
+    return 'rgba(${(accent.r * 255).round()},${(accent.g * 255).round()},'
+        '${(accent.b * 255).round()},0.98)';
+  }
+
+  Future<void> caretInit() async {
+    if (!mounted) return;
+    await _controller?.evaluateJavascript(
+      source: ReaderCaretScripts.initInvocation(
+        color: _caretRingColorCss(),
+        insetTop: 0,
+        insetBottom: 0,
+        scopeSelector: '.glossary-content',
+      ),
+    );
+  }
+
+  Future<String> caretEnter() async {
+    final Object? raw = await _controller?.evaluateJavascript(
+        source: ReaderCaretScripts.enterInvocation());
+    return ReaderCaretScripts.moveStatus(raw);
+  }
+
+  void caretExit() {
+    _controller?.evaluateJavascript(
+        source: ReaderCaretScripts.exitInvocation());
+  }
+
+  Future<String> caretMove(String dir) async {
+    final Object? raw = await _controller?.evaluateJavascript(
+        source: ReaderCaretScripts.moveInvocation(dir));
+    return ReaderCaretScripts.moveStatus(raw);
+  }
+
+  Future<String> caretReanchor(String edge) async {
+    final Object? raw = await _controller?.evaluateJavascript(
+        source: ReaderCaretScripts.reanchorInvocation(edge));
+    return ReaderCaretScripts.moveStatus(raw);
+  }
+
+  Future<void> caretLookup() async {
+    await _controller?.evaluateJavascript(
+        source: ReaderCaretScripts.lookupInvocation());
+  }
+
+  Future<void> caretRefresh() async {
+    await _controller?.evaluateJavascript(
+        source: ReaderCaretScripts.refreshInvocation());
   }
 
   Future<String?> _resolveWordAudio(String expression, String reading) async {
@@ -340,7 +403,9 @@ class DictionaryPopupWebViewState
 
         controller.addJavaScriptHandler(
           handlerName: 'popupRendered',
-          callback: (_) {},
+          callback: (_) {
+            widget.onRendered?.call();
+          },
         );
 
         controller.addJavaScriptHandler(
@@ -487,6 +552,10 @@ class DictionaryPopupWebViewState
       },
       onLoadStop: (controller, url) {
         _ready = true;
+        // Inject the same char caret as the reader (selection.js, a head script,
+        // has already defined window.hoshiSelection by load-stop). It stays
+        // dormant until the reader hands it the cursor on lookup.
+        controller.evaluateJavascript(source: ReaderCaretScripts.source());
         _pushResults();
       },
       onConsoleMessage: (controller, consoleMessage) {
