@@ -36,6 +36,8 @@ import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/src/models/dictionary_repository.dart';
 import 'package:hibiki/src/models/media_history_repository.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
+import 'package:hibiki/src/sync/backup_service.dart';
+import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/models/theme_notifier.dart' as theme_notifier;
 import 'package:hibiki/src/models/theme_notifier.dart' show ThemeNotifier;
 import 'package:hibiki/src/models/audio_controller.dart';
@@ -992,6 +994,13 @@ class AppModel with ChangeNotifier {
       debugPrint('[Hibiki] init: Drift database');
       _database = HibikiDatabase(_databaseDirectory.path);
       _databaseOpened = true;
+
+      // Sync-pref maintenance, before any repository loads them or sync runs:
+      // 1) recover device-local sync config if a previous backup import crashed
+      //    after overwriting the DB but before re-applying the preserved keys;
+      // 2) fold the deprecated "SMB"(WebDAV-gateway) config into WebDAV.
+      await BackupService.recoverPendingImport(_databaseDirectory.path);
+      await SyncRepository(_database).migrateSmbToWebDav();
 
       /// Prepare all repositories (objects created first, then loaded in
       /// parallel to avoid serial await chains).

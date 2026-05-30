@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:archive/archive.dart';
 import 'package:flutter/foundation.dart';
+import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
 
@@ -65,6 +66,11 @@ class BackupService {
   static const String _dbName = 'hibiki.db';
   static const String _metaName = 'backup_meta.json';
   static const int _maxImportBytes = 512 * 1024 * 1024; // 512 MB
+
+  /// Sidecar file holding this device's sync config across an import. Written
+  /// BEFORE the destructive DB overwrite so a crash mid-import is recoverable
+  /// (a startup sweep re-applies it). Deleted once the import completes.
+  static const String _preserveSidecar = 'hibiki.db.sync-preserve.json';
 
   String get _dbPath => p.join(_dbDirectory, _dbName);
 
@@ -176,6 +182,16 @@ class BackupService {
   ///
   /// This is a static method because the database must already be closed
   /// before calling — the caller is responsible for closing the DB first.
+  ///
+  /// Backups are exported with all sync secrets stripped ([_stripCredentials]),
+  /// so a naive whole-file swap would wipe THIS device's sync config (backend
+  /// selection + credentials + server config) — even when re-importing your own
+  /// backup. To prevent that, device-local sync prefs
+  /// ([SyncRepository.deviceLocalPrefKeys]) are read from the current DB and
+  /// re-applied to the imported DB. Folder cache and behavior flags are
+  /// intentionally NOT preserved — they come from the backup / rebuild on next
+  /// sync. The preserved keys are flushed to a sidecar BEFORE the overwrite so a
+  /// mid-import crash is recoverable via [recoverPendingImport].
   static Future<void> importBackupFiles({
     required String dbDirectory,
     required String zipPath,
@@ -186,16 +202,100 @@ class BackupService {
     final dbFile = archive.findFile(_dbName);
     if (dbFile == null) throw StateError('No $_dbName in backup archive');
 
+    final sidecar = File(p.join(dbDirectory, _preserveSidecar));
     final currentDb = File(dbPath);
+
+    // 1) Read device-local sync config from the current DB and persist it to
+    //    the sidecar BEFORE anything destructive happens (crash safety).
+    Map<String, String> preserved = const <String, String>{};
     if (currentDb.existsSync()) {
+      preserved = await _readDeviceLocalPrefs(dbDirectory);
+      await sidecar.writeAsString(jsonEncode(preserved));
       await currentDb.copy('$dbPath.pre-restore.bak');
     }
+
     final walFile = File('$dbPath-wal');
     if (walFile.existsSync()) await walFile.delete();
     final shmFile = File('$dbPath-shm');
     if (shmFile.existsSync()) await shmFile.delete();
 
+    // 2) Overwrite with the backup DB bytes.
     await currentDb.writeAsBytes(dbFile.content as List<int>);
+
+    // 3) Re-apply the preserved device-local config to the imported DB.
+    if (preserved.isNotEmpty) {
+      await _applyPreservedConfig(dbDirectory, preserved);
+    }
+
+    // 4) Success: drop the sidecar and the pre-restore copy (no disk leak).
+    await _safeDelete(sidecar.path);
+    await _safeDelete('$dbPath.pre-restore.bak');
+  }
+
+  /// Re-apply preserved sync config if a previous import crashed after the
+  /// overwrite but before re-applying (sidecar still present). Called once at
+  /// startup, before any sync code reads preferences. No-op when no sidecar.
+  static Future<void> recoverPendingImport(String dbDirectory) async {
+    final sidecar = File(p.join(dbDirectory, _preserveSidecar));
+    if (!sidecar.existsSync()) return;
+    try {
+      final raw = await sidecar.readAsString();
+      final decoded = jsonDecode(raw) as Map<String, dynamic>;
+      final prefs =
+          decoded.map((k, v) => MapEntry(k, v as String));
+      if (prefs.isNotEmpty) await _applyPreservedConfig(dbDirectory, prefs);
+    } catch (e, st) {
+      // Corrupt sidecar: drop it rather than blocking startup forever.
+      debugPrint('BackupService.recoverPendingImport failed: $e\n$st');
+    }
+    await _safeDelete(sidecar.path);
+    await _safeDelete(p.join(dbDirectory, '$_dbName.pre-restore.bak'));
+  }
+
+  /// Reads the device-local sync prefs (only the keys in
+  /// [SyncRepository.deviceLocalPrefKeys]) from the DB in [dbDirectory].
+  static Future<Map<String, String>> _readDeviceLocalPrefs(
+      String dbDirectory) async {
+    final db = HibikiDatabase(dbDirectory);
+    try {
+      final all = await db.getAllPrefs();
+      final out = <String, String>{};
+      for (final key in SyncRepository.deviceLocalPrefKeys) {
+        final value = all[key];
+        if (value != null) out[key] = value;
+      }
+      return out;
+    } finally {
+      await db.close();
+    }
+  }
+
+  /// Writes the preserved device-local [prefs] into the imported DB, clears the
+  /// stale (backup-origin) folder cache so the next sync rebuilds it against the
+  /// preserved backend account, then durably flushes.
+  static Future<void> _applyPreservedConfig(
+      String dbDirectory, Map<String, String> prefs) async {
+    final db = HibikiDatabase(dbDirectory);
+    try {
+      for (final entry in prefs.entries) {
+        await db.setPref(entry.key, entry.value);
+      }
+      // The imported DB carries the BACKUP's folder cache (title → source
+      // account folder ids), which is wrong for the preserved local backend.
+      await SyncRepository(db).clearFolderCache();
+      await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
+    } finally {
+      await db.close();
+    }
+  }
+
+  static Future<void> _safeDelete(String path) async {
+    try {
+      final f = File(path);
+      if (f.existsSync()) await f.delete();
+    } catch (_) {
+      // Best-effort cleanup; a leftover sidecar/bak is harmless and swept later.
+    }
   }
 
   String defaultFilename() {
