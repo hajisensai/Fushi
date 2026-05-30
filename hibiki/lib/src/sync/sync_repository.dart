@@ -153,6 +153,50 @@ class SyncRepository {
   Future<void> setBackendType(SyncBackendType type) =>
       _setString(_keyBackendType, type.name);
 
+  /// 一次性迁移：把已废弃的 "SMB"(实为 WebDAV 网关) 配置并入 WebDAV，并删除全部
+  /// `sync_smb_*` 死键。仅当对应 WebDAV 字段为空时才搬运，绝不覆盖用户已有的
+  /// WebDAV 配置。幂等：无 SMB 数据时是 no-op。
+  ///
+  /// 用原始 key 字符串而非常量，因为 SMB 的 key 常量已随后端一并删除；迁移代码
+  /// 必须独立于已删除的符号。
+  Future<void> migrateSmbToWebDav() async {
+    const String kSmbUrl = 'sync_smb_webdav_url';
+    const String kSmbUser = 'sync_smb_username';
+    const String kSmbPass = 'sync_smb_password';
+
+    final String? backend = await _getStringOrNull(_keyBackendType);
+    if (backend == 'smb') {
+      final String? smbUrl = await _getStringOrNull(kSmbUrl);
+      final String? smbUser = await _getStringOrNull(kSmbUser);
+      // 密码以 base64 存储，原样搬运（不解码再编码，避免双重编码）。
+      final String? smbPass = await _getStringOrNull(kSmbPass);
+
+      if (smbUrl != null && (await _getStringOrNull(_keyWebDavUrl)) == null) {
+        await _setString(_keyWebDavUrl, smbUrl);
+      }
+      if (smbUser != null &&
+          (await _getStringOrNull(_keyWebDavUsername)) == null) {
+        await _setString(_keyWebDavUsername, smbUser);
+      }
+      if (smbPass != null &&
+          (await _getStringOrNull(_keyWebDavPassword)) == null) {
+        await _setString(_keyWebDavPassword, smbPass);
+      }
+      await _setString(_keyBackendType, SyncBackendType.webDav.name);
+    }
+
+    for (final String k in const <String>[
+      kSmbUrl,
+      kSmbUser,
+      kSmbPass,
+      'sync_smb_host',
+      'sync_smb_share',
+      'sync_smb_domain',
+    ]) {
+      await _deleteKey(k);
+    }
+  }
+
   // ── Content sync ──────────────────────────────────────────────────
 
   Future<bool> isSyncContentEnabled() =>
