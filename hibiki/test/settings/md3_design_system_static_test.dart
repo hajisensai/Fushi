@@ -854,6 +854,51 @@ void main() {
     }
   });
 
+  test('sasayaki rematch controls use shared MD3 tokens', () {
+    final String source = File('lib/src/media/audiobook/sasayaki_rematch.dart')
+        .readAsStringSync();
+    final String rematchSheet = _functionSource(
+      source,
+      'Widget buildSheetBody(BuildContext sheetCtx, StateSetter setSheet)',
+      '  static Future<int?> runAutoProbe({',
+    );
+    final String windowSlider = _sectionSource(
+      source,
+      'class SasayakiWindowSlider extends StatelessWidget',
+      'class SasayakiThresholdSlider extends StatelessWidget',
+    );
+    final String thresholdSlider = _sectionSource(
+      source,
+      'class SasayakiThresholdSlider extends StatelessWidget',
+      source.length,
+    );
+
+    for (final String section in <String>[
+      rematchSheet,
+      windowSlider,
+      thresholdSlider,
+    ]) {
+      expect(section, contains('HibikiDesignTokens.of('));
+      expect(section, contains('tokens.spacing'));
+      expect(section, isNot(contains('const SizedBox(height: 4)')));
+      expect(section, isNot(contains('const SizedBox(height: 8)')));
+      expect(section, isNot(contains('const SizedBox(height: 12)')));
+      expect(section, isNot(contains('const SizedBox(width: 8)')));
+      expect(
+        section,
+        isNot(contains('const EdgeInsets.symmetric(horizontal: 20)')),
+      );
+    }
+    for (final String slider in <String>[windowSlider, thresholdSlider]) {
+      expect(slider, contains('tokens.type.listTitle'));
+      expect(slider, contains('tokens.type.metadata'));
+      expect(slider, isNot(contains('final ThemeData theme')));
+      expect(slider, isNot(contains('theme.textTheme.titleMedium')));
+      expect(slider, isNot(contains('theme.textTheme.bodySmall')));
+      expect(slider, isNot(contains('theme.colorScheme.onSurfaceVariant')));
+    }
+  });
+
   test('anki integration dialogs use shared MD3 dialog chrome', () {
     final String source =
         File('lib/src/models/anki_integration.dart').readAsStringSync();
