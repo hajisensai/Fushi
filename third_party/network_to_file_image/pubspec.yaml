@@ -1,0 +1,19 @@
+name: network_to_file_image
+description: Opens a local image file, if it exists there. If it doesn't, fetches the image from the network and then saves to the local file for next time.
+version: 4.0.1
+# author: Marcelo Glasberg <marcglasberg@gmail.com>
+homepage: https://github.com/marcglasberg/network_to_file_image
+
+environment:
+  sdk: '>=2.13.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+flutter:
+

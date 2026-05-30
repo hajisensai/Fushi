@@ -212,10 +212,9 @@ packages:
   carousel_slider:
     dependency: "direct main"
     description:
-      name: carousel_slider
-      sha256: "9c695cc963bf1d04a47bd6021f68befce8970bcd61d24938e1fb0918cf5d9c42"
-      url: "https://pub.dev"
-    source: hosted
+      path: "../third_party/carousel_slider"
+      relative: true
+    source: path
     version: "4.2.1"
   change_notifier_builder:
     dependency: "direct main"
@@ -498,12 +497,11 @@ packages:
     source: hosted
     version: "2.2.0"
   fading_edge_scrollview:
-    dependency: transitive
+    dependency: "direct overridden"
     description:
-      name: fading_edge_scrollview
-      sha256: c25c2231652ce774cc31824d0112f11f653881f43d7f5302c05af11942052031
-      url: "https://pub.dev"
-    source: hosted
+      path: "../third_party/fading_edge_scrollview"
+      relative: true
+    source: path
     version: "3.0.0"
   fake_async:
     dependency: transitive
@@ -1344,10 +1342,9 @@ packages:
   network_to_file_image:
     dependency: "direct main"
     description:
-      name: network_to_file_image
-      sha256: "47528730539abf61ea9b5edf30fe2803b5f8212b2049e1a6cb3b564acadc46dc"
-      url: "https://pub.dev"
-    source: hosted
+      path: "../third_party/network_to_file_image"
+      relative: true
+    source: path
     version: "4.0.1"
   octo_image:
     dependency: transitive

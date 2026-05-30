@@ -131,6 +131,20 @@ dependency_overrides:
   # with a Dart-only no-op so no native ActivityAware plugin is registered.
   gamepads_android:
     path: ../packages/gamepads_android_stub
+  # Vendored third-party packages carrying Flutter 3.x API-compat patches that
+  # are not published on pub.dev. Previously these lived only as hand-edits in
+  # each dev's pub-cache, so a clean checkout failed to build (e.g. on iOS):
+  #   network_to_file_image: hashValues→Object.hash, DecoderCallback /
+  #     PaintingBinding.instantiateImageCodec / ImageProvider.load removals.
+  #   carousel_slider: CarouselController name clash with flutter/material.
+  #   fading_edge_scrollview: PageController vs ScrollController type.
+  # Source under third_party/ (SDK upper bound bumped to <4.0.0 for Dart 3).
+  network_to_file_image:
+    path: ../third_party/network_to_file_image
+  carousel_slider:
+    path: ../third_party/carousel_slider
+  fading_edge_scrollview:
+    path: ../third_party/fading_edge_scrollview
 
 dev_dependencies:
   build_runner: ^2.3.3

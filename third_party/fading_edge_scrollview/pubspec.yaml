@@ -1,0 +1,18 @@
+name: fading_edge_scrollview
+description: Package providing FadingEdgeScrollView which allows you to build scrollable views with fading edges
+version: 3.0.0
+homepage: https://github.com/mponkin/fading_edge_scrollview
+
+environment:
+  sdk: '>=2.12.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+flutter:
+
