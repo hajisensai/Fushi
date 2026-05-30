@@ -464,6 +464,44 @@ class SyncRepository {
     await _setString(_keyHibikiClientToken, _encodeSecret(v));
   }
 
+  // ── Device-local key catalog ──────────────────────────────────────
+
+  /// 导入备份时必须保留在本设备、不能被备份覆盖的 preference key：后端选择 +
+  /// 全部凭据/令牌 + 本机服务器配置 + Hibiki 客户端地址/令牌（含旧单地址键）。
+  ///
+  /// 故意排除：
+  /// - 行为开关 `sync_auto_enabled`/`sync_stats_enabled`/`sync_audiobook_enabled`/
+  ///   `sync_content_enabled` —— 当作用户设置，随备份恢复。
+  /// - 内容 `audiobook_pos_*` —— 随备份恢复。
+  /// - folder cache `sync_root_folder_id`/`sync_folder_cache` —— 不还原，下次同步重建。
+  ///
+  /// 这是"哪些 key 属于设备本地"的唯一真相源；备份导入只引用本清单，杜绝两处漂移。
+  static const List<String> deviceLocalPrefKeys = <String>[
+    _keyBackendType,
+    _keyDesktopCredentials,
+    _keyOneDriveToken,
+    _keyDropboxToken,
+    _keyWebDavUrl,
+    _keyWebDavUsername,
+    _keyWebDavPassword,
+    _keyFtpHost,
+    _keyFtpPort,
+    _keyFtpUsername,
+    _keyFtpPassword,
+    _keyFtpUseTls,
+    _keySftpHost,
+    _keySftpPort,
+    _keySftpUsername,
+    _keySftpPassword,
+    _keySftpPrivateKey,
+    _keyServerEnabled,
+    _keyServerPort,
+    _keyServerPassword,
+    _keyHibikiClientUrls,
+    _keyHibikiClientToken,
+    _keyHibikiClientUrl,
+  ];
+
   // ── Helpers ───────────────────────────────────────────────────────
 
   Future<void> _setOrDelete(String key, String? value) async {
