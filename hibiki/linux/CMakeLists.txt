@@ -74,6 +74,14 @@ set_target_properties(${BINARY_NAME}
 # them to the application.
 include(flutter/generated_plugins.cmake)
 
+# === hoshidicts native dictionary engine ===
+# Mirror windows/CMakeLists.txt: the Linux runner did not build/bundle the FFI
+# dictionary engine, so libhoshidicts_ffi.so was absent and dictionary lookups
+# crashed at runtime (DynamicLibrary.open failure). Build it from the shared
+# native/ tree and install it next to the other bundled libs (rpath $ORIGIN/lib).
+set(HOSHIDICTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../native/hoshidicts")
+add_subdirectory("${HOSHIDICTS_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/hoshidicts")
+
 
 # === Installation ===
 # By default, "installing" just makes a relocatable bundle in the build
@@ -105,6 +113,10 @@ foreach(bundled_library ${PLUGIN_BUNDLED_LIBRARIES})
     DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
     COMPONENT Runtime)
 endforeach(bundled_library)
+
+# Install the hoshidicts shared library into the bundle lib dir.
+install(TARGETS hoshidicts_ffi LIBRARY DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+  COMPONENT Runtime)
 
 # Copy the native assets provided by the build.dart from all packages.
 set(NATIVE_ASSETS_DIR "${PROJECT_BUILD_DIR}native_assets/linux/")

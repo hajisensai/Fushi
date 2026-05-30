@@ -1159,5 +1159,6 @@
     "backup_import_preserve_sync_note": "Your sync settings on this device (account and credentials) will be kept.",
     "backup_import_settings_toggle": "Import settings & profiles",
     "backup_import_settings_on_hint": "Full restore: fonts, appearance and profiles come from the backup.",
-    "backup_import_settings_off_hint": "Keep this device's fonts/appearance/profiles; restore only books & reading data."
+    "backup_import_settings_off_hint": "Keep this device's fonts/appearance/profiles; restore only books & reading data.",
+    "reader_unsupported_platform": "The reader is not yet available on this platform."
 }

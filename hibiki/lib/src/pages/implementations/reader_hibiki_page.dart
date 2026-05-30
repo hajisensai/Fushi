@@ -1480,6 +1480,20 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   // ── WebView ──────────────────────────────────────────────────────────
 
   Widget _buildWebView() {
+    if (Platform.isLinux) {
+      // flutter_inappwebview has no Linux backend; the EPUB renderer is
+      // unsupported on Linux for now (see
+      // docs/specs/2026-05-30-five-platform-build.md).
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            t.reader_unsupported_platform,
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
+    }
     return InAppWebView(
       key: const ValueKey<String>('hoshi_webview'),
       contextMenu: ContextMenu(
