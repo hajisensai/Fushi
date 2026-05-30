@@ -6,8 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:hibiki/utils.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:multi_value_listenable_builder/multi_value_listenable_builder.dart';
-// ignore: depend_on_referenced_packages
-import 'package:record_mp3_plus/record_mp3_plus.dart';
+import 'package:record/record.dart';
 import 'package:hibiki/pages.dart';
 
 /// The content of the dialog used for selecting segmented units of a source
@@ -34,6 +33,8 @@ class _AudioRecorderDialogPageState
     extends BasePageState<AudioRecorderDialogPage> {
   static const double _playerTimeWidthThreshold = 280;
 
+  final AudioRecorder _recorder = AudioRecorder();
+
   File? _audioFile;
 
   bool _isRecording = false;
@@ -50,6 +51,7 @@ class _AudioRecorderDialogPageState
     _positionSub?.cancel();
     _playerStateSub?.cancel();
     _audioPlayer.dispose();
+    _recorder.dispose();
     _positionNotifier.dispose();
     _durationNotifier.dispose();
     _playerStateNotifier.dispose();
@@ -375,11 +377,12 @@ class _AudioRecorderDialogPageState
       child: Text(
         t.dialog_stop,
       ),
-      onPressed: () {
-        RecordMp3.instance.stop();
+      onPressed: () async {
+        await _recorder.stop();
         _audioFile = File(widget.filePath);
 
-        initialiseAudio(_audioFile!);
+        await initialiseAudio(_audioFile!);
+        if (!mounted) return;
         setState(() {
           _isRecording = false;
         });
@@ -393,14 +396,25 @@ class _AudioRecorderDialogPageState
       child: Text(t.dialog_record),
       onPressed: () async {
         await _audioPlayer.stop();
+        if (!await _recorder.hasPermission()) {
+          HibikiToast.show(msg: t.no_audio_file);
+          return;
+        }
+        if (!mounted) return;
         setState(() {
           _isRecording = true;
         });
-        RecordMp3.instance.start(widget.filePath, (error) {
+        try {
+          await _recorder.start(
+            const RecordConfig(encoder: AudioEncoder.aacLc),
+            path: widget.filePath,
+          );
+        } on Exception {
+          if (!mounted) return;
           setState(() {
             _isRecording = false;
           });
-        });
+        }
       },
     );
   }
