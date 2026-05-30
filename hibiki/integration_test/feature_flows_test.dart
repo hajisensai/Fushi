@@ -214,8 +214,10 @@ void main() {
           debugPrint('[M3] ✓ F6: Tags option visible in context menu');
         }
 
-        // Dismiss the dialog
-        await tester.tapAt(const Offset(10, 10));
+        // Dismiss the context menu via the keyboard (Escape pops the menu
+        // route) instead of a coordinate tap, so no screen-position guess can
+        // miss the barrier.
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
         await tester.pumpAndSettle();
       }
 
