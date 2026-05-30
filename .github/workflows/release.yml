@@ -76,6 +76,8 @@ jobs:
             echo "::group::Testing $pkg"
             (cd "$pkg" && flutter test)
             echo "::endgroup::"
+          else
+            echo "::warning title=No package tests::$pkg has no test/ dir — its code is only covered transitively by the main-app suite"
           fi
         done
 
