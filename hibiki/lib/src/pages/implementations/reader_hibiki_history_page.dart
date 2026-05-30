@@ -579,6 +579,10 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     final bool selected =
         selectionKey != null && _selectedKeys.contains(selectionKey);
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final Color selectionColor = tokens.surfaces.primary;
+    final double selectionInset = tokens.spacing.gap / 2;
+    final double selectionPadding = tokens.spacing.gap / 4;
+    final double selectionIconSize = tokens.spacing.gap * 1.75;
     final Widget card = HibikiCard(
       key: cardKey,
       padding: EdgeInsets.zero,
@@ -596,26 +600,25 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
             child,
             if (_selectionMode && selectionKey != null)
               Positioned(
-                top: 4,
-                left: 4,
+                top: selectionInset,
+                left: selectionInset,
                 child: IgnorePointer(
                   child: Container(
                     decoration: BoxDecoration(
                       color: selected
-                          ? theme.colorScheme.primary
-                          : theme.colorScheme.surface.withValues(alpha: 0.7),
+                          ? selectionColor
+                          : tokens.surfaces.page.withValues(alpha: 0.7),
                       shape: BoxShape.circle,
                       border: Border.all(
-                        color: selected
-                            ? theme.colorScheme.primary
-                            : theme.colorScheme.outline,
+                        color:
+                            selected ? selectionColor : tokens.surfaces.outline,
                         width: 1.5,
                       ),
                     ),
-                    padding: const EdgeInsets.all(2),
+                    padding: EdgeInsets.all(selectionPadding),
                     child: Icon(
                       Icons.check,
-                      size: 14,
+                      size: selectionIconSize,
                       color: selected
                           ? theme.colorScheme.onPrimary
                           : Colors.transparent,
@@ -628,7 +631,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                 child: IgnorePointer(
                   child: DecoratedBox(
                     decoration: BoxDecoration(
-                      color: theme.colorScheme.primary.withValues(alpha: 0.12),
+                      color: tokens.surfaces.primary.withValues(alpha: 0.12),
                       borderRadius: tokens.radii.cardRadius,
                     ),
                   ),

@@ -603,6 +603,28 @@ void main() {
     }
   });
 
+  test('reader history selection chrome uses shared MD3 tokens', () {
+    final String source = File(
+      'lib/src/pages/implementations/reader_hibiki_history_page.dart',
+    ).readAsStringSync();
+    final String cardShell = _functionSource(
+      source,
+      'Widget _bookCardShell({',
+      'Widget _titleOverlay(String title)',
+    );
+
+    expect(cardShell, contains('HibikiDesignTokens.of(context)'));
+    expect(cardShell, contains('tokens.spacing'));
+    expect(cardShell, contains('tokens.surfaces'));
+    expect(cardShell, isNot(contains('top: 4,')));
+    expect(cardShell, isNot(contains('left: 4,')));
+    expect(cardShell, isNot(contains('EdgeInsets.all(2)')));
+    expect(cardShell, isNot(contains('size: 14')));
+    expect(cardShell, isNot(contains('theme.colorScheme.surface.withValues')));
+    expect(cardShell, isNot(contains('theme.colorScheme.outline')));
+    expect(cardShell, isNot(contains('theme.colorScheme.primary.withValues')));
+  });
+
   test('reader history action dialogs use shared MD3 dialog chrome', () {
     final String source = File(
       'lib/src/pages/implementations/reader_hibiki_history_page.dart',
