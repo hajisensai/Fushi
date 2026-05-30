@@ -145,8 +145,8 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text(t.shortcut_settings_title)),
+    return HibikiPageScaffold(
+      title: t.shortcut_settings_title,
       body: ListView(
         children: <Widget>[
           for (final ShortcutScope scope in ShortcutScope.values) ...[

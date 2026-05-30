@@ -1527,14 +1527,17 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget> {
                               ? t.sync_connection_success
                               : t.sync_connection_failed,
                           style: theme.textTheme.bodySmall?.copyWith(
-                            color: ok ? Colors.green : theme.colorScheme.error,
+                            color: ok
+                                ? theme.colorScheme.primary
+                                : theme.colorScheme.error,
                           ),
                         ),
                   onTap: () => _addOrEditUrl(index: index),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: <Widget>[
-                      Switch.adaptive(
+                      adaptiveSwitch(
+                        context: context,
                         value: u.enabled,
                         onChanged: (_) => _toggleUrl(index),
                       ),

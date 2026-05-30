@@ -397,7 +397,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
               parent: BouncingScrollPhysics(),
             ),
             slivers: [
-              const SliverToBoxAdapter(child: SizedBox(height: 8)),
+              SliverToBoxAdapter(child: SizedBox(height: tokens.spacing.gap)),
               if (srtBooks.isNotEmpty) ...[
                 SliverToBoxAdapter(
                     child: _buildSectionHeader(t.srt_books_section)),
@@ -442,7 +442,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
             parent: BouncingScrollPhysics(),
           ),
           slivers: [
-            const SliverToBoxAdapter(child: SizedBox(height: 8)),
+            SliverToBoxAdapter(child: SizedBox(height: tokens.spacing.gap)),
             if (srtBooks.isNotEmpty) ...[
               SliverToBoxAdapter(
                   child: _buildSectionHeader(t.srt_books_section)),

@@ -172,10 +172,7 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
                       radius: 14,
                     ),
                     title: Text(tag.name),
-                    trailing: Text(
-                      t.tag_book_count(count: count),
-                      style: theme.textTheme.bodySmall,
-                    ),
+                    trailing: Text(t.tag_book_count(count: count)),
                     onTap: () => _editTag(tag),
                   ),
                 );

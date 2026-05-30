@@ -176,6 +176,7 @@ class _MiscellaneousSettingsPageState
   }
 
   Widget _buildIconGrid() {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final presets = [
       _IconOption(
         key: 'default',
@@ -195,8 +196,8 @@ class _MiscellaneousSettingsPageState
     ];
 
     return Wrap(
-      spacing: 12,
-      runSpacing: 12,
+      spacing: tokens.spacing.gap,
+      runSpacing: tokens.spacing.gap,
       children: [
         for (final preset in presets) _buildPresetTile(preset),
         if (_customSupported) _buildCustomTile(),

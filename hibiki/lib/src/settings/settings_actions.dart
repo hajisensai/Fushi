@@ -278,14 +278,16 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
   final AppModel appModel = settingsContext.appModel;
   final Color systemColor =
       appModel.systemPrimaryColor ?? const Color(0xFF1F4959);
+  final HibikiDesignTokens tokens =
+      HibikiDesignTokens.of(settingsContext.context);
 
   return AdaptiveSettingsRow(
     title: t.ttu_theme,
     icon: Icons.color_lens_outlined,
     controlBelow: true,
     trailing: Wrap(
-      spacing: 10,
-      runSpacing: 10,
+      spacing: tokens.spacing.gap,
+      runSpacing: tokens.spacing.gap,
       children: <Widget>[
         _ColorSwatch(
           color: systemColor,

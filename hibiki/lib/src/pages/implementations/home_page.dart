@@ -456,12 +456,15 @@ class _SyncExitWarningDialog extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: <Widget>[
-              TextButton(
+              adaptiveDialogAction(
+                context: context,
                 onPressed: onCancel,
                 child: Text(t.dialog_cancel),
               ),
               SizedBox(width: tokens.spacing.gap),
-              TextButton(
+              adaptiveDialogAction(
+                context: context,
+                isDestructiveAction: true,
                 onPressed: onExit,
                 child: Text(t.dialog_exit),
               ),

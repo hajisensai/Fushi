@@ -471,6 +471,7 @@ class _DownloadOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return Positioned.fill(
       child: Material(
         color: Theme.of(context).colorScheme.scrim.withValues(alpha: 0.54),
@@ -488,19 +489,19 @@ class _DownloadOverlay extends StatelessWidget {
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                 ),
-                const SizedBox(height: 16),
+                SizedBox(height: tokens.spacing.card),
                 ValueListenableBuilder<double>(
                   valueListenable: progress,
                   builder: (_, p, __) => Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       LinearProgressIndicator(value: p > 0 ? p : null),
-                      const SizedBox(height: 8),
+                      SizedBox(height: tokens.spacing.gap),
                       Text('${(p * 100).toStringAsFixed(0)}%'),
                     ],
                   ),
                 ),
-                const SizedBox(height: 16),
+                SizedBox(height: tokens.spacing.card),
                 TextButton(
                   onPressed: onHide,
                   child: Text(t.update_hide),

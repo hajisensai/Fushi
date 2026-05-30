@@ -449,7 +449,7 @@ class _SyncCompareDialogState extends State<_SyncCompareDialog> {
     if (_error != null) {
       body = Center(
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: EdgeInsets.all(tokens.spacing.card),
           child:
               Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
         ),
@@ -689,8 +689,8 @@ class _SyncCompareDialogState extends State<_SyncCompareDialog> {
   }
 
   Widget _choiceRow(String title, SyncChoice choice, ThemeData theme) {
-    return SegmentedButton<SyncChoice>(
-      showSelectedIcon: false,
+    return adaptiveSegmentedButton<SyncChoice>(
+      context: context,
       style: SegmentedButton.styleFrom(
         visualDensity: VisualDensity.compact,
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,

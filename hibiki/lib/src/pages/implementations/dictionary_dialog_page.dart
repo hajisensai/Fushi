@@ -420,8 +420,7 @@ class _DictionaryDialogPageState extends BasePageState {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return Row(
       children: [
-        Text(t.dict_download_language,
-            style: TextStyle(fontSize: textTheme.bodyMedium?.fontSize)),
+        Text(t.dict_download_language, style: tokens.type.controlLabel),
         SizedBox(width: tokens.spacing.gap),
         Expanded(
           child: DropdownMenu<String>(
