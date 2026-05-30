@@ -186,7 +186,10 @@ window.hoshiCaret = {
       // Popup-only: a lone punctuation/symbol glyph (the " | " separator between
       // source links, list bullets, brackets) is not a useful lookup target —
       // don't stop on it, so the cursor never lands on a thin separator sliver.
-      // Words/kanji (the real targets) are unaffected.
+      // Words/kanji (the real targets) are unaffected. `ch` is one UTF-16 unit,
+      // so this only matches BMP punctuation/symbols; a non-BMP symbol's lone
+      // high surrogate (cat. Cs) won't match — fail-safe (it stays stoppable),
+      // and such separators don't occur in dictionary glossaries.
       if (/^[\p{P}\p{S}]$/u.test(ch)) return false;
       // Text inside an interactive element is not its own stop — the element is
       // an atomic stop (the ring covers the whole control, e.g. a <summary>

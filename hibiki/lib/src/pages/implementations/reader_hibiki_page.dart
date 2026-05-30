@@ -3293,6 +3293,13 @@ window.flutter_inappwebview.callHandler('spreadReady');
         _returnToPopupContent();
         return KeyEventResult.handled;
       }
+      // The header is the TOP of the popup — nothing is above it. Consume Up so
+      // focus stays on the header instead of the directional fallback wrapping
+      // to another button (or, in any scope edge case, escaping and stranding
+      // the hidden caret). Mirrors the bottom bar handling its Up explicitly.
+      if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+        return KeyEventResult.handled;
+      }
       if (event.logicalKey == LogicalKeyboardKey.gameButtonB ||
           event.logicalKey == LogicalKeyboardKey.escape) {
         unawaited(_caretDismissOrExit()); // popup surface → dismissTopPopup()
@@ -3396,6 +3403,12 @@ window.flutter_inappwebview.callHandler('spreadReady');
     if (_popupHeaderScope.hasFocus) {
       if (button == GamepadButton.dpadDown) {
         _returnToPopupContent();
+        return true;
+      }
+      // Header is the top of the popup — consume Up so focus stays here (don't
+      // let the directional fallback in gamepadMoveFocusInDirection wrap to
+      // another button or escape the scope and strand the hidden caret).
+      if (button == GamepadButton.dpadUp) {
         return true;
       }
       if (button == GamepadButton.b) {
