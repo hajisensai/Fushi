@@ -54,6 +54,11 @@ app.*.map.json
 ui-*.xml
 *.ldb
 *.png
+# Golden master baselines MUST be tracked or golden tests hard-fail in CI
+# (matchesGoldenFile against a non-existent file). Generated diff artifacts
+# under test/goldens/failures/ stay ignored via the *.png rule above.
+!test/goldens/golden_files/
+!test/goldens/golden_files/*.png
 test_screenshots/
 
 # Codex test outputs
