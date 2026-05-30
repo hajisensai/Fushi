@@ -61,6 +61,21 @@ activate():
 - 实现期对照真机弹窗 DOM 校准选择器（用运行中的 WebView 控制台核对 Yomitan 结构），保证非占位。
 - **可交互元素 = 原子停靠点**：交互元素（`a[href], button, summary, [role=button], [role=link]`）整体作为**一个**停靠点（环覆盖整控件，如 `<summary>` 折叠键），光标不停在控件内部单字。此原子化**仅弹窗生效**（JS 内 `!window.hoshiReader` 分支）；阅读器正文里仍按字停靠（即便 EPUB 含交互元素，每个内部字按 A 经 `activate()→click()` 触发同一控件，功能等价），避免改变长期的逐字阅读手感。
 
+### 单元 4b：弹窗头工具栏 = Flutter 同层兄弟（2026-05-31 补）
+
+> 关键事实：弹窗顶部的 ★收藏 / ↺重播 / ▶播放 / ▶◎从cue播放 4 个按钮是 **Flutter `IconButton`**（`buildPopupAudioControls()`），作为 `DictionaryPopupLayer.headerWidget` 放在 WebView **上方的 Column**（仅 `index==0` 底层弹窗有）。**它们不在 WebView DOM 里**，JS `hoshiCaret` 永远够不到——这是 JS 选择器调不出来的根因。
+
+- 弹窗内容（WebView 光标）与弹窗头工具栏（Flutter）是**同层兄弟**，复用阅读器内容↔底栏的模型：
+  - 弹窗内容顶部按 **上** → `caretMove('up')` 返回 `'blocked'`（以前被丢弃），据此把 Flutter 焦点移进 `_popupHeaderScope`；进头时 `caretExit()` 隐藏弹窗光标环，由全局 `HibikiFocusRing` 给按钮画标准环（单一指示器）。
+  - 头里 **左/右** 遍历按钮、**A** 原生激活（手柄经 GamepadService、键盘经 ActivateIntent）、**下** 回到内容光标（`caretEnter()` 复位）、**B** 关闭弹窗（上升一层）。
+  - 守卫：工具栏只在底层弹窗（`index==0`）存在，光标在更深的子查词弹窗（`index>0`）时上键不抢被遮挡的底层工具栏（`_focusPopupHeader` 判 `topVisiblePopupIndex != 0` 直接返回）。
+  - 头聚焦分支在两个 key handler 的**最前**，优先于 `_caretActive` 分支；`_caretSurface` 全程保持 `popup`。
+
+### 单元 4c：弹窗光标环几何修正（2026-05-31 补）
+
+- **环不出界**：`_drawRing` 把绘制矩形与 `_viewport()` 取交集再画，弹窗边缘/超高停靠点的环不再溢出弹窗。
+- **不停细条**：`_isStop` 弹窗分支拒绝单个标点/符号字符（`/^[\p{P}\p{S}]$/u`），光标不再停在源链接间的 " | " 分隔符上；词/汉字/链接不受影响。
+
 ### 单元 5：验证
 
 - 纯 Dart 单测：`ReaderCaretRouter` 的 A→activate 映射。
