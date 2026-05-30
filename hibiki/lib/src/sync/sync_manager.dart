@@ -67,8 +67,11 @@ class SyncManager {
       return result;
     } on SyncBackendError catch (e) {
       if (e.isRetryable) {
+        // 仅丢内存态让重试重新解析；不清磁盘 folder 缓存。否则一次瞬时错误
+        // （网络超时等）会逼着重试及之后每个会话对每本书全量重做文件夹查找，
+        // 直到下次完全成功。陈旧 ID 会被后端拒绝(404/auth)后在错误路径自愈。
+        // 后端切换/登出仍显式 clearFolderCache（那才是有意失效）。
         _backend.clearCache();
-        await _repo.clearFolderCache();
         try {
           final result = await _syncBookOnce(
             book: book,
