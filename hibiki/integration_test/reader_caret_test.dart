@@ -11,6 +11,7 @@ import 'package:hibiki/main.dart' as app;
 import 'package:hibiki/src/epub/epub_importer.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:hibiki/src/pages/implementations/reader_hibiki_page.dart';
 import 'package:hibiki/src/reader/reader_caret_scripts.dart';
 
@@ -47,34 +48,31 @@ void main() {
       expect(await waitForHome(tester), isTrue, reason: 'Home within 90s');
       await tester.pump(const Duration(seconds: 2));
 
+      // Always import a FRESH EPUB (no audiobook) and open that exact book, so
+      // we deterministically exercise the paginated chapter reader. Tapping a
+      // pre-existing shelf book is unsafe: a book with a saved audiobook reopens
+      // in lyrics mode (_lyricsMode restored from its saved state), which loads
+      // the lyrics page instead of a chapter and never injects window.hoshiCaret
+      // — a stale shelf book is exactly what made this test spuriously fail.
+      final int bookId = await _seedTestBook(tester);
       final navTargets = findPrimaryNavigationTargets();
       if (navTargets.isNotEmpty) {
         await tester.tap(navTargets.first);
         await tester.pumpAndSettle();
       }
 
-      var bookEntries = findBookEntries();
-      for (int i = 0; i < 20 && bookEntries.evaluate().isEmpty; i++) {
+      // Shelf entries key off the media identifier (hoshi://book/<id>), not the
+      // raw row id — see reader_hibiki_history_page.dart `book_entry_<mediaId>`.
+      final String seededKey =
+          'book_entry_${ReaderHibikiSource.mediaIdentifierFor(bookId)}';
+      final Finder seededEntry = find.byKey(ValueKey<String>(seededKey));
+      for (int i = 0; i < 40 && seededEntry.evaluate().isEmpty; i++) {
         await tester.pump(const Duration(milliseconds: 500));
-        bookEntries = findBookEntries();
       }
-      if (bookEntries.evaluate().isEmpty) {
-        await _seedTestBook(tester);
-        if (navTargets.isNotEmpty) {
-          await tester.tap(navTargets.first);
-          await tester.pumpAndSettle();
-        }
-        bookEntries = findBookEntries();
-        for (int i = 0; i < 20 && bookEntries.evaluate().isEmpty; i++) {
-          await tester.pump(const Duration(milliseconds: 500));
-          bookEntries = findBookEntries();
-        }
-      }
-      if (bookEntries.evaluate().isEmpty) {
-        fail('CARET blocked: failed to seed a test EPUB onto the shelf.');
-      }
+      expect(seededEntry, findsOneWidget,
+          reason: 'freshly seeded paginated book must appear on the shelf');
 
-      await tester.tap(bookEntries.first);
+      await tester.tap(seededEntry);
       await tester.pump(const Duration(seconds: 3));
 
       const Key webViewKey = ValueKey<String>('hoshi_webview');
@@ -119,7 +117,7 @@ void main() {
             "(function(){var r=document.getElementById('hoshi-caret-ring');"
             "return r?(r.style.display||'block'):'none';})()",
           ))
-          .toString();
+              .toString();
 
       // ── enter() lands on a visible character ──────────────────────────
       final enterRaw = await eval(ReaderCaretScripts.enterInvocation());
@@ -238,26 +236,74 @@ void main() {
 
       // The eval-direct lookup() above opened a real dictionary popup (lookup
       // fires the same onTextSelected pipeline). Dismiss it via Escape so the key
-      // path starts clean — with no popup, Escape leaves the cursor in one press
-      // rather than first closing the popup (which is the correct B/Esc order).
-      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
-      await tester.pump(const Duration(milliseconds: 400));
+      // path starts clean. Focus right after a popup mount is not deterministic —
+      // an Escape can land inside the popup's own WebView instead of the Flutter
+      // dismiss handler — so retry Escape until the popup is actually gone rather
+      // than assuming one press lands. Each Escape is given time to take effect,
+      // and we re-check before sending another so a closed popup never leaks an
+      // extra Escape into the reader. (If the popup never dismisses, the Enter
+      // below would dismiss it instead of entering the cursor, so this guards the
+      // following assertion against a misattributed failure.)
+      bool popupDismissed =
+          find.byType(DictionaryPopupWebView).evaluate().isEmpty;
+      for (int attempt = 0; attempt < 6 && !popupDismissed; attempt++) {
+        if (find.byType(DictionaryPopupWebView).evaluate().isEmpty) {
+          popupDismissed = true;
+          break;
+        }
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        for (int i = 0; i < 14; i++) {
+          await tester.pump(const Duration(milliseconds: 150));
+          if (find.byType(DictionaryPopupWebView).evaluate().isEmpty) {
+            popupDismissed = true;
+            break;
+          }
+        }
+      }
+      expect(popupDismissed, isTrue,
+          reason: 'the eval-lookup popup must dismiss before the key path');
 
       await takeScreenshot(binding, 'caret_js_verified');
 
       // ── Flutter Enter key drives the cursor end-to-end ────────────────
       // Sends a real key event through _handleKeyEvent → _enterCaret → JS.
+      // _enterCaret is an async evaluateJavascript round-trip, so poll for the
+      // active state instead of assuming a single pump is enough.
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
-      await tester.pump(const Duration(milliseconds: 400));
-      final bool activeAfterEnter =
-          (await eval('window.hoshiCaret.isActive()')) == true;
+      bool activeAfterEnter = false;
+      for (int i = 0; i < 40; i++) {
+        await tester.pump(const Duration(milliseconds: 150));
+        if ((await eval('window.hoshiCaret.isActive()')) == true) {
+          activeAfterEnter = true;
+          break;
+        }
+      }
       debugPrint('[CARET] active after Flutter Enter=$activeAfterEnter');
       expect(activeAfterEnter, isTrue,
           reason: 'Flutter Enter must enter the cursor via _handleKeyEvent');
 
-      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
-      await tester.pump(const Duration(milliseconds: 400));
-      expect((await eval('window.hoshiCaret.isActive()')) == true, isFalse,
+      // Confirm the cursor is active right before the leaving Escape, so the
+      // poll below tests a real active→inactive transition rather than passing
+      // trivially on an already-inactive cursor.
+      expect((await eval('window.hoshiCaret.isActive()')) == true, isTrue,
+          reason: 'cursor must be active before the leaving Escape');
+      // Escape leaves the cursor. The earlier eval-lookup can leave a dictionary
+      // result showing; the correct B/Esc order is "Escape closes the popup
+      // first, then a further Escape leaves the cursor" (see _caretDismissOrExit:
+      // clears the dictionary when shown, else exits). So send Escape until the
+      // cursor is actually inactive instead of assuming a single press leaves it.
+      bool inactiveAfterEscape = false;
+      for (int attempt = 0; attempt < 6 && !inactiveAfterEscape; attempt++) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        for (int i = 0; i < 14; i++) {
+          await tester.pump(const Duration(milliseconds: 150));
+          if ((await eval('window.hoshiCaret.isActive()')) != true) {
+            inactiveAfterEscape = true;
+            break;
+          }
+        }
+      }
+      expect(inactiveAfterEscape, isTrue,
           reason: 'Escape must leave the cursor');
 
       await takeScreenshot(binding, 'caret_keypath_verified');
@@ -276,7 +322,7 @@ void main() {
   });
 }
 
-Future<void> _seedTestBook(WidgetTester tester) async {
+Future<int> _seedTestBook(WidgetTester tester) async {
   final ProviderContainer container = ProviderScope.containerOf(
     tester.element(find.byType(MaterialApp).first),
   );
@@ -297,4 +343,5 @@ Future<void> _seedTestBook(WidgetTester tester) async {
 
   container.invalidate(hibikiBooksProvider(appModel.targetLanguage));
   await tester.pumpAndSettle();
+  return bookId;
 }

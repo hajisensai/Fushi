@@ -42,7 +42,8 @@ void main() {
 
   const String knownWord = 'テスト語';
 
-  testWidgets('popup cursor: caret + selection injected into the popup; '
+  testWidgets(
+      'popup cursor: caret + selection injected into the popup; '
       'lookup opens it while the reader cursor is active',
       (WidgetTester tester) async {
     final List<FlutterErrorDetails> errors = [];
@@ -78,26 +79,25 @@ void main() {
           reason: 'the generated dictionary must resolve "$knownWord"');
 
       // ── Open a book ──────────────────────────────────────────────────
+      // Always import a FRESH EPUB (no audiobook) and open that exact book, so
+      // the reader is the paginated chapter view. Tapping a pre-existing shelf
+      // book is unsafe: one with a saved audiobook reopens in lyrics mode, which
+      // loads the lyrics page (not a chapter) and never injects window.hoshiCaret.
+      final int bookId = await _seedTestBook(tester, appModel);
       final navTargets = findPrimaryNavigationTargets();
       if (navTargets.isNotEmpty) {
         await tester.tap(navTargets.first);
         await tester.pumpAndSettle();
       }
-      var bookEntries = findBookEntries();
-      if (bookEntries.evaluate().isEmpty) {
-        await _seedTestBook(tester, appModel);
-        if (navTargets.isNotEmpty) {
-          await tester.tap(navTargets.first);
-          await tester.pumpAndSettle();
-        }
-        bookEntries = findBookEntries();
-        for (int i = 0; i < 20 && bookEntries.evaluate().isEmpty; i++) {
-          await tester.pump(const Duration(milliseconds: 500));
-          bookEntries = findBookEntries();
-        }
+      final String seededKey =
+          'book_entry_${ReaderHibikiSource.mediaIdentifierFor(bookId)}';
+      final Finder seededEntry = find.byKey(ValueKey<String>(seededKey));
+      for (int i = 0; i < 40 && seededEntry.evaluate().isEmpty; i++) {
+        await tester.pump(const Duration(milliseconds: 500));
       }
-      expect(bookEntries.evaluate(), isNotEmpty, reason: 'a book on the shelf');
-      await tester.tap(bookEntries.first);
+      expect(seededEntry, findsOneWidget,
+          reason: 'freshly seeded paginated book must appear on the shelf');
+      await tester.tap(seededEntry);
       await tester.pump(const Duration(seconds: 3));
 
       const Key contentReadyKey = ValueKey<String>('hoshi_content_ready');
@@ -117,12 +117,21 @@ void main() {
       String? surface() => ReaderHibikiPage.debugCaretSurface?.call();
 
       // ── Enter the reader cursor (the CaretSurface machine's entry) ───
-      // (Reveals a Windows-only gap: the reader's setup IIFE throws on WebView2
-      // at the pagination shell, so window.hoshiReader — and the caret — are not
-      // defined there; this leg passes on Android where the caret is verified.)
+      // Verified on both Android and Windows (WebView2): the reader setup script
+      // runs and window.hoshiCaret is defined for a paginated book. Entry is an
+      // async evaluateJavascript round-trip, so poll the surface state.
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
-      await tester.pump(const Duration(milliseconds: 500));
-      expect(surface(), 'reader', reason: 'Enter enters the reader cursor');
+      bool enteredReader = false;
+      // First caret entry on a cold reader (a full setup-script round-trip), so
+      // allow a generous budget before failing.
+      for (int i = 0; i < 60; i++) {
+        await tester.pump(const Duration(milliseconds: 150));
+        if (surface() == 'reader') {
+          enteredReader = true;
+          break;
+        }
+      }
+      expect(enteredReader, isTrue, reason: 'Enter enters the reader cursor');
 
       // ── A lookup made while the cursor is active opens a popup ───────
       // Invoke the reader's onTextSelected handler directly with a word the
@@ -165,7 +174,8 @@ void main() {
       expect(await typeOf('window.hoshiCaret.enter'), 'function');
       expect(await typeOf('window.hoshiCaret.move'), 'function');
       expect(await typeOf('window.hoshiCaret.lookup'), 'function');
-      expect(await typeOf('window.hoshiSelection.selectFromPosition'), 'function',
+      expect(
+          await typeOf('window.hoshiSelection.selectFromPosition'), 'function',
           reason: 'popup selection.js exposes selectFromPosition (caret lookup '
               'reuses it)');
 
@@ -205,8 +215,7 @@ void main() {
                 true,
             isTrue,
             reason: 'popup cursor active after transfer [$d]');
-        expect(
-            (await popupEval('window.hoshiCaret.scopeSelector'))?.toString(),
+        expect((await popupEval('window.hoshiCaret.scopeSelector'))?.toString(),
             '.glossary-content');
 
         // Arrow keys move the popup cursor; it stays on the popup.
@@ -262,8 +271,26 @@ Future<void> _importTestDictionary(
     'sequenced': false,
   };
   final List<List<dynamic>> termBank = <List<dynamic>>[
-    <dynamic>['テスト語', 'てすとご', '', '', 0, <String>['テスト用の語釈。'], 0, ''],
-    <dynamic>['言葉', 'ことば', '', '', 0, <String>['言語。ことば。'], 1, ''],
+    <dynamic>[
+      'テスト語',
+      'てすとご',
+      '',
+      '',
+      0,
+      <String>['テスト用の語釈。'],
+      0,
+      ''
+    ],
+    <dynamic>[
+      '言葉',
+      'ことば',
+      '',
+      '',
+      0,
+      <String>['言語。ことば。'],
+      1,
+      ''
+    ],
   ];
 
   final Archive archive = Archive()
@@ -292,9 +319,9 @@ ArchiveFile _jsonFile(String name, Object json) {
   return ArchiveFile(name, bytes.length, bytes);
 }
 
-Future<void> _seedTestBook(WidgetTester tester, AppModel appModel) async {
+Future<int> _seedTestBook(WidgetTester tester, AppModel appModel) async {
   final Uint8List bytes = EpubGenerator().generate();
-  await EpubImporter.import(
+  final int bookId = await EpubImporter.import(
     db: appModel.database,
     bytes: bytes,
     fileName: 'test_popup_caret.epub',
@@ -304,4 +331,5 @@ Future<void> _seedTestBook(WidgetTester tester, AppModel appModel) async {
   );
   container.invalidate(hibikiBooksProvider(appModel.targetLanguage));
   await tester.pumpAndSettle();
+  return bookId;
 }
