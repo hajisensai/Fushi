@@ -47,6 +47,12 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
 
 class DictionaryPopupWebViewState
     extends ConsumerState<DictionaryPopupWebView> {
+  /// Test hook: evaluate JS on the most-recently-created popup WebView (the top
+  /// of the stack in practice). Lets integration tests observe the popup cursor.
+  /// Set in [onWebViewCreated], cleared on dispose, asserted out of release.
+  @visibleForTesting
+  static Future<dynamic> Function(String source)? debugEvaluateJavascript;
+
   InAppWebViewController? _controller;
   bool _ready = false;
   String? _lastSearchTerm;
@@ -169,6 +175,10 @@ class DictionaryPopupWebViewState
 
   @override
   void dispose() {
+    assert(() {
+      debugEvaluateJavascript = null;
+      return true;
+    }());
     _controller?.dispose();
     super.dispose();
   }
@@ -386,6 +396,11 @@ class DictionaryPopupWebViewState
       },
       onWebViewCreated: (controller) {
         _controller = controller;
+        assert(() {
+          debugEvaluateJavascript =
+              (String source) => controller.evaluateJavascript(source: source);
+          return true;
+        }());
 
         controller.addJavaScriptHandler(
           handlerName: 'tapOutside',

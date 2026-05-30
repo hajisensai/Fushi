@@ -90,6 +90,12 @@ class ReaderHibikiPage extends BaseSourcePage {
   @visibleForTesting
   static Future<dynamic> Function(String source)? debugEvaluateJavascript;
 
+  /// Test hook: reports which surface the char cursor lives on
+  /// (`none`/`reader`/`popup`). Set in build, cleared on dispose, asserted out of
+  /// release builds. Lets integration tests observe the cursor↔popup transfer.
+  @visibleForTesting
+  static String Function()? debugCaretSurface;
+
   @override
   BaseSourcePageState<ReaderHibikiPage> createState() =>
       _ReaderHibikiPageState();
@@ -882,6 +888,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   void dispose() {
     assert(() {
       ReaderHibikiPage.debugEvaluateJavascript = null;
+      ReaderHibikiPage.debugCaretSurface = null;
       return true;
     }());
     ReaderHibikiSource.onSettingsChangedLive = null;
@@ -1528,6 +1535,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
           );
           ReaderHibikiPage.debugEvaluateJavascript =
               (String source) => controller.evaluateJavascript(source: source);
+          ReaderHibikiPage.debugCaretSurface = () => _caretSurface.name;
           return true;
         }());
         _startContentReadyTimeout();
