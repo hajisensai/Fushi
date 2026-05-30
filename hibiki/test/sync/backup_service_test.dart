@@ -5,6 +5,7 @@ import 'package:archive/archive.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/sync/backup_service.dart';
+import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
 void main() {
@@ -406,6 +407,81 @@ void main() {
       // Small file should pass
       final result = await service.validateBackup(zipPath);
       expect(result, isNotNull);
+    });
+  });
+
+  group('export strips device-local config (privacy)', () {
+    test('no device-local key (incl. addresses/usernames) leaks into a backup',
+        () async {
+      final srcDir = await Directory.systemTemp.createTemp('hibiki_strip_src_');
+      addTearDown(() => srcDir.delete(recursive: true));
+      final srcDb = HibikiDatabase(srcDir.path);
+      // Seed every device-local key with a sentinel value.
+      for (final String key in SyncRepository.deviceLocalPrefKeys) {
+        await srcDb.setPref(key, 'sentinel-$key');
+      }
+      // Content that SHOULD travel with the backup.
+      await srcDb.setPrefTyped<bool>('sync_auto_enabled', true);
+      await srcDb.insertEpubBook(EpubBooksCompanion.insert(
+        title: 'Keep Me',
+        epubPath: '/x.epub',
+        extractDir: '/x',
+        chapterCount: 1,
+        chaptersJson: '[]',
+        importedAt: DateTime.now().millisecondsSinceEpoch,
+      ));
+
+      final zipDir = await Directory.systemTemp.createTemp('hibiki_strip_zip_');
+      addTearDown(() => zipDir.delete(recursive: true));
+      final zipPath = '${zipDir.path}/b.zip';
+      await BackupService(
+        db: srcDb,
+        dbDirectory: srcDir.path,
+        appVersion: '1.0.0',
+      ).exportBackup(zipPath);
+      await srcDb.close();
+
+      // Import into a FRESH dir: no current DB, so the backup is applied
+      // verbatim with nothing preserved — exposing exactly what the ZIP holds.
+      final dstDir = await Directory.systemTemp.createTemp('hibiki_strip_dst_');
+      addTearDown(() => dstDir.delete(recursive: true));
+      await BackupService.importBackupFiles(
+        dbDirectory: dstDir.path,
+        zipPath: zipPath,
+      );
+
+      final dstDb = HibikiDatabase(dstDir.path);
+      addTearDown(dstDb.close);
+      for (final String key in SyncRepository.deviceLocalPrefKeys) {
+        expect(await dstDb.getPref(key), isNull,
+            reason: '$key leaked into the exported backup');
+      }
+      // Content survived the round-trip.
+      expect(
+          await dstDb.getPrefTyped<bool>('sync_auto_enabled', false), isTrue);
+      expect((await dstDb.getAllEpubBooks()).single.title, 'Keep Me');
+    });
+
+    test('every secret-shaped key stripped on export is also preserved', () {
+      // The export LIKE sweep strips any sync_%password%/%token%/%secret%/
+      // %private_key% key. Each known credential key MUST also be in the
+      // preserve list, else it'd be stripped from the backup but not restored
+      // on import → permanent credential loss. Anti-drift guard for new keys.
+      const List<String> secretKeys = <String>[
+        'sync_webdav_password',
+        'sync_ftp_password',
+        'sync_sftp_password',
+        'sync_sftp_private_key',
+        'sync_server_password',
+        'sync_onedrive_token',
+        'sync_dropbox_token',
+        'sync_hibiki_client_token',
+        'sync_desktop_credentials',
+      ];
+      for (final String k in secretKeys) {
+        expect(SyncRepository.deviceLocalPrefKeys, contains(k),
+            reason: '$k is stripped on export but missing from preserve list');
+      }
     });
   });
 }

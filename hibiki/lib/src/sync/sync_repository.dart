@@ -166,21 +166,18 @@ class SyncRepository {
 
     final String? backend = await _getStringOrNull(_keyBackendType);
     if (backend == 'smb') {
-      final String? smbUrl = await _getStringOrNull(kSmbUrl);
-      final String? smbUser = await _getStringOrNull(kSmbUser);
-      // 密码以 base64 存储，原样搬运（不解码再编码，避免双重编码）。
-      final String? smbPass = await _getStringOrNull(kSmbPass);
-
-      if (smbUrl != null && (await _getStringOrNull(_keyWebDavUrl)) == null) {
-        await _setString(_keyWebDavUrl, smbUrl);
-      }
-      if (smbUser != null &&
-          (await _getStringOrNull(_keyWebDavUsername)) == null) {
-        await _setString(_keyWebDavUsername, smbUser);
-      }
-      if (smbPass != null &&
-          (await _getStringOrNull(_keyWebDavPassword)) == null) {
-        await _setString(_keyWebDavPassword, smbPass);
+      // All-or-nothing: only seed WebDAV from SMB when there's no existing
+      // WebDAV config at all. Avoids a hybrid (URL from one source, password
+      // from the other) when the user had configured both.
+      final bool hasWebDav = (await _getStringOrNull(_keyWebDavUrl)) != null;
+      if (!hasWebDav) {
+        final String? smbUrl = await _getStringOrNull(kSmbUrl);
+        final String? smbUser = await _getStringOrNull(kSmbUser);
+        // 密码以 base64 存储，原样搬运（不解码再编码，避免双重编码）。
+        final String? smbPass = await _getStringOrNull(kSmbPass);
+        if (smbUrl != null) await _setString(_keyWebDavUrl, smbUrl);
+        if (smbUser != null) await _setString(_keyWebDavUsername, smbUser);
+        if (smbPass != null) await _setString(_keyWebDavPassword, smbPass);
       }
       await _setString(_keyBackendType, SyncBackendType.webDav.name);
     }

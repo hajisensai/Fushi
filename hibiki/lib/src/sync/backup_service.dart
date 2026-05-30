@@ -136,15 +136,30 @@ class BackupService {
     }
   }
 
-  /// Removes sync credential rows from the standalone DB copy in [dbDirectory].
-  /// Opened via [HibikiDatabase] (the copy is already at the current schema, so
-  /// no migration runs). Keyed by the `sync_` prefix + secret-shaped suffixes
-  /// so newly added credential prefs are covered without an exact allow-list to
-  /// keep in sync. VACUUM + checkpoint so secrets are not recoverable from
-  /// freelist/WAL pages.
+  /// Strips device-local sync config from the standalone DB copy in
+  /// [dbDirectory] before it leaves the device. Opened via [HibikiDatabase]
+  /// (the copy is already at the current schema, so no migration runs).
+  ///
+  /// Two layers, both required:
+  /// 1. [SyncRepository.deviceLocalPrefKeys] — the single source of truth for
+  ///    "what stays on this device": backend choice, credentials, server config
+  ///    AND server addresses / usernames / Hibiki client URLs. None of these
+  ///    belong in a shareable backup — a backup that leaks your NAS address,
+  ///    username or LAN/DDNS topology is a privacy hole. On import these are
+  ///    preserved from the local DB, so stripping them here is symmetric.
+  /// 2. A `sync_%` secret-shaped LIKE sweep — a future-proof catch-all so a
+  ///    newly added credential key is stripped even before it's added to the
+  ///    preserve list. (A test asserts every secret-shaped key is also in the
+  ///    preserve list, so the catch-all never strips something import wouldn't
+  ///    restore.)
+  ///
+  /// VACUUM + checkpoint so values are not recoverable from freelist/WAL pages.
   static Future<void> _stripCredentials(String dbDirectory) async {
     final db = HibikiDatabase(dbDirectory);
     try {
+      await (db.delete(db.preferences)
+            ..where((t) => t.key.isIn(SyncRepository.deviceLocalPrefKeys)))
+          .go();
       await db.customStatement(
         "DELETE FROM preferences WHERE key LIKE 'sync_%password%'"
         " OR key LIKE 'sync_%token%' OR key LIKE 'sync_%secret%'"
@@ -216,6 +231,10 @@ class BackupService {
       await currentDb.copy('$dbPath.pre-restore.bak');
     }
 
+    // Must delete -wal/-shm AFTER reading prefs (step 1 opened+closed a WAL
+    // connection) and BEFORE overwriting the main .db: leftover WAL frames from
+    // the old DB would otherwise be replayed against the imported file and
+    // corrupt it.
     final walFile = File('$dbPath-wal');
     if (walFile.existsSync()) await walFile.delete();
     final shmFile = File('$dbPath-shm');
