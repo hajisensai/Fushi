@@ -31,9 +31,11 @@
 
 **FK 安全性（已核实 [tables.dart:249-294](../../packages/hibiki_core/lib/src/database/tables.dart#L249-L294)）：** 设置层只有内部 FK（`profile_settings`/绑定 → `profiles`，CASCADE）；`book_profiles.bookUid` 是纯 text（**无** FK 到 `epub_books`）；无内容表 FK 到 `profiles`。故"保留设置层 + 覆盖内容层"两个方向都不违反外键。恢复顺序：先 `profiles`，再其依赖表。
 
-## 4. 实现（schema 安全：在启动迁移后做表拷贝）
+## 4. 实现（schema 安全：迁移后做表拷贝；**inline 执行**）
 
-`importBackupFiles` 是整文件覆盖；覆盖后主库可能是**旧 schema**（旧备份），需 app 重开时迁移。因此设置层的恢复**放在启动 `recoverPendingImport`**（此时主库已迁移到当前 schema，与 `pre-restore.bak`（当前 schema）列对齐，安全）。
+`importBackupFiles` 是整文件覆盖；覆盖后主库可能是**旧 schema**（旧备份）。恢复设置层时先 `HibikiDatabase(dir)` 打开主库——首条语句即触发 open+迁移到当前 schema，再 `ATTACH pre-restore.bak`（当前 schema）做按列对齐的表拷贝。
+
+**关键：恢复 inline 在 `importBackupFiles` 内同步完成**（不再延迟到启动），所以常规路径不依赖 `pre-restore.bak` 跨重启存活，消除"bak 丢失→静默丢设置"的数据丢失窗口（评审 HBK-REV High-2）。覆盖前写入的 sidecar + bak 仅作**崩溃恢复网**：若 `importBackupFiles` 中途崩溃，下次启动 `recoverPendingImport` 据 sidecar 完成恢复。`_restoreSettingsLayer` 在 bak 缺失时不静默——`debugPrint` 记录。
 
 ### 4.1 `importBackupFiles({..., bool importSettings = true})`
 - 新增参数 `importSettings`，**方法默认 true**（保持现有调用方/测试的完整导入语义；UI 传入开关值，默认 false）。

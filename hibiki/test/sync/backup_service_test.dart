@@ -574,12 +574,86 @@ void main() {
           4242);
       expect(await after.getPrefTyped<int>('audiobook_pos_99', 0), 0);
 
-      // No FK violations, and the scratch files are cleaned up:
+      // DB is valid + at the current schema after the migrate-then-copy, with
+      // no FK violations, and the scratch files are cleaned up:
+      final version =
+          await after.customSelect('PRAGMA user_version').getSingle();
+      expect(version.data['user_version'], after.schemaVersion);
+      final integrity =
+          await after.customSelect('PRAGMA integrity_check').get();
+      expect(
+          integrity.map((r) => r.data.values.first).toList(), <String>['ok']);
       final fk = await after.customSelect('PRAGMA foreign_key_check').get();
       expect(fk, isEmpty);
       expect(File('${curDir.path}/hibiki.db.pre-restore.bak').existsSync(),
           isFalse);
       expect(File('${curDir.path}/hibiki.db.sync-preserve.json').existsSync(),
+          isFalse);
+    });
+
+    test('fresh install (no current DB) restores everything (toggle moot)',
+        () async {
+      // Backup with its own settings + content.
+      final srcDir = await Directory.systemTemp.createTemp('hibiki_fresh_src_');
+      addTearDown(() => srcDir.delete(recursive: true));
+      final srcDb = HibikiDatabase(srcDir.path);
+      await srcDb.setPref('reader_appearance', 'BACKUP');
+      await srcDb.insertEpubBook(EpubBooksCompanion.insert(
+        title: 'BackupBook',
+        epubPath: '/b.epub',
+        extractDir: '/b',
+        chapterCount: 1,
+        chaptersJson: '[]',
+        importedAt: 1,
+      ));
+      final zipDir = await Directory.systemTemp.createTemp('hibiki_fresh_zip_');
+      addTearDown(() => zipDir.delete(recursive: true));
+      final zipPath = '${zipDir.path}/b.zip';
+      await BackupService(
+              db: srcDb, dbDirectory: srcDir.path, appVersion: '1.0')
+          .exportBackup(zipPath);
+      await srcDb.close();
+
+      // Import into an EMPTY dir (no current DB) with importSettings:false.
+      final dstDir = await Directory.systemTemp.createTemp('hibiki_fresh_dst_');
+      addTearDown(() => dstDir.delete(recursive: true));
+      await BackupService.importBackupFiles(
+        dbDirectory: dstDir.path,
+        zipPath: zipPath,
+        importSettings: false,
+      );
+      await BackupService.recoverPendingImport(dstDir.path);
+
+      final after = HibikiDatabase(dstDir.path);
+      addTearDown(after.close);
+      // Nothing local to preserve → backup applied verbatim (settings included).
+      expect(await after.getPref('reader_appearance'), 'BACKUP');
+      expect((await after.getAllEpubBooks()).single.title, 'BackupBook');
+      expect(File('${dstDir.path}/hibiki.db.pre-restore.bak').existsSync(),
+          isFalse);
+      expect(File('${dstDir.path}/hibiki.db.sync-preserve.json').existsSync(),
+          isFalse);
+    });
+
+    test('recoverPendingImport with a settings sidecar but missing bak is safe',
+        () async {
+      final dir = await Directory.systemTemp.createTemp('hibiki_nobak_');
+      addTearDown(() => dir.delete(recursive: true));
+      final db = HibikiDatabase(dir.path);
+      await db.setPref('reader_appearance', 'INTACT');
+      await db.close();
+
+      // A crashed keep-settings import could leave the sidecar with no bak.
+      await File('${dir.path}/hibiki.db.sync-preserve.json')
+          .writeAsString(jsonEncode(<String, dynamic>{'mode': 'settings'}));
+
+      await BackupService.recoverPendingImport(dir.path); // must not throw
+
+      final after = HibikiDatabase(dir.path);
+      addTearDown(after.close);
+      // DB untouched, sidecar cleaned up.
+      expect(await after.getPref('reader_appearance'), 'INTACT');
+      expect(File('${dir.path}/hibiki.db.sync-preserve.json').existsSync(),
           isFalse);
     });
   });

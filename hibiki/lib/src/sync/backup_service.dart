@@ -193,20 +193,6 @@ class BackupService {
     }
   }
 
-  /// Import a backup, replacing the current database files.
-  ///
-  /// This is a static method because the database must already be closed
-  /// before calling — the caller is responsible for closing the DB first.
-  ///
-  /// Backups are exported with all sync secrets stripped ([_stripCredentials]),
-  /// so a naive whole-file swap would wipe THIS device's sync config (backend
-  /// selection + credentials + server config) — even when re-importing your own
-  /// backup. To prevent that, device-local sync prefs
-  /// ([SyncRepository.deviceLocalPrefKeys]) are read from the current DB and
-  /// re-applied to the imported DB. Folder cache and behavior flags are
-  /// intentionally NOT preserved — they come from the backup / rebuild on next
-  /// sync. The preserved keys are flushed to a sidecar BEFORE the overwrite so a
-  /// mid-import crash is recoverable via [recoverPendingImport].
   /// Settings-layer tables restored from THIS device when [importBackupFiles]
   /// runs with importSettings=false. Order matters: `profiles` first (FK target
   /// of the rest). `preferences` is handled separately (audiobook positions are
@@ -231,9 +217,11 @@ class BackupService {
   ///   you out). Re-applied immediately; crash-recoverable via the sidecar.
   /// - false: keep THIS device's settings layer (preferences + profiles +
   ///   bindings = fonts/appearance/reading/profiles); only CONTENT comes from
-  ///   the backup. The settings restore happens at startup ([recoverPendingImport])
-  ///   from pre-restore.bak, AFTER the imported DB has migrated to the current
-  ///   schema — so the column-aligned table copy is always schema-safe.
+  ///   the backup. Done inline: opening the imported DB migrates it to the
+  ///   current schema, then the settings layer is copied back from
+  ///   pre-restore.bak (both at current schema → column-aligned, FK-safe). The
+  ///   sidecar + bak written before the overwrite are a crash-recovery net so
+  ///   [recoverPendingImport] can finish the restore if this crashes mid-way.
   static Future<void> importBackupFiles({
     required String dbDirectory,
     required String zipPath,
@@ -280,17 +268,21 @@ class BackupService {
     // 2) Overwrite with the backup DB bytes.
     await currentDb.writeAsBytes(dbFile.content as List<int>);
 
+    // 3) Restore what must stay on this device — inline, not deferred to
+    //    startup, so the common path never depends on bak surviving a restart.
     if (importSettings) {
-      // 3) Re-apply device-local sync config now (preferences is schema-stable).
+      // Re-apply device-local sync config (preferences is schema-stable).
       if (preservedSync.isNotEmpty) {
         await _applyPreservedConfig(dbDirectory, preservedSync);
       }
-      // 4) Success: drop the sidecar and the pre-restore copy (no disk leak).
-      await _safeDelete(sidecar.path);
-      await _safeDelete(bakPath);
+    } else if (haveCurrent) {
+      // Keep this device's whole settings layer.
+      await _restoreSettingsLayer(dbDirectory);
     }
-    // importSettings=false: leave sidecar + pre-restore.bak in place — the
-    // settings-layer restore runs at next startup against the migrated DB.
+
+    // 4) Success: drop the sidecar and the pre-restore copy (no disk leak).
+    await _safeDelete(sidecar.path);
+    await _safeDelete(bakPath);
   }
 
   /// Finish a pending import at startup, before any sync code reads prefs.
@@ -326,7 +318,16 @@ class BackupService {
   /// align. audiobook positions are content and stay from the backup.
   static Future<void> _restoreSettingsLayer(String dbDirectory) async {
     final String bakPath = p.join(dbDirectory, '$_dbName.pre-restore.bak');
-    if (!File(bakPath).existsSync()) return;
+    if (!File(bakPath).existsSync()) {
+      // bak is the only copy of this device's settings layer (the main DB was
+      // already overwritten with the backup). If it's gone we cannot restore —
+      // surface it loudly rather than silently dropping the user's settings.
+      // (Normal flow restores inline while bak definitely exists; reaching here
+      // means a crash + external deletion of bak before the next launch.)
+      debugPrint('BackupService._restoreSettingsLayer: pre-restore.bak missing '
+          '— local settings/profiles could not be preserved on import.');
+      return;
+    }
     final db = HibikiDatabase(dbDirectory);
     try {
       final String safeBak =
