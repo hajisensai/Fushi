@@ -25,12 +25,26 @@ EMULATOR="${EMULATOR:-$(command -v emulator 2>/dev/null || echo /d/android_sdk/e
 FLUTTER="${FLUTTER:-$(command -v flutter 2>/dev/null || echo /d/flutter_sdk/flutter_extracted/flutter/bin/flutter)}"
 AVD="${AVD:-hoshi_test_api35}"
 PKG="${PKG:-app.hibiki.reader}"
-# Dictionary fixture for popup_dictionary / reader_dictionary. The default file
-# name contains [..] glob brackets + CJK, so a hardcoded literal can fail to
-# byte-match the real on-disk name; if DICT_ZIP isn't an existing file we locate
-# any zip under DICT_DIR via find (brackets-safe) below.
+# Dictionary fixture for popup_dictionary / reader_dictionary. Those tests look
+# up basic vocabulary (猫 / 食べる), so the fixture must be a GENERAL J-J/J-C
+# dictionary — a grammar/bunkei dict would return zero results and fail them.
+# Resolution (below): explicit DICT_ZIP, else a general dict matched by name
+# under DICT_DIR, else any zip as a last resort.
 DICT_DIR="${DICT_DIR:-/d/辞典}"
 DICT_ZIP="${DICT_ZIP:-}"
+
+# Convert an MSYS path (/d/foo) to a Windows path (D:/foo) so the native
+# adb.exe can stat the local push source. adb push needs MSYS_NO_PATHCONV=1 for
+# the /sdcard destination, which also disables conversion of the source — so a
+# /d/... source reaches adb verbatim and fails to stat. Pre-converting the
+# source to D:/... makes both ends valid under MSYS_NO_PATHCONV=1.
+win_path() {
+  if command -v cygpath >/dev/null 2>&1; then
+    cygpath -m "$1"
+  else
+    echo "$1" | sed -E 's#^/([a-zA-Z])/#\U\1:/#'
+  fi
+}
 APK_REL="build/app/outputs/flutter-apk/app-debug.apk"
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
@@ -107,15 +121,21 @@ else
 fi
 
 DICT_OK=false
-# Resolve the dictionary fixture: prefer an explicit DICT_ZIP, else find the
-# first .zip under DICT_DIR (find tolerates the [..]/CJK characters that break
-# a literal path match).
+# Resolve the dictionary fixture: explicit DICT_ZIP, else a GENERAL dictionary
+# matched by name (明鏡/明镜/国語/国语 — these have the basic vocab the lookup
+# tests search for), else any zip as a last resort. `find` tolerates the
+# [..]/CJK characters that break a literal path match.
 if [ -z "$DICT_ZIP" ] || [ ! -f "$DICT_ZIP" ]; then
-  DICT_ZIP="$(find "$DICT_DIR" -maxdepth 1 -name '*.zip' 2>/dev/null | head -1)"
+  DICT_ZIP="$(find "$DICT_DIR" -maxdepth 1 \
+      \( -name '*明鏡*.zip' -o -name '*明镜*.zip' -o -name '*国語*.zip' \
+         -o -name '*国语*.zip' \) 2>/dev/null | head -1)"
+  [ -z "$DICT_ZIP" ] && \
+    DICT_ZIP="$(find "$DICT_DIR" -maxdepth 1 -name '*.zip' 2>/dev/null | head -1)"
 fi
 if [ -n "$DICT_ZIP" ] && [ -f "$DICT_ZIP" ]; then
   echo ">>> Pushing dictionary fixture ($(basename "$DICT_ZIP")) to /sdcard/Download/test_dict.zip..."
-  if MSYS_NO_PATHCONV=1 $ADBD push "$DICT_ZIP" /sdcard/Download/test_dict.zip >/dev/null; then
+  # Push from a Windows-form source path (see win_path) under MSYS_NO_PATHCONV.
+  if MSYS_NO_PATHCONV=1 $ADBD push "$(win_path "$DICT_ZIP")" /sdcard/Download/test_dict.zip >/dev/null; then
     DICT_OK=true
   fi
 else
