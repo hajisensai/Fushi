@@ -15,6 +15,13 @@ on:
     paths: *ci_paths
   workflow_dispatch:
 
+# Cancel a superseded PR run when the PR is updated; never cancel a
+# push-to-main/develop or release build mid-way (each commit's build matters
+# for bisecting the previously-untested develop history).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   build:
     runs-on: ubuntu-latest
