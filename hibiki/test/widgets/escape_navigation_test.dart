@@ -14,8 +14,6 @@ Widget _app(GlobalKey<NavigatorState> navKey, Widget home) {
     navigatorKey: navKey,
     builder: (context, child) => wrapWithGlobalNavigation(
       navigatorKey: navKey,
-      // Desktop path: gamepad disabled, so the Escape handler must still apply.
-      enableGamepad: false,
       child: child!,
     ),
     home: home,
