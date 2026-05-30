@@ -182,6 +182,13 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   // book (not the bottom chrome) holds focus.
   bool _caretActive = false;
 
+  // Serializes the cursor's async JS operations. A gamepad D-pad auto-repeats
+  // ~9×/s and a move that turns the page (move → _paginate → reanchor) round-
+  // trips slower than that, so overlapping calls would evaluate against a mid-
+  // pagination DOM and make the cursor jump. New directional input is dropped
+  // while an op is in flight; the next auto-repeat tick moves instead.
+  bool _caretBusy = false;
+
   bool get _showTopProgress =>
       _readerContentReady &&
       _progressCurrentChars != null &&
@@ -3327,13 +3334,18 @@ window.flutter_inappwebview.callHandler('spreadReady');
   }
 
   Future<void> _enterCaret() async {
-    if (_controller == null || !_readerContentReady) return;
-    final Object? raw = await _controller!
-        .evaluateJavascript(source: ReaderCaretScripts.enterInvocation());
-    if (!mounted) return;
-    // enter() returns {ok:false} on an empty page (no visible character).
-    if (ReaderCaretScripts.moveStatus(raw) != 'moved') return;
-    if (!_caretActive) setState(() => _caretActive = true);
+    if (_controller == null || !_readerContentReady || _caretBusy) return;
+    _caretBusy = true;
+    try {
+      final Object? raw = await _controller!
+          .evaluateJavascript(source: ReaderCaretScripts.enterInvocation());
+      if (!mounted) return;
+      // enter() returns {ok:false} on an empty page (no visible character).
+      if (ReaderCaretScripts.moveStatus(raw) != 'moved') return;
+      if (!_caretActive) setState(() => _caretActive = true);
+    } finally {
+      _caretBusy = false;
+    }
   }
 
   void _exitCaret() {
@@ -3343,35 +3355,46 @@ window.flutter_inappwebview.callHandler('spreadReady');
   }
 
   Future<void> _runCaretAction(CaretAction action) async {
-    switch (action) {
-      case CaretAction.stepForward:
-        await _caretMove('forward');
-        return;
-      case CaretAction.stepBackward:
-        await _caretMove('backward');
-        return;
-      case CaretAction.moveUp:
-        await _caretMove('up');
-        return;
-      case CaretAction.moveDown:
-        await _caretMove('down');
-        return;
-      case CaretAction.moveLeft:
-        await _caretMove('left');
-        return;
-      case CaretAction.moveRight:
-        await _caretMove('right');
-        return;
-      case CaretAction.lookup:
-        await _caretLookup();
-        return;
-      case CaretAction.dismissOrExit:
-        if (isDictionaryShown) {
-          clearDictionaryResult();
-        } else {
-          _exitCaret();
-        }
-        return;
+    // Leaving is always allowed, even mid-operation — it must never be dropped
+    // by the in-flight guard, or the user could get stuck unable to back out.
+    if (action == CaretAction.dismissOrExit) {
+      if (isDictionaryShown) {
+        clearDictionaryResult();
+      } else {
+        _exitCaret();
+      }
+      return;
+    }
+    if (_caretBusy) return;
+    _caretBusy = true;
+    try {
+      switch (action) {
+        case CaretAction.stepForward:
+          await _caretMove('forward');
+          break;
+        case CaretAction.stepBackward:
+          await _caretMove('backward');
+          break;
+        case CaretAction.moveUp:
+          await _caretMove('up');
+          break;
+        case CaretAction.moveDown:
+          await _caretMove('down');
+          break;
+        case CaretAction.moveLeft:
+          await _caretMove('left');
+          break;
+        case CaretAction.moveRight:
+          await _caretMove('right');
+          break;
+        case CaretAction.lookup:
+          await _caretLookup();
+          break;
+        case CaretAction.dismissOrExit:
+          break; // handled above
+      }
+    } finally {
+      _caretBusy = false;
     }
   }
 

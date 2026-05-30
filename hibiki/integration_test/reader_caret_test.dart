@@ -155,28 +155,56 @@ void main() {
         }
       }
 
-      // ── writing-mode physical→logical mapping is live ─────────────────
+      // ── writing-mode physical→logical mapping on real geometry ────────
       final bool vertical =
           (await eval('window.hoshiCaret._vertical()')) == true;
-      debugPrint('[CARET] vertical=$vertical');
-      // The "advance" physical key (down in vertical-rl, right in horizontal)
-      // must move the caret, proving the mapping wired up (not a no-op).
+      debugPrint('[CARET] writing-mode vertical-rl=$vertical');
+      // Reading-axis keys: vertical-rl DOWN advances / UP retreats; horizontal
+      // RIGHT advances / LEFT retreats. Advance one char then retreat — must land
+      // back on the same character. This drives the ACTUAL writing-mode geometry
+      // (the part most prone to vertical/horizontal axis bugs), not just the
+      // mapping string. Default reader layout is vertical-rl, so this exercises
+      // the vertical path on a real DOM.
+      await eval(ReaderCaretScripts.exitInvocation());
+      await eval(ReaderCaretScripts.enterInvocation());
       final String advanceKey = vertical ? 'down' : 'right';
-      final beforeAdvance = await sig();
+      final String retreatKey = vertical ? 'up' : 'left';
+      final axisStart = await sig();
       final adv = ReaderCaretScripts.moveStatus(
           await eval(ReaderCaretScripts.moveInvocation(advanceKey)));
       expect(adv == 'moved' || adv == 'pageForward', isTrue,
           reason: '$advanceKey must advance the caret in '
               '${vertical ? "vertical-rl" : "horizontal"} mode (got $adv)');
       if (adv == 'moved') {
-        final afterAdvance = await sig();
+        final afterAdv = await sig();
         expect(
-          afterAdvance['off'] != beforeAdvance['off'] ||
-              afterAdvance['len'] != beforeAdvance['len'],
-          isTrue,
-          reason: 'physical advance key must change the caret position',
-        );
+            afterAdv['off'] != axisStart['off'] ||
+                afterAdv['len'] != axisStart['len'],
+            isTrue,
+            reason: 'advance key must change the caret position');
+        final ret = ReaderCaretScripts.moveStatus(
+            await eval(ReaderCaretScripts.moveInvocation(retreatKey)));
+        if (ret == 'moved') {
+          final afterRet = await sig();
+          expect(afterRet['off'], axisStart['off'],
+              reason: '$retreatKey must reverse $advanceKey '
+                  '(writing-mode reading axis)');
+          expect(afterRet['ch'], axisStart['ch']);
+        }
       }
+      // Cross-axis (line) key must be recognised: from a mid position it either
+      // moves to an adjacent line, turns the page, or is blocked at an edge — all
+      // valid statuses, none throws.
+      final String lineKey = vertical ? 'left' : 'down';
+      final lineStatus = ReaderCaretScripts.moveStatus(
+          await eval(ReaderCaretScripts.moveInvocation(lineKey)));
+      debugPrint('[CARET] line-move ($lineKey) status=$lineStatus');
+      expect(
+        const <String>['moved', 'pageForward', 'pageBackward', 'blocked']
+            .contains(lineStatus),
+        isTrue,
+        reason: 'line-move must return a known status',
+      );
 
       // ── lookup() reuses the selection pipeline ────────────────────────
       await eval(ReaderCaretScripts.enterInvocation()); // re-seed if needed

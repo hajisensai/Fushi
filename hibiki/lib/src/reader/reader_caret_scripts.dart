@@ -118,7 +118,8 @@ window.hoshiCaret = {
     if (window.hoshiReader && typeof window.hoshiReader.isVertical === 'function') {
       return window.hoshiReader.isVertical();
     }
-    return (window.getComputedStyle(document.body).writingMode || '').indexOf('vertical') === 0;
+    // Match hoshiReader.isVertical(): the reader only lays out vertical-rl.
+    return window.getComputedStyle(document.body).writingMode === 'vertical-rl';
   },
   _paged: function() {
     return !!(window.hoshiReader && ('paginationMetrics' in window.hoshiReader));
@@ -443,10 +444,10 @@ window.hoshiCaret = {
   },
 
   reanchor: function(edge) {
-    this.active = true;
     this._ensureRing();
     var pos = (edge === 'backward') ? this._lastVisibleStop() : this._firstVisibleStop();
-    if (!pos) return { ok: false };
+    if (!pos) return { ok: false }; // empty page — leave active state untouched
+    this.active = true;
     this._place(pos.node, pos.offset, pos.rect);
     return { ok: true, rect: this._rectJson(pos.rect) };
   },
