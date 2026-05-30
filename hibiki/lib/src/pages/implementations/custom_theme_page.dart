@@ -389,14 +389,16 @@ class _CustomThemePageState extends BasePageState {
   @override
   Widget build(BuildContext context) {
     final ColorScheme cs = _preview;
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
 
     return AdaptiveSettingsScaffold(
       title: Text(t.custom_theme),
       padding: EdgeInsets.fromLTRB(
-        16,
-        12,
-        16,
-        12 +
+        tokens.spacing.page,
+        tokens.spacing.gap + tokens.spacing.gap / 2,
+        tokens.spacing.page,
+        tokens.spacing.gap +
+            tokens.spacing.gap / 2 +
             MediaQuery.of(context).padding.bottom +
             MediaQuery.of(context).viewInsets.bottom,
       ),
@@ -414,7 +416,7 @@ class _CustomThemePageState extends BasePageState {
       ],
       children: [
         _buildPreviewCard(cs),
-        const SizedBox(height: 16),
+        SizedBox(height: tokens.spacing.card),
         AdaptiveSettingsSection(
           children: [
             AdaptiveSettingsSegmentedRow<String>(
@@ -631,7 +633,7 @@ class _CustomThemePageState extends BasePageState {
             ),
           ],
         ),
-        const SizedBox(height: 16),
+        SizedBox(height: tokens.spacing.card),
         FilledButton.icon(
           onPressed: () async {
             final NavigatorState navigator = Navigator.of(context);
@@ -682,27 +684,28 @@ class _CustomThemePageState extends BasePageState {
 
     return HibikiCard(
       color: cs.surface,
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.all(tokens.spacing.card),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(t.preview, style: titleStyle),
-          const SizedBox(height: 8),
+          SizedBox(height: tokens.spacing.gap),
           Row(
             children: [
               _swatch(cs.primary, t.color_primary, cs.onSurface),
-              const SizedBox(width: 8),
+              SizedBox(width: tokens.spacing.gap),
               _swatch(cs.secondary, t.color_secondary, cs.onSurface),
-              const SizedBox(width: 8),
+              SizedBox(width: tokens.spacing.gap),
               _swatch(cs.tertiary, t.color_tertiary, cs.onSurface),
-              const SizedBox(width: 8),
+              SizedBox(width: tokens.spacing.gap),
               _swatch(cs.primaryContainer, t.color_container, cs.onSurface),
             ],
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.all(12),
+            padding:
+                EdgeInsets.all(tokens.spacing.gap + tokens.spacing.gap / 2),
             decoration: BoxDecoration(
               color: bgColor,
               borderRadius: tokens.radii.chipRadius,
@@ -726,10 +729,12 @@ class _CustomThemePageState extends BasePageState {
                     ],
                   ),
                 ),
-                const SizedBox(height: 8),
+                SizedBox(height: tokens.spacing.gap),
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: tokens.spacing.gap * 0.75,
+                    vertical: tokens.spacing.gap / 4,
+                  ),
                   decoration: BoxDecoration(
                     color: _useSasayakiColor
                         ? _sasayakiColor
@@ -741,7 +746,7 @@ class _CustomThemePageState extends BasePageState {
                     style: bodyStyle,
                   ),
                 ),
-                const SizedBox(height: 6),
+                SizedBox(height: tokens.spacing.gap * 0.75),
                 RichText(
                   text: TextSpan(
                     style: bodyStyle,
@@ -771,25 +776,28 @@ class _CustomThemePageState extends BasePageState {
               ],
             ),
           ),
-          const SizedBox(height: 8),
+          SizedBox(height: tokens.spacing.gap),
           Row(
             children: [
               HibikiPreviewSwitch(
                 trackColor: cs.primaryContainer,
                 thumbColor: cs.primary,
               ),
-              const SizedBox(width: 8),
+              SizedBox(width: tokens.spacing.gap),
               Text(t.preview_switch, style: metaStyle),
-              const SizedBox(width: 16),
+              SizedBox(width: tokens.spacing.card),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                padding: EdgeInsets.symmetric(
+                  horizontal: tokens.spacing.gap,
+                  vertical: tokens.spacing.gap * 0.375,
+                ),
                 decoration: BoxDecoration(
                   color: cs.secondaryContainer,
                   borderRadius: tokens.radii.controlRadius,
                 ),
                 child: Text(t.preview_badge, style: badgeStyle),
               ),
-              const SizedBox(width: 8),
+              SizedBox(width: tokens.spacing.gap),
               Container(
                 width: 40,
                 height: 8,
@@ -812,7 +820,10 @@ class _CustomThemePageState extends BasePageState {
     final Color fc = _useFontColor ? _fontColor! : cs.onSurface;
     final Color bg = _useBgColor ? _bgColor! : cs.surfaceContainerLow;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: EdgeInsets.symmetric(
+        horizontal: tokens.spacing.gap,
+        vertical: tokens.spacing.gap / 2,
+      ),
       decoration: BoxDecoration(
         color: bg,
         borderRadius: tokens.radii.chipRadius,
@@ -829,7 +840,10 @@ class _CustomThemePageState extends BasePageState {
     final Color fc = _useFontColor ? _fontColor! : cs.onSurface;
     final Color bg = _useBgColor ? _bgColor! : cs.surfaceContainerLow;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: EdgeInsets.symmetric(
+        horizontal: tokens.spacing.gap,
+        vertical: tokens.spacing.gap / 2,
+      ),
       decoration: BoxDecoration(
         color: bg,
         borderRadius: tokens.radii.chipRadius,
@@ -874,7 +888,10 @@ class _CustomThemePageState extends BasePageState {
     return Row(
       children: [
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          padding: EdgeInsets.symmetric(
+            horizontal: tokens.spacing.gap * 0.75,
+            vertical: tokens.spacing.gap / 4,
+          ),
           decoration: BoxDecoration(
             color: primary.withValues(alpha: 0.34),
             borderRadius: tokens.radii.chipRadius,
@@ -884,7 +901,7 @@ class _CustomThemePageState extends BasePageState {
             style: tokens.type.metadata.copyWith(color: fc),
           ),
         ),
-        const SizedBox(width: 8),
+        SizedBox(width: tokens.spacing.gap),
         HibikiPreviewSwitch(
           trackColor: track,
           thumbColor: primary,
@@ -896,7 +913,10 @@ class _CustomThemePageState extends BasePageState {
   Widget _buildSecondaryPreview(ColorScheme cs) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      padding: EdgeInsets.symmetric(
+        horizontal: tokens.spacing.gap,
+        vertical: tokens.spacing.gap * 0.375,
+      ),
       decoration: BoxDecoration(
         color: cs.secondaryContainer,
         borderRadius: tokens.radii.controlRadius,
@@ -922,7 +942,7 @@ class _CustomThemePageState extends BasePageState {
             borderRadius: tokens.radii.chipRadius,
           ),
         ),
-        const SizedBox(width: 4),
+        SizedBox(width: tokens.spacing.gap / 2),
         Container(
           width: 32,
           height: 8,
@@ -949,7 +969,10 @@ class _CustomThemePageState extends BasePageState {
     final Color sas =
         _useSasayakiColor ? _sasayakiColor! : HibikiColor.defaultSasayakiColor;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: EdgeInsets.symmetric(
+        horizontal: tokens.spacing.gap,
+        vertical: tokens.spacing.gap / 2,
+      ),
       decoration: BoxDecoration(
         color: bg,
         borderRadius: tokens.radii.chipRadius,
@@ -1025,6 +1048,7 @@ class _CustomThemePageState extends BasePageState {
     String? description,
     Widget? preview,
   }) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return AdaptiveSettingsSwitchActionRow(
       title: label,
       subtitle: description,
@@ -1039,7 +1063,7 @@ class _CustomThemePageState extends BasePageState {
             borderColor: Theme.of(context).dividerColor,
           ),
           if (preview != null) ...[
-            const SizedBox(width: 8),
+            SizedBox(width: tokens.spacing.gap),
             Expanded(child: preview),
           ],
         ],

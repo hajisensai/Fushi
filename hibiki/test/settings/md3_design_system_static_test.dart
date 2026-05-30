@@ -1189,6 +1189,23 @@ void main() {
     expect(normalized, isNot(contains('child: Card(')));
   });
 
+  test('custom theme page uses shared MD3 spacing tokens', () {
+    final String source = File(
+      'lib/src/pages/implementations/custom_theme_page.dart',
+    ).readAsStringSync();
+
+    expect(source, contains('HibikiDesignTokens.of(context)'));
+    expect(source, isNot(contains('const SizedBox(height: 16)')));
+    expect(source, isNot(contains('const SizedBox(height: 12)')));
+    expect(source, isNot(contains('const SizedBox(height: 8)')));
+    expect(source, isNot(contains('const SizedBox(width: 16)')));
+    expect(source, isNot(contains('const SizedBox(width: 8)')));
+    expect(source, isNot(contains('padding: const EdgeInsets.all(16)')));
+    expect(source, isNot(contains('padding: const EdgeInsets.all(12)')));
+    expect(source, isNot(contains('const EdgeInsets.symmetric(horizontal: 8')));
+    expect(source, isNot(contains('const EdgeInsets.symmetric(horizontal: 6')));
+  });
+
   test('custom theme import dialog uses shared MD3 dialog chrome', () {
     final String source = File(
       'lib/src/pages/implementations/custom_theme_page.dart',
