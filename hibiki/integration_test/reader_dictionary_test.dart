@@ -5,6 +5,7 @@ import 'package:integration_test/integration_test.dart';
 
 import 'package:hibiki/main.dart' as app;
 
+import 'helpers/library_fixture.dart';
 import 'test_helpers.dart';
 
 /// Integration tests for the highest-risk Hibiki user paths:
@@ -42,15 +43,24 @@ void main() {
 
       screenshotCount += await takeScreenshot(binding, 'reader_test_home');
 
+      // Self-provision the synthetic book + the dictionary the runner pushed to
+      // /sdcard/Download/test_dict.zip, so the test is hermetic on a fresh
+      // install (no manual import step required).
+      final bool dictSeeded = await seedDictionary(tester);
+      expect(dictSeeded, isTrue,
+          reason: 'Dictionary fixture must import. Push a Yomitan zip to '
+              '/sdcard/Download/test_dict.zip (the runner does this).');
+
       // ── Phase 1: Open a book from the shelf ──
 
-      final Finder bookEntries = findBookEntries();
+      Finder bookEntries = findBookEntries();
 
       if (bookEntries.evaluate().isEmpty) {
-        fail('Reader test blocked: no books on shelf. '
-            'Import the Kagami EPUB fixture first. '
-            'See CLAUDE.md § 集成测试流程.');
+        await seedReaderBook(tester);
+        bookEntries = findBookEntries();
       }
+      expect(bookEntries, findsWidgets,
+          reason: 'A book must be on the shelf after seeding the fixture');
 
       debugPrint(
           '[reader] Found ${bookEntries.evaluate().length} book(s) on shelf');

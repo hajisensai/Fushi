@@ -5,6 +5,7 @@ import 'package:integration_test/integration_test.dart';
 
 import 'package:hibiki/main.dart' as app;
 
+import 'helpers/library_fixture.dart';
 import 'test_helpers.dart';
 
 /// Verifies that keyboard page-turn shortcuts actually reach the reader's
@@ -49,10 +50,15 @@ void main() {
     expect(homeReady, isTrue, reason: 'Home must render');
     await tester.pump(const Duration(seconds: 2));
 
-    final Finder books = findBookEntries();
+    Finder books = findBookEntries();
     if (books.evaluate().isEmpty) {
-      fail('No books on shelf — import the Kagami EPUB fixture first.');
+      // Self-provision the synthetic marker EPUB so the test is hermetic on a
+      // fresh install (no manual import step required).
+      await seedReaderBook(tester);
+      books = findBookEntries();
     }
+    expect(books, findsWidgets,
+        reason: 'A book must be on the shelf after seeding the fixture');
     await tester.tap(books.first);
     await tester.pump(const Duration(seconds: 3));
 
