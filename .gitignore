@@ -33,6 +33,7 @@ melos_*.iml
 /build/
 **/pubspec_overrides.yaml
 packages/*/pubspec.lock
+packages/*/build/
 
 # Web related
 
