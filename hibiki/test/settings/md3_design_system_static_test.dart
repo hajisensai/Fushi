@@ -1177,6 +1177,25 @@ void main() {
     ).readAsStringSync();
     expect(termSource, contains('HibikiCard('));
     expect(_withoutSharedComponentNames(termSource), isNot(contains('Card(')));
+
+    final String floatingSource = File(
+      'lib/src/pages/implementations/floating_dict_page.dart',
+    ).readAsStringSync();
+    final String floatingTitle = _functionSource(
+      floatingSource,
+      'Widget _buildTitleBar()',
+      'Widget _buildSearchBar()',
+    );
+    final String floatingSearch = _functionSource(
+      floatingSource,
+      'Widget _buildSearchBar()',
+      'Widget _buildResults()',
+    );
+    for (final String section in <String>[floatingTitle, floatingSearch]) {
+      expect(section, contains('HibikiDesignTokens.of(context)'));
+      expect(section, contains('tokens.spacing'));
+      expect(section, isNot(contains('const EdgeInsets.symmetric(')));
+    }
   });
 
   test('media search shell no longer depends on legacy floating search', () {

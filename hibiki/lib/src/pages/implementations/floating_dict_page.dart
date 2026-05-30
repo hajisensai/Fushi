@@ -145,7 +145,10 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
         _invoke('dragEnd');
       },
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        padding: EdgeInsets.symmetric(
+          horizontal: tokens.spacing.gap,
+          vertical: tokens.spacing.gap / 2,
+        ),
         child: Row(
           children: [
             Expanded(
@@ -174,8 +177,12 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
   }
 
   Widget _buildSearchBar() {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      padding: EdgeInsets.symmetric(
+        horizontal: tokens.spacing.gap,
+        vertical: tokens.spacing.gap / 4,
+      ),
       child: HibikiCompactSearchRow(
         controller: _searchController,
         focusNode: _searchFocusNode,
