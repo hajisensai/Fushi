@@ -397,7 +397,7 @@ class _AudioRecorderDialogPageState
       onPressed: () async {
         await _audioPlayer.stop();
         if (!await _recorder.hasPermission()) {
-          HibikiToast.show(msg: t.no_audio_file);
+          HibikiToast.show(msg: t.microphone_permission_denied);
           return;
         }
         if (!mounted) return;
