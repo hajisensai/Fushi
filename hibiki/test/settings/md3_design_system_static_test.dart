@@ -625,6 +625,37 @@ void main() {
     expect(cardShell, isNot(contains('theme.colorScheme.primary.withValues')));
   });
 
+  test('reader history title and drag overlays use shared MD3 tokens', () {
+    final String source = File(
+      'lib/src/pages/implementations/reader_hibiki_history_page.dart',
+    ).readAsStringSync();
+    final String titleOverlay = _functionSource(
+      source,
+      'Widget _titleOverlay(String title)',
+      'Widget _cardBadge({',
+    );
+    final String dragTarget = _functionSource(
+      source,
+      'class BookDragTarget extends StatefulWidget',
+      'class ReaderHistoryDeleteDialog',
+    );
+
+    expect(titleOverlay, contains('HibikiDesignTokens.of(context)'));
+    expect(titleOverlay, contains('tokens.spacing'));
+    expect(titleOverlay, contains('tokens.surfaces'));
+    expect(titleOverlay, isNot(contains('EdgeInsets.fromLTRB(6, 4, 6, 6)')));
+    expect(titleOverlay, isNot(contains('theme.colorScheme.surface')));
+    expect(titleOverlay, isNot(contains('theme.colorScheme.onSurface')));
+
+    expect(dragTarget, contains('HibikiDesignTokens.of(context)'));
+    expect(dragTarget, contains('tokens.spacing'));
+    expect(dragTarget, contains('tokens.surfaces'));
+    expect(dragTarget, isNot(contains('final ThemeData theme')));
+    expect(dragTarget, isNot(contains('theme.colorScheme.primary')));
+    expect(dragTarget, isNot(contains('width: 2')));
+    expect(dragTarget, isNot(contains('size: 32')));
+  });
+
   test('reader history action dialogs use shared MD3 dialog chrome', () {
     final String source = File(
       'lib/src/pages/implementations/reader_hibiki_history_page.dart',

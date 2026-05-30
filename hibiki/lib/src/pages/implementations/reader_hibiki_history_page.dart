@@ -653,20 +653,26 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
 
   Widget _titleOverlay(String title) {
     return LayoutBuilder(builder: (context, constraints) {
+      final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
       return Align(
         alignment: Alignment.bottomCenter,
         child: Container(
           height: constraints.maxHeight * 0.38,
           width: double.infinity,
           alignment: Alignment.bottomCenter,
-          padding: const EdgeInsets.fromLTRB(6, 4, 6, 6),
+          padding: EdgeInsetsDirectional.fromSTEB(
+            tokens.spacing.gap * 0.75,
+            tokens.spacing.gap / 2,
+            tokens.spacing.gap * 0.75,
+            tokens.spacing.gap * 0.75,
+          ),
           decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
               colors: [
-                theme.colorScheme.surface.withValues(alpha: 0),
-                theme.colorScheme.surface.withValues(alpha: 0.85),
+                tokens.surfaces.page.withValues(alpha: 0),
+                tokens.surfaces.page.withValues(alpha: 0.85),
               ],
             ),
           ),
@@ -677,7 +683,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
             textAlign: TextAlign.center,
             softWrap: true,
             style: textTheme.labelSmall?.copyWith(
-              color: theme.colorScheme.onSurface,
+              color: tokens.surfaces.onSurface,
             ),
           ),
         ),
@@ -1487,8 +1493,8 @@ class _BookDragTargetState extends State<BookDragTarget> {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final Color hoverColor = tokens.surfaces.primary;
     return DragTarget<BookTagRow>(
       onWillAcceptWithDetails: (_) => true,
       onAcceptWithDetails: (details) {
@@ -1510,18 +1516,18 @@ class _BookDragTargetState extends State<BookDragTarget> {
               Positioned.fill(
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    color: theme.colorScheme.primary.withValues(alpha: 0.2),
+                    color: hoverColor.withValues(alpha: 0.2),
                     borderRadius: tokens.radii.cardRadius,
                     border: Border.all(
-                      color: theme.colorScheme.primary,
-                      width: 2,
+                      color: hoverColor,
+                      width: tokens.spacing.gap / 4,
                     ),
                   ),
                   child: Center(
                     child: Icon(
                       Icons.add_circle_outline,
-                      color: theme.colorScheme.primary,
-                      size: 32,
+                      color: hoverColor,
+                      size: tokens.spacing.gap * 4,
                     ),
                   ),
                 ),
