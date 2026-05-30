@@ -67,9 +67,8 @@ void main() {
 
     // A v14 table that was NOT present in the seeded DB must now exist and be
     // queryable, proving createAll() rebuilt the complete current schema.
-    final profiles = await db
-        .customSelect('SELECT COUNT(*) AS c FROM profiles')
-        .getSingle();
+    final profiles =
+        await db.customSelect('SELECT COUNT(*) AS c FROM profiles').getSingle();
     expect(profiles.read<int>('c'), 0,
         reason: 'createAll must rebuild the full v14 schema after the drop');
   });
