@@ -1047,6 +1047,32 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
                 if (_readerContentReady)
                   const SizedBox.shrink(
                       key: ValueKey<String>('hoshi_content_ready')),
+                // On-screen focus indicator for the "reading content" layer: a
+                // red ring shown while the reader content holds primary focus and
+                // no char cursor is active (the cursor draws its own ring). This
+                // replaces the native WebView focus outline, which was invisible
+                // or drawn off-screen (e.g. at the scrolled document position).
+                if (_readerContentReady && !_lyricsMode)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: AnimatedBuilder(
+                        animation: _focusNode,
+                        builder: (context, _) {
+                          final bool show = _focusNode.hasPrimaryFocus &&
+                              _caretSurface == CaretSurface.none;
+                          if (!show) return const SizedBox.shrink();
+                          return DecoratedBox(
+                            decoration: BoxDecoration(
+                              border: Border.all(
+                                color: const Color(0xFFE53935),
+                                width: 3,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
                 _buildTopProgressBar(),
                 buildDictionary(),
                 // The bottom chrome returns a Positioned; it MUST stay a direct
@@ -3236,9 +3262,15 @@ window.flutter_inappwebview.callHandler('spreadReady');
     // closes the chrome and returns focus to the reading content rather than
     // bubbling up to the global pop (which would exit the reader).
     if (_chromeFocusScope.hasFocus) {
+      // B / Escape / Up move focus back up to the reading content (the sibling
+      // layer above the bar). The bar stays visible — only Y toggles its
+      // visibility, so B must not hide it. (Both chrome bars are single rows, so
+      // intercepting Up to exit never strands intra-bar vertical traversal; a
+      // future multi-row bar would need to traverse within the bar first.)
       if (event.logicalKey == LogicalKeyboardKey.gameButtonB ||
-          event.logicalKey == LogicalKeyboardKey.escape) {
-        if (_showChrome) _toggleChrome();
+          event.logicalKey == LogicalKeyboardKey.escape ||
+          event.logicalKey == LogicalKeyboardKey.arrowUp) {
+        _focusNode.requestFocus();
         return KeyEventResult.handled;
       }
       return KeyEventResult.ignored;
@@ -3311,8 +3343,10 @@ window.flutter_inappwebview.callHandler('spreadReady');
   /// directional-focus / activate / global-back fallback.
   bool _handleGamepadButton(GamepadButton button) {
     if (_chromeFocusScope.hasFocus) {
-      if (button == GamepadButton.b) {
-        if (_showChrome) _toggleChrome();
+      // B / D-pad Up move focus back up to the reading content; the bar stays
+      // visible (only Y toggles its visibility).
+      if (button == GamepadButton.b || button == GamepadButton.dpadUp) {
+        _focusNode.requestFocus();
         return true;
       }
       // Let directional traversal / activate flow to the chrome controls.

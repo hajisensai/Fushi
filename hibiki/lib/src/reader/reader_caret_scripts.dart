@@ -213,7 +213,10 @@ window.hoshiCaret = {
   // gamepad can reach buttons/links/controls (e.g. the dictionary popup's
   // collapse toggles, audio/pitch controls and action buttons — many of which
   // are icon-only with no text glyph to land on). A then clicks them.
-  _interactiveSelector: 'a[href], button, [role="button"], [role="link"]',
+  // `summary` is the dictionary popup's collapse toggle (a native <details>
+  // disclosure); treat it as one whole interactive stop so the ring covers the
+  // whole row and A toggles the section, rather than landing on a child sliver.
+  _interactiveSelector: 'a[href], button, summary, [role="button"], [role="link"]',
   _interactiveEls: function() {
     // Element stops are a popup-only concern. In the reader the only interactive
     // text is <a href>, which is already reachable as a text stop (and activate()
@@ -238,6 +241,8 @@ window.hoshiCaret = {
       var e = pointer[p];
       if (seen.has(e)) continue;
       if (e.closest(this._interactiveSelector)) continue; // covered by an explicit control
+      var r = e.getBoundingClientRect();
+      if (r.width < 6 || r.height < 6) continue; // skip degenerate/sliver elements
       var hasPointerChild = false;
       for (var q = 0; q < pointer.length; q++) {
         if (q !== p && e.contains(pointer[q])) { hasPointerChild = true; break; }
@@ -657,7 +662,7 @@ window.hoshiCaret = {
     var el = this.node.parentElement;
     var link = el && el.closest('a[href]');
     if (link) { link.click(); return 'link'; }
-    var control = el && el.closest('button, [role="button"], [role="link"]');
+    var control = el && el.closest('button, summary, [role="button"], [role="link"]');
     if (control) { control.click(); return 'activated'; }
     return this.lookup() ? 'lookup' : 'none';
   }
