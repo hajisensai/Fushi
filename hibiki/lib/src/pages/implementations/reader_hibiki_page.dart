@@ -29,6 +29,7 @@ import 'package:hibiki/src/media/audiobook/reader_quick_settings_sheet.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/profile/profile_repository.dart';
 import 'package:hibiki/src/profile/profile_view_model.dart';
+import 'package:hibiki/src/reader/reader_caret_scripts.dart';
 import 'package:hibiki/src/reader/reader_content_styles.dart';
 import 'package:hibiki/src/reader/reader_resource_sanitizer.dart';
 import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
@@ -52,6 +53,7 @@ import 'package:hibiki/src/shortcuts/input_binding.dart'
 import 'package:hibiki/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent;
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
+import 'package:hibiki/src/shortcuts/reader_caret_router.dart';
 
 List<int> _computeChapterCharCounts(EpubBook book) {
   return List<int>.generate(
@@ -172,6 +174,13 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   // keep working after a tap lands focus inside the WebView (HBK #1).
   final FocusScopeNode _chromeFocusScope =
       FocusScopeNode(debugLabel: 'readerChrome');
+
+  // Whether the char-level reading cursor (a focused character inside the EPUB
+  // DOM, driven from JS via [ReaderCaretScripts]) is active. While active, A/Enter
+  // looks up the word at the cursor, B/Esc leaves it, and directional keys / Tab
+  // step the cursor instead of turning the page. Entered with A/Enter when the
+  // book (not the bottom chrome) holds focus.
+  bool _caretActive = false;
 
   bool get _showTopProgress =>
       _readerContentReady &&
@@ -933,6 +942,8 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       await _controller!.evaluateJavascript(
         source: ReaderPaginationScripts.updatePageSizeInvocation(w, h),
       );
+      if (!mounted || _controller == null) return;
+      await _caretRefresh();
     }
   }
 
@@ -1317,11 +1328,23 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
     final String furiganaJs = _buildFuriganaJs(s.furiganaMode);
 
+    final String caretJs = ReaderCaretScripts.source();
+    final double caretBottomInset = _showChrome
+        ? _readerChromeHeight + _stableBottomInset
+        : _stableBottomInset;
+    final String caretInit = ReaderCaretScripts.initInvocation(
+      color: _caretRingColorCss(),
+      insetTop: _readerTopOffset,
+      insetBottom: caretBottomInset,
+    );
+
     return '''
 (function() {
   window.scanNonJapaneseText = true;
   $selectionJs
   $paginationJs
+  $caretJs
+  $caretInit;
   $furiganaJs
   var startX = 0, startY = 0, startTime = 0, hasStart = false;
   function _gestureStart(x, y) { hasStart = true; startX = x; startY = y; startTime = Date.now(); }
@@ -1750,6 +1773,13 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         source: _buildReaderSetupScript(sasayakiCuesJson: sasayakiCuesJson),
       );
       if (!mounted || _navigateGeneration != gen) return;
+
+      // The setup script rebuilds window.hoshiCaret fresh (inactive). If the
+      // reading cursor was active, restore it on the new chapter's first page.
+      if (_caretActive) {
+        await _caretReanchor(ReaderNavigationDirection.forward);
+        if (!mounted || _navigateGeneration != gen) return;
+      }
 
       _initialFragment = null;
       if (_audiobookController != null) {
@@ -3149,6 +3179,23 @@ window.flutter_inappwebview.callHandler('spreadReady');
       return KeyEventResult.ignored;
     }
 
+    // Char-level reading cursor (book has focus; chrome already returned above).
+    // While active, the cursor owns Tab / arrows / A(Enter) / B(Esc) before the
+    // registry is consulted. While inactive, A / Enter ENTER the cursor.
+    if (_caretActive) {
+      final CaretAction? caretAction = ReaderCaretRouter.decideKeyboard(
+        event.logicalKey,
+        shift: HardwareKeyboard.instance.isShiftPressed,
+      );
+      if (caretAction != null) {
+        unawaited(_runCaretAction(caretAction));
+        return KeyEventResult.handled;
+      }
+    } else if (ReaderCaretRouter.isEnterTriggerKeyboard(event.logicalKey)) {
+      unawaited(_enterCaret());
+      return KeyEventResult.handled;
+    }
+
     final modifiers = <ModifierKey>{};
     if (HardwareKeyboard.instance.isControlPressed) {
       modifiers.add(ModifierKey.ctrl);
@@ -3206,6 +3253,17 @@ window.flutter_inappwebview.callHandler('spreadReady');
       // Let directional traversal / activate flow to the chrome controls.
       return false;
     }
+    // Char-level reading cursor — same contextual routing as the keyboard path.
+    if (_caretActive) {
+      final CaretAction? caretAction = ReaderCaretRouter.decideGamepad(button);
+      if (caretAction != null) {
+        unawaited(_runCaretAction(caretAction));
+        return true;
+      }
+    } else if (ReaderCaretRouter.isEnterTriggerGamepad(button)) {
+      unawaited(_enterCaret());
+      return true;
+    }
     final ShortcutAction? action = appModel.shortcutRegistry.resolveGamepad(
           button,
           scope: ShortcutScope.reader,
@@ -3256,6 +3314,109 @@ window.flutter_inappwebview.callHandler('spreadReady');
     }
   }
 
+  // ── Char-level reading cursor ─────────────────────────────────────
+
+  /// rgba() for the cursor focus ring — the reader accent (theme primary, or the
+  /// highlight yellow on dark backgrounds where primary lacks contrast).
+  String _caretRingColorCss() {
+    final Color accent = _isReaderThemeDark
+        ? HibikiColor.defaultHighlightYellow
+        : Theme.of(context).colorScheme.primary;
+    return 'rgba(${(accent.r * 255).round()},${(accent.g * 255).round()},'
+        '${(accent.b * 255).round()},0.98)';
+  }
+
+  Future<void> _enterCaret() async {
+    if (_controller == null || !_readerContentReady) return;
+    final Object? raw = await _controller!
+        .evaluateJavascript(source: ReaderCaretScripts.enterInvocation());
+    if (!mounted) return;
+    // enter() returns {ok:false} on an empty page (no visible character).
+    if (ReaderCaretScripts.moveStatus(raw) != 'moved') return;
+    if (!_caretActive) setState(() => _caretActive = true);
+  }
+
+  void _exitCaret() {
+    if (!_caretActive) return;
+    _controller?.evaluateJavascript(source: ReaderCaretScripts.exitInvocation());
+    setState(() => _caretActive = false);
+  }
+
+  Future<void> _runCaretAction(CaretAction action) async {
+    switch (action) {
+      case CaretAction.stepForward:
+        await _caretMove('forward');
+        return;
+      case CaretAction.stepBackward:
+        await _caretMove('backward');
+        return;
+      case CaretAction.moveUp:
+        await _caretMove('up');
+        return;
+      case CaretAction.moveDown:
+        await _caretMove('down');
+        return;
+      case CaretAction.moveLeft:
+        await _caretMove('left');
+        return;
+      case CaretAction.moveRight:
+        await _caretMove('right');
+        return;
+      case CaretAction.lookup:
+        await _caretLookup();
+        return;
+      case CaretAction.dismissOrExit:
+        if (isDictionaryShown) {
+          clearDictionaryResult();
+        } else {
+          _exitCaret();
+        }
+        return;
+    }
+  }
+
+  /// Drive one cursor move. JS resolves the writing-mode and either moves within
+  /// the page (status 'moved'), scrolls in continuous mode, or — in paged mode at
+  /// a page edge — asks Dart to turn the page (which re-anchors the cursor on the
+  /// new page via [_paginate]). 'blocked' = book start/end, stay put.
+  Future<void> _caretMove(String physicalDir) async {
+    if (_controller == null) return;
+    final Object? raw = await _controller!.evaluateJavascript(
+        source: ReaderCaretScripts.moveInvocation(physicalDir));
+    if (!mounted || _controller == null) return;
+    final String status = ReaderCaretScripts.moveStatus(raw);
+    if (status == 'pageForward') {
+      await _paginate(ReaderNavigationDirection.forward);
+    } else if (status == 'pageBackward') {
+      await _paginate(ReaderNavigationDirection.backward);
+    }
+  }
+
+  Future<void> _caretLookup() async {
+    if (_controller == null) return;
+    await _controller!
+        .evaluateJavascript(source: ReaderCaretScripts.lookupInvocation());
+    // JS fires onTextSelected → _handleTextSelected (the tap pipeline).
+  }
+
+  /// Place the cursor at the entering edge of the freshly paginated page.
+  Future<void> _caretReanchor(ReaderNavigationDirection direction) async {
+    if (!_caretActive || _controller == null) return;
+    final String edge = direction == ReaderNavigationDirection.forward
+        ? 'forward'
+        : 'backward';
+    await _controller!
+        .evaluateJavascript(source: ReaderCaretScripts.reanchorInvocation(edge));
+  }
+
+  /// Re-measure the ring after a relayout (chrome toggle, font/size change). If
+  /// the cursor's node detached, JS re-anchors to the first visible character.
+  Future<void> _caretRefresh() async {
+    if (!_caretActive || _controller == null) return;
+    await _controller!
+        .evaluateJavascript(source: ReaderCaretScripts.refreshInvocation());
+  }
+
   // ── Shift+Hover over dismiss barrier ──────────────────────────────
 
   double _barrierHoverLastDx = -1;
@@ -3289,6 +3450,8 @@ window.flutter_inappwebview.callHandler('spreadReady');
       if (!mounted || _controller == null) return;
       if (!_didScroll(result)) {
         _handlePageTurnLimit(direction.jsValue);
+      } else {
+        await _caretReanchor(direction);
       }
       return;
     }
@@ -3298,6 +3461,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
     if (!mounted || _controller == null) return;
     if (_didScroll(result)) {
       _refreshProgress();
+      await _caretReanchor(direction);
     } else {
       _handlePageTurnLimit(direction.jsValue);
     }
@@ -3546,6 +3710,18 @@ window.flutter_inappwebview.callHandler('spreadReady');
     await _controller!.evaluateJavascript(
       source: ReaderPaginationScripts.setChromeInsetsInvocation(top, bottom),
     );
+    if (!mounted || _controller == null) return;
+    // Keep the cursor's "is on the current page" viewport in sync with the chrome
+    // (it changes the usable bottom inset) so the next enter()/move() lands inside
+    // the visible page, and re-measure the ring for the reflow.
+    await _controller!.evaluateJavascript(
+      source: ReaderCaretScripts.initInvocation(
+        color: _caretRingColorCss(),
+        insetTop: top,
+        insetBottom: bottom,
+      ),
+    );
+    await _caretRefresh();
   }
 
   Widget _buildBottomChrome() {
