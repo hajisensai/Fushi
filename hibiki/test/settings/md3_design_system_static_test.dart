@@ -1384,8 +1384,10 @@ void main() {
 
     expect(editDialog, contains('HibikiTagChip('));
     expect(editDialog, contains('onDeleted:'));
+    expect(editDialog, contains('HibikiOverflowMenu<GamepadButton>('));
     expect(editDialog, contains('tokens.radii.controlRadius'));
     expect(editDialog, contains('tokens.spacing'));
+    expect(editDialog, isNot(contains('PopupMenuButton')));
     expect(editDialog, isNot(contains('=> Chip(')));
     expect(editDialog, isNot(contains('BorderRadius.circular(8)')));
     expect(editDialog, isNot(contains('const SizedBox(height: 8)')));

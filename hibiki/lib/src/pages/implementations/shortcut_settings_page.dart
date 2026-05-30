@@ -533,15 +533,16 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
               ],
             ),
             SizedBox(height: tokens.spacing.gap),
-            PopupMenuButton<GamepadButton>(
+            HibikiOverflowMenu<GamepadButton>(
               onSelected: _addGamepad,
-              itemBuilder: (_) => <PopupMenuEntry<GamepadButton>>[
+              items: <PopupMenuEntry<GamepadButton>>[
                 for (final GamepadButton btn in GamepadButton.values)
                   PopupMenuItem<GamepadButton>(
                     value: btn,
                     child: Text(btn.label),
                   ),
               ],
+              padding: EdgeInsets.zero,
               child: Padding(
                 padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
                 child: Row(
