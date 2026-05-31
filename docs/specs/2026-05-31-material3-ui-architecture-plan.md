@@ -653,7 +653,7 @@ git commit -m "test(focus): guard global focus architecture"
 - Review: `docs/reviews/2026-05-26-project-review.md`
 - Review: `docs/reviews/2026-05-27-project-review.md`
 
-- [ ] **Step 1: Add a static test for forbidden page-local ordinary chrome**
+- [x] **Step 1: Add a static test for forbidden page-local ordinary chrome**
 
 Add a test near the other static MD3 tests. Keep allowlists explicit so future exceptions are reviewed instead of silently accepted.
 
@@ -702,7 +702,7 @@ Add a test near the other static MD3 tests. Keep allowlists explicit so future e
   });
 ```
 
-- [ ] **Step 2: Run the test to prove the guard currently fails**
+- [x] **Step 2: Run the test to prove the guard currently fails**
 
 Run from `hibiki/`:
 
@@ -712,7 +712,7 @@ D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test test\settings\md3_
 
 Expected: FAIL listing current files that still use old ordinary chrome directly. This is intentional; copy the failing file list into the next step's migration inventory.
 
-- [ ] **Step 3: Narrow the allowlist to true content exceptions**
+- [x] **Step 3: Narrow the allowlist to true content exceptions**
 
 The first failing list will include false positives. Keep only these exception classes:
 
@@ -723,7 +723,7 @@ The first failing list will include false positives. Keep only these exception c
 
 Do not allow an exception because "this page is annoying to migrate." That is garbage architecture.
 
-- [ ] **Step 4: Commit the guard only after the allowlist makes it pass for current accepted exceptions**
+- [x] **Step 4: Commit the guard only after the allowlist makes it pass for current accepted exceptions**
 
 Run:
 
@@ -734,6 +734,11 @@ git commit -m "test(ui): define MD3 architecture guard"
 ```
 
 If the guard is too broad to be useful, do not commit it. Instead split it into smaller focused tests per family in Tasks 3-8. Do not commit a permanently failing test.
+
+Implementation note:
+- `23a19a279 test(ui): define MD3 architecture guard` added a global ordinary-chrome static guard with reviewed file-level reasons for true content/component exceptions.
+- The guard normalizes shared component names so `HibikiCard(` and similar wrappers do not count as raw framework `Card(` usage.
+- Verification: `D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test test/settings/md3_design_system_static_test.dart --reporter expanded` passed.
 
 ---
 
