@@ -1169,5 +1169,6 @@
     "shortcut_action_home_tab_prev": "Previous tab",
     "shortcut_action_home_tab_next": "Next tab",
     "move_up": "Move up",
-    "move_down": "Move down"
+    "move_down": "Move down",
+    "shortcut_action_reader_toggle_furigana": "Toggle furigana"
 }

@@ -44,6 +44,7 @@ class ShortcutDefaults {
   static const _gDpadRight = GamepadBinding(GamepadButton.dpadRight);
   static const _gDpadLeft = GamepadBinding(GamepadButton.dpadLeft);
   static const _gL3 = GamepadBinding(GamepadButton.thumbLeft);
+  static const _gR3 = GamepadBinding(GamepadButton.thumbRight);
 
   static final Map<ShortcutAction, ShortcutBindingSet> _desktop = {
     ShortcutAction.readerPageForward: _kb([
@@ -79,6 +80,8 @@ class ShortcutDefaults {
     ], [
       _gX
     ]),
+    // R3 toggles furigana (gamepad-only; keyboard furigana stays in settings).
+    ShortcutAction.readerToggleFurigana: _kb([], [_gR3]),
     ShortcutAction.homeTabBooks: _kb([
       _key(LogicalKeyboardKey.digit1, {ModifierKey.ctrl}),
     ]),

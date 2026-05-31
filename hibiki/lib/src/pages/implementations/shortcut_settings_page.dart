@@ -22,6 +22,8 @@ String _actionLabel(ShortcutAction action) {
       return t.shortcut_action_reader_dismiss_dict;
     case ShortcutAction.readerToggleBookmark:
       return t.shortcut_action_reader_toggle_bookmark;
+    case ShortcutAction.readerToggleFurigana:
+      return t.shortcut_action_reader_toggle_furigana;
     case ShortcutAction.homeTabBooks:
       return t.shortcut_action_home_tab_books;
     case ShortcutAction.homeTabDict:

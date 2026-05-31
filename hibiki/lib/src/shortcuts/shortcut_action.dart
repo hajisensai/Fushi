@@ -30,6 +30,7 @@ enum ShortcutAction {
   readerToggleChrome(ShortcutScope.reader, 'reader_toggle_chrome'),
   readerDismissDict(ShortcutScope.reader, 'reader_dismiss_dict'),
   readerToggleBookmark(ShortcutScope.reader, 'reader_toggle_bookmark'),
+  readerToggleFurigana(ShortcutScope.reader, 'reader_toggle_furigana'),
 
   // Home
   homeTabBooks(ShortcutScope.home, 'home_tab_books'),

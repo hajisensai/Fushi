@@ -3517,6 +3517,13 @@ window.flutter_inappwebview.callHandler('spreadReady');
       case ShortcutAction.readerToggleBookmark:
         _addBookmarkAtCurrentPosition();
         return KeyEventResult.handled;
+      case ShortcutAction.readerToggleFurigana:
+        // Mirror the double-tap furigana toggle so a gamepad (R3) can show/hide
+        // furigana without a pointer double-tap the WebView can't synthesise.
+        _controller?.evaluateJavascript(
+          source: "document.body.classList.toggle('show-all-rt');",
+        );
+        return KeyEventResult.handled;
       case ShortcutAction.audiobookPlayPause:
         _audiobookController?.togglePlayPause();
         return KeyEventResult.handled;

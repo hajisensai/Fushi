@@ -193,5 +193,15 @@ void main() {
         contains(GamepadButton.y),
       );
     });
+
+    test('reader furigana toggle binds to R3 (thumbRight)', () {
+      final defaults = ShortcutDefaults.forPlatform(TargetPlatform.windows);
+      expect(
+        defaults[ShortcutAction.readerToggleFurigana]!
+            .gamepadBindings
+            .map((b) => b.button),
+        contains(GamepadButton.thumbRight),
+      );
+    });
   });
 }
