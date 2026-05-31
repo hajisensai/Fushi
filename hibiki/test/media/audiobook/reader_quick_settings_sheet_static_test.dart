@@ -28,6 +28,58 @@ void main() {
     expect(source, isNot(contains('BorderRadius.circular(2)')));
   });
 
+  test('reader quick settings action buttons use shared MD3 icon controls', () {
+    final String source =
+        File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
+            .readAsStringSync();
+    final String headerSource = _between(
+      source,
+      'class _InBookSettingsHeader',
+      'class _InBookTocRow',
+    );
+    final String favoriteActionSource = _between(
+      source,
+      'class _InBookIconButton',
+      'class _RepeatIconButton',
+    );
+    final String repeatActionSource = _between(
+      source,
+      'class _RepeatIconButton',
+      source.length,
+    );
+
+    expect(source, contains('HibikiIconButton('));
+    expect(source, contains('class _InBookIconButton'));
+    expect(source, contains('class _RepeatIconButton'));
+    for (final String actionSource in <String>[
+      headerSource,
+      favoriteActionSource,
+      repeatActionSource,
+    ]) {
+      final String normalized = _withoutSharedIconButton(actionSource);
+      expect(normalized, isNot(contains('return IconButton(')));
+      expect(normalized, isNot(contains('child: IconButton(')));
+      expect(actionSource,
+          isNot(contains('visualDensity: VisualDensity.compact')));
+    }
+    expect(
+      favoriteActionSource,
+      isNot(contains('constraints: const BoxConstraints(minWidth: 32')),
+    );
+  });
+
+  test('audiobook play bar uses shared MD3 icon controls', () {
+    final String source =
+        File('lib/src/media/audiobook/audiobook_play_bar.dart')
+            .readAsStringSync();
+
+    expect(source, contains('HibikiIconButton('));
+    final String normalized = _withoutSharedIconButton(source);
+    expect(normalized, isNot(contains('return IconButton(')));
+    expect(normalized, isNot(contains('child: IconButton(')));
+    expect(source, isNot(contains('IconButton.filledTonal(')));
+  });
+
   test('reader quick settings sheet uses MD3 spacing tokens', () {
     final String source =
         File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
@@ -104,4 +156,17 @@ void main() {
     expect(desktopSource, isNot(contains('=> Dialog(')));
     expect(desktopSource, isNot(contains('ConstrainedBox(')));
   });
+}
+
+String _withoutSharedIconButton(String source) {
+  return source.replaceAll('HibikiIconButton(', 'HibikiSharedIconControl(');
+}
+
+String _between(String source, Object start, Object end) {
+  final int startIndex = start is int ? start : source.indexOf(start as String);
+  final int endIndex =
+      end is int ? end : source.indexOf(end as String, startIndex);
+  expect(startIndex, isNonNegative, reason: 'Missing source marker: $start');
+  expect(endIndex, isNonNegative, reason: 'Missing source marker: $end');
+  return source.substring(startIndex, endIndex);
 }

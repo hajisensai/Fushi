@@ -1421,7 +1421,7 @@ git commit -m "refactor(ui): migrate shelf and collection chrome to MD3 primitiv
 - Test: `hibiki/test/media/audiobook/reader_quick_settings_sheet_static_test.dart`
 - Test: `hibiki/test/settings/md3_design_system_static_test.dart`
 
-- [ ] **Step 1: Keep reader settings data flow intact**
+- [x] **Step 1: Keep reader settings data flow intact**
 
 Do not rename compatibility setters. Use existing reader source calls:
 
@@ -1432,7 +1432,11 @@ settingsContext.readerSource.setTtuTheme(value);
 settingsContext.readerSource.setTtuViewMode(value);
 ```
 
-- [ ] **Step 2: Keep quick settings as a sheet, not a second global settings app**
+Implementation note:
+- `_updateSetting` still calls `setTtuFontSize`, `setTtuLineHeight`, `setTtuViewMode`, and `setTtuTheme`.
+- `reader_hibiki_page.dart` still applies the same compatibility setters when restoring reader settings.
+
+- [x] **Step 2: Keep quick settings as a sheet, not a second global settings app**
 
 The first screen should expose only high-frequency controls:
 
@@ -1445,7 +1449,10 @@ The first screen should expose only high-frequency controls:
 
 Low-frequency rows move to global settings schema or subpages.
 
-- [ ] **Step 3: Replace local controls with shared/adaptive controls**
+Implementation note:
+- The first screen remains a quick settings sheet with progress, navigation rows, and high-frequency actions; appearance/layout/behavior/location/audiobook stay as subpages.
+
+- [x] **Step 3: Replace local controls with shared/adaptive controls**
 
 Use:
 
@@ -1458,18 +1465,30 @@ Use:
 
 Do not add local `Container` card shells.
 
-- [ ] **Step 4: Preserve audiobook bar layout boundaries**
+Implementation note:
+- `audiobook_play_bar.dart`, in-book settings header buttons, favorite/bookmark action buttons, and repeat delay buttons now use `HibikiIconButton` instead of raw Material `IconButton`.
+- Added static guards for quick-settings icon controls and play-bar icon controls.
+
+- [x] **Step 4: Preserve audiobook bar layout boundaries**
 
 Any change to `audiobook_play_bar.dart` or reader bottom chrome must verify that WebView/body content does not extend under the play bar. If implementation touches layout insets, add a manual verification note in the final implementation report.
 
-- [ ] **Step 5: Run focused tests**
+Implementation note:
+- This task changed play-bar button widgets only; it did not change bar height, reader layout insets, WebView bounds, or bottom chrome positioning.
+
+- [x] **Step 5: Run focused tests**
 
 ```powershell
 D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat format lib\src\media\audiobook\reader_quick_settings_sheet.dart lib\src\media\audiobook\audiobook_play_bar.dart lib\src\pages\implementations\reader_hibiki_page.dart test\media\audiobook\reader_quick_settings_sheet_static_test.dart test\settings\md3_design_system_static_test.dart
 D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test test\media\audiobook\reader_quick_settings_sheet_static_test.dart test\settings\md3_design_system_static_test.dart --reporter expanded
 ```
 
-- [ ] **Step 6: Commit**
+Verification:
+- `D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat format lib\src\media\audiobook\reader_quick_settings_sheet.dart lib\src\media\audiobook\audiobook_play_bar.dart test\media\audiobook\reader_quick_settings_sheet_static_test.dart test\settings\md3_design_system_static_test.dart`
+- `D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test test\media\audiobook\reader_quick_settings_sheet_static_test.dart test\settings\md3_design_system_static_test.dart --reporter expanded` passed.
+- `D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat analyze lib\src\media\audiobook\reader_quick_settings_sheet.dart lib\src\media\audiobook\audiobook_play_bar.dart lib\src\pages\implementations\reader_hibiki_page.dart test\media\audiobook\reader_quick_settings_sheet_static_test.dart test\settings\md3_design_system_static_test.dart` passed.
+
+- [x] **Step 6: Commit**
 
 ```powershell
 git add -- hibiki/lib/src/media/audiobook/reader_quick_settings_sheet.dart hibiki/lib/src/media/audiobook/audiobook_play_bar.dart hibiki/lib/src/pages/implementations/reader_hibiki_page.dart hibiki/test/media/audiobook/reader_quick_settings_sheet_static_test.dart hibiki/test/settings/md3_design_system_static_test.dart

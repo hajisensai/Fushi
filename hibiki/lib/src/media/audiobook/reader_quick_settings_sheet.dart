@@ -708,6 +708,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
     return ListenableBuilder(
       listenable: ctrl,
       builder: (context, _) {
+        final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
         final double current = ctrl.speed;
         return AdaptiveSettingsRow(
           title: '${t.playback_speed} (${current.toStringAsFixed(2)}x)',
@@ -729,12 +730,12 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
               ),
               Align(
                 alignment: Alignment.centerRight,
-                child: IconButton(
-                  icon: const Icon(Icons.restart_alt_outlined, size: 18),
-                  onPressed: (current - 1.0).abs() < 0.001
-                      ? null
-                      : () => ctrl.setSpeed(1),
-                  visualDensity: VisualDensity.compact,
+                child: HibikiIconButton(
+                  icon: Icons.restart_alt_outlined,
+                  size: 18,
+                  enabled: (current - 1.0).abs() >= 0.001,
+                  padding: EdgeInsets.all(tokens.spacing.gap / 2),
+                  onTap: () => ctrl.setSpeed(1),
                   tooltip: t.av_sync_reset,
                 ),
               ),
@@ -764,11 +765,13 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
             mainAxisSize: MainAxisSize.min,
             children: [
               _RepeatIconButton(
-                icon: const Icon(Icons.keyboard_double_arrow_left, size: 18),
+                icon: Icons.keyboard_double_arrow_left,
+                tooltip: '-1000ms',
                 onPressed: () => ctrl.setDelayMs(ctrl.delayMs.value - 1000),
               ),
               _RepeatIconButton(
-                icon: const Icon(Icons.chevron_left, size: 18),
+                icon: Icons.chevron_left,
+                tooltip: '-50ms',
                 onPressed: () => ctrl.setDelayMs(ctrl.delayMs.value - 50),
               ),
               HibikiFocusable(
@@ -785,11 +788,13 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
                 ),
               ),
               _RepeatIconButton(
-                icon: const Icon(Icons.chevron_right, size: 18),
+                icon: Icons.chevron_right,
+                tooltip: '+50ms',
                 onPressed: () => ctrl.setDelayMs(ctrl.delayMs.value + 50),
               ),
               _RepeatIconButton(
-                icon: const Icon(Icons.keyboard_double_arrow_right, size: 18),
+                icon: Icons.keyboard_double_arrow_right,
+                tooltip: '+1000ms',
                 onPressed: () => ctrl.setDelayMs(ctrl.delayMs.value + 1000),
               ),
             ],
@@ -1667,10 +1672,11 @@ class _InBookSettingsHeader extends StatelessWidget {
             child: Icon(icon, size: 22),
           )
         else
-          IconButton(
-            icon: Icon(icon),
-            onPressed: onBack,
-            visualDensity: VisualDensity.compact,
+          HibikiIconButton(
+            icon: icon,
+            tooltip: t.back,
+            padding: EdgeInsets.all(tokens.spacing.gap / 2),
+            onTap: onBack,
           ),
         SizedBox(width: tokens.spacing.gap / 2),
         Expanded(
@@ -1977,6 +1983,7 @@ class _InBookIconButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool cupertino = isCupertinoPlatform(context);
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final Color color = destructive
         ? (cupertino
             ? CupertinoColors.destructiveRed.resolveFrom(context)
@@ -1998,13 +2005,17 @@ class _InBookIconButton extends StatelessWidget {
       );
     }
 
-    return IconButton(
-      icon: Icon(materialIcon, size: 18, color: color),
+    return HibikiIconButton(
+      icon: materialIcon,
+      size: 18,
+      enabledColor: color,
       tooltip: tooltip,
-      visualDensity: VisualDensity.compact,
-      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+      constraints: BoxConstraints(
+        minWidth: tokens.spacing.gap * 4,
+        minHeight: tokens.spacing.gap * 4,
+      ),
       padding: EdgeInsets.zero,
-      onPressed: onPressed,
+      onTap: onPressed,
     );
   }
 }
@@ -2012,10 +2023,12 @@ class _InBookIconButton extends StatelessWidget {
 class _RepeatIconButton extends StatefulWidget {
   const _RepeatIconButton({
     required this.icon,
+    required this.tooltip,
     required this.onPressed,
   });
 
-  final Widget icon;
+  final IconData icon;
+  final String tooltip;
   final VoidCallback onPressed;
 
   static const Duration _initialDelay = Duration(milliseconds: 500);
@@ -2053,12 +2066,13 @@ class _RepeatIconButtonState extends State<_RepeatIconButton> {
     return GestureDetector(
       onLongPressStart: (_) => _start(),
       onLongPressEnd: (_) => _stop(),
-      child: IconButton(
+      child: HibikiIconButton(
         icon: widget.icon,
-        onPressed: widget.onPressed,
-        visualDensity: VisualDensity.compact,
-        constraints: const BoxConstraints(),
+        size: 18,
+        tooltip: widget.tooltip,
+        constraints: const BoxConstraints.tightFor(width: 32, height: 32),
         padding: EdgeInsets.zero,
+        onTap: widget.onPressed,
       ),
     );
   }

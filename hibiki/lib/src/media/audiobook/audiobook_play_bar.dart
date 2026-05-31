@@ -38,47 +38,52 @@ class AudiobookPlayBar extends StatelessWidget {
           padding: EdgeInsets.symmetric(horizontal: tokens.spacing.gap),
           child: Row(
             children: [
-              IconButton(
-                icon: Icon(skipActionSeconds == 0
+              HibikiIconButton(
+                icon: skipActionSeconds == 0
                     ? Icons.skip_previous_outlined
-                    : Icons.fast_rewind_outlined),
-                iconSize: 22,
-                onPressed: () {
+                    : Icons.fast_rewind_outlined,
+                size: 22,
+                padding: EdgeInsets.all(tokens.spacing.gap),
+                tooltip: skipActionSeconds == 0
+                    ? t.prev_sentence
+                    : '-${skipActionSeconds}s',
+                onTap: () {
                   if (skipActionSeconds == 0) {
                     controller.skipToPrevCue();
                   } else {
                     controller.seekRelative(-skipActionSeconds);
                   }
                 },
-                tooltip: skipActionSeconds == 0
-                    ? t.prev_sentence
-                    : '-${skipActionSeconds}s',
               ),
-              IconButton.filledTonal(
-                icon: Icon(
-                  controller.isPlaying
-                      ? Icons.pause_outlined
-                      : Icons.play_arrow_outlined,
-                ),
-                iconSize: 24,
-                onPressed: controller.togglePlayPause,
+              HibikiIconButton(
+                icon: controller.isPlaying
+                    ? Icons.pause_outlined
+                    : Icons.play_arrow_outlined,
+                size: 24,
+                backgroundColor:
+                    Theme.of(context).colorScheme.secondaryContainer,
+                enabledColor:
+                    Theme.of(context).colorScheme.onSecondaryContainer,
+                padding: EdgeInsets.all(tokens.spacing.gap),
+                onTap: controller.togglePlayPause,
                 tooltip: controller.isPlaying ? t.pause : t.play,
               ),
-              IconButton(
-                icon: Icon(skipActionSeconds == 0
+              HibikiIconButton(
+                icon: skipActionSeconds == 0
                     ? Icons.skip_next_outlined
-                    : Icons.fast_forward_outlined),
-                iconSize: 22,
-                onPressed: () {
+                    : Icons.fast_forward_outlined,
+                size: 22,
+                padding: EdgeInsets.all(tokens.spacing.gap),
+                tooltip: skipActionSeconds == 0
+                    ? t.next_sentence
+                    : '+${skipActionSeconds}s',
+                onTap: () {
                   if (skipActionSeconds == 0) {
                     controller.skipToNextCue();
                   } else {
                     controller.seekRelative(skipActionSeconds);
                   }
                 },
-                tooltip: skipActionSeconds == 0
-                    ? t.next_sentence
-                    : '+${skipActionSeconds}s',
               ),
               SizedBox(width: tokens.spacing.gap / 2),
               Expanded(
@@ -90,10 +95,11 @@ class AudiobookPlayBar extends StatelessWidget {
                 ),
               ),
               AudiobookFollowAudioButton(controller: controller),
-              IconButton(
-                icon: const Icon(Icons.tune_outlined),
-                iconSize: 20,
-                onPressed: onOpenSettings,
+              HibikiIconButton(
+                icon: Icons.tune_outlined,
+                size: 20,
+                padding: EdgeInsets.all(tokens.spacing.gap),
+                onTap: onOpenSettings,
                 tooltip: t.audiobook_settings,
               ),
             ],
@@ -121,12 +127,14 @@ class AudiobookFollowAudioButton extends StatelessWidget {
       valueListenable: controller.followAudio,
       builder: (context, on, _) {
         final ColorScheme colors = Theme.of(context).colorScheme;
-        return IconButton(
-          icon: Icon(on ? Icons.link : Icons.link_off),
-          iconSize: 20,
-          color: on ? colors.primary : colors.onSurfaceVariant,
+        final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+        return HibikiIconButton(
+          icon: on ? Icons.link : Icons.link_off,
+          size: 20,
+          enabledColor: on ? colors.primary : colors.onSurfaceVariant,
+          padding: EdgeInsets.all(tokens.spacing.gap),
           tooltip: on ? t.follow_audio_on_tooltip : t.follow_audio_off_tooltip,
-          onPressed: () {
+          onTap: () {
             // persist 回调在 reader 页面把 controller 和 repo 绑上；这里
             // 只翻内存状态，controller.setFollowAudio 内部会用绑好的回调
             // 落库，按钮自己不碰 Isar。
