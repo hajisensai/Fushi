@@ -464,7 +464,7 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
         builder: (context, child) {
           final cs = Theme.of(context).colorScheme;
           return CupertinoTheme(
-            data: hibikiCupertinoTheme(cs),
+            data: hibikiCupertinoTheme(cs, fontFamily: appModel.appFontFamily),
             child: Spacing(
               dataBuilder: (context) {
                 return SpacingData.generate(10);
