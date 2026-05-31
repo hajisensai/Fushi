@@ -124,6 +124,12 @@ void main() {
       expect(js, contains('isActive:'));
     });
 
+    test(
+        'popup glossary images are caret-reachable (img in the interactive '
+        'selector so A bubbles img.click() to open the image lightbox)', () {
+      expect(js, contains('[role="link"], img'));
+    });
+
     test('activate is a context click: link/control click else lookup', () {
       // A hyperlink is followed, any clickable ancestor is clicked, and plain
       // text falls back to the lookup pipeline.

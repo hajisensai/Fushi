@@ -242,7 +242,13 @@ window.hoshiCaret = {
   // `summary` is the dictionary popup's collapse toggle (a native <details>
   // disclosure); treat it as one whole interactive stop so the ring covers the
   // whole row and A toggles the section, rather than landing on a child sliver.
-  _interactiveSelector: 'a[href], button, summary, [role="button"], [role="link"]',
+  // `img` is the dictionary popup's glossary image (`a.gloss-image-link` has no
+  // href, so the cursor could not reach it before): the caret stops on it and A
+  // bubbles img.click() to its parent link → openImageLightbox. Element stops
+  // only ever run in the popup (`_markClickables`/`_interactiveEls` return early
+  // when window.hoshiReader is set), so this never adds img stops in the reader.
+  _interactiveSelector:
+      'a[href], button, summary, [role="button"], [role="link"], img',
   // Tag every clickable element (popup-only) with data-hoshi-clk, so text-stop
   // rejection (_isStop) and element-stop collection (_interactiveEls) share ONE
   // definition of "clickable": an explicit control, an onclick handler, or a
