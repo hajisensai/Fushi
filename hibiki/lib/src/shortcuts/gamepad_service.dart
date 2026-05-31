@@ -10,6 +10,7 @@ import 'package:flutter/widgets.dart';
 import 'package:gamepads/gamepads.dart' as gp;
 
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
+import 'package:hibiki/src/focus/hibiki_focus_scroll.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart';
 
 /// Intent dispatched for a physical gamepad button on platforms where Flutter
@@ -273,6 +274,22 @@ class GamepadService {
   }
 }
 
+/// Maps a [TraversalDirection] to the [AxisDirection] of the scroll it would
+/// drive, so edge-takeover scrolling only fires on the matching axis (a
+/// left/right press never scrolls a vertical list, and vice versa).
+AxisDirection axisDirectionFromTraversal(TraversalDirection direction) {
+  switch (direction) {
+    case TraversalDirection.up:
+      return AxisDirection.up;
+    case TraversalDirection.down:
+      return AxisDirection.down;
+    case TraversalDirection.left:
+      return AxisDirection.left;
+    case TraversalDirection.right:
+      return AxisDirection.right;
+  }
+}
+
 /// Moves keyboard/gamepad focus one step in [direction] from the focus tree
 /// rooted at [context]. Used by the gamepad service (and unit-tested directly).
 ///
@@ -299,6 +316,22 @@ bool gamepadMoveFocusInDirection(
       HibikiFocusRoot.maybeControllerOf(context);
   if (controller != null) {
     if (controller.move(hibikiFocusDirectionFromTraversal(direction))) {
+      return true;
+    }
+    // No registered target in this direction: take over and scroll the focused
+    // control's nearest scrollable by a screen-fraction, so a long list/page
+    // does not dead-end at its last focusable. Axis-matched so a left/right
+    // press never scrolls a vertical list. At the scroll extent this returns
+    // false and the press falls through to the (disabled) reading-order
+    // fallback — i.e. it simply stops at the edge.
+    final BuildContext? focusContext =
+        controller.activeContext ?? FocusManager.instance.primaryFocus?.context;
+    if (focusContext != null &&
+        HibikiFocusScroll.scrollByViewportFraction(
+          focusContext,
+          axisDirectionFromTraversal(direction),
+          HibikiFocusScroll.signedFractionFor(direction, 0.8),
+        )) {
       return true;
     }
     return _movePrimaryFocusInDirection(

@@ -415,7 +415,10 @@ void main() {
         HibikiFocusRoot.controllerOf(context);
 
     expect(controller.requestById(const HibikiFocusId('bottom-right')), isTrue);
-    await tester.pump();
+    // Settle the reveal: focusing bottom-right centres it, scrolling the grid
+    // to its max extent. Once settled there, a down press can neither scroll
+    // further (already at the extent) nor slide sideways through reading order.
+    await tester.pumpAndSettle();
 
     final bool moved = gamepadMoveFocusInDirection(
       context,
@@ -427,5 +430,98 @@ void main() {
     expect(controller.activeId, const HibikiFocusId('bottom-right'),
         reason: 'down at the bottom edge must not turn into a sideways '
             'reading-order move inside the shelf');
+  });
+
+  testWidgets(
+      'D-pad edge takeover scrolls the focused list when no target in direction',
+      (WidgetTester tester) async {
+    // One registered target at the top of a long scroll view: down has no
+    // lower focus target, so the gamepad must take over and scroll the list
+    // instead of dead-ending.
+    final ScrollController scrollCtrl = ScrollController();
+    addTearDown(scrollCtrl.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HibikiFocusRoot(
+          child: SingleChildScrollView(
+            controller: scrollCtrl,
+            child: Column(
+              children: <Widget>[
+                HibikiFocusTarget(
+                  id: const HibikiFocusId('only-target'),
+                  child: const SizedBox(
+                      width: 200, height: 80, child: Text('only')),
+                ),
+                for (int i = 0; i < 40; i++)
+                  SizedBox(width: 200, height: 80, child: Text('filler $i')),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final BuildContext context =
+        tester.element(find.byType(SingleChildScrollView));
+    final HibikiFocusController controller =
+        HibikiFocusRoot.controllerOf(context);
+    expect(controller.requestById(const HibikiFocusId('only-target')), isTrue);
+    await tester.pumpAndSettle();
+
+    final double before = scrollCtrl.offset;
+    final bool moved =
+        gamepadMoveFocusInDirection(context, TraversalDirection.down);
+    expect(moved, isTrue,
+        reason: 'down with no lower target takes over and scrolls');
+    await tester.pumpAndSettle();
+    expect(scrollCtrl.offset, greaterThan(before),
+        reason: 'the focused list scrolled ~0.8 viewport down');
+  });
+
+  testWidgets(
+      'D-pad edge takeover returns false at the scroll extent (no dead loop)',
+      (WidgetTester tester) async {
+    final ScrollController scrollCtrl = ScrollController();
+    addTearDown(scrollCtrl.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HibikiFocusRoot(
+          child: SingleChildScrollView(
+            controller: scrollCtrl,
+            child: Column(
+              children: <Widget>[
+                HibikiFocusTarget(
+                  id: const HibikiFocusId('only-target'),
+                  child: const SizedBox(
+                      width: 200, height: 80, child: Text('only')),
+                ),
+                for (int i = 0; i < 40; i++)
+                  SizedBox(width: 200, height: 80, child: Text('filler $i')),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final BuildContext context =
+        tester.element(find.byType(SingleChildScrollView));
+    final HibikiFocusController controller =
+        HibikiFocusRoot.controllerOf(context);
+    expect(controller.requestById(const HibikiFocusId('only-target')), isTrue);
+    await tester.pumpAndSettle();
+
+    scrollCtrl.jumpTo(scrollCtrl.position.maxScrollExtent);
+    await tester.pump();
+
+    final bool moved =
+        gamepadMoveFocusInDirection(context, TraversalDirection.down);
+    expect(moved, isFalse,
+        reason:
+            'already at the bottom: edge takeover must not report movement');
+    expect(
+        scrollCtrl.offset, closeTo(scrollCtrl.position.maxScrollExtent, 0.5));
   });
 }
