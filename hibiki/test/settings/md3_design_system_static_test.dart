@@ -52,7 +52,7 @@ void main() {
   const Map<String, List<String>> migratedSurfaces = <String, List<String>>{
     'lib/src/settings/material_settings_renderer.dart': <String>[
       'HibikiListItem',
-      'HibikiCard',
+      'AdaptiveSettingsSection',
       'HibikiPageScaffold',
     ],
     'lib/src/settings/settings_home_page.dart': <String>[
@@ -557,6 +557,108 @@ void main() {
     }
   });
 
+  test('ordinary page chrome does not reopen local MD3 decisions', () {
+    const List<String> forbidden = <String>[
+      'BorderRadius.circular(',
+      'VisualDensity.compact',
+      'surfaceContainerLow',
+      'surfaceContainerHigh',
+      'surfaceContainerHighest',
+      'fontSize:',
+      'Card(',
+      'ListTile(',
+      'SwitchListTile(',
+      'CheckboxListTile(',
+      'PopupMenuButton(',
+    ];
+    const Map<String, String> allowedFiles = <String, String>{
+      'lib/src/utils/components/hibiki_design_tokens.dart':
+          'Token source owns app radii and semantic surface roles.',
+      'lib/src/utils/components/hibiki_material_components.dart':
+          'Shared MD3 component implementation may map tokens to framework widgets.',
+      'lib/src/utils/components/settings_shared.dart':
+          'Shared adaptive settings primitives own compact settings controls.',
+      'lib/src/utils/components/hibiki_dropdown.dart':
+          'Shared dropdown owns its menu anchor shape until it is tokenized.',
+      'lib/src/utils/adaptive/adaptive_theme.dart':
+          'Cupertino text-theme bridge defines platform typography roles.',
+      'lib/src/models/theme_notifier.dart':
+          'Theme preview content intentionally displays generated surface roles.',
+      'lib/src/pages/implementations/custom_theme_page.dart':
+          'Theme preview studio intentionally displays user-selected colors.',
+      'lib/src/pages/implementations/reading_statistics_page.dart':
+          'Chart and metric preview content keeps small chart typography.',
+      'lib/src/pages/implementations/dictionary_term_page.dart':
+          'Dictionary article surface is content chrome, not ordinary page rows.',
+      'lib/src/pages/implementations/dictionary_popup_native.dart':
+          'Dictionary popup chip/content typography is dense lookup content.',
+      'lib/src/pages/implementations/history_reader_page.dart':
+          'History preview uses content-derived surface and text metrics.',
+      'lib/src/pages/implementations/reader_hibiki_history_page.dart':
+          'Book-cover overlays and drag affordances are reader-shelf content.',
+      'lib/src/pages/implementations/reader_hibiki_page.dart':
+          'Hoshi reader content and reader chrome have separate migration rules.',
+      'lib/src/media/audiobook/reader_quick_settings_sheet.dart':
+          'Reader quick settings and audiobook chrome migrate under Task 8.',
+      'lib/src/media/audiobook/audiobook_bridge.dart':
+          'Serialized audiobook bridge data includes reader font size.',
+      'lib/src/creator/fields/image_field.dart':
+          'Anki image-field renderer uses OCR/image coordinate typography.',
+      'lib/src/pages/implementations/dictionary_dialog_import_page.dart':
+          'Dictionary import content mirrors text-theme metrics.',
+      'lib/src/pages/implementations/dictionary_dialog_delete_page.dart':
+          'Dictionary delete content mirrors text-theme metrics.',
+      'lib/src/pages/implementations/dictionary_settings_dialog_page.dart':
+          'Dictionary management dense controls are tracked for Task 6.',
+      'lib/src/pages/implementations/collections_page.dart':
+          'Collection list compact controls are tracked for Task 7.',
+      'lib/src/sync/sync_settings_schema.dart':
+          'Sync settings rows are schema-owned and tracked for settings IA cleanup.',
+      'lib/src/sync/sync_compare_dialog.dart':
+          'Sync compare dense action controls are tracked for Task 9.',
+      'lib/src/settings/cupertino_settings_renderer.dart':
+          'Cupertino destination list still wraps platform navigation rows.',
+      'lib/src/utils/components/hibiki_list_tile.dart':
+          'Legacy compatibility adapter wraps framework ListTile.',
+      'lib/src/utils/components/hibiki_text_selection_controls.dart':
+          'Shared text-selection toolbar owns its transient surface.',
+      'lib/src/utils/misc/update_checker.dart':
+          'Update checker migrated card shell is already covered by local guard.',
+      'lib/src/pages/implementations/profile_management_page.dart':
+          'Profile management dense controls are tracked for Task 9.',
+      'lib/src/utils/misc/mokuro_payload.dart':
+          'Debug payload string logs parsed reader font size.',
+      'lib/src/reader/reader_pagination_scripts.dart':
+          'Injected reader JavaScript receives content font size.',
+    };
+
+    final List<String> violations = <String>[];
+    final List<File> dartFiles = Directory('lib/src')
+        .listSync(recursive: true)
+        .whereType<File>()
+        .where((File file) => file.path.endsWith('.dart'))
+        .toList(growable: false)
+      ..sort((File a, File b) => a.path.compareTo(b.path));
+    for (final File file in dartFiles) {
+      final String path = file.path.replaceAll(r'\', '/');
+      final String? reason = allowedFiles[path];
+      final String source = _withoutSharedComponentNames(
+        file.readAsStringSync(),
+      );
+      final List<String> hits = _forbiddenChromeHits(source, forbidden);
+      if (hits.isEmpty) continue;
+      if (reason != null && reason.isNotEmpty) continue;
+      violations.add('$path: ${hits.join(', ')}');
+    }
+
+    expect(
+      violations,
+      isEmpty,
+      reason: 'Route ordinary visual chrome through shared MD3 components, or '
+          'add a reviewed allowlist reason for true content exceptions.',
+    );
+  });
+
   test('reader history hover overlays use design tokens', () {
     final String source = File(
       'lib/src/pages/implementations/reader_hibiki_history_page.dart',
@@ -643,20 +745,23 @@ void main() {
     }
   });
 
-  test('material settings labels use shared MD3 micro spacing tokens', () {
+  test('settings renderer rows use shared MD3 row primitives', () {
     final String source = File(
       'lib/src/settings/material_settings_renderer.dart',
     ).readAsStringSync();
-    final String labelSource = _sectionSource(
+    final String itemSource = _sectionSource(
       source,
-      'class _SettingsLabel',
+      'class _SettingsSchemaItem',
       source.length,
     );
 
-    expect(labelSource, contains('HibikiDesignTokens.of(context)'));
-    expect(labelSource, contains('tokens.spacing'));
+    expect(itemSource, contains('AdaptiveSettingsRow('));
+    expect(itemSource, contains('AdaptiveSettingsSwitchRow('));
+    expect(itemSource, contains('AdaptiveSettingsSegmentedRow<'));
+    expect(itemSource, contains('AdaptiveSettingsSliderRow('));
+    expect(itemSource, contains('AdaptiveSettingsStepperRow('));
     expect(
-      labelSource,
+      itemSource,
       isNot(contains('padding: const EdgeInsets.only(top: 2)')),
     );
   });
@@ -1913,6 +2018,34 @@ String _withoutSharedComponentNames(String source) {
       .replaceAll('HibikiTransientScaffold(', 'HibikiSharedTransient(')
       .replaceAll('HibikiOverlayScaffold(', 'HibikiSharedOverlay(');
 }
+
+List<String> _forbiddenChromeHits(String source, List<String> forbidden) {
+  final List<String> hits = <String>[];
+  for (final String token in forbidden) {
+    if (_containsForbiddenChrome(source, token)) {
+      hits.add(token);
+    }
+  }
+  return hits;
+}
+
+bool _containsForbiddenChrome(String source, String token) {
+  if (!_identifierCallTokens.contains(token)) {
+    return source.contains(token);
+  }
+  final RegExp rawCall = RegExp(
+    r'(?<![A-Za-z0-9_])' + RegExp.escape(token),
+  );
+  return rawCall.hasMatch(source);
+}
+
+const Set<String> _identifierCallTokens = <String>{
+  'Card(',
+  'ListTile(',
+  'SwitchListTile(',
+  'CheckboxListTile(',
+  'PopupMenuButton(',
+};
 
 String _functionSource(
   String source,
