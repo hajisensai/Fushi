@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
+import 'package:hibiki/src/focus/hibiki_focus_target.dart';
 import 'package:hibiki/src/utils/components/hibiki_text_selection_controls.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 
@@ -60,7 +62,7 @@ class HibikiCard extends StatelessWidget {
   }
 }
 
-class HibikiListItem extends StatelessWidget {
+class HibikiListItem extends StatefulWidget {
   const HibikiListItem({
     required this.title,
     super.key,
@@ -73,6 +75,7 @@ class HibikiListItem extends StatelessWidget {
     this.padding,
     this.titleMaxLines = 1,
     this.subtitleMaxLines = 2,
+    this.focusId,
   });
 
   final Widget title;
@@ -85,26 +88,36 @@ class HibikiListItem extends StatelessWidget {
   final EdgeInsetsGeometry? padding;
   final int titleMaxLines;
   final int subtitleMaxLines;
+  final HibikiFocusId? focusId;
+
+  @override
+  State<HibikiListItem> createState() => _HibikiListItemState();
+}
+
+class _HibikiListItemState extends State<HibikiListItem> {
+  late final HibikiFocusId _fallbackFocusId = HibikiFocusId(
+    'hibiki-list-item-${identityHashCode(this)}',
+  );
 
   @override
   Widget build(BuildContext context) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final Color color =
-        selected ? tokens.surfaces.selected : Colors.transparent;
+        widget.selected ? tokens.surfaces.selected : Colors.transparent;
     final Widget content = ConstrainedBox(
-      constraints: BoxConstraints(minHeight: minHeight),
+      constraints: BoxConstraints(minHeight: widget.minHeight),
       child: Padding(
-        padding: padding ??
+        padding: widget.padding ??
             EdgeInsets.symmetric(
               horizontal: tokens.spacing.rowHorizontal,
               vertical: tokens.spacing.rowVertical,
             ),
         child: Row(
           children: <Widget>[
-            if (leading != null) ...<Widget>[
+            if (widget.leading != null) ...<Widget>[
               IconTheme.merge(
                 data: IconThemeData(color: tokens.surfaces.onVariant),
-                child: leading!,
+                child: widget.leading!,
               ),
               SizedBox(width: tokens.spacing.gap + 4),
             ],
@@ -115,30 +128,30 @@ class HibikiListItem extends StatelessWidget {
                 children: <Widget>[
                   DefaultTextStyle.merge(
                     style: tokens.type.listTitle,
-                    maxLines: titleMaxLines,
+                    maxLines: widget.titleMaxLines,
                     overflow: TextOverflow.ellipsis,
-                    child: title,
+                    child: widget.title,
                   ),
-                  if (subtitle != null)
+                  if (widget.subtitle != null)
                     Padding(
                       padding: EdgeInsets.only(top: tokens.spacing.gap / 4),
                       child: DefaultTextStyle.merge(
                         style: tokens.type.listSubtitle,
-                        maxLines: subtitleMaxLines,
+                        maxLines: widget.subtitleMaxLines,
                         overflow: TextOverflow.ellipsis,
-                        child: subtitle!,
+                        child: widget.subtitle!,
                       ),
                     ),
                 ],
               ),
             ),
-            if (trailing != null) ...<Widget>[
+            if (widget.trailing != null) ...<Widget>[
               SizedBox(width: tokens.spacing.gap + 4),
               DefaultTextStyle.merge(
                 style: tokens.type.metadata,
                 child: IconTheme.merge(
                   data: IconThemeData(color: tokens.surfaces.onVariant),
-                  child: trailing!,
+                  child: widget.trailing!,
                 ),
               ),
             ],
@@ -147,15 +160,34 @@ class HibikiListItem extends StatelessWidget {
       ),
     );
 
-    return Material(
+    final Widget material = Material(
       color: color,
-      child: onTap == null
+      child: widget.onTap == null
           ? content
           : InkWell(
-              onTap: onTap,
+              onTap: widget.onTap,
               child: content,
             ),
     );
+    if (widget.onTap == null) return material;
+
+    final HibikiFocusId effectiveFocusId = widget.focusId ?? _fallbackFocusId;
+    final Widget target = Actions(
+      actions: <Type, Action<Intent>>{
+        ActivateIntent: CallbackAction<ActivateIntent>(
+          onInvoke: (_) {
+            widget.onTap?.call();
+            return null;
+          },
+        ),
+      },
+      child: HibikiFocusTarget(
+        id: effectiveFocusId,
+        child: material,
+      ),
+    );
+    if (HibikiFocusRoot.maybeControllerOf(context) == null) return material;
+    return target;
   }
 }
 
