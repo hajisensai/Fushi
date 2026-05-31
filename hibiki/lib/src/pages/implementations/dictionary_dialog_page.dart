@@ -851,6 +851,8 @@ class _DictionaryDialogPageState extends BasePageState {
     required int index,
     required Key key,
     required bool isLast,
+    required VoidCallback onMoveUp,
+    required VoidCallback onMoveDown,
   }) {
     DictionaryFormat dictionaryFormat =
         appModel.dictionaryFormats[dictionary.formatKey]!;
@@ -896,6 +898,21 @@ class _DictionaryDialogPageState extends BasePageState {
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
+              // Gamepad/keyboard reorder equivalent for the drag handle.
+              HibikiIconButton(
+                icon: Icons.keyboard_arrow_up,
+                size: 18,
+                tooltip: t.move_up,
+                enabled: index > 0,
+                onTap: onMoveUp,
+              ),
+              HibikiIconButton(
+                icon: Icons.keyboard_arrow_down,
+                size: 18,
+                tooltip: t.move_down,
+                enabled: !isLast,
+                onTap: onMoveDown,
+              ),
               _buildDictionaryVisibilityButton(dictionary, enabled),
               SizedBox(width: tokens.spacing.gap / 2),
               buildDictionaryTileTrailing(dictionary),
@@ -941,24 +958,33 @@ class _DictionaryDialogPageState extends BasePageState {
           index: index,
           key: ValueKey(dictionary.name),
           isLast: index == dictionaries.length - 1,
+          onMoveUp: () => _reorderDictionaries(index, index - 1, dictionaries),
+          onMoveDown: () =>
+              _reorderDictionaries(index, index + 2, dictionaries),
         );
       },
-      onReorder: (oldIndex, newIndex) {
-        if (newIndex > oldIndex) newIndex--;
-        List<Dictionary> cloneDictionaries = List.from(dictionaries);
-
-        Dictionary item = cloneDictionaries.removeAt(oldIndex);
-        cloneDictionaries.insert(newIndex, item);
-
-        for (int index = 0; index < cloneDictionaries.length; index++) {
-          final Dictionary dictionary = cloneDictionaries[index];
-          dictionary.order = index;
-        }
-
-        appModel.updateDictionaryOrder(cloneDictionaries);
-        setState(() {});
-      },
+      onReorder: (oldIndex, newIndex) =>
+          _reorderDictionaries(oldIndex, newIndex, dictionaries),
     );
+  }
+
+  void _reorderDictionaries(
+    int oldIndex,
+    int newIndex,
+    List<Dictionary> dictionaries,
+  ) {
+    if (newIndex > oldIndex) newIndex--;
+    final List<Dictionary> cloneDictionaries = List.from(dictionaries);
+
+    final Dictionary item = cloneDictionaries.removeAt(oldIndex);
+    cloneDictionaries.insert(newIndex, item);
+
+    for (int i = 0; i < cloneDictionaries.length; i++) {
+      cloneDictionaries[i].order = i;
+    }
+
+    appModel.updateDictionaryOrder(cloneDictionaries);
+    setState(() {});
   }
 
   String _subtitleForDictionary(
