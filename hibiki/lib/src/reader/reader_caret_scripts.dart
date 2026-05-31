@@ -373,8 +373,16 @@ window.hoshiCaret = {
       if (s.el && this.el && s.el === this.el) continue;
       if (!s.el && this.node && s.node === this.node && s.offset === this.offset) continue;
       var dx = s.cx - acx, dy = s.cy - acy, ahead, along, cross;
-      if (physicalDir === 'up') { ahead = dy < -eps; along = -dy; cross = Math.abs(dx); }
-      else if (physicalDir === 'down') { ahead = dy > eps; along = dy; cross = Math.abs(dx); }
+      // Two rects share a visual row if they overlap vertically by more than
+      // half the shorter one's height. Up/Down must cross to a DIFFERENT row, so
+      // a same-row control (e.g. the popup's ♪ audio icon beside the headword,
+      // whose centre sits a hair above the big headword) is reachable only via
+      // Left/Right — Up from the top row then finds nothing and the move blocks,
+      // which lets Dart escape to the Flutter header instead of hopping to ♪.
+      var ov = Math.min(a.bottom, s.rect.bottom) - Math.max(a.top, s.rect.top);
+      var sameRow = ov > 0.5 * Math.min(a.height, s.rect.height);
+      if (physicalDir === 'up') { ahead = !sameRow && dy < -eps; along = -dy; cross = Math.abs(dx); }
+      else if (physicalDir === 'down') { ahead = !sameRow && dy > eps; along = dy; cross = Math.abs(dx); }
       else if (physicalDir === 'left') { ahead = dx < -eps; along = -dx; cross = Math.abs(dy); }
       else { ahead = dx > eps; along = dx; cross = Math.abs(dy); } // right
       if (!ahead) continue;
@@ -429,17 +437,25 @@ window.hoshiCaret = {
       var s = stops[i];
       var primary, cross, ahead, nearer;
       if (!vertical) {
-        // lines stacked vertically; primary axis = y, cross axis = x
+        // lines stacked vertically; primary axis = y, cross axis = x. A line move
+        // must cross to a different ROW: a stop overlapping the anchor's row by
+        // >half the shorter height is the same line (e.g. a same-row icon) and is
+        // not "ahead", so Up/Down skip it (it's a Left/Right neighbour).
+        var ov = Math.min(anchor.bottom, s.rect.bottom) - Math.max(anchor.top, s.rect.top);
+        var sameRow = ov > 0.5 * Math.min(anchor.height, s.rect.height);
         primary = s.cy; cross = Math.abs(s.cx - acx);
-        ahead = isNext ? (s.cy > acy + eps) : (s.cy < acy - eps);
+        ahead = !sameRow && (isNext ? (s.cy > acy + eps) : (s.cy < acy - eps));
         if (!ahead) continue;
         nearer = isNext ? (bestLine === null || primary < bestLine - eps)
                         : (bestLine === null || primary > bestLine + eps);
       } else {
         // columns stacked horizontally; primary axis = x, cross axis = y.
-        // isNext (next column) advances leftwards in vertical-rl.
+        // isNext (next column) advances leftwards in vertical-rl. Same-column
+        // guard mirrors the horizontal case on the x axis.
+        var ow = Math.min(anchor.right, s.rect.right) - Math.max(anchor.left, s.rect.left);
+        var sameCol = ow > 0.5 * Math.min(anchor.width, s.rect.width);
         primary = s.cx; cross = Math.abs(s.cy - acy);
-        ahead = isNext ? (s.cx < acx - eps) : (s.cx > acx + eps);
+        ahead = !sameCol && (isNext ? (s.cx < acx - eps) : (s.cx > acx + eps));
         if (!ahead) continue;
         nearer = isNext ? (bestLine === null || primary > bestLine + eps)
                         : (bestLine === null || primary < bestLine - eps);
@@ -636,6 +652,15 @@ window.hoshiCaret = {
     }
     var rect = this._stopRect(target);
     if (this._inViewport(rect)) {
+      // _inViewport is an intersection test, so a stop near the popup edge can be
+      // half-clipped yet "visible". Scroll it fully into view (follow focus) and
+      // re-measure, so the view tracks the cursor instead of leaving the ring
+      // pinned at the edge. Popup-only (continuous scroll); the paged reader
+      // turns pages via _offPage and isn't touched.
+      if (!window.hoshiReader) {
+        this._scrollIntoView(rect);
+        rect = this._stopRect(target);
+      }
       this._place({ node: target.node, offset: target.offset, el: target.el, rect: rect });
       return { status: 'moved', rect: this._rectJson(rect) };
     }

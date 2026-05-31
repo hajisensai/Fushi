@@ -178,6 +178,21 @@ void main() {
       expect(js, contains(r'\p{S}'));
     });
 
+    test('vertical caret moves are line-aware (same-row controls not "above")',
+        () {
+      // Up/Down must cross to a DIFFERENT visual row; a same-row icon (the popup
+      // ♪ beside the headword) is a Left/Right neighbour. Up from the top row
+      // then finds nothing → blocks → Dart escapes to the Flutter header.
+      expect(js, contains('sameRow'));
+      expect(js, contains('sameCol'));
+    });
+
+    test('popup caret scrolls a partially-clipped stop into view', () {
+      // _inViewport is intersection-based; move() must scroll an edge-clipped
+      // stop fully into view (popup-only) so the view follows the cursor.
+      expect(js, contains('_scrollIntoView(rect)'));
+    });
+
     test('scopeSelector restricts stops to matching elements (popup scope)',
         () {
       expect(js, contains('scopeSelector'));
