@@ -36,6 +36,8 @@ class ShortcutDefaults {
 
   static const _gRB = GamepadBinding(GamepadButton.rb);
   static const _gLB = GamepadBinding(GamepadButton.lb);
+  static const _gLT = GamepadBinding(GamepadButton.lt);
+  static const _gRT = GamepadBinding(GamepadButton.rt);
   static const _gB = GamepadBinding(GamepadButton.b);
   static const _gX = GamepadBinding(GamepadButton.x);
   static const _gY = GamepadBinding(GamepadButton.y);
@@ -86,8 +88,14 @@ class ShortcutDefaults {
     ShortcutAction.homeTabSettings: _kb([
       _key(LogicalKeyboardKey.digit3, {ModifierKey.ctrl}),
     ]),
+    // LT/RT cycle the three home tabs (prev/next), per the global key map.
+    // Keyboard stays on Ctrl+1/2/3 absolute jumps above.
+    ShortcutAction.homeTabPrev: _kb([], [_gLT]),
+    ShortcutAction.homeTabNext: _kb([], [_gRT]),
     ShortcutAction.homeFocusSearch: _kb([
       _key(LogicalKeyboardKey.keyF, {ModifierKey.ctrl}),
+    ], [
+      _gY
     ]),
     ShortcutAction.globalBack: _kb([
       _key(LogicalKeyboardKey.arrowLeft, {ModifierKey.alt}),

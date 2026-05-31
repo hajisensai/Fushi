@@ -28,6 +28,10 @@ String _actionLabel(ShortcutAction action) {
       return t.shortcut_action_home_tab_dict;
     case ShortcutAction.homeTabSettings:
       return t.shortcut_action_home_tab_settings;
+    case ShortcutAction.homeTabPrev:
+      return t.shortcut_action_home_tab_prev;
+    case ShortcutAction.homeTabNext:
+      return t.shortcut_action_home_tab_next;
     case ShortcutAction.homeFocusSearch:
       return t.shortcut_action_home_focus_search;
     case ShortcutAction.globalBack:

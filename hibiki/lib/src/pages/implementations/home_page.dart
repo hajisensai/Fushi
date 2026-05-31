@@ -185,6 +185,16 @@ class _HomePageState extends BasePageState<HomePage>
       case ShortcutAction.homeTabSettings:
         setState(() => _currentTab = 2);
         return KeyEventResult.handled;
+      case ShortcutAction.homeTabNext:
+        final int next = (_currentTab + 1) % 3;
+        setState(() => _currentTab = next);
+        if (next == 0) _loadIconPreset();
+        return KeyEventResult.handled;
+      case ShortcutAction.homeTabPrev:
+        final int prev = (_currentTab + 2) % 3;
+        setState(() => _currentTab = prev);
+        if (prev == 0) _loadIconPreset();
+        return KeyEventResult.handled;
       case ShortcutAction.homeFocusSearch:
         setState(() => _currentTab = 1);
         _dictFocusSignal.value++;

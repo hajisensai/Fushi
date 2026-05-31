@@ -1165,5 +1165,7 @@
     "anki_connect_api_key": "API Key",
     "anki_connect_api_key_hint": "Leave empty unless AnkiConnect requires a key",
     "shortcut_action_global_scroll_page_down": "Scroll down one screen",
-    "shortcut_action_global_scroll_page_up": "Scroll up one screen"
+    "shortcut_action_global_scroll_page_up": "Scroll up one screen",
+    "shortcut_action_home_tab_prev": "Previous tab",
+    "shortcut_action_home_tab_next": "Next tab"
 }

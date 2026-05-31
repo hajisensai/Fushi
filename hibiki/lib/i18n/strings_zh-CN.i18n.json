@@ -1165,5 +1165,7 @@
     "anki_connect_api_key": "API 密钥",
     "anki_connect_api_key_hint": "若 AnkiConnect 未设置密钥则留空",
     "shortcut_action_global_scroll_page_down": "向下翻一屏",
-    "shortcut_action_global_scroll_page_up": "向上翻一屏"
+    "shortcut_action_global_scroll_page_up": "向上翻一屏",
+    "shortcut_action_home_tab_prev": "上一个标签页",
+    "shortcut_action_home_tab_next": "下一个标签页"
 }

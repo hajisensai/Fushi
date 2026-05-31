@@ -171,5 +171,27 @@ void main() {
       expect(seen[GamepadButton.rb], ShortcutAction.readerPageForward);
       expect(seen[GamepadButton.lb], ShortcutAction.readerPageBackward);
     });
+
+    test('home tab prev/next cycle on LT/RT and focus-search on Y', () {
+      final defaults = ShortcutDefaults.forPlatform(TargetPlatform.windows);
+      expect(
+        defaults[ShortcutAction.homeTabPrev]!
+            .gamepadBindings
+            .map((b) => b.button),
+        contains(GamepadButton.lt),
+      );
+      expect(
+        defaults[ShortcutAction.homeTabNext]!
+            .gamepadBindings
+            .map((b) => b.button),
+        contains(GamepadButton.rt),
+      );
+      expect(
+        defaults[ShortcutAction.homeFocusSearch]!
+            .gamepadBindings
+            .map((b) => b.button),
+        contains(GamepadButton.y),
+      );
+    });
   });
 }

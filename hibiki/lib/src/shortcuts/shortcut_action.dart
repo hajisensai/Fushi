@@ -35,6 +35,8 @@ enum ShortcutAction {
   homeTabBooks(ShortcutScope.home, 'home_tab_books'),
   homeTabDict(ShortcutScope.home, 'home_tab_dict'),
   homeTabSettings(ShortcutScope.home, 'home_tab_settings'),
+  homeTabPrev(ShortcutScope.home, 'home_tab_prev'),
+  homeTabNext(ShortcutScope.home, 'home_tab_next'),
   homeFocusSearch(ShortcutScope.home, 'home_focus_search'),
 
   // Global
