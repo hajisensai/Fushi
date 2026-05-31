@@ -3362,6 +3362,20 @@ window.flutter_inappwebview.callHandler('spreadReady');
     // While active, the cursor owns Tab / arrows / A(Enter) / B(Esc) before the
     // registry is consulted. While inactive, A / Enter ENTER the cursor.
     if (_caretActive) {
+      // LB/RB flip a whole page on the cursor surface, mirroring the polled
+      // gamepad branch in _handleGamepadButton. Android gamepads deliver the
+      // shoulders here as gameButton key events, mapped back via fromLogicalKey;
+      // these logical keys are gamepad-only, so a desktop keyboard never hits it.
+      final GamepadButton? shoulder =
+          GamepadButton.fromLogicalKey(event.logicalKey);
+      if (shoulder == GamepadButton.rb) {
+        unawaited(_caretScrollPage(true));
+        return KeyEventResult.handled;
+      }
+      if (shoulder == GamepadButton.lb) {
+        unawaited(_caretScrollPage(false));
+        return KeyEventResult.handled;
+      }
       final CaretAction? caretAction = ReaderCaretRouter.decideKeyboard(
         event.logicalKey,
         shift: HardwareKeyboard.instance.isShiftPressed,

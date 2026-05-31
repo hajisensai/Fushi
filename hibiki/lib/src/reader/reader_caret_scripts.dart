@@ -291,19 +291,14 @@ window.hoshiCaret = {
     }
   },
   _interactiveEls: function() {
-    // In the reader the only element stops are sizable images, so D-pad can land
-    // on an illustration and A opens the lightbox (img.click() → the reader's
-    // image tap handler). Inline icons (<24px) are skipped so they don't clutter
-    // text navigation; links stay reachable as text stops via activate().
-    if (window.hoshiReader) {
-      var imgs = document.body.querySelectorAll('img');
-      var imgOut = [];
-      for (var ii = 0; ii < imgs.length; ii++) {
-        var ir = imgs[ii].getBoundingClientRect();
-        if (ir.width >= 24 && ir.height >= 24) imgOut.push(imgs[ii]);
-      }
-      return imgOut;
-    }
+    // Element stops are a popup-only concern. The reader caret navigates by
+    // reading order over text stops (_nextStop/_prevStop/_lineMove) and never
+    // consults element stops, so an img added here would be unreachable; the
+    // reader's images open via the pointer-gesture path (_gestureEnd →
+    // elementFromPoint → onImageTap), not a synthesised click. In the reader the
+    // only interactive text is <a href>, already reachable as a text stop
+    // (activate() promotes it to a link click).
+    if (window.hoshiReader) return [];
     var marked = document.body.querySelectorAll('[data-hoshi-clk]');
     var out = [];
     for (var i = 0; i < marked.length; i++) {
