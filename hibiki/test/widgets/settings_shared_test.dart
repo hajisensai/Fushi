@@ -3,6 +3,9 @@ import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/shortcuts/gamepad_service.dart'
+    show GamepadButtonIntent;
+import 'package:hibiki/src/shortcuts/input_binding.dart' show GamepadButton;
 import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 import 'package:hibiki/src/utils/components/settings_shared.dart';
 
@@ -374,5 +377,71 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(selected, 'news');
+  });
+
+  testWidgets('desktop picker uses a gamepad-enterable MenuAnchor dropdown',
+      (tester) async {
+    String selected = 'news';
+    await tester.pumpWidget(
+      _buildHarness(
+        platform: TargetPlatform.windows,
+        child: AdaptiveSettingsScaffold(
+          title: const Text('Reader settings'),
+          children: [
+            AdaptiveSettingsSection(
+              children: [
+                AdaptiveSettingsPickerRow<String>(
+                  title: 'Deck',
+                  selected: selected,
+                  options: const [
+                    AdaptiveSettingsPickerOption(
+                        value: 'default', label: 'Default'),
+                    AdaptiveSettingsPickerOption(value: 'news', label: 'News'),
+                    AdaptiveSettingsPickerOption(value: 'work', label: 'Work'),
+                  ],
+                  onChanged: (value) => selected = value,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+
+    // Desktop must NOT use the stock DropdownMenu (gamepad can't enter it) nor
+    // the Cupertino sheet — it uses a MenuAnchor inline dropdown.
+    expect(find.byType(DropdownMenu<int>), findsNothing);
+    expect(find.byType(CupertinoActionSheet), findsNothing);
+    expect(find.byType(MenuAnchor), findsOneWidget);
+
+    // Open the dropdown (the trigger shows the selected label).
+    await tester.tap(find.widgetWithText(OutlinedButton, 'News'));
+    await tester.pumpAndSettle();
+
+    // The selected entry autofocuses so a gamepad lands INSIDE the menu; others
+    // do not. (autofocus is what drives focus into the menu on open.)
+    final MenuItemButton newsItem =
+        tester.widget(find.widgetWithText(MenuItemButton, 'News'));
+    final MenuItemButton defaultItem =
+        tester.widget(find.widgetWithText(MenuItemButton, 'Default'));
+    expect(newsItem.autofocus, isTrue);
+    expect(defaultItem.autofocus, isFalse);
+
+    // A non-B button is NOT consumed by the per-item Actions (returns null), so
+    // the GamepadService fallback still runs (A→ActivateIntent, dpad→focus).
+    final BuildContext itemCtx = tester.element(find.text('Work'));
+    expect(
+      Actions.invoke(itemCtx, const GamepadButtonIntent(GamepadButton.a)),
+      isNull,
+    );
+
+    // Gamepad B IS consumed (returns true so the GamepadService skips maybePop —
+    // i.e. it must NOT pop the whole settings page) and closes the menu,
+    // returning focus to the trigger.
+    final Object? bResult =
+        Actions.invoke(itemCtx, const GamepadButtonIntent(GamepadButton.b));
+    expect(bResult, isTrue);
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(MenuItemButton, 'Work'), findsNothing);
   });
 }

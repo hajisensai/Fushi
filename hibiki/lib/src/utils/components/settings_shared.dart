@@ -1,6 +1,9 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:hibiki/src/shortcuts/gamepad_service.dart'
+    show GamepadButtonIntent;
+import 'package:hibiki/src/shortcuts/input_binding.dart' show GamepadButton;
 import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart';
 import 'package:hibiki/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
@@ -500,7 +503,25 @@ class AdaptiveSettingsPickerRow<T> extends StatelessWidget {
   }
 
   Widget _buildMaterialDropdown(BuildContext context) {
+    final TargetPlatform platform = Theme.of(context).platform;
+    // Desktop (polled gamepad): a stock DropdownMenu keeps focus on its field,
+    // so a gamepad — whose D-pad is focus-traversal, not arrow-key events —
+    // can't enter the open menu. Use a MenuAnchor dropdown (same expand-in-place
+    // look) that autofocuses the selected entry on open, so the cursor lands
+    // INSIDE the menu and D-pad traverses it. Android keeps DropdownMenu (its
+    // engine delivers real key events); iOS/macOS use the Cupertino sheet.
+    final bool desktop =
+        platform == TargetPlatform.windows || platform == TargetPlatform.linux;
     Widget buildDropdown(double width) {
+      if (desktop) {
+        return _DesktopMenuDropdown<T>(
+          width: width,
+          placeholder: placeholder,
+          options: options,
+          selected: selected,
+          onChanged: onChanged,
+        );
+      }
       return SizedBox(
         width: width,
         child: DropdownMenu<int>(
@@ -610,6 +631,131 @@ class AdaptiveSettingsPickerRow<T> extends StatelessWidget {
       if (options[i].value == selected) return i;
     }
     return null;
+  }
+}
+
+/// Desktop (Windows/Linux) inline dropdown a polled gamepad can actually enter.
+/// Built on [MenuAnchor] so the selected entry can [MenuItemButton.autofocus]
+/// when the menu opens — a stock [DropdownMenu] keeps focus on its field, so
+/// D-pad focus traversal (the polled gamepad's dpad) never reaches the menu.
+/// Looks like an expand-in-place dropdown: A opens, D-pad navigates (the list
+/// auto-scrolls to the focused entry via HibikiFocusRing), A selects, B closes.
+class _DesktopMenuDropdown<T> extends StatefulWidget {
+  const _DesktopMenuDropdown({
+    required this.width,
+    required this.options,
+    required this.selected,
+    required this.onChanged,
+    this.placeholder,
+  });
+
+  final double width;
+  final String? placeholder;
+  final List<AdaptiveSettingsPickerOption<T>> options;
+  final T selected;
+  final ValueChanged<T> onChanged;
+
+  @override
+  State<_DesktopMenuDropdown<T>> createState() =>
+      _DesktopMenuDropdownState<T>();
+}
+
+class _DesktopMenuDropdownState<T> extends State<_DesktopMenuDropdown<T>> {
+  final MenuController _menu = MenuController();
+  final FocusNode _triggerFocus =
+      FocusNode(debugLabel: 'desktopDropdownTrigger');
+
+  @override
+  void dispose() {
+    _triggerFocus.dispose();
+    super.dispose();
+  }
+
+  int get _selectedIndex {
+    for (int i = 0; i < widget.options.length; i++) {
+      if (widget.options[i].value == widget.selected) return i;
+    }
+    return 0;
+  }
+
+  String? get _selectedLabel {
+    for (final AdaptiveSettingsPickerOption<T> o in widget.options) {
+      if (o.value == widget.selected) return o.label;
+    }
+    return null;
+  }
+
+  void _closeAndRefocus() {
+    _menu.close();
+    _triggerFocus.requestFocus();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final int sel = _selectedIndex;
+    return SizedBox(
+      width: widget.width,
+      child: MenuAnchor(
+        controller: _menu,
+        childFocusNode: _triggerFocus,
+        style: MenuStyle(
+          minimumSize: WidgetStatePropertyAll<Size>(Size(widget.width, 0)),
+        ),
+        menuChildren: <Widget>[
+          for (int i = 0; i < widget.options.length; i++)
+            Actions(
+              // B closes the menu and returns focus to the trigger, instead of
+              // bubbling to the GamepadService's route-pop (which would exit the
+              // whole settings page). Other buttons fall through: A activates the
+              // focused entry (→ onPressed), D-pad traverses the entries.
+              actions: <Type, Action<Intent>>{
+                GamepadButtonIntent: CallbackAction<GamepadButtonIntent>(
+                  onInvoke: (GamepadButtonIntent intent) {
+                    if (intent.button == GamepadButton.b) {
+                      _closeAndRefocus();
+                      return true;
+                    }
+                    return null;
+                  },
+                ),
+              },
+              child: MenuItemButton(
+                autofocus: i == sel,
+                onPressed: () => widget.onChanged(widget.options[i].value),
+                child: Text(widget.options[i].label),
+              ),
+            ),
+        ],
+        builder:
+            (BuildContext context, MenuController controller, Widget? child) {
+          return OutlinedButton(
+            focusNode: _triggerFocus,
+            onPressed: () =>
+                controller.isOpen ? controller.close() : controller.open(),
+            style: OutlinedButton.styleFrom(
+              alignment: Alignment.centerLeft,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            child: Row(
+              children: <Widget>[
+                Expanded(
+                  child: Text(
+                    _selectedLabel ?? widget.placeholder ?? '',
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyLarge,
+                  ),
+                ),
+                const Icon(Icons.arrow_drop_down),
+              ],
+            ),
+          );
+        },
+      ),
+    );
   }
 }
 
