@@ -85,6 +85,53 @@ void main() {
     });
   });
 
+  group('A long-press (onLongPress set: mouse-like tap vs hold)', () {
+    late List<GamepadButton> longPresses;
+    late GamepadFrameProcessor lp;
+    void lpFrame(int mask, {required int nowMs}) => lp.processFrame(
+          buttons: mask,
+          leftTrigger: 0,
+          rightTrigger: 0,
+          stickX: 0,
+          stickY: 0,
+          nowMs: nowMs,
+        );
+
+    setUp(() {
+      buttons = <GamepadButton>[];
+      longPresses = <GamepadButton>[];
+      lp = GamepadFrameProcessor(
+        onButton: buttons.add,
+        onLongPress: longPresses.add,
+      );
+    });
+
+    test('A activate is deferred to RELEASE (not the press edge)', () {
+      lpFrame(GamepadFrameBits.a, nowMs: 0);
+      expect(buttons, isEmpty); // nothing on press
+      lpFrame(0, nowMs: 100); // released < threshold
+      expect(buttons, <GamepadButton>[GamepadButton.a]);
+      expect(longPresses, isEmpty);
+    });
+
+    test('holding A past the threshold fires one long-press and NO activate',
+        () {
+      lpFrame(GamepadFrameBits.a, nowMs: 0);
+      lpFrame(GamepadFrameBits.a, nowMs: 300); // < 500ms, still nothing
+      expect(longPresses, isEmpty);
+      lpFrame(GamepadFrameBits.a, nowMs: 520); // ≥ 500ms → long-press
+      lpFrame(GamepadFrameBits.a, nowMs: 700); // still held → no repeat
+      lpFrame(0, nowMs: 800); // released → activate suppressed
+      expect(longPresses, <GamepadButton>[GamepadButton.a]);
+      expect(buttons, isEmpty);
+    });
+
+    test('only A is deferred; B still fires on the press edge', () {
+      lpFrame(GamepadFrameBits.b, nowMs: 0);
+      expect(buttons, <GamepadButton>[GamepadButton.b]);
+    });
+  });
+
   group('D-pad directional channel', () {
     test('D-pad is NOT emitted as a discrete button — it is directional', () {
       // dpadRight should produce a dpadRight button via the directional channel

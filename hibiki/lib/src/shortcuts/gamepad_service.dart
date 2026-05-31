@@ -25,6 +25,50 @@ class GamepadButtonIntent extends Intent {
   final GamepadButton button;
 }
 
+/// Intent dispatched when [button] (currently only A) is HELD past the
+/// long-press threshold — the gamepad equivalent of a mouse long-press. A
+/// focused widget that supports long-press maps this to the SAME callback its
+/// `onLongPress` uses (see GamepadLongPressActions), so holding A does exactly
+/// what long-pressing with a mouse would.
+@immutable
+class GamepadLongPressIntent extends Intent {
+  const GamepadLongPressIntent(this.button);
+
+  final GamepadButton button;
+}
+
+/// Wraps a focusable widget so a gamepad long-press (hold A) invokes the SAME
+/// [onLongPress] callback a mouse long-press would. Place it ABOVE the widget
+/// that takes focus (e.g. around a focusable list tile) so the
+/// [GamepadLongPressIntent] dispatched to the focused node bubbles here. A null
+/// [onLongPress] is a transparent pass-through.
+class GamepadLongPressActions extends StatelessWidget {
+  const GamepadLongPressActions({
+    required this.onLongPress,
+    required this.child,
+    super.key,
+  });
+
+  final VoidCallback? onLongPress;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (onLongPress == null) return child;
+    return Actions(
+      actions: <Type, Action<Intent>>{
+        GamepadLongPressIntent: CallbackAction<GamepadLongPressIntent>(
+          onInvoke: (GamepadLongPressIntent intent) {
+            onLongPress!();
+            return null;
+          },
+        ),
+      },
+      child: child,
+    );
+  }
+}
+
 /// Internal controller "frame" bit layout (mirrors the classic XInput wButtons
 /// layout). The plugin poller encodes each `gamepads` event into this bitmask so
 /// [GamepadFrameProcessor] can stay a single, platform-free normalizer.
@@ -90,7 +134,10 @@ class GamepadService {
     if (_poller != null) return;
     if (!isSupportedPlatform) return; // Android uses engine key events
     _poller = _PluginGamepadPoller(
-      processor: GamepadFrameProcessor(onButton: _dispatchButton),
+      processor: GamepadFrameProcessor(
+        onButton: _dispatchButton,
+        onLongPress: _dispatchLongPress,
+      ),
     )..start();
   }
 
@@ -135,6 +182,20 @@ class GamepadService {
       default:
         return;
     }
+  }
+
+  /// Routes a long-press (A held past the threshold) to the focused widget as a
+  /// [GamepadLongPressIntent] — the gamepad equivalent of a mouse long-press.
+  /// A widget that supports long-press maps the intent to the same callback its
+  /// `onLongPress` uses; if nothing handles it, the long-press is a no-op.
+  void _dispatchLongPress(GamepadButton button) {
+    final BuildContext? ctx = _dispatchContext;
+    if (ctx == null) return;
+    _forceTraditionalHighlight();
+    Actions.maybeInvoke<GamepadLongPressIntent>(
+      ctx,
+      GamepadLongPressIntent(button),
+    );
   }
 
   // Gamepad input is polled, not delivered as key events, so the FocusManager
@@ -218,7 +279,7 @@ bool gamepadMoveFocusInDirection(
 /// the edge-detection, analog-stick dead-zone/hysteresis and auto-repeat logic
 /// can be unit-tested by feeding synthetic frames with controlled timestamps.
 class GamepadFrameProcessor {
-  GamepadFrameProcessor({required this.onButton});
+  GamepadFrameProcessor({required this.onButton, this.onLongPress});
 
   /// Emits a [GamepadButton] press. The D-pad AND the left stick both map to the
   /// dpad* buttons (the stick is treated exactly like the D-pad) so a controller
@@ -226,8 +287,17 @@ class GamepadFrameProcessor {
   /// user pushes.
   final void Function(GamepadButton button) onButton;
 
+  /// Emits a long-press of [button] (currently only A). To mirror a mouse's
+  /// tap-vs-long-press, A is decided on RELEASE: a release before [longPressMs]
+  /// emits [onButton] (activate); holding past [longPressMs] emits [onLongPress]
+  /// once and suppresses the activate. Null = long-press unsupported.
+  final void Function(GamepadButton button)? onLongPress;
+
   static const int repeatDelayMs = 450;
   static const int repeatIntervalMs = 110;
+
+  /// Hold threshold that turns A into a long-press (matches mouse long-press).
+  static const int longPressMs = 500;
 
   // Left-stick activation uses hysteresis to avoid jitter at the boundary.
   static const int stickEnter = 18000;
@@ -252,6 +322,12 @@ class GamepadFrameProcessor {
   bool _prevLeftTrigger = false;
   bool _prevRightTrigger = false;
 
+  // A-button hold state (only used when [onLongPress] is set). _aDownMs is the
+  // frame timestamp A went down (0 = up); _aLongFired guards one long-press per
+  // hold and suppresses the release-activate.
+  int _aDownMs = 0;
+  bool _aLongFired = false;
+
   // Hysteretic stick direction (null = stick centred).
   TraversalDirection? _stickDir;
 
@@ -266,6 +342,8 @@ class GamepadFrameProcessor {
     _prevButtons = 0;
     _prevLeftTrigger = false;
     _prevRightTrigger = false;
+    _aDownMs = 0;
+    _aLongFired = false;
     _stickDir = null;
     _heldDir = null;
   }
@@ -278,12 +356,37 @@ class GamepadFrameProcessor {
     required int stickY,
     required int nowMs,
   }) {
-    // Edge-detected discrete buttons.
+    // Edge-detected discrete buttons. A is handled separately below when
+    // long-press is supported (decided on release), so skip it here to avoid a
+    // double-fire.
     for (final MapEntry<int, GamepadButton> entry in buttonBits.entries) {
+      if (onLongPress != null && entry.value == GamepadButton.a) continue;
       final int mask = entry.key;
       final bool down = (buttons & mask) != 0;
       final bool wasDown = (_prevButtons & mask) != 0;
       if (down && !wasDown) onButton(entry.value);
+    }
+
+    // A: mirror a mouse's tap-vs-long-press. Decide on RELEASE — a release
+    // before [longPressMs] is an activate (onButton A); holding past it emits
+    // one long-press (onLongPress A) and suppresses the activate. Skipped
+    // entirely when long-press is unsupported (A then fired on the press edge
+    // by the loop above).
+    if (onLongPress != null) {
+      final bool aDown = (buttons & GamepadFrameBits.a) != 0;
+      final bool aWas = (_prevButtons & GamepadFrameBits.a) != 0;
+      if (aDown && !aWas) {
+        _aDownMs = nowMs;
+        _aLongFired = false;
+      } else if (aDown && aWas) {
+        if (!_aLongFired && nowMs - _aDownMs >= longPressMs) {
+          _aLongFired = true;
+          onLongPress!(GamepadButton.a);
+        }
+      } else if (!aDown && aWas) {
+        if (!_aLongFired) onButton(GamepadButton.a);
+        _aDownMs = 0;
+      }
     }
 
     // Triggers behave as digital buttons past the standard threshold.

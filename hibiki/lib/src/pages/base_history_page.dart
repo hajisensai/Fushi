@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
+import 'package:hibiki/src/shortcuts/gamepad_service.dart'
+    show GamepadLongPressActions;
 import 'package:hibiki/utils.dart';
 
 /// A template for a single media type's history body content in the main menu
@@ -55,32 +57,39 @@ abstract class BaseHistoryPageState<T extends BaseHistoryPage>
   /// Wraps the [MediaItem] and adds interaction functionality for tapping
   /// and long pressing.
   Widget buildMediaItem(MediaItem item) {
-    return HibikiCard(
-      padding: EdgeInsets.zero,
-      borderColor: Colors.transparent,
-      onTap: () async {
-        MediaSource mediaSource = item.getMediaSource(appModel: appModel);
-
-        await appModel.openMedia(
-          ref: ref,
-          mediaSource: mediaSource,
+    Future<void> onLongPress() async {
+      await showAppDialog(
+        context: context,
+        builder: (context) => MediaItemDialogPage(
           item: item,
-        );
-      },
-      onLongPress: () async {
-        await showAppDialog(
-          context: context,
-          builder: (context) => MediaItemDialogPage(
+          isHistory: isHistory,
+          extraActions: extraActions,
+        ),
+      );
+      if (isHistory) {
+        setState(() {});
+      }
+    }
+
+    // GamepadLongPressActions makes a gamepad long-press (hold A) invoke the
+    // SAME callback as the mouse long-press on the focused card.
+    return GamepadLongPressActions(
+      onLongPress: onLongPress,
+      child: HibikiCard(
+        padding: EdgeInsets.zero,
+        borderColor: Colors.transparent,
+        onTap: () async {
+          MediaSource mediaSource = item.getMediaSource(appModel: appModel);
+
+          await appModel.openMedia(
+            ref: ref,
+            mediaSource: mediaSource,
             item: item,
-            isHistory: isHistory,
-            extraActions: extraActions,
-          ),
-        );
-        if (isHistory) {
-          setState(() {});
-        }
-      },
-      child: buildMediaItemContent(item),
+          );
+        },
+        onLongPress: onLongPress,
+        child: buildMediaItemContent(item),
+      ),
     );
   }
 
