@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/services.dart' show FontLoader;
+import 'package:hibiki/src/models/font_decoder.dart';
 import 'package:hibiki/src/reader/reader_settings.dart'
     show ReaderCustomFontCss;
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
@@ -19,14 +20,13 @@ import 'package:path/path.dart' as p;
 class AppFontLoader {
   AppFontLoader._();
 
-  /// Extensions the Flutter engine can load at runtime. WOFF/WOFF2 only work in
-  /// the reader's WebView (CSS), the engine's font loader rejects them, so they
-  /// are skipped here in favour of the next usable candidate.
-  static const Set<String> _loadableExtensions = <String>{
-    '.ttf',
-    '.otf',
-    '.ttc',
-  };
+  /// Raw sfnt the Flutter engine loads as-is.
+  static const Set<String> _directExtensions = <String>{'.ttf', '.otf', '.ttc'};
+
+  /// WOFF 1.0 is decoded to sfnt via [FontDecoder] before loading. WOFF2 still
+  /// needs a Brotli decoder, so for now it is honoured only by the reader's
+  /// WebView and skipped here in favour of the next usable candidate.
+  static const String _woffExtension = '.woff';
 
   /// Family names already registered this process. [FontLoader] cannot unload a
   /// family, so re-registering the same one is wasteful and pointless.
@@ -61,16 +61,24 @@ class AppFontLoader {
       }
 
       final String ext = p.extension(path).toLowerCase();
-      if (!_loadableExtensions.contains(ext)) continue;
+      final bool isWoff = ext == _woffExtension;
+      if (!_directExtensions.contains(ext) && !isWoff) continue;
 
       final File file = File(path);
       if (!file.existsSync()) continue;
 
       if (!_loadedFamilies.contains(family)) {
         try {
-          final Uint8List bytes = await file.readAsBytes();
+          Uint8List bytes = await file.readAsBytes();
+          if (isWoff) {
+            // FontLoader only accepts raw sfnt, so unwrap the WOFF container.
+            final Uint8List? sfnt = FontDecoder.woffToSfnt(bytes);
+            if (sfnt == null) continue;
+            bytes = sfnt;
+          }
           final FontLoader loader = FontLoader(family)
-            ..addFont(Future<ByteData>.value(bytes.buffer.asByteData()));
+            ..addFont(Future<ByteData>.value(bytes.buffer
+                .asByteData(bytes.offsetInBytes, bytes.lengthInBytes)));
           await loader.load();
           _loadedFamilies.add(family);
         } catch (e, stack) {
