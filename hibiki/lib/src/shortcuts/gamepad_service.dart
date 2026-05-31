@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io' show Platform;
 
+import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 // Cross-platform controller plugin: GameInput on Windows, GameController on
 // iOS/macOS, evdev/SDL on Linux. Aliased because it also exports a
@@ -60,7 +62,7 @@ class GamepadLongPressActions extends StatelessWidget {
         GamepadLongPressIntent: CallbackAction<GamepadLongPressIntent>(
           onInvoke: (GamepadLongPressIntent intent) {
             onLongPress!();
-            return null;
+            return true; // handled → GamepadService skips its activate fallback
           },
         ),
       },
@@ -122,6 +124,13 @@ class GamepadService {
 
   _PluginGamepadPoller? _poller;
 
+  // Whether the global pointer route + key handler were installed by [start]
+  // (only on supported platforms). Guards [dispose] from removing routes that
+  // were never added — removeGlobalRoute asserts on an unknown route, which
+  // would otherwise crash on Android (start() early-returns there) and in tests
+  // that build AppModel without starting the service.
+  bool _inputRoutesInstalled = false;
+
   /// Android delivers controllers as engine key events; every other non-web
   /// platform polls the gamepads plugin.
   static bool get isSupportedPlatform =>
@@ -139,11 +148,22 @@ class GamepadService {
         onLongPress: _dispatchLongPress,
       ),
     )..start();
+    // Track the active input device so the focus ring follows it (pointer →
+    // hidden, hardware nav → shown). Desktop/Apple only (where this service
+    // runs); Android keeps Flutter's automatic strategy.
+    GestureBinding.instance.pointerRouter.addGlobalRoute(_onPointerGlobal);
+    HardwareKeyboard.instance.addHandler(_onKey);
+    _inputRoutesInstalled = true;
   }
 
   void dispose() {
     _poller?.dispose();
     _poller = null;
+    if (_inputRoutesInstalled) {
+      GestureBinding.instance.pointerRouter.removeGlobalRoute(_onPointerGlobal);
+      HardwareKeyboard.instance.removeHandler(_onKey);
+      _inputRoutesInstalled = false;
+    }
   }
 
   BuildContext? get _dispatchContext =>
@@ -156,7 +176,7 @@ class GamepadService {
   void _dispatchButton(GamepadButton button) {
     final BuildContext? ctx = _dispatchContext;
     if (ctx == null) return;
-    _forceTraditionalHighlight();
+    _setHighlightForHardwareNav();
 
     final bool handled = Actions.maybeInvoke<GamepadButtonIntent>(
           ctx,
@@ -191,31 +211,49 @@ class GamepadService {
   void _dispatchLongPress(GamepadButton button) {
     final BuildContext? ctx = _dispatchContext;
     if (ctx == null) return;
-    _forceTraditionalHighlight();
-    Actions.maybeInvoke<GamepadLongPressIntent>(
-      ctx,
-      GamepadLongPressIntent(button),
-    );
+    _setHighlightForHardwareNav();
+    final bool handled = Actions.maybeInvoke<GamepadLongPressIntent>(
+          ctx,
+          GamepadLongPressIntent(button),
+        ) ==
+        true;
+    // The focused widget has no long-press: a hold should still do what a tap
+    // does (otherwise holding A too long silently does nothing). Fall back to
+    // activate so e.g. a dropdown entry is still selected on a long hold.
+    if (!handled && button == GamepadButton.a) {
+      Actions.maybeInvoke<ActivateIntent>(ctx, const ActivateIntent());
+    }
   }
 
-  // Gamepad input is polled, not delivered as key events, so the FocusManager
-  // never leaves touch-highlight mode on its own — which keeps the focus ring
-  // (and any focus-driven visuals) hidden. Force the keyboard/traditional
-  // highlight the first time the controller is used so directional navigation
-  // is actually visible.
-  //
-  // DELIBERATE one-way switch: the service only runs on the desktop/Apple
-  // targets where a controller is a primary input, so once any hardware
-  // navigation happens we keep the focus ring visible for the rest of the
-  // session rather than letting a stray mouse move hide it mid-navigation. (On a
-  // hybrid touch device this means the ring stays after a controller is used;
-  // acceptable for these targets.)
-  bool _highlightForced = false;
-  void _forceTraditionalHighlight() {
-    if (_highlightForced) return;
-    _highlightForced = true;
+  // The focus ring follows the ACTIVE input device: hardware navigation
+  // (gamepad / physical keyboard) shows it (alwaysTraditional); a pointer
+  // (mouse / touch / trackpad) hides it (alwaysTouch). A polled gamepad emits no
+  // FocusManager events, so the `automatic` strategy can't react to it — hence
+  // we drive the strategy explicitly from each source. This is why a global
+  // pointer route + a key handler are installed: clicking with the mouse should
+  // NOT leave a focus ring behind ("点击正常使用不需要焦点"), while keyboard /
+  // gamepad navigation should.
+  void _setHighlightForHardwareNav() {
     FocusManager.instance.highlightStrategy =
         FocusHighlightStrategy.alwaysTraditional;
+  }
+
+  void _onPointerGlobal(PointerEvent event) {
+    // Any pointer (mouse/touch/trackpad) is a "pointing" device — no focus ring.
+    // Hover/move included so a mouse move after gamepad nav hides the ring.
+    if (event is PointerDownEvent ||
+        event is PointerHoverEvent ||
+        event is PointerMoveEvent ||
+        event is PointerPanZoomStartEvent) {
+      FocusManager.instance.highlightStrategy =
+          FocusHighlightStrategy.alwaysTouch;
+    }
+  }
+
+  bool _onKey(KeyEvent event) {
+    // Physical keyboard navigation wants the ring; never consume the event.
+    _setHighlightForHardwareNav();
+    return false;
   }
 
   static TraversalDirection? _dpadDirectionOf(GamepadButton button) {

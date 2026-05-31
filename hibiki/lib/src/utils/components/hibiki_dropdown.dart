@@ -118,14 +118,20 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
   Widget _buildMenuAnchor(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final int sel = _selectedIndex;
+    // Cap the menu height so a long list (e.g. many decks) scrolls instead of
+    // covering the whole screen, matching the stock DropdownMenu. The
+    // gamepad-focused entry is scrolled into view by HibikiFocusRing.
+    final double maxHeight = MediaQuery.sizeOf(context).height * 0.6;
     final Widget anchor = MenuAnchor(
       controller: _menu,
       childFocusNode: _triggerFocus,
-      style: (widget.width != null && widget.width!.isFinite)
-          ? MenuStyle(
-              minimumSize: WidgetStatePropertyAll<Size>(Size(widget.width!, 0)),
-            )
-          : null,
+      style: MenuStyle(
+        minimumSize: (widget.width != null && widget.width!.isFinite)
+            ? WidgetStatePropertyAll<Size>(Size(widget.width!, 0))
+            : null,
+        maximumSize:
+            WidgetStatePropertyAll<Size>(Size(double.infinity, maxHeight)),
+      ),
       menuChildren: <Widget>[
         for (int i = 0; i < widget.entries.length; i++)
           Actions(
