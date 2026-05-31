@@ -1,14 +1,20 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
+import 'package:hibiki/src/utils/misc/desktop_audio_playback.dart';
 import 'package:hibiki/src/utils/misc/desktop_tts.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
+import 'package:hibiki/src/utils/misc/local_audio_db.dart';
 
-/// Thin wrapper around the native Android TextToSpeech MethodChannel.
-/// Calls are fire-and-forget; failures are silently swallowed.
-/// Only functional on Android — all methods return no-op values on other platforms.
+/// Audio/TTS bridge. On Android these go through the native MethodChannel
+/// (`TtsChannelHandler`); off Android they fall back to pure-Dart / OS-tool
+/// implementations so the desktop builds (Windows/macOS/Linux) have working
+/// local-audio lookup, preview playback, sentence-clip extraction, cover
+/// extraction, and TTS-to-file. `speak` (TTS aloud) has no callers and stays
+/// Android-only.
 class TtsChannel {
   TtsChannel._();
   static final TtsChannel instance = TtsChannel._();
@@ -19,6 +25,10 @@ class TtsChannel {
   /// UI code can use this to show/hide TTS buttons.
   static bool get isSupported => _isSupported;
   static const _channel = HibikiChannels.tts;
+
+  /// Desktop only: the configured local-audio SQLite DB paths, mirrored here by
+  /// [setLocalAudioDbs] (Android keeps them in the native handler instead).
+  List<String> _desktopDbPaths = const <String>[];
 
   Future<void> speak(String text, {String locale = 'ja-JP'}) async {
     if (!_isSupported) return;
@@ -33,7 +43,7 @@ class TtsChannel {
   }
 
   Future<bool> playUrl(String url) async {
-    if (!_isSupported) return false;
+    if (!_isSupported) return DesktopAudioPlayback.playUrl(url);
     try {
       final result = await _channel.invokeMethod('playUrl', {'url': url});
       return result == true;
@@ -44,7 +54,10 @@ class TtsChannel {
   }
 
   Future<bool> setLocalAudioDbs(List<String> paths) async {
-    if (!_isSupported) return false;
+    if (!_isSupported) {
+      _desktopDbPaths = List<String>.of(paths);
+      return true;
+    }
     try {
       final result = await _channel.invokeMethod('setLocalAudioDb', {
         'paths': paths,
@@ -61,7 +74,20 @@ class TtsChannel {
 
   Future<Map<String, dynamic>?> queryLocalAudio(
       String expression, String reading) async {
-    if (!_isSupported) return null;
+    if (!_isSupported) {
+      for (int i = 0; i < _desktopDbPaths.length; i++) {
+        final ({String file, String source})? meta =
+            LocalAudioDb.queryMeta(_desktopDbPaths[i], expression, reading);
+        if (meta != null) {
+          return <String, dynamic>{
+            'file': meta.file,
+            'source': meta.source,
+            'dbIndex': i,
+          };
+        }
+      }
+      return null;
+    }
     try {
       final result = await _channel.invokeMethod('queryLocalAudio', {
         'expression': expression,
@@ -77,7 +103,16 @@ class TtsChannel {
 
   Future<String?> extractLocalAudio(String file, String source,
       {int dbIndex = 0}) async {
-    if (!_isSupported) return null;
+    if (!_isSupported) {
+      if (dbIndex < 0 || dbIndex >= _desktopDbPaths.length) return null;
+      final Directory dir = await getTemporaryDirectory();
+      return LocalAudioDb.extractBlob(
+        dbPath: _desktopDbPaths[dbIndex],
+        file: file,
+        source: source,
+        cacheDir: dir,
+      );
+    }
     try {
       final result = await _channel.invokeMethod('extractLocalAudio', {
         'file': file,
@@ -92,7 +127,7 @@ class TtsChannel {
   }
 
   Future<bool> playFile(String filePath) async {
-    if (!_isSupported) return false;
+    if (!_isSupported) return DesktopAudioPlayback.playFile(filePath);
     try {
       final result =
           await _channel.invokeMethod('playFile', {'path': filePath});
@@ -107,7 +142,12 @@ class TtsChannel {
     required String audioPath,
     required String outputPath,
   }) async {
-    if (!_isSupported) return null;
+    if (!_isSupported) {
+      return extractEmbeddedCoverViaFfmpeg(
+        audioPath: audioPath,
+        outputPath: outputPath,
+      );
+    }
     try {
       final result = await _channel.invokeMethod('extractEmbeddedCover', {
         'audioPath': audioPath,
@@ -171,7 +211,10 @@ class TtsChannel {
   }
 
   Future<void> stop() async {
-    if (!_isSupported) return;
+    if (!_isSupported) {
+      await DesktopAudioPlayback.stop();
+      return;
+    }
     try {
       await _channel.invokeMethod('stop');
     } catch (e, stack) {

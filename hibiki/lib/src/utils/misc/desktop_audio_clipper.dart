@@ -40,6 +40,52 @@ List<String> buildFfmpegClipArgs({
   ];
 }
 
+/// Builds the ffmpeg argument list to extract the embedded cover art of
+/// [inputPath] into [outputPath] (re-encoded to the output extension, e.g. jpg).
+List<String> buildFfmpegCoverArgs({
+  required String inputPath,
+  required String outputPath,
+}) {
+  return <String>[
+    '-y',
+    '-i',
+    inputPath,
+    '-an',
+    '-frames:v',
+    '1',
+    '-update',
+    '1',
+    outputPath,
+  ];
+}
+
+/// Extracts the embedded cover art of [audioPath] into [outputPath] via ffmpeg.
+/// Returns [outputPath] if a cover was written, else null (no cover / no ffmpeg
+/// / error). Does not treat a non-zero ffmpeg exit as fatal — a file with no
+/// cover stream simply produces no output.
+Future<String?> extractEmbeddedCoverViaFfmpeg({
+  required String audioPath,
+  required String outputPath,
+}) async {
+  if (!File(audioPath).existsSync()) return null;
+  final File output = File(outputPath);
+  try {
+    output.parent.createSync(recursive: true);
+    await Process.run(
+      resolveFfmpegExecutable(),
+      buildFfmpegCoverArgs(inputPath: audioPath, outputPath: outputPath),
+    );
+    if (output.existsSync() && output.lengthSync() > 0) return outputPath;
+    return null;
+  } on ProcessException catch (e, stack) {
+    ErrorLogService.instance.log('extractEmbeddedCoverViaFfmpeg', e, stack);
+    return null;
+  } catch (e, stack) {
+    ErrorLogService.instance.log('extractEmbeddedCoverViaFfmpeg', e, stack);
+    return null;
+  }
+}
+
 /// Resolves the ffmpeg executable: `HIBIKI_FFMPEG` override, else `ffmpeg`.
 String resolveFfmpegExecutable() {
   final String? override = Platform.environment['HIBIKI_FFMPEG']?.trim();

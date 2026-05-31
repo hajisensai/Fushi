@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:hibiki/creator.dart';
 import 'package:hibiki/models.dart';
-import 'package:hibiki/src/utils/misc/local_audio_db.dart';
 import 'package:hibiki/utils.dart';
 
 /// Fetches term audio from local Yomitan audio DB, online sources, or TTS.
@@ -56,47 +55,27 @@ class LocalAudioEnhancement extends AudioEnhancement {
   Future<File?> _generateAudio(
       AppModel appModel, String term, String reading) async {
     // 1. Local audio database (Yomitan SQLite): query metadata, then extract
-    //    the blob. Android uses the native handler; desktop queries the same
-    //    SQLite files directly in Dart (one impl for Windows/macOS/Linux).
+    //    the blob. Native handler on Android; pure-Dart sqlite3 on desktop —
+    //    both behind TtsChannel, so this call site is platform-agnostic.
     if (appModel.localAudioEnabled) {
-      if (isAndroidPlatform) {
-        try {
-          final info = await TtsChannel.instance
-              .queryLocalAudio(term, reading)
-              .timeout(const Duration(milliseconds: 500));
-          if (info != null) {
-            final int dbIndex = (info['dbIndex'] as int?) ?? 0;
-            final path = await TtsChannel.instance.extractLocalAudio(
-              info['file']! as String,
-              info['source']! as String,
-              dbIndex: dbIndex,
-            );
-            if (path != null && path.isNotEmpty) {
-              final file = File(path);
-              if (file.existsSync()) return file;
-            }
-          }
-        } on TimeoutException {
-          // Fall through
-        }
-      } else {
-        final List<String> dbPaths = appModel.localAudioDbs
-            .where((e) => e.enabled)
-            .map((e) => e.path)
-            .toList();
-        if (dbPaths.isNotEmpty) {
-          final dir = await getApplicationSupportDirectory();
-          final path = LocalAudioDb.queryAndExtract(
-            dbPaths: dbPaths,
-            expression: term,
-            reading: reading,
-            cacheDir: dir,
+      try {
+        final info = await TtsChannel.instance
+            .queryLocalAudio(term, reading)
+            .timeout(const Duration(milliseconds: 500));
+        if (info != null) {
+          final int dbIndex = (info['dbIndex'] as int?) ?? 0;
+          final path = await TtsChannel.instance.extractLocalAudio(
+            info['file']! as String,
+            info['source']! as String,
+            dbIndex: dbIndex,
           );
-          if (path != null) {
+          if (path != null && path.isNotEmpty) {
             final file = File(path);
             if (file.existsSync()) return file;
           }
         }
+      } on TimeoutException {
+        // Fall through
       }
     }
 

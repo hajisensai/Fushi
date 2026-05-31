@@ -102,4 +102,99 @@ void main() {
       expect(File(output).lengthSync(), greaterThan(0));
     });
   });
+
+  group('buildFfmpegCoverArgs', () {
+    test('extracts a single video frame with audio dropped', () {
+      expect(
+        buildFfmpegCoverArgs(inputPath: '/a/in.m4b', outputPath: '/a/c.jpg'),
+        <String>[
+          '-y',
+          '-i',
+          '/a/in.m4b',
+          '-an',
+          '-frames:v',
+          '1',
+          '-update',
+          '1',
+          '/a/c.jpg',
+        ],
+      );
+    });
+  });
+
+  group('extractEmbeddedCoverViaFfmpeg', () {
+    test('returns null when the audio file does not exist', () async {
+      expect(
+        await extractEmbeddedCoverViaFfmpeg(
+          audioPath: '/no/such/input.m4b',
+          outputPath: 'x.jpg',
+        ),
+        isNull,
+      );
+    });
+
+    test('extracts an embedded cover when ffmpeg is available', () async {
+      bool ffmpegPresent;
+      try {
+        final ProcessResult v =
+            await Process.run(resolveFfmpegExecutable(), <String>['-version']);
+        ffmpegPresent = v.exitCode == 0;
+      } catch (_) {
+        ffmpegPresent = false;
+      }
+      if (!ffmpegPresent) {
+        // ignore: avoid_print
+        print('ffmpeg not present; skipping real-cover extraction test');
+        return;
+      }
+
+      final Directory dir =
+          Directory.systemTemp.createTempSync('hibiki_cover_test');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final String cover = '${dir.path}/cover.png';
+      final String audio = '${dir.path}/withcover.m4a';
+      final String out = '${dir.path}/extracted.jpg';
+      final String ff = resolveFfmpegExecutable();
+
+      await Process.run(ff, <String>[
+        '-y',
+        '-f',
+        'lavfi',
+        '-i',
+        'color=red:s=48x48',
+        '-frames:v',
+        '1',
+        cover,
+      ]);
+      await Process.run(ff, <String>[
+        '-y',
+        '-f',
+        'lavfi',
+        '-i',
+        'sine=d=1',
+        '-i',
+        cover,
+        '-map',
+        '0:a',
+        '-map',
+        '1:v',
+        '-c:a',
+        'aac',
+        '-c:v',
+        'mjpeg',
+        '-disposition:v',
+        'attached_pic',
+        audio,
+      ]);
+
+      final String? result = await extractEmbeddedCoverViaFfmpeg(
+        audioPath: audio,
+        outputPath: out,
+      );
+
+      expect(result, out);
+      expect(File(out).existsSync(), isTrue);
+      expect(File(out).lengthSync(), greaterThan(0));
+    });
+  });
 }

@@ -20,61 +20,97 @@ import 'package:hibiki/src/utils/misc/error_log_service.dart';
 class LocalAudioDb {
   const LocalAudioDb._();
 
-  /// Looks up [expression] (preferring an exact [reading] match) across the
-  /// given read-only [dbPaths], writes the first matching audio blob into
-  /// [cacheDir], and returns the written file path — or null if nothing matched
-  /// or any error occurred. Synchronous: a single indexed lookup + small blob
-  /// write is fast enough for the main isolate.
+  /// Looks up the `(file, source)` for [expression] in [dbPath], preferring an
+  /// exact [reading] match and falling back to any entry for the expression
+  /// (mirrors the native handler). Returns null on miss or error.
+  static ({String file, String source})? queryMeta(
+    String dbPath,
+    String expression,
+    String reading,
+  ) {
+    if (expression.isEmpty || dbPath.isEmpty || !File(dbPath).existsSync()) {
+      return null;
+    }
+    Database? db;
+    try {
+      db = sqlite3.open(dbPath, mode: OpenMode.readOnly);
+      ResultSet rows = db.select(
+        'SELECT file, source FROM entries '
+        'WHERE expression = ? AND reading = ? LIMIT 1',
+        <Object?>[expression, reading],
+      );
+      if (rows.isEmpty) {
+        rows = db.select(
+          'SELECT file, source FROM entries WHERE expression = ? LIMIT 1',
+          <Object?>[expression],
+        );
+      }
+      if (rows.isEmpty) return null;
+      final Object? file = rows.first['file'];
+      final Object? source = rows.first['source'];
+      if (file is! String || source is! String) return null;
+      return (file: file, source: source);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('LocalAudioDb.queryMeta', e, stack);
+      return null;
+    } finally {
+      db?.dispose();
+    }
+  }
+
+  /// Extracts the audio blob for `(file, source)` from [dbPath] into [cacheDir]
+  /// and returns the written file path (`.opus`/`.mp3`), or null.
+  static String? extractBlob({
+    required String dbPath,
+    required String file,
+    required String source,
+    required Directory cacheDir,
+  }) {
+    if (dbPath.isEmpty || !File(dbPath).existsSync()) return null;
+    Database? db;
+    try {
+      db = sqlite3.open(dbPath, mode: OpenMode.readOnly);
+      final ResultSet rows = db.select(
+        'SELECT data FROM android WHERE file = ? AND source = ? LIMIT 1',
+        <Object?>[file, source],
+      );
+      if (rows.isEmpty) return null;
+      final Object? data = rows.first['data'];
+      if (data is! Uint8List || data.isEmpty) return null;
+
+      final String ext = file.endsWith('.opus') ? '.opus' : '.mp3';
+      final File out = File('${cacheDir.path}/local_audio$ext');
+      out.parent.createSync(recursive: true);
+      out.writeAsBytesSync(data);
+      return out.path;
+    } catch (e, stack) {
+      ErrorLogService.instance.log('LocalAudioDb.extractBlob', e, stack);
+      return null;
+    } finally {
+      db?.dispose();
+    }
+  }
+
+  /// Convenience: query [dbPaths] in order and extract the first match into
+  /// [cacheDir]. Returns the written file path, or null. Synchronous: a single
+  /// indexed lookup + small blob write is fast enough for the main isolate.
   static String? queryAndExtract({
     required List<String> dbPaths,
     required String expression,
     required String reading,
     required Directory cacheDir,
   }) {
-    if (expression.isEmpty) return null;
     for (final String dbPath in dbPaths) {
-      if (dbPath.isEmpty || !File(dbPath).existsSync()) continue;
-      Database? db;
-      try {
-        db = sqlite3.open(dbPath, mode: OpenMode.readOnly);
-
-        // 1. Metadata: prefer an exact expression+reading match, else any
-        //    entry for the expression (mirrors the native handler).
-        ResultSet rows = db.select(
-          'SELECT file, source FROM entries '
-          'WHERE expression = ? AND reading = ? LIMIT 1',
-          <Object?>[expression, reading],
-        );
-        if (rows.isEmpty) {
-          rows = db.select(
-            'SELECT file, source FROM entries WHERE expression = ? LIMIT 1',
-            <Object?>[expression],
-          );
-        }
-        if (rows.isEmpty) continue;
-        final Object? file = rows.first['file'];
-        final Object? source = rows.first['source'];
-        if (file is! String || source is! String) continue;
-
-        // 2. Blob: the audio bytes for that (file, source).
-        final ResultSet blobRows = db.select(
-          'SELECT data FROM android WHERE file = ? AND source = ? LIMIT 1',
-          <Object?>[file, source],
-        );
-        if (blobRows.isEmpty) continue;
-        final Object? data = blobRows.first['data'];
-        if (data is! Uint8List || data.isEmpty) continue;
-
-        final String ext = file.endsWith('.opus') ? '.opus' : '.mp3';
-        final File out = File('${cacheDir.path}/local_audio$ext');
-        out.parent.createSync(recursive: true);
-        out.writeAsBytesSync(data);
-        return out.path;
-      } catch (e, stack) {
-        ErrorLogService.instance.log('LocalAudioDb.queryAndExtract', e, stack);
-      } finally {
-        db?.dispose();
-      }
+      final ({String file, String source})? meta =
+          queryMeta(dbPath, expression, reading);
+      if (meta == null) continue;
+      final String? path = extractBlob(
+        dbPath: dbPath,
+        file: meta.file,
+        source: meta.source,
+        cacheDir: cacheDir,
+      );
+      if (path != null) return path;
     }
     return null;
   }
