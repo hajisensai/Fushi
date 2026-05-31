@@ -880,7 +880,7 @@ git commit -m "refactor(settings): align schema with MD3 information architectur
 - Modify: `hibiki/lib/src/utils/components/settings_shared.dart`
 - Test: `hibiki/test/settings/md3_design_system_static_test.dart`
 
-- [ ] **Step 1: Add explicit density tokens**
+- [x] **Step 1: Add explicit density tokens**
 
 Add named density/height roles instead of page-local `VisualDensity.compact`:
 
@@ -920,7 +920,7 @@ and initialize it in `HibikiDesignTokens.of`:
 density: const HibikiDensityTokens(),
 ```
 
-- [ ] **Step 2: Add shared row variants instead of local layout forks**
+- [x] **Step 2: Add shared row variants instead of local layout forks**
 
 Add optional density to `HibikiListItem`:
 
@@ -944,7 +944,7 @@ final double resolvedMinHeight = minHeight ??
 
 Change `minHeight` from `double` to `double?` and update existing calls that depend on a hard value.
 
-- [ ] **Step 3: Add a shared settings navigation row if renderers duplicate logic**
+- [x] **Step 3: Add a shared settings navigation row if renderers duplicate logic**
 
 If both Material and Cupertino renderers still construct similar navigation rows, add:
 
@@ -983,7 +983,7 @@ class AdaptiveSettingsNavigationRow extends StatelessWidget {
 }
 ```
 
-- [ ] **Step 4: Extend static component tests**
+- [x] **Step 4: Extend static component tests**
 
 In `md3_design_system_static_test.dart`, require the new tokens:
 
@@ -1004,20 +1004,25 @@ and require row density support:
 ],
 ```
 
-- [ ] **Step 5: Run focused tests**
+- [x] **Step 5: Run focused tests**
 
 ```powershell
 D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat format lib\src\utils\components\hibiki_design_tokens.dart lib\src\utils\components\hibiki_material_components.dart lib\src\utils\components\settings_shared.dart test\settings\md3_design_system_static_test.dart
 D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test test\settings\md3_design_system_static_test.dart --reporter expanded
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add -- hibiki/lib/src/utils/components/hibiki_design_tokens.dart hibiki/lib/src/utils/components/hibiki_material_components.dart hibiki/lib/src/utils/components/settings_shared.dart hibiki/test/settings/md3_design_system_static_test.dart
 git diff --cached --check
 git commit -m "feat(ui): add MD3 density tokens and row variants"
 ```
+
+Implementation note:
+- Density tokens and `HibikiListDensity` landed in `db87bc575 feat(ui): add MD3 density tokens`.
+- Renderer navigation rows now use shared `AdaptiveSettingsNavigationRow` in `92b30afa3 refactor(settings): share navigation row chrome`.
+- Verification: `D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test test/settings/settings_renderer_test.dart test/widgets/settings_shared_test.dart test/settings/md3_design_system_static_test.dart --reporter expanded` passed.
 
 ---
 
