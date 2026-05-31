@@ -1167,5 +1167,7 @@
     "shortcut_action_global_scroll_page_down": "向下翻一屏",
     "shortcut_action_global_scroll_page_up": "向上翻一屏",
     "shortcut_action_home_tab_prev": "上一个标签页",
-    "shortcut_action_home_tab_next": "下一个标签页"
+    "shortcut_action_home_tab_next": "下一个标签页",
+    "move_up": "上移",
+    "move_down": "下移"
 }

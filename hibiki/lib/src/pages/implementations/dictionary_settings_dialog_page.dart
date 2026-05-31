@@ -87,16 +87,45 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
                       key: ValueKey('audio_src_$index'),
                       title: _sources[index],
                       icon: Icons.drag_handle,
-                      trailing: HibikiIconButton(
-                        icon: Icons.delete_outline,
-                        size: 18,
-                        tooltip: t.dialog_delete,
-                        padding: EdgeInsets.all(tokens.spacing.gap / 2),
-                        onTap: () {
-                          setState(() {
-                            _sources.removeAt(index);
-                          });
-                        },
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Gamepad/keyboard reorder equivalent for the
+                          // drag handle (which a controller cannot grab).
+                          HibikiIconButton(
+                            icon: Icons.keyboard_arrow_up,
+                            size: 18,
+                            tooltip: t.move_up,
+                            enabled: index > 0,
+                            padding: EdgeInsets.all(tokens.spacing.gap / 2),
+                            onTap: () => setState(() {
+                              final item = _sources.removeAt(index);
+                              _sources.insert(index - 1, item);
+                            }),
+                          ),
+                          HibikiIconButton(
+                            icon: Icons.keyboard_arrow_down,
+                            size: 18,
+                            tooltip: t.move_down,
+                            enabled: index < _sources.length - 1,
+                            padding: EdgeInsets.all(tokens.spacing.gap / 2),
+                            onTap: () => setState(() {
+                              final item = _sources.removeAt(index);
+                              _sources.insert(index + 1, item);
+                            }),
+                          ),
+                          HibikiIconButton(
+                            icon: Icons.delete_outline,
+                            size: 18,
+                            tooltip: t.dialog_delete,
+                            padding: EdgeInsets.all(tokens.spacing.gap / 2),
+                            onTap: () {
+                              setState(() {
+                                _sources.removeAt(index);
+                              });
+                            },
+                          ),
+                        ],
                       ),
                     );
                   },

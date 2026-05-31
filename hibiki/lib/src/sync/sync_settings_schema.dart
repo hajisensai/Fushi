@@ -1539,14 +1539,31 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget> {
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: <Widget>[
+                      // Gamepad/keyboard reorder equivalent for the drag handle.
+                      HibikiIconButton(
+                        icon: Icons.keyboard_arrow_up,
+                        size: 18,
+                        tooltip: t.move_up,
+                        enabled: index > 0,
+                        onTap: () => _reorderUrls(index, index - 1),
+                      ),
+                      HibikiIconButton(
+                        icon: Icons.keyboard_arrow_down,
+                        size: 18,
+                        tooltip: t.move_down,
+                        enabled: index < _urls.length - 1,
+                        onTap: () => _reorderUrls(index, index + 2),
+                      ),
                       adaptiveSwitch(
                         context: context,
                         value: u.enabled,
                         onChanged: (_) => _toggleUrl(index),
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.delete_outline),
-                        onPressed: () => _deleteUrl(index),
+                      HibikiIconButton(
+                        icon: Icons.delete_outline,
+                        size: 18,
+                        tooltip: t.dialog_delete,
+                        onTap: () => _deleteUrl(index),
                       ),
                     ],
                   ),
