@@ -6,14 +6,12 @@ class DictionaryProgressDialogContent extends StatelessWidget {
     required this.header,
     required this.message,
     required this.progressColor,
-    this.headerStyle,
     super.key,
   });
 
   final String header;
   final String message;
   final Color progressColor;
-  final TextStyle? headerStyle;
 
   @override
   Widget build(BuildContext context) {
@@ -46,7 +44,7 @@ class DictionaryProgressDialogContent extends StatelessWidget {
                     header,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: headerStyle,
+                    style: tokens.type.metadata,
                   ),
                   SizedBox(height: tokens.spacing.gap / 4),
                   Text(

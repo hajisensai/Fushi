@@ -1338,6 +1338,12 @@ void main() {
       isNot(contains('Card(')),
     );
 
+    final String progressContent = File(
+      'lib/src/pages/implementations/dictionary_progress_dialog_content.dart',
+    ).readAsStringSync();
+    expect(progressContent, contains('tokens.type.metadata'));
+    expect(progressContent, isNot(contains('headerStyle')));
+
     final String termSource = File(
       'lib/src/pages/implementations/dictionary_term_page.dart',
     ).readAsStringSync();

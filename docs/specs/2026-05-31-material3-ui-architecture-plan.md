@@ -1237,7 +1237,7 @@ Implementation note:
 - Test: `hibiki/test/pages/floating_dict_page_static_test.dart`
 - Test: `hibiki/test/settings/md3_design_system_static_test.dart`
 
-- [ ] **Step 1: Preserve dictionary behavior before UI changes**
+- [x] **Step 1: Preserve dictionary behavior before UI changes**
 
 Search for behavior gates:
 
@@ -1247,7 +1247,11 @@ rg -n "collapseDictionaries|showExpressionTags|deduplicatePitchAccents|harmonicF
 
 Write down which rows are settings and which are management actions. Settings belong in `settings_schema.dart`; management actions stay in dictionary management pages.
 
-- [ ] **Step 2: Convert management lists to shared grouped cards**
+Implementation note:
+- Lookup behavior gates remain settings-owned in `settings_schema.dart`: `collapseDictionaries`, `showExpressionTags`, `deduplicatePitchAccents`, `harmonicFrequency`, `localAudioEnabled`, and `audioSources`.
+- Dictionary import/download/delete/reorder/hide/collapse/custom CSS remain management actions in `dictionary_dialog_page.dart`.
+
+- [x] **Step 2: Convert management lists to shared grouped cards**
 
 Use `HibikiCard` for category/group shells and `HibikiListItem` for rows:
 
@@ -1271,11 +1275,18 @@ HibikiCard(
 )
 ```
 
-- [ ] **Step 3: Keep dictionary content typography out of ordinary chrome bans**
+Implementation note:
+- `dictionary_dialog_page.dart` already renders category groups through `HibikiCard` and dictionary rows through `HibikiListItem`; reorder, hide, collapse, delete, and custom CSS actions are preserved.
+
+- [x] **Step 3: Keep dictionary content typography out of ordinary chrome bans**
 
 Dictionary entry HTML/native content can have content-specific typography. Ordinary shell elements cannot. Put exceptions in static tests by file/section, not broad file allowlists.
 
-- [ ] **Step 4: Keep popup lookup shells shared**
+Implementation note:
+- Progress-dialog title chrome now lives in `DictionaryProgressDialogContent` via `tokens.type.metadata`; callers no longer inject local `TextStyle(fontSize: ...)`.
+- Dictionary article/native content remains outside ordinary chrome migration.
+
+- [x] **Step 4: Keep popup lookup shells shared**
 
 All popup/floating shells should use:
 
@@ -1286,14 +1297,22 @@ All popup/floating shells should use:
 
 Do not reintroduce raw `TextField`, local `DecoratedBox`, or local `BorderRadius.circular`.
 
-- [ ] **Step 5: Run focused tests**
+Implementation note:
+- Popup and floating dictionary shells already use `HibikiPopupSurface`, `HibikiCompactSearchRow`, and `HibikiOverlayScaffold`.
+- `md3_design_system_static_test.dart` now also guards progress-dialog content against reintroducing caller-specific `headerStyle`.
+
+- [x] **Step 5: Run focused tests**
 
 ```powershell
 D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat format lib\src\pages\implementations\home_dictionary_page.dart lib\src\pages\implementations\dictionary_dialog_page.dart lib\src\pages\implementations\dictionary_dialog_import_page.dart lib\src\pages\implementations\dictionary_dialog_delete_page.dart lib\src\pages\implementations\dictionary_settings_dialog_page.dart lib\src\pages\implementations\dictionary_popup_webview.dart lib\src\pages\implementations\dictionary_popup_native.dart lib\src\pages\implementations\dictionary_popup_layer.dart lib\src\pages\implementations\popup_dictionary_page.dart lib\src\pages\implementations\floating_dict_page.dart test\settings\md3_design_system_static_test.dart
 D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test test\settings\md3_design_system_static_test.dart test\pages\dictionary_dialog_layout_static_test.dart test\pages\dictionary_progress_dialog_page_test.dart test\pages\audio_sources_dialog_page_test.dart test\pages\popup_dictionary_page_test.dart test\pages\floating_dict_page_static_test.dart --reporter expanded
 ```
 
-- [ ] **Step 6: Commit**
+Verification:
+- `D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat format lib\src\pages\implementations\dictionary_dialog_import_page.dart lib\src\pages\implementations\dictionary_dialog_delete_page.dart lib\src\pages\implementations\dictionary_progress_dialog_content.dart test\settings\md3_design_system_static_test.dart`
+- `D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test test\settings\md3_design_system_static_test.dart test\pages\dictionary_dialog_layout_static_test.dart test\pages\dictionary_progress_dialog_page_test.dart test\pages\audio_sources_dialog_page_test.dart test\pages\popup_dictionary_page_test.dart test\pages\floating_dict_page_static_test.dart --reporter expanded` passed.
+
+- [x] **Step 6: Commit**
 
 ```powershell
 git add -- hibiki/lib/src/pages/implementations/home_dictionary_page.dart hibiki/lib/src/pages/implementations/dictionary_dialog_page.dart hibiki/lib/src/pages/implementations/dictionary_dialog_import_page.dart hibiki/lib/src/pages/implementations/dictionary_dialog_delete_page.dart hibiki/lib/src/pages/implementations/dictionary_settings_dialog_page.dart hibiki/lib/src/pages/implementations/dictionary_popup_webview.dart hibiki/lib/src/pages/implementations/dictionary_popup_native.dart hibiki/lib/src/pages/implementations/dictionary_popup_layer.dart hibiki/lib/src/pages/implementations/popup_dictionary_page.dart hibiki/lib/src/pages/implementations/floating_dict_page.dart hibiki/test/settings/md3_design_system_static_test.dart hibiki/test/pages/dictionary_dialog_layout_static_test.dart hibiki/test/pages/dictionary_progress_dialog_page_test.dart hibiki/test/pages/audio_sources_dialog_page_test.dart hibiki/test/pages/popup_dictionary_page_test.dart hibiki/test/pages/floating_dict_page_static_test.dart

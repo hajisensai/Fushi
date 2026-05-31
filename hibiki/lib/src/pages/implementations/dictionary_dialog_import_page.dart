@@ -71,10 +71,6 @@ class _DictionaryDialogImportPageState
           header: header,
           message: progress,
           progressColor: theme.colorScheme.primary,
-          headerStyle: TextStyle(
-            fontSize: textTheme.bodySmall?.fontSize,
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
         );
       },
     );

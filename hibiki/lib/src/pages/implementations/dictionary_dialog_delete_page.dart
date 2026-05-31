@@ -46,10 +46,6 @@ class _DictionaryDialogDeletePageState
           : t.delete_in_progress,
       message: t.dictionaries_deleting_data,
       progressColor: theme.colorScheme.primary,
-      headerStyle: TextStyle(
-        fontSize: textTheme.bodySmall?.fontSize,
-        color: theme.colorScheme.onSurfaceVariant,
-      ),
     );
   }
 }
