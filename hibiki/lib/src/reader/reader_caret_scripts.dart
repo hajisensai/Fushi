@@ -391,28 +391,47 @@ window.hoshiCaret = {
     var acy = a.top + a.height / 2;
     var stops = this._collectVisibleStops();
     var eps = 2;
+    // Directional move with a "beam": a candidate whose cross-axis OVERLAPS the
+    // anchor (same row for left/right, same column for up/down) always beats one
+    // that doesn't, THEN nearest along the move axis, then nearest cross. A plain
+    // distance score (along + k*cross) lets a near-but-misaligned target win — e.g.
+    // RIGHT from the headword would pick the definition text just below over the
+    // ♪ on the same row far to the right. The beam keeps directional moves honest.
     var best = null;
-    var bestScore = Infinity;
+    var bestBeam = -1; // 1 = inside the beam, 0 = outside
+    var bestAlong = Infinity;
+    var bestCross = Infinity;
+    var horizontal = (physicalDir === 'left' || physicalDir === 'right');
     for (var i = 0; i < stops.length; i++) {
       var s = stops[i];
       if (s.el && this.el && s.el === this.el) continue;
       if (!s.el && this.node && s.node === this.node && s.offset === this.offset) continue;
-      var dx = s.cx - acx, dy = s.cy - acy, ahead, along, cross;
-      // Two rects share a visual row if they overlap vertically by more than
-      // half the shorter one's height. Up/Down must cross to a DIFFERENT row, so
-      // a same-row control (e.g. the popup's ♪ audio icon beside the headword,
-      // whose centre sits a hair above the big headword) is reachable only via
-      // Left/Right — Up from the top row then finds nothing and the move blocks,
-      // which lets Dart escape to the Flutter header instead of hopping to ♪.
-      var ov = Math.min(a.bottom, s.rect.bottom) - Math.max(a.top, s.rect.top);
-      var sameRow = ov > 0.5 * Math.min(a.height, s.rect.height);
-      if (physicalDir === 'up') { ahead = !sameRow && dy < -eps; along = -dy; cross = Math.abs(dx); }
-      else if (physicalDir === 'down') { ahead = !sameRow && dy > eps; along = dy; cross = Math.abs(dx); }
-      else if (physicalDir === 'left') { ahead = dx < -eps; along = -dx; cross = Math.abs(dy); }
-      else { ahead = dx > eps; along = dx; cross = Math.abs(dy); } // right
+      var dx = s.cx - acx, dy = s.cy - acy;
+      var ovY = Math.min(a.bottom, s.rect.bottom) - Math.max(a.top, s.rect.top);
+      var ovX = Math.min(a.right, s.rect.right) - Math.max(a.left, s.rect.left);
+      // Up/Down must cross to a DIFFERENT row: a same-row control (e.g. the ♪
+      // beside the headword, whose centre sits a hair above it) is reachable only
+      // via Left/Right, so Up from the top row blocks and Dart escapes to the
+      // Flutter header instead of hopping sideways.
+      var sameRow = ovY > 0.5 * Math.min(a.height, s.rect.height);
+      var ahead, along, cross, beam;
+      if (physicalDir === 'up') {
+        ahead = !sameRow && dy < -eps; along = -dy; cross = Math.abs(dx); beam = ovX > 0;
+      } else if (physicalDir === 'down') {
+        ahead = !sameRow && dy > eps; along = dy; cross = Math.abs(dx); beam = ovX > 0;
+      } else if (physicalDir === 'left') {
+        ahead = dx < -eps; along = -dx; cross = Math.abs(dy); beam = ovY > 0;
+      } else { // right
+        ahead = dx > eps; along = dx; cross = Math.abs(dy); beam = ovY > 0;
+      }
       if (!ahead) continue;
-      var score = along + cross * 3; // prefer same line/column, penalise cross
-      if (score < bestScore) { bestScore = score; best = s; }
+      var beamN = beam ? 1 : 0;
+      var better;
+      if (best === null) better = true;
+      else if (beamN !== bestBeam) better = beamN > bestBeam;
+      else if (Math.abs(along - bestAlong) > eps) better = along < bestAlong;
+      else better = cross < bestCross;
+      if (better) { best = s; bestBeam = beamN; bestAlong = along; bestCross = cross; }
     }
     return best;
   },

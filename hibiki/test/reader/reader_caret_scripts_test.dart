@@ -198,6 +198,14 @@ void main() {
       expect(js, contains('sameCol'));
     });
 
+    test('directional element moves use a cross-axis beam', () {
+      // A candidate whose cross-axis overlaps the anchor (same row for L/R, same
+      // column for U/D) beats a nearer-but-misaligned one, so RIGHT from the
+      // headword picks the same-row ♪ over the definition text just below.
+      expect(js, contains('beam'));
+      expect(js, contains('beamN > bestBeam'));
+    });
+
     test('popup caret scrolls a partially-clipped stop into view', () {
       // _inViewport is intersection-based; move() must scroll an edge-clipped
       // stop fully into view (popup-only) so the view follows the cursor.
