@@ -152,9 +152,9 @@ void main() {
     expect(find.byType(Scaffold), findsOneWidget);
     expect(find.byType(AppBar), findsOneWidget);
     expect(find.byType(Switch), findsOneWidget);
-    expect(find.byIcon(Icons.tune_outlined), findsNothing);
+    expect(find.byIcon(Icons.tune_outlined), findsOneWidget);
     expect(find.byIcon(Icons.settings_suggest_outlined), findsOneWidget);
-    expect(find.byIcon(Icons.toggle_on_outlined), findsNothing);
+    expect(find.byIcon(Icons.toggle_on_outlined), findsOneWidget);
     expect(
       find.byWidgetPredicate((Widget widget) => widget is SegmentedButton),
       findsOneWidget,
