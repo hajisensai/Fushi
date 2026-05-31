@@ -210,10 +210,20 @@ void main() {
       expect(js, contains('beamN > bestBeam'));
     });
 
+    test('popup text moves are physical geometry, not reading-order stepping',
+        () {
+      expect(js, contains('if (!window.hoshiReader) {'));
+      expect(js, contains('target = this._geomMove(physical);'));
+    });
+
     test('Left/Right off an element-stop row end blocks (no fly-off)', () {
       // RIGHT from the rightmost control (e.g. +) has no candidate; it must
       // block, not scroll + line-jump to an off-screen stop.
-      expect(js, contains("this.el && (dir === 'left' || dir === 'right')"));
+      expect(
+        js,
+        contains(
+            "!window.hoshiReader && (physical === 'left' || physical === 'right')"),
+      );
     });
 
     test('suspend/resume hide and re-show the ring without dropping the caret',

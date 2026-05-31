@@ -18,6 +18,7 @@ import 'package:hibiki/src/pages/implementations/book_css_editor_page.dart';
 import 'package:hibiki/src/pages/implementations/illustrations_viewer_page.dart';
 import 'package:hibiki/src/profile/profile_repository.dart';
 import 'package:hibiki/src/profile/profile_view_model.dart';
+import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/shortcuts/gamepad_service.dart'
     show GamepadLongPressActions;
 import 'package:hibiki/utils.dart';
@@ -514,6 +515,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     final int? srtBookId = book.id;
     return _bookCardShell(
       cardKey: ValueKey<String>('srt_entry_${book.ttuBookId}'),
+      focusId: HibikiFocusId('reader-shelf-srt-${book.uid}'),
       selectionKey: selKey,
       dragBookId: srtBookId,
       onTagDropped:
@@ -575,6 +577,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     required VoidCallback onLongPress,
     required Widget child,
     Key? cardKey,
+    HibikiFocusId? focusId,
     String? selectionKey,
     int? dragBookId,
     void Function(BookTagRow tag)? onTagDropped,
@@ -593,6 +596,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       onLongPress: _selectionMode ? null : onLongPress,
       child: HibikiCard(
         key: cardKey,
+        focusId: focusId,
         padding: EdgeInsets.zero,
         margin: EdgeInsets.all(tokens.spacing.rowVertical),
         selected: selected,
@@ -1086,6 +1090,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     final int? bookId = _parseBookId(item.mediaIdentifier);
     return _bookCardShell(
       cardKey: ValueKey<String>('book_entry_${item.mediaIdentifier}'),
+      focusId: HibikiFocusId('reader-shelf-book-${item.mediaIdentifier}'),
       selectionKey: item.mediaIdentifier,
       dragBookId: bookId,
       onTagDropped: bookId == null ? null : (tag) => _addTagToBook(bookId, tag),

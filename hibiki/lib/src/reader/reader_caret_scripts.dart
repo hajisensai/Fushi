@@ -704,11 +704,17 @@ window.hoshiCaret = {
     var vertical = this._vertical();
     var logical = this._logicalDir(dir, vertical);
     var forwardish = (logical === 'forward' || logical === 'lineNext');
+    var physical = this._physicalDir(dir, vertical, logical);
     var target = null;
-    if (this.el) {
+    if (!window.hoshiReader) {
+      // Dictionary popups are mixed DOM: text, links, buttons and disclosure
+      // controls share one visual plane. Directional input must therefore use
+      // physical geometry for every stop, including plain text.
+      target = this._geomMove(physical);
+    } else if (this.el) {
       // No text offset to step from an element stop — every move is geometric:
       // jump to the nearest stop (text or element) in the physical direction.
-      target = this._geomMove(this._physicalDir(dir, vertical, logical));
+      target = this._geomMove(physical);
     } else if (logical === 'forward') {
       target = this._nextStop(this.node, this.offset);
     } else if (logical === 'backward') {
@@ -721,7 +727,7 @@ window.hoshiCaret = {
       // block, rather than scroll the view and jump to another line (which made
       // the cursor "fly off" to an off-screen stop after +). The reader has no
       // element stops, so this is popup-only; Up/Down still scroll for more rows.
-      if (this.el && (dir === 'left' || dir === 'right')) {
+      if (!window.hoshiReader && (physical === 'left' || physical === 'right')) {
         return { status: 'blocked' };
       }
       if (!this.el && (logical === 'forward' || logical === 'backward')) {

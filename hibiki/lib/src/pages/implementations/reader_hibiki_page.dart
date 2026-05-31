@@ -960,7 +960,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
           if (suspend) {
             topPopupState?.caretSuspend();
           } else {
-            topPopupState?.caretResume();
+            _resumePopupCaretForHardwareNav();
           }
           break;
         case CaretSurface.reader:
@@ -975,6 +975,20 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       }
     }
     setState(() {});
+  }
+
+  void _resumePopupCaretForHardwareNav() {
+    final DictionaryPopupWebViewState? state = topPopupState;
+    if (state == null) {
+      _caretPopupState = null;
+      _caretSurface = CaretSurface.none;
+      return;
+    }
+    if (!identical(state, _caretPopupState)) {
+      unawaited(_transferCaretToTopPopup(state));
+      return;
+    }
+    state.caretResume();
   }
 
   @override

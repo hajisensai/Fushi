@@ -1,4 +1,5 @@
 import 'dart:collection';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:hibiki/src/focus/hibiki_focus_scroll.dart';
@@ -143,12 +144,25 @@ class HibikiFocusController extends ChangeNotifier {
 
     final HibikiFocusTargetEntry? active = _currentEntry();
     final int currentIndex = active == null ? -1 : targets.indexOf(active);
-    final int nextIndex = _nextIndex(
+    if (active != null) {
+      final _GeometricMoveResult geometric =
+          _geometricTarget(active, targets, direction);
+      if (!geometric.hasGeometry) {
+        return _moveByReadingOrder(
+          currentIndex: currentIndex,
+          direction: direction,
+          targets: targets,
+        );
+      }
+      final HibikiFocusTargetEntry? target = geometric.target;
+      return target != null && requestById(target.id);
+    }
+
+    return _moveByReadingOrder(
       currentIndex: currentIndex,
       direction: direction,
-      count: targets.length,
+      targets: targets,
     );
-    return requestById(targets[nextIndex].id);
   }
 
   void ensureFocus() {
@@ -226,6 +240,105 @@ class HibikiFocusController extends ChangeNotifier {
     return primary.context != null && primary.canRequestFocus;
   }
 
+  _GeometricMoveResult _geometricTarget(
+    HibikiFocusTargetEntry active,
+    List<HibikiFocusTargetEntry> targets,
+    HibikiFocusDirection direction,
+  ) {
+    final Rect? activeRect = _globalRectOf(active.context);
+    if (activeRect == null) return const _GeometricMoveResult.noGeometry();
+    final Offset activeCenter = activeRect.center;
+    HibikiFocusTargetEntry? best;
+    int bestBeam = -1;
+    double bestAlong = double.infinity;
+    double bestCross = double.infinity;
+    const double epsilon = 2;
+
+    for (final HibikiFocusTargetEntry target in targets) {
+      if (identical(target, active)) continue;
+      final Rect? targetRect = _globalRectOf(target.context);
+      if (targetRect == null) continue;
+      final Offset targetCenter = targetRect.center;
+      final double dx = targetCenter.dx - activeCenter.dx;
+      final double dy = targetCenter.dy - activeCenter.dy;
+
+      final bool ahead;
+      final double along;
+      final double cross;
+      final bool beam;
+      switch (direction) {
+        case HibikiFocusDirection.up:
+          ahead = dy < -epsilon;
+          along = -dy;
+          cross = dx.abs();
+          beam = _overlap(activeRect.left, activeRect.right, targetRect.left,
+              targetRect.right);
+          break;
+        case HibikiFocusDirection.down:
+          ahead = dy > epsilon;
+          along = dy;
+          cross = dx.abs();
+          beam = _overlap(activeRect.left, activeRect.right, targetRect.left,
+              targetRect.right);
+          break;
+        case HibikiFocusDirection.left:
+          ahead = dx < -epsilon;
+          along = -dx;
+          cross = dy.abs();
+          beam = _overlap(activeRect.top, activeRect.bottom, targetRect.top,
+              targetRect.bottom);
+          break;
+        case HibikiFocusDirection.right:
+          ahead = dx > epsilon;
+          along = dx;
+          cross = dy.abs();
+          beam = _overlap(activeRect.top, activeRect.bottom, targetRect.top,
+              targetRect.bottom);
+          break;
+      }
+      if (!ahead) continue;
+
+      final int beamScore = beam ? 1 : 0;
+      final bool better = best == null ||
+          beamScore > bestBeam ||
+          (beamScore == bestBeam &&
+              (along < bestAlong - epsilon ||
+                  ((along - bestAlong).abs() <= epsilon && cross < bestCross)));
+      if (better) {
+        best = target;
+        bestBeam = beamScore;
+        bestAlong = along;
+        bestCross = cross;
+      }
+    }
+    return _GeometricMoveResult(target: best, hasGeometry: true);
+  }
+
+  bool _moveByReadingOrder({
+    required int currentIndex,
+    required HibikiFocusDirection direction,
+    required List<HibikiFocusTargetEntry> targets,
+  }) {
+    final int nextIndex = _nextIndex(
+      currentIndex: currentIndex,
+      direction: direction,
+      count: targets.length,
+    );
+    return requestById(targets[nextIndex].id);
+  }
+
+  static Rect? _globalRectOf(BuildContext context) {
+    if (!context.mounted) return null;
+    final RenderObject? renderObject = context.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) return null;
+    final Offset origin = renderObject.localToGlobal(Offset.zero);
+    return origin & renderObject.size;
+  }
+
+  static bool _overlap(double aStart, double aEnd, double bStart, double bEnd) {
+    return math.min(aEnd, bEnd) - math.max(aStart, bStart) > 0;
+  }
+
   int _nextIndex({
     required int currentIndex,
     required HibikiFocusDirection direction,
@@ -258,6 +371,21 @@ class HibikiFocusController extends ChangeNotifier {
       }
     }
   }
+}
+
+@immutable
+class _GeometricMoveResult {
+  const _GeometricMoveResult({
+    required this.target,
+    required this.hasGeometry,
+  });
+
+  const _GeometricMoveResult.noGeometry()
+      : target = null,
+        hasGeometry = false;
+
+  final HibikiFocusTargetEntry? target;
+  final bool hasGeometry;
 }
 
 class HibikiFocusRoot extends StatefulWidget {

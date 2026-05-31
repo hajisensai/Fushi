@@ -80,7 +80,7 @@ void main() {
     );
     await tester.pump();
 
-    expect(moved, isTrue);
+    expect(moved, isFalse);
     expect(raw.hasPrimaryFocus, isFalse);
     expect(target.hasPrimaryFocus, isTrue);
     expect(
@@ -191,5 +191,67 @@ void main() {
     await tester.pump();
     expect(left.hasPrimaryFocus, isTrue,
         reason: 'blocked up falls back to previousFocus');
+  });
+
+  testWidgets('focus root moves geometrically in a two-column grid',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HibikiFocusRoot(
+          child: GridView.count(
+            crossAxisCount: 2,
+            childAspectRatio: 1,
+            children: <Widget>[
+              for (final String id in <String>[
+                'top-left',
+                'top-right',
+                'bottom-left',
+                'bottom-right',
+              ])
+                HibikiFocusTarget(
+                  id: HibikiFocusId(id),
+                  child: TextButton(
+                    onPressed: () {},
+                    child: Text(id),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final BuildContext context = tester.element(find.byType(GridView));
+    final HibikiFocusController controller =
+        HibikiFocusRoot.controllerOf(context);
+
+    expect(controller.requestById(const HibikiFocusId('top-left')), isTrue);
+    await tester.pump();
+
+    expect(controller.move(HibikiFocusDirection.down), isTrue);
+    await tester.pump();
+
+    expect(
+      controller.activeId,
+      const HibikiFocusId('bottom-left'),
+      reason: 'D-pad down in a shelf grid must move to the row below, not the '
+          'next item in reading order',
+    );
+
+    expect(controller.move(HibikiFocusDirection.right), isTrue);
+    await tester.pump();
+
+    expect(controller.activeId, const HibikiFocusId('bottom-right'));
+
+    expect(controller.move(HibikiFocusDirection.down), isFalse);
+    await tester.pump();
+
+    expect(
+      controller.activeId,
+      const HibikiFocusId('bottom-right'),
+      reason: 'D-pad down at the grid edge must stop instead of sliding '
+          'sideways through reading order',
+    );
   });
 }
