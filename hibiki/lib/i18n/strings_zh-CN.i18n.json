@@ -1163,5 +1163,7 @@
     "reader_unsupported_platform": "本平台暂不支持阅读器。",
     "microphone_permission_denied": "录音需要麦克风权限。",
     "anki_connect_api_key": "API 密钥",
-    "anki_connect_api_key_hint": "若 AnkiConnect 未设置密钥则留空"
+    "anki_connect_api_key_hint": "若 AnkiConnect 未设置密钥则留空",
+    "shortcut_action_global_scroll_page_down": "向下翻一屏",
+    "shortcut_action_global_scroll_page_up": "向上翻一屏"
 }

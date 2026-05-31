@@ -32,6 +32,10 @@ String _actionLabel(ShortcutAction action) {
       return t.shortcut_action_home_focus_search;
     case ShortcutAction.globalBack:
       return t.shortcut_action_global_back;
+    case ShortcutAction.globalScrollPageDown:
+      return t.shortcut_action_global_scroll_page_down;
+    case ShortcutAction.globalScrollPageUp:
+      return t.shortcut_action_global_scroll_page_up;
     case ShortcutAction.audiobookPlayPause:
       return t.shortcut_action_audiobook_play_pause;
     case ShortcutAction.audiobookNextSentence:

@@ -136,5 +136,40 @@ void main() {
         }
       }
     });
+
+    test('global scroll-page actions bind to RB (down) and LB (up)', () {
+      final win = ShortcutDefaults.forPlatform(TargetPlatform.windows);
+      expect(
+        win[ShortcutAction.globalScrollPageDown]!
+            .gamepadBindings
+            .map((b) => b.button),
+        contains(GamepadButton.rb),
+      );
+      expect(
+        win[ShortcutAction.globalScrollPageUp]!
+            .gamepadBindings
+            .map((b) => b.button),
+        contains(GamepadButton.lb),
+      );
+    });
+
+    test(
+        'global scroll-page RB/LB are not a reader-group conflict '
+        '(they live in the [home, global] group)', () {
+      // RB/LB are reader page-turn in the reader group; global scroll lives in
+      // the [home, global] group, so scanning the reader group must still see
+      // RB/LB owned ONLY by reader page-turn (no global action leaked in).
+      final defaults = ShortcutDefaults.forPlatform(TargetPlatform.windows);
+      final seen = <GamepadButton, ShortcutAction>{};
+      for (final scope in ShortcutScope.reader.coactiveScopes) {
+        for (final action in ShortcutAction.actionsForScope(scope)) {
+          for (final gp in defaults[action]!.gamepadBindings) {
+            seen[gp.button] = action;
+          }
+        }
+      }
+      expect(seen[GamepadButton.rb], ShortcutAction.readerPageForward);
+      expect(seen[GamepadButton.lb], ShortcutAction.readerPageBackward);
+    });
   });
 }

@@ -92,6 +92,11 @@ class ShortcutDefaults {
     ShortcutAction.globalBack: _kb([
       _key(LogicalKeyboardKey.arrowLeft, {ModifierKey.alt}),
     ]),
+    // LB/RB = 整页翻屏（gamepad-only；键盘留空，避免与 reader PageDown 在不同
+    // scope 的重复语义）。global scope，对所有非阅读器页通用；reader 页只解析
+    // reader+audiobook，不会被遮蔽。执行体见 wrapWithGlobalNavigation。
+    ShortcutAction.globalScrollPageDown: _kb([], [_gRB]),
+    ShortcutAction.globalScrollPageUp: _kb([], [_gLB]),
     // Play/pause moved off controller A → L3: on the reader page A is now
     // "enter the char-level reading cursor" (and, once inside, "look up the word
     // at the cursor"), which the page intercepts before the audiobook scope is

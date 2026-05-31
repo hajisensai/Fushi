@@ -39,6 +39,8 @@ enum ShortcutAction {
 
   // Global
   globalBack(ShortcutScope.global, 'global_back'),
+  globalScrollPageDown(ShortcutScope.global, 'global_scroll_page_down'),
+  globalScrollPageUp(ShortcutScope.global, 'global_scroll_page_up'),
 
   // Audiobook
   audiobookPlayPause(ShortcutScope.audiobook, 'audiobook_play_pause'),

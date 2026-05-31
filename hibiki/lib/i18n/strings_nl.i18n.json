@@ -1163,5 +1163,7 @@
     "reader_unsupported_platform": "The reader is not yet available on this platform.",
     "microphone_permission_denied": "Microphone permission is required to record.",
     "anki_connect_api_key": "API Key",
-    "anki_connect_api_key_hint": "Leave empty unless AnkiConnect requires a key"
+    "anki_connect_api_key_hint": "Leave empty unless AnkiConnect requires a key",
+    "shortcut_action_global_scroll_page_down": "Scroll down one screen",
+    "shortcut_action_global_scroll_page_up": "Scroll up one screen"
 }
