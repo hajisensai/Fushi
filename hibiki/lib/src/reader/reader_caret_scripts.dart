@@ -40,6 +40,13 @@ class ReaderCaretScripts {
   static String moveInvocation(String dir) =>
       "JSON.stringify(window.hoshiCaret.move('$dir'))";
 
+  /// Whole-page scroll accelerator (LB/RB) on the active caret surface.
+  /// [forward] true scrolls toward reading order. Returns the same
+  /// `{status, rect}` shape as [moveInvocation] (popup → moved/blocked,
+  /// paged reader → pageForward/pageBackward) so callers reuse [moveStatus].
+  static String scrollPageInvocation(bool forward) =>
+      'JSON.stringify(window.hoshiCaret.scrollPage($forward))';
+
   /// After a page turn, place the caret at the entering edge of the new page
   /// ([edge] = `forward` → first visible char, `backward` → last visible char).
   static String reanchorInvocation(String edge) =>
@@ -780,6 +787,16 @@ window.hoshiCaret = {
       return { status: 'moved', rect: this._rectJson(rect) };
     }
     return this._offPage(target, forwardish);
+  },
+  // ── Page flip (LB/RB) ──────────────────────────────────────────────
+  // Whole-page accelerator: in the popup it scrolls one viewport fraction and
+  // re-anchors the ring to the next line so the cursor follows the view; in the
+  // paged reader it returns a page-turn status for Dart to action. Reuses the
+  // exact primitive a line move uses when it runs off the page edge
+  // (_pageOrScroll), so page-flip and edge-scroll semantics never diverge.
+  scrollPage: function(forwardish) {
+    if (!this.active) return { status: 'blocked' };
+    return this._pageOrScroll(!!forwardish);
   },
 
   refresh: function() {

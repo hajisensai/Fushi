@@ -156,6 +156,15 @@ class DictionaryPopupWebViewState
     return ReaderCaretScripts.moveStatus(raw);
   }
 
+  /// LB/RB whole-page scroll of the popup content, re-anchoring the caret ring
+  /// to the next line so the cursor follows the view. Popups never paginate, so
+  /// the status is only ever 'moved'/'blocked'.
+  Future<String> caretScrollPage(bool forward) async {
+    final Object? raw = await _controller?.evaluateJavascript(
+        source: ReaderCaretScripts.scrollPageInvocation(forward));
+    return ReaderCaretScripts.moveStatus(raw);
+  }
+
   Future<void> caretLookup() async {
     await _controller?.evaluateJavascript(
         source: ReaderCaretScripts.lookupInvocation());

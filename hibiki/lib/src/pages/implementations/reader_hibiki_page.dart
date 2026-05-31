@@ -3460,6 +3460,18 @@ window.flutter_inappwebview.callHandler('spreadReady');
     }
     // Char-level reading cursor — same contextual routing as the keyboard path.
     if (_caretActive) {
+      // LB/RB flip a whole page on the cursor surface (popup scrolls, paged
+      // reader turns) before the directional caret map — the shoulders are not
+      // caret-directional, so they would otherwise fall through to the reader
+      // scope and never reach the popup WebView.
+      if (button == GamepadButton.rb) {
+        unawaited(_caretScrollPage(true));
+        return true;
+      }
+      if (button == GamepadButton.lb) {
+        unawaited(_caretScrollPage(false));
+        return true;
+      }
       final CaretAction? caretAction = ReaderCaretRouter.decideGamepad(button);
       if (caretAction != null) {
         unawaited(_runCaretAction(caretAction));
@@ -3718,6 +3730,34 @@ window.flutter_inappwebview.callHandler('spreadReady');
       await _paginate(ReaderNavigationDirection.forward);
     } else if (status == 'pageBackward') {
       await _paginate(ReaderNavigationDirection.backward);
+    }
+  }
+
+  /// LB/RB whole-page flip on the active cursor surface. On the popup it scrolls
+  /// the content one page and the ring follows; on the paged reader a returned
+  /// 'pageForward'/'pageBackward' turns the page (re-anchoring the cursor), the
+  /// same edge handling as a line move in [_caretMove]. Shares the [_caretBusy]
+  /// guard so a mashed shoulder cannot race an in-flight move.
+  Future<void> _caretScrollPage(bool forward) async {
+    if (_caretBusy) return;
+    _caretBusy = true;
+    try {
+      if (_caretSurface == CaretSurface.popup) {
+        await topPopupState?.caretScrollPage(forward);
+        return;
+      }
+      if (_controller == null) return;
+      final Object? raw = await _controller!.evaluateJavascript(
+          source: ReaderCaretScripts.scrollPageInvocation(forward));
+      if (!mounted || _controller == null) return;
+      final String status = ReaderCaretScripts.moveStatus(raw);
+      if (status == 'pageForward') {
+        await _paginate(ReaderNavigationDirection.forward);
+      } else if (status == 'pageBackward') {
+        await _paginate(ReaderNavigationDirection.backward);
+      }
+    } finally {
+      _caretBusy = false;
     }
   }
 

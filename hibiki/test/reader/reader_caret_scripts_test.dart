@@ -26,6 +26,14 @@ void main() {
           "JSON.stringify(window.hoshiCaret.move('forward'))");
     });
 
+    test('scrollPage passes the direction boolean through (LB/RB page flip)',
+        () {
+      expect(ReaderCaretScripts.scrollPageInvocation(true),
+          'JSON.stringify(window.hoshiCaret.scrollPage(true))');
+      expect(ReaderCaretScripts.scrollPageInvocation(false),
+          'JSON.stringify(window.hoshiCaret.scrollPage(false))');
+    });
+
     test('reanchor passes the edge token through', () {
       expect(ReaderCaretScripts.reanchorInvocation('forward'),
           "JSON.stringify(window.hoshiCaret.reanchor('forward'))");
@@ -139,6 +147,15 @@ void main() {
       expect(js, contains('Math.round(rect.top)'));
       expect(js, contains('!window.hoshiReader &&'));
       expect(js, contains("physicalDir !== 'left' && physicalDir !== 'right'"));
+    });
+
+    test('scrollPage reuses the line-edge scroll primitive (no new branch)',
+        () {
+      // LB/RB page flip must share _pageOrScroll with a line move that runs off
+      // the page edge, so popup-scroll and paged page-turn semantics never
+      // diverge. scrollPage only guards on `active` then delegates.
+      expect(js, contains('scrollPage: function(forwardish)'));
+      expect(js, contains('return this._pageOrScroll(!!forwardish);'));
     });
 
     test('reader caret stops on sizable illustrations (img element stops)', () {
