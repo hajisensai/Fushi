@@ -182,4 +182,48 @@ void main() {
       expect(value, closeTo(0.5, 0.0001));
     });
   });
+
+  group('gamepadSeekableSlider (bare seek bar)', () {
+    testWidgets('D-pad right/left seeks by the explicit step (±5s)',
+        (WidgetTester tester) async {
+      double value = 30000; // 30s into a 2-min clip
+      await tester.pumpWidget(buildTestApp(
+        HibikiFocusRoot(
+          child: StatefulBuilder(
+            builder: (BuildContext c, StateSetter setState) =>
+                gamepadSeekableSlider(
+              value: value,
+              max: 120000,
+              step: 5000,
+              onChanged: (double v) => setState(() => value = v),
+            ),
+          ),
+        ),
+      ));
+      await tester.pump();
+
+      final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+        tester.element(find.byType(Slider)),
+      );
+      controller.ensureFocus();
+      await tester.pump();
+      expect(controller.activeId, isNotNull,
+          reason: 'a bare seek bar is a focus target too');
+      final BuildContext ctx = controller.activeContext!;
+
+      Actions.maybeInvoke<GamepadButtonIntent>(
+        ctx,
+        const GamepadButtonIntent(GamepadButton.dpadRight),
+      );
+      await tester.pump();
+      expect(value, 35000, reason: 'D-pad right seeks +5s');
+
+      Actions.maybeInvoke<GamepadButtonIntent>(
+        ctx,
+        const GamepadButtonIntent(GamepadButton.dpadLeft),
+      );
+      await tester.pump();
+      expect(value, 30000, reason: 'D-pad left seeks -5s');
+    });
+  });
 }

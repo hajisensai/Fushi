@@ -973,6 +973,33 @@ class _KeyboardSlider extends StatelessWidget {
   }
 }
 
+/// A gamepad/keyboard-adjustable slider for BARE slider sites that are not full
+/// settings rows (audio seek bars, playback speed). Same single-focus-stop +
+/// D-pad Left/Right (and arrows) nudge-by-[step] behaviour as a slider row,
+/// while drag still works for mouse/touch. [step] is the per-press increment
+/// (e.g. 5000ms for a seek bar); falls back to one division / 1/20 range.
+Widget gamepadSeekableSlider({
+  required double value,
+  required double max,
+  required ValueChanged<double> onChanged,
+  double min = 0,
+  int? divisions,
+  String? label,
+  ValueChanged<double>? onChangeEnd,
+  double? step,
+}) {
+  return _KeyboardSlider(
+    value: value,
+    min: min,
+    max: max,
+    divisions: divisions,
+    label: label,
+    onChanged: onChanged,
+    onChangeEnd: onChangeEnd,
+    step: step,
+  );
+}
+
 class AdaptiveSettingsSliderRow extends StatelessWidget {
   const AdaptiveSettingsSliderRow({
     required this.title,

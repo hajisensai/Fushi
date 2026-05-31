@@ -283,10 +283,10 @@ class _AudioRecorderDialogPageState
           max = 1.0;
         }
 
-        return adaptiveSlider(
-          context: context,
+        return gamepadSeekableSlider(
           value: sliderValue <= max ? sliderValue : 0.0,
           max: max,
+          step: 5000, // gamepad D-pad Left/Right = seek ±5s
           onChanged: (progress) {
             _audioPlayer.seek(Duration(milliseconds: progress.floor()));
           },

@@ -105,11 +105,9 @@ abstract class BaseAudioField extends AudioExportField {
   /// Set up audio for new file.
   Future<void> initialiseAudio(File file) {
     final int generation = ++_audioLoadGeneration;
-    _audioLoadQueue = _audioLoadQueue
-        .catchError((Object e) {
-          debugPrint('[creator-audio] previous load failed: $e');
-        })
-        .then((_) => _replaceAudioPlayer(file, generation));
+    _audioLoadQueue = _audioLoadQueue.catchError((Object e) {
+      debugPrint('[creator-audio] previous load failed: $e');
+    }).then((_) => _replaceAudioPlayer(file, generation));
     return _audioLoadQueue;
   }
 
@@ -313,10 +311,10 @@ abstract class BaseAudioField extends AudioExportField {
         }
 
         return Expanded(
-          child: adaptiveSlider(
-              context: context,
+          child: gamepadSeekableSlider(
               value: sliderValue <= max ? sliderValue : 0.0,
               max: max,
+              step: 5000, // gamepad D-pad Left/Right = seek ±5s
               onChanged: (progress) {
                 _audioPlayer.seek(Duration(milliseconds: progress.floor()));
               }),
@@ -364,11 +362,9 @@ abstract class BaseAudioField extends AudioExportField {
   @override
   void onCreatorClose() {
     _audioLoadGeneration++;
-    _audioLoadQueue = _audioLoadQueue
-        .catchError((Object e) {
-          debugPrint('[creator-audio] pending load failed on close: $e');
-        })
-        .then((_) => _disposeAudioPlayer());
+    _audioLoadQueue = _audioLoadQueue.catchError((Object e) {
+      debugPrint('[creator-audio] pending load failed on close: $e');
+    }).then((_) => _disposeAudioPlayer());
     unawaited(_audioLoadQueue);
   }
 }
