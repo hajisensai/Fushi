@@ -113,12 +113,25 @@ MSYS_NO_PATHCONV=1 $ADBD install -r -g "$APK_REL"
 
 # All-Files-Access (MANAGE_EXTERNAL_STORAGE) is an appop, NOT a runtime
 # permission, so `install -g` does not grant it. Without it the app process gets
-# "Permission denied" reading the dictionary fixture pushed to /sdcard/Download
-# (scoped storage blocks the app uid even though adb's shell uid can write
-# there). NOTE: the appop MUST be set with `--uid` — the per-package form
-# (`appops set <pkg> MANAGE_EXTERNAL_STORAGE allow`) fails on API 35 with "not a
-# current op". The uid-scoped grant survives flutter drive's -r reinstall.
-MSYS_NO_PATHCONV=1 $ADBD shell appops set --uid "$PKG" MANAGE_EXTERNAL_STORAGE allow >/dev/null 2>&1 || true
+# "Permission denied" (errno 13) reading the dictionary fixture pushed to
+# /sdcard/Download (scoped storage blocks the app uid even though adb's shell
+# uid can write there). It must be set with `--uid` (the per-package form fails
+# on API 35), and the grant DOES survive flutter drive's -r reinstall.
+#
+# CRITICAL: appops must NOT run in the post-install window before the package
+# manager has registered the new uid — `appops set --uid <pkg>` then fails with
+# "No UID for <pkg>" and (previously, swallowed by `|| true`) the app silently
+# never got all-files access. Poll until the appop actually reads back "allow".
+echo ">>> Granting MANAGE_EXTERNAL_STORAGE (waiting for uid registration)..."
+for _ in $(seq 1 15); do
+  MSYS_NO_PATHCONV=1 $ADBD shell appops set --uid "$PKG" MANAGE_EXTERNAL_STORAGE allow >/dev/null 2>&1
+  if MSYS_NO_PATHCONV=1 $ADBD shell appops get --uid "$PKG" MANAGE_EXTERNAL_STORAGE 2>/dev/null \
+       | tr -d '\r' | grep -q "MANAGE_EXTERNAL_STORAGE: allow"; then
+    echo ">>> MANAGE_EXTERNAL_STORAGE: allow"
+    break
+  fi
+  sleep 1
+done
 
 # ── Provision external prerequisites (best effort; failures only affect the
 #    targets that need them, reported in the summary). ──
