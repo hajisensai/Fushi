@@ -12,7 +12,9 @@ void main() {
 
     expect(source, contains('HibikiDesignTokens.of(context)'));
     expect(source, contains('tokens.radii.chipRadius'));
+    expect(source, contains('HibikiFocusScroll.ensureVisibleIfHidden'));
     expect(source, isNot(contains('BorderRadius.circular(8)')));
+    expect(source, isNot(contains('Scrollable.ensureVisible')));
   });
 
   testWidgets('HibikiFocusRing builds and overlays its child',
@@ -73,7 +75,8 @@ void main() {
                 HibikiFocusRing(
                   // Child identity changes with `show`, forcing the ring to
                   // rebuild in the same pass that removes the focused sibling.
-                  child: SizedBox(key: ValueKey<bool>(show), width: 10, height: 10),
+                  child: SizedBox(
+                      key: ValueKey<bool>(show), width: 10, height: 10),
                 ),
               ],
             );
@@ -91,7 +94,8 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('renders a focus ring for a stable focused widget in '
+  testWidgets(
+      'renders a focus ring for a stable focused widget in '
       'traditional mode', (WidgetTester tester) async {
     final FocusManager fm = FocusManager.instance;
     final FocusHighlightStrategy previous = fm.highlightStrategy;

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hibiki/src/focus/hibiki_focus_scroll.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 
 /// App-level overlay that paints a high-contrast ring around the widget that
@@ -128,30 +129,7 @@ class _HibikiFocusRingState extends State<HibikiFocusRing>
     if (_fm.highlightMode != FocusHighlightMode.traditional) return;
     final BuildContext? ctx = _fm.primaryFocus?.context;
     if (ctx == null || !ctx.mounted) return;
-    final RenderObject? ro = ctx.findRenderObject();
-    if (ro is! RenderBox || !ro.hasSize || !ro.attached) return;
-    final ScrollableState? scrollable = Scrollable.maybeOf(ctx);
-    if (scrollable == null) return;
-    final RenderObject? vro = scrollable.context.findRenderObject();
-    if (vro is! RenderBox || !vro.hasSize || !vro.attached) return;
-
-    final Rect widgetRect = ro.localToGlobal(Offset.zero) & ro.size;
-    final Rect viewRect = vro.localToGlobal(Offset.zero) & vro.size;
-    const double tol = 0.5;
-    final bool fullyVisible = widgetRect.top >= viewRect.top - tol &&
-        widgetRect.bottom <= viewRect.bottom + tol &&
-        widgetRect.left >= viewRect.left - tol &&
-        widgetRect.right <= viewRect.right + tol;
-    if (fullyVisible) return;
-
-    // Short animation: long enough to read as "the view followed focus", short
-    // enough that it rarely collides with a manual scroll started right after.
-    Scrollable.ensureVisible(
-      ctx,
-      alignment: 0.5,
-      duration: const Duration(milliseconds: 120),
-      curve: Curves.easeOutCubic,
-    );
+    HibikiFocusScroll.ensureVisibleIfHidden(ctx);
   }
 
   Rect? _computeFocusRect() {
