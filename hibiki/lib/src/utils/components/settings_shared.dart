@@ -807,19 +807,15 @@ class _GamepadAdjustableValueState extends State<_GamepadAdjustableValue> {
           widget.onDecrement();
           return null;
         }),
-        GamepadButtonIntent: CallbackAction<GamepadButtonIntent>(
-          onInvoke: (GamepadButtonIntent intent) {
-            switch (intent.button) {
-              case GamepadButton.dpadRight:
-                widget.onIncrement();
-                return true; // consume so focus does NOT move
-              case GamepadButton.dpadLeft:
-                widget.onDecrement();
-                return true;
-              default:
-                return false; // up/down etc -> directional focus traversal
-            }
-          },
+        // Only ENABLED for D-pad Left/Right (adjust + consume). For any other
+        // button this Action reports disabled, so Actions.maybeInvoke keeps
+        // walking up and the press still reaches the page (Y focuses search,
+        // LT/RT switch tabs, D-pad up/down move focus between rows). Flutter
+        // stops at the first ENABLED action regardless of its return value, so
+        // a CallbackAction returning false here would wrongly swallow them.
+        GamepadButtonIntent: _GamepadAdjustAction(
+          onIncrement: widget.onIncrement,
+          onDecrement: widget.onDecrement,
         ),
       },
       child: Shortcuts(
@@ -835,6 +831,33 @@ class _GamepadAdjustableValueState extends State<_GamepadAdjustableValue> {
         ),
       ),
     );
+  }
+}
+
+/// D-pad adjust Action for [_GamepadAdjustableValue], ENABLED only for D-pad
+/// Left/Right. For every other [GamepadButtonIntent] it reports disabled so the
+/// intent keeps bubbling to the page (Y / LT / RT / D-pad up-down) instead of
+/// being consumed on the value row — Flutter stops at the first ENABLED action,
+/// not the first that returns true.
+class _GamepadAdjustAction extends Action<GamepadButtonIntent> {
+  _GamepadAdjustAction({required this.onIncrement, required this.onDecrement});
+
+  final VoidCallback onIncrement;
+  final VoidCallback onDecrement;
+
+  @override
+  bool isEnabled(GamepadButtonIntent intent) =>
+      intent.button == GamepadButton.dpadLeft ||
+      intent.button == GamepadButton.dpadRight;
+
+  @override
+  Object? invoke(GamepadButtonIntent intent) {
+    if (intent.button == GamepadButton.dpadRight) {
+      onIncrement();
+    } else if (intent.button == GamepadButton.dpadLeft) {
+      onDecrement();
+    }
+    return true;
   }
 }
 

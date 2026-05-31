@@ -226,4 +226,45 @@ void main() {
       expect(value, 30000, reason: 'D-pad left seeks -5s');
     });
   });
+
+  group('value row does not swallow page buttons (review W2)', () {
+    testWidgets(
+        'Y / LT / RT / dpadUp are NOT consumed by a focused value row '
+        '(they bubble to the page so tab-switch / focus-search still work)',
+        (WidgetTester tester) async {
+      await tester.pumpWidget(buildTestApp(
+        HibikiFocusRoot(
+          child: AdaptiveSettingsStepperRow(
+            title: 'Font',
+            value: 10,
+            step: 1,
+            min: 0,
+            max: 64,
+            format: (double v) => '${v.round()}',
+            onChanged: (_) {},
+          ),
+        ),
+      ));
+      await tester.pump();
+      final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+        tester.element(find.text('Font')),
+      );
+      controller.ensureFocus();
+      await tester.pump();
+      final BuildContext ctx = controller.activeContext!;
+
+      for (final GamepadButton b in <GamepadButton>[
+        GamepadButton.y,
+        GamepadButton.lt,
+        GamepadButton.rt,
+        GamepadButton.dpadUp,
+      ]) {
+        expect(
+          Actions.maybeInvoke<GamepadButtonIntent>(ctx, GamepadButtonIntent(b)),
+          isNot(true),
+          reason: '$b must bubble past the value row to the page',
+        );
+      }
+    });
+  });
 }
