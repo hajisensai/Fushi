@@ -4,6 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/tag_filter_sheet.dart';
+import 'package:hibiki/src/shortcuts/gamepad_service.dart'
+    show GamepadButtonIntent;
+import 'package:hibiki/src/shortcuts/input_binding.dart' show GamepadButton;
 import 'package:hibiki/utils.dart';
 
 const List<int> kTagPresetColors = [
@@ -166,14 +169,31 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
                     await _deleteTag(tag);
                     return false;
                   },
-                  child: HibikiListItem(
-                    leading: CircleAvatar(
-                      backgroundColor: Color(tag.colorValue),
-                      radius: 14,
+                  child: Actions(
+                    actions: <Type, Action<Intent>>{
+                      // Gamepad: X = delete (the swipe-delete equivalent);
+                      // _deleteTag shows its own confirmation. A stays
+                      // activate = edit. Other buttons fall through (return
+                      // false) so focus traversal is unaffected.
+                      GamepadButtonIntent: CallbackAction<GamepadButtonIntent>(
+                        onInvoke: (GamepadButtonIntent intent) {
+                          if (intent.button == GamepadButton.x) {
+                            _deleteTag(tag);
+                            return true;
+                          }
+                          return false;
+                        },
+                      ),
+                    },
+                    child: HibikiListItem(
+                      leading: CircleAvatar(
+                        backgroundColor: Color(tag.colorValue),
+                        radius: 14,
+                      ),
+                      title: Text(tag.name),
+                      trailing: Text(t.tag_book_count(count: count)),
+                      onTap: () => _editTag(tag),
                     ),
-                    title: Text(tag.name),
-                    trailing: Text(t.tag_book_count(count: count)),
-                    onTap: () => _editTag(tag),
                   ),
                 );
               },
