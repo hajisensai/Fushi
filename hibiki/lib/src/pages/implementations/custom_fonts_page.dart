@@ -925,6 +925,7 @@ class _CustomFontsPageState extends BasePageState {
                 icon: Icons.format_size,
                 controlBelow: true,
                 trailing: ReorderableListView.builder(
+                  buildDefaultDragHandles: false,
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
                   padding: EdgeInsets.zero,

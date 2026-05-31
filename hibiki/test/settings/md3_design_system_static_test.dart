@@ -1583,6 +1583,21 @@ void main() {
     }
   });
 
+  test('custom font manager disables default reorder handles', () {
+    final String source = File(
+      'lib/src/pages/implementations/custom_fonts_page.dart',
+    ).readAsStringSync();
+    final String pageSource = _sectionSource(
+      source,
+      'class _CustomFontsPageState',
+      'class CustomFontDownloadProgressDialog',
+    );
+
+    expect(pageSource, contains('ReorderableListView.builder('));
+    expect(pageSource, contains('buildDefaultDragHandles: false'));
+    expect(source, contains('ReorderableDragStartListener('));
+  });
+
   test('system font picker search uses shared MD3 spacing tokens', () {
     final String source = File(
       'lib/src/pages/implementations/custom_fonts_page.dart',
