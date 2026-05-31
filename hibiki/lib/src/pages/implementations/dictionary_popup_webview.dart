@@ -196,11 +196,17 @@ class DictionaryPopupWebViewState
     );
   }
 
-  @override
-  void dispose() {
-    _controller?.dispose();
-    super.dispose();
-  }
+  // No dispose() override that disposes _controller here.
+  //
+  // The InAppWebView widget owns its InAppWebViewController and disposes it
+  // during its OWN unmount. Since build() returns InAppWebView directly, that
+  // widget is a child element of this State, and Flutter unmounts children
+  // before their parent — so the controller is already disposed by the time
+  // this State would dispose. Calling _controller!.dispose() here was a double
+  // dispose: a harmless no-op on Android/iOS, but a hard FlutterError on the
+  // Windows fork, whose disposeChannel() asserts the channel isn't already
+  // disposed ("WindowsInAppWebViewController was used after being disposed").
+  // Let the widget own the controller lifecycle on every platform.
 
   @override
   void didUpdateWidget(DictionaryPopupWebView oldWidget) {
