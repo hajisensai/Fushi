@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -58,7 +57,26 @@ Future<int> seedReaderBook(
   debugPrint('[fixture] Seeded reader book id=$bookId ($fileName)');
 
   container.invalidate(hibikiBooksProvider(appModel.targetLanguage));
-  await tester.pumpAndSettle();
+
+  // hibikiBooksProvider is a FutureProvider — invalidating it re-runs an async
+  // DB query, so the shelf does not rebuild within a single pumpAndSettle (which
+  // only awaits frames/timers, not the pending Future). Poll until a book entry
+  // actually renders (up to ~20s) so callers that immediately query the shelf
+  // don't race the re-query — especially after a heavy dictionary import has
+  // delayed the event loop.
+  final Finder bookEntries = find.byWidgetPredicate((Widget w) {
+    final Key? k = w.key;
+    return k is ValueKey<String> &&
+        (k.value.startsWith('book_entry_') || k.value.startsWith('srt_entry_'));
+  });
+  for (int i = 0; i < 40; i++) {
+    await tester.pump(const Duration(milliseconds: 500));
+    if (bookEntries.evaluate().isNotEmpty) {
+      debugPrint('[fixture] Book entry visible after ${i * 500}ms');
+      return bookId;
+    }
+  }
+  debugPrint('[fixture] WARNING: seeded book id=$bookId not visible after 20s');
   return bookId;
 }
 
