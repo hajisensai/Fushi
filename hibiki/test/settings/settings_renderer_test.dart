@@ -14,6 +14,7 @@ import 'package:hibiki/src/settings/material_settings_renderer.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
 import 'package:hibiki/src/settings/settings_schema.dart';
+import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart';
 import 'package:hibiki/src/utils/components/settings_shared.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
@@ -137,11 +138,12 @@ Widget _harness({
   required TargetPlatform platform,
   required Widget Function(SettingsContext) builder,
   CupertinoThemeData? cupertinoTheme,
+  String designSystem = 'auto',
 }) {
   final HibikiDatabase db = _testDb();
   final ThemeNotifier themeNotifier = ThemeNotifier(db, () => const TextTheme())
     ..loadFromPrefsSnapshot(<String, String>{
-      'design_system': PrefCodec.encode('auto'),
+      'design_system': PrefCodec.encode(designSystem),
       'app_theme_key': PrefCodec.encode('system-theme'),
       'brightness_mode': PrefCodec.encode('system'),
       'custom_theme_seed': PrefCodec.encode(0xFF1F4959),
@@ -162,6 +164,9 @@ Widget _harness({
         useMaterial3: true,
         platform: platform,
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF386A58)),
+        extensions: <ThemeExtension<dynamic>>[
+          HibikiDesignSystemTheme(themeNotifier.designSystemTheme),
+        ],
       ),
       home: _buildHome(cupertinoTheme, builder),
     ),
@@ -254,6 +259,31 @@ void main() {
     expect(find.byType(CupertinoSlider), findsOneWidget);
     expect(find.text('Stepper'), findsOneWidget);
     expect(find.text('Custom builder content'), findsOneWidget);
+  });
+
+  testWidgets('material design system keeps Material rows on iOS',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      _harness(
+        platform: TargetPlatform.iOS,
+        designSystem: 'material',
+        builder: (SettingsContext settingsContext) {
+          expect(isCupertinoPlatform(settingsContext.context), isFalse);
+          return MaterialSettingsRenderer().buildDetailPage(
+            settingsContext: settingsContext,
+            destination: _fixtureDestination(),
+          );
+        },
+      ),
+    );
+
+    expect(find.byType(Scaffold), findsOneWidget);
+    expect(
+      find.byWidgetPredicate((Widget widget) => widget is SegmentedButton),
+      findsOneWidget,
+    );
+    expect(find.byType(CupertinoPageScaffold), findsNothing);
+    expect(find.byType(CupertinoSlidingSegmentedControl<String>), findsNothing);
   });
 
   testWidgets('cupertino switch uses theme primary color', (

@@ -1,5 +1,6 @@
 import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -24,6 +25,7 @@ void main() {
   });
 
   tearDown(() async {
+    debugDefaultTargetPlatformOverride = null;
     notifier.dispose();
     await db.close();
   });
@@ -130,6 +132,14 @@ void main() {
       expect(notifier.customThemeSeed, const Color(0xFFFF5500));
       expect(notifier.customThemeFontColor, const Color(0xFFFFFFFF));
       expect(notifier.customThemePrimaryColor, const Color(0xFF0000FF));
+    });
+
+    test('material design system keeps the real platform', () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      await notifier.setDesignSystem('material');
+
+      expect(notifier.theme.platform, TargetPlatform.windows);
+      expect(notifier.darkTheme.platform, TargetPlatform.windows);
     });
   });
 

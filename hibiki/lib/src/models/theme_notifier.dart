@@ -4,6 +4,7 @@ import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/i18n/strings.g.dart';
+import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:material_color_utilities/material_color_utilities.dart';
@@ -188,14 +189,14 @@ class ThemeNotifier extends ChangeNotifier {
     notifyListeners();
   }
 
-  TargetPlatform? get _overridePlatform {
+  HibikiDesignSystem get designSystemTheme {
     switch (designSystem) {
       case 'material':
-        return TargetPlatform.android;
+        return HibikiDesignSystem.material;
       case 'cupertino':
-        return TargetPlatform.iOS;
+        return HibikiDesignSystem.cupertino;
       default:
-        return null;
+        return HibikiDesignSystem.auto;
     }
   }
 
@@ -250,9 +251,11 @@ class ThemeNotifier extends ChangeNotifier {
     final TextTheme tt = _textThemeBuilder();
     return ThemeData(
       useMaterial3: true,
-      platform: _overridePlatform,
       colorScheme: cs,
       textTheme: tt,
+      extensions: <ThemeExtension<dynamic>>[
+        HibikiDesignSystemTheme(designSystemTheme),
+      ],
       appBarTheme: const AppBarTheme(
         elevation: 0,
         scrolledUnderElevation: 0,
