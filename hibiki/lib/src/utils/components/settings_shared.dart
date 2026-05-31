@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/focus/hibiki_focus_target.dart';
+import 'package:hibiki/src/shortcuts/gamepad_service.dart';
+import 'package:hibiki/src/shortcuts/input_binding.dart';
 import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart';
 import 'package:hibiki/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
@@ -752,12 +754,88 @@ class AdaptiveSettingsStepperRow extends StatelessWidget {
   }
 }
 
-class _StepperIncrementIntent extends Intent {
-  const _StepperIncrementIntent();
+class _AdjustUpIntent extends Intent {
+  const _AdjustUpIntent();
 }
 
-class _StepperDecrementIntent extends Intent {
-  const _StepperDecrementIntent();
+class _AdjustDownIntent extends Intent {
+  const _AdjustDownIntent();
+}
+
+/// Wraps a value control (stepper / slider / seek bar) as a SINGLE keyboard &
+/// gamepad focus stop whose Left/Right (and Up/Down arrows) adjust the value in
+/// place instead of moving focus. The control's own descendants are removed
+/// from focus traversal ([ExcludeFocus]) so this wrapper is the one stop; they
+/// stay mouse-clickable.
+///
+/// On desktop/Apple the gamepad D-pad arrives as a [GamepadButtonIntent] (not
+/// arrow keys): Left/Right adjust + consume (return true) so focus does NOT
+/// move; Up/Down (and others) are NOT consumed (return false) so the press
+/// falls through to directional focus traversal between rows. On Android the
+/// engine delivers the D-pad as arrow keys, handled by the [Shortcuts] below.
+class _GamepadAdjustableValue extends StatefulWidget {
+  const _GamepadAdjustableValue({
+    required this.focusIdPrefix,
+    required this.onIncrement,
+    required this.onDecrement,
+    required this.child,
+  });
+
+  final String focusIdPrefix;
+  final VoidCallback onIncrement;
+  final VoidCallback onDecrement;
+  final Widget child;
+
+  @override
+  State<_GamepadAdjustableValue> createState() =>
+      _GamepadAdjustableValueState();
+}
+
+class _GamepadAdjustableValueState extends State<_GamepadAdjustableValue> {
+  late final HibikiFocusId _focusId =
+      HibikiFocusId('${widget.focusIdPrefix}-${identityHashCode(this)}');
+
+  @override
+  Widget build(BuildContext context) {
+    return Actions(
+      actions: <Type, Action<Intent>>{
+        _AdjustUpIntent: CallbackAction<_AdjustUpIntent>(onInvoke: (_) {
+          widget.onIncrement();
+          return null;
+        }),
+        _AdjustDownIntent: CallbackAction<_AdjustDownIntent>(onInvoke: (_) {
+          widget.onDecrement();
+          return null;
+        }),
+        GamepadButtonIntent: CallbackAction<GamepadButtonIntent>(
+          onInvoke: (GamepadButtonIntent intent) {
+            switch (intent.button) {
+              case GamepadButton.dpadRight:
+                widget.onIncrement();
+                return true; // consume so focus does NOT move
+              case GamepadButton.dpadLeft:
+                widget.onDecrement();
+                return true;
+              default:
+                return false; // up/down etc -> directional focus traversal
+            }
+          },
+        ),
+      },
+      child: Shortcuts(
+        shortcuts: const <ShortcutActivator, Intent>{
+          SingleActivator(LogicalKeyboardKey.arrowUp): _AdjustUpIntent(),
+          SingleActivator(LogicalKeyboardKey.arrowRight): _AdjustUpIntent(),
+          SingleActivator(LogicalKeyboardKey.arrowDown): _AdjustDownIntent(),
+          SingleActivator(LogicalKeyboardKey.arrowLeft): _AdjustDownIntent(),
+        },
+        child: HibikiFocusTarget(
+          id: _focusId,
+          child: ExcludeFocus(child: widget.child),
+        ),
+      ),
+    );
+  }
 }
 
 /// The +/- controls of a stepper row, wrapped as a SINGLE keyboard/gamepad
@@ -800,44 +878,19 @@ class _KeyboardStepper extends StatelessWidget {
     // decrement actions — the keyboard arrow shortcuts below are invisible to
     // assistive tech, and the +/- buttons are no longer separate focus stops.
     // excludeSemantics collapses the inner buttons/label into this one node.
-    return Semantics(
-      container: true,
-      slider: true,
-      value: format(value),
-      increasedValue: format(clampedUp),
-      decreasedValue: format(clampedDown),
-      onIncrease: value < max ? _increment : null,
-      onDecrease: value > min ? _decrement : null,
-      excludeSemantics: true,
-      child: FocusableActionDetector(
-        // The buttons stay tappable by mouse, but they must not be separate tab
-        // stops — the detector itself is the one focus stop for the whole
-        // stepper.
-        descendantsAreFocusable: false,
-        shortcuts: const <ShortcutActivator, Intent>{
-          SingleActivator(LogicalKeyboardKey.arrowUp):
-              _StepperIncrementIntent(),
-          SingleActivator(LogicalKeyboardKey.arrowRight):
-              _StepperIncrementIntent(),
-          SingleActivator(LogicalKeyboardKey.arrowDown):
-              _StepperDecrementIntent(),
-          SingleActivator(LogicalKeyboardKey.arrowLeft):
-              _StepperDecrementIntent(),
-        },
-        actions: <Type, Action<Intent>>{
-          _StepperIncrementIntent: CallbackAction<_StepperIncrementIntent>(
-            onInvoke: (_) {
-              _increment();
-              return null;
-            },
-          ),
-          _StepperDecrementIntent: CallbackAction<_StepperDecrementIntent>(
-            onInvoke: (_) {
-              _decrement();
-              return null;
-            },
-          ),
-        },
+    return _GamepadAdjustableValue(
+      focusIdPrefix: 'settings-stepper',
+      onIncrement: _increment,
+      onDecrement: _decrement,
+      child: Semantics(
+        container: true,
+        slider: true,
+        value: format(value),
+        increasedValue: format(clampedUp),
+        decreasedValue: format(clampedDown),
+        onIncrease: value < max ? _increment : null,
+        onDecrease: value > min ? _decrement : null,
+        excludeSemantics: true,
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -858,6 +911,68 @@ class _KeyboardStepper extends StatelessWidget {
   }
 }
 
+/// The slider equivalent of [_KeyboardStepper]: a single keyboard/gamepad focus
+/// stop whose Left/Right (D-pad) and arrow keys nudge the slider by one step,
+/// while the slider stays draggable by mouse/touch.
+class _KeyboardSlider extends StatelessWidget {
+  const _KeyboardSlider({
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.onChanged,
+    this.divisions,
+    this.label,
+    this.onChangeEnd,
+    this.step,
+  });
+
+  final double value;
+  final double min;
+  final double max;
+  final int? divisions;
+  final String? label;
+  final ValueChanged<double> onChanged;
+  final ValueChanged<double>? onChangeEnd;
+  final double? step;
+
+  /// One D-pad/arrow nudge: an explicit [step], else one division, else 1/20 of
+  /// the range (a sensible default for continuous sliders).
+  double get _step =>
+      step ?? (divisions != null ? (max - min) / divisions! : (max - min) / 20);
+
+  void _adjust(double delta) {
+    final double next = (value + delta).clamp(min, max);
+    onChanged(next);
+    onChangeEnd?.call(next);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _GamepadAdjustableValue(
+      focusIdPrefix: 'settings-slider',
+      onIncrement: () => _adjust(_step),
+      onDecrement: () => _adjust(-_step),
+      child: Semantics(
+        container: true,
+        slider: true,
+        onIncrease: value < max ? () => _adjust(_step) : null,
+        onDecrease: value > min ? () => _adjust(-_step) : null,
+        excludeSemantics: true,
+        child: adaptiveSlider(
+          context: context,
+          value: value,
+          min: min,
+          max: max,
+          divisions: divisions,
+          label: label,
+          onChanged: onChanged,
+          onChangeEnd: onChangeEnd,
+        ),
+      ),
+    );
+  }
+}
+
 class AdaptiveSettingsSliderRow extends StatelessWidget {
   const AdaptiveSettingsSliderRow({
     required this.title,
@@ -871,6 +986,7 @@ class AdaptiveSettingsSliderRow extends StatelessWidget {
     this.divisions,
     this.label,
     this.onChangeEnd,
+    this.step,
   });
 
   final String title;
@@ -884,6 +1000,11 @@ class AdaptiveSettingsSliderRow extends StatelessWidget {
   final ValueChanged<double> onChanged;
   final ValueChanged<double>? onChangeEnd;
 
+  /// Optional explicit gamepad/keyboard nudge step (overrides the
+  /// division/default-based step) — for sliders whose natural increment differs
+  /// from one division.
+  final double? step;
+
   @override
   Widget build(BuildContext context) {
     return AdaptiveSettingsRow(
@@ -891,8 +1012,7 @@ class AdaptiveSettingsSliderRow extends StatelessWidget {
       subtitle: subtitle,
       icon: icon,
       controlBelow: true,
-      trailing: adaptiveSlider(
-        context: context,
+      trailing: _KeyboardSlider(
         value: value,
         min: min,
         max: max,
@@ -900,6 +1020,7 @@ class AdaptiveSettingsSliderRow extends StatelessWidget {
         label: label,
         onChanged: onChanged,
         onChangeEnd: onChangeEnd,
+        step: step,
       ),
     );
   }
