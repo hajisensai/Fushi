@@ -121,15 +121,26 @@ void main() {
     });
 
     test('activate is a context click: link/control click else lookup', () {
-      // A hyperlink is followed, an interactive control is clicked, and plain
+      // A hyperlink is followed, any clickable ancestor is clicked, and plain
       // text falls back to the lookup pipeline.
       expect(js, contains("closest('a[href]')"));
       expect(js, contains('link.click()'));
-      expect(
-          js,
-          contains(
-              "closest('button, summary, [role=\"button\"], [role=\"link\"]')"));
+      expect(js, contains("closest('[data-hoshi-clk]')"));
       expect(js, contains('control.click()'));
+    });
+
+    test('popup clickable detection is unified (control/onclick/pointer)', () {
+      // _markClickables tags every clickable element with data-hoshi-clk so
+      // _isStop (text rejection) and _interactiveEls (element stops) agree on
+      // what is a control — covering pointer-cursor collapsibles with no role.
+      expect(js, contains('_markClickables:'));
+      expect(js, contains('data-hoshi-clk'));
+      expect(js, contains("cursor === 'pointer'"));
+    });
+
+    test('popup caret skips passive term/POS tags (.glossary-tag, e.g. name)',
+        () {
+      expect(js, contains("closest('.glossary-tag')"));
     });
 
     test('resolves writing-mode and paged vs continuous from live state', () {

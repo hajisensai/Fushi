@@ -191,11 +191,16 @@ window.hoshiCaret = {
       // high surrogate (cat. Cs) won't match — fail-safe (it stays stoppable),
       // and such separators don't occur in dictionary glossaries.
       if (/^[\p{P}\p{S}]$/u.test(ch)) return false;
-      // Text inside an interactive element is not its own stop — the element is
-      // an atomic stop (the ring covers the whole control, e.g. a <summary>
-      // collapse toggle). The reader reaches links via their text stops.
+      // Text inside a clickable element is not its own stop — the element is an
+      // atomic stop (the ring covers the whole control, e.g. a ▶ Grammar collapse
+      // toggle) so A clicks the control instead of looking up a glyph inside it.
+      // Passive term/POS tags (.glossary-tag, e.g. "name") are labels, not lookup
+      // targets, so they are not reachable at all. data-hoshi-clk is refreshed by
+      // _markClickables at every entry point before this runs.
       var ie = node.parentElement;
-      if (ie && ie.closest(this._interactiveSelector)) return false;
+      if (ie && (ie.closest('[data-hoshi-clk]') || ie.closest('.glossary-tag'))) {
+        return false;
+      }
     }
     if (this.scopeSelector) {
       var el = node.parentElement;
@@ -232,39 +237,59 @@ window.hoshiCaret = {
   // disclosure); treat it as one whole interactive stop so the ring covers the
   // whole row and A toggles the section, rather than landing on a child sliver.
   _interactiveSelector: 'a[href], button, summary, [role="button"], [role="link"]',
+  // Tag every clickable element (popup-only) with data-hoshi-clk, so text-stop
+  // rejection (_isStop) and element-stop collection (_interactiveEls) share ONE
+  // definition of "clickable": an explicit control, an onclick handler, or a
+  // pointer cursor. Wiktionary collapsibles (▶ Grammar/Etymology) and icon-only
+  // controls bound via addEventListener carry no semantic tag/role, so the
+  // pointer-cursor probe is what catches them. Cheap for the small popup DOM;
+  // never runs in the reader (no element stops there). Called from every public
+  // entry point (move/enter/reanchor/refresh/activate) so tags are always fresh.
+  _markClickables: function() {
+    if (window.hoshiReader) return;
+    var all = document.body.querySelectorAll('*');
+    for (var i = 0; i < all.length; i++) {
+      var e = all[i], clk = false;
+      if (e.matches(this._interactiveSelector) || e.onclick) {
+        clk = true;
+      } else {
+        try {
+          if (window.getComputedStyle(e).cursor === 'pointer') {
+            // cursor:pointer INHERITS, so the headword/kanji-tag's ruby/spans all
+            // report pointer too. Only the OUTERMOST pointer element is the real
+            // control; a descendant that merely inherits pointer is part of the
+            // same control, not its own stop — otherwise the ring would fragment
+            // onto a child glyph instead of covering the whole control.
+            var p = e.parentElement;
+            var pPointer = false;
+            try { pPointer = !!p && window.getComputedStyle(p).cursor === 'pointer'; } catch (x2) {}
+            clk = !pPointer;
+          }
+        } catch (x) {}
+      }
+      if (clk) { if (!e.hasAttribute('data-hoshi-clk')) e.setAttribute('data-hoshi-clk', ''); }
+      else if (e.hasAttribute('data-hoshi-clk')) e.removeAttribute('data-hoshi-clk');
+    }
+  },
   _interactiveEls: function() {
     // Element stops are a popup-only concern. In the reader the only interactive
-    // text is <a href>, which is already reachable as a text stop (and activate()
-    // promotes a text stop inside an <a href> to a link click) — collecting links
-    // as elements too would duplicate every link stop and make line-moves stutter.
+    // text is <a href>, already reachable as a text stop (activate() promotes it
+    // to a link click); collecting links as elements too would duplicate stops.
     if (window.hoshiReader) return [];
+    var marked = document.body.querySelectorAll('[data-hoshi-clk]');
     var out = [];
-    var seen = new Set();
-    var explicit = document.body.querySelectorAll(this._interactiveSelector);
-    for (var i = 0; i < explicit.length; i++) { out.push(explicit[i]); seen.add(explicit[i]); }
-    // Controls bound via addEventListener/onclick have no attribute selector but
-    // style themselves clickable. Collect each pointer-cursored *leaf* region (no
-    // pointer-cursored descendant) that isn't already inside an explicit control,
-    // so the cursor lands on the actual icon/button — not a giant pointer
-    // container wrapping it, and not a redundant child of a <button>.
-    var all = document.body.querySelectorAll('*');
-    var pointer = [];
-    for (var j = 0; j < all.length; j++) {
-      try { if (window.getComputedStyle(all[j]).cursor === 'pointer') pointer.push(all[j]); } catch (x) {}
-    }
-    for (var p = 0; p < pointer.length; p++) {
-      var e = pointer[p];
-      if (seen.has(e)) continue;
-      if (e.closest(this._interactiveSelector)) continue; // covered by an explicit control
+    for (var i = 0; i < marked.length; i++) {
+      var e = marked[i];
       var r = e.getBoundingClientRect();
       if (r.width < 6 || r.height < 6) continue; // skip degenerate/sliver elements
-      var hasPointerChild = false;
-      for (var q = 0; q < pointer.length; q++) {
-        if (q !== p && e.contains(pointer[q])) { hasPointerChild = true; break; }
+      // Prefer the innermost control: a clickable that wraps another clickable is
+      // a container — descend so the ring lands on the real icon/button — unless
+      // it is an atomic disclosure/control we always want whole (summary/role).
+      if (!e.matches('summary, [role="button"], [role="link"]') &&
+          e.querySelector('[data-hoshi-clk]')) {
+        continue;
       }
-      if (hasPointerChild) continue; // not a leaf — descend to the real control
       out.push(e);
-      seen.add(e);
     }
     return out;
   },
@@ -593,6 +618,7 @@ window.hoshiCaret = {
 
   enter: function() {
     this._ensureRing();
+    this._markClickables();
     var pos = null;
     if (this._memNode && document.contains(this._memNode) && this._memOffset != null &&
         this._isStop(this._memNode, this._memOffset)) {
@@ -614,6 +640,7 @@ window.hoshiCaret = {
 
   reanchor: function(edge) {
     this._ensureRing();
+    this._markClickables();
     var pos = (edge === 'backward') ? this._lastVisibleStop() : this._firstVisibleStop();
     if (!pos) return { ok: false }; // empty page — leave active state untouched
     this.active = true;
@@ -623,6 +650,7 @@ window.hoshiCaret = {
 
   move: function(dir) {
     if (!this.active || (!this.node && !this.el)) return { status: 'blocked' };
+    this._markClickables();
     var detached = this.el ? !document.contains(this.el)
                            : !document.contains(this.node);
     if (detached) {
@@ -669,6 +697,7 @@ window.hoshiCaret = {
 
   refresh: function() {
     if (!this.active) return { ok: false };
+    this._markClickables();
     if (this.el && document.contains(this.el)) {
       var er = this.el.getBoundingClientRect();
       if (this._inViewport(er)) { this._drawRing(er); return { ok: true, rect: this._rectJson(er) }; }
@@ -701,6 +730,7 @@ window.hoshiCaret = {
   //    the reader tap handler toggling the (hidden) chrome instead of looking up.
   activate: function() {
     if (!this.active) return 'none';
+    this._markClickables();
     // On an interactive element stop, click it directly.
     if (this.el && document.contains(this.el)) {
       var asLink = this.el.matches('a[href]') || !!this.el.closest('a[href]');
@@ -711,7 +741,8 @@ window.hoshiCaret = {
     var el = this.node.parentElement;
     var link = el && el.closest('a[href]');
     if (link) { link.click(); return 'link'; }
-    var control = el && el.closest('button, summary, [role="button"], [role="link"]');
+    // Any clickable ancestor (control, onclick, or pointer-cursor collapsible).
+    var control = el && el.closest('[data-hoshi-clk]');
     if (control) { control.click(); return 'activated'; }
     return this.lookup() ? 'lookup' : 'none';
   }
