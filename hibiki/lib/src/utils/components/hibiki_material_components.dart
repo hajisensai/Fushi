@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/focus/hibiki_focus_target.dart';
+import 'package:hibiki/src/focus/page_scroll_registry.dart';
 import 'package:hibiki/src/utils/components/hibiki_text_selection_controls.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 import 'package:hibiki/src/utils/components/hibiki_motion_tokens.dart';
@@ -1160,7 +1161,19 @@ class _HibikiPageScaffoldState extends State<HibikiPageScaffold> {
   final ScrollController _scrollController = ScrollController();
 
   @override
+  void initState() {
+    super.initState();
+    // Register as the active page scroll controller so the gamepad LB/RB
+    // page-scroll fallback can reach this page's body even when focus rests on
+    // the top-level fallback node (a pure-display page with nothing focusable),
+    // which is an ancestor of this controller and thus invisible to
+    // PrimaryScrollController.maybeOf.
+    PageScrollRegistry.push(_scrollController);
+  }
+
+  @override
   void dispose() {
+    PageScrollRegistry.pop(_scrollController);
     _scrollController.dispose();
     super.dispose();
   }

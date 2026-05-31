@@ -11,6 +11,7 @@ import 'package:gamepads/gamepads.dart' as gp;
 
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/focus/hibiki_focus_scroll.dart';
+import 'package:hibiki/src/focus/page_scroll_registry.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart';
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
@@ -232,6 +233,16 @@ class GamepadService {
       fraction = -0.9;
     } else {
       return false;
+    }
+    // Prefer the registered active-page controller. On a pure-display page
+    // (statistics/logs) focus is the top-level fallback node, which sits ABOVE
+    // the page scaffold's PrimaryScrollController, so a context lookup from
+    // focus can never reach it. Fall back to a context lookup for pages not
+    // built on HibikiPageScaffold (e.g. home tab content, focus inside list).
+    final ScrollController? pageController = PageScrollRegistry.current;
+    if (pageController != null &&
+        HibikiFocusScroll.scrollController(pageController, fraction)) {
+      return true;
     }
     return HibikiFocusScroll.scrollPrimary(context, fraction);
   }

@@ -80,9 +80,20 @@ class HibikiFocusScroll {
   static bool scrollPrimary(BuildContext context, double signedFraction) {
     final ScrollController? controller =
         PrimaryScrollController.maybeOf(context);
-    // Exactly one attached position: 0 = nothing to scroll; >1 = ambiguous
-    // (multiple scroll views share this controller) and `.position` would throw.
-    if (controller == null || controller.positions.length != 1) return false;
+    if (controller == null) return false;
+    return scrollController(controller, signedFraction);
+  }
+
+  /// Page a [controller] by the viewport [signedFraction]. Used by the gamepad
+  /// LB/RB fallback via PageScrollRegistry so it works even when focus is the
+  /// top-level fallback node (which has no PrimaryScrollController ancestor).
+  /// Exactly one attached position required: 0 = nothing to scroll; >1 =
+  /// ambiguous and `.position` would throw.
+  static bool scrollController(
+    ScrollController controller,
+    double signedFraction,
+  ) {
+    if (controller.positions.length != 1) return false;
     final ScrollPosition position = controller.position;
     final double target =
         (position.pixels + position.viewportDimension * signedFraction)
