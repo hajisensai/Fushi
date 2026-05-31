@@ -89,4 +89,48 @@ void main() {
       expect(find.text('X'), findsOneWidget);
     });
   });
+
+  group('HibikiDropdown platform routing', () {
+    // Every polled platform (Windows/Linux/iOS/macOS) must use the
+    // gamepad-enterable MenuAnchor; only Android — whose engine delivers real
+    // key events — keeps the stock DropdownMenu. Guards the unification so a
+    // gamepad can enter the menu on iOS/macOS, not just on desktop.
+    Widget dropdownOn(TargetPlatform platform) {
+      return buildTestApp(
+        HibikiDropdown<String>(
+          options: const ['A', 'B'],
+          initialOption: 'A',
+          generateLabel: (v) => v,
+          onChanged: (_) {},
+        ),
+        theme: ThemeData.light(useMaterial3: true).copyWith(platform: platform),
+      );
+    }
+
+    for (final TargetPlatform platform in <TargetPlatform>[
+      TargetPlatform.iOS,
+      TargetPlatform.macOS,
+      TargetPlatform.windows,
+      TargetPlatform.linux,
+    ]) {
+      testWidgets('uses MenuAnchor (not stock DropdownMenu) on $platform',
+          (tester) async {
+        await tester.pumpWidget(dropdownOn(platform));
+
+        // The bare MenuAnchor path renders no DropdownMenu at all.
+        expect(find.byType(DropdownMenu<String>), findsNothing);
+        expect(find.byType(MenuAnchor), findsOneWidget);
+      });
+    }
+
+    testWidgets('keeps the stock DropdownMenu on Android (engine key events)',
+        (tester) async {
+      await tester.pumpWidget(dropdownOn(TargetPlatform.android));
+
+      // DropdownMenu is itself built on a MenuAnchor internally, so the
+      // presence of the stock DropdownMenu — not the MenuAnchor count — is the
+      // signal that Android keeps the engine-key-event path.
+      expect(find.byType(DropdownMenu<String>), findsOneWidget);
+    });
+  });
 }

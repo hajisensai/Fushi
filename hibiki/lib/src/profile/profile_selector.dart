@@ -52,8 +52,9 @@ class ProfileSelector extends ConsumerWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Gamepad-enterable on desktop (MenuAnchor); a stock DropdownMenu on
-        // Android. Bounded width keeps it valid as a non-flex Row trailing.
+        // Gamepad-enterable MenuAnchor on every polled platform
+        // (Windows/Linux/iOS/macOS); a stock DropdownMenu on Android. Bounded
+        // width keeps it valid as a non-flex Row trailing.
         GamepadMenuDropdown<int>(
           width: 220,
           selected: validId,
