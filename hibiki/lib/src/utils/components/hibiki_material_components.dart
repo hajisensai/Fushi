@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/focus/hibiki_focus_target.dart';
 import 'package:hibiki/src/focus/page_scroll_registry.dart';
+import 'package:hibiki/src/utils/components/hibiki_gamepad_keyboard.dart';
+import 'package:hibiki/src/utils/components/hibiki_icon_button.dart';
 import 'package:hibiki/src/utils/components/hibiki_text_selection_controls.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 import 'package:hibiki/src/utils/components/hibiki_motion_tokens.dart';
@@ -53,23 +56,30 @@ class _HibikiCardState extends State<HibikiCard> {
     );
     final Widget card = Padding(
       padding: widget.margin ?? EdgeInsets.zero,
-      child: Material(
-        color: effectiveColor,
-        elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: radius,
-          side: widget.borderColor != null
-              ? BorderSide(color: widget.borderColor!)
-              : BorderSide.none,
+      child: AnimatedContainer(
+        duration: hibikiMd3StateDuration,
+        curve: hibikiMd3StateCurve,
+        decoration: ShapeDecoration(
+          color: effectiveColor,
+          shape: RoundedRectangleBorder(
+            borderRadius: radius,
+            side: widget.borderColor != null
+                ? BorderSide(color: widget.borderColor!)
+                : BorderSide.none,
+          ),
         ),
-        clipBehavior: Clip.antiAlias,
-        child: widget.onTap == null && widget.onLongPress == null
-            ? content
-            : InkWell(
-                onTap: widget.onTap,
-                onLongPress: widget.onLongPress,
-                child: content,
-              ),
+        child: Material(
+          type: MaterialType.transparency,
+          shape: RoundedRectangleBorder(borderRadius: radius),
+          clipBehavior: Clip.antiAlias,
+          child: widget.onTap == null && widget.onLongPress == null
+              ? content
+              : InkWell(
+                  onTap: widget.onTap,
+                  onLongPress: widget.onLongPress,
+                  child: content,
+                ),
+        ),
       ),
     );
     if (widget.onTap == null) return card;
@@ -199,14 +209,19 @@ class _HibikiListItemState extends State<HibikiListItem> {
       ),
     );
 
-    final Widget material = Material(
+    final Widget material = AnimatedContainer(
+      duration: hibikiMd3StateDuration,
+      curve: hibikiMd3StateCurve,
       color: color,
-      child: widget.onTap == null
-          ? content
-          : InkWell(
-              onTap: widget.onTap,
-              child: content,
-            ),
+      child: Material(
+        type: MaterialType.transparency,
+        child: widget.onTap == null
+            ? content
+            : InkWell(
+                onTap: widget.onTap,
+                child: content,
+              ),
+      ),
     );
     if (widget.onTap == null) return material;
 
@@ -349,6 +364,24 @@ class _HibikiTextFieldState extends State<HibikiTextField> {
   @override
   Widget build(BuildContext context) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    // On-screen keyboard affordance: on desktop (no system IME for a gamepad
+    // user) a focusable ⌨ in the suffix opens a D-pad keyboard wired to the
+    // controller — only when there is a controller to type into and the caller
+    // did not supply its own suffix.
+    final TargetPlatform platform = Theme.of(context).platform;
+    final bool isDesktop = platform == TargetPlatform.windows ||
+        platform == TargetPlatform.linux ||
+        platform == TargetPlatform.macOS;
+    final Widget? effectiveSuffix = (isDesktop &&
+            widget.controller != null &&
+            widget.suffixIcon == null &&
+            !widget.readOnly)
+        ? HibikiIconButton(
+            icon: Icons.keyboard_outlined,
+            tooltip: t.on_screen_keyboard,
+            onTap: () => showGamepadKeyboard(context, widget.controller!),
+          )
+        : widget.suffixIcon;
     final OutlineInputBorder border = OutlineInputBorder(
       borderRadius: tokens.radii.cardRadius,
       borderSide: BorderSide(color: tokens.surfaces.outline),
@@ -386,7 +419,7 @@ class _HibikiTextFieldState extends State<HibikiTextField> {
               horizontal: tokens.spacing.rowHorizontal,
               vertical: tokens.spacing.rowVertical,
             ),
-        suffixIcon: widget.suffixIcon,
+        suffixIcon: effectiveSuffix,
         prefixIcon: widget.prefixIcon,
       ),
       onChanged: widget.onChanged,
@@ -628,7 +661,9 @@ class _HibikiTagChipState extends State<HibikiTagChip> {
       mainAxisSize: MainAxisSize.min,
       children: contentChildren,
     );
-    final Widget chip = Container(
+    final Widget chip = AnimatedContainer(
+      duration: hibikiMd3StateDuration,
+      curve: hibikiMd3StateCurve,
       padding: EdgeInsets.symmetric(
         horizontal: tokens.spacing.gap,
         vertical: 3,
@@ -641,10 +676,14 @@ class _HibikiTagChipState extends State<HibikiTagChip> {
       child: content,
     );
     if (widget.onTap == null) return chip;
-    final Widget tappable = InkWell(
+    final Widget tappable = Material(
+      type: MaterialType.transparency,
       borderRadius: tokens.radii.chipRadius,
-      onTap: widget.onTap,
-      child: chip,
+      child: InkWell(
+        borderRadius: tokens.radii.chipRadius,
+        onTap: widget.onTap,
+        child: chip,
+      ),
     );
     // Outside a HibikiFocusRoot stay a bare tappable chip (zero overhead).
     if (HibikiFocusRoot.maybeControllerOf(context) == null) return tappable;
@@ -940,7 +979,9 @@ class HibikiColorSwatch extends StatelessWidget {
     final Widget swatch = SizedBox(
       width: resolvedWidth,
       height: resolvedHeight,
-      child: DecoratedBox(
+      child: AnimatedContainer(
+        duration: hibikiMd3StateDuration,
+        curve: hibikiMd3StateCurve,
         decoration: BoxDecoration(
           color: color,
           shape: isDot ? BoxShape.circle : BoxShape.rectangle,
