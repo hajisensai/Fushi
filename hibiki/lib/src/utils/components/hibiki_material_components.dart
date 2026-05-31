@@ -90,6 +90,8 @@ class _HibikiCardState extends State<HibikiCard> {
   }
 }
 
+enum HibikiListDensity { standard, compact }
+
 class HibikiListItem extends StatefulWidget {
   const HibikiListItem({
     required this.title,
@@ -99,7 +101,8 @@ class HibikiListItem extends StatefulWidget {
     this.trailing,
     this.selected = false,
     this.onTap,
-    this.minHeight = 56,
+    this.minHeight,
+    this.density = HibikiListDensity.standard,
     this.padding,
     this.titleMaxLines = 1,
     this.subtitleMaxLines = 2,
@@ -112,7 +115,8 @@ class HibikiListItem extends StatefulWidget {
   final Widget? trailing;
   final bool selected;
   final VoidCallback? onTap;
-  final double minHeight;
+  final double? minHeight;
+  final HibikiListDensity density;
   final EdgeInsetsGeometry? padding;
   final int titleMaxLines;
   final int subtitleMaxLines;
@@ -132,8 +136,13 @@ class _HibikiListItemState extends State<HibikiListItem> {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final Color color =
         widget.selected ? tokens.surfaces.selected : Colors.transparent;
+    final double resolvedMinHeight = widget.minHeight ??
+        switch (widget.density) {
+          HibikiListDensity.standard => tokens.density.listMinHeight,
+          HibikiListDensity.compact => tokens.density.compactListMinHeight,
+        };
     final Widget content = ConstrainedBox(
-      constraints: BoxConstraints(minHeight: widget.minHeight),
+      constraints: BoxConstraints(minHeight: resolvedMinHeight),
       child: Padding(
         padding: widget.padding ??
             EdgeInsets.symmetric(

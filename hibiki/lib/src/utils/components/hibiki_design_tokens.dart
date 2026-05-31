@@ -6,12 +6,14 @@ class HibikiDesignTokens {
     required this.surfaces,
     required this.type,
     required this.spacing,
+    required this.density,
   });
 
   final HibikiRadii radii;
   final HibikiSurfaceColors surfaces;
   final HibikiTypeRoles type;
   final HibikiSpacingTokens spacing;
+  final HibikiDensityTokens density;
 
   // HBK-AUDIT-150: `of` is named like an O(1) lookup but used to build a fresh
   // token graph (11 Color reads + 6 TextStyle.copyWith allocations) on every
@@ -39,6 +41,7 @@ class HibikiDesignTokens {
       surfaces: HibikiSurfaceColors.fromScheme(scheme),
       type: HibikiTypeRoles.fromTheme(theme),
       spacing: const HibikiSpacingTokens(),
+      density: const HibikiDensityTokens(),
     );
     _cachedScheme = scheme;
     _cachedTextTheme = textTheme;
@@ -179,4 +182,18 @@ class HibikiSpacingTokens {
   final double rowVertical;
   final double card;
   final double gap;
+}
+
+class HibikiDensityTokens {
+  const HibikiDensityTokens({
+    this.listMinHeight = 56,
+    this.compactListMinHeight = 44,
+    this.controlHeight = 48,
+    this.compactControlHeight = 36,
+  });
+
+  final double listMinHeight;
+  final double compactListMinHeight;
+  final double controlHeight;
+  final double compactControlHeight;
 }

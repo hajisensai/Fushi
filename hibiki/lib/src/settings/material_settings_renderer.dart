@@ -407,7 +407,7 @@ class _MaterialSettingsItem extends StatelessWidget {
       leading: leading,
       title: label,
       trailing: trailing,
-      minHeight: 56,
+      density: HibikiListDensity.standard,
     );
   }
 }

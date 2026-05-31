@@ -119,6 +119,44 @@ void main() {
     expect(tapped, isTrue);
   });
 
+  testWidgets('HibikiListItem resolves standard and compact density heights',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      buildSubject(
+        const Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            HibikiListItem(title: Text('Standard')),
+            HibikiListItem(
+              title: Text('Compact'),
+              density: HibikiListDensity.compact,
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final RenderBox standard = tester.renderObject<RenderBox>(
+      find
+          .ancestor(
+            of: find.text('Standard'),
+            matching: find.byType(ConstrainedBox),
+          )
+          .first,
+    );
+    final RenderBox compact = tester.renderObject<RenderBox>(
+      find
+          .ancestor(
+            of: find.text('Compact'),
+            matching: find.byType(ConstrainedBox),
+          )
+          .first,
+    );
+
+    expect(standard.size.height, 56);
+    expect(compact.size.height, 44);
+  });
+
   testWidgets('HibikiActionChip registers with the focus root',
       (WidgetTester tester) async {
     bool tapped = false;
