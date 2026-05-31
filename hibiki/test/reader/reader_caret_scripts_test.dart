@@ -141,6 +141,14 @@ void main() {
       expect(js, contains("physicalDir !== 'left' && physicalDir !== 'right'"));
     });
 
+    test('reader caret stops on sizable illustrations (img element stops)', () {
+      // In the reader, D-pad can land on an image (≥24px) and A opens the
+      // lightbox via img.click(); inline icons (<24px) are skipped so they do
+      // not clutter text navigation.
+      expect(js, contains("querySelectorAll('img')"));
+      expect(js, contains('ir.width >= 24 && ir.height >= 24'));
+    });
+
     test('activate is a context click: link/control click else lookup', () {
       // A hyperlink is followed, any clickable ancestor is clicked, and plain
       // text falls back to the lookup pipeline.

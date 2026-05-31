@@ -284,10 +284,19 @@ window.hoshiCaret = {
     }
   },
   _interactiveEls: function() {
-    // Element stops are a popup-only concern. In the reader the only interactive
-    // text is <a href>, already reachable as a text stop (activate() promotes it
-    // to a link click); collecting links as elements too would duplicate stops.
-    if (window.hoshiReader) return [];
+    // In the reader the only element stops are sizable images, so D-pad can land
+    // on an illustration and A opens the lightbox (img.click() → the reader's
+    // image tap handler). Inline icons (<24px) are skipped so they don't clutter
+    // text navigation; links stay reachable as text stops via activate().
+    if (window.hoshiReader) {
+      var imgs = document.body.querySelectorAll('img');
+      var imgOut = [];
+      for (var ii = 0; ii < imgs.length; ii++) {
+        var ir = imgs[ii].getBoundingClientRect();
+        if (ir.width >= 24 && ir.height >= 24) imgOut.push(imgs[ii]);
+      }
+      return imgOut;
+    }
     var marked = document.body.querySelectorAll('[data-hoshi-clk]');
     var out = [];
     for (var i = 0; i < marked.length; i++) {
