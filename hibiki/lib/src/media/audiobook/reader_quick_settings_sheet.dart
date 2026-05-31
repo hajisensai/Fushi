@@ -334,9 +334,98 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
       children: [
         _buildProgressSection(theme),
         SizedBox(height: sectionGap),
+        _buildQuickControlsSection(theme),
+        SizedBox(height: sectionGap),
         AdaptiveSettingsSection(children: navigationRows),
         SizedBox(height: sectionGap),
         _buildActionRow(context),
+      ],
+    );
+  }
+
+  Widget _buildQuickControlsSection(ThemeData theme) {
+    final TtuReaderSettings? s = _settings;
+    if (s == null) return _buildSettingsLoading();
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(t.display_settings, style: theme.textTheme.titleMedium),
+        SizedBox(height: tokens.spacing.gap),
+        AdaptiveSettingsSection(
+          children: [
+            AdaptiveSettingsStepperRow(
+              title: t.ttu_font_size,
+              value: s.fontSize,
+              step: 1,
+              min: 8,
+              max: 64,
+              format: (double value) => '${value.round()}',
+              onChanged: (double fontSize) {
+                s.fontSize = fontSize;
+                setState(() {});
+                _updateSetting('fontSize', fontSize);
+              },
+            ),
+            AdaptiveSettingsStepperRow(
+              title: t.ttu_line_height,
+              value: s.lineHeight,
+              step: 0.1,
+              min: 1,
+              max: 3,
+              format: (double value) => value.toStringAsFixed(2),
+              onChanged: (double lineHeight) {
+                s.lineHeight = (lineHeight * 100).roundToDouble() / 100;
+                setState(() {});
+                _updateSetting('lineHeight', s.lineHeight);
+              },
+            ),
+            AdaptiveSettingsRow(
+              title: t.ttu_theme,
+              controlBelow: true,
+              trailing: Wrap(
+                spacing: tokens.spacing.gap * 0.75,
+                runSpacing: tokens.spacing.gap * 0.75,
+                children: TtuReaderSettings.availableThemes.map((themeKey) {
+                  return buildReaderThemeChip(
+                    context: context,
+                    label: TtuReaderSettings.themeLabels[themeKey] ?? themeKey,
+                    selected: s.theme == themeKey,
+                    onSelected: (bool selected) async {
+                      if (!selected) return;
+                      s.theme = themeKey;
+                      setState(() {});
+                      await widget.appModel.setAppThemeKey(themeKey);
+                      await _updateSetting('theme', themeKey);
+                      await widget.onThemeChanged?.call();
+                    },
+                  );
+                }).toList(growable: false),
+              ),
+            ),
+            AdaptiveSettingsSegmentedRow<String>(
+              title: t.ttu_view_mode_label,
+              segments: <ButtonSegment<String>>[
+                ButtonSegment<String>(
+                  value: 'paginated',
+                  label: Text(t.ttu_paginated),
+                  tooltip: t.ttu_paginated,
+                ),
+                ButtonSegment<String>(
+                  value: 'continuous',
+                  label: Text(t.ttu_scroll),
+                  tooltip: t.ttu_scroll,
+                ),
+              ],
+              selected: s.viewMode,
+              onChanged: (String viewMode) {
+                s.viewMode = viewMode;
+                setState(() {});
+                _updateSetting('viewMode', viewMode);
+              },
+            ),
+          ],
+        ),
       ],
     );
   }

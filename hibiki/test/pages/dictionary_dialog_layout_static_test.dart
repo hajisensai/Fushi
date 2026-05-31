@@ -93,4 +93,17 @@ void main() {
     expect(source, isNot(contains('CupertinoAlertDialog')));
     expect(source, isNot(contains('return Dialog(')));
   });
+
+  test('dictionary manager uses compact mobile-safe chrome', () {
+    final String source =
+        File('lib/src/pages/implementations/dictionary_dialog_page.dart')
+            .readAsStringSync();
+
+    expect(source, contains('_buildMobilePageActions'));
+    expect(source, contains('_buildDesktopPageActions'));
+    expect(source, contains('MediaQuery.sizeOf(context).width < 480'));
+    expect(source, contains('AdaptiveSettingsPickerRow<DictionaryType>'));
+    expect(source, contains('_buildDictionaryTypePicker'));
+    expect(source, contains('_buildDictionaryVisibilityButton'));
+  });
 }

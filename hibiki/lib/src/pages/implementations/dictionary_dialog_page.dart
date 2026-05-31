@@ -25,17 +25,18 @@ class _DictionaryDialogPageState extends BasePageState {
 
   @override
   Widget build(BuildContext context) {
+    final bool compact = MediaQuery.sizeOf(context).width < 480;
     return AdaptiveSettingsScaffold(
       title: Text(t.dictionaries),
-      actions: _buildPageActions(),
+      actions: compact ? _buildMobilePageActions() : _buildDesktopPageActions(),
       children: [
-        _buildCategorySelector(),
+        compact ? _buildDictionaryTypePicker() : _buildCategorySelector(),
         buildContent(),
       ],
     );
   }
 
-  List<Widget> _buildPageActions() {
+  List<Widget> _buildDesktopPageActions() {
     return [
       IconButton(
         tooltip: t.dict_download_browse,
@@ -60,6 +61,40 @@ class _DictionaryDialogPageState extends BasePageState {
           color: theme.colorScheme.error,
         ),
         onPressed: showDictionaryClearDialog,
+      ),
+    ];
+  }
+
+  List<Widget> _buildMobilePageActions() {
+    return [
+      HibikiOverflowMenu<VoidCallback>(
+        tooltip: t.show_options,
+        icon: Icons.more_vert,
+        onSelected: (VoidCallback action) => action(),
+        items: [
+          buildPopupItem(
+            label: t.dict_download_browse,
+            icon: Icons.cloud_download_outlined,
+            action: _showDownloadSelectionDialog,
+          ),
+          if (!Platform.isIOS)
+            buildPopupItem(
+              label: t.dialog_import_folder,
+              icon: Icons.drive_folder_upload_outlined,
+              action: _importDictionaryFolder,
+            ),
+          buildPopupItem(
+            label: t.dialog_import_dictionary,
+            icon: Icons.upload_file_outlined,
+            action: _importDictionaryFiles,
+          ),
+          buildPopupItem(
+            label: t.dialog_clear_all_dictionaries,
+            icon: Icons.delete_sweep_outlined,
+            color: theme.colorScheme.error,
+            action: showDictionaryClearDialog,
+          ),
+        ],
       ),
     ];
   }
@@ -743,6 +778,41 @@ class _DictionaryDialogPageState extends BasePageState {
     );
   }
 
+  Widget _buildDictionaryTypePicker() {
+    return AdaptiveSettingsSection(
+      children: [
+        AdaptiveSettingsPickerRow<DictionaryType>(
+          title: t.dictionaries,
+          icon: Icons.menu_book_outlined,
+          controlBelow: true,
+          materialWidth: double.infinity,
+          selected: _selectedType,
+          options: [
+            AdaptiveSettingsPickerOption<DictionaryType>(
+              value: DictionaryType.term,
+              label: t.dictionary_type_term,
+            ),
+            AdaptiveSettingsPickerOption<DictionaryType>(
+              value: DictionaryType.kanji,
+              label: t.dictionary_section_kanji,
+            ),
+            AdaptiveSettingsPickerOption<DictionaryType>(
+              value: DictionaryType.frequency,
+              label: t.dictionary_type_frequency,
+            ),
+            AdaptiveSettingsPickerOption<DictionaryType>(
+              value: DictionaryType.pitch,
+              label: t.dictionary_type_pitch,
+            ),
+          ],
+          onChanged: (DictionaryType value) {
+            setState(() => _selectedType = value);
+          },
+        ),
+      ],
+    );
+  }
+
   Widget buildEmptyMessage() {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return AdaptiveSettingsSection(
@@ -817,6 +887,8 @@ class _DictionaryDialogPageState extends BasePageState {
           ),
           subtitle: Text(
             _subtitleForDictionary(dictionary, dictionaryFormat),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
             style: textTheme.bodySmall?.copyWith(
               color: subtitleColor,
             ),
@@ -824,15 +896,33 @@ class _DictionaryDialogPageState extends BasePageState {
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              buildDictionaryTileTrailing(dictionary),
+              _buildDictionaryVisibilityButton(dictionary, enabled),
               SizedBox(width: tokens.spacing.gap / 2),
-              adaptiveSwitch(
-                context: context,
-                value: enabled,
-                onChanged: (_) => _toggleDictionaryHidden(dictionary),
-              ),
+              buildDictionaryTileTrailing(dictionary),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDictionaryVisibilityButton(
+    Dictionary dictionary,
+    bool enabled,
+  ) {
+    final ColorScheme scheme = theme.colorScheme;
+    final String tooltip = enabled ? t.options_hide : t.options_show;
+    return Tooltip(
+      message: tooltip,
+      child: Semantics(
+        button: true,
+        toggled: enabled,
+        label: tooltip,
+        child: Switch(
+          value: enabled,
+          onChanged: (_) => _toggleDictionaryHidden(dictionary),
+          activeThumbColor: scheme.onPrimaryContainer,
+          activeTrackColor: scheme.primaryContainer,
         ),
       ),
     );

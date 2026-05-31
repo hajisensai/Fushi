@@ -210,6 +210,35 @@ void main() {
     expect(schemaSource, isNot(contains('DictionarySettingsDialogPage')));
   });
 
+  test('custom fonts are grouped with app appearance typography', () {
+    final String schemaSource =
+        readNormalizedSource('lib/src/settings/settings_schema.dart');
+    final int appearanceStart =
+        schemaSource.indexOf('SettingsDestination _appearanceDestination()');
+    final int profilesStart =
+        schemaSource.indexOf('SettingsDestination _profilesDestination()');
+    final int readingDisplayStart = schemaSource
+        .indexOf('SettingsDestination _readingDisplayDestination()');
+    final int readingControlsStart = schemaSource
+        .indexOf('SettingsDestination _readingControlsDestination()');
+
+    expect(appearanceStart, isNonNegative);
+    expect(profilesStart, isNonNegative);
+    expect(readingDisplayStart, isNonNegative);
+    expect(readingControlsStart, isNonNegative);
+
+    final String appearanceSource =
+        schemaSource.substring(appearanceStart, profilesStart);
+    final String readingDisplaySource =
+        schemaSource.substring(readingDisplayStart, readingControlsStart);
+
+    expect(appearanceSource, contains('CustomFontsPage'));
+    expect(appearanceSource, contains("id: 'appearance.fonts'"));
+    expect(readingDisplaySource, isNot(contains('CustomFontsPage')));
+    expect(
+        readingDisplaySource, isNot(contains("id: 'reading_display.fonts'")));
+  });
+
   test('sync backup settings use standard schema rows for options', () {
     final String source =
         readNormalizedSource('lib/src/sync/sync_settings_schema.dart');

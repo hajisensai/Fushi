@@ -90,7 +90,11 @@ void main() {
     expect(find.text(t.section_layout), findsOneWidget);
     expect(find.text(t.settings_destination_reading_controls), findsOneWidget);
     expect(find.text(t.section_navigation), findsOneWidget);
-    expect(find.text(t.display_settings), findsNothing);
+    expect(find.text(t.display_settings), findsOneWidget);
+    expect(find.text(t.ttu_font_size), findsOneWidget);
+    expect(find.text(t.ttu_line_height), findsOneWidget);
+    expect(find.text(t.ttu_theme), findsOneWidget);
+    expect(find.text(t.ttu_view_mode_label), findsOneWidget);
     expect(find.byType(ListTile), findsNothing);
 
     await tester.tap(find.text(t.settings_destination_appearance));
@@ -103,6 +107,7 @@ void main() {
 
     await tester.tap(find.byIcon(Icons.arrow_back));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text(t.section_layout));
     await tester.tap(find.text(t.section_layout));
     await tester.pumpAndSettle();
 
@@ -158,6 +163,7 @@ void main() {
     );
     await tester.pump();
 
+    await tester.ensureVisible(find.text(t.section_navigation));
     await tester.tap(find.text(t.section_navigation));
     await tester.pumpAndSettle();
 

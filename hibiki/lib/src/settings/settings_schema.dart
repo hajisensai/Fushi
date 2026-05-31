@@ -100,6 +100,23 @@ SettingsDestination _appearanceDestination() {
         ],
       ),
       SettingsSection(
+        title: t.section_typography,
+        items: <SettingsItem>[
+          SettingsNavigationItem(
+            id: 'appearance.fonts',
+            title: customFontsTitlePlaceholder,
+            icon: Icons.font_download_outlined,
+            onTap: (SettingsContext settingsContext) async {
+              await pushSettingsPage(
+                settingsContext,
+                (_) => const CustomFontsPage(),
+              );
+              notifyReaderSettingsChanged(settingsContext);
+            },
+          ),
+        ],
+      ),
+      SettingsSection(
         title: t.settings_section_app_shell,
         items: <SettingsItem>[
           SettingsActionItem(
@@ -179,18 +196,6 @@ SettingsDestination _readingDisplayDestination() {
             title: t.display_settings,
             icon: Icons.text_fields,
             builder: (_) => const DisplaySettingsPage(),
-          ),
-          SettingsNavigationItem(
-            id: 'reading_display.fonts',
-            title: customFontsTitlePlaceholder,
-            icon: Icons.font_download_outlined,
-            onTap: (SettingsContext settingsContext) async {
-              await pushSettingsPage(
-                settingsContext,
-                (_) => const CustomFontsPage(),
-              );
-              notifyReaderSettingsChanged(settingsContext);
-            },
           ),
           SettingsNavigationItem(
             id: 'reading_display.book_css',

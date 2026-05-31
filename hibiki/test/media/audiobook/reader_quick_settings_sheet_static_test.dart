@@ -17,6 +17,34 @@ void main() {
     expect(source, isNot(contains('class AudiobookSettingsSheet')));
   });
 
+  test('reader quick settings home exposes only the four quick controls', () {
+    final String source =
+        File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
+            .readAsStringSync();
+    final String mainSource = _between(
+      source,
+      '  Widget _buildMainPage(BuildContext context, ThemeData theme)',
+      '  Widget _buildSubPage(BuildContext context, ThemeData theme)',
+    );
+
+    expect(mainSource, contains('_buildQuickControlsSection(theme)'));
+    expect(
+        source, contains('Widget _buildQuickControlsSection(ThemeData theme)'));
+
+    final String quickControlsSource = _between(
+      source,
+      '  Widget _buildQuickControlsSection(ThemeData theme)',
+      '  Widget _buildSubPage(BuildContext context, ThemeData theme)',
+    );
+    expect(quickControlsSource, contains('fontSize'));
+    expect(quickControlsSource, contains('lineHeight'));
+    expect(quickControlsSource, contains('theme'));
+    expect(quickControlsSource, contains('viewMode'));
+    expect(quickControlsSource, isNot(contains('writingMode')));
+    expect(quickControlsSource, isNot(contains('furigana')));
+    expect(quickControlsSource, isNot(contains('marginTop')));
+  });
+
   test('reader quick settings sheet uses shared MD3 sheet chrome', () {
     final String source =
         File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
