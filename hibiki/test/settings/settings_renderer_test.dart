@@ -14,6 +14,7 @@ import 'package:hibiki/src/settings/material_settings_renderer.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
 import 'package:hibiki/src/settings/settings_schema.dart';
+import 'package:hibiki/src/utils/components/settings_shared.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -47,6 +48,12 @@ SettingsDestination _fixtureDestination() {
             showIcon: true,
             builder: (_) => const SizedBox.shrink(),
           ),
+          SettingsActionItem(
+            id: 'action',
+            title: 'Action',
+            icon: Icons.play_arrow_outlined,
+            onTap: (_) {},
+          ),
           SettingsSwitchItem(
             id: 'toggle',
             title: 'Toggle',
@@ -71,6 +78,31 @@ SettingsDestination _fixtureDestination() {
             ],
             selected: (_) => 'auto',
             onChanged: (_, __) {},
+          ),
+          SettingsSliderItem(
+            id: 'slider',
+            title: 'Slider',
+            icon: Icons.linear_scale_outlined,
+            value: (_) => 0.5,
+            divisions: 4,
+            label: (double value) => value.toStringAsFixed(1),
+            onChanged: (_, __) {},
+          ),
+          SettingsStepperItem(
+            id: 'stepper',
+            title: 'Stepper',
+            icon: Icons.exposure_outlined,
+            value: (_) => 2,
+            step: 1,
+            min: 0,
+            max: 4,
+            format: (double value) => value.toStringAsFixed(0),
+            onChanged: (_, __) {},
+          ),
+          SettingsCustomItem(
+            id: 'custom',
+            title: 'Custom',
+            builder: (_) => const Text('Custom builder content'),
           ),
         ],
       ),
@@ -153,14 +185,36 @@ void main() {
 
     expect(find.byType(Scaffold), findsOneWidget);
     expect(find.byType(AppBar), findsOneWidget);
+    expect(find.text('Action'), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (Widget widget) =>
+            widget is AdaptiveSettingsRow &&
+            widget.title == 'Action' &&
+            widget.icon == Icons.play_arrow_outlined &&
+            widget.showIcon,
+      ),
+      findsOneWidget,
+    );
     expect(find.byType(Switch), findsOneWidget);
     expect(find.byIcon(Icons.tune_outlined), findsOneWidget);
     expect(find.byIcon(Icons.settings_suggest_outlined), findsOneWidget);
-    expect(find.byIcon(Icons.toggle_on_outlined), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (Widget widget) =>
+            widget is AdaptiveSettingsSwitchRow &&
+            widget.title == 'Toggle' &&
+            widget.icon == Icons.toggle_on_outlined,
+      ),
+      findsOneWidget,
+    );
     expect(
       find.byWidgetPredicate((Widget widget) => widget is SegmentedButton),
       findsOneWidget,
     );
+    expect(find.byType(Slider), findsOneWidget);
+    expect(find.text('Stepper'), findsOneWidget);
+    expect(find.text('Custom builder content'), findsOneWidget);
     expect(find.byType(CupertinoPageScaffold), findsNothing);
   });
 
@@ -180,7 +234,9 @@ void main() {
 
     expect(find.byType(CupertinoPageScaffold), findsOneWidget);
     expect(find.byType(CupertinoSliverNavigationBar), findsOneWidget);
-    expect(find.byType(CupertinoListSection), findsOneWidget);
+    expect(find.byType(AdaptiveSettingsSection), findsOneWidget);
+    expect(find.text('Action'), findsOneWidget);
+    expect(find.byIcon(Icons.play_arrow_outlined), findsNothing);
     expect(find.byType(CupertinoSwitch), findsOneWidget);
     expect(find.byIcon(Icons.tune_outlined), findsNothing);
     expect(find.byIcon(Icons.settings_suggest_outlined), findsOneWidget);
@@ -195,6 +251,9 @@ void main() {
       find.byWidgetPredicate((Widget widget) => widget is SegmentedButton),
       findsNothing,
     );
+    expect(find.byType(CupertinoSlider), findsOneWidget);
+    expect(find.text('Stepper'), findsOneWidget);
+    expect(find.text('Custom builder content'), findsOneWidget);
   });
 
   testWidgets('cupertino switch uses theme primary color', (
@@ -308,9 +367,20 @@ void main() {
 
     expect(material, contains('AdaptiveSettingsNavigationRow('));
     expect(cupertino, contains('AdaptiveSettingsNavigationRow('));
+    for (final String row in <String>[
+      'AdaptiveSettingsRow(',
+      'AdaptiveSettingsSwitchRow(',
+      'AdaptiveSettingsSegmentedRow<',
+      'AdaptiveSettingsSliderRow(',
+      'AdaptiveSettingsStepperRow(',
+    ]) {
+      expect(material, contains(row));
+      expect(cupertino, contains(row));
+    }
     expect(material,
         isNot(contains('SettingsNavigationItem navigation => _navigation')));
     expect(cupertino,
         isNot(contains('SettingsNavigationItem navigation => _navigation')));
+    expect(cupertino, isNot(contains('segmented.onChanged as Function')));
   });
 }

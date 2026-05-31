@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart' show ButtonSegment;
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
@@ -108,56 +109,80 @@ class CupertinoSettingsRenderer implements SettingsRenderer {
         destination.visibleSections(settingsContext);
     return Column(
       children: sections.map((SettingsSection section) {
-        return _CupertinoSettingsSection(
+        return _SettingsSchemaSection(
           section: section,
           settingsContext: settingsContext,
+          showIcons: false,
+          routeBuilder: (BuildContext context, WidgetBuilder builder) {
+            return CupertinoPageRoute<void>(builder: builder);
+          },
         );
       }).toList(growable: false),
     );
   }
 }
 
-class _CupertinoSettingsSection extends StatelessWidget {
-  const _CupertinoSettingsSection({
+class _SettingsSchemaSection extends StatelessWidget {
+  const _SettingsSchemaSection({
     required this.section,
     required this.settingsContext,
+    required this.showIcons,
+    required this.routeBuilder,
   });
 
   final SettingsSection section;
   final SettingsContext settingsContext;
+  final bool showIcons;
+  final Route<void> Function(BuildContext context, WidgetBuilder builder)
+      routeBuilder;
 
   @override
   Widget build(BuildContext context) {
     if (section.items.isEmpty) return const SizedBox.shrink();
-    return CupertinoListSection.insetGrouped(
-      header: section.title == null ? null : Text(section.title!),
-      footer: section.footer == null ? null : Text(section.footer!),
-      children: section.items
-          .map((SettingsItem item) => _CupertinoSettingsItem(
-                item: item,
-                settingsContext: settingsContext,
-              ))
-          .toList(growable: false),
+    final List<Widget> rows = section.items
+        .map(
+          (SettingsItem item) => _SettingsSchemaItem(
+            item: item,
+            settingsContext: settingsContext,
+            showIcons: showIcons,
+            routeBuilder: routeBuilder,
+          ),
+        )
+        .toList(growable: false);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        AdaptiveSettingsSection(title: section.title, children: rows),
+        if (section.footer != null && section.footer!.isNotEmpty)
+          _SettingsSectionFooter(section.footer!),
+      ],
     );
   }
 }
 
-class _CupertinoSettingsItem extends StatelessWidget {
-  const _CupertinoSettingsItem({
+class _SettingsSchemaItem extends StatelessWidget {
+  const _SettingsSchemaItem({
     required this.item,
     required this.settingsContext,
+    required this.showIcons,
+    required this.routeBuilder,
   });
 
   final SettingsItem item;
   final SettingsContext settingsContext;
+  final bool showIcons;
+  final Route<void> Function(BuildContext context, WidgetBuilder builder)
+      routeBuilder;
 
   @override
   Widget build(BuildContext context) {
     return switch (item) {
       SettingsNavigationItem navigation => _routeRow(context, navigation),
       SettingsActionItem action => _action(action),
-      SettingsSwitchItem toggle => _switch(context, toggle),
-      SettingsSegmentedItem<dynamic> segmented => _segmented(segmented),
+      SettingsSwitchItem toggle => _switch(toggle),
+      SettingsSegmentedItem<dynamic> segmented => _segmented<Object>(
+          segmented as SettingsSegmentedItem<Object>,
+        ),
       SettingsSliderItem slider => _slider(slider),
       SettingsStepperItem stepper => _stepper(stepper),
       SettingsCustomItem custom => custom.builder(settingsContext),
@@ -172,7 +197,7 @@ class _CupertinoSettingsItem extends StatelessWidget {
       title: navigation.title,
       subtitle: navigation.subtitle,
       icon: navigation.icon,
-      showIcon: navigation.showIcon,
+      showIcon: showIcons || navigation.showIcon,
       onTap: () async {
         if (navigation.onTap != null) {
           await navigation.onTap!(settingsContext);
@@ -180,178 +205,123 @@ class _CupertinoSettingsItem extends StatelessWidget {
         }
         final WidgetBuilder? builder = navigation.builder;
         if (builder == null) return;
-        Navigator.of(context).push(CupertinoPageRoute<void>(builder: builder));
+        Navigator.of(context).push(routeBuilder(context, builder));
       },
     );
   }
 
   Widget _action(SettingsActionItem action) {
-    return _tile(onTap: () async => action.onTap(settingsContext));
+    return AdaptiveSettingsRow(
+      title: action.title,
+      subtitle: action.subtitle,
+      icon: action.icon,
+      showIcon: showIcons,
+      onTap: () async => action.onTap(settingsContext),
+    );
   }
 
-  Widget _switch(BuildContext context, SettingsSwitchItem toggle) {
+  Widget _switch(SettingsSwitchItem toggle) {
     final bool value = toggle.value(settingsContext);
-    return _tile(
-      trailing: CupertinoSwitch(
-        value: value,
-        activeTrackColor: CupertinoTheme.of(context).primaryColor,
-        onChanged: (bool next) async {
-          await toggle.onChanged(settingsContext, next);
-          settingsContext.refresh();
-        },
-      ),
-      onTap: () async {
-        await toggle.onChanged(settingsContext, !value);
+    return AdaptiveSettingsSwitchRow(
+      title: toggle.title,
+      subtitle: toggle.subtitle,
+      icon: showIcons ? toggle.icon : null,
+      value: value,
+      onChanged: (bool next) async {
+        await toggle.onChanged(settingsContext, next);
         settingsContext.refresh();
       },
     );
   }
 
-  Widget _segmented(SettingsSegmentedItem<dynamic> segmented) {
-    final HibikiDesignTokens tokens =
-        HibikiDesignTokens.of(settingsContext.context);
-    final Object selected = segmented.selected(settingsContext) as Object;
-    final Widget control = CupertinoSlidingSegmentedControl<Object>(
-      groupValue: selected,
-      children: <Object, Widget>{
-        for (final SettingsSegmentOption<dynamic> option in segmented.options)
-          option.value as Object: Padding(
-            padding: EdgeInsets.symmetric(horizontal: tokens.spacing.gap),
-            child: option.icon == null
-                ? Text(option.label)
-                : Icon(option.icon, size: 16),
-          ),
-      },
-      onValueChanged: (Object? value) async {
-        if (value == null) return;
-        await (segmented.onChanged as Function)(settingsContext, value);
+  Widget _segmented<T extends Object>(SettingsSegmentedItem<T> segmented) {
+    return AdaptiveSettingsSegmentedRow<T>(
+      title: segmented.title,
+      subtitle: segmented.subtitle,
+      icon: showIcons ? segmented.icon : null,
+      segments: segmented.options.map(_segment).toList(growable: false),
+      selected: segmented.selected(settingsContext),
+      controlBelow: segmented.controlBelow,
+      onChanged: (T value) async {
+        await segmented.onChanged(settingsContext, value);
         settingsContext.refresh();
       },
-    );
-    return _tile(
-      trailing: control,
-      controlBelow: segmented.controlBelow,
     );
   }
 
   Widget _slider(SettingsSliderItem slider) {
     final double value = slider.value(settingsContext);
-    return _tile(
-      controlBelow: true,
-      trailing: CupertinoSlider(
-        value: value.clamp(slider.min, slider.max).toDouble(),
-        min: slider.min,
-        max: slider.max,
-        divisions: slider.divisions,
-        onChanged: (double next) async {
-          await slider.onChanged(settingsContext, next);
-          settingsContext.refresh();
-        },
-        onChangeEnd: slider.onChangeEnd == null
-            ? null
-            : (double next) async {
-                await slider.onChangeEnd!(settingsContext, next);
-                settingsContext.refresh();
-              },
-      ),
+    return AdaptiveSettingsSliderRow(
+      title: slider.title,
+      subtitle: slider.subtitle,
+      icon: showIcons ? slider.icon : null,
+      value: value.clamp(slider.min, slider.max).toDouble(),
+      min: slider.min,
+      max: slider.max,
+      divisions: slider.divisions,
+      label: slider.label?.call(value),
+      onChanged: (double next) async {
+        await slider.onChanged(settingsContext, next);
+        settingsContext.refresh();
+      },
+      onChangeEnd: slider.onChangeEnd == null
+          ? null
+          : (double next) async {
+              await slider.onChangeEnd!(settingsContext, next);
+              settingsContext.refresh();
+            },
     );
   }
 
   Widget _stepper(SettingsStepperItem stepper) {
     final double value = stepper.value(settingsContext);
-    return _tile(
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          CupertinoButton(
-            padding: EdgeInsets.zero,
-            minSize: 30,
-            onPressed: () async {
-              final double next = (value - stepper.step)
-                  .clamp(stepper.min, stepper.max)
-                  .toDouble();
-              await stepper.onChanged(settingsContext, next);
-              settingsContext.refresh();
-            },
-            child: const Icon(CupertinoIcons.minus, size: 18),
-          ),
-          SizedBox(
-            width: 48,
-            child: Text(
-              stepper.format(value),
-              textAlign: TextAlign.center,
-            ),
-          ),
-          CupertinoButton(
-            padding: EdgeInsets.zero,
-            minSize: 30,
-            onPressed: () async {
-              final double next = (value + stepper.step)
-                  .clamp(stepper.min, stepper.max)
-                  .toDouble();
-              await stepper.onChanged(settingsContext, next);
-              settingsContext.refresh();
-            },
-            child: const Icon(CupertinoIcons.add, size: 18),
-          ),
-        ],
-      ),
+    return AdaptiveSettingsStepperRow(
+      title: stepper.title,
+      subtitle: stepper.subtitle,
+      icon: showIcons ? stepper.icon : null,
+      value: value,
+      step: stepper.step,
+      min: stepper.min,
+      max: stepper.max,
+      format: stepper.format,
+      onChanged: (double next) async {
+        await stepper.onChanged(settingsContext, next);
+        settingsContext.refresh();
+      },
     );
   }
 
-  Widget _tile({
-    Widget? trailing,
-    GestureTapCallback? onTap,
-    bool controlBelow = false,
-    bool showIcon = false,
-  }) {
-    final HibikiDesignTokens tokens =
-        HibikiDesignTokens.of(settingsContext.context);
-    final Widget? leading = showIcon && item.icon != null
-        ? Icon(item.icon,
-            color: CupertinoTheme.of(settingsContext.context).primaryColor)
-        : null;
-    if (controlBelow) {
-      return CupertinoListTile(
-        leading: leading,
-        title: Text(item.title),
-        subtitle: item.subtitle == null ? null : Text(item.subtitle!),
-        onTap: onTap,
-        trailing: null,
-        additionalInfo: null,
-        padding: EdgeInsets.symmetric(
-          horizontal: tokens.spacing.rowHorizontal,
-          vertical: tokens.spacing.rowVertical,
-        ),
-      ).withBelow(trailing, tokens);
-    }
-    return CupertinoListTile(
-      leading: leading,
-      title: Text(item.title),
-      subtitle: item.subtitle == null ? null : Text(item.subtitle!),
-      trailing: trailing,
-      onTap: onTap,
+  ButtonSegment<T> _segment<T extends Object>(SettingsSegmentOption<T> option) {
+    return ButtonSegment<T>(
+      value: option.value,
+      label: Text(option.label),
+      icon: option.icon != null ? Icon(option.icon, size: 16) : null,
+      tooltip: option.tooltip ?? option.label,
     );
   }
 }
 
-extension _CupertinoTileBelow on CupertinoListTile {
-  Widget withBelow(Widget? child, HibikiDesignTokens tokens) {
-    if (child == null) return this;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        this,
-        Padding(
-          padding: EdgeInsets.fromLTRB(
-            tokens.spacing.rowHorizontal,
-            0,
-            tokens.spacing.rowHorizontal,
-            tokens.spacing.gap + tokens.spacing.gap / 2,
-          ),
-          child: Align(alignment: Alignment.centerLeft, child: child),
+class _SettingsSectionFooter extends StatelessWidget {
+  const _SettingsSectionFooter(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        tokens.spacing.gap + tokens.spacing.gap / 2,
+        0,
+        tokens.spacing.gap + tokens.spacing.gap / 2,
+        tokens.spacing.gap + tokens.spacing.gap / 2,
+      ),
+      child: Text(
+        text,
+        style: tokens.type.metadata.copyWith(
+          color: CupertinoColors.secondaryLabel.resolveFrom(context),
         ),
-      ],
+      ),
     );
   }
 }

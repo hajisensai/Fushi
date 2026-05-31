@@ -115,101 +115,70 @@ class MaterialSettingsRenderer implements SettingsRenderer {
       ),
       itemCount: sections.length,
       itemBuilder: (BuildContext context, int index) {
-        return _MaterialSettingsSection(
+        return _SettingsSchemaSection(
           section: sections[index],
           settingsContext: settingsContext,
+          showIcons: true,
+          routeBuilder: (BuildContext context, WidgetBuilder builder) {
+            return MaterialPageRoute<void>(builder: builder);
+          },
         );
       },
     );
   }
 }
 
-class _MaterialSettingsSection extends StatelessWidget {
-  const _MaterialSettingsSection({
+class _SettingsSchemaSection extends StatelessWidget {
+  const _SettingsSchemaSection({
     required this.section,
     required this.settingsContext,
+    required this.showIcons,
+    required this.routeBuilder,
   });
 
   final SettingsSection section;
   final SettingsContext settingsContext;
+  final bool showIcons;
+  final Route<void> Function(BuildContext context, WidgetBuilder builder)
+      routeBuilder;
 
   @override
   Widget build(BuildContext context) {
     if (section.items.isEmpty) return const SizedBox.shrink();
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return Padding(
-      padding: EdgeInsets.only(
-        bottom: tokens.spacing.gap + tokens.spacing.gap / 2,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          if (section.title != null && section.title!.isNotEmpty)
-            Padding(
-              padding: EdgeInsets.only(bottom: tokens.spacing.gap * 0.75),
-              child: Text(
-                section.title!,
-                style: tokens.type.sectionLabel,
-              ),
-            ),
-          HibikiCard(
-            padding: EdgeInsets.zero,
-            child: Column(
-              children: _withDividers(
-                context,
-                section.items
-                    .map((SettingsItem item) => _MaterialSettingsItem(
-                          item: item,
-                          settingsContext: settingsContext,
-                        ))
-                    .toList(growable: false),
-              ),
-            ),
+    final List<Widget> rows = section.items
+        .map(
+          (SettingsItem item) => _SettingsSchemaItem(
+            item: item,
+            settingsContext: settingsContext,
+            showIcons: showIcons,
+            routeBuilder: routeBuilder,
           ),
-          if (section.footer != null && section.footer!.isNotEmpty)
-            Padding(
-              padding: EdgeInsets.fromLTRB(
-                tokens.spacing.gap + tokens.spacing.gap / 2,
-                tokens.spacing.gap * 0.75,
-                tokens.spacing.gap + tokens.spacing.gap / 2,
-                0,
-              ),
-              child: Text(
-                section.footer!,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: tokens.surfaces.onVariant,
-                    ),
-              ),
-            ),
-        ],
-      ),
+        )
+        .toList(growable: false);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        AdaptiveSettingsSection(title: section.title, children: rows),
+        if (section.footer != null && section.footer!.isNotEmpty)
+          _SettingsSectionFooter(section.footer!),
+      ],
     );
-  }
-
-  List<Widget> _withDividers(BuildContext context, List<Widget> rows) {
-    final List<Widget> result = <Widget>[];
-    for (int index = 0; index < rows.length; index++) {
-      if (index > 0) {
-        result.add(Divider(
-          height: 1,
-          thickness: 0.5,
-          color: Theme.of(context).colorScheme.outlineVariant,
-        ));
-      }
-      result.add(rows[index]);
-    }
-    return result;
   }
 }
 
-class _MaterialSettingsItem extends StatelessWidget {
-  const _MaterialSettingsItem({
+class _SettingsSchemaItem extends StatelessWidget {
+  const _SettingsSchemaItem({
     required this.item,
     required this.settingsContext,
+    required this.showIcons,
+    required this.routeBuilder,
   });
 
   final SettingsItem item;
   final SettingsContext settingsContext;
+  final bool showIcons;
+  final Route<void> Function(BuildContext context, WidgetBuilder builder)
+      routeBuilder;
 
   @override
   Widget build(BuildContext context) {
@@ -217,7 +186,9 @@ class _MaterialSettingsItem extends StatelessWidget {
       SettingsNavigationItem navigation => _routeRow(context, navigation),
       SettingsActionItem action => _action(action),
       SettingsSwitchItem toggle => _switch(toggle),
-      SettingsSegmentedItem<dynamic> segmented => _segmented(segmented),
+      SettingsSegmentedItem<dynamic> segmented => _segmented<Object>(
+          segmented as SettingsSegmentedItem<Object>,
+        ),
       SettingsSliderItem slider => _slider(slider),
       SettingsStepperItem stepper => _stepper(stepper),
       SettingsCustomItem custom => custom.builder(settingsContext),
@@ -232,7 +203,7 @@ class _MaterialSettingsItem extends StatelessWidget {
       title: navigation.title,
       subtitle: navigation.subtitle,
       icon: navigation.icon,
-      showIcon: true,
+      showIcon: showIcons || navigation.showIcon,
       onTap: () async {
         if (navigation.onTap != null) {
           await navigation.onTap!(settingsContext);
@@ -241,213 +212,124 @@ class _MaterialSettingsItem extends StatelessWidget {
         final WidgetBuilder? builder = navigation.builder;
         if (builder == null) return;
         Navigator.of(context).push(
-          MaterialPageRoute<void>(builder: builder),
+          routeBuilder(context, builder),
         );
       },
     );
   }
 
   Widget _action(SettingsActionItem action) {
-    return _tile(onTap: () async => action.onTap(settingsContext));
+    return AdaptiveSettingsRow(
+      title: action.title,
+      subtitle: action.subtitle,
+      icon: action.icon,
+      showIcon: showIcons,
+      onTap: () async => action.onTap(settingsContext),
+    );
   }
 
   Widget _switch(SettingsSwitchItem toggle) {
     final bool value = toggle.value(settingsContext);
-    return _tile(
-      trailing: Switch(
-        value: value,
-        onChanged: (bool next) async {
-          await toggle.onChanged(settingsContext, next);
-          settingsContext.refresh();
-        },
-      ),
-      onTap: () async {
-        await toggle.onChanged(settingsContext, !value);
+    return AdaptiveSettingsSwitchRow(
+      title: toggle.title,
+      subtitle: toggle.subtitle,
+      icon: showIcons ? toggle.icon : null,
+      value: value,
+      onChanged: (bool next) async {
+        await toggle.onChanged(settingsContext, next);
         settingsContext.refresh();
       },
     );
   }
 
-  Widget _segmented(SettingsSegmentedItem<dynamic> segmented) {
-    final Object selected = segmented.selected(settingsContext) as Object;
-    final Widget control = SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: SegmentedButton<Object>(
-        showSelectedIcon: false,
-        style: const ButtonStyle(
-          visualDensity: VisualDensity.compact,
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        ),
-        segments:
-            segmented.options.map((SettingsSegmentOption<dynamic> option) {
-          final Object value = option.value as Object;
-          return ButtonSegment<Object>(
-            value: value,
-            label: Text(option.label),
-            icon: option.icon != null ? Icon(option.icon, size: 16) : null,
-            tooltip: option.tooltip ?? option.label,
-          );
-        }).toList(growable: false),
-        selected: <Object>{selected},
-        onSelectionChanged: (Set<Object> values) async {
-          if (values.isEmpty) return;
-          // HBK-AUDIT-130: invoke the real SettingsValueChanged callback
-          // instead of casting to a bare `Function`. The dynamic-typed
-          // callback still accepts the selected Object, but keeping the
-          // typedef preserves the parameter contract the `as Function`
-          // bypass discarded.
-          await segmented.onChanged(settingsContext, values.first);
-          settingsContext.refresh();
-        },
-      ),
-    );
-    return _tile(
-      trailing: control,
+  Widget _segmented<T extends Object>(SettingsSegmentedItem<T> segmented) {
+    return AdaptiveSettingsSegmentedRow<T>(
+      title: segmented.title,
+      subtitle: segmented.subtitle,
+      icon: showIcons ? segmented.icon : null,
+      segments: segmented.options.map(_segment).toList(growable: false),
+      selected: segmented.selected(settingsContext),
       controlBelow: segmented.controlBelow,
+      onChanged: (T value) async {
+        await segmented.onChanged(settingsContext, value);
+        settingsContext.refresh();
+      },
     );
   }
 
   Widget _slider(SettingsSliderItem slider) {
     final double value = slider.value(settingsContext);
-    return _tile(
-      controlBelow: true,
-      trailing: Slider(
-        value: value.clamp(slider.min, slider.max).toDouble(),
-        min: slider.min,
-        max: slider.max,
-        divisions: slider.divisions,
-        label: slider.label?.call(value),
-        onChanged: (double next) async {
-          await slider.onChanged(settingsContext, next);
-          settingsContext.refresh();
-        },
-        onChangeEnd: slider.onChangeEnd == null
-            ? null
-            : (double next) async {
-                await slider.onChangeEnd!(settingsContext, next);
-                settingsContext.refresh();
-              },
-      ),
+    return AdaptiveSettingsSliderRow(
+      title: slider.title,
+      subtitle: slider.subtitle,
+      icon: showIcons ? slider.icon : null,
+      value: value.clamp(slider.min, slider.max).toDouble(),
+      min: slider.min,
+      max: slider.max,
+      divisions: slider.divisions,
+      label: slider.label?.call(value),
+      onChanged: (double next) async {
+        await slider.onChanged(settingsContext, next);
+        settingsContext.refresh();
+      },
+      onChangeEnd: slider.onChangeEnd == null
+          ? null
+          : (double next) async {
+              await slider.onChangeEnd!(settingsContext, next);
+              settingsContext.refresh();
+            },
     );
   }
 
   Widget _stepper(SettingsStepperItem stepper) {
     final double value = stepper.value(settingsContext);
-    return _tile(
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          IconButton(
-            visualDensity: VisualDensity.compact,
-            icon: const Icon(Icons.remove, size: 18),
-            onPressed: () async {
-              final double next = (value - stepper.step)
-                  .clamp(stepper.min, stepper.max)
-                  .toDouble();
-              await stepper.onChanged(settingsContext, next);
-              settingsContext.refresh();
-            },
-          ),
-          SizedBox(
-            width: 48,
-            child: Text(
-              stepper.format(value),
-              textAlign: TextAlign.center,
-            ),
-          ),
-          IconButton(
-            visualDensity: VisualDensity.compact,
-            icon: const Icon(Icons.add, size: 18),
-            onPressed: () async {
-              final double next = (value + stepper.step)
-                  .clamp(stepper.min, stepper.max)
-                  .toDouble();
-              await stepper.onChanged(settingsContext, next);
-              settingsContext.refresh();
-            },
-          ),
-        ],
-      ),
+    return AdaptiveSettingsStepperRow(
+      title: stepper.title,
+      subtitle: stepper.subtitle,
+      icon: showIcons ? stepper.icon : null,
+      value: value,
+      step: stepper.step,
+      min: stepper.min,
+      max: stepper.max,
+      format: stepper.format,
+      onChanged: (double next) async {
+        await stepper.onChanged(settingsContext, next);
+        settingsContext.refresh();
+      },
     );
   }
 
-  Widget _tile({
-    Widget? trailing,
-    GestureTapCallback? onTap,
-    bool controlBelow = false,
-  }) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(
-      settingsContext.context,
-    );
-    final Widget label = _SettingsLabel(
-      title: item.title,
-      subtitle: item.subtitle,
-    );
-    final Widget? leading = item.icon == null
-        ? null
-        : Padding(
-            padding: EdgeInsets.only(
-              right: tokens.spacing.gap + tokens.spacing.gap / 2,
-            ),
-            child: Icon(item.icon, size: 22),
-          );
-    if (controlBelow) {
-      return HibikiListItem(
-        onTap: onTap,
-        leading: leading,
-        title: label,
-        subtitle: trailing == null
-            ? null
-            : Padding(
-                padding: EdgeInsets.only(top: tokens.spacing.gap),
-                child: Align(alignment: Alignment.centerLeft, child: trailing),
-              ),
-        subtitleMaxLines: 10,
-        minHeight: 56,
-      );
-    }
-    return HibikiListItem(
-      onTap: onTap,
-      leading: leading,
-      title: label,
-      trailing: trailing,
-      density: HibikiListDensity.standard,
+  ButtonSegment<T> _segment<T extends Object>(SettingsSegmentOption<T> option) {
+    return ButtonSegment<T>(
+      value: option.value,
+      label: Text(option.label),
+      icon: option.icon != null ? Icon(option.icon, size: 16) : null,
+      tooltip: option.tooltip ?? option.label,
     );
   }
 }
 
-class _SettingsLabel extends StatelessWidget {
-  const _SettingsLabel({required this.title, this.subtitle});
+class _SettingsSectionFooter extends StatelessWidget {
+  const _SettingsSectionFooter(this.text);
 
-  final String title;
-  final String? subtitle;
+  final String text;
 
   @override
   Widget build(BuildContext context) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    final ThemeData theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: <Widget>[
-        Text(
-          title,
-          style: theme.textTheme.bodyMedium,
-          overflow: TextOverflow.ellipsis,
-        ),
-        if (subtitle != null && subtitle!.isNotEmpty)
-          Padding(
-            padding: EdgeInsets.only(top: tokens.spacing.gap / 4),
-            child: Text(
-              subtitle!,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        tokens.spacing.gap + tokens.spacing.gap / 2,
+        0,
+        tokens.spacing.gap + tokens.spacing.gap / 2,
+        tokens.spacing.gap + tokens.spacing.gap / 2,
+      ),
+      child: Text(
+        text,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: tokens.surfaces.onVariant,
             ),
-          ),
-      ],
+      ),
     );
   }
 }
