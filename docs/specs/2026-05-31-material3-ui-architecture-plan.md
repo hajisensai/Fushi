@@ -753,7 +753,7 @@ Implementation note:
 - Test: `hibiki/test/settings/settings_migration_static_test.dart`
 - Test: `hibiki/test/settings/settings_redesign_static_test.dart`
 
-- [ ] **Step 1: Write a schema shape test**
+- [x] **Step 1: Write a schema shape test**
 
 Add assertions to `settings_renderer_test.dart` using its existing `_harness(...)` pattern, or create `settings_schema_architecture_test.dart` with the same in-memory `HibikiDatabase` + `ProviderScope` setup. Do not invent a null `SettingsContext`; `buildSettingsSchema()` reads real `AppModel` and `ReaderHibikiSource` state.
 
@@ -789,7 +789,7 @@ testWidgets('settings destinations keep the MD3 information architecture', (
 
 Use the existing imports from `settings_renderer_test.dart`: `TargetPlatform`, `SettingsContext`, `SettingsDestination`, `SettingsDestinationId`, and `buildSettingsSchema`.
 
-- [ ] **Step 2: Move configuration entries by semantic owner**
+- [x] **Step 2: Move configuration entries by semantic owner**
 
 In `settings_schema.dart`, keep these destinations and move rows there:
 
@@ -823,7 +823,7 @@ Expected ownership:
 - System: update channel, low memory mode, GitHub.
 - Diagnostics: error log, debug log, debug log toggle.
 
-- [ ] **Step 3: Delete or hide visible rows that are not real settings**
+- [x] **Step 3: Delete or hide visible rows that are not real settings**
 
 Use one of these patterns:
 
@@ -839,7 +839,7 @@ SettingsNavigationItem(
 
 or delete the `SettingsItem` if it only opens a dead/incomplete workflow. Do not delete underlying prefs unless the task explicitly lists a key migration.
 
-- [ ] **Step 4: Keep every visible row iconed**
+- [x] **Step 4: Keep every visible row iconed**
 
 For every visible `SettingsItem`, set `icon`. Use outlined Material icons by default:
 
@@ -857,7 +857,7 @@ SettingsSwitchItem(
 )
 ```
 
-- [ ] **Step 5: Run settings tests**
+- [x] **Step 5: Run settings tests**
 
 Run from `hibiki/`:
 
@@ -867,13 +867,18 @@ D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test test\settings\sett
 
 Expected: PASS after schema moves. If tests fail because visible row expectations changed, update assertions to the new schema order only after checking the moved rows still preserve value getters and setters.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add -- hibiki/lib/src/settings/settings_schema.dart hibiki/lib/src/settings/settings_destination.dart hibiki/lib/src/settings/settings_actions.dart hibiki/lib/src/settings/settings_home_page.dart hibiki/test/settings/settings_renderer_test.dart hibiki/test/settings/settings_migration_static_test.dart hibiki/test/settings/settings_redesign_static_test.dart
 git diff --cached --check
 git commit -m "refactor(settings): align schema with MD3 information architecture"
 ```
+
+Implementation note:
+- The current schema already exposes task-oriented destinations and hides non-real rows such as the placeholder Book CSS entry.
+- `de86f8f4c test(settings): require shared schema renderer rows` updated the IA contract to require shared adaptive renderer rows after Task 4 moved platform controls out of the renderers.
+- Verification: `D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test test/settings/settings_renderer_test.dart test/settings/settings_migration_static_test.dart test/settings/settings_redesign_static_test.dart --reporter expanded` passed.
 
 ---
 
