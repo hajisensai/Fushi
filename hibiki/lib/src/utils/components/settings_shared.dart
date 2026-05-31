@@ -617,6 +617,7 @@ class AdaptiveSettingsTextField extends StatelessWidget {
   const AdaptiveSettingsTextField({
     super.key,
     this.controller,
+    this.focusNode,
     this.initialValue,
     this.hintText,
     this.labelText,
@@ -628,6 +629,7 @@ class AdaptiveSettingsTextField extends StatelessWidget {
   }) : assert(controller == null || initialValue == null);
 
   final TextEditingController? controller;
+  final FocusNode? focusNode;
   final String? initialValue;
   final String? hintText;
   final String? labelText;
@@ -641,6 +643,7 @@ class AdaptiveSettingsTextField extends StatelessWidget {
   Widget build(BuildContext context) {
     return HibikiTextField(
       controller: controller,
+      focusNode: focusNode,
       initialValue: initialValue,
       hintText: hintText,
       labelText: labelText,

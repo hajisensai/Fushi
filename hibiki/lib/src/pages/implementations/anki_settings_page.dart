@@ -40,24 +40,24 @@ class _AnkiSettingsPageState extends BasePageState<AnkiSettingsPage> {
           AdaptiveSettingsSection(
             title: 'AnkiConnect',
             children: [
-              _buildConnectionField(
+              _AnkiConnectionField(
                 label: t.anki_connect_host,
                 value: settings.ankiConnectHost,
                 hint: 'localhost',
-                onSubmitted: vm.updateAnkiConnectHost,
+                onChanged: vm.updateAnkiConnectHost,
               ),
-              _buildConnectionField(
+              _AnkiConnectionField(
                 label: t.anki_connect_port,
                 value: settings.ankiConnectPort.toString(),
                 hint: '8765',
                 keyboardType: TextInputType.number,
-                onSubmitted: vm.updateAnkiConnectPort,
+                onChanged: vm.updateAnkiConnectPort,
               ),
-              _buildConnectionField(
+              _AnkiConnectionField(
                 label: t.anki_connect_api_key,
                 value: settings.ankiConnectApiKey,
                 hint: t.anki_connect_api_key_hint,
-                onSubmitted: vm.updateAnkiConnectApiKey,
+                onChanged: vm.updateAnkiConnectApiKey,
               ),
             ],
           ),
@@ -225,26 +225,6 @@ class _AnkiSettingsPageState extends BasePageState<AnkiSettingsPage> {
     }
   }
 
-  Widget _buildConnectionField({
-    required String label,
-    required String value,
-    required String hint,
-    required ValueChanged<String> onSubmitted,
-    TextInputType keyboardType = TextInputType.text,
-  }) {
-    return AdaptiveSettingsRow(
-      title: label,
-      controlBelow: true,
-      trailing: AdaptiveSettingsTextField(
-        key: ValueKey('$label-$value'),
-        initialValue: value,
-        keyboardType: keyboardType,
-        hintText: hint,
-        onSubmitted: onSubmitted,
-      ),
-    );
-  }
-
   Widget _buildTagsInput(AnkiSettings settings, AnkiViewModel vm) {
     return AdaptiveSettingsRow(
       title: t.anki_tags,
@@ -254,6 +234,71 @@ class _AnkiSettingsPageState extends BasePageState<AnkiSettingsPage> {
         labelText: t.anki_tags,
         hintText: t.anki_tags_hint,
         onChanged: (v) => vm.updateTags(v),
+      ),
+    );
+  }
+}
+
+/// A single AnkiConnect connection setting (host / port / API key).
+///
+/// Persists on EVERY change via [onChanged] — not only on Enter — so tapping
+/// "Fetch" right after typing uses the value the user just entered. It holds
+/// its own [TextEditingController] (rather than a keyed `initialValue` field)
+/// so it also reflects externally-loaded values (async settings load, profile
+/// switch) without resetting the caret while the user is typing.
+class _AnkiConnectionField extends StatefulWidget {
+  const _AnkiConnectionField({
+    required this.label,
+    required this.value,
+    required this.hint,
+    required this.onChanged,
+    this.keyboardType = TextInputType.text,
+  });
+
+  final String label;
+  final String value;
+  final String hint;
+  final ValueChanged<String> onChanged;
+  final TextInputType keyboardType;
+
+  @override
+  State<_AnkiConnectionField> createState() => _AnkiConnectionFieldState();
+}
+
+class _AnkiConnectionFieldState extends State<_AnkiConnectionField> {
+  late final TextEditingController _controller =
+      TextEditingController(text: widget.value);
+  final FocusNode _focusNode = FocusNode();
+
+  @override
+  void didUpdateWidget(_AnkiConnectionField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Reflect external value changes (async load, profile switch) ONLY while the
+    // field is not being edited, so a lagging async save can never clobber the
+    // user's in-progress typing.
+    if (!_focusNode.hasFocus && widget.value != _controller.text) {
+      _controller.text = widget.value;
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AdaptiveSettingsRow(
+      title: widget.label,
+      controlBelow: true,
+      trailing: AdaptiveSettingsTextField(
+        controller: _controller,
+        focusNode: _focusNode,
+        keyboardType: widget.keyboardType,
+        hintText: widget.hint,
+        onChanged: widget.onChanged,
       ),
     );
   }

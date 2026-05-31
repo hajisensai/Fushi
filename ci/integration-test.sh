@@ -68,7 +68,15 @@ emulator_serial() {
 DEVICE="$(emulator_serial)"
 if [ -z "$DEVICE" ]; then
   echo ">>> No emulator online — booting AVD '$AVD'..."
-  "$EMULATOR" -avd "$AVD" -no-snapshot-save -gpu host >/dev/null 2>&1 &
+  # Use SOFTWARE WebView rendering (swiftshader_indirect), NOT -gpu host. With
+  # host-GPU passthrough the emulator's chromium WebView renderer fails to get a
+  # valid EGL config ("eglChooseConfig failed") and the renderer process is
+  # killed ("aw_browser_terminator: Renderer process crash detected") — so the
+  # Hoshi reader WebView never appears and every reader/dictionary integration
+  # test fails opening a book. swiftshader_indirect renders the WebView in
+  # software and the renderer no longer crashes (verified: reader_pagination
+  # 0 renderer crashes, All tests passed). GPU_MODE overridable for fast hosts.
+  "$EMULATOR" -avd "$AVD" -no-snapshot-save -gpu "${GPU_MODE:-swiftshader_indirect}" >/dev/null 2>&1 &
   for _ in $(seq 1 120); do
     DEVICE="$(emulator_serial)"
     [ -n "$DEVICE" ] && break
