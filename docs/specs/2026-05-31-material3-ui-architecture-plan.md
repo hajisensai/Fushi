@@ -1036,7 +1036,7 @@ Implementation note:
 - Test: `hibiki/test/pages/hibiki_settings_dialog_page_test.dart`
 - Test: `hibiki/test/pages/hibiki_settings_dialog_md3_static_test.dart`
 
-- [ ] **Step 1: Add renderer tests for every item type**
+- [x] **Step 1: Add renderer tests for every item type**
 
 Make sure the renderer test builds one item of each type:
 
@@ -1078,7 +1078,7 @@ SettingsSection(
 )
 ```
 
-- [ ] **Step 2: Remove renderer-specific visual decisions**
+- [x] **Step 2: Remove renderer-specific visual decisions**
 
 In both renderers:
 
@@ -1087,7 +1087,7 @@ In both renderers:
 - Use token spacing, not numeric page-local padding except constructor defaults inside shared components.
 - Do not cast typed callbacks to `Function`; call the `SettingsValueChanged<T>` callback directly.
 
-- [ ] **Step 3: Keep custom builders contained**
+- [x] **Step 3: Keep custom builders contained**
 
 For `SettingsCustomItem`, the renderer may call:
 
@@ -1097,20 +1097,25 @@ SettingsCustomItem custom => custom.builder(settingsContext),
 
 but every custom builder in `settings_actions.dart`, `settings_schema.dart`, and `sync_settings_schema.dart` must return `AdaptiveSettingsRow`, `AdaptiveSettingsSection`, `HibikiTextField`, `HibikiCard`, or another shared primitive.
 
-- [ ] **Step 4: Run focused tests**
+- [x] **Step 4: Run focused tests**
 
 ```powershell
 D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat format lib\src\settings\material_settings_renderer.dart lib\src\settings\cupertino_settings_renderer.dart lib\src\settings\settings_actions.dart test\settings\settings_renderer_test.dart test\pages\hibiki_settings_dialog_page_test.dart test\pages\hibiki_settings_dialog_md3_static_test.dart
 D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test test\settings\settings_renderer_test.dart test\pages\hibiki_settings_dialog_page_test.dart test\pages\hibiki_settings_dialog_md3_static_test.dart --reporter expanded
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add -- hibiki/lib/src/settings/material_settings_renderer.dart hibiki/lib/src/settings/cupertino_settings_renderer.dart hibiki/lib/src/settings/settings_actions.dart hibiki/test/settings/settings_renderer_test.dart hibiki/test/pages/hibiki_settings_dialog_page_test.dart hibiki/test/pages/hibiki_settings_dialog_md3_static_test.dart
 git diff --cached --check
 git commit -m "refactor(settings): render schema through shared MD3 rows"
 ```
+
+Implementation note:
+- `43451d591 refactor(settings): render schema through shared rows` extended renderer coverage to navigation, action, switch, segmented, slider, stepper, and custom rows.
+- Material and Cupertino detail renderers now route schema rows through `AdaptiveSettingsSection` and `AdaptiveSettings*Row` primitives; Cupertino no longer casts segmented callbacks through `Function`.
+- Verification: `D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test test/settings/settings_renderer_test.dart test/pages/hibiki_settings_dialog_page_test.dart test/pages/hibiki_settings_dialog_md3_static_test.dart --reporter expanded` passed.
 
 ---
 
