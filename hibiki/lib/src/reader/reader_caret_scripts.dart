@@ -251,9 +251,10 @@ window.hoshiCaret = {
   // whole row and A toggles the section, rather than landing on a child sliver.
   // `img` is the dictionary popup's glossary image (`a.gloss-image-link` has no
   // href, so the cursor could not reach it before): the caret stops on it and A
-  // bubbles img.click() to its parent link → openImageLightbox. Element stops
-  // only ever run in the popup (`_markClickables`/`_interactiveEls` return early
-  // when window.hoshiReader is set), so this never adds img stops in the reader.
+  // bubbles img.click() to its parent link → openImageLightbox. This selector is
+  // popup-only (`_markClickables` returns early in the reader); the reader's own
+  // element stops (block illustrations) come from the `_interactiveEls` reader
+  // branch, not from this selector.
   _interactiveSelector:
       'a[href], button, summary, [role="button"], [role="link"], img',
   // Tag every clickable element (popup-only) with data-hoshi-clk, so text-stop
@@ -262,8 +263,10 @@ window.hoshiCaret = {
   // pointer cursor. Wiktionary collapsibles (▶ Grammar/Etymology) and icon-only
   // controls bound via addEventListener carry no semantic tag/role, so the
   // pointer-cursor probe is what catches them. Cheap for the small popup DOM;
-  // never runs in the reader (no element stops there). Called from every public
-  // entry point (move/enter/reanchor/refresh/activate) so tags are always fresh.
+  // returns early in the reader (whose only element stops are block images,
+  // collected by _interactiveEls directly — no data-hoshi-clk tagging needed).
+  // Called from every public entry point (move/enter/reanchor/refresh/activate)
+  // so tags are always fresh.
   _markClickables: function() {
     if (window.hoshiReader) return;
     var all = document.body.querySelectorAll('*');
@@ -776,8 +779,10 @@ window.hoshiCaret = {
     if (!target) {
       // Left/Right off the end of an element stop's row has nowhere to go:
       // block, rather than scroll the view and jump to another line (which made
-      // the cursor "fly off" to an off-screen stop after +). The reader has no
-      // element stops, so this is popup-only; Up/Down still scroll for more rows.
+      // the cursor "fly off" to an off-screen stop after +). Popup-only: the
+      // reader's element stops (block images) are reached by Up/Down line moves,
+      // and its Left/Right is reading-order text stepping handled just below;
+      // Up/Down here still scroll for more rows.
       if (!window.hoshiReader && (physical === 'left' || physical === 'right')) {
         return { status: 'blocked' };
       }
