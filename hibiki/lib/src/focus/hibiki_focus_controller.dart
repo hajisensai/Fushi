@@ -272,9 +272,17 @@ class HibikiFocusRoot extends StatefulWidget {
     return scope!.controller;
   }
 
-  static HibikiFocusController? maybeControllerOf(BuildContext context) {
+  static HibikiFocusController? maybeControllerOf(
+    BuildContext context, {
+    bool listen = true,
+  }) {
+    if (listen) {
+      return context
+          .dependOnInheritedWidgetOfExactType<_HibikiFocusScope>()
+          ?.controller;
+    }
     return context
-        .dependOnInheritedWidgetOfExactType<_HibikiFocusScope>()
+        .getInheritedWidgetOfExactType<_HibikiFocusScope>()
         ?.controller;
   }
 

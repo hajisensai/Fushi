@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 
 /// Intent for "go back / dismiss" driven by the gamepad B button.
 /// Reuses [Navigator.maybePop] so it uniformly closes dialogs, bottom sheets
@@ -44,10 +45,14 @@ KeyEventResult _handleGlobalEscape(
   if (nav == null || !nav.canPop()) return KeyEventResult.ignored;
 
   // The focused widget lives in the top-most route; resolve its route so we can
-  // tell a full page apart from a popup. With no primary focus the key never
-  // reaches this node (it sits below the root focus scope), so a null focus here
-  // means "not ours" — leave it alone rather than guess the top route.
-  final BuildContext? focused = FocusManager.instance.primaryFocus?.context;
+  // tell a full page apart from a popup. The focus root is the authoritative
+  // source once installed; raw primary focus is kept as an unrooted fallback.
+  final BuildContext? navigationContext = navigatorKey.currentContext;
+  final HibikiFocusController? controller = navigationContext == null
+      ? null
+      : HibikiFocusRoot.maybeControllerOf(navigationContext, listen: false);
+  final BuildContext? focused =
+      controller?.activeContext ?? FocusManager.instance.primaryFocus?.context;
   if (focused == null) return KeyEventResult.ignored;
   final ModalRoute<dynamic>? route = ModalRoute.of(focused);
   if (route == null || route is PopupRoute) return KeyEventResult.ignored;

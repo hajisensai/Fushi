@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
+import 'package:hibiki/src/focus/hibiki_focus_target.dart';
 import 'package:hibiki/src/shortcuts/global_navigation.dart';
 
 // On desktop, Escape should exit the current navigation level. The framework
@@ -15,6 +17,19 @@ Widget _app(GlobalKey<NavigatorState> navKey, Widget home) {
     builder: (context, child) => wrapWithGlobalNavigation(
       navigatorKey: navKey,
       child: child!,
+    ),
+    home: home,
+  );
+}
+
+Widget _focusApp(GlobalKey<NavigatorState> navKey, Widget home) {
+  return MaterialApp(
+    navigatorKey: navKey,
+    builder: (context, child) => HibikiFocusRoot(
+      child: wrapWithGlobalNavigation(
+        navigatorKey: navKey,
+        child: child!,
+      ),
     ),
     home: home,
   );
@@ -84,6 +99,68 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('DIALOG'), findsNothing);
+  });
+
+  testWidgets(
+      'Escape uses the focus controller active context before full-page pop',
+      (WidgetTester tester) async {
+    final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
+    final FocusNode dialogFocus = FocusNode(debugLabel: 'dialog-focus');
+    addTearDown(dialogFocus.dispose);
+
+    await tester.pumpWidget(
+      _focusApp(
+        navKey,
+        Scaffold(
+          body: Builder(
+            builder: (BuildContext context) => TextButton(
+              autofocus: true,
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (BuildContext pageContext) => Scaffold(
+                    body: Center(
+                      child: TextButton(
+                        onPressed: () => showDialog<void>(
+                          context: pageContext,
+                          barrierDismissible: false,
+                          builder: (BuildContext dialogContext) => Dialog(
+                            child: HibikiFocusTarget(
+                              id: const HibikiFocusId('dialog-target'),
+                              focusNode: dialogFocus,
+                              child: const SizedBox(
+                                width: 160,
+                                height: 80,
+                                child: Center(child: Text('LOCKED DIALOG')),
+                              ),
+                            ),
+                          ),
+                        ),
+                        child: const Text('open dialog'),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              child: const Text('open page'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('open page'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('open dialog'));
+    await tester.pumpAndSettle();
+    dialogFocus.requestFocus();
+    await tester.pump();
+    expect(find.text('LOCKED DIALOG'), findsOneWidget);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+
+    expect(find.text('LOCKED DIALOG'), findsOneWidget);
+    expect(find.text('open dialog'), findsOneWidget);
   });
 
   testWidgets('Escape in a dialog sub-page goes back one level, not closed', (
