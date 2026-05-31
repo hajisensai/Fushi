@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/utils/components/hibiki_dropdown.dart';
 
 import 'widget_test_helpers.dart';
@@ -131,6 +132,44 @@ void main() {
       // presence of the stock DropdownMenu — not the MenuAnchor count — is the
       // signal that Android keeps the engine-key-event path.
       expect(find.byType(DropdownMenu<String>), findsOneWidget);
+    });
+
+    testWidgets('MenuAnchor trigger registers with the focus root',
+        (tester) async {
+      await tester.pumpWidget(buildTestApp(
+        HibikiFocusRoot(
+          child: HibikiDropdown<String>(
+            focusId: const HibikiFocusId('fruit-dropdown'),
+            options: const ['A', 'B'],
+            initialOption: 'A',
+            generateLabel: (v) => v,
+            onChanged: (_) {},
+          ),
+        ),
+        theme: ThemeData.light(useMaterial3: true).copyWith(
+          platform: TargetPlatform.windows,
+        ),
+      ));
+      await tester.pump();
+
+      final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+        tester.element(find.text('A')),
+      );
+
+      expect(
+        controller.requestById(const HibikiFocusId('fruit-dropdown')),
+        isTrue,
+      );
+      await tester.pump();
+      expect(controller.activeId, const HibikiFocusId('fruit-dropdown'));
+
+      expect(find.byType(MenuItemButton), findsNothing);
+      Actions.maybeInvoke<ActivateIntent>(
+        controller.activeContext!,
+        const ActivateIntent(),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(MenuItemButton), findsNWidgets(2));
     });
   });
 }

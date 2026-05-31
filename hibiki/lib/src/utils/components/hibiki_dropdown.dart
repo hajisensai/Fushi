@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
+import 'package:hibiki/src/focus/hibiki_focus_target.dart';
 import 'package:hibiki/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent;
 import 'package:hibiki/src/shortcuts/input_binding.dart' show GamepadButton;
@@ -40,6 +42,7 @@ class GamepadMenuDropdown<T> extends StatefulWidget {
     this.width,
     this.label,
     this.hintText,
+    this.focusId,
   });
 
   final List<GamepadDropdownEntry<T>> entries;
@@ -53,6 +56,7 @@ class GamepadMenuDropdown<T> extends StatefulWidget {
   /// Floating label (Material [DropdownMenu] path only).
   final String? label;
   final String? hintText;
+  final HibikiFocusId? focusId;
 
   @override
   State<GamepadMenuDropdown<T>> createState() => _GamepadMenuDropdownState<T>();
@@ -62,6 +66,9 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
   final MenuController _menu = MenuController();
   final FocusNode _triggerFocus =
       FocusNode(debugLabel: 'gamepadDropdownTrigger');
+  late final HibikiFocusId _fallbackFocusId = HibikiFocusId(
+    'gamepad-dropdown-${identityHashCode(this)}',
+  );
 
   @override
   void dispose() {
@@ -133,11 +140,36 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
                 : null;
         final double? menuWidth = fixedWidth ??
             (constraints.maxWidth.isFinite ? constraints.maxWidth : null);
-        final Widget anchor = _menuAnchor(context, menuWidth);
+        final Widget anchor = _focusableAnchor(
+          context,
+          _menuAnchor(context, menuWidth),
+        );
         return fixedWidth == null
             ? anchor
             : SizedBox(width: fixedWidth, child: anchor);
       },
+    );
+  }
+
+  Widget _focusableAnchor(BuildContext context, Widget anchor) {
+    if (HibikiFocusRoot.maybeControllerOf(context) == null) return anchor;
+    return Actions(
+      actions: <Type, Action<Intent>>{
+        ActivateIntent: CallbackAction<ActivateIntent>(
+          onInvoke: (_) {
+            if (widget.enabled) {
+              _menu.isOpen ? _menu.close() : _menu.open();
+            }
+            return null;
+          },
+        ),
+      },
+      child: HibikiFocusRegistration(
+        id: widget.focusId ?? _fallbackFocusId,
+        focusNode: _triggerFocus,
+        enabled: widget.enabled,
+        child: anchor,
+      ),
     );
   }
 
@@ -277,6 +309,7 @@ class HibikiDropdown<T> extends StatefulWidget {
     required this.generateLabel,
     required this.onChanged,
     this.enabled = true,
+    this.focusId,
     super.key,
   });
 
@@ -295,6 +328,7 @@ class HibikiDropdown<T> extends StatefulWidget {
 
   /// Whether the button allows changing the option or not.
   final bool enabled;
+  final HibikiFocusId? focusId;
 
   @override
   State<HibikiDropdown<T>> createState() => _HibikiDropdownState<T>();
@@ -321,6 +355,7 @@ class _HibikiDropdownState<T> extends State<HibikiDropdown<T>> {
       enabled: widget.enabled,
       selected: dropdownValue,
       onChanged: _onSelected,
+      focusId: widget.focusId,
       entries: <GamepadDropdownEntry<T>>[
         for (final T value in uniqueOptions)
           (value: value, label: widget.generateLabel(value)),

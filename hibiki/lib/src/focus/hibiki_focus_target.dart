@@ -22,6 +22,78 @@ class HibikiFocusTarget extends StatefulWidget {
   State<HibikiFocusTarget> createState() => _HibikiFocusTargetState();
 }
 
+class HibikiFocusRegistration extends StatefulWidget {
+  const HibikiFocusRegistration({
+    required this.id,
+    required this.focusNode,
+    required this.child,
+    super.key,
+    this.enabled = true,
+  });
+
+  final HibikiFocusId id;
+  final FocusNode focusNode;
+  final Widget child;
+  final bool enabled;
+
+  @override
+  State<HibikiFocusRegistration> createState() =>
+      _HibikiFocusRegistrationState();
+}
+
+class _HibikiFocusRegistrationState extends State<HibikiFocusRegistration> {
+  late final Object _owner = Object();
+  HibikiFocusController? _controller;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _controller = HibikiFocusRoot.maybeControllerOf(context);
+    _register();
+  }
+
+  @override
+  void didUpdateWidget(HibikiFocusRegistration oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final bool identityChanged = oldWidget.id != widget.id ||
+        !identical(oldWidget.focusNode, widget.focusNode);
+    if (identityChanged) {
+      _unregister(oldWidget.id, oldWidget.focusNode);
+    }
+    _register();
+  }
+
+  @override
+  void dispose() {
+    _unregister(widget.id, widget.focusNode);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _HibikiFocusTargetAnchor(
+      onReady: (BuildContext targetContext) => _register(targetContext),
+      child: widget.child,
+    );
+  }
+
+  void _register([BuildContext? targetContext]) {
+    final HibikiFocusController? controller = _controller;
+    if (controller == null) return;
+    controller.register(HibikiFocusTargetEntry(
+      id: widget.id,
+      focusNode: widget.focusNode,
+      context: targetContext ?? context,
+      enabled: widget.enabled,
+      owner: _owner,
+    ));
+  }
+
+  void _unregister(HibikiFocusId id, FocusNode node) {
+    _controller?.unregister(id, node, _owner);
+  }
+}
+
 class _HibikiFocusTargetState extends State<HibikiFocusTarget> {
   late FocusNode _ownedNode;
   late final Object _owner = Object();
