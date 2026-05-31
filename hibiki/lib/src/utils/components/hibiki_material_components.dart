@@ -4,7 +4,7 @@ import 'package:hibiki/src/focus/hibiki_focus_target.dart';
 import 'package:hibiki/src/utils/components/hibiki_text_selection_controls.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 
-class HibikiCard extends StatelessWidget {
+class HibikiCard extends StatefulWidget {
   const HibikiCard({
     required this.child,
     super.key,
@@ -16,6 +16,7 @@ class HibikiCard extends StatelessWidget {
     this.selected = false,
     this.onTap,
     this.onLongPress,
+    this.focusId,
   });
 
   final Widget child;
@@ -27,36 +28,63 @@ class HibikiCard extends StatelessWidget {
   final bool selected;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
+  final HibikiFocusId? focusId;
+
+  @override
+  State<HibikiCard> createState() => _HibikiCardState();
+}
+
+class _HibikiCardState extends State<HibikiCard> {
+  late final HibikiFocusId _fallbackFocusId = HibikiFocusId(
+    'hibiki-card-${identityHashCode(this)}',
+  );
 
   @override
   Widget build(BuildContext context) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    final Color effectiveColor =
-        color ?? (selected ? tokens.surfaces.selected : tokens.surfaces.card);
-    final BorderRadius radius = borderRadius ?? tokens.radii.cardRadius;
+    final Color effectiveColor = widget.color ??
+        (widget.selected ? tokens.surfaces.selected : tokens.surfaces.card);
+    final BorderRadius radius = widget.borderRadius ?? tokens.radii.cardRadius;
     final Widget content = Padding(
-      padding: padding ?? EdgeInsets.all(tokens.spacing.card),
-      child: child,
+      padding: widget.padding ?? EdgeInsets.all(tokens.spacing.card),
+      child: widget.child,
     );
-    return Padding(
-      padding: margin ?? EdgeInsets.zero,
+    final Widget card = Padding(
+      padding: widget.margin ?? EdgeInsets.zero,
       child: Material(
         color: effectiveColor,
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: radius,
-          side: borderColor != null
-              ? BorderSide(color: borderColor!)
+          side: widget.borderColor != null
+              ? BorderSide(color: widget.borderColor!)
               : BorderSide.none,
         ),
         clipBehavior: Clip.antiAlias,
-        child: onTap == null && onLongPress == null
+        child: widget.onTap == null && widget.onLongPress == null
             ? content
             : InkWell(
-                onTap: onTap,
-                onLongPress: onLongPress,
+                onTap: widget.onTap,
+                onLongPress: widget.onLongPress,
                 child: content,
               ),
+      ),
+    );
+    if (widget.onTap == null) return card;
+    if (HibikiFocusRoot.maybeControllerOf(context) == null) return card;
+
+    return Actions(
+      actions: <Type, Action<Intent>>{
+        ActivateIntent: CallbackAction<ActivateIntent>(
+          onInvoke: (_) {
+            widget.onTap?.call();
+            return null;
+          },
+        ),
+      },
+      child: HibikiFocusTarget(
+        id: widget.focusId ?? _fallbackFocusId,
+        child: card,
       ),
     );
   }
