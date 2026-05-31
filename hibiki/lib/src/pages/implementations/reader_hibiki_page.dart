@@ -1093,17 +1093,6 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
                   Positioned.fill(
                     child: ColoredBox(color: bgColor),
                   ),
-                AnimatedOpacity(
-                  opacity: _lyricsModeTransition ? 1.0 : 0.0,
-                  duration: const Duration(milliseconds: 200),
-                  child: IgnorePointer(
-                    ignoring: !_lyricsModeTransition,
-                    child: ColoredBox(
-                      color: _themeBackgroundColor(),
-                      child: const SizedBox.expand(),
-                    ),
-                  ),
-                ),
                 if (_readerContentReady)
                   const SizedBox.shrink(
                       key: ValueKey<String>('hoshi_content_ready')),
@@ -2094,8 +2083,6 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
     setState(() => _lyricsModeTransition = true);
     try {
-      await Future<void>.delayed(const Duration(milliseconds: 200));
-
       setState(() => _lyricsMode = entering);
       await ReaderHibikiSource.instance.setLyricsMode(entering);
 
