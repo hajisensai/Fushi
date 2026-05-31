@@ -166,7 +166,7 @@ The bad data structure is the absence of a data structure: focusable targets are
 - Review: `hibiki/lib/src/utils/components/hibiki_focus_ring.dart`
 - Review: `hibiki/lib/src/pages/implementations/reader_hibiki_page.dart`
 
-- [ ] **Step 1: Add failing contract tests for focus ownership**
+- [x] **Step 1: Add failing contract tests for focus ownership**
 
 The tests should describe the public behavior before implementation:
 
@@ -225,7 +225,7 @@ Add separate tests for:
 - Disabling the focused row moves focus to the next enabled target.
 - A route with only passive content focuses the route fallback, not `null`.
 
-- [ ] **Step 2: Add failing contract tests for focus-driven scroll**
+- [x] **Step 2: Add failing contract tests for focus-driven scroll**
 
 The test should prove the sequence: move focus first, then reveal that target.
 
@@ -276,7 +276,7 @@ testWidgets('directional move scrolls the newly focused target into view',
 
 Do not accept a test that scrolls first and infers focus from visibility. That is the old broken model.
 
-- [ ] **Step 3: Update existing gamepad tests to target the new contract**
+- [x] **Step 3: Update existing gamepad tests to target the new contract**
 
 Keep `gamepad_focus_nav_test.dart`, but stop treating `gamepadMoveFocusInDirection(...)` as the end-state API. The final tests should cover:
 
@@ -285,7 +285,7 @@ Keep `gamepad_focus_nav_test.dart`, but stop treating `gamepadMoveFocusInDirecti
 - A blocked direction uses deterministic scope policy, not raw Flutter geometric search.
 - Activation uses the focused target's context, not `navigatorKey.currentContext`.
 
-- [ ] **Step 4: Run focused failing tests**
+- [x] **Step 4: Run focused failing tests**
 
 ```powershell
 cd hibiki
@@ -293,6 +293,8 @@ D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test test/focus test/sh
 ```
 
 This task may commit tests only if they are marked with `skip` and each skipped test names the not-yet-implemented task. Prefer committing the implementation and tests together in Focus Task 2.
+
+Implementation evidence: covered by commits `c975f3ae3`, `1d0c199f8`, `f368d5190`, and `489474495`. Focus tests and shortcut focus tests now exercise the root, fallback, movement, and focus-driven scroll behavior.
 
 ---
 
@@ -306,7 +308,7 @@ This task may commit tests only if they are marked with `skip` and each skipped 
 - Modify: `hibiki/lib/src/utils/components/hibiki_focusable.dart`
 - Modify: `hibiki/test/focus/global_focus_contract_test.dart`
 
-- [ ] **Step 1: Introduce stable focus ids and target registration**
+- [x] **Step 1: Introduce stable focus ids and target registration**
 
 Use explicit ids for repeated rows and route-owned controls. Do not use display text as identity; text is localized and user-editable.
 
@@ -330,7 +332,7 @@ class HibikiFocusId {
 }
 ```
 
-- [ ] **Step 2: Implement `HibikiFocusController` as the single owner**
+- [x] **Step 2: Implement `HibikiFocusController` as the single owner**
 
 The controller owns a fallback node and a registry. `FocusManager.primaryFocus` remains Flutter's actual focus source, but the controller repairs invalid states and chooses movement targets.
 
@@ -364,7 +366,7 @@ Invariant rules:
 - Unregistering the active target must schedule repair; it must not synchronously request focus during widget disposal.
 - Text fields and WebView hosts are targets. Native text editing is not overridden while that target owns focus.
 
-- [ ] **Step 3: Add `HibikiFocusRoot` to the app shell**
+- [x] **Step 3: Add `HibikiFocusRoot` to the app shell**
 
 Wrap the app once, near the existing focus ring/navigation wrappers:
 
@@ -381,11 +383,11 @@ return HibikiFocusRoot(
 
 Keep the actual nesting consistent with `main.dart`; the point is that navigation, focus ring, shortcuts, and gamepad dispatch can all resolve the same controller.
 
-- [ ] **Step 4: Convert `HibikiFocusable` into a target adapter**
+- [x] **Step 4: Convert `HibikiFocusable` into a target adapter**
 
 `HibikiFocusable` should still work for existing callers, but internally it registers a `HibikiFocusTarget`. This preserves old call sites while moving the data model into the new layer.
 
-- [ ] **Step 5: Verify**
+- [x] **Step 5: Verify**
 
 ```powershell
 cd hibiki
@@ -408,7 +410,7 @@ git commit -m "feat(focus): add global focus root"
 - Modify: `hibiki/test/shortcuts/gamepad_navigation_flow_test.dart`
 - Modify: `hibiki/test/shortcuts/shortcut_focus_dispatch_test.dart`
 
-- [ ] **Step 1: Replace directional fallback as the primary path**
+- [x] **Step 1: Replace directional fallback as the primary path**
 
 `GamepadService` should dispatch D-pad and analog-stick movement through the app controller:
 
@@ -426,15 +428,15 @@ Add the conversion helper in the focus layer so shortcut code does not define it
 
 Keep `gamepadMoveFocusInDirection(...)` temporarily only for unrooted tests or screens not yet wrapped by `HibikiFocusRoot`. Mark it deprecated after all app surfaces are rooted.
 
-- [ ] **Step 2: Make activation use active focus context**
+- [x] **Step 2: Make activation use active focus context**
 
 Activation, long-press, and B/back dispatch should resolve context from `HibikiFocusController.activeContext`. `navigatorKey.currentContext` is only a last-resort shell fallback, never the normal action context.
 
-- [ ] **Step 3: Make Escape/back repair focus after pop**
+- [x] **Step 3: Make Escape/back repair focus after pop**
 
 After `Navigator.maybePop()`, schedule `focus.ensureFocus()`. Closing a dialog must restore focus to the invoking target or nearest valid route target.
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 ```powershell
 cd hibiki
@@ -456,7 +458,7 @@ git commit -m "fix(focus): route gamepad movement through focus controller"
 - Modify: `hibiki/test/focus/focus_driven_scroll_test.dart`
 - Modify: `hibiki/test/widgets/hibiki_focus_ring_test.dart`
 
-- [ ] **Step 1: Move scroll reveal out of the ring**
+- [x] **Step 1: Move scroll reveal out of the ring**
 
 `HibikiFocusRing` should paint and track geometry. It should not own scroll policy. Move the existing "only scroll if hidden" logic into `HibikiFocusScroll`.
 
@@ -468,18 +470,18 @@ Required behavior:
 - Manual scroll never changes app focus.
 - Touch highlight mode may suppress the visible ring, but it must not invalidate focus ownership.
 
-- [ ] **Step 2: Make the controller call scroll reveal**
+- [x] **Step 2: Make the controller call scroll reveal**
 
 After `move(...)` or `requestById(...)` succeeds, schedule `HibikiFocusScroll.ensureVisible(...)` for the target. Keep this post-frame; disposal and layout changes must settle before geometry reads.
 
-- [ ] **Step 3: Add static guard for forbidden scroll ownership**
+- [x] **Step 3: Add static guard for forbidden scroll ownership**
 
 Add a focused static test that allows `Scrollable.ensureVisible` only in:
 
 - `lib/src/focus/hibiki_focus_scroll.dart`
 - Temporary allowlisted legacy files with a removal comment
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 ```powershell
 cd hibiki
@@ -490,6 +492,8 @@ git add -- lib/src/focus lib/src/utils/components/hibiki_focus_ring.dart test/fo
 git diff --cached --check
 git commit -m "fix(focus): centralize focus-driven scrolling"
 ```
+
+Implementation evidence: scroll ownership is centralized in `HibikiFocusScroll`, and `focus_architecture_static_test.dart` guards `Scrollable.ensureVisible` placement. Verified in commit `489474495`.
 
 ---
 
@@ -516,6 +520,8 @@ Start with four policies. Do not invent more until a real surface needs one.
 `HibikiListItem`, `HibikiCard` when tappable, `HibikiSearchField`, overflow menus, file picker rows, adaptive settings rows, segmented controls, sliders, and switches should opt into focus target registration at the component layer.
 
 This is the important MD3 merge point: a page migrated to shared MD3 primitives gets deterministic keyboard/gamepad focus for free.
+
+Progress: `HibikiListItem`, `HibikiCard`, `HibikiDropdown`, `HibikiSearchField`, `HibikiTextField`, `HibikiSelectableChip`, `HibikiActionChip`, and `HibikiIconButton` now register focus targets when given a `focusId`. Remaining work: overflow menus, file picker rows, adaptive settings rows, segmented controls, sliders, switches, and any page-owned proxy targets.
 
 - [ ] **Step 3: Remove page-local traversal hacks while migrating components**
 
