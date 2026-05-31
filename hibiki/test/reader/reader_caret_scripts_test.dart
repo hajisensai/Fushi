@@ -130,6 +130,17 @@ void main() {
       expect(js, contains('[role="link"], img'));
     });
 
+    test('popup Up/Down jump by row, Left/Right per-glyph (上下跳项 / 左右逐字)', () {
+      // _collectVisibleStops takes a lineLevel flag; popup vertical moves keep
+      // one text stop per visual row (rounded top), so Up/Down hops rows /
+      // elements instead of every glyph, while Left/Right and the reader stay
+      // per-glyph (window.hoshiReader → lineLevel false).
+      expect(js, contains('_collectVisibleStops: function(lineLevel)'));
+      expect(js, contains('Math.round(rect.top)'));
+      expect(js, contains('!window.hoshiReader &&'));
+      expect(js, contains("physicalDir !== 'left' && physicalDir !== 'right'"));
+    });
+
     test('activate is a context click: link/control click else lookup', () {
       // A hyperlink is followed, any clickable ancestor is clicked, and plain
       // text falls back to the lookup pipeline.

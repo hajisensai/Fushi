@@ -362,10 +362,16 @@ window.hoshiCaret = {
       node = n; text = node.textContent; i = this._prevIndex(text, text.length);
     }
   },
-  _collectVisibleStops: function() {
+  // [lineLevel] (popup vertical moves): keep ONE text stop per visual row
+  // (keyed by rounded top) so Up/Down hops between rows/elements instead of
+  // every glyph — "上下跳项". Left/Right and the reader pass it falsy so text
+  // stays per-character — "左右逐字". Element (interactive) stops are always
+  // kept in both modes.
+  _collectVisibleStops: function(lineLevel) {
     var walker = this._walker();
     var out = [];
     var node;
+    var seenRows = {};
     while (node = walker.nextNode()) {
       var text = node.textContent;
       for (var i = 0; i < text.length;) {
@@ -373,11 +379,15 @@ window.hoshiCaret = {
         if (this._isStop(node, i)) {
           var rect = this._charRect(node, i);
           if (this._inViewport(rect)) {
-            out.push({
-              node: node, offset: i, el: null, rect: rect,
-              cx: rect.left + rect.width / 2,
-              cy: rect.top + rect.height / 2
-            });
+            var rowKey = lineLevel ? Math.round(rect.top) : -1;
+            if (!lineLevel || !seenRows[rowKey]) {
+              if (lineLevel) seenRows[rowKey] = true;
+              out.push({
+                node: node, offset: i, el: null, rect: rect,
+                cx: rect.left + rect.width / 2,
+                cy: rect.top + rect.height / 2
+              });
+            }
           }
         }
         i += len;
@@ -401,7 +411,12 @@ window.hoshiCaret = {
     if (!a) return null;
     var acx = a.left + a.width / 2;
     var acy = a.top + a.height / 2;
-    var stops = this._collectVisibleStops();
+    // Popup: Up/Down jump by row/element (skip per-glyph stops), Left/Right
+    // step per-glyph within the current text. The reader keeps per-glyph both
+    // ways (window.hoshiReader → lineLevel false).
+    var lineLevel = !window.hoshiReader &&
+      physicalDir !== 'left' && physicalDir !== 'right';
+    var stops = this._collectVisibleStops(lineLevel);
     var eps = 2;
     // Directional move with a "beam": a candidate whose cross-axis OVERLAPS the
     // anchor (same row for left/right, same column for up/down) always beats one
