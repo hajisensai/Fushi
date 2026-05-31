@@ -132,6 +132,18 @@ class DictionaryPopupWebViewState
         source: ReaderCaretScripts.exitInvocation());
   }
 
+  /// Hide the caret ring without dropping it (user switched to the mouse).
+  void caretSuspend() {
+    _controller?.evaluateJavascript(
+        source: ReaderCaretScripts.suspendInvocation());
+  }
+
+  /// Re-show the caret ring (user switched back to keyboard/gamepad).
+  void caretResume() {
+    _controller?.evaluateJavascript(
+        source: ReaderCaretScripts.resumeInvocation());
+  }
+
   Future<String> caretMove(String dir) async {
     final Object? raw = await _controller?.evaluateJavascript(
         source: ReaderCaretScripts.moveInvocation(dir));

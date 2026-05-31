@@ -27,6 +27,12 @@ class ReaderCaretScripts {
   /// Deactivate the caret and hide the ring (keeps the remembered position).
   static String exitInvocation() => 'window.hoshiCaret.exit()';
 
+  /// Hide the ring but keep the caret active/owned (used when the user switches
+  /// to the mouse); [resumeInvocation] re-shows it for keyboard/gamepad.
+  static String suspendInvocation() => 'window.hoshiCaret.suspend()';
+  static String resumeInvocation() =>
+      'JSON.stringify(window.hoshiCaret.resume())';
+
   /// Move the caret. [dir] is a physical direction (`up`/`down`/`left`/`right`)
   /// or a logical one (`forward`/`backward`/`lineNext`/`linePrev`). Returns
   /// `{status, rect}` where status ∈ moved | pageForward | pageBackward |
@@ -657,6 +663,25 @@ window.hoshiCaret = {
     return true;
   },
 
+  // Suspend/resume hide and re-show the ring WITHOUT changing `active`, so the
+  // caret keeps its position and ownership. Used when the user switches to the
+  // mouse (ring vanishes) and back to keyboard/gamepad (ring returns) — unlike
+  // exit(), this never drops the caret, so directional keys keep driving the
+  // popup instead of falling through to the reader's page-turn.
+  suspend: function() {
+    this._hideRing();
+    return true;
+  },
+  resume: function() {
+    if (!this.active) return { ok: false };
+    var r = this._anchorRect();
+    if (r && this._inViewport(r)) {
+      this._drawRing(r);
+      return { ok: true, rect: this._rectJson(r) };
+    }
+    return this.refresh();
+  },
+
   reanchor: function(edge) {
     this._ensureRing();
     this._markClickables();
@@ -692,6 +717,13 @@ window.hoshiCaret = {
       target = this._lineMove(logical === 'lineNext', vertical);
     }
     if (!target) {
+      // Left/Right off the end of an element stop's row has nowhere to go:
+      // block, rather than scroll the view and jump to another line (which made
+      // the cursor "fly off" to an off-screen stop after +). The reader has no
+      // element stops, so this is popup-only; Up/Down still scroll for more rows.
+      if (this.el && (dir === 'left' || dir === 'right')) {
+        return { status: 'blocked' };
+      }
       if (!this.el && (logical === 'forward' || logical === 'backward')) {
         return { status: 'blocked' };
       }

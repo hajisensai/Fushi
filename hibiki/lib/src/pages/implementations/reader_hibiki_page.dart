@@ -948,13 +948,31 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   // The input device flipped between touch (mouse/pointer) and keyboard/gamepad.
   void _onHighlightModeChanged(FocusHighlightMode mode) {
     if (!mounted) return;
-    // The char caret (incl. the popup's JS ring) is a keyboard/gamepad
-    // affordance. When the user picks up the mouse, focus visuals should vanish
-    // ("用鼠标的时候焦点应消失"), so leave the caret on whichever surface holds
-    // it. _exitCaret repaints; otherwise just repaint the inset ring.
-    if (mode == FocusHighlightMode.touch && _caretActive) {
-      _exitCaret();
-      return;
+    // The char caret is a keyboard/gamepad affordance: hide its ring on the
+    // mouse ("用鼠标的时候焦点应消失") and bring it back on hardware nav. Crucially
+    // we SUSPEND (hide the ring) rather than exit — the caret keeps its surface,
+    // so when the controller is picked back up the directions still drive the
+    // popup/reader caret instead of falling through to the reader's page-turn.
+    if (_caretActive) {
+      final bool suspend = mode == FocusHighlightMode.touch;
+      switch (_caretSurface) {
+        case CaretSurface.popup:
+          if (suspend) {
+            topPopupState?.caretSuspend();
+          } else {
+            topPopupState?.caretResume();
+          }
+          break;
+        case CaretSurface.reader:
+          _controller?.evaluateJavascript(
+            source: suspend
+                ? ReaderCaretScripts.suspendInvocation()
+                : ReaderCaretScripts.resumeInvocation(),
+          );
+          break;
+        case CaretSurface.none:
+          break;
+      }
     }
     setState(() {});
   }

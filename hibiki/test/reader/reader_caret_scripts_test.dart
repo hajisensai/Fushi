@@ -7,6 +7,10 @@ void main() {
       expect(ReaderCaretScripts.enterInvocation(),
           'JSON.stringify(window.hoshiCaret.enter())');
       expect(ReaderCaretScripts.exitInvocation(), 'window.hoshiCaret.exit()');
+      expect(ReaderCaretScripts.suspendInvocation(),
+          'window.hoshiCaret.suspend()');
+      expect(ReaderCaretScripts.resumeInvocation(),
+          'JSON.stringify(window.hoshiCaret.resume())');
       expect(
           ReaderCaretScripts.lookupInvocation(), 'window.hoshiCaret.lookup()');
       expect(ReaderCaretScripts.activateInvocation(),
@@ -204,6 +208,20 @@ void main() {
       // headword picks the same-row ♪ over the definition text just below.
       expect(js, contains('beam'));
       expect(js, contains('beamN > bestBeam'));
+    });
+
+    test('Left/Right off an element-stop row end blocks (no fly-off)', () {
+      // RIGHT from the rightmost control (e.g. +) has no candidate; it must
+      // block, not scroll + line-jump to an off-screen stop.
+      expect(js, contains("this.el && (dir === 'left' || dir === 'right')"));
+    });
+
+    test('suspend/resume hide and re-show the ring without dropping the caret',
+        () {
+      // Mouse hides the ring (suspend) but keeps `active`, so keyboard/gamepad
+      // resume keeps the caret on its surface instead of paging the reader.
+      expect(js, contains('suspend:'));
+      expect(js, contains('resume:'));
     });
 
     test('popup caret scrolls a partially-clipped stop into view', () {
