@@ -945,10 +945,18 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     super.dispose();
   }
 
-  // Repaint the inset reading-content focus ring when the input device flips
-  // between touch and keyboard/gamepad (the ring is traditional-mode only).
+  // The input device flipped between touch (mouse/pointer) and keyboard/gamepad.
   void _onHighlightModeChanged(FocusHighlightMode mode) {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    // The char caret (incl. the popup's JS ring) is a keyboard/gamepad
+    // affordance. When the user picks up the mouse, focus visuals should vanish
+    // ("用鼠标的时候焦点应消失"), so leave the caret on whichever surface holds
+    // it. _exitCaret repaints; otherwise just repaint the inset ring.
+    if (mode == FocusHighlightMode.touch && _caretActive) {
+      _exitCaret();
+      return;
+    }
+    setState(() {});
   }
 
   @override

@@ -18,6 +18,8 @@ import 'package:hibiki/src/pages/implementations/book_css_editor_page.dart';
 import 'package:hibiki/src/pages/implementations/illustrations_viewer_page.dart';
 import 'package:hibiki/src/profile/profile_repository.dart';
 import 'package:hibiki/src/profile/profile_view_model.dart';
+import 'package:hibiki/src/shortcuts/gamepad_service.dart'
+    show GamepadLongPressActions;
 import 'package:hibiki/utils.dart';
 
 class ReaderHibikiHistoryPage extends HistoryReaderPage {
@@ -584,61 +586,68 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     final double selectionInset = tokens.spacing.gap / 2;
     final double selectionPadding = tokens.spacing.gap / 4;
     final double selectionIconSize = tokens.spacing.gap * 1.75;
-    final Widget card = HibikiCard(
-      key: cardKey,
-      padding: EdgeInsets.zero,
-      margin: EdgeInsets.all(tokens.spacing.rowVertical),
-      selected: selected,
-      onTap: _selectionMode && selectionKey != null
-          ? () => _toggleSelection(selectionKey)
-          : onTap,
+    // Gamepad long-press (hold A) on the focused card invokes the same
+    // onLongPress as the mouse (book details / actions). In selection mode the
+    // long-press is disabled (tap toggles selection), so it's a pass-through.
+    final Widget card = GamepadLongPressActions(
       onLongPress: _selectionMode ? null : onLongPress,
-      child: AspectRatio(
-        aspectRatio: mediaSource.aspectRatio,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            child,
-            if (_selectionMode && selectionKey != null)
-              Positioned(
-                top: selectionInset,
-                left: selectionInset,
-                child: IgnorePointer(
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: selected
-                          ? selectionColor
-                          : tokens.surfaces.page.withValues(alpha: 0.7),
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color:
-                            selected ? selectionColor : tokens.surfaces.outline,
-                        width: 1.5,
+      child: HibikiCard(
+        key: cardKey,
+        padding: EdgeInsets.zero,
+        margin: EdgeInsets.all(tokens.spacing.rowVertical),
+        selected: selected,
+        onTap: _selectionMode && selectionKey != null
+            ? () => _toggleSelection(selectionKey)
+            : onTap,
+        onLongPress: _selectionMode ? null : onLongPress,
+        child: AspectRatio(
+          aspectRatio: mediaSource.aspectRatio,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              child,
+              if (_selectionMode && selectionKey != null)
+                Positioned(
+                  top: selectionInset,
+                  left: selectionInset,
+                  child: IgnorePointer(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? selectionColor
+                            : tokens.surfaces.page.withValues(alpha: 0.7),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: selected
+                              ? selectionColor
+                              : tokens.surfaces.outline,
+                          width: 1.5,
+                        ),
+                      ),
+                      padding: EdgeInsets.all(selectionPadding),
+                      child: Icon(
+                        Icons.check,
+                        size: selectionIconSize,
+                        color: selected
+                            ? theme.colorScheme.onPrimary
+                            : Colors.transparent,
                       ),
                     ),
-                    padding: EdgeInsets.all(selectionPadding),
-                    child: Icon(
-                      Icons.check,
-                      size: selectionIconSize,
-                      color: selected
-                          ? theme.colorScheme.onPrimary
-                          : Colors.transparent,
+                  ),
+                ),
+              if (selected)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: tokens.surfaces.primary.withValues(alpha: 0.12),
+                        borderRadius: tokens.radii.cardRadius,
+                      ),
                     ),
                   ),
                 ),
-              ),
-            if (selected)
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: tokens.surfaces.primary.withValues(alpha: 0.12),
-                      borderRadius: tokens.radii.cardRadius,
-                    ),
-                  ),
-                ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );
