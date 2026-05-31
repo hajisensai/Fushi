@@ -32,6 +32,7 @@ import 'package:hibiki/src/profile/profile_repository.dart';
 import 'package:hibiki/src/pages/implementations/popup_dictionary_page.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki/src/media/floating_dict_channel.dart';
+import 'package:hibiki/src/models/app_font_loader.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/src/models/dictionary_repository.dart';
 import 'package:hibiki/src/models/media_history_repository.dart';
@@ -532,9 +533,30 @@ class AppModel with ChangeNotifier {
   /// Blocks creator from processing initial media while player controller is not ready.
   bool blockCreatorInitialMedia = false;
 
+  /// The user's custom app-wide font family, or null to use the language
+  /// default. Resolved and registered with the Flutter engine by
+  /// [refreshAppFont]; see [AppFontLoader].
+  String? _appFontFamily;
+  String? get appFontFamily => _appFontFamily;
+
+  /// Loads the first enabled entry from the reader's `customFonts` list as the
+  /// app-wide UI font (registering the file with the Flutter engine via
+  /// [AppFontLoader]) and rebuilds the theme. Falls back to the language
+  /// default when none is usable. Safe to call repeatedly — a no-op when the
+  /// resolved family is unchanged.
+  Future<void> refreshAppFont() async {
+    final ReaderSettings settings = ReaderSettings(_database);
+    await settings.refreshFromDb();
+    final String? family =
+        await AppFontLoader.resolveAndLoad(settings.customFonts);
+    if (family == _appFontFamily) return;
+    _appFontFamily = family;
+    notifyListeners();
+  }
+
   /// Get the app-wide text style.
   TextStyle get textStyle => TextStyle(
-        fontFamily: targetLanguage.defaultFontFamily,
+        fontFamily: appFontFamily ?? targetLanguage.defaultFontFamily,
         fontFeatures: const [FontFeature('liga', 0)],
         locale: targetLanguage.locale,
         textBaseline: targetLanguage.textBaseline,
@@ -1092,6 +1114,11 @@ class AppModel with ChangeNotifier {
       MediaSource.setDatabase(_database);
       final readerSettings = ReaderSettings(_database);
       await readerSettings.loadFromPrefsSnapshot(prefsSnapshot);
+      // Register the user's custom app-wide font (first enabled entry) before
+      // first paint so the global theme uses it without a flash. Reuses the
+      // settings just loaded above to avoid a second prefs read.
+      _appFontFamily =
+          await AppFontLoader.resolveAndLoad(readerSettings.customFonts);
       ReaderHibikiSource.readerSettings = readerSettings;
 
       await loadShortcutRegistry(

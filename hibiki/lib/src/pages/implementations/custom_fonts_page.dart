@@ -429,6 +429,9 @@ class _CustomFontsPageState extends BasePageState {
 
   Future<void> _save() async {
     await _settings!.setCustomFonts(_fonts.map((e) => e.toMap()).toList());
+    // Re-resolve the app-wide UI font so changes here (add / remove / toggle /
+    // reorder) take effect across the whole app, not just the reader.
+    await appModel.refreshAppFont();
   }
 
   Directory get _fontsDir {
