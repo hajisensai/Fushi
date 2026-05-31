@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
+import 'package:hibiki/src/utils/misc/desktop_tts.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 
 /// Thin wrapper around the native Android TextToSpeech MethodChannel.
@@ -151,7 +152,11 @@ class TtsChannel {
 
   Future<String?> ttsToFile(String text, String outputPath,
       {String locale = 'ja-JP'}) async {
-    if (!_isSupported) return null;
+    if (!_isSupported) {
+      // No native TextToSpeech off Android: use the OS speech engine
+      // (macOS `say` / Windows SAPI). Returns null on Linux / failure.
+      return ttsToFileDesktop(text: text, outputPath: outputPath);
+    }
     try {
       final result = await _channel.invokeMethod('ttsToFile', {
         'text': text,
