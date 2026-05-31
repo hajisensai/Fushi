@@ -43,4 +43,46 @@ class HibikiFocusScroll {
 
     ensureVisible(context);
   }
+
+  /// 把 [context] 最近的可滚动祖先按 viewport 的 [signedFraction] 比例滚动一段。
+  ///
+  /// 这是手柄"独立滚动通道"的唯一实现：D-pad 走到列表边缘（无几何焦点目标）时
+  /// 接管滚动，与"焦点切换的 reveal 副作用"解耦。命中且仍能滚返回 true；
+  /// 无 Scrollable 祖先 / 已到边界 / [wantAxis] 与滚动轴不匹配时返回 false。
+  static bool scrollByViewportFraction(
+    BuildContext context,
+    AxisDirection? wantAxis,
+    double signedFraction,
+  ) {
+    if (!context.mounted) return false;
+    final ScrollableState? scrollable = Scrollable.maybeOf(context);
+    if (scrollable == null) return false;
+    final ScrollPosition position = scrollable.position;
+    if (wantAxis != null && axisDirectionToAxis(wantAxis) != position.axis) {
+      return false;
+    }
+    final double target =
+        (position.pixels + position.viewportDimension * signedFraction)
+            .clamp(position.minScrollExtent, position.maxScrollExtent);
+    if ((target - position.pixels).abs() < 0.5) return false;
+    position.animateTo(
+      target,
+      duration: const Duration(milliseconds: 120),
+      curve: Curves.easeOutCubic,
+    );
+    return true;
+  }
+
+  /// 方向 → viewport 比例正负号：down/right 为正（向后/下滚），up/left 为负。
+  static double signedFractionFor(
+      TraversalDirection direction, double fraction) {
+    switch (direction) {
+      case TraversalDirection.down:
+      case TraversalDirection.right:
+        return fraction;
+      case TraversalDirection.up:
+      case TraversalDirection.left:
+        return -fraction;
+    }
+  }
 }
