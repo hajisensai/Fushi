@@ -21,6 +21,7 @@ import 'package:hibiki/src/sync/dropbox_sync_backend.dart';
 import 'package:hibiki/src/sync/onedrive_sync_backend.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_error_messages.dart';
+import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/shortcuts/global_navigation.dart';
@@ -470,10 +471,12 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
               },
               // Universal gamepad/keyboard navigation: a visible focus ring for
               // observability, wrapping a global gamepad-B back/dismiss intent.
-              child: HibikiFocusRing(
-                child: wrapWithGlobalNavigation(
-                  navigatorKey: appModel.navigatorKey,
-                  child: child!,
+              child: HibikiFocusRoot(
+                child: HibikiFocusRing(
+                  child: wrapWithGlobalNavigation(
+                    navigatorKey: appModel.navigatorKey,
+                    child: child!,
+                  ),
                 ),
               ),
             ),

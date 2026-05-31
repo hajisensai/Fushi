@@ -1,0 +1,156 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
+
+class HibikiFocusTarget extends StatefulWidget {
+  const HibikiFocusTarget({
+    super.key,
+    required this.id,
+    required this.child,
+    this.focusNode,
+    this.enabled = true,
+    this.autofocus = false,
+  });
+
+  final HibikiFocusId id;
+  final Widget child;
+  final FocusNode? focusNode;
+  final bool enabled;
+  final bool autofocus;
+
+  @override
+  State<HibikiFocusTarget> createState() => _HibikiFocusTargetState();
+}
+
+class _HibikiFocusTargetState extends State<HibikiFocusTarget> {
+  late FocusNode _ownedNode;
+  late final Object _owner = Object();
+  HibikiFocusController? _controller;
+  FocusNode? _registeredNode;
+
+  FocusNode get _focusNode => widget.focusNode ?? _ownedNode;
+
+  @override
+  void initState() {
+    super.initState();
+    _ownedNode = FocusNode(debugLabel: widget.id.value);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _controller = HibikiFocusRoot.maybeControllerOf(context);
+    _register();
+  }
+
+  @override
+  void didUpdateWidget(HibikiFocusTarget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final bool identityChanged = oldWidget.id != widget.id ||
+        !identical(oldWidget.focusNode, widget.focusNode);
+    if (identityChanged) {
+      _unregister(oldWidget.id, _registeredNode ?? _focusNode);
+    }
+    _register();
+  }
+
+  @override
+  void dispose() {
+    _unregister(widget.id, _registeredNode ?? _focusNode);
+    _ownedNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Focus(
+      focusNode: _focusNode,
+      autofocus: widget.autofocus,
+      canRequestFocus: widget.enabled,
+      skipTraversal: !widget.enabled,
+      child: _HibikiFocusTargetAnchor(
+        onReady: (BuildContext targetContext) => _register(targetContext),
+        child: widget.child,
+      ),
+    );
+  }
+
+  void _register([BuildContext? targetContext]) {
+    final HibikiFocusController? controller = _controller;
+    if (controller == null) return;
+    _registeredNode = _focusNode;
+    controller.register(HibikiFocusTargetEntry(
+      id: widget.id,
+      focusNode: _focusNode,
+      context: targetContext ?? context,
+      enabled: widget.enabled,
+      owner: _owner,
+    ));
+  }
+
+  void _unregister(HibikiFocusId id, FocusNode node) {
+    _controller?.unregister(id, node, _owner);
+  }
+}
+
+class _HibikiFocusTargetAnchor extends StatefulWidget {
+  const _HibikiFocusTargetAnchor({
+    required this.onReady,
+    required this.child,
+  });
+
+  final ValueChanged<BuildContext> onReady;
+  final Widget child;
+
+  @override
+  State<_HibikiFocusTargetAnchor> createState() =>
+      _HibikiFocusTargetAnchorState();
+}
+
+class _HibikiFocusTargetAnchorState extends State<_HibikiFocusTargetAnchor> {
+  final GlobalKey _anchorKey = GlobalKey();
+  bool _scheduled = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _scheduleReady();
+  }
+
+  @override
+  void didUpdateWidget(_HibikiFocusTargetAnchor oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _scheduleReady();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    _scheduleReady();
+    return _HibikiFocusRenderAnchor(
+      key: _anchorKey,
+      child: widget.child,
+    );
+  }
+
+  void _scheduleReady() {
+    if (_scheduled) return;
+    _scheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scheduled = false;
+      if (!mounted) return;
+      final BuildContext? anchorContext = _anchorKey.currentContext;
+      if (anchorContext != null) {
+        widget.onReady(anchorContext);
+      }
+    });
+  }
+}
+
+class _HibikiFocusRenderAnchor extends SingleChildRenderObjectWidget {
+  const _HibikiFocusRenderAnchor({super.key, required super.child});
+
+  @override
+  RenderObject createRenderObject(BuildContext context) {
+    return RenderProxyBox();
+  }
+}
