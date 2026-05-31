@@ -9,6 +9,7 @@ import 'package:flutter/widgets.dart';
 // `GamepadButton` enum that would clash with Hibiki's.
 import 'package:gamepads/gamepads.dart' as gp;
 
+import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart';
 
 /// Intent dispatched for a physical gamepad button on platforms where Flutter
@@ -288,6 +289,12 @@ bool gamepadMoveFocusInDirection(
   BuildContext context,
   TraversalDirection direction,
 ) {
+  final HibikiFocusController? controller =
+      HibikiFocusRoot.maybeControllerOf(context);
+  if (controller != null) {
+    return controller.move(hibikiFocusDirectionFromTraversal(direction));
+  }
+
   final FocusNode? primary = FocusManager.instance.primaryFocus;
   // Bootstrap when nothing is usefully focused: null, a scope, a non-focusable
   // node, or a skip-traversal wrapper (e.g. a full-page key-event sink — moving

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
+import 'package:hibiki/src/focus/hibiki_focus_target.dart';
 import 'package:hibiki/src/shortcuts/gamepad_service.dart';
 
 void main() {
@@ -43,6 +45,48 @@ void main() {
 
     expect(nodes[0].hasPrimaryFocus, isTrue,
         reason: 'first directional press with nothing focused lands on n0');
+  });
+
+  testWidgets('uses HibikiFocusController when a focus root is available',
+      (WidgetTester tester) async {
+    final FocusNode raw = FocusNode(debugLabel: 'raw-unregistered');
+    final FocusNode target = FocusNode(debugLabel: 'registered-target');
+    addTearDown(raw.dispose);
+    addTearDown(target.dispose);
+
+    await tester.pumpWidget(MaterialApp(
+      home: HibikiFocusRoot(
+        child: Column(
+          children: <Widget>[
+            Focus(
+              focusNode: raw,
+              child: const SizedBox(width: 80, height: 60),
+            ),
+            HibikiFocusTarget(
+              id: const HibikiFocusId('registered-target'),
+              focusNode: target,
+              child: const SizedBox(width: 80, height: 60),
+            ),
+          ],
+        ),
+      ),
+    ));
+    await tester.pump();
+
+    final BuildContext context = tester.element(find.byType(Column));
+    final bool moved = gamepadMoveFocusInDirection(
+      context,
+      TraversalDirection.down,
+    );
+    await tester.pump();
+
+    expect(moved, isTrue);
+    expect(raw.hasPrimaryFocus, isFalse);
+    expect(target.hasPrimaryFocus, isTrue);
+    expect(
+      HibikiFocusRoot.controllerOf(context).activeId,
+      const HibikiFocusId('registered-target'),
+    );
   });
 
   testWidgets('moves geometrically down then up between stacked controls',
