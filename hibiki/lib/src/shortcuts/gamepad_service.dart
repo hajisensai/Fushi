@@ -326,7 +326,8 @@ bool gamepadMoveFocusInDirection(
     // fallback — i.e. it simply stops at the edge.
     final BuildContext? focusContext =
         controller.activeContext ?? FocusManager.instance.primaryFocus?.context;
-    if (focusContext != null &&
+    if (controller.activeIsOnlyFocusableInNearestScrollable &&
+        focusContext != null &&
         HibikiFocusScroll.scrollByViewportFraction(
           focusContext,
           axisDirectionFromTraversal(direction),

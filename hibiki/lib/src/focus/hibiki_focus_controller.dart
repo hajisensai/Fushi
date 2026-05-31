@@ -80,6 +80,23 @@ class HibikiFocusController extends ChangeNotifier {
 
   HibikiFocusId? get activeId => _activeId;
 
+  bool get activeIsOnlyFocusableInNearestScrollable {
+    final HibikiFocusTargetEntry? active = _currentEntry();
+    if (active == null || !active.context.mounted) return false;
+    final ScrollableState? activeScrollable = Scrollable.maybeOf(
+      active.context,
+    );
+    if (activeScrollable == null) return false;
+    for (final HibikiFocusTargetEntry entry in _entries.values) {
+      if (identical(entry, active) || !_entryCanFocus(entry)) continue;
+      if (!entry.context.mounted) continue;
+      if (identical(Scrollable.maybeOf(entry.context), activeScrollable)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   void attach(BuildContext rootContext) {
     _rootContext = rootContext;
     if (!_attached) {
