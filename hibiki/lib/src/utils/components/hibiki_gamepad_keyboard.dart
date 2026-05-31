@@ -183,3 +183,56 @@ class _KbKeyState extends State<_KbKey> {
     return Expanded(flex: widget.flex, child: focusable);
   }
 }
+
+/// Inserts [ch] at the controller's cursor (replacing any selection), leaving
+/// the cursor after it. Used by [showGamepadKeyboard].
+void gamepadKeyboardInsert(TextEditingController controller, String ch) {
+  final TextSelection sel = controller.selection;
+  final int start = sel.isValid ? sel.start : controller.text.length;
+  final int end = sel.isValid ? sel.end : controller.text.length;
+  final String next = controller.text.replaceRange(start, end, ch);
+  controller.value = TextEditingValue(
+    text: next,
+    selection: TextSelection.collapsed(offset: start + ch.length),
+  );
+}
+
+/// Deletes the selection, or the single character before the cursor.
+void gamepadKeyboardBackspace(TextEditingController controller) {
+  final TextSelection sel = controller.selection;
+  if (sel.isValid && sel.start != sel.end) {
+    controller.value = TextEditingValue(
+      text: controller.text.replaceRange(sel.start, sel.end, ''),
+      selection: TextSelection.collapsed(offset: sel.start),
+    );
+    return;
+  }
+  final int pos = sel.isValid ? sel.start : controller.text.length;
+  if (pos <= 0) return;
+  controller.value = TextEditingValue(
+    text: controller.text.replaceRange(pos - 1, pos, ''),
+    selection: TextSelection.collapsed(offset: pos - 1),
+  );
+}
+
+/// Shows [HibikiGamepadKeyboard] in a bottom sheet wired to [controller] — text
+/// entry for desktop/console where no system IME exists. Characters insert at
+/// the cursor, ⌫ deletes, ✓ dismisses.
+Future<void> showGamepadKeyboard(
+  BuildContext context,
+  TextEditingController controller,
+) {
+  return showModalBottomSheet<void>(
+    context: context,
+    builder: (BuildContext ctx) => SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: HibikiGamepadKeyboard(
+          onChar: (String ch) => gamepadKeyboardInsert(controller, ch),
+          onBackspace: () => gamepadKeyboardBackspace(controller),
+          onSubmit: () => Navigator.of(ctx).maybePop(),
+        ),
+      ),
+    ),
+  );
+}

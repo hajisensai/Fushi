@@ -113,4 +113,55 @@ void main() {
       expect(submits, 1);
     });
   });
+
+  group('gamepad keyboard text wiring', () {
+    test('insert adds a char at the cursor and advances it', () {
+      final TextEditingController c = TextEditingController(text: 'ac');
+      addTearDown(c.dispose);
+      c.selection = const TextSelection.collapsed(offset: 1);
+      gamepadKeyboardInsert(c, 'b');
+      expect(c.text, 'abc');
+      expect(c.selection.baseOffset, 2);
+    });
+
+    test('insert with no valid selection appends at the end', () {
+      final TextEditingController c = TextEditingController(text: 'ab');
+      addTearDown(c.dispose);
+      gamepadKeyboardInsert(c, 'c');
+      expect(c.text, 'abc');
+    });
+
+    test('insert replaces the current selection', () {
+      final TextEditingController c = TextEditingController(text: 'axc');
+      addTearDown(c.dispose);
+      c.selection = const TextSelection(baseOffset: 1, extentOffset: 2);
+      gamepadKeyboardInsert(c, 'b');
+      expect(c.text, 'abc');
+    });
+
+    test('backspace deletes the char before the cursor', () {
+      final TextEditingController c = TextEditingController(text: 'abc');
+      addTearDown(c.dispose);
+      c.selection = const TextSelection.collapsed(offset: 3);
+      gamepadKeyboardBackspace(c);
+      expect(c.text, 'ab');
+      expect(c.selection.baseOffset, 2);
+    });
+
+    test('backspace at the start is a no-op', () {
+      final TextEditingController c = TextEditingController(text: 'abc');
+      addTearDown(c.dispose);
+      c.selection = const TextSelection.collapsed(offset: 0);
+      gamepadKeyboardBackspace(c);
+      expect(c.text, 'abc');
+    });
+
+    test('backspace deletes the current selection', () {
+      final TextEditingController c = TextEditingController(text: 'abXYc');
+      addTearDown(c.dispose);
+      c.selection = const TextSelection(baseOffset: 2, extentOffset: 4);
+      gamepadKeyboardBackspace(c);
+      expect(c.text, 'abc');
+    });
+  });
 }
