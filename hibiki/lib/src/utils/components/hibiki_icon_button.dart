@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
+import 'package:hibiki/src/focus/hibiki_focus_target.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 
 /// A button that can be set as busy. When busy, the icon is faded out when its
@@ -24,6 +26,7 @@ class HibikiIconButton extends StatefulWidget {
     this.constraints,
     this.padding,
     this.isWideTapArea = false,
+    this.focusId,
     super.key,
   });
 
@@ -73,6 +76,7 @@ class HibikiIconButton extends StatefulWidget {
 
   /// If this button needs to act like an [IconButton] with a wide area.
   final bool isWideTapArea;
+  final HibikiFocusId? focusId;
 
   @override
   State<StatefulWidget> createState() => _HibikiIconButtonState();
@@ -138,7 +142,7 @@ class _HibikiIconButtonState extends State<HibikiIconButton> {
   Widget build(BuildContext context) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     if (widget.isWideTapArea) {
-      return Semantics(
+      final Semantics button = Semantics(
         label: widget.tooltip,
         button: true,
         child: IconButton(
@@ -154,9 +158,10 @@ class _HibikiIconButtonState extends State<HibikiIconButton> {
           onPressed: enabled ? _handleTap : null,
         ),
       );
+      return _focusable(context, button);
     }
 
-    return Semantics(
+    final Semantics button = Semantics(
       label: widget.tooltip,
       button: true,
       child: InkWell(
@@ -175,6 +180,27 @@ class _HibikiIconButtonState extends State<HibikiIconButton> {
             ),
           ),
         ),
+      ),
+    );
+    return _focusable(context, button);
+  }
+
+  Widget _focusable(BuildContext context, Widget button) {
+    if (widget.focusId == null) return button;
+    if (HibikiFocusRoot.maybeControllerOf(context) == null) return button;
+    return Actions(
+      actions: <Type, Action<Intent>>{
+        ActivateIntent: CallbackAction<ActivateIntent>(
+          onInvoke: (_) async {
+            if (enabled) await _handleTap();
+            return null;
+          },
+        ),
+      },
+      child: HibikiFocusTarget(
+        id: widget.focusId!,
+        enabled: enabled,
+        child: button,
       ),
     );
   }

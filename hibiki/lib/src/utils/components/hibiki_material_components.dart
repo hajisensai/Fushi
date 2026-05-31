@@ -400,6 +400,7 @@ class HibikiSelectableChip extends StatelessWidget {
     this.avatar,
     this.leadingIcon,
     this.tooltip,
+    this.focusId,
   });
 
   final String label;
@@ -408,6 +409,7 @@ class HibikiSelectableChip extends StatelessWidget {
   final Widget? avatar;
   final IconData? leadingIcon;
   final String? tooltip;
+  final HibikiFocusId? focusId;
 
   @override
   Widget build(BuildContext context) {
@@ -437,8 +439,25 @@ class HibikiSelectableChip extends StatelessWidget {
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
       onSelected: onSelected,
     );
-    if (tooltip == null) return chip;
-    return Tooltip(message: tooltip!, child: chip);
+    final Widget withTooltip =
+        tooltip == null ? chip : Tooltip(message: tooltip!, child: chip);
+    if (focusId == null) return withTooltip;
+    if (HibikiFocusRoot.maybeControllerOf(context) == null) return withTooltip;
+    return Actions(
+      actions: <Type, Action<Intent>>{
+        ActivateIntent: CallbackAction<ActivateIntent>(
+          onInvoke: (_) {
+            onSelected?.call(!selected);
+            return null;
+          },
+        ),
+      },
+      child: HibikiFocusTarget(
+        id: focusId!,
+        enabled: onSelected != null,
+        child: withTooltip,
+      ),
+    );
   }
 }
 
@@ -448,17 +467,19 @@ class HibikiActionChip extends StatelessWidget {
     required this.icon,
     required this.onPressed,
     super.key,
+    this.focusId,
   });
 
   final String label;
   final IconData icon;
   final VoidCallback onPressed;
+  final HibikiFocusId? focusId;
 
   @override
   Widget build(BuildContext context) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
-    return OutlinedButton.icon(
+    final OutlinedButton button = OutlinedButton.icon(
       onPressed: onPressed,
       style: OutlinedButton.styleFrom(
         foregroundColor: colors.primary,
@@ -473,6 +494,22 @@ class HibikiActionChip extends StatelessWidget {
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: tokens.type.controlLabel,
+      ),
+    );
+    if (focusId == null) return button;
+    if (HibikiFocusRoot.maybeControllerOf(context) == null) return button;
+    return Actions(
+      actions: <Type, Action<Intent>>{
+        ActivateIntent: CallbackAction<ActivateIntent>(
+          onInvoke: (_) {
+            onPressed();
+            return null;
+          },
+        ),
+      },
+      child: HibikiFocusTarget(
+        id: focusId!,
+        child: button,
       ),
     );
   }

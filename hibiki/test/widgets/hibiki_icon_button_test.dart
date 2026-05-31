@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/utils/components/hibiki_icon_button.dart';
 
 import 'widget_test_helpers.dart';
@@ -93,6 +94,36 @@ void main() {
       ));
 
       expect(find.byType(IconButton), findsOneWidget);
+    });
+
+    testWidgets('registers with the focus root and activates on Enter',
+        (tester) async {
+      bool tapped = false;
+      await tester.pumpWidget(buildTestApp(
+        HibikiFocusRoot(
+          child: HibikiIconButton(
+            focusId: const HibikiFocusId('play-button'),
+            icon: Icons.play_arrow,
+            tooltip: 'Play',
+            onTap: () => tapped = true,
+          ),
+        ),
+      ));
+      await tester.pump();
+
+      final HibikiFocusController root = HibikiFocusRoot.controllerOf(
+        tester.element(find.byIcon(Icons.play_arrow)),
+      );
+      expect(root.requestById(const HibikiFocusId('play-button')), isTrue);
+      await tester.pump();
+      expect(root.activeId, const HibikiFocusId('play-button'));
+
+      Actions.maybeInvoke<ActivateIntent>(
+        root.activeContext!,
+        const ActivateIntent(),
+      );
+      await tester.pumpAndSettle();
+      expect(tapped, isTrue);
     });
   });
 }

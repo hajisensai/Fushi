@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 
 void main() {
@@ -64,6 +65,35 @@ void main() {
     expect(selected, isFalse);
   });
 
+  testWidgets('HibikiSelectableChip registers with the focus root',
+      (WidgetTester tester) async {
+    bool selected = false;
+    await tester.pumpWidget(buildSubject(
+      HibikiFocusRoot(
+        child: HibikiSelectableChip(
+          focusId: const HibikiFocusId('theme-chip'),
+          label: 'Theme',
+          selected: selected,
+          onSelected: (bool value) => selected = value,
+        ),
+      ),
+    ));
+    await tester.pump();
+
+    final HibikiFocusController root = HibikiFocusRoot.controllerOf(
+      tester.element(find.byType(ChoiceChip)),
+    );
+    expect(root.requestById(const HibikiFocusId('theme-chip')), isTrue);
+    await tester.pump();
+    expect(root.activeId, const HibikiFocusId('theme-chip'));
+
+    Actions.maybeInvoke<ActivateIntent>(
+      root.activeContext!,
+      const ActivateIntent(),
+    );
+    expect(selected, isTrue);
+  });
+
   testWidgets('HibikiActionChip uses shared outline action styling',
       (WidgetTester tester) async {
     bool tapped = false;
@@ -86,6 +116,34 @@ void main() {
     expect(find.byIcon(Icons.open_in_new), findsOneWidget);
 
     await tester.tap(find.byType(HibikiActionChip));
+    expect(tapped, isTrue);
+  });
+
+  testWidgets('HibikiActionChip registers with the focus root',
+      (WidgetTester tester) async {
+    bool tapped = false;
+    await tester.pumpWidget(buildSubject(
+      HibikiFocusRoot(
+        child: HibikiActionChip(
+          focusId: const HibikiFocusId('open-chip'),
+          label: 'Open',
+          icon: Icons.open_in_new,
+          onPressed: () => tapped = true,
+        ),
+      ),
+    ));
+    await tester.pump();
+
+    final HibikiFocusController root = HibikiFocusRoot.controllerOf(
+      tester.element(find.byType(OutlinedButton)),
+    );
+    expect(root.requestById(const HibikiFocusId('open-chip')), isTrue);
+    await tester.pump();
+
+    Actions.maybeInvoke<ActivateIntent>(
+      root.activeContext!,
+      const ActivateIntent(),
+    );
     expect(tapped, isTrue);
   });
 
