@@ -816,8 +816,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
           trailing: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              adaptiveSlider(
-                context: context,
+              gamepadSeekableSlider(
                 value: current.clamp(0.25, 3.0),
                 min: 0.25,
                 max: 3,
