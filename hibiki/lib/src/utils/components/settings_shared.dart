@@ -1,6 +1,8 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
+import 'package:hibiki/src/focus/hibiki_focus_target.dart';
 import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart';
 import 'package:hibiki/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
@@ -224,19 +226,36 @@ class AdaptiveSettingsRow extends StatelessWidget {
     );
 
     if (onTap == null) return content;
-    if (cupertino) {
-      // Cupertino has no InkWell; HibikiFocusable keeps the row reachable by
-      // directional focus navigation (gamepad/keyboard) instead of a bare,
-      // unfocusable GestureDetector.
-      return HibikiFocusable(
-        onTap: onTap,
-        borderRadius: BorderRadius.zero,
-        child: content,
-      );
+    final bool hasFocusRoot =
+        HibikiFocusRoot.maybeControllerOf(context) != null;
+    if (!hasFocusRoot) {
+      return cupertino
+          // Cupertino has no InkWell; HibikiFocusable keeps the row reachable by
+          // directional focus navigation (gamepad/keyboard) instead of a bare,
+          // unfocusable GestureDetector.
+          ? HibikiFocusable(
+              onTap: onTap,
+              borderRadius: BorderRadius.zero,
+              child: content,
+            )
+          : InkWell(
+              onTap: onTap,
+              child: content,
+            );
     }
-    return InkWell(
-      onTap: onTap,
-      child: content,
+    final Widget tappable = cupertino
+        ? GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onTap,
+            child: content,
+          )
+        : InkWell(
+            onTap: onTap,
+            child: content,
+          );
+    return _SettingsRowFocusTarget(
+      onTap: onTap!,
+      child: tappable,
     );
   }
 
@@ -283,6 +302,44 @@ class AdaptiveSettingsRow extends StatelessWidget {
             Align(alignment: Alignment.centerLeft, child: trailing!),
           ],
         ],
+      ),
+    );
+  }
+}
+
+class _SettingsRowFocusTarget extends StatefulWidget {
+  const _SettingsRowFocusTarget({
+    required this.onTap,
+    required this.child,
+  });
+
+  final VoidCallback onTap;
+  final Widget child;
+
+  @override
+  State<_SettingsRowFocusTarget> createState() =>
+      _SettingsRowFocusTargetState();
+}
+
+class _SettingsRowFocusTargetState extends State<_SettingsRowFocusTarget> {
+  late final HibikiFocusId _focusId = HibikiFocusId(
+    'settings-row-${identityHashCode(this)}',
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    return Actions(
+      actions: <Type, Action<Intent>>{
+        ActivateIntent: CallbackAction<ActivateIntent>(
+          onInvoke: (_) {
+            widget.onTap();
+            return null;
+          },
+        ),
+      },
+      child: HibikiFocusTarget(
+        id: _focusId,
+        child: widget.child,
       ),
     );
   }

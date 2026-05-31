@@ -284,6 +284,12 @@ class GamepadService {
 ///    directly beneath it) fall back to reading-order traversal so the user can
 ///    still progress: down/right = next, up/left = previous.
 ///
+///
+/// With a Hibiki focus root, controller failure only falls through to
+/// directional geometry. Reading-order fallback stays disabled there so a
+/// shelf edge can escape to the side rail or top bar without sliding sideways
+/// through shelf items.
+///
 /// Returns whether focus actually changed.
 bool gamepadMoveFocusInDirection(
   BuildContext context,
@@ -292,9 +298,28 @@ bool gamepadMoveFocusInDirection(
   final HibikiFocusController? controller =
       HibikiFocusRoot.maybeControllerOf(context);
   if (controller != null) {
-    return controller.move(hibikiFocusDirectionFromTraversal(direction));
+    if (controller.move(hibikiFocusDirectionFromTraversal(direction))) {
+      return true;
+    }
+    return _movePrimaryFocusInDirection(
+      context,
+      direction,
+      allowReadingOrderFallback: false,
+    );
   }
 
+  return _movePrimaryFocusInDirection(
+    context,
+    direction,
+    allowReadingOrderFallback: true,
+  );
+}
+
+bool _movePrimaryFocusInDirection(
+  BuildContext context,
+  TraversalDirection direction, {
+  required bool allowReadingOrderFallback,
+}) {
   final FocusNode? primary = FocusManager.instance.primaryFocus;
   // Bootstrap when nothing is usefully focused: null, a scope, a non-focusable
   // node, or a skip-traversal wrapper (e.g. a full-page key-event sink — moving
@@ -304,9 +329,10 @@ bool gamepadMoveFocusInDirection(
       primary is FocusScopeNode ||
       !primary.canRequestFocus ||
       primary.skipTraversal) {
-    return FocusScope.of(context).nextFocus();
+    return allowReadingOrderFallback && FocusScope.of(context).nextFocus();
   }
   if (primary.focusInDirection(direction)) return true;
+  if (!allowReadingOrderFallback) return false;
   switch (direction) {
     case TraversalDirection.down:
     case TraversalDirection.right:

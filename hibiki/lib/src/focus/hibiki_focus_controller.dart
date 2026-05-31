@@ -127,7 +127,7 @@ class HibikiFocusController extends ChangeNotifier {
 
   bool requestById(HibikiFocusId id) {
     final HibikiFocusTargetEntry? entry = _entries[id];
-    if (entry == null || !entry.canFocus) return false;
+    if (entry == null || !_entryCanFocus(entry)) return false;
     entry.focusNode.requestFocus();
     _activeId = id;
     _scheduleReveal(entry);
@@ -173,7 +173,7 @@ class HibikiFocusController extends ChangeNotifier {
     }
 
     final HibikiFocusTargetEntry? active = _currentEntry();
-    if (active != null && active.canFocus) {
+    if (active != null && _entryCanFocus(active)) {
       active.focusNode.requestFocus();
       _activeId = active.id;
       _scheduleReveal(active);
@@ -214,18 +214,20 @@ class HibikiFocusController extends ChangeNotifier {
   HibikiFocusTargetEntry? _currentEntry() {
     final FocusNode? primary = FocusManager.instance.primaryFocus;
     for (final HibikiFocusTargetEntry entry in _entries.values) {
-      if (identical(entry.focusNode, primary)) {
+      if (_entryCanFocus(entry) && identical(entry.focusNode, primary)) {
         _activeId = entry.id;
         return entry;
       }
     }
     if (_activeId == null) return null;
-    return _entries[_activeId!];
+    final HibikiFocusTargetEntry? active = _entries[_activeId!];
+    if (active == null || !_entryCanFocus(active)) return null;
+    return active;
   }
 
   List<HibikiFocusTargetEntry> _focusableEntries() {
     return _entries.values
-        .where((HibikiFocusTargetEntry entry) => entry.canFocus)
+        .where((HibikiFocusTargetEntry entry) => _entryCanFocus(entry))
         .toList(growable: false);
   }
 
@@ -235,9 +237,22 @@ class HibikiFocusController extends ChangeNotifier {
     if (primary is FocusScopeNode) return false;
     if (primary.skipTraversal) return false;
     for (final HibikiFocusTargetEntry entry in _entries.values) {
-      if (identical(entry.focusNode, primary)) return entry.canFocus;
+      if (identical(entry.focusNode, primary)) return _entryCanFocus(entry);
     }
-    return primary.context != null && primary.canRequestFocus;
+    final BuildContext? context = primary.context;
+    return context != null &&
+        primary.canRequestFocus &&
+        _isCurrentRoute(context);
+  }
+
+  bool _entryCanFocus(HibikiFocusTargetEntry entry) {
+    return entry.canFocus && _isCurrentRoute(entry.context);
+  }
+
+  bool _isCurrentRoute(BuildContext context) {
+    if (!context.mounted) return false;
+    final ModalRoute<dynamic>? route = ModalRoute.of(context);
+    return route == null || route.isCurrent;
   }
 
   _GeometricMoveResult _geometricTarget(
@@ -359,7 +374,7 @@ class HibikiFocusController extends ChangeNotifier {
     final FocusNode? primary = FocusManager.instance.primaryFocus;
     for (final HibikiFocusTargetEntry entry in _entries.values) {
       if (identical(entry.focusNode, primary)) {
-        if (!entry.canFocus) {
+        if (!_entryCanFocus(entry)) {
           scheduleRepair();
           return;
         }

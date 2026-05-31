@@ -254,4 +254,178 @@ void main() {
           'sideways through reading order',
     );
   });
+
+  testWidgets('gamepad escapes a focus root edge to sibling controls',
+      (WidgetTester tester) async {
+    final FocusNode rail = FocusNode(debugLabel: 'rail');
+    addTearDown(rail.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Row(
+            children: <Widget>[
+              Focus(
+                focusNode: rail,
+                child: const SizedBox(width: 96, height: 320),
+              ),
+              Expanded(
+                child: HibikiFocusRoot(
+                  child: GridView.count(
+                    crossAxisCount: 2,
+                    childAspectRatio: 1,
+                    children: <Widget>[
+                      for (final String id in <String>[
+                        'top-left',
+                        'top-right',
+                        'bottom-left',
+                        'bottom-right',
+                      ])
+                        HibikiFocusTarget(
+                          id: HibikiFocusId(id),
+                          child: TextButton(
+                            onPressed: () {},
+                            child: Text(id),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final BuildContext context = tester.element(find.byType(GridView));
+    final HibikiFocusController controller =
+        HibikiFocusRoot.controllerOf(context);
+
+    expect(controller.requestById(const HibikiFocusId('top-left')), isTrue);
+    await tester.pump();
+
+    final bool moved = gamepadMoveFocusInDirection(
+      context,
+      TraversalDirection.left,
+    );
+    await tester.pump();
+
+    expect(moved, isTrue);
+    expect(rail.hasPrimaryFocus, isTrue,
+        reason: 'left from the shelf edge must leave the book grid and focus '
+            'the side navigation layer');
+  });
+
+  testWidgets('gamepad escapes a focus root top edge to top controls',
+      (WidgetTester tester) async {
+    final FocusNode top = FocusNode(debugLabel: 'top');
+    addTearDown(top.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Column(
+            children: <Widget>[
+              Focus(
+                focusNode: top,
+                child: const SizedBox(width: 320, height: 72),
+              ),
+              Expanded(
+                child: HibikiFocusRoot(
+                  child: GridView.count(
+                    crossAxisCount: 2,
+                    childAspectRatio: 1,
+                    children: <Widget>[
+                      for (final String id in <String>[
+                        'top-left',
+                        'top-right',
+                        'bottom-left',
+                        'bottom-right',
+                      ])
+                        HibikiFocusTarget(
+                          id: HibikiFocusId(id),
+                          child: TextButton(
+                            onPressed: () {},
+                            child: Text(id),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final BuildContext context = tester.element(find.byType(GridView));
+    final HibikiFocusController controller =
+        HibikiFocusRoot.controllerOf(context);
+
+    expect(controller.requestById(const HibikiFocusId('top-left')), isTrue);
+    await tester.pump();
+
+    final bool moved = gamepadMoveFocusInDirection(
+      context,
+      TraversalDirection.up,
+    );
+    await tester.pump();
+
+    expect(moved, isTrue);
+    expect(top.hasPrimaryFocus, isTrue,
+        reason: 'up from the shelf top edge must leave the book grid and focus '
+            'the top options layer');
+  });
+
+  testWidgets('gamepad does not reading-order slide at a focus root edge',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HibikiFocusRoot(
+          child: GridView.count(
+            crossAxisCount: 2,
+            childAspectRatio: 1,
+            children: <Widget>[
+              for (final String id in <String>[
+                'top-left',
+                'top-right',
+                'bottom-left',
+                'bottom-right',
+              ])
+                HibikiFocusTarget(
+                  id: HibikiFocusId(id),
+                  child: TextButton(
+                    onPressed: () {},
+                    child: Text(id),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final BuildContext context = tester.element(find.byType(GridView));
+    final HibikiFocusController controller =
+        HibikiFocusRoot.controllerOf(context);
+
+    expect(controller.requestById(const HibikiFocusId('bottom-right')), isTrue);
+    await tester.pump();
+
+    final bool moved = gamepadMoveFocusInDirection(
+      context,
+      TraversalDirection.down,
+    );
+    await tester.pump();
+
+    expect(moved, isFalse);
+    expect(controller.activeId, const HibikiFocusId('bottom-right'),
+        reason: 'down at the bottom edge must not turn into a sideways '
+            'reading-order move inside the shelf');
+  });
 }

@@ -116,4 +116,125 @@ void main() {
     expect(FocusManager.instance.primaryFocus, isNotNull);
     expect(second.hasPrimaryFocus, isTrue);
   });
+
+  testWidgets('pushed routes own directional focus targets',
+      (WidgetTester tester) async {
+    final FocusNode outer = FocusNode(debugLabel: 'outer');
+    final FocusNode inner = FocusNode(debugLabel: 'inner');
+    addTearDown(outer.dispose);
+    addTearDown(inner.dispose);
+
+    late HibikiFocusController controller;
+    await tester.pumpWidget(
+      MaterialApp(
+        builder: (BuildContext context, Widget? child) => HibikiFocusRoot(
+          child: child!,
+        ),
+        home: Scaffold(
+          body: Builder(
+            builder: (BuildContext context) {
+              controller = HibikiFocusRoot.controllerOf(context);
+              return Column(
+                children: <Widget>[
+                  HibikiFocusTarget(
+                    id: const HibikiFocusId('outer'),
+                    focusNode: outer,
+                    child: TextButton(
+                      onPressed: () => Navigator.of(context).push<void>(
+                        MaterialPageRoute<void>(
+                          builder: (BuildContext context) => Scaffold(
+                            body: HibikiFocusTarget(
+                              id: const HibikiFocusId('inner'),
+                              focusNode: inner,
+                              child: const SizedBox(
+                                width: 120,
+                                height: 80,
+                                child: Center(child: Text('inner target')),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      child: const Text('outer target'),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    outer.requestFocus();
+    await tester.pump();
+    expect(controller.activeId, const HibikiFocusId('outer'));
+
+    await tester.tap(find.text('outer target'));
+    await tester.pumpAndSettle();
+    await tester.pump();
+
+    expect(controller.activeId, const HibikiFocusId('inner'));
+    expect(inner.hasPrimaryFocus, isTrue);
+    expect(outer.hasPrimaryFocus, isFalse);
+  });
+
+  testWidgets('modal routes own directional focus targets',
+      (WidgetTester tester) async {
+    final FocusNode outer = FocusNode(debugLabel: 'outer');
+    final FocusNode dialog = FocusNode(debugLabel: 'dialog');
+    addTearDown(outer.dispose);
+    addTearDown(dialog.dispose);
+
+    late HibikiFocusController controller;
+    await tester.pumpWidget(
+      MaterialApp(
+        builder: (BuildContext context, Widget? child) => HibikiFocusRoot(
+          child: child!,
+        ),
+        home: Scaffold(
+          body: Builder(
+            builder: (BuildContext context) {
+              controller = HibikiFocusRoot.controllerOf(context);
+              return HibikiFocusTarget(
+                id: const HibikiFocusId('outer'),
+                focusNode: outer,
+                child: TextButton(
+                  onPressed: () => showDialog<void>(
+                    context: context,
+                    builder: (BuildContext context) => Dialog(
+                      child: HibikiFocusTarget(
+                        id: const HibikiFocusId('dialog'),
+                        focusNode: dialog,
+                        child: const SizedBox(
+                          width: 120,
+                          height: 80,
+                          child: Center(child: Text('dialog target')),
+                        ),
+                      ),
+                    ),
+                  ),
+                  child: const Text('outer target'),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    outer.requestFocus();
+    await tester.pump();
+    expect(controller.activeId, const HibikiFocusId('outer'));
+
+    await tester.tap(find.text('outer target'));
+    await tester.pumpAndSettle();
+    await tester.pump();
+
+    expect(controller.activeId, const HibikiFocusId('dialog'));
+    expect(dialog.hasPrimaryFocus, isTrue);
+    expect(outer.hasPrimaryFocus, isFalse);
+  });
 }

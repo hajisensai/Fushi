@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/utils/components/hibiki_focus_ring.dart';
 import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 import 'package:hibiki/src/utils/components/settings_shared.dart';
@@ -313,6 +314,44 @@ void main() {
     expect(value, 11);
 
     handle.dispose();
+  });
+
+  testWidgets('Material settings rows register with Hibiki focus root',
+      (WidgetTester tester) async {
+    int taps = 0;
+    await tester.pumpWidget(
+      _app(
+        HibikiFocusRoot(
+          child: Column(
+            children: <Widget>[
+              AdaptiveSettingsNavigationRow(
+                title: 'Outer',
+                onTap: () => taps += 1,
+              ),
+              AdaptiveSettingsNavigationRow(
+                title: 'Inner',
+                onTap: () => taps += 1,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final BuildContext context = tester.element(find.text('Outer'));
+    final HibikiFocusController controller =
+        HibikiFocusRoot.controllerOf(context);
+
+    expect(controller.move(HibikiFocusDirection.down), isTrue);
+    await tester.pump();
+    expect(controller.activeContext, isNotNull);
+
+    Actions.maybeInvoke<ActivateIntent>(
+      controller.activeContext!,
+      const ActivateIntent(),
+    );
+    expect(taps, 1);
   });
 
   testWidgets(
