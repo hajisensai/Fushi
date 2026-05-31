@@ -289,13 +289,14 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
       spacing: tokens.spacing.gap,
       runSpacing: tokens.spacing.gap,
       children: <Widget>[
-        _ColorSwatch(
+        HibikiColorSwatch(
           color: systemColor,
+          size: _swatchSize,
+          shape: HibikiColorSwatchShape.dot,
           selected: appModel.appThemeKey == 'system-theme',
           overlay: Icon(
             Icons.auto_awesome_outlined,
             size: 18,
-            color: _onSwatch(systemColor).withValues(alpha: 0.72),
           ),
           onTap: () async {
             await appModel.setAppThemeKey('system-theme');
@@ -304,8 +305,10 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
         ),
         ...AppModel.themePresets.entries.map(
           (MapEntry<String, ({Color seed, Brightness brightness})> entry) {
-            return _ColorSwatch(
+            return HibikiColorSwatch(
               color: entry.value.seed,
+              size: _swatchSize,
+              shape: HibikiColorSwatchShape.dot,
               selected: appModel.appThemeKey == entry.key,
               onTap: () async {
                 await appModel.setAppThemeKey(entry.key);
@@ -314,13 +317,14 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
             );
           },
         ),
-        _ColorSwatch(
+        HibikiColorSwatch(
           color: appModel.customThemeSeed,
+          size: _swatchSize,
+          shape: HibikiColorSwatchShape.dot,
           selected: appModel.appThemeKey == 'custom-theme',
           overlay: Icon(
             Icons.palette_outlined,
             size: 18,
-            color: _onSwatch(appModel.customThemeSeed).withValues(alpha: 0.72),
           ),
           onTap: () async {
             await pushSettingsPage(
@@ -369,49 +373,3 @@ Widget buildBrightnessSelector(SettingsContext settingsContext) {
 // uses `customFontsTitlePlaceholder` (settings_schema.dart). Keeping both a
 // static placeholder and an unused dynamic title is a maintenance trap, so the
 // disconnected dynamic helper is deleted.
-
-Color _onSwatch(Color color) {
-  return ThemeData.estimateBrightnessForColor(color) == Brightness.dark
-      ? Colors.white
-      : Colors.black;
-}
-
-class _ColorSwatch extends StatelessWidget {
-  const _ColorSwatch({
-    required this.color,
-    required this.selected,
-    required this.onTap,
-    this.overlay,
-  });
-
-  final Color color;
-  final bool selected;
-  final VoidCallback onTap;
-  final Widget? overlay;
-
-  @override
-  Widget build(BuildContext context) {
-    return HibikiFocusable(
-      onTap: onTap,
-      borderRadius: const BorderRadius.all(Radius.circular(_swatchSize)),
-      child: Container(
-        width: _swatchSize,
-        height: _swatchSize,
-        decoration: BoxDecoration(
-          color: color,
-          shape: BoxShape.circle,
-          border: selected
-              ? Border.all(
-                  color: color,
-                  width: 3,
-                  strokeAlign: BorderSide.strokeAlignOutside,
-                )
-              : null,
-        ),
-        child: selected
-            ? Icon(Icons.check, color: _onSwatch(color), size: 20)
-            : overlay,
-      ),
-    );
-  }
-}

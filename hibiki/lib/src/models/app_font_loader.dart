@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/services.dart' show FontLoader;
 import 'package:hibiki/src/models/font_decoder.dart';
+import 'package:hibiki/src/models/woff2_decoder.dart';
 import 'package:hibiki/src/reader/reader_settings.dart'
     show ReaderCustomFontCss;
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
@@ -23,10 +24,12 @@ class AppFontLoader {
   /// Raw sfnt the Flutter engine loads as-is.
   static const Set<String> _directExtensions = <String>{'.ttf', '.otf', '.ttc'};
 
-  /// WOFF 1.0 is decoded to sfnt via [FontDecoder] before loading. WOFF2 still
-  /// needs a Brotli decoder, so for now it is honoured only by the reader's
-  /// WebView and skipped here in favour of the next usable candidate.
+  /// Web-font containers decoded to sfnt before loading: WOFF 1.0 via
+  /// [FontDecoder] (zlib) and WOFF2 via [Woff2Decoder] (Brotli + glyf/loca
+  /// transform). An entry that fails to decode is skipped, falling through to
+  /// the next usable candidate.
   static const String _woffExtension = '.woff';
+  static const String _woff2Extension = '.woff2';
 
   /// Family names already registered this process. [FontLoader] cannot unload a
   /// family, so re-registering the same one is wasteful and pointless.
@@ -62,7 +65,8 @@ class AppFontLoader {
 
       final String ext = p.extension(path).toLowerCase();
       final bool isWoff = ext == _woffExtension;
-      if (!_directExtensions.contains(ext) && !isWoff) continue;
+      final bool isWoff2 = ext == _woff2Extension;
+      if (!_directExtensions.contains(ext) && !isWoff && !isWoff2) continue;
 
       final File file = File(path);
       if (!file.existsSync()) continue;
@@ -70,9 +74,12 @@ class AppFontLoader {
       if (!_loadedFamilies.contains(family)) {
         try {
           Uint8List bytes = await file.readAsBytes();
-          if (isWoff) {
-            // FontLoader only accepts raw sfnt, so unwrap the WOFF container.
-            final Uint8List? sfnt = FontDecoder.woffToSfnt(bytes);
+          if (isWoff || isWoff2) {
+            // FontLoader only accepts raw sfnt, so unwrap the web-font
+            // container (WOFF2 first, then WOFF 1.0).
+            final Uint8List? sfnt = isWoff2
+                ? Woff2Decoder.toSfnt(bytes)
+                : FontDecoder.woffToSfnt(bytes);
             if (sfnt == null) continue;
             bytes = sfnt;
           }

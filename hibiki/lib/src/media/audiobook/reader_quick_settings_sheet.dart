@@ -350,8 +350,10 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(t.display_settings, style: theme.textTheme.titleMedium),
-        SizedBox(height: tokens.spacing.gap),
+        SettingsSectionHeader(
+          t.display_settings,
+          padding: EdgeInsets.only(bottom: tokens.spacing.gap),
+        ),
         AdaptiveSettingsSection(
           children: [
             AdaptiveSettingsStepperRow(
@@ -534,8 +536,10 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(t.reading_progress, style: theme.textTheme.titleMedium),
-        SizedBox(height: tokens.spacing.gap),
+        SettingsSectionHeader(
+          t.reading_progress,
+          padding: EdgeInsets.only(bottom: tokens.spacing.gap),
+        ),
         for (final String line in lines)
           Text(line, style: theme.textTheme.bodyMedium),
       ],
@@ -574,8 +578,10 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(t.book_search, style: theme.textTheme.titleMedium),
-        SizedBox(height: tokens.spacing.gap),
+        SettingsSectionHeader(
+          t.book_search,
+          padding: EdgeInsets.only(bottom: tokens.spacing.gap),
+        ),
         Row(
           children: [
             Expanded(
@@ -681,8 +687,10 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(t.jump_to_char, style: theme.textTheme.titleMedium),
-        SizedBox(height: tokens.spacing.gap),
+        SettingsSectionHeader(
+          t.jump_to_char,
+          padding: EdgeInsets.only(bottom: tokens.spacing.gap),
+        ),
         if (hasProgress)
           Padding(
             padding: EdgeInsets.only(bottom: tokens.spacing.gap),

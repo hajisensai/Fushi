@@ -146,6 +146,15 @@ void main() {
     expect(source, isNot(contains('start: (cupertino ? 16 : 12)')));
   });
 
+  test('reader quick settings section headings use shared settings chrome', () {
+    final String source =
+        File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
+            .readAsStringSync();
+
+    expect(source, contains('SettingsSectionHeader('));
+    expect(source, isNot(contains('style: theme.textTheme.titleMedium')));
+  });
+
   test('in-book settings header uses theme typography without hardcoded size',
       () {
     final String source =

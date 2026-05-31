@@ -1476,6 +1476,22 @@ void main() {
     expect(source, isNot(contains('const EdgeInsets.symmetric(horizontal: 6')));
   });
 
+  test('theme selector uses shared MD3 swatches', () {
+    final String source =
+        File('lib/src/settings/settings_actions.dart').readAsStringSync();
+    final String themeSelector = _functionSource(
+      source,
+      'Widget buildThemeSelector(SettingsContext settingsContext)',
+      'Widget buildBrightnessSelector(SettingsContext settingsContext)',
+    );
+
+    expect(themeSelector, contains('HibikiColorSwatch('));
+    expect(source, isNot(contains('class _ColorSwatch')));
+    expect(themeSelector, isNot(contains('_ColorSwatch(')));
+    expect(themeSelector, isNot(contains('Container(')));
+    expect(themeSelector, isNot(contains('BoxDecoration(')));
+  });
+
   test('custom theme import dialog uses shared MD3 dialog chrome', () {
     final String source = File(
       'lib/src/pages/implementations/custom_theme_page.dart',

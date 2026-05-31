@@ -123,6 +123,7 @@ dependencies:
   xml: ^6.3.0
   wakelock_plus: ^1.1.4
   record: 6.0.0
+  brotli: ^0.6.0
 dependency_overrides:
   flutter_inappwebview_windows:
     path: ../packages/flutter_inappwebview_windows

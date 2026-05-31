@@ -871,6 +871,7 @@ class HibikiColorSwatch extends StatelessWidget {
     this.label,
     this.textColor,
     this.borderColor,
+    this.overlay,
   });
 
   final Color color;
@@ -883,6 +884,7 @@ class HibikiColorSwatch extends StatelessWidget {
   final String? label;
   final Color? textColor;
   final Color? borderColor;
+  final Widget? overlay;
 
   @override
   Widget build(BuildContext context) {
@@ -898,14 +900,27 @@ class HibikiColorSwatch extends StatelessWidget {
       color: selected ? colors.primary : borderColor ?? colors.outlineVariant,
       width: selected ? 3 : 1,
     );
-    final Widget swatch = Container(
+    final Color foreground = _swatchForegroundFor(color);
+    final Widget? swatchOverlay =
+        selected ? Icon(Icons.check, color: foreground, size: 20) : overlay;
+    final Widget swatch = SizedBox(
       width: resolvedWidth,
       height: resolvedHeight,
-      decoration: BoxDecoration(
-        color: color,
-        shape: isDot ? BoxShape.circle : BoxShape.rectangle,
-        borderRadius: isDot ? null : tokens.radii.chipRadius,
-        border: Border.fromBorderSide(borderSide),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: color,
+          shape: isDot ? BoxShape.circle : BoxShape.rectangle,
+          borderRadius: isDot ? null : tokens.radii.chipRadius,
+          border: Border.fromBorderSide(borderSide),
+        ),
+        child: swatchOverlay == null
+            ? null
+            : Center(
+                child: IconTheme.merge(
+                  data: IconThemeData(color: foreground, size: 20),
+                  child: swatchOverlay,
+                ),
+              ),
       ),
     );
     final Widget interactiveSwatch = onTap == null
@@ -937,6 +952,12 @@ class HibikiColorSwatch extends StatelessWidget {
       ],
     );
   }
+}
+
+Color _swatchForegroundFor(Color background) {
+  return ThemeData.estimateBrightnessForColor(background) == Brightness.dark
+      ? Colors.white
+      : Colors.black;
 }
 
 class HibikiPreviewSwitch extends StatelessWidget {
