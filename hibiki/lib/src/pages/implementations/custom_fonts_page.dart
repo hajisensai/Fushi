@@ -942,8 +942,11 @@ class _CustomFontsPageState extends BasePageState {
                       isFile: entry.isFile,
                       enabled: entry.enabled,
                       index: index,
+                      isLast: index == _fonts.length - 1,
                       onToggle: () => _toggleFont(index),
                       onDelete: () => _removeFont(index),
+                      onMoveUp: () => _onReorder(index, index - 1),
+                      onMoveDown: () => _onReorder(index, index + 2),
                     );
                   },
                 ),
@@ -1134,8 +1137,11 @@ class _FontTile extends StatelessWidget {
     required this.isFile,
     required this.enabled,
     required this.index,
+    required this.isLast,
     required this.onToggle,
     required this.onDelete,
+    required this.onMoveUp,
+    required this.onMoveDown,
     super.key,
   });
 
@@ -1143,8 +1149,11 @@ class _FontTile extends StatelessWidget {
   final bool isFile;
   final bool enabled;
   final int index;
+  final bool isLast;
   final VoidCallback onToggle;
   final VoidCallback onDelete;
+  final VoidCallback onMoveUp;
+  final VoidCallback onMoveDown;
 
   @override
   Widget build(BuildContext context) {
@@ -1156,14 +1165,31 @@ class _FontTile extends StatelessWidget {
       value: enabled,
       onChanged: (_) => onToggle(),
       actions: [
+        // Gamepad/keyboard reorder equivalent for the drag handle.
+        HibikiIconButton(
+          icon: Icons.keyboard_arrow_up,
+          size: 18,
+          tooltip: t.move_up,
+          enabled: index > 0,
+          onTap: onMoveUp,
+        ),
+        HibikiIconButton(
+          icon: Icons.keyboard_arrow_down,
+          size: 18,
+          tooltip: t.move_down,
+          enabled: !isLast,
+          onTap: onMoveDown,
+        ),
         ReorderableDragStartListener(
           index: index,
           child: const Icon(Icons.drag_handle),
         ),
-        IconButton(
-          icon: Icon(Icons.delete_outline, color: scheme.error),
+        HibikiIconButton(
+          icon: Icons.delete_outline,
+          size: 18,
+          enabledColor: scheme.error,
           tooltip: t.custom_fonts_removed,
-          onPressed: onDelete,
+          onTap: onDelete,
         ),
       ],
     );
