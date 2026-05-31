@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
@@ -71,10 +72,20 @@ Future<String?> extractEmbeddedCoverViaFfmpeg({
   final File output = File(outputPath);
   try {
     output.parent.createSync(recursive: true);
-    await Process.run(
-      resolveFfmpegExecutable(),
+    final int? code = await _runFfmpeg(
       buildFfmpegCoverArgs(inputPath: audioPath, outputPath: outputPath),
+      const Duration(seconds: 30),
     );
+    if (code == null) {
+      // Timed out / killed: drop any partial output.
+      if (output.existsSync()) {
+        try {
+          output.deleteSync();
+        } catch (_) {}
+      }
+      return null;
+    }
+    // ffmpeg exits non-zero when there is no cover stream; rely on the output.
     if (output.existsSync() && output.lengthSync() > 0) return outputPath;
     return null;
   } on ProcessException catch (e, stack) {
@@ -93,6 +104,27 @@ String resolveFfmpegExecutable() {
   return 'ffmpeg';
 }
 
+/// Runs ffmpeg with [args], draining both pipes, and kills it if it does not
+/// finish within [timeout]. Returns the exit code, or null on timeout. The
+/// timeout bounds a hung/pathological encode (e.g. an unusually long clip on a
+/// slow machine) so it can never block the mining flow indefinitely. Throws
+/// [ProcessException] if ffmpeg is not installed — callers handle that.
+Future<int?> _runFfmpeg(List<String> args, Duration timeout) async {
+  final Process process = await Process.start(resolveFfmpegExecutable(), args);
+  // Drain both pipes: a full OS pipe buffer (ffmpeg writes progress to stderr)
+  // would otherwise deadlock the process before it can exit.
+  unawaited(process.stdout.drain<void>());
+  final Future<void> stderrDrained = process.stderr.drain<void>();
+  try {
+    final int code = await process.exitCode.timeout(timeout);
+    await stderrDrained;
+    return code;
+  } on TimeoutException {
+    process.kill(ProcessSignal.sigkill);
+    return null;
+  }
+}
+
 /// Cuts `[startMs, endMs)` out of [inputPath] into [outputPath] using ffmpeg.
 /// Returns [outputPath] on success, or null if the range is invalid, the input
 /// is missing, ffmpeg is not installed, or the cut produced no output.
@@ -108,23 +140,28 @@ Future<String?> extractAudioSegmentViaFfmpeg({
   final File output = File(outputPath);
   try {
     output.parent.createSync(recursive: true);
-    final ProcessResult result = await Process.run(
-      resolveFfmpegExecutable(),
+    // 120s bounds a hung encode; even a several-minute clip re-encodes to AAC
+    // far faster than real time, so this never truncates a legitimate clip.
+    final int? code = await _runFfmpeg(
       buildFfmpegClipArgs(
         inputPath: inputPath,
         startMs: startMs,
         endMs: endMs,
         outputPath: outputPath,
       ),
+      const Duration(seconds: 120),
     );
-    if (result.exitCode == 0 &&
-        output.existsSync() &&
-        output.lengthSync() > 0) {
+    if (code == 0 && output.existsSync() && output.lengthSync() > 0) {
       return outputPath;
+    }
+    if (output.existsSync()) {
+      try {
+        output.deleteSync();
+      } catch (_) {}
     }
     ErrorLogService.instance.log(
       'extractAudioSegmentViaFfmpeg',
-      'ffmpeg exit ${result.exitCode}: ${result.stderr}',
+      code == null ? 'ffmpeg timed out' : 'ffmpeg exit $code',
       StackTrace.current,
     );
     return null;
