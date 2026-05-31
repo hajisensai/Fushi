@@ -200,8 +200,10 @@ class AppModel with ChangeNotifier {
   /// focus pipeline on platforms where the Flutter engine does not deliver
   /// gameButton* key events (desktop). No-op on Android/iOS (native key events)
   /// and on desktops without an implemented input source.
-  late final GamepadService gamepadService =
-      GamepadService(navigatorKey: navigatorKey);
+  late final GamepadService gamepadService = GamepadService(
+    navigatorKey: navigatorKey,
+    registry: shortcutRegistry,
+  );
 
   Color? get systemPrimaryColor => themeNotifier.systemPrimaryColor;
 

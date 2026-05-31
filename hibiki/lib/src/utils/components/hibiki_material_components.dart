@@ -1119,7 +1119,7 @@ class HibikiPageHeader extends StatelessWidget {
   }
 }
 
-class HibikiPageScaffold extends StatelessWidget {
+class HibikiPageScaffold extends StatefulWidget {
   const HibikiPageScaffold({
     required this.title,
     required this.body,
@@ -1148,38 +1148,66 @@ class HibikiPageScaffold extends StatelessWidget {
   final bool? headerCompact;
 
   @override
+  State<HibikiPageScaffold> createState() => _HibikiPageScaffoldState();
+}
+
+class _HibikiPageScaffoldState extends State<HibikiPageScaffold> {
+  // Owns a PrimaryScrollController so a [body] built from a primary ScrollView
+  // (CustomScrollView/ListView with no explicit controller) attaches here. The
+  // gamepad LB/RB page-scroll fallback reaches it via
+  // PrimaryScrollController.maybeOf even on pure-display pages with no focus
+  // geometry (e.g. reading statistics), where D-pad edge takeover can't help.
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return Scaffold(
-      backgroundColor: tokens.surfaces.page,
-      appBar: showAppBar
-          ? AppBar(
-              leading: leading,
-              title: const SizedBox.shrink(),
-              backgroundColor: tokens.surfaces.page,
-              surfaceTintColor: Colors.transparent,
-              elevation: 0,
-              scrolledUnderElevation: 0,
-            )
-          : null,
-      floatingActionButton: floatingActionButton,
-      floatingActionButtonLocation: floatingActionButtonLocation,
-      bottomNavigationBar: bottomNavigationBar,
-      body: SafeArea(
-        top: !showAppBar,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            HibikiPageHeader(
-              title: title,
-              subtitle: subtitle,
-              leading: showAppBar ? null : leading,
-              actions: actions,
-              bottom: headerBottom,
-              compact: headerCompact ?? showAppBar,
-            ),
-            Expanded(child: body),
-          ],
+    return PrimaryScrollController(
+      controller: _scrollController,
+      // Inherit on EVERY platform. The default is mobile-only, which would
+      // leave the body's primary ScrollView UNATTACHED on desktop (and, worse,
+      // shadow this controller with PrimaryScrollController.none) — but the
+      // gamepad LB/RB page-scroll fallback that reaches this controller is a
+      // desktop feature. All-platform inherit makes the body scroll reachable
+      // everywhere.
+      automaticallyInheritForPlatforms: TargetPlatform.values.toSet(),
+      child: Scaffold(
+        backgroundColor: tokens.surfaces.page,
+        appBar: widget.showAppBar
+            ? AppBar(
+                leading: widget.leading,
+                title: const SizedBox.shrink(),
+                backgroundColor: tokens.surfaces.page,
+                surfaceTintColor: Colors.transparent,
+                elevation: 0,
+                scrolledUnderElevation: 0,
+              )
+            : null,
+        floatingActionButton: widget.floatingActionButton,
+        floatingActionButtonLocation: widget.floatingActionButtonLocation,
+        bottomNavigationBar: widget.bottomNavigationBar,
+        body: SafeArea(
+          top: !widget.showAppBar,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              HibikiPageHeader(
+                title: widget.title,
+                subtitle: widget.subtitle,
+                leading: widget.showAppBar ? null : widget.leading,
+                actions: widget.actions,
+                bottom: widget.headerBottom,
+                compact: widget.headerCompact ?? widget.showAppBar,
+              ),
+              Expanded(child: widget.body),
+            ],
+          ),
         ),
       ),
     );

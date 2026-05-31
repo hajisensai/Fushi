@@ -69,6 +69,50 @@ void main() {
           isFalse);
     });
 
+    testWidgets('scrollPrimary 翻 PrimaryScrollController 一个 viewport 比例',
+        (WidgetTester tester) async {
+      final ScrollController controller = ScrollController();
+      addTearDown(controller.dispose);
+      late BuildContext ctx;
+      await tester.pumpWidget(MaterialApp(
+        home: PrimaryScrollController(
+          controller: controller,
+          child: Builder(builder: (BuildContext c) {
+            ctx = c;
+            return Scaffold(
+              body: CustomScrollView(
+                slivers: <Widget>[
+                  SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (BuildContext _, int i) =>
+                          SizedBox(height: 100, child: Text('$i')),
+                      childCount: 60,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ),
+      ));
+      final double vp = controller.position.viewportDimension;
+      expect(HibikiFocusScroll.scrollPrimary(ctx, 0.9), isTrue);
+      await tester.pumpAndSettle();
+      expect(controller.offset, closeTo(vp * 0.9, 1.0));
+    });
+
+    testWidgets('scrollPrimary 无 PrimaryScrollController 返回 false',
+        (WidgetTester tester) async {
+      late BuildContext ctx;
+      await tester.pumpWidget(MaterialApp(
+        home: Builder(builder: (BuildContext c) {
+          ctx = c;
+          return const SizedBox();
+        }),
+      ));
+      expect(HibikiFocusScroll.scrollPrimary(ctx, 0.9), isFalse);
+    });
+
     testWidgets('wantAxis 与 position.axis 不匹配返回 false（垂直页 left/right 不误翻）',
         (WidgetTester tester) async {
       final ScrollController controller = ScrollController();

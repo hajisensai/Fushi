@@ -73,6 +73,29 @@ class HibikiFocusScroll {
     return true;
   }
 
+  /// 把 [context] 最近的 [PrimaryScrollController] 滚动 viewport 的
+  /// [signedFraction] 比例。用于手柄 LB/RB 整页翻屏——纯展示零焦点页（统计/日志）
+  /// 没有焦点几何目标，只能靠页面主滚动区翻屏。命中且仍能滚返回 true；无
+  /// PrimaryScrollController / 无 client / 已到边界返回 false。
+  static bool scrollPrimary(BuildContext context, double signedFraction) {
+    final ScrollController? controller =
+        PrimaryScrollController.maybeOf(context);
+    // Exactly one attached position: 0 = nothing to scroll; >1 = ambiguous
+    // (multiple scroll views share this controller) and `.position` would throw.
+    if (controller == null || controller.positions.length != 1) return false;
+    final ScrollPosition position = controller.position;
+    final double target =
+        (position.pixels + position.viewportDimension * signedFraction)
+            .clamp(position.minScrollExtent, position.maxScrollExtent);
+    if ((target - position.pixels).abs() < 0.5) return false;
+    controller.animateTo(
+      target,
+      duration: const Duration(milliseconds: 120),
+      curve: Curves.easeOutCubic,
+    );
+    return true;
+  }
+
   /// 方向 → viewport 比例正负号：down/right 为正（向后/下滚），up/left 为负。
   static double signedFractionFor(
       TraversalDirection direction, double fraction) {

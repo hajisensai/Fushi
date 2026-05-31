@@ -12,6 +12,8 @@ import 'package:gamepads/gamepads.dart' as gp;
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/focus/hibiki_focus_scroll.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart';
+import 'package:hibiki/src/shortcuts/shortcut_action.dart';
+import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
 
 /// Intent dispatched for a physical gamepad button on platforms where Flutter
 /// does NOT deliver `gameButton*` key events (desktop / Apple). The active page
@@ -120,9 +122,14 @@ class GamepadFrameBits {
 ///   2. else A → [ActivateIntent], B → global back (maybePop),
 ///      D-pad → directional focus (same as arrow keys).
 class GamepadService {
-  GamepadService({required this.navigatorKey});
+  GamepadService({required this.navigatorKey, this.registry});
 
   final GlobalKey<NavigatorState> navigatorKey;
+
+  /// Resolves which action a controller button is bound to, used by the global
+  /// LB/RB scroll-page fallback so a user-rebound key still works. Null in tests
+  /// that don't exercise scrolling.
+  final HibikiShortcutRegistry? registry;
 
   _PluginGamepadPoller? _poller;
 
@@ -187,6 +194,12 @@ class GamepadService {
         true;
     if (handled) return;
 
+    // The page didn't consume the button: LB/RB (or whatever the user bound to
+    // the global scroll-page actions) page-scrolls the current page's primary
+    // scroll view. This is the only path that scrolls a pure-display page
+    // (statistics/logs) which has no focus geometry for D-pad edge takeover.
+    if (_tryScrollPage(ctx, button)) return;
+
     switch (button) {
       case GamepadButton.a:
         Actions.maybeInvoke<ActivateIntent>(ctx, const ActivateIntent());
@@ -204,6 +217,23 @@ class GamepadService {
       default:
         return;
     }
+  }
+
+  /// LB/RB page-scroll fallback: if [button] is bound to a global scroll-page
+  /// action, page the nearest [PrimaryScrollController] by ~0.9 viewport.
+  /// Returns whether it scrolled (so the dispatcher can stop).
+  bool _tryScrollPage(BuildContext context, GamepadButton button) {
+    final ShortcutAction? action =
+        registry?.resolveGamepad(button, scope: ShortcutScope.global);
+    final double fraction;
+    if (action == ShortcutAction.globalScrollPageDown) {
+      fraction = 0.9;
+    } else if (action == ShortcutAction.globalScrollPageUp) {
+      fraction = -0.9;
+    } else {
+      return false;
+    }
+    return HibikiFocusScroll.scrollPrimary(context, fraction);
   }
 
   /// Routes a long-press (A held past the threshold) to the focused widget as a
