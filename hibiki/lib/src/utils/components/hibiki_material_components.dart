@@ -3,6 +3,7 @@ import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/focus/hibiki_focus_target.dart';
 import 'package:hibiki/src/utils/components/hibiki_text_selection_controls.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
+import 'package:hibiki/src/utils/components/hibiki_motion_tokens.dart';
 
 class HibikiCard extends StatefulWidget {
   const HibikiCard({
@@ -925,10 +926,14 @@ class HibikiColorSwatch extends StatelessWidget {
     );
     final Widget interactiveSwatch = onTap == null
         ? swatch
-        : InkWell(
+        : Material(
+            color: Colors.transparent,
             borderRadius: inkRadius,
-            onTap: onTap,
-            child: swatch,
+            child: InkWell(
+              borderRadius: inkRadius,
+              onTap: onTap,
+              child: swatch,
+            ),
           );
     final Widget semanticSwatch = Semantics(
       button: onTap != null,
@@ -1405,6 +1410,7 @@ class HibikiOverflowMenu<T> extends StatelessWidget {
       padding: padding,
       splashRadius: splashRadius,
       position: PopupMenuPosition.under,
+      popUpAnimationStyle: hibikiMd3MenuAnimationStyle,
       onSelected: onSelected,
       itemBuilder: (BuildContext context) => items,
       child: child,

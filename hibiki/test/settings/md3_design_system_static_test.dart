@@ -1312,6 +1312,41 @@ void main() {
     }
   });
 
+  test('transient routes use shared MD3 motion tokens', () {
+    final File motionFile =
+        File('lib/src/utils/components/hibiki_motion_tokens.dart');
+    expect(motionFile.existsSync(), isTrue);
+
+    final String motion = motionFile.readAsStringSync();
+    expect(motion, contains('const AnimationStyle'));
+    expect(motion, contains('hibikiMd3DialogAnimationStyle'));
+    expect(motion, contains('hibikiMd3SheetAnimationStyle'));
+    expect(motion, contains('hibikiMd3MenuAnimationStyle'));
+    expect(motion, contains('Easing.emphasizedDecelerate'));
+    expect(motion, contains('Easing.emphasizedAccelerate'));
+
+    final String dialog =
+        File('lib/src/utils/misc/show_app_dialog.dart').readAsStringSync();
+    final String sheet =
+        File('lib/src/utils/adaptive/adaptive_widgets.dart').readAsStringSync();
+    final String menu = File(
+      'lib/src/utils/components/hibiki_material_components.dart',
+    ).readAsStringSync();
+    final String home =
+        File('lib/src/pages/implementations/home_page.dart').readAsStringSync();
+    final String sync =
+        File('lib/src/sync/sync_compare_dialog.dart').readAsStringSync();
+
+    expect(dialog, contains('animationStyle: hibikiMd3DialogAnimationStyle'));
+    expect(
+        sheet, contains('sheetAnimationStyle: hibikiMd3SheetAnimationStyle'));
+    expect(menu, contains('popUpAnimationStyle: hibikiMd3MenuAnimationStyle'));
+    expect(home, contains('showAppDialog<bool>('));
+    expect(sync, contains('showAppDialog<int>('));
+    expect(home, isNot(contains('showDialog<bool>(')));
+    expect(sync, isNot(contains('showDialog<int>(')));
+  });
+
   test('dictionary and popup surfaces use shared MD3 primitives', () {
     final String dictionaryManager = File(
       'lib/src/pages/implementations/dictionary_dialog_page.dart',

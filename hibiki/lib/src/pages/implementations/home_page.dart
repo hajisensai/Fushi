@@ -226,7 +226,7 @@ class _HomePageState extends BasePageState<HomePage>
               canPop: !syncing,
               onPopInvokedWithResult: (didPop, _) async {
                 if (didPop) return;
-                final bool? confirmed = await showDialog<bool>(
+                final bool? confirmed = await showAppDialog<bool>(
                   context: context,
                   builder: (BuildContext ctx) => _SyncExitWarningDialog(
                     onCancel: () => Navigator.pop(ctx, false),

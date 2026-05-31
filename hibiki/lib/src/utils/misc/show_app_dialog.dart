@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart';
+import 'package:hibiki/src/utils/components/hibiki_motion_tokens.dart';
 
 Future<T?> showAppDialog<T>({
   required BuildContext context,
@@ -20,5 +21,6 @@ Future<T?> showAppDialog<T>({
     builder: builder,
     barrierDismissible: barrierDismissible,
     barrierColor: barrierColor,
+    animationStyle: hibikiMd3DialogAnimationStyle,
   );
 }

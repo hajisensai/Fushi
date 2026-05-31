@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart';
+import 'package:hibiki/src/utils/components/hibiki_motion_tokens.dart';
 
 Widget adaptiveDialogAction({
   required BuildContext context,
@@ -130,6 +131,7 @@ Future<T?> adaptiveModalSheet<T>({
     context: context,
     isScrollControlled: isScrollControlled,
     showDragHandle: showDragHandle,
+    sheetAnimationStyle: hibikiMd3SheetAnimationStyle,
     builder: builder,
   );
 }

@@ -17,6 +17,7 @@ export 'src/utils/components/hibiki_list_tile.dart';
 export 'src/utils/components/hibiki_focusable.dart';
 export 'src/utils/components/hibiki_focus_ring.dart';
 export 'src/utils/components/hibiki_design_tokens.dart';
+export 'src/utils/components/hibiki_motion_tokens.dart';
 export 'src/utils/components/hibiki_material_components.dart';
 export 'src/utils/components/settings_shared.dart';
 

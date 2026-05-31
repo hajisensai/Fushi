@@ -302,8 +302,13 @@ void main() {
       ),
     );
 
-    final Container swatch = tester.widget<Container>(find.byType(Container));
-    final BoxDecoration decoration = swatch.decoration! as BoxDecoration;
+    final DecoratedBox swatch = tester
+        .widgetList<DecoratedBox>(find.byType(DecoratedBox))
+        .firstWhere((DecoratedBox widget) {
+      final Decoration decoration = widget.decoration;
+      return decoration is BoxDecoration && decoration.color == Colors.green;
+    });
+    final BoxDecoration decoration = swatch.decoration as BoxDecoration;
 
     expect(decoration.color, Colors.green);
     expect(decoration.borderRadius, BorderRadius.circular(8));

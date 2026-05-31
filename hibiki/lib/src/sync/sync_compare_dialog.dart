@@ -269,7 +269,7 @@ Future<void> showSyncCompareDialog(
 
   if (!context.mounted) return;
 
-  final applied = await showDialog<int>(
+  final applied = await showAppDialog<int>(
     context: context,
     barrierDismissible: false,
     builder: (_) => _SyncCompareDialog(db: db, backend: backend),
