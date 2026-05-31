@@ -6,6 +6,7 @@ import 'package:hibiki/src/pages/implementations/profile_management_page.dart';
 import 'package:hibiki/src/profile/profile_view_model.dart';
 import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart';
 import 'package:hibiki/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:hibiki/src/utils/components/hibiki_dropdown.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
 /// Compact profile selector widget for embedding in settings pages.
@@ -51,20 +52,17 @@ class ProfileSelector extends ConsumerWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 220),
-          child: DropdownMenu<int>(
-            initialSelection: validId,
-            dropdownMenuEntries: [
-              for (final p in uiState.profiles)
-                DropdownMenuEntry(value: p.id, label: p.name),
-            ],
-            onSelected: (id) {
-              if (id != null && id != validId) {
-                vm.switchProfile(id);
-              }
-            },
-          ),
+        // Gamepad-enterable on desktop (MenuAnchor); a stock DropdownMenu on
+        // Android. Bounded width keeps it valid as a non-flex Row trailing.
+        GamepadMenuDropdown<int>(
+          width: 220,
+          selected: validId,
+          onChanged: (id) {
+            if (id != validId) vm.switchProfile(id);
+          },
+          entries: <GamepadDropdownEntry<int>>[
+            for (final p in uiState.profiles) (value: p.id, label: p.name),
+          ],
         ),
         IconButton(
           icon: const Icon(Icons.settings_outlined, size: 20),

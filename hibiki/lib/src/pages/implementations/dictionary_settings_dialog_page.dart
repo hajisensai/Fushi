@@ -285,25 +285,16 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
   }
 
   Widget _buildScopeDropdown(BuildContext context) {
-    return SizedBox(
+    return GamepadMenuDropdown<int>(
       width: double.infinity,
-      child: DropdownMenu<int>(
-        label: Text(t.custom_dict_css),
-        expandedInsets: EdgeInsets.zero,
-        initialSelection: _selectedIndex,
-        dropdownMenuEntries: [
-          DropdownMenuEntry<int>(
-            value: 0,
-            label: t.custom_dict_css_global,
-          ),
-          for (int i = 0; i < _dictNames.length; i++)
-            DropdownMenuEntry<int>(
-              value: i + 1,
-              label: _dictNames[i],
-            ),
-        ],
-        onSelected: _onScopeChanged,
-      ),
+      label: t.custom_dict_css,
+      selected: _selectedIndex,
+      onChanged: _onScopeChanged,
+      entries: <GamepadDropdownEntry<int>>[
+        (value: 0, label: t.custom_dict_css_global),
+        for (int i = 0; i < _dictNames.length; i++)
+          (value: i + 1, label: _dictNames[i]),
+      ],
     );
   }
 }

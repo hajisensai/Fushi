@@ -423,15 +423,13 @@ class _DictionaryDialogPageState extends BasePageState {
         Text(t.dict_download_language, style: tokens.type.controlLabel),
         SizedBox(width: tokens.spacing.gap),
         Expanded(
-          child: DropdownMenu<String>(
-            expandedInsets: EdgeInsets.zero,
-            initialSelection: selectedLang,
-            dropdownMenuEntries: langs.entries.map((e) {
-              return DropdownMenuEntry(value: e.key, label: e.value);
-            }).toList(),
-            onSelected: (String? val) {
-              if (val != null) onChanged(val);
-            },
+          child: GamepadMenuDropdown<String>(
+            selected: selectedLang,
+            onChanged: onChanged,
+            entries: <GamepadDropdownEntry<String>>[
+              for (final MapEntry<String, String> e in langs.entries)
+                (value: e.key, label: e.value),
+            ],
           ),
         ),
       ],
