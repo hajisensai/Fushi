@@ -527,7 +527,7 @@ class HibikiActionChip extends StatelessWidget {
 
 enum HibikiTagChipTone { filled, surface }
 
-class HibikiTagChip extends StatelessWidget {
+class HibikiTagChip extends StatefulWidget {
   const HibikiTagChip({
     required this.label,
     super.key,
@@ -537,6 +537,7 @@ class HibikiTagChip extends StatelessWidget {
     this.tone = HibikiTagChipTone.filled,
     this.onTap,
     this.onDeleted,
+    this.focusId,
   });
 
   final String label;
@@ -546,35 +547,49 @@ class HibikiTagChip extends StatelessWidget {
   final HibikiTagChipTone tone;
   final VoidCallback? onTap;
   final VoidCallback? onDeleted;
+  final HibikiFocusId? focusId;
+
+  @override
+  State<HibikiTagChip> createState() => _HibikiTagChipState();
+}
+
+class _HibikiTagChipState extends State<HibikiTagChip> {
+  /// Stable derived id so a tappable chip is a gamepad/keyboard focus target by
+  /// default — Stateful (not Stateless) so identityHashCode is stable across
+  /// rebuilds. Mirrors HibikiCard / HibikiListItem.
+  late final HibikiFocusId _fallbackFocusId =
+      HibikiFocusId('hibiki-tag-chip-${identityHashCode(this)}');
 
   @override
   Widget build(BuildContext context) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
-    final Color tagColor = color ?? colors.primary;
-    final Color baseColor =
-        color ?? (selected ? colors.primaryContainer : tokens.surfaces.overlay);
-    final Color background = switch (tone) {
-      HibikiTagChipTone.filled => dimmed
+    final Color tagColor = widget.color ?? colors.primary;
+    final Color baseColor = widget.color ??
+        (widget.selected ? colors.primaryContainer : tokens.surfaces.overlay);
+    final Color background = switch (widget.tone) {
+      HibikiTagChipTone.filled => widget.dimmed
           ? baseColor.withValues(alpha: 0.44)
-          : baseColor.withValues(alpha: color == null ? 1 : 0.88),
-      HibikiTagChipTone.surface => selected
-          ? tagColor.withValues(alpha: dimmed ? 0.12 : 0.2)
-          : tokens.surfaces.overlay.withValues(alpha: dimmed ? 0.44 : 1),
+          : baseColor.withValues(alpha: widget.color == null ? 1 : 0.88),
+      HibikiTagChipTone.surface => widget.selected
+          ? tagColor.withValues(alpha: widget.dimmed ? 0.12 : 0.2)
+          : tokens.surfaces.overlay.withValues(alpha: widget.dimmed ? 0.44 : 1),
     };
-    final Color foreground = switch (tone) {
+    final Color foreground = switch (widget.tone) {
       HibikiTagChipTone.filled => _foregroundFor(background),
-      HibikiTagChipTone.surface =>
-        dimmed ? colors.onSurface.withValues(alpha: 0.4) : colors.onSurface,
+      HibikiTagChipTone.surface => widget.dimmed
+          ? colors.onSurface.withValues(alpha: 0.4)
+          : colors.onSurface,
     };
-    final BoxBorder? border = selected
+    final BoxBorder? border = widget.selected
         ? Border.all(
-            color:
-                tone == HibikiTagChipTone.surface ? tagColor : colors.primary,
+            color: widget.tone == HibikiTagChipTone.surface
+                ? tagColor
+                : colors.primary,
           )
         : null;
     final Text labelText = Text(
-      label,
+      widget.label,
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
       style: tokens.type.metadata.copyWith(
@@ -583,10 +598,11 @@ class HibikiTagChip extends StatelessWidget {
       ),
     );
     final List<Widget> contentChildren = <Widget>[
-      if (tone == HibikiTagChipTone.surface && color != null) ...<Widget>[
+      if (widget.tone == HibikiTagChipTone.surface &&
+          widget.color != null) ...<Widget>[
         DecoratedBox(
           decoration: BoxDecoration(
-            color: color,
+            color: widget.color,
             shape: BoxShape.circle,
           ),
           child: const SizedBox(width: 10, height: 10),
@@ -594,11 +610,11 @@ class HibikiTagChip extends StatelessWidget {
         SizedBox(width: tokens.spacing.gap * 0.625),
       ],
       Flexible(child: labelText),
-      if (onDeleted != null) ...<Widget>[
+      if (widget.onDeleted != null) ...<Widget>[
         SizedBox(width: tokens.spacing.gap * 0.375),
         InkWell(
           borderRadius: tokens.radii.chipRadius,
-          onTap: onDeleted,
+          onTap: widget.onDeleted,
           child: Icon(
             Icons.close,
             size: 14,
@@ -623,11 +639,27 @@ class HibikiTagChip extends StatelessWidget {
       ),
       child: content,
     );
-    if (onTap == null) return chip;
-    return InkWell(
+    if (widget.onTap == null) return chip;
+    final Widget tappable = InkWell(
       borderRadius: tokens.radii.chipRadius,
-      onTap: onTap,
+      onTap: widget.onTap,
       child: chip,
+    );
+    // Outside a HibikiFocusRoot stay a bare tappable chip (zero overhead).
+    if (HibikiFocusRoot.maybeControllerOf(context) == null) return tappable;
+    return Actions(
+      actions: <Type, Action<Intent>>{
+        ActivateIntent: CallbackAction<ActivateIntent>(
+          onInvoke: (_) {
+            widget.onTap?.call();
+            return null;
+          },
+        ),
+      },
+      child: HibikiFocusTarget(
+        id: widget.focusId ?? _fallbackFocusId,
+        child: tappable,
+      ),
     );
   }
 
