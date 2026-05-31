@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
+import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 
 /// Thin wrapper around the native Android TextToSpeech MethodChannel.
@@ -124,7 +125,16 @@ class TtsChannel {
     required int endMs,
     required String outputPath,
   }) async {
-    if (!_isSupported) return null;
+    if (!_isSupported) {
+      // No native channel off Android: cut the sentence clip with ffmpeg so
+      // desktop Anki cards still get audio (returns null if ffmpeg is absent).
+      return extractAudioSegmentViaFfmpeg(
+        inputPath: inputPath,
+        startMs: startMs,
+        endMs: endMs,
+        outputPath: outputPath,
+      );
+    }
     try {
       final result = await _channel.invokeMethod('extractAudioSegment', {
         'inputPath': inputPath,
