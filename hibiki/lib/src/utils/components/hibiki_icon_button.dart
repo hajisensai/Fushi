@@ -85,6 +85,13 @@ class HibikiIconButton extends StatefulWidget {
 class _HibikiIconButtonState extends State<HibikiIconButton> {
   late bool enabled;
 
+  /// Stable fallback id so an icon button is a gamepad/keyboard focus target by
+  /// default (no explicit [focusId] needed). Derived from this State's identity
+  /// so it survives rebuilds and stays unique per instance — mirrors HibikiCard
+  /// / HibikiListItem.
+  late final HibikiFocusId _fallbackFocusId =
+      HibikiFocusId('hibiki-icon-button-${identityHashCode(this)}');
+
   /// HBK-AUDIT-151: true while a busy [onTap] action is awaiting completion.
   /// Used so [didUpdateWidget] does not re-enable the button mid-action when
   /// the parent rebuilds during the await.
@@ -186,7 +193,11 @@ class _HibikiIconButtonState extends State<HibikiIconButton> {
   }
 
   Widget _focusable(BuildContext context, Widget button) {
-    if (widget.focusId == null) return button;
+    // A decorative icon (no onTap) must not pollute the focus traversal order —
+    // same rule as HibikiCard / HibikiListItem with a null onTap.
+    if (widget.onTap == null) return button;
+    // Outside a HibikiFocusRoot (e.g. plain widget tests) stay a bare button —
+    // zero overhead and no registration where there is no controller.
     if (HibikiFocusRoot.maybeControllerOf(context) == null) return button;
     return Actions(
       actions: <Type, Action<Intent>>{
@@ -198,7 +209,9 @@ class _HibikiIconButtonState extends State<HibikiIconButton> {
         ),
       },
       child: HibikiFocusTarget(
-        id: widget.focusId!,
+        // Default to the stable derived id so every actionable icon button is
+        // reachable by gamepad/keyboard; an explicit focusId overrides it.
+        id: widget.focusId ?? _fallbackFocusId,
         enabled: enabled,
         child: button,
       ),
