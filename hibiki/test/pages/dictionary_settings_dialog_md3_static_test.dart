@@ -23,4 +23,15 @@ void main() {
       ),
     );
   });
+
+  test('audio source controls use shared MD3 icon buttons', () {
+    final String source = File(
+      'lib/src/pages/implementations/dictionary_settings_dialog_page.dart',
+    ).readAsStringSync();
+
+    expect(source, contains('HibikiIconButton('));
+    expect(source, isNot(contains('trailing: IconButton(')));
+    expect(source, isNot(contains('suffixIcon: IconButton(')));
+    expect(source, isNot(contains('visualDensity: VisualDensity.compact')));
+  });
 }

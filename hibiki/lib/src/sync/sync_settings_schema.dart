@@ -331,7 +331,6 @@ class _SyncAccountWidgetState extends State<_SyncAccountWidget> {
     }
     return FilledButton.icon(
       style: FilledButton.styleFrom(
-        visualDensity: VisualDensity.compact,
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       ),
       onPressed: _isLoading ? null : _signIn,
@@ -353,7 +352,6 @@ class _SyncAccountWidgetState extends State<_SyncAccountWidget> {
     }
     return TextButton(
       style: TextButton.styleFrom(
-        visualDensity: VisualDensity.compact,
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       ),
       onPressed: _isLoading ? null : _signOut,

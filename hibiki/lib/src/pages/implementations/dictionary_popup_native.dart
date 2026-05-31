@@ -214,31 +214,28 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
     Color subColor,
     HibikiDesignTokens tokens,
   ) {
-    return IconButton(
-      tooltip: t.creator_export_card,
-      visualDensity: VisualDensity.compact,
-      padding: EdgeInsets.all(tokens.spacing.gap / 2),
-      constraints: BoxConstraints.tightFor(
-        width: tokens.spacing.card * 2,
-        height: tokens.spacing.card * 2,
+    return SizedBox(
+      width: tokens.spacing.card * 2,
+      height: tokens.spacing.card * 2,
+      child: Center(
+        child: HibikiIconButton(
+          icon: Icons.add_circle_outline,
+          tooltip: t.creator_export_card,
+          size: tokens.spacing.card + tokens.spacing.gap / 2,
+          enabled: widget.onMineEntry != null,
+          enabledColor: subColor,
+          disabledColor: subColor.withValues(alpha: 0.38),
+          padding: EdgeInsets.all(tokens.spacing.gap / 2),
+          onTap: widget.onMineEntry == null
+              ? null
+              : () {
+                  widget.onMineEntry!({
+                    'expression': entry.expression,
+                    'reading': entry.reading,
+                  });
+                },
+        ),
       ),
-      style: IconButton.styleFrom(
-        foregroundColor: subColor,
-        disabledForegroundColor: subColor.withValues(alpha: 0.38),
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      ),
-      icon: Icon(
-        Icons.add_circle_outline,
-        size: tokens.spacing.card + tokens.spacing.gap / 2,
-      ),
-      onPressed: widget.onMineEntry == null
-          ? null
-          : () {
-              widget.onMineEntry!({
-                'expression': entry.expression,
-                'reading': entry.reading,
-              });
-            },
     );
   }
 

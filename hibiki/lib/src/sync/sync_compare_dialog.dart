@@ -692,7 +692,6 @@ class _SyncCompareDialogState extends State<_SyncCompareDialog> {
     return adaptiveSegmentedButton<SyncChoice>(
       context: context,
       style: SegmentedButton.styleFrom(
-        visualDensity: VisualDensity.compact,
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         textStyle: theme.textTheme.labelSmall,
       ),

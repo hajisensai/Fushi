@@ -23,4 +23,18 @@ void main() {
       ),
     );
   });
+
+  test('profile action buttons use shared MD3 icon buttons', () {
+    final String source = File(
+      'lib/src/pages/implementations/profile_management_page.dart',
+    ).readAsStringSync();
+
+    final int actionStart = source.indexOf('class _ProfileActionButton');
+    final int deleteStart = source.indexOf('@visibleForTesting', actionStart);
+    final String actionSource = source.substring(actionStart, deleteStart);
+
+    expect(actionSource, contains('HibikiIconButton('));
+    expect(actionSource, isNot(contains('return IconButton(')));
+    expect(actionSource, isNot(contains('VisualDensity.compact')));
+  });
 }

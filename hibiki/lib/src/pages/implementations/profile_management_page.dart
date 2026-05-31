@@ -271,13 +271,14 @@ class _ProfileActionButton extends StatelessWidget {
       );
     }
 
-    return IconButton(
-      icon: Icon(materialIcon, size: 20, color: color),
+    return HibikiIconButton(
+      icon: materialIcon,
+      size: 20,
       tooltip: tooltip,
-      visualDensity: VisualDensity.compact,
+      enabledColor: color,
       constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
       padding: EdgeInsets.zero,
-      onPressed: onPressed,
+      onTap: onPressed,
     );
   }
 }

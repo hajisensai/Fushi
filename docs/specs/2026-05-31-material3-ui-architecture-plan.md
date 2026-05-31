@@ -1575,13 +1575,15 @@ Result: PASS. The first `audio_recorder_dialog_md3_static_test.dart` run failed
 before the production change because `audio_recorder_page.dart` still contained
 local `IconButton` controls; it passed after the migration.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```powershell
 git add -- hibiki/lib/src/media/audiobook/book_import_dialog.dart hibiki/lib/src/media/audiobook/audiobook_import_dialog.dart hibiki/lib/src/pages/implementations/media_item_dialog_page.dart hibiki/lib/src/pages/implementations/media_item_edit_dialog_page.dart hibiki/lib/src/pages/implementations/media_source_picker_dialog_page.dart hibiki/lib/src/pages/implementations/example_sentences_dialog_page.dart hibiki/lib/src/pages/implementations/open_stash_dialog_page.dart hibiki/lib/src/pages/implementations/audio_recorder_page.dart hibiki/lib/src/pages/implementations/anki_settings_page.dart hibiki/lib/src/pages/implementations/text_segmentation_dialog_page.dart hibiki/lib/src/pages/implementations/crop_image_dialog_page.dart hibiki/test/settings/md3_design_system_static_test.dart hibiki/test/media/audiobook/book_import_dialog_test.dart hibiki/test/pages/media_item_dialog_page_test.dart hibiki/test/pages/media_item_edit_dialog_page_test.dart hibiki/test/pages/anki_settings_page_test.dart
 git diff --cached --check
 git commit -m "refactor(ui): align import and creator dialogs with MD3 primitives"
 ```
+
+Committed 2026-05-31 as `601e6e3b1 refactor(ui): align audio recorder controls with MD3 primitives`.
 
 ---
 
@@ -1592,7 +1594,7 @@ git commit -m "refactor(ui): align import and creator dialogs with MD3 primitive
 - Append if needed: `docs/reviews/YYYY-MM-DD-project-review.md`
 - Update only if reproduced: `docs/REGRESSION_BUGS.md`
 
-- [ ] **Step 1: Run static searches for remaining old chrome**
+- [x] **Step 1: Run static searches for remaining old chrome**
 
 Run from `hibiki/`:
 
@@ -1611,7 +1613,17 @@ For each hit, classify it as:
 
 Every remaining ordinary chrome defect must become a new static test or be fixed before completion.
 
-- [ ] **Step 2: Run design-system tests**
+Verified 2026-05-31. Remaining ordinary chrome defects found by the audit were:
+
+- `dictionary_popup_native.dart` mining action still used a local `IconButton`.
+- `dictionary_settings_dialog_page.dart` audio source add/delete actions still used local `IconButton` plus local compact density.
+- `profile_management_page.dart` profile action buttons still used local `IconButton` plus local compact density.
+- `reader_quick_settings_sheet.dart` in-book search/jump buttons still used local `FilledButton.tonal` plus local compact density.
+- `sync_settings_schema.dart` and `sync_compare_dialog.dart` still carried page-local compact density overrides on Material controls.
+
+All ordinary chrome defects above were fixed or guarded. Remaining search hits are shared component implementation, theme/token sources, Hoshi reader/user typography, dictionary/content preview surfaces, or debug payload strings.
+
+- [x] **Step 2: Run design-system tests**
 
 ```powershell
 D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test test\settings\md3_design_system_static_test.dart --reporter expanded
@@ -1619,7 +1631,9 @@ D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test test\settings\md3_
 
 Expected: PASS.
 
-- [ ] **Step 3: Run focused page families**
+Result 2026-05-31: PASS.
+
+- [x] **Step 3: Run focused page families**
 
 ```powershell
 D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test test\settings\settings_renderer_test.dart test\pages\hibiki_settings_dialog_page_test.dart test\media\audiobook\book_import_dialog_test.dart test\pages\dictionary_dialog_layout_static_test.dart test\pages\popup_dictionary_page_test.dart test\pages\book_profile_dialog_page_test.dart test\pages\reader_history_delete_dialog_test.dart --reporter expanded
@@ -1627,7 +1641,9 @@ D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test test\settings\sett
 
 Expected: PASS.
 
-- [ ] **Step 4: Run full Flutter tests**
+Result 2026-05-31: PASS.
+
+- [x] **Step 4: Run full Flutter tests**
 
 ```powershell
 D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test
@@ -1635,7 +1651,9 @@ D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test
 
 Expected: PASS. If full test is blocked by pre-existing environment/tooling failures, record the exact command, exit code, and first relevant error in the review note and final response.
 
-- [ ] **Step 5: Manual Android Material path smoke**
+Result 2026-05-31: PASS.
+
+- [x] **Step 5: Manual Android Material path smoke**
 
 Use the installed debug/release APK appropriate for the device ABI. Do not clear app data unless testing first-run UI is the goal.
 
@@ -1663,7 +1681,26 @@ For reader/audiobook layout, also capture bounds:
 - body text/image bounds
 - audiobook bar bounds
 
-- [ ] **Step 6: Review report**
+Android smoke result 2026-05-31: partial PASS on `emulator-5554` (`x86_64`) using `build/app/outputs/flutter-apk/app-debug.apk`, installed without clearing app data.
+
+Captured:
+
+- `.codex-test/md3-home.png`
+- `.codex-test/md3-home.xml`
+- `.codex-test/md3-settings.png`
+- `.codex-test/md3-settings.xml`
+- `.codex-test/md3-settings-appearance.png`
+- `.codex-test/md3-settings-appearance.xml`
+- `.codex-test/md3-dictionaries.png`
+- `.codex-test/md3-dictionaries.xml`
+- `.codex-test/md3-dictionary-search.png`
+- `.codex-test/md3-dictionary-search.xml`
+- `.codex-test/md3-logcat.txt`
+- `.codex-test/md3-launch-logcat.txt`
+
+Covered home Books/Dictionaries/Settings tabs, settings home, Appearance detail page, dictionary search field and empty-result state. Current emulator data had no imported dictionaries and no books, so popup lookup results, reader shelf selection/long press, reader quick settings, audiobook bar, and reader/audiobook bounds were not manually verified in this smoke. `md3-logcat.txt` had no app crash; filtered noise was emulator/system logging and dictionary preprocess logs.
+
+- [x] **Step 6: Review report**
 
 Append to `docs/reviews/YYYY-MM-DD-project-review.md`:
 
@@ -1693,7 +1730,7 @@ Append to `docs/reviews/YYYY-MM-DD-project-review.md`:
 
 Do not claim manual verification passed without screenshots/UI XML/log evidence.
 
-- [ ] **Step 7: Final commit**
+- [x] **Step 7: Final commit**
 
 ```powershell
 D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat format .

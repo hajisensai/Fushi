@@ -608,12 +608,6 @@ void main() {
           'Dictionary import content mirrors text-theme metrics.',
       'lib/src/pages/implementations/dictionary_dialog_delete_page.dart':
           'Dictionary delete content mirrors text-theme metrics.',
-      'lib/src/pages/implementations/dictionary_settings_dialog_page.dart':
-          'Dictionary management dense controls are tracked for Task 6.',
-      'lib/src/sync/sync_settings_schema.dart':
-          'Sync settings rows are schema-owned and tracked for settings IA cleanup.',
-      'lib/src/sync/sync_compare_dialog.dart':
-          'Sync compare dense action controls are tracked for Task 9.',
       'lib/src/settings/cupertino_settings_renderer.dart':
           'Cupertino destination list still wraps platform navigation rows.',
       'lib/src/utils/components/hibiki_list_tile.dart':
@@ -622,8 +616,6 @@ void main() {
           'Shared text-selection toolbar owns its transient surface.',
       'lib/src/utils/misc/update_checker.dart':
           'Update checker migrated card shell is already covered by local guard.',
-      'lib/src/pages/implementations/profile_management_page.dart':
-          'Profile management dense controls are tracked for Task 9.',
       'lib/src/utils/misc/mokuro_payload.dart':
           'Debug payload string logs parsed reader font size.',
       'lib/src/reader/reader_pagination_scripts.dart':
@@ -1356,10 +1348,12 @@ void main() {
       'Widget _buildMineButton(',
       '  Widget _buildDeinflection(',
     );
-    expect(mineButton, contains('IconButton('));
+    expect(mineButton, contains('HibikiIconButton('));
     expect(mineButton, contains('Icons.add_circle_outline'));
     expect(mineButton, contains('tokens.spacing'));
     expect(mineButton, contains('creator_export_card'));
+    expect(_withoutSharedComponentNames(mineButton),
+        isNot(contains('IconButton(')));
     expect(mineButton, isNot(contains("Text('+")));
     expect(mineButton, isNot(contains('HibikiFocusable(')));
 

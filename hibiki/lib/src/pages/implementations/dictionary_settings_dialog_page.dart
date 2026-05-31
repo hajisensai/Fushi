@@ -87,10 +87,12 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
                       key: ValueKey('audio_src_$index'),
                       title: _sources[index],
                       icon: Icons.drag_handle,
-                      trailing: IconButton(
-                        visualDensity: VisualDensity.compact,
-                        icon: const Icon(Icons.delete_outline, size: 18),
-                        onPressed: () {
+                      trailing: HibikiIconButton(
+                        icon: Icons.delete_outline,
+                        size: 18,
+                        tooltip: t.dialog_delete,
+                        padding: EdgeInsets.all(tokens.spacing.gap / 2),
+                        onTap: () {
                           setState(() {
                             _sources.removeAt(index);
                           });
@@ -104,10 +106,11 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
               AdaptiveSettingsTextField(
                 controller: _controller,
                 hintText: 'https://...{term}...{reading}',
-                suffixIcon: IconButton(
-                  visualDensity: VisualDensity.compact,
-                  icon: const Icon(Icons.add),
-                  onPressed: _addSource,
+                suffixIcon: HibikiIconButton(
+                  icon: Icons.add,
+                  tooltip: t.dialog_add,
+                  padding: EdgeInsets.all(tokens.spacing.gap / 2),
+                  onTap: _addSource,
                 ),
                 onSubmitted: (_) => _addSource(),
               ),

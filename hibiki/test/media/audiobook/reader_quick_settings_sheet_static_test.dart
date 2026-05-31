@@ -66,6 +66,15 @@ void main() {
       favoriteActionSource,
       isNot(contains('constraints: const BoxConstraints(minWidth: 32')),
     );
+
+    final String inBookSource = _between(
+      source,
+      '  Widget _buildSearchSection(ThemeData theme)',
+      'class _InBookSettingsHeader',
+    );
+    expect(inBookSource, contains('HibikiIconButton('));
+    expect(inBookSource, isNot(contains('FilledButton.tonal(')));
+    expect(inBookSource, isNot(contains('VisualDensity.compact')));
   });
 
   test('audiobook play bar uses shared MD3 icon controls', () {

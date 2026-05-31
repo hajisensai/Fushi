@@ -502,16 +502,9 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
               ),
             ),
             SizedBox(width: tokens.spacing.gap),
-            SizedBox(
-              height: 40,
-              child: FilledButton.tonal(
-                onPressed: _isSearching ? null : _doSearch,
-                style: FilledButton.styleFrom(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: tokens.spacing.gap + tokens.spacing.gap / 2,
-                  ),
-                  visualDensity: VisualDensity.compact,
-                ),
+            SizedBox.square(
+              dimension: 40,
+              child: Center(
                 child: _isSearching
                     ? SizedBox(
                         width: 18,
@@ -519,7 +512,15 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
                         child:
                             adaptiveIndicator(context: context, strokeWidth: 2),
                       )
-                    : const Icon(Icons.search, size: 20),
+                    : HibikiIconButton(
+                        icon: Icons.search,
+                        size: 20,
+                        backgroundColor: theme.colorScheme.secondaryContainer,
+                        enabledColor: theme.colorScheme.onSecondaryContainer,
+                        padding: EdgeInsets.all(tokens.spacing.gap),
+                        tooltip: t.search,
+                        onTap: _doSearch,
+                      ),
               ),
             ),
           ],
@@ -617,17 +618,18 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
               ),
             ),
             SizedBox(width: tokens.spacing.gap),
-            SizedBox(
-              height: 40,
-              child: FilledButton.tonal(
-                onPressed: () => _doCharJump(context),
-                style: FilledButton.styleFrom(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: tokens.spacing.gap + tokens.spacing.gap / 2,
-                  ),
-                  visualDensity: VisualDensity.compact,
+            SizedBox.square(
+              dimension: 40,
+              child: Center(
+                child: HibikiIconButton(
+                  icon: Icons.arrow_forward,
+                  size: 20,
+                  backgroundColor: theme.colorScheme.secondaryContainer,
+                  enabledColor: theme.colorScheme.onSecondaryContainer,
+                  padding: EdgeInsets.all(tokens.spacing.gap),
+                  tooltip: t.jump_to_char,
+                  onTap: () => _doCharJump(context),
                 ),
-                child: const Icon(Icons.arrow_forward, size: 20),
               ),
             ),
           ],
