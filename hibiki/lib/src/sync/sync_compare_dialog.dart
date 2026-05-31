@@ -522,17 +522,20 @@ class _SyncCompareDialogState extends State<_SyncCompareDialog> {
                     });
                   },
                   items: [
-                    PopupMenuItem(
+                    HibikiPopupMenuItem<SyncChoice>(
+                      label: t.sync_compare_all_local,
+                      icon: Icons.phone_android_outlined,
                       value: SyncChoice.useLocal,
-                      child: Text(t.sync_compare_all_local),
                     ),
-                    PopupMenuItem(
+                    HibikiPopupMenuItem<SyncChoice>(
+                      label: t.sync_compare_all_remote,
+                      icon: Icons.cloud_outlined,
                       value: SyncChoice.useRemote,
-                      child: Text(t.sync_compare_all_remote),
                     ),
-                    PopupMenuItem(
+                    HibikiPopupMenuItem<SyncChoice>(
+                      label: t.sync_compare_all_skip,
+                      icon: Icons.block_outlined,
                       value: SyncChoice.skip,
-                      child: Text(t.sync_compare_all_skip),
                     ),
                   ],
                 ),

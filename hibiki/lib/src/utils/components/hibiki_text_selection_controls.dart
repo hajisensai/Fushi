@@ -242,8 +242,10 @@ class _HibikiSelectionToolbarState extends State<_HibikiSelectionToolbar> {
             onSelected: (i) => overflowItems[i].onPressed?.call(),
             items: [
               for (int i = 0; i < overflowItems.length; i++)
-                PopupMenuItem<int>(
-                    value: i, child: Text(overflowItems[i].label)),
+                HibikiPopupMenuItem<int>(
+                  label: overflowItems[i].label,
+                  value: i,
+                ),
             ],
           ),
       ],

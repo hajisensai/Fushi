@@ -4,6 +4,7 @@ import 'package:hibiki/src/focus/hibiki_focus_target.dart';
 import 'package:hibiki/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent;
 import 'package:hibiki/src/shortcuts/input_binding.dart' show GamepadButton;
+import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 
 /// A single (value, label) choice for [GamepadMenuDropdown].
 typedef GamepadDropdownEntry<T> = ({T value, String label});
@@ -174,8 +175,7 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
   }
 
   Widget _menuAnchor(BuildContext context, double? menuWidth) {
-    final ThemeData theme = Theme.of(context);
-    final ColorScheme colors = theme.colorScheme;
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final int sel = _selectedIndex;
     // Cap the menu height so a long list (e.g. many decks) scrolls instead of
     // covering the whole screen, matching the stock DropdownMenu. The
@@ -185,6 +185,15 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
       controller: _menu,
       childFocusNode: _triggerFocus,
       style: MenuStyle(
+        backgroundColor: WidgetStatePropertyAll<Color>(tokens.surfaces.overlay),
+        surfaceTintColor:
+            const WidgetStatePropertyAll<Color>(Colors.transparent),
+        shape: WidgetStatePropertyAll<OutlinedBorder>(
+          RoundedRectangleBorder(borderRadius: tokens.radii.menuRadius),
+        ),
+        padding: WidgetStatePropertyAll<EdgeInsetsGeometry>(
+          EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
+        ),
         // Pin the menu panel width to the trigger width (min == max → the menu
         // matches the anchor). A null width (unbounded parent) keeps content
         // sizing, the prior behavior.
@@ -197,7 +206,7 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
       ),
       menuChildren: <Widget>[
         for (int i = 0; i < widget.entries.length; i++)
-          _menuItem(context, colors, i, sel, menuWidth),
+          _menuItem(context, tokens, i, sel, menuWidth),
       ],
       builder:
           (BuildContext context, MenuController controller, Widget? child) {
@@ -208,10 +217,12 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
               : null,
           style: OutlinedButton.styleFrom(
             alignment: Alignment.centerLeft,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
+            padding: EdgeInsets.symmetric(
+              horizontal: tokens.spacing.rowHorizontal,
+              vertical: tokens.spacing.rowVertical,
             ),
+            shape:
+                RoundedRectangleBorder(borderRadius: tokens.radii.chipRadius),
           ),
           child: Row(
             children: <Widget>[
@@ -219,10 +230,13 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
                 child: Text(
                   _selectedLabel ?? widget.hintText ?? widget.label ?? '',
                   overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodyLarge,
+                  style: tokens.type.listTitle,
                 ),
               ),
-              const Icon(Icons.arrow_drop_down),
+              Icon(
+                Icons.arrow_drop_down,
+                color: tokens.surfaces.onVariant,
+              ),
             ],
           ),
         );
@@ -231,19 +245,27 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
   }
 
   /// One menu entry. The selected entry gets the MD3 "selected" state — a
-  /// full-row [ColorScheme.secondaryContainer] background plus a trailing check
-  /// — so it reads as active before the gamepad focus ring lands on it. Items
-  /// are 48dp tall with 12dp side padding and fill the (pinned) menu width.
+  /// full-row tokenized selected background plus a trailing check, so it reads
+  /// as active before the gamepad focus ring lands on it.
   Widget _menuItem(
     BuildContext context,
-    ColorScheme colors,
+    HibikiDesignTokens tokens,
     int i,
     int sel,
     double? menuWidth,
   ) {
     final bool selected = i == sel;
     final GamepadDropdownEntry<T> entry = widget.entries[i];
-    final Widget text = Text(entry.label, overflow: TextOverflow.ellipsis);
+    final Color foreground =
+        selected ? tokens.surfaces.primary : tokens.surfaces.onSurface;
+    final Widget text = Text(
+      entry.label,
+      overflow: TextOverflow.ellipsis,
+      style: tokens.type.listTitle.copyWith(
+        color: foreground,
+        fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+      ),
+    );
     // Flex (Expanded) needs a bounded width; only the pinned-width menu hands
     // the item finite constraints. The unbounded fallback uses a min-size row
     // so a flex child can never assert against infinite width.
@@ -253,16 +275,16 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
             children: <Widget>[
               text,
               if (selected)
-                const Padding(
-                  padding: EdgeInsets.only(left: 8),
-                  child: Icon(Icons.check, size: 20),
+                Padding(
+                  padding: EdgeInsets.only(left: tokens.spacing.gap),
+                  child: Icon(Icons.check, size: 20, color: foreground),
                 ),
             ],
           )
         : Row(
             children: <Widget>[
               Expanded(child: text),
-              if (selected) const Icon(Icons.check, size: 20),
+              if (selected) Icon(Icons.check, size: 20, color: foreground),
             ],
           );
     return Actions(
@@ -286,10 +308,12 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
         onPressed: () => widget.onChanged(entry.value),
         style: MenuItemButton.styleFrom(
           minimumSize: Size(menuWidth ?? 0, 48),
-          padding: const EdgeInsets.symmetric(horizontal: 12),
+          padding: EdgeInsets.symmetric(
+            horizontal: tokens.spacing.rowHorizontal,
+          ),
           alignment: Alignment.centerLeft,
-          backgroundColor: selected ? colors.secondaryContainer : null,
-          foregroundColor: selected ? colors.onSecondaryContainer : null,
+          backgroundColor: selected ? tokens.surfaces.selected : null,
+          foregroundColor: foreground,
         ),
         child: label,
       ),

@@ -1007,30 +1007,17 @@ class _DictionaryDialogPageState extends BasePageState {
     );
   }
 
-  PopupMenuItem<VoidCallback> buildPopupItem({
+  HibikiPopupMenuItem<VoidCallback> buildPopupItem({
     required String label,
-    required Function() action,
+    required VoidCallback action,
     IconData? icon,
     Color? color,
   }) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return PopupMenuItem<VoidCallback>(
+    return HibikiPopupMenuItem<VoidCallback>(
+      label: label,
       value: action,
-      child: Row(
-        children: [
-          if (icon != null)
-            Icon(
-              icon,
-              size: textTheme.bodyMedium?.fontSize,
-              color: color,
-            ),
-          if (icon != null) SizedBox(width: tokens.spacing.gap),
-          Text(
-            label,
-            style: TextStyle(color: color),
-          ),
-        ],
-      ),
+      icon: icon,
+      color: color,
     );
   }
 
@@ -1039,7 +1026,7 @@ class _DictionaryDialogPageState extends BasePageState {
   // tile opens this same getMenuItems list via buildDictionaryTileTrailing()
   // / HibikiOverflowMenu; the showMenu variant was never wired to any gesture.
 
-  List<PopupMenuItem<VoidCallback>> getMenuItems(Dictionary dictionary) {
+  List<HibikiPopupMenuItem<VoidCallback>> getMenuItems(Dictionary dictionary) {
     return [
       buildPopupItem(
         label: dictionary.isHidden(appModel.targetLanguage)

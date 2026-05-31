@@ -1379,11 +1379,85 @@ class HibikiOverflowMenu<T> extends StatelessWidget {
       icon: child == null ? iconWidget ?? Icon(icon, size: iconSize) : null,
       shape: RoundedRectangleBorder(borderRadius: tokens.radii.menuRadius),
       color: tokens.surfaces.overlay,
+      surfaceTintColor: Colors.transparent,
+      menuPadding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
       padding: padding,
       splashRadius: splashRadius,
+      position: PopupMenuPosition.under,
       onSelected: onSelected,
       itemBuilder: (BuildContext context) => items,
       child: child,
+    );
+  }
+}
+
+class HibikiPopupMenuItem<T> extends PopupMenuItem<T> {
+  HibikiPopupMenuItem({
+    required String label,
+    required T value,
+    super.key,
+    IconData? icon,
+    Color? color,
+    bool selected = false,
+    bool enabled = true,
+  }) : super(
+          value: value,
+          enabled: enabled,
+          height: 48,
+          child: _HibikiPopupMenuItemContent(
+            label: label,
+            icon: icon,
+            color: color,
+            selected: selected,
+          ),
+        );
+}
+
+class _HibikiPopupMenuItemContent extends StatelessWidget {
+  const _HibikiPopupMenuItemContent({
+    required this.label,
+    this.icon,
+    this.color,
+    this.selected = false,
+  });
+
+  final String label;
+  final IconData? icon;
+  final Color? color;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final Color foreground = color ??
+        (selected ? tokens.surfaces.primary : tokens.surfaces.onSurface);
+    final TextStyle textStyle = tokens.type.listTitle.copyWith(
+      color: foreground,
+      fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+    );
+
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 48),
+      child: Row(
+        children: <Widget>[
+          if (icon != null) ...<Widget>[
+            Icon(icon, size: 20, color: foreground),
+            SizedBox(width: tokens.spacing.gap + 4),
+          ],
+          Expanded(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: textStyle,
+            ),
+          ),
+          if (selected) ...<Widget>[
+            SizedBox(width: tokens.spacing.gap + 4),
+            Icon(Icons.check, size: 20, color: foreground),
+          ],
+        ],
+      ),
     );
   }
 }

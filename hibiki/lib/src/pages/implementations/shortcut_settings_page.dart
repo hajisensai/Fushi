@@ -537,9 +537,10 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
               onSelected: _addGamepad,
               items: <PopupMenuEntry<GamepadButton>>[
                 for (final GamepadButton btn in GamepadButton.values)
-                  PopupMenuItem<GamepadButton>(
+                  HibikiPopupMenuItem<GamepadButton>(
+                    label: btn.label,
+                    icon: Icons.gamepad_outlined,
                     value: btn,
-                    child: Text(btn.label),
                   ),
               ],
               padding: EdgeInsets.zero,

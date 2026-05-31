@@ -137,7 +137,6 @@ class _DictionaryEntryHeaderWrap extends ConsumerWidget {
   }) {
     AppModel appModel = ref.read(appProvider);
     CreatorModel creatorModel = ref.read(creatorProvider);
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
 
     List<QuickAction> filteredActions = appModel.quickActions.values
         .where((e) => e.showInSingleDictionary)
@@ -145,7 +144,9 @@ class _DictionaryEntryHeaderWrap extends ConsumerWidget {
 
     return [
       ...filteredActions.map((quickAction) {
-        return PopupMenuItem<VoidCallback>(
+        return HibikiPopupMenuItem<VoidCallback>(
+          label: quickAction.getLocalisedLabel(appModel),
+          icon: quickAction.icon,
           value: () async {
             await quickAction.executeAction(
               context: context,
@@ -158,19 +159,6 @@ class _DictionaryEntryHeaderWrap extends ConsumerWidget {
 
             ref.invalidate(quickActionColorProvider(entry));
           },
-          child: Row(
-            children: [
-              Icon(
-                quickAction.icon,
-                size: Theme.of(context).textTheme.bodyMedium?.fontSize,
-              ),
-              SizedBox(width: tokens.spacing.gap),
-              Text(
-                quickAction.getLocalisedLabel(appModel),
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-            ],
-          ),
         );
       }).toList(),
     ];

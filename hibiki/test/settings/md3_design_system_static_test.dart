@@ -35,6 +35,7 @@ void main() {
       'class HibikiModalSheetFrame',
       'class HibikiDialogFrame',
       'class HibikiOverflowMenu',
+      'class HibikiPopupMenuItem',
       'class HibikiFilePickerRow',
       'class HibikiLogPanel',
       'class HibikiPopupSurface',
@@ -1254,9 +1255,61 @@ void main() {
         File('lib/src/sync/sync_settings_schema.dart').readAsStringSync();
 
     expect(source, contains('AdaptiveSettingsSwitchRow('));
+    expect(source, contains('AdaptiveSettingsPickerRow<SyncBackendType>('));
     expect(source, contains('HibikiListItem('));
+    expect(source, isNot(contains('DropdownButton<SyncBackendType>(')));
     expect(source, isNot(contains('SwitchListTile')));
     expect(source, isNot(contains('ListTile(')));
+  });
+
+  test('popup menus use the shared MD3 menu item primitive', () {
+    final List<String> menuFiles = <String>[
+      'lib/src/pages/implementations/dictionary_dialog_page.dart',
+      'lib/src/pages/implementations/dictionary_entry_page.dart',
+      'lib/src/pages/implementations/shortcut_settings_page.dart',
+      'lib/src/sync/sync_compare_dialog.dart',
+      'lib/src/utils/components/hibiki_text_selection_controls.dart',
+    ];
+
+    final String sharedMenu = File(
+      'lib/src/utils/components/hibiki_material_components.dart',
+    ).readAsStringSync();
+    expect(sharedMenu, contains('class HibikiPopupMenuItem<T>'));
+    expect(sharedMenu, contains('minHeight: 48'));
+    expect(sharedMenu, contains('tokens.radii.menuRadius'));
+    expect(sharedMenu, contains('PopupMenuPosition.under'));
+
+    final String dropdown =
+        File('lib/src/utils/components/hibiki_dropdown.dart')
+            .readAsStringSync();
+    expect(dropdown, contains('MenuAnchor('));
+    expect(dropdown, contains('tokens.radii.menuRadius'));
+    expect(dropdown, contains('tokens.surfaces.overlay'));
+    expect(dropdown, contains('tokens.surfaces.selected'));
+    expect(dropdown, isNot(contains('BorderRadius.circular(8)')));
+    expect(dropdown, isNot(contains('colors.secondaryContainer')));
+
+    for (final String path in menuFiles) {
+      final String source = File(path).readAsStringSync();
+      final String withoutSharedMenuItems =
+          source.replaceAll('HibikiPopupMenuItem', 'SharedMenuItem');
+
+      expect(
+        source,
+        contains('HibikiPopupMenuItem'),
+        reason: '$path should route menu rows through the shared MD3 item.',
+      );
+      expect(
+        withoutSharedMenuItems,
+        isNot(contains('PopupMenuItem(')),
+        reason: '$path should not create bespoke popup menu rows.',
+      );
+      expect(
+        withoutSharedMenuItems,
+        isNot(contains('PopupMenuItem<')),
+        reason: '$path should not type local helpers as raw popup items.',
+      );
+    }
   });
 
   test('dictionary and popup surfaces use shared MD3 primitives', () {
@@ -1276,11 +1329,11 @@ void main() {
     final String managerMenu = _functionSource(
       dictionaryManager,
       'Widget buildDictionaryTileTrailing(',
-      'PopupMenuItem<VoidCallback> buildPopupItem({',
+      'HibikiPopupMenuItem<VoidCallback> buildPopupItem({',
     );
     final String managerPopupItem = _functionSource(
       dictionaryManager,
-      'PopupMenuItem<VoidCallback> buildPopupItem({',
+      'HibikiPopupMenuItem<VoidCallback> buildPopupItem({',
       '  // HBK-AUDIT-111:',
     );
 
@@ -1304,8 +1357,8 @@ void main() {
     expect(managerMenu, isNot(contains('PopupMenuButton')));
     expect(managerMenu, isNot(contains('Material(')));
     expect(managerMenu, isNot(contains('BorderRadius.circular(24)')));
-    expect(managerPopupItem, contains('HibikiDesignTokens.of(context)'));
-    expect(managerPopupItem, contains('tokens.spacing'));
+    expect(managerPopupItem, contains('HibikiPopupMenuItem<VoidCallback>('));
+    expect(managerPopupItem, isNot(contains('Row(')));
     expect(managerPopupItem, isNot(contains('const SizedBox(width: 8)')));
     expect(managerMenu, isNot(contains('const SizedBox(width: 8)')));
 

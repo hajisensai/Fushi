@@ -899,6 +899,8 @@ String _backendLabel(SyncBackendType type) {
   switch (type) {
     case SyncBackendType.googleDrive:
       return t.sync_backend_google_drive;
+    case SyncBackendType.hibikiServer:
+      return t.sync_backend_hibiki_server;
     case SyncBackendType.webDav:
       return t.sync_backend_webdav;
     case SyncBackendType.oneDrive:
@@ -909,8 +911,6 @@ String _backendLabel(SyncBackendType type) {
       return t.sync_backend_ftp;
     case SyncBackendType.sftp:
       return t.sync_backend_sftp;
-    case SyncBackendType.hibikiServer:
-      return t.sync_backend_hibiki_server;
   }
 }
 
@@ -936,34 +936,39 @@ class _BackendSelectorWidgetState extends State<_BackendSelectorWidget> {
   @override
   Widget build(BuildContext context) {
     final state = _syncSettings(widget.settingsContext);
-    return AdaptiveSettingsRow(
+    return AdaptiveSettingsPickerRow<SyncBackendType>(
       title: t.sync_backend,
       icon: Icons.cloud_outlined,
+      selected: state.backendType,
+      options: _selectableBackends(state.backendType)
+          .map(
+            (SyncBackendType type) =>
+                AdaptiveSettingsPickerOption<SyncBackendType>(
+              value: type,
+              label: _backendLabel(type),
+            ),
+          )
+          .toList(growable: false),
       controlBelow: true,
-      trailing: DropdownButton<SyncBackendType>(
-        value: state.backendType,
-        underline: const SizedBox.shrink(),
-        items: _selectableBackends(state.backendType)
-            .map((SyncBackendType type) => DropdownMenuItem<SyncBackendType>(
-                  value: type,
-                  child: Text(_backendLabel(type)),
-                ))
-            .toList(),
-        onChanged: (SyncBackendType? value) async {
-          final SyncBackendType previous = state.backendType;
-          if (value == null || value == previous) return;
-          state.backendType = value;
-          final repo = SyncRepository(widget.settingsContext.appModel.database);
-          await repo.setBackendType(value);
-          await repo.clearFolderCache();
-          // The TLS flag is FTP-only; don't let it linger after switching away.
-          if (previous == SyncBackendType.ftp && value != SyncBackendType.ftp) {
-            await repo.setFtpTlsEnabled(false);
-          }
-          widget.settingsContext.refresh();
-        },
-      ),
+      materialWidth: double.infinity,
+      onChanged: _selectBackend,
     );
+  }
+
+  Future<void> _selectBackend(SyncBackendType value) async {
+    final _SyncSettingsState state = _syncSettings(widget.settingsContext);
+    final SyncBackendType previous = state.backendType;
+    if (value == previous) return;
+    state.backendType = value;
+    final SyncRepository repo =
+        SyncRepository(widget.settingsContext.appModel.database);
+    await repo.setBackendType(value);
+    await repo.clearFolderCache();
+    // The TLS flag is FTP-only; don't let it linger after switching away.
+    if (previous == SyncBackendType.ftp && value != SyncBackendType.ftp) {
+      await repo.setFtpTlsEnabled(false);
+    }
+    widget.settingsContext.refresh();
   }
 }
 
