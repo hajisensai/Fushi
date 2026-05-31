@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/models.dart';
+import 'package:hibiki/src/shortcuts/gamepad_service.dart'
+    show GamepadLongPressActions;
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 
@@ -80,32 +82,37 @@ class _HibikiSearchHistoryState extends ConsumerState<HibikiSearchHistory> {
     required Function(String) onSearchTermSelect,
   }) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return GestureDetector(
-      onLongPress: () {
-        if (widget.searchSuggestions.isNotEmpty) {
-          return;
-        }
+    void onRemove() {
+      if (widget.searchSuggestions.isNotEmpty) {
+        return;
+      }
+      appModel.removeFromSearchHistory(
+        historyKey: uniqueKey,
+        searchTerm: searchTerm,
+      );
+      setState(() {});
+      widget.onUpdate();
+    }
 
-        appModel.removeFromSearchHistory(
-          historyKey: uniqueKey,
-          searchTerm: searchTerm,
-        );
-        setState(() {});
-        widget.onUpdate();
-      },
-      child: HibikiListItem(
-        leading: Icon(
-          widget.searchSuggestions.isNotEmpty
-              ? Icons.search
-              : Icons.youtube_searched_for_outlined,
+    return GamepadLongPressActions(
+      // Gamepad: hold-A removes this history entry (mouse long-press equivalent).
+      onLongPress: onRemove,
+      child: GestureDetector(
+        onLongPress: onRemove,
+        child: HibikiListItem(
+          leading: Icon(
+            widget.searchSuggestions.isNotEmpty
+                ? Icons.search
+                : Icons.youtube_searched_for_outlined,
+          ),
+          title: Text(searchTerm),
+          titleMaxLines: 1,
+          padding: EdgeInsets.symmetric(
+            horizontal: tokens.spacing.page,
+            vertical: tokens.spacing.rowVertical + 2,
+          ),
+          onTap: () => onSearchTermSelect(searchTerm),
         ),
-        title: Text(searchTerm),
-        titleMaxLines: 1,
-        padding: EdgeInsets.symmetric(
-          horizontal: tokens.spacing.page,
-          vertical: tokens.spacing.rowVertical + 2,
-        ),
-        onTap: () => onSearchTermSelect(searchTerm),
       ),
     );
   }

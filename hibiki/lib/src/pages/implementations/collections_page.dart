@@ -9,6 +9,8 @@ import 'package:hibiki/media.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki/src/pages/base_page.dart';
+import 'package:hibiki/src/shortcuts/gamepad_service.dart'
+    show GamepadLongPressActions;
 
 enum _CollectionType { bookmark, sentence }
 
@@ -483,70 +485,78 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
             false;
       },
       onDismissed: (_) => _deleteItem(item),
-      child: GestureDetector(
+      child: GamepadLongPressActions(
+        // Gamepad: hold-A opens the same item menu a mouse long-press does.
         onLongPress: () => _showItemDialog(item),
-        child: HibikiListItem(
-          leading: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: <Widget>[
-              Icon(icon,
-                  size: 20,
-                  color: isBookmark
-                      ? Theme.of(context).colorScheme.primary
-                      : Theme.of(context).colorScheme.tertiary),
-              Text(
-                typeLabel,
-                style: textTheme.labelSmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+        child: GestureDetector(
+          onLongPress: () => _showItemDialog(item),
+          child: HibikiListItem(
+            leading: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: <Widget>[
+                Icon(icon,
+                    size: 20,
+                    color: isBookmark
+                        ? Theme.of(context).colorScheme.primary
+                        : Theme.of(context).colorScheme.tertiary),
+                Text(
+                  typeLabel,
+                  style: textTheme.labelSmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
+            title: Text(
+              title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            subtitle: Text(
+              [
+                if (subtitle != null && subtitle.isNotEmpty) subtitle,
+                _dateFmt.format(item.createdAt),
+              ].join(' · '),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_hasAudio(item))
+                  HibikiIconButton(
+                    tooltip: t.dialog_play,
+                    icon: _playingAudio
+                        ? Icons.hourglass_top
+                        : Icons.volume_up_outlined,
+                    size: 18,
+                    enabled: !_playingAudio,
+                    padding: EdgeInsets.all(tokens.spacing.gap / 2),
+                    onTap: () => _playItemAudio(item),
+                  ),
+                if (!isBookmark && item.text != null)
+                  HibikiIconButton(
+                    tooltip: t.copy,
+                    icon: Icons.copy_outlined,
+                    size: 18,
+                    padding: EdgeInsets.all(tokens.spacing.gap / 2),
+                    onTap: () {
+                      Clipboard.setData(ClipboardData(text: item.text!));
+                    },
+                  ),
+                if (canNavigate)
+                  Icon(
+                    Icons.chevron_right,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+              ],
+            ),
+            // Non-navigable rows still get an onTap so they are a gamepad focus
+            // stop (otherwise hold-A / the item menu can never be reached).
+            onTap: canNavigate
+                ? () => _openBook(item)
+                : () => _showItemDialog(item),
           ),
-          title: Text(
-            title,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
-          subtitle: Text(
-            [
-              if (subtitle != null && subtitle.isNotEmpty) subtitle,
-              _dateFmt.format(item.createdAt),
-            ].join(' · '),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (_hasAudio(item))
-                HibikiIconButton(
-                  tooltip: t.dialog_play,
-                  icon: _playingAudio
-                      ? Icons.hourglass_top
-                      : Icons.volume_up_outlined,
-                  size: 18,
-                  enabled: !_playingAudio,
-                  padding: EdgeInsets.all(tokens.spacing.gap / 2),
-                  onTap: () => _playItemAudio(item),
-                ),
-              if (!isBookmark && item.text != null)
-                HibikiIconButton(
-                  tooltip: t.copy,
-                  icon: Icons.copy_outlined,
-                  size: 18,
-                  padding: EdgeInsets.all(tokens.spacing.gap / 2),
-                  onTap: () {
-                    Clipboard.setData(ClipboardData(text: item.text!));
-                  },
-                ),
-              if (canNavigate)
-                Icon(
-                  Icons.chevron_right,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-            ],
-          ),
-          onTap: canNavigate ? () => _openBook(item) : null,
         ),
       ),
     );
