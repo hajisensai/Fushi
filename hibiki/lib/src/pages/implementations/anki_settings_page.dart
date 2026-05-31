@@ -53,6 +53,12 @@ class _AnkiSettingsPageState extends BasePageState<AnkiSettingsPage> {
                 keyboardType: TextInputType.number,
                 onSubmitted: vm.updateAnkiConnectPort,
               ),
+              _buildConnectionField(
+                label: t.anki_connect_api_key,
+                value: settings.ankiConnectApiKey,
+                hint: t.anki_connect_api_key_hint,
+                onSubmitted: vm.updateAnkiConnectApiKey,
+              ),
             ],
           ),
         if (uiState.errorMessage != null)

@@ -8,7 +8,16 @@ class AnkiConnectService implements AnkiService {
   final String host;
   final int port;
 
-  AnkiConnectService({this.host = 'localhost', this.port = 8765});
+  /// AnkiConnect API key. When the AnkiConnect add-on has `apiKey` configured,
+  /// every request must carry a matching `key`; otherwise it replies with
+  /// "valid api key must be provided". Empty means no key (the default).
+  final String apiKey;
+
+  AnkiConnectService({
+    this.host = 'localhost',
+    this.port = 8765,
+    this.apiKey = '',
+  });
 
   static const _timeout = Duration(seconds: 10);
 
@@ -18,6 +27,9 @@ class AnkiConnectService implements AnkiService {
       'action': action,
       'version': 6,
       if (params != null) 'params': params,
+      // Only send `key` when configured: AnkiConnect with no apiKey set does
+      // not expect the field, and sending an empty one is needless.
+      if (apiKey.isNotEmpty) 'key': apiKey,
     });
     final response = await http.post(
       Uri.parse('http://$host:$port'),

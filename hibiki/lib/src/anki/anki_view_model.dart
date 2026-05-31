@@ -129,6 +129,12 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
         .updateSettings((s) => s.copyWith(ankiConnectPort: port));
     state = state.copyWith(settings: updated);
   }
+
+  Future<void> updateAnkiConnectApiKey(String apiKey) async {
+    final updated = await _repository
+        .updateSettings((s) => s.copyWith(ankiConnectApiKey: apiKey.trim()));
+    state = state.copyWith(settings: updated);
+  }
 }
 
 final ankiRepositoryProvider = Provider<BaseAnkiRepository>((_) {

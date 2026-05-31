@@ -1161,5 +1161,7 @@
     "backup_import_settings_on_hint": "Full restore: fonts, appearance and profiles come from the backup.",
     "backup_import_settings_off_hint": "Keep this device's fonts/appearance/profiles; restore only books & reading data.",
     "reader_unsupported_platform": "The reader is not yet available on this platform.",
-    "microphone_permission_denied": "Microphone permission is required to record."
+    "microphone_permission_denied": "Microphone permission is required to record.",
+    "anki_connect_api_key": "API Key",
+    "anki_connect_api_key_hint": "Leave empty unless AnkiConnect requires a key"
 }

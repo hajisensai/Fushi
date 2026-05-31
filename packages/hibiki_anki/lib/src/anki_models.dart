@@ -48,6 +48,7 @@ class AnkiSettings {
     this.embedMedia = true,
     this.ankiConnectHost = 'localhost',
     this.ankiConnectPort = 8765,
+    this.ankiConnectApiKey = '',
   });
 
   factory AnkiSettings.fromJson(Map<String, dynamic> json) => AnkiSettings(
@@ -71,6 +72,7 @@ class AnkiSettings {
         embedMedia: json['embedMedia'] as bool? ?? true,
         ankiConnectHost: json['ankiConnectHost'] as String? ?? 'localhost',
         ankiConnectPort: json['ankiConnectPort'] as int? ?? 8765,
+        ankiConnectApiKey: json['ankiConnectApiKey'] as String? ?? '',
       );
   final int? selectedDeckId;
   final String? selectedDeckName;
@@ -85,6 +87,7 @@ class AnkiSettings {
   final bool embedMedia;
   final String ankiConnectHost;
   final int ankiConnectPort;
+  final String ankiConnectApiKey;
 
   bool get isConfigured => selectedDeckId != null && selectedNoteTypeId != null;
 
@@ -109,6 +112,7 @@ class AnkiSettings {
     bool? embedMedia,
     String? ankiConnectHost,
     int? ankiConnectPort,
+    String? ankiConnectApiKey,
   }) =>
       AnkiSettings(
         selectedDeckId: selectedDeckId ?? this.selectedDeckId,
@@ -124,6 +128,7 @@ class AnkiSettings {
         embedMedia: embedMedia ?? this.embedMedia,
         ankiConnectHost: ankiConnectHost ?? this.ankiConnectHost,
         ankiConnectPort: ankiConnectPort ?? this.ankiConnectPort,
+        ankiConnectApiKey: ankiConnectApiKey ?? this.ankiConnectApiKey,
       );
 
   Map<String, dynamic> toJson() => {
@@ -141,6 +146,7 @@ class AnkiSettings {
         'embedMedia': embedMedia,
         'ankiConnectHost': ankiConnectHost,
         'ankiConnectPort': ankiConnectPort,
+        'ankiConnectApiKey': ankiConnectApiKey,
       };
 }
 

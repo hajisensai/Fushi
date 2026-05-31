@@ -312,4 +312,38 @@ void main() {
       expect(params['data'], 'QUJD');
     });
   });
+
+  group('api key', () {
+    // AnkiConnect with `apiKey` configured rejects keyless requests with
+    // "valid api key must be provided"; the service must thread the key into
+    // every request body, and omit it entirely when none is configured.
+    Future<Map<String, dynamic>> bodyWithApiKey(String apiKey) async {
+      final issued = <http.Request>[];
+      final client = MockClient((http.Request request) async {
+        issued.add(request);
+        return http.Response(
+          jsonEncode(
+              <String, Object?>{'result': const <String>[], 'error': null}),
+          200,
+          headers: <String, String>{'content-type': 'application/json'},
+        );
+      });
+      await http.runWithClient(
+        () => AnkiConnectService(host: '127.0.0.1', port: 8765, apiKey: apiKey)
+            .getDeckNames(),
+        () => client,
+      );
+      return jsonDecode(issued.single.body) as Map<String, dynamic>;
+    }
+
+    test('includes the key field when an api key is configured', () async {
+      final body = await bodyWithApiKey('s3cr3t');
+      expect(body['key'], 's3cr3t');
+    });
+
+    test('omits the key field when no api key is configured', () async {
+      final body = await bodyWithApiKey('');
+      expect(body.containsKey('key'), isFalse);
+    });
+  });
 }
