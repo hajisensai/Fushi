@@ -24,4 +24,14 @@ void main() {
     );
     expect(source, isNot(contains('const EdgeInsets.all(16)')));
   });
+
+  test('audio recorder player controls use shared MD3 icon buttons', () {
+    final String source = File(
+      'lib/src/pages/implementations/audio_recorder_page.dart',
+    ).readAsStringSync();
+
+    expect(source, contains('HibikiIconButton('));
+    expect(source, isNot(contains('return IconButton(')));
+    expect(source, isNot(contains('child: IconButton(')));
+  });
 }

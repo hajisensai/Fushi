@@ -1518,7 +1518,7 @@ git commit -m "refactor(reader): align quick settings and audiobook chrome with 
 - Test: `hibiki/test/pages/anki_settings_page_test.dart`
 - Test: `hibiki/test/settings/md3_design_system_static_test.dart`
 
-- [ ] **Step 1: Keep workflow semantics**
+- [x] **Step 1: Keep workflow semantics**
 
 For import dialogs, preserve:
 
@@ -1533,7 +1533,7 @@ For Anki, preserve:
 - deck/model fetch behavior.
 - mapping labels and persisted mappings.
 
-- [ ] **Step 2: Use step-based/import primitives**
+- [x] **Step 2: Use step-based/import primitives**
 
 Use existing primitives first:
 
@@ -1547,12 +1547,33 @@ Use existing primitives first:
 
 Only add a new primitive if at least two dialogs duplicate the same layout.
 
-- [ ] **Step 3: Run focused tests**
+Implementation note: import dialogs, media item dialogs, media source picker,
+example sentences, open stash, Anki settings, text segmentation, and crop image
+were already on the shared MD3 dialog/row/input primitives. The remaining
+ordinary chrome defect in this family was `audio_recorder_page.dart`, whose
+active and disabled play controls still used local `IconButton` instances. Those
+controls now use `HibikiIconButton`; the audio session, recorder permission,
+play/pause/seek, file picker, import, matching, progress, and Anki routing flows
+were not changed.
+
+- [x] **Step 3: Run focused tests**
 
 ```powershell
 D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat format lib\src\media\audiobook\book_import_dialog.dart lib\src\media\audiobook\audiobook_import_dialog.dart lib\src\pages\implementations\media_item_dialog_page.dart lib\src\pages\implementations\media_item_edit_dialog_page.dart lib\src\pages\implementations\media_source_picker_dialog_page.dart lib\src\pages\implementations\example_sentences_dialog_page.dart lib\src\pages\implementations\open_stash_dialog_page.dart lib\src\pages\implementations\audio_recorder_page.dart lib\src\pages\implementations\anki_settings_page.dart lib\src\pages\implementations\text_segmentation_dialog_page.dart lib\src\pages\implementations\crop_image_dialog_page.dart test\settings\md3_design_system_static_test.dart
 D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test test\settings\md3_design_system_static_test.dart test\media\audiobook\book_import_dialog_test.dart test\pages\media_item_dialog_page_test.dart test\pages\media_item_edit_dialog_page_test.dart test\pages\anki_settings_page_test.dart --reporter expanded
 ```
+
+Verified 2026-05-31:
+
+```powershell
+D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat format lib/src/pages/implementations/audio_recorder_page.dart test/pages/audio_recorder_dialog_md3_static_test.dart
+D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test test/pages/audio_recorder_dialog_md3_static_test.dart --reporter expanded
+D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test test/pages/audio_recorder_dialog_md3_static_test.dart test/pages/audio_recorder_page_test.dart test/media/audiobook/book_import_dialog_test.dart test/media/audiobook/audiobook_import_dialog_test.dart test/pages/media_item_dialog_page_test.dart test/pages/media_item_edit_dialog_page_test.dart test/pages/media_item_edit_dialog_md3_static_test.dart test/pages/media_source_picker_dialog_page_test.dart test/pages/media_source_picker_dialog_md3_static_test.dart test/pages/anki_settings_page_test.dart test/pages/example_sentences_dialog_md3_static_test.dart test/pages/open_stash_dialog_page_test.dart test/pages/text_segmentation_dialog_md3_static_test.dart test/pages/crop_image_dialog_md3_static_test.dart test/settings/md3_design_system_static_test.dart --reporter expanded
+```
+
+Result: PASS. The first `audio_recorder_dialog_md3_static_test.dart` run failed
+before the production change because `audio_recorder_page.dart` still contained
+local `IconButton` controls; it passed after the migration.
 
 - [ ] **Step 4: Commit**
 

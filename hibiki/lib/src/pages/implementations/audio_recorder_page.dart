@@ -152,6 +152,7 @@ class _AudioRecorderDialogPageState
         _playerStateNotifier,
       ],
       builder: (context, values, _) {
+        final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
         PlayerState? playerState = values.elementAt(0);
 
         IconData iconData = Icons.play_arrow_outlined;
@@ -165,9 +166,12 @@ class _AudioRecorderDialogPageState
           iconData = Icons.play_arrow_outlined;
         }
 
-        return IconButton(
-          icon: Icon(iconData, size: 24),
-          onPressed: () async {
+        return HibikiIconButton(
+          icon: iconData,
+          size: 24,
+          padding: EdgeInsets.all(tokens.spacing.gap),
+          tooltip: playerState?.playing == true ? t.pause : t.play,
+          onTap: () async {
             AudioSession? session;
             if (Platform.isAndroid || Platform.isIOS || Platform.isMacOS) {
               session = await AudioSession.instance;
@@ -339,13 +343,13 @@ class _AudioRecorderDialogPageState
                 else
                   Opacity(
                     opacity: 0.5,
-                    child: IconButton(
-                      icon: Icon(
-                        Icons.play_arrow_outlined,
-                        size: 24,
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                      onPressed: null,
+                    child: HibikiIconButton(
+                      icon: Icons.play_arrow_outlined,
+                      size: 24,
+                      enabled: false,
+                      disabledColor: theme.colorScheme.onSurfaceVariant,
+                      padding: EdgeInsets.all(tokens.spacing.gap),
+                      tooltip: t.play,
                     ),
                   ),
                 if (showTime)
