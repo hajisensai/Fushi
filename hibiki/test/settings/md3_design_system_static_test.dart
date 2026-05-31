@@ -610,8 +610,6 @@ void main() {
           'Dictionary delete content mirrors text-theme metrics.',
       'lib/src/pages/implementations/dictionary_settings_dialog_page.dart':
           'Dictionary management dense controls are tracked for Task 6.',
-      'lib/src/pages/implementations/collections_page.dart':
-          'Collection list compact controls are tracked for Task 7.',
       'lib/src/sync/sync_settings_schema.dart':
           'Sync settings rows are schema-owned and tracked for settings IA cleanup.',
       'lib/src/sync/sync_compare_dialog.dart':
@@ -1675,6 +1673,29 @@ void main() {
     }
   });
 
+  test('collection list rows use shared MD3 primitives', () {
+    final String source = File(
+      'lib/src/pages/implementations/collections_page.dart',
+    ).readAsStringSync();
+    final String itemSource = _functionSource(
+      source,
+      'Widget _buildItem(_CollectionItem item)',
+      'class CollectionItemDialogFrame',
+    );
+    final String normalized = _withoutSharedComponentNames(itemSource);
+
+    expect(itemSource, contains('HibikiListItem('));
+    expect(itemSource, contains('HibikiIconButton('));
+    expect(itemSource, contains('tokens.spacing'));
+    expect(itemSource, contains('_hasAudio(item)'));
+    expect(itemSource, contains('_playItemAudio(item)'));
+    expect(itemSource, contains('onLongPress: () => _showItemDialog(item)'));
+    expect(normalized, isNot(contains('IconButton(')));
+    expect(itemSource, isNot(contains('VisualDensity.compact')));
+    expect(normalized, isNot(contains('ListTile(')));
+    expect(normalized, isNot(contains('Card(')));
+  });
+
   test('media item edit dialog uses shared MD3 dialog chrome', () {
     final String source = File(
       'lib/src/pages/implementations/media_item_edit_dialog_page.dart',
@@ -2018,6 +2039,7 @@ String _withoutSharedComponentNames(String source) {
       .replaceAll('HibikiCard(', 'HibikiSharedPanel(')
       .replaceAll('HibikiListItem(', 'HibikiSharedRow(')
       .replaceAll('HibikiListTile(', 'HibikiSharedTile(')
+      .replaceAll('HibikiIconButton(', 'HibikiSharedIconControl(')
       .replaceAll('HibikiSearchField(', 'HibikiSharedSearch(')
       .replaceAll('HibikiTextField(', 'HibikiSharedField(')
       .replaceAll('HibikiOverflowMenu(', 'HibikiSharedOverflow(')

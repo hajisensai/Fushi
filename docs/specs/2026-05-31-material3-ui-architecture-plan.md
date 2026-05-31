@@ -1340,7 +1340,7 @@ git commit -m "refactor(dictionary): use shared MD3 lookup and management chrome
 - Test: `hibiki/test/pages/tag_picker_page_static_test.dart`
 - Test: `hibiki/test/settings/md3_design_system_static_test.dart`
 
-- [ ] **Step 1: Preserve shelf behavior**
+- [x] **Step 1: Preserve shelf behavior**
 
 Before changing UI, search for interactions that must survive:
 
@@ -1350,7 +1350,11 @@ rg -n "onLongPress|Reorderable|Selection|Tag|Bookmark|_bookCardShell|_hasAudio|_
 
 Do not lose long-press, selection, tag drop, reorder, import, delete, or audio playback affordances.
 
-- [ ] **Step 2: Route all cards through shared shells**
+Implementation note:
+- Preserved `reader_hibiki_history_page.dart` selection mode, tag drag/drop, reorder, long-press dialogs, batch tag picker, and `_bookCardShell`.
+- Preserved `collections_page.dart` bookmark/favorite delete, long-press item dialog, copy, jump-to-book, `_hasAudio`, and `_playItemAudio`.
+
+- [x] **Step 2: Route all cards through shared shells**
 
 Use:
 
@@ -1361,11 +1365,18 @@ Use:
 - `HibikiColorSwatch` for tag colors.
 - `HibikiPlaceholderMessage` for empty states.
 
-- [ ] **Step 3: Keep chart drawing exceptions local to chart painters**
+Implementation note:
+- Collection row actions now use `HibikiIconButton` instead of raw compact `IconButton`, so `collections_page.dart` no longer needs a global Task 7 allowlist entry.
+- Existing shelf, tag picker, tag management, and statistics surfaces already use shared MD3 shells for ordinary chrome.
+
+- [x] **Step 3: Keep chart drawing exceptions local to chart painters**
 
 `reading_statistics_page.dart` may use direct colors inside chart painters. Ordinary page sections around charts should use `HibikiCard` and tokens.
 
-- [ ] **Step 4: Strengthen static tests**
+Implementation note:
+- Chart typography/color exceptions remain scoped to `reading_statistics_page.dart`; the page shell uses `HibikiPageScaffold`, `HibikiCard`, and design tokens.
+
+- [x] **Step 4: Strengthen static tests**
 
 For migrated shelf/list files, assert shared components exist and old rows do not:
 
@@ -1376,14 +1387,22 @@ expect(source, isNot(contains('CheckboxListTile(')));
 expect(source, isNot(contains('SwitchListTile(')));
 ```
 
-- [ ] **Step 5: Run focused tests**
+Implementation note:
+- Added `history_reader_page_static_test.dart` because the plan referenced it but the test file did not exist in the current tree.
+- Strengthened `md3_design_system_static_test.dart` to reject raw collection-row `IconButton`, `VisualDensity.compact`, `ListTile`, and `Card` after normalizing shared component names.
+
+- [x] **Step 5: Run focused tests**
 
 ```powershell
 D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat format lib\src\pages\implementations\home_reader_page.dart lib\src\pages\implementations\reader_hibiki_history_page.dart lib\src\pages\implementations\history_reader_page.dart lib\src\pages\base_history_page.dart lib\src\pages\implementations\collections_page.dart lib\src\pages\implementations\tag_management_page.dart lib\src\pages\implementations\tag_picker_page.dart lib\src\pages\implementations\tag_filter_sheet.dart lib\src\pages\implementations\reading_statistics_page.dart test\settings\md3_design_system_static_test.dart
 D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test test\settings\md3_design_system_static_test.dart test\pages\book_profile_dialog_page_test.dart test\pages\reader_history_delete_dialog_test.dart test\pages\history_reader_page_static_test.dart test\pages\tag_picker_page_static_test.dart --reporter expanded
 ```
 
-- [ ] **Step 6: Commit**
+Verification:
+- `D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat format lib\src\pages\implementations\home_reader_page.dart lib\src\pages\implementations\reader_hibiki_history_page.dart lib\src\pages\implementations\history_reader_page.dart lib\src\pages\base_history_page.dart lib\src\pages\implementations\collections_page.dart lib\src\pages\implementations\tag_management_page.dart lib\src\pages\implementations\tag_picker_page.dart lib\src\pages\implementations\tag_filter_sheet.dart lib\src\pages\implementations\reading_statistics_page.dart test\settings\md3_design_system_static_test.dart test\pages\history_reader_page_static_test.dart`
+- `D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat test test\settings\md3_design_system_static_test.dart test\pages\book_profile_dialog_page_test.dart test\pages\reader_history_delete_dialog_test.dart test\pages\history_reader_page_static_test.dart test\pages\tag_picker_page_static_test.dart test\pages\collections_page_test.dart --reporter expanded` passed.
+
+- [x] **Step 6: Commit**
 
 ```powershell
 git add -- hibiki/lib/src/pages/implementations/home_reader_page.dart hibiki/lib/src/pages/implementations/reader_hibiki_history_page.dart hibiki/lib/src/pages/implementations/history_reader_page.dart hibiki/lib/src/pages/base_history_page.dart hibiki/lib/src/pages/implementations/collections_page.dart hibiki/lib/src/pages/implementations/tag_management_page.dart hibiki/lib/src/pages/implementations/tag_picker_page.dart hibiki/lib/src/pages/implementations/tag_filter_sheet.dart hibiki/lib/src/pages/implementations/reading_statistics_page.dart hibiki/test/settings/md3_design_system_static_test.dart hibiki/test/pages/book_profile_dialog_page_test.dart hibiki/test/pages/reader_history_delete_dialog_test.dart hibiki/test/pages/history_reader_page_static_test.dart hibiki/test/pages/tag_picker_page_static_test.dart

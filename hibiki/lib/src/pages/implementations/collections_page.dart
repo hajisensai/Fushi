@@ -519,23 +519,25 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (_hasAudio(item))
-                IconButton(
-                  icon: Icon(
-                    _playingAudio
-                        ? Icons.hourglass_top
-                        : Icons.volume_up_outlined,
-                    size: 18,
-                  ),
-                  onPressed: _playingAudio ? null : () => _playItemAudio(item),
-                  visualDensity: VisualDensity.compact,
+                HibikiIconButton(
+                  tooltip: t.dialog_play,
+                  icon: _playingAudio
+                      ? Icons.hourglass_top
+                      : Icons.volume_up_outlined,
+                  size: 18,
+                  enabled: !_playingAudio,
+                  padding: EdgeInsets.all(tokens.spacing.gap / 2),
+                  onTap: () => _playItemAudio(item),
                 ),
               if (!isBookmark && item.text != null)
-                IconButton(
-                  icon: const Icon(Icons.copy_outlined, size: 18),
-                  onPressed: () {
+                HibikiIconButton(
+                  tooltip: t.copy,
+                  icon: Icons.copy_outlined,
+                  size: 18,
+                  padding: EdgeInsets.all(tokens.spacing.gap / 2),
+                  onTap: () {
                     Clipboard.setData(ClipboardData(text: item.text!));
                   },
-                  visualDensity: VisualDensity.compact,
                 ),
               if (canNavigate)
                 Icon(
