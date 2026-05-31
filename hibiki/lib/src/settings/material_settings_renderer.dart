@@ -6,6 +6,7 @@ import 'package:hibiki/src/settings/settings_detail_page.dart';
 import 'package:hibiki/src/settings/settings_renderer.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
+import 'package:hibiki/src/utils/components/settings_shared.dart';
 
 class MaterialSettingsRenderer implements SettingsRenderer {
   const MaterialSettingsRenderer();
@@ -213,7 +214,7 @@ class _MaterialSettingsItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return switch (item) {
-      SettingsNavigationItem navigation => _navigation(context, navigation),
+      SettingsNavigationItem navigation => _routeRow(context, navigation),
       SettingsActionItem action => _action(action),
       SettingsSwitchItem toggle => _switch(toggle),
       SettingsSegmentedItem<dynamic> segmented => _segmented(segmented),
@@ -223,12 +224,15 @@ class _MaterialSettingsItem extends StatelessWidget {
     };
   }
 
-  Widget _navigation(
+  Widget _routeRow(
     BuildContext context,
     SettingsNavigationItem navigation,
   ) {
-    return _tile(
-      trailing: const Icon(Icons.chevron_right),
+    return AdaptiveSettingsNavigationRow(
+      title: navigation.title,
+      subtitle: navigation.subtitle,
+      icon: navigation.icon,
+      showIcon: true,
       onTap: () async {
         if (navigation.onTap != null) {
           await navigation.onTap!(settingsContext);

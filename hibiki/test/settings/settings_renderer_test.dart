@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:flutter/cupertino.dart';
@@ -294,5 +296,21 @@ void main() {
     expect(find.byIcon(Icons.devices_outlined), findsNothing);
     expect(find.byIcon(Icons.color_lens_outlined), findsNothing);
     expect(find.byIcon(Icons.contrast_outlined), findsNothing);
+  });
+
+  test('settings renderers route navigation rows through shared component', () {
+    final String material =
+        File('lib/src/settings/material_settings_renderer.dart')
+            .readAsStringSync();
+    final String cupertino =
+        File('lib/src/settings/cupertino_settings_renderer.dart')
+            .readAsStringSync();
+
+    expect(material, contains('AdaptiveSettingsNavigationRow('));
+    expect(cupertino, contains('AdaptiveSettingsNavigationRow('));
+    expect(material,
+        isNot(contains('SettingsNavigationItem navigation => _navigation')));
+    expect(cupertino,
+        isNot(contains('SettingsNavigationItem navigation => _navigation')));
   });
 }

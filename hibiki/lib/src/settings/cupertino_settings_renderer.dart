@@ -5,6 +5,7 @@ import 'package:hibiki/src/settings/settings_destination.dart';
 import 'package:hibiki/src/settings/settings_detail_page.dart';
 import 'package:hibiki/src/settings/settings_renderer.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
+import 'package:hibiki/src/utils/components/settings_shared.dart';
 
 class CupertinoSettingsRenderer implements SettingsRenderer {
   const CupertinoSettingsRenderer();
@@ -153,7 +154,7 @@ class _CupertinoSettingsItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return switch (item) {
-      SettingsNavigationItem navigation => _navigation(context, navigation),
+      SettingsNavigationItem navigation => _routeRow(context, navigation),
       SettingsActionItem action => _action(action),
       SettingsSwitchItem toggle => _switch(context, toggle),
       SettingsSegmentedItem<dynamic> segmented => _segmented(segmented),
@@ -163,12 +164,14 @@ class _CupertinoSettingsItem extends StatelessWidget {
     };
   }
 
-  Widget _navigation(
+  Widget _routeRow(
     BuildContext context,
     SettingsNavigationItem navigation,
   ) {
-    return _tile(
-      trailing: const CupertinoListTileChevron(),
+    return AdaptiveSettingsNavigationRow(
+      title: navigation.title,
+      subtitle: navigation.subtitle,
+      icon: navigation.icon,
       showIcon: navigation.showIcon,
       onTap: () async {
         if (navigation.onTap != null) {
