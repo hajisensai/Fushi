@@ -228,9 +228,11 @@ class HibikiSearchField extends StatelessWidget {
     required this.onSubmitted,
     super.key,
     this.fieldKey,
+    this.focusId,
   });
 
   final Key? fieldKey;
+  final HibikiFocusId? focusId;
   final TextEditingController controller;
   final FocusNode focusNode;
   final String hintText;
@@ -240,7 +242,7 @@ class HibikiSearchField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return SearchBar(
+    final SearchBar searchBar = SearchBar(
       key: fieldKey,
       controller: controller,
       focusNode: focusNode,
@@ -256,10 +258,17 @@ class HibikiSearchField extends StatelessWidget {
       onChanged: onChanged,
       onSubmitted: onSubmitted,
     );
+    if (focusId == null) return searchBar;
+    if (HibikiFocusRoot.maybeControllerOf(context) == null) return searchBar;
+    return HibikiFocusRegistration(
+      id: focusId!,
+      focusNode: focusNode,
+      child: searchBar,
+    );
   }
 }
 
-class HibikiTextField extends StatelessWidget {
+class HibikiTextField extends StatefulWidget {
   const HibikiTextField({
     super.key,
     this.controller,
@@ -283,6 +292,7 @@ class HibikiTextField extends StatelessWidget {
     this.textAlignVertical,
     this.style,
     this.contentPadding,
+    this.focusId,
   }) : assert(controller == null || initialValue == null);
 
   final TextEditingController? controller;
@@ -306,6 +316,24 @@ class HibikiTextField extends StatelessWidget {
   final TextAlignVertical? textAlignVertical;
   final TextStyle? style;
   final EdgeInsetsGeometry? contentPadding;
+  final HibikiFocusId? focusId;
+
+  @override
+  State<HibikiTextField> createState() => _HibikiTextFieldState();
+}
+
+class _HibikiTextFieldState extends State<HibikiTextField> {
+  late final FocusNode _ownedFocusNode = FocusNode(
+    debugLabel: widget.hintText ?? widget.labelText ?? 'hibiki-text-field',
+  );
+
+  FocusNode get _effectiveFocusNode => widget.focusNode ?? _ownedFocusNode;
+
+  @override
+  void dispose() {
+    _ownedFocusNode.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -314,24 +342,24 @@ class HibikiTextField extends StatelessWidget {
       borderRadius: tokens.radii.cardRadius,
       borderSide: BorderSide(color: tokens.surfaces.outline),
     );
-    return TextFormField(
-      controller: controller,
-      initialValue: initialValue,
-      focusNode: focusNode,
-      autofocus: autofocus,
-      readOnly: readOnly,
-      obscureText: obscureText,
-      keyboardType: keyboardType,
-      textInputAction: textInputAction,
-      maxLines: expands ? null : maxLines,
-      minLines: minLines,
-      expands: expands,
-      textAlignVertical: textAlignVertical,
-      style: style ?? tokens.type.listTitle,
+    final TextFormField textField = TextFormField(
+      controller: widget.controller,
+      initialValue: widget.initialValue,
+      focusNode: _effectiveFocusNode,
+      autofocus: widget.autofocus,
+      readOnly: widget.readOnly,
+      obscureText: widget.obscureText,
+      keyboardType: widget.keyboardType,
+      textInputAction: widget.textInputAction,
+      maxLines: widget.expands ? null : widget.maxLines,
+      minLines: widget.minLines,
+      expands: widget.expands,
+      textAlignVertical: widget.textAlignVertical,
+      style: widget.style ?? tokens.type.listTitle,
       decoration: InputDecoration(
-        hintText: hintText,
-        labelText: labelText,
-        suffixText: suffixText,
+        hintText: widget.hintText,
+        labelText: widget.labelText,
+        suffixText: widget.suffixText,
         hintStyle: tokens.type.listSubtitle,
         labelStyle: tokens.type.metadata,
         floatingLabelStyle: tokens.type.sectionLabel,
@@ -342,16 +370,23 @@ class HibikiTextField extends StatelessWidget {
         focusedBorder: border.copyWith(
           borderSide: BorderSide(color: tokens.surfaces.primary, width: 2),
         ),
-        contentPadding: contentPadding ??
+        contentPadding: widget.contentPadding ??
             EdgeInsets.symmetric(
               horizontal: tokens.spacing.rowHorizontal,
               vertical: tokens.spacing.rowVertical,
             ),
-        suffixIcon: suffixIcon,
-        prefixIcon: prefixIcon,
+        suffixIcon: widget.suffixIcon,
+        prefixIcon: widget.prefixIcon,
       ),
-      onChanged: onChanged,
-      onFieldSubmitted: onSubmitted,
+      onChanged: widget.onChanged,
+      onFieldSubmitted: widget.onSubmitted,
+    );
+    if (widget.focusId == null) return textField;
+    if (HibikiFocusRoot.maybeControllerOf(context) == null) return textField;
+    return HibikiFocusRegistration(
+      id: widget.focusId!,
+      focusNode: _effectiveFocusNode,
+      child: textField,
     );
   }
 }
