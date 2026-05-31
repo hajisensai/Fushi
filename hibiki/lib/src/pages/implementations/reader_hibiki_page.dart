@@ -2339,6 +2339,87 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     return null;
   }
 
+  /// Picks the cue that best matches the looked-up SENTENCE range
+  /// `[sentOffset, sentOffset + sentLength)`. Among cues that overlap the
+  /// sentence it prefers the one that also contains [wordOffset]; otherwise the
+  /// maximum-overlap cue.
+  ///
+  /// This is more robust than [_findCueForOffset]'s bare-offset containment:
+  /// cue fragment ranges are half-open and forward-tiled (the next cue's start
+  /// is anchored at the previous cue's match end), so a cue whose `normCharEnd`
+  /// under-covers its real tail (e.g. a fuzzily matched long cue) lets a tail
+  /// word's offset spill into the NEXT cue's range — mis-attaching the audio one
+  /// sentence ahead. The next cue does not overlap this sentence, so scoring by
+  /// sentence overlap excludes it and keeps the audio aligned with the text.
+  AudioCue? _findCueForRange(int wordOffset, int sentOffset, int sentLength) {
+    final AudiobookPlayerController? ctrl = _audiobookController;
+    if (ctrl == null || sentLength <= 0) return null;
+    final List<AudioCue> cues = ctrl.sasayakiCuesForSection(_currentChapter);
+    final int selStart = sentOffset;
+    final int selEnd = sentOffset + sentLength;
+    AudioCue? best;
+    int bestOverlap = 0;
+    AudioCue? wordContained;
+    for (final AudioCue cue in cues) {
+      final SasayakiFragment? frag =
+          SasayakiMatchCodec.tryDecode(cue.textFragmentId);
+      if (frag == null) continue;
+      final int lo =
+          selStart > frag.normCharStart ? selStart : frag.normCharStart;
+      final int hi = selEnd < frag.normCharEnd ? selEnd : frag.normCharEnd;
+      if (hi - lo <= 0) continue; // cue does not intersect the sentence
+      if (hi - lo > bestOverlap) {
+        bestOverlap = hi - lo;
+        best = cue;
+      }
+      if (frag.normCharStart <= wordOffset && frag.normCharEnd > wordOffset) {
+        wordContained = cue;
+      }
+    }
+    return wordContained ?? best;
+  }
+
+  /// Collapses all whitespace so SRT line breaks / spaces don't defeat the
+  /// substring checks below (Japanese text carries no significant spaces).
+  static String _stripWhitespace(String s) => s.replaceAll(RegExp(r'\s+'), '');
+
+  /// Whether [cue]'s text and [sentence] share content (one contains the other
+  /// after stripping whitespace) — i.e. they are the same sentence rather than
+  /// neighbours. Used to reject a range-picked cue that is a different sentence.
+  bool _cueTextOverlapsSentence(AudioCue cue, String sentence) {
+    final String a = _stripWhitespace(cue.text);
+    final String b = _stripWhitespace(sentence);
+    if (a.isEmpty || b.isEmpty) return false;
+    return a.contains(b) || b.contains(a);
+  }
+
+  /// Finds the section cue whose TEXT matches the displayed [sentence]: a cue
+  /// whose text contains the whole sentence (a long audio cue spanning several
+  /// reader sentences), else the longest cue contained within the sentence
+  /// (finer audio cues). Text content is reliable even when fuzzy fragment
+  /// ranges under-cover a cue and the offset lookup drifts to a neighbour.
+  AudioCue? _findCueByText(String sentence) {
+    final AudiobookPlayerController? ctrl = _audiobookController;
+    if (ctrl == null) return null;
+    final String needle = _stripWhitespace(sentence);
+    if (needle.length < 3) return null;
+    final List<AudioCue> cues = ctrl.sasayakiCuesForSection(_currentChapter);
+    AudioCue? container;
+    AudioCue? longestContained;
+    int longestLen = 0;
+    for (final AudioCue cue in cues) {
+      final String t = _stripWhitespace(cue.text);
+      if (t.length < 3) continue;
+      if (t.contains(needle)) {
+        container ??= cue;
+      } else if (needle.contains(t) && t.length > longestLen) {
+        longestLen = t.length;
+        longestContained = cue;
+      }
+    }
+    return container ?? longestContained;
+  }
+
   AudioCue? _findCueForSentence(String sentence) {
     if (_srtBookUid == null) return null;
     final List<AudioCue>? allCues = _cachedAllCues;
@@ -3027,7 +3108,29 @@ window.flutter_inappwebview.callHandler('spreadReady');
       return;
     }
 
-    _lookupCue = data.normalizedOffset != null
+    // Resolve the audio cue for the looked-up word. A bare word offset can sit
+    // just past a fuzzily-matched cue's end and spill into the next cue,
+    // mis-attaching the audio one sentence ahead, so:
+    //   1. prefer the cue that best overlaps the looked-up SENTENCE range;
+    //   2. if that cue's text is clearly a different sentence (shares no text
+    //      with the displayed sentence), or nothing matched, fall back to the
+    //      cue whose TEXT overlaps the sentence — reliable even when fuzzy
+    //      fragment ranges under-cover a cue;
+    //   3. last, the bare offset / SRT sentence-text match.
+    _lookupCue = (data.normalizedOffset != null &&
+            data.sentenceNormalizedOffset != null &&
+            data.sentenceNormalizedLength != null)
+        ? _findCueForRange(
+            data.normalizedOffset!,
+            data.sentenceNormalizedOffset!,
+            data.sentenceNormalizedLength!,
+          )
+        : null;
+    if (_lookupCue == null ||
+        !_cueTextOverlapsSentence(_lookupCue!, data.sentence)) {
+      _lookupCue = _findCueByText(data.sentence) ?? _lookupCue;
+    }
+    _lookupCue ??= data.normalizedOffset != null
         ? _findCueForOffset(data.normalizedOffset!)
         : null;
     if (_lookupCue == null && _srtBookUid != null) {
