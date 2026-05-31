@@ -291,14 +291,18 @@ window.hoshiCaret = {
     }
   },
   _interactiveEls: function() {
-    // Element stops are a popup-only concern. The reader caret navigates by
-    // reading order over text stops (_nextStop/_prevStop/_lineMove) and never
-    // consults element stops, so an img added here would be unreachable; the
-    // reader's images open via the pointer-gesture path (_gestureEnd →
-    // elementFromPoint → onImageTap), not a synthesised click. In the reader the
-    // only interactive text is <a href>, already reachable as a text stop
-    // (activate() promotes it to a link click).
-    if (window.hoshiReader) return [];
+    // In the reader the only element stops are block illustrations: img.block-img
+    // is the reader's own tag for an image wider/taller than 256px and not gaiji
+    // (reader_pagination_scripts _sharedInitImages), i.e. the exact set the
+    // tap-gesture path opens. They are block-level, on their own row, so a D-pad
+    // line move — which consults these via _collectVisibleStops/_lineMove — can
+    // land on one without disturbing text-row navigation, and activate() opens it
+    // through onImageTap. Inline images and gaiji are excluded so they never
+    // interrupt reading; hyperlinks stay reachable as text stops.
+    if (window.hoshiReader) {
+      return Array.prototype.slice.call(
+        document.body.querySelectorAll('img.block-img'));
+    }
     var marked = document.body.querySelectorAll('[data-hoshi-clk]');
     var out = [];
     for (var i = 0; i < marked.length; i++) {
@@ -503,6 +507,19 @@ window.hoshiCaret = {
     var s = stops[stops.length - 1];
     return { node: s.node, offset: s.offset, el: s.el, rect: s.rect };
   },
+  // First visible ELEMENT stop (e.g. a reader block illustration). Lets the
+  // caret enter / re-anchor on a pure-image page where _firstVisibleStop (text
+  // only) finds nothing. _lastVisibleStop already covers the backward edge.
+  _firstVisibleElementStop: function() {
+    var stops = this._collectVisibleStops();
+    for (var i = 0; i < stops.length; i++) {
+      if (stops[i].el) {
+        var s = stops[i];
+        return { node: s.node, offset: s.offset, el: s.el, rect: s.rect };
+      }
+    }
+    return null;
+  },
 
   // ── Geometric line move ────────────────────────────────────────────
   _lineMove: function(isNext, vertical) {
@@ -683,6 +700,7 @@ window.hoshiCaret = {
       if (this._inViewport(rr)) pos = { node: this._memNode, offset: this._memOffset, rect: rr };
     }
     if (!pos) pos = this._firstVisibleStop();
+    if (!pos) pos = this._firstVisibleElementStop(); // pure-illustration page
     if (!pos) { this.active = false; return { ok: false }; }
     this.active = true;
     this._place(pos);
@@ -718,6 +736,7 @@ window.hoshiCaret = {
     this._ensureRing();
     this._markClickables();
     var pos = (edge === 'backward') ? this._lastVisibleStop() : this._firstVisibleStop();
+    if (!pos) pos = this._firstVisibleElementStop(); // pure-illustration page
     if (!pos) return { ok: false }; // empty page — leave active state untouched
     this.active = true;
     this._place(pos);
@@ -832,6 +851,13 @@ window.hoshiCaret = {
     this._markClickables();
     // On an interactive element stop, click it directly.
     if (this.el && document.contains(this.el)) {
+      // Reader block images have no DOM click→lightbox listener (the reader opens
+      // images from the pointer-gesture path, not a synthesised click), so call
+      // the same onImageTap handler that path uses instead of a no-op el.click().
+      if (window.hoshiReader && this.el.tagName === 'IMG' && this.el.src) {
+        window.flutter_inappwebview.callHandler('onImageTap', this.el.src);
+        return 'activated';
+      }
       var asLink = this.el.matches('a[href]') || !!this.el.closest('a[href]');
       this.el.click();
       return asLink ? 'link' : 'activated';

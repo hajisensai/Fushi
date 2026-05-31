@@ -158,13 +158,30 @@ void main() {
       expect(js, contains('return this._pageOrScroll(!!forwardish);'));
     });
 
-    test('reader caret keeps element stops popup-only (no reader img stops)',
+    test('reader element stops are block illustrations (img.block-img)', () {
+      // The reader's only element stops are block illustrations — the same
+      // img.block-img the tap-gesture path opens (>256px, non-gaiji). A D-pad
+      // line move reaches them via _collectVisibleStops; inline images/gaiji are
+      // excluded so they never interrupt text navigation.
+      expect(js, contains("querySelectorAll('img.block-img')"));
+    });
+
+    test('A on a reader illustration opens it via onImageTap (not el.click)',
         () {
-      // Element stops are unreachable in the reader (it navigates text stops by
-      // reading order and never consults _interactiveEls), so the reader branch
-      // must return early — images open via the pointer-gesture path, not the
-      // caret.
-      expect(js, contains('if (window.hoshiReader) return [];'));
+      // Reader block images have no DOM click→lightbox listener, so activate()
+      // must call the same onImageTap handler the pointer-gesture path uses;
+      // el.click() would be a no-op.
+      expect(js, contains("window.hoshiReader && this.el.tagName === 'IMG'"));
+      expect(js, contains("callHandler('onImageTap', this.el.src)"));
+    });
+
+    test('caret can enter/re-anchor a pure-illustration page (element stop)',
+        () {
+      // _firstVisibleStop walks text only, so a page that is just an image needs
+      // a fallback to the first visible element stop, or enter()/reanchor() would
+      // refuse to place the caret.
+      expect(js, contains('_firstVisibleElementStop:'));
+      expect(js, contains('pos = this._firstVisibleElementStop();'));
     });
 
     test('activate is a context click: link/control click else lookup', () {
