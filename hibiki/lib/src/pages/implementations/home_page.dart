@@ -321,6 +321,13 @@ class _HomePageState extends BasePageState<HomePage>
     final int visualIndex =
         reversed ? (destinations.length - 1 - _currentTab) : _currentTab;
 
+    void selectVisual(int index) {
+      final int logicalIndex =
+          reversed ? (destinations.length - 1 - index) : index;
+      setState(() => _currentTab = logicalIndex);
+      if (logicalIndex == 0) _loadIconPreset();
+    }
+
     return Scaffold(
       resizeToAvoidBottomInset: false,
       body: SafeArea(
@@ -330,18 +337,23 @@ class _HomePageState extends BasePageState<HomePage>
         child: Row(
           children: [
             FocusTraversalGroup(
-              child: NavigationRail(
-                leading: _buildRailLeading(),
-                groupAlignment: 0.0,
-                selectedIndex: visualIndex,
-                onDestinationSelected: (int index) {
-                  final int logicalIndex =
-                      reversed ? (destinations.length - 1 - index) : index;
-                  setState(() => _currentTab = logicalIndex);
-                  if (logicalIndex == 0) _loadIconPreset();
-                },
-                labelType: NavigationRailLabelType.all,
-                destinations: displayDestinations,
+              // The rail is one vertical gamepad focus stop: D-pad Up/Down
+              // switches tabs in place (the ring follows it), Right leaves to the
+              // content — instead of focus leaking onto its unregistered
+              // destinations and dropping the ring.
+              child: GamepadNavCluster(
+                axis: Axis.vertical,
+                count: destinations.length,
+                currentIndex: visualIndex,
+                onSelect: selectVisual,
+                child: NavigationRail(
+                  leading: _buildRailLeading(),
+                  groupAlignment: 0.0,
+                  selectedIndex: visualIndex,
+                  onDestinationSelected: selectVisual,
+                  labelType: NavigationRailLabelType.all,
+                  destinations: displayDestinations,
+                ),
               ),
             ),
             const VerticalDivider(thickness: 1, width: 1),
