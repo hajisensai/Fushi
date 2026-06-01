@@ -149,7 +149,7 @@ class _KbKeyState extends State<_KbKey> {
     final Widget key = Padding(
       padding: EdgeInsets.all(tokens.spacing.gap / 4),
       child: Material(
-        color: colors.surfaceContainerHighest,
+        color: tokens.surfaces.overlay,
         shape: RoundedRectangleBorder(borderRadius: tokens.radii.chipRadius),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
