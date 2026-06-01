@@ -4,16 +4,20 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:hibiki/src/epub/epub_book.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_bridge.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_play_bar.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/pages/implementations/book_css_editor_page.dart';
-import 'package:hibiki/src/pages/implementations/custom_theme_page.dart';
+import 'package:hibiki/src/settings/cupertino_settings_renderer.dart';
+import 'package:hibiki/src/settings/material_settings_renderer.dart';
+import 'package:hibiki/src/settings/settings_context.dart';
+import 'package:hibiki/src/settings/settings_destination.dart';
+import 'package:hibiki/src/settings/settings_renderer.dart';
+import 'package:hibiki/src/settings/settings_schema.dart';
 import 'package:hibiki/utils.dart';
 
 class ReaderQuickSettingsSheet extends StatefulWidget {
@@ -26,6 +30,7 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
     required this.onExitReader,
     required this.webViewController,
     required this.appModel,
+    required this.ref,
     this.pageProgress,
     this.onThemeChanged,
     this.bookmarks = const [],
@@ -67,6 +72,10 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
   final VoidCallback onExitReader;
   final InAppWebViewController webViewController;
   final AppModel appModel;
+
+  /// Riverpod ref from the reader page, forwarded to the schema-projected
+  /// settings so [SettingsContext] always has a real [WidgetRef].
+  final WidgetRef ref;
   final Future<void> Function()? onThemeChanged;
   final List<Bookmark> bookmarks;
   final Future<void> Function(Bookmark bookmark)? onJumpToBookmark;
@@ -127,9 +136,6 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
   late List<FavoriteSentence> _favorites =
       List<FavoriteSentence>.of(widget.favoriteSentences);
 
-  late bool _localShowFloatingLyric = widget.showFloatingLyric;
-  late bool _localShowMediaNotification = widget.showMediaNotification;
-  late double _localFloatingLyricFontSize = widget.floatingLyricFontSize;
   @override
   void initState() {
     super.initState();
@@ -243,23 +249,6 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
     } finally {
       _layoutReloading = false;
     }
-  }
-
-  Future<void> _applyFuriganaMode(String mode) async {
-    if (widget.isHibikiReader) {
-      await _src.setTtuFuriganaMode(mode);
-      await widget.onStyleChanged?.call();
-      return;
-    }
-    final hide = mode != 'show';
-    final style = switch (mode) {
-      'hide' => 'Hide',
-      'partial' => 'partial',
-      'toggle' => 'toggle',
-      _ => 'partial',
-    };
-    await _updateSetting('hideFurigana', hide);
-    await _updateSetting('furiganaStyle', style);
   }
 
   @override
@@ -440,13 +429,23 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
     switch (page) {
       case 'appearance':
         title = t.settings_destination_appearance;
-        content = _buildAppearanceSettingsSection(theme);
+        content = _buildReaderGroupContent(
+          ReaderGroup.appearance,
+          t.settings_destination_appearance,
+        );
       case 'layout':
         title = t.section_layout;
-        content = _buildLayoutSettingsSection(theme);
+        // Lyrics mode keeps its bespoke font/margin controls — those are not
+        // schema items (they write lyrics-only `setLyrics*` setters).
+        content = widget.lyricsMode
+            ? _buildLyricsDisplaySection()
+            : _buildReaderGroupContent(ReaderGroup.layout, t.section_layout);
       case 'behavior':
-        title = t.settings_destination_reading_controls;
-        content = _buildBehaviorSettingsSection();
+        title = t.section_navigation;
+        content = _buildReaderGroupContent(
+          ReaderGroup.behavior,
+          t.section_navigation,
+        );
       case 'location':
         title = t.section_navigation;
         content = _buildLocationSection(theme);
@@ -468,6 +467,44 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
         SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
         content,
       ],
+    );
+  }
+
+  /// 把某个 [ReaderGroup] 投影成 schema 渲染内容。写路径走 schema item 的
+  /// `setTtu*` + `notifyReaderSettingsChanged`（= `onSettingsChangedLive` CSS
+  /// 实时更新），与本面板的 `_updateSetting` 落同一存储。
+  ///
+  /// refresh 回调负责把内存镜像 `_settings` 从 `_src` 重建并 setState；
+  /// appearance/layout 组含结构性布局键（view mode / writing mode / columns /
+  /// spread / prioritize reader styles），仅 CSS 注入不够，需要额外触发整章
+  /// 重排（`onReloadChapter`），对齐旧 `_updateSetting` 对 layout key 的处理。
+  Widget _buildReaderGroupContent(ReaderGroup group, String title) {
+    final bool needsLayoutReload =
+        group == ReaderGroup.appearance || group == ReaderGroup.layout;
+    final SettingsContext settingsContext = SettingsContext(
+      context: context,
+      appModel: widget.appModel,
+      ref: widget.ref,
+      readerSource: ReaderHibikiSource.instance,
+      refresh: () {
+        if (!mounted) return;
+        _loadSettings();
+        setState(() {});
+        if (needsLayoutReload) {
+          _reloadLayoutLive();
+        } else {
+          widget.onStyleChanged?.call();
+        }
+      },
+    );
+    final bool cupertino = isCupertinoPlatform(context);
+    final SettingsRenderer renderer = cupertino
+        ? const CupertinoSettingsRenderer()
+        : const MaterialSettingsRenderer();
+    return renderer.buildDetailContent(
+      settingsContext: settingsContext,
+      destination: buildReaderGroupDestination(settingsContext, group, title),
+      shrinkWrap: true,
     );
   }
 
@@ -531,7 +568,8 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
       lines.add(t.page_progress(current: pp.$1, total: pp.$2));
     }
 
-    if (lines.isEmpty) return const SizedBox.shrink();
+    final AudiobookPlayerController? ctrl = widget.controller;
+    if (lines.isEmpty && ctrl == null) return const SizedBox.shrink();
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -542,8 +580,58 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
         ),
         for (final String line in lines)
           Text(line, style: theme.textTheme.bodyMedium),
+        if (ctrl != null) _buildAudioProgressLine(theme, ctrl),
       ],
     );
+  }
+
+  /// 音频播放进度行（position / duration），跟随控制器 notifyListeners 刷新
+  /// （cue 切换 / 播放暂停时触发，与 `_buildSpeedSection` 同一订阅模式）。
+  Widget _buildAudioProgressLine(
+    ThemeData theme,
+    AudiobookPlayerController ctrl,
+  ) {
+    return ListenableBuilder(
+      listenable: ctrl,
+      builder: (BuildContext context, _) {
+        final Duration pos = ctrl.position;
+        final Duration dur = ctrl.duration;
+        final double fraction = dur.inMilliseconds > 0
+            ? (pos.inMilliseconds / dur.inMilliseconds).clamp(0.0, 1.0)
+            : 0.0;
+        final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+        return Padding(
+          padding: EdgeInsets.only(top: tokens.spacing.gap / 2),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '${_formatDuration(pos)} / ${_formatDuration(dur)}',
+                style: theme.textTheme.bodyMedium,
+              ),
+              SizedBox(height: tokens.spacing.gap / 2),
+              ClipRRect(
+                borderRadius: tokens.radii.chipRadius,
+                child: LinearProgressIndicator(
+                  value: fraction,
+                  minHeight: 3,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  static String _formatDuration(Duration d) {
+    final int totalSeconds = d.inSeconds;
+    final int minutes = totalSeconds ~/ 60;
+    final int seconds = totalSeconds % 60;
+    final String mm = minutes.toString().padLeft(2, '0');
+    final String ss = seconds.toString().padLeft(2, '0');
+    return '$mm:$ss';
   }
 
   Future<void> _doSearch() async {
@@ -950,125 +1038,6 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
     );
   }
 
-  Widget _buildBehaviorSettingsSection() {
-    return AdaptiveSettingsSection(
-      children: _buildReaderSwitches(),
-    );
-  }
-
-  List<Widget> _buildReaderSwitches() {
-    Widget sw(String label, bool value, VoidCallback toggle) {
-      return AdaptiveSettingsSwitchRow(
-        title: label,
-        value: value,
-        onChanged: (_) {
-          toggle();
-          setState(() {});
-        },
-      );
-    }
-
-    return [
-      sw(t.highlight_on_tap, _src.highlightOnTap, _src.toggleHighlightOnTap),
-      sw(t.tap_empty_hide_chrome, _src.tapEmptyToHideChrome,
-          _src.toggleTapEmptyToHideChrome),
-      sw(t.volume_button_page_turning, _src.volumePageTurningEnabled, () {
-        _src.toggleVolumePageTurningEnabled();
-        VolumeKeyChannel.instance
-            .setInterceptEnabled(_src.volumePageTurningEnabled);
-      }),
-      sw(t.invert_volume_buttons, _src.volumePageTurningInverted,
-          _src.toggleVolumePageTurningInverted),
-      sw(t.volume_key_sentence_nav, _src.volumeKeySentenceNavEnabled,
-          _src.toggleVolumeKeySentenceNavEnabled),
-      sw(t.invert_swipe_direction, _src.invertSwipeDirection,
-          _src.toggleInvertSwipeDirection),
-      sw(t.keep_screen_awake, _src.keepScreenAwake, () async {
-        _src.toggleKeepScreenAwake();
-        try {
-          if (_src.keepScreenAwake) {
-            await WakelockPlus.enable();
-          } else {
-            await WakelockPlus.disable();
-          }
-        } catch (e) {
-          debugPrint('[Hibiki] wakelock toggle failed: $e');
-        }
-      }),
-      sw(t.auto_read_on_lookup, _src.autoReadOnLookup,
-          _src.toggleAutoReadOnLookup),
-      sw(t.pause_on_lookup, _src.pauseOnLookup, () async {
-        await _src.setPauseOnLookup(value: !_src.pauseOnLookup);
-        setState(() {});
-      }),
-      AdaptiveSettingsSliderRow(
-        title: t.dismiss_swipe_sensitivity,
-        value: _src.dismissSwipeSensitivity,
-        min: 0.1,
-        divisions: 9,
-        label: _src.dismissSwipeSensitivity.toStringAsFixed(1),
-        onChanged: (v) {
-          _src.setDismissSwipeSensitivity(v);
-          setState(() {});
-        },
-      ),
-      AdaptiveSettingsSliderRow(
-        title: t.volume_button_turning_speed,
-        value: _src.volumePageTurningSpeed.toDouble(),
-        min: 10,
-        max: 500,
-        divisions: 49,
-        label: '${_src.volumePageTurningSpeed}',
-        onChanged: (v) {
-          _src.setVolumePageTurningSpeed(v.round());
-          setState(() {});
-        },
-      ),
-    ];
-  }
-
-  Widget _buildPlayBarToggle() {
-    return AdaptiveSettingsSection(
-      children: [
-        AdaptiveSettingsSwitchRow(
-          title: t.show_media_notification,
-          value: _localShowMediaNotification,
-          onChanged: (_) {
-            widget.onToggleMediaNotification?.call();
-            setState(() {
-              _localShowMediaNotification = !_localShowMediaNotification;
-            });
-          },
-        ),
-        AdaptiveSettingsSwitchRow(
-          title: t.show_floating_lyric,
-          subtitle: t.floating_lyric_hint,
-          value: _localShowFloatingLyric,
-          onChanged: (_) async {
-            final bool ok = await widget.onToggleFloatingLyric?.call() ?? false;
-            if (ok && mounted) {
-              setState(() {
-                _localShowFloatingLyric = !_localShowFloatingLyric;
-              });
-            }
-          },
-        ),
-        AdaptiveSettingsStepperRow(
-          title: t.floating_lyric_font_size,
-          value: _localFloatingLyricFontSize,
-          step: 1,
-          min: 8,
-          max: 64,
-          format: (double value) => '${value.round()}',
-          onChanged: (double value) {
-            widget.onFloatingLyricFontSizeChanged?.call(value);
-            setState(() => _localFloatingLyricFontSize = value);
-          },
-        ),
-      ],
-    );
-  }
-
   Widget _buildSettingsLoading() {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return Center(
@@ -1086,12 +1055,21 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
   }
 
   Widget _buildAudiobookSettingsSection(ThemeData theme) {
+    // Projected schema preferences (media notification / floating lyric /
+    // floating lyric font size). These persist via AppModel, not the runtime
+    // controller, so they render even when no audiobook is loaded.
+    final Widget projectedSettings = _buildReaderGroupContent(
+      ReaderGroup.audiobook,
+      t.section_audiobook,
+    );
     if (widget.controller == null) {
-      return _buildPlayBarToggle();
+      return projectedSettings;
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // Runtime transport controls — read live state off `widget.controller`,
+        // not preferences, so they stay bespoke (not schema items).
         AdaptiveSettingsSection(
           children: [
             _buildVolumeSection(widget.controller!),
@@ -1101,7 +1079,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
             _buildSkipActionSection(),
           ],
         ),
-        _buildPlayBarToggle(),
+        projectedSettings,
         if (widget.onAudioImport != null)
           AdaptiveSettingsSection(
             children: [
@@ -1115,412 +1093,6 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
               ),
             ],
           ),
-      ],
-    );
-  }
-
-  Widget _buildAppearanceSettingsSection(ThemeData theme) {
-    final TtuReaderSettings? s = _settings;
-    if (s == null) {
-      return _buildSettingsLoading();
-    }
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        AdaptiveSettingsSection(
-          children: [
-            AdaptiveSettingsRow(
-              title: t.ttu_theme,
-              controlBelow: true,
-              trailing: Wrap(
-                spacing: tokens.spacing.gap * 0.75,
-                runSpacing: tokens.spacing.gap * 0.75,
-                children: [
-                  ...TtuReaderSettings.availableThemes.map((themeKey) {
-                    final bool selected = s.theme == themeKey;
-                    return buildReaderThemeChip(
-                      context: context,
-                      label:
-                          TtuReaderSettings.themeLabels[themeKey] ?? themeKey,
-                      selected: selected,
-                      onSelected: (bool on) async {
-                        if (!on) return;
-                        s.theme = themeKey;
-                        setState(() {});
-                        await widget.appModel.setAppThemeKey(themeKey);
-                        await _updateSetting('theme', themeKey);
-                        await widget.onThemeChanged?.call();
-                      },
-                    );
-                  }),
-                  buildReaderThemeChip(
-                    avatar: Icon(
-                      Icons.palette_outlined,
-                      size: 18,
-                      color: s.theme == 'custom-theme'
-                          ? theme.colorScheme.onPrimaryContainer
-                          : null,
-                    ),
-                    context: context,
-                    label: t.custom_theme,
-                    selected: s.theme == 'custom-theme',
-                    onSelected: (_) {
-                      Navigator.push(
-                        context,
-                        adaptivePageRoute(
-                          builder: (_) => const CustomThemePage(),
-                        ),
-                      ).then((_) async {
-                        s.theme = widget.appModel.appThemeKey;
-                        setState(() {});
-                        await _updateSetting('theme', s.theme);
-                        await widget.onThemeChanged?.call();
-                      });
-                    },
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        AdaptiveSettingsSection(
-          children: [
-            AdaptiveSettingsStepperRow(
-              title: t.ttu_font_size,
-              value: s.fontSize,
-              step: 1,
-              min: 8,
-              max: 64,
-              format: (double value) => '${value.round()}',
-              onChanged: (double value) {
-                s.fontSize = value;
-                setState(() {});
-                _updateSetting('fontSize', value);
-              },
-            ),
-            AdaptiveSettingsStepperRow(
-              title: t.ttu_line_height,
-              value: s.lineHeight,
-              step: 0.1,
-              min: 1,
-              max: 3,
-              format: (double value) => value.toStringAsFixed(2),
-              onChanged: (double value) {
-                s.lineHeight = (value * 100).roundToDouble() / 100;
-                setState(() {});
-                _updateSetting('lineHeight', s.lineHeight);
-              },
-            ),
-            _numberStepper(
-              label: t.ttu_text_indentation,
-              value: _src.ttuTextIndentation,
-              step: 1,
-              min: 0,
-              max: 10,
-              format: (double v) => '${v.round()}',
-              onChanged: (double v) {
-                _src.setTtuTextIndentation(v);
-                setState(() {});
-                _updateSetting('textIndentation', v);
-              },
-            ),
-            if (widget.extractDir != null)
-              AdaptiveSettingsNavigationRow(
-                title: t.book_css_editor_edit_css,
-                icon: Icons.code_outlined,
-                onTap: () async {
-                  await Navigator.push(
-                    context,
-                    adaptivePageRoute(
-                      builder: (_) =>
-                          BookCssEditorPage(extractDir: widget.extractDir!),
-                    ),
-                  );
-                  await _reloadLayoutLive();
-                },
-              ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildLayoutSettingsSection(ThemeData theme) {
-    final TtuReaderSettings? s = _settings;
-    if (s == null) {
-      return _buildSettingsLoading();
-    }
-    if (widget.lyricsMode) return _buildLyricsDisplaySection();
-    final bool isVertical = s.writingMode.startsWith('vertical');
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        AdaptiveSettingsSection(
-          children: [
-            AdaptiveSettingsSegmentedRow<String>(
-              title: t.spread_mode,
-              segments: <ButtonSegment<String>>[
-                ButtonSegment<String>(
-                  value: 'off',
-                  label: Text(t.spread_off),
-                  tooltip: t.spread_off,
-                ),
-                ButtonSegment<String>(
-                  value: 'on',
-                  label: Text(t.spread_on),
-                  tooltip: t.spread_on,
-                ),
-                ButtonSegment<String>(
-                  value: 'auto',
-                  label: Text(t.spread_auto),
-                  tooltip: t.spread_auto,
-                ),
-              ],
-              selected: _src.ttuSpreadMode,
-              onChanged: (String value) {
-                _src.setTtuSpreadMode(value);
-                setState(() {});
-                _updateSetting('spreadMode', value);
-              },
-            ),
-            if (_src.ttuSpreadMode != 'off')
-              AdaptiveSettingsSegmentedRow<String>(
-                title: t.spread_direction,
-                segments: const <ButtonSegment<String>>[
-                  ButtonSegment<String>(
-                    value: 'rtl',
-                    label: Text('RTL'),
-                    tooltip: 'Right to Left',
-                  ),
-                  ButtonSegment<String>(
-                    value: 'ltr',
-                    label: Text('LTR'),
-                    tooltip: 'Left to Right',
-                  ),
-                ],
-                selected: _src.ttuSpreadDirection,
-                onChanged: (String value) {
-                  _src.setTtuSpreadDirection(value);
-                  setState(() {});
-                  _updateSetting('spreadDirection', value);
-                },
-              ),
-            AdaptiveSettingsSegmentedRow<String>(
-              title: t.ttu_writing_direction,
-              segments: <ButtonSegment<String>>[
-                ButtonSegment<String>(
-                  value: 'horizontal-tb',
-                  label: Text(t.ttu_horizontal),
-                  tooltip: t.ttu_horizontal,
-                ),
-                ButtonSegment<String>(
-                  value: 'vertical-rl',
-                  label: Text(t.ttu_vertical),
-                  tooltip: t.ttu_vertical,
-                ),
-              ],
-              selected: s.writingMode,
-              onChanged: (String value) {
-                s.writingMode = value;
-                setState(() {});
-                _updateSetting('writingMode', value);
-              },
-            ),
-            AdaptiveSettingsSegmentedRow<String>(
-              title: t.ttu_view_mode_label,
-              segments: <ButtonSegment<String>>[
-                ButtonSegment<String>(
-                  value: 'paginated',
-                  label: Text(t.ttu_paginated),
-                  tooltip: t.ttu_paginated,
-                ),
-                ButtonSegment<String>(
-                  value: 'continuous',
-                  label: Text(t.ttu_scroll),
-                  tooltip: t.ttu_scroll,
-                ),
-              ],
-              selected: s.viewMode,
-              onChanged: (String value) {
-                s.viewMode = value;
-                setState(() {});
-                _updateSetting('viewMode', value);
-              },
-            ),
-            if (isVertical)
-              AdaptiveSettingsSegmentedRow<String>(
-                title: t.ttu_vert_text_orient,
-                subtitle: t.ttu_vert_text_orient_hint,
-                segments: <ButtonSegment<String>>[
-                  ButtonSegment<String>(
-                    value: 'mixed',
-                    label: Text(t.ttu_orient_mixed),
-                    tooltip: t.ttu_orient_mixed,
-                  ),
-                  ButtonSegment<String>(
-                    value: 'upright',
-                    label: Text(t.ttu_orient_upright),
-                    tooltip: t.ttu_orient_upright,
-                  ),
-                ],
-                selected: _src.ttuVerticalTextOrientation,
-                onChanged: (String value) {
-                  _src.setTtuVerticalTextOrientation(value);
-                  setState(() {});
-                  _updateSetting('verticalTextOrientation', value);
-                },
-              ),
-            AdaptiveSettingsSegmentedRow<String>(
-              title: t.ttu_furigana_mode,
-              subtitle: t.ttu_furigana_mode_hint,
-              controlBelow: true,
-              segments: <ButtonSegment<String>>[
-                ButtonSegment<String>(
-                  value: 'show',
-                  label: Text(t.ttu_furigana_show),
-                  tooltip: t.ttu_furigana_show,
-                ),
-                ButtonSegment<String>(
-                  value: 'hide',
-                  label: Text(t.ttu_furigana_hide),
-                  tooltip: t.ttu_furigana_hide,
-                ),
-                ButtonSegment<String>(
-                  value: 'partial',
-                  label: Text(t.ttu_furigana_partial),
-                  tooltip: t.ttu_furigana_partial,
-                ),
-                ButtonSegment<String>(
-                  value: 'toggle',
-                  label: Text(t.ttu_furigana_toggle),
-                  tooltip: t.ttu_furigana_toggle,
-                ),
-              ],
-              selected: _src.ttuFuriganaMode,
-              onChanged: (String mode) {
-                setState(() {});
-                _applyFuriganaMode(mode);
-              },
-            ),
-          ],
-        ),
-        AdaptiveSettingsSection(
-          children: [
-            _numberStepper(
-              label: t.margin_top,
-              value: _src.ttuMarginTop,
-              step: 1,
-              min: -5,
-              max: 30,
-              format: (double v) => '${v.round()}',
-              onChanged: (double v) {
-                _src.setTtuMarginTop(v);
-                setState(() {});
-                _updateSetting('marginTop', v);
-              },
-            ),
-            _numberStepper(
-              label: t.margin_bottom,
-              value: _src.ttuMarginBottom,
-              step: 1,
-              min: -5,
-              max: 30,
-              format: (double v) => '${v.round()}',
-              onChanged: (double v) {
-                _src.setTtuMarginBottom(v);
-                setState(() {});
-                _updateSetting('marginBottom', v);
-              },
-            ),
-            _numberStepper(
-              label: t.margin_left,
-              value: _src.ttuMarginLeft,
-              step: 1,
-              min: -5,
-              max: 30,
-              format: (double v) => '${v.round()}',
-              onChanged: (double v) {
-                _src.setTtuMarginLeft(v);
-                setState(() {});
-                _updateSetting('marginLeft', v);
-              },
-            ),
-            _numberStepper(
-              label: t.margin_right,
-              value: _src.ttuMarginRight,
-              step: 1,
-              min: -5,
-              max: 30,
-              format: (double v) => '${v.round()}',
-              onChanged: (double v) {
-                _src.setTtuMarginRight(v);
-                setState(() {});
-                _updateSetting('marginRight', v);
-              },
-            ),
-            _numberStepper(
-              label: t.columns_per_page,
-              value: _src.ttuPageColumns.toDouble(),
-              step: 1,
-              min: 0,
-              max: 4,
-              format: (double v) =>
-                  v.round() == 0 ? t.ttu_page_columns_auto : '${v.round()}',
-              onChanged: (double v) {
-                _src.setTtuPageColumns(v.round());
-                setState(() {});
-                _updateSetting('pageColumns', v.round());
-              },
-            ),
-          ],
-        ),
-        AdaptiveSettingsSection(
-          children: [
-            AdaptiveSettingsSwitchRow(
-              title: t.ttu_text_justify,
-              subtitle: t.ttu_text_justify_hint,
-              value: _src.ttuEnableTextJustification,
-              onChanged: (bool value) {
-                _src.setTtuEnableTextJustification(value);
-                setState(() {});
-                _updateSetting('enableTextJustification', value);
-              },
-            ),
-            if (isVertical)
-              AdaptiveSettingsSwitchRow(
-                title: t.ttu_vert_kerning,
-                subtitle: t.ttu_vert_kerning_hint,
-                value: _src.ttuEnableVerticalFontKerning,
-                onChanged: (bool value) {
-                  _src.setTtuEnableVerticalFontKerning(value);
-                  setState(() {});
-                  _updateSetting('enableVerticalFontKerning', value);
-                },
-              ),
-            if (isVertical)
-              AdaptiveSettingsSwitchRow(
-                title: t.ttu_font_vpal,
-                subtitle: t.ttu_font_vpal_hint,
-                value: _src.ttuEnableFontVPAL,
-                onChanged: (bool value) {
-                  _src.setTtuEnableFontVPAL(value);
-                  setState(() {});
-                  _updateSetting('enableFontVPAL', value);
-                },
-              ),
-            AdaptiveSettingsSwitchRow(
-              title: t.ttu_reader_styles,
-              subtitle: t.ttu_reader_styles_hint,
-              value: _src.ttuPrioritizeReaderStyles,
-              onChanged: (bool value) {
-                _src.setTtuPrioritizeReaderStyles(value);
-                setState(() {});
-                _updateSetting('prioritizeReaderStyles', value);
-              },
-            ),
-          ],
-        ),
       ],
     );
   }

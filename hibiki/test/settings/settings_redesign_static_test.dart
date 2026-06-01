@@ -176,6 +176,10 @@ void main() {
 
     expect(source, isNot(contains('design_system_label')));
     expect(source, isNot(contains('ProfileSelector')));
+    // Now a thin schema-projected page: no hand-written ttu setters, renders
+    // via SettingsRenderer.buildDetailContent.
+    expect(source, isNot(contains('setTtuFontSize')));
+    expect(source, contains('buildDetailContent'));
   });
 
   test('settings schema uses task-oriented destinations', () {

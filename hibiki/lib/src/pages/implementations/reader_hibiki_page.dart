@@ -4486,6 +4486,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
       },
       webViewController: _controller!,
       appModel: appModel,
+      ref: ref,
       isHibikiReader: true,
       onStyleChanged: _applyStylesLive,
       onThemeChanged: _onThemeChanged,
