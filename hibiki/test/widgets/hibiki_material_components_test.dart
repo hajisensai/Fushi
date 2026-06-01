@@ -532,4 +532,45 @@ void main() {
     expect(material.clipBehavior, Clip.none);
     expect(shape.side, BorderSide.none);
   });
+
+  testWidgets(
+      'HibikiToolScaffold default back button registers with focus root',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(
+          useMaterial3: true,
+          colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
+        ),
+        home: const Scaffold(body: Text('home')),
+        routes: <String, WidgetBuilder>{
+          '/tool': (BuildContext context) => const HibikiFocusRoot(
+                child: HibikiToolScaffold(
+                  title: 'Tool',
+                  body: Text('tool'),
+                ),
+              ),
+        },
+      ),
+    );
+    Navigator.of(tester.element(find.text('home'))).pushNamed('/tool');
+    await tester.pumpAndSettle();
+
+    final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+      tester.element(find.text('Tool')),
+    );
+    controller.ensureFocus();
+    await tester.pump();
+
+    expect(controller.activeId, isNotNull,
+        reason: 'the default tool-page back button must be reachable by '
+            'custom gamepad focus, not only by touch or system back');
+    Actions.maybeInvoke<ActivateIntent>(
+      controller.activeContext!,
+      const ActivateIntent(),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('home'), findsOneWidget);
+  });
 }

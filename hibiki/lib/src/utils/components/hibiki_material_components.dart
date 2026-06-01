@@ -1394,12 +1394,11 @@ class HibikiToolScaffold extends StatelessWidget {
 
   Widget? _defaultLeading(BuildContext context) {
     if (!Navigator.of(context).canPop()) return null;
-    return IconButton(
+    return HibikiIconButton(
       tooltip: MaterialLocalizations.of(context).backButtonTooltip,
-      icon: const Icon(Icons.arrow_back),
-      constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+      icon: Icons.arrow_back,
       padding: EdgeInsets.zero,
-      onPressed: () => Navigator.of(context).maybePop(),
+      onTap: () => Navigator.of(context).maybePop(),
     );
   }
 
