@@ -23,7 +23,7 @@
 | 期3 导航 + 查词入口 | 已有 | `ShortcutAction.homeTabPrev/homeTabNext/homeFocusSearch` 与 LT/RT/Y 默认绑定，`home_page.dart` 消费这些 action；测试见 `shortcut_defaults_test.dart` | 仍需手柄端到端复测首页 tab 循环与词典搜索聚焦 |
 | 期4 手势等价动作 | 部分已有 | `GamepadLongPressActions` 已覆盖历史/集合/搜索历史等条目；标签页有 X 删除；重排按钮与 `gamepad_reorder_test.dart` 覆盖索引补偿 | 覆盖面未审完：集合/标签/字体/词典/同步 URL/音频源等所有长按、删除、重排入口还要逐页核对 |
 | 期5 阅读器 + WebView 专项 | 部分已有 | 弹窗上下跳项/左右逐字、图片停点、reader 图片 `onImageTap`、R3 振假名、LB/RB 复用滚动/翻页均有代码与 `reader_caret_scripts_test.dart` 结构测试；本轮修复了 disabled 按钮误入停点 | 词典结果 WebView 是否纳入 caret、全屏插图 LB/RB/R3、真实 WebView DOM/边界证据仍需补齐 |
-| 期6 手柄软键盘 | 部分已有 | `HibikiGamepadKeyboard`、`showGamepadKeyboard`、`HibikiTextField`、`HibikiSearchField`、`HibikiCompactSearchRow` 已在桌面提供软键盘入口；文本插入/删除/提交测试见 `hibiki_gamepad_keyboard_test.dart`、`hibiki_text_field_keyboard_test.dart` | 还要审计绕过共享输入组件的少数专用编辑器；未接入的路径不能算完成 |
+| 期6 手柄软键盘 | 部分已有 | `HibikiGamepadKeyboard`、`showGamepadKeyboard`、`HibikiTextField`、`HibikiSearchField`、`HibikiCompactSearchRow`、`HibikiEditorPanel` 已在桌面提供软键盘入口；文本插入/删除/提交测试见 `hibiki_gamepad_keyboard_test.dart`、`hibiki_text_field_keyboard_test.dart` | 仍需真实桌面手柄复测重命名、标签/Profile/WebSocket、歌词和书籍 CSS 编辑路径，不能只靠 widget 结构测试宣称完成 |
 
 【核心判断】
 ✅ 值得继续做：这是实打实的可达性缺口，不是臆想优化。坏状态已经从“没有方案”变成“实现散落、文档过期、设备证据不足”。

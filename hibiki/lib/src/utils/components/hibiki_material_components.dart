@@ -1669,22 +1669,35 @@ class HibikiEditorPanel extends StatelessWidget {
       padding: EdgeInsets.all(tokens.spacing.page),
       child: HibikiCard(
         padding: EdgeInsets.zero,
-        child: TextField(
-          controller: controller,
-          focusNode: focusNode,
-          maxLines: null,
-          expands: true,
-          textAlignVertical: TextAlignVertical.top,
-          style: tokens.type.listSubtitle.copyWith(
-            color: tokens.surfaces.onSurface,
-            fontFamily: 'monospace',
-          ),
-          decoration: InputDecoration(
-            border: InputBorder.none,
-            enabledBorder: InputBorder.none,
-            focusedBorder: InputBorder.none,
-            contentPadding: EdgeInsets.all(tokens.spacing.card),
-          ),
+        child: Stack(
+          children: <Widget>[
+            TextField(
+              controller: controller,
+              focusNode: focusNode,
+              maxLines: null,
+              expands: true,
+              textAlignVertical: TextAlignVertical.top,
+              style: tokens.type.listSubtitle.copyWith(
+                color: tokens.surfaces.onSurface,
+                fontFamily: 'monospace',
+              ),
+              decoration: InputDecoration(
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                contentPadding: EdgeInsets.all(tokens.spacing.card),
+              ),
+            ),
+            Positioned(
+              top: tokens.spacing.gap,
+              right: tokens.spacing.gap,
+              child: _hibikiTextFieldKeyboardSuffix(
+                    context: context,
+                    controller: controller,
+                  ) ??
+                  const SizedBox.shrink(),
+            ),
+          ],
         ),
       ),
     );

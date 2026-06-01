@@ -100,4 +100,22 @@ void main() {
       expect(find.byIcon(Icons.keyboard_outlined), findsOneWidget);
     });
   });
+
+  testWidgets('desktop HibikiEditorPanel shows the ⌨ button',
+      (WidgetTester tester) async {
+    final TextEditingController c = TextEditingController();
+    addTearDown(c.dispose);
+
+    await tester.pumpWidget(buildTestApp(
+      SizedBox(
+        width: 480,
+        height: 320,
+        child: HibikiEditorPanel(controller: c),
+      ),
+      theme: ThemeData(useMaterial3: true, platform: TargetPlatform.windows),
+    ));
+    await tester.pump();
+
+    expect(find.byIcon(Icons.keyboard_outlined), findsOneWidget);
+  });
 }
