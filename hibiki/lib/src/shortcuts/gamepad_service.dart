@@ -49,7 +49,7 @@ class GamepadLongPressIntent extends Intent {
 /// that takes focus (e.g. around a focusable list tile) so the
 /// [GamepadLongPressIntent] dispatched to the focused node bubbles here. A null
 /// [onLongPress] is a transparent pass-through.
-class GamepadLongPressActions extends StatelessWidget {
+class GamepadLongPressActions extends StatefulWidget {
   const GamepadLongPressActions({
     required this.onLongPress,
     required this.child,
@@ -60,19 +60,82 @@ class GamepadLongPressActions extends StatelessWidget {
   final Widget child;
 
   @override
+  State<GamepadLongPressActions> createState() =>
+      _GamepadLongPressActionsState();
+}
+
+class _GamepadLongPressActionsState extends State<GamepadLongPressActions> {
+  Timer? _aHoldTimer;
+  bool _aLongFired = false;
+
+  @override
+  void dispose() {
+    _clearAHold();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    if (onLongPress == null) return child;
+    if (widget.onLongPress == null) return widget.child;
     return Actions(
       actions: <Type, Action<Intent>>{
         GamepadLongPressIntent: CallbackAction<GamepadLongPressIntent>(
           onInvoke: (GamepadLongPressIntent intent) {
-            onLongPress!();
+            if (intent.button != GamepadButton.a) return false;
+            widget.onLongPress!();
             return true; // handled → GamepadService skips its activate fallback
           },
         ),
       },
-      child: child,
+      child: Focus(
+        canRequestFocus: false,
+        skipTraversal: true,
+        onKeyEvent: _handleNativeGamepadKey,
+        child: widget.child,
+      ),
     );
+  }
+
+  KeyEventResult _handleNativeGamepadKey(FocusNode node, KeyEvent event) {
+    if (event.logicalKey != LogicalKeyboardKey.gameButtonA) {
+      return KeyEventResult.ignored;
+    }
+    if (event is KeyDownEvent) {
+      if (_aHoldTimer != null) return KeyEventResult.handled;
+      _aLongFired = false;
+      _aHoldTimer = Timer(
+        const Duration(milliseconds: GamepadFrameProcessor.longPressMs),
+        () {
+          _aHoldTimer = null;
+          _aLongFired = true;
+          if (mounted) widget.onLongPress?.call();
+        },
+      );
+      return KeyEventResult.handled;
+    }
+    if (event is KeyRepeatEvent) {
+      return KeyEventResult.handled;
+    }
+    if (event is KeyUpEvent) {
+      final bool longFired = _aLongFired;
+      _clearAHold();
+      if (!longFired) {
+        final BuildContext targetContext =
+            FocusManager.instance.primaryFocus?.context ?? context;
+        Actions.maybeInvoke<ActivateIntent>(
+          targetContext,
+          const ActivateIntent(),
+        );
+      }
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  void _clearAHold() {
+    _aHoldTimer?.cancel();
+    _aHoldTimer = null;
+    _aLongFired = false;
   }
 }
 

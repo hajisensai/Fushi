@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:hibiki/src/shortcuts/gamepad_service.dart';
@@ -129,6 +131,53 @@ void main() {
     test('only A is deferred; B still fires on the press edge', () {
       lpFrame(GamepadFrameBits.b, nowMs: 0);
       expect(buttons, <GamepadButton>[GamepadButton.b]);
+    });
+  });
+
+  group('GamepadLongPressActions native key path', () {
+    testWidgets('holding gameButtonA invokes long press without activate',
+        (WidgetTester tester) async {
+      int activations = 0;
+      int longPresses = 0;
+      final FocusNode focusNode = FocusNode();
+      addTearDown(focusNode.dispose);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: GamepadLongPressActions(
+              onLongPress: () => longPresses++,
+              child: Actions(
+                actions: <Type, Action<Intent>>{
+                  ActivateIntent: CallbackAction<ActivateIntent>(
+                    onInvoke: (_) {
+                      activations++;
+                      return null;
+                    },
+                  ),
+                },
+                child: Focus(
+                  focusNode: focusNode,
+                  autofocus: true,
+                  child: const SizedBox(width: 20, height: 20),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(focusNode.hasFocus, isTrue);
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.gameButtonA);
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(longPresses, 1);
+      expect(activations, 0);
+
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.gameButtonA);
+      await tester.pump();
+      expect(longPresses, 1);
+      expect(activations, 0);
     });
   });
 
