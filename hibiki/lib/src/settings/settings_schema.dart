@@ -258,8 +258,7 @@ SettingsDestination _readingDestination() {
             value: (SettingsContext c) => c.readerSource.ttuLineHeight,
             format: (double v) => v.toStringAsFixed(2),
             onChanged: (SettingsContext c, double v) {
-              c.readerSource
-                  .setTtuLineHeight((v * 100).roundToDouble() / 100);
+              c.readerSource.setTtuLineHeight((v * 100).roundToDouble() / 100);
               notifyReaderSettingsChanged(c);
             },
           ),
@@ -439,8 +438,7 @@ SettingsDestination _readingDestination() {
                 tooltip: 'Left to Right',
               ),
             ],
-            selected: (SettingsContext c) =>
-                c.readerSource.ttuSpreadDirection,
+            selected: (SettingsContext c) => c.readerSource.ttuSpreadDirection,
             onChanged: (SettingsContext c, String v) {
               c.readerSource.setTtuSpreadDirection(v);
               notifyReaderSettingsChanged(c);
@@ -646,6 +644,21 @@ SettingsDestination _readingDestination() {
                 settingsContext.readerSource.highlightOnTap,
             onChanged: (SettingsContext settingsContext, bool value) {
               settingsContext.readerSource.toggleHighlightOnTap();
+              notifyReaderSettingsChanged(settingsContext);
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'reading_controls.tap_empty_hide_chrome',
+            title: t.tap_empty_hide_chrome,
+            icon: Icons.fullscreen_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 10,
+            ),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.tapEmptyToHideChrome,
+            onChanged: (SettingsContext settingsContext, bool value) {
+              settingsContext.readerSource.toggleTapEmptyToHideChrome();
               notifyReaderSettingsChanged(settingsContext);
             },
           ),

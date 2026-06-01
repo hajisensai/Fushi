@@ -12,6 +12,8 @@ import 'package:hibiki/src/media/audiobook/audiobook_play_bar.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/pages/implementations/book_css_editor_page.dart';
+import 'package:hibiki/src/pages/implementations/custom_theme_page.dart';
 import 'package:hibiki/src/settings/cupertino_settings_renderer.dart';
 import 'package:hibiki/src/settings/material_settings_renderer.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
@@ -377,21 +379,49 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
               trailing: Wrap(
                 spacing: tokens.spacing.gap * 0.75,
                 runSpacing: tokens.spacing.gap * 0.75,
-                children: TtuReaderSettings.availableThemes.map((themeKey) {
-                  return buildReaderThemeChip(
+                children: <Widget>[
+                  ...TtuReaderSettings.availableThemes.map((themeKey) {
+                    return buildReaderThemeChip(
+                      context: context,
+                      label:
+                          TtuReaderSettings.themeLabels[themeKey] ?? themeKey,
+                      selected: s.theme == themeKey,
+                      onSelected: (bool selected) async {
+                        if (!selected) return;
+                        s.theme = themeKey;
+                        setState(() {});
+                        await widget.appModel.setAppThemeKey(themeKey);
+                        await _updateSetting('theme', themeKey);
+                        await widget.onThemeChanged?.call();
+                      },
+                    );
+                  }),
+                  buildReaderThemeChip(
+                    avatar: Icon(
+                      Icons.palette_outlined,
+                      size: 18,
+                      color: s.theme == 'custom-theme'
+                          ? theme.colorScheme.onPrimaryContainer
+                          : null,
+                    ),
                     context: context,
-                    label: TtuReaderSettings.themeLabels[themeKey] ?? themeKey,
-                    selected: s.theme == themeKey,
-                    onSelected: (bool selected) async {
-                      if (!selected) return;
-                      s.theme = themeKey;
-                      setState(() {});
-                      await widget.appModel.setAppThemeKey(themeKey);
-                      await _updateSetting('theme', themeKey);
-                      await widget.onThemeChanged?.call();
+                    label: t.custom_theme,
+                    selected: s.theme == 'custom-theme',
+                    onSelected: (_) {
+                      Navigator.push(
+                        context,
+                        adaptivePageRoute(
+                          builder: (_) => const CustomThemePage(),
+                        ),
+                      ).then((_) async {
+                        s.theme = widget.appModel.appThemeKey;
+                        setState(() {});
+                        await _updateSetting('theme', s.theme);
+                        await widget.onThemeChanged?.call();
+                      });
                     },
-                  );
-                }).toList(growable: false),
+                  ),
+                ],
               ),
             ),
             AdaptiveSettingsSegmentedRow<String>(
@@ -429,10 +459,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
     switch (page) {
       case 'appearance':
         title = t.settings_destination_appearance;
-        content = _buildReaderGroupContent(
-          ReaderGroup.appearance,
-          t.settings_destination_appearance,
-        );
+        content = _buildAppearanceSubPage();
       case 'layout':
         title = t.section_layout;
         // Lyrics mode keeps its bespoke font/margin controls — those are not
@@ -505,6 +532,45 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
       settingsContext: settingsContext,
       destination: buildReaderGroupDestination(settingsContext, group, title),
       shrinkWrap: true,
+    );
+  }
+
+  /// Appearance sub-page = projected schema appearance items + the bespoke
+  /// per-book "Edit Book CSS" nav row. Book CSS needs the live, per-book
+  /// `widget.extractDir`, which no static schema item can carry, so it stays
+  /// bespoke and is only shown when an extract dir is available.
+  Widget _buildAppearanceSubPage() {
+    final Widget projected = _buildReaderGroupContent(
+      ReaderGroup.appearance,
+      t.settings_destination_appearance,
+    );
+    if (widget.extractDir == null) {
+      return projected;
+    }
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        projected,
+        AdaptiveSettingsSection(
+          children: [
+            AdaptiveSettingsNavigationRow(
+              title: t.book_css_editor_edit_css,
+              icon: Icons.code_outlined,
+              onTap: () async {
+                await Navigator.push(
+                  context,
+                  adaptivePageRoute(
+                    builder: (_) =>
+                        BookCssEditorPage(extractDir: widget.extractDir!),
+                  ),
+                );
+                await _reloadLayoutLive();
+              },
+            ),
+          ],
+        ),
+      ],
     );
   }
 
