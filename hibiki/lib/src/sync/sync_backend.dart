@@ -13,12 +13,12 @@ import 'package:hibiki/src/sync/webdav_sync_backend.dart';
 
 enum SyncBackendType {
   googleDrive,
+  hibikiServer,
   webDav,
   oneDrive,
   dropbox,
   ftp,
   sftp,
-  hibikiServer,
 }
 
 class SyncBackendError implements Exception {
