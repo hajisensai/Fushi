@@ -54,7 +54,7 @@ import 'package:hibiki/src/utils/misc/show_app_dialog.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart'
     show GamepadButton, ModifierKey;
 import 'package:hibiki/src/shortcuts/gamepad_service.dart'
-    show GamepadButtonIntent;
+    show GamepadButtonIntent, GamepadLongPressIntent;
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 import 'package:hibiki/src/shortcuts/reader_caret_router.dart';
 
@@ -1066,6 +1066,10 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         GamepadButtonIntent: CallbackAction<GamepadButtonIntent>(
           onInvoke: (GamepadButtonIntent intent) =>
               _handleGamepadButton(intent.button),
+        ),
+        GamepadLongPressIntent: CallbackAction<GamepadLongPressIntent>(
+          onInvoke: (GamepadLongPressIntent intent) =>
+              _handleGamepadLongPress(intent.button),
         ),
       },
       child: Focus(
@@ -3519,6 +3523,12 @@ window.flutter_inappwebview.callHandler('spreadReady');
     return _executeShortcutAction(action) == KeyEventResult.handled;
   }
 
+  bool _handleGamepadLongPress(GamepadButton button) {
+    if (button != GamepadButton.a || !_caretActive) return false;
+    unawaited(_runCaretAction(CaretAction.longPress));
+    return true;
+  }
+
   KeyEventResult _executeShortcutAction(ShortcutAction action) {
     switch (action) {
       case ShortcutAction.readerPageForward:
@@ -3647,6 +3657,9 @@ window.flutter_inappwebview.callHandler('spreadReady');
           break;
         case CaretAction.lookup:
           await _caretLookup();
+          break;
+        case CaretAction.longPress:
+          await _caretLongPress();
           break;
         case CaretAction.dismissOrExit:
           break; // handled above
@@ -3801,6 +3814,16 @@ window.flutter_inappwebview.callHandler('spreadReady');
     if (_controller == null) return;
     await _controller!
         .evaluateJavascript(source: ReaderCaretScripts.activateInvocation());
+  }
+
+  Future<void> _caretLongPress() async {
+    if (_caretSurface == CaretSurface.popup) {
+      await topPopupState?.caretLongPress();
+      return;
+    }
+    if (_controller == null) return;
+    await _controller!
+        .evaluateJavascript(source: ReaderCaretScripts.longPressInvocation());
   }
 
   /// Place the reader cursor at the entering edge of the freshly paginated page.

@@ -178,6 +178,11 @@ class DictionaryPopupWebViewState
         source: ReaderCaretScripts.activateInvocation());
   }
 
+  Future<void> caretLongPress() async {
+    await _controller?.evaluateJavascript(
+        source: ReaderCaretScripts.longPressInvocation());
+  }
+
   Future<void> caretRefresh() async {
     await _controller?.evaluateJavascript(
         source: ReaderCaretScripts.refreshInvocation());

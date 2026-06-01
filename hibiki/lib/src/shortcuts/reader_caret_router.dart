@@ -26,6 +26,11 @@ enum CaretAction {
   /// Plain word lookup. Kept as the fallback that [activate] performs on plain
   /// text; no input maps directly to it any more.
   lookup,
+
+  /// Gamepad hold-A / long-press at the cursor. This is separate from
+  /// [activate] so a dictionary popup summary can mark/unmark a dictionary
+  /// without also toggling the disclosure row.
+  longPress,
   dismissOrExit,
 }
 

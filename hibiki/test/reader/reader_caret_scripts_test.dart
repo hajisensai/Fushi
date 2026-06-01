@@ -15,6 +15,8 @@ void main() {
           ReaderCaretScripts.lookupInvocation(), 'window.hoshiCaret.lookup()');
       expect(ReaderCaretScripts.activateInvocation(),
           'window.hoshiCaret.activate()');
+      expect(ReaderCaretScripts.longPressInvocation(),
+          'window.hoshiCaret.longPress()');
       expect(ReaderCaretScripts.refreshInvocation(),
           'JSON.stringify(window.hoshiCaret.refresh())');
     });
@@ -127,6 +129,7 @@ void main() {
       expect(js, contains('reanchor:'));
       expect(js, contains('lookup:'));
       expect(js, contains('activate:'));
+      expect(js, contains('longPress:'));
       expect(js, contains('refresh:'));
       expect(js, contains('init:'));
       expect(js, contains('isActive:'));
@@ -191,6 +194,13 @@ void main() {
       expect(js, contains('link.click()'));
       expect(js, contains("closest('[data-hoshi-clk]')"));
       expect(js, contains('control.click()'));
+    });
+
+    test('long-press can mark popup dictionary summaries without toggling', () {
+      expect(js, contains('longPress: function()'));
+      expect(js, contains("closest('summary.dict-label')"));
+      expect(js, contains('window.__hoshiDictLongPress(summary)'));
+      expect(js, contains("return 'dict'"));
     });
 
     test('popup clickable detection is unified (control/onclick/pointer)', () {

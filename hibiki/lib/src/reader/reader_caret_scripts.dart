@@ -60,6 +60,11 @@ class ReaderCaretScripts {
   /// word. Returns `'link'` | `'activated'` | `'lookup'` | `'none'`.
   static String activateInvocation() => 'window.hoshiCaret.activate()';
 
+  /// Long-press at the caret. Used by gamepad hold-A for actions that are not
+  /// the same as short activation, such as marking a popup dictionary summary
+  /// without toggling its disclosure row.
+  static String longPressInvocation() => 'window.hoshiCaret.longPress()';
+
   /// Re-measure the ring after a relayout; re-anchors if the node detached.
   static String refreshInvocation() =>
       'JSON.stringify(window.hoshiCaret.refresh())';
@@ -877,6 +882,42 @@ window.hoshiCaret = {
     var control = el && el.closest('[data-hoshi-clk]');
     if (control) { control.click(); return 'activated'; }
     return this.lookup() ? 'lookup' : 'none';
+  },
+
+  longPress: function() {
+    if (!this.active) return 'none';
+    this._markClickables();
+    var target = null;
+    if (this.el && document.contains(this.el)) {
+      target = this.el;
+    } else if (this.node && document.contains(this.node)) {
+      target = this.node.parentElement;
+    }
+    if (!target) return 'none';
+
+    var summary = target.closest && target.closest('summary.dict-label');
+    if (summary && typeof window.__hoshiDictLongPress === 'function') {
+      window.__hoshiDictLongPress(summary);
+      return 'dict';
+    }
+
+    if (!this.el && this.node) {
+      return this.lookup() ? 'lookup' : 'none';
+    }
+
+    var rect = target.getBoundingClientRect ? target.getBoundingClientRect() : null;
+    if (rect) {
+      var ev = new MouseEvent('contextmenu', {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+        clientX: rect.left + rect.width / 2,
+        clientY: rect.top + rect.height / 2
+      });
+      target.dispatchEvent(ev);
+      return 'contextmenu';
+    }
+    return 'none';
   }
 };
 """;

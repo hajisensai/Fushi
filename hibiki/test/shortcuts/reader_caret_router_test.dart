@@ -94,6 +94,10 @@ void main() {
           CaretAction.dismissOrExit);
     });
 
+    test('long-press is a distinct caret action for hold-A routing', () {
+      expect(CaretAction.values, contains(CaretAction.longPress));
+    });
+
     test('X / Y / shoulders return null (kept for bookmark/chrome/page-turn)',
         () {
       expect(ReaderCaretRouter.decideGamepad(GamepadButton.x), isNull);

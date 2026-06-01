@@ -1477,6 +1477,13 @@ function createGlossarySection(dictName, contents, isFirst, entryIdx) {
             summary.classList.add('selected');
         }
     };
+    summary.__hoshiToggleSelection = toggleSelection;
+    window.__hoshiDictLongPress = (summaryEl) => {
+        const toggle = summaryEl?.__hoshiToggleSelection;
+        if (typeof toggle !== 'function') return false;
+        toggle();
+        return true;
+    };
     summary.addEventListener('touchstart', (e) => {
         longPressed = false;
         longPressTimer = setTimeout(toggleSelection, 500);
