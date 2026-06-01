@@ -160,7 +160,7 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
                         onTap: () => setState(() {
                           _sources.insert(
                             0,
-                            AudioSourceConfig.hibikiRemote(enabled: true),
+                            AudioSourceConfig.hibikiRemote(),
                           );
                         }),
                       ),
