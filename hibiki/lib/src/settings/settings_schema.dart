@@ -372,6 +372,7 @@ SettingsDestination _readingDisplayDestination() {
           SettingsSegmentedItem<String>(
             id: 'reading_display.spread_mode',
             title: t.spread_mode,
+            icon: Icons.menu_book_outlined,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
               order: 5,
@@ -402,6 +403,7 @@ SettingsDestination _readingDisplayDestination() {
           SettingsSegmentedItem<String>(
             id: 'reading_display.spread_direction',
             title: t.spread_direction,
+            icon: Icons.swap_horiz_outlined,
             visible: (SettingsContext c) =>
                 c.readerSource.ttuSpreadMode != 'off',
             reader: const ReaderPlacement(
@@ -430,6 +432,7 @@ SettingsDestination _readingDisplayDestination() {
           SettingsSegmentedItem<String>(
             id: 'reading_display.writing_mode',
             title: t.ttu_writing_direction,
+            icon: Icons.text_rotate_vertical,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
               order: 7,
@@ -455,6 +458,7 @@ SettingsDestination _readingDisplayDestination() {
           SettingsSegmentedItem<String>(
             id: 'reading_display.view_mode',
             title: t.ttu_view_mode_label,
+            icon: Icons.chrome_reader_mode_outlined,
             reader: const ReaderPlacement(
               group: ReaderGroup.appearance,
               order: 3,
@@ -480,6 +484,7 @@ SettingsDestination _readingDisplayDestination() {
           SettingsSegmentedItem<String>(
             id: 'reading_display.vert_text_orient',
             title: t.ttu_vert_text_orient,
+            icon: Icons.text_rotation_none,
             visible: isVertical,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
@@ -507,6 +512,7 @@ SettingsDestination _readingDisplayDestination() {
           SettingsSegmentedItem<String>(
             id: 'reading_display.furigana_mode',
             title: t.ttu_furigana_mode,
+            icon: Icons.translate_outlined,
             controlBelow: true,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
@@ -548,6 +554,7 @@ SettingsDestination _readingDisplayDestination() {
           SettingsSwitchItem(
             id: 'reading_display.text_justify',
             title: t.ttu_text_justify,
+            icon: Icons.format_align_justify,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
               order: 10,
@@ -562,6 +569,7 @@ SettingsDestination _readingDisplayDestination() {
           SettingsSwitchItem(
             id: 'reading_display.vert_kerning',
             title: t.ttu_vert_kerning,
+            icon: Icons.space_bar,
             visible: isVertical,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
@@ -577,6 +585,7 @@ SettingsDestination _readingDisplayDestination() {
           SettingsSwitchItem(
             id: 'reading_display.font_vpal',
             title: t.ttu_font_vpal,
+            icon: Icons.format_shapes,
             visible: isVertical,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
@@ -591,6 +600,7 @@ SettingsDestination _readingDisplayDestination() {
           SettingsSwitchItem(
             id: 'reading_display.prioritize_reader_styles',
             title: t.ttu_reader_styles,
+            icon: Icons.style_outlined,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
               order: 13,
