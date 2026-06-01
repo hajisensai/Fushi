@@ -391,7 +391,7 @@ void main() {
         await onDiskDb.replaceAllDictionaryHistory([
           DictionaryHistoryCompanion.insert(
             position: 0,
-            resultJson: '{"searchTerm":"猫"}',
+            resultJson: '{"searchTerm":"cat"}',
           ),
         ]);
 
@@ -449,6 +449,176 @@ void main() {
         await onDiskDb.close();
         if (dbDir.existsSync()) await dbDir.delete(recursive: true);
         if (dictDir.existsSync()) await dictDir.delete(recursive: true);
+      }
+    });
+
+    test(
+        'exportBackup strips dictionary state when enabled but resources are missing',
+        () async {
+      final dbDir =
+          await Directory.systemTemp.createTemp('backup_dict_missing_');
+      final missingDictDir =
+          Directory('${tmpDir.path}/missing_dictionary_resources');
+      final onDiskDb = HibikiDatabase(dbDir.path);
+      try {
+        await Directory('${missingDictDir.path}/download_temp')
+            .create(recursive: true);
+        await File('${missingDictDir.path}/download_temp/leftover.bin')
+            .writeAsString('temporary file');
+        await SyncRepository(onDiskDb).setSyncDictionaryEnabled(true);
+        await onDiskDb.upsertDictionaryMeta(
+          DictionaryMetadataCompanion.insert(
+            name: 'MissingDict',
+            formatKey: 'yomichan',
+            order: 0,
+          ),
+        );
+        await onDiskDb.replaceAllDictionaryHistory([
+          DictionaryHistoryCompanion.insert(
+            position: 0,
+            resultJson: '{"searchTerm":"cat"}',
+          ),
+        ]);
+
+        final service = BackupService(
+          db: onDiskDb,
+          dbDirectory: dbDir.path,
+          dictionaryResourceDirectory: missingDictDir.path,
+          appVersion: '2.0.0',
+        );
+        final outputPath = '${tmpDir.path}/dictionary_missing_test.zip';
+        await service.exportBackup(outputPath);
+
+        final archive =
+            ZipDecoder().decodeBytes(await File(outputPath).readAsBytes());
+        final bool containsDictionaryResource = archive.files.any(
+          (ArchiveFile file) => file.name.replaceAll(r'\', '/').startsWith(
+                'dictionaryResources/',
+              ),
+        );
+        expect(containsDictionaryResource, isFalse);
+
+        final dbBytes = archive.findFile('hibiki.db')!.content as List<int>;
+        final restoreDir =
+            await Directory.systemTemp.createTemp('backup_dict_missing_r_');
+        await File('${restoreDir.path}/hibiki.db').writeAsBytes(dbBytes);
+        final restored = HibikiDatabase(restoreDir.path);
+        try {
+          expect(await restored.getAllDictionaryMetadata(), isEmpty);
+          expect(await restored.getAllDictionaryHistory(), isEmpty);
+        } finally {
+          await restored.close();
+          if (restoreDir.existsSync()) {
+            await restoreDir.delete(recursive: true);
+          }
+        }
+      } finally {
+        await onDiskDb.close();
+        if (dbDir.existsSync()) await dbDir.delete(recursive: true);
+      }
+    });
+
+    test('importBackupFiles clears stale dictionary resources when none exist',
+        () async {
+      final srcDir =
+          await Directory.systemTemp.createTemp('backup_no_dict_src_');
+      final srcDb = HibikiDatabase(srcDir.path);
+      try {
+        final service = BackupService(
+          db: srcDb,
+          dbDirectory: srcDir.path,
+          appVersion: '2.0.0',
+        );
+        final outputPath = '${tmpDir.path}/no_dictionary_resources.zip';
+        await service.exportBackup(outputPath);
+
+        final dstDir =
+            await Directory.systemTemp.createTemp('backup_no_dict_dst_');
+        final dstDictDir =
+            await Directory.systemTemp.createTemp('backup_no_dict_resources_');
+        try {
+          await Directory('${dstDictDir.path}/OldDict/media')
+              .create(recursive: true);
+          await File('${dstDictDir.path}/OldDict/blobs.bin')
+              .writeAsString('stale index');
+          await File('${dstDictDir.path}/OldDict/media/old.png')
+              .writeAsString('stale image');
+
+          await BackupService.importBackupFiles(
+            dbDirectory: dstDir.path,
+            zipPath: outputPath,
+            dictionaryResourceDirectory: dstDictDir.path,
+          );
+
+          expect(await dstDictDir.exists(), isTrue);
+          expect(await dstDictDir.list().toList(), isEmpty);
+        } finally {
+          if (dstDir.existsSync()) await dstDir.delete(recursive: true);
+          if (dstDictDir.existsSync()) {
+            await dstDictDir.delete(recursive: true);
+          }
+        }
+      } finally {
+        await srcDb.close();
+        if (srcDir.existsSync()) await srcDir.delete(recursive: true);
+      }
+    });
+
+    test('importBackupFiles rejects invalid dictionary resource paths safely',
+        () async {
+      final dbBytes = utf8.encode('restored db content');
+      final meta = BackupMeta(
+        appVersion: '2.0.0',
+        schemaVersion: 13,
+        createdAt: DateTime.now(),
+        bookCount: 0,
+        statsCount: 0,
+      );
+      final archive = Archive()
+        ..addFile(ArchiveFile('hibiki.db', dbBytes.length, dbBytes))
+        ..addFile(ArchiveFile(
+          'backup_meta.json',
+          utf8.encode(jsonEncode(meta.toJson())).length,
+          utf8.encode(jsonEncode(meta.toJson())),
+        ))
+        ..addFile(ArchiveFile(
+          'dictionaryResources/../escape.txt',
+          6,
+          utf8.encode('escape'),
+        ));
+      final zipPath = '${tmpDir.path}/invalid_dictionary_path.zip';
+      await File(zipPath).writeAsBytes(ZipEncoder().encode(archive)!);
+
+      final dstDir =
+          await Directory.systemTemp.createTemp('backup_bad_dict_dst_');
+      final dstDictDir =
+          await Directory.systemTemp.createTemp('backup_bad_dict_resources_');
+      try {
+        await File('${dstDir.path}/hibiki.db').writeAsString('current db');
+        await Directory('${dstDictDir.path}/OldDict').create(recursive: true);
+        await File('${dstDictDir.path}/OldDict/blobs.bin')
+            .writeAsString('stale index');
+
+        await expectLater(
+          BackupService.importBackupFiles(
+            dbDirectory: dstDir.path,
+            zipPath: zipPath,
+            dictionaryResourceDirectory: dstDictDir.path,
+          ),
+          throwsA(isA<FormatException>()),
+        );
+
+        expect(
+          await File('${dstDictDir.path}/OldDict/blobs.bin').readAsString(),
+          'stale index',
+        );
+        expect(await File('${dstDir.path}/hibiki.db').readAsString(),
+            'current db');
+      } finally {
+        if (dstDir.existsSync()) await dstDir.delete(recursive: true);
+        if (dstDictDir.existsSync()) {
+          await dstDictDir.delete(recursive: true);
+        }
       }
     });
 

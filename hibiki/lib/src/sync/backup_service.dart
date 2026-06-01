@@ -110,14 +110,15 @@ class BackupService {
       // server passwords (base64 = encoding, not encryption). VACUUM after the
       // delete so the secrets are not recoverable from freelist pages.
       // (HBK-AUDIT-012)
-      final bool syncDictionaryEnabled =
-          await SyncRepository(_db).isSyncDictionaryEnabled();
       final Directory? dictionaryResourceRoot =
           _dictionaryResourceDirectory == null
               ? null
               : Directory(_dictionaryResourceDirectory);
+      final bool includeDictionary =
+          await SyncRepository(_db).isSyncDictionaryEnabled() &&
+              await _hasCompleteDictionaryResources(dictionaryResourceRoot);
       await _stripCredentials(tmpDir.path);
-      if (!syncDictionaryEnabled || dictionaryResourceRoot == null) {
+      if (!includeDictionary) {
         await _stripDictionaryState(tmpDir.path);
       }
 
@@ -134,10 +135,10 @@ class BackupService {
       final archive = Archive();
       final dbBytes = await File(cleanDbPath).readAsBytes();
       archive.addFile(ArchiveFile(_dbName, dbBytes.length, dbBytes));
-      if (syncDictionaryEnabled && dictionaryResourceRoot != null) {
+      if (includeDictionary) {
         await _addDirectoryToArchive(
           archive: archive,
-          root: dictionaryResourceRoot,
+          root: dictionaryResourceRoot!,
           archivePrefix: _dictionaryResourcesPrefix,
         );
       }
@@ -268,6 +269,14 @@ class BackupService {
     final archive = ZipDecoder().decodeBytes(bytes);
     final dbFile = archive.findFile(_dbName);
     if (dbFile == null) throw StateError('No $_dbName in backup archive');
+    final String? dictionaryRestoreDirectory = dictionaryResourceDirectory;
+    List<MapEntry<ArchiveFile, String>>? dictionaryRestorePlan;
+    if (dictionaryRestoreDirectory != null) {
+      dictionaryRestorePlan = _buildDictionaryRestorePlan(
+        archive: archive,
+        dictionaryResourceDirectory: dictionaryRestoreDirectory,
+      );
+    }
 
     final sidecar = File(p.join(dbDirectory, _preserveSidecar));
     final String bakPath = '$dbPath.pre-restore.bak';
@@ -304,10 +313,10 @@ class BackupService {
     // 2) Overwrite with the backup DB bytes.
     await currentDb.writeAsBytes(dbFile.content as List<int>);
 
-    if (dictionaryResourceDirectory != null) {
+    if (dictionaryRestorePlan != null && dictionaryRestoreDirectory != null) {
       await _restoreDictionaryResources(
-        archive: archive,
-        dictionaryResourceDirectory: dictionaryResourceDirectory,
+        restorePlan: dictionaryRestorePlan,
+        dictionaryResourceDirectory: dictionaryRestoreDirectory,
       );
     }
 
@@ -461,30 +470,48 @@ class BackupService {
     }
   }
 
-  static Future<void> _restoreDictionaryResources({
+  Future<bool> _hasCompleteDictionaryResources(Directory? root) async {
+    if (root == null || !await root.exists()) return false;
+    final List<DictionaryMetaRow> dictionaries =
+        await _db.getAllDictionaryMetadata();
+    if (dictionaries.isEmpty) return false;
+    for (final DictionaryMetaRow dictionary in dictionaries) {
+      final Directory dictionaryDir = Directory(
+        p.join(root.path, dictionary.name),
+      );
+      if (!await _directoryHasFiles(dictionaryDir)) return false;
+    }
+    return true;
+  }
+
+  static Future<bool> _directoryHasFiles(Directory directory) async {
+    if (!await directory.exists()) return false;
+    await for (final FileSystemEntity entity
+        in directory.list(recursive: true)) {
+      if (entity is File) return true;
+    }
+    return false;
+  }
+
+  static List<ArchiveFile> _dictionaryResourceFiles(Archive archive) {
+    return archive.files.where((ArchiveFile file) {
+      if (!file.isFile) return false;
+      return file.name
+          .replaceAll(r'\', '/')
+          .startsWith('$_dictionaryResourcesPrefix/');
+    }).toList();
+  }
+
+  static List<MapEntry<ArchiveFile, String>> _buildDictionaryRestorePlan({
     required Archive archive,
     required String dictionaryResourceDirectory,
-  }) async {
-    final bool hasDictionaryResources = archive.files.any(
-      (ArchiveFile file) =>
-          file.isFile &&
-          file.name
-              .replaceAll(r'\', '/')
-              .startsWith('$_dictionaryResourcesPrefix/'),
-    );
-    if (!hasDictionaryResources) return;
-
+  }) {
     final Directory targetRoot = Directory(dictionaryResourceDirectory);
-    if (await targetRoot.exists()) {
-      await targetRoot.delete(recursive: true);
-    }
-    await targetRoot.create(recursive: true);
-
     final String canonicalRoot = p.canonicalize(targetRoot.path);
-    for (final ArchiveFile file in archive.files) {
-      if (!file.isFile) continue;
+    final List<MapEntry<ArchiveFile, String>> restorePlan =
+        <MapEntry<ArchiveFile, String>>[];
+    for (final ArchiveFile file in _dictionaryResourceFiles(archive)) {
       final String rawName = file.name.replaceAll(r'\', '/');
-      if (!rawName.startsWith('$_dictionaryResourcesPrefix/')) continue;
       final String relativePath =
           rawName.substring(_dictionaryResourcesPrefix.length + 1);
       final String normalizedRelative = p.posix.normalize(relativePath);
@@ -503,10 +530,27 @@ class BackupService {
           !p.isWithin(canonicalRoot, canonicalTarget)) {
         throw FormatException('Invalid dictionary resource path: ${file.name}');
       }
+      restorePlan.add(MapEntry<ArchiveFile, String>(file, targetPath));
+    }
+    return restorePlan;
+  }
 
-      final File targetFile = File(targetPath);
+  static Future<void> _restoreDictionaryResources({
+    required List<MapEntry<ArchiveFile, String>> restorePlan,
+    required String dictionaryResourceDirectory,
+  }) async {
+    final Directory targetRoot = Directory(dictionaryResourceDirectory);
+    if (await targetRoot.exists()) {
+      await targetRoot.delete(recursive: true);
+    }
+    await targetRoot.create(recursive: true);
+    for (final MapEntry<ArchiveFile, String> entry in restorePlan) {
+      final File targetFile = File(entry.value);
       targetFile.parent.createSync(recursive: true);
-      await targetFile.writeAsBytes(file.content as List<int>, flush: true);
+      await targetFile.writeAsBytes(
+        entry.key.content as List<int>,
+        flush: true,
+      );
     }
   }
 
