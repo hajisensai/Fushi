@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'dart:io';
 
+import 'package:archive/archive.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,17 +15,9 @@ import 'package:hibiki/src/models/app_model.dart';
 import 'generate_test_epub.dart' show EpubGenerator;
 
 /// Shared self-provisioning helpers so library-dependent integration tests are
-/// hermetic on a fresh install (no manual `adb push` + import step). Mirrors the
-/// pattern proven in reader_pagination_test/_seedTestBook: import the synthetic
-/// marker EPUB straight into the app database, then refresh the shelf provider.
-///
-/// These let the EMULATOR-ONLY runner (ci/integration-test.sh) drive every
-/// target unattended: the runner pushes the dictionary zip to /sdcard, and the
-/// tests seed their own book/dictionary at runtime.
+/// hermetic on a fresh install.
 
-/// Resolve the [AppModel] from the running app and wait until it has finished
-/// initialising (DB open + first frame). Fails the test if it never does.
-Future<AppModel> _readyAppModel(WidgetTester tester) async {
+Future<AppModel> readyAppModel(WidgetTester tester) async {
   final ProviderContainer container = ProviderScope.containerOf(
     tester.element(find.byType(MaterialApp).first),
   );
@@ -36,14 +30,11 @@ Future<AppModel> _readyAppModel(WidgetTester tester) async {
   return appModel;
 }
 
-/// Import the synthetic marker EPUB onto the shelf and refresh the shelf
-/// provider so it becomes visible. Returns the new book id. Idempotent enough
-/// for the per-target fresh installs flutter drive produces.
 Future<int> seedReaderBook(
   WidgetTester tester, {
   String fileName = 'test_library.epub',
 }) async {
-  final AppModel appModel = await _readyAppModel(tester);
+  final AppModel appModel = await readyAppModel(tester);
   final ProviderContainer container = ProviderScope.containerOf(
     tester.element(find.byType(MaterialApp).first),
   );
@@ -58,16 +49,11 @@ Future<int> seedReaderBook(
 
   container.invalidate(hibikiBooksProvider(appModel.targetLanguage));
 
-  // hibikiBooksProvider is a FutureProvider — invalidating it re-runs an async
-  // DB query, so the shelf does not rebuild within a single pumpAndSettle (which
-  // only awaits frames/timers, not the pending Future). Poll until a book entry
-  // actually renders (up to ~20s) so callers that immediately query the shelf
-  // don't race the re-query — especially after a heavy dictionary import has
-  // delayed the event loop.
   final Finder bookEntries = find.byWidgetPredicate((Widget w) {
-    final Key? k = w.key;
-    return k is ValueKey<String> &&
-        (k.value.startsWith('book_entry_') || k.value.startsWith('srt_entry_'));
+    final Key? key = w.key;
+    return key is ValueKey<String> &&
+        (key.value.startsWith('book_entry_') ||
+            key.value.startsWith('srt_entry_'));
   });
   for (int i = 0; i < 40; i++) {
     await tester.pump(const Duration(milliseconds: 500));
@@ -80,36 +66,23 @@ Future<int> seedReaderBook(
   return bookId;
 }
 
-/// Import the dictionary the runner pushed into the app's external-files dir
-/// (copied into the app cache first, as the importer reads from app storage).
-/// The app reads its own external-files dir with no permission;
-/// /sdcard/Download is a legacy fallback but is blocked for the app uid under
-/// scoped storage. Returns true if the import succeeded; false (with a debug
-/// log) if the fixture is absent or the import threw.
 Future<bool> seedDictionary(WidgetTester tester) async {
-  final AppModel appModel = await _readyAppModel(tester);
+  final AppModel appModel = await readyAppModel(tester);
+  if (_hasGeneratedDictionary(appModel)) {
+    debugPrint('[fixture] Generated dictionary already installed');
+    return true;
+  }
 
   final Directory cacheDir = await getTemporaryDirectory();
   final File dictFile = File('${cacheDir.path}/test_dict.zip');
   if (!dictFile.existsSync()) {
-    final Directory? extDir = await getExternalStorageDirectory();
-    final List<File> candidates = <File>[
-      if (extDir != null) File('${extDir.path}/test_dict.zip'),
-      File('/sdcard/Download/test_dict.zip'),
-    ];
-    File? src;
-    for (final File f in candidates) {
-      if (f.existsSync()) {
-        src = f;
-        break;
-      }
+    final File? source = await _findExternalDictionaryFixture();
+    if (source == null) {
+      await writeGeneratedDictionary(dictFile);
+      debugPrint('[fixture] Generated dictionary fixture at ${dictFile.path}');
+    } else {
+      source.copySync(dictFile.path);
     }
-    if (src == null) {
-      debugPrint('[fixture] No dictionary fixture in the app external-files '
-          'dir or /sdcard/Download — skipping dictionary seed');
-      return false;
-    }
-    src.copySync(dictFile.path);
   }
 
   final ValueNotifier<String> progress = ValueNotifier<String>('');
@@ -122,10 +95,79 @@ Future<bool> seedDictionary(WidgetTester tester) async {
     );
   } catch (e, stack) {
     debugPrint('[fixture] Dictionary import failed: $e\n$stack');
-    return false;
+    return _hasGeneratedDictionary(appModel);
   } finally {
     progress.dispose();
   }
-  debugPrint('[fixture] Dictionary seed success=$ok');
-  return ok;
+
+  final bool installed = ok || _hasGeneratedDictionary(appModel);
+  debugPrint('[fixture] Dictionary seed success=$installed');
+  return installed;
+}
+
+Future<File> writeGeneratedDictionary(File file) async {
+  final Map<String, dynamic> index = <String, dynamic>{
+    'title': 'HibikiGeneratedTestDict',
+    'format': 3,
+    'revision': 'generated-test-1',
+    'sequenced': false,
+  };
+  final List<List<dynamic>> termBank = <List<dynamic>>[
+    <dynamic>[
+      'testword',
+      'testword',
+      '',
+      '',
+      0,
+      <String>['Generated dictionary entry used by comprehensive tests.'],
+      0,
+      '',
+    ],
+    <dynamic>[
+      '\u732b',
+      '\u306d\u3053',
+      '',
+      '',
+      0,
+      <String>['Generated Japanese lookup entry for comprehensive tests.'],
+      1,
+      '',
+    ],
+  ];
+
+  final Archive archive = Archive()
+    ..addFile(_jsonFile('index.json', index))
+    ..addFile(_jsonFile('term_bank_1.json', termBank));
+  final List<int> zipBytes = ZipEncoder().encode(archive)!;
+  file.parent.createSync(recursive: true);
+  await file.writeAsBytes(zipBytes, flush: true);
+  return file;
+}
+
+Future<File?> _findExternalDictionaryFixture() async {
+  final List<File> candidates = <File>[];
+  if (!Platform.isWindows && !Platform.isMacOS && !Platform.isLinux) {
+    final Directory? extDir = await getExternalStorageDirectory();
+    if (extDir != null) {
+      candidates.add(File('${extDir.path}/test_dict.zip'));
+    }
+  }
+  candidates.add(File('/sdcard/Download/test_dict.zip'));
+
+  for (final File file in candidates) {
+    if (file.existsSync()) return file;
+  }
+  return null;
+}
+
+bool _hasGeneratedDictionary(AppModel appModel) {
+  return appModel.dictionaries.any((dictionary) {
+    return dictionary.name == 'HibikiGeneratedTestDict' ||
+        dictionary.name == 'HibikiComprehensiveTestDictionary';
+  });
+}
+
+ArchiveFile _jsonFile(String name, Object json) {
+  final List<int> bytes = utf8.encode(jsonEncode(json));
+  return ArchiveFile(name, bytes.length, bytes);
 }
