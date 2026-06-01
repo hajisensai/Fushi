@@ -18,7 +18,7 @@ class LocalAudioDbEntry {
       LocalAudioDbEntry(
         path: json['path'] as String? ?? '',
         displayName: json['displayName'] as String? ?? '',
-        enabled: json['enabled'] as bool? ?? false,
+        enabled: json['enabled'] as bool? ?? true,
       );
 
   final String path;

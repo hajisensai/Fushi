@@ -61,12 +61,15 @@ void main() {
     );
 
     expect(entry.enabled, isFalse);
+  });
+
+  test('legacy local audio DB JSON without enabled stays enabled', () {
     expect(
       LocalAudioDbEntry.fromJson(const <String, dynamic>{
         'path': '/tmp/old.db',
         'displayName': 'old',
       }).enabled,
-      isFalse,
+      isTrue,
     );
   });
 
