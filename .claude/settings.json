@@ -1,5 +1,8 @@
 {
   "permissions": {
     "defaultMode": "bypassPermissions"
+  },
+  "enabledPlugins": {
+    "security-guidance@claude-plugins-official": true
   }
 }
