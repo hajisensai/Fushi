@@ -10,7 +10,6 @@ import 'package:hibiki/src/pages/implementations/popup_dictionary_page.dart';
 import 'package:hibiki/src/platform/platform_services.dart';
 import 'package:hibiki/src/platform/platform_providers.dart';
 import 'package:hibiki/src/utils/misc/popup_channel.dart';
-import 'package:hibiki/src/utils/spacing.dart';
 
 String _extractWord(AppModel appModel, String text, int charIndex) {
   if (charIndex < 0 || !appModel.isInitialised) return text;
@@ -163,10 +162,11 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
   }
 
   Widget _buildWithSpacing(BuildContext context, Widget? child) {
-    return Spacing(
-      dataBuilder: (context) {
-        return SpacingData.generate(10);
-      },
+    final AppModel appModel = ref.watch(appProvider);
+    return HibikiAppUiScale(
+      scale: appModel.isInitialised
+          ? appModel.appUiScale
+          : HibikiAppUiScale.defaultScale,
       child: child ?? const SizedBox.shrink(),
     );
   }

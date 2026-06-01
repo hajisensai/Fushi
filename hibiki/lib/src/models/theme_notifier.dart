@@ -10,6 +10,7 @@ import 'package:hibiki_core/hibiki_core.dart';
 import 'package:material_color_utilities/material_color_utilities.dart';
 
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/utils/app_ui_scale.dart';
 
 Color _readableOnColor(Color color) {
   return ThemeData.estimateBrightnessForColor(color) == Brightness.dark
@@ -198,6 +199,20 @@ class ThemeNotifier extends ChangeNotifier {
       default:
         return HibikiDesignSystem.auto;
     }
+  }
+
+  double get appUiScale {
+    final Object value = _get(
+      'app_ui_scale',
+      defaultValue: HibikiAppUiScale.defaultScale,
+    );
+    if (value is num) return HibikiAppUiScale.normalize(value.toDouble());
+    return HibikiAppUiScale.defaultScale;
+  }
+
+  Future<void> setAppUiScale(double value) async {
+    await _set('app_ui_scale', HibikiAppUiScale.normalize(value));
+    notifyListeners();
   }
 
   bool get isDarkMode {

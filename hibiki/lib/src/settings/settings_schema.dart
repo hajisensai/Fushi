@@ -97,6 +97,22 @@ SettingsDestination _appearanceDestination() {
             icon: Icons.contrast_outlined,
             builder: buildBrightnessSelector,
           ),
+          SettingsSliderItem(
+            id: 'appearance.app_ui_scale',
+            title: t.app_ui_scale,
+            subtitle: t.app_ui_scale_hint,
+            icon: Icons.format_size_outlined,
+            min: HibikiAppUiScale.minScale,
+            max: HibikiAppUiScale.maxScale,
+            divisions: 6,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.appUiScale,
+            label: (double value) => '${(value * 100).round()}%',
+            onChanged: (SettingsContext settingsContext, double value) async {
+              await settingsContext.appModel.setAppUiScale(value);
+              settingsContext.refresh();
+            },
+          ),
         ],
       ),
       SettingsSection(

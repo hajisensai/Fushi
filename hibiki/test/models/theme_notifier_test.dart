@@ -60,6 +60,10 @@ void main() {
       expect(notifier.themeMode, ThemeMode.system);
     });
 
+    test('default appUiScale is 100 percent', () {
+      expect(notifier.appUiScale, 1.0);
+    });
+
     test('theme returns valid ThemeData', () {
       expect(notifier.theme, isA<ThemeData>());
       expect(notifier.theme.useMaterial3, true);
@@ -105,6 +109,23 @@ void main() {
       expect(notifier.themeMode, ThemeMode.dark);
       expect(notifier.isDarkMode, true);
       expect(notifyCount, 1);
+    });
+
+    test('setAppUiScale clamps, persists, and notifies', () async {
+      int notifyCount = 0;
+      notifier.addListener(() => notifyCount++);
+
+      await notifier.setAppUiScale(1.2);
+      expect(notifier.appUiScale, 1.15);
+      expect(notifyCount, 1);
+
+      final ThemeNotifier reloaded = ThemeNotifier(db, textThemeBuilder);
+      addTearDown(reloaded.dispose);
+      await reloaded.refreshFromDb();
+      expect(reloaded.appUiScale, 1.15);
+
+      await notifier.setAppUiScale(0.7);
+      expect(notifier.appUiScale, 0.85);
     });
 
     test('setCustomThemeSeed persists color', () async {

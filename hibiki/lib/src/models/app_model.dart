@@ -1399,6 +1399,10 @@ class AppModel with ChangeNotifier {
   Future<void> setBrightnessMode(String mode) =>
       themeNotifier.setBrightnessMode(mode);
 
+  double get appUiScale => themeNotifier.appUiScale;
+  Future<void> setAppUiScale(double value) =>
+      themeNotifier.setAppUiScale(value);
+
   bool get isDarkMode => themeNotifier.isDarkMode;
 
   Color get customThemeSeed => themeNotifier.customThemeSeed;

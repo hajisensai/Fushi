@@ -6,6 +6,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/models/theme_notifier.dart';
@@ -353,6 +354,43 @@ void main() {
           return const SizedBox.shrink();
         },
       ),
+    );
+  });
+
+  testWidgets('appearance settings exposes app UI size slider',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      _harness(
+        platform: TargetPlatform.android,
+        builder: (SettingsContext settingsContext) {
+          final SettingsDestination appearance =
+              buildSettingsSchema(settingsContext).firstWhere(
+            (SettingsDestination destination) =>
+                destination.id == SettingsDestinationId.appearance,
+          );
+          final SettingsDestination interfaceOnly = SettingsDestination(
+            id: appearance.id,
+            title: appearance.title,
+            icon: appearance.icon,
+            sections: <SettingsSection>[appearance.sections.first],
+          );
+          return MaterialSettingsRenderer().buildDetailPage(
+            settingsContext: settingsContext,
+            destination: interfaceOnly,
+          );
+        },
+      ),
+    );
+
+    expect(find.text(t.app_ui_scale), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (Widget widget) =>
+            widget is AdaptiveSettingsSliderRow &&
+            widget.title == t.app_ui_scale &&
+            widget.value == 1.0,
+      ),
+      findsOneWidget,
     );
   });
 

@@ -11,7 +11,6 @@ import 'package:flutter_logs/flutter_logs.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:receive_intent/receive_intent.dart' as intents;
 import 'package:stack_trace/stack_trace.dart';
-import 'package:hibiki/src/utils/spacing.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
@@ -465,10 +464,8 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
           final cs = Theme.of(context).colorScheme;
           return CupertinoTheme(
             data: hibikiCupertinoTheme(cs, fontFamily: appModel.appFontFamily),
-            child: Spacing(
-              dataBuilder: (context) {
-                return SpacingData.generate(10);
-              },
+            child: HibikiAppUiScale(
+              scale: appModel.appUiScale,
               // Universal gamepad/keyboard navigation: a visible focus ring for
               // observability, wrapping a global gamepad-B back/dismiss intent.
               child: HibikiFocusRoot(

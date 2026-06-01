@@ -1171,5 +1171,7 @@
     "move_up": "Move up",
     "move_down": "Move down",
     "shortcut_action_reader_toggle_furigana": "Toggle furigana",
-    "on_screen_keyboard": "On-screen keyboard"
+    "on_screen_keyboard": "On-screen keyboard",
+    "app_ui_scale": "UI size",
+    "app_ui_scale_hint": "Scales app text and spacing. Lower it on large screens if controls feel oversized."
 }
