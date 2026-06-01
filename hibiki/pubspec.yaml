@@ -127,6 +127,12 @@ dependencies:
 dependency_overrides:
   flutter_inappwebview_windows:
     path: ../packages/flutter_inappwebview_windows
+  # flutter_inappwebview_android 1.1.3 has legacy openFileChooser overloads
+  # declared protected, which fails against the current Android WebChromeClient
+  # API at compileSdk 36. Keep the Android implementation vendored until an
+  # upstream release carries the public-method fix.
+  flutter_inappwebview_android:
+    path: ../third_party/flutter_inappwebview_android
   # Android uses the engine's native key-event path for controllers, NOT the
   # gamepads plugin. The real gamepads_android crashes at launch (it casts
   # MainActivity to GamepadsCompatibleActivity unconditionally), so override it
