@@ -1117,6 +1117,23 @@ void main() {
     }
   });
 
+  test('local audio databases use collapsible reorderable list', () {
+    final String source =
+        File('lib/src/settings/settings_schema.dart').readAsStringSync();
+    final String section = _sectionSource(
+      source,
+      'class _LocalAudioDatabasesRow',
+      'String get customFontsTitlePlaceholder',
+    );
+
+    expect(section, contains('ExpansionTile('));
+    expect(section, contains('ReorderableListView.builder('));
+    expect(section, contains('ReorderableDragStartListener('));
+    expect(section, contains('appModel.reorderLocalAudioDbs('));
+    expect(section, isNot(contains('Icons.arrow_upward_outlined')));
+    expect(section, isNot(contains('Icons.arrow_downward_outlined')));
+  });
+
   test('audiobook play bar uses shared MD3 spacing tokens', () {
     final String source = File(
       'lib/src/media/audiobook/audiobook_play_bar.dart',

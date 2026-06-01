@@ -116,7 +116,10 @@ class LocalAudioManager {
 
   Future<void> reorder(int oldIndex, int newIndex) async {
     final dbs = List<LocalAudioDbEntry>.of(entries);
+    if (oldIndex < 0 || oldIndex >= dbs.length) return;
+    if (newIndex < 0 || newIndex > dbs.length) return;
     if (newIndex > oldIndex) newIndex--;
+    if (newIndex == oldIndex) return;
     final entry = dbs.removeAt(oldIndex);
     dbs.insert(newIndex, entry);
     await setEntries(dbs);

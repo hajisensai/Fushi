@@ -902,6 +902,8 @@ class _LocalAudioDatabasesRow extends StatefulWidget {
 }
 
 class _LocalAudioDatabasesRowState extends State<_LocalAudioDatabasesRow> {
+  bool _expanded = true;
+
   SettingsContext get settingsContext => widget.settingsContext;
   AppModel get appModel => settingsContext.appModel;
 
@@ -910,7 +912,7 @@ class _LocalAudioDatabasesRowState extends State<_LocalAudioDatabasesRow> {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final List<LocalAudioDbEntry> dbs = appModel.localAudioDbs;
     return AdaptiveSettingsRow(
-      title: t.local_audio_add_db,
+      title: t.local_audio,
       icon: Icons.storage_outlined,
       controlBelow: true,
       trailing: Column(
@@ -926,8 +928,7 @@ class _LocalAudioDatabasesRowState extends State<_LocalAudioDatabasesRow> {
                     ),
               ),
             ),
-          for (int index = 0; index < dbs.length; index++)
-            _buildDbTile(dbs, index),
+          if (dbs.isNotEmpty) _buildDbList(dbs),
           SizedBox(height: tokens.spacing.gap / 2),
           TextButton.icon(
             icon: Icon(
@@ -936,6 +937,37 @@ class _LocalAudioDatabasesRowState extends State<_LocalAudioDatabasesRow> {
             ),
             label: Text(t.local_audio_add_db),
             onPressed: _pickAndAddAudioDb,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDbList(List<LocalAudioDbEntry> dbs) {
+    return Theme(
+      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        tilePadding: EdgeInsets.zero,
+        childrenPadding: EdgeInsets.zero,
+        initiallyExpanded: _expanded,
+        title: Text('${t.local_audio} (${dbs.length})'),
+        onExpansionChanged: (bool value) {
+          setState(() {
+            _expanded = value;
+          });
+        },
+        children: <Widget>[
+          ReorderableListView.builder(
+            buildDefaultDragHandles: false,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: dbs.length,
+            itemBuilder: (BuildContext context, int index) =>
+                _buildDbTile(dbs, index),
+            onReorder: (int oldIndex, int newIndex) async {
+              await appModel.reorderLocalAudioDbs(oldIndex, newIndex);
+              _refresh();
+            },
           ),
         ],
       ),
@@ -951,6 +983,7 @@ class _LocalAudioDatabasesRowState extends State<_LocalAudioDatabasesRow> {
     final TextStyle? counterStyle = Theme.of(context).textTheme.bodySmall;
 
     return AdaptiveSettingsRow(
+      key: ValueKey<String>(entry.path),
       title: label,
       icon: enabled ? Icons.storage_outlined : Icons.block,
       trailing: Row(
@@ -966,26 +999,16 @@ class _LocalAudioDatabasesRowState extends State<_LocalAudioDatabasesRow> {
               _refresh();
             },
           ),
-          if (index > 0)
-            HibikiIconButton(
-              tooltip: t.increase,
-              size: 18,
-              icon: Icons.arrow_upward_outlined,
-              onTap: () async {
-                await appModel.reorderLocalAudioDbs(index, index - 1);
-                _refresh();
-              },
+          ReorderableDragStartListener(
+            index: index,
+            child: Tooltip(
+              message: t.custom_fonts_drag_hint,
+              child: const Padding(
+                padding: EdgeInsets.all(8),
+                child: Icon(Icons.drag_handle, size: 18),
+              ),
             ),
-          if (index < dbs.length - 1)
-            HibikiIconButton(
-              tooltip: t.decrease,
-              size: 18,
-              icon: Icons.arrow_downward_outlined,
-              onTap: () async {
-                await appModel.reorderLocalAudioDbs(index, index + 2);
-                _refresh();
-              },
-            ),
+          ),
           HibikiIconButton(
             tooltip: t.dialog_delete,
             size: 18,
