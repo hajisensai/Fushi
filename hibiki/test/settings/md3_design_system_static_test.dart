@@ -1364,6 +1364,31 @@ void main() {
     expect(sync, isNot(contains('showDialog<int>(')));
   });
 
+  test('shared MD3 primitives animate state changes', () {
+    final String motion =
+        File('lib/src/utils/components/hibiki_motion_tokens.dart')
+            .readAsStringSync();
+    expect(motion, contains('hibikiMd3StateDuration'));
+    expect(motion, contains('hibikiMd3StateCurve'));
+    expect(motion, contains('Durations.short4'));
+    expect(motion, contains('Easing.standard'));
+
+    final String components = File(
+      'lib/src/utils/components/hibiki_material_components.dart',
+    ).readAsStringSync();
+    for (final (String start, String end) in <(String, String)>[
+      ('class HibikiCard', 'enum HibikiListDensity'),
+      ('class HibikiListItem', 'class HibikiSearchField'),
+      ('class HibikiTagChip', 'class HibikiBadge'),
+      ('class HibikiColorSwatch', 'Color _swatchForegroundFor'),
+    ]) {
+      final String section = _sectionSource(components, start, end);
+      expect(section, contains('AnimatedContainer('));
+      expect(section, contains('duration: hibikiMd3StateDuration'));
+      expect(section, contains('curve: hibikiMd3StateCurve'));
+    }
+  });
+
   test('dictionary and popup surfaces use shared MD3 primitives', () {
     final String dictionaryManager = File(
       'lib/src/pages/implementations/dictionary_dialog_page.dart',

@@ -200,12 +200,13 @@ void main() {
 
     final Text darkText = tester.widget<Text>(find.text('Dark'));
     final Text lightText = tester.widget<Text>(find.text('Light'));
-    final Container darkContainer = tester.widget<Container>(find
-        .ancestor(
-          of: find.text('Dark'),
-          matching: find.byType(Container),
-        )
-        .first);
+    final AnimatedContainer darkContainer =
+        tester.widget<AnimatedContainer>(find
+            .ancestor(
+              of: find.text('Dark'),
+              matching: find.byType(AnimatedContainer),
+            )
+            .first);
 
     expect(darkText.style?.color, Colors.white);
     expect(lightText.style?.color, Colors.black);
@@ -228,9 +229,10 @@ void main() {
       ),
     );
 
-    final Iterable<Container> containers =
-        tester.widgetList<Container>(find.byType(Container));
-    final Container chip = containers.firstWhere((Container widget) {
+    final Iterable<AnimatedContainer> containers =
+        tester.widgetList<AnimatedContainer>(find.byType(AnimatedContainer));
+    final AnimatedContainer chip =
+        containers.firstWhere((AnimatedContainer widget) {
       final Decoration? decoration = widget.decoration;
       return decoration is BoxDecoration && decoration.border != null;
     });
@@ -302,10 +304,10 @@ void main() {
       ),
     );
 
-    final DecoratedBox swatch = tester
-        .widgetList<DecoratedBox>(find.byType(DecoratedBox))
-        .firstWhere((DecoratedBox widget) {
-      final Decoration decoration = widget.decoration;
+    final AnimatedContainer swatch = tester
+        .widgetList<AnimatedContainer>(find.byType(AnimatedContainer))
+        .firstWhere((AnimatedContainer widget) {
+      final Decoration decoration = widget.decoration!;
       return decoration is BoxDecoration && decoration.color == Colors.green;
     });
     final BoxDecoration decoration = swatch.decoration as BoxDecoration;

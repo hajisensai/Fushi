@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+const Duration hibikiMd3StateDuration = Durations.short4;
+const Curve hibikiMd3StateCurve = Easing.standard;
+
 const AnimationStyle hibikiMd3DialogAnimationStyle = AnimationStyle(
   curve: Easing.emphasizedDecelerate,
   duration: Durations.medium2,
