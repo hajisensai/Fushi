@@ -171,16 +171,18 @@ void main() {
       expect(js, contains('getNormalizedOffset:'));
     });
 
-    test('selectText delegates to selectFromPosition (shared core for the '
+    test(
+        'selectText delegates to selectFromPosition (shared core for the '
         'coordinate and caret paths)', () {
-      expect(js, contains('return this.selectFromPosition(hit.node, hit.offset'));
+      expect(
+          js, contains('return this.selectFromPosition(hit.node, hit.offset'));
     });
 
-    test('selectFromPosition fires the onTextSelected handler (caret lookup '
+    test(
+        'selectFromPosition fires the onTextSelected handler (caret lookup '
         'reuses the same dictionary pipeline)', () {
       // Single onTextSelected emitter lives in selectFromPosition.
-      final int emitters =
-          "callHandler('onTextSelected'".allMatches(js).length;
+      final int emitters = "callHandler('onTextSelected'".allMatches(js).length;
       expect(emitters, 1);
     });
 

@@ -91,8 +91,8 @@ void main() {
           'tok',
           (String url, String token) async => false,
         ),
-        throwsA(isA<SyncBackendError>()
-            .having((SyncBackendError e) => e.isRetryable, 'isRetryable', isTrue)),
+        throwsA(isA<SyncBackendError>().having(
+            (SyncBackendError e) => e.isRetryable, 'isRetryable', isTrue)),
       );
     });
   });

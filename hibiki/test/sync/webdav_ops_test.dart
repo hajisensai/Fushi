@@ -12,7 +12,8 @@ void main() {
       // absolute href — must NOT be accepted as same-origin (HBK-AUDIT-160).
       final WebDavOps ops = _ops('http://nas.local:8080/dav');
       expect(
-        () => ops.resolveHref('http://nas.local/dav/file', 'http://nas.local:8080/dav'),
+        () => ops.resolveHref(
+            'http://nas.local/dav/file', 'http://nas.local:8080/dav'),
         throwsA(isA<SyncBackendError>()),
       );
     });

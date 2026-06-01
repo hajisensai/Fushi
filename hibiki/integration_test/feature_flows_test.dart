@@ -22,8 +22,7 @@ void main() {
   final IntegrationTestWidgetsFlutterBinding binding =
       IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('M3: Feature flows work end-to-end',
-      (WidgetTester tester) async {
+  testWidgets('M3: Feature flows work end-to-end', (WidgetTester tester) async {
     final List<FlutterErrorDetails> errors = [];
     final FlutterExceptionHandler? oldHandler = FlutterError.onError;
     FlutterError.onError = (FlutterErrorDetails details) {
@@ -226,7 +225,6 @@ void main() {
       debugPrint('[M3] === Feature Flows Complete ===');
       assertStrictErrors(errors);
       debugPrint('[M3] === ALL FEATURE FLOW TESTS PASSED ===');
-
     } finally {
       FlutterError.onError = oldHandler;
     }

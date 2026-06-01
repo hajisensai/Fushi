@@ -175,7 +175,6 @@ class FloatingLyricChannel extends FloatingOverlayChannel {
 
   static Future<void> setLocked(bool locked) async {
     if (!_instance.isSupported) return;
-    await _instance.channel
-        .invokeMethod<void>('setLocked', {'locked': locked});
+    await _instance.channel.invokeMethod<void>('setLocked', {'locked': locked});
   }
 }

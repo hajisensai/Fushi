@@ -63,8 +63,8 @@ Future<DesktopOAuthResult> runDesktopOAuthLoopback({
 
       if (completer.isCompleted) return;
       if (code != null) {
-        completer.complete(
-            DesktopOAuthResult(code: code, redirectUri: redirectUri));
+        completer
+            .complete(DesktopOAuthResult(code: code, redirectUri: redirectUri));
       } else if (error != null) {
         completer.completeError(SyncAuthError('Authorization denied: $error'));
       }
@@ -86,7 +86,8 @@ Future<DesktopOAuthResult> runDesktopOAuthLoopback({
 }
 
 String _resultPage({required bool success, String? error}) {
-  final title = success ? 'Hibiki — Sign-in complete' : 'Hibiki — Sign-in failed';
+  final title =
+      success ? 'Hibiki — Sign-in complete' : 'Hibiki — Sign-in failed';
   final body = success
       ? 'You can close this tab and return to Hibiki.'
       : 'Authorization failed${error != null ? ': $error' : ''}. '

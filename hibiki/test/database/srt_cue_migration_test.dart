@@ -95,32 +95,32 @@ CREATE TABLE audio_cues (
         // ── seed data ──
         // Standalone SRT book (no audiobooks row) with 3 cues.
         rawDb.execute(
-          "INSERT INTO srt_books (uid, title, srt_path, imported_at, ttu_book_id) "
+          'INSERT INTO srt_books (uid, title, srt_path, imported_at, ttu_book_id) '
           "VALUES ('srtbook_keep', 'SRT Book', '/x.srt', 0, 0)",
         );
         // An audiobook-owned book with 2 cues.
         rawDb.execute(
-          "INSERT INTO audiobooks (book_uid, alignment_format, alignment_path) "
+          'INSERT INTO audiobooks (book_uid, alignment_format, alignment_path) '
           "VALUES ('audiobook_keep', 'srt', '/a.srt')",
         );
         for (int i = 0; i < 3; i++) {
           rawDb.execute(
-            "INSERT INTO audio_cues (book_uid, chapter_href, sentence_index, "
-            "text_fragment_id, cue_text, start_ms, end_ms, audio_file_index) "
+            'INSERT INTO audio_cues (book_uid, chapter_href, sentence_index, '
+            'text_fragment_id, cue_text, start_ms, end_ms, audio_file_index) '
             "VALUES ('srtbook_keep', 'c.xhtml', $i, 'f$i', 't$i', 0, 1, 0)",
           );
         }
         for (int i = 0; i < 2; i++) {
           rawDb.execute(
-            "INSERT INTO audio_cues (book_uid, chapter_href, sentence_index, "
-            "text_fragment_id, cue_text, start_ms, end_ms, audio_file_index) "
+            'INSERT INTO audio_cues (book_uid, chapter_href, sentence_index, '
+            'text_fragment_id, cue_text, start_ms, end_ms, audio_file_index) '
             "VALUES ('audiobook_keep', 'c.xhtml', $i, 'f$i', 't$i', 0, 1, 0)",
           );
         }
         // A truly-orphaned cue: book_uid in neither audiobooks nor srt_books.
         rawDb.execute(
-          "INSERT INTO audio_cues (book_uid, chapter_href, sentence_index, "
-          "text_fragment_id, cue_text, start_ms, end_ms, audio_file_index) "
+          'INSERT INTO audio_cues (book_uid, chapter_href, sentence_index, '
+          'text_fragment_id, cue_text, start_ms, end_ms, audio_file_index) '
           "VALUES ('ghost', 'c.xhtml', 0, 'f', 't', 0, 1, 0)",
         );
 
@@ -135,14 +135,15 @@ CREATE TABLE audio_cues (
 Future<int> _cueCount(HibikiDatabase db, String bookUid) async {
   // bookUid is a test-controlled literal; safe to interpolate.
   final row = await db
-      .customSelect("SELECT COUNT(*) AS c FROM audio_cues "
+      .customSelect('SELECT COUNT(*) AS c FROM audio_cues '
           "WHERE book_uid = '$bookUid'")
       .getSingle();
   return row.read<int>('c');
 }
 
 void main() {
-  test('v11->v14 migration preserves SRT-owned and audiobook-owned cues, '
+  test(
+      'v11->v14 migration preserves SRT-owned and audiobook-owned cues, '
       'deletes only doubly-orphaned cues', () async {
     final db = await _openV11DbWithSrtCues();
 

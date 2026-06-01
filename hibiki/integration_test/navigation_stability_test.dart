@@ -195,8 +195,7 @@ void main() {
           debugPrint('[M4] ✓ Reader WebView loaded');
 
           // Wait for content
-          const Key contentReadyKey =
-              ValueKey<String>('hoshi_content_ready');
+          const Key contentReadyKey = ValueKey<String>('hoshi_content_ready');
           for (int i = 0; i < 120; i++) {
             await tester.pump(const Duration(milliseconds: 500));
             if (find.byKey(contentReadyKey).evaluate().isNotEmpty) {
@@ -229,7 +228,6 @@ void main() {
       // === Error summary ===
       assertStrictErrors(errors);
       debugPrint('[M4] === ALL NAVIGATION TESTS PASSED ===');
-
     } finally {
       FlutterError.onError = oldHandler;
     }

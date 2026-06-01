@@ -65,8 +65,8 @@ void main() {
 
     await expectLater(
       server.start(),
-      throwsA(isA<SyncServerPortInUseException>()
-          .having((SyncServerPortInUseException e) => e.port, 'port', takenPort)),
+      throwsA(isA<SyncServerPortInUseException>().having(
+          (SyncServerPortInUseException e) => e.port, 'port', takenPort)),
     );
   });
 }

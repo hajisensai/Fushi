@@ -143,8 +143,8 @@ void main() {
 
     test('DELETE removes file', () async {
       await server.start();
-      final testFile =
-          File('${tempDir.path}/sync-data/ttu-reader-data/TestBook/to_delete.json');
+      final testFile = File(
+          '${tempDir.path}/sync-data/ttu-reader-data/TestBook/to_delete.json');
       await testFile.writeAsString('{}');
       expect(testFile.existsSync(), isTrue);
 
@@ -168,8 +168,7 @@ void main() {
       final client = HttpClient();
       final request = await client.openUrl(
         'MKCOL',
-        Uri.parse(
-            'http://localhost:${server.port}/ttu-reader-data/NewBook/'),
+        Uri.parse('http://localhost:${server.port}/ttu-reader-data/NewBook/'),
       );
       request.headers.set('Authorization',
           'Basic ${base64Encode(utf8.encode('hibiki:$token'))}');
@@ -177,7 +176,8 @@ void main() {
       await response.drain<void>();
       expect(response.statusCode, 201);
       expect(
-        Directory('${tempDir.path}/sync-data/ttu-reader-data/NewBook').existsSync(),
+        Directory('${tempDir.path}/sync-data/ttu-reader-data/NewBook')
+            .existsSync(),
         isTrue,
       );
       client.close();

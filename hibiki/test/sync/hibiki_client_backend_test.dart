@@ -87,7 +87,8 @@ void main() {
     expect(backend.cachedRootFolderId, 'http://lan:8765/ttu-reader-data/');
   });
 
-  test('clearCache forces re-probe so failover works on a retry (HBK-AUDIT-157)',
+  test(
+      'clearCache forces re-probe so failover works on a retry (HBK-AUDIT-157)',
       () async {
     final HibikiDatabase db = _testDb();
     addTearDown(db.close);

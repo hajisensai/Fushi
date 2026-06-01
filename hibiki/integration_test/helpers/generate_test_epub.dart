@@ -45,8 +45,7 @@ class EpubGenerator {
     '雨が止んだ。',
   ];
 
-  static const _longText =
-      '彼女は長い間、窓の外を見つめていた。街を歩く人々、走り去る車、風に揺れる街路樹。'
+  static const _longText = '彼女は長い間、窓の外を見つめていた。街を歩く人々、走り去る車、風に揺れる街路樹。'
       'すべてが日常の一部であり、特別なことは何もなかった。しかし、今日は何かが違った。'
       '空気の匂いが変わったのか、光の色が変わったのか、それとも自分自身が変わったのか。'
       '彼女にはわからなかった。ただ、胸の奥で何かが動いたような気がした。'
@@ -223,8 +222,7 @@ $body
         .map((c) => '    <item id="$c" href="$c.xhtml" '
             'media-type="application/xhtml+xml"/>')
         .join('\n');
-    final refs =
-        chapters.map((c) => '    <itemref idref="$c"/>').join('\n');
+    final refs = chapters.map((c) => '    <itemref idref="$c"/>').join('\n');
     return '''<?xml version="1.0" encoding="UTF-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid">
   <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
@@ -336,7 +334,8 @@ svg { display: block; margin: 1em auto; max-width: 100%; }
       buf.add(nameBytes);
       buf.add(data);
 
-      centralEntries.add(_CentralEntry(nameBytes, data.length, _crc32(data), offset));
+      centralEntries
+          .add(_CentralEntry(nameBytes, data.length, _crc32(data), offset));
     }
 
     final centralStart = buf.length;
@@ -375,11 +374,10 @@ svg { display: block; margin: 1em auto; max-width: 100%; }
     return buf.toBytes();
   }
 
-  Uint8List _u16(int v) =>
-      Uint8List.fromList([v & 0xFF, (v >> 8) & 0xFF]);
+  Uint8List _u16(int v) => Uint8List.fromList([v & 0xFF, (v >> 8) & 0xFF]);
 
-  Uint8List _u32(int v) =>
-      Uint8List.fromList([v & 0xFF, (v >> 8) & 0xFF, (v >> 16) & 0xFF, (v >> 24) & 0xFF]);
+  Uint8List _u32(int v) => Uint8List.fromList(
+      [v & 0xFF, (v >> 8) & 0xFF, (v >> 16) & 0xFF, (v >> 24) & 0xFF]);
 
   int _crc32(Uint8List data) {
     int crc = 0xFFFFFFFF;

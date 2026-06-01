@@ -1,6 +1,5 @@
 import 'dart:convert';
 
-import 'package:flutter/material.dart' hide HibikiShortcutRegistry;
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart';
@@ -68,7 +67,7 @@ void main() {
 
     test('updateBinding replaces bindings', () {
       final newBindings = ShortcutBindingSet(
-        keyboardBindings: [
+        keyboardBindings: const [
           InputBinding(key: LogicalKeyboardKey.keyN),
         ],
       );
@@ -110,7 +109,7 @@ void main() {
     test('hasKeyboardConflict ignores different scope', () {
       final binding = InputBinding(
         key: LogicalKeyboardKey.digit1,
-        modifiers: {ModifierKey.ctrl},
+        modifiers: const {ModifierKey.ctrl},
       );
       final conflict = registry.hasKeyboardConflict(
         ShortcutScope.reader,
@@ -127,7 +126,7 @@ void main() {
       // the audiobook binding would silently never fire on the reader page.
       final binding = InputBinding(
         key: LogicalKeyboardKey.space,
-        modifiers: {ModifierKey.ctrl},
+        modifiers: const {ModifierKey.ctrl},
       );
       expect(
         registry.hasKeyboardConflict(
@@ -155,7 +154,7 @@ void main() {
       // Alt+ArrowLeft; checking from the home scope must find it.
       final binding = InputBinding(
         key: LogicalKeyboardKey.arrowLeft,
-        modifiers: {ModifierKey.alt},
+        modifiers: const {ModifierKey.alt},
       );
       expect(
         registry.hasKeyboardConflict(
@@ -172,7 +171,7 @@ void main() {
       // homeTabBooks; from the reader scope it stays clear of conflict.
       final binding = InputBinding(
         key: LogicalKeyboardKey.digit1,
-        modifiers: {ModifierKey.ctrl},
+        modifiers: const {ModifierKey.ctrl},
       );
       expect(
         registry.hasKeyboardConflict(

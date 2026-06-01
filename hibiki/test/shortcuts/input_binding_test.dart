@@ -36,7 +36,7 @@ void main() {
     test('serialize key with modifiers', () {
       final binding = InputBinding(
         key: LogicalKeyboardKey.keyD,
-        modifiers: {ModifierKey.ctrl},
+        modifiers: const {ModifierKey.ctrl},
       );
       expect(binding.serialize(), 'Ctrl+KeyD');
     });
@@ -44,7 +44,7 @@ void main() {
     test('serialize key with multiple modifiers sorted', () {
       final binding = InputBinding(
         key: LogicalKeyboardKey.space,
-        modifiers: {ModifierKey.shift, ModifierKey.ctrl},
+        modifiers: const {ModifierKey.shift, ModifierKey.ctrl},
       );
       expect(binding.serialize(), 'Ctrl+Shift+Space');
     });
@@ -70,7 +70,7 @@ void main() {
     test('round-trip serialize/deserialize', () {
       final original = InputBinding(
         key: LogicalKeyboardKey.arrowRight,
-        modifiers: {ModifierKey.ctrl, ModifierKey.shift},
+        modifiers: const {ModifierKey.ctrl, ModifierKey.shift},
       );
       final serialized = original.serialize();
       final restored = InputBinding.deserialize(serialized);
@@ -82,11 +82,11 @@ void main() {
     test('equality', () {
       final a = InputBinding(
         key: LogicalKeyboardKey.space,
-        modifiers: {ModifierKey.shift},
+        modifiers: const {ModifierKey.shift},
       );
       final b = InputBinding(
         key: LogicalKeyboardKey.space,
-        modifiers: {ModifierKey.shift},
+        modifiers: const {ModifierKey.shift},
       );
       expect(a, equals(b));
       expect(a.hashCode, b.hashCode);
@@ -106,7 +106,7 @@ void main() {
       ]) {
         final original = InputBinding(
           key: key,
-          modifiers: {ModifierKey.ctrl},
+          modifiers: const {ModifierKey.ctrl},
         );
         final restored = InputBinding.deserialize(original.serialize());
         expect(restored, isNotNull, reason: '${key.keyLabel} dropped');
@@ -123,7 +123,7 @@ void main() {
       expect(
         InputBinding(
           key: LogicalKeyboardKey.keyD,
-          modifiers: {ModifierKey.ctrl},
+          modifiers: const {ModifierKey.ctrl},
         ).serialize(),
         'Ctrl+KeyD',
       );
@@ -217,14 +217,14 @@ void main() {
   group('ShortcutBindingSet', () {
     test('toJson and fromJson round-trip', () {
       final set = ShortcutBindingSet(
-        keyboardBindings: [
+        keyboardBindings: const [
           InputBinding(key: LogicalKeyboardKey.pageDown),
           InputBinding(
             key: LogicalKeyboardKey.space,
             modifiers: {ModifierKey.shift},
           ),
         ],
-        gamepadBindings: [
+        gamepadBindings: const [
           GamepadBinding(GamepadButton.rb),
         ],
       );
@@ -237,7 +237,7 @@ void main() {
     });
 
     test('fromJson handles empty lists', () {
-      final set = ShortcutBindingSet.fromJson({
+      final set = ShortcutBindingSet.fromJson(const {
         'keyboard': <String>[],
         'gamepad': <String>[],
       });
@@ -246,7 +246,7 @@ void main() {
     });
 
     test('fromJson handles missing keys', () {
-      final set = ShortcutBindingSet.fromJson(<String, dynamic>{});
+      final set = ShortcutBindingSet.fromJson(const <String, dynamic>{});
       expect(set.keyboardBindings, isEmpty);
       expect(set.gamepadBindings, isEmpty);
     });

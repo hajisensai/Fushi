@@ -50,8 +50,7 @@ void main() {
       // ── Phase 1: Access AppModel and import dictionary ──
 
       final Element anyElement = tester.element(find.byType(Scaffold).first);
-      final ProviderContainer container =
-          ProviderScope.containerOf(anyElement);
+      final ProviderContainer container = ProviderScope.containerOf(anyElement);
       final AppModel appModel = container.read(appProvider);
 
       final cacheDir = await getTemporaryDirectory();

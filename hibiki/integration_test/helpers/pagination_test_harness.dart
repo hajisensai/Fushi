@@ -267,8 +267,7 @@ class RenderedSettings {
         columnCount = (json['columnCount'] as num).toInt();
 
   @override
-  String toString() =>
-      'RenderedSettings(fontSize=$fontSize, lh=$lineHeight, '
+  String toString() => 'RenderedSettings(fontSize=$fontSize, lh=$lineHeight, '
       'wm=$writingMode, cols=$columnCount)';
 }
 
@@ -338,7 +337,8 @@ List<InvariantViolation> validateChapterScan(
         violations.add(InvariantViolation(
           invariant: 'I2',
           pageNumber: page.pageNumber,
-          message: 'Severe overlap: regressed by ${prevLast - currFirst} markers',
+          message:
+              'Severe overlap: regressed by ${prevLast - currFirst} markers',
           details: {'prevLast': prevLast, 'currFirst': currFirst},
         ));
       }
@@ -551,9 +551,7 @@ int _markerIndex(String markerId) {
 /// Parse fullChapterScan JSON result into PageData list.
 List<PageData> parseChapterScan(String jsonStr) {
   final List<dynamic> list = jsonDecode(jsonStr) as List<dynamic>;
-  return list
-      .map((e) => PageData.fromJson(e as Map<String, dynamic>))
-      .toList();
+  return list.map((e) => PageData.fromJson(e as Map<String, dynamic>)).toList();
 }
 
 /// Parse visible markers JSON.
@@ -564,8 +562,7 @@ List<String> parseMarkers(String jsonStr) {
 
 /// Parse rendered settings JSON.
 RenderedSettings parseRenderedSettings(String jsonStr) {
-  return RenderedSettings.fromJson(
-      jsonDecode(jsonStr) as Map<String, dynamic>);
+  return RenderedSettings.fromJson(jsonDecode(jsonStr) as Map<String, dynamic>);
 }
 
 /// Print formatted test report.

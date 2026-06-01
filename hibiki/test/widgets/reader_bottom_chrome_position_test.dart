@@ -110,7 +110,8 @@ void main() {
       final Rect rect = tester.getRect(find.byKey(barKey));
       expect(rect.bottom, moreOrLessEquals(stack.bottom, epsilon: 0.5),
           reason: 'Bottom chrome must be anchored to the bottom of the stack.');
-      expect(rect.top, moreOrLessEquals(stack.bottom - barHeight, epsilon: 0.5));
+      expect(
+          rect.top, moreOrLessEquals(stack.bottom - barHeight, epsilon: 0.5));
     },
   );
 }

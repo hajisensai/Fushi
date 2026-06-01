@@ -72,8 +72,9 @@ class _HibikiFocusableState extends State<HibikiFocusable> {
     final Key? key = widget.key;
     final FocusNode? node = widget.focusNode;
     if (key != null) return HibikiFocusId('focusable-key-$key');
-    if (node != null)
+    if (node != null) {
       return HibikiFocusId('focusable-node-${identityHashCode(node)}');
+    }
     return _fallbackId;
   }
 

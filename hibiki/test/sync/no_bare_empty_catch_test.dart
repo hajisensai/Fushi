@@ -11,7 +11,8 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   test('no bare empty catch blocks in lib/src/sync', () {
     final Directory dir = Directory('lib/src/sync');
-    expect(dir.existsSync(), isTrue, reason: 'run from the hibiki/ package root');
+    expect(dir.existsSync(), isTrue,
+        reason: 'run from the hibiki/ package root');
 
     // Matches an empty (whitespace-only) catch body in either form:
     //   `catch (...) {}` / `catch (...) { }` / `catch (...) {\n}`
@@ -25,7 +26,8 @@ void main() {
       if (entity is! File || !entity.path.endsWith('.dart')) continue;
       final String content = entity.readAsStringSync();
       for (final RegExpMatch m in bareCatch.allMatches(content)) {
-        final int line = '\n'.allMatches(content.substring(0, m.start)).length + 1;
+        final int line =
+            '\n'.allMatches(content.substring(0, m.start)).length + 1;
         offenders.add('${entity.path}:$line');
       }
     }

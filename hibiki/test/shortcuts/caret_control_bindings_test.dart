@@ -54,7 +54,8 @@ void main() {
       });
     }
 
-    test('Enter is NOT a registry action in the reader scope (cursor entry is '
+    test(
+        'Enter is NOT a registry action in the reader scope (cursor entry is '
         'page-level, contextual on focus + cursor state)', () {
       final registry = registryFor(TargetPlatform.windows);
       expect(

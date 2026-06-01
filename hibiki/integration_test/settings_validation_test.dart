@@ -89,7 +89,8 @@ void main() {
       }
 
       debugPrint('[M2] === Summary ===');
-      debugPrint('[M2] Switches toggled OK: $totalToggled, failed: $totalFailed');
+      debugPrint(
+          '[M2] Switches toggled OK: $totalToggled, failed: $totalFailed');
       debugPrint('[M2] Persistence verified on $totalPersistChecked pages, '
           'failed: $totalPersistFailed');
 

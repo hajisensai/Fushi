@@ -16,7 +16,7 @@ void main() {
 
   Future<int> cueCount(String bookUid) async {
     final row = await db
-        .customSelect("SELECT COUNT(*) AS c FROM audio_cues "
+        .customSelect('SELECT COUNT(*) AS c FROM audio_cues '
             "WHERE book_uid = '$bookUid'")
         .getSingle();
     return row.read<int>('c');
@@ -38,14 +38,14 @@ void main() {
     const String srtUid = 'srtbook_test';
     final String epubUid = buildLegacyBookUid(epubId);
     await db.customStatement(
-      "INSERT INTO srt_books (uid, title, srt_path, imported_at, ttu_book_id) "
+      'INSERT INTO srt_books (uid, title, srt_path, imported_at, ttu_book_id) '
       "VALUES (?, 'SRT', '/s.srt', 0, ?)",
       [srtUid, epubId],
     );
     for (final String owner in <String>[srtUid, epubUid]) {
       await db.customStatement(
-        "INSERT INTO audio_cues (book_uid, chapter_href, sentence_index, "
-        "text_fragment_id, cue_text, start_ms, end_ms, audio_file_index) "
+        'INSERT INTO audio_cues (book_uid, chapter_href, sentence_index, '
+        'text_fragment_id, cue_text, start_ms, end_ms, audio_file_index) '
         "VALUES (?, 'c.xhtml', 0, 'f', 't', 0, 1, 0)",
         [owner],
       );

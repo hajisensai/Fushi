@@ -134,16 +134,16 @@ void main() {
 
       // === Full chapter scan ===
       debugPrint('[M1] === Full Chapter Scan ===');
-      final scanRaw =
-          await eval('window.hoshiTestHarness.fullChapterScan();');
+      final scanRaw = await eval('window.hoshiTestHarness.fullChapterScan();');
       final List<PageData> pages = parseChapterScan(scanRaw as String);
       debugPrint('[M1] Scanned ${pages.length} pages');
       expect(pages.length, greaterThan(0),
           reason: 'Chapter scan must produce at least one page');
 
       // Log layout + first pages for context in CI output.
-      final settingsRaw = await eval(
-          'window.hoshiTestHarness.validateRenderedSettings();') as String;
+      final settingsRaw =
+          await eval('window.hoshiTestHarness.validateRenderedSettings();')
+              as String;
       debugPrint('[M1] rendered: $settingsRaw');
       for (int i = 0; i < pages.length && i < 4; i++) {
         final p = pages[i];
@@ -203,8 +203,7 @@ void main() {
       final i7 = byInv['I7'] ?? const [];
       expect(i5, isEmpty,
           reason: 'I5 trailing-space violations: ${i5.join("; ")}');
-      expect(i7, isEmpty,
-          reason: 'I7 page-count violations: ${i7.join("; ")}');
+      expect(i7, isEmpty, reason: 'I7 page-count violations: ${i7.join("; ")}');
 
       // Marker continuity/coverage only when synthetic markers present.
       if (allMarkers.isNotEmpty) {
@@ -212,8 +211,7 @@ void main() {
         final i3 = byInv['I3'] ?? const [];
         expect(i2, isEmpty,
             reason: 'I2 marker-continuity violations: ${i2.join("; ")}');
-        expect(i3, isEmpty,
-            reason: 'I3 coverage violations: ${i3.join("; ")}');
+        expect(i3, isEmpty, reason: 'I3 coverage violations: ${i3.join("; ")}');
         debugPrint('[M1] ✓ Marker continuity + coverage validated');
       } else {
         debugPrint('[M1] ⚠ No markers in book — I2/I3 skipped '
@@ -225,12 +223,11 @@ void main() {
       // === I9: Position restoration across chrome toggle ===
       debugPrint('[M1] === I9: Position Restoration ===');
       final beforeState = PaginationState.fromJson(
-        _decode(await eval(
-            'window.hoshiTestHarness.getPaginationState();') as String),
+        _decode(await eval('window.hoshiTestHarness.getPaginationState();')
+            as String),
       );
       final beforeMarkers = parseMarkers(
-          await eval('window.hoshiTestHarness.getVisibleMarkers();')
-              as String);
+          await eval('window.hoshiTestHarness.getVisibleMarkers();') as String);
 
       // Toggle reader chrome on/off (center tap) without changing settings.
       final centerTap = Offset(
@@ -243,8 +240,8 @@ void main() {
       await tester.pump(const Duration(seconds: 1));
 
       final afterState = PaginationState.fromJson(
-        _decode(await eval(
-            'window.hoshiTestHarness.getPaginationState();') as String),
+        _decode(await eval('window.hoshiTestHarness.getPaginationState();')
+            as String),
       );
       debugPrint('[M1] Scroll before=${beforeState.scroll} '
           'after=${afterState.scroll}');
@@ -283,12 +280,11 @@ void main() {
       }
       await tester.pump(const Duration(milliseconds: 300));
       final midState = PaginationState.fromJson(
-        _decode(await eval(
-            'window.hoshiTestHarness.getPaginationState();') as String),
+        _decode(await eval('window.hoshiTestHarness.getPaginationState();')
+            as String),
       );
       final midMarkers = parseMarkers(
-          await eval('window.hoshiTestHarness.getVisibleMarkers();')
-              as String);
+          await eval('window.hoshiTestHarness.getVisibleMarkers();') as String);
       expect(midState.scroll, greaterThan(0),
           reason: 'I10 setup: reader must be mid-chapter before rapid toggle');
       debugPrint('[M1] I10 mid scroll=${midState.scroll} '
@@ -302,12 +298,11 @@ void main() {
       await tester.pump(const Duration(seconds: 1));
 
       final afterRapid = PaginationState.fromJson(
-        _decode(await eval(
-            'window.hoshiTestHarness.getPaginationState();') as String),
+        _decode(await eval('window.hoshiTestHarness.getPaginationState();')
+            as String),
       );
       final afterRapidMarkers = parseMarkers(
-          await eval('window.hoshiTestHarness.getVisibleMarkers();')
-              as String);
+          await eval('window.hoshiTestHarness.getVisibleMarkers();') as String);
       debugPrint('[M1] I10 after rapid toggle scroll=${afterRapid.scroll} '
           'markers=${afterRapidMarkers.join(",")}');
       expect(afterRapid.scroll, greaterThan(0),

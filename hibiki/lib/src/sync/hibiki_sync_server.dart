@@ -39,7 +39,8 @@ bool isAddressInUseError(SocketException e) {
   // Fall back to the message: cross-process conflicts carry an errno above,
   // but a same-process re-bind raises Dart's "shared flag" guard with no code,
   // and some platforms phrase EADDRINUSE without a numeric code.
-  final String message = '${e.osError?.message ?? ''} ${e.message}'.toLowerCase();
+  final String message =
+      '${e.osError?.message ?? ''} ${e.message}'.toLowerCase();
   return message.contains('address already in use') ||
       message.contains('address in use') ||
       message.contains('only one usage of each socket address') ||

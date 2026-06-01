@@ -5,7 +5,6 @@ import 'package:integration_test/integration_test.dart';
 
 import 'package:hibiki/main.dart' as app;
 import 'package:hibiki/pages.dart';
-import 'package:hibiki/src/pages/implementations/shortcut_settings_page.dart';
 
 import 'test_helpers.dart';
 
@@ -71,8 +70,10 @@ void main() {
             'widgets (the UI is gamepad-traversable without taps)');
 
     // ── gameButtonB pops a pushed route via the global pop intent ──
-    final BuildContext ctx = tester.element(find.byType(HomePage).first);
-    Navigator.of(ctx).push(MaterialPageRoute<void>(
+    final NavigatorState navigator = Navigator.of(
+      tester.element(find.byType(HomePage).first),
+    );
+    navigator.push(MaterialPageRoute<void>(
       builder: (_) => const ShortcutSettingsPage(),
     ));
     await tester.pump(const Duration(seconds: 1));

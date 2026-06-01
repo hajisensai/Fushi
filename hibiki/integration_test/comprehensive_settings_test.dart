@@ -131,8 +131,9 @@ Future<int> _exerciseFirstStepper(WidgetTester tester) async {
 
 Future<int> _exerciseFirstSegmentedButton(WidgetTester tester) async {
   final Finder segmentedFinder = find.byWidgetPredicate(
-    (Widget widget) =>
-        widget.runtimeType.toString().startsWith('AdaptiveSettingsSegmentedRow'),
+    (Widget widget) => widget.runtimeType
+        .toString()
+        .startsWith('AdaptiveSettingsSegmentedRow'),
   );
   for (int i = 0; i < segmentedFinder.evaluate().length; i++) {
     final dynamic row = tester.widget(segmentedFinder.at(i));
@@ -290,8 +291,7 @@ SettingsDestination _buildHarnessDestination(_HarnessState state) {
             min: 0,
             max: 20,
             format: (double value) => value.round().toString(),
-            onChanged: (_, double value) =>
-                state.stepperValue = value.round(),
+            onChanged: (_, double value) => state.stepperValue = value.round(),
           ),
           SettingsCustomItem(
             id: 'harness.picker',

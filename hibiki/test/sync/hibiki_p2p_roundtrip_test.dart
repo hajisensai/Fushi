@@ -50,8 +50,8 @@ void main() {
     expect(await backend.restoreAuth(repo), isTrue,
         reason: 'configured client should report authenticated');
     final String root = await backend.findOrCreateRootFolder();
-    final String folder =
-        await backend.ensureBookFolder(bookTitle: 'TestBook', rootFolderId: root);
+    final String folder = await backend.ensureBookFolder(
+        bookTitle: 'TestBook', rootFolderId: root);
     await backend.updateProgressFile(
       folderId: folder,
       fileId: null,

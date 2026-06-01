@@ -1,4 +1,5 @@
 #!/usr/bin/env dart
+
 /// Syncs i18n keys across all language files.
 ///
 /// Usage:
@@ -29,9 +30,12 @@ void main(List<String> args) {
 
 /// Add a new key to all language files.
 void _addKey(List<String> args, int idx, bool dryRun) {
-  final List<String> rest = args.sublist(idx + 1).where((a) => !a.startsWith('--')).toList();
+  final List<String> rest =
+      args.sublist(idx + 1).where((a) => !a.startsWith('--')).toList();
   if (rest.length < 3) {
-    stderr.writeln('Usage: dart tool/i18n_sync.dart --add <key> <en_value> <zh_value>');
+    stderr.writeln(
+      'Usage: dart tool/i18n_sync.dart --add <key> <en_value> <zh_value>',
+    );
     exit(1);
   }
   final String key = rest[0];
@@ -44,7 +48,7 @@ void _addKey(List<String> args, int idx, bool dryRun) {
   for (final File file in files) {
     final Map<String, dynamic> json = _readJson(file);
     if (json.containsKey(key)) {
-      print('  skip ${file.path} (key already exists)');
+      stdout.writeln('  skip ${file.path} (key already exists)');
       continue;
     }
 
@@ -53,18 +57,19 @@ void _addKey(List<String> args, int idx, bool dryRun) {
     changed++;
 
     if (dryRun) {
-      print('  would add "$key": "$value" to ${file.path}');
+      stdout.writeln('  would add "$key": "$value" to ${file.path}');
     } else {
       _writeJson(file, json);
-      print('  added "$key" to ${file.path}');
+      stdout.writeln('  added "$key" to ${file.path}');
     }
   }
-  print('\n${dryRun ? "Would change" : "Changed"} $changed files.');
+  stdout.writeln('\n${dryRun ? "Would change" : "Changed"} $changed files.');
 }
 
 /// Remove a key from all language files.
 void _removeKey(List<String> args, int idx, bool dryRun) {
-  final List<String> rest = args.sublist(idx + 1).where((a) => !a.startsWith('--')).toList();
+  final List<String> rest =
+      args.sublist(idx + 1).where((a) => !a.startsWith('--')).toList();
   if (rest.isEmpty) {
     stderr.writeln('Usage: dart tool/i18n_sync.dart --remove <key>');
     exit(1);
@@ -80,13 +85,13 @@ void _removeKey(List<String> args, int idx, bool dryRun) {
     changed++;
 
     if (dryRun) {
-      print('  would remove "$key" from ${file.path}');
+      stdout.writeln('  would remove "$key" from ${file.path}');
     } else {
       _writeJson(file, json);
-      print('  removed "$key" from ${file.path}');
+      stdout.writeln('  removed "$key" from ${file.path}');
     }
   }
-  print('\n${dryRun ? "Would change" : "Changed"} $changed files.');
+  stdout.writeln('\n${dryRun ? "Would change" : "Changed"} $changed files.');
 }
 
 /// Fill missing keys in translation files using zh-CN value, falling back to base EN.
@@ -103,30 +108,34 @@ void _syncMissing(bool dryRun) {
     if (_isBase(file)) continue;
 
     final Map<String, dynamic> json = _readJson(file);
-    final List<String> missing = baseJson.keys.where((k) => !json.containsKey(k)).toList();
+    final List<String> missing =
+        baseJson.keys.where((k) => !json.containsKey(k)).toList();
     if (missing.isEmpty) continue;
 
     for (final String key in missing) {
-      final String fallback = (zhCnJson[key] as String?) ?? (baseJson[key] as String? ?? '');
+      final String fallback =
+          (zhCnJson[key] as String?) ?? (baseJson[key] as String? ?? '');
       json[key] = fallback;
     }
     totalAdded += missing.length;
 
     if (dryRun) {
-      print('  ${file.path}: ${missing.length} missing keys');
+      stdout.writeln('  ${file.path}: ${missing.length} missing keys');
       for (final String k in missing) {
-        print('    + $k');
+        stdout.writeln('    + $k');
       }
     } else {
       _writeJson(file, json);
-      print('  ${file.path}: filled ${missing.length} keys');
+      stdout.writeln('  ${file.path}: filled ${missing.length} keys');
     }
   }
 
   if (totalAdded == 0) {
-    print('All translation files are in sync.');
+    stdout.writeln('All translation files are in sync.');
   } else {
-    print('\n${dryRun ? "Would fill" : "Filled"} $totalAdded missing keys across files.');
+    stdout.writeln(
+      '\n${dryRun ? "Would fill" : "Filled"} $totalAdded missing keys across files.',
+    );
   }
 }
 

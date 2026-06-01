@@ -23,7 +23,8 @@ void main() {
       expect(channel, isA<FloatingOverlayChannel>());
     });
 
-    test('canDrawOverlaysImpl returns false when channel returns null', () async {
+    test('canDrawOverlaysImpl returns false when channel returns null',
+        () async {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel.channel, (MethodCall call) async {
         if (call.method == 'canDrawOverlays') return null;
@@ -34,7 +35,8 @@ void main() {
       expect(result, isFalse);
     });
 
-    test('canDrawOverlaysImpl returns true when channel returns true', () async {
+    test('canDrawOverlaysImpl returns true when channel returns true',
+        () async {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel.channel, (MethodCall call) async {
         if (call.method == 'canDrawOverlays') return true;

@@ -122,8 +122,7 @@ class SftpSyncBackend extends SyncBackend {
       });
 
   @override
-  Future<List<DriveFile>> listBooks(String rootFolderId) =>
-      _guarded(() async {
+  Future<List<DriveFile>> listBooks(String rootFolderId) => _guarded(() async {
         final sftp = await _ensureConnected();
         final entries = await sftp.listdir(rootFolderId);
         return entries
@@ -170,8 +169,7 @@ class SftpSyncBackend extends SyncBackend {
   // ── Metadata sync ─────────────────────────────────────────────────
 
   @override
-  Future<DriveSyncFiles> listSyncFiles(String folderId) =>
-      _guarded(() async {
+  Future<DriveSyncFiles> listSyncFiles(String folderId) => _guarded(() async {
         final sftp = await _ensureConnected();
         final entries = await sftp.listdir(folderId);
         final files = entries
@@ -320,8 +318,7 @@ class SftpSyncBackend extends SyncBackend {
       });
 
   @override
-  Future<DriveFile?> findContentFile(
-          String folderId, String fileName) =>
+  Future<DriveFile?> findContentFile(String folderId, String fileName) =>
       _guarded(() async {
         final sftp = await _ensureConnected();
         final path = '$folderId/$fileName';
@@ -572,5 +569,4 @@ class SftpSyncBackend extends SyncBackend {
       await handle.close();
     }
   }
-
 }

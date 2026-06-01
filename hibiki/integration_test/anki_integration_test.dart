@@ -58,7 +58,9 @@ void main() {
       expect(noteType!.fields, isNotEmpty);
       await repo.updateSettings(
         (AnkiSettings s) => s.copyWith(
-          fieldMappings: <String, String>{noteType.fields.first: '{expression}'},
+          fieldMappings: <String, String>{
+            noteType.fields.first: '{expression}'
+          },
         ),
       );
 
