@@ -201,13 +201,27 @@ class DictionaryPopupWebViewState
           return null;
         }
       },
+      queryLocalAudioByDbIndex: (expression, reading, dbIndex) async {
+        if (!appModel.localAudioEnabled) return null;
+        try {
+          return await TtsChannel.instance
+              .queryLocalAudio(expression, reading, dbIndex: dbIndex)
+              .timeout(const Duration(milliseconds: 500));
+        } on TimeoutException {
+          return null;
+        }
+      },
       extractLocalAudio: TtsChannel.instance.extractLocalAudio,
-      queryRemoteAudio: appModel.lookupRemoteAudio,
+      queryRemoteAudio: (expression, reading) => appModel.lookupRemoteAudio(
+        expression,
+        reading,
+        ignoreRemoteLookupEnabled: true,
+      ),
     );
-    return resolver.resolve(
+    return resolver.resolveConfigured(
       expression: expression,
       reading: reading,
-      sources: appModel.enabledAudioSources,
+      sources: appModel.audioSourceConfigs,
     );
   }
 
@@ -551,20 +565,7 @@ class DictionaryPopupWebViewState
             final expression = data['expression']?.toString() ?? '';
             final reading = data['reading']?.toString() ?? '';
             if (expression.isEmpty) return null;
-            final appModel = ref.read(appProvider);
-            if (!appModel.localAudioEnabled) return null;
-            final info =
-                await TtsChannel.instance.queryLocalAudio(expression, reading);
-            if (info == null) {
-              return appModel.lookupRemoteAudio(expression, reading);
-            }
-            final int dbIndex = (info['dbIndex'] as int?) ?? 0;
-            final path = await TtsChannel.instance.extractLocalAudio(
-              info['file']! as String,
-              info['source']! as String,
-              dbIndex: dbIndex,
-            );
-            return path ?? appModel.lookupRemoteAudio(expression, reading);
+            return _resolveWordAudio(expression, reading);
           },
         );
 

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
+import 'package:hibiki/src/models/audio_source_config.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/utils/player/blur_options.dart';
 
@@ -318,8 +319,42 @@ class PreferencesRepository extends ChangeNotifier {
     return List<String>.from(defaultAudioSources);
   }
 
+  List<AudioSourceConfig> get audioSourceConfigs {
+    final result = getPref('audio_source_configs', defaultValue: null);
+    if (result is List) {
+      final configs = result
+          .whereType<Map>()
+          .map((Map json) => AudioSourceConfig.fromJson(
+                Map<String, dynamic>.from(json),
+              ))
+          .where((AudioSourceConfig source) =>
+              source.kind != AudioSourceKind.remoteAudio ||
+              (source.url?.isNotEmpty ?? false))
+          .toList();
+      if (configs.isNotEmpty) return configs;
+    }
+    return AudioSourceConfig.fromLegacyUrls(audioSources);
+  }
+
   void setAudioSources(List<String> sources) async {
     await setPref('audio_sources', sources);
+    notifyListeners();
+  }
+
+  Future<void> setAudioSourceConfigs(List<AudioSourceConfig> sources) async {
+    await setPref(
+      'audio_source_configs',
+      sources.map((AudioSourceConfig source) => source.toJson()).toList(),
+    );
+    await setPref(
+      'audio_sources',
+      sources
+          .where((AudioSourceConfig source) =>
+              source.kind == AudioSourceKind.remoteAudio && source.enabled)
+          .map((AudioSourceConfig source) => source.url ?? '')
+          .where((String url) => url.isNotEmpty)
+          .toList(),
+    );
     notifyListeners();
   }
 

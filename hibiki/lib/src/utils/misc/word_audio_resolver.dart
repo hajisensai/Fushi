@@ -3,10 +3,13 @@ import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:hibiki/i18n/strings.g.dart';
+import 'package:hibiki/src/models/audio_source_config.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 
 typedef LocalAudioQuery = Future<Map<String, dynamic>?> Function(
     String expression, String reading);
+typedef IndexedLocalAudioQuery = Future<Map<String, dynamic>?> Function(
+    String expression, String reading, int dbIndex);
 typedef LocalAudioExtractor = Future<String?>
     Function(String file, String source, {int dbIndex});
 typedef AudioSourceListFetcher = Future<List<String>> Function(String url);
@@ -17,15 +20,21 @@ class WordAudioResolver {
   WordAudioResolver({
     required this.queryLocalAudio,
     required this.extractLocalAudio,
+    IndexedLocalAudioQuery? queryLocalAudioByDbIndex,
     this.queryRemoteAudio,
     AudioSourceListFetcher? fetchAudioSourceList,
-  }) : fetchAudioSourceList = fetchAudioSourceList ??
+  })  : queryLocalAudioByDbIndex = queryLocalAudioByDbIndex ??
+            ((String expression, String reading, int _) =>
+                queryLocalAudio(expression, reading)),
+        fetchAudioSourceList = fetchAudioSourceList ??
             WordAudioResolver.defaultFetchAudioSourceList;
 
   static const String localAudioUrl =
       'http://localhost:8765/localaudio/get/?term={term}&reading={reading}';
+  static const String hibikiRemoteAudioUrl = 'hibiki://remote-audio';
 
   final LocalAudioQuery queryLocalAudio;
+  final IndexedLocalAudioQuery queryLocalAudioByDbIndex;
   final LocalAudioExtractor extractLocalAudio;
   final RemoteAudioQuery? queryRemoteAudio;
   final AudioSourceListFetcher fetchAudioSourceList;
@@ -46,6 +55,14 @@ class WordAudioResolver {
         if (remote != null && remote.isNotEmpty) return remote;
         continue;
       }
+      if (template == hibikiRemoteAudioUrl) {
+        final String? remote = await queryRemoteAudio?.call(
+          expression,
+          reading,
+        );
+        if (remote != null && remote.isNotEmpty) return remote;
+        continue;
+      }
 
       final String url = expandTemplate(
         template: template,
@@ -59,16 +76,75 @@ class WordAudioResolver {
     return null;
   }
 
+  Future<String?> resolveConfigured({
+    required String expression,
+    required String reading,
+    required List<AudioSourceConfig> sources,
+  }) async {
+    int localDbIndex = 0;
+    for (final AudioSourceConfig source in sources) {
+      if (!source.enabled) {
+        continue;
+      }
+
+      switch (source.kind) {
+        case AudioSourceKind.hibikiRemote:
+          final String? remote = await queryRemoteAudio?.call(
+            expression,
+            reading,
+          );
+          if (remote != null && remote.isNotEmpty) return remote;
+        case AudioSourceKind.localAudio:
+          final int dbIndex = localDbIndex;
+          localDbIndex++;
+          final String? path = await _resolveLocalAt(
+            expression,
+            reading,
+            dbIndex,
+          );
+          if (path != null && path.isNotEmpty) return path;
+        case AudioSourceKind.remoteAudio:
+          final String? template = source.url;
+          if (template == null || template.isEmpty) continue;
+          final String url = expandTemplate(
+            template: template,
+            expression: expression,
+            reading: reading,
+          );
+          final List<String> urls = await fetchAudioSourceList(url);
+          if (urls.isNotEmpty) return urls.first;
+      }
+    }
+    return null;
+  }
+
   Future<String?> _resolveLocal(String expression, String reading) async {
     final Map<String, dynamic>? info =
         await queryLocalAudio(expression, reading);
+    return _extractLocal(info);
+  }
+
+  Future<String?> _resolveLocalAt(
+    String expression,
+    String reading,
+    int dbIndex,
+  ) async {
+    final Map<String, dynamic>? info =
+        await queryLocalAudioByDbIndex(expression, reading, dbIndex);
+    return _extractLocal(info, fallbackDbIndex: dbIndex);
+  }
+
+  Future<String?> _extractLocal(
+    Map<String, dynamic>? info, {
+    int fallbackDbIndex = 0,
+  }) async {
     if (info == null) return null;
 
     final String? file = info['file'] as String?;
     final String? source = info['source'] as String?;
     if (file == null || source == null) return null;
 
-    final int dbIndex = (info['dbIndex'] as int?) ?? 0;
+    final int dbIndex = (info['dbIndex'] as int?) ?? fallbackDbIndex;
     return extractLocalAudio(file, source, dbIndex: dbIndex);
   }
 

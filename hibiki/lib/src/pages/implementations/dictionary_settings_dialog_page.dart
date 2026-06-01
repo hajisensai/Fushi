@@ -11,21 +11,21 @@ class AudioSourcesDialog extends StatefulWidget {
     super.key,
   });
 
-  final List<String> sources;
-  final void Function(List<String>) onSave;
+  final List<AudioSourceConfig> sources;
+  final void Function(List<AudioSourceConfig>) onSave;
 
   @override
   State<AudioSourcesDialog> createState() => _AudioSourcesDialogState();
 }
 
 class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
-  late List<String> _sources;
+  late List<AudioSourceConfig> _sources;
   final _controller = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-    _sources = List<String>.from(widget.sources);
+    _sources = List<AudioSourceConfig>.from(widget.sources);
   }
 
   @override
@@ -38,7 +38,7 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
   Widget build(BuildContext context) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final double maxHeight =
-        (MediaQuery.of(context).size.height * 0.24).clamp(56.0, 320.0);
+        (MediaQuery.of(context).size.height * 0.55).clamp(128.0, 420.0);
 
     return HibikiDialogFrame(
       maxWidth: 560,
@@ -83,13 +83,24 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
                     });
                   },
                   itemBuilder: (context, index) {
+                    final AudioSourceConfig source = _sources[index];
                     return AdaptiveSettingsRow(
-                      key: ValueKey('audio_src_$index'),
-                      title: _sources[index],
+                      key: ValueKey(
+                        'audio_src_${source.kind.wireName}_${source.url ?? source.path ?? index}',
+                      ),
+                      title: source.displayLabel,
+                      subtitle: _sourceSubtitle(source),
                       icon: Icons.drag_handle,
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
+                          Switch.adaptive(
+                            value: source.enabled,
+                            onChanged: (bool enabled) => setState(() {
+                              _sources[index] =
+                                  source.copyWith(enabled: enabled);
+                            }),
+                          ),
                           // Gamepad/keyboard reorder equivalent for the
                           // drag handle (which a controller cannot grab).
                           HibikiIconButton(
@@ -118,6 +129,8 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
                             icon: Icons.delete_outline,
                             size: 18,
                             tooltip: t.dialog_delete,
+                            enabled:
+                                source.kind != AudioSourceKind.hibikiRemote,
                             padding: EdgeInsets.all(tokens.spacing.gap / 2),
                             onTap: () {
                               setState(() {
@@ -135,11 +148,29 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
               AdaptiveSettingsTextField(
                 controller: _controller,
                 hintText: 'https://...{term}...{reading}',
-                suffixIcon: HibikiIconButton(
-                  icon: Icons.add,
-                  tooltip: t.dialog_add,
-                  padding: EdgeInsets.all(tokens.spacing.gap / 2),
-                  onTap: _addSource,
+                suffixIcon: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (!_sources.any((AudioSourceConfig source) =>
+                        source.kind == AudioSourceKind.hibikiRemote))
+                      HibikiIconButton(
+                        icon: Icons.hub_outlined,
+                        tooltip: t.remote_lookup_enabled,
+                        padding: EdgeInsets.all(tokens.spacing.gap / 2),
+                        onTap: () => setState(() {
+                          _sources.insert(
+                            0,
+                            AudioSourceConfig.hibikiRemote(enabled: true),
+                          );
+                        }),
+                      ),
+                    HibikiIconButton(
+                      icon: Icons.add,
+                      tooltip: t.dialog_add,
+                      padding: EdgeInsets.all(tokens.spacing.gap / 2),
+                      onTap: _addSource,
+                    ),
+                  ],
                 ),
                 onSubmitted: (_) => _addSource(),
               ),
@@ -155,7 +186,9 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
               context: context,
               onPressed: () {
                 setState(() {
-                  _sources = List<String>.from(AppModel.defaultAudioSources);
+                  _sources = AudioSourceConfig.fromLegacyUrls(
+                    AppModel.defaultAudioSources,
+                  );
                 });
               },
               child: Text(t.reset),
@@ -178,9 +211,20 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
     final text = _controller.text.trim();
     if (text.isNotEmpty) {
       setState(() {
-        _sources.add(text);
+        _sources.add(AudioSourceConfig.remoteAudio(url: text));
         _controller.clear();
       });
+    }
+  }
+
+  String _sourceSubtitle(AudioSourceConfig source) {
+    switch (source.kind) {
+      case AudioSourceKind.hibikiRemote:
+        return t.remote_lookup_enabled;
+      case AudioSourceKind.localAudio:
+        return t.local_audio;
+      case AudioSourceKind.remoteAudio:
+        return source.url ?? '';
     }
   }
 }

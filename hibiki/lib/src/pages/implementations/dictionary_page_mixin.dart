@@ -107,13 +107,28 @@ mixin DictionaryPageMixin {
             return null;
           }
         },
+        queryLocalAudioByDbIndex: (expression, reading, dbIndex) async {
+          if (!mixinAppModel.localAudioEnabled) return null;
+          try {
+            return await TtsChannel.instance
+                .queryLocalAudio(expression, reading, dbIndex: dbIndex)
+                .timeout(const Duration(milliseconds: 500));
+          } on TimeoutException {
+            return null;
+          }
+        },
         extractLocalAudio: TtsChannel.instance.extractLocalAudio,
-        queryRemoteAudio: mixinAppModel.lookupRemoteAudio,
+        queryRemoteAudio: (expression, reading) =>
+            mixinAppModel.lookupRemoteAudio(
+          expression,
+          reading,
+          ignoreRemoteLookupEnabled: true,
+        ),
       );
-      final String? url = await resolver.resolve(
+      final String? url = await resolver.resolveConfigured(
         expression: expression,
         reading: reading,
-        sources: mixinAppModel.enabledAudioSources,
+        sources: mixinAppModel.audioSourceConfigs,
       );
       if (url == null || url.isEmpty) return;
       if (url.startsWith('file://')) {

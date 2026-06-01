@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/i18n/strings.g.dart';
+import 'package:hibiki/src/models/audio_source_config.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_settings_dialog_page.dart';
 
 void main() {
@@ -26,8 +27,10 @@ void main() {
         AudioSourcesDialog(
           sources: List.generate(
             12,
-            (index) =>
-                'https://audio.example.com/very/long/source/$index/{term}/{reading}',
+            (index) => AudioSourceConfig.remoteAudio(
+              url:
+                  'https://audio.example.com/very/long/source/$index/{term}/{reading}',
+            ),
           ),
           onSave: (_) {},
         ),

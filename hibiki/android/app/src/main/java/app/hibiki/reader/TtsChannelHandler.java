@@ -290,13 +290,17 @@ public class TtsChannelHandler {
     private void handleQueryLocalAudio(MethodCall call, MethodChannel.Result result) {
         String expression = call.argument("expression");
         String reading = call.argument("reading");
+        Integer dbIndexArg = call.argument("dbIndex");
         if (localAudioDbs.isEmpty() || expression == null) {
             result.success(null);
             return;
         }
         ioExecutor.execute(() -> {
             synchronized (dbLock) {
-                for (int i = 0; i < localAudioDbs.size(); i++) {
+                int start = (dbIndexArg != null) ? dbIndexArg : 0;
+                int end = (dbIndexArg != null) ? dbIndexArg + 1 : localAudioDbs.size();
+                for (int i = start; i < end && i < localAudioDbs.size(); i++) {
+                    if (i < 0) continue;
                     SQLiteDatabase db = localAudioDbs.get(i);
                     if (db == null || !db.isOpen()) continue;
                     Cursor cursor = null;

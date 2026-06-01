@@ -221,13 +221,28 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
             return null;
           }
         },
+        queryLocalAudioByDbIndex: (expression, reading, dbIndex) async {
+          try {
+            return await TtsChannel.instance
+                .queryLocalAudio(expression, reading, dbIndex: dbIndex)
+                .timeout(const Duration(milliseconds: 500));
+          } on TimeoutException {
+            debugPrint(
+                '[hibiki-autoread] queryLocalAudio timed out for "$expression"');
+            return null;
+          }
+        },
         extractLocalAudio: TtsChannel.instance.extractLocalAudio,
-        queryRemoteAudio: appModel.lookupRemoteAudio,
+        queryRemoteAudio: (expression, reading) => appModel.lookupRemoteAudio(
+          expression,
+          reading,
+          ignoreRemoteLookupEnabled: true,
+        ),
       );
-      final String? url = await resolver.resolve(
+      final String? url = await resolver.resolveConfigured(
         expression: expression,
         reading: reading,
-        sources: sources,
+        sources: appModel.audioSourceConfigs,
       );
       debugPrint('[hibiki-autoread] resolved url=$url');
       if (url == null || url.isEmpty) return;

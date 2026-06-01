@@ -73,9 +73,15 @@ class TtsChannel {
       setLocalAudioDbs(path.isEmpty ? [] : [path]);
 
   Future<Map<String, dynamic>?> queryLocalAudio(
-      String expression, String reading) async {
+    String expression,
+    String reading, {
+    int? dbIndex,
+  }) async {
     if (!_isSupported) {
-      for (int i = 0; i < _desktopDbPaths.length; i++) {
+      final int start = dbIndex ?? 0;
+      final int end = dbIndex == null ? _desktopDbPaths.length : start + 1;
+      for (int i = start; i < end && i < _desktopDbPaths.length; i++) {
+        if (i < 0) continue;
         final ({String file, String source})? meta =
             LocalAudioDb.queryMeta(_desktopDbPaths[i], expression, reading);
         if (meta != null) {
@@ -92,6 +98,7 @@ class TtsChannel {
       final result = await _channel.invokeMethod('queryLocalAudio', {
         'expression': expression,
         'reading': reading,
+        if (dbIndex != null) 'dbIndex': dbIndex,
       });
       if (result == null) return null;
       return Map<String, dynamic>.from(result as Map);

@@ -377,10 +377,10 @@ SettingsDestination _lookupDestination() {
               return showSettingsDialog(
                 settingsContext,
                 (_) => AudioSourcesDialog(
-                  sources: List<String>.from(
-                    settingsContext.appModel.audioSources,
+                  sources: List<AudioSourceConfig>.from(
+                    settingsContext.appModel.audioSourceConfigs,
                   ),
-                  onSave: settingsContext.appModel.setAudioSources,
+                  onSave: settingsContext.appModel.setAudioSourceConfigs,
                 ),
               );
             },

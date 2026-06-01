@@ -3,6 +3,7 @@ import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki_core/hibiki_core.dart';
+import 'package:hibiki/src/models/audio_source_config.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/utils/player/blur_options.dart';
 
@@ -80,6 +81,15 @@ void main() {
 
     test('audioSources returns default URL list', () {
       expect(repo.audioSources, PreferencesRepository.defaultAudioSources);
+    });
+
+    test('audioSourceConfigs migrates legacy URL list', () {
+      expect(
+        repo.audioSourceConfigs,
+        AudioSourceConfig.fromLegacyUrls(
+          PreferencesRepository.defaultAudioSources,
+        ),
+      );
     });
 
     test('blurOptions returns default values', () {
@@ -184,6 +194,42 @@ void main() {
       final repo2 = PreferencesRepository(db);
       await repo2.loadFromDb();
       expect(repo2.audioSources, ['https://a.com', 'https://b.com']);
+      repo2.dispose();
+    });
+
+    test('setAudioSourceConfigs persists typed audio sources', () async {
+      await repo.setAudioSourceConfigs(<AudioSourceConfig>[
+        AudioSourceConfig.hibikiRemote(enabled: true),
+        AudioSourceConfig.localAudio(
+          label: 'nhk16',
+          path: '/tmp/nhk16.db',
+          enabled: false,
+        ),
+        AudioSourceConfig.remoteAudio(url: 'https://a.com/{term}'),
+        AudioSourceConfig.remoteAudio(
+          label: 'B',
+          url: 'https://b.com/{reading}',
+          enabled: false,
+        ),
+      ]);
+
+      final repo2 = PreferencesRepository(db);
+      await repo2.loadFromDb();
+      expect(repo2.audioSourceConfigs, <AudioSourceConfig>[
+        AudioSourceConfig.hibikiRemote(enabled: true),
+        AudioSourceConfig.localAudio(
+          label: 'nhk16',
+          path: '/tmp/nhk16.db',
+          enabled: false,
+        ),
+        AudioSourceConfig.remoteAudio(url: 'https://a.com/{term}'),
+        AudioSourceConfig.remoteAudio(
+          label: 'B',
+          url: 'https://b.com/{reading}',
+          enabled: false,
+        ),
+      ]);
+      expect(repo2.audioSources, ['https://a.com/{term}']);
       repo2.dispose();
     });
 

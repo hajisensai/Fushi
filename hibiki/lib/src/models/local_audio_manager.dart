@@ -25,9 +25,10 @@ class LocalAudioDbEntry {
   final String displayName;
   final bool enabled;
 
-  LocalAudioDbEntry copyWith({bool? enabled}) => LocalAudioDbEntry(
+  LocalAudioDbEntry copyWith({String? displayName, bool? enabled}) =>
+      LocalAudioDbEntry(
         path: path,
-        displayName: displayName,
+        displayName: displayName ?? this.displayName,
         enabled: enabled ?? this.enabled,
       );
 
@@ -136,6 +137,17 @@ class LocalAudioManager {
       TtsChannel.instance.setLocalAudioDbs(<String>[]);
     }
     notifyListeners();
+  }
+
+  Future<void> setLocalAudioEnabled(bool value) async {
+    await _prefsRepo.setPref('local_audio_enabled', value);
+    if (value) {
+      await TtsChannel.instance.setLocalAudioDbs(
+        entries.where((e) => e.enabled).map((e) => e.path).toList(),
+      );
+    } else {
+      await TtsChannel.instance.setLocalAudioDbs(<String>[]);
+    }
   }
 
   Future<void> bindForNativeHandler({bool clearMissingPath = false}) async {

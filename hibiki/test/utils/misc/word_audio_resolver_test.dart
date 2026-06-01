@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/models/audio_source_config.dart';
 import 'package:hibiki/src/utils/misc/word_audio_resolver.dart';
 
 void main() {
@@ -106,6 +107,65 @@ void main() {
         'https://example.test/audio/list?term=%E9%A3%9F%E3%81%B9%E3%82%8B&reading=%E3%81%9F%E3%81%B9%E3%82%8B',
       );
       expect(result, 'https://cdn.test/audio.mp3');
+    });
+
+    test('resolves typed sources in user order', () async {
+      final List<String> calls = <String>[];
+      final resolver = WordAudioResolver(
+        queryLocalAudio: (_, __) async => null,
+        queryLocalAudioByDbIndex: (expression, reading, dbIndex) async {
+          calls.add('local:$dbIndex');
+          if (dbIndex == 1) {
+            return <String, dynamic>{
+              'file': 'audio/right.mp3',
+              'source': 'nhk16',
+              'dbIndex': dbIndex,
+            };
+          }
+          return null;
+        },
+        extractLocalAudio: (_, __, {dbIndex = 0}) async {
+          calls.add('extract:$dbIndex');
+          return '/tmp/local_$dbIndex.mp3';
+        },
+        queryRemoteAudio: (_, __) async {
+          calls.add('hibiki');
+          return null;
+        },
+        fetchAudioSourceList: (url) async {
+          calls.add(url);
+          return const <String>['https://cdn.test/fallback.mp3'];
+        },
+      );
+
+      final String? result = await resolver.resolveConfigured(
+        expression: '食べる',
+        reading: 'たべる',
+        sources: <AudioSourceConfig>[
+          AudioSourceConfig.hibikiRemote(enabled: true),
+          AudioSourceConfig.localAudio(
+            label: 'first',
+            path: '/db/first.db',
+            enabled: true,
+          ),
+          AudioSourceConfig.localAudio(
+            label: 'second',
+            path: '/db/second.db',
+            enabled: true,
+          ),
+          AudioSourceConfig.remoteAudio(
+            url: 'https://remote.test/?term={term}',
+          ),
+        ],
+      );
+
+      expect(result, '/tmp/local_1.mp3');
+      expect(calls, <String>[
+        'hibiki',
+        'local:0',
+        'local:1',
+        'extract:1',
+      ]);
     });
   });
 }

@@ -42,6 +42,7 @@ import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/models/theme_notifier.dart' as theme_notifier;
 import 'package:hibiki/src/models/theme_notifier.dart' show ThemeNotifier;
 import 'package:hibiki/src/models/audio_controller.dart';
+import 'package:hibiki/src/models/audio_source_config.dart';
 import 'package:hibiki/src/models/dictionary_import_manager.dart';
 import 'package:hibiki/src/models/file_export_manager.dart';
 import 'package:hibiki/src/models/local_audio_manager.dart';
@@ -56,6 +57,8 @@ import 'package:hibiki/src/platform/platform_providers.dart';
 
 export 'package:hibiki/src/models/local_audio_manager.dart'
     show LocalAudioDbEntry;
+export 'package:hibiki/src/models/audio_source_config.dart'
+    show AudioSourceConfig, AudioSourceKind;
 
 /// A list of fields that the app will support at runtime.
 final List<Field> globalFields = List<Field>.unmodifiable(
@@ -1743,6 +1746,19 @@ class AppModel with ChangeNotifier {
     }
 
     final int effectiveMaxTerms = overrideMaximumTerms ?? maximumTerms;
+    final bool tryRemoteFirst = allowRemoteLookup && remoteLookupEnabled;
+    if (tryRemoteFirst) {
+      final DictionarySearchResult? remoteResult =
+          await _searchRemoteDictionary(
+        searchTerm: searchTerm,
+        searchWithWildcards: searchWithWildcards,
+        maximumTerms: effectiveMaxTerms,
+      );
+      if (remoteResult != null) {
+        return remoteResult;
+      }
+    }
+
     final String cacheKey =
         '${searchTerm.length}:$searchTerm/$effectiveMaxTerms/$maximumDictionarySearchResults';
 
@@ -1808,7 +1824,7 @@ class AppModel with ChangeNotifier {
       dictRepo.cacheSearchResult(cacheKey, result);
       return result;
     }
-    if (allowRemoteLookup) {
+    if (allowRemoteLookup && !tryRemoteFirst) {
       final DictionarySearchResult? remoteResult =
           await _searchRemoteDictionary(
         searchTerm: searchTerm,
@@ -2518,7 +2534,65 @@ class AppModel with ChangeNotifier {
 
   List<String> get audioSources => prefsRepo.audioSources;
 
+  List<AudioSourceConfig> get audioSourceConfigs {
+    final List<AudioSourceConfig> saved = prefsRepo.audioSourceConfigs;
+    final Map<String, LocalAudioDbEntry> localByPath =
+        <String, LocalAudioDbEntry>{
+      for (final LocalAudioDbEntry db in localAudioDbs) db.path: db,
+    };
+    final Set<String> savedLocalPaths = saved
+        .where((AudioSourceConfig source) =>
+            source.kind == AudioSourceKind.localAudio &&
+            localByPath.containsKey(source.path))
+        .map((AudioSourceConfig source) => source.path ?? '')
+        .where((String value) => value.isNotEmpty)
+        .toSet();
+    return <AudioSourceConfig>[
+      for (final AudioSourceConfig source in saved)
+        if (source.kind != AudioSourceKind.localAudio)
+          source
+        else if (localByPath.containsKey(source.path))
+          AudioSourceConfig.localAudio(
+            label: localByPath[source.path]!.displayName,
+            path: source.path!,
+            enabled: localAudioEnabled && localByPath[source.path]!.enabled,
+          ),
+      for (final LocalAudioDbEntry db in localAudioDbs)
+        if (!savedLocalPaths.contains(db.path))
+          AudioSourceConfig.localAudio(
+            label: db.displayName,
+            path: db.path,
+            enabled: localAudioEnabled && db.enabled,
+          ),
+    ];
+  }
+
+  List<AudioSourceConfig> get enabledAudioSourceConfigs =>
+      audioSourceConfigs.where((AudioSourceConfig source) {
+        if (!source.enabled) return false;
+        if (source.kind == AudioSourceKind.localAudio && !localAudioEnabled) {
+          return false;
+        }
+        return true;
+      }).toList(growable: false);
+
   List<String> get enabledAudioSources {
+    final List<AudioSourceConfig> configs = enabledAudioSourceConfigs;
+    if (configs.isNotEmpty) {
+      return configs
+          .map((AudioSourceConfig source) {
+            switch (source.kind) {
+              case AudioSourceKind.hibikiRemote:
+                return WordAudioResolver.hibikiRemoteAudioUrl;
+              case AudioSourceKind.localAudio:
+                return WordAudioResolver.localAudioUrl;
+              case AudioSourceKind.remoteAudio:
+                return source.url ?? '';
+            }
+          })
+          .where((String source) => source.isNotEmpty)
+          .toList(growable: false);
+    }
     final List<String> sources = audioSources
         .where((source) => source != WordAudioResolver.localAudioUrl)
         .toList(growable: false);
@@ -2533,8 +2607,38 @@ class AppModel with ChangeNotifier {
   void setAudioSources(List<String> sources) =>
       prefsRepo.setAudioSources(sources);
 
-  Future<String?> lookupRemoteAudio(String expression, String reading) async {
-    if (!remoteLookupEnabled) return null;
+  Future<void> setAudioSourceConfigs(List<AudioSourceConfig> sources) async {
+    await prefsRepo.setAudioSourceConfigs(sources);
+    final Map<String, LocalAudioDbEntry> current = <String, LocalAudioDbEntry>{
+      for (final LocalAudioDbEntry db in localAudioDbs) db.path: db,
+    };
+    final List<LocalAudioDbEntry> nextDbs = <LocalAudioDbEntry>[
+      for (final AudioSourceConfig source in sources)
+        if (source.kind == AudioSourceKind.localAudio &&
+            (source.path?.isNotEmpty ?? false))
+          (current[source.path] ??
+                  LocalAudioDbEntry(
+                    path: source.path!,
+                    displayName: source.displayLabel,
+                    enabled: source.enabled,
+                  ))
+              .copyWith(
+            displayName: source.displayLabel,
+            enabled: source.enabled,
+          ),
+    ];
+    await _localAudioManager.setEntries(nextDbs);
+    await _localAudioManager.setLocalAudioEnabled(
+      nextDbs.any((LocalAudioDbEntry db) => db.enabled),
+    );
+  }
+
+  Future<String?> lookupRemoteAudio(
+    String expression,
+    String reading, {
+    bool ignoreRemoteLookupEnabled = false,
+  }) async {
+    if (!ignoreRemoteLookupEnabled && !remoteLookupEnabled) return null;
     try {
       return HibikiRemoteLookupClient(repo: SyncRepository(_database))
           .lookupAudioUrl(expression: expression, reading: reading);
