@@ -25,6 +25,11 @@ String? _scanForWoff2(Directory dir) {
 }
 
 String? _findWoff2() {
+  // Committed fixture (CI-stable). Falls back to an override / the SDK's
+  // bundled Roboto woff2 when run outside the repo tree.
+  final File vendored = File('test/fixtures/fonts/Roboto-Regular.woff2');
+  if (vendored.existsSync()) return vendored.path;
+
   final String? override = Platform.environment['HIBIKI_WOFF2_FIXTURE'];
   if (override != null && File(override).existsSync()) return override;
 
@@ -133,5 +138,56 @@ void main() {
       ..addFont(Future<ByteData>.value(
           ByteData.view(sfnt.buffer, sfnt.offsetInBytes, sfnt.lengthInBytes)));
     await loader.load();
+  });
+
+  // The Roboto fixture does not exercise the hmtx transform, so verify that
+  // reconstruction directly (both the from-xMin and from-stream paths).
+  group('hmtx transform reconstruction', () {
+    Uint8List bytesOf(List<int> b) => Uint8List.fromList(b);
+
+    ByteData viewOf(Uint8List u) =>
+        ByteData.view(u.buffer, u.offsetInBytes, u.lengthInBytes);
+
+    test('omitted lsb arrays are derived from glyf xMin', () {
+      // flags=0x03 (both lsb arrays omitted); advanceWidth[2] = 500, 600.
+      final Uint8List tx = bytesOf(<int>[0x03, 0x01, 0xF4, 0x02, 0x58]);
+      final Uint8List? hmtx =
+          Woff2Decoder.reconstructHmtxForTest(tx, 2, <int>[10, 20, 30]);
+      expect(hmtx, isNotNull);
+      final ByteData bd = viewOf(hmtx!);
+      expect(hmtx.length, 2 * 4 + 1 * 2);
+      expect(bd.getUint16(0), 500);
+      expect(bd.getInt16(2), 10);
+      expect(bd.getUint16(4), 600);
+      expect(bd.getInt16(6), 20);
+      expect(bd.getInt16(8), 30); // mono-glyph lsb taken from xMin
+    });
+
+    test('present lsb arrays are read from the stream', () {
+      // flags=0x00; advances 500,600; lsb 5,-5; mono lsb 9.
+      final Uint8List tx = bytesOf(<int>[
+        0x00,
+        0x01, 0xF4, 0x02, 0x58, // advances 500, 600
+        0x00, 0x05, 0xFF, 0xFB, // lsb 5, -5
+        0x00, 0x09, // mono lsb 9
+      ]);
+      final Uint8List? hmtx =
+          Woff2Decoder.reconstructHmtxForTest(tx, 2, <int>[0, 0, 0]);
+      expect(hmtx, isNotNull);
+      final ByteData bd = viewOf(hmtx!);
+      expect(bd.getUint16(0), 500);
+      expect(bd.getInt16(2), 5);
+      expect(bd.getUint16(4), 600);
+      expect(bd.getInt16(6), -5);
+      expect(bd.getInt16(8), 9);
+    });
+
+    test('rejects numberOfHMetrics greater than numGlyphs', () {
+      expect(
+        Woff2Decoder.reconstructHmtxForTest(
+            bytesOf(<int>[0x03, 0x00, 0x00]), 5, <int>[0, 0]),
+        isNull,
+      );
+    });
   });
 }

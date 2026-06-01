@@ -1,20 +1,20 @@
 import 'dart:typed_data';
 
 import 'package:brotli/brotli.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:hibiki/src/models/font_decoder.dart';
 
 /// Decodes a WOFF2 container into raw sfnt (TrueType) bytes that Flutter's
 /// `FontLoader` can register.
 ///
 /// WOFF2 = Brotli-compressed tables + a reversible transform of `glyf`/`loca`
-/// (and optionally `hmtx`). The Flutter engine cannot read WOFF2, so for the
-/// app UI we reconstruct the original sfnt: decompress, reverse the glyf/loca
-/// transform, re-encode glyphs into the standard TrueType `glyf` format, and
-/// reassemble via [FontDecoder.buildSfnt].
+/// and (optionally) `hmtx`. The Flutter engine cannot read WOFF2, so for the
+/// app UI we reconstruct the original sfnt: decompress, reverse the transforms,
+/// re-encode glyphs into the standard TrueType `glyf` format, and reassemble
+/// via [FontDecoder.buildSfnt].
 ///
 /// Returns `null` for anything it cannot faithfully reconstruct (the caller
-/// then skips the font rather than registering a corrupt one). A transformed
-/// `hmtx` is currently unsupported and yields `null`.
+/// then skips the font rather than registering a corrupt one).
 class Woff2Decoder {
   Woff2Decoder._();
 
@@ -22,6 +22,7 @@ class Woff2Decoder {
   static const int _glyfTag = 0x676C7966; // 'glyf'
   static const int _locaTag = 0x6C6F6361; // 'loca'
   static const int _headTag = 0x68656164; // 'head'
+  static const int _hheaTag = 0x68686561; // 'hhea'
   static const int _hmtxTag = 0x686D7478; // 'hmtx'
 
   /// WOFF2 "known table tags" (flag index 0..62; 63 = explicit tag).
@@ -156,24 +157,30 @@ class Woff2Decoder {
 
     final Map<int, Uint8List> out = <int, Uint8List>{};
     _Entry? glyf;
+    _Entry? hmtx;
     for (final _Entry e in entries) {
-      if (e.tag == _hmtxTag && e.transformed) return null; // unsupported
       if (e.tag == _glyfTag) {
         glyf = e;
         continue;
       }
       if (e.tag == _locaTag) {
         if (!e.transformed) out[e.tag] = e.data!;
-        continue; // transformed loca is rebuilt from glyf
+        continue; // a transformed loca is rebuilt from glyf
+      }
+      if (e.tag == _hmtxTag && e.transformed) {
+        hmtx = e; // rebuilt after glyf (needs per-glyph xMin)
+        continue;
       }
       out[e.tag] = e.data!;
     }
 
+    List<int> xMins = const <int>[];
     if (glyf != null) {
       if (glyf.transformed) {
         final _GlyfResult g = _reconstructGlyf(glyf.data!);
         out[_glyfTag] = g.glyf;
         out[_locaTag] = g.loca;
+        xMins = g.xMins;
         final Uint8List? head = out[_headTag];
         if (head != null && head.length >= 52) {
           // We always emit the long loca format.
@@ -184,6 +191,18 @@ class Woff2Decoder {
       } else {
         out[_glyfTag] = glyf.data!;
       }
+    }
+
+    if (hmtx != null) {
+      final Uint8List? hhea = out[_hheaTag];
+      if (hhea == null || hhea.length < 36) return null;
+      final int numberOfHMetrics =
+          ByteData.view(hhea.buffer, hhea.offsetInBytes, hhea.lengthInBytes)
+              .getUint16(34);
+      final Uint8List? rebuilt =
+          _reconstructHmtx(hmtx.data!, numberOfHMetrics, xMins);
+      if (rebuilt == null) return null;
+      out[_hmtxTag] = rebuilt;
     }
 
     final List<SfntTable> tables = <SfntTable>[];
@@ -233,32 +252,28 @@ class Woff2Decoder {
 
     final BytesBuilder glyfOut = BytesBuilder(copy: false);
     final List<int> loca = <int>[0];
+    final List<int> xMins = <int>[];
 
     for (int i = 0; i < numGlyphs; i++) {
       final int nc = nContour.i16();
       final bool hasBbox = (bboxBitmap[i >> 3] & (0x80 >> (i & 7))) != 0;
       Uint8List glyph;
+      int xMin;
       if (nc == 0) {
         glyph = Uint8List(0);
+        xMin = 0;
       } else if (nc > 0) {
-        glyph = _simpleGlyph(
-          nc,
-          hasBbox,
-          nPoints,
-          flagStream,
-          glyphStream,
-          instructionStream,
-          bboxStream,
-        );
+        final (Uint8List, int) g = _simpleGlyph(nc, hasBbox, nPoints,
+            flagStream, glyphStream, instructionStream, bboxStream);
+        glyph = g.$1;
+        xMin = g.$2;
       } else {
-        glyph = _compositeGlyph(
-          hasBbox,
-          compositeStream,
-          glyphStream,
-          instructionStream,
-          bboxStream,
-        );
+        final (Uint8List, int) g = _compositeGlyph(hasBbox, compositeStream,
+            glyphStream, instructionStream, bboxStream);
+        glyph = g.$1;
+        xMin = g.$2;
       }
+      xMins.add(xMin);
       glyfOut.add(glyph);
       if (glyph.length.isOdd) glyfOut.addByte(0); // 2-byte align
       loca.add(glyfOut.length);
@@ -269,10 +284,10 @@ class Woff2Decoder {
     for (int i = 0; i < loca.length; i++) {
       locaBd.setUint32(i * 4, loca[i]);
     }
-    return _GlyfResult(glyf, locaBd.buffer.asUint8List());
+    return _GlyfResult(glyf, locaBd.buffer.asUint8List(), xMins);
   }
 
-  static Uint8List _simpleGlyph(
+  static (Uint8List, int) _simpleGlyph(
     int nc,
     bool hasBbox,
     _Reader nPoints,
@@ -294,7 +309,10 @@ class Woff2Decoder {
     final int instrLen = glyphStream.read255();
     final Uint8List instr = instructionStream.take(instrLen);
 
-    int xMin, yMin, xMax, yMax;
+    int xMin;
+    int yMin;
+    int xMax;
+    int yMax;
     if (hasBbox) {
       xMin = bboxStream.i16();
       yMin = bboxStream.i16();
@@ -360,10 +378,10 @@ class Woff2Decoder {
     out.add(_runLengthFlags(flagBytes));
     out.add(xs.toBytes());
     out.add(ys.toBytes());
-    return out.toBytes();
+    return (out.toBytes(), xMin);
   }
 
-  static Uint8List _compositeGlyph(
+  static (Uint8List, int) _compositeGlyph(
     bool hasBbox,
     _Reader compositeStream,
     _Reader glyphStream,
@@ -414,7 +432,7 @@ class Woff2Decoder {
       out.add(_u16(instrLen));
       out.add(instr);
     }
-    return out.toBytes();
+    return (out.toBytes(), xMin);
   }
 
   static List<_Pt> _tripletDecode(Uint8List flags, _Reader g, int n) {
@@ -490,6 +508,58 @@ class Woff2Decoder {
     return out.toBytes();
   }
 
+  // ── hmtx transform reversal (WOFF2 spec §5.2) ──────────────────────────
+
+  /// Test seam for [_reconstructHmtx]: rebuilds a standard `hmtx` table from a
+  /// transformed one, deriving omitted left side bearings from [xMins].
+  @visibleForTesting
+  static Uint8List? reconstructHmtxForTest(
+    Uint8List data,
+    int numberOfHMetrics,
+    List<int> xMins,
+  ) =>
+      _reconstructHmtx(data, numberOfHMetrics, xMins);
+
+  static Uint8List? _reconstructHmtx(
+    Uint8List data,
+    int numberOfHMetrics,
+    List<int> xMins,
+  ) {
+    final int numGlyphs = xMins.length;
+    if (numberOfHMetrics == 0 || numberOfHMetrics > numGlyphs) return null;
+
+    final _Reader r = _Reader(data);
+    final int flags = r.u8();
+    if ((flags & 0xFC) != 0) return null; // reserved bits must be 0
+    final bool noLsb = (flags & 0x01) != 0; // proportional lsb omitted
+    final bool noLeftSideBearing = (flags & 0x02) != 0; // mono lsb omitted
+
+    final List<int> advances = <int>[
+      for (int i = 0; i < numberOfHMetrics; i++) r.u16(),
+    ];
+    final List<int> lsbs = <int>[
+      for (int i = 0; i < numberOfHMetrics; i++) noLsb ? xMins[i] : r.i16(),
+    ];
+    final int monoCount = numGlyphs - numberOfHMetrics;
+    final List<int> monoLsbs = <int>[
+      for (int i = 0; i < monoCount; i++)
+        noLeftSideBearing ? xMins[numberOfHMetrics + i] : r.i16(),
+    ];
+
+    final ByteData out = ByteData(numberOfHMetrics * 4 + monoCount * 2);
+    int o = 0;
+    for (int i = 0; i < numberOfHMetrics; i++) {
+      out.setUint16(o, advances[i] & 0xFFFF);
+      out.setInt16(o + 2, lsbs[i]);
+      o += 4;
+    }
+    for (int i = 0; i < monoCount; i++) {
+      out.setInt16(o, monoLsbs[i]);
+      o += 2;
+    }
+    return out.buffer.asUint8List();
+  }
+
   static int _checksum(Uint8List data) {
     final ByteData bd =
         ByteData.view(data.buffer, data.offsetInBytes, data.lengthInBytes);
@@ -533,9 +603,10 @@ class _Entry {
 }
 
 class _GlyfResult {
-  _GlyfResult(this.glyf, this.loca);
+  _GlyfResult(this.glyf, this.loca, this.xMins);
   final Uint8List glyf;
   final Uint8List loca;
+  final List<int> xMins;
 }
 
 class _Pt {
