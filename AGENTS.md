@@ -276,3 +276,13 @@ cd hibiki\android
 ```
 
 修改当前 Hoshi 阅读器的 WebView、JS、CSS、资源拦截或分页行为时，不需要构建 `D:\ttu-fork`；必须在 Hibiki 侧验证目标阅读器路径。修改旧 TTU 迁移代码或迁移资产时，验证“历史 IndexedDB -> 当前 Hoshi 存储/书架”的迁移路径。声明“修好了”之前必须用真实模拟器或用户指定设备复测目标路径，并留下截图、UI XML 或 logcat 证据。
+
+## Hibiki Mac/Windows 同步
+
+- Windows 仓库通过 `mac` remote 同步到 `192.168.1.34`：`shfaifsj@192.168.1.34:hibiki.git`。
+- Git commit 是唯一同步单位；不要用 Syncthing、rsync 或手动复制目录同步这个工作区，尤其不要同步 `.git`、`build/`、`.dart_tool/`、Gradle 缓存或未提交半成品。
+- Mac 可以在普通工作区修改代码，但改完必须先 `git commit`，再 push 到 Mac 上的 bare repo；Windows 只从 `mac/<branch>` 拉取已提交历史。
+- Windows 从 Mac 拉取前使用 `.\tool\sync_from_mac.ps1`。脚本默认拒绝 dirty worktree，只允许 fast-forward；分叉时必须停下来人工 rebase 或 merge。
+- Windows 推送到 Mac 前使用 `.\tool\sync_to_mac.ps1`。脚本默认拒绝 dirty worktree；如果本地落后 `mac/<branch>` 或双方已分叉，必须先同步/解决冲突，禁止强推。
+- 只有明确知道自己只是在推已有 commit 时，才允许 `.\tool\sync_to_mac.ps1 -AllowDirty`；这个参数不会同步未提交文件。
+- 两边切换机器前的最低纪律：开工前先从对应远端 fetch/ff-only，同步失败就先解决分叉；收工前提交并推送，不把未提交状态留给另一台机器猜。

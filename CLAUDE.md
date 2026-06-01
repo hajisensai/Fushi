@@ -1,5 +1,15 @@
 # Hibiki Agent Rules
 
+## Hibiki Mac/Windows 同步
+
+- Windows 仓库通过 `mac` remote 同步到 `192.168.1.34`：`shfaifsj@192.168.1.34:hibiki.git`。
+- Git commit 是唯一同步单位；不要用 Syncthing、rsync 或手动复制目录同步这个工作区，尤其不要同步 `.git`、`build/`、`.dart_tool/`、Gradle 缓存或未提交半成品。
+- Mac 可以在普通工作区修改代码，但改完必须先 `git commit`，再 push 到 Mac 上的 bare repo；Windows 只从 `mac/<branch>` 拉取已提交历史。
+- Windows 从 Mac 拉取前使用 `.\tool\sync_from_mac.ps1`。脚本默认拒绝 dirty worktree，只允许 fast-forward；分叉时必须停下来人工 rebase 或 merge。
+- Windows 推送到 Mac 前使用 `.\tool\sync_to_mac.ps1`。脚本默认拒绝 dirty worktree；如果本地落后 `mac/<branch>` 或双方已分叉，必须先同步/解决冲突，禁止强推。
+- 只有明确知道自己只是在推已有 commit 时，才允许 `.\tool\sync_to_mac.ps1 -AllowDirty`；这个参数不会同步未提交文件。
+- 两边切换机器前的最低纪律：开工前先从对应远端 fetch/ff-only，同步失败就先解决分叉；收工前提交并推送，不把未提交状态留给另一台机器猜。
+
 本文件是 Claude/Codex 进入 Hibiki 仓库后的长期执行规则，不是项目宣传页。只保留会影响分析、修改、验证、审查和提交的内容；项目介绍放 README，细节设计放 docs。
 
 ## 基本规则
@@ -175,7 +185,7 @@ SELECT name FROM profiles;
 Windows 无法跑 iOS 模拟器（Apple Simulator 只在 macOS）。iOS/macOS 构建走局域网内一台远程 Mac。
 
 - **连接**：`ssh shfaifsj@192.168.1.34`（已配免密公钥）。Mac：macOS 15.7.4 / Apple Silicon (arm64) / Xcode 16.4 / iOS 18.6 模拟器运行时已装；Flutter 在 `~/flutter`，代码在 `~/dev/hibiki`。RustDesk（端口 48204）只能看屏，跑不了命令行构建。
-- **代码同步（不走 GitHub —— 从该 Mac 访问 GitHub 不稳定）**：Mac 上有裸库 `~/hibiki.git`，Windows 加了 remote `mac`（`shfaifsj@192.168.1.34:hibiki.git`）。同步：Windows `git push mac develop` → Mac `git -C ~/dev/hibiki pull`。Windows 是唯一真源（develop 上有并发 agent，提交只 stage 自己的文件，禁止 `git add -A`）。
+- **代码同步（不走 GitHub —— 从该 Mac 访问 GitHub 不稳定）**：Mac 上有裸库 `~/hibiki.git`，Windows 加了 remote `mac`（`shfaifsj@192.168.1.34:hibiki.git`）。Mac 和 Windows 都可以修改，但必须以 Git commit 为同步单位；Windows 使用 `.\tool\sync_from_mac.ps1` / `.\tool\sync_to_mac.ps1` 做 fast-forward 同步和推送保护。提交只 stage 自己的文件，禁止 `git add -A`。
 - **CocoaPods**：Mac 系统 ruby 为 2.6.10，现代 gem 需 ruby≥2.7/3.x，老 gem 解析器会抓最新版而失败。必须钉版（全部 `--user-install`）：ffi 1.16.3、securerandom 0.3.2、zeitwerk 2.6.18、drb 2.0.6、mutex_m 0.2.0、minitest 5.16.3、i18n 1.14.7、tzinfo 2.0.6、activesupport 6.1.7.10，最后 cocoapods 1.12.1。pod 落在 `~/.gem/ruby/2.6.0/bin`。
 - **第三方手改包已入库**：`network_to_file_image` / `carousel_slider` / `fading_edge_scrollview` 的 Flutter 3.x API 兼容补丁已 vendor 到 `third_party/`，并在 `hibiki/pubspec.yaml` 用 `dependency_overrides` 的 `path:` 指向（不再依赖各机 pub-cache 手改）。新增此类补丁照此 vendor，并把其 pubspec 的 SDK 上界 bump 到 `<4.0.0`。
 - **构建 + 运行**（在 `~/dev/hibiki/hibiki` 下，先 `export LANG=en_US.UTF-8` 和把 `~/flutter/bin` + `~/.gem/ruby/2.6.0/bin` 加进 PATH）：
