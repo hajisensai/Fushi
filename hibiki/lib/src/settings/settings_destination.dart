@@ -29,6 +29,8 @@ class ReaderPlacement {
   const ReaderPlacement({required this.group, required this.order});
 
   final ReaderGroup group;
+
+  /// 在所属 [group] 内的升序排序键（仅组内有效，可有间隔）。
   final int order;
 }
 

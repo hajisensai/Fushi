@@ -27,33 +27,55 @@ List<SettingsDestination> buildSettingsSchema(SettingsContext context) {
   ];
 }
 
+/// 遍历完整 schema，收集所有带 [ReaderPlacement] 的 item，按 group + order 升序分组。
+Map<ReaderGroup, List<SettingsItem>> collectReaderItems(
+  SettingsContext context,
+) {
+  final Map<ReaderGroup, List<SettingsItem>> grouped =
+      <ReaderGroup, List<SettingsItem>>{};
+  for (final SettingsDestination destination in buildSettingsSchema(context)) {
+    for (final SettingsSection section in destination.sections) {
+      for (final SettingsItem item in section.items) {
+        final ReaderPlacement? placement = item.reader;
+        if (placement == null) continue;
+        grouped.putIfAbsent(placement.group, () => <SettingsItem>[]).add(item);
+      }
+    }
+  }
+  for (final List<SettingsItem> items in grouped.values) {
+    items.sort((SettingsItem a, SettingsItem b) =>
+        a.reader!.order.compareTo(b.reader!.order));
+  }
+  return grouped;
+}
+
+/// 把某个 [ReaderGroup] 的 item 包装成一个可被 SettingsRenderer 渲染的 destination。
+SettingsDestination buildReaderGroupDestination(
+  SettingsContext context,
+  ReaderGroup group,
+  String title,
+) {
+  final List<SettingsItem> items =
+      collectReaderItems(context)[group] ?? <SettingsItem>[];
+  return SettingsDestination(
+    id: SettingsDestinationId.readerQuickSettings,
+    title: title,
+    icon: Icons.tune_outlined,
+    sections: <SettingsSection>[SettingsSection(items: items)],
+  );
+}
+
 SettingsDestination buildReaderQuickSettingsDestination(
   SettingsContext context,
 ) {
-  final List<SettingsDestination> destinations = buildSettingsSchema(context);
-  final SettingsDestination appearance = destinations.firstWhere(
-    (SettingsDestination destination) =>
-        destination.id == SettingsDestinationId.appearance,
-  );
-  final SettingsDestination readingDisplay = destinations.firstWhere(
-    (SettingsDestination destination) =>
-        destination.id == SettingsDestinationId.readingDisplay,
-  );
-  final SettingsDestination readingControls = destinations.firstWhere(
-    (SettingsDestination destination) =>
-        destination.id == SettingsDestinationId.readingControls,
-  );
-  final SettingsDestination lookup = destinations.firstWhere(
-    (SettingsDestination destination) =>
-        destination.id == SettingsDestinationId.lookup,
-  );
-  final List<SettingsItem> quickLookupItems =
-      lookup.sections.expand((SettingsSection section) => section.items).where(
-    (SettingsItem item) {
-      return item.id == 'lookup.auto_read_on_lookup' ||
-          item.id == 'lookup.popup_max_width';
-    },
-  ).toList(growable: false);
+  final Map<ReaderGroup, List<SettingsItem>> grouped =
+      collectReaderItems(context);
+  SettingsSection sectionFor(ReaderGroup group, String title) {
+    return SettingsSection(
+      title: title,
+      items: grouped[group] ?? <SettingsItem>[],
+    );
+  }
 
   return SettingsDestination(
     id: SettingsDestinationId.readerQuickSettings,
@@ -61,14 +83,11 @@ SettingsDestination buildReaderQuickSettingsDestination(
     summary: t.source_description_epub,
     icon: Icons.tune_outlined,
     sections: <SettingsSection>[
-      appearance.sections.first,
-      ...readingDisplay.sections,
-      ...readingControls.sections,
-      SettingsSection(
-        title: t.settings_section_lookup_behavior,
-        items: quickLookupItems,
-      ),
-    ],
+      sectionFor(ReaderGroup.appearance, t.settings_destination_appearance),
+      sectionFor(ReaderGroup.layout, t.section_layout),
+      sectionFor(ReaderGroup.behavior, t.section_navigation),
+      sectionFor(ReaderGroup.audiobook, t.section_audiobook),
+    ].where((SettingsSection s) => s.items.isNotEmpty).toList(growable: false),
   );
 }
 
@@ -632,6 +651,10 @@ SettingsDestination _readingControlsDestination() {
             id: 'reading_controls.highlight_on_tap',
             title: t.highlight_on_tap,
             icon: Icons.touch_app_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 0,
+            ),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.highlightOnTap,
             onChanged: (SettingsContext settingsContext, bool value) {
@@ -643,6 +666,10 @@ SettingsDestination _readingControlsDestination() {
             id: 'reading_controls.volume_page_turning',
             title: t.volume_button_page_turning,
             icon: Icons.volume_up_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 1,
+            ),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.volumePageTurningEnabled,
             onChanged: (SettingsContext settingsContext, bool value) {
@@ -657,6 +684,10 @@ SettingsDestination _readingControlsDestination() {
             id: 'reading_controls.invert_volume_buttons',
             title: t.invert_volume_buttons,
             icon: Icons.swap_vert_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 2,
+            ),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.volumePageTurningInverted,
             onChanged: (SettingsContext settingsContext, bool value) {
@@ -668,6 +699,10 @@ SettingsDestination _readingControlsDestination() {
             id: 'reading_controls.invert_swipe_direction',
             title: t.invert_swipe_direction,
             icon: Icons.swipe_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 3,
+            ),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.invertSwipeDirection,
             onChanged: (SettingsContext settingsContext, bool value) {
@@ -682,6 +717,10 @@ SettingsDestination _readingControlsDestination() {
             min: 10,
             max: 500,
             divisions: 49,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 4,
+            ),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.volumePageTurningSpeed.toDouble(),
             label: (double value) => value.round().toString(),
@@ -698,6 +737,10 @@ SettingsDestination _readingControlsDestination() {
             min: 0.1,
             max: 1,
             divisions: 9,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 5,
+            ),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.dismissSwipeSensitivity,
             label: (double value) => value.toStringAsFixed(1),
@@ -711,6 +754,10 @@ SettingsDestination _readingControlsDestination() {
             id: 'reading_controls.keep_screen_awake',
             title: t.keep_screen_awake,
             icon: Icons.lightbulb_outline,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 6,
+            ),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.keepScreenAwake,
             onChanged: setKeepScreenAwake,
@@ -808,6 +855,10 @@ SettingsDestination _lookupDestination() {
             id: 'lookup.auto_read_on_lookup',
             title: t.auto_read_on_lookup,
             icon: Icons.record_voice_over_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 7,
+            ),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.autoReadOnLookup,
             onChanged: (SettingsContext settingsContext, bool value) {
@@ -819,6 +870,10 @@ SettingsDestination _lookupDestination() {
             id: 'lookup.pause_on_lookup',
             title: t.pause_on_lookup,
             icon: Icons.pause_circle_outline,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 8,
+            ),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.pauseOnLookup,
             onChanged: (SettingsContext settingsContext, bool value) async {
@@ -980,6 +1035,10 @@ SettingsDestination _listeningDestination() {
             id: 'listening.media_notification',
             title: t.show_media_notification,
             icon: Icons.notifications_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.audiobook,
+              order: 0,
+            ),
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.showMediaNotification,
             onChanged: (SettingsContext settingsContext, bool value) async {
@@ -993,6 +1052,10 @@ SettingsDestination _listeningDestination() {
             subtitle: t.floating_lyric_hint,
             icon: Icons.subtitles_outlined,
             visible: (_) => Platform.isAndroid,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.audiobook,
+              order: 1,
+            ),
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.showFloatingLyric,
             onChanged: (SettingsContext settingsContext, bool value) async {
@@ -1008,6 +1071,10 @@ SettingsDestination _listeningDestination() {
             min: 8,
             max: 64,
             step: 1,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.audiobook,
+              order: 2,
+            ),
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.floatingLyricFontSize,
             format: (double value) => value.round().toString(),
@@ -1020,6 +1087,10 @@ SettingsDestination _listeningDestination() {
             id: 'listening.volume_key_sentence_nav',
             title: t.volume_key_sentence_nav,
             icon: Icons.skip_next_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 9,
+            ),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.volumeKeySentenceNavEnabled,
             onChanged: (SettingsContext settingsContext, bool value) {
