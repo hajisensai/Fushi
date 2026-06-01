@@ -202,6 +202,13 @@ void main() {
       expect(js, contains("cursor === 'pointer'"));
     });
 
+    test('popup caret excludes disabled controls from element stops', () {
+      // A disabled mine/action button is visible but not actionable. It must not
+      // receive data-hoshi-clk, otherwise the gamepad ring can land on a dead
+      // control and A becomes a no-op.
+      expect(js, contains(':disabled, [aria-disabled="true"]'));
+    });
+
     test('popup caret skips passive term/POS tags (.glossary-tag, e.g. name)',
         () {
       expect(js, contains("closest('.glossary-tag')"));

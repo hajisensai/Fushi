@@ -1,6 +1,6 @@
 # Hibiki 手柄导航全面优化设计（Gamepad Navigation Comprehensive Design）
 
-> 日期：2026-05-31 ｜ 状态：设计已确认，待写实施计划 ｜ 平台：Windows / iOS / macOS / Linux（轮询 gamepads 插件）+ Android（引擎 key-event）
+> 日期：2026-05-31 ｜ 状态：实现中；期1-3 已有代码/单测覆盖，期4-6 部分已有，仍缺真实设备复测闭环 ｜ 平台：Windows / iOS / macOS / Linux（轮询 gamepads 插件）+ Android（引擎 key-event）
 
 本设计是 Hibiki 手柄可用性的**总纲**，统一定义全局按键语义、独立滚动通道、焦点默认可达策略、查词弹窗焦点语义，并把全部缺口拆成 6 期可独立交付的迭代。
 
@@ -9,6 +9,29 @@
 - [2026-05-30-reader-char-caret-navigation-design.md](2026-05-30-reader-char-caret-navigation-design.md) — 阅读器字级光标
 - [2026-05-30-popup-char-caret-design.md](2026-05-30-popup-char-caret-design.md) / [2026-05-31-popup-gamepad-navigation-plan.md](2026-05-31-popup-gamepad-navigation-plan.md) — 弹窗字级光标 + sibling-layer 两层协同
 - [2026-05-31-gamepad-long-press-plan.md](2026-05-31-gamepad-long-press-plan.md) — 长按 A 等价
+
+---
+
+## 0. 当前实现审计（2026-06-01）
+
+这份总纲已经不再是“待写实施计划”。代码里已有一批实现，剩下的问题不是重写，而是继续按缺口收口。
+
+| 阶段 | 状态 | 当前证据 | 剩余缺口 |
+|------|------|----------|----------|
+| 期1 滚动通道 + 默认可达 | 已有 | `HibikiFocusScroll.scrollByViewportFraction/scrollPrimary`、`PageScrollRegistry`、`globalScrollPageUp/Down`，测试见 `hibiki_focus_scroll_test.dart`、`hibiki_page_scaffold_scroll_test.dart`、`gamepad_focus_nav_test.dart` | 仍需 Windows 手柄与 Android 模拟器复测统计页、日志页等原始失败路径 |
+| 期2 数值控件可调 | 已有 | `settings_shared.dart` 的 `_GamepadAdjustableValue`、`_KeyboardStepper`、slider/stepper 行统一 D-pad 左右调值 | 仍需真实设置面板路径复测，确认所有数值页都已走统一组件 |
+| 期3 导航 + 查词入口 | 已有 | `ShortcutAction.homeTabPrev/homeTabNext/homeFocusSearch` 与 LT/RT/Y 默认绑定，`home_page.dart` 消费这些 action；测试见 `shortcut_defaults_test.dart` | 仍需手柄端到端复测首页 tab 循环与词典搜索聚焦 |
+| 期4 手势等价动作 | 部分已有 | `GamepadLongPressActions` 已覆盖历史/集合/搜索历史等条目；标签页有 X 删除；重排按钮与 `gamepad_reorder_test.dart` 覆盖索引补偿 | 覆盖面未审完：集合/标签/字体/词典/同步 URL/音频源等所有长按、删除、重排入口还要逐页核对 |
+| 期5 阅读器 + WebView 专项 | 部分已有 | 弹窗上下跳项/左右逐字、图片停点、reader 图片 `onImageTap`、R3 振假名、LB/RB 复用滚动/翻页均有代码与 `reader_caret_scripts_test.dart` 结构测试；本轮修复了 disabled 按钮误入停点 | 词典结果 WebView 是否纳入 caret、全屏插图 LB/RB/R3、真实 WebView DOM/边界证据仍需补齐 |
+| 期6 手柄软键盘 | 部分已有 | `HibikiGamepadKeyboard`、`showGamepadKeyboardSheet`、文本插入/删除/提交测试见 `hibiki_gamepad_keyboard_test.dart` | 还要审计它实际接入了哪些文本框；未接入的重命名/标签/Profile/WebSocket/歌词路径不能算完成 |
+
+【核心判断】
+✅ 值得继续做：这是实打实的可达性缺口，不是臆想优化。坏状态已经从“没有方案”变成“实现散落、文档过期、设备证据不足”。
+
+【关键洞察】
+- 数据结构：真正的状态不是单个“手柄支持已完成”布尔值，而是“action 绑定 + 焦点注册 + 页面消费 + 设备验证”四段链路。
+- 复杂度：不要再造第二套手柄系统；所有新增能力必须落回 `ShortcutAction`、`HibikiFocusTarget`、`HibikiFocusScroll`、`window.hoshiCaret` 这些现有入口。
+- 风险点：结构测试只能证明脚本/绑定存在，不能证明 WebView、DocumentsUI、真实手柄事件在设备上跑通。未复测的路径不得标成完成。
 
 ---
 

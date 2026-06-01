@@ -272,7 +272,9 @@ window.hoshiCaret = {
     var all = document.body.querySelectorAll('*');
     for (var i = 0; i < all.length; i++) {
       var e = all[i], clk = false;
-      if (e.matches(this._interactiveSelector) || e.onclick) {
+      if (e.matches(':disabled, [aria-disabled="true"]')) {
+        clk = false;
+      } else if (e.matches(this._interactiveSelector) || e.onclick) {
         clk = true;
       } else {
         try {
