@@ -15,6 +15,20 @@ void main() {
     expect(source, contains('ReaderCaretScripts.longPressInvocation()'));
   });
 
+  test('Android gameButtonA key path defers activate until release', () {
+    final String source =
+        File('lib/src/pages/implementations/reader_hibiki_page.dart')
+            .readAsStringSync();
+
+    expect(source, contains('Timer? _gamepadAHoldTimer'));
+    expect(source, contains('_handleGamepadAKeyEvent'));
+    expect(source, contains('event is KeyUpEvent'));
+    expect(source, contains('event is KeyRepeatEvent'));
+    expect(source, contains('_clearGamepadAHold()'));
+    expect(source, contains('CaretAction.activate'));
+    expect(source, contains('CaretAction.longPress'));
+  });
+
   test('popup WebView exposes caretLongPress through ReaderCaretScripts', () {
     final String source =
         File('lib/src/pages/implementations/dictionary_popup_webview.dart')

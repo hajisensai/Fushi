@@ -145,6 +145,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   Timer? _saveDebounce;
   Timer? _progressPollTimer;
   Timer? _contentReadyTimer;
+  Timer? _gamepadAHoldTimer;
   // HBK-AUDIT-120: volume-key throttle uses a last-fire timestamp instead of an
   // empty-callback Timer. The old timer-as-flag pattern obscured intent and left
   // a stale timer gating the next press after a speed-setting change.
@@ -164,6 +165,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
   bool _lyricsMode = false;
   bool _lyricsModeTransition = false;
+  bool _gamepadALongFired = false;
 
   bool _lyricsPageReady = false;
   int _lyricsEntryChapter = 0;
@@ -915,6 +917,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     _progressPollTimer?.cancel();
     _saveDebounce?.cancel();
     _contentReadyTimer?.cancel();
+    _clearGamepadAHold();
     VolumeKeyChannel.instance.setHandlers();
     VolumeKeyChannel.instance.setInterceptEnabled(false);
     appModel.setOverrideDictionaryTheme(null);
@@ -3313,13 +3316,12 @@ window.flutter_inappwebview.callHandler('spreadReady');
   // ── Key Navigation ────────────────────────────────────────────────
 
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
-    if (event is! KeyDownEvent) return KeyEventResult.ignored;
-
     // The popup header toolbar (sibling of the popup content). Down returns to
     // the content caret; B/Escape dismiss the popup (ascend out of it). Left/
     // Right/Enter fall through to the framework so the buttons traverse and
     // activate natively (the global HibikiFocusRing rings the focused one).
     if (_popupHeaderScope.hasFocus) {
+      if (event is! KeyDownEvent) return KeyEventResult.ignored;
       if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
         _returnToPopupContent();
         return KeyEventResult.handled;
@@ -3345,6 +3347,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
     // closes the chrome and returns focus to the reading content rather than
     // bubbling up to the global pop (which would exit the reader).
     if (_chromeFocusScope.hasFocus) {
+      if (event is! KeyDownEvent) return KeyEventResult.ignored;
       // The bar and the reading content are the same (top) layer. Up moves focus
       // back to the reading content; B/Escape exit the reader (top-level back).
       // The bar's visibility is controlled only by Y, so B must not hide it.
@@ -3361,6 +3364,11 @@ window.flutter_inappwebview.callHandler('spreadReady');
       }
       return KeyEventResult.ignored;
     }
+
+    final KeyEventResult? gamepadAResult = _handleGamepadAKeyEvent(event);
+    if (gamepadAResult != null) return gamepadAResult;
+
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
 
     // Char-level reading cursor (book has focus; chrome already returned above).
     // While active, the cursor owns Tab / arrows / A(Enter) / B(Esc) before the
@@ -3434,6 +3442,40 @@ window.flutter_inappwebview.callHandler('spreadReady');
 
     if (action == null) return KeyEventResult.ignored;
     return _executeShortcutAction(action);
+  }
+
+  KeyEventResult? _handleGamepadAKeyEvent(KeyEvent event) {
+    if (event.logicalKey != LogicalKeyboardKey.gameButtonA) return null;
+    if (event is KeyDownEvent) {
+      if (_gamepadAHoldTimer != null) return KeyEventResult.handled;
+      _gamepadALongFired = false;
+      _gamepadAHoldTimer = Timer(const Duration(milliseconds: 500), () {
+        _gamepadAHoldTimer = null;
+        _gamepadALongFired = true;
+        if (!mounted || !_caretActive) return;
+        unawaited(_runCaretAction(CaretAction.longPress));
+      });
+      return KeyEventResult.handled;
+    }
+    if (event is KeyRepeatEvent) return KeyEventResult.handled;
+    if (event is KeyUpEvent) {
+      final bool longFired = _gamepadALongFired;
+      _clearGamepadAHold();
+      if (longFired) return KeyEventResult.handled;
+      if (_caretActive) {
+        unawaited(_runCaretAction(CaretAction.activate));
+      } else {
+        unawaited(_enterCaret());
+      }
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.handled;
+  }
+
+  void _clearGamepadAHold() {
+    _gamepadAHoldTimer?.cancel();
+    _gamepadAHoldTimer = null;
+    _gamepadALongFired = false;
   }
 
   /// Handles a gamepad button delivered via [GamepadButtonIntent] (desktop
