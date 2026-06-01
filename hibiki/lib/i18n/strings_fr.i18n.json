@@ -1177,5 +1177,6 @@
     "remote_lookup_enabled": "Use remote Hibiki lookup",
     "remote_lookup_enabled_hint": "When local dictionaries or Local Audio miss, query the configured Hibiki server",
     "sync_dictionary": "Sync dictionaries",
-    "sync_dictionary_warning": "Dictionary packages can be large and include imported dictionary resources."
+    "sync_dictionary_warning": "Dictionary packages can be large and include imported dictionary resources.",
+    "settings_destination_reading": "Reading"
 }
