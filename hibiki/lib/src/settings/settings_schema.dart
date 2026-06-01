@@ -1027,6 +1027,26 @@ class _LocalAudioDatabasesRowState extends State<_LocalAudioDatabasesRow> {
               _refresh();
             },
           ),
+          HibikiIconButton(
+            tooltip: t.move_up,
+            size: 18,
+            icon: Icons.keyboard_arrow_up,
+            enabled: index > 0,
+            onTap: () async {
+              await appModel.reorderLocalAudioDbs(index, index - 1);
+              _refresh();
+            },
+          ),
+          HibikiIconButton(
+            tooltip: t.move_down,
+            size: 18,
+            icon: Icons.keyboard_arrow_down,
+            enabled: index < dbs.length - 1,
+            onTap: () async {
+              await appModel.reorderLocalAudioDbs(index, index + 2);
+              _refresh();
+            },
+          ),
           ReorderableDragStartListener(
             index: index,
             child: Tooltip(

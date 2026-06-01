@@ -1130,6 +1130,10 @@ void main() {
     expect(section, contains('ReorderableListView.builder('));
     expect(section, contains('ReorderableDragStartListener('));
     expect(section, contains('appModel.reorderLocalAudioDbs('));
+    expect(section, contains('Icons.keyboard_arrow_up'));
+    expect(section, contains('Icons.keyboard_arrow_down'));
+    expect(section, contains('t.move_up'));
+    expect(section, contains('t.move_down'));
     expect(section, isNot(contains('Icons.arrow_upward_outlined')));
     expect(section, isNot(contains('Icons.arrow_downward_outlined')));
   });
