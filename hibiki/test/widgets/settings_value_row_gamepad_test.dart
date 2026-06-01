@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/shortcuts/gamepad_service.dart';
+import 'package:hibiki/src/shortcuts/global_navigation.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart';
 import 'package:hibiki/src/utils/components/settings_shared.dart';
 
@@ -61,6 +63,47 @@ void main() {
       );
       await tester.pump();
       expect(value, 10);
+    });
+
+    testWidgets('native D-pad right reaches the same value-row action',
+        (WidgetTester tester) async {
+      final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
+      double value = 10;
+      await tester.pumpWidget(MaterialApp(
+        navigatorKey: navKey,
+        theme: ThemeData.light(useMaterial3: true),
+        home: Scaffold(
+          body: HibikiFocusRoot(
+            child: StatefulBuilder(
+              builder: (BuildContext c, StateSetter setState) =>
+                  AdaptiveSettingsStepperRow(
+                title: 'Font',
+                value: value,
+                step: 1,
+                min: 0,
+                max: 64,
+                format: (double v) => '${v.round()}',
+                onChanged: (double v) => setState(() => value = v),
+              ),
+            ),
+          ),
+        ),
+        builder: (BuildContext context, Widget? child) =>
+            wrapWithGlobalNavigation(navigatorKey: navKey, child: child!),
+      ));
+      await tester.pump();
+
+      final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+        tester.element(find.text('Font')),
+      );
+      controller.ensureFocus();
+      await tester.pump();
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pump();
+
+      expect(value, 11);
+      expect(controller.activeId, isNotNull);
     });
 
     testWidgets('D-pad up/down is NOT consumed (lets focus move between rows)',

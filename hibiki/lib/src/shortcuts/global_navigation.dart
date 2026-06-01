@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
+import 'package:hibiki/src/shortcuts/gamepad_service.dart'
+    show dispatchNativeGamepadButtonIntent;
 
 /// Intent for "go back / dismiss" driven by the gamepad B button.
 /// Reuses [Navigator.maybePop] so it uniformly closes dialogs, bottom sheets
@@ -77,8 +79,12 @@ Widget wrapWithGlobalNavigation({
   return Focus(
     canRequestFocus: false,
     skipTraversal: true,
-    onKeyEvent: (FocusNode node, KeyEvent event) =>
-        _handleGlobalEscape(navigatorKey, event),
+    onKeyEvent: (FocusNode node, KeyEvent event) {
+      final KeyEventResult gamepadResult =
+          dispatchNativeGamepadButtonIntent(event);
+      if (gamepadResult == KeyEventResult.handled) return gamepadResult;
+      return _handleGlobalEscape(navigatorKey, event);
+    },
     child: Shortcuts(
       shortcuts: const <ShortcutActivator, Intent>{
         SingleActivator(LogicalKeyboardKey.gameButtonB): HibikiPopIntent(),

@@ -8,7 +8,10 @@ import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart'
     show GamepadButton, ModifierKey;
 import 'package:hibiki/src/shortcuts/gamepad_service.dart'
-    show GamepadButtonIntent, gamepadMoveFocusInDirection;
+    show
+        GamepadButtonIntent,
+        dispatchNativeGamepadButtonIntent,
+        gamepadMoveFocusInDirection;
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 
 class HomePage extends BasePage {
@@ -106,6 +109,12 @@ class _HomePageState extends BasePageState<HomePage>
 
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
+
+    final KeyEventResult focusedGamepadAction =
+        dispatchNativeGamepadButtonIntent(event);
+    if (focusedGamepadAction == KeyEventResult.handled) {
+      return focusedGamepadAction;
+    }
 
     final modifiers = <ModifierKey>{};
     if (HardwareKeyboard.instance.isControlPressed) {

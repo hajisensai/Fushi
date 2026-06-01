@@ -44,6 +44,37 @@ class GamepadLongPressIntent extends Intent {
   final GamepadButton button;
 }
 
+/// Dispatches a normalized gamepad [button] to the [GamepadButtonIntent]
+/// handler nearest [context]. Returns true only when a focused page/widget
+/// explicitly consumes the button.
+bool dispatchGamepadButtonIntent(
+  BuildContext context,
+  GamepadButton button,
+) {
+  return Actions.maybeInvoke<GamepadButtonIntent>(
+        context,
+        GamepadButtonIntent(button),
+      ) ==
+      true;
+}
+
+/// Converts Android/native controller key events into the same focused
+/// [GamepadButtonIntent] path used by the desktop poller. B is deliberately
+/// ignored here so existing global-back shortcuts remain the fallback owner.
+KeyEventResult dispatchNativeGamepadButtonIntent(KeyEvent event) {
+  if (event is! KeyDownEvent) return KeyEventResult.ignored;
+  final GamepadButton? button = GamepadButton.fromLogicalKey(event.logicalKey);
+  if (button == null || button == GamepadButton.b) {
+    return KeyEventResult.ignored;
+  }
+
+  final BuildContext? context = FocusManager.instance.primaryFocus?.context;
+  if (context == null) return KeyEventResult.ignored;
+  return dispatchGamepadButtonIntent(context, button)
+      ? KeyEventResult.handled
+      : KeyEventResult.ignored;
+}
+
 /// Wraps a focusable widget so a gamepad long-press (hold A) invokes the SAME
 /// [onLongPress] callback a mouse long-press would. Place it ABOVE the widget
 /// that takes focus (e.g. around a focusable list tile) so the
