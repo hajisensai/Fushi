@@ -181,10 +181,10 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
               ),
             ),
             if (isCupertinoPlatform(context))
-              IconButton(
+              HibikiIconButton(
                 tooltip: t.clear_dictionary_title,
-                icon: const Icon(Icons.delete_sweep_outlined),
-                onPressed: _showDeleteDictionaryHistoryPrompt,
+                icon: Icons.delete_sweep_outlined,
+                onTap: _showDeleteDictionaryHistoryPrompt,
               ),
           ],
         ),

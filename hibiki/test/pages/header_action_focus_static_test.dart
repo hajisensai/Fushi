@@ -53,4 +53,16 @@ void main() {
     expect(selectionBar, contains('HibikiIconButton('));
     expect(selectionBar, isNot(contains('\n              IconButton(')));
   });
+
+  test('home dictionary compact toolbar uses HibikiIconButton action', () {
+    final String source = File(
+      'lib/src/pages/implementations/home_dictionary_page.dart',
+    ).readAsStringSync();
+    final int toolbarStart = source.indexOf('Widget _buildSearchHeader()');
+    final int bodyStart = source.indexOf('Widget _buildBody()');
+    final String toolbar = source.substring(toolbarStart, bodyStart);
+
+    expect(toolbar, contains('HibikiIconButton('));
+    expect(toolbar, isNot(contains('\n              IconButton(')));
+  });
 }
