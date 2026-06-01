@@ -488,22 +488,42 @@ class AdaptiveSettingsSegmentedRow<T extends Object> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // A segmented row is a discrete-valued control: register it as a SINGLE
+    // gamepad/keyboard focus stop (like the stepper/slider rows) so geometric
+    // focus navigation can land on it, and D-pad Left/Right cycles the segment
+    // in place. Without this wrapper the row carries no HibikiFocusTarget (its
+    // AdaptiveSettingsRow has no onTap), so it is invisible to directional
+    // navigation — the cursor skips the whole layout section.
+    final int currentIndex =
+        segments.indexWhere((ButtonSegment<T> s) => s.value == selected);
+    void selectAt(int index) {
+      if (segments.isEmpty) return;
+      final int clamped = index.clamp(0, segments.length - 1);
+      final T value = segments[clamped].value;
+      if (value != selected) onChanged(value);
+    }
+
     return AdaptiveSettingsRow(
       title: title,
       subtitle: subtitle,
       icon: icon,
       controlBelow: controlBelow,
-      trailing: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: adaptiveSegmentedButton<T>(
-          context: context,
-          segments: segments,
-          selected: <T>{selected},
-          onSelectionChanged: (Set<T> values) {
-            if (values.isEmpty) return;
-            onChanged(values.first);
-          },
-          style: kSettingsSegmentedStyle,
+      trailing: _GamepadAdjustableValue(
+        focusIdPrefix: 'settings-segmented',
+        onIncrement: () => selectAt(currentIndex + 1),
+        onDecrement: () => selectAt(currentIndex - 1),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: adaptiveSegmentedButton<T>(
+            context: context,
+            segments: segments,
+            selected: <T>{selected},
+            onSelectionChanged: (Set<T> values) {
+              if (values.isEmpty) return;
+              onChanged(values.first);
+            },
+            style: kSettingsSegmentedStyle,
+          ),
         ),
       ),
     );
