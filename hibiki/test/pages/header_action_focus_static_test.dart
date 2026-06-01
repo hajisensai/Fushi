@@ -28,4 +28,16 @@ void main() {
     expect(headerActions, contains('HibikiIconButton('));
     expect(headerActions, isNot(contains('\n        IconButton(')));
   });
+
+  test('shortcut action rows use HibikiIconButton for edit command', () {
+    final String source = File(
+      'lib/src/pages/implementations/shortcut_settings_page.dart',
+    ).readAsStringSync();
+    final int tileStart = source.indexOf('class _ActionTile');
+    final int dialogStart = source.indexOf('class ShortcutBindingEditDialog');
+    final String actionTile = source.substring(tileStart, dialogStart);
+
+    expect(actionTile, contains('HibikiIconButton('));
+    expect(actionTile, isNot(contains('trailing: IconButton(')));
+  });
 }

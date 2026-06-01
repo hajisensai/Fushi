@@ -262,9 +262,10 @@ class _ActionTile extends StatelessWidget {
                       ))
                   .toList(growable: false),
             ),
-      trailing: IconButton(
-        icon: const Icon(Icons.edit_outlined),
-        onPressed: onEdit,
+      trailing: HibikiIconButton(
+        icon: Icons.edit_outlined,
+        tooltip: t.options_edit,
+        onTap: onEdit,
       ),
     );
   }
