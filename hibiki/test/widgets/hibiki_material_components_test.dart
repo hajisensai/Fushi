@@ -573,4 +573,54 @@ void main() {
 
     expect(find.text('home'), findsOneWidget);
   });
+
+  testWidgets('HibikiCompactSearchRow icon buttons register with focus root',
+      (WidgetTester tester) async {
+    final TextEditingController textController =
+        TextEditingController(text: 'term');
+    final FocusNode fieldFocus = FocusNode();
+    int closes = 0;
+    String? submitted;
+    addTearDown(textController.dispose);
+    addTearDown(fieldFocus.dispose);
+
+    await tester.pumpWidget(
+      buildSubject(
+        HibikiFocusRoot(
+          child: HibikiCompactSearchRow(
+            controller: textController,
+            focusNode: fieldFocus,
+            hintText: 'Search',
+            onClose: () => closes += 1,
+            onSubmit: (String value) => submitted = value,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+      tester.element(find.byType(HibikiCompactSearchRow)),
+    );
+    controller.ensureFocus();
+    await tester.pump();
+
+    expect(controller.activeId, isNotNull,
+        reason: 'compact search close/search buttons must not be pointer-only');
+    Actions.maybeInvoke<ActivateIntent>(
+      controller.activeContext!,
+      const ActivateIntent(),
+    );
+    await tester.pump();
+    expect(closes, 1);
+
+    expect(controller.move(HibikiFocusDirection.right), isTrue);
+    await tester.pump();
+    Actions.maybeInvoke<ActivateIntent>(
+      controller.activeContext!,
+      const ActivateIntent(),
+    );
+    await tester.pump();
+    expect(submitted, 'term');
+  });
 }

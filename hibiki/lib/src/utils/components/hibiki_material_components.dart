@@ -1886,11 +1886,13 @@ class _CompactSearchIconButton extends StatelessWidget {
     return SizedBox(
       width: 36,
       height: 36,
-      child: IconButton(
-        icon: Icon(icon, color: tokens.surfaces.onVariant, size: 20),
+      child: HibikiIconButton(
+        icon: icon,
+        enabledColor: tokens.surfaces.onVariant,
+        size: 20,
         tooltip: tooltip,
         padding: EdgeInsets.zero,
-        onPressed: onPressed,
+        onTap: onPressed,
       ),
     );
   }
