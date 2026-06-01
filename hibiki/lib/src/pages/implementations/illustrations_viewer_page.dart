@@ -4,6 +4,9 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:hibiki/src/epub/epub_storage.dart';
+import 'package:hibiki/src/shortcuts/gamepad_service.dart'
+    show GamepadButtonIntent;
+import 'package:hibiki/src/shortcuts/input_binding.dart' show GamepadButton;
 import 'package:hibiki/utils.dart';
 
 class IllustrationsViewerPage extends StatefulWidget {
@@ -194,50 +197,109 @@ class _FullScreenGallery extends StatefulWidget {
 
 class _FullScreenGalleryState extends State<_FullScreenGallery> {
   late PageController _pageController;
+  late TransformationController _transformationController;
   late int _currentIndex;
+  bool _zoomed = false;
 
   @override
   void initState() {
     super.initState();
     _currentIndex = widget.initialIndex;
     _pageController = PageController(initialPage: widget.initialIndex);
+    _transformationController = TransformationController();
   }
 
   @override
   void dispose() {
+    _transformationController.dispose();
     _pageController.dispose();
     super.dispose();
+  }
+
+  bool _handleGamepad(GamepadButton button) {
+    switch (button) {
+      case GamepadButton.rb:
+        _pageBy(1);
+        return true;
+      case GamepadButton.lb:
+        _pageBy(-1);
+        return true;
+      case GamepadButton.thumbRight:
+        _toggleZoom();
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  void _pageBy(int delta) {
+    final int target =
+        (_currentIndex + delta).clamp(0, widget.images.length - 1);
+    if (target == _currentIndex) return;
+    _pageController.animateToPage(
+      target,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  void _toggleZoom() {
+    setState(() {
+      _zoomed = !_zoomed;
+      _transformationController.value =
+          _zoomed ? (Matrix4.identity()..scale(2.0)) : Matrix4.identity();
+    });
+  }
+
+  void _setCurrentIndex(int index) {
+    setState(() {
+      _currentIndex = index;
+      _zoomed = false;
+      _transformationController.value = Matrix4.identity();
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return HibikiToolScaffold(
-      title: t.image_page_counter(
-        current: _currentIndex + 1,
-        total: widget.images.length,
-      ),
-      body: PageView.builder(
-        controller: _pageController,
-        itemCount: widget.images.length,
-        onPageChanged: (index) => setState(() => _currentIndex = index),
-        itemBuilder: (context, index) {
-          return InteractiveViewer(
-            minScale: 0.5,
-            maxScale: 4,
-            child: Center(
-              child: Image.memory(
-                widget.images[index],
-                fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) => Icon(
-                  Icons.broken_image_outlined,
-                  color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
-                  size: 64,
+    return Actions(
+      actions: <Type, Action<Intent>>{
+        GamepadButtonIntent: CallbackAction<GamepadButtonIntent>(
+          onInvoke: (GamepadButtonIntent intent) =>
+              _handleGamepad(intent.button),
+        ),
+      },
+      child: Focus(
+        autofocus: true,
+        child: HibikiToolScaffold(
+          title: t.image_page_counter(
+            current: _currentIndex + 1,
+            total: widget.images.length,
+          ),
+          body: PageView.builder(
+            controller: _pageController,
+            itemCount: widget.images.length,
+            onPageChanged: _setCurrentIndex,
+            itemBuilder: (context, index) {
+              return InteractiveViewer(
+                transformationController: _transformationController,
+                minScale: 0.5,
+                maxScale: 4,
+                child: Center(
+                  child: Image.memory(
+                    widget.images[index],
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) => Icon(
+                      Icons.broken_image_outlined,
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+                      size: 64,
+                    ),
+                  ),
                 ),
-              ),
-            ),
-          );
-        },
+              );
+            },
+          ),
+        ),
       ),
     );
   }
