@@ -151,6 +151,18 @@ SettingsDestination buildSyncBackupDestination() {
             },
           ),
           SettingsSwitchItem(
+            id: 'sync.dictionary',
+            title: t.sync_dictionary,
+            subtitle: t.sync_dictionary_warning,
+            icon: Icons.menu_book_outlined,
+            value: (SettingsContext ctx) => _syncSettings(ctx).syncDictionary,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).syncDictionary = value;
+              await SyncRepository(ctx.appModel.database)
+                  .setSyncDictionaryEnabled(value);
+            },
+          ),
+          SettingsSwitchItem(
             id: 'sync.content',
             title: t.sync_content,
             subtitle: t.sync_content_warning,
@@ -581,6 +593,7 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
       final service = BackupService(
         db: appModel.database,
         dbDirectory: appModel.databaseDirectory.path,
+        dictionaryResourceDirectory: appModel.dictionaryResourceDirectory.path,
         appVersion: appModel.packageInfo.version,
       );
 
@@ -685,6 +698,7 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
       final service = BackupService(
         db: appModel.database,
         dbDirectory: appModel.databaseDirectory.path,
+        dictionaryResourceDirectory: appModel.dictionaryResourceDirectory.path,
         appVersion: appModel.packageInfo.version,
       );
 
@@ -714,6 +728,7 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
         dbDirectory: appModel.databaseDirectory.path,
         zipPath: filePath,
         importSettings: importSettings,
+        dictionaryResourceDirectory: appModel.dictionaryResourceDirectory.path,
       );
 
       if (mounted) {
@@ -1942,6 +1957,7 @@ class _SyncSettingsState {
   bool autoSync = false;
   bool syncStats = true;
   bool syncAudioBook = true;
+  bool syncDictionary = false;
   bool syncContent = false;
   bool _loaded = false;
   bool _loading = false;
@@ -1955,6 +1971,7 @@ class _SyncSettingsState {
       autoSync = await _repo.isAutoSyncEnabled();
       syncStats = await _repo.isSyncStatsEnabled();
       syncAudioBook = await _repo.isSyncAudioBookEnabled();
+      syncDictionary = await _repo.isSyncDictionaryEnabled();
       syncContent = await _repo.isSyncContentEnabled();
       _loaded = true;
       _settingsContext.refresh();

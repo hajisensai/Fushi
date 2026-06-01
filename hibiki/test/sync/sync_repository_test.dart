@@ -19,18 +19,39 @@ void main() {
 
     await db.setPref(SyncRepository.syncStatsPreferenceKey, 'false');
     await db.setPref(SyncRepository.syncAudioBookPreferenceKey, 'true');
+    await db.setPref(SyncRepository.syncDictionaryPreferenceKey, 'true');
 
     expect(await repo.isSyncStatsEnabled(), isFalse);
     expect(await repo.isSyncAudioBookEnabled(), isTrue);
+    expect(await repo.isSyncDictionaryEnabled(), isTrue);
 
     await repo.setSyncStatsEnabled(true);
     await repo.setSyncAudioBookEnabled(false);
+    await repo.setSyncDictionaryEnabled(false);
 
     expect(await db.getPref(SyncRepository.syncStatsPreferenceKey), 'b:true');
     expect(
       await db.getPref(SyncRepository.syncAudioBookPreferenceKey),
       'b:false',
     );
+    expect(
+      await db.getPref(SyncRepository.syncDictionaryPreferenceKey),
+      'b:false',
+    );
+  });
+
+  test('dictionary sync preference defaults to false', () async {
+    final HibikiDatabase db = _testDb();
+    addTearDown(db.close);
+    final SyncRepository repo = SyncRepository(db);
+
+    expect(await repo.isSyncDictionaryEnabled(), isFalse);
+
+    await repo.setSyncDictionaryEnabled(true);
+    expect(await repo.isSyncDictionaryEnabled(), isTrue);
+
+    await repo.setSyncDictionaryEnabled(false);
+    expect(await repo.isSyncDictionaryEnabled(), isFalse);
   });
 
   test('auto sync preference defaults to false', () async {
@@ -181,6 +202,7 @@ void main() {
       expect(keys, isNot(contains('sync_auto_enabled')));
       expect(keys, isNot(contains('sync_stats_enabled')));
       expect(keys, isNot(contains('sync_audiobook_enabled')));
+      expect(keys, isNot(contains('sync_dictionary_enabled')));
       expect(keys, isNot(contains('sync_content_enabled')));
       expect(keys, isNot(contains('sync_root_folder_id')));
       expect(keys, isNot(contains('sync_folder_cache')));

@@ -249,6 +249,8 @@ void main() {
         contains("SettingsSwitchItem(\n            id: 'sync.statistics'"));
     expect(source,
         contains("SettingsSwitchItem(\n            id: 'sync.audiobook'"));
+    expect(source,
+        contains("SettingsSwitchItem(\n            id: 'sync.dictionary'"));
     expect(source, isNot(contains("id: 'sync.options'")));
     expect(source, isNot(contains('class _SyncOptionsWidget')));
   });

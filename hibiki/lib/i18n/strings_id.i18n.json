@@ -1175,5 +1175,7 @@
     "app_ui_scale": "UI size",
     "app_ui_scale_hint": "Scales app text and spacing. Lower it on large screens if controls feel oversized.",
     "remote_lookup_enabled": "Use remote Hibiki lookup",
-    "remote_lookup_enabled_hint": "When local dictionaries or Local Audio miss, query the configured Hibiki server"
+    "remote_lookup_enabled_hint": "When local dictionaries or Local Audio miss, query the configured Hibiki server",
+    "sync_dictionary": "Sync dictionaries",
+    "sync_dictionary_warning": "Dictionary packages can be large and include imported dictionary resources."
 }

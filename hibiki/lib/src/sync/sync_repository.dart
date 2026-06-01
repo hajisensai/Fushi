@@ -36,6 +36,7 @@ class SyncRepository {
   static const _keyFolderCache = 'sync_folder_cache';
   static const _keySyncStats = 'sync_stats_enabled';
   static const _keySyncAudioBook = 'sync_audiobook_enabled';
+  static const _keySyncDictionary = 'sync_dictionary_enabled';
   static const _keyAutoSync = 'sync_auto_enabled';
   static const _keyLastSyncMs = 'sync_last_sync_ms';
   static const _keyDesktopCredentials = 'sync_desktop_credentials';
@@ -47,6 +48,7 @@ class SyncRepository {
 
   static const String syncStatsPreferenceKey = _keySyncStats;
   static const String syncAudioBookPreferenceKey = _keySyncAudioBook;
+  static const String syncDictionaryPreferenceKey = _keySyncDictionary;
 
   // ── Folder cache ──────────────────────────────────────────────────
 
@@ -102,6 +104,11 @@ class SyncRepository {
       _db.getPrefTyped<bool>(_keySyncAudioBook, true);
   Future<void> setSyncAudioBookEnabled(bool v) =>
       _db.setPrefTyped<bool>(_keySyncAudioBook, v);
+
+  Future<bool> isSyncDictionaryEnabled() =>
+      _db.getPrefTyped<bool>(_keySyncDictionary, false);
+  Future<void> setSyncDictionaryEnabled(bool v) =>
+      _db.setPrefTyped<bool>(_keySyncDictionary, v);
 
   Future<bool> isAutoSyncEnabled() =>
       _db.getPrefTyped<bool>(_keyAutoSync, false);
@@ -477,7 +484,7 @@ class SyncRepository {
   ///
   /// 故意排除：
   /// - 行为开关 `sync_auto_enabled`/`sync_stats_enabled`/`sync_audiobook_enabled`/
-  ///   `sync_content_enabled` —— 当作用户设置，随备份恢复。
+  ///   `sync_dictionary_enabled`/`sync_content_enabled` —— 当作用户设置，随备份恢复。
   /// - 内容 `audiobook_pos_*` —— 随备份恢复。
   /// - folder cache `sync_root_folder_id`/`sync_folder_cache` —— 不还原，下次同步重建。
   ///

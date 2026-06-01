@@ -329,7 +329,7 @@ void main() {
         await onDiskDb.replaceAllDictionaryHistory([
           DictionaryHistoryCompanion.insert(
             position: 0,
-            resultJson: '{"searchTerm":"猫"}',
+            resultJson: '{"searchTerm":"cat"}',
           ),
         ]);
 
@@ -363,6 +363,92 @@ void main() {
       } finally {
         await onDiskDb.close();
         if (dbDir.existsSync()) await dbDir.delete(recursive: true);
+      }
+    });
+
+    test(
+        'exportBackup keeps dictionary resources when dictionary sync is enabled',
+        () async {
+      final dbDir =
+          await Directory.systemTemp.createTemp('backup_dict_enabled_');
+      final dictDir =
+          await Directory.systemTemp.createTemp('backup_dict_resources_');
+      final onDiskDb = HibikiDatabase(dbDir.path);
+      try {
+        await Directory('${dictDir.path}/JMdict/media').create(recursive: true);
+        await File('${dictDir.path}/JMdict/blobs.bin')
+            .writeAsString('dictionary index');
+        await File('${dictDir.path}/JMdict/media/pitch.png')
+            .writeAsString('pitch image');
+        await SyncRepository(onDiskDb).setSyncDictionaryEnabled(true);
+        await onDiskDb.upsertDictionaryMeta(
+          DictionaryMetadataCompanion.insert(
+            name: 'JMdict',
+            formatKey: 'yomichan',
+            order: 0,
+          ),
+        );
+        await onDiskDb.replaceAllDictionaryHistory([
+          DictionaryHistoryCompanion.insert(
+            position: 0,
+            resultJson: '{"searchTerm":"猫"}',
+          ),
+        ]);
+
+        final service = BackupService(
+          db: onDiskDb,
+          dbDirectory: dbDir.path,
+          dictionaryResourceDirectory: dictDir.path,
+          appVersion: '2.0.0',
+        );
+        final outputPath = '${tmpDir.path}/dictionary_enabled_test.zip';
+        await service.exportBackup(outputPath);
+
+        final archive =
+            ZipDecoder().decodeBytes(await File(outputPath).readAsBytes());
+        expect(archive.findFile('dictionaryResources/JMdict/blobs.bin'),
+            isNotNull);
+        expect(archive.findFile('dictionaryResources/JMdict/media/pitch.png'),
+            isNotNull);
+
+        final dbBytes = archive.findFile('hibiki.db')!.content as List<int>;
+        final restoreDir =
+            await Directory.systemTemp.createTemp('backup_dict_enabled_r_');
+        final restoredDictDir = await Directory.systemTemp
+            .createTemp('backup_dict_enabled_resources_r_');
+        await File('${restoreDir.path}/hibiki.db').writeAsBytes(dbBytes);
+        await BackupService.importBackupFiles(
+          dbDirectory: restoreDir.path,
+          zipPath: outputPath,
+          dictionaryResourceDirectory: restoredDictDir.path,
+        );
+        final restored = HibikiDatabase(restoreDir.path);
+        try {
+          expect(await restored.getAllDictionaryMetadata(), hasLength(1));
+          expect(await restored.getAllDictionaryHistory(), hasLength(1));
+          expect(
+            await File('${restoredDictDir.path}/JMdict/blobs.bin')
+                .readAsString(),
+            'dictionary index',
+          );
+          expect(
+            await File('${restoredDictDir.path}/JMdict/media/pitch.png')
+                .readAsString(),
+            'pitch image',
+          );
+        } finally {
+          await restored.close();
+          if (restoreDir.existsSync()) {
+            await restoreDir.delete(recursive: true);
+          }
+          if (restoredDictDir.existsSync()) {
+            await restoredDictDir.delete(recursive: true);
+          }
+        }
+      } finally {
+        await onDiskDb.close();
+        if (dbDir.existsSync()) await dbDir.delete(recursive: true);
+        if (dictDir.existsSync()) await dictDir.delete(recursive: true);
       }
     });
 

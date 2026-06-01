@@ -55,16 +55,20 @@ class BackupService {
     required HibikiDatabase db,
     required String dbDirectory,
     required String appVersion,
+    String? dictionaryResourceDirectory,
   })  : _db = db,
         _dbDirectory = dbDirectory,
+        _dictionaryResourceDirectory = dictionaryResourceDirectory,
         _appVersion = appVersion;
 
   final HibikiDatabase _db;
   final String _dbDirectory;
+  final String? _dictionaryResourceDirectory;
   final String _appVersion;
 
   static const String _dbName = 'hibiki.db';
   static const String _metaName = 'backup_meta.json';
+  static const String _dictionaryResourcesPrefix = 'dictionaryResources';
   static const int _maxImportBytes = 512 * 1024 * 1024; // 512 MB
 
   /// Sidecar file holding this device's sync config across an import. Written
@@ -106,8 +110,16 @@ class BackupService {
       // server passwords (base64 = encoding, not encryption). VACUUM after the
       // delete so the secrets are not recoverable from freelist pages.
       // (HBK-AUDIT-012)
+      final bool syncDictionaryEnabled =
+          await SyncRepository(_db).isSyncDictionaryEnabled();
+      final Directory? dictionaryResourceRoot =
+          _dictionaryResourceDirectory == null
+              ? null
+              : Directory(_dictionaryResourceDirectory);
       await _stripCredentials(tmpDir.path);
-      await _stripDictionaryState(tmpDir.path);
+      if (!syncDictionaryEnabled || dictionaryResourceRoot == null) {
+        await _stripDictionaryState(tmpDir.path);
+      }
 
       final books = await _db.getAllEpubBooks();
       final stats = await _db.getAllReadingStatistics();
@@ -122,6 +134,13 @@ class BackupService {
       final archive = Archive();
       final dbBytes = await File(cleanDbPath).readAsBytes();
       archive.addFile(ArchiveFile(_dbName, dbBytes.length, dbBytes));
+      if (syncDictionaryEnabled && dictionaryResourceRoot != null) {
+        await _addDirectoryToArchive(
+          archive: archive,
+          root: dictionaryResourceRoot,
+          archivePrefix: _dictionaryResourcesPrefix,
+        );
+      }
       final metaBytes = utf8.encode(
         const JsonEncoder.withIndent('  ').convert(meta.toJson()),
       );
@@ -174,10 +193,9 @@ class BackupService {
     }
   }
 
-  /// Removes dictionary rows from the exported DB copy. Dictionary entries and
-  /// media live under `dictionaryResources/`, not inside this backup archive;
-  /// keeping only DB metadata would restore ghost dictionaries that cannot be
-  /// queried.
+  /// Removes dictionary rows from the exported DB copy when dictionary sync is
+  /// disabled. Keeping DB metadata without matching `dictionaryResources/`
+  /// files would restore ghost dictionaries that cannot be queried.
   static Future<void> _stripDictionaryState(String dbDirectory) async {
     final db = HibikiDatabase(dbDirectory);
     try {
@@ -243,6 +261,7 @@ class BackupService {
     required String dbDirectory,
     required String zipPath,
     bool importSettings = true,
+    String? dictionaryResourceDirectory,
   }) async {
     final dbPath = p.join(dbDirectory, _dbName);
     final bytes = await File(zipPath).readAsBytes();
@@ -284,6 +303,13 @@ class BackupService {
 
     // 2) Overwrite with the backup DB bytes.
     await currentDb.writeAsBytes(dbFile.content as List<int>);
+
+    if (dictionaryResourceDirectory != null) {
+      await _restoreDictionaryResources(
+        archive: archive,
+        dictionaryResourceDirectory: dictionaryResourceDirectory,
+      );
+    }
 
     // 3) Restore what must stay on this device — inline, not deferred to
     //    startup, so the common path never depends on bak surviving a restart.
@@ -413,6 +439,74 @@ class BackupService {
       await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
     } finally {
       await db.close();
+    }
+  }
+
+  static Future<void> _addDirectoryToArchive({
+    required Archive archive,
+    required Directory root,
+    required String archivePrefix,
+  }) async {
+    if (!await root.exists()) return;
+    await for (final FileSystemEntity entity in root.list(recursive: true)) {
+      if (entity is! File) continue;
+      final String relativePath = p.relative(entity.path, from: root.path);
+      final String archivePath =
+          p.posix.join(archivePrefix, relativePath.replaceAll(r'\', '/'));
+      archive.addFile(ArchiveFile(
+        archivePath,
+        await entity.length(),
+        await entity.readAsBytes(),
+      ));
+    }
+  }
+
+  static Future<void> _restoreDictionaryResources({
+    required Archive archive,
+    required String dictionaryResourceDirectory,
+  }) async {
+    final bool hasDictionaryResources = archive.files.any(
+      (ArchiveFile file) =>
+          file.isFile &&
+          file.name
+              .replaceAll(r'\', '/')
+              .startsWith('$_dictionaryResourcesPrefix/'),
+    );
+    if (!hasDictionaryResources) return;
+
+    final Directory targetRoot = Directory(dictionaryResourceDirectory);
+    if (await targetRoot.exists()) {
+      await targetRoot.delete(recursive: true);
+    }
+    await targetRoot.create(recursive: true);
+
+    final String canonicalRoot = p.canonicalize(targetRoot.path);
+    for (final ArchiveFile file in archive.files) {
+      if (!file.isFile) continue;
+      final String rawName = file.name.replaceAll(r'\', '/');
+      if (!rawName.startsWith('$_dictionaryResourcesPrefix/')) continue;
+      final String relativePath =
+          rawName.substring(_dictionaryResourcesPrefix.length + 1);
+      final String normalizedRelative = p.posix.normalize(relativePath);
+      if (relativePath.isEmpty ||
+          p.posix.isAbsolute(relativePath) ||
+          normalizedRelative == '..' ||
+          normalizedRelative.startsWith('../')) {
+        throw FormatException('Invalid dictionary resource path: ${file.name}');
+      }
+
+      final String targetPath = p.normalize(
+        p.join(targetRoot.path, normalizedRelative),
+      );
+      final String canonicalTarget = p.canonicalize(targetPath);
+      if (canonicalTarget != canonicalRoot &&
+          !p.isWithin(canonicalRoot, canonicalTarget)) {
+        throw FormatException('Invalid dictionary resource path: ${file.name}');
+      }
+
+      final File targetFile = File(targetPath);
+      targetFile.parent.createSync(recursive: true);
+      await targetFile.writeAsBytes(file.content as List<int>, flush: true);
     }
   }
 

@@ -68,6 +68,7 @@ void main() {
         'sync.auto_sync',
         'sync.statistics',
         'sync.audiobook',
+        'sync.dictionary',
         'sync.content',
       ]);
       expect(idsOf(dest.sections[3]), <String>['sync.compare']);
