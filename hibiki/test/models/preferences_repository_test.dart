@@ -86,9 +86,12 @@ void main() {
     test('audioSourceConfigs migrates legacy URL list', () {
       expect(
         repo.audioSourceConfigs,
-        AudioSourceConfig.fromLegacyUrls(
-          PreferencesRepository.defaultAudioSources,
-        ),
+        <AudioSourceConfig>[
+          AudioSourceConfig.hibikiRemote(),
+          ...AudioSourceConfig.fromLegacyUrls(
+            PreferencesRepository.defaultAudioSources,
+          ),
+        ],
       );
     });
 

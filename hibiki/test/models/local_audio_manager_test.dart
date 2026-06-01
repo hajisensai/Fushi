@@ -54,6 +54,22 @@ void main() {
     );
   });
 
+  test('new local audio DB entries default to disabled', () {
+    const LocalAudioDbEntry entry = LocalAudioDbEntry(
+      path: '/tmp/off.db',
+      displayName: 'off',
+    );
+
+    expect(entry.enabled, isFalse);
+    expect(
+      LocalAudioDbEntry.fromJson(const <String, dynamic>{
+        'path': '/tmp/old.db',
+        'displayName': 'old',
+      }).enabled,
+      isFalse,
+    );
+  });
+
   test('reorder ignores out-of-range indexes', () async {
     await manager.setEntries(const <LocalAudioDbEntry>[
       LocalAudioDbEntry(path: '/tmp/one.db', displayName: 'one'),

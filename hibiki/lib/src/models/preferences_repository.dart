@@ -331,9 +331,24 @@ class PreferencesRepository extends ChangeNotifier {
               source.kind != AudioSourceKind.remoteAudio ||
               (source.url?.isNotEmpty ?? false))
           .toList();
-      if (configs.isNotEmpty) return configs;
+      if (configs.isNotEmpty) return _withDefaultAudioSources(configs);
     }
-    return AudioSourceConfig.fromLegacyUrls(audioSources);
+    return _withDefaultAudioSources(
+      AudioSourceConfig.fromLegacyUrls(audioSources),
+    );
+  }
+
+  List<AudioSourceConfig> _withDefaultAudioSources(
+    List<AudioSourceConfig> sources,
+  ) {
+    final bool hasHibikiRemote = sources.any(
+      (AudioSourceConfig source) => source.kind == AudioSourceKind.hibikiRemote,
+    );
+    if (hasHibikiRemote) return sources;
+    return <AudioSourceConfig>[
+      AudioSourceConfig.hibikiRemote(),
+      ...sources,
+    ];
   }
 
   void setAudioSources(List<String> sources) async {

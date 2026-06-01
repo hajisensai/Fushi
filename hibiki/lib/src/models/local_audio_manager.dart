@@ -11,14 +11,14 @@ class LocalAudioDbEntry {
   const LocalAudioDbEntry({
     required this.path,
     required this.displayName,
-    this.enabled = true,
+    this.enabled = false,
   });
 
   factory LocalAudioDbEntry.fromJson(Map<String, dynamic> json) =>
       LocalAudioDbEntry(
         path: json['path'] as String? ?? '',
         displayName: json['displayName'] as String? ?? '',
-        enabled: json['enabled'] as bool? ?? true,
+        enabled: json['enabled'] as bool? ?? false,
       );
 
   final String path;

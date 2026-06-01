@@ -39,7 +39,7 @@ class AudioSourceConfig {
   factory AudioSourceConfig.localAudio({
     required String label,
     required String path,
-    bool enabled = true,
+    bool enabled = false,
   }) {
     return AudioSourceConfig._(
       kind: AudioSourceKind.localAudio,

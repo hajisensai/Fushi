@@ -17,6 +17,15 @@ void main() {
       expect(sources[1].url, 'https://b.test/?reading={reading}');
     });
 
+    test('local audio sources default to disabled', () {
+      final AudioSourceConfig source = AudioSourceConfig.localAudio(
+        label: 'local',
+        path: '/db/local.db',
+      );
+
+      expect(source.enabled, isFalse);
+    });
+
     test('round trips multiple local and remote sources plus Hibiki remote',
         () {
       final List<AudioSourceConfig> sources = <AudioSourceConfig>[
@@ -29,6 +38,7 @@ void main() {
         AudioSourceConfig.localAudio(
           label: 'daijisen',
           path: '/db/daijisen.db',
+          enabled: true,
         ),
         AudioSourceConfig.remoteAudio(
           url: 'https://a.test/?term={term}',
