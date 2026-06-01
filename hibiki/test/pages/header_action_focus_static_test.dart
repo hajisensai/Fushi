@@ -40,4 +40,17 @@ void main() {
     expect(actionTile, contains('HibikiIconButton('));
     expect(actionTile, isNot(contains('trailing: IconButton(')));
   });
+
+  test('reader history batch toolbar uses HibikiIconButton actions', () {
+    final String source = File(
+      'lib/src/pages/implementations/reader_hibiki_history_page.dart',
+    ).readAsStringSync();
+    final int barStart = source.indexOf('Widget _buildBatchActionBar()');
+    final int deleteStart =
+        source.indexOf('Future<void> _batchDeleteConfirm()');
+    final String selectionBar = source.substring(barStart, deleteStart);
+
+    expect(selectionBar, contains('HibikiIconButton('));
+    expect(selectionBar, isNot(contains('\n              IconButton(')));
+  });
 }

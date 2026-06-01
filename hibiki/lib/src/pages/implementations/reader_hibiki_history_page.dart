@@ -881,17 +881,19 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                 child: Text(t.batch_invert_selection),
               ),
               const Spacer(),
-              IconButton(
-                onPressed: _selectedKeys.isEmpty ? null : _batchShowTagPicker,
-                icon: const Icon(Icons.sell_outlined),
+              HibikiIconButton(
+                enabled: _selectedKeys.isNotEmpty,
+                onTap: _batchShowTagPicker,
+                icon: Icons.sell_outlined,
                 tooltip: t.tag_label,
               ),
               SizedBox(width: tokens.spacing.gap / 2),
-              IconButton(
-                onPressed: _selectedKeys.isEmpty ? null : _batchDeleteConfirm,
-                icon: const Icon(Icons.delete_outline),
+              HibikiIconButton(
+                enabled: _selectedKeys.isNotEmpty,
+                onTap: _batchDeleteConfirm,
+                icon: Icons.delete_outline,
                 tooltip: t.dialog_delete,
-                color: theme.colorScheme.error,
+                enabledColor: theme.colorScheme.error,
               ),
             ],
           ),
