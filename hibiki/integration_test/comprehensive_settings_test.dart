@@ -255,7 +255,7 @@ Future<void> _pushSettingsDestination(
 
 SettingsDestination _buildHarnessDestination(_HarnessState state) {
   return SettingsDestination(
-    id: SettingsDestinationId.diagnostics,
+    id: SettingsDestinationId.system,
     title: 'Harness',
     icon: Icons.tune,
     sections: <SettingsSection>[

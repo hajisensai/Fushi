@@ -6,16 +6,14 @@ import 'package:hibiki/src/settings/settings_context.dart';
 enum SettingsDestinationId {
   appearance,
   profiles,
-  readingDisplay,
-  readingControls,
+  reading,
   lookup,
   cardCreation,
   listening,
   syncBackup,
   system,
-  diagnostics,
   // Synthetic destination for the reader quick-settings dialog; its own id so
-  // it never collides with the real readingDisplay destination (HBK-AUDIT-131).
+  // it never collides with the real reading destination (HBK-AUDIT-131).
   readerQuickSettings,
 }
 

@@ -16,14 +16,12 @@ List<SettingsDestination> buildSettingsSchema(SettingsContext context) {
   return <SettingsDestination>[
     _appearanceDestination(),
     _profilesDestination(),
-    _readingDisplayDestination(),
-    _readingControlsDestination(),
+    _readingDestination(),
     _lookupDestination(),
     _cardCreationDestination(),
     _listeningDestination(),
     buildSyncBackupDestination(),
     _systemDestination(),
-    _diagnosticsDestination(),
   ];
 }
 
@@ -216,12 +214,12 @@ SettingsDestination _profilesDestination() {
   );
 }
 
-SettingsDestination _readingDisplayDestination() {
+SettingsDestination _readingDestination() {
   bool isVertical(SettingsContext c) =>
       c.readerSource.ttuWritingMode.startsWith('vertical');
   return SettingsDestination(
-    id: SettingsDestinationId.readingDisplay,
-    title: t.settings_destination_reading_display,
+    id: SettingsDestinationId.reading,
+    title: t.settings_destination_reading,
     summary: t.section_layout,
     icon: Icons.auto_stories_outlined,
     sections: <SettingsSection>[
@@ -633,17 +631,6 @@ SettingsDestination _readingDisplayDestination() {
           ),
         ],
       ),
-    ],
-  );
-}
-
-SettingsDestination _readingControlsDestination() {
-  return SettingsDestination(
-    id: SettingsDestinationId.readingControls,
-    title: t.settings_destination_reading_controls,
-    summary: t.section_navigation,
-    icon: Icons.touch_app_outlined,
-    sections: <SettingsSection>[
       SettingsSection(
         title: t.section_navigation,
         items: <SettingsItem>[
@@ -1194,17 +1181,6 @@ SettingsDestination _systemDestination() {
           ),
         ],
       ),
-    ],
-  );
-}
-
-SettingsDestination _diagnosticsDestination() {
-  return SettingsDestination(
-    id: SettingsDestinationId.diagnostics,
-    title: t.settings_destination_diagnostics,
-    summary: t.error_log_label(n: ErrorLogService.instance.entries.length),
-    icon: Icons.bug_report_outlined,
-    sections: <SettingsSection>[
       SettingsSection(
         title: t.settings_destination_diagnostics,
         items: <SettingsItem>[
