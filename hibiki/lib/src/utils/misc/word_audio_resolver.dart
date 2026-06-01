@@ -10,11 +10,14 @@ typedef LocalAudioQuery = Future<Map<String, dynamic>?> Function(
 typedef LocalAudioExtractor = Future<String?>
     Function(String file, String source, {int dbIndex});
 typedef AudioSourceListFetcher = Future<List<String>> Function(String url);
+typedef RemoteAudioQuery = Future<String?> Function(
+    String expression, String reading);
 
 class WordAudioResolver {
   WordAudioResolver({
     required this.queryLocalAudio,
     required this.extractLocalAudio,
+    this.queryRemoteAudio,
     AudioSourceListFetcher? fetchAudioSourceList,
   }) : fetchAudioSourceList = fetchAudioSourceList ??
             WordAudioResolver.defaultFetchAudioSourceList;
@@ -24,6 +27,7 @@ class WordAudioResolver {
 
   final LocalAudioQuery queryLocalAudio;
   final LocalAudioExtractor extractLocalAudio;
+  final RemoteAudioQuery? queryRemoteAudio;
   final AudioSourceListFetcher fetchAudioSourceList;
 
   Future<String?> resolve({
@@ -35,6 +39,11 @@ class WordAudioResolver {
       if (template == localAudioUrl) {
         final String? path = await _resolveLocal(expression, reading);
         if (path != null && path.isNotEmpty) return path;
+        final String? remote = await queryRemoteAudio?.call(
+          expression,
+          reading,
+        );
+        if (remote != null && remote.isNotEmpty) return remote;
         continue;
       }
 

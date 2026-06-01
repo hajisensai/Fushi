@@ -197,6 +197,7 @@ class DictionaryPopupWebViewState
         }
       },
       extractLocalAudio: TtsChannel.instance.extractLocalAudio,
+      queryRemoteAudio: appModel.lookupRemoteAudio,
     );
     return resolver.resolve(
       expression: expression,
@@ -549,14 +550,16 @@ class DictionaryPopupWebViewState
             if (!appModel.localAudioEnabled) return null;
             final info =
                 await TtsChannel.instance.queryLocalAudio(expression, reading);
-            if (info == null) return null;
+            if (info == null) {
+              return appModel.lookupRemoteAudio(expression, reading);
+            }
             final int dbIndex = (info['dbIndex'] as int?) ?? 0;
             final path = await TtsChannel.instance.extractLocalAudio(
               info['file']! as String,
               info['source']! as String,
               dbIndex: dbIndex,
             );
-            return path;
+            return path ?? appModel.lookupRemoteAudio(expression, reading);
           },
         );
 

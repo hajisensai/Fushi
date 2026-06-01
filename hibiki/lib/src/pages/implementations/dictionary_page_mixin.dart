@@ -108,6 +108,7 @@ mixin DictionaryPageMixin {
           }
         },
         extractLocalAudio: TtsChannel.instance.extractLocalAudio,
+        queryRemoteAudio: mixinAppModel.lookupRemoteAudio,
       );
       final String? url = await resolver.resolve(
         expression: expression,

@@ -1,8 +1,11 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/sync/hibiki_remote_lookup_service.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
+import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 
 void main() {
   group('HibikiSyncServer', () {
@@ -220,6 +223,107 @@ void main() {
       expect(response.headers.value('content-type'), 'application/json');
       client.close();
     });
+
+    test('remote dictionary lookup requires auth and returns popup payload',
+        () async {
+      final HibikiSyncServer lookupServer = HibikiSyncServer(
+        syncDataDir: tempDir.path,
+        port: 0,
+        token: token,
+        allowLan: true,
+        remoteLookupService: _FakeRemoteLookupService(),
+      );
+      await server.stop();
+      server = lookupServer;
+      await server.start();
+
+      final client = HttpClient();
+      final unauthenticated = await client.postUrl(Uri.parse(
+        'http://localhost:${server.port}/api/lookup/dictionary',
+      ));
+      unauthenticated.headers.contentType = ContentType.json;
+      unauthenticated.add(utf8.encode(jsonEncode(<String, dynamic>{
+        'term': '猫',
+        'wildcards': false,
+        'maximumTerms': 3,
+      })));
+      final rejected = await unauthenticated.close();
+      await rejected.drain<void>();
+      expect(rejected.statusCode, 401);
+
+      final request = await client.postUrl(Uri.parse(
+        'http://localhost:${server.port}/api/lookup/dictionary',
+      ));
+      request.headers
+        ..set('Authorization',
+            'Basic ${base64Encode(utf8.encode('hibiki:$token'))}')
+        ..contentType = ContentType.json;
+      request.add(utf8.encode(jsonEncode(<String, dynamic>{
+        'term': '猫',
+        'wildcards': true,
+        'maximumTerms': 3,
+      })));
+      final response = await request.close();
+      final body = await response.transform(utf8.decoder).join();
+      final json = jsonDecode(body) as Map<String, dynamic>;
+
+      expect(response.statusCode, 200);
+      expect(json['type'], 'dictionaryResult');
+      expect(json['result'], isA<Map<String, dynamic>>());
+      expect(json['popupJson'], contains('remote-popup'));
+      client.close();
+    });
+
+    test('remote audio lookup returns an opaque file id, not a filesystem path',
+        () async {
+      final HibikiSyncServer lookupServer = HibikiSyncServer(
+        syncDataDir: tempDir.path,
+        port: 0,
+        token: token,
+        allowLan: true,
+        remoteLookupService: _FakeRemoteLookupService(),
+      );
+      await server.stop();
+      server = lookupServer;
+      await server.start();
+
+      final client = HttpClient();
+      final request = await client.postUrl(Uri.parse(
+        'http://localhost:${server.port}/api/lookup/audio',
+      ));
+      request.headers
+        ..set('Authorization',
+            'Basic ${base64Encode(utf8.encode('hibiki:$token'))}')
+        ..contentType = ContentType.json;
+      request.add(utf8.encode(jsonEncode(<String, dynamic>{
+        'expression': '猫',
+        'reading': 'ねこ',
+        'path': '../../secret.mp3',
+      })));
+      final response = await request.close();
+      final body = await response.transform(utf8.decoder).join();
+      final json = jsonDecode(body) as Map<String, dynamic>;
+
+      expect(response.statusCode, 200);
+      expect(json['type'], 'audioResult');
+      expect(json['contentType'], 'audio/mpeg');
+      final String url = json['url'] as String;
+      expect(url, contains('/api/lookup/audio/file?id='));
+      expect(url, isNot(contains('secret.mp3')));
+
+      final fileRequest = await client.getUrl(Uri.parse(url));
+      fileRequest.headers.set('Authorization',
+          'Basic ${base64Encode(utf8.encode('hibiki:$token'))}');
+      final fileResponse = await fileRequest.close();
+      final bytes = await fileResponse.fold<List<int>>(
+        <int>[],
+        (List<int> previous, List<int> element) => previous..addAll(element),
+      );
+      expect(fileResponse.statusCode, 200);
+      expect(fileResponse.headers.value('content-type'), 'audio/mpeg');
+      expect(bytes, <int>[1, 2, 3, 4]);
+      client.close();
+    });
   });
 
   group('HibikiSyncServer.generateToken', () {
@@ -228,4 +332,38 @@ void main() {
       expect(tokens.toSet().length, 10);
     });
   });
+}
+
+class _FakeRemoteLookupService implements HibikiRemoteLookupService {
+  @override
+  Future<DictionarySearchResult?> searchDictionary({
+    required String term,
+    required bool wildcards,
+    required int maximumTerms,
+  }) async {
+    final DictionarySearchResult result = DictionarySearchResult(
+      searchTerm: term,
+      entries: <DictionaryEntry>[
+        DictionaryEntry(
+          dictionaryName: 'remote',
+          word: term,
+          reading: 'ねこ',
+          meaning: 'remote meaning',
+        ),
+      ],
+    );
+    result.popupJson = '{"source":"remote-popup"}';
+    return result;
+  }
+
+  @override
+  Future<RemoteAudioLookup?> lookupAudio({
+    required String expression,
+    required String reading,
+  }) async {
+    return RemoteAudioLookup(
+      bytes: Uint8List.fromList(<int>[1, 2, 3, 4]),
+      contentType: 'audio/mpeg',
+    );
+  }
 }

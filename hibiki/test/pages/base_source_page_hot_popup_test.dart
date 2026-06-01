@@ -37,6 +37,7 @@ class HotPopupTestAppModel extends AppModel {
     required bool searchWithWildcards,
     int? overrideMaximumTerms,
     bool useCache = true,
+    bool allowRemoteLookup = true,
   }) async {
     return DictionarySearchResult(searchTerm: searchTerm);
   }

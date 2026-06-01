@@ -46,6 +46,8 @@ import 'package:hibiki/src/models/dictionary_import_manager.dart';
 import 'package:hibiki/src/models/file_export_manager.dart';
 import 'package:hibiki/src/models/local_audio_manager.dart';
 import 'package:hibiki/src/models/anki_integration.dart';
+import 'package:hibiki/src/sync/hibiki_remote_lookup_client.dart';
+import 'package:hibiki/src/sync/hibiki_remote_lookup_service.dart';
 import 'package:hibiki/src/shortcuts/gamepad_service.dart';
 import 'package:hibiki/src/shortcuts/shortcut_preferences.dart';
 import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
@@ -1710,6 +1712,7 @@ class AppModel with ChangeNotifier {
     required bool searchWithWildcards,
     int? overrideMaximumTerms,
     bool useCache = true,
+    bool allowRemoteLookup = true,
   }) async {
     final swTotal = Stopwatch()..start();
     final swPreprocess = Stopwatch()..start();
@@ -1804,8 +1807,37 @@ class AppModel with ChangeNotifier {
     if (result != null && result.entries.isNotEmpty) {
       dictRepo.cacheSearchResult(cacheKey, result);
       return result;
-    } else {
-      return DictionarySearchResult(searchTerm: searchTerm);
+    }
+    if (allowRemoteLookup) {
+      final DictionarySearchResult? remoteResult =
+          await _searchRemoteDictionary(
+        searchTerm: searchTerm,
+        searchWithWildcards: searchWithWildcards,
+        maximumTerms: effectiveMaxTerms,
+      );
+      if (remoteResult != null) {
+        return remoteResult;
+      }
+    }
+    return DictionarySearchResult(searchTerm: searchTerm);
+  }
+
+  Future<DictionarySearchResult?> _searchRemoteDictionary({
+    required String searchTerm,
+    required bool searchWithWildcards,
+    required int maximumTerms,
+  }) async {
+    if (!remoteLookupEnabled) return null;
+    try {
+      return HibikiRemoteLookupClient(repo: SyncRepository(_database))
+          .searchDictionary(
+        term: searchTerm,
+        wildcards: searchWithWildcards,
+        maximumTerms: maximumTerms,
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log('remoteDictionaryLookup', e, stack);
+      return null;
     }
   }
 
@@ -2466,6 +2498,10 @@ class AppModel with ChangeNotifier {
   bool get collapseDictionaries => prefsRepo.collapseDictionaries;
   void toggleCollapseDictionaries() => prefsRepo.toggleCollapseDictionaries();
 
+  bool get remoteLookupEnabled => prefsRepo.remoteLookupEnabled;
+  Future<void> setRemoteLookupEnabled(bool value) =>
+      prefsRepo.setRemoteLookupEnabled(value);
+
   Map<String, String> get customDictCSS => prefsRepo.customDictCSS;
   String getCustomCSSForDict(String dictName) =>
       prefsRepo.getCustomCSSForDict(dictName);
@@ -2496,6 +2532,21 @@ class AppModel with ChangeNotifier {
 
   void setAudioSources(List<String> sources) =>
       prefsRepo.setAudioSources(sources);
+
+  Future<String?> lookupRemoteAudio(String expression, String reading) async {
+    if (!remoteLookupEnabled) return null;
+    try {
+      return HibikiRemoteLookupClient(repo: SyncRepository(_database))
+          .lookupAudioUrl(expression: expression, reading: reading);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('remoteAudioLookup', e, stack);
+      return null;
+    }
+  }
+
+  HibikiRemoteLookupService createRemoteLookupService() {
+    return _AppModelRemoteLookupService(this);
+  }
 
   // ── local audio DB (delegated to LocalAudioManager) ─────────────────
 
@@ -2630,6 +2681,77 @@ class AppModel with ChangeNotifier {
     } else {
       imageCache.maximumSize = 1000;
       imageCache.maximumSizeBytes = 100 << 20; // 100 MB
+    }
+  }
+}
+
+class _AppModelRemoteLookupService implements HibikiRemoteLookupService {
+  const _AppModelRemoteLookupService(this._appModel);
+
+  final AppModel _appModel;
+
+  @override
+  Future<DictionarySearchResult?> searchDictionary({
+    required String term,
+    required bool wildcards,
+    required int maximumTerms,
+  }) async {
+    final DictionarySearchResult result = await _appModel.searchDictionary(
+      searchTerm: term,
+      searchWithWildcards: wildcards,
+      overrideMaximumTerms: maximumTerms,
+      useCache: false,
+      allowRemoteLookup: false,
+    );
+    return result.entries.isEmpty ? null : result;
+  }
+
+  @override
+  Future<RemoteAudioLookup?> lookupAudio({
+    required String expression,
+    required String reading,
+  }) async {
+    if (!_appModel.localAudioEnabled) return null;
+    final Map<String, dynamic>? info =
+        await TtsChannel.instance.queryLocalAudio(
+      expression,
+      reading,
+    );
+    if (info == null) return null;
+    final String? file = info['file'] as String?;
+    final String? source = info['source'] as String?;
+    if (file == null || source == null) return null;
+    final int dbIndex = (info['dbIndex'] as int?) ?? 0;
+    final String? resolved = await TtsChannel.instance.extractLocalAudio(
+      file,
+      source,
+      dbIndex: dbIndex,
+    );
+    if (resolved == null || resolved.isEmpty) return null;
+    final Uri? uri = Uri.tryParse(resolved);
+    final String filePath =
+        uri != null && uri.scheme == 'file' ? uri.toFilePath() : resolved;
+    final File audioFile = File(filePath);
+    if (!audioFile.existsSync()) return null;
+    return RemoteAudioLookup(
+      bytes: await audioFile.readAsBytes(),
+      contentType: _remoteAudioContentType(filePath),
+    );
+  }
+
+  String _remoteAudioContentType(String filePath) {
+    switch (path.extension(filePath).toLowerCase()) {
+      case '.mp3':
+        return 'audio/mpeg';
+      case '.m4a':
+      case '.m4b':
+        return 'audio/mp4';
+      case '.ogg':
+        return 'audio/ogg';
+      case '.flac':
+        return 'audio/flac';
+      default:
+        return 'application/octet-stream';
     }
   }
 }

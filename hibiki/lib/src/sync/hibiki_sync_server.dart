@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:hibiki/src/sync/hibiki_remote_lookup_service.dart';
 import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:shelf/shelf_io.dart' as shelf_io;
@@ -53,15 +54,20 @@ class HibikiSyncServer {
     required int port,
     required String token,
     bool allowLan = false,
+    HibikiRemoteLookupService? remoteLookupService,
   })  : syncDataDir = p.join(syncDataDir, 'sync-data'),
         _requestedPort = port,
         _token = token,
-        _allowLan = allowLan;
+        _allowLan = allowLan,
+        _remoteLookupService = remoteLookupService;
 
   final String syncDataDir;
   final int _requestedPort;
   final String _token;
   final bool _allowLan;
+  final HibikiRemoteLookupService? _remoteLookupService;
+  final Map<String, _RemoteAudioToken> _remoteAudioTokens =
+      <String, _RemoteAudioToken>{};
   HttpServer? _server;
 
   bool get isRunning => _server != null;
@@ -139,6 +145,10 @@ class HibikiSyncServer {
   Future<shelf.Response> _handleRequest(shelf.Request request) async {
     final method = request.method.toUpperCase();
     final reqPath = Uri.decodeFull('/${request.url.path}');
+    if (reqPath.startsWith('/api/lookup/')) {
+      return _handleLookupApi(request, method, reqPath);
+    }
+
     final fsPath = p.canonicalize(p.join(syncDataDir, reqPath.substring(1)));
     final canonicalRoot = p.canonicalize(syncDataDir);
     if (fsPath != canonicalRoot &&
@@ -161,12 +171,146 @@ class HibikiSyncServer {
         return _handleHead(fsPath);
       case 'OPTIONS':
         return shelf.Response.ok('', headers: {
-          'Allow': 'OPTIONS, GET, PUT, DELETE, MKCOL, PROPFIND, HEAD',
+          'Allow': 'OPTIONS, GET, POST, PUT, DELETE, MKCOL, PROPFIND, HEAD',
           'DAV': '1',
         });
       default:
         return shelf.Response(405);
     }
+  }
+
+  Future<shelf.Response> _handleLookupApi(
+    shelf.Request request,
+    String method,
+    String reqPath,
+  ) async {
+    if (reqPath == '/api/lookup/dictionary') {
+      if (method != 'POST') return shelf.Response(405);
+      return _handleDictionaryLookup(request);
+    }
+    if (reqPath == '/api/lookup/audio') {
+      if (method != 'POST') return shelf.Response(405);
+      return _handleAudioLookup(request);
+    }
+    if (reqPath == '/api/lookup/audio/file') {
+      if (method != 'GET' && method != 'HEAD') return shelf.Response(405);
+      return _handleAudioFile(request, method == 'HEAD');
+    }
+    return shelf.Response.notFound('Not found');
+  }
+
+  Future<shelf.Response> _handleDictionaryLookup(shelf.Request request) async {
+    final HibikiRemoteLookupService? service = _remoteLookupService;
+    if (service == null) return shelf.Response.notFound('Remote lookup off');
+    final Map<String, dynamic>? body = await _readJsonObject(request);
+    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
+
+    final String term = body['term']?.toString() ?? '';
+    if (term.trim().isEmpty) {
+      return _jsonResponse(<String, dynamic>{
+        'type': 'dictionaryResult',
+        'result': null,
+        'popupJson': null,
+      });
+    }
+    final bool wildcards = body['wildcards'] as bool? ?? false;
+    final int maximumTerms = (body['maximumTerms'] as num?)?.toInt() ?? 10;
+    final result = await service.searchDictionary(
+      term: term,
+      wildcards: wildcards,
+      maximumTerms: maximumTerms,
+    );
+
+    return _jsonResponse(<String, dynamic>{
+      'type': 'dictionaryResult',
+      'result': result == null ? null : jsonDecode(result.toJson()),
+      'popupJson': result?.popupJson,
+    });
+  }
+
+  Future<shelf.Response> _handleAudioLookup(shelf.Request request) async {
+    final HibikiRemoteLookupService? service = _remoteLookupService;
+    if (service == null) return shelf.Response.notFound('Remote lookup off');
+    final Map<String, dynamic>? body = await _readJsonObject(request);
+    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
+
+    final String expression = body['expression']?.toString() ?? '';
+    final String reading = body['reading']?.toString() ?? '';
+    if (expression.trim().isEmpty) return _audioMissResponse();
+
+    final RemoteAudioLookup? lookup = await service.lookupAudio(
+      expression: expression,
+      reading: reading,
+    );
+    if (lookup == null) return _audioMissResponse();
+
+    final String id = _generateAudioToken();
+    _remoteAudioTokens[id] = _RemoteAudioToken(
+      bytes: lookup.bytes,
+      contentType: lookup.contentType,
+      createdAt: DateTime.now(),
+    );
+    final Uri url = request.requestedUri.replace(
+      path: '/api/lookup/audio/file',
+      queryParameters: <String, String>{'id': id},
+    );
+    return _jsonResponse(<String, dynamic>{
+      'type': 'audioResult',
+      'url': url.toString(),
+      'contentType': lookup.contentType,
+    });
+  }
+
+  shelf.Response _handleAudioFile(shelf.Request request, bool headOnly) {
+    _pruneAudioTokens();
+    final String? id = request.url.queryParameters['id'];
+    final _RemoteAudioToken? token = id == null ? null : _remoteAudioTokens[id];
+    if (token == null) return shelf.Response.notFound('Not found');
+    return shelf.Response.ok(
+      headOnly ? null : token.bytes,
+      headers: <String, String>{
+        'Content-Type': token.contentType,
+        'Content-Length': '${token.bytes.length}',
+      },
+    );
+  }
+
+  shelf.Response _audioMissResponse() => _jsonResponse(<String, dynamic>{
+        'type': 'audioResult',
+        'url': null,
+        'contentType': null,
+      });
+
+  Future<Map<String, dynamic>?> _readJsonObject(shelf.Request request) async {
+    try {
+      final String body = await request.readAsString();
+      final dynamic decoded = jsonDecode(body);
+      if (decoded is Map<String, dynamic>) return decoded;
+      if (decoded is Map) return Map<String, dynamic>.from(decoded);
+    } catch (_) {
+      return null;
+    }
+    return null;
+  }
+
+  shelf.Response _jsonResponse(Map<String, dynamic> body) {
+    return shelf.Response.ok(
+      jsonEncode(body),
+      headers: <String, String>{'Content-Type': 'application/json'},
+    );
+  }
+
+  String _generateAudioToken() {
+    final Random random = Random.secure();
+    final List<int> bytes = List<int>.generate(18, (_) => random.nextInt(256));
+    return base64UrlEncode(bytes);
+  }
+
+  void _pruneAudioTokens() {
+    final DateTime cutoff = DateTime.now().subtract(const Duration(minutes: 5));
+    _remoteAudioTokens.removeWhere(
+      (String _, _RemoteAudioToken token) => token.createdAt.isBefore(cutoff),
+    );
   }
 
   Future<shelf.Response> _handlePropfind(
@@ -356,4 +500,16 @@ class _DavEntry {
   final bool isCollection;
   final String displayName;
   final int contentLength;
+}
+
+class _RemoteAudioToken {
+  const _RemoteAudioToken({
+    required this.bytes,
+    required this.contentType,
+    required this.createdAt,
+  });
+
+  final Uint8List bytes;
+  final String contentType;
+  final DateTime createdAt;
 }

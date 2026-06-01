@@ -222,6 +222,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
           }
         },
         extractLocalAudio: TtsChannel.instance.extractLocalAudio,
+        queryRemoteAudio: appModel.lookupRemoteAudio,
       );
       final String? url = await resolver.resolve(
         expression: expression,

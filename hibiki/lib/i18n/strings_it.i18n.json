@@ -1173,5 +1173,7 @@
     "shortcut_action_reader_toggle_furigana": "Toggle furigana",
     "on_screen_keyboard": "On-screen keyboard",
     "app_ui_scale": "UI size",
-    "app_ui_scale_hint": "Scales app text and spacing. Lower it on large screens if controls feel oversized."
+    "app_ui_scale_hint": "Scales app text and spacing. Lower it on large screens if controls feel oversized.",
+    "remote_lookup_enabled": "Use remote Hibiki lookup",
+    "remote_lookup_enabled_hint": "When local dictionaries or Local Audio miss, query the configured Hibiki server"
 }

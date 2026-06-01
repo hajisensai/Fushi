@@ -113,6 +113,14 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  bool get remoteLookupEnabled =>
+      getPref('remote_lookup_enabled', defaultValue: false) as bool;
+
+  Future<void> setRemoteLookupEnabled(bool value) async {
+    await setPref('remote_lookup_enabled', value);
+    notifyListeners();
+  }
+
   final int defaultSearchDebounceDelay = 100;
 
   int get searchDebounceDelay => getPref('auto_search_debounce_delay',

@@ -1696,6 +1696,7 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
       port: _port,
       token: _token!,
       allowLan: true,
+      remoteLookupService: appModel.createRemoteLookupService(),
     );
     try {
       await _server!.start();

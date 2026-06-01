@@ -402,6 +402,18 @@ SettingsDestination _lookupDestination() {
             },
           ),
           SettingsSwitchItem(
+            id: 'lookup.remote_lookup',
+            title: t.remote_lookup_enabled,
+            subtitle: t.remote_lookup_enabled_hint,
+            icon: Icons.hub_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.remoteLookupEnabled,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setRemoteLookupEnabled(value);
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSwitchItem(
             id: 'lookup.auto_read_on_lookup',
             title: t.auto_read_on_lookup,
             icon: Icons.record_voice_over_outlined,
