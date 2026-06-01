@@ -3,6 +3,8 @@ import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/focus/hibiki_focus_target.dart';
 import 'package:hibiki/src/focus/page_scroll_registry.dart';
+import 'package:hibiki/src/shortcuts/gamepad_service.dart';
+import 'package:hibiki/src/shortcuts/input_binding.dart';
 import 'package:hibiki/src/utils/components/hibiki_gamepad_keyboard.dart';
 import 'package:hibiki/src/utils/components/hibiki_icon_button.dart';
 import 'package:hibiki/src/utils/components/hibiki_text_selection_controls.dart';
@@ -683,18 +685,20 @@ class _HibikiTagChipState extends State<HibikiTagChip> {
       ),
       child: content,
     );
-    if (widget.onTap == null) return chip;
-    final Widget tappable = Material(
-      type: MaterialType.transparency,
-      borderRadius: tokens.radii.chipRadius,
-      child: InkWell(
-        borderRadius: tokens.radii.chipRadius,
-        onTap: widget.onTap,
-        child: chip,
-      ),
-    );
+    final Widget surface = widget.onTap == null
+        ? chip
+        : Material(
+            type: MaterialType.transparency,
+            borderRadius: tokens.radii.chipRadius,
+            child: InkWell(
+              borderRadius: tokens.radii.chipRadius,
+              onTap: widget.onTap,
+              child: chip,
+            ),
+          );
+    if (widget.onTap == null && widget.onDeleted == null) return surface;
     // Outside a HibikiFocusRoot stay a bare tappable chip (zero overhead).
-    if (HibikiFocusRoot.maybeControllerOf(context) == null) return tappable;
+    if (HibikiFocusRoot.maybeControllerOf(context) == null) return surface;
     return Actions(
       actions: <Type, Action<Intent>>{
         ActivateIntent: CallbackAction<ActivateIntent>(
@@ -703,10 +707,19 @@ class _HibikiTagChipState extends State<HibikiTagChip> {
             return null;
           },
         ),
+        GamepadButtonIntent: CallbackAction<GamepadButtonIntent>(
+          onInvoke: (GamepadButtonIntent intent) {
+            if (intent.button != GamepadButton.x || widget.onDeleted == null) {
+              return false;
+            }
+            widget.onDeleted!();
+            return true;
+          },
+        ),
       },
       child: HibikiFocusTarget(
         id: widget.focusId ?? _fallbackFocusId,
-        child: tappable,
+        child: surface,
       ),
     );
   }
