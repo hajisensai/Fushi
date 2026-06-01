@@ -106,4 +106,33 @@ void main() {
     expect(source, contains('_buildDictionaryTypePicker'));
     expect(source, contains('_buildDictionaryVisibilityButton'));
   });
+
+  test('dictionary folder import is not Android-only', () {
+    final String source =
+        File('lib/src/pages/implementations/dictionary_dialog_page.dart')
+            .readAsStringSync();
+    final int pickerStart = source
+        .indexOf('  Future<({Directory directory, Directory? cleanupDir})?>');
+    final int folderImportStart =
+        source.indexOf('  Future<void> _importDictionaryFolder()');
+    final int buildContentStart = source.indexOf('  Widget buildContent()');
+
+    expect(pickerStart, isNonNegative);
+    expect(folderImportStart, isNonNegative);
+    expect(buildContentStart, greaterThan(folderImportStart));
+
+    final String pickerSource =
+        source.substring(pickerStart, folderImportStart);
+    final String folderImportSource =
+        source.substring(folderImportStart, buildContentStart);
+
+    expect(
+        folderImportSource, isNot(contains('if (!Platform.isAndroid) return')));
+    expect(pickerSource, contains('FilePicker.platform.getDirectoryPath'));
+    expect(
+        folderImportSource, contains('appModel.importDictionaryFromDirectory'));
+    expect(
+        folderImportSource, contains('directory: pickedDirectory.directory'));
+    expect(folderImportSource, contains('pickedDirectory.cleanupDir'));
+  });
 }

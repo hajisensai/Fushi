@@ -637,6 +637,25 @@ class _DictionaryDialogPageState extends BasePageState {
 
   static const _safChannel = HibikiChannels.saf;
 
+  Future<({Directory directory, Directory? cleanupDir})?>
+      _pickDictionaryImportDirectory() async {
+    if (Platform.isAndroid) {
+      final Directory tempDir = Directory(
+        '${appModel.dictionaryResourceDirectory.path}/saf_import_temp',
+      );
+      final String? result = await _safChannel.invokeMethod<String>(
+        'pickAndCopyDirectory',
+        {'destPath': tempDir.path},
+      );
+      if (result == null) return null;
+      return (directory: tempDir, cleanupDir: tempDir);
+    }
+
+    final String? selectedPath = await FilePicker.platform.getDirectoryPath();
+    if (selectedPath == null) return null;
+    return (directory: Directory(selectedPath), cleanupDir: null);
+  }
+
   Future<void> _importDictionaryFolder() async {
     ValueNotifier<String> progressNotifier =
         ValueNotifier<String>(t.import_start);
@@ -646,16 +665,9 @@ class _DictionaryDialogPageState extends BasePageState {
       debugPrint('[Dictionary Import] ${progressNotifier.value}');
     });
 
-    final tempDir = Directory(
-      '${appModel.dictionaryResourceDirectory.path}/saf_import_temp',
-    );
-
-    if (!Platform.isAndroid) return;
-    final result = await _safChannel.invokeMethod<String>(
-      'pickAndCopyDirectory',
-      {'destPath': tempDir.path},
-    );
-    if (result == null) return;
+    final ({Directory? cleanupDir, Directory directory})? pickedDirectory =
+        await _pickDictionaryImportDirectory();
+    if (pickedDirectory == null) return;
 
     if (mounted) {
       showAppDialog(
@@ -673,7 +685,7 @@ class _DictionaryDialogPageState extends BasePageState {
 
     try {
       await appModel.importDictionaryFromDirectory(
-        directory: tempDir,
+        directory: pickedDirectory.directory,
         progressNotifier: progressNotifier,
         countNotifier: countNotifier,
         totalNotifier: totalNotifier,
@@ -692,8 +704,9 @@ class _DictionaryDialogPageState extends BasePageState {
       progressNotifier.value = '$e';
       await Future.delayed(const Duration(seconds: 3));
     } finally {
-      if (tempDir.existsSync()) {
-        tempDir.deleteSync(recursive: true);
+      final Directory? cleanupDir = pickedDirectory.cleanupDir;
+      if (cleanupDir != null && cleanupDir.existsSync()) {
+        cleanupDir.deleteSync(recursive: true);
       }
     }
 
