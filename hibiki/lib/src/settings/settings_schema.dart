@@ -82,7 +82,7 @@ SettingsDestination buildReaderQuickSettingsDestination(
     sections: <SettingsSection>[
       sectionFor(ReaderGroup.appearance, t.settings_destination_appearance),
       sectionFor(ReaderGroup.layout, t.section_layout),
-      sectionFor(ReaderGroup.behavior, t.section_navigation),
+      sectionFor(ReaderGroup.behavior, t.settings_destination_reading_controls),
       sectionFor(ReaderGroup.audiobook, t.section_audiobook),
     ].where((SettingsSection s) => s.items.isNotEmpty).toList(growable: false),
   );

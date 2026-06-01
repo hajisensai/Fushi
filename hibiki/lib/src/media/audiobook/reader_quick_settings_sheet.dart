@@ -476,10 +476,10 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
             ? _buildLyricsDisplaySection()
             : _buildReaderGroupContent(ReaderGroup.layout, t.section_layout);
       case 'behavior':
-        title = t.section_navigation;
+        title = t.settings_destination_reading_controls;
         content = _buildReaderGroupContent(
           ReaderGroup.behavior,
-          t.section_navigation,
+          t.settings_destination_reading_controls,
         );
       case 'location':
         title = t.section_navigation;
