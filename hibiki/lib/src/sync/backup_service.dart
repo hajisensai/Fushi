@@ -107,6 +107,7 @@ class BackupService {
       // delete so the secrets are not recoverable from freelist pages.
       // (HBK-AUDIT-012)
       await _stripCredentials(tmpDir.path);
+      await _stripDictionaryState(tmpDir.path);
 
       final books = await _db.getAllEpubBooks();
       final stats = await _db.getAllReadingStatistics();
@@ -166,6 +167,22 @@ class BackupService {
         " OR key LIKE 'sync_%private_key%'"
         " OR key = 'sync_desktop_credentials'",
       );
+      await db.customStatement('VACUUM');
+      await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
+    } finally {
+      await db.close();
+    }
+  }
+
+  /// Removes dictionary rows from the exported DB copy. Dictionary entries and
+  /// media live under `dictionaryResources/`, not inside this backup archive;
+  /// keeping only DB metadata would restore ghost dictionaries that cannot be
+  /// queried.
+  static Future<void> _stripDictionaryState(String dbDirectory) async {
+    final db = HibikiDatabase(dbDirectory);
+    try {
+      await db.clearDictionaryHistory();
+      await db.clearAllDictionaryMeta();
       await db.customStatement('VACUUM');
       await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
     } finally {

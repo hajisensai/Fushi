@@ -314,6 +314,58 @@ void main() {
       }
     });
 
+    test('exportBackup strips dictionary state without touching source DB',
+        () async {
+      final dbDir = await Directory.systemTemp.createTemp('backup_dict_');
+      final onDiskDb = HibikiDatabase(dbDir.path);
+      try {
+        await onDiskDb.upsertDictionaryMeta(
+          DictionaryMetadataCompanion.insert(
+            name: 'JMdict',
+            formatKey: 'yomichan',
+            order: 0,
+          ),
+        );
+        await onDiskDb.replaceAllDictionaryHistory([
+          DictionaryHistoryCompanion.insert(
+            position: 0,
+            resultJson: '{"searchTerm":"猫"}',
+          ),
+        ]);
+
+        final service = BackupService(
+          db: onDiskDb,
+          dbDirectory: dbDir.path,
+          appVersion: '2.0.0',
+        );
+        final outputPath = '${tmpDir.path}/dictionary_test.zip';
+        await service.exportBackup(outputPath);
+
+        expect(await onDiskDb.getAllDictionaryMetadata(), hasLength(1));
+        expect(await onDiskDb.getAllDictionaryHistory(), hasLength(1));
+
+        final archive =
+            ZipDecoder().decodeBytes(await File(outputPath).readAsBytes());
+        final dbBytes = archive.findFile('hibiki.db')!.content as List<int>;
+        final restoreDir =
+            await Directory.systemTemp.createTemp('backup_dict_r_');
+        await File('${restoreDir.path}/hibiki.db').writeAsBytes(dbBytes);
+        final restored = HibikiDatabase(restoreDir.path);
+        try {
+          expect(await restored.getAllDictionaryMetadata(), isEmpty);
+          expect(await restored.getAllDictionaryHistory(), isEmpty);
+        } finally {
+          await restored.close();
+          if (restoreDir.existsSync()) {
+            await restoreDir.delete(recursive: true);
+          }
+        }
+      } finally {
+        await onDiskDb.close();
+        if (dbDir.existsSync()) await dbDir.delete(recursive: true);
+      }
+    });
+
     test('export then import round-trip preserves database content', () async {
       // Source DB on disk: insert a book and a reading statistic.
       final srcDir = await Directory.systemTemp.createTemp('backup_src_');
