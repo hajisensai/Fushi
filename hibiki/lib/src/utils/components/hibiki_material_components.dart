@@ -1508,7 +1508,7 @@ class HibikiFilePickerRow extends StatelessWidget {
   }
 }
 
-class HibikiOverflowMenu<T> extends StatelessWidget {
+class HibikiOverflowMenu<T> extends StatefulWidget {
   const HibikiOverflowMenu({
     required this.items,
     required this.onSelected,
@@ -1533,22 +1533,50 @@ class HibikiOverflowMenu<T> extends StatelessWidget {
   final double? splashRadius;
 
   @override
+  State<HibikiOverflowMenu<T>> createState() => _HibikiOverflowMenuState<T>();
+}
+
+class _HibikiOverflowMenuState<T> extends State<HibikiOverflowMenu<T>> {
+  final GlobalKey<PopupMenuButtonState<T>> _menuKey =
+      GlobalKey<PopupMenuButtonState<T>>();
+  late final HibikiFocusId _fallbackFocusId =
+      HibikiFocusId('hibiki-overflow-menu-${identityHashCode(this)}');
+
+  @override
   Widget build(BuildContext context) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return PopupMenuButton<T>(
-      tooltip: tooltip,
-      icon: child == null ? iconWidget ?? Icon(icon, size: iconSize) : null,
+    final PopupMenuButton<T> menu = PopupMenuButton<T>(
+      key: _menuKey,
+      tooltip: widget.tooltip,
+      icon: widget.child == null
+          ? widget.iconWidget ?? Icon(widget.icon, size: widget.iconSize)
+          : null,
       shape: RoundedRectangleBorder(borderRadius: tokens.radii.menuRadius),
       color: tokens.surfaces.overlay,
       surfaceTintColor: Colors.transparent,
       menuPadding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
-      padding: padding,
-      splashRadius: splashRadius,
+      padding: widget.padding,
+      splashRadius: widget.splashRadius,
       position: PopupMenuPosition.under,
       popUpAnimationStyle: hibikiMd3MenuAnimationStyle,
-      onSelected: onSelected,
-      itemBuilder: (BuildContext context) => items,
-      child: child,
+      onSelected: widget.onSelected,
+      itemBuilder: (BuildContext context) => widget.items,
+      child: widget.child,
+    );
+    if (HibikiFocusRoot.maybeControllerOf(context) == null) return menu;
+    return Actions(
+      actions: <Type, Action<Intent>>{
+        ActivateIntent: CallbackAction<ActivateIntent>(
+          onInvoke: (_) {
+            _menuKey.currentState?.showButtonMenu();
+            return null;
+          },
+        ),
+      },
+      child: HibikiFocusTarget(
+        id: _fallbackFocusId,
+        child: menu,
+      ),
     );
   }
 }

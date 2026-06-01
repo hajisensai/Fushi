@@ -272,6 +272,48 @@ void main() {
     expect(deleted, isTrue);
   });
 
+  testWidgets('HibikiOverflowMenu registers with the focus root and opens',
+      (WidgetTester tester) async {
+    int? selected;
+    await tester.pumpWidget(
+      buildSubject(
+        HibikiFocusRoot(
+          child: Column(
+            children: <Widget>[
+              HibikiOverflowMenu<int>(
+                items: <PopupMenuEntry<int>>[
+                  HibikiPopupMenuItem<int>(label: 'Delete', value: 1),
+                ],
+                onSelected: (int value) => selected = value,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+      tester.element(find.byType(HibikiOverflowMenu<int>)),
+    );
+    controller.ensureFocus();
+    await tester.pump();
+
+    expect(controller.activeId, isNotNull,
+        reason:
+            'overflow menus are real command surfaces, not mouse-only dots');
+    Actions.maybeInvoke<ActivateIntent>(
+      controller.activeContext!,
+      const ActivateIntent(),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Delete'), findsOneWidget);
+    await tester.tap(find.text('Delete'));
+    await tester.pumpAndSettle();
+    expect(selected, 1);
+  });
+
   testWidgets('HibikiBadge uses the shared compact radius',
       (WidgetTester tester) async {
     await tester.pumpWidget(
