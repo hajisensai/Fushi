@@ -380,6 +380,7 @@ SettingsDestination _readingDestination() {
             id: 'reading_display.spread_mode',
             title: t.spread_mode,
             icon: Icons.menu_book_outlined,
+            controlBelow: true,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
               order: 5,
@@ -411,6 +412,7 @@ SettingsDestination _readingDestination() {
             id: 'reading_display.spread_direction',
             title: t.spread_direction,
             icon: Icons.swap_horiz_outlined,
+            controlBelow: true,
             visible: (SettingsContext c) =>
                 c.readerSource.ttuSpreadMode != 'off',
             reader: const ReaderPlacement(
@@ -439,6 +441,7 @@ SettingsDestination _readingDestination() {
             id: 'reading_display.writing_mode',
             title: t.ttu_writing_direction,
             icon: Icons.text_rotate_vertical,
+            controlBelow: true,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
               order: 7,
@@ -465,6 +468,7 @@ SettingsDestination _readingDestination() {
             id: 'reading_display.view_mode',
             title: t.ttu_view_mode_label,
             icon: Icons.chrome_reader_mode_outlined,
+            controlBelow: true,
             reader: const ReaderPlacement(
               group: ReaderGroup.appearance,
               order: 3,
@@ -491,6 +495,7 @@ SettingsDestination _readingDestination() {
             id: 'reading_display.vert_text_orient',
             title: t.ttu_vert_text_orient,
             icon: Icons.text_rotation_none,
+            controlBelow: true,
             visible: isVertical,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
