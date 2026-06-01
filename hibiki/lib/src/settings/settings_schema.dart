@@ -4,7 +4,6 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
-import 'package:hibiki/src/pages/implementations/book_css_editor_page.dart';
 import 'package:hibiki/src/settings/settings_actions.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
@@ -369,16 +368,8 @@ SettingsDestination _readingDestination() {
                 v.round() == 0 ? t.ttu_page_columns_auto : '${v.round()}',
             onChanged: (SettingsContext c, double v) {
               c.readerSource.setTtuPageColumns(v.round());
-              notifyReaderSettingsChanged(c);
+              notifyReaderLayoutChanged(c);
             },
-          ),
-          SettingsNavigationItem(
-            id: 'reading_display.book_css',
-            title: t.book_css_editor_title,
-            subtitle: t.book_css_editor_no_extract_dir,
-            icon: Icons.code_outlined,
-            visible: (_) => false,
-            builder: (_) => const BookCssEditorPage(extractDir: ''),
           ),
         ],
       ),
@@ -413,7 +404,7 @@ SettingsDestination _readingDestination() {
             selected: (SettingsContext c) => c.readerSource.ttuSpreadMode,
             onChanged: (SettingsContext c, String v) {
               c.readerSource.setTtuSpreadMode(v);
-              notifyReaderSettingsChanged(c);
+              notifyReaderLayoutChanged(c);
             },
           ),
           SettingsSegmentedItem<String>(
@@ -441,7 +432,7 @@ SettingsDestination _readingDestination() {
             selected: (SettingsContext c) => c.readerSource.ttuSpreadDirection,
             onChanged: (SettingsContext c, String v) {
               c.readerSource.setTtuSpreadDirection(v);
-              notifyReaderSettingsChanged(c);
+              notifyReaderLayoutChanged(c);
             },
           ),
           SettingsSegmentedItem<String>(
@@ -467,7 +458,7 @@ SettingsDestination _readingDestination() {
             selected: (SettingsContext c) => c.readerSource.ttuWritingMode,
             onChanged: (SettingsContext c, String v) {
               c.readerSource.setTtuWritingMode(v);
-              notifyReaderSettingsChanged(c);
+              notifyReaderLayoutChanged(c);
             },
           ),
           SettingsSegmentedItem<String>(
@@ -493,7 +484,7 @@ SettingsDestination _readingDestination() {
             selected: (SettingsContext c) => c.readerSource.ttuViewMode,
             onChanged: (SettingsContext c, String v) {
               c.readerSource.setTtuViewMode(v);
-              notifyReaderSettingsChanged(c);
+              notifyReaderLayoutChanged(c);
             },
           ),
           SettingsSegmentedItem<String>(
@@ -624,7 +615,7 @@ SettingsDestination _readingDestination() {
                 c.readerSource.ttuPrioritizeReaderStyles,
             onChanged: (SettingsContext c, bool value) {
               c.readerSource.setTtuPrioritizeReaderStyles(value);
-              notifyReaderSettingsChanged(c);
+              notifyReaderLayoutChanged(c);
             },
           ),
         ],
@@ -1035,10 +1026,6 @@ SettingsDestination _listeningDestination() {
             id: 'listening.media_notification',
             title: t.show_media_notification,
             icon: Icons.notifications_outlined,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.audiobook,
-              order: 0,
-            ),
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.showMediaNotification,
             onChanged: (SettingsContext settingsContext, bool value) async {
@@ -1052,10 +1039,6 @@ SettingsDestination _listeningDestination() {
             subtitle: t.floating_lyric_hint,
             icon: Icons.subtitles_outlined,
             visible: (_) => Platform.isAndroid,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.audiobook,
-              order: 1,
-            ),
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.showFloatingLyric,
             onChanged: (SettingsContext settingsContext, bool value) async {
@@ -1071,10 +1054,6 @@ SettingsDestination _listeningDestination() {
             min: 8,
             max: 64,
             step: 1,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.audiobook,
-              order: 2,
-            ),
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.floatingLyricFontSize,
             format: (double value) => value.round().toString(),

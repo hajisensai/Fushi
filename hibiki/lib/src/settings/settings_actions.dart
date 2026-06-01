@@ -143,6 +143,16 @@ void notifyReaderSettingsChanged(SettingsContext settingsContext) {
   settingsContext.refresh();
 }
 
+/// Like [notifyReaderSettingsChanged], but for structural layout keys (writing
+/// mode / view mode / page columns / spread mode / spread direction /
+/// prioritize reader styles) whose effect needs a full chapter reload rather
+/// than a live CSS re-injection. Fires the reader's layout-reload hook so the
+/// pagination engine re-runs; the CSS-only path cannot express these changes.
+void notifyReaderLayoutChanged(SettingsContext settingsContext) {
+  ReaderHibikiSource.onLayoutReloadLive?.call();
+  settingsContext.refresh();
+}
+
 Future<void> setKeepScreenAwake(
   SettingsContext settingsContext,
   bool value,

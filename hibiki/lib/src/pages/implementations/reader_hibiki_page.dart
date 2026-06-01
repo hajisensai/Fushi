@@ -257,6 +257,11 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         setState(() {});
       }
     };
+    ReaderHibikiSource.onLayoutReloadLive = () {
+      if (mounted) {
+        _reloadWithCurrentSettings();
+      }
+    };
     _initBook();
   }
 
@@ -912,6 +917,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       return true;
     }());
     ReaderHibikiSource.onSettingsChangedLive = null;
+    ReaderHibikiSource.onLayoutReloadLive = null;
     FocusManager.instance.removeHighlightModeListener(_onHighlightModeChanged);
     WidgetsBinding.instance.removeObserver(this);
     _progressPollTimer?.cancel();

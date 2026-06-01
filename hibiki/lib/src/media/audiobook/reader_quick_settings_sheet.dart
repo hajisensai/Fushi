@@ -138,6 +138,14 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
   late List<FavoriteSentence> _favorites =
       List<FavoriteSentence>.of(widget.favoriteSentences);
 
+  // Local mirror of the audiobook overlay toggles. These are NOT schema items:
+  // flipping them needs reader-page side effects (overlay show/hide, permission
+  // request, live floating-lyric style) that a preference-only schema item
+  // cannot perform, so the rows stay bespoke and call back into the page.
+  late bool _localShowFloatingLyric = widget.showFloatingLyric;
+  late bool _localShowMediaNotification = widget.showMediaNotification;
+  late double _localFloatingLyricFontSize = widget.floatingLyricFontSize;
+
   @override
   void initState() {
     super.initState();
@@ -498,16 +506,15 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
   }
 
   /// 把某个 [ReaderGroup] 投影成 schema 渲染内容。写路径走 schema item 的
-  /// `setTtu*` + `notifyReaderSettingsChanged`（= `onSettingsChangedLive` CSS
-  /// 实时更新），与本面板的 `_updateSetting` 落同一存储。
+  /// `setTtu*` + notify helper，与本面板的 `_updateSetting` 落同一存储。
   ///
-  /// refresh 回调负责把内存镜像 `_settings` 从 `_src` 重建并 setState；
-  /// appearance/layout 组含结构性布局键（view mode / writing mode / columns /
-  /// spread / prioritize reader styles），仅 CSS 注入不够，需要额外触发整章
-  /// 重排（`onReloadChapter`），对齐旧 `_updateSetting` 对 layout key 的处理。
+  /// 实时更新由 notify helper 经 `ReaderHibikiSource` 的回调驱动，且是按 key
+  /// 精确的：CSS-only key 走 `notifyReaderSettingsChanged`（=
+  /// `onSettingsChangedLive`，CSS 注入），结构性布局 key（view mode / writing
+  /// mode / columns / spread / prioritize reader styles）走
+  /// `notifyReaderLayoutChanged`（= `onLayoutReloadLive`，整章重排）。本 refresh
+  /// 回调只负责把内存镜像 `_settings` 从 `_src` 重建并 setState。
   Widget _buildReaderGroupContent(ReaderGroup group, String title) {
-    final bool needsLayoutReload =
-        group == ReaderGroup.appearance || group == ReaderGroup.layout;
     final SettingsContext settingsContext = SettingsContext(
       context: context,
       appModel: widget.appModel,
@@ -517,11 +524,6 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
         if (!mounted) return;
         _loadSettings();
         setState(() {});
-        if (needsLayoutReload) {
-          _reloadLayoutLive();
-        } else {
-          widget.onStyleChanged?.call();
-        }
       },
     );
     final bool cupertino = isCupertinoPlatform(context);
@@ -1120,16 +1122,59 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
     );
   }
 
-  Widget _buildAudiobookSettingsSection(ThemeData theme) {
-    // Projected schema preferences (media notification / floating lyric /
-    // floating lyric font size). These persist via AppModel, not the runtime
-    // controller, so they render even when no audiobook is loaded.
-    final Widget projectedSettings = _buildReaderGroupContent(
-      ReaderGroup.audiobook,
-      t.section_audiobook,
+  /// Bespoke audiobook overlay toggles. Not schema items: each toggle drives a
+  /// reader-page side effect (media-notification publish/clear, floating-lyric
+  /// overlay show/hide + permission request, live floating-lyric restyle) that
+  /// a preference-only schema item cannot perform. The global Listening page
+  /// keeps the plain preference toggles for the no-reader-open case.
+  Widget _buildPlayBarToggle() {
+    return AdaptiveSettingsSection(
+      children: [
+        AdaptiveSettingsSwitchRow(
+          title: t.show_media_notification,
+          value: _localShowMediaNotification,
+          onChanged: (_) {
+            widget.onToggleMediaNotification?.call();
+            setState(() {
+              _localShowMediaNotification = !_localShowMediaNotification;
+            });
+          },
+        ),
+        AdaptiveSettingsSwitchRow(
+          title: t.show_floating_lyric,
+          subtitle: t.floating_lyric_hint,
+          value: _localShowFloatingLyric,
+          onChanged: (_) async {
+            final bool ok = await widget.onToggleFloatingLyric?.call() ?? false;
+            if (ok && mounted) {
+              setState(() {
+                _localShowFloatingLyric = !_localShowFloatingLyric;
+              });
+            }
+          },
+        ),
+        AdaptiveSettingsStepperRow(
+          title: t.floating_lyric_font_size,
+          value: _localFloatingLyricFontSize,
+          step: 1,
+          min: 8,
+          max: 64,
+          format: (double value) => '${value.round()}',
+          onChanged: (double value) {
+            widget.onFloatingLyricFontSizeChanged?.call(value);
+            setState(() => _localFloatingLyricFontSize = value);
+          },
+        ),
+      ],
     );
+  }
+
+  Widget _buildAudiobookSettingsSection(ThemeData theme) {
+    // The audiobook overlay toggles persist via AppModel but need reader-page
+    // side effects, so they are rendered bespoke (not via the schema). With no
+    // audiobook loaded, the toggles are the entire sub-page.
     if (widget.controller == null) {
-      return projectedSettings;
+      return _buildPlayBarToggle();
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1145,7 +1190,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
             _buildSkipActionSection(),
           ],
         ),
-        projectedSettings,
+        _buildPlayBarToggle(),
         if (widget.onAudioImport != null)
           AdaptiveSettingsSection(
             children: [
