@@ -71,6 +71,9 @@ debug_screenshot.png
 # Claude agent worktrees
 .claude/worktrees/
 
+# Codex agent worktrees
+.worktrees/
+
 # Codex test artifacts (fixtures, screenshots, evidence)
 .codex-test/
 
