@@ -190,11 +190,6 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           icon: Icons.bar_chart_outlined,
           onTap: _openReadingStatistics,
         ),
-        mediaSource.buildTweaksButton(
-          context: context,
-          ref: ref,
-          appModel: appModel,
-        ),
       ],
     );
   }

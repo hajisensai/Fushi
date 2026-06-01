@@ -7,6 +7,32 @@ import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
 
 void main() {
+  group('ReaderHibikiSource shelf actions', () {
+    test('bookshelf home actions do not expose the tweaks button', () {
+      final String source = File(
+        'lib/src/media/sources/reader_hibiki_source.dart',
+      ).readAsStringSync();
+      final String historySource = File(
+        'lib/src/pages/implementations/reader_hibiki_history_page.dart',
+      ).readAsStringSync();
+
+      final int actionsStart = source.indexOf('List<Widget> getActions');
+      final int importButtonStart =
+          source.indexOf('Widget buildBookImportButton');
+      final String actionsBody = source.substring(
+        actionsStart,
+        importButtonStart,
+      );
+
+      expect(actionsStart, isNonNegative);
+      expect(importButtonStart, isNonNegative);
+      expect(actionsBody, contains('buildBookImportButton'));
+      expect(actionsBody, isNot(contains('buildTweaksButton')));
+      expect(source, isNot(contains('Widget buildTweaksButton')));
+      expect(historySource, isNot(contains('buildTweaksButton')));
+    });
+  });
+
   group('ReaderHibikiSource custom font helpers', () {
     late Directory tempDir;
 

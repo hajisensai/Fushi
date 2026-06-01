@@ -144,7 +144,6 @@ class ReaderHibikiSource extends ReaderMediaSource {
   }) {
     return [
       buildBookImportButton(context: context, ref: ref, appModel: appModel),
-      buildTweaksButton(context: context, ref: ref, appModel: appModel),
     ];
   }
 
@@ -170,24 +169,6 @@ class ReaderHibikiSource extends ReaderMediaSource {
           ref.invalidate(hibikiBooksProvider(appModel.targetLanguage));
           ref.invalidate(srtBooksProvider);
         }
-      },
-    );
-  }
-
-  Widget buildTweaksButton({
-    required BuildContext context,
-    required WidgetRef ref,
-    required AppModel appModel,
-  }) {
-    return HibikiIconButton(
-      size: Theme.of(context).textTheme.titleLarge?.fontSize,
-      tooltip: t.tweaks,
-      icon: Icons.tune_outlined,
-      onTap: () {
-        showAppDialog(
-          context: context,
-          builder: (context) => const HibikiSettingsDialogPage(),
-        );
       },
     );
   }
