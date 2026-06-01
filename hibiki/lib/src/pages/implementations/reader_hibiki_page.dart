@@ -3895,6 +3895,17 @@ window.flutter_inappwebview.callHandler('spreadReady');
     if (_controller == null) {
       return;
     }
+    // Lyrics mode renders LyricsModeHtml — a vertical cue list with no
+    // hoshiReader paginator. paginate() there no-ops in JS (the
+    // `window.hoshiReader && ...` guard short-circuits) and returns undefined,
+    // which _didScroll reads as a page edge → _handlePageTurnLimit →
+    // _navigateToChapter, swapping the lyrics page for an EPUB chapter (the
+    // text vanishes). Swipe paths already guard this (onSwipe/onBoundarySwipe);
+    // the keyboard/gamepad/volume shortcut path funnels through here, so this is
+    // the single choke point that must bail in lyrics mode.
+    if (_lyricsMode) {
+      return;
+    }
     if (_settings?.isContinuousMode == true) {
       final dynamic result = await _controller!.evaluateJavascript(
         source: ReaderPaginationScripts.paginateInvocation(direction),

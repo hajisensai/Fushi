@@ -118,11 +118,15 @@ class HibikiFocusController extends ChangeNotifier {
 
   void register(HibikiFocusTargetEntry entry) {
     _entries[entry.id] = entry;
-    if (!entry.canFocus && entry.focusNode.hasPrimaryFocus) {
-      scheduleRepair();
-      return;
-    }
-    _handleFocusChange();
+    // Recording the entry is the only synchronous work. Recomputing the active
+    // focus is deferred to the post-frame repair: register() runs inside
+    // didChangeDependencies, which for a lazily-built SliverList child fires
+    // during a layout callback. Doing _handleFocusChange() here would call
+    // ModalRoute.of()/notifyListeners() mid-build — illegal, and it explodes
+    // when an off-screen focused sibling is being recycled (deactivated but not
+    // yet unregistered) in the same pass. scheduleRepair() → ensureFocus() does
+    // the same recomputation safely after the frame, and the FocusManager
+    // listener handles every later focus change.
     scheduleRepair();
   }
 
