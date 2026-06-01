@@ -147,7 +147,7 @@
 - 弹窗模式（`!window.hoshiReader`）下，让停点集合 `_collectVisibleStops`（[reader_caret_scripts.dart:359-391](../../hibiki/lib/src/reader/reader_caret_scripts.dart#L359-L391)）**按移动方向分粒度**：垂直移动（↑↓）收集「①动作项 `_interactiveEls` ∪ ②查词文本的行级停点」，水平移动（←→）在当前②查词文本块内收集「字级停点」。第③类纯装饰从两种粒度都排除（扩展现有 `_isStop` 对 `.glossary-tag` 等的拒绝，覆盖频率/pitch/词典名/振假名）。阅读器正文保持现状逐字（正文文本即查词目标）。
 - 衔接已落地的 sibling-layer（[2026-05-31-popup-gamepad-navigation-plan.md](2026-05-31-popup-gamepad-navigation-plan.md)）：DOM 顶行 ↑ 越界 → Flutter 顶栏；顶栏 ↓ → 回 DOM 首个停点。本设计是其停点模型的升级，不重做两层协同。
 - **补 3 个可达缺口**：①`gloss-image-link` 加 `role=button`（或 `_interactiveSelector` 增 `.gloss-image-link`）使 caret 够得到，A 命中 → `openImageLightbox`；②`mine-button` `disabled` 态从停点集合排除，启用后随刷新回归；③统一原则——要可达的元素必须落进 `_markClickables` 三条命中之一（`_interactiveSelector` / `onclick` 属性 / 最外层 pointer），`addEventListener`-only 不算。
-- 词典 tab 结果（`definition.html`/`definition.js`，不注入 `hoshiCaret`）是否纳入：作为期5 的可选子项单独决定，纳入则在 `definition.html` 也注入同一套 caret，复用停点/激活逻辑，不另造。
+- 主页词典 tab 结果当前已走 `DictionaryPopupWebView`，所以纳入同一套 `hoshiCaret` 停点/激活/长按逻辑；旧 `DictionaryHtmlWidget` 仍用于单词典结构化内容页，它是嵌入式固定高度 HTML，不再代表主页词典结果。若以后要让这个旧嵌入页也吃手柄 caret，必须先设计“多个嵌入 WebView 谁持有焦点”的所有权，不要只注入 JS 假装完成。
 
 ---
 
