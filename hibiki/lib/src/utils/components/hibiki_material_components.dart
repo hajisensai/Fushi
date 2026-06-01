@@ -268,12 +268,17 @@ class HibikiSearchField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final Widget? trailing = _hibikiTextFieldKeyboardSuffix(
+      context: context,
+      controller: controller,
+    );
     final SearchBar searchBar = SearchBar(
       key: fieldKey,
       controller: controller,
       focusNode: focusNode,
       hintText: hintText,
       leading: const Icon(Icons.search),
+      trailing: trailing == null ? null : <Widget>[trailing],
       elevation: const WidgetStatePropertyAll<double>(0),
       backgroundColor: WidgetStatePropertyAll<Color>(tokens.surfaces.search),
       shape: WidgetStatePropertyAll<OutlinedBorder>(
@@ -364,24 +369,11 @@ class _HibikiTextFieldState extends State<HibikiTextField> {
   @override
   Widget build(BuildContext context) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    // On-screen keyboard affordance: on desktop (no system IME for a gamepad
-    // user) a focusable ⌨ in the suffix opens a D-pad keyboard wired to the
-    // controller — only when there is a controller to type into and the caller
-    // did not supply its own suffix.
-    final TargetPlatform platform = Theme.of(context).platform;
-    final bool isDesktop = platform == TargetPlatform.windows ||
-        platform == TargetPlatform.linux ||
-        platform == TargetPlatform.macOS;
-    final Widget? effectiveSuffix = (isDesktop &&
-            widget.controller != null &&
-            widget.suffixIcon == null &&
-            !widget.readOnly)
-        ? HibikiIconButton(
-            icon: Icons.keyboard_outlined,
-            tooltip: t.on_screen_keyboard,
-            onTap: () => showGamepadKeyboard(context, widget.controller!),
-          )
-        : widget.suffixIcon;
+    final Widget? effectiveSuffix = widget.suffixIcon ??
+        _hibikiTextFieldKeyboardSuffix(
+          context: context,
+          controller: widget.readOnly ? null : widget.controller,
+        );
     final OutlineInputBorder border = OutlineInputBorder(
       borderRadius: tokens.radii.cardRadius,
       borderSide: BorderSide(color: tokens.surfaces.outline),
@@ -433,6 +425,22 @@ class _HibikiTextFieldState extends State<HibikiTextField> {
       child: textField,
     );
   }
+}
+
+Widget? _hibikiTextFieldKeyboardSuffix({
+  required BuildContext context,
+  required TextEditingController? controller,
+}) {
+  final TargetPlatform platform = Theme.of(context).platform;
+  final bool isDesktop = platform == TargetPlatform.windows ||
+      platform == TargetPlatform.linux ||
+      platform == TargetPlatform.macOS;
+  if (!isDesktop || controller == null) return null;
+  return HibikiIconButton(
+    icon: Icons.keyboard_outlined,
+    tooltip: t.on_screen_keyboard,
+    onTap: () => showGamepadKeyboard(context, controller),
+  );
 }
 
 class HibikiSelectableChip extends StatelessWidget {
@@ -1755,6 +1763,10 @@ class HibikiCompactSearchRow extends StatelessWidget {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final String closeTooltip =
         MaterialLocalizations.of(context).closeButtonTooltip;
+    final Widget? keyboardSuffix = _hibikiTextFieldKeyboardSuffix(
+      context: context,
+      controller: controller,
+    );
     return HibikiCard(
       color: tokens.surfaces.search,
       borderRadius: tokens.radii.controlRadius,
@@ -1789,6 +1801,7 @@ class HibikiCompactSearchRow extends StatelessWidget {
                 onSubmitted: (_) => _submit(),
               ),
             ),
+            if (keyboardSuffix != null) keyboardSuffix,
             _CompactSearchIconButton(
               key: searchButtonKey,
               icon: Icons.search,

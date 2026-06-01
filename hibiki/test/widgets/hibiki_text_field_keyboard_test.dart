@@ -55,4 +55,49 @@ void main() {
       expect(find.byIcon(Icons.keyboard_outlined), findsNothing);
     });
   });
+
+  group('search fields on-screen keyboard affordance', () {
+    testWidgets('desktop HibikiSearchField shows the ⌨ button',
+        (WidgetTester tester) async {
+      final TextEditingController c = TextEditingController();
+      final FocusNode focusNode = FocusNode();
+      addTearDown(c.dispose);
+      addTearDown(focusNode.dispose);
+
+      await tester.pumpWidget(buildTestApp(
+        HibikiSearchField(
+          controller: c,
+          focusNode: focusNode,
+          hintText: 'Search',
+          onChanged: (_) {},
+          onSubmitted: (_) {},
+        ),
+        theme: ThemeData(useMaterial3: true, platform: TargetPlatform.windows),
+      ));
+      await tester.pump();
+
+      expect(find.byIcon(Icons.keyboard_outlined), findsOneWidget);
+    });
+
+    testWidgets('desktop compact search row shows the ⌨ button',
+        (WidgetTester tester) async {
+      final TextEditingController c = TextEditingController();
+      final FocusNode focusNode = FocusNode();
+      addTearDown(c.dispose);
+      addTearDown(focusNode.dispose);
+
+      await tester.pumpWidget(buildTestApp(
+        HibikiCompactSearchRow(
+          controller: c,
+          focusNode: focusNode,
+          hintText: 'Search',
+          onSubmit: (_) {},
+        ),
+        theme: ThemeData(useMaterial3: true, platform: TargetPlatform.windows),
+      ));
+      await tester.pump();
+
+      expect(find.byIcon(Icons.keyboard_outlined), findsOneWidget);
+    });
+  });
 }
