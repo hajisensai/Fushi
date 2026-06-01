@@ -111,21 +111,22 @@ void main() {
       expect(notifyCount, 1);
     });
 
-    test('setAppUiScale clamps, persists, and notifies', () async {
+    test('setAppUiScale clamps to 30-300 percent, persists, and notifies',
+        () async {
       int notifyCount = 0;
       notifier.addListener(() => notifyCount++);
 
-      await notifier.setAppUiScale(1.2);
-      expect(notifier.appUiScale, 1.15);
+      await notifier.setAppUiScale(3.5);
+      expect(notifier.appUiScale, 3.0);
       expect(notifyCount, 1);
 
       final ThemeNotifier reloaded = ThemeNotifier(db, textThemeBuilder);
       addTearDown(reloaded.dispose);
       await reloaded.refreshFromDb();
-      expect(reloaded.appUiScale, 1.15);
+      expect(reloaded.appUiScale, 3.0);
 
-      await notifier.setAppUiScale(0.7);
-      expect(notifier.appUiScale, 0.85);
+      await notifier.setAppUiScale(0.2);
+      expect(notifier.appUiScale, 0.3);
     });
 
     test('setCustomThemeSeed persists color', () async {

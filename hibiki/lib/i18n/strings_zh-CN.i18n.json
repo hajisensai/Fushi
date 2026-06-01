@@ -1173,7 +1173,7 @@
     "shortcut_action_reader_toggle_furigana": "切换振假名",
     "on_screen_keyboard": "屏幕键盘",
     "app_ui_scale": "界面大小",
-    "app_ui_scale_hint": "缩放应用文字和间距。大屏设备上如果控件偏大，可以调低。",
+    "app_ui_scale_hint": "缩放应用文字和间距，范围 30% 到 300%。大屏设备上如果控件偏小，可以调高。",
     "remote_lookup_enabled": "使用远端 Hibiki 查询",
     "remote_lookup_enabled_hint": "本地词典或本地音频未命中时，查询已配置的 Hibiki 服务器",
     "sync_dictionary": "同步词典",

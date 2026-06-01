@@ -8,9 +8,9 @@ class HibikiAppUiScale extends StatelessWidget {
     super.key,
   });
 
-  static const double minScale = 0.85;
+  static const double minScale = 0.3;
   static const double defaultScale = 1.0;
-  static const double maxScale = 1.15;
+  static const double maxScale = 3.0;
 
   final double scale;
   final Widget child;

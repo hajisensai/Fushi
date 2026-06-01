@@ -104,7 +104,7 @@ SettingsDestination _appearanceDestination() {
             icon: Icons.format_size_outlined,
             min: HibikiAppUiScale.minScale,
             max: HibikiAppUiScale.maxScale,
-            divisions: 6,
+            divisions: 27,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.appUiScale,
             label: (double value) => '${(value * 100).round()}%',

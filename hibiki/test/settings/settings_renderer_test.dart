@@ -388,7 +388,10 @@ void main() {
         (Widget widget) =>
             widget is AdaptiveSettingsSliderRow &&
             widget.title == t.app_ui_scale &&
-            widget.value == 1.0,
+            widget.value == 1.0 &&
+            widget.min == 0.3 &&
+            widget.max == 3.0 &&
+            widget.divisions == 27,
       ),
       findsOneWidget,
     );

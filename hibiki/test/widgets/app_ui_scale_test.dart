@@ -4,7 +4,7 @@ import 'package:hibiki/src/utils/app_ui_scale.dart';
 import 'package:hibiki/src/utils/spacing.dart';
 
 void main() {
-  testWidgets('app UI scale changes text scale and spacing', (
+  testWidgets('app UI scale can enlarge text and spacing for large screens', (
     WidgetTester tester,
   ) async {
     late double textScale;
@@ -14,7 +14,7 @@ void main() {
       MaterialApp(
         builder: (BuildContext context, Widget? child) {
           return HibikiAppUiScale(
-            scale: 0.85,
+            scale: 3.0,
             child: child ?? const SizedBox.shrink(),
           );
         },
@@ -28,8 +28,8 @@ void main() {
       ),
     );
 
-    expect(textScale, 0.85);
-    expect(normalSpacing, 8.5);
+    expect(textScale, 3.0);
+    expect(normalSpacing, 30.0);
   });
 
   testWidgets('app UI scale preserves system text scaling', (
@@ -45,7 +45,7 @@ void main() {
               textScaler: const TextScaler.linear(1.2),
             ),
             child: HibikiAppUiScale(
-              scale: 0.85,
+              scale: 0.3,
               child: child ?? const SizedBox.shrink(),
             ),
           );
@@ -59,6 +59,6 @@ void main() {
       ),
     );
 
-    expect(textScale, closeTo(1.02, 0.001));
+    expect(textScale, closeTo(0.36, 0.001));
   });
 }
