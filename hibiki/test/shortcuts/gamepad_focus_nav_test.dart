@@ -524,4 +524,48 @@ void main() {
     expect(
         scrollCtrl.offset, closeTo(scrollCtrl.position.maxScrollExtent, 0.5));
   });
+
+  testWidgets(
+      'focus recovers from the ring-less fallback once targets appear '
+      '(empty tab → content loaded)', (WidgetTester tester) async {
+    final ValueNotifier<bool> hasContent = ValueNotifier<bool>(false);
+    addTearDown(hasContent.dispose);
+    await tester.pumpWidget(MaterialApp(
+      home: HibikiFocusRoot(
+        child: ValueListenableBuilder<bool>(
+          valueListenable: hasContent,
+          builder: (BuildContext c, bool ready, _) => Column(
+            children: <Widget>[
+              if (ready)
+                HibikiFocusTarget(
+                  id: const HibikiFocusId('loaded'),
+                  child: const SizedBox(width: 80, height: 60),
+                )
+              else
+                const SizedBox(width: 80, height: 60), // nothing focusable
+            ],
+          ),
+        ),
+      ),
+    ));
+    await tester.pump();
+    final BuildContext context = tester.element(find.byType(Column));
+    final HibikiFocusController controller =
+        HibikiFocusRoot.controllerOf(context);
+
+    // Empty tab: ensureFocus settles on the ring-less fallback (nothing real).
+    controller.ensureFocus();
+    await tester.pump();
+    expect(controller.fallbackNode.hasPrimaryFocus, isTrue,
+        reason: 'no targets yet → fallback');
+
+    // Content loads → its registration repairs focus onto the real target
+    // instead of stranding the cursor ring-less on the fallback.
+    hasContent.value = true;
+    await tester.pump(); // build + register
+    await tester.pump(); // post-frame scheduleRepair → ensureFocus
+    expect(controller.fallbackNode.hasPrimaryFocus, isFalse);
+    expect(controller.activeId, const HibikiFocusId('loaded'),
+        reason: 'focus re-homed onto the newly loaded target');
+  });
 }

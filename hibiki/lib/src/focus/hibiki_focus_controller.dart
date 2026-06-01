@@ -254,7 +254,13 @@ class HibikiFocusController extends ChangeNotifier {
 
   bool _isUsablePrimary(FocusNode? primary) {
     if (primary == null) return false;
-    if (identical(primary, fallbackNode)) return true;
+    // The fallback (a skip-traversal, ring-less sink) is "usable" ONLY as a last
+    // resort — when there is nothing real to focus (a pure-display page). When
+    // focusable targets exist (e.g. a tab's content finished loading after the
+    // cursor had fallen back), it must NOT count as usable, so ensureFocus()
+    // re-homes onto a real target instead of stranding the cursor ring-less on
+    // the fallback.
+    if (identical(primary, fallbackNode)) return _focusableEntries().isEmpty;
     if (primary is FocusScopeNode) return false;
     if (primary.skipTraversal) return false;
     for (final HibikiFocusTargetEntry entry in _entries.values) {
