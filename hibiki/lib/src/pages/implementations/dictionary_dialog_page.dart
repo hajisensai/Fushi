@@ -38,29 +38,27 @@ class _DictionaryDialogPageState extends BasePageState {
 
   List<Widget> _buildDesktopPageActions() {
     return [
-      IconButton(
+      HibikiIconButton(
         tooltip: t.dict_download_browse,
-        icon: const Icon(Icons.cloud_download_outlined),
-        onPressed: _showDownloadSelectionDialog,
+        icon: Icons.cloud_download_outlined,
+        onTap: _showDownloadSelectionDialog,
       ),
       if (!Platform.isIOS)
-        IconButton(
+        HibikiIconButton(
           tooltip: t.dialog_import_folder,
-          icon: const Icon(Icons.drive_folder_upload_outlined),
-          onPressed: _importDictionaryFolder,
+          icon: Icons.drive_folder_upload_outlined,
+          onTap: _importDictionaryFolder,
         ),
-      IconButton(
+      HibikiIconButton(
         tooltip: t.dialog_import_dictionary,
-        icon: const Icon(Icons.upload_file_outlined),
-        onPressed: _importDictionaryFiles,
+        icon: Icons.upload_file_outlined,
+        onTap: _importDictionaryFiles,
       ),
-      IconButton(
+      HibikiIconButton(
         tooltip: t.dialog_clear_all_dictionaries,
-        icon: Icon(
-          Icons.delete_sweep_outlined,
-          color: theme.colorScheme.error,
-        ),
-        onPressed: showDictionaryClearDialog,
+        icon: Icons.delete_sweep_outlined,
+        enabledColor: theme.colorScheme.error,
+        onTap: showDictionaryClearDialog,
       ),
     ];
   }

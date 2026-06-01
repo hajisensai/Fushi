@@ -403,15 +403,15 @@ class _CustomThemePageState extends BasePageState {
             MediaQuery.of(context).viewInsets.bottom,
       ),
       actions: [
-        IconButton(
-          icon: const Icon(Icons.content_paste_outlined),
+        HibikiIconButton(
+          icon: Icons.content_paste_outlined,
           tooltip: t.import_theme,
-          onPressed: _importTheme,
+          onTap: _importTheme,
         ),
-        IconButton(
-          icon: const Icon(Icons.share_outlined),
+        HibikiIconButton(
+          icon: Icons.share_outlined,
           tooltip: t.share_theme,
-          onPressed: _shareTheme,
+          onTap: _shareTheme,
         ),
       ],
       children: [
