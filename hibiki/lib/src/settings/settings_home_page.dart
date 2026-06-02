@@ -14,9 +14,13 @@ class SettingsHomePage extends BasePage {
   const SettingsHomePage({
     super.key,
     this.embedded = false,
+    this.onBack,
   });
 
   final bool embedded;
+
+  /// 非空时在内嵌页头左侧显示返回箭头（宽屏全屏设置切回来源 tab）。
+  final VoidCallback? onBack;
 
   @override
   BasePageState<SettingsHomePage> createState() => _SettingsHomePageState();
@@ -101,7 +105,16 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        HibikiPageHeader(title: t.settings),
+        HibikiPageHeader(
+          title: t.settings,
+          leading: widget.onBack != null
+              ? IconButton(
+                  icon: const Icon(Icons.arrow_back),
+                  tooltip: t.back,
+                  onPressed: widget.onBack,
+                )
+              : null,
+        ),
         Expanded(child: content),
       ],
     );

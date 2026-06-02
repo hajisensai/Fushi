@@ -110,10 +110,13 @@ class _HibikiSettingsDialogPageState extends BasePageState {
 // ─── Full-page version (home "调整" tab) ──────────────────────────────────────
 
 class HibikiSettingsContent extends StatelessWidget {
-  const HibikiSettingsContent({super.key});
+  const HibikiSettingsContent({super.key, this.onBack});
+
+  /// 非空时在设置页头左侧显示返回箭头（宽屏隐藏图标侧栏的全屏设置场景）。
+  final VoidCallback? onBack;
 
   @override
   Widget build(BuildContext context) {
-    return const SettingsHomePage(embedded: true);
+    return SettingsHomePage(embedded: true, onBack: onBack);
   }
 }

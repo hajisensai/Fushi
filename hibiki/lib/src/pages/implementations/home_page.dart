@@ -26,6 +26,9 @@ class _HomePageState extends BasePageState<HomePage>
   String get appVersion => appModel.packageInfo.version;
 
   int _currentTab = 0;
+
+  /// 进入「设置」标签前的来源 tab，供设置全屏左上返回箭头切回。
+  int _previousTab = 0;
   String _iconAsset = 'assets/meta/icon.png';
   final FocusNode _keyboardFocusNode = FocusNode();
   final ValueNotifier<int> _dictFocusSignal = ValueNotifier<int>(0);
@@ -182,30 +185,37 @@ class _HomePageState extends BasePageState<HomePage>
     return c != null && c.widget is EditableText;
   }
 
+  /// 统一切换顶层 tab：进入「设置」(2) 前记录来源 tab，tab 0 时刷新图标预设。
+  /// 所有切 tab 入口（侧栏 / 底栏 / 快捷键）都走这里，保证 _previousTab 一致。
+  void _selectTab(int logicalIndex) {
+    setState(() {
+      if (logicalIndex == 2 && _currentTab != 2) {
+        _previousTab = _currentTab;
+      }
+      _currentTab = logicalIndex;
+    });
+    if (logicalIndex == 0) _loadIconPreset();
+  }
+
   KeyEventResult _executeShortcutAction(ShortcutAction action) {
     switch (action) {
       case ShortcutAction.homeTabBooks:
-        setState(() => _currentTab = 0);
-        _loadIconPreset();
+        _selectTab(0);
         return KeyEventResult.handled;
       case ShortcutAction.homeTabDict:
-        setState(() => _currentTab = 1);
+        _selectTab(1);
         return KeyEventResult.handled;
       case ShortcutAction.homeTabSettings:
-        setState(() => _currentTab = 2);
+        _selectTab(2);
         return KeyEventResult.handled;
       case ShortcutAction.homeTabNext:
-        final int next = (_currentTab + 1) % 3;
-        setState(() => _currentTab = next);
-        if (next == 0) _loadIconPreset();
+        _selectTab((_currentTab + 1) % 3);
         return KeyEventResult.handled;
       case ShortcutAction.homeTabPrev:
-        final int prev = (_currentTab + 2) % 3;
-        setState(() => _currentTab = prev);
-        if (prev == 0) _loadIconPreset();
+        _selectTab((_currentTab + 2) % 3);
         return KeyEventResult.handled;
       case ShortcutAction.homeFocusSearch:
-        setState(() => _currentTab = 1);
+        _selectTab(1);
         _dictFocusSignal.value++;
         return KeyEventResult.handled;
       case ShortcutAction.globalBack:
@@ -295,11 +305,8 @@ class _HomePageState extends BasePageState<HomePage>
                 child: LayoutBuilder(
                   builder: (context, constraints) {
                     final sizeClass = windowSizeClassOf(constraints);
+                    // compact(<600) → 底栏；medium/expanded(≥600，含竖屏平板) → 侧边布局。
                     if (sizeClass == WindowSizeClass.compact) {
-                      return _buildMobileLayout();
-                    }
-                    if (!isDesktopPlatform &&
-                        constraints.maxWidth <= constraints.maxHeight) {
                       return _buildMobileLayout();
                     }
                     return _buildDesktopLayout(sizeClass);
@@ -330,6 +337,23 @@ class _HomePageState extends BasePageState<HomePage>
       ];
 
   Widget _buildDesktopLayout(WindowSizeClass sizeClass) {
+    if (_currentTab == 2 && !isCupertinoPlatform(context)) {
+      // 设置标签（仅 Material）：隐藏 3 图标侧栏，全屏二栏（内部
+      // MaterialSupportingPaneLayout），左上返回箭头切回来源 tab（参考 Mihon
+      // 宽屏设置）。Cupertino（iPad/Cupertino 桌面）的内嵌设置不渲染页头/返回，
+      // 隐藏 rail 会无出口，故保持原 rail+body 不变。
+      return Scaffold(
+        resizeToAvoidBottomInset: false,
+        body: SafeArea(
+          child: FocusTraversalGroup(
+            child: HibikiSettingsContent(
+              onBack: () => _selectTab(_previousTab),
+            ),
+          ),
+        ),
+      );
+    }
+
     final bool reversed = appModel.reverseNavigationBar;
     final List<AdaptiveNavItem> items = _navItems();
     final List<AdaptiveNavItem> displayItems =
@@ -339,8 +363,7 @@ class _HomePageState extends BasePageState<HomePage>
 
     void selectVisual(int index) {
       final int logicalIndex = reversed ? (items.length - 1 - index) : index;
-      setState(() => _currentTab = logicalIndex);
-      if (logicalIndex == 0) _loadIconPreset();
+      _selectTab(logicalIndex);
     }
 
     return Scaffold(
@@ -388,8 +411,7 @@ class _HomePageState extends BasePageState<HomePage>
         onTap: (int index) {
           final int logicalIndex =
               reversed ? (items.length - 1 - index) : index;
-          setState(() => _currentTab = logicalIndex);
-          if (logicalIndex == 0) _loadIconPreset();
+          _selectTab(logicalIndex);
         },
         items: displayItems,
       ),
