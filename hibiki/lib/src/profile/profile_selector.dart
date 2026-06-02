@@ -1,11 +1,8 @@
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/pages/implementations/profile_management_page.dart';
 import 'package:hibiki/src/profile/profile_view_model.dart';
 import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart';
-import 'package:hibiki/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:hibiki/src/utils/components/hibiki_dropdown.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
@@ -39,44 +36,26 @@ class ProfileSelector extends ConsumerWidget {
 
     // This selector is embedded as the `trailing` of an AdaptiveSettingsRow,
     // whose Row lays out a non-flex trailing beside an Expanded(label) sibling
-    // and therefore measures the trailing with UNBOUNDED main-axis width. The
-    // old code wrapped the dropdown in an `Expanded` (a flex child), which under
-    // unbounded width threw "RenderFlex children have non-zero flex but incoming
-    // width constraints are unbounded" (debug), blanking the Anki settings page.
-    // The fix is to remove the flex child: the dropdown sizes to its content and
-    // is capped by a ConstrainedBox (mirroring AdaptiveSettingsPickerRow's
-    // bounded dropdown), so it never demands unbounded width and stays narrow
-    // enough not to overflow tight rows. `mainAxisSize.min` keeps the row
-    // shrink-wrapping (matching this widget's Cupertino branch). The row title
-    // already shows the profile label, so no in-widget label prefix is needed.
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // Gamepad-enterable MenuAnchor on every polled platform
-        // (Windows/Linux/iOS/macOS); a stock DropdownMenu on Android. Bounded
-        // width keeps it valid as a non-flex Row trailing.
-        GamepadMenuDropdown<int>(
-          width: 220,
-          selected: validId,
-          onChanged: (id) {
-            if (id != validId) vm.switchProfile(id);
-          },
-          entries: <GamepadDropdownEntry<int>>[
-            for (final p in uiState.profiles) (value: p.id, label: p.name),
-          ],
-        ),
-        IconButton(
-          icon: const Icon(Icons.settings_outlined, size: 20),
-          tooltip: t.profile_management,
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(),
-          onPressed: () {
-            Navigator.push(
-              context,
-              adaptivePageRoute(builder: (_) => const ProfileManagementPage()),
-            );
-          },
-        ),
+    // and therefore measures the trailing with UNBOUNDED main-axis width. A
+    // self-sizing, bounded-width dropdown is valid in that slot (a flex child
+    // such as `Expanded` would throw "RenderFlex children have non-zero flex but
+    // incoming width constraints are unbounded" and blank the page). The bounded
+    // 220 width also keeps the trailing from crowding out the row's "配置" label.
+    //
+    // No gear shortcut here: profile management is reached from Settings →
+    // Profiles (a first-class "配置管理" navigation row), so an in-row gear is a
+    // redundant entry point that only steals width from the label.
+    //
+    // Gamepad-enterable MenuAnchor on every polled platform
+    // (Windows/Linux/iOS/macOS); a stock DropdownMenu on Android.
+    return GamepadMenuDropdown<int>(
+      width: 220,
+      selected: validId,
+      onChanged: (id) {
+        if (id != validId) vm.switchProfile(id);
+      },
+      entries: <GamepadDropdownEntry<int>>[
+        for (final p in uiState.profiles) (value: p.id, label: p.name),
       ],
     );
   }
@@ -102,52 +81,31 @@ class _CupertinoProfileSelector extends StatelessWidget {
     final Color secondaryLabel = CupertinoColors.secondaryLabel.resolveFrom(
       context,
     );
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        Flexible(
-          child: CupertinoButton(
-            minSize: 30,
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            onPressed: () => _showProfilePicker(context),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Flexible(
-                  child: Text(
-                    active.name,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                const SizedBox(width: 4),
-                Icon(
-                  CupertinoIcons.chevron_down,
-                  size: 14,
-                  color: secondaryLabel,
-                ),
-              ],
+    // No gear shortcut: profile management lives in Settings → Profiles, so an
+    // in-row gear here would only be a redundant entry point. The picker shrinks
+    // to its content (ellipsised profile name) and stays a valid self-sizing
+    // trailing for AdaptiveSettingsRow's unbounded-width measurement.
+    return CupertinoButton(
+      minSize: 30,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      onPressed: () => _showProfilePicker(context),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Flexible(
+            child: Text(
+              active.name,
+              overflow: TextOverflow.ellipsis,
             ),
           ),
-        ),
-        CupertinoButton(
-          minSize: 30,
-          padding: EdgeInsets.zero,
-          onPressed: () {
-            Navigator.push(
-              context,
-              adaptivePageRoute(
-                context: context,
-                builder: (_) => const ProfileManagementPage(),
-              ),
-            );
-          },
-          child: Icon(
-            CupertinoIcons.gear_alt,
-            size: 20,
+          const SizedBox(width: 4),
+          Icon(
+            CupertinoIcons.chevron_down,
+            size: 14,
             color: secondaryLabel,
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
