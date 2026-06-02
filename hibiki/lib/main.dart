@@ -30,6 +30,35 @@ import 'package:share_plus/share_plus.dart';
 
 Color? _savedSplashColor;
 
+/// Single source of truth for the status/navigation bar overlay style.
+///
+/// Maps an app [brightness] to the matching system bar icon brightness while
+/// keeping both bars transparent + uncontrasted for edge-to-edge layout. Used
+/// both at startup (keyed off the platform brightness, to avoid a white flash
+/// before init) and at runtime via an [AnnotatedRegion] keyed off the live
+/// theme brightness, so the system navigation bar follows in-app theme
+/// switches instead of being frozen at the launch-time platform brightness.
+SystemUiOverlayStyle hibikiSystemOverlayStyle(Brightness brightness) {
+  // A dark app surface needs light (bright) bar icons; a light surface needs
+  // dark icons. We set the icon brightnesses *explicitly* rather than reuse
+  // SystemUiOverlayStyle.light/.dark, because both of those presets hardcode
+  // systemNavigationBarIconBrightness: Brightness.light (they assume an opaque
+  // black nav bar). With our transparent edge-to-edge nav bar that would leave
+  // the gesture pill / buttons light on a light theme — invisible, and frozen
+  // across theme switches.
+  final iconBrightness =
+      brightness == Brightness.dark ? Brightness.light : Brightness.dark;
+  return SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    statusBarIconBrightness: iconBrightness,
+    // iOS: statusBarBrightness is the *background* brightness behind the bar.
+    statusBarBrightness: brightness,
+    systemNavigationBarColor: Colors.transparent,
+    systemNavigationBarIconBrightness: iconBrightness,
+    systemNavigationBarContrastEnforced: false,
+  );
+}
+
 @pragma('vm:entry-point')
 void popupMain() {
   popup_entrypoint.popupMain();
@@ -72,17 +101,7 @@ void main() {
     final platformBrightness =
         WidgetsBinding.instance.platformDispatcher.platformBrightness;
     SystemChrome.setSystemUIOverlayStyle(
-      platformBrightness == Brightness.dark
-          ? SystemUiOverlayStyle.light.copyWith(
-              statusBarColor: Colors.transparent,
-              systemNavigationBarColor: Colors.transparent,
-              systemNavigationBarContrastEnforced: false,
-            )
-          : SystemUiOverlayStyle.dark.copyWith(
-              statusBarColor: Colors.transparent,
-              systemNavigationBarColor: Colors.transparent,
-              systemNavigationBarContrastEnforced: false,
-            ),
+      hibikiSystemOverlayStyle(platformBrightness),
     );
 
     if (Platform.isAndroid || Platform.isIOS) {
@@ -462,17 +481,25 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
         // the entire project, making use of the [spaces] package.
         builder: (context, child) {
           final cs = Theme.of(context).colorScheme;
-          return CupertinoTheme(
-            data: hibikiCupertinoTheme(cs, fontFamily: appModel.appFontFamily),
-            child: HibikiAppUiScale(
-              scale: appModel.appUiScale,
-              // Universal gamepad/keyboard navigation: a visible focus ring for
-              // observability, wrapping a global gamepad-B back/dismiss intent.
-              child: HibikiFocusRoot(
-                child: HibikiFocusRing(
-                  child: wrapWithGlobalNavigation(
-                    navigatorKey: appModel.navigatorKey,
-                    child: child!,
+          // Drive the status/navigation bar icon brightness from the *live*
+          // theme so switching themes repaints the system bars. The builder
+          // reruns on every theme change, so the AnnotatedRegion re-emits the
+          // matching overlay style.
+          return AnnotatedRegion<SystemUiOverlayStyle>(
+            value: hibikiSystemOverlayStyle(cs.brightness),
+            child: CupertinoTheme(
+              data:
+                  hibikiCupertinoTheme(cs, fontFamily: appModel.appFontFamily),
+              child: HibikiAppUiScale(
+                scale: appModel.appUiScale,
+                // Universal gamepad/keyboard navigation: a visible focus ring for
+                // observability, wrapping a global gamepad-B back/dismiss intent.
+                child: HibikiFocusRoot(
+                  child: HibikiFocusRing(
+                    child: wrapWithGlobalNavigation(
+                      navigatorKey: appModel.navigatorKey,
+                      child: child!,
+                    ),
                   ),
                 ),
               ),
