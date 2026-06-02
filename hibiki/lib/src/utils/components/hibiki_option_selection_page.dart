@@ -101,17 +101,16 @@ class _HibikiOptionSelectionPageState<T>
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final ColorScheme scheme = Theme.of(context).colorScheme;
 
+    // Single-choice list: the selected entry shows a trailing check, every
+    // other entry is a plain tappable row. No navigation chevron — tapping an
+    // option pops this page with its value, it does not drill into a subpage,
+    // so a `chevron_right` would falsely imply a deeper level.
     final List<Widget> rows = _filtered.map((HibikiOptionSelectionOption<T> o) {
       final bool selected = o.value == widget.selected;
-      if (selected) {
-        return AdaptiveSettingsRow(
-          title: o.label,
-          trailing: Icon(Icons.check, color: scheme.primary),
-        );
-      }
-      return AdaptiveSettingsNavigationRow(
+      return AdaptiveSettingsRow(
         title: o.label,
-        onTap: () => Navigator.pop(context, o.value),
+        trailing: selected ? Icon(Icons.check, color: scheme.primary) : null,
+        onTap: selected ? null : () => Navigator.pop(context, o.value),
       );
     }).toList();
 
