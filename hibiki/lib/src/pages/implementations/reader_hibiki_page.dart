@@ -4682,6 +4682,8 @@ window.flutter_inappwebview.callHandler('spreadReady');
         ? _currentChapterLabel()
         : 'Ch. ${_currentChapter + 1}';
 
+    final (int, int)? pageInfo = await _probePageInfo();
+
     final Bookmark bm = Bookmark(
       sectionIndex: _currentChapter,
       normCharOffset: normOffset,
@@ -4689,9 +4691,34 @@ window.flutter_inappwebview.callHandler('spreadReady');
       createdAt: DateTime.now(),
       ttuBookId: widget.bookId,
       bookTitle: _book?.title,
+      pageInChapter: pageInfo?.$1,
+      totalPagesInChapter: pageInfo?.$2,
     );
 
     await BookmarkRepository(appModel.database).addBookmark(widget.bookId, bm);
+  }
+
+  /// Probes the paginated reader engine for the current page / total pages
+  /// within the loaded chapter. Returns `null` in continuous mode (no pages)
+  /// or when the engine isn't ready.
+  Future<(int, int)?> _probePageInfo() async {
+    if (_controller == null) return null;
+    final Object? raw = await _controller!.evaluateJavascript(
+      source: ReaderPaginationScripts.pageInfoInvocation(),
+    );
+    if (raw is! String) return null;
+    final String trimmed = raw.trim();
+    if (trimmed.isEmpty || trimmed == 'null') return null;
+    try {
+      final Map<String, dynamic> info =
+          jsonDecode(trimmed) as Map<String, dynamic>;
+      final int? current = (info['currentPage'] as num?)?.toInt();
+      final int? total = (info['totalPages'] as num?)?.toInt();
+      if (current == null || total == null || total <= 0) return null;
+      return (current, total);
+    } catch (_) {
+      return null;
+    }
   }
 
   String _currentChapterLabel() {

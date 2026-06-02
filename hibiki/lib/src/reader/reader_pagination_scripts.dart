@@ -63,6 +63,13 @@ class ReaderPaginationScripts {
   static String getFirstVisibleCharOffsetInvocation() =>
       'window.hoshiReader && window.hoshiReader.getFirstVisibleCharOffset()';
 
+  /// Returns the current page / total pages within the loaded chapter as a JSON
+  /// string (`{"currentPage":N,"totalPages":M}`), or the literal `"null"` when
+  /// the reader is in a non-paged mode (continuous) where pages don't apply.
+  static String pageInfoInvocation() =>
+      'JSON.stringify((window.hoshiReader && window.hoshiReader.pageInfo) '
+      '? window.hoshiReader.pageInfo() : null)';
+
   static String scrollToCharOffsetInvocation(int charOffset) =>
       'window.hoshiReader && window.hoshiReader.scrollToCharOffset($charOffset)';
 
@@ -754,6 +761,25 @@ $_sharedJs
       }
     }
     return exploredChars / metrics.totalChars;
+  },
+  pageInfo: function() {
+    // Page numbers only make sense once layout has settled. During a
+    // pending re-anchor rAF (page-size / chrome-inset transition) getPagePosition
+    // can read a transiently reset scrollTop (see setChromeInsets / HBK-REG-004),
+    // which would mis-report page 1 — so bail and let the caller show no page.
+    if (this._reanchorPending === true) return null;
+    var context = this.getScrollContext();
+    if (context.pageSize <= 0 || context.columnPitch <= 0) return null;
+    // totalPages math relies on min/maxScroll being whole-columnPitch aligned,
+    // which buildPaginationMetrics guarantees (alignContentStartToPage / floor*pitch).
+    var metrics = this.paginationMetrics || this.buildPaginationMetrics();
+    var span = Math.max(0, metrics.maxScroll - metrics.minScroll);
+    var totalPages = Math.round(span / context.columnPitch) + 1;
+    var currentScroll = this.getPagePosition(context);
+    var page = Math.round((currentScroll - metrics.minScroll) / context.columnPitch) + 1;
+    if (page < 1) page = 1;
+    if (page > totalPages) page = totalPages;
+    return { currentPage: page, totalPages: totalPages };
   },
   restoreProgress: async function(progress) {
     await document.fonts.ready;
