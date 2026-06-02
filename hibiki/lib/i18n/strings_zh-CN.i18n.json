@@ -1182,5 +1182,11 @@
     "sync_pair_window_open": "配对开启中：剩 ${n} 秒",
     "sync_pair_success": "配对成功，已自动填入 token",
     "sync_pair_window_closed": "请先在对方设备上开启配对",
-    "sync_pair_failed": "配对失败"
+    "sync_pair_failed": "配对失败",
+    "audio_source_hibiki_interconnect": "Hibiki 互联",
+    "audio_sources_remote_group": "远端来源",
+    "audio_source_url_invalid": "链接需为 http(s) 且含 term / reading 占位符",
+    "audio_source_added": "已添加音频来源",
+    "local_audio_imported": "已添加音频数据库",
+    "local_audio_import_failed": "导入音频数据库失败"
 }
