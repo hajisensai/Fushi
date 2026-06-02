@@ -587,6 +587,8 @@ void main() {
           'Dictionary article surface is content chrome, not ordinary page rows.',
       'lib/src/pages/implementations/dictionary_popup_native.dart':
           'Dictionary popup chip/content typography is dense lookup content.',
+      'lib/src/pages/implementations/dictionary_popup_webview.dart':
+          'WebView result theming injects MD3 ColorScheme surface roles into popup CSS.',
       'lib/src/pages/implementations/history_reader_page.dart':
           'History preview uses content-derived surface and text metrics.',
       'lib/src/pages/implementations/reader_hibiki_history_page.dart':

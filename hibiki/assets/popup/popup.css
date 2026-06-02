@@ -28,11 +28,15 @@ body {
     --text-color-light3: #777777;
     --text-color-light4: #888888;
     --background-color-dark1: #eeeeee;
-    --surface-container: rgba(128, 128, 128, 0.10);
-    --surface-container-high: rgba(128, 128, 128, 0.14);
-    --outline-variant: rgba(128, 128, 128, 0.32);
-    --primary-color: #386A58;
-    --on-surface-variant: #44483F;
+    /* MD3 tonal roles: consume the values Dart injects from the app ColorScheme
+       (--md-*), falling back to the static grey/green when no host injects them
+       (e.g. the Android native popup path). */
+    --surface-container: var(--md-surface-container, rgba(128, 128, 128, 0.10));
+    --surface-container-high: var(--md-surface-container-high, rgba(128, 128, 128, 0.14));
+    --outline-variant: var(--md-outline-variant, rgba(128, 128, 128, 0.32));
+    --primary-color: var(--md-primary, #386A58);
+    --on-surface-variant: var(--md-on-surface-variant, #44483F);
+    --secondary-container: var(--md-secondary-container, rgba(128, 128, 128, 0.18));
     color: var(--text-color);
     background-color: var(--background-color, transparent);
     font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", sans-serif !important;

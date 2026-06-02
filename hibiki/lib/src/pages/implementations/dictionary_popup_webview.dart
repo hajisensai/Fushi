@@ -296,6 +296,20 @@ class DictionaryPopupWebViewState
     final int bb = (bgColor.b * 255.0).round().clamp(0, 255);
     final String bgRgb = 'rgb($br, $bg, $bb)';
 
+    // MD3 tonal roles injected so the WebView result surfaces follow the app's
+    // ColorScheme (dark mode / dynamic color / user theme) instead of the
+    // hardcoded grey/green fallbacks baked into popup.css.
+    String cssRgb(Color c) => 'rgb(${(c.r * 255.0).round().clamp(0, 255)}, '
+        '${(c.g * 255.0).round().clamp(0, 255)}, '
+        '${(c.b * 255.0).round().clamp(0, 255)})';
+    final ColorScheme scheme = theme.colorScheme;
+    final String mdSurfaceContainer = cssRgb(scheme.surfaceContainer);
+    final String mdSurfaceContainerHigh = cssRgb(scheme.surfaceContainerHigh);
+    final String mdOutlineVariant = cssRgb(scheme.outlineVariant);
+    final String mdOnSurfaceVariant = cssRgb(scheme.onSurfaceVariant);
+    final String mdPrimary = cssRgb(scheme.primary);
+    final String mdSecondaryContainer = cssRgb(scheme.secondaryContainer);
+
     final bool needsScrollCheck = widget.onScrolledToBottom != null;
     final String renderCall = isLoadMore
         ? 'window.updatePopupIncremental();'
@@ -306,6 +320,12 @@ class DictionaryPopupWebViewState
       document.documentElement.style.setProperty('--hoshi-primary-highlight', '$primaryRgba');
       document.documentElement.style.setProperty('--text-color', '$textRgba');
       document.documentElement.style.setProperty('--background-color', '$bgRgb');
+      document.documentElement.style.setProperty('--md-surface-container', '$mdSurfaceContainer');
+      document.documentElement.style.setProperty('--md-surface-container-high', '$mdSurfaceContainerHigh');
+      document.documentElement.style.setProperty('--md-outline-variant', '$mdOutlineVariant');
+      document.documentElement.style.setProperty('--md-on-surface-variant', '$mdOnSurfaceVariant');
+      document.documentElement.style.setProperty('--md-primary', '$mdPrimary');
+      document.documentElement.style.setProperty('--md-secondary-container', '$mdSecondaryContainer');
       window.audioSources = $audioSourcesJson;
       window.needsAudio = true;
       window.deduplicatePitchAccents = $deduplicatePitch;

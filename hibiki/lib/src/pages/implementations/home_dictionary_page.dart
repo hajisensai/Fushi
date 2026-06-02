@@ -165,29 +165,27 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
         horizontalPadding,
         tokens.spacing.gap,
       ),
-      child: SizedBox(
-        height: kToolbarHeight,
-        child: Row(
-          children: [
-            Expanded(
-              child: HibikiSearchField(
-                fieldKey:
-                    const ValueKey<String>('home_dictionary_search_field'),
-                controller: _controller,
-                focusNode: _searchFocusNode,
-                hintText: t.search_ellipsis,
-                onChanged: _onQueryChanged,
-                onSubmitted: _search,
-              ),
+      // Let the MD3 SearchBar own its height instead of forcing kToolbarHeight.
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: HibikiSearchField(
+              fieldKey: const ValueKey<String>('home_dictionary_search_field'),
+              controller: _controller,
+              focusNode: _searchFocusNode,
+              hintText: t.search_ellipsis,
+              onChanged: _onQueryChanged,
+              onSubmitted: _search,
             ),
-            if (isCupertinoPlatform(context))
-              HibikiIconButton(
-                tooltip: t.clear_dictionary_title,
-                icon: Icons.delete_sweep_outlined,
-                onTap: _showDeleteDictionaryHistoryPrompt,
-              ),
-          ],
-        ),
+          ),
+          if (isCupertinoPlatform(context))
+            HibikiIconButton(
+              tooltip: t.clear_dictionary_title,
+              icon: Icons.delete_sweep_outlined,
+              onTap: _showDeleteDictionaryHistoryPrompt,
+            ),
+        ],
       ),
     );
   }
