@@ -158,6 +158,26 @@ class AppModel with ChangeNotifier {
 
   AppModel(this.platformServices);
 
+  /// Test-only seam: wires the preferences + local-audio sub-managers directly,
+  /// bypassing the heavy [initialise] platform-channel path, so unit tests can
+  /// exercise local-audio config against a real [PreferencesRepository] +
+  /// [LocalAudioManager] on an in-memory DB and a temp directory.
+  ///
+  /// Deliberately leaves [_database] uninitialized — tests using this seam must
+  /// only exercise code paths that do not touch [_database].
+  @visibleForTesting
+  void wireLocalAudioForTesting({
+    required PreferencesRepository prefsRepo,
+    required Directory databaseDirectory,
+  }) {
+    _prefsRepo = prefsRepo;
+    _databaseDirectory = databaseDirectory;
+    _localAudioManager = LocalAudioManager(
+      prefsRepo: prefsRepo,
+      databaseDirectory: databaseDirectory,
+    );
+  }
+
   /// Used for showing dialogs without needing to pass around a [BuildContext].
   GlobalKey<NavigatorState> get navigatorKey => _navigatorKey;
   late final GlobalKey<NavigatorState> _navigatorKey =
@@ -2627,10 +2647,18 @@ class AppModel with ChangeNotifier {
             enabled: source.enabled,
           ),
     ];
+    // 删掉被移除本地库的磁盘文件（避免孤儿）。
+    final Set<String> nextPaths =
+        nextDbs.map((LocalAudioDbEntry db) => db.path).toSet();
+    for (final String oldPath in current.keys) {
+      if (!nextPaths.contains(oldPath)) {
+        await LocalAudioManager.deleteFiles(oldPath);
+      }
+    }
     await _localAudioManager.setEntries(nextDbs);
-    await _localAudioManager.setLocalAudioEnabled(
-      nextDbs.any((LocalAudioDbEntry db) => db.enabled),
-    );
+    // 不再用「任一库启用」自动派生总开关；以当前显式总开关值重新 gate native
+    // （总开关 OFF → 推空列表给 native；ON → 推 enabled 路径）。
+    await _localAudioManager.setLocalAudioEnabled(localAudioEnabled);
   }
 
   Future<String?> lookupRemoteAudio(
@@ -2655,6 +2683,19 @@ class AppModel with ChangeNotifier {
   // ── local audio DB (delegated to LocalAudioManager) ─────────────────
 
   List<LocalAudioDbEntry> get localAudioDbs => _localAudioManager.entries;
+
+  /// 把外部音频库文件拷进库目录，返回内部副本 entry（不写 prefs、不通知 native）。
+  /// 持久化交给后续 [setAudioSourceConfigs]。
+  Future<LocalAudioDbEntry> importLocalAudioDbFile(
+    String sourcePath, {
+    required String displayName,
+  }) =>
+      _localAudioManager.importFile(sourcePath, displayName: displayName);
+
+  /// 显式设置本地音频总开关（dialog 直接调用）。true → 推 enabled 路径给 native，
+  /// false → 推空列表。
+  Future<void> setLocalAudioEnabled(bool value) =>
+      _localAudioManager.setLocalAudioEnabled(value);
 
   Future<void> setLocalAudioDbs(List<LocalAudioDbEntry> dbs) =>
       _localAudioManager.setEntries(dbs);
