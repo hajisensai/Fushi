@@ -1,13 +1,18 @@
+import 'package:drift/drift.dart' hide isNull;
+import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:hibiki/models.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/models/theme_notifier.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_bridge.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_play_bar.dart';
 import 'package:hibiki/src/media/audiobook/reader_quick_settings_sheet.dart';
 import 'package:hibiki/utils.dart';
+import 'package:hibiki_core/hibiki_core.dart';
 
 import '../../helpers/test_platform_services.dart';
 
@@ -16,34 +21,27 @@ class _FakeInAppWebViewController implements InAppWebViewController {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-void main() {
-  testWidgets('reader settings custom theme chip uses shared MD3 chip',
-      (tester) async {
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: Builder(
-            builder: (context) {
-              return buildReaderThemeChip(
-                context: context,
-                label: 'Custom Theme',
-                selected: true,
-                onSelected: (_) {},
-                avatar: const Icon(Icons.palette),
-              );
-            },
-          ),
-        ),
-      ),
-    );
-
-    final Finder chip = find.byType(HibikiSelectableChip);
-
-    expect(chip, findsOneWidget);
-    expect(tester.widget<HibikiSelectableChip>(chip).selected, isTrue);
-    expect(find.byType(ActionChip), findsNothing);
+AppModel _testAppModel() {
+  final HibikiDatabase db = HibikiDatabase.forTesting(
+    DatabaseConnection(NativeDatabase.memory()),
+  );
+  final ThemeNotifier themeNotifier = ThemeNotifier(db, () => const TextTheme())
+    ..loadFromPrefsSnapshot(<String, String>{
+      'design_system': PrefCodec.encode('material'),
+      'app_theme_key': PrefCodec.encode('system-theme'),
+      'brightness_mode': PrefCodec.encode('system'),
+      'custom_theme_seed': PrefCodec.encode(0xFF1F4959),
+    });
+  final AppModel appModel = AppModel(testPlatformServices())
+    ..themeNotifier = themeNotifier;
+  addTearDown(() async {
+    themeNotifier.dispose();
+    await db.close();
   });
+  return appModel;
+}
 
+void main() {
   testWidgets('audiobook play bar keeps lyrics mode out of bottom bar',
       (tester) async {
     final controller = AudiobookPlayerController();
@@ -80,7 +78,7 @@ void main() {
                 onBookmark: () async {},
                 onExitReader: () {},
                 webViewController: _FakeInAppWebViewController(),
-                appModel: AppModel(testPlatformServices()),
+                appModel: _testAppModel(),
                 ref: ref,
                 isHibikiReader: true,
               ),
@@ -95,12 +93,14 @@ void main() {
     expect(find.text(t.settings_destination_appearance), findsOneWidget);
     expect(find.text(t.section_layout), findsOneWidget);
     expect(find.text(t.settings_destination_reading_controls), findsOneWidget);
+    expect(find.text(t.settings_destination_lookup), findsOneWidget);
     expect(find.text(t.section_navigation), findsOneWidget);
     expect(find.text(t.display_settings), findsOneWidget);
-    // Main-page quick controls keep the bespoke theme chip + view-mode toggle.
+    // Main-page quick controls keep only the most frequently adjusted controls;
+    // theme lives in the appearance sub-page and reuses the global selector.
     expect(find.text(t.ttu_font_size), findsOneWidget);
     expect(find.text(t.ttu_line_height), findsOneWidget);
-    expect(find.text(t.ttu_theme), findsOneWidget);
+    expect(find.text(t.ttu_theme), findsNothing);
     expect(find.text(t.ttu_view_mode_label), findsOneWidget);
     expect(find.byType(ListTile), findsNothing);
 
@@ -109,8 +109,19 @@ void main() {
     await tester.tap(find.text(t.settings_destination_appearance));
     await tester.pumpAndSettle();
 
+    expect(find.text(t.ttu_theme), findsOneWidget);
+    expect(find.byType(HibikiColorSwatch), findsWidgets);
     expect(find.byType(AdaptiveSettingsStepperRow), findsWidgets);
     expect(find.byType(AdaptiveSettingsSwitchRow), findsNothing);
+
+    await tester.tap(find.byIcon(Icons.arrow_back));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text(t.settings_destination_lookup));
+    await tester.tap(find.text(t.settings_destination_lookup));
+    await tester.pumpAndSettle();
+
+    expect(find.text(t.auto_read_on_lookup), findsOneWidget);
+    expect(find.text(t.pause_on_lookup), findsOneWidget);
 
     await tester.tap(find.byIcon(Icons.arrow_back));
     await tester.pumpAndSettle();
@@ -147,7 +158,7 @@ void main() {
                 onBookmark: () async {},
                 onExitReader: () {},
                 webViewController: _FakeInAppWebViewController(),
-                appModel: AppModel(testPlatformServices()),
+                appModel: _testAppModel(),
                 ref: ref,
                 bookmarks: [
                   Bookmark(

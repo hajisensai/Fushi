@@ -19,7 +19,7 @@ enum SettingsDestinationId {
 
 /// 书内快捷面板的分组维度，与全局 [SettingsDestinationId] 正交。
 /// 一个设置项可以同时出现在全局某 destination 和书内某 [ReaderGroup]。
-enum ReaderGroup { appearance, layout, behavior, audiobook }
+enum ReaderGroup { appearance, layout, behavior, lookup, audiobook }
 
 /// 描述某个 [SettingsItem] 在书内快捷面板里的放置位置。
 /// 为 null 表示该项不出现在书内面板（仅全局可见）。

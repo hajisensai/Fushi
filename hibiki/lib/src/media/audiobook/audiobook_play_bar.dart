@@ -145,19 +145,3 @@ class AudiobookFollowAudioButton extends StatelessWidget {
     );
   }
 }
-
-Widget buildReaderThemeChip({
-  required BuildContext context,
-  required String label,
-  required bool selected,
-  required ValueChanged<bool> onSelected,
-  Widget? avatar,
-}) {
-  return HibikiSelectableChip(
-    tooltip: label,
-    avatar: avatar,
-    label: label,
-    selected: selected,
-    onSelected: onSelected,
-  );
-}

@@ -8,14 +8,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:hibiki/src/epub/epub_book.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_bridge.dart';
-import 'package:hibiki/src/media/audiobook/audiobook_play_bar.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/book_css_editor_page.dart';
-import 'package:hibiki/src/pages/implementations/custom_theme_page.dart';
 import 'package:hibiki/src/settings/cupertino_settings_renderer.dart';
 import 'package:hibiki/src/settings/material_settings_renderer.dart';
+import 'package:hibiki/src/settings/settings_actions.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
 import 'package:hibiki/src/settings/settings_renderer.dart';
@@ -315,6 +314,11 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
         page: 'behavior',
       ),
       _categoryTile(
+        icon: Icons.manage_search_outlined,
+        label: t.settings_destination_lookup,
+        page: 'lookup',
+      ),
+      _categoryTile(
         icon: Icons.menu_book_outlined,
         label: t.section_navigation,
         page: 'location',
@@ -381,57 +385,6 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
                 _updateSetting('lineHeight', s.lineHeight);
               },
             ),
-            AdaptiveSettingsRow(
-              title: t.ttu_theme,
-              controlBelow: true,
-              trailing: Wrap(
-                spacing: tokens.spacing.gap * 0.75,
-                runSpacing: tokens.spacing.gap * 0.75,
-                children: <Widget>[
-                  ...TtuReaderSettings.availableThemes.map((themeKey) {
-                    return buildReaderThemeChip(
-                      context: context,
-                      label:
-                          TtuReaderSettings.themeLabels[themeKey] ?? themeKey,
-                      selected: s.theme == themeKey,
-                      onSelected: (bool selected) async {
-                        if (!selected) return;
-                        s.theme = themeKey;
-                        setState(() {});
-                        await widget.appModel.setAppThemeKey(themeKey);
-                        await _updateSetting('theme', themeKey);
-                        await widget.onThemeChanged?.call();
-                      },
-                    );
-                  }),
-                  buildReaderThemeChip(
-                    avatar: Icon(
-                      Icons.palette_outlined,
-                      size: 18,
-                      color: s.theme == 'custom-theme'
-                          ? theme.colorScheme.onPrimaryContainer
-                          : null,
-                    ),
-                    context: context,
-                    label: t.custom_theme,
-                    selected: s.theme == 'custom-theme',
-                    onSelected: (_) {
-                      Navigator.push(
-                        context,
-                        adaptivePageRoute(
-                          builder: (_) => const CustomThemePage(),
-                        ),
-                      ).then((_) async {
-                        s.theme = widget.appModel.appThemeKey;
-                        setState(() {});
-                        await _updateSetting('theme', s.theme);
-                        await widget.onThemeChanged?.call();
-                      });
-                    },
-                  ),
-                ],
-              ),
-            ),
             AdaptiveSettingsSegmentedRow<String>(
               title: t.ttu_view_mode_label,
               segments: <ButtonSegment<String>>[
@@ -481,6 +434,12 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
           ReaderGroup.behavior,
           t.settings_destination_reading_controls,
         );
+      case 'lookup':
+        title = t.settings_destination_lookup;
+        content = _buildReaderGroupContent(
+          ReaderGroup.lookup,
+          t.settings_destination_lookup,
+        );
       case 'location':
         title = t.section_navigation;
         content = _buildLocationSection(theme);
@@ -514,8 +473,8 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
   /// mode / columns / spread / prioritize reader styles）走
   /// `notifyReaderLayoutChanged`（= `onLayoutReloadLive`，整章重排）。本 refresh
   /// 回调只负责把内存镜像 `_settings` 从 `_src` 重建并 setState。
-  Widget _buildReaderGroupContent(ReaderGroup group, String title) {
-    final SettingsContext settingsContext = SettingsContext(
+  SettingsContext _settingsContext() {
+    return SettingsContext(
       context: context,
       appModel: widget.appModel,
       ref: widget.ref,
@@ -526,15 +485,54 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
         setState(() {});
       },
     );
+  }
+
+  Widget _buildReaderGroupContent(ReaderGroup group, String title) {
+    final SettingsContext settingsContext = _settingsContext();
+    return _buildSettingsDestinationContent(
+      settingsContext,
+      buildReaderGroupDestination(settingsContext, group, title),
+    );
+  }
+
+  Widget _buildSettingsDestinationContent(
+    SettingsContext settingsContext,
+    SettingsDestination destination,
+  ) {
     final bool cupertino = isCupertinoPlatform(context);
     final SettingsRenderer renderer = cupertino
         ? const CupertinoSettingsRenderer()
         : const MaterialSettingsRenderer();
     return renderer.buildDetailContent(
       settingsContext: settingsContext,
-      destination: buildReaderGroupDestination(settingsContext, group, title),
+      destination: destination,
       shrinkWrap: true,
     );
+  }
+
+  Widget _buildThemeSelector() {
+    final SettingsContext settingsContext = SettingsContext(
+      context: context,
+      appModel: widget.appModel,
+      ref: widget.ref,
+      readerSource: ReaderHibikiSource.instance,
+      refresh: () {
+        if (!mounted) return;
+        unawaited(_syncThemeSelection());
+        _loadSettings();
+        setState(() {});
+      },
+    );
+    return AdaptiveSettingsSection(
+      children: <Widget>[
+        buildThemeSelector(settingsContext),
+      ],
+    );
+  }
+
+  Future<void> _syncThemeSelection() async {
+    await _updateSetting('theme', widget.appModel.appThemeKey);
+    await widget.onThemeChanged?.call();
   }
 
   /// Appearance sub-page = projected schema appearance items + the bespoke
@@ -546,13 +544,22 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
       ReaderGroup.appearance,
       t.settings_destination_appearance,
     );
+    final Widget themeSelector = _buildThemeSelector();
     if (widget.extractDir == null) {
-      return projected;
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          themeSelector,
+          projected,
+        ],
+      );
     }
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        themeSelector,
         projected,
         AdaptiveSettingsSection(
           children: [

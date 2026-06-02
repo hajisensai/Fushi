@@ -223,7 +223,7 @@ void main() {
       'HibikiDesignTokens',
     ],
     'lib/src/media/audiobook/audiobook_play_bar.dart': <String>[
-      'HibikiSelectableChip',
+      'HibikiIconButton',
     ],
     'lib/src/pages/implementations/tag_filter_sheet.dart': <String>[
       'HibikiSelectableChip',
