@@ -122,7 +122,6 @@ mixin DictionaryPageMixin {
             mixinAppModel.lookupRemoteAudio(
           expression,
           reading,
-          ignoreRemoteLookupEnabled: true,
         ),
       );
       final String? url = await resolver.resolveConfigured(

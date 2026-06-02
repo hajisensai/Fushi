@@ -1177,5 +1177,7 @@
     "remote_lookup_enabled_hint": "本地词典或本地音频未命中时，查询已配置的 Hibiki 服务器",
     "sync_dictionary": "同步词典",
     "sync_dictionary_warning": "词典包可能很大，并包含已导入的词典资源。",
-    "settings_destination_reading": "阅读"
+    "settings_destination_reading": "阅读",
+    "remote_dict_lookup": "远端词典查询",
+    "remote_dict_lookup_hint": "本地词典查不到时，查询已配置的 Hibiki 服务器"
 }

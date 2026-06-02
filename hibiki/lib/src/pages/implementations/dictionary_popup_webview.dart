@@ -215,7 +215,6 @@ class DictionaryPopupWebViewState
       queryRemoteAudio: (expression, reading) => appModel.lookupRemoteAudio(
         expression,
         reading,
-        ignoreRemoteLookupEnabled: true,
       ),
     );
     return resolver.resolveConfigured(

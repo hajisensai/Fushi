@@ -837,8 +837,8 @@ SettingsDestination _lookupDestination() {
           ),
           SettingsSwitchItem(
             id: 'lookup.remote_lookup',
-            title: t.remote_lookup_enabled,
-            subtitle: t.remote_lookup_enabled_hint,
+            title: t.remote_dict_lookup,
+            subtitle: t.remote_dict_lookup_hint,
             icon: Icons.hub_outlined,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.remoteLookupEnabled,

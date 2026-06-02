@@ -2635,10 +2635,10 @@ class AppModel with ChangeNotifier {
 
   Future<String?> lookupRemoteAudio(
     String expression,
-    String reading, {
-    bool ignoreRemoteLookupEnabled = false,
-  }) async {
-    if (!ignoreRemoteLookupEnabled && !remoteLookupEnabled) return null;
+    String reading,
+  ) async {
+    // 远端音频是否查询由「管理音频来源」对话框里的 hibikiRemote 源 enabled 决定
+    // （resolveConfigured 只在该源 enabled 时才调用这里）；与词典远端开关 remoteLookupEnabled 无关。
     try {
       return HibikiRemoteLookupClient(repo: SyncRepository(_database))
           .lookupAudioUrl(expression: expression, reading: reading);

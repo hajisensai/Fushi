@@ -236,7 +236,6 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         queryRemoteAudio: (expression, reading) => appModel.lookupRemoteAudio(
           expression,
           reading,
-          ignoreRemoteLookupEnabled: true,
         ),
       );
       final String? url = await resolver.resolveConfigured(
