@@ -197,7 +197,7 @@ class HibikiFocusController extends ChangeNotifier {
     if (active != null && _entryCanFocus(active)) {
       active.focusNode.requestFocus();
       _activeId = active.id;
-      _scheduleReveal(active);
+      _maybeRevealOnRepair(active);
       return;
     }
 
@@ -205,7 +205,7 @@ class HibikiFocusController extends ChangeNotifier {
     if (targets.isNotEmpty) {
       targets.first.focusNode.requestFocus();
       _activeId = targets.first.id;
-      _scheduleReveal(targets.first);
+      _maybeRevealOnRepair(targets.first);
       notifyListeners();
       return;
     }
@@ -221,6 +221,23 @@ class HibikiFocusController extends ChangeNotifier {
         HibikiFocusScroll.ensureVisible(entry.context);
       }
     });
+  }
+
+  // Reveal driven by PASSIVE focus repair (page entry, async reflow re-homing
+  // the cursor) — gated to keyboard/gamepad highlight mode, mirroring
+  // HibikiFocusRing: the viewport follows focus only when there is a visible
+  // focus cursor. In touch mode there is no cursor, so moving the scroll offset
+  // to "reveal" a programmatically grabbed target is an unwanted jump — e.g.
+  // the sync/backup page, whose async backend load reflows the list taller
+  // after this reveal is scheduled, would scroll-center a now-lower row and
+  // yank the page down on open. Explicit gamepad/keyboard navigation
+  // (requestById/move) still reveals unconditionally — that input IS the
+  // traditional-mode cursor.
+  void _maybeRevealOnRepair(HibikiFocusTargetEntry entry) {
+    if (FocusManager.instance.highlightMode != FocusHighlightMode.traditional) {
+      return;
+    }
+    _scheduleReveal(entry);
   }
 
   void scheduleRepair() {

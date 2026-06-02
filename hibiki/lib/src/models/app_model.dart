@@ -175,6 +175,15 @@ class AppModel with ChangeNotifier {
     );
   }
 
+  /// Test seam: inject an already-open database so widget tests can exercise
+  /// schema builders (e.g. the sync/backup destination) that read [database]
+  /// without running the full [initialise] path.
+  @visibleForTesting
+  void wireDatabaseForTesting(HibikiDatabase db) {
+    _database = db;
+    _databaseOpened = true;
+  }
+
   /// Used for showing dialogs without needing to pass around a [BuildContext].
   GlobalKey<NavigatorState> get navigatorKey => _navigatorKey;
   late final GlobalKey<NavigatorState> _navigatorKey =
