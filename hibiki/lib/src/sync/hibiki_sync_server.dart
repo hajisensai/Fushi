@@ -70,6 +70,21 @@ class HibikiSyncServer {
       <String, _RemoteAudioToken>{};
   HttpServer? _server;
 
+  /// Pairing window: while [isPairingOpen] is true, an unauthenticated client
+  /// may POST /api/pair to fetch [_token]. The user explicitly opens this
+  /// short window on the server device (Bluetooth-style pairing), so the raw
+  /// token is only handed out during a window they deliberately opened.
+  DateTime? _pairingExpiry;
+
+  void openPairing({Duration window = const Duration(seconds: 60)}) {
+    _pairingExpiry = DateTime.now().add(window);
+  }
+
+  bool get isPairingOpen {
+    final DateTime? expiry = _pairingExpiry;
+    return expiry != null && DateTime.now().isBefore(expiry);
+  }
+
   bool get isRunning => _server != null;
   int get port => _server?.port ?? _requestedPort;
 
@@ -107,6 +122,10 @@ class HibikiSyncServer {
     return (shelf.Handler innerHandler) {
       return (shelf.Request request) {
         if (request.method == 'OPTIONS') return innerHandler(request);
+        // Pairing is the one unauthenticated route: the client has no token
+        // yet — that is exactly what it is fetching. Gating is done by the
+        // pairing window inside _handlePair, not by Basic auth.
+        if (request.url.path == 'api/pair') return innerHandler(request);
         final auth = request.headers['authorization'];
         if (auth == null || !_validateAuth(auth)) {
           return shelf.Response(401,
@@ -145,6 +164,9 @@ class HibikiSyncServer {
   Future<shelf.Response> _handleRequest(shelf.Request request) async {
     final method = request.method.toUpperCase();
     final reqPath = Uri.decodeFull('/${request.url.path}');
+    if (reqPath == '/api/pair') {
+      return _handlePair(method);
+    }
     if (reqPath.startsWith('/api/lookup/')) {
       return _handleLookupApi(request, method, reqPath);
     }
@@ -177,6 +199,14 @@ class HibikiSyncServer {
       default:
         return shelf.Response(405);
     }
+  }
+
+  shelf.Response _handlePair(String method) {
+    if (method != 'POST') return shelf.Response(405);
+    if (!isPairingOpen) {
+      return shelf.Response(403, body: 'Pairing window closed');
+    }
+    return _jsonResponse(<String, dynamic>{'token': _token});
   }
 
   Future<shelf.Response> _handleLookupApi(
