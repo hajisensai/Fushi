@@ -1802,15 +1802,33 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
     return 'Hibiki';
   }
 
+  /// Cancel the pairing countdown and clear its displayed seconds. Stopping the
+  /// server (or regenerating the token, which stops it) drops the server's
+  /// pairing window, so the UI must not keep claiming "pairing open: N left"
+  /// while peers would actually get a 403. The `mounted` guard is because this
+  /// runs from async paths like [_stopServer]; do NOT call it from dispose().
+  void _cancelPairCountdown() {
+    _pairCountdownTimer?.cancel();
+    _pairCountdownTimer = null;
+    if (mounted) setState(() => _pairSecondsLeft = 0);
+  }
+
   Future<void> _stopServer() async {
+    // Stopping the server invalidates any open pairing window; reset the
+    // countdown so the button stops falsely showing "pairing open: N left".
+    _pairCountdownTimer?.cancel();
+    _pairCountdownTimer = null;
     await _broadcast?.stop();
     _broadcast = null;
     await _server?.stop();
     _server = null;
-    if (mounted) setState(() {});
+    if (mounted) setState(() => _pairSecondsLeft = 0);
   }
 
   Future<void> _regenerateToken() async {
+    // A token change invalidates the current pairing window even when the
+    // server isn't restarted below, so always cancel the countdown first.
+    _cancelPairCountdown();
     final newToken = HibikiSyncServer.generateToken();
     final repo = SyncRepository(widget.settingsContext.appModel.database);
     await repo.setServerPassword(newToken);
