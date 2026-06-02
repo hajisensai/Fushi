@@ -1554,67 +1554,65 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget> {
               itemBuilder: (BuildContext context, int index) {
                 final HibikiClientUrl u = _urls[index];
                 final bool? ok = _reachable[u.url];
-                return HibikiListItem(
+                return ReorderableDelayedDragStartListener(
                   key: ValueKey<String>(u.url),
-                  padding: EdgeInsets.zero,
-                  leading: ReorderableDragStartListener(
-                    index: index,
-                    child: Icon(Icons.drag_handle,
-                        color: theme.colorScheme.onSurfaceVariant),
-                  ),
-                  title: Text(
-                    u.url,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: u.enabled
-                          ? theme.colorScheme.onSurface
-                          : theme.colorScheme.onSurfaceVariant,
+                  index: index,
+                  child: HibikiListItem(
+                    padding: EdgeInsets.zero,
+                    title: Text(
+                      u.url,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: u.enabled
+                            ? theme.colorScheme.onSurface
+                            : theme.colorScheme.onSurfaceVariant,
+                      ),
                     ),
-                  ),
-                  subtitle: ok == null
-                      ? null
-                      : Text(
-                          ok
-                              ? t.sync_connection_success
-                              : t.sync_connection_failed,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: ok
-                                ? theme.colorScheme.primary
-                                : theme.colorScheme.error,
+                    subtitle: ok == null
+                        ? null
+                        : Text(
+                            ok
+                                ? t.sync_connection_success
+                                : t.sync_connection_failed,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: ok
+                                  ? theme.colorScheme.primary
+                                  : theme.colorScheme.error,
+                            ),
                           ),
+                    onTap: () => _addOrEditUrl(index: index),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        // Gamepad/keyboard reorder equivalent for the drag handle.
+                        HibikiIconButton(
+                          icon: Icons.keyboard_arrow_up,
+                          size: 18,
+                          tooltip: t.move_up,
+                          enabled: index > 0,
+                          onTap: () => _reorderUrls(index, index - 1),
                         ),
-                  onTap: () => _addOrEditUrl(index: index),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      // Gamepad/keyboard reorder equivalent for the drag handle.
-                      HibikiIconButton(
-                        icon: Icons.keyboard_arrow_up,
-                        size: 18,
-                        tooltip: t.move_up,
-                        enabled: index > 0,
-                        onTap: () => _reorderUrls(index, index - 1),
-                      ),
-                      HibikiIconButton(
-                        icon: Icons.keyboard_arrow_down,
-                        size: 18,
-                        tooltip: t.move_down,
-                        enabled: index < _urls.length - 1,
-                        onTap: () => _reorderUrls(index, index + 2),
-                      ),
-                      adaptiveSwitch(
-                        context: context,
-                        value: u.enabled,
-                        onChanged: (_) => _toggleUrl(index),
-                      ),
-                      HibikiIconButton(
-                        icon: Icons.delete_outline,
-                        size: 18,
-                        tooltip: t.dialog_delete,
-                        onTap: () => _deleteUrl(index),
-                      ),
-                    ],
+                        HibikiIconButton(
+                          icon: Icons.keyboard_arrow_down,
+                          size: 18,
+                          tooltip: t.move_down,
+                          enabled: index < _urls.length - 1,
+                          onTap: () => _reorderUrls(index, index + 2),
+                        ),
+                        adaptiveSwitch(
+                          context: context,
+                          value: u.enabled,
+                          onChanged: (_) => _toggleUrl(index),
+                        ),
+                        HibikiIconButton(
+                          icon: Icons.delete_outline,
+                          size: 18,
+                          tooltip: t.dialog_delete,
+                          onTap: () => _deleteUrl(index),
+                        ),
+                      ],
+                    ),
                   ),
                 );
               },

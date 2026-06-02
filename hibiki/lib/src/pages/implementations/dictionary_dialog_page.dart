@@ -890,61 +890,58 @@ class _DictionaryDialogPageState extends BasePageState {
     final Color titleColor =
         enabled ? scheme.onSurface : scheme.onSurfaceVariant;
     final Color subtitleColor = scheme.onSurfaceVariant;
-    return Padding(
+    return ReorderableDelayedDragStartListener(
       key: key,
-      padding: EdgeInsets.only(bottom: isLast ? 0 : tokens.spacing.rowVertical),
-      child: HibikiCard(
-        padding: EdgeInsets.zero,
-        child: HibikiListItem(
-          minHeight: 70,
-          padding: EdgeInsets.symmetric(
-            horizontal: tokens.spacing.rowHorizontal - tokens.spacing.gap / 2,
-            vertical: tokens.spacing.rowVertical,
-          ),
-          leading: ReorderableDragStartListener(
-            index: index,
-            child: Icon(
-              Icons.drag_handle,
-              color: scheme.onSurfaceVariant,
+      index: index,
+      child: Padding(
+        padding:
+            EdgeInsets.only(bottom: isLast ? 0 : tokens.spacing.rowVertical),
+        child: HibikiCard(
+          padding: EdgeInsets.zero,
+          child: HibikiListItem(
+            minHeight: 70,
+            padding: EdgeInsets.symmetric(
+              horizontal: tokens.spacing.rowHorizontal - tokens.spacing.gap / 2,
+              vertical: tokens.spacing.rowVertical,
             ),
-          ),
-          title: Text(
-            dictionary.name,
-            style: textTheme.bodyLarge?.copyWith(
-              color: titleColor,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          subtitle: Text(
-            _subtitleForDictionary(dictionary, dictionaryFormat),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: textTheme.bodySmall?.copyWith(
-              color: subtitleColor,
-            ),
-          ),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Gamepad/keyboard reorder equivalent for the drag handle.
-              HibikiIconButton(
-                icon: Icons.keyboard_arrow_up,
-                size: 18,
-                tooltip: t.move_up,
-                enabled: index > 0,
-                onTap: onMoveUp,
+            title: Text(
+              dictionary.name,
+              style: textTheme.bodyLarge?.copyWith(
+                color: titleColor,
+                fontWeight: FontWeight.w600,
               ),
-              HibikiIconButton(
-                icon: Icons.keyboard_arrow_down,
-                size: 18,
-                tooltip: t.move_down,
-                enabled: !isLast,
-                onTap: onMoveDown,
+            ),
+            subtitle: Text(
+              _subtitleForDictionary(dictionary, dictionaryFormat),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: textTheme.bodySmall?.copyWith(
+                color: subtitleColor,
               ),
-              _buildDictionaryVisibilityButton(dictionary, enabled),
-              SizedBox(width: tokens.spacing.gap / 2),
-              buildDictionaryTileTrailing(dictionary),
-            ],
+            ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Gamepad/keyboard reorder equivalent for the drag handle.
+                HibikiIconButton(
+                  icon: Icons.keyboard_arrow_up,
+                  size: 18,
+                  tooltip: t.move_up,
+                  enabled: index > 0,
+                  onTap: onMoveUp,
+                ),
+                HibikiIconButton(
+                  icon: Icons.keyboard_arrow_down,
+                  size: 18,
+                  tooltip: t.move_down,
+                  enabled: !isLast,
+                  onTap: onMoveDown,
+                ),
+                _buildDictionaryVisibilityButton(dictionary, enabled),
+                SizedBox(width: tokens.spacing.gap / 2),
+                buildDictionaryTileTrailing(dictionary),
+              ],
+            ),
           ),
         ),
       ),

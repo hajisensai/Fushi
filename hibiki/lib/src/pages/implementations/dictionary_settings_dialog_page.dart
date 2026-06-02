@@ -162,6 +162,9 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
   Widget _buildRemoteList(HibikiDesignTokens tokens) {
     return ReorderableListView.builder(
       shrinkWrap: true,
+      // 关掉桌面端自动注入的 ☰ 拖拽手柄（会盖住行尾按钮）；改用整行长按拖拽，
+      // 全平台统一。上下箭头按钮仍是无障碍/手柄重排路径。
+      buildDefaultDragHandles: false,
       physics: const NeverScrollableScrollPhysics(),
       itemCount: _remoteSources.length,
       onReorder: (int oldIndex, int newIndex) {
@@ -174,57 +177,61 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
       itemBuilder: (BuildContext context, int index) {
         final AudioSourceConfig source = _remoteSources[index];
         final bool isHibiki = source.kind == AudioSourceKind.hibikiRemote;
-        return AdaptiveSettingsRow(
+        return ReorderableDelayedDragStartListener(
           key: ValueKey<String>(
             'audio_remote_${source.kind.wireName}_${source.url ?? index}',
           ),
-          title: isHibiki
-              ? t.audio_source_hibiki_interconnect
-              : source.displayLabel,
-          subtitle: isHibiki ? t.remote_audio_source : (source.url ?? ''),
-          icon: Icons.drag_handle,
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Switch.adaptive(
-                value: source.enabled,
-                onChanged: (bool enabled) => setState(() {
-                  _remoteSources[index] = source.copyWith(enabled: enabled);
-                }),
-              ),
-              // Gamepad/keyboard reorder equivalent for the drag handle
-              // (which a controller cannot grab).
-              HibikiIconButton(
-                icon: Icons.keyboard_arrow_up,
-                size: 18,
-                tooltip: t.move_up,
-                enabled: index > 0,
-                padding: EdgeInsets.all(tokens.spacing.gap / 2),
-                onTap: () => setState(() {
-                  final AudioSourceConfig item = _remoteSources.removeAt(index);
-                  _remoteSources.insert(index - 1, item);
-                }),
-              ),
-              HibikiIconButton(
-                icon: Icons.keyboard_arrow_down,
-                size: 18,
-                tooltip: t.move_down,
-                enabled: index < _remoteSources.length - 1,
-                padding: EdgeInsets.all(tokens.spacing.gap / 2),
-                onTap: () => setState(() {
-                  final AudioSourceConfig item = _remoteSources.removeAt(index);
-                  _remoteSources.insert(index + 1, item);
-                }),
-              ),
-              HibikiIconButton(
-                icon: Icons.delete_outline,
-                size: 18,
-                tooltip: t.dialog_delete,
-                enabled: !isHibiki,
-                padding: EdgeInsets.all(tokens.spacing.gap / 2),
-                onTap: () => setState(() => _remoteSources.removeAt(index)),
-              ),
-            ],
+          index: index,
+          child: AdaptiveSettingsRow(
+            title: isHibiki
+                ? t.audio_source_hibiki_interconnect
+                : source.displayLabel,
+            subtitle: isHibiki ? t.remote_audio_source : (source.url ?? ''),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Switch.adaptive(
+                  value: source.enabled,
+                  onChanged: (bool enabled) => setState(() {
+                    _remoteSources[index] = source.copyWith(enabled: enabled);
+                  }),
+                ),
+                // Gamepad/keyboard reorder equivalent for the drag handle
+                // (which a controller cannot grab).
+                HibikiIconButton(
+                  icon: Icons.keyboard_arrow_up,
+                  size: 18,
+                  tooltip: t.move_up,
+                  enabled: index > 0,
+                  padding: EdgeInsets.all(tokens.spacing.gap / 2),
+                  onTap: () => setState(() {
+                    final AudioSourceConfig item =
+                        _remoteSources.removeAt(index);
+                    _remoteSources.insert(index - 1, item);
+                  }),
+                ),
+                HibikiIconButton(
+                  icon: Icons.keyboard_arrow_down,
+                  size: 18,
+                  tooltip: t.move_down,
+                  enabled: index < _remoteSources.length - 1,
+                  padding: EdgeInsets.all(tokens.spacing.gap / 2),
+                  onTap: () => setState(() {
+                    final AudioSourceConfig item =
+                        _remoteSources.removeAt(index);
+                    _remoteSources.insert(index + 1, item);
+                  }),
+                ),
+                HibikiIconButton(
+                  icon: Icons.delete_outline,
+                  size: 18,
+                  tooltip: t.dialog_delete,
+                  enabled: !isHibiki,
+                  padding: EdgeInsets.all(tokens.spacing.gap / 2),
+                  onTap: () => setState(() => _remoteSources.removeAt(index)),
+                ),
+              ],
+            ),
           ),
         );
       },

@@ -1157,40 +1157,40 @@ class _FontTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    return AdaptiveSettingsSwitchActionRow(
-      title: name,
-      subtitle: isFile ? t.font_source_file : t.font_source_system,
-      icon: isFile ? Icons.file_present_outlined : Icons.phone_android_outlined,
-      value: enabled,
-      onChanged: (_) => onToggle(),
-      actions: [
-        // Gamepad/keyboard reorder equivalent for the drag handle.
-        HibikiIconButton(
-          icon: Icons.keyboard_arrow_up,
-          size: 18,
-          tooltip: t.move_up,
-          enabled: index > 0,
-          onTap: onMoveUp,
-        ),
-        HibikiIconButton(
-          icon: Icons.keyboard_arrow_down,
-          size: 18,
-          tooltip: t.move_down,
-          enabled: !isLast,
-          onTap: onMoveDown,
-        ),
-        ReorderableDragStartListener(
-          index: index,
-          child: const Icon(Icons.drag_handle),
-        ),
-        HibikiIconButton(
-          icon: Icons.delete_outline,
-          size: 18,
-          enabledColor: scheme.error,
-          tooltip: t.custom_fonts_removed,
-          onTap: onDelete,
-        ),
-      ],
+    // 整行长按拖拽重排（不再显示 ☰ 手柄）；上下箭头按钮是无障碍/手柄重排路径。
+    return ReorderableDelayedDragStartListener(
+      index: index,
+      child: AdaptiveSettingsSwitchActionRow(
+        title: name,
+        subtitle: isFile ? t.font_source_file : t.font_source_system,
+        icon:
+            isFile ? Icons.file_present_outlined : Icons.phone_android_outlined,
+        value: enabled,
+        onChanged: (_) => onToggle(),
+        actions: [
+          HibikiIconButton(
+            icon: Icons.keyboard_arrow_up,
+            size: 18,
+            tooltip: t.move_up,
+            enabled: index > 0,
+            onTap: onMoveUp,
+          ),
+          HibikiIconButton(
+            icon: Icons.keyboard_arrow_down,
+            size: 18,
+            tooltip: t.move_down,
+            enabled: !isLast,
+            onTap: onMoveDown,
+          ),
+          HibikiIconButton(
+            icon: Icons.delete_outline,
+            size: 18,
+            enabledColor: scheme.error,
+            tooltip: t.custom_fonts_removed,
+            onTap: onDelete,
+          ),
+        ],
+      ),
     );
   }
 }

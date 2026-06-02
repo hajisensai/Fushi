@@ -1718,7 +1718,9 @@ void main() {
 
     expect(pageSource, contains('ReorderableListView.builder('));
     expect(pageSource, contains('buildDefaultDragHandles: false'));
-    expect(source, contains('ReorderableDragStartListener('));
+    // 不再显示 ☰ 拖拽手柄，改用整行长按拖拽。
+    expect(source, contains('ReorderableDelayedDragStartListener('));
+    expect(source, isNot(contains('ReorderableDragStartListener(')));
   });
 
   test('system font picker search uses shared MD3 spacing tokens', () {
