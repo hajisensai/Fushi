@@ -1019,17 +1019,33 @@ class HibikiColorSwatch extends StatelessWidget {
               ),
       ),
     );
-    final Widget interactiveSwatch = onTap == null
-        ? swatch
-        : Material(
-            color: Colors.transparent,
-            borderRadius: inkRadius,
-            child: InkWell(
-              borderRadius: inkRadius,
-              onTap: onTap,
-              child: swatch,
-            ),
-          );
+    final Widget interactiveSwatch;
+    if (onTap == null) {
+      interactiveSwatch = swatch;
+    } else {
+      // Under a HibikiFocusRoot the directional focus controller navigates ONLY
+      // between registered HibikiFocusTargets — a bare InkWell makes its own
+      // (unregistered) Focus node, so gamepad/keyboard navigation skips the
+      // whole swatch row (the theme picker was unreachable: "到不了主题的位置").
+      // Register each swatch as a single focus stop (A/Enter activates onTap),
+      // keeping the InkWell for mouse/touch ripple but barring it from grabbing
+      // a competing focus node. Off-root (mobile touch) the InkWell is unchanged.
+      final bool underFocusRoot =
+          HibikiFocusRoot.maybeControllerOf(context) != null;
+      final Widget inkSwatch = Material(
+        color: Colors.transparent,
+        borderRadius: inkRadius,
+        child: InkWell(
+          borderRadius: inkRadius,
+          onTap: onTap,
+          canRequestFocus: !underFocusRoot,
+          child: swatch,
+        ),
+      );
+      interactiveSwatch = underFocusRoot
+          ? _FocusableColorSwatch(onTap: onTap!, child: inkSwatch)
+          : inkSwatch;
+    }
     final Widget semanticSwatch = Semantics(
       button: onTap != null,
       selected: selected,
@@ -1050,6 +1066,48 @@ class HibikiColorSwatch extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Registers a [HibikiColorSwatch] as a single gamepad/keyboard focus stop so
+/// the directional [HibikiFocusController] can land on it (A/Enter fires
+/// [onTap]). Mirrors the settings-row focus target: an [Actions] ancestor turns
+/// the [ActivateIntent] dispatched at the focused node into the tap. Only used
+/// under a [HibikiFocusRoot]; off-root the bare InkWell stays a normal target.
+class _FocusableColorSwatch extends StatefulWidget {
+  const _FocusableColorSwatch({
+    required this.onTap,
+    required this.child,
+  });
+
+  final VoidCallback onTap;
+  final Widget child;
+
+  @override
+  State<_FocusableColorSwatch> createState() => _FocusableColorSwatchState();
+}
+
+class _FocusableColorSwatchState extends State<_FocusableColorSwatch> {
+  late final HibikiFocusId _focusId = HibikiFocusId(
+    'color-swatch-${identityHashCode(this)}',
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    return Actions(
+      actions: <Type, Action<Intent>>{
+        ActivateIntent: CallbackAction<ActivateIntent>(
+          onInvoke: (_) {
+            widget.onTap();
+            return null;
+          },
+        ),
+      },
+      child: HibikiFocusTarget(
+        id: _focusId,
+        child: widget.child,
+      ),
     );
   }
 }
