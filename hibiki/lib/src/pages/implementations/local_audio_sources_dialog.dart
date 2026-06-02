@@ -133,6 +133,9 @@ class _LocalAudioSourcesDialogState extends State<LocalAudioSourcesDialog> {
     }
     return ReorderableListView.builder(
       shrinkWrap: true,
+      // 关掉桌面端自动注入的 ☰ 拖拽手柄（它被 Stack 叠在行尾，会盖住下移按钮）；
+      // 改用整行长按拖拽，移动端/桌面端行为统一。上下箭头按钮仍是无障碍/手柄重排路径。
+      buildDefaultDragHandles: false,
       itemCount: prefs.length,
       onReorder: (int oldIndex, int newIndex) {
         setState(() {
@@ -143,42 +146,44 @@ class _LocalAudioSourcesDialogState extends State<LocalAudioSourcesDialog> {
       },
       itemBuilder: (BuildContext context, int index) {
         final LocalAudioSourcePref source = prefs[index];
-        return AdaptiveSettingsRow(
+        return ReorderableDelayedDragStartListener(
           key: ValueKey<String>('local_audio_source_${source.name}'),
-          title: source.name,
-          icon: Icons.drag_handle,
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Switch.adaptive(
-                value: source.enabled,
-                onChanged: (bool enabled) => setState(() {
-                  prefs[index] = source.copyWith(enabled: enabled);
-                }),
-              ),
-              HibikiIconButton(
-                icon: Icons.keyboard_arrow_up,
-                size: 18,
-                tooltip: t.move_up,
-                enabled: index > 0,
-                padding: EdgeInsets.all(tokens.spacing.gap / 2),
-                onTap: () => setState(() {
-                  final LocalAudioSourcePref item = prefs.removeAt(index);
-                  prefs.insert(index - 1, item);
-                }),
-              ),
-              HibikiIconButton(
-                icon: Icons.keyboard_arrow_down,
-                size: 18,
-                tooltip: t.move_down,
-                enabled: index < prefs.length - 1,
-                padding: EdgeInsets.all(tokens.spacing.gap / 2),
-                onTap: () => setState(() {
-                  final LocalAudioSourcePref item = prefs.removeAt(index);
-                  prefs.insert(index + 1, item);
-                }),
-              ),
-            ],
+          index: index,
+          child: AdaptiveSettingsRow(
+            title: source.name,
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Switch.adaptive(
+                  value: source.enabled,
+                  onChanged: (bool enabled) => setState(() {
+                    prefs[index] = source.copyWith(enabled: enabled);
+                  }),
+                ),
+                HibikiIconButton(
+                  icon: Icons.keyboard_arrow_up,
+                  size: 18,
+                  tooltip: t.move_up,
+                  enabled: index > 0,
+                  padding: EdgeInsets.all(tokens.spacing.gap / 2),
+                  onTap: () => setState(() {
+                    final LocalAudioSourcePref item = prefs.removeAt(index);
+                    prefs.insert(index - 1, item);
+                  }),
+                ),
+                HibikiIconButton(
+                  icon: Icons.keyboard_arrow_down,
+                  size: 18,
+                  tooltip: t.move_down,
+                  enabled: index < prefs.length - 1,
+                  padding: EdgeInsets.all(tokens.spacing.gap / 2),
+                  onTap: () => setState(() {
+                    final LocalAudioSourcePref item = prefs.removeAt(index);
+                    prefs.insert(index + 1, item);
+                  }),
+                ),
+              ],
+            ),
           ),
         );
       },
