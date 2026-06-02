@@ -23,7 +23,7 @@
 ## Funzionalità
 
 ### Lettura EPUB
-- [ttu Ebook Reader](https://github.com/ttu-ttu/ebook-reader) integrato per il rendering EPUB (WebView)
+- Rendering EPUB in WebView (motore di impaginazione derivato da [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader))
 - Tocca per cercare nel dizionario, seleziona per analizzare
 - Font personalizzati, temi (chiaro/scuro)
 - Statistiche di lettura e segnalibri
@@ -82,27 +82,36 @@ L'interfaccia supporta le seguenti lingue:
 
 | Livello | Tecnologia |
 |---|---|
-| Framework | Flutter 3.41.6 / Dart 3.11.4 |
-| Lettore | ttu Ebook Reader (WebView, [fork](https://github.com/hdjsadgfwtg/ttu-fork)) |
-| Archiviazione | Isar + Drift (SQLite) + hoshidicts (motore dizionario C++ FFI) |
+| Framework | Flutter 3.41.6 (Dart SDK `>=3.5.0 <4.0.0`) |
+| Piattaforma | Android / iOS / macOS / Windows / Linux (Material 3 + Cupertino adattivo) |
+| Lettore | Motore di impaginazione WebView (derivato da [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader)) |
+| Archiviazione | Drift (SQLite, WAL) + hoshidicts (motore dizionario C++ FFI) |
 | NLP | Ve (deconiugazione) |
 | Schede | AnkiDroid API |
-| Internazionalizzazione | Slang |
-| Versione minima | Android 8.0 (API 26) |
+| Internazionalizzazione | Slang (17 lingue) |
+| Versione minima | Android 7.0 (API 24) |
 
 ## Compilazione
 
+Preparazione con un solo comando (genera automaticamente `dart_defines.env` + `flutter pub get` + applica le patch), poi compila:
+
 ```bash
-cd hibiki/hibiki
-flutter pub get
-flutter build apk --release --target-platform android-arm64 --split-per-abi
+# nella radice del repository
+bash tool/bootstrap.sh          # Windows PowerShell: .\tool\bootstrap.ps1
+                                # oppure (Linux/macOS): dart run melos bootstrap
+
+cd hibiki
+flutter build apk --release --target-platform android-arm64 --split-per-abi \
+  --dart-define-from-file=dart_defines.env
 ```
 
-> **Prima della prima compilazione è necessario applicare le patch alla pub cache.** Se la pub cache viene cancellata o si esegue nuovamente `pub get`, tutte le patch devono essere riapplicate. Vedi [Dipendenze e patch](#dipendenze-e-patch) di seguito.
+`tool/bootstrap.sh` / `tool/bootstrap.ps1` raccoglie tre passaggi in un unico comando: ① se manca `hibiki/dart_defines.env`, viene generato automaticamente da `dart_defines.env.example` (valori OAuth segnaposto bastano per compilare, solo il backup su Google Drive richiede valori reali); ② `flutter pub get`; ③ esecuzione di `ci/apply-patches.sh`. `melos bootstrap` esegue i passaggi ②③ tramite un post-hook (su Windows melos ha un bug di codifica CJK, quindi usa `tool/bootstrap.ps1`).
+
+> **Nota sulle patch:** `ci/apply-patches.sh` sovrascrive la pub cache reale con le modifiche in `ci/patches/`. Va rieseguito dopo ogni svuotamento della pub cache o nuovo `flutter pub get` (bootstrap include già questo passaggio). Se lo script non trova alcun obiettivo di patch, salta e avvisa invece di fingere il successo.
 
 ## Dipendenze e patch
 
-Questo progetto è bloccato su Flutter 3.41.6. Alcune dipendenze upstream non sono ancora compatibili e richiedono patch manuali al codice sorgente nella pub cache.
+Questo progetto è bloccato su Flutter 3.41.6; alcune dipendenze upstream non sono ancora compatibili. Le correzioni seguono due vie: ① i pacchetti che devono fungere da input di build ed essere riprodotti in modo coerente tra macchine vengono vendorizzati direttamente in `third_party/` e referenziati tramite `dependency_overrides` (`network_to_file_image` / `carousel_slider` / `fading_edge_scrollview` / `flutter_inappwebview_android`, **senza** patch alla pub cache); ② i restanti pacchetti vengono patchati da `ci/apply-patches.sh` nel codice sorgente della pub cache. Dettagli del meccanismo in [docs/agent/build.md](../agent/build.md). Le tabelle pieghevoli seguenti sono un elenco storico raggruppato per modifica; in caso di sovrapposizione con il meccanismo ①, prevale la versione vendorizzata.
 
 <details>
 <summary><b>Patch per modifiche API di Flutter</b></summary>
@@ -133,7 +142,7 @@ Flutter 3.41.6 ha rimosso completamente l'API v1 embedding (`PluginRegistry.Regi
 
 | Obiettivo | Modifiche |
 |---|---|
-| `android/build.gradle` afterEvaluate | Forzatura `compileSdkVersion 34` per i sotto-progetti; rimozione di `-Werror` |
+| `android/build.gradle` afterEvaluate | Forzatura `compileSdk` (predefinito 36, alcuni 34) per i sotto-progetti; rimozione di `-Werror` |
 | `audio_session` 0.1.14 | Rimozione di `-Werror`, `-Xlint:deprecation` |
 | `package_info_plus` 4.0.2 | Correzione null safety per Kotlin |
 | `receive_intent` (git) | Correzione null safety per Kotlin |
@@ -160,23 +169,22 @@ Flutter 3.41.6 ha rimosso completamente l'API v1 embedding (`PluginRegistry.Regi
 ## Struttura del progetto
 
 ```
-hibiki/
+hibiki/                      # Radice del repository (workspace Melos: hibiki_workspace)
 ├── hibiki/                  # Directory principale dell'app Flutter
 │   ├── lib/
-│   │   ├── i18n/            # Internazionalizzazione (17 lingue)
+│   │   ├── i18n/            # Internazionalizzazione (17 lingue, Slang)
 │   │   ├── src/
 │   │   │   ├── pages/       # Pagine (libreria, lettore, dizionario, impostazioni, ecc.)
-│   │   │   ├── media/       # Bridge audiolibri, parsing sottotitoli
-│   │   │   ├── dictionary/  # Motore di ricerca dizionario
-│   │   │   ├── models/      # Modelli dati e gestione dello stato
-│   │   │   └── language/    # Livello di astrazione linguistica
+│   │   │   ├── reader/      # Script JS/CSS della WebView del lettore
+│   │   │   ├── media/       # Audiolibri, parsing sottotitoli, reader source
+│   │   │   └── models/      # Modelli dati e gestione dello stato (AppModel)
 │   │   └── main.dart
-│   ├── assets/
-│   │   └── ttu-ebook-reader/ # Artefatti di build del fork ttu
-│   └── android/
-│       └── app/src/main/cpp/ # Motore dizionario C++ hoshidicts
-├── docs/                    # Documentazione di sviluppo
-└── chisa/                   # Riferimento alla versione precedente di jidoujisho
+│   └── android/             # Progetto Android (manifest, hoshidicts nativo)
+├── packages/                # Pacchetti interni + flutter_inappwebview_windows(fork) + gamepads_android_stub
+├── third_party/             # Pacchetti patch vendorizzati (referenziati da dependency_overrides)
+├── ci/                      # Patch di build e script di test di integrazione
+├── tool/                    # Script bootstrap / i18n_sync, ecc.
+└── docs/                    # Documentazione di sviluppo (incl. manuale agente docs/agent/)
 ```
 
 ## Ringraziamenti

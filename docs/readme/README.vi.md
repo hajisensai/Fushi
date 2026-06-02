@@ -23,7 +23,7 @@
 ## Tính năng
 
 ### Đọc EPUB
-- Tích hợp [ttu Ebook Reader](https://github.com/ttu-ttu/ebook-reader) để hiển thị EPUB (WebView)
+- Hiển thị EPUB trong WebView (engine phân trang phái sinh từ [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader))
 - Chạm để tra từ điển, chọn để phân tích
 - Phông chữ tùy chỉnh, giao diện (sáng/tối)
 - Thống kê đọc và đánh dấu trang
@@ -82,27 +82,40 @@ Giao diện hỗ trợ các ngôn ngữ sau:
 
 | Tầng | Công nghệ |
 |---|---|
-| Framework | Flutter 3.41.6 / Dart 3.11.4 |
-| Trình đọc | ttu Ebook Reader (WebView, [fork](https://github.com/hdjsadgfwtg/ttu-fork)) |
-| Lưu trữ | Isar + Drift (SQLite) + hoshidicts (engine từ điển C++ FFI) |
+| Framework | Flutter 3.41.6 (Dart SDK `>=3.5.0 <4.0.0`) |
+| Nền tảng | Android / iOS / macOS / Windows / Linux (thích ứng Material 3 + Cupertino) |
+| Trình đọc | Engine phân trang WebView (phái sinh từ [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader)) |
+| Lưu trữ | Drift (SQLite, WAL) + hoshidicts (engine từ điển C++ FFI) |
 | NLP | Ve (chuyển đổi dạng) |
 | Thẻ ghi nhớ | AnkiDroid API |
-| Quốc tế hóa | Slang |
-| Phiên bản tối thiểu | Android 8.0 (API 26) |
+| Quốc tế hóa | Slang (17 ngôn ngữ) |
+| Phiên bản tối thiểu | Android 7.0 (API 24) |
 
 ## Biên dịch
 
+Chuẩn bị một lệnh (tự động seed `dart_defines.env` + `flutter pub get` + áp dụng bản vá), sau đó biên dịch:
+
 ```bash
-cd hibiki/hibiki
-flutter pub get
-flutter build apk --release --target-platform android-arm64 --split-per-abi
+# Tại thư mục gốc của kho
+bash tool/bootstrap.sh          # Windows PowerShell: .\tool\bootstrap.ps1
+                                # hoặc (Linux/macOS): dart run melos bootstrap
+
+cd hibiki
+flutter build apk --release --target-platform android-arm64 --split-per-abi \
+  --dart-define-from-file=dart_defines.env
 ```
 
-> **Trước khi biên dịch lần đầu cần áp dụng các bản vá pub cache.** Nếu pub cache bị xóa hoặc chạy lại `pub get`, tất cả các bản vá cần được áp dụng lại. Xem [Phụ thuộc và bản vá](#phụ-thuộc-và-bản-vá) bên dưới.
+`tool/bootstrap.sh` / `tool/bootstrap.ps1` gom ba việc vào một lệnh: ① nếu thiếu
+`hibiki/dart_defines.env` thì tự sinh từ `dart_defines.env.example` (giá trị OAuth
+giả là đủ để biên dịch, chỉ sao lưu Google Drive mới cần giá trị thật); ② `flutter pub get`;
+③ chạy `ci/apply-patches.sh`. `melos bootstrap` thực hiện ②③ tương tự qua post hook
+(trên Windows melos có lỗi mã hóa CJK, nên dùng `tool/bootstrap.ps1`).
+
+> **Ghi chú về bản vá:** `ci/apply-patches.sh` ghi đè các thay đổi trong `ci/patches/` lên pub cache thực tế. Mỗi lần xóa pub cache hoặc chạy lại `flutter pub get` đều phải chạy lại (bootstrap đã bao gồm bước này). Khi không tìm thấy mục tiêu bản vá nào, script sẽ bỏ qua và cảnh báo thay vì giả vờ thành công.
 
 ## Phụ thuộc và bản vá
 
-Dự án này được khóa ở Flutter 3.41.6. Một số phụ thuộc upstream chưa tương thích và cần vá thủ công mã nguồn trong pub cache.
+Dự án này được khóa ở Flutter 3.41.6, một số phụ thuộc upstream chưa tương thích. Việc vá chia thành hai cơ chế: ① các gói cần làm đầu vào biên dịch, tái lập nhất quán giữa các máy được vendor trực tiếp vào `third_party/` và trỏ tới bằng `dependency_overrides` (`network_to_file_image` / `carousel_slider` / `fading_edge_scrollview` / `flutter_inappwebview_android`, **không** cần vá pub-cache); ② các gói còn lại do `ci/apply-patches.sh` vá mã nguồn trong pub cache. Chi tiết cơ chế xem [docs/agent/build.md](../agent/build.md). Các bảng gập bên dưới là danh sách lịch sử phân loại theo thay đổi; với các gói trùng với cơ chế ①, bản vendored được ưu tiên.
 
 <details>
 <summary><b>Bản vá thay đổi API Flutter</b></summary>
@@ -133,7 +146,7 @@ Flutter 3.41.6 đã xóa hoàn toàn API v1 embedding (`PluginRegistry.Registrar
 
 | Mục tiêu | Thay đổi |
 |---|---|
-| `android/build.gradle` afterEvaluate | Ép buộc `compileSdkVersion 34` cho các dự án con; xóa `-Werror` |
+| `android/build.gradle` afterEvaluate | Ép buộc `compileSdk` cho các dự án con (mặc định 36, một vài 34); xóa `-Werror` |
 | `audio_session` 0.1.14 | Xóa `-Werror`, `-Xlint:deprecation` |
 | `package_info_plus` 4.0.2 | Sửa Kotlin null safety |
 | `receive_intent` (git) | Sửa Kotlin null safety |
@@ -160,23 +173,22 @@ Flutter 3.41.6 đã xóa hoàn toàn API v1 embedding (`PluginRegistry.Registrar
 ## Cấu trúc dự án
 
 ```
-hibiki/
+hibiki/                      # Gốc kho (Melos workspace: hibiki_workspace)
 ├── hibiki/                  # Thư mục chính ứng dụng Flutter
 │   ├── lib/
-│   │   ├── i18n/            # Quốc tế hóa (17 ngôn ngữ)
+│   │   ├── i18n/            # Quốc tế hóa (17 ngôn ngữ, Slang)
 │   │   ├── src/
 │   │   │   ├── pages/       # Trang (kệ sách, trình đọc, từ điển, cài đặt, v.v.)
-│   │   │   ├── media/       # Cầu nối sách nói, phân tích phụ đề
-│   │   │   ├── dictionary/  # Engine tra cứu từ điển
-│   │   │   ├── models/      # Mô hình dữ liệu và quản lý trạng thái
-│   │   │   └── language/    # Tầng trừu tượng ngôn ngữ
+│   │   │   ├── reader/      # Script JS/CSS WebView của trình đọc
+│   │   │   ├── media/       # Sách nói, phân tích phụ đề, reader source
+│   │   │   └── models/      # Mô hình dữ liệu và quản lý trạng thái (AppModel)
 │   │   └── main.dart
-│   ├── assets/
-│   │   └── ttu-ebook-reader/ # Sản phẩm biên dịch fork ttu
-│   └── android/
-│       └── app/src/main/cpp/ # Engine từ điển C++ hoshidicts
-├── docs/                    # Tài liệu phát triển
-└── chisa/                   # Tham chiếu phiên bản cũ jidoujisho
+│   └── android/             # Dự án Android (manifest, native hoshidicts)
+├── packages/                # Package nội bộ + flutter_inappwebview_windows(fork) + gamepads_android_stub
+├── third_party/             # Gói vá vendored (dependency_overrides trỏ tới)
+├── ci/                      # Script vá biên dịch và kiểm thử tích hợp
+├── tool/                    # Script bootstrap / i18n_sync, v.v.
+└── docs/                    # Tài liệu phát triển (gồm sổ tay thao tác agent docs/agent/)
 ```
 
 ## Lời cảm ơn

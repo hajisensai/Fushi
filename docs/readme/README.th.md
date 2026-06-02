@@ -23,7 +23,7 @@
 ## คุณสมบัติ
 
 ### การอ่าน EPUB
-- ฝังตัวอ่าน [ttu Ebook Reader](https://github.com/ttu-ttu/ebook-reader) แสดงผล EPUB ผ่าน WebView
+- แสดงผล EPUB ใน WebView (เอนจินแบ่งหน้าที่พัฒนาต่อจาก [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader))
 - แตะเพื่อค้นหาคำศัพท์ เลือกข้อความเพื่อวิเคราะห์
 - ฟอนต์กำหนดเอง ธีม (สว่าง/มืด)
 - สถิติการอ่านและบุ๊กมาร์ก
@@ -82,27 +82,40 @@
 
 | ชั้น | เทคโนโลยี |
 |---|---|
-| เฟรมเวิร์ก | Flutter 3.41.6 / Dart 3.11.4 |
-| ตัวอ่าน | ttu Ebook Reader (WebView, [fork](https://github.com/hdjsadgfwtg/ttu-fork)) |
-| จัดเก็บข้อมูล | Isar + Drift (SQLite) + hoshidicts (เอนจินพจนานุกรม C++ FFI) |
+| เฟรมเวิร์ก | Flutter 3.41.6 (Dart SDK `>=3.5.0 <4.0.0`) |
+| แพลตฟอร์ม | Android / iOS / macOS / Windows / Linux (Material 3 + Cupertino ปรับตามแพลตฟอร์ม) |
+| ตัวอ่าน | เอนจินแบ่งหน้า WebView (พัฒนาต่อจาก [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader)) |
+| จัดเก็บข้อมูล | Drift (SQLite, WAL) + hoshidicts (เอนจินพจนานุกรม C++ FFI) |
 | NLP | Ve (การผันกลับ) |
 | สร้างบัตรคำ | AnkiDroid API |
-| สากลานุวัตน์ | Slang |
-| เวอร์ชันขั้นต่ำ | Android 8.0 (API 26) |
+| สากลานุวัตน์ | Slang (17 ภาษา) |
+| เวอร์ชันขั้นต่ำ | Android 7.0 (API 24) |
 
 ## การสร้าง
 
+เตรียมด้วยคำสั่งเดียว (seed `dart_defines.env` อัตโนมัติ + `flutter pub get` + แพตช์) จากนั้นสร้าง:
+
 ```bash
-cd hibiki/hibiki
-flutter pub get
-flutter build apk --release --target-platform android-arm64 --split-per-abi
+# ที่รากของ repo
+bash tool/bootstrap.sh          # Windows PowerShell: .\tool\bootstrap.ps1
+                                # หรือ (Linux/macOS): dart run melos bootstrap
+
+cd hibiki
+flutter build apk --release --target-platform android-arm64 --split-per-abi \
+  --dart-define-from-file=dart_defines.env
 ```
 
-> **ต้องแพตช์ pub cache ก่อนสร้างครั้งแรก** หาก pub cache ถูกล้างหรือรัน `pub get` ใหม่ จะต้องนำแพตช์ทั้งหมดมาใช้ใหม่ ดูรายละเอียดที่ [การพึ่งพาและแพตช์](#การพึ่งพาและแพตช์) ด้านล่าง
+`tool/bootstrap.sh` / `tool/bootstrap.ps1` รวมสามสิ่งไว้ในคำสั่งเดียว: ① ถ้าไม่มี
+`hibiki/dart_defines.env` จะสร้างจาก `dart_defines.env.example` อัตโนมัติ (ค่า OAuth
+ตัวอย่างก็คอมไพล์ได้ มีเพียงการสำรองข้อมูล Google Drive ที่ต้องใช้ค่าจริง); ② `flutter pub get`;
+③ รัน `ci/apply-patches.sh` `melos bootstrap` ทำ ②③ เหมือนกันผ่าน post hook
+(บน Windows melos มีบั๊กการเข้ารหัส CJK จึงใช้ `tool/bootstrap.ps1` แทน)
+
+> **หมายเหตุเกี่ยวกับแพตช์:** `ci/apply-patches.sh` จะเขียนทับการเปลี่ยนแปลงใน `ci/patches/` ลงบน pub cache จริง ทุกครั้งที่ล้าง pub cache หรือรัน `flutter pub get` ใหม่ต้องรันซ้ำ (bootstrap รวมขั้นตอนนี้แล้ว) เมื่อสคริปต์ไม่พบเป้าหมายแพตช์ใดเลย จะข้ามและเตือนแทนที่จะแสร้งว่าสำเร็จ
 
 ## การพึ่งพาและแพตช์
 
-โปรเจกต์นี้ล็อกเวอร์ชัน Flutter 3.41.6 การพึ่งพาต้นทางบางส่วนยังไม่รองรับและต้องแพตช์ซอร์สโค้ดใน pub cache ด้วยตนเอง
+โปรเจกต์นี้ล็อกเวอร์ชัน Flutter 3.41.6 การพึ่งพาต้นทางบางส่วนยังไม่รองรับ การแพตช์แบ่งเป็นสองกลไก: ① แพ็กเกจที่ต้องใช้เป็นอินพุตของการสร้างและทำซ้ำให้เหมือนกันทุกเครื่อง จะถูก vendor ไว้ใน `third_party/` โดยตรงและชี้ด้วย `dependency_overrides` (`network_to_file_image` / `carousel_slider` / `fading_edge_scrollview` / `flutter_inappwebview_android`, **ไม่** ต้องแพตช์ pub-cache); ② แพ็กเกจที่เหลือถูกแพตช์ซอร์สใน pub cache โดย `ci/apply-patches.sh` รายละเอียดกลไกดูที่ [docs/agent/build.md](../agent/build.md) ตารางพับด้านล่างเป็นรายการเชิงประวัติจัดกลุ่มตามการเปลี่ยนแปลง แพ็กเกจที่ทับซ้อนกับกลไก ① ให้ยึดเวอร์ชัน vendored เป็นหลัก
 
 <details>
 <summary><b>แพตช์การเปลี่ยนแปลง Flutter API</b></summary>
@@ -133,7 +146,7 @@ Flutter 3.41.6 ลบ v1 embedding API (`PluginRegistry.Registrar`) ออกท
 
 | เป้าหมาย | การเปลี่ยนแปลง |
 |---|---|
-| `android/build.gradle` afterEvaluate | บังคับ `compileSdkVersion 34` ในโปรเจกต์ย่อย; ลบ `-Werror` |
+| `android/build.gradle` afterEvaluate | บังคับ `compileSdk` ในโปรเจกต์ย่อย (ค่าเริ่มต้น 36, บางตัว 34); ลบ `-Werror` |
 | `audio_session` 0.1.14 | ลบ `-Werror`, `-Xlint:deprecation` |
 | `package_info_plus` 4.0.2 | แก้ไข Kotlin null safety |
 | `receive_intent` (git) | แก้ไข Kotlin null safety |
@@ -160,23 +173,22 @@ Flutter 3.41.6 ลบ v1 embedding API (`PluginRegistry.Registrar`) ออกท
 ## โครงสร้างโปรเจกต์
 
 ```
-hibiki/
+hibiki/                      # รากของ repo (Melos workspace: hibiki_workspace)
 ├── hibiki/                  # ไดเรกทอรีหลักของแอป Flutter
 │   ├── lib/
-│   │   ├── i18n/            # สากลานุวัตน์ (17 ภาษา)
+│   │   ├── i18n/            # สากลานุวัตน์ (17 ภาษา, Slang)
 │   │   ├── src/
 │   │   │   ├── pages/       # หน้า (ชั้นหนังสือ, ตัวอ่าน, พจนานุกรม, การตั้งค่า ฯลฯ)
-│   │   │   ├── media/       # บริดจ์หนังสือเสียง, แยกวิเคราะห์ซับไตเติ้ล
-│   │   │   ├── dictionary/  # เอนจินค้นหาพจนานุกรม
-│   │   │   ├── models/      # โมเดลข้อมูลและการจัดการสถานะ
-│   │   │   └── language/    # ชั้นนามธรรมภาษา
+│   │   │   ├── reader/      # สคริปต์ JS/CSS WebView ของตัวอ่าน
+│   │   │   ├── media/       # หนังสือเสียง, แยกวิเคราะห์ซับไตเติ้ล, reader source
+│   │   │   └── models/      # โมเดลข้อมูลและการจัดการสถานะ (AppModel)
 │   │   └── main.dart
-│   ├── assets/
-│   │   └── ttu-ebook-reader/ # ผลผลิตจากการสร้าง ttu fork
-│   └── android/
-│       └── app/src/main/cpp/ # เอนจินพจนานุกรม C++ hoshidicts
-├── docs/                    # เอกสารการพัฒนา
-└── chisa/                   # อ้างอิง jidoujisho เวอร์ชันเก่า
+│   └── android/             # โปรเจกต์ Android (manifest, native hoshidicts)
+├── packages/                # package ภายใน + flutter_inappwebview_windows(fork) + gamepads_android_stub
+├── third_party/             # แพ็กเกจแพตช์ vendored (dependency_overrides ชี้มา)
+├── ci/                      # สคริปต์แพตช์การสร้างและการทดสอบรวม
+├── tool/                    # สคริปต์ bootstrap / i18n_sync ฯลฯ
+└── docs/                    # เอกสารการพัฒนา (รวมคู่มือการดำเนินการ agent docs/agent/)
 ```
 
 ## กิตติกรรมประกาศ

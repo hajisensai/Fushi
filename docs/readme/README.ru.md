@@ -23,7 +23,7 @@
 ## Возможности
 
 ### Чтение EPUB
-- Встроенный рендеринг EPUB через [ttu Ebook Reader](https://github.com/ttu-ttu/ebook-reader) (WebView)
+- Рендеринг EPUB в WebView (постраничный движок на основе [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader))
 - Нажмите для поиска слова, выделите для анализа
 - Настраиваемые шрифты и темы (светлая/тёмная)
 - Статистика чтения и закладки
@@ -82,27 +82,36 @@
 
 | Уровень | Технология |
 |---|---|
-| Фреймворк | Flutter 3.41.6 / Dart 3.11.4 |
-| Читалка | ttu Ebook Reader (WebView, [форк](https://github.com/hdjsadgfwtg/ttu-fork)) |
-| Хранение | Isar + Drift (SQLite) + hoshidicts (движок словарей C++ FFI) |
+| Фреймворк | Flutter 3.41.6 (Dart SDK `>=3.5.0 <4.0.0`) |
+| Платформа | Android / iOS / macOS / Windows / Linux (адаптивный Material 3 + Cupertino) |
+| Читалка | Постраничный движок на WebView (на основе [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader)) |
+| Хранение | Drift (SQLite, WAL) + hoshidicts (движок словарей C++ FFI) |
 | NLP | Ve (деконъюгация) |
 | Создание карточек | AnkiDroid API |
-| Интернационализация | Slang |
-| Минимальная версия | Android 8.0 (API 26) |
+| Интернационализация | Slang (17 языков) |
+| Минимальная версия | Android 7.0 (API 24) |
 
 ## Сборка
 
+Подготовка одной командой (автоматический seed `dart_defines.env` + `flutter pub get` + применение патчей), затем сборка:
+
 ```bash
-cd hibiki/hibiki
-flutter pub get
-flutter build apk --release --target-platform android-arm64 --split-per-abi
+# в корне репозитория
+bash tool/bootstrap.sh          # Windows PowerShell: .\tool\bootstrap.ps1
+                                # или (Linux/macOS): dart run melos bootstrap
+
+cd hibiki
+flutter build apk --release --target-platform android-arm64 --split-per-abi \
+  --dart-define-from-file=dart_defines.env
 ```
 
-> **Перед первой сборкой необходимо применить патчи pub cache.** Если pub cache очищен или повторно выполнен `pub get`, все патчи необходимо применить заново. См. раздел [Зависимости и патчи](#зависимости-и-патчи) ниже.
+`tool/bootstrap.sh` / `tool/bootstrap.ps1` сводит три действия в одну команду: ① если отсутствует `hibiki/dart_defines.env`, он автоматически генерируется из `dart_defines.env.example` (значения-заглушки OAuth достаточны для компиляции, реальные нужны только для резервного копирования в Google Drive); ② `flutter pub get`; ③ запуск `ci/apply-patches.sh`. `melos bootstrap` через post hook выполняет те же шаги ②③ (в Windows у melos есть баг с кодировкой CJK, поэтому используйте `tool/bootstrap.ps1`).
+
+> **О патчах:** `ci/apply-patches.sh` накладывает изменения из `ci/patches/` поверх фактического pub cache. После каждой очистки pub cache или повторного `flutter pub get` его необходимо запускать заново (bootstrap уже включает этот шаг). Если скрипт не находит ни одной цели патча, он пропускает её с предупреждением, а не имитирует успех.
 
 ## Зависимости и патчи
 
-Проект привязан к Flutter 3.41.6. Некоторые зависимости ещё не адаптированы и требуют ручного исправления исходного кода в pub cache.
+Проект привязан к Flutter 3.41.6, часть upstream-зависимостей ещё не адаптирована. Исправления идут двумя путями: ① пакеты, которые должны быть входными данными сборки и воспроизводиться одинаково на разных машинах, vendored в `third_party/` и подключены через `dependency_overrides` (`network_to_file_image` / `carousel_slider` / `fading_edge_scrollview` / `flutter_inappwebview_android`, **без** патча pub cache); ② остальные пакеты исправляет `ci/apply-patches.sh` в исходниках pub cache. Подробности механизма см. в [docs/agent/build.md](../agent/build.md). Свёрнутые таблицы ниже — исторический список по категориям изменений; для пакетов, пересекающихся с механизмом ①, приоритет имеет vendored-версия.
 
 <details>
 <summary><b>Патчи изменений API Flutter</b></summary>
@@ -133,7 +142,7 @@ Flutter 3.41.6 полностью удалил API v1 embedding (`PluginRegistry
 
 | Цель | Изменения |
 |---|---|
-| `android/build.gradle` afterEvaluate | Принудительный `compileSdkVersion 34` для подпроектов; удаление `-Werror` |
+| `android/build.gradle` afterEvaluate | Принудительный `compileSdk` для подпроектов (по умолчанию 36, отдельные 34); удаление `-Werror` |
 | `audio_session` 0.1.14 | Удаление `-Werror`, `-Xlint:deprecation` |
 | `package_info_plus` 4.0.2 | Исправление null-безопасности Kotlin |
 | `receive_intent` (git) | Исправление null-безопасности Kotlin |
@@ -160,23 +169,22 @@ Flutter 3.41.6 полностью удалил API v1 embedding (`PluginRegistry
 ## Структура проекта
 
 ```
-hibiki/
+hibiki/                      # Корень репозитория (Melos workspace: hibiki_workspace)
 ├── hibiki/                  # Основной каталог Flutter-приложения
 │   ├── lib/
-│   │   ├── i18n/            # Интернационализация (17 языков)
+│   │   ├── i18n/            # Интернационализация (17 языков, Slang)
 │   │   ├── src/
 │   │   │   ├── pages/       # Страницы (книжная полка, читалка, словарь, настройки и др.)
-│   │   │   ├── media/       # Мост аудиокниг, разбор субтитров
-│   │   │   ├── dictionary/  # Движок поиска по словарю
-│   │   │   ├── models/      # Модели данных и управление состоянием
-│   │   │   └── language/    # Уровень абстракции языка
+│   │   │   ├── reader/      # JS/CSS-скрипты WebView читалки
+│   │   │   ├── media/       # Аудиокниги, разбор субтитров, reader source
+│   │   │   └── models/      # Модели данных и управление состоянием (AppModel)
 │   │   └── main.dart
-│   ├── assets/
-│   │   └── ttu-ebook-reader/ # Артефакты сборки форка ttu
-│   └── android/
-│       └── app/src/main/cpp/ # Движок словарей C++ hoshidicts
-├── docs/                    # Документация разработки
-└── chisa/                   # Справочник ранних версий jidoujisho
+│   └── android/             # Android-проект (manifest, native hoshidicts)
+├── packages/                # Внутренние package + flutter_inappwebview_windows(fork) + gamepads_android_stub
+├── third_party/             # vendored патч-пакеты (подключены через dependency_overrides)
+├── ci/                      # Скрипты патчей сборки и интеграционных тестов
+├── tool/                    # Скрипты bootstrap / i18n_sync и др.
+└── docs/                    # Документация разработки (включая руководство agent в docs/agent/)
 ```
 
 ## Благодарности

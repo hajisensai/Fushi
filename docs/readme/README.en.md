@@ -23,7 +23,7 @@
 ## Features
 
 ### EPUB Reading
-- Built-in [ttu Ebook Reader](https://github.com/ttu-ttu/ebook-reader) for EPUB rendering (WebView)
+- Render EPUB in WebView (paging engine derived from [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader))
 - Tap to look up words, select text for analysis
 - Custom fonts, themes (light/dark)
 - Reading statistics and bookmarks
@@ -82,27 +82,36 @@ The interface supports the following languages:
 
 | Layer | Technology |
 |---|---|
-| Framework | Flutter 3.41.6 / Dart 3.11.4 |
-| Reader | ttu Ebook Reader (WebView, [fork](https://github.com/hdjsadgfwtg/ttu-fork)) |
-| Storage | Isar + Drift (SQLite) + hoshidicts (C++ FFI dictionary engine) |
+| Framework | Flutter 3.41.6 (Dart SDK `>=3.5.0 <4.0.0`) |
+| Platform | Android / iOS / macOS / Windows / Linux (Material 3 + Cupertino adaptive) |
+| Reader | WebView paging engine (derived from [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader)) |
+| Storage | Drift (SQLite, WAL) + hoshidicts (C++ FFI dictionary engine) |
 | NLP | Ve (lemmatization) |
 | Card Creation | AnkiDroid API |
-| i18n | Slang |
-| Minimum Version | Android 8.0 (API 26) |
+| i18n | Slang (17 languages) |
+| Minimum Version | Android 7.0 (API 24) |
 
 ## Building
 
+One-command prep (auto-seed `dart_defines.env` + `flutter pub get` + apply patches), then build:
+
 ```bash
-cd hibiki/hibiki
-flutter pub get
-flutter build apk --release --target-platform android-arm64 --split-per-abi
+# From the repository root
+bash tool/bootstrap.sh          # Windows PowerShell: .\tool\bootstrap.ps1
+                                # or (Linux/macOS): dart run melos bootstrap
+
+cd hibiki
+flutter build apk --release --target-platform android-arm64 --split-per-abi \
+  --dart-define-from-file=dart_defines.env
 ```
 
-> **Pub cache patches are required before the first build.** If the pub cache is cleared or `pub get` is re-run, all patches must be re-applied. See [Dependencies & Patches](#dependencies--patches) below.
+`tool/bootstrap.sh` / `tool/bootstrap.ps1` collapse three steps into one command: ① if `hibiki/dart_defines.env` is missing, it is auto-generated from `dart_defines.env.example` (placeholder OAuth values compile fine — only Google Drive backup needs real values); ② `flutter pub get`; ③ run `ci/apply-patches.sh`. `melos bootstrap` does the same ②③ via a post hook (on Windows melos has a CJK encoding bug, so use `tool/bootstrap.ps1`).
+
+> **Patch note:** `ci/apply-patches.sh` overlays the changes under `ci/patches/` onto the actual pub cache. It must be re-run after every pub cache clear or `flutter pub get` (bootstrap already includes this step). When the script finds no patch targets, it skips and warns rather than pretending to succeed.
 
 ## Dependencies & Patches
 
-This project is locked to Flutter 3.41.6. Some upstream dependencies have not been updated for this version and require manual patching in the pub cache.
+This project is locked to Flutter 3.41.6, and some upstream dependencies have not been adapted yet. Patching follows two mechanisms: ① packages that need to be build inputs and reproduce consistently across machines are vendored directly under `third_party/` and pointed to via `dependency_overrides` (`network_to_file_image` / `carousel_slider` / `fading_edge_scrollview` / `flutter_inappwebview_android`, **no** pub-cache patching needed); ② the remaining packages are patched in the pub cache source by `ci/apply-patches.sh`. See [docs/agent/build.md](../agent/build.md) for mechanism details. The folding tables below are a historical list grouped by change; for packages that overlap with mechanism ①, the vendored version takes precedence.
 
 <details>
 <summary><b>Flutter API Change Patches</b></summary>
@@ -133,7 +142,7 @@ Flutter 3.41.6 completely removed the v1 embedding API (`PluginRegistry.Registra
 
 | Target | Changes |
 |---|---|
-| `android/build.gradle` afterEvaluate | Force `compileSdkVersion 34` for subprojects; remove `-Werror` |
+| `android/build.gradle` afterEvaluate | Force `compileSdk` for subprojects (default 36, some 34); remove `-Werror` |
 | `audio_session` 0.1.14 | Remove `-Werror`, `-Xlint:deprecation` |
 | `package_info_plus` 4.0.2 | Kotlin null safety fix |
 | `receive_intent` (git) | Kotlin null safety fix |
@@ -160,23 +169,22 @@ Flutter 3.41.6 completely removed the v1 embedding API (`PluginRegistry.Registra
 ## Project Structure
 
 ```
-hibiki/
+hibiki/                      # Repository root (Melos workspace: hibiki_workspace)
 ├── hibiki/                  # Flutter app main directory
 │   ├── lib/
-│   │   ├── i18n/            # Internationalization (17 languages)
+│   │   ├── i18n/            # Internationalization (17 languages, Slang)
 │   │   ├── src/
 │   │   │   ├── pages/       # Pages (bookshelf, reader, dictionary, settings, etc.)
-│   │   │   ├── media/       # Audiobook bridge, subtitle parsing
-│   │   │   ├── dictionary/  # Dictionary lookup engine
-│   │   │   ├── models/      # Data models and state management
-│   │   │   └── language/    # Language abstraction layer
+│   │   │   ├── reader/      # Reader WebView JS/CSS scripts
+│   │   │   ├── media/       # Audiobook, subtitle parsing, reader source
+│   │   │   └── models/      # Data models and state management (AppModel)
 │   │   └── main.dart
-│   ├── assets/
-│   │   └── ttu-ebook-reader/ # ttu fork build artifacts
-│   └── android/
-│       └── app/src/main/cpp/ # hoshidicts C++ dictionary engine
-├── docs/                    # Development documentation
-└── chisa/                   # jidoujisho early version reference
+│   └── android/             # Android project (manifest, native hoshidicts)
+├── packages/                # Internal packages + flutter_inappwebview_windows (fork) + gamepads_android_stub
+├── third_party/             # Vendored patched packages (pointed to by dependency_overrides)
+├── ci/                      # Build patches and integration test scripts
+├── tool/                    # bootstrap / i18n_sync and other scripts
+└── docs/                    # Development documentation (incl. docs/agent/ agent operations manual)
 ```
 
 ## Acknowledgments

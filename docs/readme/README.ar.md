@@ -23,7 +23,7 @@
 ## الميزات
 
 ### قراءة EPUB
-- قارئ [ttu Ebook Reader](https://github.com/ttu-ttu/ebook-reader) مدمج يعرض EPUB عبر WebView
+- عرض EPUB في WebView (محرك تقسيم الصفحات مشتق من [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader))
 - انقر للبحث عن كلمة، حدد نصاً لتحليله
 - خطوط مخصصة، سمات (فاتحة/داكنة)
 - إحصائيات القراءة والعلامات المرجعية
@@ -82,27 +82,40 @@
 
 | الطبقة | التقنية |
 |---|---|
-| إطار العمل | Flutter 3.41.6 / Dart 3.11.4 |
-| القارئ | ttu Ebook Reader (WebView, [fork](https://github.com/hdjsadgfwtg/ttu-fork)) |
-| التخزين | Isar + Drift (SQLite) + hoshidicts (محرك قاموس C++ FFI) |
+| إطار العمل | Flutter 3.41.6 (Dart SDK `>=3.5.0 <4.0.0`) |
+| المنصة | Android / iOS / macOS / Windows / Linux (تكيُّف Material 3 + Cupertino) |
+| القارئ | محرك تقسيم الصفحات WebView (مشتق من [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader)) |
+| التخزين | Drift (SQLite, WAL) + hoshidicts (محرك قاموس C++ FFI) |
 | NLP | Ve (التصريف العكسي) |
 | إنشاء البطاقات | AnkiDroid API |
-| التدويل | Slang |
-| الحد الأدنى للإصدار | Android 8.0 (API 26) |
+| التدويل | Slang (17 لغة) |
+| الحد الأدنى للإصدار | Android 7.0 (API 24) |
 
 ## البناء
 
+تحضير بأمر واحد (إنشاء تلقائي لـ `dart_defines.env` + `flutter pub get` + تطبيق التصحيحات)، ثم البناء:
+
 ```bash
-cd hibiki/hibiki
-flutter pub get
-flutter build apk --release --target-platform android-arm64 --split-per-abi
+# في جذر المستودع
+bash tool/bootstrap.sh          # Windows PowerShell: .\tool\bootstrap.ps1
+                                # أو (Linux/macOS): dart run melos bootstrap
+
+cd hibiki
+flutter build apk --release --target-platform android-arm64 --split-per-abi \
+  --dart-define-from-file=dart_defines.env
 ```
 
-> **يجب تطبيق تصحيحات pub cache قبل البناء الأول.** إذا تم مسح pub cache أو أُعيد تشغيل `pub get`، يجب إعادة تطبيق جميع التصحيحات. راجع [التبعيات والتصحيحات](#التبعيات-والتصحيحات) أدناه.
+يجمع `tool/bootstrap.sh` / `tool/bootstrap.ps1` ثلاثة أشياء في أمر واحد: ① إذا كان
+`hibiki/dart_defines.env` مفقوداً يُنشأ تلقائياً من `dart_defines.env.example` (قيم OAuth
+النائبة تكفي للترجمة، فقط نسخ Google Drive الاحتياطي يحتاج قيماً حقيقية)؛ ② `flutter pub get`؛
+③ تشغيل `ci/apply-patches.sh`. يقوم `melos bootstrap` بـ ②③ نفسها عبر post hook
+(على Windows لدى melos خلل ترميز CJK، لذا استخدم `tool/bootstrap.ps1`).
+
+> **ملاحظة حول التصحيحات:** يكتب `ci/apply-patches.sh` التعديلات الموجودة في `ci/patches/` فوق pub cache الفعلي. في كل مرة يُمسح فيها pub cache أو يُعاد تشغيل `flutter pub get` يجب تشغيله مجدداً (bootstrap يتضمن هذه الخطوة). عندما لا يجد السكربت أي هدف تصحيح، يتخطى ويحذّر بدلاً من التظاهر بالنجاح.
 
 ## التبعيات والتصحيحات
 
-هذا المشروع مقفل على Flutter 3.41.6. بعض التبعيات الأصلية لم تُكيَّف بعد وتتطلب تصحيح الكود المصدري يدوياً في pub cache.
+هذا المشروع مقفل على Flutter 3.41.6، وبعض التبعيات الأصلية لم تُكيَّف بعد. ينقسم التصحيح إلى آليتين: ① الحزم التي يجب أن تكون مدخلاً للبناء وتُعاد بثبات عبر الأجهزة تُدمج (vendor) مباشرة في `third_party/` ويُشار إليها عبر `dependency_overrides` (`network_to_file_image` / `carousel_slider` / `fading_edge_scrollview` / `flutter_inappwebview_android`، **دون** الحاجة لتصحيح pub-cache)؛ ② بقية الحزم يُصحَّح مصدرها في pub cache بواسطة `ci/apply-patches.sh`. تفاصيل الآلية في [docs/agent/build.md](../agent/build.md). الجداول القابلة للطي أدناه قائمة تاريخية مصنّفة حسب التغيير؛ وبالنسبة للحزم المتداخلة مع الآلية ① تُعتمد النسخة المدمجة (vendored).
 
 <details>
 <summary><b>تصحيحات تغييرات Flutter API</b></summary>
@@ -133,7 +146,7 @@ flutter build apk --release --target-platform android-arm64 --split-per-abi
 
 | الهدف | التغييرات |
 |---|---|
-| `android/build.gradle` afterEvaluate | فرض `compileSdkVersion 34` على المشاريع الفرعية؛ إزالة `-Werror` |
+| `android/build.gradle` afterEvaluate | فرض `compileSdk` على المشاريع الفرعية (الافتراضي 36، بعضها 34)؛ إزالة `-Werror` |
 | `audio_session` 0.1.14 | إزالة `-Werror`، `-Xlint:deprecation` |
 | `package_info_plus` 4.0.2 | إصلاح Kotlin null safety |
 | `receive_intent` (git) | إصلاح Kotlin null safety |
@@ -160,23 +173,22 @@ flutter build apk --release --target-platform android-arm64 --split-per-abi
 ## هيكل المشروع
 
 ```
-hibiki/
+hibiki/                      # جذر المستودع (Melos workspace: hibiki_workspace)
 ├── hibiki/                  # الدليل الرئيسي لتطبيق Flutter
 │   ├── lib/
-│   │   ├── i18n/            # التدويل (17 لغة)
+│   │   ├── i18n/            # التدويل (17 لغة، Slang)
 │   │   ├── src/
 │   │   │   ├── pages/       # الصفحات (رف الكتب، القارئ، القاموس، الإعدادات، إلخ)
-│   │   │   ├── media/       # جسر الكتب الصوتية، تحليل الترجمات
-│   │   │   ├── dictionary/  # محرك البحث في القاموس
-│   │   │   ├── models/      # نماذج البيانات وإدارة الحالة
-│   │   │   └── language/    # طبقة تجريد اللغة
+│   │   │   ├── reader/      # سكربتات JS/CSS للقارئ في WebView
+│   │   │   ├── media/       # الكتب الصوتية، تحليل الترجمات، reader source
+│   │   │   └── models/      # نماذج البيانات وإدارة الحالة (AppModel)
 │   │   └── main.dart
-│   ├── assets/
-│   │   └── ttu-ebook-reader/ # مخرجات بناء ttu fork
-│   └── android/
-│       └── app/src/main/cpp/ # محرك قاموس C++ hoshidicts
-├── docs/                    # وثائق التطوير
-└── chisa/                   # مرجع الإصدارات المبكرة من jidoujisho
+│   └── android/             # مشروع Android (manifest، hoshidicts الأصلي)
+├── packages/                # حزم داخلية + flutter_inappwebview_windows(fork) + gamepads_android_stub
+├── third_party/             # حزم تصحيح مدمجة (vendored، يشير إليها dependency_overrides)
+├── ci/                      # سكربتات تصحيح البناء واختبارات التكامل
+├── tool/                    # سكربتات bootstrap / i18n_sync، إلخ
+└── docs/                    # وثائق التطوير (تشمل دليل عمليات الوكيل docs/agent/)
 ```
 
 ## شكر وتقدير

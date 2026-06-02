@@ -23,7 +23,7 @@
 ## Functies
 
 ### EPUB-lezer
-- Geintegreerde [ttu Ebook Reader](https://github.com/ttu-ttu/ebook-reader) voor EPUB-weergave (WebView)
+- EPUB-weergave in WebView (gepagineerde engine afgeleid van [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader))
 - Tik om op te zoeken, selecteer om te analyseren
 - Aangepaste lettertypen, thema's (licht/donker)
 - Leesstatistieken en bladwijzers
@@ -82,27 +82,36 @@ De interface ondersteunt de volgende talen:
 
 | Laag | Technologie |
 |---|---|
-| Framework | Flutter 3.41.6 / Dart 3.11.4 |
-| Lezer | ttu Ebook Reader (WebView, [fork](https://github.com/hdjsadgfwtg/ttu-fork)) |
-| Opslag | Isar + Drift (SQLite) + hoshidicts (C++ FFI woordenboekengine) |
+| Framework | Flutter 3.41.6 (Dart SDK `>=3.5.0 <4.0.0`) |
+| Platform | Android / iOS / macOS / Windows / Linux (Material 3 + Cupertino adaptief) |
+| Lezer | Gepagineerde WebView-engine (afgeleid van [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader)) |
+| Opslag | Drift (SQLite, WAL) + hoshidicts (C++ FFI woordenboekengine) |
 | NLP | Ve (deconjugatie) |
 | Kaarten | AnkiDroid API |
-| Internationalisatie | Slang |
-| Minimumversie | Android 8.0 (API 26) |
+| Internationalisatie | Slang (17 talen) |
+| Minimumversie | Android 7.0 (API 24) |
 
 ## Bouwen
 
+Voorbereiding met een enkel commando (automatisch seeden van `dart_defines.env` + `flutter pub get` + patches toepassen), daarna bouwen:
+
 ```bash
-cd hibiki/hibiki
-flutter pub get
-flutter build apk --release --target-platform android-arm64 --split-per-abi
+# in de hoofdmap van de repository
+bash tool/bootstrap.sh          # Windows PowerShell: .\tool\bootstrap.ps1
+                                # of (Linux/macOS): dart run melos bootstrap
+
+cd hibiki
+flutter build apk --release --target-platform android-arm64 --split-per-abi \
+  --dart-define-from-file=dart_defines.env
 ```
 
-> **Voor de eerste build moeten pub cache-patches worden toegepast.** Als de pub cache wordt gewist of `pub get` opnieuw wordt uitgevoerd, moeten alle patches opnieuw worden toegepast. Zie [Afhankelijkheden en patches](#afhankelijkheden-en-patches) hieronder.
+`tool/bootstrap.sh` / `tool/bootstrap.ps1` brengt drie stappen samen in een commando: ① als `hibiki/dart_defines.env` ontbreekt, wordt het automatisch gegenereerd uit `dart_defines.env.example` (placeholder-OAuth-waarden volstaan om te compileren, echte waarden zijn alleen nodig voor Google Drive-back-up); ② `flutter pub get`; ③ uitvoeren van `ci/apply-patches.sh`. `melos bootstrap` doet via een post hook hetzelfde voor ②③ (op Windows heeft melos een CJK-coderingsbug, gebruik daarom `tool/bootstrap.ps1`).
+
+> **Over de patches:** `ci/apply-patches.sh` legt de wijzigingen uit `ci/patches/` over de feitelijke pub cache. Na elke wissing van de pub cache of een nieuwe `flutter pub get` moet het opnieuw worden uitgevoerd (bootstrap bevat deze stap al). Als het script geen enkel patch-doel vindt, slaat het dit over met een waarschuwing in plaats van succes te veinzen.
 
 ## Afhankelijkheden en patches
 
-Dit project is vastgezet op Flutter 3.41.6. Sommige upstream-afhankelijkheden zijn nog niet compatibel en vereisen handmatige patches in de broncode van de pub cache.
+Dit project is vastgezet op Flutter 3.41.6 en sommige upstream-afhankelijkheden zijn nog niet aangepast. Patches verlopen via twee wegen: ① pakketten die een build-invoer moeten zijn en op verschillende machines identiek reproduceerbaar, worden vendored onder `third_party/` en via `dependency_overrides` aangewezen (`network_to_file_image` / `carousel_slider` / `fading_edge_scrollview` / `flutter_inappwebview_android`, **zonder** pub-cache-patch); ② de overige pakketten worden door `ci/apply-patches.sh` in de pub-cache-broncode gepatcht. Mechanismedetails staan in [docs/agent/build.md](../agent/build.md). De inklapbare tabellen hieronder vormen een historische lijst gerangschikt op wijziging; voor pakketten die met mechanisme ① overlappen, geldt de vendored versie.
 
 <details>
 <summary><b>Flutter API-wijzigingspatches</b></summary>
@@ -133,7 +142,7 @@ Flutter 3.41.6 heeft de v1 embedding API (`PluginRegistry.Registrar`) volledig v
 
 | Doel | Wijzigingen |
 |---|---|
-| `android/build.gradle` afterEvaluate | Subprojecten geforceerd naar `compileSdkVersion 34`; verwijdering van `-Werror` |
+| `android/build.gradle` afterEvaluate | Subprojecten geforceerd naar `compileSdk` (standaard 36, enkele 34); verwijdering van `-Werror` |
 | `audio_session` 0.1.14 | Verwijdering van `-Werror`, `-Xlint:deprecation` |
 | `package_info_plus` 4.0.2 | Kotlin null safety-fix |
 | `receive_intent` (git) | Kotlin null safety-fix |
@@ -160,23 +169,22 @@ Flutter 3.41.6 heeft de v1 embedding API (`PluginRegistry.Registrar`) volledig v
 ## Projectstructuur
 
 ```
-hibiki/
+hibiki/                      # Hoofdmap repository (Melos workspace: hibiki_workspace)
 ├── hibiki/                  # Hoofdmap van de Flutter-app
 │   ├── lib/
-│   │   ├── i18n/            # Internationalisatie (17 talen)
+│   │   ├── i18n/            # Internationalisatie (17 talen, Slang)
 │   │   ├── src/
 │   │   │   ├── pages/       # Pagina's (boekenplank, lezer, woordenboek, instellingen, enz.)
-│   │   │   ├── media/       # Luisterboekbrug, ondertitelparsing
-│   │   │   ├── dictionary/  # Woordenboekzoekmachine
-│   │   │   ├── models/      # Datamodellen en statusbeheer
-│   │   │   └── language/    # Taalabstractielaag
+│   │   │   ├── reader/      # JS/CSS-scripts van de WebView-lezer
+│   │   │   ├── media/       # Luisterboeken, ondertitelparsing, reader source
+│   │   │   └── models/      # Datamodellen en statusbeheer (AppModel)
 │   │   └── main.dart
-│   ├── assets/
-│   │   └── ttu-ebook-reader/ # Build-artefacten van ttu-fork
-│   └── android/
-│       └── app/src/main/cpp/ # hoshidicts C++ woordenboekengine
-├── docs/                    # Ontwikkelingsdocumentatie
-└── chisa/                   # Referentie naar eerdere versie van jidoujisho
+│   └── android/             # Android-project (manifest, native hoshidicts)
+├── packages/                # Interne packages + flutter_inappwebview_windows(fork) + gamepads_android_stub
+├── third_party/             # vendored patch-pakketten (aangewezen via dependency_overrides)
+├── ci/                      # Build-patch- en integratietestscripts
+├── tool/                    # bootstrap / i18n_sync en andere scripts
+└── docs/                    # Ontwikkelingsdocumentatie (inclusief agent-handleiding in docs/agent/)
 ```
 
 ## Dankbetuigingen

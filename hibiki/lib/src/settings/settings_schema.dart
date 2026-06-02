@@ -152,17 +152,6 @@ SettingsDestination _appearanceDestination() {
       SettingsSection(
         title: t.settings_section_app_shell,
         items: <SettingsItem>[
-          SettingsActionItem(
-            id: 'appearance.language',
-            title: t.options_language,
-            icon: Icons.translate_outlined,
-            onTap: (SettingsContext settingsContext) {
-              return showSettingsDialog(
-                settingsContext,
-                (_) => const LanguageDialogPage(),
-              );
-            },
-          ),
           SettingsNavigationItem(
             id: 'appearance.app_icon',
             title: t.app_icon_label,
@@ -1151,6 +1140,17 @@ SettingsDestination _systemDestination() {
       SettingsSection(
         title: t.settings_destination_system,
         items: <SettingsItem>[
+          SettingsActionItem(
+            id: 'appearance.language',
+            title: t.options_language,
+            icon: Icons.translate_outlined,
+            onTap: (SettingsContext settingsContext) {
+              return showSettingsDialog(
+                settingsContext,
+                (_) => const LanguageDialogPage(),
+              );
+            },
+          ),
           SettingsSwitchItem(
             id: 'system.low_memory_mode',
             title: t.low_memory_mode,

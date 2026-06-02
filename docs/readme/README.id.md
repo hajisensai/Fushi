@@ -23,7 +23,7 @@
 ## Fitur
 
 ### Pembacaan EPUB
-- [ttu Ebook Reader](https://github.com/ttu-ttu/ebook-reader) terintegrasi merender EPUB melalui WebView
+- Render EPUB di WebView (mesin paginasi turunan dari [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader))
 - Ketuk untuk mencari kata, pilih teks untuk menganalisis
 - Font kustom, tema (terang/gelap)
 - Statistik membaca dan penanda halaman
@@ -82,27 +82,40 @@ Antarmuka mendukung bahasa-bahasa berikut:
 
 | Lapisan | Teknologi |
 |---|---|
-| Framework | Flutter 3.41.6 / Dart 3.11.4 |
-| Pembaca | ttu Ebook Reader (WebView, [fork](https://github.com/hdjsadgfwtg/ttu-fork)) |
-| Penyimpanan | Isar + Drift (SQLite) + hoshidicts (mesin kamus C++ FFI) |
+| Framework | Flutter 3.41.6 (Dart SDK `>=3.5.0 <4.0.0`) |
+| Platform | Android / iOS / macOS / Windows / Linux (adaptif Material 3 + Cupertino) |
+| Pembaca | Mesin paginasi WebView (turunan dari [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader)) |
+| Penyimpanan | Drift (SQLite, WAL) + hoshidicts (mesin kamus C++ FFI) |
 | NLP | Ve (dekonjugasi) |
 | Pembuatan kartu | AnkiDroid API |
-| Internasionalisasi | Slang |
-| Versi minimum | Android 8.0 (API 26) |
+| Internasionalisasi | Slang (17 bahasa) |
+| Versi minimum | Android 7.0 (API 24) |
 
 ## Build
 
+Persiapan satu perintah (otomatis seed `dart_defines.env` + `flutter pub get` + terapkan patch), lalu build:
+
 ```bash
-cd hibiki/hibiki
-flutter pub get
-flutter build apk --release --target-platform android-arm64 --split-per-abi
+# Di root repositori
+bash tool/bootstrap.sh          # Windows PowerShell: .\tool\bootstrap.ps1
+                                # atau (Linux/macOS): dart run melos bootstrap
+
+cd hibiki
+flutter build apk --release --target-platform android-arm64 --split-per-abi \
+  --dart-define-from-file=dart_defines.env
 ```
 
-> **Patch pub cache diperlukan sebelum build pertama.** Jika pub cache dihapus atau `pub get` dijalankan ulang, semua patch harus diterapkan kembali. Lihat [Dependensi & Patch](#dependensi--patch) di bawah.
+`tool/bootstrap.sh` / `tool/bootstrap.ps1` menyatukan tiga hal menjadi satu perintah: ① jika
+`hibiki/dart_defines.env` tidak ada, otomatis dibuat dari `dart_defines.env.example` (nilai OAuth
+placeholder cukup untuk kompilasi, hanya backup Google Drive yang butuh nilai asli); ② `flutter pub get`;
+③ menjalankan `ci/apply-patches.sh`. `melos bootstrap` melakukan ②③ yang sama melalui post hook
+(di Windows melos punya bug encoding CJK, jadi gunakan `tool/bootstrap.ps1`).
+
+> **Catatan patch:** `ci/apply-patches.sh` menimpa perubahan di `ci/patches/` ke pub cache yang sebenarnya. Setiap kali pub cache dihapus atau `flutter pub get` dijalankan ulang harus dijalankan kembali (bootstrap sudah mencakup langkah ini). Ketika skrip tidak menemukan target patch apa pun, ia melewati dan memberi peringatan alih-alih berpura-pura berhasil.
 
 ## Dependensi & Patch
 
-Proyek ini dikunci ke Flutter 3.41.6. Beberapa dependensi upstream belum diadaptasi dan memerlukan patching manual terhadap kode sumber di pub cache.
+Proyek ini dikunci ke Flutter 3.41.6, beberapa dependensi upstream belum diadaptasi. Patching dibagi menjadi dua mekanisme: ① paket yang perlu menjadi input build dan direproduksi konsisten antar mesin di-vendor langsung ke `third_party/` dan ditunjuk dengan `dependency_overrides` (`network_to_file_image` / `carousel_slider` / `fading_edge_scrollview` / `flutter_inappwebview_android`, **tanpa** patch pub-cache); ② paket selebihnya dipatch sumbernya di pub cache oleh `ci/apply-patches.sh`. Detail mekanisme lihat [docs/agent/build.md](../agent/build.md). Tabel lipat di bawah adalah daftar historis yang dikelompokkan berdasarkan perubahan; untuk paket yang tumpang tindih dengan mekanisme ①, versi vendored yang berlaku.
 
 <details>
 <summary><b>Patch Perubahan Flutter API</b></summary>
@@ -133,7 +146,7 @@ Flutter 3.41.6 sepenuhnya menghapus v1 embedding API (`PluginRegistry.Registrar`
 
 | Target | Perubahan |
 |---|---|
-| `android/build.gradle` afterEvaluate | Paksa `compileSdkVersion 34` pada subproyek; hapus `-Werror` |
+| `android/build.gradle` afterEvaluate | Paksa `compileSdk` pada subproyek (default 36, beberapa 34); hapus `-Werror` |
 | `audio_session` 0.1.14 | Hapus `-Werror`, `-Xlint:deprecation` |
 | `package_info_plus` 4.0.2 | Perbaikan Kotlin null safety |
 | `receive_intent` (git) | Perbaikan Kotlin null safety |
@@ -160,23 +173,22 @@ Flutter 3.41.6 sepenuhnya menghapus v1 embedding API (`PluginRegistry.Registrar`
 ## Struktur Proyek
 
 ```
-hibiki/
+hibiki/                      # Root repo (Melos workspace: hibiki_workspace)
 ├── hibiki/                  # Direktori utama aplikasi Flutter
 │   ├── lib/
-│   │   ├── i18n/            # Internasionalisasi (17 bahasa)
+│   │   ├── i18n/            # Internasionalisasi (17 bahasa, Slang)
 │   │   ├── src/
 │   │   │   ├── pages/       # Halaman (rak buku, pembaca, kamus, pengaturan, dll.)
-│   │   │   ├── media/       # Jembatan buku audio, penguraian subtitle
-│   │   │   ├── dictionary/  # Mesin pencarian kamus
-│   │   │   ├── models/      # Model data & manajemen state
-│   │   │   └── language/    # Lapisan abstraksi bahasa
+│   │   │   ├── reader/      # Skrip JS/CSS WebView pembaca
+│   │   │   ├── media/       # Buku audio, penguraian subtitle, reader source
+│   │   │   └── models/      # Model data & manajemen state (AppModel)
 │   │   └── main.dart
-│   ├── assets/
-│   │   └── ttu-ebook-reader/ # Artefak build ttu fork
-│   └── android/
-│       └── app/src/main/cpp/ # Mesin kamus C++ hoshidicts
-├── docs/                    # Dokumentasi pengembangan
-└── chisa/                   # Referensi versi awal jidoujisho
+│   └── android/             # Proyek Android (manifest, native hoshidicts)
+├── packages/                # Paket internal + flutter_inappwebview_windows(fork) + gamepads_android_stub
+├── third_party/             # Paket patch vendored (ditunjuk dependency_overrides)
+├── ci/                      # Skrip patch build dan pengujian integrasi
+├── tool/                    # Skrip bootstrap / i18n_sync, dll.
+└── docs/                    # Dokumentasi pengembangan (termasuk manual operasi agent docs/agent/)
 ```
 
 ## Penghargaan
