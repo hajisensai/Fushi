@@ -39,6 +39,9 @@ public class TtsChannelHandler {
     private MediaPlayer mediaPlayer;
     private final List<SQLiteDatabase> localAudioDbs = new ArrayList<>();
     private final List<String> localAudioDbPaths = new ArrayList<>();
+    // 与 localAudioDbs 同 index 对齐：每库启用子来源的优先级序（首=最高）。
+    // 空 list = 该库不限制（全启用、DB 自然序），兼容无配置的旧库。
+    private final List<List<String>> localAudioDbOrders = new ArrayList<>();
     private final Object dbLock = new Object();
     private final ExecutorService ioExecutor = Executors.newFixedThreadPool(2);
     private final ExecutorService dbSetupExecutor = Executors.newSingleThreadExecutor();
@@ -79,6 +82,9 @@ public class TtsChannelHandler {
                         break;
                     case "queryLocalAudio":
                         handleQueryLocalAudio(call, result);
+                        break;
+                    case "listLocalAudioSources":
+                        handleListLocalAudioSources(call, result);
                         break;
                     case "extractLocalAudio":
                         handleExtractLocalAudio(call, result);
@@ -240,6 +246,25 @@ public class TtsChannelHandler {
         if (dbPaths == null) dbPaths = new ArrayList<>();
         final List<String> paths = dbPaths;
 
+        // path -> 启用子来源优先级序。来自 'dbConfigs'；缺省空表示该库不限制。
+        final Map<String, List<String>> orderByPath = new HashMap<>();
+        List<Map<String, Object>> dbConfigs = call.argument("dbConfigs");
+        if (dbConfigs != null) {
+            for (Map<String, Object> cfg : dbConfigs) {
+                if (cfg == null) continue;
+                Object p = cfg.get("path");
+                Object o = cfg.get("order");
+                if (!(p instanceof String)) continue;
+                List<String> order = new ArrayList<>();
+                if (o instanceof List) {
+                    for (Object s : (List<?>) o) {
+                        if (s instanceof String) order.add((String) s);
+                    }
+                }
+                orderByPath.put((String) p, order);
+            }
+        }
+
         dbSetupExecutor.execute(() -> {
             synchronized (dbLock) {
                 closeAllAudioDbsLocked();
@@ -260,6 +285,9 @@ public class TtsChannelHandler {
                         db.enableWriteAheadLogging();
                         localAudioDbPaths.add(dbPath);
                         localAudioDbs.add(db);
+                        // 开库成功后再记 order，保证与 localAudioDbs 的 index 对齐。
+                        List<String> order = orderByPath.get(dbPath);
+                        localAudioDbOrders.add(order != null ? order : new ArrayList<>());
                     } catch (Exception e) {
                         android.util.Log.e("hibiki-audio",
                             "Failed to open DB: " + dbPath, e);
@@ -303,24 +331,28 @@ public class TtsChannelHandler {
                     if (i < 0) continue;
                     SQLiteDatabase db = localAudioDbs.get(i);
                     if (db == null || !db.isOpen()) continue;
+                    List<String> order = (i < localAudioDbOrders.size())
+                        ? localAudioDbOrders.get(i) : null;
                     Cursor cursor = null;
                     try {
+                        // order 为空走快路径（LIMIT 1）；非空要取全部候选行再按序挑。
+                        boolean ordered = order != null && !order.isEmpty();
+                        String limit = ordered ? "" : " LIMIT 1";
                         cursor = db.rawQuery(
-                            "SELECT file, source FROM entries WHERE expression = ? AND reading = ? LIMIT 1",
+                            "SELECT file, source FROM entries WHERE expression = ? AND reading = ?" + limit,
                             new String[]{expression, reading != null ? reading : ""});
                         if (cursor == null || !cursor.moveToFirst()) {
                             if (cursor != null) cursor.close();
                             cursor = db.rawQuery(
-                                "SELECT file, source FROM entries WHERE expression = ? LIMIT 1",
+                                "SELECT file, source FROM entries WHERE expression = ?" + limit,
                                 new String[]{expression});
                         }
-                        if (cursor != null && cursor.moveToFirst()) {
-                            String file = cursor.getString(0);
-                            String source = cursor.getString(1);
+                        String[] picked = pickByOrder(cursor, order);
+                        if (picked != null) {
                             final int dbIndex = i;
                             Map<String, Object> info = new HashMap<>();
-                            info.put("file", file);
-                            info.put("source", source);
+                            info.put("file", picked[0]);
+                            info.put("source", picked[1]);
                             info.put("dbIndex", dbIndex);
                             new Handler(Looper.getMainLooper()).post(
                                 () -> result.success(info));
@@ -335,6 +367,64 @@ public class TtsChannelHandler {
                 }
                 new Handler(Looper.getMainLooper()).post(() -> result.success(null));
             }
+        });
+    }
+
+    /// 从候选行里按 [order] 选 source 优先级最高（rank 最小且 >=0）的一行。
+    /// order 为空 → 返回首行（兼容无配置旧库）；全被过滤掉 → null。
+    /// 返回 {file, source}。
+    private static String[] pickByOrder(Cursor cursor, List<String> order) {
+        if (cursor == null || !cursor.moveToFirst()) return null;
+        if (order == null || order.isEmpty()) {
+            return new String[]{cursor.getString(0), cursor.getString(1)};
+        }
+        String[] best = null;
+        int bestRank = Integer.MAX_VALUE;
+        do {
+            String source = cursor.getString(1);
+            int rank = order.indexOf(source);
+            if (rank < 0) continue; // 禁用 / 未列入 → 跳过
+            if (rank < bestRank) {
+                bestRank = rank;
+                best = new String[]{cursor.getString(0), source};
+            }
+        } while (cursor.moveToNext());
+        return best;
+    }
+
+    /// 枚举一个本地音频库内全部子来源（SELECT DISTINCT source）。
+    /// 用独立 read-only 连接，避开与播放查询共享 db 的锁竞争 / 并发关闭。
+    private void handleListLocalAudioSources(MethodCall call, MethodChannel.Result result) {
+        String path = call.argument("path");
+        if (path == null || path.isEmpty()) {
+            result.success(new ArrayList<String>());
+            return;
+        }
+        ioExecutor.execute(() -> {
+            List<String> sources = new ArrayList<>();
+            SQLiteDatabase db = null;
+            try {
+                File f = new File(path);
+                if (f.exists()) {
+                    db = SQLiteDatabase.openDatabase(path, null,
+                        SQLiteDatabase.OPEN_READONLY
+                            | SQLiteDatabase.NO_LOCALIZED_COLLATORS);
+                    try (Cursor c = db.rawQuery(
+                            "SELECT DISTINCT source FROM entries", null)) {
+                        while (c != null && c.moveToNext()) {
+                            String s = c.getString(0);
+                            if (s != null) sources.add(s);
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                android.util.Log.w("hibiki-audio",
+                    "listLocalAudioSources failed: " + path, e);
+            } finally {
+                if (db != null && db.isOpen()) db.close();
+            }
+            final List<String> out = sources;
+            new Handler(Looper.getMainLooper()).post(() -> result.success(out));
         });
     }
 
@@ -546,5 +636,6 @@ public class TtsChannelHandler {
         }
         localAudioDbs.clear();
         localAudioDbPaths.clear();
+        localAudioDbOrders.clear();
     }
 }
