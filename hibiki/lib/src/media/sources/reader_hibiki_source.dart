@@ -365,10 +365,6 @@ class ReaderHibikiSource extends ReaderMediaSource {
   /// reader settings, not just the in-book sheet.
   static VoidCallback? onLayoutReloadLive;
 
-  // HBK-AUDIT-124: removed the dead instance portForLanguage. It had zero call
-  // sites and duplicated the live TtuMigrationServer.portForLanguage; for any
-  // third language it would have thrown UnimplementedError.
-
   bool get volumePageTurningEnabled => getPreference<bool>(
       key: 'volume_page_turning_enabled', defaultValue: true);
 

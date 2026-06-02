@@ -89,7 +89,6 @@ dependencies:
   media_kit_libs_windows_audio: ^1.0.9
   kana_kit: ^2.0.0
   list_counter: ^1.0.2
-  local_assets_server: ^2.0.2+12
   material_color_utilities: ^0.13.0
   marquee: ^2.2.3
   multi_value_listenable_builder: ^0.0.2
@@ -180,7 +179,6 @@ flutter:
   assets:
     - assets/licenses/
     - assets/meta/
-    - assets/ttu-ebook-reader/
     - assets/popup/
     - assets/transforms/
 

@@ -5,7 +5,6 @@ import 'dart:ui';
 
 // archive/archive_io moved to DictionaryImportManager
 // audio_service moved to AudioController
-import 'package:collection/collection.dart';
 // external_app_launcher moved to AnkiIntegration
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -26,8 +25,6 @@ import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
-import 'package:hibiki/src/epub/ttu_migration.dart';
-import 'package:hibiki/src/epub/ttu_migration_server.dart';
 import 'package:hibiki/src/profile/profile_repository.dart';
 import 'package:hibiki/src/pages/implementations/popup_dictionary_page.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
@@ -1174,14 +1171,6 @@ class AppModel with ChangeNotifier {
         ]),
       ]);
 
-      if (_shouldRunTtuMigration()) {
-        debugPrint('[Hibiki] init: ttu migration (background, non-blocking)');
-        unawaited(_runTtuMigrationAsync());
-      } else {
-        debugPrint('[Hibiki] init: ttu migration skipped '
-            '(desktop or version >= 0.5.0)');
-      }
-
       debugPrint('[Hibiki] init: search preload (parallel)');
       final String warmupChar = targetLanguage.helloWorld.substring(0, 1);
       unawaited(Future.wait(<Future<void>>[
@@ -1217,53 +1206,6 @@ class AppModel with ChangeNotifier {
       _initError = '$e';
       notifyListeners();
     }
-  }
-
-  Future<void> _runTtuMigrationAsync() async {
-    try {
-      final migServer = await TtuMigrationServer.start(targetLanguage);
-      final int migCount = await TtuMigration.migrateIfNeeded(
-        _database,
-        migServer.boundPort!,
-      );
-      if (migCount > 0) {
-        debugPrint('[Hibiki] ttu migration: $migCount books migrated');
-      }
-      final int blobCount = await TtuMigration.remediateMissingBlobs(
-        _database,
-        migServer.boundPort!,
-      );
-      if (blobCount > 0) {
-        debugPrint('[Hibiki] ttu blob remediation: $blobCount books fixed');
-      }
-      final int tocCount = await TtuMigration.remediateMissingToc(
-        _database,
-        migServer.boundPort!,
-      );
-      if (tocCount > 0) {
-        debugPrint('[Hibiki] ttu TOC remediation: $tocCount books fixed');
-      }
-      final int charCount = await TtuMigration.remediateMissingCharacters(
-        _database,
-      );
-      if (charCount > 0) {
-        debugPrint('[Hibiki] characters remediation: $charCount books fixed');
-      }
-      debugPrint('[Hibiki] ttu migration completed in background');
-    } catch (e, stack) {
-      ErrorLogService.instance.log('AppModel.ttuMigration', e, stack);
-      debugPrint('[Hibiki] ttu migration failed (non-fatal): $e');
-    }
-  }
-
-  bool _shouldRunTtuMigration() {
-    if (!isMobilePlatform) return false;
-    final parts = _packageInfo.version.split('.');
-    final int major = int.tryParse(parts.elementAtOrNull(0) ?? '') ?? 0;
-    final int minor = int.tryParse(parts.elementAtOrNull(1) ?? '') ?? 0;
-    // >= 0.5.0 → no TTU data ever existed, skip migration
-    if (major > 0 || (major == 0 && minor >= 5)) return false;
-    return true;
   }
 
   Future<void> initialiseForDictionaryPopup() async {
