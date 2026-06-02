@@ -186,6 +186,23 @@ void main() {
     });
   });
 
+  group('device id', () {
+    test('getOrCreateDeviceId is stable across calls', () async {
+      final HibikiDatabase db = _testDb();
+      addTearDown(db.close);
+      final SyncRepository repo = SyncRepository(db);
+
+      final first = await repo.getOrCreateDeviceId();
+      expect(first, isNotEmpty);
+      final second = await repo.getOrCreateDeviceId();
+      expect(second, equals(first));
+    });
+
+    test('sync_device_id is in the device-local key catalog', () {
+      expect(SyncRepository.deviceLocalPrefKeys, contains('sync_device_id'));
+    });
+  });
+
   group('device-local pref key catalog', () {
     test('includes backend selection, credentials and server config', () {
       const keys = SyncRepository.deviceLocalPrefKeys;

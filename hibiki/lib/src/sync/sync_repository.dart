@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
@@ -383,6 +384,7 @@ class SyncRepository {
   static const _keyServerEnabled = 'sync_server_enabled';
   static const _keyServerPort = 'sync_server_port';
   static const _keyServerPassword = 'sync_server_password';
+  static const _keyDeviceId = 'sync_device_id';
 
   /// Single source of truth for the default Hibiki sync-server port.
   /// 38765 is in the IANA User Ports range (1024–49151) but unassigned and
@@ -410,6 +412,17 @@ class SyncRepository {
       return;
     }
     await _setString(_keyServerPassword, _encodeSecret(v));
+  }
+
+  /// Stable per-install identifier used to (a) advertise this device over the
+  /// LAN and (b) filter our own service out of discovery results. Generated
+  /// once on first use and persisted; never overwritten by a backup import.
+  Future<String> getOrCreateDeviceId() async {
+    final existing = await _getStringOrNull(_keyDeviceId);
+    if (existing != null && existing.isNotEmpty) return existing;
+    final String id = HibikiSyncServer.generateToken();
+    await _setString(_keyDeviceId, id);
+    return id;
   }
 
   // ── Hibiki Client (connect to another Hibiki instance) ─────────
@@ -510,6 +523,7 @@ class SyncRepository {
     _keyServerEnabled,
     _keyServerPort,
     _keyServerPassword,
+    _keyDeviceId,
     _keyHibikiClientUrls,
     _keyHibikiClientToken,
     _keyHibikiClientUrl,
