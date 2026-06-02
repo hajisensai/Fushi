@@ -263,7 +263,11 @@ Future<void> showSyncCompareDialog(
   final backend = resolveSyncBackend(await repo.getBackendType());
   if (!await backend.isAuthenticated) {
     if (!context.mounted) return;
-    showSyncMessage(context, t.sync_not_signed_in);
+    // The compare precondition is "a sync target is configured" — not an
+    // account login. The Hibiki interconnect (and WebDAV/FTP/SFTP) have no
+    // sign-in, so "not signed in" was wrong there; use a backend-neutral
+    // "set up sync first" message that reads correctly for every backend.
+    showSyncMessage(context, t.sync_compare_unavailable);
     return;
   }
 
