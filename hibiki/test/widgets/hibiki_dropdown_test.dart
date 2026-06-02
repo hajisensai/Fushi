@@ -134,6 +134,34 @@ void main() {
       expect(find.byType(DropdownMenu<String>), findsOneWidget);
     });
 
+    testWidgets(
+        'Android stock DropdownMenu caps menuHeight to the screen '
+        '(no off-screen overflow with many options)', (tester) async {
+      final List<String> many =
+          List<String>.generate(40, (int i) => 'Option $i');
+      await tester.pumpWidget(
+        buildTestApp(
+          HibikiDropdown<String>(
+            options: many,
+            initialOption: 'Option 0',
+            generateLabel: (String v) => v,
+            onChanged: (_) {},
+          ),
+          theme: ThemeData.light(useMaterial3: true)
+              .copyWith(platform: TargetPlatform.android),
+        ),
+      );
+
+      final DropdownMenu<String> dropdown =
+          tester.widget(find.byType(DropdownMenu<String>));
+      final double screenHeight =
+          tester.view.physicalSize.height / tester.view.devicePixelRatio;
+      // A bounded menu means the 40-item list scrolls WITHIN the screen instead
+      // of running its bottom entries off the bottom edge.
+      expect(dropdown.menuHeight, isNotNull);
+      expect(dropdown.menuHeight, lessThanOrEqualTo(screenHeight));
+    });
+
     testWidgets('MenuAnchor trigger registers with the focus root',
         (tester) async {
       await tester.pumpWidget(buildTestApp(

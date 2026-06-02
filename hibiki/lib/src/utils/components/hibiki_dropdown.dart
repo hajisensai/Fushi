@@ -99,16 +99,24 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
   @override
   Widget build(BuildContext context) {
     if (!_isPolledGamepadPlatform(context)) {
-      return _buildStockDropdown();
+      return _buildStockDropdown(context);
     }
     return _buildMenuAnchor(context);
   }
 
-  Widget _buildStockDropdown() {
+  Widget _buildStockDropdown(BuildContext context) {
+    // Cap the menu height to a fraction of the screen so a long list (e.g. the
+    // 17 app languages, dozens of Anki decks) scrolls WITHIN the viewport
+    // instead of running its bottom entries off the screen edge — unreachable
+    // because the overlay is anchored, not scrolled. Mirrors the polled-platform
+    // MenuAnchor cap in [_menuAnchor]; the stock DropdownMenu has no implicit
+    // bound, so it must be set explicitly.
+    final double menuHeight = MediaQuery.sizeOf(context).height * 0.6;
     final Widget menu = DropdownMenu<T>(
       // Fill the bounding box (the parent, or the SizedBox below when a fixed
       // width is given) — matches the prior call sites' expandedInsets usage.
       expandedInsets: EdgeInsets.zero,
+      menuHeight: menuHeight,
       initialSelection: widget.selected,
       enabled: widget.enabled,
       label: widget.label == null ? null : Text(widget.label!),
