@@ -1708,26 +1708,24 @@ class _InBookFavoriteRow extends StatelessWidget {
         children: [
           _buildColorRail(context, color),
           SizedBox(width: tokens.spacing.gap * 0.75),
-          if (onPlay != null)
+          // 跳转按钮已移除：整行点击 (onTap) 已经跳转到该收藏句子，
+          // 单独的跳转图标与之重复，反而把按钮挤在一起。
+          if (onPlay != null) ...[
             _InBookIconButton(
               materialIcon: Icons.volume_up_outlined,
               cupertinoIcon: CupertinoIcons.speaker_2,
               tooltip: t.play,
               onPressed: onPlay!,
             ),
-          if (onJump != null)
-            _InBookIconButton(
-              materialIcon: Icons.open_in_new_outlined,
-              cupertinoIcon: CupertinoIcons.arrow_up_right_square,
-              tooltip: t.jump_to_cue,
-              onPressed: onJump!,
-            ),
+            SizedBox(width: tokens.spacing.gap / 2),
+          ],
           _InBookIconButton(
             materialIcon: Icons.copy_outlined,
             cupertinoIcon: CupertinoIcons.doc_on_doc,
             tooltip: t.copy,
             onPressed: onCopy,
           ),
+          SizedBox(width: tokens.spacing.gap / 2),
           _InBookIconButton(
             materialIcon: Icons.delete_outline,
             cupertinoIcon: CupertinoIcons.delete,
