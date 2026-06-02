@@ -8,6 +8,7 @@ export 'src/utils/components/hibiki_icon_button.dart';
 export 'src/utils/components/hibiki_bottom_sheet.dart';
 export 'src/utils/components/hibiki_divider.dart';
 export 'src/utils/components/hibiki_dropdown.dart';
+export 'src/utils/components/hibiki_option_selection_page.dart';
 export 'src/utils/components/hibiki_marquee.dart';
 export 'src/utils/components/hibiki_tag.dart';
 export 'src/utils/components/hibiki_placeholder_message.dart';
