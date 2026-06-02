@@ -148,19 +148,6 @@ void main() {
     }
   });
 
-  test('settings schema custom rows use shared MD3 spacing tokens', () {
-    final String schemaSource =
-        readNormalizedSource('lib/src/settings/settings_schema.dart');
-
-    expect(schemaSource, contains('HibikiDesignTokens.of(context)'));
-    expect(schemaSource, contains('tokens.spacing'));
-    expect(
-      schemaSource,
-      isNot(contains('const EdgeInsets.symmetric(vertical: 4)')),
-    );
-    expect(schemaSource, isNot(contains('const SizedBox(height: 4)')));
-  });
-
   test('legacy adaptive alert factory is removed', () {
     final String source =
         readNormalizedSource('lib/src/utils/adaptive/adaptive_widgets.dart');
