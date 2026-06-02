@@ -83,6 +83,7 @@ SettingsDestination buildReaderQuickSettingsDestination(
       sectionFor(ReaderGroup.appearance, t.settings_destination_appearance),
       sectionFor(ReaderGroup.layout, t.section_layout),
       sectionFor(ReaderGroup.behavior, t.settings_destination_reading_controls),
+      sectionFor(ReaderGroup.lookup, t.settings_destination_lookup),
       sectionFor(ReaderGroup.audiobook, t.section_audiobook),
     ].where((SettingsSection s) => s.items.isNotEmpty).toList(growable: false),
   );
@@ -852,8 +853,8 @@ SettingsDestination _lookupDestination() {
             title: t.auto_read_on_lookup,
             icon: Icons.record_voice_over_outlined,
             reader: const ReaderPlacement(
-              group: ReaderGroup.behavior,
-              order: 7,
+              group: ReaderGroup.lookup,
+              order: 0,
             ),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.autoReadOnLookup,
@@ -867,8 +868,8 @@ SettingsDestination _lookupDestination() {
             title: t.pause_on_lookup,
             icon: Icons.pause_circle_outline,
             reader: const ReaderPlacement(
-              group: ReaderGroup.behavior,
-              order: 8,
+              group: ReaderGroup.lookup,
+              order: 1,
             ),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.pauseOnLookup,

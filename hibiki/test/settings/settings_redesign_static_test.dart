@@ -240,11 +240,47 @@ void main() {
   test('reader quick settings project from schema reader placements', () {
     final String schemaSource =
         readNormalizedSource('lib/src/settings/settings_schema.dart');
+    final String destinationSource =
+        readNormalizedSource('lib/src/settings/settings_destination.dart');
+    final String sheetSource = readNormalizedSource(
+        'lib/src/media/audiobook/reader_quick_settings_sheet.dart');
     expect(schemaSource,
         contains('Map<ReaderGroup, List<SettingsItem>> collectReaderItems'));
     expect(schemaSource, contains('item.reader'));
     expect(schemaSource,
         isNot(contains("item.id == 'lookup.auto_read_on_lookup' ||")));
+
+    expect(destinationSource, contains('lookup'));
+    expect(schemaSource, contains('sectionFor(ReaderGroup.lookup'));
+    expect(sheetSource, contains("page: 'lookup'"));
+    expect(sheetSource, contains('ReaderGroup.lookup'));
+
+    final int autoReadStart =
+        schemaSource.indexOf("id: 'lookup.auto_read_on_lookup'");
+    final int pauseStart = schemaSource.indexOf("id: 'lookup.pause_on_lookup'");
+    expect(autoReadStart, isNonNegative);
+    expect(pauseStart, isNonNegative);
+
+    final String autoReadSource =
+        schemaSource.substring(autoReadStart, pauseStart);
+    final String pauseSource =
+        schemaSource.substring(pauseStart, pauseStart + 520);
+    expect(autoReadSource, contains('group: ReaderGroup.lookup'));
+    expect(pauseSource, contains('group: ReaderGroup.lookup'));
+    expect(autoReadSource, isNot(contains('group: ReaderGroup.behavior')));
+    expect(pauseSource, isNot(contains('group: ReaderGroup.behavior')));
+  });
+
+  test('reader quick settings reuse the shared theme selector', () {
+    final String sheetSource = readNormalizedSource(
+        'lib/src/media/audiobook/reader_quick_settings_sheet.dart');
+    final String actionsSource =
+        readNormalizedSource('lib/src/settings/settings_actions.dart');
+
+    expect(actionsSource, contains('Widget buildThemeSelector'));
+    expect(sheetSource, contains('buildThemeSelector(settingsContext)'));
+    expect(sheetSource, isNot(contains('TtuReaderSettings.availableThemes')));
+    expect(sheetSource, isNot(contains('buildReaderThemeChip(')));
   });
 
   test('sync backup settings use standard schema rows for options', () {
