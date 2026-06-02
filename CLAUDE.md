@@ -63,7 +63,7 @@
 | 要做的事 | 看这里 |
 |---|---|
 | 跑集成测试 / 设备验证 / ADB 降级 / AnkiDroid / DB 查询 / 测试素材 | [docs/agent/integration-testing.md](docs/agent/integration-testing.md) |
-| 构建 5 平台 / melos / 依赖补丁机制 / Android Manifest 组件 | [docs/agent/build.md](docs/agent/build.md) |
+| 构建 5 平台 / melos / 依赖补丁机制 | [docs/agent/build.md](docs/agent/build.md) |
 | 持续审查模式 / 报告格式 / 回归记录 | [docs/agent/review-process.md](docs/agent/review-process.md) |
 | 阅读器调试（WebView / 恢复 / 分页 / 有声书遮挡 / 平台特例） | [docs/agent/reader-debugging.md](docs/agent/reader-debugging.md) |
 
