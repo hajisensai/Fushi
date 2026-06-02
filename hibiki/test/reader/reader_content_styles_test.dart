@@ -264,6 +264,42 @@ void main() {
           contains(
               'padding-bottom: calc(${settings.marginBottom}vh + ${settings.fontSize.round()}px + var(--chrome-bottom-inset, 0px))'));
     });
+
+    // Regression: in vertical writing mode the page-turn axis is scrollTop, so
+    // the column-gap (the inter-page period) must reserve the chrome insets too.
+    // Otherwise the column pitch (pageSize + gap) is shorter than the viewport
+    // by (chromeTop + chromeBottom) and the previous page's tail bleeds into the
+    // top notch strip of the current page.
+    test('vertical paginated column-gap includes both chrome insets', () async {
+      final ReaderSettings settings = await _defaultSettings();
+      // Default writing-mode is vertical-rl.
+      final String css = ReaderContentStyles.css(settings: settings);
+      expect(
+          css,
+          contains(
+              'column-gap: calc(${settings.marginTop}vh + ${settings.marginBottom}vh + ${settings.fontSize.round()}px + var(--chrome-top-inset, 0px) + var(--chrome-bottom-inset, 0px))'));
+    });
+
+    test('horizontal paginated column-gap excludes chrome insets', () async {
+      final HibikiDatabase db =
+          HibikiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final ReaderSettings settings = ReaderSettings(db);
+      await settings.refreshFromDb();
+      await settings.setWritingMode('horizontal-tb');
+
+      final String css = ReaderContentStyles.css(settings: settings);
+      expect(
+          css,
+          contains(
+              'column-gap: calc(${settings.marginLeft}vw + ${settings.marginRight}vw + ${settings.fontSize.round()}px)'));
+      // The horizontal page-turn axis is scrollLeft; chrome insets live in
+      // padding-top/bottom (perpendicular), so they must not enter the gap.
+      expect(
+          css,
+          isNot(contains(
+              'column-gap: calc(${settings.marginLeft}vw + ${settings.marginRight}vw + ${settings.fontSize.round()}px + var(--chrome-top-inset')));
+    });
   });
 
   group('ReaderContentStyles negative margin clamping', () {

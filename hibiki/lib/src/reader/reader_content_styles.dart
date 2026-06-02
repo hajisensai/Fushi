@@ -80,8 +80,18 @@ class ReaderContentStyles {
     final double mr = math.max(0, settings.marginRight);
 
     final String paddingCss = '${mt}vh ${mr}vw ${mb}vh ${ml}vw';
+    // The column-gap is the inter-page period along the page-turn axis. In
+    // vertical writing mode pages turn along scrollTop, so the gap must reserve
+    // the chrome insets (notch top + chrome bottom) on top of the margins/font;
+    // otherwise the column pitch (pageSize + gap = pageHeight - chromeTop -
+    // chromeBottom) falls short of the full viewport height and the previous
+    // page's tail bleeds into the current page's top notch strip. Including the
+    // insets makes pitch == pageHeight so consecutive pages tile exactly.
+    // Horizontal mode turns along scrollLeft, where the chrome insets live in
+    // padding-top/bottom (perpendicular to the turn axis) and must stay out of
+    // the gap.
     final String columnGapCss = isVertical
-        ? 'calc(${mt}vh + ${mb}vh + ${settings.fontSize.round()}px)'
+        ? 'calc(${mt}vh + ${mb}vh + ${settings.fontSize.round()}px + var(--chrome-top-inset, 0px) + var(--chrome-bottom-inset, 0px))'
         : 'calc(${ml}vw + ${mr}vw + ${settings.fontSize.round()}px)';
 
     final String textSpacingCss =
