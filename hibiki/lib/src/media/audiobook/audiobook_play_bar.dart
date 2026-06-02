@@ -14,6 +14,7 @@ class AudiobookPlayBar extends StatelessWidget {
     required this.onOpenSettings,
     this.skipActionSeconds = 0,
     this.backgroundColor,
+    this.reversed = false,
     super.key,
   });
 
@@ -23,6 +24,10 @@ class AudiobookPlayBar extends StatelessWidget {
   /// 0 = skip by sentence, 5/10/15/30 = skip by N seconds.
   final int skipActionSeconds;
 
+  /// 跟随「反转底栏方向」偏好（[PreferencesRepository.reverseNavigationBar]）。
+  /// 为 true 时镜像控件位置（仅反转 children 顺序，保留 cue 文本内部方向）。
+  final bool reversed;
+
   /// 用户点 ⚙ 设置按钮后触发。由 reader 页面侧注入，因为设置面板要
   /// 访问 WebView controller 才能 probe ttu 当前章节 / TOC、触发书签。
   final VoidCallback onOpenSettings;
@@ -30,6 +35,68 @@ class AudiobookPlayBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final List<Widget> barItems = <Widget>[
+      HibikiIconButton(
+        icon: skipActionSeconds == 0
+            ? Icons.skip_previous_outlined
+            : Icons.fast_rewind_outlined,
+        size: 22,
+        padding: EdgeInsets.all(tokens.spacing.gap),
+        tooltip:
+            skipActionSeconds == 0 ? t.prev_sentence : '-${skipActionSeconds}s',
+        onTap: () {
+          if (skipActionSeconds == 0) {
+            controller.skipToPrevCue();
+          } else {
+            controller.seekRelative(-skipActionSeconds);
+          }
+        },
+      ),
+      HibikiIconButton(
+        icon: controller.isPlaying
+            ? Icons.pause_outlined
+            : Icons.play_arrow_outlined,
+        size: 24,
+        backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+        enabledColor: Theme.of(context).colorScheme.onSecondaryContainer,
+        padding: EdgeInsets.all(tokens.spacing.gap),
+        onTap: controller.togglePlayPause,
+        tooltip: controller.isPlaying ? t.pause : t.play,
+      ),
+      HibikiIconButton(
+        icon: skipActionSeconds == 0
+            ? Icons.skip_next_outlined
+            : Icons.fast_forward_outlined,
+        size: 22,
+        padding: EdgeInsets.all(tokens.spacing.gap),
+        tooltip:
+            skipActionSeconds == 0 ? t.next_sentence : '+${skipActionSeconds}s',
+        onTap: () {
+          if (skipActionSeconds == 0) {
+            controller.skipToNextCue();
+          } else {
+            controller.seekRelative(skipActionSeconds);
+          }
+        },
+      ),
+      SizedBox(width: tokens.spacing.gap / 2),
+      Expanded(
+        child: Text(
+          controller.currentCue?.text ?? '',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+      ),
+      AudiobookFollowAudioButton(controller: controller),
+      HibikiIconButton(
+        icon: Icons.tune_outlined,
+        size: 20,
+        padding: EdgeInsets.all(tokens.spacing.gap),
+        onTap: onOpenSettings,
+        tooltip: t.audiobook_settings,
+      ),
+    ];
     return ColoredBox(
       color: backgroundColor ?? Theme.of(context).colorScheme.surface,
       child: SizedBox(
@@ -37,72 +104,7 @@ class AudiobookPlayBar extends StatelessWidget {
         child: Padding(
           padding: EdgeInsets.symmetric(horizontal: tokens.spacing.gap),
           child: Row(
-            children: [
-              HibikiIconButton(
-                icon: skipActionSeconds == 0
-                    ? Icons.skip_previous_outlined
-                    : Icons.fast_rewind_outlined,
-                size: 22,
-                padding: EdgeInsets.all(tokens.spacing.gap),
-                tooltip: skipActionSeconds == 0
-                    ? t.prev_sentence
-                    : '-${skipActionSeconds}s',
-                onTap: () {
-                  if (skipActionSeconds == 0) {
-                    controller.skipToPrevCue();
-                  } else {
-                    controller.seekRelative(-skipActionSeconds);
-                  }
-                },
-              ),
-              HibikiIconButton(
-                icon: controller.isPlaying
-                    ? Icons.pause_outlined
-                    : Icons.play_arrow_outlined,
-                size: 24,
-                backgroundColor:
-                    Theme.of(context).colorScheme.secondaryContainer,
-                enabledColor:
-                    Theme.of(context).colorScheme.onSecondaryContainer,
-                padding: EdgeInsets.all(tokens.spacing.gap),
-                onTap: controller.togglePlayPause,
-                tooltip: controller.isPlaying ? t.pause : t.play,
-              ),
-              HibikiIconButton(
-                icon: skipActionSeconds == 0
-                    ? Icons.skip_next_outlined
-                    : Icons.fast_forward_outlined,
-                size: 22,
-                padding: EdgeInsets.all(tokens.spacing.gap),
-                tooltip: skipActionSeconds == 0
-                    ? t.next_sentence
-                    : '+${skipActionSeconds}s',
-                onTap: () {
-                  if (skipActionSeconds == 0) {
-                    controller.skipToNextCue();
-                  } else {
-                    controller.seekRelative(skipActionSeconds);
-                  }
-                },
-              ),
-              SizedBox(width: tokens.spacing.gap / 2),
-              Expanded(
-                child: Text(
-                  controller.currentCue?.text ?? '',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ),
-              AudiobookFollowAudioButton(controller: controller),
-              HibikiIconButton(
-                icon: Icons.tune_outlined,
-                size: 20,
-                padding: EdgeInsets.all(tokens.spacing.gap),
-                onTap: onOpenSettings,
-                tooltip: t.audiobook_settings,
-              ),
-            ],
+            children: reversed ? barItems.reversed.toList() : barItems,
           ),
         ),
       ),

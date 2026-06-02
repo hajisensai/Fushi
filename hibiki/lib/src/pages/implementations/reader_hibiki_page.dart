@@ -47,7 +47,6 @@ import 'package:hibiki/src/utils/misc/volume_key_channel.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:hibiki/src/utils/misc/platform_utils.dart';
-import 'package:hibiki/src/utils/app_ui_scale.dart';
 import 'package:hibiki/src/utils/misc/hibiki_color.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
@@ -1600,312 +1599,308 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         ),
       );
     }
-    return HibikiNativeScale(
-      child: InAppWebView(
-        key: const ValueKey<String>('hoshi_webview'),
-        contextMenu: ContextMenu(
-          settings: ContextMenuSettings(
-            hideDefaultSystemContextMenuItems: false,
-          ),
-          menuItems: [
-            ContextMenuItem(
-              id: 1,
-              title: t.search,
-              action: () async {
-                final text = await _controller?.getSelectedText();
-                if (text == null || text.isEmpty) return;
-                if (!mounted) return;
-                final size = MediaQuery.of(context).size;
-                final rect = Rect.fromCenter(
-                  center: Offset(size.width / 2, size.height / 3),
-                  width: 1,
-                  height: 1,
-                );
-                prunePopupStack(0);
-                await searchDictionaryResult(
-                  searchTerm: text,
-                  selectionRect: rect,
-                );
-              },
-            ),
-          ],
+    return InAppWebView(
+      key: const ValueKey<String>('hoshi_webview'),
+      contextMenu: ContextMenu(
+        settings: ContextMenuSettings(
+          hideDefaultSystemContextMenuItems: false,
         ),
-        initialUserScripts: UnmodifiableListView<UserScript>(<UserScript>[
-          UserScript(
-            source:
-                'window.onerror=function(m,s,l,c,e){console.error("__HIBIKI_JS_ERROR__ "+m+" at "+s+":"+l+":"+c);return false;};',
-            injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+        menuItems: [
+          ContextMenuItem(
+            id: 1,
+            title: t.search,
+            action: () async {
+              final text = await _controller?.getSelectedText();
+              if (text == null || text.isEmpty) return;
+              if (!mounted) return;
+              final size = MediaQuery.of(context).size;
+              final rect = Rect.fromCenter(
+                center: Offset(size.width / 2, size.height / 3),
+                width: 1,
+                height: 1,
+              );
+              prunePopupStack(0);
+              await searchDictionaryResult(
+                searchTerm: text,
+                selectionRect: rect,
+              );
+            },
           ),
-        ]),
-        initialSettings: InAppWebViewSettings(
-          mediaPlaybackRequiresUserGesture: false,
-          verticalScrollBarEnabled: false,
-          horizontalScrollBarEnabled: false,
-          verticalScrollbarThumbColor: Colors.transparent,
-          verticalScrollbarTrackColor: Colors.transparent,
-          horizontalScrollbarThumbColor: Colors.transparent,
-          horizontalScrollbarTrackColor: Colors.transparent,
-          scrollbarFadingEnabled: false,
-          databaseEnabled: false,
-          domStorageEnabled: false,
-          useShouldInterceptRequest: true,
-          mixedContentMode: MixedContentMode.MIXED_CONTENT_COMPATIBILITY_MODE,
-          useShouldOverrideUrlLoading: true,
+        ],
+      ),
+      initialUserScripts: UnmodifiableListView<UserScript>(<UserScript>[
+        UserScript(
+          source:
+              'window.onerror=function(m,s,l,c,e){console.error("__HIBIKI_JS_ERROR__ "+m+" at "+s+":"+l+":"+c);return false;};',
+          injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
         ),
-        onWebViewCreated: (controller) {
-          _controller = controller;
-          assert(() {
-            assert(
-              ReaderHibikiPage.debugEvaluateJavascript == null,
-              'debugEvaluateJavascript already set — a previous reader did not '
-              'clear it on dispose, or two readers are live at once.',
-            );
-            ReaderHibikiPage.debugEvaluateJavascript = (String source) =>
-                controller.evaluateJavascript(source: source);
-            ReaderHibikiPage.debugCaretSurface = () => _caretSurface.name;
-            ReaderHibikiPage.debugEvaluateTopPopup =
-                (String source) async => topPopupState?.debugEval(source);
-            return true;
-          }());
-          _startContentReadyTimeout();
-          if (_lyricsMode && _audiobookController != null) {
-            final List<AudioCue> allCues =
-                _audiobookController!.allBookCuesSnapshot;
-            if (allCues.isNotEmpty) {
-              _audiobookController!.setChapterCues(allCues);
+      ]),
+      initialSettings: InAppWebViewSettings(
+        mediaPlaybackRequiresUserGesture: false,
+        verticalScrollBarEnabled: false,
+        horizontalScrollBarEnabled: false,
+        verticalScrollbarThumbColor: Colors.transparent,
+        verticalScrollbarTrackColor: Colors.transparent,
+        horizontalScrollbarThumbColor: Colors.transparent,
+        horizontalScrollbarTrackColor: Colors.transparent,
+        scrollbarFadingEnabled: false,
+        databaseEnabled: false,
+        domStorageEnabled: false,
+        useShouldInterceptRequest: true,
+        mixedContentMode: MixedContentMode.MIXED_CONTENT_COMPATIBILITY_MODE,
+        useShouldOverrideUrlLoading: true,
+      ),
+      onWebViewCreated: (controller) {
+        _controller = controller;
+        assert(() {
+          assert(
+            ReaderHibikiPage.debugEvaluateJavascript == null,
+            'debugEvaluateJavascript already set — a previous reader did not '
+            'clear it on dispose, or two readers are live at once.',
+          );
+          ReaderHibikiPage.debugEvaluateJavascript =
+              (String source) => controller.evaluateJavascript(source: source);
+          ReaderHibikiPage.debugCaretSurface = () => _caretSurface.name;
+          ReaderHibikiPage.debugEvaluateTopPopup =
+              (String source) async => topPopupState?.debugEval(source);
+          return true;
+        }());
+        _startContentReadyTimeout();
+        if (_lyricsMode && _audiobookController != null) {
+          final List<AudioCue> allCues =
+              _audiobookController!.allBookCuesSnapshot;
+          if (allCues.isNotEmpty) {
+            _audiobookController!.setChapterCues(allCues);
+          }
+          _lyricsEntryChapter = _currentChapter;
+          _lyricsEntryCueIndex = allCues.isNotEmpty
+              ? _audiobookController!.allBookCueIdx
+              : _audiobookController!.currentCueIdx;
+          _loadLyricsPage();
+        } else {
+          _restoreInFlight = true;
+          _loadChapterDirectly(_currentChapter);
+        }
+
+        controller.addJavaScriptHandler(
+          handlerName: 'onTextSelected',
+          callback: (args) async {
+            if (args.isEmpty) return;
+            try {
+              final Map<String, dynamic> payload =
+                  jsonDecode(args[0] as String) as Map<String, dynamic>;
+              await _handleTextSelected(ReaderSelectionData.fromJson(payload));
+            } catch (e, stack) {
+              ErrorLogService.instance
+                  .log('ReaderHibiki.onTextSelected', e, stack);
+              debugPrint('[ReaderHibiki] onTextSelected error: $e');
             }
-            _lyricsEntryChapter = _currentChapter;
-            _lyricsEntryCueIndex = allCues.isNotEmpty
-                ? _audiobookController!.allBookCueIdx
-                : _audiobookController!.currentCueIdx;
-            _loadLyricsPage();
-          } else {
-            _restoreInFlight = true;
-            _loadChapterDirectly(_currentChapter);
-          }
+          },
+        );
 
-          controller.addJavaScriptHandler(
-            handlerName: 'onTextSelected',
-            callback: (args) async {
-              if (args.isEmpty) return;
-              try {
-                final Map<String, dynamic> payload =
-                    jsonDecode(args[0] as String) as Map<String, dynamic>;
-                await _handleTextSelected(
-                    ReaderSelectionData.fromJson(payload));
-              } catch (e, stack) {
-                ErrorLogService.instance
-                    .log('ReaderHibiki.onTextSelected', e, stack);
-                debugPrint('[ReaderHibiki] onTextSelected error: $e');
-              }
-            },
-          );
+        controller.addJavaScriptHandler(
+          handlerName: 'onRestoreComplete',
+          callback: (_) => _onRestoreComplete(),
+        );
 
-          controller.addJavaScriptHandler(
-            handlerName: 'onRestoreComplete',
-            callback: (_) => _onRestoreComplete(),
-          );
-
-          controller.addJavaScriptHandler(
-            handlerName: 'onTap',
-            callback: (args) {
-              if (args.length < 2) return;
-              final bool shiftKey = args.length >= 3 && args[2] == true;
-              if (!_showChrome && !shiftKey) {
-                _toggleChrome();
-                return;
-              }
-              if (!shiftKey && !ReaderHibikiSource.instance.highlightOnTap) {
-                return;
-              }
-              final double x = _toDouble(args[0]) ?? 0;
-              final double y = _toDouble(args[1]) ?? 0;
-              _selectTextAt(x, y);
-            },
-          );
-
-          controller.addJavaScriptHandler(
-            handlerName: 'onShiftHover',
-            callback: (args) {
-              if (args.length < 2) return;
-              final double x = _toDouble(args[0]) ?? 0;
-              final double y = _toDouble(args[1]) ?? 0;
-              _selectTextAt(x, y);
-            },
-          );
-
-          controller.addJavaScriptHandler(
-            handlerName: 'onTapEmpty',
-            callback: (_) {
-              if (ReaderHibikiSource.instance.tapEmptyToHideChrome) {
-                _toggleChrome();
-              }
-            },
-          );
-
-          controller.addJavaScriptHandler(
-            handlerName: 'onSwipe',
-            callback: (List<dynamic> args) {
-              if (args.isEmpty || _lyricsMode) return;
-              final String dir = args[0] as String;
-              final bool invert =
-                  ReaderHibikiSource.instance.invertSwipeDirection;
-              if (dir == 'left') {
-                _paginate(invert
-                    ? ReaderNavigationDirection.backward
-                    : ReaderNavigationDirection.forward);
-              } else if (dir == 'right') {
-                _paginate(invert
-                    ? ReaderNavigationDirection.forward
-                    : ReaderNavigationDirection.backward);
-              }
-            },
-          );
-
-          controller.addJavaScriptHandler(
-            handlerName: 'onBoundarySwipe',
-            callback: (List<dynamic> args) {
-              if (args.isEmpty || _lyricsMode) return;
-              final String dir = args[0] as String;
-              if (dir == 'forward') {
-                _handlePageTurnLimit('forward');
-              } else if (dir == 'backward') {
-                _handlePageTurnLimit('backward');
-              }
-            },
-          );
-
-          controller.addJavaScriptHandler(
-            handlerName: 'onImageDetected',
-            callback: (_) => _audiobookController?.triggerImagePause(),
-          );
-
-          controller.addJavaScriptHandler(
-            handlerName: 'onImageTap',
-            callback: (args) {
-              if (args.isEmpty) return;
-              _openImageViewer(args[0] as String);
-            },
-          );
-
-          controller.addJavaScriptHandler(
-            handlerName: 'spreadReady',
-            callback: (_) {
-              _isNavigatingToChapter = false;
-              _restoreInFlight = false;
-              if (_restoreCompleter != null &&
-                  !_restoreCompleter!.isCompleted) {
-                _restoreCompleter!.complete(true);
-              }
-              _restoreCompleter = null;
-              if (mounted) {
-                setState(() {
-                  _readerContentReady = true;
-                });
-              }
-            },
-          );
-
-          controller.addJavaScriptHandler(
-            handlerName: 'onCueTap',
-            callback: (List<dynamic> args) {
-              if (args.isEmpty || _audiobookController == null) return;
-              final int sentenceIndex = (args[0] as num).toInt();
-              final List<AudioCue>? allCues = _cachedAllCues;
-              if (allCues == null) return;
-              final int idx = allCues
-                  .indexWhere((AudioCue c) => c.sentenceIndex == sentenceIndex);
-              if (idx >= 0) {
-                _audiobookController!.playCueAndContinue(allCues[idx]);
-              }
-            },
-          );
-        },
-        shouldInterceptRequest: (controller, request) async {
-          return await _interceptRequest(request.url);
-        },
-        shouldOverrideUrlLoading: (controller, action) async {
-          final String url = action.request.url?.toString() ?? '';
-          if (_isNavigatingToChapter) {
-            return NavigationActionPolicy.ALLOW;
-          }
-          final ({int chapterIndex, String? fragment})? link =
-              _book?.resolveInternalLink(url);
-          if (link != null) {
-            // HBK-AUDIT-038: a same-document anchor (e.g. href="#note1") resolves
-            // to the current chapter's path plus a fragment. Reloading the whole
-            // chapter just to scroll to an in-page anchor causes a visible flash
-            // and loses scroll context — jump in place instead of reloading.
-            if (link.chapterIndex == _currentChapter && link.fragment != null) {
-              _jumpToFragmentInPlace(link.fragment!);
-            } else {
-              _navigateToChapterWithFragment(link.chapterIndex, link.fragment);
-            }
-            return NavigationActionPolicy.CANCEL;
-          }
-          // HBK-AUDIT-038: external links (http/https/mailto) used to fall through
-          // to a blanket CANCEL and were silently swallowed. Route real external
-          // schemes to the OS handler so footnote/source links work.
-          await _openExternalUrl(url);
-          return NavigationActionPolicy.CANCEL;
-        },
-        onLoadStop: (controller, url) async {
-          _isNavigatingToChapter = false;
-          final int chapterSnapshot = _currentChapter;
-          debugPrint('[ReaderHibiki] onLoadStop: url=$url '
-              'chapter=$chapterSnapshot progress=$_initialProgress');
-          if (_lyricsMode) {
-            await _onChapterLoadComplete(controller);
-            return;
-          }
-          final String expectedUrl = _chapterUrl(chapterSnapshot);
-          if (url != null &&
-              Uri.parse(url.toString()).path != Uri.parse(expectedUrl).path) {
-            debugPrint(
-                '[ReaderHibiki] onLoadStop: stale page (expected=$expectedUrl), ignoring');
-            return;
-          }
-          await _onChapterLoadComplete(controller);
-        },
-        onReceivedError: (controller, request, error) async {
-          if (request.isForMainFrame ?? false) {
-            debugPrint('[ReaderHibiki] onReceivedError: ${error.description} '
-                'url=${request.url}');
-            // WebView2 on Windows reports NavigationCompleted with isSuccess=false
-            // for intercepted hoshi.local URLs because the domain doesn't resolve
-            // at the network layer, even though shouldInterceptRequest provided a
-            // valid response. The content IS rendered — treat as onLoadStop.
-            if (Platform.isWindows &&
-                request.url.host == ReaderHibikiSource.kHost) {
-              _isNavigatingToChapter = false;
-              final int chapterSnapshot = _currentChapter;
-              if (_lyricsMode) {
-                await _onChapterLoadComplete(controller);
-                return;
-              }
-              final String expectedUrl = _chapterUrl(chapterSnapshot);
-              if (Uri.parse(request.url.toString()).path !=
-                  Uri.parse(expectedUrl).path) {
-                debugPrint('[ReaderHibiki] Windows onReceivedError: stale page '
-                    '(expected=$expectedUrl), ignoring');
-                return;
-              }
-              await _onChapterLoadComplete(controller);
+        controller.addJavaScriptHandler(
+          handlerName: 'onTap',
+          callback: (args) {
+            if (args.length < 2) return;
+            final bool shiftKey = args.length >= 3 && args[2] == true;
+            if (!_showChrome && !shiftKey) {
+              _toggleChrome();
               return;
             }
-            if (_restoreExpectedGeneration != _navigateGeneration) return;
+            if (!shiftKey && !ReaderHibikiSource.instance.highlightOnTap) {
+              return;
+            }
+            final double x = _toDouble(args[0]) ?? 0;
+            final double y = _toDouble(args[1]) ?? 0;
+            _selectTextAt(x, y);
+          },
+        );
+
+        controller.addJavaScriptHandler(
+          handlerName: 'onShiftHover',
+          callback: (args) {
+            if (args.length < 2) return;
+            final double x = _toDouble(args[0]) ?? 0;
+            final double y = _toDouble(args[1]) ?? 0;
+            _selectTextAt(x, y);
+          },
+        );
+
+        controller.addJavaScriptHandler(
+          handlerName: 'onTapEmpty',
+          callback: (_) {
+            if (ReaderHibikiSource.instance.tapEmptyToHideChrome) {
+              _toggleChrome();
+            }
+          },
+        );
+
+        controller.addJavaScriptHandler(
+          handlerName: 'onSwipe',
+          callback: (List<dynamic> args) {
+            if (args.isEmpty || _lyricsMode) return;
+            final String dir = args[0] as String;
+            final bool invert =
+                ReaderHibikiSource.instance.invertSwipeDirection;
+            if (dir == 'left') {
+              _paginate(invert
+                  ? ReaderNavigationDirection.backward
+                  : ReaderNavigationDirection.forward);
+            } else if (dir == 'right') {
+              _paginate(invert
+                  ? ReaderNavigationDirection.forward
+                  : ReaderNavigationDirection.backward);
+            }
+          },
+        );
+
+        controller.addJavaScriptHandler(
+          handlerName: 'onBoundarySwipe',
+          callback: (List<dynamic> args) {
+            if (args.isEmpty || _lyricsMode) return;
+            final String dir = args[0] as String;
+            if (dir == 'forward') {
+              _handlePageTurnLimit('forward');
+            } else if (dir == 'backward') {
+              _handlePageTurnLimit('backward');
+            }
+          },
+        );
+
+        controller.addJavaScriptHandler(
+          handlerName: 'onImageDetected',
+          callback: (_) => _audiobookController?.triggerImagePause(),
+        );
+
+        controller.addJavaScriptHandler(
+          handlerName: 'onImageTap',
+          callback: (args) {
+            if (args.isEmpty) return;
+            _openImageViewer(args[0] as String);
+          },
+        );
+
+        controller.addJavaScriptHandler(
+          handlerName: 'spreadReady',
+          callback: (_) {
             _isNavigatingToChapter = false;
             _restoreInFlight = false;
             if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
-              _restoreCompleter!.complete(false);
+              _restoreCompleter!.complete(true);
             }
             _restoreCompleter = null;
+            if (mounted) {
+              setState(() {
+                _readerContentReady = true;
+              });
+            }
+          },
+        );
+
+        controller.addJavaScriptHandler(
+          handlerName: 'onCueTap',
+          callback: (List<dynamic> args) {
+            if (args.isEmpty || _audiobookController == null) return;
+            final int sentenceIndex = (args[0] as num).toInt();
+            final List<AudioCue>? allCues = _cachedAllCues;
+            if (allCues == null) return;
+            final int idx = allCues
+                .indexWhere((AudioCue c) => c.sentenceIndex == sentenceIndex);
+            if (idx >= 0) {
+              _audiobookController!.playCueAndContinue(allCues[idx]);
+            }
+          },
+        );
+      },
+      shouldInterceptRequest: (controller, request) async {
+        return await _interceptRequest(request.url);
+      },
+      shouldOverrideUrlLoading: (controller, action) async {
+        final String url = action.request.url?.toString() ?? '';
+        if (_isNavigatingToChapter) {
+          return NavigationActionPolicy.ALLOW;
+        }
+        final ({int chapterIndex, String? fragment})? link =
+            _book?.resolveInternalLink(url);
+        if (link != null) {
+          // HBK-AUDIT-038: a same-document anchor (e.g. href="#note1") resolves
+          // to the current chapter's path plus a fragment. Reloading the whole
+          // chapter just to scroll to an in-page anchor causes a visible flash
+          // and loses scroll context — jump in place instead of reloading.
+          if (link.chapterIndex == _currentChapter && link.fragment != null) {
+            _jumpToFragmentInPlace(link.fragment!);
+          } else {
+            _navigateToChapterWithFragment(link.chapterIndex, link.fragment);
           }
-        },
-        onConsoleMessage: (controller, msg) {
-          debugPrint('[WebView] ${msg.message}');
-        },
-      ),
+          return NavigationActionPolicy.CANCEL;
+        }
+        // HBK-AUDIT-038: external links (http/https/mailto) used to fall through
+        // to a blanket CANCEL and were silently swallowed. Route real external
+        // schemes to the OS handler so footnote/source links work.
+        await _openExternalUrl(url);
+        return NavigationActionPolicy.CANCEL;
+      },
+      onLoadStop: (controller, url) async {
+        _isNavigatingToChapter = false;
+        final int chapterSnapshot = _currentChapter;
+        debugPrint('[ReaderHibiki] onLoadStop: url=$url '
+            'chapter=$chapterSnapshot progress=$_initialProgress');
+        if (_lyricsMode) {
+          await _onChapterLoadComplete(controller);
+          return;
+        }
+        final String expectedUrl = _chapterUrl(chapterSnapshot);
+        if (url != null &&
+            Uri.parse(url.toString()).path != Uri.parse(expectedUrl).path) {
+          debugPrint(
+              '[ReaderHibiki] onLoadStop: stale page (expected=$expectedUrl), ignoring');
+          return;
+        }
+        await _onChapterLoadComplete(controller);
+      },
+      onReceivedError: (controller, request, error) async {
+        if (request.isForMainFrame ?? false) {
+          debugPrint('[ReaderHibiki] onReceivedError: ${error.description} '
+              'url=${request.url}');
+          // WebView2 on Windows reports NavigationCompleted with isSuccess=false
+          // for intercepted hoshi.local URLs because the domain doesn't resolve
+          // at the network layer, even though shouldInterceptRequest provided a
+          // valid response. The content IS rendered — treat as onLoadStop.
+          if (Platform.isWindows &&
+              request.url.host == ReaderHibikiSource.kHost) {
+            _isNavigatingToChapter = false;
+            final int chapterSnapshot = _currentChapter;
+            if (_lyricsMode) {
+              await _onChapterLoadComplete(controller);
+              return;
+            }
+            final String expectedUrl = _chapterUrl(chapterSnapshot);
+            if (Uri.parse(request.url.toString()).path !=
+                Uri.parse(expectedUrl).path) {
+              debugPrint('[ReaderHibiki] Windows onReceivedError: stale page '
+                  '(expected=$expectedUrl), ignoring');
+              return;
+            }
+            await _onChapterLoadComplete(controller);
+            return;
+          }
+          if (_restoreExpectedGeneration != _navigateGeneration) return;
+          _isNavigatingToChapter = false;
+          _restoreInFlight = false;
+          if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
+            _restoreCompleter!.complete(false);
+          }
+          _restoreCompleter = null;
+        }
+      },
+      onConsoleMessage: (controller, msg) {
+        debugPrint('[WebView] ${msg.message}');
+      },
     );
   }
 
@@ -4305,6 +4300,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
                       ReaderHibikiSource.instance.skipActionSeconds,
                   onOpenSettings: _showAppearanceSheet,
                   backgroundColor: _themeBackgroundColor(),
+                  reversed: appModel.reverseNavigationBar,
                 ),
                 ColoredBox(
                   color: _themeBackgroundColor(),
@@ -4323,6 +4319,20 @@ window.flutter_inappwebview.callHandler('spreadReady');
 
   Widget _buildSettingsBar() {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final bool reversed = appModel.reverseNavigationBar;
+    final List<Widget> barItems = <Widget>[
+      IconButton(
+        icon: Icon(Icons.headphones_outlined, color: _themeTextColor()),
+        iconSize: 22,
+        onPressed: _openAudioImportDialog,
+      ),
+      const Spacer(),
+      IconButton(
+        icon: Icon(Icons.tune_outlined, color: _themeTextColor()),
+        iconSize: 20,
+        onPressed: _showAppearanceSheet,
+      ),
+    ];
     return Positioned(
       left: 0,
       right: 0,
@@ -4339,21 +4349,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
                 child: Padding(
                   padding: EdgeInsets.symmetric(horizontal: tokens.spacing.gap),
                   child: Row(
-                    children: <Widget>[
-                      IconButton(
-                        icon: Icon(Icons.headphones_outlined,
-                            color: _themeTextColor()),
-                        iconSize: 22,
-                        onPressed: _openAudioImportDialog,
-                      ),
-                      const Spacer(),
-                      IconButton(
-                        icon:
-                            Icon(Icons.tune_outlined, color: _themeTextColor()),
-                        iconSize: 20,
-                        onPressed: _showAppearanceSheet,
-                      ),
-                    ],
+                    children: reversed ? barItems.reversed.toList() : barItems,
                   ),
                 ),
               ),
