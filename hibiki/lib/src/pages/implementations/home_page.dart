@@ -1,9 +1,7 @@
-import 'package:change_notifier_builder/change_notifier_builder.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:hibiki/src/sync/sync_auto_trigger.dart';
 import 'package:hibiki/pages.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart'
     show GamepadButton, ModifierKey;
@@ -29,14 +27,12 @@ class _HomePageState extends BasePageState<HomePage>
 
   /// 进入「设置」标签前的来源 tab，供设置全屏左上返回箭头切回。
   int _previousTab = 0;
-  String _iconAsset = 'assets/meta/icon.png';
   final FocusNode _keyboardFocusNode = FocusNode();
   final ValueNotifier<int> _dictFocusSignal = ValueNotifier<int>(0);
 
   @override
   void initState() {
     super.initState();
-    _loadIconPreset();
 
     WidgetsBinding.instance.addObserver(this);
     appModelNoUpdate.databaseCloseNotifier.addListener(refresh);
@@ -63,14 +59,6 @@ class _HomePageState extends BasePageState<HomePage>
 
       triggerAutoSyncOnAppOpen(db: appModel.database);
     });
-  }
-
-  Future<void> _loadIconPreset() async {
-    final prefs = await SharedPreferences.getInstance();
-    final key = prefs.getString(iconPresetKey) ?? 'default';
-    if (mounted) {
-      setState(() => _iconAsset = iconAssetMap[key] ?? 'assets/meta/icon.png');
-    }
   }
 
   void refresh() {
@@ -185,7 +173,7 @@ class _HomePageState extends BasePageState<HomePage>
     return c != null && c.widget is EditableText;
   }
 
-  /// 统一切换顶层 tab：进入「设置」(2) 前记录来源 tab，tab 0 时刷新图标预设。
+  /// 统一切换顶层 tab：进入「设置」(2) 前记录来源 tab。
   /// 所有切 tab 入口（侧栏 / 底栏 / 快捷键）都走这里，保证 _previousTab 一致。
   void _selectTab(int logicalIndex) {
     setState(() {
@@ -194,7 +182,6 @@ class _HomePageState extends BasePageState<HomePage>
       }
       _currentTab = logicalIndex;
     });
-    if (logicalIndex == 0) _loadIconPreset();
   }
 
   KeyEventResult _executeShortcutAction(ShortcutAction action) {
@@ -383,7 +370,6 @@ class _HomePageState extends BasePageState<HomePage>
                 currentIndex: visualIndex,
                 onTap: selectVisual,
                 items: displayItems,
-                leading: _buildRailLeading(),
               ),
             ),
             const VerticalDivider(thickness: 1, width: 1),
@@ -427,28 +413,6 @@ class _HomePageState extends BasePageState<HomePage>
       default:
         return const HomeReaderPage();
     }
-  }
-
-  Widget _buildRailLeading() {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        tokens.spacing.gap + tokens.spacing.gap / 2,
-        tokens.spacing.gap + tokens.spacing.gap / 2,
-        tokens.spacing.gap + tokens.spacing.gap / 2,
-        tokens.spacing.card + tokens.spacing.gap,
-      ),
-      child: ChangeNotifierBuilder(
-        notifier: appModel.incognitoNotifier,
-        builder: (context, notifier, _) {
-          return Image.asset(
-            _iconAsset,
-            width: 36,
-            height: 36,
-          );
-        },
-      ),
-    );
   }
 }
 

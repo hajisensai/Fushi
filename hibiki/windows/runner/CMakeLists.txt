@@ -20,5 +20,7 @@ target_compile_definitions(${BINARY_NAME} PRIVATE
   "FLUTTER_VERSION_BUILD=${FLUTTER_VERSION_BUILD}"
 )
 target_link_libraries(${BINARY_NAME} PRIVATE flutter flutter_wrapper_app)
+# dwmapi: DWM caption/text color theming for the native title bar.
+target_link_libraries(${BINARY_NAME} PRIVATE dwmapi)
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 add_dependencies(${BINARY_NAME} flutter_assemble)

@@ -22,6 +22,7 @@ import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_error_messages.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
+import 'package:hibiki/src/utils/window_caption_channel.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/shortcuts/global_navigation.dart';
 import 'package:hibiki/src/platform/platform_services.dart';
@@ -481,6 +482,13 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
         // the entire project, making use of the [spaces] package.
         builder: (context, child) {
           final cs = Theme.of(context).colorScheme;
+          // Keep the native Windows title bar in sync with the live app theme
+          // (surface background + onSurface text). No-op on other platforms.
+          // The channel de-dupes identical values so this is cheap per rebuild.
+          WindowCaptionChannel.setCaptionColors(
+            caption: cs.surface,
+            text: cs.onSurface,
+          );
           // Drive the status/navigation bar icon brightness from the *live*
           // theme so switching themes repaints the system bars. The builder
           // reruns on every theme change, so the AnnotatedRegion re-emits the

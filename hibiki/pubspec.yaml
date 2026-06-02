@@ -172,6 +172,10 @@ flutter_icons:
   image_path: "assets/meta/splash_source.png"
   adaptive_icon_background: "#FFFFFF"
   adaptive_icon_foreground: "assets/meta/splash_source.png"
+  windows:
+    generate: true
+    image_path: "assets/meta/launcher_icon_full.png"
+    icon_size: 256
 
 flutter:
   uses-material-design: true

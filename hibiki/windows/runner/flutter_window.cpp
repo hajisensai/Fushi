@@ -1,6 +1,9 @@
 #include "flutter_window.h"
 
+#include <dwmapi.h>
+
 #include <optional>
+#include <variant>
 
 #include "flutter/generated_plugin_registrant.h"
 
@@ -25,8 +28,66 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
+
+  // Title-bar theming channel: Dart pushes surface/onSurface colors so the
+  // native caption follows the in-app theme (see window_caption_channel.dart).
+  caption_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(), "app.hibiki/window",
+          &flutter::StandardMethodCodec::GetInstance());
+  caption_channel_->SetMethodCallHandler(
+      [this](const flutter::MethodCall<flutter::EncodableValue>& call,
+             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
+                 result) {
+        if (call.method_name() == "setCaptionColors") {
+          const auto* args =
+              std::get_if<flutter::EncodableMap>(call.arguments());
+          if (args != nullptr) {
+            const auto caption_it =
+                args->find(flutter::EncodableValue("caption"));
+            const auto text_it = args->find(flutter::EncodableValue("text"));
+            // Dart sends ARGB ints; opaque colors (alpha 0xFF) exceed int32
+            // range and arrive as int64. TryGetLongValue() accepts either
+            // int32 or int64 without throwing (unlike std::get<int>).
+            const int64_t caption_argb =
+                caption_it != args->end()
+                    ? caption_it->second.TryGetLongValue().value_or(0)
+                    : 0;
+            const int64_t text_argb =
+                text_it != args->end()
+                    ? text_it->second.TryGetLongValue().value_or(0)
+                    : 0;
+            ApplyCaptionColors(static_cast<uint32_t>(caption_argb),
+                               static_cast<uint32_t>(text_argb));
+          }
+          result->Success();
+        } else {
+          result->NotImplemented();
+        }
+      });
+
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
   return true;
+}
+
+void FlutterWindow::ApplyCaptionColors(uint32_t caption_argb,
+                                       uint32_t text_argb) {
+  HWND hwnd = GetHandle();
+  if (hwnd == nullptr) {
+    return;
+  }
+  // ARGB (0xAARRGGBB) -> Win32 COLORREF (0x00BBGGRR). Alpha is dropped;
+  // DWM caption colors are opaque.
+  auto to_colorref = [](uint32_t argb) -> COLORREF {
+    return RGB((argb >> 16) & 0xFF, (argb >> 8) & 0xFF, argb & 0xFF);
+  };
+  COLORREF caption = to_colorref(caption_argb);
+  COLORREF text = to_colorref(text_argb);
+  // DWMWA_CAPTION_COLOR (35) / DWMWA_TEXT_COLOR (36): Windows 11 build 22000+.
+  // On older Windows these return a failure HRESULT that we intentionally
+  // ignore, leaving the system-drawn title bar untouched.
+  DwmSetWindowAttribute(hwnd, 35, &caption, sizeof(caption));
+  DwmSetWindowAttribute(hwnd, 36, &text, sizeof(text));
 }
 
 void FlutterWindow::OnDestroy() {

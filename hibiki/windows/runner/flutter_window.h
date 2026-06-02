@@ -3,6 +3,8 @@
 
 #include <flutter/dart_project.h>
 #include <flutter/flutter_view_controller.h>
+#include <flutter/method_channel.h>
+#include <flutter/standard_method_codec.h>
 
 #include <memory>
 
@@ -28,6 +30,14 @@ class FlutterWindow : public Win32Window {
 
   // The Flutter instance hosted by this window.
   std::unique_ptr<flutter::FlutterViewController> flutter_controller_;
+
+  // Receives title-bar colors pushed from Dart (app.hibiki/window channel).
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
+      caption_channel_;
+
+  // Applies DWM caption/text colors to the top-level window. Persists across
+  // focus changes, so the unfocused title bar keeps following the app theme.
+  void ApplyCaptionColors(uint32_t caption_argb, uint32_t text_argb);
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_
