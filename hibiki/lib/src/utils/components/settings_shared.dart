@@ -11,6 +11,7 @@ import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 import 'package:hibiki/src/utils/components/hibiki_dropdown.dart';
 import 'package:hibiki/src/utils/components/hibiki_focusable.dart';
 import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
+import 'package:hibiki/src/utils/components/hibiki_option_selection_page.dart';
 
 class SettingsSectionHeader extends StatelessWidget {
   const SettingsSectionHeader(this.text, {super.key, this.padding});
@@ -33,6 +34,13 @@ const kSettingsSegmentedStyle = ButtonStyle(
   visualDensity: VisualDensity.compact,
   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
 );
+
+/// An [AdaptiveSettingsPickerRow] with more options than this renders as a
+/// chevron navigation row that pushes a bounded full-page selector instead of
+/// an inline overlay dropdown / action sheet — the overlay's anchored height
+/// would otherwise run a long list (app languages, dozens of Anki decks) off
+/// the screen edge. Short option sets keep the inline control.
+const int kSettingsPickerInlineLimit = 8;
 
 class AdaptiveSettingsScaffold extends StatelessWidget {
   const AdaptiveSettingsScaffold({
@@ -567,6 +575,9 @@ class AdaptiveSettingsPickerRow<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (options.length > kSettingsPickerInlineLimit) {
+      return _buildFullPageRow(context);
+    }
     final bool cupertino = isCupertinoPlatform(context);
     return AdaptiveSettingsRow(
       title: title,
@@ -577,6 +588,35 @@ class AdaptiveSettingsPickerRow<T> extends StatelessWidget {
           ? _buildCupertinoTrailing(context)
           : _buildMaterialDropdown(context),
       onTap: cupertino ? () => _showCupertinoPicker(context) : null,
+    );
+  }
+
+  /// Long option sets route to a bounded full-page selector
+  /// ([HibikiOptionSelectionPage]) instead of an anchored overlay that could
+  /// overflow the screen. The chosen entry is reported through [onChanged];
+  /// backing out (null result) leaves the selection unchanged. Index-keyed so
+  /// the page never needs `==`/hashCode on [T].
+  Widget _buildFullPageRow(BuildContext context) {
+    return AdaptiveSettingsNavigationRow(
+      title: title,
+      subtitle: _selectedLabel ?? placeholder,
+      icon: icon,
+      showIcon: icon != null,
+      onTap: () async {
+        final int? index = await pickOption<int>(
+          context,
+          title: title,
+          selected: _selectedIndex,
+          options: <HibikiOptionSelectionOption<int>>[
+            for (int i = 0; i < options.length; i++)
+              HibikiOptionSelectionOption<int>(
+                value: i,
+                label: options[i].label,
+              ),
+          ],
+        );
+        if (index != null) onChanged(options[index].value);
+      },
     );
   }
 
