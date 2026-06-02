@@ -22,6 +22,21 @@ import 'package:shelf/shelf_io.dart' as shelf_io;
 /// and verified on real devices; it is intentionally NOT bolted on here. Until
 /// then, treat LAN sync as unencrypted and only use it on a network you trust.
 
+/// A pairing attempt from a peer that POSTed /api/pair. Carries what the host
+/// UI needs to identify the requester in its confirmation prompt.
+class HibikiPairRequest {
+  const HibikiPairRequest({
+    required this.deviceName,
+    required this.remoteAddress,
+  });
+
+  /// Self-reported name from the client (may be null/empty if not sent).
+  final String? deviceName;
+
+  /// Source IP of the TCP connection, or null when it can't be resolved.
+  final String? remoteAddress;
+}
+
 /// Thrown by [HibikiSyncServer.start] when the requested port is already bound
 /// by another process. Carries the [port] so the UI can name it.
 class SyncServerPortInUseException implements Exception {
@@ -70,20 +85,12 @@ class HibikiSyncServer {
       <String, _RemoteAudioToken>{};
   HttpServer? _server;
 
-  /// Pairing window: while [isPairingOpen] is true, an unauthenticated client
-  /// may POST /api/pair to fetch [_token]. The user explicitly opens this
-  /// short window on the server device (Bluetooth-style pairing), so the raw
-  /// token is only handed out during a window they deliberately opened.
-  DateTime? _pairingExpiry;
-
-  void openPairing({Duration window = const Duration(seconds: 60)}) {
-    _pairingExpiry = DateTime.now().add(window);
-  }
-
-  bool get isPairingOpen {
-    final DateTime? expiry = _pairingExpiry;
-    return expiry != null && DateTime.now().isBefore(expiry);
-  }
+  /// Interactive pairing approval. When a client POSTs /api/pair, the server
+  /// asks the host UI via this callback (Bluetooth-style "device X wants to
+  /// pair — allow?") and only hands out [_token] when it resolves true. While
+  /// null (no UI wired), every pairing request is refused, so the raw token is
+  /// never handed out without a deliberate human approval on the host device.
+  Future<bool> Function(HibikiPairRequest request)? onPairRequest;
 
   bool get isRunning => _server != null;
   int get port => _server?.port ?? _requestedPort;
@@ -165,7 +172,7 @@ class HibikiSyncServer {
     final method = request.method.toUpperCase();
     final reqPath = Uri.decodeFull('/${request.url.path}');
     if (reqPath == '/api/pair') {
-      return _handlePair(method);
+      return _handlePair(request);
     }
     if (reqPath.startsWith('/api/lookup/')) {
       return _handleLookupApi(request, method, reqPath);
@@ -201,12 +208,31 @@ class HibikiSyncServer {
     }
   }
 
-  shelf.Response _handlePair(String method) {
-    if (method != 'POST') return shelf.Response(405);
-    if (!isPairingOpen) {
-      return shelf.Response(403, body: 'Pairing window closed');
+  Future<shelf.Response> _handlePair(shelf.Request request) async {
+    if (request.method.toUpperCase() != 'POST') return shelf.Response(405);
+    final Future<bool> Function(HibikiPairRequest)? approve = onPairRequest;
+    // No UI wired to approve → never hand out the token unattended.
+    if (approve == null) {
+      return shelf.Response(403, body: 'Pairing not available');
     }
+    String? name;
+    final Map<String, dynamic>? body = await _readJsonObject(request);
+    final String? reported = body?['name']?.toString().trim();
+    if (reported != null && reported.isNotEmpty) name = reported;
+    final bool approved = await approve(HibikiPairRequest(
+      deviceName: name,
+      remoteAddress: _remoteAddress(request),
+    ));
+    if (!approved) return shelf.Response(403, body: 'Pairing declined');
     return _jsonResponse(<String, dynamic>{'token': _token});
+  }
+
+  /// Source IP of the request's TCP connection, or null when shelf_io did not
+  /// attach connection info (e.g. some test harnesses).
+  static String? _remoteAddress(shelf.Request request) {
+    final Object? info = request.context['shelf.io.connection_info'];
+    if (info is HttpConnectionInfo) return info.remoteAddress.address;
+    return null;
   }
 
   Future<shelf.Response> _handleLookupApi(

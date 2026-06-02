@@ -1178,10 +1178,7 @@
     "remote_dict_lookup": "Remote dictionary lookup",
     "remote_dict_lookup_hint": "When local dictionaries miss, query the configured Hibiki server",
     "remote_audio_source": "Remote audio",
-    "sync_pair_open_button": "Allow pairing",
-    "sync_pair_window_open": "Pairing open: ${n}s",
     "sync_pair_success": "Paired — token filled in",
-    "sync_pair_window_closed": "Open pairing on the other device first",
     "sync_pair_failed": "Pairing failed",
     "audio_source_hibiki_interconnect": "Hibiki P2P",
     "audio_sources_remote_group": "Remote sources",
@@ -1191,5 +1188,11 @@
     "local_audio_import_failed": "Failed to import audio database",
     "local_audio_edit_sources": "Edit sources",
     "local_audio_source_order_title": "Source priority",
-    "local_audio_no_sources": "No sources found in this database"
+    "local_audio_no_sources": "No sources found in this database",
+    "sync_pair_request_title": "Pairing request",
+    "sync_pair_request_body": "A device is requesting to pair. Allow it to sync with this device?",
+    "sync_pair_allow": "Allow",
+    "sync_pair_deny": "Deny",
+    "sync_pair_denied": "The other device declined pairing",
+    "sync_pair_unknown_device": "Unknown device"
 }

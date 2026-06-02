@@ -1670,6 +1670,10 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
   LanBroadcastService? _broadcast;
   late final TextEditingController _portController;
   bool _loaded = false;
+  // True while a pairing-approval dialog is on screen. A peer must not be able
+  // to stack prompts on the host by hammering /api/pair, so we serve one at a
+  // time and auto-refuse anything that arrives while one is already open.
+  bool _pairDialogOpen = false;
 
   @override
   void initState() {
@@ -1747,7 +1751,7 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
       token: _token!,
       allowLan: true,
       remoteLookupService: appModel.createRemoteLookupService(),
-    );
+    )..onPairRequest = _promptPairApproval;
     try {
       await _server!.start();
       // Persist enabled only once the bind actually succeeded, so a failed
@@ -1795,6 +1799,106 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
       if (host.trim().isNotEmpty) return 'Hibiki · $host';
     } catch (_) {/* localHostname can throw on some platforms */}
     return 'Hibiki';
+  }
+
+  /// Server callback: a peer POSTed /api/pair. Ask the host user to allow the
+  /// token handout. Uses the app-wide navigator so the prompt appears even if
+  /// the user has navigated away from the sync page while the server runs.
+  /// Resolves false (refuse) on a stacked request, a missing context, an
+  /// explicit deny, or a 60s no-answer timeout.
+  Future<bool> _promptPairApproval(HibikiPairRequest request) async {
+    if (_pairDialogOpen) return false;
+    final BuildContext? ctx =
+        widget.settingsContext.appModel.navigatorKey.currentContext;
+    if (ctx == null) return false;
+    _pairDialogOpen = true;
+    Timer? autoDeny;
+    try {
+      final bool? approved = await showAppDialog<bool>(
+        context: ctx,
+        builder: (BuildContext dialogCtx) {
+          // Auto-refuse after 60s so a forgotten prompt never leaks the token
+          // and the waiting client gets a deterministic answer.
+          autoDeny ??= Timer(const Duration(seconds: 60), () {
+            if (Navigator.of(dialogCtx).canPop()) {
+              Navigator.pop(dialogCtx, false);
+            }
+          });
+          final HibikiDesignTokens tokens = HibikiDesignTokens.of(dialogCtx);
+          return HibikiDialogFrame(
+            maxWidth: 420,
+            insetPadding: EdgeInsets.symmetric(
+              horizontal: tokens.spacing.card,
+              vertical: tokens.spacing.card,
+            ),
+            scrollable: false,
+            child: HibikiModalSheetFrame(
+              title: t.sync_pair_request_title,
+              scrollable: true,
+              bodyPadding: EdgeInsets.fromLTRB(
+                tokens.spacing.card,
+                0,
+                tokens.spacing.card,
+                tokens.spacing.gap,
+              ),
+              footerPadding: EdgeInsets.fromLTRB(
+                tokens.spacing.card,
+                tokens.spacing.gap,
+                tokens.spacing.card,
+                tokens.spacing.card,
+              ),
+              body: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Text(t.sync_pair_request_body),
+                  SizedBox(height: tokens.spacing.gap),
+                  Text(
+                    _pairRequesterLabel(request),
+                    style: Theme.of(dialogCtx).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                ],
+              ),
+              footer: Wrap(
+                alignment: WrapAlignment.end,
+                spacing: tokens.spacing.gap,
+                children: <Widget>[
+                  adaptiveDialogAction(
+                    context: dialogCtx,
+                    isDestructiveAction: true,
+                    onPressed: () => Navigator.pop(dialogCtx, false),
+                    child: Text(t.sync_pair_deny),
+                  ),
+                  adaptiveDialogAction(
+                    context: dialogCtx,
+                    isDefaultAction: true,
+                    onPressed: () => Navigator.pop(dialogCtx, true),
+                    child: Text(t.sync_pair_allow),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+      return approved ?? false;
+    } finally {
+      autoDeny?.cancel();
+      _pairDialogOpen = false;
+    }
+  }
+
+  /// "<name> · <ip>" when both are known, else whichever is present, else a
+  /// generic label so the prompt always names a requester.
+  String _pairRequesterLabel(HibikiPairRequest request) {
+    final String name = request.deviceName?.trim() ?? '';
+    final String ip = request.remoteAddress?.trim() ?? '';
+    if (name.isNotEmpty && ip.isNotEmpty) return '$name · $ip';
+    if (name.isNotEmpty) return name;
+    if (ip.isNotEmpty) return ip;
+    return t.sync_pair_unknown_device;
   }
 
   Future<void> _stopServer() async {
@@ -1913,6 +2017,9 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget> {
   bool _scanning = false;
   bool _scanFailed = false;
   StreamSubscription<List<HibikiDevice>>? _devicesSub;
+  // webDavUrl of the device currently awaiting the host's pairing approval, or
+  // null when idle. Drives the per-row spinner and blocks concurrent attempts.
+  String? _pairingUrl;
 
   @override
   void initState() {
@@ -1966,19 +2073,29 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget> {
   }
 
   Future<void> _connectToDevice(HibikiDevice device) async {
+    // One pairing attempt at a time: the awaited request can hang for up to a
+    // minute waiting on the host's approval dialog.
+    if (_pairingUrl != null) return;
     final state = _syncSettings(widget.settingsContext);
     state.backendType = SyncBackendType.hibikiServer;
     final repo = SyncRepository(widget.settingsContext.appModel.database);
     await repo.setBackendType(SyncBackendType.hibikiServer);
     // Always record the address (deduped) so the user keeps the URL even if
-    // pairing is not open yet and they fall back to pasting the token.
+    // the host declines and they fall back to pasting the token.
     await repo.addHibikiClientUrl(device.webDavUrl);
 
+    setState(() => _pairingUrl = device.webDavUrl);
     String message;
     try {
       final http.Response resp = await http
-          .post(Uri.parse('${device.webDavUrl}/api/pair'))
-          .timeout(const Duration(seconds: 5));
+          .post(
+            Uri.parse('${device.webDavUrl}/api/pair'),
+            headers: <String, String>{'Content-Type': 'application/json'},
+            body: jsonEncode(<String, String>{'name': _localDeviceName()}),
+          )
+          // Outlast the host's 60s approval window so its auto-deny 403 reaches
+          // us instead of us timing out first.
+          .timeout(const Duration(seconds: 65));
       if (resp.statusCode == 200) {
         final dynamic body = jsonDecode(resp.body);
         final String? token =
@@ -1990,22 +2107,35 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget> {
           message = t.sync_pair_failed;
         }
       } else if (resp.statusCode == 403) {
-        message = t.sync_pair_window_closed;
+        // Host declined or let the prompt time out.
+        message = t.sync_pair_denied;
       } else {
         message = t.sync_pair_failed;
       }
     } catch (e, stack) {
-      // Pairing probe failed (window closed/no server/timeout). Keep the URL;
-      // record why instead of swallowing.
+      // Pairing probe failed (no server/timeout/declined). Keep the URL; record
+      // why instead of swallowing.
       ErrorLogService.instance
           .log('LanDiscovery.pair:${device.webDavUrl}', e, stack);
       message = t.sync_pair_failed;
+    } finally {
+      if (mounted) setState(() => _pairingUrl = null);
     }
 
     // Single source of truth bumped → client-config widget reloads URL + token.
     state.reloadClientConfig();
     widget.settingsContext.refresh();
     if (mounted) _showSnackBar(context, '${device.name}: $message');
+  }
+
+  /// This device's own advertised name, sent to the host so its approval prompt
+  /// can identify who is asking. Mirrors the server widget's [_deviceName].
+  String _localDeviceName() {
+    try {
+      final String host = Platform.localHostname;
+      if (host.trim().isNotEmpty) return 'Hibiki · $host';
+    } catch (_) {/* localHostname can throw on some platforms */}
+    return 'Hibiki';
   }
 
   @override
@@ -2042,9 +2172,19 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget> {
               leading: const Icon(Icons.devices_outlined, size: 20),
               title: Text(device.name),
               subtitle: Text(device.webDavUrl),
+              trailing: _pairingUrl == device.webDavUrl
+                  ? SizedBox(
+                      width: 18,
+                      height: 18,
+                      child:
+                          adaptiveIndicator(context: context, strokeWidth: 2),
+                    )
+                  : null,
               minHeight: 52,
               padding: EdgeInsets.zero,
-              onTap: () => _connectToDevice(device),
+              // Disable taps while any pairing attempt is in flight.
+              onTap:
+                  _pairingUrl != null ? null : () => _connectToDevice(device),
             ),
         ],
       ),

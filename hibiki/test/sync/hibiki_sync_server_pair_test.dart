@@ -27,13 +27,14 @@ void main() {
 
   Uri pairUri() => Uri.parse('http://127.0.0.1:${server.port}/api/pair');
 
-  test('POST /api/pair returns 403 when pairing window is closed', () async {
+  test('POST /api/pair returns 403 when no approval handler is wired',
+      () async {
     final http.Response resp = await http.post(pairUri());
     expect(resp.statusCode, 403);
   });
 
-  test('POST /api/pair returns the token while the window is open', () async {
-    server.openPairing(window: const Duration(seconds: 60));
+  test('POST /api/pair returns the token when the host approves', () async {
+    server.onPairRequest = (HibikiPairRequest _) async => true;
     final http.Response resp = await http.post(pairUri());
     expect(resp.statusCode, 200);
     final Map<String, dynamic> body =
@@ -41,8 +42,32 @@ void main() {
     expect(body['token'], 'super-secret-token');
   });
 
+  test('POST /api/pair returns 403 when the host declines', () async {
+    server.onPairRequest = (HibikiPairRequest _) async => false;
+    final http.Response resp = await http.post(pairUri());
+    expect(resp.statusCode, 403);
+  });
+
+  test('the approval handler receives the client name and remote address',
+      () async {
+    HibikiPairRequest? seen;
+    server.onPairRequest = (HibikiPairRequest req) async {
+      seen = req;
+      return true;
+    };
+    await http.post(
+      pairUri(),
+      headers: <String, String>{'Content-Type': 'application/json'},
+      body: jsonEncode(<String, String>{'name': 'Galaxy S21'}),
+    );
+    expect(seen, isNotNull);
+    expect(seen!.deviceName, 'Galaxy S21');
+    // shelf_io attaches the connection info, so the loopback IP is resolved.
+    expect(seen!.remoteAddress, isNotNull);
+  });
+
   test('GET /api/pair is rejected with 405', () async {
-    server.openPairing(window: const Duration(seconds: 60));
+    server.onPairRequest = (HibikiPairRequest _) async => true;
     final http.Response resp = await http.get(pairUri());
     expect(resp.statusCode, 405);
   });
@@ -52,15 +77,8 @@ void main() {
     final http.Response davResp =
         await http.get(Uri.parse('http://127.0.0.1:${server.port}/'));
     expect(davResp.statusCode, 401);
-    server.openPairing();
+    server.onPairRequest = (HibikiPairRequest _) async => true;
     final http.Response pairResp = await http.post(pairUri());
     expect(pairResp.statusCode, 200);
-  });
-
-  test('window expires: 403 again after it elapses', () async {
-    server.openPairing(window: const Duration(milliseconds: 50));
-    await Future<void>.delayed(const Duration(milliseconds: 120));
-    final http.Response resp = await http.post(pairUri());
-    expect(resp.statusCode, 403);
   });
 }

@@ -1178,10 +1178,7 @@
     "remote_dict_lookup": "远端词典查询",
     "remote_dict_lookup_hint": "本地词典查不到时，查询已配置的 Hibiki 服务器",
     "remote_audio_source": "远端音频",
-    "sync_pair_open_button": "开启配对",
-    "sync_pair_window_open": "配对开启中：剩 ${n} 秒",
     "sync_pair_success": "配对成功，已自动填入 token",
-    "sync_pair_window_closed": "请先在对方设备上开启配对",
     "sync_pair_failed": "配对失败",
     "audio_source_hibiki_interconnect": "Hibiki 互联",
     "audio_sources_remote_group": "远端来源",
@@ -1191,5 +1188,11 @@
     "local_audio_import_failed": "导入音频数据库失败",
     "local_audio_edit_sources": "编辑来源",
     "local_audio_source_order_title": "来源顺序",
-    "local_audio_no_sources": "此数据库未发现可用来源"
+    "local_audio_no_sources": "此数据库未发现可用来源",
+    "sync_pair_request_title": "配对请求",
+    "sync_pair_request_body": "有设备请求配对，允许它与本机同步吗？",
+    "sync_pair_allow": "允许",
+    "sync_pair_deny": "拒绝",
+    "sync_pair_denied": "对方拒绝了配对请求",
+    "sync_pair_unknown_device": "未知设备"
 }
