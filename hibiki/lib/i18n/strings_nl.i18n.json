@@ -1188,5 +1188,8 @@
     "audio_source_url_invalid": "Link must be http(s) and contain a term or reading placeholder",
     "audio_source_added": "Audio source added",
     "local_audio_imported": "Audio database added",
-    "local_audio_import_failed": "Failed to import audio database"
+    "local_audio_import_failed": "Failed to import audio database",
+    "local_audio_edit_sources": "Edit sources",
+    "local_audio_source_order_title": "Source priority",
+    "local_audio_no_sources": "No sources found in this database"
 }
