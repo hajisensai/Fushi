@@ -1,7 +1,6 @@
 {
     "settings_destination_appearance": "外观",
     "settings_destination_profiles": "配置方案",
-    "settings_destination_reading_display": "阅读显示",
     "settings_destination_reading_controls": "阅读操作",
     "settings_destination_lookup": "查词",
     "settings_destination_card_creation": "制卡",
@@ -1177,5 +1176,6 @@
     "remote_lookup_enabled": "使用远端 Hibiki 查询",
     "remote_lookup_enabled_hint": "本地词典或本地音频未命中时，查询已配置的 Hibiki 服务器",
     "sync_dictionary": "同步词典",
-    "sync_dictionary_warning": "词典包可能很大，并包含已导入的词典资源。"
+    "sync_dictionary_warning": "词典包可能很大，并包含已导入的词典资源。",
+    "settings_destination_reading": "阅读"
 }

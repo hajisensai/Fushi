@@ -1,7 +1,6 @@
 {
     "settings_destination_appearance": "Appearance",
     "settings_destination_profiles": "Configuration Schemes",
-    "settings_destination_reading_display": "Reading Display",
     "settings_destination_reading_controls": "Reading Controls",
     "settings_destination_lookup": "Lookup",
     "settings_destination_card_creation": "Card Creation",
@@ -1177,5 +1176,6 @@
     "remote_lookup_enabled": "Use remote Hibiki lookup",
     "remote_lookup_enabled_hint": "When local dictionaries or Local Audio miss, query the configured Hibiki server",
     "sync_dictionary": "Sync dictionaries",
-    "sync_dictionary_warning": "Dictionary packages can be large and include imported dictionary resources."
+    "sync_dictionary_warning": "Dictionary packages can be large and include imported dictionary resources.",
+    "settings_destination_reading": "Reading"
 }

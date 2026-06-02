@@ -24,7 +24,7 @@ class SettingsHomePage extends BasePage {
 
 class _SettingsHomePageState extends BasePageState<SettingsHomePage> {
   SettingsDestinationId _selectedDestinationId =
-      SettingsDestinationId.readingDisplay;
+      SettingsDestinationId.reading;
 
   @override
   void initState() {

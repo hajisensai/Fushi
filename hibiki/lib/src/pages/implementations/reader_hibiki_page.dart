@@ -257,6 +257,11 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         setState(() {});
       }
     };
+    ReaderHibikiSource.onLayoutReloadLive = () {
+      if (mounted) {
+        _reloadWithCurrentSettings();
+      }
+    };
     _initBook();
   }
 
@@ -912,6 +917,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       return true;
     }());
     ReaderHibikiSource.onSettingsChangedLive = null;
+    ReaderHibikiSource.onLayoutReloadLive = null;
     FocusManager.instance.removeHighlightModeListener(_onHighlightModeChanged);
     WidgetsBinding.instance.removeObserver(this);
     _progressPollTimer?.cancel();
@@ -4486,6 +4492,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
       },
       webViewController: _controller!,
       appModel: appModel,
+      ref: ref,
       isHibikiReader: true,
       onStyleChanged: _applyStylesLive,
       onThemeChanged: _onThemeChanged,

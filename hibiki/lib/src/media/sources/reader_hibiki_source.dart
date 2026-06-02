@@ -352,7 +352,18 @@ class ReaderHibikiSource extends ReaderMediaSource {
 
   static ReaderSettings? readerSettings;
 
+  /// Fired on CSS-only setting changes (font size / line height / margins /
+  /// indentation / justify / kerning / vpal / furigana / vert-orient). The
+  /// reader live-updates the injected stylesheet without a full chapter reload.
   static VoidCallback? onSettingsChangedLive;
+
+  /// Fired on structural layout changes that the CSS injection alone cannot
+  /// express (writing mode / view mode / page columns / spread mode / spread
+  /// direction / prioritize reader styles). The reader rebuilds the chapter so
+  /// the pagination engine re-runs. Kept separate from [onSettingsChangedLive]
+  /// so the reload-vs-CSS choice is key-accurate for every surface that mutates
+  /// reader settings, not just the in-book sheet.
+  static VoidCallback? onLayoutReloadLive;
 
   // HBK-AUDIT-124: removed the dead instance portForLanguage. It had zero call
   // sites and duplicated the live TtuMigrationServer.portForLanguage; for any

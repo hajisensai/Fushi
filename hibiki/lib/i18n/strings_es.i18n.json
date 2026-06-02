@@ -996,7 +996,6 @@
     "settings_destination_lookup": "Búsqueda",
     "settings_destination_profiles": "Esquemas de configuración",
     "settings_destination_reading_controls": "Controles de lectura",
-    "settings_destination_reading_display": "Pantalla de lectura",
     "settings_destination_sync_backup": "Sincronización y copia de seguridad",
     "settings_destination_system": "Sistema",
     "settings_section_app_shell": "Aplicación",
@@ -1177,5 +1176,6 @@
     "remote_lookup_enabled": "Use remote Hibiki lookup",
     "remote_lookup_enabled_hint": "When local dictionaries or Local Audio miss, query the configured Hibiki server",
     "sync_dictionary": "Sync dictionaries",
-    "sync_dictionary_warning": "Dictionary packages can be large and include imported dictionary resources."
+    "sync_dictionary_warning": "Dictionary packages can be large and include imported dictionary resources.",
+    "settings_destination_reading": "Reading"
 }

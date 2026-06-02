@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
@@ -66,19 +67,24 @@ void main() {
   testWidgets('in-book settings sheet uses adaptive settings rows',
       (tester) async {
     await tester.pumpWidget(
-      MaterialApp(
-        theme: ThemeData(useMaterial3: true),
-        home: Scaffold(
-          body: ReaderQuickSettingsSheet(
-            controller: null,
-            toc: const [],
-            readerProgress: const (1, 3),
-            onJumpSection: (_) async {},
-            onBookmark: () async {},
-            onExitReader: () {},
-            webViewController: _FakeInAppWebViewController(),
-            appModel: AppModel(testPlatformServices()),
-            isHibikiReader: true,
+      ProviderScope(
+        child: MaterialApp(
+          theme: ThemeData(useMaterial3: true),
+          home: Scaffold(
+            body: Consumer(
+              builder: (context, ref, _) => ReaderQuickSettingsSheet(
+                controller: null,
+                toc: const [],
+                readerProgress: const (1, 3),
+                onJumpSection: (_) async {},
+                onBookmark: () async {},
+                onExitReader: () {},
+                webViewController: _FakeInAppWebViewController(),
+                appModel: AppModel(testPlatformServices()),
+                ref: ref,
+                isHibikiReader: true,
+              ),
+            ),
           ),
         ),
       ),
@@ -91,18 +97,19 @@ void main() {
     expect(find.text(t.settings_destination_reading_controls), findsOneWidget);
     expect(find.text(t.section_navigation), findsOneWidget);
     expect(find.text(t.display_settings), findsOneWidget);
+    // Main-page quick controls keep the bespoke theme chip + view-mode toggle.
     expect(find.text(t.ttu_font_size), findsOneWidget);
     expect(find.text(t.ttu_line_height), findsOneWidget);
     expect(find.text(t.ttu_theme), findsOneWidget);
     expect(find.text(t.ttu_view_mode_label), findsOneWidget);
     expect(find.byType(ListTile), findsNothing);
 
+    // The appearance sub-page is now schema-projected: typography steppers
+    // (font size / line height / indentation) + the view-mode segmented row.
     await tester.tap(find.text(t.settings_destination_appearance));
     await tester.pumpAndSettle();
 
-    expect(find.text(t.settings_destination_appearance), findsOneWidget);
     expect(find.byType(AdaptiveSettingsStepperRow), findsWidgets);
-    expect(find.byType(ChoiceChip), findsWidgets);
     expect(find.byType(AdaptiveSettingsSwitchRow), findsNothing);
 
     await tester.tap(find.byIcon(Icons.arrow_back));
@@ -111,7 +118,12 @@ void main() {
     await tester.tap(find.text(t.section_layout));
     await tester.pumpAndSettle();
 
-    expect(find.byType(AdaptiveSettingsSegmentedRow<String>), findsWidgets);
+    // Schema-projected segmented items render as AdaptiveSettingsSegmentedRow
+    // with the renderer's erased <Object> type arg, not the bespoke <String>.
+    expect(
+      find.byType(AdaptiveSettingsSegmentedRow<Object>),
+      findsWidgets,
+    );
     expect(find.byType(AdaptiveSettingsStepperRow), findsWidgets);
     expect(find.byType(ListTile), findsNothing);
   });
@@ -119,44 +131,49 @@ void main() {
   testWidgets('in-book navigation lists avoid legacy Material tiles',
       (tester) async {
     await tester.pumpWidget(
-      MaterialApp(
-        theme: ThemeData(useMaterial3: true),
-        home: Scaffold(
-          body: ReaderQuickSettingsSheet(
-            controller: null,
-            toc: const [
-              TtuTocEntry(index: 0, label: 'Opening'),
-              TtuTocEntry(index: 1, label: 'Chapter 1'),
-            ],
-            readerProgress: const (1, 2),
-            onJumpSection: (_) async {},
-            onBookmark: () async {},
-            onExitReader: () {},
-            webViewController: _FakeInAppWebViewController(),
-            appModel: AppModel(testPlatformServices()),
-            bookmarks: [
-              Bookmark(
-                sectionIndex: 1,
-                normCharOffset: 120,
-                label: 'Saved page',
-                createdAt: DateTime(2026, 5, 25, 12),
+      ProviderScope(
+        child: MaterialApp(
+          theme: ThemeData(useMaterial3: true),
+          home: Scaffold(
+            body: Consumer(
+              builder: (context, ref, _) => ReaderQuickSettingsSheet(
+                controller: null,
+                toc: const [
+                  TtuTocEntry(index: 0, label: 'Opening'),
+                  TtuTocEntry(index: 1, label: 'Chapter 1'),
+                ],
+                readerProgress: const (1, 2),
+                onJumpSection: (_) async {},
+                onBookmark: () async {},
+                onExitReader: () {},
+                webViewController: _FakeInAppWebViewController(),
+                appModel: AppModel(testPlatformServices()),
+                ref: ref,
+                bookmarks: [
+                  Bookmark(
+                    sectionIndex: 1,
+                    normCharOffset: 120,
+                    label: 'Saved page',
+                    createdAt: DateTime(2026, 5, 25, 12),
+                  ),
+                ],
+                favoriteSentences: [
+                  FavoriteSentence(
+                    text: 'A highlighted sentence from the current book.',
+                    bookTitle: 'Current Book',
+                    chapterLabel: 'Chapter 1',
+                    sectionIndex: 1,
+                    normCharOffset: 120,
+                    createdAt: DateTime(2026, 5, 25, 12),
+                  ),
+                ],
+                onJumpToBookmark: (_) async {},
+                onDeleteBookmark: (_) async {},
+                onJumpToFavorite: (_) async {},
+                onDeleteFavorite: (_) async {},
+                isHibikiReader: true,
               ),
-            ],
-            favoriteSentences: [
-              FavoriteSentence(
-                text: 'A highlighted sentence from the current book.',
-                bookTitle: 'Current Book',
-                chapterLabel: 'Chapter 1',
-                sectionIndex: 1,
-                normCharOffset: 120,
-                createdAt: DateTime(2026, 5, 25, 12),
-              ),
-            ],
-            onJumpToBookmark: (_) async {},
-            onDeleteBookmark: (_) async {},
-            onJumpToFavorite: (_) async {},
-            onDeleteFavorite: (_) async {},
-            isHibikiReader: true,
+            ),
           ),
         ),
       ),

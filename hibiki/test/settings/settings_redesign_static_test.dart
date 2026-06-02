@@ -27,14 +27,12 @@ void main() {
       'SettingsDestination buildReaderQuickSettingsDestination',
       'SettingsDestinationId.appearance',
       'SettingsDestinationId.profiles',
-      'SettingsDestinationId.readingDisplay',
-      'SettingsDestinationId.readingControls',
+      'SettingsDestinationId.reading',
       'SettingsDestinationId.lookup',
       'SettingsDestinationId.cardCreation',
       'SettingsDestinationId.listening',
       'buildSyncBackupDestination',
       'SettingsDestinationId.system',
-      'SettingsDestinationId.diagnostics',
     ],
     'lib/src/sync/sync_settings_schema.dart': <String>[
       'SettingsDestination buildSyncBackupDestination',
@@ -178,6 +176,10 @@ void main() {
 
     expect(source, isNot(contains('design_system_label')));
     expect(source, isNot(contains('ProfileSelector')));
+    // Now a thin schema-projected page: no hand-written ttu setters, renders
+    // via SettingsRenderer.buildDetailContent.
+    expect(source, isNot(contains('setTtuFontSize')));
+    expect(source, contains('buildDetailContent'));
   });
 
   test('settings schema uses task-oriented destinations', () {
@@ -192,14 +194,12 @@ void main() {
     for (final String token in <String>[
       'SettingsDestinationId.appearance',
       'SettingsDestinationId.profiles',
-      'SettingsDestinationId.readingDisplay',
-      'SettingsDestinationId.readingControls',
+      'SettingsDestinationId.reading',
       'SettingsDestinationId.lookup',
       'SettingsDestinationId.cardCreation',
       'SettingsDestinationId.listening',
       'SettingsDestinationId.syncBackup',
       'SettingsDestinationId.system',
-      'SettingsDestinationId.diagnostics',
     ]) {
       expect(combined, contains(token), reason: 'missing $token');
     }
@@ -217,26 +217,34 @@ void main() {
         schemaSource.indexOf('SettingsDestination _appearanceDestination()');
     final int profilesStart =
         schemaSource.indexOf('SettingsDestination _profilesDestination()');
-    final int readingDisplayStart = schemaSource
-        .indexOf('SettingsDestination _readingDisplayDestination()');
-    final int readingControlsStart = schemaSource
-        .indexOf('SettingsDestination _readingControlsDestination()');
+    final int readingStart =
+        schemaSource.indexOf('SettingsDestination _readingDestination()');
+    final int lookupStart =
+        schemaSource.indexOf('SettingsDestination _lookupDestination()');
 
     expect(appearanceStart, isNonNegative);
     expect(profilesStart, isNonNegative);
-    expect(readingDisplayStart, isNonNegative);
-    expect(readingControlsStart, isNonNegative);
+    expect(readingStart, isNonNegative);
+    expect(lookupStart, isNonNegative);
 
     final String appearanceSource =
         schemaSource.substring(appearanceStart, profilesStart);
-    final String readingDisplaySource =
-        schemaSource.substring(readingDisplayStart, readingControlsStart);
+    final String readingSource =
+        schemaSource.substring(readingStart, lookupStart);
 
     expect(appearanceSource, contains('CustomFontsPage'));
     expect(appearanceSource, contains("id: 'appearance.fonts'"));
-    expect(readingDisplaySource, isNot(contains('CustomFontsPage')));
-    expect(
-        readingDisplaySource, isNot(contains("id: 'reading_display.fonts'")));
+    expect(readingSource, isNot(contains('CustomFontsPage')));
+  });
+
+  test('reader quick settings project from schema reader placements', () {
+    final String schemaSource =
+        readNormalizedSource('lib/src/settings/settings_schema.dart');
+    expect(schemaSource,
+        contains('Map<ReaderGroup, List<SettingsItem>> collectReaderItems'));
+    expect(schemaSource, contains('item.reader'));
+    expect(schemaSource,
+        isNot(contains("item.id == 'lookup.auto_read_on_lookup' ||")));
   });
 
   test('sync backup settings use standard schema rows for options', () {

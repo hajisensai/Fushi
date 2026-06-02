@@ -6,17 +6,30 @@ import 'package:hibiki/src/settings/settings_context.dart';
 enum SettingsDestinationId {
   appearance,
   profiles,
-  readingDisplay,
-  readingControls,
+  reading,
   lookup,
   cardCreation,
   listening,
   syncBackup,
   system,
-  diagnostics,
   // Synthetic destination for the reader quick-settings dialog; its own id so
-  // it never collides with the real readingDisplay destination (HBK-AUDIT-131).
+  // it never collides with the real reading destination (HBK-AUDIT-131).
   readerQuickSettings,
+}
+
+/// 书内快捷面板的分组维度，与全局 [SettingsDestinationId] 正交。
+/// 一个设置项可以同时出现在全局某 destination 和书内某 [ReaderGroup]。
+enum ReaderGroup { appearance, layout, behavior, audiobook }
+
+/// 描述某个 [SettingsItem] 在书内快捷面板里的放置位置。
+/// 为 null 表示该项不出现在书内面板（仅全局可见）。
+class ReaderPlacement {
+  const ReaderPlacement({required this.group, required this.order});
+
+  final ReaderGroup group;
+
+  /// 在所属 [group] 内的升序排序键（仅组内有效，可有间隔）。
+  final int order;
 }
 
 typedef SettingsVisibility = bool Function(SettingsContext context);
@@ -98,6 +111,7 @@ sealed class SettingsItem {
     this.subtitle,
     this.icon,
     this.visible,
+    this.reader,
   });
 
   final String id;
@@ -105,6 +119,9 @@ sealed class SettingsItem {
   final String? subtitle;
   final IconData? icon;
   final SettingsVisibility? visible;
+
+  /// 书内快捷面板放置；null = 仅全局可见。
+  final ReaderPlacement? reader;
 
   bool isVisible(SettingsContext context) => visible?.call(context) ?? true;
 }
@@ -119,6 +136,7 @@ class SettingsNavigationItem extends SettingsItem {
     super.subtitle,
     super.icon,
     super.visible,
+    super.reader,
   }) : assert(builder != null || onTap != null);
 
   final WidgetBuilder? builder;
@@ -134,6 +152,7 @@ class SettingsActionItem extends SettingsItem {
     super.subtitle,
     super.icon,
     super.visible,
+    super.reader,
   });
 
   final SettingsItemAction onTap;
@@ -148,6 +167,7 @@ class SettingsSwitchItem extends SettingsItem {
     super.subtitle,
     super.icon,
     super.visible,
+    super.reader,
   });
 
   final SettingsSwitchGetter value;
@@ -178,6 +198,7 @@ class SettingsSegmentedItem<T extends Object> extends SettingsItem {
     super.subtitle,
     super.icon,
     super.visible,
+    super.reader,
     this.controlBelow = false,
   });
 
@@ -196,6 +217,7 @@ class SettingsSliderItem extends SettingsItem {
     super.subtitle,
     super.icon,
     super.visible,
+    super.reader,
     this.min = 0,
     this.max = 1,
     this.divisions,
@@ -225,6 +247,7 @@ class SettingsStepperItem extends SettingsItem {
     super.subtitle,
     super.icon,
     super.visible,
+    super.reader,
   });
 
   final double Function(SettingsContext context) value;
@@ -243,6 +266,7 @@ class SettingsCustomItem extends SettingsItem {
     super.subtitle,
     super.icon,
     super.visible,
+    super.reader,
   });
 
   final SettingsItemBuilder builder;

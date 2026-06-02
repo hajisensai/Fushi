@@ -4,7 +4,6 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
-import 'package:hibiki/src/pages/implementations/book_css_editor_page.dart';
 import 'package:hibiki/src/settings/settings_actions.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
@@ -16,44 +15,64 @@ List<SettingsDestination> buildSettingsSchema(SettingsContext context) {
   return <SettingsDestination>[
     _appearanceDestination(),
     _profilesDestination(),
-    _readingDisplayDestination(),
-    _readingControlsDestination(),
+    _readingDestination(),
     _lookupDestination(),
     _cardCreationDestination(),
     _listeningDestination(),
     buildSyncBackupDestination(),
     _systemDestination(),
-    _diagnosticsDestination(),
   ];
+}
+
+/// 遍历完整 schema，收集所有带 [ReaderPlacement] 的 item，按 group + order 升序分组。
+Map<ReaderGroup, List<SettingsItem>> collectReaderItems(
+  SettingsContext context,
+) {
+  final Map<ReaderGroup, List<SettingsItem>> grouped =
+      <ReaderGroup, List<SettingsItem>>{};
+  for (final SettingsDestination destination in buildSettingsSchema(context)) {
+    for (final SettingsSection section in destination.sections) {
+      for (final SettingsItem item in section.items) {
+        final ReaderPlacement? placement = item.reader;
+        if (placement == null) continue;
+        grouped.putIfAbsent(placement.group, () => <SettingsItem>[]).add(item);
+      }
+    }
+  }
+  for (final List<SettingsItem> items in grouped.values) {
+    items.sort((SettingsItem a, SettingsItem b) =>
+        a.reader!.order.compareTo(b.reader!.order));
+  }
+  return grouped;
+}
+
+/// 把某个 [ReaderGroup] 的 item 包装成一个可被 SettingsRenderer 渲染的 destination。
+SettingsDestination buildReaderGroupDestination(
+  SettingsContext context,
+  ReaderGroup group,
+  String title,
+) {
+  final List<SettingsItem> items =
+      collectReaderItems(context)[group] ?? <SettingsItem>[];
+  return SettingsDestination(
+    id: SettingsDestinationId.readerQuickSettings,
+    title: title,
+    icon: Icons.tune_outlined,
+    sections: <SettingsSection>[SettingsSection(items: items)],
+  );
 }
 
 SettingsDestination buildReaderQuickSettingsDestination(
   SettingsContext context,
 ) {
-  final List<SettingsDestination> destinations = buildSettingsSchema(context);
-  final SettingsDestination appearance = destinations.firstWhere(
-    (SettingsDestination destination) =>
-        destination.id == SettingsDestinationId.appearance,
-  );
-  final SettingsDestination readingDisplay = destinations.firstWhere(
-    (SettingsDestination destination) =>
-        destination.id == SettingsDestinationId.readingDisplay,
-  );
-  final SettingsDestination readingControls = destinations.firstWhere(
-    (SettingsDestination destination) =>
-        destination.id == SettingsDestinationId.readingControls,
-  );
-  final SettingsDestination lookup = destinations.firstWhere(
-    (SettingsDestination destination) =>
-        destination.id == SettingsDestinationId.lookup,
-  );
-  final List<SettingsItem> quickLookupItems =
-      lookup.sections.expand((SettingsSection section) => section.items).where(
-    (SettingsItem item) {
-      return item.id == 'lookup.auto_read_on_lookup' ||
-          item.id == 'lookup.popup_max_width';
-    },
-  ).toList(growable: false);
+  final Map<ReaderGroup, List<SettingsItem>> grouped =
+      collectReaderItems(context);
+  SettingsSection sectionFor(ReaderGroup group, String title) {
+    return SettingsSection(
+      title: title,
+      items: grouped[group] ?? <SettingsItem>[],
+    );
+  }
 
   return SettingsDestination(
     id: SettingsDestinationId.readerQuickSettings,
@@ -61,14 +80,11 @@ SettingsDestination buildReaderQuickSettingsDestination(
     summary: t.source_description_epub,
     icon: Icons.tune_outlined,
     sections: <SettingsSection>[
-      appearance.sections.first,
-      ...readingDisplay.sections,
-      ...readingControls.sections,
-      SettingsSection(
-        title: t.settings_section_lookup_behavior,
-        items: quickLookupItems,
-      ),
-    ],
+      sectionFor(ReaderGroup.appearance, t.settings_destination_appearance),
+      sectionFor(ReaderGroup.layout, t.section_layout),
+      sectionFor(ReaderGroup.behavior, t.settings_destination_reading_controls),
+      sectionFor(ReaderGroup.audiobook, t.section_audiobook),
+    ].where((SettingsSection s) => s.items.isNotEmpty).toList(growable: false),
   );
 }
 
@@ -197,43 +213,418 @@ SettingsDestination _profilesDestination() {
   );
 }
 
-SettingsDestination _readingDisplayDestination() {
+SettingsDestination _readingDestination() {
+  bool isVertical(SettingsContext c) =>
+      c.readerSource.ttuWritingMode.startsWith('vertical');
   return SettingsDestination(
-    id: SettingsDestinationId.readingDisplay,
-    title: t.settings_destination_reading_display,
+    id: SettingsDestinationId.reading,
+    title: t.settings_destination_reading,
     summary: t.section_layout,
     icon: Icons.auto_stories_outlined,
     sections: <SettingsSection>[
       SettingsSection(
         title: t.section_typography,
         items: <SettingsItem>[
-          SettingsNavigationItem(
-            id: 'reading_display.display',
-            title: t.display_settings,
-            icon: Icons.text_fields,
-            builder: (_) => const DisplaySettingsPage(),
+          SettingsStepperItem(
+            id: 'reading_display.font_size',
+            title: t.ttu_font_size,
+            icon: Icons.format_size,
+            min: 8,
+            max: 64,
+            step: 1,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.appearance,
+              order: 0,
+            ),
+            value: (SettingsContext c) => c.readerSource.ttuFontSize,
+            format: (double v) => '${v.round()}',
+            onChanged: (SettingsContext c, double v) {
+              c.readerSource.setTtuFontSize(v);
+              notifyReaderSettingsChanged(c);
+            },
           ),
-          SettingsNavigationItem(
-            id: 'reading_display.book_css',
-            title: t.book_css_editor_title,
-            subtitle: t.book_css_editor_no_extract_dir,
-            icon: Icons.code_outlined,
-            visible: (_) => false,
-            builder: (_) => const BookCssEditorPage(extractDir: ''),
+          SettingsStepperItem(
+            id: 'reading_display.line_height',
+            title: t.ttu_line_height,
+            icon: Icons.format_line_spacing,
+            min: 1,
+            max: 3,
+            step: 0.1,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.appearance,
+              order: 1,
+            ),
+            value: (SettingsContext c) => c.readerSource.ttuLineHeight,
+            format: (double v) => v.toStringAsFixed(2),
+            onChanged: (SettingsContext c, double v) {
+              c.readerSource.setTtuLineHeight((v * 100).roundToDouble() / 100);
+              notifyReaderSettingsChanged(c);
+            },
+          ),
+          SettingsStepperItem(
+            id: 'reading_display.text_indentation',
+            title: t.ttu_text_indentation,
+            icon: Icons.format_indent_increase,
+            min: 0,
+            max: 10,
+            step: 1,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.appearance,
+              order: 2,
+            ),
+            value: (SettingsContext c) => c.readerSource.ttuTextIndentation,
+            format: (double v) => '${v.round()}',
+            onChanged: (SettingsContext c, double v) {
+              c.readerSource.setTtuTextIndentation(v);
+              notifyReaderSettingsChanged(c);
+            },
+          ),
+          SettingsStepperItem(
+            id: 'reading_display.margin_top',
+            title: t.margin_top,
+            icon: Icons.border_top,
+            min: -5,
+            max: 30,
+            step: 1,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.layout,
+              order: 0,
+            ),
+            value: (SettingsContext c) => c.readerSource.ttuMarginTop,
+            format: (double v) => '${v.round()}',
+            onChanged: (SettingsContext c, double v) {
+              c.readerSource.setTtuMarginTop(v);
+              notifyReaderSettingsChanged(c);
+            },
+          ),
+          SettingsStepperItem(
+            id: 'reading_display.margin_bottom',
+            title: t.margin_bottom,
+            icon: Icons.border_bottom,
+            min: -5,
+            max: 30,
+            step: 1,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.layout,
+              order: 1,
+            ),
+            value: (SettingsContext c) => c.readerSource.ttuMarginBottom,
+            format: (double v) => '${v.round()}',
+            onChanged: (SettingsContext c, double v) {
+              c.readerSource.setTtuMarginBottom(v);
+              notifyReaderSettingsChanged(c);
+            },
+          ),
+          SettingsStepperItem(
+            id: 'reading_display.margin_left',
+            title: t.margin_left,
+            icon: Icons.border_left,
+            min: -5,
+            max: 30,
+            step: 1,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.layout,
+              order: 2,
+            ),
+            value: (SettingsContext c) => c.readerSource.ttuMarginLeft,
+            format: (double v) => '${v.round()}',
+            onChanged: (SettingsContext c, double v) {
+              c.readerSource.setTtuMarginLeft(v);
+              notifyReaderSettingsChanged(c);
+            },
+          ),
+          SettingsStepperItem(
+            id: 'reading_display.margin_right',
+            title: t.margin_right,
+            icon: Icons.border_right,
+            min: -5,
+            max: 30,
+            step: 1,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.layout,
+              order: 3,
+            ),
+            value: (SettingsContext c) => c.readerSource.ttuMarginRight,
+            format: (double v) => '${v.round()}',
+            onChanged: (SettingsContext c, double v) {
+              c.readerSource.setTtuMarginRight(v);
+              notifyReaderSettingsChanged(c);
+            },
+          ),
+          SettingsStepperItem(
+            id: 'reading_display.page_columns',
+            title: t.columns_per_page,
+            icon: Icons.view_column_outlined,
+            min: 0,
+            max: 4,
+            step: 1,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.layout,
+              order: 4,
+            ),
+            value: (SettingsContext c) =>
+                c.readerSource.ttuPageColumns.toDouble(),
+            format: (double v) =>
+                v.round() == 0 ? t.ttu_page_columns_auto : '${v.round()}',
+            onChanged: (SettingsContext c, double v) {
+              c.readerSource.setTtuPageColumns(v.round());
+              notifyReaderLayoutChanged(c);
+            },
           ),
         ],
       ),
-    ],
-  );
-}
-
-SettingsDestination _readingControlsDestination() {
-  return SettingsDestination(
-    id: SettingsDestinationId.readingControls,
-    title: t.settings_destination_reading_controls,
-    summary: t.section_navigation,
-    icon: Icons.touch_app_outlined,
-    sections: <SettingsSection>[
+      SettingsSection(
+        title: t.section_layout,
+        items: <SettingsItem>[
+          SettingsSegmentedItem<String>(
+            id: 'reading_display.spread_mode',
+            title: t.spread_mode,
+            icon: Icons.menu_book_outlined,
+            controlBelow: true,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.layout,
+              order: 5,
+            ),
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: 'off',
+                label: t.spread_off,
+                tooltip: t.spread_off,
+              ),
+              SettingsSegmentOption<String>(
+                value: 'on',
+                label: t.spread_on,
+                tooltip: t.spread_on,
+              ),
+              SettingsSegmentOption<String>(
+                value: 'auto',
+                label: t.spread_auto,
+                tooltip: t.spread_auto,
+              ),
+            ],
+            selected: (SettingsContext c) => c.readerSource.ttuSpreadMode,
+            onChanged: (SettingsContext c, String v) {
+              c.readerSource.setTtuSpreadMode(v);
+              notifyReaderLayoutChanged(c);
+            },
+          ),
+          SettingsSegmentedItem<String>(
+            id: 'reading_display.spread_direction',
+            title: t.spread_direction,
+            icon: Icons.swap_horiz_outlined,
+            controlBelow: true,
+            visible: (SettingsContext c) =>
+                c.readerSource.ttuSpreadMode != 'off',
+            reader: const ReaderPlacement(
+              group: ReaderGroup.layout,
+              order: 6,
+            ),
+            options: const <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: 'rtl',
+                label: 'RTL',
+                tooltip: 'Right to Left',
+              ),
+              SettingsSegmentOption<String>(
+                value: 'ltr',
+                label: 'LTR',
+                tooltip: 'Left to Right',
+              ),
+            ],
+            selected: (SettingsContext c) => c.readerSource.ttuSpreadDirection,
+            onChanged: (SettingsContext c, String v) {
+              c.readerSource.setTtuSpreadDirection(v);
+              notifyReaderLayoutChanged(c);
+            },
+          ),
+          SettingsSegmentedItem<String>(
+            id: 'reading_display.writing_mode',
+            title: t.ttu_writing_direction,
+            icon: Icons.text_rotate_vertical,
+            controlBelow: true,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.layout,
+              order: 7,
+            ),
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: 'horizontal-tb',
+                label: t.ttu_horizontal,
+                tooltip: t.ttu_horizontal,
+              ),
+              SettingsSegmentOption<String>(
+                value: 'vertical-rl',
+                label: t.ttu_vertical,
+                tooltip: t.ttu_vertical,
+              ),
+            ],
+            selected: (SettingsContext c) => c.readerSource.ttuWritingMode,
+            onChanged: (SettingsContext c, String v) {
+              c.readerSource.setTtuWritingMode(v);
+              notifyReaderLayoutChanged(c);
+            },
+          ),
+          SettingsSegmentedItem<String>(
+            id: 'reading_display.view_mode',
+            title: t.ttu_view_mode_label,
+            icon: Icons.chrome_reader_mode_outlined,
+            controlBelow: true,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.appearance,
+              order: 3,
+            ),
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: 'paginated',
+                label: t.ttu_paginated,
+                tooltip: t.ttu_paginated,
+              ),
+              SettingsSegmentOption<String>(
+                value: 'continuous',
+                label: t.ttu_scroll,
+                tooltip: t.ttu_scroll,
+              ),
+            ],
+            selected: (SettingsContext c) => c.readerSource.ttuViewMode,
+            onChanged: (SettingsContext c, String v) {
+              c.readerSource.setTtuViewMode(v);
+              notifyReaderLayoutChanged(c);
+            },
+          ),
+          SettingsSegmentedItem<String>(
+            id: 'reading_display.vert_text_orient',
+            title: t.ttu_vert_text_orient,
+            icon: Icons.text_rotation_none,
+            controlBelow: true,
+            visible: isVertical,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.layout,
+              order: 8,
+            ),
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: 'mixed',
+                label: t.ttu_orient_mixed,
+                tooltip: t.ttu_orient_mixed,
+              ),
+              SettingsSegmentOption<String>(
+                value: 'upright',
+                label: t.ttu_orient_upright,
+                tooltip: t.ttu_orient_upright,
+              ),
+            ],
+            selected: (SettingsContext c) =>
+                c.readerSource.ttuVerticalTextOrientation,
+            onChanged: (SettingsContext c, String v) {
+              c.readerSource.setTtuVerticalTextOrientation(v);
+              notifyReaderSettingsChanged(c);
+            },
+          ),
+          SettingsSegmentedItem<String>(
+            id: 'reading_display.furigana_mode',
+            title: t.ttu_furigana_mode,
+            icon: Icons.translate_outlined,
+            controlBelow: true,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.layout,
+              order: 9,
+            ),
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: 'show',
+                label: t.ttu_furigana_show,
+                tooltip: t.ttu_furigana_show,
+              ),
+              SettingsSegmentOption<String>(
+                value: 'hide',
+                label: t.ttu_furigana_hide,
+                tooltip: t.ttu_furigana_hide,
+              ),
+              SettingsSegmentOption<String>(
+                value: 'partial',
+                label: t.ttu_furigana_partial,
+                tooltip: t.ttu_furigana_partial,
+              ),
+              SettingsSegmentOption<String>(
+                value: 'toggle',
+                label: t.ttu_furigana_toggle,
+                tooltip: t.ttu_furigana_toggle,
+              ),
+            ],
+            selected: (SettingsContext c) => c.readerSource.ttuFuriganaMode,
+            onChanged: (SettingsContext c, String v) {
+              c.readerSource.setTtuFuriganaMode(v);
+              notifyReaderSettingsChanged(c);
+            },
+          ),
+        ],
+      ),
+      SettingsSection(
+        title: t.section_advanced_typography,
+        items: <SettingsItem>[
+          SettingsSwitchItem(
+            id: 'reading_display.text_justify',
+            title: t.ttu_text_justify,
+            icon: Icons.format_align_justify,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.layout,
+              order: 10,
+            ),
+            value: (SettingsContext c) =>
+                c.readerSource.ttuEnableTextJustification,
+            onChanged: (SettingsContext c, bool value) {
+              c.readerSource.setTtuEnableTextJustification(value);
+              notifyReaderSettingsChanged(c);
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'reading_display.vert_kerning',
+            title: t.ttu_vert_kerning,
+            icon: Icons.space_bar,
+            visible: isVertical,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.layout,
+              order: 11,
+            ),
+            value: (SettingsContext c) =>
+                c.readerSource.ttuEnableVerticalFontKerning,
+            onChanged: (SettingsContext c, bool value) {
+              c.readerSource.setTtuEnableVerticalFontKerning(value);
+              notifyReaderSettingsChanged(c);
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'reading_display.font_vpal',
+            title: t.ttu_font_vpal,
+            icon: Icons.format_shapes,
+            visible: isVertical,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.layout,
+              order: 12,
+            ),
+            value: (SettingsContext c) => c.readerSource.ttuEnableFontVPAL,
+            onChanged: (SettingsContext c, bool value) {
+              c.readerSource.setTtuEnableFontVPAL(value);
+              notifyReaderSettingsChanged(c);
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'reading_display.prioritize_reader_styles',
+            title: t.ttu_reader_styles,
+            icon: Icons.style_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.layout,
+              order: 13,
+            ),
+            value: (SettingsContext c) =>
+                c.readerSource.ttuPrioritizeReaderStyles,
+            onChanged: (SettingsContext c, bool value) {
+              c.readerSource.setTtuPrioritizeReaderStyles(value);
+              notifyReaderLayoutChanged(c);
+            },
+          ),
+        ],
+      ),
       SettingsSection(
         title: t.section_navigation,
         items: <SettingsItem>[
@@ -241,6 +632,10 @@ SettingsDestination _readingControlsDestination() {
             id: 'reading_controls.highlight_on_tap',
             title: t.highlight_on_tap,
             icon: Icons.touch_app_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 0,
+            ),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.highlightOnTap,
             onChanged: (SettingsContext settingsContext, bool value) {
@@ -249,9 +644,28 @@ SettingsDestination _readingControlsDestination() {
             },
           ),
           SettingsSwitchItem(
+            id: 'reading_controls.tap_empty_hide_chrome',
+            title: t.tap_empty_hide_chrome,
+            icon: Icons.fullscreen_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 10,
+            ),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.tapEmptyToHideChrome,
+            onChanged: (SettingsContext settingsContext, bool value) {
+              settingsContext.readerSource.toggleTapEmptyToHideChrome();
+              notifyReaderSettingsChanged(settingsContext);
+            },
+          ),
+          SettingsSwitchItem(
             id: 'reading_controls.volume_page_turning',
             title: t.volume_button_page_turning,
             icon: Icons.volume_up_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 1,
+            ),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.volumePageTurningEnabled,
             onChanged: (SettingsContext settingsContext, bool value) {
@@ -266,6 +680,10 @@ SettingsDestination _readingControlsDestination() {
             id: 'reading_controls.invert_volume_buttons',
             title: t.invert_volume_buttons,
             icon: Icons.swap_vert_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 2,
+            ),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.volumePageTurningInverted,
             onChanged: (SettingsContext settingsContext, bool value) {
@@ -277,6 +695,10 @@ SettingsDestination _readingControlsDestination() {
             id: 'reading_controls.invert_swipe_direction',
             title: t.invert_swipe_direction,
             icon: Icons.swipe_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 3,
+            ),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.invertSwipeDirection,
             onChanged: (SettingsContext settingsContext, bool value) {
@@ -291,6 +713,10 @@ SettingsDestination _readingControlsDestination() {
             min: 10,
             max: 500,
             divisions: 49,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 4,
+            ),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.volumePageTurningSpeed.toDouble(),
             label: (double value) => value.round().toString(),
@@ -307,6 +733,10 @@ SettingsDestination _readingControlsDestination() {
             min: 0.1,
             max: 1,
             divisions: 9,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 5,
+            ),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.dismissSwipeSensitivity,
             label: (double value) => value.toStringAsFixed(1),
@@ -320,6 +750,10 @@ SettingsDestination _readingControlsDestination() {
             id: 'reading_controls.keep_screen_awake',
             title: t.keep_screen_awake,
             icon: Icons.lightbulb_outline,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 6,
+            ),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.keepScreenAwake,
             onChanged: setKeepScreenAwake,
@@ -417,6 +851,10 @@ SettingsDestination _lookupDestination() {
             id: 'lookup.auto_read_on_lookup',
             title: t.auto_read_on_lookup,
             icon: Icons.record_voice_over_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 7,
+            ),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.autoReadOnLookup,
             onChanged: (SettingsContext settingsContext, bool value) {
@@ -428,6 +866,10 @@ SettingsDestination _lookupDestination() {
             id: 'lookup.pause_on_lookup',
             title: t.pause_on_lookup,
             icon: Icons.pause_circle_outline,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 8,
+            ),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.pauseOnLookup,
             onChanged: (SettingsContext settingsContext, bool value) async {
@@ -629,6 +1071,10 @@ SettingsDestination _listeningDestination() {
             id: 'listening.volume_key_sentence_nav',
             title: t.volume_key_sentence_nav,
             icon: Icons.skip_next_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 9,
+            ),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.volumeKeySentenceNavEnabled,
             onChanged: (SettingsContext settingsContext, bool value) {
@@ -732,17 +1178,6 @@ SettingsDestination _systemDestination() {
           ),
         ],
       ),
-    ],
-  );
-}
-
-SettingsDestination _diagnosticsDestination() {
-  return SettingsDestination(
-    id: SettingsDestinationId.diagnostics,
-    title: t.settings_destination_diagnostics,
-    summary: t.error_log_label(n: ErrorLogService.instance.entries.length),
-    icon: Icons.bug_report_outlined,
-    sections: <SettingsSection>[
       SettingsSection(
         title: t.settings_destination_diagnostics,
         items: <SettingsItem>[

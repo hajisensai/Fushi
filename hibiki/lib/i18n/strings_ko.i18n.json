@@ -996,7 +996,6 @@
     "settings_destination_lookup": "검색",
     "settings_destination_profiles": "구성 스킴",
     "settings_destination_reading_controls": "읽기 컨트롤",
-    "settings_destination_reading_display": "읽기 디스플레이",
     "settings_destination_sync_backup": "동기화 및 백업",
     "settings_destination_system": "시스템",
     "settings_section_app_shell": "앱",
@@ -1177,5 +1176,6 @@
     "remote_lookup_enabled": "Use remote Hibiki lookup",
     "remote_lookup_enabled_hint": "When local dictionaries or Local Audio miss, query the configured Hibiki server",
     "sync_dictionary": "Sync dictionaries",
-    "sync_dictionary_warning": "Dictionary packages can be large and include imported dictionary resources."
+    "sync_dictionary_warning": "Dictionary packages can be large and include imported dictionary resources.",
+    "settings_destination_reading": "Reading"
 }
