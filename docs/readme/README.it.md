@@ -93,7 +93,7 @@ L'interfaccia supporta le seguenti lingue:
 
 ## Compilazione
 
-Preparazione con un solo comando (genera automaticamente `dart_defines.env` + `flutter pub get` + applica le patch), poi compila:
+Preparazione con un solo comando (`flutter pub get` + applica le patch), poi compila:
 
 ```bash
 # nella radice del repository
@@ -101,11 +101,10 @@ bash tool/bootstrap.sh          # Windows PowerShell: .\tool\bootstrap.ps1
                                 # oppure (Linux/macOS): dart run melos bootstrap
 
 cd hibiki
-flutter build apk --release --target-platform android-arm64 --split-per-abi \
-  --dart-define-from-file=dart_defines.env
+flutter build apk --release --target-platform android-arm64 --split-per-abi
 ```
 
-`tool/bootstrap.sh` / `tool/bootstrap.ps1` raccoglie tre passaggi in un unico comando: ① se manca `hibiki/dart_defines.env`, viene generato automaticamente da `dart_defines.env.example` (valori OAuth segnaposto bastano per compilare, solo il backup su Google Drive richiede valori reali); ② `flutter pub get`; ③ esecuzione di `ci/apply-patches.sh`. `melos bootstrap` esegue i passaggi ②③ tramite un post-hook (su Windows melos ha un bug di codifica CJK, quindi usa `tool/bootstrap.ps1`).
+`tool/bootstrap.sh` / `tool/bootstrap.ps1` raccoglie due passaggi in un unico comando: ① `flutter pub get`; ② esecuzione di `ci/apply-patches.sh`. `melos bootstrap` esegue lo stesso tramite un post-hook (su Windows melos ha un bug di codifica CJK, quindi usa `tool/bootstrap.ps1`).
 
 > **Nota sulle patch:** `ci/apply-patches.sh` sovrascrive la pub cache reale con le modifiche in `ci/patches/`. Va rieseguito dopo ogni svuotamento della pub cache o nuovo `flutter pub get` (bootstrap include già questo passaggio). Se lo script non trova alcun obiettivo di patch, salta e avvisa invece di fingere il successo.
 

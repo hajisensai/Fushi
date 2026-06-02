@@ -5,24 +5,21 @@
       "name": "Hibiki (debug)",
       "type": "dart",
       "request": "launch",
-      "program": "hibiki/lib/main.dart",
-      "toolArgs": ["--dart-define-from-file=hibiki/dart_defines.env"]
+      "program": "hibiki/lib/main.dart"
     },
     {
       "name": "Hibiki (profile)",
       "type": "dart",
       "request": "launch",
       "program": "hibiki/lib/main.dart",
-      "flutterMode": "profile",
-      "toolArgs": ["--dart-define-from-file=hibiki/dart_defines.env"]
+      "flutterMode": "profile"
     },
     {
       "name": "Hibiki (release)",
       "type": "dart",
       "request": "launch",
       "program": "hibiki/lib/main.dart",
-      "flutterMode": "release",
-      "toolArgs": ["--dart-define-from-file=hibiki/dart_defines.env"]
+      "flutterMode": "release"
     }
   ]
 }

@@ -93,7 +93,7 @@
 
 ## 빌드
 
-원커맨드 준비 (`dart_defines.env` 자동 생성 + `flutter pub get` + 패치 적용) 후 빌드합니다:
+원커맨드 준비 (`flutter pub get` + 패치 적용) 후 빌드합니다:
 
 ```bash
 # 저장소 루트에서
@@ -101,11 +101,10 @@ bash tool/bootstrap.sh          # Windows PowerShell: .\tool\bootstrap.ps1
                                 # 또는 (Linux/macOS): dart run melos bootstrap
 
 cd hibiki
-flutter build apk --release --target-platform android-arm64 --split-per-abi \
-  --dart-define-from-file=dart_defines.env
+flutter build apk --release --target-platform android-arm64 --split-per-abi
 ```
 
-`tool/bootstrap.sh` / `tool/bootstrap.ps1`은 세 가지 작업을 한 커맨드로 묶습니다: ①`hibiki/dart_defines.env`가 없으면 `dart_defines.env.example`에서 자동 생성 (플레이스홀더 OAuth 값으로도 컴파일 가능, 실제 값은 Google Drive 백업에만 필요); ②`flutter pub get`; ③`ci/apply-patches.sh` 실행. `melos bootstrap`도 post hook으로 동일한 ②③을 수행합니다 (Windows에서는 melos에 CJK 인코딩 버그가 있으므로 `tool/bootstrap.ps1`을 사용하세요).
+`tool/bootstrap.sh` / `tool/bootstrap.ps1`은 두 가지 작업을 한 커맨드로 묶습니다: ①`flutter pub get`; ②`ci/apply-patches.sh` 실행. `melos bootstrap`도 post hook으로 동일한 작업을 수행합니다 (Windows에서는 melos에 CJK 인코딩 버그가 있으므로 `tool/bootstrap.ps1`을 사용하세요).
 
 > **패치 설명:** `ci/apply-patches.sh`는 `ci/patches/` 아래의 변경 사항을 실제 pub cache에 덮어씁니다. pub cache를 초기화하거나 `flutter pub get`을 다시 실행할 때마다 다시 실행해야 합니다 (bootstrap에 이 단계가 포함되어 있습니다). 스크립트는 패치 대상을 찾지 못하면 성공한 척하지 않고 건너뛰고 경고합니다.
 

@@ -93,7 +93,7 @@ Giao diện hỗ trợ các ngôn ngữ sau:
 
 ## Biên dịch
 
-Chuẩn bị một lệnh (tự động seed `dart_defines.env` + `flutter pub get` + áp dụng bản vá), sau đó biên dịch:
+Chuẩn bị một lệnh (`flutter pub get` + áp dụng bản vá), sau đó biên dịch:
 
 ```bash
 # Tại thư mục gốc của kho
@@ -101,14 +101,11 @@ bash tool/bootstrap.sh          # Windows PowerShell: .\tool\bootstrap.ps1
                                 # hoặc (Linux/macOS): dart run melos bootstrap
 
 cd hibiki
-flutter build apk --release --target-platform android-arm64 --split-per-abi \
-  --dart-define-from-file=dart_defines.env
+flutter build apk --release --target-platform android-arm64 --split-per-abi
 ```
 
-`tool/bootstrap.sh` / `tool/bootstrap.ps1` gom ba việc vào một lệnh: ① nếu thiếu
-`hibiki/dart_defines.env` thì tự sinh từ `dart_defines.env.example` (giá trị OAuth
-giả là đủ để biên dịch, chỉ sao lưu Google Drive mới cần giá trị thật); ② `flutter pub get`;
-③ chạy `ci/apply-patches.sh`. `melos bootstrap` thực hiện ②③ tương tự qua post hook
+`tool/bootstrap.sh` / `tool/bootstrap.ps1` gom hai việc vào một lệnh: ① `flutter pub get`;
+② chạy `ci/apply-patches.sh`. `melos bootstrap` thực hiện điều tương tự qua post hook
 (trên Windows melos có lỗi mã hóa CJK, nên dùng `tool/bootstrap.ps1`).
 
 > **Ghi chú về bản vá:** `ci/apply-patches.sh` ghi đè các thay đổi trong `ci/patches/` lên pub cache thực tế. Mỗi lần xóa pub cache hoặc chạy lại `flutter pub get` đều phải chạy lại (bootstrap đã bao gồm bước này). Khi không tìm thấy mục tiêu bản vá nào, script sẽ bỏ qua và cảnh báo thay vì giả vờ thành công.

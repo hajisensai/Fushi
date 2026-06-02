@@ -93,7 +93,7 @@
 
 ## การสร้าง
 
-เตรียมด้วยคำสั่งเดียว (seed `dart_defines.env` อัตโนมัติ + `flutter pub get` + แพตช์) จากนั้นสร้าง:
+เตรียมด้วยคำสั่งเดียว (`flutter pub get` + แพตช์) จากนั้นสร้าง:
 
 ```bash
 # ที่รากของ repo
@@ -101,14 +101,11 @@ bash tool/bootstrap.sh          # Windows PowerShell: .\tool\bootstrap.ps1
                                 # หรือ (Linux/macOS): dart run melos bootstrap
 
 cd hibiki
-flutter build apk --release --target-platform android-arm64 --split-per-abi \
-  --dart-define-from-file=dart_defines.env
+flutter build apk --release --target-platform android-arm64 --split-per-abi
 ```
 
-`tool/bootstrap.sh` / `tool/bootstrap.ps1` รวมสามสิ่งไว้ในคำสั่งเดียว: ① ถ้าไม่มี
-`hibiki/dart_defines.env` จะสร้างจาก `dart_defines.env.example` อัตโนมัติ (ค่า OAuth
-ตัวอย่างก็คอมไพล์ได้ มีเพียงการสำรองข้อมูล Google Drive ที่ต้องใช้ค่าจริง); ② `flutter pub get`;
-③ รัน `ci/apply-patches.sh` `melos bootstrap` ทำ ②③ เหมือนกันผ่าน post hook
+`tool/bootstrap.sh` / `tool/bootstrap.ps1` รวมสองสิ่งไว้ในคำสั่งเดียว: ① `flutter pub get`;
+② รัน `ci/apply-patches.sh` `melos bootstrap` ทำสิ่งเดียวกันผ่าน post hook
 (บน Windows melos มีบั๊กการเข้ารหัส CJK จึงใช้ `tool/bootstrap.ps1` แทน)
 
 > **หมายเหตุเกี่ยวกับแพตช์:** `ci/apply-patches.sh` จะเขียนทับการเปลี่ยนแปลงใน `ci/patches/` ลงบน pub cache จริง ทุกครั้งที่ล้าง pub cache หรือรัน `flutter pub get` ใหม่ต้องรันซ้ำ (bootstrap รวมขั้นตอนนี้แล้ว) เมื่อสคริปต์ไม่พบเป้าหมายแพตช์ใดเลย จะข้ามและเตือนแทนที่จะแสร้งว่าสำเร็จ

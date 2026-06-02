@@ -93,7 +93,7 @@ Arayüz aşağıdaki dilleri destekler:
 
 ## Derleme
 
-Tek komutla hazırlık (`dart_defines.env` otomatik seed + `flutter pub get` + yama uygulama), ardından derleyin:
+Tek komutla hazırlık (`flutter pub get` + yama uygulama), ardından derleyin:
 
 ```bash
 # depo kök dizininde
@@ -101,11 +101,10 @@ bash tool/bootstrap.sh          # Windows PowerShell: .\tool\bootstrap.ps1
                                 # veya (Linux/macOS): dart run melos bootstrap
 
 cd hibiki
-flutter build apk --release --target-platform android-arm64 --split-per-abi \
-  --dart-define-from-file=dart_defines.env
+flutter build apk --release --target-platform android-arm64 --split-per-abi
 ```
 
-`tool/bootstrap.sh` / `tool/bootstrap.ps1` üç işi tek komutta toplar: ① `hibiki/dart_defines.env` yoksa `dart_defines.env.example` dosyasından otomatik üretilir (yer tutucu OAuth değerleri derleme için yeterlidir, gerçek değerler yalnızca Google Drive yedeklemesi için gerekir); ② `flutter pub get`; ③ `ci/apply-patches.sh` çalıştırma. `melos bootstrap`, post hook aracılığıyla aynı ②③ adımlarını yapar (Windows'ta melos'ta CJK kodlama hatası vardır, bu yüzden `tool/bootstrap.ps1` kullanın).
+`tool/bootstrap.sh` / `tool/bootstrap.ps1` iki işi tek komutta toplar: ① `flutter pub get`; ② `ci/apply-patches.sh` çalıştırma. `melos bootstrap`, post hook aracılığıyla aynısını yapar (Windows'ta melos'ta CJK kodlama hatası vardır, bu yüzden `tool/bootstrap.ps1` kullanın).
 
 > **Yamalar hakkında:** `ci/apply-patches.sh`, `ci/patches/` altındaki değişiklikleri gerçek pub cache üzerine uygular. Her pub cache temizliğinden veya yeni bir `flutter pub get` işleminden sonra yeniden çalıştırılmalıdır (bootstrap bu adımı zaten içerir). Betik herhangi bir yama hedefi bulamazsa, başarıyı taklit etmek yerine bir uyarıyla atlar.
 

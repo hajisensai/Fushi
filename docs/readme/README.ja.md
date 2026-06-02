@@ -93,7 +93,7 @@
 
 ## ビルド
 
-ワンコマンド準備（`dart_defines.env` の自動生成 + `flutter pub get` + パッチ適用）の後、ビルドします：
+ワンコマンド準備（`flutter pub get` + パッチ適用）の後、ビルドします：
 
 ```bash
 # リポジトリのルートで
@@ -101,11 +101,10 @@ bash tool/bootstrap.sh          # Windows PowerShell：.\tool\bootstrap.ps1
                                 # または（Linux/macOS）：dart run melos bootstrap
 
 cd hibiki
-flutter build apk --release --target-platform android-arm64 --split-per-abi \
-  --dart-define-from-file=dart_defines.env
+flutter build apk --release --target-platform android-arm64 --split-per-abi
 ```
 
-`tool/bootstrap.sh` / `tool/bootstrap.ps1` は 3 つの処理を 1 コマンドにまとめます：①`hibiki/dart_defines.env` が無い場合は `dart_defines.env.example` から自動生成（プレースホルダの OAuth 値でもコンパイル可能、実際の値が必要なのは Google Drive バックアップのみ）；②`flutter pub get`；③`ci/apply-patches.sh` の実行。`melos bootstrap` も post hook で同じ②③を行います（Windows では melos に CJK エンコーディングのバグがあるため `tool/bootstrap.ps1` を使用してください）。
+`tool/bootstrap.sh` / `tool/bootstrap.ps1` は 2 つの処理を 1 コマンドにまとめます：①`flutter pub get`；②`ci/apply-patches.sh` の実行。`melos bootstrap` も post hook で同じ処理を行います（Windows では melos に CJK エンコーディングのバグがあるため `tool/bootstrap.ps1` を使用してください）。
 
 > **パッチの説明：** `ci/apply-patches.sh` は `ci/patches/` 配下の変更を実際の pub cache に上書きします。pub cache をクリアするか `flutter pub get` を再実行するたびに再実行が必要です（bootstrap はこのステップを含みます）。スクリプトはパッチ対象が見つからない場合、成功したふりをせずスキップして警告します。
 

@@ -93,7 +93,7 @@
 
 ## البناء
 
-تحضير بأمر واحد (إنشاء تلقائي لـ `dart_defines.env` + `flutter pub get` + تطبيق التصحيحات)، ثم البناء:
+تحضير بأمر واحد (`flutter pub get` + تطبيق التصحيحات)، ثم البناء:
 
 ```bash
 # في جذر المستودع
@@ -101,14 +101,11 @@ bash tool/bootstrap.sh          # Windows PowerShell: .\tool\bootstrap.ps1
                                 # أو (Linux/macOS): dart run melos bootstrap
 
 cd hibiki
-flutter build apk --release --target-platform android-arm64 --split-per-abi \
-  --dart-define-from-file=dart_defines.env
+flutter build apk --release --target-platform android-arm64 --split-per-abi
 ```
 
-يجمع `tool/bootstrap.sh` / `tool/bootstrap.ps1` ثلاثة أشياء في أمر واحد: ① إذا كان
-`hibiki/dart_defines.env` مفقوداً يُنشأ تلقائياً من `dart_defines.env.example` (قيم OAuth
-النائبة تكفي للترجمة، فقط نسخ Google Drive الاحتياطي يحتاج قيماً حقيقية)؛ ② `flutter pub get`؛
-③ تشغيل `ci/apply-patches.sh`. يقوم `melos bootstrap` بـ ②③ نفسها عبر post hook
+يجمع `tool/bootstrap.sh` / `tool/bootstrap.ps1` أمرين في أمر واحد: ① `flutter pub get`؛
+② تشغيل `ci/apply-patches.sh`. يقوم `melos bootstrap` بالأمر نفسه عبر post hook
 (على Windows لدى melos خلل ترميز CJK، لذا استخدم `tool/bootstrap.ps1`).
 
 > **ملاحظة حول التصحيحات:** يكتب `ci/apply-patches.sh` التعديلات الموجودة في `ci/patches/` فوق pub cache الفعلي. في كل مرة يُمسح فيها pub cache أو يُعاد تشغيل `flutter pub get` يجب تشغيله مجدداً (bootstrap يتضمن هذه الخطوة). عندما لا يجد السكربت أي هدف تصحيح، يتخطى ويحذّر بدلاً من التظاهر بالنجاح.

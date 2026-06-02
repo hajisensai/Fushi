@@ -9,13 +9,11 @@ command:
   bootstrap:
     usePubspecOverrides: true
     # After `melos bootstrap` resolves deps, finish the fresh-checkout setup so
-    # the workspace is build-ready in one command: seed dart_defines.env and
-    # apply the non-vendored pub-cache patches. Requires bash (Git Bash on
-    # Windows). The Windows-native path is tool/bootstrap.ps1 (melos bootstrap
-    # has a CJK encoding bug on Windows).
+    # the workspace is build-ready in one command: apply the non-vendored
+    # pub-cache patches. Requires bash (Git Bash on Windows). The Windows-native
+    # path is tool/bootstrap.ps1 (melos bootstrap has a CJK encoding bug on Windows).
     hooks:
       post: |
-        bash ci/ensure-dart-defines.sh
         bash ci/apply-patches.sh
 
 scripts:
@@ -29,10 +27,10 @@ scripts:
 
   dev:
     run: |
-      cd hibiki && flutter run --dart-define-from-file=dart_defines.env
-    description: Run Hibiki in debug mode with secrets injected
+      cd hibiki && flutter run
+    description: Run Hibiki in debug mode
 
   build:android:
     run: |
-      cd hibiki && flutter build apk --release --target-platform android-arm64 --split-per-abi --dart-define-from-file=dart_defines.env
+      cd hibiki && flutter build apk --release --target-platform android-arm64 --split-per-abi
     description: Build Android release APK

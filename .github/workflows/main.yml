@@ -85,9 +85,6 @@ jobs:
       working-directory: hibiki
       run: >-
         flutter build apk --debug
-        --dart-define=GOOGLE_OAUTH_CLIENT_ID=${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
-        --dart-define=GOOGLE_OAUTH_CLIENT_SECRET=${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
-
     # The release build (minify/R8/proguard + C++23 native) is the variant that
     # ships; without a keystore it was never exercised on PRs, so R8/keep-rule
     # regressions stayed invisible until a tagged release (HBK-AUDIT-026).
@@ -115,8 +112,6 @@ jobs:
       working-directory: hibiki
       run: >-
         flutter build apk --release
-        --dart-define=GOOGLE_OAUTH_CLIENT_ID=${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
-        --dart-define=GOOGLE_OAUTH_CLIENT_SECRET=${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
       env:
         HAS_KEYSTORE: ${{ secrets.KEYSTORE_BASE64 != '' }}
 
@@ -145,8 +140,6 @@ jobs:
       working-directory: hibiki
       run: >-
         flutter build apk --release
-        --dart-define=GOOGLE_OAUTH_CLIENT_ID=${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
-        --dart-define=GOOGLE_OAUTH_CLIENT_SECRET=${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
       env:
         HAS_KEYSTORE: ${{ secrets.KEYSTORE_BASE64 != '' }}
 

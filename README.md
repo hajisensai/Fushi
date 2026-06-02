@@ -93,7 +93,7 @@
 
 ## 构建
 
-一键准备（自动 seed `dart_defines.env` + `flutter pub get` + 打补丁），然后构建：
+一键准备（`flutter pub get` + 打补丁），然后构建：
 
 ```bash
 # 在仓库根目录
@@ -101,14 +101,11 @@ bash tool/bootstrap.sh          # Windows PowerShell：.\tool\bootstrap.ps1
                                 # 或（Linux/macOS）：dart run melos bootstrap
 
 cd hibiki
-flutter build apk --release --target-platform android-arm64 --split-per-abi \
-  --dart-define-from-file=dart_defines.env
+flutter build apk --release --target-platform android-arm64 --split-per-abi
 ```
 
-`tool/bootstrap.sh` / `tool/bootstrap.ps1` 把三件事收敛成一条命令：①若缺
-`hibiki/dart_defines.env` 则从 `dart_defines.env.example` 自动生成（占位 OAuth
-值即可编译，仅 Google Drive 备份需要真实值）；②`flutter pub get`；③运行
-`ci/apply-patches.sh`。`melos bootstrap` 经 post hook 做同样的②③（Windows 上
+`tool/bootstrap.sh` / `tool/bootstrap.ps1` 把两件事收敛成一条命令：①`flutter pub get`；②运行
+`ci/apply-patches.sh`。`melos bootstrap` 经 post hook 做同样的事（Windows 上
 melos 有 CJK 编码 bug，改用 `tool/bootstrap.ps1`）。
 
 > **补丁说明：** `ci/apply-patches.sh` 会将 `ci/patches/` 下的修改覆盖到实际 pub cache。每次清除 pub cache 或重新 `flutter pub get` 后必须重新执行（bootstrap 已包含这步）。脚本找不到任何补丁目标时会跳过并警告，而不是假装成功。

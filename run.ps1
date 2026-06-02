@@ -28,18 +28,12 @@ if (-not $Flutter) {
   }
 }
 
-# Secrets are injected from hibiki/dart_defines.env when present (gitignored).
-$defines = @()
-if (Test-Path (Join-Path $AppDir "dart_defines.env")) {
-  $defines = @("--dart-define-from-file=dart_defines.env")
-}
-
 Push-Location $AppDir
 try {
   Write-Host "==> $Flutter pub get"
   & $Flutter pub get
-  Write-Host "==> $Flutter run -d $Device $($defines -join ' ') $Rest"
-  & $Flutter run -d $Device @defines @Rest
+  Write-Host "==> $Flutter run -d $Device $Rest"
+  & $Flutter run -d $Device @Rest
 } finally {
   Pop-Location
 }

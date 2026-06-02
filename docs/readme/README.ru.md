@@ -93,7 +93,7 @@
 
 ## Сборка
 
-Подготовка одной командой (автоматический seed `dart_defines.env` + `flutter pub get` + применение патчей), затем сборка:
+Подготовка одной командой (`flutter pub get` + применение патчей), затем сборка:
 
 ```bash
 # в корне репозитория
@@ -101,11 +101,10 @@ bash tool/bootstrap.sh          # Windows PowerShell: .\tool\bootstrap.ps1
                                 # или (Linux/macOS): dart run melos bootstrap
 
 cd hibiki
-flutter build apk --release --target-platform android-arm64 --split-per-abi \
-  --dart-define-from-file=dart_defines.env
+flutter build apk --release --target-platform android-arm64 --split-per-abi
 ```
 
-`tool/bootstrap.sh` / `tool/bootstrap.ps1` сводит три действия в одну команду: ① если отсутствует `hibiki/dart_defines.env`, он автоматически генерируется из `dart_defines.env.example` (значения-заглушки OAuth достаточны для компиляции, реальные нужны только для резервного копирования в Google Drive); ② `flutter pub get`; ③ запуск `ci/apply-patches.sh`. `melos bootstrap` через post hook выполняет те же шаги ②③ (в Windows у melos есть баг с кодировкой CJK, поэтому используйте `tool/bootstrap.ps1`).
+`tool/bootstrap.sh` / `tool/bootstrap.ps1` сводит два действия в одну команду: ① `flutter pub get`; ② запуск `ci/apply-patches.sh`. `melos bootstrap` через post hook выполняет то же самое (в Windows у melos есть баг с кодировкой CJK, поэтому используйте `tool/bootstrap.ps1`).
 
 > **О патчах:** `ci/apply-patches.sh` накладывает изменения из `ci/patches/` поверх фактического pub cache. После каждой очистки pub cache или повторного `flutter pub get` его необходимо запускать заново (bootstrap уже включает этот шаг). Если скрипт не находит ни одной цели патча, он пропускает её с предупреждением, а не имитирует успех.
 

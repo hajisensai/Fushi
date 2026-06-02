@@ -82,9 +82,6 @@ jobs:
         working-directory: hibiki
         run: >-
           flutter build linux --debug
-          --dart-define=GOOGLE_OAUTH_CLIENT_ID=${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
-          --dart-define=GOOGLE_OAUTH_CLIENT_SECRET=${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
-
   macos:
     runs-on: macos-latest
     steps:
@@ -103,8 +100,6 @@ jobs:
         working-directory: hibiki
         run: >-
           flutter build macos --debug
-          --dart-define=GOOGLE_OAUTH_CLIENT_ID=${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
-          --dart-define=GOOGLE_OAUTH_CLIENT_SECRET=${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
       - name: Run macOS comprehensive automation contract
         run: bash ci/comprehensive-test.sh --platform=macos --only=appSmoke
 
@@ -131,9 +126,6 @@ jobs:
         working-directory: hibiki
         run: >-
           flutter build ios --debug --no-codesign
-          --dart-define=GOOGLE_OAUTH_CLIENT_ID=${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
-          --dart-define=GOOGLE_OAUTH_CLIENT_SECRET=${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
-
   windows:
     runs-on: windows-latest
     steps:
@@ -156,7 +148,5 @@ jobs:
         working-directory: hibiki
         run: >-
           flutter build windows --debug
-          --dart-define=GOOGLE_OAUTH_CLIENT_ID=${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
-          --dart-define=GOOGLE_OAUTH_CLIENT_SECRET=${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
       - name: Run Windows comprehensive automation contract
         run: .\ci\comprehensive-test.ps1 -Platform windows -Only appSmoke

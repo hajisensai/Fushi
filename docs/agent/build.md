@@ -12,13 +12,14 @@
 
 ## 准备 + 构建
 
-`tool/bootstrap.sh`（Windows：`.\tool\bootstrap.ps1`）一条命令完成：缺 `hibiki/dart_defines.env` 就从 `.example` 生成 → `flutter pub get` → `ci/apply-patches.sh`。`melos bootstrap` 经 post hook 做后两步。然后：
+`tool/bootstrap.sh`（Windows：`.\tool\bootstrap.ps1`）一条命令完成：`flutter pub get` → `ci/apply-patches.sh`。`melos bootstrap` 经 post hook 做同样两步。然后：
 
 ```bash
 cd hibiki
-flutter build apk --release --target-platform android-arm64 --split-per-abi \
-  --dart-define-from-file=dart_defines.env
+flutter build apk --release --target-platform android-arm64 --split-per-abi
 ```
+
+> Google Drive 同步的 OAuth 凭据已写死进源码默认值（`lib/src/sync/google_drive_auth.dart`），构建无需再传 `--dart-define`。如需换凭据，改该文件的 `defaultValue` 或自行加 `--dart-define` 覆盖。
 
 ## 依赖补丁
 

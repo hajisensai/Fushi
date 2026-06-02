@@ -93,7 +93,7 @@ Antarmuka mendukung bahasa-bahasa berikut:
 
 ## Build
 
-Persiapan satu perintah (otomatis seed `dart_defines.env` + `flutter pub get` + terapkan patch), lalu build:
+Persiapan satu perintah (`flutter pub get` + terapkan patch), lalu build:
 
 ```bash
 # Di root repositori
@@ -101,14 +101,11 @@ bash tool/bootstrap.sh          # Windows PowerShell: .\tool\bootstrap.ps1
                                 # atau (Linux/macOS): dart run melos bootstrap
 
 cd hibiki
-flutter build apk --release --target-platform android-arm64 --split-per-abi \
-  --dart-define-from-file=dart_defines.env
+flutter build apk --release --target-platform android-arm64 --split-per-abi
 ```
 
-`tool/bootstrap.sh` / `tool/bootstrap.ps1` menyatukan tiga hal menjadi satu perintah: ① jika
-`hibiki/dart_defines.env` tidak ada, otomatis dibuat dari `dart_defines.env.example` (nilai OAuth
-placeholder cukup untuk kompilasi, hanya backup Google Drive yang butuh nilai asli); ② `flutter pub get`;
-③ menjalankan `ci/apply-patches.sh`. `melos bootstrap` melakukan ②③ yang sama melalui post hook
+`tool/bootstrap.sh` / `tool/bootstrap.ps1` menyatukan dua hal menjadi satu perintah: ① `flutter pub get`;
+② menjalankan `ci/apply-patches.sh`. `melos bootstrap` melakukan hal yang sama melalui post hook
 (di Windows melos punya bug encoding CJK, jadi gunakan `tool/bootstrap.ps1`).
 
 > **Catatan patch:** `ci/apply-patches.sh` menimpa perubahan di `ci/patches/` ke pub cache yang sebenarnya. Setiap kali pub cache dihapus atau `flutter pub get` dijalankan ulang harus dijalankan kembali (bootstrap sudah mencakup langkah ini). Ketika skrip tidak menemukan target patch apa pun, ia melewati dan memberi peringatan alih-alih berpura-pura berhasil.

@@ -93,7 +93,7 @@ De interface ondersteunt de volgende talen:
 
 ## Bouwen
 
-Voorbereiding met een enkel commando (automatisch seeden van `dart_defines.env` + `flutter pub get` + patches toepassen), daarna bouwen:
+Voorbereiding met een enkel commando (`flutter pub get` + patches toepassen), daarna bouwen:
 
 ```bash
 # in de hoofdmap van de repository
@@ -101,11 +101,10 @@ bash tool/bootstrap.sh          # Windows PowerShell: .\tool\bootstrap.ps1
                                 # of (Linux/macOS): dart run melos bootstrap
 
 cd hibiki
-flutter build apk --release --target-platform android-arm64 --split-per-abi \
-  --dart-define-from-file=dart_defines.env
+flutter build apk --release --target-platform android-arm64 --split-per-abi
 ```
 
-`tool/bootstrap.sh` / `tool/bootstrap.ps1` brengt drie stappen samen in een commando: ① als `hibiki/dart_defines.env` ontbreekt, wordt het automatisch gegenereerd uit `dart_defines.env.example` (placeholder-OAuth-waarden volstaan om te compileren, echte waarden zijn alleen nodig voor Google Drive-back-up); ② `flutter pub get`; ③ uitvoeren van `ci/apply-patches.sh`. `melos bootstrap` doet via een post hook hetzelfde voor ②③ (op Windows heeft melos een CJK-coderingsbug, gebruik daarom `tool/bootstrap.ps1`).
+`tool/bootstrap.sh` / `tool/bootstrap.ps1` brengt twee stappen samen in een commando: ① `flutter pub get`; ② uitvoeren van `ci/apply-patches.sh`. `melos bootstrap` doet via een post hook hetzelfde (op Windows heeft melos een CJK-coderingsbug, gebruik daarom `tool/bootstrap.ps1`).
 
 > **Over de patches:** `ci/apply-patches.sh` legt de wijzigingen uit `ci/patches/` over de feitelijke pub cache. Na elke wissing van de pub cache of een nieuwe `flutter pub get` moet het opnieuw worden uitgevoerd (bootstrap bevat deze stap al). Als het script geen enkel patch-doel vindt, slaat het dit over met een waarschuwing in plaats van succes te veinzen.
 

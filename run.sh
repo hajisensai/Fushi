@@ -29,9 +29,7 @@ DEVICE="${1:-windows}"
 
 cd "$APP_DIR"
 
-# Secrets are injected from hibiki/dart_defines.env when present (gitignored).
 CMD=("$FLUTTER" run -d "$DEVICE")
-[[ -f "$APP_DIR/dart_defines.env" ]] && CMD+=(--dart-define-from-file=dart_defines.env)
 CMD+=("$@")
 
 echo "==> $FLUTTER pub get"
