@@ -63,6 +63,12 @@ void main() {
       expect(idsOf(dest.sections[1]), <String>['sync.server_mode']);
     });
 
+    test('host-server group is backend-gated (Hibiki interconnect only)', () {
+      // Hosting only makes sense for the Hibiki P2P backend, so the whole
+      // section carries a visibility predicate instead of being always shown.
+      expect(dest.sections[1].visible, isNotNull);
+    });
+
     test('content / actions / backup groups remain global', () {
       expect(idsOf(dest.sections[2]), <String>[
         'sync.auto_sync',

@@ -99,11 +99,15 @@ SettingsDestination buildSyncBackupDestination() {
         ],
       ),
       // ── Group 2: This device as a sync server ─────────────────────────
-      // Independent of the chosen backend (you can host regardless of where
-      // you sync your own data). Always shown.
+      // Hosting this device as a server is only meaningful for the Hibiki P2P
+      // interconnect ("Hibiki 互联") — the other backends sync your own data
+      // outward and never serve it. Gate the whole group on that backend so it
+      // matches the hibiki_server_config / lan_devices items in Group 1.
       SettingsSection(
         title: t.sync_section_host_server,
         footer: t.sync_section_host_server_footer,
+        visible: (SettingsContext ctx) =>
+            _syncSettings(ctx).backendType == SyncBackendType.hibikiServer,
         items: <SettingsItem>[
           SettingsCustomItem(
             id: 'sync.server_mode',
