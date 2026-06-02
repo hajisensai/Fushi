@@ -105,4 +105,21 @@ void main() {
     // 显式总开关保留，不从 entry 状态派生。
     expect(appModel.localAudioEnabled, isTrue);
   });
+
+  test('local db enabled survives a setAudioSourceConfigs round-trip while master is OFF',
+      () async {
+    final LocalAudioDbEntry a =
+        await appModel.importLocalAudioDbFile(srcA.path, displayName: 'A');
+    // persist the db as enabled
+    await appModel.setAudioSourceConfigs(<AudioSourceConfig>[
+      AudioSourceConfig.localAudio(label: 'A', path: a.path, enabled: true),
+    ]);
+    // user turns the global master switch OFF
+    await appModel.setLocalAudioEnabled(false);
+    // user merely opens then closes the dialog: read the projection, save it back
+    final List<AudioSourceConfig> projected = appModel.audioSourceConfigs;
+    await appModel.setAudioSourceConfigs(projected);
+    // the db's real per-db enabled must be preserved (not wiped by master-off projection)
+    expect(appModel.localAudioDbs.single.enabled, isTrue);
+  });
 }

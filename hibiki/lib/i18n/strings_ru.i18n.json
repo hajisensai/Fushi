@@ -1172,11 +1172,10 @@
     "on_screen_keyboard": "On-screen keyboard",
     "app_ui_scale": "UI size",
     "app_ui_scale_hint": "Scales app text and spacing. Lower it on large screens if controls feel oversized.",
-    "remote_lookup_enabled": "Use remote Hibiki lookup",
-    "remote_lookup_enabled_hint": "When local dictionaries or Local Audio miss, query the configured Hibiki server",
     "sync_dictionary": "Sync dictionaries",
     "sync_dictionary_warning": "Dictionary packages can be large and include imported dictionary resources.",
     "settings_destination_reading": "Reading",
     "remote_dict_lookup": "Remote dictionary lookup",
-    "remote_dict_lookup_hint": "When local dictionaries miss, query the configured Hibiki server"
+    "remote_dict_lookup_hint": "When local dictionaries miss, query the configured Hibiki server",
+    "remote_audio_source": "Remote audio"
 }

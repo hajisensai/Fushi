@@ -2575,14 +2575,14 @@ class AppModel with ChangeNotifier {
           AudioSourceConfig.localAudio(
             label: localByPath[source.path]!.displayName,
             path: source.path!,
-            enabled: localAudioEnabled && localByPath[source.path]!.enabled,
+            enabled: localByPath[source.path]!.enabled,
           ),
       for (final LocalAudioDbEntry db in localAudioDbs)
         if (!savedLocalPaths.contains(db.path))
           AudioSourceConfig.localAudio(
             label: db.displayName,
             path: db.path,
-            enabled: localAudioEnabled && db.enabled,
+            enabled: db.enabled,
           ),
     ];
   }
@@ -2694,19 +2694,6 @@ class AppModel with ChangeNotifier {
 
   Future<void> setLocalAudioDbs(List<LocalAudioDbEntry> dbs) =>
       _localAudioManager.setEntries(dbs);
-
-  Future<void> toggleLocalAudioDbEnabled(int index) =>
-      _localAudioManager.toggleEnabled(index);
-
-  Future<void> addLocalAudioDb(String sourcePath,
-          {required String displayName}) =>
-      _localAudioManager.add(sourcePath, displayName: displayName);
-
-  Future<void> removeLocalAudioDb(int index) =>
-      _localAudioManager.remove(index);
-
-  Future<void> reorderLocalAudioDbs(int oldIndex, int newIndex) =>
-      _localAudioManager.reorder(oldIndex, newIndex);
 
   bool get localAudioEnabled => _localAudioManager.localAudioEnabled;
 

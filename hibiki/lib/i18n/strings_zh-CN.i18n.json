@@ -1172,11 +1172,10 @@
     "on_screen_keyboard": "屏幕键盘",
     "app_ui_scale": "界面大小",
     "app_ui_scale_hint": "缩放应用文字和间距，范围 30% 到 300%。大屏设备上如果控件偏小，可以调高。",
-    "remote_lookup_enabled": "使用远端 Hibiki 查询",
-    "remote_lookup_enabled_hint": "本地词典或本地音频未命中时，查询已配置的 Hibiki 服务器",
     "sync_dictionary": "同步词典",
     "sync_dictionary_warning": "词典包可能很大，并包含已导入的词典资源。",
     "settings_destination_reading": "阅读",
     "remote_dict_lookup": "远端词典查询",
-    "remote_dict_lookup_hint": "本地词典查不到时，查询已配置的 Hibiki 服务器"
+    "remote_dict_lookup_hint": "本地词典查不到时，查询已配置的 Hibiki 服务器",
+    "remote_audio_source": "远端音频"
 }

@@ -184,7 +184,7 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
                         source.kind == AudioSourceKind.hibikiRemote))
                       HibikiIconButton(
                         icon: Icons.hub_outlined,
-                        tooltip: t.remote_lookup_enabled,
+                        tooltip: t.remote_audio_source,
                         padding: EdgeInsets.all(tokens.spacing.gap / 2),
                         onTap: () => setState(() {
                           _sources.insert(
@@ -273,7 +273,7 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
   String _sourceSubtitle(AudioSourceConfig source) {
     switch (source.kind) {
       case AudioSourceKind.hibikiRemote:
-        return t.remote_lookup_enabled;
+        return t.remote_audio_source;
       case AudioSourceKind.localAudio:
         return t.local_audio;
       case AudioSourceKind.remoteAudio:
