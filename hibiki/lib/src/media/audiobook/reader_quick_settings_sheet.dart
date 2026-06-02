@@ -7,6 +7,7 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:hibiki/src/epub/epub_book.dart';
+import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_bridge.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_play_bar.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
@@ -391,6 +392,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
                   ...TtuReaderSettings.availableThemes.map((themeKey) {
                     return buildReaderThemeChip(
                       context: context,
+                      focusId: HibikiFocusId('reader-theme-$themeKey'),
                       label:
                           TtuReaderSettings.themeLabels[themeKey] ?? themeKey,
                       selected: s.theme == themeKey,
@@ -413,6 +415,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
                           : null,
                     ),
                     context: context,
+                    focusId: const HibikiFocusId('reader-theme-custom'),
                     label: t.custom_theme,
                     selected: s.theme == 'custom-theme',
                     onSelected: (_) {
@@ -1403,8 +1406,12 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
   }) {
     final ThemeData theme = Theme.of(context);
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return InkWell(
+    final Widget button = InkWell(
       onTap: onTap,
+      // Under HibikiFocusRoot the registered HibikiActivatableFocusTarget below
+      // is the single focus stop; keep the InkWell ripple for mouse/touch but
+      // stop it grabbing a competing, unregistered focus node.
+      canRequestFocus: HibikiFocusRoot.maybeControllerOf(context) == null,
       borderRadius: tokens.radii.controlRadius,
       child: Padding(
         padding: EdgeInsets.symmetric(
@@ -1420,6 +1427,15 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
           ],
         ),
       ),
+    );
+    // A bare InkWell is invisible to the directional focus controller (it walks
+    // only registered targets), so the whole action strip was skipped. Register
+    // each button as a single focus stop that A/Enter activates.
+    if (HibikiFocusRoot.maybeControllerOf(context) == null) return button;
+    return HibikiActivatableFocusTarget(
+      focusIdPrefix: 'reader-action',
+      onTap: onTap,
+      child: button,
     );
   }
 }

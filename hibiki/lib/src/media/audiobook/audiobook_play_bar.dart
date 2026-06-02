@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/utils.dart';
 
 /// 有声书播放控制条（紧凑型，固定于阅读器底部）。
@@ -152,6 +153,7 @@ Widget buildReaderThemeChip({
   required bool selected,
   required ValueChanged<bool> onSelected,
   Widget? avatar,
+  HibikiFocusId? focusId,
 }) {
   return HibikiSelectableChip(
     tooltip: label,
@@ -159,5 +161,6 @@ Widget buildReaderThemeChip({
     label: label,
     selected: selected,
     onSelected: onSelected,
+    focusId: focusId,
   );
 }

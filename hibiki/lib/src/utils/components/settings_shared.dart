@@ -530,6 +530,50 @@ class AdaptiveSettingsSegmentedRow<T extends Object> extends StatelessWidget {
   }
 }
 
+/// Registers a STANDALONE [adaptiveSegmentedButton] (one NOT hosted by an
+/// [AdaptiveSettingsSegmentedRow] — e.g. a segmented selector inside a dialog
+/// header) as a single gamepad/keyboard focus stop, with D-pad Left/Right
+/// cycling the selection in place. Without this the segmented strip is a cluster
+/// of native buttons that the directional [HibikiFocusController] — which walks
+/// only registered targets — skips entirely. Pass the already-built segmented
+/// button (or its scroll wrapper) as [child]; it is excluded from inner focus
+/// traversal so this is the one stop, while staying mouse/touch-tappable.
+class HibikiAdjustableSegmented<T extends Object> extends StatelessWidget {
+  const HibikiAdjustableSegmented({
+    required this.values,
+    required this.selected,
+    required this.onChanged,
+    required this.child,
+    super.key,
+    this.focusIdPrefix = 'segmented',
+  });
+
+  /// The segment values in display order; [selected] must be one of them.
+  final List<T> values;
+  final T selected;
+  final ValueChanged<T> onChanged;
+  final Widget child;
+  final String focusIdPrefix;
+
+  @override
+  Widget build(BuildContext context) {
+    final int currentIndex = values.indexOf(selected);
+    void selectAt(int index) {
+      if (values.isEmpty) return;
+      final int clamped = index.clamp(0, values.length - 1);
+      final T value = values[clamped];
+      if (value != selected) onChanged(value);
+    }
+
+    return _GamepadAdjustableValue(
+      focusIdPrefix: focusIdPrefix,
+      onIncrement: () => selectAt(currentIndex + 1),
+      onDecrement: () => selectAt(currentIndex - 1),
+      child: child,
+    );
+  }
+}
+
 class AdaptiveSettingsPickerOption<T> {
   const AdaptiveSettingsPickerOption({
     required this.value,

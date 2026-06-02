@@ -692,33 +692,50 @@ class _SyncCompareDialogState extends State<_SyncCompareDialog> {
   }
 
   Widget _choiceRow(String title, SyncChoice choice, ThemeData theme) {
-    return adaptiveSegmentedButton<SyncChoice>(
-      context: context,
-      style: SegmentedButton.styleFrom(
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        textStyle: theme.textTheme.labelSmall,
-      ),
-      segments: [
-        ButtonSegment(
-          value: SyncChoice.useLocal,
-          label: Text(t.sync_compare_use_local),
-          tooltip: t.sync_compare_use_local,
-        ),
-        ButtonSegment(
-          value: SyncChoice.skip,
-          label: Text(t.sync_compare_skip),
-          tooltip: t.sync_compare_skip,
-        ),
-        ButtonSegment(
-          value: SyncChoice.useRemote,
-          label: Text(t.sync_compare_use_remote),
-          tooltip: t.sync_compare_use_remote,
-        ),
+    // Wrap as a single gamepad/keyboard focus stop (D-pad Left/Right cycles the
+    // conflict resolution). A bare per-entry segmented button is an unregistered
+    // native cluster; with only the header overflow menu registered, directional
+    // nav would never land here and the user could not pick a choice or reach
+    // Apply.
+    return HibikiAdjustableSegmented<SyncChoice>(
+      focusIdPrefix: 'sync-choice',
+      values: const <SyncChoice>[
+        SyncChoice.useLocal,
+        SyncChoice.skip,
+        SyncChoice.useRemote,
       ],
-      selected: {choice},
-      onSelectionChanged: (Set<SyncChoice> sel) {
-        setState(() => _choices[title] = sel.first);
+      selected: choice,
+      onChanged: (SyncChoice value) {
+        setState(() => _choices[title] = value);
       },
+      child: adaptiveSegmentedButton<SyncChoice>(
+        context: context,
+        style: SegmentedButton.styleFrom(
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          textStyle: theme.textTheme.labelSmall,
+        ),
+        segments: [
+          ButtonSegment(
+            value: SyncChoice.useLocal,
+            label: Text(t.sync_compare_use_local),
+            tooltip: t.sync_compare_use_local,
+          ),
+          ButtonSegment(
+            value: SyncChoice.skip,
+            label: Text(t.sync_compare_skip),
+            tooltip: t.sync_compare_skip,
+          ),
+          ButtonSegment(
+            value: SyncChoice.useRemote,
+            label: Text(t.sync_compare_use_remote),
+            tooltip: t.sync_compare_use_remote,
+          ),
+        ],
+        selected: {choice},
+        onSelectionChanged: (Set<SyncChoice> sel) {
+          setState(() => _choices[title] = sel.first);
+        },
+      ),
     );
   }
 

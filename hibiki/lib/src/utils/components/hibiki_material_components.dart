@@ -1043,7 +1043,11 @@ class HibikiColorSwatch extends StatelessWidget {
         ),
       );
       interactiveSwatch = underFocusRoot
-          ? _FocusableColorSwatch(onTap: onTap!, child: inkSwatch)
+          ? HibikiActivatableFocusTarget(
+              focusIdPrefix: 'color-swatch',
+              onTap: onTap!,
+              child: inkSwatch,
+            )
           : inkSwatch;
     }
     final Widget semanticSwatch = Semantics(
@@ -1070,27 +1074,36 @@ class HibikiColorSwatch extends StatelessWidget {
   }
 }
 
-/// Registers a [HibikiColorSwatch] as a single gamepad/keyboard focus stop so
-/// the directional [HibikiFocusController] can land on it (A/Enter fires
-/// [onTap]). Mirrors the settings-row focus target: an [Actions] ancestor turns
-/// the [ActivateIntent] dispatched at the focused node into the tap. Only used
-/// under a [HibikiFocusRoot]; off-root the bare InkWell stays a normal target.
-class _FocusableColorSwatch extends StatefulWidget {
-  const _FocusableColorSwatch({
+/// Registers [child] as a single gamepad/keyboard focus stop whose A/Enter
+/// ([ActivateIntent]) fires [onTap]. The [Actions] sits ABOVE the
+/// [HibikiFocusTarget] on purpose: the gamepad A path dispatches the intent at
+/// the focused node's context (gamepad_service `_dispatchButton`), which finds
+/// an Actions handler only by walking UP — so a handler placed *inside*
+/// HibikiFocusTarget (as [HibikiFocusable] does) would never fire. Use this for
+/// a discrete tap target whose own visual (e.g. an InkWell with
+/// `canRequestFocus: false`) must stay mouse/touch-tappable without grabbing a
+/// competing, unregistered focus node. Only meaningful under a [HibikiFocusRoot].
+class HibikiActivatableFocusTarget extends StatefulWidget {
+  const HibikiActivatableFocusTarget({
     required this.onTap,
     required this.child,
+    super.key,
+    this.focusIdPrefix = 'tap-stop',
   });
 
   final VoidCallback onTap;
   final Widget child;
+  final String focusIdPrefix;
 
   @override
-  State<_FocusableColorSwatch> createState() => _FocusableColorSwatchState();
+  State<HibikiActivatableFocusTarget> createState() =>
+      _HibikiActivatableFocusTargetState();
 }
 
-class _FocusableColorSwatchState extends State<_FocusableColorSwatch> {
+class _HibikiActivatableFocusTargetState
+    extends State<HibikiActivatableFocusTarget> {
   late final HibikiFocusId _focusId = HibikiFocusId(
-    'color-swatch-${identityHashCode(this)}',
+    '${widget.focusIdPrefix}-${identityHashCode(this)}',
   );
 
   @override
