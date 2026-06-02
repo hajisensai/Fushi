@@ -5117,9 +5117,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
     final FavoriteSentence fav = FavoriteSentence(
       text: sentence,
       bookTitle: _book!.title,
-      chapterLabel: section < _book!.chapters.length
-          ? _book!.chapters[section].href
-          : null,
+      chapterLabel: _currentChapterLabelFor(section),
       createdAt: DateTime.now(),
       ttuBookId: widget.bookId,
       sectionIndex: section,
