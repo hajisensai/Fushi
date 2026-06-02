@@ -29,10 +29,11 @@ class AudioSourceConfig {
   });
 
   factory AudioSourceConfig.hibikiRemote({bool enabled = false}) {
+    // label 留空：显示名由 UI 用 i18n（audio_source_hibiki_interconnect）解析，
+    // 不把英文写死进持久化 JSON。
     return AudioSourceConfig._(
       kind: AudioSourceKind.hibikiRemote,
       enabled: enabled,
-      label: 'Hibiki Remote',
     );
   }
 
@@ -94,7 +95,7 @@ class AudioSourceConfig {
   String get displayLabel {
     switch (kind) {
       case AudioSourceKind.hibikiRemote:
-        return label ?? 'Hibiki Remote';
+        return label ?? '';
       case AudioSourceKind.localAudio:
         return (label?.isNotEmpty ?? false) ? label! : (path ?? '');
       case AudioSourceKind.remoteAudio:

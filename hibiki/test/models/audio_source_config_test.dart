@@ -17,6 +17,15 @@ void main() {
       expect(sources[1].url, 'https://b.test/?reading={reading}');
     });
 
+    test('hibikiRemote does not hardcode an English display label', () {
+      final AudioSourceConfig source = AudioSourceConfig.hibikiRemote();
+
+      expect(source.label, isNull);
+      expect(source.displayLabel, isEmpty);
+      // 不再把英文名持久化进 json
+      expect(source.toJson().containsKey('label'), isFalse);
+    });
+
     test('local audio sources default to disabled', () {
       final AudioSourceConfig source = AudioSourceConfig.localAudio(
         label: 'local',
