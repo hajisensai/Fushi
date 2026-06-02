@@ -6,7 +6,7 @@ import 'test_flow/comprehensive_test_reporter.dart';
 
 Future<void> main(List<String> args) async {
   final _RunnerOptions options = _RunnerOptions.parse(args);
-  final TestPlatformId host = _hostPlatform();
+  final HostPlatformId host = _hostPlatform();
   final Set<TestPlatformId> platforms = options.platforms;
   final Set<ScenarioId> scenarios = options.scenarios;
   final String outputDir = options.reportDir ??
@@ -37,10 +37,13 @@ Future<void> main(List<String> args) async {
   }
 }
 
-TestPlatformId _hostPlatform() {
-  if (Platform.isAndroid) return TestPlatformId.android;
-  if (Platform.isMacOS) return TestPlatformId.macos;
-  return TestPlatformId.windows;
+HostPlatformId _hostPlatform() {
+  if (Platform.isLinux) return HostPlatformId.linux;
+  if (Platform.isWindows) return HostPlatformId.windows;
+  if (Platform.isMacOS) return HostPlatformId.macos;
+  throw UnsupportedError(
+    'Unsupported host platform: ${Platform.operatingSystem}',
+  );
 }
 
 class _RunnerOptions {

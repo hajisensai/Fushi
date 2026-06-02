@@ -1,17 +1,29 @@
-name: Build iOS / macOS / Linux / Windows
+name: Build and Test Android / macOS / Linux / Windows
 
 # Verifies the app compiles on the four non-Android shipped platforms:
 #  - iOS/macOS gamepads = GameController; Linux = evdev/GTK
 #  - Windows = the forked flutter_inappwebview_windows C++ EPUB renderer, which
 #    is otherwise only built on the dev host and was never gated by CI.
+# Also runs the shared comprehensive automation contract on Android, Windows,
+# and macOS. That runner requires real test verdict text in logs, not just a
+# zero exit code.
 # Runs on PRs to main/develop (so a per-platform native break blocks the merge),
 # on manual dispatch, and on `ci/**` branch pushes for ad-hoc runs.
 on:
   workflow_dispatch:
   push:
-    branches: ['ci/**']
+    branches: ['main', 'develop', 'ci/**']
+    paths: &multiplatform_paths
+      - 'hibiki/**'
+      - 'packages/**'
+      - 'ci/**'
+      - 'third_party/**'
+      - '.github/workflows/build-multiplatform.yml'
+      - 'pubspec.yaml'
+      - 'pubspec.lock'
   pull_request:
     branches: ['main', 'develop']
+    paths: *multiplatform_paths
 
 # Cancel a superseded PR run (4 build jobs incl. 2 expensive macOS runners) when
 # the PR is force-pushed; keep ci/** and manual-dispatch runs to completion.
@@ -20,6 +32,32 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.41.6'
+      - name: Flutter pub get
+        working-directory: hibiki
+        run: flutter pub get
+      - name: Apply pub cache patches
+        run: |
+          chmod +x ci/apply-patches.sh
+          bash ci/apply-patches.sh
+      - name: Run Android comprehensive automation contract
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_6
+          script: bash ci/comprehensive-test.sh --platform=android --only=appSmoke
+
   linux:
     runs-on: ubuntu-latest
     steps:
@@ -67,6 +105,8 @@ jobs:
           flutter build macos --debug
           --dart-define=GOOGLE_OAUTH_CLIENT_ID=${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
           --dart-define=GOOGLE_OAUTH_CLIENT_SECRET=${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+      - name: Run macOS comprehensive automation contract
+        run: bash ci/comprehensive-test.sh --platform=macos --only=appSmoke
 
   ios:
     runs-on: macos-latest
@@ -118,3 +158,5 @@ jobs:
           flutter build windows --debug
           --dart-define=GOOGLE_OAUTH_CLIENT_ID=${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
           --dart-define=GOOGLE_OAUTH_CLIENT_SECRET=${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+      - name: Run Windows comprehensive automation contract
+        run: .\ci\comprehensive-test.ps1 -Platform windows -Only appSmoke

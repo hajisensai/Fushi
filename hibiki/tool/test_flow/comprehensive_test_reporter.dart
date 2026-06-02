@@ -19,6 +19,7 @@ class ScenarioReport {
     required this.assertions,
     required this.evidence,
     this.blockedReason = '',
+    this.failureReason = '',
     this.exitCode,
     this.durationMs,
   });
@@ -30,6 +31,7 @@ class ScenarioReport {
   final List<String> assertions;
   final List<String> evidence;
   final String blockedReason;
+  final String failureReason;
   final int? exitCode;
   final int? durationMs;
 
@@ -41,6 +43,7 @@ class ScenarioReport {
         'assertions': assertions,
         'evidence': evidence,
         'blockedReason': blockedReason,
+        'failureReason': failureReason,
         'exitCode': exitCode,
         'durationMs': durationMs,
       };
@@ -52,7 +55,8 @@ class ComprehensiveReport {
   final List<ScenarioReport> entries;
 
   bool get hasFailures => entries.any((ScenarioReport entry) {
-        return entry.status == ScenarioStatus.failed;
+        return entry.status == ScenarioStatus.failed ||
+            entry.status == ScenarioStatus.blocked;
       });
 
   Map<String, Object> toJson() => <String, Object>{
@@ -65,14 +69,12 @@ ComprehensiveReport buildDryRunReport({
   required List<PlatformPlan> matrix,
   required Set<TestPlatformId> selectedPlatforms,
   required Set<ScenarioId> selectedScenarios,
-  required TestPlatformId hostPlatform,
+  required HostPlatformId hostPlatform,
 }) {
   final List<ScenarioReport> entries = <ScenarioReport>[];
   for (final PlatformPlan plan in matrix) {
     if (!selectedPlatforms.contains(plan.platform)) continue;
-    final bool hostMissing = plan.platform != hostPlatform &&
-        plan.platform == TestPlatformId.macos &&
-        plan.blockedWhenHostMissing;
+    final bool hostMissing = !plan.supportsHost(hostPlatform);
     for (final TestScenario scenario in plan.scenarios) {
       if (!selectedScenarios.contains(scenario.id)) continue;
       entries.add(ScenarioReport(
@@ -82,7 +84,8 @@ ComprehensiveReport buildDryRunReport({
         commands: scenario.commands,
         assertions: scenario.assertions,
         evidence: scenario.evidence,
-        blockedReason: hostMissing ? plan.hostMissingMessage : '',
+        blockedReason:
+            hostMissing ? plan.blockedReasonForHost(hostPlatform) : '',
       ));
     }
   }
@@ -119,6 +122,9 @@ String _renderMarkdown(ComprehensiveReport report) {
     if (entry.exitCode != null) {
       buffer.writeln('- exitCode: ${entry.exitCode}');
     }
+    if (entry.failureReason.isNotEmpty) {
+      buffer.writeln('- failureReason: ${entry.failureReason}');
+    }
     if (entry.durationMs != null) {
       buffer.writeln('- durationMs: ${entry.durationMs}');
     }
@@ -131,8 +137,4 @@ String _renderMarkdown(ComprehensiveReport report) {
   return buffer.toString();
 }
 
-String _platformLabel(TestPlatformId platform) => switch (platform) {
-      TestPlatformId.android => 'Android',
-      TestPlatformId.windows => 'Windows',
-      TestPlatformId.macos => 'macOS',
-    };
+String _platformLabel(TestPlatformId platform) => platform.label;

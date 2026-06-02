@@ -4,7 +4,25 @@ enum TestPlatformId {
   macos,
 }
 
+enum HostPlatformId {
+  linux,
+  windows,
+  macos,
+}
+
+enum OutputExpectationKind {
+  contains,
+  excludes,
+}
+
+enum OutputExpectationStream {
+  stdout,
+  stderr,
+  combined,
+}
+
 enum ScenarioId {
+  appSmoke,
   dictionaryImportSearch,
   fontImportApply,
   syncSettingsEffect,
@@ -22,6 +40,7 @@ class TestScenario {
     required this.commands,
     required this.assertions,
     required this.evidence,
+    required this.outputExpectations,
     this.requiredFixtures = const <String>[],
   });
 
@@ -29,28 +48,64 @@ class TestScenario {
   final List<String> commands;
   final List<String> assertions;
   final List<String> evidence;
+  final List<OutputExpectation> outputExpectations;
   final List<String> requiredFixtures;
+}
+
+class OutputExpectation {
+  const OutputExpectation.contains(
+    this.text, {
+    this.stream = OutputExpectationStream.combined,
+  }) : kind = OutputExpectationKind.contains;
+
+  const OutputExpectation.excludes(
+    this.text, {
+    this.stream = OutputExpectationStream.combined,
+  }) : kind = OutputExpectationKind.excludes;
+
+  final OutputExpectationKind kind;
+  final OutputExpectationStream stream;
+  final String text;
 }
 
 class PlatformPlan {
   const PlatformPlan({
     required this.platform,
     required this.scenarios,
-    this.blockedWhenHostMissing = false,
+    required this.compatibleHosts,
     this.hostMissingMessage = '',
   });
 
   final TestPlatformId platform;
   final List<TestScenario> scenarios;
-  final bool blockedWhenHostMissing;
+  final Set<HostPlatformId> compatibleHosts;
   final String hostMissingMessage;
+
+  bool get blockedWhenHostMissing =>
+      compatibleHosts.length != HostPlatformId.values.length;
+
+  bool supportsHost(HostPlatformId hostPlatform) {
+    return compatibleHosts.contains(hostPlatform);
+  }
+
+  String blockedReasonForHost(HostPlatformId hostPlatform) {
+    if (hostMissingMessage.isNotEmpty) return hostMissingMessage;
+    return '${platform.label} scenarios require ${platform.label} host automation; '
+        '${hostPlatform.label} cannot run this target.';
+  }
 }
 
 List<PlatformPlan> buildComprehensiveMatrix() {
   return const <PlatformPlan>[
     PlatformPlan(
       platform: TestPlatformId.android,
+      compatibleHosts: <HostPlatformId>{
+        HostPlatformId.linux,
+        HostPlatformId.windows,
+        HostPlatformId.macos,
+      },
       scenarios: <TestScenario>[
+        TestScenarios.appSmoke,
         TestScenarios.dictionaryImportSearch,
         TestScenarios.fontImportApply,
         TestScenarios.syncSettingsEffect,
@@ -64,7 +119,13 @@ List<PlatformPlan> buildComprehensiveMatrix() {
     ),
     PlatformPlan(
       platform: TestPlatformId.windows,
+      compatibleHosts: <HostPlatformId>{
+        HostPlatformId.windows,
+      },
+      hostMissingMessage:
+          'Windows scenarios require running this runner on a Windows host.',
       scenarios: <TestScenario>[
+        TestScenarios.appSmoke,
         TestScenarios.dictionaryImportSearch,
         TestScenarios.fontImportApply,
         TestScenarios.syncSettingsEffect,
@@ -78,10 +139,13 @@ List<PlatformPlan> buildComprehensiveMatrix() {
     ),
     PlatformPlan(
       platform: TestPlatformId.macos,
-      blockedWhenHostMissing: true,
+      compatibleHosts: <HostPlatformId>{
+        HostPlatformId.macos,
+      },
       hostMissingMessage:
           'macOS scenarios require running this runner on a macOS host.',
       scenarios: <TestScenario>[
+        TestScenarios.appSmoke,
         TestScenarios.dictionaryImportSearch,
         TestScenarios.fontImportApply,
         TestScenarios.syncSettingsEffect,
@@ -96,7 +160,46 @@ List<PlatformPlan> buildComprehensiveMatrix() {
   ];
 }
 
+extension TestPlatformLabel on TestPlatformId {
+  String get label => switch (this) {
+        TestPlatformId.android => 'Android',
+        TestPlatformId.windows => 'Windows',
+        TestPlatformId.macos => 'macOS',
+      };
+}
+
+extension HostPlatformLabel on HostPlatformId {
+  String get label => switch (this) {
+        HostPlatformId.linux => 'Linux',
+        HostPlatformId.windows => 'Windows',
+        HostPlatformId.macos => 'macOS',
+      };
+}
+
 abstract final class TestScenarios {
+  static const List<OutputExpectation> flutterSuccessOutput =
+      <OutputExpectation>[
+    OutputExpectation.contains('All tests passed'),
+    OutputExpectation.excludes('Some tests failed'),
+  ];
+
+  static const TestScenario appSmoke = TestScenario(
+    id: ScenarioId.appSmoke,
+    commands: <String>[
+      'flutter drive --target=integration_test/app_smoke_test.dart',
+    ],
+    assertions: <String>[
+      'app renders a Scaffold within 90 seconds',
+      'primary navigation can switch away and back',
+      'unexpected FlutterError entries are rejected',
+    ],
+    evidence: <String>[
+      'report.json',
+      'integration log',
+    ],
+    outputExpectations: flutterSuccessOutput,
+  );
+
   static const TestScenario dictionaryImportSearch = TestScenario(
     id: ScenarioId.dictionaryImportSearch,
     commands: <String>[
@@ -111,6 +214,7 @@ abstract final class TestScenarios {
       'integration log',
       'screenshot when supported',
     ],
+    outputExpectations: flutterSuccessOutput,
     requiredFixtures: <String>['test-yomitan.zip'],
   );
 
@@ -124,6 +228,7 @@ abstract final class TestScenarios {
       'reader custom font CSS contains @font-face and expected family',
     ],
     evidence: <String>['report.json', 'integration log'],
+    outputExpectations: flutterSuccessOutput,
     requiredFixtures: <String>['test-font.ttf'],
   );
 
@@ -137,6 +242,7 @@ abstract final class TestScenarios {
       'sync content toggles persist and reload',
     ],
     evidence: <String>['report.json', 'integration log'],
+    outputExpectations: flutterSuccessOutput,
   );
 
   static const TestScenario syncP2pRoundtrip = TestScenario(
@@ -149,6 +255,7 @@ abstract final class TestScenarios {
       'client backend reads the uploaded progress JSON back',
     ],
     evidence: <String>['report.json', 'server log', 'client log'],
+    outputExpectations: flutterSuccessOutput,
   );
 
   static const TestScenario bookImportOpen = TestScenario(
@@ -161,6 +268,7 @@ abstract final class TestScenarios {
       'Hoshi WebView appears and content-ready marker is visible',
     ],
     evidence: <String>['report.json', 'screenshot when supported'],
+    outputExpectations: flutterSuccessOutput,
     requiredFixtures: <String>['marker.epub'],
   );
 
@@ -174,6 +282,7 @@ abstract final class TestScenarios {
       'position restoration invariants I9-I10 pass',
     ],
     evidence: <String>['report.json', 'pagination log'],
+    outputExpectations: flutterSuccessOutput,
     requiredFixtures: <String>['marker.epub'],
   );
 
@@ -191,6 +300,7 @@ abstract final class TestScenarios {
       'integration log',
       'screenshot when supported',
     ],
+    outputExpectations: flutterSuccessOutput,
     requiredFixtures: <String>['marker.epub', 'test-yomitan.zip'],
   );
 
@@ -206,6 +316,7 @@ abstract final class TestScenarios {
       'picker-like rows change persisted values and restore',
     ],
     evidence: <String>['report.json', 'integration log'],
+    outputExpectations: flutterSuccessOutput,
   );
 
   static const TestScenario regressionOpenBugs = TestScenario(
@@ -223,6 +334,7 @@ abstract final class TestScenarios {
       '.codex-test UI hierarchy',
       'logcat or bounds where required',
     ],
+    outputExpectations: flutterSuccessOutput,
     requiredFixtures: <String>['kagami.epub', 'kagami.m4b', 'kagami.srt'],
   );
 }
