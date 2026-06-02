@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hibiki/src/focus/focus_geometry.dart';
 import 'package:hibiki/src/focus/hibiki_focus_scroll.dart';
 import 'package:hibiki/src/utils/app_ui_scale.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
@@ -174,22 +175,14 @@ class _HibikiFocusRingState extends State<HibikiFocusRing>
   Rect? _computeFocusRect() {
     if (_fm.highlightMode != FocusHighlightMode.traditional) return null;
     final BuildContext? ctx = _fm.primaryFocus?.context;
-    if (ctx == null || !ctx.mounted) return null;
-    final RenderObject? ro = ctx.findRenderObject();
-    if (ro is! RenderBox || !ro.hasSize || !ro.attached) return null;
-    // Map BOTH corners through localToGlobal so the rect carries the control's
-    // ON-SCREEN size, not its un-transformed local size. Under HibikiAppUiScale's
-    // Transform.scale, localToGlobal scales position by the live scale, but
-    // ro.size stays the un-scaled local size. `topLeft & ro.size` therefore mixed
-    // a scaled position with an unscaled size; build() then divides the whole rect
-    // by scale, shrinking the ring to size/scale instead of growing it with the
-    // control ("大小没跟着缩放"). Rect.fromPoints captures the scaled extent so the
-    // ring tracks the control's size at any scale. (Assumes no rotation between
-    // the focusable and the view — true for the app's single Transform.scale.)
-    final Offset topLeft = ro.localToGlobal(Offset.zero);
-    final Offset bottomRight =
-        ro.localToGlobal(ro.size.bottomRight(Offset.zero));
-    final Rect rect = Rect.fromPoints(topLeft, bottomRight);
+    if (ctx == null) return null;
+    // ON-SCREEN (view-coord) rect of the focused control: globalRectOfBox maps
+    // both corners through localToGlobal so the rect carries the SCALED size.
+    // `topLeft & size` would pair a scaled position with an unscaled size, and
+    // build() (which divides by the live scale) would then shrink the ring on
+    // zoom-in instead of growing it with the control. See focus_geometry.dart.
+    final Rect? rect = globalRectOfContext(ctx);
+    if (rect == null) return null;
     // Don't ring a (near) full-screen focusable: the ring would sit at/beyond the
     // window edge — clipped, and occluded by any overlaid chrome (e.g. a reader
     // bottom bar). Such a node draws its own inset focus indicator instead.

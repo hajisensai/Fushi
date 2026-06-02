@@ -2,6 +2,7 @@ import 'dart:collection';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:hibiki/src/focus/focus_geometry.dart';
 import 'package:hibiki/src/focus/hibiki_focus_scroll.dart';
 
 @immutable
@@ -304,7 +305,7 @@ class HibikiFocusController extends ChangeNotifier {
     List<HibikiFocusTargetEntry> targets,
     HibikiFocusDirection direction,
   ) {
-    final Rect? activeRect = _globalRectOf(active.context);
+    final Rect? activeRect = globalRectOfContext(active.context);
     if (activeRect == null) return const _GeometricMoveResult.noGeometry();
     final Offset activeCenter = activeRect.center;
     HibikiFocusTargetEntry? best;
@@ -315,7 +316,7 @@ class HibikiFocusController extends ChangeNotifier {
 
     for (final HibikiFocusTargetEntry target in targets) {
       if (identical(target, active)) continue;
-      final Rect? targetRect = _globalRectOf(target.context);
+      final Rect? targetRect = globalRectOfContext(target.context);
       if (targetRect == null) continue;
       final Offset targetCenter = targetRect.center;
       final double dx = targetCenter.dx - activeCenter.dx;
@@ -393,14 +394,6 @@ class HibikiFocusController extends ChangeNotifier {
       count: targets.length,
     );
     return requestById(targets[nextIndex].id);
-  }
-
-  static Rect? _globalRectOf(BuildContext context) {
-    if (!context.mounted) return null;
-    final RenderObject? renderObject = context.findRenderObject();
-    if (renderObject is! RenderBox || !renderObject.hasSize) return null;
-    final Offset origin = renderObject.localToGlobal(Offset.zero);
-    return origin & renderObject.size;
   }
 
   static bool _overlap(double aStart, double aEnd, double bStart, double bEnd) {

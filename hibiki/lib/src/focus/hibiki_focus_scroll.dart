@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hibiki/src/focus/focus_geometry.dart';
 
 class HibikiFocusScroll {
   const HibikiFocusScroll._();
@@ -30,10 +31,11 @@ class HibikiFocusScroll {
       return;
     }
 
-    final Rect widgetRect =
-        renderObject.localToGlobal(Offset.zero) & renderObject.size;
-    final Rect viewportRect =
-        viewport.localToGlobal(Offset.zero) & viewport.size;
+    // ON-SCREEN rects (both corners mapped) so the visibility test holds under
+    // the app UI-scale Transform: `localToGlobal(Offset.zero) & size` would
+    // under-measure each box's extent by the scale factor. See focus_geometry.
+    final Rect widgetRect = globalRectOfBox(renderObject);
+    final Rect viewportRect = globalRectOfBox(viewport);
     const double tolerance = 0.5;
     final bool fullyVisible = widgetRect.top >= viewportRect.top - tolerance &&
         widgetRect.bottom <= viewportRect.bottom + tolerance &&
