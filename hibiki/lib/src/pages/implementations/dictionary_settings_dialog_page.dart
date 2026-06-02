@@ -11,6 +11,7 @@ class AudioSourcesDialog extends StatefulWidget {
     this.localAudioEnabled = false,
     this.onToggleLocalAudio,
     this.onPickLocalDb,
+    this.onEditLocalSources,
     super.key,
   });
 
@@ -26,6 +27,9 @@ class AudioSourcesDialog extends StatefulWidget {
   /// 选文件并拷贝进库目录，返回一个 localAudio 源（已拷贝、未持久化）；
   /// 返回 null 表示用户取消。
   final Future<AudioSourceConfig?> Function()? onPickLocalDb;
+
+  /// 打开某个本地音频库的「子来源顺序 + 逐源启用」编辑器（按库路径）。
+  final Future<void> Function(String path)? onEditLocalSources;
 
   /// 自定义远端音频 URL 合法性：必须是 http(s) 链接，且至少含一个
   /// `{term}` / `{reading}` 占位符（否则播放时无法代入查词参数）。
@@ -327,6 +331,15 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
                               source.copyWith(enabled: enabled);
                         }),
                       ),
+                      if (widget.onEditLocalSources != null &&
+                          (source.path?.isNotEmpty ?? false))
+                        HibikiIconButton(
+                          icon: Icons.tune,
+                          size: 18,
+                          tooltip: t.local_audio_edit_sources,
+                          padding: EdgeInsets.all(tokens.spacing.gap / 2),
+                          onTap: () => widget.onEditLocalSources!(source.path!),
+                        ),
                       HibikiIconButton(
                         icon: Icons.delete_outline,
                         size: 18,

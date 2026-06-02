@@ -43,6 +43,7 @@ import 'package:hibiki/src/models/audio_source_config.dart';
 import 'package:hibiki/src/models/dictionary_import_manager.dart';
 import 'package:hibiki/src/models/file_export_manager.dart';
 import 'package:hibiki/src/models/local_audio_manager.dart';
+import 'package:hibiki/src/models/local_audio_source_pref.dart';
 import 'package:hibiki/src/models/anki_integration.dart';
 import 'package:hibiki/src/sync/hibiki_remote_lookup_client.dart';
 import 'package:hibiki/src/sync/hibiki_remote_lookup_service.dart';
@@ -54,6 +55,8 @@ import 'package:hibiki/src/platform/platform_providers.dart';
 
 export 'package:hibiki/src/models/local_audio_manager.dart'
     show LocalAudioDbEntry;
+export 'package:hibiki/src/models/local_audio_source_pref.dart'
+    show LocalAudioSourcePref;
 export 'package:hibiki/src/models/audio_source_config.dart'
     show AudioSourceConfig, AudioSourceKind;
 
@@ -2634,6 +2637,25 @@ class AppModel with ChangeNotifier {
 
   Future<void> setLocalAudioDbs(List<LocalAudioDbEntry> dbs) =>
       _localAudioManager.setEntries(dbs);
+
+  /// 枚举一个本地音频库内的全部子来源名（用于「编辑来源」对话框）。
+  Future<List<String>> listLocalAudioSources(String path) =>
+      TtsChannel.instance.listLocalAudioSources(path);
+
+  /// 该库当前已存的子来源偏好（优先级序 + 逐源启用）；未配置返回空。
+  List<LocalAudioSourcePref> sourcePrefsForLocalDb(String path) {
+    for (final LocalAudioDbEntry e in _localAudioManager.entries) {
+      if (e.path == path) return e.sources;
+    }
+    return const <LocalAudioSourcePref>[];
+  }
+
+  /// 设置某库的子来源偏好，立即持久化并重推 native。
+  Future<void> setLocalAudioDbSources(
+      String path, List<LocalAudioSourcePref> prefs) async {
+    await _localAudioManager.setSourcesFor(path, prefs);
+    notifyListeners();
+  }
 
   bool get localAudioEnabled => _localAudioManager.localAudioEnabled;
 

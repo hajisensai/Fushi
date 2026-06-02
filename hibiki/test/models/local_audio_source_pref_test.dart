@@ -12,7 +12,7 @@ void main() {
 
   test('defaults enabled to true on malformed json', () {
     final LocalAudioSourcePref p =
-        LocalAudioSourcePref.fromJson(<String, dynamic>{'name': 'forvo'});
+        LocalAudioSourcePref.fromJson(const <String, dynamic>{'name': 'forvo'});
     expect(p.name, 'forvo');
     expect(p.enabled, isTrue);
   });

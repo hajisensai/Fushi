@@ -824,6 +824,19 @@ SettingsDestination _lookupDestination() {
                       enabled: true,
                     );
                   },
+                  onEditLocalSources: (String path) async {
+                    await showSettingsDialog(
+                      settingsContext,
+                      (_) => LocalAudioSourcesDialog(
+                        dbPath: path,
+                        savedPrefs: appModel.sourcePrefsForLocalDb(path),
+                        listSources: () => appModel.listLocalAudioSources(path),
+                        onApply: (List<LocalAudioSourcePref> prefs) =>
+                            appModel.setLocalAudioDbSources(path, prefs),
+                      ),
+                    );
+                    settingsContext.refresh();
+                  },
                 ),
               );
             },
