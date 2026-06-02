@@ -308,7 +308,6 @@ class DictionaryPopupWebViewState
     final String mdOutlineVariant = cssRgb(scheme.outlineVariant);
     final String mdOnSurfaceVariant = cssRgb(scheme.onSurfaceVariant);
     final String mdPrimary = cssRgb(scheme.primary);
-    final String mdSecondaryContainer = cssRgb(scheme.secondaryContainer);
 
     final bool needsScrollCheck = widget.onScrolledToBottom != null;
     final String renderCall = isLoadMore
@@ -325,7 +324,6 @@ class DictionaryPopupWebViewState
       document.documentElement.style.setProperty('--md-outline-variant', '$mdOutlineVariant');
       document.documentElement.style.setProperty('--md-on-surface-variant', '$mdOnSurfaceVariant');
       document.documentElement.style.setProperty('--md-primary', '$mdPrimary');
-      document.documentElement.style.setProperty('--md-secondary-container', '$mdSecondaryContainer');
       window.audioSources = $audioSourcesJson;
       window.needsAudio = true;
       window.deduplicatePitchAccents = $deduplicatePitch;
