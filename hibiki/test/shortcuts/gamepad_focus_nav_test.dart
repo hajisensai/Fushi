@@ -255,6 +255,73 @@ void main() {
     );
   });
 
+  testWidgets(
+      'down lands on the immediately-next row even when it does not align '
+      'horizontally (settings 主题 swatch row is not skipped)',
+      (WidgetTester tester) async {
+    // Reproduces the appearance settings layout: a RIGHT-aligned segmented
+    // control (设计系统), then a LEFT-aligned theme-swatch row (主题), then
+    // another RIGHT-aligned segmented control (深色模式). Pressing down from
+    // the top control must step to the immediately-next row (the left-aligned
+    // swatch), NOT skip it to the next right-aligned control just because that
+    // one happens to overlap horizontally with the source.
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HibikiFocusRoot(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              for (final ({String id, Alignment align}) row
+                  in <({String id, Alignment align})>[
+                (id: 'top-right', align: Alignment.centerRight),
+                (id: 'mid-left', align: Alignment.centerLeft),
+                (id: 'bottom-right', align: Alignment.centerRight),
+              ])
+                Align(
+                  alignment: row.align,
+                  child: HibikiFocusTarget(
+                    id: HibikiFocusId(row.id),
+                    child: TextButton(
+                      onPressed: () {},
+                      child: Text(row.id),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final BuildContext context = tester.element(find.byType(Column));
+    final HibikiFocusController controller =
+        HibikiFocusRoot.controllerOf(context);
+
+    expect(controller.requestById(const HibikiFocusId('top-right')), isTrue);
+    await tester.pump();
+
+    expect(controller.move(HibikiFocusDirection.down), isTrue);
+    await tester.pump();
+
+    expect(
+      controller.activeId,
+      const HibikiFocusId('mid-left'),
+      reason: 'down must land on the immediately-next row, not skip the '
+          'left-aligned swatch row to the next right-aligned control',
+    );
+
+    expect(controller.move(HibikiFocusDirection.down), isTrue);
+    await tester.pump();
+    expect(controller.activeId, const HibikiFocusId('bottom-right'),
+        reason: 'a further down continues to the last row');
+
+    expect(controller.move(HibikiFocusDirection.up), isTrue);
+    await tester.pump();
+    expect(controller.activeId, const HibikiFocusId('mid-left'),
+        reason: 'up is symmetric: it must not skip the swatch row either');
+  });
+
   testWidgets('gamepad escapes a focus root edge to sibling controls',
       (WidgetTester tester) async {
     final FocusNode rail = FocusNode(debugLabel: 'rail');

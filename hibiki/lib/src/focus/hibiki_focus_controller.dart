@@ -358,11 +358,20 @@ class HibikiFocusController extends ChangeNotifier {
       if (!ahead) continue;
 
       final int beamScore = beam ? 1 : 0;
+      // Distance ALONG the press direction is the primary key: the
+      // immediately-next row always wins, even if it is offset on the cross
+      // axis (e.g. a left-aligned 主题 swatch row below a right-aligned
+      // segmented control — it must NOT be skipped for a farther row that
+      // merely overlaps the source horizontally). Perpendicular OVERLAP
+      // (`beam`) is only a tiebreaker between candidates at the same `along`
+      // distance — a grid's two columns sit on the same row, so down still
+      // prefers the same-column cell over the diagonal one. `cross` (centre
+      // offset) breaks any remaining tie.
       final bool better = best == null ||
-          beamScore > bestBeam ||
-          (beamScore == bestBeam &&
-              (along < bestAlong - epsilon ||
-                  ((along - bestAlong).abs() <= epsilon && cross < bestCross)));
+          along < bestAlong - epsilon ||
+          ((along - bestAlong).abs() <= epsilon &&
+              (beamScore > bestBeam ||
+                  (beamScore == bestBeam && cross < bestCross)));
       if (better) {
         best = target;
         bestBeam = beamScore;
