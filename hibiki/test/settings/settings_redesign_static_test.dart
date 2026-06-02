@@ -321,4 +321,22 @@ void main() {
       contains('await ReaderHibikiSource.readerSettings?.refreshFromDb();'),
     );
   });
+
+  test(
+      'wide settings nav pane gets a tonal container background (material only)',
+      () {
+    final String source =
+        readNormalizedSource('lib/src/settings/settings_home_page.dart');
+    // MD3 list-detail: nav pane on tonal token surface (surfaces.group =
+    // surfaceContainerLow), gated to Material via the cupertino branch.
+    expect(source, contains('tokens.surfaces.group'));
+    expect(source, contains('cupertino ? null :'));
+  });
+
+  test('material destination list uses pill selection + gated chevron', () {
+    final String source = readNormalizedSource(
+        'lib/src/settings/material_settings_renderer.dart');
+    expect(source, contains('HibikiListItemSelectedShape'));
+    expect(source, contains('pushRoutes ? const Icon(Icons.chevron_right)'));
+  });
 }

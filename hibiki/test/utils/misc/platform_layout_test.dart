@@ -43,7 +43,9 @@ void main() {
           WindowSizeClass.expanded,
           DesktopContentKind.settings,
         ),
-        760,
+        // MD3 list-detail: widened 760 -> 960 so the detail pane breathes after
+        // the 280px nav pane (Phase 1 ④).
+        960,
       );
     });
 

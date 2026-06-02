@@ -23,8 +23,7 @@ class SettingsHomePage extends BasePage {
 }
 
 class _SettingsHomePageState extends BasePageState<SettingsHomePage> {
-  SettingsDestinationId _selectedDestinationId =
-      SettingsDestinationId.reading;
+  SettingsDestinationId _selectedDestinationId = SettingsDestinationId.reading;
 
   @override
   void initState() {
@@ -118,13 +117,19 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage> {
           destination.id == _selectedDestinationId,
     );
     final bool cupertino = isCupertinoPlatform(context);
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final Color dividerColor = cupertino
         ? CupertinoColors.separator.resolveFrom(context)
-        : Theme.of(context).colorScheme.outlineVariant;
+        : tokens.surfaces.outline;
+    // MD3 list-detail: the nav pane sits on the tonal container token
+    // (`surfaces.group`) while the detail pane stays on the base page surface.
+    // Material only — Cupertino keeps its system background untouched.
+    final Color? navPaneColor = cupertino ? null : tokens.surfaces.group;
     return Row(
       children: <Widget>[
-        SizedBox(
+        Container(
           width: 280,
+          color: navPaneColor,
           child: renderer.buildDestinationList(
             settingsContext: settingsContext,
             destinations: destinations,

@@ -59,7 +59,7 @@ double? desktopContentMaxWidth(
   return switch (kind) {
     DesktopContentKind.readerShelf => 1280,
     DesktopContentKind.dictionary => 1040,
-    DesktopContentKind.settings => 760,
+    DesktopContentKind.settings => 960,
   };
 }
 

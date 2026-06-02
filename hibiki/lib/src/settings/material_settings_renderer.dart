@@ -58,11 +58,18 @@ class MaterialSettingsRenderer implements SettingsRenderer {
         final bool selected = destination.id == selectedDestinationId;
         return HibikiListItem(
           selected: selected,
+          // Master-detail (pushRoutes:false) keeps selection in-pane, so use the
+          // MD3 rounded pill highlight; the narrow push list keeps full-bleed fill.
+          selectedShape: pushRoutes
+              ? HibikiListItemSelectedShape.fill
+              : HibikiListItemSelectedShape.pill,
           leading: Icon(destination.icon),
           title: Text(destination.title),
           subtitle:
               destination.summary != null ? Text(destination.summary!) : null,
-          trailing: const Icon(Icons.chevron_right),
+          // Chevron implies push navigation; only show it when tapping actually
+          // pushes a detail route (narrow layout), not in the master-detail pane.
+          trailing: pushRoutes ? const Icon(Icons.chevron_right) : null,
           onTap: () {
             onDestinationSelected(destination.id);
             if (!pushRoutes) return;
@@ -107,8 +114,10 @@ class MaterialSettingsRenderer implements SettingsRenderer {
     return ListView.builder(
       controller: scrollController,
       shrinkWrap: shrinkWrap,
+      // Left side hugs the pane divider; give it MD3 expanded breathing room
+      // (page + gap = 24) so detail content isn't glued to the nav pane.
       padding: EdgeInsets.fromLTRB(
-        tokens.spacing.page,
+        tokens.spacing.page + tokens.spacing.gap,
         tokens.spacing.gap,
         tokens.spacing.page,
         tokens.spacing.page + mediaPadding.bottom,
