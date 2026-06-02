@@ -706,7 +706,6 @@
     "harmonic_frequency": "Worthäufigkeiten aggregieren",
     "manage_audio_sources": "Audioquellen verwalten",
     "local_audio": "Lokales Audio",
-    "local_audio_not_set": "Keine Datenbank ausgewählt",
     "use_recommended_template": "Empfohlen",
     "recommended_template_exists": "Das Standardprofil existiert bereits.",
     "recommended_template_created": "Empfohlenes Profil wurde erstellt.",

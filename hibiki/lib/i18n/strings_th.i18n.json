@@ -706,7 +706,6 @@
     "harmonic_frequency": "รวมความถี่คำ",
     "manage_audio_sources": "จัดการแหล่งเสียง",
     "local_audio": "เสียงในเครื่อง",
-    "local_audio_not_set": "ยังไม่ได้เลือกฐานข้อมูล",
     "use_recommended_template": "แนะนำ",
     "recommended_template_exists": "โปรไฟล์มาตรฐานมีอยู่แล้ว",
     "recommended_template_created": "สร้างโปรไฟล์แนะนำแล้ว",

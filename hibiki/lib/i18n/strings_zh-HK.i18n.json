@@ -706,7 +706,6 @@
     "harmonic_frequency": "詞頻聚合",
     "manage_audio_sources": "管理音訊來源",
     "local_audio": "本地音頻",
-    "local_audio_not_set": "未選擇資料庫",
     "use_recommended_template": "推薦範本",
     "recommended_template_exists": "標準設定檔已存在。",
     "recommended_template_created": "已建立推薦設定檔。",

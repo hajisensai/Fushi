@@ -706,7 +706,6 @@
     "harmonic_frequency": "Kelime sıklıklarını birleştir",
     "manage_audio_sources": "Ses kaynaklarını yönet",
     "local_audio": "Yerel ses",
-    "local_audio_not_set": "Veritabanı seçilmedi",
     "use_recommended_template": "Önerilen",
     "recommended_template_exists": "Standart profil zaten mevcut.",
     "recommended_template_created": "Önerilen profil oluşturuldu.",

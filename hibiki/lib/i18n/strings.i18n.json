@@ -731,7 +731,6 @@
     "audio_source_request_error": "Audio source request failed: ${detail}",
     "audio_source_error": "Audio source error: ${detail}",
     "local_audio": "Local audio",
-    "local_audio_not_set": "No database selected",
     "use_recommended_template": "Recommended",
     "recommended_template_exists": "The standard profile already exists.",
     "recommended_template_created": "Recommended profile has been created.",

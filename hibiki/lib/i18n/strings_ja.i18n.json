@@ -711,7 +711,6 @@
     "harmonic_frequency": "語彙頻度集約",
     "manage_audio_sources": "音声ソースの管理",
     "local_audio": "ローカル音声",
-    "local_audio_not_set": "データベース未選択",
     "use_recommended_template": "推奨",
     "recommended_template_exists": "標準プロファイルは既に存在します。",
     "recommended_template_created": "推奨プロファイルを作成しました。",

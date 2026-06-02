@@ -727,7 +727,6 @@
     "harmonic_frequency": "词频聚合",
     "manage_audio_sources": "管理音频来源",
     "local_audio": "本地音频",
-    "local_audio_not_set": "未选择数据库",
     "use_recommended_template": "推荐模板",
     "recommended_template_exists": "标准配置已存在。",
     "recommended_template_created": "已创建推荐配置。",

@@ -706,7 +706,6 @@
     "harmonic_frequency": "Aggrega frequenze delle parole",
     "manage_audio_sources": "Gestisci sorgenti audio",
     "local_audio": "Audio locale",
-    "local_audio_not_set": "Nessun database selezionato",
     "use_recommended_template": "Raccomandato",
     "recommended_template_exists": "Il profilo standard esiste già.",
     "recommended_template_created": "Il profilo raccomandato è stato creato.",

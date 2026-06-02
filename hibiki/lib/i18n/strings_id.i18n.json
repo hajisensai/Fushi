@@ -706,7 +706,6 @@
     "harmonic_frequency": "Gabungkan frekuensi kata",
     "manage_audio_sources": "Kelola sumber audio",
     "local_audio": "Audio lokal",
-    "local_audio_not_set": "Tidak ada database yang dipilih",
     "use_recommended_template": "Rekomendasi",
     "recommended_template_exists": "Profil standar sudah ada.",
     "recommended_template_created": "Profil rekomendasi telah dibuat.",

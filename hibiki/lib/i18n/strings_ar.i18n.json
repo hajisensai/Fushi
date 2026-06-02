@@ -706,7 +706,6 @@
     "harmonic_frequency": "تجميع تكرارات الكلمات",
     "manage_audio_sources": "إدارة مصادر الصوت",
     "local_audio": "صوت محلي",
-    "local_audio_not_set": "لم يتم اختيار قاعدة بيانات",
     "use_recommended_template": "موصى به",
     "recommended_template_exists": "الملف الشخصي القياسي موجود بالفعل.",
     "recommended_template_created": "تم إنشاء الملف الشخصي الموصى به.",

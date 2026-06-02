@@ -706,7 +706,6 @@
     "harmonic_frequency": "단어 빈도 집계",
     "manage_audio_sources": "오디오 소스 관리",
     "local_audio": "로컬 오디오",
-    "local_audio_not_set": "데이터베이스가 선택되지 않았습니다",
     "use_recommended_template": "추천",
     "recommended_template_exists": "기본 프로필이 이미 존재합니다.",
     "recommended_template_created": "추천 프로필이 생성되었습니다.",

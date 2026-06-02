@@ -706,7 +706,6 @@
     "harmonic_frequency": "Агрегация частот слов",
     "manage_audio_sources": "Управление аудиоисточниками",
     "local_audio": "Локальное аудио",
-    "local_audio_not_set": "База данных не выбрана",
     "use_recommended_template": "Рекомендуемый",
     "recommended_template_exists": "Стандартный профиль уже существует.",
     "recommended_template_created": "Рекомендуемый профиль создан.",
