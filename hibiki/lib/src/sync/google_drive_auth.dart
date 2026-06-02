@@ -28,10 +28,26 @@ class GoogleDriveAuth {
   static const _driveFileScope = 'https://www.googleapis.com/auth/drive.file';
   static const _emailScope = 'https://www.googleapis.com/auth/userinfo.email';
 
-  static const _oauthClientId =
-      String.fromEnvironment('GOOGLE_OAUTH_CLIENT_ID');
-  static const _oauthClientSecret =
-      String.fromEnvironment('GOOGLE_OAUTH_CLIENT_SECRET');
+  // 安装型应用（installed-app / PKCE）的 OAuth 凭据按 Google 设计属于
+  // 非机密信息，编译进二进制可接受（见 HBK-AUDIT-072）。这里写成默认值，
+  // 任何构建方式（flutter run / build / CI）都无需再带 --dart-define-from-file；
+  // 仍保留 --dart-define 覆盖能力，便于切换凭据而不改源码。
+  static const _oauthClientId = String.fromEnvironment(
+    'GOOGLE_OAUTH_CLIENT_ID',
+    defaultValue:
+        '963096957716-rmi74hd9mt8n4lvh6u32uqmkhcp2gkku.apps.googleusercontent.com',
+  );
+  static const _oauthClientSecret = String.fromEnvironment(
+    'GOOGLE_OAUTH_CLIENT_SECRET',
+    defaultValue: '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',
+  );
+
+  // iOS 专用 OAuth 客户端（应用类型 = iOS，Bundle ID = app.hibiki.reader）。
+  // Android 不读这里：google_sign_in 在 Android 上从 google-services.json 按
+  // 包名 + 签名 SHA-1 自动解析对应 client，传 null 即可。iOS 必须显式提供
+  // iOS 型 clientId，且 Info.plist 需配反转 client id 的 URL scheme 作回调。
+  static const _iosClientId =
+      '963096957716-a9f20m4rsbenns50qn0l2cleq9cj5g0b.apps.googleusercontent.com';
 
   static final _desktopClientId = auth.ClientId(
     _oauthClientId,
@@ -42,6 +58,7 @@ class GoogleDriveAuth {
 
   GoogleSignIn? _googleSignIn;
   GoogleSignIn get _signIn => _googleSignIn ??= GoogleSignIn(
+        clientId: Platform.isIOS ? _iosClientId : null,
         scopes: [_driveFileScope],
       );
 
