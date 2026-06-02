@@ -215,6 +215,90 @@ void main() {
   });
 
   testWidgets(
+      'ring on-screen size tracks the scaled control (not just position)',
+      (WidgetTester tester) async {
+    // Regression: the ring's rect was built as `localToGlobal(Offset.zero) &
+    // ro.size` — a scaled top-left but the control's UN-scaled local size. build()
+    // then divides by the scale, so the ring SHRANK as the UI zoomed in (44px ring
+    // around an 80px control at 2.0×) instead of growing with it ("大小没缩放").
+    // Map both corners through localToGlobal so the rect carries the on-screen
+    // size. getRect returns GLOBAL (view-space) coords — the true visual rect the
+    // Transform produces — so this asserts what the user actually sees.
+    final FocusManager fm = FocusManager.instance;
+    final FocusHighlightStrategy previous = fm.highlightStrategy;
+    fm.highlightStrategy = FocusHighlightStrategy.alwaysTraditional;
+    addTearDown(() => fm.highlightStrategy = previous);
+
+    final FocusNode node = FocusNode();
+    addTearDown(node.dispose);
+    const Key focusKey = ValueKey<String>('scaled-size-target');
+
+    late StateSetter setOuter;
+    double scale = 1.0;
+    await tester.pumpWidget(MaterialApp(
+      home: StatefulBuilder(
+        builder: (BuildContext context, StateSetter setState) {
+          setOuter = setState;
+          return HibikiAppUiScale(
+            scale: scale,
+            child: HibikiFocusRing(
+              child: Scaffold(
+                body: Center(
+                  child: Focus(
+                    focusNode: node,
+                    autofocus: true,
+                    child: const SizedBox(key: focusKey, width: 40, height: 40),
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    ));
+    await tester.pump();
+    await tester.pump();
+
+    final Finder ring = find.descendant(
+      of: find.byType(HibikiFocusRing),
+      matching: find.byWidgetPredicate((Widget w) =>
+          w is DecoratedBox &&
+          w.decoration is BoxDecoration &&
+          (w.decoration as BoxDecoration).border != null),
+    );
+
+    // The ring must stay the control's on-screen rect inflated by exactly 2px at
+    // every scale — a constant visual gap, with the control portion scaling.
+    void expectRingHugsControl(double s) {
+      final Rect control = tester.getRect(find.byKey(focusKey));
+      final Rect r = tester.getRect(ring);
+      expect(r.left, closeTo(control.left - 2, 0.6), reason: 'left @ $s');
+      expect(r.top, closeTo(control.top - 2, 0.6), reason: 'top @ $s');
+      expect(r.width, closeTo(control.width + 4, 0.6),
+          reason: 'width must track scaled control @ $s');
+      expect(r.height, closeTo(control.height + 4, 0.6),
+          reason: 'height must track scaled control @ $s');
+    }
+
+    expectRingHugsControl(1.0);
+
+    setOuter(() => scale = 2.0);
+    await tester.pump();
+    await tester.pump();
+    await tester.pump();
+    // Control is 80px on screen at 2.0×; ring must be 84px, not the old 44px.
+    expect(tester.getRect(find.byKey(focusKey)).width, closeTo(80, 0.6),
+        reason: 'sanity: control doubles on screen at 2.0×');
+    expectRingHugsControl(2.0);
+
+    setOuter(() => scale = 0.5);
+    await tester.pump();
+    await tester.pump();
+    await tester.pump();
+    expectRingHugsControl(0.5);
+  });
+
+  testWidgets(
       'a theme change does not yank a manually-scrolled-away focus back',
       (WidgetTester tester) async {
     // didChangeDependencies fires for ANY inherited dependency the ring reads in
