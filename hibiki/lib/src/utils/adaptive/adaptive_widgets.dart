@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart';
+import 'package:hibiki/src/utils/app_ui_scale.dart';
 import 'package:hibiki/src/utils/components/hibiki_motion_tokens.dart';
 
 Widget adaptiveDialogAction({
@@ -85,7 +86,7 @@ Widget adaptiveSlider({
       onChangeEnd: onChangeEnd,
     );
   }
-  return Slider(
+  final Widget slider = Slider(
     value: value,
     onChanged: onChanged,
     min: min,
@@ -95,6 +96,21 @@ Widget adaptiveSlider({
     thumbColor: thumbColor,
     onChangeStart: onChangeStart,
     onChangeEnd: onChangeEnd,
+  );
+  // 值指示器水平钳制根因修复（见 slider_value_indicator_scale_test.dart）：
+  // Material Slider 的 getHorizontalShift 用 parentBox.localToGlobal(center)（GLOBAL/
+  // view 坐标，含 Transform.scale 的 ×s）与 sizeWithOverflow(= MediaQuery.sizeOf) 比较，
+  // SDK 假定两者同空间。HibikiAppUiScale 把树放大 s 倍、却把 MediaQuery.size 缩成 view/s，
+  // 两空间差 s²，钳制甩飞气泡。这里把 Slider 看到的 screenSize 还原回 GLOBAL/view 空间
+  // (= size * scale)，与 localToGlobal 同空间，钳制即正确归零。scale==1.0 为 no-op。
+  // 只改 size（保留 textScaler 等），且 Slider 布局宽度来自父约束、不依赖 MediaQuery.size，
+  // 故仅影响值指示器钳制这一条买路。
+  final double uiScale = HibikiAppUiScale.of(context);
+  if (uiScale == HibikiAppUiScale.defaultScale) return slider;
+  final MediaQueryData mq = MediaQuery.of(context);
+  return MediaQuery(
+    data: mq.copyWith(size: mq.size * uiScale),
+    child: slider,
   );
 }
 
