@@ -103,11 +103,28 @@ class GoogleDriveAuth {
       }
       return;
     }
-    final client = await auth_io.clientViaUserConsent(
-      _desktopClientId,
-      [_driveFileScope, _emailScope],
-      (String url) => launchUrl(Uri.parse(url)),
-    );
+    final auth.AuthClient client;
+    try {
+      client = await auth_io.clientViaUserConsent(
+        _desktopClientId,
+        [_driveFileScope, _emailScope],
+        (String url) => launchUrl(Uri.parse(url)),
+      );
+    } catch (e, st) {
+      // The googleapis_auth loopback server renders a bare "HTTP 500" page in
+      // the browser and the friendly-error mapper may relabel the cause, both
+      // hiding what Google actually returned. Log the raw failure (token-
+      // exchange error body + status, or the network/TLS error) so the real
+      // root cause — invalid_client / redirect_uri_mismatch / access_denied /
+      // a blocked-direct-connection timeout — is visible.
+      developer.log(
+        'Desktop Google OAuth failed: ${e.runtimeType}: $e',
+        error: e,
+        stackTrace: st,
+        name: 'GoogleDriveAuth',
+      );
+      rethrow;
+    }
 
     _desktopClient?.close();
     _desktopCredentials = client.credentials;
