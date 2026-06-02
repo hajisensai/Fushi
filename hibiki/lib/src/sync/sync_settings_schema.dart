@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:clipboard/clipboard.dart';
@@ -24,6 +25,7 @@ import 'package:hibiki/src/sync/sync_message_dialog.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/webdav_sync_backend.dart';
 import 'package:hibiki/utils.dart';
+import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -1971,11 +1973,42 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget> {
     state.backendType = SyncBackendType.hibikiServer;
     final repo = SyncRepository(widget.settingsContext.appModel.database);
     await repo.setBackendType(SyncBackendType.hibikiServer);
-    // Add the discovered address to the candidate list (deduped) instead of
-    // overwriting the whole config — and keep any token the user already set.
+    // Always record the address (deduped) so the user keeps the URL even if
+    // pairing is not open yet and they fall back to pasting the token.
     await repo.addHibikiClientUrl(device.webDavUrl);
+
+    String message;
+    try {
+      final http.Response resp = await http
+          .post(Uri.parse('${device.webDavUrl}/api/pair'))
+          .timeout(const Duration(seconds: 5));
+      if (resp.statusCode == 200) {
+        final dynamic body = jsonDecode(resp.body);
+        final String? token =
+            body is Map<String, dynamic> ? body['token'] as String? : null;
+        if (token != null && token.isNotEmpty) {
+          await repo.setHibikiClientToken(token);
+          message = t.sync_pair_success;
+        } else {
+          message = t.sync_pair_failed;
+        }
+      } else if (resp.statusCode == 403) {
+        message = t.sync_pair_window_closed;
+      } else {
+        message = t.sync_pair_failed;
+      }
+    } catch (e, stack) {
+      // Pairing probe failed (window closed/no server/timeout). Keep the URL;
+      // record why instead of swallowing.
+      ErrorLogService.instance
+          .log('LanDiscovery.pair:${device.webDavUrl}', e, stack);
+      message = t.sync_pair_failed;
+    }
+
+    // Single source of truth bumped → client-config widget reloads URL + token.
+    state.reloadClientConfig();
     widget.settingsContext.refresh();
-    if (mounted) _showSnackBar(context, '${device.name} (${device.webDavUrl})');
+    if (mounted) _showSnackBar(context, '${device.name}: $message');
   }
 
   @override
