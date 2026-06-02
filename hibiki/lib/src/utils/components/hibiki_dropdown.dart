@@ -9,6 +9,11 @@ import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 /// A single (value, label) choice for [GamepadMenuDropdown].
 typedef GamepadDropdownEntry<T> = ({T value, String label});
 
+/// Fraction of the screen height a dropdown menu may occupy. Caps both the
+/// stock Android [DropdownMenu] and the polled-platform [MenuAnchor] so a long
+/// option list scrolls within the viewport instead of overflowing off-screen.
+const double _kMenuMaxHeightFactor = 0.6;
+
 /// Returns true on platforms where a controller is *polled* (its D-pad arrives
 /// as focus traversal, not arrow-key events). A stock Material [DropdownMenu]
 /// keeps focus on its field when opened and only navigates via arrow KEY
@@ -111,7 +116,8 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
     // because the overlay is anchored, not scrolled. Mirrors the polled-platform
     // MenuAnchor cap in [_menuAnchor]; the stock DropdownMenu has no implicit
     // bound, so it must be set explicitly.
-    final double menuHeight = MediaQuery.sizeOf(context).height * 0.6;
+    final double menuHeight =
+        MediaQuery.sizeOf(context).height * _kMenuMaxHeightFactor;
     final Widget menu = DropdownMenu<T>(
       // Fill the bounding box (the parent, or the SizedBox below when a fixed
       // width is given) — matches the prior call sites' expandedInsets usage.
@@ -188,7 +194,8 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
     // Cap the menu height so a long list (e.g. many decks) scrolls instead of
     // covering the whole screen, matching the stock DropdownMenu. The
     // gamepad-focused entry is scrolled into view by HibikiFocusRing.
-    final double maxHeight = MediaQuery.sizeOf(context).height * 0.6;
+    final double maxHeight =
+        MediaQuery.sizeOf(context).height * _kMenuMaxHeightFactor;
     return MenuAnchor(
       controller: _menu,
       childFocusNode: _triggerFocus,

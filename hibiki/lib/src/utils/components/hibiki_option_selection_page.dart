@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hibiki/i18n/strings.g.dart';
+import 'package:hibiki/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 import 'package:hibiki/src/utils/components/settings_shared.dart';
@@ -26,7 +27,10 @@ Future<T?> pickOption<T>(
   bool? searchable,
 }) {
   return Navigator.of(context).push<T>(
-    MaterialPageRoute<T>(
+    // Adaptive route so iOS/macOS get the Cupertino transition + swipe-back
+    // gesture (the page body already adapts via AdaptiveSettingsScaffold).
+    adaptivePageRoute<T>(
+      context: context,
       builder: (_) => HibikiOptionSelectionPage<T>(
         title: title,
         options: options,
