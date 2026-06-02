@@ -751,36 +751,53 @@ class _DictionaryDialogPageState extends BasePageState {
             scrollDirection: Axis.horizontal,
             child: ConstrainedBox(
               constraints: BoxConstraints(minWidth: constraints.maxWidth),
-              child: adaptiveSegmentedButton<DictionaryType>(
-                context: context,
-                segments: [
-                  ButtonSegment<DictionaryType>(
-                    value: DictionaryType.term,
-                    label: Text(t.dictionary_type_term),
-                    tooltip: t.dictionary_type_term,
-                  ),
-                  ButtonSegment<DictionaryType>(
-                    value: DictionaryType.kanji,
-                    label: Text(t.dictionary_section_kanji),
-                    tooltip: t.dictionary_section_kanji,
-                  ),
-                  ButtonSegment<DictionaryType>(
-                    value: DictionaryType.frequency,
-                    label: Text(t.dictionary_type_frequency),
-                    tooltip: t.dictionary_type_frequency,
-                  ),
-                  ButtonSegment<DictionaryType>(
-                    value: DictionaryType.pitch,
-                    label: Text(t.dictionary_type_pitch),
-                    tooltip: t.dictionary_type_pitch,
-                  ),
+              // Wrap as a single gamepad/keyboard focus stop (D-pad Left/Right
+              // cycles the category). A bare segmented button is a cluster of
+              // unregistered native buttons that the directional focus
+              // controller skips over to the dictionary tiles below.
+              child: HibikiAdjustableSegmented<DictionaryType>(
+                focusIdPrefix: 'dict-type',
+                values: const <DictionaryType>[
+                  DictionaryType.term,
+                  DictionaryType.kanji,
+                  DictionaryType.frequency,
+                  DictionaryType.pitch,
                 ],
-                selected: {_selectedType},
-                onSelectionChanged: (Set<DictionaryType> selection) {
-                  if (selection.isEmpty) return;
-                  setState(() => _selectedType = selection.first);
+                selected: _selectedType,
+                onChanged: (DictionaryType value) {
+                  setState(() => _selectedType = value);
                 },
-                style: kSettingsSegmentedStyle,
+                child: adaptiveSegmentedButton<DictionaryType>(
+                  context: context,
+                  segments: [
+                    ButtonSegment<DictionaryType>(
+                      value: DictionaryType.term,
+                      label: Text(t.dictionary_type_term),
+                      tooltip: t.dictionary_type_term,
+                    ),
+                    ButtonSegment<DictionaryType>(
+                      value: DictionaryType.kanji,
+                      label: Text(t.dictionary_section_kanji),
+                      tooltip: t.dictionary_section_kanji,
+                    ),
+                    ButtonSegment<DictionaryType>(
+                      value: DictionaryType.frequency,
+                      label: Text(t.dictionary_type_frequency),
+                      tooltip: t.dictionary_type_frequency,
+                    ),
+                    ButtonSegment<DictionaryType>(
+                      value: DictionaryType.pitch,
+                      label: Text(t.dictionary_type_pitch),
+                      tooltip: t.dictionary_type_pitch,
+                    ),
+                  ],
+                  selected: {_selectedType},
+                  onSelectionChanged: (Set<DictionaryType> selection) {
+                    if (selection.isEmpty) return;
+                    setState(() => _selectedType = selection.first);
+                  },
+                  style: kSettingsSegmentedStyle,
+                ),
               ),
             ),
           );

@@ -1019,17 +1019,37 @@ class HibikiColorSwatch extends StatelessWidget {
               ),
       ),
     );
-    final Widget interactiveSwatch = onTap == null
-        ? swatch
-        : Material(
-            color: Colors.transparent,
-            borderRadius: inkRadius,
-            child: InkWell(
-              borderRadius: inkRadius,
-              onTap: onTap,
-              child: swatch,
-            ),
-          );
+    final Widget interactiveSwatch;
+    if (onTap == null) {
+      interactiveSwatch = swatch;
+    } else {
+      // Under a HibikiFocusRoot the directional focus controller navigates ONLY
+      // between registered HibikiFocusTargets — a bare InkWell makes its own
+      // (unregistered) Focus node, so gamepad/keyboard navigation skips the
+      // whole swatch row (the theme picker was unreachable: "到不了主题的位置").
+      // Register each swatch as a single focus stop (A/Enter activates onTap),
+      // keeping the InkWell for mouse/touch ripple but barring it from grabbing
+      // a competing focus node. Off-root (mobile touch) the InkWell is unchanged.
+      final bool underFocusRoot =
+          HibikiFocusRoot.maybeControllerOf(context) != null;
+      final Widget inkSwatch = Material(
+        color: Colors.transparent,
+        borderRadius: inkRadius,
+        child: InkWell(
+          borderRadius: inkRadius,
+          onTap: onTap,
+          canRequestFocus: !underFocusRoot,
+          child: swatch,
+        ),
+      );
+      interactiveSwatch = underFocusRoot
+          ? HibikiActivatableFocusTarget(
+              focusIdPrefix: 'color-swatch',
+              onTap: onTap!,
+              child: inkSwatch,
+            )
+          : inkSwatch;
+    }
     final Widget semanticSwatch = Semantics(
       button: onTap != null,
       selected: selected,
@@ -1050,6 +1070,57 @@ class HibikiColorSwatch extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Registers [child] as a single gamepad/keyboard focus stop whose A/Enter
+/// ([ActivateIntent]) fires [onTap]. The [Actions] sits ABOVE the
+/// [HibikiFocusTarget] on purpose: the gamepad A path dispatches the intent at
+/// the focused node's context (gamepad_service `_dispatchButton`), which finds
+/// an Actions handler only by walking UP — so a handler placed *inside*
+/// HibikiFocusTarget (as [HibikiFocusable] does) would never fire. Use this for
+/// a discrete tap target whose own visual (e.g. an InkWell with
+/// `canRequestFocus: false`) must stay mouse/touch-tappable without grabbing a
+/// competing, unregistered focus node. Only meaningful under a [HibikiFocusRoot].
+class HibikiActivatableFocusTarget extends StatefulWidget {
+  const HibikiActivatableFocusTarget({
+    required this.onTap,
+    required this.child,
+    super.key,
+    this.focusIdPrefix = 'tap-stop',
+  });
+
+  final VoidCallback onTap;
+  final Widget child;
+  final String focusIdPrefix;
+
+  @override
+  State<HibikiActivatableFocusTarget> createState() =>
+      _HibikiActivatableFocusTargetState();
+}
+
+class _HibikiActivatableFocusTargetState
+    extends State<HibikiActivatableFocusTarget> {
+  late final HibikiFocusId _focusId = HibikiFocusId(
+    '${widget.focusIdPrefix}-${identityHashCode(this)}',
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    return Actions(
+      actions: <Type, Action<Intent>>{
+        ActivateIntent: CallbackAction<ActivateIntent>(
+          onInvoke: (_) {
+            widget.onTap();
+            return null;
+          },
+        ),
+      },
+      child: HibikiFocusTarget(
+        id: _focusId,
+        child: widget.child,
+      ),
     );
   }
 }
