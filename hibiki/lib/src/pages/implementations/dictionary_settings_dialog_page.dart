@@ -8,11 +8,24 @@ class AudioSourcesDialog extends StatefulWidget {
   const AudioSourcesDialog({
     required this.sources,
     required this.onSave,
+    this.localAudioEnabled = false,
+    this.onToggleLocalAudio,
+    this.onPickLocalDb,
     super.key,
   });
 
   final List<AudioSourceConfig> sources;
   final void Function(List<AudioSourceConfig>) onSave;
+
+  /// 本地音频全局总开关当前值（保留为对话框顶部的显式控件）。
+  final bool localAudioEnabled;
+
+  /// 切换全局总开关；立即生效（独立于 _sources 批量提交）。
+  final Future<void> Function(bool enabled)? onToggleLocalAudio;
+
+  /// 选文件并拷贝进库目录，返回一个 localAudio 源（已拷贝、未持久化）；
+  /// 返回 null 表示用户取消。
+  final Future<AudioSourceConfig?> Function()? onPickLocalDb;
 
   @override
   State<AudioSourcesDialog> createState() => _AudioSourcesDialogState();
@@ -20,12 +33,14 @@ class AudioSourcesDialog extends StatefulWidget {
 
 class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
   late List<AudioSourceConfig> _sources;
+  late bool _localAudioEnabled;
   final _controller = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _sources = List<AudioSourceConfig>.from(widget.sources);
+    _localAudioEnabled = widget.localAudioEnabled;
   }
 
   @override
@@ -71,6 +86,20 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              if (widget.onToggleLocalAudio != null) ...<Widget>[
+                AdaptiveSettingsRow(
+                  title: t.local_audio,
+                  icon: Icons.library_music_outlined,
+                  trailing: Switch.adaptive(
+                    value: _localAudioEnabled,
+                    onChanged: (bool value) async {
+                      await widget.onToggleLocalAudio!(value);
+                      if (mounted) setState(() => _localAudioEnabled = value);
+                    },
+                  ),
+                ),
+                SizedBox(height: tokens.spacing.gap),
+              ],
               Flexible(
                 child: ReorderableListView.builder(
                   shrinkWrap: true,
@@ -174,6 +203,23 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
                 ),
                 onSubmitted: (_) => _addSource(),
               ),
+              if (widget.onPickLocalDb != null) ...<Widget>[
+                SizedBox(height: tokens.spacing.gap),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    icon: const Icon(Icons.library_add_outlined, size: 18),
+                    label: Text(t.local_audio_add_db),
+                    onPressed: () async {
+                      final AudioSourceConfig? added =
+                          await widget.onPickLocalDb!();
+                      if (added != null && mounted) {
+                        setState(() => _sources.add(added));
+                      }
+                    },
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -186,9 +232,16 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
               context: context,
               onPressed: () {
                 setState(() {
-                  _sources = AudioSourceConfig.fromLegacyUrls(
-                    AppModel.defaultAudioSources,
-                  );
+                  final List<AudioSourceConfig> kept = _sources
+                      .where((AudioSourceConfig s) =>
+                          s.kind != AudioSourceKind.remoteAudio)
+                      .toList();
+                  _sources = <AudioSourceConfig>[
+                    ...kept,
+                    ...AudioSourceConfig.fromLegacyUrls(
+                      AppModel.defaultAudioSources,
+                    ),
+                  ];
                 });
               },
               child: Text(t.reset),
