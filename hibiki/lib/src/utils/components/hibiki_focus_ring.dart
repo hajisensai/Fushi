@@ -42,6 +42,12 @@ class _HibikiFocusRingState extends State<HibikiFocusRing>
   // and from a manual scroll (which must never trigger a scroll-back).
   FocusNode? _lastFocused;
 
+  // The UI scale (folded into MediaQuery.textScaler by HibikiAppUiScale) seen at
+  // the last didChangeDependencies. Used to tell a geometry-changing scale
+  // reflow (must reveal + recompute) apart from a theme-only dependency change
+  // (must only recompute the ring, never scroll).
+  TextScaler? _lastTextScaler;
+
   @override
   void initState() {
     super.initState();
@@ -58,6 +64,34 @@ class _HibikiFocusRingState extends State<HibikiFocusRing>
     _fm.removeHighlightModeListener(_onHighlight);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  // Fires on ANY inherited dependency read in build() changing — that is both
+  // the in-app UI scale (HibikiAppUiScale folds it into MediaQuery.textScaler,
+  // read below) AND the theme (Theme.of in build()). We must distinguish them:
+  //
+  //  - A scale change reflows the whole subtree, moving the focused control,
+  //    without any window-metrics/focus/scroll/highlight change — invisible to
+  //    every other recompute trigger here, so the ring would stay pinned to the
+  //    control's old position ("焦点不跟着动"). Treat it like a resize: reveal
+  //    the control and recompute the ring geometry.
+  //  - A theme change does NOT move geometry. Calling _scheduleEnsureVisible()
+  //    for it would yank a focused control the user deliberately scrolled out of
+  //    view back to center, breaking this widget's "manual scroll is not pulled
+  //    back" contract (see the class doc). So a theme-only change must ONLY
+  //    recompute (cheap, no scroll; also refreshes the ring colour).
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Read (and thereby depend on) the scale-driven textScaler. Keep this read:
+    // it registers the MediaQuery.textScaler aspect dependency that delivers
+    // scale changes here. Removing it silently brings back the original bug.
+    final TextScaler textScaler = MediaQuery.textScalerOf(context);
+    final bool scaleChanged =
+        _lastTextScaler != null && textScaler != _lastTextScaler;
+    _lastTextScaler = textScaler;
+    if (scaleChanged) _scheduleEnsureVisible();
+    _scheduleRecompute();
   }
 
   void _onHighlight(FocusHighlightMode _) => _scheduleRecompute();

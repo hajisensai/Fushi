@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/utils/app_ui_scale.dart';
 import 'package:hibiki/src/utils/components/hibiki_focus_ring.dart';
 
 void main() {
@@ -124,5 +125,170 @@ void main() {
     expect(tester.takeException(), isNull);
     // The ring is an IgnorePointer-wrapped DecoratedBox positioned over focus.
     expect(find.byType(IgnorePointer), findsWidgets);
+  });
+
+  testWidgets(
+      'ring follows the focused control when the in-app UI scale changes',
+      (WidgetTester tester) async {
+    // Regression: dragging the "界面大小" (app UI scale) slider reflows the whole
+    // subtree via MediaQuery.textScaler / Spacing — moving the focused control —
+    // without any window-metrics, focus, scroll, or highlight change. None of
+    // the ring's recompute triggers fired, so the ring stayed pinned to the
+    // control's old position ("焦点不跟着动").
+    final FocusManager fm = FocusManager.instance;
+    final FocusHighlightStrategy previous = fm.highlightStrategy;
+    fm.highlightStrategy = FocusHighlightStrategy.alwaysTraditional;
+    addTearDown(() => fm.highlightStrategy = previous);
+
+    final FocusNode node = FocusNode();
+    addTearDown(node.dispose);
+    const Key focusKey = ValueKey<String>('scaled-focus-target');
+
+    late StateSetter setOuter;
+    double scale = 1.0;
+    await tester.pumpWidget(MaterialApp(
+      home: StatefulBuilder(
+        builder: (BuildContext context, StateSetter setState) {
+          setOuter = setState;
+          return HibikiAppUiScale(
+            scale: scale,
+            child: HibikiFocusRing(
+              child: Scaffold(
+                body: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    // Height scales with textScaler, so the focus target below
+                    // it shifts down when the UI scale grows.
+                    const Text('header', style: TextStyle(fontSize: 48)),
+                    Focus(
+                      focusNode: node,
+                      autofocus: true,
+                      child: const SizedBox(
+                        key: focusKey,
+                        width: 40,
+                        height: 40,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    ));
+    await tester.pump(); // post-frame rect computation
+    await tester.pump(); // setState -> ring drawn
+
+    // The ring is the only bordered DecoratedBox in the subtree.
+    final Finder ringIndicator = find.descendant(
+      of: find.byType(HibikiFocusRing),
+      matching: find.byWidgetPredicate((Widget w) =>
+          w is DecoratedBox &&
+          w.decoration is BoxDecoration &&
+          (w.decoration as BoxDecoration).border != null),
+    );
+    expect(ringIndicator, findsOneWidget);
+
+    // Ring sits at the focused control's rect inflated by 2px.
+    final Offset focusTopLeft = tester.getTopLeft(find.byKey(focusKey));
+    Offset ringTopLeft = tester.getTopLeft(ringIndicator);
+    expect((ringTopLeft - (focusTopLeft - const Offset(2, 2))).distance,
+        lessThan(0.5),
+        reason: 'ring should align to focus at scale 1.0');
+
+    // Grow the UI scale: the header text gets taller, pushing the focus target
+    // down. No window resize / focus change / scroll happens.
+    setOuter(() => scale = 2.0);
+    await tester.pump(); // rebuild with new scale (reflow)
+    await tester.pump(); // didChangeDependencies-scheduled recompute
+    await tester.pump(); // setState -> ring repositioned
+
+    final Offset movedFocusTopLeft = tester.getTopLeft(find.byKey(focusKey));
+    expect(movedFocusTopLeft.dy, greaterThan(focusTopLeft.dy),
+        reason: 'sanity: focus target moved down after scale increase');
+
+    ringTopLeft = tester.getTopLeft(ringIndicator);
+    expect((ringTopLeft - (movedFocusTopLeft - const Offset(2, 2))).distance,
+        lessThan(0.5),
+        reason: 'ring must follow the focus target after a UI scale change');
+  });
+
+  testWidgets(
+      'a theme change does not yank a manually-scrolled-away focus back',
+      (WidgetTester tester) async {
+    // didChangeDependencies fires for ANY inherited dependency the ring reads in
+    // build() — including Theme.of. A theme change must NOT trigger the
+    // reveal/scroll path: it does not move geometry, and pulling a deliberately
+    // scrolled-away focus back to center would break the "manual scroll is not
+    // pulled back" contract. Only a real UI-scale (textScaler) change may scroll.
+    final FocusManager fm = FocusManager.instance;
+    final FocusHighlightStrategy previous = fm.highlightStrategy;
+    fm.highlightStrategy = FocusHighlightStrategy.alwaysTraditional;
+    addTearDown(() => fm.highlightStrategy = previous);
+
+    final FocusNode node = FocusNode();
+    addTearDown(node.dispose);
+    final ScrollController controller = ScrollController();
+    addTearDown(controller.dispose);
+
+    late StateSetter setOuter;
+    bool dark = false;
+    await tester.pumpWidget(StatefulBuilder(
+      builder: (BuildContext context, StateSetter setState) {
+        setOuter = setState;
+        return MaterialApp(
+          theme: ThemeData(brightness: Brightness.light),
+          darkTheme: ThemeData(brightness: Brightness.dark),
+          themeMode: dark ? ThemeMode.dark : ThemeMode.light,
+          home: HibikiAppUiScale(
+            scale: 1.0,
+            child: HibikiFocusRing(
+              child: Scaffold(
+                // SingleChildScrollView keeps every child mounted regardless of
+                // scroll, so the focused node stays alive (and primary) when we
+                // scroll it off-screen — isolating the theme path from any
+                // focus-change-driven reveal.
+                body: SingleChildScrollView(
+                  controller: controller,
+                  child: Column(
+                    children: <Widget>[
+                      const SizedBox(height: 400),
+                      Focus(
+                        focusNode: node,
+                        autofocus: true,
+                        child: const SizedBox(width: 40, height: 40),
+                      ),
+                      const SizedBox(height: 2000),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    ));
+    await tester.pump(); // autofocus + initial reveal (focus already visible)
+    await tester.pump();
+
+    // Manually scroll the focused control fully above the viewport. A manual
+    // scroll must never be pulled back.
+    controller.jumpTo(800);
+    await tester.pump();
+    expect(node.hasPrimaryFocus, isTrue,
+        reason: 'focus stays alive while scrolled away (kept mounted)');
+    expect(controller.offset, 800.0);
+
+    // Toggle the theme: changes Theme.of below the ring → didChangeDependencies,
+    // but textScaler is unchanged. The ring must NOT scroll.
+    setOuter(() => dark = true);
+    await tester.pump(); // rebuild with new theme
+    await tester.pump(); // any scheduled post-frame callbacks
+    await tester.pump();
+
+    expect(controller.offset, 800.0,
+        reason:
+            'theme change must not scroll the manually-positioned viewport');
   });
 }
