@@ -1177,5 +1177,10 @@
     "settings_destination_reading": "阅读",
     "remote_dict_lookup": "远端词典查询",
     "remote_dict_lookup_hint": "本地词典查不到时，查询已配置的 Hibiki 服务器",
-    "remote_audio_source": "远端音频"
+    "remote_audio_source": "远端音频",
+    "sync_pair_open_button": "开启配对",
+    "sync_pair_window_open": "配对开启中：剩 ${n} 秒",
+    "sync_pair_success": "配对成功，已自动填入 token",
+    "sync_pair_window_closed": "请先在对方设备上开启配对",
+    "sync_pair_failed": "配对失败"
 }
