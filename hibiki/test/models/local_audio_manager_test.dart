@@ -89,4 +89,31 @@ void main() {
       hasLength(2),
     );
   });
+
+  test('importFile copies into store and does NOT persist prefs', () async {
+    final Directory src = await Directory.systemTemp.createTemp('src');
+    final File source = File('${src.path}/nhk.db');
+    await source.writeAsString('sqlite-bytes');
+
+    final LocalAudioDbEntry entry =
+        await manager.importFile(source.path, displayName: 'nhk');
+
+    expect(entry.displayName, 'nhk');
+    expect(File(entry.path).existsSync(), isTrue);
+    expect(entry.path.startsWith(directory.path), isTrue);
+    expect(manager.entries, isEmpty); // not persisted
+    await src.delete(recursive: true);
+  });
+
+  test('deleteFiles removes db + wal + shm', () async {
+    final File dbf = File('${directory.path}/x.db')..writeAsStringSync('a');
+    final File wal = File('${directory.path}/x.db-wal')..writeAsStringSync('b');
+    final File shm = File('${directory.path}/x.db-shm')..writeAsStringSync('c');
+
+    await LocalAudioManager.deleteFiles(dbf.path);
+
+    expect(dbf.existsSync(), isFalse);
+    expect(wal.existsSync(), isFalse);
+    expect(shm.existsSync(), isFalse);
+  });
 }

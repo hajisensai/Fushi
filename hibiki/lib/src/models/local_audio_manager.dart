@@ -91,16 +91,40 @@ class LocalAudioManager {
     await setEntries(dbs);
   }
 
-  Future<void> add(String sourcePath, {required String displayName}) async {
-    final internalName =
+  /// 把外部 [sourcePath] 拷贝进库目录，返回指向内部副本的 entry（默认启用），
+  /// 但不写 prefs、不通知 native。持久化交给 setEntries / setAudioSourceConfigs。
+  Future<LocalAudioDbEntry> importFile(
+    String sourcePath, {
+    required String displayName,
+  }) async {
+    final String internalName =
         'local_audio_${DateTime.now().millisecondsSinceEpoch}.db';
-    final internalPath = path.join(_databaseDirectory.path, internalName);
-    final sourceFile = File(sourcePath);
+    final String internalPath =
+        path.join(_databaseDirectory.path, internalName);
+    final File sourceFile = File(sourcePath);
     if (await sourceFile.exists()) {
       await sourceFile.copy(internalPath);
     }
-    final dbs = List<LocalAudioDbEntry>.of(entries);
-    dbs.add(LocalAudioDbEntry(path: internalPath, displayName: displayName));
+    return LocalAudioDbEntry(
+      path: internalPath,
+      displayName: displayName,
+      enabled: true,
+    );
+  }
+
+  /// 删除一个本地库的主文件及其 -wal / -shm 旁文件。
+  static Future<void> deleteFiles(String dbPath) async {
+    if (dbPath.isEmpty) return;
+    for (final String suffix in <String>['', '-wal', '-shm']) {
+      final File f = File('$dbPath$suffix');
+      if (await f.exists()) await f.delete();
+    }
+  }
+
+  Future<void> add(String sourcePath, {required String displayName}) async {
+    final LocalAudioDbEntry entry =
+        await importFile(sourcePath, displayName: displayName);
+    final dbs = List<LocalAudioDbEntry>.of(entries)..add(entry);
     await setEntries(dbs);
   }
 
@@ -108,10 +132,7 @@ class LocalAudioManager {
     final dbs = List<LocalAudioDbEntry>.of(entries);
     if (index < 0 || index >= dbs.length) return;
     final entry = dbs.removeAt(index);
-    for (final suffix in ['', '-wal', '-shm']) {
-      final f = File('${entry.path}$suffix');
-      if (await f.exists()) await f.delete();
-    }
+    await deleteFiles(entry.path);
     await setEntries(dbs);
   }
 
