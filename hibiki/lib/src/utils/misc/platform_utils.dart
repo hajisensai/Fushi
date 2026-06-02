@@ -25,6 +25,14 @@ bool get supportsFloatingOverlay => Platform.isAndroid;
 
 bool get isWindowsPlatform => Platform.isWindows;
 
+/// 桌面端用 MD3 的钳制滚动（去掉 iOS 风格回弹），其它平台保持原有可回弹物理。
+/// 始终保留 AlwaysScrollable 外层，使短内容也可滚动 / 触发下拉刷新等行为。
+ScrollPhysics desktopAwareScrollPhysics() {
+  return isDesktopPlatform
+      ? const AlwaysScrollableScrollPhysics(parent: ClampingScrollPhysics())
+      : const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics());
+}
+
 enum WindowSizeClass { compact, medium, expanded }
 
 enum DesktopContentKind { readerShelf, dictionary, settings }

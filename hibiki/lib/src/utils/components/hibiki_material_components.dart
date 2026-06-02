@@ -106,6 +106,9 @@ class _HibikiCardState extends State<HibikiCard> {
 
 enum HibikiListDensity { standard, compact }
 
+/// 选中态高亮形状：fill = 满宽方角（平铺列表），pill = 内缩圆角（导航列表）。
+enum HibikiListItemSelectedShape { fill, pill }
+
 class HibikiListItem extends StatefulWidget {
   const HibikiListItem({
     required this.title,
@@ -114,6 +117,7 @@ class HibikiListItem extends StatefulWidget {
     this.leading,
     this.trailing,
     this.selected = false,
+    this.selectedShape = HibikiListItemSelectedShape.fill,
     this.onTap,
     this.minHeight,
     this.density = HibikiListDensity.standard,
@@ -128,6 +132,7 @@ class HibikiListItem extends StatefulWidget {
   final Widget? leading;
   final Widget? trailing;
   final bool selected;
+  final HibikiListItemSelectedShape selectedShape;
   final VoidCallback? onTap;
   final double? minHeight;
   final HibikiListDensity density;
@@ -211,16 +216,26 @@ class _HibikiListItemState extends State<HibikiListItem> {
       ),
     );
 
+    final bool pill = widget.selectedShape == HibikiListItemSelectedShape.pill;
+    final BorderRadius? highlightRadius =
+        pill ? tokens.radii.groupRadius : null;
     final Widget material = AnimatedContainer(
       duration: hibikiMd3StateDuration,
       curve: hibikiMd3StateCurve,
-      color: color,
+      margin: pill
+          ? EdgeInsets.symmetric(horizontal: tokens.spacing.gap)
+          : EdgeInsets.zero,
+      color: pill ? null : color,
+      decoration: pill
+          ? BoxDecoration(color: color, borderRadius: highlightRadius)
+          : null,
       child: Material(
         type: MaterialType.transparency,
         child: widget.onTap == null
             ? content
             : InkWell(
                 onTap: widget.onTap,
+                borderRadius: highlightRadius,
                 child: content,
               ),
       ),
