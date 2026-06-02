@@ -8,7 +8,7 @@
 - source：`hibiki/lib/src/media/sources/reader_hibiki_source.dart`，类 `ReaderHibikiSource`。
 - JS / CSS：`hibiki/lib/src/reader/` 下 `reader_pagination_scripts.dart`、`reader_content_styles.dart`、`reader_selection_scripts.dart`、`reader_caret_scripts.dart`。
 - **JS 桥接全局仍叫 `window.hoshiReader`**（历史命名，是真实符号，不要改）；字级焦点用 `window.hoshiCaret` + Dart `ReaderCaretRouter`。
-- 当前阅读器问题**不要**去 `D:\ttu-fork` 修。
+- 当前阅读器问题**不要**去上游 ttu fork 仓库改。
 
 ## TTU 命名残留 vs 迁移代码
 

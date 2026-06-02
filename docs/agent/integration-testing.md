@@ -20,7 +20,7 @@
 - ADB 脚本（`ci/*.sh`）**不得**向 Flutter 文本框输入 CJK——`input text` 在 Android 上不支持 Unicode，`settext.jar` 找不到 Flutter 的 EditText。CJK 文字输入只能通过 `tester.enterText()` 在 Flutter 集成测试里完成。
 - 导入验证优先用 DB 查询（`run-as app.hibiki.reader sqlite3 files/hibiki.db`），不依赖 UI dump 匹配文字。
 - **禁止通过截图猜坐标点击 UI 元素。** 如果必须通过 ADB 点击（而非 `flutter drive`），先 `uiautomator dump` → 解析 XML 找 `content-desc`/`text` 匹配的元素 → 从 `bounds` 算中心坐标 → `input tap`。辅助脚本：`.codex-test/tools/tap-element.sh <content-desc>`、`.codex-test/tools/list-elements.sh`。
-- **ADB 路径固定用** `D:/android_sdk/platform-tools/adb.exe`，不依赖 PATH 中的 adb。
+- adb 用 Android SDK 自带的 `platform-tools/adb`（`$ANDROID_HOME` 下；确保版本够新），不要依赖 PATH 里可能过时的 adb。
 - 需要新增测试流程时，先判断属于哪一层，不要在错误的层做事。
 - 不要在同一台模拟器上并发跑两个编排脚本——日志会互相污染。
 
@@ -83,38 +83,15 @@ SELECT COUNT(*) FROM preferences;       -- 偏好设置条数
 SELECT name FROM profiles;              -- Profile 列表
 ```
 
-## 测试素材（仓库外，不入库）
+## 测试素材
 
-固定测试资料放仓库外固定路径，不纳入 git（`.codex-test/` 整体 gitignored）；临时截图、UI XML、logcat 片段放 `.codex-test/` 下，并在最终回复里给出具体路径。
+自动化集成测试**不依赖任何外部素材**：库依赖类测试（`reader_dictionary` / `reader_keyboard` / `regression`）由 `integration_test/helpers/library_fixture.dart` 自带 fixture —— `seedReaderBook` 用 `EpubGenerator`+`EpubImporter` 程序化导入合成 EPUB，`seedDictionary` 导入 runner 推送的字典。全新安装也能跑，无需准备任何文件。
 
-| 类型 | 路径 |
-|------|------|
-| EPUB | `.codex-test/fixtures/kagami/かがみの孤城 (辻村深月) (Z-Library).epub` |
-| 音频 | `.codex-test/fixtures/kagami/かがみの孤城 [audiobook.jp 244083].m4b` |
-| 字幕 | `.codex-test/fixtures/kagami/かがみの孤城 [audiobook.jp 244083].srt` |
-| 字典 | `D:\辞典\` 目录下任意 `.zip` |
+需要用真实素材做手动/额外测试时（各人路径不同，不写死）：
 
-`D:\辞典\` 可用字典清单：
-- `明镜日汉双解词典_Yomitan 1.4.4.zip`
-- `[JA-JA] 日本語俗語辞書.zip`
-- `[JA-JA] 実用日本語表現辞典.zip`
-- `[JA Freq] BCCWJ_SUW_LUW_combined.zip`
-- `[JA Freq] JPDB_v2.2_Frequency_Kana_2024-10-13.zip`
-- `どんなときどう使う 日本語表現文型辞典_1_05.zip`
-- `[JA-JA] 明鏡国語辞典 第三版[2025-08-18].zip`
-- `（大修館）明鏡国語辞典［第二版］.zip`
-- `Nihongo-Bunkei-Jiten.zip`
-- `[JA-JA] ことわざ・慣用句の百科事典.zip`
-- `[JA-JA] 絵でわかる慣用句 [2024-06-30].zip`
-- `[JA-JA Expressions] 故事ことわざの辞典.zip`
-- `[JA-JA Grammar] [画像付き] 絵でわかる日本語 v3.zip`
-- `大辞泉/大辞泉 第二版[2025-04-29][no-images].zip`
-- `大辞泉/大辞泉 第二版[2025-04-29].zip`
-- `旺文社国語辞典 第十二版/旺文社国語辞典 第十二版[2025-04-29].zip`
-- `小学館 例解学習国語 第十二版/小学館例解学習国語 第十二版[2025-08-18].zip`
-- `[Pitch] NHK日本語発音アクセント新辞典.zip`
-
-推送到模拟器时可改成 ASCII 文件名，避免 Windows/adb 对日文文件名抽风（如 `/sdcard/Download/hibiki-test/kagami/kagami.epub`）。大文件推送后必须用 `adb shell ls -lh` 确认大小，不要只信 `adb push` 的一行输出。
+- 把自己的 EPUB / 音频 / 字幕 / 字典(`.zip`) 放进仓库外的 `.codex-test/fixtures/<任意名>/`（`.codex-test/` 整体 gitignored，不入库），在脚本或测试里引用该路径；或直接在 app 内手动导入。
+- 临时截图、UI XML、logcat 片段也放 `.codex-test/` 下，并在最终回复里给出具体路径。
+- 推送到模拟器时用 ASCII 文件名（避免 Windows/adb 对 CJK 文件名抽风）；大文件推送后用 `adb shell ls -lh` 确认大小，不要只信 `adb push` 的一行输出。
 
 ## 手工验证与证据留存
 

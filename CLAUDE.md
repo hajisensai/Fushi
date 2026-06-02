@@ -34,7 +34,7 @@
 - 状态管理 Riverpod；音频 just_audio（桌面经 just_audio_media_kit）；录音 record 6.x。
 - 主存储是 Drift SQLite（`HibikiDatabase`，schema v14），偏好落 Drift `preferences` 表 + `profile_settings` 每 Profile 快照。**已无 Isar/Hive 依赖**；旧注释里的 Isar/Hive 不代表当前事实，先查代码再判断。
 - EPUB 阅读器走 reader_hibiki 实现（见仓库地图）。`reader_ttu` key、`setTtu*` 方法、`ttuBookId` 列、`ttu_*` i18n 只是旧数据兼容残留，不代表还有 TTU 阅读器；没有迁移方案别随手改这些持久化 key。
-- 旧 TTU 迁移代码已移除（develop `90c37b472`：`TtuMigrationServer` / `TtuIdbReader` / `assets/ttu-ebook-reader` 均已删除）；只剩上述命名残留作旧数据兼容。阅读器渲染/交互问题按 reader_hibiki 路径修，不要去 `D:\ttu-fork`。
+- 旧 TTU 迁移代码已移除（develop `90c37b472`：`TtuMigrationServer` / `TtuIdbReader` / `assets/ttu-ebook-reader` 均已删除）；只剩上述命名残留作旧数据兼容。阅读器渲染/交互问题按 reader_hibiki 路径修，不要去上游 ttu fork 仓库改。
 - 词典导入/查询核心走 `hoshidicts` C++ FFI；格式 UI 或旧 Dart format 类不一定是真实导入路径。
 - 国际化用 Slang，源文件 `hibiki/lib/i18n/*.i18n.json`（17 种语言），生成文件 `strings.g.dart`。
 - 5 平台均出包（Android/iOS/macOS/Windows/Linux）：Android 走 Material Design 3，iOS 走 Cupertino，桌面端复用 Material 架构并依赖 fork 的 `flutter_inappwebview_windows` 渲染 EPUB。
@@ -47,8 +47,8 @@
 ## 验证
 
 - 文档改动：至少 `git diff --cached --check`，不必跑 Flutter 测试。
-- Dart/Flutter 改动（在 `hibiki/` 下）：`dart.bat format .` + `flutter.bat test`（完整路径见 [docs/agent/build.md](docs/agent/build.md)）。
-- Android 资源/manifest/Gradle/权限/通知/前台服务/打包改动：再加 `cd hibiki\android && .\gradlew.bat :app:assembleRelease`。
+- Dart/Flutter 改动（在 `hibiki/` 下）：`dart format .` + `flutter test`（用项目的 Flutter 3.41.6 工具链；本机 flutter 不在 PATH 就把完整路径写进 `CLAUDE.local.md`）。
+- Android 资源/manifest/Gradle/权限/通知/前台服务/打包改动：再加 `gradlew :app:assembleRelease`（在 `hibiki/android/`；Windows 用 `.\gradlew.bat`）。
 - 阅读器/导入/播放/布局问题，声明「修好了」前必须用真实模拟器或用户指定设备复测原始失败路径并留证据（见 [docs/agent/integration-testing.md](docs/agent/integration-testing.md)）。
 
 ## 提交
