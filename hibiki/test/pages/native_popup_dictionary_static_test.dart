@@ -44,6 +44,50 @@ void main() {
     expect(layoutSource, isNot(contains('android.R.drawable.ic_menu_search')));
   });
 
+  test('native popup mirrors in-reader popup surface and compact search row',
+      () {
+    final String source = File(popupActivityPath).readAsStringSync();
+    final String layoutSource = _functionSource(
+      source,
+      'private fun buildLayout() {',
+      'private fun buildMaterialSearchBar(colors: PopupMaterialColors): LinearLayout {',
+    );
+    final String searchSource = _functionSource(
+      source,
+      'private fun buildMaterialSearchBar(colors: PopupMaterialColors): LinearLayout {',
+      'private fun buildIconButton(',
+    );
+    final String iconSource = _functionSource(
+      source,
+      'private fun buildIconButton(',
+      'private fun submitSearchFromField()',
+    );
+    final String injectionSource = _functionSource(
+      source,
+      'private fun injectResults(',
+      'private fun injectError(message: String) {',
+    );
+
+    expect(source, contains('POPUP_SURFACE_RADIUS_DP = 12f'));
+    expect(source, contains('SEARCH_ROW_RADIUS_DP = 16f'));
+    expect(source, contains('SEARCH_ROW_HEIGHT_DP = 44f'));
+    expect(source, contains('ICON_BUTTON_SIZE_DP = 40f'));
+    expect(layoutSource, contains('radiusDp = POPUP_SURFACE_RADIUS_DP'));
+    expect(layoutSource, contains('setBackgroundColor(Color.TRANSPARENT)'));
+    expect(layoutSource, contains('addPopupDivider(root, colors)'));
+    expect(layoutSource, isNot(contains('setPadding(dp(10f)')));
+    expect(searchSource, contains('radiusDp = SEARCH_ROW_RADIUS_DP'));
+    expect(searchSource, contains('dp(SEARCH_ROW_HEIGHT_DP)'));
+    expect(searchSource, contains('colors.search'));
+    expect(
+        searchSource, contains('setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)'));
+    expect(iconSource, contains('dp(ICON_BUTTON_SIZE_DP)'));
+    expect(iconSource, contains('colors.onSurfaceVariant'));
+    expect(injectionSource,
+        contains('val bgColor = safeDictColor ?: "transparent"'));
+    expect(injectionSource, contains('--background-color'));
+  });
+
   test('native popup injects MD3 color tokens into popup html', () {
     final String source = File(popupActivityPath).readAsStringSync();
     final String injectionSource = _functionSource(

@@ -10,10 +10,10 @@ import android.os.Build
 import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import android.util.TypedValue
-import android.util.DisplayMetrics
 import android.util.Log
 import android.view.Gravity
 import android.view.KeyEvent
+import android.view.View
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.webkit.JavascriptInterface
@@ -48,6 +48,14 @@ class PopupDictActivity : Activity() {
         private const val MD3_ON_SURFACE_VARIANT_DARK = "#C4C8BE"
         private const val MD3_OUTLINE_VARIANT_LIGHT = "#C4C8BE"
         private const val MD3_OUTLINE_VARIANT_DARK = "#44483F"
+        private const val POPUP_SURFACE_RADIUS_DP = 12f
+        private const val SEARCH_ROW_RADIUS_DP = 16f
+        private const val SEARCH_ROW_HEIGHT_DP = 44f
+        private const val ICON_BUTTON_SIZE_DP = 40f
+        private const val POPUP_EDGE_PADDING_DP = 0f
+        private const val SEARCH_ROW_HORIZONTAL_PADDING_DP = 4f
+        private const val SEARCH_ROW_BOTTOM_MARGIN_DP = 0f
+        private const val POPUP_DIVIDER_HEIGHT_DP = 1f
 
         @Volatile
         private var bridgeInitialized = false
@@ -59,16 +67,16 @@ class PopupDictActivity : Activity() {
     private data class PopupMaterialColors(
         val primary: Int,
         val surface: Int,
-        val surfaceContainer: Int,
-        val surfaceContainerHigh: Int,
+        val card: Int,
+        val search: Int,
         val onSurface: Int,
         val onSurfaceVariant: Int,
         val outlineVariant: Int,
     ) {
         val cssPrimary: String get() = toCssColor(primary)
         val cssSurface: String get() = toCssColor(surface)
-        val cssSurfaceContainer: String get() = toCssColor(surfaceContainer)
-        val cssSurfaceContainerHigh: String get() = toCssColor(surfaceContainerHigh)
+        val cssSurfaceContainer: String get() = toCssColor(card)
+        val cssSurfaceContainerHigh: String get() = toCssColor(search)
         val cssOnSurface: String get() = toCssColor(onSurface)
         val cssOnSurfaceVariant: String get() = toCssColor(onSurfaceVariant)
         val cssOutlineVariant: String get() = toCssColor(outlineVariant)
@@ -86,10 +94,10 @@ class PopupDictActivity : Activity() {
                 return PopupMaterialColors(
                     primary = Color.parseColor(if (isDark) MD3_PRIMARY_DARK else MD3_PRIMARY_LIGHT),
                     surface = Color.parseColor(if (isDark) MD3_SURFACE_DARK else MD3_SURFACE_LIGHT),
-                    surfaceContainer = Color.parseColor(
+                    card = Color.parseColor(
                         if (isDark) MD3_SURFACE_CONTAINER_DARK else MD3_SURFACE_CONTAINER_LIGHT
                     ),
-                    surfaceContainerHigh = Color.parseColor(
+                    search = Color.parseColor(
                         if (isDark) MD3_SURFACE_CONTAINER_HIGH_DARK else MD3_SURFACE_CONTAINER_HIGH_LIGHT
                     ),
                     onSurface = Color.parseColor(if (isDark) MD3_ON_SURFACE_DARK else MD3_ON_SURFACE_LIGHT),
@@ -184,19 +192,25 @@ class PopupDictActivity : Activity() {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(10f), dp(10f), dp(10f), dp(10f))
+            setPadding(
+                dp(POPUP_EDGE_PADDING_DP),
+                dp(POPUP_EDGE_PADDING_DP),
+                dp(POPUP_EDGE_PADDING_DP),
+                dp(POPUP_EDGE_PADDING_DP)
+            )
             background = roundedRect(
                 color = colors.surface,
-                radiusDp = 24f,
+                radiusDp = POPUP_SURFACE_RADIUS_DP,
                 strokeColor = colors.outlineVariant,
                 strokeDp = 1f,
             )
-            elevation = dp(6f).toFloat()
+            elevation = 0f
             clipToOutline = true
         }
 
         val searchBar = buildMaterialSearchBar(colors)
         root.addView(searchBar)
+        addPopupDivider(root, colors)
 
         webView = WebView(this).apply {
             settings.javaScriptEnabled = true
@@ -207,7 +221,7 @@ class PopupDictActivity : Activity() {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
             )
-            setBackgroundColor(colors.surface)
+            setBackgroundColor(Color.TRANSPARENT)
         }
         webView.addJavascriptInterface(PopupJsInterface(), "androidBridge")
         webView.webViewClient = object : WebViewClient() {
@@ -243,18 +257,16 @@ class PopupDictActivity : Activity() {
         val searchBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(4f), 0, dp(4f), 0)
+            setPadding(dp(SEARCH_ROW_HORIZONTAL_PADDING_DP), 0, dp(SEARCH_ROW_HORIZONTAL_PADDING_DP), 0)
             background = roundedRect(
-                color = colors.surfaceContainerHigh,
-                radiusDp = 24f,
-                strokeColor = colors.outlineVariant,
-                strokeDp = 1f,
+                color = colors.search,
+                radiusDp = SEARCH_ROW_RADIUS_DP,
             )
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(48f),
+                dp(SEARCH_ROW_HEIGHT_DP),
             ).apply {
-                bottomMargin = dp(8f)
+                bottomMargin = dp(SEARCH_ROW_BOTTOM_MARGIN_DP)
             }
         }
 
@@ -271,7 +283,7 @@ class PopupDictActivity : Activity() {
             isSingleLine = true
             imeOptions = EditorInfo.IME_ACTION_SEARCH
             setSingleLine(true)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
             setTextColor(colors.onSurface)
             setHintTextColor(colors.onSurfaceVariant)
             includeFontPadding = false
@@ -322,9 +334,19 @@ class PopupDictActivity : Activity() {
             this.contentDescription = contentDescription
             background = iconButtonBackground(colors)
             scaleType = ImageView.ScaleType.CENTER
-            layoutParams = LinearLayout.LayoutParams(dp(40f), dp(40f))
+            layoutParams = LinearLayout.LayoutParams(dp(ICON_BUTTON_SIZE_DP), dp(ICON_BUTTON_SIZE_DP))
             setOnClickListener { onClick() }
         }
+    }
+
+    private fun addPopupDivider(root: LinearLayout, colors: PopupMaterialColors) {
+        root.addView(View(this).apply {
+            setBackgroundColor(colors.outlineVariant)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(POPUP_DIVIDER_HEIGHT_DP),
+            )
+        })
     }
 
     private fun submitSearchFromField() {
@@ -423,7 +445,7 @@ class PopupDictActivity : Activity() {
         val safeDictColor = prefs.overrideDictColor?.takeIf {
             it.matches(Regex("^(rgb\\(\\d{1,3},\\s*\\d{1,3},\\s*\\d{1,3}\\)|#[0-9a-fA-F]{3,8})$"))
         }
-        val bgColor = safeDictColor ?: colors.cssSurface
+        val bgColor = safeDictColor ?: "transparent"
         val textColor = colors.cssOnSurface
         val collapsedJson = JSONArray(prefs.collapsedDictNames).toString()
         val safeCustomCss = try {
