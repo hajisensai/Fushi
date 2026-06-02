@@ -1566,17 +1566,6 @@ class AppModel with ChangeNotifier {
     dictionaryMenuNotifier.notifyListeners();
   }
 
-  /// Show the language menu. This should be callable from many parts of the
-  /// app, so it is appropriately handled by the model.
-  Future<void> showLanguageMenu() async {
-    final ctx = _ctx;
-    if (ctx == null) return;
-    await showAppDialog(
-      context: ctx,
-      builder: (context) => const LanguageDialogPage(),
-    );
-  }
-
   /// Show the profiles management page.
   Future<void> showProfilesMenu() async {
     final ctx = _ctx;

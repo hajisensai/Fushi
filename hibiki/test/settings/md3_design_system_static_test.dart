@@ -219,9 +219,6 @@ void main() {
     'lib/src/media/audiobook/reader_quick_settings_sheet.dart': <String>[
       'HibikiTextField',
     ],
-    'lib/src/pages/implementations/language_dialog_page.dart': <String>[
-      'HibikiDesignTokens',
-    ],
     'lib/src/media/audiobook/audiobook_play_bar.dart': <String>[
       'HibikiIconButton',
     ],
@@ -340,9 +337,6 @@ void main() {
         'ListTile(',
         'OutlineInputBorder',
         'shape: BoxShape.circle',
-      ],
-      'lib/src/pages/implementations/language_dialog_page.dart': <String>[
-        'fontSize: 10',
       ],
       'lib/src/pages/implementations/media_item_dialog_page.dart': <String>[
         'return Dialog(',

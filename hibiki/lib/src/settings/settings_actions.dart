@@ -284,6 +284,32 @@ Widget buildProfilePickerRow(SettingsContext settingsContext) {
   );
 }
 
+/// App-UI language picker. With 17 locales it crosses
+/// [kSettingsPickerInlineLimit], so [AdaptiveSettingsPickerRow] renders a
+/// chevron row that pushes the searchable full-page selector instead of an
+/// overlay dropdown that would overflow the screen.
+Widget buildLanguageSelector(SettingsContext settingsContext) {
+  final AppModel appModel = settingsContext.appModel;
+  final String current = appModel.appLocale.toLanguageTag();
+  return AdaptiveSettingsPickerRow<String>(
+    title: t.options_language,
+    icon: Icons.translate_outlined,
+    selected: current,
+    options: <AdaptiveSettingsPickerOption<String>>[
+      for (final MapEntry<String, String> entry
+          in HibikiLocalisations.localeNames.entries)
+        AdaptiveSettingsPickerOption<String>(
+          value: entry.key,
+          label: entry.value,
+        ),
+    ],
+    onChanged: (String tag) {
+      appModel.setAppLocale(tag);
+      settingsContext.refresh();
+    },
+  );
+}
+
 Widget buildThemeSelector(SettingsContext settingsContext) {
   final AppModel appModel = settingsContext.appModel;
   final Color systemColor =
