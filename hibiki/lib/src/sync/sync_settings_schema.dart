@@ -1672,6 +1672,8 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
   LanBroadcastService? _broadcast;
   late final TextEditingController _portController;
   bool _loaded = false;
+  Timer? _pairCountdownTimer;
+  int _pairSecondsLeft = 0;
 
   @override
   void initState() {
@@ -1682,6 +1684,7 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
 
   @override
   void dispose() {
+    _pairCountdownTimer?.cancel();
     _portController.dispose();
     _broadcast?.stop();
     _server?.stop();
@@ -1818,6 +1821,28 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
     }
   }
 
+  /// Open a 60s pairing window on the running server and tick a countdown so
+  /// the user sees how long peers may pair. No-op when the server isn't up.
+  void _openPairing() {
+    final HibikiSyncServer? server = _server;
+    if (server == null || !server.isRunning) return;
+    const int windowSeconds = 60;
+    server.openPairing(window: const Duration(seconds: windowSeconds));
+    _pairCountdownTimer?.cancel();
+    setState(() => _pairSecondsLeft = windowSeconds);
+    _pairCountdownTimer =
+        Timer.periodic(const Duration(seconds: 1), (Timer timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      setState(() {
+        _pairSecondsLeft -= 1;
+        if (_pairSecondsLeft <= 0) timer.cancel();
+      });
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!_loaded) return const SizedBox.shrink();
@@ -1893,6 +1918,19 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
                 ),
               ],
             ),
+            if (running) ...<Widget>[
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: _pairSecondsLeft > 0 ? null : _openPairing,
+                  icon: const Icon(Icons.wifi_tethering, size: 18),
+                  label: Text(_pairSecondsLeft > 0
+                      ? t.sync_pair_window_open(n: _pairSecondsLeft)
+                      : t.sync_pair_open_button),
+                ),
+              ),
+            ],
           ],
         ],
       ),
