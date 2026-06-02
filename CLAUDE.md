@@ -25,7 +25,7 @@
 - Drift 数据库：`packages/hibiki_core/lib/src/database/database.dart` 和 `tables.dart`（schema v14，21 张表，WAL）。
 - 词典 FFI：`packages/hibiki_dictionary/lib/src/engine/hoshidicts.dart`。
 - 有声书：`packages/hibiki_audio/` + `hibiki/lib/src/media/audiobook/`（导入入口 `book_import_dialog.dart` / `audiobook_import_dialog.dart`）。
-- i18n 同步脚本：`hibiki/tool/i18n_sync.dart`；跨机同步脚本：仓库根 `tool/sync_from_mac.ps1` / `tool/sync_to_mac.ps1`。
+- i18n 同步脚本：`hibiki/tool/i18n_sync.dart`。
 - 审查报告：`docs/reviews/YYYY-MM-DD-project-review.md`；已复现回归：`docs/REGRESSION_BUGS.md`（本地，不入库）；测试证据：`.codex-test/`（不入库）。
 
 ## 当前技术事实
@@ -57,11 +57,6 @@
 - 提交前 `git status --short`，**只 stage 本轮相关文件**（禁止 `git add -A`——本工作区可能有并发 agent 的无关改动）；再 `git diff --cached --check`。
 - 提交信息简洁说明真实改动（如 `docs: rewrite agent rules` / `fix(reader): preserve restore position`）。
 - 提交后再 `git status --short`，回复中给出提交哈希和仍存在的无关未提交改动。
-
-## 跨机同步
-
-- Windows ↔ 远端 Mac 以 git commit 为唯一同步单位，用仓库根 `tool\sync_from_mac.ps1` / `tool\sync_to_mac.ps1`（默认拒绝 dirty worktree、只 fast-forward、禁止强推）；分叉时停下人工 rebase/merge。
-- 内网地址、SSH 主机、iOS/macOS 远程构建细节在本机未入库的 `AGENTS.local.md`；需要时读它，换机器手动重建，不入库。
 
 ## 详细操作流程（docs/agent/）
 

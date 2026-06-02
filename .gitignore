@@ -95,3 +95,7 @@ docs/TODO.md
 .ccg/
 .claude/index.json
 .superpowers/
+
+# Local-only agent notes (private remote-build / sync details: SSH host, IP, ports)
+AGENTS.local.md
+CLAUDE.local.md

@@ -8,6 +8,15 @@ packages:
 command:
   bootstrap:
     usePubspecOverrides: true
+    # After `melos bootstrap` resolves deps, finish the fresh-checkout setup so
+    # the workspace is build-ready in one command: seed dart_defines.env and
+    # apply the non-vendored pub-cache patches. Requires bash (Git Bash on
+    # Windows). The Windows-native path is tool/bootstrap.ps1 (melos bootstrap
+    # has a CJK encoding bug on Windows).
+    hooks:
+      post: |
+        bash ci/ensure-dart-defines.sh
+        bash ci/apply-patches.sh
 
 scripts:
   analyze:
