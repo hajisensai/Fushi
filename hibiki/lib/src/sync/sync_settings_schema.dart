@@ -1638,6 +1638,7 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
   int _port = SyncRepository.defaultServerPort;
   String? _token;
   HibikiSyncServer? _server;
+  LanBroadcastService? _broadcast;
   late final TextEditingController _portController;
   bool _loaded = false;
 
@@ -1651,6 +1652,7 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
   @override
   void dispose() {
     _portController.dispose();
+    _broadcast?.stop();
     _server?.stop();
     super.dispose();
   }
@@ -1724,6 +1726,9 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
       // (HBK-AUDIT-167).
       await SyncRepository(widget.settingsContext.appModel.database)
           .setServerEnabled(true);
+      // Advertise on the LAN using the ACTUAL bound port so peers discover the
+      // host even when the requested port was 0/auto or differs from _port.
+      await _startBroadcast(_server!.port);
       if (mounted) setState(() {});
     } on SyncServerPortInUseException catch (e) {
       _server = null;
@@ -1741,7 +1746,31 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
     }
   }
 
+  Future<void> _startBroadcast(int boundPort) async {
+    final SyncRepository repo =
+        SyncRepository(widget.settingsContext.appModel.database);
+    final String deviceId = await repo.getOrCreateDeviceId();
+    _broadcast = LanBroadcastService(
+      deviceName: _deviceName(),
+      deviceId: deviceId,
+      port: boundPort,
+    );
+    await _broadcast!.start();
+  }
+
+  /// Human-readable advertisement name. Platform.localHostname is the machine
+  /// name on desktop; falls back to a generic label on mobile or on error.
+  String _deviceName() {
+    try {
+      final String host = Platform.localHostname;
+      if (host.trim().isNotEmpty) return 'Hibiki · $host';
+    } catch (_) {/* localHostname can throw on some platforms */}
+    return 'Hibiki';
+  }
+
   Future<void> _stopServer() async {
+    await _broadcast?.stop();
+    _broadcast = null;
     await _server?.stop();
     _server = null;
     if (mounted) setState(() {});
@@ -1851,7 +1880,7 @@ class _LanDiscoveryWidget extends StatefulWidget {
 }
 
 class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget> {
-  late LanDiscoveryService _discovery;
+  LanDiscoveryService? _discovery;
   List<HibikiDevice> _devices = <HibikiDevice>[];
   bool _scanning = false;
   bool _scanFailed = false;
@@ -1860,27 +1889,37 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget> {
   @override
   void initState() {
     super.initState();
-    _discovery = LanDiscoveryService(deviceId: 'settings-scan');
-    _startScan();
+    _init();
+  }
+
+  Future<void> _init() async {
+    final String deviceId = await SyncRepository(
+            widget.settingsContext.appModel.database)
+        .getOrCreateDeviceId();
+    if (!mounted) return;
+    _discovery = LanDiscoveryService(deviceId: deviceId);
+    await _startScan();
   }
 
   @override
   void dispose() {
     _devicesSub?.cancel();
-    _discovery.dispose();
+    _discovery?.dispose();
     super.dispose();
   }
 
   Future<void> _startScan() async {
+    final LanDiscoveryService? discovery = _discovery;
+    if (discovery == null) return;
     setState(() {
       _scanning = true;
       _scanFailed = false;
     });
-    _devicesSub = _discovery.devices.listen((List<HibikiDevice> devices) {
+    _devicesSub = discovery.devices.listen((List<HibikiDevice> devices) {
       if (mounted) setState(() => _devices = devices);
     });
     try {
-      await _discovery.startDiscovery();
+      await discovery.startDiscovery();
     } catch (e, stack) {
       // Surface the failure instead of showing an empty "no devices" list with
       // no hint that the scan itself failed (permissions/firewall) — HBK-AUDIT-164.
