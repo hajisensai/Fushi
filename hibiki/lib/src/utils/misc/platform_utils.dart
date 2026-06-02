@@ -1,6 +1,6 @@
 import 'dart:io' show Platform;
 
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 
 // Architecture decision: platform branching uses runtime Platform.is* checks
 // centralized in this file, not Dart conditional imports.
@@ -38,6 +38,8 @@ ScrollPhysics desktopAwareScrollPhysics() {
 enum WindowSizeClass { compact, medium, expanded }
 
 enum DesktopContentKind { readerShelf, dictionary, settings }
+
+enum SupportingPaneSide { start, end }
 
 WindowSizeClass windowSizeClassOf(BoxConstraints constraints) {
   final double w = constraints.maxWidth;
@@ -91,6 +93,10 @@ double readerShelfGridExtentForLayout({
   return readerShelfGridExtentForWidth(contentWidth ?? mediaWidth);
 }
 
+double supportingPaneWidthForLayout(double width) {
+  return (width * 0.3).clamp(280.0, 360.0);
+}
+
 class DesktopContentLayout extends StatelessWidget {
   const DesktopContentLayout({
     required this.kind,
@@ -117,6 +123,53 @@ class DesktopContentLayout extends StatelessWidget {
             constraints: BoxConstraints(maxWidth: maxWidth),
             child: padded,
           ),
+        );
+      },
+    );
+  }
+}
+
+class MaterialSupportingPaneLayout extends StatelessWidget {
+  const MaterialSupportingPaneLayout({
+    required this.primary,
+    required this.supporting,
+    super.key,
+    this.supportingSide = SupportingPaneSide.end,
+    this.minSplitWidth = 840,
+    this.dividerColor,
+  });
+
+  final Widget primary;
+  final Widget supporting;
+  final SupportingPaneSide supportingSide;
+  final double minSplitWidth;
+  final Color? dividerColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        if (constraints.maxWidth < minSplitWidth) return primary;
+
+        final double supportingWidth =
+            supportingPaneWidthForLayout(constraints.maxWidth);
+        final Color resolvedDividerColor =
+            dividerColor ?? Theme.of(context).dividerColor;
+        final Widget divider = VerticalDivider(
+          width: 1,
+          thickness: 1,
+          color: resolvedDividerColor,
+        );
+        final Widget fixedSupporting = SizedBox(
+          width: supportingWidth,
+          child: supporting,
+        );
+        final Widget flexiblePrimary = Expanded(child: primary);
+
+        return Row(
+          children: supportingSide == SupportingPaneSide.start
+              ? <Widget>[fixedSupporting, divider, flexiblePrimary]
+              : <Widget>[flexiblePrimary, divider, fixedSupporting],
         );
       },
     );

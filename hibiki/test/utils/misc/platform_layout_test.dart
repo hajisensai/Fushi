@@ -26,6 +26,8 @@ void main() {
 
   group('desktop layout metrics', () {
     const ValueKey<String> childKey = ValueKey<String>('content-child');
+    const ValueKey<String> primaryKey = ValueKey<String>('primary-pane');
+    const ValueKey<String> supportingKey = ValueKey<String>('supporting-pane');
 
     test('keeps mobile layouts unconstrained', () {
       expect(
@@ -175,6 +177,76 @@ void main() {
       );
 
       expect(tester.getSize(find.byKey(childKey)).width, 500);
+    });
+
+    testWidgets('collapses supporting pane layouts below expanded width', (
+      WidgetTester tester,
+    ) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(500, 300);
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(
+        const Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox.expand(
+            child: MaterialSupportingPaneLayout(
+              primary: SizedBox.expand(key: primaryKey),
+              supporting: SizedBox.expand(key: supportingKey),
+            ),
+          ),
+        ),
+      );
+
+      expect(find.byKey(primaryKey), findsOneWidget);
+      expect(find.byKey(supportingKey), findsNothing);
+      expect(tester.getSize(find.byKey(primaryKey)).width, 500);
+    });
+
+    testWidgets('uses 70/30 split for expanded supporting pane layouts', (
+      WidgetTester tester,
+    ) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1000, 300);
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(
+        const Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox.expand(
+            child: MaterialSupportingPaneLayout(
+              primary: SizedBox.expand(key: primaryKey),
+              supporting: SizedBox.expand(key: supportingKey),
+            ),
+          ),
+        ),
+      );
+
+      expect(tester.getSize(find.byKey(primaryKey)).width, 699);
+      expect(tester.getSize(find.byKey(supportingKey)).width, 300);
+    });
+
+    testWidgets('caps supporting pane width on very wide layouts', (
+      WidgetTester tester,
+    ) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1280, 300);
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(
+        const Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox.expand(
+            child: MaterialSupportingPaneLayout(
+              primary: SizedBox.expand(key: primaryKey),
+              supporting: SizedBox.expand(key: supportingKey),
+            ),
+          ),
+        ),
+      );
+
+      expect(tester.getSize(find.byKey(supportingKey)).width, 360);
+      expect(tester.getSize(find.byKey(primaryKey)).width, 919);
     });
   });
 }

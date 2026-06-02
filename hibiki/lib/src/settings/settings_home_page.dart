@@ -125,27 +125,24 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage> {
     // (`surfaces.group`) while the detail pane stays on the base page surface.
     // Material only — Cupertino keeps its system background untouched.
     final Color? navPaneColor = cupertino ? null : tokens.surfaces.group;
-    return Row(
-      children: <Widget>[
-        Container(
-          width: 280,
-          color: navPaneColor,
-          child: renderer.buildDestinationList(
-            settingsContext: settingsContext,
-            destinations: destinations,
-            selectedDestinationId: _selectedDestinationId,
-            onDestinationSelected: _selectDestination,
-            pushRoutes: false, // master-detail keeps selection in-pane.
-          ),
+    return MaterialSupportingPaneLayout(
+      minSplitWidth: 720,
+      supportingSide: SupportingPaneSide.start,
+      dividerColor: dividerColor,
+      supporting: Container(
+        color: navPaneColor,
+        child: renderer.buildDestinationList(
+          settingsContext: settingsContext,
+          destinations: destinations,
+          selectedDestinationId: _selectedDestinationId,
+          onDestinationSelected: _selectDestination,
+          pushRoutes: false, // master-detail keeps selection in-pane.
         ),
-        VerticalDivider(width: 1, thickness: 1, color: dividerColor),
-        Expanded(
-          child: renderer.buildDetailContent(
-            settingsContext: settingsContext,
-            destination: selected,
-          ),
-        ),
-      ],
+      ),
+      primary: renderer.buildDetailContent(
+        settingsContext: settingsContext,
+        destination: selected,
+      ),
     );
   }
 
