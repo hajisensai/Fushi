@@ -1860,11 +1860,7 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget> {
   @override
   void initState() {
     super.initState();
-    _discovery = LanDiscoveryService(
-      deviceName: 'Hibiki',
-      port: SyncRepository.defaultServerPort,
-      deviceId: 'settings-scan',
-    );
+    _discovery = LanDiscoveryService(deviceId: 'settings-scan');
     _startScan();
   }
 

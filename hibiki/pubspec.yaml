@@ -113,7 +113,6 @@ dependencies:
   sliver_tools: ^0.2.12
   stack_trace: ^1.11.1
   shelf: ^1.4.0
-  multicast_dns: ^0.3.2+6
   ftpconnect: ^2.0.10
   dartssh2: ^2.9.0
   crypto: ^3.0.0
@@ -124,6 +123,7 @@ dependencies:
   wakelock_plus: ^1.1.4
   record: 6.0.0
   brotli: ^0.6.0
+  bonsoir: ^7.1.1
 dependency_overrides:
   flutter_inappwebview_windows:
     path: ../packages/flutter_inappwebview_windows
