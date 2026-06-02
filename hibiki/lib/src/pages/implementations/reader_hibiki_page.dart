@@ -4300,6 +4300,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
                       ReaderHibikiSource.instance.skipActionSeconds,
                   onOpenSettings: _showAppearanceSheet,
                   backgroundColor: _themeBackgroundColor(),
+                  foregroundColor: _themeTextColor(),
                   reversed: appModel.reverseNavigationBar,
                 ),
                 ColoredBox(
