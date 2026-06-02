@@ -1347,6 +1347,10 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget> {
     _syncSettings(widget.settingsContext)
         .clientConfigRevision
         .addListener(_onClientConfigRevision);
+    // Rebuild when the server-enabled flag flips so "add connection" re-gates.
+    _syncSettings(widget.settingsContext)
+        .roleRevision
+        .addListener(_onRoleRevision);
   }
 
   @override
@@ -1354,9 +1358,16 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget> {
     _syncSettings(widget.settingsContext)
         .clientConfigRevision
         .removeListener(_onClientConfigRevision);
+    _syncSettings(widget.settingsContext)
+        .roleRevision
+        .removeListener(_onRoleRevision);
     _tokenFocus.dispose();
     _tokenController.dispose();
     super.dispose();
+  }
+
+  void _onRoleRevision() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _load() async {
@@ -1368,6 +1379,8 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget> {
       _tokenController.text = token ?? '';
       _loaded = true;
     });
+    _syncSettings(widget.settingsContext)
+        .setHasClientConnection(urls.isNotEmpty);
   }
 
   void _onClientConfigRevision() {
@@ -1387,9 +1400,17 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget> {
         _tokenController.text = token ?? '';
       }
     });
+    _syncSettings(widget.settingsContext)
+        .setHasClientConnection(urls.isNotEmpty);
   }
 
-  Future<void> _persistUrls() => _repo.setHibikiClientUrls(_urls);
+  Future<void> _persistUrls() async {
+    await _repo.setHibikiClientUrls(_urls);
+    // Keep the role lock honest: deleting the last URL must release the server
+    // toggle; adding one must lock it. Every URL mutation routes through here.
+    _syncSettings(widget.settingsContext)
+        .setHasClientConnection(_urls.isNotEmpty);
+  }
 
   Future<void> _saveToken() async {
     try {
@@ -1539,6 +1560,11 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget> {
   Widget build(BuildContext context) {
     if (!_loaded) return const SizedBox.shrink();
     final ThemeData theme = Theme.of(context);
+    // Mutual exclusion: while this device serves peers, it can't also connect
+    // out as a client. Block adding/editing connections; deleting stays allowed
+    // so the user can clear them and switch roles.
+    final bool lockedByServer =
+        _syncSettings(widget.settingsContext).serverEnabled;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Column(
@@ -1581,7 +1607,9 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget> {
                                   : theme.colorScheme.error,
                             ),
                           ),
-                    onTap: () => _addOrEditUrl(index: index),
+                    onTap: lockedByServer
+                        ? null
+                        : () => _addOrEditUrl(index: index),
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: <Widget>[
@@ -1617,10 +1645,20 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget> {
                 );
               },
             ),
+          if (lockedByServer)
+            Padding(
+              padding: const EdgeInsets.only(top: 4, bottom: 4),
+              child: Text(
+                t.sync_role_locked_by_server,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
           Align(
             alignment: Alignment.centerLeft,
             child: TextButton.icon(
-              onPressed: () => _addOrEditUrl(),
+              onPressed: lockedByServer ? null : () => _addOrEditUrl(),
               icon: const Icon(Icons.add, size: 18),
               label: Text(t.dialog_add),
             ),
@@ -1679,15 +1717,26 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
   void initState() {
     super.initState();
     _portController = TextEditingController(text: '$_port');
+    // Rebuild when the client-connection flag flips so the toggle re-gates.
+    _syncSettings(widget.settingsContext)
+        .roleRevision
+        .addListener(_onRoleRevision);
     _loadSettings();
   }
 
   @override
   void dispose() {
+    _syncSettings(widget.settingsContext)
+        .roleRevision
+        .removeListener(_onRoleRevision);
     _portController.dispose();
     _broadcast?.stop();
     _server?.stop();
     super.dispose();
+  }
+
+  void _onRoleRevision() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _loadSettings() async {
@@ -1707,6 +1756,7 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
         _token = token;
         _loaded = true;
       });
+      _syncSettings(widget.settingsContext).setServerEnabled(enabled);
       if (enabled) await _startServer();
     }
   }
@@ -1739,6 +1789,7 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
   Future<void> _disableAfterStartFailure() async {
     await SyncRepository(widget.settingsContext.appModel.database)
         .setServerEnabled(false);
+    _syncSettings(widget.settingsContext).setServerEnabled(false);
     if (mounted) setState(() => _enabled = false);
   }
 
@@ -1759,6 +1810,7 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
       // (HBK-AUDIT-167).
       await SyncRepository(widget.settingsContext.appModel.database)
           .setServerEnabled(true);
+      _syncSettings(widget.settingsContext).setServerEnabled(true);
       // Advertise on the LAN using the ACTUAL bound port so peers discover the
       // host even when the requested port was 0/auto or differs from _port.
       await _startBroadcast(_server!.port);
@@ -1923,6 +1975,11 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
   Widget build(BuildContext context) {
     if (!_loaded) return const SizedBox.shrink();
     final bool running = _server != null && _server!.isRunning;
+    // Mutual exclusion: block turning the server ON while this device is a
+    // client of a peer. Turning OFF an already-running server stays allowed so
+    // the user can always escape (and legacy both-on data can't deadlock).
+    final bool lockedByClient =
+        _syncSettings(widget.settingsContext).hasClientConnection && !_enabled;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Column(
@@ -1930,21 +1987,29 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
         children: <Widget>[
           AdaptiveSettingsSwitchRow(
             title: t.sync_server_enable,
-            subtitle: running ? t.sync_server_running : t.sync_server_stopped,
+            subtitle: lockedByClient
+                ? t.sync_role_locked_by_client
+                : (running ? t.sync_server_running : t.sync_server_stopped),
             value: _enabled,
-            onChanged: (bool v) async {
-              if (v) {
-                // Reflect the toggle while starting; _startServer persists
-                // enabled on success and resets it on failure (HBK-AUDIT-167).
-                setState(() => _enabled = true);
-                await _startServer();
-              } else {
-                setState(() => _enabled = false);
-                await SyncRepository(widget.settingsContext.appModel.database)
-                    .setServerEnabled(false);
-                await _stopServer();
-              }
-            },
+            onChanged: lockedByClient
+                ? null
+                : (bool v) async {
+                    if (v) {
+                      // Reflect the toggle while starting; _startServer persists
+                      // enabled on success and resets it on failure
+                      // (HBK-AUDIT-167).
+                      setState(() => _enabled = true);
+                      await _startServer();
+                    } else {
+                      setState(() => _enabled = false);
+                      await SyncRepository(
+                              widget.settingsContext.appModel.database)
+                          .setServerEnabled(false);
+                      _syncSettings(widget.settingsContext)
+                          .setServerEnabled(false);
+                      await _stopServer();
+                    }
+                  },
           ),
           if (_enabled) ...<Widget>[
             const SizedBox(height: 8),
@@ -2024,7 +2089,15 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget> {
   @override
   void initState() {
     super.initState();
+    // Rebuild when the server-enabled flag flips so device taps re-gate.
+    _syncSettings(widget.settingsContext)
+        .roleRevision
+        .addListener(_onRoleRevision);
     _init();
+  }
+
+  void _onRoleRevision() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _init() async {
@@ -2045,6 +2118,9 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget> {
 
   @override
   void dispose() {
+    _syncSettings(widget.settingsContext)
+        .roleRevision
+        .removeListener(_onRoleRevision);
     _devicesSub?.cancel();
     _discovery?.dispose();
     super.dispose();
@@ -2083,6 +2159,8 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget> {
     // Always record the address (deduped) so the user keeps the URL even if
     // the host declines and they fall back to pasting the token.
     await repo.addHibikiClientUrl(device.webDavUrl);
+    // A client connection now exists → lock this device out of server mode.
+    state.setHasClientConnection(true);
 
     setState(() => _pairingUrl = device.webDavUrl);
     String message;
@@ -2153,6 +2231,10 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget> {
 
   @override
   Widget build(BuildContext context) {
+    // Mutual exclusion: while this device serves peers, it can't connect out as
+    // a client, so device taps are inert and a note explains why.
+    final bool lockedByServer =
+        _syncSettings(widget.settingsContext).serverEnabled;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Column(
@@ -2172,6 +2254,16 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget> {
             ],
           ),
           const SizedBox(height: 8),
+          if (lockedByServer)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(
+                t.sync_role_locked_by_server,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+              ),
+            ),
           if (_scanFailed)
             Text(t.sync_lan_scan_failed,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -2195,9 +2287,10 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget> {
                   : null,
               minHeight: 52,
               padding: EdgeInsets.zero,
-              // Disable taps while any pairing attempt is in flight.
-              onTap:
-                  _pairingUrl != null ? null : () => _connectToDevice(device),
+              // Disable taps while serving peers, or while a pairing is running.
+              onTap: (lockedByServer || _pairingUrl != null)
+                  ? null
+                  : () => _connectToDevice(device),
             ),
         ],
       ),
@@ -2228,6 +2321,26 @@ class _SyncSettingsState {
 
   void reloadClientConfig() => clientConfigRevision.value++;
 
+  /// Mutual-exclusion role state for the Hibiki interconnect: a device may be a
+  /// host (server on, others connect to it) OR a client (connected outward to a
+  /// peer), never both. The two flags below are the shared truth the server and
+  /// client widgets read to gate each other; [roleRevision] notifies on change.
+  bool serverEnabled = false;
+  bool hasClientConnection = false;
+  final ValueNotifier<int> roleRevision = ValueNotifier<int>(0);
+
+  void setServerEnabled(bool value) {
+    if (serverEnabled == value) return;
+    serverEnabled = value;
+    roleRevision.value++;
+  }
+
+  void setHasClientConnection(bool value) {
+    if (hasClientConnection == value) return;
+    hasClientConnection = value;
+    roleRevision.value++;
+  }
+
   Future<void> load() async {
     if (_loaded || _loading) return;
 
@@ -2239,6 +2352,8 @@ class _SyncSettingsState {
       syncAudioBook = await _repo.isSyncAudioBookEnabled();
       syncDictionary = await _repo.isSyncDictionaryEnabled();
       syncContent = await _repo.isSyncContentEnabled();
+      serverEnabled = await _repo.isServerEnabled();
+      hasClientConnection = (await _repo.getHibikiClientUrls()).isNotEmpty;
       _loaded = true;
       _settingsContext.refresh();
     } finally {
