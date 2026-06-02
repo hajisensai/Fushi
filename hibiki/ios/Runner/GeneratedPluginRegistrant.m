@@ -24,6 +24,12 @@
 @import audio_session;
 #endif
 
+#if __has_include(<bonsoir_darwin/SwiftBonsoirPlugin.h>)
+#import <bonsoir_darwin/SwiftBonsoirPlugin.h>
+#else
+@import bonsoir_darwin;
+#endif
+
 #if __has_include(<device_info_plus/FPPDeviceInfoPlusPlugin.h>)
 #import <device_info_plus/FPPDeviceInfoPlusPlugin.h>
 #else
@@ -198,6 +204,7 @@
   [AsyncZipPlugin registerWithRegistrar:[registry registrarForPlugin:@"AsyncZipPlugin"]];
   [AudioServicePlugin registerWithRegistrar:[registry registrarForPlugin:@"AudioServicePlugin"]];
   [AudioSessionPlugin registerWithRegistrar:[registry registrarForPlugin:@"AudioSessionPlugin"]];
+  [SwiftBonsoirPlugin registerWithRegistrar:[registry registrarForPlugin:@"SwiftBonsoirPlugin"]];
   [FPPDeviceInfoPlusPlugin registerWithRegistrar:[registry registrarForPlugin:@"FPPDeviceInfoPlusPlugin"]];
   [DocumentFileSavePlusPlugin registerWithRegistrar:[registry registrarForPlugin:@"DocumentFileSavePlusPlugin"]];
   [LaunchexternalappPlugin registerWithRegistrar:[registry registrarForPlugin:@"LaunchexternalappPlugin"]];
