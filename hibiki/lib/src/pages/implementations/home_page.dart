@@ -309,30 +309,36 @@ class _HomePageState extends BasePageState<HomePage>
             )));
   }
 
+  /// The three top-level destinations, shared by the bottom bar and the side
+  /// rail so both render the SAME labels and (selected) icons.
+  List<AdaptiveNavItem> _navItems() => <AdaptiveNavItem>[
+        AdaptiveNavItem(
+          icon: Icons.menu_book_outlined,
+          selectedIcon: Icons.menu_book,
+          label: t.books,
+        ),
+        AdaptiveNavItem(
+          icon: Icons.search_outlined,
+          selectedIcon: Icons.search,
+          label: t.dictionaries,
+        ),
+        AdaptiveNavItem(
+          icon: Icons.tune_outlined,
+          selectedIcon: Icons.tune,
+          label: t.settings,
+        ),
+      ];
+
   Widget _buildDesktopLayout(WindowSizeClass sizeClass) {
     final bool reversed = appModel.reverseNavigationBar;
-    final List<NavigationRailDestination> destinations = [
-      NavigationRailDestination(
-        icon: const Icon(Icons.menu_book_outlined),
-        label: Text(t.books),
-      ),
-      NavigationRailDestination(
-        icon: const Icon(Icons.search),
-        label: Text(t.dictionaries),
-      ),
-      NavigationRailDestination(
-        icon: const Icon(Icons.tune_outlined),
-        label: Text(t.settings),
-      ),
-    ];
-    final List<NavigationRailDestination> displayDestinations =
-        reversed ? destinations.reversed.toList() : destinations;
+    final List<AdaptiveNavItem> items = _navItems();
+    final List<AdaptiveNavItem> displayItems =
+        reversed ? items.reversed.toList() : items;
     final int visualIndex =
-        reversed ? (destinations.length - 1 - _currentTab) : _currentTab;
+        reversed ? (items.length - 1 - _currentTab) : _currentTab;
 
     void selectVisual(int index) {
-      final int logicalIndex =
-          reversed ? (destinations.length - 1 - index) : index;
+      final int logicalIndex = reversed ? (items.length - 1 - index) : index;
       setState(() => _currentTab = logicalIndex);
       if (logicalIndex == 0) _loadIconPreset();
     }
@@ -346,23 +352,15 @@ class _HomePageState extends BasePageState<HomePage>
         child: Row(
           children: [
             FocusTraversalGroup(
-              // The rail is one vertical gamepad focus stop: D-pad Up/Down
-              // switches tabs in place (the ring follows it), Right leaves to the
-              // content — instead of focus leaking onto its unregistered
-              // destinations and dropping the ring.
-              child: GamepadNavCluster(
-                axis: Axis.vertical,
-                count: destinations.length,
+              // Each rail destination is its own gamepad/keyboard focus target,
+              // so the app focus ring hugs the single selected item; D-pad
+              // Up/Down steps between them and Left/Right leaves to the content.
+              child: adaptiveNavRail(
+                context: context,
                 currentIndex: visualIndex,
-                onSelect: selectVisual,
-                child: NavigationRail(
-                  leading: _buildRailLeading(),
-                  groupAlignment: 0.0,
-                  selectedIndex: visualIndex,
-                  onDestinationSelected: selectVisual,
-                  labelType: NavigationRailLabelType.all,
-                  destinations: displayDestinations,
-                ),
+                onTap: selectVisual,
+                items: displayItems,
+                leading: _buildRailLeading(),
               ),
             ),
             const VerticalDivider(thickness: 1, width: 1),
@@ -375,23 +373,7 @@ class _HomePageState extends BasePageState<HomePage>
 
   Widget _buildMobileLayout() {
     final bool reversed = appModel.reverseNavigationBar;
-    final List<AdaptiveNavItem> items = [
-      AdaptiveNavItem(
-        icon: Icons.menu_book_outlined,
-        selectedIcon: Icons.menu_book,
-        label: t.books,
-      ),
-      AdaptiveNavItem(
-        icon: Icons.search_outlined,
-        selectedIcon: Icons.search,
-        label: t.dictionaries,
-      ),
-      AdaptiveNavItem(
-        icon: Icons.tune_outlined,
-        selectedIcon: Icons.tune,
-        label: t.settings,
-      ),
-    ];
+    final List<AdaptiveNavItem> items = _navItems();
     final List<AdaptiveNavItem> displayItems =
         reversed ? items.reversed.toList() : items;
     final int visualIndex =

@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/utils/adaptive/adaptive_navigation.dart';
 import 'package:integration_test/integration_test.dart';
 
 bool get screenshotsAreRequired =>
@@ -91,6 +92,13 @@ Finder findDictionaryResultEvidence() {
 }
 
 List<Finder> findPrimaryNavigationTargets() {
+  // Material now self-draws the bottom bar / side rail (per-item gamepad focus),
+  // tagged with [hibikiMaterialNavKey] instead of the stock NavigationBar/Rail.
+  final Finder materialNav = find.byKey(hibikiMaterialNavKey);
+  if (materialNav.evaluate().isNotEmpty) {
+    return _navigationIconsInside(materialNav);
+  }
+
   final Finder rail = find.byType(NavigationRail);
   if (rail.evaluate().isNotEmpty) {
     return _navigationIconsInside(rail);

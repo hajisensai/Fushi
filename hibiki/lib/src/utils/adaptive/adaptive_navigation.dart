@@ -6,6 +6,7 @@ import 'package:hibiki/src/focus/hibiki_focus_target.dart';
 import 'package:hibiki/src/shortcuts/gamepad_service.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart';
 import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart';
+import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 
 class AdaptiveNavItem {
   final IconData icon;
@@ -18,44 +19,261 @@ class AdaptiveNavItem {
   });
 }
 
+/// Marks the root of the self-drawn Material navigation (bottom bar / side rail)
+/// so integration tests can locate the top-level destinations without depending
+/// on the private widget type or the stock NavigationBar/NavigationRail (which
+/// this no longer uses on Material).
+const Key hibikiMaterialNavKey = ValueKey<String>('hibiki-material-nav');
+
 Widget adaptiveBottomBar({
   required BuildContext context,
   required int currentIndex,
   required ValueChanged<int> onTap,
   required List<AdaptiveNavItem> items,
 }) {
-  final Widget bar = isCupertinoPlatform(context)
-      ? CupertinoTabBar(
-          currentIndex: currentIndex,
-          onTap: onTap,
-          items: items
-              .map((AdaptiveNavItem e) => BottomNavigationBarItem(
-                    icon: Icon(e.icon),
-                    label: e.label,
-                  ))
-              .toList(),
-        )
-      : NavigationBar(
-          selectedIndex: currentIndex,
-          onDestinationSelected: onTap,
-          destinations: items
-              .map((AdaptiveNavItem e) => NavigationDestination(
-                    icon: Icon(e.icon),
-                    selectedIcon: Icon(e.selectedIcon ?? e.icon),
-                    label: e.label,
-                  ))
-              .toList(),
-        );
-  // Make the whole bar one gamepad focus stop (a horizontal selector): D-pad
-  // Left/Right switches tabs in place, the ring follows the bar, and focus can
-  // leave it upward — instead of leaking onto the bar's unregistered
-  // destinations and losing the ring.
-  return GamepadNavCluster(
+  if (isCupertinoPlatform(context)) {
+    // Cupertino keeps the stock tab bar as a single whole-bar gamepad stop. iOS
+    // is touch-first and we don't self-draw its chrome; per-item focus is a
+    // Material-only refinement (the rail/bottom bar the gamepad users hit).
+    return GamepadNavCluster(
+      axis: Axis.horizontal,
+      count: items.length,
+      currentIndex: currentIndex,
+      onSelect: onTap,
+      child: CupertinoTabBar(
+        currentIndex: currentIndex,
+        onTap: onTap,
+        items: items
+            .map((AdaptiveNavItem e) => BottomNavigationBarItem(
+                  icon: Icon(e.icon),
+                  label: e.label,
+                ))
+            .toList(),
+      ),
+    );
+  }
+  // Material: each destination is its OWN gamepad/keyboard focus target, so the
+  // app focus ring hugs the single selected item instead of wrapping the whole
+  // bar. Directional D-pad steps between adjacent tiles through the normal
+  // HibikiFocus geometry; A/Enter (or a tap) selects.
+  return _MaterialNavCluster(
     axis: Axis.horizontal,
-    count: items.length,
     currentIndex: currentIndex,
-    onSelect: onTap,
-    child: bar,
+    onTap: onTap,
+    items: items,
+    idPrefix: 'nav-bar',
+  );
+}
+
+/// Self-drawn Material navigation as a row (bottom bar) or column (side rail) of
+/// per-item gamepad/keyboard focus targets. Reproduces the MD3 destination look
+/// (indicator pill + icon swap + label) so the app focus ring can hug a single
+/// destination — the stock [NavigationBar]/[NavigationRail] only expose the
+/// whole bar as one focusable region.
+class _MaterialNavCluster extends StatelessWidget {
+  const _MaterialNavCluster({
+    required this.axis,
+    required this.currentIndex,
+    required this.onTap,
+    required this.items,
+    required this.idPrefix,
+    this.leading,
+  });
+
+  /// [Axis.horizontal] = bottom bar; [Axis.vertical] = side rail.
+  final Axis axis;
+  final int currentIndex;
+  final ValueChanged<int> onTap;
+  final List<AdaptiveNavItem> items;
+
+  /// Stable per-position focus id prefix; the bar and rail use distinct prefixes
+  /// so their ids never collide (only one is mounted at a time anyway).
+  final String idPrefix;
+
+  /// Rail-only leading widget (the app logo). Ignored for the bottom bar.
+  final Widget? leading;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final bool horizontal = axis == Axis.horizontal;
+
+    final List<Widget> tiles = <Widget>[
+      for (int i = 0; i < items.length; i++)
+        _NavFocusCell(
+          id: HibikiFocusId('$idPrefix-$i'),
+          item: items[i],
+          selected: i == currentIndex,
+          horizontal: horizontal,
+          onSelect: () => onTap(i),
+        ),
+    ];
+
+    if (horizontal) {
+      return Material(
+        key: hibikiMaterialNavKey,
+        color: colors.surfaceContainer,
+        child: SafeArea(
+          top: false,
+          child: SizedBox(
+            height: 80,
+            child: Row(
+              children: <Widget>[
+                for (final Widget tile in tiles) Expanded(child: tile),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Material(
+      key: hibikiMaterialNavKey,
+      color: colors.surface,
+      child: SizedBox(
+        width: 80,
+        child: SafeArea(
+          right: false,
+          child: Column(
+            children: <Widget>[
+              if (leading != null) leading!,
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: <Widget>[
+                    for (final Widget tile in tiles)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        child: tile,
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// One Material navigation destination wrapped as an independent gamepad/keyboard
+/// focus target. The [HibikiFocusTarget] hugs the icon+label content so the app
+/// focus ring frames just this item. A/Enter resolve to [ActivateIntent] (mapped
+/// here to [onSelect]); a mouse/touch tap calls it directly. The [InkWell] does
+/// not request focus — the focus node belongs to the [HibikiFocusTarget].
+class _NavFocusCell extends StatelessWidget {
+  const _NavFocusCell({
+    required this.id,
+    required this.item,
+    required this.selected,
+    required this.horizontal,
+    required this.onSelect,
+  });
+
+  final HibikiFocusId id;
+  final AdaptiveNavItem item;
+  final bool selected;
+  final bool horizontal;
+  final VoidCallback onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget tile = _HibikiNavTile(item: item, selected: selected);
+    // ActivateIntent must sit ABOVE the focus node: the gamepad/keyboard path
+    // dispatches it at the primary-focus context and walks UP the Actions chain.
+    return Actions(
+      actions: <Type, Action<Intent>>{
+        ActivateIntent: CallbackAction<ActivateIntent>(
+          onInvoke: (ActivateIntent intent) {
+            onSelect();
+            return null;
+          },
+        ),
+      },
+      child: InkWell(
+        onTap: onSelect,
+        canRequestFocus: false,
+        borderRadius: HibikiDesignTokens.of(context).radii.controlRadius,
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            vertical: horizontal ? 0 : 4,
+            horizontal: horizontal ? 4 : 0,
+          ),
+          child: Center(
+            child: HibikiFocusTarget(id: id, child: tile),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Pure MD3 destination visual: an indicator pill behind the icon (filled when
+/// selected) over a label. Shared by the bottom bar and the side rail.
+class _HibikiNavTile extends StatelessWidget {
+  const _HibikiNavTile({required this.item, required this.selected});
+
+  final AdaptiveNavItem item;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final TextTheme textTheme = Theme.of(context).textTheme;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Container(
+          width: 64,
+          height: 32,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: selected ? colors.secondaryContainer : Colors.transparent,
+            borderRadius: HibikiDesignTokens.of(context).radii.controlRadius,
+          ),
+          child: Icon(
+            selected ? (item.selectedIcon ?? item.icon) : item.icon,
+            size: 24,
+            color: selected
+                ? colors.onSecondaryContainer
+                : colors.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          item.label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: textTheme.labelSmall?.copyWith(
+            color: selected ? colors.onSurface : colors.onSurfaceVariant,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Self-drawn Material navigation rail (per-item gamepad/keyboard focus). Mirrors
+/// `NavigationRail(labelType: all)` with a leading logo and centered group, but
+/// each destination is its own focus target so the ring hugs one item. [items]
+/// and [currentIndex] are in visual order; [onTap] receives the visual index
+/// (the caller keeps its visual→logical mapping, e.g. reversed rails).
+Widget adaptiveNavRail({
+  required BuildContext context,
+  required int currentIndex,
+  required ValueChanged<int> onTap,
+  required List<AdaptiveNavItem> items,
+  Widget? leading,
+}) {
+  return _MaterialNavCluster(
+    axis: Axis.vertical,
+    currentIndex: currentIndex,
+    onTap: onTap,
+    items: items,
+    idPrefix: 'nav-rail',
+    leading: leading,
   );
 }
 

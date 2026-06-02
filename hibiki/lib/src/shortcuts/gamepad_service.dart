@@ -252,6 +252,15 @@ class GamepadService {
         onLongPress: _dispatchLongPress,
       ),
     )..start();
+    // Start with the ring HIDDEN: it must only appear AFTER the user actually
+    // drives with a controller or physical keyboard ("焦点应该在使用手柄或者键盘
+    // 以后才会出来"). Desktop's default `automatic` strategy treats a mouse as
+    // "traditional" and shows the ring from launch / during mouse use, which is
+    // exactly what we don't want — so we own the strategy explicitly here and in
+    // the pointer/key handlers below. Android (service no-op) keeps Flutter's
+    // automatic strategy, which already starts in touch mode on touch devices.
+    FocusManager.instance.highlightStrategy =
+        FocusHighlightStrategy.alwaysTouch;
     // Track the active input device so the focus ring follows it (pointer →
     // hidden, hardware nav → shown). Desktop/Apple only (where this service
     // runs); Android keeps Flutter's automatic strategy.
