@@ -151,7 +151,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                   ref.invalidate(hibikiBooksProvider(appModel.targetLanguage));
                 },
               ),
-              loading: () => const SizedBox.shrink(),
+              loading: () => buildLoading(),
             ),
           ),
           if (_selectionMode) _buildBatchActionBar(),
@@ -391,9 +391,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         child: LayoutBuilder(
           builder: (context, constraints) => CustomScrollView(
             controller: mediaType.scrollController,
-            physics: const AlwaysScrollableScrollPhysics(
-              parent: BouncingScrollPhysics(),
-            ),
+            physics: desktopAwareScrollPhysics(),
             slivers: [
               SliverToBoxAdapter(child: SizedBox(height: tokens.spacing.gap)),
               if (srtBooks.isNotEmpty) ...[
@@ -485,11 +483,9 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       ),
       child: Text(
         label,
-        style: textTheme.labelMedium?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
-          fontWeight: FontWeight.bold,
-          letterSpacing: 0.8,
-        ),
+        // Shared MD3 section label (labelLarge / primary / w600) — same role as
+        // the settings detail section headers, replacing the ad-hoc styling.
+        style: tokens.type.sectionLabel,
       ),
     );
   }
