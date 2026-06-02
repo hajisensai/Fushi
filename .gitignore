@@ -57,7 +57,12 @@ SPEC.md
 test_screenshots/
 screenshot_*.png
 tmp_screen*.png
+# uiautomator dump XML (lands in .codex-test/ and repo root) — keep ignored.
 *.xml
+# ...but vendored third_party packages are build inputs and must be tracked in
+# full (e.g. flutter_inappwebview_android needs android/src/main/res/*.xml so
+# R.layout.*/R.id.* resolve on a fresh checkout). Re-include their XML.
+!third_party/**/*.xml
 
 # QA screenshots and debug artifacts
 qa-*.png
