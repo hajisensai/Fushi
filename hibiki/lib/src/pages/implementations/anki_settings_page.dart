@@ -128,13 +128,15 @@ class _AnkiSettingsPageState extends BasePageState<AnkiSettingsPage> {
     return AdaptiveSettingsRow(
       icon: Icons.sync_outlined,
       title: uiState.isFetching ? t.anki_fetching : t.anki_fetch,
+      // Action row, not navigation: tapping triggers a fetch (spinner while
+      // running), it does not open a subpage — so no chevron.
       trailing: uiState.isFetching
           ? SizedBox(
               width: 20,
               height: 20,
               child: adaptiveIndicator(context: context, strokeWidth: 2),
             )
-          : const Icon(Icons.chevron_right),
+          : null,
       onTap: uiState.isFetching ? null : () => vm.fetchConfiguration(),
     );
   }

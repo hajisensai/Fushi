@@ -1202,7 +1202,11 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
         if (widget.onAudioImport != null)
           AdaptiveSettingsSection(
             children: [
-              AdaptiveSettingsNavigationRow(
+              // Action row, not navigation: tapping closes the sheet and runs
+              // the audio-import callback, it does not open a subpage — so no
+              // chevron (plain AdaptiveSettingsRow instead of NavigationRow,
+              // which would force a trailing chevron_right).
+              AdaptiveSettingsRow(
                 title: t.srt_book_replace_audio,
                 icon: Icons.swap_horiz_outlined,
                 onTap: () {

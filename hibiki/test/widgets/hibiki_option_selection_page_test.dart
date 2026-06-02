@@ -58,11 +58,11 @@ void main() {
     expect(popped, 'en-US');
   });
 
-  testWidgets('shows a search field past the threshold and filters',
+  testWidgets('never renders a search field, even for long option sets',
       (WidgetTester tester) async {
     final List<HibikiOptionSelectionOption<int>> many =
         List<HibikiOptionSelectionOption<int>>.generate(
-      kOptionSelectionSearchThreshold + 3,
+      20,
       (int i) => HibikiOptionSelectionOption<int>(value: i, label: 'Item $i'),
     );
     await tester.pumpWidget(
@@ -76,30 +76,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.byType(HibikiTextField), findsOneWidget);
-
-    // 'Item 0' is a substring of no other label ('Item 10'..'Item 14' don't
-    // contain it), so the list collapses to exactly that row. (find.text also
-    // matches the search field's own text, so assert presence with
-    // findsWidgets rather than an exact count.)
-    await tester.enterText(find.byType(TextField).first, 'Item 0');
-    await tester.pumpAndSettle();
-    expect(find.text('Item 5'), findsNothing);
-    expect(find.text('Item 0'), findsWidgets);
-  });
-
-  testWidgets('no search field below the threshold',
-      (WidgetTester tester) async {
-    await tester.pumpWidget(
-      _harness(
-        HibikiOptionSelectionPage<String>(
-          title: 'Language',
-          options: _langs(),
-          selected: 'ja',
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
     expect(find.byType(HibikiTextField), findsNothing);
+    expect(find.byType(TextField), findsNothing);
   });
 }
