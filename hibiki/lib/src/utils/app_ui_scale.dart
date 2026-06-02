@@ -8,8 +8,10 @@ import 'package:hibiki/src/utils/spacing.dart';
 /// 视觉缩放，同时把 [MediaQuery] 的 size / inset 反算成「缩小后的逻辑画布」，让布局
 /// 回流填满整屏——效果等同浏览器缩放：所有东西按同一比例一起放大缩小。
 ///
-/// 平台视图（如阅读器 WebView）若要保持原生清晰渲染，用 [HibikiNativeScale] 包裹，
-/// 它会对该子树做 1/scale 反向缩放，使净变换回到单位阵。
+/// 注意：阅读器 WebView 也在这层缩放内、跟随整体一起缩放（放大时正文会有轻微栅格
+/// 软化，正文字号请用阅读器自带设置）。**不要**单独对 WebView 做反向缩放——那会让
+/// WebView 处于原生坐标空间、而其上的划词弹窗/高亮浮层仍在缩放后的 canvas 空间，
+/// 两套坐标错位 factor scale，书内查词弹窗与高亮会全部偏位（曾如此回归过）。
 class HibikiAppUiScale extends StatelessWidget {
   const HibikiAppUiScale({
     required this.scale,
@@ -91,55 +93,6 @@ MediaQueryData _scaleMediaQuery(MediaQueryData mq, double factor) {
     viewInsets: mq.viewInsets * factor,
     systemGestureInsets: mq.systemGestureInsets * factor,
   );
-}
-
-/// 对子树做 1/scale 反向缩放，使其内部平台视图按原生分辨率渲染、命中测试 1:1。
-///
-/// 用于阅读器 WebView：外层 [HibikiAppUiScale] 把整屏放大了 s 倍，这里再缩 1/s，
-/// 净变换为单位阵——WebView 拿到的逻辑视口 = 真实屏幕逻辑尺寸，EPUB 原生清晰。
-/// 必须放在有界约束下（如 [Positioned.fill] 内）。
-class HibikiNativeScale extends StatelessWidget {
-  const HibikiNativeScale({
-    required this.child,
-    super.key,
-  });
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    final double s = HibikiAppUiScale.of(context);
-    if (s == HibikiAppUiScale.defaultScale) return child;
-
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        if (!constraints.hasBoundedWidth || !constraints.hasBoundedHeight) {
-          return child;
-        }
-        final Size region = constraints.biggest;
-        final Size native = region * s;
-        final MediaQueryData mq = MediaQuery.of(context);
-        return Transform.scale(
-          scale: 1 / s,
-          alignment: Alignment.topLeft,
-          child: OverflowBox(
-            alignment: Alignment.topLeft,
-            minWidth: native.width,
-            maxWidth: native.width,
-            minHeight: native.height,
-            maxHeight: native.height,
-            child: SizedBox.fromSize(
-              size: native,
-              child: MediaQuery(
-                data: _scaleMediaQuery(mq, s),
-                child: child,
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
 }
 
 /// 向后代暴露当前有效缩放系数。

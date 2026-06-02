@@ -95,36 +95,4 @@ void main() {
     final Rect visual = tester.getRect(find.byKey(boxKey));
     expect(visual.width, 100);
   });
-
-  testWidgets('HibikiNativeScale：缩放 2.0 下宿主子节点净变换为单位阵（按原生逻辑分辨率布局、填满区域）', (
-    WidgetTester tester,
-  ) async {
-    const Key hostChildKey = Key('native-child');
-    late Size childLogicalSize;
-    await tester.pumpWidget(
-      MaterialApp(
-        builder: (BuildContext context, Widget? child) => HibikiAppUiScale(
-            scale: 2.0, child: child ?? const SizedBox.shrink()),
-        home: HibikiNativeScale(
-          child: Builder(
-            builder: (BuildContext context) {
-              childLogicalSize = MediaQuery.of(context).size;
-              return const ColoredBox(
-                key: hostChildKey,
-                color: Color(0xFF112233),
-                child: SizedBox.expand(),
-              );
-            },
-          ),
-        ),
-      ),
-    );
-
-    final Size screen = tester.view.physicalSize / tester.view.devicePixelRatio;
-    expect(childLogicalSize.width, closeTo(screen.width, 0.5));
-    expect(childLogicalSize.height, closeTo(screen.height, 0.5));
-    final Rect visual = tester.getRect(find.byKey(hostChildKey));
-    expect(visual.width, closeTo(screen.width, 0.5));
-    expect(visual.height, closeTo(screen.height, 0.5));
-  });
 }
