@@ -5,6 +5,7 @@ import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/models/local_audio_manager.dart';
+import 'package:hibiki/src/models/local_audio_source_pref.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
@@ -71,6 +72,67 @@ void main() {
       }).enabled,
       isTrue,
     );
+  });
+
+  test('LocalAudioDbEntry round trips its source prefs through json', () {
+    const LocalAudioDbEntry entry = LocalAudioDbEntry(
+      path: '/tmp/a.db',
+      displayName: 'a',
+      enabled: true,
+      sources: <LocalAudioSourcePref>[
+        LocalAudioSourcePref(name: 'nhk16'),
+        LocalAudioSourcePref(name: 'forvo', enabled: false),
+      ],
+    );
+    final LocalAudioDbEntry restored =
+        LocalAudioDbEntry.fromJson(entry.toJson());
+    expect(restored.sources, entry.sources);
+  });
+
+  test('entry without sources omits the key and decodes to empty', () {
+    const LocalAudioDbEntry entry =
+        LocalAudioDbEntry(path: '/tmp/b.db', displayName: 'b');
+    expect(entry.toJson().containsKey('sources'), isFalse);
+    expect(
+      LocalAudioDbEntry.fromJson(const <String, dynamic>{
+        'path': '/tmp/b.db',
+        'displayName': 'b',
+      }).sources,
+      isEmpty,
+    );
+  });
+
+  test('setSourcesFor updates only the matching db, leaving others intact',
+      () async {
+    await manager.setEntries(const <LocalAudioDbEntry>[
+      LocalAudioDbEntry(path: '/tmp/one.db', displayName: 'one', enabled: true),
+      LocalAudioDbEntry(path: '/tmp/two.db', displayName: 'two', enabled: true),
+    ]);
+
+    await manager.setSourcesFor('/tmp/two.db', const <LocalAudioSourcePref>[
+      LocalAudioSourcePref(name: 'forvo'),
+      LocalAudioSourcePref(name: 'nhk16', enabled: false),
+    ]);
+
+    final List<LocalAudioDbEntry> after = manager.entries;
+    expect(after.firstWhere((e) => e.path == '/tmp/one.db').sources, isEmpty);
+    expect(
+      after.firstWhere((e) => e.path == '/tmp/two.db').sources,
+      const <LocalAudioSourcePref>[
+        LocalAudioSourcePref(name: 'forvo'),
+        LocalAudioSourcePref(name: 'nhk16', enabled: false),
+      ],
+    );
+  });
+
+  test('setSourcesFor on an unknown path is a no-op', () async {
+    await manager.setEntries(const <LocalAudioDbEntry>[
+      LocalAudioDbEntry(path: '/tmp/one.db', displayName: 'one'),
+    ]);
+    await manager.setSourcesFor('/tmp/missing.db', const <LocalAudioSourcePref>[
+      LocalAudioSourcePref(name: 'x'),
+    ]);
+    expect(manager.entries.single.sources, isEmpty);
   });
 
   test('reorder ignores out-of-range indexes', () async {

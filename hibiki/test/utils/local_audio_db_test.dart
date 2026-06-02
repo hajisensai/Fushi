@@ -78,6 +78,63 @@ void main() {
     );
   });
 
+  test('listSources returns the distinct sources in the db', () {
+    final Database db = sqlite3.open(dbPath);
+    db.execute("INSERT INTO entries VALUES ('猫','ねこ','c.mp3','nhk16')");
+    db.execute("INSERT INTO entries VALUES ('猫','ねこ','d.mp3','forvo')");
+    db.dispose();
+
+    final List<String> sources = LocalAudioDb.listSources(dbPath);
+    expect(sources.toSet(), <String>{'src1', 'nhk16', 'forvo'});
+  });
+
+  test('queryMeta honors the source priority order', () {
+    final Database db = sqlite3.open(dbPath);
+    // 同一词在两个来源下都有音频。
+    db.execute("INSERT INTO entries VALUES ('猫','ねこ','nhk.mp3','nhk16')");
+    db.execute("INSERT INTO entries VALUES ('猫','ねこ','forvo.mp3','forvo')");
+    db.dispose();
+
+    // forvo 优先 → 选 forvo
+    expect(
+      LocalAudioDb.queryMeta(dbPath, '猫', 'ねこ',
+          order: <String>['forvo', 'nhk16'])?.source,
+      'forvo',
+    );
+    // nhk16 优先 → 选 nhk16
+    expect(
+      LocalAudioDb.queryMeta(dbPath, '猫', 'ねこ',
+          order: <String>['nhk16', 'forvo'])?.source,
+      'nhk16',
+    );
+  });
+
+  test('queryMeta skips sources absent from order (disabled)', () {
+    final Database db = sqlite3.open(dbPath);
+    db.execute("INSERT INTO entries VALUES ('猫','ねこ','nhk.mp3','nhk16')");
+    db.execute("INSERT INTO entries VALUES ('猫','ねこ','forvo.mp3','forvo')");
+    db.dispose();
+
+    // 只启用 nhk16（forvo 禁用，不在 order）→ 即便 forvo 也命中，也只返回 nhk16
+    expect(
+      LocalAudioDb.queryMeta(dbPath, '猫', 'ねこ', order: <String>['nhk16'])
+          ?.source,
+      'nhk16',
+    );
+    // 所有命中来源都不在 order → null
+    expect(
+      LocalAudioDb.queryMeta(dbPath, '猫', 'ねこ', order: <String>['oald10']),
+      isNull,
+    );
+  });
+
+  test('queryMeta with empty order keeps first-match behavior', () {
+    expect(
+      LocalAudioDb.queryMeta(dbPath, '勉強', 'べんきょう')?.source,
+      'src1',
+    );
+  });
+
   test('uses the .opus extension when the file name ends in .opus', () {
     final Database db = sqlite3.open(dbPath);
     db.execute("INSERT INTO entries VALUES ('opusword','','b.opus','src1')");

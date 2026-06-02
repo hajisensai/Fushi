@@ -87,6 +87,7 @@ class _ProfileManagementPageState extends BasePageState<ProfileManagementPage> {
   ) {
     final isOnly = uiState.profiles.length <= 1;
     final bool cupertino = isCupertinoPlatform(context);
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return [
       for (final p in uiState.profiles)
         AdaptiveSettingsRow(
@@ -110,13 +111,15 @@ class _ProfileManagementPageState extends BasePageState<ProfileManagementPage> {
                 tooltip: t.profile_copy,
                 onPressed: () => _showCopyDialog(vm, p.id, p.name),
               ),
+              SizedBox(width: tokens.spacing.gap / 2),
               _ProfileActionButton(
                 materialIcon: Icons.edit_outlined,
                 cupertinoIcon: CupertinoIcons.pencil,
                 tooltip: t.profile_rename,
                 onPressed: () => _showRenameDialog(vm, p.id, p.name),
               ),
-              if (!isOnly)
+              if (!isOnly) ...[
+                SizedBox(width: tokens.spacing.gap / 2),
                 _ProfileActionButton(
                   materialIcon: Icons.delete_outline,
                   cupertinoIcon: CupertinoIcons.delete,
@@ -124,6 +127,7 @@ class _ProfileManagementPageState extends BasePageState<ProfileManagementPage> {
                   destructive: true,
                   onPressed: () => _showDeleteDialog(vm, p.id, p.name),
                 ),
+              ],
             ],
           ),
         ),

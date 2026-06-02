@@ -9,6 +9,19 @@ import 'package:hibiki/src/utils/misc/desktop_tts.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/utils/misc/local_audio_db.dart';
 
+/// 一个本地音频库推给查询层的配置：库路径 + 启用子来源的优先级序。
+///
+/// [sourceOrder] 只含**启用**的子来源（如 `['nhk16','forvo']`），按优先级从高到低；
+/// 空表示「该库不限制」——退回 DB 自然顺序、全部启用（向后兼容无配置的旧库）。
+@immutable
+class LocalAudioDbConfig {
+  const LocalAudioDbConfig(
+      {required this.path, this.sourceOrder = const <String>[]});
+
+  final String path;
+  final List<String> sourceOrder;
+}
+
 /// Audio/TTS bridge. On Android these go through the native MethodChannel
 /// (`TtsChannelHandler`); off Android they fall back to pure-Dart / OS-tool
 /// implementations so the desktop builds (Windows/macOS/Linux) have working
@@ -26,9 +39,13 @@ class TtsChannel {
   static bool get isSupported => _isSupported;
   static const _channel = HibikiChannels.tts;
 
-  /// Desktop only: the configured local-audio SQLite DB paths, mirrored here by
-  /// [setLocalAudioDbs] (Android keeps them in the native handler instead).
-  List<String> _desktopDbPaths = const <String>[];
+  /// Desktop only: the configured local-audio SQLite DB configs (path +
+  /// per-db enabled source order), mirrored here by [setLocalAudioDbs]
+  /// (Android keeps them in the native handler instead).
+  List<LocalAudioDbConfig> _desktopDbConfigs = const <LocalAudioDbConfig>[];
+
+  List<String> get _desktopDbPaths =>
+      _desktopDbConfigs.map((LocalAudioDbConfig c) => c.path).toList();
 
   Future<void> speak(String text, {String locale = 'ja-JP'}) async {
     if (!_isSupported) return;
@@ -53,14 +70,21 @@ class TtsChannel {
     }
   }
 
-  Future<bool> setLocalAudioDbs(List<String> paths) async {
+  Future<bool> setLocalAudioDbs(List<LocalAudioDbConfig> dbs) async {
     if (!_isSupported) {
-      _desktopDbPaths = List<String>.of(paths);
+      _desktopDbConfigs = List<LocalAudioDbConfig>.of(dbs);
       return true;
     }
     try {
       final result = await _channel.invokeMethod('setLocalAudioDb', {
-        'paths': paths,
+        // 'paths' 保留兼容旧逻辑；'dbConfigs' 携带每库启用源优先级。
+        'paths': dbs.map((LocalAudioDbConfig c) => c.path).toList(),
+        'dbConfigs': dbs
+            .map((LocalAudioDbConfig c) => <String, Object?>{
+                  'path': c.path,
+                  'order': c.sourceOrder,
+                })
+            .toList(),
       });
       return result == true;
     } catch (e, stack) {
@@ -69,8 +93,24 @@ class TtsChannel {
     }
   }
 
-  Future<bool> setLocalAudioDb(String path) =>
-      setLocalAudioDbs(path.isEmpty ? [] : [path]);
+  Future<bool> setLocalAudioDb(String path) => setLocalAudioDbs(path.isEmpty
+      ? const <LocalAudioDbConfig>[]
+      : <LocalAudioDbConfig>[LocalAudioDbConfig(path: path)]);
+
+  /// 枚举一个本地音频库内的全部子来源名（`SELECT DISTINCT source`）。
+  /// Android 走 native；桌面直接读 sqlite。返回空表示库为空 / 读失败。
+  Future<List<String>> listLocalAudioSources(String dbPath) async {
+    if (!_isSupported) return LocalAudioDb.listSources(dbPath);
+    try {
+      final Object? r = await _channel.invokeMethod(
+          'listLocalAudioSources', <String, Object?>{'path': dbPath});
+      return (r as List<Object?>?)?.cast<String>() ?? const <String>[];
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('TtsChannel.listLocalAudioSources', e, stack);
+      return const <String>[];
+    }
+  }
 
   Future<Map<String, dynamic>?> queryLocalAudio(
     String expression,
@@ -80,10 +120,15 @@ class TtsChannel {
     if (!_isSupported) {
       final int start = dbIndex ?? 0;
       final int end = dbIndex == null ? _desktopDbPaths.length : start + 1;
-      for (int i = start; i < end && i < _desktopDbPaths.length; i++) {
+      for (int i = start; i < end && i < _desktopDbConfigs.length; i++) {
         if (i < 0) continue;
-        final ({String file, String source})? meta =
-            LocalAudioDb.queryMeta(_desktopDbPaths[i], expression, reading);
+        final LocalAudioDbConfig cfg = _desktopDbConfigs[i];
+        final ({String file, String source})? meta = LocalAudioDb.queryMeta(
+          cfg.path,
+          expression,
+          reading,
+          order: cfg.sourceOrder,
+        );
         if (meta != null) {
           return <String, dynamic>{
             'file': meta.file,

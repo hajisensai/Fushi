@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 
+import 'package:hibiki/src/models/local_audio_source_pref.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/utils/misc/tts_channel.dart';
 
@@ -12,6 +13,7 @@ class LocalAudioDbEntry {
     required this.path,
     required this.displayName,
     this.enabled = false,
+    this.sources = const <LocalAudioSourcePref>[],
   });
 
   factory LocalAudioDbEntry.fromJson(Map<String, dynamic> json) =>
@@ -19,23 +21,39 @@ class LocalAudioDbEntry {
         path: json['path'] as String? ?? '',
         displayName: json['displayName'] as String? ?? '',
         enabled: json['enabled'] as bool? ?? true,
+        sources: (json['sources'] as List<dynamic>?)
+                ?.map((dynamic e) =>
+                    LocalAudioSourcePref.fromJson(e as Map<String, dynamic>))
+                .toList() ??
+            const <LocalAudioSourcePref>[],
       );
 
   final String path;
   final String displayName;
   final bool enabled;
 
-  LocalAudioDbEntry copyWith({String? displayName, bool? enabled}) =>
+  /// 库内子来源偏好（优先级序，首=最高）。空=未配置 → 查询退回 DB 自然序、全启用。
+  final List<LocalAudioSourcePref> sources;
+
+  LocalAudioDbEntry copyWith({
+    String? displayName,
+    bool? enabled,
+    List<LocalAudioSourcePref>? sources,
+  }) =>
       LocalAudioDbEntry(
         path: path,
         displayName: displayName ?? this.displayName,
         enabled: enabled ?? this.enabled,
+        sources: sources ?? this.sources,
       );
 
   Map<String, dynamic> toJson() => {
         'path': path,
         'displayName': displayName,
         'enabled': enabled,
+        if (sources.isNotEmpty)
+          'sources':
+              sources.map((LocalAudioSourcePref s) => s.toJson()).toList(),
       };
 }
 
@@ -51,6 +69,17 @@ class LocalAudioManager {
 
   bool get localAudioEnabled =>
       _prefsRepo.getPref('local_audio_enabled', defaultValue: false);
+
+  /// 把一个库 entry 转成喂 native 的配置：sourceOrder 只含**启用**的子来源，
+  /// 按存储顺序（=优先级）。空 sources → 空 order → native 退回全启用自然序。
+  static LocalAudioDbConfig _configFor(LocalAudioDbEntry e) =>
+      LocalAudioDbConfig(
+        path: e.path,
+        sourceOrder: e.sources
+            .where((LocalAudioSourcePref s) => s.enabled)
+            .map((LocalAudioSourcePref s) => s.name)
+            .toList(),
+      );
 
   List<LocalAudioDbEntry> get entries {
     final String raw = _prefsRepo.getPref('local_audio_dbs', defaultValue: '');
@@ -80,8 +109,18 @@ class LocalAudioManager {
         'local_audio_dbs', jsonEncode(dbs.map((e) => e.toJson()).toList()));
     await _prefsRepo.setPref('local_audio_db_path', '');
     await _prefsRepo.setPref('local_audio_db_display_name', '');
-    await TtsChannel.instance.setLocalAudioDbs(
-        dbs.where((e) => e.enabled).map((e) => e.path).toList());
+    await TtsChannel.instance
+        .setLocalAudioDbs(dbs.where((e) => e.enabled).map(_configFor).toList());
+  }
+
+  /// 只改某个库的子来源偏好（优先级序 + 逐源启用），立即持久化并重推 native。
+  Future<void> setSourcesFor(
+      String path, List<LocalAudioSourcePref> prefs) async {
+    final List<LocalAudioDbEntry> dbs = List<LocalAudioDbEntry>.of(entries);
+    final int i = dbs.indexWhere((LocalAudioDbEntry e) => e.path == path);
+    if (i < 0) return;
+    dbs[i] = dbs[i].copyWith(sources: prefs);
+    await setEntries(dbs); // setEntries 内已重推 native
   }
 
   Future<void> toggleEnabled(int index) async {
@@ -168,12 +207,12 @@ class LocalAudioManager {
   Future<void> toggleLocalAudio(VoidCallback notifyListeners) async {
     await _prefsRepo.setPref('local_audio_enabled', !localAudioEnabled);
     if (localAudioEnabled) {
-      final paths = entries.where((e) => e.enabled).map((e) => e.path).toList();
-      if (paths.isNotEmpty) {
-        TtsChannel.instance.setLocalAudioDbs(paths);
+      final configs = entries.where((e) => e.enabled).map(_configFor).toList();
+      if (configs.isNotEmpty) {
+        TtsChannel.instance.setLocalAudioDbs(configs);
       }
     } else {
-      TtsChannel.instance.setLocalAudioDbs(<String>[]);
+      TtsChannel.instance.setLocalAudioDbs(const <LocalAudioDbConfig>[]);
     }
     notifyListeners();
   }
@@ -182,10 +221,10 @@ class LocalAudioManager {
     await _prefsRepo.setPref('local_audio_enabled', value);
     if (value) {
       await TtsChannel.instance.setLocalAudioDbs(
-        entries.where((e) => e.enabled).map((e) => e.path).toList(),
+        entries.where((e) => e.enabled).map(_configFor).toList(),
       );
     } else {
-      await TtsChannel.instance.setLocalAudioDbs(<String>[]);
+      await TtsChannel.instance.setLocalAudioDbs(const <LocalAudioDbConfig>[]);
     }
   }
 
@@ -194,17 +233,17 @@ class LocalAudioManager {
     final dbs = entries;
     if (dbs.isEmpty) return;
 
-    final validPaths = <String>[];
+    final validConfigs = <LocalAudioDbConfig>[];
     for (final entry in dbs) {
       if (!entry.enabled) continue;
       if (await File(entry.path).exists()) {
-        validPaths.add(entry.path);
+        validConfigs.add(_configFor(entry));
       } else {
         debugPrint('[hibiki-audio] DB missing, skipping: ${entry.path}');
       }
     }
-    if (validPaths.isNotEmpty) {
-      await TtsChannel.instance.setLocalAudioDbs(validPaths);
+    if (validConfigs.isNotEmpty) {
+      await TtsChannel.instance.setLocalAudioDbs(validConfigs);
     }
   }
 }

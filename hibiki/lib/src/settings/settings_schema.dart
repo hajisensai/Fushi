@@ -748,13 +748,12 @@ SettingsDestination _readingDestination() {
                 settingsContext.readerSource.keepScreenAwake,
             onChanged: setKeepScreenAwake,
           ),
-          // 快捷键设置入口暂时隐藏，后面再更新（功能保留，仅不在设置中展示）。
-          // SettingsNavigationItem(
-          //   id: 'reading_controls.keyboard_shortcuts',
-          //   title: t.shortcut_settings_title,
-          //   icon: Icons.keyboard_outlined,
-          //   builder: (BuildContext context) => const ShortcutSettingsPage(),
-          // ),
+          SettingsNavigationItem(
+            id: 'reading_controls.keyboard_shortcuts',
+            title: t.shortcut_settings_title,
+            icon: Icons.keyboard_outlined,
+            builder: (BuildContext context) => const ShortcutSettingsPage(),
+          ),
         ],
       ),
     ],
