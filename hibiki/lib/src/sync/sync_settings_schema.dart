@@ -1893,12 +1893,19 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget> {
   }
 
   Future<void> _init() async {
-    final String deviceId = await SyncRepository(
-            widget.settingsContext.appModel.database)
-        .getOrCreateDeviceId();
-    if (!mounted) return;
-    _discovery = LanDiscoveryService(deviceId: deviceId);
-    await _startScan();
+    try {
+      final String deviceId = await SyncRepository(
+              widget.settingsContext.appModel.database)
+          .getOrCreateDeviceId();
+      if (!mounted) return;
+      _discovery = LanDiscoveryService(deviceId: deviceId);
+      await _startScan();
+    } catch (e, stack) {
+      // Loading the device id (a DB read) can throw; surface it as a scan
+      // failure instead of silently never starting discovery (don't swallow).
+      ErrorLogService.instance.log('LanDiscovery.init', e, stack);
+      if (mounted) setState(() => _scanFailed = true);
+    }
   }
 
   @override
