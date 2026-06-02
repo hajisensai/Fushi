@@ -958,8 +958,10 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
     return AdaptiveSettingsSliderRow(
       title: t.audio_volume,
       icon: Icons.volume_up_outlined,
-      value: ctrl.volume,
+      value: ctrl.volume.clamp(0.0, 2.0),
       max: 2,
+      // 10% 一档的离散刻度，与「界面大小」等其它 MD3 滑条统一显示刻度点。
+      divisions: 20,
       onChanged: (v) {
         ctrl.setVolume(v);
         setState(() {});

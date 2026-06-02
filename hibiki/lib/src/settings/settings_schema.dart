@@ -114,21 +114,13 @@ SettingsDestination _appearanceDestination() {
             icon: Icons.contrast_outlined,
             builder: buildBrightnessSelector,
           ),
-          SettingsSliderItem(
+          // 「界面大小」滑条用自定义有状态行：拖动中只更新局部值跟手，松手才提交
+          // 真实缩放（见 buildAppUiScaleSelector）。这样拖动期间不触发全局
+          // HibikiAppUiScale 的 Transform 重排，滑条不会在手指下被缩放位移、可连续拖。
+          SettingsCustomItem(
             id: 'appearance.app_ui_scale',
-            title: t.app_ui_scale,
-            subtitle: t.app_ui_scale_hint,
             icon: Icons.format_size_outlined,
-            min: HibikiAppUiScale.minScale,
-            max: HibikiAppUiScale.maxScale,
-            divisions: 27,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.appUiScale,
-            label: (double value) => '${(value * 100).round()}%',
-            onChanged: (SettingsContext settingsContext, double value) async {
-              await settingsContext.appModel.setAppUiScale(value);
-              settingsContext.refresh();
-            },
+            builder: buildAppUiScaleSelector,
           ),
         ],
       ),

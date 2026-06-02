@@ -397,6 +397,54 @@ void main() {
     );
   });
 
+  testWidgets('app UI scale slider commits only on drag end, not during drag',
+      (WidgetTester tester) async {
+    late AppModel appModel;
+    await tester.pumpWidget(
+      _harness(
+        platform: TargetPlatform.android,
+        builder: (SettingsContext settingsContext) {
+          appModel = settingsContext.appModel;
+          final SettingsDestination appearance =
+              buildSettingsSchema(settingsContext).firstWhere(
+            (SettingsDestination destination) =>
+                destination.id == SettingsDestinationId.appearance,
+          );
+          final SettingsDestination interfaceOnly = SettingsDestination(
+            id: appearance.id,
+            title: appearance.title,
+            icon: appearance.icon,
+            sections: <SettingsSection>[appearance.sections.first],
+          );
+          return MaterialSettingsRenderer().buildDetailPage(
+            settingsContext: settingsContext,
+            destination: interfaceOnly,
+          );
+        },
+      ),
+    );
+
+    AdaptiveSettingsSliderRow row() => tester.widget<AdaptiveSettingsSliderRow>(
+          find.byType(AdaptiveSettingsSliderRow),
+        );
+
+    expect(appModel.appUiScale, 1.0);
+
+    // 拖动中：onChanged 只更新本地显示值，绝不提交真实缩放——否则全局
+    // HibikiAppUiScale 的 Transform 会实时重排，滑块在手指下被缩放位移导致
+    // 拖动断裂（本次修复的根因）。
+    row().onChanged(2.0);
+    await tester.pump();
+    expect(appModel.appUiScale, 1.0, reason: '拖动期间不得提交真实缩放');
+    expect(row().value, 2.0, reason: '滑条显示跟手到本地拖动值');
+
+    // 松手：onChangeEnd 一次性提交真实缩放并回落到已提交值。
+    row().onChangeEnd!(2.0);
+    await tester.pump();
+    expect(appModel.appUiScale, 2.0, reason: '松手提交真实缩放');
+    expect(row().value, 2.0);
+  });
+
   testWidgets('appearance custom rows omit Cupertino leading icons',
       (WidgetTester tester) async {
     await tester.pumpWidget(
