@@ -1326,6 +1326,7 @@ class _HibikiServerConfigWidget extends StatefulWidget {
 
 class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget> {
   late final TextEditingController _tokenController;
+  late final FocusNode _tokenFocus;
   List<HibikiClientUrl> _urls = <HibikiClientUrl>[];
   // url -> last test-connection result (null = not tested this session).
   final Map<String, bool> _reachable = <String, bool>{};
@@ -1339,11 +1340,19 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget> {
   void initState() {
     super.initState();
     _tokenController = TextEditingController();
+    _tokenFocus = FocusNode();
     _load();
+    _syncSettings(widget.settingsContext)
+        .clientConfigRevision
+        .addListener(_onClientConfigRevision);
   }
 
   @override
   void dispose() {
+    _syncSettings(widget.settingsContext)
+        .clientConfigRevision
+        .removeListener(_onClientConfigRevision);
+    _tokenFocus.dispose();
     _tokenController.dispose();
     super.dispose();
   }
@@ -1356,6 +1365,25 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget> {
       _urls = urls;
       _tokenController.text = token ?? '';
       _loaded = true;
+    });
+  }
+
+  void _onClientConfigRevision() {
+    unawaited(_reloadFromStore());
+  }
+
+  /// Reload the persisted client config after an external mutation (LAN
+  /// pairing). The URL list always reloads; the token field only reloads when
+  /// it has no focus, so we never clobber text the user is actively typing.
+  Future<void> _reloadFromStore() async {
+    final List<HibikiClientUrl> urls = await _repo.getHibikiClientUrls();
+    final String? token = await _repo.getHibikiClientToken();
+    if (!mounted) return;
+    setState(() {
+      _urls = urls;
+      if (!_tokenFocus.hasFocus) {
+        _tokenController.text = token ?? '';
+      }
     });
   }
 
@@ -1600,6 +1628,7 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget> {
           const SizedBox(height: 12),
           HibikiTextField(
             controller: _tokenController,
+            focusNode: _tokenFocus,
             labelText: t.sync_server_token,
             onChanged: (_) => _saveToken(),
           ),
@@ -1894,9 +1923,9 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget> {
 
   Future<void> _init() async {
     try {
-      final String deviceId = await SyncRepository(
-              widget.settingsContext.appModel.database)
-          .getOrCreateDeviceId();
+      final String deviceId =
+          await SyncRepository(widget.settingsContext.appModel.database)
+              .getOrCreateDeviceId();
       if (!mounted) return;
       _discovery = LanDiscoveryService(deviceId: deviceId);
       await _startScan();
@@ -2007,6 +2036,14 @@ class _SyncSettingsState {
   bool syncContent = false;
   bool _loaded = false;
   bool _loading = false;
+
+  /// Bumped whenever the persisted Hibiki *client* config (URLs / token) is
+  /// mutated from outside the client-config widget (e.g. LAN pairing). The
+  /// client-config widget listens and reloads — this is the single source of
+  /// truth replacing the previous "loaded once in initState" stale state.
+  final ValueNotifier<int> clientConfigRevision = ValueNotifier<int>(0);
+
+  void reloadClientConfig() => clientConfigRevision.value++;
 
   Future<void> load() async {
     if (_loaded || _loading) return;
