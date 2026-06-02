@@ -214,6 +214,14 @@ class _HibikiFocusRingState extends State<HibikiFocusRing>
     // it onto the focused control. At scale 1.0 (no Transform) this is a no-op,
     // matching the pre-Transform behaviour. Reading the scale here also makes
     // build() depend on _AppUiScaleScope, so a scale change rebuilds the ring.
+    //
+    // ASSUMPTION: the ONLY transform between this Stack and any focusable is that
+    // single app-level Transform.scale, so `local = global / scale` holds exactly.
+    // True for the app tree (HibikiAppUiScale → HibikiFocusRoot → HibikiFocusRing
+    // → Navigator; routes/dialogs add offsets, never another scale). If a nested
+    // Transform/InteractiveViewer is ever placed between the ring and a focusable,
+    // this single-scale mapping breaks — switch to localToGlobal(ancestor: <this
+    // Stack's RenderObject>) to resolve the focused rect in local space directly.
     final double scale = HibikiAppUiScale.of(context);
     final Rect? globalRect = _rect;
     final Rect? ringRect = globalRect == null
