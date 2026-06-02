@@ -84,7 +84,7 @@ Future<ComprehensiveReport> buildExecutionReport({
   required List<PlatformPlan> matrix,
   required Set<TestPlatformId> selectedPlatforms,
   required Set<ScenarioId> selectedScenarios,
-  required TestPlatformId hostPlatform,
+  required HostPlatformId hostPlatform,
   required String outputDir,
   String workingDirectory = '.',
   ComprehensiveCommandRunner commandRunner = runProcessCommand,
@@ -95,9 +95,7 @@ Future<ComprehensiveReport> buildExecutionReport({
   for (final PlatformPlan plan in matrix) {
     if (!selectedPlatforms.contains(plan.platform)) continue;
 
-    final bool hostMissing = plan.platform != hostPlatform &&
-        plan.platform == TestPlatformId.macos &&
-        plan.blockedWhenHostMissing;
+    final bool hostMissing = !plan.supportsHost(hostPlatform);
 
     for (final TestScenario scenario in plan.scenarios) {
       if (!selectedScenarios.contains(scenario.id)) continue;
@@ -109,7 +107,7 @@ Future<ComprehensiveReport> buildExecutionReport({
           commands: scenario.commands,
           assertions: scenario.assertions,
           evidence: scenario.evidence,
-          blockedReason: plan.hostMissingMessage,
+          blockedReason: plan.blockedReasonForHost(hostPlatform),
         ));
         continue;
       }
@@ -117,6 +115,7 @@ Future<ComprehensiveReport> buildExecutionReport({
       final List<String> evidence = <String>[...scenario.evidence];
       int exitCode = 0;
       int durationMs = 0;
+      String failureReason = '';
       for (int i = 0; i < scenario.commands.length; i++) {
         final String command = scenario.commands[i];
         final CommandInvocation invocation = buildCommandInvocation(
@@ -148,6 +147,18 @@ Future<ComprehensiveReport> buildExecutionReport({
 
         if (!result.succeeded) {
           exitCode = result.exitCode;
+          failureReason = 'Command exited with $exitCode: '
+              '${requestDisplay(plan.platform, scenario.id, command)}';
+          break;
+        }
+
+        final String? outputFailure = validateOutputExpectations(
+          result,
+          scenario.outputExpectations,
+        );
+        if (outputFailure != null) {
+          exitCode = 1;
+          failureReason = outputFailure;
           break;
         }
       }
@@ -159,6 +170,7 @@ Future<ComprehensiveReport> buildExecutionReport({
         commands: scenario.commands,
         assertions: scenario.assertions,
         evidence: evidence,
+        failureReason: failureReason,
         exitCode: exitCode,
         durationMs: durationMs,
       ));
@@ -166,6 +178,48 @@ Future<ComprehensiveReport> buildExecutionReport({
   }
 
   return ComprehensiveReport(entries: entries);
+}
+
+String requestDisplay(
+  TestPlatformId platform,
+  ScenarioId scenario,
+  String command,
+) {
+  return '${platform.name}/${scenario.name}: $command';
+}
+
+String? validateOutputExpectations(
+  CommandResult result,
+  List<OutputExpectation> expectations,
+) {
+  for (final OutputExpectation expectation in expectations) {
+    final String haystack = _outputForExpectation(result, expectation.stream);
+    final bool containsText = haystack.contains(expectation.text);
+    switch (expectation.kind) {
+      case OutputExpectationKind.contains:
+        if (!containsText) {
+          return 'Missing required output "${expectation.text}" in '
+              '${expectation.stream.name}.';
+        }
+      case OutputExpectationKind.excludes:
+        if (containsText) {
+          return 'Forbidden output "${expectation.text}" appeared in '
+              '${expectation.stream.name}.';
+        }
+    }
+  }
+  return null;
+}
+
+String _outputForExpectation(
+  CommandResult result,
+  OutputExpectationStream stream,
+) {
+  return switch (stream) {
+    OutputExpectationStream.stdout => result.stdout,
+    OutputExpectationStream.stderr => result.stderr,
+    OutputExpectationStream.combined => '${result.stdout}\n${result.stderr}',
+  };
 }
 
 Future<CommandResult> runProcessCommand(CommandRequest request) async {

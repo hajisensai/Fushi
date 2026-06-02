@@ -24,6 +24,7 @@ void main() {
     test('every platform has every required scenario', () {
       final List<PlatformPlan> matrix = buildComprehensiveMatrix();
       const Set<ScenarioId> required = <ScenarioId>{
+        ScenarioId.appSmoke,
         ScenarioId.dictionaryImportSearch,
         ScenarioId.fontImportApply,
         ScenarioId.syncSettingsEffect,
@@ -55,8 +56,25 @@ void main() {
               reason: '${plan.platform.name}/${scenario.id.name} assertions');
           expect(scenario.evidence, isNotEmpty,
               reason: '${plan.platform.name}/${scenario.id.name} evidence');
+          expect(scenario.outputExpectations, isNotEmpty,
+              reason:
+                  '${plan.platform.name}/${scenario.id.name} output matches');
         }
       }
+    });
+
+    test('host compatibility blocks impossible desktop targets', () {
+      final ComprehensiveReport report = buildDryRunReport(
+        matrix: buildComprehensiveMatrix(),
+        selectedPlatforms: const <TestPlatformId>{TestPlatformId.windows},
+        selectedScenarios: const <ScenarioId>{ScenarioId.appSmoke},
+        hostPlatform: HostPlatformId.linux,
+      );
+
+      final ScenarioReport entry = report.entries.single;
+      expect(entry.status, ScenarioStatus.blocked);
+      expect(entry.blockedReason, contains('Windows'));
+      expect(report.hasFailures, isTrue);
     });
 
     test('non-macos host blocks macos instead of silently passing it', () {
@@ -88,7 +106,7 @@ void main() {
           TestPlatformId.macos,
         },
         selectedScenarios: ScenarioId.values.toSet(),
-        hostPlatform: TestPlatformId.windows,
+        hostPlatform: HostPlatformId.windows,
       );
 
       writeComprehensiveReport(report, dir.path);
@@ -151,14 +169,16 @@ void main() {
           ScenarioId.syncP2pRoundtrip,
           ScenarioId.readerPagination,
         },
-        hostPlatform: TestPlatformId.windows,
+        hostPlatform: HostPlatformId.windows,
         outputDir: dir.path,
         commandRunner: (CommandRequest request) async {
           final bool shouldPass =
               request.scenario == ScenarioId.syncP2pRoundtrip;
           return CommandResult(
             exitCode: shouldPass ? 0 : 1,
-            stdout: 'stdout for ${request.scenario.name}',
+            stdout: shouldPass
+                ? '+1: All tests passed! stdout for ${request.scenario.name}'
+                : 'stdout for ${request.scenario.name}',
             stderr: shouldPass ? '' : 'failure for ${request.scenario.name}',
             duration: const Duration(milliseconds: 7),
           );
@@ -185,6 +205,77 @@ void main() {
         contains('failure for readerPagination'),
       );
       expect(report.hasFailures, isTrue);
+    });
+
+    test('execution fails when a zero-exit command lacks required output',
+        () async {
+      final Directory dir = await Directory.systemTemp
+          .createTemp('hibiki_comprehensive_missing_output_');
+      addTearDown(() {
+        if (dir.existsSync()) {
+          dir.deleteSync(recursive: true);
+        }
+      });
+
+      final ComprehensiveReport report = await buildExecutionReport(
+        matrix: buildComprehensiveMatrix(),
+        selectedPlatforms: const <TestPlatformId>{TestPlatformId.windows},
+        selectedScenarios: const <ScenarioId>{ScenarioId.appSmoke},
+        hostPlatform: HostPlatformId.windows,
+        outputDir: dir.path,
+        commandRunner: (_) async {
+          return const CommandResult(
+            exitCode: 0,
+            stdout: 'process exited without a test verdict',
+            stderr: '',
+            duration: Duration(milliseconds: 3),
+          );
+        },
+      );
+
+      final ScenarioReport entry = report.entries.single;
+      expect(entry.status, ScenarioStatus.failed);
+      expect(entry.failureReason, contains('Missing required output'));
+      expect(entry.failureReason, contains('All tests passed'));
+    });
+
+    test('app smoke is the shared android windows macos runtime scenario', () {
+      for (final PlatformPlan plan in buildComprehensiveMatrix()) {
+        final TestScenario scenario = plan.scenarios.singleWhere(
+          (TestScenario scenario) => scenario.id == ScenarioId.appSmoke,
+        );
+
+        expect(
+          scenario.commands.single,
+          'flutter drive --target=integration_test/app_smoke_test.dart',
+        );
+        expect(
+          scenario.outputExpectations.map((OutputExpectation expectation) {
+            return expectation.text;
+          }),
+          contains('All tests passed'),
+        );
+      }
+    });
+
+    test(
+        'github workflow runs comprehensive automation on android windows macos',
+        () {
+      final String workflow = File(
+        '../.github/workflows/build-multiplatform.yml',
+      ).readAsStringSync();
+
+      expect(
+        workflow,
+        contains('ci/comprehensive-test.sh --platform=android --only=appSmoke'),
+      );
+      expect(workflow,
+          contains('.\\ci\\comprehensive-test.ps1 -Platform windows'));
+      expect(workflow, contains('-Only appSmoke'));
+      expect(
+        workflow,
+        contains('ci/comprehensive-test.sh --platform=macos --only=appSmoke'),
+      );
     });
 
     test('fixture generator writes required comprehensive test files',
