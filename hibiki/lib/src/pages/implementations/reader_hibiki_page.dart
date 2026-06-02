@@ -2057,6 +2057,17 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       });
     }
 
+    // 收藏高亮：在恢复完成（章节分页布局已稳定、恢复滚动已结束）时重新应用。
+    // _onChapterLoadComplete 里的早期 apply 跑在 onLoadStop 同步返回之后，
+    // 而 hoshiReader.initialize 把 buildNodeOffsets / 恢复滚动塞进图片
+    // Promise.all().then() 里异步执行——早期 apply 抢在列布局存在之前注册
+    // CSS Custom Highlight range，重进章节时高亮不绘制（立即收藏时布局已稳定
+    // 所以能显示）。在这里（与立即收藏相同的稳定状态）再应用一次即可对齐。
+    // 重复应用是幂等的：__hibikiApplyHighlights 会先清空再重建 range map。
+    if (!_lyricsMode) {
+      _applyChapterHighlights();
+    }
+
     _audiobookController?.notifySectionRestoreCompleted(
       currentReaderSection: _currentChapter,
       success: true,
