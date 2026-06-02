@@ -3,9 +3,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/models.dart';
+import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:hibiki/src/utils/misc/popup_channel.dart';
+import 'package:hibiki/src/utils/misc/swipe_dismiss_wrapper.dart';
 import 'package:hibiki/utils.dart';
 
 class PopupDictionaryPage extends ConsumerStatefulWidget {
@@ -112,7 +114,44 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
 
   Widget _buildOuterContainer() {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return HibikiPopupSurface(
+    final double gap = tokens.spacing.gap;
+    return Stack(
+      children: <Widget>[
+        // 透明背景：点击卡片外部关闭弹窗（背后是触发查词的其它 app 画面）。
+        Positioned.fill(
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _close,
+            child: const SizedBox.expand(),
+          ),
+        ),
+        // 贴顶部的浮动卡片，外观对齐书内查词弹窗（圆角 + 边框 + 横滑关闭）。
+        Align(
+          alignment: Alignment.topCenter,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              const double maxCardWidth = 480;
+              final double available = constraints.maxWidth - gap * 2;
+              final double width =
+                  available < maxCardWidth ? available : maxCardWidth;
+              final double height = (constraints.maxHeight - gap * 2) * 0.72;
+              return Padding(
+                padding: EdgeInsets.all(gap),
+                child: SizedBox(
+                  width: width,
+                  height: height,
+                  child: _buildCard(tokens),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCard(HibikiDesignTokens tokens) {
+    final Widget card = HibikiPopupSurface(
       color: appModel.overrideDictionaryColor ?? tokens.surfaces.page,
       child: Column(
         children: [
@@ -129,6 +168,11 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
           ),
         ],
       ),
+    );
+    return SwipeDismissWrapper(
+      sensitivity: ReaderHibikiSource.instance.dismissSwipeSensitivity,
+      onDismiss: _close,
+      child: card,
     );
   }
 
