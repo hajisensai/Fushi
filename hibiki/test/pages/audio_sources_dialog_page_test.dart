@@ -12,11 +12,24 @@ void main() {
 
   Widget buildApp(Widget home) {
     return TranslationProvider(
-      child: MaterialApp(home: home),
+      child: MaterialApp(home: Scaffold(body: home)),
     );
   }
 
-  testWidgets('audio sources dialog fits a compact desktop window', (
+  test('isValidRemoteUrl enforces http(s) + a term/reading placeholder', () {
+    expect(AudioSourcesDialog.isValidRemoteUrl('https://x.com/{term}'), isTrue);
+    expect(
+        AudioSourcesDialog.isValidRemoteUrl('http://x.com/{reading}'), isTrue);
+    // 无占位符
+    expect(AudioSourcesDialog.isValidRemoteUrl('https://x.com/audio'), isFalse);
+    // 非 http(s)
+    expect(AudioSourcesDialog.isValidRemoteUrl('ftp://x.com/{term}'), isFalse);
+    // 无 scheme / authority
+    expect(AudioSourcesDialog.isValidRemoteUrl('{term}'), isFalse);
+    expect(AudioSourcesDialog.isValidRemoteUrl(''), isFalse);
+  });
+
+  testWidgets('fits a compact desktop window with many remote sources', (
     WidgetTester tester,
   ) async {
     tester.view.devicePixelRatio = 1;
@@ -26,11 +39,10 @@ void main() {
     await tester.pumpWidget(
       buildApp(
         AudioSourcesDialog(
-          sources: List.generate(
+          sources: List<AudioSourceConfig>.generate(
             12,
-            (index) => AudioSourceConfig.remoteAudio(
-              url:
-                  'https://audio.example.com/very/long/source/$index/{term}/{reading}',
+            (int i) => AudioSourceConfig.remoteAudio(
+              url: 'https://audio.example.com/$i/{term}/{reading}',
             ),
           ),
           onSave: (_) {},
@@ -42,9 +54,33 @@ void main() {
     expect(find.byType(TextField), findsOneWidget);
   });
 
-  testWidgets('shows local audio master switch and add button when wired', (
+  testWidgets('rejects an invalid url and clears the error on a valid one', (
     WidgetTester tester,
   ) async {
+    await tester.pumpWidget(
+      buildApp(
+        AudioSourcesDialog(
+          sources: const <AudioSourceConfig>[],
+          onSave: (_) {},
+        ),
+      ),
+    );
+
+    await tester.enterText(find.byType(TextField), 'not-a-url');
+    await tester.pump();
+    expect(find.text(t.audio_source_url_invalid), findsOneWidget);
+
+    await tester.enterText(
+      find.byType(TextField),
+      'https://x.com/{term}/{reading}',
+    );
+    await tester.pump();
+    expect(find.text(t.audio_source_url_invalid), findsNothing);
+  });
+
+  testWidgets(
+      'local audio group expands to reveal the add-db button and '
+      'toggles the master switch', (WidgetTester tester) async {
     bool? toggled;
     await tester.pumpWidget(
       buildApp(
@@ -58,12 +94,15 @@ void main() {
       ),
     );
 
-    // (a) the add-db button label is present.
+    // 折叠态：add-db 按钮不在树里。
+    expect(find.text(t.local_audio_add_db), findsNothing);
+
+    // 点组头展开。
+    await tester.tap(find.text(t.local_audio));
+    await tester.pumpAndSettle();
     expect(find.text(t.local_audio_add_db), findsOneWidget);
 
-    // (b) toggling the master switch invokes onToggleLocalAudio with true.
-    // Switch.adaptive renders a Material Switch or a CupertinoSwitch depending
-    // on the host platform, so match either kind within the master-switch row.
+    // 总开关回调（Switch.adaptive 在不同平台渲染 Material/Cupertino，二者皆匹配）。
     final Finder masterSwitch = find.descendant(
       of: find.ancestor(
         of: find.text(t.local_audio),
