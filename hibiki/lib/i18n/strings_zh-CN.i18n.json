@@ -1171,7 +1171,7 @@
     "shortcut_action_reader_toggle_furigana": "切换振假名",
     "on_screen_keyboard": "屏幕键盘",
     "app_ui_scale": "界面大小",
-    "app_ui_scale_hint": "缩放应用文字和间距，范围 30% 到 300%。大屏设备上如果控件偏小，可以调高。",
+    "app_ui_scale_hint": "整体缩放应用界面（文字、图标、控件一起放大缩小），范围 30% 到 300%。大屏设备上界面偏小可调高。",
     "sync_dictionary": "同步词典",
     "sync_dictionary_warning": "词典包可能很大，并包含已导入的词典资源。",
     "settings_destination_reading": "阅读",

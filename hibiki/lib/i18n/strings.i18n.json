@@ -1171,7 +1171,7 @@
     "shortcut_action_reader_toggle_furigana": "Toggle furigana",
     "on_screen_keyboard": "On-screen keyboard",
     "app_ui_scale": "UI size",
-    "app_ui_scale_hint": "Scales app text and spacing from 30% to 300%. Increase it on large screens if controls feel too small.",
+    "app_ui_scale_hint": "Scales the whole interface — text, icons and controls together — from 30% to 300%. Increase it if the UI looks small on large screens.",
     "sync_dictionary": "Sync dictionaries",
     "sync_dictionary_warning": "Dictionary packages can be large and include imported dictionary resources.",
     "settings_destination_reading": "Reading",
