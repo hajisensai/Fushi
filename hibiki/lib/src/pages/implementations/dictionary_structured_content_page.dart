@@ -92,10 +92,16 @@ class _DictionaryHtmlWidgetState extends ConsumerState<DictionaryHtmlWidget> {
   double _contentHeight = 1;
   bool _ready = false;
 
+  /// Brightness last rendered into the WebView. Used to re-render when the app
+  /// theme is toggled while this widget is on screen — see
+  /// [didChangeDependencies].
+  bool? _lastPushedIsDark;
+
   void _pushContent() {
     if (_controller == null || !_ready) return;
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    _lastPushedIsDark = isDark;
     final dictionaryFontSize = ref.read(appProvider).dictionaryFontSize;
     final dictCss =
         ref.read(dictionaryCssProvider(widget.entry.dictionaryName));
@@ -122,6 +128,19 @@ class _DictionaryHtmlWidgetState extends ConsumerState<DictionaryHtmlWidget> {
     if (oldWidget.entry != widget.entry) {
       _pushContent();
     }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Re-render when the app theme is toggled while this definition is on
+    // screen (the inherited Theme rebuild fires didChangeDependencies).
+    // renderDefinition is keyed on isDark, so only a brightness flip needs a
+    // re-push; the guard skips unrelated dependency changes.
+    if (!_ready || _controller == null) return;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    if (isDark == _lastPushedIsDark) return;
+    _pushContent();
   }
 
   @override

@@ -59,6 +59,11 @@ class DictionaryPopupWebViewState
   String? _lastSearchTerm;
   int _lastEntryCount = 0;
 
+  /// The theme-derived CSS variable JS last pushed to the WebView. Used to
+  /// re-inject (and only re-inject) when the app theme actually changes while
+  /// the popup is open — see [didChangeDependencies].
+  String? _lastThemeVarsJs;
+
   static const String _scrollCheckJs = '''
 (function(){
   if(!window.__hoshiScrollInstalled){
@@ -244,6 +249,54 @@ class DictionaryPopupWebViewState
     }
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Re-push the theme CSS when the app theme changes while the popup is open
+    // (light/dark toggle or seed-colour change rebuilds the inherited Theme).
+    // Without this the WebView keeps the colours captured when results were
+    // last rendered. CSS variables apply live to the existing DOM, so we only
+    // re-inject the variables — no entry re-render. The string compare dedupes
+    // unrelated dependency changes (MediaQuery, locale, …).
+    if (!_ready || _controller == null) return;
+    final String themeVarsJs = _themeVariablesJs();
+    if (themeVarsJs == _lastThemeVarsJs) return;
+    _lastThemeVarsJs = themeVarsJs;
+    _controller!.evaluateJavascript(source: themeVarsJs);
+  }
+
+  /// JS that pushes the theme-derived CSS custom properties + `data-theme`
+  /// onto the popup document. Kept separate from entry rendering so it can be
+  /// re-evaluated on a theme switch without rebuilding the result list.
+  String _themeVariablesJs() {
+    final ThemeData theme = Theme.of(context);
+    final bool isDark = theme.brightness == Brightness.dark;
+    final ColorScheme scheme = theme.colorScheme;
+    String cssRgb(Color c) => 'rgb(${(c.r * 255.0).round().clamp(0, 255)}, '
+        '${(c.g * 255.0).round().clamp(0, 255)}, '
+        '${(c.b * 255.0).round().clamp(0, 255)})';
+    final Color primary = scheme.primary;
+    final String primaryRgba =
+        'rgba(${(primary.r * 255.0).round().clamp(0, 255)}, '
+        '${(primary.g * 255.0).round().clamp(0, 255)}, '
+        '${(primary.b * 255.0).round().clamp(0, 255)}, 0.35)';
+    final String textRgba = cssRgb(scheme.onSurface);
+    final Color bgColor =
+        ref.read(appProvider).overrideDictionaryColor ?? scheme.surface;
+    final String bgRgb = cssRgb(bgColor);
+    return '''
+      document.documentElement.setAttribute('data-theme', '${isDark ? 'dark' : 'light'}');
+      document.documentElement.style.setProperty('--hoshi-primary-highlight', '$primaryRgba');
+      document.documentElement.style.setProperty('--text-color', '$textRgba');
+      document.documentElement.style.setProperty('--background-color', '$bgRgb');
+      document.documentElement.style.setProperty('--md-surface-container', '${cssRgb(scheme.surfaceContainer)}');
+      document.documentElement.style.setProperty('--md-surface-container-high', '${cssRgb(scheme.surfaceContainerHigh)}');
+      document.documentElement.style.setProperty('--md-outline-variant', '${cssRgb(scheme.outlineVariant)}');
+      document.documentElement.style.setProperty('--md-on-surface-variant', '${cssRgb(scheme.onSurfaceVariant)}');
+      document.documentElement.style.setProperty('--md-primary', '${cssRgb(scheme.primary)}');
+''';
+  }
+
   void _pushResults() {
     if (_controller == null || !_ready) return;
     if (widget.result.entries.isEmpty) return;
@@ -268,13 +321,6 @@ class DictionaryPopupWebViewState
     }
 
     final stylesJson = _getStylesJson();
-    final ThemeData theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final Color primary = theme.colorScheme.primary;
-    final int pr = (primary.r * 255.0).round().clamp(0, 255);
-    final int pg = (primary.g * 255.0).round().clamp(0, 255);
-    final int pb = (primary.b * 255.0).round().clamp(0, 255);
-    final String primaryRgba = 'rgba($pr, $pg, $pb, 0.35)';
 
     final appModel = ref.read(appProvider);
     final deduplicatePitch = appModel.deduplicatePitchAccents;
@@ -283,31 +329,12 @@ class DictionaryPopupWebViewState
     final showExprTags = appModel.showExpressionTags;
     final audioSourcesJson = jsonEncode(appModel.enabledAudioSources);
 
-    final Color onSurface = theme.colorScheme.onSurface;
-    final int tr = (onSurface.r * 255.0).round().clamp(0, 255);
-    final int tg = (onSurface.g * 255.0).round().clamp(0, 255);
-    final int tb = (onSurface.b * 255.0).round().clamp(0, 255);
-    final String textRgba = 'rgb($tr, $tg, $tb)';
-
-    final Color bgColor =
-        appModel.overrideDictionaryColor ?? theme.colorScheme.surface;
-    final int br = (bgColor.r * 255.0).round().clamp(0, 255);
-    final int bg = (bgColor.g * 255.0).round().clamp(0, 255);
-    final int bb = (bgColor.b * 255.0).round().clamp(0, 255);
-    final String bgRgb = 'rgb($br, $bg, $bb)';
-
-    // MD3 tonal roles injected so the WebView result surfaces follow the app's
-    // ColorScheme (dark mode / dynamic color / user theme) instead of the
-    // hardcoded grey/green fallbacks baked into popup.css.
-    String cssRgb(Color c) => 'rgb(${(c.r * 255.0).round().clamp(0, 255)}, '
-        '${(c.g * 255.0).round().clamp(0, 255)}, '
-        '${(c.b * 255.0).round().clamp(0, 255)})';
-    final ColorScheme scheme = theme.colorScheme;
-    final String mdSurfaceContainer = cssRgb(scheme.surfaceContainer);
-    final String mdSurfaceContainerHigh = cssRgb(scheme.surfaceContainerHigh);
-    final String mdOutlineVariant = cssRgb(scheme.outlineVariant);
-    final String mdOnSurfaceVariant = cssRgb(scheme.onSurfaceVariant);
-    final String mdPrimary = cssRgb(scheme.primary);
+    // MD3 tonal roles + base colours injected so the WebView result surfaces
+    // follow the app's ColorScheme (dark mode / dynamic color / user theme)
+    // instead of the hardcoded grey/green fallbacks baked into popup.css.
+    // Shared with the live theme-switch path in didChangeDependencies.
+    final String themeVarsJs = _themeVariablesJs();
+    _lastThemeVarsJs = themeVarsJs;
 
     final bool needsScrollCheck = widget.onScrolledToBottom != null;
     final String renderCall = isLoadMore
@@ -315,15 +342,7 @@ class DictionaryPopupWebViewState
         : 'window.renderPopup();';
     final swInject = Stopwatch()..start();
     _controller!.evaluateJavascript(source: '''
-      document.documentElement.setAttribute('data-theme', '${isDark ? 'dark' : 'light'}');
-      document.documentElement.style.setProperty('--hoshi-primary-highlight', '$primaryRgba');
-      document.documentElement.style.setProperty('--text-color', '$textRgba');
-      document.documentElement.style.setProperty('--background-color', '$bgRgb');
-      document.documentElement.style.setProperty('--md-surface-container', '$mdSurfaceContainer');
-      document.documentElement.style.setProperty('--md-surface-container-high', '$mdSurfaceContainerHigh');
-      document.documentElement.style.setProperty('--md-outline-variant', '$mdOutlineVariant');
-      document.documentElement.style.setProperty('--md-on-surface-variant', '$mdOnSurfaceVariant');
-      document.documentElement.style.setProperty('--md-primary', '$mdPrimary');
+      $themeVarsJs
       window.audioSources = $audioSourcesJson;
       window.needsAudio = true;
       window.deduplicatePitchAccents = $deduplicatePitch;
