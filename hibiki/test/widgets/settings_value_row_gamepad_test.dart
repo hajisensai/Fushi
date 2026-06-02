@@ -106,6 +106,53 @@ void main() {
       expect(controller.activeId, isNotNull);
     });
 
+    testWidgets(
+        'arrow up/down KEY does NOT adjust the value '
+        '(Android D-pad arrives as arrow keys → must move focus, not change value)',
+        (WidgetTester tester) async {
+      final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
+      double value = 10;
+      await tester.pumpWidget(MaterialApp(
+        navigatorKey: navKey,
+        theme: ThemeData.light(useMaterial3: true),
+        home: Scaffold(
+          body: HibikiFocusRoot(
+            child: StatefulBuilder(
+              builder: (BuildContext c, StateSetter setState) =>
+                  AdaptiveSettingsStepperRow(
+                title: 'Font',
+                value: value,
+                step: 1,
+                min: 0,
+                max: 64,
+                format: (double v) => '${v.round()}',
+                onChanged: (double v) => setState(() => value = v),
+              ),
+            ),
+          ),
+        ),
+        builder: (BuildContext context, Widget? child) =>
+            wrapWithGlobalNavigation(navigatorKey: navKey, child: child!),
+      ));
+      await tester.pump();
+
+      final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+        tester.element(find.text('Font')),
+      );
+      controller.ensureFocus();
+      await tester.pump();
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump();
+      expect(value, 10,
+          reason: 'arrow down navigates rows, must NOT decrement the value');
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await tester.pump();
+      expect(value, 10,
+          reason: 'arrow up navigates rows, must NOT increment the value');
+    });
+
     testWidgets('D-pad up/down is NOT consumed (lets focus move between rows)',
         (WidgetTester tester) async {
       double value = 10;

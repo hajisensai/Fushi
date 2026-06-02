@@ -783,16 +783,21 @@ class _AdjustDownIntent extends Intent {
 }
 
 /// Wraps a value control (stepper / slider / seek bar) as a SINGLE keyboard &
-/// gamepad focus stop whose Left/Right (and Up/Down arrows) adjust the value in
-/// place instead of moving focus. The control's own descendants are removed
-/// from focus traversal ([ExcludeFocus]) so this wrapper is the one stop; they
-/// stay mouse-clickable.
+/// gamepad focus stop whose Left/Right adjust the value in place instead of
+/// moving focus. The control's own descendants are removed from focus traversal
+/// ([ExcludeFocus]) so this wrapper is the one stop; they stay mouse-clickable.
+///
+/// Up/Down deliberately do NOT adjust the value — they fall through so the user
+/// can move focus to the next/previous row. Binding Up/Down to adjust would trap
+/// vertical navigation and silently change the focused control's value while the
+/// user is only trying to scroll past it.
 ///
 /// On desktop/Apple the gamepad D-pad arrives as a [GamepadButtonIntent] (not
 /// arrow keys): Left/Right adjust + consume (return true) so focus does NOT
 /// move; Up/Down (and others) are NOT consumed (return false) so the press
 /// falls through to directional focus traversal between rows. On Android the
-/// engine delivers the D-pad as arrow keys, handled by the [Shortcuts] below.
+/// engine delivers the D-pad as arrow keys, handled by the [Shortcuts] below —
+/// which mirror that contract: only Left/Right are bound.
 class _GamepadAdjustableValue extends StatefulWidget {
   const _GamepadAdjustableValue({
     required this.focusIdPrefix,
@@ -839,10 +844,10 @@ class _GamepadAdjustableValueState extends State<_GamepadAdjustableValue> {
         ),
       },
       child: Shortcuts(
+        // Left/Right only — Up/Down are left unbound so they bubble to
+        // directional focus traversal (move between rows). See class doc.
         shortcuts: const <ShortcutActivator, Intent>{
-          SingleActivator(LogicalKeyboardKey.arrowUp): _AdjustUpIntent(),
           SingleActivator(LogicalKeyboardKey.arrowRight): _AdjustUpIntent(),
-          SingleActivator(LogicalKeyboardKey.arrowDown): _AdjustDownIntent(),
           SingleActivator(LogicalKeyboardKey.arrowLeft): _AdjustDownIntent(),
         },
         child: HibikiFocusTarget(
@@ -882,9 +887,10 @@ class _GamepadAdjustAction extends Action<GamepadButtonIntent> {
 }
 
 /// The +/- controls of a stepper row, wrapped as a SINGLE keyboard/gamepad
-/// focus stop. Tab lands here once (not once per button), and the arrow keys
-/// adjust the value in place (Up/Right increment, Down/Left decrement) instead
-/// of leaking into directional focus traversal. The inner buttons stay
+/// focus stop. Tab lands here once (not once per button), and Left/Right
+/// (D-pad or arrow keys) adjust the value in place (Right increment, Left
+/// decrement) instead of leaking into directional focus traversal; Up/Down stay
+/// free for row-to-row navigation. The inner buttons stay
 /// mouse-clickable but are removed from focus traversal so they never become
 /// separate, value-less tab stops.
 ///
@@ -955,8 +961,9 @@ class _KeyboardStepper extends StatelessWidget {
 }
 
 /// The slider equivalent of [_KeyboardStepper]: a single keyboard/gamepad focus
-/// stop whose Left/Right (D-pad) and arrow keys nudge the slider by one step,
-/// while the slider stays draggable by mouse/touch.
+/// stop whose Left/Right (D-pad or arrow keys) nudge the slider by one step,
+/// while the slider stays draggable by mouse/touch. Up/Down are left free for
+/// row-to-row focus navigation.
 class _KeyboardSlider extends StatelessWidget {
   const _KeyboardSlider({
     required this.value,

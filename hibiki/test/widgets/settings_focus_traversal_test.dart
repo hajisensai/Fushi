@@ -254,12 +254,13 @@ void main() {
 
     await tester.sendKeyEvent(LogicalKeyboardKey.tab);
     await tester.pump();
-    // The stepper now holds focus: arrows adjust value, and it is NOT one of
+    // The stepper now holds focus: Left/Right adjust value, and it is NOT one of
     // the neighbouring buttons (proves the +/- buttons are not separate stops).
+    // (Up/Down are reserved for row-to-row navigation, so the probe is Right.)
     expect(before.hasPrimaryFocus, isFalse);
     expect(after.hasPrimaryFocus, isFalse);
     final double mid = value;
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
     await tester.pump();
     expect(value, greaterThan(mid),
         reason: 'the single focus stop between the buttons is the stepper');
