@@ -1194,5 +1194,6 @@
     "sync_pair_allow": "允许",
     "sync_pair_deny": "拒绝",
     "sync_pair_denied": "对方拒绝了配对请求",
-    "sync_pair_unknown_device": "未知设备"
+    "sync_pair_unknown_device": "未知设备",
+    "sync_pair_unavailable": "对方设备未就绪或版本过旧，请确认对方已更新并开启同步后重试。"
 }

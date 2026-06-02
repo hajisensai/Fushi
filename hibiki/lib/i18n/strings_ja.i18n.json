@@ -1194,5 +1194,6 @@
     "sync_pair_allow": "Allow",
     "sync_pair_deny": "Deny",
     "sync_pair_denied": "The other device declined pairing",
-    "sync_pair_unknown_device": "Unknown device"
+    "sync_pair_unknown_device": "Unknown device",
+    "sync_pair_unavailable": "The other device isn't ready or is on an older version. Update it and enable sync, then try again."
 }

@@ -27,10 +27,14 @@ void main() {
 
   Uri pairUri() => Uri.parse('http://127.0.0.1:${server.port}/api/pair');
 
-  test('POST /api/pair returns 403 when no approval handler is wired',
+  test('POST /api/pair returns 403/unavailable when no handler is wired',
       () async {
     final http.Response resp = await http.post(pairUri());
     expect(resp.statusCode, 403);
+    expect(
+      (jsonDecode(resp.body) as Map<String, dynamic>)['reason'],
+      'unavailable',
+    );
   });
 
   test('POST /api/pair returns the token when the host approves', () async {
@@ -42,10 +46,14 @@ void main() {
     expect(body['token'], 'super-secret-token');
   });
 
-  test('POST /api/pair returns 403 when the host declines', () async {
+  test('POST /api/pair returns 403/declined when the host declines', () async {
     server.onPairRequest = (HibikiPairRequest _) async => false;
     final http.Response resp = await http.post(pairUri());
     expect(resp.statusCode, 403);
+    expect(
+      (jsonDecode(resp.body) as Map<String, dynamic>)['reason'],
+      'declined',
+    );
   });
 
   test('the approval handler receives the client name and remote address',

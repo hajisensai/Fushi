@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:bonsoir/bonsoir.dart';
 
@@ -48,7 +49,8 @@ class HibikiDevice {
       name: service.name,
       host: host,
       port: service.port,
-      deviceId: service.attributes[LanDiscoveryService.attributeId] ?? service.name,
+      deviceId:
+          service.attributes[LanDiscoveryService.attributeId] ?? service.name,
     );
   }
 }
@@ -63,6 +65,10 @@ class LanDiscoveryService {
   /// Our own id, used to filter our own advertisement out of the results.
   final String deviceId;
 
+  /// Our own LAN IPv4 addresses, used as a fallback self-filter for platforms
+  /// that drop the TXT `id` attribute on resolve (then [deviceId] can't match).
+  final Set<String> _localAddresses = <String>{};
+
   final Map<String, HibikiDevice> _discoveredDevices = <String, HibikiDevice>{};
   final StreamController<List<HibikiDevice>> _deviceStream =
       StreamController<List<HibikiDevice>>.broadcast();
@@ -73,11 +79,32 @@ class LanDiscoveryService {
   List<HibikiDevice> get currentDevices => _discoveredDevices.values.toList();
 
   Future<void> startDiscovery() async {
+    await _refreshLocalAddresses();
     final BonsoirDiscovery discovery = BonsoirDiscovery(type: serviceType);
     _discovery = discovery;
     await discovery.initialize();
     _sub = discovery.eventStream!.listen(_onEvent);
     await discovery.start();
+  }
+
+  /// Snapshot this device's own IPv4 addresses so a resolved service pointing
+  /// back at us can be recognised as self even when its TXT `id` is missing.
+  Future<void> _refreshLocalAddresses() async {
+    _localAddresses.clear();
+    try {
+      final List<NetworkInterface> interfaces = await NetworkInterface.list(
+        type: InternetAddressType.IPv4,
+        includeLoopback: true,
+      );
+      for (final NetworkInterface iface in interfaces) {
+        for (final InternetAddress addr in iface.addresses) {
+          _localAddresses.add(addr.address);
+        }
+      }
+    } catch (e, stack) {
+      // Enumeration can be denied/unsupported; the id filter still applies.
+      ErrorLogService.instance.log('LanDiscovery.localAddresses', e, stack);
+    }
   }
 
   void _onEvent(BonsoirDiscoveryEvent event) {
@@ -89,19 +116,23 @@ class LanDiscoveryService {
       case BonsoirDiscoveryServiceFoundEvent():
         if (discovery == null) return;
         unawaited(_resolve(event.service, discovery));
-      // A service finished resolving: map it and add it (unless it is us).
+      // A service finished resolving: map it and add it (unless it is us — by
+      // advertised id, or by host address when the id attribute didn't survive).
       case BonsoirDiscoveryServiceResolvedEvent():
         final HibikiDevice? device =
             HibikiDevice.fromResolvedService(event.service);
-        if (device == null || device.deviceId == deviceId) return;
+        if (device == null ||
+            device.deviceId == deviceId ||
+            _localAddresses.contains(device.host)) {
+          return;
+        }
         _discoveredDevices[device.deviceId] = device;
         _deviceStream.add(currentDevices);
       // A service went away: remove it by its advertised id attribute, falling
       // back to the service name when the platform did not carry attributes.
       case BonsoirDiscoveryServiceLostEvent():
         final BonsoirService service = event.service;
-        final String key =
-            service.attributes[attributeId] ?? service.name;
+        final String key = service.attributes[attributeId] ?? service.name;
         if (_discoveredDevices.remove(key) != null) {
           _deviceStream.add(currentDevices);
         }

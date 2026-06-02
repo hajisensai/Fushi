@@ -211,10 +211,9 @@ class HibikiSyncServer {
   Future<shelf.Response> _handlePair(shelf.Request request) async {
     if (request.method.toUpperCase() != 'POST') return shelf.Response(405);
     final Future<bool> Function(HibikiPairRequest)? approve = onPairRequest;
-    // No UI wired to approve → never hand out the token unattended.
-    if (approve == null) {
-      return shelf.Response(403, body: 'Pairing not available');
-    }
+    // No UI wired to approve → never hand out the token unattended. A distinct
+    // reason lets the client say "peer not ready" instead of "peer declined".
+    if (approve == null) return _pairDenied('unavailable');
     String? name;
     final Map<String, dynamic>? body = await _readJsonObject(request);
     final String? reported = body?['name']?.toString().trim();
@@ -223,9 +222,19 @@ class HibikiSyncServer {
       deviceName: name,
       remoteAddress: _remoteAddress(request),
     ));
-    if (!approved) return shelf.Response(403, body: 'Pairing declined');
+    if (!approved) return _pairDenied('declined');
     return _jsonResponse(<String, dynamic>{'token': _token});
   }
+
+  /// A 403 carrying a machine-readable [reason] ('declined' | 'unavailable') so
+  /// the client can distinguish a real refusal from a peer that has no approval
+  /// handler wired. Older peers reply with a plain-text body instead, which the
+  /// client treats as 'unavailable'.
+  shelf.Response _pairDenied(String reason) => shelf.Response(
+        403,
+        body: jsonEncode(<String, String>{'reason': reason}),
+        headers: <String, String>{'Content-Type': 'application/json'},
+      );
 
   /// Source IP of the request's TCP connection, or null when shelf_io did not
   /// attach connection info (e.g. some test harnesses).

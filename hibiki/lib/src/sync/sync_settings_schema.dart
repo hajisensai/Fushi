@@ -2107,8 +2107,7 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget> {
           message = t.sync_pair_failed;
         }
       } else if (resp.statusCode == 403) {
-        // Host declined or let the prompt time out.
-        message = t.sync_pair_denied;
+        message = _pairDeniedMessage(resp.body);
       } else {
         message = t.sync_pair_failed;
       }
@@ -2126,6 +2125,20 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget> {
     state.reloadClientConfig();
     widget.settingsContext.refresh();
     if (mounted) _showSnackBar(context, '${device.name}: $message');
+  }
+
+  /// Tell a 403 apart: a peer that explicitly declined ({"reason":"declined"})
+  /// vs one with no approval handler / older build ({"reason":"unavailable"} or
+  /// a plain-text body), so the user isn't told "declined" when the peer simply
+  /// can't prompt. A token-less reply that somehow returns 200 is handled above.
+  String _pairDeniedMessage(String body) {
+    try {
+      final dynamic decoded = jsonDecode(body);
+      if (decoded is Map && decoded['reason'] == 'declined') {
+        return t.sync_pair_denied;
+      }
+    } catch (_) {/* older peers reply with a plain-text 403 body */}
+    return t.sync_pair_unavailable;
   }
 
   /// This device's own advertised name, sent to the host so its approval prompt
