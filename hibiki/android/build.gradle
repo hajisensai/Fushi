@@ -54,8 +54,12 @@ subprojects {
             def android = proj.extensions.findByName('android')
             if (android != null) {
                 // Force compileSdk for all subprojects so Material You attrs (lStar etc.) resolve
-                // App uses 36 (media3 requires it); plugins stay at 34 to avoid null-safety breakage
-                if (proj.plugins.hasPlugin('com.android.application')) {
+                // App uses 36 (media3 requires it); plugins stay at 34 to avoid null-safety breakage.
+                // Exception: bonsoir_android references API-36 symbols
+                // (NsdServiceInfo.hostname / hostAddresses) behind runtime SDK guards, so it must be
+                // compiled against 36 or it fails with "Unresolved reference 'hostname'".
+                if (proj.plugins.hasPlugin('com.android.application') ||
+                        proj.name == 'bonsoir_android') {
                     android.compileSdkVersion 36
                 } else {
                     android.compileSdkVersion 34
