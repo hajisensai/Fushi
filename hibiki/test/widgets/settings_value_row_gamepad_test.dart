@@ -271,6 +271,49 @@ void main() {
       await tester.pump();
       expect(value, closeTo(0.5, 0.0001));
     });
+
+    testWidgets(
+        'arrow up/down KEY does NOT move a slider row '
+        '(the actual repro: "音量键翻页速度" slider changed while scrolling rows)',
+        (WidgetTester tester) async {
+      final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
+      double value = 0.5;
+      await tester.pumpWidget(MaterialApp(
+        navigatorKey: navKey,
+        theme: ThemeData.light(useMaterial3: true),
+        home: Scaffold(
+          body: HibikiFocusRoot(
+            child: StatefulBuilder(
+              builder: (BuildContext c, StateSetter setState) =>
+                  AdaptiveSettingsSliderRow(
+                title: 'Volume',
+                value: value,
+                divisions: 10,
+                onChanged: (double v) => setState(() => value = v),
+              ),
+            ),
+          ),
+        ),
+        builder: (BuildContext context, Widget? child) =>
+            wrapWithGlobalNavigation(navigatorKey: navKey, child: child!),
+      ));
+      await tester.pump();
+      final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+        tester.element(find.text('Volume')),
+      );
+      controller.ensureFocus();
+      await tester.pump();
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump();
+      expect(value, closeTo(0.5, 0.0001),
+          reason: 'arrow down navigates rows, must NOT move the slider');
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await tester.pump();
+      expect(value, closeTo(0.5, 0.0001),
+          reason: 'arrow up navigates rows, must NOT move the slider');
+    });
   });
 
   group('gamepadSeekableSlider (bare seek bar)', () {

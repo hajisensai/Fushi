@@ -24,7 +24,9 @@ Rect _globalRect(Finder finder, WidgetTester tester) {
 }
 
 void main() {
-  testWidgets('focused number stepper increments on ArrowRight/ArrowUp', (
+  testWidgets(
+      'focused number stepper increments on ArrowRight (ArrowUp does NOT adjust)',
+      (
     tester,
   ) async {
     double value = 10;
@@ -51,14 +53,21 @@ void main() {
     final double before = value;
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
     await tester.pump();
+    expect(value, greaterThan(before),
+        reason: 'ArrowRight should increase the stepper value');
+
+    // ArrowUp is reserved for row-to-row focus navigation: it must NOT nudge
+    // the value (re-binding it here is the bug this guards against).
+    final double afterRight = value;
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
     await tester.pump();
-
-    expect(value, greaterThan(before),
-        reason: 'ArrowRight/ArrowUp should increase the stepper value');
+    expect(value, afterRight,
+        reason: 'ArrowUp must not change the stepper value');
   });
 
-  testWidgets('focused number stepper decrements on ArrowLeft/ArrowDown', (
+  testWidgets(
+      'focused number stepper decrements on ArrowLeft (ArrowDown does NOT adjust)',
+      (
     tester,
   ) async {
     double value = 10;
@@ -84,11 +93,16 @@ void main() {
     final double before = value;
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
     await tester.pump();
+    expect(value, lessThan(before),
+        reason: 'ArrowLeft should decrease the stepper value');
+
+    // ArrowDown is reserved for row-to-row focus navigation: it must NOT nudge
+    // the value.
+    final double afterLeft = value;
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pump();
-
-    expect(value, lessThan(before),
-        reason: 'ArrowLeft/ArrowDown should decrease the stepper value');
+    expect(value, afterLeft,
+        reason: 'ArrowDown must not change the stepper value');
   });
 
   testWidgets('Tab traversal scrolls a below-the-fold control into view', (

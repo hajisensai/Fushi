@@ -490,8 +490,9 @@ class AdaptiveSettingsSegmentedRow<T extends Object> extends StatelessWidget {
   Widget build(BuildContext context) {
     // A segmented row is a discrete-valued control: register it as a SINGLE
     // gamepad/keyboard focus stop (like the stepper/slider rows) so geometric
-    // focus navigation can land on it, and D-pad Left/Right cycles the segment
-    // in place. Without this wrapper the row carries no HibikiFocusTarget (its
+    // focus navigation can land on it, and D-pad Left/Right steps the segment
+    // in place (clamped at the ends, no wrap). Without this wrapper the row
+    // carries no HibikiFocusTarget (its
     // AdaptiveSettingsRow has no onTap), so it is invisible to directional
     // navigation — the cursor skips the whole layout section.
     final int currentIndex =
