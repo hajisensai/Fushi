@@ -2647,17 +2647,12 @@ class AppModel with ChangeNotifier {
             enabled: source.enabled,
           ),
     ];
-    // 删掉被移除本地库的磁盘文件（避免孤儿）。
-    final Set<String> nextPaths =
-        nextDbs.map((LocalAudioDbEntry db) => db.path).toSet();
-    for (final String oldPath in current.keys) {
-      if (!nextPaths.contains(oldPath)) {
-        await LocalAudioManager.deleteFiles(oldPath);
-      }
-    }
     await _localAudioManager.setEntries(nextDbs);
-    // 不再用「任一库启用」自动派生总开关；以当前显式总开关值重新 gate native
-    // （总开关 OFF → 推空列表给 native；ON → 推 enabled 路径）。
+    // 回收所有不再被引用的本地音频副本（含曾持久化已移除 + 拷贝但从未持久化的孤儿）。
+    await _localAudioManager.pruneOrphans(
+      nextDbs.map((LocalAudioDbEntry db) => db.path),
+    );
+    // 以当前显式总开关值重新 gate native（不再从 entry 自动派生）。
     await _localAudioManager.setLocalAudioEnabled(localAudioEnabled);
   }
 

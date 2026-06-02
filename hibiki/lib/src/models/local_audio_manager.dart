@@ -112,6 +112,24 @@ class LocalAudioManager {
     );
   }
 
+  /// 删除库目录里所有不被 [keepPaths] 引用的本地音频副本文件
+  /// （只动 `local_audio_*.db` 及其 -wal/-shm 旁文件，绝不碰其它文件，如主库 hibiki.db）。
+  /// 用于回收"拷贝了但从未持久化"的孤儿文件。
+  Future<void> pruneOrphans(Iterable<String> keepPaths) async {
+    // 规范化引用路径，避免 Windows 反斜杠 / 正斜杠 + 大小写差异导致误删被引用文件。
+    final Set<String> keep =
+        keepPaths.map((String p) => path.canonicalize(p)).toSet();
+    if (!await _databaseDirectory.exists()) return;
+    final RegExp namePattern = RegExp(r'^local_audio_\d+\.db$');
+    await for (final FileSystemEntity entity in _databaseDirectory.list()) {
+      if (entity is! File) continue;
+      final String name = path.basename(entity.path);
+      if (!namePattern.hasMatch(name)) continue; // 只清本地音频副本，跳过 -wal/-shm 和其它文件
+      if (keep.contains(path.canonicalize(entity.path))) continue;
+      await deleteFiles(entity.path); // 连带删除该副本的 -wal / -shm
+    }
+  }
+
   /// 删除一个本地库的主文件及其 -wal / -shm 旁文件。
   static Future<void> deleteFiles(String dbPath) async {
     if (dbPath.isEmpty) return;

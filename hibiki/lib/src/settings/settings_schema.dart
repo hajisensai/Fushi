@@ -808,13 +808,32 @@ SettingsDestination _lookupDestination() {
             title: t.manage_audio_sources,
             icon: Icons.volume_up_outlined,
             onTap: (SettingsContext settingsContext) {
+              final AppModel appModel = settingsContext.appModel;
               return showSettingsDialog(
                 settingsContext,
                 (_) => AudioSourcesDialog(
                   sources: List<AudioSourceConfig>.from(
-                    settingsContext.appModel.audioSourceConfigs,
+                    appModel.audioSourceConfigs,
                   ),
-                  onSave: settingsContext.appModel.setAudioSourceConfigs,
+                  onSave: appModel.setAudioSourceConfigs,
+                  localAudioEnabled: appModel.localAudioEnabled,
+                  onToggleLocalAudio: appModel.setLocalAudioEnabled,
+                  onPickLocalDb: () async {
+                    final FilePickerResult? result =
+                        await FilePicker.platform.pickFiles();
+                    final String? pickedPath = result?.files.single.path;
+                    if (pickedPath == null) return null;
+                    final LocalAudioDbEntry entry =
+                        await appModel.importLocalAudioDbFile(
+                      pickedPath,
+                      displayName: result!.files.single.name,
+                    );
+                    return AudioSourceConfig.localAudio(
+                      label: entry.displayName,
+                      path: entry.path,
+                      enabled: true,
+                    );
+                  },
                 ),
               );
             },
@@ -955,28 +974,6 @@ SettingsDestination _lookupDestination() {
               settingsContext.appModel.setPopupMaxWidth(value);
               settingsContext.refresh();
             },
-          ),
-        ],
-      ),
-      SettingsSection(
-        title: t.local_audio,
-        items: <SettingsItem>[
-          SettingsSwitchItem(
-            id: 'lookup.local_audio',
-            title: t.local_audio,
-            icon: Icons.library_music_outlined,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.localAudioEnabled,
-            onChanged: (SettingsContext settingsContext, bool value) {
-              settingsContext.appModel.toggleLocalAudio();
-              settingsContext.refresh();
-            },
-          ),
-          SettingsCustomItem(
-            id: 'lookup.local_audio_databases',
-            icon: Icons.storage_outlined,
-            builder: (SettingsContext settingsContext) =>
-                _LocalAudioDatabasesRow(settingsContext: settingsContext),
           ),
         ],
       ),
@@ -1351,208 +1348,6 @@ class _SettingsNumberFieldState extends State<_SettingsNumberField> {
         onChanged: widget.onChanged,
       ),
     );
-  }
-}
-
-class _LocalAudioDatabasesRow extends StatefulWidget {
-  const _LocalAudioDatabasesRow({required this.settingsContext});
-
-  final SettingsContext settingsContext;
-
-  @override
-  State<_LocalAudioDatabasesRow> createState() =>
-      _LocalAudioDatabasesRowState();
-}
-
-class _LocalAudioDatabasesRowState extends State<_LocalAudioDatabasesRow> {
-  bool _expanded = true;
-
-  SettingsContext get settingsContext => widget.settingsContext;
-  AppModel get appModel => settingsContext.appModel;
-
-  @override
-  Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    final List<LocalAudioDbEntry> dbs = appModel.localAudioDbs;
-    return AdaptiveSettingsRow(
-      title: t.local_audio,
-      icon: Icons.storage_outlined,
-      controlBelow: true,
-      trailing: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          if (dbs.isEmpty)
-            Padding(
-              padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
-              child: Text(
-                t.local_audio_not_set,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-              ),
-            ),
-          if (dbs.isNotEmpty) _buildDbList(dbs),
-          SizedBox(height: tokens.spacing.gap / 2),
-          TextButton.icon(
-            icon: Icon(
-              Icons.add,
-              size: Theme.of(context).textTheme.bodyMedium?.fontSize,
-            ),
-            label: Text(t.local_audio_add_db),
-            onPressed: _pickAndAddAudioDb,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDbList(List<LocalAudioDbEntry> dbs) {
-    return Theme(
-      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-      child: ExpansionTile(
-        tilePadding: EdgeInsets.zero,
-        childrenPadding: EdgeInsets.zero,
-        initiallyExpanded: _expanded,
-        title: Text('${t.local_audio} (${dbs.length})'),
-        onExpansionChanged: (bool value) {
-          setState(() {
-            _expanded = value;
-          });
-        },
-        children: <Widget>[
-          ReorderableListView.builder(
-            buildDefaultDragHandles: false,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: dbs.length,
-            itemBuilder: (BuildContext context, int index) =>
-                _buildDbTile(dbs, index),
-            onReorder: (int oldIndex, int newIndex) async {
-              await appModel.reorderLocalAudioDbs(oldIndex, newIndex);
-              _refresh();
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDbTile(List<LocalAudioDbEntry> dbs, int index) {
-    final LocalAudioDbEntry entry = dbs[index];
-    final String label = entry.displayName.isNotEmpty
-        ? entry.displayName
-        : entry.path.split('/').last;
-    final bool enabled = entry.enabled;
-    final TextStyle? counterStyle = Theme.of(context).textTheme.bodySmall;
-
-    return AdaptiveSettingsRow(
-      key: ValueKey<String>(entry.path),
-      title: label,
-      icon: enabled ? Icons.storage_outlined : Icons.block,
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Text('${index + 1}', style: counterStyle),
-          HibikiIconButton(
-            tooltip: enabled ? t.options_hide : t.options_show,
-            size: 18,
-            icon: enabled ? Icons.check_circle_outline : Icons.block,
-            onTap: () async {
-              await appModel.toggleLocalAudioDbEnabled(index);
-              _refresh();
-            },
-          ),
-          HibikiIconButton(
-            tooltip: t.move_up,
-            size: 18,
-            icon: Icons.keyboard_arrow_up,
-            enabled: index > 0,
-            onTap: () async {
-              await appModel.reorderLocalAudioDbs(index, index - 1);
-              _refresh();
-            },
-          ),
-          HibikiIconButton(
-            tooltip: t.move_down,
-            size: 18,
-            icon: Icons.keyboard_arrow_down,
-            enabled: index < dbs.length - 1,
-            onTap: () async {
-              await appModel.reorderLocalAudioDbs(index, index + 2);
-              _refresh();
-            },
-          ),
-          ReorderableDragStartListener(
-            index: index,
-            child: Tooltip(
-              message: t.custom_fonts_drag_hint,
-              child: const Padding(
-                padding: EdgeInsets.all(8),
-                child: Icon(Icons.drag_handle, size: 18),
-              ),
-            ),
-          ),
-          HibikiIconButton(
-            tooltip: t.dialog_delete,
-            size: 18,
-            icon: Icons.delete_outline,
-            onTap: () => _confirmRemove(index, label),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _confirmRemove(int index, String label) async {
-    final bool confirmed = await showSettingsConfirmationDialog(
-      settingsContext,
-      title: t.dialog_delete,
-      body: label,
-      confirmLabel: t.dialog_delete,
-      destructive: true,
-    );
-    if (!confirmed || !mounted) return;
-    await appModel.removeLocalAudioDb(index);
-    _refresh();
-  }
-
-  Future<void> _pickAndAddAudioDb() async {
-    bool importDialogShown = false;
-
-    void showImportDialog() {
-      if (importDialogShown || !mounted) return;
-      importDialogShown = true;
-      showSettingsProgressDialog(
-        settingsContext,
-        message: t.dialog_importing,
-      );
-    }
-
-    try {
-      final FilePickerResult? result = await FilePicker.platform.pickFiles(
-        onFileLoading: (FilePickerStatus status) {
-          if (status == FilePickerStatus.picking) showImportDialog();
-        },
-      );
-      if (result != null && result.files.single.path != null && mounted) {
-        final PlatformFile file = result.files.single;
-        showImportDialog();
-        await appModel.addLocalAudioDb(
-          file.path!,
-          displayName: file.name,
-        );
-        _refresh();
-      }
-    } finally {
-      if (importDialogShown && mounted) {
-        Navigator.of(context).pop();
-      }
-    }
-  }
-
-  void _refresh() {
-    if (mounted) setState(() {});
-    settingsContext.refresh();
   }
 }
 

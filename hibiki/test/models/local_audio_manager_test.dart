@@ -116,4 +116,26 @@ void main() {
     expect(wal.existsSync(), isFalse);
     expect(shm.existsSync(), isFalse);
   });
+
+  test('pruneOrphans deletes unreferenced local_audio_*.db files only',
+      () async {
+    // a referenced db we keep
+    final File keep = File('${directory.path}/local_audio_1.db')
+      ..writeAsStringSync('k');
+    // an orphan copied db + sidecars
+    final File orphan = File('${directory.path}/local_audio_2.db')
+      ..writeAsStringSync('o');
+    final File orphanWal = File('${directory.path}/local_audio_2.db-wal')
+      ..writeAsStringSync('w');
+    // an unrelated file that must NOT be touched
+    final File other = File('${directory.path}/hibiki.db')
+      ..writeAsStringSync('h');
+
+    await manager.pruneOrphans(<String>[keep.path]);
+
+    expect(keep.existsSync(), isTrue); // referenced -> kept
+    expect(orphan.existsSync(), isFalse); // unreferenced -> deleted
+    expect(orphanWal.existsSync(), isFalse);
+    expect(other.existsSync(), isTrue); // not a local_audio_* file -> untouched
+  });
 }
