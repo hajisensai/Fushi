@@ -127,9 +127,12 @@ class _AnkiSettingsPageState extends BasePageState<AnkiSettingsPage> {
   Widget _buildFetchTile(AnkiUiState uiState, AnkiViewModel vm) {
     return AdaptiveSettingsRow(
       icon: Icons.sync_outlined,
+      showIcon: true,
       title: uiState.isFetching ? t.anki_fetching : t.anki_fetch,
-      // Action row, not navigation: tapping triggers a fetch (spinner while
-      // running), it does not open a subpage — so no chevron.
+      // Action row, not navigation: a leading icon + state-layer ripple signals
+      // tappability (MD3 list-item convention, same as SettingsActionItem); the
+      // tap triggers a fetch (spinner while running) rather than opening a
+      // subpage, so there is no trailing chevron.
       trailing: uiState.isFetching
           ? SizedBox(
               width: 20,

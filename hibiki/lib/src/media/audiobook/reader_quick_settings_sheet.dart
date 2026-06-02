@@ -1202,13 +1202,16 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
         if (widget.onAudioImport != null)
           AdaptiveSettingsSection(
             children: [
-              // Action row, not navigation: tapping closes the sheet and runs
-              // the audio-import callback, it does not open a subpage — so no
-              // chevron (plain AdaptiveSettingsRow instead of NavigationRow,
-              // which would force a trailing chevron_right).
+              // Action row, not navigation: a leading icon + state-layer ripple
+              // signals tappability (MD3 list-item convention, same as the
+              // other rows in this sheet); the tap closes the sheet and runs the
+              // audio-import callback rather than opening a subpage, so there is
+              // no trailing chevron (plain AdaptiveSettingsRow, not
+              // NavigationRow which would force a chevron_right).
               AdaptiveSettingsRow(
                 title: t.srt_book_replace_audio,
                 icon: Icons.swap_horiz_outlined,
+                showIcon: true,
                 onTap: () {
                   Navigator.pop(context);
                   widget.onAudioImport!();
