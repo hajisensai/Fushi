@@ -347,17 +347,16 @@ class _SystemFontPickerPageState extends State<_SystemFontPickerPage> {
               ]
             : _filtered.map((String name) {
                 final bool added = widget.alreadyAdded.contains(name);
-                if (added) {
-                  return AdaptiveSettingsRow(
-                    title: name,
-                    icon: Icons.font_download_outlined,
-                    trailing: Icon(Icons.check, color: scheme.outline),
-                  );
-                }
-                return AdaptiveSettingsNavigationRow(
+                // Single-choice list: added fonts show a trailing check,
+                // pickable fonts are plain tappable rows. No navigation chevron
+                // — tapping pops this page with the font name, it does not drill
+                // into a subpage, so a `chevron_right` would falsely imply one.
+                return AdaptiveSettingsRow(
                   title: name,
                   icon: Icons.font_download_outlined,
-                  onTap: () => Navigator.pop(context, name),
+                  trailing:
+                      added ? Icon(Icons.check, color: scheme.outline) : null,
+                  onTap: added ? null : () => Navigator.pop(context, name),
                 );
               }).toList();
 
