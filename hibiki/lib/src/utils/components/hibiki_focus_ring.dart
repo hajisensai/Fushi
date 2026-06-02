@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hibiki/src/focus/hibiki_focus_scroll.dart';
+import 'package:hibiki/src/utils/app_ui_scale.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 
 /// App-level overlay that paints a high-contrast ring around the widget that
@@ -42,11 +43,11 @@ class _HibikiFocusRingState extends State<HibikiFocusRing>
   // and from a manual scroll (which must never trigger a scroll-back).
   FocusNode? _lastFocused;
 
-  // The UI scale (folded into MediaQuery.textScaler by HibikiAppUiScale) seen at
-  // the last didChangeDependencies. Used to tell a geometry-changing scale
+  // The in-app UI scale (exposed by HibikiAppUiScale via _AppUiScaleScope) seen
+  // at the last didChangeDependencies. Used to tell a geometry-changing scale
   // reflow (must reveal + recompute) apart from a theme-only dependency change
   // (must only recompute the ring, never scroll).
-  TextScaler? _lastTextScaler;
+  double? _lastUiScale;
 
   @override
   void initState() {
@@ -67,7 +68,7 @@ class _HibikiFocusRingState extends State<HibikiFocusRing>
   }
 
   // Fires on ANY inherited dependency read in build() changing — that is both
-  // the in-app UI scale (HibikiAppUiScale folds it into MediaQuery.textScaler,
+  // the in-app UI scale (HibikiAppUiScale exposes it via _AppUiScaleScope,
   // read below) AND the theme (Theme.of in build()). We must distinguish them:
   //
   //  - A scale change reflows the whole subtree, moving the focused control,
@@ -83,13 +84,17 @@ class _HibikiFocusRingState extends State<HibikiFocusRing>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Read (and thereby depend on) the scale-driven textScaler. Keep this read:
-    // it registers the MediaQuery.textScaler aspect dependency that delivers
-    // scale changes here. Removing it silently brings back the original bug.
-    final TextScaler textScaler = MediaQuery.textScalerOf(context);
-    final bool scaleChanged =
-        _lastTextScaler != null && textScaler != _lastTextScaler;
-    _lastTextScaler = textScaler;
+    // Depend on the actual in-app UI scale. HibikiAppUiScale exposes it via an
+    // InheritedWidget (_AppUiScaleScope); a scale change always notifies this
+    // dependent — unlike the old MediaQuery.textScaler aspect, which the
+    // Transform-based scale no longer touches (changing scale only moves the
+    // size aspect, never reaching a textScaler-aspect dependent). A scale reflow
+    // moves the focused control without any window-metrics/focus/scroll/highlight
+    // change, so detect it here and reveal the control. Removing this read
+    // silently brings back the original "焦点不跟着动" bug.
+    final double uiScale = HibikiAppUiScale.of(context);
+    final bool scaleChanged = _lastUiScale != null && uiScale != _lastUiScale;
+    _lastUiScale = uiScale;
     if (scaleChanged) _scheduleEnsureVisible();
     _scheduleRecompute();
   }
@@ -186,11 +191,34 @@ class _HibikiFocusRingState extends State<HibikiFocusRing>
     return rect;
   }
 
+  // Scale a rect about the top-left origin (matches HibikiAppUiScale's
+  // Transform.scale alignment: topLeft). Used to map a global-coord ring rect
+  // into this widget's scaled-down local canvas.
+  static Rect _scaleRect(Rect rect, double factor) => Rect.fromLTWH(
+        rect.left * factor,
+        rect.top * factor,
+        rect.width * factor,
+        rect.height * factor,
+      );
+
   @override
   Widget build(BuildContext context) {
-    final Rect? rect = _rect;
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final Color color = Theme.of(context).colorScheme.primary;
+    // _rect comes from RenderBox.localToGlobal — it is in GLOBAL (view) coords.
+    // HibikiFocusRing sits INSIDE HibikiAppUiScale's Transform.scale (alignment
+    // topLeft), so this Stack's local coord system is the un-scaled logical
+    // canvas: local = global / scale. Build the 2px-inflated ring in GLOBAL
+    // coords (so the visual gap around the control stays a constant 2px at any
+    // scale), then map the whole rect back to local so the Transform re-magnifies
+    // it onto the focused control. At scale 1.0 (no Transform) this is a no-op,
+    // matching the pre-Transform behaviour. Reading the scale here also makes
+    // build() depend on _AppUiScaleScope, so a scale change rebuilds the ring.
+    final double scale = HibikiAppUiScale.of(context);
+    final Rect? globalRect = _rect;
+    final Rect? ringRect = globalRect == null
+        ? null
+        : _scaleRect(globalRect.inflate(2), 1 / scale);
     return Stack(
       children: <Widget>[
         // Track the focused control while any scrollable moves it (mouse wheel,
@@ -205,9 +233,9 @@ class _HibikiFocusRingState extends State<HibikiFocusRing>
           },
           child: widget.child,
         ),
-        if (rect != null)
+        if (ringRect != null)
           Positioned.fromRect(
-            rect: rect.inflate(2),
+            rect: ringRect,
             child: IgnorePointer(
               child: DecoratedBox(
                 decoration: BoxDecoration(

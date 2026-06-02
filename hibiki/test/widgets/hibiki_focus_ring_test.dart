@@ -131,7 +131,7 @@ void main() {
       'ring follows the focused control when the in-app UI scale changes',
       (WidgetTester tester) async {
     // Regression: dragging the "界面大小" (app UI scale) slider reflows the whole
-    // subtree via MediaQuery.textScaler / Spacing — moving the focused control —
+    // subtree via HibikiAppUiScale's Transform — moving the focused control —
     // without any window-metrics, focus, scroll, or highlight change. None of
     // the ring's recompute triggers fired, so the ring stayed pinned to the
     // control's old position ("焦点不跟着动").
@@ -221,7 +221,7 @@ void main() {
     // build() — including Theme.of. A theme change must NOT trigger the
     // reveal/scroll path: it does not move geometry, and pulling a deliberately
     // scrolled-away focus back to center would break the "manual scroll is not
-    // pulled back" contract. Only a real UI-scale (textScaler) change may scroll.
+    // pulled back" contract. Only a real in-app UI-scale change may scroll.
     final FocusManager fm = FocusManager.instance;
     final FocusHighlightStrategy previous = fm.highlightStrategy;
     fm.highlightStrategy = FocusHighlightStrategy.alwaysTraditional;
