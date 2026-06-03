@@ -285,9 +285,10 @@ class HibikiSearchField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    final Widget? trailing = _hibikiTextFieldKeyboardSuffix(
+    final Widget? trailing = _hibikiTextFieldInputSuffix(
       context: context,
       controller: controller,
+      onChanged: onChanged,
     );
     final SearchBar searchBar = SearchBar(
       key: fieldKey,
@@ -387,9 +388,10 @@ class _HibikiTextFieldState extends State<HibikiTextField> {
   Widget build(BuildContext context) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final Widget? effectiveSuffix = widget.suffixIcon ??
-        _hibikiTextFieldKeyboardSuffix(
+        _hibikiTextFieldInputSuffix(
           context: context,
           controller: widget.readOnly ? null : widget.controller,
+          onChanged: widget.onChanged,
         );
     final OutlineInputBorder border = OutlineInputBorder(
       borderRadius: tokens.radii.cardRadius,
@@ -444,19 +446,38 @@ class _HibikiTextFieldState extends State<HibikiTextField> {
   }
 }
 
-Widget? _hibikiTextFieldKeyboardSuffix({
+/// The input-assist suffix icon for a text field. On desktop (no system IME) it
+/// opens the on-screen [showGamepadKeyboard]; on mobile it offers one-tap
+/// clipboard paste (the system IME types, but paste otherwise needs a
+/// long-press). [onChanged] is forwarded so a programmatic edit (on-screen
+/// keyboard input or paste) still updates reactive fields — Flutter does not
+/// fire `onChanged` on programmatic controller mutations.
+Widget? _hibikiTextFieldInputSuffix({
   required BuildContext context,
   required TextEditingController? controller,
+  ValueChanged<String>? onChanged,
 }) {
+  if (controller == null) return null;
   final TargetPlatform platform = Theme.of(context).platform;
   final bool isDesktop = platform == TargetPlatform.windows ||
       platform == TargetPlatform.linux ||
       platform == TargetPlatform.macOS;
-  if (!isDesktop || controller == null) return null;
+  if (isDesktop) {
+    return HibikiIconButton(
+      icon: Icons.keyboard_outlined,
+      tooltip: t.on_screen_keyboard,
+      onTap: () =>
+          showGamepadKeyboard(context, controller, onChanged: onChanged),
+    );
+  }
   return HibikiIconButton(
-    icon: Icons.keyboard_outlined,
-    tooltip: t.on_screen_keyboard,
-    onTap: () => showGamepadKeyboard(context, controller),
+    icon: Icons.content_paste_outlined,
+    tooltip: t.paste,
+    onTap: () async {
+      if (await gamepadKeyboardPaste(controller)) {
+        onChanged?.call(controller.text);
+      }
+    },
   );
 }
 
@@ -1823,7 +1844,7 @@ class HibikiEditorPanel extends StatelessWidget {
             Positioned(
               top: tokens.spacing.gap,
               right: tokens.spacing.gap,
-              child: _hibikiTextFieldKeyboardSuffix(
+              child: _hibikiTextFieldInputSuffix(
                     context: context,
                     controller: controller,
                   ) ??
@@ -1908,7 +1929,7 @@ class HibikiCompactSearchRow extends StatelessWidget {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final String closeTooltip =
         MaterialLocalizations.of(context).closeButtonTooltip;
-    final Widget? keyboardSuffix = _hibikiTextFieldKeyboardSuffix(
+    final Widget? keyboardSuffix = _hibikiTextFieldInputSuffix(
       context: context,
       controller: controller,
     );

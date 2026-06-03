@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 
@@ -53,6 +54,69 @@ void main() {
       ));
       await tester.pump();
       expect(find.byIcon(Icons.keyboard_outlined), findsNothing);
+    });
+
+    testWidgets('mobile + controller shows a one-tap paste button',
+        (WidgetTester tester) async {
+      final TextEditingController c = TextEditingController();
+      addTearDown(c.dispose);
+      await tester.pumpWidget(buildTestApp(
+        HibikiTextField(controller: c),
+        theme: ThemeData(useMaterial3: true, platform: TargetPlatform.android),
+      ));
+      await tester.pump();
+      expect(find.byIcon(Icons.content_paste_outlined), findsOneWidget);
+      expect(find.byIcon(Icons.keyboard_outlined), findsNothing,
+          reason: 'mobile uses the system IME, not the on-screen keyboard');
+    });
+
+    testWidgets('desktop shows the keyboard button, not paste',
+        (WidgetTester tester) async {
+      final TextEditingController c = TextEditingController();
+      addTearDown(c.dispose);
+      await tester.pumpWidget(buildTestApp(
+        HibikiTextField(controller: c),
+        theme: ThemeData(useMaterial3: true, platform: TargetPlatform.windows),
+      ));
+      await tester.pump();
+      expect(find.byIcon(Icons.keyboard_outlined), findsOneWidget);
+      expect(find.byIcon(Icons.content_paste_outlined), findsNothing);
+    });
+
+    testWidgets(
+        'mobile paste button inserts clipboard text and fires onChanged',
+        (WidgetTester tester) async {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (MethodCall call) async => call.method == 'Clipboard.getData'
+            ? <String, dynamic>{'text': 'hi'}
+            : null,
+      );
+      addTearDown(() => tester.binding.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null));
+      final TextEditingController c = TextEditingController(text: 'a');
+      addTearDown(c.dispose);
+      c.selection = const TextSelection.collapsed(offset: 1);
+      final List<String> changes = <String>[];
+      await tester.pumpWidget(buildTestApp(
+        HibikiTextField(controller: c, onChanged: changes.add),
+        theme: ThemeData(useMaterial3: true, platform: TargetPlatform.android),
+      ));
+      await tester.pump();
+      await tester.tap(find.byIcon(Icons.content_paste_outlined));
+      await tester.pumpAndSettle();
+      expect(c.text, 'ahi');
+      expect(changes.last, 'ahi');
+    });
+
+    testWidgets('mobile no-controller shows no paste button',
+        (WidgetTester tester) async {
+      await tester.pumpWidget(buildTestApp(
+        const HibikiTextField(initialValue: 'x'),
+        theme: ThemeData(useMaterial3: true, platform: TargetPlatform.android),
+      ));
+      await tester.pump();
+      expect(find.byIcon(Icons.content_paste_outlined), findsNothing);
     });
   });
 

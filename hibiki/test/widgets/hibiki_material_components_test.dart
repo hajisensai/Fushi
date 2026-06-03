@@ -614,6 +614,11 @@ void main() {
     await tester.pump();
     expect(closes, 1);
 
+    // Row order on mobile is [close] [field] [paste] [search]: the default test
+    // platform is android, where the input suffix is now a one-tap paste button
+    // sitting between the field and the search button. Step right past it.
+    expect(controller.move(HibikiFocusDirection.right), isTrue);
+    await tester.pump();
     expect(controller.move(HibikiFocusDirection.right), isTrue);
     await tester.pump();
     Actions.maybeInvoke<ActivateIntent>(
