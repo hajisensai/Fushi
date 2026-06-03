@@ -23,6 +23,26 @@ import 'package:hibiki/src/shortcuts/gamepad_service.dart'
     show GamepadLongPressActions;
 import 'package:hibiki/utils.dart';
 
+/// 自适应标签列在给定可用高度下能放几个 chip slot。
+///
+/// 根因守卫：当 [maxHeight] 无界（== infinity，例如标签覆盖层用
+/// `Positioned(top, left)`（无 bottom/height）落进 `Stack(fit: StackFit.expand)`
+/// 时拿到 unbounded 约束），旧实现 `(maxHeight * 0.55 / chipHeight).floor()` 会在
+/// Infinity 上抛 `UnsupportedError: Infinity or NaN toInt` —— 表现为书本打 tag 后
+/// 封面卡片渲染异常（debug 红框/错误占位）。无界时返回全部标签数，渲染全部、由父
+/// 级自然裁剪，而不是吞异常或硬编码 slot。
+@visibleForTesting
+int adaptiveTagSlots({
+  required double maxHeight,
+  required int tagCount,
+  double chipHeight = 22.0,
+}) {
+  if (tagCount <= 0) return 0;
+  if (!maxHeight.isFinite) return tagCount;
+  final double usable = maxHeight * 0.55;
+  return (usable / chipHeight).floor().clamp(1, tagCount);
+}
+
 class ReaderHibikiHistoryPage extends HistoryReaderPage {
   const ReaderHibikiHistoryPage({super.key});
 
@@ -311,10 +331,10 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   Widget _adaptiveTagColumn(List<BookTagRow> tags) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        const double chipHeight = 22.0;
-        final double usable = constraints.maxHeight * 0.55;
-        final int maxSlots =
-            (usable / chipHeight).floor().clamp(1, tags.length);
+        final int maxSlots = adaptiveTagSlots(
+          maxHeight: constraints.maxHeight,
+          tagCount: tags.length,
+        );
 
         if (maxSlots >= tags.length) {
           return Column(
