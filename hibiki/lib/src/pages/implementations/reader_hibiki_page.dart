@@ -2231,10 +2231,18 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     final double mb = src.lyricsMarginBottom;
     final double ml = src.lyricsMarginLeft;
     final double mr = src.lyricsMarginRight;
-    await _controller!.evaluateJavascript(
-      source: 'window.__lyricsUpdateStyle && window.__lyricsUpdateStyle('
-          "'$bgCss','$fgCss','$accentCss',$fontSize,$mt,$mb,$ml,$mr);",
-    );
+    try {
+      await _controller!.evaluateJavascript(
+        source: 'window.__lyricsUpdateStyle && window.__lyricsUpdateStyle('
+            "'$bgCss','$fgCss','$accentCss',$fontSize,$mt,$mb,$ml,$mr);",
+      );
+    } catch (e, stack) {
+      // 与 _applyStylesLive/_reloadWithCurrentSettings 对称：半销毁 WebView 上
+      // eval 抛 PlatformException，安全 no-op（lyrics 路径也不再裸露孤儿 await）。
+      ErrorLogService.instance
+          .log('ReaderHibiki.updateLyricsStyleLive.eval', e, stack);
+      return;
+    }
     if (mounted) setState(() {});
   }
 
