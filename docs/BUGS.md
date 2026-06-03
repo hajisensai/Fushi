@@ -13,6 +13,16 @@
 
 ---
 
+## BUG-009 · 桌面端「外观→iOS(Cupertino)」设置页崩坏：三栏拥挤 + 右下角 RenderFlex 溢出 + 无返回出口
+- **报告**：2026-06-03（用户，附两张截图：切 iOS 前为正常 Material 全屏二栏；切 iOS 后变成「最左 Material 药丸 3 图标侧栏 + 中间 Cupertino insetGrouped 目标列表 + 右侧详情底部黄黑条纹溢出」，无返回箭头）
+- **真实性**：✅ 真 bug（代码追踪 + Win11 真机截图双确证）。两个独立根因：
+  - **R1 详情溢出**（右下黄黑条纹）：`CupertinoSettingsRenderer.buildDetailContent`(`hibiki/lib/src/settings/cupertino_settings_renderer.dart:110`)返回**裸 `Column`（不可滚动）**，被 `SettingsHomePage._buildWideLayout`(`settings_home_page.dart:159-165`)塞进 `MaterialSupportingPaneLayout.primary`（`Expanded`，有限高度）→ 内容超高 RenderFlex 溢出。对照 `MaterialSettingsRenderer.buildDetailContent`(`material_settings_renderer.dart:114`)用 `ListView.builder` 自带滚动故不溢出。
+  - **R2 结构割裂**（三栏拥挤 + 无返回 + 布局突变）：`home_page.dart:327` 的设置标签全屏分支带 `_currentTab==2 && !isCupertinoPlatform(context)` 门控，cupertino 桌面被排除 → 退化成「3 图标 rail + 嵌入设置」三栏；且 `SettingsHomePage._buildEmbeddedMaterialShell`(`settings_home_page.dart:101-103`)对 cupertino 提前返回裸 content（无页头/返回箭头）。桌面外壳本应「复用 Material 架构、叶子控件按设计系统切皮肤」(CLAUDE.md)，此处 cupertino 桌面是半成品特例路径。同款 overflow/退化在 macOS、iPad 横屏同样存在（同一份 `_buildDesktopLayout`），无人报。
+- **[x] ① 已修复** — `918139165`（R1：`CupertinoSettingsRenderer.buildDetailContent` 裸 `Column` → 可滚动 `ListView.builder`，对齐 Material 渲染器，shrinkWrap 时禁自滚由外层 sliver/SingleChildScrollView 滚、底部留安全区；`buildDetailPage` sliver 内调用传 `shrinkWrap:true`；reader 设置弹窗 `shrinkWrap:!cupertino→true`。R2：去掉 `home_page.dart` 设置全屏分支的 `!isCupertinoPlatform` 门控，cupertino 桌面也隐藏 3 图标 rail 走全屏二栏；`settings_home_page._buildEmbeddedShell` 去掉 cupertino 提前返回、给桌面全屏设置补 `HibikiPageHeader`+返回箭头，并短路保留 cupertino 手机原生无页头。消除特例分支，非补丁）
+- **[x] ② 已加自动化测试** — `test/settings/settings_renderer_test.dart`（`BUG-009`：cupertino 详情在固定矮高度 pane 里渲染不抛 RenderFlex 溢出、提供可滚动视口；`BUG-009 R2`：`platform=windows + designSystem=cupertino` 下 pump 真实 `SettingsHomePage(embedded,onBack)`，断言渲染返回箭头出口且不溢出）
+- **备注**：布局类。代码+单测已绿（settings_renderer_test 14/14；opus 审查 🟢 无致命问题，确认全 5 个 `buildDetailContent` 调用点覆盖、material 弹窗零变化、macOS/iPad/iOS手机/Android 各组合推演只有目标场景改变）。仍需 **Win11 真机肉眼复测**原始失败页（外观切 iOS）确认黄黑条纹消失、二栏、返回箭头可点回来源 tab、视觉协调——待补。R3 配色（Cupertino 列表系统灰 vs app 主题 surface 色不一致）属主观微调，本轮不做，真机看效果再定。
+- **预存失败（非本轮）**：`test/settings/md3_design_system_static_test.dart` 的「page chrome surfaces use shared MD3 spacing tokens」用例引用 `home_page.dart` 已被删除的 `_buildRailLeading()`（「删宽屏 rail logo」改动遗留，与 BUG-009 无关），本轮未触碰，待对应改动方同步守卫。
+
 ## BUG-006 · 改 String 型 segmented 设置（书写方向/视图模式/振假名/跨页）渲染器崩溃
 - **报告**：2026-06-03（由 settings schema 焦点驱动覆盖测试发现，非用户报告）
 - **真实性**：✅ 真 bug。`material_/cupertino_settings_renderer.dart` 把 `SettingsSegmentedItem<String>` 经 `as <Object>` 转型，闭包读 `onChanged` 因函数参数逆变抛 `_TypeError`。两渲染器同病；现有测试只渲染不真改 segmented 所以潜伏。
