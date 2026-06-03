@@ -351,4 +351,85 @@ void main() {
       expect(calls, 3);
     });
   });
+
+  group('ReaderContentStyles vertical-only CSS probes (T1)', () {
+    Future<ReaderSettings> verticalSettings() async {
+      final HibikiDatabase db =
+          HibikiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final ReaderSettings settings = ReaderSettings(db);
+      await settings.refreshFromDb();
+      await settings.setWritingMode('vertical-rl');
+      return settings;
+    }
+
+    Future<ReaderSettings> horizontalSettings() async {
+      final HibikiDatabase db =
+          HibikiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final ReaderSettings settings = ReaderSettings(db);
+      await settings.refreshFromDb();
+      await settings.setWritingMode('horizontal-tb');
+      return settings;
+    }
+
+    test('vertical upright orientation emits text-orientation: upright',
+        () async {
+      final ReaderSettings settings = await verticalSettings();
+      await settings.setVerticalTextOrientation('upright');
+      final String css = ReaderContentStyles.css(settings: settings);
+      expect(css, contains('text-orientation: upright;'));
+      expect(css, isNot(contains('text-orientation: mixed;')));
+    });
+
+    test('vertical mixed orientation emits text-orientation: mixed', () async {
+      final ReaderSettings settings = await verticalSettings();
+      await settings.setVerticalTextOrientation('mixed');
+      final String css = ReaderContentStyles.css(settings: settings);
+      expect(css, contains('text-orientation: mixed;'));
+      expect(css, isNot(contains('text-orientation: upright;')));
+    });
+
+    test('vertical kerning ON emits font-kerning: normal', () async {
+      final ReaderSettings settings = await verticalSettings();
+      await settings.setEnableVerticalFontKerning(true);
+      final String css = ReaderContentStyles.css(settings: settings);
+      expect(css, contains('font-kerning: normal !important;'));
+    });
+
+    test('vertical kerning OFF omits font-kerning declaration', () async {
+      final ReaderSettings settings = await verticalSettings();
+      await settings.setEnableVerticalFontKerning(false);
+      final String css = ReaderContentStyles.css(settings: settings);
+      expect(css, isNot(contains('font-kerning')));
+    });
+
+    test('vertical VPAL ON emits font-feature-settings vpal 1', () async {
+      final ReaderSettings settings = await verticalSettings();
+      await settings.setEnableFontVPAL(true);
+      final String css = ReaderContentStyles.css(settings: settings);
+      expect(css, contains("font-feature-settings: 'vpal' 1 !important;"));
+    });
+
+    test('vertical VPAL OFF omits vpal feature setting', () async {
+      final ReaderSettings settings = await verticalSettings();
+      await settings.setEnableFontVPAL(false);
+      final String css = ReaderContentStyles.css(settings: settings);
+      expect(css, isNot(contains('vpal')));
+    });
+
+    test('horizontal-tb gates out all three even with every toggle ON',
+        () async {
+      final ReaderSettings settings = await horizontalSettings();
+      await settings.setVerticalTextOrientation('upright');
+      await settings.setEnableVerticalFontKerning(true);
+      await settings.setEnableFontVPAL(true);
+
+      final String css = ReaderContentStyles.css(settings: settings);
+      expect(css, contains('horizontal-tb'));
+      expect(css, isNot(contains('text-orientation')));
+      expect(css, isNot(contains('font-kerning')));
+      expect(css, isNot(contains('vpal')));
+    });
+  });
 }
