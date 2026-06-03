@@ -307,8 +307,13 @@ class HibikiFocusController extends ChangeNotifier {
   ) {
     final Rect? activeRect = globalRectOfContext(active.context);
     if (activeRect == null) return const _GeometricMoveResult.noGeometry();
+    // 当前项所在的最近 Scrollable —— 方向导航优先停留在同一面板（同一可滚动
+    // 容器）内。设置宽屏主从布局里，导航栏与详情各是独立 ListView；没有这条，
+    // 详情里「设计系统」段控按 Down 会被纵向更近的左侧导航项「阅读」抢走。
+    final ScrollableState? activeScrollable = Scrollable.maybeOf(active.context);
     final Offset activeCenter = activeRect.center;
     HibikiFocusTargetEntry? best;
+    int bestSamePane = -1;
     int bestClears = -1;
     int bestBeam = -1;
     double bestAlong = double.infinity;
@@ -319,6 +324,12 @@ class HibikiFocusController extends ChangeNotifier {
       if (identical(target, active)) continue;
       final Rect? targetRect = globalRectOfContext(target.context);
       if (targetRect == null) continue;
+      // 同一最近 Scrollable 即同一视觉面板；两者都无 Scrollable(null==null) 也算
+      // 「同面板」，使纯展示页（无可滚动容器）该档恒等、行为与改动前一致。
+      final bool samePane = identical(
+        Scrollable.maybeOf(target.context),
+        activeScrollable,
+      );
       final Offset targetCenter = targetRect.center;
       final double dx = targetCenter.dx - activeCenter.dx;
       final double dy = targetCenter.dy - activeCenter.dy;
@@ -374,29 +385,31 @@ class HibikiFocusController extends ChangeNotifier {
 
       final int beamScore = beam ? 1 : 0;
       final int clearsScore = clears ? 1 : 0;
+      final int samePaneScore = samePane ? 1 : 0;
       // Ranking, in priority order:
-      //  1. `clears` — a candidate fully past the source on the press axis
-      //     beats one that merely overlaps it (kills the keyboard `q`→`a`
-      //     diagonal: `a` overlaps `q` horizontally so it does NOT clear for a
-      //     RIGHT press, while `w` does).
-      //  2. `along` — within the same clear-tier, the immediately-next
-      //     row/column wins even if offset on the cross axis (a left-aligned
-      //     主题 swatch row below a right-aligned segmented control must NOT be
-      //     skipped for a farther row that merely overlaps horizontally —
-      //     f165cd475).
-      //  3. `beam` — perpendicular OVERLAP breaks an `along` tie, so a grid's
-      //     two columns (same row, same `along`) still prefer the same-column
-      //     cell over the diagonal one.
+      //  0. `samePane` — a candidate in the SAME nearest Scrollable (same visual
+      //     pane) beats any cross-pane candidate. In the wide settings list-detail
+      //     the nav pane and the detail pane are separate ListViews; without this
+      //     a Down press from a detail control jumps to the vertically-closer nav
+      //     item in the OTHER pane. Both-null (no Scrollable) counts as same, so
+      //     scrollable-free pages keep the original behaviour.
+      //  1. `clears` — fully past the source on the press axis beats mere overlap.
+      //  2. `along` — the immediately-next row/column wins even if cross-offset.
+      //  3. `beam` — perpendicular overlap breaks an `along` tie.
       //  4. `cross` — centre offset breaks any remaining tie.
       final bool better = best == null ||
-          clearsScore > bestClears ||
-          (clearsScore == bestClears &&
-              (along < bestAlong - epsilon ||
-                  ((along - bestAlong).abs() <= epsilon &&
-                      (beamScore > bestBeam ||
-                          (beamScore == bestBeam && cross < bestCross)))));
+          samePaneScore > bestSamePane ||
+          (samePaneScore == bestSamePane &&
+              (clearsScore > bestClears ||
+                  (clearsScore == bestClears &&
+                      (along < bestAlong - epsilon ||
+                          ((along - bestAlong).abs() <= epsilon &&
+                              (beamScore > bestBeam ||
+                                  (beamScore == bestBeam &&
+                                      cross < bestCross)))))));
       if (better) {
         best = target;
+        bestSamePane = samePaneScore;
         bestClears = clearsScore;
         bestBeam = beamScore;
         bestAlong = along;
