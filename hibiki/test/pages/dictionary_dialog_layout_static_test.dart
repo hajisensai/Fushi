@@ -135,4 +135,29 @@ void main() {
         folderImportSource, contains('directory: pickedDirectory.directory'));
     expect(folderImportSource, contains('pickedDirectory.cleanupDir'));
   });
+
+  test('dictionary manager surfaces a labeled Material action bar', () {
+    final String source =
+        File('lib/src/pages/implementations/dictionary_dialog_page.dart')
+            .readAsStringSync();
+
+    // Material path empties the app bar and renders an in-page action bar.
+    expect(source, contains('_buildActionBar'));
+    expect(source, contains('if (!cupertino) _buildActionBar()'));
+    expect(source, contains('actions: cupertino'));
+
+    // The four actions are labeled buttons reusing the existing i18n keys.
+    for (final String label in <String>[
+      't.dict_download_browse',
+      't.dialog_import_folder',
+      't.dialog_import_dictionary',
+      't.dialog_clear_all_dictionaries',
+    ]) {
+      expect(source, contains(label), reason: 'missing label $label');
+    }
+    expect(source, contains('FilledButton.tonalIcon'));
+
+    // Buttons stay reachable by gamepad/keyboard (single focus stop each).
+    expect(source, contains('HibikiActivatableFocusTarget'));
+  });
 }

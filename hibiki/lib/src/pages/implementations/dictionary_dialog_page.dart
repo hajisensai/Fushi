@@ -6,6 +6,7 @@ import 'package:path/path.dart' as path;
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
+import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/models/dictionary_repository.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/utils.dart';
@@ -25,14 +26,97 @@ class _DictionaryDialogPageState extends BasePageState {
 
   @override
   Widget build(BuildContext context) {
+    final bool cupertino = isCupertinoPlatform(context);
     final bool compact = MediaQuery.sizeOf(context).width < 480;
     return AdaptiveSettingsScaffold(
       title: Text(t.dictionaries),
-      actions: compact ? _buildMobilePageActions() : _buildDesktopPageActions(),
+      // Cupertino (iOS/macOS) keeps its native nav-bar icon actions. Material
+      // (Android/Windows/Linux) empties the app bar and surfaces the same
+      // actions as labeled buttons in an in-page action bar so they read as
+      // normal buttons instead of bare icons.
+      actions: cupertino
+          ? (compact ? _buildMobilePageActions() : _buildDesktopPageActions())
+          : const <Widget>[],
       children: [
+        if (!cupertino) _buildActionBar(),
         compact ? _buildDictionaryTypePicker() : _buildCategorySelector(),
         buildContent(),
       ],
+    );
+  }
+
+  /// Material in-page action bar: labeled import/clear buttons that wrap on
+  /// narrow widths. Replaces the bare app-bar icon buttons on Material.
+  Widget _buildActionBar() {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final ColorScheme scheme = theme.colorScheme;
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: tokens.spacing.gap + tokens.spacing.gap / 2,
+      ),
+      child: Wrap(
+        spacing: tokens.spacing.gap,
+        runSpacing: tokens.spacing.gap,
+        children: <Widget>[
+          _buildActionButton(
+            focusPrefix: 'dict-action-download',
+            icon: Icons.cloud_download_outlined,
+            label: t.dict_download_browse,
+            onTap: _showDownloadSelectionDialog,
+          ),
+          if (!Platform.isIOS)
+            _buildActionButton(
+              focusPrefix: 'dict-action-folder',
+              icon: Icons.drive_folder_upload_outlined,
+              label: t.dialog_import_folder,
+              onTap: _importDictionaryFolder,
+            ),
+          _buildActionButton(
+            focusPrefix: 'dict-action-file',
+            icon: Icons.upload_file_outlined,
+            label: t.dialog_import_dictionary,
+            onTap: _importDictionaryFiles,
+          ),
+          _buildActionButton(
+            focusPrefix: 'dict-action-clear',
+            icon: Icons.delete_sweep_outlined,
+            label: t.dialog_clear_all_dictionaries,
+            onTap: showDictionaryClearDialog,
+            style: FilledButton.styleFrom(
+              backgroundColor: scheme.errorContainer,
+              foregroundColor: scheme.onErrorContainer,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// A labeled action button that is mouse/touch tappable and, under a
+  /// [HibikiFocusRoot], a single gamepad/keyboard focus stop (A/Enter fires
+  /// [onTap]). Same idiom as the reader quick-settings action strip: the
+  /// underlying button is removed from focus traversal so it does not grab a
+  /// competing, unregistered focus node.
+  Widget _buildActionButton({
+    required String focusPrefix,
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    ButtonStyle? style,
+  }) {
+    final Widget button = FilledButton.tonalIcon(
+      onPressed: onTap,
+      style: style,
+      icon: Icon(icon, size: 18),
+      label: Text(label),
+    );
+    if (HibikiFocusRoot.maybeControllerOf(context) == null) {
+      return button;
+    }
+    return HibikiActivatableFocusTarget(
+      focusIdPrefix: focusPrefix,
+      onTap: onTap,
+      child: ExcludeFocus(child: button),
     );
   }
 
