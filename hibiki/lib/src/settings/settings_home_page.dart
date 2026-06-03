@@ -77,25 +77,27 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage> {
     final Widget content = LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         if (constraints.maxWidth >= 720) {
+          // 宽屏主从：导航栏贴最左、详情填满整宽（平板友好，不再居中留白）。
           return _buildWideLayout(
             settingsContext: settingsContext,
             renderer: renderer,
             destinations: destinations,
           );
         }
-        return renderer.buildHomePage(
-          settingsContext: settingsContext,
-          destinations: destinations,
-          selectedDestinationId: _selectedDestinationId,
-          onDestinationSelected: _selectDestination,
-          embedded: widget.embedded,
+        // 窄屏单列：居中限宽（单列阅读更舒适）。
+        return DesktopContentLayout(
+          kind: DesktopContentKind.settings,
+          child: renderer.buildHomePage(
+            settingsContext: settingsContext,
+            destinations: destinations,
+            selectedDestinationId: _selectedDestinationId,
+            onDestinationSelected: _selectDestination,
+            embedded: widget.embedded,
+          ),
         );
       },
     );
-    return DesktopContentLayout(
-      kind: DesktopContentKind.settings,
-      child: _buildEmbeddedShell(content),
-    );
+    return _buildEmbeddedShell(content);
   }
 
   Widget _buildEmbeddedShell(Widget content) {
