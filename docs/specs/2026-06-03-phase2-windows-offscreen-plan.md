@@ -66,9 +66,13 @@
 
 ---
 
-## Step 4 —（Phase 3 预告）Mac 跨机分派
+## Step 4 — Phase 3 Mac 跨机分派（✅ 完成 + 真机验证）
 
-不在本计划，独立出 Phase 3 计划：Windows 当总指挥经 `ssh shfaifsj@192.168.1.34` + `sync_to_mac.ps1` 把同款集成测试分派到 Mac（macOS 同样需要 runner 离屏支持——`macos/Runner` 的 `MainFlutterWindow`，机制类似但 Cocoa：`HIBIKI_TEST_HIDDEN` 时 `orderOut:` / 设 `NSWindow.level` + 离屏 frame）。
+**状态：✅ 完成。Windows 当总指挥、Mac 真机跑，端到端验证通过。**
+- **macOS runner 离屏** `882970fb9`：`macos/Runner/MainFlutterWindow.swift` 认 `HIBIKI_TEST_HIDDEN`——窗口建在 `(-32000,-32000)`、`NSApp.setActivationPolicy(.accessory)`（无 Dock/菜单、不自动激活）、`canBecomeKey/canBecomeMain` 返回 false（不夺键盘/前台），保留 ordered-in 让引擎渲染。Cocoa 镜像 Windows `win32_window.cpp`。
+- **真 Mac 验证**（`ssh shfaifsj@192.168.1.34`，macOS 15.7.4）：`flutter build macos --debug` 编译+链接通过（`✓ Built ...hibiki.app`）；`HIBIKI_TEST_HIDDEN=1 flutter test integration_test/desktop_settings_smoke_test.dart -d macos` **`All tests passed`**（焦点遍历 12 真目标 + live reading-setting 改 css 真生效），与 Windows 完全镜像。
+- **一键派发** `4c5627ce3`：`tool/run_mac_itest.ps1`——一条 Windows 命令 sync→Mac ff→跑隐藏 macOS 集成测试。坑=PowerShell→ssh 的原生参数重引用 + stdin CRLF 会静默破坏内联命令，用 **base64 编码 remote 脚本**绕开，已验证 exit=0 全绿。
+- 仍可后补：macOS 端「不抢前台」的显式探测（如 AppleScript 查 frontmost app），目前由 `.accessory` + 离屏 + 非 key 设计保证 + 后台 ssh 跑测全绿佐证。
 
 ---
 
