@@ -1355,8 +1355,14 @@ class _HibikiPageScaffoldState extends State<HibikiPageScaffold> {
         bottomNavigationBar: widget.bottomNavigationBar,
         body: SafeArea(
           top: !widget.showAppBar,
+          // stretch (not start) so every page body receives a tight full-width
+          // constraint. Under start the cross axis stays loose, and any body
+          // that shrink-wraps its width (e.g. a vertical SingleChildScrollView
+          // like HibikiLogPanel) collapses into a tall, content-width column on
+          // the left instead of filling the page. The header left-aligns its
+          // own content internally, so it is unaffected by stretch.
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
               HibikiPageHeader(
                 title: widget.title,
