@@ -49,9 +49,33 @@ window.__hoshiHighlight = function(selector, reveal) {
   document.querySelectorAll('.hoshi-active').forEach(function(e) {
     e.classList.remove('hoshi-active');
   });
-  if (!selector) return;
+  if (!selector) { window.__hoshiPrevHighlight = null; return; }
   var el = document.querySelector(selector);
   if (el) {
+    // 图片暂停检测：cue 推进到新句子时，若上一句锚点到当前句锚点之间（document
+    // 顺序）存在 img/svg，说明本次推进刚跨过一张插图 → 通知 Dart 暂停。用「锚点间
+    // DOM」判定而非 IntersectionObserver 视口可见性 —— 阅读器是 CSS 多栏 +
+    // overflow:hidden + scrollLeft 离散翻页，整页插图常落在无 cue 的页上、被 reveal
+    // 一帧跳过、从不成为当前页，IO 永不达阈值，故图片暂停历史上一直无效（BUG-007）。
+    var prev = window.__hoshiPrevHighlight;
+    if (prev && prev !== el && document.contains(prev)) {
+      var a = prev, b = el;
+      if (prev.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_PRECEDING) {
+        a = el; b = prev;
+      }
+      var media = document.querySelectorAll('img, svg');
+      for (var i = 0; i < media.length; i++) {
+        var m = media[i];
+        if ((a.compareDocumentPosition(m) & Node.DOCUMENT_POSITION_FOLLOWING) &&
+            (b.compareDocumentPosition(m) & Node.DOCUMENT_POSITION_PRECEDING)) {
+          if (window.flutter_inappwebview) {
+            window.flutter_inappwebview.callHandler('onImageDetected');
+          }
+          break;
+        }
+      }
+    }
+    window.__hoshiPrevHighlight = el;
     el.classList.add('hoshi-active');
     if (reveal) {
       if (window.hoshiReader && window.hoshiReader.scrollToTarget) {
@@ -158,36 +182,6 @@ window.__sasayakiRequestNav = async function(n) {
 };
 ''';
 
-  /// 图片进入视口检测 — IntersectionObserver 监测 <img> / <svg>，回调 Flutter。
-  static const String _imagePauseFn = '''
-(function() {
-  if (window.__hoshiImageObserver) return;
-  var cooldown = false;
-  window.__hoshiImageObserver = new IntersectionObserver(function(entries) {
-    if (cooldown) return;
-    for (var i = 0; i < entries.length; i++) {
-      if (entries[i].isIntersecting) {
-        cooldown = true;
-        if (window.flutter_inappwebview) {
-          window.flutter_inappwebview.callHandler('onImageDetected');
-        }
-        setTimeout(function() { cooldown = false; }, 3000);
-        break;
-      }
-    }
-  }, { threshold: 0.3 });
-  function observe() {
-    var imgs = document.querySelectorAll('img, svg');
-    for (var j = 0; j < imgs.length; j++) {
-      window.__hoshiImageObserver.observe(imgs[j]);
-    }
-  }
-  observe();
-  var mo = new MutationObserver(function() { observe(); });
-  mo.observe(document.body || document.documentElement, { childList: true, subtree: true });
-})();
-''';
-
   /// 自动句子标注函数：按日文句末标点分割文本节点，包裹 data-hoshi-sid span。
   static const String _annotateFn = '''
 window.__hoshiAnnotate = function(chapterHref) {
@@ -270,7 +264,6 @@ window.__hoshiAnnotate = function(chapterHref) {
     await controller.evaluateJavascript(source: _sasayakiFn);
     await controller.evaluateJavascript(source: _chapterNavFn);
     await controller.evaluateJavascript(source: _annotateFn);
-    await controller.evaluateJavascript(source: _imagePauseFn);
   }
 
   /// 高亮 [cue] 对应的句子。
