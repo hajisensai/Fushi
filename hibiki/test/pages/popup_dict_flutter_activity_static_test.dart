@@ -36,6 +36,8 @@ void main() {
         contains('getCachedEngineId(): String = PopupEngineHolder.ENGINE_ID'));
     expect(src, contains('shouldDestroyEngineWithHost(): Boolean = false'));
     expect(src, contains('BackgroundMode.transparent'));
+    expect(src,
+        contains('import io.flutter.embedding.android.FlutterActivityLaunchConfigs.BackgroundMode'));
     final int setPendingIdx = src.indexOf('PopupEngineHolder.setPendingText');
     final int ensureIdx = src.indexOf('PopupEngineHolder.ensureEngine');
     expect(setPendingIdx, isNonNegative);
