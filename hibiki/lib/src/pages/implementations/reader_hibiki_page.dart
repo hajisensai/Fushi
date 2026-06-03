@@ -238,7 +238,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
   @override
   double get popupBottomReserve =>
-      (_readerContentReady && _showChrome) ? _readerBottomReserve : 0;
+      // 与 _buildBottomChrome 的可见条件保持一致：底栏占位 ⟺ 弹窗预留底部空间，
+      // 否则切章期间底栏可见但预留为 0，弹窗可能被底栏遮挡。
+      (_hasEverLoaded && _showChrome) ? _readerBottomReserve : 0;
 
   @override
   double get popupTopReserve => _stableTopInset;
@@ -4270,7 +4272,12 @@ window.flutter_inappwebview.callHandler('spreadReady');
   }
 
   Widget _buildBottomChrome() {
-    if (!_readerContentReady || !_showChrome) {
+    // 底栏可见性只取决于用户意图（_showChrome）和「首次冷加载是否完成」
+    // （_hasEverLoaded，只置 true、从不复位），不再耦合每次切章都会翻转的
+    // _readerContentReady。否则切章时 _readerContentReady=false 会把底栏硬卸载
+    // 成 SizedBox.shrink()，新章就绪后又突然挂回，造成底栏闪烁。冷启动首章
+    // 渲染前 _hasEverLoaded 仍为 false，底栏照旧不显示，行为不变。
+    if (!_hasEverLoaded || !_showChrome) {
       return const SizedBox.shrink();
     }
     if (_audiobookController != null) {
