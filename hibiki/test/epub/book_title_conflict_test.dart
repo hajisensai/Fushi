@@ -38,7 +38,8 @@ void main() {
       expect(out, 'Rust (3)');
     });
 
-    test('conflict + cancel throws DuplicateImportCancelledException', () async {
+    test('conflict + cancel throws DuplicateImportCancelledException',
+        () async {
       expect(
         () => resolveBookTitleConflict(
           existingTitles: const <String>['Rust'],
