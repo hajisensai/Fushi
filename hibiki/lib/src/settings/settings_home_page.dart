@@ -152,9 +152,16 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage> {
           pushRoutes: false, // master-detail keeps selection in-pane.
         ),
       ),
-      primary: renderer.buildDetailContent(
-        settingsContext: settingsContext,
-        destination: selected,
+      // 详情面板的身份就是当前 destination：用 KeyedSubtree 按 id 编码，
+      // 切换目标时整棵子树作废重建，避免 Flutter 复用上一目标同位置的 Switch
+      // Element 触发 didUpdateWidget(value 变化)→ 圆点滑动（以及分段滑动、滚动
+      // 位置串页等同类复用副作用）。
+      primary: KeyedSubtree(
+        key: ValueKey<SettingsDestinationId>(selected.id),
+        child: renderer.buildDetailContent(
+          settingsContext: settingsContext,
+          destination: selected,
+        ),
       ),
     );
   }
