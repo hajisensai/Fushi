@@ -309,6 +309,7 @@ class HibikiFocusController extends ChangeNotifier {
     if (activeRect == null) return const _GeometricMoveResult.noGeometry();
     final Offset activeCenter = activeRect.center;
     HibikiFocusTargetEntry? best;
+    int bestClears = -1;
     int bestBeam = -1;
     double bestAlong = double.infinity;
     double bestCross = double.infinity;
@@ -326,6 +327,15 @@ class HibikiFocusController extends ChangeNotifier {
       final double along;
       final double cross;
       final bool beam;
+      // `clears`: the candidate lies ENTIRELY past the source along the press
+      // axis (its near edge is at/after the source's far edge). This separates
+      // a genuine next-row/next-column target from one that merely sits beside
+      // the source and is barely past its centre — e.g. on a keyboard, the key
+      // directly BELOW `q` (`a`) overlaps `q` horizontally, so for a RIGHT
+      // press it does NOT clear, while the same-row `w` does. Used as the top
+      // ranking tier below so a barely-ahead, axis-overlapping diagonal never
+      // beats the same-row neighbour.
+      final bool clears;
       switch (direction) {
         case HibikiFocusDirection.up:
           ahead = dy < -epsilon;
@@ -333,6 +343,7 @@ class HibikiFocusController extends ChangeNotifier {
           cross = dx.abs();
           beam = _overlap(activeRect.left, activeRect.right, targetRect.left,
               targetRect.right);
+          clears = targetRect.bottom <= activeRect.top + epsilon;
           break;
         case HibikiFocusDirection.down:
           ahead = dy > epsilon;
@@ -340,6 +351,7 @@ class HibikiFocusController extends ChangeNotifier {
           cross = dx.abs();
           beam = _overlap(activeRect.left, activeRect.right, targetRect.left,
               targetRect.right);
+          clears = targetRect.top >= activeRect.bottom - epsilon;
           break;
         case HibikiFocusDirection.left:
           ahead = dx < -epsilon;
@@ -347,6 +359,7 @@ class HibikiFocusController extends ChangeNotifier {
           cross = dy.abs();
           beam = _overlap(activeRect.top, activeRect.bottom, targetRect.top,
               targetRect.bottom);
+          clears = targetRect.right <= activeRect.left + epsilon;
           break;
         case HibikiFocusDirection.right:
           ahead = dx > epsilon;
@@ -354,27 +367,37 @@ class HibikiFocusController extends ChangeNotifier {
           cross = dy.abs();
           beam = _overlap(activeRect.top, activeRect.bottom, targetRect.top,
               targetRect.bottom);
+          clears = targetRect.left >= activeRect.right - epsilon;
           break;
       }
       if (!ahead) continue;
 
       final int beamScore = beam ? 1 : 0;
-      // Distance ALONG the press direction is the primary key: the
-      // immediately-next row always wins, even if it is offset on the cross
-      // axis (e.g. a left-aligned 主题 swatch row below a right-aligned
-      // segmented control — it must NOT be skipped for a farther row that
-      // merely overlaps the source horizontally). Perpendicular OVERLAP
-      // (`beam`) is only a tiebreaker between candidates at the same `along`
-      // distance — a grid's two columns sit on the same row, so down still
-      // prefers the same-column cell over the diagonal one. `cross` (centre
-      // offset) breaks any remaining tie.
+      final int clearsScore = clears ? 1 : 0;
+      // Ranking, in priority order:
+      //  1. `clears` — a candidate fully past the source on the press axis
+      //     beats one that merely overlaps it (kills the keyboard `q`→`a`
+      //     diagonal: `a` overlaps `q` horizontally so it does NOT clear for a
+      //     RIGHT press, while `w` does).
+      //  2. `along` — within the same clear-tier, the immediately-next
+      //     row/column wins even if offset on the cross axis (a left-aligned
+      //     主题 swatch row below a right-aligned segmented control must NOT be
+      //     skipped for a farther row that merely overlaps horizontally —
+      //     f165cd475).
+      //  3. `beam` — perpendicular OVERLAP breaks an `along` tie, so a grid's
+      //     two columns (same row, same `along`) still prefer the same-column
+      //     cell over the diagonal one.
+      //  4. `cross` — centre offset breaks any remaining tie.
       final bool better = best == null ||
-          along < bestAlong - epsilon ||
-          ((along - bestAlong).abs() <= epsilon &&
-              (beamScore > bestBeam ||
-                  (beamScore == bestBeam && cross < bestCross)));
+          clearsScore > bestClears ||
+          (clearsScore == bestClears &&
+              (along < bestAlong - epsilon ||
+                  ((along - bestAlong).abs() <= epsilon &&
+                      (beamScore > bestBeam ||
+                          (beamScore == bestBeam && cross < bestCross)))));
       if (better) {
         best = target;
+        bestClears = clearsScore;
         bestBeam = beamScore;
         bestAlong = along;
         bestCross = cross;
