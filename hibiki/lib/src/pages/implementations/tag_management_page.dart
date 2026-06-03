@@ -139,6 +139,7 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
       title: t.tag_manage_title,
       floatingActionButton: FloatingActionButton(
         onPressed: _createTag,
+        tooltip: t.tag_new,
         child: const Icon(Icons.add),
       ),
       body: _tags.isEmpty

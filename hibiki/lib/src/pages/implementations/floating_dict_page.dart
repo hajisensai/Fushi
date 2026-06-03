@@ -167,6 +167,7 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
                   color: tokens.surfaces.onVariant,
                 ),
                 padding: EdgeInsets.zero,
+                tooltip: t.floating_dict_close,
                 onPressed: () => _invoke('close'),
               ),
             ),

@@ -199,6 +199,7 @@ abstract class BaseAudioField extends AudioExportField {
 
         return IconButton(
           icon: Icon(iconData, size: 24),
+          tooltip: playerState?.playing == true ? t.pause : t.play,
           onPressed: () async {
             AudioSession? session;
             if (supportsNativeAudio) {

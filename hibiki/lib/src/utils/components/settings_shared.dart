@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/focus/hibiki_focus_target.dart';
 import 'package:hibiki/src/shortcuts/gamepad_service.dart';
@@ -1058,7 +1059,11 @@ class _KeyboardStepper extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _SettingsStepButton(icon: Icons.remove, onPressed: _decrement),
+            _SettingsStepButton(
+              icon: Icons.remove,
+              onPressed: _decrement,
+              tooltip: t.decrease,
+            ),
             SizedBox(
               width: 46,
               child: Text(
@@ -1067,7 +1072,11 @@ class _KeyboardStepper extends StatelessWidget {
                 style: Theme.of(context).textTheme.bodyLarge,
               ),
             ),
-            _SettingsStepButton(icon: Icons.add, onPressed: _increment),
+            _SettingsStepButton(
+              icon: Icons.add,
+              onPressed: _increment,
+              tooltip: t.increase,
+            ),
           ],
         ),
       ),
@@ -1333,10 +1342,15 @@ class _SettingsIcon extends StatelessWidget {
 }
 
 class _SettingsStepButton extends StatelessWidget {
-  const _SettingsStepButton({required this.icon, required this.onPressed});
+  const _SettingsStepButton({
+    required this.icon,
+    required this.onPressed,
+    required this.tooltip,
+  });
 
   final IconData icon;
   final VoidCallback onPressed;
+  final String tooltip;
 
   @override
   Widget build(BuildContext context) {
@@ -1350,6 +1364,7 @@ class _SettingsStepButton extends StatelessWidget {
     }
     return IconButton(
       icon: Icon(icon, size: 18),
+      tooltip: tooltip,
       visualDensity: VisualDensity.compact,
       onPressed: onPressed,
     );

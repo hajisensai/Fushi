@@ -57,7 +57,7 @@ class _DebugLogPageState extends State<DebugLogPage> {
               name: 'hibiki_debug_log.txt',
               mimeType: 'text/plain',
             );
-            Share.shareXFiles([xFile], subject: 'hibiki Debug Log');
+            Share.shareXFiles([xFile], subject: t.debug_log_share_subject);
           },
         ),
         HibikiIconButton(

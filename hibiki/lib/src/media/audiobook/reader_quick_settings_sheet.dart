@@ -1476,11 +1476,15 @@ class _InBookSettingsHeader extends StatelessWidget {
     return Row(
       children: [
         if (cupertino)
-          CupertinoButton(
-            padding: EdgeInsets.zero,
-            minSize: 36,
-            onPressed: onBack,
-            child: Icon(icon, size: 22),
+          Semantics(
+            button: true,
+            label: t.back,
+            child: CupertinoButton(
+              padding: EdgeInsets.zero,
+              minSize: 36,
+              onPressed: onBack,
+              child: Icon(icon, size: 22),
+            ),
           )
         else
           HibikiIconButton(

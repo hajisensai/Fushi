@@ -613,8 +613,11 @@ class _DictionaryDialogPageState extends BasePageState {
       if (successCount == toDownload.length) {
         progressNotifier.value = t.dict_download_complete;
       } else if (successCount > 0) {
-        progressNotifier.value =
-            '$successCount/${toDownload.length} OK. Failed: $lastError';
+        progressNotifier.value = t.dict_download_partial(
+          success: successCount,
+          total: toDownload.length,
+          error: lastError ?? '',
+        );
       } else {
         progressNotifier.value = t.dict_download_failed(error: lastError ?? '');
       }
