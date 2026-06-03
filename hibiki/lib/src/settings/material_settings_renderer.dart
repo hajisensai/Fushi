@@ -260,7 +260,14 @@ class _SettingsSchemaItem extends StatelessWidget {
       selected: segmented.selected(settingsContext),
       controlBelow: segmented.controlBelow,
       onChanged: (T value) async {
-        await segmented.onChanged(settingsContext, value);
+        // 派发处把 SettingsSegmentedItem<String> 经 `as SettingsSegmentedItem
+        // <Object>` 转型到这里（T=Object）。此时静态读 `segmented.onChanged`
+        // 会按 SettingsValueChanged<Object> 检查实际的 (SettingsContext,String)
+        // 回调——函数参数逆变，String 形参不是 Object 形参的子类型，于是改任何
+        // String 型 segmented 设置都会抛 _TypeError。用 dynamic 调用绕开这个
+        // 读取期检查（值在运行时本就是该 T 的实例，dynamic 调用会做正确的运行
+        // 时类型校验）。
+        await (segmented as dynamic).onChanged(settingsContext, value);
         settingsContext.refresh();
       },
     );

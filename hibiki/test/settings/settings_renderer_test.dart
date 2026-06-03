@@ -502,4 +502,66 @@ void main() {
         isNot(contains('SettingsNavigationItem navigation => _navigation')));
     expect(cupertino, isNot(contains('segmented.onChanged as Function')));
   });
+
+  // 回归：改 String 型 segmented 设置时，渲染器派发处把 SettingsSegmentedItem
+  // <String> 经 `as SettingsSegmentedItem<Object>` 转型，闭包静态读
+  // `segmented.onChanged` 会因函数参数逆变抛 _TypeError（书写方向/视图模式/振
+  // 假名等改一下就崩）。两个渲染器都用 dynamic 调用绕开。
+  SettingsDestination _segmentedFixture(void Function(String) onValue) {
+    return SettingsDestination(
+      id: SettingsDestinationId.appearance,
+      title: 'Appearance',
+      icon: Icons.palette_outlined,
+      sections: <SettingsSection>[
+        SettingsSection(
+          items: <SettingsItem>[
+            SettingsSegmentedItem<String>(
+              id: 'mode',
+              title: 'Mode',
+              options: const <SettingsSegmentOption<String>>[
+                SettingsSegmentOption<String>(value: 'auto', label: 'Auto'),
+                SettingsSegmentOption<String>(value: 'on', label: 'On'),
+              ],
+              selected: (_) => 'auto',
+              onChanged: (_, String value) => onValue(value),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  testWidgets('material segmented change fires onChanged without _TypeError',
+      (WidgetTester tester) async {
+    String received = '';
+    await tester.pumpWidget(_harness(
+      platform: TargetPlatform.android,
+      builder: (SettingsContext sctx) => MaterialSettingsRenderer()
+          .buildDetailPage(
+              settingsContext: sctx,
+              destination: _segmentedFixture((String v) => received = v)),
+    ));
+    await tester.tap(find.text('On'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull,
+        reason: '改 String 型 segmented 设置不得抛 _TypeError');
+    expect(received, 'on', reason: 'onChanged 必须以正确的 String 值触发');
+  });
+
+  testWidgets('cupertino segmented change fires onChanged without _TypeError',
+      (WidgetTester tester) async {
+    String received = '';
+    await tester.pumpWidget(_harness(
+      platform: TargetPlatform.iOS,
+      builder: (SettingsContext sctx) => CupertinoSettingsRenderer()
+          .buildDetailPage(
+              settingsContext: sctx,
+              destination: _segmentedFixture((String v) => received = v)),
+    ));
+    await tester.tap(find.text('On'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull,
+        reason: '改 String 型 segmented 设置不得抛 _TypeError');
+    expect(received, 'on', reason: 'onChanged 必须以正确的 String 值触发');
+  });
 }

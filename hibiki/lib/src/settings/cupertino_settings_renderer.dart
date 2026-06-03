@@ -243,7 +243,11 @@ class _SettingsSchemaItem extends StatelessWidget {
       selected: segmented.selected(settingsContext),
       controlBelow: segmented.controlBelow,
       onChanged: (T value) async {
-        await segmented.onChanged(settingsContext, value);
+        // 同 MaterialSettingsRenderer._segmented：派发处把
+        // SettingsSegmentedItem<String> 转型到 T=Object，静态读
+        // `segmented.onChanged` 会因函数参数逆变抛 _TypeError（改 String 型
+        // segmented 设置时崩）。用 dynamic 调用绕开读取期检查。
+        await (segmented as dynamic).onChanged(settingsContext, value);
         settingsContext.refresh();
       },
     );
