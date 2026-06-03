@@ -171,13 +171,34 @@ window.__hoshiApplySasayakiCues = function(sectionIndex, cuesJson) {
   }
 };
 
+window.__hoshiSasayakiAnchorEl = function(key) {
+  var r = window.hoshiReader;
+  if (!r) return null;
+  if (window.__hoshiCssHighlightsSupported && r.cueRangesMap && r.cueRangesMap.get) {
+    var ranges = r.cueRangesMap.get(key);
+    if (ranges && ranges[0]) {
+      var n = ranges[0].startContainer;
+      return n && n.nodeType === 1 ? n : (n ? n.parentElement : null);
+    }
+  } else if (r.cueWrappers && r.cueWrappers.get) {
+    var w = r.cueWrappers.get(key);
+    if (w && w[0]) return w[0];
+  }
+  return null;
+};
+
 window.__hoshiHighlightSasayakiCueById = function(key, reveal) {
   if (reveal === undefined) reveal = true;
-  if (window.hoshiReader && typeof window.hoshiReader.highlightSasayakiCue === 'function') {
-    window.hoshiReader.highlightSasayakiCue(key, reveal);
-    return true;
+  var r = window.hoshiReader;
+  if (!r || typeof r.highlightSasayakiCue !== 'function') return false;
+  var anchor = window.__hoshiSasayakiAnchorEl(key);
+  var revealedImage = false;
+  if (anchor && typeof window.__hoshiImagePauseAdvance === 'function') {
+    revealedImage = window.__hoshiImagePauseAdvance(anchor, reveal);
   }
-  return false;
+  // 跨过插图且需 reveal 时：让 reader 只高亮不自动滚（已滚到插图）；否则正常 reveal。
+  r.highlightSasayakiCue(key, revealedImage ? false : reveal);
+  return true;
 };
 ''';
 

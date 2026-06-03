@@ -123,4 +123,70 @@ void main() {
     expect(revealTarget, 'pic',
         reason: 'cue 推进跨过插图、reveal=true 时应把视口滚到插图(id=pic)而非 s2 文字');
   });
+
+  testWidgets(
+      'sasayaki cue: advancing across an image fires onImageDetected (BUG-007 gap1)',
+      (WidgetTester tester) async {
+    bool imageDetected = false;
+    String? revealTarget;
+    final Completer<void> driven = Completer<void>();
+
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: InAppWebView(
+          initialData: InAppWebViewInitialData(data: html),
+          onWebViewCreated: (InAppWebViewController controller) {
+            controller.addJavaScriptHandler(
+              handlerName: 'onImageDetected',
+              callback: (List<dynamic> _) {
+                imageDetected = true;
+                return null;
+              },
+            );
+            controller.addJavaScriptHandler(
+              handlerName: 'reportReveal',
+              callback: (List<dynamic> a) {
+                revealTarget = a.isNotEmpty ? a.first as String? : null;
+                return null;
+              },
+            );
+          },
+          onLoadStop: (InAppWebViewController controller, WebUri? url) async {
+            await controller.evaluateJavascript(source: '''
+              window.__hoshiCssHighlightsSupported = true;
+              window.hoshiReader = {
+                cueRangesMap: new Map(),
+                activeCueId: null,
+                highlightSasayakiCue: function(id, reveal){ this.activeCueId = id; },
+                scrollToTarget: function(t){
+                  window.flutter_inappwebview.callHandler('reportReveal',
+                    (t && (t.id || t.tagName)) || null);
+                }
+              };
+              (function(){
+                function rng(sel){ var el=document.querySelector(sel);
+                  var r=document.createRange(); r.selectNodeContents(el); return r; }
+                window.hoshiReader.cueRangesMap.set('c1', [rng('[data-hoshi-sid=s1]')]);
+                window.hoshiReader.cueRangesMap.set('c2', [rng('[data-hoshi-sid=s2]')]);
+              })();
+            ''');
+            await AudiobookBridge.inject(controller);
+            await controller.evaluateJavascript(
+                source: "window.__hoshiHighlightSasayakiCueById('c1', false);");
+            await controller.evaluateJavascript(
+                source: "window.__hoshiHighlightSasayakiCueById('c2', true);");
+            if (!driven.isCompleted) driven.complete();
+          },
+        ),
+      ),
+    ));
+
+    for (int i = 0; i < 150 && !driven.isCompleted; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await tester.pump(const Duration(seconds: 1));
+    expect(imageDetected, isTrue,
+        reason: 'sasayaki cue 从 s1 跨过 svg 推进到 s2 必须触发 onImageDetected');
+    expect(revealTarget, 'pic', reason: 'sasayaki 跨图、reveal=true 时也应把视口滚到插图');
+  });
 }

@@ -44,4 +44,18 @@ void main() {
     expect(src, contains('window.__hoshiRevealTarget'),
         reason: '命中插图、reveal 时须把视口滚到插图（否则暂停看不到图）');
   });
+
+  test('sasayaki cue path is wired to image-pause detection (BUG-007 gap1)',
+      () {
+    expect(src, contains('window.__hoshiSasayakiAnchorEl'),
+        reason: 'sasayaki cue 须能解析锚点元素（cueRangesMap/cueWrappers）');
+    expect(src, contains('cueRangesMap'),
+        reason: 'CSS-highlights 路径从 cueRangesMap 取 sasayaki cue 的 range 锚点');
+    final int sasIdx =
+        src.indexOf('__hoshiHighlightSasayakiCueById = function');
+    expect(sasIdx, greaterThan(-1));
+    final String sasFn = src.substring(sasIdx, sasIdx + 600);
+    expect(sasFn, contains('__hoshiImagePauseAdvance'),
+        reason: 'sasayaki 高亮路径须复用共享跨图检测核心');
+  });
 }
