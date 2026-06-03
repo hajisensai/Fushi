@@ -50,9 +50,10 @@
 
 ## Step 3 — 桌面 T3 `getComputedStyle` 探针（reader WebView 真生效）
 
+**状态：✅ 完成 `c54cfe56b`（绿）。** `integration_test/desktop_reader_css_dom_test.dart`：往 live `InAppWebView`（Windows fork 引擎）注入 `ReaderContentStyles.css`（fontSize 20 / 40），读回 `getComputedStyle(document.body).fontSize` = `20px` / `40px`。证明生成的 CSS **真被 WebView 引擎应用**（T1 字符串测不到的最后一环）。standalone WebView + 注入式，无需整本书；经 `tool/run_windows_itest.ps1 integration_test\desktop_reader_css_dom_test.dart` 跑。
+
 **Files:**
-- Create: `hibiki/integration_test/helpers/dom_effect_probe.dart`（T3：经 `InAppWebViewController.evaluateJavascript` 读 `getComputedStyle`）
-- Create: `hibiki/integration_test/desktop_reader_css_dom_test.dart`
+- Create: `hibiki/integration_test/desktop_reader_css_dom_test.dart`（✅ 已建）
 
 - [ ] **Step 3.1：T3 探针**——给定一个已加载书的 reader WebView，改 reading 设置后注入 JS：
   ```js
