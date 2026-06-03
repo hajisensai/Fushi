@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -16,13 +17,35 @@ import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/sync_settings_schema.dart';
 import 'package:hibiki/src/utils/components/settings_shared.dart';
 
+import 'helpers/focus_driver.dart';
 import 'test_helpers.dart';
 
+/// Comprehensive settings, focus-driven (synthetic key events only — no
+/// coordinate taps), on the REAL app.
+///
+/// Tab-traverses the REAL [DisplaySettingsPage] and drives each settings row it
+/// lands on by its kind — Switch is activated with Space, Slider/Stepper/
+/// Segmented are nudged with the D-pad (each is a single `_GamepadAdjustable`
+/// focus stop). Tabbing also scrolls the lazy list into view and builds rows on
+/// demand, so this reaches controls past the first screenful without coordinate
+/// scrolling. Then it asserts the changes wrote through to the prefs DB and
+/// restores every pref it touched.
+///
+/// The old version pushed a SYNTHETIC harness page on top of DisplaySettings to
+/// cover every control type; that depended on the under-route going off-stage,
+/// which only holds on mobile — on the desktop two-pane the pushed route does
+/// not render, so the harness saw 0 controls. Control-TYPE coverage already
+/// lives in the platform-agnostic widget test
+/// `test/settings/settings_schema_coverage_test.dart` (full focus-driven schema
+/// + effect probes), so this integration test focuses on the unique value: the
+/// REAL app's REAL settings page driven by focus. Runs on emulator + desktop
+/// (Windows/Mac hidden runner).
 void main() {
   final IntegrationTestWidgetsFlutterBinding binding =
       IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('comprehensive settings controls persist real preference changes',
+  testWidgets(
+      'comprehensive settings: focus-driven real controls persist real changes',
       (WidgetTester tester) async {
     final List<FlutterErrorDetails> errors = <FlutterErrorDetails>[];
     final FlutterExceptionHandler? oldHandler = FlutterError.onError;
@@ -45,28 +68,35 @@ void main() {
           Map<String, String>.from(appModel.prefsRepo.prefsSnapshot);
 
       await _openDisplaySettingsPage(tester);
-      final _ExerciseCounts counts = await _exerciseVisibleControls(tester);
-      expect(counts.segmentedButtons, greaterThan(0));
-      expect(counts.steppers, greaterThan(0));
 
-      final _HarnessState harness = await _exerciseHarnessControls(tester);
-      expect(harness.switchValue, isTrue);
-      expect(harness.segmentValue, 'right');
-      expect(harness.sliderValue, greaterThan(0.5));
-      expect(harness.stepperValue, 11);
-      expect(harness.pickerValue, 'beta');
+      final FocusDriver driver = FocusDriver(tester);
+      final int driven = await _focusDriveSettingsRows(tester, driver, target: 3);
+      debugPrint('[comprehensive-settings] focus-driven rows=$driven');
+      expect(driven, greaterThanOrEqualTo(2),
+          reason: 'focus must drive at least two real settings controls '
+              '(Switch/Slider/Stepper/Segmented) on DisplaySettingsPage');
 
-      await _exerciseSyncSettings(tester, appModel);
-
-      final double originalFontSize = appModel.prefsRepo.dictionaryFontSize;
-      appModel.setDictionaryFontSize(originalFontSize + 1);
-      await tester.pump(const Duration(milliseconds: 500));
       await appModel.prefsRepo.refreshFromDb();
       final Map<String, String> after =
           Map<String, String>.from(appModel.prefsRepo.prefsSnapshot);
-      expect(_mapsEqual(before, after), isFalse);
-      appModel.setDictionaryFontSize(originalFontSize);
-      await tester.pump(const Duration(milliseconds: 500));
+      expect(_mapsEqual(before, after), isFalse,
+          reason: 'focus-driven control changes must write through to prefs');
+
+      await _exerciseSyncSettings(tester, appModel);
+
+      // Restore every pref this test changed back to its pre-test value so the
+      // user's real settings are untouched.
+      for (final MapEntry<String, String> e in before.entries) {
+        if (after[e.key] != e.value) {
+          await appModel.database.setPref(e.key, e.value);
+        }
+      }
+      for (final String k in after.keys) {
+        if (!before.containsKey(k)) {
+          await appModel.database.deletePref(k);
+        }
+      }
+      await appModel.prefsRepo.refreshFromDb();
 
       await takeScreenshot(binding, 'comprehensive_settings');
       assertStrictErrors(errors);
@@ -74,6 +104,65 @@ void main() {
       FlutterError.onError = oldHandler;
     }
   });
+}
+
+/// Tab through the current page; whenever focus lands on a settings row, drive
+/// it by its kind (Switch → Space activate; Slider/Stepper/Segmented → D-pad
+/// arrow). Tabbing scrolls + builds lazy rows. Stops after [target] rows driven.
+Future<int> _focusDriveSettingsRows(
+  WidgetTester tester,
+  FocusDriver driver, {
+  required int target,
+}) async {
+  int driven = 0;
+  final Set<FocusNode> seen = <FocusNode>{};
+  for (int step = 0; step < 150 && driven < target; step++) {
+    final FocusNode? node = FocusManager.instance.primaryFocus;
+    if (node != null && seen.add(node)) {
+      final _RowKind? kind = _focusedRowKind();
+      if (kind == _RowKind.switchRow) {
+        await driver.activate();
+        await tester.pump(const Duration(milliseconds: 250));
+        driven++;
+      } else if (kind != null) {
+        await driver.adjust(steps: 2);
+        await tester.pump(const Duration(milliseconds: 250));
+        driven++;
+      }
+    }
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pump(const Duration(milliseconds: 60));
+  }
+  return driven;
+}
+
+enum _RowKind { switchRow, slider, stepper, segmented }
+
+_RowKind? _focusedRowKind() {
+  final BuildContext? ctx = FocusManager.instance.primaryFocus?.context;
+  if (ctx == null) return null;
+  _RowKind? found;
+  ctx.visitAncestorElements((Element el) {
+    final Widget w = el.widget;
+    if (w is AdaptiveSettingsSwitchRow) {
+      found = _RowKind.switchRow;
+      return false;
+    }
+    if (w is AdaptiveSettingsSliderRow) {
+      found = _RowKind.slider;
+      return false;
+    }
+    if (w is AdaptiveSettingsStepperRow) {
+      found = _RowKind.stepper;
+      return false;
+    }
+    if (w is AdaptiveSettingsSegmentedRow) {
+      found = _RowKind.segmented;
+      return false;
+    }
+    return true;
+  });
+  return found;
 }
 
 Future<void> _openDisplaySettingsPage(WidgetTester tester) async {
@@ -86,124 +175,6 @@ Future<void> _openDisplaySettingsPage(WidgetTester tester) async {
     ),
   ));
   await tester.pump(const Duration(seconds: 2));
-}
-
-Future<_ExerciseCounts> _exerciseVisibleControls(WidgetTester tester) async {
-  int switches = 0;
-  int sliders = 0;
-  int segmented = 0;
-  int steppers = 0;
-
-  for (int pass = 0; pass < 16; pass++) {
-    if (steppers == 0) {
-      steppers += await _exerciseFirstStepper(tester);
-    }
-    if (segmented == 0) {
-      segmented += await _exerciseFirstSegmentedButton(tester);
-    }
-    if (switches == 0) {
-      switches += await _exerciseFirstSwitch(tester);
-    }
-    if (sliders == 0) {
-      sliders += await _exerciseFirstSlider(tester);
-    }
-    if (switches > 0 && segmented > 0 && steppers > 0) break;
-    if (!await _scrollBy(tester, -260)) break;
-  }
-
-  return _ExerciseCounts(
-    switches: switches,
-    sliders: sliders,
-    segmentedButtons: segmented,
-    steppers: steppers,
-  );
-}
-
-Future<int> _exerciseFirstStepper(WidgetTester tester) async {
-  final Finder stepperFinder = find.byType(AdaptiveSettingsStepperRow);
-  if (stepperFinder.evaluate().isEmpty) return 0;
-  final AdaptiveSettingsStepperRow row =
-      tester.widget<AdaptiveSettingsStepperRow>(stepperFinder.first);
-  row.onChanged((row.value + row.step).clamp(row.min, row.max).toDouble());
-  await tester.pump(const Duration(milliseconds: 500));
-  return 1;
-}
-
-Future<int> _exerciseFirstSegmentedButton(WidgetTester tester) async {
-  final Finder segmentedFinder = find.byWidgetPredicate(
-    (Widget widget) => widget.runtimeType
-        .toString()
-        .startsWith('AdaptiveSettingsSegmentedRow'),
-  );
-  for (int i = 0; i < segmentedFinder.evaluate().length; i++) {
-    final dynamic row = tester.widget(segmentedFinder.at(i));
-    for (final ButtonSegment<dynamic> segment
-        in row.segments as List<ButtonSegment<dynamic>>) {
-      if (segment.value == row.selected) continue;
-      row.onChanged(segment.value);
-      await tester.pump(const Duration(milliseconds: 500));
-      return 1;
-    }
-  }
-  return 0;
-}
-
-Future<int> _exerciseFirstSwitch(WidgetTester tester) async {
-  final Finder switchFinder = find.byType(Switch);
-  for (int i = 0; i < switchFinder.evaluate().length; i++) {
-    final Finder current = switchFinder.at(i);
-    final Switch value = tester.widget<Switch>(current);
-    if (value.onChanged == null) continue;
-    await tester.tap(current, warnIfMissed: false);
-    await tester.pump(const Duration(milliseconds: 500));
-    await tester.tap(current, warnIfMissed: false);
-    await tester.pump(const Duration(milliseconds: 500));
-    return 1;
-  }
-  return 0;
-}
-
-Future<int> _exerciseFirstSlider(WidgetTester tester) async {
-  final Finder sliderFinder = find.byType(Slider);
-  if (sliderFinder.evaluate().isEmpty) return 0;
-  await tester.drag(sliderFinder.first, const Offset(16, 0));
-  await tester.pump(const Duration(milliseconds: 500));
-  return 1;
-}
-
-Future<_HarnessState> _exerciseHarnessControls(WidgetTester tester) async {
-  final _HarnessState state = _HarnessState();
-  await _pushSettingsDestination(
-    tester,
-    _buildHarnessDestination(state),
-  );
-
-  final Finder switchFinder = find.byType(Switch);
-  expect(switchFinder, findsOneWidget);
-  await tester.tap(switchFinder.first, warnIfMissed: false);
-  await tester.pump(const Duration(milliseconds: 500));
-
-  await tester.tap(find.text('Right').first);
-  await tester.pump(const Duration(milliseconds: 500));
-
-  final Finder sliderFinder = find.byType(Slider);
-  expect(sliderFinder, findsOneWidget);
-  await tester.drag(sliderFinder.first, const Offset(80, 0));
-  await tester.pump(const Duration(milliseconds: 500));
-
-  final Finder addButton = find.byIcon(Icons.add);
-  expect(addButton, findsOneWidget);
-  await tester.tap(addButton.first, warnIfMissed: false);
-  await tester.pump(const Duration(milliseconds: 500));
-
-  await tester.tap(find.text('Alpha').first, warnIfMissed: false);
-  await tester.pump(const Duration(milliseconds: 500));
-  await tester.tap(find.text('Beta').last, warnIfMissed: false);
-  await tester.pump(const Duration(milliseconds: 500));
-
-  Navigator.of(tester.element(find.byType(SettingsDetailPage).first)).pop();
-  await tester.pump(const Duration(milliseconds: 500));
-  return state;
 }
 
 Future<void> _exerciseSyncSettings(
@@ -253,108 +224,10 @@ Future<void> _pushSettingsDestination(
   await tester.pump(const Duration(seconds: 2));
 }
 
-SettingsDestination _buildHarnessDestination(_HarnessState state) {
-  return SettingsDestination(
-    id: SettingsDestinationId.system,
-    title: 'Harness',
-    icon: Icons.tune,
-    sections: <SettingsSection>[
-      SettingsSection(
-        items: <SettingsItem>[
-          SettingsSwitchItem(
-            id: 'harness.switch',
-            title: 'Switch',
-            value: (_) => state.switchValue,
-            onChanged: (_, bool value) => state.switchValue = value,
-          ),
-          SettingsSegmentedItem<String>(
-            id: 'harness.segment',
-            title: 'Segment',
-            options: const <SettingsSegmentOption<String>>[
-              SettingsSegmentOption<String>(value: 'left', label: 'Left'),
-              SettingsSegmentOption<String>(value: 'right', label: 'Right'),
-            ],
-            selected: (_) => state.segmentValue,
-            onChanged: (_, String value) => state.segmentValue = value,
-          ),
-          SettingsSliderItem(
-            id: 'harness.slider',
-            title: 'Slider',
-            value: (_) => state.sliderValue,
-            onChanged: (_, double value) => state.sliderValue = value,
-          ),
-          SettingsStepperItem(
-            id: 'harness.stepper',
-            title: 'Stepper',
-            value: (_) => state.stepperValue.toDouble(),
-            step: 1,
-            min: 0,
-            max: 20,
-            format: (double value) => value.round().toString(),
-            onChanged: (_, double value) => state.stepperValue = value.round(),
-          ),
-          SettingsCustomItem(
-            id: 'harness.picker',
-            builder: (_) => AdaptiveSettingsPickerRow<String>(
-              title: 'Picker',
-              options: const <AdaptiveSettingsPickerOption<String>>[
-                AdaptiveSettingsPickerOption<String>(
-                  value: 'alpha',
-                  label: 'Alpha',
-                ),
-                AdaptiveSettingsPickerOption<String>(
-                  value: 'beta',
-                  label: 'Beta',
-                ),
-              ],
-              selected: state.pickerValue,
-              onChanged: (String value) => state.pickerValue = value,
-            ),
-          ),
-        ],
-      ),
-    ],
-  );
-}
-
-Future<bool> _scrollBy(WidgetTester tester, double dy) async {
-  final Finder scrollables = find.byType(Scrollable);
-  if (scrollables.evaluate().isEmpty) return false;
-  await tester.drag(
-    scrollables.last,
-    Offset(0, dy),
-    warnIfMissed: false,
-  );
-  await tester.pump(const Duration(milliseconds: 300));
-  return true;
-}
-
 bool _mapsEqual(Map<String, String> a, Map<String, String> b) {
   if (a.length != b.length) return false;
   for (final MapEntry<String, String> entry in a.entries) {
     if (b[entry.key] != entry.value) return false;
   }
   return true;
-}
-
-class _ExerciseCounts {
-  const _ExerciseCounts({
-    required this.switches,
-    required this.sliders,
-    required this.segmentedButtons,
-    required this.steppers,
-  });
-
-  final int switches;
-  final int sliders;
-  final int segmentedButtons;
-  final int steppers;
-}
-
-class _HarnessState {
-  bool switchValue = false;
-  String segmentValue = 'left';
-  double sliderValue = 0.5;
-  int stepperValue = 10;
-  String pickerValue = 'alpha';
 }
