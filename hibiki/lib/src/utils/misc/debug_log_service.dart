@@ -1,8 +1,9 @@
 import 'package:flutter/foundation.dart';
+import 'package:hibiki/src/utils/misc/frame_safe_notifier.dart';
 import 'package:hibiki/utils.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-class DebugLogService extends ChangeNotifier {
+class DebugLogService extends ChangeNotifier with FrameSafeNotifier {
   DebugLogService._();
   static final DebugLogService instance = DebugLogService._();
 
@@ -30,7 +31,7 @@ class DebugLogService extends ChangeNotifier {
     if (!value) {
       _entries.clear();
     }
-    notifyListeners();
+    notifyListenersFrameSafe();
   }
 
   void _installHook() {
@@ -49,7 +50,7 @@ class DebugLogService extends ChangeNotifier {
     if (_entries.length > _maxEntries) {
       _entries.removeRange(0, _entries.length - _maxEntries);
     }
-    notifyListeners();
+    notifyListenersFrameSafe();
   }
 
   String getFullLog() {
@@ -67,7 +68,7 @@ class DebugLogService extends ChangeNotifier {
 
   void clear() {
     _entries.clear();
-    notifyListeners();
+    notifyListenersFrameSafe();
   }
 }
 

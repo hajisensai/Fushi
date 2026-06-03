@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:hibiki/i18n/strings.g.dart';
+import 'package:hibiki/src/utils/misc/frame_safe_notifier.dart';
 import 'package:path_provider/path_provider.dart';
 
 class ErrorLogEntry {
@@ -27,7 +28,7 @@ class ErrorLogEntry {
   }
 }
 
-class ErrorLogService extends ChangeNotifier {
+class ErrorLogService extends ChangeNotifier with FrameSafeNotifier {
   ErrorLogService._();
   static final instance = ErrorLogService._();
 
@@ -72,7 +73,7 @@ class ErrorLogService extends ChangeNotifier {
     if (_entries.length > _maxEntries) {
       _entries.removeAt(0);
     }
-    notifyListeners();
+    notifyListenersFrameSafe();
     _appendToFile(entry);
   }
 
@@ -116,7 +117,7 @@ class ErrorLogService extends ChangeNotifier {
   Future<void> clear() async {
     _entries.clear();
     _persistedLog = '';
-    notifyListeners();
+    notifyListenersFrameSafe();
     try {
       await _logFile?.writeAsString('');
     } catch (e) {

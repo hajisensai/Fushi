@@ -204,6 +204,7 @@ class AdaptiveSettingsRow extends StatelessWidget {
     this.trailing,
     this.onTap,
     this.controlBelow = false,
+    this.trailingFlexible = false,
   });
 
   final String title;
@@ -218,10 +219,20 @@ class AdaptiveSettingsRow extends StatelessWidget {
   /// `DropdownMenu(expandedInsets: …)` without a bounding `SizedBox`) throws
   /// "RenderFlex children have non-zero flex but incoming width constraints are
   /// unbounded". Bound such controls (e.g. `SizedBox(width: …)`, as
-  /// [AdaptiveSettingsPickerRow] does) or pass them via [controlBelow] instead.
+  /// [AdaptiveSettingsPickerRow] does), set [trailingFlexible] for a control
+  /// that should shrink-and-scroll, or pass them via [controlBelow] instead.
   final Widget? trailing;
   final VoidCallback? onTap;
   final bool controlBelow;
+
+  /// When true (and [controlBelow] is false), [trailing] is hosted as a
+  /// `Flexible(fit: loose)` child of the inline Row instead of a non-flex one,
+  /// so it receives BOUNDED main-axis constraints. Use this for an intrinsically
+  /// wide control wrapped in a horizontal scroll view (e.g. a `SegmentedButton`
+  /// in [AdaptiveSettingsSegmentedRow]): with bounded width the scroll view
+  /// actually scrolls instead of overflowing the row. Self-sizing controls
+  /// (switches, steppers) must leave this false so the label stays greedy.
+  final bool trailingFlexible;
 
   @override
   Widget build(BuildContext context) {
@@ -283,7 +294,12 @@ class AdaptiveSettingsRow extends StatelessWidget {
           Expanded(child: _SettingsLabel(title: title, subtitle: subtitle)),
           if (trailing != null) ...[
             const SizedBox(width: 12),
-            trailing!,
+            // A flexible trailing receives bounded width so an inner horizontal
+            // scroll view scrolls instead of overflowing (see [trailingFlexible]).
+            if (trailingFlexible)
+              Flexible(fit: FlexFit.loose, child: trailing!)
+            else
+              trailing!,
           ],
         ],
       ),
@@ -517,6 +533,10 @@ class AdaptiveSettingsSegmentedRow<T extends Object> extends StatelessWidget {
       subtitle: subtitle,
       icon: icon,
       controlBelow: controlBelow,
+      // The segmented strip is intrinsically wide and wrapped in a horizontal
+      // scroll view; host it as a flexible (bounded-width) trailing so it
+      // shrink-and-scrolls on narrow panes instead of overflowing the row.
+      trailingFlexible: true,
       trailing: _GamepadAdjustableValue(
         focusIdPrefix: 'settings-segmented',
         onIncrement: () => selectAt(currentIndex + 1),
