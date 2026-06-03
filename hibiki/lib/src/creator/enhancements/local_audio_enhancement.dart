@@ -57,26 +57,26 @@ class LocalAudioEnhancement extends AudioEnhancement {
     // 1. Local audio database (Yomitan SQLite): query metadata, then extract
     //    the blob. Native handler on Android; pure-Dart sqlite3 on desktop —
     //    both behind TtsChannel, so this call site is platform-agnostic.
-    if (appModel.localAudioEnabled) {
-      try {
-        final info = await TtsChannel.instance
-            .queryLocalAudio(term, reading)
-            .timeout(const Duration(milliseconds: 500));
-        if (info != null) {
-          final int dbIndex = (info['dbIndex'] as int?) ?? 0;
-          final path = await TtsChannel.instance.extractLocalAudio(
-            info['file']! as String,
-            info['source']! as String,
-            dbIndex: dbIndex,
-          );
-          if (path != null && path.isNotEmpty) {
-            final file = File(path);
-            if (file.existsSync()) return file;
-          }
+    // 删了 master 总开关后无条件先查本地音频库（Yomitan SQLite）；native 只持有
+    // 已启用的库，无启用库时返回空，行为与之前一致。
+    try {
+      final info = await TtsChannel.instance
+          .queryLocalAudio(term, reading)
+          .timeout(const Duration(milliseconds: 500));
+      if (info != null) {
+        final int dbIndex = (info['dbIndex'] as int?) ?? 0;
+        final path = await TtsChannel.instance.extractLocalAudio(
+          info['file']! as String,
+          info['source']! as String,
+          dbIndex: dbIndex,
+        );
+        if (path != null && path.isNotEmpty) {
+          final file = File(path);
+          if (file.existsSync()) return file;
         }
-      } on TimeoutException {
-        // Fall through
       }
+    } on TimeoutException {
+      // Fall through
     }
 
     // 2. TTS to file

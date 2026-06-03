@@ -98,7 +98,6 @@ mixin DictionaryPageMixin {
     try {
       final WordAudioResolver resolver = WordAudioResolver(
         queryLocalAudio: (expression, reading) async {
-          if (!mixinAppModel.localAudioEnabled) return null;
           try {
             return await TtsChannel.instance
                 .queryLocalAudio(expression, reading)
@@ -108,7 +107,6 @@ mixin DictionaryPageMixin {
           }
         },
         queryLocalAudioByDbIndex: (expression, reading, dbIndex) async {
-          if (!mixinAppModel.localAudioEnabled) return null;
           try {
             return await TtsChannel.instance
                 .queryLocalAudio(expression, reading, dbIndex: dbIndex)

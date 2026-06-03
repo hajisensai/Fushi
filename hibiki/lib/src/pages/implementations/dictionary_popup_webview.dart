@@ -197,7 +197,6 @@ class DictionaryPopupWebViewState
     final appModel = ref.read(appProvider);
     final WordAudioResolver resolver = WordAudioResolver(
       queryLocalAudio: (expression, reading) async {
-        if (!appModel.localAudioEnabled) return null;
         try {
           return await TtsChannel.instance
               .queryLocalAudio(expression, reading)
@@ -207,7 +206,6 @@ class DictionaryPopupWebViewState
         }
       },
       queryLocalAudioByDbIndex: (expression, reading, dbIndex) async {
-        if (!appModel.localAudioEnabled) return null;
         try {
           return await TtsChannel.instance
               .queryLocalAudio(expression, reading, dbIndex: dbIndex)

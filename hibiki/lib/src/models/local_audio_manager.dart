@@ -67,9 +67,6 @@ class LocalAudioManager {
   final PreferencesRepository _prefsRepo;
   final Directory _databaseDirectory;
 
-  bool get localAudioEnabled =>
-      _prefsRepo.getPref('local_audio_enabled', defaultValue: false);
-
   /// 把一个库 entry 转成喂 native 的配置：sourceOrder 只含**启用**的子来源，
   /// 按存储顺序（=优先级）。空 sources → 空 order → native 退回全启用自然序。
   static LocalAudioDbConfig _configFor(LocalAudioDbEntry e) =>
@@ -204,32 +201,7 @@ class LocalAudioManager {
     await setEntries(dbs);
   }
 
-  Future<void> toggleLocalAudio(VoidCallback notifyListeners) async {
-    await _prefsRepo.setPref('local_audio_enabled', !localAudioEnabled);
-    if (localAudioEnabled) {
-      final configs = entries.where((e) => e.enabled).map(_configFor).toList();
-      if (configs.isNotEmpty) {
-        TtsChannel.instance.setLocalAudioDbs(configs);
-      }
-    } else {
-      TtsChannel.instance.setLocalAudioDbs(const <LocalAudioDbConfig>[]);
-    }
-    notifyListeners();
-  }
-
-  Future<void> setLocalAudioEnabled(bool value) async {
-    await _prefsRepo.setPref('local_audio_enabled', value);
-    if (value) {
-      await TtsChannel.instance.setLocalAudioDbs(
-        entries.where((e) => e.enabled).map(_configFor).toList(),
-      );
-    } else {
-      await TtsChannel.instance.setLocalAudioDbs(const <LocalAudioDbConfig>[]);
-    }
-  }
-
   Future<void> bindForNativeHandler({bool clearMissingPath = false}) async {
-    if (!localAudioEnabled) return;
     final dbs = entries;
     if (dbs.isEmpty) return;
 

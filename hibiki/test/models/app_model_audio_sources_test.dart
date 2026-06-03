@@ -94,19 +94,7 @@ void main() {
     expect(File(b.path).existsSync(), isFalse);
   });
 
-  test('setAudioSourceConfigs does NOT auto-toggle localAudioEnabled',
-      () async {
-    await appModel.setLocalAudioEnabled(true);
-    final LocalAudioDbEntry a =
-        await appModel.importLocalAudioDbFile(srcA.path, displayName: 'A');
-    await appModel.setAudioSourceConfigs(<AudioSourceConfig>[
-      AudioSourceConfig.localAudio(label: 'A', path: a.path, enabled: false),
-    ]);
-    // 显式总开关保留，不从 entry 状态派生。
-    expect(appModel.localAudioEnabled, isTrue);
-  });
-
-  test('local db enabled survives a setAudioSourceConfigs round-trip while master is OFF',
+  test('local db enabled survives a setAudioSourceConfigs round-trip',
       () async {
     final LocalAudioDbEntry a =
         await appModel.importLocalAudioDbFile(srcA.path, displayName: 'A');
@@ -114,12 +102,27 @@ void main() {
     await appModel.setAudioSourceConfigs(<AudioSourceConfig>[
       AudioSourceConfig.localAudio(label: 'A', path: a.path, enabled: true),
     ]);
-    // user turns the global master switch OFF
-    await appModel.setLocalAudioEnabled(false);
-    // user merely opens then closes the dialog: read the projection, save it back
+    // open then close the dialog: read the projection and save it back
     final List<AudioSourceConfig> projected = appModel.audioSourceConfigs;
     await appModel.setAudioSourceConfigs(projected);
-    // the db's real per-db enabled must be preserved (not wiped by master-off projection)
+    // the db's real per-db enabled must be preserved across the round-trip
     expect(appModel.localAudioDbs.single.enabled, isTrue);
+  });
+
+  test('enabledAudioSourceConfigs gates local audio by per-db enabled only',
+      () async {
+    final LocalAudioDbEntry a =
+        await appModel.importLocalAudioDbFile(srcA.path, displayName: 'A');
+    final LocalAudioDbEntry b =
+        await appModel.importLocalAudioDbFile(srcB.path, displayName: 'B');
+    await appModel.setAudioSourceConfigs(<AudioSourceConfig>[
+      AudioSourceConfig.localAudio(label: 'A', path: a.path, enabled: true),
+      AudioSourceConfig.localAudio(label: 'B', path: b.path, enabled: false),
+    ]);
+    final List<AudioSourceConfig> enabled = appModel.enabledAudioSourceConfigs;
+    final Iterable<AudioSourceConfig> localEnabled = enabled
+        .where((AudioSourceConfig s) => s.kind == AudioSourceKind.localAudio);
+    expect(localEnabled.length, 1);
+    expect(localEnabled.single.path, a.path);
   });
 }

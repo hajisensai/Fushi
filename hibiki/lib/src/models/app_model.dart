@@ -2534,14 +2534,9 @@ class AppModel with ChangeNotifier {
     ];
   }
 
-  List<AudioSourceConfig> get enabledAudioSourceConfigs =>
-      audioSourceConfigs.where((AudioSourceConfig source) {
-        if (!source.enabled) return false;
-        if (source.kind == AudioSourceKind.localAudio && !localAudioEnabled) {
-          return false;
-        }
-        return true;
-      }).toList(growable: false);
+  List<AudioSourceConfig> get enabledAudioSourceConfigs => audioSourceConfigs
+      .where((AudioSourceConfig source) => source.enabled)
+      .toList(growable: false);
 
   List<String> get enabledAudioSources {
     final List<AudioSourceConfig> configs = enabledAudioSourceConfigs;
@@ -2563,7 +2558,9 @@ class AppModel with ChangeNotifier {
     final List<String> sources = audioSources
         .where((source) => source != WordAudioResolver.localAudioUrl)
         .toList(growable: false);
-    if (!localAudioEnabled) return sources;
+    // 删了 master 总开关后，本地音频是否参与 legacy 回退路径，
+    // 由「是否存在已启用的本地库」决定（与 typed-config 路径语义一致）。
+    if (!localAudioDbs.any((LocalAudioDbEntry e) => e.enabled)) return sources;
 
     return <String>[
       WordAudioResolver.localAudioUrl,
@@ -2599,8 +2596,6 @@ class AppModel with ChangeNotifier {
     await _localAudioManager.pruneOrphans(
       nextDbs.map((LocalAudioDbEntry db) => db.path),
     );
-    // 以当前显式总开关值重新 gate native（不再从 entry 自动派生）。
-    await _localAudioManager.setLocalAudioEnabled(localAudioEnabled);
   }
 
   Future<String?> lookupRemoteAudio(
@@ -2634,11 +2629,6 @@ class AppModel with ChangeNotifier {
   }) =>
       _localAudioManager.importFile(sourcePath, displayName: displayName);
 
-  /// 显式设置本地音频总开关（dialog 直接调用）。true → 推 enabled 路径给 native，
-  /// false → 推空列表。
-  Future<void> setLocalAudioEnabled(bool value) =>
-      _localAudioManager.setLocalAudioEnabled(value);
-
   Future<void> setLocalAudioDbs(List<LocalAudioDbEntry> dbs) =>
       _localAudioManager.setEntries(dbs);
 
@@ -2660,11 +2650,6 @@ class AppModel with ChangeNotifier {
     await _localAudioManager.setSourcesFor(path, prefs);
     notifyListeners();
   }
-
-  bool get localAudioEnabled => _localAudioManager.localAudioEnabled;
-
-  void toggleLocalAudio() =>
-      _localAudioManager.toggleLocalAudio(notifyListeners);
 
   // ── UI visibility (delegated) ────────────────────────────────────────
 
@@ -2804,7 +2789,6 @@ class _AppModelRemoteLookupService implements HibikiRemoteLookupService {
     required String expression,
     required String reading,
   }) async {
-    if (!_appModel.localAudioEnabled) return null;
     final Map<String, dynamic>? info =
         await TtsChannel.instance.queryLocalAudio(
       expression,
