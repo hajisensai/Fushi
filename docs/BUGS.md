@@ -16,9 +16,9 @@
 ## BUG-012 · md3 静态守卫扫已删除的 `_buildRailLeading()`（stale 测试，非产品 bug）
 - **报告**：2026-06-03（我，T4 探针全量回归 `flutter test` 时发现的 4 个预存失败之一，用户让查）。
 - **真实性**：⚠️ **非产品 bug，是 stale 测试守卫**。`test/settings/md3_design_system_static_test.dart`「page chrome surfaces use shared MD3 spacing tokens」用 `_functionSource(homeSource, 'Widget _buildRailLeading()', 'class _SyncExitWarningDialog')` 扫 `home_page.dart` 的 rail-leading 函数，但 `8fd0fc1fe`（删宽屏 rail logo）已把 `_buildRailLeading()` 整个删除（`grep` 确认 home_page.dart 已无此函数，`_SyncExitWarningDialog` 尚在 `:421`）→ 起始标记找不到 → `indexOf` 返回 `-1` → `expect(..., isNonNegative)` 失败。产品行为（删 rail logo）是**有意的**，不是 bug。
-- **[ ] ① 不适用** — 无产品 bug 可修；守卫需移除/改指那条 `_buildRailLeading` 断言。
-- **[ ] ② 不适用**。
-- **备注**：`md3_design_system_static_test` 是并发 agent 正在扩的 MD3 守卫（未提交 `docs/specs/2026-06-03-md3-adaptive-nav-shell-plan.md`）。**留给该 agent 随 rail-logo 删除一并更新守卫，我不动以避免冲突**。
+- **[x] ① 已处理** — `3f508995c`（移除那条扫**已删除函数** `_buildRailLeading()` 的废断言；同测试的 collections + tag-management chrome MD3 token 守卫保留不变）。无产品 bug 可修，这是 stale 测试维护。
+- **[ ] ② 不适用**（非产品 bug，无回归测试可加）。
+- **备注**：rail leading logo 表面在 `8fd0fc1fe` 已整体删除（有意），故该子守卫确定性失效（扫不存在的函数）、非设计判断，直接移除以解全套件唯一红。若并发 agent 的 MD3 nav-shell 重构重新引入 rail leading，应再补对应守卫。
 
 ## BUG-011 · 手柄屏幕键盘「右」键落到右下对角键而非同行邻居
 - **报告**：2026-06-03（我，全量回归预存失败之一）。
