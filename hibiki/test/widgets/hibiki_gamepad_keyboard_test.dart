@@ -1,9 +1,26 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/utils/components/hibiki_gamepad_keyboard.dart';
 
 import 'widget_test_helpers.dart';
+
+/// Mocks the platform clipboard so [gamepadKeyboardPaste] reads [text] (or no
+/// text when null). Auto-restored after the test.
+void mockClipboard(WidgetTester tester, String? text) {
+  tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+    SystemChannels.platform,
+    (MethodCall call) async {
+      if (call.method == 'Clipboard.getData') {
+        return text == null ? null : <String, dynamic>{'text': text};
+      }
+      return null;
+    },
+  );
+  addTearDown(() => tester.binding.defaultBinaryMessenger
+      .setMockMethodCallHandler(SystemChannels.platform, null));
+}
 
 void main() {
   group('HibikiGamepadKeyboard', () {
@@ -112,6 +129,41 @@ void main() {
       await tester.pump();
       expect(submits, 1);
     });
+
+    testWidgets('paste key renders only when onPaste is provided',
+        (WidgetTester tester) async {
+      await tester.pumpWidget(buildTestApp(
+        HibikiFocusRoot(
+          child: HibikiGamepadKeyboard(onChar: (_) {}, onBackspace: () {}),
+        ),
+      ));
+      await tester.pump();
+      expect(find.byIcon(Icons.content_paste_outlined), findsNothing);
+
+      await tester.pumpWidget(buildTestApp(
+        HibikiFocusRoot(
+          child: HibikiGamepadKeyboard(
+              onChar: (_) {}, onBackspace: () {}, onPaste: () {}),
+        ),
+      ));
+      await tester.pump();
+      expect(find.byIcon(Icons.content_paste_outlined), findsOneWidget);
+    });
+
+    testWidgets('tapping the paste key fires onPaste',
+        (WidgetTester tester) async {
+      int pastes = 0;
+      await tester.pumpWidget(buildTestApp(
+        HibikiFocusRoot(
+          child: HibikiGamepadKeyboard(
+              onChar: (_) {}, onBackspace: () {}, onPaste: () => pastes++),
+        ),
+      ));
+      await tester.pump();
+      await tester.tap(find.byIcon(Icons.content_paste_outlined));
+      await tester.pump();
+      expect(pastes, 1);
+    });
   });
 
   group('gamepad keyboard text wiring', () {
@@ -163,5 +215,73 @@ void main() {
       gamepadKeyboardBackspace(c);
       expect(c.text, 'abc');
     });
+  });
+
+  group('gamepadKeyboardPaste', () {
+    testWidgets('inserts clipboard text at the cursor and advances it',
+        (WidgetTester tester) async {
+      mockClipboard(tester, 'XY');
+      final TextEditingController c = TextEditingController(text: 'ac');
+      addTearDown(c.dispose);
+      c.selection = const TextSelection.collapsed(offset: 1);
+      final bool inserted = await gamepadKeyboardPaste(c);
+      expect(inserted, isTrue);
+      expect(c.text, 'aXYc');
+      expect(c.selection.baseOffset, 3);
+    });
+
+    testWidgets('replaces the current selection', (WidgetTester tester) async {
+      mockClipboard(tester, 'B');
+      final TextEditingController c = TextEditingController(text: 'aXc');
+      addTearDown(c.dispose);
+      c.selection = const TextSelection(baseOffset: 1, extentOffset: 2);
+      await gamepadKeyboardPaste(c);
+      expect(c.text, 'aBc');
+    });
+
+    testWidgets('empty clipboard is a no-op returning false',
+        (WidgetTester tester) async {
+      mockClipboard(tester, '');
+      final TextEditingController c = TextEditingController(text: 'ab');
+      addTearDown(c.dispose);
+      final bool inserted = await gamepadKeyboardPaste(c);
+      expect(inserted, isFalse);
+      expect(c.text, 'ab');
+    });
+
+    testWidgets('null clipboard is a no-op returning false',
+        (WidgetTester tester) async {
+      mockClipboard(tester, null);
+      final TextEditingController c = TextEditingController(text: 'ab');
+      addTearDown(c.dispose);
+      expect(await gamepadKeyboardPaste(c), isFalse);
+      expect(c.text, 'ab');
+    });
+  });
+
+  testWidgets('showGamepadKeyboard fires onChanged on char and on paste',
+      (WidgetTester tester) async {
+    mockClipboard(tester, 'PV');
+    final TextEditingController c = TextEditingController();
+    addTearDown(c.dispose);
+    final List<String> changes = <String>[];
+
+    await tester.pumpWidget(buildTestApp(Builder(
+      builder: (BuildContext ctx) => ElevatedButton(
+        onPressed: () => showGamepadKeyboard(ctx, c, onChanged: changes.add),
+        child: const Text('open'),
+      ),
+    )));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('q'));
+    await tester.pump();
+    expect(changes.last, 'q');
+
+    await tester.tap(find.byIcon(Icons.content_paste_outlined));
+    await tester.pumpAndSettle();
+    expect(c.text, 'qPV');
+    expect(changes.last, 'qPV');
   });
 }

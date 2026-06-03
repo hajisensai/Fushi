@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/focus/hibiki_focus_target.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
@@ -21,6 +23,7 @@ class HibikiGamepadKeyboard extends StatefulWidget {
     required this.onBackspace,
     super.key,
     this.onSubmit,
+    this.onPaste,
   });
 
   /// Emitted with the character of the pressed key.
@@ -31,6 +34,9 @@ class HibikiGamepadKeyboard extends StatefulWidget {
 
   /// Pressed the ✓ (done) key, if provided.
   final VoidCallback? onSubmit;
+
+  /// Pressed the 📋 (paste) key, if provided.
+  final VoidCallback? onPaste;
 
   @override
   State<HibikiGamepadKeyboard> createState() => _HibikiGamepadKeyboardState();
@@ -109,6 +115,14 @@ class _HibikiGamepadKeyboardState extends State<HibikiGamepadKeyboard> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: <Widget>[
               _KbKey(label: _layerKeyLabel, onPress: _cycleLayer, flex: 2),
+              if (widget.onPaste != null)
+                _KbKey(
+                  label: 'paste',
+                  icon: Icons.content_paste_outlined,
+                  tooltip: t.paste,
+                  onPress: widget.onPaste!,
+                  flex: 2,
+                ),
               _KbKey(label: '␣', onPress: () => widget.onChar(' '), flex: 4),
               _KbKey(label: '⌫', onPress: widget.onBackspace, flex: 2),
               if (widget.onSubmit != null)
@@ -128,11 +142,21 @@ class _KbKey extends StatefulWidget {
     required this.label,
     required this.onPress,
     this.flex = 1,
+    this.icon,
+    this.tooltip,
   });
 
   final String label;
   final VoidCallback onPress;
   final int flex;
+
+  /// When set, the key renders this icon instead of [label] (e.g. the paste
+  /// key). [label] still serves as the key's debug/identity string.
+  final IconData? icon;
+
+  /// Optional hover/long-press tooltip — used by icon keys whose glyph is less
+  /// self-evident than the text keys.
+  final String? tooltip;
 
   @override
   State<_KbKey> createState() => _KbKeyState();
@@ -157,20 +181,26 @@ class _KbKeyState extends State<_KbKey> {
           child: Container(
             constraints: const BoxConstraints(minWidth: 32, minHeight: 40),
             alignment: Alignment.center,
-            child: Text(
-              widget.label,
-              style: tokens.type.controlLabel.copyWith(color: colors.onSurface),
-            ),
+            child: widget.icon != null
+                ? Icon(widget.icon, size: 20, color: colors.onSurface)
+                : Text(
+                    widget.label,
+                    style: tokens.type.controlLabel
+                        .copyWith(color: colors.onSurface),
+                  ),
           ),
         ),
       ),
     );
+    final Widget tipped = widget.tooltip == null
+        ? key
+        : Tooltip(message: widget.tooltip!, child: key);
     // Outside a HibikiFocusRoot (plain widget tests) the key stays a bare
     // tappable; under one it becomes a gamepad focus target. Expanded wraps the
     // WHOLE thing so it remains a direct child of the Row (Expanded must be a
     // direct Flex child, not nested under HibikiFocusTarget).
     final Widget focusable = HibikiFocusRoot.maybeControllerOf(context) == null
-        ? key
+        ? tipped
         : Actions(
             actions: <Type, Action<Intent>>{
               ActivateIntent: CallbackAction<ActivateIntent>(onInvoke: (_) {
@@ -178,7 +208,7 @@ class _KbKeyState extends State<_KbKey> {
                 return null;
               }),
             },
-            child: HibikiFocusTarget(id: _focusId, child: key),
+            child: HibikiFocusTarget(id: _focusId, child: tipped),
           );
     return Expanded(flex: widget.flex, child: focusable);
   }
@@ -215,21 +245,49 @@ void gamepadKeyboardBackspace(TextEditingController controller) {
   );
 }
 
+/// Reads the clipboard's plain text and inserts it at the controller's cursor
+/// (replacing any selection) via [gamepadKeyboardInsert]. Returns true if text
+/// was inserted; false when the clipboard holds no text (no-op). Shared by the
+/// on-screen keyboard's paste key and the mobile text-field paste button.
+Future<bool> gamepadKeyboardPaste(TextEditingController controller) async {
+  final ClipboardData? data = await Clipboard.getData(Clipboard.kTextPlain);
+  final String? text = data?.text;
+  if (text == null || text.isEmpty) return false;
+  gamepadKeyboardInsert(controller, text);
+  return true;
+}
+
 /// Shows [HibikiGamepadKeyboard] in a bottom sheet wired to [controller] — text
 /// entry for desktop/console where no system IME exists. Characters insert at
-/// the cursor, ⌫ deletes, ✓ dismisses.
+/// the cursor, ⌫ deletes, 📋 pastes the clipboard, ✓ dismisses.
+///
+/// [onChanged] is fired after every programmatic edit (type/backspace/paste) so
+/// reactive fields update — Flutter does not fire `onChanged` on programmatic
+/// controller mutations.
 Future<void> showGamepadKeyboard(
   BuildContext context,
-  TextEditingController controller,
-) {
+  TextEditingController controller, {
+  ValueChanged<String>? onChanged,
+}) {
   return showModalBottomSheet<void>(
     context: context,
     builder: (BuildContext ctx) => SafeArea(
       child: Padding(
         padding: const EdgeInsets.all(8),
         child: HibikiGamepadKeyboard(
-          onChar: (String ch) => gamepadKeyboardInsert(controller, ch),
-          onBackspace: () => gamepadKeyboardBackspace(controller),
+          onChar: (String ch) {
+            gamepadKeyboardInsert(controller, ch);
+            onChanged?.call(controller.text);
+          },
+          onBackspace: () {
+            gamepadKeyboardBackspace(controller);
+            onChanged?.call(controller.text);
+          },
+          onPaste: () async {
+            if (await gamepadKeyboardPaste(controller)) {
+              onChanged?.call(controller.text);
+            }
+          },
           onSubmit: () => Navigator.of(ctx).maybePop(),
         ),
       ),
