@@ -36,4 +36,12 @@ void main() {
     expect(src, isNot(contains('__hoshiImageObserver')),
         reason: '旧 IO 图片观察器须移除');
   });
+
+  test('shared cue-advance helper reveals the crossed image (BUG-007 gap2)',
+      () {
+    expect(src, contains('window.__hoshiImagePauseAdvance'),
+        reason: 'cue 推进检测抽成共享 helper，selector/sasayaki 两路径复用');
+    expect(src, contains('window.__hoshiRevealTarget'),
+        reason: '命中插图、reveal 时须把视口滚到插图（否则暂停看不到图）');
+  });
 }

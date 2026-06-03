@@ -42,8 +42,53 @@ class AudiobookBridge {
 ''';
   }
 
-  /// 高亮函数 — reveal 时委托 hoshiReader.scrollToTarget，fallback scrollIntoView。
+  /// 高亮 + 图片暂停检测（cue 推进锚点间 DOM 判定，绕开 IntersectionObserver 视口
+  /// 可见性 —— 阅读器多栏 overflow:hidden scrollLeft 离散翻页会把整页插图一帧跳过，
+  /// IO 永不达阈值，故历史上图片暂停一直无效，见 BUG-007）。
   static const String _highlightFn = '''
+window.__hoshiImageBetween = function(prev, el) {
+  if (!prev || !el || prev === el || !document.contains(prev)) return null;
+  var a = prev, b = el;
+  if (prev.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_PRECEDING) {
+    a = el; b = prev;
+  }
+  var media = document.querySelectorAll('img, svg');
+  for (var i = 0; i < media.length; i++) {
+    var m = media[i];
+    if ((a.compareDocumentPosition(m) & Node.DOCUMENT_POSITION_FOLLOWING) &&
+        (b.compareDocumentPosition(m) & Node.DOCUMENT_POSITION_PRECEDING)) {
+      return m;
+    }
+  }
+  return null;
+};
+
+window.__hoshiRevealTarget = function(t) {
+  if (!t) return;
+  if (window.hoshiReader && window.hoshiReader.scrollToTarget) {
+    window.hoshiReader.scrollToTarget(t);
+  } else {
+    t.scrollIntoView({block: 'center', behavior: 'instant'});
+  }
+};
+
+// cue 推进核心：把上一句锚点更新到 el；若两锚点之间跨过 img/svg → 通知 Dart 暂停。
+// 当 reveal 为真时把视口滚到那张插图（而非 el），返回 true 表示「已 reveal 图片，
+// 调用方不要再 reveal el」。onImageDetected 与 reveal 无关，跨图就发（设备测试契约）。
+window.__hoshiImagePauseAdvance = function(el, reveal) {
+  var crossed = window.__hoshiImageBetween(window.__hoshiPrevHighlight, el);
+  window.__hoshiPrevHighlight = el;
+  if (!crossed) return false;
+  if (window.flutter_inappwebview) {
+    window.flutter_inappwebview.callHandler('onImageDetected');
+  }
+  if (reveal) {
+    window.__hoshiRevealTarget(crossed);
+    return true;
+  }
+  return false;
+};
+
 window.__hoshiHighlight = function(selector, reveal) {
   if (reveal === undefined) reveal = true;
   document.querySelectorAll('.hoshi-active').forEach(function(e) {
@@ -51,39 +96,11 @@ window.__hoshiHighlight = function(selector, reveal) {
   });
   if (!selector) { window.__hoshiPrevHighlight = null; return; }
   var el = document.querySelector(selector);
-  if (el) {
-    // 图片暂停检测：cue 推进到新句子时，若上一句锚点到当前句锚点之间（document
-    // 顺序）存在 img/svg，说明本次推进刚跨过一张插图 → 通知 Dart 暂停。用「锚点间
-    // DOM」判定而非 IntersectionObserver 视口可见性 —— 阅读器是 CSS 多栏 +
-    // overflow:hidden + scrollLeft 离散翻页，整页插图常落在无 cue 的页上、被 reveal
-    // 一帧跳过、从不成为当前页，IO 永不达阈值，故图片暂停历史上一直无效（BUG-007）。
-    var prev = window.__hoshiPrevHighlight;
-    if (prev && prev !== el && document.contains(prev)) {
-      var a = prev, b = el;
-      if (prev.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_PRECEDING) {
-        a = el; b = prev;
-      }
-      var media = document.querySelectorAll('img, svg');
-      for (var i = 0; i < media.length; i++) {
-        var m = media[i];
-        if ((a.compareDocumentPosition(m) & Node.DOCUMENT_POSITION_FOLLOWING) &&
-            (b.compareDocumentPosition(m) & Node.DOCUMENT_POSITION_PRECEDING)) {
-          if (window.flutter_inappwebview) {
-            window.flutter_inappwebview.callHandler('onImageDetected');
-          }
-          break;
-        }
-      }
-    }
-    window.__hoshiPrevHighlight = el;
-    el.classList.add('hoshi-active');
-    if (reveal) {
-      if (window.hoshiReader && window.hoshiReader.scrollToTarget) {
-        window.hoshiReader.scrollToTarget(el);
-      } else {
-        el.scrollIntoView({block: 'center', behavior: 'instant'});
-      }
-    }
+  if (!el) return;
+  var revealedImage = window.__hoshiImagePauseAdvance(el, reveal);
+  el.classList.add('hoshi-active');
+  if (reveal && !revealedImage) {
+    window.__hoshiRevealTarget(el);
   }
 };
 ''';

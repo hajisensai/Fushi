@@ -24,14 +24,15 @@ void main() {
   const String html = '''
 <!DOCTYPE html><html><head><meta charset="utf-8"></head><body>
   <p><span data-hoshi-sid="s1">画像の前の文。</span></p>
-  <svg xmlns="http://www.w3.org/2000/svg" width="120" height="90">
+  <svg id="pic" xmlns="http://www.w3.org/2000/svg" width="120" height="90">
     <rect width="120" height="90" fill="#ccc"></rect>
   </svg>
   <p><span data-hoshi-sid="s2">画像の後の文。</span></p>
 </body></html>
 ''';
 
-  testWidgets('cue-advance across an image fires onImageDetected in a real WebView',
+  testWidgets(
+      'cue-advance across an image fires onImageDetected in a real WebView',
       (WidgetTester tester) async {
     bool imageDetected = false;
     final Completer<void> driven = Completer<void>();
@@ -70,12 +71,56 @@ void main() {
     for (int i = 0; i < 150 && !driven.isCompleted; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
-    expect(driven.isCompleted, isTrue,
-        reason: 'WebView 未在 15s 内完成加载/驱动');
+    expect(driven.isCompleted, isTrue, reason: 'WebView 未在 15s 内完成加载/驱动');
     await tester.pump(const Duration(seconds: 1));
 
     expect(imageDetected, isTrue,
         reason: 'cue 推进从 s1 跨过 svg 到 s2 必须触发 onImageDetected（旧 IO 视口'
             '检测在离散翻页下漏报，新锚点间 DOM 检测应确定性命中）');
+  });
+
+  testWidgets(
+      'selector cue: crossing an image reveals the IMAGE (not next text) when reveal=true',
+      (WidgetTester tester) async {
+    final Completer<void> driven = Completer<void>();
+    String? revealTarget;
+
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: InAppWebView(
+          initialData: InAppWebViewInitialData(data: html),
+          onWebViewCreated: (InAppWebViewController controller) {
+            controller.addJavaScriptHandler(
+              handlerName: 'reportReveal',
+              callback: (List<dynamic> args) {
+                revealTarget = args.isNotEmpty ? args.first as String? : null;
+                return null;
+              },
+            );
+          },
+          onLoadStop: (InAppWebViewController controller, WebUri? url) async {
+            await controller.evaluateJavascript(
+                source: 'window.hoshiReader={scrollToTarget:function(t){'
+                    "window.flutter_inappwebview.callHandler('reportReveal',"
+                    '(t&&(t.id||t.tagName))||null);}};');
+            await AudiobookBridge.inject(controller);
+            await controller.evaluateJavascript(
+                source:
+                    "window.__hoshiHighlight('[data-hoshi-sid=s1]', true);");
+            await controller.evaluateJavascript(
+                source:
+                    "window.__hoshiHighlight('[data-hoshi-sid=s2]', true);");
+            if (!driven.isCompleted) driven.complete();
+          },
+        ),
+      ),
+    ));
+
+    for (int i = 0; i < 150 && !driven.isCompleted; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await tester.pump(const Duration(seconds: 1));
+    expect(revealTarget, 'pic',
+        reason: 'cue 推进跨过插图、reveal=true 时应把视口滚到插图(id=pic)而非 s2 文字');
   });
 }
