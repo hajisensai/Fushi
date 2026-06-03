@@ -1,7 +1,9 @@
 package app.hibiki.reader
 
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
+import android.webkit.WebView
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.android.FlutterActivityLaunchConfigs.BackgroundMode
 
@@ -12,9 +14,38 @@ import io.flutter.embedding.android.FlutterActivityLaunchConfigs.BackgroundMode
  * the PROCESS_TEXT / SEND / TRANSLATE / hibiki://lookup entry points.
  */
 class PopupDictFlutterActivity : FlutterActivity() {
+    companion object {
+        @Volatile
+        private var webViewDataDirConfigured = false
+
+        /**
+         * The popup Flutter engine renders dictionary entries in a
+         * flutter_inappwebview WebView inside the :popup process. Android forbids
+         * two processes sharing one WebView data directory (crbug.com/558377), so
+         * the :popup process must use a distinct suffix before any WebView is
+         * created — mirroring the legacy native PopupDictActivity. Must run before
+         * the engine renders, hence the first line of onCreate.
+         */
+        private fun configureWebViewDataDir() {
+            if (webViewDataDirConfigured) return
+            webViewDataDirConfigured = true
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                try {
+                    WebView.setDataDirectorySuffix("popup")
+                } catch (e: IllegalStateException) {
+                    // Another :popup entry point (legacy PopupDictActivity) already
+                    // set the suffix in this process — same dir, safe to ignore.
+                }
+            }
+        }
+    }
+
     private var engineWasCold: Boolean = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Give the :popup WebView its own data directory before anything in this
+        // process touches WebView (the engine renders entries via inappwebview).
+        configureWebViewDataDir()
         // Set the term BEFORE ensureEngine: a cold start executes the Dart
         // entrypoint inside ensureEngine and Dart immediately polls
         // getInitialProcessText.

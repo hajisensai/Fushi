@@ -36,10 +36,19 @@ void main() {
         contains('getCachedEngineId(): String = PopupEngineHolder.ENGINE_ID'));
     expect(src, contains('shouldDestroyEngineWithHost(): Boolean = false'));
     expect(src, contains('BackgroundMode.transparent'));
-    expect(src,
-        contains('import io.flutter.embedding.android.FlutterActivityLaunchConfigs.BackgroundMode'));
+    expect(
+        src,
+        contains(
+            'import io.flutter.embedding.android.FlutterActivityLaunchConfigs.BackgroundMode'));
+    // The :popup WebView must use its own data directory (crbug.com/558377),
+    // configured before the engine renders any WebView (top of onCreate).
+    expect(src, contains('WebView.setDataDirectorySuffix("popup")'));
+    final int configCallIdx = src.lastIndexOf('configureWebViewDataDir()');
     final int setPendingIdx = src.indexOf('PopupEngineHolder.setPendingText');
     final int ensureIdx = src.indexOf('PopupEngineHolder.ensureEngine');
+    expect(configCallIdx, isNonNegative);
+    expect(configCallIdx, lessThan(setPendingIdx),
+        reason: 'WebView 数据目录后缀必须在引擎/取词前配置，避免多进程 WebView 冲突');
     expect(setPendingIdx, isNonNegative);
     expect(ensureIdx, isNonNegative);
     expect(setPendingIdx, lessThan(ensureIdx),
