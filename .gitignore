@@ -94,6 +94,7 @@ docs/TODO.md
 # AI tooling config
 .ccg/
 .claude/index.json
+.claude/settings.local.json
 .superpowers/
 
 # Local-only agent notes (private remote-build / sync details: SSH host, IP, ports)
