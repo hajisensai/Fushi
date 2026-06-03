@@ -1,6 +1,8 @@
 package app.hibiki.reader
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import app.hibiki.reader.constants.ChannelNames
 import io.flutter.FlutterInjector
 import io.flutter.embedding.engine.FlutterEngine
@@ -31,6 +33,7 @@ object PopupEngineHolder {
     @Volatile
     private var onFinish: (() -> Unit)? = null
 
+    @Volatile
     private var channel: MethodChannel? = null
 
     fun setPendingText(text: String) {
@@ -42,6 +45,7 @@ object PopupEngineHolder {
     }
 
     /** Returns true when the engine had to be created now (cold start). */
+    @Synchronized
     fun ensureEngine(context: Context): Boolean {
         val cache = FlutterEngineCache.getInstance()
         if (cache.get(ENGINE_ID) != null) return false
@@ -79,9 +83,10 @@ object PopupEngineHolder {
     fun pushProcessText(text: String) {
         if (text.isBlank()) return
         pendingText = text
+        val ch = channel ?: return
         val args = HashMap<String, Any>()
         args["text"] = text
         args["charIndex"] = -1
-        channel?.invokeMethod("onNewProcessText", args)
+        Handler(Looper.getMainLooper()).post { ch.invokeMethod("onNewProcessText", args) }
     }
 }
