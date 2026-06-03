@@ -102,6 +102,19 @@ Hibiki 目前有三套查词 UI：
   - `adb shell am start -a android.intent.action.VIEW -d "hibiki://lookup?word=日本語"`
   - 确认出 Flutter 弹窗 → 点词出嵌套层 → 返回逐层回退 → 截图取证。
 
+## 8.1 设备验证结果（2026-06-03，emulator hoshi_test_api35）
+
+在真机模拟器上实测 release APK（含下述 WebView 修复），全部目标通过：
+
+1. ✅ 外部 `hibiki://lookup?word=...` 与 PROCESS_TEXT 均 resumed 到透明 `PopupDictFlutterActivity`，`:popup` 进程加载 `libflutter.so`+Impeller；旧原生 `PopupDictActivity` `exported=false`，外部直接启动抛 SecurityException（彻底失活）。
+2. ✅ 弹出 Flutter `PopupDictionaryPage`（贴顶卡片+搜索栏，透明浮于触发它的画面之上），导入测试词典后正确渲染词条（neko → cat; feline）。
+3. ✅ 嵌套下钻：点词条里的词（feline）→ 叠出新层；返回键 pop 回上一层（neko），再返回才关窗——与 app 内逐层返回一致。
+4. ✅ 热引擎复用：关窗后再 firing 新词，同一 `:popup` pid、无新引擎加载，搜索栏即时更新（`onNewProcessText` 生效）。
+
+**验证中发现并根因修复的真 bug（develop `84eaf5320`）**：`:popup` 进程的 Flutter 引擎用 flutter_inappwebview 渲染词条，与主进程 WebView 共用同一数据目录触发 `crbug.com/558377`（"Using WebView from more than one process at once with the same data directory"），弹窗在渲染前崩溃（词典查询本身成功 `cache HIT`，但 WebView 抛 PlatformException）。修复：在 `PopupDictFlutterActivity.onCreate` 最早处（任何 WebView 创建前）调 `WebView.setDataDirectorySuffix("popup")`，复刻旧原生 `PopupDictActivity.configureWebViewDataDir()` 的做法；并加源码守卫断言。**这是只有真机能暴露的运行时问题——静态测试 + release 构建均通过却仍崩，印证了设备复测的必要性。**
+
+**已知次要行为（非阻塞）**：`:popup` 热引擎在首次查词时 `initialiseForDictionaryPopup()` 加载词典缓存。若用户在热引擎已存活期间导入新词典，外部查词要等 `:popup` 进程被系统回收/重启后才反映新词典（与旧原生 `HoshiBridge` 进程级缓存特性一致，且 `:popup` 进程短命会自愈）。如需即时反映可后续在 `onNewProcessText` 路径补一次词典缓存刷新。
+
 ## 9. 验收标准
 
 1. Android 外部 4 个入口均弹出 Flutter `PopupDictionaryPage`（非原生 WebView 弹窗）。
