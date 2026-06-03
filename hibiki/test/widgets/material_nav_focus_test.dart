@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/focus/hibiki_focus_target.dart';
@@ -138,6 +139,33 @@ void main() {
     expect(index, 2);
     expect(controller.activeId, const HibikiFocusId('nav-bar-2'),
         reason: 'focus stays on the tile after selecting');
+  });
+
+  testWidgets('Enter key on a focused tile selects it (keyboard activation)',
+      (WidgetTester tester) async {
+    int index = 0;
+    await tester.pumpWidget(buildTestApp(
+      StatefulBuilder(
+        builder: (BuildContext c, StateSetter setState) => contentThenBar(
+          index: index,
+          onTap: (int i) => setState(() => index = i),
+        ),
+      ),
+    ));
+    await tester.pump();
+    final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+      tester.element(find.byType(Column).first),
+    );
+
+    controller.requestById(const HibikiFocusId('nav-bar-2'));
+    await tester.pump();
+    // Keyboard activation: a focused tile must select on Enter, not just on a
+    // direct Actions.invoke or a gamepad A. This guards desktop keyboard a11y
+    // (gameButtonA can't be synthesized on Windows; Enter must work).
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+    expect(index, 2,
+        reason: 'Enter on a focused nav tile must select that destination');
   });
 
   testWidgets('a tap selects the destination', (WidgetTester tester) async {
