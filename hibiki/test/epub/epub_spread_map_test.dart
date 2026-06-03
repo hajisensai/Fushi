@@ -181,5 +181,62 @@ void main() {
       expect(spread.chapterIndices, [4, 5]);
       expect(spread.isSpread, true);
     });
+
+    test(
+        'flipping Spread Mode off→on rebuilds the page map on the SAME book '
+        '(identity singles → paired/forceAll)', () {
+      final EpubBook book = _makeBook(
+        count: 6,
+        imageOnly: <bool>[true, true, true, true, true, true],
+      );
+
+      final EpubSpreadMap off = EpubSpreadMap.build(
+        book: book,
+        spreadMode: 'off',
+        spreadDirection: 'rtl',
+      );
+      expect(off.length, 6, reason: 'off 模式必须是 N 个单页 identity');
+      for (int i = 0; i < 6; i++) {
+        expect(off.entryAt(i).chapterIndex, i);
+        expect(off.entryAt(i).isSpread, isFalse);
+        expect(off.entryAt(i).secondChapterIndex, isNull);
+        expect(off.virtualPageForChapter(i), i);
+      }
+
+      final EpubSpreadMap on = EpubSpreadMap.build(
+        book: book,
+        spreadMode: 'on',
+        spreadDirection: 'rtl',
+      );
+
+      expect(on.length, 4, reason: 'on 模式应配对 → 页数应少于 off');
+      expect(on.length, lessThan(off.length));
+
+      expect(on.entryAt(0).isSpread, isFalse);
+      expect(on.entryAt(0).chapterIndex, 0);
+
+      expect(on.entryAt(1).isSpread, isTrue);
+      expect(on.entryAt(1).chapterIndex, 1);
+      expect(on.entryAt(1).secondChapterIndex, 2);
+      expect(on.entryAt(1).chapterIndices, <int>[1, 2]);
+
+      expect(on.entryAt(2).isSpread, isTrue);
+      expect(on.entryAt(2).chapterIndex, 3);
+      expect(on.entryAt(2).secondChapterIndex, 4);
+
+      expect(on.entryAt(3).isSpread, isFalse);
+      expect(on.entryAt(3).chapterIndex, 5);
+
+      expect(off.virtualPageForChapter(4), 4);
+      expect(on.virtualPageForChapter(4), 2);
+      expect(on.virtualPageForChapter(4), isNot(off.virtualPageForChapter(4)));
+
+      final bool offHasAnySpread = List<int>.generate(off.length, (int v) => v)
+          .any((int v) => off.entryAt(v).isSpread);
+      final bool onHasAnySpread = List<int>.generate(on.length, (int v) => v)
+          .any((int v) => on.entryAt(v).isSpread);
+      expect(offHasAnySpread, isFalse);
+      expect(onHasAnySpread, isTrue);
+    });
   });
 }
