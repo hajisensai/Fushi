@@ -94,14 +94,24 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage> {
     );
     return DesktopContentLayout(
       kind: DesktopContentKind.settings,
-      child: _buildEmbeddedMaterialShell(content),
+      child: _buildEmbeddedShell(content),
     );
   }
 
-  Widget _buildEmbeddedMaterialShell(Widget content) {
-    if (!widget.embedded || isCupertinoPlatform(context)) {
+  Widget _buildEmbeddedShell(Widget content) {
+    if (!widget.embedded) {
       return content;
     }
+    // Cupertino 手机（compact 走底栏导航、onBack 为空、无需返回出口）保持原生
+    // 无页头观感，不强加 Material 风页头。只有桌面/平板全屏设置（隐藏图标侧栏、
+    // 由 onBack 提供返回）才需补页头出口——这正是 BUG-009 R2 让 Cupertino 桌面
+    // 从「无出口的三栏混排」恢复成「页头(返回) + 二栏」的地方。Material 维持其
+    // 一贯页头（手机标题 / 桌面带返回箭头）。
+    if (isCupertinoPlatform(context) && widget.onBack == null) {
+      return content;
+    }
+    // 全屏嵌入设置统一加自绘页头 + 返回箭头；叶子设置控件仍由各自渲染器保持
+    // Cupertino / Material 皮肤。
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[

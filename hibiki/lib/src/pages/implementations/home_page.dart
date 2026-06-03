@@ -324,11 +324,13 @@ class _HomePageState extends BasePageState<HomePage>
       ];
 
   Widget _buildDesktopLayout(WindowSizeClass sizeClass) {
-    if (_currentTab == 2 && !isCupertinoPlatform(context)) {
-      // 设置标签（仅 Material）：隐藏 3 图标侧栏，全屏二栏（内部
+    if (_currentTab == 2) {
+      // 设置标签（全部设计系统）：隐藏 3 图标侧栏，全屏二栏（内部
       // MaterialSupportingPaneLayout），左上返回箭头切回来源 tab（参考 Mihon
-      // 宽屏设置）。Cupertino（iPad/Cupertino 桌面）的内嵌设置不渲染页头/返回，
-      // 隐藏 rail 会无出口，故保持原 rail+body 不变。
+      // 宽屏设置）。Cupertino 桌面也走这里——叶子控件保持 Cupertino 皮肤，但外壳
+      // 复用同一 Material 架构；返回出口由 SettingsHomePage 的嵌入页头提供
+      // （BUG-009 R2）。否则会退化成「3 图标 rail + 嵌入式 Cupertino 设置」三栏
+      // 混排、无返回出口、且详情面板溢出。
       return Scaffold(
         resizeToAvoidBottomInset: false,
         body: SafeArea(

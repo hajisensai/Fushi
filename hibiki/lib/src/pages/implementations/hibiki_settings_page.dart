@@ -84,7 +84,11 @@ class _HibikiSettingsDialogPageState extends BasePageState {
       settingsContext: settingsContext,
       destination: destination,
       scrollController: cupertino ? null : _contentScrollController,
-      shrinkWrap: !cupertino,
+      // 两个渲染器的详情都已是可滚动 ListView（BUG-009 R1）。在此弹窗里统一收缩
+      // 到内容高：material 由 ListView 自身(controller=_contentScrollController)
+      // 滚动，cupertino 由下方外层 SingleChildScrollView 滚动；shrinkWrap 避免
+      // ListView 落在无界高度（cupertino 的 SingleChildScrollView）处崩。
+      shrinkWrap: true,
     );
 
     return SizedBox(

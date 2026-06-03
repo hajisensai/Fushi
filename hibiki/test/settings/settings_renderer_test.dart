@@ -14,6 +14,7 @@ import 'package:hibiki/src/settings/cupertino_settings_renderer.dart';
 import 'package:hibiki/src/settings/material_settings_renderer.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
+import 'package:hibiki/src/settings/settings_home_page.dart';
 import 'package:hibiki/src/settings/settings_schema.dart';
 import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart';
 import 'package:hibiki/src/utils/components/settings_shared.dart';
@@ -563,5 +564,70 @@ void main() {
     expect(tester.takeException(), isNull,
         reason: '改 String 型 segmented 设置不得抛 _TypeError');
     expect(received, 'on', reason: 'onChanged 必须以正确的 String 值触发');
+  });
+
+  // BUG-009 R1：宽屏 master-detail 的 primary 是有限高度的 Expanded；cupertino
+  // 详情过去返回裸 Column，内容超高 → RenderFlex 溢出（真机右下角黄黑条纹）。
+  // 详情必须像 Material 渲染器一样自带滚动视口。
+  testWidgets(
+      'BUG-009: cupertino detail content scrolls in a bounded pane instead of '
+      'overflowing', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      _harness(
+        platform: TargetPlatform.iOS,
+        builder: (SettingsContext settingsContext) {
+          // 模拟宽屏 primary：固定矮高度面板，内容远超其高度。
+          return Align(
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              height: 250,
+              width: 600,
+              child: const CupertinoSettingsRenderer().buildDetailContent(
+                settingsContext: settingsContext,
+                destination: _fixtureDestination(),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+
+    expect(
+      tester.takeException(),
+      isNull,
+      reason: 'cupertino 详情在有限高度面板里必须可滚动，不得 RenderFlex 溢出（BUG-009 R1）',
+    );
+    // 详情自身提供可滚动视口（宽屏 primary 与 reader 设置弹窗都复用此路径）。
+    expect(find.byType(Scrollable), findsWidgets);
+  });
+
+  // BUG-009 R2：Windows 桌面把外观切到 iOS(Cupertino) 后，设置标签曾退化成
+  // 「3 图标 rail + 嵌入 Cupertino 设置」三栏混排、无返回出口、详情溢出。修复后
+  // cupertino 桌面复用 Material 全屏外壳：宽屏二栏 + 顶部返回箭头出口，不溢出。
+  testWidgets(
+      'BUG-009 R2: cupertino desktop embedded settings expose a back-arrow exit '
+      'and do not overflow', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      _harness(
+        // 复现用户场景：Windows 主机 + 外观强制 iOS(Cupertino) 覆盖。
+        platform: TargetPlatform.windows,
+        designSystem: 'cupertino',
+        builder: (SettingsContext _) =>
+            SettingsHomePage(embedded: true, onBack: () {}),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      tester.takeException(),
+      isNull,
+      reason: 'cupertino 桌面嵌入设置不得 RenderFlex 溢出（BUG-009）',
+    );
+    // 退化态完全没有出口；修复后必须有返回箭头（由统一嵌入页头提供）。
+    expect(
+      find.byIcon(Icons.arrow_back),
+      findsOneWidget,
+      reason: 'cupertino 桌面全屏设置必须提供返回箭头出口（BUG-009 R2）',
+    );
   });
 }

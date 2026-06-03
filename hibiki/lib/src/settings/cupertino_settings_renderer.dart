@@ -91,6 +91,9 @@ class CupertinoSettingsRenderer implements SettingsRenderer {
             child: buildDetailContent(
               settingsContext: settingsContext,
               destination: destination,
+              // sliver 沿滚动轴无界，详情须收缩到内容高、由外层 CustomScrollView
+              // 滚动（large-title 折叠依赖同一 scrollview）。
+              shrinkWrap: true,
             ),
           ),
         ],
@@ -107,17 +110,30 @@ class CupertinoSettingsRenderer implements SettingsRenderer {
   }) {
     final List<SettingsSection> sections =
         destination.visibleSections(settingsContext);
-    return Column(
-      children: sections.map((SettingsSection section) {
+    final EdgeInsets mediaPadding =
+        MediaQuery.of(settingsContext.context).padding;
+    // 与 MaterialSettingsRenderer.buildDetailContent 对齐：用可滚动 ListView 而非
+    // 裸 Column。宽屏 master-detail 的 primary 是有限高度的 Expanded，裸 Column
+    // 内容超高会 RenderFlex 溢出（真机右下角黄黑条纹，BUG-009 R1）。
+    // shrinkWrap 时禁用自身滚动，交由外层 sliver / SingleChildScrollView 滚动
+    // （buildDetailPage 的 CustomScrollView 复用此路径）。底部留安全区，自滚到底
+    // 时最后一项不贴边（对齐 Material 渲染器）。
+    return ListView.builder(
+      controller: scrollController,
+      shrinkWrap: shrinkWrap,
+      physics: shrinkWrap ? const NeverScrollableScrollPhysics() : null,
+      padding: EdgeInsets.only(bottom: mediaPadding.bottom),
+      itemCount: sections.length,
+      itemBuilder: (BuildContext context, int index) {
         return _SettingsSchemaSection(
-          section: section,
+          section: sections[index],
           settingsContext: settingsContext,
           showIcons: false,
           routeBuilder: (BuildContext context, WidgetBuilder builder) {
             return CupertinoPageRoute<void>(builder: builder);
           },
         );
-      }).toList(growable: false),
+      },
     );
   }
 }
