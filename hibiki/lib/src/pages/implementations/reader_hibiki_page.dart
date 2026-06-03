@@ -1815,6 +1815,11 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
             if (mounted) {
               setState(() {
                 _readerContentReady = true;
+                // spread(漫画双页)路径只发 'spreadReady'，从不发 'onRestoreComplete'，
+                // 故不走 _onRestoreComplete 的 _hasEverLoaded 置位。这里补齐，与另外
+                // 三个 content-ready 完成点对齐 —— 否则 spread 书冷开时底栏(有声书条/
+                // 设置条)要等 8s _startContentReadyTimeout 兜底才出现。set-once，不复位。
+                _hasEverLoaded = true;
               });
             }
           },
