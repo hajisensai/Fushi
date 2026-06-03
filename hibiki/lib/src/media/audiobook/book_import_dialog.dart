@@ -11,6 +11,7 @@ import 'package:hibiki/src/media/audiobook/sasayaki_rematch.dart';
 import 'package:hibiki/src/media/audiobook/text_to_epub.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/epub/epub_book.dart';
+import 'package:hibiki/src/epub/book_title_conflict.dart';
 import 'package:hibiki/src/epub/epub_importer.dart';
 import 'package:hibiki/src/epub/epub_parser.dart';
 import 'package:hibiki/src/epub/epub_storage.dart';
@@ -465,6 +466,33 @@ class _BookImportDialogState extends State<BookImportDialog> {
     _progressMsg.value = msg;
   }
 
+  /// 同名书弹窗回调，喂给 [EpubImporter]。是→加后缀，否/关闭→取消这本书。
+  Future<DuplicateTitleResolution> _onDuplicateTitle(
+    String proposedTitle,
+  ) async {
+    if (!mounted) return DuplicateTitleResolution.cancel;
+    final bool? keep = await showAppDialog<bool>(
+      context: context,
+      builder: (BuildContext ctx) => AlertDialog(
+        title: Text(t.book_import_duplicate_title),
+        content: Text(t.book_import_duplicate_message(name: proposedTitle)),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(t.book_import_duplicate_cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(t.book_import_duplicate_keep),
+          ),
+        ],
+      ),
+    );
+    return keep == true
+        ? DuplicateTitleResolution.addSuffix
+        : DuplicateTitleResolution.cancel;
+  }
+
   Future<void> _doImport() async {
     if (_epubPath == null && !_hasSubtitles) {
       HibikiToast.show(msg: t.srt_import_missing_input);
@@ -507,6 +535,12 @@ class _BookImportDialogState extends State<BookImportDialog> {
             : '${t.srt_import_success} · $tail';
         HibikiToast.show(msg: msg);
         Navigator.pop(context, true);
+      }
+    } on DuplicateImportCancelledException {
+      // 用户在同名弹窗选了"否"——取消这本书，不是错误。
+      if (mounted) {
+        HibikiToast.show(msg: t.book_import_duplicate_cancelled);
+        Navigator.pop(context, false);
       }
     } catch (e, stack) {
       ErrorLogService.instance.log('BookImportDialog.import', e, stack);
@@ -552,9 +586,13 @@ class _BookImportDialogState extends State<BookImportDialog> {
           db: widget.db,
           filePath: epubPath,
           fileName: '${title.replaceAll(RegExp(r'[^\w\s\-]'), '')}.epub',
+          onDuplicateTitle: _onDuplicateTitle,
         );
         debugPrint(
             '[hibiki-import] subtitleBook: EPUB import done, id=$bookId');
+      } on DuplicateImportCancelledException {
+        // 取消必须冒泡到顶层中止整次导入，不能被吞成 bookId=0 继续。
+        rethrow;
       } catch (e, stack) {
         ErrorLogService.instance.log('BookImportDialog.epubImport', e, stack);
         debugPrint('[hibiki-import] EPUB generation/import failed: $e');
@@ -634,6 +672,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
         db: widget.db,
         bytes: bytes,
         fileName: filename,
+        onDuplicateTitle: _onDuplicateTitle,
       );
     } else {
       _reportProgress(0.5, t.import_step_importing_epub);
@@ -641,6 +680,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
         db: widget.db,
         filePath: _epubPath!,
         fileName: _epubName ?? p.basename(_epubPath!),
+        onDuplicateTitle: _onDuplicateTitle,
       );
     }
 
@@ -672,6 +712,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
         db: widget.db,
         bytes: importBytes,
         fileName: importFilename,
+        onDuplicateTitle: _onDuplicateTitle,
       );
     } else {
       _reportProgress(0.2, t.import_step_importing_epub);
@@ -679,6 +720,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
         db: widget.db,
         filePath: _epubPath!,
         fileName: _epubName ?? p.basename(_epubPath!),
+        onDuplicateTitle: _onDuplicateTitle,
       );
     }
 
