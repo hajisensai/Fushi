@@ -315,47 +315,85 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
         ),
         if (_localExpanded) ...<Widget>[
           if (_localSources.isNotEmpty)
-            ListView.builder(
+            ReorderableListView.builder(
               shrinkWrap: true,
+              // 同 _buildRemoteList：关掉桌面自动 ☰ 手柄（会盖行尾按钮），改整行长按
+              // 拖拽；上下箭头是无障碍/手柄重排路径。列表在外层 SingleChildScrollView
+              // 内，自身不滚动。
+              buildDefaultDragHandles: false,
               physics: const NeverScrollableScrollPhysics(),
               itemCount: _localSources.length,
+              onReorder: (int oldIndex, int newIndex) {
+                setState(() {
+                  if (newIndex > oldIndex) newIndex--;
+                  final AudioSourceConfig item =
+                      _localSources.removeAt(oldIndex);
+                  _localSources.insert(newIndex, item);
+                });
+              },
               itemBuilder: (BuildContext context, int index) {
                 final AudioSourceConfig source = _localSources[index];
-                return AdaptiveSettingsRow(
-                  key: ValueKey<String>(
-                    'audio_local_${source.path ?? index}',
-                  ),
-                  title: source.displayLabel,
-                  subtitle: source.path ?? '',
-                  icon: Icons.audiotrack_outlined,
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      Switch.adaptive(
-                        value: source.enabled,
-                        onChanged: (bool enabled) => setState(() {
-                          _localSources[index] =
-                              source.copyWith(enabled: enabled);
-                        }),
-                      ),
-                      if (widget.onEditLocalSources != null &&
-                          (source.path?.isNotEmpty ?? false))
-                        HibikiIconButton(
-                          icon: Icons.tune,
-                          size: 18,
-                          tooltip: t.local_audio_edit_sources,
-                          padding: EdgeInsets.all(tokens.spacing.gap / 2),
-                          onTap: () => widget.onEditLocalSources!(source.path!),
+                return ReorderableDelayedDragStartListener(
+                  key: ValueKey<String>('audio_local_${source.path ?? index}'),
+                  index: index,
+                  child: AdaptiveSettingsRow(
+                    title: source.displayLabel,
+                    subtitle: source.path ?? '',
+                    icon: Icons.audiotrack_outlined,
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Switch.adaptive(
+                          value: source.enabled,
+                          onChanged: (bool enabled) => setState(() {
+                            _localSources[index] =
+                                source.copyWith(enabled: enabled);
+                          }),
                         ),
-                      HibikiIconButton(
-                        icon: Icons.delete_outline,
-                        size: 18,
-                        tooltip: t.dialog_delete,
-                        padding: EdgeInsets.all(tokens.spacing.gap / 2),
-                        onTap: () =>
-                            setState(() => _localSources.removeAt(index)),
-                      ),
-                    ],
+                        HibikiIconButton(
+                          icon: Icons.keyboard_arrow_up,
+                          size: 18,
+                          tooltip: t.move_up,
+                          enabled: index > 0,
+                          padding: EdgeInsets.all(tokens.spacing.gap / 2),
+                          onTap: () => setState(() {
+                            final AudioSourceConfig item =
+                                _localSources.removeAt(index);
+                            _localSources.insert(index - 1, item);
+                          }),
+                        ),
+                        HibikiIconButton(
+                          icon: Icons.keyboard_arrow_down,
+                          size: 18,
+                          tooltip: t.move_down,
+                          enabled: index < _localSources.length - 1,
+                          padding: EdgeInsets.all(tokens.spacing.gap / 2),
+                          onTap: () => setState(() {
+                            final AudioSourceConfig item =
+                                _localSources.removeAt(index);
+                            _localSources.insert(index + 1, item);
+                          }),
+                        ),
+                        if (widget.onEditLocalSources != null &&
+                            (source.path?.isNotEmpty ?? false))
+                          HibikiIconButton(
+                            icon: Icons.tune,
+                            size: 18,
+                            tooltip: t.local_audio_edit_sources,
+                            padding: EdgeInsets.all(tokens.spacing.gap / 2),
+                            onTap: () =>
+                                widget.onEditLocalSources!(source.path!),
+                          ),
+                        HibikiIconButton(
+                          icon: Icons.delete_outline,
+                          size: 18,
+                          tooltip: t.dialog_delete,
+                          padding: EdgeInsets.all(tokens.spacing.gap / 2),
+                          onTap: () =>
+                              setState(() => _localSources.removeAt(index)),
+                        ),
+                      ],
+                    ),
                   ),
                 );
               },
