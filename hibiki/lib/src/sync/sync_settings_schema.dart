@@ -265,6 +265,28 @@ void _showSnackBar(BuildContext context, String message) {
   showSyncMessage(context, message);
 }
 
+/// 手动同步完成后的 SnackBar 摘要（消费 [SyncRunReport]）。纯函数，便于单测边界：
+/// 全 0 → "无新增"；多类型 → ` · ` 拼接；有失败 → 追加失败计数后缀。
+@visibleForTesting
+String summarizeSyncReport(SyncRunReport r) {
+  final List<String> parts = <String>[
+    if (r.booksImported > 0) t.sync_now_books_in(count: r.booksImported),
+    if (r.dictionariesImported > 0)
+      t.sync_now_dicts_in(count: r.dictionariesImported),
+    if (r.dictionariesExported > 0)
+      t.sync_now_dicts_out(count: r.dictionariesExported),
+    if (r.audiobooksImported > 0)
+      t.sync_now_audio_in(count: r.audiobooksImported),
+    if (r.audiobooksExported > 0)
+      t.sync_now_audio_out(count: r.audiobooksExported),
+  ];
+  final String head = parts.isEmpty ? t.sync_now_no_changes : parts.join(' · ');
+  final String done = t.sync_now_done(detail: head);
+  return r.errors.isEmpty
+      ? done
+      : '$done${t.sync_now_failed_suffix(count: r.errors.length)}';
+}
+
 // ── Sync account widget ──────────────────────────────────────────────
 
 class _SyncAccountWidget extends StatefulWidget {
@@ -631,7 +653,7 @@ class _SyncNowWidgetState extends State<_SyncNowWidget> {
         case ManualSyncOutcome.busy:
           _showSnackBar(context, t.sync_now_busy);
         case ManualSyncOutcome.completed:
-          _showSnackBar(context, _summary(result.report!));
+          _showSnackBar(context, summarizeSyncReport(result.report!));
       }
     } catch (e) {
       if (mounted) {
@@ -643,26 +665,6 @@ class _SyncNowWidgetState extends State<_SyncNowWidget> {
     } finally {
       if (mounted) setState(() => _syncing = false);
     }
-  }
-
-  String _summary(SyncRunReport r) {
-    final List<String> parts = <String>[
-      if (r.booksImported > 0) t.sync_now_books_in(count: r.booksImported),
-      if (r.dictionariesImported > 0)
-        t.sync_now_dicts_in(count: r.dictionariesImported),
-      if (r.dictionariesExported > 0)
-        t.sync_now_dicts_out(count: r.dictionariesExported),
-      if (r.audiobooksImported > 0)
-        t.sync_now_audio_in(count: r.audiobooksImported),
-      if (r.audiobooksExported > 0)
-        t.sync_now_audio_out(count: r.audiobooksExported),
-    ];
-    final String head =
-        parts.isEmpty ? t.sync_now_no_changes : parts.join(' · ');
-    final String done = t.sync_now_done(detail: head);
-    return r.errors.isEmpty
-        ? done
-        : '$done${t.sync_now_failed_suffix(count: r.errors.length)}';
   }
 
   @override
