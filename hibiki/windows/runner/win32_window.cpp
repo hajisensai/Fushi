@@ -35,6 +35,22 @@ void EnableFullDpiSupportIfAvailable(HWND hwnd) {
   }
 }
 
+// Far off every physical monitor; the same coordinate Windows itself uses to
+// park minimized windows. Combined with WS_EX_NOACTIVATE this hides the runner
+// without pausing the Flutter engine (the window stays WS_VISIBLE so it keeps
+// producing frames — it is simply never on screen).
+constexpr int kOffscreenOrigin = -32000;
+
+// True when HIBIKI_TEST_HIDDEN is set (to anything non-empty). In that mode the
+// runner creates its window off-screen and non-activating so automated
+// integration tests can drive the real desktop app — focus moves, settings
+// changes, WebView DOM probes — without it appearing on screen or stealing
+// keyboard/foreground focus from whatever the user is doing. GetEnvironmentVariable
+// with a null buffer returns the required size (>0) when the variable exists.
+bool IsTestHiddenMode() {
+  return GetEnvironmentVariableW(L"HIBIKI_TEST_HIDDEN", nullptr, 0) > 0;
+}
+
 }  // namespace
 
 // Manages the Win32Window's window class registration.
@@ -116,11 +132,20 @@ bool Win32Window::CreateAndShow(const std::wstring& title,
   UINT dpi = FlutterDesktopGetDpiForMonitor(monitor);
   double scale_factor = dpi / 96.0;
 
-  HWND window = CreateWindow(
-      window_class, title.c_str(), WS_OVERLAPPEDWINDOW | WS_VISIBLE,
-      Scale(origin.x, scale_factor), Scale(origin.y, scale_factor),
-      Scale(size.width, scale_factor), Scale(size.height, scale_factor),
-      nullptr, nullptr, GetModuleHandle(nullptr), this);
+  // Background test mode: park the window off-screen and make it non-activating
+  // (no taskbar button, never takes foreground) so integration tests can drive
+  // the real app without disturbing the user. WS_VISIBLE is kept so the engine
+  // keeps rendering; only the position + ex-style change.
+  const bool hidden = IsTestHiddenMode();
+  const DWORD ex_style = hidden ? (WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE) : 0;
+  const int window_x = hidden ? kOffscreenOrigin : Scale(origin.x, scale_factor);
+  const int window_y = hidden ? kOffscreenOrigin : Scale(origin.y, scale_factor);
+
+  HWND window = CreateWindowEx(
+      ex_style, window_class, title.c_str(), WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+      window_x, window_y, Scale(size.width, scale_factor),
+      Scale(size.height, scale_factor), nullptr, nullptr,
+      GetModuleHandle(nullptr), this);
 
   if (!window) {
     return false;
