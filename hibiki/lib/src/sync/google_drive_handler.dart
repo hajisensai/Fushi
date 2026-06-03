@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:googleapis/drive/v3.dart' as drive;
 import 'package:hibiki/src/sync/google_drive_auth.dart';
+import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 
@@ -185,6 +186,91 @@ class GoogleDriveHandler {
 
       return folderId;
     });
+  }
+
+  // ── Generic asset-store primitives ─────────────────────────────────
+
+  static const _folderMimeType = 'application/vnd.google-apps.folder';
+
+  /// Ensure a child folder named [name] exists under [parentId]; return its id.
+  Future<String> ensureChildFolder(String parentId, String name) async {
+    final qParent = _escapeQuery(parentId);
+    final qName = _escapeQuery(name);
+
+    return _call((api) async {
+      final list = await api.files.list(
+        q: "trashed=false and '$qParent' in parents "
+            "and mimeType='$_folderMimeType' "
+            "and name='$qName'",
+        $fields: 'files(id,name)',
+      );
+
+      if (list.files != null && list.files!.isNotEmpty) {
+        return list.files!.first.id!;
+      }
+
+      final created = await api.files.create(
+        drive.File()
+          ..name = name
+          ..mimeType = _folderMimeType
+          ..parents = [parentId],
+      );
+      return created.id!;
+    });
+  }
+
+  /// List all direct children (files + folders) under [parentId] as
+  /// [AssetEntry]s, with [AssetEntry.isFolder] derived from the Drive
+  /// mimeType. DriveFile carries no mimeType, so we map straight from the
+  /// raw `drive.File` here instead of widening DriveFile.
+  Future<List<AssetEntry>> listChildrenRaw(String parentId) async {
+    final qParent = _escapeQuery(parentId);
+    return _call((api) async {
+      final results = <AssetEntry>[];
+      String? pageToken;
+
+      do {
+        final list = await api.files.list(
+          q: "'$qParent' in parents and trashed=false",
+          $fields: 'nextPageToken,files(id,name,mimeType,size)',
+          pageSize: 1000,
+          pageToken: pageToken,
+        );
+        if (list.files != null) {
+          for (final f in list.files!) {
+            results.add(AssetEntry(
+              id: f.id!,
+              name: f.name!,
+              isFolder: f.mimeType == _folderMimeType,
+              sizeBytes: f.size != null ? int.tryParse(f.size!) : null,
+            ));
+          }
+        }
+        pageToken = list.nextPageToken;
+      } while (pageToken != null);
+
+      return results;
+    });
+  }
+
+  /// Download and JSON-decode the content of [fileId]; null on empty.
+  Future<Object?> downloadJsonById(String fileId) async {
+    return _downloadJson(fileId);
+  }
+
+  /// Upsert a JSON file named [name] under [parentId] (utf8 of jsonEncode).
+  Future<void> uploadJsonInFolder(
+    String parentId,
+    String name,
+    Object? json,
+  ) async {
+    final existingId = await _findFileId(parentId, name);
+    await _uploadJson(
+      folderId: parentId,
+      fileId: existingId,
+      fileName: name,
+      data: json,
+    );
   }
 
   // ── Sync file operations ──────────────────────────────────────────

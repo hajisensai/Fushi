@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:hibiki/src/sync/google_drive_auth.dart';
 import 'package:hibiki/src/sync/google_drive_handler.dart';
+import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
@@ -192,4 +193,62 @@ class GoogleDriveSyncBackend extends SyncBackend {
   @override
   void cacheBookFolderIds(List<DriveFile> folders) =>
       _drive.cacheBookFolderIds(folders);
+
+  // ── SyncAssetStore ─────────────────────────────────────────────────
+
+  @override
+  Future<String> ensureNamespace(String name) => _wrapErrors(() async {
+        final root = await _drive.findOrCreateRootFolder();
+        return _drive.ensureChildFolder(root, name);
+      });
+
+  @override
+  Future<String> ensureFolder(String parentId, String name) =>
+      _wrapErrors(() => _drive.ensureChildFolder(parentId, name));
+
+  @override
+  Future<List<AssetEntry>> listChildren(String namespaceId) =>
+      _wrapErrors(() => _drive.listChildrenRaw(namespaceId));
+
+  @override
+  Future<AssetEntry?> findAsset(String namespaceId, String name) =>
+      _wrapErrors(() async {
+        final f = await _drive.findContentFile(namespaceId, name);
+        if (f == null) return null;
+        return AssetEntry(id: f.id, name: f.name);
+      });
+
+  @override
+  Future<void> putAsset(
+    String namespaceId,
+    String name,
+    File file, {
+    void Function(double progress)? onProgress,
+  }) =>
+      _wrapVoidErrors(() => _drive.uploadContentFile(
+            folderId: namespaceId,
+            fileName: name,
+            file: file,
+            onProgress: onProgress,
+          ));
+
+  @override
+  Future<void> getAsset(
+    String assetId,
+    File destination, {
+    void Function(double progress)? onProgress,
+  }) =>
+      _wrapVoidErrors(() => _drive.downloadContentFile(
+            fileId: assetId,
+            destination: destination,
+            onProgress: onProgress,
+          ));
+
+  @override
+  Future<Object?> getJsonAsset(String assetId) =>
+      _wrapErrors(() => _drive.downloadJsonById(assetId));
+
+  @override
+  Future<void> putJsonAsset(String namespaceId, String name, Object? json) =>
+      _wrapVoidErrors(() => _drive.uploadJsonInFolder(namespaceId, name, json));
 }

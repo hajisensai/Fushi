@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_manager.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
@@ -113,6 +114,35 @@ class _AlwaysRetryableBackend implements SyncBackend {
       throw UnimplementedError();
   @override
   void cacheBookFolderIds(List<DriveFile> folders) =>
+      throw UnimplementedError();
+
+  // ── SyncAssetStore (unreached: findOrCreateRootFolder throws first) ──
+  @override
+  Future<String> ensureNamespace(String name) async =>
+      throw UnimplementedError();
+  @override
+  Future<String> ensureFolder(String parentId, String name) async =>
+      throw UnimplementedError();
+  @override
+  Future<List<AssetEntry>> listChildren(String namespaceId) async =>
+      throw UnimplementedError();
+  @override
+  Future<AssetEntry?> findAsset(String namespaceId, String name) async =>
+      throw UnimplementedError();
+  @override
+  Future<void> putAsset(String namespaceId, String name, File file,
+          {void Function(double progress)? onProgress}) async =>
+      throw UnimplementedError();
+  @override
+  Future<void> getAsset(String assetId, File destination,
+          {void Function(double progress)? onProgress}) async =>
+      throw UnimplementedError();
+  @override
+  Future<Object?> getJsonAsset(String assetId) async =>
+      throw UnimplementedError();
+  @override
+  Future<void> putJsonAsset(
+          String namespaceId, String name, Object? json) async =>
       throw UnimplementedError();
 }
 

@@ -7,6 +7,7 @@ import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 import 'package:hibiki/src/sync/desktop_oauth.dart';
 import 'package:hibiki/src/sync/sync_http.dart';
+import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/sync_utils.dart';
@@ -556,6 +557,71 @@ class OneDriveSyncBackend extends SyncBackend {
     return null;
   }
 
+  // ── SyncAssetStore implementation ─────────────────────────────────
+
+  @override
+  Future<String> ensureNamespace(String name) async {
+    final rootId = await findOrCreateRootFolder();
+    return _ensureChildFolder(rootId, name);
+  }
+
+  @override
+  Future<String> ensureFolder(String parentId, String name) =>
+      _ensureChildFolder(parentId, name);
+
+  @override
+  Future<List<AssetEntry>> listChildren(String namespaceId) async {
+    final items = await _listChildren('/me/drive/items/$namespaceId/children');
+    return items
+        .map((item) => AssetEntry(
+              id: item['id'] as String,
+              name: item['name'] as String,
+              isFolder: item.containsKey('folder'),
+              sizeBytes: (item['size'] as num?)?.toInt(),
+            ))
+        .toList();
+  }
+
+  @override
+  Future<AssetEntry?> findAsset(String namespaceId, String name) async {
+    final file = await findContentFile(namespaceId, name);
+    if (file == null) return null;
+    return AssetEntry(id: file.id, name: file.name);
+  }
+
+  @override
+  Future<void> putAsset(
+    String namespaceId,
+    String name,
+    File file, {
+    void Function(double progress)? onProgress,
+  }) =>
+      uploadContentFile(
+        folderId: namespaceId,
+        fileName: name,
+        file: file,
+        onProgress: onProgress,
+      );
+
+  @override
+  Future<void> getAsset(
+    String assetId,
+    File destination, {
+    void Function(double progress)? onProgress,
+  }) =>
+      downloadContentFile(
+        fileId: assetId,
+        destination: destination,
+        onProgress: onProgress,
+      );
+
+  @override
+  Future<Object?> getJsonAsset(String assetId) => _downloadItemJson(assetId);
+
+  @override
+  Future<void> putJsonAsset(String namespaceId, String name, Object? json) =>
+      _uploadJson(namespaceId, name, json);
+
   // ── Cache ─────────────────────────────────────────────────────────
 
   @override
@@ -589,6 +655,29 @@ class OneDriveSyncBackend extends SyncBackend {
   }
 
   // ── Private helpers ───────────────────────────────────────────────
+
+  /// Ensure a child folder named [name] exists directly under [parentId],
+  /// returning its Graph item id. Find-then-create-on-404 (idempotent):
+  /// 'useExisting' is not a valid conflictBehavior (HTTP 400), so a single
+  /// create-or-reuse POST is not possible — same pattern as [ensureBookFolder].
+  Future<String> _ensureChildFolder(String parentId, String name) async {
+    try {
+      final resp = await _graphGet(
+          '/me/drive/items/$parentId:/${Uri.encodeComponent(name)}');
+      final json = jsonDecode(resp.body) as Map<String, dynamic>;
+      return json['id'] as String;
+    } on SyncBackendError catch (e) {
+      if (!e.isRetryable) rethrow; // Only catch 404.
+    }
+
+    final resp = await _graphPost('/me/drive/items/$parentId/children', {
+      'name': name,
+      'folder': <String, dynamic>{},
+      '@microsoft.graph.conflictBehavior': 'fail',
+    });
+    final json = jsonDecode(resp.body) as Map<String, dynamic>;
+    return json['id'] as String;
+  }
 
   Future<List<Map<String, dynamic>>> _listChildren(String firstPath) async {
     final items = <Map<String, dynamic>>[];

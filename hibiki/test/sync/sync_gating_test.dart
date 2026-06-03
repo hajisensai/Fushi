@@ -6,6 +6,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/sync/backup_service.dart';
+import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_manager.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
@@ -85,6 +86,35 @@ class _RecordingExportBackend implements SyncBackend {
   Map<String, String> get cachedFolderIds => const <String, String>{};
   @override
   void cacheBookFolderIds(List<DriveFile> folders) {}
+
+  // ── SyncAssetStore (unused by this test) ──────────────────────────
+  @override
+  Future<String> ensureNamespace(String name) async =>
+      throw UnimplementedError();
+  @override
+  Future<String> ensureFolder(String parentId, String name) async =>
+      throw UnimplementedError();
+  @override
+  Future<List<AssetEntry>> listChildren(String namespaceId) async =>
+      throw UnimplementedError();
+  @override
+  Future<AssetEntry?> findAsset(String namespaceId, String name) async =>
+      throw UnimplementedError();
+  @override
+  Future<void> putAsset(String namespaceId, String name, File file,
+          {void Function(double progress)? onProgress}) async =>
+      throw UnimplementedError();
+  @override
+  Future<void> getAsset(String assetId, File destination,
+          {void Function(double progress)? onProgress}) async =>
+      throw UnimplementedError();
+  @override
+  Future<Object?> getJsonAsset(String assetId) async =>
+      throw UnimplementedError();
+  @override
+  Future<void> putJsonAsset(
+          String namespaceId, String name, Object? json) async =>
+      throw UnimplementedError();
 
   @override
   Future<bool> get isAuthenticated async => true;

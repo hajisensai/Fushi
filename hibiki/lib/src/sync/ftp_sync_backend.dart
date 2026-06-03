@@ -5,6 +5,7 @@ import 'dart:math';
 
 import 'package:ftpconnect/ftpconnect.dart';
 import 'package:flutter/foundation.dart';
+import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/sync_utils.dart';
@@ -419,6 +420,127 @@ class FtpSyncBackend extends SyncBackend {
           throw SyncBackendError('Failed to find content file: $e',
               isRetryable: true);
         }
+      });
+
+  // ── Generic asset store (SyncAssetStore) ──────────────────────────
+  //
+  // Ids are home-anchored absolute FTP paths: a namespace's id is the folder
+  // path under [_rootPath], and an asset's id is `'<folderId>/<name>'`. All
+  // direct-client operations take [_opLock] and call [_ensureConnected] (same
+  // shape as findOrCreateRootFolder / ensureBookFolder / listBooks). Methods
+  // that merely delegate to an already-locking public op (uploadContentFile /
+  // downloadContentFile / findContentFile / _downloadJson) must NOT re-wrap in
+  // [_opLock] — AsyncMutex is non-reentrant and would deadlock.
+
+  @override
+  Future<String> ensureNamespace(String name) =>
+      _ensureFolderAt(_rootPath, name);
+
+  @override
+  Future<String> ensureFolder(String parentId, String name) =>
+      _ensureFolderAt(parentId, name);
+
+  /// Ensure a child folder [name] exists under [parentId] and return its
+  /// home-anchored absolute path `'<parentId>/<name>'`. Mirrors the
+  /// create-if-missing path of ensureBookFolder (checkFolderExistence →
+  /// changeDirectory(parent) → makeDirectory(name)).
+  Future<String> _ensureFolderAt(String parentId, String name) =>
+      _opLock.withLock(() async {
+        await _ensureConnected();
+        final folderPath = '$parentId/$name';
+        try {
+          final exists = await _client!.checkFolderExistence(folderPath);
+          if (!exists) {
+            await _client!.changeDirectory(parentId);
+            final created = await _client!.makeDirectory(name);
+            if (!created) {
+              throw SyncBackendError('Failed to create folder: $folderPath');
+            }
+          }
+          await _client!.changeDirectory(_homeDir);
+          return folderPath;
+        } catch (e) {
+          if (e is SyncBackendError || e is SyncAuthError) rethrow;
+          _resetConnection();
+          throw SyncBackendError('Failed to ensure folder: $e',
+              isRetryable: true);
+        }
+      });
+
+  @override
+  Future<List<AssetEntry>> listChildren(String namespaceId) =>
+      _opLock.withLock(() async {
+        await _ensureConnected();
+        try {
+          await _client!.changeDirectory(namespaceId);
+          final entries = await _client!.listDirectoryContent();
+          return entries
+              .map((e) => AssetEntry(
+                    id: '$namespaceId/${e.name}',
+                    name: e.name,
+                    isFolder: e.type == FTPEntryType.dir,
+                  ))
+              .toList();
+        } catch (e) {
+          if (e is SyncBackendError || e is SyncAuthError) rethrow;
+          _resetConnection();
+          throw SyncBackendError('Failed to list children: $e',
+              isRetryable: true);
+        }
+      });
+
+  @override
+  Future<AssetEntry?> findAsset(String namespaceId, String name) async {
+    // Delegates to the already-locking findContentFile; do not re-wrap.
+    final file = await findContentFile(namespaceId, name);
+    if (file == null) return null;
+    return AssetEntry(id: file.id, name: file.name);
+  }
+
+  @override
+  Future<void> putAsset(
+    String namespaceId,
+    String name,
+    File file, {
+    void Function(double progress)? onProgress,
+  }) {
+    // Delegates to the already-locking uploadContentFile; do not re-wrap.
+    return uploadContentFile(
+      folderId: namespaceId,
+      fileName: name,
+      file: file,
+      onProgress: onProgress,
+    );
+  }
+
+  @override
+  Future<void> getAsset(
+    String assetId,
+    File destination, {
+    void Function(double progress)? onProgress,
+  }) {
+    // Delegates to the already-locking downloadContentFile; do not re-wrap.
+    return downloadContentFile(
+      fileId: assetId,
+      destination: destination,
+      onProgress: onProgress,
+    );
+  }
+
+  @override
+  Future<Object?> getJsonAsset(String assetId) {
+    // Delegates to the already-locking _downloadJson (temp-file → utf8 →
+    // jsonDecode); do not re-wrap.
+    return _downloadJson(assetId);
+  }
+
+  @override
+  Future<void> putJsonAsset(String namespaceId, String name, Object? json) =>
+      _opLock.withLock(() async {
+        await _ensureConnected();
+        // _uploadJsonImpl writes utf8(jsonEncode(...)) to a temp file and
+        // uploads to `'<namespaceId>/<name>'` (same path as updateProgressFile).
+        await _uploadJsonImpl(namespaceId, name, json);
       });
 
   // ── Cache ─────────────────────────────────────────────────────────

@@ -7,6 +7,7 @@ import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 import 'package:hibiki/src/sync/desktop_oauth.dart';
 import 'package:hibiki/src/sync/sync_http.dart';
+import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/sync_utils.dart';
@@ -575,6 +576,87 @@ class DropboxSyncBackend extends SyncBackend {
     for (final f in folders) {
       _titleToFolderId[f.name] = f.id;
     }
+  }
+
+  // ── SyncAssetStore ────────────────────────────────────────────────
+
+  @override
+  Future<String> ensureNamespace(String name) async {
+    // Top-level namespace == a folder directly under the root path.
+    return ensureFolder(_rootFolderPath, name);
+  }
+
+  @override
+  Future<String> ensureFolder(String parentId, String name) async {
+    final folderPath = '$parentId/$name';
+    try {
+      await _apiPost('/files/create_folder_v2', {
+        'path': folderPath,
+        'autorename': false,
+      });
+    } on SyncBackendError catch (e) {
+      // 409 conflict means it already exists — that is fine (idempotent).
+      if (!e.message.contains('409')) rethrow;
+    }
+    return folderPath;
+  }
+
+  @override
+  Future<List<AssetEntry>> listChildren(String namespaceId) async {
+    final entries = await _listFolder(namespaceId);
+    return entries
+        .map((e) => AssetEntry(
+              id: e['path_lower'] as String? ?? e['path_display'] as String,
+              name: e['name'] as String,
+              isFolder: e['.tag'] == 'folder',
+            ))
+        .toList();
+  }
+
+  @override
+  Future<AssetEntry?> findAsset(String namespaceId, String name) async {
+    final file = await findContentFile(namespaceId, name);
+    if (file == null) return null;
+    return AssetEntry(id: file.id, name: file.name);
+  }
+
+  @override
+  Future<void> putAsset(
+    String namespaceId,
+    String name,
+    File file, {
+    void Function(double progress)? onProgress,
+  }) async {
+    await uploadContentFile(
+      folderId: namespaceId,
+      fileName: name,
+      file: file,
+      onProgress: onProgress,
+    );
+  }
+
+  @override
+  Future<void> getAsset(
+    String assetId,
+    File destination, {
+    void Function(double progress)? onProgress,
+  }) async {
+    await downloadContentFile(
+      fileId: assetId,
+      destination: destination,
+      onProgress: onProgress,
+    );
+  }
+
+  @override
+  Future<Object?> getJsonAsset(String assetId) async {
+    return _downloadFileJson(assetId);
+  }
+
+  @override
+  Future<void> putJsonAsset(
+      String namespaceId, String name, Object? json) async {
+    await _uploadJsonFile(namespaceId, name, json);
   }
 
   // ── Private helpers ───────────────────────────────────────────────

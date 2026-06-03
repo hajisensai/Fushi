@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/sync_utils.dart';
@@ -432,6 +433,93 @@ class HibikiClientSyncBackend extends SyncBackend {
       _titleToFolderId[f.name] = f.id;
     }
   }
+
+  // ── SyncAssetStore ────────────────────────────────────────────────
+
+  @override
+  Future<String> ensureNamespace(String name) async {
+    await _ensureResolved();
+    final root = '${_ops!.baseUrl}/ttu-reader-data/';
+    final path = '$root${Uri.encodeComponent(name)}/';
+    await _ops!.ensureCollection(path);
+    return path;
+  }
+
+  @override
+  Future<String> ensureFolder(String parentId, String name) async {
+    await _ensureResolved();
+    final path = '$parentId${Uri.encodeComponent(name)}/';
+    await _ops!.ensureCollection(path);
+    return path;
+  }
+
+  @override
+  Future<List<AssetEntry>> listChildren(String namespaceId) async {
+    await _ensureResolved();
+    final entries = await _ops!.propfindChildren(namespaceId);
+    return entries
+        .where((e) => e.href != namespaceId)
+        .map((e) => AssetEntry(
+              id: e.href,
+              name: _stripTrailingSlash(e.displayName),
+              isFolder: e.isCollection,
+            ))
+        .toList();
+  }
+
+  @override
+  Future<AssetEntry?> findAsset(String namespaceId, String name) async {
+    await _ensureResolved();
+    final path = '$namespaceId${Uri.encodeComponent(name)}';
+    if (!await _ops!.headFile(path)) return null;
+    return AssetEntry(id: path, name: name);
+  }
+
+  @override
+  Future<void> putAsset(
+    String namespaceId,
+    String name,
+    File file, {
+    void Function(double progress)? onProgress,
+  }) async {
+    await _ensureResolved();
+    await uploadContentFile(
+      folderId: namespaceId,
+      fileName: name,
+      file: file,
+      onProgress: onProgress,
+    );
+  }
+
+  @override
+  Future<void> getAsset(
+    String assetId,
+    File destination, {
+    void Function(double progress)? onProgress,
+  }) async {
+    await _ensureResolved();
+    await downloadContentFile(
+      fileId: assetId,
+      destination: destination,
+      onProgress: onProgress,
+    );
+  }
+
+  @override
+  Future<Object?> getJsonAsset(String assetId) async {
+    await _ensureResolved();
+    return _ops!.downloadJson(assetId);
+  }
+
+  @override
+  Future<void> putJsonAsset(
+      String namespaceId, String name, Object? json) async {
+    await _ensureResolved();
+    await _ops!.uploadJson(namespaceId, name, json);
+  }
+
+  static String _stripTrailingSlash(String value) =>
+      value.endsWith('/') ? value.substring(0, value.length - 1) : value;
 
   // ── Test connection ───────────────────────────────────────────────
 

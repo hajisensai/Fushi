@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/foundation.dart';
+import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/sync_utils.dart';
@@ -324,6 +325,111 @@ class SftpSyncBackend extends SyncBackend {
         final path = '$folderId/$fileName';
         if (!await _fileExists(sftp, path)) return null;
         return DriveFile(id: path, name: fileName);
+      });
+
+  // ── SyncAssetStore ────────────────────────────────────────────────
+  //
+  // The asset-store contract is layered on top of the same SFTP primitives the
+  // legacy DriveFile API uses; ids are paths RELATIVE to the login home, with
+  // the root namespace at [rootFolderName] and children at `'$parentId/$name'`.
+  //
+  // Methods that delegate to an existing API (uploadContentFile /
+  // downloadContentFile / findContentFile / _downloadJson) deliberately do NOT
+  // re-wrap in `_guarded`: those callees already hold the op lock + perform the
+  // SyncBackend error translation, and `AsyncMutex` is NOT reentrant, so a
+  // second `_guarded` here would deadlock on its own lock. The rest take their
+  // own `_guarded`, mirroring findOrCreateRootFolder / listBooks / _uploadJson.
+
+  @override
+  Future<String> ensureNamespace(String name) => _guarded(() async {
+        final sftp = await _ensureConnected();
+        final path = '$rootFolderName/$name';
+        await _mkdirIfAbsent(sftp, path);
+        return path;
+      });
+
+  @override
+  Future<String> ensureFolder(String parentId, String name) =>
+      _guarded(() async {
+        final sftp = await _ensureConnected();
+        final path = '$parentId/$name';
+        await _mkdirIfAbsent(sftp, path);
+        return path;
+      });
+
+  @override
+  Future<List<AssetEntry>> listChildren(String namespaceId) =>
+      _guarded(() async {
+        final sftp = await _ensureConnected();
+        final entries = await sftp.listdir(namespaceId);
+        return entries
+            .where((e) => e.filename != '.' && e.filename != '..')
+            .map((e) => AssetEntry(
+                  id: '$namespaceId/${e.filename}',
+                  name: e.filename,
+                  isFolder: e.attr.isDirectory,
+                  sizeBytes: e.attr.size,
+                ))
+            .toList();
+      });
+
+  @override
+  Future<AssetEntry?> findAsset(String namespaceId, String name) async {
+    // Delegates to the already-`_guarded` findContentFile (no re-wrap).
+    final file = await findContentFile(namespaceId, name);
+    if (file == null) return null;
+    return AssetEntry(id: file.id, name: file.name);
+  }
+
+  @override
+  Future<void> putAsset(
+    String namespaceId,
+    String name,
+    File file, {
+    void Function(double progress)? onProgress,
+  }) {
+    // Delegates to the already-`_guarded` uploadContentFile (no re-wrap).
+    return uploadContentFile(
+      folderId: namespaceId,
+      fileName: name,
+      file: file,
+      onProgress: onProgress,
+    );
+  }
+
+  @override
+  Future<void> getAsset(
+    String assetId,
+    File destination, {
+    void Function(double progress)? onProgress,
+  }) {
+    // Delegates to the already-`_guarded` downloadContentFile (no re-wrap).
+    return downloadContentFile(
+      fileId: assetId,
+      destination: destination,
+      onProgress: onProgress,
+    );
+  }
+
+  @override
+  Future<Object?> getJsonAsset(String assetId) async {
+    // Delegates to the already-`_guarded` _downloadJson (no re-wrap). A missing
+    // or non-JSON asset yields null per the contract; a missing file surfaces
+    // as a (retryable) SyncBackendError from `_guarded`, which we map to null.
+    try {
+      return await _downloadJson(assetId);
+    } on SyncBackendError {
+      return null;
+    } on FormatException {
+      return null;
+    }
+  }
+
+  @override
+  Future<void> putJsonAsset(String namespaceId, String name, Object? json) =>
+      _guarded(() async {
+        final sftp = await _ensureConnected();
+        await _uploadJson(sftp, namespaceId, name, json);
       });
 
   // ── Cache ─────────────────────────────────────────────────────────
