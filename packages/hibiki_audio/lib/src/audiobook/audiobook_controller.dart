@@ -220,7 +220,10 @@ class AudiobookPlayerController extends ChangeNotifier {
       _imagePauseTimer = null;
       if (!_player.playing) {
         unawaited(_player.play());
-        notifyListeners();
+        // 暂停时视口停在插图上；恢复后把视口拉回当前 cue（插图后那句），
+        // 让 reader 的 _onCueChanged 以 forceReveal 续上 audio-follow（snapReaderToAudio
+        // 内部会 notifyListeners）。
+        snapReaderToAudio();
       }
     });
     notifyListeners();
