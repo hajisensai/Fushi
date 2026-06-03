@@ -1,4 +1,3 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/i18n/strings.g.dart';
@@ -14,6 +13,31 @@ void main() {
     return TranslationProvider(
       child: MaterialApp(home: Scaffold(body: home)),
     );
+  }
+
+  // 把对话框 push 成真正的 route，这样行尾「关闭」按钮的 Navigator.pop 能正常
+  // 出栈并触发 onSave（对话框直接当 MaterialApp.home 时 pop 根 route 会抛）。
+  Future<void> openDialog(
+    WidgetTester tester,
+    AudioSourcesDialog dialog,
+  ) async {
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (BuildContext context) => ElevatedButton(
+                onPressed: () =>
+                    showDialog<void>(context: context, builder: (_) => dialog),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
   }
 
   test('isValidRemoteUrl enforces http(s) + a term/reading placeholder', () {
@@ -79,43 +103,76 @@ void main() {
   });
 
   testWidgets(
-      'local audio group expands to reveal the add-db button and '
-      'toggles the master switch', (WidgetTester tester) async {
-    bool? toggled;
-    await tester.pumpWidget(
-      buildApp(
-        AudioSourcesDialog(
-          sources: const <AudioSourceConfig>[],
-          onSave: (_) {},
-          localAudioEnabled: false,
-          onToggleLocalAudio: (bool v) async => toggled = v,
-          onPickLocalDb: () async => null,
-        ),
+      'renders local audio rows inline with no master switch and exposes '
+      'the add-db entry', (WidgetTester tester) async {
+    await openDialog(
+      tester,
+      AudioSourcesDialog(
+        sources: <AudioSourceConfig>[
+          AudioSourceConfig.localAudio(
+              label: 'android.db', path: '/a.db', enabled: true),
+        ],
+        onSave: (_) {},
+        onPickLocalDb: () async => null,
       ),
     );
 
-    // 折叠态：add-db 按钮不在树里。
-    expect(find.text(t.local_audio_add_db), findsNothing);
-
-    // 点组头展开。
-    await tester.tap(find.text(t.local_audio));
-    await tester.pumpAndSettle();
+    // 本地库行直接渲染在统一列表里（无需展开任何分组）。
+    expect(find.text('android.db'), findsOneWidget);
+    // 「添加本地音频数据库」入口始终可见（不再藏在折叠组里）。
     expect(find.text(t.local_audio_add_db), findsOneWidget);
+    // 不再有「本地音频」master 组头 / 总开关。
+    expect(find.text(t.local_audio), findsNothing);
+  });
 
-    // 总开关回调（Switch.adaptive 在不同平台渲染 Material/Cupertino，二者皆匹配）。
-    final Finder masterSwitch = find.descendant(
-      of: find.ancestor(
-        of: find.text(t.local_audio),
-        matching: find.byType(Row),
-      ),
-      matching: find.byWidgetPredicate(
-        (Widget w) => w is Switch || w is CupertinoSwitch,
+  testWidgets('adding a remote url inserts it at the top of the saved list',
+      (WidgetTester tester) async {
+    List<AudioSourceConfig>? saved;
+    await openDialog(
+      tester,
+      AudioSourcesDialog(
+        sources: <AudioSourceConfig>[
+          AudioSourceConfig.remoteAudio(url: 'https://old.example.com/{term}'),
+        ],
+        onSave: (List<AudioSourceConfig> v) => saved = v,
       ),
     );
-    expect(masterSwitch, findsOneWidget);
 
-    await tester.tap(masterSwitch.first);
+    await tester.enterText(
+        find.byType(TextField), 'https://new.example.com/{term}');
+    await tester.pump();
+    await tester.tap(find.byIcon(Icons.add));
     await tester.pumpAndSettle();
-    expect(toggled, isTrue);
+    await tester.tap(find.text(t.dialog_close));
+    await tester.pumpAndSettle();
+
+    expect(saved, isNotNull);
+    expect(saved!.length, 2);
+    expect(saved!.first.url, 'https://new.example.com/{term}');
+  });
+
+  testWidgets('adding a local db inserts it at the top of the saved list',
+      (WidgetTester tester) async {
+    List<AudioSourceConfig>? saved;
+    await openDialog(
+      tester,
+      AudioSourcesDialog(
+        sources: <AudioSourceConfig>[
+          AudioSourceConfig.remoteAudio(url: 'https://old.example.com/{term}'),
+        ],
+        onSave: (List<AudioSourceConfig> v) => saved = v,
+        onPickLocalDb: () async => AudioSourceConfig.localAudio(
+            label: 'new.db', path: '/new.db', enabled: true),
+      ),
+    );
+
+    await tester.tap(find.text(t.local_audio_add_db));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.dialog_close));
+    await tester.pumpAndSettle();
+
+    expect(saved, isNotNull);
+    expect(saved!.first.kind, AudioSourceKind.localAudio);
+    expect(saved!.first.path, '/new.db');
   });
 }

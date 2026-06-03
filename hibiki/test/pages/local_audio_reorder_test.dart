@@ -19,8 +19,6 @@ void main() {
 
     await tester.pumpWidget(_host(AudioSourcesDialog(
       sources: twoLocal,
-      localAudioEnabled: true, // 让本地分组默认展开
-      onToggleLocalAudio: (_) async {},
       onSave: (_) {},
     )));
     await tester.pumpAndSettle();

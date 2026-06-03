@@ -813,8 +813,6 @@ SettingsDestination _lookupDestination() {
                     appModel.audioSourceConfigs,
                   ),
                   onSave: appModel.setAudioSourceConfigs,
-                  localAudioEnabled: appModel.localAudioEnabled,
-                  onToggleLocalAudio: appModel.setLocalAudioEnabled,
                   onPickLocalDb: () async {
                     final FilePickerResult? result =
                         await FilePicker.platform.pickFiles();
