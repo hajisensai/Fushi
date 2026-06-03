@@ -469,6 +469,7 @@ class _CustomThemePageState extends BasePageState {
                     child: ColorPicker(
                       pickerColor: _seed,
                       onColorChanged: _setSeed,
+                      portraitOnly: true,
                       colorPickerWidth: pickerWidth,
                       pickerAreaHeightPercent: isLandscape ? 0.4 : 0.6,
                       enableAlpha: false,
@@ -1026,6 +1027,7 @@ class _CustomThemePageState extends BasePageState {
           child: ColorPicker(
             pickerColor: color,
             onColorChanged: onChanged,
+            portraitOnly: true,
             colorPickerWidth: pickerWidth,
             pickerAreaHeightPercent: isLandscape ? 0.35 : 0.5,
             enableAlpha: enableAlpha,

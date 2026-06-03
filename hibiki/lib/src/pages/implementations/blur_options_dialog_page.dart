@@ -89,6 +89,7 @@ class _BlurOptionsDialogPageState extends BasePageState<BlurOptionsDialogPage> {
                 onColorChanged: (color) async {
                   _pendingColor = color;
                 },
+                portraitOnly: true,
                 colorPickerWidth: 200,
                 pickerAreaHeightPercent: 0.8,
               ),
