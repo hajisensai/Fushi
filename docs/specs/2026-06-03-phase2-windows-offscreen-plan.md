@@ -22,7 +22,10 @@
 
 **状态：✅ 基座完成 `94e6b56b0`（绿）。** `integration_test/desktop_settings_smoke_test.dart` + `tool/run_windows_itest.ps1`：真 app 在隐藏 runner 下初始化渲染 home、`FocusDriver` 焦点遍历到 **17 个真焦点目标**、改 live `ReaderHibikiSource.readerSettings` 的 writingMode **真改变 `ReaderContentStyles.css`**（`evidence=writing-mode: horizontal-tb !important;`，用户真实设置在 finally 还原）。先前用 app_smoke 在 Windows hidden 验证过真 app 初始化不崩、不抢前台。
 
-**⚠ Step 2b 缺口（焦点「激活」UI 控件，未解）：** 在 Windows 集成测试里**无法用键合成 nav/list 的激活**。根因：nav 项（`adaptive_navigation.dart`）把 `ActivateIntent → onSelect`，但激活由 gamepad service（`gamepad_service.dart` 的 `Actions.maybeInvoke<ActivateIntent>`）从 **gameButtonA** 触发，而 `gameButtonA` 在 Windows **无物理键映射**（`sendKeyEvent` 抛 "not found in windows physical key map"），合不出；裸 Enter/Space 也没导航这套 gamepad-owned nav。所以 Step 2 测试焦点**遍历**(已证) + 经 live 实例改设置(已证生效)，但没焦点**激活** UI 控件。**闭合 Step 2b 需要一条键盘激活路径——并可能暴露真实的桌面键盘 a11y 缺口（键盘用户能否激活 nav/设置项）。值得单独追，可能是真 bug。**
+**Step 2b（焦点「激活」UI 控件）——已查清：✅ 非产品 bug，仅测试 harness 限制。**
+- **键盘 Enter 激活 nav 正常**（`4e339b7d6` 加守卫 `test/widgets/material_nav_focus_test.dart`「Enter key on a focused tile selects it」通过）：nav 项 `Actions{ActivateIntent}` 经默认 Shortcuts 响应 Enter，且 gamepad service 的 `_onKey`(`gamepad_service.dart:399-403`)`return false` **永不消费按键**，Enter 透传。之前只有 `Actions.maybeInvoke` 直调被测，键盘激活是盲区，现已补齐。
+- **Windows 集成里焦点「激活」不通的真因**（两者都是 harness，不是 bug）：(1) app 主激活键 `gameButtonA` 在 Windows **无物理键映射**，`sendKeyEvent` 合不出；(2) `FocusDriver.focusWidget(Icon)` 反向子树判定会在真 app 深树里**误匹配到容器节点**（焦点没真落在 nav 项激活节点），所以 Enter 发给了错节点。
+- 故 Step 2 集成测试做焦点**遍历**(已证) + 经 live 实例改设置(已证生效)，键盘**激活**由 widget 层守卫覆盖（正确分层）。若日后要在集成层焦点激活，改进 `FocusDriver.focusWidget` 别误匹配容器即可（测试原语改进，非产品改动）。
 
 **Files:**
 - Create: `hibiki/integration_test/desktop_settings_smoke_test.dart`（桌面版冒烟：app.main → 焦点驱动进设置 → 改一个 reading 设置 → 断言 `ReaderSettings`/`ReaderContentStyles.css` 真变）
