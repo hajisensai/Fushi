@@ -65,11 +65,22 @@ window.__hoshiImageBetween = function(prev, el) {
 
 window.__hoshiRevealTarget = function(t) {
   if (!t) return;
-  if (window.hoshiReader && window.hoshiReader.scrollToTarget) {
-    window.hoshiReader.scrollToTarget(t);
-  } else {
-    t.scrollIntoView({block: 'center', behavior: 'instant'});
+  var r = window.hoshiReader;
+  // 分页模式 hoshiReader 没有 scrollToTarget、且 body overflow:hidden 下原生
+  // scrollIntoView 不滚动；reader 的页对齐 reveal 原语是 scrollToRange（连续模式
+  // 走 revealElement→scrollToTarget）。用 selectNode(t) 取元素自身盒，对 img/svg/
+  // 文本都成立（selectNodeContents 对空的 img 取不到 rect）。
+  if (r && typeof r.scrollToRange === 'function') {
+    try {
+      var rng = document.createRange();
+      rng.selectNode(t);
+      r.scrollToRange(rng);
+      return;
+    } catch (e) {}
   }
+  if (r && typeof r.revealElement === 'function') { r.revealElement(t); return; }
+  if (r && typeof r.scrollToTarget === 'function') { r.scrollToTarget(t); return; }
+  t.scrollIntoView({block: 'center', behavior: 'instant'});
 };
 
 // cue 推进核心：把上一句锚点更新到 el；若两锚点之间跨过 img/svg → 通知 Dart 暂停。

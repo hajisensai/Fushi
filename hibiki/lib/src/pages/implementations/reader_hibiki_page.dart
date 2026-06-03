@@ -102,6 +102,14 @@ class ReaderHibikiPage extends BaseSourcePage {
   @visibleForTesting
   static Future<dynamic> Function(String source)? debugEvaluateTopPopup;
 
+  /// Test hook: inject the real audiobook bridge JS (`__hoshiHighlight`,
+  /// image-pause helpers, sasayaki highlight) on demand. Lets integration tests
+  /// drive the production highlight / image-pause reveal path on a plain
+  /// (non-audiobook) book in the real paginated WebView, without seeding a full
+  /// audiobook. Set in build, cleared on dispose.
+  @visibleForTesting
+  static Future<void> Function()? debugInjectAudiobookBridge;
+
   @override
   BaseSourcePageState<ReaderHibikiPage> createState() =>
       _ReaderHibikiPageState();
@@ -924,6 +932,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       ReaderHibikiPage.debugEvaluateJavascript = null;
       ReaderHibikiPage.debugCaretSurface = null;
       ReaderHibikiPage.debugEvaluateTopPopup = null;
+      ReaderHibikiPage.debugInjectAudiobookBridge = null;
       return true;
     }());
     ReaderHibikiSource.onSettingsChangedLive = null;
@@ -1681,6 +1690,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
           ReaderHibikiPage.debugCaretSurface = () => _caretSurface.name;
           ReaderHibikiPage.debugEvaluateTopPopup =
               (String source) async => topPopupState?.debugEval(source);
+          ReaderHibikiPage.debugInjectAudiobookBridge = () =>
+              AudiobookBridge.inject(controller,
+                  primaryColor: _themeSasayakiColor());
           return true;
         }());
         _startContentReadyTimeout();
