@@ -24,6 +24,60 @@ import '../../integration_test/helpers/focus_driver.dart';
 import '../../integration_test/helpers/schema_settings_verifier.dart';
 import '../helpers/test_platform_services.dart';
 
+/// 这些设置在 widget/unit 覆盖 harness 里观测不到「真生效」（消费点在真实
+/// WebView popup.js / 原生通知 / Android-only 更新路径 / 音量键回调 / 单例
+/// 不进 settings DB），但各自有专项测试或登记为设备集成 backlog。映射到证据，
+/// 让覆盖测试不对「别处已覆盖」的项裸喊 UNVERIFIED/FAIL，且强制每个 changed
+/// 但未 effect-verified 的设置都必须有去处（no silent caps）。
+const Map<String, String> kCoveredElsewhere = <String, String>{
+  // 专项 unit/widget 生效探针（docs/specs/2026-06-03-t4-effect-probes-plan.md T1–T9）
+  'reading/Text Orientation': 'test/reader/reader_content_styles_test.dart',
+  'reading/Font Kerning (Vertical)':
+      'test/reader/reader_content_styles_test.dart',
+  'reading/VPAL (Vertical Alt)': 'test/reader/reader_content_styles_test.dart',
+  'appearance/Design System': 'test/models/theme_notifier_test.dart',
+  'appearance/UI size': 'test/models/theme_notifier_test.dart',
+  'reading/Spread Mode': 'test/epub/epub_spread_map_test.dart',
+  'lookup/Popup max width': 'test/pages/dictionary_popup_layer_test.dart',
+  'cardCreation/Auto-add book title to tags':
+      'test/creator/tags_field_auto_add_book_test.dart',
+  'system/Low Memory Mode': 'test/models/app_model_low_memory_mode_test.dart',
+  'reading/Swipe dismiss sensitivity':
+      'test/widgets/swipe_dismiss_wrapper_test.dart',
+  'system/Enable debug log': 'test/utils/misc/debug_log_service_test.dart',
+  'syncBackup/Auto Sync': 'test/sync/sync_gating_test.dart',
+  'syncBackup/Sync Statistics': 'test/sync/sync_gating_test.dart',
+  'syncBackup/Sync Audiobook Position': 'test/sync/sync_gating_test.dart',
+  'syncBackup/Sync book files': 'test/sync/sync_gating_test.dart',
+  'syncBackup/Sync dictionaries': 'test/sync/sync_gating_test.dart',
+  // 设备/集成 backlog（消费点真机/WebView/Android-only，widget 测不到）
+  'reading/Spread Direction': 'DEVICE: spread page order in WebView',
+  'reading/Highlight text on tap': 'DEVICE: WebView onTap lookup',
+  'reading/Tap empty area to hide controls':
+      'DEVICE: WebView onTapEmpty chrome',
+  'reading/Invert swipe page turn direction': 'DEVICE: WebView swipe direction',
+  'reading/Volume key page turning speed': 'DEVICE: native volume-key throttle',
+  'reading/Keep screen awake': 'DEVICE: WakelockPlus channel',
+  'reading/Volume button page turning': 'DEVICE: native VolumeKeyChannel',
+  'reading/Invert volume buttons': 'DEVICE: native volume-key direction',
+  'lookup/Pause on Lookup': 'DEVICE: audiobook pause on selection',
+  'lookup/Aggregate word frequencies': 'DEVICE: popup.js frequency aggregation',
+  'lookup/Auto search': 'WIDGET-TODO: HomeDictionaryPage debounce gate',
+  'lookup/Remote dictionary lookup': 'INTEGRATION: remote host lookup',
+  'lookup/Auto read word on lookup': 'DEVICE: TTS auto-read',
+  'lookup/Collapse dictionaries': 'DEVICE: popup.js collapse',
+  'lookup/Show expression tags': 'DEVICE: popup.js expression tags',
+  'lookup/Deduplicate pitch accents': 'DEVICE: popup.js pitch dedup',
+  'listening/Show media notification':
+      'DEVICE: native AudioHandler notification',
+  'listening/Volume Key Sentence Navigation':
+      'DEVICE: native volume-key cue nav',
+  'system/Update Channel': 'DEVICE: Android-only UpdateChecker (beta/stable)',
+  "system/Don't remind me about updates": 'DEVICE: Android-only UpdateChecker',
+  'system/Auto-install updates': 'DEVICE: Android-only UpdateChecker install',
+  'appearance/Reverse navigation bar': 'WIDGET-TODO: HomePage nav order',
+};
+
 /// 焦点驱动的 settings schema **全分组**覆盖测试（Phase 1 Task 4）。
 ///
 /// 用仓库验证过的 settings_renderer harness（测试 AppModel + 内存 DB + 真实
@@ -233,6 +287,26 @@ void main() {
     for (final String f in destFindings) {
       debugPrint('[schema-coverage] DEST-FINDING: $f');
     }
+
+    // 账目：每个 changed 但未 effect-verified 的设置，要么有专项探针、要么登记
+    // 设备 backlog（kCoveredElsewhere），不允许静默缺口。
+    final List<ItemVerdict> stillUnaccounted = verdicts
+        .where((ItemVerdict v) =>
+            !v.effectVerified && !kCoveredElsewhere.containsKey(v.id))
+        .toList();
+    for (final ItemVerdict v in stillUnaccounted) {
+      debugPrint('[schema-coverage] STILL-UNACCOUNTED: ${v.id} '
+          '(${v.controlType}) — 既无探针也未登记 backlog');
+    }
+    debugPrint('[schema-coverage] coverage accounting: '
+        'effectVerified=$effect '
+        'coveredElsewhere=${verdicts.where((ItemVerdict v) => !v.effectVerified && kCoveredElsewhere.containsKey(v.id)).length} '
+        'stillUnaccounted=${stillUnaccounted.length}');
+
+    expect(stillUnaccounted, isEmpty,
+        reason: '每个 changed 但未 effect-verified 的设置都必须登记到 '
+            'kCoveredElsewhere（专项测试或设备 backlog），不允许静默缺口。'
+            '未登记: ${stillUnaccounted.map((ItemVerdict v) => v.id).join(", ")}');
 
     expect(destFindings, isEmpty,
         reason: '全部 8 个 destination 都应能渲染（根本性修复：测试侧 wire 全部'
