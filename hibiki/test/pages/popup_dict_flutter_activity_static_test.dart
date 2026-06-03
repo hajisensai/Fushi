@@ -8,7 +8,8 @@ void main() {
 
   test('popup engine holder runs popupMain on a cached engine', () {
     final String src = File(holderPath).readAsStringSync();
-    expect(src, contains('FlutterEngine(context.applicationContext, null, false)'));
+    expect(src,
+        contains('FlutterEngine(context.applicationContext, null, false)'));
     expect(src, contains('GeneratedPluginRegistrant.registerWith(engine)'));
     expect(src, contains('"popupMain"'));
     expect(src, contains('executeDartEntrypoint'));
@@ -31,7 +32,8 @@ void main() {
   test('popup flutter activity is transparent, cached-engine, pushes text', () {
     final String src = File(activityPath).readAsStringSync();
     expect(src, contains('class PopupDictFlutterActivity : FlutterActivity()'));
-    expect(src, contains('getCachedEngineId(): String = PopupEngineHolder.ENGINE_ID'));
+    expect(src,
+        contains('getCachedEngineId(): String = PopupEngineHolder.ENGINE_ID'));
     expect(src, contains('shouldDestroyEngineWithHost(): Boolean = false'));
     expect(src, contains('BackgroundMode.transparent'));
     final int setPendingIdx = src.indexOf('PopupEngineHolder.setPendingText');
@@ -61,6 +63,7 @@ String _functionSource(String source, String startToken, String endToken) {
   final int start = source.indexOf(startToken);
   expect(start, isNonNegative, reason: 'missing $startToken');
   final int end = source.indexOf(endToken, start + startToken.length);
-  expect(end, greaterThan(start), reason: 'missing $endToken after $startToken');
+  expect(end, greaterThan(start),
+      reason: 'missing $endToken after $startToken');
   return source.substring(start, end);
 }
