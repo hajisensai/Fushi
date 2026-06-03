@@ -1206,5 +1206,10 @@
     "book_import_duplicate_cancel": "No, cancel",
     "book_import_duplicate_cancelled": "Import cancelled",
     "book_import_duplicate_message": "A book named \"$name\" already exists. Import it anyway? \"Yes\" imports with a numbered suffix; \"No\" cancels.",
-    "reverse_reader_bottom_bar": "Reverse reader bottom bar"
+    "reverse_reader_bottom_bar": "Reverse reader bottom bar",
+    "floating_dict_close": "Close",
+    "debug_log_share_subject": "hibiki Debug Log",
+    "spread_direction_rtl": "Right to Left",
+    "spread_direction_ltr": "Left to Right",
+    "dict_download_partial": "$success / $total OK. Failed: $error"
 }

@@ -1206,5 +1206,10 @@
     "book_import_duplicate_cancel": "否，取消",
     "book_import_duplicate_cancelled": "已取消导入",
     "book_import_duplicate_message": "书库中已存在《$name》。仍要导入吗？「是」会加序号后缀导入，「否」取消添加这本书。",
-    "reverse_reader_bottom_bar": "反转阅读器底栏"
+    "reverse_reader_bottom_bar": "反转阅读器底栏",
+    "floating_dict_close": "关闭",
+    "debug_log_share_subject": "hibiki 调试日志",
+    "spread_direction_rtl": "从右到左",
+    "spread_direction_ltr": "从左到右",
+    "dict_download_partial": "成功 $success / $total。失败：$error"
 }
