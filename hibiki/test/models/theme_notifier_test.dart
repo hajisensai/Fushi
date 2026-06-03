@@ -1,10 +1,12 @@
-import 'package:drift/drift.dart' hide isNull;
+import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/models/theme_notifier.dart';
+import 'package:hibiki/src/utils/app_ui_scale.dart';
+import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart';
 
 HibikiDatabase _testDb() {
   return HibikiDatabase.forTesting(
@@ -221,6 +223,118 @@ void main() {
       );
       expect(cs.secondary, const Color(0xFFFF0000));
       expect(cs.secondaryContainer, isNot(equals(cs.secondary)));
+    });
+  });
+
+  group('ThemeNotifier.designSystemTheme reflects design_system pref', () {
+    test(
+        'design_system=cupertino → designSystemTheme is cupertino and is '
+        'injected into ThemeData.extensions', () {
+      notifier.loadFromPrefsSnapshot(<String, String>{
+        'design_system': PrefCodec.encode('cupertino'),
+      });
+
+      expect(notifier.designSystem, 'cupertino');
+      expect(notifier.designSystemTheme, HibikiDesignSystem.cupertino);
+
+      final HibikiDesignSystemTheme? lightExt =
+          notifier.theme.extension<HibikiDesignSystemTheme>();
+      expect(lightExt, isNotNull);
+      expect(lightExt!.designSystem, HibikiDesignSystem.cupertino);
+
+      final HibikiDesignSystemTheme? darkExt =
+          notifier.darkTheme.extension<HibikiDesignSystemTheme>();
+      expect(darkExt, isNotNull);
+      expect(darkExt!.designSystem, HibikiDesignSystem.cupertino);
+    });
+
+    test('design_system=material → designSystemTheme is material', () {
+      notifier.loadFromPrefsSnapshot(<String, String>{
+        'design_system': PrefCodec.encode('material'),
+      });
+
+      expect(notifier.designSystem, 'material');
+      expect(notifier.designSystemTheme, HibikiDesignSystem.material);
+      expect(
+        notifier.theme.extension<HibikiDesignSystemTheme>()!.designSystem,
+        HibikiDesignSystem.material,
+      );
+    });
+
+    test('absent design_system → defaults to auto', () {
+      notifier.loadFromPrefsSnapshot(<String, String>{});
+
+      expect(notifier.designSystem, 'auto');
+      expect(notifier.designSystemTheme, HibikiDesignSystem.auto);
+      expect(
+        notifier.theme.extension<HibikiDesignSystemTheme>()!.designSystem,
+        HibikiDesignSystem.auto,
+      );
+    });
+
+    test('explicit design_system=auto → designSystemTheme is auto', () {
+      notifier.loadFromPrefsSnapshot(<String, String>{
+        'design_system': PrefCodec.encode('auto'),
+      });
+
+      expect(notifier.designSystem, 'auto');
+      expect(notifier.designSystemTheme, HibikiDesignSystem.auto);
+    });
+
+    test('unknown design_system value → falls through to auto', () {
+      notifier.loadFromPrefsSnapshot(<String, String>{
+        'design_system': PrefCodec.encode('fluent'),
+      });
+
+      expect(notifier.designSystem, 'fluent');
+      expect(notifier.designSystemTheme, HibikiDesignSystem.auto);
+    });
+  });
+
+  group('ThemeNotifier.appUiScale reflects app_ui_scale pref', () {
+    test('app_ui_scale=1.5 → appUiScale is the in-range normalized value', () {
+      notifier.loadFromPrefsSnapshot(<String, String>{
+        'app_ui_scale': PrefCodec.encode(1.5),
+      });
+
+      expect(notifier.appUiScale, 1.5);
+      expect(notifier.appUiScale, HibikiAppUiScale.normalize(1.5));
+    });
+
+    test('out-of-range app_ui_scale=5.0 → clamped to maxScale (3.0)', () {
+      notifier.loadFromPrefsSnapshot(<String, String>{
+        'app_ui_scale': PrefCodec.encode(5.0),
+      });
+
+      expect(HibikiAppUiScale.maxScale, 3.0);
+      expect(notifier.appUiScale, HibikiAppUiScale.maxScale);
+      expect(notifier.appUiScale, 3.0);
+    });
+
+    test('below-range app_ui_scale=0.1 → clamped to minScale (0.3)', () {
+      notifier.loadFromPrefsSnapshot(<String, String>{
+        'app_ui_scale': PrefCodec.encode(0.1),
+      });
+
+      expect(HibikiAppUiScale.minScale, 0.3);
+      expect(notifier.appUiScale, HibikiAppUiScale.minScale);
+      expect(notifier.appUiScale, 0.3);
+    });
+
+    test('absent app_ui_scale → defaults to defaultScale (1.0)', () {
+      notifier.loadFromPrefsSnapshot(<String, String>{});
+
+      expect(HibikiAppUiScale.defaultScale, 1.0);
+      expect(notifier.appUiScale, HibikiAppUiScale.defaultScale);
+      expect(notifier.appUiScale, 1.0);
+    });
+
+    test('app_ui_scale stored as int → still normalized as double', () {
+      notifier.loadFromPrefsSnapshot(<String, String>{
+        'app_ui_scale': PrefCodec.encode(2),
+      });
+
+      expect(notifier.appUiScale, 2.0);
     });
   });
 }
