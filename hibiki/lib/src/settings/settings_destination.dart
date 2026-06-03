@@ -199,7 +199,7 @@ class SettingsSegmentedItem<T extends Object> extends SettingsItem {
     super.icon,
     super.visible,
     super.reader,
-    this.controlBelow = false,
+    this.controlBelow = true,
   });
 
   final List<SettingsSegmentOption<T>> options;

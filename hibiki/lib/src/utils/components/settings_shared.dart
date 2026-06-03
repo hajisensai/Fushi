@@ -499,7 +499,7 @@ class AdaptiveSettingsSegmentedRow<T extends Object> extends StatelessWidget {
     super.key,
     this.subtitle,
     this.icon,
-    this.controlBelow = false,
+    this.controlBelow = true,
   });
 
   final String title;
@@ -508,6 +508,16 @@ class AdaptiveSettingsSegmentedRow<T extends Object> extends StatelessWidget {
   final List<ButtonSegment<T>> segments;
   final T selected;
   final ValueChanged<T> onChanged;
+
+  /// A segmented strip is an intrinsically WIDE, multi-option control. Hosted
+  /// inline ([controlBelow] false) it shares the row with an `Expanded` label,
+  /// and RenderFlex splits the width by flex (≈50/50) — so a strip wider than
+  /// its share is clipped/scrolled and trailing segments fall off the right
+  /// edge (the reported 设计系统/深色模式 bug, BUG-008). Default is therefore
+  /// [controlBelow] true: the strip gets its own full-width row below the
+  /// label, showing every segment and scrolling only when the pane is genuinely
+  /// narrower than the strip. Pass `controlBelow: false` only for a short strip
+  /// that must sit inline next to a short label.
   final bool controlBelow;
 
   @override

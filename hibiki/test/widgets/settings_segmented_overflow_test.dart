@@ -4,40 +4,69 @@ import 'package:hibiki/src/utils/components/settings_shared.dart';
 
 import 'widget_test_helpers.dart';
 
-// Regression for the reported layout bug: "A RenderFlex overflowed by 332 pixels
-// on the right." on the settings page. An inline (controlBelow:false) segmented
-// row hosts a wide [SegmentedButton] inside a horizontal scroll view. As a
-// NON-flex Row child it was measured with UNBOUNDED width, so the scroll view
-// sized to the strip's full intrinsic width and overflowed narrow detail panes
-// every frame. It is now a flexible (bounded-width) trailing, so it scrolls.
+// Regression for two reported layout bugs on the settings page, both rooted in
+// how a wide [SegmentedButton] is hosted inside an [AdaptiveSettingsSegmentedRow].
+//
+//  1. "A RenderFlex overflowed by 332 pixels on the right." — an INLINE
+//     (controlBelow:false) segmented row hosting the strip in a horizontal
+//     scroll view used to size it to the strip's full intrinsic width as a
+//     NON-flex child and overflow narrow panes. It is now a flexible
+//     (bounded-width) trailing, so the inline path scrolls instead.
+//  2. BUG-008 (设计系统/深色模式 options clipped off the right edge) — the inline
+//     path splits the row width ≈50/50 between the `Expanded` label and the
+//     strip, so a strip wider than its share is clipped/scrolled and trailing
+//     segments fall off-screen even when the PANE has plenty of room. The fix
+//     makes [controlBelow] default to true: the strip gets its own full-width
+//     row below the label, so the same strip that the inline path has to scroll
+//     fits without scrolling and every segment is visible.
 void main() {
-  Widget narrowSegmentedRow() {
+  // Verbose labels so the strip is intrinsically wide (~700-800px): wide enough
+  // that a ≈50/50 inline split must scroll it, yet narrower than the panes used
+  // below — the exact regime where the inline split clipped segments.
+  final List<ButtonSegment<String>> designSystemSegments =
+      const <ButtonSegment<String>>[
+    ButtonSegment<String>(value: 'auto', label: Text('Automatic')),
+    ButtonSegment<String>(value: 'material', label: Text('Material Design 3')),
+    ButtonSegment<String>(value: 'cupertino', label: Text('iOS (Cupertino)')),
+  ];
+
+  Widget row({required double width, required bool? controlBelow}) {
     return Align(
       alignment: Alignment.topCenter,
       child: SizedBox(
-        // A narrow detail pane just above the master-detail split width, where
-        // the wide design-system strip used to overflow.
-        width: 240,
-        child: AdaptiveSettingsSegmentedRow<String>(
-          title: 'Design system',
-          subtitle: 'Choose the platform look',
-          segments: const <ButtonSegment<String>>[
-            ButtonSegment<String>(
-                value: 'material', label: Text('Material Design 3')),
-            ButtonSegment<String>(value: 'cupertino', label: Text('iOS')),
-            ButtonSegment<String>(value: 'auto', label: Text('Automatic')),
-          ],
-          selected: 'material',
-          onChanged: (_) {},
-        ),
+        width: width,
+        child: controlBelow == null
+            ? AdaptiveSettingsSegmentedRow<String>(
+                // No controlBelow → exercises the shipped default the
+                // appearance-page selectors (设计系统/深色模式) rely on.
+                title: 'Design system',
+                subtitle: 'Choose the platform look',
+                segments: designSystemSegments,
+                selected: 'material',
+                onChanged: (_) {},
+              )
+            : AdaptiveSettingsSegmentedRow<String>(
+                title: 'Design system',
+                subtitle: 'Choose the platform look',
+                controlBelow: controlBelow,
+                segments: designSystemSegments,
+                selected: 'material',
+                onChanged: (_) {},
+              ),
       ),
     );
   }
 
+  double maxScrollOf(WidgetTester tester) =>
+      (tester.state(find.byType(Scrollable).first) as ScrollableState)
+          .position
+          .maxScrollExtent;
+
   testWidgets(
     'inline segmented row shrink-and-scrolls in a narrow pane without overflow',
     (WidgetTester tester) async {
-      await tester.pumpWidget(buildTestApp(narrowSegmentedRow()));
+      await tester
+          .pumpWidget(buildTestApp(row(width: 240, controlBelow: false)));
       await tester.pump();
 
       expect(tester.takeException(), isNull,
@@ -46,10 +75,53 @@ void main() {
       // The strip is genuinely scrollable now (bounded width → it scrolls
       // instead of clipping/overflowing).
       expect(find.byType(SingleChildScrollView), findsOneWidget);
-      final ScrollableState scrollable =
-          tester.state(find.byType(Scrollable).first);
-      expect(scrollable.position.maxScrollExtent, greaterThan(0.0),
+      expect(maxScrollOf(tester), greaterThan(0.0),
           reason: 'the segmented strip exceeds the bounded width and scrolls');
+    },
+  );
+
+  testWidgets(
+    'BUG-008: default segmented row lays the strip below the label so the '
+    'whole strip is visible where the inline split would clip it',
+    (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(1200, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      const double pane = 1100;
+
+      // Inline at this pane: the ≈50/50 split caps the strip at ~half (well
+      // under its intrinsic width), so it must scroll — segments are clipped.
+      await tester
+          .pumpWidget(buildTestApp(row(width: pane, controlBelow: false)));
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      final double inlineScroll = maxScrollOf(tester);
+      expect(inlineScroll, greaterThan(0.0),
+          reason: 'inline split squeezes the strip below its width → scrolls');
+
+      // Default (controlBelow:true): same pane, but the strip owns a full-width
+      // row below the label, so it fits and does NOT scroll.
+      await tester
+          .pumpWidget(buildTestApp(row(width: pane, controlBelow: null)));
+      await tester.pump();
+      expect(tester.takeException(), isNull,
+          reason: 'no overflow when the strip owns its own row');
+
+      final Rect label = tester.getRect(find.text('Design system'));
+      final Rect strip = tester.getRect(find.byType(SegmentedButton<String>));
+
+      // Structural proof: the strip is on its own row BELOW the label, not
+      // squeezed beside it.
+      expect(strip.top, greaterThanOrEqualTo(label.bottom - 0.5),
+          reason: 'the segmented strip sits below the label (controlBelow)');
+
+      // Symptom guard: the full strip — including the last "iOS" segment — fits,
+      // so nothing is clipped and the strip does not scroll.
+      expect(maxScrollOf(tester), 0.0,
+          reason: 'a full-width row fits the strip, so it does not scroll');
+      final Rect lastSegment = tester.getRect(find.text('iOS (Cupertino)'));
+      expect(lastSegment.right, lessThanOrEqualTo(strip.right + 0.5),
+          reason: 'the last segment is within the (un-scrolled) strip bounds');
     },
   );
 }
