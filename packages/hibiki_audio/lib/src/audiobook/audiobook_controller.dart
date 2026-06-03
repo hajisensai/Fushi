@@ -416,6 +416,13 @@ class AudiobookPlayerController extends ChangeNotifier {
     // 位置阶段 cue 与 reader 当前章不一致是常态，不应在用户没按播放时
     // 就把 reader 拉到音频章。
     _hasPlayedOnce = true;
+    // 用户在图片自动暂停窗口内手动播放：取消待恢复计时器并把视口从插图拉回当前
+    // cue（否则计时器到点见已在播放而跳过 snap，视口卡在插图上直到下次 cue 推进）。
+    if (_imagePauseTimer != null) {
+      _imagePauseTimer!.cancel();
+      _imagePauseTimer = null;
+      snapReaderToAudio();
+    }
     unawaited(_player.play());
   }
 
