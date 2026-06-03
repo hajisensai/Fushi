@@ -1200,5 +1200,10 @@
     "sync_role_locked_by_client": "Already connected to another device. Remove the connection before hosting as a server.",
     "sync_compare_unavailable": "Set up sync first",
     "sync_audiobook_files": "Sync audiobook files",
-    "sync_audiobook_files_warning": "Audio and subtitles can be large."
+    "sync_audiobook_files_warning": "Audio and subtitles can be large.",
+    "book_import_duplicate_title": "Duplicate book",
+    "book_import_duplicate_keep": "Yes, add suffix",
+    "book_import_duplicate_cancel": "No, cancel",
+    "book_import_duplicate_cancelled": "Import cancelled",
+    "book_import_duplicate_message": "A book named \"$name\" already exists. Import it anyway? \"Yes\" imports with a numbered suffix; \"No\" cancels."
 }

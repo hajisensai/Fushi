@@ -1200,5 +1200,10 @@
     "sync_role_locked_by_client": "已连接其他设备，请先移除连接后才能作为服务端。",
     "sync_compare_unavailable": "请先设置同步",
     "sync_audiobook_files": "同步有声书文件",
-    "sync_audiobook_files_warning": "音频和字幕可能很大。"
+    "sync_audiobook_files_warning": "音频和字幕可能很大。",
+    "book_import_duplicate_title": "同名书籍",
+    "book_import_duplicate_keep": "是，加后缀",
+    "book_import_duplicate_cancel": "否，取消",
+    "book_import_duplicate_cancelled": "已取消导入",
+    "book_import_duplicate_message": "书库中已存在《$name》。仍要导入吗？「是」会加序号后缀导入，「否」取消添加这本书。"
 }
