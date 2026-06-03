@@ -1,0 +1,34 @@
+# 行尾策略：仓库内统一存 LF，工作树 checkout 也用 LF（消除 Windows autocrlf 的 CRLF 噪声）
+* text=auto eol=lf
+
+# Windows 专用脚本必须保留 CRLF，否则部分 shell/批处理会异常
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+*.ps1  text eol=crlf
+
+# 二进制文件不做行尾转换
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.webp  binary
+*.ico   binary
+*.icns  binary
+*.ttf   binary
+*.otf   binary
+*.woff  binary
+*.woff2 binary
+*.so    binary
+*.dll   binary
+*.dylib binary
+*.a     binary
+*.lib   binary
+*.jar   binary
+*.keystore binary
+*.zip   binary
+*.gz    binary
+*.mp3   binary
+*.wav   binary
+*.m4a   binary
+*.mp4   binary
+*.pdf   binary
