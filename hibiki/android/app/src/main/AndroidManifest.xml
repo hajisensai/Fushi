@@ -95,8 +95,23 @@
                 android:resource="@style/NormalTheme"/>
         </activity-alias>
 
+        <!-- 失活：暂留作回退，本轮不删；intent-filter 已迁到 PopupDictFlutterActivity -->
         <activity
             android:name=".PopupDictActivity"
+            android:theme="@style/PopupDictTheme"
+            android:process=":popup"
+            android:taskAffinity="app.hibiki.reader.popup"
+            android:excludeFromRecents="true"
+            android:autoRemoveFromRecents="true"
+            android:launchMode="singleTop"
+            android:exported="false"
+            android:hardwareAccelerated="true"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:windowSoftInputMode="adjustResize">
+        </activity>
+
+        <activity
+            android:name=".PopupDictFlutterActivity"
             android:theme="@style/PopupDictTheme"
             android:process=":popup"
             android:taskAffinity="app.hibiki.reader.popup"
