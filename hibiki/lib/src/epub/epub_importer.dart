@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:hibiki_core/hibiki_core.dart';
+import 'package:hibiki/src/epub/book_title_conflict.dart';
 import 'package:hibiki/src/epub/epub_book.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/epub/epub_parser.dart';
@@ -22,6 +23,7 @@ class EpubImporter {
     required HibikiDatabase db,
     required Uint8List bytes,
     required String fileName,
+    DuplicateTitleCallback? onDuplicateTitle,
   }) async {
     final int tempId = DateTime.now().millisecondsSinceEpoch;
     final String extractDir = await EpubStorage.bookDirectory(tempId);
@@ -67,9 +69,16 @@ class EpubImporter {
               ? p.basenameWithoutExtension(fileName)
               : book.title;
 
+      final List<EpubBookRow> existingBooks = await db.getAllEpubBooks();
+      final String storedTitle = await resolveBookTitleConflict(
+        existingTitles: existingBooks.map((EpubBookRow b) => b.title).toList(),
+        proposedTitle: resolvedTitle,
+        onDuplicateTitle: onDuplicateTitle,
+      );
+
       insertedBookId = await db.into(db.epubBooks).insert(
             EpubBooksCompanion.insert(
-              title: resolvedTitle,
+              title: storedTitle,
               author: book.author != null
                   ? Value(book.author)
                   : const Value.absent(),
@@ -141,11 +150,13 @@ class EpubImporter {
   static Future<int> importFromFile({
     required HibikiDatabase db,
     required String filePath,
+    DuplicateTitleCallback? onDuplicateTitle,
   }) async {
     return importFromPath(
       db: db,
       filePath: filePath,
       fileName: p.basename(filePath),
+      onDuplicateTitle: onDuplicateTitle,
     );
   }
 
@@ -155,6 +166,7 @@ class EpubImporter {
     required HibikiDatabase db,
     required String filePath,
     required String fileName,
+    DuplicateTitleCallback? onDuplicateTitle,
   }) async {
     final int tempId = DateTime.now().millisecondsSinceEpoch;
     final String extractDir = await EpubStorage.bookDirectory(tempId);
@@ -200,9 +212,16 @@ class EpubImporter {
               ? p.basenameWithoutExtension(fileName)
               : book.title;
 
+      final List<EpubBookRow> existingBooks = await db.getAllEpubBooks();
+      final String storedTitle = await resolveBookTitleConflict(
+        existingTitles: existingBooks.map((EpubBookRow b) => b.title).toList(),
+        proposedTitle: resolvedTitle,
+        onDuplicateTitle: onDuplicateTitle,
+      );
+
       insertedBookId = await db.into(db.epubBooks).insert(
             EpubBooksCompanion.insert(
-              title: resolvedTitle,
+              title: storedTitle,
               author: book.author != null
                   ? Value(book.author)
                   : const Value.absent(),
