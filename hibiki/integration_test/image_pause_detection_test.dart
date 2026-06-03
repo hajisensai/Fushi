@@ -165,7 +165,7 @@ void main() {
               };
               (function(){
                 function rng(sel){ var el=document.querySelector(sel);
-                  var r=document.createRange(); r.selectNodeContents(el); return r; }
+                  var r=document.createRange(); r.selectNodeContents(el.firstChild); return r; }
                 window.hoshiReader.cueRangesMap.set('c1', [rng('[data-hoshi-sid=s1]')]);
                 window.hoshiReader.cueRangesMap.set('c2', [rng('[data-hoshi-sid=s2]')]);
               })();
