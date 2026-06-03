@@ -401,16 +401,16 @@ SettingsDestination _readingDestination() {
               group: ReaderGroup.layout,
               order: 6,
             ),
-            options: const <SettingsSegmentOption<String>>[
+            options: <SettingsSegmentOption<String>>[
               SettingsSegmentOption<String>(
                 value: 'rtl',
                 label: 'RTL',
-                tooltip: 'Right to Left',
+                tooltip: t.spread_direction_rtl,
               ),
               SettingsSegmentOption<String>(
                 value: 'ltr',
                 label: 'LTR',
-                tooltip: 'Left to Right',
+                tooltip: t.spread_direction_ltr,
               ),
             ],
             selected: (SettingsContext c) => c.readerSource.ttuSpreadDirection,
@@ -537,6 +537,20 @@ SettingsDestination _readingDestination() {
             onChanged: (SettingsContext c, String v) {
               c.readerSource.setTtuFuriganaMode(v);
               notifyReaderSettingsChanged(c);
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'reading_display.reverse_reader_bottom_bar',
+            title: t.reverse_reader_bottom_bar,
+            icon: Icons.swap_horiz_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 0,
+            ),
+            value: (SettingsContext c) => c.appModel.reverseReaderBottomBar,
+            onChanged: (SettingsContext c, bool value) {
+              c.appModel.toggleReverseReaderBottomBar();
+              c.refresh();
             },
           ),
         ],

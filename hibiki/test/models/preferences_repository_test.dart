@@ -305,6 +305,25 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       expect(repo.reverseNavigationBar, false);
     });
+
+    test('reverseReaderBottomBar is independent of reverseNavigationBar',
+        () async {
+      expect(repo.reverseReaderBottomBar, false); // 默认关
+      expect(repo.reverseNavigationBar, false);
+
+      repo.toggleReverseReaderBottomBar();
+      await Future<void>.delayed(Duration.zero);
+      expect(repo.reverseReaderBottomBar, true);
+      expect(repo.reverseNavigationBar, false,
+          reason:
+              'toggling the reader bottom bar must not touch the nav-bar pref');
+
+      repo.toggleReverseNavigationBar();
+      await Future<void>.delayed(Duration.zero);
+      expect(repo.reverseNavigationBar, true);
+      expect(repo.reverseReaderBottomBar, true,
+          reason: 'the two prefs are decoupled');
+    });
   });
 
   // ── cache coherence ──────────────────────────────────────────────────

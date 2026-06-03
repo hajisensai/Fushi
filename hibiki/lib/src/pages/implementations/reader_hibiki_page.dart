@@ -4349,7 +4349,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
                   onOpenSettings: _showAppearanceSheet,
                   backgroundColor: _themeBackgroundColor(),
                   foregroundColor: _themeTextColor(),
-                  reversed: appModel.reverseNavigationBar,
+                  reversed: appModel.reverseReaderBottomBar,
                 ),
                 ColoredBox(
                   color: _themeBackgroundColor(),
@@ -4368,17 +4368,19 @@ window.flutter_inappwebview.callHandler('spreadReady');
 
   Widget _buildSettingsBar() {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    final bool reversed = appModel.reverseNavigationBar;
+    final bool reversed = appModel.reverseReaderBottomBar;
     final List<Widget> barItems = <Widget>[
       IconButton(
         icon: Icon(Icons.headphones_outlined, color: _themeTextColor()),
         iconSize: 22,
+        tooltip: t.audio_import,
         onPressed: _openAudioImportDialog,
       ),
       const Spacer(),
       IconButton(
         icon: Icon(Icons.tune_outlined, color: _themeTextColor()),
         iconSize: 20,
+        tooltip: t.settings_destination_appearance,
         onPressed: _showAppearanceSheet,
       ),
     ];
@@ -5241,6 +5243,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
                   size: 24,
                 ),
                 onPressed: ctrl.togglePlayPause,
+                tooltip: ctrl.isPlaying ? t.pause : t.play,
                 visualDensity: VisualDensity.compact,
               ),
               SizedBox(width: tokens.spacing.gap),

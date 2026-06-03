@@ -196,6 +196,14 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  bool get reverseReaderBottomBar =>
+      getPref('reverse_reader_bottom_bar', defaultValue: false) as bool;
+
+  void toggleReverseReaderBottomBar() async {
+    await setPref('reverse_reader_bottom_bar', !reverseReaderBottomBar);
+    notifyListeners();
+  }
+
   // ── transcript ───────────────────────────────────────────────────────
 
   bool get isTranscriptPlayerMode =>

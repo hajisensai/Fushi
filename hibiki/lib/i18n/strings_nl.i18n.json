@@ -1205,5 +1205,6 @@
     "book_import_duplicate_keep": "Yes, add suffix",
     "book_import_duplicate_cancel": "No, cancel",
     "book_import_duplicate_cancelled": "Import cancelled",
-    "book_import_duplicate_message": "A book named \"$name\" already exists. Import it anyway? \"Yes\" imports with a numbered suffix; \"No\" cancels."
+    "book_import_duplicate_message": "A book named \"$name\" already exists. Import it anyway? \"Yes\" imports with a numbered suffix; \"No\" cancels.",
+    "reverse_reader_bottom_bar": "Reverse reader bottom bar"
 }

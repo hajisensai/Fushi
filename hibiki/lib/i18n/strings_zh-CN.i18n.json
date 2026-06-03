@@ -1205,5 +1205,6 @@
     "book_import_duplicate_keep": "是，加后缀",
     "book_import_duplicate_cancel": "否，取消",
     "book_import_duplicate_cancelled": "已取消导入",
-    "book_import_duplicate_message": "书库中已存在《$name》。仍要导入吗？「是」会加序号后缀导入，「否」取消添加这本书。"
+    "book_import_duplicate_message": "书库中已存在《$name》。仍要导入吗？「是」会加序号后缀导入，「否」取消添加这本书。",
+    "reverse_reader_bottom_bar": "反转阅读器底栏"
 }
