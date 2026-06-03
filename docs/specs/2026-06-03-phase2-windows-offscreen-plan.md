@@ -20,6 +20,10 @@
 
 ## Step 2 — Windows 桌面集成测试入口（驱动真实 app）
 
+**状态：✅ 基座完成 `94e6b56b0`（绿）。** `integration_test/desktop_settings_smoke_test.dart` + `tool/run_windows_itest.ps1`：真 app 在隐藏 runner 下初始化渲染 home、`FocusDriver` 焦点遍历到 **17 个真焦点目标**、改 live `ReaderHibikiSource.readerSettings` 的 writingMode **真改变 `ReaderContentStyles.css`**（`evidence=writing-mode: horizontal-tb !important;`，用户真实设置在 finally 还原）。先前用 app_smoke 在 Windows hidden 验证过真 app 初始化不崩、不抢前台。
+
+**⚠ Step 2b 缺口（焦点「激活」UI 控件，未解）：** 在 Windows 集成测试里**无法用键合成 nav/list 的激活**。根因：nav 项（`adaptive_navigation.dart`）把 `ActivateIntent → onSelect`，但激活由 gamepad service（`gamepad_service.dart` 的 `Actions.maybeInvoke<ActivateIntent>`）从 **gameButtonA** 触发，而 `gameButtonA` 在 Windows **无物理键映射**（`sendKeyEvent` 抛 "not found in windows physical key map"），合不出；裸 Enter/Space 也没导航这套 gamepad-owned nav。所以 Step 2 测试焦点**遍历**(已证) + 经 live 实例改设置(已证生效)，但没焦点**激活** UI 控件。**闭合 Step 2b 需要一条键盘激活路径——并可能暴露真实的桌面键盘 a11y 缺口（键盘用户能否激活 nav/设置项）。值得单独追，可能是真 bug。**
+
 **Files:**
 - Create: `hibiki/integration_test/desktop_settings_smoke_test.dart`（桌面版冒烟：app.main → 焦点驱动进设置 → 改一个 reading 设置 → 断言 `ReaderSettings`/`ReaderContentStyles.css` 真变）
 - Create/Modify: `hibiki/tool/run_windows_itest.ps1`（PowerShell：`$env:HIBIKI_TEST_HIDDEN='1'` 后 `flutter test integration_test/<t> -d windows`；收集证据到 `.codex-test/`）
