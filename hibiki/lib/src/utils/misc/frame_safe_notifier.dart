@@ -18,13 +18,29 @@ mixin FrameSafeNotifier on ChangeNotifier {
   /// 与 [notifyListeners] 等价，但保证不会在 build/layout/paint 期间同步触发
   /// 监听者重建。
   void notifyListenersFrameSafe() {
-    final SchedulerBinding scheduler = SchedulerBinding.instance;
-    if (scheduler.schedulerPhase == SchedulerPhase.persistentCallbacks) {
+    // 错误水槽这类通知源可能在【没有绑定】的环境被调用——纯 unit test、后台
+    // isolate、或绑定初始化前的极早期。此时一定不在帧渲染管线中，直接同步通知
+    // 即可。关键：记日志/发通知这件事本身绝不能抛异常（error sink must never
+    // throw），否则会把被记录的原始错误（如解析损坏 JSON 的优雅降级）反噬成崩溃。
+    // SchedulerBinding.instance 在无绑定时会抛，故先安全取绑定。
+    final SchedulerBinding? scheduler = _schedulerOrNull();
+    if (scheduler != null &&
+        scheduler.schedulerPhase == SchedulerPhase.persistentCallbacks) {
       // 正处于本帧的渲染管线中；post-frame 回调会在本帧渲染结束后、
       // setState 安全的阶段运行。
       scheduler.addPostFrameCallback((Duration _) => notifyListeners());
     } else {
       notifyListeners();
+    }
+  }
+
+  /// 安全取 [SchedulerBinding] 单例：无绑定（unit test / isolate / 极早期）返回
+  /// null，而不是抛 "Binding has not yet been initialized"。
+  static SchedulerBinding? _schedulerOrNull() {
+    try {
+      return SchedulerBinding.instance;
+    } catch (_) {
+      return null;
     }
   }
 }
