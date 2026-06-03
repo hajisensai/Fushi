@@ -37,6 +37,8 @@ void main() {
     'lib/src/sync/sync_settings_schema.dart': <String>[
       'SettingsDestination buildSyncBackupDestination',
       'SettingsDestinationId.syncBackup',
+      'sync.sync_now',
+      'runManualFullSync',
     ],
     'lib/src/settings/material_settings_renderer.dart': <String>[
       'class MaterialSettingsRenderer',

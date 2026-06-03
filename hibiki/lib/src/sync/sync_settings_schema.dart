@@ -19,8 +19,10 @@ import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 import 'package:hibiki/src/sync/lan_discovery_service.dart';
 import 'package:hibiki/src/sync/sftp_sync_backend.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
+import 'package:hibiki/src/sync/sync_auto_trigger.dart';
 import 'package:hibiki/src/sync/sync_compare_dialog.dart';
 import 'package:hibiki/src/sync/sync_error_messages.dart';
+import 'package:hibiki/src/sync/sync_orchestrator.dart';
 import 'package:hibiki/src/sync/sync_message_dialog.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/webdav_sync_backend.dart';
@@ -199,6 +201,12 @@ SettingsDestination buildSyncBackupDestination() {
       SettingsSection(
         title: t.sync_section_actions,
         items: <SettingsItem>[
+          SettingsCustomItem(
+            id: 'sync.sync_now',
+            icon: Icons.sync,
+            builder: (SettingsContext ctx) =>
+                _SyncNowWidget(settingsContext: ctx),
+          ),
           SettingsActionItem(
             id: 'sync.compare',
             title: t.sync_compare,
@@ -593,6 +601,90 @@ class _WebDavConfigWidgetState extends State<_WebDavConfigWidget> {
 }
 
 // ── Backup export widget ─────────────────────────────────────────────
+
+class _SyncNowWidget extends StatefulWidget {
+  const _SyncNowWidget({required this.settingsContext});
+  final SettingsContext settingsContext;
+
+  @override
+  State<_SyncNowWidget> createState() => _SyncNowWidgetState();
+}
+
+class _SyncNowWidgetState extends State<_SyncNowWidget> {
+  bool _syncing = false;
+
+  Future<void> _syncNow() async {
+    setState(() => _syncing = true);
+    try {
+      final AppModel appModel = widget.settingsContext.appModel;
+      final ManualSyncResult result = await runManualFullSync(
+        db: appModel.database,
+        dictionaryResourceRoot: appModel.dictionaryResourceDirectory,
+        audioDatabaseRoot:
+            Directory('${appModel.appDirectory.path}/audiobooks'),
+        tempDir: appModel.temporaryDirectory,
+      );
+      if (!mounted) return;
+      switch (result.outcome) {
+        case ManualSyncOutcome.notConfigured:
+          _showSnackBar(context, t.sync_compare_unavailable);
+        case ManualSyncOutcome.busy:
+          _showSnackBar(context, t.sync_now_busy);
+        case ManualSyncOutcome.completed:
+          _showSnackBar(context, _summary(result.report!));
+      }
+    } catch (e) {
+      if (mounted) {
+        _showSnackBar(
+          context,
+          t.sync_error(message: friendlySyncErrorDetail(e)),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _syncing = false);
+    }
+  }
+
+  String _summary(SyncRunReport r) {
+    final List<String> parts = <String>[
+      if (r.booksImported > 0) t.sync_now_books_in(count: r.booksImported),
+      if (r.dictionariesImported > 0)
+        t.sync_now_dicts_in(count: r.dictionariesImported),
+      if (r.dictionariesExported > 0)
+        t.sync_now_dicts_out(count: r.dictionariesExported),
+      if (r.audiobooksImported > 0)
+        t.sync_now_audio_in(count: r.audiobooksImported),
+      if (r.audiobooksExported > 0)
+        t.sync_now_audio_out(count: r.audiobooksExported),
+    ];
+    final String head =
+        parts.isEmpty ? t.sync_now_no_changes : parts.join(' · ');
+    final String done = t.sync_now_done(detail: head);
+    return r.errors.isEmpty
+        ? done
+        : '$done${t.sync_now_failed_suffix(count: r.errors.length)}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AdaptiveSettingsRow(
+      title: t.sync_now,
+      subtitle: t.sync_now_hint,
+      icon: Icons.sync,
+      controlBelow: true,
+      trailing: _syncing
+          ? const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : FilledButton(
+              onPressed: _syncNow,
+              child: Text(t.sync_now),
+            ),
+    );
+  }
+}
 
 class _BackupExportWidget extends StatefulWidget {
   const _BackupExportWidget({required this.settingsContext});

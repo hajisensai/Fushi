@@ -1211,5 +1211,16 @@
     "debug_log_share_subject": "hibiki 调试日志",
     "spread_direction_rtl": "从右到左",
     "spread_direction_ltr": "从左到右",
-    "dict_download_partial": "成功 $success / $total。失败：$error"
+    "dict_download_partial": "成功 $success / $total。失败：$error",
+    "sync_now": "立即同步",
+    "sync_now_hint": "立即与云端做一次完整双向同步",
+    "sync_now_busy": "同步进行中，请稍候",
+    "sync_now_no_changes": "无新增",
+    "sync_now_done": "同步完成 · $detail",
+    "sync_now_failed_suffix": " · $count 项失败",
+    "sync_now_books_in": "↓$count 本书",
+    "sync_now_dicts_in": "↓$count 词典",
+    "sync_now_dicts_out": "↑$count 词典",
+    "sync_now_audio_in": "↓$count 有声书",
+    "sync_now_audio_out": "↑$count 有声书"
 }

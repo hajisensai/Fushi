@@ -120,6 +120,59 @@ Future<void> _runAutoSyncAll({
   }
 }
 
+/// 手动「立即同步」的结果。
+enum ManualSyncOutcome { completed, notConfigured, busy }
+
+class ManualSyncResult {
+  const ManualSyncResult(this.outcome, [this.report]);
+  final ManualSyncOutcome outcome;
+  final SyncRunReport? report;
+}
+
+/// 用户手点"立即同步"：跑完整双向全量同步（同 [triggerAutoSyncOnAppOpen]），
+/// 但绕过自动同步开关与 5 分钟冷却（手动是显式意图）。仍尊重各资产 gate 与后端
+/// 认证；与后台同步共用 [_autoSyncMutex]，避免并发改 singleton backend 状态。
+Future<ManualSyncResult> runManualFullSync({
+  required HibikiDatabase db,
+  required Directory dictionaryResourceRoot,
+  required Directory audioDatabaseRoot,
+  required Directory tempDir,
+}) async {
+  if (!_syncingIds.add('__all__')) {
+    return const ManualSyncResult(ManualSyncOutcome.busy);
+  }
+  _activeSyncs++;
+  syncInProgress.value = true;
+  try {
+    return await _autoSyncMutex.withLock(() async {
+      final repo = SyncRepository(db);
+      final backend = resolveSyncBackend(await repo.getBackendType());
+      await backend.restoreAuth(repo);
+      if (!await backend.isAuthenticated) {
+        return const ManualSyncResult(ManualSyncOutcome.notConfigured);
+      }
+      final orchestrator = SyncOrchestrator(
+        db: db,
+        backend: backend,
+        dictionaryResourceRoot: dictionaryResourceRoot,
+        audioDatabaseRoot: audioDatabaseRoot,
+        tempDir: tempDir,
+        syncStats: await repo.isSyncStatsEnabled(),
+        syncAudioBookPosition: await repo.isSyncAudioBookEnabled(),
+        syncContent: await repo.isSyncContentEnabled(),
+        syncAudioBookFiles: await repo.isSyncAudioBookFilesEnabled(),
+        syncDictionary: await repo.isSyncDictionaryEnabled(),
+      );
+      final SyncRunReport report = await orchestrator.run();
+      return ManualSyncResult(ManualSyncOutcome.completed, report);
+    });
+  } finally {
+    _syncingIds.remove('__all__');
+    _activeSyncs--;
+    syncInProgress.value = _activeSyncs > 0;
+  }
+}
+
 Future<void> _runAutoSync({
   required HibikiDatabase db,
   required String mediaIdentifier,

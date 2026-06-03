@@ -1211,5 +1211,16 @@
     "debug_log_share_subject": "hibiki Debug Log",
     "spread_direction_rtl": "Right to Left",
     "spread_direction_ltr": "Left to Right",
-    "dict_download_partial": "$success / $total OK. Failed: $error"
+    "dict_download_partial": "$success / $total OK. Failed: $error",
+    "sync_now": "Sync now",
+    "sync_now_hint": "Run a full two-way sync with the cloud now",
+    "sync_now_busy": "A sync is already running",
+    "sync_now_no_changes": "no changes",
+    "sync_now_done": "Synced · $detail",
+    "sync_now_failed_suffix": " · $count failed",
+    "sync_now_books_in": "↓$count books",
+    "sync_now_dicts_in": "↓$count dictionaries",
+    "sync_now_dicts_out": "↑$count dictionaries",
+    "sync_now_audio_in": "↓$count audiobooks",
+    "sync_now_audio_out": "↑$count audiobooks"
 }
