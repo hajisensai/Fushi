@@ -54,6 +54,19 @@ void main() {
     expect(await repo.isSyncDictionaryEnabled(), isFalse);
   });
 
+  test('audiobook-files sync preference defaults false and round-trips',
+      () async {
+    final HibikiDatabase db = _testDb();
+    addTearDown(db.close);
+    final SyncRepository repo = SyncRepository(db);
+
+    expect(await repo.isSyncAudioBookFilesEnabled(), isFalse);
+    await repo.setSyncAudioBookFilesEnabled(true);
+    expect(await repo.isSyncAudioBookFilesEnabled(), isTrue);
+    await repo.setSyncAudioBookFilesEnabled(false);
+    expect(await repo.isSyncAudioBookFilesEnabled(), isFalse);
+  });
+
   test('auto sync preference defaults to false', () async {
     final HibikiDatabase db = _testDb();
     addTearDown(db.close);

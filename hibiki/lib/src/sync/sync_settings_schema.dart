@@ -180,6 +180,19 @@ SettingsDestination buildSyncBackupDestination() {
                   .setSyncContentEnabled(value);
             },
           ),
+          SettingsSwitchItem(
+            id: 'sync.audiobook_files',
+            title: t.sync_audiobook_files,
+            subtitle: t.sync_audiobook_files_warning,
+            icon: Icons.audio_file_outlined,
+            value: (SettingsContext ctx) =>
+                _syncSettings(ctx).syncAudioBookFiles,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).syncAudioBookFiles = value;
+              await SyncRepository(ctx.appModel.database)
+                  .setSyncAudioBookFilesEnabled(value);
+            },
+          ),
         ],
       ),
       // ── Group 4: Manual sync actions — global ────────────────────────
@@ -2310,6 +2323,7 @@ class _SyncSettingsState {
   bool syncAudioBook = true;
   bool syncDictionary = false;
   bool syncContent = false;
+  bool syncAudioBookFiles = false;
   bool _loaded = false;
   bool _loading = false;
 
@@ -2352,6 +2366,7 @@ class _SyncSettingsState {
       syncAudioBook = await _repo.isSyncAudioBookEnabled();
       syncDictionary = await _repo.isSyncDictionaryEnabled();
       syncContent = await _repo.isSyncContentEnabled();
+      syncAudioBookFiles = await _repo.isSyncAudioBookFilesEnabled();
       serverEnabled = await _repo.isServerEnabled();
       hasClientConnection = (await _repo.getHibikiClientUrls()).isNotEmpty;
       _loaded = true;

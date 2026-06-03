@@ -38,6 +38,7 @@ class SyncRepository {
   static const _keySyncStats = 'sync_stats_enabled';
   static const _keySyncAudioBook = 'sync_audiobook_enabled';
   static const _keySyncDictionary = 'sync_dictionary_enabled';
+  static const _keySyncAudioBookFiles = 'sync_audiobook_files_enabled';
   static const _keyAutoSync = 'sync_auto_enabled';
   static const _keyLastSyncMs = 'sync_last_sync_ms';
   static const _keyDesktopCredentials = 'sync_desktop_credentials';
@@ -110,6 +111,12 @@ class SyncRepository {
       _db.getPrefTyped<bool>(_keySyncDictionary, false);
   Future<void> setSyncDictionaryEnabled(bool v) =>
       _db.setPrefTyped<bool>(_keySyncDictionary, v);
+
+  /// 是否同步有声书文件（音频 + 字幕包）。默认 false：包大，需用户显式开启。
+  Future<bool> isSyncAudioBookFilesEnabled() =>
+      _db.getPrefTyped<bool>(_keySyncAudioBookFiles, false);
+  Future<void> setSyncAudioBookFilesEnabled(bool v) =>
+      _db.setPrefTyped<bool>(_keySyncAudioBookFiles, v);
 
   Future<bool> isAutoSyncEnabled() =>
       _db.getPrefTyped<bool>(_keyAutoSync, false);
