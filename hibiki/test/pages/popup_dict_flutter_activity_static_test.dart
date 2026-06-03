@@ -24,4 +24,43 @@ void main() {
     expect(src, contains('getInitialProcessText'));
     expect(src, contains('finishPopup'));
   });
+
+  const String activityPath =
+      'android/app/src/main/java/app/hibiki/reader/PopupDictFlutterActivity.kt';
+
+  test('popup flutter activity is transparent, cached-engine, pushes text', () {
+    final String src = File(activityPath).readAsStringSync();
+    expect(src, contains('class PopupDictFlutterActivity : FlutterActivity()'));
+    expect(src, contains('getCachedEngineId(): String = PopupEngineHolder.ENGINE_ID'));
+    expect(src, contains('shouldDestroyEngineWithHost(): Boolean = false'));
+    expect(src, contains('BackgroundMode.transparent'));
+    final int setPendingIdx = src.indexOf('PopupEngineHolder.setPendingText');
+    final int ensureIdx = src.indexOf('PopupEngineHolder.ensureEngine');
+    expect(setPendingIdx, isNonNegative);
+    expect(ensureIdx, isNonNegative);
+    expect(setPendingIdx, lessThan(ensureIdx),
+        reason: '冷启动 executeDartEntrypoint 前必须先 setPendingText');
+    expect(src, contains('PopupEngineHolder.pushProcessText'));
+    expect(src, contains('override fun onNewIntent('));
+    final String extractSrc = _functionSource(
+      src,
+      'private fun extractProcessText(intent: Intent?): String? {',
+      '\n}',
+    );
+    final int pIdx = extractSrc.indexOf('EXTRA_PROCESS_TEXT');
+    final int tIdx = extractSrc.indexOf('EXTRA_TEXT');
+    final int uIdx = extractSrc.indexOf('"lookup"');
+    expect(pIdx, isNonNegative);
+    expect(tIdx, greaterThan(pIdx));
+    expect(uIdx, greaterThan(tIdx));
+    expect(src, contains('PopupEngineHolder.setOnFinish(null)'));
+  });
+}
+
+String _functionSource(String source, String startToken, String endToken) {
+  final int start = source.indexOf(startToken);
+  expect(start, isNonNegative, reason: 'missing $startToken');
+  final int end = source.indexOf(endToken, start + startToken.length);
+  expect(end, greaterThan(start), reason: 'missing $endToken after $startToken');
+  return source.substring(start, end);
 }
