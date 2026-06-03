@@ -254,15 +254,23 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     // appears/disappears with the input device, not only on focus changes.
     FocusManager.instance.addHighlightModeListener(_onHighlightModeChanged);
     ReaderHibikiSource.onSettingsChangedLive = () {
-      if (mounted) {
-        _applyStylesLive();
-        setState(() {});
-      }
+      if (!mounted) return;
+      // fire-and-forget 必须 catchError：否则 await 边界之后的异步异常（如
+      // WebView 半销毁时 evaluateJavascript 抛 PlatformException）会逃进当前
+      // zone，绕过 FlutterError.onError/takeException/platformDispatcher，
+      // 生产里成未捕获异步错误、测试里让 binding 断言。
+      unawaited(_applyStylesLive().catchError((Object e, StackTrace s) {
+        ErrorLogService.instance
+            .log('ReaderHibiki.onSettingsChangedLive', e, s);
+      }));
+      setState(() {});
     };
     ReaderHibikiSource.onLayoutReloadLive = () {
-      if (mounted) {
-        _reloadWithCurrentSettings();
-      }
+      if (!mounted) return;
+      unawaited(
+          _reloadWithCurrentSettings().catchError((Object e, StackTrace s) {
+        ErrorLogService.instance.log('ReaderHibiki.onLayoutReloadLive', e, s);
+      }));
     };
     _initBook();
   }
@@ -1392,8 +1400,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
           : null,
     );
     final String jsonCss = jsonEncode(css);
-    await _controller!.evaluateJavascript(
-      source: '''
+    try {
+      await _controller!.evaluateJavascript(
+        source: '''
 (function(){
   var el = document.getElementById('hoshi-reader-style');
   if (!el) {
@@ -1404,7 +1413,14 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   el.textContent = $jsonCss;
 })();
 ''',
-    );
+      );
+    } catch (e, stack) {
+      // controller 非 null 但底层 WebView 平台视图已销毁时 evaluateJavascript
+      // 抛 PlatformException。无活动 WebView 时套样式本就无意义 → 安全 no-op。
+      ErrorLogService.instance
+          .log('ReaderHibiki.applyStylesLive.eval', e, stack);
+      return;
+    }
     if (mounted) setState(() {});
   }
 
@@ -4831,9 +4847,18 @@ window.flutter_inappwebview.callHandler('spreadReady');
       await _loadLyricsPage();
       return;
     }
-    final dynamic result = await _controller!.evaluateJavascript(
-      source: ReaderPaginationScripts.progressInvocation(),
-    );
+    final dynamic result;
+    try {
+      result = await _controller!.evaluateJavascript(
+        source: ReaderPaginationScripts.progressInvocation(),
+      );
+    } catch (e, stack) {
+      // 半销毁的 WebView 上 evaluateJavascript 抛 PlatformException；此处尚未改
+      // 任何恢复状态，安全 no-op 返回（此前这是 try 块外的孤儿 await，会逃 zone）。
+      ErrorLogService.instance
+          .log('ReaderHibiki.reloadWithCurrentSettings.eval', e, stack);
+      return;
+    }
     if (!mounted || _controller == null) return;
     final double? progress = _toDouble(result);
     _initialProgress = progress ?? 0.0;
