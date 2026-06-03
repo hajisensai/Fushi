@@ -21,32 +21,30 @@ import '../../integration_test/helpers/focus_driver.dart';
 import '../../integration_test/helpers/schema_settings_verifier.dart';
 import '../helpers/test_platform_services.dart';
 
-/// 焦点驱动的 settings schema 覆盖测试（Phase 1 Task 4，widget 测试形态）。
+/// 焦点驱动的 settings schema **全分组**覆盖测试（Phase 1 Task 4）。
 ///
 /// 用仓库验证过的 settings_renderer harness（测试 AppModel + 内存 DB + 真实
-/// schema + 真实 MaterialSettingsRenderer）渲染 reading 分组明细页，再用
-/// [FocusDriver] 以 Tab 焦点遍历整页：每个可聚焦节点若落在某个
+/// schema + 真实 MaterialSettingsRenderer）逐个渲染**每个** destination 的明细
+/// 页，再用 [FocusDriver] 以 Tab 焦点遍历整页：每个可聚焦节点若落在某个
 /// `AdaptiveSettings*Row` 上就驱动它（Switch 用 Space 激活；Slider / Stepper /
-/// Segmented 都是 _GamepadAdjustableValue 包装的单一焦点停靠点，用 Left/Right
-/// 方向键原地调值），验证「改值 → 写穿 DB → 真生效(T1) → 全局可还原」。
+/// Segmented 都是 _GamepadAdjustableValue 单一焦点停靠点，用 Left/Right 方向键
+/// 原地调值），验证「改值 → 写穿 DB → 真生效 → 全局可还原」。
 ///
-/// 比 flutter drive 上跑 app.main 更确定、更快、无 live-app 后台噪音；逐设置校验
-/// 是平台无关的（焦点 + 框架 + 纯 Dart T1 探针）。整 app 流程的真机/桌面验证
-/// 由 app_smoke 等目标承担（Phase 2-4）。
+/// 生效探针按 destination 分派：reading → T1（`ReaderContentStyles.css` 渲染
+/// 输入）；appearance → T2（`themeNotifier.theme` 渲染输入）；其余分组多为行为/
+/// 持久类，暂无适用探针 → 按设计 §5 显式记为 UNVERIFIED 缺口（待 T4 行为探针），
+/// 不静默放水也不误判失败。
 ///
-/// PASS = 五步全绿；只写穿 DB 不算过。行为类设置不影响阅读器 CSS、没有适用的 T1
-/// 探针，按设计 §5 显式记为 UNVERIFIED 缺口（待 T4 行为探针），不静默放水也不
-/// 误判失败。
+/// 比 flutter drive 跑 app.main 更确定、更快、无 live-app 后台噪音；逐设置校验
+/// 平台无关。整 app 流程的真机/桌面验证由 app_smoke 等承担（Phase 2-4）。
 void main() {
   testWidgets(
-      'reading settings: focus-driven, change persists and takes effect',
+      'all settings destinations: focus-driven, change persists and takes effect',
       (WidgetTester tester) async {
     final HibikiDatabase db =
         HibikiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
 
-    // reader 设置后端指向这个内存 DB：reader 项的 onChanged 写到这里、T1 探针也读
-    // 这里。测试后复原全局静态，避免泄漏到其它测试。
     final ReaderSettings? prevReaderSettings =
         ReaderHibikiSource.readerSettings;
     final ReaderSettings readerSettings = ReaderSettings(db);
@@ -64,12 +62,31 @@ void main() {
           });
     addTearDown(themeNotifier.dispose);
     final AppModel appModel = AppModel(testPlatformServices())
-      ..themeNotifier = themeNotifier;
+      ..themeNotifier = themeNotifier
+      ..wireDatabaseForTesting(db);
+
+    // 探针：reading→T1 reader CSS；appearance→T2 themeNotifier.theme 渲染输入。
+    final ReaderCssEffectProbe readerProbe =
+        ReaderCssEffectProbe(() => readerSettings);
+    final RenderInputProbe themeProbe = RenderInputProbe(
+      () => '${themeNotifier.theme.colorScheme}|'
+          '${themeNotifier.darkTheme.colorScheme}|'
+          '${themeNotifier.brightnessMode}|${themeNotifier.appThemeKey}',
+      tier: EffectTier.t2WidgetTree,
+    );
+    EffectProbe? probeFor(SettingsDestinationId id) => switch (id) {
+          SettingsDestinationId.reading => readerProbe,
+          SettingsDestinationId.appearance => themeProbe,
+          _ => null,
+        };
+
+    final ValueNotifier<SettingsDestination?> destNotifier =
+        ValueNotifier<SettingsDestination?>(null);
+    addTearDown(destNotifier.dispose);
+    List<SettingsDestination> destinations = const <SettingsDestination>[];
 
     await tester.pumpWidget(ProviderScope(
-      overrides: <Override>[
-        appProvider.overrideWith((Ref ref) => appModel),
-      ],
+      overrides: <Override>[appProvider.overrideWith((Ref ref) => appModel)],
       child: MaterialApp(
         theme: ThemeData(
           useMaterial3: true,
@@ -88,55 +105,76 @@ void main() {
               readerSource: ReaderHibikiSource.instance,
               refresh: () {},
             );
-            final SettingsDestination reading = buildSettingsSchema(sctx)
-                .firstWhere((SettingsDestination d) =>
-                    d.id == SettingsDestinationId.reading);
-            return MaterialSettingsRenderer().buildDetailPage(
-              settingsContext: sctx,
-              destination: reading,
+            final List<SettingsDestination> all = buildSettingsSchema(sctx);
+            destinations = all;
+            return ValueListenableBuilder<SettingsDestination?>(
+              valueListenable: destNotifier,
+              builder: (_, SettingsDestination? dest, __) {
+                return MaterialSettingsRenderer().buildDetailPage(
+                  settingsContext: sctx,
+                  destination: dest ?? all.first,
+                );
+              },
             );
           },
         ),
       ),
     ));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 200));
 
     final Map<String, String> initial =
         Map<String, String>.from(await db.getAllPrefs());
 
     final FocusDriver driver = FocusDriver(tester);
-    final ReaderCssEffectProbe readerProbe =
-        ReaderCssEffectProbe(() => readerSettings);
     final List<ItemVerdict> verdicts = <ItemVerdict>[];
-    final Set<FocusNode> seen = <FocusNode>{};
-    final Set<String> drivenTitles = <String>{};
+    final List<String> destFindings = <String>[];
 
-    const int maxStops = 300;
-    int stale = 0;
-    for (int step = 0; step < maxStops; step++) {
-      final FocusNode? node = FocusManager.instance.primaryFocus;
-      if (node != null && !seen.contains(node)) {
-        seen.add(node);
-        final _FocusedRow? row = _focusedSettingsRow();
-        if (row != null && !drivenTitles.contains(row.title)) {
-          drivenTitles.add(row.title);
-          verdicts.add(await _verifyFocusedNode(
-            tester: tester,
-            driver: driver,
-            db: db,
-            readerSettings: readerSettings,
-            readerProbe: readerProbe,
-            row: row,
-          ));
-        }
+    for (final SettingsDestination dest in destinations) {
+      destNotifier.value = dest;
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 120));
+      // 渲染该分组时可能抛多个异常（最小 harness 缺真实 AppModel 子系统状态）；
+      // 全部 drain，记下第一条当发现，跳过该分组（不让残留异常判挂整测）。
+      Object? renderEx;
+      Object? e;
+      while ((e = tester.takeException()) != null) {
+        renderEx ??= e;
       }
-      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
-      await tester.pump(const Duration(milliseconds: 16));
-      final FocusNode? now = FocusManager.instance.primaryFocus;
-      if (now == null || seen.contains(now)) {
-        if (++stale > 8) break;
-      } else {
-        stale = 0;
+      if (renderEx != null) {
+        destFindings.add('${dest.id.name}: render threw $renderEx');
+        debugPrint(
+            '[schema-coverage] DEST ${dest.id.name} render FAILED: $renderEx');
+        continue;
+      }
+      final EffectProbe? probe = probeFor(dest.id);
+      final Set<FocusNode> seen = <FocusNode>{};
+      final Set<String> driven = <String>{};
+      int stale = 0;
+      for (int step = 0; step < 400; step++) {
+        final FocusNode? node = FocusManager.instance.primaryFocus;
+        if (node != null && !seen.contains(node)) {
+          seen.add(node);
+          final _FocusedRow? row = _focusedSettingsRow();
+          if (row != null && driven.add(row.title)) {
+            verdicts.add(await _verifyFocusedNode(
+              tester: tester,
+              driver: driver,
+              db: db,
+              readerSettings: readerSettings,
+              probe: probe,
+              destId: dest.id.name,
+              row: row,
+            ));
+          }
+        }
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pump(const Duration(milliseconds: 16));
+        final FocusNode? now = FocusManager.instance.primaryFocus;
+        if (now == null || seen.contains(now)) {
+          if (++stale > 8) break;
+        } else {
+          stale = 0;
+        }
       }
     }
 
@@ -154,9 +192,8 @@ void main() {
       }
     }
     await readerSettings.refreshFromDb();
-    final Map<String, String> restored =
-        Map<String, String>.from(await db.getAllPrefs());
-    final bool globallyRestored = _mapsEqual(initial, restored);
+    final bool globallyRestored =
+        _mapsEqual(initial, Map<String, String>.from(await db.getAllPrefs()));
 
     for (final ItemVerdict v in verdicts) {
       debugPrint('[schema-coverage] ${_describe(v)}');
@@ -167,12 +204,15 @@ void main() {
     final int unverified = verdicts
         .where((ItemVerdict v) => v.changed && !v.effectVerified)
         .length;
-    debugPrint('[schema-coverage] reading: rows=${verdicts.length} '
+    debugPrint('[schema-coverage] ALL destinations: rows=${verdicts.length} '
         'changed=$changed effectVerified=$effect '
-        'unverified(T1-n/a或待T4)=$unverified globallyRestored=$globallyRestored');
+        'unverified(待 T4)=$unverified globallyRestored=$globallyRestored '
+        'destFindings=${destFindings.length}');
+    for (final String f in destFindings) {
+      debugPrint('[schema-coverage] DEST-FINDING: $f');
+    }
 
-    expect(verdicts.length, greaterThan(3),
-        reason: 'reading 分组必须遍历到多个可操作控件（焦点可达）');
+    expect(verdicts.length, greaterThan(15), reason: '应遍历到跨多个分组的大量可操作控件（焦点可达）');
     final List<ItemVerdict> notPersisted =
         verdicts.where((ItemVerdict v) => v.changed && !v.persisted).toList();
     expect(notPersisted, isEmpty,
@@ -180,7 +220,7 @@ void main() {
             '${notPersisted.map((ItemVerdict v) => v.id).join(", ")}');
     expect(verdicts.where((ItemVerdict v) => v.effectVerified).length,
         greaterThanOrEqualTo(8),
-        reason: '阅读器 CSS 类设置应有多项被 T1 探针确认真生效');
+        reason: 'reading(T1)+appearance(T2) 应有多项被探针确认真生效');
     expect(globallyRestored, isTrue, reason: '全部设置必须能还原到初始快照');
   });
 }
@@ -228,11 +268,12 @@ Future<ItemVerdict> _verifyFocusedNode({
   required FocusDriver driver,
   required HibikiDatabase db,
   required ReaderSettings readerSettings,
-  required ReaderCssEffectProbe readerProbe,
+  required EffectProbe? probe,
+  required String destId,
   required _FocusedRow row,
 }) async {
   await readerSettings.refreshFromDb();
-  final EffectSnapshot effBefore = readerProbe.capture();
+  final EffectSnapshot? effBefore = probe?.capture();
   final Map<String, String> before =
       Map<String, String>.from(await db.getAllPrefs());
 
@@ -257,22 +298,22 @@ Future<ItemVerdict> _verifyFocusedNode({
 
   bool effectVerified = false;
   String note = '';
-  if (changed) {
-    final EffectVerdict ev =
-        readerProbe.compare(effBefore, readerProbe.capture());
-    effectVerified = ev.changed;
+  if (probe != null && effBefore != null && changed) {
+    effectVerified = probe.compare(effBefore, probe.capture()).changed;
     if (!effectVerified) {
-      note = 'EFFECT UNVERIFIED: T1 reader-CSS 无变化（多为行为类设置，待 T4 探针）';
+      note = 'EFFECT UNVERIFIED: ${probe.kind.name} 渲染输入无变化（多为行为类设置，待 T4）';
     }
+  } else if (!changed) {
+    note = 'no change observed（驱动键不对 / 控件被门控 disabled）';
   } else {
-    note = 'no change observed（该控件的驱动键可能不对）';
+    note = 'EFFECT UNVERIFIED: 该分组暂无适用探针（待 T4 行为探针）';
   }
   if (thrown != null) {
     note = '${note.isEmpty ? "" : "$note; "}THREW: $thrown';
   }
 
   return ItemVerdict(
-    id: row.title,
+    id: '$destId/${row.title}',
     controlType: row.kind.name,
     reached: true,
     changed: changed,
