@@ -59,6 +59,44 @@ void main() {
     expect(popupRect.bottom, lessThanOrEqualTo(48));
   });
 
+  group('calcPopupPosition maxWidth constraint', () {
+    const Rect selectionRect = Rect.fromLTWH(400, 300, 40, 24);
+    const Size screen = Size(1920, 1080);
+
+    test('small maxWidth caps the popup width to <= maxWidth', () {
+      final Rect popupRect = calcPopupPosition(
+        selectionRect: selectionRect,
+        screen: screen,
+        maxWidth: 250,
+      );
+
+      expect(popupRect.width, lessThanOrEqualTo(250));
+      expect(popupRect.width, 250);
+      expect(popupRect.left, greaterThanOrEqualTo(0));
+      expect(popupRect.right, lessThanOrEqualTo(1920));
+    });
+
+    test(
+        'larger maxWidth yields a wider popup, still bounded by available width',
+        () {
+      final Rect narrow = calcPopupPosition(
+        selectionRect: selectionRect,
+        screen: screen,
+        maxWidth: 250,
+      );
+      final Rect wide = calcPopupPosition(
+        selectionRect: selectionRect,
+        screen: screen,
+        maxWidth: 1000,
+      );
+
+      expect(wide.width, greaterThan(narrow.width));
+      expect(wide.width, 1000);
+      expect(wide.width, lessThanOrEqualTo(screen.width));
+      expect(wide.right, lessThanOrEqualTo(screen.width));
+    });
+  });
+
   testWidgets('empty popup layer fits a compact surface without overflow', (
     WidgetTester tester,
   ) async {
