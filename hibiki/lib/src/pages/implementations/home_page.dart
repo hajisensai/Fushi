@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:hibiki/src/sync/sync_auto_trigger.dart';
@@ -57,7 +59,13 @@ class _HomePageState extends BasePageState<HomePage>
         );
       }
 
-      triggerAutoSyncOnAppOpen(db: appModel.database);
+      triggerAutoSyncOnAppOpen(
+        db: appModel.database,
+        dictionaryResourceRoot: appModel.dictionaryResourceDirectory,
+        audioDatabaseRoot:
+            Directory('${appModel.appDirectory.path}/audiobooks'),
+        tempDir: appModel.temporaryDirectory,
+      );
     });
   }
 

@@ -1,8 +1,10 @@
 import 'dart:developer' as developer;
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_manager.dart';
+import 'package:hibiki/src/sync/sync_orchestrator.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/sync_utils.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
@@ -45,13 +47,32 @@ void triggerAutoSyncOnBackground({
   _runAutoSync(db: db, mediaIdentifier: mediaIdentifier, messenger: null);
 }
 
-void triggerAutoSyncOnAppOpen({required HibikiDatabase db}) {
-  _runAutoSyncAll(db: db);
+/// Full bidirectional sweep on app open: imports remote-only books, syncs all
+/// book progress/content, and union-syncs dictionaries + audiobook packages.
+/// The asset directories come from [AppModel] (the sync layer must not depend
+/// on it) — [audioDatabaseRoot] is where pulled audiobook packages land.
+void triggerAutoSyncOnAppOpen({
+  required HibikiDatabase db,
+  required Directory dictionaryResourceRoot,
+  required Directory audioDatabaseRoot,
+  required Directory tempDir,
+}) {
+  _runAutoSyncAll(
+    db: db,
+    dictionaryResourceRoot: dictionaryResourceRoot,
+    audioDatabaseRoot: audioDatabaseRoot,
+    tempDir: tempDir,
+  );
 }
 
 const _syncCooldownMs = 5 * 60 * 1000;
 
-Future<void> _runAutoSyncAll({required HibikiDatabase db}) async {
+Future<void> _runAutoSyncAll({
+  required HibikiDatabase db,
+  required Directory dictionaryResourceRoot,
+  required Directory audioDatabaseRoot,
+  required Directory tempDir,
+}) async {
   if (!_syncingIds.add('__all__')) return;
 
   _activeSyncs++;
@@ -72,17 +93,19 @@ Future<void> _runAutoSyncAll({required HibikiDatabase db}) async {
       await backend.restoreAuth(repo);
       if (!await backend.isAuthenticated) return;
 
-      final syncStats = await repo.isSyncStatsEnabled();
-      final syncAudioBook = await repo.isSyncAudioBookEnabled();
-      final syncContent = await repo.isSyncContentEnabled();
-
-      final manager = SyncManager(db: db, backend: backend);
-      await manager.syncAllBooks(
-        syncStats: syncStats,
-        statsSyncMode: StatisticsSyncMode.merge,
-        syncAudioBook: syncAudioBook,
-        syncContent: syncContent,
+      final orchestrator = SyncOrchestrator(
+        db: db,
+        backend: backend,
+        dictionaryResourceRoot: dictionaryResourceRoot,
+        audioDatabaseRoot: audioDatabaseRoot,
+        tempDir: tempDir,
+        syncStats: await repo.isSyncStatsEnabled(),
+        syncAudioBookPosition: await repo.isSyncAudioBookEnabled(),
+        syncContent: await repo.isSyncContentEnabled(),
+        syncAudioBookFiles: await repo.isSyncAudioBookFilesEnabled(),
+        syncDictionary: await repo.isSyncDictionaryEnabled(),
       );
+      await orchestrator.run();
     });
   } catch (e) {
     developer.log(

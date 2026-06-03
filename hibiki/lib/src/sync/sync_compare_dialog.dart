@@ -6,6 +6,7 @@ import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_error_messages.dart';
 import 'package:hibiki/src/sync/sync_manager.dart';
 import 'package:hibiki/src/sync/sync_message_dialog.dart';
+import 'package:hibiki/src/sync/sync_orchestrator.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
@@ -64,7 +65,12 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
   final repo = SyncRepository(db);
 
   final rootId = await _ensureRoot(backend, repo);
-  final remoteBooks = await backend.listBooks(rootId);
+  // Reserved asset namespaces (e.g. __dictionaries__) live alongside book
+  // folders under the root; they are not books and must not appear as phantom
+  // compare entries.
+  final remoteBooks = (await backend.listBooks(rootId))
+      .where((DriveFile f) => !isReservedSyncFolderName(f.name))
+      .toList();
   backend.cacheBookFolderIds(remoteBooks);
   final localBooks = await db.getAllEpubBooks();
 

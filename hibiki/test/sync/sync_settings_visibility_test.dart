@@ -76,6 +76,7 @@ void main() {
         'sync.audiobook',
         'sync.dictionary',
         'sync.content',
+        'sync.audiobook_files',
       ]);
       expect(idsOf(dest.sections[3]), <String>['sync.compare']);
       expect(idsOf(dest.sections[4]),
