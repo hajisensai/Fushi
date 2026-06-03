@@ -1097,11 +1097,18 @@ SettingsDestination _systemDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.system,
     title: t.settings_destination_system,
-    summary: t.section_update,
+    // 更新分区仅 Android 可见（见下方 section 网关）；非 Android 不以「更新」
+    // 作为该分区的副标题，避免指向不存在的能力。
+    summary: Platform.isAndroid ? t.section_update : null,
     icon: Icons.settings_suggest_outlined,
     sections: <SettingsSection>[
       SettingsSection(
         title: t.section_update,
+        // 自动更新整条链路仅 Android 实现：UpdateChecker._check 在 !isAndroid
+        // 时直接 return，原生 installApk 通道也只在 Android 注册。其余平台靠
+        // 应用商店/手动更新，故整段更新设置在非 Android 隐藏，避免出现
+        // 「可见但拨动无效」的死开关（BUG-013）。
+        visible: (_) => Platform.isAndroid,
         items: <SettingsItem>[
           SettingsSegmentedItem<String>(
             id: 'system.update_channel',
