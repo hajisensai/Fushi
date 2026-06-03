@@ -23,9 +23,9 @@
 ## BUG-011 · 手柄屏幕键盘「右」键落到右下对角键而非同行邻居
 - **报告**：2026-06-03（我，全量回归预存失败之一）。
 - **真实性**：✅ **真回归**。`HibikiGamepadKeyboard` 焦点在 `q`，按 D-pad 右键焦点落到**下一行的 `a`** 而非同行的 `w`（`test/widgets/hibiki_gamepad_keyboard_test.dart:60` 期望 `['w']` 实得 `['a']`）。根因：`f165cd475`（用户自己的提交「directional nav no longer skips the immediately-next row」）把**「沿按压方向距离 `along`」设成 `HibikiFocusController` 几何导航的绝对主键**（为修向下导航跳行），副作用是横向「右」移时——下一行里只要稍偏右的键（`a`：`along` 极小、`beam`=0 无垂直重叠）会击败同行邻居（`w`：`along`≈1 键宽、`beam`=1 有重叠）。根因点 `hibiki_focus_controller.dart:371-375`。
-- **[ ] ① 未修复** — 修法**微妙**：键盘（grid，右→同行）与外观设置（list，下→紧邻行不论对齐，`f165cd475` 正为此而改）在几何上**本质冲突**。已算：`along + K·cross` 线性度量里键盘要 `K>0.68`、外观要 `K<0.224`，**无单一 K 可同时满足**；恢复 `beam`-first 又会反转 `f165cd475`。这是 shared focus 核心、全 app 手柄导航依赖，须配全套 gamepad 导航测试矩阵谨慎重平衡，**不草率改**。
-- **[ ] ② 未加** — 失败的 `hibiki_gamepad_keyboard_test` 本身即守卫（当前红）；修复时须同时保 `test/shortcuts/gamepad_focus_nav_test.dart`（`f165cd475` 的）绿。
-- **备注**：影响手柄/方向键操作屏幕键盘可用性（右键走对角）。**建议作为专项任务**（先 brainstorm 几何度量，再以「键盘右-同行 ∧ 外观下-紧邻行」双约束为测试门槛实现）。
+- **[x] ① 已修复** — `c8017ad8c`。修法不靠调权重（线性 `along+K·cross` 无单一 K 可同时满足键盘 `K>0.68` 与外观 `K<0.224`，恢复 `beam`-first 又反转 `f165cd475`），而是**加一个几何「clears」主层**：候选须在按压轴上**整体越过源**（近边在源远边之后）才进第一层；`a` 在横向与 `q` 重叠 → RIGHT 不 clear → 降到第二层，`w` clear。层内保留 `f165cd475` 的 `along→beam→cross` 序，故外观 DOWN 仍到左对齐紧邻行、网格 DOWN 仍选同列。消除冲突而非折中。
+- **[x] ② 已加自动化测试** — `test/widgets/hibiki_gamepad_keyboard_test.dart`（`q`→右→`w`，随修复变绿）即守卫；并以**全套 30+ gamepad/focus 测试**为回归门槛实跑全绿（`+250`），含 `test/shortcuts/gamepad_focus_nav_test.dart`（`f165cd475` 的外观 DOWN）、`test/focus/focus_geometry_test.dart`、`theme_swatch_gamepad`、`settings_value_row_gamepad` 等。
+- **备注**：影响手柄/方向键操作屏幕键盘可用性（右键曾走对角）。focus 核心改动，已用全 gamepad/focus 测试矩阵把关；真机手柄复测可后补。
 
 ## BUG-010 · 错误日志通知器在无绑定时抛异常，反噬「损坏 JSON 优雅降级」
 - **报告**：2026-06-03（我，全量回归预存失败之一，且用户提示「2 个 JSON 容错可能同根因」——确为同根因）。
