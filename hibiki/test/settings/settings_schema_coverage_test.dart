@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7,6 +9,7 @@ import 'package:hibiki_core/hibiki_core.dart';
 
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
+import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/models/theme_notifier.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/src/settings/material_settings_renderer.dart';
@@ -61,9 +64,28 @@ void main() {
             'custom_theme_seed': PrefCodec.encode(0xFF1F4959),
           });
     addTearDown(themeNotifier.dispose);
+    // 用现成公开 seam 把 schema 渲染需要的子系统全部 wire 到同一内存 DB（不改
+    // app_model.dart，避开并发 agent 冲突）：wireDatabaseForTesting 设 database；
+    // wireLocalAudioForTesting 设 prefsRepo(+localAudioManager) —— prefsRepo 是
+    // appearance/lookup/cardCreation/listening/system 绝大多数 blocker 的根源。
+    final Directory tmpDir =
+        Directory.systemTemp.createTempSync('hibiki_settings_cov_');
+    addTearDown(() {
+      try {
+        tmpDir.deleteSync(recursive: true);
+      } catch (_) {}
+    });
+    final PreferencesRepository prefsRepo = PreferencesRepository(db);
+    await prefsRepo.loadFromDb();
     final AppModel appModel = AppModel(testPlatformServices())
       ..themeNotifier = themeNotifier
-      ..wireDatabaseForTesting(db);
+      ..wireDatabaseForTesting(db)
+      ..wireLocalAudioForTesting(
+          prefsRepo: prefsRepo, databaseDirectory: tmpDir)
+      // 语言选择器读 locales late-Map；populateLanguages/Locales 是公开纯 Dart
+      // 静态注册（startup 也调它们），填好 system 分组的语言项才能渲染。
+      ..populateLanguages()
+      ..populateLocales();
 
     // 探针：reading→T1 reader CSS；appearance→T2 themeNotifier.theme 渲染输入。
     final ReaderCssEffectProbe readerProbe =
@@ -212,7 +234,11 @@ void main() {
       debugPrint('[schema-coverage] DEST-FINDING: $f');
     }
 
-    expect(verdicts.length, greaterThan(15), reason: '应遍历到跨多个分组的大量可操作控件（焦点可达）');
+    expect(destFindings, isEmpty,
+        reason: '全部 8 个 destination 都应能渲染（根本性修复：测试侧 wire 全部'
+            '子系统）。渲染失败: ${destFindings.join("; ")}');
+    expect(verdicts.length, greaterThan(40),
+        reason: '应遍历到跨全部 8 个分组的大量可操作控件（焦点可达）');
     final List<ItemVerdict> notPersisted =
         verdicts.where((ItemVerdict v) => v.changed && !v.persisted).toList();
     expect(notPersisted, isEmpty,
