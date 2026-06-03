@@ -64,6 +64,10 @@ class _DictionaryDialogPageState extends BasePageState {
             label: t.dict_download_browse,
             onTap: _showDownloadSelectionDialog,
           ),
+          // Folder import is unavailable on iOS. This bar only renders on
+          // Material, so the guard is a no-op on a normal iOS device (Cupertino
+          // there); it stays live only for a forced Material design-system
+          // override on iOS, mirroring _buildDesktopPageActions.
           if (!Platform.isIOS)
             _buildActionButton(
               focusPrefix: 'dict-action-folder',
