@@ -251,9 +251,14 @@ class SyncOrchestrator {
         } else if (!hasLocal && existing != null) {
           tmp = _tmpFile('.hibikiaudio');
           await _backend.getAsset(existing.id, tmp);
+          // Re-key to THIS device's book: bookUid embeds the local book id,
+          // which differs per device, so the source's bookUid would never
+          // resolve to our book.
           await _packages.importAudioDatabasePackage(
             packageFile: tmp,
             audioDatabaseRoot: _audioDatabaseRoot,
+            bookUidOverride: bookUid,
+            ttuBookIdOverride: book.id,
           );
           report.audiobooksImported++;
         }

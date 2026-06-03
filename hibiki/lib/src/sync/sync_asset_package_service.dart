@@ -111,9 +111,17 @@ class SyncAssetPackageService {
     return _writeZip(outputFile, archive);
   }
 
+  /// Imports an audiobook package. [bookUidOverride] / [ttuBookIdOverride]
+  /// re-key the imported audiobook + cues ([bookUidOverride]) and SRT book
+  /// ([ttuBookIdOverride]) to the importing device's own book. This is required
+  /// for cross-device sync: `bookUid` embeds the source device's local book id
+  /// (`buildLegacyBookUid(book.id)`), which differs per device, so without
+  /// re-keying the synced audiobook would never link to the target's book.
   Future<void> importAudioDatabasePackage({
     required File packageFile,
     required Directory audioDatabaseRoot,
+    String? bookUidOverride,
+    int? ttuBookIdOverride,
   }) async {
     final Archive archive =
         ZipDecoder().decodeBytes(await packageFile.readAsBytes());
@@ -124,9 +132,15 @@ class SyncAssetPackageService {
     final Map<String, Object?> audiobook = _mapValue(manifest, 'audiobook');
     final Map<String, Object?> srtBook = _mapValue(manifest, 'srtBook');
     final Map<String, Object?> resources = _mapValue(manifest, 'resources');
-    final String bookUid = _stringValue(audiobook, 'bookUid');
+    final String bookUid =
+        bookUidOverride ?? _stringValue(audiobook, 'bookUid');
+    final int ttuBookId = ttuBookIdOverride ?? _intValue(srtBook, 'ttuBookId');
+    // The on-disk directory name must be filesystem-safe: a real bookUid
+    // (`reader_ttu/hoshi://book/<id>`) contains `:` and `/` which are invalid
+    // path chars on Windows. The DB still keys rows by the logical [bookUid];
+    // only the storage directory is sanitized.
     final Directory targetDir =
-        Directory(p.join(audioDatabaseRoot.path, bookUid));
+        Directory(p.join(audioDatabaseRoot.path, _safeDirName(bookUid)));
 
     await _extractArchivePrefix(
       archive: archive,
@@ -175,7 +189,7 @@ class SyncAssetPackageService {
         'coverPath',
       )),
       importedAt: _intValue(srtBook, 'importedAt'),
-      ttuBookId: Value(_intValue(srtBook, 'ttuBookId')),
+      ttuBookId: Value(ttuBookId),
     ));
 
     await _db.replaceCuesForBook(
@@ -247,6 +261,11 @@ class SyncAssetPackageService {
     };
   }
 }
+
+/// Sanitizes a logical id into a filesystem-safe directory name (replaces the
+/// Windows-invalid `\ / : * ? " < > |` with `_`). Filesystem-safe inputs (e.g.
+/// `ttu-42`) pass through unchanged.
+String _safeDirName(String id) => id.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
 
 Future<File> _writeZip(File outputFile, Archive archive) async {
   outputFile.parent.createSync(recursive: true);

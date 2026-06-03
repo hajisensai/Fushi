@@ -1,6 +1,7 @@
+import 'dart:convert';
 import 'dart:io';
 
-import 'package:drift/drift.dart';
+import 'package:drift/drift.dart' hide isNotNull, isNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
@@ -256,5 +257,115 @@ void main() {
     expect(second.dictionariesExported, 0);
     expect(second.dictionariesImported, 0);
     expect(second.errors, isEmpty);
+  });
+
+  test('audiobook package syncs and re-keys to the target device book',
+      () async {
+    final FakeAssetStore store = FakeAssetStore();
+    final FakeSyncBackend backend = FakeSyncBackend(store);
+    final Directory tmp = Directory('${work.path}/tmp')..createSync();
+    final Directory srcAudioRoot = Directory('${work.path}/src_audio')
+      ..createSync();
+    final Directory tgtAudioRoot = Directory('${work.path}/tgt_audio')
+      ..createSync();
+
+    SyncOrchestrator orch(HibikiDatabase db, Directory audioRoot) =>
+        SyncOrchestrator(
+          db: db,
+          backend: backend,
+          dictionaryResourceRoot: tmp,
+          audioDatabaseRoot: audioRoot,
+          tempDir: tmp,
+          syncStats: false,
+          syncAudioBookPosition: false,
+          syncContent: false,
+          syncAudioBookFiles: true,
+          syncDictionary: false,
+        );
+
+    // ── Source device: book id 1 + its audiobook/srt/cues/files ──
+    final HibikiDatabase srcDb = _memDb();
+    addTearDown(srcDb.close);
+    final int srcId = await srcDb.insertEpubBook(EpubBooksCompanion.insert(
+      title: 'MyBook',
+      epubPath: '/fake/mybook.epub',
+      extractDir: '/fake/extract',
+      chapterCount: 1,
+      chaptersJson: '[]',
+      importedAt: 1,
+    ));
+    final String srcUid = buildLegacyBookUid(srcId);
+    final File track = File('${srcAudioRoot.path}/track.mp3')
+      ..writeAsStringSync('audio');
+    final File align = File('${srcAudioRoot.path}/align.srt')
+      ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nhi\n');
+    await srcDb.upsertAudiobook(AudiobooksCompanion.insert(
+      bookUid: srcUid,
+      audioRoot: Value(srcAudioRoot.path),
+      audioPathsJson: Value(jsonEncode(<String>[track.path])),
+      alignmentFormat: 'srt',
+      alignmentPath: align.path,
+    ));
+    await srcDb.upsertSrtBook(SrtBooksCompanion.insert(
+      uid: 'srt-$srcId',
+      title: 'MyBook',
+      audioRoot: Value(srcAudioRoot.path),
+      audioPathsJson: Value(jsonEncode(<String>[track.path])),
+      srtPath: align.path,
+      importedAt: 1,
+      ttuBookId: Value(srcId),
+    ));
+    await srcDb.replaceCuesForBook(srcUid, <AudioCuesCompanion>[
+      AudioCuesCompanion.insert(
+        bookUid: srcUid,
+        chapterHref: 'c.xhtml',
+        sentenceIndex: 0,
+        textFragmentId: 'f0',
+        cueText: 'hi',
+        startMs: 0,
+        endMs: 1000,
+        audioFileIndex: 0,
+      ),
+    ]);
+
+    final SyncRunReport push = SyncRunReport();
+    await orch(srcDb, srcAudioRoot).syncAudiobookPackages('root', push);
+    expect(push.errors, isEmpty, reason: push.errors.join(' | '));
+    expect(push.audiobooksExported, 1);
+
+    // ── Target device: SAME title but a DIFFERENT book id (seed a throwaway
+    // first so the real book gets id 2) and NO audiobook ──
+    final HibikiDatabase tgtDb = _memDb();
+    addTearDown(tgtDb.close);
+    await tgtDb.insertEpubBook(EpubBooksCompanion.insert(
+      title: 'Throwaway',
+      epubPath: '/fake/t.epub',
+      extractDir: '/fake/te',
+      chapterCount: 1,
+      chaptersJson: '[]',
+      importedAt: 1,
+    ));
+    final int tgtId = await tgtDb.insertEpubBook(EpubBooksCompanion.insert(
+      title: 'MyBook',
+      epubPath: '/fake/mybook.epub',
+      extractDir: '/fake/extract2',
+      chapterCount: 1,
+      chaptersJson: '[]',
+      importedAt: 2,
+    ));
+    expect(tgtId, isNot(srcId)); // proves re-keying is actually exercised
+
+    final SyncRunReport pull = SyncRunReport();
+    await orch(tgtDb, tgtAudioRoot).syncAudiobookPackages('root', pull);
+    expect(pull.errors, isEmpty, reason: pull.errors.join(' | '));
+    expect(pull.audiobooksImported, 1);
+
+    // The synced audiobook must resolve via the TARGET device's own bookUid.
+    final String tgtUid = buildLegacyBookUid(tgtId);
+    expect(await tgtDb.getAudiobookByBookUid(tgtUid), isNotNull);
+    expect(await tgtDb.getSrtBookByTtuBookId(tgtId), isNotNull);
+    expect(await tgtDb.getCuesForBook(tgtUid), isNotEmpty);
+    // Source's bookUid must NOT leak as the key on the target.
+    expect(await tgtDb.getAudiobookByBookUid(srcUid), isNull);
   });
 }
