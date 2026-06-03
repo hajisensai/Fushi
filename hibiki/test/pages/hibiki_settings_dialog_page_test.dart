@@ -73,4 +73,9 @@ class _SettingsDialogTestAppModel extends AppModel {
   void setPopupMaxWidth(double width) {
     _popupMaxWidth = width;
   }
+
+  // 阅读器底栏反转开关（reader 快捷面板里）读 appModel；本 double 未初始化
+  // prefsRepo，故显式后备，避免渲染该开关时 prefsRepo 空指针。
+  @override
+  bool get reverseReaderBottomBar => false;
 }

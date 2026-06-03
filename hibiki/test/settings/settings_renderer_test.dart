@@ -150,7 +150,7 @@ Widget _harness({
       'brightness_mode': PrefCodec.encode('system'),
       'custom_theme_seed': PrefCodec.encode(0xFF1F4959),
     });
-  final AppModel appModel = AppModel(testPlatformServices())
+  final AppModel appModel = _RendererTestAppModel()
     ..themeNotifier = themeNotifier;
   addTearDown(() async {
     themeNotifier.dispose();
@@ -630,4 +630,14 @@ void main() {
       reason: 'cupertino 桌面全屏设置必须提供返回箭头出口（BUG-009 R2）',
     );
   });
+}
+
+/// 渲染器测试用的轻量 AppModel：未跑 initialise()、prefsRepo 为空。阅读设置里
+/// 「反转阅读器底栏」开关读 appModel.reverseReaderBottomBar（→ prefsRepo），故显式
+/// 后备，避免渲染该开关时 _prefsRepo! 空指针（同 _SettingsDialogTestAppModel）。
+class _RendererTestAppModel extends AppModel {
+  _RendererTestAppModel() : super(testPlatformServices());
+
+  @override
+  bool get reverseReaderBottomBar => false;
 }
