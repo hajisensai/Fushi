@@ -2,6 +2,7 @@ import 'dart:developer' as developer;
 
 import 'package:flutter/material.dart';
 import 'package:hibiki/src/sync/position_converter.dart';
+import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_error_messages.dart';
 import 'package:hibiki/src/sync/sync_manager.dart';
@@ -19,6 +20,8 @@ class SyncCompareEntry {
   SyncCompareEntry({
     required this.title,
     required this.bookId,
+    this.remoteFolderId,
+    this.remoteAudioBookId,
     this.localProgress,
     this.localUpdatedAt,
     this.remoteProgress,
@@ -31,6 +34,13 @@ class SyncCompareEntry {
 
   final String title;
   final int? bookId;
+
+  /// 远端书籍文件夹的原生定位符（删除整本远端书用）；本端独有书为 null。
+  final String? remoteFolderId;
+
+  /// 远端有声书资产（audiobook.hibikiaudio）的原生定位符；无远端有声书为 null。
+  final String? remoteAudioBookId;
+
   final double? localProgress;
   final int? localUpdatedAt;
   final double? remoteProgress;
@@ -56,6 +66,23 @@ class SyncCompareEntry {
     if (remoteUpdatedAt! > localUpdatedAt!) return SyncDirection.importFromTtu;
     return SyncDirection.synced;
   }
+}
+
+/// 一条词典对比项：按词典名对齐本端与远端的存在性。
+class SyncDictEntry {
+  SyncDictEntry({
+    required this.name,
+    required this.hasLocal,
+    this.remoteAssetId,
+  });
+
+  final String name;
+  final bool hasLocal;
+
+  /// 远端词典资产（`<name>.hibikidict`）定位符；远端没有则 null。
+  final String? remoteAssetId;
+
+  bool get hasRemote => remoteAssetId != null;
 }
 
 Future<List<SyncCompareEntry>> _fetchCompareData(
@@ -153,10 +180,14 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
     }
 
     final remoteData = remoteDataMap[title];
+    final remote =
+        remoteByTitle[title] ?? remoteByTitle[sanitizeTtuFilename(title)];
 
     entries.add(SyncCompareEntry(
       title: title,
       bookId: local?.id,
+      remoteFolderId: remote?.id,
+      remoteAudioBookId: remoteData?.audioBookId,
       localProgress: localProg,
       localUpdatedAt: localUpdatedAt,
       remoteProgress: remoteData?.progress,
@@ -176,18 +207,58 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
   return entries;
 }
 
+Future<List<SyncDictEntry>> _fetchDictEntries(
+  HibikiDatabase db,
+  SyncBackend backend, {
+  required bool includeLocalOnly,
+}) async {
+  final String ns = await backend.ensureNamespace(kSyncDictionaryNamespace);
+  final List<AssetEntry> remote = await backend.listChildren(ns);
+  const String suffix = '.hibikidict';
+
+  final Map<String, String> remoteByName = <String, String>{};
+  for (final AssetEntry e in remote) {
+    if (e.isFolder || !e.name.endsWith(suffix)) continue;
+    remoteByName[e.name.substring(0, e.name.length - suffix.length)] = e.id;
+  }
+  final Set<String> localNames = <String>{
+    for (final DictionaryMetaRow d in await db.getAllDictionaryMetadata())
+      d.name,
+  };
+
+  final Set<String> allNames = <String>{...localNames, ...remoteByName.keys};
+  final List<SyncDictEntry> out = <SyncDictEntry>[
+    for (final String n in allNames)
+      SyncDictEntry(
+        name: n,
+        hasLocal: localNames.contains(n),
+        remoteAssetId: remoteByName[n],
+      ),
+  ];
+  // 门控：远端项始终保留（要删它）；纯本地项（无远端可删）只在词典同步选项
+  // 开启时才显示，避免选项关闭时用无关本地词典刷屏。
+  out.removeWhere((SyncDictEntry e) => !e.hasRemote && !includeLocalOnly);
+  out.sort((SyncDictEntry a, SyncDictEntry b) =>
+      a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+  return out;
+}
+
 class _RemoteBookData {
   const _RemoteBookData({
     this.progress,
     this.updatedAt,
     this.statsCount,
     this.audioPosSec,
+    this.audioBookId,
   });
 
   final double? progress;
   final int? updatedAt;
   final int? statsCount;
   final double? audioPosSec;
+
+  /// 远端有声书资产（audiobook.hibikiaudio）的原生定位符；无则 null。
+  final String? audioBookId;
 }
 
 Future<_RemoteBookData> _fetchRemoteBookData(
@@ -201,6 +272,7 @@ Future<_RemoteBookData> _fetchRemoteBookData(
     int? updatedAt;
     int? statsCount;
     double? audioPosSec;
+    String? audioBookId;
 
     final futures = <Future<void>>[];
 
@@ -216,6 +288,7 @@ Future<_RemoteBookData> _fetchRemoteBookData(
       }));
     }
     if (syncFiles.audioBook != null) {
+      audioBookId = syncFiles.audioBook!.id;
       futures.add(backend.getAudioBookFile(syncFiles.audioBook!.id).then((a) {
         audioPosSec = a.playbackPositionSec;
       }));
@@ -228,6 +301,7 @@ Future<_RemoteBookData> _fetchRemoteBookData(
       updatedAt: updatedAt,
       statsCount: statsCount,
       audioPosSec: audioPosSec,
+      audioBookId: audioBookId,
     );
   } catch (e) {
     developer.log(
@@ -300,6 +374,7 @@ class _SyncCompareDialog extends StatefulWidget {
 
 class _SyncCompareDialogState extends State<_SyncCompareDialog> {
   List<SyncCompareEntry>? _entries;
+  List<SyncDictEntry>? _dicts;
   Map<String, SyncChoice> _choices = {};
   String? _error;
   bool _applying = false;
@@ -314,7 +389,18 @@ class _SyncCompareDialogState extends State<_SyncCompareDialog> {
 
   Future<void> _load() async {
     try {
-      final entries = await _fetchCompareData(widget.db, widget.backend);
+      final repo = SyncRepository(widget.db);
+      final bool dictSyncOn = await repo.isSyncDictionaryEnabled();
+      final results = await Future.wait(<Future<Object>>[
+        _fetchCompareData(widget.db, widget.backend),
+        _fetchDictEntries(
+          widget.db,
+          widget.backend,
+          includeLocalOnly: dictSyncOn,
+        ),
+      ]);
+      final entries = results[0] as List<SyncCompareEntry>;
+      final dicts = results[1] as List<SyncDictEntry>;
       final choices = <String, SyncChoice>{};
       for (final e in entries) {
         if (e.bookId == null || e.isSynced) {
@@ -330,6 +416,7 @@ class _SyncCompareDialogState extends State<_SyncCompareDialog> {
       if (mounted) {
         setState(() {
           _entries = entries;
+          _dicts = dicts;
           _choices = choices;
         });
       }
