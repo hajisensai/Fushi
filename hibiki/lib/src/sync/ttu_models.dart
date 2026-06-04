@@ -165,4 +165,5 @@ enum SyncResult {
   imported,
   exported,
   skipped,
+  conflict,
 }

@@ -222,6 +222,9 @@ Future<void> _runAutoSync({
           t.sync_auto_complete(direction: '↑', title: book.title),
         SyncResult.synced => null,
         SyncResult.skipped => null,
+        // Auto-sync stays silent on conflict: divergent progress must not be
+        // resolved by a toast. The compare dialog drives the user decision.
+        SyncResult.conflict => null,
       };
 
       if (message != null && messenger != null) {

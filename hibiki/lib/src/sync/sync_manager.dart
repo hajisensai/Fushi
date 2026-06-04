@@ -6,6 +6,7 @@ import 'package:drift/drift.dart';
 import 'package:flutter/foundation.dart';
 import 'package:hibiki/src/sync/position_converter.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
+import 'package:hibiki/src/sync/sync_progress_resolver.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
@@ -18,12 +19,24 @@ class SyncBookResult {
     required this.title,
     this.characterCount,
     this.error,
+    this.conflictAssetKey,
+    this.conflictDimension,
+    this.conflictLocalVersion,
+    this.conflictRemoteVersion,
   });
 
   final SyncResult direction;
   final String title;
   final int? characterCount;
   final String? error;
+
+  // Populated only when `direction == SyncResult.conflict`. The local/remote
+  // versions are the diverging progress timestamps; downstream UI uses them
+  // (with assetKey+dimension) as a dedup fingerprint for the resolution prompt.
+  final String? conflictAssetKey;
+  final String? conflictDimension;
+  final int? conflictLocalVersion;
+  final int? conflictRemoteVersion;
 }
 
 /// 单本书一次同步的归类结果：成功应用 / 真失败 / 良性空操作。
@@ -197,14 +210,58 @@ class SyncManager {
         ? _localProgressFraction(localPosition, chapters)
         : null;
 
-    final syncDir = direction ??
-        _determineSyncDirection(
-          localUpdatedAt: localPosition?.updatedAt,
-          localProgress: localProgress,
-          remoteProgressFile: syncFiles.progress,
+    final int? remoteTimestamp = syncFiles.progress != null
+        ? parseProgressTimestamp(syncFiles.progress!.name)
+        : null;
+    final String assetKey = sanitizeTtuFilename(book.title);
+
+    final SyncDirection syncDir;
+    if (direction != null) {
+      // Manual (compare-dialog) path: caller owns the direction, no three-way
+      // gate, no base bookkeeping — unchanged behaviour.
+      syncDir = direction;
+    } else {
+      // Auto path: gate on the common-ancestor baseline. A genuine fork
+      // (both sides moved off base) must surface as a conflict instead of
+      // silently last-write-wins clobbering one side.
+      final int? base = await _db.getSyncBaseline(assetKey, 'progress');
+      final ProgressResolution res = resolveProgressSync(
+        local: localPosition?.updatedAt,
+        remote: remoteTimestamp,
+        base: base,
+      );
+      if (res.isConflict) {
+        return SyncBookResult(
+          direction: SyncResult.conflict,
+          title: book.title,
+          conflictAssetKey: assetKey,
+          conflictDimension: 'progress',
+          conflictLocalVersion: localPosition?.updatedAt,
+          conflictRemoteVersion: remoteTimestamp,
         );
+      }
+      // Non-conflict: honour the resolver's direction. It agrees with the
+      // legacy last-write-wins outcome for single-sided / unanimous cases;
+      // when both timestamps are equal it returns `synced`, so fall back to
+      // the content-aware tie-break for the genuine same-ms collision.
+      syncDir = res.direction == SyncDirection.synced &&
+              localPosition?.updatedAt != null &&
+              remoteTimestamp != null
+          ? _determineSyncDirection(
+              localUpdatedAt: localPosition?.updatedAt,
+              localProgress: localProgress,
+              remoteProgressFile: syncFiles.progress,
+            )
+          : res.direction;
+    }
 
     if (syncDir == SyncDirection.synced) {
+      // Both sides already agree on this timestamp: record it as the new base
+      // so a later single-sided edit is recognised instead of re-colliding.
+      if (direction == null && localPosition?.updatedAt != null) {
+        await _db.setSyncBaseline(
+            assetKey, 'progress', localPosition!.updatedAt);
+      }
       return SyncBookResult(direction: SyncResult.synced, title: book.title);
     }
     if (importOnly && syncDir != SyncDirection.importFromTtu) {
@@ -217,7 +274,7 @@ class SyncManager {
 
     switch (syncDir) {
       case SyncDirection.importFromTtu:
-        return _handleImport(
+        final SyncBookResult result = await _handleImport(
           book: book,
           folderId: folderId,
           chapters: chapters,
@@ -229,13 +286,22 @@ class SyncManager {
           syncAudioBook: syncAudioBook,
           syncContent: syncContent,
         );
+        // Base = remote progress timestamp = the updatedAt import wrote locally
+        // (_handleImport stores remoteProgress.lastBookmarkModified, which
+        // equals the remote filename timestamp). Both sides now agree on it.
+        if (direction == null &&
+            result.direction == SyncResult.imported &&
+            remoteTimestamp != null) {
+          await _db.setSyncBaseline(assetKey, 'progress', remoteTimestamp);
+        }
+        return result;
 
       case SyncDirection.exportToTtu:
         if (localPosition == null && !syncContent) {
           return SyncBookResult(
               direction: SyncResult.skipped, title: book.title);
         }
-        return _handleExport(
+        final SyncBookResult result = await _handleExport(
           book: book,
           folderId: folderId,
           chapters: chapters,
@@ -248,6 +314,16 @@ class SyncManager {
           statsSyncMode: statsSyncMode,
           syncContent: syncContent,
         );
+        // Base = the timestamp _handleExport wrote into the remote progress
+        // file, which is localPosition.updatedAt (also written back locally).
+        // Only persist when a position was actually exported.
+        if (direction == null &&
+            result.direction == SyncResult.exported &&
+            localPosition?.updatedAt != null) {
+          await _db.setSyncBaseline(
+              assetKey, 'progress', localPosition!.updatedAt);
+        }
+        return result;
 
       case SyncDirection.synced:
         return SyncBookResult(direction: SyncResult.synced, title: book.title);
