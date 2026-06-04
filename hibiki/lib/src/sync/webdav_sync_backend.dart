@@ -375,6 +375,17 @@ class WebDavSyncBackend extends SyncBackend {
   Future<void> putJsonAsset(String namespaceId, String name, Object? json) =>
       _ops!.uploadJson(namespaceId, name, json);
 
+  @override
+  Future<void> deleteAsset(String id, {bool isFolder = false}) async {
+    try {
+      // WebDAV DELETE 对 collection（文件夹）递归删除，对文件单删；同一原语。
+      await _ops!.deleteFile(id);
+    } catch (e) {
+      // 幂等：404/已删除当作成功。其它错误记录但不抛（与删除非致命语义一致）。
+      debugPrint('[webdav] deleteAsset failed: $id: $e');
+    }
+  }
+
   static String _stripTrailingSlash(String value) =>
       value.endsWith('/') ? value.substring(0, value.length - 1) : value;
 
