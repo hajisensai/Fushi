@@ -38,6 +38,14 @@ class _FakeSyncBackend implements SyncBackend {
   /// When true, [deleteAsset] throws to exercise the failure path.
   bool failDelete = false;
 
+  /// When true, [listSyncFiles] reports a remote audiobook asset (id
+  /// [audioAssetId]) for every book folder, so the row exposes a "delete remote
+  /// audiobook" action. Default false keeps the other cases' empty contract.
+  bool withAudio = false;
+
+  /// Native locator of the synthesised remote audiobook asset.
+  static const String audioAssetId = 'audioAsset1';
+
   static const String _dictNs = '__dictionaries__';
 
   // ── deleteAsset (the unit under test) ─────────────────────────────
@@ -58,8 +66,13 @@ class _FakeSyncBackend implements SyncBackend {
   @override
   void cacheBookFolderIds(List<DriveFile> folders) {}
   @override
-  Future<DriveSyncFiles> listSyncFiles(String folderId) async =>
-      const DriveSyncFiles();
+  Future<DriveSyncFiles> listSyncFiles(String folderId) async => withAudio
+      // Only the audioBook field is populated, so _fetchRemoteBookData touches
+      // getAudioBookFile but never getProgressFile/getStatsFile.
+      ? const DriveSyncFiles(
+          audioBook: DriveFile(id: audioAssetId, name: 'audiobook.hibikiaudio'),
+        )
+      : const DriveSyncFiles();
   @override
   Future<String> ensureNamespace(String name) async => name;
   @override
@@ -102,9 +115,14 @@ class _FakeSyncBackend implements SyncBackend {
   @override
   Future<List<TtuStatistics>> getStatsFile(String fileId) async =>
       throw UnimplementedError();
+  // Reached only when [withAudio] is on (listSyncFiles surfaces an audioBook);
+  // _fetchRemoteBookData reads playbackPositionSec off the returned instance.
   @override
-  Future<TtuAudioBook> getAudioBookFile(String fileId) async =>
-      throw UnimplementedError();
+  Future<TtuAudioBook> getAudioBookFile(String fileId) async => TtuAudioBook(
+        title: 'BookA',
+        playbackPositionSec: 0,
+        lastAudioBookModified: 0,
+      );
   @override
   Future<void> updateProgressFile({
     required String folderId,
@@ -279,5 +297,41 @@ void main() {
     expect(fake.deletedFolderFlags['folderX'], isTrue);
     // ...but the row must survive a failure (no optimistic removal).
     expect(find.text('BookA'), findsOneWidget);
+  });
+
+  testWidgets(
+      'audiobook row delete removes only the audiobook action, keeps the book row',
+      (WidgetTester tester) async {
+    final _FakeSyncBackend fake = _FakeSyncBackend(
+      books: <DriveFile>[const DriveFile(id: 'folderX', name: 'BookA')],
+      dictAssets: const <AssetEntry>[],
+    )..withAudio = true;
+    await pumpDialog(tester, fake);
+
+    expect(find.text('BookA'), findsOneWidget);
+
+    await tapDeleteAndConfirm(
+      tester,
+      rowDeleteIcon: find.byIcon(Icons.delete_outline),
+      menuLabel: t.sync_compare_delete_audiobook,
+    );
+
+    // Deleted the audiobook asset (not a folder).
+    expect(fake.deletedIds, contains(_FakeSyncBackend.audioAssetId));
+    expect(
+      fake.deletedFolderFlags[_FakeSyncBackend.audioAssetId],
+      isFalse,
+    );
+    // The book folder was never touched.
+    expect(fake.deletedIds, isNot(contains('folderX')));
+    // Unlike a whole-book delete, the row survives — only the audiobook
+    // sub-action is cleared (_copyWithoutAudio optimistic refresh).
+    expect(find.text('BookA'), findsOneWidget);
+
+    // Re-open the row overflow: the audiobook item is gone, the book item stays.
+    await tester.tap(find.byIcon(Icons.delete_outline));
+    await tester.pumpAndSettle();
+    expect(find.text(t.sync_compare_delete_audiobook), findsNothing);
+    expect(find.text(t.sync_compare_delete_book), findsOneWidget);
   });
 }
