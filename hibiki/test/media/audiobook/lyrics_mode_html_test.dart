@@ -72,6 +72,55 @@ void main() {
       expect(cueRule, isNot(contains('92vw')));
       expect(cueRule, isNot(contains('max-width: 100vw')));
     });
+
+    // The lyrics page is a standalone document (not ReaderContentStyles), so it
+    // needs its own themed scrollbar or it shows the default grey bar over the
+    // themed background. The classic WebView2 scrollbar honours
+    // ::-webkit-scrollbar; the standard props cover overlay engines.
+    test('scrollbar is themed to the cue text colour with a transparent track',
+        () {
+      final String html = LyricsModeHtml.generate(
+        cues: <AudioCue>[_cue(0), _cue(1)],
+        currentIndex: 0,
+        backgroundColor: 'rgba(18,18,18,1.00)',
+        textColor: 'rgba(255,255,255,0.87)',
+        accentColor: 'rgba(255,220,0,1.00)',
+        fontSize: 20,
+      );
+
+      expect(html, contains('::-webkit-scrollbar-thumb'));
+      final String thumbRule = _cssBlock(html, '::-webkit-scrollbar-thumb {');
+      expect(thumbRule, contains('background-color: rgba(255,255,255,0.87)'));
+
+      final String trackRule = _cssBlock(html, '::-webkit-scrollbar-track {');
+      expect(trackRule, contains('background: transparent'));
+
+      final String rootRule = _cssBlock(html, 'html, body {');
+      expect(rootRule, contains('scrollbar-width: thin;'));
+      expect(
+        rootRule,
+        contains('scrollbar-color: rgba(255,255,255,0.87) transparent;'),
+      );
+    });
+
+    test(
+        'live style update repaints the scrollbar thumb to the new text colour',
+        () {
+      final String html = LyricsModeHtml.generate(
+        cues: <AudioCue>[_cue(0)],
+        currentIndex: 0,
+        backgroundColor: 'rgba(255,255,255,1.00)',
+        textColor: 'rgba(0,0,0,0.87)',
+        accentColor: 'rgba(255,220,0,1.00)',
+        fontSize: 20,
+      );
+
+      // __lyricsUpdateStyle must patch the scrollbar rules, not just .cue, so
+      // changing theme while in lyrics mode recolours the bar without reload.
+      expect(html, contains("r.selectorText === '::-webkit-scrollbar-thumb'"));
+      expect(html, contains("r.selectorText === 'html, body'"));
+      expect(html, contains("setProperty('scrollbar-color'"));
+    });
   });
 }
 

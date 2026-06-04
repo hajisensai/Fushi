@@ -50,8 +50,27 @@ html, body {
   overflow-x: hidden;
   -webkit-tap-highlight-color: transparent;
   -webkit-touch-callout: none;
+  /* Themed scrollbar: transparent track shows the lyrics background, thumb
+     takes the cue text colour so it matches the theme instead of the default
+     grey bar. ::-webkit-scrollbar covers the classic scrollbar; the standard
+     props cover overlay scrollbars on newer engines. */
+  scrollbar-width: thin;
+  scrollbar-color: $textColor transparent;
 }
 body { font-family: "Noto Serif JP", "Noto Sans JP", serif; }
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background-color: $textColor;
+  background-clip: padding-box;
+  border: 2px solid transparent;
+  border-radius: 8px;
+}
 .lyrics-container {
   display: flex;
   flex-direction: column;
@@ -215,6 +234,10 @@ window.__lyricsUpdateStyle = function(bgColor, textColor, accentColor, fontSize,
     if (r.selectorText === '.cue') {
       r.style.color = textColor;
       r.style.fontSize = fontSize + 'px';
+    } else if (r.selectorText === 'html, body') {
+      r.style.setProperty('scrollbar-color', textColor + ' transparent');
+    } else if (r.selectorText === '::-webkit-scrollbar-thumb') {
+      r.style.backgroundColor = textColor;
     } else if (r.selectorText === '.cue.current') {
       r.style.color = accentColor;
     } else if (r.type === CSSRule.STYLE_RULE && r.selectorText === '.cue.current .hoshi-dict-highlight') {
