@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 
-import 'package:archive/archive.dart';
 import 'package:archive/archive_io.dart';
 import 'package:drift/drift.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -55,12 +54,11 @@ class SyncAssetPackageService {
     required File packageFile,
     required Directory dictionaryResourceRoot,
   }) async {
-    final Archive archive =
-        ZipDecoder().decodeBytes(await packageFile.readAsBytes());
-    final Map<String, Object?> manifest = _readManifest(
-      archive,
-      expectedKind: 'dictionary',
-    );
+    final String manifestJson = await _readManifestInIsolate(packageFile.path);
+    final Map<String, Object?> manifest = _typedMap(jsonDecode(manifestJson));
+    if (manifest['kind'] != 'dictionary') {
+      throw FormatException('Unexpected package kind: ${manifest['kind']}');
+    }
     final Map<String, Object?> dictionary = _mapValue(manifest, 'dictionary');
     final String name = _stringValue(dictionary, 'name');
 
@@ -70,23 +68,18 @@ class SyncAssetPackageService {
       order: _intValue(dictionary, 'order'),
       type: Value(_stringValue(dictionary, 'type')),
       metadataJson: Value(_stringValue(dictionary, 'metadataJson')),
-      hiddenLanguagesJson: Value(_stringValue(
-        dictionary,
-        'hiddenLanguagesJson',
-      )),
-      collapsedLanguagesJson: Value(_stringValue(
-        dictionary,
-        'collapsedLanguagesJson',
-      )),
+      hiddenLanguagesJson: Value(_stringValue(dictionary, 'hiddenLanguagesJson')),
+      collapsedLanguagesJson:
+          Value(_stringValue(dictionary, 'collapsedLanguagesJson')),
     ));
 
     final Directory targetDir = Directory(
       p.join(dictionaryResourceRoot.path, name),
     );
-    await _extractArchivePrefix(
-      archive: archive,
+    await _extractResourcesInIsolate(
+      packagePath: packageFile.path,
+      targetDirPath: targetDir.path,
       prefix: 'resources',
-      targetRoot: targetDir,
     );
   }
 
@@ -142,12 +135,11 @@ class SyncAssetPackageService {
     String? bookUidOverride,
     int? ttuBookIdOverride,
   }) async {
-    final Archive archive =
-        ZipDecoder().decodeBytes(await packageFile.readAsBytes());
-    final Map<String, Object?> manifest = _readManifest(
-      archive,
-      expectedKind: 'audioDatabase',
-    );
+    final String manifestJson = await _readManifestInIsolate(packageFile.path);
+    final Map<String, Object?> manifest = _typedMap(jsonDecode(manifestJson));
+    if (manifest['kind'] != 'audioDatabase') {
+      throw FormatException('Unexpected package kind: ${manifest['kind']}');
+    }
     final Map<String, Object?> audiobook = _mapValue(manifest, 'audiobook');
     final Map<String, Object?> srtBook = _mapValue(manifest, 'srtBook');
     final Map<String, Object?> resources = _mapValue(manifest, 'resources');
@@ -161,10 +153,10 @@ class SyncAssetPackageService {
     final Directory targetDir =
         Directory(p.join(audioDatabaseRoot.path, _safeDirName(bookUid)));
 
-    await _extractArchivePrefix(
-      archive: archive,
+    await _extractResourcesInIsolate(
+      packagePath: packageFile.path,
+      targetDirPath: targetDir.path,
       prefix: 'resources',
-      targetRoot: targetDir,
     );
 
     final String alignmentPath = p.join(
@@ -285,84 +277,6 @@ class SyncAssetPackageService {
 /// Windows-invalid `\ / : * ? " < > |` with `_`). Filesystem-safe inputs (e.g.
 /// `ttu-42`) pass through unchanged.
 String _safeDirName(String id) => id.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
-
-Future<File> _writeZip(File outputFile, Archive archive) async {
-  outputFile.parent.createSync(recursive: true);
-  await outputFile.writeAsBytes(ZipEncoder().encode(archive)!, flush: true);
-  return outputFile;
-}
-
-ArchiveFile _jsonFile(String name, Object? json) {
-  final List<int> bytes = utf8.encode(jsonEncode(json));
-  return ArchiveFile(name, bytes.length, bytes);
-}
-
-Future<void> _addDirectoryFiles({
-  required Archive archive,
-  required Directory root,
-  required String archivePrefix,
-}) async {
-  if (!await root.exists()) return;
-  await for (final FileSystemEntity entity in root.list(recursive: true)) {
-    if (entity is! File) continue;
-    final String relativePath = p.relative(entity.path, from: root.path);
-    final String archivePath =
-        p.posix.join(archivePrefix, relativePath.replaceAll(r'\', '/'));
-    archive.addFile(ArchiveFile(
-      archivePath,
-      await entity.length(),
-      await entity.readAsBytes(),
-    ));
-  }
-}
-
-Future<void> _extractArchivePrefix({
-  required Archive archive,
-  required String prefix,
-  required Directory targetRoot,
-}) async {
-  final String canonicalRoot = p.canonicalize(targetRoot.path);
-  for (final ArchiveFile file in archive.files) {
-    if (!file.isFile) continue;
-    final String rawName = file.name.replaceAll(r'\', '/');
-    if (!rawName.startsWith('$prefix/')) continue;
-    final String relativePath = rawName.substring(prefix.length + 1);
-    final String normalizedRelative = p.posix.normalize(relativePath);
-    if (relativePath.isEmpty ||
-        p.posix.isAbsolute(relativePath) ||
-        normalizedRelative == '..' ||
-        normalizedRelative.startsWith('../')) {
-      throw FormatException('Invalid package path: ${file.name}');
-    }
-    final String targetPath = p.normalize(
-      p.join(targetRoot.path, normalizedRelative),
-    );
-    if (p.canonicalize(targetPath) != canonicalRoot &&
-        !p.isWithin(canonicalRoot, p.canonicalize(targetPath))) {
-      throw FormatException('Invalid package path: ${file.name}');
-    }
-    final File targetFile = File(targetPath);
-    targetFile.parent.createSync(recursive: true);
-    await targetFile.writeAsBytes(file.content as List<int>, flush: true);
-  }
-}
-
-Map<String, Object?> _readManifest(
-  Archive archive, {
-  required String expectedKind,
-}) {
-  final ArchiveFile? manifestFile = archive.findFile('manifest.json');
-  if (manifestFile == null) {
-    throw const FormatException('Package manifest is missing');
-  }
-  final Object? decoded =
-      jsonDecode(utf8.decode(manifestFile.content as List<int>));
-  final Map<String, Object?> manifest = _typedMap(decoded);
-  if (manifest['kind'] != expectedKind) {
-    throw FormatException('Unexpected package kind: ${manifest['kind']}');
-  }
-  return manifest;
-}
 
 List<File> _audioPackageFiles(AudiobookRow audiobook, SrtBookRow srtBook) {
   final List<String> paths = <String>[
