@@ -31,15 +31,25 @@ void main() {
     expect(source, isNot(contains("page: 'appearance'")));
     expect(source, isNot(contains('Widget _buildQuickControlsSection(')));
 
-    // 平铺区包含主题选择器 + schema 投影的 appearance 分组 + 编辑书籍CSS。
+    // 平铺区把主题行 + appearance schema 裸行 + 编辑书籍CSS 合并成一张等宽卡
+    // （单个 AdaptiveSettingsSection），编辑书籍CSS 是最后一行而非独立卡。
     final String inlineSource = _between(
       source,
       '  Widget _buildAppearanceInline(ThemeData theme)',
       '  Widget _buildLocationSection(ThemeData theme)',
     );
-    expect(inlineSource, contains('_buildThemeSelector()'));
+    expect(
+        inlineSource, contains('buildThemeSelector(_themeSettingsContext())'));
     expect(inlineSource, contains('ReaderGroup.appearance'));
+    // appearance schema 行用 buildSectionRows 取「裸行」（非 buildDetailContent
+    // 的 ListView+整页内边距），才能与下方导航卡等宽。
+    expect(inlineSource, contains('buildSectionRows('));
     expect(inlineSource, contains('book_css_editor_edit_css'));
+    // 主题不再是独立卡：内联区不再用旧的 _buildThemeSelector() 包装方法。
+    expect(source, isNot(contains('Widget _buildThemeSelector()')));
+    // 单卡合并：内联区只一个 AdaptiveSettingsSection（编辑书籍CSS 并入其中，
+    // 非独立卡）。
+    expect('AdaptiveSettingsSection('.allMatches(inlineSource).length, 1);
   });
 
   test('reader quick settings sheet uses shared MD3 sheet chrome', () {

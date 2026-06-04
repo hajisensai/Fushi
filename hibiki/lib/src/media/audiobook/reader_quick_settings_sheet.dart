@@ -409,8 +409,11 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
     );
   }
 
-  Widget _buildThemeSelector() {
-    final SettingsContext settingsContext = SettingsContext(
+  /// 主题行专用 [SettingsContext]：换肤后除 setState 外还要 `_syncThemeSelection`
+  /// （把 appThemeKey 落 reader 设置 + 触发 `onThemeChanged` 的词典/歌词联动）。
+  /// 与 appearance 其它行的普通 `_settingsContext()` 区分，故单列一个工厂。
+  SettingsContext _themeSettingsContext() {
+    return SettingsContext(
       context: context,
       appModel: widget.appModel,
       ref: widget.ref,
@@ -420,11 +423,6 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
         unawaited(_syncThemeSelection());
         setState(() {});
       },
-    );
-    return AdaptiveSettingsSection(
-      children: <Widget>[
-        buildThemeSelector(settingsContext),
-      ],
     );
   }
 
@@ -439,45 +437,55 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
   /// 无静态 schema item 能携带，故保留 bespoke，仅在有 extract dir 时显示。
   Widget _buildAppearanceInline(ThemeData theme) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    final Widget projected = _buildReaderGroupContent(
+    // 单张「等宽」卡：主题行 + appearance schema 行（字号/行高/段落缩进/视图
+    // 模式）+ 编辑书籍CSS 行，行间分割线，编辑书籍CSS 是该卡最后一行（非独立卡）。
+    // appearance schema 行用 `buildSectionRows` 取「裸行」拼进同一张
+    // `AdaptiveSettingsSection`——而非 `buildDetailContent` 的 ListView+整页内
+    // 边距（那会让本卡比下方导航卡窄、还自带滚动），从而与下方导航卡等宽。
+    // 主题行用自己的 `_themeSettingsContext()` 保留实时换肤 + 词典/歌词联动；
+    // appearance 行用普通 `_settingsContext()`。
+    final SettingsContext appearanceCtx = _settingsContext();
+    final SettingsDestination base = buildReaderGroupDestination(
+      appearanceCtx,
       ReaderGroup.appearance,
       t.settings_destination_appearance,
     );
-    final Widget themeSelector = _buildThemeSelector();
-    final List<Widget> children = <Widget>[
-      SettingsSectionHeader(
-        t.display_settings,
-        padding: EdgeInsets.only(bottom: tokens.spacing.gap),
-      ),
-      themeSelector,
-      projected,
-    ];
-    if (widget.extractDir != null) {
-      children.add(
-        AdaptiveSettingsSection(
-          children: [
-            AdaptiveSettingsNavigationRow(
-              title: t.book_css_editor_edit_css,
-              icon: Icons.code_outlined,
-              onTap: () async {
-                await Navigator.push(
-                  context,
-                  adaptivePageRoute(
-                    builder: (_) =>
-                        BookCssEditorPage(extractDir: widget.extractDir!),
-                  ),
-                );
-                await _reloadLayoutLive();
-              },
-            ),
-          ],
+    final SettingsRenderer renderer = isCupertinoPlatform(context)
+        ? const CupertinoSettingsRenderer()
+        : const MaterialSettingsRenderer();
+    final List<Widget> cardChildren = <Widget>[
+      buildThemeSelector(_themeSettingsContext()),
+      for (final SettingsSection section in base.sections)
+        ...renderer.buildSectionRows(
+          settingsContext: appearanceCtx,
+          section: section,
         ),
-      );
-    }
+      if (widget.extractDir != null)
+        AdaptiveSettingsNavigationRow(
+          title: t.book_css_editor_edit_css,
+          icon: Icons.code_outlined,
+          onTap: () async {
+            await Navigator.push(
+              context,
+              adaptivePageRoute(
+                builder: (_) =>
+                    BookCssEditorPage(extractDir: widget.extractDir!),
+              ),
+            );
+            await _reloadLayoutLive();
+          },
+        ),
+    ];
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: children,
+      children: [
+        SettingsSectionHeader(
+          t.display_settings,
+          padding: EdgeInsets.only(bottom: tokens.spacing.gap),
+        ),
+        AdaptiveSettingsSection(children: cardChildren),
+      ],
     );
   }
 

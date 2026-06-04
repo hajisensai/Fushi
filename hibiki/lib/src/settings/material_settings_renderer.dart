@@ -135,6 +135,27 @@ class MaterialSettingsRenderer implements SettingsRenderer {
       },
     );
   }
+
+  @override
+  List<Widget> buildSectionRows({
+    required SettingsContext settingsContext,
+    required SettingsSection section,
+    bool showIcons = true,
+  }) {
+    final SettingsSection visible = section.visibleCopy(settingsContext);
+    return visible.items
+        .map(
+          (SettingsItem item) => _SettingsSchemaItem(
+            item: item,
+            settingsContext: settingsContext,
+            showIcons: showIcons,
+            routeBuilder: (BuildContext context, WidgetBuilder builder) {
+              return MaterialPageRoute<void>(builder: builder);
+            },
+          ),
+        )
+        .toList(growable: false);
+  }
 }
 
 class _SettingsSchemaSection extends StatelessWidget {

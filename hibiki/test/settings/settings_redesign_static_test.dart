@@ -267,7 +267,8 @@ void main() {
         readNormalizedSource('lib/src/settings/settings_actions.dart');
 
     expect(actionsSource, contains('Widget buildThemeSelector'));
-    expect(sheetSource, contains('buildThemeSelector(settingsContext)'));
+    expect(
+        sheetSource, contains('buildThemeSelector(_themeSettingsContext())'));
     expect(sheetSource, isNot(contains('TtuReaderSettings.availableThemes')));
     expect(sheetSource, isNot(contains('buildReaderThemeChip(')));
   });
