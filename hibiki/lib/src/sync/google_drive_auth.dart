@@ -9,6 +9,7 @@ import 'package:googleapis_auth/googleapis_auth.dart' as auth;
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 
+import 'package:hibiki/src/sync/google_oauth_secret.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 
 class GoogleDriveAuthError implements Exception {
@@ -28,10 +29,11 @@ class GoogleDriveAuth {
   static const _driveFileScope = 'https://www.googleapis.com/auth/drive.file';
   static const _emailScope = 'https://www.googleapis.com/auth/userinfo.email';
 
-  // 安装型应用（installed-app / PKCE）的 OAuth 凭据按 Google 设计属于
-  // 非机密信息，编译进二进制可接受（见 HBK-AUDIT-072）。这里写成默认值，
-  // 任何构建方式（flutter run / build / CI）都无需再带 --dart-define-from-file；
-  // 仍保留 --dart-define 覆盖能力，便于切换凭据而不改源码。
+  // 安装型应用（installed-app / PKCE）的 OAuth 凭据按 Google 设计属于非机密
+  // 信息，会编译进二进制（见 HBK-AUDIT-072）。client_id 是公开标识，硬编码可接受
+  // （与 Dropbox/OneDrive 后端一致）；client secret 虽同属非机密，但 GitGuardian
+  // 会扫描告警，故真值移到 gitignored 的 google_oauth_secret.dart，仅作默认值引用，
+  // 既不入库也不需每次构建带 flag。两者均保留 --dart-define 覆盖能力。
   static const _oauthClientId = String.fromEnvironment(
     'GOOGLE_OAUTH_CLIENT_ID',
     defaultValue:
@@ -39,7 +41,7 @@ class GoogleDriveAuth {
   );
   static const _oauthClientSecret = String.fromEnvironment(
     'GOOGLE_OAUTH_CLIENT_SECRET',
-    defaultValue: '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',
+    defaultValue: kGoogleOAuthClientSecret,
   );
 
   // iOS 专用 OAuth 客户端（应用类型 = iOS，Bundle ID = app.hibiki.reader）。
