@@ -7,6 +7,7 @@ import 'package:crypto/crypto.dart' as crypto;
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/models/local_audio_source_pref.dart';
 import 'package:hibiki/src/sync/sync_asset_package_service.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
@@ -310,6 +311,75 @@ void main() {
       expect(restoredBytes.length, sizeBytes);
       expect(_sha256Hex(restoredBytes), _sha256Hex(big),
           reason: '大文件 STORE 往返后字节哈希必须一致');
+    });
+  });
+
+  group('Local audio sync packages', () {
+    test('round trip carries config and restores db bytes (>2MB STORE)',
+        () async {
+      final Directory temp = await Directory.systemTemp.createTemp(
+        'hibiki-local-audio-package-',
+      );
+      addTearDown(() => temp.delete(recursive: true));
+      final HibikiDatabase sourceDb = _testDb();
+      final HibikiDatabase targetDb = _testDb();
+      addTearDown(sourceDb.close);
+      addTearDown(targetDb.close);
+
+      // 3 MB 伪随机 .db（覆盖全字节值），确保走 STORE 流式分块路径而非整入内存。
+      const int sizeBytes = 3 * 1024 * 1024;
+      final Uint8List big = Uint8List(sizeBytes);
+      int state = 0x0abcdef;
+      for (int i = 0; i < sizeBytes; i++) {
+        state = (state * 1103515245 + 12345) & 0x7fffffff;
+        big[i] = state & 0xff;
+      }
+      final File dbFile = File(p.join(temp.path, 'local_audio_42.db'))
+        ..writeAsBytesSync(big);
+
+      final SyncAssetPackageService service =
+          SyncAssetPackageService(db: sourceDb);
+      final File package = await service.exportLocalAudioPackage(
+        displayName: 'NHK Audio',
+        enabled: true,
+        sources: const <LocalAudioSourcePref>[
+          LocalAudioSourcePref(name: 'nhk16', enabled: true),
+          LocalAudioSourcePref(name: 'forvo', enabled: false),
+        ],
+        dbFile: dbFile,
+        outputFile: File(p.join(temp.path, 'nhk.hibikiaudiolib')),
+      );
+
+      // STORE 验证：包内资源条目压缩方式必须是 STORE（compressionType==0）。
+      final Archive archive =
+          ZipDecoder().decodeBytes(await package.readAsBytes());
+      final ArchiveFile? resource =
+          archive.findFile('resources/local_audio_42.db');
+      expect(resource, isNotNull);
+      expect(resource!.compressionType, ArchiveFile.STORE,
+          reason: '大 DB 必须 STORE，不能 deflate（会整文件入内存 OOM）');
+
+      final Directory staging = Directory(p.join(temp.path, 'staging'))
+        ..createSync();
+      final LocalAudioPackageContents contents =
+          await SyncAssetPackageService(db: targetDb).importLocalAudioPackage(
+        packageFile: package,
+        stagingDir: staging,
+      );
+
+      expect(contents.displayName, 'NHK Audio');
+      expect(contents.enabled, isTrue);
+      expect(contents.sources.length, 2);
+      expect(contents.sources[0].name, 'nhk16');
+      expect(contents.sources[0].enabled, isTrue);
+      expect(contents.sources[1].name, 'forvo');
+      expect(contents.sources[1].enabled, isFalse);
+
+      expect(contents.dbFile.existsSync(), isTrue);
+      final Uint8List restored = contents.dbFile.readAsBytesSync();
+      expect(restored.length, sizeBytes);
+      expect(_sha256Hex(restored), _sha256Hex(big),
+          reason: '大 DB STORE 往返后字节哈希必须一致');
     });
   });
 }

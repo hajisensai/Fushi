@@ -4,8 +4,25 @@ import 'dart:isolate';
 
 import 'package:archive/archive_io.dart';
 import 'package:drift/drift.dart';
+import 'package:hibiki/src/models/local_audio_source_pref.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
+
+/// [SyncAssetPackageService.importLocalAudioPackage] 的解析结果：已解压到本机
+/// staging 目录的 .db 文件 + manifest 携带的配置。注册（拷进库目录 / 写 prefs /
+/// 推 native）由调用方（`AppModel.importSyncedLocalAudioDb`）完成。
+class LocalAudioPackageContents {
+  const LocalAudioPackageContents({
+    required this.dbFile,
+    required this.displayName,
+    required this.enabled,
+    required this.sources,
+  });
+  final File dbFile;
+  final String displayName;
+  final bool enabled;
+  final List<LocalAudioSourcePref> sources;
+}
 
 class SyncAssetPackageService {
   SyncAssetPackageService({required HibikiDatabase db}) : _db = db;
@@ -223,6 +240,76 @@ class SyncAssetPackageService {
           audioFileIndex: _intValue(cue, 'audioFileIndex'),
         );
       }).toList(),
+    );
+  }
+
+  /// 打包一个本地音频库：单个 .db（STORE 流式）+ manifest（displayName/enabled/子来源）。
+  /// [dbFile] 是该库的本机 .db 主文件（不含 -wal/-shm，导入后由 sqlite 自建）。
+  Future<File> exportLocalAudioPackage({
+    required String displayName,
+    required bool enabled,
+    required List<LocalAudioSourcePref> sources,
+    required File dbFile,
+    required File outputFile,
+  }) async {
+    final String dbFileName = p.basename(dbFile.path);
+    final String manifestJson = jsonEncode(<String, Object?>{
+      'schemaVersion': 1,
+      'kind': 'localAudio',
+      'localAudio': <String, Object?>{
+        'displayName': displayName,
+        'enabled': enabled,
+        'dbFileName': dbFileName,
+        'sources': sources.map((LocalAudioSourcePref s) => s.toJson()).toList(),
+      },
+    });
+    outputFile.parent.createSync(recursive: true);
+    // 发音 DB 可达几百 MB：STORE 走真流式（不整文件入内存），且 sqlite 已是二进制
+    // 难压缩，deflate 只是浪费 CPU 还会整文件入内存 OOM。
+    await _zipPackageInIsolate(
+      outputPath: outputFile.path,
+      manifestJson: manifestJson,
+      archivePathToSource: <String, String>{'resources/$dbFileName': dbFile.path},
+      storeResources: true,
+    );
+    return outputFile;
+  }
+
+  /// 解析本地音频包：读 manifest + 把 .db 流式解压到 [stagingDir]，返回内容。
+  /// 不写任何 prefs / 不推 native（注册由 AppModel 负责，保持双真相源一致 +
+  /// 本机重建 path：远端 manifest 的绝对 path 在本机不存在，绝不能直接复用）。
+  Future<LocalAudioPackageContents> importLocalAudioPackage({
+    required File packageFile,
+    required Directory stagingDir,
+  }) async {
+    final String manifestJson = await _readManifestInIsolate(packageFile.path);
+    final Map<String, Object?> manifest = _typedMap(jsonDecode(manifestJson));
+    if (manifest['kind'] != 'localAudio') {
+      throw FormatException('Unexpected package kind: ${manifest['kind']}');
+    }
+    final Map<String, Object?> meta = _mapValue(manifest, 'localAudio');
+    final String displayName = _stringValue(meta, 'displayName');
+    final String dbFileName = _stringValue(meta, 'dbFileName');
+    final bool enabled = _nullableBool(meta, 'enabled') ?? true;
+    final List<LocalAudioSourcePref> sources =
+        _listValue(meta, 'sources').map((Object? raw) {
+      final Map<String, Object?> m = _typedMap(raw);
+      return LocalAudioSourcePref(
+        name: _stringValue(m, 'name'),
+        enabled: _nullableBool(m, 'enabled') ?? true,
+      );
+    }).toList();
+
+    await _extractResourcesInIsolate(
+      packagePath: packageFile.path,
+      targetDirPath: stagingDir.path,
+      prefix: 'resources',
+    );
+    return LocalAudioPackageContents(
+      dbFile: File(p.join(stagingDir.path, dbFileName)),
+      displayName: displayName,
+      enabled: enabled,
+      sources: sources,
     );
   }
 
