@@ -112,20 +112,10 @@ class CupertinoSettingsRenderer implements SettingsRenderer {
         destination.visibleSections(settingsContext);
     final EdgeInsets mediaPadding =
         MediaQuery.of(settingsContext.context).padding;
-    // 与 MaterialSettingsRenderer.buildDetailContent 对齐：用可滚动 ListView 而非
-    // 裸 Column。宽屏 master-detail 的 primary 是有限高度的 Expanded，裸 Column
-    // 内容超高会 RenderFlex 溢出（真机右下角黄黑条纹，BUG-009 R1）。
-    // shrinkWrap 时禁用自身滚动，交由外层 sliver / SingleChildScrollView 滚动
-    // （buildDetailPage 的 CustomScrollView 复用此路径）。底部留安全区，自滚到底
-    // 时最后一项不贴边（对齐 Material 渲染器）。
-    return ListView.builder(
-      controller: scrollController,
-      shrinkWrap: shrinkWrap,
-      physics: shrinkWrap ? const NeverScrollableScrollPhysics() : null,
-      padding: EdgeInsets.only(bottom: mediaPadding.bottom),
-      itemCount: sections.length,
-      itemBuilder: (BuildContext context, int index) {
-        return _SettingsSchemaSection(
+    // 底部留安全区，自滚到底时最后一项不贴边（对齐 Material 渲染器）。
+    final EdgeInsets padding = EdgeInsets.only(bottom: mediaPadding.bottom);
+
+    Widget section(int index) => _SettingsSchemaSection(
           section: sections[index],
           settingsContext: settingsContext,
           showIcons: false,
@@ -133,7 +123,35 @@ class CupertinoSettingsRenderer implements SettingsRenderer {
             return CupertinoPageRoute<void>(builder: builder);
           },
         );
-      },
+
+    // shrinkWrap：嵌在外层 sliver / SingleChildScrollView 里（buildDetailPage 的
+    // CustomScrollView 复用此路径），由父滚动；shrinkWrap ListView 必须布局全部子项
+    // 来量自身高度，extent 已精确，禁用自身滚动即可。
+    if (shrinkWrap) {
+      return ListView.builder(
+        controller: scrollController,
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        padding: padding,
+        itemCount: sections.length,
+        itemBuilder: (BuildContext context, int index) => section(index),
+      );
+    }
+
+    // 自滚动（宽屏 master-detail 详情面板）。镜像 MaterialSettingsRenderer：懒加载
+    // ListView.builder 按已布局子项平均高估算视口外 section 的 extent，section 高度
+    // 悬殊时 maxScrollExtent 随滚动漂移、弹道落点被重新 clamp → 视口跳跃（BUG-037）。
+    // 全 section 布局（SingleChildScrollView + Column）让 extent 精确恒定；它本身可
+    // 滚动，也不会像裸 Column 那样在有界 Expanded 里 RenderFlex 溢出（BUG-009 R1）。
+    return SingleChildScrollView(
+      controller: scrollController,
+      padding: padding,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          for (int index = 0; index < sections.length; index++) section(index),
+        ],
+      ),
     );
   }
 

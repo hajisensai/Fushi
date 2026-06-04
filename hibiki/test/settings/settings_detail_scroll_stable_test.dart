@@ -11,8 +11,10 @@ import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/models/theme_notifier.dart';
+import 'package:hibiki/src/settings/cupertino_settings_renderer.dart';
 import 'package:hibiki/src/settings/material_settings_renderer.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
+import 'package:hibiki/src/settings/settings_renderer.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/sync_settings_schema.dart';
@@ -36,7 +38,10 @@ import '../helpers/test_platform_services.dart';
 HibikiDatabase _testDb() =>
     HibikiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
-Future<ScrollController> _pumpSyncDetail(WidgetTester tester) async {
+Future<ScrollController> _pumpSyncDetail(
+  WidgetTester tester,
+  SettingsRenderer renderer,
+) async {
   FocusManager.instance.highlightStrategy = FocusHighlightStrategy.alwaysTouch;
 
   final HibikiDatabase db = _testDb();
@@ -99,7 +104,7 @@ Future<ScrollController> _pumpSyncDetail(WidgetTester tester) async {
                   readerSource: ReaderHibikiSource.instance,
                   refresh: () {},
                 );
-                return const MaterialSettingsRenderer().buildDetailContent(
+                return renderer.buildDetailContent(
                   settingsContext: sc,
                   destination: buildSyncBackupDestination(),
                   scrollController: controller,
@@ -140,26 +145,36 @@ void main() {
     FocusManager.instance.highlightStrategy = FocusHighlightStrategy.automatic;
   });
 
-  testWidgets('sync/backup detail keeps a stable scroll extent at every offset',
-      (WidgetTester tester) async {
-    final ScrollController controller = await _pumpSyncDetail(tester);
+  // 两个渲染器的自滚动详情路径（shrinkWrap:false）都吃这条修复：Material 走窄屏
+  // push 页 + 宽屏主从，Cupertino 走宽屏 master-detail（iPad/macOS-Cupertino）。
+  for (final ({String name, SettingsRenderer renderer}) variant
+      in <({String name, SettingsRenderer renderer})>[
+    (name: 'material', renderer: const MaterialSettingsRenderer()),
+    (name: 'cupertino', renderer: const CupertinoSettingsRenderer()),
+  ]) {
+    testWidgets(
+        '${variant.name}: sync/backup detail keeps a stable scroll extent at '
+        'every offset', (WidgetTester tester) async {
+      final ScrollController controller =
+          await _pumpSyncDetail(tester, variant.renderer);
 
-    final double maxTop = controller.position.maxScrollExtent;
-    expect(maxTop, greaterThan(0), reason: '内容必须超出视口，否则 extent 稳定性断言为空');
+      final double maxTop = controller.position.maxScrollExtent;
+      expect(maxTop, greaterThan(0), reason: '内容必须超出视口，否则 extent 稳定性断言为空');
 
-    controller.jumpTo(maxTop / 2);
-    await tester.pumpAndSettle();
-    final double maxMid = controller.position.maxScrollExtent;
+      controller.jumpTo(maxTop / 2);
+      await tester.pumpAndSettle();
+      final double maxMid = controller.position.maxScrollExtent;
 
-    controller.jumpTo(controller.position.maxScrollExtent);
-    await tester.pumpAndSettle();
-    final double maxBottom = controller.position.maxScrollExtent;
+      controller.jumpTo(controller.position.maxScrollExtent);
+      await tester.pumpAndSettle();
+      final double maxBottom = controller.position.maxScrollExtent;
 
-    // 懒加载变高列表：maxScrollExtent 随布局到的子项不同而漂移 → 弹道落点被重
-    // clamp → 视觉跳跃。非懒加载（全 section 布局）下三处必须逐像素相等。
-    expect(maxMid, maxTop,
-        reason: '滚到中部后 extent 从 $maxTop 漂移到 $maxMid（懒加载估算不稳）');
-    expect(maxBottom, maxTop,
-        reason: '滚到底部后 extent 从 $maxTop 漂移到 $maxBottom（懒加载估算不稳）');
-  });
+      // 懒加载变高列表：maxScrollExtent 随布局到的子项不同而漂移 → 弹道落点被重
+      // clamp → 视觉跳跃。非懒加载（全 section 布局）下三处必须逐像素相等。
+      expect(maxMid, maxTop,
+          reason: '滚到中部后 extent 从 $maxTop 漂移到 $maxMid（懒加载估算不稳）');
+      expect(maxBottom, maxTop,
+          reason: '滚到底部后 extent 从 $maxTop 漂移到 $maxBottom（懒加载估算不稳）');
+    });
+  }
 }
