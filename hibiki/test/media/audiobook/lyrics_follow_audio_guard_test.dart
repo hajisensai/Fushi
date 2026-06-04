@@ -52,10 +52,9 @@ void main() {
       'lib/src/pages/implementations/reader_hibiki_page.dart',
     ).readAsStringSync();
 
-    // 歌词分支必须把跟随开关透传进 JS（否则自动滚动永远发生）。
-    expect(
-      src,
-      contains(r'__lyricsSetCue($idx, ${controller.followAudio.value})'),
-    );
+    // 歌词分支必须把跟随开关透传进 JS（否则自动滚动永远发生）。拆成两个更小的
+    // 不变片段，避免对跨行字符串拼接的换行位置脆敏（Info-5）。
+    expect(src, contains(r'__lyricsSetCue($idx, '));
+    expect(src, contains(r'${controller.followAudio.value}'));
   });
 }

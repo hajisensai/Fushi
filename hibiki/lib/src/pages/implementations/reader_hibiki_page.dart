@@ -3506,6 +3506,10 @@ window.flutter_inappwebview.callHandler('spreadReady');
         _showChrome) {
       _chromeFocusScope.requestFocus();
       if (_chromeFocusScope.nextFocus()) return KeyEventResult.handled;
+      // Empty chrome (no focusable child): undo the scope grab so focus isn't
+      // stranded on an empty FocusScope, then fall through to shortcut
+      // resolution. Mirrors _promoteCaretToChrome's undo.
+      _focusNode.requestFocus();
     }
 
     final modifiers = <ModifierKey>{};
@@ -3920,10 +3924,13 @@ window.flutter_inappwebview.callHandler('spreadReady');
   }
 
   /// Move focus from the active reader caret DOWN into the bottom chrome bar
-  /// (the sibling layer below the reading content), the symmetric counterpart of
-  /// [_focusPopupHeader] (popup content Up → header). Only promotes if the bar is
-  /// visible and actually accepts focus; otherwise the caret stays put (no
-  /// stranded focus, no page turn).
+  /// (the sibling layer below the reading content). Spatially the same idea as
+  /// [_focusPopupHeader] (popup content Up → header), but ONE-WAY: this fully
+  /// exits the caret ([_exitCaret]) rather than just hiding the ring, so the
+  /// later Up from the bar returns to plain reading focus ([_focusNode]), not a
+  /// re-entered caret — unlike the reversible popup content↔header round-trip.
+  /// Only promotes if the bar is visible and actually accepts focus; otherwise
+  /// the caret stays put (no stranded focus, no page turn).
   void _promoteCaretToChrome() {
     if (!_showChrome) return; // bar hidden — nowhere to go; Down stays a no-op
     _chromeFocusScope.requestFocus();
