@@ -138,6 +138,19 @@ class MaterialSettingsRenderer implements SettingsRenderer {
       return ListView.builder(
         controller: scrollController,
         shrinkWrap: true,
+        // Embedded in a PARENT scrollable (no own controller) ⇒ must NOT own the
+        // scroll. A shrink-wrapped ListView still installs its own Scrollable
+        // with a vertical drag recognizer; sized to content its scroll extent is
+        // zero, so a drag that lands ON its rows wins the gesture arena, moves
+        // nothing, and never bubbles to the parent — the reader quick-settings
+        // 布局 sub-page couldn't be scrolled by touch (BUG-042). Disabling the
+        // inner physics lets every drag reach the parent. Mirrors the cupertino
+        // renderer, which is already NeverScrollable here. The one caller that
+        // drives this list itself (hibiki_settings_page master-detail) passes a
+        // controller and keeps real physics so it can still scroll.
+        physics: scrollController == null
+            ? const NeverScrollableScrollPhysics()
+            : null,
         padding: padding,
         itemCount: sections.length,
         itemBuilder: (BuildContext context, int index) => section(index),
