@@ -55,6 +55,7 @@
 
 ## 提交
 
+- 本仓库工作流是 **develop 直提**：默认直接在 `develop` 分支提交，不建 feature 分支、不走 PR；多个 agent 共享同一 develop 工作树（所以才有下面"只 stage 本轮文件"的铁律）。需要隔离时才用 worktree，改完仍回 `develop`。
 - 完成代码/文档/测试/审查改动后默认提交本轮。
 - 提交前 `git status --short`，**只 stage 本轮相关文件**（禁止 `git add -A`——本工作区可能有并发 agent 的无关改动）；再 `git diff --cached --check`。
 - 提交信息简洁说明真实改动（如 `docs: rewrite agent rules` / `fix(reader): preserve restore position`）。
