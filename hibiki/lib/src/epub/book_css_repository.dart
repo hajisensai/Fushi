@@ -34,23 +34,77 @@ class CssFileEntry {
   }
 }
 
+/// BUG-040: a CSS file's identity plus its on-disk content captured together,
+/// so the editor can populate its tabs without re-touching the filesystem on
+/// the UI isolate.
+class CssFileSnapshot {
+  CssFileSnapshot({required this.entry, required this.content});
+
+  final CssFileEntry entry;
+  final String content;
+}
+
 class BookCssRepository {
   BookCssRepository(this.extractDir);
 
   final String extractDir;
 
+  /// BUG-040: discover CSS files and read their contents off the UI thread.
+  /// The recursive `listSync` over a fully-extracted EPUB (images/fonts/xhtml —
+  /// often thousands of entries) plus the per-file `readAsStringSync` used to
+  /// run synchronously inside the editor's `initState`, freezing the first
+  /// frame for the entire duration of the page-push transition. The async
+  /// `dart:io` walk + reads run the blocking syscalls on the Dart IO thread
+  /// pool and deliver results via the event loop, so the UI isolate is never
+  /// blocked and frames keep rendering (the editor shows a spinner meanwhile).
+  Future<List<CssFileSnapshot>> loadSnapshots() async {
+    final List<CssFileEntry> entries = await _discoverCssFilesAsync();
+    final List<CssFileSnapshot> snapshots = <CssFileSnapshot>[];
+    for (final CssFileEntry entry in entries) {
+      snapshots
+          .add(CssFileSnapshot(entry: entry, content: await readCss(entry)));
+    }
+    return snapshots;
+  }
+
+  Future<List<CssFileEntry>> _discoverCssFilesAsync() async {
+    final Directory dir = Directory(extractDir);
+    if (!await dir.exists()) return const [];
+
+    final List<String> cssFilePaths = <String>[];
+    await for (final FileSystemEntity entity in dir.list(recursive: true)) {
+      if (entity is! File) continue;
+      final String ext = p.extension(entity.path).toLowerCase();
+      if (ext == '.css' && !entity.path.endsWith('.original')) {
+        cssFilePaths.add(entity.path);
+      }
+    }
+    return _entriesFromCssPaths(cssFilePaths);
+  }
+
   List<CssFileEntry> discoverCssFiles() {
     final Directory dir = Directory(extractDir);
     if (!dir.existsSync()) return const [];
 
-    final List<File> cssFiles =
-        dir.listSync(recursive: true).whereType<File>().where((f) {
-      final String ext = p.extension(f.path).toLowerCase();
-      return ext == '.css' && !f.path.endsWith('.original');
-    }).toList();
+    final List<String> cssFilePaths = dir
+        .listSync(recursive: true)
+        .whereType<File>()
+        .where((f) {
+          final String ext = p.extension(f.path).toLowerCase();
+          return ext == '.css' && !f.path.endsWith('.original');
+        })
+        .map((f) => f.path)
+        .toList();
 
-    final List<String> relativePaths = cssFiles.map((f) {
-      return p.relative(f.path, from: extractDir).replaceAll(r'\', '/');
+    return _entriesFromCssPaths(cssFilePaths);
+  }
+
+  /// Pure transform shared by the sync and async discovery paths: map absolute
+  /// CSS file paths to sorted [CssFileEntry]s with shortest-unique display
+  /// titles.
+  List<CssFileEntry> _entriesFromCssPaths(List<String> cssFilePaths) {
+    final List<String> relativePaths = cssFilePaths.map((path) {
+      return p.relative(path, from: extractDir).replaceAll(r'\', '/');
     }).toList()
       ..sort();
 

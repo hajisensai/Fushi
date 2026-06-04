@@ -80,6 +80,29 @@ void main() {
     });
   });
 
+  group('loadSnapshots (BUG-040: off-UI-thread discover + read)', () {
+    test('returns one snapshot per CSS file with disk content', () async {
+      _createFile(tmpDir, 'OEBPS/Styles/style.css', 'body{color:red}');
+      _createFile(tmpDir, 'OEBPS/Styles/fonts.css', '@font-face{}');
+      _createFile(tmpDir, 'OEBPS/Text/chapter1.xhtml', '<html/>');
+
+      final repo = BookCssRepository(tmpDir.path);
+      final snapshots = await repo.loadSnapshots();
+
+      // Same discovery contract as discoverCssFiles (sorted, xhtml excluded),
+      // but each entry already carries its on-disk content.
+      expect(snapshots.map((s) => s.entry.relativePath).toList(),
+          ['OEBPS/Styles/fonts.css', 'OEBPS/Styles/style.css']);
+      expect(snapshots[0].content, '@font-face{}');
+      expect(snapshots[1].content, 'body{color:red}');
+    });
+
+    test('returns empty list when extractDir does not exist', () async {
+      final repo = BookCssRepository(p.join(tmpDir.path, 'nonexistent'));
+      expect(await repo.loadSnapshots(), isEmpty);
+    });
+  });
+
   group('displayTitle shortest unique suffix', () {
     test('unique basenames use basename only', () {
       _createFile(tmpDir, 'OEBPS/Styles/style.css', 'a');
