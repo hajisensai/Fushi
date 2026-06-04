@@ -174,6 +174,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   bool _lyricsMode = false;
   bool _lyricsModeTransition = false;
   bool _gamepadALongFired = false;
+  // 重入守卫：「调整」面板从点击到 show 之间有 DB 读 await，快速连点会二次进入并
+  // 弹出两个面板（BUG-026）。打开期间置 true、关闭后于 finally 复位。
+  bool _appearanceSheetOpen = false;
 
   bool _lyricsPageReady = false;
   int _lyricsEntryChapter = 0;
@@ -4546,181 +4549,191 @@ window.flutter_inappwebview.callHandler('spreadReady');
 
   Future<void> _showAppearanceSheet() async {
     if (_settings == null || _controller == null || _book == null) return;
+    // 重入守卫：快速连点时按钮按下到 show 之间的 DB 读 await 期间会二次进入、弹出
+    // 两个面板。标志置位必须在第一个 await 之前，复位放 finally（异常也复位）。
+    if (_appearanceSheetOpen) return;
+    _appearanceSheetOpen = true;
+    try {
+      // _settings 就是 ReaderHibikiSource.readerSettings 本体（见 initState 绑定），
+      // 面板控件经 ReaderHibikiSource.instance.ttu* 实时读写同一对象，开面板前后都
+      // 无需设置同步——旧 TTU 双存储时代的 _syncSettings*Hive 已是写回自身的死桥，
+      // 且 _syncSettingsToHive 会触发 17× onSettingsChangedLive 的 DB/WebView 风暴。
+      final List<TtuTocEntry> toc = _buildTtuToc();
+      final int bookId = widget.bookId;
+      final BookmarkRepository bmRepo = BookmarkRepository(appModel.database);
+      final FavoriteSentenceRepository favRepo =
+          FavoriteSentenceRepository(appModel.database);
 
-    // _settings 就是 ReaderHibikiSource.readerSettings 本体（见 initState 绑定），
-    // 面板控件经 ReaderHibikiSource.instance.ttu* 实时读写同一对象，开面板前后都
-    // 无需设置同步——旧 TTU 双存储时代的 _syncSettings*Hive 已是写回自身的死桥，
-    // 且 _syncSettingsToHive 会触发 17× onSettingsChangedLive 的 DB/WebView 风暴。
-    final List<TtuTocEntry> toc = _buildTtuToc();
-    final int bookId = widget.bookId;
-    final BookmarkRepository bmRepo = BookmarkRepository(appModel.database);
-    final FavoriteSentenceRepository favRepo =
-        FavoriteSentenceRepository(appModel.database);
+      List<Bookmark> bookmarks = await bmRepo.getBookmarks(bookId);
+      final List<FavoriteSentence> allFavorites = await favRepo.getAll();
+      final List<FavoriteSentence> favorites =
+          allFavorites.where((f) => f.ttuBookId == bookId).toList();
 
-    List<Bookmark> bookmarks = await bmRepo.getBookmarks(bookId);
-    final List<FavoriteSentence> allFavorites = await favRepo.getAll();
-    final List<FavoriteSentence> favorites =
-        allFavorites.where((f) => f.ttuBookId == bookId).toList();
+      if (!mounted) return;
 
-    if (!mounted) return;
-
-    final Widget sheetContent = ReaderQuickSettingsSheet(
-      controller: _audiobookController,
-      toc: toc,
-      readerProgress: (_currentChapter, _book!.chapters.length),
-      onJumpSection: (index) async {
-        _navigateToChapter(index);
-      },
-      onBookmark: () async {
-        await _addBookmarkAtCurrentPosition();
-      },
-      onExitReader: () {
-        Navigator.of(context).pop();
-      },
-      webViewController: _controller!,
-      appModel: appModel,
-      ref: ref,
-      isHibikiReader: true,
-      onStyleChanged: _applyStylesLive,
-      onThemeChanged: _onThemeChanged,
-      extractDir: _extractDir,
-      onReloadChapter: _reloadWithCurrentSettings,
-      onAudioImport: _srtBookUid != null ? _openAudioImportDialog : null,
-      lyricsMode: _lyricsMode,
-      onToggleLyricsMode: _toggleLyricsMode,
-      showFloatingLyric: appModel.showFloatingLyric,
-      onToggleFloatingLyric: _toggleFloatingLyric,
-      floatingLyricFontSize: appModel.floatingLyricFontSize,
-      onFloatingLyricFontSizeChanged: (v) async {
-        await appModel.setFloatingLyricFontSize(v);
-        final Color bg = _themeBackgroundColor();
-        final Color fg = _themeTextColor();
-        final bool dark = _isReaderThemeDark;
-        await FloatingLyricChannel.updateStyle(
-          fontSize: v,
-          textColor: fg.value,
-          bgColor: bg.withAlpha(dark ? 230 : 220).value,
-          buttonTextColor: fg.value,
-          buttonBgColor:
-              (dark ? const Color(0x33FFFFFF) : const Color(0x1A000000)).value,
-        );
-      },
-      showMediaNotification: appModel.showMediaNotification,
-      onToggleMediaNotification: _toggleMediaNotification,
-      charProgress: _progressCurrentChars != null && _progressTotalChars != null
-          ? (_progressCurrentChars!, _progressTotalChars!)
-          : null,
-      onJumpToCharOffset: (globalOffset) async {
-        _jumpToGlobalCharOffset(globalOffset);
-      },
-      epubBook: _book,
-      onSearchJump: (BookSearchResult result, String query) async {
-        if (_book == null || _controller == null) return;
-        if (result.sectionIndex != _currentChapter) {
-          final bool ok = await _navigateToChapterAndWait(result.sectionIndex);
-          if (!ok || !mounted || _controller == null) return;
-        }
-        await _controller!.evaluateJavascript(
-          source: ReaderPaginationScripts.scrollToSearchMatchInvocation(
-            query,
-            result.charOffset,
-          ),
-        );
-      },
-      bookmarks: bookmarks,
-      onJumpToBookmark: (bm) async {
-        if (bm.sectionIndex != _currentChapter) {
-          await _navigateToChapterAndWait(bm.sectionIndex);
-        }
-        if (!mounted || _controller == null) return;
-        final double progress = bm.normCharOffset / 10000.0;
-        await _controller!.evaluateJavascript(
-          source:
-              'window.hoshiReader && window.hoshiReader.restoreProgress($progress);',
-        );
-      },
-      onDeleteBookmark: (bookmark) async {
-        final int? id = bookmark.id;
-        if (id != null) {
-          await bmRepo.removeBookmarkById(id);
-        } else {
-          await bmRepo.removeBookmarkMatching(
-            bookId,
-            sectionIndex: bookmark.sectionIndex,
-            normCharOffset: bookmark.normCharOffset,
-            createdAt: bookmark.createdAt,
+      final Widget sheetContent = ReaderQuickSettingsSheet(
+        controller: _audiobookController,
+        toc: toc,
+        readerProgress: (_currentChapter, _book!.chapters.length),
+        onJumpSection: (index) async {
+          _navigateToChapter(index);
+        },
+        onBookmark: () async {
+          await _addBookmarkAtCurrentPosition();
+        },
+        onExitReader: () {
+          Navigator.of(context).pop();
+        },
+        webViewController: _controller!,
+        appModel: appModel,
+        ref: ref,
+        isHibikiReader: true,
+        onStyleChanged: _applyStylesLive,
+        onThemeChanged: _onThemeChanged,
+        extractDir: _extractDir,
+        onReloadChapter: _reloadWithCurrentSettings,
+        onAudioImport: _srtBookUid != null ? _openAudioImportDialog : null,
+        lyricsMode: _lyricsMode,
+        onToggleLyricsMode: _toggleLyricsMode,
+        showFloatingLyric: appModel.showFloatingLyric,
+        onToggleFloatingLyric: _toggleFloatingLyric,
+        floatingLyricFontSize: appModel.floatingLyricFontSize,
+        onFloatingLyricFontSizeChanged: (v) async {
+          await appModel.setFloatingLyricFontSize(v);
+          final Color bg = _themeBackgroundColor();
+          final Color fg = _themeTextColor();
+          final bool dark = _isReaderThemeDark;
+          await FloatingLyricChannel.updateStyle(
+            fontSize: v,
+            textColor: fg.value,
+            bgColor: bg.withAlpha(dark ? 230 : 220).value,
+            buttonTextColor: fg.value,
+            buttonBgColor:
+                (dark ? const Color(0x33FFFFFF) : const Color(0x1A000000))
+                    .value,
           );
-        }
-        bookmarks = await bmRepo.getBookmarks(bookId);
-      },
-      favoriteSentences: favorites,
-      onDeleteFavorite: (fav) async {
-        await favRepo.removeById(fav.id);
-      },
-      onJumpToFavorite: (fav) async {
-        if (fav.sectionIndex == null) return;
-        if (fav.sectionIndex != _currentChapter) {
-          await _navigateToChapterAndWait(fav.sectionIndex!);
-        }
-        if (!mounted || _controller == null) return;
-        if (fav.normCharOffset != null) {
-          final double progress = fav.normCharOffset! / 10000.0;
+        },
+        showMediaNotification: appModel.showMediaNotification,
+        onToggleMediaNotification: _toggleMediaNotification,
+        charProgress:
+            _progressCurrentChars != null && _progressTotalChars != null
+                ? (_progressCurrentChars!, _progressTotalChars!)
+                : null,
+        onJumpToCharOffset: (globalOffset) async {
+          _jumpToGlobalCharOffset(globalOffset);
+        },
+        epubBook: _book,
+        onSearchJump: (BookSearchResult result, String query) async {
+          if (_book == null || _controller == null) return;
+          if (result.sectionIndex != _currentChapter) {
+            final bool ok =
+                await _navigateToChapterAndWait(result.sectionIndex);
+            if (!ok || !mounted || _controller == null) return;
+          }
+          await _controller!.evaluateJavascript(
+            source: ReaderPaginationScripts.scrollToSearchMatchInvocation(
+              query,
+              result.charOffset,
+            ),
+          );
+        },
+        bookmarks: bookmarks,
+        onJumpToBookmark: (bm) async {
+          if (bm.sectionIndex != _currentChapter) {
+            await _navigateToChapterAndWait(bm.sectionIndex);
+          }
+          if (!mounted || _controller == null) return;
+          final double progress = bm.normCharOffset / 10000.0;
           await _controller!.evaluateJavascript(
             source:
                 'window.hoshiReader && window.hoshiReader.restoreProgress($progress);',
           );
-        }
-      },
-      onPlayFavorite: _audiobookController == null
-          ? null
-          : (fav) async {
-              if (fav.normCharOffset == null || fav.sectionIndex == null) {
-                return;
-              }
-              final int section = fav.sectionIndex!;
-              final List<AudioCue> cues =
-                  _audiobookController!.sasayakiCuesForSection(section);
-              AudioCue? target;
-              for (final AudioCue cue in cues) {
-                final SasayakiFragment? frag =
-                    SasayakiMatchCodec.tryDecode(cue.textFragmentId);
-                if (frag == null) continue;
-                if (frag.normCharStart <= fav.normCharOffset! &&
-                    frag.normCharEnd > fav.normCharOffset!) {
-                  target = cue;
-                  break;
+        },
+        onDeleteBookmark: (bookmark) async {
+          final int? id = bookmark.id;
+          if (id != null) {
+            await bmRepo.removeBookmarkById(id);
+          } else {
+            await bmRepo.removeBookmarkMatching(
+              bookId,
+              sectionIndex: bookmark.sectionIndex,
+              normCharOffset: bookmark.normCharOffset,
+              createdAt: bookmark.createdAt,
+            );
+          }
+          bookmarks = await bmRepo.getBookmarks(bookId);
+        },
+        favoriteSentences: favorites,
+        onDeleteFavorite: (fav) async {
+          await favRepo.removeById(fav.id);
+        },
+        onJumpToFavorite: (fav) async {
+          if (fav.sectionIndex == null) return;
+          if (fav.sectionIndex != _currentChapter) {
+            await _navigateToChapterAndWait(fav.sectionIndex!);
+          }
+          if (!mounted || _controller == null) return;
+          if (fav.normCharOffset != null) {
+            final double progress = fav.normCharOffset! / 10000.0;
+            await _controller!.evaluateJavascript(
+              source:
+                  'window.hoshiReader && window.hoshiReader.restoreProgress($progress);',
+            );
+          }
+        },
+        onPlayFavorite: _audiobookController == null
+            ? null
+            : (fav) async {
+                if (fav.normCharOffset == null || fav.sectionIndex == null) {
+                  return;
                 }
-              }
-              if (target != null) {
-                await _audiobookController!.playRange(
-                  AudioPlaybackRange(
-                    audioFileIndex: target.audioFileIndex,
-                    startMs: target.startMs,
-                    endMs: target.endMs,
-                  ),
-                );
-              }
-            },
-    );
+                final int section = fav.sectionIndex!;
+                final List<AudioCue> cues =
+                    _audiobookController!.sasayakiCuesForSection(section);
+                AudioCue? target;
+                for (final AudioCue cue in cues) {
+                  final SasayakiFragment? frag =
+                      SasayakiMatchCodec.tryDecode(cue.textFragmentId);
+                  if (frag == null) continue;
+                  if (frag.normCharStart <= fav.normCharOffset! &&
+                      frag.normCharEnd > fav.normCharOffset!) {
+                    target = cue;
+                    break;
+                  }
+                }
+                if (target != null) {
+                  await _audiobookController!.playRange(
+                    AudioPlaybackRange(
+                      audioFileIndex: target.audioFileIndex,
+                      startMs: target.startMs,
+                      endMs: target.endMs,
+                    ),
+                  );
+                }
+              },
+      );
 
-    if (isDesktopPlatform) {
-      await showAppDialog(
-        context: context,
-        builder: (_) => HibikiDialogFrame(
-          maxWidth: 520,
-          maxHeightFactor: 0.80,
-          scrollable: false,
-          child: sheetContent,
-        ),
-      );
-    } else {
-      await adaptiveModalSheet<void>(
-        context: context,
-        builder: (_) => sheetContent,
-      );
+      if (isDesktopPlatform) {
+        await showAppDialog(
+          context: context,
+          builder: (_) => HibikiDialogFrame(
+            maxWidth: 520,
+            maxHeightFactor: 0.80,
+            scrollable: false,
+            child: sheetContent,
+          ),
+        );
+      } else {
+        await adaptiveModalSheet<void>(
+          context: context,
+          builder: (_) => sheetContent,
+        );
+      }
+
+      _syncDictionaryTheme();
+    } finally {
+      _appearanceSheetOpen = false;
     }
-
-    _syncDictionaryTheme();
   }
 
   Future<void> _addBookmarkAtCurrentPosition() async {
