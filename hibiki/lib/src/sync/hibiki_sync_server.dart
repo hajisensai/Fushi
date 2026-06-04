@@ -103,6 +103,19 @@ class HibikiSyncServer {
 
   Future<void> start() async {
     if (_server != null) return;
+    // The WebDAV root maps to [syncDataDir]; materialise it up front so a
+    // freshly enabled server answers PROPFIND on '/' with a 207 (an empty
+    // collection) instead of a 404. The client's reachability probe PROPFINDs
+    // the root and gates every other op — including the MKCOL that would
+    // otherwise lazily create this dir — so without this a reachable,
+    // correctly-authenticating host is reported as "No reachable Hibiki server
+    // address", a chicken-and-egg deadlock that never bootstraps (BUG-035).
+    // Deliberately outside the bind try/catch below: a read-only/permission
+    // failure here should fail-fast and bubble to the caller's error handling
+    // (sync_settings_schema._startServer catch-all) rather than masquerade as a
+    // port-in-use error — and since it runs before serve(), a failure leaves no
+    // half-bound socket to roll back.
+    await Directory(syncDataDir).create(recursive: true);
     final handler = const shelf.Pipeline()
         .addMiddleware(_authMiddleware())
         .addHandler(_handleRequest);
