@@ -29,7 +29,8 @@ void main() {
       expect(src, contains('_lineMove'));
     });
 
-    test('lookup reuses hoshiSelection.selectFromPosition with cue context', () {
+    test('lookup reuses hoshiSelection.selectFromPosition with cue context',
+        () {
       expect(src, contains('window.hoshiSelection'));
       expect(src, contains('selectFromPosition'));
       expect(src, contains('__lyricsCueContext'));
