@@ -110,7 +110,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text(t.ttu_theme), findsOneWidget);
-    expect(find.byType(HibikiColorSwatch), findsWidgets);
+    expect(find.byType(HibikiSchemeSwatch), findsWidgets);
     expect(find.byType(AdaptiveSettingsStepperRow), findsWidgets);
     expect(find.byType(AdaptiveSettingsSwitchRow), findsNothing);
 

@@ -1541,7 +1541,11 @@ void main() {
       'Widget buildBrightnessSelector(SettingsContext settingsContext)',
     );
 
-    expect(themeSelector, contains('HibikiColorSwatch('));
+    // Theme circles preview the generated scheme (primary/secondary/tertiary/
+    // surface) via the four-quadrant HibikiSchemeSwatch, not a single seed
+    // colour — see hibikiSchemeSwatchColors.
+    expect(themeSelector, contains('HibikiSchemeSwatch('));
+    expect(themeSelector, contains('hibikiSchemeSwatchColors('));
     expect(source, isNot(contains('class _ColorSwatch')));
     expect(themeSelector, isNot(contains('_ColorSwatch(')));
     expect(themeSelector, isNot(contains('Container(')));
