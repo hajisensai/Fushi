@@ -112,7 +112,7 @@ class GoogleDriveAuth {
     // Dropbox/OneDrive backends) so we fully control the authorization URL.
     // googleapis_auth's clientViaUserConsent never sends `access_type=offline`,
     // so Google returns NO refresh token and the session dies on the next app
-    // restart (BUG-032). We request offline access + `prompt=consent` to
+    // restart (BUG-034). We request offline access + `prompt=consent` to
     // guarantee a durable refresh token even when the account already
     // authorized the app, then exchange the code through googleapis_auth
     // (whose refreshCredentials carries the refresh token forward).
@@ -143,7 +143,14 @@ class GoogleDriveAuth {
 
       _desktopClient?.close();
       _desktopCredentials = credentials;
-      final authClient = auth.authenticatedClient(baseClient, credentials);
+      // closeUnderlyingClient: a later _desktopClient.close() must also close
+      // baseClient — authenticatedClient does NOT own it by default, so without
+      // this every re-auth / refresh / signOut leaks the HTTP client.
+      final authClient = auth.authenticatedClient(
+        baseClient,
+        credentials,
+        closeUnderlyingClient: true,
+      );
       _desktopClient = authClient;
       _cachedRepo = repo;
       await _fetchDesktopEmail(authClient);
@@ -177,11 +184,12 @@ class GoogleDriveAuth {
         'code_challenge': challenge,
         'code_challenge_method': 'S256',
         // Required for Google to issue a refresh token; without it the desktop
-        // session cannot survive an app restart (BUG-032).
+        // session cannot survive an app restart (BUG-034).
         'access_type': 'offline',
         // Force the consent screen so a refresh token is returned even when the
-        // account previously authorized the app.
-        'prompt': 'consent',
+        // account previously authorized the app; offer the account chooser so
+        // multi-account users can pick which Google account to use.
+        'prompt': 'consent select_account',
       });
 
   static String _createCodeVerifier() {
@@ -196,13 +204,15 @@ class GoogleDriveAuth {
   }
 
   /// Whether [error] means Google actually rejected the refresh token
-  /// (invalid_grant → HTTP 400/401), as opposed to a transient failure
-  /// (offline, a blocked/timed-out direct connection, a 5xx). Only a true
-  /// rejection should drop the saved desktop session (BUG-032).
+  /// (invalid_grant / revoked / disabled → HTTP 400/401/403), as opposed to a
+  /// transient failure (offline, a blocked/timed-out direct connection, a 5xx).
+  /// Only a true rejection should drop the saved desktop session (BUG-034).
   static bool _isCredentialsRejected(Object error) {
     if (error is auth.AccessDeniedException) return true;
     return error is auth.ServerRequestFailedException &&
-        (error.statusCode == 400 || error.statusCode == 401);
+        (error.statusCode == 400 ||
+            error.statusCode == 401 ||
+            error.statusCode == 403);
   }
 
   @visibleForTesting
@@ -238,7 +248,11 @@ class GoogleDriveAuth {
 
       _desktopClient?.close();
       _desktopCredentials = refreshed;
-      final authClient = auth.authenticatedClient(baseClient, refreshed);
+      final authClient = auth.authenticatedClient(
+        baseClient,
+        refreshed,
+        closeUnderlyingClient: true,
+      );
       _desktopClient = authClient;
       _cachedRepo = repo;
       await _fetchDesktopEmail(authClient);
@@ -256,7 +270,7 @@ class GoogleDriveAuth {
       // refresh token. A transient failure — offline at startup, a
       // blocked/timed-out direct connection (common on restrictive networks),
       // a 5xx — must NOT wipe a still-valid session, or the next launch is a
-      // spurious sign-out (BUG-032).
+      // spurious sign-out (BUG-034).
       if (_isCredentialsRejected(e)) {
         await repo.clearDesktopSession();
       }
@@ -288,7 +302,11 @@ class GoogleDriveAuth {
       );
       _desktopCredentials = refreshed;
       _desktopClient?.close();
-      _desktopClient = auth.authenticatedClient(baseClient, refreshed);
+      _desktopClient = auth.authenticatedClient(
+        baseClient,
+        refreshed,
+        closeUnderlyingClient: true,
+      );
       final repo = _cachedRepo;
       if (repo != null) await _persistDesktopCredentials(repo);
     } catch (e) {

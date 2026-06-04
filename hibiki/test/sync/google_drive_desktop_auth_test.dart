@@ -4,12 +4,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:googleapis_auth/googleapis_auth.dart' as auth;
 import 'package:hibiki/src/sync/google_drive_auth.dart';
 
-/// Guards the desktop Google Drive auth fix (BUG-032): the session kept dropping
+/// Guards the desktop Google Drive auth fix (BUG-034): the session kept dropping
 /// on every app restart because the old flow (clientViaUserConsent) never
 /// requested offline access, so Google issued no refresh token, and a transient
 /// network failure on restore additionally wiped the saved session.
 void main() {
-  group('desktop auth URL requests a durable refresh token (BUG-032)', () {
+  group('desktop auth URL requests a durable refresh token (BUG-034)', () {
     final url =
         GoogleDriveAuth.debugBuildDesktopAuthUrl('http://localhost:1234');
 
@@ -26,7 +26,9 @@ void main() {
     });
 
     test('forces consent so a refresh token is issued on re-auth too', () {
-      expect(url.queryParameters['prompt'], 'consent');
+      // 'consent' guarantees a refresh token even on re-auth; 'select_account'
+      // lets multi-account users choose which Google account to use.
+      expect(url.queryParameters['prompt'], contains('consent'));
     });
 
     test('carries the loopback redirect and PKCE challenge', () {
@@ -38,7 +40,7 @@ void main() {
     });
   });
 
-  group('restore only drops the session on a real rejection (BUG-032)', () {
+  group('restore only drops the session on a real rejection (BUG-034)', () {
     test('Google rejecting the refresh token (HTTP 400) is fatal', () {
       // invalid_grant → 400; the saved session is genuinely dead.
       expect(
@@ -55,6 +57,16 @@ void main() {
         GoogleDriveAuth.debugIsCredentialsRejected(
           auth.ServerRequestFailedException('unauthorized',
               statusCode: 401, responseContent: null),
+        ),
+        isTrue,
+      );
+    });
+
+    test('HTTP 403 (revoked / project disabled) is fatal', () {
+      expect(
+        GoogleDriveAuth.debugIsCredentialsRejected(
+          auth.ServerRequestFailedException('forbidden',
+              statusCode: 403, responseContent: null),
         ),
         isTrue,
       );
@@ -91,7 +103,7 @@ void main() {
     });
   });
 
-  test('source guard: no regression to the offline-less consent flow (BUG-032)',
+  test('source guard: no regression to the offline-less consent flow (BUG-034)',
       () {
     final source =
         File('lib/src/sync/google_drive_auth.dart').readAsStringSync();
@@ -99,15 +111,15 @@ void main() {
     // form (with paren) so the prose mention in the fix comment doesn't count.
     expect(source.contains('clientViaUserConsent('), isFalse,
         reason: 'clientViaUserConsent never sends access_type=offline → no '
-            'refresh token → session dies on restart (BUG-032).');
+            'refresh token → session dies on restart (BUG-034).');
     // The durable-refresh-token wiring must stay in place.
     expect(source.contains("'access_type': 'offline'"), isTrue);
-    expect(source.contains("'prompt': 'consent'"), isTrue);
+    expect(source.contains("'prompt': 'consent"), isTrue);
     expect(source.contains('obtainAccessCredentialsViaCodeExchange'), isTrue);
     expect(source.contains('runDesktopOAuthLoopback'), isTrue);
     // The restore path must gate the wipe behind a real rejection.
     expect(source.contains('if (_isCredentialsRejected(e)) {'), isTrue,
         reason: 'restoreDesktopAuth must not clear the session on transient '
-            'network errors (BUG-032).');
+            'network errors (BUG-034).');
   });
 }
