@@ -307,11 +307,15 @@ class HibikiFocusController extends ChangeNotifier {
   ) {
     final Rect? activeRect = globalRectOfContext(active.context);
     if (activeRect == null) return const _GeometricMoveResult.noGeometry();
-    // 当前项所在的最近 Scrollable —— 方向导航优先停留在同一面板（同一可滚动
-    // 容器）内。设置宽屏主从布局里，导航栏与详情各是独立 ListView；没有这条，
-    // 详情里「设计系统」段控按 Down 会被纵向更近的左侧导航项「阅读」抢走。
+    // 面板身份：方向导航优先停留在同一视觉面板。主边界是最近的
+    // FocusTraversalGroup —— home 外壳把侧栏 rail、正文 body、设置各包进独立
+    // 的 group，所以无 Scrollable 的页头按钮与同样无 Scrollable 的 rail 仍判异
+    // 面板（Down/Up 不会从内容/chrome 误入 rail）。同一 group 内再用非空
+    // Scrollable 细分：宽屏设置主从布局里导航栏与详情各是独立 ListView，没有这条
+    // 细分，详情里「设计系统」段控按 Down 会被纵向更近的左侧导航项「阅读」抢走。
     final ScrollableState? activeScrollable =
         Scrollable.maybeOf(active.context);
+    final Element? activeGroup = _nearestTraversalGroup(active.context);
     final Offset activeCenter = activeRect.center;
     HibikiFocusTargetEntry? best;
     int bestSamePane = -1;
@@ -325,11 +329,10 @@ class HibikiFocusController extends ChangeNotifier {
       if (identical(target, active)) continue;
       final Rect? targetRect = globalRectOfContext(target.context);
       if (targetRect == null) continue;
-      // 同一最近 Scrollable 即同一视觉面板；两者都无 Scrollable(null==null) 也算
-      // 「同面板」，使纯展示页（无可滚动容器）该档恒等、行为与改动前一致。
-      final bool samePane = identical(
-        Scrollable.maybeOf(target.context),
-        activeScrollable,
+      final bool samePane = _isSamePane(
+        target.context,
+        activeGroup: activeGroup,
+        activeScrollable: activeScrollable,
       );
       final Offset targetCenter = targetRect.center;
       final double dx = targetCenter.dx - activeCenter.dx;
@@ -428,6 +431,40 @@ class HibikiFocusController extends ChangeNotifier {
       }
     }
     return _GeometricMoveResult(target: best, hasGeometry: true);
+  }
+
+  /// 目标是否与当前项同面板：① 必须同一最近 [FocusTraversalGroup]（不同组即异
+  /// 面板，例如侧栏 rail vs 正文 body——两者都可能没有 Scrollable）；② 同一组内若
+  /// 两者都在非空 Scrollable 且不同，则异面板（宽屏设置主从布局的导航栏与详情两条
+  /// 独立 ListView）；任一方无 Scrollable（页头 chrome）时只看组，让无滚动的 chrome
+  /// 与同组内容算同面板。两者皆无 FTG、皆无 Scrollable 时退化为旧行为（恒同面板，
+  /// 纯展示页/无分栏页该档恒等，与改动前一致）。
+  bool _isSamePane(
+    BuildContext targetContext, {
+    required Element? activeGroup,
+    required ScrollableState? activeScrollable,
+  }) {
+    if (!identical(_nearestTraversalGroup(targetContext), activeGroup)) {
+      return false;
+    }
+    final ScrollableState? targetScrollable = Scrollable.maybeOf(targetContext);
+    if (activeScrollable == null || targetScrollable == null) return true;
+    return identical(targetScrollable, activeScrollable);
+  }
+
+  /// 最近的 [FocusTraversalGroup] 元素（无则 null）——方向导航「面板」身份的主边界。
+  /// 用 Element 标识（跨重建稳定，且一次 move() 内整棵树不会重建）而非 widget 实例。
+  Element? _nearestTraversalGroup(BuildContext context) {
+    if (!context.mounted) return null;
+    Element? group;
+    context.visitAncestorElements((Element element) {
+      if (element.widget is FocusTraversalGroup) {
+        group = element;
+        return false;
+      }
+      return true;
+    });
+    return group;
   }
 
   bool _moveByReadingOrder({
