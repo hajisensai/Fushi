@@ -68,7 +68,8 @@ class SyncAssetPackageService {
       order: _intValue(dictionary, 'order'),
       type: Value(_stringValue(dictionary, 'type')),
       metadataJson: Value(_stringValue(dictionary, 'metadataJson')),
-      hiddenLanguagesJson: Value(_stringValue(dictionary, 'hiddenLanguagesJson')),
+      hiddenLanguagesJson:
+          Value(_stringValue(dictionary, 'hiddenLanguagesJson')),
       collapsedLanguagesJson:
           Value(_stringValue(dictionary, 'collapsedLanguagesJson')),
     ));
@@ -391,7 +392,7 @@ String? _nullablePathIn(
 
 // ── 流式打包辅助（跑在后台 isolate，纯文件→文件，不依赖 DB / Flutter）─────────
 //
-// OOM 根因修复：旧实现把整个资源文件 readAsBytes、整个 zip 在内存里 encode/decode。
+// OOM 根因修复：旧实现把整个资源文件读进内存、整个 zip 在内存里编解码。
 // 这里改用 archive_io 流式（ZipFileEncoder.addFile 经 InputFileStream 逐块读，
 // ArchiveFile.writeContent 经 OutputFileStream 逐块写），并整体放进 Isolate.run，
 // 让 deflate/inflate 的 CPU 与磁盘 IO 都离开 UI isolate。
