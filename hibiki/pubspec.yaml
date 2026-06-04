@@ -123,6 +123,9 @@ dependencies:
   record: 6.0.0
   brotli: ^0.6.0
   bonsoir: ^7.1.1
+  media_kit: ^1.2.6
+  media_kit_video: ^2.0.1
+  media_kit_libs_video: ^1.0.7
 dependency_overrides:
   flutter_inappwebview_windows:
     path: ../packages/flutter_inappwebview_windows
