@@ -374,6 +374,84 @@ void main() {
     expect(find.text('CalmBook'), findsNothing);
   });
 
+  testWidgets(
+      'conflictsOnly Apply only syncs conflict books, not hidden non-conflict ones',
+      (WidgetTester tester) async {
+    final HibikiDatabase db = _memDb();
+    addTearDown(db.close);
+
+    // Conflict book: both sides off base → manual choice required.
+    final EpubBookRow conflictBook = await _seedBook(db, 'ConflictBook');
+    await _seedPosition(db, conflictBook.id, updatedAt: 120, fraction: 0.6);
+    await db.setSyncBaseline(
+        sanitizeTtuFilename('ConflictBook'), 'progress', 50);
+
+    // Calm book: single-sided local change (remote == base) → auto-export
+    // direction, seeded as useLocal. It is HIDDEN in conflictsOnly mode, so
+    // Apply must NOT touch its remote folder. This is the [Important] guard.
+    final EpubBookRow calmBook = await _seedBook(db, 'CalmBook');
+    await _seedPosition(db, calmBook.id, updatedAt: 200, fraction: 0.7);
+    await db.setSyncBaseline(sanitizeTtuFilename('CalmBook'), 'progress', 100);
+
+    final _FakeSyncBackend fake = _FakeSyncBackend(
+      remoteBooks: <String, _RemoteBook>{
+        'ConflictBook': _RemoteBook.withProgress(
+          folderId: 'folderC',
+          timestampMs: 100,
+          fraction: 0.4,
+        ),
+        'CalmBook': _RemoteBook.withProgress(
+          folderId: 'folderK',
+          timestampMs: 100, // remote == base → single-sided, not a conflict.
+          fraction: 0.5,
+        ),
+      },
+    );
+    await pumpDialog(tester, db, fake, conflictsOnly: true);
+
+    // Only the conflict book is visible; Apply count reflects the single
+    // conflict, not the hidden calm book.
+    expect(find.text('ConflictBook'), findsOneWidget);
+    expect(find.text('CalmBook'), findsNothing);
+
+    // Resolve the conflict to export (use local), then Apply.
+    await tester.tap(find.text(t.sync_compare_use_local).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.sync_compare_apply(count: 1)));
+    await tester.pumpAndSettle();
+
+    // Fake backend recorded an export ONLY for the conflict folder; the hidden
+    // calm book's folder was never synced.
+    expect(fake.exportedByFolder.keys, contains('folderC'));
+    expect(fake.exportedByFolder.keys, isNot(contains('folderK')));
+  });
+
+  testWidgets('conflictsOnly with zero conflicts shows the empty state',
+      (WidgetTester tester) async {
+    final HibikiDatabase db = _memDb();
+    addTearDown(db.close);
+
+    // A library with one non-conflict (single-sided) book and no conflicts.
+    final EpubBookRow calmBook = await _seedBook(db, 'CalmBook');
+    await _seedPosition(db, calmBook.id, updatedAt: 200, fraction: 0.7);
+    await db.setSyncBaseline(sanitizeTtuFilename('CalmBook'), 'progress', 100);
+
+    final _FakeSyncBackend fake = _FakeSyncBackend(
+      remoteBooks: <String, _RemoteBook>{
+        'CalmBook': _RemoteBook.withProgress(
+          folderId: 'folderK',
+          timestampMs: 100, // remote == base → single-sided, not a conflict.
+          fraction: 0.5,
+        ),
+      },
+    );
+    await pumpDialog(tester, db, fake, conflictsOnly: true);
+
+    // No phantom blank list: an explicit empty-state message is shown.
+    expect(find.text(t.sync_compare_empty), findsOneWidget);
+    expect(find.text('CalmBook'), findsNothing);
+  });
+
   testWidgets('resolving a conflict via Apply writes the baseline',
       (WidgetTester tester) async {
     final HibikiDatabase db = _memDb();

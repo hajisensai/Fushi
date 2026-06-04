@@ -461,9 +461,20 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
     }
   }
 
-  Future<void> _applyChoices() async {
+  /// 单一真相源：哪些 entries 参与渲染/计数/Apply。
+  ///
+  /// conflictsOnly 模式下（冲突解决弹窗）只有真分叉冲突项参与——非冲突书既不显示
+  /// 也不会被 Apply 同步，消除「渲染集 vs 应用集」漂移。默认（false）路径逐字节不变。
+  List<SyncCompareEntry> get _entriesInPlay {
     final entries = _entries;
-    if (entries == null) return;
+    if (entries == null) return const <SyncCompareEntry>[];
+    if (!widget.conflictsOnly) return entries;
+    return entries.where((e) => e.hasConflict).toList();
+  }
+
+  Future<void> _applyChoices() async {
+    if (_entries == null) return;
+    final entries = _entriesInPlay;
 
     // Only the books the user chose to sync count toward progress.
     final actionable = entries.where((e) {
@@ -640,7 +651,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
 
   int get _actionableCount {
     if (_entries == null) return 0;
-    return _entries!.where((e) {
+    return _entriesInPlay.where((e) {
       final c = _choices[e.title];
       return c != null && c != SyncChoice.skip && e.bookId != null;
     }).length;
@@ -668,10 +679,13 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
           child: CircularProgressIndicator.adaptive(),
         ),
       );
-    } else if (_entries!.isEmpty && (_dicts?.isEmpty ?? true)) {
+    } else if (widget.conflictsOnly
+        ? _entriesInPlay.isEmpty
+        : (_entries!.isEmpty && (_dicts?.isEmpty ?? true))) {
+      // 空态判定按「参与项」：conflictsOnly 下基于冲突项，无冲突即「无可解冲突」。
       body = Center(child: Text(t.sync_compare_empty));
     } else {
-      final conflicts = _entries!.where((e) => e.hasConflict).toList();
+      final conflicts = _entriesInPlay.where((e) => e.hasConflict).toList();
       // conflictsOnly 模式只渲染冲突分组：隐藏自动可解的书与全部词典分组。
       final others = widget.conflictsOnly
           ? const <SyncCompareEntry>[]
