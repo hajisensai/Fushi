@@ -53,6 +53,18 @@ class VideoPlayerController extends ChangeNotifier {
 
   bool get isPlaying => _player?.state.playing ?? false;
 
+  /// 当前视频可用的字幕轨（含内嵌轨）；未 [load] 时为空。
+  ///
+  /// 为运行时切换 + Phase 1 内嵌字幕功能预留；无法纯单测（需真实 libmpv
+  /// player），靠 analyze 验证编译。
+  List<SubtitleTrack> get subtitleTracks =>
+      _player?.state.tracks.subtitle ?? const <SubtitleTrack>[];
+
+  /// 切换字幕轨（运行时 / Phase 1 预留）。未 [load] 时 no-op 安全。
+  Future<void> selectSubtitleTrack(SubtitleTrack track) async {
+    await _player?.setSubtitleTrack(track);
+  }
+
   /// 设置 cue 列表：拷贝并按 startMs 升序排序（[JsonAlignmentParser.findCueIndex]
   /// 要求升序），重置当前 cue 状态。
   void setCues(List<AudioCue> cues) {

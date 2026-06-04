@@ -44,3 +44,38 @@
   `SubtitleTrack.uri(File(path).uri.toString())`。
 - `Future<void> dispose()`（`lib/src/player/player.dart:138`）。
 - `VideoController(player)` 位置构造（`media_kit_video` `video_controller.dart:72`）。
+
+### Task 9（内嵌字幕：渲染路径 + 枚举/切换 API + 导入放宽）
+
+> 来源：源码核验 + 现有 spike 共识，**实际行为仍待设备验证**。
+
+- **controller 字幕轨 API**（`VideoPlayerController`）：
+  - `List<SubtitleTrack> get subtitleTracks => _player?.state.tracks.subtitle ?? const []`
+    ——未 load 时空，含内嵌轨。
+  - `Future<void> selectSubtitleTrack(SubtitleTrack)` 包 `player.setSubtitleTrack`，
+    未 load 时 no-op。
+  - 为运行时切换 + Phase 1 预留；无法纯单测（需真实 libmpv），靠 analyze 验证编译。
+- **导入放宽**（`VideoImportDialog` / `videoImportCanImport`）：
+  - 字幕变为**可选**，只需选视频即可导入（`videoImportCanImport` 纯函数，已单测覆盖
+    四种组合）。
+  - 选了字幕：原逻辑不变（解析 cue → 写 `subtitleSource`/`subtitleFormat` + cue 列表）。
+  - **未选字幕**：`saveVideoBook` 写 `subtitleSource: null` / `subtitleFormat: null` /
+    `embeddedSubtitleTrack: 0`（标记用内嵌默认轨），**不写 cue**；load 时
+    `externalSubtitlePath` 为 null → 不调 `setSubtitleTrack` → libmpv 自动渲染内嵌
+    默认字幕轨到画面。
+
+#### Phase 0 现状
+- 内嵌字幕**画面渲染**：靠 libmpv 默认行为（无外挂字幕时不覆盖字幕轨），预期 OK。
+- 内嵌字幕 **cue 文本提取成 cue 列表**（高亮同步 / 句导航 / 查词 / 制卡的数据来源）：
+  **未实现**——只选视频导入时 cue 列表为空，cue 级功能（overlay 高亮 / 句导航）无数据，
+  这是 Phase 0 已知降级。
+
+#### 待设备 spike（Phase 1 内嵌字幕功能依赖）
+- [ ] 选内嵌轨播放时 `player.stream.subtitle`（`List<String>`?）能否拿到**当前句文本**
+      ——Phase 1 内嵌字幕查词的 sentence 来源是否可靠（时序 / 多行 / 空白）。
+- [ ] 若 stream 只给"当前句"无完整时间轴：是否需要 **ffmpeg 抽轨成 srt**（或 libmpv
+      dump）才能建完整 cue 列表（高亮/句导航/制卡需要全量 cue）。
+- [ ] **移动端可行性**：Android / iOS 上内嵌字幕轨枚举、切换、文本/时间轴提取是否与桌面
+      一致（libmpv 在移动端的字幕能力差异）。
+- [ ] `player.state.tracks.subtitle` 各端返回的 `SubtitleTrack` 字段（id/title/language）
+      是否足以在 UI 列出可读轨名供用户切换。

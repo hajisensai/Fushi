@@ -1234,5 +1234,6 @@
     "video_import_pick_subtitle": "选择字幕(srt/vtt/ass)",
     "video_import_confirm": "导入",
     "shelf_video_section": "视频",
-    "video_import_action": "导入视频"
+    "video_import_action": "导入视频",
+    "video_import_subtitle_optional": "可选（不选则使用视频内嵌字幕）"
 }
