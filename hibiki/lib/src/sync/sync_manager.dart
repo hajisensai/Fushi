@@ -219,8 +219,10 @@ class SyncManager {
 
     final SyncDirection syncDir;
     if (direction != null) {
-      // Manual (compare-dialog) path: caller owns the direction, no three-way
-      // gate, no base bookkeeping — unchanged behaviour.
+      // Manual (compare-dialog) path: caller owns the direction, so no
+      // three-way conflict gate here. The baseline IS still written after the
+      // transfer lands below, so a user-resolved conflict records its new
+      // common ancestor and stops re-surfacing as a conflict.
       syncDir = direction;
     } else {
       // Auto path: gate on the common-ancestor baseline. A genuine fork
@@ -260,7 +262,9 @@ class SyncManager {
     if (syncDir == SyncDirection.synced) {
       // Both sides already agree on this timestamp: record it as the new base
       // so a later single-sided edit is recognised instead of re-colliding.
-      if (direction == null && localPosition?.updatedAt != null) {
+      // Written on both auto and manual paths — once both sides agree, the
+      // common ancestor is this timestamp regardless of who decided it.
+      if (localPosition?.updatedAt != null) {
         await _db.setSyncBaseline(
             assetKey, 'progress', localPosition!.updatedAt);
       }
@@ -291,8 +295,10 @@ class SyncManager {
         // Base = remote progress timestamp = the updatedAt import wrote locally
         // (_handleImport stores remoteProgress.lastBookmarkModified, which
         // equals the remote filename timestamp). Both sides now agree on it.
-        if (direction == null &&
-            result.direction == SyncResult.imported &&
+        // Written on both auto and manual (compare useRemote→import) paths so a
+        // resolved conflict's new common ancestor is recorded and the divergence
+        // stops reading as a conflict next time.
+        if (result.direction == SyncResult.imported &&
             remoteTimestamp != null) {
           await _db.setSyncBaseline(assetKey, 'progress', remoteTimestamp);
         }
@@ -318,9 +324,10 @@ class SyncManager {
         );
         // Base = the timestamp _handleExport wrote into the remote progress
         // file, which is localPosition.updatedAt (also written back locally).
-        // Only persist when a position was actually exported.
-        if (direction == null &&
-            result.direction == SyncResult.exported &&
+        // Only persist when a position was actually exported. Written on both
+        // auto and manual (compare useLocal→export) paths so a resolved
+        // conflict's new common ancestor is recorded.
+        if (result.direction == SyncResult.exported &&
             localPosition?.updatedAt != null) {
           await _db.setSyncBaseline(
               assetKey, 'progress', localPosition!.updatedAt);

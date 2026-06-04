@@ -8,6 +8,7 @@ import 'package:hibiki/src/sync/sync_error_messages.dart';
 import 'package:hibiki/src/sync/sync_manager.dart';
 import 'package:hibiki/src/sync/sync_message_dialog.dart';
 import 'package:hibiki/src/sync/sync_orchestrator.dart';
+import 'package:hibiki/src/sync/sync_progress_resolver.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
@@ -30,6 +31,7 @@ class SyncCompareEntry {
     this.remoteStatsCount,
     this.localAudioPosMs,
     this.remoteAudioPosSec,
+    this.base,
   });
 
   final String title;
@@ -50,10 +52,19 @@ class SyncCompareEntry {
   final int? localAudioPosMs;
   final double? remoteAudioPosSec;
 
+  /// 共同祖先基线（progress 维度时间戳）；用于把「时间戳不等」收紧为「真分叉」。
+  final int? base;
+
   bool get hasLocal => localUpdatedAt != null;
   bool get hasRemote => remoteUpdatedAt != null;
-  bool get hasConflict =>
-      hasLocal && hasRemote && localUpdatedAt != remoteUpdatedAt;
+
+  /// 冲突 = 双边都偏离共同祖先 base（真分叉），不再是简单的时间戳不等。
+  /// 单边改动（一边等于 base）由 [resolveProgressSync] 判为自动方向，不算冲突。
+  bool get hasConflict => resolveProgressSync(
+        local: localUpdatedAt,
+        remote: remoteUpdatedAt,
+        base: base,
+      ).isConflict;
   bool get isSynced =>
       hasLocal && hasRemote && localUpdatedAt == remoteUpdatedAt;
   bool get needsManualChoice => hasConflict;
@@ -183,6 +194,11 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
     final remote =
         remoteByTitle[title] ?? remoteByTitle[sanitizeTtuFilename(title)];
 
+    // 跨设备资产身份与 SyncManager 一致：sanitizeTtuFilename(title)。读共同祖先
+    // 基线，让「时间戳不等」收紧为「真分叉」冲突判定。
+    final int? base =
+        await db.getSyncBaseline(sanitizeTtuFilename(title), 'progress');
+
     entries.add(SyncCompareEntry(
       title: title,
       bookId: local?.id,
@@ -196,6 +212,7 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
       remoteStatsCount: remoteData?.statsCount,
       localAudioPosMs: localAudioMs,
       remoteAudioPosSec: remoteData?.audioPosSec,
+      base: base,
     ));
   }
 
@@ -337,8 +354,9 @@ String _unsanitize(String name) {
 
 Future<void> showSyncCompareDialog(
   BuildContext context,
-  HibikiDatabase db,
-) async {
+  HibikiDatabase db, {
+  bool conflictsOnly = false,
+}) async {
   final repo = SyncRepository(db);
   final backend = resolveSyncBackend(await repo.getBackendType());
   if (!await backend.isAuthenticated) {
@@ -356,7 +374,11 @@ Future<void> showSyncCompareDialog(
   final applied = await showAppDialog<int>(
     context: context,
     barrierDismissible: false,
-    builder: (_) => SyncCompareDialog(db: db, backend: backend),
+    builder: (_) => SyncCompareDialog(
+      db: db,
+      backend: backend,
+      conflictsOnly: conflictsOnly,
+    ),
   );
   if (applied != null && applied > 0 && context.mounted) {
     showSyncMessage(context, t.sync_compare_applied(count: applied));
@@ -370,9 +392,17 @@ Future<void> showSyncCompareDialog(
 /// [showSyncCompareDialog]。
 @visibleForTesting
 class SyncCompareDialog extends StatefulWidget {
-  const SyncCompareDialog({required this.db, required this.backend, super.key});
+  const SyncCompareDialog({
+    required this.db,
+    required this.backend,
+    this.conflictsOnly = false,
+    super.key,
+  });
   final HibikiDatabase db;
   final SyncBackend backend;
+
+  /// 只显示真分叉冲突项（隐藏自动可解的书与词典分组）。冲突解决弹窗用。
+  final bool conflictsOnly;
 
   @override
   State<SyncCompareDialog> createState() => _SyncCompareDialogState();
@@ -605,6 +635,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
         remoteStatsCount: e.remoteStatsCount,
         localAudioPosMs: e.localAudioPosMs,
         remoteAudioPosSec: e.remoteAudioPosSec,
+        base: e.base,
       );
 
   int get _actionableCount {
@@ -641,21 +672,27 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
       body = Center(child: Text(t.sync_compare_empty));
     } else {
       final conflicts = _entries!.where((e) => e.hasConflict).toList();
-      final others = _entries!.where((e) => !e.hasConflict).toList();
+      // conflictsOnly 模式只渲染冲突分组：隐藏自动可解的书与全部词典分组。
+      final others = widget.conflictsOnly
+          ? const <SyncCompareEntry>[]
+          : _entries!.where((e) => !e.hasConflict).toList();
+      final bool showDicts = !widget.conflictsOnly;
 
       body = ListView(
         children: [
           if (conflicts.isNotEmpty) ...[
             _sectionHeader(t.sync_compare_conflicts, theme, isConflict: true),
             for (final e in conflicts) _buildEntry(e, theme),
-            const Divider(height: 16),
+            if (others.isNotEmpty ||
+                (showDicts && (_dicts?.isNotEmpty ?? false)))
+              const Divider(height: 16),
           ],
           if (others.isNotEmpty) ...[
             if (conflicts.isNotEmpty)
               _sectionHeader(t.sync_compare_all_books, theme),
             for (final e in others) _buildEntry(e, theme),
           ],
-          if (_dicts != null && _dicts!.isNotEmpty) ...[
+          if (showDicts && _dicts != null && _dicts!.isNotEmpty) ...[
             const Divider(height: 16),
             _sectionHeader(t.sync_compare_dictionaries, theme),
             for (final SyncDictEntry d in _dicts!) _buildDictEntry(d, theme),
