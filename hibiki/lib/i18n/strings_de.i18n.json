@@ -1228,7 +1228,5 @@
     "sync_compare_delete_audiobook": "Delete audiobook on remote",
     "sync_compare_delete_dict": "Delete dictionary on remote",
     "sync_compare_deleted": "Deleted from remote",
-    "sync_compare_delete_confirm": "Delete \"$name\" from the remote? Local data is kept. This cannot be undone.",
-    "sync_conflict_title": "Resolve sync conflicts",
-    "sync_conflict_hint": "Review and resolve two-way reading-progress conflicts"
+    "sync_compare_delete_confirm": "Delete \"$name\" from the remote? Local data is kept. This cannot be undone."
 }
