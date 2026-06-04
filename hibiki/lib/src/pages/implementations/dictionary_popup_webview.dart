@@ -623,17 +623,9 @@ class DictionaryPopupWebViewState
               final data = args[0] as Map;
               url = data['url']?.toString() ?? '';
             }
-            if (url.isNotEmpty && url.startsWith('file://')) {
-              final filePath = Uri.parse(url).toFilePath();
-              return TtsChannel.instance.playFile(filePath);
-            }
-            if (url.isNotEmpty && url.startsWith('/')) {
-              return TtsChannel.instance.playFile(url);
-            }
-            if (url.isNotEmpty && url.startsWith('http')) {
-              return TtsChannel.instance.playUrl(url);
-            }
-            return false;
+            // Plays remote URLs and local file paths uniformly, including
+            // Windows drive-letter paths (BUG-046).
+            return TtsChannel.instance.playAudioRef(url);
           },
         );
       },

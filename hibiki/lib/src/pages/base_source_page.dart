@@ -247,17 +247,10 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       debugPrint('[hibiki-autoread] resolved url=$url');
       if (url == null || url.isEmpty) return;
 
-      if (url.startsWith('file://')) {
-        final filePath = Uri.parse(url).toFilePath();
-        final ok = await TtsChannel.instance.playFile(filePath);
-        debugPrint('[hibiki-autoread] playFile ok=$ok');
-      } else if (url.startsWith('/')) {
-        final ok = await TtsChannel.instance.playFile(url);
-        debugPrint('[hibiki-autoread] playFile ok=$ok');
-      } else if (url.startsWith('http')) {
-        final ok = await TtsChannel.instance.playUrl(url);
-        debugPrint('[hibiki-autoread] playUrl ok=$ok');
-      }
+      // Plays remote URLs and local file paths uniformly, including Windows
+      // drive-letter paths (BUG-046).
+      final bool ok = await TtsChannel.instance.playAudioRef(url);
+      debugPrint('[hibiki-autoread] play ok=$ok');
     } catch (e, st) {
       debugPrint('[hibiki-autoread] error: $e\n$st');
     }
