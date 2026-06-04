@@ -100,3 +100,8 @@ docs/TODO.md
 # Local-only agent notes (private remote-build / sync details: SSH host, IP, ports)
 AGENTS.local.md
 CLAUDE.local.md
+
+# Google Desktop OAuth client secret — non-confidential by Google's design but
+# kept out of git to silence secret scanners and keep a rotated value private.
+# Copy hibiki/lib/src/sync/google_oauth_secret.example.dart to fill it in.
+hibiki/lib/src/sync/google_oauth_secret.dart
