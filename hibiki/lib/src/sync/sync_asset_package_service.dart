@@ -24,19 +24,31 @@ class SyncAssetPackageService {
       p.join(dictionaryResourceRoot.path, dictionaryName),
     );
 
-    final Archive archive = Archive()
-      ..addFile(_jsonFile('manifest.json', <String, Object?>{
-        'schemaVersion': 1,
-        'kind': 'dictionary',
-        'dictionary': _dictionaryManifest(meta),
-      }));
-    await _addDirectoryFiles(
-      archive: archive,
-      root: sourceDir,
-      archivePrefix: 'resources',
-    );
+    // 主 isolate：收集文件清单（zip 内路径 → 磁盘路径），不读内容。
+    final Map<String, String> archivePathToSource = <String, String>{};
+    if (await sourceDir.exists()) {
+      await for (final FileSystemEntity entity
+          in sourceDir.list(recursive: true)) {
+        if (entity is! File) continue;
+        final String relativePath =
+            p.relative(entity.path, from: sourceDir.path).replaceAll(r'\', '/');
+        archivePathToSource['resources/$relativePath'] = entity.path;
+      }
+    }
 
-    return _writeZip(outputFile, archive);
+    final String manifestJson = jsonEncode(<String, Object?>{
+      'schemaVersion': 1,
+      'kind': 'dictionary',
+      'dictionary': _dictionaryManifest(meta),
+    });
+
+    outputFile.parent.createSync(recursive: true);
+    await _zipPackageInIsolate(
+      outputPath: outputFile.path,
+      manifestJson: manifestJson,
+      archivePathToSource: archivePathToSource,
+    );
+    return outputFile;
   }
 
   Future<void> importDictionaryPackage({
@@ -86,31 +98,36 @@ class SyncAssetPackageService {
     final AudiobookRow audiobook = (await _db.getAudiobookByBookUid(bookUid))!;
     final SrtBookRow srtBook = (await _db.getSrtBookByUid(srtBookUid))!;
     final List<AudioCueRow> cues = await _db.getCuesForBook(bookUid);
-    final Map<String, String> resourceNames = <String, String>{};
     final List<File> files = _audioPackageFiles(audiobook, srtBook);
 
-    final Archive archive = Archive();
+    // 主 isolate：分配唯一文件名，建立 manifest 的 resources 映射（源路径→名）
+    // 与 isolate 的 zip 内路径映射（resources/名→源路径）。
+    final Map<String, String> resourceNames = <String, String>{}; // src -> name
+    final Map<String, String> archivePathToSource = <String, String>{};
     final Set<String> usedNames = <String>{};
     for (final File file in files) {
       if (!await file.exists()) continue;
       final String name = _uniqueFileName(file, usedNames);
       resourceNames[file.path] = name;
-      archive.addFile(ArchiveFile(
-        'resources/$name',
-        await file.length(),
-        await file.readAsBytes(),
-      ));
+      archivePathToSource['resources/$name'] = file.path;
     }
-    archive.addFile(_jsonFile('manifest.json', <String, Object?>{
+
+    final String manifestJson = jsonEncode(<String, Object?>{
       'schemaVersion': 1,
       'kind': 'audioDatabase',
       'audiobook': _audiobookManifest(audiobook),
       'srtBook': _srtBookManifest(srtBook),
       'cues': cues.map(_audioCueManifest).toList(),
       'resources': resourceNames,
-    }));
+    });
 
-    return _writeZip(outputFile, archive);
+    outputFile.parent.createSync(recursive: true);
+    await _zipPackageInIsolate(
+      outputPath: outputFile.path,
+      manifestJson: manifestJson,
+      archivePathToSource: archivePathToSource,
+    );
+    return outputFile;
   }
 
   /// Imports an audiobook package. [bookUidOverride] / [ttuBookIdOverride]
