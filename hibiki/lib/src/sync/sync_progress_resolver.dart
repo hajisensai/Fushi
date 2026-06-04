@@ -31,8 +31,9 @@ ProgressResolution resolveProgressSync({
   required int? base,
 }) {
   if (local == null && remote == null) return ProgressResolution.synced();
-  if (local == null)
+  if (local == null) {
     return ProgressResolution.auto(SyncDirection.importFromTtu);
+  }
   if (remote == null) return ProgressResolution.auto(SyncDirection.exportToTtu);
   if (local == remote) return ProgressResolution.synced();
   // 此处 local != remote。
