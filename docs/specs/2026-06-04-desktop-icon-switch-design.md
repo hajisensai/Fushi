@@ -8,7 +8,8 @@
 **目标**
 - Windows / macOS 支持切换 App 图标：内置预设（default / full / minimal）+ 用户自选图片。
 - 桌面端"换图标"= 改**运行中程序**的图标：Windows 窗口 + 任务栏图标（`WM_SETICON`），macOS 程序坞 Dock 图标（`NSApp.applicationIconImage`）。每次启动重新套用，重启不丢。
-- 图标选择 + 自选图片**跨设备同步**：在一台设备上选定，经现有同步系统传到其它设备，各端按自己平台的方式套用。
+- **预设选择**（default/full/minimal）**跨设备同步**：在一台设备上选定，经现有同步系统传到其它设备，各端按自己平台的方式套用。
+- **自选图片设备本地、不同步**：自选的图只在当前设备生效，不跨设备传。
 
 **非目标（明确不做）**
 - 不改 exe（资源管理器里）/ .app（访达里）的**磁盘文件图标**。原因：Windows 需重写运行中 exe 的 PE 资源（被占用、破坏签名、绿色版无快捷方式可改、图标缓存不刷新）；macOS `NSWorkspace.setIcon` 会在 bundle 内塞 `Icon\r` 破坏已签名/公证 .app 的封签。两端都碎，已评估否决。
@@ -35,13 +36,15 @@
 
 ### 3.1 存储单一真相源迁移
 - `app_icon_preset` 从 SharedPreferences → Drift `preferences` 表（经 `PreferencesRepository`）。新增键：
-  - `app_icon_preset`（String）：`default` / `hibiki_full` / `hibiki_minimal` / `custom`。
-  - `app_icon_custom_png`（String，仅 `custom` 时有值）：自选图缩放后 PNG 的 base64。
+  - `app_icon_preset`（String）：`default` / `hibiki_full` / `hibiki_minimal` / `custom`。**同步**。
+  - `app_icon_custom_png`（String，仅 `custom` 时有值）：自选图缩放后 PNG 的 base64。**设备本地，不同步**。
 - **一次性迁移（Never break userspace）**：首次读取时若 Drift 无 `app_icon_preset` 而 SharedPreferences 有，则搬过来并删旧键。安卓老用户的当前选择不丢。
 
 ### 3.2 跨设备同步
-- 把 `app_icon_preset` 和 `app_icon_custom_png` 加进 `backup_service` 的跨设备白名单（与 `audiobook_pos_%` 同级处理），让它们随 settings 层同步而非被当本地设置保留。
-- 自选图（方案A）：缩到不超过 256×256 PNG（app 图标足够），base64 存 `app_icon_custom_png`，搭偏好同步顺风车，**不新增同步管线**。
+- **只把 `app_icon_preset` 加进** `backup_service` 的跨设备白名单（与 `audiobook_pos_%` 同级处理），让预设选择随 settings 层同步。
+- `app_icon_custom_png` **不进白名单** → 沿用现有"preferences 默认保留本地"行为，自动设备本地、不跨设备。
+- **兜底规则（custom 跨设备无意义）**：某设备同步收到 `app_icon_preset == custom` 但本地无 `app_icon_custom_png` 时，**回落到 `default`** 套用（单一 null 兜底，不在同步逻辑里加分支）。即"custom"本质是设备本地状态，跨设备不还原他人自选图。
+- 自选图存储：缩到 **256×256** PNG，base64 存本地 `app_icon_custom_png`（256 上限依据见 §3.6）。
 - 冲突：last-write-wins（与现有偏好同步一致；图标非高频写，不接入 SyncConflictPrompter）。
 
 ### 3.3 平台 channel 契约（`icon_switch`）
@@ -69,6 +72,7 @@
 - `miscellaneous_settings_page.dart`：门控 `if (Platform.isAndroid)` → `if (Platform.isAndroid || Platform.isWindows || Platform.isMacOS)`。Linux/iOS 仍"不支持"。
 - 预设网格预览图（full/minimal PNG）在桌面包里需可显示 → 这两张 PNG 重新打回 Windows/macOS 包（见 §5 体积副作用）。
 - 自选走桌面文件选择（`file_picker` 或 `image_picker` 桌面实现），选后缩放→base64→存偏好→`applyIcon`。
+- **256×256 上限依据**（非随意取值）：(1) Windows `.ico` 格式单图硬上限就是 256×256（尺寸字段 1 字节，0=256），>256 系统也用不了；(2) macOS Dock 最大尺寸 Retina @2x = 256px；(3) 框住本地存储行大小。任选图无论多大一律缩到 ≤256，存原图等于背用不上的死像素。
 
 ## 4. 错误处理
 - channel 返回 bool；失败复用现有 snackbar 文案（`icon_switch_success` / `icon_shortcut_unsupported`）。
@@ -81,15 +85,16 @@
 ## 6. 测试策略
 - **widget 测试**：桌面平台下设置页显示图标网格（非"不支持"）；选预设 → channel 收到 `applyIcon{preset}`；选自选图 → 收到 `applyIcon{customPng}`；偏好写穿 Drift。
 - **迁移测试**：SharedPreferences 有旧 `app_icon_preset`、Drift 无 → 首读后 Drift 有、旧键清除。
-- **同步测试**：`app_icon_preset` + `app_icon_custom_png` 在 backup/restore 往返后跨设备保留（对照非白名单键保持本地）。
-- **源码守卫**：断言设置页门控含 Windows/macOS；断言两键在同步白名单内。
+- **同步测试**：`app_icon_preset` 在 backup/restore 往返后跨设备保留；`app_icon_custom_png` **不跨设备**（保持本地，对照白名单键）。
+- **兜底测试**：restore 收到 `preset==custom` 且本地无 `app_icon_custom_png` → 套用 `default`，不报错。
+- **源码守卫**：断言设置页门控含 Windows/macOS；断言 `app_icon_preset` 在同步白名单内、`app_icon_custom_png` 不在。
 - **真机视觉复测（用户）**：Win 任务栏/Mac Dock 图标真变 + 重启保持 + 两机同步生效。离屏抓不到任务栏/Dock，需肉眼。
 
 ## 7. 影响文件清单
 - `hibiki/lib/src/pages/implementations/miscellaneous_settings_page.dart`（门控 + 自选桌面路径 + applyIcon 调用）
 - `hibiki/lib/main.dart`（桌面启动重套用）
 - `hibiki/lib/src/models/preferences_repository.dart`（新增图标键 getter/setter）
-- `hibiki/lib/src/sync/backup_service.dart`（同步白名单加两键）
+- `hibiki/lib/src/sync/backup_service.dart`（同步白名单加 `app_icon_preset` 一键 + custom-preset 兜底）
 - 同步收敛后重套用钩子（`sync_orchestrator.dart` 或 `app_model` 同步回调）
 - `windows/runner/{win32_window.cpp,win32_window.h,Runner.rc,resource.h}` + 预设 `.ico` + channel handler
 - `macos/Runner/{MainFlutterWindow.swift / AppDelegate.swift}` + 预设图 + channel handler
