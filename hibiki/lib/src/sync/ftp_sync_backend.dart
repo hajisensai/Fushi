@@ -543,6 +543,40 @@ class FtpSyncBackend extends SyncBackend {
         await _uploadJsonImpl(namespaceId, name, json);
       });
 
+  @override
+  Future<void> deleteAsset(String id, {bool isFolder = false}) =>
+      _opLock.withLock(() async {
+        await _ensureConnected();
+        try {
+          if (isFolder) {
+            await _deleteDirRecursive(id);
+          } else {
+            await _deleteRemoteFileImpl(id);
+          }
+        } catch (e) {
+          // 幂等 + 非致命：FTP 不存在/权限错误记录但不抛（与现有删除策略一致）。
+          debugPrint('[ftp] deleteAsset failed: $id: $e');
+        }
+      });
+
+  /// 递归删除 FTP 目录 [path]：先删子文件、递归删子目录，最后删空目录本身。
+  Future<void> _deleteDirRecursive(String path) async {
+    await _client!.changeDirectory(path);
+    final List<FTPEntry> entries = await _client!.listDirectoryContent();
+    for (final FTPEntry e in entries) {
+      if (e.name == '.' || e.name == '..') continue;
+      final String childId = '$path/${e.name}';
+      if (e.type == FTPEntryType.dir) {
+        await _deleteDirRecursive(childId);
+      } else {
+        await _deleteRemoteFileImpl(childId);
+      }
+    }
+    // 回到父目录再删空目录本身。
+    await _client!.changeDirectory(_parentPath(path));
+    await _client!.deleteDirectory(_fileName(path));
+  }
+
   // ── Cache ─────────────────────────────────────────────────────────
 
   @override
