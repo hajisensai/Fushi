@@ -73,7 +73,8 @@ void triggerAutoSyncOnAppOpen({
   required Directory audioDatabaseRoot,
   required Directory tempDir,
   required List<LocalAudioDbEntry> localAudioEntries,
-  required Future<void> Function(LocalAudioPackageContents) onLocalAudioImported,
+  required Future<void> Function(LocalAudioPackageContents)
+      onLocalAudioImported,
   SyncReportCallback? onReport,
 }) {
   _runAutoSyncAll(
@@ -95,7 +96,8 @@ Future<void> _runAutoSyncAll({
   required Directory audioDatabaseRoot,
   required Directory tempDir,
   required List<LocalAudioDbEntry> localAudioEntries,
-  required Future<void> Function(LocalAudioPackageContents) onLocalAudioImported,
+  required Future<void> Function(LocalAudioPackageContents)
+      onLocalAudioImported,
   SyncReportCallback? onReport,
 }) async {
   if (!_syncingIds.add('__all__')) return;
@@ -167,7 +169,8 @@ Future<ManualSyncResult> runManualFullSync({
   required Directory audioDatabaseRoot,
   required Directory tempDir,
   required List<LocalAudioDbEntry> localAudioEntries,
-  required Future<void> Function(LocalAudioPackageContents) onLocalAudioImported,
+  required Future<void> Function(LocalAudioPackageContents)
+      onLocalAudioImported,
 }) async {
   if (!_syncingIds.add('__all__')) {
     return const ManualSyncResult(ManualSyncOutcome.busy);

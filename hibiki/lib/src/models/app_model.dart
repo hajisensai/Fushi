@@ -2699,7 +2699,8 @@ class AppModel with ChangeNotifier {
       path: entry.path,
       enabled: c.enabled,
     );
-    await setAudioSourceConfigs(<AudioSourceConfig>[...audioSourceConfigs, cfg]);
+    await setAudioSourceConfigs(
+        <AudioSourceConfig>[...audioSourceConfigs, cfg]);
     if (c.sources.isNotEmpty) {
       await setLocalAudioDbSources(entry.path, c.sources);
     }

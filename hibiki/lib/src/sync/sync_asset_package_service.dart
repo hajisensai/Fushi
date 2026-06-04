@@ -269,7 +269,9 @@ class SyncAssetPackageService {
     await _zipPackageInIsolate(
       outputPath: outputFile.path,
       manifestJson: manifestJson,
-      archivePathToSource: <String, String>{'resources/$dbFileName': dbFile.path},
+      archivePathToSource: <String, String>{
+        'resources/$dbFileName': dbFile.path
+      },
       storeResources: true,
     );
     return outputFile;

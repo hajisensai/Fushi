@@ -426,14 +426,13 @@ void main() {
       final LocalAudioDbEntry entry = seedDb(tmp, 'NHK Audio');
       final SyncRunReport report = SyncRunReport();
       await orch(db, backend, tmp,
-              syncLocalAudio: true, entries: <LocalAudioDbEntry>[entry])
-          .syncLocalAudioPackages(report);
+          syncLocalAudio: true,
+          entries: <LocalAudioDbEntry>[entry]).syncLocalAudioPackages(report);
 
       expect(report.localAudioExported, 1);
       expect(report.localAudioImported, 0);
       expect(report.errors, isEmpty, reason: report.errors.join(' | '));
-      final String ns =
-          await backend.ensureNamespace(kSyncLocalAudioNamespace);
+      final String ns = await backend.ensureNamespace(kSyncLocalAudioNamespace);
       final List<AssetEntry> children = await backend.listChildren(ns);
       expect(children.where((AssetEntry e) => !e.isFolder).length, 1);
       expect(children.first.name, 'NHK Audio.hibikiaudiolib');
@@ -450,8 +449,8 @@ void main() {
       final LocalAudioDbEntry srcEntry = seedDb(tmp, 'Forvo');
       final SyncRunReport push = SyncRunReport();
       await orch(srcDb, backend, tmp,
-              syncLocalAudio: true, entries: <LocalAudioDbEntry>[srcEntry])
-          .syncLocalAudioPackages(push);
+          syncLocalAudio: true,
+          entries: <LocalAudioDbEntry>[srcEntry]).syncLocalAudioPackages(push);
       expect(push.localAudioExported, 1);
 
       // Target has no local entries → pulls + invokes the import callback.
@@ -488,8 +487,8 @@ void main() {
       // First run pushes.
       final SyncRunReport first = SyncRunReport();
       await orch(db, backend, tmp,
-              syncLocalAudio: true, entries: <LocalAudioDbEntry>[entry])
-          .syncLocalAudioPackages(first);
+          syncLocalAudio: true,
+          entries: <LocalAudioDbEntry>[entry]).syncLocalAudioPackages(first);
       expect(first.localAudioExported, 1);
 
       // Second run with the SAME displayName present on both sides: no push,
