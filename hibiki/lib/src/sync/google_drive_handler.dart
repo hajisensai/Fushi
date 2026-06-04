@@ -519,6 +519,12 @@ class GoogleDriveHandler {
     return _findFile(folderId, fileName);
   }
 
+  /// 永久删除 [fileId]（文件或文件夹；文件夹递归删内容）。不存在时 Drive 返回 404，
+  /// 由调用方按幂等吞掉（`GoogleDriveError.isStaleCacheError`）。
+  Future<void> deleteFile(String fileId) async {
+    await _call<void>((api) => api.files.delete(fileId));
+  }
+
   Future<DriveFile?> _findFile(String folderId, String fileName) async {
     final qFolder = _escapeQuery(folderId);
     final qName = _escapeQuery(fileName);

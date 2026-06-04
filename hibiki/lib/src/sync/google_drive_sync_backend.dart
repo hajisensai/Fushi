@@ -251,4 +251,16 @@ class GoogleDriveSyncBackend extends SyncBackend {
   @override
   Future<void> putJsonAsset(String namespaceId, String name, Object? json) =>
       _wrapVoidErrors(() => _drive.uploadJsonInFolder(namespaceId, name, json));
+
+  @override
+  Future<void> deleteAsset(String id, {bool isFolder = false}) =>
+      _wrapVoidErrors(() async {
+        // Drive 删文件夹即递归删内容，文件/文件夹同一 API；isFolder 无需分支。
+        try {
+          await _drive.deleteFile(id);
+        } on GoogleDriveError catch (e) {
+          if (e.isStaleCacheError) return; // 幂等：404 已不存在视为成功。
+          rethrow;
+        }
+      });
 }
