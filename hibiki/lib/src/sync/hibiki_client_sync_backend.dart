@@ -518,6 +518,18 @@ class HibikiClientSyncBackend extends SyncBackend {
     await _ops!.uploadJson(namespaceId, name, json);
   }
 
+  @override
+  Future<void> deleteAsset(String id, {bool isFolder = false}) async {
+    await _ensureResolved();
+    try {
+      // 服务端 _handleDelete 对目录 recursive 删、对文件单删；同一原语。
+      await _ops!.deleteFile(id);
+    } catch (e) {
+      // 幂等：404/已删除当作成功。其它错误记录但不抛。
+      debugPrint('[hibiki-client] deleteAsset failed: $id: $e');
+    }
+  }
+
   static String _stripTrailingSlash(String value) =>
       value.endsWith('/') ? value.substring(0, value.length - 1) : value;
 
