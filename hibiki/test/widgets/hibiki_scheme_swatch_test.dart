@@ -38,7 +38,7 @@ void main() {
     ]);
   });
 
-  testWidgets('HibikiSchemeSwatch fires onTap and paints four quadrants',
+  testWidgets('HibikiSchemeSwatch fires onTap and paints the accent dot',
       (WidgetTester tester) async {
     int taps = 0;
     await tester.pumpWidget(
@@ -64,11 +64,13 @@ void main() {
     expect(taps, 1);
   });
 
-  testWidgets('selection ring is painted over the quadrant fill, not under it',
+  testWidgets('rounded card uses the surface colour as background + ring',
       (WidgetTester tester) async {
-    // Regression: a plain `decoration` border is drawn first then hidden by the
-    // ClipOval fill (inside-aligned stroke sits inside the clipped circle). The
-    // border must live in foregroundDecoration so the selection ring is visible.
+    // The swatch is a rounded-square card whose background IS the scheme surface
+    // (colours[3]); the selection ring rides the card border. The inner accent
+    // dot is centred and never reaches the edge, so the border is on `decoration`
+    // (visible) — no foregroundDecoration needed.
+    const Color surface = Color(0xFFAABBCC);
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
@@ -78,7 +80,7 @@ void main() {
                 Color(0xFF112233),
                 Color(0xFF445566),
                 Color(0xFF778899),
-                Color(0xFFAABBCC),
+                surface,
               ],
               selected: true,
             ),
@@ -92,11 +94,12 @@ void main() {
         matching: find.byType(AnimatedContainer),
       ),
     );
-    expect(container.decoration, isNull,
-        reason: 'a background decoration border would be hidden by ClipOval');
-    final BoxDecoration foreground =
-        container.foregroundDecoration! as BoxDecoration;
-    expect(foreground.border, isNotNull);
-    expect(foreground.shape, BoxShape.circle);
+    expect(container.foregroundDecoration, isNull);
+    final BoxDecoration card = container.decoration! as BoxDecoration;
+    expect(card.color, surface,
+        reason: 'card background is the scheme surface');
+    expect(card.border, isNotNull, reason: 'selection ring rides the card');
+    expect(card.borderRadius, isNotNull,
+        reason: 'rounded square, not a full circle');
   });
 }

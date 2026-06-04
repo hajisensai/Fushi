@@ -1195,10 +1195,11 @@ Color _swatchForegroundFor(Color background) {
       : Colors.black;
 }
 
-/// The four quadrant colours (top-left, top-right, bottom-left, bottom-right)
-/// previewed by a [HibikiSchemeSwatch] for a generated [ColorScheme]: primary,
-/// secondary, tertiary, surface. Surface sits bottom-right so light vs dark
-/// presets sharing one seed stay visually distinct (their surfaces differ).
+/// The colours a [HibikiSchemeSwatch] previews for a generated [ColorScheme]:
+/// [primary, secondary, tertiary, surface]. The first three are the accent
+/// wedges of the inner dot; surface is the rounded card's background. Surface is
+/// included so light vs dark presets sharing one seed stay distinct (their
+/// surfaces, hence card backgrounds, differ).
 List<Color> hibikiSchemeSwatchColors(ColorScheme scheme) => <Color>[
       scheme.primary,
       scheme.secondary,
@@ -1206,11 +1207,13 @@ List<Color> hibikiSchemeSwatchColors(ColorScheme scheme) => <Color>[
       scheme.surface,
     ];
 
-/// A circular swatch split into four quadrants previewing the real generated
-/// scheme colours, instead of a single seed colour. Used by the theme picker so
-/// each circle accurately predicts the applied theme — the single-colour seed
-/// swatch could not (e.g. light/dark presets share one seed). Single-colour
-/// swatches (tag colour, custom-colour preview) keep using [HibikiColorSwatch].
+/// A rounded-square swatch — a surface-coloured card holding a small dot split
+/// into three accent wedges (primary/secondary/tertiary) — previewing the real
+/// generated scheme colours instead of a single seed colour. Used by the theme
+/// picker so each swatch accurately predicts the applied theme (background +
+/// accents); a single-colour seed swatch could not (e.g. light/dark presets
+/// share one seed). Single-colour swatches (tag colour, custom-colour preview)
+/// keep using [HibikiColorSwatch].
 class HibikiSchemeSwatch extends StatelessWidget {
   const HibikiSchemeSwatch({
     required this.colors,
@@ -1238,52 +1241,63 @@ class HibikiSchemeSwatch extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final ColorScheme cs = Theme.of(context).colorScheme;
+    final Color cardSurface = colors[3];
     final BorderSide borderSide = BorderSide(
       color: selected ? cs.primary : borderColor ?? cs.outlineVariant,
       width: selected ? 3 : 1,
     );
     final Widget? badgeChild =
-        selected ? const Icon(Icons.check, size: 18) : overlay;
-    // A surface-filled disc behind the badge keeps the icon legible regardless
-    // of the four quadrant colours underneath.
+        selected ? const Icon(Icons.check, size: 14) : overlay;
+    // A surface-filled disc behind the badge keeps the icon legible over the
+    // three accent wedges of the inner dot.
     final Widget? badge = badgeChild == null
         ? null
         : Container(
-            padding: const EdgeInsets.all(4),
+            padding: const EdgeInsets.all(3),
             decoration: BoxDecoration(
-              color: cs.surface,
+              color: cardSurface,
               shape: BoxShape.circle,
             ),
             child: IconTheme.merge(
-              data: IconThemeData(color: cs.onSurface, size: 18),
+              data: IconThemeData(color: cs.onSurface, size: 14),
               child: badgeChild,
             ),
           );
+    // Rounded-square card filled with the scheme's surface colour; a smaller dot
+    // inside shows the three accent roles (primary/secondary/tertiary). The
+    // selection ring rides the card border — the centred dot never reaches the
+    // edge, so a plain `decoration` border stays visible (no foregroundDecoration
+    // needed, unlike the old full-bleed quadrant circle).
     final Widget visual = AnimatedContainer(
       duration: hibikiMd3StateDuration,
       curve: hibikiMd3StateCurve,
       width: size,
       height: size,
-      // The border goes in foregroundDecoration so the selection ring / outline
-      // paints OVER the quadrant fill. A plain `decoration` border would be
-      // drawn first and then hidden by the ClipOval child (its inside-aligned
-      // stroke sits inside the clipped circle), leaving no visible ring.
-      foregroundDecoration: BoxDecoration(
-        shape: BoxShape.circle,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: cardSurface,
+        borderRadius: tokens.radii.chipRadius,
         border: Border.fromBorderSide(borderSide),
       ),
-      child: ClipOval(
-        child: CustomPaint(
-          painter: _SchemeQuadrantPainter(colors),
-          child: badge == null ? null : Center(child: badge),
+      child: SizedBox(
+        width: size * 0.58,
+        height: size * 0.58,
+        child: ClipOval(
+          child: CustomPaint(
+            painter: _SchemeWedgePainter(
+              <Color>[colors[0], colors[1], colors[2]],
+            ),
+            child: badge == null ? null : Center(child: badge),
+          ),
         ),
       ),
     );
     return _buildSwatchInteractive(
       context,
       visual: visual,
-      inkRadius: BorderRadius.circular(size / 2),
+      inkRadius: tokens.radii.chipRadius,
       selected: selected,
       onTap: onTap,
       label: label,
@@ -1292,10 +1306,12 @@ class HibikiSchemeSwatch extends StatelessWidget {
   }
 }
 
-class _SchemeQuadrantPainter extends CustomPainter {
-  const _SchemeQuadrantPainter(this.colors);
+class _SchemeWedgePainter extends CustomPainter {
+  const _SchemeWedgePainter(this.colors);
 
-  /// [topLeft, topRight, bottomLeft, bottomRight].
+  /// [top, bottomLeft, bottomRight] — primary fills the top half, secondary and
+  /// tertiary the two bottom quarters. Surface is the card background, not a
+  /// wedge.
   final List<Color> colors;
 
   @override
@@ -1304,17 +1320,15 @@ class _SchemeQuadrantPainter extends CustomPainter {
     final double my = size.height / 2;
     final Paint paint = Paint()..style = PaintingStyle.fill;
     paint.color = colors[0];
-    canvas.drawRect(Rect.fromLTRB(0, 0, mx, my), paint);
+    canvas.drawRect(Rect.fromLTRB(0, 0, size.width, my), paint);
     paint.color = colors[1];
-    canvas.drawRect(Rect.fromLTRB(mx, 0, size.width, my), paint);
-    paint.color = colors[2];
     canvas.drawRect(Rect.fromLTRB(0, my, mx, size.height), paint);
-    paint.color = colors[3];
+    paint.color = colors[2];
     canvas.drawRect(Rect.fromLTRB(mx, my, size.width, size.height), paint);
   }
 
   @override
-  bool shouldRepaint(_SchemeQuadrantPainter oldDelegate) =>
+  bool shouldRepaint(_SchemeWedgePainter oldDelegate) =>
       !listEquals(oldDelegate.colors, colors);
 }
 
