@@ -6,6 +6,7 @@ import 'package:hibiki/src/sync/sync_asset_package_service.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_manager.dart';
+import 'package:hibiki/src/sync/sync_progress.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -104,6 +105,7 @@ class SyncOrchestrator {
     this.localAudioEntries = const <LocalAudioDbEntry>[],
     this.onLocalAudioImported,
     this.statsSyncMode = StatisticsSyncMode.merge,
+    this.onProgress,
   })  : _db = db,
         _backend = backend,
         _dictionaryResourceRoot = dictionaryResourceRoot,
@@ -131,6 +133,28 @@ class SyncOrchestrator {
   final Future<void> Function(LocalAudioPackageContents)? onLocalAudioImported;
   final StatisticsSyncMode statsSyncMode;
 
+  /// Optional progress sink (manual sync only). Null for background auto-sync,
+  /// which keeps its old silent behaviour.
+  final SyncProgressCallback? onProgress;
+
+  void _emit(
+    SyncPhase phase, {
+    required int itemIndex,
+    required int itemTotal,
+    String? title,
+    double? fileFraction,
+  }) {
+    final cb = onProgress;
+    if (cb == null) return;
+    cb(SyncProgress(
+      phase: phase,
+      itemIndex: itemIndex,
+      itemTotal: itemTotal,
+      title: title,
+      fileFraction: fileFraction,
+    ));
+  }
+
   int _tmpCounter = 0;
 
   File _tmpFile(String suffix) {
@@ -151,12 +175,29 @@ class SyncOrchestrator {
 
     // Existing per-book progress / stats / content / audiobook-position sync
     // for every local book (now including any just-imported remote books).
-    final List<SyncBookResult> bookResults =
-        await SyncManager(db: _db, backend: _backend).syncAllBooks(
+    int readingDone = 0;
+    int readingTotal = 0;
+    String? readingTitle;
+    final List<SyncBookResult> bookResults = await SyncManager(
+      db: _db,
+      backend: _backend,
+      onContentProgress: (double f) => _emit(SyncPhase.readingData,
+          itemIndex: readingDone,
+          itemTotal: readingTotal,
+          title: readingTitle,
+          fileFraction: f),
+    ).syncAllBooks(
       syncStats: syncStats,
       statsSyncMode: statsSyncMode,
       syncAudioBook: syncAudioBookPosition,
       syncContent: syncContent,
+      onBookProgress: (int done, int total, String title) {
+        readingDone = done;
+        readingTotal = total;
+        readingTitle = title;
+        _emit(SyncPhase.readingData,
+            itemIndex: done, itemTotal: total, title: title);
+      },
     );
     _collectConflicts(bookResults, report);
 
@@ -199,17 +240,31 @@ class SyncOrchestrator {
         sanitizeTtuFilename(b.title),
     };
 
-    for (final DriveFile folder in remoteFolders) {
-      if (isReservedSyncFolderName(folder.name)) continue;
-      final String key = sanitizeTtuFilename(folder.name);
-      if (isReservedSyncFolderName(key) || localKeys.contains(key)) continue;
+    // Resolve the remote-only set first so progress has a real denominator.
+    final List<DriveFile> toImport = <DriveFile>[
+      for (final DriveFile folder in remoteFolders)
+        if (!isReservedSyncFolderName(folder.name) &&
+            !isReservedSyncFolderName(sanitizeTtuFilename(folder.name)) &&
+            !localKeys.contains(sanitizeTtuFilename(folder.name)))
+          folder,
+    ];
+    final int total = toImport.length;
 
+    for (int i = 0; i < total; i++) {
+      final DriveFile folder = toImport[i];
+      _emit(SyncPhase.books,
+          itemIndex: i, itemTotal: total, title: folder.name);
       try {
         if (await importRemoteBookFolder(
           db: _db,
           backend: _backend,
           folderId: folder.id,
           tempDir: _tempDir,
+          onProgress: (double f) => _emit(SyncPhase.books,
+              itemIndex: i,
+              itemTotal: total,
+              title: folder.name,
+              fileFraction: f),
         )) {
           report.booksImported++;
         }
@@ -235,9 +290,26 @@ class SyncOrchestrator {
       for (final DictionaryMetaRow d in localDicts) d.name,
     };
 
+    // Resolve both sides' work first so progress has a real denominator.
+    final List<DictionaryMetaRow> toPush = <DictionaryMetaRow>[
+      for (final DictionaryMetaRow d in localDicts)
+        if (!remoteNames.contains(d.name)) d,
+    ];
+    final List<AssetEntry> toPull = <AssetEntry>[
+      for (final AssetEntry e in remote)
+        if (!e.isFolder &&
+            e.name.endsWith(_dictionaryAssetSuffix) &&
+            !localNames.contains(e.name
+                .substring(0, e.name.length - _dictionaryAssetSuffix.length)))
+          e,
+    ];
+    final int total = toPush.length + toPull.length;
+    int index = 0;
+
     // Push local-only dictionaries.
-    for (final DictionaryMetaRow d in localDicts) {
-      if (remoteNames.contains(d.name)) continue;
+    for (final DictionaryMetaRow d in toPush) {
+      _emit(SyncPhase.dictionaries,
+          itemIndex: index, itemTotal: total, title: d.name);
       File? tmp;
       try {
         tmp = _tmpFile(_dictionaryAssetSuffix);
@@ -246,25 +318,34 @@ class SyncOrchestrator {
           dictionaryResourceRoot: _dictionaryResourceRoot,
           outputFile: tmp,
         );
-        await _backend.putAsset(ns, '${d.name}$_dictionaryAssetSuffix', tmp);
+        await _backend.putAsset(ns, '${d.name}$_dictionaryAssetSuffix', tmp,
+            onProgress: (double f) => _emit(SyncPhase.dictionaries,
+                itemIndex: index,
+                itemTotal: total,
+                title: d.name,
+                fileFraction: f));
         report.dictionariesExported++;
       } catch (e) {
         report.errors.add('export dictionary "${d.name}": $e');
       } finally {
         _safeDelete(tmp);
       }
+      index++;
     }
 
     // Pull remote-only dictionaries.
-    for (final AssetEntry e in remote) {
-      if (e.isFolder || !e.name.endsWith(_dictionaryAssetSuffix)) continue;
-      final String base =
-          e.name.substring(0, e.name.length - _dictionaryAssetSuffix.length);
-      if (localNames.contains(base)) continue;
+    for (final AssetEntry e in toPull) {
+      _emit(SyncPhase.dictionaries,
+          itemIndex: index, itemTotal: total, title: e.name);
       File? tmp;
       try {
         tmp = _tmpFile(_dictionaryAssetSuffix);
-        await _backend.getAsset(e.id, tmp);
+        await _backend.getAsset(e.id, tmp,
+            onProgress: (double f) => _emit(SyncPhase.dictionaries,
+                itemIndex: index,
+                itemTotal: total,
+                title: e.name,
+                fileFraction: f));
         await _packages.importDictionaryPackage(
           packageFile: tmp,
           dictionaryResourceRoot: _dictionaryResourceRoot,
@@ -275,6 +356,7 @@ class SyncOrchestrator {
       } finally {
         _safeDelete(tmp);
       }
+      index++;
     }
   }
 
@@ -297,11 +379,29 @@ class SyncOrchestrator {
       for (final LocalAudioDbEntry d in localAudioEntries) d.displayName,
     };
 
+    // Resolve both sides' work first so progress has a real denominator. The
+    // push side also drops libraries whose DB file is gone (nothing to send).
+    final List<LocalAudioDbEntry> toPush = <LocalAudioDbEntry>[
+      for (final LocalAudioDbEntry d in localAudioEntries)
+        if (!remoteNames.contains(d.displayName) && File(d.path).existsSync())
+          d,
+    ];
+    final List<AssetEntry> toPull = <AssetEntry>[
+      for (final AssetEntry e in remote)
+        if (!e.isFolder &&
+            e.name.endsWith(_localAudioAssetSuffix) &&
+            !localNames.contains(e.name
+                .substring(0, e.name.length - _localAudioAssetSuffix.length)))
+          e,
+    ];
+    final int total = toPush.length + toPull.length;
+    int index = 0;
+
     // Push local-only.
-    for (final LocalAudioDbEntry d in localAudioEntries) {
-      if (remoteNames.contains(d.displayName)) continue;
+    for (final LocalAudioDbEntry d in toPush) {
+      _emit(SyncPhase.localAudio,
+          itemIndex: index, itemTotal: total, title: d.displayName);
       final File dbFile = File(d.path);
-      if (!dbFile.existsSync()) continue;
       File? tmp;
       try {
         tmp = _tmpFile(_localAudioAssetSuffix);
@@ -313,21 +413,25 @@ class SyncOrchestrator {
           outputFile: tmp,
         );
         await _backend.putAsset(
-            ns, '${d.displayName}$_localAudioAssetSuffix', tmp);
+            ns, '${d.displayName}$_localAudioAssetSuffix', tmp,
+            onProgress: (double f) => _emit(SyncPhase.localAudio,
+                itemIndex: index,
+                itemTotal: total,
+                title: d.displayName,
+                fileFraction: f));
         report.localAudioExported++;
       } catch (e) {
         report.errors.add('export local audio "${d.displayName}": $e');
       } finally {
         _safeDelete(tmp);
       }
+      index++;
     }
 
     // Pull remote-only.
-    for (final AssetEntry e in remote) {
-      if (e.isFolder || !e.name.endsWith(_localAudioAssetSuffix)) continue;
-      final String base =
-          e.name.substring(0, e.name.length - _localAudioAssetSuffix.length);
-      if (localNames.contains(base)) continue;
+    for (final AssetEntry e in toPull) {
+      _emit(SyncPhase.localAudio,
+          itemIndex: index, itemTotal: total, title: e.name);
       File? tmp;
       // Staging .db extracted from the package. AppModel.importSyncedLocalAudioDb
       // *copies* it into the library dir (never moves), so the staging copy
@@ -336,7 +440,12 @@ class SyncOrchestrator {
       File? stagingDb;
       try {
         tmp = _tmpFile(_localAudioAssetSuffix);
-        await _backend.getAsset(e.id, tmp);
+        await _backend.getAsset(e.id, tmp,
+            onProgress: (double f) => _emit(SyncPhase.localAudio,
+                itemIndex: index,
+                itemTotal: total,
+                title: e.name,
+                fileFraction: f));
         final LocalAudioPackageContents contents =
             await _packages.importLocalAudioPackage(
           packageFile: tmp,
@@ -353,6 +462,7 @@ class SyncOrchestrator {
         _safeDelete(tmp);
         _safeDelete(stagingDb);
       }
+      index++;
     }
   }
 
@@ -360,7 +470,16 @@ class SyncOrchestrator {
   /// book's folder. A book missing its audiobook locally but present remotely
   /// is pulled; a book with a local audiobook absent remotely is pushed.
   Future<void> syncAudiobookPackages(String root, SyncRunReport report) async {
-    for (final EpubBookRow book in await _db.getAllEpubBooks()) {
+    // A real "files transferred" denominator would need a findAsset network
+    // round-trip per book before the loop; instead progress is keyed on the
+    // book scan (k/N books), with the large pull/push fraction blended into the
+    // current book's slot. The bar still advances monotonically.
+    final List<EpubBookRow> books = await _db.getAllEpubBooks();
+    final int total = books.length;
+    for (int i = 0; i < total; i++) {
+      final EpubBookRow book = books[i];
+      _emit(SyncPhase.audiobooks,
+          itemIndex: i, itemTotal: total, title: book.title);
       File? tmp;
       try {
         final String bookUid = buildLegacyBookUid(book.id);
@@ -382,11 +501,21 @@ class SyncOrchestrator {
             srtBookUid: srt.uid,
             outputFile: tmp,
           );
-          await _backend.putAsset(folderId, kSyncAudiobookAssetName, tmp);
+          await _backend.putAsset(folderId, kSyncAudiobookAssetName, tmp,
+              onProgress: (double f) => _emit(SyncPhase.audiobooks,
+                  itemIndex: i,
+                  itemTotal: total,
+                  title: book.title,
+                  fileFraction: f));
           report.audiobooksExported++;
         } else if (!hasLocal && existing != null) {
           tmp = _tmpFile('.hibikiaudio');
-          await _backend.getAsset(existing.id, tmp);
+          await _backend.getAsset(existing.id, tmp,
+              onProgress: (double f) => _emit(SyncPhase.audiobooks,
+                  itemIndex: i,
+                  itemTotal: total,
+                  title: book.title,
+                  fileFraction: f));
           // Re-key to THIS device's book: bookUid embeds the local book id,
           // which differs per device, so the source's bookUid would never
           // resolve to our book.
@@ -424,6 +553,7 @@ Future<bool> importRemoteBookFolder({
   required SyncBackend backend,
   required String folderId,
   required Directory tempDir,
+  void Function(double fraction)? onProgress,
 }) async {
   final List<AssetEntry> children = await backend.listChildren(folderId);
   AssetEntry? epub;
@@ -441,7 +571,7 @@ Future<bool> importRemoteBookFolder({
     'hibiki_remote_${DateTime.now().microsecondsSinceEpoch}.epub',
   ));
   try {
-    await backend.getAsset(epub.id, tmp);
+    await backend.getAsset(epub.id, tmp, onProgress: onProgress);
     await EpubImporter.importFromPath(
       db: db,
       filePath: tmp.path,

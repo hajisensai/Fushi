@@ -7,6 +7,7 @@ import 'package:hibiki/src/sync/sync_asset_package_service.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_manager.dart';
 import 'package:hibiki/src/sync/sync_orchestrator.dart';
+import 'package:hibiki/src/sync/sync_progress.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/sync_utils.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
@@ -171,6 +172,7 @@ Future<ManualSyncResult> runManualFullSync({
   required List<LocalAudioDbEntry> localAudioEntries,
   required Future<void> Function(LocalAudioPackageContents)
       onLocalAudioImported,
+  SyncProgressCallback? onProgress,
 }) async {
   if (!_syncingIds.add('__all__')) {
     return const ManualSyncResult(ManualSyncOutcome.busy);
@@ -199,6 +201,7 @@ Future<ManualSyncResult> runManualFullSync({
         syncLocalAudio: await repo.isSyncLocalAudioEnabled(),
         localAudioEntries: localAudioEntries,
         onLocalAudioImported: onLocalAudioImported,
+        onProgress: onProgress,
       );
       final SyncRunReport report = await orchestrator.run();
       return ManualSyncResult(ManualSyncOutcome.completed, report);

@@ -153,10 +153,13 @@ class SyncManager {
     required bool syncAudioBook,
     bool syncContent = false,
     bool importOnly = false,
+    void Function(int done, int total, String title)? onBookProgress,
   }) async {
     final books = await _db.getAllEpubBooks();
     final results = <SyncBookResult>[];
-    for (final book in books) {
+    for (int i = 0; i < books.length; i++) {
+      final book = books[i];
+      onBookProgress?.call(i, books.length, book.title);
       final result = await syncBook(
         book: book,
         syncStats: syncStats,

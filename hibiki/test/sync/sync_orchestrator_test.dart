@@ -10,6 +10,7 @@ import 'package:hibiki/src/sync/sync_asset_package_service.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_orchestrator.dart';
+import 'package:hibiki/src/sync/sync_progress.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -229,6 +230,55 @@ void main() {
       File('${tgtDictRoot.path}/testdict/index.json').existsSync(),
       isTrue,
     );
+  });
+
+  test('syncDictionaries emits per-item progress with file fraction', () async {
+    final FakeAssetStore store = FakeAssetStore();
+    final FakeSyncBackend backend = FakeSyncBackend(store);
+    final Directory tmp = Directory('${work.path}/tmp')..createSync();
+
+    final HibikiDatabase db = _memDb();
+    addTearDown(db.close);
+    await db.upsertDictionaryMeta(DictionaryMetadataCompanion.insert(
+      name: 'progdict',
+      formatKey: 'yomitan',
+      order: 0,
+      type: const Value('term'),
+      metadataJson: const Value('{}'),
+      hiddenLanguagesJson: const Value('[]'),
+      collapsedLanguagesJson: const Value('[]'),
+    ));
+    final Directory dictRoot = Directory('${work.path}/dicts')..createSync();
+    Directory('${dictRoot.path}/progdict').createSync(recursive: true);
+    File('${dictRoot.path}/progdict/index.json').writeAsStringSync('{}');
+
+    final List<SyncProgress> events = <SyncProgress>[];
+    final orchestrator = SyncOrchestrator(
+      db: db,
+      backend: backend,
+      dictionaryResourceRoot: dictRoot,
+      audioDatabaseRoot: tmp,
+      tempDir: tmp,
+      syncStats: false,
+      syncAudioBookPosition: false,
+      syncContent: false,
+      syncAudioBookFiles: false,
+      syncDictionary: true,
+      syncLocalAudio: false,
+      onProgress: events.add,
+    );
+    await orchestrator.syncDictionaries(SyncRunReport());
+
+    // One push: a start tick (no fraction) then the putAsset fraction tick.
+    final dictEvents =
+        events.where((e) => e.phase == SyncPhase.dictionaries).toList();
+    expect(dictEvents, isNotEmpty);
+    expect(dictEvents.every((e) => e.itemTotal == 1), isTrue);
+    expect(dictEvents.first.title, 'progdict');
+    expect(dictEvents.any((e) => e.fileFraction == 1.0), isTrue,
+        reason: 'putAsset onProgress(1.0) must blend into the bar');
+    // Fraction at the file tick = (0 + 1) / 1 = 1.0.
+    expect(dictEvents.last.fraction, 1.0);
   });
 
   test('dictionary already present on both sides is not re-imported', () async {

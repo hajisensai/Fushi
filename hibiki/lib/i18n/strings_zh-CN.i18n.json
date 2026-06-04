@@ -1240,5 +1240,10 @@
     "sync_local_audio_warning": "同步本地音频来源数据库（可能较大）",
     "sync_now_local_audio_in": "↓$count 本地音频",
     "sync_now_local_audio_out": "↑$count 本地音频",
-    "update_network_unreachable": "无法连接 $host（网络超时或不可达）。"
+    "update_network_unreachable": "无法连接 $host（网络超时或不可达）。",
+    "sync_progress_books": "导入书籍",
+    "sync_progress_reading": "同步阅读数据",
+    "sync_progress_dictionaries": "同步词典",
+    "sync_progress_local_audio": "同步本地音频",
+    "sync_progress_audiobooks": "同步有声书"
 }

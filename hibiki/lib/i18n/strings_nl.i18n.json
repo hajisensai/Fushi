@@ -1240,5 +1240,10 @@
     "sync_local_audio_warning": "Syncs local audio source databases (may be large)",
     "sync_now_local_audio_in": "↓$count audio sources",
     "sync_now_local_audio_out": "↑$count audio sources",
-    "update_network_unreachable": "Could not reach $host (network timeout or unreachable)."
+    "update_network_unreachable": "Could not reach $host (network timeout or unreachable).",
+    "sync_progress_books": "Importing books",
+    "sync_progress_reading": "Syncing reading data",
+    "sync_progress_dictionaries": "Syncing dictionaries",
+    "sync_progress_local_audio": "Syncing local audio",
+    "sync_progress_audiobooks": "Syncing audiobooks"
 }

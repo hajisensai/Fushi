@@ -24,6 +24,7 @@ import 'package:hibiki/src/sync/sync_compare_dialog.dart';
 import 'package:hibiki/src/sync/sync_conflict_prompter.dart';
 import 'package:hibiki/src/sync/sync_error_messages.dart';
 import 'package:hibiki/src/sync/sync_orchestrator.dart';
+import 'package:hibiki/src/sync/sync_progress.dart';
 import 'package:hibiki/src/sync/sync_message_dialog.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/webdav_sync_backend.dart';
@@ -651,13 +652,17 @@ class _SyncNowWidget extends StatefulWidget {
 
 class _SyncNowWidgetState extends State<_SyncNowWidget> {
   bool _syncing = false;
+  SyncProgress? _progress;
 
   Future<void> _syncNow() async {
     // Re-entrant guard: the whole row is a focus target whose Activate (A/Enter,
     // see [AdaptiveSettingsRow.onTap] below) runs this too, so a second
     // activation while a sync is in flight must be a no-op.
     if (_syncing) return;
-    setState(() => _syncing = true);
+    setState(() {
+      _syncing = true;
+      _progress = null;
+    });
     try {
       final AppModel appModel = widget.settingsContext.appModel;
       final ManualSyncResult result = await runManualFullSync(
@@ -668,6 +673,9 @@ class _SyncNowWidgetState extends State<_SyncNowWidget> {
         tempDir: appModel.temporaryDirectory,
         localAudioEntries: appModel.localAudioDbs,
         onLocalAudioImported: appModel.importSyncedLocalAudioDb,
+        onProgress: (SyncProgress p) {
+          if (mounted) setState(() => _progress = p);
+        },
       );
       if (!mounted) return;
       switch (result.outcome) {
@@ -704,15 +712,46 @@ class _SyncNowWidgetState extends State<_SyncNowWidget> {
         );
       }
     } finally {
-      if (mounted) setState(() => _syncing = false);
+      if (mounted) {
+        setState(() {
+          _syncing = false;
+          _progress = null;
+        });
+      }
     }
+  }
+
+  /// Localized phase name for the inline progress line.
+  String _phaseLabel(SyncPhase phase) {
+    switch (phase) {
+      case SyncPhase.books:
+        return t.sync_progress_books;
+      case SyncPhase.readingData:
+        return t.sync_progress_reading;
+      case SyncPhase.dictionaries:
+        return t.sync_progress_dictionaries;
+      case SyncPhase.localAudio:
+        return t.sync_progress_local_audio;
+      case SyncPhase.audiobooks:
+        return t.sync_progress_audiobooks;
+    }
+  }
+
+  /// "phase (k/N) title" — count omitted when the phase has no items.
+  String _progressLine(SyncProgress p) {
+    final String phase = _phaseLabel(p.phase);
+    if (p.itemTotal <= 0) return phase;
+    final String head = '$phase (${p.itemIndex + 1}/${p.itemTotal})';
+    final String? title = p.title;
+    return (title == null || title.isEmpty) ? head : '$head $title';
   }
 
   @override
   Widget build(BuildContext context) {
-    return AdaptiveSettingsRow(
+    final SyncProgress? p = _progress;
+    final AdaptiveSettingsRow row = AdaptiveSettingsRow(
       title: t.sync_now,
-      subtitle: t.sync_now_hint,
+      subtitle: _syncing && p != null ? _progressLine(p) : t.sync_now_hint,
       icon: Icons.sync,
       controlBelow: true,
       // The action lives on the trailing button; giving the ROW an onTap is what
@@ -731,6 +770,20 @@ class _SyncNowWidgetState extends State<_SyncNowWidget> {
               onPressed: _syncNow,
               child: Text(t.sync_now),
             ),
+    );
+    if (!_syncing) return row;
+    // Inline determinate bar below the row (indeterminate when a phase has no
+    // measurable total), matching the compare dialog's Apply progress.
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        row,
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: LinearProgressIndicator(value: p?.fraction),
+        ),
+      ],
     );
   }
 }
