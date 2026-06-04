@@ -114,6 +114,7 @@ class VideoPlayerController extends ChangeNotifier {
   }) async {
     _bookUid = bookUid;
     _videoPath = videoFile.path;
+    debugPrint('[video-load] cues=${cues.length} path=${videoFile.path}');
     setCues(cues);
 
     // 重复 load：先释放上一次的 tick / 订阅 / player，避免泄漏。
@@ -176,6 +177,7 @@ class VideoPlayerController extends ChangeNotifier {
     if (idx == _currentCueIndex) return;
     _currentCueIndex = idx;
     _currentCue = _cues[idx];
+    debugPrint('[video-cue] idx=$idx pos=${posMs}ms text="${_cues[idx].text}"');
     notifyListeners();
   }
 

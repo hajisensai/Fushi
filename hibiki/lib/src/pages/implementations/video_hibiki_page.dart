@@ -101,13 +101,22 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage> {
     if (controller == null) return;
     await controller.pause();
     final String term = sentence.characters.skip(graphemeIndex).join();
+    debugPrint('[video-lookup] tap idx=$graphemeIndex term="$term"');
     if (term.isEmpty) return;
     final DictionarySearchResult result = await appModel.searchDictionary(
       searchTerm: term,
       searchWithWildcards: false,
       overrideMaximumTerms: appModel.maximumTerms,
     );
-    if (!mounted || result.entries.isEmpty) return;
+    debugPrint('[video-lookup] entries=${result.entries.length}');
+    if (!mounted || result.entries.isEmpty) {
+      if (mounted && result.entries.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('未找到该词')),
+        );
+      }
+      return;
+    }
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: const Color(0xF2101010),
