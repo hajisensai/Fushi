@@ -143,13 +143,15 @@ Future<int> _cueCount(HibikiDatabase db, String bookUid) async {
 
 void main() {
   test(
-      'v11->v14 migration preserves SRT-owned and audiobook-owned cues, '
+      'v11->latest migration preserves SRT-owned and audiobook-owned cues, '
       'deletes only doubly-orphaned cues', () async {
     final db = await _openV11DbWithSrtCues();
 
-    // Force the migration to run.
+    // Force the migration to run. Assert against the live schemaVersion so the
+    // test doesn't re-break on every future schema bump (it migrates to the
+    // current version, not a hard-coded 14).
     final version = await db.customSelect('PRAGMA user_version').getSingle();
-    expect(version.read<int>('user_version'), 14);
+    expect(version.read<int>('user_version'), db.schemaVersion);
 
     // SRT book cues must survive (the bug deleted all of these).
     expect(await _cueCount(db, 'srtbook_keep'), 3);

@@ -193,7 +193,7 @@ void main() {
     await db.customSelect('SELECT sort_order FROM book_tags').get();
     final row = await db.customSelect('PRAGMA user_version').getSingle();
 
-    expect(row.read<int>('user_version'), 14);
+    expect(row.read<int>('user_version'), db.schemaVersion);
   });
 
   test('migration tolerates legacy database with existing reader offset column',
@@ -203,7 +203,7 @@ void main() {
     await db.customSelect('SELECT ttu_char_offset FROM reader_positions').get();
     final row = await db.customSelect('PRAGMA user_version').getSingle();
 
-    expect(row.read<int>('user_version'), 14);
+    expect(row.read<int>('user_version'), db.schemaVersion);
   });
 
   test(
@@ -214,6 +214,6 @@ void main() {
     await db.customSelect('SELECT type FROM dictionary_metadata').get();
     final row = await db.customSelect('PRAGMA user_version').getSingle();
 
-    expect(row.read<int>('user_version'), 14);
+    expect(row.read<int>('user_version'), db.schemaVersion);
   });
 }
