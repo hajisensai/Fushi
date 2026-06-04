@@ -26,8 +26,34 @@ const String _dictionaryAssetSuffix = '.hibikidict';
 /// any listing of book folders (compare dialog, remote-book import).
 bool isReservedSyncFolderName(String name) => name == kSyncDictionaryNamespace;
 
+/// One sync item judged a genuine fork (both sides moved off the common-ancestor
+/// baseline) and therefore skipped instead of auto-resolved. Carries everything
+/// a later resolution prompt needs, including both versions so [fingerprint] can
+/// dedup re-surfacing of the same conflict.
+class SyncConflict {
+  SyncConflict({
+    required this.assetKey,
+    required this.dimension,
+    required this.title,
+    this.localVersion,
+    this.remoteVersion,
+  });
+
+  final String assetKey;
+  final String dimension;
+  final String title;
+  final int? localVersion;
+  final int? remoteVersion;
+
+  /// 去重指纹：资产+维度+两端版本。两端任一版本变化即视为新冲突。
+  String get fingerprint => '$assetKey|$dimension|$localVersion|$remoteVersion';
+}
+
 /// Tally of what one orchestrated run transferred. `errors` collects per-item
-/// failures that were skipped without aborting the whole run.
+/// failures that were skipped without aborting the whole run. `conflicts`
+/// collects items judged a genuine fork and skipped without auto-resolving —
+/// they are neither failures nor transfers, so they never feed `booksImported`
+/// nor `errors`.
 class SyncRunReport {
   int booksImported = 0;
   int dictionariesImported = 0;
@@ -35,6 +61,7 @@ class SyncRunReport {
   int audiobooksImported = 0;
   int audiobooksExported = 0;
   final List<String> errors = <String>[];
+  final List<SyncConflict> conflicts = <SyncConflict>[];
 }
 
 /// Bidirectional, union-based sync across any [SyncBackend].
@@ -103,17 +130,40 @@ class SyncOrchestrator {
 
     // Existing per-book progress / stats / content / audiobook-position sync
     // for every local book (now including any just-imported remote books).
-    await SyncManager(db: _db, backend: _backend).syncAllBooks(
+    final List<SyncBookResult> bookResults =
+        await SyncManager(db: _db, backend: _backend).syncAllBooks(
       syncStats: syncStats,
       statsSyncMode: statsSyncMode,
       syncAudioBook: syncAudioBookPosition,
       syncContent: syncContent,
     );
+    _collectConflicts(bookResults, report);
 
     if (syncDictionary) await syncDictionaries(report);
     if (syncAudioBookFiles) await syncAudiobookPackages(root, report);
 
     return report;
+  }
+
+  /// Folds the per-book sweep results into [SyncRunReport.conflicts]. Only
+  /// [SyncResult.conflict] rows are collected; everything else (imported /
+  /// exported / synced / skipped) is left to the existing per-phase tallies
+  /// and is NOT counted here. A conflict carries the four fields filled by
+  /// [SyncManager] when it detects a genuine three-way fork.
+  void _collectConflicts(
+    List<SyncBookResult> results,
+    SyncRunReport report,
+  ) {
+    for (final SyncBookResult result in results) {
+      if (result.direction != SyncResult.conflict) continue;
+      report.conflicts.add(SyncConflict(
+        assetKey: result.conflictAssetKey!,
+        dimension: result.conflictDimension!,
+        title: result.title,
+        localVersion: result.conflictLocalVersion,
+        remoteVersion: result.conflictRemoteVersion,
+      ));
+    }
   }
 
   /// Downloads and imports books that exist on the backend but not locally
