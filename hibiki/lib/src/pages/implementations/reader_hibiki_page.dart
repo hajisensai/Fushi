@@ -1530,6 +1530,29 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   $furiganaJs
   var startX = 0, startY = 0, startTime = 0, hasStart = false;
   function _gestureStart(x, y) { hasStart = true; startX = x; startY = y; startTime = Date.now(); }
+  // Resolve a block illustration under the tap to an absolute image URL, or
+  // null when the tap isn't on one. Handles both raster <img> covers/figures
+  // and fixed-layout EPUB <svg><image> covers (which are not IMG elements, so
+  // their xlink:href must be resolved against document.baseURI).
+  function _hoshiBlockImageUrl(target) {
+    if (!target) return null;
+    if (target.tagName === 'IMG' && target.src) return target.src;
+    var wrapper = target.closest ? target.closest('.block-img-wrapper') : null;
+    if (!wrapper) return null;
+    var img = wrapper.querySelector('img.block-img');
+    if (img && img.src) return img.src;
+    var svg = wrapper.querySelector('svg.block-img');
+    if (svg) {
+      var im = svg.querySelector('image');
+      if (im) {
+        var href = im.getAttribute('xlink:href') || im.getAttribute('href');
+        if (href) {
+          try { return new URL(href, document.baseURI).href; } catch (err) {}
+        }
+      }
+    }
+    return null;
+  }
   function _gestureEnd(x, y, e) {
     if (!hasStart) return;
     hasStart = false;
@@ -1547,15 +1570,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         window.flutter_inappwebview.callHandler('onSwipe', 'right');
       }
     } else if (absDx < 20 && absDy < 20 && elapsed < 500) {
-      var target = document.elementFromPoint(x, y);
-      if (target && target.tagName !== 'IMG') {
-        var img = target.classList && target.classList.contains('block-img-wrapper')
-          ? target.querySelector('img')
-          : target.querySelector(':scope > img.block-img');
-        if (img) target = img;
-      }
-      if (target && target.tagName === 'IMG' && target.src) {
-        window.flutter_inappwebview.callHandler('onImageTap', target.src);
+      var imgUrl = _hoshiBlockImageUrl(document.elementFromPoint(x, y));
+      if (imgUrl) {
+        window.flutter_inappwebview.callHandler('onImageTap', imgUrl);
       } else {
         window.flutter_inappwebview.callHandler('onTap', x, y, !!(e && e.shiftKey));
       }

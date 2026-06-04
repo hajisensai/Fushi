@@ -471,8 +471,29 @@ class ReaderPaginationScripts {
 
   static String _sharedInitImages() => '''
   Array.from(document.querySelectorAll('svg')).forEach(function(svg) {
-    if (svg.querySelector('image') && svg.getAttribute('preserveAspectRatio') === 'none') {
+    var svgImage = svg.querySelector('image');
+    if (!svgImage) return;
+    if (svg.getAttribute('preserveAspectRatio') === 'none') {
       svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+    }
+    if (svg.classList.contains('gaiji') || svg.classList.contains('gaiji-line')) return;
+    // Fixed-layout EPUB covers/illustrations ship as <svg><image> instead of
+    // <img>. Give large ones the same block treatment as <img> below (centre
+    // via .block-img-wrapper + tap-to-zoom) so they don't fall through as
+    // inline content that drifts to the page edge in vertical-rl reflow.
+    var iw = parseFloat(svgImage.getAttribute('width')) || 0;
+    var ih = parseFloat(svgImage.getAttribute('height')) || 0;
+    if (iw <= 256 && ih <= 256) {
+      var vb = (svg.getAttribute('viewBox') || '').split(/[ ,]+/);
+      iw = parseFloat(vb[2]) || iw;
+      ih = parseFloat(vb[3]) || ih;
+    }
+    if ((iw > 256 || ih > 256) && !svg.closest('.block-img-wrapper')) {
+      svg.classList.add('block-img');
+      var swrap = document.createElement('div');
+      swrap.className = 'block-img-wrapper';
+      svg.parentNode.insertBefore(swrap, svg);
+      swrap.appendChild(svg);
     }
   });
   var imagePromises = Array.from(document.querySelectorAll('img')).map(function(img) {
