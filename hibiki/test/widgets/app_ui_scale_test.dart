@@ -73,6 +73,54 @@ void main() {
     expect(textScale, closeTo(1.2, 0.001));
   });
 
+  testWidgets('缩小 (scale<1)：屏幕底部按钮仍可命中点击（无 OverflowBox 死区）', (
+    WidgetTester tester,
+  ) async {
+    bool bottomTapped = false;
+    bool topTapped = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        builder: (BuildContext context, Widget? child) => HibikiAppUiScale(
+            scale: 0.5, child: child ?? const SizedBox.shrink()),
+        home: Scaffold(
+          body: Stack(
+            children: <Widget>[
+              Align(
+                alignment: Alignment.topLeft,
+                child: SizedBox(
+                  width: 80,
+                  height: 40,
+                  child: GestureDetector(
+                    onTap: () => topTapped = true,
+                    child: const ColoredBox(color: Color(0xFF0000FF)),
+                  ),
+                ),
+              ),
+              Align(
+                alignment: Alignment.bottomCenter,
+                child: SizedBox(
+                  width: 120,
+                  height: 48,
+                  child: GestureDetector(
+                    onTap: () => bottomTapped = true,
+                    child: const ColoredBox(color: Color(0xFFFF0000)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byType(GestureDetector).first); // top-left
+    await tester.tap(find.byType(GestureDetector).last); // bottom-center
+    await tester.pump();
+
+    expect(topTapped, isTrue, reason: '左上控件应可点击');
+    expect(bottomTapped, isTrue, reason: '缩小后底栏控件不应落入命中死区');
+  });
+
   testWidgets('scale==1.0 走快路径：不插入 Transform，无额外变换', (
     WidgetTester tester,
   ) async {

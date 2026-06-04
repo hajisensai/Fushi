@@ -60,21 +60,21 @@ class HibikiAppUiScale extends StatelessWidget {
         final Size view = constraints.biggest;
         final Size canvas = view / s;
         final MediaQueryData mq = MediaQuery.of(context);
-        return Transform.scale(
-          scale: s,
+        // 用 FittedBox(BoxFit.fill) 而非 Transform.scale + OverflowBox：
+        // OverflowBox 让 canvas 子树「溢出」自身（box 尺寸只有 view），缩小 (s<1) 时
+        // canvas > view，溢出到 view 之外的底部/右侧子树会被 RenderBox.hitTest 的
+        // `size.contains(position)` 短路丢弃命中——底栏「看得到点不到」。
+        // FittedBox 把 canvas 子树「装进」自身：box 尺寸恒为 view，子树缩放后恰好填满、
+        // 绝不溢出，整个可见区都可命中。canvas = view/s 各轴等比，BoxFit.fill 算出的
+        // 变换就是均匀 scale = s，与原 Transform 数值等价（WebView 坐标一致性不变）。
+        return FittedBox(
+          fit: BoxFit.fill,
           alignment: Alignment.topLeft,
-          child: OverflowBox(
-            alignment: Alignment.topLeft,
-            minWidth: canvas.width,
-            maxWidth: canvas.width,
-            minHeight: canvas.height,
-            maxHeight: canvas.height,
-            child: SizedBox.fromSize(
-              size: canvas,
-              child: MediaQuery(
-                data: _scaleMediaQuery(mq, 1 / s),
-                child: scoped,
-              ),
+          child: SizedBox.fromSize(
+            size: canvas,
+            child: MediaQuery(
+              data: _scaleMediaQuery(mq, 1 / s),
+              child: scoped,
             ),
           ),
         );

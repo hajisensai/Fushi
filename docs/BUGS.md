@@ -13,6 +13,13 @@
 
 ---
 
+## BUG-022 · 调大/调小界面大小后点不到底栏（及右侧）按钮——缩小时整片命中死区
+- **报告**：2026-06-04（用户：「调整界面大小会点不到底栏的按钮」）。
+- **真实性**：✅ **真 bug（OverflowBox 溢出区命中被丢弃）**。界面大小是浏览器式整体缩放 `HibikiAppUiScale`（`app_ui_scale.dart`，`Transform.scale` 全树缩放 + 反算 MediaQuery 几何）。旧实现：缩放系数 `s` 时 `canvas = view / s`，把 app 子树放进 `SizedBox(canvas)`，外套 `OverflowBox(min/max=canvas, align topLeft)`，再 `Transform.scale(s, topLeft)`（`app_ui_scale.dart:55-83`）。**缩小 (s<1) 时 `canvas > view`，`SizedBox(canvas)` 比 `OverflowBox`（自身 size = 入参约束 `view`）大、向右下溢出**。Flutter `RenderBox.hitTest` 有 `if (size.contains(position))` 短路：`OverflowBox` 自身 size 只有 `view`，缩放后落在 `view` 之外的那部分子树（屏幕底部/右侧）命中测试被整段丢弃 → 底栏「看得到点不到」。定量：屏幕 p∈[0,view]，逆变换后 p′=p/s∈[0,canvas]，仅 p′<view（即 p<s·view）可命中——s=0.5 只剩屏幕**左上 1/4** 可点、底栏全死；s=0.8 底部/右侧 ~20% 死。任何缩小都产生底部死区，越缩越大。**放大 (s>1)** 时 `canvas<view`、子树不溢出，命中正常，故只在缩小时复现。根因 = 用 OverflowBox 让子树「溢出自身」，与 hitTest 的 `size.contains` 短路天然冲突。
+- **[x] ① 已修复** — `app_ui_scale.dart` 把 `Transform.scale + OverflowBox` 换成 `FittedBox(fit: BoxFit.fill, alignment: topLeft)` 包 `SizedBox(canvas)`。FittedBox 把子树**装进**自身：box size 恒为 `view`，子树缩放后恰好填满、**绝不溢出**，整个可见区都在 box 的 `size.contains` 内、全部可命中。`canvas = view/s` 各轴等比，`BoxFit.fill` 算出的变换就是均匀 `scale = s`，与原 `Transform.scale(s)` 数值等价——既有「视觉尺寸按 scale 放大」「screenSize 回 GLOBAL/view 空间」等测试全绿，WebView 划词弹窗/高亮的坐标一致性（全树同一均匀变换）不受影响。消除「子树溢出自身」这个与命中测试冲突的特殊情况，非补丁式绕过。
+- **[x] ② 已加自动化测试** — `test/widgets/app_ui_scale_test.dart` 新增「缩小 (scale<1)：屏幕底部按钮仍可命中点击」：`scale=0.5` 下左上 + 底部各放 `GestureDetector`，`tester.tap` 两者后断言底部 `bottomTapped` 为真（左上作控制组）。旧码（OverflowBox）下底部 tap 落入死区、`bottomTapped==false` → 红；FittedBox 修复后绿。同文件原有缩放/spacing/textScaler/快路径 4 测仍绿，证明视觉行为未变。
+- **备注**：布局/命中测试类，最强可落地层是 widget tap 行为测试（真实 hitTest 派发）。代码 + `test/widgets/app_ui_scale_test.dart` + 相邻 `test/focus/focus_geometry_test` `test/widgets/{hibiki_focus_ring,slider_value_indicator_scale}_test` 全绿、`dart format` 0 改动；全量 `flutter test` 2075 绿（唯一失败 `audiobook_play_bar_reverse_test` 与本改动零交集、单独跑通过，系并发/顺序串扰）。**真机肉眼复测原始失败路径**（设置里把界面调小 → 底栏、右侧按钮仍可点）待用户后补。
+
 ## BUG-021 · 反转阅读器底栏把 ⏮⏯⏭ 前进后退也镜像了，方向操作颠倒
 - **报告**：2026-06-04（用户：「反转阅读器底栏，不要把前进后退也反转了，操作不对」）。
 - **真实性**：✅ **真 bug（镜像粒度过粗）**。有声书播放底栏 `AudiobookPlayBar`（`audiobook_play_bar.dart`）的 `reversed` 开关做的是 `children: reversed ? barItems.reversed.toList() : barItems`（`:131`），把**整条扁平 children 列表**翻转——其中 `barItems` 前三项正是 ⏮(上一句/快退)⏯(播放)⏭(下一句/快进)。reversed=true 时三联键顺序变成 ⏭⏯⏮：快退/上一句跑到右、快进/下一句跑到左，方向语义被镜像 → 用户按左以为后退实际前进。普通设置底栏 `_buildSettingsBar`（`reader_hibiki_page.dart`）只有 headphones/Spacer/tune 无方向键，翻转无害，故问题仅在播放条。根因 = 把「整体布局镜像」和「播放三联键内部方向」耦合在同一个 `List.reversed` 里。
