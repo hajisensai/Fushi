@@ -1030,6 +1030,31 @@ window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
     }
   });
 };
+window.hoshiReader.reanchorAfterStyleChange = function(styleEl, css) {
+  // 外部 live CSS 变更（字体大小 / 行间 / 余白）会让 body 重新分页排版。必须像
+  // updatePageSize 一样「重排前捕捉进度 → 换样式 → 失效 metrics → rAF 重锚到分页
+  // 边界」，否则 body 停在重排前的错位滚动量、且重排过程残留的 root scrollTop 不被
+  // 清掉，最上一行被裁。共用 _reanchorPending 串行标志，避免与 chrome-inset / 页尺寸
+  // 重锚互相打架（见 setChromeInsets / updatePageSize，HBK-REG-004 / BUG-023）。
+  if (!this.didInitialize) { styleEl.textContent = css; return; }
+  var inFlight = this._reanchorPending === true;
+  var progress = inFlight ? 0 : this.calculateProgress();
+  styleEl.textContent = css;
+  this.paginationMetrics = null;
+  var cs = this._contentSize();
+  document.documentElement.style.setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(cs.w * $imageWidthRatio)) + 'px');
+  document.documentElement.style.setProperty('--hoshi-image-max-height', Math.max(1, cs.h) + 'px');
+  if (inFlight) return;
+  this._reanchorPending = true;
+  var self = this;
+  requestAnimationFrame(function() {
+    try {
+      self.scrollToProgressPaged(self.getScrollContext(), progress);
+    } finally {
+      self._reanchorPending = false;
+    }
+  });
+};
 $_sharedInitBoot
 </script>''';
   }
@@ -1291,6 +1316,28 @@ window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
   var inFlight = this._reanchorPending === true;
   var progress = (changed && !inFlight) ? this.calculateProgress() : 0;
   document.documentElement.style.setProperty('--hoshi-continuous-height', newHeight + 'px');
+  var cs = this._contentSize();
+  document.documentElement.style.setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(cs.w * $imageWidthRatio)) + 'px');
+  document.documentElement.style.setProperty('--hoshi-image-max-height', Math.max(1, cs.h) + 'px');
+  if (inFlight || progress <= 0) return;
+  this._reanchorPending = true;
+  var self = this;
+  requestAnimationFrame(function() {
+    try {
+      self.scrollToProgressContinuous(progress);
+    } finally {
+      self._reanchorPending = false;
+    }
+  });
+};
+window.hoshiReader.reanchorAfterStyleChange = function(styleEl, css) {
+  // 连续模式同理（见分页版注释）：外部 live CSS 变更后必须按进度重新滚动回同一
+  // 位置，否则字体/行间变更后内容相对视口漂移。镜像本模式 updatePageSize 的重锚序列，
+  // 共用 _reanchorPending（BUG-023）。
+  if (!this.didInitialize) { styleEl.textContent = css; return; }
+  var inFlight = this._reanchorPending === true;
+  var progress = inFlight ? 0 : this.calculateProgress();
+  styleEl.textContent = css;
   var cs = this._contentSize();
   document.documentElement.style.setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(cs.w * $imageWidthRatio)) + 'px');
   document.documentElement.style.setProperty('--hoshi-image-max-height', Math.max(1, cs.h) + 'px');

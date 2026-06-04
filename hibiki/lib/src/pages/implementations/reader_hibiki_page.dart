@@ -1420,7 +1420,17 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     el.id = 'hoshi-reader-style';
     document.head.appendChild(el);
   }
-  el.textContent = $jsonCss;
+  var css = $jsonCss;
+  // 字体大小/行间/余白等 live 变更会让 body 重新分页排版。仅换 textContent 会让
+  // 视口停在错位滚动量、最上一行被裁（BUG-023）。reanchorAfterStyleChange 在换样式
+  // 的同时按既有重锚机制（捕捉进度→失效 metrics→rAF 重锚到分页边界）回正；仅在
+  // pagination 未就绪 / 非 reader 页（无 hoshiReader）时回退裸 textContent。
+  var r = window.hoshiReader;
+  if (r && typeof r.reanchorAfterStyleChange === 'function') {
+    r.reanchorAfterStyleChange(el, css);
+  } else {
+    el.textContent = css;
+  }
 })();
 ''',
       );

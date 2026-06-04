@@ -277,4 +277,59 @@ void main() {
       expect(ReaderPaginationScripts.intResult('abc'), isNull);
     });
   });
+
+  // BUG-023: 调整字体大小（行间/余白同源）走 _applyStylesLive 的 CSS-only live
+  // 注入，会让 body 重新分页排版，但旧路径既不重建 paginationMetrics、也不把视口
+  // 重新对齐到分页边界 —— 既有的 updatePageSize / setChromeInsets 都有「捕捉进度
+  // → 重排 → 重锚」机制，唯独外部 CSS 变更没有，于是页面停在错位的滚动量、最上
+  // 一行被裁。修复加 reanchorAfterStyleChange，两模式各镜像自身 updatePageSize 的
+  // 重锚序列。这些断言先红（方法不存在），实现后绿。
+  group('ReaderPaginationScripts.reanchorAfterStyleChange (BUG-023)', () {
+    final String paginated = ReaderPaginationScripts.shellScript(
+      initialProgress: 0.3,
+    );
+    final String continuous = ReaderPaginationScripts.shellScript(
+      continuousMode: true,
+      initialProgress: 0.3,
+    );
+
+    test('paginated shell defines reanchorAfterStyleChange', () {
+      expect(paginated, contains('reanchorAfterStyleChange'));
+    });
+
+    test('continuous shell defines reanchorAfterStyleChange', () {
+      expect(continuous, contains('reanchorAfterStyleChange'));
+    });
+
+    test(
+        'paginated re-anchor captures progress, invalidates metrics, '
+        'serialises via _reanchorPending and re-snaps to a page boundary', () {
+      final int idx = paginated.indexOf('reanchorAfterStyleChange =');
+      expect(idx, greaterThanOrEqualTo(0));
+      // 取方法体（到下一处 window.hoshiReader. 赋值之前，足够覆盖本方法）。
+      final int next = paginated.indexOf('window.hoshiReader.', idx + 1);
+      final String body =
+          paginated.substring(idx, next < 0 ? paginated.length : next);
+      expect(body, contains('calculateProgress()'),
+          reason: '必须在重排前捕捉阅读进度，否则无法回到同一页');
+      expect(body, contains('this.paginationMetrics = null'),
+          reason: '字体变更后分页 metrics 失效，不置空会用旧 progressStops 算错页');
+      expect(body, contains('_reanchorPending'),
+          reason: '必须复用既有 in-flight 串行标志，避免与 chrome-inset/页尺寸重锚打架');
+      expect(body, contains('scrollToProgressPaged'),
+          reason: 'rAF 内必须重新对齐到分页边界（顺带 lockRootViewport 清 root 滚动）');
+    });
+
+    test('continuous re-anchor captures progress and re-scrolls', () {
+      final int idx = continuous.indexOf('reanchorAfterStyleChange =');
+      expect(idx, greaterThanOrEqualTo(0));
+      final int next = continuous.indexOf('window.hoshiReader.', idx + 1);
+      final String body =
+          continuous.substring(idx, next < 0 ? continuous.length : next);
+      expect(body, contains('calculateProgress()'));
+      expect(body, contains('_reanchorPending'));
+      expect(body, contains('scrollToProgressContinuous'),
+          reason: '连续模式重排后必须按进度重新滚动到同一位置');
+    });
+  });
 }
