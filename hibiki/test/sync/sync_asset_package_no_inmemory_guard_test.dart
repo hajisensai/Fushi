@@ -22,5 +22,11 @@ void main() {
         reason: 'zip 编解码必须在后台 isolate，勿阻塞 UI isolate');
     expect(src.contains('ZipFileEncoder'), isTrue);
     expect(src.contains('InputFileStream'), isTrue);
+    expect(src.contains('Inflate.stream('), isTrue,
+        reason: '导入 DEFLATE 条目必须 Inflate.stream(raw,out) 逐块落盘，不得整文件入内存');
+    expect(src.contains('writeInputStream('), isTrue,
+        reason: '导入 STORE 条目必须 out.writeInputStream(raw) 逐块拷贝');
+    expect(src.contains('ZipFileEncoder.STORE'), isTrue,
+        reason: '音频包导出必须用 STORE 流式（避免大文件整入内存 + deflate 浪费）');
   });
 }
