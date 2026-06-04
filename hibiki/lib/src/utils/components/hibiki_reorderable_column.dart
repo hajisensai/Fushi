@@ -61,6 +61,7 @@ class _HibikiReorderableColumnState extends State<HibikiReorderableColumn> {
   final GlobalKey _rootKey = GlobalKey();
 
   int? _dragOriginal; // 正在拖拽的原始 index（null = 未拖拽）
+  int _dragStartDi = 0; // 起拖时被拖行的 display 下标（提交 from，不依赖「起始必恒等」）
   double _feedbackTop = 0; // 浮层复制的本地 Y（列表本地坐标）
   double _grabDy = 0; // 抓取点相对被拖行顶部的本地偏移
   final Map<int, double> _heights = <int, double>{}; // 原始 index → 行高
@@ -85,6 +86,9 @@ class _HibikiReorderableColumnState extends State<HibikiReorderableColumn> {
     for (int i = 0; i < widget.itemCount; i++) {
       _rowKeys.putIfAbsent(i, () => GlobalKey());
     }
+    // itemCount 缩减后修剪陈旧 key/高度，避免无界增长。
+    _rowKeys.removeWhere((int i, _) => i >= widget.itemCount);
+    _heights.removeWhere((int i, _) => i >= widget.itemCount);
   }
 
   double _localY(Offset globalPosition) {
@@ -129,6 +133,7 @@ class _HibikiReorderableColumnState extends State<HibikiReorderableColumn> {
     final double localY = _localY(globalPosition);
     setState(() {
       _dragOriginal = original;
+      _dragStartDi = di;
       _grabDy = (localY - top).clamp(0.0, _heightOf(original));
       _feedbackTop = top;
     });
@@ -168,7 +173,7 @@ class _HibikiReorderableColumnState extends State<HibikiReorderableColumn> {
   void _endDrag() {
     final int? dragged = _dragOriginal;
     if (dragged == null) return;
-    final int from = dragged; // 起始时 _display 为恒等，原始 index 即起始位置
+    final int from = _dragStartDi; // 起拖时的 display 下标（= 父列表中的起始位置）
     final int to = _display.indexOf(dragged);
     setState(() {
       _dragOriginal = null;
