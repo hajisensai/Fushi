@@ -650,6 +650,8 @@ class _SyncNowWidgetState extends State<_SyncNowWidget> {
         audioDatabaseRoot:
             Directory('${appModel.appDirectory.path}/audiobooks'),
         tempDir: appModel.temporaryDirectory,
+        localAudioEntries: appModel.localAudioDbs,
+        onLocalAudioImported: appModel.importSyncedLocalAudioDb,
       );
       if (!mounted) return;
       switch (result.outcome) {
