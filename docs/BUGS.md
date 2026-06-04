@@ -13,19 +13,26 @@
 
 ---
 
-## BUG-019 · 阅读 caret 激活时按「下」翻页、回不去底栏
+## BUG-020 · 阅读 caret 激活时按「下」翻页、回不去底栏
 - **报告**：2026-06-04（用户，手柄/键盘场景：「焦点在阅读部分的时候，按下回不去底栏了」「按下会翻页，而不是去底栏」）。
 - **真实性**：✅ **真 bug（缺晋升通路 + 路径不对称）**。底栏（`_chromeFocusScope`）是阅读内容下方的相邻层。已有设计里「Down→底栏」只在 **caret 未激活的手柄路径** 存在（`reader_hibiki_page.dart:3608`，`dpadDown && _showChrome → chrome`）。但：① **caret 激活时**（阅读时的正常态），物理 Down → `CaretAction.moveDown` → `_caretMove('down')`，到分页页边 hoshiCaret 返回 `pageForward`，Dart 直接 `_paginate(forward)` 翻页（`audiobook` 竖排里 Down 还是阅读推进方向，页边必翻页）——**永远到不了底栏**；② **键盘路径**连未激活的「Down→底栏」都没有，arrowDown 直接解析成 reader 翻页快捷键。对照已有的对称设计：弹窗内容 caret 顶边 `blocked && up` → `_focusPopupHeader()` 晋升弹窗头部（`_caretMove` popup 分支）。阅读 caret 缺「底边 down → 底栏」这条对称晋升。根因 = caret/焦点面相邻层晋升通路不完整。
 - **[x] ① 已修复** — `e6ed553b8`（候选①：Down 不再翻页，到可视底边晋升底栏，翻页留给 Left/Right 与 LB/RB）。抽纯函数 `readerCaretMoveOutcome(physicalDir, status)`：仅 **物理 `down`** 且 `status∈{pageForward, blocked}` → `promoteChrome`（连续模式末尾 blocked 同样晋升、非死路）；逻辑 `forward`（Tab/竖排阅读推进，dir 串是 `'forward'` 非 `'down'`）仍 `paginateForward`，阅读推进不受影响；其余方向页边仍翻页。`_caretMove` reader 分支按它分派，promote 走新 `_promoteCaretToChrome()`（镜像 `_focusPopupHeader`：`_showChrome` 且 `_chromeFocusScope.nextFocus()` 成功才 `_exitCaret()` 交焦点给底栏，否则回退 `_focusNode` 不留悬空焦点、不翻页）。键盘路径补未激活 `arrowDown && _showChrome → chrome`，与手柄 3608 对齐。消除特例/补全对称，非补丁。
 - **[x] ② 已加自动化测试** — `hibiki/test/reader/reader_caret_down_promotes_chrome_test.dart`：钉死 `readerCaretMoveOutcome` 边界（down+pageForward/blocked→promoteChrome、down+moved→none、forward+pageForward→paginateForward、up/left/right 页边仍翻页、up+blocked→none）。谁让物理 down 在页边重新翻页即红。全量 `test/reader/ test/focus/ test/shortcuts/`（343）绿无回归。
 - **备注**：reader/WebView/焦点类。纯函数边界 + 全 focus/shortcuts 矩阵把关；`_caretMove`/`_promoteCaretToChrome` 的 WebView 实跑（手柄/键盘在阅读 caret 按 Down 到底栏、Left/Right/LB/RB 仍翻页、底栏 Up 回正文）需真机复测原始失败路径，待用户后补。竖排书里物理 Down 原是阅读推进、页边会翻页，本修改后页边 Down 改去底栏（候选①，用户确认）——翻页改用 Left/Right 或肩键。
 
-## BUG-018 · 歌词模式「自动音频跟随」开关无效（关掉仍自动滚到当前句）
+## BUG-019 · 歌词模式「自动音频跟随」开关无效（关掉仍自动滚到当前句）
 - **报告**：2026-06-04（用户，手柄/键盘场景：「歌词模式的自动音频跟随开关无效」）。
 - **真实性**：✅ **真 bug（门控信号缺失）**。非歌词路径里，cue 切换的「滚动/reveal」由 `AudiobookPlayerController.shouldRevealCurrentCue`（内含 `followAudio.value && ...`，`audiobook_controller.dart:729`）门控，关跟随就不滚。但歌词分支 `_onCueChanged`（`reader_hibiki_page.dart:2316-2330`）**无条件**调 `'window.__lyricsSetCue($idx)'`，而 `LyricsModeHtml` 的 `setCue(index)` 末尾**恒调** `scrollToCenter(_cues[index])`（`lyrics_mode_html.dart`）——整条歌词路径从不读 `followAudio.value`。后果：跟随开关在歌词模式下完全无效，关掉后歌词仍自动滚到正在播放的句子，用户无法自由翻看歌词。根因 = 歌词 cue 路径漏了 followAudio 门控信号。
 - **[x] ① 已修复** — `167e9fef6`（① JS `setCue(index, scroll)`：当前/邻近行高亮类切换照旧，仅 `if (scroll !== false) scrollToCenter` ——关跟随只停自动滚动、仍标记当前句；`__lyricsSetCue(index, scroll)` 透传第二参。② Dart 歌词分支把 `controller.followAudio.value` 传进 `__lyricsSetCue`。消除「歌词路径无视 followAudio」的缺口，与非歌词路径的 reveal 门控语义对齐，非补丁）。
 - **[x] ② 已加自动化测试** — `hibiki/test/media/audiobook/lyrics_follow_audio_guard_test.dart`：①生成器断言 `setCue(index, scroll)` 用 `scroll` 门控 `scrollToCenter`、`__lyricsSetCue` 收第二参（旧单参/恒滚码三条全红）；②reader 源码扫描断言歌词分支把 `followAudio.value` 透传进 `__lyricsSetCue`。全量 `test/media/audiobook/` 265 绿无回归。
 - **备注**：reader/WebView 行为类。最强可落地层是 HTML 生成器契约 + reader 源码透传守卫（`_onCueChanged` 在含真实 InAppWebView 的 reader 页无法 widget 挂载，JS 滚动是 WebView 行为）。真机复测原始失败路径（开有声书→进歌词模式→关「自动音频跟随」→确认歌词不再自动滚、播放进度照常）待用户后补。
+
+## BUG-018 · 词典弹窗字级光标焦点环落在空盒子/细条上（与图标错位）
+- **报告**：2026-06-04（用户，附两张截图：teal 焦点环一处是分隔线附近的细高竖条、一处是 ♪/+ 按钮上方的空角丸方框）。
+- **真实性**：✅ **真 bug（焦点环几何与可见内容不对称）**。弹窗里字级光标（`window.hoshiCaret`，`reader_caret_scripts.dart`）按设计会停在交互控件上让手柄可达（`7abc0a92b`）。但**文字停靠点**用 `_charRect`（紧贴单字形），**元素停靠点**却用 `el.getBoundingClientRect()`（含 padding/行盒/`transform` 的整盒）：`_stopRect:334`、`_anchorRect:338`、`_interactiveEls:320`、`_collectVisibleStops:423`、`refresh:832`。后果——折叠词典段 `summary.dict-label`（`display:inline`、10px、半透明、▶ 是 `::before`）框成稀疏细条；`.audio-button`/`.mine-button`（`font-size:18px` 行盒 + flex 居中 + `translateY`）框成比 ♪/+ 大且上移的空角丸方框（`border-radius:3px` 来自焦点环 `:636`）。根因 = 元素停靠点的环用整盒、与文字停靠点不对称，且未排除可见内容为空的退化元素。
+- **[x] ① 已修复** — `3db13bd69`（新增 `_elInk`（元素自身内容 client rects 并集 = 可见 ink，排除 `::before` 伪元素）与 `_elRect`（优先 ink、clamp 到 border box、无 ink 回退 box），把上述 5 处元素 rect 读取统一路由过去；`_interactiveEls` 丢弃"无 ink 且非 img/picture/video/canvas/svg/[role=img]"的空 wrapper。保留控件可达性，只收紧环几何——消除不对称而非删停靠点。reader 分支 `window.hoshiReader` 下 `_interactiveEls` 仍走 `img.block-img`，未受影响）。
+- **[x] ② 已加自动化测试** — `test/reader/reader_caret_scripts_test.dart` 源码扫描守卫 3 条（先红：`456792148`，后绿：`3db13bd69`）：环走 `_elInk`/`_elRect`/`selectNodeContents`/`getClientRects`；`_stopRect`/`_anchorRect` 经 `_elRect`；空 wrapper（`!this._elInk(e)` 且非图片）被排除。谁把元素环改回裸 `getBoundingClientRect()` 即红。全量 `flutter test` 2039 绿无回归。
+- **备注**：reader/WebView 几何类。代码 + 单测已绿、`flutter analyze` 0 issue；几何真值（环是否真贴合 ♪/+ 与 summary 文字、不再有空盒子/细条）需**真机肉眼复测**原始失败路径（开词典弹窗 → 手柄/键盘进字级光标 → 方向键停到 ♪/+ 与折叠词典段，确认环贴字形/标签）——待用户后补。`_elInk` 对 collapsed `summary` 只框标签文字（▶ 由 `::before` 渲染、不入 Range，落在环外），如真机觉得需连 ▶ 一起框可再议。
 
 ## BUG-017 · 歌词模式当前行被放大后溢出左右边框、文字贴边裁切
 - **报告**：2026-06-04（用户，附截图：蓝色高亮当前行 `麗子はその扉を開けて恐る恐る現場に足を踏み入れた。` 顶满左右边框、右侧 `足を踏み入` 被裁，灰色非当前行有正常边距）。

@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/audiobook/lyrics_mode_html.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 
-/// BUG-018 回归守卫：歌词模式「自动音频跟随」开关必须真控制自动滚动。
+/// BUG-019 回归守卫：歌词模式「自动音频跟随」开关必须真控制自动滚动。
 ///
 /// 根因：`_onCueChanged` 的歌词分支原来无条件 `__lyricsSetCue(idx)`，
 /// 而 `setCue` 末尾恒调 `scrollToCenter` —— 从不读 `followAudio.value`，

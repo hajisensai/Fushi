@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/pages/implementations/reader_hibiki_page.dart';
 
-/// BUG-019 回归守卫：阅读 caret 激活时按物理「下」到可视底边，应**晋升到底栏**
+/// BUG-020 回归守卫：阅读 caret 激活时按物理「下」到可视底边，应**晋升到底栏**
 /// 而非翻页（候选①：Down 不翻页；翻页留给 Left/Right 或 LB/RB）。
 ///
 /// 纯决策函数 [readerCaretMoveOutcome] 把 hoshiCaret.move 返回的 status +

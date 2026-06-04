@@ -79,7 +79,7 @@ enum ReaderCaretMoveOutcome {
 }
 
 /// Pure mapping from (physical direction, move status) → Dart action for the
-/// reader caret. Extracted so the BUG-019 edge rule is unit-tested without a
+/// reader caret. Extracted so the BUG-020 edge rule is unit-tested without a
 /// WebView. Only an explicit physical `down` promotes to the chrome bar; the
 /// logical `forward` (Tab / vertical-rl reading advance) still paginates, so
 /// reading-order stepping is unaffected.
@@ -3500,7 +3500,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
     // layer below the reading content), mirroring the gamepad polled path
     // (_handleGamepadButton). Without this the keyboard path had no chrome
     // route, so Down resolved to a reader page-turn shortcut and could never
-    // reach the bar (BUG-019). Gated on a visible bar that accepts focus.
+    // reach the bar (BUG-020). Gated on a visible bar that accepts focus.
     if (!_caretActive &&
         event.logicalKey == LogicalKeyboardKey.arrowDown &&
         _showChrome) {
@@ -3905,7 +3905,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
     switch (readerCaretMoveOutcome(physicalDir, status)) {
       case ReaderCaretMoveOutcome.promoteChrome:
         // Down at the bottom edge: hand focus to the bottom bar instead of
-        // turning the page (BUG-019). Mirrors the popup top-edge Up→header.
+        // turning the page (BUG-020). Mirrors the popup top-edge Up→header.
         _promoteCaretToChrome();
         break;
       case ReaderCaretMoveOutcome.paginateForward:
