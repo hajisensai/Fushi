@@ -1012,7 +1012,7 @@
     "update_debug_channel": "Debug Update Channel",
     "update_debug_channel_warning": "Debug channel builds may be unstable. Use at your own risk.",
     "sync_title": "Sync",
-    "sync_summary": "Google Drive · ッツ/Hoshi Reader compatible",
+    "sync_summary": "Cloud, LAN P2P & local backup · ッツ/Hoshi Reader compatible",
     "sync_account": "Account",
     "sync_client_id": "Google OAuth Client ID",
     "sync_client_id_hint": "xxx.apps.googleusercontent.com",
