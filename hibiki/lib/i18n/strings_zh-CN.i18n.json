@@ -1245,5 +1245,6 @@
     "sync_progress_reading": "同步阅读数据",
     "sync_progress_dictionaries": "同步词典",
     "sync_progress_local_audio": "同步本地音频",
-    "sync_progress_audiobooks": "同步有声书"
+    "sync_progress_audiobooks": "同步有声书",
+    "sync_compare_no_content": "仅云端数据，无可下载书籍"
 }

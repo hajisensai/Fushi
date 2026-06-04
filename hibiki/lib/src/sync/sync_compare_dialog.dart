@@ -24,6 +24,7 @@ class SyncCompareEntry {
     required this.title,
     required this.bookId,
     this.remoteFolderId,
+    this.remoteHasContent = true,
     this.remoteAudioBookId,
     this.localProgress,
     this.localUpdatedAt,
@@ -41,6 +42,15 @@ class SyncCompareEntry {
 
   /// 远端书籍文件夹的原生定位符（删除整本远端书用）；本端独有书为 null。
   final String? remoteFolderId;
+
+  /// 该远端文件夹是否含可下载的 `.epub` 内容。仅对「远端独有」书有意义：为 false
+  /// 时是只剩同步元数据的孤儿，不能当可下载书（避免 BUG-049 幽灵下载），但条目保留
+  /// 以便删除。本端已有书 / 本端独有书恒为 true（不参与远端下载判定）。
+  final bool remoteHasContent;
+
+  /// 远端独有且确有内容可下载（[remoteFolderId] 非空且 [remoteHasContent]）。
+  bool get isDownloadableRemoteOnly =>
+      bookId == null && remoteFolderId != null && remoteHasContent;
 
   /// 远端有声书资产（audiobook.hibikiaudio）的原生定位符；无远端有声书为 null。
   final String? remoteAudioBookId;
@@ -97,6 +107,36 @@ class SyncDictEntry {
 
   bool get hasRemote => remoteAssetId != null;
 }
+
+/// True if a remote book folder holds a downloadable EPUB content asset.
+/// Mirrors [importRemoteBookFolder]'s content lookup so the compare list never
+/// offers a download it can't fulfil (BUG-049). Errs toward *showing* the entry
+/// when the listing fails, so a transient error never hides a real remote book.
+Future<bool> _remoteFolderHasContent(
+  SyncBackend backend,
+  String folderId,
+) async {
+  try {
+    final List<AssetEntry> children = await backend.listChildren(folderId);
+    return children.any((AssetEntry e) =>
+        !e.isFolder && e.name.toLowerCase().endsWith('.epub'));
+  } catch (e) {
+    developer.log(
+      'Failed to check remote content for "$folderId"',
+      error: e,
+      name: 'SyncCompare',
+    );
+    return true;
+  }
+}
+
+/// Test seam for [_fetchCompareData] (the production builder is private).
+@visibleForTesting
+Future<List<SyncCompareEntry>> fetchCompareDataForTest(
+  HibikiDatabase db,
+  SyncBackend backend,
+) =>
+    _fetchCompareData(db, backend);
 
 Future<List<SyncCompareEntry>> _fetchCompareData(
   HibikiDatabase db,
@@ -196,6 +236,16 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
     final remote =
         remoteByTitle[title] ?? remoteByTitle[sanitizeTtuFilename(title)];
 
+    // Whether this remote book folder actually holds downloadable book content.
+    // Only meaningful (and only checked, to save a round-trip) for remote-only
+    // books: a folder with no local book and no .epub is an orphan that holds
+    // only sync metadata, so it must NOT be offered as a download that
+    // importRemoteBookFolder can never satisfy — the phantom "download" row
+    // that never clears (BUG-049). The row is still kept so it can be deleted.
+    final bool remoteHasContent = (local == null && remote != null)
+        ? await _remoteFolderHasContent(backend, remote.id)
+        : true;
+
     // 跨设备资产身份与 SyncManager 一致：sanitizeTtuFilename(title)。读共同祖先
     // 基线，让「时间戳不等」收紧为「真分叉」冲突判定。
     final int? base =
@@ -205,6 +255,7 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
       title: title,
       bookId: local?.id,
       remoteFolderId: remote?.id,
+      remoteHasContent: remoteHasContent,
       remoteAudioBookId: remoteData?.audioBookId,
       localProgress: localProg,
       localUpdatedAt: localUpdatedAt,
@@ -455,10 +506,12 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
       final choices = <String, SyncChoice>{};
       for (final e in entries) {
         if (e.bookId == null) {
-          // remote-only 书：唯一可做的对账是「下载到本机」。有远端文件夹则默认
-          // 勾选下载，匹配用户「点 Apply 应把云端书拉下来」的直觉。
-          choices[e.title] =
-              e.remoteFolderId != null ? SyncChoice.useRemote : SyncChoice.skip;
+          // remote-only 书：唯一可做的对账是「下载到本机」。仅当远端确有可下载内容
+          // 时才默认勾选下载，匹配用户「点 Apply 应把云端书拉下来」的直觉；只剩同步
+          // 元数据的孤儿默认 skip，不再当永远拉不下来的幽灵（BUG-049）。
+          choices[e.title] = e.isDownloadableRemoteOnly
+              ? SyncChoice.useRemote
+              : SyncChoice.skip;
         } else if (e.isSynced) {
           choices[e.title] = SyncChoice.skip;
         } else if (e.autoDirection == SyncDirection.importFromTtu) {
@@ -492,12 +545,13 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
     return entries.where((e) => e.hasConflict).toList();
   }
 
-  /// 一条 entry 是否参与 Apply：选了非 skip，且要么本地已有（bookId）、要么远端
-  /// 独有可下载（remoteFolderId）。
+  /// 一条 entry 是否参与 Apply：选了非 skip，且要么本地已有（bookId，做进度同步），
+  /// 要么远端独有且确有内容可下载（[isDownloadableRemoteOnly]）。只剩同步元数据的
+  /// 远端孤儿不可下载，故不参与 Apply（仍可经行内删除清理）（BUG-049）。
   bool _isActionable(SyncCompareEntry e) {
     final c = _choices[e.title];
     if (c == null || c == SyncChoice.skip) return false;
-    return e.bookId != null || e.remoteFolderId != null;
+    return e.bookId != null || e.isDownloadableRemoteOnly;
   }
 
   Future<void> _applyChoices() async {
@@ -693,6 +747,10 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
         title: e.title,
         bookId: e.bookId,
         remoteFolderId: e.remoteFolderId,
+        // Carry the content flag: dropping it would reset to the default true
+        // and re-expose the phantom download on a content-less orphan after its
+        // remote audiobook is deleted (BUG-049 regression).
+        remoteHasContent: e.remoteHasContent,
         remoteAudioBookId: null,
         localProgress: e.localProgress,
         localUpdatedAt: e.localUpdatedAt,
@@ -802,9 +860,9 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
                       for (final e in _entries!) {
                         if (e.bookId != null && e.needsManualChoice) {
                           _choices[e.title] = choice;
-                        } else if (e.bookId == null &&
-                            e.remoteFolderId != null) {
+                        } else if (e.isDownloadableRemoteOnly) {
                           // remote-only 只在 useRemote/skip 间切；忽略 useLocal。
+                          // 无内容的孤儿不可下载，不参与批量「全部用远端」。
                           _choices[e.title] = choice == SyncChoice.useLocal
                               ? SyncChoice.skip
                               : choice;
@@ -1000,9 +1058,19 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
           if (entry.bookId != null && entry.needsManualChoice) ...[
             const SizedBox(height: 6),
             _choiceRow(entry.title, choice, theme),
-          ] else if (entry.bookId == null && entry.remoteFolderId != null) ...[
+          ] else if (entry.isDownloadableRemoteOnly) ...[
             const SizedBox(height: 6),
             _downloadRow(entry.title, choice, theme),
+          ] else if (entry.bookId == null && entry.remoteFolderId != null) ...[
+            // Orphan remote folder: only sync metadata on the cloud, no book to
+            // download. Show why (the delete menu above can clean it up) instead
+            // of a download checkbox that could never succeed (BUG-049).
+            const SizedBox(height: 6),
+            Text(
+              t.sync_compare_no_content,
+              style: theme.textTheme.labelMedium
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
           ],
         ],
       ),
