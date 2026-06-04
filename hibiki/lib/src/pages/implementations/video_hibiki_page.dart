@@ -34,6 +34,7 @@ class VideoHibikiPage extends StatefulWidget {
 
 class _VideoHibikiPageState extends State<VideoHibikiPage> {
   VideoPlayerController? _controller;
+  bool _failed = false;
 
   @override
   void initState() {
@@ -43,16 +44,29 @@ class _VideoHibikiPageState extends State<VideoHibikiPage> {
 
   Future<void> _init() async {
     final VideoBookRow? row = await widget.repo.getByBookUid(widget.bookUid);
-    if (row == null) return;
+    if (row == null) {
+      // 书缺失/被删：标记错误态而非永久 loader。
+      if (mounted) setState(() => _failed = true);
+      return;
+    }
     final List<AudioCue> cues = await widget.repo.loadCues(widget.bookUid);
     final VideoPlayerController controller = VideoPlayerController();
-    await controller.load(
-      bookUid: widget.bookUid,
-      videoFile: File(row.videoPath),
-      cues: cues,
-      initialPositionMs: row.lastPositionMs,
-      externalSubtitlePath: row.subtitleSource,
-    );
+    // 照有声书 _initAudiobookController 范式：load 失败时 dispose 控制器并
+    // 进入错误态，不让页面卡在 loader（坏视频文件/解码失败可控降级）。
+    try {
+      await controller.load(
+        bookUid: widget.bookUid,
+        videoFile: File(row.videoPath),
+        cues: cues,
+        initialPositionMs: row.lastPositionMs,
+        externalSubtitlePath: row.subtitleSource,
+      );
+    } catch (e, stack) {
+      debugPrint('[VideoHibikiPage] video load failed: $e\n$stack');
+      controller.dispose();
+      if (mounted) setState(() => _failed = true);
+      return;
+    }
     controller.onPositionWrite =
         (String uid, int posMs) => widget.repo.updatePosition(uid, posMs);
     if (!mounted) {
@@ -74,25 +88,29 @@ class _VideoHibikiPageState extends State<VideoHibikiPage> {
     final VideoController? videoController = controller?.videoController;
     return Scaffold(
       backgroundColor: Colors.black,
-      body: (controller == null || videoController == null)
-          ? const Center(child: CircularProgressIndicator())
-          : Column(
-              children: <Widget>[
-                Expanded(
-                  child: Stack(
-                    children: <Widget>[
-                      Positioned.fill(
-                        child: Video(controller: videoController),
+      body: _failed
+          ? const Center(
+              child: Icon(Icons.error_outline, color: Colors.white70, size: 48),
+            )
+          : (controller == null || videoController == null)
+              ? const Center(child: CircularProgressIndicator())
+              : Column(
+                  children: <Widget>[
+                    Expanded(
+                      child: Stack(
+                        children: <Widget>[
+                          Positioned.fill(
+                            child: Video(controller: videoController),
+                          ),
+                          Positioned.fill(
+                            child: VideoSubtitleOverlay(controller: controller),
+                          ),
+                        ],
                       ),
-                      Positioned.fill(
-                        child: VideoSubtitleOverlay(controller: controller),
-                      ),
-                    ],
-                  ),
+                    ),
+                    VideoPlayBar(controller: controller),
+                  ],
                 ),
-                VideoPlayBar(controller: controller),
-              ],
-            ),
     );
   }
 }

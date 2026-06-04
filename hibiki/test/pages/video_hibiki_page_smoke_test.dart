@@ -6,7 +6,8 @@ import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
 void main() {
-  testWidgets('shows loader when book missing', (WidgetTester tester) async {
+  testWidgets('missing book resolves to error state, not a stuck loader',
+      (WidgetTester tester) async {
     final HibikiDatabase db =
         HibikiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
@@ -14,7 +15,9 @@ void main() {
       home:
           VideoHibikiPage(bookUid: 'video/none', repo: VideoBookRepository(db)),
     ));
-    await tester.pump();
-    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    // Let _init() complete (getByBookUid → null → error state).
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.error_outline), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
   });
 }

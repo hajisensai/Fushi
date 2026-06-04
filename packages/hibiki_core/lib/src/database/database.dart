@@ -567,6 +567,8 @@ class HibikiDatabase extends _$HibikiDatabase {
       (select(videoBooks)..where((t) => t.bookUid.equals(bookUid)))
           .getSingleOrNull();
 
+  Future<List<VideoBookRow>> allVideoBooks() => select(videoBooks).get();
+
   Future<void> updateVideoBookPosition(String bookUid, int positionMs) =>
       (update(videoBooks)..where((t) => t.bookUid.equals(bookUid)))
           .write(VideoBooksCompanion(lastPositionMs: Value(positionMs)));

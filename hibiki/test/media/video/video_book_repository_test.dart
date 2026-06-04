@@ -38,4 +38,21 @@ void main() {
     final row2 = await repo.getByBookUid('video/1');
     expect(row2!.lastPositionMs, 5000);
   });
+
+  test('listAll returns all video books', () async {
+    final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final repo = VideoBookRepository(db);
+    await repo.saveVideoBook(const VideoBooksCompanion(
+        bookUid: Value('video/a'),
+        title: Value('A'),
+        videoPath: Value('/a.mp4')));
+    await repo.saveVideoBook(const VideoBooksCompanion(
+        bookUid: Value('video/b'),
+        title: Value('B'),
+        videoPath: Value('/b.mp4')));
+    final all = await repo.listAll();
+    expect(all, hasLength(2));
+    expect(all.map((e) => e.bookUid), containsAll(['video/a', 'video/b']));
+  });
 }

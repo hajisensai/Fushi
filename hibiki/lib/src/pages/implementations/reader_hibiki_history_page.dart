@@ -11,6 +11,9 @@ import 'package:hibiki/pages.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:hibiki/src/media/audiobook/book_import_dialog.dart';
+import 'package:hibiki/src/media/video/video_book_repository.dart';
+import 'package:hibiki/src/media/video/video_import_dialog.dart';
+import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/epub/epub_storage.dart';
@@ -95,6 +98,24 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   List<MediaItem> _visibleEpubBooks = const [];
   List<SrtBook> _visibleSrtBooks = const [];
 
+  // 视频书单独分区：无 Riverpod provider，按需载入 state 并在导入后刷新。
+  List<VideoBookRow> _videoBooks = const [];
+  Future<List<VideoBookRow>>? _videoBooksFuture;
+
+  VideoBookRepository get _videoRepo => VideoBookRepository(appModel.database);
+
+  Future<List<VideoBookRow>> _loadVideoBooks() async {
+    final List<VideoBookRow> rows = await _videoRepo.listAll();
+    _videoBooks = rows;
+    return rows;
+  }
+
+  void _refreshVideoBooks() {
+    setState(() {
+      _videoBooksFuture = _loadVideoBooks();
+    });
+  }
+
   static double _gridExtent(BuildContext context, BoxConstraints constraints) {
     return readerShelfGridExtentForLayout(
       mediaWidth: MediaQuery.sizeOf(context).width,
@@ -148,6 +169,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
             child: books.when(
               data: (bookList) {
                 _batchAudiobookInfoFuture ??= _loadAllAudiobookInfo();
+                _videoBooksFuture ??= _loadVideoBooks();
                 final Set<int>? filterSet = filteredIds.valueOrNull;
                 final List<MediaItem> filtered;
                 if (filterSet == null) {
@@ -160,7 +182,11 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                 }
                 return FutureBuilder<Map<String, _AudiobookInfo>>(
                   future: _batchAudiobookInfoFuture,
-                  builder: (context, abSnapshot) => buildBody(filtered),
+                  builder: (context, abSnapshot) =>
+                      FutureBuilder<List<VideoBookRow>>(
+                    future: _videoBooksFuture,
+                    builder: (context, videoSnapshot) => buildBody(filtered),
+                  ),
                 );
               },
               error: (error, stack) => buildError(
@@ -199,6 +225,11 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           context: context,
           ref: ref,
           appModel: appModel,
+        ),
+        _headerAction(
+          tooltip: t.video_import_action,
+          icon: Icons.movie_outlined,
+          onTap: _openVideoImport,
         ),
         _headerAction(
           tooltip: t.collections,
@@ -391,9 +422,12 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     } else {
       srtBooks = allSrtBooks;
     }
+    // 视频书无标签，标签筛选激活时整组隐藏（与 SRT 同策略）。
+    final List<VideoBookRow> videoBooks =
+        hasActiveFilter ? const [] : _videoBooks;
     _visibleEpubBooks = epubBooks;
     _visibleSrtBooks = srtBooks;
-    if (epubBooks.isEmpty && srtBooks.isEmpty) {
+    if (epubBooks.isEmpty && srtBooks.isEmpty && videoBooks.isEmpty) {
       return hasActiveFilter
           ? Center(
               child: HibikiPlaceholderMessage(
@@ -474,8 +508,20 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                 ),
               ),
             ],
+            if (videoBooks.isNotEmpty) ...[
+              SliverToBoxAdapter(
+                  child: _buildSectionHeader(t.shelf_video_section)),
+              SliverGrid.builder(
+                gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+                  maxCrossAxisExtent: _gridExtent(context, constraints),
+                  childAspectRatio: mediaSource.aspectRatio,
+                ),
+                itemCount: videoBooks.length,
+                itemBuilder: (_, i) => _buildVideoCard(videoBooks[i]),
+              ),
+            ],
             if (epubBooks.isNotEmpty) ...[
-              if (srtBooks.isNotEmpty)
+              if (srtBooks.isNotEmpty || videoBooks.isNotEmpty)
                 SliverToBoxAdapter(child: _buildSectionHeader(t.section_epub)),
               SliverGrid.builder(
                 gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
@@ -556,6 +602,68 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         ],
       ),
     );
+  }
+
+  Widget _buildVideoCard(VideoBookRow book) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final double overlayInset = tokens.spacing.gap * 0.75;
+    return _bookCardShell(
+      cardKey: ValueKey<String>('video_entry_${book.bookUid}'),
+      focusId: HibikiFocusId('reader-shelf-video-${book.bookUid}'),
+      onTap: () => _openVideoBook(book),
+      onLongPress: () => _openVideoBook(book),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          _buildVideoCover(book),
+          _titleOverlay(book.title),
+          Positioned(
+            top: overlayInset,
+            right: overlayInset,
+            child: _cardBadge(
+              icon: Icons.movie_outlined,
+              background: theme.colorScheme.tertiaryContainer,
+              foreground: theme.colorScheme.onTertiaryContainer,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVideoCover(VideoBookRow book) {
+    final String? cover = book.coverPath;
+    if (cover != null && File(cover).existsSync()) {
+      return FadeInImage(
+        imageErrorBuilder: (_, __, ___) =>
+            _coverPlaceholderIcon(Icons.movie_outlined),
+        placeholder: MemoryImage(kTransparentImage),
+        image: FileImage(File(cover)),
+        alignment: Alignment.topCenter,
+        fit: BoxFit.fitHeight,
+      );
+    }
+    return _coverPlaceholderIcon(Icons.movie_outlined);
+  }
+
+  void _openVideoBook(VideoBookRow book) {
+    Navigator.push(
+      context,
+      adaptivePageRoute<void>(
+        builder: (_) =>
+            VideoHibikiPage(bookUid: book.bookUid, repo: _videoRepo),
+      ),
+    );
+  }
+
+  Future<void> _openVideoImport() async {
+    final String? bookUid = await showAppDialog<String>(
+      context: context,
+      builder: (_) => VideoImportDialog(repo: _videoRepo),
+    );
+    if (bookUid != null) {
+      _refreshVideoBooks();
+    }
   }
 
   Widget _buildSrtCover(SrtBook book) {

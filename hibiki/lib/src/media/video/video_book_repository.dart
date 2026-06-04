@@ -13,6 +13,8 @@ class VideoBookRepository {
   Future<VideoBookRow?> getByBookUid(String bookUid) =>
       _db.getVideoBookByBookUid(bookUid);
 
+  Future<List<VideoBookRow>> listAll() => _db.allVideoBooks();
+
   Future<void> updatePosition(String bookUid, int positionMs) =>
       _db.updateVideoBookPosition(bookUid, positionMs);
 
@@ -20,8 +22,7 @@ class VideoBookRepository {
     required String bookUid,
     required List<AudioCue> cues,
   }) =>
-      _db.replaceCuesForBook(
-          bookUid, cues.map(AudioCue.toCompanion).toList());
+      _db.replaceCuesForBook(bookUid, cues.map(AudioCue.toCompanion).toList());
 
   Future<List<AudioCue>> loadCues(String bookUid) async {
     final List<AudioCueRow> rows = await _db.getCuesForBook(bookUid);
