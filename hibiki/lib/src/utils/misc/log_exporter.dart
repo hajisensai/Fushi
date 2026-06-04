@@ -27,7 +27,15 @@ Future<void> saveLogToFile({
   required String fileName,
   required String subject,
 }) async {
-  final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+  // FilePicker 对话框可能开很久，期间页面可能被 pop。每次提示前都校验
+  // context 仍挂载，避免对已 dispose 的 ScaffoldMessenger 调用 showSnackBar
+  // （参照 sync_settings_schema 的 `if (mounted)` 保护）。
+  void notify(String message) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+  }
+
   File? tmp;
   try {
     final Directory tmpDir = await getTemporaryDirectory();
@@ -44,7 +52,7 @@ Future<void> saveLogToFile({
       );
       if (savePath != null) {
         await tmp.copy(savePath);
-        messenger.showSnackBar(SnackBar(content: Text(t.log_export_saved)));
+        notify(t.log_export_saved);
       }
     } else {
       await Share.shareXFiles(
@@ -53,7 +61,7 @@ Future<void> saveLogToFile({
       );
     }
   } catch (_) {
-    messenger.showSnackBar(SnackBar(content: Text(t.log_export_failed)));
+    notify(t.log_export_failed);
   } finally {
     // 桌面端导出完（含取消保存）清理临时文件；移动端分享需保留文件供
     // 系统分享面板异步读取，不在此删。
