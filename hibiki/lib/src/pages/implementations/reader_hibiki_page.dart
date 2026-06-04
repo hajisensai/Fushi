@@ -63,11 +63,23 @@ import 'package:hibiki/src/shortcuts/reader_caret_router.dart';
 /// following the popup stack as the user looks up deeper words and backs out.
 enum CaretSurface { none, reader, popup }
 
-List<int> _computeChapterCharCounts(EpubBook book) {
-  return List<int>.generate(
+/// 解析结果 + 每章字符数，一次 isolate 往返同时算好，避免把整本书
+/// （含全部章节 HTML）二次序列化进新 isolate 只为数字符。
+class ParsedBookData {
+  const ParsedBookData(this.book, this.charCounts);
+  final EpubBook book;
+  final List<int> charCounts;
+}
+
+/// 在单个 isolate 内解析 EPUB 并计算每章纯文本长度。供 compute() 调用，
+/// 也可直接调用做等价性校验。
+ParsedBookData parseAndCountChapters(String extractDir) {
+  final EpubBook book = EpubParser.parseFromExtracted(extractDir);
+  final List<int> counts = List<int>.generate(
     book.chapters.length,
-    (i) => book.chapterPlainText(i).length,
+    (int i) => book.chapterPlainText(i).length,
   );
+  return ParsedBookData(book, counts);
 }
 
 class ReaderHibikiPage extends BaseSourcePage {
@@ -355,7 +367,10 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     _extractDir = extractDir;
 
     try {
-      _book = await compute(EpubParser.parseFromExtracted, extractDir);
+      final ParsedBookData parsed =
+          await compute(parseAndCountChapters, extractDir);
+      _book = parsed.book;
+      _chapterCharCounts = parsed.charCounts;
       debugPrint(
           '[ReaderHibiki] parsed EPUB: ${_book!.chapters.length} chapters');
     } on FormatException catch (e) {
@@ -363,16 +378,17 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       _book = await _buildBookFromDb(db, widget.bookId, extractDir);
       if (!mounted) return;
       _book ??= _buildLegacyBook(extractDir);
+      // fallback 路径没在 isolate 里算字符数，这里补一趟（书已在内存，便宜）。
+      _chapterCharCounts = List<int>.generate(
+        _book!.chapters.length,
+        (int i) => _book!.chapterPlainText(i).length,
+      );
       HibikiToast.show(msg: t.epub_parse_fallback);
     }
 
     final List<String> hrefs = _book!.chapters.map((ch) => ch.href).toList();
     debugPrint('[ReaderHibiki] chapter hrefs: $hrefs');
 
-    _chapterCharCounts = await compute(
-      _computeChapterCharCounts,
-      _book!,
-    );
     int cumulative = 0;
     _chapterCumulativeChars = <int>[];
     for (final int count in _chapterCharCounts) {
