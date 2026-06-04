@@ -310,7 +310,8 @@ class HibikiFocusController extends ChangeNotifier {
     // 当前项所在的最近 Scrollable —— 方向导航优先停留在同一面板（同一可滚动
     // 容器）内。设置宽屏主从布局里，导航栏与详情各是独立 ListView；没有这条，
     // 详情里「设计系统」段控按 Down 会被纵向更近的左侧导航项「阅读」抢走。
-    final ScrollableState? activeScrollable = Scrollable.maybeOf(active.context);
+    final ScrollableState? activeScrollable =
+        Scrollable.maybeOf(active.context);
     final Offset activeCenter = activeRect.center;
     HibikiFocusTargetEntry? best;
     int bestSamePane = -1;
@@ -387,21 +388,31 @@ class HibikiFocusController extends ChangeNotifier {
       final int clearsScore = clears ? 1 : 0;
       final int samePaneScore = samePane ? 1 : 0;
       // Ranking, in priority order:
-      //  0. `samePane` — a candidate in the SAME nearest Scrollable (same visual
-      //     pane) beats any cross-pane candidate. In the wide settings list-detail
-      //     the nav pane and the detail pane are separate ListViews; without this
-      //     a Down press from a detail control jumps to the vertically-closer nav
-      //     item in the OTHER pane. Both-null (no Scrollable) counts as same, so
-      //     scrollable-free pages keep the original behaviour.
-      //  1. `clears` — fully past the source on the press axis beats mere overlap.
+      //  0. `clears` — a candidate that lies ENTIRELY past the source on the press
+      //     axis (a genuine next-row/next-column neighbour) beats one that merely
+      //     sits diagonally beside the source. This MUST outrank `samePane`:
+      //     pressing Left/Right on a full-width row (e.g. a settings switch) has
+      //     no in-row same-pane neighbour, so its only same-pane "ahead"
+      //     candidates are DIAGONAL (a swatch/segment a row up or down). A real
+      //     directional neighbour in the OTHER pane — the nav rail, directly to
+      //     the side and clearing the source — must win over that diagonal;
+      //     otherwise Left on the switch jumps UP to the 主题 swatch row instead
+      //     of escaping to the nav pane (BUG-015).
+      //  1. `samePane` — among equally-clearing candidates, one in the SAME nearest
+      //     Scrollable (same visual pane) beats a cross-pane one. In the wide
+      //     settings list-detail the nav pane and the detail pane are separate
+      //     ListViews; without this a Down press from a detail control lands on
+      //     the vertically-closer nav item in the OTHER pane (both clear, so this
+      //     tier keeps focus in-pane). Both-null (no Scrollable) counts as same,
+      //     so scrollable-free pages keep the original behaviour.
       //  2. `along` — the immediately-next row/column wins even if cross-offset.
       //  3. `beam` — perpendicular overlap breaks an `along` tie.
       //  4. `cross` — centre offset breaks any remaining tie.
       final bool better = best == null ||
-          samePaneScore > bestSamePane ||
-          (samePaneScore == bestSamePane &&
-              (clearsScore > bestClears ||
-                  (clearsScore == bestClears &&
+          clearsScore > bestClears ||
+          (clearsScore == bestClears &&
+              (samePaneScore > bestSamePane ||
+                  (samePaneScore == bestSamePane &&
                       (along < bestAlong - epsilon ||
                           ((along - bestAlong).abs() <= epsilon &&
                               (beamScore > bestBeam ||

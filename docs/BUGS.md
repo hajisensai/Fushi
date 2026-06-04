@@ -13,6 +13,20 @@
 
 ---
 
+## BUG-016 · 同步设置「立即同步/导出/导入」手柄键盘到不了，Compare Data 按下跳到左侧导航
+- **报告**：2026-06-04（用户，附截图：焦点环在「Compare Data」行，按下跑到左边；并指出「去不到立即同步」）。
+- **真实性**：✅ **真 bug（方向焦点不可达）**。方向导航只走已注册的 `HibikiFocusTarget`（`gamepadMoveFocusInDirection`→`HibikiFocusController.move`，只遍历 `_entries`）。`AdaptiveSettingsRow` **只有传了 `onTap` 才注册焦点目标**（`settings_shared.dart:250` `if (onTap == null) return content;`，否则裸 `content` 不可聚焦）。但同步设置的「立即同步」(`_SyncNowWidget`)、「导出备份」(`_BackupExportWidget`)、「导入备份」(`_BackupImportWidget`) 把动作放在 `controlBelow` 的**尾部裸 `FilledButton`** 上、行本身**没有 `onTap`** → 整行不注册，裸按钮也不是 Hibiki 焦点目标。后果：① 「立即同步」等按钮**永远聚焦不到**；② 焦点在已注册的「Compare Data」(`SettingsActionItem`→带 `onTap`) 按 Down，因为同面板下方没有可达目标，几何评分挑了**跨面板**的左侧导航项 → 焦点「去到左边」。根因点 `sync_settings_schema.dart` 三个 widget 的 `build()`。
+- **[x] ① 已修复** — 给这三行的 `AdaptiveSettingsRow` 加 `onTap`（指向各自的 `_syncNow/_export/_import`，并在这些方法首行加 `if (_syncing/_isExporting/_isImporting) return;` 防重入，因为整行 Activate 与尾部按钮会都触发）。整行随之注册成焦点目标，A/Enter 经 `_SettingsRowFocusTarget` 的 `ActivateIntent` 跑动作；尾部按钮保留作视觉/鼠标可达。「立即同步」可达；「Compare Data」按 Down 落到同面板下方的「导出备份」而非跳走。提交见下。
+- **[x] ② 已加自动化测试** — `test/settings/sync_action_rows_focus_test.dart`：真实 `AdaptiveSettingsRow` 重建左导航+右详情两面板，从 `detail-top` 连按 Down 走 Compare→Sync，并各用 `ActivateIntent` 验证落点（`syncActivated` 必须为真——修复前 Sync 行未注册，第二次 Down 会跳到导航面板，该断言变红）。
+- **备注**：布局/焦点类。代码 + `test/focus/ test/settings/ test/sync/` 全量（329）绿。真机手柄/键盘复测同步设置页（焦点能到「立即同步」「导出」「导入」，Compare 按下到导出而非导航栏）待用户。同类的 `_SyncAccountWidget` 登录/登出按钮、各后端「测试连接」按钮也是行内裸按钮、同源问题，本轮未报未改，留作后续。
+
+## BUG-015 · 外观设置「反转底栏方向」开关按左键焦点跳到「主题」色块
+- **报告**：2026-06-04（用户，附截图：焦点在底部整宽开关「反转底栏方向」，按方向键左，焦点回到上方「主题」色块行）。
+- **真实性**：✅ **真 bug（方向几何评分错档）**。宽屏设置主从布局：左导航面板、右详情面板各是独立 `Scrollable`。`HibikiFocusController._geometricTarget` 的评分把 `samePane`（同一可滚动面板）排在 `clears`（候选在按压轴上**整体越过**源，即真·下一行/下一列邻居）之上（`hibiki_focus_controller.dart:400-409`）。整宽的开关行没有「同行左邻居」，唯一的同面板「左方」候选只能是**斜上方**的「主题」色块（`clears=0`）；正左方、确实越过源的导航项是跨面板（`samePane=0`）。`samePane` 优先 → 斜上方色块击败正左方导航项 → 左移跳到「主题」。这个 `samePane`-first 档是早先「Down 留在同面板」修复（`focus_pane_locality_test`）叠加上来的，过度泛化到了 Left/Right。
+- **[x] ① 已修复** — 把评分档序从 `samePane > clears > along > beam > cross` 改为 `clears > samePane > along > beam > cross`（`hibiki_focus_controller.dart`）。真·方向邻居（clears）优先于同面板斜向候选；同为 clears 时再用 `samePane` 保「Down 留在同面板」（那条 case 里跨面板导航项也 clears，平局由 `samePane` 打破，原行为不变）。`along>beam` 次序不动，故外观 Down 仍落到左对齐紧邻行、网格 Down 仍选同列、键盘右键仍到同行（BUG-011）。消除错档而非加权重。
+- **[x] ② 已加自动化测试** — `test/focus/focus_left_escapes_pane_test.dart`：两面板，焦点在整宽 `detail-switch` 按 Left，断言落到 `nav-*`（修复前落 `detail-swatch` → 红）。并以全量 `test/focus/ test/shortcuts/gamepad_focus_nav_test.dart test/widgets/{theme_swatch,settings_segmented_row,gamepad_nav_cluster,focus_reachable_clusters,material_nav}_*` 为回归门槛实跑全绿（含 `focus_pane_locality_test` 的「Down 留同面板」「Right 跨面板」、`focus_geometry_test` 的 along-first、BUG-011 键盘右键）。
+- **备注**：focus 核心共享算法改动，已用全 focus/gamepad 测试矩阵把关；真机手柄/键盘在外观设置页复测（开关按左到导航栏、色块行内左右仍切色块）待用户。
+
 ## BUG-014 · 同步对比对话框把「良性跳过」误报成「同步错误：<书名>」
 - **报告**：2026-06-04（用户附截图：SnackBar 显示「同步错误：Pagination Test Book」）。
 - **真实性**：✅ **真 bug（结果分类错误）**。该 SnackBar 唯一来源是 `sync_compare_dialog.dart` 的 `_applyChanges`（`t.sync_error(message: errors.join(', '))`，message 是书名列表）。逐本书应用时旧逻辑 `if (result.direction != SyncResult.skipped) applied++ else errors.add(entry.title)` 把**任何** `SyncResult.skipped` 都归到 `errors`。但 `SyncManager.syncBook`/`_syncBookOnce` 返回 skipped 有两类语义：① 真失败——`syncBook` 把 `SyncBackendError`/通用异常吞进 `SyncBookResult.error` 后以 skipped 返回（`sync_manager.dart:88-108`）；② **良性跳过**——无可传输内容，`error == null`，例如导出方向但本地无阅读位置且未开内容同步（`sync_manager.dart:211-213`）、importOnly 方向不符（`:187-189`）。旧分类只看 `direction` 不看 `error`，把②误报成「同步错误」。「Pagination Test Book」即走②路径（用户选了方向但实际无内容可传）。根因 = 分类信号选错（该看 `result.error`，却只看 `direction == skipped`）。

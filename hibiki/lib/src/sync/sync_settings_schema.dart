@@ -636,6 +636,10 @@ class _SyncNowWidgetState extends State<_SyncNowWidget> {
   bool _syncing = false;
 
   Future<void> _syncNow() async {
+    // Re-entrant guard: the whole row is a focus target whose Activate (A/Enter,
+    // see [AdaptiveSettingsRow.onTap] below) runs this too, so a second
+    // activation while a sync is in flight must be a no-op.
+    if (_syncing) return;
     setState(() => _syncing = true);
     try {
       final AppModel appModel = widget.settingsContext.appModel;
@@ -674,6 +678,12 @@ class _SyncNowWidgetState extends State<_SyncNowWidget> {
       subtitle: t.sync_now_hint,
       icon: Icons.sync,
       controlBelow: true,
+      // The action lives on the trailing button; giving the ROW an onTap is what
+      // registers it as a HibikiFocusTarget so gamepad/keyboard directional nav
+      // can reach it and Activate runs the sync (BUG-016). Without it the row was
+      // unreachable and Down from the neighbouring "Compare Data" row jumped
+      // cross-pane to the nav rail.
+      onTap: _syncNow,
       trailing: _syncing
           ? const SizedBox(
               width: 20,
@@ -700,6 +710,9 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
   bool _isExporting = false;
 
   Future<void> _export() async {
+    // Re-entrant guard: the row's Activate (A/Enter) and the trailing button
+    // both call this, so ignore a second trigger while an export is running.
+    if (_isExporting) return;
     setState(() => _isExporting = true);
     try {
       final appModel = widget.settingsContext.appModel;
@@ -755,6 +768,9 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
       subtitle: t.backup_export_hint,
       icon: Icons.upload_file_outlined,
       controlBelow: true,
+      // Row onTap registers the focus target so directional nav reaches the
+      // export action (BUG-016); the trailing button is the visual affordance.
+      onTap: _export,
       trailing: _isExporting
           ? Row(
               mainAxisSize: MainAxisSize.min,
@@ -797,6 +813,9 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
   bool _isImporting = false;
 
   Future<void> _import() async {
+    // Re-entrant guard: the row's Activate (A/Enter) and the trailing button
+    // both call this, so ignore a second trigger while an import is running.
+    if (_isImporting) return;
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['zip'],
@@ -965,6 +984,9 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
       subtitle: t.backup_import_hint,
       icon: Icons.download_outlined,
       controlBelow: true,
+      // Row onTap registers the focus target so directional nav reaches the
+      // import action (BUG-016); the trailing button is the visual affordance.
+      onTap: _import,
       trailing: _isImporting
           ? SizedBox(
               width: 24,
