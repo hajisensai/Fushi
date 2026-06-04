@@ -60,6 +60,11 @@ class AudiobookPlayerController extends ChangeNotifier {
   Map<int, int> _allBookCueIdToIndex = {};
   List<AudioCue> get allBookCuesSnapshot => _allBookCues;
 
+  /// 每个音频文件的时长（毫秒），下标 = audioFileIndex。由对齐 cue 的
+  /// per-file 最大 endMs 推算（load-free，播放前即可用），供 [totalDuration]
+  /// / [globalPosition] 显示用。空 = 无对齐数据，回退到 just_audio。
+  List<int> _fileDurationsMs = const <int>[];
+
   /// clip 播放前主播放器是否正在播放，clip 结束后恢复。
   bool _resumeMainAfterClip = false;
 
@@ -235,8 +240,46 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 当前全局播放位置。
   Duration get position => _player.position;
 
-  /// 总时长（多文件为所有文件之和）。
+  /// 当前文件时长（per-file，供 [seekRelative] / [seekMs] 钳制用）。
   Duration get duration => _player.duration ?? Duration.zero;
+
+  /// 全书总时长（所有音频文件时长之和）。优先用对齐 cue 推算（播放前即可用，
+  /// 无需解码音频）；无 cue 数据时回退到 just_audio 当前文件时长。
+  ///
+  /// 与 [duration]（per-file，供 seek 钳制）不同，这是显示用的「总长度」。
+  Duration get totalDuration {
+    final Duration? playerDur = _player.duration;
+    if (_fileDurationsMs.isNotEmpty) {
+      int sum = 0;
+      for (final int ms in _fileDurationsMs) {
+        sum += ms;
+      }
+      if (sum > 0) {
+        // cue 估算到「末句结束」会比真实文件短（片尾静音/音乐不在 cue 里）。
+        // 单文件时 `_player.duration` 是真实整段时长，取较大者，避免播放到
+        // 末句之后出现 pos>dur 的显示瑕疵；多文件时 `_player.duration` 只是
+        // 当前文件，远小于全书 sum，max 自然取 sum。
+        final int playerMs = playerDur?.inMilliseconds ?? 0;
+        return Duration(milliseconds: sum > playerMs ? sum : playerMs);
+      }
+    }
+    return playerDur ?? Duration.zero;
+  }
+
+  /// 全书累计播放位置 = 当前文件之前所有文件时长之和 + 当前文件内位置。
+  /// 与 [totalDuration] 配对供进度条显示；无 cue 数据时退化为当前文件位置。
+  ///
+  /// 前序文件用 cue 估算时长累加，当前文件内用真实 `_player.position`——
+  /// 二者精度不同，跨文件瞬间可能轻微抖动（真实文件长常 > 末句 endMs），
+  /// 仅结尾几百毫秒的视觉抖动，不影响只读进度条的正确性。
+  Duration get globalPosition {
+    final int idx = _player.currentIndex ?? 0;
+    int base = 0;
+    for (int i = 0; i < idx && i < _fileDurationsMs.length; i++) {
+      base += _fileDurationsMs[i];
+    }
+    return Duration(milliseconds: base + _player.position.inMilliseconds);
+  }
 
   /// 当前速度。
   double get speed => _player.speed;
@@ -401,6 +444,26 @@ class AudiobookPlayerController extends ChangeNotifier {
       if (id != null) idMap[id] = i;
     }
     _allBookCueIdToIndex = idMap;
+    _rebuildFileDurations();
+  }
+
+  /// 从全书 cue 推算每个文件时长 = 该文件内 cue 的最大 endMs。
+  void _rebuildFileDurations() {
+    int maxIdx = -1;
+    for (final AudioCue cue in _allBookCues) {
+      if (cue.audioFileIndex > maxIdx) maxIdx = cue.audioFileIndex;
+    }
+    if (maxIdx < 0) {
+      _fileDurationsMs = const <int>[];
+      return;
+    }
+    final List<int> durations = List<int>.filled(maxIdx + 1, 0);
+    for (final AudioCue cue in _allBookCues) {
+      final int idx = cue.audioFileIndex;
+      if (idx < 0) continue;
+      if (cue.endMs > durations[idx]) durations[idx] = cue.endMs;
+    }
+    _fileDurationsMs = durations;
   }
 
   // ── 播放控制 API ───────────────────────────────────────────────────────────
