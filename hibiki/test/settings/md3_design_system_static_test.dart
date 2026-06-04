@@ -599,6 +599,9 @@ void main() {
           'Reader quick settings and audiobook chrome migrate under Task 8.',
       'lib/src/media/audiobook/audiobook_bridge.dart':
           'Serialized audiobook bridge data includes reader font size.',
+      'lib/src/media/video/video_subtitle_overlay.dart':
+          'Video subtitle overlay renders caption content (fixed '
+              'white-on-black caption radius/size), not ordinary page chrome.',
       'lib/src/creator/fields/image_field.dart':
           'Anki image-field renderer uses OCR/image coordinate typography.',
       'lib/src/pages/implementations/dictionary_dialog_import_page.dart':
