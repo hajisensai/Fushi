@@ -751,9 +751,11 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     Navigator.push(
       context,
       adaptivePageRoute<void>(
-        builder: (_) => ReaderHibikiPage(
-          bookId: book.ttuBookId,
-          item: _srtBookMediaItem(book),
+        builder: (_) => HibikiAppUiScaleNeutralizer(
+          child: ReaderHibikiPage(
+            bookId: book.ttuBookId,
+            item: _srtBookMediaItem(book),
+          ),
         ),
       ),
     );

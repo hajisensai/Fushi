@@ -104,15 +104,17 @@ class ReaderHibikiSource extends ReaderMediaSource {
   }) async {}
 
   @override
-  BaseSourcePage buildLaunchPage({
+  Widget buildLaunchPage({
     MediaItem? item,
     Bookmark? initialBookmarkJump,
   }) {
     final int bookId = _extractBookId(item?.mediaIdentifier ?? '');
-    return ReaderHibikiPage(
-      item: item,
-      bookId: bookId,
-      initialBookmarkJump: initialBookmarkJump,
+    return HibikiAppUiScaleNeutralizer(
+      child: ReaderHibikiPage(
+        item: item,
+        bookId: bookId,
+        initialBookmarkJump: initialBookmarkJump,
+      ),
     );
   }
 

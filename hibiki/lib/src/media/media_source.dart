@@ -205,8 +205,13 @@ abstract class MediaSource {
 
   /// The widget to show when this source is launched. An optional [MediaItem]
   /// can be supplied as a launch parameter.
-  BaseSourcePage buildLaunchPage(
-      {MediaItem? item, Bookmark? initialBookmarkJump});
+  ///
+  /// Returns a plain [Widget] (not [BaseSourcePage]) so an implementation may
+  /// wrap its page in a non-page widget (e.g. the reader wraps it in a
+  /// [HibikiAppUiScaleNeutralizer] so the WebView renders at native density).
+  /// The only caller feeds this straight into a [WidgetBuilder], so the wider
+  /// return type is contract-compatible.
+  Widget buildLaunchPage({MediaItem? item, Bookmark? initialBookmarkJump});
 
   /// If this is not null, this action is executed when the user taps on the
   /// search bar. Sources that do not have a search action should have this
