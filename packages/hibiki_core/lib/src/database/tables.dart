@@ -305,3 +305,18 @@ class SyncBaselines extends Table {
   @override
   Set<Column> get primaryKey => {assetKey, dimension};
 }
+
+// ── video_books ─────────────────────────────────────────────────────
+@DataClassName('VideoBookRow')
+class VideoBooks extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get bookUid => text().unique()();
+  TextColumn get title => text()();
+  TextColumn get videoPath => text()();
+  TextColumn get subtitleSource => text().nullable()();
+  TextColumn get subtitleFormat => text().nullable()();
+  IntColumn get embeddedSubtitleTrack => integer().nullable()();
+  TextColumn get coverPath => text().nullable()();
+  IntColumn get lastPositionMs => integer().withDefault(const Constant(0))();
+  DateTimeColumn get importedAt => dateTime().nullable()();
+}

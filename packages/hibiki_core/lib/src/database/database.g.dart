@@ -8234,6 +8234,542 @@ class SyncBaselinesCompanion extends UpdateCompanion<SyncBaselineRow> {
   }
 }
 
+class $VideoBooksTable extends VideoBooks
+    with TableInfo<$VideoBooksTable, VideoBookRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $VideoBooksTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+      'id', aliasedName, false,
+      hasAutoIncrement: true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
+  static const VerificationMeta _bookUidMeta =
+      const VerificationMeta('bookUid');
+  @override
+  late final GeneratedColumn<String> bookUid = GeneratedColumn<String>(
+      'book_uid', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways('UNIQUE'));
+  static const VerificationMeta _titleMeta = const VerificationMeta('title');
+  @override
+  late final GeneratedColumn<String> title = GeneratedColumn<String>(
+      'title', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _videoPathMeta =
+      const VerificationMeta('videoPath');
+  @override
+  late final GeneratedColumn<String> videoPath = GeneratedColumn<String>(
+      'video_path', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _subtitleSourceMeta =
+      const VerificationMeta('subtitleSource');
+  @override
+  late final GeneratedColumn<String> subtitleSource = GeneratedColumn<String>(
+      'subtitle_source', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _subtitleFormatMeta =
+      const VerificationMeta('subtitleFormat');
+  @override
+  late final GeneratedColumn<String> subtitleFormat = GeneratedColumn<String>(
+      'subtitle_format', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _embeddedSubtitleTrackMeta =
+      const VerificationMeta('embeddedSubtitleTrack');
+  @override
+  late final GeneratedColumn<int> embeddedSubtitleTrack = GeneratedColumn<int>(
+      'embedded_subtitle_track', aliasedName, true,
+      type: DriftSqlType.int, requiredDuringInsert: false);
+  static const VerificationMeta _coverPathMeta =
+      const VerificationMeta('coverPath');
+  @override
+  late final GeneratedColumn<String> coverPath = GeneratedColumn<String>(
+      'cover_path', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _lastPositionMsMeta =
+      const VerificationMeta('lastPositionMs');
+  @override
+  late final GeneratedColumn<int> lastPositionMs = GeneratedColumn<int>(
+      'last_position_ms', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _importedAtMeta =
+      const VerificationMeta('importedAt');
+  @override
+  late final GeneratedColumn<DateTime> importedAt = GeneratedColumn<DateTime>(
+      'imported_at', aliasedName, true,
+      type: DriftSqlType.dateTime, requiredDuringInsert: false);
+  @override
+  List<GeneratedColumn> get $columns => [
+        id,
+        bookUid,
+        title,
+        videoPath,
+        subtitleSource,
+        subtitleFormat,
+        embeddedSubtitleTrack,
+        coverPath,
+        lastPositionMs,
+        importedAt
+      ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'video_books';
+  @override
+  VerificationContext validateIntegrity(Insertable<VideoBookRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('book_uid')) {
+      context.handle(_bookUidMeta,
+          bookUid.isAcceptableOrUnknown(data['book_uid']!, _bookUidMeta));
+    } else if (isInserting) {
+      context.missing(_bookUidMeta);
+    }
+    if (data.containsKey('title')) {
+      context.handle(
+          _titleMeta, title.isAcceptableOrUnknown(data['title']!, _titleMeta));
+    } else if (isInserting) {
+      context.missing(_titleMeta);
+    }
+    if (data.containsKey('video_path')) {
+      context.handle(_videoPathMeta,
+          videoPath.isAcceptableOrUnknown(data['video_path']!, _videoPathMeta));
+    } else if (isInserting) {
+      context.missing(_videoPathMeta);
+    }
+    if (data.containsKey('subtitle_source')) {
+      context.handle(
+          _subtitleSourceMeta,
+          subtitleSource.isAcceptableOrUnknown(
+              data['subtitle_source']!, _subtitleSourceMeta));
+    }
+    if (data.containsKey('subtitle_format')) {
+      context.handle(
+          _subtitleFormatMeta,
+          subtitleFormat.isAcceptableOrUnknown(
+              data['subtitle_format']!, _subtitleFormatMeta));
+    }
+    if (data.containsKey('embedded_subtitle_track')) {
+      context.handle(
+          _embeddedSubtitleTrackMeta,
+          embeddedSubtitleTrack.isAcceptableOrUnknown(
+              data['embedded_subtitle_track']!, _embeddedSubtitleTrackMeta));
+    }
+    if (data.containsKey('cover_path')) {
+      context.handle(_coverPathMeta,
+          coverPath.isAcceptableOrUnknown(data['cover_path']!, _coverPathMeta));
+    }
+    if (data.containsKey('last_position_ms')) {
+      context.handle(
+          _lastPositionMsMeta,
+          lastPositionMs.isAcceptableOrUnknown(
+              data['last_position_ms']!, _lastPositionMsMeta));
+    }
+    if (data.containsKey('imported_at')) {
+      context.handle(
+          _importedAtMeta,
+          importedAt.isAcceptableOrUnknown(
+              data['imported_at']!, _importedAtMeta));
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  VideoBookRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return VideoBookRow(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
+      bookUid: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}book_uid'])!,
+      title: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}title'])!,
+      videoPath: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}video_path'])!,
+      subtitleSource: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}subtitle_source']),
+      subtitleFormat: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}subtitle_format']),
+      embeddedSubtitleTrack: attachedDatabase.typeMapping.read(
+          DriftSqlType.int, data['${effectivePrefix}embedded_subtitle_track']),
+      coverPath: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}cover_path']),
+      lastPositionMs: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}last_position_ms'])!,
+      importedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}imported_at']),
+    );
+  }
+
+  @override
+  $VideoBooksTable createAlias(String alias) {
+    return $VideoBooksTable(attachedDatabase, alias);
+  }
+}
+
+class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
+  final int id;
+  final String bookUid;
+  final String title;
+  final String videoPath;
+  final String? subtitleSource;
+  final String? subtitleFormat;
+  final int? embeddedSubtitleTrack;
+  final String? coverPath;
+  final int lastPositionMs;
+  final DateTime? importedAt;
+  const VideoBookRow(
+      {required this.id,
+      required this.bookUid,
+      required this.title,
+      required this.videoPath,
+      this.subtitleSource,
+      this.subtitleFormat,
+      this.embeddedSubtitleTrack,
+      this.coverPath,
+      required this.lastPositionMs,
+      this.importedAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['book_uid'] = Variable<String>(bookUid);
+    map['title'] = Variable<String>(title);
+    map['video_path'] = Variable<String>(videoPath);
+    if (!nullToAbsent || subtitleSource != null) {
+      map['subtitle_source'] = Variable<String>(subtitleSource);
+    }
+    if (!nullToAbsent || subtitleFormat != null) {
+      map['subtitle_format'] = Variable<String>(subtitleFormat);
+    }
+    if (!nullToAbsent || embeddedSubtitleTrack != null) {
+      map['embedded_subtitle_track'] = Variable<int>(embeddedSubtitleTrack);
+    }
+    if (!nullToAbsent || coverPath != null) {
+      map['cover_path'] = Variable<String>(coverPath);
+    }
+    map['last_position_ms'] = Variable<int>(lastPositionMs);
+    if (!nullToAbsent || importedAt != null) {
+      map['imported_at'] = Variable<DateTime>(importedAt);
+    }
+    return map;
+  }
+
+  VideoBooksCompanion toCompanion(bool nullToAbsent) {
+    return VideoBooksCompanion(
+      id: Value(id),
+      bookUid: Value(bookUid),
+      title: Value(title),
+      videoPath: Value(videoPath),
+      subtitleSource: subtitleSource == null && nullToAbsent
+          ? const Value.absent()
+          : Value(subtitleSource),
+      subtitleFormat: subtitleFormat == null && nullToAbsent
+          ? const Value.absent()
+          : Value(subtitleFormat),
+      embeddedSubtitleTrack: embeddedSubtitleTrack == null && nullToAbsent
+          ? const Value.absent()
+          : Value(embeddedSubtitleTrack),
+      coverPath: coverPath == null && nullToAbsent
+          ? const Value.absent()
+          : Value(coverPath),
+      lastPositionMs: Value(lastPositionMs),
+      importedAt: importedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(importedAt),
+    );
+  }
+
+  factory VideoBookRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return VideoBookRow(
+      id: serializer.fromJson<int>(json['id']),
+      bookUid: serializer.fromJson<String>(json['bookUid']),
+      title: serializer.fromJson<String>(json['title']),
+      videoPath: serializer.fromJson<String>(json['videoPath']),
+      subtitleSource: serializer.fromJson<String?>(json['subtitleSource']),
+      subtitleFormat: serializer.fromJson<String?>(json['subtitleFormat']),
+      embeddedSubtitleTrack:
+          serializer.fromJson<int?>(json['embeddedSubtitleTrack']),
+      coverPath: serializer.fromJson<String?>(json['coverPath']),
+      lastPositionMs: serializer.fromJson<int>(json['lastPositionMs']),
+      importedAt: serializer.fromJson<DateTime?>(json['importedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'bookUid': serializer.toJson<String>(bookUid),
+      'title': serializer.toJson<String>(title),
+      'videoPath': serializer.toJson<String>(videoPath),
+      'subtitleSource': serializer.toJson<String?>(subtitleSource),
+      'subtitleFormat': serializer.toJson<String?>(subtitleFormat),
+      'embeddedSubtitleTrack': serializer.toJson<int?>(embeddedSubtitleTrack),
+      'coverPath': serializer.toJson<String?>(coverPath),
+      'lastPositionMs': serializer.toJson<int>(lastPositionMs),
+      'importedAt': serializer.toJson<DateTime?>(importedAt),
+    };
+  }
+
+  VideoBookRow copyWith(
+          {int? id,
+          String? bookUid,
+          String? title,
+          String? videoPath,
+          Value<String?> subtitleSource = const Value.absent(),
+          Value<String?> subtitleFormat = const Value.absent(),
+          Value<int?> embeddedSubtitleTrack = const Value.absent(),
+          Value<String?> coverPath = const Value.absent(),
+          int? lastPositionMs,
+          Value<DateTime?> importedAt = const Value.absent()}) =>
+      VideoBookRow(
+        id: id ?? this.id,
+        bookUid: bookUid ?? this.bookUid,
+        title: title ?? this.title,
+        videoPath: videoPath ?? this.videoPath,
+        subtitleSource:
+            subtitleSource.present ? subtitleSource.value : this.subtitleSource,
+        subtitleFormat:
+            subtitleFormat.present ? subtitleFormat.value : this.subtitleFormat,
+        embeddedSubtitleTrack: embeddedSubtitleTrack.present
+            ? embeddedSubtitleTrack.value
+            : this.embeddedSubtitleTrack,
+        coverPath: coverPath.present ? coverPath.value : this.coverPath,
+        lastPositionMs: lastPositionMs ?? this.lastPositionMs,
+        importedAt: importedAt.present ? importedAt.value : this.importedAt,
+      );
+  VideoBookRow copyWithCompanion(VideoBooksCompanion data) {
+    return VideoBookRow(
+      id: data.id.present ? data.id.value : this.id,
+      bookUid: data.bookUid.present ? data.bookUid.value : this.bookUid,
+      title: data.title.present ? data.title.value : this.title,
+      videoPath: data.videoPath.present ? data.videoPath.value : this.videoPath,
+      subtitleSource: data.subtitleSource.present
+          ? data.subtitleSource.value
+          : this.subtitleSource,
+      subtitleFormat: data.subtitleFormat.present
+          ? data.subtitleFormat.value
+          : this.subtitleFormat,
+      embeddedSubtitleTrack: data.embeddedSubtitleTrack.present
+          ? data.embeddedSubtitleTrack.value
+          : this.embeddedSubtitleTrack,
+      coverPath: data.coverPath.present ? data.coverPath.value : this.coverPath,
+      lastPositionMs: data.lastPositionMs.present
+          ? data.lastPositionMs.value
+          : this.lastPositionMs,
+      importedAt:
+          data.importedAt.present ? data.importedAt.value : this.importedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('VideoBookRow(')
+          ..write('id: $id, ')
+          ..write('bookUid: $bookUid, ')
+          ..write('title: $title, ')
+          ..write('videoPath: $videoPath, ')
+          ..write('subtitleSource: $subtitleSource, ')
+          ..write('subtitleFormat: $subtitleFormat, ')
+          ..write('embeddedSubtitleTrack: $embeddedSubtitleTrack, ')
+          ..write('coverPath: $coverPath, ')
+          ..write('lastPositionMs: $lastPositionMs, ')
+          ..write('importedAt: $importedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+      id,
+      bookUid,
+      title,
+      videoPath,
+      subtitleSource,
+      subtitleFormat,
+      embeddedSubtitleTrack,
+      coverPath,
+      lastPositionMs,
+      importedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is VideoBookRow &&
+          other.id == this.id &&
+          other.bookUid == this.bookUid &&
+          other.title == this.title &&
+          other.videoPath == this.videoPath &&
+          other.subtitleSource == this.subtitleSource &&
+          other.subtitleFormat == this.subtitleFormat &&
+          other.embeddedSubtitleTrack == this.embeddedSubtitleTrack &&
+          other.coverPath == this.coverPath &&
+          other.lastPositionMs == this.lastPositionMs &&
+          other.importedAt == this.importedAt);
+}
+
+class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
+  final Value<int> id;
+  final Value<String> bookUid;
+  final Value<String> title;
+  final Value<String> videoPath;
+  final Value<String?> subtitleSource;
+  final Value<String?> subtitleFormat;
+  final Value<int?> embeddedSubtitleTrack;
+  final Value<String?> coverPath;
+  final Value<int> lastPositionMs;
+  final Value<DateTime?> importedAt;
+  const VideoBooksCompanion({
+    this.id = const Value.absent(),
+    this.bookUid = const Value.absent(),
+    this.title = const Value.absent(),
+    this.videoPath = const Value.absent(),
+    this.subtitleSource = const Value.absent(),
+    this.subtitleFormat = const Value.absent(),
+    this.embeddedSubtitleTrack = const Value.absent(),
+    this.coverPath = const Value.absent(),
+    this.lastPositionMs = const Value.absent(),
+    this.importedAt = const Value.absent(),
+  });
+  VideoBooksCompanion.insert({
+    this.id = const Value.absent(),
+    required String bookUid,
+    required String title,
+    required String videoPath,
+    this.subtitleSource = const Value.absent(),
+    this.subtitleFormat = const Value.absent(),
+    this.embeddedSubtitleTrack = const Value.absent(),
+    this.coverPath = const Value.absent(),
+    this.lastPositionMs = const Value.absent(),
+    this.importedAt = const Value.absent(),
+  })  : bookUid = Value(bookUid),
+        title = Value(title),
+        videoPath = Value(videoPath);
+  static Insertable<VideoBookRow> custom({
+    Expression<int>? id,
+    Expression<String>? bookUid,
+    Expression<String>? title,
+    Expression<String>? videoPath,
+    Expression<String>? subtitleSource,
+    Expression<String>? subtitleFormat,
+    Expression<int>? embeddedSubtitleTrack,
+    Expression<String>? coverPath,
+    Expression<int>? lastPositionMs,
+    Expression<DateTime>? importedAt,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (bookUid != null) 'book_uid': bookUid,
+      if (title != null) 'title': title,
+      if (videoPath != null) 'video_path': videoPath,
+      if (subtitleSource != null) 'subtitle_source': subtitleSource,
+      if (subtitleFormat != null) 'subtitle_format': subtitleFormat,
+      if (embeddedSubtitleTrack != null)
+        'embedded_subtitle_track': embeddedSubtitleTrack,
+      if (coverPath != null) 'cover_path': coverPath,
+      if (lastPositionMs != null) 'last_position_ms': lastPositionMs,
+      if (importedAt != null) 'imported_at': importedAt,
+    });
+  }
+
+  VideoBooksCompanion copyWith(
+      {Value<int>? id,
+      Value<String>? bookUid,
+      Value<String>? title,
+      Value<String>? videoPath,
+      Value<String?>? subtitleSource,
+      Value<String?>? subtitleFormat,
+      Value<int?>? embeddedSubtitleTrack,
+      Value<String?>? coverPath,
+      Value<int>? lastPositionMs,
+      Value<DateTime?>? importedAt}) {
+    return VideoBooksCompanion(
+      id: id ?? this.id,
+      bookUid: bookUid ?? this.bookUid,
+      title: title ?? this.title,
+      videoPath: videoPath ?? this.videoPath,
+      subtitleSource: subtitleSource ?? this.subtitleSource,
+      subtitleFormat: subtitleFormat ?? this.subtitleFormat,
+      embeddedSubtitleTrack:
+          embeddedSubtitleTrack ?? this.embeddedSubtitleTrack,
+      coverPath: coverPath ?? this.coverPath,
+      lastPositionMs: lastPositionMs ?? this.lastPositionMs,
+      importedAt: importedAt ?? this.importedAt,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (bookUid.present) {
+      map['book_uid'] = Variable<String>(bookUid.value);
+    }
+    if (title.present) {
+      map['title'] = Variable<String>(title.value);
+    }
+    if (videoPath.present) {
+      map['video_path'] = Variable<String>(videoPath.value);
+    }
+    if (subtitleSource.present) {
+      map['subtitle_source'] = Variable<String>(subtitleSource.value);
+    }
+    if (subtitleFormat.present) {
+      map['subtitle_format'] = Variable<String>(subtitleFormat.value);
+    }
+    if (embeddedSubtitleTrack.present) {
+      map['embedded_subtitle_track'] =
+          Variable<int>(embeddedSubtitleTrack.value);
+    }
+    if (coverPath.present) {
+      map['cover_path'] = Variable<String>(coverPath.value);
+    }
+    if (lastPositionMs.present) {
+      map['last_position_ms'] = Variable<int>(lastPositionMs.value);
+    }
+    if (importedAt.present) {
+      map['imported_at'] = Variable<DateTime>(importedAt.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('VideoBooksCompanion(')
+          ..write('id: $id, ')
+          ..write('bookUid: $bookUid, ')
+          ..write('title: $title, ')
+          ..write('videoPath: $videoPath, ')
+          ..write('subtitleSource: $subtitleSource, ')
+          ..write('subtitleFormat: $subtitleFormat, ')
+          ..write('embeddedSubtitleTrack: $embeddedSubtitleTrack, ')
+          ..write('coverPath: $coverPath, ')
+          ..write('lastPositionMs: $lastPositionMs, ')
+          ..write('importedAt: $importedAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$HibikiDatabase extends GeneratedDatabase {
   _$HibikiDatabase(QueryExecutor e) : super(e);
   $HibikiDatabaseManager get managers => $HibikiDatabaseManager(this);
@@ -8269,6 +8805,7 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
       $MediaTypeProfilesTable(this);
   late final $BookProfilesTable bookProfiles = $BookProfilesTable(this);
   late final $SyncBaselinesTable syncBaselines = $SyncBaselinesTable(this);
+  late final $VideoBooksTable videoBooks = $VideoBooksTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -8295,7 +8832,8 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
         profileSettings,
         mediaTypeProfiles,
         bookProfiles,
-        syncBaselines
+        syncBaselines,
+        videoBooks
       ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules(
@@ -14022,6 +14560,254 @@ typedef $$SyncBaselinesTableProcessedTableManager = ProcessedTableManager<
     ),
     SyncBaselineRow,
     PrefetchHooks Function()>;
+typedef $$VideoBooksTableCreateCompanionBuilder = VideoBooksCompanion Function({
+  Value<int> id,
+  required String bookUid,
+  required String title,
+  required String videoPath,
+  Value<String?> subtitleSource,
+  Value<String?> subtitleFormat,
+  Value<int?> embeddedSubtitleTrack,
+  Value<String?> coverPath,
+  Value<int> lastPositionMs,
+  Value<DateTime?> importedAt,
+});
+typedef $$VideoBooksTableUpdateCompanionBuilder = VideoBooksCompanion Function({
+  Value<int> id,
+  Value<String> bookUid,
+  Value<String> title,
+  Value<String> videoPath,
+  Value<String?> subtitleSource,
+  Value<String?> subtitleFormat,
+  Value<int?> embeddedSubtitleTrack,
+  Value<String?> coverPath,
+  Value<int> lastPositionMs,
+  Value<DateTime?> importedAt,
+});
+
+class $$VideoBooksTableFilterComposer
+    extends Composer<_$HibikiDatabase, $VideoBooksTable> {
+  $$VideoBooksTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get bookUid => $composableBuilder(
+      column: $table.bookUid, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get title => $composableBuilder(
+      column: $table.title, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get videoPath => $composableBuilder(
+      column: $table.videoPath, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get subtitleSource => $composableBuilder(
+      column: $table.subtitleSource,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get subtitleFormat => $composableBuilder(
+      column: $table.subtitleFormat,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get embeddedSubtitleTrack => $composableBuilder(
+      column: $table.embeddedSubtitleTrack,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get coverPath => $composableBuilder(
+      column: $table.coverPath, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get lastPositionMs => $composableBuilder(
+      column: $table.lastPositionMs,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<DateTime> get importedAt => $composableBuilder(
+      column: $table.importedAt, builder: (column) => ColumnFilters(column));
+}
+
+class $$VideoBooksTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $VideoBooksTable> {
+  $$VideoBooksTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get bookUid => $composableBuilder(
+      column: $table.bookUid, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get title => $composableBuilder(
+      column: $table.title, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get videoPath => $composableBuilder(
+      column: $table.videoPath, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get subtitleSource => $composableBuilder(
+      column: $table.subtitleSource,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get subtitleFormat => $composableBuilder(
+      column: $table.subtitleFormat,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get embeddedSubtitleTrack => $composableBuilder(
+      column: $table.embeddedSubtitleTrack,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get coverPath => $composableBuilder(
+      column: $table.coverPath, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get lastPositionMs => $composableBuilder(
+      column: $table.lastPositionMs,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<DateTime> get importedAt => $composableBuilder(
+      column: $table.importedAt, builder: (column) => ColumnOrderings(column));
+}
+
+class $$VideoBooksTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $VideoBooksTable> {
+  $$VideoBooksTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get bookUid =>
+      $composableBuilder(column: $table.bookUid, builder: (column) => column);
+
+  GeneratedColumn<String> get title =>
+      $composableBuilder(column: $table.title, builder: (column) => column);
+
+  GeneratedColumn<String> get videoPath =>
+      $composableBuilder(column: $table.videoPath, builder: (column) => column);
+
+  GeneratedColumn<String> get subtitleSource => $composableBuilder(
+      column: $table.subtitleSource, builder: (column) => column);
+
+  GeneratedColumn<String> get subtitleFormat => $composableBuilder(
+      column: $table.subtitleFormat, builder: (column) => column);
+
+  GeneratedColumn<int> get embeddedSubtitleTrack => $composableBuilder(
+      column: $table.embeddedSubtitleTrack, builder: (column) => column);
+
+  GeneratedColumn<String> get coverPath =>
+      $composableBuilder(column: $table.coverPath, builder: (column) => column);
+
+  GeneratedColumn<int> get lastPositionMs => $composableBuilder(
+      column: $table.lastPositionMs, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get importedAt => $composableBuilder(
+      column: $table.importedAt, builder: (column) => column);
+}
+
+class $$VideoBooksTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $VideoBooksTable,
+    VideoBookRow,
+    $$VideoBooksTableFilterComposer,
+    $$VideoBooksTableOrderingComposer,
+    $$VideoBooksTableAnnotationComposer,
+    $$VideoBooksTableCreateCompanionBuilder,
+    $$VideoBooksTableUpdateCompanionBuilder,
+    (
+      VideoBookRow,
+      BaseReferences<_$HibikiDatabase, $VideoBooksTable, VideoBookRow>
+    ),
+    VideoBookRow,
+    PrefetchHooks Function()> {
+  $$VideoBooksTableTableManager(_$HibikiDatabase db, $VideoBooksTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$VideoBooksTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$VideoBooksTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$VideoBooksTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<String> bookUid = const Value.absent(),
+            Value<String> title = const Value.absent(),
+            Value<String> videoPath = const Value.absent(),
+            Value<String?> subtitleSource = const Value.absent(),
+            Value<String?> subtitleFormat = const Value.absent(),
+            Value<int?> embeddedSubtitleTrack = const Value.absent(),
+            Value<String?> coverPath = const Value.absent(),
+            Value<int> lastPositionMs = const Value.absent(),
+            Value<DateTime?> importedAt = const Value.absent(),
+          }) =>
+              VideoBooksCompanion(
+            id: id,
+            bookUid: bookUid,
+            title: title,
+            videoPath: videoPath,
+            subtitleSource: subtitleSource,
+            subtitleFormat: subtitleFormat,
+            embeddedSubtitleTrack: embeddedSubtitleTrack,
+            coverPath: coverPath,
+            lastPositionMs: lastPositionMs,
+            importedAt: importedAt,
+          ),
+          createCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            required String bookUid,
+            required String title,
+            required String videoPath,
+            Value<String?> subtitleSource = const Value.absent(),
+            Value<String?> subtitleFormat = const Value.absent(),
+            Value<int?> embeddedSubtitleTrack = const Value.absent(),
+            Value<String?> coverPath = const Value.absent(),
+            Value<int> lastPositionMs = const Value.absent(),
+            Value<DateTime?> importedAt = const Value.absent(),
+          }) =>
+              VideoBooksCompanion.insert(
+            id: id,
+            bookUid: bookUid,
+            title: title,
+            videoPath: videoPath,
+            subtitleSource: subtitleSource,
+            subtitleFormat: subtitleFormat,
+            embeddedSubtitleTrack: embeddedSubtitleTrack,
+            coverPath: coverPath,
+            lastPositionMs: lastPositionMs,
+            importedAt: importedAt,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$VideoBooksTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $VideoBooksTable,
+    VideoBookRow,
+    $$VideoBooksTableFilterComposer,
+    $$VideoBooksTableOrderingComposer,
+    $$VideoBooksTableAnnotationComposer,
+    $$VideoBooksTableCreateCompanionBuilder,
+    $$VideoBooksTableUpdateCompanionBuilder,
+    (
+      VideoBookRow,
+      BaseReferences<_$HibikiDatabase, $VideoBooksTable, VideoBookRow>
+    ),
+    VideoBookRow,
+    PrefetchHooks Function()>;
 
 class $HibikiDatabaseManager {
   final _$HibikiDatabase _db;
@@ -14070,4 +14856,6 @@ class $HibikiDatabaseManager {
       $$BookProfilesTableTableManager(_db, _db.bookProfiles);
   $$SyncBaselinesTableTableManager get syncBaselines =>
       $$SyncBaselinesTableTableManager(_db, _db.syncBaselines);
+  $$VideoBooksTableTableManager get videoBooks =>
+      $$VideoBooksTableTableManager(_db, _db.videoBooks);
 }

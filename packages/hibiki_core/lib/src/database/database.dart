@@ -48,6 +48,7 @@ LazyDatabase _openDb(String dbDirectory) {
   MediaTypeProfiles,
   BookProfiles,
   SyncBaselines,
+  VideoBooks,
 ])
 class HibikiDatabase extends _$HibikiDatabase {
   final String _dbDirectory;
@@ -57,7 +58,7 @@ class HibikiDatabase extends _$HibikiDatabase {
   HibikiDatabase.forTesting(super.e) : _dbDirectory = '';
 
   @override
-  int get schemaVersion => 15;
+  int get schemaVersion => 16;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -223,6 +224,9 @@ class HibikiDatabase extends _$HibikiDatabase {
           }
           if (from < 15) {
             await m.createTable(syncBaselines);
+          }
+          if (from < 16) {
+            await m.createTable(videoBooks);
           }
         },
         onCreate: (m) async {
@@ -553,6 +557,19 @@ class HibikiDatabase extends _$HibikiDatabase {
         return (delete(audiobooks)..where((t) => t.bookUid.equals(bookUid)))
             .go();
       });
+
+  // ── video_books ─────────────────────────────────────────────────
+  Future<void> upsertVideoBook(VideoBooksCompanion vb) =>
+      into(videoBooks).insert(vb,
+          onConflict: DoUpdate((_) => vb, target: [videoBooks.bookUid]));
+
+  Future<VideoBookRow?> getVideoBookByBookUid(String bookUid) =>
+      (select(videoBooks)..where((t) => t.bookUid.equals(bookUid)))
+          .getSingleOrNull();
+
+  Future<void> updateVideoBookPosition(String bookUid, int positionMs) =>
+      (update(videoBooks)..where((t) => t.bookUid.equals(bookUid)))
+          .write(VideoBooksCompanion(lastPositionMs: Value(positionMs)));
 
   // ── audio cues ──────────────────────────────────────────────────
   Future<List<AudioCueRow>> getCuesForChapter(

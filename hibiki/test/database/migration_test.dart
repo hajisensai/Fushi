@@ -1,4 +1,5 @@
-﻿import 'package:drift/native.dart';
+﻿import 'package:drift/drift.dart' show Value;
+import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
@@ -26,12 +27,30 @@ Future<HibikiDatabase> _openV14DbWithoutSyncBaselines() async {
   return db;
 }
 
+/// Opens a `user_version = 15` database that lacks the video_books table,
+/// forcing the real `if (from < 16) createTable(videoBooks)` onUpgrade branch
+/// in database.dart to run when HibikiDatabase opens it.
+Future<HibikiDatabase> _openV15DbWithoutVideoBooks() async {
+  final db = HibikiDatabase.forTesting(
+    NativeDatabase.memory(
+      setup: (rawDb) {
+        // A v15 DB created before VideoBooks existed: no video_books table.
+        // The from<16 branch creates exactly that table; earlier branches
+        // (from<15 etc.) do not fire at version 15.
+        rawDb.execute('PRAGMA user_version = 15');
+      },
+    ),
+  );
+  addTearDown(db.close);
+  return db;
+}
+
 void main() {
   group('Database schema', () {
     test('fresh database has expected schema version', () async {
       final db = await _openDb();
       final version = await db.customSelect('PRAGMA user_version').getSingle();
-      expect(version.data['user_version'], 15);
+      expect(version.data['user_version'], 16);
     });
 
     test('all expected tables exist', () async {
@@ -63,6 +82,7 @@ void main() {
           'anki_mappings',
           'search_history_items',
           'sync_baselines',
+          'video_books',
         ]),
       );
     });
@@ -81,13 +101,36 @@ void main() {
       // onCreate.
       final db = await _openV14DbWithoutSyncBaselines();
 
-      // The upgrade ladder bumped the schema to the current version.
+      // The upgrade ladder bumped the schema to the current version (a v14 DB
+      // walks the full ladder past 15 to the latest schema).
       final version = await db.customSelect('PRAGMA user_version').getSingle();
-      expect(version.read<int>('user_version'), 15);
+      expect(version.read<int>('user_version'), 16);
 
       // The newly-migrated table exists and querying an absent baseline does
       // not throw.
       expect(await db.getSyncBaseline('x', 'progress'), isNull);
+    });
+
+    test('real v15->v16 upgrade creates a usable video_books table', () async {
+      // A pre-v16 DB has no video_books table; opening it must drive the
+      // from<16 onUpgrade branch (createTable(videoBooks)) rather than
+      // onCreate.
+      final db = await _openV15DbWithoutVideoBooks();
+
+      // The upgrade ladder bumped the schema to the current version.
+      final version = await db.customSelect('PRAGMA user_version').getSingle();
+      expect(version.read<int>('user_version'), 16);
+
+      // The newly-migrated table exists and is usable: upsert then read back.
+      await db.upsertVideoBook(const VideoBooksCompanion(
+        bookUid: Value('video/migrated'),
+        title: Value('Migrated'),
+        videoPath: Value('/abs/migrated.mp4'),
+      ));
+      final row = await db.getVideoBookByBookUid('video/migrated');
+      expect(row, isNotNull);
+      expect(row!.title, 'Migrated');
+      expect(row.lastPositionMs, 0);
     });
 
     test('preferences table has key and value columns', () async {
