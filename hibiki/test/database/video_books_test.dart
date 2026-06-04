@@ -34,5 +34,23 @@ void main() {
       final row = await db.getVideoBookByBookUid('video/1');
       expect(row!.lastPositionMs, 12345);
     });
+
+    test('upsert with same bookUid updates in place (no duplicate row)',
+        () async {
+      final db = await _openDb();
+      await db.upsertVideoBook(_book());
+      await db.upsertVideoBook(const VideoBooksCompanion(
+        bookUid: Value('video/1'),
+        title: Value('Updated'),
+        videoPath: Value('/abs/sample2.mp4'),
+        lastPositionMs: Value(999),
+      ));
+      final row = await db.getVideoBookByBookUid('video/1');
+      expect(row!.title, 'Updated');
+      expect(row.videoPath, '/abs/sample2.mp4');
+      expect(row.lastPositionMs, 999);
+      final all = await db.select(db.videoBooks).get();
+      expect(all, hasLength(1));
+    });
   });
 }
