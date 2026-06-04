@@ -1,6 +1,8 @@
 import 'dart:developer' as developer;
+import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:hibiki/src/epub/book_title_conflict.dart';
 import 'package:hibiki/src/sync/position_converter.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
@@ -356,6 +358,7 @@ Future<void> showSyncCompareDialog(
   BuildContext context,
   HibikiDatabase db, {
   bool conflictsOnly = false,
+  Directory? tempDir,
 }) async {
   final repo = SyncRepository(db);
   final backend = resolveSyncBackend(await repo.getBackendType());
@@ -378,6 +381,7 @@ Future<void> showSyncCompareDialog(
       db: db,
       backend: backend,
       conflictsOnly: conflictsOnly,
+      tempDir: tempDir,
     ),
   );
   if (applied != null && applied > 0 && context.mounted) {
@@ -396,6 +400,7 @@ class SyncCompareDialog extends StatefulWidget {
     required this.db,
     required this.backend,
     this.conflictsOnly = false,
+    this.tempDir,
     super.key,
   });
   final HibikiDatabase db;
@@ -403,6 +408,9 @@ class SyncCompareDialog extends StatefulWidget {
 
   /// 只显示真分叉冲突项（隐藏自动可解的书与词典分组）。冲突解决弹窗用。
   final bool conflictsOnly;
+
+  /// 下载远端独有书时的临时目录；为 null 时落回系统临时目录。
+  final Directory? tempDir;
 
   @override
   State<SyncCompareDialog> createState() => _SyncCompareDialogState();
@@ -423,6 +431,9 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
     _load();
   }
 
+  /// 解析下载用临时目录：优先注入值，否则系统临时目录。
+  Directory _resolveTempDir() => widget.tempDir ?? Directory.systemTemp;
+
   Future<void> _load() async {
     try {
       final repo = SyncRepository(widget.db);
@@ -439,7 +450,12 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
       final dicts = results[1] as List<SyncDictEntry>;
       final choices = <String, SyncChoice>{};
       for (final e in entries) {
-        if (e.bookId == null || e.isSynced) {
+        if (e.bookId == null) {
+          // remote-only 书：唯一可做的对账是「下载到本机」。有远端文件夹则默认
+          // 勾选下载，匹配用户「点 Apply 应把云端书拉下来」的直觉。
+          choices[e.title] =
+              e.remoteFolderId != null ? SyncChoice.useRemote : SyncChoice.skip;
+        } else if (e.isSynced) {
           choices[e.title] = SyncChoice.skip;
         } else if (e.autoDirection == SyncDirection.importFromTtu) {
           choices[e.title] = SyncChoice.useRemote;
@@ -472,15 +488,20 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
     return entries.where((e) => e.hasConflict).toList();
   }
 
+  /// 一条 entry 是否参与 Apply：选了非 skip，且要么本地已有（bookId）、要么远端
+  /// 独有可下载（remoteFolderId）。
+  bool _isActionable(SyncCompareEntry e) {
+    final c = _choices[e.title];
+    if (c == null || c == SyncChoice.skip) return false;
+    return e.bookId != null || e.remoteFolderId != null;
+  }
+
   Future<void> _applyChoices() async {
     if (_entries == null) return;
     final entries = _entriesInPlay;
 
     // Only the books the user chose to sync count toward progress.
-    final actionable = entries.where((e) {
-      final c = _choices[e.title];
-      return c != null && c != SyncChoice.skip && e.bookId != null;
-    }).toList();
+    final actionable = entries.where(_isActionable).toList();
     final total = actionable.length;
 
     setState(() {
@@ -512,6 +533,37 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
       final errors = <String>[];
       for (final entry in actionable) {
         final choice = _choices[entry.title]!;
+
+        if (entry.bookId == null) {
+          // remote-only：下载并导入本地（显式用户动作，不受 syncContent 门控）。
+          if (mounted) {
+            setState(() {
+              _progressLabel = '(${done + 1}/$total) ${entry.title}';
+              _progress = done / total;
+            });
+          }
+          try {
+            final bool imported = await importRemoteBookFolder(
+              db: widget.db,
+              backend: widget.backend,
+              folderId: entry.remoteFolderId!,
+              tempDir: _resolveTempDir(),
+            );
+            if (imported) applied++;
+          } on DuplicateImportCancelledException {
+            // 良性：本机已有同名书，跳过。
+          } catch (e) {
+            errors.add(entry.title);
+            developer.log(
+              'Failed to download "${entry.title}"',
+              error: e,
+              name: 'SyncCompare',
+            );
+          }
+          done++;
+          if (mounted) setState(() => _progress = done / total);
+          continue;
+        }
 
         final book = await widget.db.getEpubBook(entry.bookId!);
         if (book == null) {
@@ -651,10 +703,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
 
   int get _actionableCount {
     if (_entries == null) return 0;
-    return _entriesInPlay.where((e) {
-      final c = _choices[e.title];
-      return c != null && c != SyncChoice.skip && e.bookId != null;
-    }).length;
+    return _entriesInPlay.where(_isActionable).length;
   }
 
   @override
@@ -749,6 +798,12 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
                       for (final e in _entries!) {
                         if (e.bookId != null && e.needsManualChoice) {
                           _choices[e.title] = choice;
+                        } else if (e.bookId == null &&
+                            e.remoteFolderId != null) {
+                          // remote-only 只在 useRemote/skip 间切；忽略 useLocal。
+                          _choices[e.title] = choice == SyncChoice.useLocal
+                              ? SyncChoice.skip
+                              : choice;
                         }
                       }
                     });
@@ -941,9 +996,35 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
           if (entry.bookId != null && entry.needsManualChoice) ...[
             const SizedBox(height: 6),
             _choiceRow(entry.title, choice, theme),
+          ] else if (entry.bookId == null && entry.remoteFolderId != null) ...[
+            const SizedBox(height: 6),
+            _downloadRow(entry.title, choice, theme),
           ],
         ],
       ),
+    );
+  }
+
+  Widget _downloadRow(String title, SyncChoice choice, ThemeData theme) {
+    final bool download = choice == SyncChoice.useRemote;
+    return Row(
+      children: <Widget>[
+        Checkbox(
+          value: download,
+          onChanged: _applying
+              ? null
+              : (bool? v) => setState(() {
+                    _choices[title] =
+                        (v ?? false) ? SyncChoice.useRemote : SyncChoice.skip;
+                  }),
+        ),
+        Icon(Icons.cloud_download_outlined,
+            size: 16, color: theme.colorScheme.primary),
+        const SizedBox(width: 4),
+        Text(t.sync_compare_download,
+            style: theme.textTheme.labelMedium
+                ?.copyWith(color: theme.colorScheme.primary)),
+      ],
     );
   }
 
