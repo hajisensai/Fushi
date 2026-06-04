@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:hibiki/src/epub/epub_importer.dart';
+import 'package:hibiki/src/models/local_audio_manager.dart';
 import 'package:hibiki/src/sync/sync_asset_package_service.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
@@ -22,9 +23,18 @@ const String kSyncAudiobookAssetName = 'audiobook.hibikiaudio';
 
 const String _dictionaryAssetSuffix = '.hibikidict';
 
+/// Reserved top-level folder holding local-audio source packages (pronunciation
+/// DB + config manifest), alongside the dictionary namespace and per-book
+/// folders. Must be filtered from any listing that treats root children as
+/// books ([isReservedSyncFolderName]).
+const String kSyncLocalAudioNamespace = '__local_audio__';
+
+const String _localAudioAssetSuffix = '.hibikiaudiolib';
+
 /// True for reserved folder names that are NOT books and must be filtered from
 /// any listing of book folders (compare dialog, remote-book import).
-bool isReservedSyncFolderName(String name) => name == kSyncDictionaryNamespace;
+bool isReservedSyncFolderName(String name) =>
+    name == kSyncDictionaryNamespace || name == kSyncLocalAudioNamespace;
 
 /// One sync item judged a genuine fork (both sides moved off the common-ancestor
 /// baseline) and therefore skipped instead of auto-resolved. Carries everything
@@ -60,6 +70,8 @@ class SyncRunReport {
   int dictionariesExported = 0;
   int audiobooksImported = 0;
   int audiobooksExported = 0;
+  int localAudioImported = 0;
+  int localAudioExported = 0;
   final List<String> errors = <String>[];
   final List<SyncConflict> conflicts = <SyncConflict>[];
 }
@@ -88,6 +100,9 @@ class SyncOrchestrator {
     required this.syncContent,
     required this.syncAudioBookFiles,
     required this.syncDictionary,
+    required this.syncLocalAudio,
+    this.localAudioEntries = const <LocalAudioDbEntry>[],
+    this.onLocalAudioImported,
     this.statsSyncMode = StatisticsSyncMode.merge,
   })  : _db = db,
         _backend = backend,
@@ -108,6 +123,12 @@ class SyncOrchestrator {
   final bool syncContent;
   final bool syncAudioBookFiles;
   final bool syncDictionary;
+
+  /// 是否同步本地音频来源（DB 文件 + 配置）。orchestrator 不依赖 AppModel：导出用的
+  /// 条目列表由 [localAudioEntries] 注入，导入注册经 [onLocalAudioImported] 回调。
+  final bool syncLocalAudio;
+  final List<LocalAudioDbEntry> localAudioEntries;
+  final Future<void> Function(LocalAudioPackageContents)? onLocalAudioImported;
   final StatisticsSyncMode statsSyncMode;
 
   int _tmpCounter = 0;
@@ -140,6 +161,7 @@ class SyncOrchestrator {
     _collectConflicts(bookResults, report);
 
     if (syncDictionary) await syncDictionaries(report);
+    if (syncLocalAudio) await syncLocalAudioPackages(report);
     if (syncAudioBookFiles) await syncAudiobookPackages(root, report);
 
     return report;
@@ -250,6 +272,77 @@ class SyncOrchestrator {
         report.dictionariesImported++;
       } catch (err) {
         report.errors.add('import dictionary "${e.name}": $err');
+      } finally {
+        _safeDelete(tmp);
+      }
+    }
+  }
+
+  /// Union-syncs local audio source DBs in the `__local_audio__` namespace.
+  /// 资产名 = displayName（[LocalAudioDbEntry.path] 含本机时间戳，每机不同不可用）。
+  /// push 本地独有（displayName 不在远端）/ pull 远端独有（displayName 不在本地）。
+  ///
+  /// 已知限制：displayName 无唯一约束，撞名按「同一库」union 跳过（与词典按 name
+  /// 同语义）；真正的唯一性去重列为 follow-up。
+  Future<void> syncLocalAudioPackages(SyncRunReport report) async {
+    final String ns = await _backend.ensureNamespace(kSyncLocalAudioNamespace);
+    final List<AssetEntry> remote = await _backend.listChildren(ns);
+
+    final Set<String> remoteNames = <String>{
+      for (final AssetEntry e in remote)
+        if (!e.isFolder && e.name.endsWith(_localAudioAssetSuffix))
+          e.name.substring(0, e.name.length - _localAudioAssetSuffix.length),
+    };
+    final Set<String> localNames = <String>{
+      for (final LocalAudioDbEntry d in localAudioEntries) d.displayName,
+    };
+
+    // Push local-only.
+    for (final LocalAudioDbEntry d in localAudioEntries) {
+      if (remoteNames.contains(d.displayName)) continue;
+      final File dbFile = File(d.path);
+      if (!dbFile.existsSync()) continue;
+      File? tmp;
+      try {
+        tmp = _tmpFile(_localAudioAssetSuffix);
+        await _packages.exportLocalAudioPackage(
+          displayName: d.displayName,
+          enabled: d.enabled,
+          sources: d.sources,
+          dbFile: dbFile,
+          outputFile: tmp,
+        );
+        await _backend.putAsset(
+            ns, '${d.displayName}$_localAudioAssetSuffix', tmp);
+        report.localAudioExported++;
+      } catch (e) {
+        report.errors.add('export local audio "${d.displayName}": $e');
+      } finally {
+        _safeDelete(tmp);
+      }
+    }
+
+    // Pull remote-only.
+    for (final AssetEntry e in remote) {
+      if (e.isFolder || !e.name.endsWith(_localAudioAssetSuffix)) continue;
+      final String base =
+          e.name.substring(0, e.name.length - _localAudioAssetSuffix.length);
+      if (localNames.contains(base)) continue;
+      File? tmp;
+      try {
+        tmp = _tmpFile(_localAudioAssetSuffix);
+        await _backend.getAsset(e.id, tmp);
+        final LocalAudioPackageContents contents =
+            await _packages.importLocalAudioPackage(
+          packageFile: tmp,
+          stagingDir: _tempDir,
+        );
+        if (onLocalAudioImported != null) {
+          await onLocalAudioImported!(contents);
+          report.localAudioImported++;
+        }
+      } catch (err) {
+        report.errors.add('import local audio "${e.name}": $err');
       } finally {
         _safeDelete(tmp);
       }
