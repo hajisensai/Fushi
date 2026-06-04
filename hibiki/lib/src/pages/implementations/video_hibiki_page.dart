@@ -201,7 +201,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage> {
   MaterialDesktopVideoControlsThemeData _desktopControlsTheme(
     VideoPlayerController controller,
   ) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
     return MaterialDesktopVideoControlsThemeData(
+      seekBarPositionColor: cs.primary,
+      seekBarThumbColor: cs.primary,
+      buttonBarButtonColor: cs.onSurface,
       topButtonBar: <Widget>[
         const Spacer(),
         MaterialDesktopCustomButton(
@@ -262,16 +266,15 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage> {
   Widget build(BuildContext context) {
     final VideoPlayerController? controller = _controller;
     final VideoController? videoController = controller?.videoController;
+    final ColorScheme cs = Theme.of(context).colorScheme;
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: cs.surface,
       appBar: AppBar(
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
         title: Text(_title ?? ''),
       ),
       body: _failed
-          ? const Center(
-              child: Icon(Icons.error_outline, color: Colors.white70, size: 48),
+          ? Center(
+              child: Icon(Icons.error_outline, color: cs.error, size: 48),
             )
           : (controller == null || videoController == null)
               ? const Center(child: CircularProgressIndicator())
