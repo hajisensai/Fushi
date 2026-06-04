@@ -4380,7 +4380,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
       IconButton(
         icon: Icon(Icons.tune_outlined, color: _themeTextColor()),
         iconSize: 20,
-        tooltip: t.settings_destination_appearance,
+        tooltip: t.reader_settings_section,
         onPressed: _showAppearanceSheet,
       ),
     ];
