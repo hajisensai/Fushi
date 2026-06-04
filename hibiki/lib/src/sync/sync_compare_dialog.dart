@@ -362,6 +362,10 @@ Future<void> showSyncCompareDialog(
 }) async {
   final repo = SyncRepository(db);
   final backend = resolveSyncBackend(await repo.getBackendType());
+  // Rehydrate the saved session first — opening compare straight after a cold
+  // start would otherwise read a not-yet-restored auth state and wrongly report
+  // "set up sync first" (mobile google_sign_in / desktop refresh) (BUG-047).
+  await backend.restoreAuth(repo);
   if (!await backend.isAuthenticated) {
     if (!context.mounted) return;
     // The compare precondition is "a sync target is configured" — not an

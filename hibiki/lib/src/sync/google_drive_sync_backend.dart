@@ -53,7 +53,11 @@ class GoogleDriveSyncBackend extends SyncBackend {
 
   @override
   Future<bool> restoreAuth(SyncRepository repo) async {
-    if (GoogleDriveAuth.useMobileAuth) return false;
+    // Mobile: rehydrate the google_sign_in session via signInSilently() instead
+    // of the old no-op `return false`, which left the account row showing
+    // "未登录"/no email and blocked auto-sync's isAuthenticated gate after a
+    // restart (BUG-047).
+    if (GoogleDriveAuth.useMobileAuth) return _auth.restoreMobileAuth();
     if (await _auth.isAuthenticated) return true;
     return _auth.restoreDesktopAuth(repo);
   }
