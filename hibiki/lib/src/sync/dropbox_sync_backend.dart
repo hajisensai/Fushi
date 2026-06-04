@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:developer' as developer;
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
@@ -657,6 +658,18 @@ class DropboxSyncBackend extends SyncBackend {
   Future<void> putJsonAsset(
       String namespaceId, String name, Object? json) async {
     await _uploadJsonFile(namespaceId, name, json);
+  }
+
+  @override
+  Future<void> deleteAsset(String id, {bool isFolder = false}) async {
+    // AssetEntry.id 对 Dropbox 是路径串；delete_v2 对文件夹递归删，
+    // _deleteFile 已吞 not-found，天然幂等，isFolder 无需分支。
+    try {
+      await _deleteFile(id);
+    } catch (e) {
+      developer.log('Dropbox deleteAsset failed: $id',
+          error: e, name: 'DropboxSync');
+    }
   }
 
   // ── Private helpers ───────────────────────────────────────────────
