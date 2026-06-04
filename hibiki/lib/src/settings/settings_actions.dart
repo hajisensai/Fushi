@@ -334,10 +334,10 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
           ),
           size: _swatchSize,
           selected: appModel.appThemeKey == 'system-theme',
-          overlay: const Icon(
-            Icons.auto_awesome_outlined,
-            size: 18,
-          ),
+          // Size inherited from HibikiSchemeSwatch's badge IconTheme (14) so the
+          // icon fits the smaller inner dot; an explicit size here would override
+          // it and crowd the dot.
+          overlay: const Icon(Icons.auto_awesome_outlined),
           onTap: () async {
             await appModel.setAppThemeKey('system-theme');
             notifyReaderSettingsChanged(settingsContext);
@@ -378,10 +378,8 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
           ),
           size: _swatchSize,
           selected: appModel.appThemeKey == 'custom-theme',
-          overlay: const Icon(
-            Icons.palette_outlined,
-            size: 18,
-          ),
+          // Size inherited from the badge IconTheme (14); see system swatch above.
+          overlay: const Icon(Icons.palette_outlined),
           onTap: () async {
             await pushSettingsPage(
               settingsContext,
