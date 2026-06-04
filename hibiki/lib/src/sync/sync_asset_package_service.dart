@@ -42,10 +42,12 @@ class SyncAssetPackageService {
     });
 
     outputFile.parent.createSync(recursive: true);
+    // 词典 JSON 可压缩，保留 deflate 省上传体积；词典资源文件较小，单文件入内存可接受。
     await _zipPackageInIsolate(
       outputPath: outputFile.path,
       manifestJson: manifestJson,
       archivePathToSource: archivePathToSource,
+      storeResources: false,
     );
     return outputFile;
   }
@@ -116,10 +118,12 @@ class SyncAssetPackageService {
     });
 
     outputFile.parent.createSync(recursive: true);
+    // 音频/字幕/封面已是压缩格式或很小，STORE 既流式（不整大文件入内存）又不浪费 CPU。
     await _zipPackageInIsolate(
       outputPath: outputFile.path,
       manifestJson: manifestJson,
       archivePathToSource: archivePathToSource,
+      storeResources: true,
     );
     return outputFile;
   }
@@ -390,34 +394,64 @@ String? _nullablePathIn(
   return p.join(root.path, _resourceName(resources, value));
 }
 
-// ── 流式打包辅助（跑在后台 isolate，纯文件→文件，不依赖 DB / Flutter）─────────
+// ── 打包辅助（跑在后台 isolate，纯文件→文件，不依赖 DB / Flutter）─────────
 //
-// OOM 根因修复：旧实现把整个资源文件读进内存、整个 zip 在内存里编解码。
-// 这里改用 archive_io 流式（ZipFileEncoder.addFile 经 InputFileStream 逐块读，
-// ArchiveFile.writeContent 经 OutputFileStream 逐块写），并整体放进 Isolate.run，
-// 让 deflate/inflate 的 CPU 与磁盘 IO 都离开 UI isolate。
+// OOM 根因修复：旧实现把整个资源文件读进内存、整个 zip 在内存里编解码，且整条
+// 编解码链跑在 UI isolate。这里整体放进 Isolate.run（deflate/inflate 的 CPU 与
+// 磁盘 IO 都离开 UI isolate），不再整 zip 入内存，并按包类型选择压缩策略：
+//
+// - 音频包用 STORE（[storeResources]=true）：archive 3.6.1 的 STORE 分支对
+//   `ArchiveFile.stream` 真流式（getFileCrc32 分块读 + writeInputStream 直接转发，
+//   不 toUint8List），单个几百 MB 的音频/封面文件不会整入内存；音频/图片本就是
+//   压缩格式，deflate 也只是浪费 CPU。
+// - 词典包用 deflate（[storeResources]=false）：词典 JSON 可压缩省上传体积。注意
+//   archive 3.6.1 的 GZIP/deflate 分支会 `toUint8List()` 把单个文件整入内存再整块
+//   Deflate（addFile 的 InputFileStream 在此被 buffer 化），是 archive 3.6.1 的已知
+//   限制；词典资源文件较小，逐文件入内存可接受（如需进一步降内存可改 STORE 词典）。
+// - 导入用 ArchiveFile.decompress(OutputFileStream)：STORE→writeInputStream、
+//   DEFLATE→Inflate.stream，两者都逐块落盘、无整文件入内存。
 
-/// 流式打 zip：把 [archivePathToSource]（zip 内路径 → 磁盘绝对路径）的每个文件
-/// 流式写入 [outputPath]，并把 [manifestJson] 作为 `manifest.json` 写入。
+/// 把 [archivePathToSource]（zip 内路径 → 磁盘绝对路径）的每个文件写入
+/// [outputPath]，并把 [manifestJson] 作为 `manifest.json` 写入。
+/// [storeResources]=true 用 STORE（流式、不整文件入内存），false 用 deflate
+/// （逐文件压缩、单文件入内存，详见上方说明）。
 Future<void> _zipPackageInIsolate({
   required String outputPath,
   required String manifestJson,
   required Map<String, String> archivePathToSource,
+  required bool storeResources,
 }) async {
   await Isolate.run(() async {
     final ZipFileEncoder encoder = ZipFileEncoder();
     encoder.create(outputPath);
-    final List<int> manifestBytes = utf8.encode(manifestJson);
-    encoder.addArchiveFile(
-      ArchiveFile('manifest.json', manifestBytes.length, manifestBytes),
-    );
-    for (final MapEntry<String, String> entry in archivePathToSource.entries) {
-      final File file = File(entry.value);
-      if (!file.existsSync()) continue;
-      // addFile 内部用 InputFileStream 流式读，不整文件入内存。
-      await encoder.addFile(file, entry.key);
+    try {
+      final List<int> manifestBytes = utf8.encode(manifestJson);
+      encoder.addArchiveFile(
+        ArchiveFile('manifest.json', manifestBytes.length, manifestBytes),
+      );
+      for (final MapEntry<String, String> entry
+          in archivePathToSource.entries) {
+        final File file = File(entry.value);
+        if (!file.existsSync()) continue;
+        await encoder.addFile(
+          file,
+          entry.key,
+          storeResources ? ZipFileEncoder.STORE : ZipFileEncoder.GZIP,
+        );
+      }
+      encoder.closeSync();
+    } catch (_) {
+      // 释放底层 OutputFileStream 句柄；旧的 writeAsBytes(flush:true) 是原子的，
+      // 不留半截 zip——流式化后必须手动删掉中途失败留下的半截包，避免被当成有效包。
+      encoder.closeSync();
+      try {
+        final File partial = File(outputPath);
+        if (partial.existsSync()) partial.deleteSync();
+      } catch (_) {
+        // best-effort：删半截包失败不掩盖原始导出异常，rethrow 才是真错。
+      }
+      rethrow;
     }
-    encoder.closeSync();
   });
 }
 
@@ -439,8 +473,9 @@ Future<String> _readManifestInIsolate(String packagePath) async {
   });
 }
 
-/// 流式把 [prefix]/ 下的资源解压到 [targetDirPath]。保留 zip-slip 路径安全校验
-/// （与旧 _extractArchivePrefix 等价），每个文件经 OutputFileStream 逐块落盘。
+/// 把 [prefix]/ 下的资源解压到 [targetDirPath]。保留 zip-slip 路径安全校验
+/// （与旧 _extractArchivePrefix 等价），每个文件经 [_streamArchiveFileTo] 逐块落盘
+/// （STORE→writeInputStream、DEFLATE→Inflate.stream，均不整文件入内存）。
 Future<void> _extractResourcesInIsolate({
   required String packagePath,
   required String targetDirPath,
@@ -473,7 +508,7 @@ Future<void> _extractResourcesInIsolate({
         File(targetPath).parent.createSync(recursive: true);
         final OutputFileStream out = OutputFileStream(targetPath);
         try {
-          file.writeContent(out);
+          _streamArchiveFileTo(file, out);
         } finally {
           out.closeSync();
         }
@@ -482,4 +517,37 @@ Future<void> _extractResourcesInIsolate({
       input.closeSync();
     }
   });
+}
+
+/// 把 `decodeBuffer` 出来的 [file] 流式写入 [out]，不整文件入内存。
+///
+/// 不能用 `ArchiveFile.decompress(out)`：archive 3.6.1 的 `ZipDecoder.decodeBuffer`
+/// 把每个条目构造成 `ArchiveFile(name, size, ZipFile, compressionMethod)`，`ZipFile`
+/// 是 `FileContent`，于是 `ArchiveFile._content` 被设为该 ZipFile（**非 null**），
+/// `decompress(out)` 的前置 `_content==null && _rawContent!=null` 不成立 → 直接 no-op
+/// 写出 0 字节。`writeContent(out)` 又会先 `_content.content`（`ZipFile.content` getter）
+/// 把整文件解压进内存（STORE→toUint8List、DEFLATE→inflateBuffer）——正是导入侧 OOM 源。
+///
+/// 真正的流式落盘：直接消费条目的原始压缩流 [ArchiveFile.rawContent]（从
+/// `InputFileStream` 解出来时是惰性窗口文件流，不在内存），按压缩类型分流：
+/// - STORE：`out.writeInputStream(raw)` 逐块拷贝（raw 即未压缩字节）；
+/// - DEFLATE：`Inflate.stream(raw, out)` 逐块 inflate 直接写 out。
+void _streamArchiveFileTo(ArchiveFile file, OutputFileStream out) {
+  final InputStreamBase? raw = file.rawContent;
+  if (raw == null) {
+    // 防御：无原始流时回退到 writeContent（会整文件入内存，但保证正确性）。
+    file.writeContent(out);
+    return;
+  }
+  switch (file.compressionType) {
+    case ArchiveFile.STORE:
+      out.writeInputStream(raw);
+      break;
+    case ArchiveFile.DEFLATE:
+      Inflate.stream(raw, out);
+      break;
+    default:
+      // 其它压缩（bzip2/aes 等）本打包格式不产出；回退到 writeContent 保正确。
+      file.writeContent(out);
+  }
 }
