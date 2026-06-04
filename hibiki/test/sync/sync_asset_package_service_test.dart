@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart' as crypto;
@@ -230,7 +231,7 @@ void main() {
 
     test('large audio file survives STORE export + streaming import intact',
         () async {
-      // 行为级证明 STORE 导出 + decompress(out) 导入对大文件往返字节一致。
+      // 行为级证明 STORE 导出 + rawContent 流式导入对大文件往返字节一致。
       // 用 >2MB（3MB）的伪随机内容，走过 archive 的分块 CRC / writeInputStream
       // 流式路径（小文件走不到），断言导入后磁盘字节与源完全一致。
       final Directory temp = await Directory.systemTemp.createTemp(
