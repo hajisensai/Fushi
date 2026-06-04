@@ -458,13 +458,23 @@ void main() {
       addTearDown(tgtDb.close);
       final List<LocalAudioPackageContents> imported =
           <LocalAudioPackageContents>[];
+      // Capture the staging .db path + its existence *inside* the callback:
+      // AppModel.importSyncedLocalAudioDb copies the staged .db while the
+      // callback runs (so it must still exist here), and the orchestrator
+      // deletes it afterwards (I-1).
+      bool dbFileExistedDuringImport = false;
+      String? stagingDbPath;
       final SyncRunReport pull = SyncRunReport();
       await orch(
         tgtDb,
         backend,
         tmp,
         syncLocalAudio: true,
-        onImported: (LocalAudioPackageContents c) async => imported.add(c),
+        onImported: (LocalAudioPackageContents c) async {
+          imported.add(c);
+          stagingDbPath = c.dbFile.path;
+          dbFileExistedDuringImport = c.dbFile.existsSync();
+        },
       ).syncLocalAudioPackages(pull);
 
       expect(pull.localAudioImported, 1);
@@ -473,7 +483,11 @@ void main() {
       expect(imported.single.displayName, 'Forvo');
       expect(imported.single.enabled, isTrue);
       expect(imported.single.sources.single.name, 'nhk16');
-      expect(imported.single.dbFile.existsSync(), isTrue);
+      // Staged .db is available while the import callback runs…
+      expect(dbFileExistedDuringImport, isTrue);
+      // …and is cleaned up afterwards — no staging .db leak (I-1).
+      expect(File(stagingDbPath!).existsSync(), isFalse,
+          reason: 'staging .db must be deleted after import (I-1)');
     });
 
     test('entry present on both sides (same displayName) is skipped', () async {
