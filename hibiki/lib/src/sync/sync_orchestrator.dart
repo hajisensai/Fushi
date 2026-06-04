@@ -329,6 +329,11 @@ class SyncOrchestrator {
           e.name.substring(0, e.name.length - _localAudioAssetSuffix.length);
       if (localNames.contains(base)) continue;
       File? tmp;
+      // Staging .db extracted from the package. AppModel.importSyncedLocalAudioDb
+      // *copies* it into the library dir (never moves), so the staging copy
+      // (potentially hundreds of MB) must be deleted here — otherwise every
+      // pulled library leaks one .db into the OS temp dir.
+      File? stagingDb;
       try {
         tmp = _tmpFile(_localAudioAssetSuffix);
         await _backend.getAsset(e.id, tmp);
@@ -337,6 +342,7 @@ class SyncOrchestrator {
           packageFile: tmp,
           stagingDir: _tempDir,
         );
+        stagingDb = contents.dbFile;
         if (onLocalAudioImported != null) {
           await onLocalAudioImported!(contents);
           report.localAudioImported++;
@@ -345,6 +351,7 @@ class SyncOrchestrator {
         report.errors.add('import local audio "${e.name}": $err');
       } finally {
         _safeDelete(tmp);
+        _safeDelete(stagingDb);
       }
     }
   }

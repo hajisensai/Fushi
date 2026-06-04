@@ -2599,7 +2599,15 @@ class AppModel with ChangeNotifier {
   void setAudioSources(List<String> sources) =>
       prefsRepo.setAudioSources(sources);
 
-  Future<void> setAudioSourceConfigs(List<AudioSourceConfig> sources) async {
+  /// [sourcesByPath] 为指定 path 的**新增** local-audio 库预置子来源偏好，让
+  /// 注册同步库时一次写穿（避免随后再调 setLocalAudioDbSources 二次落盘 + 二次推
+  /// native）。仅对 [current] 里尚不存在的库生效；已有库的子来源以现存为准（按
+  /// path 经 copyWith 继承），不被覆盖。
+  Future<void> setAudioSourceConfigs(
+    List<AudioSourceConfig> sources, {
+    Map<String, List<LocalAudioSourcePref>> sourcesByPath =
+        const <String, List<LocalAudioSourcePref>>{},
+  }) async {
     await prefsRepo.setAudioSourceConfigs(sources);
     final Map<String, LocalAudioDbEntry> current = <String, LocalAudioDbEntry>{
       for (final LocalAudioDbEntry db in localAudioDbs) db.path: db,
@@ -2613,6 +2621,8 @@ class AppModel with ChangeNotifier {
                     path: source.path!,
                     displayName: source.displayLabel,
                     enabled: source.enabled,
+                    sources: sourcesByPath[source.path] ??
+                        const <LocalAudioSourcePref>[],
                   ))
               .copyWith(
             displayName: source.displayLabel,
@@ -2699,11 +2709,14 @@ class AppModel with ChangeNotifier {
       path: entry.path,
       enabled: c.enabled,
     );
+    // 一次写穿：把子来源偏好随新库一起 bake 进 setEntries，省掉随后再调
+    // setLocalAudioDbSources 的二次 prefs 写 + 二次 native 全量重推。
     await setAudioSourceConfigs(
-        <AudioSourceConfig>[...audioSourceConfigs, cfg]);
-    if (c.sources.isNotEmpty) {
-      await setLocalAudioDbSources(entry.path, c.sources);
-    }
+      <AudioSourceConfig>[...audioSourceConfigs, cfg],
+      sourcesByPath: c.sources.isEmpty
+          ? const <String, List<LocalAudioSourcePref>>{}
+          : <String, List<LocalAudioSourcePref>>{entry.path: c.sources},
+    );
     notifyListeners();
   }
 
