@@ -25,6 +25,7 @@ import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/src/utils/window_caption_channel.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/shortcuts/global_navigation.dart';
+import 'package:hibiki/src/startup/webview_prewarm.dart';
 import 'package:hibiki/src/platform/platform_services.dart';
 import 'package:hibiki/src/platform/platform_providers.dart';
 import 'package:share_plus/share_plus.dart';
@@ -191,11 +192,22 @@ void main() {
 
     // ── 预热 WebView 引擎 ──────────────────────────────────────────────
     // 用户还在看主页/书架时就把冷启动成本吃掉：~500-1500ms。
-    // Desktop: HeadlessInAppWebView may crash WebView2 if called before the
-    // Flutter view is attached, so only warm up on mobile.
-    if ((Platform.isAndroid || Platform.isIOS) && !appModel.lowMemoryMode) {
+    // 移动端可直接预热；桌面端（WebView2）必须等首帧渲染、Flutter view
+    // 已挂载后再构造 HeadlessInAppWebView，否则会崩 WebView2。
+    final bool isMobilePlatform = Platform.isAndroid || Platform.isIOS;
+    final bool isDesktopPlatform =
+        Platform.isWindows || Platform.isLinux || Platform.isMacOS;
+    if (shouldPrewarmWebView(
+      isMobile: isMobilePlatform,
+      isDesktop: isDesktopPlatform,
+      lowMemory: appModel.lowMemoryMode,
+    )) {
       unawaited(Future(() async {
         try {
+          // 桌面端等首帧，保证 Flutter view 已 attach（WebView2 前提）。
+          if (isDesktopPlatform) {
+            await WidgetsBinding.instance.endOfFrame;
+          }
           late final HeadlessInAppWebView warmup;
           warmup = HeadlessInAppWebView(
             initialUrlRequest: URLRequest(url: WebUri('about:blank')),
