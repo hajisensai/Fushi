@@ -1671,7 +1671,7 @@ class AppModel with ChangeNotifier {
       dictRepo.clearDictionaryResultsCache();
     } catch (e, stack) {
       ErrorLogService.instance.log('deleteDictionaries', e, stack);
-      HibikiToast.show(msg: 'Failed to delete dictionaries');
+      HibikiToast.show(msg: t.dictionaries_delete_failed);
     } finally {
       dictionarySearchAgainNotifier.notifyListeners();
     }
@@ -1694,7 +1694,7 @@ class AppModel with ChangeNotifier {
       dictRepo.clearDictionaryResultsCache();
     } catch (e, stack) {
       ErrorLogService.instance.log('deleteDictionary', e, stack);
-      HibikiToast.show(msg: 'Failed to delete dictionary');
+      HibikiToast.show(msg: t.dictionary_delete_failed);
     } finally {
       dictionarySearchAgainNotifier.notifyListeners();
     }

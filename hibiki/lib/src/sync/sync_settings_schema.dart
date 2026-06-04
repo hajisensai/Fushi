@@ -536,8 +536,8 @@ class _WebDavConfigWidgetState extends State<_WebDavConfigWidget> {
       final password = _passwordController.text;
       if (url.isEmpty || username.isEmpty || password.isEmpty) {
         if (mounted) {
-          _showSnackBar(
-              context, t.sync_webdav_test_failed(message: 'Missing fields'));
+          _showSnackBar(context,
+              t.sync_webdav_test_failed(message: t.sync_webdav_missing_fields));
         }
         return;
       }

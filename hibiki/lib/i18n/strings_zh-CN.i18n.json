@@ -1228,5 +1228,8 @@
     "sync_compare_delete_audiobook": "删除远端有声书",
     "sync_compare_delete_dict": "删除远端词典",
     "sync_compare_deleted": "已从远端删除",
-    "sync_compare_delete_confirm": "确定从远端删除「$name」吗？本地数据保留，此操作不可撤销。"
+    "sync_compare_delete_confirm": "确定从远端删除「$name」吗？本地数据保留，此操作不可撤销。",
+    "dictionaries_delete_failed": "删除全部词典失败",
+    "dictionary_delete_failed": "删除词典失败",
+    "sync_webdav_missing_fields": "缺少字段"
 }
