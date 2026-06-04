@@ -10,7 +10,6 @@
 #include <dynamic_color/dynamic_color_plugin_c_api.h>
 #include <flutter_inappwebview_windows/flutter_inappwebview_windows_plugin_c_api.h>
 #include <gamepads_windows/gamepads_windows_plugin_c_api.h>
-#include <media_kit_libs_windows_audio/media_kit_libs_windows_audio_plugin_c_api.h>
 #include <media_kit_libs_windows_video/media_kit_libs_windows_video_plugin_c_api.h>
 #include <media_kit_video/media_kit_video_plugin_c_api.h>
 #include <permission_handler_windows/permission_handler_windows_plugin.h>
@@ -28,8 +27,6 @@ void RegisterPlugins(flutter::PluginRegistry* registry) {
       registry->GetRegistrarForPlugin("FlutterInappwebviewWindowsPluginCApi"));
   GamepadsWindowsPluginCApiRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("GamepadsWindowsPluginCApi"));
-  MediaKitLibsWindowsAudioPluginCApiRegisterWithRegistrar(
-      registry->GetRegistrarForPlugin("MediaKitLibsWindowsAudioPluginCApi"));
   MediaKitLibsWindowsVideoPluginCApiRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("MediaKitLibsWindowsVideoPluginCApi"));
   MediaKitVideoPluginCApiRegisterWithRegistrar(

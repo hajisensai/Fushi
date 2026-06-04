@@ -17,20 +17,37 @@ AudioCue _cue(String t, int s, int e) => AudioCue()
   ..audioFileIndex = 0;
 
 void main() {
-  testWidgets('shows current cue text and updates on change', (tester) async {
+  testWidgets('renders current cue as tappable chars; fires onCharTap',
+      (tester) async {
     final c = VideoPlayerController();
     addTearDown(c.dispose);
     c.setCues([_cue('hello', 0, 1000), _cue('world', 2000, 3000)]);
 
-    await tester.pumpWidget(buildTestApp(VideoSubtitleOverlay(controller: c)));
+    String? tappedSentence;
+    int? tappedIndex;
+    await tester.pumpWidget(buildTestApp(VideoSubtitleOverlay(
+      controller: c,
+      onCharTap: (String s, int i) {
+        tappedSentence = s;
+        tappedIndex = i;
+      },
+    )));
+
     c.debugUpdateCueForPosition(500);
     await tester.pump();
-    expect(find.text('hello'), findsOneWidget);
+    // 'hello' 拆成逐字符可点。
+    expect(find.text('h'), findsOneWidget);
+    expect(find.text('e'), findsOneWidget);
+    expect(find.text('l'), findsNWidgets(2));
+
+    await tester.tap(find.text('e'));
+    expect(tappedSentence, 'hello');
+    expect(tappedIndex, 1); // 'e' 是第 1 个 grapheme
 
     c.debugUpdateCueForPosition(2500);
     await tester.pump();
-    expect(find.text('world'), findsOneWidget);
-    expect(find.text('hello'), findsNothing);
+    expect(find.text('w'), findsOneWidget);
+    expect(find.text('h'), findsNothing);
   });
 
   testWidgets('renders nothing when no current cue', (tester) async {
@@ -39,6 +56,6 @@ void main() {
     c.setCues([_cue('hello', 0, 1000)]);
     await tester.pumpWidget(buildTestApp(VideoSubtitleOverlay(controller: c)));
     await tester.pump();
-    expect(find.text('hello'), findsNothing); // 未推进位置，无 current cue
+    expect(find.text('h'), findsNothing); // 未推进位置，无 current cue
   });
 }

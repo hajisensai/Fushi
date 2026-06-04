@@ -37,6 +37,9 @@ class VideoPlayerController extends ChangeNotifier {
 
   String? _bookUid;
 
+  /// 视频文件绝对路径；制卡时按 cue 时间裁字幕音频片段用。
+  String? _videoPath;
+
   /// 上次持久化时的整秒位置；用于 [_maybeSavePosition] 节流到每秒至多一次。
   int _lastSavedSec = -1;
 
@@ -51,7 +54,15 @@ class VideoPlayerController extends ChangeNotifier {
 
   VideoController? get videoController => _videoController;
 
+  /// 视频文件绝对路径（制卡裁字幕音频用）；未 [load] 时为空。
+  String? get videoPath => _videoPath;
+
   bool get isPlaying => _player?.state.playing ?? false;
+
+  /// 截取当前解码帧为 JPEG 字节（制卡截图用）。未 [load] 返回 null。
+  Future<Uint8List?> screenshot() async {
+    return _player?.screenshot(format: 'image/jpeg');
+  }
 
   /// 当前视频可用的字幕轨（含内嵌轨）；未 [load] 时为空。
   ///
@@ -63,6 +74,15 @@ class VideoPlayerController extends ChangeNotifier {
   /// 切换字幕轨（运行时 / Phase 1 预留）。未 [load] 时 no-op 安全。
   Future<void> selectSubtitleTrack(SubtitleTrack track) async {
     await _player?.setSubtitleTrack(track);
+  }
+
+  /// 当前视频可用的音轨；未 [load] 时为空。
+  List<AudioTrack> get audioTracks =>
+      _player?.state.tracks.audio ?? const <AudioTrack>[];
+
+  /// 切换音轨。未 [load] 时 no-op 安全。
+  Future<void> selectAudioTrack(AudioTrack track) async {
+    await _player?.setAudioTrack(track);
   }
 
   /// 设置 cue 列表：拷贝并按 startMs 升序排序（[JsonAlignmentParser.findCueIndex]
@@ -93,6 +113,7 @@ class VideoPlayerController extends ChangeNotifier {
     String? externalSubtitlePath,
   }) async {
     _bookUid = bookUid;
+    _videoPath = videoFile.path;
     setCues(cues);
 
     // 重复 load：先释放上一次的 tick / 订阅 / player，避免泄漏。
@@ -111,11 +132,9 @@ class VideoPlayerController extends ChangeNotifier {
       play: false,
     );
 
-    if (externalSubtitlePath != null && externalSubtitlePath.isNotEmpty) {
-      await player.setSubtitleTrack(
-        SubtitleTrack.uri(File(externalSubtitlePath).uri.toString()),
-      );
-    }
+    // 外挂字幕走可点击 overlay（cue 同步 + 逐字查词），不交给 libmpv 画面渲染，
+    // 避免不可点的画面字幕与 overlay 双重。内嵌字幕（无 cue）靠 libmpv 默认渲染。
+    // externalSubtitlePath 暂保留参数（未来可选切到 libmpv 渲染），当前不使用。
 
     await player.setRate(initialSpeed);
     if (initialPositionMs > 0) {
