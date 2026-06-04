@@ -78,7 +78,8 @@ void main() {
         'sync.content',
         'sync.audiobook_files',
       ]);
-      expect(idsOf(dest.sections[3]), <String>['sync.sync_now', 'sync.compare']);
+      expect(idsOf(dest.sections[3]),
+          <String>['sync.sync_now', 'sync.compare', 'sync.conflicts']);
       expect(idsOf(dest.sections[4]),
           <String>['sync.backup_export', 'sync.backup_import']);
     });

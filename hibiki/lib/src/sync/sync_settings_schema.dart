@@ -217,6 +217,17 @@ SettingsDestination buildSyncBackupDestination() {
               ctx.appModel.database,
             ),
           ),
+          SettingsActionItem(
+            id: 'sync.conflicts',
+            title: t.sync_conflict_title,
+            subtitle: t.sync_conflict_hint,
+            icon: Icons.merge_type,
+            onTap: (SettingsContext ctx) => showSyncCompareDialog(
+              ctx.context,
+              ctx.appModel.database,
+              conflictsOnly: true,
+            ),
+          ),
         ],
       ),
       // ── Group 5: Local backup — independent of sync ──────────────────
