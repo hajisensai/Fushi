@@ -79,7 +79,7 @@ class UpdateChecker {
     try {
       await _cleanupOldApks(currentVersion);
       client = HttpClient();
-      client.connectionTimeout = const Duration(seconds: 10);
+      client.connectionTimeout = const Duration(seconds: 30);
 
       final json = betaChannel
           ? await _fetchLatestRelease(client)
@@ -149,8 +149,14 @@ class UpdateChecker {
         }
         await response.drain<void>();
       } catch (e, stack) {
-        ErrorLogService.instance.log('UpdateChecker.httpGet', e, stack);
-        debugPrint('[Hibiki] request failed ($u): $e');
+        // 更新检查是 best-effort：连不上/超时/TLS 握手失败是预期网络现象（尤其
+        // GFW 下访问 GitHub 与代理），只 debugPrint，不带堆栈污染错误日志。
+        if (isExpectedUpdateNetworkFailure(e)) {
+          debugPrint('[Hibiki] update check skipped ($u): $e');
+        } else {
+          ErrorLogService.instance.log('UpdateChecker.httpGet', e, stack);
+          debugPrint('[Hibiki] request failed ($u): $e');
+        }
       }
     }
     return null;
@@ -280,8 +286,14 @@ class UpdateChecker {
           }
           await response.drain<void>();
         } catch (e, stack) {
-          ErrorLogService.instance.log('UpdateChecker.download', e, stack);
-          debugPrint('[Hibiki] download failed ($u): $e');
+          // 单个下载源连不上是预期的，逐源静默回退；只 debugPrint。全部失败时
+          // 下面的 throw 会被外层 catch 统一记录一条并弹 SnackBar 提示用户。
+          if (isExpectedUpdateNetworkFailure(e)) {
+            debugPrint('[Hibiki] download source skipped ($u): $e');
+          } else {
+            ErrorLogService.instance.log('UpdateChecker.download', e, stack);
+            debugPrint('[Hibiki] download failed ($u): $e');
+          }
         }
       }
       if (!downloaded) {
@@ -337,6 +349,13 @@ String _extOf(String url) {
   final int dot = name.lastIndexOf('.');
   return dot >= 0 ? name.substring(dot) : '';
 }
+
+/// 更新检查与下载都是 best-effort。网络类失败——连不上、连接超时、TLS 握手
+/// 失败、底层 HTTP 协议错误——是预期现象（尤其 GFW 下访问 GitHub / 代理本就
+/// 不稳），不该当错误带完整堆栈塞进用户可见的错误日志，否则真正的 bug 信号会
+/// 被这类噪音淹没。返回 true 表示该异常只需 debugPrint，无需写 ErrorLogService。
+bool isExpectedUpdateNetworkFailure(Object e) =>
+    e is SocketException || e is HandshakeException || e is HttpException;
 
 bool isVersionNewer(String remote, String local) {
   String strip(String v) => v.split('+').first;
