@@ -1239,5 +1239,6 @@
     "sync_local_audio": "同步本地音频",
     "sync_local_audio_warning": "同步本地音频来源数据库（可能较大）",
     "sync_now_local_audio_in": "↓$count 本地音频",
-    "sync_now_local_audio_out": "↑$count 本地音频"
+    "sync_now_local_audio_out": "↑$count 本地音频",
+    "update_network_unreachable": "无法连接 $host（网络超时或不可达）。"
 }
