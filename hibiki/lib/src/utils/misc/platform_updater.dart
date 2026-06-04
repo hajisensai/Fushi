@@ -136,6 +136,20 @@ class AndroidInstaller {
   }
 }
 
+/// Inno Setup 静默安装参数：抑制向导、跳过初始提示；安装器脚本负责关旧实例 + 重启。
+List<String> windowsInstallerArgs(String installerPath) =>
+    <String>['/VERYSILENT', '/SP-'];
+
 class WindowsInstaller {
-  static Future<void> runAndExit(String installerPath) async {}
+  /// 启动安装器（分离进程）后退出本进程，让安装器替换运行中的 exe 并重启 app。
+  static Future<void> runAndExit(String installerPath) async {
+    await Process.start(
+      installerPath,
+      windowsInstallerArgs(installerPath),
+      mode: ProcessStartMode.detached,
+    );
+    // 给安装器拿到文件锁的瞬间；随后退出本进程，让其替换 hibiki.exe。
+    await Future<void>.delayed(const Duration(milliseconds: 500));
+    exit(0);
+  }
 }

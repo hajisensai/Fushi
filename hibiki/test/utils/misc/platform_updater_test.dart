@@ -95,4 +95,13 @@ void main() {
       expect(platformSupportsInAppInstall(), expected);
     });
   });
+
+  group('windowsInstallerArgs', () {
+    test('runs installer very-silently and skips initial prompt', () {
+      final List<String> args =
+          windowsInstallerArgs(r'C:\tmp\hibiki-0.4.2-windows-setup.exe');
+      expect(args, contains('/VERYSILENT'));
+      expect(args, contains('/SP-'));
+    });
+  });
 }
