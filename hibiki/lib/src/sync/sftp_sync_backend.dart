@@ -432,6 +432,39 @@ class SftpSyncBackend extends SyncBackend {
         await _uploadJson(sftp, namespaceId, name, json);
       });
 
+  @override
+  Future<void> deleteAsset(String id, {bool isFolder = false}) =>
+      _guarded(() async {
+        final SftpClient sftp = await _ensureConnected();
+        try {
+          if (isFolder) {
+            await _deleteDirRecursive(sftp, id);
+          } else {
+            await _deleteIfExists(sftp, id);
+          }
+        } on SftpStatusError catch (e) {
+          // 幂等：目标（含递归过程中已不存在的目录）不存在视为成功。其它
+          // SftpStatusError 透传给 _guarded 转成可重试错误。
+          if (e.code == SftpStatusCode.noSuchFile) return;
+          rethrow;
+        }
+      });
+
+  /// 递归删除 SFTP 目录 [path]：删子文件 + 递归子目录，最后 rmdir 空目录。
+  Future<void> _deleteDirRecursive(SftpClient sftp, String path) async {
+    final List<SftpName> entries = await sftp.listdir(path);
+    for (final SftpName e in entries) {
+      if (e.filename == '.' || e.filename == '..') continue;
+      final String childId = '$path/${e.filename}';
+      if (e.attr.isDirectory) {
+        await _deleteDirRecursive(sftp, childId);
+      } else {
+        await _deleteIfExists(sftp, childId);
+      }
+    }
+    await sftp.rmdir(path);
+  }
+
   // ── Cache ─────────────────────────────────────────────────────────
 
   @override
