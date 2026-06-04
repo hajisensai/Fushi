@@ -13,6 +13,13 @@
 
 ---
 
+## BUG-018 · 歌词模式「自动音频跟随」开关无效（关掉仍自动滚到当前句）
+- **报告**：2026-06-04（用户，手柄/键盘场景：「歌词模式的自动音频跟随开关无效」）。
+- **真实性**：✅ **真 bug（门控信号缺失）**。非歌词路径里，cue 切换的「滚动/reveal」由 `AudiobookPlayerController.shouldRevealCurrentCue`（内含 `followAudio.value && ...`，`audiobook_controller.dart:729`）门控，关跟随就不滚。但歌词分支 `_onCueChanged`（`reader_hibiki_page.dart:2316-2330`）**无条件**调 `'window.__lyricsSetCue($idx)'`，而 `LyricsModeHtml` 的 `setCue(index)` 末尾**恒调** `scrollToCenter(_cues[index])`（`lyrics_mode_html.dart`）——整条歌词路径从不读 `followAudio.value`。后果：跟随开关在歌词模式下完全无效，关掉后歌词仍自动滚到正在播放的句子，用户无法自由翻看歌词。根因 = 歌词 cue 路径漏了 followAudio 门控信号。
+- **[x] ① 已修复** — `167e9fef6`（① JS `setCue(index, scroll)`：当前/邻近行高亮类切换照旧，仅 `if (scroll !== false) scrollToCenter` ——关跟随只停自动滚动、仍标记当前句；`__lyricsSetCue(index, scroll)` 透传第二参。② Dart 歌词分支把 `controller.followAudio.value` 传进 `__lyricsSetCue`。消除「歌词路径无视 followAudio」的缺口，与非歌词路径的 reveal 门控语义对齐，非补丁）。
+- **[x] ② 已加自动化测试** — `hibiki/test/media/audiobook/lyrics_follow_audio_guard_test.dart`：①生成器断言 `setCue(index, scroll)` 用 `scroll` 门控 `scrollToCenter`、`__lyricsSetCue` 收第二参（旧单参/恒滚码三条全红）；②reader 源码扫描断言歌词分支把 `followAudio.value` 透传进 `__lyricsSetCue`。全量 `test/media/audiobook/` 265 绿无回归。
+- **备注**：reader/WebView 行为类。最强可落地层是 HTML 生成器契约 + reader 源码透传守卫（`_onCueChanged` 在含真实 InAppWebView 的 reader 页无法 widget 挂载，JS 滚动是 WebView 行为）。真机复测原始失败路径（开有声书→进歌词模式→关「自动音频跟随」→确认歌词不再自动滚、播放进度照常）待用户后补。
+
 ## BUG-017 · 歌词模式当前行被放大后溢出左右边框、文字贴边裁切
 - **报告**：2026-06-04（用户，附截图：蓝色高亮当前行 `麗子はその扉を開けて恐る恐る現場に足を踏み入れた。` 顶满左右边框、右侧 `足を踏み入` 被裁，灰色非当前行有正常边距）。
 - **真实性**：✅ **真 bug（布局溢出）**。歌词模式独立页 `LyricsModeHtml.generate`（`lyrics_mode_html.dart`）里 `.cue { max-width: 92vw; }` 让当前行在 92vw 内换行，随后 `.cue.current { transform: scale(1.15); }` 把整盒（含宽度）**视觉放大到 92vw × 1.15 = 105.8vw**，默认 `transform-origin: 50% 50%` 居中放大 → 向左右各溢出 ~7vw；`html, body { overflow-x: hidden }` 把溢出裁掉 → 当前行文字贴边并被切。非当前行 scale 1.0、92vw < 95vw 内容区故有正常边距，只有被放大的当前行溢出，与截图吻合。隐患叠加：`92vw` 是硬编码，既不跟随容器 `padding`（marginLeft/Right，默认各 2.5vw），也不预留 scale 余量——两个魔数静默耦合。根因点旧 `lyrics_mode_html.dart` 的 `max-width: 92vw` 与 `.cue.current { transform: scale(1.15) }`。
