@@ -322,5 +322,35 @@ void main() {
       expect(js, contains('scopeSelector'));
       expect(js, contains('closest(this.scopeSelector)'));
     });
+
+    test('element-stop ring hugs visible ink, not the full border box', () {
+      // 元素停靠点（弹窗 ♪/+ 按钮、折叠词典段 summary）必须把焦点环画在元素的
+      // 可见内容 rect（_elRect → _elInk：内容 client rects 并集，clamp 到 border
+      // box）上，而不是 el.getBoundingClientRect()——后者含 padding/行盒/transform，
+      // 渲染成比字形大且错位的空盒子。(BUG-017)
+      expect(js, contains('_elInk:'));
+      expect(js, contains('_elRect:'));
+      expect(js, contains('selectNodeContents'));
+      expect(js, contains('getClientRects'));
+    });
+
+    test('element stops route ring + geometry through _elRect (no raw box)', () {
+      // _stopRect 与 _anchorRect 必须经 _elRect 取元素 rect，使焦点环、命中测试、
+      // 方向几何都用收紧后的可见 rect。
+      expect(js, contains('if (stop.el) return this._elRect(stop.el);'));
+      expect(
+        js,
+        contains(
+            'if (this.el && document.contains(this.el)) return this._elRect(this.el);'),
+      );
+    });
+
+    test('empty clickable wrappers are not element stops (ink or image only)',
+        () {
+      // 无文字 ink 且非替换元素（图片）的 clickable 是空 wrapper，必须跳过，
+      // 焦点环不得落在空白盒子上；图片本身无文字 ink，其 border box 即内容。
+      expect(js, contains('!this._elInk(e)'));
+      expect(js, contains('picture, video, canvas, svg'));
+    });
   });
 }
