@@ -178,67 +178,80 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
     final String keyId = isLocal
         ? 'audio_local_${source.path ?? index}'
         : 'audio_remote_${source.kind.wireName}_${source.url ?? index}';
+    final Widget row = AdaptiveSettingsRow(
+      title: title,
+      subtitle: subtitle,
+      icon: isLocal ? Icons.audiotrack_outlined : null,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          // 「调整子来源」只在本地库行出现；放在开关**左侧**，让开关/↑/↓/删除
+          // 四列在所有行右贴边对齐（多出的 tune 只向左凸出，不挤动公共列）。
+          if (isLocal &&
+              widget.onEditLocalSources != null &&
+              (source.path?.isNotEmpty ?? false))
+            HibikiIconButton(
+              icon: Icons.tune,
+              size: 18,
+              tooltip: t.local_audio_edit_sources,
+              padding: EdgeInsets.all(tokens.spacing.gap / 2),
+              onTap: () => widget.onEditLocalSources!(source.path!),
+            ),
+          Switch.adaptive(
+            value: source.enabled,
+            onChanged: (bool enabled) => setState(() {
+              _sources[index] = source.copyWith(enabled: enabled);
+            }),
+          ),
+          // Gamepad/keyboard reorder equivalent for the drag handle
+          // (which a controller cannot grab).
+          HibikiIconButton(
+            icon: Icons.keyboard_arrow_up,
+            size: 18,
+            tooltip: t.move_up,
+            enabled: index > 0,
+            padding: EdgeInsets.all(tokens.spacing.gap / 2),
+            onTap: () => setState(() {
+              final AudioSourceConfig item = _sources.removeAt(index);
+              _sources.insert(index - 1, item);
+            }),
+          ),
+          HibikiIconButton(
+            icon: Icons.keyboard_arrow_down,
+            size: 18,
+            tooltip: t.move_down,
+            enabled: index < _sources.length - 1,
+            padding: EdgeInsets.all(tokens.spacing.gap / 2),
+            onTap: () => setState(() {
+              final AudioSourceConfig item = _sources.removeAt(index);
+              _sources.insert(index + 1, item);
+            }),
+          ),
+          HibikiIconButton(
+            icon: Icons.delete_outline,
+            size: 18,
+            tooltip: t.dialog_delete,
+            enabled: !isHibiki,
+            padding: EdgeInsets.all(tokens.spacing.gap / 2),
+            onTap: () => setState(() => _sources.removeAt(index)),
+          ),
+        ],
+      ),
+    );
+    // 长按拖拽用 Overlay 渲染拖拽代理，其定位假定「全局↔overlay 本地」是纯平移；
+    // 在 HibikiAppUiScale 的 Transform.scale 下该假定不成立，拖拽代理会按
+    // (1-scale)×距离 漂移、飞出屏幕（Flutter 对 Transform 内 Draggable/Reorderable
+    // 的已知限制）。上方 ↑/↓ 箭头是完整等价重排路径，故仅在 1.0 缩放下启用拖拽，
+    // 非默认缩放时退化为 KeyedSubtree（保留 ReorderableListView 必需的 Key、禁拖拽）。
+    final bool dragSafe =
+        HibikiAppUiScale.of(context) == HibikiAppUiScale.defaultScale;
+    if (!dragSafe) {
+      return KeyedSubtree(key: ValueKey<String>(keyId), child: row);
+    }
     return ReorderableDelayedDragStartListener(
       key: ValueKey<String>(keyId),
       index: index,
-      child: AdaptiveSettingsRow(
-        title: title,
-        subtitle: subtitle,
-        icon: isLocal ? Icons.audiotrack_outlined : null,
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Switch.adaptive(
-              value: source.enabled,
-              onChanged: (bool enabled) => setState(() {
-                _sources[index] = source.copyWith(enabled: enabled);
-              }),
-            ),
-            // Gamepad/keyboard reorder equivalent for the drag handle
-            // (which a controller cannot grab).
-            HibikiIconButton(
-              icon: Icons.keyboard_arrow_up,
-              size: 18,
-              tooltip: t.move_up,
-              enabled: index > 0,
-              padding: EdgeInsets.all(tokens.spacing.gap / 2),
-              onTap: () => setState(() {
-                final AudioSourceConfig item = _sources.removeAt(index);
-                _sources.insert(index - 1, item);
-              }),
-            ),
-            HibikiIconButton(
-              icon: Icons.keyboard_arrow_down,
-              size: 18,
-              tooltip: t.move_down,
-              enabled: index < _sources.length - 1,
-              padding: EdgeInsets.all(tokens.spacing.gap / 2),
-              onTap: () => setState(() {
-                final AudioSourceConfig item = _sources.removeAt(index);
-                _sources.insert(index + 1, item);
-              }),
-            ),
-            if (isLocal &&
-                widget.onEditLocalSources != null &&
-                (source.path?.isNotEmpty ?? false))
-              HibikiIconButton(
-                icon: Icons.tune,
-                size: 18,
-                tooltip: t.local_audio_edit_sources,
-                padding: EdgeInsets.all(tokens.spacing.gap / 2),
-                onTap: () => widget.onEditLocalSources!(source.path!),
-              ),
-            HibikiIconButton(
-              icon: Icons.delete_outline,
-              size: 18,
-              tooltip: t.dialog_delete,
-              enabled: !isHibiki,
-              padding: EdgeInsets.all(tokens.spacing.gap / 2),
-              onTap: () => setState(() => _sources.removeAt(index)),
-            ),
-          ],
-        ),
-      ),
+      child: row,
     );
   }
 

@@ -146,45 +146,56 @@ class _LocalAudioSourcesDialogState extends State<LocalAudioSourcesDialog> {
       },
       itemBuilder: (BuildContext context, int index) {
         final LocalAudioSourcePref source = prefs[index];
-        return ReorderableDelayedDragStartListener(
-          key: ValueKey<String>('local_audio_source_${source.name}'),
-          index: index,
-          child: AdaptiveSettingsRow(
-            title: source.name,
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Switch.adaptive(
-                  value: source.enabled,
-                  onChanged: (bool enabled) => setState(() {
-                    prefs[index] = source.copyWith(enabled: enabled);
-                  }),
-                ),
-                HibikiIconButton(
-                  icon: Icons.keyboard_arrow_up,
-                  size: 18,
-                  tooltip: t.move_up,
-                  enabled: index > 0,
-                  padding: EdgeInsets.all(tokens.spacing.gap / 2),
-                  onTap: () => setState(() {
-                    final LocalAudioSourcePref item = prefs.removeAt(index);
-                    prefs.insert(index - 1, item);
-                  }),
-                ),
-                HibikiIconButton(
-                  icon: Icons.keyboard_arrow_down,
-                  size: 18,
-                  tooltip: t.move_down,
-                  enabled: index < prefs.length - 1,
-                  padding: EdgeInsets.all(tokens.spacing.gap / 2),
-                  onTap: () => setState(() {
-                    final LocalAudioSourcePref item = prefs.removeAt(index);
-                    prefs.insert(index + 1, item);
-                  }),
-                ),
-              ],
-            ),
+        final Widget row = AdaptiveSettingsRow(
+          title: source.name,
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Switch.adaptive(
+                value: source.enabled,
+                onChanged: (bool enabled) => setState(() {
+                  prefs[index] = source.copyWith(enabled: enabled);
+                }),
+              ),
+              HibikiIconButton(
+                icon: Icons.keyboard_arrow_up,
+                size: 18,
+                tooltip: t.move_up,
+                enabled: index > 0,
+                padding: EdgeInsets.all(tokens.spacing.gap / 2),
+                onTap: () => setState(() {
+                  final LocalAudioSourcePref item = prefs.removeAt(index);
+                  prefs.insert(index - 1, item);
+                }),
+              ),
+              HibikiIconButton(
+                icon: Icons.keyboard_arrow_down,
+                size: 18,
+                tooltip: t.move_down,
+                enabled: index < prefs.length - 1,
+                padding: EdgeInsets.all(tokens.spacing.gap / 2),
+                onTap: () => setState(() {
+                  final LocalAudioSourcePref item = prefs.removeAt(index);
+                  prefs.insert(index + 1, item);
+                }),
+              ),
+            ],
           ),
+        );
+        // 缩放态（HibikiAppUiScale != 1.0）下 Overlay 拖拽代理会飞出屏幕（Flutter 对
+        // Transform 内 Reorderable 的已知限制）；上方 ↑/↓ 箭头是完整等价重排路径，
+        // 故仅在 1.0 缩放下启用长按拖拽，否则退化为带 Key 的 KeyedSubtree（禁拖拽）。
+        final bool dragSafe =
+            HibikiAppUiScale.of(context) == HibikiAppUiScale.defaultScale;
+        final ValueKey<String> rowKey =
+            ValueKey<String>('local_audio_source_${source.name}');
+        if (!dragSafe) {
+          return KeyedSubtree(key: rowKey, child: row);
+        }
+        return ReorderableDelayedDragStartListener(
+          key: rowKey,
+          index: index,
+          child: row,
         );
       },
     );
