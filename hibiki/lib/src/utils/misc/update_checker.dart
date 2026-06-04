@@ -1,14 +1,13 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import 'package:hibiki/src/utils/misc/channel_constants.dart';
+import 'package:hibiki/src/utils/misc/platform_updater.dart';
 import 'package:hibiki/utils.dart';
 
 const String _kGitHubRepo = 'hdjsadgfwtg/hibiki';
@@ -42,11 +41,16 @@ class UpdateChecker {
       final cacheDir = await getTemporaryDirectory();
       const prefix = 'hibiki-';
       for (final f in cacheDir.listSync()) {
-        if (f is! File || !f.path.endsWith('.apk')) continue;
-        final name = f.uri.pathSegments.last;
+        if (f is! File) continue;
+        final String name = f.uri.pathSegments.last;
         if (!name.startsWith(prefix)) continue;
-        final apkVersion = name.substring(prefix.length, name.length - 4);
-        if (!_isNewer(apkVersion, currentVersion)) {
+        const List<String> exts = <String>['.apk', '.exe', '.AppImage', '.zip'];
+        final String ext =
+            exts.firstWhere((String e) => name.endsWith(e), orElse: () => '');
+        if (ext.isEmpty) continue;
+        final String fileVersion =
+            name.substring(prefix.length, name.length - ext.length);
+        if (!_isNewer(fileVersion, currentVersion)) {
           try {
             f.deleteSync();
           } catch (e) {
@@ -66,8 +70,11 @@ class UpdateChecker {
     bool autoInstall = false,
     bool betaChannel = false,
   }) async {
-    if (!Platform.isAndroid) return;
-    if (neverRemind && !autoInstall) return;
+    final PlatformUpdater updater = updaterForCurrentPlatform();
+    if (!updater.supportsUpdateCheck) return;
+    final bool canInstall = updater.supportsInAppInstall;
+    // 不能自装的平台忽略 autoInstall（无意义），但仍可「检查→打开发布页」。
+    if (neverRemind && !(canInstall && autoInstall)) return;
     HttpClient? client;
     try {
       await _cleanupOldApks(currentVersion);
@@ -91,54 +98,30 @@ class UpdateChecker {
 
       final releaseBody = json['body'] as String? ?? '';
 
-      String? apkUrl;
-      String? fallbackApkUrl;
       final assets = json['assets'] as List<dynamic>? ?? [];
+      final List<Map<String, dynamic>> assetMaps =
+          assets.whereType<Map<String, dynamic>>().toList(growable: false);
+      final String? downloadUrl = await updater.selectAsset(assetMaps);
 
-      List<String> supportedAbis = [];
-      try {
-        final androidInfo = await DeviceInfoPlugin().androidInfo;
-        supportedAbis = androidInfo.supportedAbis;
-      } catch (e, stack) {
-        ErrorLogService.instance.log('UpdateChecker.getAbi', e, stack);
-        debugPrint('[Hibiki] failed to get device ABI info: $e');
-      }
-
-      final abiTags =
-          supportedAbis.map((abi) => abi.replaceAll('_', '-')).toList();
-
-      for (final asset in assets) {
-        final assetMap = asset as Map<String, dynamic>;
-        final name = assetMap['name'] as String? ?? '';
-        if (!name.endsWith('.apk')) continue;
-        final url = assetMap['browser_download_url'] as String?;
-        if (url == null) continue;
-
-        if (abiTags.any(name.contains)) {
-          apkUrl = url;
-          break;
-        }
-        fallbackApkUrl ??= url;
-      }
-      apkUrl ??= fallbackApkUrl;
-
-      // No APK asset — fall back to opening release page in browser.
-      if (apkUrl == null) {
-        final htmlUrl = json['html_url'] as String?;
+      // 无适配本平台的 asset（iOS / 未实现桌面 / 该 release 没传本平台包）→ 打开发布页。
+      if (downloadUrl == null) {
+        final String? htmlUrl = json['html_url'] as String?;
         if (htmlUrl != null && context.mounted) {
           _showFallbackDialog(context, tagName, releaseBody, htmlUrl);
         }
         return;
       }
-
-      if (!context.mounted) {
-        return;
-      }
-
-      if (autoInstall) {
-        _downloadAndInstall(context, apkUrl, tagName);
+      if (!context.mounted) return;
+      if (canInstall && autoInstall) {
+        _downloadAndInstall(context, downloadUrl, tagName, updater);
+      } else if (canInstall) {
+        _showUpdateDialog(context, tagName, releaseBody, downloadUrl, updater);
       } else {
-        _showUpdateDialog(context, tagName, releaseBody, apkUrl);
+        // 能检查但不能自装（本期 iOS/mac/Linux）：弹「前往下载」打开发布页。
+        final String? htmlUrl = json['html_url'] as String?;
+        if (htmlUrl != null) {
+          _showFallbackDialog(context, tagName, releaseBody, htmlUrl);
+        }
       }
     } catch (e, stack) {
       ErrorLogService.instance.log('UpdateChecker.check', e, stack);
@@ -205,6 +188,7 @@ class UpdateChecker {
     String version,
     String releaseNotes,
     String downloadUrl,
+    PlatformUpdater updater,
   ) {
     showAppDialog<void>(
       context: context,
@@ -214,7 +198,7 @@ class UpdateChecker {
         primaryLabel: t.update_download,
         onPrimary: () {
           Navigator.of(ctx).pop();
-          _downloadAndInstall(context, downloadUrl, version);
+          _downloadAndInstall(context, downloadUrl, version, updater);
         },
       ),
     );
@@ -248,6 +232,7 @@ class UpdateChecker {
     BuildContext context,
     String url,
     String version,
+    PlatformUpdater updater,
   ) async {
     final progress = ValueNotifier<double>(0);
     final status = ValueNotifier<String>(t.update_downloading);
@@ -273,7 +258,8 @@ class UpdateChecker {
     HttpClient? client;
     try {
       final cacheDir = await getTemporaryDirectory();
-      final apkFile = File('${cacheDir.path}/hibiki-$version.apk');
+      final String ext = _extOf(url);
+      final File outFile = File('${cacheDir.path}/hibiki-$version$ext');
 
       client = HttpClient();
       client.connectionTimeout = const Duration(seconds: 30);
@@ -288,7 +274,7 @@ class UpdateChecker {
           request.headers.set('User-Agent', 'Hibiki/$version');
           final response = await request.close();
           if (response.statusCode == 200) {
-            await _writeResponse(response, apkFile, progress);
+            await _writeResponse(response, outFile, progress);
             downloaded = true;
             break;
           }
@@ -304,9 +290,7 @@ class UpdateChecker {
 
       status.value = t.update_installing;
 
-      await HibikiChannels.update.invokeMethod('installApk', {
-        'path': apkFile.path,
-      });
+      await updater.apply(outFile, version);
     } catch (e, stack) {
       ErrorLogService.instance
           .log('UpdateChecker.downloadAndInstall', e, stack);
@@ -344,6 +328,14 @@ class UpdateChecker {
     await sink.flush();
     await sink.close();
   }
+}
+
+String _extOf(String url) {
+  final String path = Uri.parse(url).path;
+  final int slash = path.lastIndexOf('/');
+  final String name = slash >= 0 ? path.substring(slash + 1) : path;
+  final int dot = name.lastIndexOf('.');
+  return dot >= 0 ? name.substring(dot) : '';
 }
 
 bool isVersionNewer(String remote, String local) {
