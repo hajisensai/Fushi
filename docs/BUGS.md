@@ -13,6 +13,13 @@
 
 ---
 
+## BUG-038 · 桌面端书架卡片只能长按弹上下文菜单，鼠标右键无效（PC 用户惯例是右键）
+- **报告**：2026-06-04（用户截图书架本卡片长按出的菜单：「你这个长按才能触发出来，pc 用户一般都是右键的」）。场景 = 桌面端（Windows/Linux/macOS）鼠标操作。
+- **真实性**：✅ **真 bug（交互入口缺失，确定性）**。沿真实代码路径定位：书架两类卡片（EPUB `buildMediaItem` / 字幕书 `_buildSrtCard`）都经 `_bookCardShell`（`reader_hibiki_history_page.dart:586`）渲染，外壳只配线 `onTap`（打开书）、`onLongPress`（弹 `MediaItemDialogPage` / `_showSrtBookDialog` 上下文菜单）与手柄长按（`GamepadLongPressActions`），**从不配线 secondary tap（鼠标右键）**。底层 `HibikiCard`（`hibiki_material_components.dart:15`）的 `InkWell` 也只传 `onTap`/`onLongPress`。桌面鼠标没有「长按」语义（按住不放不会触发 `onLongPress` 的触摸计时），用户只能靠长按或手柄进菜单 → PC 上右键这个标准上下文菜单手势是死的。根因点 = `HibikiCard` 与 `_bookCardShell` 缺 `onSecondaryTap` 配线。
+- **[x] ① 已修复** — `<pending-commit>`：Linus 式消除特殊情况——上下文菜单是一个语义，应同时由「长按（触摸/手柄）」和「右键（鼠标）」两种平台习惯入口触发，而非只留触摸一条路。给 `HibikiCard` 增 `onSecondaryTap` 字段并配线到内部 `InkWell.onSecondaryTap`（仅当三个回调皆 null 才退化为无 `InkWell`，向后兼容）；`_bookCardShell` 把 `onSecondaryTap: _selectionMode ? null : onLongPress` 配成与长按**同一个**回调（选择模式下与长按一致禁用，tap 改切换选择）。**无需平台分支**：secondary tap 只由鼠标右键产生，触摸/手柄设备永不发火，故全平台配线零副作用——消除「桌面要特判」的特殊情况。不动 `onTap`/`onLongPress`/手柄路径，原有行为全等价。
+- **[x] ② 已加自动化测试** — `<pending-commit>` · `hibiki/test/widgets/hibiki_card_secondary_tap_test.dart`：① 行为级——真实 `HibikiCard` 同时挂 `onTap`/`onLongPress`/`onSecondaryTap`，用 `tester.tap(..., buttons: kSecondaryButton)` 模拟右键，断言 `onSecondaryTap` 触发 1 次、`onTap` **0 次**（右键不误开书）；②（向后兼容）未挂 `onSecondaryTap` 时右键无副作用且不抛异常；③ 源码守卫断言 `_bookCardShell` 含 `onSecondaryTap: _selectionMode ? null : onLongPress`，防回归。`flutter test test/widgets test/pages/book_drag_target_layout_test.dart` 全量 **202 绿**无回归，`flutter analyze` 0 issue、`dart format` 0 改动。
+- **备注**：交互/桌面/书架类。代码 + 单测绿。**真机肉眼复测原始失败路径待用户**：桌面端书架右键任一本卡片 → 应弹与长按相同的上下文菜单（阅读/指定配置/编辑书籍 CSS/编辑信息/删除）；左键仍正常打开书、选择模式下右键不弹菜单。
+
 ## BUG-037 · 设置「同步与备份」页手机触摸上下滑动会跳跃
 - **报告**：2026-06-04（用户：「同步与备份里面，上下滑动会跳跃」）。澄清确认：**手机触摸滑动**（Android/iOS）。
 - **真实性**：✅ **真 bug（懒加载列表 extent 估算漂移），确定性复现**。沿真实代码路径定位：自滚动的设置详情（`MaterialSettingsRenderer.buildDetailContent`，`shrinkWrap:false`，手机点目的地走 `buildDetailPage` 窄屏 push 页 / 宽屏走 `settings_home_page.dart:173` 主从详情）用懒加载 `ListView.builder`。`RenderSliverList` 只布局可见 section，用**已布局子项的平均高**估算视口外子项的 extent；而同步页 section 高度悬殊（1 行开关 vs. 很高的 `_LanDiscoveryWidget`/URL 列表/`_HibikiServerConfigWidget`），估算值随滚动位置漂移 → `maxScrollExtent` 在手指下变化 → 弹道滚动按旧上界算的落点被重新 clamp → 视口跳跃。**与 BUG-004 不同**：004 是 touch 行回收→`_maybeRevealOnRepair` reveal 拽回（焦点机制，已 `f6ef60d27` 门控修复）；本条是 reveal 已门控后**剩下的结构性机制**——`settings_scroll_no_rollback_test.dart:138-139` 注释当时已点名「懒加载列表 extent 不稳」却当测试假象绕过，正是此 bug。根因点 = `material_settings_renderer.dart` 自滚动路径用懒加载 `ListView.builder`。冒烟枪：新测试实测同步详情页 `maxScrollExtent` 从顶部 1028px 漂到中部 846px（182px 摆动）。

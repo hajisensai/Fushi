@@ -615,6 +615,8 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
             ? () => _toggleSelection(selectionKey)
             : onTap,
         onLongPress: _selectionMode ? null : onLongPress,
+        // 桌面端鼠标右键打开与长按相同的书籍上下文菜单（PC 用户惯例）。
+        onSecondaryTap: _selectionMode ? null : onLongPress,
         child: AspectRatio(
           aspectRatio: mediaSource.aspectRatio,
           child: Stack(
