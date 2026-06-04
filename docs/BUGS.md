@@ -13,6 +13,13 @@
 
 ---
 
+## BUG-039 · 放大「界面大小」后阅读器正文/划词弹窗/选区高亮发糊
+- **报告**：2026-06-04（用户：调大「界面大小」后阅读器书内正文、划词弹窗、选区高亮变模糊；放大时复现，缩小未报）。采番注：动手前查 `docs/BUGS.md` 当前最大号为 BUG-038，故本条取 039。
+- **真实性**：✅ **真 bug（全局缩放过采样丢分辨率）**。沿真实代码路径定位：全局 `HibikiAppUiScale` 用 `FittedBox` 把整树先渲染进 `view/s` 画布、再拉大 `s` 倍呈现；而阅读器正文 WebView（`reader_hibiki_page.dart:1704`）、划词弹窗（`base_source_page.dart:276` 的 `buildDictionary` → `DictionaryPopupWebView`）、选区高亮（正文 WebView 内 CSS）都是 WebView 平台视图纹理（按 `逻辑尺寸×dpi` 离屏渲染），被 `FittedBox` 拉大后即丢分辨率 → 发糊。移动端真 WebView 平台视图没有离屏过采样旋钮、只有内容重排（重排会移动划词坐标系），故跨平台统一解法 = 阅读器整页中和缩放、正文大小改走阅读器字号。根因点 = `reader_hibiki_page.dart:1704`（正文 WebView）、`base_source_page.dart:276`（划词弹窗），二者都被 `HibikiAppUiScale` 的 `FittedBox` 过采样拉大。
+- **[x] ① 已修复** — `3253b381f` + `d304922fe`：新增 `HibikiAppUiScaleNeutralizer`，阅读器整页从路由层中和全局缩放——净缩放 = 1、WebView 按原生密度渲染、正文大小统一走阅读器字号（消除「整树过采样拉大」这个特殊情况，非补丁）。`3253b381f` 落中和器实现 + 3 个 widget 测试；`d304922fe` 在两处构造点接线中和器并把 `buildLaunchPage` 返回类型放宽为 `Widget`。
+- **[x] ② 已加自动化测试** — `3253b381f`（中和器行为）+ `d304922fe`（接线守卫）· `hibiki/test/utils/app_ui_scale_neutralizer_test.dart`（真实视口尺寸 / MediaQuery 还原 / 缩放标记 = 1.0 / 焦点几何与无缩放基线一致，3 例）+ `hibiki/test/pages/reader_neutralizer_wired_test.dart`（两处构造点接线守卫，2 例）。`flutter test test/utils/app_ui_scale_neutralizer_test.dart test/pages/reader_neutralizer_wired_test.dart` **5 绿**；`flutter test test/utils/ test/widgets/` 全量 **316 绿**无回归（含既有 app_ui_scale / focus_ring / slider 缩放测试）。
+- **备注**：reader/WebView/缩放类。代码 + 单测绿。**真机/模拟器视觉复测原始失败路径待用户**（代码无法自证清晰度）：放大「界面大小」后阅读器正文/划词弹窗/选区高亮应清晰、且划词弹窗定位不偏。语义变化：进阅读器后「界面大小」不再作用于书页，正文只认阅读器字号（退出阅读器后原生 UI 仍整体缩放）。
+
 ## BUG-038 · 桌面端书架卡片只能长按弹上下文菜单，鼠标右键无效（PC 用户惯例是右键）
 - **报告**：2026-06-04（用户截图书架本卡片长按出的菜单：「你这个长按才能触发出来，pc 用户一般都是右键的」）。场景 = 桌面端（Windows/Linux/macOS）鼠标操作。
 - **真实性**：✅ **真 bug（交互入口缺失，确定性）**。沿真实代码路径定位：书架两类卡片（EPUB `buildMediaItem` / 字幕书 `_buildSrtCard`）都经 `_bookCardShell`（`reader_hibiki_history_page.dart:586`）渲染，外壳只配线 `onTap`（打开书）、`onLongPress`（弹 `MediaItemDialogPage` / `_showSrtBookDialog` 上下文菜单）与手柄长按（`GamepadLongPressActions`），**从不配线 secondary tap（鼠标右键）**。底层 `HibikiCard`（`hibiki_material_components.dart:15`）的 `InkWell` 也只传 `onTap`/`onLongPress`。桌面鼠标没有「长按」语义（按住不放不会触发 `onLongPress` 的触摸计时），用户只能靠长按或手柄进菜单 → PC 上右键这个标准上下文菜单手势是死的。根因点 = `HibikiCard` 与 `_bookCardShell` 缺 `onSecondaryTap` 配线。
