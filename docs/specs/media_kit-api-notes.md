@@ -24,4 +24,23 @@
 - [ ] dispose 时序：controller 与 player 谁先
 
 ## 验证结论
-（设备验证后填写真实签名与行为，后续 Task 3/9 以此为准）
+
+### Task 3（源码核验，非设备运行）
+
+> 来源：pub cache `media_kit-1.2.6` / `media_kit_video-2.0.1` 真实源码（非设备运行，
+> 仍待设备 spike 验证实际行为）。所有签名与 Task 描述一致，`VideoPlayerController`
+> 实现 `flutter analyze` 0 issue。
+
+- `Player()` 无参构造（`lib/src/player/player.dart`）。
+- `Future<void> open(Playable playable, {bool play = true})`——`Media` 是 `Playable`
+  子类，传 `Media(File(path).uri.toString())`，`play: false` 只打开不播。
+- `player.state.playing` -> `bool`、`player.state.position` -> `Duration`、
+  `player.state.duration` -> `Duration`（`lib/src/models/player_state.dart`）。
+- `player.stream.playing` -> `Stream<bool>`（`lib/src/models/player_stream.dart`，
+  是 `final` 字段非 getter）；同模块有 `stream.position` / `stream.duration`。
+- 控制均 `Future<void>`：`play()` / `pause()` / `playOrPause()` /
+  `seek(Duration)` / `setRate(double)`。
+- 外挂字幕：`Future<void> setSubtitleTrack(SubtitleTrack)`，外挂用
+  `SubtitleTrack.uri(File(path).uri.toString())`。
+- `Future<void> dispose()`（`lib/src/player/player.dart:138`）。
+- `VideoController(player)` 位置构造（`media_kit_video` `video_controller.dart:72`）。
