@@ -28,15 +28,27 @@ final Set<String> _syncingIds = {};
 // triggers before they queue on the mutex.
 final AsyncMutex _autoSyncMutex = AsyncMutex();
 
+/// Fired after an auto-sync run produced a [SyncRunReport], carrying the
+/// already-resolved+authenticated [SyncBackend] so the caller can drive a
+/// conflict-resolution dialog without re-resolving/re-authing. Only invoked when
+/// the run actually reached a report (auth ok, sync ran); skipped/aborted runs
+/// never call it.
+typedef SyncReportCallback = void Function(
+  SyncRunReport report,
+  SyncBackend backend,
+);
+
 void triggerAutoSyncAfterClose({
   required HibikiDatabase db,
   required String mediaIdentifier,
   required ScaffoldMessengerState messenger,
+  SyncReportCallback? onReport,
 }) {
   _runAutoSync(
     db: db,
     mediaIdentifier: mediaIdentifier,
     messenger: messenger,
+    onReport: onReport,
   );
 }
 
@@ -44,6 +56,8 @@ void triggerAutoSyncOnBackground({
   required HibikiDatabase db,
   required String mediaIdentifier,
 }) {
+  // Background (app→paused) intentionally has NO onReport: the user can't see a
+  // dialog, so conflicts stay silent until a later visible sync surfaces them.
   _runAutoSync(db: db, mediaIdentifier: mediaIdentifier, messenger: null);
 }
 
@@ -56,12 +70,14 @@ void triggerAutoSyncOnAppOpen({
   required Directory dictionaryResourceRoot,
   required Directory audioDatabaseRoot,
   required Directory tempDir,
+  SyncReportCallback? onReport,
 }) {
   _runAutoSyncAll(
     db: db,
     dictionaryResourceRoot: dictionaryResourceRoot,
     audioDatabaseRoot: audioDatabaseRoot,
     tempDir: tempDir,
+    onReport: onReport,
   );
 }
 
@@ -72,6 +88,7 @@ Future<void> _runAutoSyncAll({
   required Directory dictionaryResourceRoot,
   required Directory audioDatabaseRoot,
   required Directory tempDir,
+  SyncReportCallback? onReport,
 }) async {
   if (!_syncingIds.add('__all__')) return;
 
@@ -105,7 +122,8 @@ Future<void> _runAutoSyncAll({
         syncAudioBookFiles: await repo.isSyncAudioBookFilesEnabled(),
         syncDictionary: await repo.isSyncDictionaryEnabled(),
       );
-      await orchestrator.run();
+      final SyncRunReport report = await orchestrator.run();
+      onReport?.call(report, backend);
     });
   } catch (e) {
     developer.log(
@@ -177,6 +195,7 @@ Future<void> _runAutoSync({
   required HibikiDatabase db,
   required String mediaIdentifier,
   required ScaffoldMessengerState? messenger,
+  SyncReportCallback? onReport,
 }) async {
   final match = _bookIdPattern.firstMatch(mediaIdentifier);
   if (match == null) return;
@@ -235,6 +254,24 @@ Future<void> _runAutoSync({
             duration: const Duration(seconds: 2),
             behavior: SnackBarBehavior.floating,
           ));
+      }
+
+      // Surface a genuine fork to the caller as a one-conflict report so the
+      // book-exit flow can prompt resolution. The single-book path runs
+      // SyncManager.syncBook (not the orchestrator), so build the report here
+      // from the conflict fields SyncManager fills on SyncResult.conflict.
+      if (onReport != null) {
+        final SyncRunReport report = SyncRunReport();
+        if (result.direction == SyncResult.conflict) {
+          report.conflicts.add(SyncConflict(
+            assetKey: result.conflictAssetKey!,
+            dimension: result.conflictDimension!,
+            title: result.title,
+            localVersion: result.conflictLocalVersion,
+            remoteVersion: result.conflictRemoteVersion,
+          ));
+        }
+        onReport(report, backend);
       }
     });
   } catch (e) {

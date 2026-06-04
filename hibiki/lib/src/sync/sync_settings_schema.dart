@@ -21,6 +21,7 @@ import 'package:hibiki/src/sync/sftp_sync_backend.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_auto_trigger.dart';
 import 'package:hibiki/src/sync/sync_compare_dialog.dart';
+import 'package:hibiki/src/sync/sync_conflict_prompter.dart';
 import 'package:hibiki/src/sync/sync_error_messages.dart';
 import 'package:hibiki/src/sync/sync_orchestrator.dart';
 import 'package:hibiki/src/sync/sync_message_dialog.dart';
@@ -657,7 +658,25 @@ class _SyncNowWidgetState extends State<_SyncNowWidget> {
         case ManualSyncOutcome.busy:
           _showSnackBar(context, t.sync_now_busy);
         case ManualSyncOutcome.completed:
-          _showSnackBar(context, summarizeSyncReport(result.report!));
+          final SyncRunReport report = result.report!;
+          _showSnackBar(context, summarizeSyncReport(report));
+          if (report.conflicts.isNotEmpty) {
+            // Manual sync is an explicit user action: prompt resolution
+            // immediately, unconstrained by in-book/snooze (ConflictSource
+            // .manual). Re-resolve the backend (auth was just exercised by the
+            // run, so this is cheap) to drive the conflicts-only dialog.
+            final SyncBackend backend = resolveSyncBackend(
+              await SyncRepository(appModel.database).getBackendType(),
+            );
+            await appModel.syncConflictPrompter.present(
+              navigatorKey: appModel.navigatorKey,
+              db: appModel.database,
+              backend: backend,
+              conflicts: report.conflicts,
+              source: ConflictSource.manual,
+              inBook: appModel.isMediaOpen,
+            );
+          }
       }
     } catch (e) {
       if (mounted) {

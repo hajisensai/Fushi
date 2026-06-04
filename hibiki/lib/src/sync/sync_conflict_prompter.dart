@@ -1,10 +1,16 @@
+import 'package:flutter/widgets.dart';
+import 'package:hibiki/src/sync/sync_backend.dart';
+import 'package:hibiki/src/sync/sync_compare_dialog.dart';
 import 'package:hibiki/src/sync/sync_orchestrator.dart';
+import 'package:hibiki/src/utils/misc/show_app_dialog.dart';
+import 'package:hibiki_core/hibiki_core.dart';
 
 /// 冲突来源：决定弹窗的时机约束。
 enum ConflictSource { manual, auto, background }
 
-/// 决定冲突弹窗的「是否/此刻弹」+ 会话级防骚扰。纯内存、随会话失效。
-/// 只做决策，不持有 UI（弹窗由调用方按本类结论执行）。
+/// 决定冲突弹窗的「是否/此刻弹」+ 会话级防骚扰，并在该弹时经全局 navigatorKey
+/// 弹出冲突解决对话框。决策逻辑（[shouldPrompt]）仍是纯函数；[present] 只是把
+/// 「该弹就弹、用户没解就静默」这条策略接到真实 UI 上。纯内存、随会话失效。
 class SyncConflictPrompter {
   bool dialogOpen = false;
   final Set<String> _snoozed = <String>{};
@@ -32,6 +38,44 @@ class SyncConflictPrompter {
   void markDismissed(List<SyncConflict> conflicts) {
     for (final SyncConflict c in conflicts) {
       _snoozed.add(c.fingerprint);
+    }
+  }
+
+  /// 按 [shouldPrompt] 决策，必要时经全局 [navigatorKey] 弹出 conflictsOnly 的
+  /// 冲突解决对话框。用户未解决（applied 计数为空/0）则把这组冲突指纹加入会话
+  /// snooze，避免自动同步反复打扰。
+  ///
+  /// 直接渲染 [SyncCompareDialog]（注入已解析的 [backend]），而非走
+  /// [showSyncCompareDialog] —— 后者从 db 自行解析 backend 且不回传 applied
+  /// 计数，无法满足「用注入 backend + 观察是否已解决以决定 snooze」这两点。
+  Future<void> present({
+    required GlobalKey<NavigatorState> navigatorKey,
+    required HibikiDatabase db,
+    required SyncBackend backend,
+    required List<SyncConflict> conflicts,
+    required ConflictSource source,
+    required bool inBook,
+  }) async {
+    if (!shouldPrompt(conflicts: conflicts, source: source, inBook: inBook)) {
+      return;
+    }
+    final BuildContext? ctx = navigatorKey.currentContext;
+    if (ctx == null) return; // HBK-AUDIT-012：navigatorKey 未 attach 时 null 安全
+    dialogOpen = true;
+    try {
+      final int? applied = await showAppDialog<int>(
+        context: ctx,
+        barrierDismissible: false,
+        builder: (_) => SyncCompareDialog(
+          db: db,
+          backend: backend,
+          conflictsOnly: true,
+        ),
+      );
+      // applied>0 表示用户至少解决了一项；否则视为取消，本会话静默这组冲突。
+      if (applied == null || applied <= 0) markDismissed(conflicts);
+    } finally {
+      dialogOpen = false;
     }
   }
 }

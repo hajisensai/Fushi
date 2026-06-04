@@ -35,6 +35,7 @@ import 'package:hibiki/src/models/dictionary_repository.dart';
 import 'package:hibiki/src/models/media_history_repository.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/sync/backup_service.dart';
+import 'package:hibiki/src/sync/sync_conflict_prompter.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/models/theme_notifier.dart' as theme_notifier;
 import 'package:hibiki/src/models/theme_notifier.dart' show ThemeNotifier;
@@ -186,6 +187,10 @@ class AppModel with ChangeNotifier {
     _database = db;
     _databaseOpened = true;
   }
+
+  /// 全应用共享的冲突弹窗调度器：三处同步入口（手动 / 关书后 / app 启动）
+  /// 共用同一份会话级 snooze + 单飞状态，避免冲突弹窗互相重入或反复打扰。
+  final SyncConflictPrompter syncConflictPrompter = SyncConflictPrompter();
 
   /// Used for showing dialogs without needing to pass around a [BuildContext].
   GlobalKey<NavigatorState> get navigatorKey => _navigatorKey;
