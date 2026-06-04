@@ -292,3 +292,16 @@ class BookProfiles extends Table {
   @override
   Set<Column> get primaryKey => {bookUid};
 }
+
+// ── sync_baselines ──────────────────────────────────────────────────
+// 每本书每个同步维度「上次同步成功时双方一致的版本」（共同祖先），
+// 用于三方分叉检测。assetKey = sanitizeTtuFilename(book.title)（跨设备稳定）。
+@DataClassName('SyncBaselineRow')
+class SyncBaselines extends Table {
+  TextColumn get assetKey => text()();
+  TextColumn get dimension => text()(); // 'progress'（Phase 2 再加 'audiobook'）
+  IntColumn get baseVersion => integer()();
+
+  @override
+  Set<Column> get primaryKey => {assetKey, dimension};
+}

@@ -13,7 +13,7 @@ void main() {
     test('fresh database has expected schema version', () async {
       final db = await _openDb();
       final version = await db.customSelect('PRAGMA user_version').getSingle();
-      expect(version.data['user_version'], 14);
+      expect(version.data['user_version'], 15);
     });
 
     test('all expected tables exist', () async {
@@ -44,8 +44,15 @@ void main() {
           'reading_statistics',
           'anki_mappings',
           'search_history_items',
+          'sync_baselines',
         ]),
       );
+    });
+
+    test('sync_baselines table is usable after migration', () async {
+      final db = await _openDb();
+      // Table exists (no exception) and reports null for an absent baseline.
+      expect(await db.getSyncBaseline('x', 'progress'), isNull);
     });
 
     test('preferences table has key and value columns', () async {

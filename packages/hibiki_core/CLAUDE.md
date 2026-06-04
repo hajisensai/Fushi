@@ -4,7 +4,7 @@
 
 ## 模块职责
 
-共享核心模块：定义 Drift SQLite 数据库 schema（21 张表，当前 schemaVersion=13）、表迁移逻辑、偏好键值编解码器（PrefCodec）、语言配置模型和文本选区模型。是所有其他 packages 的基础依赖。
+共享核心模块：定义 Drift SQLite 数据库 schema（22 张表，当前 schemaVersion=15）、表迁移逻辑、偏好键值编解码器（PrefCodec）、语言配置模型和文本选区模型。是所有其他 packages 的基础依赖。
 
 ## 入口与启动
 
@@ -27,7 +27,7 @@
 
 ## 数据模型
 
-21 张 Drift 表（按功能分组）：
+22 张 Drift 表（按功能分组）：
 
 | 分组 | 表名 |
 |------|------|
@@ -42,8 +42,9 @@
 | EPUB | `EpubBooks` |
 | 标签 | `BookTags`, `BookTagMappings`, `SrtBookTagMappings` |
 | Profile | `Profiles`, `ProfileSettings`, `MediaTypeProfiles`, `BookProfiles` |
+| 同步 | `SyncBaselines` |
 
-迁移策略：`onUpgrade` 逐版本增量迁移（v1->v13），支持降级时自动备份并重建。
+迁移策略：`onUpgrade` 逐版本增量迁移（v1->v15），支持降级时自动备份并重建。
 
 ## 测试与质量
 

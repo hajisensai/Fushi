@@ -47,6 +47,7 @@ LazyDatabase _openDb(String dbDirectory) {
   ProfileSettings,
   MediaTypeProfiles,
   BookProfiles,
+  SyncBaselines,
 ])
 class HibikiDatabase extends _$HibikiDatabase {
   final String _dbDirectory;
@@ -56,7 +57,7 @@ class HibikiDatabase extends _$HibikiDatabase {
   HibikiDatabase.forTesting(super.e) : _dbDirectory = '';
 
   @override
-  int get schemaVersion => 14;
+  int get schemaVersion => 15;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -219,6 +220,9 @@ class HibikiDatabase extends _$HibikiDatabase {
             // upgrade so existing DBs gain any missing index; fresh DBs get
             // them in onCreate.
             await _ensureIndexes();
+          }
+          if (from < 15) {
+            await m.createTable(syncBaselines);
           }
         },
         onCreate: (m) async {
@@ -1084,4 +1088,30 @@ class HibikiDatabase extends _$HibikiDatabase {
 
   Future<int> deleteBookProfile(String bookUid) =>
       (delete(bookProfiles)..where((t) => t.bookUid.equals(bookUid))).go();
+
+  // ── sync baselines ──────────────────────────────────────────────
+  /// 读某资产某维度的基线版本；无记录返回 null。
+  Future<int?> getSyncBaseline(String assetKey, String dimension) async {
+    final SyncBaselineRow? row = await (select(syncBaselines)
+          ..where((t) =>
+              t.assetKey.equals(assetKey) & t.dimension.equals(dimension)))
+        .getSingleOrNull();
+    return row?.baseVersion;
+  }
+
+  /// 写/更新基线版本（主键 assetKey+dimension upsert）。
+  Future<void> setSyncBaseline(
+    String assetKey,
+    String dimension,
+    int baseVersion,
+  ) =>
+      into(syncBaselines).insertOnConflictUpdate(SyncBaselinesCompanion(
+        assetKey: Value(assetKey),
+        dimension: Value(dimension),
+        baseVersion: Value(baseVersion),
+      ));
+
+  /// 删某资产所有维度基线（删书时 GC，可选调用）。
+  Future<void> deleteSyncBaselines(String assetKey) =>
+      (delete(syncBaselines)..where((t) => t.assetKey.equals(assetKey))).go();
 }

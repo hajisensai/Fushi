@@ -7997,6 +7997,243 @@ class BookProfilesCompanion extends UpdateCompanion<BookProfileRow> {
   }
 }
 
+class $SyncBaselinesTable extends SyncBaselines
+    with TableInfo<$SyncBaselinesTable, SyncBaselineRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $SyncBaselinesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _assetKeyMeta =
+      const VerificationMeta('assetKey');
+  @override
+  late final GeneratedColumn<String> assetKey = GeneratedColumn<String>(
+      'asset_key', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _dimensionMeta =
+      const VerificationMeta('dimension');
+  @override
+  late final GeneratedColumn<String> dimension = GeneratedColumn<String>(
+      'dimension', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _baseVersionMeta =
+      const VerificationMeta('baseVersion');
+  @override
+  late final GeneratedColumn<int> baseVersion = GeneratedColumn<int>(
+      'base_version', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  @override
+  List<GeneratedColumn> get $columns => [assetKey, dimension, baseVersion];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'sync_baselines';
+  @override
+  VerificationContext validateIntegrity(Insertable<SyncBaselineRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('asset_key')) {
+      context.handle(_assetKeyMeta,
+          assetKey.isAcceptableOrUnknown(data['asset_key']!, _assetKeyMeta));
+    } else if (isInserting) {
+      context.missing(_assetKeyMeta);
+    }
+    if (data.containsKey('dimension')) {
+      context.handle(_dimensionMeta,
+          dimension.isAcceptableOrUnknown(data['dimension']!, _dimensionMeta));
+    } else if (isInserting) {
+      context.missing(_dimensionMeta);
+    }
+    if (data.containsKey('base_version')) {
+      context.handle(
+          _baseVersionMeta,
+          baseVersion.isAcceptableOrUnknown(
+              data['base_version']!, _baseVersionMeta));
+    } else if (isInserting) {
+      context.missing(_baseVersionMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {assetKey, dimension};
+  @override
+  SyncBaselineRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SyncBaselineRow(
+      assetKey: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}asset_key'])!,
+      dimension: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}dimension'])!,
+      baseVersion: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}base_version'])!,
+    );
+  }
+
+  @override
+  $SyncBaselinesTable createAlias(String alias) {
+    return $SyncBaselinesTable(attachedDatabase, alias);
+  }
+}
+
+class SyncBaselineRow extends DataClass implements Insertable<SyncBaselineRow> {
+  final String assetKey;
+  final String dimension;
+  final int baseVersion;
+  const SyncBaselineRow(
+      {required this.assetKey,
+      required this.dimension,
+      required this.baseVersion});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['asset_key'] = Variable<String>(assetKey);
+    map['dimension'] = Variable<String>(dimension);
+    map['base_version'] = Variable<int>(baseVersion);
+    return map;
+  }
+
+  SyncBaselinesCompanion toCompanion(bool nullToAbsent) {
+    return SyncBaselinesCompanion(
+      assetKey: Value(assetKey),
+      dimension: Value(dimension),
+      baseVersion: Value(baseVersion),
+    );
+  }
+
+  factory SyncBaselineRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SyncBaselineRow(
+      assetKey: serializer.fromJson<String>(json['assetKey']),
+      dimension: serializer.fromJson<String>(json['dimension']),
+      baseVersion: serializer.fromJson<int>(json['baseVersion']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'assetKey': serializer.toJson<String>(assetKey),
+      'dimension': serializer.toJson<String>(dimension),
+      'baseVersion': serializer.toJson<int>(baseVersion),
+    };
+  }
+
+  SyncBaselineRow copyWith(
+          {String? assetKey, String? dimension, int? baseVersion}) =>
+      SyncBaselineRow(
+        assetKey: assetKey ?? this.assetKey,
+        dimension: dimension ?? this.dimension,
+        baseVersion: baseVersion ?? this.baseVersion,
+      );
+  SyncBaselineRow copyWithCompanion(SyncBaselinesCompanion data) {
+    return SyncBaselineRow(
+      assetKey: data.assetKey.present ? data.assetKey.value : this.assetKey,
+      dimension: data.dimension.present ? data.dimension.value : this.dimension,
+      baseVersion:
+          data.baseVersion.present ? data.baseVersion.value : this.baseVersion,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SyncBaselineRow(')
+          ..write('assetKey: $assetKey, ')
+          ..write('dimension: $dimension, ')
+          ..write('baseVersion: $baseVersion')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(assetKey, dimension, baseVersion);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SyncBaselineRow &&
+          other.assetKey == this.assetKey &&
+          other.dimension == this.dimension &&
+          other.baseVersion == this.baseVersion);
+}
+
+class SyncBaselinesCompanion extends UpdateCompanion<SyncBaselineRow> {
+  final Value<String> assetKey;
+  final Value<String> dimension;
+  final Value<int> baseVersion;
+  final Value<int> rowid;
+  const SyncBaselinesCompanion({
+    this.assetKey = const Value.absent(),
+    this.dimension = const Value.absent(),
+    this.baseVersion = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  SyncBaselinesCompanion.insert({
+    required String assetKey,
+    required String dimension,
+    required int baseVersion,
+    this.rowid = const Value.absent(),
+  })  : assetKey = Value(assetKey),
+        dimension = Value(dimension),
+        baseVersion = Value(baseVersion);
+  static Insertable<SyncBaselineRow> custom({
+    Expression<String>? assetKey,
+    Expression<String>? dimension,
+    Expression<int>? baseVersion,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (assetKey != null) 'asset_key': assetKey,
+      if (dimension != null) 'dimension': dimension,
+      if (baseVersion != null) 'base_version': baseVersion,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  SyncBaselinesCompanion copyWith(
+      {Value<String>? assetKey,
+      Value<String>? dimension,
+      Value<int>? baseVersion,
+      Value<int>? rowid}) {
+    return SyncBaselinesCompanion(
+      assetKey: assetKey ?? this.assetKey,
+      dimension: dimension ?? this.dimension,
+      baseVersion: baseVersion ?? this.baseVersion,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (assetKey.present) {
+      map['asset_key'] = Variable<String>(assetKey.value);
+    }
+    if (dimension.present) {
+      map['dimension'] = Variable<String>(dimension.value);
+    }
+    if (baseVersion.present) {
+      map['base_version'] = Variable<int>(baseVersion.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SyncBaselinesCompanion(')
+          ..write('assetKey: $assetKey, ')
+          ..write('dimension: $dimension, ')
+          ..write('baseVersion: $baseVersion, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$HibikiDatabase extends GeneratedDatabase {
   _$HibikiDatabase(QueryExecutor e) : super(e);
   $HibikiDatabaseManager get managers => $HibikiDatabaseManager(this);
@@ -8031,6 +8268,7 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
   late final $MediaTypeProfilesTable mediaTypeProfiles =
       $MediaTypeProfilesTable(this);
   late final $BookProfilesTable bookProfiles = $BookProfilesTable(this);
+  late final $SyncBaselinesTable syncBaselines = $SyncBaselinesTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -8056,7 +8294,8 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
         profiles,
         profileSettings,
         mediaTypeProfiles,
-        bookProfiles
+        bookProfiles,
+        syncBaselines
       ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules(
@@ -13639,6 +13878,150 @@ typedef $$BookProfilesTableProcessedTableManager = ProcessedTableManager<
     (BookProfileRow, $$BookProfilesTableReferences),
     BookProfileRow,
     PrefetchHooks Function({bool profileId})>;
+typedef $$SyncBaselinesTableCreateCompanionBuilder = SyncBaselinesCompanion
+    Function({
+  required String assetKey,
+  required String dimension,
+  required int baseVersion,
+  Value<int> rowid,
+});
+typedef $$SyncBaselinesTableUpdateCompanionBuilder = SyncBaselinesCompanion
+    Function({
+  Value<String> assetKey,
+  Value<String> dimension,
+  Value<int> baseVersion,
+  Value<int> rowid,
+});
+
+class $$SyncBaselinesTableFilterComposer
+    extends Composer<_$HibikiDatabase, $SyncBaselinesTable> {
+  $$SyncBaselinesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get assetKey => $composableBuilder(
+      column: $table.assetKey, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get dimension => $composableBuilder(
+      column: $table.dimension, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get baseVersion => $composableBuilder(
+      column: $table.baseVersion, builder: (column) => ColumnFilters(column));
+}
+
+class $$SyncBaselinesTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $SyncBaselinesTable> {
+  $$SyncBaselinesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get assetKey => $composableBuilder(
+      column: $table.assetKey, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get dimension => $composableBuilder(
+      column: $table.dimension, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get baseVersion => $composableBuilder(
+      column: $table.baseVersion, builder: (column) => ColumnOrderings(column));
+}
+
+class $$SyncBaselinesTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $SyncBaselinesTable> {
+  $$SyncBaselinesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get assetKey =>
+      $composableBuilder(column: $table.assetKey, builder: (column) => column);
+
+  GeneratedColumn<String> get dimension =>
+      $composableBuilder(column: $table.dimension, builder: (column) => column);
+
+  GeneratedColumn<int> get baseVersion => $composableBuilder(
+      column: $table.baseVersion, builder: (column) => column);
+}
+
+class $$SyncBaselinesTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $SyncBaselinesTable,
+    SyncBaselineRow,
+    $$SyncBaselinesTableFilterComposer,
+    $$SyncBaselinesTableOrderingComposer,
+    $$SyncBaselinesTableAnnotationComposer,
+    $$SyncBaselinesTableCreateCompanionBuilder,
+    $$SyncBaselinesTableUpdateCompanionBuilder,
+    (
+      SyncBaselineRow,
+      BaseReferences<_$HibikiDatabase, $SyncBaselinesTable, SyncBaselineRow>
+    ),
+    SyncBaselineRow,
+    PrefetchHooks Function()> {
+  $$SyncBaselinesTableTableManager(
+      _$HibikiDatabase db, $SyncBaselinesTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$SyncBaselinesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$SyncBaselinesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$SyncBaselinesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> assetKey = const Value.absent(),
+            Value<String> dimension = const Value.absent(),
+            Value<int> baseVersion = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              SyncBaselinesCompanion(
+            assetKey: assetKey,
+            dimension: dimension,
+            baseVersion: baseVersion,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String assetKey,
+            required String dimension,
+            required int baseVersion,
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              SyncBaselinesCompanion.insert(
+            assetKey: assetKey,
+            dimension: dimension,
+            baseVersion: baseVersion,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$SyncBaselinesTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $SyncBaselinesTable,
+    SyncBaselineRow,
+    $$SyncBaselinesTableFilterComposer,
+    $$SyncBaselinesTableOrderingComposer,
+    $$SyncBaselinesTableAnnotationComposer,
+    $$SyncBaselinesTableCreateCompanionBuilder,
+    $$SyncBaselinesTableUpdateCompanionBuilder,
+    (
+      SyncBaselineRow,
+      BaseReferences<_$HibikiDatabase, $SyncBaselinesTable, SyncBaselineRow>
+    ),
+    SyncBaselineRow,
+    PrefetchHooks Function()>;
 
 class $HibikiDatabaseManager {
   final _$HibikiDatabase _db;
@@ -13685,4 +14068,6 @@ class $HibikiDatabaseManager {
       $$MediaTypeProfilesTableTableManager(_db, _db.mediaTypeProfiles);
   $$BookProfilesTableTableManager get bookProfiles =>
       $$BookProfilesTableTableManager(_db, _db.bookProfiles);
+  $$SyncBaselinesTableTableManager get syncBaselines =>
+      $$SyncBaselinesTableTableManager(_db, _db.syncBaselines);
 }
