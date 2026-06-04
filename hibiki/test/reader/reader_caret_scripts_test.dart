@@ -327,7 +327,7 @@ void main() {
       // 元素停靠点（弹窗 ♪/+ 按钮、折叠词典段 summary）必须把焦点环画在元素的
       // 可见内容 rect（_elRect → _elInk：内容 client rects 并集，clamp 到 border
       // box）上，而不是 el.getBoundingClientRect()——后者含 padding/行盒/transform，
-      // 渲染成比字形大且错位的空盒子。(BUG-017)
+      // 渲染成比字形大且错位的空盒子。(BUG-018)
       expect(js, contains('_elInk:'));
       expect(js, contains('_elRect:'));
       expect(js, contains('selectNodeContents'));

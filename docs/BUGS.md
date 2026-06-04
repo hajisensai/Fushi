@@ -13,7 +13,7 @@
 
 ---
 
-## BUG-017 · 词典弹窗字级光标焦点环落在空盒子/细条上（与图标错位）
+## BUG-018 · 词典弹窗字级光标焦点环落在空盒子/细条上（与图标错位）
 - **报告**：2026-06-04（用户，附两张截图：teal 焦点环一处是分隔线附近的细高竖条、一处是 ♪/+ 按钮上方的空角丸方框）。
 - **真实性**：✅ **真 bug（焦点环几何与可见内容不对称）**。弹窗里字级光标（`window.hoshiCaret`，`reader_caret_scripts.dart`）按设计会停在交互控件上让手柄可达（`7abc0a92b`）。但**文字停靠点**用 `_charRect`（紧贴单字形），**元素停靠点**却用 `el.getBoundingClientRect()`（含 padding/行盒/`transform` 的整盒）：`_stopRect:334`、`_anchorRect:338`、`_interactiveEls:320`、`_collectVisibleStops:423`、`refresh:832`。后果——折叠词典段 `summary.dict-label`（`display:inline`、10px、半透明、▶ 是 `::before`）框成稀疏细条；`.audio-button`/`.mine-button`（`font-size:18px` 行盒 + flex 居中 + `translateY`）框成比 ♪/+ 大且上移的空角丸方框（`border-radius:3px` 来自焦点环 `:636`）。根因 = 元素停靠点的环用整盒、与文字停靠点不对称，且未排除可见内容为空的退化元素。
 - **[x] ① 已修复** — `3db13bd69`（新增 `_elInk`（元素自身内容 client rects 并集 = 可见 ink，排除 `::before` 伪元素）与 `_elRect`（优先 ink、clamp 到 border box、无 ink 回退 box），把上述 5 处元素 rect 读取统一路由过去；`_interactiveEls` 丢弃"无 ink 且非 img/picture/video/canvas/svg/[role=img]"的空 wrapper。保留控件可达性，只收紧环几何——消除不对称而非删停靠点。reader 分支 `window.hoshiReader` 下 `_interactiveEls` 仍走 `img.block-img`，未受影响）。
