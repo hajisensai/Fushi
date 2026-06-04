@@ -136,6 +136,28 @@ void main() {
     expect(folderImportSource, contains('pickedDirectory.cleanupDir'));
   });
 
+  // BUG-044：界面缩放（HibikiAppUiScale != 1.0）下，SDK ReorderableListView 的
+  // Overlay 拖拽代理不认祖先 Transform.scale，长按拖拽反馈会按 (1−s)×距离 向右下漂移、
+  // 飞离原位（用户截图症状）。修复=改用自实现的 HibikiReorderableColumn（局部坐标长按
+  // 拖拽，globalToLocal 消掉祖先缩放），缩放下精确跟手、零偏移、视觉一致。
+  test(
+      'dictionary list uses HibikiReorderableColumn (UI-scale safe), not SDK '
+      'ReorderableListView (BUG-044)', () {
+    final String source =
+        File('lib/src/pages/implementations/dictionary_dialog_page.dart')
+            .readAsStringSync();
+
+    expect(source, contains('HibikiReorderableColumn('));
+    // 禁的是 SDK 拖拽控件的**构造调用**（说明性注释可提及其名字）。
+    expect(source, isNot(contains('ReorderableListView.builder(')));
+    expect(source, isNot(contains('ReorderableListView(')));
+    expect(source, isNot(contains('ReorderableDelayedDragStartListener(')));
+    expect(source, isNot(contains('ReorderableDragStartListener(')));
+    // 上下箭头按钮仍是无障碍/手柄重排路径（手柄抓不到拖拽时）。
+    expect(source, contains('Icons.keyboard_arrow_up'));
+    expect(source, contains('Icons.keyboard_arrow_down'));
+  });
+
   test('dictionary manager surfaces a labeled Material action bar', () {
     final String source =
         File('lib/src/pages/implementations/dictionary_dialog_page.dart')

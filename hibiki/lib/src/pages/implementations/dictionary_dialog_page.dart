@@ -968,7 +968,6 @@ class _DictionaryDialogPageState extends BasePageState {
   Widget _buildDictionaryTile({
     required Dictionary dictionary,
     required int index,
-    required Key key,
     required bool isLast,
     required VoidCallback onMoveUp,
     required VoidCallback onMoveDown,
@@ -981,58 +980,55 @@ class _DictionaryDialogPageState extends BasePageState {
     final Color titleColor =
         enabled ? scheme.onSurface : scheme.onSurfaceVariant;
     final Color subtitleColor = scheme.onSurfaceVariant;
-    return ReorderableDelayedDragStartListener(
-      key: key,
-      index: index,
-      child: Padding(
-        padding:
-            EdgeInsets.only(bottom: isLast ? 0 : tokens.spacing.rowVertical),
-        child: HibikiCard(
-          padding: EdgeInsets.zero,
-          child: HibikiListItem(
-            minHeight: 70,
-            padding: EdgeInsets.symmetric(
-              horizontal: tokens.spacing.rowHorizontal - tokens.spacing.gap / 2,
-              vertical: tokens.spacing.rowVertical,
+    // 行内容本身不含拖拽监听：长按拖拽由外层 HibikiReorderableColumn 统一接管
+    // （局部坐标，缩放下零偏移），不再用 SDK 的 ReorderableDelayedDragStartListener。
+    return Padding(
+      padding: EdgeInsets.only(bottom: isLast ? 0 : tokens.spacing.rowVertical),
+      child: HibikiCard(
+        padding: EdgeInsets.zero,
+        child: HibikiListItem(
+          minHeight: 70,
+          padding: EdgeInsets.symmetric(
+            horizontal: tokens.spacing.rowHorizontal - tokens.spacing.gap / 2,
+            vertical: tokens.spacing.rowVertical,
+          ),
+          title: Text(
+            dictionary.name,
+            style: textTheme.bodyLarge?.copyWith(
+              color: titleColor,
+              fontWeight: FontWeight.w600,
             ),
-            title: Text(
-              dictionary.name,
-              style: textTheme.bodyLarge?.copyWith(
-                color: titleColor,
-                fontWeight: FontWeight.w600,
+          ),
+          subtitle: Text(
+            _subtitleForDictionary(dictionary, dictionaryFormat),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: textTheme.bodySmall?.copyWith(
+              color: subtitleColor,
+            ),
+          ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Gamepad/keyboard reorder equivalent for the drag handle.
+              HibikiIconButton(
+                icon: Icons.keyboard_arrow_up,
+                size: 18,
+                tooltip: t.move_up,
+                enabled: index > 0,
+                onTap: onMoveUp,
               ),
-            ),
-            subtitle: Text(
-              _subtitleForDictionary(dictionary, dictionaryFormat),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: textTheme.bodySmall?.copyWith(
-                color: subtitleColor,
+              HibikiIconButton(
+                icon: Icons.keyboard_arrow_down,
+                size: 18,
+                tooltip: t.move_down,
+                enabled: !isLast,
+                onTap: onMoveDown,
               ),
-            ),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Gamepad/keyboard reorder equivalent for the drag handle.
-                HibikiIconButton(
-                  icon: Icons.keyboard_arrow_up,
-                  size: 18,
-                  tooltip: t.move_up,
-                  enabled: index > 0,
-                  onTap: onMoveUp,
-                ),
-                HibikiIconButton(
-                  icon: Icons.keyboard_arrow_down,
-                  size: 18,
-                  tooltip: t.move_down,
-                  enabled: !isLast,
-                  onTap: onMoveDown,
-                ),
-                _buildDictionaryVisibilityButton(dictionary, enabled),
-                SizedBox(width: tokens.spacing.gap / 2),
-                buildDictionaryTileTrailing(dictionary),
-              ],
-            ),
+              _buildDictionaryVisibilityButton(dictionary, enabled),
+              SizedBox(width: tokens.spacing.gap / 2),
+              buildDictionaryTileTrailing(dictionary),
+            ],
           ),
         ),
       ),
@@ -1061,35 +1057,36 @@ class _DictionaryDialogPageState extends BasePageState {
     );
   }
 
+  // 用自实现的 HibikiReorderableColumn（局部坐标长按拖拽），而非 SDK 的
+  // ReorderableListView：后者的 Overlay 拖拽代理不认祖先 HibikiAppUiScale 的
+  // Transform.scale，缩放界面下长按拖拽反馈会按 (1−s)×距离 向右下漂移、飞离原位
+  // （BUG-044）。前者把拖拽反馈渲染在列表自身坐标系、用 globalToLocal 消掉祖先缩放
+  // → 任意缩放下都精确跟手、零偏移且视觉一致。上下箭头按钮仍是无障碍/手柄重排路径。
   Widget _buildDictionaryList(List<Dictionary> dictionaries) {
-    return ReorderableListView.builder(
-      buildDefaultDragHandles: false,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
+    return HibikiReorderableColumn(
       itemCount: dictionaries.length,
-      itemBuilder: (context, index) {
-        Dictionary dictionary = dictionaries[index];
-        return _buildDictionaryTile(
-          dictionary: dictionary,
-          index: index,
-          key: ValueKey(dictionary.name),
-          isLast: index == dictionaries.length - 1,
-          onMoveUp: () => _reorderDictionaries(index, index - 1, dictionaries),
-          onMoveDown: () =>
-              _reorderDictionaries(index, index + 2, dictionaries),
-        );
-      },
-      onReorder: (oldIndex, newIndex) =>
-          _reorderDictionaries(oldIndex, newIndex, dictionaries),
+      keyForIndex: (int index) => ValueKey<String>(dictionaries[index].name),
+      // HibikiReorderableColumn 的 to 已是最终下标，直接 removeAt(from)/insert(to)。
+      onReorder: (int from, int to) =>
+          _reorderDictionaries(from, to, dictionaries),
+      itemBuilder: (BuildContext context, int index) => _buildDictionaryTile(
+        dictionary: dictionaries[index],
+        index: index,
+        isLast: index == dictionaries.length - 1,
+        onMoveUp: () => _reorderDictionaries(index, index - 1, dictionaries),
+        onMoveDown: () => _reorderDictionaries(index, index + 1, dictionaries),
+      ),
     );
   }
 
+  /// 把 [dictionaries] 中 `from` 处的词典移动到**最终下标** `newIndex`，重排 order
+  /// 并持久化。`newIndex` 是移动完成后该词典应处的位置（非 SDK 的「插入前下标」），
+  /// 上下箭头与长按拖拽统一走这套最终下标语义——无需 SDK 的 `if(new>old)new--` 特例。
   void _reorderDictionaries(
     int oldIndex,
     int newIndex,
     List<Dictionary> dictionaries,
   ) {
-    if (newIndex > oldIndex) newIndex--;
     final List<Dictionary> cloneDictionaries = List.from(dictionaries);
 
     final Dictionary item = cloneDictionaries.removeAt(oldIndex);
