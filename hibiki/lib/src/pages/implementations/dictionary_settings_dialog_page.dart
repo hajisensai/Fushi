@@ -146,24 +146,32 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
   }
 
   // ── 统一来源列表 ───────────────────────────────────────────────────────
+  // 用自实现的 HibikiReorderableColumn（局部坐标长按拖拽），而非 SDK 的
+  // ReorderableListView：后者的 Overlay 拖拽代理不认祖先 HibikiAppUiScale 的
+  // Transform.scale，缩放界面下长按拖拽会飞出屏幕。前者把拖拽反馈渲染在列表自身坐标系、
+  // 用 globalToLocal 消掉祖先缩放 → 任意缩放下都精确跟手、零偏移且视觉一致。
+  // 上下箭头按钮仍是无障碍/手柄重排路径。
   Widget _buildSourceList(HibikiDesignTokens tokens) {
-    return ReorderableListView.builder(
-      shrinkWrap: true,
-      // 关掉桌面端自动注入的 ☰ 拖拽手柄（会盖住行尾按钮）；改整行长按拖拽，
-      // 全平台统一。上下箭头按钮是无障碍/手柄重排路径。
-      buildDefaultDragHandles: false,
-      physics: const NeverScrollableScrollPhysics(),
+    return HibikiReorderableColumn(
       itemCount: _sources.length,
-      onReorder: (int oldIndex, int newIndex) {
+      keyForIndex: (int index) => ValueKey<String>(_sourceKeyId(index)),
+      onReorder: (int from, int to) {
         setState(() {
-          if (newIndex > oldIndex) newIndex--;
-          final AudioSourceConfig item = _sources.removeAt(oldIndex);
-          _sources.insert(newIndex, item);
+          final AudioSourceConfig item = _sources.removeAt(from);
+          _sources.insert(to, item);
         });
       },
       itemBuilder: (BuildContext context, int index) =>
           _buildSourceRow(tokens, index),
     );
+  }
+
+  /// 行身份 key（拖拽重排时稳定标识每一行）。
+  String _sourceKeyId(int index) {
+    final AudioSourceConfig source = _sources[index];
+    return source.kind == AudioSourceKind.localAudio
+        ? 'audio_local_${source.path ?? index}'
+        : 'audio_remote_${source.kind.wireName}_${source.url ?? index}';
   }
 
   Widget _buildSourceRow(HibikiDesignTokens tokens, int index) {
@@ -175,10 +183,7 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
     final String subtitle = isHibiki
         ? t.remote_audio_source
         : (isLocal ? (source.path ?? '') : (source.url ?? ''));
-    final String keyId = isLocal
-        ? 'audio_local_${source.path ?? index}'
-        : 'audio_remote_${source.kind.wireName}_${source.url ?? index}';
-    final Widget row = AdaptiveSettingsRow(
+    return AdaptiveSettingsRow(
       title: title,
       subtitle: subtitle,
       icon: isLocal ? Icons.audiotrack_outlined : null,
@@ -237,21 +242,6 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
           ),
         ],
       ),
-    );
-    // 长按拖拽用 Overlay 渲染拖拽代理，其定位假定「全局↔overlay 本地」是纯平移；
-    // 在 HibikiAppUiScale 的 Transform.scale 下该假定不成立，拖拽代理会按
-    // (1-scale)×距离 漂移、飞出屏幕（Flutter 对 Transform 内 Draggable/Reorderable
-    // 的已知限制）。上方 ↑/↓ 箭头是完整等价重排路径，故仅在 1.0 缩放下启用拖拽，
-    // 非默认缩放时退化为 KeyedSubtree（保留 ReorderableListView 必需的 Key、禁拖拽）。
-    final bool dragSafe =
-        HibikiAppUiScale.of(context) == HibikiAppUiScale.defaultScale;
-    if (!dragSafe) {
-      return KeyedSubtree(key: ValueKey<String>(keyId), child: row);
-    }
-    return ReorderableDelayedDragStartListener(
-      key: ValueKey<String>(keyId),
-      index: index,
-      child: row,
     );
   }
 

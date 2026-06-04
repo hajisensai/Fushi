@@ -236,31 +236,66 @@ void main() {
     expect(tuneX, lessThan(localSwitchX));
   });
 
-  // BUG-027 ②：界面缩放（HibikiAppUiScale != 1.0）下，ReorderableListView 的 Overlay
-  // 拖拽代理坐标按纯平移计算、不认祖先 Transform.scale，长按拖拽会飞出屏幕。修复后仅在
-  // 1.0 缩放下挂 ReorderableDelayedDragStartListener，缩放态退化为 KeyedSubtree（禁拖拽，
-  // 保留 ↑/↓ 箭头重排）。
-  AudioSourcesDialog twoRemoteDialog() => AudioSourcesDialog(
+  // BUG-027 ②：界面缩放（HibikiAppUiScale != 1.0）下，SDK ReorderableListView 的
+  // Overlay 拖拽代理不认祖先 Transform.scale，长按拖拽会飞出屏幕。修复=改用自实现的
+  // HibikiReorderableColumn（局部坐标拖拽），缩放下精确跟手、零偏移、视觉一致。
+  testWidgets('uses HibikiReorderableColumn (not SDK ReorderableListView)',
+      (WidgetTester tester) async {
+    await openDialog(
+      tester,
+      AudioSourcesDialog(
         sources: <AudioSourceConfig>[
           AudioSourceConfig.remoteAudio(url: 'https://a.example.com/{term}'),
           AudioSourceConfig.remoteAudio(url: 'https://b.example.com/{term}'),
         ],
         onSave: (_) {},
-      );
-
-  testWidgets('long-press drag is enabled at default (1.0) scale (BUG-027)',
-      (WidgetTester tester) async {
-    await openDialogScaled(
-        tester, twoRemoteDialog(), HibikiAppUiScale.defaultScale);
-    expect(find.byType(ReorderableDelayedDragStartListener), findsWidgets);
-    expect(find.byType(Switch), findsNWidgets(2));
+      ),
+    );
+    expect(find.byType(HibikiReorderableColumn), findsOneWidget);
+    expect(find.byType(ReorderableListView), findsNothing);
   });
 
-  testWidgets('long-press drag is disabled when the UI is scaled (BUG-027)',
+  testWidgets('long-press drag reorders rows even under 0.5 UI scale (BUG-027)',
       (WidgetTester tester) async {
-    await openDialogScaled(tester, twoRemoteDialog(), 0.5);
-    // 拖拽门控关闭（无拖拽监听，避免拖拽代理飞出屏幕），但列表仍正常渲染。
-    expect(find.byType(ReorderableDelayedDragStartListener), findsNothing);
-    expect(find.byType(Switch), findsNWidgets(2));
+    List<AudioSourceConfig>? saved;
+    const String urlA = 'https://a.example.com/{term}';
+    const String urlB = 'https://b.example.com/{term}';
+    const String urlC = 'https://c.example.com/{term}';
+    await openDialogScaled(
+      tester,
+      AudioSourcesDialog(
+        sources: <AudioSourceConfig>[
+          AudioSourceConfig.remoteAudio(url: urlA),
+          AudioSourceConfig.remoteAudio(url: urlB),
+          AudioSourceConfig.remoteAudio(url: urlC),
+        ],
+        onSave: (List<AudioSourceConfig> v) => saved = v,
+      ),
+      0.5,
+    );
+
+    // 抓 A 行标题（左侧文本、远离开关/按钮），长按下拖越过 B 行中点。
+    // url 在标题与副标题各出现一次，取首个（标题）。
+    final Offset start = tester.getCenter(find.text(urlA).first);
+    final Offset next = tester.getCenter(find.text(urlB).first);
+    final TestGesture gesture = await tester.startGesture(start);
+    await tester.pump(const Duration(milliseconds: 600));
+    await gesture.moveTo(Offset.lerp(start, next, 0.6)!);
+    await tester.pump();
+    await gesture.moveTo(next);
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.text(t.dialog_close));
+    await tester.pumpAndSettle();
+
+    expect(saved, isNotNull);
+    expect(saved!.length, 3);
+    // A 被拖到 B 之后（缩放下拖拽真实生效、未飞走）。
+    final List<String?> order =
+        saved!.map((AudioSourceConfig s) => s.url).toList();
+    expect(order.indexOf(urlA), greaterThan(order.indexOf(urlB)));
   });
 }

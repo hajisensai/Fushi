@@ -107,6 +107,7 @@ class AudiobookRepository {
   static const String _kFollowAudioKeyPrefix = 'audiobook_follow_';
   static const String _kDelayMsKeyPrefix = 'audiobook_delay_';
   static const String _kSpeedKeyPrefix = 'audiobook_speed_';
+  static const String _kVolumeKeyPrefix = 'audiobook_volume_';
   static const String _kImagePauseSecKeyPrefix = 'audiobook_image_pause_';
   static const String _kHealthOverlayKeyPrefix = 'audiobook_health_overlay_';
 
@@ -141,6 +142,18 @@ class AudiobookRepository {
     required double speed,
   }) =>
       _db.setPref('$_kSpeedKeyPrefix$bookUid', speed.toString());
+
+  Future<double> readVolume(String bookUid) async {
+    final raw = await _db.getPref('$_kVolumeKeyPrefix$bookUid');
+    if (raw == null) return 1.0;
+    return double.tryParse(raw) ?? 1.0;
+  }
+
+  Future<void> updateVolume({
+    required String bookUid,
+    required double volume,
+  }) =>
+      _db.setPref('$_kVolumeKeyPrefix$bookUid', volume.toString());
 
   // ── image pause ─────────────────────────────────────────────────
 

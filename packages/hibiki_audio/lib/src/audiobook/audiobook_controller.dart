@@ -185,12 +185,22 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 播放速度变化时的持久化回调。内部在 [setSpeed] 调用。
   Future<void> Function(double speed)? onSpeedPersist;
 
+  /// 音量变化时的持久化回调。内部在 [setVolume] 调用（与 [onSpeedPersist] 同型）。
+  Future<void> Function(double volume)? onVolumePersist;
+
   // ── 音量 ─────────────────────────────────────────────────────────────────
   double get volume => _player.volume;
 
   Future<void> setVolume(double v) async {
-    await _player.setVolume(v.clamp(0.0, 2.0));
+    final double clamped = v.clamp(0.0, 2.0);
+    final double prev = _player.volume;
+    await _player.setVolume(clamped);
     notifyListeners();
+    if ((clamped - prev).abs() < 0.001) return;
+    final Future<void> Function(double)? persist = onVolumePersist;
+    if (persist != null) {
+      unawaited(persist(clamped));
+    }
   }
 
   // ── 图片暂停 ───────────────────────────────────────────────────────────────
@@ -303,6 +313,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     double initialSpeed = 1.0,
     int initialPositionMs = 0,
     int initialImagePauseSec = 0,
+    double initialVolume = 1.0,
   }) async {
     // 新一轮加载：旧 Completer 若未完成则补完（防上次 load 异常中断），
     // 再建新的未完成 Completer 阻塞后续 seek 直到本次 load 结束。
@@ -382,6 +393,18 @@ class AudiobookPlayerController extends ChangeNotifier {
         debugPrint('AudiobookController.setSpeed: $e\n$stack');
         debugPrint(
             '[hibiki-audiobook] initial setSpeed $initialSpeed failed: $e');
+      }
+    }
+
+    // 恢复持久化音量（默认 1.0 不必下发；非默认才设，避免无谓 platform 调用）。
+    // 与 speed/delay 同：load 不触发 persist 回调，载入不是用户操作。
+    if ((initialVolume - 1.0).abs() > 0.001) {
+      try {
+        await _player.setVolume(initialVolume.clamp(0.0, 2.0));
+      } catch (e, stack) {
+        debugPrint('AudiobookController.setVolume: $e\n$stack');
+        debugPrint(
+            '[hibiki-audiobook] initial setVolume $initialVolume failed: $e');
       }
     }
 

@@ -766,6 +766,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       repo.readSpeed(bookUid),
       repo.readPositionMs(bookUid),
       repo.readImagePauseSec(bookUid),
+      repo.readVolume(bookUid),
     ]);
     try {
       await controller.load(
@@ -776,6 +777,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         initialSpeed: prefs[2] as double,
         initialPositionMs: prefs[3] as int,
         initialImagePauseSec: prefs[4] as int,
+        initialVolume: prefs[5] as double,
       );
     } catch (e, stack) {
       ErrorLogService.instance.log('ReaderHibiki.loadAudiobook', e, stack);
@@ -800,6 +802,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     };
     controller.onSpeedPersist = (speed) async {
       await repo.updateSpeed(bookUid: bookUid, speed: speed);
+    };
+    controller.onVolumePersist = (volume) async {
+      await repo.updateVolume(bookUid: bookUid, volume: volume);
     };
     controller.onImagePausePersist = (sec) async {
       await repo.updateImagePauseSec(bookUid: bookUid, sec: sec);
@@ -848,6 +853,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       abRepo.readSpeed(srtBookUid),
       abRepo.readPositionMs(srtBookUid),
       abRepo.readImagePauseSec(srtBookUid),
+      abRepo.readVolume(srtBookUid),
     ]);
     try {
       await controller.load(
@@ -858,6 +864,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         initialSpeed: prefs[2] as double,
         initialPositionMs: prefs[3] as int,
         initialImagePauseSec: prefs[4] as int,
+        initialVolume: prefs[5] as double,
       );
     } catch (e, stack) {
       ErrorLogService.instance.log('ReaderHibiki.loadSrtBook', e, stack);
@@ -882,6 +889,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     };
     controller.onSpeedPersist = (double speed) async {
       await abRepo.updateSpeed(bookUid: srtBookUid, speed: speed);
+    };
+    controller.onVolumePersist = (double volume) async {
+      await abRepo.updateVolume(bookUid: srtBookUid, volume: volume);
     };
     controller.onImagePausePersist = (int sec) async {
       await abRepo.updateImagePauseSec(bookUid: srtBookUid, sec: sec);

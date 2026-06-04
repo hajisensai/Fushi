@@ -131,22 +131,24 @@ class _LocalAudioSourcesDialogState extends State<LocalAudioSourcesDialog> {
         ),
       );
     }
-    return ReorderableListView.builder(
-      shrinkWrap: true,
-      // 关掉桌面端自动注入的 ☰ 拖拽手柄（它被 Stack 叠在行尾，会盖住下移按钮）；
-      // 改用整行长按拖拽，移动端/桌面端行为统一。上下箭头按钮仍是无障碍/手柄重排路径。
-      buildDefaultDragHandles: false,
+    // 用自实现的 HibikiReorderableColumn（局部坐标长按拖拽），而非 SDK 的
+    // ReorderableListView：后者的 Overlay 拖拽代理不认祖先 HibikiAppUiScale 的
+    // Transform.scale，缩放界面下长按拖拽会飞出屏幕。前者把拖拽反馈渲染在列表自身坐标系、
+    // 用 globalToLocal 消掉祖先缩放 → 任意缩放下都精确跟手、零偏移且视觉一致。
+    // 上下箭头按钮仍是无障碍/手柄重排路径。
+    return HibikiReorderableColumn(
       itemCount: prefs.length,
-      onReorder: (int oldIndex, int newIndex) {
+      keyForIndex: (int index) =>
+          ValueKey<String>('local_audio_source_${prefs[index].name}'),
+      onReorder: (int from, int to) {
         setState(() {
-          if (newIndex > oldIndex) newIndex--;
-          final LocalAudioSourcePref item = prefs.removeAt(oldIndex);
-          prefs.insert(newIndex, item);
+          final LocalAudioSourcePref item = prefs.removeAt(from);
+          prefs.insert(to, item);
         });
       },
       itemBuilder: (BuildContext context, int index) {
         final LocalAudioSourcePref source = prefs[index];
-        final Widget row = AdaptiveSettingsRow(
+        return AdaptiveSettingsRow(
           title: source.name,
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
@@ -181,21 +183,6 @@ class _LocalAudioSourcesDialogState extends State<LocalAudioSourcesDialog> {
               ),
             ],
           ),
-        );
-        // 缩放态（HibikiAppUiScale != 1.0）下 Overlay 拖拽代理会飞出屏幕（Flutter 对
-        // Transform 内 Reorderable 的已知限制）；上方 ↑/↓ 箭头是完整等价重排路径，
-        // 故仅在 1.0 缩放下启用长按拖拽，否则退化为带 Key 的 KeyedSubtree（禁拖拽）。
-        final bool dragSafe =
-            HibikiAppUiScale.of(context) == HibikiAppUiScale.defaultScale;
-        final ValueKey<String> rowKey =
-            ValueKey<String>('local_audio_source_${source.name}');
-        if (!dragSafe) {
-          return KeyedSubtree(key: rowKey, child: row);
-        }
-        return ReorderableDelayedDragStartListener(
-          key: rowKey,
-          index: index,
-          child: row,
         );
       },
     );
