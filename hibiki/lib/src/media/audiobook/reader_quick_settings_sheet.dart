@@ -1260,38 +1260,46 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
   }
 
   Widget _buildActionRow(BuildContext context) {
+    // 每个按钮包进 Expanded：行宽被均分，单个槽位宽度由可用宽度决定，
+    // 不再受标签固有宽度 + 固定内边距之和驱动。这样任何语言/任意长标签
+    // 都不会让 Row 溢出（spaceAround 只会分配正余白、负余白照样溢出）。
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceAround,
       children: [
         if (widget.onToggleLyricsMode != null)
-          _actionBtn(
+          Expanded(
+            child: _actionBtn(
+              context,
+              icon: widget.lyricsMode
+                  ? Icons.auto_stories_outlined
+                  : Icons.lyrics_outlined,
+              label: widget.lyricsMode ? t.book_mode : t.lyrics_mode,
+              onTap: () {
+                Navigator.of(context).pop();
+                widget.onToggleLyricsMode!();
+              },
+            ),
+          ),
+        Expanded(
+          child: _actionBtn(
             context,
-            icon: widget.lyricsMode
-                ? Icons.auto_stories_outlined
-                : Icons.lyrics_outlined,
-            label: widget.lyricsMode ? t.book_mode : t.lyrics_mode,
-            onTap: () {
+            icon: Icons.bookmark_add_outlined,
+            label: t.action_bookmark,
+            onTap: () async {
               Navigator.of(context).pop();
-              widget.onToggleLyricsMode!();
+              await widget.onBookmark();
             },
           ),
-        _actionBtn(
-          context,
-          icon: Icons.bookmark_add_outlined,
-          label: t.action_bookmark,
-          onTap: () async {
-            Navigator.of(context).pop();
-            await widget.onBookmark();
-          },
         ),
-        _actionBtn(
-          context,
-          icon: Icons.exit_to_app_outlined,
-          label: t.action_exit,
-          onTap: () {
-            Navigator.of(context).pop();
-            widget.onExitReader();
-          },
+        Expanded(
+          child: _actionBtn(
+            context,
+            icon: Icons.exit_to_app_outlined,
+            label: t.action_exit,
+            onTap: () {
+              Navigator.of(context).pop();
+              widget.onExitReader();
+            },
+          ),
         ),
       ],
     );
@@ -1322,7 +1330,13 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
           children: [
             Icon(icon, size: 20, color: theme.colorScheme.onSurface),
             SizedBox(height: tokens.spacing.gap / 2),
-            Text(label, style: theme.textTheme.labelSmall),
+            Text(
+              label,
+              style: theme.textTheme.labelSmall,
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
           ],
         ),
       ),

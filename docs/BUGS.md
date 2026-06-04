@@ -13,6 +13,13 @@
 
 ---
 
+## BUG-028 · 阅读器快捷设置弹窗底部动作行右侧溢出 3.3px（RenderFlex overflow）
+- **报告**：2026-06-04（用户，附 Windows 阅读器快捷设置弹窗截图：底部「书籍模式 / 书签 / 退出」动作行右侧黄黑条 "RIGHT OVERFLOWED BY 3.3 PIXELS"，「退出」被裁切）。
+- **真实性**：✅ **真 bug（Row 用 spaceAround + 非伸缩固定内边距子项，负余白溢出）**。`_buildActionRow`（`reader_quick_settings_sheet.dart:1262`）是 `Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [...])`，子项 `_actionBtn` 是固有宽度的 `InkWell > Padding(horizontal: tokens.spacing.gap * 1.5) > Column(Icon + Text(label))`。`spaceAround` 只在有正余白时分配间距、**不会压缩子项**；当三个按钮的固有宽度之和（标签文本宽 + 每侧 1.5×gap 内边距）超过弹窗可用宽度时，Row 产生负余白 → 直接 RenderFlex 右溢出。中文标签「书籍模式」(4 字) + 「书签」+「退出」在窄弹窗里刚好超出 3.3px。根因 = 动作行布局不自适应：子项宽度由标签固有宽驱动，而非由可用宽度均分。任意更长标签（其它 16 种语言、更长译文）会溢出更多。
+- **[x] ① 已修复** — Linus 式消除特殊情况：把每个 `_actionBtn` 包进 `Expanded`，删掉 `MainAxisAlignment.spaceAround`。行宽被按钮数均分，单个槽位宽度由**可用宽度**决定，不再受标签固有宽 + 固定内边距之和驱动 → 任何语言/任意长标签都不可能让 Row 溢出（消除「标签太长就溢出」这个特殊情况，而非给某个 gap 调小几像素打补丁）。`_actionBtn` 内 `Text(label)` 追加 `textAlign: center` + `maxLines: 1` + `overflow: TextOverflow.ellipsis`：槽位内极端长标签也只省略号降级、不撑高/不裁切。`flutter analyze` 0 issue、`dart format` 0 改动。
+- **[x] ② 已加自动化测试** — `test/media/audiobook/reader_quick_settings_sheet_static_test.dart` 新增「reader action row flexes so labels never overflow (BUG-028)」：抽 `_buildActionRow` 函数体断言含 `Expanded(`、不含 `MainAxisAlignment.spaceAround`；抽 `_actionBtn` 函数体断言含 `overflow: TextOverflow.ellipsis` + `maxLines: 1`。谁把动作行退回固有宽 spaceAround / 去掉标签省略号即红。该文件全量 11 例全绿。（reader 快捷设置弹窗依赖实时 controller，widget 挂载成本高，源码扫描守卫为本路径最强可落地层，与 BUG-026 同范式。）
+- **备注**：reader/布局类。**真机肉眼复测原始失败路径待用户**（Windows 上开带有声书的 EPUB → 弹快捷设置 → 底部动作行不再有黄黑溢出条、「退出」完整可见且三个按钮均分居中；并复测无有声书时只有 书签/退出 两项也均分不挤）。同弹窗本轮另有并发 agent 的 BUG-027 改动，本次只 stage `_buildActionRow`/`_actionBtn` 相关 hunk + 对应测试。
+
 ## BUG-027 · 有声书进度区「音频总长度」恒显示 0
 - **报告**：2026-06-04（用户，附阅读器外观设置截图：「音频总长度是0，修复一下」）。
 - **真实性**：✅ **真 bug（duration 数据源在播放前不可用 + 多文件语义错）**。阅读器快捷设置弹窗顶部进度区 `_buildAudioProgressLine`（`reader_quick_settings_sheet.dart`）显示 `position / duration`，`duration` 取 `AudiobookPlayerController.duration`（`audiobook_controller.dart:243`）= `_player.duration ?? Duration.zero`。但 `load()` 用 `setAudioSource(..., preload: false)`（`audiobook_controller.dart:293/312`）——不预加载，播放前 just_audio 不解码、`_player.duration` 为 null → 显示 0。且 getter 旧注释承诺「多文件为所有文件之和」，而 `_player.duration` 对 `ConcatenatingAudioSource` 只是**当前文件**时长，从不是全书之和。根因 = 显示用「总长度」错用了 per-file、播放前不可用的 `_player.duration`。用户确认要显示**整本书总时长**。

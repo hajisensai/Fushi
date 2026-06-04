@@ -166,6 +166,33 @@ void main() {
     expect(headerSource, isNot(contains('fontSize: 17')));
   });
 
+  test('reader action row flexes so labels never overflow (BUG-028)', () {
+    final String source =
+        File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
+            .readAsStringSync();
+    final String actionRowSource = _between(
+      source,
+      '  Widget _buildActionRow(BuildContext context)',
+      '  Widget _actionBtn(',
+    );
+
+    // 根因：spaceAround 只分配正余白，子项固有宽度（标签+固定内边距）超出可用
+    // 宽度时照样溢出。修复改为每个按钮 Expanded 均分槽位，且不再用 spaceAround。
+    expect(actionRowSource, contains('Expanded('),
+        reason: '动作按钮必须包进 Expanded 才能在任意标签宽度下均分、不溢出');
+    expect(actionRowSource, isNot(contains('MainAxisAlignment.spaceAround')),
+        reason: 'spaceAround 不缩子项，是 3.3px 右溢出的根因');
+
+    // 标签在槽位内也要安全降级，避免极端长标签把 Column 撑高/裁切。
+    final String actionBtnSource = _between(
+      source,
+      '  Widget _actionBtn(',
+      'class _InBookSettingsHeader',
+    );
+    expect(actionBtnSource, contains('overflow: TextOverflow.ellipsis'));
+    expect(actionBtnSource, contains('maxLines: 1'));
+  });
+
   test('reader page opens the reader quick settings sheet', () {
     final String readerSource =
         File('lib/src/pages/implementations/reader_hibiki_page.dart')
