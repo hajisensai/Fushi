@@ -1,6 +1,7 @@
 #include <cstring>
 #include <filesystem>
 #include <nlohmann/json.hpp>
+#include <objbase.h>
 #include <Shlwapi.h>
 #include <wil/wrl.h>
 
@@ -164,6 +165,17 @@ namespace flutter_inappwebview_plugin
       hr = callback(S_OK, webViewEnvironment->getEnvironment());
     }
     else {
+      // WebView2 requires COM to be initialized (apartment-threaded, with a
+      // message pump) on the calling thread. Other plugins loaded later in the
+      // process — notably media_kit/libmpv, which initializes when an audiobook
+      // is opened — can leave this thread's COM uninitialized, making the
+      // environment creation below fail with CO_E_NOTINITIALIZED so the reader
+      // renders a permanent blank page. CoInitializeEx is per-thread refcounted
+      // and idempotent (S_FALSE when already initialized), so restore the
+      // documented precondition right where WebView2 needs it instead of relying
+      // on global COM state staying intact. The platform thread lives for the
+      // app lifetime, so we intentionally do not pair a CoUninitialize.
+      CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
       hr = CreateCoreWebView2EnvironmentWithOptions(
         nullptr, nullptr, nullptr,
         Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(callback).Get());

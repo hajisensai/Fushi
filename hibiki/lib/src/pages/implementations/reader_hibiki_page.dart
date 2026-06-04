@@ -3611,7 +3611,12 @@ window.flutter_inappwebview.callHandler('spreadReady');
       // bar has no focusable child (nextFocus() == false), fall through so the
       // GamepadService directional-focus fallback runs instead of stranding the
       // press on the (focus-less) reading content.
-      if (_chromeFocusScope.nextFocus()) return true;
+      // FocusNode.nextFocus() dereferences `context!`; guard against an
+      // unattached scope (chrome not yet built, e.g. content not ready) so it
+      // can never throw "Null check operator used on a null value".
+      if (_chromeFocusScope.context != null && _chromeFocusScope.nextFocus()) {
+        return true;
+      }
     }
     final ShortcutAction? action = appModel.shortcutRegistry.resolveGamepad(
           button,
@@ -4284,7 +4289,13 @@ window.flutter_inappwebview.callHandler('spreadReady');
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted || !_showChrome) return;
         _chromeFocusScope.requestFocus();
-        _chromeFocusScope.nextFocus();
+        // Guard against an unattached scope: FocusNode.nextFocus() dereferences
+        // `context!` and throws if the chrome bar hasn't mounted this node yet
+        // (e.g. toggled while reader content isn't ready). requestFocus() above
+        // is safe without a context; only the traversal needs one.
+        if (_chromeFocusScope.context != null) {
+          _chromeFocusScope.nextFocus();
+        }
       });
     }
   }

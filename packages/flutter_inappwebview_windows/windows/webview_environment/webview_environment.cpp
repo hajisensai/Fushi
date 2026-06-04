@@ -1,3 +1,4 @@
+#include <objbase.h>
 #include <WebView2EnvironmentOptions.h>
 #include <wil/wrl.h>
 
@@ -56,6 +57,10 @@ namespace flutter_inappwebview_plugin
       }
     }
 
+    // See in_app_webview.cpp: WebView2 needs COM initialized on the calling
+    // thread; media_kit/libmpv (audiobook playback) can tear it down, yielding
+    // CO_E_NOTINITIALIZED here. Idempotent, refcounted — restore the precondition.
+    CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     auto hr = CreateCoreWebView2EnvironmentWithOptions(
       settings && settings->browserExecutableFolder.has_value() ? utf8_to_wide(settings->browserExecutableFolder.value()).c_str() : nullptr,
       settings && settings->userDataFolder.has_value() ? utf8_to_wide(settings->userDataFolder.value()).c_str() : nullptr,
