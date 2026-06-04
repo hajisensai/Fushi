@@ -1,10 +1,12 @@
 import 'dart:io';
 
 import 'package:hibiki/src/epub/epub_importer.dart';
+import 'package:hibiki/src/models/local_audio_manager.dart';
 import 'package:hibiki/src/sync/sync_asset_package_service.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_manager.dart';
+import 'package:hibiki/src/sync/sync_progress.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -22,9 +24,18 @@ const String kSyncAudiobookAssetName = 'audiobook.hibikiaudio';
 
 const String _dictionaryAssetSuffix = '.hibikidict';
 
+/// Reserved top-level folder holding local-audio source packages (pronunciation
+/// DB + config manifest), alongside the dictionary namespace and per-book
+/// folders. Must be filtered from any listing that treats root children as
+/// books ([isReservedSyncFolderName]).
+const String kSyncLocalAudioNamespace = '__local_audio__';
+
+const String _localAudioAssetSuffix = '.hibikiaudiolib';
+
 /// True for reserved folder names that are NOT books and must be filtered from
 /// any listing of book folders (compare dialog, remote-book import).
-bool isReservedSyncFolderName(String name) => name == kSyncDictionaryNamespace;
+bool isReservedSyncFolderName(String name) =>
+    name == kSyncDictionaryNamespace || name == kSyncLocalAudioNamespace;
 
 /// One sync item judged a genuine fork (both sides moved off the common-ancestor
 /// baseline) and therefore skipped instead of auto-resolved. Carries everything
@@ -60,6 +71,8 @@ class SyncRunReport {
   int dictionariesExported = 0;
   int audiobooksImported = 0;
   int audiobooksExported = 0;
+  int localAudioImported = 0;
+  int localAudioExported = 0;
   final List<String> errors = <String>[];
   final List<SyncConflict> conflicts = <SyncConflict>[];
 }
@@ -88,7 +101,11 @@ class SyncOrchestrator {
     required this.syncContent,
     required this.syncAudioBookFiles,
     required this.syncDictionary,
+    required this.syncLocalAudio,
+    this.localAudioEntries = const <LocalAudioDbEntry>[],
+    this.onLocalAudioImported,
     this.statsSyncMode = StatisticsSyncMode.merge,
+    this.onProgress,
   })  : _db = db,
         _backend = backend,
         _dictionaryResourceRoot = dictionaryResourceRoot,
@@ -108,7 +125,35 @@ class SyncOrchestrator {
   final bool syncContent;
   final bool syncAudioBookFiles;
   final bool syncDictionary;
+
+  /// 是否同步本地音频来源（DB 文件 + 配置）。orchestrator 不依赖 AppModel：导出用的
+  /// 条目列表由 [localAudioEntries] 注入，导入注册经 [onLocalAudioImported] 回调。
+  final bool syncLocalAudio;
+  final List<LocalAudioDbEntry> localAudioEntries;
+  final Future<void> Function(LocalAudioPackageContents)? onLocalAudioImported;
   final StatisticsSyncMode statsSyncMode;
+
+  /// Optional progress sink (manual sync only). Null for background auto-sync,
+  /// which keeps its old silent behaviour.
+  final SyncProgressCallback? onProgress;
+
+  void _emit(
+    SyncPhase phase, {
+    required int itemIndex,
+    required int itemTotal,
+    String? title,
+    double? fileFraction,
+  }) {
+    final cb = onProgress;
+    if (cb == null) return;
+    cb(SyncProgress(
+      phase: phase,
+      itemIndex: itemIndex,
+      itemTotal: itemTotal,
+      title: title,
+      fileFraction: fileFraction,
+    ));
+  }
 
   int _tmpCounter = 0;
 
@@ -130,16 +175,34 @@ class SyncOrchestrator {
 
     // Existing per-book progress / stats / content / audiobook-position sync
     // for every local book (now including any just-imported remote books).
-    final List<SyncBookResult> bookResults =
-        await SyncManager(db: _db, backend: _backend).syncAllBooks(
+    int readingDone = 0;
+    int readingTotal = 0;
+    String? readingTitle;
+    final List<SyncBookResult> bookResults = await SyncManager(
+      db: _db,
+      backend: _backend,
+      onContentProgress: (double f) => _emit(SyncPhase.readingData,
+          itemIndex: readingDone,
+          itemTotal: readingTotal,
+          title: readingTitle,
+          fileFraction: f),
+    ).syncAllBooks(
       syncStats: syncStats,
       statsSyncMode: statsSyncMode,
       syncAudioBook: syncAudioBookPosition,
       syncContent: syncContent,
+      onBookProgress: (int done, int total, String title) {
+        readingDone = done;
+        readingTotal = total;
+        readingTitle = title;
+        _emit(SyncPhase.readingData,
+            itemIndex: done, itemTotal: total, title: title);
+      },
     );
     _collectConflicts(bookResults, report);
 
     if (syncDictionary) await syncDictionaries(report);
+    if (syncLocalAudio) await syncLocalAudioPackages(report);
     if (syncAudioBookFiles) await syncAudiobookPackages(root, report);
 
     return report;
@@ -177,36 +240,36 @@ class SyncOrchestrator {
         sanitizeTtuFilename(b.title),
     };
 
-    for (final DriveFile folder in remoteFolders) {
-      if (isReservedSyncFolderName(folder.name)) continue;
-      final String key = sanitizeTtuFilename(folder.name);
-      if (isReservedSyncFolderName(key) || localKeys.contains(key)) continue;
+    // Resolve the remote-only set first so progress has a real denominator.
+    final List<DriveFile> toImport = <DriveFile>[
+      for (final DriveFile folder in remoteFolders)
+        if (!isReservedSyncFolderName(folder.name) &&
+            !isReservedSyncFolderName(sanitizeTtuFilename(folder.name)) &&
+            !localKeys.contains(sanitizeTtuFilename(folder.name)))
+          folder,
+    ];
+    final int total = toImport.length;
 
-      File? tmp;
+    for (int i = 0; i < total; i++) {
+      final DriveFile folder = toImport[i];
+      _emit(SyncPhase.books,
+          itemIndex: i, itemTotal: total, title: folder.name);
       try {
-        final List<AssetEntry> children =
-            await _backend.listChildren(folder.id);
-        AssetEntry? epub;
-        for (final AssetEntry e in children) {
-          if (!e.isFolder && e.name.toLowerCase().endsWith('.epub')) {
-            epub = e;
-            break;
-          }
-        }
-        if (epub == null) continue;
-
-        tmp = _tmpFile('.epub');
-        await _backend.getAsset(epub.id, tmp);
-        await EpubImporter.importFromPath(
+        if (await importRemoteBookFolder(
           db: _db,
-          filePath: tmp.path,
-          fileName: epub.name,
-        );
-        report.booksImported++;
+          backend: _backend,
+          folderId: folder.id,
+          tempDir: _tempDir,
+          onProgress: (double f) => _emit(SyncPhase.books,
+              itemIndex: i,
+              itemTotal: total,
+              title: folder.name,
+              fileFraction: f),
+        )) {
+          report.booksImported++;
+        }
       } catch (e) {
         report.errors.add('import book "${folder.name}": $e');
-      } finally {
-        _safeDelete(tmp);
       }
     }
   }
@@ -227,9 +290,26 @@ class SyncOrchestrator {
       for (final DictionaryMetaRow d in localDicts) d.name,
     };
 
+    // Resolve both sides' work first so progress has a real denominator.
+    final List<DictionaryMetaRow> toPush = <DictionaryMetaRow>[
+      for (final DictionaryMetaRow d in localDicts)
+        if (!remoteNames.contains(d.name)) d,
+    ];
+    final List<AssetEntry> toPull = <AssetEntry>[
+      for (final AssetEntry e in remote)
+        if (!e.isFolder &&
+            e.name.endsWith(_dictionaryAssetSuffix) &&
+            !localNames.contains(e.name
+                .substring(0, e.name.length - _dictionaryAssetSuffix.length)))
+          e,
+    ];
+    final int total = toPush.length + toPull.length;
+    int index = 0;
+
     // Push local-only dictionaries.
-    for (final DictionaryMetaRow d in localDicts) {
-      if (remoteNames.contains(d.name)) continue;
+    for (final DictionaryMetaRow d in toPush) {
+      _emit(SyncPhase.dictionaries,
+          itemIndex: index, itemTotal: total, title: d.name);
       File? tmp;
       try {
         tmp = _tmpFile(_dictionaryAssetSuffix);
@@ -238,25 +318,34 @@ class SyncOrchestrator {
           dictionaryResourceRoot: _dictionaryResourceRoot,
           outputFile: tmp,
         );
-        await _backend.putAsset(ns, '${d.name}$_dictionaryAssetSuffix', tmp);
+        await _backend.putAsset(ns, '${d.name}$_dictionaryAssetSuffix', tmp,
+            onProgress: (double f) => _emit(SyncPhase.dictionaries,
+                itemIndex: index,
+                itemTotal: total,
+                title: d.name,
+                fileFraction: f));
         report.dictionariesExported++;
       } catch (e) {
         report.errors.add('export dictionary "${d.name}": $e');
       } finally {
         _safeDelete(tmp);
       }
+      index++;
     }
 
     // Pull remote-only dictionaries.
-    for (final AssetEntry e in remote) {
-      if (e.isFolder || !e.name.endsWith(_dictionaryAssetSuffix)) continue;
-      final String base =
-          e.name.substring(0, e.name.length - _dictionaryAssetSuffix.length);
-      if (localNames.contains(base)) continue;
+    for (final AssetEntry e in toPull) {
+      _emit(SyncPhase.dictionaries,
+          itemIndex: index, itemTotal: total, title: e.name);
       File? tmp;
       try {
         tmp = _tmpFile(_dictionaryAssetSuffix);
-        await _backend.getAsset(e.id, tmp);
+        await _backend.getAsset(e.id, tmp,
+            onProgress: (double f) => _emit(SyncPhase.dictionaries,
+                itemIndex: index,
+                itemTotal: total,
+                title: e.name,
+                fileFraction: f));
         await _packages.importDictionaryPackage(
           packageFile: tmp,
           dictionaryResourceRoot: _dictionaryResourceRoot,
@@ -267,6 +356,113 @@ class SyncOrchestrator {
       } finally {
         _safeDelete(tmp);
       }
+      index++;
+    }
+  }
+
+  /// Union-syncs local audio source DBs in the `__local_audio__` namespace.
+  /// 资产名 = displayName（[LocalAudioDbEntry.path] 含本机时间戳，每机不同不可用）。
+  /// push 本地独有（displayName 不在远端）/ pull 远端独有（displayName 不在本地）。
+  ///
+  /// 已知限制：displayName 无唯一约束，撞名按「同一库」union 跳过（与词典按 name
+  /// 同语义）；真正的唯一性去重列为 follow-up。
+  Future<void> syncLocalAudioPackages(SyncRunReport report) async {
+    final String ns = await _backend.ensureNamespace(kSyncLocalAudioNamespace);
+    final List<AssetEntry> remote = await _backend.listChildren(ns);
+
+    final Set<String> remoteNames = <String>{
+      for (final AssetEntry e in remote)
+        if (!e.isFolder && e.name.endsWith(_localAudioAssetSuffix))
+          e.name.substring(0, e.name.length - _localAudioAssetSuffix.length),
+    };
+    final Set<String> localNames = <String>{
+      for (final LocalAudioDbEntry d in localAudioEntries) d.displayName,
+    };
+
+    // Resolve both sides' work first so progress has a real denominator. The
+    // push side also drops libraries whose DB file is gone (nothing to send).
+    final List<LocalAudioDbEntry> toPush = <LocalAudioDbEntry>[
+      for (final LocalAudioDbEntry d in localAudioEntries)
+        if (!remoteNames.contains(d.displayName) && File(d.path).existsSync())
+          d,
+    ];
+    final List<AssetEntry> toPull = <AssetEntry>[
+      for (final AssetEntry e in remote)
+        if (!e.isFolder &&
+            e.name.endsWith(_localAudioAssetSuffix) &&
+            !localNames.contains(e.name
+                .substring(0, e.name.length - _localAudioAssetSuffix.length)))
+          e,
+    ];
+    final int total = toPush.length + toPull.length;
+    int index = 0;
+
+    // Push local-only.
+    for (final LocalAudioDbEntry d in toPush) {
+      _emit(SyncPhase.localAudio,
+          itemIndex: index, itemTotal: total, title: d.displayName);
+      final File dbFile = File(d.path);
+      File? tmp;
+      try {
+        tmp = _tmpFile(_localAudioAssetSuffix);
+        await _packages.exportLocalAudioPackage(
+          displayName: d.displayName,
+          enabled: d.enabled,
+          sources: d.sources,
+          dbFile: dbFile,
+          outputFile: tmp,
+        );
+        await _backend.putAsset(
+            ns, '${d.displayName}$_localAudioAssetSuffix', tmp,
+            onProgress: (double f) => _emit(SyncPhase.localAudio,
+                itemIndex: index,
+                itemTotal: total,
+                title: d.displayName,
+                fileFraction: f));
+        report.localAudioExported++;
+      } catch (e) {
+        report.errors.add('export local audio "${d.displayName}": $e');
+      } finally {
+        _safeDelete(tmp);
+      }
+      index++;
+    }
+
+    // Pull remote-only.
+    for (final AssetEntry e in toPull) {
+      _emit(SyncPhase.localAudio,
+          itemIndex: index, itemTotal: total, title: e.name);
+      File? tmp;
+      // Staging .db extracted from the package. AppModel.importSyncedLocalAudioDb
+      // *copies* it into the library dir (never moves), so the staging copy
+      // (potentially hundreds of MB) must be deleted here — otherwise every
+      // pulled library leaks one .db into the OS temp dir.
+      File? stagingDb;
+      try {
+        tmp = _tmpFile(_localAudioAssetSuffix);
+        await _backend.getAsset(e.id, tmp,
+            onProgress: (double f) => _emit(SyncPhase.localAudio,
+                itemIndex: index,
+                itemTotal: total,
+                title: e.name,
+                fileFraction: f));
+        final LocalAudioPackageContents contents =
+            await _packages.importLocalAudioPackage(
+          packageFile: tmp,
+          stagingDir: _tempDir,
+        );
+        stagingDb = contents.dbFile;
+        if (onLocalAudioImported != null) {
+          await onLocalAudioImported!(contents);
+          report.localAudioImported++;
+        }
+      } catch (err) {
+        report.errors.add('import local audio "${e.name}": $err');
+      } finally {
+        _safeDelete(tmp);
+        _safeDelete(stagingDb);
+      }
+      index++;
     }
   }
 
@@ -274,7 +470,16 @@ class SyncOrchestrator {
   /// book's folder. A book missing its audiobook locally but present remotely
   /// is pulled; a book with a local audiobook absent remotely is pushed.
   Future<void> syncAudiobookPackages(String root, SyncRunReport report) async {
-    for (final EpubBookRow book in await _db.getAllEpubBooks()) {
+    // A real "files transferred" denominator would need a findAsset network
+    // round-trip per book before the loop; instead progress is keyed on the
+    // book scan (k/N books), with the large pull/push fraction blended into the
+    // current book's slot. The bar still advances monotonically.
+    final List<EpubBookRow> books = await _db.getAllEpubBooks();
+    final int total = books.length;
+    for (int i = 0; i < total; i++) {
+      final EpubBookRow book = books[i];
+      _emit(SyncPhase.audiobooks,
+          itemIndex: i, itemTotal: total, title: book.title);
       File? tmp;
       try {
         final String bookUid = buildLegacyBookUid(book.id);
@@ -296,11 +501,21 @@ class SyncOrchestrator {
             srtBookUid: srt.uid,
             outputFile: tmp,
           );
-          await _backend.putAsset(folderId, kSyncAudiobookAssetName, tmp);
+          await _backend.putAsset(folderId, kSyncAudiobookAssetName, tmp,
+              onProgress: (double f) => _emit(SyncPhase.audiobooks,
+                  itemIndex: i,
+                  itemTotal: total,
+                  title: book.title,
+                  fileFraction: f));
           report.audiobooksExported++;
         } else if (!hasLocal && existing != null) {
           tmp = _tmpFile('.hibikiaudio');
-          await _backend.getAsset(existing.id, tmp);
+          await _backend.getAsset(existing.id, tmp,
+              onProgress: (double f) => _emit(SyncPhase.audiobooks,
+                  itemIndex: i,
+                  itemTotal: total,
+                  title: book.title,
+                  fileFraction: f));
           // Re-key to THIS device's book: bookUid embeds the local book id,
           // which differs per device, so the source's bookUid would never
           // resolve to our book.
@@ -326,6 +541,48 @@ class SyncOrchestrator {
       if (f.existsSync()) f.deleteSync();
     } catch (_) {
       // Best-effort temp cleanup.
+    }
+  }
+}
+
+/// 下载远端书文件夹 [folderId] 里的 `.epub` 内容资产并导入为本地书。
+/// 返回 true=导入成功；false=该文件夹没有 `.epub`（发送方关了内容同步，跳过）。
+/// 传输/导入失败时抛出，交调用方决定如何提示。临时文件用后即删。
+Future<bool> importRemoteBookFolder({
+  required HibikiDatabase db,
+  required SyncBackend backend,
+  required String folderId,
+  required Directory tempDir,
+  void Function(double fraction)? onProgress,
+}) async {
+  final List<AssetEntry> children = await backend.listChildren(folderId);
+  AssetEntry? epub;
+  for (final AssetEntry e in children) {
+    if (!e.isFolder && e.name.toLowerCase().endsWith('.epub')) {
+      epub = e;
+      break;
+    }
+  }
+  if (epub == null) return false;
+
+  tempDir.createSync(recursive: true);
+  final File tmp = File(p.join(
+    tempDir.path,
+    'hibiki_remote_${DateTime.now().microsecondsSinceEpoch}.epub',
+  ));
+  try {
+    await backend.getAsset(epub.id, tmp, onProgress: onProgress);
+    await EpubImporter.importFromPath(
+      db: db,
+      filePath: tmp.path,
+      fileName: epub.name,
+    );
+    return true;
+  } finally {
+    try {
+      if (tmp.existsSync()) tmp.deleteSync();
+    } catch (_) {
+      // best-effort temp cleanup
     }
   }
 }

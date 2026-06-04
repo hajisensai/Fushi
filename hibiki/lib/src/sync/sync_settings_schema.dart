@@ -24,6 +24,7 @@ import 'package:hibiki/src/sync/sync_compare_dialog.dart';
 import 'package:hibiki/src/sync/sync_conflict_prompter.dart';
 import 'package:hibiki/src/sync/sync_error_messages.dart';
 import 'package:hibiki/src/sync/sync_orchestrator.dart';
+import 'package:hibiki/src/sync/sync_progress.dart';
 import 'package:hibiki/src/sync/sync_message_dialog.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/webdav_sync_backend.dart';
@@ -172,6 +173,18 @@ SettingsDestination buildSyncBackupDestination() {
             },
           ),
           SettingsSwitchItem(
+            id: 'sync.local_audio',
+            title: t.sync_local_audio,
+            subtitle: t.sync_local_audio_warning,
+            icon: Icons.graphic_eq_outlined,
+            value: (SettingsContext ctx) => _syncSettings(ctx).syncLocalAudio,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).syncLocalAudio = value;
+              await SyncRepository(ctx.appModel.database)
+                  .setSyncLocalAudioEnabled(value);
+            },
+          ),
+          SettingsSwitchItem(
             id: 'sync.content',
             title: t.sync_content,
             subtitle: t.sync_content_warning,
@@ -280,6 +293,10 @@ String summarizeSyncReport(SyncRunReport r) {
       t.sync_now_audio_in(count: r.audiobooksImported),
     if (r.audiobooksExported > 0)
       t.sync_now_audio_out(count: r.audiobooksExported),
+    if (r.localAudioImported > 0)
+      t.sync_now_local_audio_in(count: r.localAudioImported),
+    if (r.localAudioExported > 0)
+      t.sync_now_local_audio_out(count: r.localAudioExported),
   ];
   final String head = parts.isEmpty ? t.sync_now_no_changes : parts.join(' · ');
   final String done = t.sync_now_done(detail: head);
@@ -536,8 +553,8 @@ class _WebDavConfigWidgetState extends State<_WebDavConfigWidget> {
       final password = _passwordController.text;
       if (url.isEmpty || username.isEmpty || password.isEmpty) {
         if (mounted) {
-          _showSnackBar(
-              context, t.sync_webdav_test_failed(message: 'Missing fields'));
+          _showSnackBar(context,
+              t.sync_webdav_test_failed(message: t.sync_webdav_missing_fields));
         }
         return;
       }
@@ -635,13 +652,17 @@ class _SyncNowWidget extends StatefulWidget {
 
 class _SyncNowWidgetState extends State<_SyncNowWidget> {
   bool _syncing = false;
+  SyncProgress? _progress;
 
   Future<void> _syncNow() async {
     // Re-entrant guard: the whole row is a focus target whose Activate (A/Enter,
     // see [AdaptiveSettingsRow.onTap] below) runs this too, so a second
     // activation while a sync is in flight must be a no-op.
     if (_syncing) return;
-    setState(() => _syncing = true);
+    setState(() {
+      _syncing = true;
+      _progress = null;
+    });
     try {
       final AppModel appModel = widget.settingsContext.appModel;
       final ManualSyncResult result = await runManualFullSync(
@@ -650,6 +671,11 @@ class _SyncNowWidgetState extends State<_SyncNowWidget> {
         audioDatabaseRoot:
             Directory('${appModel.appDirectory.path}/audiobooks'),
         tempDir: appModel.temporaryDirectory,
+        localAudioEntries: appModel.localAudioDbs,
+        onLocalAudioImported: appModel.importSyncedLocalAudioDb,
+        onProgress: (SyncProgress p) {
+          if (mounted) setState(() => _progress = p);
+        },
       );
       if (!mounted) return;
       switch (result.outcome) {
@@ -686,15 +712,46 @@ class _SyncNowWidgetState extends State<_SyncNowWidget> {
         );
       }
     } finally {
-      if (mounted) setState(() => _syncing = false);
+      if (mounted) {
+        setState(() {
+          _syncing = false;
+          _progress = null;
+        });
+      }
     }
+  }
+
+  /// Localized phase name for the inline progress line.
+  String _phaseLabel(SyncPhase phase) {
+    switch (phase) {
+      case SyncPhase.books:
+        return t.sync_progress_books;
+      case SyncPhase.readingData:
+        return t.sync_progress_reading;
+      case SyncPhase.dictionaries:
+        return t.sync_progress_dictionaries;
+      case SyncPhase.localAudio:
+        return t.sync_progress_local_audio;
+      case SyncPhase.audiobooks:
+        return t.sync_progress_audiobooks;
+    }
+  }
+
+  /// "phase (k/N) title" — count omitted when the phase has no items.
+  String _progressLine(SyncProgress p) {
+    final String phase = _phaseLabel(p.phase);
+    if (p.itemTotal <= 0) return phase;
+    final String head = '$phase (${p.itemIndex + 1}/${p.itemTotal})';
+    final String? title = p.title;
+    return (title == null || title.isEmpty) ? head : '$head $title';
   }
 
   @override
   Widget build(BuildContext context) {
-    return AdaptiveSettingsRow(
+    final SyncProgress? p = _progress;
+    final AdaptiveSettingsRow row = AdaptiveSettingsRow(
       title: t.sync_now,
-      subtitle: t.sync_now_hint,
+      subtitle: _syncing && p != null ? _progressLine(p) : t.sync_now_hint,
       icon: Icons.sync,
       controlBelow: true,
       // The action lives on the trailing button; giving the ROW an onTap is what
@@ -713,6 +770,20 @@ class _SyncNowWidgetState extends State<_SyncNowWidget> {
               onPressed: _syncNow,
               child: Text(t.sync_now),
             ),
+    );
+    if (!_syncing) return row;
+    // Inline determinate bar below the row (indeterminate when a phase has no
+    // measurable total), matching the compare dialog's Apply progress.
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        row,
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: LinearProgressIndicator(value: p?.fraction),
+        ),
+      ],
     );
   }
 }
@@ -2457,6 +2528,7 @@ class _SyncSettingsState {
   bool syncStats = true;
   bool syncAudioBook = true;
   bool syncDictionary = false;
+  bool syncLocalAudio = false;
   bool syncContent = false;
   bool syncAudioBookFiles = false;
   bool _loaded = false;
@@ -2500,6 +2572,7 @@ class _SyncSettingsState {
       syncStats = await _repo.isSyncStatsEnabled();
       syncAudioBook = await _repo.isSyncAudioBookEnabled();
       syncDictionary = await _repo.isSyncDictionaryEnabled();
+      syncLocalAudio = await _repo.isSyncLocalAudioEnabled();
       syncContent = await _repo.isSyncContentEnabled();
       syncAudioBookFiles = await _repo.isSyncAudioBookFilesEnabled();
       serverEnabled = await _repo.isServerEnabled();

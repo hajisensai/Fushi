@@ -15,6 +15,7 @@ class _BookCssEditorPageState extends State<BookCssEditorPage> {
   late BookCssRepository _repo;
   List<CssFileEntry> _entries = [];
   int _selectedIndex = 0;
+  bool _loading = true;
 
   final Map<int, TextEditingController> _textControllers = {};
   final Map<int, String> _diskContent = {};
@@ -26,8 +27,15 @@ class _BookCssEditorPageState extends State<BookCssEditorPage> {
     _reload();
   }
 
-  void _reload() {
-    _entries = _repo.discoverCssFiles();
+  // BUG-040: the discover-walk + per-file reads run off the UI thread via async
+  // `dart:io` (see [BookCssRepository.loadSnapshots]) so opening the editor no
+  // longer freezes the page-push transition. While the load is in flight the
+  // page shows a progress indicator instead of synchronously blocking the UI.
+  Future<void> _reload() async {
+    if (mounted) setState(() => _loading = true);
+    final List<CssFileSnapshot> snapshots = await _repo.loadSnapshots();
+    if (!mounted) return;
+
     for (final controller in _textControllers.values) {
       controller.removeListener(_onTextChanged);
       controller.dispose();
@@ -35,16 +43,17 @@ class _BookCssEditorPageState extends State<BookCssEditorPage> {
     _textControllers.clear();
     _diskContent.clear();
     _selectedIndex = 0;
+    _entries = <CssFileEntry>[for (final s in snapshots) s.entry];
 
-    for (int i = 0; i < _entries.length; i++) {
-      final String content = _repo.readCssSync(_entries[i]);
+    for (int i = 0; i < snapshots.length; i++) {
+      final String content = snapshots[i].content;
       _diskContent[i] = content;
       final TextEditingController controller =
           TextEditingController(text: content);
       controller.addListener(_onTextChanged);
       _textControllers[i] = controller;
     }
-    if (mounted) setState(() {});
+    setState(() => _loading = false);
   }
 
   @override
@@ -127,7 +136,9 @@ class _BookCssEditorPageState extends State<BookCssEditorPage> {
     final String content = _textControllers[index]!.text;
     _repo.saveCss(_entries[index], content);
     _diskContent[index] = content;
-    _entries = _repo.discoverCssFiles();
+    // BUG-040: no re-walk — saving CSS content can't change the set of .css
+    // files, and the modified marker (`isDifferentFromOriginal`) reads disk
+    // live, so a fresh `discoverCssFiles()` here only re-froze the UI thread.
     setState(() {});
     // _doSave is reached after an awaited unsaved-changes dialog in
     // _guardUnsaved, so the page may already be popped/disposed. Guard the
@@ -171,7 +182,8 @@ class _BookCssEditorPageState extends State<BookCssEditorPage> {
     final String restored = _repo.readCssSync(_entries[idx]);
     _diskContent[idx] = restored;
     _textControllers[idx]!.text = restored;
-    _entries = _repo.discoverCssFiles();
+    // BUG-040: no re-walk — resetting one file's content can't change the set
+    // of .css files; the modified marker recomputes from disk live.
     setState(() {});
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -219,7 +231,14 @@ class _BookCssEditorPageState extends State<BookCssEditorPage> {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    // BUG-040: while the off-thread load is in flight, show a progress
+    // indicator instead of a blank/blocked frame.
+    if (_loading) {
+      return HibikiToolScaffold(
+        title: t.book_css_editor_title,
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
     if (_entries.isEmpty) {
       return HibikiToolScaffold(
         title: t.book_css_editor_title,
@@ -230,6 +249,7 @@ class _BookCssEditorPageState extends State<BookCssEditorPage> {
       );
     }
 
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (bool didPop, _) async {

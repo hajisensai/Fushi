@@ -83,6 +83,54 @@ class HibikiAppUiScale extends StatelessWidget {
   }
 }
 
+/// 在阅读器等需要原生清晰度的全屏子树里「中和」祖先 [HibikiAppUiScale] 的整体缩放。
+///
+/// 逆变换：把子树重新按**真实视口尺寸**布局、净缩放回到 1.0，使其中的 WebView 平台
+/// 视图按原生像素密度渲染（放大不再栅格软化）。正文大小改由阅读器自带字号控制。
+///
+/// **关键**：必须整棵子树（WebView + 划词弹窗 + 高亮 + 铬层）一起中和——它们处于
+/// 同一坐标空间，所以 JS 报的 selectionRect 定位不会错位。**不要**只中和 WebView：
+/// 那正是被撤销的 HibikiNativeScale 老坑（只反缩放 WebView、弹窗没跟上 → 错位）。
+///
+/// 必须从**路由层**包在页面外，使页面 State.context 也落在本中和器之下，辅助方法
+/// 经 State.context 读到的 MediaQuery 才是真实几何。
+class HibikiAppUiScaleNeutralizer extends StatelessWidget {
+  const HibikiAppUiScaleNeutralizer({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final double s = HibikiAppUiScale.of(context);
+    if (s == HibikiAppUiScale.defaultScale) return child;
+
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        if (!constraints.hasBoundedWidth || !constraints.hasBoundedHeight) {
+          return child;
+        }
+        final Size canvas = constraints.biggest; // 祖先给的缩放画布 (view/s)
+        final Size view = canvas * s; // 还原真实视口
+        final MediaQueryData mq = MediaQuery.of(context);
+        return FittedBox(
+          fit: BoxFit.fill,
+          alignment: Alignment.topLeft,
+          child: SizedBox.fromSize(
+            size: view,
+            child: MediaQuery(
+              data: _scaleMediaQuery(mq, s), // ×s 还原真实 size/inset
+              child: _AppUiScaleScope(
+                scale: HibikiAppUiScale.defaultScale, // 子树视角:净缩放=1
+                child: child,
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 /// 把 [MediaQueryData] 的几何量按 [factor] 缩放，使 SafeArea / 键盘避让在缩小后的
 /// 逻辑画布里仍然正确。
 MediaQueryData _scaleMediaQuery(MediaQueryData mq, double factor) {

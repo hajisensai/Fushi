@@ -67,6 +67,13 @@ class GoogleDriveAuth {
         scopes: [_driveFileScope],
       );
 
+  // The signed-in mobile account, populated by authenticate() or by
+  // restoreMobileAuth() on launch. google_sign_in does NOT auto-restore the
+  // user across a cold start — `currentUser` is null and `isSignedIn()` is
+  // unreliable — so the auth state and email must be driven off this cached
+  // account rather than queried lazily (BUG-047).
+  GoogleSignInAccount? _mobileUser;
+
   // ── Desktop (googleapis_auth) ────────────────────────────────────
 
   auth.AuthClient? _desktopClient;
@@ -77,16 +84,29 @@ class GoogleDriveAuth {
   // ── Public API ───────────────────────────────────────────────────
 
   Future<bool> get isAuthenticated {
-    if (useMobileAuth) return _signIn.isSignedIn();
+    // Drive off the rehydrated account, not isSignedIn(): the latter can report
+    // true on a cold start while currentUser is still null (so no usable token
+    // and no email), which surfaced as "已登录 / no account name" (BUG-047).
+    if (useMobileAuth) return Future.value(_mobileUser != null);
     return Future.value(_desktopClient != null);
   }
 
   Future<String?> get currentEmail async {
-    if (useMobileAuth) {
-      return _signIn.currentUser?.email ??
-          (await _signIn.signInSilently())?.email;
-    }
+    if (useMobileAuth) return _mobileUser?.email;
     return _desktopEmail;
+  }
+
+  /// Rehydrate the mobile (google_sign_in) session on launch. The plugin does
+  /// not restore the signed-in user automatically, so the saved session must be
+  /// revived explicitly via signInSilently() — mirroring restoreDesktopAuth on
+  /// desktop. Without this the account row showed "未登录" and auto-sync never
+  /// passed its isAuthenticated gate after an app restart (BUG-047). Returns
+  /// whether a signed-in account was recovered.
+  Future<bool> restoreMobileAuth() async {
+    if (!useMobileAuth) return false;
+    if (_mobileUser != null) return true;
+    _mobileUser = await _signIn.signInSilently();
+    return _mobileUser != null;
   }
 
   Future<auth.AuthClient> getAuthClient() async {
@@ -106,6 +126,7 @@ class GoogleDriveAuth {
       if (account == null) {
         throw GoogleDriveAuthError('Sign-in cancelled');
       }
+      _mobileUser = account;
       return;
     }
     // Desktop: drive the RFC 8252 loopback flow ourselves (same helper as the
@@ -280,7 +301,8 @@ class GoogleDriveAuth {
 
   Future<void> refreshAuth() async {
     if (useMobileAuth) {
-      await _signIn.signInSilently(reAuthenticate: true);
+      _mobileUser =
+          await _signIn.signInSilently(reAuthenticate: true) ?? _mobileUser;
       return;
     }
 
@@ -322,6 +344,7 @@ class GoogleDriveAuth {
   Future<void> signOut({SyncRepository? repo}) async {
     if (useMobileAuth) {
       await _signIn.signOut();
+      _mobileUser = null;
       return;
     }
     _desktopClient?.close();

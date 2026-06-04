@@ -21,6 +21,7 @@
 #include "hash/hash.hpp"
 #include "json/yomitan_parser.hpp"
 #include "memory/memory.hpp"
+#include "util/fs_utf8.hpp"
 
 namespace {
 
@@ -82,20 +83,26 @@ DictionaryQuery::DictionaryQuery(DictionaryQuery&&) noexcept = default;
 DictionaryQuery& DictionaryQuery::operator=(DictionaryQuery&&) noexcept = default;
 
 void DictionaryQuery::add_dict(const std::string& path, DictionaryType type) {
-  if (!std::filesystem::is_regular_file(path + "/.hoshidicts_1")) {
+  if (!std::filesystem::is_regular_file(hoshi::fs_path(path + "/.hoshidicts_1"))) {
     return;
   }
 
   Dictionary dict;
   Index index;
-  std::string buf{};
-  if (glz::read_file_json(index, path + "/index.json", buf)) {
-    return;
+  {
+    std::ifstream index_in(hoshi::fs_path(path + "/index.json"), std::ios::binary);
+    if (!index_in) {
+      return;
+    }
+    std::string index_buf((std::istreambuf_iterator<char>(index_in)), {});
+    if (glz::read_json(index, index_buf)) {
+      return;
+    }
   }
 
-  dict.name = index.title.empty() ? std::filesystem::path(path).stem().string() : index.title;
-  if (std::filesystem::exists(path + "/styles.css")) {
-    std::ifstream f(path + "/styles.css");
+  dict.name = index.title.empty() ? hoshi::fs_to_utf8(hoshi::fs_path(path).stem()) : index.title;
+  if (std::filesystem::exists(hoshi::fs_path(path + "/styles.css"))) {
+    std::ifstream f(hoshi::fs_path(path + "/styles.css"));
     dict.styles = std::string(std::istreambuf_iterator<char>(f), {});
   }
 

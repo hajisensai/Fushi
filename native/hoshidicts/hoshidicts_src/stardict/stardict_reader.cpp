@@ -8,10 +8,12 @@
 #include <stdexcept>
 #include <sstream>
 
+#include "../util/fs_utf8.hpp"
+
 namespace {
 
 std::vector<uint8_t> read_file(const std::string& path) {
-  std::ifstream f(path, std::ios::binary | std::ios::ate);
+  std::ifstream f(hoshi::fs_path(path), std::ios::binary | std::ios::ate);
   if (!f.is_open()) return {};
   auto size = f.tellg();
   f.seekg(0);
@@ -89,7 +91,7 @@ StardictResult stardict_reader::parse(const std::string& ifo_path) {
   std::string ifo_content(reinterpret_cast<char*>(ifo_data.data()), ifo_data.size());
   std::string bookname = parse_ifo_value(ifo_content, "bookname");
   if (bookname.empty()) {
-    bookname = std::filesystem::path(ifo_path).stem().string();
+    bookname = hoshi::fs_to_utf8(hoshi::fs_path(ifo_path).stem());
   }
 
   std::string base = ifo_path.substr(0, ifo_path.size() - 4);

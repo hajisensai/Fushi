@@ -67,6 +67,8 @@ class _HomePageState extends BasePageState<HomePage>
         audioDatabaseRoot:
             Directory('${appModel.appDirectory.path}/audiobooks'),
         tempDir: appModel.temporaryDirectory,
+        localAudioEntries: appModel.localAudioDbs,
+        onLocalAudioImported: appModel.importSyncedLocalAudioDb,
         onReport: appModel.presentAutoConflicts,
       );
     });

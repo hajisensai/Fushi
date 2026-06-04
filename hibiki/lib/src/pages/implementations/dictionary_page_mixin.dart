@@ -128,14 +128,7 @@ mixin DictionaryPageMixin {
         sources: mixinAppModel.audioSourceConfigs,
       );
       if (url == null || url.isEmpty) return;
-      if (url.startsWith('file://')) {
-        final filePath = Uri.parse(url).toFilePath();
-        await TtsChannel.instance.playFile(filePath);
-      } else if (url.startsWith('/')) {
-        await TtsChannel.instance.playFile(url);
-      } else if (url.startsWith('http')) {
-        await TtsChannel.instance.playUrl(url);
-      }
+      await TtsChannel.instance.playAudioRef(url);
     } catch (e, st) {
       debugPrint('[hibiki-autoread] error: $e\n$st');
     }

@@ -111,20 +111,16 @@ class MaterialSettingsRenderer implements SettingsRenderer {
     final List<SettingsSection> sections =
         destination.visibleSections(settingsContext);
     final EdgeInsets mediaPadding = MediaQuery.of(context).padding;
-    return ListView.builder(
-      controller: scrollController,
-      shrinkWrap: shrinkWrap,
-      // Left side hugs the pane divider; give it MD3 expanded breathing room
-      // (page + gap = 24) so detail content isn't glued to the nav pane.
-      padding: EdgeInsets.fromLTRB(
-        tokens.spacing.page + tokens.spacing.gap,
-        tokens.spacing.gap,
-        tokens.spacing.page,
-        tokens.spacing.page + mediaPadding.bottom,
-      ),
-      itemCount: sections.length,
-      itemBuilder: (BuildContext context, int index) {
-        return _SettingsSchemaSection(
+    // Left side hugs the pane divider; give it MD3 expanded breathing room
+    // (page + gap = 24) so detail content isn't glued to the nav pane.
+    final EdgeInsets padding = EdgeInsets.fromLTRB(
+      tokens.spacing.page + tokens.spacing.gap,
+      tokens.spacing.gap,
+      tokens.spacing.page,
+      tokens.spacing.page + mediaPadding.bottom,
+    );
+
+    Widget section(int index) => _SettingsSchemaSection(
           section: sections[index],
           settingsContext: settingsContext,
           showIcons: true,
@@ -132,7 +128,54 @@ class MaterialSettingsRenderer implements SettingsRenderer {
             return MaterialPageRoute<void>(builder: builder);
           },
         );
-      },
+
+    // Embedded in a PARENT scrollable (cupertino CustomScrollView, the desktop
+    // settings SingleChildScrollView, the reader quick-settings sheet): a
+    // shrink-wrapped ListView must lay out every child to measure its own height,
+    // so its extent is already exact. Keep it — it doesn't own the scroll, so
+    // the lazy-extent drift below never applies.
+    if (shrinkWrap) {
+      return ListView.builder(
+        controller: scrollController,
+        shrinkWrap: true,
+        // Embedded in a PARENT scrollable (no own controller) ⇒ must NOT own the
+        // scroll. A shrink-wrapped ListView still installs its own Scrollable
+        // with a vertical drag recognizer; sized to content its scroll extent is
+        // zero, so a drag that lands ON its rows wins the gesture arena, moves
+        // nothing, and never bubbles to the parent — the reader quick-settings
+        // 布局 sub-page couldn't be scrolled by touch (BUG-042). Disabling the
+        // inner physics lets every drag reach the parent. Mirrors the cupertino
+        // renderer, which is already NeverScrollable here. The one caller that
+        // drives this list itself (hibiki_settings_page master-detail) passes a
+        // controller and keeps real physics so it can still scroll.
+        physics: scrollController == null
+            ? const NeverScrollableScrollPhysics()
+            : null,
+        padding: padding,
+        itemCount: sections.length,
+        itemBuilder: (BuildContext context, int index) => section(index),
+      );
+    }
+
+    // Own-scrolling detail page. A lazy `ListView.builder` (SliverList) only
+    // lays out visible sections and ESTIMATES the extent of the off-screen ones
+    // from the average of the laid-out children. The sync/backup sections have
+    // wildly unequal heights (a 1-row toggle vs. the tall LAN discovery / URL
+    // list / server-config widgets), so that estimate — and thus
+    // `maxScrollExtent` — drifts as you scroll; a fling computed against one
+    // extent is re-clamped when it changes mid-flight, which the eye sees as the
+    // content jumping (BUG-037). A settings page has a bounded, small number of
+    // sections, so laying them ALL out (non-lazy SingleChildScrollView + Column)
+    // costs nothing and makes the scroll extent exact and constant.
+    return SingleChildScrollView(
+      controller: scrollController,
+      padding: padding,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          for (int index = 0; index < sections.length; index++) section(index),
+        ],
+      ),
     );
   }
 

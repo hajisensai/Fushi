@@ -35,6 +35,7 @@ import 'package:hibiki/src/models/dictionary_repository.dart';
 import 'package:hibiki/src/models/media_history_repository.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/sync/backup_service.dart';
+import 'package:hibiki/src/sync/sync_asset_package_service.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_conflict_prompter.dart';
 import 'package:hibiki/src/sync/sync_orchestrator.dart';
@@ -1671,7 +1672,7 @@ class AppModel with ChangeNotifier {
       dictRepo.clearDictionaryResultsCache();
     } catch (e, stack) {
       ErrorLogService.instance.log('deleteDictionaries', e, stack);
-      HibikiToast.show(msg: 'Failed to delete dictionaries');
+      HibikiToast.show(msg: t.dictionaries_delete_failed);
     } finally {
       dictionarySearchAgainNotifier.notifyListeners();
     }
@@ -1694,7 +1695,7 @@ class AppModel with ChangeNotifier {
       dictRepo.clearDictionaryResultsCache();
     } catch (e, stack) {
       ErrorLogService.instance.log('deleteDictionary', e, stack);
-      HibikiToast.show(msg: 'Failed to delete dictionary');
+      HibikiToast.show(msg: t.dictionary_delete_failed);
     } finally {
       dictionarySearchAgainNotifier.notifyListeners();
     }
@@ -2598,7 +2599,15 @@ class AppModel with ChangeNotifier {
   void setAudioSources(List<String> sources) =>
       prefsRepo.setAudioSources(sources);
 
-  Future<void> setAudioSourceConfigs(List<AudioSourceConfig> sources) async {
+  /// [sourcesByPath] 为指定 path 的**新增** local-audio 库预置子来源偏好，让
+  /// 注册同步库时一次写穿（避免随后再调 setLocalAudioDbSources 二次落盘 + 二次推
+  /// native）。仅对 [current] 里尚不存在的库生效；已有库的子来源以现存为准（按
+  /// path 经 copyWith 继承），不被覆盖。
+  Future<void> setAudioSourceConfigs(
+    List<AudioSourceConfig> sources, {
+    Map<String, List<LocalAudioSourcePref>> sourcesByPath =
+        const <String, List<LocalAudioSourcePref>>{},
+  }) async {
     await prefsRepo.setAudioSourceConfigs(sources);
     final Map<String, LocalAudioDbEntry> current = <String, LocalAudioDbEntry>{
       for (final LocalAudioDbEntry db in localAudioDbs) db.path: db,
@@ -2612,6 +2621,8 @@ class AppModel with ChangeNotifier {
                     path: source.path!,
                     displayName: source.displayLabel,
                     enabled: source.enabled,
+                    sources: sourcesByPath[source.path] ??
+                        const <LocalAudioSourcePref>[],
                   ))
               .copyWith(
             displayName: source.displayLabel,
@@ -2675,6 +2686,37 @@ class AppModel with ChangeNotifier {
   Future<void> setLocalAudioDbSources(
       String path, List<LocalAudioSourcePref> prefs) async {
     await _localAudioManager.setSourcesFor(path, prefs);
+    notifyListeners();
+  }
+
+  /// 同步拉到一个远端本地音频库：把 staging 的 .db 拷进本机库目录（重建本机 path，
+  /// 绝不复用远端 manifest 的绝对 path——它在本机不存在），经 [setAudioSourceConfigs]
+  /// 双写 `audio_source_configs` + `local_audio_dbs` + 推 native，再还原子来源偏好
+  /// 并刷 UI。按 displayName 去重（已存在则跳过）。
+  ///
+  /// 由 [SyncOrchestrator.onLocalAudioImported] 调用，故注册逻辑集中在此（拥有
+  /// LocalAudioManager 的 AppModel），保持双真相源一致。
+  Future<void> importSyncedLocalAudioDb(LocalAudioPackageContents c) async {
+    final bool exists = audioSourceConfigs.any((AudioSourceConfig s) =>
+        s.kind == AudioSourceKind.localAudio &&
+        s.displayLabel == c.displayName);
+    if (exists) return;
+    if (!await c.dbFile.exists()) return;
+    final LocalAudioDbEntry entry =
+        await importLocalAudioDbFile(c.dbFile.path, displayName: c.displayName);
+    final AudioSourceConfig cfg = AudioSourceConfig.localAudio(
+      label: c.displayName,
+      path: entry.path,
+      enabled: c.enabled,
+    );
+    // 一次写穿：把子来源偏好随新库一起 bake 进 setEntries，省掉随后再调
+    // setLocalAudioDbSources 的二次 prefs 写 + 二次 native 全量重推。
+    await setAudioSourceConfigs(
+      <AudioSourceConfig>[...audioSourceConfigs, cfg],
+      sourcesByPath: c.sources.isEmpty
+          ? const <String, List<LocalAudioSourcePref>>{}
+          : <String, List<LocalAudioSourcePref>>{entry.path: c.sources},
+    );
     notifyListeners();
   }
 

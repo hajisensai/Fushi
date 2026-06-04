@@ -75,6 +75,7 @@ void main() {
         'sync.statistics',
         'sync.audiobook',
         'sync.dictionary',
+        'sync.local_audio',
         'sync.content',
         'sync.audiobook_files',
       ]);

@@ -4,9 +4,13 @@ import 'dart:io';
 import 'package:drift/drift.dart' hide isNotNull, isNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/models/local_audio_manager.dart';
+import 'package:hibiki/src/models/local_audio_source_pref.dart';
+import 'package:hibiki/src/sync/sync_asset_package_service.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_orchestrator.dart';
+import 'package:hibiki/src/sync/sync_progress.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -163,6 +167,7 @@ SyncOrchestrator _orchestrator(
       syncContent: false,
       syncAudioBookFiles: false,
       syncDictionary: true,
+      syncLocalAudio: false,
     );
 
 void main() {
@@ -227,6 +232,55 @@ void main() {
     );
   });
 
+  test('syncDictionaries emits per-item progress with file fraction', () async {
+    final FakeAssetStore store = FakeAssetStore();
+    final FakeSyncBackend backend = FakeSyncBackend(store);
+    final Directory tmp = Directory('${work.path}/tmp')..createSync();
+
+    final HibikiDatabase db = _memDb();
+    addTearDown(db.close);
+    await db.upsertDictionaryMeta(DictionaryMetadataCompanion.insert(
+      name: 'progdict',
+      formatKey: 'yomitan',
+      order: 0,
+      type: const Value('term'),
+      metadataJson: const Value('{}'),
+      hiddenLanguagesJson: const Value('[]'),
+      collapsedLanguagesJson: const Value('[]'),
+    ));
+    final Directory dictRoot = Directory('${work.path}/dicts')..createSync();
+    Directory('${dictRoot.path}/progdict').createSync(recursive: true);
+    File('${dictRoot.path}/progdict/index.json').writeAsStringSync('{}');
+
+    final List<SyncProgress> events = <SyncProgress>[];
+    final orchestrator = SyncOrchestrator(
+      db: db,
+      backend: backend,
+      dictionaryResourceRoot: dictRoot,
+      audioDatabaseRoot: tmp,
+      tempDir: tmp,
+      syncStats: false,
+      syncAudioBookPosition: false,
+      syncContent: false,
+      syncAudioBookFiles: false,
+      syncDictionary: true,
+      syncLocalAudio: false,
+      onProgress: events.add,
+    );
+    await orchestrator.syncDictionaries(SyncRunReport());
+
+    // One push: a start tick (no fraction) then the putAsset fraction tick.
+    final dictEvents =
+        events.where((e) => e.phase == SyncPhase.dictionaries).toList();
+    expect(dictEvents, isNotEmpty);
+    expect(dictEvents.every((e) => e.itemTotal == 1), isTrue);
+    expect(dictEvents.first.title, 'progdict');
+    expect(dictEvents.any((e) => e.fileFraction == 1.0), isTrue,
+        reason: 'putAsset onProgress(1.0) must blend into the bar');
+    // Fraction at the file tick = (0 + 1) / 1 = 1.0.
+    expect(dictEvents.last.fraction, 1.0);
+  });
+
   test('dictionary already present on both sides is not re-imported', () async {
     final FakeAssetStore store = FakeAssetStore();
     final FakeSyncBackend backend = FakeSyncBackend(store);
@@ -284,6 +338,7 @@ void main() {
           syncContent: false,
           syncAudioBookFiles: true,
           syncDictionary: false,
+          syncLocalAudio: false,
         );
 
     // ── Source device: book id 1 + its audiobook/srt/cues/files ──
@@ -370,5 +425,177 @@ void main() {
     expect(await tgtDb.getCuesForBook(tgtUid), isNotEmpty);
     // Source's bookUid must NOT leak as the key on the target.
     expect(await tgtDb.getAudiobookByBookUid(srcUid), isNull);
+  });
+
+  group('local audio phase', () {
+    SyncOrchestrator orch(
+      HibikiDatabase db,
+      SyncBackend backend,
+      Directory tmp, {
+      required bool syncLocalAudio,
+      List<LocalAudioDbEntry> entries = const <LocalAudioDbEntry>[],
+      Future<void> Function(LocalAudioPackageContents)? onImported,
+    }) =>
+        SyncOrchestrator(
+          db: db,
+          backend: backend,
+          dictionaryResourceRoot: tmp,
+          audioDatabaseRoot: tmp,
+          tempDir: tmp,
+          syncStats: false,
+          syncAudioBookPosition: false,
+          syncContent: false,
+          syncAudioBookFiles: false,
+          syncDictionary: false,
+          syncLocalAudio: syncLocalAudio,
+          localAudioEntries: entries,
+          onLocalAudioImported: onImported,
+        );
+
+    LocalAudioDbEntry seedDb(Directory dir, String name) {
+      final File db = File('${dir.path}/local_audio_${name.hashCode}.db')
+        ..createSync(recursive: true)
+        ..writeAsStringSync('sqlite-bytes-$name');
+      return LocalAudioDbEntry(
+        path: db.path,
+        displayName: name,
+        enabled: true,
+        sources: const <LocalAudioSourcePref>[
+          LocalAudioSourcePref(name: 'nhk16', enabled: true),
+        ],
+      );
+    }
+
+    test('local-only entry is pushed to the backend', () async {
+      final FakeAssetStore store = FakeAssetStore();
+      final FakeSyncBackend backend = FakeSyncBackend(store);
+      final Directory tmp = Directory('${work.path}/tmp')..createSync();
+      final HibikiDatabase db = _memDb();
+      addTearDown(db.close);
+
+      final LocalAudioDbEntry entry = seedDb(tmp, 'NHK Audio');
+      final SyncRunReport report = SyncRunReport();
+      await orch(db, backend, tmp,
+          syncLocalAudio: true,
+          entries: <LocalAudioDbEntry>[entry]).syncLocalAudioPackages(report);
+
+      expect(report.localAudioExported, 1);
+      expect(report.localAudioImported, 0);
+      expect(report.errors, isEmpty, reason: report.errors.join(' | '));
+      final String ns = await backend.ensureNamespace(kSyncLocalAudioNamespace);
+      final List<AssetEntry> children = await backend.listChildren(ns);
+      expect(children.where((AssetEntry e) => !e.isFolder).length, 1);
+      expect(children.first.name, 'NHK Audio.hibikiaudiolib');
+    });
+
+    test('remote-only package is pulled and registered via callback', () async {
+      final FakeAssetStore store = FakeAssetStore();
+      final FakeSyncBackend backend = FakeSyncBackend(store);
+      final Directory tmp = Directory('${work.path}/tmp')..createSync();
+
+      // Source pushes one entry into the shared backend.
+      final HibikiDatabase srcDb = _memDb();
+      addTearDown(srcDb.close);
+      final LocalAudioDbEntry srcEntry = seedDb(tmp, 'Forvo');
+      final SyncRunReport push = SyncRunReport();
+      await orch(srcDb, backend, tmp,
+          syncLocalAudio: true,
+          entries: <LocalAudioDbEntry>[srcEntry]).syncLocalAudioPackages(push);
+      expect(push.localAudioExported, 1);
+
+      // Target has no local entries → pulls + invokes the import callback.
+      final HibikiDatabase tgtDb = _memDb();
+      addTearDown(tgtDb.close);
+      final List<LocalAudioPackageContents> imported =
+          <LocalAudioPackageContents>[];
+      // Capture the staging .db path + its existence *inside* the callback:
+      // AppModel.importSyncedLocalAudioDb copies the staged .db while the
+      // callback runs (so it must still exist here), and the orchestrator
+      // deletes it afterwards (I-1).
+      bool dbFileExistedDuringImport = false;
+      String? stagingDbPath;
+      final SyncRunReport pull = SyncRunReport();
+      await orch(
+        tgtDb,
+        backend,
+        tmp,
+        syncLocalAudio: true,
+        onImported: (LocalAudioPackageContents c) async {
+          imported.add(c);
+          stagingDbPath = c.dbFile.path;
+          dbFileExistedDuringImport = c.dbFile.existsSync();
+        },
+      ).syncLocalAudioPackages(pull);
+
+      expect(pull.localAudioImported, 1);
+      expect(pull.errors, isEmpty, reason: pull.errors.join(' | '));
+      expect(imported.length, 1);
+      expect(imported.single.displayName, 'Forvo');
+      expect(imported.single.enabled, isTrue);
+      expect(imported.single.sources.single.name, 'nhk16');
+      // Staged .db is available while the import callback runs…
+      expect(dbFileExistedDuringImport, isTrue);
+      // …and is cleaned up afterwards — no staging .db leak (I-1).
+      expect(File(stagingDbPath!).existsSync(), isFalse,
+          reason: 'staging .db must be deleted after import (I-1)');
+    });
+
+    test('entry present on both sides (same displayName) is skipped', () async {
+      final FakeAssetStore store = FakeAssetStore();
+      final FakeSyncBackend backend = FakeSyncBackend(store);
+      final Directory tmp = Directory('${work.path}/tmp')..createSync();
+      final HibikiDatabase db = _memDb();
+      addTearDown(db.close);
+
+      final LocalAudioDbEntry entry = seedDb(tmp, 'Shared');
+      // First run pushes.
+      final SyncRunReport first = SyncRunReport();
+      await orch(db, backend, tmp,
+          syncLocalAudio: true,
+          entries: <LocalAudioDbEntry>[entry]).syncLocalAudioPackages(first);
+      expect(first.localAudioExported, 1);
+
+      // Second run with the SAME displayName present on both sides: no push,
+      // no pull (callback never even needed).
+      final SyncRunReport second = SyncRunReport();
+      await orch(
+        db,
+        backend,
+        tmp,
+        syncLocalAudio: true,
+        entries: <LocalAudioDbEntry>[entry],
+        onImported: (LocalAudioPackageContents c) async =>
+            fail('must not import a same-named entry'),
+      ).syncLocalAudioPackages(second);
+      expect(second.localAudioExported, 0);
+      expect(second.localAudioImported, 0);
+      expect(second.errors, isEmpty);
+    });
+
+    test('syncLocalAudio:false leaves the namespace untouched in run()',
+        () async {
+      final FakeAssetStore store = FakeAssetStore();
+      final FakeSyncBackend backend = FakeSyncBackend(store);
+      final Directory tmp = Directory('${work.path}/tmp')..createSync();
+      final HibikiDatabase db = _memDb();
+      addTearDown(db.close);
+
+      final LocalAudioDbEntry entry = seedDb(tmp, 'Disabled');
+      final SyncRunReport report = await orch(
+        db,
+        backend,
+        tmp,
+        syncLocalAudio: false,
+        entries: <LocalAudioDbEntry>[entry],
+      ).run();
+
+      expect(report.localAudioExported, 0);
+      expect(report.localAudioImported, 0);
+      // The phase never ran → the local-audio namespace holds no packages even
+      // though a local entry existed that would otherwise have been pushed.
+      final List<AssetEntry> children =
+          await backend.listChildren(kSyncLocalAudioNamespace);
+      expect(children.where((AssetEntry e) => !e.isFolder), isEmpty);
+    });
   });
 }

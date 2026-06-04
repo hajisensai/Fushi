@@ -2,9 +2,12 @@ import 'dart:developer' as developer;
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:hibiki/src/models/local_audio_manager.dart';
+import 'package:hibiki/src/sync/sync_asset_package_service.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_manager.dart';
 import 'package:hibiki/src/sync/sync_orchestrator.dart';
+import 'package:hibiki/src/sync/sync_progress.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/sync_utils.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
@@ -70,6 +73,9 @@ void triggerAutoSyncOnAppOpen({
   required Directory dictionaryResourceRoot,
   required Directory audioDatabaseRoot,
   required Directory tempDir,
+  required List<LocalAudioDbEntry> localAudioEntries,
+  required Future<void> Function(LocalAudioPackageContents)
+      onLocalAudioImported,
   SyncReportCallback? onReport,
 }) {
   _runAutoSyncAll(
@@ -77,6 +83,8 @@ void triggerAutoSyncOnAppOpen({
     dictionaryResourceRoot: dictionaryResourceRoot,
     audioDatabaseRoot: audioDatabaseRoot,
     tempDir: tempDir,
+    localAudioEntries: localAudioEntries,
+    onLocalAudioImported: onLocalAudioImported,
     onReport: onReport,
   );
 }
@@ -88,6 +96,9 @@ Future<void> _runAutoSyncAll({
   required Directory dictionaryResourceRoot,
   required Directory audioDatabaseRoot,
   required Directory tempDir,
+  required List<LocalAudioDbEntry> localAudioEntries,
+  required Future<void> Function(LocalAudioPackageContents)
+      onLocalAudioImported,
   SyncReportCallback? onReport,
 }) async {
   if (!_syncingIds.add('__all__')) return;
@@ -121,6 +132,9 @@ Future<void> _runAutoSyncAll({
         syncContent: await repo.isSyncContentEnabled(),
         syncAudioBookFiles: await repo.isSyncAudioBookFilesEnabled(),
         syncDictionary: await repo.isSyncDictionaryEnabled(),
+        syncLocalAudio: await repo.isSyncLocalAudioEnabled(),
+        localAudioEntries: localAudioEntries,
+        onLocalAudioImported: onLocalAudioImported,
       );
       final SyncRunReport report = await orchestrator.run();
       onReport?.call(report, backend);
@@ -155,6 +169,10 @@ Future<ManualSyncResult> runManualFullSync({
   required Directory dictionaryResourceRoot,
   required Directory audioDatabaseRoot,
   required Directory tempDir,
+  required List<LocalAudioDbEntry> localAudioEntries,
+  required Future<void> Function(LocalAudioPackageContents)
+      onLocalAudioImported,
+  SyncProgressCallback? onProgress,
 }) async {
   if (!_syncingIds.add('__all__')) {
     return const ManualSyncResult(ManualSyncOutcome.busy);
@@ -180,6 +198,10 @@ Future<ManualSyncResult> runManualFullSync({
         syncContent: await repo.isSyncContentEnabled(),
         syncAudioBookFiles: await repo.isSyncAudioBookFilesEnabled(),
         syncDictionary: await repo.isSyncDictionaryEnabled(),
+        syncLocalAudio: await repo.isSyncLocalAudioEnabled(),
+        localAudioEntries: localAudioEntries,
+        onLocalAudioImported: onLocalAudioImported,
+        onProgress: onProgress,
       );
       final SyncRunReport report = await orchestrator.run();
       return ManualSyncResult(ManualSyncOutcome.completed, report);

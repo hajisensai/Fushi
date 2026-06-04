@@ -33,6 +33,27 @@ void main() {
     );
   }
 
+  // BUG-040: the editor loads CSS off the UI thread via async `dart:io`. Real
+  // file IO only advances under `runAsync`, but the `await` continuations in
+  // `_reload` are bound to the test's fake-async zone and only run on `pump()`.
+  // Alternating the two drains the discover→read chain; we stop once the
+  // loading `CircularProgressIndicator` clears (pumpAndSettle can't be used —
+  // it spins forever on the spinner's indefinite animation).
+  Future<void> settleAsyncLoad(WidgetTester tester) async {
+    for (int i = 0; i < 50; i++) {
+      if (find.byType(CircularProgressIndicator).evaluate().isEmpty) return;
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 10)),
+      );
+      await tester.pump();
+    }
+  }
+
+  Future<void> pumpEditor(WidgetTester tester, String extractDir) async {
+    await tester.pumpWidget(buildApp(extractDir));
+    await settleAsyncLoad(tester);
+  }
+
   void createCss(Directory root, String rel, String content) {
     final File f = File(p.join(root.path, rel.replaceAll('/', p.separator)));
     f.parent.createSync(recursive: true);
@@ -40,13 +61,39 @@ void main() {
   }
 
   testWidgets(
-    'cancel tab switch keeps _selectedIndex on original tab',
+    'BUG-040: opens off the UI thread — loading first frame, content after load',
     (WidgetTester tester) async {
       createCss(tmpDir, 'a.css', 'aaa');
       createCss(tmpDir, 'b.css', 'bbb');
 
       await tester.pumpWidget(buildApp(tmpDir.path));
-      await tester.pumpAndSettle();
+      // Only one frame — the discover-walk + reads are still in flight off the
+      // UI thread, so the page must NOT have synchronously populated its tabs
+      // (that synchronous populate is exactly the freeze we removed).
+      await tester.pump();
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.text('a.css'), findsNothing);
+
+      // Drive the real async file IO until the loading spinner clears.
+      await settleAsyncLoad(tester);
+
+      // After the off-thread load resolves, tabs + editor content appear.
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(find.text('a.css'), findsOneWidget);
+      expect(find.text('b.css'), findsOneWidget);
+      final TextField tf =
+          tester.widget<TextField>(find.byType(TextField).first);
+      expect(tf.controller!.text, 'aaa');
+    },
+  );
+
+  testWidgets(
+    'cancel tab switch keeps _selectedIndex on original tab',
+    (WidgetTester tester) async {
+      createCss(tmpDir, 'a.css', 'aaa');
+      createCss(tmpDir, 'b.css', 'bbb');
+
+      await pumpEditor(tester, tmpDir.path);
 
       // Verify two chips rendered, first selected
       expect(find.text('a.css'), findsOneWidget);
@@ -87,8 +134,7 @@ void main() {
       createCss(tmpDir, 'a.css', 'aaa');
       createCss(tmpDir, 'b.css', 'bbb');
 
-      await tester.pumpWidget(buildApp(tmpDir.path));
-      await tester.pumpAndSettle();
+      await pumpEditor(tester, tmpDir.path);
 
       await tester.enterText(find.byType(TextField).first, 'modified');
       await tester.pumpAndSettle();
@@ -106,8 +152,7 @@ void main() {
     (WidgetTester tester) async {
       createCss(tmpDir, 'style.css', 'original content');
 
-      await tester.pumpWidget(buildApp(tmpDir.path));
-      await tester.pumpAndSettle();
+      await pumpEditor(tester, tmpDir.path);
 
       // Type to create unsaved changes
       await tester.enterText(find.byType(TextField).first, 'user edits');

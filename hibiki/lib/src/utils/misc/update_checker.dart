@@ -79,7 +79,7 @@ class UpdateChecker {
     try {
       await _cleanupOldApks(currentVersion);
       client = HttpClient();
-      client.connectionTimeout = const Duration(seconds: 10);
+      client.connectionTimeout = const Duration(seconds: 30);
 
       final json = betaChannel
           ? await _fetchLatestRelease(client)
@@ -149,8 +149,16 @@ class UpdateChecker {
         }
         await response.drain<void>();
       } catch (e, stack) {
-        ErrorLogService.instance.log('UpdateChecker.httpGet', e, stack);
-        debugPrint('[Hibiki] request failed ($u): $e');
+        // 网络类失败（连不上/超时/TLS 握手）记一条可读的 i18n 摘要、不带堆栈，
+        // 让用户在日志里看到「连不上哪个源」而不被原始堆栈噪音淹没；其它异常
+        // （解析/逻辑错误）才是真问题，连堆栈一起记。
+        if (isExpectedUpdateNetworkFailure(e)) {
+          ErrorLogService.instance.log('UpdateChecker.httpGet',
+              t.update_network_unreachable(host: hostLabelForUpdateUrl(u)));
+        } else {
+          ErrorLogService.instance.log('UpdateChecker.httpGet', e, stack);
+        }
+        debugPrint('[Hibiki] update check failed ($u): $e');
       }
     }
     return null;
@@ -280,8 +288,15 @@ class UpdateChecker {
           }
           await response.drain<void>();
         } catch (e, stack) {
-          ErrorLogService.instance.log('UpdateChecker.download', e, stack);
-          debugPrint('[Hibiki] download failed ($u): $e');
+          // 逐个下载源回退：网络类失败记 i18n 摘要、不带堆栈；其它异常带堆栈。
+          // 全部源失败时下面的 throw 仍会被外层 catch 统一记一条并弹 SnackBar。
+          if (isExpectedUpdateNetworkFailure(e)) {
+            ErrorLogService.instance.log('UpdateChecker.download',
+                t.update_network_unreachable(host: hostLabelForUpdateUrl(u)));
+          } else {
+            ErrorLogService.instance.log('UpdateChecker.download', e, stack);
+          }
+          debugPrint('[Hibiki] download source failed ($u): $e');
         }
       }
       if (!downloaded) {
@@ -336,6 +351,25 @@ String _extOf(String url) {
   final String name = slash >= 0 ? path.substring(slash + 1) : path;
   final int dot = name.lastIndexOf('.');
   return dot >= 0 ? name.substring(dot) : '';
+}
+
+/// 更新检查与下载都是 best-effort。网络类失败——连不上、连接超时、TLS 握手
+/// 失败、底层 HTTP 协议错误——是预期现象（尤其 GFW 下访问 GitHub / 代理本就
+/// 不稳），不该当错误带完整堆栈塞进用户可见的错误日志，否则真正的 bug 信号会
+/// 被这类噪音淹没。返回 true 表示该异常只需 debugPrint，无需写 ErrorLogService。
+bool isExpectedUpdateNetworkFailure(Object e) =>
+    e is SocketException || e is HandshakeException || e is HttpException;
+
+/// 从更新请求 URL 取主机名，作为日志里「连不上哪个源」的可读标签。代理 URL
+/// 形如 `https://ghfast.top/https://api.github.com/...`，其 host 是代理本身
+/// （ghfast.top），正好对应真正发起连接、真正超时的那一跳。URL 畸形时回退到原串。
+String hostLabelForUpdateUrl(String url) {
+  try {
+    final String host = Uri.parse(url).host;
+    return host.isNotEmpty ? host : url;
+  } catch (_) {
+    return url;
+  }
 }
 
 bool isVersionNewer(String remote, String local) {

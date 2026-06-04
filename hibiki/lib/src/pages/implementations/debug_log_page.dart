@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:hibiki/src/utils/misc/log_exporter.dart';
 import 'package:hibiki/utils.dart';
 
 class DebugLogPage extends StatefulWidget {
@@ -60,6 +61,17 @@ class _DebugLogPageState extends State<DebugLogPage> {
             Share.shareXFiles([xFile], subject: t.debug_log_share_subject);
           },
         ),
+        if (showSaveLogAction)
+          HibikiIconButton(
+            icon: Icons.save_alt_outlined,
+            tooltip: t.log_export_file,
+            onTap: () => saveLogToFile(
+              context: context,
+              log: _log,
+              fileName: 'hibiki_debug_log.txt',
+              subject: t.debug_log_share_subject,
+            ),
+          ),
         HibikiIconButton(
           icon: Icons.delete_outline,
           tooltip: t.clear,

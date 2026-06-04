@@ -24,6 +24,7 @@ class HibikiCard extends StatefulWidget {
     this.selected = false,
     this.onTap,
     this.onLongPress,
+    this.onSecondaryTap,
     this.focusId,
   });
 
@@ -36,6 +37,10 @@ class HibikiCard extends StatefulWidget {
   final bool selected;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
+
+  /// 桌面端鼠标右键（secondary tap）触发，通常映射到与 [onLongPress] 相同的
+  /// 上下文菜单。触摸/手柄设备没有 secondary tap，故配线全平台无副作用。
+  final VoidCallback? onSecondaryTap;
   final HibikiFocusId? focusId;
 
   @override
@@ -75,11 +80,14 @@ class _HibikiCardState extends State<HibikiCard> {
           type: MaterialType.transparency,
           shape: RoundedRectangleBorder(borderRadius: radius),
           clipBehavior: Clip.antiAlias,
-          child: widget.onTap == null && widget.onLongPress == null
+          child: widget.onTap == null &&
+                  widget.onLongPress == null &&
+                  widget.onSecondaryTap == null
               ? content
               : InkWell(
                   onTap: widget.onTap,
                   onLongPress: widget.onLongPress,
+                  onSecondaryTap: widget.onSecondaryTap,
                   child: content,
                 ),
         ),

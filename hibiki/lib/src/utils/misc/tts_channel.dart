@@ -22,6 +22,10 @@ class LocalAudioDbConfig {
   final List<String> sourceOrder;
 }
 
+/// How a resolved audio reference should be played, decided purely from its
+/// string form (see [TtsChannel.classifyAudioRef]).
+enum ResolvedAudioPlayback { none, url, file }
+
 /// Audio/TTS bridge. On Android these go through the native MethodChannel
 /// (`TtsChannelHandler`); off Android they fall back to pure-Dart / OS-tool
 /// implementations so the desktop builds (Windows/macOS/Linux) have working
@@ -187,6 +191,42 @@ class TtsChannel {
     } catch (e, stack) {
       ErrorLogService.instance.log('TtsChannel.playFile', e, stack);
       return false;
+    }
+  }
+
+  /// Classifies a resolved audio reference produced by [WordAudioResolver],
+  /// decided purely from its string form so it is unit-testable without an
+  /// audio backend.
+  ///
+  /// - empty → [ResolvedAudioPlayback.none]
+  /// - `http(s)://…` → [ResolvedAudioPlayback.url] (streamed via [playUrl])
+  /// - everything else → [ResolvedAudioPlayback.file]: a `file://` URI **or** a
+  ///   bare absolute filesystem path. The path may be Unix (`/…`) **or** Windows
+  ///   (`C:\…`). The old call sites only recognised `/…` and silently dropped
+  ///   Windows drive-letter paths, so local-audio playback never fired on
+  ///   Windows (BUG-046). Treating any non-URL ref as a file removes that
+  ///   special case instead of bolting on another `startsWith` branch.
+  @visibleForTesting
+  static ResolvedAudioPlayback classifyAudioRef(String ref) {
+    if (ref.isEmpty) return ResolvedAudioPlayback.none;
+    if (ref.startsWith('http')) return ResolvedAudioPlayback.url;
+    return ResolvedAudioPlayback.file;
+  }
+
+  /// Plays a resolved audio reference (remote URL or local file path) on every
+  /// platform. Single home for the URL-vs-path branching so no caller
+  /// re-hand-rolls it (which is how Windows local audio regressed). Returns
+  /// whether playback started.
+  Future<bool> playAudioRef(String ref) async {
+    switch (classifyAudioRef(ref)) {
+      case ResolvedAudioPlayback.none:
+        return false;
+      case ResolvedAudioPlayback.url:
+        return playUrl(ref);
+      case ResolvedAudioPlayback.file:
+        final String path =
+            ref.startsWith('file://') ? Uri.parse(ref).toFilePath() : ref;
+        return playFile(path);
     }
   }
 

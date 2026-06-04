@@ -32,6 +32,7 @@ import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart'
 import 'package:hibiki/src/profile/profile_repository.dart';
 import 'package:hibiki/src/profile/profile_view_model.dart';
 import 'package:hibiki/src/reader/reader_caret_scripts.dart';
+import 'package:hibiki/src/reader/reader_lyrics_caret_scripts.dart';
 import 'package:hibiki/src/reader/reader_content_styles.dart';
 import 'package:hibiki/src/reader/reader_resource_sanitizer.dart';
 import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
@@ -61,13 +62,30 @@ import 'package:hibiki/src/shortcuts/reader_caret_router.dart';
 /// Which WebView surface the char-level reading cursor lives on. The cursor is
 /// on the reader content, or — after a dictionary lookup — on the top popup,
 /// following the popup stack as the user looks up deeper words and backs out.
-enum CaretSurface { none, reader, popup }
+enum CaretSurface { none, reader, popup, lyrics }
 
-List<int> _computeChapterCharCounts(EpubBook book) {
+/// 解析结果 + 每章字符数，一次 isolate 往返同时算好，避免把整本书
+/// （含全部章节 HTML）二次序列化进新 isolate 只为数字符。
+class ParsedBookData {
+  const ParsedBookData(this.book, this.charCounts);
+  final EpubBook book;
+  final List<int> charCounts;
+}
+
+/// 逐章纯文本长度。成功路径在解析 isolate 内调用；fallback 路径经 compute()
+/// 调用（书已在内存，但仍放后台 isolate，避免在 UI 线程跑 html 解析）。
+List<int> countChapterChars(EpubBook book) {
   return List<int>.generate(
     book.chapters.length,
-    (i) => book.chapterPlainText(i).length,
+    (int i) => book.chapterPlainText(i).length,
   );
+}
+
+/// 在单个 isolate 内解析 EPUB 并计算每章纯文本长度。供 compute() 调用，
+/// 也可直接调用做等价性校验。
+ParsedBookData parseAndCountChapters(String extractDir) {
+  final EpubBook book = EpubParser.parseFromExtracted(extractDir);
+  return ParsedBookData(book, countChapterChars(book));
 }
 
 class ReaderHibikiPage extends BaseSourcePage {
@@ -229,6 +247,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
   bool get _caretActive => _caretSurface != CaretSurface.none;
   bool get _caretOnReader => _caretSurface == CaretSurface.reader;
+  bool get _caretOnLyrics => _caretSurface == CaretSurface.lyrics;
 
   // Serializes the cursor's async JS operations. A gamepad D-pad auto-repeats
   // ~9×/s and a move that turns the page (move → _paginate → reanchor) round-
@@ -355,7 +374,10 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     _extractDir = extractDir;
 
     try {
-      _book = await compute(EpubParser.parseFromExtracted, extractDir);
+      final ParsedBookData parsed =
+          await compute(parseAndCountChapters, extractDir);
+      _book = parsed.book;
+      _chapterCharCounts = parsed.charCounts;
       debugPrint(
           '[ReaderHibiki] parsed EPUB: ${_book!.chapters.length} chapters');
     } on FormatException catch (e) {
@@ -363,16 +385,16 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       _book = await _buildBookFromDb(db, widget.bookId, extractDir);
       if (!mounted) return;
       _book ??= _buildLegacyBook(extractDir);
+      // fallback 路径没在解析 isolate 里算字符数，这里补一趟；书已在内存，
+      // 但仍走 compute() 放后台 isolate，避免在 UI 线程跑 html 解析。
+      _chapterCharCounts = await compute(countChapterChars, _book!);
+      if (!mounted) return;
       HibikiToast.show(msg: t.epub_parse_fallback);
     }
 
     final List<String> hrefs = _book!.chapters.map((ch) => ch.href).toList();
     debugPrint('[ReaderHibiki] chapter hrefs: $hrefs');
 
-    _chapterCharCounts = await compute(
-      _computeChapterCharCounts,
-      _book!,
-    );
     int cumulative = 0;
     _chapterCumulativeChars = <int>[];
     for (final int count in _chapterCharCounts) {
@@ -1007,6 +1029,13 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
             source: suspend
                 ? ReaderCaretScripts.suspendInvocation()
                 : ReaderCaretScripts.resumeInvocation(),
+          );
+          break;
+        case CaretSurface.lyrics:
+          _controller?.evaluateJavascript(
+            source: suspend
+                ? ReaderLyricsCaretScripts.suspendInvocation()
+                : ReaderLyricsCaretScripts.resumeInvocation(),
           );
           break;
         case CaretSurface.none:
@@ -1987,6 +2016,19 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         });
       }
       _lyricsPageReady = true;
+      // 注入歌词专用行级 caret（键盘/手柄逐词查词），镜像 reader 的 hoshiCaret 注入。
+      // 文档刚加载，caret inactive；surface 在 _enterCaret 成功时才置 lyrics。
+      await controller.evaluateJavascript(
+          source: ReaderLyricsCaretScripts.source());
+      if (mounted) {
+        await controller.evaluateJavascript(
+          source: ReaderLyricsCaretScripts.initInvocation(
+            color: _caretRingColorCss(),
+            insetTop: _readerTopOffset,
+            insetBottom: 0,
+          ),
+        );
+      }
       _onCueChanged();
       await _applyLyricsFavorites();
       return;
@@ -2185,6 +2227,10 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       await ReaderHibikiSource.instance.setLyricsMode(entering);
 
       if (entering) {
+        // 文档即将被 LyricsModeHtml 整页替换（其中无 window.hoshiCaret）。若此刻
+        // reader caret 正激活，surface 会滞留 reader，之后方向键会对歌词文档调
+        // window.hoshiCaret.move() 报错、caret 卡死——进入前先丢掉旧 caret。
+        _exitCaret();
         await _resolveAndApplyProfile(
           appModelNoUpdate.database,
           mediaTypeOverride: 'lyrics',
@@ -2299,6 +2345,8 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
           .log('ReaderHibiki.updateLyricsStyleLive.eval', e, stack);
       return;
     }
+    // cue 文本随字号/边距重排，激活中的焦点环坐标会过期——重测一次跟上新布局。
+    if (_caretOnLyrics) await _caretRefresh();
     if (mounted) setState(() {});
   }
 
@@ -2319,6 +2367,11 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   }
 
   Future<void> _exitLyricsMode() async {
+    // 离开歌词模式会重载 reader 章节，lyrics caret JS 随之消失；复位 surface，
+    // 否则方向键/A 会被误路由到已不存在的 hoshiLyricsCaret。
+    if (_caretSurface == CaretSurface.lyrics) {
+      setState(() => _caretSurface = CaretSurface.none);
+    }
     final AudiobookPlayerController ctrl = _audiobookController!;
     final AudioCue? cue = ctrl.currentCue;
     int targetChapter =
@@ -3698,7 +3751,12 @@ window.flutter_inappwebview.callHandler('spreadReady');
           clearDictionaryResult();
           return KeyEventResult.handled;
         }
-        return KeyEventResult.ignored;
+        // No dictionary popup: this is the reader's "back" key (keyboard Esc /
+        // gamepad B). Leave the book — never toggle the bottom bar. Bar
+        // visibility is owned by M / Y / tap. Mirrors the chrome-scope and
+        // popup-scope B/Esc branches that already maybePop().
+        unawaited(Navigator.of(context).maybePop());
+        return KeyEventResult.handled;
       case ShortcutAction.readerToggleChrome:
         if (isDictionaryShown) {
           clearDictionaryResult();
@@ -3749,12 +3807,21 @@ window.flutter_inappwebview.callHandler('spreadReady');
     if (_controller == null || !_readerContentReady || _caretBusy) return;
     _caretBusy = true;
     try {
-      final Object? raw = await _controller!
-          .evaluateJavascript(source: ReaderCaretScripts.enterInvocation());
+      final Object? raw = await _controller!.evaluateJavascript(
+          source: _lyricsMode
+              ? ReaderLyricsCaretScripts.enterInvocation()
+              : ReaderCaretScripts.enterInvocation());
       if (!mounted) return;
       // enter() returns {ok:false} on an empty page (no visible character).
       if (ReaderCaretScripts.moveStatus(raw) != 'moved') return;
-      setState(() => _caretSurface = CaretSurface.reader);
+      if (_lyricsMode) {
+        // 激活后暂停播放跟随滚动：setCue 只换高亮，不抢滚动。
+        await _controller!
+            .evaluateJavascript(source: 'window.__lyricsCaretActive = true;');
+        setState(() => _caretSurface = CaretSurface.lyrics);
+      } else {
+        setState(() => _caretSurface = CaretSurface.reader);
+      }
     } finally {
       _caretBusy = false;
     }
@@ -3768,6 +3835,15 @@ window.flutter_inappwebview.callHandler('spreadReady');
       case CaretSurface.reader:
         _controller?.evaluateJavascript(
             source: ReaderCaretScripts.exitInvocation());
+        break;
+      case CaretSurface.lyrics:
+        _controller?.evaluateJavascript(
+            source: ReaderLyricsCaretScripts.exitInvocation());
+        // 退出焦点：恢复播放跟随并立即把当前播放行重新居中。
+        _controller?.evaluateJavascript(
+            source: 'window.__lyricsCaretActive = false;'
+                'if(window.__lyricsScrollToCue&&window.__lyricsGetCurrentIndex)'
+                'window.__lyricsScrollToCue(window.__lyricsGetCurrentIndex());');
         break;
       case CaretSurface.popup:
         topPopupState?.caretExit();
@@ -3906,8 +3982,11 @@ window.flutter_inappwebview.callHandler('spreadReady');
     }
     if (_controller == null) return;
     final Object? raw = await _controller!.evaluateJavascript(
-        source: ReaderCaretScripts.moveInvocation(physicalDir));
+        source: _caretOnLyrics
+            ? ReaderLyricsCaretScripts.moveInvocation(physicalDir)
+            : ReaderCaretScripts.moveInvocation(physicalDir));
     if (!mounted || _controller == null) return;
+    // lyrics caret 只返回 moved/blocked，永不 pageForward/Backward，故下面分支天然跳过。
     final String status = ReaderCaretScripts.moveStatus(raw);
     if (status == 'pageForward') {
       await _paginate(ReaderNavigationDirection.forward);
@@ -3931,7 +4010,9 @@ window.flutter_inappwebview.callHandler('spreadReady');
       }
       if (_controller == null) return;
       final Object? raw = await _controller!.evaluateJavascript(
-          source: ReaderCaretScripts.scrollPageInvocation(forward));
+          source: _caretOnLyrics
+              ? ReaderLyricsCaretScripts.scrollPageInvocation(forward)
+              : ReaderCaretScripts.scrollPageInvocation(forward));
       if (!mounted || _controller == null) return;
       final String status = ReaderCaretScripts.moveStatus(raw);
       if (status == 'pageForward') {
@@ -3953,8 +4034,10 @@ window.flutter_inappwebview.callHandler('spreadReady');
       return;
     }
     if (_controller == null) return;
-    await _controller!
-        .evaluateJavascript(source: ReaderCaretScripts.lookupInvocation());
+    await _controller!.evaluateJavascript(
+        source: _caretOnLyrics
+            ? ReaderLyricsCaretScripts.lookupInvocation()
+            : ReaderCaretScripts.lookupInvocation());
   }
 
   /// A / Enter "context click" at the cursor: follow a hyperlink, click an
@@ -3968,8 +4051,10 @@ window.flutter_inappwebview.callHandler('spreadReady');
       return;
     }
     if (_controller == null) return;
-    await _controller!
-        .evaluateJavascript(source: ReaderCaretScripts.activateInvocation());
+    await _controller!.evaluateJavascript(
+        source: _caretOnLyrics
+            ? ReaderLyricsCaretScripts.activateInvocation()
+            : ReaderCaretScripts.activateInvocation());
   }
 
   Future<void> _caretLongPress() async {
@@ -3978,8 +4063,10 @@ window.flutter_inappwebview.callHandler('spreadReady');
       return;
     }
     if (_controller == null) return;
-    await _controller!
-        .evaluateJavascript(source: ReaderCaretScripts.longPressInvocation());
+    await _controller!.evaluateJavascript(
+        source: _caretOnLyrics
+            ? ReaderLyricsCaretScripts.longPressInvocation()
+            : ReaderCaretScripts.longPressInvocation());
   }
 
   /// Place the reader cursor at the entering edge of the freshly paginated page.
@@ -3996,9 +4083,11 @@ window.flutter_inappwebview.callHandler('spreadReady');
   /// the cursor's node detached, JS re-anchors to the first visible character.
   /// Reader-only.
   Future<void> _caretRefresh() async {
-    if (!_caretOnReader || _controller == null) return;
-    await _controller!
-        .evaluateJavascript(source: ReaderCaretScripts.refreshInvocation());
+    if (_controller == null || (!_caretOnReader && !_caretOnLyrics)) return;
+    await _controller!.evaluateJavascript(
+        source: _caretOnLyrics
+            ? ReaderLyricsCaretScripts.refreshInvocation()
+            : ReaderCaretScripts.refreshInvocation());
   }
 
   /// Hand the char-level cursor to the freshly rendered top popup when in cursor
