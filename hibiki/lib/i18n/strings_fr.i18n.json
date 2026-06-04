@@ -1232,5 +1232,8 @@
     "dictionaries_delete_failed": "Échec de la suppression des dictionnaires",
     "dictionary_delete_failed": "Échec de la suppression du dictionnaire",
     "sync_webdav_missing_fields": "Champs manquants",
-    "sync_compare_download": "Télécharger"
+    "sync_compare_download": "Télécharger",
+    "log_export_file": "Export to file",
+    "log_export_saved": "Log saved",
+    "log_export_failed": "Export failed"
 }

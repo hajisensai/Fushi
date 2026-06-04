@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:hibiki/src/utils/misc/log_exporter.dart';
 import 'package:hibiki/utils.dart';
 
 class ErrorLogPage extends StatelessWidget {
@@ -41,6 +42,17 @@ class ErrorLogPage extends StatelessWidget {
             Share.shareXFiles([xFile], subject: t.error_log_share_subject);
           },
         ),
+        if (showSaveLogAction)
+          HibikiIconButton(
+            icon: Icons.save_alt_outlined,
+            tooltip: t.log_export_file,
+            onTap: () => saveLogToFile(
+              context: context,
+              log: log,
+              fileName: 'hibiki_error_log.txt',
+              subject: t.error_log_share_subject,
+            ),
+          ),
         HibikiIconButton(
           icon: Icons.delete_outline,
           tooltip: t.clear,

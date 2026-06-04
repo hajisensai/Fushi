@@ -1232,5 +1232,8 @@
     "dictionaries_delete_failed": "사전 삭제 실패",
     "dictionary_delete_failed": "사전 삭제 실패",
     "sync_webdav_missing_fields": "입력하지 않은 항목이 있습니다",
-    "sync_compare_download": "다운로드"
+    "sync_compare_download": "다운로드",
+    "log_export_file": "Export to file",
+    "log_export_saved": "Log saved",
+    "log_export_failed": "Export failed"
 }

@@ -1232,5 +1232,8 @@
     "dictionaries_delete_failed": "Verwijderen van woordenboeken mislukt",
     "dictionary_delete_failed": "Verwijderen van woordenboek mislukt",
     "sync_webdav_missing_fields": "Ontbrekende velden",
-    "sync_compare_download": "Downloaden"
+    "sync_compare_download": "Downloaden",
+    "log_export_file": "Export to file",
+    "log_export_saved": "Log saved",
+    "log_export_failed": "Export failed"
 }

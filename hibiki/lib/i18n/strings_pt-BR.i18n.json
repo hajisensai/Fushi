@@ -1232,5 +1232,8 @@
     "dictionaries_delete_failed": "Falha ao excluir dicionários",
     "dictionary_delete_failed": "Falha ao excluir dicionário",
     "sync_webdav_missing_fields": "Campos faltando",
-    "sync_compare_download": "Baixar"
+    "sync_compare_download": "Baixar",
+    "log_export_file": "Export to file",
+    "log_export_saved": "Log saved",
+    "log_export_failed": "Export failed"
 }

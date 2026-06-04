@@ -1232,5 +1232,8 @@
     "dictionaries_delete_failed": "Không thể xóa từ điển",
     "dictionary_delete_failed": "Không thể xóa từ điển",
     "sync_webdav_missing_fields": "Thiếu thông tin",
-    "sync_compare_download": "Tải xuống"
+    "sync_compare_download": "Tải xuống",
+    "log_export_file": "Export to file",
+    "log_export_saved": "Log saved",
+    "log_export_failed": "Export failed"
 }
