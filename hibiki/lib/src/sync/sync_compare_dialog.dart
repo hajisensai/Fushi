@@ -837,14 +837,17 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
                       );
                     } else if (sel == 'audiobook' &&
                         entry.remoteAudioBookId != null) {
-                      final int i = _entries!.indexOf(entry);
                       _deleteRemote(
                         name: entry.title,
                         id: entry.remoteAudioBookId!,
                         isFolder: false,
                         onSuccess: () {
-                          if (i >= 0) {
-                            _entries![i] = _copyWithoutAudio(entry);
+                          // 删除成功那一刻才取索引，避免在 await 前预捕获索引
+                          // 而期间列表变动导致的 stale 写入（与 book/dict 删除
+                          // 一致的对象引用写法）。
+                          final int idx = _entries!.indexOf(entry);
+                          if (idx >= 0) {
+                            _entries![idx] = _copyWithoutAudio(entry);
                           }
                         },
                       );
