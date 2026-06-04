@@ -60,7 +60,11 @@ abstract class SyncAssetStore {
   Future<void> putJsonAsset(String namespaceId, String name, Object? json);
 
   /// 删除 [id] 指向的资产或命名空间。[isFolder] 为 true 时按“文件夹”语义递归删除
-  /// 其下全部内容。幂等：目标不存在视为成功（不抛）。
+  /// 其下全部内容。幂等：目标不存在视为成功（不抛）；其它错误（网络/权限/协议）
+  /// 必须向上抛出，供调用方（UI）如实提示失败。
+  ///
+  /// 例外：FTP 后端因 ftpconnect 只回 bool、无法区分“不存在”与“真失败”，删除不
+  /// 存在的目标会报错而非静默成功——即 FTP 不保证幂等（宁可暴露真错也不假装成功）。
   ///
   /// 删除是不可逆的远端副作用，调用方必须已向用户确认。
   Future<void> deleteAsset(String id, {bool isFolder = false});
