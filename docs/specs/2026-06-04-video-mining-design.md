@@ -15,7 +15,7 @@
 - **视频来源**：本地视频文件（mp4/mkv 等）+ **外挂字幕（srt/ass/vtt）** 与 **内嵌字幕轨** 两种都要。
 - **平台**：全平台 5 端（Android / iOS / macOS / Windows / Linux）。
 - **查词**：逐字点击精确切词（与 EPUB 阅读器同等精度）。
-- **制卡**：参照 mpvacious（例句 + 字幕音频片段 + 视频截图帧 + 词典字段；多句合并；音频边界微调；更新最近卡 / 新建卡两模式）。
+- **制卡**：参照 mpvacious（例句 + 字幕音频片段 + 视频截图帧 + 词典字段；多句合并；音频边界微调）。**只做"新建卡"**——用户确认删除 mpvacious 的"更新最近卡"模式。
 
 ### 非目标（YAGNI）
 
@@ -74,13 +74,12 @@
 - **三件套制卡**：例句（当前字幕）+ 字幕音频片段 + 当前帧截图，一次制成一张卡，并叠加查词得到的词典字段。
 - **多句合并**：标记起点句 → 当前句，合并文本、音频取首句起到当前句末、截图取当前帧。
 - **音频边界微调**：`audioPaddingMs` 前后留白（mpvacious 同款）。
-- **两种制卡模式**：
-  - ① 一体化：视频里查词直接带媒体制新卡（比 mpvacious 两步流更顺）。
-  - ② mpvacious 经典「更新最近卡」：AnkiConnect `guiBrowse added:1` + `updateNoteFields` + `storeMediaFile`。
+- **制卡模式（只此一种）**：一体化「新建卡」——视频里查词后直接带媒体制一张新卡（词典字段 + 例句 + 字幕音频 + 当前帧截图）。比 mpvacious 的两步流更顺，且 AnkiDroid / AnkiConnect 都支持，**无平台差异**。
+- **已删除**：mpvacious 的「更新最近卡」模式（`guiBrowse added:1` + `updateNoteFields`）——用户确认不需要，连带省去 Android 不支持更新卡的降级处理。
 
-## 5. 平台差异（硬限制，UI 须明确网关）
+## 5. 平台差异
 
-- **「更新最近卡」模式**依赖 AnkiConnect 的 `updateNoteFields`/`guiBrowse`；**AnkiDroid Content Provider 不支持更新任意最近卡** → 此模式仅桌面/AnkiConnect 可用，Android 降级为「只能新建卡」。
+- **制卡**：只做「新建卡」，AnkiDroid / AnkiConnect 均支持，**无平台差异**。
 - **截图**：media_kit 全平台统一，无差异。
 - **音频片段**：桌面 ffmpeg（需 `HIBIKI_FFMPEG`/PATH）、Android 原生 MediaExtractor 扩展。
 
@@ -101,4 +100,4 @@
 ## 8. Backlog（不在本功能范围）
 
 - 移动端有声书音频迁移 media_kit（全栈统一 libmpv）——独立重构项目，需单独收益/回归论证。
-- 在线/流媒体视频支持。
+- **在线/流媒体视频支持**——用户期望「能做最好」，但与本地视频是两套完全不同的工程（取流 / DRM / 各站字幕来源各异），不是在现有 Phase 上加一点能覆盖的。**本期不含**；定位为「本地三阶段落地后优先评估的后续独立功能」，届时单独立项设计。
