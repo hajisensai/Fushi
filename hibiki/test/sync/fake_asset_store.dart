@@ -84,4 +84,16 @@ class FakeAssetStore implements SyncAssetStore {
       String namespaceId, String name, Object? json) async {
     _files[_join(namespaceId, name)] = utf8.encode(jsonEncode(json));
   }
+
+  @override
+  Future<void> deleteAsset(String id, {bool isFolder = false}) async {
+    // 文件资产：直接移除。
+    _files.remove(id);
+    if (isFolder) {
+      // 递归移除该命名空间及其全部子项（路径前缀匹配）。
+      final String prefix = '$id/';
+      _folders.removeWhere((String f) => f == id || f.startsWith(prefix));
+      _files.removeWhere((String k, List<int> _) => k.startsWith(prefix));
+    }
+  }
 }

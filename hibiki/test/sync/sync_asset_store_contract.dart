@@ -48,8 +48,9 @@ void runAssetStoreContract(
       await store.putAsset(sub, 'content.epub', src);
       await store.putJsonAsset(books, 'top.json', <String, int>{'x': 1});
 
-      final Set<String> topNames =
-          (await store.listChildren(books)).map((AssetEntry e) => e.name).toSet();
+      final Set<String> topNames = (await store.listChildren(books))
+          .map((AssetEntry e) => e.name)
+          .toSet();
       expect(topNames, containsAll(<String>['bookKey', 'top.json']));
       // 不应递归出 content.epub
       expect(topNames.contains('content.epub'), isFalse);
@@ -66,6 +67,32 @@ void runAssetStoreContract(
       final AssetEntry? found = await store.findAsset(ns, 'm.json');
       final Object? decoded = await store.getJsonAsset(found!.id);
       expect(decoded, <String, Object?>{'k': 'v', 'n': 2});
+    });
+
+    test('deleteAsset removes a file (idempotent)', () async {
+      final String ns = await store.ensureNamespace('books');
+      final File src = File('${tmp.path}/a.txt')..writeAsStringSync('hello');
+      await store.putAsset(ns, 'a.txt', src);
+      expect(await store.findAsset(ns, 'a.txt'), isNotNull);
+
+      final AssetEntry asset = (await store.findAsset(ns, 'a.txt'))!;
+      await store.deleteAsset(asset.id);
+      expect(await store.findAsset(ns, 'a.txt'), isNull);
+
+      // 幂等：再删一次不应抛。
+      await store.deleteAsset(asset.id);
+    });
+
+    test('deleteAsset removes a folder recursively', () async {
+      final String ns = await store.ensureNamespace('books');
+      final String sub = await store.ensureFolder(ns, 'bookA');
+      final File src = File('${tmp.path}/content.epub')
+        ..writeAsStringSync('content');
+      await store.putAsset(sub, 'content.epub', src);
+
+      await store.deleteAsset(sub, isFolder: true);
+      final List<AssetEntry> children = await store.listChildren(ns);
+      expect(children.where((AssetEntry c) => c.name == 'bookA'), isEmpty);
     });
   });
 }
