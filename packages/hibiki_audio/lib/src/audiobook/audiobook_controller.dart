@@ -420,9 +420,10 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// -1 表示从未保存过。
   int _lastSavedWholeSec = -1;
 
-  /// 播放位置写入回调。调用方在 attach 时装入，
-  /// 一般实现为写 Drift database preferences。
-  void Function(String bookUid, int positionMs)? onPositionWrite;
+  /// 播放位置写入回调。调用方在 attach 时装入，一般实现为写 Drift database
+  /// preferences。返回写库 Future，让 [flushPosition] 能 await 到真正落库
+  /// （周期路径仍 fire-and-forget，不 await）。
+  Future<void> Function(String bookUid, int positionMs)? onPositionWrite;
 
   /// 把当前播放位置写入持久化存储。对齐上游：**每整秒变化一次**就写。
   /// 125ms tick 触发 8 次里只有 1 次真的落库，IO 成本和上游等价。
@@ -437,7 +438,23 @@ class AudiobookPlayerController extends ChangeNotifier {
       return;
     }
     _lastSavedWholeSec = wholeSec;
-    onPositionWrite?.call(uid, posMs);
+    unawaited(onPositionWrite?.call(uid, posMs));
+  }
+
+  /// 强制把当前播放位置同步写入持久层并 **await 到落库**。
+  ///
+  /// 用于 app 退到后台（reader 页 `didChangeAppLifecycleState` 的
+  /// paused/inactive）：后台之后进程随时可能被系统杀掉，而硬杀场景 [dispose]
+  /// 的 `force` 保存不会执行，周期保存（[_maybeSavePosition]）又是
+  /// fire-and-forget（写库 Future 没人等，可能在进程被回收前还没 commit），
+  /// 加上后台 Dart timer 挂起后周期保存本身也停了。这里在仍存活的 onPause
+  /// 窗口里把当前位置 await 写穿，保证退到后台那一刻的进度可靠落库。
+  Future<void> flushPosition() async {
+    final String? uid = _audiobook?.bookUid;
+    if (uid == null) return;
+    final int posMs = _player.position.inMilliseconds;
+    _lastSavedWholeSec = posMs ~/ 1000;
+    await onPositionWrite?.call(uid, posMs);
   }
 
   /// 切换章节后更新当前章节的 cue 列表。

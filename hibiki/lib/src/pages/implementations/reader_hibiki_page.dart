@@ -794,9 +794,8 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       return;
     }
 
-    controller.onPositionWrite = (uid, posMs) {
-      repo.updatePositionMs(bookUid: uid, positionMs: posMs);
-    };
+    controller.onPositionWrite =
+        (uid, posMs) => repo.updatePositionMs(bookUid: uid, positionMs: posMs);
     controller.onDelayPersist = (ms) async {
       await repo.updateDelayMs(bookUid: bookUid, ms: ms);
     };
@@ -881,9 +880,8 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       return;
     }
 
-    controller.onPositionWrite = (String uid, int posMs) {
-      abRepo.updatePositionMs(bookUid: uid, positionMs: posMs);
-    };
+    controller.onPositionWrite = (String uid, int posMs) =>
+        abRepo.updatePositionMs(bookUid: uid, positionMs: posMs);
     controller.onDelayPersist = (int ms) async {
       await abRepo.updateDelayMs(bookUid: srtBookUid, ms: ms);
     };
@@ -3343,11 +3341,21 @@ window.flutter_inappwebview.callHandler('spreadReady');
   // position is saved. dispose did this but didChangeAppLifecycleState did not,
   // so backgrounding while in lyrics mode lost playback progress. Both paths
   // now share this helper.
+  //
+  // BUG-032: backgrounding must ALSO durably flush the audiobook playback
+  // position. dispose() force-saves it via the controller, but on a hard
+  // process kill dispose never runs; the periodic save is fire-and-forget (may
+  // not commit before the OS reclaims the process) and stops once background
+  // Dart timers suspend. In lyrics mode the audio position is the only visible
+  // progress (entry cue = allBookCueIdx), so losing it reads as "归零". Await
+  // the controller flush inside the still-alive onPause window so the position
+  // at background time is written through — mirroring the reader-pos flush.
   Future<void> _syncAndFlushPosition() async {
     if (_lyricsMode) {
       _syncPositionFromCurrentCue();
     }
     await _flushPosition();
+    await _audiobookController?.flushPosition();
   }
 
   Future<void> _flushPosition() async {
