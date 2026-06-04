@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/utils/misc/platform_updater.dart';
 
@@ -73,6 +75,24 @@ void main() {
       expect(u.supportsUpdateCheck, isTrue);
       expect(u.supportsInAppInstall, isFalse);
       expect(await u.selectAsset(_assets(<String>['x.zip'])), isNull);
+    });
+  });
+
+  group('factory + capability helpers', () {
+    test('updaterForCurrentPlatform returns a supported-check updater', () {
+      final PlatformUpdater u = updaterForCurrentPlatform();
+      expect(u.supportsUpdateCheck, isTrue);
+    });
+
+    test('capability helpers agree with the current updater', () {
+      final PlatformUpdater u = updaterForCurrentPlatform();
+      expect(platformSupportsUpdateCheck(), u.supportsUpdateCheck);
+      expect(platformSupportsInAppInstall(), u.supportsInAppInstall);
+    });
+
+    test('in-app install capability is android or windows in phase 1', () {
+      final bool expected = Platform.isAndroid || Platform.isWindows;
+      expect(platformSupportsInAppInstall(), expected);
     });
   });
 }

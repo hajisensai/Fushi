@@ -21,6 +21,18 @@ abstract class PlatformUpdater {
   Future<void> apply(File file, String version);
 }
 
+/// 本期支持「应用内安装」的平台集合（单一真相源；macOS/Linux 在各自阶段加入）。
+bool platformSupportsInAppInstall() => Platform.isAndroid || Platform.isWindows;
+
+/// 所有平台都至少支持「检查更新 → 打开发布页」。
+bool platformSupportsUpdateCheck() => true;
+
+PlatformUpdater updaterForCurrentPlatform() {
+  if (Platform.isAndroid) return AndroidUpdater();
+  if (Platform.isWindows) return WindowsUpdater();
+  return UnsupportedUpdater();
+}
+
 /// 从 asset map 安全取出可下载的 (name, url)。
 Iterable<(String, String)> _downloadable(
     List<Map<String, dynamic>> assets) sync* {
