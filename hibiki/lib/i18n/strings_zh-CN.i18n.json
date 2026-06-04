@@ -1231,5 +1231,6 @@
     "sync_compare_delete_confirm": "确定从远端删除「$name」吗？本地数据保留，此操作不可撤销。",
     "dictionaries_delete_failed": "删除全部词典失败",
     "dictionary_delete_failed": "删除词典失败",
-    "sync_webdav_missing_fields": "缺少字段"
+    "sync_webdav_missing_fields": "缺少字段",
+    "sync_compare_download": "下载"
 }

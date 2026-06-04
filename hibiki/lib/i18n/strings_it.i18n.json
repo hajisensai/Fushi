@@ -1231,5 +1231,6 @@
     "sync_compare_delete_confirm": "Delete \"$name\" from the remote? Local data is kept. This cannot be undone.",
     "dictionaries_delete_failed": "Failed to delete dictionaries",
     "dictionary_delete_failed": "Failed to delete dictionary",
-    "sync_webdav_missing_fields": "Missing fields"
+    "sync_webdav_missing_fields": "Missing fields",
+    "sync_compare_download": "Download"
 }
