@@ -28,6 +28,7 @@
 #include "json/yomitan_parser.hpp"
 #include "mdx/mdx_reader.hpp"
 #include "stardict/stardict_reader.hpp"
+#include "util/fs_utf8.hpp"
 #include "zip/zip.hpp"
 
 #include "hoshidicts/platform.hpp"
@@ -490,8 +491,8 @@ size_t write_media(const std::string& path, const Zip& zip, const std::vector<in
     return 0;
   }
 
-  std::ofstream media(path + "/media.bin", std::ios::binary);
-  std::ofstream media_idx(path + "/media.idx", std::ios::binary);
+  std::ofstream media(hoshi::fs_path(path + "/media.bin"), std::ios::binary);
+  std::ofstream media_idx(hoshi::fs_path(path + "/media.idx"), std::ios::binary);
   setup_stream_exceptions(media);
   setup_stream_exceptions(media_idx);
 
@@ -609,7 +610,7 @@ ProcessedFile process_simple_entries(const std::vector<SimpleEntry>& entries) {
 }
 
 ImportResult import_mdx(const std::string& mdx_path, const std::string& output_dir) {
-  std::ifstream file(mdx_path, std::ios::binary | std::ios::ate);
+  std::ifstream file(hoshi::fs_path(mdx_path), std::ios::binary | std::ios::ate);
   if (!file.is_open()) {
     return {.success = false, .errors = {"failed to open MDX file"}};
   }
@@ -628,7 +629,7 @@ ImportResult import_mdx(const std::string& mdx_path, const std::string& output_d
 
   std::string title = mdx.title;
   if (title.empty()) {
-    title = std::filesystem::path(mdx_path).stem().string();
+    title = hoshi::fs_to_utf8(hoshi::fs_path(mdx_path).stem());
   }
 
   std::vector<SimpleEntry> entries;
@@ -648,16 +649,16 @@ ImportResult import_mdx_from_zip(Zip& zip, const std::string& output_dir) {
     const auto& name = zip.entries[i].name;
     if (name.size() > 4 && name.substr(name.size() - 4) == ".mdx") {
       std::string temp_dir = output_dir + "/_mdx_temp";
-      std::filesystem::create_directories(temp_dir);
-      std::string temp_path = temp_dir + "/" + std::filesystem::path(name).filename().string();
+      std::filesystem::create_directories(hoshi::fs_path(temp_dir));
+      std::string temp_path = temp_dir + "/" + hoshi::fs_to_utf8(hoshi::fs_path(name).filename());
       {
         std::string content = zip.read(static_cast<int>(i));
-        std::ofstream out(temp_path, std::ios::binary);
+        std::ofstream out(hoshi::fs_path(temp_path), std::ios::binary);
         setup_stream_exceptions(out);
         out.write(content.data(), static_cast<std::streamsize>(content.size()));
       }
       auto result = import_mdx(temp_path, output_dir);
-      std::filesystem::remove_all(temp_dir);
+      std::filesystem::remove_all(hoshi::fs_path(temp_dir));
       return result;
     }
   }
@@ -683,30 +684,30 @@ ImportResult import_stardict(const std::string& ifo_path, const std::string& out
 
 ImportResult import_stardict_from_zip(Zip& zip, const std::string& output_dir) {
   std::string temp_dir = output_dir + "/_stardict_temp";
-  std::filesystem::create_directories(temp_dir);
+  std::filesystem::create_directories(hoshi::fs_path(temp_dir));
   std::string ifo_path;
 
   for (size_t i = 0; i < zip.entries.size(); i++) {
     const auto& name = zip.entries[i].name;
     if (name.empty() || name.back() == '/') continue;
-    std::string filename = std::filesystem::path(name).filename().string();
-    std::string ext = std::filesystem::path(filename).extension().string();
+    std::string filename = hoshi::fs_to_utf8(hoshi::fs_path(name).filename());
+    std::string ext = hoshi::fs_to_utf8(hoshi::fs_path(filename).extension());
     if (ext == ".ifo" || ext == ".idx" || ext == ".dict" || ext == ".syn" || filename.ends_with(".dict.dz")) {
       std::string out_path = temp_dir + "/" + filename;
       std::string content = zip.read(static_cast<int>(i));
-      std::ofstream out(out_path, std::ios::binary);
+      std::ofstream out(hoshi::fs_path(out_path), std::ios::binary);
       out.write(content.data(), static_cast<std::streamsize>(content.size()));
       if (ext == ".ifo") ifo_path = out_path;
     }
   }
 
   if (ifo_path.empty()) {
-    std::filesystem::remove_all(temp_dir);
+    std::filesystem::remove_all(hoshi::fs_path(temp_dir));
     return {.success = false, .errors = {"no .ifo file found in zip"}};
   }
 
   auto result = import_stardict(ifo_path, output_dir);
-  std::filesystem::remove_all(temp_dir);
+  std::filesystem::remove_all(hoshi::fs_path(temp_dir));
   return result;
 }
 
@@ -736,7 +737,7 @@ std::string sanitize_title(const std::string& raw) {
 }
 
 std::string read_dsl_file_as_utf8(const std::string& dsl_path) {
-  std::ifstream file(dsl_path, std::ios::binary | std::ios::ate);
+  std::ifstream file(hoshi::fs_path(dsl_path), std::ios::binary | std::ios::ate);
   if (!file.is_open()) return {};
   auto size = file.tellg();
   if (size < 2) return {};
@@ -823,7 +824,7 @@ ImportResult import_dsl(const std::string& dsl_path, const std::string& output_d
   flush_entry();
 
   if (title.empty()) {
-    title = std::filesystem::path(dsl_path).stem().string();
+    title = hoshi::fs_to_utf8(hoshi::fs_path(dsl_path).stem());
   }
 
   // Strip DSL markup: remove [tag] markers, handle \[ \] escapes, convert [m] to indent
@@ -873,27 +874,35 @@ ImportResult import_yomitan(Zip& zip, const std::string& output_dir, bool low_ra
 
     result.title = sanitize_title(std::string(index.title));
 
-    std::filesystem::path dict_path = std::filesystem::path(output_dir) / result.title;
+    std::filesystem::path dict_path = hoshi::fs_path(output_dir) / hoshi::fs_path(result.title);
     {
-      auto canonical_parent = std::filesystem::weakly_canonical(output_dir);
+      auto canonical_parent = std::filesystem::weakly_canonical(hoshi::fs_path(output_dir));
       auto canonical_child = std::filesystem::weakly_canonical(dict_path);
       auto rel = std::filesystem::relative(canonical_child, canonical_parent);
       if (rel.empty() || *rel.begin() == "..") {
         throw std::runtime_error("path traversal detected in dictionary title");
       }
     }
-    std::string path = dict_path.string();
+    std::string path = hoshi::fs_to_utf8(dict_path);
     std::filesystem::create_directories(dict_path);
 
-    if (glz::write_file_json(index, path + "/index.json", std::string{})) {
-      throw std::runtime_error("failed to write index.json");
+    {
+      std::string index_buf;
+      if (glz::write_json(index, index_buf)) {
+        throw std::runtime_error("failed to write index.json");
+      }
+      std::ofstream index_out(hoshi::fs_path(path + "/index.json"), std::ios::binary);
+      index_out.write(index_buf.data(), static_cast<std::streamsize>(index_buf.size()));
+      if (!index_out.good()) {
+        throw std::runtime_error("failed to write index.json");
+      }
     }
 
     int styles_idx = zip.find("styles.css");
     if (styles_idx >= 0) {
       std::string styles = zip.read(styles_idx);
       if (!styles.empty()) {
-        std::ofstream styles_file(path + "/styles.css", std::ios::binary);
+        std::ofstream styles_file(hoshi::fs_path(path + "/styles.css"), std::ios::binary);
         setup_stream_exceptions(styles_file);
         styles_file.write(styles.data(), static_cast<std::streamsize>(styles.size()));
       }
@@ -904,7 +913,7 @@ ImportResult import_yomitan(Zip& zip, const std::string& output_dir, bool low_ra
     std::future<size_t> media_thread =
         std::async(std::launch::async, [&path, &zip, &files]() { return write_media(path, zip, files.media_files); });
 
-    std::ofstream blobs(path + "/blobs.bin", std::ios::binary);
+    std::ofstream blobs(hoshi::fs_path(path + "/blobs.bin"), std::ios::binary);
     setup_stream_exceptions(blobs);
     std::vector<std::pair<uint64_t, uint64_t>> offsets;
     uint64_t write_offset = 0;
@@ -930,7 +939,7 @@ ImportResult import_yomitan(Zip& zip, const std::string& output_dir, bool low_ra
 
     result.media_count = media_thread.get();
 
-    std::ofstream sui(path + "/.hoshidicts_1", std::ios::binary);
+    std::ofstream sui(hoshi::fs_path(path + "/.hoshidicts_1"), std::ios::binary);
     result.success = true;
   } catch (const std::exception& e) {
     result.success = false;
@@ -938,7 +947,7 @@ ImportResult import_yomitan(Zip& zip, const std::string& output_dir, bool low_ra
   }
 
   if (!result.success && !result.title.empty()) {
-    std::filesystem::remove_all(std::filesystem::path(output_dir) / result.title);
+    std::filesystem::remove_all(hoshi::fs_path(output_dir) / hoshi::fs_path(result.title));
   }
 
   return result;
@@ -953,27 +962,35 @@ ImportResult dictionary_importer::write_simple_dict(const std::string& title, co
     result.title = sanitize_title(title);
     result.detected_type = "term";
 
-    std::filesystem::path dict_path = std::filesystem::path(output_dir) / result.title;
+    std::filesystem::path dict_path = hoshi::fs_path(output_dir) / hoshi::fs_path(result.title);
     {
-      auto canonical_parent = std::filesystem::weakly_canonical(output_dir);
+      auto canonical_parent = std::filesystem::weakly_canonical(hoshi::fs_path(output_dir));
       auto canonical_child = std::filesystem::weakly_canonical(dict_path);
       auto rel = std::filesystem::relative(canonical_child, canonical_parent);
       if (rel.empty() || *rel.begin() == "..") {
         throw std::runtime_error("path traversal detected in dictionary title");
       }
     }
-    std::string path = dict_path.string();
+    std::string path = hoshi::fs_to_utf8(dict_path);
     std::filesystem::create_directories(dict_path);
 
     Index index;
     index.title = result.title;
     index.format = 3;
-    if (glz::write_file_json(index, path + "/index.json", std::string{})) {
-      throw std::runtime_error("failed to write index.json");
+    {
+      std::string index_buf;
+      if (glz::write_json(index, index_buf)) {
+        throw std::runtime_error("failed to write index.json");
+      }
+      std::ofstream index_out(hoshi::fs_path(path + "/index.json"), std::ios::binary);
+      index_out.write(index_buf.data(), static_cast<std::streamsize>(index_buf.size()));
+      if (!index_out.good()) {
+        throw std::runtime_error("failed to write index.json");
+      }
     }
 
     if (!styles_css.empty()) {
-      std::ofstream styles_file(path + "/styles.css", std::ios::binary);
+      std::ofstream styles_file(hoshi::fs_path(path + "/styles.css"), std::ios::binary);
       setup_stream_exceptions(styles_file);
       styles_file.write(styles_css.data(), static_cast<std::streamsize>(styles_css.size()));
     }
@@ -984,7 +1001,7 @@ ImportResult dictionary_importer::write_simple_dict(const std::string& title, co
     }
 
     ankerl::unordered_dense::map<uint64_t, uint64_t> glossaries;
-    std::ofstream blobs(path + "/blobs.bin", std::ios::binary);
+    std::ofstream blobs(hoshi::fs_path(path + "/blobs.bin"), std::ios::binary);
     setup_stream_exceptions(blobs);
     uint64_t write_offset = 0;
 
@@ -1035,7 +1052,7 @@ ImportResult dictionary_importer::write_simple_dict(const std::string& title, co
     blobs.write(offset_buf.data(), static_cast<std::streamsize>(offset_buf.size()));
     hash_thread.get();
 
-    std::ofstream sui(path + "/.hoshidicts_1", std::ios::binary);
+    std::ofstream sui(hoshi::fs_path(path + "/.hoshidicts_1"), std::ios::binary);
     result.success = true;
   } catch (const std::exception& e) {
     result.success = false;
@@ -1043,7 +1060,7 @@ ImportResult dictionary_importer::write_simple_dict(const std::string& title, co
   }
 
   if (!result.success && !result.title.empty()) {
-    std::filesystem::remove_all(std::filesystem::path(output_dir) / result.title);
+    std::filesystem::remove_all(hoshi::fs_path(output_dir) / hoshi::fs_path(result.title));
   }
 
   return result;

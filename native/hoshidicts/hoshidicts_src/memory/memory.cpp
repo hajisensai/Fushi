@@ -9,11 +9,29 @@
 #include <unistd.h>
 #endif
 
+#ifdef _WIN32
+namespace {
+// Dart passes paths as UTF-8. The narrow (ANSI) Win32 file APIs decode via the
+// active code page, so non-ASCII paths fail (ERROR_INVALID_NAME). Convert to
+// UTF-16 and use the wide Win32 APIs so any path opens correctly.
+std::wstring to_wide(const std::string& utf8) {
+  if (utf8.empty()) {
+    return std::wstring();
+  }
+  int n = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), static_cast<int>(utf8.size()), nullptr, 0);
+  std::wstring w(static_cast<size_t>(n), L'\0');
+  MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), static_cast<int>(utf8.size()), &w[0], n);
+  return w;
+}
+}  // namespace
+#endif
+
 namespace memory {
 mapped_file map_rd(const std::string& path) {
 #ifdef _WIN32
-  HANDLE file =
-      CreateFileA(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+  const std::wstring wpath = to_wide(path);
+  HANDLE file = CreateFileW(wpath.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
+                            FILE_ATTRIBUTE_NORMAL, nullptr);
   if (file == INVALID_HANDLE_VALUE) {
     return {};
   }
@@ -24,7 +42,7 @@ mapped_file map_rd(const std::string& path) {
     return {};
   }
 
-  HANDLE mapping = CreateFileMappingA(file, nullptr, PAGE_READONLY, 0, 0, nullptr);
+  HANDLE mapping = CreateFileMappingW(file, nullptr, PAGE_READONLY, 0, 0, nullptr);
   CloseHandle(file);
   if (!mapping) {
     return {};
@@ -65,8 +83,9 @@ mapped_file map_rw(const std::string& path, size_t file_size) {
   }
 
 #ifdef _WIN32
-  HANDLE file = CreateFileA(path.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL,
-                            nullptr);
+  const std::wstring wpath = to_wide(path);
+  HANDLE file = CreateFileW(wpath.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
+                            FILE_ATTRIBUTE_NORMAL, nullptr);
   if (file == INVALID_HANDLE_VALUE) {
     return {};
   }
@@ -78,7 +97,7 @@ mapped_file map_rw(const std::string& path, size_t file_size) {
     return {};
   }
 
-  HANDLE mapping = CreateFileMappingA(file, nullptr, PAGE_READWRITE, size.HighPart, size.LowPart, nullptr);
+  HANDLE mapping = CreateFileMappingW(file, nullptr, PAGE_READWRITE, size.HighPart, size.LowPart, nullptr);
   CloseHandle(file);
   if (!mapping) {
     return {};
