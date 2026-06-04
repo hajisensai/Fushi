@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:device_info_plus/device_info_plus.dart';
 
+import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/utils.dart'; // ErrorLogService
 
 /// 每平台的更新策略：选包（[selectAsset]）+ 安装（[apply]）。
@@ -124,9 +125,15 @@ class UnsupportedUpdater extends PlatformUpdater {
   }
 }
 
-// ── 安装器（Task 3/4 落地真实实现，本 Task 先占位让 selectAsset 测试编译通过）──
+// ── 安装器（Task 4 落地 Windows，本 Task 落地 Android）──
+/// Android 原生安装：仅 Android 注册的 installApk 通道（FileProvider + ACTION_VIEW，
+/// 带 HBK-AUDIT-058 路径校验，见 MainActivity.java）。
 class AndroidInstaller {
-  static Future<void> install(String apkPath) async {}
+  static Future<void> install(String apkPath) async {
+    await HibikiChannels.update.invokeMethod('installApk', <String, String>{
+      'path': apkPath,
+    });
+  }
 }
 
 class WindowsInstaller {

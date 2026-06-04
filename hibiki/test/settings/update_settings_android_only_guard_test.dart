@@ -61,17 +61,32 @@ void main() {
     );
   });
 
-  test('UpdateChecker pipeline is Android-only (data-side invariant)', () {
+  test('UpdateChecker pipeline delegates gating to PlatformUpdater', () {
     final String source =
         File('lib/src/utils/misc/update_checker.dart').readAsStringSync();
 
-    // 数据侧不变量：检查/下载/安装整条链在非 Android 直接 return。
-    // 这是上面 UI 网关的根因——二者必须同进退。
+    // 数据侧不变量（Phase 1 重构后）：检查/选包/安装整条链不再硬编码
+    // `!Platform.isAndroid`，而是委托 `updaterForCurrentPlatform()`：
+    //   - `supportsUpdateCheck` 决定是否拉取 release（全平台为 true）；
+    //   - `supportsInAppInstall` 决定能否自动下载安装（Android/Windows）
+    //     还是只「检查→打开发布页」（iOS/mac/Linux）。
+    // BUG-013 的死开关风险改由各 PlatformUpdater 的 supports* + UI 网关共同
+    // 保证，二者仍须同进退。
     expect(
       source,
-      contains('if (!Platform.isAndroid) return;'),
-      reason: 'UpdateChecker._check 必须在非 Android 早退；'
-          '若放开更新到其它平台，须同时重审 UI 网关（BUG-013）',
+      isNot(contains('if (!Platform.isAndroid) return;')),
+      reason: 'Phase 1 起 UpdateChecker 不再硬门控 Android；'
+          '应委托 updaterForCurrentPlatform()',
+    );
+    expect(
+      source,
+      contains('final PlatformUpdater updater = updaterForCurrentPlatform();'),
+      reason: 'UpdateChecker._check 必须委托 updaterForCurrentPlatform() 选平台策略',
+    );
+    expect(
+      source,
+      contains('if (!updater.supportsUpdateCheck) return;'),
+      reason: '检查更新门控须走 updater.supportsUpdateCheck',
     );
   });
 }
