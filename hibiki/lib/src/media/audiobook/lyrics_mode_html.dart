@@ -43,6 +43,7 @@ class LyricsModeHtml {
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
+:root { --cue-scale: 1.15; }
 html, body {
   width: 100%;
   background: $backgroundColor;
@@ -65,7 +66,7 @@ body { font-family: "Noto Serif JP", "Noto Sans JP", serif; }
   font-size: ${fontSize}px;
   line-height: 1.7;
   padding: 12px 8px;
-  max-width: 92vw;
+  max-width: calc(100% / var(--cue-scale) - 1%);
   overflow-wrap: break-word;
   word-break: break-word;
   opacity: 0.15;
@@ -76,7 +77,7 @@ body { font-family: "Noto Serif JP", "Noto Sans JP", serif; }
 }
 .cue.current {
   opacity: 1.0;
-  transform: scale(1.15);
+  transform: scale(var(--cue-scale));
   font-weight: 700;
   color: $accentColor;
 }

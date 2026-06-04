@@ -13,6 +13,13 @@
 
 ---
 
+## BUG-017 · 歌词模式当前行被放大后溢出左右边框、文字贴边裁切
+- **报告**：2026-06-04（用户，附截图：蓝色高亮当前行 `麗子はその扉を開けて恐る恐る現場に足を踏み入れた。` 顶满左右边框、右侧 `足を踏み入` 被裁，灰色非当前行有正常边距）。
+- **真实性**：✅ **真 bug（布局溢出）**。歌词模式独立页 `LyricsModeHtml.generate`（`lyrics_mode_html.dart`）里 `.cue { max-width: 92vw; }` 让当前行在 92vw 内换行，随后 `.cue.current { transform: scale(1.15); }` 把整盒（含宽度）**视觉放大到 92vw × 1.15 = 105.8vw**，默认 `transform-origin: 50% 50%` 居中放大 → 向左右各溢出 ~7vw；`html, body { overflow-x: hidden }` 把溢出裁掉 → 当前行文字贴边并被切。非当前行 scale 1.0、92vw < 95vw 内容区故有正常边距，只有被放大的当前行溢出，与截图吻合。隐患叠加：`92vw` 是硬编码，既不跟随容器 `padding`（marginLeft/Right，默认各 2.5vw），也不预留 scale 余量——两个魔数静默耦合。根因点旧 `lyrics_mode_html.dart` 的 `max-width: 92vw` 与 `.cue.current { transform: scale(1.15) }`。
+- **[x] ① 已修复** — 把 `--cue-scale: 1.15` 提成 `:root` 变量，`.cue.current { transform: scale(var(--cue-scale)) }`，`.cue { max-width: calc(100% / var(--cue-scale) - 1%) }`。`100%` 对 flex 子项解析为容器内容盒（= 100vw − 左右 padding），自动跟随边距；除以最大 scale 预留缩放余量使 `scale × maxWidth ≤ 内容盒`，溢出按构造消失；`- 1%` 是亚像素抗锯齿安全余量；全 `.cue` 统一 max-width 故行变 current 时只缩放不重排（消除动画抖动）；live-update（`__lyricsUpdateStyle`）只改容器 padding，百分比相对值自动重算无需额外 JS（按 `selectorText` 匹配，新增 `:root` 规则不影响其循环）。消除特殊情况 + 去掉魔数静默耦合（提交见下）。
+- **[x] ② 已加自动化测试** — `test/media/audiobook/lyrics_mode_html_test.dart` 新增「active cue width reserves headroom for its scale」：断言 `.cue.current` 用 `transform: scale(var(--cue-scale))`、存在 `--cue-scale:`、`.cue` 的 `max-width` 是 `calc(100% / var(--cue-scale)` 且**不含** `92vw`/`100vw`。旧码（`scale(1.15)` 字面量 + `92vw`）四条断言全红——非同义反复。全量 `test/media/audiobook/` + `reader_paginate_lyrics_guard_static_test` + `reader_hibiki_dialog_test` 共 266 绿无回归。
+- **备注**：reader/WebView/布局类。代码 + 单测已绿，`dart format` 0 改动。最强可落地层是 CSS 生成器断言（纯字符串生成、无 WebView 渲染）；真机肉眼复测原始失败路径（开有声书→进歌词模式→确认当前高亮行不再贴边裁切、非当前行边距一致）待用户后补。near-1 仍用字面量 `scale(1.05)`（< 1.15，余量更足，无需变量化）。
+
 ## BUG-016 · 同步设置「立即同步/导出/导入」手柄键盘到不了，Compare Data 按下跳到左侧导航
 - **报告**：2026-06-04（用户，附截图：焦点环在「Compare Data」行，按下跑到左边；并指出「去不到立即同步」）。
 - **真实性**：✅ **真 bug（方向焦点不可达）**。方向导航只走已注册的 `HibikiFocusTarget`（`gamepadMoveFocusInDirection`→`HibikiFocusController.move`，只遍历 `_entries`）。`AdaptiveSettingsRow` **只有传了 `onTap` 才注册焦点目标**（`settings_shared.dart:250` `if (onTap == null) return content;`，否则裸 `content` 不可聚焦）。但同步设置的「立即同步」(`_SyncNowWidget`)、「导出备份」(`_BackupExportWidget`)、「导入备份」(`_BackupImportWidget`) 把动作放在 `controlBelow` 的**尾部裸 `FilledButton`** 上、行本身**没有 `onTap`** → 整行不注册，裸按钮也不是 Hibiki 焦点目标。后果：① 「立即同步」等按钮**永远聚焦不到**；② 焦点在已注册的「Compare Data」(`SettingsActionItem`→带 `onTap`) 按 Down，因为同面板下方没有可达目标，几何评分挑了**跨面板**的左侧导航项 → 焦点「去到左边」。根因点 `sync_settings_schema.dart` 三个 widget 的 `build()`。
