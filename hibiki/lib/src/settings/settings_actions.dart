@@ -325,12 +325,16 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
       spacing: tokens.spacing.gap,
       runSpacing: tokens.spacing.gap,
       children: <Widget>[
-        HibikiColorSwatch(
-          color: systemColor,
+        HibikiSchemeSwatch(
+          colors: hibikiSchemeSwatchColors(
+            buildHibikiColorScheme(
+              seedColor: systemColor,
+              brightness: Theme.of(settingsContext.context).brightness,
+            ),
+          ),
           size: _swatchSize,
-          shape: HibikiColorSwatchShape.dot,
           selected: appModel.appThemeKey == 'system-theme',
-          overlay: Icon(
+          overlay: const Icon(
             Icons.auto_awesome_outlined,
             size: 18,
           ),
@@ -341,10 +345,14 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
         ),
         ...AppModel.themePresets.entries.map(
           (MapEntry<String, ({Color seed, Brightness brightness})> entry) {
-            return HibikiColorSwatch(
-              color: entry.value.seed,
+            return HibikiSchemeSwatch(
+              colors: hibikiSchemeSwatchColors(
+                buildHibikiColorScheme(
+                  seedColor: entry.value.seed,
+                  brightness: entry.value.brightness,
+                ),
+              ),
               size: _swatchSize,
-              shape: HibikiColorSwatchShape.dot,
               selected: appModel.appThemeKey == entry.key,
               onTap: () async {
                 await appModel.setAppThemeKey(entry.key);
@@ -353,12 +361,16 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
             );
           },
         ),
-        HibikiColorSwatch(
-          color: appModel.customThemeSeed,
+        HibikiSchemeSwatch(
+          colors: hibikiSchemeSwatchColors(
+            buildHibikiColorScheme(
+              seedColor: appModel.customThemeSeed,
+              brightness: Theme.of(settingsContext.context).brightness,
+            ),
+          ),
           size: _swatchSize,
-          shape: HibikiColorSwatchShape.dot,
           selected: appModel.appThemeKey == 'custom-theme',
-          overlay: Icon(
+          overlay: const Icon(
             Icons.palette_outlined,
             size: 18,
           ),
