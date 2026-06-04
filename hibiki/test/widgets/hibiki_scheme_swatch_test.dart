@@ -63,4 +63,40 @@ void main() {
     await tester.pumpAndSettle();
     expect(taps, 1);
   });
+
+  testWidgets('selection ring is painted over the quadrant fill, not under it',
+      (WidgetTester tester) async {
+    // Regression: a plain `decoration` border is drawn first then hidden by the
+    // ClipOval fill (inside-aligned stroke sits inside the clipped circle). The
+    // border must live in foregroundDecoration so the selection ring is visible.
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: HibikiSchemeSwatch(
+              colors: const <Color>[
+                Color(0xFF112233),
+                Color(0xFF445566),
+                Color(0xFF778899),
+                Color(0xFFAABBCC),
+              ],
+              selected: true,
+            ),
+          ),
+        ),
+      ),
+    );
+    final AnimatedContainer container = tester.widget<AnimatedContainer>(
+      find.descendant(
+        of: find.byType(HibikiSchemeSwatch),
+        matching: find.byType(AnimatedContainer),
+      ),
+    );
+    expect(container.decoration, isNull,
+        reason: 'a background decoration border would be hidden by ClipOval');
+    final BoxDecoration foreground =
+        container.foregroundDecoration! as BoxDecoration;
+    expect(foreground.border, isNotNull);
+    expect(foreground.shape, BoxShape.circle);
+  });
 }

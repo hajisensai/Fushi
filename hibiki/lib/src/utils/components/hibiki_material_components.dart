@@ -1265,7 +1265,11 @@ class HibikiSchemeSwatch extends StatelessWidget {
       curve: hibikiMd3StateCurve,
       width: size,
       height: size,
-      decoration: BoxDecoration(
+      // The border goes in foregroundDecoration so the selection ring / outline
+      // paints OVER the quadrant fill. A plain `decoration` border would be
+      // drawn first and then hidden by the ClipOval child (its inside-aligned
+      // stroke sits inside the clipped circle), leaving no visible ring.
+      foregroundDecoration: BoxDecoration(
         shape: BoxShape.circle,
         border: Border.fromBorderSide(borderSide),
       ),

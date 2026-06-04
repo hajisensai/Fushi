@@ -362,10 +362,18 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
           },
         ),
         HibikiSchemeSwatch(
+          // Mirror ThemeNotifier.buildColorScheme's custom branch (seed + role
+          // overrides + the custom theme's own brightness) so the preview circle
+          // matches the theme that custom-theme actually applies.
           colors: hibikiSchemeSwatchColors(
             buildHibikiColorScheme(
               seedColor: appModel.customThemeSeed,
-              brightness: Theme.of(settingsContext.context).brightness,
+              brightness:
+                  appModel.customThemeDark ? Brightness.dark : Brightness.light,
+              primary: appModel.customThemePrimaryColor,
+              secondary: appModel.customThemeSecondaryColor,
+              tertiary: appModel.customThemeTertiaryColor,
+              primaryContainer: appModel.customThemeContainerColor,
             ),
           ),
           size: _swatchSize,

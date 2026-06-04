@@ -13,10 +13,22 @@ import 'widget_test_helpers.dart';
 // whole row (设计系统 → 深色模式). Each onTap swatch is now a single focus stop
 // that A/Enter activates.
 void main() {
+  // The shipped theme picker uses HibikiSchemeSwatch; the single-colour
+  // HibikiColorSwatch is still used elsewhere. Both wrap their visual through the
+  // shared _buildSwatchInteractive helper, so parameterise the swatch builder to
+  // prove BOTH register as focus stops (a regression in either must be caught).
   Widget stepperThenSwatches({
     required void Function(int) onPick,
     int count = 3,
+    Widget Function(int index, VoidCallback onTap)? swatchBuilder,
   }) {
+    final Widget Function(int, VoidCallback) builder = swatchBuilder ??
+        (int i, VoidCallback onTap) => HibikiColorSwatch(
+              key: ValueKey<int>(i),
+              color: Colors.primaries[i],
+              shape: HibikiColorSwatchShape.dot,
+              onTap: onTap,
+            );
     return HibikiFocusRoot(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -32,19 +44,24 @@ void main() {
           ),
           Wrap(
             children: <Widget>[
-              for (int i = 0; i < count; i++)
-                HibikiColorSwatch(
-                  key: ValueKey<int>(i),
-                  color: Colors.primaries[i],
-                  shape: HibikiColorSwatchShape.dot,
-                  onTap: () => onPick(i),
-                ),
+              for (int i = 0; i < count; i++) builder(i, () => onPick(i)),
             ],
           ),
         ],
       ),
     );
   }
+
+  Widget schemeSwatch(int i, VoidCallback onTap) => HibikiSchemeSwatch(
+        key: ValueKey<int>(i),
+        colors: <Color>[
+          Colors.primaries[i],
+          Colors.primaries[i].shade200,
+          Colors.primaries[i].shade100,
+          Colors.primaries[i].shade50,
+        ],
+        onTap: onTap,
+      );
 
   testWidgets('D-pad Down from the row above reaches a theme swatch',
       (WidgetTester tester) async {
@@ -112,5 +129,35 @@ void main() {
     await tester.pump();
     expect(picked, 1,
         reason: 'one right from the first swatch lands on index 1');
+  });
+
+  testWidgets('D-pad Down reaches a four-quadrant HibikiSchemeSwatch',
+      (WidgetTester tester) async {
+    int? picked;
+    await tester.pumpWidget(buildTestApp(
+      stepperThenSwatches(
+        onPick: (int i) => picked = i,
+        swatchBuilder: schemeSwatch,
+      ),
+    ));
+    await tester.pump();
+
+    final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+      tester.element(find.text('Scale')),
+    );
+    controller.ensureFocus();
+    await tester.pump();
+
+    expect(controller.move(HibikiFocusDirection.down), isTrue,
+        reason: 'the scheme swatch row is a registered focus stop too');
+    await tester.pump();
+
+    Actions.maybeInvoke<ActivateIntent>(
+      controller.activeContext!,
+      const ActivateIntent(),
+    );
+    await tester.pump();
+    expect(picked, isNotNull,
+        reason: 'A on the focused scheme swatch selects it');
   });
 }
