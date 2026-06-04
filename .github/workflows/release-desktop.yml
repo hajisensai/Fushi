@@ -1,0 +1,65 @@
+name: Build Desktop Release Artifacts
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.41.6'
+      - name: Flutter pub get
+        working-directory: hibiki
+        run: flutter pub get
+      - name: Apply pub cache patches
+        shell: bash
+        run: |
+          chmod +x ci/apply-patches.sh
+          bash ci/apply-patches.sh
+      - name: Build Windows release
+        working-directory: hibiki
+        run: flutter build windows --release
+      - name: Read version
+        id: ver
+        shell: bash
+        run: |
+          V=$(grep '^version:' hibiki/pubspec.yaml | sed 's/version: *//;s/+.*//')
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+      - name: Compile installer (Inno Setup)
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y; $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
+          & "$iscc" "/DAppVersion=${{ steps.ver.outputs.version }}" `
+            "/DSourceDir=$PWD\hibiki\build\windows\x64\runner\Release" `
+            "/DOutputDir=$PWD\hibiki\build\installer" `
+            "hibiki\windows\installer\hibiki.iss"
+      - name: Check signing availability
+        id: signcheck
+        shell: bash
+        env:
+          CERT: ${{ secrets.WINDOWS_CERT_BASE64 }}
+        run: |
+          if [ -n "$CERT" ]; then echo "have=true" >> "$GITHUB_OUTPUT"; else echo "have=false" >> "$GITHUB_OUTPUT"; fi
+      - name: Sign installer (optional)
+        if: steps.signcheck.outputs.have == 'true'
+        env:
+          WINDOWS_CERT_BASE64: ${{ secrets.WINDOWS_CERT_BASE64 }}
+          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+        shell: pwsh
+        run: |
+          [IO.File]::WriteAllBytes("$PWD\cert.pfx", [Convert]::FromBase64String($env:WINDOWS_CERT_BASE64))
+          $st = (Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Select-Object -Last 1).FullName
+          & "$st" sign /fd SHA256 /f "$PWD\cert.pfx" /p $env:WINDOWS_CERT_PASSWORD /tr http://timestamp.digicert.com /td SHA256 "$PWD\hibiki\build\installer\hibiki-${{ steps.ver.outputs.version }}-windows-setup.exe"
+      - name: Upload to release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: hibiki/build/installer/hibiki-*-windows-setup.exe
