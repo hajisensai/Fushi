@@ -176,12 +176,17 @@ function setCue(index) {
     if (d === 0) _cues[i].classList.add('current');
     else _cues[i].classList.add('near-' + d);
   }
-  scrollToCenter(_cues[index]);
+  // 焦点 caret 激活时，播放推进只换高亮，不把屏幕从用户正读的行拽走。
+  if (!window.__lyricsCaretActive) scrollToCenter(_cues[index]);
 }
 
 // ── Dart bridge ──
 window.__lyricsSetCue = function(index) { setCue(index); };
 window.__lyricsGetCurrentIndex = function() { return _currentIdx; };
+// 供 hoshiLyricsCaret 行间移动时把目标 cue 居中（复用同一滚动动画）。
+window.__lyricsScrollToCue = function(index) {
+  if (index >= 0 && index < _cues.length) scrollToCenter(_cues[index]);
+};
 
 // ── 点击：所有句子→查词 ──
 document.getElementById('lc').addEventListener('click', function(e) {
