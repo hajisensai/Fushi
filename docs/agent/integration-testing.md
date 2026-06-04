@@ -19,10 +19,40 @@
 
 - ADB 脚本（`ci/*.sh`）**不得**向 Flutter 文本框输入 CJK——`input text` 在 Android 上不支持 Unicode，`settext.jar` 找不到 Flutter 的 EditText。CJK 文字输入只能通过 `tester.enterText()` 在 Flutter 集成测试里完成。
 - 导入验证优先用 DB 查询（`run-as app.hibiki.reader sqlite3 files/hibiki.db`），不依赖 UI dump 匹配文字。
-- **禁止通过截图猜坐标点击 UI 元素。** 如果必须通过 ADB 点击（而非 `flutter drive`），先 `uiautomator dump` → 解析 XML 找 `content-desc`/`text` 匹配的元素 → 从 `bounds` 算中心坐标 → `input tap`。辅助脚本：`.codex-test/tools/tap-element.sh <content-desc>`、`.codex-test/tools/list-elements.sh`。
+- **UI 交互一律焦点驱动，禁止坐标点击。** Flutter 集成测试操作真 app **只发框架级合成按键**（`tester.sendKeyEvent`，经 `FocusDriver`），绝不用 `tester.tap` / 坐标点击，也不用 ADB 截图猜坐标 `input tap`——点击依赖精确屏幕位置，布局/滚动/缩放/平台一变就错位易错；焦点+键位置无关且三端一致。详见下方「焦点驱动操作」。
 - adb 用 Android SDK 自带的 `platform-tools/adb`（`$ANDROID_HOME` 下；确保版本够新），不要依赖 PATH 里可能过时的 adb。
 - 需要新增测试流程时，先判断属于哪一层，不要在错误的层做事。
 - 不要在同一台模拟器上并发跑两个编排脚本——日志会互相污染。
+
+## 焦点驱动操作（不用点击，三端一致）
+
+集成测试**操作真 app 一律用焦点 + 合成按键，绝不坐标点击**。点击依赖精确屏幕位置（布局/滚动/缩放/平台一变就错位、易出错）；焦点 + 按键**位置无关**，而且**不要求 OS 窗口真获得焦点**，所以同一份测试在模拟器、Windows 离屏 runner、Mac 离屏 runner 上机制完全一致。
+
+**原语**：`integration_test/helpers/focus_driver.dart` 的 `FocusDriver`（只发 `tester.sendKeyEvent`，绝不 `tester.tap`）：
+
+| 方法 | 键 | 作用 |
+|---|---|---|
+| `reachAll()` | `Tab` | 遍历当前页可达焦点；**Tab 本身会把懒加载列表滚动 + 构建出屏外的行**（所以别用 `find.byType(X).first` 硬定位——页顶可能没有目标控件） |
+| `focusWidget(finder)` | `Tab` | Tab 到焦点落进 finder 子树 |
+| `activate()` | `Space` | 激活开关 / 按钮 |
+| `adjust(steps:)` | `←/→` 方向键 | 加减（Slider/Stepper/Segmented 是 `_GamepadAdjustableValue` 单一焦点停靠点，不用 Space） |
+
+**标准操作模式**（见 `integration_test/comprehensive_settings_test.dart` 与 widget 层 `test/settings/settings_schema_coverage_test.dart`）：
+`Tab` 遍历 → 对落到的每个控件**检测类型**（向上遍历 widget 祖先找 `AdaptiveSettings{Switch,Slider,Stepper,Segmented}Row`）→ **按类型驱动**（Switch→`Space`，可调→方向键）→ 断言**真写穿 DB / 真生效**（不只点几下）→ **还原** prefs（不动用户真实设置）。
+
+**激活键的平台差异**：app 主激活是手柄 `gameButtonA`——模拟器（Android）能合成它；**桌面（Windows/Mac）合不出**（无物理键映射，`sendKeyEvent(gameButtonA)` 抛 "not found in windows physical key map"）→ 桌面用 `Enter`/`Space`。`Tab` 与方向键到处都行，优先用它们。
+
+**为何能离屏后台跑**：合成按键走 Flutter 框架（不走 OS），与窗口是否在前台无关。桌面 runner 认环境变量 `HIBIKI_TEST_HIDDEN` 把窗口停到屏外 + 不抢前台（`windows/runner/win32_window.cpp` / `macos/Runner/MainFlutterWindow.swift`），不挡你用电脑。
+
+**三端跑同一份焦点驱动测试**：
+```bash
+# 模拟器（Android，gameButtonA 可合成）
+flutter test integration_test/<t>_test.dart -d emulator-<port>     # 或 ci/integration-test.sh
+# Windows 离屏后台（PowerShell，仓库根）
+.\hibiki\tool\run_windows_itest.ps1 integration_test/<t>_test.dart
+# Mac 跨机（Windows 当总指挥，sync→Mac ff→跑）
+.\tool\run_mac_itest.ps1 integration_test/<t>_test.dart
+```
 
 ## 一键运行（全自动，仅模拟器）
 
