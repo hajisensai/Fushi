@@ -35,7 +35,9 @@ import 'package:hibiki/src/models/dictionary_repository.dart';
 import 'package:hibiki/src/models/media_history_repository.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/sync/backup_service.dart';
+import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_conflict_prompter.dart';
+import 'package:hibiki/src/sync/sync_orchestrator.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/models/theme_notifier.dart' as theme_notifier;
 import 'package:hibiki/src/models/theme_notifier.dart' show ThemeNotifier;
@@ -191,6 +193,26 @@ class AppModel with ChangeNotifier {
   /// 全应用共享的冲突弹窗调度器：三处同步入口（手动 / 关书后 / app 启动）
   /// 共用同一份会话级 snooze + 单飞状态，避免冲突弹窗互相重入或反复打扰。
   final SyncConflictPrompter syncConflictPrompter = SyncConflictPrompter();
+
+  /// 自动同步（关书后 / app 启动）拿到报告后，若有冲突则弹解决对话框。
+  /// fire-and-forget：present 是 barrier 对话框，不阻塞调用方；异常兜住并记日志，
+  /// 不让它逃成未捕获 async error。签名与 [SyncReportCallback] typedef 完全一致，
+  /// 故两处自动同步入口可直接传方法引用，无需再包 lambda。
+  void presentAutoConflicts(SyncRunReport report, SyncBackend backend) {
+    if (report.conflicts.isEmpty) return;
+    syncConflictPrompter
+        .present(
+      navigatorKey: navigatorKey,
+      db: database,
+      backend: backend,
+      conflicts: report.conflicts,
+      source: ConflictSource.auto,
+      inBook: isMediaOpen,
+    )
+        .catchError((Object e, StackTrace s) {
+      debugPrint('[sync] auto conflict prompt failed: $e');
+    });
+  }
 
   /// Used for showing dialogs without needing to pass around a [BuildContext].
   GlobalKey<NavigatorState> get navigatorKey => _navigatorKey;

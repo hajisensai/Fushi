@@ -9,9 +9,6 @@ import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:hibiki/src/sync/sync_auto_trigger.dart';
-import 'package:hibiki/src/sync/sync_backend.dart';
-import 'package:hibiki/src/sync/sync_conflict_prompter.dart';
-import 'package:hibiki/src/sync/sync_orchestrator.dart';
 import 'package:hibiki/utils.dart';
 
 /// A page template which assumes use of [BaseSourcePageState] by which all
@@ -105,17 +102,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         db: appModel.database,
         mediaIdentifier: item.mediaIdentifier,
         messenger: messenger,
-        onReport: (SyncRunReport report, SyncBackend backend) {
-          if (report.conflicts.isEmpty) return;
-          appModel.syncConflictPrompter.present(
-            navigatorKey: appModel.navigatorKey,
-            db: appModel.database,
-            backend: backend,
-            conflicts: report.conflicts,
-            source: ConflictSource.auto,
-            inBook: appModel.isMediaOpen,
-          );
-        },
+        onReport: appModel.presentAutoConflicts,
       );
     }
     return true;

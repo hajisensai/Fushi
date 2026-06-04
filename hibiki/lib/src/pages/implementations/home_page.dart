@@ -3,9 +3,6 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:hibiki/src/sync/sync_auto_trigger.dart';
-import 'package:hibiki/src/sync/sync_backend.dart';
-import 'package:hibiki/src/sync/sync_conflict_prompter.dart';
-import 'package:hibiki/src/sync/sync_orchestrator.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart'
@@ -70,17 +67,7 @@ class _HomePageState extends BasePageState<HomePage>
         audioDatabaseRoot:
             Directory('${appModel.appDirectory.path}/audiobooks'),
         tempDir: appModel.temporaryDirectory,
-        onReport: (SyncRunReport report, SyncBackend backend) {
-          if (report.conflicts.isEmpty) return;
-          appModel.syncConflictPrompter.present(
-            navigatorKey: appModel.navigatorKey,
-            db: appModel.database,
-            backend: backend,
-            conflicts: report.conflicts,
-            source: ConflictSource.auto,
-            inBook: appModel.isMediaOpen,
-          );
-        },
+        onReport: appModel.presentAutoConflicts,
       );
     });
   }
