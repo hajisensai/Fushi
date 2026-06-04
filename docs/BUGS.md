@@ -13,6 +13,13 @@
 
 ---
 
+## BUG-027 · 有声书进度区「音频总长度」恒显示 0
+- **报告**：2026-06-04（用户，附阅读器外观设置截图：「音频总长度是0，修复一下」）。
+- **真实性**：✅ **真 bug（duration 数据源在播放前不可用 + 多文件语义错）**。阅读器快捷设置弹窗顶部进度区 `_buildAudioProgressLine`（`reader_quick_settings_sheet.dart`）显示 `position / duration`，`duration` 取 `AudiobookPlayerController.duration`（`audiobook_controller.dart:243`）= `_player.duration ?? Duration.zero`。但 `load()` 用 `setAudioSource(..., preload: false)`（`audiobook_controller.dart:293/312`）——不预加载，播放前 just_audio 不解码、`_player.duration` 为 null → 显示 0。且 getter 旧注释承诺「多文件为所有文件之和」，而 `_player.duration` 对 `ConcatenatingAudioSource` 只是**当前文件**时长，从不是全书之和。根因 = 显示用「总长度」错用了 per-file、播放前不可用的 `_player.duration`。用户确认要显示**整本书总时长**。
+- **[x] ① 已修复** — `27faad5d4`（新增显示用 getter：`totalDuration` = 全书所有文件时长之和，从已在内存的对齐 cue `_allBookCues` 的 per-file 最大 `endMs` 推算（`_rebuildFileDurations` 在 `setAllBookCues` 末尾重建，load-free、播放前即可用；单文件时与真实 `_player.duration` 取较大者，避免片尾静音致 pos>dur）；`globalPosition` = 前序文件时长和 + 当前文件内真实位置。进度行改用 `globalPosition`/`totalDuration`，`_formatDuration` 支持小时 `h:mm:ss`（`ce2f2bfe4`）。**不改** `duration`/`position`/`seekMs`/`seekRelative`（per-file 坐标，内部 cue 跳句与锁屏 seek 依赖，改了会破坏）。消除「显示总长度却用 per-file 当前文件时长」的特殊情况，非补丁式绕过。`flutter analyze` 0 issue）。
+- **[x] ② 已加自动化测试** — `packages/hibiki_audio/test/audiobook/audiobook_total_duration_test.dart`（3 例，全绿）：① 多文件 `totalDuration` = 各文件末句 endMs 之和；② 无 cue 且无 player duration 时回退 `Duration.zero`；③ 未加载文件时 `globalPosition == Duration.zero`。hibiki_audio 全量 11 绿、`hibiki` lib analyze 0 issue、`test/media/audiobook`+`test/focus`+`test/settings` 387 绿无回归。opus 审查 🟢 0 Critical（W1 单文件 pos>dur 已采纳修复，W2 文件边界轻微抖动已注释为可接受权衡）。
+- **备注**：有声书/播放类。全书总时长来自对齐 cue 推算（文件尾无 cue 部分会略少，是 load-free 最佳来源）；锁屏媒体通知仍显示 per-file 时长（本轮只修 app 内进度行，符合用户指向，且全书坐标需配套全书 seek 映射，超本轮范围）。**真机肉眼复测原始失败路径**（打开带有声书的 EPUB → 进度区「总长度」显示非 0 = 全书总时长，长书显示 h:mm:ss）待用户后补。同轮附带 UI 重构：删阅读器快捷设置弹窗重复的「外观」子页、内容平铺到主页（`ce2f2bfe4`，非 bug，见 `docs/specs/2026-06-04-reader-appearance-flatten-and-audio-total-duration-plan.md`）。
+
 ## BUG-026 · 快速连点底栏「调整」会弹出两个面板（重入无守卫）
 - **报告**：2026-06-04（用户：「打开调整的时候按的快的话会出来两个调整」）。
 - **真实性**：✅ **真 bug（异步打开路径缺重入守卫）**。`_showAppearanceSheet`（`reader_hibiki_page.dart:4564`）在按钮按下到真正 `showModalBottomSheet`/`showAppDialog`（`:4736`/`:4744`）之间还有两次 `await`：`bmRepo.getBookmarks`（`:4577`）+ `favRepo.getAll`（`:4578`）。这两次 await 让出事件循环；用户快速连点时第二次点击事件在第一次 yield 后被处理，再次进入 `_showAppearanceSheet`、越过入口仅有的 `if (_settings==null||_controller==null||_book==null) return` 守卫（状态未变仍非 null），也走到 show → 两个面板叠加。入口两处都触发同一方法：有声书底栏 `AudiobookPlayBar(onOpenSettings: _showAppearanceSheet)`（`:4388`）与设置底栏 tune 按钮 `onPressed: _showAppearanceSheet`（`:4423`）。BUG-024 删掉开面板前的 `_syncSettingsToHive` 后窗口变窄，但 DB 读 await 的窗口仍在，连点照样双开。根因 = 异步打开方法无「正在打开/已打开」重入标志。
