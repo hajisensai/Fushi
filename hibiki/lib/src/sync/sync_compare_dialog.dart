@@ -356,23 +356,29 @@ Future<void> showSyncCompareDialog(
   final applied = await showAppDialog<int>(
     context: context,
     barrierDismissible: false,
-    builder: (_) => _SyncCompareDialog(db: db, backend: backend),
+    builder: (_) => SyncCompareDialog(db: db, backend: backend),
   );
   if (applied != null && applied > 0 && context.mounted) {
     showSyncMessage(context, t.sync_compare_applied(count: applied));
   }
 }
 
-class _SyncCompareDialog extends StatefulWidget {
-  const _SyncCompareDialog({required this.db, required this.backend});
+/// 同步对比对话框：列出本端/远端书籍、词典差异并支持逐行删除远端副本。
+///
+/// 构造直接注入 [backend]，因此天生可测——widget 测试可注入 fake backend 直接
+/// `pumpWidget` 它，无需走 [showSyncCompareDialog] 的解析/导航路径。生产入口仍是
+/// [showSyncCompareDialog]。
+@visibleForTesting
+class SyncCompareDialog extends StatefulWidget {
+  const SyncCompareDialog({required this.db, required this.backend, super.key});
   final HibikiDatabase db;
   final SyncBackend backend;
 
   @override
-  State<_SyncCompareDialog> createState() => _SyncCompareDialogState();
+  State<SyncCompareDialog> createState() => _SyncCompareDialogState();
 }
 
-class _SyncCompareDialogState extends State<_SyncCompareDialog> {
+class _SyncCompareDialogState extends State<SyncCompareDialog> {
   List<SyncCompareEntry>? _entries;
   List<SyncDictEntry>? _dicts;
   Map<String, SyncChoice> _choices = {};
