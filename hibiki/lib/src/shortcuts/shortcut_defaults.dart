@@ -65,11 +65,17 @@ class ShortcutDefaults {
       _gLB,
       _gDpadLeft
     ]),
+    // 底栏开关只负责「打开/切换」底栏，键盘走 M（Esc 已让位给 readerDismissDict
+    // 的「返回」语义，见下）；手柄走 Y。Esc 不再绑这里，避免与 readerDismissDict
+    // 双绑同一键、被枚举顺序抢成「切底栏」而永远退不出书。
     ShortcutAction.readerToggleChrome: _kb([
-      _key(LogicalKeyboardKey.escape),
+      _key(LogicalKeyboardKey.keyM),
     ], [
       _gY
     ]),
+    // 阅读器内的「返回」键：有词典弹窗就关弹窗，否则直接退出书籍（执行体见
+    // reader_hibiki_page 的 _executeShortcutAction）。键盘 Esc、手柄 B，与桌面
+    // 「Esc=上一级」直觉一致；绝不切换底栏。
     ShortcutAction.readerDismissDict: _kb([
       _key(LogicalKeyboardKey.escape),
     ], [

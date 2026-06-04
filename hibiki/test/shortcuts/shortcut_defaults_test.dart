@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 import 'package:hibiki/src/shortcuts/shortcut_defaults.dart';
@@ -135,6 +136,46 @@ void main() {
           }
         }
       }
+    });
+
+    test(
+        'no reader-group keyboard binding is owned by more than one action '
+        '(no shadowed keyboard default on the reader page)', () {
+      // Mirrors the gamepad guard above. The Esc=exit bug came from Escape
+      // being double-bound to readerToggleChrome AND readerDismissDict; enum
+      // order silently picked one and the other never fired. Keyed on the full
+      // InputBinding (key+modifiers) so Space vs Shift+Space stay distinct.
+      final defaults = ShortcutDefaults.forPlatform(TargetPlatform.windows);
+      final seen = <String, ShortcutAction>{};
+      for (final scope in ShortcutScope.reader.coactiveScopes) {
+        for (final action in ShortcutAction.actionsForScope(scope)) {
+          for (final kb in defaults[action]!.keyboardBindings) {
+            final key = kb.serialize();
+            expect(seen.containsKey(key), isFalse,
+                reason: '$key bound to both ${seen[key]?.key} and '
+                    '${action.key} — the later one is shadowed');
+            seen[key] = action;
+          }
+        }
+      }
+    });
+
+    test(
+        'reader bottom-bar toggle is on M (keyboard) and Y (gamepad); '
+        'Esc is the reader back key, not the bar toggle', () {
+      final win = ShortcutDefaults.forPlatform(TargetPlatform.windows);
+      final toggle = win[ShortcutAction.readerToggleChrome]!;
+      final dismiss = win[ShortcutAction.readerDismissDict]!;
+      expect(toggle.keyboardBindings.map((b) => b.key),
+          contains(LogicalKeyboardKey.keyM));
+      expect(toggle.keyboardBindings.map((b) => b.key),
+          isNot(contains(LogicalKeyboardKey.escape)));
+      expect(toggle.gamepadBindings.map((b) => b.button),
+          contains(GamepadButton.y));
+      expect(dismiss.keyboardBindings.map((b) => b.key),
+          contains(LogicalKeyboardKey.escape));
+      expect(dismiss.gamepadBindings.map((b) => b.button),
+          contains(GamepadButton.b));
     });
 
     test('global scroll-page actions bind to RB (down) and LB (up)', () {

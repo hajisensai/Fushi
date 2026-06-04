@@ -267,16 +267,47 @@ void main() {
       );
     });
 
-    test('resolveKeyboard Escape returns first matching action by enum order',
+    test('resolveKeyboard Escape resolves to readerDismissDict (reader back)',
         () {
-      // Both readerToggleChrome and readerDismissDict bind to Escape.
-      // resolveKeyboard returns the first match in enum declaration order.
+      // Regression: Escape used to be double-bound to BOTH readerToggleChrome
+      // and readerDismissDict, and enum order made it resolve to
+      // readerToggleChrome → Esc toggled the bottom bar instead of leaving the
+      // book. Esc is now the reader's single "back" key (readerDismissDict);
+      // readerToggleChrome moved to KeyM. So Esc must resolve to dismiss/back.
       final result = registry.resolveKeyboard(
         LogicalKeyboardKey.escape,
         modifiers: {},
         scope: ShortcutScope.reader,
       );
+      expect(result, ShortcutAction.readerDismissDict);
+    });
+
+    test(
+        'resolveKeyboard KeyM resolves to readerToggleChrome (open bottom bar)',
+        () {
+      final result = registry.resolveKeyboard(
+        LogicalKeyboardKey.keyM,
+        modifiers: {},
+        scope: ShortcutScope.reader,
+      );
       expect(result, ShortcutAction.readerToggleChrome);
+    });
+
+    test('Escape is owned by exactly one reader-group action (no double-bind)',
+        () {
+      // The original bug was a silent keyboard double-bind. Guard it: no two
+      // reader-group actions may both own Escape, or enum order would again
+      // decide which one wins and the loser would never fire.
+      const escape = InputBinding(key: LogicalKeyboardKey.escape);
+      final owners = <ShortcutAction>[];
+      for (final scope in ShortcutScope.reader.coactiveScopes) {
+        for (final action in ShortcutAction.actionsForScope(scope)) {
+          if (registry.bindingsFor(action).keyboardBindings.contains(escape)) {
+            owners.add(action);
+          }
+        }
+      }
+      expect(owners, [ShortcutAction.readerDismissDict]);
     });
 
     test('loadFromJson preserves unknown action keys for forward compatibility',

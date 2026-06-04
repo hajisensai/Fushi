@@ -3698,7 +3698,12 @@ window.flutter_inappwebview.callHandler('spreadReady');
           clearDictionaryResult();
           return KeyEventResult.handled;
         }
-        return KeyEventResult.ignored;
+        // No dictionary popup: this is the reader's "back" key (keyboard Esc /
+        // gamepad B). Leave the book — never toggle the bottom bar. Bar
+        // visibility is owned by M / Y / tap. Mirrors the chrome-scope and
+        // popup-scope B/Esc branches that already maybePop().
+        unawaited(Navigator.of(context).maybePop());
+        return KeyEventResult.handled;
       case ShortcutAction.readerToggleChrome:
         if (isDictionaryShown) {
           clearDictionaryResult();

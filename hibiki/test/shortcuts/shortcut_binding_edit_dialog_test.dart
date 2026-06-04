@@ -76,8 +76,9 @@ void main() {
 
   testWidgets('capturing a key already bound in scope shows a conflict warning',
       (WidgetTester tester) async {
-    // Escape is a reader-scope default (toggle chrome / dismiss dict), so
-    // trying to bind it to another reader action must be rejected.
+    // Escape is a reader-scope default (the reader "back" key = dismiss dict /
+    // exit book), so trying to bind it to another reader action must be
+    // rejected.
     await pumpDialog(tester, buildRegistry(),
         action: ShortcutAction.readerToggleBookmark);
     await startCapture(tester);
@@ -87,7 +88,7 @@ void main() {
 
     expect(find.widgetWithText(HibikiTagChip, 'Escape'), findsNothing);
     expect(
-      find.text(t.shortcut_conflict(s: t.shortcut_action_reader_toggle_chrome)),
+      find.text(t.shortcut_conflict(s: t.shortcut_action_reader_dismiss_dict)),
       findsOneWidget,
     );
   });
