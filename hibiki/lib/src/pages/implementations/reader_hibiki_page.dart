@@ -71,15 +71,20 @@ class ParsedBookData {
   final List<int> charCounts;
 }
 
+/// 逐章纯文本长度。成功路径在解析 isolate 内调用；fallback 路径经 compute()
+/// 调用（书已在内存，但仍放后台 isolate，避免在 UI 线程跑 html 解析）。
+List<int> countChapterChars(EpubBook book) {
+  return List<int>.generate(
+    book.chapters.length,
+    (int i) => book.chapterPlainText(i).length,
+  );
+}
+
 /// 在单个 isolate 内解析 EPUB 并计算每章纯文本长度。供 compute() 调用，
 /// 也可直接调用做等价性校验。
 ParsedBookData parseAndCountChapters(String extractDir) {
   final EpubBook book = EpubParser.parseFromExtracted(extractDir);
-  final List<int> counts = List<int>.generate(
-    book.chapters.length,
-    (int i) => book.chapterPlainText(i).length,
-  );
-  return ParsedBookData(book, counts);
+  return ParsedBookData(book, countChapterChars(book));
 }
 
 class ReaderHibikiPage extends BaseSourcePage {
@@ -378,11 +383,10 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       _book = await _buildBookFromDb(db, widget.bookId, extractDir);
       if (!mounted) return;
       _book ??= _buildLegacyBook(extractDir);
-      // fallback 路径没在 isolate 里算字符数，这里补一趟（书已在内存，便宜）。
-      _chapterCharCounts = List<int>.generate(
-        _book!.chapters.length,
-        (int i) => _book!.chapterPlainText(i).length,
-      );
+      // fallback 路径没在解析 isolate 里算字符数，这里补一趟；书已在内存，
+      // 但仍走 compute() 放后台 isolate，避免在 UI 线程跑 html 解析。
+      _chapterCharCounts = await compute(countChapterChars, _book!);
+      if (!mounted) return;
       HibikiToast.show(msg: t.epub_parse_fallback);
     }
 
