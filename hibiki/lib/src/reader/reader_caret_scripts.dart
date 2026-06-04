@@ -254,8 +254,13 @@ window.hoshiCaret = {
   // ink (an <img>, or a truly empty wrapper).
   _elInk: function(el) {
     var range = document.createRange();
-    try { range.selectNodeContents(el); } catch (e) { return null; }
-    var rects = range.getClientRects();
+    var rects;
+    // Both selectNodeContents and getClientRects can throw on a detached /
+    // display:contents node in some WebViews; treat any failure as "no ink"
+    // (return null) so an element stop never escalates into an uncaught throw
+    // that would break move()/refresh().
+    try { range.selectNodeContents(el); rects = range.getClientRects(); }
+    catch (e) { return null; }
     var L = Infinity, T = Infinity, R = -Infinity, B = -Infinity, found = false;
     for (var i = 0; i < rects.length; i++) {
       var r = rects[i];
