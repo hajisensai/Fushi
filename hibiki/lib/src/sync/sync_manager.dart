@@ -49,7 +49,7 @@ enum SyncApplyOutcome { applied, failed, noop }
 
 /// 把 [SyncBookResult] 归类为 [SyncApplyOutcome]。先看 [SyncBookResult.error]
 /// 区分真失败，再按 [SyncResult] 区分实际发生传输（imported/exported）与无操作
-/// （synced/良性 skipped）。纯函数，便于单测覆盖分类边界。
+/// （synced/良性 skipped/conflict 跳过）。纯函数，便于单测覆盖分类边界。
 SyncApplyOutcome classifySyncApply(SyncBookResult result) {
   if (result.error != null) return SyncApplyOutcome.failed;
   switch (result.direction) {
@@ -58,6 +58,8 @@ SyncApplyOutcome classifySyncApply(SyncBookResult result) {
       return SyncApplyOutcome.applied;
     case SyncResult.synced:
     case SyncResult.skipped:
+    case SyncResult.conflict:
+      // 冲突被自动同步跳过、不写任何数据，属良性无操作；交由 compare 对话框裁决。
       return SyncApplyOutcome.noop;
   }
 }

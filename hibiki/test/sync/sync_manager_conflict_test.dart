@@ -90,6 +90,8 @@ class _FakeSyncBackend implements SyncBackend {
 
   // ── Unreached stub members ──────────────────────────────────────────
   @override
+  Future<void> deleteAsset(String id, {bool isFolder = false}) async {}
+  @override
   Future<bool> get isAuthenticated async => true;
   @override
   Future<String?> get currentEmail async => null;
