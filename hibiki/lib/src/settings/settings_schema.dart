@@ -8,6 +8,7 @@ import 'package:hibiki/src/settings/settings_actions.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
 import 'package:hibiki/src/sync/sync_settings_schema.dart';
+import 'package:hibiki/src/utils/misc/platform_updater.dart';
 import 'package:hibiki/utils.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -1097,18 +1098,15 @@ SettingsDestination _systemDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.system,
     title: t.settings_destination_system,
-    // 更新分区仅 Android 可见（见下方 section 网关）；非 Android 不以「更新」
-    // 作为该分区的副标题，避免指向不存在的能力。
-    summary: Platform.isAndroid ? t.section_update : null,
+    summary: t.section_update,
     icon: Icons.settings_suggest_outlined,
     sections: <SettingsSection>[
       SettingsSection(
         title: t.section_update,
-        // 自动更新整条链路仅 Android 实现：UpdateChecker._check 在 !isAndroid
-        // 时直接 return，原生 installApk 通道也只在 Android 注册。其余平台靠
-        // 应用商店/手动更新，故整段更新设置在非 Android 隐藏，避免出现
-        // 「可见但拨动无效」的死开关（BUG-013）。
-        visible: (_) => Platform.isAndroid,
+        // 更新分区在所有平台可见（至少能「检查→打开发布页」）；自动安装开关
+        // 仅在支持应用内安装的平台显示（platformSupportsInAppInstall，见
+        // platform_updater.dart 单一真相源）。
+        visible: (_) => platformSupportsUpdateCheck(),
         items: <SettingsItem>[
           SettingsSegmentedItem<String>(
             id: 'system.update_channel',
@@ -1153,6 +1151,7 @@ SettingsDestination _systemDestination() {
             id: 'system.update_auto_install',
             title: t.update_auto_install,
             icon: Icons.download_done_outlined,
+            visible: (_) => platformSupportsInAppInstall(),
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.updateAutoInstall,
             onChanged: (SettingsContext settingsContext, bool value) async {
