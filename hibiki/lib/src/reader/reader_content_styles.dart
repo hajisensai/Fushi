@@ -193,6 +193,12 @@ html {
      Android WebView / Windows WebView2 / macOS WKWebView. */
   scrollbar-width: thin;
   scrollbar-color: ${colors.textColor} transparent;
+  /* Pin the UA colour scheme to the reader theme (not the OS). WebView2 uses
+     Fluent overlay scrollbars that ignore ::-webkit-scrollbar and follow the
+     system light/dark setting; declaring color-scheme makes that native
+     scrollbar flip to match the book's background instead of staying dark on a
+     light page (or vice versa). */
+  color-scheme: ${colors.colorScheme};
 }
 ::-webkit-scrollbar {
   width: 8px;
@@ -463,6 +469,7 @@ body.show-all-rt rt {
           selectionColor: 'rgba(190, 155, 100, 0.35)',
           sasayakiColor: 'rgba(80, 150, 200, 0.35)',
           linkColor: '#6fa8dc',
+          colorScheme: 'dark',
         );
       case 'dark-theme':
         return const _ThemeColors(
@@ -471,6 +478,7 @@ body.show-all-rt rt {
           selectionColor: 'rgba(180, 145, 90, 0.35)',
           sasayakiColor: 'rgba(70, 130, 180, 0.35)',
           linkColor: '#7aacdf',
+          colorScheme: 'dark',
         );
       case 'black-theme':
         return const _ThemeColors(
@@ -479,15 +487,43 @@ body.show-all-rt rt {
           selectionColor: 'rgba(170, 135, 80, 0.40)',
           sasayakiColor: 'rgba(60, 120, 170, 0.40)',
           linkColor: '#5b9bd5',
+          colorScheme: 'dark',
         );
       case 'custom-theme':
         return _ThemeColors(
           textColor: customFg ?? 'rgba(0, 0, 0, 0.87)',
           backgroundColor: customBg ?? '#fff',
+          colorScheme: _isDarkBackground(customBg) ? 'dark' : 'light',
         );
       default:
         return const _ThemeColors();
     }
+  }
+
+  /// Best-effort luminance check for a custom background so the native scrollbar
+  /// picks the matching light/dark bucket. Only `#rgb` / `#rrggbb` are parsed;
+  /// anything else (named colours, rgba()) falls back to 'light'.
+  static bool _isDarkBackground(String? background) {
+    if (background == null) return false;
+    final String hex = background.trim();
+    if (!hex.startsWith('#')) return false;
+    final String body = hex.substring(1);
+    int? r;
+    int? g;
+    int? b;
+    if (body.length == 3) {
+      r = int.tryParse('${body[0]}${body[0]}', radix: 16);
+      g = int.tryParse('${body[1]}${body[1]}', radix: 16);
+      b = int.tryParse('${body[2]}${body[2]}', radix: 16);
+    } else if (body.length == 6) {
+      r = int.tryParse(body.substring(0, 2), radix: 16);
+      g = int.tryParse(body.substring(2, 4), radix: 16);
+      b = int.tryParse(body.substring(4, 6), radix: 16);
+    }
+    if (r == null || g == null || b == null) return false;
+    // Rec. 601 relative luminance; < 0.5 of full range reads as dark.
+    final double luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0;
+    return luminance < 0.5;
   }
 }
 
@@ -498,6 +534,7 @@ class _ThemeColors {
     this.selectionColor = 'rgba(160, 160, 160, 0.40)',
     this.sasayakiColor = 'rgba(135, 206, 235, 0.40)',
     this.linkColor = '#426cf5',
+    this.colorScheme = 'light',
   });
 
   final String textColor;
@@ -505,4 +542,8 @@ class _ThemeColors {
   final String selectionColor;
   final String sasayakiColor;
   final String linkColor;
+
+  /// UA color-scheme bucket ('light' | 'dark') the native (Fluent overlay)
+  /// scrollbar follows. Derived from the background, not the OS.
+  final String colorScheme;
 }

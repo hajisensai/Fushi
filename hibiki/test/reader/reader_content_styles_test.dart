@@ -344,6 +344,55 @@ void main() {
         contains('scrollbar-color: rgba(0, 0, 0, 0.87) transparent;'),
       );
     });
+
+    // The native WebView2 Fluent overlay scrollbar ignores ::-webkit-scrollbar
+    // and follows the UA color-scheme. Pin it to the reader theme so it flips
+    // light/dark with the book background instead of the OS.
+    test('light themes pin color-scheme: light', () async {
+      final ReaderSettings settings = await _defaultSettings();
+      for (final String theme in <String>['ecru-theme', 'water-theme']) {
+        final String css = ReaderContentStyles.css(
+          settings: settings,
+          themeOverride: theme,
+        );
+        expect(css, contains('color-scheme: light;'), reason: theme);
+      }
+    });
+
+    test('dark themes pin color-scheme: dark', () async {
+      final ReaderSettings settings = await _defaultSettings();
+      for (final String theme in <String>[
+        'gray-theme',
+        'dark-theme',
+        'black-theme'
+      ]) {
+        final String css = ReaderContentStyles.css(
+          settings: settings,
+          themeOverride: theme,
+        );
+        expect(css, contains('color-scheme: dark;'), reason: theme);
+      }
+    });
+
+    test('custom theme derives color-scheme from background luminance',
+        () async {
+      final ReaderSettings settings = await _defaultSettings();
+      final String darkCss = ReaderContentStyles.css(
+        settings: settings,
+        themeOverride: 'custom-theme',
+        customBg: '#101015',
+        customFg: '#eeeeee',
+      );
+      expect(darkCss, contains('color-scheme: dark;'));
+
+      final String lightCss = ReaderContentStyles.css(
+        settings: settings,
+        themeOverride: 'custom-theme',
+        customBg: '#FAF0E6',
+        customFg: '#222222',
+      );
+      expect(lightCss, contains('color-scheme: light;'));
+    });
   });
 
   group('ReaderContentStyles negative margin clamping', () {
