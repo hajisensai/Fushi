@@ -302,6 +302,50 @@ void main() {
     });
   });
 
+  group('ReaderContentStyles themed scrollbar', () {
+    test('emits webkit scrollbar rules with a transparent track', () async {
+      final ReaderSettings settings = await _defaultSettings();
+      final String css = ReaderContentStyles.css(settings: settings);
+      expect(css, contains('::-webkit-scrollbar'));
+      expect(css, contains('::-webkit-scrollbar-thumb'));
+      expect(css, contains('::-webkit-scrollbar-track'));
+      expect(css, contains('scrollbar-width: thin;'));
+    });
+
+    test(
+        'thumb colour follows the theme text colour (dark theme → light thumb)',
+        () async {
+      final ReaderSettings settings = await _defaultSettings();
+      final String css = ReaderContentStyles.css(
+        settings: settings,
+        themeOverride: 'dark-theme',
+      );
+      // dark-theme textColor is rgba(255, 255, 255, 0.6); the thumb must reuse it.
+      expect(
+        css,
+        contains('scrollbar-color: rgba(255, 255, 255, 0.6) transparent;'),
+      );
+      expect(
+        css,
+        contains('background-color: rgba(255, 255, 255, 0.6);'),
+      );
+    });
+
+    test('thumb colour follows a light theme text colour (ecru → dark thumb)',
+        () async {
+      final ReaderSettings settings = await _defaultSettings();
+      final String css = ReaderContentStyles.css(
+        settings: settings,
+        themeOverride: 'ecru-theme',
+      );
+      // ecru-theme textColor is rgba(0, 0, 0, 0.87).
+      expect(
+        css,
+        contains('scrollbar-color: rgba(0, 0, 0, 0.87) transparent;'),
+      );
+    });
+  });
+
   group('ReaderContentStyles negative margin clamping', () {
     test('negative margins are clamped to 0 in padding CSS', () async {
       final HibikiDatabase db =

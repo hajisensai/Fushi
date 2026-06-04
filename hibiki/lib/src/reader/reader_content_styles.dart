@@ -186,6 +186,31 @@ $pageBreakCss
 html {
   /* block-container property: constrain line-box height so ruby/furigana won't expand it */
   -webkit-line-box-contain: block glyphs replaced;
+  /* Themed scrollbar: the track stays transparent so it shows the page
+     background, and the thumb takes the theme text colour (already alpha<1),
+     so dark themes get a light thumb and light themes a dark one. The standard
+     props cover Firefox/Chromium 121+; the -webkit pseudo-elements below cover
+     Android WebView / Windows WebView2 / macOS WKWebView. */
+  scrollbar-width: thin;
+  scrollbar-color: ${colors.textColor} transparent;
+}
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  /* padding-box clip + transparent border insets the coloured area, giving a
+     slim, soft thumb instead of a heavy full-width bar. */
+  background-color: ${colors.textColor};
+  background-clip: padding-box;
+  border: 2px solid transparent;
+  border-radius: 8px;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
 $layoutCss
 img.block-img {
@@ -226,6 +251,17 @@ svg {
   margin: auto$readerStylePriority;
   break-inside: avoid !important;
   -webkit-column-break-inside: avoid !important;
+}
+svg.block-img {
+  /* Fixed-layout <svg><image> cover/illustration promoted to a block image by
+     _sharedInitImages: give it a definite page-sized box so its inner <image>
+     meet-fits + centres (the generic svg width/height:100% above can't resolve
+     against an indefinite reflow column, leaving the cover stuck at the edge).
+     The .block-img-wrapper then centres the box; cursor matches img.block-img. */
+  width: var(--hoshi-image-max-width, $imageMaxWidth)$readerStylePriority;
+  height: var(--hoshi-image-max-height, $imageMaxHeight)$readerStylePriority;
+  margin: auto$readerStylePriority;
+  cursor: pointer;
 }
 $furiganaCss
 ruby > rt, ruby > rp {
