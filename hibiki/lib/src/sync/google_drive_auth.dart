@@ -1,14 +1,17 @@
 import 'dart:convert';
 import 'dart:developer' as developer;
 import 'dart:io' show Platform;
+import 'dart:math';
 
+import 'package:crypto/crypto.dart';
 import 'package:extension_google_sign_in_as_googleapis_auth/extension_google_sign_in_as_googleapis_auth.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:googleapis_auth/auth_io.dart' as auth_io;
 import 'package:googleapis_auth/googleapis_auth.dart' as auth;
 import 'package:http/http.dart' as http;
-import 'package:url_launcher/url_launcher.dart';
 
+import 'package:hibiki/src/sync/desktop_oauth.dart';
 import 'package:hibiki/src/sync/google_oauth_secret.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 
@@ -105,20 +108,51 @@ class GoogleDriveAuth {
       }
       return;
     }
-    final auth.AuthClient client;
+    // Desktop: drive the RFC 8252 loopback flow ourselves (same helper as the
+    // Dropbox/OneDrive backends) so we fully control the authorization URL.
+    // googleapis_auth's clientViaUserConsent never sends `access_type=offline`,
+    // so Google returns NO refresh token and the session dies on the next app
+    // restart (BUG-032). We request offline access + `prompt=consent` to
+    // guarantee a durable refresh token even when the account already
+    // authorized the app, then exchange the code through googleapis_auth
+    // (whose refreshCredentials carries the refresh token forward).
+    final verifier = _createCodeVerifier();
+    final challenge = _codeChallenge(verifier);
+    final baseClient = http.Client();
     try {
-      client = await auth_io.clientViaUserConsent(
-        _desktopClientId,
-        [_driveFileScope, _emailScope],
-        (String url) => launchUrl(Uri.parse(url)),
+      final result = await runDesktopOAuthLoopback(
+        buildAuthUrl: (redirectUri) => _buildDesktopAuthUrl(
+          redirectUri: redirectUri,
+          challenge: challenge,
+        ),
       );
+      final credentials = await auth_io.obtainAccessCredentialsViaCodeExchange(
+        baseClient,
+        _desktopClientId,
+        result.code,
+        redirectUrl: result.redirectUri,
+        codeVerifier: verifier,
+      );
+      if (credentials.refreshToken == null) {
+        // With access_type=offline + prompt=consent Google always returns a
+        // refresh token; bail rather than persist a session that could never
+        // be restored after a restart.
+        throw GoogleDriveAuthError(
+            'Google did not return a refresh token; cannot stay signed in');
+      }
+
+      _desktopClient?.close();
+      _desktopCredentials = credentials;
+      final authClient = auth.authenticatedClient(baseClient, credentials);
+      _desktopClient = authClient;
+      _cachedRepo = repo;
+      await _fetchDesktopEmail(authClient);
+      if (repo != null) await _persistDesktopCredentials(repo);
     } catch (e, st) {
-      // The googleapis_auth loopback server renders a bare "HTTP 500" page in
-      // the browser and the friendly-error mapper may relabel the cause, both
-      // hiding what Google actually returned. Log the raw failure (token-
-      // exchange error body + status, or the network/TLS error) so the real
-      // root cause — invalid_client / redirect_uri_mismatch / access_denied /
-      // a blocked-direct-connection timeout — is visible.
+      baseClient.close();
+      // Log the raw failure so the real root cause — invalid_client /
+      // redirect_uri_mismatch / access_denied / a blocked-direct-connection
+      // timeout — is visible instead of a friendly-mapped or bare HTTP error.
       developer.log(
         'Desktop Google OAuth failed: ${e.runtimeType}: $e',
         error: e,
@@ -127,15 +161,60 @@ class GoogleDriveAuth {
       );
       rethrow;
     }
-
-    _desktopClient?.close();
-    _desktopCredentials = client.credentials;
-    _desktopClient = client;
-    _cachedRepo = repo;
-    await _fetchDesktopEmail(client);
-
-    if (repo != null) await _persistDesktopCredentials(repo);
   }
+
+  // ── Desktop authorization URL + PKCE ─────────────────────────────
+
+  static Uri _buildDesktopAuthUrl({
+    required String redirectUri,
+    required String challenge,
+  }) =>
+      Uri.https('accounts.google.com', 'o/oauth2/v2/auth', {
+        'client_id': _oauthClientId,
+        'response_type': 'code',
+        'redirect_uri': redirectUri,
+        'scope': [_driveFileScope, _emailScope].join(' '),
+        'code_challenge': challenge,
+        'code_challenge_method': 'S256',
+        // Required for Google to issue a refresh token; without it the desktop
+        // session cannot survive an app restart (BUG-032).
+        'access_type': 'offline',
+        // Force the consent screen so a refresh token is returned even when the
+        // account previously authorized the app.
+        'prompt': 'consent',
+      });
+
+  static String _createCodeVerifier() {
+    final rng = Random.secure();
+    final bytes = List<int>.generate(64, (_) => rng.nextInt(256));
+    return base64UrlEncode(bytes).replaceAll('=', '');
+  }
+
+  static String _codeChallenge(String verifier) {
+    final digest = sha256.convert(ascii.encode(verifier));
+    return base64UrlEncode(digest.bytes).replaceAll('=', '');
+  }
+
+  /// Whether [error] means Google actually rejected the refresh token
+  /// (invalid_grant → HTTP 400/401), as opposed to a transient failure
+  /// (offline, a blocked/timed-out direct connection, a 5xx). Only a true
+  /// rejection should drop the saved desktop session (BUG-032).
+  static bool _isCredentialsRejected(Object error) {
+    if (error is auth.AccessDeniedException) return true;
+    return error is auth.ServerRequestFailedException &&
+        (error.statusCode == 400 || error.statusCode == 401);
+  }
+
+  @visibleForTesting
+  static Uri debugBuildDesktopAuthUrl(String redirectUri) =>
+      _buildDesktopAuthUrl(
+        redirectUri: redirectUri,
+        challenge: 'test-challenge',
+      );
+
+  @visibleForTesting
+  static bool debugIsCredentialsRejected(Object error) =>
+      _isCredentialsRejected(error);
 
   Future<bool> restoreDesktopAuth(SyncRepository repo) async {
     if (useMobileAuth) return false;
@@ -168,12 +247,19 @@ class GoogleDriveAuth {
     } catch (e, st) {
       baseClient.close();
       developer.log(
-        'Failed to restore desktop auth',
+        'Failed to restore desktop auth: ${e.runtimeType}: $e',
         error: e,
         stackTrace: st,
         name: 'GoogleDriveAuth',
       );
-      await repo.clearDesktopSession();
+      // Only drop the saved credentials when Google actually rejected the
+      // refresh token. A transient failure — offline at startup, a
+      // blocked/timed-out direct connection (common on restrictive networks),
+      // a 5xx — must NOT wipe a still-valid session, or the next launch is a
+      // spurious sign-out (BUG-032).
+      if (_isCredentialsRejected(e)) {
+        await repo.clearDesktopSession();
+      }
       return false;
     }
   }
