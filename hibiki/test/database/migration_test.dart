@@ -8,6 +8,24 @@ Future<HibikiDatabase> _openDb() async {
   return db;
 }
 
+/// Opens a `user_version = 14` database that lacks the sync_baselines table,
+/// forcing the real `if (from < 15) createTable(syncBaselines)` onUpgrade
+/// branch in database.dart to run when HibikiDatabase opens it.
+Future<HibikiDatabase> _openV14DbWithoutSyncBaselines() async {
+  final db = HibikiDatabase.forTesting(
+    NativeDatabase.memory(
+      setup: (rawDb) {
+        // A v14 DB created before SyncBaselines existed: no sync_baselines
+        // table. We only need the version marker — the from<15 branch creates
+        // exactly that table, and from<14 (index backfill) does not fire.
+        rawDb.execute('PRAGMA user_version = 14');
+      },
+    ),
+  );
+  addTearDown(db.close);
+  return db;
+}
+
 void main() {
   group('Database schema', () {
     test('fresh database has expected schema version', () async {
@@ -49,9 +67,26 @@ void main() {
       );
     });
 
-    test('sync_baselines table is usable after migration', () async {
+    test('sync_baselines table is usable on a fresh database', () async {
       final db = await _openDb();
-      // Table exists (no exception) and reports null for an absent baseline.
+      // Fresh DB goes through onCreate/createAll; the table exists (no
+      // exception) and reports null for an absent baseline.
+      expect(await db.getSyncBaseline('x', 'progress'), isNull);
+    });
+
+    test('real v14->v15 upgrade creates a usable sync_baselines table',
+        () async {
+      // A pre-v15 DB has no sync_baselines table; opening it must drive the
+      // from<15 onUpgrade branch (createTable(syncBaselines)) rather than
+      // onCreate.
+      final db = await _openV14DbWithoutSyncBaselines();
+
+      // The upgrade ladder bumped the schema to the current version.
+      final version = await db.customSelect('PRAGMA user_version').getSingle();
+      expect(version.read<int>('user_version'), 15);
+
+      // The newly-migrated table exists and querying an absent baseline does
+      // not throw.
       expect(await db.getSyncBaseline('x', 'progress'), isNull);
     });
 
