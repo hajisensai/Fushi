@@ -2227,6 +2227,10 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       await ReaderHibikiSource.instance.setLyricsMode(entering);
 
       if (entering) {
+        // 文档即将被 LyricsModeHtml 整页替换（其中无 window.hoshiCaret）。若此刻
+        // reader caret 正激活，surface 会滞留 reader，之后方向键会对歌词文档调
+        // window.hoshiCaret.move() 报错、caret 卡死——进入前先丢掉旧 caret。
+        _exitCaret();
         await _resolveAndApplyProfile(
           appModelNoUpdate.database,
           mediaTypeOverride: 'lyrics',
@@ -2341,6 +2345,8 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
           .log('ReaderHibiki.updateLyricsStyleLive.eval', e, stack);
       return;
     }
+    // cue 文本随字号/边距重排，激活中的焦点环坐标会过期——重测一次跟上新布局。
+    if (_caretOnLyrics) await _caretRefresh();
     if (mounted) setState(() {});
   }
 
@@ -3833,9 +3839,11 @@ window.flutter_inappwebview.callHandler('spreadReady');
       case CaretSurface.lyrics:
         _controller?.evaluateJavascript(
             source: ReaderLyricsCaretScripts.exitInvocation());
-        // 退出焦点：恢复播放跟随并立即回到当前播放行。
+        // 退出焦点：恢复播放跟随并立即把当前播放行重新居中。
         _controller?.evaluateJavascript(
-            source: 'window.__lyricsCaretActive = false;');
+            source: 'window.__lyricsCaretActive = false;'
+                'if(window.__lyricsScrollToCue&&window.__lyricsGetCurrentIndex)'
+                'window.__lyricsScrollToCue(window.__lyricsGetCurrentIndex());');
         break;
       case CaretSurface.popup:
         topPopupState?.caretExit();
