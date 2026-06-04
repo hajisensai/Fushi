@@ -48,6 +48,9 @@ class FakeSyncBackend implements SyncBackend {
   @override
   Future<void> putJsonAsset(String namespaceId, String name, Object? json) =>
       _store.putJsonAsset(namespaceId, name, json);
+  @override
+  Future<void> deleteAsset(String id, {bool isFolder = false}) =>
+      _store.deleteAsset(id, isFolder: isFolder);
 
   // ── Book-folder ops used by syncAudiobookPackages ─────────────────
   @override

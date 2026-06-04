@@ -115,6 +115,9 @@ class _RecordingExportBackend implements SyncBackend {
   Future<void> putJsonAsset(
           String namespaceId, String name, Object? json) async =>
       throw UnimplementedError();
+  @override
+  Future<void> deleteAsset(String id, {bool isFolder = false}) async =>
+      throw UnimplementedError();
 
   @override
   Future<bool> get isAuthenticated async => true;
