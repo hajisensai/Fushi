@@ -90,32 +90,23 @@ void main() {
     await tester.pump();
 
     expect(find.byType(AdaptiveSettingsNavigationRow), findsWidgets);
-    expect(find.text(t.settings_destination_appearance), findsOneWidget);
+    // 「外观」子页入口已删除——内容平铺到主页。
+    expect(find.text(t.settings_destination_appearance), findsNothing);
     expect(find.text(t.section_layout), findsOneWidget);
     expect(find.text(t.settings_destination_reading_controls), findsOneWidget);
     expect(find.text(t.settings_destination_lookup), findsOneWidget);
     expect(find.text(t.section_navigation), findsOneWidget);
     expect(find.text(t.display_settings), findsOneWidget);
-    // Main-page quick controls keep only the most frequently adjusted controls;
-    // theme lives in the appearance sub-page and reuses the global selector.
-    expect(find.text(t.ttu_font_size), findsOneWidget);
-    expect(find.text(t.ttu_line_height), findsOneWidget);
-    expect(find.text(t.ttu_theme), findsNothing);
-    expect(find.text(t.ttu_view_mode_label), findsOneWidget);
-    expect(find.byType(ListTile), findsNothing);
 
-    // The appearance sub-page is now schema-projected: typography steppers
-    // (font size / line height / indentation) + the view-mode segmented row.
-    await tester.tap(find.text(t.settings_destination_appearance));
-    await tester.pumpAndSettle();
-
+    // 主页直接平铺外观：主题选择器 + 字号/行高/视图模式（schema 投影）。
     expect(find.text(t.ttu_theme), findsOneWidget);
     expect(find.byType(HibikiSchemeSwatch), findsWidgets);
+    expect(find.text(t.ttu_font_size), findsOneWidget);
+    expect(find.text(t.ttu_line_height), findsOneWidget);
+    expect(find.text(t.ttu_view_mode_label), findsOneWidget);
     expect(find.byType(AdaptiveSettingsStepperRow), findsWidgets);
-    expect(find.byType(AdaptiveSettingsSwitchRow), findsNothing);
+    expect(find.byType(ListTile), findsNothing);
 
-    await tester.tap(find.byIcon(Icons.arrow_back));
-    await tester.pumpAndSettle();
     await tester.ensureVisible(find.text(t.settings_destination_lookup));
     await tester.tap(find.text(t.settings_destination_lookup));
     await tester.pumpAndSettle();

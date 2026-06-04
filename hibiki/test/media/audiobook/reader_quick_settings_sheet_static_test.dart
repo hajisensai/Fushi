@@ -9,7 +9,6 @@ void main() {
             .readAsStringSync();
 
     expect(source, contains('class ReaderQuickSettingsSheet'));
-    expect(source, contains("page: 'appearance'"));
     expect(source, contains("page: 'layout'"));
     expect(source, contains("page: 'behavior'"));
     expect(source, contains("page: 'location'"));
@@ -17,7 +16,7 @@ void main() {
     expect(source, isNot(contains('class AudiobookSettingsSheet')));
   });
 
-  test('reader quick settings home exposes only the four quick controls', () {
+  test('reader quick settings home inlines the appearance controls', () {
     final String source =
         File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
             .readAsStringSync();
@@ -27,22 +26,20 @@ void main() {
       '  Widget _buildSubPage(BuildContext context, ThemeData theme)',
     );
 
-    expect(mainSource, contains('_buildQuickControlsSection(theme)'));
-    expect(
-        source, contains('Widget _buildQuickControlsSection(ThemeData theme)'));
+    // 外观已平铺到主页，不再有独立的「外观」导航子页入口。
+    expect(mainSource, contains('_buildAppearanceInline(theme)'));
+    expect(source, isNot(contains("page: 'appearance'")));
+    expect(source, isNot(contains('Widget _buildQuickControlsSection(')));
 
-    final String quickControlsSource = _between(
+    // 平铺区包含主题选择器 + schema 投影的 appearance 分组 + 编辑书籍CSS。
+    final String inlineSource = _between(
       source,
-      '  Widget _buildQuickControlsSection(ThemeData theme)',
-      '  Widget _buildSubPage(BuildContext context, ThemeData theme)',
+      '  Widget _buildAppearanceInline(ThemeData theme)',
+      '  Widget _buildLocationSection(ThemeData theme)',
     );
-    expect(quickControlsSource, contains('fontSize'));
-    expect(quickControlsSource, contains('lineHeight'));
-    expect(quickControlsSource, contains('theme'));
-    expect(quickControlsSource, contains('viewMode'));
-    expect(quickControlsSource, isNot(contains('writingMode')));
-    expect(quickControlsSource, isNot(contains('furigana')));
-    expect(quickControlsSource, isNot(contains('marginTop')));
+    expect(inlineSource, contains('_buildThemeSelector()'));
+    expect(inlineSource, contains('ReaderGroup.appearance'));
+    expect(inlineSource, contains('book_css_editor_edit_css'));
   });
 
   test('reader quick settings sheet uses shared MD3 sheet chrome', () {

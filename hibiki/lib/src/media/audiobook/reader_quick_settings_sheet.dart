@@ -122,8 +122,6 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
 class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
   ReaderHibikiSource get _src => ReaderHibikiSource.instance;
 
-  TtuReaderSettings? _settings;
-
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _charJumpController = TextEditingController();
   List<BookSearchResult> _searchResults = const [];
@@ -147,36 +145,10 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
   late double _localFloatingLyricFontSize = widget.floatingLyricFontSize;
 
   @override
-  void initState() {
-    super.initState();
-    _loadSettings();
-  }
-
-  @override
   void dispose() {
     _searchController.dispose();
     _charJumpController.dispose();
     super.dispose();
-  }
-
-  Future<void> _loadSettings() async {
-    if (widget.isHibikiReader) {
-      final TtuReaderSettings s = TtuReaderSettings(
-        fontSize: _src.ttuFontSize,
-        lineHeight: _src.ttuLineHeight,
-        writingMode: _src.ttuWritingMode,
-        viewMode: _src.ttuViewMode,
-        theme: _src.ttuTheme,
-        hideFurigana: _src.ttuFuriganaMode == 'hide',
-        fontFamilyGroupOne: 'Noto Serif JP',
-        fontFamilyGroupTwo: 'Noto Sans JP',
-      );
-      if (mounted) setState(() => _settings = s);
-      return;
-    }
-    final TtuReaderSettings s =
-        await AudiobookBridge.getReaderSettings(widget.webViewController);
-    if (mounted) setState(() => _settings = s);
   }
 
   Future<void> _updateSetting(String key, Object value) async {
@@ -300,11 +272,6 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
     final double sectionGap = tokens.spacing.gap + tokens.spacing.gap / 2;
     final List<Widget> navigationRows = [
       _categoryTile(
-        icon: Icons.palette_outlined,
-        label: t.settings_destination_appearance,
-        page: 'appearance',
-      ),
-      _categoryTile(
         icon: Icons.auto_stories_outlined,
         label: t.section_layout,
         page: 'layout',
@@ -338,77 +305,11 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
       children: [
         _buildProgressSection(theme),
         SizedBox(height: sectionGap),
-        _buildQuickControlsSection(theme),
+        _buildAppearanceInline(theme),
         SizedBox(height: sectionGap),
         AdaptiveSettingsSection(children: navigationRows),
         SizedBox(height: sectionGap),
         _buildActionRow(context),
-      ],
-    );
-  }
-
-  Widget _buildQuickControlsSection(ThemeData theme) {
-    final TtuReaderSettings? s = _settings;
-    if (s == null) return _buildSettingsLoading();
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SettingsSectionHeader(
-          t.display_settings,
-          padding: EdgeInsets.only(bottom: tokens.spacing.gap),
-        ),
-        AdaptiveSettingsSection(
-          children: [
-            AdaptiveSettingsStepperRow(
-              title: t.ttu_font_size,
-              value: s.fontSize,
-              step: 1,
-              min: 8,
-              max: 64,
-              format: (double value) => '${value.round()}',
-              onChanged: (double fontSize) {
-                s.fontSize = fontSize;
-                setState(() {});
-                _updateSetting('fontSize', fontSize);
-              },
-            ),
-            AdaptiveSettingsStepperRow(
-              title: t.ttu_line_height,
-              value: s.lineHeight,
-              step: 0.1,
-              min: 1,
-              max: 3,
-              format: (double value) => value.toStringAsFixed(2),
-              onChanged: (double lineHeight) {
-                s.lineHeight = (lineHeight * 100).roundToDouble() / 100;
-                setState(() {});
-                _updateSetting('lineHeight', s.lineHeight);
-              },
-            ),
-            AdaptiveSettingsSegmentedRow<String>(
-              title: t.ttu_view_mode_label,
-              segments: <ButtonSegment<String>>[
-                ButtonSegment<String>(
-                  value: 'paginated',
-                  label: Text(t.ttu_paginated),
-                  tooltip: t.ttu_paginated,
-                ),
-                ButtonSegment<String>(
-                  value: 'continuous',
-                  label: Text(t.ttu_scroll),
-                  tooltip: t.ttu_scroll,
-                ),
-              ],
-              selected: s.viewMode,
-              onChanged: (String viewMode) {
-                s.viewMode = viewMode;
-                setState(() {});
-                _updateSetting('viewMode', viewMode);
-              },
-            ),
-          ],
-        ),
       ],
     );
   }
@@ -419,9 +320,6 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
     String title;
     Widget content;
     switch (page) {
-      case 'appearance':
-        title = t.settings_destination_appearance;
-        content = _buildAppearanceSubPage();
       case 'layout':
         title = t.section_layout;
         // Lyrics mode keeps its bespoke font/margin controls — those are not
@@ -472,8 +370,9 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
   /// 精确的：CSS-only key 走 `notifyReaderSettingsChanged`（=
   /// `onSettingsChangedLive`，CSS 注入），结构性布局 key（view mode / writing
   /// mode / columns / spread / prioritize reader styles）走
-  /// `notifyReaderLayoutChanged`（= `onLayoutReloadLive`，整章重排）。本 refresh
-  /// 回调只负责把内存镜像 `_settings` 从 `_src` 重建并 setState。
+  /// `notifyReaderLayoutChanged`（= `onLayoutReloadLive`，整章重排）。schema
+  /// 投影项实时从 `ReaderHibikiSource.instance` 读写，本 refresh 回调只需
+  /// setState 重读 live 值即可。
   SettingsContext _settingsContext() {
     return SettingsContext(
       context: context,
@@ -482,7 +381,6 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
       readerSource: ReaderHibikiSource.instance,
       refresh: () {
         if (!mounted) return;
-        _loadSettings();
         setState(() {});
       },
     );
@@ -520,7 +418,6 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
       refresh: () {
         if (!mounted) return;
         unawaited(_syncThemeSelection());
-        _loadSettings();
         setState(() {});
       },
     );
@@ -536,32 +433,27 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
     await widget.onThemeChanged?.call();
   }
 
-  /// Appearance sub-page = projected schema appearance items + the bespoke
-  /// per-book "Edit Book CSS" nav row. Book CSS needs the live, per-book
-  /// `widget.extractDir`, which no static schema item can carry, so it stays
-  /// bespoke and is only shown when an extract dir is available.
-  Widget _buildAppearanceSubPage() {
+  /// 外观区（原「外观」子页内容，现平铺到弹窗主页）：标题 + 主题选择器 +
+  /// schema 投影的 appearance 分组（字号/行高/段落缩进/视图模式）+ 每书
+  /// 「编辑书籍 CSS」导航行。Book CSS 需要 live、按书的 `widget.extractDir`，
+  /// 无静态 schema item 能携带，故保留 bespoke，仅在有 extract dir 时显示。
+  Widget _buildAppearanceInline(ThemeData theme) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final Widget projected = _buildReaderGroupContent(
       ReaderGroup.appearance,
       t.settings_destination_appearance,
     );
     final Widget themeSelector = _buildThemeSelector();
-    if (widget.extractDir == null) {
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          themeSelector,
-          projected,
-        ],
-      );
-    }
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        themeSelector,
-        projected,
+    final List<Widget> children = <Widget>[
+      SettingsSectionHeader(
+        t.display_settings,
+        padding: EdgeInsets.only(bottom: tokens.spacing.gap),
+      ),
+      themeSelector,
+      projected,
+    ];
+    if (widget.extractDir != null) {
+      children.add(
         AdaptiveSettingsSection(
           children: [
             AdaptiveSettingsNavigationRow(
@@ -580,7 +472,12 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
             ),
           ],
         ),
-      ],
+      );
+    }
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: children,
     );
   }
 
@@ -670,8 +567,8 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
     return ListenableBuilder(
       listenable: ctrl,
       builder: (BuildContext context, _) {
-        final Duration pos = ctrl.position;
-        final Duration dur = ctrl.duration;
+        final Duration pos = ctrl.globalPosition;
+        final Duration dur = ctrl.totalDuration;
         final double fraction = dur.inMilliseconds > 0
             ? (pos.inMilliseconds / dur.inMilliseconds).clamp(0.0, 1.0)
             : 0.0;
@@ -703,10 +600,14 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
 
   static String _formatDuration(Duration d) {
     final int totalSeconds = d.inSeconds;
-    final int minutes = totalSeconds ~/ 60;
+    final int hours = totalSeconds ~/ 3600;
+    final int minutes = (totalSeconds % 3600) ~/ 60;
     final int seconds = totalSeconds % 60;
-    final String mm = minutes.toString().padLeft(2, '0');
     final String ss = seconds.toString().padLeft(2, '0');
+    final String mm = minutes.toString().padLeft(2, '0');
+    if (hours > 0) {
+      return '$hours:$mm:$ss';
+    }
     return '$mm:$ss';
   }
 
@@ -1113,22 +1014,6 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
           onChanged: ctrl.setImagePauseSec,
         );
       },
-    );
-  }
-
-  Widget _buildSettingsLoading() {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return Center(
-      child: Padding(
-        padding: EdgeInsets.symmetric(
-          vertical: tokens.spacing.gap + tokens.spacing.gap / 2,
-        ),
-        child: SizedBox(
-          width: 20,
-          height: 20,
-          child: adaptiveIndicator(context: context, strokeWidth: 2),
-        ),
-      ),
     );
   }
 
