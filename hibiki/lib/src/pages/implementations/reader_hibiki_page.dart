@@ -1387,7 +1387,8 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   Future<void> _applyStylesLive() async {
     if (_controller == null || _settings == null) return;
     _invalidateStyleCache();
-    await _syncSettingsFromHive();
+    // _settings 即 ReaderHibikiSource.readerSettings 本体，setTtu* 已在触发本
+    // 回调前写穿同一对象，无需再 _syncSettingsFromHive 自拷贝（旧 TTU 死桥）。
     if (!mounted || _controller == null) return;
     if (_lyricsMode) {
       await _updateLyricsStyleLive();
@@ -4536,8 +4537,10 @@ window.flutter_inappwebview.callHandler('spreadReady');
   Future<void> _showAppearanceSheet() async {
     if (_settings == null || _controller == null || _book == null) return;
 
-    await _syncSettingsToHive();
-
+    // _settings 就是 ReaderHibikiSource.readerSettings 本体（见 initState 绑定），
+    // 面板控件经 ReaderHibikiSource.instance.ttu* 实时读写同一对象，开面板前后都
+    // 无需设置同步——旧 TTU 双存储时代的 _syncSettings*Hive 已是写回自身的死桥，
+    // 且 _syncSettingsToHive 会触发 17× onSettingsChangedLive 的 DB/WebView 风暴。
     final List<TtuTocEntry> toc = _buildTtuToc();
     final int bookId = widget.bookId;
     final BookmarkRepository bmRepo = BookmarkRepository(appModel.database);
@@ -4707,7 +4710,6 @@ window.flutter_inappwebview.callHandler('spreadReady');
       );
     }
 
-    await _syncSettingsFromHive();
     _syncDictionaryTheme();
   }
 
@@ -4796,54 +4798,6 @@ window.flutter_inappwebview.callHandler('spreadReady');
       }
     }
     return 'Ch. ${chapterIndex + 1}';
-  }
-
-  Future<void> _syncSettingsToHive() async {
-    final ReaderSettings s = _settings!;
-    final ReaderHibikiSource src = ReaderHibikiSource.instance;
-    await Future.wait(<Future<void>>[
-      src.setTtuFontSize(s.fontSize),
-      src.setTtuLineHeight(s.lineHeight),
-      src.setTtuWritingMode(s.writingMode),
-      src.setTtuViewMode(s.viewMode),
-      src.setTtuTheme(s.theme),
-      src.setTtuFuriganaMode(s.furiganaMode),
-      src.setTtuTextIndentation(s.textIndentation),
-      src.setTtuMarginTop(s.marginTop),
-      src.setTtuMarginBottom(s.marginBottom),
-      src.setTtuMarginLeft(s.marginLeft),
-      src.setTtuMarginRight(s.marginRight),
-      src.setTtuPageColumns(s.pageColumns),
-      src.setTtuEnableVerticalFontKerning(s.enableVerticalFontKerning),
-      src.setTtuEnableFontVPAL(s.enableFontVPAL),
-      src.setTtuVerticalTextOrientation(s.verticalTextOrientation),
-      src.setTtuEnableTextJustification(s.enableTextJustification),
-      src.setTtuPrioritizeReaderStyles(s.prioritizeReaderStyles),
-    ]);
-  }
-
-  Future<void> _syncSettingsFromHive() async {
-    final ReaderSettings s = _settings!;
-    final ReaderHibikiSource src = ReaderHibikiSource.instance;
-    await Future.wait(<Future<void>>[
-      s.setFontSize(src.ttuFontSize),
-      s.setLineHeight(src.ttuLineHeight),
-      s.setWritingMode(src.ttuWritingMode),
-      s.setViewMode(src.ttuViewMode),
-      s.setTheme(src.ttuTheme),
-      s.setFuriganaMode(src.ttuFuriganaMode),
-      s.setTextIndentation(src.ttuTextIndentation),
-      s.setMarginTop(src.ttuMarginTop),
-      s.setMarginBottom(src.ttuMarginBottom),
-      s.setMarginLeft(src.ttuMarginLeft),
-      s.setMarginRight(src.ttuMarginRight),
-      s.setPageColumns(src.ttuPageColumns),
-      s.setEnableVerticalFontKerning(src.ttuEnableVerticalFontKerning),
-      s.setEnableFontVPAL(src.ttuEnableFontVPAL),
-      s.setVerticalTextOrientation(src.ttuVerticalTextOrientation),
-      s.setEnableTextJustification(src.ttuEnableTextJustification),
-      s.setPrioritizeReaderStyles(src.ttuPrioritizeReaderStyles),
-    ]);
   }
 
   List<TtuTocEntry> _buildTtuToc() {
