@@ -498,10 +498,14 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
             syncAudioBook: syncAudioBook,
             syncContent: syncContent,
           );
-          if (result.direction != SyncResult.skipped) {
-            applied++;
-          } else {
-            errors.add(entry.title);
+          switch (classifySyncApply(result)) {
+            case SyncApplyOutcome.applied:
+              applied++;
+            case SyncApplyOutcome.failed:
+              errors.add(entry.title);
+            case SyncApplyOutcome.noop:
+              // 良性跳过（无可传输内容）：既不计成功也不报错，避免误报「同步错误」。
+              break;
           }
         } catch (e) {
           errors.add(entry.title);

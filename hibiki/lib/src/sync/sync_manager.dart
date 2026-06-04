@@ -26,6 +26,29 @@ class SyncBookResult {
   final String? error;
 }
 
+/// 单本书一次同步的归类结果：成功应用 / 真失败 / 良性空操作。
+///
+/// [SyncResult.skipped] 既可能是「无可传输内容」的良性跳过（`error == null`，
+/// 例如导出方向但本地无阅读位置且未开内容同步），也可能是 [SyncManager.syncBook]
+/// 把真实异常吞进 [SyncBookResult.error] 后返回的失败。两者不能都当成「同步错误」，
+/// 否则良性跳过会误报为失败（BUG-014）。
+enum SyncApplyOutcome { applied, failed, noop }
+
+/// 把 [SyncBookResult] 归类为 [SyncApplyOutcome]。先看 [SyncBookResult.error]
+/// 区分真失败，再按 [SyncResult] 区分实际发生传输（imported/exported）与无操作
+/// （synced/良性 skipped）。纯函数，便于单测覆盖分类边界。
+SyncApplyOutcome classifySyncApply(SyncBookResult result) {
+  if (result.error != null) return SyncApplyOutcome.failed;
+  switch (result.direction) {
+    case SyncResult.imported:
+    case SyncResult.exported:
+      return SyncApplyOutcome.applied;
+    case SyncResult.synced:
+    case SyncResult.skipped:
+      return SyncApplyOutcome.noop;
+  }
+}
+
 class SyncManager {
   SyncManager({
     required HibikiDatabase db,
