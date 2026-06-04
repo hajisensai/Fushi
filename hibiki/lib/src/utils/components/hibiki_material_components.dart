@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
@@ -1055,59 +1056,86 @@ class HibikiColorSwatch extends StatelessWidget {
               ),
       ),
     );
-    final Widget interactiveSwatch;
-    if (onTap == null) {
-      interactiveSwatch = swatch;
-    } else {
-      // Under a HibikiFocusRoot the directional focus controller navigates ONLY
-      // between registered HibikiFocusTargets — a bare InkWell makes its own
-      // (unregistered) Focus node, so gamepad/keyboard navigation skips the
-      // whole swatch row (the theme picker was unreachable: "到不了主题的位置").
-      // Register each swatch as a single focus stop (A/Enter activates onTap),
-      // keeping the InkWell for mouse/touch ripple but barring it from grabbing
-      // a competing focus node. Off-root (mobile touch) the InkWell is unchanged.
-      final bool underFocusRoot =
-          HibikiFocusRoot.maybeControllerOf(context) != null;
-      final Widget inkSwatch = Material(
-        color: Colors.transparent,
-        borderRadius: inkRadius,
-        child: InkWell(
-          borderRadius: inkRadius,
-          onTap: onTap,
-          canRequestFocus: !underFocusRoot,
-          child: swatch,
-        ),
-      );
-      interactiveSwatch = underFocusRoot
-          ? HibikiActivatableFocusTarget(
-              focusIdPrefix: 'color-swatch',
-              onTap: onTap!,
-              child: inkSwatch,
-            )
-          : inkSwatch;
-    }
-    final Widget semanticSwatch = Semantics(
-      button: onTap != null,
+    return _buildSwatchInteractive(
+      context,
+      visual: swatch,
+      inkRadius: inkRadius,
       selected: selected,
-      child: interactiveSwatch,
-    );
-    if (label == null) return semanticSwatch;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        semanticSwatch,
-        SizedBox(height: tokens.spacing.gap / 2),
-        Text(
-          label!,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: tokens.type.metadata.copyWith(
-            color: textColor ?? tokens.surfaces.onSurface,
-          ),
-        ),
-      ],
+      onTap: onTap,
+      label: label,
+      textColor: textColor,
     );
   }
+}
+
+/// Shared interactive wrapper for swatch widgets: InkWell ripple + a single
+/// gamepad/keyboard focus stop + selection semantics + optional caption label.
+///
+/// [visual] is the bare painted swatch (it owns its own size/shape/border).
+/// [inkRadius] clips the ripple. Factored out of [HibikiColorSwatch] so
+/// [HibikiSchemeSwatch] inherits the EXACT focus-stop behaviour: under a
+/// [HibikiFocusRoot] the directional controller navigates ONLY between
+/// registered HibikiFocusTargets — a bare InkWell makes its own (unregistered)
+/// Focus node, so gamepad/keyboard navigation skips the whole swatch row (the
+/// theme picker was unreachable: "到不了主题的位置"). We register each swatch as a
+/// single focus stop (A/Enter activates onTap), keeping the InkWell for
+/// mouse/touch ripple but barring it from grabbing a competing focus node.
+/// Off-root (mobile touch) the InkWell is unchanged.
+Widget _buildSwatchInteractive(
+  BuildContext context, {
+  required Widget visual,
+  required BorderRadius inkRadius,
+  required bool selected,
+  required VoidCallback? onTap,
+  String? label,
+  Color? textColor,
+}) {
+  final Widget interactiveSwatch;
+  if (onTap == null) {
+    interactiveSwatch = visual;
+  } else {
+    final bool underFocusRoot =
+        HibikiFocusRoot.maybeControllerOf(context) != null;
+    final Widget inkSwatch = Material(
+      color: Colors.transparent,
+      borderRadius: inkRadius,
+      child: InkWell(
+        borderRadius: inkRadius,
+        onTap: onTap,
+        canRequestFocus: !underFocusRoot,
+        child: visual,
+      ),
+    );
+    interactiveSwatch = underFocusRoot
+        ? HibikiActivatableFocusTarget(
+            focusIdPrefix: 'color-swatch',
+            onTap: onTap,
+            child: inkSwatch,
+          )
+        : inkSwatch;
+  }
+  final Widget semanticSwatch = Semantics(
+    button: onTap != null,
+    selected: selected,
+    child: interactiveSwatch,
+  );
+  if (label == null) return semanticSwatch;
+  final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+  return Column(
+    mainAxisSize: MainAxisSize.min,
+    children: <Widget>[
+      semanticSwatch,
+      SizedBox(height: tokens.spacing.gap / 2),
+      Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: tokens.type.metadata.copyWith(
+          color: textColor ?? tokens.surfaces.onSurface,
+        ),
+      ),
+    ],
+  );
 }
 
 /// Registers [child] as a single gamepad/keyboard focus stop whose A/Enter
@@ -1165,6 +1193,125 @@ Color _swatchForegroundFor(Color background) {
   return ThemeData.estimateBrightnessForColor(background) == Brightness.dark
       ? Colors.white
       : Colors.black;
+}
+
+/// The four quadrant colours (top-left, top-right, bottom-left, bottom-right)
+/// previewed by a [HibikiSchemeSwatch] for a generated [ColorScheme]: primary,
+/// secondary, tertiary, surface. Surface sits bottom-right so light vs dark
+/// presets sharing one seed stay visually distinct (their surfaces differ).
+List<Color> hibikiSchemeSwatchColors(ColorScheme scheme) => <Color>[
+      scheme.primary,
+      scheme.secondary,
+      scheme.tertiary,
+      scheme.surface,
+    ];
+
+/// A circular swatch split into four quadrants previewing the real generated
+/// scheme colours, instead of a single seed colour. Used by the theme picker so
+/// each circle accurately predicts the applied theme — the single-colour seed
+/// swatch could not (e.g. light/dark presets share one seed). Single-colour
+/// swatches (tag colour, custom-colour preview) keep using [HibikiColorSwatch].
+class HibikiSchemeSwatch extends StatelessWidget {
+  const HibikiSchemeSwatch({
+    required this.colors,
+    super.key,
+    this.size = 48,
+    this.selected = false,
+    this.onTap,
+    this.overlay,
+    this.label,
+    this.textColor,
+    this.borderColor,
+  }) : assert(colors.length == 4, 'scheme swatch needs exactly 4 colours');
+
+  /// [primary, secondary, tertiary, surface] — see [hibikiSchemeSwatchColors].
+  final List<Color> colors;
+  final double size;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  /// Centred badge icon for non-preset swatches (system = auto, custom = palette).
+  final Widget? overlay;
+  final String? label;
+  final Color? textColor;
+  final Color? borderColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final BorderSide borderSide = BorderSide(
+      color: selected ? cs.primary : borderColor ?? cs.outlineVariant,
+      width: selected ? 3 : 1,
+    );
+    final Widget? badgeChild =
+        selected ? const Icon(Icons.check, size: 18) : overlay;
+    // A surface-filled disc behind the badge keeps the icon legible regardless
+    // of the four quadrant colours underneath.
+    final Widget? badge = badgeChild == null
+        ? null
+        : Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: cs.surface,
+              shape: BoxShape.circle,
+            ),
+            child: IconTheme.merge(
+              data: IconThemeData(color: cs.onSurface, size: 18),
+              child: badgeChild,
+            ),
+          );
+    final Widget visual = AnimatedContainer(
+      duration: hibikiMd3StateDuration,
+      curve: hibikiMd3StateCurve,
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.fromBorderSide(borderSide),
+      ),
+      child: ClipOval(
+        child: CustomPaint(
+          painter: _SchemeQuadrantPainter(colors),
+          child: badge == null ? null : Center(child: badge),
+        ),
+      ),
+    );
+    return _buildSwatchInteractive(
+      context,
+      visual: visual,
+      inkRadius: BorderRadius.circular(size / 2),
+      selected: selected,
+      onTap: onTap,
+      label: label,
+      textColor: textColor,
+    );
+  }
+}
+
+class _SchemeQuadrantPainter extends CustomPainter {
+  const _SchemeQuadrantPainter(this.colors);
+
+  /// [topLeft, topRight, bottomLeft, bottomRight].
+  final List<Color> colors;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final double mx = size.width / 2;
+    final double my = size.height / 2;
+    final Paint paint = Paint()..style = PaintingStyle.fill;
+    paint.color = colors[0];
+    canvas.drawRect(Rect.fromLTRB(0, 0, mx, my), paint);
+    paint.color = colors[1];
+    canvas.drawRect(Rect.fromLTRB(mx, 0, size.width, my), paint);
+    paint.color = colors[2];
+    canvas.drawRect(Rect.fromLTRB(0, my, mx, size.height), paint);
+    paint.color = colors[3];
+    canvas.drawRect(Rect.fromLTRB(mx, my, size.width, size.height), paint);
+  }
+
+  @override
+  bool shouldRepaint(_SchemeQuadrantPainter oldDelegate) =>
+      !listEquals(oldDelegate.colors, colors);
 }
 
 class HibikiPreviewSwitch extends StatelessWidget {
