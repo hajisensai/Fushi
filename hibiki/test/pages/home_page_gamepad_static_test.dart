@@ -13,7 +13,7 @@ void main() {
       'dispatchNativeGamepadButtonIntent(event)',
     );
     final int arrowFallbackIndex =
-        source.indexOf('_arrowDirection(event.logicalKey)');
+        source.indexOf('arrowTraversalDirection(event.logicalKey)');
 
     expect(focusedActionIndex, isNonNegative);
     expect(arrowFallbackIndex, isNonNegative);

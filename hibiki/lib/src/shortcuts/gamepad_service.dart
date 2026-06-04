@@ -434,6 +434,33 @@ AxisDirection axisDirectionFromTraversal(TraversalDirection direction) {
   }
 }
 
+/// Maps a keyboard arrow key to the [TraversalDirection] it drives for focus
+/// navigation; any non-arrow key returns null. Shared by the home page handler
+/// and the app-wide [wrapWithGlobalNavigation] handler so both read arrows the
+/// same way.
+TraversalDirection? arrowTraversalDirection(LogicalKeyboardKey key) {
+  if (key == LogicalKeyboardKey.arrowUp) return TraversalDirection.up;
+  if (key == LogicalKeyboardKey.arrowDown) return TraversalDirection.down;
+  if (key == LogicalKeyboardKey.arrowLeft) return TraversalDirection.left;
+  if (key == LogicalKeyboardKey.arrowRight) return TraversalDirection.right;
+  return null;
+}
+
+/// The [EditableText] that currently holds focus, or null when no text field is
+/// focused. Lets callers decide per-direction whether an arrow key should drive
+/// the text caret or move focus (single-line fields don't use up/down).
+///
+/// [EditableText] owns its focus through an inner `Focus(debugLabel:
+/// 'EditableText')`, so the primary focus node's own `context.widget` is that
+/// `Focus`, NOT the [EditableText] — a bare `is EditableText` check would always
+/// miss. The [EditableText] is that Focus's ancestor element, so we look it up.
+EditableText? focusedEditableText() {
+  final BuildContext? c = FocusManager.instance.primaryFocus?.context;
+  if (c == null) return null;
+  if (c.widget is EditableText) return c.widget as EditableText;
+  return c.findAncestorWidgetOfExactType<EditableText>();
+}
+
 /// Moves keyboard/gamepad focus one step in [direction] from the focus tree
 /// rooted at [context]. Used by the gamepad service (and unit-tested directly).
 ///

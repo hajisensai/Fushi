@@ -10,7 +10,9 @@ import 'package:hibiki/src/shortcuts/input_binding.dart'
 import 'package:hibiki/src/shortcuts/gamepad_service.dart'
     show
         GamepadButtonIntent,
+        arrowTraversalDirection,
         dispatchNativeGamepadButtonIntent,
+        focusedEditableText,
         gamepadMoveFocusInDirection;
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 
@@ -159,26 +161,19 @@ class _HomePageState extends BasePageState<HomePage>
     // Arrow keys are unbound on home, so drive robust directional focus
     // navigation through the SAME helper the gamepad D-pad/stick uses — keyboard
     // and gamepad therefore behave identically. Skipped while a text field is
-    // focused so the field's own cursor movement keeps working.
-    final TraversalDirection? dir = _arrowDirection(event.logicalKey);
-    if (dir != null && !_isEditableFocused()) {
+    // focused so the field's own cursor movement keeps working (up/down then
+    // bubble to wrapWithGlobalNavigation, which lets them escape a single-line
+    // field). Uses the shared arrow/editable helpers so home and the app-wide
+    // wrapper read arrows and "is a text field focused" the same way — the old
+    // private `is EditableText` check missed every field (the primary focus is
+    // EditableText's inner Focus, not the EditableText), so it never actually
+    // guarded the search field's caret.
+    final TraversalDirection? dir = arrowTraversalDirection(event.logicalKey);
+    if (dir != null && focusedEditableText() == null) {
       gamepadMoveFocusInDirection(context, dir);
       return KeyEventResult.handled;
     }
     return KeyEventResult.ignored;
-  }
-
-  static TraversalDirection? _arrowDirection(LogicalKeyboardKey key) {
-    if (key == LogicalKeyboardKey.arrowUp) return TraversalDirection.up;
-    if (key == LogicalKeyboardKey.arrowDown) return TraversalDirection.down;
-    if (key == LogicalKeyboardKey.arrowLeft) return TraversalDirection.left;
-    if (key == LogicalKeyboardKey.arrowRight) return TraversalDirection.right;
-    return null;
-  }
-
-  static bool _isEditableFocused() {
-    final BuildContext? c = FocusManager.instance.primaryFocus?.context;
-    return c != null && c.widget is EditableText;
   }
 
   /// 统一切换顶层 tab：进入「设置」(2) 前记录来源 tab。
