@@ -1,0 +1,122 @@
+import 'dart:io';
+
+import 'package:device_info_plus/device_info_plus.dart';
+
+import 'package:hibiki/utils.dart'; // ErrorLogService
+
+/// 每平台的更新策略：选包（[selectAsset]）+ 安装（[apply]）。
+/// 共享的 GitHub 拉取/版本比较/下载浮层仍在 UpdateChecker。
+abstract class PlatformUpdater {
+  /// 当前平台是否支持「检查更新」（iOS/未实现桌面也为 true，只是 apply=打开发布页）。
+  bool get supportsUpdateCheck;
+
+  /// 当前平台是否支持「应用内安装」（决定是否显示自动安装、是否走下载→apply）。
+  bool get supportsInAppInstall;
+
+  /// 从 release 的 [assets]（每项含 name / browser_download_url）挑本平台可安装包的
+  /// 下载 URL；null = 无适配包（上层回退打开发布页）。
+  Future<String?> selectAsset(List<Map<String, dynamic>> assets);
+
+  /// 应用已下载到 [file] 的更新。仅在 [supportsInAppInstall] 为 true 时被调用。
+  Future<void> apply(File file, String version);
+}
+
+/// 从 asset map 安全取出可下载的 (name, url)。
+Iterable<(String, String)> _downloadable(
+    List<Map<String, dynamic>> assets) sync* {
+  for (final Map<String, dynamic> a in assets) {
+    final String name = a['name'] as String? ?? '';
+    final String? url = a['browser_download_url'] as String?;
+    if (name.isEmpty || url == null) continue;
+    yield (name, url);
+  }
+}
+
+class AndroidUpdater extends PlatformUpdater {
+  AndroidUpdater({Future<List<String>> Function()? abiProvider})
+      : _abiProvider = abiProvider ?? _defaultAbis;
+
+  final Future<List<String>> Function() _abiProvider;
+
+  static Future<List<String>> _defaultAbis() async {
+    try {
+      final AndroidDeviceInfo info = await DeviceInfoPlugin().androidInfo;
+      return info.supportedAbis;
+    } catch (e, s) {
+      ErrorLogService.instance.log('PlatformUpdater.getAbi', e, s);
+      return <String>[];
+    }
+  }
+
+  @override
+  bool get supportsUpdateCheck => true;
+
+  @override
+  bool get supportsInAppInstall => true;
+
+  @override
+  Future<String?> selectAsset(List<Map<String, dynamic>> assets) async {
+    final List<String> abis = await _abiProvider();
+    final List<String> abiTags =
+        abis.map((String a) => a.replaceAll('_', '-')).toList();
+    String? fallback;
+    for (final (String name, String url) in _downloadable(assets)) {
+      if (!name.endsWith('.apk')) continue;
+      if (abiTags.any(name.contains)) return url;
+      fallback ??= url;
+    }
+    return fallback;
+  }
+
+  @override
+  Future<void> apply(File file, String version) async {
+    await AndroidInstaller.install(file.path);
+  }
+}
+
+class WindowsUpdater extends PlatformUpdater {
+  @override
+  bool get supportsUpdateCheck => true;
+
+  @override
+  bool get supportsInAppInstall => true;
+
+  @override
+  Future<String?> selectAsset(List<Map<String, dynamic>> assets) async {
+    for (final (String name, String url) in _downloadable(assets)) {
+      if (name.endsWith('-windows-setup.exe')) return url;
+    }
+    return null;
+  }
+
+  @override
+  Future<void> apply(File file, String version) async {
+    await WindowsInstaller.runAndExit(file.path);
+  }
+}
+
+/// iOS + 本期未实现的 macOS/Linux：可检查但不能自装。
+class UnsupportedUpdater extends PlatformUpdater {
+  @override
+  bool get supportsUpdateCheck => true;
+
+  @override
+  bool get supportsInAppInstall => false;
+
+  @override
+  Future<String?> selectAsset(List<Map<String, dynamic>> assets) async => null;
+
+  @override
+  Future<void> apply(File file, String version) async {
+    throw StateError('UnsupportedUpdater.apply must not be called');
+  }
+}
+
+// ── 安装器（Task 3/4 落地真实实现，本 Task 先占位让 selectAsset 测试编译通过）──
+class AndroidInstaller {
+  static Future<void> install(String apkPath) async {}
+}
+
+class WindowsInstaller {
+  static Future<void> runAndExit(String installerPath) async {}
+}
