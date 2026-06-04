@@ -334,7 +334,8 @@ void main() {
       expect(js, contains('getClientRects'));
     });
 
-    test('element stops route ring + geometry through _elRect (no raw box)', () {
+    test('element stops route ring + geometry through _elRect (no raw box)',
+        () {
       // _stopRect 与 _anchorRect 必须经 _elRect 取元素 rect，使焦点环、命中测试、
       // 方向几何都用收紧后的可见 rect。
       expect(js, contains('if (stop.el) return this._elRect(stop.el);'));
