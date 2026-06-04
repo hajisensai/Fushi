@@ -1235,5 +1235,9 @@
     "sync_compare_download": "Télécharger",
     "log_export_file": "Export to file",
     "log_export_saved": "Log saved",
-    "log_export_failed": "Export failed"
+    "log_export_failed": "Export failed",
+    "sync_local_audio": "Sync local audio",
+    "sync_local_audio_warning": "Syncs local audio source databases (may be large)",
+    "sync_now_local_audio_in": "↓$count audio sources",
+    "sync_now_local_audio_out": "↑$count audio sources"
 }

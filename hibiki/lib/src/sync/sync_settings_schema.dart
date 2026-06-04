@@ -172,6 +172,18 @@ SettingsDestination buildSyncBackupDestination() {
             },
           ),
           SettingsSwitchItem(
+            id: 'sync.local_audio',
+            title: t.sync_local_audio,
+            subtitle: t.sync_local_audio_warning,
+            icon: Icons.graphic_eq_outlined,
+            value: (SettingsContext ctx) => _syncSettings(ctx).syncLocalAudio,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).syncLocalAudio = value;
+              await SyncRepository(ctx.appModel.database)
+                  .setSyncLocalAudioEnabled(value);
+            },
+          ),
+          SettingsSwitchItem(
             id: 'sync.content',
             title: t.sync_content,
             subtitle: t.sync_content_warning,
@@ -280,6 +292,10 @@ String summarizeSyncReport(SyncRunReport r) {
       t.sync_now_audio_in(count: r.audiobooksImported),
     if (r.audiobooksExported > 0)
       t.sync_now_audio_out(count: r.audiobooksExported),
+    if (r.localAudioImported > 0)
+      t.sync_now_local_audio_in(count: r.localAudioImported),
+    if (r.localAudioExported > 0)
+      t.sync_now_local_audio_out(count: r.localAudioExported),
   ];
   final String head = parts.isEmpty ? t.sync_now_no_changes : parts.join(' · ');
   final String done = t.sync_now_done(detail: head);
@@ -2459,6 +2475,7 @@ class _SyncSettingsState {
   bool syncStats = true;
   bool syncAudioBook = true;
   bool syncDictionary = false;
+  bool syncLocalAudio = false;
   bool syncContent = false;
   bool syncAudioBookFiles = false;
   bool _loaded = false;
@@ -2502,6 +2519,7 @@ class _SyncSettingsState {
       syncStats = await _repo.isSyncStatsEnabled();
       syncAudioBook = await _repo.isSyncAudioBookEnabled();
       syncDictionary = await _repo.isSyncDictionaryEnabled();
+      syncLocalAudio = await _repo.isSyncLocalAudioEnabled();
       syncContent = await _repo.isSyncContentEnabled();
       syncAudioBookFiles = await _repo.isSyncAudioBookFilesEnabled();
       serverEnabled = await _repo.isServerEnabled();

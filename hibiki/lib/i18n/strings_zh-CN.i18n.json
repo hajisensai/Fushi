@@ -1235,5 +1235,9 @@
     "sync_compare_download": "下载",
     "log_export_file": "导出到文件",
     "log_export_saved": "日志已保存",
-    "log_export_failed": "导出失败"
+    "log_export_failed": "导出失败",
+    "sync_local_audio": "同步本地音频",
+    "sync_local_audio_warning": "同步本地音频来源数据库（可能较大）",
+    "sync_now_local_audio_in": "↓$count 本地音频",
+    "sync_now_local_audio_out": "↑$count 本地音频"
 }
