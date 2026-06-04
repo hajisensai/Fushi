@@ -191,9 +191,9 @@ class DictionaryImportManager {
         if (finalDir.existsSync()) finalDir.deleteSync(recursive: true);
 
         if (innerDataDir.existsSync()) {
-          innerDataDir.renameSync(finalDir.path);
+          await _publishImportedDir(innerDataDir, finalDir.path);
         } else {
-          tempOutputDir.renameSync(finalDir.path);
+          await _publishImportedDir(tempOutputDir, finalDir.path);
         }
         if (tempOutputDir.existsSync()) {
           tempOutputDir.deleteSync(recursive: true);
@@ -293,9 +293,9 @@ class DictionaryImportManager {
       if (finalDir.existsSync()) finalDir.deleteSync(recursive: true);
 
       if (innerDataDir.existsSync()) {
-        innerDataDir.renameSync(finalDir.path);
+        await _publishImportedDir(innerDataDir, finalDir.path);
       } else {
-        tempOutputDir.renameSync(finalDir.path);
+        await _publishImportedDir(tempOutputDir, finalDir.path);
       }
       if (tempOutputDir.existsSync()) {
         tempOutputDir.deleteSync(recursive: true);
@@ -403,6 +403,73 @@ class DictionaryImportManager {
     }
   }
 
+  static Future<void> _copyDirectoryAsync(
+      Directory source, Directory destination) async {
+    await destination.create(recursive: true);
+    await for (final entity in source.list()) {
+      final newPath = path.join(destination.path, path.basename(entity.path));
+      if (entity is File) {
+        await entity.copy(newPath);
+      } else if (entity is Directory) {
+        await _copyDirectoryAsync(entity, Directory(newPath));
+      }
+    }
+  }
+
+  /// 把已导入的词典目录从暂存区 [source] 发布到最终路径 [destPath]。
+  ///
+  /// Windows Defender / 搜索索引器会在文件刚落盘后异步打开扫描、短暂持有句柄，
+  /// 致紧接着的目录 rename（`MoveFileExW`）报 ERROR_ACCESS_DENIED(5) 或
+  /// SHARING_VIOLATION(32)（BUG-050）。这是**不可控的外部平台行为**（无法阻止
+  /// AV/索引器扫描刚写入的文件），故对 rename 做有界重试；用尽后回退「递归复制+删源」
+  /// （copy 用共享读打开源文件，容忍扫描句柄）。POSIX 下 rename 一次即成功、不触发
+  /// 重试分支。本进程自身的 native 句柄在 `import_` 返回时已关闭（RAII），故非同进程
+  /// 句柄泄漏——间歇性失败(4/14)证实锁来自外部、可经重试规避。
+  Future<void> _publishImportedDir(Directory source, String destPath) {
+    return publishImportedDir(
+      rename: () => source.rename(destPath),
+      copyThenDelete: () async {
+        await _copyDirectoryAsync(source, Directory(destPath));
+        try {
+          await source.delete(recursive: true);
+        } catch (_) {
+          // 删源失败留下的残留 temp 由下一轮 import 的 import_temp 清理覆盖。
+        }
+      },
+      sleep: (ms) => Future<void>.delayed(Duration(milliseconds: ms)),
+      isWindows: Platform.isWindows,
+    );
+  }
+
+  /// [_publishImportedDir] 的纯逻辑核心，依赖项全部注入便于测试。
+  /// 仅当 [isWindows] 且 OS 错误码为瞬时锁（5/32）时重试；用尽 [maxAttempts]
+  /// 后调 [copyThenDelete] 回退。其余错误（非 Windows、或非瞬时码）原样抛出。
+  @visibleForTesting
+  static Future<DictPublishMethod> publishImportedDir({
+    required Future<void> Function() rename,
+    required Future<void> Function() copyThenDelete,
+    required Future<void> Function(int delayMs) sleep,
+    required bool isWindows,
+    int maxAttempts = 10,
+  }) async {
+    for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        await rename();
+        return DictPublishMethod.renamed;
+      } on FileSystemException catch (e) {
+        final int? code = e.osError?.errorCode;
+        final bool transient = isWindows && (code == 5 || code == 32);
+        if (!transient) rethrow;
+        if (attempt == maxAttempts) {
+          await copyThenDelete();
+          return DictPublishMethod.copied;
+        }
+        await sleep(50 * attempt); // 退避：50ms,100ms,… 给 AV 扫描窗口让路
+      }
+    }
+    return DictPublishMethod.renamed; // 不可达：循环内必返回或抛出
+  }
+
   _UpdateDecision _decideUpdate(String newName) {
     if (_dictRepo.hasDictionaryNamed(newName)) {
       return _UpdateDecision.alreadyUpToDate;
@@ -420,3 +487,7 @@ class DictionaryImportManager {
 }
 
 enum _UpdateDecision { newDictionary, alreadyUpToDate, replaceOldVersion }
+
+/// [DictionaryImportManager.publishImportedDir] 的发布方式：直接 rename 成功，
+/// 或重试用尽后回退到复制+删源。
+enum DictPublishMethod { renamed, copied }
