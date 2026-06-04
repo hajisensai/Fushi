@@ -182,31 +182,17 @@ class SyncOrchestrator {
       final String key = sanitizeTtuFilename(folder.name);
       if (isReservedSyncFolderName(key) || localKeys.contains(key)) continue;
 
-      File? tmp;
       try {
-        final List<AssetEntry> children =
-            await _backend.listChildren(folder.id);
-        AssetEntry? epub;
-        for (final AssetEntry e in children) {
-          if (!e.isFolder && e.name.toLowerCase().endsWith('.epub')) {
-            epub = e;
-            break;
-          }
-        }
-        if (epub == null) continue;
-
-        tmp = _tmpFile('.epub');
-        await _backend.getAsset(epub.id, tmp);
-        await EpubImporter.importFromPath(
+        if (await importRemoteBookFolder(
           db: _db,
-          filePath: tmp.path,
-          fileName: epub.name,
-        );
-        report.booksImported++;
+          backend: _backend,
+          folderId: folder.id,
+          tempDir: _tempDir,
+        )) {
+          report.booksImported++;
+        }
       } catch (e) {
         report.errors.add('import book "${folder.name}": $e');
-      } finally {
-        _safeDelete(tmp);
       }
     }
   }
@@ -326,6 +312,47 @@ class SyncOrchestrator {
       if (f.existsSync()) f.deleteSync();
     } catch (_) {
       // Best-effort temp cleanup.
+    }
+  }
+}
+
+/// 下载远端书文件夹 [folderId] 里的 `.epub` 内容资产并导入为本地书。
+/// 返回 true=导入成功；false=该文件夹没有 `.epub`（发送方关了内容同步，跳过）。
+/// 传输/导入失败时抛出，交调用方决定如何提示。临时文件用后即删。
+Future<bool> importRemoteBookFolder({
+  required HibikiDatabase db,
+  required SyncBackend backend,
+  required String folderId,
+  required Directory tempDir,
+}) async {
+  final List<AssetEntry> children = await backend.listChildren(folderId);
+  AssetEntry? epub;
+  for (final AssetEntry e in children) {
+    if (!e.isFolder && e.name.toLowerCase().endsWith('.epub')) {
+      epub = e;
+      break;
+    }
+  }
+  if (epub == null) return false;
+
+  tempDir.createSync(recursive: true);
+  final File tmp = File(p.join(
+    tempDir.path,
+    'hibiki_remote_${DateTime.now().microsecondsSinceEpoch}.epub',
+  ));
+  try {
+    await backend.getAsset(epub.id, tmp);
+    await EpubImporter.importFromPath(
+      db: db,
+      filePath: tmp.path,
+      fileName: epub.name,
+    );
+    return true;
+  } finally {
+    try {
+      if (tmp.existsSync()) tmp.deleteSync();
+    } catch (_) {
+      // best-effort temp cleanup
     }
   }
 }
