@@ -528,6 +528,75 @@ class _SyncCompareDialogState extends State<_SyncCompareDialog> {
     }
   }
 
+  /// 删除前确认框：用户确认才返回 true。删除是不可逆的远端副作用。
+  Future<bool> _confirmDelete(String name) async {
+    final bool? ok = await showAppDialog<bool>(
+      context: context,
+      builder: (BuildContext ctx) => HibikiDialogFrame(
+        maxWidth: 420,
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Text(t.sync_compare_delete_confirm(name: name)),
+            const SizedBox(height: 16),
+            OverflowBar(
+              alignment: MainAxisAlignment.end,
+              spacing: 8,
+              children: <Widget>[
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: Text(t.dialog_cancel),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: Text(t.dialog_delete),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+    return ok ?? false;
+  }
+
+  /// 删除远端某项；成功后调用 [onSuccess] 做乐观本地移除并 setState。失败如实提示且不移除。
+  Future<void> _deleteRemote({
+    required String name,
+    required String id,
+    required bool isFolder,
+    required VoidCallback onSuccess,
+  }) async {
+    if (!await _confirmDelete(name)) return;
+    try {
+      await widget.backend.deleteAsset(id, isFolder: isFolder);
+      if (!mounted) return;
+      setState(onSuccess);
+      showSyncMessage(context, t.sync_compare_deleted);
+    } catch (e) {
+      if (mounted) showSyncMessage(context, friendlySyncError(e));
+    }
+  }
+
+  /// 复制 entry 但清掉远端有声书 id（删完远端有声书后用，书籍行其它信息保留）。
+  static SyncCompareEntry _copyWithoutAudio(SyncCompareEntry e) =>
+      SyncCompareEntry(
+        title: e.title,
+        bookId: e.bookId,
+        remoteFolderId: e.remoteFolderId,
+        remoteAudioBookId: null,
+        localProgress: e.localProgress,
+        localUpdatedAt: e.localUpdatedAt,
+        remoteProgress: e.remoteProgress,
+        remoteUpdatedAt: e.remoteUpdatedAt,
+        localStatsCount: e.localStatsCount,
+        remoteStatsCount: e.remoteStatsCount,
+        localAudioPosMs: e.localAudioPosMs,
+        remoteAudioPosSec: e.remoteAudioPosSec,
+      );
+
   int get _actionableCount {
     if (_entries == null) return 0;
     return _entries!.where((e) {
@@ -558,7 +627,7 @@ class _SyncCompareDialogState extends State<_SyncCompareDialog> {
           child: CircularProgressIndicator.adaptive(),
         ),
       );
-    } else if (_entries!.isEmpty) {
+    } else if (_entries!.isEmpty && (_dicts?.isEmpty ?? true)) {
       body = Center(child: Text(t.sync_compare_empty));
     } else {
       final conflicts = _entries!.where((e) => e.hasConflict).toList();
@@ -575,6 +644,11 @@ class _SyncCompareDialogState extends State<_SyncCompareDialog> {
             if (conflicts.isNotEmpty)
               _sectionHeader(t.sync_compare_all_books, theme),
             for (final e in others) _buildEntry(e, theme),
+          ],
+          if (_dicts != null && _dicts!.isNotEmpty) ...[
+            const Divider(height: 16),
+            _sectionHeader(t.sync_compare_dictionaries, theme),
+            for (final SyncDictEntry d in _dicts!) _buildDictEntry(d, theme),
           ],
         ],
       );
@@ -742,6 +816,49 @@ class _SyncCompareDialogState extends State<_SyncCompareDialog> {
                   child: Icon(Icons.warning_amber_rounded,
                       size: 16, color: theme.colorScheme.error),
                 ),
+              if (entry.remoteFolderId != null ||
+                  entry.remoteAudioBookId != null)
+                HibikiOverflowMenu<String>(
+                  iconWidget: const Icon(Icons.delete_outline, size: 18),
+                  tooltip: t.dialog_delete,
+                  onSelected: (String sel) {
+                    if (sel == 'book' && entry.remoteFolderId != null) {
+                      _deleteRemote(
+                        name: entry.title,
+                        id: entry.remoteFolderId!,
+                        isFolder: true,
+                        onSuccess: () => _entries!.remove(entry),
+                      );
+                    } else if (sel == 'audiobook' &&
+                        entry.remoteAudioBookId != null) {
+                      final int i = _entries!.indexOf(entry);
+                      _deleteRemote(
+                        name: entry.title,
+                        id: entry.remoteAudioBookId!,
+                        isFolder: false,
+                        onSuccess: () {
+                          if (i >= 0) {
+                            _entries![i] = _copyWithoutAudio(entry);
+                          }
+                        },
+                      );
+                    }
+                  },
+                  items: <PopupMenuEntry<String>>[
+                    if (entry.remoteFolderId != null)
+                      HibikiPopupMenuItem<String>(
+                        label: t.sync_compare_delete_book,
+                        icon: Icons.menu_book_outlined,
+                        value: 'book',
+                      ),
+                    if (entry.remoteAudioBookId != null)
+                      HibikiPopupMenuItem<String>(
+                        label: t.sync_compare_delete_audiobook,
+                        icon: Icons.headphones_outlined,
+                        value: 'audiobook',
+                      ),
+                  ],
+                ),
             ],
           ),
           const SizedBox(height: 4),
@@ -761,6 +878,52 @@ class _SyncCompareDialogState extends State<_SyncCompareDialog> {
             const SizedBox(height: 6),
             _choiceRow(entry.title, choice, theme),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDictEntry(SyncDictEntry d, ThemeData theme) {
+    return HibikiCard(
+      color: Colors.transparent,
+      margin: const EdgeInsets.symmetric(vertical: 2),
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+      child: Row(
+        children: <Widget>[
+          Icon(Icons.menu_book_outlined,
+              size: 18, color: theme.colorScheme.onSurfaceVariant),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              d.name,
+              style: theme.textTheme.titleSmall,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          Text(
+            d.hasRemote ? t.sync_compare_remote : t.sync_compare_local,
+            style: theme.textTheme.bodySmall
+                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          ),
+          if (d.hasRemote)
+            HibikiOverflowMenu<String>(
+              iconWidget: const Icon(Icons.delete_outline, size: 18),
+              tooltip: t.dialog_delete,
+              onSelected: (String _) => _deleteRemote(
+                name: d.name,
+                id: d.remoteAssetId!,
+                isFolder: false,
+                onSuccess: () => _dicts!.remove(d),
+              ),
+              items: <PopupMenuEntry<String>>[
+                HibikiPopupMenuItem<String>(
+                  label: t.sync_compare_delete_dict,
+                  icon: Icons.delete_outline,
+                  value: 'dict',
+                ),
+              ],
+            ),
         ],
       ),
     );
