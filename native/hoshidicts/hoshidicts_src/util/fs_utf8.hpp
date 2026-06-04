@@ -10,8 +10,6 @@
 #pragma once
 
 #include <filesystem>
-#include <fstream>
-#include <ios>
 #include <string>
 
 namespace hoshi {
@@ -39,18 +37,6 @@ inline std::string fs_to_utf8(const std::filesystem::path& p) {
 #else
   return p.u8string();
 #endif
-}
-
-// Open helpers that take a UTF-8 path. fstream gained a std::filesystem::path
-// ctor in C++17 which on Windows opens via the wide path -> correct.
-inline std::ifstream open_ifstream(const std::string& utf8_path,
-                                   std::ios::openmode mode = std::ios::in) {
-  return std::ifstream(fs_path(utf8_path), mode);
-}
-
-inline std::ofstream open_ofstream(const std::string& utf8_path,
-                                   std::ios::openmode mode = std::ios::out) {
-  return std::ofstream(fs_path(utf8_path), mode);
 }
 
 }  // namespace hoshi
