@@ -63,6 +63,37 @@ import 'package:hibiki/src/shortcuts/reader_caret_router.dart';
 /// following the popup stack as the user looks up deeper words and backs out.
 enum CaretSurface { none, reader, popup }
 
+/// What the reader-surface caret move resolves to in Dart, given the physical
+/// key direction and the `status` hoshiCaret.move returned.
+enum ReaderCaretMoveOutcome {
+  /// In-page move (status `moved`) or a benign block — nothing for Dart to do.
+  none,
+  paginateForward,
+  paginateBackward,
+
+  /// Physical Down ran off the bottom of the reading content — drop focus into
+  /// the bottom chrome bar (the sibling layer below), mirroring the popup's
+  /// top-edge Up→header promotion. Down never turns the page; paging is on
+  /// Left/Right and the LB/RB shoulders.
+  promoteChrome,
+}
+
+/// Pure mapping from (physical direction, move status) → Dart action for the
+/// reader caret. Extracted so the BUG-019 edge rule is unit-tested without a
+/// WebView. Only an explicit physical `down` promotes to the chrome bar; the
+/// logical `forward` (Tab / vertical-rl reading advance) still paginates, so
+/// reading-order stepping is unaffected.
+ReaderCaretMoveOutcome readerCaretMoveOutcome(
+    String physicalDir, String status) {
+  if (physicalDir == 'down' &&
+      (status == 'pageForward' || status == 'blocked')) {
+    return ReaderCaretMoveOutcome.promoteChrome;
+  }
+  if (status == 'pageForward') return ReaderCaretMoveOutcome.paginateForward;
+  if (status == 'pageBackward') return ReaderCaretMoveOutcome.paginateBackward;
+  return ReaderCaretMoveOutcome.none;
+}
+
 List<int> _computeChapterCharCounts(EpubBook book) {
   return List<int>.generate(
     book.chapters.length,
@@ -3465,6 +3496,18 @@ window.flutter_inappwebview.callHandler('spreadReady');
       return KeyEventResult.handled;
     }
 
+    // Caret inactive: arrow Down drops focus into the bottom bar (the sibling
+    // layer below the reading content), mirroring the gamepad polled path
+    // (_handleGamepadButton). Without this the keyboard path had no chrome
+    // route, so Down resolved to a reader page-turn shortcut and could never
+    // reach the bar (BUG-019). Gated on a visible bar that accepts focus.
+    if (!_caretActive &&
+        event.logicalKey == LogicalKeyboardKey.arrowDown &&
+        _showChrome) {
+      _chromeFocusScope.requestFocus();
+      if (_chromeFocusScope.nextFocus()) return KeyEventResult.handled;
+    }
+
     final modifiers = <ModifierKey>{};
     if (HardwareKeyboard.instance.isControlPressed) {
       modifiers.add(ModifierKey.ctrl);
@@ -3859,10 +3902,35 @@ window.flutter_inappwebview.callHandler('spreadReady');
         source: ReaderCaretScripts.moveInvocation(physicalDir));
     if (!mounted || _controller == null) return;
     final String status = ReaderCaretScripts.moveStatus(raw);
-    if (status == 'pageForward') {
-      await _paginate(ReaderNavigationDirection.forward);
-    } else if (status == 'pageBackward') {
-      await _paginate(ReaderNavigationDirection.backward);
+    switch (readerCaretMoveOutcome(physicalDir, status)) {
+      case ReaderCaretMoveOutcome.promoteChrome:
+        // Down at the bottom edge: hand focus to the bottom bar instead of
+        // turning the page (BUG-019). Mirrors the popup top-edge Up→header.
+        _promoteCaretToChrome();
+        break;
+      case ReaderCaretMoveOutcome.paginateForward:
+        await _paginate(ReaderNavigationDirection.forward);
+        break;
+      case ReaderCaretMoveOutcome.paginateBackward:
+        await _paginate(ReaderNavigationDirection.backward);
+        break;
+      case ReaderCaretMoveOutcome.none:
+        break;
+    }
+  }
+
+  /// Move focus from the active reader caret DOWN into the bottom chrome bar
+  /// (the sibling layer below the reading content), the symmetric counterpart of
+  /// [_focusPopupHeader] (popup content Up → header). Only promotes if the bar is
+  /// visible and actually accepts focus; otherwise the caret stays put (no
+  /// stranded focus, no page turn).
+  void _promoteCaretToChrome() {
+    if (!_showChrome) return; // bar hidden — nowhere to go; Down stays a no-op
+    _chromeFocusScope.requestFocus();
+    if (_chromeFocusScope.nextFocus()) {
+      _exitCaret(); // hide the reader caret ring; the bar's ring takes over
+    } else {
+      _focusNode.requestFocus(); // bar had no focusable child — undo
     }
   }
 

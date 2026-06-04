@@ -13,6 +13,13 @@
 
 ---
 
+## BUG-019 · 阅读 caret 激活时按「下」翻页、回不去底栏
+- **报告**：2026-06-04（用户，手柄/键盘场景：「焦点在阅读部分的时候，按下回不去底栏了」「按下会翻页，而不是去底栏」）。
+- **真实性**：✅ **真 bug（缺晋升通路 + 路径不对称）**。底栏（`_chromeFocusScope`）是阅读内容下方的相邻层。已有设计里「Down→底栏」只在 **caret 未激活的手柄路径** 存在（`reader_hibiki_page.dart:3608`，`dpadDown && _showChrome → chrome`）。但：① **caret 激活时**（阅读时的正常态），物理 Down → `CaretAction.moveDown` → `_caretMove('down')`，到分页页边 hoshiCaret 返回 `pageForward`，Dart 直接 `_paginate(forward)` 翻页（`audiobook` 竖排里 Down 还是阅读推进方向，页边必翻页）——**永远到不了底栏**；② **键盘路径**连未激活的「Down→底栏」都没有，arrowDown 直接解析成 reader 翻页快捷键。对照已有的对称设计：弹窗内容 caret 顶边 `blocked && up` → `_focusPopupHeader()` 晋升弹窗头部（`_caretMove` popup 分支）。阅读 caret 缺「底边 down → 底栏」这条对称晋升。根因 = caret/焦点面相邻层晋升通路不完整。
+- **[x] ① 已修复** — `e6ed553b8`（候选①：Down 不再翻页，到可视底边晋升底栏，翻页留给 Left/Right 与 LB/RB）。抽纯函数 `readerCaretMoveOutcome(physicalDir, status)`：仅 **物理 `down`** 且 `status∈{pageForward, blocked}` → `promoteChrome`（连续模式末尾 blocked 同样晋升、非死路）；逻辑 `forward`（Tab/竖排阅读推进，dir 串是 `'forward'` 非 `'down'`）仍 `paginateForward`，阅读推进不受影响；其余方向页边仍翻页。`_caretMove` reader 分支按它分派，promote 走新 `_promoteCaretToChrome()`（镜像 `_focusPopupHeader`：`_showChrome` 且 `_chromeFocusScope.nextFocus()` 成功才 `_exitCaret()` 交焦点给底栏，否则回退 `_focusNode` 不留悬空焦点、不翻页）。键盘路径补未激活 `arrowDown && _showChrome → chrome`，与手柄 3608 对齐。消除特例/补全对称，非补丁。
+- **[x] ② 已加自动化测试** — `hibiki/test/reader/reader_caret_down_promotes_chrome_test.dart`：钉死 `readerCaretMoveOutcome` 边界（down+pageForward/blocked→promoteChrome、down+moved→none、forward+pageForward→paginateForward、up/left/right 页边仍翻页、up+blocked→none）。谁让物理 down 在页边重新翻页即红。全量 `test/reader/ test/focus/ test/shortcuts/`（343）绿无回归。
+- **备注**：reader/WebView/焦点类。纯函数边界 + 全 focus/shortcuts 矩阵把关；`_caretMove`/`_promoteCaretToChrome` 的 WebView 实跑（手柄/键盘在阅读 caret 按 Down 到底栏、Left/Right/LB/RB 仍翻页、底栏 Up 回正文）需真机复测原始失败路径，待用户后补。竖排书里物理 Down 原是阅读推进、页边会翻页，本修改后页边 Down 改去底栏（候选①，用户确认）——翻页改用 Left/Right 或肩键。
+
 ## BUG-018 · 歌词模式「自动音频跟随」开关无效（关掉仍自动滚到当前句）
 - **报告**：2026-06-04（用户，手柄/键盘场景：「歌词模式的自动音频跟随开关无效」）。
 - **真实性**：✅ **真 bug（门控信号缺失）**。非歌词路径里，cue 切换的「滚动/reveal」由 `AudiobookPlayerController.shouldRevealCurrentCue`（内含 `followAudio.value && ...`，`audiobook_controller.dart:729`）门控，关跟随就不滚。但歌词分支 `_onCueChanged`（`reader_hibiki_page.dart:2316-2330`）**无条件**调 `'window.__lyricsSetCue($idx)'`，而 `LyricsModeHtml` 的 `setCue(index)` 末尾**恒调** `scrollToCenter(_cues[index])`（`lyrics_mode_html.dart`）——整条歌词路径从不读 `followAudio.value`。后果：跟随开关在歌词模式下完全无效，关掉后歌词仍自动滚到正在播放的句子，用户无法自由翻看歌词。根因 = 歌词 cue 路径漏了 followAudio 门控信号。
