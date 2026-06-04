@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:developer' as developer;
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
@@ -663,13 +662,9 @@ class DropboxSyncBackend extends SyncBackend {
   @override
   Future<void> deleteAsset(String id, {bool isFolder = false}) async {
     // AssetEntry.id 对 Dropbox 是路径串；delete_v2 对文件夹递归删，
-    // _deleteFile 已吞 not-found，天然幂等，isFolder 无需分支。
-    try {
-      await _deleteFile(id);
-    } catch (e) {
-      developer.log('Dropbox deleteAsset failed: $id',
-          error: e, name: 'DropboxSync');
-    }
+    // _deleteFile 已吞 not-found，天然幂等，isFolder 无需分支。其它错误
+    // （网络/权限/协议）必须自然抛出，否则 UI 会把真实失败误报为「已删除」。
+    await _deleteFile(id);
   }
 
   // ── Private helpers ───────────────────────────────────────────────

@@ -377,13 +377,10 @@ class WebDavSyncBackend extends SyncBackend {
 
   @override
   Future<void> deleteAsset(String id, {bool isFolder = false}) async {
-    try {
-      // WebDAV DELETE 对 collection（文件夹）递归删除，对文件单删；同一原语。
-      await _ops!.deleteFile(id);
-    } catch (e) {
-      // 幂等：404/已删除当作成功。其它错误记录但不抛（与删除非致命语义一致）。
-      debugPrint('[webdav] deleteAsset failed: $id: $e');
-    }
+    // WebDAV DELETE 对 collection（文件夹）递归删除，对文件单删；同一原语。
+    // WebDavOps.deleteFile 已把 404/已删除当作成功（幂等）；其它错误（网络/权限/
+    // 协议）必须自然抛出，否则 UI 会把真实失败误报为「已删除」。
+    await _ops!.deleteFile(id);
   }
 
   static String _stripTrailingSlash(String value) =>

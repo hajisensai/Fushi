@@ -547,19 +547,39 @@ class FtpSyncBackend extends SyncBackend {
   Future<void> deleteAsset(String id, {bool isFolder = false}) =>
       _opLock.withLock(() async {
         await _ensureConnected();
+        // 用户显式删除：真实失败（网络/权限/协议）必须抛出，否则 UI 会把失败
+        // 误报为「已删除」。ftpconnect 的 deleteFile/deleteEmptyDirectory 只返回
+        // bool 且无法区分 not-found 与真失败，所以这里不静默任何失败——宁可抛真
+        // 错也不静默成功。连接类错误按本文件惯例转成 retryable 供 SyncManager 重连。
         try {
           if (isFolder) {
             await _deleteDirRecursive(id);
           } else {
-            await _deleteRemoteFileImpl(id);
+            await _deleteFileStrict(id);
           }
         } catch (e) {
-          // 幂等 + 非致命：FTP 不存在/权限错误记录但不抛（与现有删除策略一致）。
-          debugPrint('[ftp] deleteAsset failed: $id: $e');
+          if (e is SyncBackendError || e is SyncAuthError) rethrow;
+          _resetConnection();
+          throw SyncBackendError('Failed to delete asset: $e',
+              isRetryable: true);
         }
       });
 
+  /// 删除单个 FTP 文件 [fileId]，删除失败（含目标不存在）抛 [SyncBackendError]。
+  /// 与吞错的 [_deleteRemoteFileImpl]（upload-then-delete 清理用）区分：本方法供
+  /// 用户显式删除路径使用，必须让失败可见。
+  Future<void> _deleteFileStrict(String fileId) async {
+    final String dir = _parentPath(fileId);
+    final String name = _fileName(fileId);
+    await _client!.changeDirectory(dir);
+    final bool ok = await _client!.deleteFile(name);
+    if (!ok) {
+      throw SyncBackendError('Failed to delete file: $fileId');
+    }
+  }
+
   /// 递归删除 FTP 目录 [path]：先删子文件、递归删子目录，最后删空目录本身。
+  /// 任一子项删除失败都会抛出，整体中断——绝不因单个子项失败而静默成功。
   Future<void> _deleteDirRecursive(String path) async {
     await _client!.changeDirectory(path);
     final List<FTPEntry> entries = await _client!.listDirectoryContent();
@@ -569,12 +589,15 @@ class FtpSyncBackend extends SyncBackend {
       if (e.type == FTPEntryType.dir) {
         await _deleteDirRecursive(childId);
       } else {
-        await _deleteRemoteFileImpl(childId);
+        await _deleteFileStrict(childId);
       }
     }
     // 回到父目录再删空目录本身。
     await _client!.changeDirectory(_parentPath(path));
-    await _client!.deleteDirectory(_fileName(path));
+    final bool ok = await _client!.deleteEmptyDirectory(_fileName(path));
+    if (!ok) {
+      throw SyncBackendError('Failed to delete directory: $path');
+    }
   }
 
   // ── Cache ─────────────────────────────────────────────────────────

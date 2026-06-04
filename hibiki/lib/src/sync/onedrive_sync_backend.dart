@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:developer' as developer;
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
@@ -626,13 +625,9 @@ class OneDriveSyncBackend extends SyncBackend {
   @override
   Future<void> deleteAsset(String id, {bool isFolder = false}) async {
     // AssetEntry.id 对 OneDrive 是不透明 item id；Graph DELETE 对文件夹递归删，
-    // _graphDelete 已把 404 当作成功，天然幂等，isFolder 无需分支。
-    try {
-      await _deleteItem(id);
-    } catch (e) {
-      developer.log('OneDrive deleteAsset failed: $id',
-          error: e, name: 'OneDriveSync');
-    }
+    // _graphDelete 已把 404 当作成功，天然幂等，isFolder 无需分支。其它错误
+    // （网络/权限/协议）必须自然抛出，否则 UI 会把真实失败误报为「已删除」。
+    await _deleteItem(id);
   }
 
   // ── Cache ─────────────────────────────────────────────────────────

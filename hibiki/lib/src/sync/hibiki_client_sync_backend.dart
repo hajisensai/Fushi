@@ -521,13 +521,10 @@ class HibikiClientSyncBackend extends SyncBackend {
   @override
   Future<void> deleteAsset(String id, {bool isFolder = false}) async {
     await _ensureResolved();
-    try {
-      // 服务端 _handleDelete 对目录 recursive 删、对文件单删；同一原语。
-      await _ops!.deleteFile(id);
-    } catch (e) {
-      // 幂等：404/已删除当作成功。其它错误记录但不抛。
-      debugPrint('[hibiki-client] deleteAsset failed: $id: $e');
-    }
+    // 服务端 _handleDelete 对目录 recursive 删、对文件单删；同一原语。
+    // WebDavOps.deleteFile 已把服务端 404/已删除当作成功（幂等）；其它错误
+    // （网络/权限/协议）必须自然抛出，否则 UI 会把真实失败误报为「已删除」。
+    await _ops!.deleteFile(id);
   }
 
   static String _stripTrailingSlash(String value) =>
