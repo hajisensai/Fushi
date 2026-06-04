@@ -58,4 +58,10 @@ abstract class SyncAssetStore {
 
   /// 在 [namespaceId] 下写入名为 [name] 的 JSON 资产（覆盖）。
   Future<void> putJsonAsset(String namespaceId, String name, Object? json);
+
+  /// 删除 [id] 指向的资产或命名空间。[isFolder] 为 true 时按“文件夹”语义递归删除
+  /// 其下全部内容。幂等：目标不存在视为成功（不抛）。
+  ///
+  /// 删除是不可逆的远端副作用，调用方必须已向用户确认。
+  Future<void> deleteAsset(String id, {bool isFolder = false});
 }
