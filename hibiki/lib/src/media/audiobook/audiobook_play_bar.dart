@@ -32,7 +32,10 @@ class AudiobookPlayBar extends StatelessWidget {
   final int skipActionSeconds;
 
   /// 跟随「反转底栏方向」偏好（[PreferencesRepository.reverseNavigationBar]）。
-  /// 为 true 时镜像控件位置（仅反转 children 顺序，保留 cue 文本内部方向）。
+  /// 为 true 时镜像整条 bar 的控件位置（反转顶层 children 顺序）。⏮⏯⏭ 播放
+  /// 三联键被打包成一个原子组，镜像时整组换边但**内部方向不变**——快退/上一句
+  /// 永远在左、快进/下一句永远在右（否则方向语义错乱，BUG-021）。cue 文本
+  /// 内部方向同样保留。
   final bool reversed;
 
   /// 用户点 ⚙ 设置按钮后触发。由 reader 页面侧注入，因为设置面板要
@@ -53,52 +56,62 @@ class AudiobookPlayBar extends StatelessWidget {
     final TextStyle? cueStyle = fg != null
         ? Theme.of(context).textTheme.bodySmall?.copyWith(color: fg)
         : Theme.of(context).textTheme.bodySmall;
+    // ⏮⏯⏭ 是一个原子组：reversed 镜像整条 bar 时这组只换边、内部方向不动，
+    // 否则快退/快进会左右颠倒（BUG-021）。用 min-size Row 包住三键。
+    final Widget playbackControls = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        HibikiIconButton(
+          icon: skipActionSeconds == 0
+              ? Icons.skip_previous_outlined
+              : Icons.fast_rewind_outlined,
+          size: 22,
+          enabledColor: fg,
+          padding: EdgeInsets.all(tokens.spacing.gap),
+          tooltip: skipActionSeconds == 0
+              ? t.prev_sentence
+              : '-${skipActionSeconds}s',
+          onTap: () {
+            if (skipActionSeconds == 0) {
+              controller.skipToPrevCue();
+            } else {
+              controller.seekRelative(-skipActionSeconds);
+            }
+          },
+        ),
+        HibikiIconButton(
+          icon: controller.isPlaying
+              ? Icons.pause_outlined
+              : Icons.play_arrow_outlined,
+          size: 24,
+          backgroundColor: playBackground,
+          enabledColor: playForeground,
+          padding: EdgeInsets.all(tokens.spacing.gap),
+          onTap: controller.togglePlayPause,
+          tooltip: controller.isPlaying ? t.pause : t.play,
+        ),
+        HibikiIconButton(
+          icon: skipActionSeconds == 0
+              ? Icons.skip_next_outlined
+              : Icons.fast_forward_outlined,
+          size: 22,
+          enabledColor: fg,
+          padding: EdgeInsets.all(tokens.spacing.gap),
+          tooltip: skipActionSeconds == 0
+              ? t.next_sentence
+              : '+${skipActionSeconds}s',
+          onTap: () {
+            if (skipActionSeconds == 0) {
+              controller.skipToNextCue();
+            } else {
+              controller.seekRelative(skipActionSeconds);
+            }
+          },
+        ),
+      ],
+    );
     final List<Widget> barItems = <Widget>[
-      HibikiIconButton(
-        icon: skipActionSeconds == 0
-            ? Icons.skip_previous_outlined
-            : Icons.fast_rewind_outlined,
-        size: 22,
-        enabledColor: fg,
-        padding: EdgeInsets.all(tokens.spacing.gap),
-        tooltip:
-            skipActionSeconds == 0 ? t.prev_sentence : '-${skipActionSeconds}s',
-        onTap: () {
-          if (skipActionSeconds == 0) {
-            controller.skipToPrevCue();
-          } else {
-            controller.seekRelative(-skipActionSeconds);
-          }
-        },
-      ),
-      HibikiIconButton(
-        icon: controller.isPlaying
-            ? Icons.pause_outlined
-            : Icons.play_arrow_outlined,
-        size: 24,
-        backgroundColor: playBackground,
-        enabledColor: playForeground,
-        padding: EdgeInsets.all(tokens.spacing.gap),
-        onTap: controller.togglePlayPause,
-        tooltip: controller.isPlaying ? t.pause : t.play,
-      ),
-      HibikiIconButton(
-        icon: skipActionSeconds == 0
-            ? Icons.skip_next_outlined
-            : Icons.fast_forward_outlined,
-        size: 22,
-        enabledColor: fg,
-        padding: EdgeInsets.all(tokens.spacing.gap),
-        tooltip:
-            skipActionSeconds == 0 ? t.next_sentence : '+${skipActionSeconds}s',
-        onTap: () {
-          if (skipActionSeconds == 0) {
-            controller.skipToNextCue();
-          } else {
-            controller.seekRelative(skipActionSeconds);
-          }
-        },
-      ),
+      playbackControls,
       SizedBox(width: tokens.spacing.gap / 2),
       Expanded(
         child: Text(

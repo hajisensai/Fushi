@@ -13,6 +13,13 @@
 
 ---
 
+## BUG-021 · 反转阅读器底栏把 ⏮⏯⏭ 前进后退也镜像了，方向操作颠倒
+- **报告**：2026-06-04（用户：「反转阅读器底栏，不要把前进后退也反转了，操作不对」）。
+- **真实性**：✅ **真 bug（镜像粒度过粗）**。有声书播放底栏 `AudiobookPlayBar`（`audiobook_play_bar.dart`）的 `reversed` 开关做的是 `children: reversed ? barItems.reversed.toList() : barItems`（`:131`），把**整条扁平 children 列表**翻转——其中 `barItems` 前三项正是 ⏮(上一句/快退)⏯(播放)⏭(下一句/快进)。reversed=true 时三联键顺序变成 ⏭⏯⏮：快退/上一句跑到右、快进/下一句跑到左，方向语义被镜像 → 用户按左以为后退实际前进。普通设置底栏 `_buildSettingsBar`（`reader_hibiki_page.dart`）只有 headphones/Spacer/tune 无方向键，翻转无害，故问题仅在播放条。根因 = 把「整体布局镜像」和「播放三联键内部方向」耦合在同一个 `List.reversed` 里。
+- **[x] ① 已修复** — 把 ⏮⏯⏭ 三键打包成一个 min-size `Row`（`playbackControls`）作为 `barItems` 的单个原子项；`barItems.reversed` 只调换顶层项的左右位置，播放组整体换边但**内部方向恒为 ⏮⏯⏭**。改数据结构消除特殊情况，而非加 `if (reversed)` 分支单独回正三键。cue 文本仍 `Expanded`、follow/tune 仍随镜像换边，符合「反转底栏但不反转前进后退」。
+- **[x] ② 已加自动化测试** — `test/media/audiobook/audiobook_play_bar_reverse_test.dart`（真 widget 行为，按图标中心 x 坐标断言）：① 未翻转时 ⏮<⏯<⏭<⚙；② 翻转时 ⏮<⏯<⏭ 仍成立（三联键方向不变）且 ⚙<⏮（整条 bar 确已镜像）。修复前用例②的 `prev<play` 直接红（实测 prev=773 > play=734）。全量 `test/media/audiobook/`（265）绿无回归。
+- **备注**：reader/有声书/布局类。代码 + 单测绿、`flutter analyze` 0 issue、`dart format` 0 改动。**真机肉眼复测**原始失败路径（开有声书 → 设置开「反转底栏方向」→ 确认 ⏮⏯⏭ 仍是上一句左/下一句右、其余控件镜像）待用户后补。
+
 ## BUG-019 · Windows 上打开「带有声书的 EPUB」阅读器永久白屏（内容空白、窗口可动）
 - **报告**：2026-06-04（用户，附截图：纯白 Hibiki 窗口）。用户澄清：导入成功后**开书才白**、**窗口能动但内容空白**，并提供 `win_run.log`（2476 行）。
 - **真实性**：✅ **真 bug（COM 未初始化导致 WebView2 环境创建失败）**。日志逐行钉死：`2422 parsed EPUB: 23 chapters` → `2424 restore lookup` → `2425 volume key handlers installed`（=阅读器 init 走到 `reader_hibiki_page.dart:423`，证明 `_resolveAudioSlot()`(`:382`，音频 load)**已正常完成**，排除音频挂起），紧接 `2426 in_app_webview.cpp(67): Error -2147221008: 尚未调用 CoInitialize` + `dealloc InAppWebViewSettings`。`-2147221008 = 0x800401F0 = CO_E_NOTINITIALIZED`：reader 的 WebView2 环境创建（`in_app_webview.cpp:167` `CreateCoreWebView2EnvironmentWithOptions`，其完成回调在 `:67` `failedAndLog(result)` 记此错）在**当前线程 COM 未初始化**时失败 → `completionHandler(nullptr,…)` → controller/webView 均空、settings 立即 dealloc → 正文永不渲染 = 白屏；UI 线程空闲故窗口仍可拖动。**为何只在「带有声书」时白**：打开有声书会经 `_initAudiobookController`→`AudiobookPlayerController.load()` 启动 media_kit/libmpv（桌面 just_audio 后端，本次加载 492MB m4b），libmpv 在主/平台线程把 COM 初始化引用净额打到 0（CoUninitialize 不配对），之后 reader 创建 WebView2 时 COM 已失效。普通 EPUB 不加载 media_kit，COM 不被破坏，故正常。根因 = WebView2 的「调用线程须 CoInitialize」前置条件被其他插件破坏，fork 未在用处重新保证它。
