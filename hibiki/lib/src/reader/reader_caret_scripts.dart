@@ -246,6 +246,52 @@ window.hoshiCaret = {
     return range.getBoundingClientRect();
   },
 
+  // ── Element-stop ink rect ──────────────────────────────────────────
+  // _elInk: the union of an element's OWN content client rects (text glyphs /
+  // inline children), i.e. the visible ink — the ♪/+ glyph, the dict-label
+  // text. Pseudo-elements (a summary's ▶ ::before) are not in the Range and are
+  // intentionally excluded. Returns null when the element has no own text/inline
+  // ink (an <img>, or a truly empty wrapper).
+  _elInk: function(el) {
+    var range = document.createRange();
+    var rects;
+    // Both selectNodeContents and getClientRects can throw on a detached /
+    // display:contents node in some WebViews; treat any failure as "no ink"
+    // (return null) so an element stop never escalates into an uncaught throw
+    // that would break move()/refresh().
+    try { range.selectNodeContents(el); rects = range.getClientRects(); }
+    catch (e) { return null; }
+    var L = Infinity, T = Infinity, R = -Infinity, B = -Infinity, found = false;
+    for (var i = 0; i < rects.length; i++) {
+      var r = rects[i];
+      if (r.width <= 0 || r.height <= 0) continue;
+      found = true;
+      if (r.left < L) L = r.left;
+      if (r.top < T) T = r.top;
+      if (r.right > R) R = r.right;
+      if (r.bottom > B) B = r.bottom;
+    }
+    if (!found) return null;
+    return { left: L, top: T, right: R, bottom: B, width: R - L, height: B - T };
+  },
+  // _elRect: rect for an element stop's ring / geometry. Prefer the visible ink
+  // (clamped to the border box so a descendant overflow can't paint outside),
+  // falling back to the border box for ink-less stops (images fill their box).
+  // The element-stop analogue of _charRect for text stops, so element rings hug
+  // their glyph/label instead of a padded, line-box-tall, transform-shifted box.
+  _elRect: function(el) {
+    var box = el.getBoundingClientRect();
+    var ink = this._elInk(el);
+    if (!ink) return box;
+    var left = Math.max(ink.left, box.left);
+    var top = Math.max(ink.top, box.top);
+    var right = Math.min(ink.right, box.right);
+    var bottom = Math.min(ink.bottom, box.bottom);
+    if (right <= left || bottom <= top) return box;
+    return { left: left, top: top, right: right, bottom: bottom,
+             width: right - left, height: bottom - top };
+  },
+
   // ── Interactive element stops ──────────────────────────────────────
   // Besides text glyphs, the cursor can land on interactive elements so a
   // gamepad can reach buttons/links/controls (e.g. the dictionary popup's
@@ -317,8 +363,15 @@ window.hoshiCaret = {
     var out = [];
     for (var i = 0; i < marked.length; i++) {
       var e = marked[i];
-      var r = e.getBoundingClientRect();
+      var r = this._elRect(e);
       if (r.width < 6 || r.height < 6) continue; // skip degenerate/sliver elements
+      // A clickable with no visible ink and no replaced content (image) is an
+      // empty wrapper — skip it so the ring never lands on a blank box. Images
+      // legitimately have no text ink; their border box IS their content.
+      if (!this._elInk(e) &&
+          !e.matches('img, picture, video, canvas, svg, [role="img"]')) {
+        continue;
+      }
       // Prefer the innermost control: a clickable that wraps another clickable is
       // a container — descend so the ring lands on the real icon/button — unless
       // it is an atomic disclosure/control we always want whole (summary/role).
@@ -331,11 +384,11 @@ window.hoshiCaret = {
     return out;
   },
   _stopRect: function(stop) {
-    if (stop.el) return stop.el.getBoundingClientRect();
+    if (stop.el) return this._elRect(stop.el);
     return this._charRect(stop.node, stop.offset);
   },
   _anchorRect: function() {
-    if (this.el && document.contains(this.el)) return this.el.getBoundingClientRect();
+    if (this.el && document.contains(this.el)) return this._elRect(this.el);
     if (this.node && document.contains(this.node)) return this._charRect(this.node, this.offset);
     return null;
   },
@@ -420,7 +473,7 @@ window.hoshiCaret = {
     }
     var els = this._interactiveEls();
     for (var k = 0; k < els.length; k++) {
-      var er = els[k].getBoundingClientRect();
+      var er = this._elRect(els[k]);
       if (this._inViewport(er)) {
         out.push({
           node: null, offset: 0, el: els[k], rect: er,
@@ -829,7 +882,7 @@ window.hoshiCaret = {
     if (!this.active) return { ok: false };
     this._markClickables();
     if (this.el && document.contains(this.el)) {
-      var er = this.el.getBoundingClientRect();
+      var er = this._elRect(this.el);
       if (this._inViewport(er)) { this._drawRing(er); return { ok: true, rect: this._rectJson(er) }; }
     } else if (this.node && document.contains(this.node) && this._isStop(this.node, this.offset)) {
       var rect = this._charRect(this.node, this.offset);

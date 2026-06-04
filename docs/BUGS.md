@@ -13,6 +13,13 @@
 
 ---
 
+## BUG-018 · 词典弹窗字级光标焦点环落在空盒子/细条上（与图标错位）
+- **报告**：2026-06-04（用户，附两张截图：teal 焦点环一处是分隔线附近的细高竖条、一处是 ♪/+ 按钮上方的空角丸方框）。
+- **真实性**：✅ **真 bug（焦点环几何与可见内容不对称）**。弹窗里字级光标（`window.hoshiCaret`，`reader_caret_scripts.dart`）按设计会停在交互控件上让手柄可达（`7abc0a92b`）。但**文字停靠点**用 `_charRect`（紧贴单字形），**元素停靠点**却用 `el.getBoundingClientRect()`（含 padding/行盒/`transform` 的整盒）：`_stopRect:334`、`_anchorRect:338`、`_interactiveEls:320`、`_collectVisibleStops:423`、`refresh:832`。后果——折叠词典段 `summary.dict-label`（`display:inline`、10px、半透明、▶ 是 `::before`）框成稀疏细条；`.audio-button`/`.mine-button`（`font-size:18px` 行盒 + flex 居中 + `translateY`）框成比 ♪/+ 大且上移的空角丸方框（`border-radius:3px` 来自焦点环 `:636`）。根因 = 元素停靠点的环用整盒、与文字停靠点不对称，且未排除可见内容为空的退化元素。
+- **[x] ① 已修复** — `3db13bd69`（新增 `_elInk`（元素自身内容 client rects 并集 = 可见 ink，排除 `::before` 伪元素）与 `_elRect`（优先 ink、clamp 到 border box、无 ink 回退 box），把上述 5 处元素 rect 读取统一路由过去；`_interactiveEls` 丢弃"无 ink 且非 img/picture/video/canvas/svg/[role=img]"的空 wrapper。保留控件可达性，只收紧环几何——消除不对称而非删停靠点。reader 分支 `window.hoshiReader` 下 `_interactiveEls` 仍走 `img.block-img`，未受影响）。
+- **[x] ② 已加自动化测试** — `test/reader/reader_caret_scripts_test.dart` 源码扫描守卫 3 条（先红：`456792148`，后绿：`3db13bd69`）：环走 `_elInk`/`_elRect`/`selectNodeContents`/`getClientRects`；`_stopRect`/`_anchorRect` 经 `_elRect`；空 wrapper（`!this._elInk(e)` 且非图片）被排除。谁把元素环改回裸 `getBoundingClientRect()` 即红。全量 `flutter test` 2039 绿无回归。
+- **备注**：reader/WebView 几何类。代码 + 单测已绿、`flutter analyze` 0 issue；几何真值（环是否真贴合 ♪/+ 与 summary 文字、不再有空盒子/细条）需**真机肉眼复测**原始失败路径（开词典弹窗 → 手柄/键盘进字级光标 → 方向键停到 ♪/+ 与折叠词典段，确认环贴字形/标签）——待用户后补。`_elInk` 对 collapsed `summary` 只框标签文字（▶ 由 `::before` 渲染、不入 Range，落在环外），如真机觉得需连 ▶ 一起框可再议。
+
 ## BUG-017 · 歌词模式当前行被放大后溢出左右边框、文字贴边裁切
 - **报告**：2026-06-04（用户，附截图：蓝色高亮当前行 `麗子はその扉を開けて恐る恐る現場に足を踏み入れた。` 顶满左右边框、右侧 `足を踏み入` 被裁，灰色非当前行有正常边距）。
 - **真实性**：✅ **真 bug（布局溢出）**。歌词模式独立页 `LyricsModeHtml.generate`（`lyrics_mode_html.dart`）里 `.cue { max-width: 92vw; }` 让当前行在 92vw 内换行，随后 `.cue.current { transform: scale(1.15); }` 把整盒（含宽度）**视觉放大到 92vw × 1.15 = 105.8vw**，默认 `transform-origin: 50% 50%` 居中放大 → 向左右各溢出 ~7vw；`html, body { overflow-x: hidden }` 把溢出裁掉 → 当前行文字贴边并被切。非当前行 scale 1.0、92vw < 95vw 内容区故有正常边距，只有被放大的当前行溢出，与截图吻合。隐患叠加：`92vw` 是硬编码，既不跟随容器 `padding`（marginLeft/Right，默认各 2.5vw），也不预留 scale 余量——两个魔数静默耦合。根因点旧 `lyrics_mode_html.dart` 的 `max-width: 92vw` 与 `.cue.current { transform: scale(1.15) }`。
