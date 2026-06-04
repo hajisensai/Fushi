@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:archive/archive.dart';
+import 'package:archive/archive_io.dart';
 import 'package:drift/drift.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
@@ -454,4 +456,98 @@ String? _nullablePathIn(
   final String? value = _nullableString(map, key);
   if (value == null) return null;
   return p.join(root.path, _resourceName(resources, value));
+}
+
+// ── 流式打包辅助（跑在后台 isolate，纯文件→文件，不依赖 DB / Flutter）─────────
+//
+// OOM 根因修复：旧实现把整个资源文件 readAsBytes、整个 zip 在内存里 encode/decode。
+// 这里改用 archive_io 流式（ZipFileEncoder.addFile 经 InputFileStream 逐块读，
+// ArchiveFile.writeContent 经 OutputFileStream 逐块写），并整体放进 Isolate.run，
+// 让 deflate/inflate 的 CPU 与磁盘 IO 都离开 UI isolate。
+
+/// 流式打 zip：把 [archivePathToSource]（zip 内路径 → 磁盘绝对路径）的每个文件
+/// 流式写入 [outputPath]，并把 [manifestJson] 作为 `manifest.json` 写入。
+Future<void> _zipPackageInIsolate({
+  required String outputPath,
+  required String manifestJson,
+  required Map<String, String> archivePathToSource,
+}) async {
+  await Isolate.run(() async {
+    final ZipFileEncoder encoder = ZipFileEncoder();
+    encoder.create(outputPath);
+    final List<int> manifestBytes = utf8.encode(manifestJson);
+    encoder.addArchiveFile(
+      ArchiveFile('manifest.json', manifestBytes.length, manifestBytes),
+    );
+    for (final MapEntry<String, String> entry in archivePathToSource.entries) {
+      final File file = File(entry.value);
+      if (!file.existsSync()) continue;
+      // addFile 内部用 InputFileStream 流式读，不整文件入内存。
+      await encoder.addFile(file, entry.key);
+    }
+    encoder.closeSync();
+  });
+}
+
+/// 只读取包内 `manifest.json`（小，进内存）。decodeBuffer 只读中央目录 + 惰性流，
+/// 不解压全部条目，因此很轻。
+Future<String> _readManifestInIsolate(String packagePath) async {
+  return Isolate.run(() {
+    final InputFileStream input = InputFileStream(packagePath);
+    try {
+      final Archive archive = ZipDecoder().decodeBuffer(input);
+      final ArchiveFile? manifestFile = archive.findFile('manifest.json');
+      if (manifestFile == null) {
+        throw const FormatException('Package manifest is missing');
+      }
+      return utf8.decode(manifestFile.content as List<int>);
+    } finally {
+      input.closeSync();
+    }
+  });
+}
+
+/// 流式把 [prefix]/ 下的资源解压到 [targetDirPath]。保留 zip-slip 路径安全校验
+/// （与旧 _extractArchivePrefix 等价），每个文件经 OutputFileStream 逐块落盘。
+Future<void> _extractResourcesInIsolate({
+  required String packagePath,
+  required String targetDirPath,
+  required String prefix,
+}) async {
+  await Isolate.run(() {
+    final InputFileStream input = InputFileStream(packagePath);
+    try {
+      final Archive archive = ZipDecoder().decodeBuffer(input);
+      final String canonicalRoot = p.canonicalize(targetDirPath);
+      for (final ArchiveFile file in archive.files) {
+        if (!file.isFile) continue;
+        final String rawName = file.name.replaceAll(r'\', '/');
+        if (!rawName.startsWith('$prefix/')) continue;
+        final String relativePath = rawName.substring(prefix.length + 1);
+        final String normalizedRelative = p.posix.normalize(relativePath);
+        if (relativePath.isEmpty ||
+            p.posix.isAbsolute(relativePath) ||
+            normalizedRelative == '..' ||
+            normalizedRelative.startsWith('../')) {
+          throw FormatException('Invalid package path: ${file.name}');
+        }
+        final String targetPath =
+            p.normalize(p.join(targetDirPath, normalizedRelative));
+        final String canonicalTarget = p.canonicalize(targetPath);
+        if (canonicalTarget != canonicalRoot &&
+            !p.isWithin(canonicalRoot, canonicalTarget)) {
+          throw FormatException('Invalid package path: ${file.name}');
+        }
+        File(targetPath).parent.createSync(recursive: true);
+        final OutputFileStream out = OutputFileStream(targetPath);
+        try {
+          file.writeContent(out);
+        } finally {
+          out.closeSync();
+        }
+      }
+    } finally {
+      input.closeSync();
+    }
+  });
 }
