@@ -343,7 +343,9 @@ git commit -m "feat(yomitan): add termEntries adapter (Hibiki result -> Yomitan 
 
 ## Task 2: tokenize 适配器（纯函数）
 
-把 `JapaneseLanguage.textToWords`（返回 `List<String>`，见 `japanese_language.dart:97`）的分词结果包装成 yomitan-api `tokenize` 形状。宽松兼容：每段给 `text`，读音用对该段的 `lookup` 取首条 reading（命中才带）。
+把 `JapaneseLanguage.textToWords`（返回 `List<String>`，见 `japanese_language.dart:97`）的分词结果包装成 yomitan-api `tokenize` 形状。
+
+**真实形状（核对 `yomitan-api/docs/api_paths/tokenize.md`）**：`content` 是**二维数组**——每个分词段包在自己的 list 里 `content: [[{text,reading}], [{text,reading}], ...]`；顶层 `id:"scan"`、`source:<parser>`、`dictionary:null`、`index`。每段首元素可带精简 `headwords`，但文档明确「无匹配时省略 headwords」，故本版**合法省略 headwords**（宽松取舍，后续可增强）。读音用对该段的 `lookup` 取首条 reading（命中才带，否则空串）。
 
 **Files:**
 - Create: `hibiki/lib/src/sync/yomitan_tokenize_adapter.dart`
@@ -358,7 +360,7 @@ import 'package:hibiki/src/sync/yomitan_tokenize_adapter.dart';
 
 void main() {
   group('buildYomitanTokenizeResponse', () {
-    test('wraps segments with index and content', () {
+    test('wraps each segment in its own array (yomitan 2D content)', () {
       // tokenizer 注入为纯函数依赖，避免依赖 FFI 引擎
       List<String> fakeTokenizer(String t) => ['日本語', 'は', '難しい'];
       String fakeReading(String w) => w == '日本語' ? 'にほんご' : '';
@@ -370,12 +372,18 @@ void main() {
         readingOf: fakeReading,
       );
 
+      expect(out['id'], 'scan');
+      expect(out['source'], 'scanning-parser');
+      expect(out['dictionary'], isNull);
       expect(out['index'], 0);
+
       final content = out['content'] as List;
       expect(content.length, 3);
-      expect((content[0] as Map)['text'], '日本語');
-      expect((content[0] as Map)['reading'], 'にほんご');
-      expect((content[1] as Map)['reading'], ''); // 未命中给空读音
+      final firstSeg = content[0] as List; // 每段是自己的数组
+      expect(firstSeg.length, 1);
+      expect((firstSeg[0] as Map)['text'], '日本語');
+      expect((firstSeg[0] as Map)['reading'], 'にほんご');
+      expect(((content[1] as List)[0] as Map)['reading'], ''); // 未命中空读音
     });
 
     test('empty text yields empty content', () {
@@ -409,26 +417,29 @@ typedef Tokenizer = List<String> Function(String text);
 typedef ReadingResolver = String Function(String word);
 
 /// 把分词结果包装成 yomitan-api `tokenize` 单条响应形状。
-/// 形状：`{ id, source, dictionary, index, content: [{text, reading}] }`。
+/// 形状：`{ id:"scan", source:<parser>, dictionary:null, index,
+/// content: [[{text, reading}], ...] }`（content 二维：每段一个数组）。
+/// headwords（首段精简词条）按文档可省略，本版省略（宽松取舍）。
 Map<String, dynamic> buildYomitanTokenizeResponse({
   required String text,
   required int index,
   required Tokenizer tokenize,
   required ReadingResolver readingOf,
+  String parser = 'scanning-parser',
 }) {
-  final List<Map<String, dynamic>> content = <Map<String, dynamic>>[];
+  final List<List<Map<String, dynamic>>> content =
+      <List<Map<String, dynamic>>>[];
   if (text.isNotEmpty) {
     for (final String seg in tokenize(text)) {
-      content.add(<String, dynamic>{
-        'text': seg,
-        'reading': readingOf(seg),
-      });
+      content.add(<Map<String, dynamic>>[
+        <String, dynamic>{'text': seg, 'reading': readingOf(seg)},
+      ]);
     }
   }
   return <String, dynamic>{
-    'id': index,
-    'source': text,
-    'dictionary': 'Hibiki',
+    'id': 'scan',
+    'source': parser,
+    'dictionary': null,
     'index': index,
     'content': content,
   };
