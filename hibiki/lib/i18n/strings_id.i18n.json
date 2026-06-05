@@ -136,8 +136,6 @@
     "error_standard_profile_name_content": "Tidak dapat mengganti nama profil standar.",
     "error_ankidroid_api": "Error AnkiDroid",
     "error_ankidroid_api_content": "Terjadi masalah saat berkomunikasi dengan AnkiDroid.\n\nPastikan layanan latar belakang AnkiDroid aktif dan semua izin aplikasi yang diperlukan telah diberikan.",
-    "info_standard_model": "Tipe kartu standar ditambahkan",
-    "info_standard_model_content": "『hibiki Kinomoto』telah ditambahkan ke AnkiDroid sebagai tipe kartu baru.\n\nPengaturan yang menggunakan tipe kartu atau urutan field berbeda dapat ditambahkan melalui profil ekspor baru.",
     "error_model_missing": "Tipe kartu tidak ditemukan",
     "error_model_missing_content": "Tipe kartu yang sesuai dengan profil yang dipilih tidak ditemukan.\n\nProfil akan dihapus, dan profil standar telah dipilih sebagai gantinya.",
     "error_model_changed": "Tipe kartu berubah",

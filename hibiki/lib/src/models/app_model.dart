@@ -1881,9 +1881,6 @@ class AppModel with ChangeNotifier {
   Future<void> requestAnkidroidPermissions() =>
       ankiIntegration.requestPermissions();
 
-  Future<void> addDefaultModelIfMissing() =>
-      ankiIntegration.addDefaultModelIfMissing(_ctx);
-
   Future<List<String>> getDecks() => ankiIntegration.getDecks(_ctx);
 
   Future<List<String>> getModelList() => ankiIntegration.getModelList(_ctx);

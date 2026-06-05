@@ -136,8 +136,6 @@
     "error_standard_profile_name_content": "Não é possível renomear o perfil padrão.",
     "error_ankidroid_api": "Erro do AnkiDroid",
     "error_ankidroid_api_content": "Houve um problema na comunicação com o AnkiDroid.\n\nCertifique-se de que o serviço em segundo plano do AnkiDroid está ativo e que todas as permissões relevantes foram concedidas para continuar.",
-    "info_standard_model": "Tipo de card padrão adicionado",
-    "info_standard_model_content": "『hibiki Kinomoto』 foi adicionado ao AnkiDroid como um novo tipo de card.\n\nConfigurações que utilizem um tipo de card ou ordem de campos diferente podem ser usadas adicionando um novo perfil de exportação.",
     "error_model_missing": "Tipo de card ausente",
     "error_model_missing_content": "O tipo de card correspondente ao perfil selecionado está ausente.\n\nO perfil será excluído e o perfil padrão foi selecionado em seu lugar.",
     "error_model_changed": "Tipo de card alterado",

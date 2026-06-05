@@ -152,8 +152,6 @@
     "error_standard_profile_name_content": "无法重命名标准配置。",
     "error_ankidroid_api": "AnkiDroid 错误",
     "error_ankidroid_api_content": "与 AnkiDroid 通信时出错。\n\n请确认 AnkiDroid 的后台服务已启用，并已授予所需权限。",
-    "info_standard_model": "已添加标准卡片类型",
-    "info_standard_model_content": "『hibiki Kinomoto』已作为新卡片类型添加至 AnkiDroid。\n\n如需使用其他卡片类型或字段顺序，可新建导出配置。",
     "error_model_missing": "缺少卡片类型",
     "error_model_missing_content": "当前配置对应的卡片类型已不存在。\n\n该配置将被删除，并自动切换到标准配置。",
     "error_model_changed": "卡片类型已变更",

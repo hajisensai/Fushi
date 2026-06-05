@@ -136,8 +136,6 @@
     "error_standard_profile_name_content": "Impossible de renommer le profil standard.",
     "error_ankidroid_api": "Erreur AnkiDroid",
     "error_ankidroid_api_content": "Un problème de communication avec AnkiDroid est survenu.\n\nAssurez-vous que le service en arrière-plan d'AnkiDroid est actif et que toutes les permissions nécessaires sont accordées pour continuer.",
-    "info_standard_model": "Type de carte standard ajouté",
-    "info_standard_model_content": "『hibiki Kinomoto』 a été ajouté à AnkiDroid en tant que nouveau type de carte.\n\nLes configurations utilisant un type de carte ou un ordre de champs différent peuvent être utilisées en ajoutant un nouveau profil d'exportation.",
     "error_model_missing": "Type de carte manquant",
     "error_model_missing_content": "Le type de carte correspondant au profil actuellement sélectionné est manquant.\n\nLe profil sera supprimé et le profil standard a été sélectionné à sa place.",
     "error_model_changed": "Type de carte modifié",

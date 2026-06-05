@@ -136,8 +136,6 @@
     "error_standard_profile_name_content": "Das Standardprofil kann nicht umbenannt werden.",
     "error_ankidroid_api": "AnkiDroid-Fehler",
     "error_ankidroid_api_content": "Bei der Kommunikation mit AnkiDroid ist ein Fehler aufgetreten.\n\nStellen Sie sicher, dass der AnkiDroid-Hintergrunddienst aktiv ist und alle erforderlichen App-Berechtigungen erteilt wurden.",
-    "info_standard_model": "Standard-Kartentyp hinzugefügt",
-    "info_standard_model_content": "『hibiki Kinomoto』wurde als neuer Kartentyp zu AnkiDroid hinzugefügt.\n\nSetups mit einem anderen Kartentyp oder Feldreihenfolge können durch Hinzufügen eines neuen Exportprofils verwendet werden.",
     "error_model_missing": "Fehlender Kartentyp",
     "error_model_missing_content": "Der zugehörige Kartentyp des aktuell ausgewählten Profils fehlt.\n\nDas Profil wird gelöscht und das Standardprofil wurde als Ersatz ausgewählt.",
     "error_model_changed": "Kartentyp geändert",

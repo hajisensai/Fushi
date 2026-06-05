@@ -136,8 +136,6 @@
     "error_standard_profile_name_content": "標準プロファイルの名前は変更できません。",
     "error_ankidroid_api": "AnkiDroidエラー",
     "error_ankidroid_api_content": "AnkiDroidとの通信中に問題が発生しました。\n\n続行するには、AnkiDroidのバックグラウンドサービスが有効であること、および必要なアプリの権限がすべて付与されていることを確認してください。",
-    "info_standard_model": "標準カードタイプを追加しました",
-    "info_standard_model_content": "『hibiki Kinomoto』が新しいカードタイプとしてAnkiDroidに追加されました。\n\n別のカードタイプやフィールド順序を使用する場合は、新しいエクスポートプロファイルを追加してください。",
     "error_model_missing": "カードタイプが見つかりません",
     "error_model_missing_content": "現在選択中のプロファイルに対応するカードタイプが見つかりません。\n\nこのプロファイルは削除され、標準プロファイルが代わりに選択されました。",
     "error_model_changed": "カードタイプが変更されました",

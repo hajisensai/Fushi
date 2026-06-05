@@ -136,8 +136,6 @@
     "error_standard_profile_name_content": "Невозможно переименовать стандартный профиль.",
     "error_ankidroid_api": "Ошибка AnkiDroid",
     "error_ankidroid_api_content": "Произошла ошибка при взаимодействии с AnkiDroid.\n\nУбедитесь, что фоновый сервис AnkiDroid запущен и все необходимые разрешения предоставлены.",
-    "info_standard_model": "Добавлен стандартный тип карточки",
-    "info_standard_model_content": "『hibiki Kinomoto』 добавлен в AnkiDroid как новый тип карточки.\n\nДля использования другого типа карточки или порядка полей создайте новый профиль экспорта.",
     "error_model_missing": "Тип карточки не найден",
     "error_model_missing_content": "Тип карточки текущего профиля не найден.\n\nПрофиль будет удалён, выбран стандартный профиль.",
     "error_model_changed": "Тип карточки изменён",

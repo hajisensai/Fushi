@@ -136,8 +136,6 @@
     "error_standard_profile_name_content": "No se puede renombrar el perfil estándar.",
     "error_ankidroid_api": "Error de AnkiDroid",
     "error_ankidroid_api_content": "Hubo un problema al comunicarse con AnkiDroid.\n\nAsegúrate de que el servicio en segundo plano de AnkiDroid esté activo y de que se hayan concedido todos los permisos necesarios.",
-    "info_standard_model": "Tipo de tarjeta estándar añadido",
-    "info_standard_model_content": "『hibiki Kinomoto』 se ha añadido a AnkiDroid como un nuevo tipo de tarjeta.\n\nLas configuraciones que usen un tipo de tarjeta o un orden de campos diferentes pueden utilizarse añadiendo un nuevo perfil de exportación.",
     "error_model_missing": "Tipo de tarjeta no encontrado",
     "error_model_missing_content": "El tipo de tarjeta correspondiente al perfil seleccionado no se encuentra.\n\nEl perfil será eliminado y se ha seleccionado el perfil estándar en su lugar.",
     "error_model_changed": "Tipo de tarjeta modificado",

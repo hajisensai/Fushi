@@ -136,8 +136,6 @@
     "error_standard_profile_name_content": "لا يمكن إعادة تسمية الملف الشخصي القياسي.",
     "error_ankidroid_api": "خطأ في AnkiDroid",
     "error_ankidroid_api_content": "حدث خطأ في التواصل مع AnkiDroid.\n\nتأكد من أن خدمة AnkiDroid الخلفية نشطة وتم منح جميع الأذونات المطلوبة.",
-    "info_standard_model": "تمت إضافة نوع البطاقة القياسي",
-    "info_standard_model_content": "تمت إضافة『hibiki Kinomoto』إلى AnkiDroid كنوع بطاقة جديد.\n\nيمكن استخدام أنواع بطاقات أخرى بإضافة ملف شخصي تصدير جديد.",
     "error_model_missing": "نوع البطاقة مفقود",
     "error_model_missing_content": "نوع البطاقة المرتبط بالملف الشخصي المحدد مفقود.\n\nسيتم حذف الملف الشخصي والتبديل إلى الملف القياسي.",
     "error_model_changed": "تغيّر نوع البطاقة",

@@ -136,8 +136,6 @@
     "error_standard_profile_name_content": "기본 프로필의 이름은 변경할 수 없습니다.",
     "error_ankidroid_api": "AnkiDroid 오류",
     "error_ankidroid_api_content": "AnkiDroid와 통신 중 문제가 발생했습니다.\n\n계속하려면 AnkiDroid 백그라운드 서비스가 활성화되어 있고 관련 앱 권한이 모두 부여되었는지 확인하세요.",
-    "info_standard_model": "기본 카드 유형 추가됨",
-    "info_standard_model_content": "『hibiki Kinomoto』가 AnkiDroid에 새 카드 유형으로 추가되었습니다.\n\n다른 카드 유형이나 필드 순서를 사용하려면 새 내보내기 프로필을 추가하세요.",
     "error_model_missing": "카드 유형 없음",
     "error_model_missing_content": "현재 선택된 프로필에 해당하는 카드 유형이 없습니다.\n\n해당 프로필은 삭제되고, 기본 프로필이 대신 선택되었습니다.",
     "error_model_changed": "카드 유형 변경됨",
