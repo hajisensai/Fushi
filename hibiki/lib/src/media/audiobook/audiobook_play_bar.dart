@@ -131,7 +131,7 @@ class AudiobookPlayBar extends StatelessWidget {
         enabledColor: fg,
         padding: EdgeInsets.all(tokens.spacing.gap),
         onTap: onOpenSettings,
-        tooltip: t.audiobook_settings,
+        tooltip: t.reader_settings_section,
       ),
     ];
     return ColoredBox(
