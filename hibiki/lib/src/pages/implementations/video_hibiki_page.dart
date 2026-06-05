@@ -72,6 +72,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage> {
 
   AppModel get appModel => ref.read(appProvider);
 
+  /// app 当前目标学习语言代码（如 `'ja'`/`'ko'`），用于 sidecar 字幕语言优先检测。
+  String get _targetLangCode => appModel.targetLanguage.locale.languageCode;
+
   @override
   void initState() {
     super.initState();
@@ -168,7 +171,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage> {
   }) async {
     if (persisted == null || persisted.isEmpty) return null;
     final List<SubtitleSource> sources =
-        await listAllSubtitleSources(videoPath);
+        await listAllSubtitleSources(videoPath, langCode: _targetLangCode);
     if (sources.isEmpty) return null;
 
     final SubtitleSource? chosen = crossEpisode
@@ -245,13 +248,15 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage> {
 
   /// 探测视频同目录 sidecar 字幕并解析为 cue（无则 null）。
   ///
-  /// 优先级 `.ja.srt > .ja.ass > .srt > .ass`（见 [findSidecarSubtitle]）；按
-  /// 扩展名路由 [SrtParser] / [AssParser]。IO + 解析失败静默返回 null。
+  /// 按 app 学习语言优先（学日语 → `.ja.srt > .ja.ass > … > .srt > .ass …`，
+  /// 见 [findSidecarSubtitle]）；按扩展名路由 [SrtParser] / [AssParser]。IO + 解析
+  /// 失败静默返回 null。
   Future<({String path, List<AudioCue> cues})?> _detectSidecar(
     String videoPath,
     String bookUid,
   ) async {
-    final String? sidecarPath = findSidecarSubtitle(videoPath);
+    final String? sidecarPath =
+        findSidecarSubtitle(videoPath, langCode: _targetLangCode);
     if (sidecarPath == null) return null;
     try {
       final String text = await readTextWithEncoding(File(sidecarPath));
@@ -569,7 +574,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage> {
     if (videoPath == null) return;
 
     final List<SubtitleSource> sources =
-        await listAllSubtitleSources(videoPath);
+        await listAllSubtitleSources(videoPath, langCode: _targetLangCode);
     if (!mounted) return;
 
     showModalBottomSheet<void>(

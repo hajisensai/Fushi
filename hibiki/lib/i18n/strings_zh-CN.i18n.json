@@ -1252,7 +1252,6 @@
     "video_import_confirm": "导入",
     "shelf_video_section": "视频",
     "video_import_action": "导入视频",
-    "video_import_subtitle_optional": "可选（不选则使用视频内嵌字幕）",
     "video_import_playlist": "导入播放列表 (m3u8)",
     "video_import_pick_playlist": "选择 m3u8 播放列表",
     "video_episode_list": "选集",
@@ -1261,5 +1260,6 @@
     "video_subtitle_source": "字幕来源",
     "video_subtitle_off": "关闭字幕",
     "video_subtitle_switched": "已切换字幕：$label",
-    "video_audio_track_switched": "音轨: $label"
+    "video_audio_track_switched": "音轨: $label",
+    "video_import_subtitle_optional": "可选外挂字幕（播放时可随时在内嵌/外挂字幕间切换）"
 }

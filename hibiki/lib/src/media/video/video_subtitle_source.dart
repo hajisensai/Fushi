@@ -219,25 +219,39 @@ const Set<String> _externalSubtitleExtensions = <String>{
 };
 
 /// **纯函数**：从目录文件名列表 [dirFiles] 中挑出与 [videoBaseNoExt] **同前缀**的
-/// 外挂字幕文件名（大小写不敏感），按 [dirFiles] 原序返回原始文件名。
+/// 外挂字幕文件名（大小写不敏感），返回原始文件名。
 ///
 /// 「同前缀」= 文件名（小写）以 `<videoBaseNoExt>` 开头，且扩展名 ∈
 /// {srt,ass,ssa,vtt}。即 `S01E01.mkv`（base=`S01E01`）只挑 `S01E01.srt` /
 /// `S01E01.ja.srt` / `S01E01.en.srt`，**不挑** `S01E02.ja.srt`。这样换集/同目录混放
 /// 多集字幕时，字幕菜单只列当前集的字幕，不被别集刷屏。
 ///
+/// [langCode] 是 app 目标学习语言代码（如 `'ja'`）。**列全部同名字幕不变**，但带该
+/// 语言标记 `.<langCode>.` 的字幕排在前（稳定排序：组内保持 [dirFiles] 原序），让
+/// 菜单第一项是学习语言对应的字幕。
+///
 /// 不碰文件系统，可单测。
-List<String> pickSameNameSubs(String videoBaseNoExt, List<String> dirFiles) {
+List<String> pickSameNameSubs(
+  String videoBaseNoExt,
+  List<String> dirFiles, {
+  required String langCode,
+}) {
   final String baseLower = videoBaseNoExt.toLowerCase();
-  final List<String> matched = <String>[];
+  final String langMarker = '.${langCode.toLowerCase()}.';
+  final List<String> langFirst = <String>[];
+  final List<String> rest = <String>[];
   for (final String name in dirFiles) {
     final String nameLower = name.toLowerCase();
     if (!nameLower.startsWith(baseLower)) continue;
     final String ext = p.extension(nameLower);
     if (!_externalSubtitleExtensions.contains(ext)) continue;
-    matched.add(name);
+    if (nameLower.contains(langMarker)) {
+      langFirst.add(name);
+    } else {
+      rest.add(name);
+    }
   }
-  return matched;
+  return <String>[...langFirst, ...rest];
 }
 
 /// **纯函数**：换集时按「同类偏好」从新集可用字幕源 [sources] 里挑一个。
@@ -296,8 +310,12 @@ String _externalSubtitleSuffix(String path) {
 ///
 /// 返回合并列表（内嵌在前，外挂在后）。外挂只收与视频同 basename（去扩展名）前缀的
 /// srt/ass/ssa/vtt（含 `.ja.srt` 等带语言后缀），见 [pickSameNameSubs]——别集字幕
-/// 不列。目录读取失败时只返回内嵌部分。
-Future<List<SubtitleSource>> listAllSubtitleSources(String videoPath) async {
+/// 不列。[langCode] 是 app 学习语言代码，让带该语言标记的外挂字幕排在前。目录读取
+/// 失败时只返回内嵌部分。
+Future<List<SubtitleSource>> listAllSubtitleSources(
+  String videoPath, {
+  required String langCode,
+}) async {
   final List<SubtitleSource> sources = <SubtitleSource>[];
 
   // ① 内嵌轨。
@@ -323,7 +341,8 @@ Future<List<SubtitleSource>> listAllSubtitleSources(String videoPath) async {
           .whereType<File>()
           .map((File f) => p.basename(f.path))
           .toList();
-      for (final String name in pickSameNameSubs(videoBaseNoExt, dirFiles)) {
+      for (final String name
+          in pickSameNameSubs(videoBaseNoExt, dirFiles, langCode: langCode)) {
         sources.add(SubtitleSource.external(
           externalPath: p.normalize(p.join(dir, name)),
           label: name,

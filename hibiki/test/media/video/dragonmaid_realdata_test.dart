@@ -39,7 +39,7 @@ void main() {
         reason: 'first episode mkv must exist: $firstPath');
 
     // ② sidecar 检测：S01E01.mkv → .ja.srt。
-    final String? sidecar = findSidecarSubtitle(firstPath);
+    final String? sidecar = findSidecarSubtitle(firstPath, langCode: 'ja');
     expect(sidecar, isNotNull);
     expect(sidecar!.toLowerCase().endsWith('.ja.srt'), isTrue,
         reason: 'expected .ja.srt sidecar, got $sidecar');

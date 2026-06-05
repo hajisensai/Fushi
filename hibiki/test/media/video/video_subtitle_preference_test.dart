@@ -13,7 +13,10 @@ void main() {
         "Miss Kobayashi's Dragon Maid - S01E03.ja.srt",
         'random.srt',
       ];
-      expect(pickSameNameSubs(base, dirFiles), <String>['$base.ja.srt']);
+      expect(
+        pickSameNameSubs(base, dirFiles, langCode: 'ja'),
+        <String>['$base.ja.srt'],
+      );
     });
 
     test('同集多语言后缀都列出（.ja.srt + .en.srt）', () {
@@ -24,20 +27,52 @@ void main() {
         "Miss Kobayashi's Dragon Maid - S01E02.ja.srt",
       ];
       expect(
-        pickSameNameSubs(base, dirFiles),
+        pickSameNameSubs(base, dirFiles, langCode: 'ja'),
         containsAll(<String>['$base.ja.srt', '$base.en.srt']),
       );
-      expect(pickSameNameSubs(base, dirFiles), hasLength(2));
+      expect(pickSameNameSubs(base, dirFiles, langCode: 'ja'), hasLength(2));
+    });
+
+    test('学习语言标记字幕排在前（学日语 → .ja.srt 排 .en.srt 之前）', () {
+      final List<String> dirFiles = <String>[
+        '$base.mkv',
+        '$base.en.srt',
+        '$base.srt',
+        '$base.ja.srt',
+      ];
+      expect(
+        pickSameNameSubs(base, dirFiles, langCode: 'ja'),
+        <String>['$base.ja.srt', '$base.en.srt', '$base.srt'],
+      );
+    });
+
+    test('学韩语 → .ko.srt 排前，无 ko 则按原序', () {
+      final List<String> dirFiles = <String>[
+        '$base.mkv',
+        '$base.ja.srt',
+        '$base.ko.srt',
+        '$base.srt',
+      ];
+      expect(
+        pickSameNameSubs(base, dirFiles, langCode: 'ko'),
+        <String>['$base.ko.srt', '$base.ja.srt', '$base.srt'],
+      );
     });
 
     test('无后缀的精确同名字幕也列出（base.srt）', () {
       final List<String> dirFiles = <String>['$base.mkv', '$base.srt'];
-      expect(pickSameNameSubs(base, dirFiles), <String>['$base.srt']);
+      expect(
+        pickSameNameSubs(base, dirFiles, langCode: 'ja'),
+        <String>['$base.srt'],
+      );
     });
 
     test('大小写不敏感匹配，返回原始文件名', () {
       final List<String> dirFiles = <String>['$base.JA.SRT'];
-      expect(pickSameNameSubs(base, dirFiles), <String>['$base.JA.SRT']);
+      expect(
+        pickSameNameSubs(base, dirFiles, langCode: 'ja'),
+        <String>['$base.JA.SRT'],
+      );
     });
 
     test('只收 srt/ass/ssa/vtt 扩展名，前缀同名但非字幕的文件不列', () {
@@ -47,7 +82,10 @@ void main() {
         '$base.ja.srt',
         '$base.txt',
       ];
-      expect(pickSameNameSubs(base, dirFiles), <String>['$base.ja.srt']);
+      expect(
+        pickSameNameSubs(base, dirFiles, langCode: 'ja'),
+        <String>['$base.ja.srt'],
+      );
     });
 
     test('前缀不同名（别集）一律不列', () {
@@ -55,7 +93,7 @@ void main() {
         "Miss Kobayashi's Dragon Maid - S01E02.ja.srt",
         'S01E01.ja.srt',
       ];
-      expect(pickSameNameSubs(base, dirFiles), isEmpty);
+      expect(pickSameNameSubs(base, dirFiles, langCode: 'ja'), isEmpty);
     });
   });
 

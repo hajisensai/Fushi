@@ -1252,7 +1252,6 @@
     "video_import_confirm": "Import",
     "shelf_video_section": "Videos",
     "video_import_action": "Import video",
-    "video_import_subtitle_optional": "Optional (uses the video's embedded subtitles if not selected)",
     "video_import_playlist": "Import playlist (m3u8)",
     "video_import_pick_playlist": "Pick m3u8 playlist",
     "video_episode_list": "Episodes",
@@ -1261,5 +1260,6 @@
     "video_subtitle_source": "Subtitle source",
     "video_subtitle_off": "Turn off subtitles",
     "video_subtitle_switched": "Subtitle: $label",
-    "video_audio_track_switched": "Audio track: $label"
+    "video_audio_track_switched": "Audio track: $label",
+    "video_import_subtitle_optional": "Optional external subtitle (you can switch between embedded/external subtitles anytime during playback)"
 }
