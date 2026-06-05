@@ -67,8 +67,27 @@ class VideoHibikiPage extends ConsumerStatefulWidget {
   ConsumerState<VideoHibikiPage> createState() => _VideoHibikiPageState();
 }
 
+/// 集成测试钩子（仅测试用）：对当前 [VideoHibikiPage] 的 [State] 读播放位置 /
+/// 驱动真实播放，验证「退出→再进续播」链路而不暴露页面私有字段。State 以
+/// [VideoHibikiTestHooks] 形式按接口暴露，测试经 `tester.state` 拿到后 `as` 转型。
+@visibleForTesting
+abstract class VideoHibikiTestHooks {
+  /// 当前播放位置（毫秒）；未就绪为 null。
+  int? get debugPositionMs;
+
+  /// 开始真实播放（驱动 libmpv），让位置自然前进。
+  Future<void> debugPlay();
+}
+
 class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
-    with DictionaryPageMixin {
+    with DictionaryPageMixin, WidgetsBindingObserver
+    implements VideoHibikiTestHooks {
+  @override
+  int? get debugPositionMs => _controller?.positionMs;
+
+  @override
+  Future<void> debugPlay() async => _controller?.play();
+
   VideoPlayerController? _controller;
   bool _failed = false;
   String? _title;
@@ -124,7 +143,21 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _init();
+  }
+
+  /// app 进后台（[AppLifecycleState.inactive]/`.paused`/`.hidden`）时把当前播放
+  /// 位置 **await 落库**：dispose 在硬杀进程时不会跑，周期保存是 fire-and-forget
+  /// 且后台定时器会挂起。趁 controller 仍存活把退出瞬间位置写穿（对齐阅读器
+  /// `_syncAndFlushPosition`）。
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
+      unawaited(_controller?.flushPosition());
+    }
   }
 
   Future<void> _init() async {
@@ -499,6 +532,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _popupStack.clear();
     final OverlayEntry? entry = _popupOverlayEntry;
     if (entry != null) {
@@ -994,12 +1028,22 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     final VideoController? videoController = controller?.videoController;
     final ColorScheme cs = Theme.of(context).colorScheme;
     return PopScope(
-      // 浮层栈非空时，back 先关栈（一层一层退）而非直接退出视频页。浮层在根 Overlay，
-      // 退出视频路由不会自动清它，故必须在路由 pop 前拦截。
-      canPop: _popupStack.isEmpty,
-      onPopInvokedWithResult: (bool didPop, Object? _) {
-        if (didPop || _popupStack.isEmpty) return;
-        _popNestedPopupAt(_popupStack.length - 1);
+      // 始终 `canPop: false` 自管退出：① 浮层栈非空时 back 先关栈（一层一层退），
+      // 浮层在根 Overlay 退出视频路由不会自动清它，必须在 pop 前拦截；② 栈空真退出
+      // 时，**先 await `flushPosition()` 把退出瞬间位置可靠落库再手动 pop**——否则只剩
+      // controller.dispose() 里 fire-and-forget 的 `_forceSavePositionSync()`，drift
+      // 写库 Future 与 Navigator 同步销毁 State 竞争、常写不完，导致「退出再进没回到
+      // 上次位置」（对齐阅读器 `onWillPop` 先 await 落库再 pop 的做法）。
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, Object? _) async {
+        if (didPop) return;
+        if (_popupStack.isNotEmpty) {
+          _popNestedPopupAt(_popupStack.length - 1);
+          return;
+        }
+        final NavigatorState nav = Navigator.of(context);
+        await _controller?.flushPosition();
+        if (mounted) nav.pop();
       },
       child: _buildScaffold(controller, videoController, cs),
     );
@@ -1067,6 +1111,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       fullscreen: _desktopControlsTheme(controller),
       child: Video(
         controller: videoController,
+        // 视频不满屏时的 letterbox/pillarbox 填充色吃主题 surface（默认黑边换成
+        // 跟随主题的中性底色，与 Scaffold 背景一致，深浅主题统一）。
+        fill: Theme.of(context).colorScheme.surface,
         // 字幕 overlay 包进 controls builder：media_kit 全屏推独立 root 路由并复用
         // 同一 controls，故 overlay 随全屏一起进路由，全屏时字幕仍显示且可点查词。
         controls: (VideoState state) => _buildVideoControls(state, controller),
