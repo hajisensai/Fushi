@@ -165,6 +165,20 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 调 [notifySectionRestoreCompleted] 清回 false。
   bool _chapterTransition = false;
 
+  /// 显式 seek（skipToCue / playCueOnce）进行中：`preload:false` 下跨文件
+  /// `seek(index:)` 会触发目标文件异步加载，加载期 positionStream 先吐瞬态
+  /// 位置（0 / 旧文件章首），逐 tick 触发 _maybeEmitCrossChapter / reveal，
+  /// 造成「音频开头 → 章节开头 → 正确位置」三段跳（BUG-061）。
+  /// 立旗后 [_updateCurrentCue] 顶部抑制瞬态 tick，直到 player 切到目标音频
+  /// 文件且位置到达目标（见 [reachedExplicitSeekTargetForTesting]）才放行。
+  bool _explicitSeekInFlight = false;
+  int _explicitSeekTargetFileIndex = -1;
+  int _explicitSeekTargetMs = 0;
+
+  /// 落定容差（毫秒）：位置到达 `targetMs - 容差` 即视为 seek 落定，
+  /// 取约两个 125ms tick 的量级，吸收 just_audio 加载完成后的首帧抖动。
+  static const int _kExplicitSeekToleranceMs = 300;
+
   /// Follow audio 开关变化时的持久化回调。Reader 页面 attach audiobook 时
   /// 装入这个字段（一般是 `(v) => repo.updateFollowAudio(bookKey, v)`），
   /// [setFollowAudio] 内部调用。独立于按钮 UI 让 play bar 只翻内存状态
@@ -576,6 +590,14 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// [_updateCurrentCue]：暂停态下 positionStream 不发事件，必须显式；
   /// 播放态下 positionStream 稍后 tick 到新位置，_updateCurrentCue 判断
   /// cue 已变化就不再 notify，天然幂等。
+  /// 立起显式 seek 抑制窗：记录目标音频文件与位置，[_updateCurrentCue]
+  /// 据此在加载期抑制瞬态 tick，直到真实位置落定（BUG-061）。
+  void _beginExplicitSeek(int targetFileIndex, int targetMs) {
+    _explicitSeekInFlight = true;
+    _explicitSeekTargetFileIndex = targetFileIndex;
+    _explicitSeekTargetMs = targetMs;
+  }
+
   Future<void> skipToCue(AudioCue cue) async {
     _stopAtPositionMs = null;
     _returnToPosition = null;
@@ -588,6 +610,7 @@ class AudiobookPlayerController extends ChangeNotifier {
       return;
     }
     final int positionMs = _clampToKnownDuration(mappedPosition.positionMs);
+    _beginExplicitSeek(mappedPosition.audioFileIndex, positionMs);
     await _player.seek(
       Duration(milliseconds: positionMs),
       index: mappedPosition.audioFileIndex,
@@ -595,11 +618,15 @@ class AudiobookPlayerController extends ChangeNotifier {
     _chapterTransition = false;
     final int idx = _chapterCues.indexOf(cue);
     if (idx >= 0) {
+      // 权威写入目标 cue（不依赖瞬态 position）；保持 _explicitSeekInFlight=true，
+      // 由 _updateCurrentCue 在位置落定后清旗，期间抑制加载期瞬态 tick。
       _currentCueIndex = idx;
       _currentCue = cue;
       _maybeEmitCrossChapter(cue);
       notifyListeners();
     } else {
+      // 非 sasayaki 路径维持原有「按当前位置即时定位」语义，不抑制。
+      _explicitSeekInFlight = false;
       _updateCurrentCue(_player.position.inMilliseconds);
     }
   }
@@ -620,10 +647,10 @@ class AudiobookPlayerController extends ChangeNotifier {
     );
     _stopAtPositionMs = cue.endMs;
 
+    final int targetMs = _clampToKnownDuration(startPosition.positionMs);
+    _beginExplicitSeek(startPosition.audioFileIndex, targetMs);
     await _player.seek(
-      Duration(
-        milliseconds: _clampToKnownDuration(startPosition.positionMs),
-      ),
+      Duration(milliseconds: targetMs),
       index: startPosition.audioFileIndex,
     );
     _chapterTransition = false;
@@ -769,6 +796,21 @@ class AudiobookPlayerController extends ChangeNotifier {
   }
 
   void _updateCurrentCue(int posMs) {
+    // 显式 seek（skipToCue/playCueOnce）加载期：抑制瞬态 tick 驱动位置保存 /
+    // cue 推进 / 跨章 / reveal，直到真实位置到达目标（BUG-061）。落定的那一
+    // tick 清旗后继续往下按正常逻辑处理。
+    if (_explicitSeekInFlight) {
+      if (reachedExplicitSeekTargetForTesting(
+        currentFileIndex: _player.currentIndex ?? 0,
+        posMs: posMs,
+        targetFileIndex: _explicitSeekTargetFileIndex,
+        targetMs: _explicitSeekTargetMs,
+      )) {
+        _explicitSeekInFlight = false;
+      } else {
+        return;
+      }
+    }
     // 位置持久化挪到 chapterTransition guard 之前，对齐 Sasayaki tick 的
     // 结构：位置保存在 tick() 主体，updateCue() 的 guard 不影响保存节奏。
     // 跨章 await 几秒内，如果 guard 把 save 一起卡住，用户此时杀进程会
@@ -1082,6 +1124,20 @@ class AudiobookPlayerController extends ChangeNotifier {
       return true;
     }
     return a.textFragmentId.isNotEmpty && a.textFragmentId == b.textFragmentId;
+  }
+
+  /// 显式 seek 是否「落定」：player 已切到目标音频文件、且当前位置到达
+  /// `targetMs - toleranceMs`。未落定（仍在加载期 / index 未切 / 位置仍为
+  /// 瞬态 0）时返回 false，调用方应抑制该 tick（BUG-061）。纯函数，可单测。
+  @visibleForTesting
+  static bool reachedExplicitSeekTargetForTesting({
+    required int currentFileIndex,
+    required int posMs,
+    required int targetFileIndex,
+    required int targetMs,
+    int toleranceMs = _kExplicitSeekToleranceMs,
+  }) {
+    return currentFileIndex == targetFileIndex && posMs >= targetMs - toleranceMs;
   }
 
   @visibleForTesting
