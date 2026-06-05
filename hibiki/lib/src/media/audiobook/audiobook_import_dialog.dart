@@ -9,7 +9,6 @@ import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki/src/media/audiobook/sasayaki_rematch.dart';
 import 'package:hibiki/src/epub/epub_book.dart';
 import 'package:hibiki/src/epub/epub_parser.dart';
-import 'package:hibiki/src/epub/epub_storage.dart';
 import 'package:hibiki/utils.dart';
 
 /// 有声书导入/移除对话框。
@@ -18,20 +17,21 @@ import 'package:hibiki/utils.dart';
 /// "选目录"和"选文件"两个按钮，可在两种音频来源模式间切换。
 class AudiobookImportDialog extends StatefulWidget {
   const AudiobookImportDialog({
-    required this.bookUid,
+    required this.bookKey,
     required this.repo,
-    this.ttuBookId,
+    this.extractDir,
     this.audioOnly = false,
     super.key,
   });
 
-  final String bookUid;
+  /// 书的唯一标识 = EpubBooks.bookKey（也用作有声书 / cue 的 key）。
+  final String bookKey;
   final AudiobookRepository repo;
 
-  /// Drift EpubBooks primary key. 当传入且对齐文件是
-  /// `.srt` 时，走 Sasayaki 路径：从提取目录读章节文本 → EpubSrtMatcher 匹配
-  /// → 把命中 cue 的偏移编码写回 textFragmentId。
-  final int? ttuBookId;
+  /// 已导入 EPUB 的提取目录（`EpubBooks.extractDir`）。非空时走 Sasayaki
+  /// 路径：从提取目录读章节文本 → EpubSrtMatcher 匹配 → 把命中 cue 的偏移
+  /// 编码写回 textFragmentId。standalone（无 EPUB）时为 null。
+  final String? extractDir;
 
   /// When true, only audio files can be imported (alignment row and matcher
   /// settings are hidden). Used for SRT books that already have their own cues.
@@ -72,9 +72,13 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
 
   /// 只有 srt/lrc/vtt/ass 才跑 matcher（SMIL/JSON 有硬时间码锚点，与
   /// window 无关），且必须绑定了 ttu 才有 sections 可查，否则 slider 隐藏。
+  /// 是否绑定了一本已导入的 EPUB（有提取目录可供 matcher 读章节文本）。
+  bool get _hasEpub =>
+      widget.extractDir != null && widget.extractDir!.isNotEmpty;
+
   bool get _willRunMatcher {
     if (_alignmentPath == null) return false;
-    if (widget.ttuBookId == null || widget.ttuBookId! <= 0) return false;
+    if (!_hasEpub) return false;
     final String ext = _alignmentPath!.split('.').last.toLowerCase();
     return SasayakiRematch.supportedFormats.contains(ext);
   }
@@ -108,7 +112,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
   }
 
   Future<void> _initExisting() async {
-    final Audiobook? existing = await widget.repo.findByBookUid(widget.bookUid);
+    final Audiobook? existing = await widget.repo.findByBookKey(widget.bookKey);
     if (!mounted) return;
     setState(() {
       _existing = existing;
@@ -264,7 +268,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
   /// 才显示重跑入口。SMIL/JSON 走信任文件锚点，与 searchWindow 无关。
   /// unrun 状态也允许重跑 — 历史脏记录的书借此给它跑一次。
   bool _canReMatch(Audiobook ab, AudiobookHealth health) {
-    if (widget.ttuBookId == null || widget.ttuBookId! <= 0) return false;
+    if (!_hasEpub) return false;
     if (!SasayakiRematch.isEligible(ab)) return false;
     switch (health.kind) {
       case HealthKind.partial:
@@ -532,12 +536,11 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
   }
 
   Future<List<EpubSection>> _loadSectionsForProbe() async {
-    if (widget.ttuBookId == null || widget.ttuBookId! <= 0) {
+    if (!_hasEpub) {
       return const <EpubSection>[];
     }
     try {
-      final String extractDir =
-          await EpubStorage.bookDirectory(widget.ttuBookId!);
+      final String extractDir = widget.extractDir!;
       final EpubBook book = EpubParser.parseFromExtracted(extractDir);
       return List<EpubSection>.generate(
         book.chapters.length,
@@ -563,13 +566,13 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
     try {
       switch (ext) {
         case 'srt':
-          return await SrtParser.parse(srtFile: f, bookUid: widget.bookUid);
+          return await SrtParser.parse(srtFile: f, bookKey: widget.bookKey);
         case 'lrc':
-          return await LrcParser.parse(lrcFile: f, bookUid: widget.bookUid);
+          return await LrcParser.parse(lrcFile: f, bookKey: widget.bookKey);
         case 'vtt':
-          return await VttParser.parse(vttFile: f, bookUid: widget.bookUid);
+          return await VttParser.parse(vttFile: f, bookKey: widget.bookKey);
         case 'ass':
-          return await AssParser.parse(assFile: f, bookUid: widget.bookUid);
+          return await AssParser.parse(assFile: f, bookKey: widget.bookKey);
         default:
           return const <AudioCue>[];
       }
@@ -594,8 +597,8 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
     }
 
     debugPrint(
-        '[hibiki-audiobook] doImport bookUid.len=${widget.bookUid.length} '
-        'hash=${widget.bookUid.hashCode} uid=${widget.bookUid}');
+        '[hibiki-audiobook] doImport bookKey.len=${widget.bookKey.length} '
+        'hash=${widget.bookKey.hashCode} key=${widget.bookKey}');
     setState(() => _importing = true);
     _reportProgress(0, '');
 
@@ -697,7 +700,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       }
 
       _reportProgress(0.8, t.import_step_saving);
-      final Audiobook audiobook = Audiobook()..bookUid = widget.bookUid;
+      final Audiobook audiobook = Audiobook()..bookKey = widget.bookKey;
 
       if (persistedAlignment != null) {
         final String ext = persistedAlignment.split('.').last.toLowerCase();
@@ -717,11 +720,11 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       await widget.repo.saveAudiobook(audiobook);
       if (parsed != null) {
         await widget.repo.saveCues(
-          bookUid: widget.bookUid,
+          bookKey: widget.bookKey,
           cues: parsed.cues,
         );
         await widget.repo.updateHealthOverlay(
-          bookUid: widget.bookUid,
+          bookKey: widget.bookKey,
           health: parsed.health,
         );
       }
@@ -774,8 +777,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
   /// health 走 Hive overlay（不 put Audiobook，避免二次 put 把 matchRatePct
   /// 字节写坏）。
   Future<void> _openReMatchSheet(Audiobook ab) async {
-    final int? ttuId = widget.ttuBookId;
-    if (ttuId == null || ttuId <= 0) {
+    if (!_hasEpub) {
       HibikiToast.show(msg: t.ttu_not_bound_cannot_rematch);
       return;
     }
@@ -783,7 +785,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
       context: context,
       ab: ab,
       repo: widget.repo,
-      ttuBookId: ttuId,
+      extractDir: widget.extractDir!,
       onRunningChanged: (running) {
         if (mounted) setState(() => _importing = running);
       },
@@ -800,8 +802,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
   /// notApplicable；reader 失败 / cues 为空 → failed。调用方据此写回
   /// [Audiobook.healthKindRaw] 等字段。
   Future<AudiobookHealth> _matchCuesToTtu(List<AudioCue> cues) async {
-    final int? ttuId = widget.ttuBookId;
-    if (ttuId == null || ttuId <= 0) {
+    if (!_hasEpub) {
       return AudiobookHealth.notApplicable(
         reason: 'no book bound — subtitle playback works, but no '
             'cross-chapter highlight',
@@ -812,7 +813,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
     }
     try {
       _reportProgress(0.2, t.import_step_reading_idb);
-      final String extractDir = await EpubStorage.bookDirectory(ttuId);
+      final String extractDir = widget.extractDir!;
       final EpubBook epubBook = EpubParser.parseFromExtracted(extractDir);
       final List<EpubSection> sections = List<EpubSection>.generate(
         epubBook.chapters.length,
@@ -868,16 +869,16 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
     String formatLabel = format;
 
     if (format == 'srt') {
-      cues = await SrtParser.parse(srtFile: alignFile, bookUid: widget.bookUid);
+      cues = await SrtParser.parse(srtFile: alignFile, bookKey: widget.bookKey);
     } else if (format == 'lrc') {
-      cues = await LrcParser.parse(lrcFile: alignFile, bookUid: widget.bookUid);
+      cues = await LrcParser.parse(lrcFile: alignFile, bookKey: widget.bookKey);
     } else if (format == 'vtt') {
-      cues = await VttParser.parse(vttFile: alignFile, bookUid: widget.bookUid);
+      cues = await VttParser.parse(vttFile: alignFile, bookKey: widget.bookKey);
     } else if (format == 'ass' || format == 'ssa') {
-      cues = await AssParser.parse(assFile: alignFile, bookUid: widget.bookUid);
+      cues = await AssParser.parse(assFile: alignFile, bookKey: widget.bookKey);
     } else if (format == 'json') {
       cues = await JsonAlignmentParser.parse(
-          jsonFile: alignFile, bookUid: widget.bookUid);
+          jsonFile: alignFile, bookKey: widget.bookKey);
       useFragmentHealth = true;
     } else {
       final String fileName =
@@ -886,7 +887,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
           RegExp(r'\.smil$', caseSensitive: false), '.xhtml');
       cues = await SmilParser.parse(
           smilFile: alignFile,
-          bookUid: widget.bookUid,
+          bookKey: widget.bookKey,
           chapterHref: chapterHref);
       useFragmentHealth = true;
       formatLabel = 'smil';
@@ -960,7 +961,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
   }
 
   Future<void> _removeAudiobook(Audiobook ab) async {
-    debugPrint('AudiobookImportDialog: remove tapped for ${widget.bookUid}');
+    debugPrint('AudiobookImportDialog: remove tapped for ${widget.bookKey}');
     final NavigatorState outerNavigator =
         Navigator.of(context, rootNavigator: true);
 
@@ -974,7 +975,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
     if (confirm != true) return;
 
     try {
-      await widget.repo.deleteAudiobook(widget.bookUid);
+      await widget.repo.deleteAudiobook(widget.bookKey);
       debugPrint('AudiobookImportDialog: deleteAudiobook done');
     } catch (e, st) {
       ErrorLogService.instance.log('AudiobookImport.deleteAudiobook', e, st);
@@ -991,7 +992,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
   }
 
   Future<Directory> _ensurePersistDir() =>
-      AudiobookStorage.ensurePersistDir(widget.bookUid);
+      AudiobookStorage.ensurePersistDir(widget.bookKey);
 
   static String _formatBytes(int bytes) {
     if (bytes < 1024) return '$bytes B';

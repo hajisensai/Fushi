@@ -90,13 +90,15 @@ ParsedBookData parseAndCountChapters(String extractDir) {
 
 class ReaderHibikiPage extends BaseSourcePage {
   const ReaderHibikiPage({
-    required this.bookId,
+    required this.bookKey,
     super.item,
     this.initialBookmarkJump,
     super.key,
   });
 
-  final int bookId;
+  /// EpubBooks primary key (= sanitized title). Identifies the book across all
+  /// reading data (positions, bookmarks, audiobook, profile).
+  final String bookKey;
   final Bookmark? initialBookmarkJump;
 
   /// Debug-only hook for integration tests to evaluate JS inside the reader
@@ -182,7 +184,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   double _lastProgressValue = 0;
 
   AudiobookPlayerController? _audiobookController;
-  String? _audiobookBookUid;
+  String? _audiobookBookKey;
   String? _srtBookUid;
   Map<int, int>? _srtCueChapterMap;
   List<(int firstIdx, int lastIdx)>? _srtChapterRanges;
@@ -314,18 +316,18 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       final ProfileViewModel profileVm =
           ref.read(profileViewModelProvider.notifier);
 
-      final String bookUid = ReaderHibikiSource.bookUidFor(widget.bookId);
+      final String bookKey = widget.bookKey;
 
       String mediaType;
       if (mediaTypeOverride != null) {
         mediaType = mediaTypeOverride;
       } else {
         mediaType = 'epub';
-        final abRow = await db.getAudiobookByBookUid(bookUid);
+        final abRow = await db.getAudiobookByBookKey(bookKey);
         if (abRow != null) {
           mediaType = 'audiobook';
         } else {
-          final srtRow = await db.getSrtBookByTtuBookId(widget.bookId);
+          final srtRow = await db.getSrtBookByBookKey(bookKey);
           if (srtRow != null) {
             mediaType = 'srtbook';
           }
@@ -333,7 +335,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       }
 
       final int resolvedId = await profileRepo.resolveProfileId(
-        bookUid: bookUid,
+        bookUid: bookKey,
         mediaType: mediaType,
       );
       final int currentActiveId = await profileRepo.getActiveProfileId();
@@ -360,17 +362,20 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     _settings = ReaderHibikiSource.readerSettings;
     if (!mounted) return;
 
-    final bool exists = await EpubStorage.bookExists(widget.bookId);
+    // Locate the book on disk by its stored extract_dir column (the on-disk
+    // folder name may still be a legacy int id; the column is the truth).
+    final EpubBookRow? bookRow = await db.getEpubBook(widget.bookKey);
+    if (!mounted) return;
+    final String extractDir = bookRow?.extractDir ?? '';
+    final bool exists = await EpubStorage.bookDirExists(extractDir);
     if (!mounted) return;
     if (!exists) {
-      debugPrint('[ReaderHibiki] book ${widget.bookId} not found on disk');
+      debugPrint('[ReaderHibiki] book ${widget.bookKey} not found on disk');
       HibikiToast.show(msg: t.book_file_not_found);
       Navigator.of(context).pop();
       return;
     }
 
-    final String extractDir = await EpubStorage.bookDirectory(widget.bookId);
-    if (!mounted) return;
     _extractDir = extractDir;
 
     try {
@@ -382,7 +387,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
           '[ReaderHibiki] parsed EPUB: ${_book!.chapters.length} chapters');
     } on FormatException catch (e) {
       debugPrint('[ReaderHibiki] EPUB parse failed ($e), trying DB metadata');
-      _book = await _buildBookFromDb(db, widget.bookId, extractDir);
+      _book = await _buildBookFromDb(db, widget.bookKey, extractDir);
       if (!mounted) return;
       _book ??= _buildLegacyBook(extractDir);
       // fallback 路径没在解析 isolate 里算字符数，这里补一趟；书已在内存，
@@ -419,9 +424,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
           'chapter=$_currentChapter progress=$_initialProgress');
     } else {
       final ReaderPositionRepository repo = ReaderPositionRepository(db);
-      final ReaderPosition? saved = await repo.findByTtuBookId(widget.bookId);
+      final ReaderPosition? saved = await repo.findByBookKey(widget.bookKey);
       if (!mounted) return;
-      debugPrint('[ReaderHibiki] restore lookup: bookId=${widget.bookId} '
+      debugPrint('[ReaderHibiki] restore lookup: bookKey=${widget.bookKey} '
           'saved=$saved section=${saved?.sectionIndex} '
           'offset=${saved?.normCharOffset}');
       if (saved != null &&
@@ -512,10 +517,10 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
   Future<EpubBook?> _buildBookFromDb(
     HibikiDatabase db,
-    int bookId,
+    String bookKey,
     String extractDir,
   ) async {
-    final EpubBookRow? row = await db.getEpubBook(bookId);
+    final EpubBookRow? row = await db.getEpubBook(bookKey);
     if (row == null) return null;
 
     final List<dynamic> rawChapters =
@@ -583,7 +588,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     }
 
     return EpubBook(
-      title: t.untitled_book(id: widget.bookId),
+      title: t.untitled_book(id: widget.bookKey),
       chapters: chapters,
       rootDirectory: extractDir,
     );
@@ -595,21 +600,21 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       old.removeListener(_onCueChanged);
       old.dispose();
       _audiobookController = null;
-      _audiobookBookUid = null;
+      _audiobookBookKey = null;
       _srtBookUid = null;
       _srtCueChapterMap = null;
       _srtChapterRanges = null;
     }
 
     final HibikiDatabase db = appModel.database;
-    final String bookUid = ReaderHibikiSource.bookUidFor(widget.bookId);
+    final String bookKey = widget.bookKey;
     final Audiobook? ab =
-        (await db.getAudiobookByBookUid(bookUid))?.let(_audiobookFromRow);
+        (await db.getAudiobookByBookKey(bookKey))?.let(_audiobookFromRow);
     final SrtBook? srt =
-        (await db.getSrtBookByTtuBookId(widget.bookId))?.let(_srtBookFromRow);
+        (await db.getSrtBookByBookKey(bookKey))?.let(_srtBookFromRow);
 
     if (ab != null) {
-      await _initAudiobookController(ab, bookUid);
+      await _initAudiobookController(ab, bookKey);
     }
     // Audiobook 记录存在但无音频文件时 _initAudiobookController 提前返回，
     // controller 仍为 null → 回退到 SrtBook 路径加载音频。
@@ -642,11 +647,11 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       return;
     }
 
-    final String? bookUid = _audiobookBookUid;
-    if (bookUid == null || _book == null) return;
+    final String? bookKey = _audiobookBookKey;
+    if (bookKey == null || _book == null) return;
 
     final AudiobookRepository repo = AudiobookRepository(appModel.database);
-    final List<AudioCue> allCues = await repo.cuesForBook(bookUid);
+    final List<AudioCue> allCues = await repo.cuesForBook(bookKey);
     controller.setAllBookCues(allCues);
     _cachedAllCues = allCues;
     _cachedSasayaki = allCues.any(
@@ -667,7 +672,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
     final String chapterHref = _book!.chapters[_currentChapter].href;
     final List<AudioCue> chapterCues = await repo.cuesForChapter(
-      bookUid: bookUid,
+      bookKey: bookKey,
       chapterHref: chapterHref,
     );
     controller.setChapterCues(chapterCues);
@@ -768,7 +773,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
   Future<void> _initAudiobookController(
     Audiobook audiobook,
-    String bookUid,
+    String bookKey,
   ) async {
     final AudiobookRepository repo = AudiobookRepository(appModel.database);
     final List<File> audioFiles = await _resolveAudioFiles(
@@ -783,12 +788,12 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
     final AudiobookPlayerController controller = AudiobookPlayerController();
     final List<Object> prefs = await Future.wait(<Future<Object>>[
-      repo.readFollowAudio(bookUid),
-      repo.readDelayMs(bookUid),
-      repo.readSpeed(bookUid),
-      repo.readPositionMs(bookUid),
-      repo.readImagePauseSec(bookUid),
-      repo.readVolume(bookUid),
+      repo.readFollowAudio(bookKey),
+      repo.readDelayMs(bookKey),
+      repo.readSpeed(bookKey),
+      repo.readPositionMs(bookKey),
+      repo.readImagePauseSec(bookKey),
+      repo.readVolume(bookKey),
     ]);
     try {
       await controller.load(
@@ -817,28 +822,28 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     }
 
     controller.onPositionWrite =
-        (uid, posMs) => repo.updatePositionMs(bookUid: uid, positionMs: posMs);
+        (key, posMs) => repo.updatePositionMs(bookKey: key, positionMs: posMs);
     controller.onDelayPersist = (ms) async {
-      await repo.updateDelayMs(bookUid: bookUid, ms: ms);
+      await repo.updateDelayMs(bookKey: bookKey, ms: ms);
     };
     controller.onSpeedPersist = (speed) async {
-      await repo.updateSpeed(bookUid: bookUid, speed: speed);
+      await repo.updateSpeed(bookKey: bookKey, speed: speed);
     };
     controller.onVolumePersist = (volume) async {
-      await repo.updateVolume(bookUid: bookUid, volume: volume);
+      await repo.updateVolume(bookKey: bookKey, volume: volume);
     };
     controller.onImagePausePersist = (sec) async {
-      await repo.updateImagePauseSec(bookUid: bookUid, sec: sec);
+      await repo.updateImagePauseSec(bookKey: bookKey, sec: sec);
     };
     controller.onFollowAudioPersist = (value) async {
-      await repo.updateFollowAudio(bookUid: bookUid, value: value);
+      await repo.updateFollowAudio(bookKey: bookKey, value: value);
     };
     controller.getCurrentReaderSection = () => _currentChapter;
     controller.onCrossChapter = _handleCueCrossChapter;
     controller.onBoundarySkip = _handleBoundarySkip;
     controller.addListener(_onCueChanged);
 
-    _audiobookBookUid = bookUid;
+    _audiobookBookKey = bookKey;
 
     setState(() {
       _audiobookController = controller;
@@ -858,7 +863,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     }
 
     final Audiobook syntheticAudiobook = Audiobook()
-      ..bookUid = srtBook.uid
+      ..bookKey = srtBook.uid
       ..audioRoot = srtBook.audioRoot
       ..audioPaths = srtBook.audioPaths
       ..alignmentFormat = 'srt'
@@ -902,22 +907,22 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       return;
     }
 
-    controller.onPositionWrite = (String uid, int posMs) =>
-        abRepo.updatePositionMs(bookUid: uid, positionMs: posMs);
+    controller.onPositionWrite = (String key, int posMs) =>
+        abRepo.updatePositionMs(bookKey: key, positionMs: posMs);
     controller.onDelayPersist = (int ms) async {
-      await abRepo.updateDelayMs(bookUid: srtBookUid, ms: ms);
+      await abRepo.updateDelayMs(bookKey: srtBookUid, ms: ms);
     };
     controller.onSpeedPersist = (double speed) async {
-      await abRepo.updateSpeed(bookUid: srtBookUid, speed: speed);
+      await abRepo.updateSpeed(bookKey: srtBookUid, speed: speed);
     };
     controller.onVolumePersist = (double volume) async {
-      await abRepo.updateVolume(bookUid: srtBookUid, volume: volume);
+      await abRepo.updateVolume(bookKey: srtBookUid, volume: volume);
     };
     controller.onImagePausePersist = (int sec) async {
-      await abRepo.updateImagePauseSec(bookUid: srtBookUid, sec: sec);
+      await abRepo.updateImagePauseSec(bookKey: srtBookUid, sec: sec);
     };
     controller.onFollowAudioPersist = (bool value) async {
-      await abRepo.updateFollowAudio(bookUid: srtBookUid, value: value);
+      await abRepo.updateFollowAudio(bookKey: srtBookUid, value: value);
     };
     controller.getCurrentReaderSection = () => _currentChapter;
     controller.onCrossChapter = _handleCueCrossChapter;
@@ -2063,7 +2068,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     if (!mounted || _controller == null) return;
     final List<FavoriteSentence> chapterFavs = all
         .where((s) =>
-            s.ttuBookId == widget.bookId && s.sectionIndex == _currentChapter)
+            s.bookKey == widget.bookKey && s.sectionIndex == _currentChapter)
         .toList();
     final int withOffsets =
         chapterFavs.where((s) => s.normCharOffset != null).length;
@@ -2091,7 +2096,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     final List<FavoriteSentence> all = await repo.getAll();
     if (_controller == null || !mounted) return;
     final List<String> texts = all
-        .where((s) => s.ttuBookId == widget.bookId)
+        .where((s) => s.bookKey == widget.bookKey)
         .map((s) => s.text)
         .where((t) => t.isNotEmpty)
         .toList();
@@ -2629,10 +2634,10 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       _cachedAllCues = cues;
       return null;
     }
-    if (_audiobookBookUid == null) return null;
+    if (_audiobookBookKey == null) return null;
 
     final AudiobookRepository repo = AudiobookRepository(appModel.database);
-    final List<AudioCue> allCues = await repo.cuesForBook(_audiobookBookUid!);
+    final List<AudioCue> allCues = await repo.cuesForBook(_audiobookBookKey!);
     _cachedAllCues = allCues;
     _cachedSasayaki = allCues.any(
       (c) => SasayakiMatchCodec.tryDecode(c.textFragmentId) != null,
@@ -2673,7 +2678,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         _srtCueChapterMap = m;
         _srtChapterRanges = r;
       }
-    } else if (_audiobookBookUid != null) {
+    } else if (_audiobookBookKey != null) {
       if (_cachedSasayaki) {
         _audiobookController!.setChapterCues(allCues);
         _audiobookController!.setAllBookCues(allCues);
@@ -2681,7 +2686,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         final String chapterHref = _book!.chapters[_currentChapter].href;
         final AudiobookRepository repo = AudiobookRepository(appModel.database);
         final List<AudioCue> cues = await repo.cuesForChapter(
-          bookUid: _audiobookBookUid!,
+          bookKey: _audiobookBookKey!,
           chapterHref: chapterHref,
         );
         _audiobookController!.setChapterCues(cues);
@@ -2864,7 +2869,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
   Future<void> _initSpreadMap(HibikiDatabase db) async {
     if (_book == null || _settings == null) return;
-    final String bookKey = widget.bookId.toString();
+    final String bookKey = widget.bookKey;
     if (_settings!.spreadMode == 'auto') {
       _edgeMatchResults = await EpubSpreadAnalyzer.loadCached(db, bookKey);
     }
@@ -3242,7 +3247,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
     final bool favorited =
         await FavoriteSentenceRepository(appModel.database).isFavorited(
       text: sentence,
-      ttuBookId: widget.bookId,
+      bookKey: widget.bookKey,
       sectionIndex: _lookupSectionIndex,
       normCharOffset: sentenceRange?.offset,
     );
@@ -3326,12 +3331,12 @@ window.flutter_inappwebview.callHandler('spreadReady');
     _lastSavedProgress = progress;
 
     final int normOffset = (progress * 10000).round();
-    debugPrint('[ReaderHibiki] save position: bookId=${widget.bookId} '
+    debugPrint('[ReaderHibiki] save position: bookKey=${widget.bookKey} '
         'section=$section normOffset=$normOffset');
     final ReaderPositionRepository repo =
         ReaderPositionRepository(appModel.database);
     await repo.save(
-      ttuBookId: widget.bookId,
+      bookKey: widget.bookKey,
       sectionIndex: section,
       normCharOffset: normOffset,
     );
@@ -4553,15 +4558,14 @@ window.flutter_inappwebview.callHandler('spreadReady');
       await _openSrtBookAudioPicker();
       return;
     }
-    final String bookUid = ReaderHibikiSource.bookUidFor(widget.bookId);
     final AudiobookRepository repo = AudiobookRepository(appModel.database);
 
     await showAppDialog<void>(
       context: context,
       builder: (ctx) => AudiobookImportDialog(
-        bookUid: bookUid,
+        bookKey: widget.bookKey,
         repo: repo,
-        ttuBookId: widget.bookId,
+        extractDir: _extractDir,
       ),
     );
 
@@ -4664,15 +4668,15 @@ window.flutter_inappwebview.callHandler('spreadReady');
       // 无需设置同步——旧 TTU 双存储时代的 _syncSettings*Hive 已是写回自身的死桥，
       // 且 _syncSettingsToHive 会触发 17× onSettingsChangedLive 的 DB/WebView 风暴。
       final List<TtuTocEntry> toc = _buildTtuToc();
-      final int bookId = widget.bookId;
+      final String bookKey = widget.bookKey;
       final BookmarkRepository bmRepo = BookmarkRepository(appModel.database);
       final FavoriteSentenceRepository favRepo =
           FavoriteSentenceRepository(appModel.database);
 
-      List<Bookmark> bookmarks = await bmRepo.getBookmarks(bookId);
+      List<Bookmark> bookmarks = await bmRepo.getBookmarks(bookKey);
       final List<FavoriteSentence> allFavorites = await favRepo.getAll();
       final List<FavoriteSentence> favorites =
-          allFavorites.where((f) => f.ttuBookId == bookId).toList();
+          allFavorites.where((f) => f.bookKey == bookKey).toList();
 
       if (!mounted) return;
 
@@ -4760,13 +4764,13 @@ window.flutter_inappwebview.callHandler('spreadReady');
             await bmRepo.removeBookmarkById(id);
           } else {
             await bmRepo.removeBookmarkMatching(
-              bookId,
+              bookKey,
               sectionIndex: bookmark.sectionIndex,
               normCharOffset: bookmark.normCharOffset,
               createdAt: bookmark.createdAt,
             );
           }
-          bookmarks = await bmRepo.getBookmarks(bookId);
+          bookmarks = await bmRepo.getBookmarks(bookKey);
         },
         favoriteSentences: favorites,
         onDeleteFavorite: (fav) async {
@@ -4855,11 +4859,11 @@ window.flutter_inappwebview.callHandler('spreadReady');
         normCharOffset: normOffset,
         label: label,
         createdAt: DateTime.now(),
-        ttuBookId: widget.bookId,
+        bookKey: widget.bookKey,
         bookTitle: _book?.title,
       );
       await BookmarkRepository(appModel.database)
-          .addBookmark(widget.bookId, bm);
+          .addBookmark(widget.bookKey, bm);
       return;
     }
 
@@ -4881,13 +4885,13 @@ window.flutter_inappwebview.callHandler('spreadReady');
       normCharOffset: normOffset,
       label: label,
       createdAt: DateTime.now(),
-      ttuBookId: widget.bookId,
+      bookKey: widget.bookKey,
       bookTitle: _book?.title,
       pageInChapter: pageInfo?.$1,
       totalPagesInChapter: pageInfo?.$2,
     );
 
-    await BookmarkRepository(appModel.database).addBookmark(widget.bookId, bm);
+    await BookmarkRepository(appModel.database).addBookmark(widget.bookKey, bm);
   }
 
   /// Probes the paginated reader engine for the current page / total pages
@@ -5217,7 +5221,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
     final List<FavoriteSentence> all =
         await FavoriteSentenceRepository(appModel.database).getAll();
     final List<FavoriteSentence> chapterFavs = all
-        .where((s) => s.ttuBookId == widget.bookId && s.sectionIndex == section)
+        .where((s) => s.bookKey == widget.bookKey && s.sectionIndex == section)
         .toList();
     await HighlightBridge.applyHighlights(_controller!, chapterFavs,
         backgroundHex: _readerBackgroundHex,
@@ -5255,7 +5259,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
     if (_currentSentenceIsFavorited) {
       await repo.removeByContent(
         text: sentence,
-        ttuBookId: widget.bookId,
+        bookKey: widget.bookKey,
         sectionIndex: section,
         normCharOffset: sentenceRange?.offset,
       );
@@ -5272,7 +5276,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
       bookTitle: _book!.title,
       chapterLabel: _currentChapterLabelFor(section),
       createdAt: DateTime.now(),
-      ttuBookId: widget.bookId,
+      bookKey: widget.bookKey,
       sectionIndex: section,
       normCharOffset: sentenceRange?.offset,
       normCharLength: sentenceRange?.length,
@@ -5381,7 +5385,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
   Audiobook _audiobookFromRow(AudiobookRow row) {
     final Audiobook ab = Audiobook()
       ..id = row.id
-      ..bookUid = row.bookUid
+      ..bookKey = row.bookKey
       ..audioRoot = row.audioRoot
       ..alignmentFormat = row.alignmentFormat
       ..alignmentPath = row.alignmentPath;
@@ -5401,7 +5405,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
       ..audioRoot = row.audioRoot
       ..srtPath = row.srtPath
       ..coverPath = row.coverPath
-      ..ttuBookId = row.ttuBookId;
+      ..bookKey = row.bookKey;
     if (row.audioPathsJson != null) {
       book.audioPaths =
           (jsonDecode(row.audioPathsJson!) as List<dynamic>).cast<String>();
