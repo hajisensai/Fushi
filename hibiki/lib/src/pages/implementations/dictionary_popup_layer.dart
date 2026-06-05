@@ -24,8 +24,10 @@ Rect calcPopupPosition({
   final double availableHeight =
       (effectiveBottom - effectiveTop - verticalInset * 2).clamp(0, maxHeight);
   final double width = availableWidth;
-  final double height =
-      ((effectiveBottom - effectiveTop) * 0.5).clamp(0, availableHeight);
+  // 高度直接用 availableHeight（已按 maxHeight 与屏幕可用空间双重 clamp）。
+  // 旧实现额外乘 0.5 把高度顶死在半屏，使「弹窗最大高度」设置在半屏以上失效；
+  // 去掉后高度设置真正说了算，最高可拉到接近整屏（减边距）。
+  final double height = availableHeight;
 
   final double minLeft = horizontalInset;
   final double maxLeft = screen.width - width - horizontalInset;

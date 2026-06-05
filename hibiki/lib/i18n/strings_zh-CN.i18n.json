@@ -1307,5 +1307,7 @@
     "video_delete_confirm": "删除『$title』？此操作无法撤销。",
     "video_subtitle_load_failed": "无法加载该字幕（可能是图形或不支持的字幕轨）：$label",
     "drag_drop_need_card_target": "请把字幕或音频拖到某本书或某个视频上",
-    "shortcut_action_audiobook_seek_clicked": "跳转音频到点击的句子"
+    "shortcut_action_audiobook_seek_clicked": "跳转音频到点击的句子",
+    "popup_max_height": "查词窗口最大高度",
+    "wheel_page_turn_interval": "滚轮翻页间隔"
 }

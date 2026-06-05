@@ -740,6 +740,26 @@ SettingsDestination _readingDestination() {
               notifyReaderSettingsChanged(settingsContext);
             },
           ),
+          SettingsSliderItem(
+            id: 'reading_controls.wheel_page_turn_interval',
+            title: t.wheel_page_turn_interval,
+            icon: Icons.mouse_outlined,
+            min: 150,
+            max: 1000,
+            divisions: 17,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 7,
+            ),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.wheelPageTurnInterval.toDouble(),
+            label: (double value) => value.round().toString(),
+            onChanged: (SettingsContext settingsContext, double value) async {
+              await settingsContext.readerSource
+                  .setWheelPageTurnInterval(value.round());
+              notifyReaderSettingsChanged(settingsContext);
+            },
+          ),
           SettingsSwitchItem(
             id: 'reading_controls.keep_screen_awake',
             title: t.keep_screen_awake,
@@ -978,6 +998,21 @@ SettingsDestination _lookupDestination() {
             label: (double value) => value.round().toString(),
             onChanged: (SettingsContext settingsContext, double value) {
               settingsContext.appModel.setPopupMaxWidth(value);
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSliderItem(
+            id: 'lookup.popup_max_height',
+            title: t.popup_max_height,
+            icon: Icons.height_outlined,
+            min: 200,
+            max: 800,
+            divisions: 60,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.popupMaxHeight,
+            label: (double value) => value.round().toString(),
+            onChanged: (SettingsContext settingsContext, double value) {
+              settingsContext.appModel.setPopupMaxHeight(value);
               settingsContext.refresh();
             },
           ),

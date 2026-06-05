@@ -40,6 +40,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'appearance/UI size': 'test/models/theme_notifier_test.dart',
   'reading/Spread Mode': 'test/epub/epub_spread_map_test.dart',
   'lookup/Popup max width': 'test/pages/dictionary_popup_layer_test.dart',
+  'lookup/Popup max height': 'test/pages/dictionary_popup_layer_test.dart',
   'cardCreation/Auto-add book title to tags':
       'test/creator/tags_field_auto_add_book_test.dart',
   'system/Low Memory Mode': 'test/models/app_model_low_memory_mode_test.dart',
@@ -60,6 +61,8 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'DEVICE: WebView onTapEmpty chrome',
   'reading/Invert swipe page turn direction': 'DEVICE: WebView swipe direction',
   'reading/Volume key page turning speed': 'DEVICE: native volume-key throttle',
+  'reading/Mouse wheel page-turn interval':
+      'DEVICE: WebView wheel page-turn throttle',
   'reading/Keep screen awake': 'DEVICE: WakelockPlus channel',
   'reading/Volume button page turning': 'DEVICE: native VolumeKeyChannel',
   'reading/Invert volume buttons': 'DEVICE: native volume-key direction',

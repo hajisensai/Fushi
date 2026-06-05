@@ -258,8 +258,11 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
 
   void clearDictionaryResult() => _dismissPopupAt(0);
 
-  double get popupMaxWidth => appModel.popupMaxWidth;
-  double get popupMaxHeight => 360;
+  // 弹窗盒子尺寸随「界面大小」一起放大：阅读器/词典页整树被 HibikiAppUiScaleNeutralizer
+  // 中和回原生密度（净缩放=1），弹窗盒子若不乘 appUiScale，界面 200% 时它仍是原生小尺寸
+  // （内容放大走 WebView 内 CSS zoom，见 DictionaryPopupWebView）。
+  double get popupMaxWidth => appModel.popupMaxWidth * appModel.appUiScale;
+  double get popupMaxHeight => appModel.popupMaxHeight * appModel.appUiScale;
   double get popupPadding => 6;
   double get popupBottomReserve => 0;
   double get popupTopReserve => 0;

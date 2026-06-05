@@ -55,6 +55,10 @@ void main() {
       expect(repo.popupMaxWidth, 400.0);
     });
 
+    test('popupMaxHeight defaults to 360.0', () {
+      expect(repo.popupMaxHeight, 360.0);
+    });
+
     test('searchDebounceDelay defaults to 100', () {
       expect(repo.searchDebounceDelay, 100);
     });
@@ -164,6 +168,16 @@ void main() {
       final repo2 = PreferencesRepository(db);
       await repo2.loadFromDb();
       expect(repo2.dictionaryFontSize, 24.0);
+      repo2.dispose();
+    });
+
+    test('setPopupMaxHeight round-trips through DB', () async {
+      repo.setPopupMaxHeight(560.0);
+      await Future<void>.delayed(Duration.zero);
+
+      final repo2 = PreferencesRepository(db);
+      await repo2.loadFromDb();
+      expect(repo2.popupMaxHeight, 560.0);
       repo2.dispose();
     });
 

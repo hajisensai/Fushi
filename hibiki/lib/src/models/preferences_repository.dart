@@ -152,6 +152,17 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  final double defaultPopupMaxHeight = 360;
+
+  double get popupMaxHeight =>
+      getPref('popup_max_height', defaultValue: defaultPopupMaxHeight)
+          as double;
+
+  void setPopupMaxHeight(double height) async {
+    await setPref('popup_max_height', height);
+    notifyListeners();
+  }
+
   final int defaultDoubleTapSeekDuration = 5000;
 
   int get doubleTapSeekDuration => getPref('double_tap_seek_duration',

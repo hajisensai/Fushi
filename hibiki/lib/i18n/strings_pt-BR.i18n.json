@@ -1307,5 +1307,7 @@
     "video_delete_confirm": "Delete 『$title』? This cannot be undone.",
     "video_subtitle_load_failed": "Couldn't load this subtitle (graphic or unsupported track): $label",
     "drag_drop_need_card_target": "Drop subtitles or audio onto a book or video",
-    "shortcut_action_audiobook_seek_clicked": "Seek audio to clicked sentence"
+    "shortcut_action_audiobook_seek_clicked": "Seek audio to clicked sentence",
+    "popup_max_height": "Popup max height",
+    "wheel_page_turn_interval": "Mouse wheel page-turn interval"
 }

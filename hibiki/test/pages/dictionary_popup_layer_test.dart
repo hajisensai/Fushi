@@ -29,7 +29,9 @@ void main() {
     );
 
     expect(popupRect.width, 360);
-    expect(popupRect.height, 300);
+    // 高度现在 = availableHeight（受 maxHeight 与屏幕可用空间双重 clamp），不再被
+    // 旧的 *0.5 顶死在半屏：480 < (600-余白) 所以取 maxHeight=480。
+    expect(popupRect.height, 480);
     expect(popupRect.left, greaterThanOrEqualTo(6));
     expect(popupRect.top, greaterThanOrEqualTo(6));
     expect(popupRect.right, lessThanOrEqualTo(794));
@@ -94,6 +96,54 @@ void main() {
       expect(wide.width, 1000);
       expect(wide.width, lessThanOrEqualTo(screen.width));
       expect(wide.right, lessThanOrEqualTo(screen.width));
+    });
+  });
+
+  group('calcPopupPosition maxHeight constraint (half-screen cap removed)', () {
+    // selection 放在靠顶部，留足下方空间，让 height 完全由 maxHeight 决定。
+    const Rect selectionRect = Rect.fromLTWH(400, 100, 40, 24);
+    const Size screen = Size(1920, 1080);
+
+    test('small maxHeight caps the popup height to <= maxHeight', () {
+      final Rect popupRect = calcPopupPosition(
+        selectionRect: selectionRect,
+        screen: screen,
+        maxHeight: 300,
+      );
+
+      expect(popupRect.height, 300);
+      expect(popupRect.top, greaterThanOrEqualTo(0));
+      expect(popupRect.bottom, lessThanOrEqualTo(screen.height));
+    });
+
+    test('large maxHeight grows past half-screen (no *0.5 cap)', () {
+      final Rect popupRect = calcPopupPosition(
+        selectionRect: selectionRect,
+        screen: screen,
+        maxHeight: 900,
+      );
+
+      // 旧实现这里会被 0.5*1080=540 顶死；去掉 *0.5 后真正取到 maxHeight=900。
+      expect(popupRect.height, 900);
+      expect(popupRect.height, greaterThan(screen.height / 2));
+      expect(popupRect.top, greaterThanOrEqualTo(0));
+      expect(popupRect.bottom, lessThanOrEqualTo(screen.height));
+    });
+
+    test('larger maxHeight yields a taller popup', () {
+      final Rect short = calcPopupPosition(
+        selectionRect: selectionRect,
+        screen: screen,
+        maxHeight: 300,
+      );
+      final Rect tall = calcPopupPosition(
+        selectionRect: selectionRect,
+        screen: screen,
+        maxHeight: 700,
+      );
+
+      expect(tall.height, greaterThan(short.height));
+      expect(tall.height, 700);
     });
   });
 

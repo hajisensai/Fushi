@@ -491,6 +491,26 @@ class ReaderHibikiSource extends ReaderMediaSource {
     );
   }
 
+  /// 鼠标滚轮翻页节流间隔（毫秒），越大翻页越慢。默认 450ms。
+  int get wheelPageTurnInterval =>
+      readerSettings?.wheelPageTurnInterval ??
+      getPreference<int>(
+        key: 'wheel_page_turn_interval',
+        defaultValue: 450,
+      );
+
+  Future<void> setWheelPageTurnInterval(int value) async {
+    final ReaderSettings? settings = readerSettings;
+    if (settings != null) {
+      await settings.setWheelPageTurnInterval(value);
+      return;
+    }
+    await setPreference<int>(
+      key: 'wheel_page_turn_interval',
+      value: value,
+    );
+  }
+
   bool get highlightOnTap =>
       readerSettings?.highlightOnTap ??
       getPreference<bool>(key: 'highlight_on_tap', defaultValue: true);

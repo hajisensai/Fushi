@@ -23,6 +23,14 @@ class HotPopupTestAppModel extends AppModel {
   double get popupMaxWidth => 360;
 
   @override
+  double get popupMaxHeight => 360;
+
+  // 该 fake 不跑 initialise()，themeNotifier 是未初始化的 late；弹窗盒子尺寸现在
+  // 会乘 appUiScale（base_source_page），故覆写成默认 1.0，避免 LateInitError。
+  @override
+  double get appUiScale => 1.0;
+
+  @override
   List<String> get enabledAudioSources => const <String>[];
 
   @override

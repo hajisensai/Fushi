@@ -2419,6 +2419,10 @@ class AppModel with ChangeNotifier {
   double get popupMaxWidth => prefsRepo.popupMaxWidth;
   void setPopupMaxWidth(double width) => prefsRepo.setPopupMaxWidth(width);
 
+  double get defaultPopupMaxHeight => prefsRepo.defaultPopupMaxHeight;
+  double get popupMaxHeight => prefsRepo.popupMaxHeight;
+  void setPopupMaxHeight(double height) => prefsRepo.setPopupMaxHeight(height);
+
   int get defaultDoubleTapSeekDuration =>
       prefsRepo.defaultDoubleTapSeekDuration;
   int get doubleTapSeekDuration => prefsRepo.doubleTapSeekDuration;

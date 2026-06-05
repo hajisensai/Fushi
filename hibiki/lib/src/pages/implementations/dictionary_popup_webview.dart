@@ -64,6 +64,24 @@ class DictionaryPopupWebViewState
   /// the popup is open — see [didChangeDependencies].
   String? _lastThemeVarsJs;
 
+  /// 划词弹窗内容缩放的字号基准。CSS 写死的 px 字号对应「词典字号=16」的视觉，
+  /// 故 zoom = appUiScale × (dictionaryFontSize / 16)：默认(16, 100%)时 zoom=1，
+  /// 与改动前观感一致；调大词典字号或界面大小时按比例放大。CSS zoom 会按放大尺寸
+  /// 重新排版栅格化（不像 FittedBox 拉位图），所以在中和器的原生密度下依旧清晰。
+  static const double _popupFontBaseline = 16.0;
+
+  /// 划词弹窗内容 CSS `zoom` 系数：跟随「界面大小」与「词典字号」一起放大，
+  /// 与 Dart 侧盒子尺寸（base_source_page / dictionary_page_mixin 乘 appUiScale）一致。
+  /// 默认 (appUiScale=1, fontSize=16) → 1.0，保持改动前观感。clamp 防御非法输入。
+  static double popupContentZoom({
+    required double appUiScale,
+    required double dictionaryFontSize,
+  }) {
+    final double raw = appUiScale * (dictionaryFontSize / _popupFontBaseline);
+    if (!raw.isFinite || raw <= 0) return 1.0;
+    return raw.clamp(0.3, 8.0).toDouble();
+  }
+
   static const String _scrollCheckJs = '''
 (function(){
   if(!window.__hoshiScrollInstalled){
@@ -321,6 +339,12 @@ class DictionaryPopupWebViewState
     final stylesJson = _getStylesJson();
 
     final appModel = ref.read(appProvider);
+    // 内容缩放：跟随「词典字号」与「界面大小」。盒子尺寸在 Dart 侧已乘 appUiScale
+    // （base_source_page / dictionary_page_mixin），这里把内容也等比放大，二者一致。
+    final double popupZoom = popupContentZoom(
+      appUiScale: appModel.appUiScale,
+      dictionaryFontSize: appModel.dictionaryFontSize,
+    );
     final deduplicatePitch = appModel.deduplicatePitchAccents;
     final harmonicFreq = appModel.harmonicFrequency;
     final collapseDict = appModel.collapseDictionaries;
@@ -341,6 +365,7 @@ class DictionaryPopupWebViewState
     final swInject = Stopwatch()..start();
     _controller!.evaluateJavascript(source: '''
       $themeVarsJs
+      document.documentElement.style.zoom = '${popupZoom.toStringAsFixed(4)}';
       window.audioSources = $audioSourcesJson;
       window.needsAudio = true;
       window.deduplicatePitchAccents = $deduplicatePitch;

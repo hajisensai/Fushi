@@ -209,6 +209,12 @@ class ReaderSettings {
   Future<void> setDismissSwipeSensitivity(double v) =>
       _set<double>('dismiss_swipe_sensitivity', v);
 
+  /// 鼠标滚轮翻页的节流间隔（毫秒）：滚一下翻一页后，此时长内忽略后续滚轮事件。
+  /// 越大翻页越慢。默认 450ms（旧实现写死 250ms，偏快）。
+  int get wheelPageTurnInterval => _get<int>('wheel_page_turn_interval', 450);
+  Future<void> setWheelPageTurnInterval(int v) =>
+      _set<int>('wheel_page_turn_interval', v);
+
   bool get highlightOnTap => _get<bool>('highlight_on_tap', true);
   Future<void> toggleHighlightOnTap() =>
       _set<bool>('highlight_on_tap', !highlightOnTap);

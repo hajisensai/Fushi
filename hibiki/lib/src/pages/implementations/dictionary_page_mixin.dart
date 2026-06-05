@@ -157,8 +157,9 @@ mixin DictionaryPageMixin {
     final Rect pos = calcPopupPosition(
       selectionRect: entry.selectionRect,
       screen: screen,
-      maxWidth: mixinAppModel.popupMaxWidth,
-      maxHeight: 360,
+      // 盒子尺寸随界面大小放大（同 base_source_page.popupMaxWidth/Height）。
+      maxWidth: mixinAppModel.popupMaxWidth * mixinAppModel.appUiScale,
+      maxHeight: mixinAppModel.popupMaxHeight * mixinAppModel.appUiScale,
     );
     final bool isDark =
         (mixinAppModel.overrideDictionaryTheme ?? mixinTheme).brightness ==
