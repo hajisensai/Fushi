@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
@@ -153,6 +154,67 @@ class VideoPlayerController extends ChangeNotifier {
       if (p == null) return;
       updateCueForPosition(p.state.position.inMilliseconds);
     });
+
+    // 无外挂字幕且无 cue 时，桌面端后台抽内嵌字幕轨成可点击 cue（不阻塞首帧）。
+    if ((externalSubtitlePath == null || externalSubtitlePath.isEmpty) &&
+        cues.isEmpty) {
+      unawaited(_loadEmbeddedSubtitleIfNeeded(bookUid: bookUid));
+    }
+  }
+
+  /// 桌面端后台抽第一条内嵌字幕轨 → 解析成 cue → [setCues]，触发可点击 overlay。
+  ///
+  /// 仅当无外挂字幕且当前无 cue 时由 [load] 末尾触发（调用方已门控）。移动端跳过
+  /// （ffmpeg 不可用），失败 / 无字幕轨静默返回，保留 libmpv 画面渲染兜底。
+  ///
+  /// 抽字幕较慢（ffmpeg 跑几秒），故 [load] 用 `unawaited` 后台触发不阻塞播放；
+  /// 抽完才 [setCues]，overlay 此时才出现。期间若发生重新 [load]（[_videoPath]
+  /// 变化）则丢弃旧结果，避免把上一段视频的字幕错挂到新视频。
+  Future<void> _loadEmbeddedSubtitleIfNeeded({required String bookUid}) async {
+    if (!(Platform.isWindows || Platform.isMacOS || Platform.isLinux)) {
+      return;
+    }
+    final String? videoPath = _videoPath;
+    if (videoPath == null) return;
+
+    final Directory dir =
+        Directory.systemTemp.createTempSync('hibiki_video_sub');
+    final String outputPath = '${dir.path}/video_embedded_sub.ass';
+    try {
+      final String? extracted = await extractEmbeddedSubtitleViaFfmpeg(
+        inputPath: videoPath,
+        streamIndex: 0,
+        outputPath: outputPath,
+      );
+      if (extracted == null) {
+        debugPrint('[video-embedded-sub] no embedded subtitle track extracted');
+        return;
+      }
+      // 抽字幕期间发生了重新 load（换片）：丢弃过期结果。
+      if (_videoPath != videoPath) {
+        debugPrint(
+            '[video-embedded-sub] discarded stale result (video changed)');
+        return;
+      }
+      final String text = await readTextWithEncoding(File(extracted));
+      final List<AudioCue> cues =
+          AssParser.parseString(content: text, bookUid: bookUid);
+      if (cues.isEmpty) {
+        debugPrint('[video-embedded-sub] parsed 0 cues from embedded track');
+        return;
+      }
+      // 再次校验未换片，再写穿 cue。
+      if (_videoPath != videoPath) {
+        debugPrint('[video-embedded-sub] discarded stale cues (video changed)');
+        return;
+      }
+      debugPrint('[video-embedded-sub] extracted ${cues.length} cues');
+      setCues(cues);
+    } finally {
+      try {
+        dir.deleteSync(recursive: true);
+      } catch (_) {}
+    }
   }
 
   /// cue 同步核心：照搬有声书 `_updateCurrentCue` 语义。

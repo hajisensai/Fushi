@@ -97,6 +97,79 @@ Future<String?> extractEmbeddedCoverViaFfmpeg({
   }
 }
 
+/// Builds the ffmpeg argument list to demux the [streamIndex]-th subtitle track
+/// of [inputPath] into [outputPath]. Pure (no IO) so it is unit-testable.
+///
+/// `0:s:$streamIndex` selects the Nth subtitle stream of the (only) input;
+/// ffmpeg infers the output subtitle format from [outputPath]'s extension
+/// (e.g. `.ass` → ASS), so an embedded ASS track round-trips losslessly.
+List<String> buildFfmpegSubtitleArgs({
+  required String inputPath,
+  required int streamIndex,
+  required String outputPath,
+}) {
+  return <String>[
+    '-y',
+    '-i',
+    inputPath,
+    '-map',
+    '0:s:$streamIndex',
+    outputPath,
+  ];
+}
+
+/// Demuxes the [streamIndex]-th embedded subtitle track of [inputPath] into
+/// [outputPath] via ffmpeg. Returns [outputPath] on success, or null if the
+/// input is missing, the stream index is out of range, ffmpeg is not installed,
+/// or no subtitle text was written.
+///
+/// Mirrors [extractAudioSegmentViaFfmpeg]: bounded timeout, drops partial
+/// output on timeout / failure, never throws for the caller (a video with no
+/// subtitle track is a no-op fallback, not a crash).
+Future<String?> extractEmbeddedSubtitleViaFfmpeg({
+  required String inputPath,
+  required int streamIndex,
+  required String outputPath,
+}) async {
+  if (!File(inputPath).existsSync()) return null;
+
+  final File output = File(outputPath);
+  try {
+    output.parent.createSync(recursive: true);
+    // 30s bounds a hung demux; subtitle demuxing is text-only (no re-encode of
+    // the multi-GB video), so even a long episode finishes in well under this.
+    final int? code = await _runFfmpeg(
+      buildFfmpegSubtitleArgs(
+        inputPath: inputPath,
+        streamIndex: streamIndex,
+        outputPath: outputPath,
+      ),
+      const Duration(seconds: 30),
+    );
+    if (code == 0 && output.existsSync() && output.lengthSync() > 0) {
+      return outputPath;
+    }
+    if (output.existsSync()) {
+      try {
+        output.deleteSync();
+      } catch (_) {}
+    }
+    ErrorLogService.instance.log(
+      'extractEmbeddedSubtitleViaFfmpeg',
+      code == null ? 'ffmpeg timed out' : 'ffmpeg exit $code',
+      StackTrace.current,
+    );
+    return null;
+  } on ProcessException catch (e, stack) {
+    // ffmpeg not installed / not on PATH — graceful no-subtitle fallback.
+    ErrorLogService.instance.log('extractEmbeddedSubtitleViaFfmpeg', e, stack);
+    return null;
+  } catch (e, stack) {
+    ErrorLogService.instance.log('extractEmbeddedSubtitleViaFfmpeg', e, stack);
+    return null;
+  }
+}
+
 /// Resolves the ffmpeg executable: `HIBIKI_FFMPEG` override, else `ffmpeg`.
 String resolveFfmpegExecutable() {
   final String? override = Platform.environment['HIBIKI_FFMPEG']?.trim();
