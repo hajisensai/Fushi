@@ -55,7 +55,6 @@
 
 ## 提交
 
-- 本仓库工作流是 **develop 直提**：默认直接在 `develop` 分支提交，不建 feature 分支、不走 PR；多个 agent 共享同一 develop 工作树（所以才有下面"只 stage 本轮文件"的铁律）。需要隔离时才用 worktree，改完仍回 `develop`。
 - 完成代码/文档/测试/审查改动后默认提交本轮。
 - 提交前 `git status --short`，**只 stage 本轮相关文件**（禁止 `git add -A`——本工作区可能有并发 agent 的无关改动）；再 `git diff --cached --check`。
 - 提交信息简洁说明真实改动（如 `docs: rewrite agent rules` / `fix(reader): preserve restore position`）。
@@ -85,3 +84,5 @@
 | `third_party/` | — | vendored 补丁包：carousel_slider / fading_edge_scrollview / flutter_inappwebview_android / network_to_file_image | — |
 
 > 完整架构、技术栈、构建命令、致谢见 [README.md](README.md)。`file_picker` 用 pub.dev 版（**不是** fork）。依赖补丁机制（vendored vs apply-patches）见 [docs/agent/build.md](docs/agent/build.md)。
+
+## 始终用中文回复

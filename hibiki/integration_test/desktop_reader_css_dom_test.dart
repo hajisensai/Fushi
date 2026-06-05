@@ -27,8 +27,7 @@ import 'package:hibiki/src/reader/reader_settings.dart';
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  const String html =
-      '<!DOCTYPE html><html><head><meta charset="utf-8"></head>'
+  const String html = '<!DOCTYPE html><html><head><meta charset="utf-8"></head>'
       '<body><p>本文のテスト文字列</p></body></html>';
 
   testWidgets(

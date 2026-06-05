@@ -44,8 +44,7 @@ void main() {
 
   testWidgets(
       'desktop hidden runner: real app inits, focus traverses, reading setting '
-      'takes real effect on the live instance',
-      (WidgetTester tester) async {
+      'takes real effect on the live instance', (WidgetTester tester) async {
     final List<FlutterErrorDetails> errors = <FlutterErrorDetails>[];
     final FlutterExceptionHandler? oldHandler = FlutterError.onError;
     FlutterError.onError = (FlutterErrorDetails details) {
@@ -100,7 +99,8 @@ void main() {
       debugPrint('[desktop-settings] effect changed=${verdict.changed} '
           'evidence=${verdict.evidence}');
       expect(verdict.changed, isTrue,
-          reason: 'A reading-setting change on the live instance must alter the '
+          reason:
+              'A reading-setting change on the live instance must alter the '
               'live ReaderContentStyles.css (real effect, not just persist)');
 
       assertStrictErrors(errors);

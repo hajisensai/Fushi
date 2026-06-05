@@ -9,11 +9,13 @@ void main() {
           ProgressResolution.synced());
     });
     test('only remote -> import (single side)', () {
-      expect(resolveProgressSync(local: null, remote: 100, base: null).direction,
+      expect(
+          resolveProgressSync(local: null, remote: 100, base: null).direction,
           SyncDirection.importFromTtu);
     });
     test('only local -> export (single side)', () {
-      expect(resolveProgressSync(local: 100, remote: null, base: null).direction,
+      expect(
+          resolveProgressSync(local: 100, remote: null, base: null).direction,
           SyncDirection.exportToTtu);
     });
     test('local==remote -> synced', () {
@@ -22,13 +24,11 @@ void main() {
       expect(r.direction, SyncDirection.synced);
     });
     test('local==base, remote moved -> import (remote single-side)', () {
-      expect(
-          resolveProgressSync(local: 50, remote: 100, base: 50).direction,
+      expect(resolveProgressSync(local: 50, remote: 100, base: 50).direction,
           SyncDirection.importFromTtu);
     });
     test('remote==base, local moved -> export (local single-side)', () {
-      expect(
-          resolveProgressSync(local: 100, remote: 50, base: 50).direction,
+      expect(resolveProgressSync(local: 100, remote: 50, base: 50).direction,
           SyncDirection.exportToTtu);
     });
     test('both moved off base, differ -> CONFLICT', () {

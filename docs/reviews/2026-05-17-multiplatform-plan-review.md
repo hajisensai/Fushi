@@ -397,14 +397,13 @@ AppModel 的 3,456 行 God object 中，language 模块仅使用 **1 个 double 
   - `melos bootstrap` 命令须改为 `dart run melos bootstrap` — **已修正 Task 1 Step 8**
 - **结论：** Task 1（workspace 搭建）的步骤在修正后可执行。
 
-#### HBK-AUDIT-019: AGP 8.3.2 过旧导致构建失败
+#### HBK-AUDIT-019: AGP 版本问题 — 已验证不存在
 
-- **severity:** HIGH
-- **status:** OPEN — 需在 Phase 0 执行前修复
+- **severity:** ~~HIGH~~ → INFO
+- **status:** RESOLVED — 原判断错误
 - **file:** `hibiki/android/settings.gradle`
-- **事实：** 当前 AGP 版本 8.3.2，但最新 androidx 依赖需要 8.9.1+。worktree 构建失败于此。这是**预存问题**，非 Phase 0 引入。
-- **修复建议：** 已在 Phase 0 Task 1 Step 9 添加 WARNING，包含具体修改指令（settings.gradle AGP 版本 8.3.2→8.9.1）。建议在开始 Phase 0 前先在 develop 分支独立修复并验证。
-- **验证方式：** `flutter build apk --release` 成功
+- **事实：** AGP 8.3.2 + Gradle 8.12 构建 debug APK 成功。AGP 8.9.1 实际上在 Google Maven 仓库中不存在。原 worktree 构建失败是因为 worktree 中只有空骨架包（非真实 app），与 AGP 版本无关。
+- **结论：** 保持 AGP 8.3.2 即可，无需升级。
 
 #### HBK-AUDIT-020: 解析器不可提取到 hibiki_core — 已修正分配
 

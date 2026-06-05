@@ -70,7 +70,8 @@ void main() {
       await _openDisplaySettingsPage(tester);
 
       final FocusDriver driver = FocusDriver(tester);
-      final int driven = await _focusDriveSettingsRows(tester, driver, target: 3);
+      final int driven =
+          await _focusDriveSettingsRows(tester, driver, target: 3);
       debugPrint('[comprehensive-settings] focus-driven rows=$driven');
       expect(driven, greaterThanOrEqualTo(2),
           reason: 'focus must drive at least two real settings controls '
