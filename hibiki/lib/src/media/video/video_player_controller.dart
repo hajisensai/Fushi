@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:hibiki/src/media/video/video_playback_source.dart';
 import 'package:hibiki/src/media/video/video_shader_manager.dart';
 import 'package:hibiki/src/media/video/video_subtitle_source.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
@@ -24,7 +25,8 @@ import 'package:media_kit_video/media_kit_video.dart';
 ///   不 `new Player()`，因为测试宿主无 libmpv，构造即抛。真正实例化放在 [load]。
 /// - cue 选择逻辑抽成可测的 [updateCueForPosition]，并经 [debugUpdateCueForPosition]
 ///   暴露给单测——单测只调 [setCues] + [debugUpdateCueForPosition]，不触发 Player。
-class VideoPlayerController extends ChangeNotifier {
+class VideoPlayerController extends ChangeNotifier
+    implements VideoPlaybackSource {
   Player? _player;
   VideoController? _videoController;
 
@@ -65,8 +67,10 @@ class VideoPlayerController extends ChangeNotifier {
   /// 位置持久化回调：整秒变化时调用，由上层（repository）落库。
   Future<void> Function(String bookUid, int positionMs)? onPositionWrite;
 
+  @override
   AudioCue? get currentCue => _currentCue;
 
+  @override
   int get currentCueIndex => _currentCueIndex;
 
   List<AudioCue> get cues => _cues;
@@ -76,11 +80,17 @@ class VideoPlayerController extends ChangeNotifier {
   /// 视频文件绝对路径（制卡裁字幕音频用）；未 [load] 时为空。
   String? get videoPath => _videoPath;
 
+  @override
   bool get isPlaying => _player?.state.playing ?? false;
 
   /// 当前播放位置（毫秒）；未 [load] 时为 null。换集前用它补记当前集精确进度
   /// （tick 整秒节流外的尾差）。
+  @override
   int? get positionMs => _player?.state.position.inMilliseconds;
+
+  /// 媒体总时长（毫秒）；未 [load] / 未解析媒体头时为 null。
+  @override
+  int? get durationMs => _player?.state.duration.inMilliseconds;
 
   /// 当前音画延迟（毫秒）；设置面板显示用。
   int get delayMs => _delayMs;
