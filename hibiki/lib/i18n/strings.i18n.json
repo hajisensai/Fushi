@@ -5,7 +5,7 @@
     "settings_destination_lookup": "Lookup",
     "settings_destination_card_creation": "Card Creation",
     "settings_destination_listening": "Listening",
-    "settings_destination_sync_backup": "Sync & Backup",
+    "settings_destination_sync_backup": "Sync & Backup (Experimental)",
     "settings_destination_system": "System",
     "settings_destination_diagnostics": "Diagnostics",
     "settings_section_app_shell": "App",

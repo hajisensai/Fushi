@@ -993,7 +993,7 @@
     "settings_destination_lookup": "Recherche",
     "settings_destination_profiles": "Schémas de configuration",
     "settings_destination_reading_controls": "Commandes de lecture",
-    "settings_destination_sync_backup": "Sync et sauvegarde",
+    "settings_destination_sync_backup": "Sync et sauvegarde (Expérimental)",
     "settings_destination_system": "Système",
     "settings_section_app_shell": "Application",
     "settings_section_lookup_behavior": "Comportement de recherche",

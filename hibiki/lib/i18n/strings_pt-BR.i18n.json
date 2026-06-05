@@ -993,7 +993,7 @@
     "settings_destination_lookup": "Consulta",
     "settings_destination_profiles": "Esquemas de configuração",
     "settings_destination_reading_controls": "Controles de leitura",
-    "settings_destination_sync_backup": "Sincronização e backup",
+    "settings_destination_sync_backup": "Sincronização e backup (Experimental)",
     "settings_destination_system": "Sistema",
     "settings_section_app_shell": "Aplicativo",
     "settings_section_lookup_behavior": "Comportamento da consulta",

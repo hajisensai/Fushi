@@ -5,7 +5,7 @@
     "settings_destination_lookup": "查词",
     "settings_destination_card_creation": "制卡",
     "settings_destination_listening": "听书",
-    "settings_destination_sync_backup": "同步与备份",
+    "settings_destination_sync_backup": "同步与备份（实验性）",
     "settings_destination_system": "系统",
     "settings_destination_diagnostics": "诊断",
     "settings_section_app_shell": "应用",
