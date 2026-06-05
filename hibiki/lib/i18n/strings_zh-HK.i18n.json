@@ -1290,5 +1290,17 @@
     "video_jimaku_no_results": "No subtitles found",
     "video_jimaku_no_key": "Enter your Jimaku API key first",
     "video_jimaku_download_failed": "Download failed",
-    "video_jimaku_downloaded": "Subtitle downloaded and applied"
+    "video_jimaku_downloaded": "Subtitle downloaded and applied",
+    "video_shader_download_anime4k": "Download Anime4K presets",
+    "video_shader_anime4k_title": "Anime4K recommended shaders",
+    "video_shader_anime4k_hint": "Pick a preset to download. After downloading, tick it in the list to enable. Desktop only.",
+    "video_shader_downloading": "Downloading shaders…",
+    "video_shader_download_done": "Downloaded $count shader(s)",
+    "video_shader_download_failed": "Shader download failed",
+    "video_shader_download_partial": "Downloaded $ok shader(s), $failed failed",
+    "video_shader_downloaded_label": "Downloaded",
+    "video_shader_preset_mode_a_fast": "For most 1080p anime. Lighter GPU load.",
+    "video_shader_preset_mode_b_fast": "For older 720p anime with resampling artifacts.",
+    "video_shader_preset_mode_c_fast": "For old SD (480p) anime with compression smearing.",
+    "video_shader_preset_mode_a_hq": "Highest quality for 1080p anime. Needs a strong GPU."
 }
