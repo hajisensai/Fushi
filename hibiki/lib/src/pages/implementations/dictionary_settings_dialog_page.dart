@@ -53,6 +53,11 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
 
   @override
   void dispose() {
+    // 任意关闭路径（底部「关闭」按钮 / 点遮罩 / 系统返回 / Esc）都落盘：本对话框没有
+    // 「取消」概念（只有「重置」+「关闭」），用户心智=改了就生效。过去 onSave 只挂在
+    // 底部「关闭」按钮上，点遮罩/返回会丢掉已导入的本地音频（且拷贝副本被 pruneOrphans
+    // 回收）。把持久化下沉到 dispose 后，所有关闭路径行为一致（BUG-053）。
+    widget.onSave(_sources);
     _controller.dispose();
     super.dispose();
   }
@@ -133,10 +138,8 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
             ),
             adaptiveDialogAction(
               context: context,
-              onPressed: () {
-                widget.onSave(_sources);
-                Navigator.pop(context);
-              },
+              // 持久化已下沉到 dispose（覆盖所有关闭路径，见 BUG-053），这里只负责出栈。
+              onPressed: () => Navigator.pop(context),
               child: Text(t.dialog_close),
             ),
           ],

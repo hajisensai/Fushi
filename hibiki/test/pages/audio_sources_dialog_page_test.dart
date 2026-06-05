@@ -205,6 +205,38 @@ void main() {
     expect(saved!.first.path, '/new.db');
   });
 
+  // BUG-053：导入本地音频后，若用「点遮罩 / 系统返回 / Esc」关闭对话框（而非底部
+  // 「关闭」按钮），过去 onSave 从不触发 → 导入丢失（且拷贝副本被 pruneOrphans 回收）。
+  // 修复=任意关闭路径都落盘（save-on-dispose），故这里不点「关闭」按钮、改点遮罩关闭，
+  // 仍必须持久化导入的本地库。
+  testWidgets(
+      'imported local db persists when the dialog is dismissed by the barrier '
+      '(not the close button) (BUG-053)', (WidgetTester tester) async {
+    List<AudioSourceConfig>? saved;
+    await openDialog(
+      tester,
+      AudioSourcesDialog(
+        sources: const <AudioSourceConfig>[],
+        onSave: (List<AudioSourceConfig> v) => saved = v,
+        onPickLocalDb: () async => AudioSourceConfig.localAudio(
+            label: 'new.db', path: '/new.db', enabled: true),
+      ),
+    );
+
+    await tester.tap(find.text(t.local_audio_add_db));
+    await tester.pumpAndSettle();
+
+    // 不点「关闭」按钮，而是点对话框外的遮罩关闭（= 系统返回 / Esc 的等价关闭路径）。
+    await tester.tapAt(const Offset(5, 5));
+    await tester.pumpAndSettle();
+
+    // 导入必须已落盘，而不是随对话框关闭一起丢失。
+    expect(saved, isNotNull);
+    expect(saved!.length, 1);
+    expect(saved!.first.kind, AudioSourceKind.localAudio);
+    expect(saved!.first.path, '/new.db');
+  });
+
   // BUG-027 ①：本地库行的「调整(tune)」按钮过去夹在 ↓ 和删除之间，把开关/↑/↓ 往左
   // 挤，导致跨行的开关列错位。修复后 tune 移到开关左侧——本地行与远端行的开关列右贴边
   // 对齐，tune 只向左凸出。
