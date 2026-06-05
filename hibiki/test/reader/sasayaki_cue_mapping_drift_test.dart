@@ -92,6 +92,10 @@ void main() {
       // 运行时按 DOM 文本建归一化反查表。
       expect(src.contains('buildSasayakiNormIndex:'), isTrue,
           reason: '需一次性构建实时 DOM 的归一化全文 + 反查表');
+      // 反查表必须按 UTF-16 码元粒度（代理对 push 两条），与 full.indexOf 的
+      // 码元偏移对齐，否则 CJK 扩展 B+ 汉字后高亮错位（W-1）。
+      expect(src.contains('for (var u = 0; u < ch.length'), isTrue,
+          reason: 'map 必须按码元粒度建，与 full(码元串) 同空间');
       // 用 cue 原文 needle 在全文里搜索（而非按 start 死偏移数 cursor）。
       expect(src.contains('this.normalizeText(cue.text'), isTrue,
           reason: 'needle 必须来自 cue 原文，靠 DOM 文本自校正');

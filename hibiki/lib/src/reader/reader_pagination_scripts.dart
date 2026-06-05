@@ -329,7 +329,12 @@ class ReaderPaginationScripts {
         var ch = String.fromCodePoint(text.codePointAt(i));
         var next = i + ch.length;
         if (this.isMatchableChar(ch)) {
-          map.push({ node: node, start: i, end: next });
+          // full 是 UTF-16 码元串（full.indexOf 返回码元偏移），map 必须与之同粒度：
+          // 星平面字符（CJK 扩展 B+，白名单含  0+）占 2 个码元，push 两条
+          // 指向同一原始区间的反查项，否则码元偏移索引逐码点 map 会在代理对后错位。
+          for (var u = 0; u < ch.length; u++) {
+            map.push({ node: node, start: i, end: next });
+          }
           chunk += ch;
         }
         i = next;

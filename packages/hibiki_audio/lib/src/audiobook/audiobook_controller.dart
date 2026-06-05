@@ -484,6 +484,9 @@ class AudiobookPlayerController extends ChangeNotifier {
     // 守卫放下后第一次 tick 会匹配到 cue[0] 导致进度清零。
     // 守卫放下后 notifySectionRestoreCompleted 会负责恢复。
     if (_chapterTransition) return;
+    // 换 cue 列表是上下文边界：任何挂起的显式 seek 抑制窗都失效，必须复位，
+    // 否则下面的 _updateCurrentCue 重算会被旗挡住、_currentCue 卡 null（W-2）。
+    _explicitSeekInFlight = false;
     _currentCue = null;
     _currentCueIndex = -1;
     _updateCurrentCue(_player.position.inMilliseconds);
@@ -941,6 +944,8 @@ class AudiobookPlayerController extends ChangeNotifier {
     required bool success,
   }) {
     _chapterTransition = false;
+    // 章节恢复完成是上下文边界：复位显式 seek 抑制窗，避免旧旗挡住重算（W-2）。
+    _explicitSeekInFlight = false;
     _updateCurrentCue(_player.position.inMilliseconds);
   }
 
@@ -1137,7 +1142,8 @@ class AudiobookPlayerController extends ChangeNotifier {
     required int targetMs,
     int toleranceMs = _kExplicitSeekToleranceMs,
   }) {
-    return currentFileIndex == targetFileIndex && posMs >= targetMs - toleranceMs;
+    return currentFileIndex == targetFileIndex &&
+        posMs >= targetMs - toleranceMs;
   }
 
   @visibleForTesting
