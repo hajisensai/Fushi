@@ -32,12 +32,16 @@ class BookImportDialog extends StatefulWidget {
     required this.repo,
     required this.audiobookRepo,
     required this.db,
+    this.initialEpubPath,
+    this.initialSubtitlePath,
     super.key,
   });
 
   final SrtBookRepository repo;
   final AudiobookRepository audiobookRepo;
   final HibikiDatabase db;
+  final String? initialEpubPath;
+  final String? initialSubtitlePath;
 
   @override
   State<BookImportDialog> createState() => _BookImportDialogState();
@@ -73,6 +77,24 @@ class _BookImportDialogState extends State<BookImportDialog> {
   }
 
   bool get _hasSubtitles => _subtitlePath != null;
+
+  @override
+  void initState() {
+    super.initState();
+    final String? epub = widget.initialEpubPath;
+    if (epub != null) {
+      _epubPath = epub;
+      _epubName = p.basename(epub);
+      if (_titleCtrl.text.isEmpty) {
+        _titleCtrl.text = p.basenameWithoutExtension(epub);
+      }
+    }
+    final String? sub = widget.initialSubtitlePath;
+    if (sub != null) {
+      _subtitlePath = sub;
+      _subtitleName = p.basename(sub);
+    }
+  }
 
   @override
   void dispose() {
