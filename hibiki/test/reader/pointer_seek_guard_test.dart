@@ -17,10 +17,7 @@ void main() {
   });
 
   test('onPointerSeek is gated by the configurable mouse binding', () {
-    expect(src.contains('_isSeekToClickedSentenceButton'), isTrue);
-    expect(src.contains('resolveMouse'), isTrue);
-    expect(
-        src.contains('ShortcutAction.audiobookSeekToClickedSentence'), isTrue);
+    expect(src.contains('isSeekToClickedSentenceButton'), isTrue);
   });
 
   test('reader seek path uses cueIdAtPoint reverse lookup and plays the cue',
@@ -28,5 +25,9 @@ void main() {
     expect(src.contains('cueIdAtPoint'), isTrue);
     expect(src.contains('cueForPointerPayload'), isTrue);
     expect(src.contains('playCueAndContinue'), isTrue);
+  });
+
+  test('lyrics seek path resolves the cue via cueForLyricsPointer', () {
+    expect(src.contains('cueForLyricsPointer'), isTrue);
   });
 }

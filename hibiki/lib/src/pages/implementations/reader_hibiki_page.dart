@@ -1971,7 +1971,10 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
           callback: (List<dynamic> args) async {
             if (args.length < 3 || _audiobookController == null) return;
             final int button = (args[0] as num?)?.toInt() ?? -1;
-            if (!_isSeekToClickedSentenceButton(button)) return;
+            if (!isSeekToClickedSentenceButton(
+                appModel.shortcutRegistry, button)) {
+              return;
+            }
             final double x = _toDouble(args[1]) ?? 0;
             final double y = _toDouble(args[2]) ?? 0;
             await _seekToClickedSentence(x, y);
@@ -1983,10 +1986,14 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
           callback: (List<dynamic> args) {
             if (args.length < 2 || _audiobookController == null) return;
             final int button = (args[0] as num?)?.toInt() ?? -1;
-            if (!_isSeekToClickedSentenceButton(button)) return;
             final int idx = (args[1] as num?)?.toInt() ?? -1;
-            if (idx < 0 || idx >= _lyricsCueList.length) return;
-            _audiobookController!.playCueAndContinue(_lyricsCueList[idx]);
+            final AudioCue? cue = cueForLyricsPointer(
+              appModel.shortcutRegistry,
+              button,
+              idx,
+              _lyricsCueList,
+            );
+            if (cue != null) _audiobookController!.playCueAndContinue(cue);
           },
         );
       },
@@ -3819,17 +3826,6 @@ window.flutter_inappwebview.callHandler('spreadReady');
     return true;
   }
 
-  /// 单一真相：哪个 DOM 鼠标按钮触发「seek 到点击句」由快捷键注册表决定
-  /// （默认中键）。鼠标键是位置型动作，不进位置无关的 [_executeShortcutAction]。
-  bool _isSeekToClickedSentenceButton(int button) {
-    if (button < 0) return false;
-    return appModel.shortcutRegistry.resolveMouse(
-          button,
-          scope: ShortcutScope.audiobook,
-        ) ==
-        ShortcutAction.audiobookSeekToClickedSentence;
-  }
-
   /// 正文（Sasayaki 原生 EPUB / 合成书）中键点击 → 经 JS `cueIdAtPoint` 反查所在
   /// cue → 跳到该句并播放。点空白/无命中静默忽略。
   Future<void> _seekToClickedSentence(double x, double y) async {
@@ -3839,6 +3835,9 @@ window.flutter_inappwebview.callHandler('spreadReady');
       source: 'window.hoshiReader && window.hoshiReader.cueIdAtPoint'
           ' ? window.hoshiReader.cueIdAtPoint($x, $y) : null',
     );
+    // await 期间用户可能退出有声书（_audiobookController 被置空并 dispose）。
+    // 用快照同一性校验，避免对已 dispose 的旧 controller 调 playCueAndContinue。
+    if (!mounted || !identical(_audiobookController, controller)) return;
     if (raw is! String) return;
     final List<AudioCue>? allCues = _cachedAllCues;
     if (allCues == null) return;

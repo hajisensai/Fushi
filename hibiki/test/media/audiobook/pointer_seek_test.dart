@@ -1,6 +1,8 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki/src/media/audiobook/pointer_seek.dart';
+import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
 
 AudioCue _cue({required int sid, required String frag}) => AudioCue()
   ..bookKey = 'b'
@@ -37,5 +39,30 @@ void main() {
     expect(cueForPointerPayload('null', cues), isNull);
     expect(cueForPointerPayload('not json', cues), isNull);
     expect(cueForPointerPayload('', cues), isNull);
+  });
+
+  group('button gate + lyrics boundary (real registry defaults)', () {
+    HibikiShortcutRegistry registry() =>
+        HibikiShortcutRegistry()..loadDefaults(TargetPlatform.windows);
+
+    test('default middle button (1) is the seek button; others are not', () {
+      final reg = registry();
+      expect(isSeekToClickedSentenceButton(reg, 1), isTrue);
+      expect(isSeekToClickedSentenceButton(reg, 2), isFalse);
+      expect(isSeekToClickedSentenceButton(reg, -1), isFalse);
+    });
+
+    test('cueForLyricsPointer returns cue only for bound button + in-range idx',
+        () {
+      final reg = registry();
+      expect(cueForLyricsPointer(reg, 1, 1, cues)?.sentenceIndex, 1);
+      // Unbound button → no seek.
+      expect(cueForLyricsPointer(reg, 2, 0, cues), isNull);
+      // Out-of-range index → no seek (negative and past-end).
+      expect(cueForLyricsPointer(reg, 1, -1, cues), isNull);
+      expect(cueForLyricsPointer(reg, 1, cues.length, cues), isNull);
+      // Empty cue list → no crash, no seek.
+      expect(cueForLyricsPointer(reg, 1, 0, const <AudioCue>[]), isNull);
+    });
   });
 }
