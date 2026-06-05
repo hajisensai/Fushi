@@ -1281,5 +1281,14 @@
     "video_setting_shaders": "Shaders (Anime4K, etc.)",
     "video_setting_shaders_hint": "Apply mpv GLSL shaders (e.g. Anime4K). Desktop only.",
     "video_shaders_empty": "No shaders imported yet",
-    "video_shader_import": "Import shader (.glsl)"
+    "video_shader_import": "Import shader (.glsl)",
+    "video_jimaku_fetch": "Auto-fetch subtitles (Jimaku)",
+    "video_jimaku_api_key": "Jimaku API key",
+    "video_jimaku_api_key_hint": "Get a free API key at jimaku.cc/account",
+    "video_jimaku_query": "Series name",
+    "video_jimaku_search": "Search",
+    "video_jimaku_no_results": "No subtitles found",
+    "video_jimaku_no_key": "Enter your Jimaku API key first",
+    "video_jimaku_download_failed": "Download failed",
+    "video_jimaku_downloaded": "Subtitle downloaded and applied"
 }

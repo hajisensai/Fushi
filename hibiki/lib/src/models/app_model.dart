@@ -1574,6 +1574,11 @@ class AppModel with ChangeNotifier {
   Future<void> setVideoShadersEnabled(String json) =>
       prefsRepo.setVideoShadersEnabled(json);
 
+  /// Jimaku API key（自动获取日语字幕）。
+  String get jimakuApiKey => prefsRepo.jimakuApiKey;
+
+  Future<void> setJimakuApiKey(String key) => prefsRepo.setJimakuApiKey(key);
+
   bool get reverseNavigationBar => prefsRepo.reverseNavigationBar;
   void toggleReverseNavigationBar() => prefsRepo.toggleReverseNavigationBar();
 

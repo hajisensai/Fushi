@@ -1281,5 +1281,14 @@
     "video_setting_shaders": "着色器（Anime4K 等）",
     "video_setting_shaders_hint": "应用 mpv GLSL 着色器（如 Anime4K）。仅桌面端生效。",
     "video_shaders_empty": "还没有导入着色器",
-    "video_shader_import": "导入着色器（.glsl）"
+    "video_shader_import": "导入着色器（.glsl）",
+    "video_jimaku_fetch": "自动获取字幕（Jimaku）",
+    "video_jimaku_api_key": "Jimaku API key",
+    "video_jimaku_api_key_hint": "在 jimaku.cc/account 免费获取 API key",
+    "video_jimaku_query": "番剧名",
+    "video_jimaku_search": "搜索",
+    "video_jimaku_no_results": "没有找到字幕",
+    "video_jimaku_no_key": "请先填写 Jimaku API key",
+    "video_jimaku_download_failed": "下载失败",
+    "video_jimaku_downloaded": "字幕已下载并应用"
 }

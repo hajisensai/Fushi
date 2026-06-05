@@ -225,6 +225,15 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Jimaku（jimaku.cc）API key：自动获取日语字幕用（用户在视频字幕菜单里填）。
+  String get jimakuApiKey =>
+      getPref('jimaku_api_key', defaultValue: '') as String;
+
+  Future<void> setJimakuApiKey(String key) async {
+    await setPref('jimaku_api_key', key);
+    notifyListeners();
+  }
+
   // ── transcript ───────────────────────────────────────────────────────
 
   bool get isTranscriptPlayerMode =>

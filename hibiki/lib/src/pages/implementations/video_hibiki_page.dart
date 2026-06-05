@@ -10,14 +10,17 @@ import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
+import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
+import 'package:hibiki/src/media/video/video_filename_parser.dart';
 import 'package:hibiki/src/media/video/video_player_controller.dart';
 import 'package:hibiki/src/media/video/video_shader_manager.dart';
+import 'package:hibiki/src/pages/implementations/jimaku_subtitle_dialog.dart';
 import 'package:hibiki/src/pages/implementations/video_shader_dialog.dart';
 import 'package:hibiki/src/media/video/video_sidecar.dart';
 import 'package:hibiki/src/media/video/video_subtitle_overlay.dart';
@@ -991,6 +994,18 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           child: ListView(
             shrinkWrap: true,
             children: <Widget>[
+              // 自动获取字幕（Jimaku）：用番名搜 → 下载 → 应用为外挂源。
+              ListTile(
+                textColor: Colors.white,
+                leading: const Icon(Icons.cloud_download_outlined,
+                    color: Colors.white),
+                title: Text(t.video_jimaku_fetch),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _openJimakuDialog(controller);
+                },
+              ),
+              const Divider(color: Colors.white24, height: 1),
               ListTile(
                 textColor: Colors.white,
                 leading: const Icon(Icons.subtitles_off, color: Colors.white),
@@ -1021,6 +1036,37 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           ),
         ),
       ),
+    );
+  }
+
+  /// 打开「自动获取字幕（Jimaku）」对话框：用番名（文件名解析）搜 → 下载到
+  /// `<appDocs>/video_subtitles/` → 构造外挂 [SubtitleSource] 复用既有 cue 加载/切换/
+  /// 持久化链路应用。真实拉取需有效 Jimaku API key + 联网（验证待用户）。
+  Future<void> _openJimakuDialog(VideoPlayerController controller) async {
+    final String? videoPath = _currentVideoPath;
+    if (videoPath == null) return;
+    final Directory docs = await getApplicationDocumentsDirectory();
+    final String saveDir = p.join(docs.path, 'video_subtitles');
+    final String query = parseVideoFilename(p.basename(videoPath)).series;
+    if (!context.mounted) return;
+    final String? downloaded = await showDialog<String>(
+      context: context,
+      builder: (_) => JimakuSubtitleDialog(
+        initialQuery: query,
+        initialApiKey: appModel.jimakuApiKey,
+        onApiKeyChanged: (String key) => appModel.setJimakuApiKey(key),
+        saveDirectory: saveDir,
+      ),
+    );
+    if (downloaded == null || !context.mounted) return;
+    final SubtitleSource source = SubtitleSource.external(
+      externalPath: downloaded,
+      label: p.basename(downloaded),
+    );
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    await _selectSubtitleSource(controller, source);
+    messenger.showSnackBar(
+      SnackBar(content: Text(t.video_jimaku_downloaded)),
     );
   }
 
