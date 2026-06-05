@@ -107,7 +107,13 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
         }
       },
       child: HibikiOverlayScaffold(
-        body: _buildOuterContainer(),
+        // 根因修复（BUG-054）：弹窗词典窗口经 popup_main 同样套了 HibikiAppUiScale，
+        // 其 DictionaryPopupLayer→DictionaryPopupWebView 会被 FittedBox 拉糊。整页在
+        // 中和器下渲染（净缩放=1），WebView 走原生密度、其上的关闭遮罩/嵌套层共用
+        // 同一真实坐标系。
+        body: HibikiAppUiScaleNeutralizer(
+          child: _buildOuterContainer(),
+        ),
       ),
     );
   }

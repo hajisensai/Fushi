@@ -406,6 +406,23 @@ class DictionaryPopupWebViewState
 
   @override
   Widget build(BuildContext context) {
+    // 不变式（根因守卫，BUG-039/054 同因）：词典 WebView 必须在「净缩放=1」的原生
+    // 密度空间里渲染。全局「界面大小」用 FittedBox 把整棵树当一张画布拉伸，WebView
+    // 是平台视图纹理、被拉大必糊；唯一干净解法是让它永远在原生密度渲染（内容大小走
+    // WebView 自带字号），即必须处在 HibikiAppUiScaleNeutralizer 之下。
+    // of()==defaultScale 同时覆盖「全局未缩放」与「已被中和器中和」两种合法情形；
+    // 唯一会触发的是「被全局缩放且未中和」——正是发糊的精确条件。任何新增词典
+    // WebView 表面若忘了套中和器，会在此 debug/集成测试里立刻炸，而非等用户撞糊。
+    final double appUiScale = HibikiAppUiScale.of(context);
+    assert(
+      appUiScale == HibikiAppUiScale.defaultScale,
+      'DictionaryPopupWebView 必须渲染在 HibikiAppUiScaleNeutralizer 之下'
+      '（净缩放=1），否则会被全局界面缩放的 FittedBox 拉糊。'
+      '当前 scale=$appUiScale。'
+      '修法：把承载本 WebView 及其同坐标系弹窗的整块区域用 '
+      'HibikiAppUiScaleNeutralizer 包裹（参见 reader_hibiki_source / '
+      'home_dictionary_page / popup_dictionary_page）。',
+    );
     final t = Translations.of(context);
     final appModel = ref.read(appProvider);
     final Color bgColor = appModel.overrideDictionaryColor ??
