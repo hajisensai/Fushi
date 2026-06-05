@@ -82,7 +82,7 @@
 
 | الطبقة | التقنية |
 |---|---|
-| إطار العمل | Flutter 3.41.6 (Dart SDK `>=3.5.0 <4.0.0`) |
+| إطار العمل | Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`) |
 | المنصة | Android / iOS / macOS / Windows / Linux (تكيُّف Material 3 + Cupertino) |
 | القارئ | محرك تقسيم الصفحات WebView (مشتق من [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader)) |
 | التخزين | Drift (SQLite, WAL) + hoshidicts (محرك قاموس C++ FFI) |
@@ -112,7 +112,7 @@ flutter build apk --release --target-platform android-arm64 --split-per-abi
 
 ## التبعيات والتصحيحات
 
-هذا المشروع مقفل على Flutter 3.41.6، وبعض التبعيات الأصلية لم تُكيَّف بعد. ينقسم التصحيح إلى آليتين: ① الحزم التي يجب أن تكون مدخلاً للبناء وتُعاد بثبات عبر الأجهزة تُدمج (vendor) مباشرة في `third_party/` ويُشار إليها عبر `dependency_overrides` (`network_to_file_image` / `carousel_slider` / `fading_edge_scrollview` / `flutter_inappwebview_android`، **دون** الحاجة لتصحيح pub-cache)؛ ② بقية الحزم يُصحَّح مصدرها في pub cache بواسطة `ci/apply-patches.sh`. تفاصيل الآلية في [docs/agent/build.md](../agent/build.md). الجداول القابلة للطي أدناه قائمة تاريخية مصنّفة حسب التغيير؛ وبالنسبة للحزم المتداخلة مع الآلية ① تُعتمد النسخة المدمجة (vendored).
+هذا المشروع مقفل على Flutter 3.44.0، وبعض التبعيات الأصلية لم تُكيَّف بعد. ينقسم التصحيح إلى آليتين: ① الحزم التي يجب أن تكون مدخلاً للبناء وتُعاد بثبات عبر الأجهزة تُدمج (vendor) مباشرة في `third_party/` ويُشار إليها عبر `dependency_overrides` (`network_to_file_image` / `carousel_slider` / `fading_edge_scrollview` / `flutter_inappwebview_android`، **دون** الحاجة لتصحيح pub-cache)؛ ② بقية الحزم يُصحَّح مصدرها في pub cache بواسطة `ci/apply-patches.sh`. تفاصيل الآلية في [docs/agent/build.md](../agent/build.md). الجداول القابلة للطي أدناه قائمة تاريخية مصنّفة حسب التغيير؛ وبالنسبة للحزم المتداخلة مع الآلية ① تُعتمد النسخة المدمجة (vendored).
 
 <details>
 <summary><b>تصحيحات تغييرات Flutter API</b></summary>
@@ -132,7 +132,7 @@ flutter build apk --release --target-platform android-arm64 --split-per-abi
 <details>
 <summary><b>تصحيحات إزالة v1 Embedding</b></summary>
 
-أزال Flutter 3.41.6 بالكامل واجهة v1 embedding API (`PluginRegistry.Registrar`). الإضافات التالية تحتاج إلى حذف المراجع ذات الصلة:
+أزال Flutter 3.44.0 بالكامل واجهة v1 embedding API (`PluginRegistry.Registrar`). الإضافات التالية تحتاج إلى حذف المراجع ذات الصلة:
 
 `flutter_plugin_android_lifecycle` · `file_picker` · `flutter_inappwebview` · `fluttertoast` · `image_picker_android` · `mecab_dart` · `permission_handler_android` · `url_launcher_android` · `path_provider_android` · `sqflite` · `record_mp3_plus`
 

@@ -23,7 +23,7 @@ flutter build apk --release --target-platform android-arm64 --split-per-abi
 
 ## 依赖补丁
 
-Flutter 3.41.6 下部分上游依赖未适配，两种补法并存（对个别包**有重叠**）：
+Flutter 3.44.0 下部分上游依赖未适配，两种补法并存（对个别包**有重叠**）：
 
 - **vendored**：`network_to_file_image` / `carousel_slider` / `fading_edge_scrollview` / `flutter_inappwebview_android`（在 `third_party/`）与 `flutter_inappwebview_windows` / `gamepads_android_stub`（在 `packages/`），经 `dependency_overrides` 的 `path:` 从仓库内解析。`third_party/` 的 fork 必须整包入库（`.gitignore` 用 `!third_party/**/*.xml` 豁免 res/manifest）；新增时把其 pubspec 的 SDK 上界 bump 到 `<4.0.0`。
 - **pub-cache 补丁**：`ci/apply-patches.sh` 把 `ci/patches/{hosted,git}/<包-版本>/` 覆盖到 pub cache，按精确版本号命名；版本漂移就跳过并警告（HBK-AUDIT-005）。每次清 cache 或 `pub get` 后要重跑（bootstrap 已含）。

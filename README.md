@@ -96,7 +96,7 @@
 
 | 层 | 技术 |
 |---|---|
-| 框架 | Flutter 3.41.6（Dart SDK `>=3.5.0 <4.0.0`） |
+| 框架 | Flutter 3.44.0（Dart SDK `>=3.5.0 <4.0.0`） |
 | 平台 | Android / Windows（iOS / macOS / Linux 后续支持；Material 3 + Cupertino 自适应） |
 | 阅读器 | WebView 分页引擎（[Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader) 衍生） |
 | 存储 | Drift（SQLite，WAL）+ hoshidicts（C++ FFI 词典引擎） |
@@ -126,7 +126,7 @@ melos 有 CJK 编码 bug，改用 `tool/bootstrap.ps1`）。
 
 ## 依赖与补丁
 
-本项目锁定 Flutter 3.41.6，部分上游依赖尚未适配。修补分两条路：① 需作为构建输入、跨机一致复现的包直接 vendor 到 `third_party/` 并用 `dependency_overrides` 指向（`network_to_file_image` / `carousel_slider` / `fading_edge_scrollview` / `flutter_inappwebview_android`，**无需**打 pub-cache 补丁）；② 其余包由 `ci/apply-patches.sh` 修补 pub cache 源码。机制细节见 [docs/agent/build.md](docs/agent/build.md)。下方折叠表是按改动归类的历史清单，与机制 ① 重叠的包以 vendored 版本为准。
+本项目锁定 Flutter 3.44.0，部分上游依赖尚未适配。修补分两条路：① 需作为构建输入、跨机一致复现的包直接 vendor 到 `third_party/` 并用 `dependency_overrides` 指向（`network_to_file_image` / `carousel_slider` / `fading_edge_scrollview` / `flutter_inappwebview_android`，**无需**打 pub-cache 补丁）；② 其余包由 `ci/apply-patches.sh` 修补 pub cache 源码。机制细节见 [docs/agent/build.md](docs/agent/build.md)。下方折叠表是按改动归类的历史清单，与机制 ① 重叠的包以 vendored 版本为准。
 
 <details>
 <summary><b>Flutter API 变更补丁</b></summary>
@@ -144,7 +144,7 @@ melos 有 CJK 编码 bug，改用 `tool/bootstrap.ps1`）。
 <details>
 <summary><b>v1 Embedding 移除补丁</b></summary>
 
-Flutter 3.41.6 完全移除了 v1 embedding API（`PluginRegistry.Registrar`），以下插件需删除相关引用：
+Flutter 3.44.0 完全移除了 v1 embedding API（`PluginRegistry.Registrar`），以下插件需删除相关引用：
 
 `flutter_plugin_android_lifecycle` · `file_picker` · `flutter_inappwebview` · `fluttertoast` · `image_picker_android` · `mecab_dart` · `permission_handler_android` · `url_launcher_android` · `path_provider_android` · `sqflite`
 

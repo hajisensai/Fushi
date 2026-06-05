@@ -82,7 +82,7 @@
 
 | Уровень | Технология |
 |---|---|
-| Фреймворк | Flutter 3.41.6 (Dart SDK `>=3.5.0 <4.0.0`) |
+| Фреймворк | Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`) |
 | Платформа | Android / iOS / macOS / Windows / Linux (адаптивный Material 3 + Cupertino) |
 | Читалка | Постраничный движок на WebView (на основе [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader)) |
 | Хранение | Drift (SQLite, WAL) + hoshidicts (движок словарей C++ FFI) |
@@ -110,7 +110,7 @@ flutter build apk --release --target-platform android-arm64 --split-per-abi
 
 ## Зависимости и патчи
 
-Проект привязан к Flutter 3.41.6, часть upstream-зависимостей ещё не адаптирована. Исправления идут двумя путями: ① пакеты, которые должны быть входными данными сборки и воспроизводиться одинаково на разных машинах, vendored в `third_party/` и подключены через `dependency_overrides` (`network_to_file_image` / `carousel_slider` / `fading_edge_scrollview` / `flutter_inappwebview_android`, **без** патча pub cache); ② остальные пакеты исправляет `ci/apply-patches.sh` в исходниках pub cache. Подробности механизма см. в [docs/agent/build.md](../agent/build.md). Свёрнутые таблицы ниже — исторический список по категориям изменений; для пакетов, пересекающихся с механизмом ①, приоритет имеет vendored-версия.
+Проект привязан к Flutter 3.44.0, часть upstream-зависимостей ещё не адаптирована. Исправления идут двумя путями: ① пакеты, которые должны быть входными данными сборки и воспроизводиться одинаково на разных машинах, vendored в `third_party/` и подключены через `dependency_overrides` (`network_to_file_image` / `carousel_slider` / `fading_edge_scrollview` / `flutter_inappwebview_android`, **без** патча pub cache); ② остальные пакеты исправляет `ci/apply-patches.sh` в исходниках pub cache. Подробности механизма см. в [docs/agent/build.md](../agent/build.md). Свёрнутые таблицы ниже — исторический список по категориям изменений; для пакетов, пересекающихся с механизмом ①, приоритет имеет vendored-версия.
 
 <details>
 <summary><b>Патчи изменений API Flutter</b></summary>
@@ -130,7 +130,7 @@ flutter build apk --release --target-platform android-arm64 --split-per-abi
 <details>
 <summary><b>Патчи удаления v1 embedding</b></summary>
 
-Flutter 3.41.6 полностью удалил API v1 embedding (`PluginRegistry.Registrar`). Следующие плагины требуют удаления соответствующих ссылок:
+Flutter 3.44.0 полностью удалил API v1 embedding (`PluginRegistry.Registrar`). Следующие плагины требуют удаления соответствующих ссылок:
 
 `flutter_plugin_android_lifecycle` · `file_picker` · `flutter_inappwebview` · `fluttertoast` · `image_picker_android` · `mecab_dart` · `permission_handler_android` · `url_launcher_android` · `path_provider_android` · `sqflite` · `record_mp3_plus`
 

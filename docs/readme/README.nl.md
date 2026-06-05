@@ -82,7 +82,7 @@ De interface ondersteunt de volgende talen:
 
 | Laag | Technologie |
 |---|---|
-| Framework | Flutter 3.41.6 (Dart SDK `>=3.5.0 <4.0.0`) |
+| Framework | Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`) |
 | Platform | Android / iOS / macOS / Windows / Linux (Material 3 + Cupertino adaptief) |
 | Lezer | Gepagineerde WebView-engine (afgeleid van [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader)) |
 | Opslag | Drift (SQLite, WAL) + hoshidicts (C++ FFI woordenboekengine) |
@@ -110,7 +110,7 @@ flutter build apk --release --target-platform android-arm64 --split-per-abi
 
 ## Afhankelijkheden en patches
 
-Dit project is vastgezet op Flutter 3.41.6 en sommige upstream-afhankelijkheden zijn nog niet aangepast. Patches verlopen via twee wegen: ① pakketten die een build-invoer moeten zijn en op verschillende machines identiek reproduceerbaar, worden vendored onder `third_party/` en via `dependency_overrides` aangewezen (`network_to_file_image` / `carousel_slider` / `fading_edge_scrollview` / `flutter_inappwebview_android`, **zonder** pub-cache-patch); ② de overige pakketten worden door `ci/apply-patches.sh` in de pub-cache-broncode gepatcht. Mechanismedetails staan in [docs/agent/build.md](../agent/build.md). De inklapbare tabellen hieronder vormen een historische lijst gerangschikt op wijziging; voor pakketten die met mechanisme ① overlappen, geldt de vendored versie.
+Dit project is vastgezet op Flutter 3.44.0 en sommige upstream-afhankelijkheden zijn nog niet aangepast. Patches verlopen via twee wegen: ① pakketten die een build-invoer moeten zijn en op verschillende machines identiek reproduceerbaar, worden vendored onder `third_party/` en via `dependency_overrides` aangewezen (`network_to_file_image` / `carousel_slider` / `fading_edge_scrollview` / `flutter_inappwebview_android`, **zonder** pub-cache-patch); ② de overige pakketten worden door `ci/apply-patches.sh` in de pub-cache-broncode gepatcht. Mechanismedetails staan in [docs/agent/build.md](../agent/build.md). De inklapbare tabellen hieronder vormen een historische lijst gerangschikt op wijziging; voor pakketten die met mechanisme ① overlappen, geldt de vendored versie.
 
 <details>
 <summary><b>Flutter API-wijzigingspatches</b></summary>
@@ -130,7 +130,7 @@ Dit project is vastgezet op Flutter 3.41.6 en sommige upstream-afhankelijkheden 
 <details>
 <summary><b>v1 Embedding-verwijderingspatches</b></summary>
 
-Flutter 3.41.6 heeft de v1 embedding API (`PluginRegistry.Registrar`) volledig verwijderd. De volgende plugins vereisen het verwijderen van gerelateerde verwijzingen:
+Flutter 3.44.0 heeft de v1 embedding API (`PluginRegistry.Registrar`) volledig verwijderd. De volgende plugins vereisen het verwijderen van gerelateerde verwijzingen:
 
 `flutter_plugin_android_lifecycle` · `file_picker` · `flutter_inappwebview` · `fluttertoast` · `image_picker_android` · `mecab_dart` · `permission_handler_android` · `url_launcher_android` · `path_provider_android` · `sqflite` · `record_mp3_plus`
 

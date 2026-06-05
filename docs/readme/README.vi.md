@@ -82,7 +82,7 @@ Giao diện hỗ trợ các ngôn ngữ sau:
 
 | Tầng | Công nghệ |
 |---|---|
-| Framework | Flutter 3.41.6 (Dart SDK `>=3.5.0 <4.0.0`) |
+| Framework | Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`) |
 | Nền tảng | Android / iOS / macOS / Windows / Linux (thích ứng Material 3 + Cupertino) |
 | Trình đọc | Engine phân trang WebView (phái sinh từ [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader)) |
 | Lưu trữ | Drift (SQLite, WAL) + hoshidicts (engine từ điển C++ FFI) |
@@ -112,7 +112,7 @@ flutter build apk --release --target-platform android-arm64 --split-per-abi
 
 ## Phụ thuộc và bản vá
 
-Dự án này được khóa ở Flutter 3.41.6, một số phụ thuộc upstream chưa tương thích. Việc vá chia thành hai cơ chế: ① các gói cần làm đầu vào biên dịch, tái lập nhất quán giữa các máy được vendor trực tiếp vào `third_party/` và trỏ tới bằng `dependency_overrides` (`network_to_file_image` / `carousel_slider` / `fading_edge_scrollview` / `flutter_inappwebview_android`, **không** cần vá pub-cache); ② các gói còn lại do `ci/apply-patches.sh` vá mã nguồn trong pub cache. Chi tiết cơ chế xem [docs/agent/build.md](../agent/build.md). Các bảng gập bên dưới là danh sách lịch sử phân loại theo thay đổi; với các gói trùng với cơ chế ①, bản vendored được ưu tiên.
+Dự án này được khóa ở Flutter 3.44.0, một số phụ thuộc upstream chưa tương thích. Việc vá chia thành hai cơ chế: ① các gói cần làm đầu vào biên dịch, tái lập nhất quán giữa các máy được vendor trực tiếp vào `third_party/` và trỏ tới bằng `dependency_overrides` (`network_to_file_image` / `carousel_slider` / `fading_edge_scrollview` / `flutter_inappwebview_android`, **không** cần vá pub-cache); ② các gói còn lại do `ci/apply-patches.sh` vá mã nguồn trong pub cache. Chi tiết cơ chế xem [docs/agent/build.md](../agent/build.md). Các bảng gập bên dưới là danh sách lịch sử phân loại theo thay đổi; với các gói trùng với cơ chế ①, bản vendored được ưu tiên.
 
 <details>
 <summary><b>Bản vá thay đổi API Flutter</b></summary>
@@ -132,7 +132,7 @@ Dự án này được khóa ở Flutter 3.41.6, một số phụ thuộc upstre
 <details>
 <summary><b>Bản vá xóa v1 Embedding</b></summary>
 
-Flutter 3.41.6 đã xóa hoàn toàn API v1 embedding (`PluginRegistry.Registrar`). Các plugin sau cần xóa các tham chiếu liên quan:
+Flutter 3.44.0 đã xóa hoàn toàn API v1 embedding (`PluginRegistry.Registrar`). Các plugin sau cần xóa các tham chiếu liên quan:
 
 `flutter_plugin_android_lifecycle` · `file_picker` · `flutter_inappwebview` · `fluttertoast` · `image_picker_android` · `mecab_dart` · `permission_handler_android` · `url_launcher_android` · `path_provider_android` · `sqflite` · `record_mp3_plus`
 

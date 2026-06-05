@@ -82,7 +82,7 @@ The interface supports the following languages:
 
 | Layer | Technology |
 |---|---|
-| Framework | Flutter 3.41.6 (Dart SDK `>=3.5.0 <4.0.0`) |
+| Framework | Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`) |
 | Platform | Android / iOS / macOS / Windows / Linux (Material 3 + Cupertino adaptive) |
 | Reader | WebView paging engine (derived from [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader)) |
 | Storage | Drift (SQLite, WAL) + hoshidicts (C++ FFI dictionary engine) |
@@ -110,7 +110,7 @@ flutter build apk --release --target-platform android-arm64 --split-per-abi
 
 ## Dependencies & Patches
 
-This project is locked to Flutter 3.41.6, and some upstream dependencies have not been adapted yet. Patching follows two mechanisms: ① packages that need to be build inputs and reproduce consistently across machines are vendored directly under `third_party/` and pointed to via `dependency_overrides` (`network_to_file_image` / `carousel_slider` / `fading_edge_scrollview` / `flutter_inappwebview_android`, **no** pub-cache patching needed); ② the remaining packages are patched in the pub cache source by `ci/apply-patches.sh`. See [docs/agent/build.md](../agent/build.md) for mechanism details. The folding tables below are a historical list grouped by change; for packages that overlap with mechanism ①, the vendored version takes precedence.
+This project is locked to Flutter 3.44.0, and some upstream dependencies have not been adapted yet. Patching follows two mechanisms: ① packages that need to be build inputs and reproduce consistently across machines are vendored directly under `third_party/` and pointed to via `dependency_overrides` (`network_to_file_image` / `carousel_slider` / `fading_edge_scrollview` / `flutter_inappwebview_android`, **no** pub-cache patching needed); ② the remaining packages are patched in the pub cache source by `ci/apply-patches.sh`. See [docs/agent/build.md](../agent/build.md) for mechanism details. The folding tables below are a historical list grouped by change; for packages that overlap with mechanism ①, the vendored version takes precedence.
 
 <details>
 <summary><b>Flutter API Change Patches</b></summary>
@@ -130,7 +130,7 @@ This project is locked to Flutter 3.41.6, and some upstream dependencies have no
 <details>
 <summary><b>v1 Embedding Removal Patches</b></summary>
 
-Flutter 3.41.6 completely removed the v1 embedding API (`PluginRegistry.Registrar`). The following plugins require removal of related references:
+Flutter 3.44.0 completely removed the v1 embedding API (`PluginRegistry.Registrar`). The following plugins require removal of related references:
 
 `flutter_plugin_android_lifecycle` · `file_picker` · `flutter_inappwebview` · `fluttertoast` · `image_picker_android` · `mecab_dart` · `permission_handler_android` · `url_launcher_android` · `path_provider_android` · `sqflite` · `record_mp3_plus`
 
