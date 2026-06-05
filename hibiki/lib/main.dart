@@ -29,9 +29,21 @@ import 'package:hibiki/src/shortcuts/global_navigation.dart';
 import 'package:hibiki/src/startup/webview_prewarm.dart';
 import 'package:hibiki/src/platform/platform_services.dart';
 import 'package:hibiki/src/platform/platform_providers.dart';
+import 'package:hibiki/src/media/video/external_video.dart';
+import 'package:hibiki/src/media/video/video_book_repository.dart';
+import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
+import 'package:drift/drift.dart' show Value;
+import 'package:hibiki_core/hibiki_core.dart'
+    show VideoBooksCompanion, VideoBookRow;
+import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
 
 Color? _savedSplashColor;
+
+/// 桌面端「从 app 外打开视频文件」时，runner 经 `set_dart_entrypoint_arguments`
+/// 把视频路径传进 `main(List<String> args)`；这里暂存，待 app 初始化完成后由
+/// [_HoshiReaderAppState] 打开播放页并加入书架。null 表示本次启动不是外部打开视频。
+String? _pendingExternalVideoPath;
 
 /// Single source of truth for the status/navigation bar overlay style.
 ///
@@ -68,7 +80,21 @@ void popupMain() {
 }
 
 /// Application execution starts here.
-void main() {
+///
+/// [args] are the Dart entrypoint arguments. On Windows the runner forwards the
+/// process argv (minus the binary name) via `set_dart_entrypoint_arguments`, so
+/// opening a video with Hibiki (file association / drag-onto-exe / CLI) lands the
+/// video path here. We stash the first supported video path for the widget tree
+/// to act on once the app has finished initialising.
+void main(List<String> args) {
+  // 桌面端：从 args 里挑出外部打开的视频路径（仅 Windows runner 会传 argv）。
+  if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+    final String? videoArg = firstExternalVideoArg(args);
+    if (videoArg != null && File(videoArg).existsSync()) {
+      _pendingExternalVideoPath = videoArg;
+    }
+  }
+
   /// Run and handle an error zone to customise the action performed upon
   /// an error or exception. This allows for error logging for debug purposes
   /// as well as communicating errors to Crashlytics if enabled.
@@ -274,6 +300,9 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
   bool _isMainIntent = true;
   StreamSubscription? _intentsSubscription;
 
+  /// 守卫：确保外部打开的视频只被打开一次（[build] 可能多次重建）。
+  bool _externalVideoHandled = false;
+
   @override
   void initState() {
     super.initState();
@@ -369,6 +398,43 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
     } catch (e) {
       HibikiToast.show(msg: friendlySyncError(e));
     }
+  }
+
+  /// 处理「从 app 外用 Hibiki 打开视频」：建/取一条外部视频 VideoBook（videoPath
+  /// 存外部绝对路径，不复制文件），然后用全局 navigator push [VideoHibikiPage]
+  /// 播放。bookUid 用 [externalVideoBookUid]（全路径 sha1）派生，幂等——同一文件
+  /// 重复打开复用同条记录、保留上次进度。入库后书架视频分区自动出现该条目。
+  ///
+  /// 字幕无需在此预解析：[VideoHibikiPage] 加载时若 [VideoBookRow.subtitleSource]
+  /// 为空会自动探测同名 sidecar 字幕（见 `findSidecarSubtitle`）。
+  Future<void> _openExternalVideo(String videoPath) async {
+    final NavigatorState? navigator = appModel.navigatorKey.currentState;
+    if (navigator == null) return;
+
+    final VideoBookRepository repo = VideoBookRepository(appModel.database);
+    final String bookUid = externalVideoBookUid(videoPath);
+
+    try {
+      final VideoBookRow? existing = await repo.getByBookUid(bookUid);
+      if (existing == null) {
+        await repo.saveVideoBook(VideoBooksCompanion(
+          bookUid: Value(bookUid),
+          title: Value(p.basenameWithoutExtension(videoPath)),
+          videoPath: Value(videoPath),
+          importedAt: Value(DateTime.now()),
+        ));
+      }
+    } catch (e) {
+      debugPrint('[Hibiki] external video upsert failed: $e');
+      return;
+    }
+
+    if (!mounted) return;
+    await navigator.push(
+      adaptivePageRoute<void>(
+        builder: (_) => VideoHibikiPage(bookUid: bookUid, repo: repo),
+      ),
+    );
   }
 
   @override
@@ -475,6 +541,17 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
           ),
         ),
       );
+    }
+
+    // app 已初始化完成（走到这里说明 home 即将渲染）：若本次启动是「从 app 外
+    // 打开视频」，在首帧后建/取 VideoBook 并打开播放页。只触发一次。
+    if (!_externalVideoHandled && _pendingExternalVideoPath != null) {
+      _externalVideoHandled = true;
+      final String videoPath = _pendingExternalVideoPath!;
+      _pendingExternalVideoPath = null;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        unawaited(_openExternalVideo(videoPath));
+      });
     }
 
     return TranslationProvider(
