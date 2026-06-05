@@ -51,7 +51,7 @@ void main() {
     test('fresh database has expected schema version', () async {
       final db = await _openDb();
       final version = await db.customSelect('PRAGMA user_version').getSingle();
-      expect(version.data['user_version'], 17);
+      expect(version.data['user_version'], 20);
     });
 
     test('all expected tables exist', () async {
@@ -105,7 +105,7 @@ void main() {
       // The upgrade ladder bumped the schema to the current version (a v14 DB
       // walks the full ladder past 15 to the latest schema).
       final version = await db.customSelect('PRAGMA user_version').getSingle();
-      expect(version.read<int>('user_version'), 17);
+      expect(version.read<int>('user_version'), 20);
 
       // The newly-migrated table exists and querying an absent baseline does
       // not throw.
@@ -123,7 +123,7 @@ void main() {
 
       // The upgrade ladder bumped the schema to the current version.
       final version = await db.customSelect('PRAGMA user_version').getSingle();
-      expect(version.read<int>('user_version'), 17);
+      expect(version.read<int>('user_version'), 20);
 
       // The table carries the full v17 column set (no stepwise add-column
       // ladder remains).

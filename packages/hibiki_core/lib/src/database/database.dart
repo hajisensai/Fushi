@@ -57,7 +57,7 @@ class HibikiDatabase extends _$HibikiDatabase {
   HibikiDatabase.forTesting(super.e) : _dbDirectory = '';
 
   @override
-  int get schemaVersion => 17;
+  int get schemaVersion => 20;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -265,6 +265,37 @@ class HibikiDatabase extends _$HibikiDatabase {
               await m.createTable(videoBooks);
             }
           }
+          if (from < 20) {
+            // Convergence point. The video worktree forked BEFORE develop's
+            // name-PK v16 and burned its own v16-v19 numbers on video_books, so
+            // a real user DB can sit at user_version 16-19 with epub_books still
+            // id-keyed and a legacy id-PK video_books — the from<16 / from<17
+            // steps above never fire for it (version already past them). This
+            // step converges BOTH lineages by inspecting the ACTUAL schema, not
+            // the version number (the two lineages' v16-v19 are semantically
+            // different, so only column/PK probes can tell them apart). Both
+            // paths are idempotent and lossless for real user data.
+            //
+            // (1) epub_books still id-keyed (video-line fork never ran name-PK)
+            //     -> re-key now. _migrateBookKeyV16 self-guards with
+            //     `if (!_columnExists('epub_books','id')) return`, so it is a
+            //     no-op for develop name-PK users. It rebuilds books + reading
+            //     relations inside one atomic transaction and never touches
+            //     video_books (content-keyed, no FK to epub id).
+            await _migrateBookKeyV16(m);
+            // (2) video_books on the legacy autoincrement id PK (built by the
+            //     video line's v16-v19) -> rebuild as book_uid PK. Video data is
+            //     reimportable test data, so drop+recreate is simplest and
+            //     safest. develop users' video_books (just built by from<17) is
+            //     already book_uid-keyed and is left alone.
+            if (await _tableExists('video_books') &&
+                !await _videoBooksKeyedByBookUid()) {
+              await m.deleteTable('video_books');
+            }
+            if (!await _tableExists('video_books')) {
+              await m.createTable(videoBooks);
+            }
+          }
         },
         onCreate: (m) async {
           await m.createAll();
@@ -445,6 +476,18 @@ class HibikiDatabase extends _$HibikiDatabase {
       variables: [Variable<String>(tableName)],
     ).get();
     return rows.isNotEmpty;
+  }
+
+  /// Whether video_books is keyed by book_uid (the unified v20 shape) rather
+  /// than the legacy autoincrement `id` PK the video worktree's v16-v19 used.
+  /// Probes the actual table_info so the v20 convergence step can tell a
+  /// video-line fork (id PK -> must rebuild) from an already-correct table.
+  Future<bool> _videoBooksKeyedByBookUid() async {
+    final rows = await customSelect("PRAGMA table_info('video_books')").get();
+    final Iterable<QueryRow> pkCols =
+        rows.where((QueryRow r) => r.read<int>('pk') > 0);
+    return pkCols.length == 1 &&
+        pkCols.first.read<String>('name') == 'book_uid';
   }
 
   // ── preferences helpers ─────────────────────────────────────────
