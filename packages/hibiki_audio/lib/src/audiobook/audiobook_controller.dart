@@ -859,7 +859,21 @@ class AudiobookPlayerController extends ChangeNotifier {
     if (idx < 0) return;
     final AudioCue cue = fileCues[idx];
     final int chapterIdx = _chapterCues.indexOf(cue);
-    if (chapterIdx == _currentCueIndex) return;
+    if (chapterIdx == _currentCueIndex) {
+      // cue 未变但 reader 章可能仍不同步（BUG-069）：skipToCue 跨章时会预置
+      // _currentCueIndex 到目标 cue，但其 _maybeEmitCrossChapter 可能因
+      // !_hasPlayedOnce（本会话首次「从本句播放」）/ restore-in-flight 等守卫
+      // 被挡，文字停在原章；之后 cue 一直不变就走这条裸 return、永不再做跨章
+      // 检查 → 要用户再点一次才跟过去。在「正在跟随播放」（playing 且非
+      // playCueOnce 单句试听）时补一次安静（不打印）的跨章检查，让文字收敛到
+      // 当前 cue 所属章。_maybeEmitCrossChapter 同章早退（已同步时 no-op）、
+      // 跳章期间 _chapterTransition 守卫挡住后续 tick，不会 per-tick 抖动；
+      // 暂停态不补检查，避免覆盖用户手动翻页。
+      if (_player.playing && _stopAtPositionMs == null) {
+        _maybeEmitCrossChapter(cue, quiet: true);
+      }
+      return;
+    }
     _currentCueIndex = chapterIdx;
     _currentCue = cue;
     _maybeEmitCrossChapter(_currentCue);
@@ -912,10 +926,13 @@ class AudiobookPlayerController extends ChangeNotifier {
   ///
   /// SMIL/JSON 等非 sasayaki 路径 cue 的 textFragmentId 解码返回 null，
   /// 自然跳过这套逻辑（它们没有跨章同步概念）。
-  void _maybeEmitCrossChapter(AudioCue? cue, {bool bypassPlayGuard = false}) {
+  void _maybeEmitCrossChapter(AudioCue? cue,
+      {bool bypassPlayGuard = false, bool quiet = false}) {
     if (_chapterTransition) {
-      // ignore: avoid_print
-      print('[hibiki-crossChapter] blocked: _chapterTransition=true');
+      if (!quiet) {
+        // ignore: avoid_print
+        print('[hibiki-crossChapter] blocked: _chapterTransition=true');
+      }
       return;
     }
     if (cue == null) return;
@@ -924,15 +941,42 @@ class AudiobookPlayerController extends ChangeNotifier {
     if (frag == null) return;
     final int cueSec = frag.sectionIndex;
     final int currentSec = getCurrentReaderSection?.call() ?? -1;
-    // ignore: avoid_print
-    print(
-        '[hibiki-crossChapter] cueSec=$cueSec currentSec=$currentSec follow=${followAudio.value} played=$_hasPlayedOnce');
-    if (currentSec < 0) return;
-    if (cueSec == currentSec) return;
-    if (!followAudio.value) return;
-    if (!bypassPlayGuard && !_hasPlayedOnce) return;
+    if (!quiet) {
+      // ignore: avoid_print
+      print(
+          '[hibiki-crossChapter] cueSec=$cueSec currentSec=$currentSec follow=${followAudio.value} played=$_hasPlayedOnce');
+    }
+    if (!shouldCrossChapterForTesting(
+      cueSec: cueSec,
+      currentSec: currentSec,
+      followAudio: followAudio.value,
+      hasPlayedOnce: _hasPlayedOnce,
+      bypassPlayGuard: bypassPlayGuard,
+    )) {
+      return;
+    }
     _chapterTransition = true;
     onCrossChapter?.call(cueSec);
+  }
+
+  /// 纯决策：当前 cue 所属章 [cueSec] 与 reader 实际挂载章 [currentSec] 是否
+  /// 应触发跨章跟随。`currentSec < 0`（reader 未就绪）或同章不跳；follow 关 /
+  /// 还没按过 play（非 bypass）也不跳。抽出便于单测，并让「cue 未变但章不同步」
+  /// 的恢复补检查（[_updateCurrentCue]）复用同一判据。`hasPlayedOnce` 守卫正是
+  /// 首次「从本句播放」跨章被挡、需点两次的根因（BUG-069）。
+  @visibleForTesting
+  static bool shouldCrossChapterForTesting({
+    required int cueSec,
+    required int currentSec,
+    required bool followAudio,
+    required bool hasPlayedOnce,
+    bool bypassPlayGuard = false,
+  }) {
+    if (currentSec < 0) return false;
+    if (cueSec == currentSec) return false;
+    if (!followAudio) return false;
+    if (!bypassPlayGuard && !hasPlayedOnce) return false;
+    return true;
   }
 
   /// 由 reader 在章节跳转完成（或失败）后调用：清守卫，
