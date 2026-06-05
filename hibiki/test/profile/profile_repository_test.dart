@@ -7,7 +7,7 @@ import 'package:hibiki_core/hibiki_core.dart';
 /// Hermetic in-process Anki repo: keeps settings in memory instead of
 /// SharedPreferences so ProfileRepository's snapshot/apply Anki round-trip runs
 /// without platform channels. ProfileRepository only ever calls
-/// loadSettings/saveSettings, so the 3 network methods are never exercised.
+/// loadSettings/saveSettings, so the network methods are never exercised.
 class _FakeAnkiRepository extends BaseAnkiRepository {
   AnkiSettings _settings = const AnkiSettings();
 
@@ -31,6 +31,13 @@ class _FakeAnkiRepository extends BaseAnkiRepository {
 
   @override
   Future<bool> isDuplicate(String expression, String reading) async => false;
+
+  @override
+  Future<bool> createNoteType(AnkiNoteTypeTemplate template) =>
+      throw UnimplementedError();
+
+  @override
+  Future<bool> createDeck(String name) => throw UnimplementedError();
 }
 
 Future<HibikiDatabase> _openDb() async {
