@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:googleapis/drive/v3.dart' as drive;
+import 'package:googleapis_auth/googleapis_auth.dart' as auth;
 import 'package:hibiki/src/sync/google_drive_auth.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_utils.dart';
@@ -19,6 +20,33 @@ class GoogleDriveError implements Exception {
 
   @override
   String toString() => 'GoogleDriveError($statusCode): $message';
+}
+
+/// Whether [error] is an expired/rejected access-token failure that a token
+/// refresh + single retry can recover from.
+///
+/// The catch here must accept BOTH shapes a 401 can take:
+/// - [drive.DetailedApiRequestError] with `status == 401` — googleapis turns a
+///   plain HTTP 401 response into this.
+/// - [auth.AccessDeniedException] — the googleapis_auth `authenticatedClient`
+///   intercepts any response carrying a `www-authenticate` header inside its own
+///   `send()` (auth_http_utils.dart) and throws this BEFORE googleapis can map
+///   it to a [drive.DetailedApiRequestError]. The desktop/mobile clients are
+///   plain (non-auto-refreshing), so an expired access token surfaces here as
+///   the verbatim `Access was denied (www-authenticate header was: ...
+///   error="invalid_token")` message. Catching only the request-error shape
+///   meant the refresh-and-retry never fired and the user saw a raw
+///   `invalid_token` sync failure ~1h after sign-in (BUG-060).
+/// - [auth.ServerRequestFailedException] with `statusCode == 401` — a token the
+///   auth service itself rejected during a request.
+@visibleForTesting
+bool googleDriveErrorIsUnauthorized(Object error) {
+  if (error is drive.DetailedApiRequestError) return error.status == 401;
+  if (error is auth.AccessDeniedException) return true;
+  if (error is auth.ServerRequestFailedException) {
+    return error.statusCode == 401;
+  }
+  return false;
 }
 
 typedef FolderCache = Map<String, String>;
@@ -65,24 +93,41 @@ class GoogleDriveHandler {
   Future<T> _call<T>(Future<T> Function(drive.DriveApi api) fn) async {
     try {
       return await fn(await _api());
-    } on drive.DetailedApiRequestError catch (e) {
-      if (e.status == 401) {
+    } on GoogleDriveAuthError {
+      rethrow;
+    } catch (e) {
+      if (!googleDriveErrorIsUnauthorized(e)) {
+        if (e is drive.DetailedApiRequestError) {
+          throw GoogleDriveError(e.message ?? 'API error',
+              statusCode: e.status);
+        }
+        rethrow;
+      }
+      // Expired/rejected access token: the cached client carries a stale token.
+      // Drop it, refresh, and retry once with a freshly-tokened client. The
+      // expiry can arrive as either a DetailedApiRequestError(401) or an
+      // auth.AccessDeniedException (www-authenticate 401), so both reach here
+      // via googleDriveErrorIsUnauthorized (BUG-060).
+      _cachedApi = null;
+      await GoogleDriveAuth.instance.refreshAuth();
+      try {
+        return await fn(await _api());
+      } on GoogleDriveAuthError {
+        rethrow;
+      } catch (retry) {
+        // The refreshed token was also rejected — drop the cached api so the
+        // next call rebuilds it instead of reusing the poisoned client
+        // (HBK-AUDIT-168).
         _cachedApi = null;
-        await GoogleDriveAuth.instance.refreshAuth();
-        try {
-          return await fn(await _api());
-        } on drive.DetailedApiRequestError catch (retry) {
-          // The refreshed token was also rejected — drop the cached api so the
-          // next call rebuilds it instead of reusing the poisoned client
-          // (HBK-AUDIT-168).
-          _cachedApi = null;
+        if (retry is drive.DetailedApiRequestError) {
           throw GoogleDriveError(retry.message ?? 'Retry failed',
               statusCode: retry.status);
         }
+        if (googleDriveErrorIsUnauthorized(retry)) {
+          throw GoogleDriveError(retry.toString(), statusCode: 401);
+        }
+        rethrow;
       }
-      throw GoogleDriveError(e.message ?? 'API error', statusCode: e.status);
-    } on GoogleDriveAuthError {
-      rethrow;
     }
   }
 
