@@ -212,8 +212,6 @@ hibiki/                      # 仓库根（Melos workspace: hibiki_workspace）
 | [hoshidicts](https://github.com/Manhhao/hoshidicts) | C++ 词典引擎 |
 | [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader) | iOS 日语阅读器 |
 | [Sasayaki](https://github.com/Manhhao/Hoshi-Reader/blob/develop/SASAYAKI.md) | 有声书同步方案 |
-| [ttu Ebook Reader](https://github.com/ttu-ttu/ebook-reader) | EPUB 渲染引擎 |
-| [kamperemu/ebook-reader](https://github.com/kamperemu/ebook-reader) | ttu 社区维护版（SvelteKit v2），hibiki fork 的上游基准 |
 | [Yomitan](https://github.com/yomidevs/yomitan) | 词典格式与变换表来源 |
 | [Lapis](https://github.com/donkuri/lapis) | Anki 笔记类型 |
 
