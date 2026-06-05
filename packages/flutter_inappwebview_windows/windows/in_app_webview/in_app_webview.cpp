@@ -568,24 +568,35 @@ namespace flutter_inappwebview_plugin
 
             channelDelegate->onProgressChanged(100);
             if (isSuccess) {
+              // 正常成功：清掉本次主框架可能记下的注入标记，避免集合泄漏。
+              if (url.has_value()) {
+                consumeMainFrameInjectedOk(url.value());
+              }
               channelDelegate->onLoadStop(url);
             }
             else if (!InAppWebView::isSslError(webErrorType) && navigationAction) {
-              auto webResourceRequest = std::make_unique<WebResourceRequest>(url, navigationAction->request->method, navigationAction->request->headers, navigationAction->isForMainFrame);
-              int httpStatusCode = 0;
-              wil::com_ptr<ICoreWebView2NavigationCompletedEventArgs2> args2;
-              if (SUCCEEDED(args->QueryInterface(IID_PPV_ARGS(&args2))) && SUCCEEDED(args2->get_HttpStatusCode(&httpStatusCode)) && httpStatusCode >= 400) {
-                auto webResourceResponse = std::make_unique<WebResourceResponse>(std::optional<std::string>{},
-                  std::optional<std::string>{},
-                  httpStatusCode,
-                  std::optional<std::string>{},
-                  std::optional<std::map<std::string, std::string>>{},
-                  std::optional<std::vector<uint8_t>>{});
-                channelDelegate->onReceivedHttpError(std::move(webResourceRequest), std::move(webResourceResponse));
+              // 根治 hoshi.local 假失败：拦截器已为该主框架 URL 注入 2xx 响应，
+              // 内容已渲染，引擎因自定义域 DNS 解析失败误报 IsSuccess=FALSE —— 当成功。
+              if (url.has_value() && consumeMainFrameInjectedOk(url.value())) {
+                channelDelegate->onLoadStop(url);
               }
-              else if (httpStatusCode < 400) {
-                auto webResourceError = std::make_unique<WebResourceError>(WebErrorStatusDescription[webErrorType], webErrorType);
-                channelDelegate->onReceivedError(std::move(webResourceRequest), std::move(webResourceError));
+              else {
+                auto webResourceRequest = std::make_unique<WebResourceRequest>(url, navigationAction->request->method, navigationAction->request->headers, navigationAction->isForMainFrame);
+                int httpStatusCode = 0;
+                wil::com_ptr<ICoreWebView2NavigationCompletedEventArgs2> args2;
+                if (SUCCEEDED(args->QueryInterface(IID_PPV_ARGS(&args2))) && SUCCEEDED(args2->get_HttpStatusCode(&httpStatusCode)) && httpStatusCode >= 400) {
+                  auto webResourceResponse = std::make_unique<WebResourceResponse>(std::optional<std::string>{},
+                    std::optional<std::string>{},
+                    httpStatusCode,
+                    std::optional<std::string>{},
+                    std::optional<std::map<std::string, std::string>>{},
+                    std::optional<std::vector<uint8_t>>{});
+                  channelDelegate->onReceivedHttpError(std::move(webResourceRequest), std::move(webResourceResponse));
+                }
+                else if (httpStatusCode < 400) {
+                  auto webResourceError = std::make_unique<WebResourceError>(WebErrorStatusDescription[webErrorType], webErrorType);
+                  channelDelegate->onReceivedError(std::move(webResourceRequest), std::move(webResourceError));
+                }
               }
             }
           }
@@ -885,9 +896,18 @@ namespace flutter_inappwebview_plugin
                 {
                   failedLog(deferral->Complete());
                 };
-              callback->nonNullSuccess = [this, deferral, args](const std::shared_ptr<WebResourceResponse> response)
+              callback->nonNullSuccess = [this, deferral, args, request](const std::shared_ptr<WebResourceResponse> response)
                 {
                   args->put_Response(response->toWebView2Response(webViewEnv));
+                  // 根治准备：拦截器为主框架 document 注入了 2xx 响应时记下其 URL，
+                  // 供 NavigationCompleted 把 hoshi.local 的 DNS 假失败纠正为成功。
+                  COREWEBVIEW2_WEB_RESOURCE_CONTEXT resourceContext;
+                  const int64_t statusCode = response->statusCode.value_or(200);
+                  if (request->url.has_value() && statusCode >= 200 && statusCode < 300 &&
+                      SUCCEEDED(args->get_ResourceContext(&resourceContext)) &&
+                      resourceContext == COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT) {
+                    rememberMainFrameInjectedOk(request->url.value());
+                  }
                   failedLog(deferral->Complete());
                   return false;
                 };
@@ -1874,6 +1894,29 @@ namespace flutter_inappwebview_plugin
     return webErrorStatus >= COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_COMMON_NAME_IS_INCORRECT && webErrorStatus <= COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_IS_INVALID;
   }
 
+  namespace {
+    // 截断 '#' 之后的 fragment，消除主框架 URL 在注入侧与导航完成侧的规范化差异。
+    std::string stripFragment(const std::string& url) {
+      const auto hashPos = url.find('#');
+      return hashPos == std::string::npos ? url : url.substr(0, hashPos);
+    }
+  }
+
+  void InAppWebView::rememberMainFrameInjectedOk(const std::string& rawUrl)
+  {
+    mainFrameInjectedOkUrls_.insert(stripFragment(rawUrl));
+  }
+
+  bool InAppWebView::consumeMainFrameInjectedOk(const std::string& rawUrl)
+  {
+    const auto it = mainFrameInjectedOkUrls_.find(stripFragment(rawUrl));
+    if (it == mainFrameInjectedOkUrls_.end()) {
+      return false;
+    }
+    mainFrameInjectedOkUrls_.erase(it);
+    return true;
+  }
+
   InAppWebView::~InAppWebView()
   {
     debugLog("dealloc InAppWebView");
@@ -1891,6 +1934,7 @@ namespace flutter_inappwebview_plugin
       failedLog(webViewController->Close());
     }
     navigationActions_.clear();
+    mainFrameInjectedOkUrls_.clear();
     inAppBrowser = nullptr;
     plugin = nullptr;
   }
