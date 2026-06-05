@@ -999,6 +999,47 @@ class HibikiDatabase extends _$HibikiDatabase {
       (update(epubBooks)..where((t) => t.bookKey.equals(bookKey)))
           .write(EpubBooksCompanion(epubPath: Value(epubPath)));
 
+  /// Rewrites a book's on-disk content paths (full-data backup restore rebases
+  /// absolute paths to this device's roots). Only supplied fields are written;
+  /// null leaves a column unchanged.
+  Future<void> updateEpubBookContentPaths(
+    String bookKey, {
+    String? epubPath,
+    String? extractDir,
+    String? coverPath,
+  }) =>
+      (update(epubBooks)..where((t) => t.bookKey.equals(bookKey))).write(
+        EpubBooksCompanion(
+          epubPath: epubPath == null ? const Value.absent() : Value(epubPath),
+          extractDir:
+              extractDir == null ? const Value.absent() : Value(extractDir),
+          coverPath:
+              coverPath == null ? const Value.absent() : Value(coverPath),
+        ),
+      );
+
+  /// Rewrites an audiobook's on-disk paths (full-data backup restore). Only
+  /// supplied fields are written. `alignmentPath` is non-null in the schema, so
+  /// callers that rebase it always pass a value.
+  Future<void> updateAudiobookPaths(
+    String bookKey, {
+    String? audioRoot,
+    String? audioPathsJson,
+    String? alignmentPath,
+  }) =>
+      (update(audiobooks)..where((t) => t.bookKey.equals(bookKey))).write(
+        AudiobooksCompanion(
+          audioRoot:
+              audioRoot == null ? const Value.absent() : Value(audioRoot),
+          audioPathsJson: audioPathsJson == null
+              ? const Value.absent()
+              : Value(audioPathsJson),
+          alignmentPath: alignmentPath == null
+              ? const Value.absent()
+              : Value(alignmentPath),
+        ),
+      );
+
   Future<int> deleteEpubBook(String bookKey) => transaction(() async {
         await (delete(readerPositions)..where((t) => t.bookKey.equals(bookKey)))
             .go();
