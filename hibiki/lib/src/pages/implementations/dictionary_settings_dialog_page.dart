@@ -319,6 +319,10 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
       if (!mounted) return;
       if (added != null) {
         setState(() => _sources.insert(0, added));
+        // 导入即落盘：拷贝本地库是离散动作，当场持久化才让「导入成功」名副其实，
+        // 且此后即便不经任何关闭路径退出（甚至杀进程）也不丢（BUG-053）；dispose
+        // 的兜底保存仍覆盖此后的排序/开关/URL 等批量编辑。
+        widget.onSave(_sources);
         _showSnack(t.local_audio_imported);
       }
       // added == null 表示用户取消选择，不弹反馈。
