@@ -60,27 +60,30 @@ class DroppedFiles {
 DroppedFiles classifyDroppedFiles(List<String> paths);
 ```
 
-## 4. 两层拖拽目标
+## 4. 单 DropTarget + 卡片登记表（每 tab 一个）
 
 拖拽落点**只挂在「书架 tab」和「视频 tab」的 body**；词典 / 设置 tab 不接收拖放。
 
-### 页面层（新建媒体）
+**关键约束**：`desktop_drop` 在拖放时会对**所有**包含落点坐标的 `DropTarget` 触发 `onDragDone`——嵌套两层会双触发且触发顺序不保证。故**不嵌套**：每个 tab 只放**一个**页面级 `DropTarget`，由它拿到落点坐标后自己做卡片命中测试。
 
-包在 `HomeReaderPage`（书架 body）与 `HomeVideoPage`（视频 body）外层：
+### 页面级 DropTarget（每 tab 一个，包在该 tab 的内容滚动区外层）
 
-- 拖入**书文件** → 打开 `BookImportDialog`，预填 EPUB 路径。
-- 拖入**视频文件** → 打开 `VideoImportDialog`，预填视频路径。
-- 拖入**字幕 / 音频但没落在任何卡片上** → SnackBar 提示「字幕 / 音频请拖到某本书或某个视频上」。
+`onDragDone(detail)` 拿到 `detail.files`（路径）与 `detail.localPosition`（落点），决策：
 
-### 卡片层（附加到已有媒体）
+1. `classifyDroppedFiles` 分类。
+2. **有书文件** → `BookImportDialog` 预填 EPUB 路径（书架 tab）。**有视频文件** → `VideoImportDialog` 预填视频路径（视频 tab）。
+3. **有字幕 / 音频** → 用落点坐标在**卡片登记表**里命中测试：
+   - 命中书卡 → `AudiobookImportDialog(bookKey, extractDir, repo)` 预填音频槽+字幕槽。
+   - 命中视频卡 → `VideoImportDialog` 外挂字幕路径，目标锁定该 VideoBook。
+   - 没命中任何卡片 → SnackBar「字幕 / 音频请拖到某本书或某个视频上」。
 
-每个书卡 / 视频卡各包一层 DropTarget：
+### 卡片登记表（命中测试，替代嵌套 DropTarget）
 
-- **书卡**：字幕和/或音频 → `AudiobookImportDialog(bookKey, extractDir, repo)`，预填音频槽 + 字幕槽（用户再确认对齐 / 补音频）。
-- **视频卡**：字幕 → 复用 `VideoImportDialog` 的外挂字幕路径，目标 VideoBook 锁定该卡。
-- 其余类型在卡片层忽略，冒泡交给页面层处理。
-
-两层消歧：卡片层只处理「字幕/音频」；页面层只处理「书/视频」。按类别分流，不靠坐标 hit-test，避免 `desktop_drop` 嵌套事件语义的不确定性（实现阶段需用 context7 核实 `desktop_drop` 嵌套 `DropTarget` 的触发语义，必要时退回「单页面 DropTarget + 卡片矩形登记」方案）。
+- `CardDropRegistry<T>`：每张卡片在 build 时用 `GlobalKey` 注册 `(key, meta)`，dispose 时注销。
+- 命中测试：遍历已注册卡片，用 `GlobalKey.currentContext` 取 `RenderBox`，`localToGlobal(Offset.zero) & size` 得屏幕矩形，判断落点是否落入；返回首个命中的 `meta`。
+- 卡片 `meta`：书卡 = `bookKey`（String，`extractDir` 落库时再经 `getEpubBook(bookKey)` 取）；视频卡 = `VideoBookRow`（持 `bookUid`）。
+- **可测核心**抽成纯函数 `hitTestCards(List<({Rect rect, T meta})> cards, Offset point) → T?`，矩形几何单测；widget 层只负责从 `GlobalKey` 收集矩形。
+- 经 `InheritedWidget`（`CardDropScope`）把 registry 下发给卡片，卡片用 `CardDropScope.of(context)` 注册。
 
 ## 5. 复用点 — 零重写，只加「预填」入口
 
