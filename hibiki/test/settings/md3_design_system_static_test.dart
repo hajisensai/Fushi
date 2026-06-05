@@ -605,6 +605,12 @@ void main() {
       'lib/src/pages/implementations/video_hibiki_page.dart':
           'Video player page chrome (track-switch menu, media controls) '
               'follows media-page rules like reader/audiobook.',
+      'lib/src/pages/implementations/video_shader_dialog.dart':
+          'Experimental mpv shader dialog lists imported shader files as '
+              'checkbox rows (transient video-subsystem content).',
+      'lib/src/pages/implementations/jimaku_subtitle_dialog.dart':
+          'Experimental Jimaku subtitle dialog lists downloadable subtitle '
+              'files as transient video-subsystem content rows.',
       'lib/src/creator/fields/image_field.dart':
           'Anki image-field renderer uses OCR/image coordinate typography.',
       'lib/src/pages/implementations/dictionary_dialog_import_page.dart':

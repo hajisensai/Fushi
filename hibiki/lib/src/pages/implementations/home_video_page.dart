@@ -173,7 +173,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   Widget _coverPlaceholder() {
     final ColorScheme colors = Theme.of(context).colorScheme;
     return ColoredBox(
-      color: colors.surfaceContainerHighest,
+      color: colors.surfaceContainer,
       child: Center(
         child: Icon(Icons.movie_outlined,
             size: 40, color: colors.onSurfaceVariant),
