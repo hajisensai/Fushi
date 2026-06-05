@@ -29,10 +29,10 @@
 
 ### 目标
 
-- **G1（防损坏）**：下载完成后用已知 md5 校验文件，损坏/截断则丢弃重试，绝不污染本地。
-- **G2（内容更新传播）**：同名但内容不同的大资产，按"修改时间新的胜"自动覆盖，且覆盖前先落临时文件校验、通过才原子替换。
+- **G1（防损坏 = 完整性保证）**：下载完成后用 manifest 里的 md5 校验文件，不符则丢弃重试，绝不污染本地。**这是唯一的数据完整性保证，与 mtime 无关**——无论方向怎么判，落地的数据一定完整未损坏。
+- **G2（内容更新传播 = 尽力而为的最新性）**：同名但内容不同的大资产，按"修改时间新的胜"自动覆盖，覆盖前先落临时文件校验、通过才原子替换。**mtime 是依赖设备时钟的启发式**：时钟回拨等极端情况下可能判错方向（拿到较旧但**仍完整**的版本），但绝不会损坏数据。要 100% "永远最新" 只能弹窗让人选，已与用户确认选 A（自动、不打扰），接受此取舍。
 - **G3（全后端一致）**：机制不依赖任一后端的原生 hash 能力。
-- **G4（不重复算 hash）**：大文件（可达数百 MB）的本地 md5 必须缓存，文件未变不重算。
+- **G4（大文件不重复算 hash）**：仅二期需要——比对"本地已存在大资产 vs 远端"时，本地 md5 按 `(path,size,mtime)` 缓存，文件未变不重读。一期不需要缓存（见 §4、§6）。
 
 ### 非目标
 
@@ -70,20 +70,28 @@
 
 manifest 自身在 union 的名字集合里要被**排除**（`isReservedSyncFolderName` 同理新增 `.manifest.json` 后缀过滤），不能被当成一个待同步资产。
 
-## 4. 本地 md5 计算与缓存（G4）
+## 4. 本地 md5 计算与缓存
 
 新增 helper `hibiki/lib/src/sync/sync_content_hash.dart`：
 
 ```dart
 /// 流式计算文件 md5（不整文件进内存），返回小写 hex。
 Future<String> computeFileMd5(File file);
+```
 
-/// 带缓存的 md5：缓存键 (绝对路径, size, mtimeMs)；命中直接返回缓存值，
+实现用 `package:crypto` 的 `md5.bind(file.openRead())`，瓶颈是把整个文件读一遍的磁盘 IO（小文件微秒级，但大资产可达数百 MB，手机闪存上是数百 ms 级），不是 CPU。
+
+**一期不需要缓存**：只在"刚下载的临时文件"和"刚导出的临时文件"上算 md5，这两个文件本来就在手上/必须读，零额外成本。
+
+**二期才引入缓存**：比对"本地已存在的大资产 vs 远端"时，若每次自动同步都把所有本地大文件重读一遍 md5，对大书库是数 GB 重复 IO。届时加：
+
+```dart
+/// 带缓存的 md5：缓存键 (绝对路径, size, mtimeMs)；命中直接返回，
 /// 未命中或 size/mtime 变化时重算并写缓存。
 Future<String> cachedFileMd5(File file, ContentHashCache cache);
 ```
 
-缓存落 Drift `preferences` 表（或新增一张窄表 `content_hash_cache(path, size, mtime, md5)`，实现计划定）。键含 size+mtime，文件一改就自然失效。流式实现用 `package:crypto` 的 `md5.bind(file.openRead())`。
+缓存落 Drift（`preferences` 表或新窄表 `content_hash_cache(path,size,mtime,md5)`，二期实现计划定）。键含 size+mtime，文件一改自然失效。本质就是"记住上次算的值，文件没动就不重读"。
 
 ## 5. 改动触点（全部在编排器层）
 
@@ -123,8 +131,10 @@ Future<bool> _getAssetVerified(AssetEntry asset, String manifestId, File tmp, {o
     不同：
       远端 mtime 更新 → pull 到临时文件 → md5 校验 → 通过才【原子重导入】覆盖本地
       本地 mtime 更新 → 重新导出 → putAsset + 覆盖远端 manifest
-      mtime 相等但 md5 不同 → 平手保守跳过并记一条诊断（极罕见，避免来回覆盖抖动）
+      mtime 相等       → 确定性 tiebreak：md5 字典序大的一方胜（按上面对应方向覆盖）
 ```
+
+> **为什么不是"平手跳过"**：跳过会让两边永远停在不一致状态。`mtime 相等且 md5 不同` 在现实中近乎不可能（两设备独立生成同名异容资产却撞同一毫秒），这里只需一个**确定性、无状态、两端都会算出同一答案**的 tiebreak（md5 字典序）保证系统**必然收敛到一致**，而不是引入一个 divergent 特例。
 
 "原子重导入覆盖本地"按资产类型分别落地（这是二期的真实复杂度，每类一个子任务 + 测试）：
 
@@ -144,8 +154,8 @@ mtime 来源：manifest.mtime（上传方写入时的资产文件修改时间）
 
 ## 8. 测试策略
 
-- **纯函数**：`sync_content_hash` 的 md5 正确性 + 缓存命中/失效（size/mtime 变更触发重算）——可在 host 跑。
-- **决策逻辑**：抽一个纯函数 `decideAssetAction({localMd5, localMtime, remoteManifest})` 返回 `skip/pullOverwrite/pushOverwrite/pullNew/pushNew/tie`，单测全分支（同 `resolveProgressSync` 范式）。
+- **纯函数**：`sync_content_hash` 的 md5 正确性——可在 host 跑。二期再加缓存命中/失效（size/mtime 变更触发重算）测试。
+- **决策逻辑**：抽一个纯函数 `decideAssetAction({localMd5, localMtime, remoteManifest})` 返回 `skip/pullOverwrite/pushOverwrite/pullNew/pushNew`，单测全分支（同 `resolveProgressSync` 范式）；专门覆盖"mtime 相等 → md5 字典序 tiebreak 两端算出同一方向"的收敛性。
 - **编排器集成**：用现有 in-memory / fake backend 测试套验证：
   - 一期：损坏的远端资产（manifest.md5 与内容不符）被拒绝 import；旧无-manifest 资产仍可 pull。
   - 二期：同名 md5 不同时按 mtime 覆盖正确方向；epub 覆盖后阅读进度保留（守护测试）。
@@ -160,5 +170,5 @@ mtime 来源：manifest.mtime（上传方写入时的资产文件修改时间）
 ## 10. 风险
 
 - **二期覆盖语义**是最大风险点：重导入若中途失败必须回滚，不能让本地处于半覆盖状态——这正是"先写临时文件、校验通过再原子替换"的理由。
-- 大文件 md5 成本：靠 §4 缓存消除稳态重算；首次/变更后仍要全量读一遍文件（IO 成本，不可避免，但只一次）。
-- mtime 可信度：依赖各设备时钟。时钟回拨可能误判方向；平手保守跳过 + 诊断日志兜底。
+- 大文件 md5 成本：一期只 hash 本就在手的临时文件（零额外成本）；二期靠 §4 缓存消除稳态重算，首次/变更后仍要全量读一遍文件（IO 成本，不可避免，但只一次）。
+- mtime 可信度：依赖各设备时钟。时钟回拨可能误判方向——但只影响"拿到哪版"，不影响完整性（md5 兜底）；mtime 相等的退化情形用确定性 md5 字典序 tiebreak 保证收敛，不留 divergent 状态。
