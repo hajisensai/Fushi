@@ -5,10 +5,10 @@
       "Edit(.claude/settings.local.json)",
       "Write(.claude/settings.local.json)",
       "Edit(.claude/settings.json)",
-      "Write(.claude/settings.json)",
+      "Write(.claude/settings.json)"
     ]
   },
   "enabledPlugins": {
     "security-guidance@claude-plugins-official": true
-  },
+  }
 }
