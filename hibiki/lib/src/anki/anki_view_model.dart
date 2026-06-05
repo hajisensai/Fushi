@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:hibiki_anki/hibiki_anki.dart';
@@ -135,6 +136,52 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
         .updateSettings((s) => s.copyWith(ankiConnectApiKey: apiKey.trim()));
     state = state.copyWith(settings: updated);
   }
+
+  Future<LapisSetupResult> createLapisSetup() async {
+    state = state.copyWith(isFetching: true, clearError: true);
+    try {
+      final created = await _repository.createNoteType(LapisNoteType.template);
+      await _repository.createDeck(LapisNoteType.deckName);
+
+      final fetch = await _repository.fetchConfiguration();
+      if (fetch is AnkiFetchError) {
+        state = state.copyWith(isFetching: false, errorMessage: fetch.message);
+        return LapisSetupResult(LapisSetupOutcome.failed, fetch.message);
+      }
+
+      final settings = await _repository.loadSettings();
+      final noteType = settings.availableNoteTypes.firstWhere(
+          (t) => t.name == LapisNoteType.modelName,
+          orElse: () => settings.availableNoteTypes.first);
+      final deck = settings.availableDecks.firstWhere(
+          (d) => d.name == LapisNoteType.deckName,
+          orElse: () => settings.availableDecks.first);
+
+      final updated = await _repository.updateSettings((s) => s.copyWith(
+            selectedDeckId: deck.id,
+            selectedDeckName: deck.name,
+            selectedNoteTypeId: noteType.id,
+            selectedNoteTypeName: noteType.name,
+            fieldMappings: LapisPreset.applyDefaults(noteType, {}),
+          ));
+      state = state.copyWith(settings: updated, isFetching: false);
+      return LapisSetupResult(created
+          ? LapisSetupOutcome.created
+          : LapisSetupOutcome.alreadyExisted);
+    } catch (e, stack) {
+      debugPrint('AnkiViewModel.createLapisSetup: $e\n$stack');
+      state = state.copyWith(isFetching: false, errorMessage: e.toString());
+      return LapisSetupResult(LapisSetupOutcome.failed, e.toString());
+    }
+  }
+}
+
+enum LapisSetupOutcome { created, alreadyExisted, failed }
+
+class LapisSetupResult {
+  const LapisSetupResult(this.outcome, [this.message]);
+  final LapisSetupOutcome outcome;
+  final String? message;
 }
 
 final ankiRepositoryProvider = Provider<BaseAnkiRepository>((_) {
