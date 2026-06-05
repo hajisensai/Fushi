@@ -1064,34 +1064,51 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       label: p.basename(downloaded),
     );
     final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
-    await _selectSubtitleSource(controller, source);
-    messenger.showSnackBar(
-      SnackBar(content: Text(t.video_jimaku_downloaded)),
-    );
+    final bool applied = await _selectSubtitleSource(controller, source);
+    // 仅在字幕真被应用（解析出 cue）时报「已下载并应用」；cue 为空时
+    // _selectSubtitleSource 已弹失败提示，不再叠加误导性的成功提示。
+    if (applied && mounted) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(t.video_jimaku_downloaded)),
+      );
+    }
   }
 
   /// 选中某字幕源：加载 cue → 切 overlay → 持久化 → SnackBar。
-  Future<void> _selectSubtitleSource(
+  /// 返回 true 表示字幕真被应用（解析出 cue 并切换/持久化）；false 表示空 cue
+  /// 失败（已弹失败提示、未切换、未持久化、未覆盖当前可用字幕）。
+  Future<bool> _selectSubtitleSource(
     VideoPlayerController controller,
     SubtitleSource source,
   ) async {
     final String? videoPath = _currentVideoPath;
-    if (videoPath == null) return;
+    if (videoPath == null) return false;
     final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
 
     final List<AudioCue> cues =
         await loadCuesForSource(source, videoPath, widget.bookUid);
+    if (!mounted) return false;
+    // 抽取/解析后无任何 cue（图形字幕、ffmpeg 缺失、轨损坏等）：诚实告知失败，
+    // **不切换、不持久化**——避免谎报「已切换」却空屏，也避免用一个坏内封轨覆盖掉
+    // 当前正常工作的字幕源（下次进来还是空）。
+    if (cues.isEmpty) {
+      messenger.showSnackBar(SnackBar(
+        content: Text(t.video_subtitle_load_failed(label: source.label)),
+      ));
+      return false;
+    }
     controller.setCues(cues);
     // 选了文本字幕源就关掉 libmpv 画面字幕，避免与可点 overlay 双重渲染。
     await controller.selectSubtitleTrack(SubtitleTrack.no());
 
     final String persisted = source.toPersistedValue();
     await widget.repo.updateSubtitleSource(widget.bookUid, persisted);
-    if (!mounted) return;
+    if (!mounted) return false;
     setState(() => _currentSubtitleSource = persisted);
     messenger.showSnackBar(SnackBar(
       content: Text(t.video_subtitle_switched(label: source.label)),
     ));
+    return true;
   }
 
   /// 关闭字幕：清空 cue overlay + 关 libmpv 字幕轨 + 持久化 null。

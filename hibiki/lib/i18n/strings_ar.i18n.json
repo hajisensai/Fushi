@@ -1292,5 +1292,6 @@
     "video_jimaku_download_failed": "Download failed",
     "video_jimaku_downloaded": "Subtitle downloaded and applied",
     "video_delete_title": "Delete Video",
-    "video_delete_confirm": "Delete 『$title』? This cannot be undone."
+    "video_delete_confirm": "Delete 『$title』? This cannot be undone.",
+    "video_subtitle_load_failed": "Couldn't load this subtitle (graphic or unsupported track): $label"
 }

@@ -1292,5 +1292,6 @@
     "video_jimaku_download_failed": "下载失败",
     "video_jimaku_downloaded": "字幕已下载并应用",
     "video_delete_title": "删除视频",
-    "video_delete_confirm": "删除『$title』？此操作无法撤销。"
+    "video_delete_confirm": "删除『$title』？此操作无法撤销。",
+    "video_subtitle_load_failed": "无法加载该字幕（可能是图形或不支持的字幕轨）：$label"
 }

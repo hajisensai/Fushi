@@ -13,6 +13,15 @@
 
 ---
 
+## BUG-071 · 视频切换「内封字幕」无字幕显示，外挂字幕正常
+- **报告**：2026-06-06（用户：「切换内封字幕，没有字幕显示，外挂的正常」）。采番注：原拟 BUG-069，提交前连撞并发抢占（069=有声书跨章文字跟随、070=有声书桌面调速闪退、068=app 字体钉死日语），故顺延取 071。
+- **真实性**：✅ **真 bug（两处叠加，均沿真实代码路径 + 真实视频实证）**。内封字幕菜单来自 `listAllSubtitleSources`（跑 `ffmpeg -i` 列举 + `ffmpeg -map 0:s:N` 抽取转 cue），外挂只直接读文件——故 ffmpeg 链路任一环坏只砸内封。本机用 ffmpeg 造 `mkv+ass` / `mkv+subrip` / `mp4+mov_text` 三视频跑 app 完整路径（`listAllSubtitleSources`+`loadCuesForSource`）复现：mkv 文本字幕正常（各 2 cues），**mp4 内封字幕「枚举到 0 个字幕源」**——菜单根本列不出。两处根因：
+  - **① 列举正则漏匹配**（`hibiki/lib/src/media/video/video_subtitle_source.dart:56` `_subtitleStreamPattern`）：新版 ffmpeg 对 mp4/mov 字幕流打印 `Stream #0:1[0x2](und): Subtitle: mov_text`，那段十六进制流 id `[0x2]` 插在 `#0:1` 与 `(lang)` 之间，旧正则 `#\d+:\d+(?:\(...\))?: Subtitle:` 无此可选段 → 整条漏掉 → mp4 内封枚举为 0。mkv 流无该 hex id 故不受影响。
+  - **② codec 白名单漏 `mov_text`**（同文件 `subtitleFormatForCodec`）：旧实现只认 ass/ssa/subrip/srt/webvtt/vtt，其余（含 mp4 文本字幕标准 codec `mov_text`/`tx3g`）一律返回 null，且该 null 被当成「图形字幕/不支持」→ `_loadEmbeddedCues` 返回空 → 即便列出也加载不到 cue。把「不认识的文本 codec」与「真图形字幕」混为一谈。
+- **[x] ① 已修复** — 本提交（自含修复+测试+本条目；并发抢号致哈希随 rebase 变动故不内联记录）：① 正则加可选 `(?:\[0x[0-9a-fA-F]+\])?` 跳过流 id；② `subtitleFormatForCodec` 改 **fail-open**——ass/ssa→ass、webvtt/vtt→vtt 保原生保真，**已知图形** codec（hdmv_pgs_subtitle/pgssub/dvd_subtitle/dvdsub/dvb_subtitle/dvbsub/xsub）明确 null，**其余一律 srt**（subrip/mov_text/tx3g/text/…由 ffmpeg 按 `.srt` 输出扩展名转码再走 SrtParser；真图形轨即便漏排除也会因 ffmpeg 转码失败兜底为空，无坏数据）；③ 顺手修「切换后 cue 为空仍谎报『已切换』并覆盖当前可用字幕」——空 cue 时改报 `video_subtitle_load_failed` 且不切换不持久化（保留正常字幕）。
+- **[x] ② 已加自动化测试** — `hibiki/test/media/video/video_subtitle_source_test.dart`（新增：mp4 `[0x2]` 流 id 行仍解析 + mkv/mp4 混合相对序号、`mov_text`/`tx3g`/`text`→srt、未知文本 codec fail-open→srt、扩充图形 codec→null）。真实视频端到端验证：mp4 mov_text 由「枚举 0」→「枚举 1 + 2 cues『こんにちは世界』」（用 ffmpeg 造样本跑 `listAllSubtitleSources`+`loadCuesForSource`，证据见会话）。
+- **备注**：真机/真桌面端用含内封字幕的真实视频（尤其 mp4/mov_text 与含 PGS 图形轨的 BD 源）肉眼复测「切换内封→字幕出现」「图形轨→提示无法加载且不丢原字幕」**待用户**。
+
 ## BUG-069 · 查词弹窗「从本句播放」跨多章，书籍文字第一次只跟一章、第二次才到位
 - **报告**：2026-06-06（用户：「音频跳转多章的时候，第一次只会跳一章，第二次才会跳到位置」；触发=查词窗口的播放；并明确「音频秒加载啊，是书籍文字」——音频瞬时到位，卡的是 reader 文字跟随）。采番注：原取 BUG-067，rebase 回 develop 时连撞两次并发占用（067=桌面拖动重排长按、068=app UI 字体钉死日语），故顺延取 069。
 - **真实性**：✅ **真 bug（reader 文字跨章跟随不收敛，非音频）**。沿真实代码路径定位：查词弹窗「从本句播放」(`reader_hibiki_page.dart` 的 `Icons.play_circle_outline`)→`playCueAndContinue`→`skipToCue`。① `playCueAndContinue` 先 `await skipToCue(cue)` **再**置 `_hasPlayedOnce=true`；`skipToCue`（sasayaki 路径）已把 `_currentCueIndex/_currentCue` 预置成目标 cue，并调 `_maybeEmitCrossChapter`——但本会话**首次**播放时 `_hasPlayedOnce` 仍为 false，`_maybeEmitCrossChapter` 的 `!_hasPlayedOnce` 守卫直接 return，**文字不跳**。② 之后 `_player.play()`，positionStream tick 进 `_updateCurrentCue`，因为当前 cue 没变（`chapterIdx == _currentCueIndex`，`audiobook_controller.dart:861-862`）走**裸 `return`**，**永不再做跨章检查** → 文字卡在原章，直到音频走到下一条 cue 或用户**再点一次**（重跑 `skipToCue`，此时 `_hasPlayedOnce` 已 true）才跳。根因 = 「cue 未变」短路吞掉了跨章跟随的恢复机会。根因 `packages/hibiki_audio/lib/src/audiobook/audiobook_controller.dart:861`（`_updateCurrentCue` 短路）+ `:604/673`（skipToCue/playCueAndContinue 的 `_hasPlayedOnce` 时序）。
