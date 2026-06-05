@@ -33,14 +33,14 @@ class VttParser {
   /// 走 [readTextWithEncoding] 自动识别编码，兼容 Shift-JIS / CP932 等非 UTF-8 源。
   static Future<List<AudioCue>> parse({
     required File vttFile,
-    required String bookUid,
+    required String bookKey,
     String chapterHref = defaultChapter,
     int audioFileIndex = 0,
   }) async {
     final String content = await readTextWithEncoding(vttFile);
     return parseString(
       content: content,
-      bookUid: bookUid,
+      bookKey: bookKey,
       chapterHref: chapterHref,
       audioFileIndex: audioFileIndex,
     );
@@ -49,7 +49,7 @@ class VttParser {
   /// 解析 VTT 文本字符串并返回 [AudioCue] 列表。纯函数，测试入口。
   static List<AudioCue> parseString({
     required String content,
-    required String bookUid,
+    required String bookKey,
     String chapterHref = defaultChapter,
     int audioFileIndex = 0,
   }) {
@@ -112,7 +112,7 @@ class VttParser {
 
       cues.add(
         AudioCue()
-          ..bookUid = bookUid
+          ..bookKey = bookKey
           ..chapterHref = chapterHref
           ..sentenceIndex = sentenceIndex
           ..textFragmentId = '[data-cue-id="$sentenceIndex"]'

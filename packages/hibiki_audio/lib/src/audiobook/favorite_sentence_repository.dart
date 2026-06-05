@@ -10,7 +10,7 @@ class FavoriteSentence {
         bookTitle: json['bookTitle'] as String,
         chapterLabel: json['chapterLabel'] as String?,
         createdAt: DateTime.parse(json['createdAt'] as String),
-        ttuBookId: json['ttuBookId'] as int?,
+        bookKey: json['bookKey'] as String?,
         sectionIndex: json['sectionIndex'] as int?,
         normCharOffset: json['normCharOffset'] as int?,
         normCharLength: json['normCharLength'] as int?,
@@ -21,7 +21,7 @@ class FavoriteSentence {
     required this.bookTitle,
     required this.createdAt,
     this.chapterLabel,
-    this.ttuBookId,
+    this.bookKey,
     this.sectionIndex,
     this.normCharOffset,
     this.normCharLength,
@@ -34,7 +34,7 @@ class FavoriteSentence {
   final String bookTitle;
   final String? chapterLabel;
   final DateTime createdAt;
-  final int? ttuBookId;
+  final String? bookKey;
   final int? sectionIndex;
   final int? normCharOffset;
   final int? normCharLength;
@@ -46,7 +46,7 @@ class FavoriteSentence {
         'bookTitle': bookTitle,
         if (chapterLabel != null) 'chapterLabel': chapterLabel,
         'createdAt': createdAt.toIso8601String(),
-        if (ttuBookId != null) 'ttuBookId': ttuBookId,
+        if (bookKey != null) 'bookKey': bookKey,
         if (sectionIndex != null) 'sectionIndex': sectionIndex,
         if (normCharOffset != null) 'normCharOffset': normCharOffset,
         if (normCharLength != null) 'normCharLength': normCharLength,
@@ -85,28 +85,28 @@ class FavoriteSentenceRepository {
 
   Future<bool> isFavorited({
     required String text,
-    required int? ttuBookId,
+    required String? bookKey,
     required int? sectionIndex,
     required int? normCharOffset,
   }) async {
     final sentences = await getAll();
     return sentences.any((s) =>
         s.text == text &&
-        s.ttuBookId == ttuBookId &&
+        s.bookKey == bookKey &&
         s.sectionIndex == sectionIndex &&
         s.normCharOffset == normCharOffset);
   }
 
   Future<void> removeByContent({
     required String text,
-    required int? ttuBookId,
+    required String? bookKey,
     required int? sectionIndex,
     required int? normCharOffset,
   }) async {
     final sentences = await getAll();
     sentences.removeWhere((s) =>
         s.text == text &&
-        s.ttuBookId == ttuBookId &&
+        s.bookKey == bookKey &&
         s.sectionIndex == sectionIndex &&
         s.normCharOffset == normCharOffset);
     await _db.setPref(
@@ -117,7 +117,7 @@ class FavoriteSentenceRepository {
 
   static bool _contentMatch(FavoriteSentence a, FavoriteSentence b) =>
       a.text == b.text &&
-      a.ttuBookId == b.ttuBookId &&
+      a.bookKey == b.bookKey &&
       a.sectionIndex == b.sectionIndex &&
       a.normCharOffset == b.normCharOffset;
 

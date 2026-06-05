@@ -23,8 +23,8 @@ class SrtBookRepository {
     return _rowToModel(row);
   }
 
-  Future<SrtBook?> findByTtuBookId(int ttuBookId) async {
-    final row = await _db.getSrtBookByTtuBookId(ttuBookId);
+  Future<SrtBook?> findByBookKey(String bookKey) async {
+    final row = await _db.getSrtBookByBookKey(bookKey);
     if (row == null) return null;
     return _rowToModel(row);
   }
@@ -40,7 +40,7 @@ class SrtBookRepository {
       srtPath: Value(book.srtPath),
       coverPath: Value(book.coverPath),
       importedAt: Value(book.importedAt),
-      ttuBookId: Value(book.ttuBookId),
+      bookKey: Value(book.bookKey),
     ));
   }
 
@@ -52,7 +52,7 @@ class SrtBookRepository {
   Future<List<AudioCue>> cuesFor(String uid) async {
     final rows = await ((_db.select(_db.audioCues))
           ..where((t) =>
-              t.bookUid.equals(uid) &
+              t.bookKey.equals(uid) &
               t.chapterHref.equals(SrtParser.defaultChapter))
           ..orderBy([(t) => OrderingTerm.asc(t.sentenceIndex)]))
         .get();
@@ -79,7 +79,7 @@ class SrtBookRepository {
     book.srtPath = r.srtPath;
     book.coverPath = r.coverPath;
     book.importedAt = r.importedAt;
-    book.ttuBookId = r.ttuBookId;
+    book.bookKey = r.bookKey;
     return book;
   }
 }

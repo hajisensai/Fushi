@@ -41,7 +41,7 @@ class AssParser {
   /// 走 [readTextWithEncoding] 自动识别编码，兼容 Shift-JIS / CP932 等非 UTF-8 源。
   static Future<List<AudioCue>> parse({
     required File assFile,
-    required String bookUid,
+    required String bookKey,
     String chapterHref = defaultChapter,
     int audioFileIndex = 0,
   }) async {
@@ -49,14 +49,14 @@ class AssParser {
     if (content.length > 1024 * 1024) {
       return compute(_parseStringIsolate, <String, dynamic>{
         'content': content,
-        'bookUid': bookUid,
+        'bookKey': bookKey,
         'chapterHref': chapterHref,
         'audioFileIndex': audioFileIndex,
       });
     }
     return parseString(
       content: content,
-      bookUid: bookUid,
+      bookKey: bookKey,
       chapterHref: chapterHref,
       audioFileIndex: audioFileIndex,
     );
@@ -65,7 +65,7 @@ class AssParser {
   static List<AudioCue> _parseStringIsolate(Map<String, dynamic> args) {
     return parseString(
       content: args['content'] as String,
-      bookUid: args['bookUid'] as String,
+      bookKey: args['bookKey'] as String,
       chapterHref: args['chapterHref'] as String,
       audioFileIndex: args['audioFileIndex'] as int,
     );
@@ -74,7 +74,7 @@ class AssParser {
   /// 解析 ASS/SSA 文本字符串并返回 [AudioCue] 列表。纯函数，测试入口。
   static List<AudioCue> parseString({
     required String content,
-    required String bookUid,
+    required String bookKey,
     String chapterHref = defaultChapter,
     int audioFileIndex = 0,
   }) {
@@ -174,7 +174,7 @@ class AssParser {
         continue;
       }
       cues.add(AudioCue()
-        ..bookUid = bookUid
+        ..bookKey = bookKey
         ..chapterHref = chapterHref
         ..sentenceIndex = cues.length
         ..textFragmentId = '[data-cue-id="${cues.length}"]'

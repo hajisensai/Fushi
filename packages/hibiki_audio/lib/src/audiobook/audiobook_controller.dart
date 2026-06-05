@@ -166,7 +166,7 @@ class AudiobookPlayerController extends ChangeNotifier {
   bool _chapterTransition = false;
 
   /// Follow audio 开关变化时的持久化回调。Reader 页面 attach audiobook 时
-  /// 装入这个字段（一般是 `(v) => repo.updateFollowAudio(bookUid, v)`），
+  /// 装入这个字段（一般是 `(v) => repo.updateFollowAudio(bookKey, v)`），
   /// [setFollowAudio] 内部调用。独立于按钮 UI 让 play bar 只翻内存状态
   /// 不用知道 Hive。
   Future<void> Function(bool value)? onFollowAudioPersist;
@@ -423,14 +423,14 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 播放位置写入回调。调用方在 attach 时装入，一般实现为写 Drift database
   /// preferences。返回写库 Future，让 [flushPosition] 能 await 到真正落库
   /// （周期路径仍 fire-and-forget，不 await）。
-  Future<void> Function(String bookUid, int positionMs)? onPositionWrite;
+  Future<void> Function(String bookKey, int positionMs)? onPositionWrite;
 
   /// 把当前播放位置写入持久化存储。对齐上游：**每整秒变化一次**就写。
   /// 125ms tick 触发 8 次里只有 1 次真的落库，IO 成本和上游等价。
   ///
   /// 调用时机：cue 变化（_updateCurrentCue）、暂停、dispose。
   void _maybeSavePosition({bool force = false}) {
-    final String? uid = _audiobook?.bookUid;
+    final String? uid = _audiobook?.bookKey;
     if (uid == null) return;
     final int posMs = _player.position.inMilliseconds;
     final int wholeSec = posMs ~/ 1000;
@@ -450,7 +450,7 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 加上后台 Dart timer 挂起后周期保存本身也停了。这里在仍存活的 onPause
   /// 窗口里把当前位置 await 写穿，保证退到后台那一刻的进度可靠落库。
   Future<void> flushPosition() async {
-    final String? uid = _audiobook?.bookUid;
+    final String? uid = _audiobook?.bookKey;
     if (uid == null) return;
     final int posMs = _player.position.inMilliseconds;
     _lastSavedWholeSec = posMs ~/ 1000;
@@ -1073,7 +1073,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     final int? aId = a.id;
     final int? bId = b.id;
     if (aId != null && bId != null) return aId == bId;
-    if (a.bookUid == b.bookUid &&
+    if (a.bookKey == b.bookKey &&
         a.chapterHref == b.chapterHref &&
         a.sentenceIndex == b.sentenceIndex &&
         a.audioFileIndex == b.audioFileIndex &&

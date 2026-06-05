@@ -654,7 +654,7 @@ List<AudioCue> _rebuildCues(List<String> texts, List<int> indexes) {
   return <AudioCue>[
     for (int i = 0; i < texts.length; i++)
       (AudioCue()
-        ..bookUid = ''
+        ..bookKey = ''
         ..chapterHref = ''
         ..sentenceIndex = indexes[i]
         ..textFragmentId = ''

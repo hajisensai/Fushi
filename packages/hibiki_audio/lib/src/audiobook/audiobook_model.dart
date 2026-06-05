@@ -7,8 +7,8 @@ import 'audiobook_health.dart' show HealthKind;
 class Audiobook {
   int? id;
 
-  /// 对应 MediaItem.uniqueKey（书的唯一标识）。
-  late String bookUid;
+  /// 书的唯一标识 = EpubBooks.bookKey（sanitize 后的标题）。
+  late String bookKey;
 
   /// 音频文件目录（本地绝对路径）。folder 模式下非 null，files 模式下为 null。
   String? audioRoot;
@@ -63,8 +63,8 @@ class Audiobook {
 class AudioCue {
   int? id;
 
-  /// 对应 [Audiobook.bookUid]。
-  late String bookUid;
+  /// 对应 [Audiobook.bookKey]（或 standalone SRT 的 uid）。
+  late String bookKey;
 
   /// EPUB spine item，例如 'OEBPS/ch01.xhtml'。
   late String chapterHref;
@@ -98,7 +98,7 @@ class AudioCue {
   static AudioCue fromRow(AudioCueRow r) {
     final c = AudioCue();
     c.id = r.id;
-    c.bookUid = r.bookUid;
+    c.bookKey = r.bookKey;
     c.chapterHref = r.chapterHref;
     c.sentenceIndex = r.sentenceIndex;
     c.textFragmentId = r.textFragmentId;
@@ -111,7 +111,7 @@ class AudioCue {
 
   static AudioCuesCompanion toCompanion(AudioCue c) =>
       AudioCuesCompanion.insert(
-        bookUid: c.bookUid,
+        bookKey: c.bookKey,
         chapterHref: c.chapterHref,
         sentenceIndex: c.sentenceIndex,
         textFragmentId: c.textFragmentId,
