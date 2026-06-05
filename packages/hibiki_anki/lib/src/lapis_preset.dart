@@ -1,24 +1,8 @@
 import 'anki_models.dart';
+import 'lapis_note_type.dart';
 
 class LapisPreset {
-  static const _defaults = {
-    'Expression': '{expression}',
-    'ExpressionFurigana': '{furigana-plain}',
-    'ExpressionReading': '{reading}',
-    'ExpressionAudio': '{audio}',
-    'SelectionText': '{popup-selection-text}',
-    'MainDefinition': '{glossary-first}',
-    'Sentence': '{sentence}',
-    'SentenceAudio': '{sasayaki-audio}',
-    'Picture': '{book-cover}',
-    'Glossary': '{glossary}',
-    'PitchPosition': '{pitch-accent-positions}',
-    'PitchCategories': '{pitch-accent-categories}',
-    'Frequency': '{frequencies}',
-    'FreqSort': '{frequency-harmonic-rank}',
-    'MiscInfo': '{document-title}',
-    'IsWordAndSentenceCard': 'x',
-  };
+  static const _defaults = LapisNoteType.defaultFieldMappings;
 
   static bool matches(AnkiNoteType noteType) {
     final fields = noteType.fields.toSet();
