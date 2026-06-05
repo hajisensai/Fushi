@@ -426,13 +426,18 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     } else {
       srtBooks = allSrtBooks;
     }
-    // 视频书无标签，标签筛选激活时整组隐藏（与 SRT 同策略）。
     // 实验视频 tab 启用时，视频归「视频」tab 独占，书架不再显示视频分区（用户反馈：
     // 书架是书的地方）；开关关闭（无视频 tab）时书架照旧显示，保持向后兼容。
-    final List<VideoBookRow> videoBooks =
-        (hasActiveFilter || appModel.experimentalVideoEnabled)
-            ? const []
-            : _videoBooks;
+    // 视频现已纳入共享标签系统：筛选激活时按命中的 bookUid 过滤（不再整组隐藏）。
+    final Set<String>? videoFilter =
+        ref.watch(filteredVideoBookUidsProvider).valueOrNull;
+    final List<VideoBookRow> videoBooks = appModel.experimentalVideoEnabled
+        ? const <VideoBookRow>[]
+        : (videoFilter == null
+            ? _videoBooks
+            : _videoBooks
+                .where((VideoBookRow b) => videoFilter.contains(b.bookUid))
+                .toList());
     _visibleEpubBooks = epubBooks;
     _visibleSrtBooks = srtBooks;
     if (epubBooks.isEmpty && srtBooks.isEmpty && videoBooks.isEmpty) {
@@ -445,7 +450,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
             )
           : buildPlaceholder();
     }
-    if (hasActiveFilter && epubBooks.isEmpty) {
+    if (hasActiveFilter && epubBooks.isEmpty && videoBooks.isEmpty) {
       return RawScrollbar(
         thumbVisibility: true,
         thickness: 3,
@@ -612,14 +617,25 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     );
   }
 
+  Widget? _buildVideoBookTagLabels(String bookUid) {
+    final tagMap = ref.watch(videoBookTagMapProvider).valueOrNull;
+    if (tagMap == null) return null;
+    final tags = tagMap[bookUid];
+    if (tags == null || tags.isEmpty) return null;
+    return _adaptiveTagColumn(tags);
+  }
+
   Widget _buildVideoCard(VideoBookRow book) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final double overlayInset = tokens.spacing.gap * 0.75;
+    final tagWidget = _buildVideoBookTagLabels(book.bookUid);
     return _bookCardShell(
       cardKey: ValueKey<String>('video_entry_${book.bookUid}'),
       focusId: HibikiFocusId('reader-shelf-video-${book.bookUid}'),
+      dragBookId: book.bookUid,
+      onTagDropped: (tag) => _addTagToVideoBook(book.bookUid, tag),
       onTap: () => _openVideoBook(book),
-      onLongPress: () => _openVideoBook(book),
+      onLongPress: () => _showVideoBookDialog(book),
       child: Stack(
         fit: StackFit.expand,
         children: [
@@ -634,6 +650,12 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
               foreground: theme.colorScheme.onTertiaryContainer,
             ),
           ),
+          if (tagWidget != null)
+            Positioned(
+              top: overlayInset,
+              left: overlayInset,
+              child: tagWidget,
+            ),
         ],
       ),
     );
@@ -670,6 +692,111 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       builder: (_) => VideoImportDialog(repo: _videoRepo),
     );
     if (bookUid != null) {
+      _refreshVideoBooks();
+    }
+  }
+
+  Future<void> _addTagToVideoBook(String bookUid, BookTagRow tag) async {
+    final existing = ref.read(videoBookTagMapProvider).valueOrNull;
+    final alreadyHas = existing?[bookUid]?.any((t) => t.id == tag.id) ?? false;
+    if (alreadyHas) {
+      HibikiToast.show(msg: t.tag_already_on_book(name: tag.name));
+      return;
+    }
+    await ref.read(appProvider).database.addTagToVideoBook(bookUid, tag.id);
+    ref.invalidate(videoBookTagMapProvider);
+    ref.invalidate(filteredVideoBookUidsProvider);
+    if (mounted) {
+      HibikiToast.show(msg: t.tag_added_to_book(name: tag.name));
+    }
+  }
+
+  /// 长按视频卡：弹底部菜单（编辑标签 / 设置封面 / 删除）。修复「视频长按没菜单」
+  /// ——此前 onLongPress 与 onTap 同样只是打开播放页。与视频 tab 菜单保持一致。
+  void _showVideoBookDialog(VideoBookRow book) {
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (BuildContext ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            ListTile(
+              leading: const Icon(Icons.sell_outlined),
+              title: Text(t.tag_label),
+              onTap: () {
+                Navigator.pop(ctx);
+                _openVideoTagPicker(book.bookUid);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.image_outlined),
+              title: Text(t.srt_import_pick_cover),
+              onTap: () {
+                Navigator.pop(ctx);
+                _pickVideoCover(book);
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.delete_outline,
+                  color: Theme.of(ctx).colorScheme.error),
+              title: Text(
+                t.dialog_delete,
+                style: TextStyle(color: Theme.of(ctx).colorScheme.error),
+              ),
+              onTap: () {
+                Navigator.pop(ctx);
+                _confirmDeleteVideoBook(book);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _openVideoTagPicker(String bookUid) {
+    Navigator.push(
+      context,
+      adaptivePageRoute(
+        builder: (_) => TagPickerPage(videoBookUid: bookUid),
+      ),
+    ).then((_) {
+      ref.invalidate(videoBookTagMapProvider);
+      ref.invalidate(filteredVideoBookUidsProvider);
+      ref.invalidate(allTagsProvider);
+    });
+  }
+
+  /// 设置视频封面：选图 → 经共享 [setVideoCoverFromPickedFile]（拷盘 + 驱逐旧
+  /// 缓存 + 落库）→ 刷新。与视频 tab 换封面共用同一入口。
+  Future<void> _pickVideoCover(VideoBookRow book) async {
+    final FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+    );
+    final String? pickedPath = result?.files.first.path;
+    if (pickedPath == null || !mounted) return;
+    await setVideoCoverFromPickedFile(
+      repo: _videoRepo,
+      bookUid: book.bookUid,
+      pickedPath: pickedPath,
+    );
+    if (mounted) _refreshVideoBooks();
+  }
+
+  Future<void> _confirmDeleteVideoBook(VideoBookRow book) async {
+    final bool? confirmed = await showAppDialog<bool>(
+      context: context,
+      builder: (ctx) => ReaderHistoryDeleteDialog(
+        title: t.video_delete_title,
+        message: t.video_delete_confirm(title: book.title),
+        onConfirm: () => Navigator.pop(ctx, true),
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await _videoRepo.deleteVideoBook(book.bookUid);
+    if (mounted) {
+      ref.invalidate(videoBookTagMapProvider);
+      ref.invalidate(filteredVideoBookUidsProvider);
       _refreshVideoBooks();
     }
   }

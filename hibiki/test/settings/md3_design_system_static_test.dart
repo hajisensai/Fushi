@@ -605,6 +605,10 @@ void main() {
       'lib/src/pages/implementations/video_hibiki_page.dart':
           'Video player page chrome (track-switch menu, media controls) '
               'follows media-page rules like reader/audiobook.',
+      'lib/src/pages/implementations/home_video_page.dart':
+          'Video tab long-press action sheet (tags / cover / delete) is a '
+              'transient video-subsystem menu, same pattern as the allowlisted '
+              'video_hibiki_page track-switch menu.',
       'lib/src/pages/implementations/video_shader_dialog.dart':
           'Experimental mpv shader dialog lists imported shader files as '
               'checkbox rows (transient video-subsystem content).',

@@ -61,6 +61,33 @@ final filteredSrtBookIdsProvider = FutureProvider<Set<int>?>((ref) async {
   return db.getSrtBookIdsForAllTags(tagIds);
 });
 
+/// 视频书 → 标签列表（keyed by bookUid）。与 [bookTagMapProvider] /
+/// [srtBookTagMapProvider] 同形，三者共用同一 [BookTags] 标签池。
+final videoBookTagMapProvider =
+    FutureProvider<Map<String, List<BookTagRow>>>((ref) async {
+  final db = ref.watch(appProvider).database;
+  final tags = await db.getAllTags();
+  final mappings = await db.getAllVideoBookTagMappings();
+  final tagById = {for (final t in tags) t.id: t};
+  final Map<String, List<BookTagRow>> result = {};
+  for (final m in mappings) {
+    final tag = tagById[m.tagId];
+    if (tag != null) {
+      result.putIfAbsent(m.videoBookUid, () => []).add(tag);
+    }
+  }
+  return result;
+});
+
+/// 当前标签筛选下命中的视频 bookUid 集合（共享 [selectedTagIdsProvider]，与
+/// 书架/SRT 联动）；无筛选时返回 null（= 不过滤）。
+final filteredVideoBookUidsProvider = FutureProvider<Set<String>?>((ref) async {
+  final tagIds = ref.watch(selectedTagIdsProvider);
+  if (tagIds.isEmpty) return null;
+  final db = ref.watch(appProvider).database;
+  return db.getVideoBookUidsForAllTags(tagIds);
+});
+
 class TagFilterSheet extends ConsumerStatefulWidget {
   const TagFilterSheet({super.key});
 

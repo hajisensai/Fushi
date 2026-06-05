@@ -1290,5 +1290,7 @@
     "video_jimaku_no_results": "No subtitles found",
     "video_jimaku_no_key": "Enter your Jimaku API key first",
     "video_jimaku_download_failed": "Download failed",
-    "video_jimaku_downloaded": "Subtitle downloaded and applied"
+    "video_jimaku_downloaded": "Subtitle downloaded and applied",
+    "video_delete_title": "Delete Video",
+    "video_delete_confirm": "Delete 『$title』? This cannot be undone."
 }

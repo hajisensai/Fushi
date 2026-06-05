@@ -8928,6 +8928,240 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
   }
 }
 
+class $VideoBookTagMappingsTable extends VideoBookTagMappings
+    with TableInfo<$VideoBookTagMappingsTable, VideoBookTagMappingRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $VideoBookTagMappingsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+      'id', aliasedName, false,
+      hasAutoIncrement: true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
+  static const VerificationMeta _videoBookUidMeta =
+      const VerificationMeta('videoBookUid');
+  @override
+  late final GeneratedColumn<String> videoBookUid = GeneratedColumn<String>(
+      'video_book_uid', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'REFERENCES video_books (book_uid) ON DELETE CASCADE'));
+  static const VerificationMeta _tagIdMeta = const VerificationMeta('tagId');
+  @override
+  late final GeneratedColumn<int> tagId = GeneratedColumn<int>(
+      'tag_id', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'REFERENCES book_tags (id) ON DELETE CASCADE'));
+  @override
+  List<GeneratedColumn> get $columns => [id, videoBookUid, tagId];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'video_book_tag_mappings';
+  @override
+  VerificationContext validateIntegrity(
+      Insertable<VideoBookTagMappingRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('video_book_uid')) {
+      context.handle(
+          _videoBookUidMeta,
+          videoBookUid.isAcceptableOrUnknown(
+              data['video_book_uid']!, _videoBookUidMeta));
+    } else if (isInserting) {
+      context.missing(_videoBookUidMeta);
+    }
+    if (data.containsKey('tag_id')) {
+      context.handle(
+          _tagIdMeta, tagId.isAcceptableOrUnknown(data['tag_id']!, _tagIdMeta));
+    } else if (isInserting) {
+      context.missing(_tagIdMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  List<Set<GeneratedColumn>> get uniqueKeys => [
+        {videoBookUid, tagId},
+      ];
+  @override
+  VideoBookTagMappingRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return VideoBookTagMappingRow(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
+      videoBookUid: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}video_book_uid'])!,
+      tagId: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}tag_id'])!,
+    );
+  }
+
+  @override
+  $VideoBookTagMappingsTable createAlias(String alias) {
+    return $VideoBookTagMappingsTable(attachedDatabase, alias);
+  }
+}
+
+class VideoBookTagMappingRow extends DataClass
+    implements Insertable<VideoBookTagMappingRow> {
+  final int id;
+  final String videoBookUid;
+  final int tagId;
+  const VideoBookTagMappingRow(
+      {required this.id, required this.videoBookUid, required this.tagId});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['video_book_uid'] = Variable<String>(videoBookUid);
+    map['tag_id'] = Variable<int>(tagId);
+    return map;
+  }
+
+  VideoBookTagMappingsCompanion toCompanion(bool nullToAbsent) {
+    return VideoBookTagMappingsCompanion(
+      id: Value(id),
+      videoBookUid: Value(videoBookUid),
+      tagId: Value(tagId),
+    );
+  }
+
+  factory VideoBookTagMappingRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return VideoBookTagMappingRow(
+      id: serializer.fromJson<int>(json['id']),
+      videoBookUid: serializer.fromJson<String>(json['videoBookUid']),
+      tagId: serializer.fromJson<int>(json['tagId']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'videoBookUid': serializer.toJson<String>(videoBookUid),
+      'tagId': serializer.toJson<int>(tagId),
+    };
+  }
+
+  VideoBookTagMappingRow copyWith(
+          {int? id, String? videoBookUid, int? tagId}) =>
+      VideoBookTagMappingRow(
+        id: id ?? this.id,
+        videoBookUid: videoBookUid ?? this.videoBookUid,
+        tagId: tagId ?? this.tagId,
+      );
+  VideoBookTagMappingRow copyWithCompanion(VideoBookTagMappingsCompanion data) {
+    return VideoBookTagMappingRow(
+      id: data.id.present ? data.id.value : this.id,
+      videoBookUid: data.videoBookUid.present
+          ? data.videoBookUid.value
+          : this.videoBookUid,
+      tagId: data.tagId.present ? data.tagId.value : this.tagId,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('VideoBookTagMappingRow(')
+          ..write('id: $id, ')
+          ..write('videoBookUid: $videoBookUid, ')
+          ..write('tagId: $tagId')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, videoBookUid, tagId);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is VideoBookTagMappingRow &&
+          other.id == this.id &&
+          other.videoBookUid == this.videoBookUid &&
+          other.tagId == this.tagId);
+}
+
+class VideoBookTagMappingsCompanion
+    extends UpdateCompanion<VideoBookTagMappingRow> {
+  final Value<int> id;
+  final Value<String> videoBookUid;
+  final Value<int> tagId;
+  const VideoBookTagMappingsCompanion({
+    this.id = const Value.absent(),
+    this.videoBookUid = const Value.absent(),
+    this.tagId = const Value.absent(),
+  });
+  VideoBookTagMappingsCompanion.insert({
+    this.id = const Value.absent(),
+    required String videoBookUid,
+    required int tagId,
+  })  : videoBookUid = Value(videoBookUid),
+        tagId = Value(tagId);
+  static Insertable<VideoBookTagMappingRow> custom({
+    Expression<int>? id,
+    Expression<String>? videoBookUid,
+    Expression<int>? tagId,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (videoBookUid != null) 'video_book_uid': videoBookUid,
+      if (tagId != null) 'tag_id': tagId,
+    });
+  }
+
+  VideoBookTagMappingsCompanion copyWith(
+      {Value<int>? id, Value<String>? videoBookUid, Value<int>? tagId}) {
+    return VideoBookTagMappingsCompanion(
+      id: id ?? this.id,
+      videoBookUid: videoBookUid ?? this.videoBookUid,
+      tagId: tagId ?? this.tagId,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (videoBookUid.present) {
+      map['video_book_uid'] = Variable<String>(videoBookUid.value);
+    }
+    if (tagId.present) {
+      map['tag_id'] = Variable<int>(tagId.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('VideoBookTagMappingsCompanion(')
+          ..write('id: $id, ')
+          ..write('videoBookUid: $videoBookUid, ')
+          ..write('tagId: $tagId')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$HibikiDatabase extends GeneratedDatabase {
   _$HibikiDatabase(QueryExecutor e) : super(e);
   $HibikiDatabaseManager get managers => $HibikiDatabaseManager(this);
@@ -8964,6 +9198,8 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
   late final $BookProfilesTable bookProfiles = $BookProfilesTable(this);
   late final $SyncBaselinesTable syncBaselines = $SyncBaselinesTable(this);
   late final $VideoBooksTable videoBooks = $VideoBooksTable(this);
+  late final $VideoBookTagMappingsTable videoBookTagMappings =
+      $VideoBookTagMappingsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -8991,7 +9227,8 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
         mediaTypeProfiles,
         bookProfiles,
         syncBaselines,
-        videoBooks
+        videoBooks,
+        videoBookTagMappings
       ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules(
@@ -9050,6 +9287,20 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
                 limitUpdateKind: UpdateKind.delete),
             result: [
               TableUpdate('book_profiles', kind: UpdateKind.delete),
+            ],
+          ),
+          WritePropagation(
+            on: TableUpdateQuery.onTableName('video_books',
+                limitUpdateKind: UpdateKind.delete),
+            result: [
+              TableUpdate('video_book_tag_mappings', kind: UpdateKind.delete),
+            ],
+          ),
+          WritePropagation(
+            on: TableUpdateQuery.onTableName('book_tags',
+                limitUpdateKind: UpdateKind.delete),
+            result: [
+              TableUpdate('video_book_tag_mappings', kind: UpdateKind.delete),
             ],
           ),
         ],
@@ -12548,6 +12799,25 @@ final class $$BookTagsTableReferences
     return ProcessedTableManager(
         manager.$state.copyWith(prefetchedData: cache));
   }
+
+  static MultiTypedResultKey<$VideoBookTagMappingsTable,
+      List<VideoBookTagMappingRow>> _videoBookTagMappingsRefsTable(
+          _$HibikiDatabase db) =>
+      MultiTypedResultKey.fromTable(db.videoBookTagMappings,
+          aliasName: $_aliasNameGenerator(
+              db.bookTags.id, db.videoBookTagMappings.tagId));
+
+  $$VideoBookTagMappingsTableProcessedTableManager
+      get videoBookTagMappingsRefs {
+    final manager =
+        $$VideoBookTagMappingsTableTableManager($_db, $_db.videoBookTagMappings)
+            .filter((f) => f.tagId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache =
+        $_typedResult.readTableOrNull(_videoBookTagMappingsRefsTable($_db));
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: cache));
+  }
 }
 
 class $$BookTagsTableFilterComposer
@@ -12608,6 +12878,28 @@ class $$BookTagsTableFilterComposer
             $$SrtBookTagMappingsTableFilterComposer(
               $db: $db,
               $table: $db.srtBookTagMappings,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+
+  Expression<bool> videoBookTagMappingsRefs(
+      Expression<bool> Function($$VideoBookTagMappingsTableFilterComposer f)
+          f) {
+    final $$VideoBookTagMappingsTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.videoBookTagMappings,
+        getReferencedColumn: (t) => t.tagId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$VideoBookTagMappingsTableFilterComposer(
+              $db: $db,
+              $table: $db.videoBookTagMappings,
               $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
               joinBuilder: joinBuilder,
               $removeJoinBuilderFromRootComposer:
@@ -12708,6 +13000,29 @@ class $$BookTagsTableAnnotationComposer
                 ));
     return f(composer);
   }
+
+  Expression<T> videoBookTagMappingsRefs<T extends Object>(
+      Expression<T> Function($$VideoBookTagMappingsTableAnnotationComposer a)
+          f) {
+    final $$VideoBookTagMappingsTableAnnotationComposer composer =
+        $composerBuilder(
+            composer: this,
+            getCurrentColumn: (t) => t.id,
+            referencedTable: $db.videoBookTagMappings,
+            getReferencedColumn: (t) => t.tagId,
+            builder: (joinBuilder,
+                    {$addJoinBuilderToRootComposer,
+                    $removeJoinBuilderFromRootComposer}) =>
+                $$VideoBookTagMappingsTableAnnotationComposer(
+                  $db: $db,
+                  $table: $db.videoBookTagMappings,
+                  $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                  joinBuilder: joinBuilder,
+                  $removeJoinBuilderFromRootComposer:
+                      $removeJoinBuilderFromRootComposer,
+                ));
+    return f(composer);
+  }
 }
 
 class $$BookTagsTableTableManager extends RootTableManager<
@@ -12722,7 +13037,9 @@ class $$BookTagsTableTableManager extends RootTableManager<
     (BookTagRow, $$BookTagsTableReferences),
     BookTagRow,
     PrefetchHooks Function(
-        {bool bookTagMappingsRefs, bool srtBookTagMappingsRefs})> {
+        {bool bookTagMappingsRefs,
+        bool srtBookTagMappingsRefs,
+        bool videoBookTagMappingsRefs})> {
   $$BookTagsTableTableManager(_$HibikiDatabase db, $BookTagsTable table)
       : super(TableManagerState(
           db: db,
@@ -12766,12 +13083,15 @@ class $$BookTagsTableTableManager extends RootTableManager<
                   (e.readTable(table), $$BookTagsTableReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: (
-              {bookTagMappingsRefs = false, srtBookTagMappingsRefs = false}) {
+              {bookTagMappingsRefs = false,
+              srtBookTagMappingsRefs = false,
+              videoBookTagMappingsRefs = false}) {
             return PrefetchHooks(
               db: db,
               explicitlyWatchedTables: [
                 if (bookTagMappingsRefs) db.bookTagMappings,
-                if (srtBookTagMappingsRefs) db.srtBookTagMappings
+                if (srtBookTagMappingsRefs) db.srtBookTagMappings,
+                if (videoBookTagMappingsRefs) db.videoBookTagMappings
               ],
               addJoins: null,
               getPrefetchedDataCallback: (items) async {
@@ -12801,6 +13121,19 @@ class $$BookTagsTableTableManager extends RootTableManager<
                         referencedItemsForCurrentItem: (item,
                                 referencedItems) =>
                             referencedItems.where((e) => e.tagId == item.id),
+                        typedResults: items),
+                  if (videoBookTagMappingsRefs)
+                    await $_getPrefetchedData<BookTagRow, $BookTagsTable,
+                            VideoBookTagMappingRow>(
+                        currentTable: table,
+                        referencedTable: $$BookTagsTableReferences
+                            ._videoBookTagMappingsRefsTable(db),
+                        managerFromTypedResult: (p0) =>
+                            $$BookTagsTableReferences(db, table, p0)
+                                .videoBookTagMappingsRefs,
+                        referencedItemsForCurrentItem: (item,
+                                referencedItems) =>
+                            referencedItems.where((e) => e.tagId == item.id),
                         typedResults: items)
                 ];
               },
@@ -12821,7 +13154,9 @@ typedef $$BookTagsTableProcessedTableManager = ProcessedTableManager<
     (BookTagRow, $$BookTagsTableReferences),
     BookTagRow,
     PrefetchHooks Function(
-        {bool bookTagMappingsRefs, bool srtBookTagMappingsRefs})>;
+        {bool bookTagMappingsRefs,
+        bool srtBookTagMappingsRefs,
+        bool videoBookTagMappingsRefs})>;
 typedef $$BookTagMappingsTableCreateCompanionBuilder = BookTagMappingsCompanion
     Function({
   Value<int> id,
@@ -14759,6 +15094,31 @@ typedef $$VideoBooksTableUpdateCompanionBuilder = VideoBooksCompanion Function({
   Value<int> rowid,
 });
 
+final class $$VideoBooksTableReferences
+    extends BaseReferences<_$HibikiDatabase, $VideoBooksTable, VideoBookRow> {
+  $$VideoBooksTableReferences(super.$_db, super.$_table, super.$_typedResult);
+
+  static MultiTypedResultKey<$VideoBookTagMappingsTable,
+      List<VideoBookTagMappingRow>> _videoBookTagMappingsRefsTable(
+          _$HibikiDatabase db) =>
+      MultiTypedResultKey.fromTable(db.videoBookTagMappings,
+          aliasName: $_aliasNameGenerator(
+              db.videoBooks.bookUid, db.videoBookTagMappings.videoBookUid));
+
+  $$VideoBookTagMappingsTableProcessedTableManager
+      get videoBookTagMappingsRefs {
+    final manager =
+        $$VideoBookTagMappingsTableTableManager($_db, $_db.videoBookTagMappings)
+            .filter((f) => f.videoBookUid.bookUid
+                .sqlEquals($_itemColumn<String>('book_uid')!));
+
+    final cache =
+        $_typedResult.readTableOrNull(_videoBookTagMappingsRefsTable($_db));
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: cache));
+  }
+}
+
 class $$VideoBooksTableFilterComposer
     extends Composer<_$HibikiDatabase, $VideoBooksTable> {
   $$VideoBooksTableFilterComposer({
@@ -14811,6 +15171,28 @@ class $$VideoBooksTableFilterComposer
 
   ColumnFilters<int> get delayMs => $composableBuilder(
       column: $table.delayMs, builder: (column) => ColumnFilters(column));
+
+  Expression<bool> videoBookTagMappingsRefs(
+      Expression<bool> Function($$VideoBookTagMappingsTableFilterComposer f)
+          f) {
+    final $$VideoBookTagMappingsTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.bookUid,
+        referencedTable: $db.videoBookTagMappings,
+        getReferencedColumn: (t) => t.videoBookUid,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$VideoBookTagMappingsTableFilterComposer(
+              $db: $db,
+              $table: $db.videoBookTagMappings,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
 }
 
 class $$VideoBooksTableOrderingComposer
@@ -14916,6 +15298,29 @@ class $$VideoBooksTableAnnotationComposer
 
   GeneratedColumn<int> get delayMs =>
       $composableBuilder(column: $table.delayMs, builder: (column) => column);
+
+  Expression<T> videoBookTagMappingsRefs<T extends Object>(
+      Expression<T> Function($$VideoBookTagMappingsTableAnnotationComposer a)
+          f) {
+    final $$VideoBookTagMappingsTableAnnotationComposer composer =
+        $composerBuilder(
+            composer: this,
+            getCurrentColumn: (t) => t.bookUid,
+            referencedTable: $db.videoBookTagMappings,
+            getReferencedColumn: (t) => t.videoBookUid,
+            builder: (joinBuilder,
+                    {$addJoinBuilderToRootComposer,
+                    $removeJoinBuilderFromRootComposer}) =>
+                $$VideoBookTagMappingsTableAnnotationComposer(
+                  $db: $db,
+                  $table: $db.videoBookTagMappings,
+                  $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                  joinBuilder: joinBuilder,
+                  $removeJoinBuilderFromRootComposer:
+                      $removeJoinBuilderFromRootComposer,
+                ));
+    return f(composer);
+  }
 }
 
 class $$VideoBooksTableTableManager extends RootTableManager<
@@ -14927,12 +15332,9 @@ class $$VideoBooksTableTableManager extends RootTableManager<
     $$VideoBooksTableAnnotationComposer,
     $$VideoBooksTableCreateCompanionBuilder,
     $$VideoBooksTableUpdateCompanionBuilder,
-    (
-      VideoBookRow,
-      BaseReferences<_$HibikiDatabase, $VideoBooksTable, VideoBookRow>
-    ),
+    (VideoBookRow, $$VideoBooksTableReferences),
     VideoBookRow,
-    PrefetchHooks Function()> {
+    PrefetchHooks Function({bool videoBookTagMappingsRefs})> {
   $$VideoBooksTableTableManager(_$HibikiDatabase db, $VideoBooksTable table)
       : super(TableManagerState(
           db: db,
@@ -15008,9 +15410,37 @@ class $$VideoBooksTableTableManager extends RootTableManager<
             rowid: rowid,
           ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map((e) => (
+                    e.readTable(table),
+                    $$VideoBooksTableReferences(db, table, e)
+                  ))
               .toList(),
-          prefetchHooksCallback: null,
+          prefetchHooksCallback: ({videoBookTagMappingsRefs = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [
+                if (videoBookTagMappingsRefs) db.videoBookTagMappings
+              ],
+              addJoins: null,
+              getPrefetchedDataCallback: (items) async {
+                return [
+                  if (videoBookTagMappingsRefs)
+                    await $_getPrefetchedData<VideoBookRow, $VideoBooksTable,
+                            VideoBookTagMappingRow>(
+                        currentTable: table,
+                        referencedTable: $$VideoBooksTableReferences
+                            ._videoBookTagMappingsRefsTable(db),
+                        managerFromTypedResult: (p0) =>
+                            $$VideoBooksTableReferences(db, table, p0)
+                                .videoBookTagMappingsRefs,
+                        referencedItemsForCurrentItem:
+                            (item, referencedItems) => referencedItems
+                                .where((e) => e.videoBookUid == item.bookUid),
+                        typedResults: items)
+                ];
+              },
+            );
+          },
         ));
 }
 
@@ -15023,12 +15453,331 @@ typedef $$VideoBooksTableProcessedTableManager = ProcessedTableManager<
     $$VideoBooksTableAnnotationComposer,
     $$VideoBooksTableCreateCompanionBuilder,
     $$VideoBooksTableUpdateCompanionBuilder,
-    (
-      VideoBookRow,
-      BaseReferences<_$HibikiDatabase, $VideoBooksTable, VideoBookRow>
-    ),
+    (VideoBookRow, $$VideoBooksTableReferences),
     VideoBookRow,
-    PrefetchHooks Function()>;
+    PrefetchHooks Function({bool videoBookTagMappingsRefs})>;
+typedef $$VideoBookTagMappingsTableCreateCompanionBuilder
+    = VideoBookTagMappingsCompanion Function({
+  Value<int> id,
+  required String videoBookUid,
+  required int tagId,
+});
+typedef $$VideoBookTagMappingsTableUpdateCompanionBuilder
+    = VideoBookTagMappingsCompanion Function({
+  Value<int> id,
+  Value<String> videoBookUid,
+  Value<int> tagId,
+});
+
+final class $$VideoBookTagMappingsTableReferences extends BaseReferences<
+    _$HibikiDatabase, $VideoBookTagMappingsTable, VideoBookTagMappingRow> {
+  $$VideoBookTagMappingsTableReferences(
+      super.$_db, super.$_table, super.$_typedResult);
+
+  static $VideoBooksTable _videoBookUidTable(_$HibikiDatabase db) =>
+      db.videoBooks.createAlias($_aliasNameGenerator(
+          db.videoBookTagMappings.videoBookUid, db.videoBooks.bookUid));
+
+  $$VideoBooksTableProcessedTableManager get videoBookUid {
+    final $_column = $_itemColumn<String>('video_book_uid')!;
+
+    final manager = $$VideoBooksTableTableManager($_db, $_db.videoBooks)
+        .filter((f) => f.bookUid.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_videoBookUidTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
+
+  static $BookTagsTable _tagIdTable(_$HibikiDatabase db) =>
+      db.bookTags.createAlias(
+          $_aliasNameGenerator(db.videoBookTagMappings.tagId, db.bookTags.id));
+
+  $$BookTagsTableProcessedTableManager get tagId {
+    final $_column = $_itemColumn<int>('tag_id')!;
+
+    final manager = $$BookTagsTableTableManager($_db, $_db.bookTags)
+        .filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_tagIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
+}
+
+class $$VideoBookTagMappingsTableFilterComposer
+    extends Composer<_$HibikiDatabase, $VideoBookTagMappingsTable> {
+  $$VideoBookTagMappingsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  $$VideoBooksTableFilterComposer get videoBookUid {
+    final $$VideoBooksTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.videoBookUid,
+        referencedTable: $db.videoBooks,
+        getReferencedColumn: (t) => t.bookUid,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$VideoBooksTableFilterComposer(
+              $db: $db,
+              $table: $db.videoBooks,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$BookTagsTableFilterComposer get tagId {
+    final $$BookTagsTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.tagId,
+        referencedTable: $db.bookTags,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$BookTagsTableFilterComposer(
+              $db: $db,
+              $table: $db.bookTags,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$VideoBookTagMappingsTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $VideoBookTagMappingsTable> {
+  $$VideoBookTagMappingsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  $$VideoBooksTableOrderingComposer get videoBookUid {
+    final $$VideoBooksTableOrderingComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.videoBookUid,
+        referencedTable: $db.videoBooks,
+        getReferencedColumn: (t) => t.bookUid,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$VideoBooksTableOrderingComposer(
+              $db: $db,
+              $table: $db.videoBooks,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$BookTagsTableOrderingComposer get tagId {
+    final $$BookTagsTableOrderingComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.tagId,
+        referencedTable: $db.bookTags,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$BookTagsTableOrderingComposer(
+              $db: $db,
+              $table: $db.bookTags,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$VideoBookTagMappingsTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $VideoBookTagMappingsTable> {
+  $$VideoBookTagMappingsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  $$VideoBooksTableAnnotationComposer get videoBookUid {
+    final $$VideoBooksTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.videoBookUid,
+        referencedTable: $db.videoBooks,
+        getReferencedColumn: (t) => t.bookUid,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$VideoBooksTableAnnotationComposer(
+              $db: $db,
+              $table: $db.videoBooks,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$BookTagsTableAnnotationComposer get tagId {
+    final $$BookTagsTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.tagId,
+        referencedTable: $db.bookTags,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$BookTagsTableAnnotationComposer(
+              $db: $db,
+              $table: $db.bookTags,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$VideoBookTagMappingsTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $VideoBookTagMappingsTable,
+    VideoBookTagMappingRow,
+    $$VideoBookTagMappingsTableFilterComposer,
+    $$VideoBookTagMappingsTableOrderingComposer,
+    $$VideoBookTagMappingsTableAnnotationComposer,
+    $$VideoBookTagMappingsTableCreateCompanionBuilder,
+    $$VideoBookTagMappingsTableUpdateCompanionBuilder,
+    (VideoBookTagMappingRow, $$VideoBookTagMappingsTableReferences),
+    VideoBookTagMappingRow,
+    PrefetchHooks Function({bool videoBookUid, bool tagId})> {
+  $$VideoBookTagMappingsTableTableManager(
+      _$HibikiDatabase db, $VideoBookTagMappingsTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$VideoBookTagMappingsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$VideoBookTagMappingsTableOrderingComposer(
+                  $db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$VideoBookTagMappingsTableAnnotationComposer(
+                  $db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<String> videoBookUid = const Value.absent(),
+            Value<int> tagId = const Value.absent(),
+          }) =>
+              VideoBookTagMappingsCompanion(
+            id: id,
+            videoBookUid: videoBookUid,
+            tagId: tagId,
+          ),
+          createCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            required String videoBookUid,
+            required int tagId,
+          }) =>
+              VideoBookTagMappingsCompanion.insert(
+            id: id,
+            videoBookUid: videoBookUid,
+            tagId: tagId,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (
+                    e.readTable(table),
+                    $$VideoBookTagMappingsTableReferences(db, table, e)
+                  ))
+              .toList(),
+          prefetchHooksCallback: ({videoBookUid = false, tagId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins: <
+                  T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic>>(state) {
+                if (videoBookUid) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.videoBookUid,
+                    referencedTable: $$VideoBookTagMappingsTableReferences
+                        ._videoBookUidTable(db),
+                    referencedColumn: $$VideoBookTagMappingsTableReferences
+                        ._videoBookUidTable(db)
+                        .bookUid,
+                  ) as T;
+                }
+                if (tagId) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.tagId,
+                    referencedTable:
+                        $$VideoBookTagMappingsTableReferences._tagIdTable(db),
+                    referencedColumn: $$VideoBookTagMappingsTableReferences
+                        ._tagIdTable(db)
+                        .id,
+                  ) as T;
+                }
+
+                return state;
+              },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ));
+}
+
+typedef $$VideoBookTagMappingsTableProcessedTableManager
+    = ProcessedTableManager<
+        _$HibikiDatabase,
+        $VideoBookTagMappingsTable,
+        VideoBookTagMappingRow,
+        $$VideoBookTagMappingsTableFilterComposer,
+        $$VideoBookTagMappingsTableOrderingComposer,
+        $$VideoBookTagMappingsTableAnnotationComposer,
+        $$VideoBookTagMappingsTableCreateCompanionBuilder,
+        $$VideoBookTagMappingsTableUpdateCompanionBuilder,
+        (VideoBookTagMappingRow, $$VideoBookTagMappingsTableReferences),
+        VideoBookTagMappingRow,
+        PrefetchHooks Function({bool videoBookUid, bool tagId})>;
 
 class $HibikiDatabaseManager {
   final _$HibikiDatabase _db;
@@ -15079,4 +15828,6 @@ class $HibikiDatabaseManager {
       $$SyncBaselinesTableTableManager(_db, _db.syncBaselines);
   $$VideoBooksTableTableManager get videoBooks =>
       $$VideoBooksTableTableManager(_db, _db.videoBooks);
+  $$VideoBookTagMappingsTableTableManager get videoBookTagMappings =>
+      $$VideoBookTagMappingsTableTableManager(_db, _db.videoBookTagMappings);
 }

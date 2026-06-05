@@ -38,6 +38,13 @@ class VideoBookRepository {
   Future<void> updateAudioTrackId(String bookUid, String? audioTrackId) =>
       _db.updateVideoBookAudioTrackId(bookUid, audioTrackId);
 
+  /// 更新视频封面图绝对路径（书架/视频库长按菜单手动设置封面）。
+  Future<void> updateCover(String bookUid, String coverPath) =>
+      _db.updateVideoBookCover(bookUid, coverPath);
+
+  /// 删除视频书（标签映射经 FK cascade 自动清理）。
+  Future<void> deleteVideoBook(String bookUid) => _db.deleteVideoBook(bookUid);
+
   Future<void> saveCues({
     required String bookUid,
     required List<AudioCue> cues,
