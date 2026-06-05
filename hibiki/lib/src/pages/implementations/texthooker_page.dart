@@ -148,7 +148,10 @@ class _WordSpan extends StatelessWidget {
         final Offset topLeft = box.localToGlobal(Offset.zero);
         onTap(word, topLeft & box.size);
       },
-      child: Text(word, style: const TextStyle(fontSize: 18, height: 1.6)),
+      child: Text(
+        word,
+        style: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.6),
+      ),
     );
   }
 }
