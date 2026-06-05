@@ -482,9 +482,9 @@ class SyncOrchestrator {
           itemIndex: i, itemTotal: total, title: book.title);
       File? tmp;
       try {
-        final String bookUid = buildLegacyBookUid(book.id);
-        final AudiobookRow? ab = await _db.getAudiobookByBookUid(bookUid);
-        final SrtBookRow? srt = await _db.getSrtBookByTtuBookId(book.id);
+        final String bookKey = book.bookKey;
+        final AudiobookRow? ab = await _db.getAudiobookByBookKey(bookKey);
+        final SrtBookRow? srt = await _db.getSrtBookByBookKey(bookKey);
         final bool hasLocal = ab != null && srt != null;
 
         final String folderId = await _backend.ensureBookFolder(
@@ -497,7 +497,7 @@ class SyncOrchestrator {
         if (hasLocal && existing == null) {
           tmp = _tmpFile('.hibikiaudio');
           await _packages.exportAudioDatabasePackage(
-            bookUid: bookUid,
+            bookKey: bookKey,
             srtBookUid: srt.uid,
             outputFile: tmp,
           );
@@ -516,14 +516,12 @@ class SyncOrchestrator {
                   itemTotal: total,
                   title: book.title,
                   fileFraction: f));
-          // Re-key to THIS device's book: bookUid embeds the local book id,
-          // which differs per device, so the source's bookUid would never
-          // resolve to our book.
+          // Re-key to THIS device's book: bind the package to our resolved
+          // local bookKey so the synced audiobook/cues/srt link to our book.
           await _packages.importAudioDatabasePackage(
             packageFile: tmp,
             audioDatabaseRoot: _audioDatabaseRoot,
-            bookUidOverride: bookUid,
-            ttuBookIdOverride: book.id,
+            bookKeyOverride: bookKey,
           );
           report.audiobooksImported++;
         }

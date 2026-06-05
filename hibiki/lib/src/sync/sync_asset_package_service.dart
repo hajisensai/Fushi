@@ -104,13 +104,13 @@ class SyncAssetPackageService {
   }
 
   Future<File> exportAudioDatabasePackage({
-    required String bookUid,
+    required String bookKey,
     required String srtBookUid,
     required File outputFile,
   }) async {
-    final AudiobookRow audiobook = (await _db.getAudiobookByBookUid(bookUid))!;
+    final AudiobookRow audiobook = (await _db.getAudiobookByBookKey(bookKey))!;
     final SrtBookRow srtBook = (await _db.getSrtBookByUid(srtBookUid))!;
-    final List<AudioCueRow> cues = await _db.getCuesForBook(bookUid);
+    final List<AudioCueRow> cues = await _db.getCuesForBook(bookKey);
     final List<File> files = _audioPackageFiles(audiobook, srtBook);
 
     // 主 isolate：分配唯一文件名，建立 manifest 的 resources 映射（源路径→名）
@@ -145,17 +145,15 @@ class SyncAssetPackageService {
     return outputFile;
   }
 
-  /// Imports an audiobook package. [bookUidOverride] / [ttuBookIdOverride]
-  /// re-key the imported audiobook + cues ([bookUidOverride]) and SRT book
-  /// ([ttuBookIdOverride]) to the importing device's own book. This is required
-  /// for cross-device sync: `bookUid` embeds the source device's local book id
-  /// (`buildLegacyBookUid(book.id)`), which differs per device, so without
-  /// re-keying the synced audiobook would never link to the target's book.
+  /// Imports an audiobook package. [bookKeyOverride] re-keys the imported
+  /// audiobook + cues AND the SRT book's bookKey to the importing device's own
+  /// book. Cross-device sync needs this because bookKey = sanitized title is
+  /// stable across devices, but the override lets the caller bind the package to
+  /// the exact local book it resolved.
   Future<void> importAudioDatabasePackage({
     required File packageFile,
     required Directory audioDatabaseRoot,
-    String? bookUidOverride,
-    int? ttuBookIdOverride,
+    String? bookKeyOverride,
   }) async {
     final String manifestJson = await _readManifestInIsolate(packageFile.path);
     final Map<String, Object?> manifest = _typedMap(jsonDecode(manifestJson));
@@ -165,15 +163,14 @@ class SyncAssetPackageService {
     final Map<String, Object?> audiobook = _mapValue(manifest, 'audiobook');
     final Map<String, Object?> srtBook = _mapValue(manifest, 'srtBook');
     final Map<String, Object?> resources = _mapValue(manifest, 'resources');
-    final String bookUid =
-        bookUidOverride ?? _stringValue(audiobook, 'bookUid');
-    final int ttuBookId = ttuBookIdOverride ?? _intValue(srtBook, 'ttuBookId');
-    // The on-disk directory name must be filesystem-safe: a real bookUid
-    // (`reader_ttu/hoshi://book/<id>`) contains `:` and `/` which are invalid
-    // path chars on Windows. The DB still keys rows by the logical [bookUid];
-    // only the storage directory is sanitized.
+    final String bookKey =
+        bookKeyOverride ?? _stringValue(audiobook, 'bookKey');
+    // The on-disk directory name must be filesystem-safe: a bookKey (sanitized
+    // title) is mostly safe but may still contain spaces/unicode; _safeDirName
+    // strips any Windows-invalid chars. The DB still keys rows by [bookKey];
+    // only the storage directory name is sanitized.
     final Directory targetDir =
-        Directory(p.join(audioDatabaseRoot.path, _safeDirName(bookUid)));
+        Directory(p.join(audioDatabaseRoot.path, _safeDirName(bookKey)));
 
     await _extractResourcesInIsolate(
       packagePath: packageFile.path,
@@ -193,7 +190,7 @@ class SyncAssetPackageService {
     }).toList();
 
     await _db.upsertAudiobook(AudiobooksCompanion.insert(
-      bookUid: bookUid,
+      bookKey: bookKey,
       audioRoot: Value(targetDir.path),
       audioPathsJson: Value(jsonEncode(audioPaths)),
       alignmentFormat: _stringValue(audiobook, 'alignmentFormat'),
@@ -222,15 +219,15 @@ class SyncAssetPackageService {
         'coverPath',
       )),
       importedAt: _intValue(srtBook, 'importedAt'),
-      ttuBookId: Value(ttuBookId),
+      bookKey: Value(bookKey),
     ));
 
     await _db.replaceCuesForBook(
-      bookUid,
+      bookKey,
       _listValue(manifest, 'cues').map((Object? raw) {
         final Map<String, Object?> cue = _typedMap(raw);
         return AudioCuesCompanion.insert(
-          bookUid: bookUid,
+          bookKey: bookKey,
           chapterHref: _stringValue(cue, 'chapterHref'),
           sentenceIndex: _intValue(cue, 'sentenceIndex'),
           textFragmentId: _stringValue(cue, 'textFragmentId'),
@@ -329,7 +326,7 @@ class SyncAssetPackageService {
 
   Map<String, Object?> _audiobookManifest(AudiobookRow row) {
     return <String, Object?>{
-      'bookUid': row.bookUid,
+      'bookKey': row.bookKey,
       'audioPaths': _decodeStringList(row.audioPathsJson),
       'alignmentFormat': row.alignmentFormat,
       'alignmentPath': row.alignmentPath,
@@ -350,7 +347,7 @@ class SyncAssetPackageService {
       'srtPath': row.srtPath,
       'coverPath': row.coverPath,
       'importedAt': row.importedAt,
-      'ttuBookId': row.ttuBookId,
+      'bookKey': row.bookKey,
     };
   }
 
