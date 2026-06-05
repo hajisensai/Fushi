@@ -734,8 +734,6 @@ class AppModel with ChangeNotifier {
     final List<Language> availableLanguages = List<Language>.unmodifiable(
       [
         JapaneseLanguage.instance,
-        EnglishLanguage.instance,
-        ChineseLanguage.instance,
       ],
     );
 
