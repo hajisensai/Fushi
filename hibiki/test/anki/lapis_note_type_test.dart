@@ -50,7 +50,27 @@ void main() {
       expect(LapisNoteType.template.cardName, 'Card 1');
       expect(LapisNoteType.template.front, LapisNoteType.front);
       expect(LapisNoteType.template.back, LapisNoteType.back);
-      expect(LapisNoteType.template.css, LapisNoteType.css);
+      // template.css is the verbatim upstream css followed by the Hibiki delta.
+      expect(LapisNoteType.template.css,
+          '${LapisNoteType.css}\n${LapisNoteType.hibikiCssOverride}');
+    });
+
+    test('Hibiki css override separates the def-info label from the sentence',
+        () {
+      // BUG-056 follow-up: upstream `.def-info` has no top margin so the
+      // "Primary Definition N/M" label crowds the sentence on multi-def desktop
+      // cards. The delta lives in its own constant (css stays verbatim) and is
+      // appended after the vendored css so it wins by source order.
+      expect(LapisNoteType.css, isNot(contains('Hibiki delta')),
+          reason: 'vendored css must stay byte-identical to upstream');
+      expect(LapisNoteType.hibikiCssOverride, contains('.def-info'));
+      expect(LapisNoteType.hibikiCssOverride, contains('Hibiki delta'));
+      expect(LapisNoteType.hibikiCssOverride, contains('margin-top'));
+      expect(
+        LapisNoteType.template.css.indexOf(LapisNoteType.hibikiCssOverride),
+        greaterThan(LapisNoteType.template.css.indexOf('.def-info {')),
+        reason: 'override must come after the upstream .def-info rule',
+      );
     });
 
     test('default field mappings only reference real fields', () {

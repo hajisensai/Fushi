@@ -22,7 +22,8 @@ void main() {
     expect(params['modelName'], 'Lapis');
     expect(params['inOrderFields'], LapisNoteType.fields);
     expect(params['isCloze'], false);
-    expect(params['css'], LapisNoteType.css);
+    // createModel pushes template.css = vendored css + Hibiki delta (BUG-056).
+    expect(params['css'], LapisNoteType.template.css);
     final templates = params['cardTemplates'] as List;
     expect(templates, hasLength(1));
     final card = templates.first as Map<String, dynamic>;

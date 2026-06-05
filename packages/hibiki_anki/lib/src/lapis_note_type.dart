@@ -1929,12 +1929,31 @@ html.mobile .sentence, html:not(.mobile) .sentence-alt,
 }
 ''';
 
+  /// Hibiki-local CSS delta appended *after* the vendored upstream [css].
+  ///
+  /// Kept in its own constant so [css] stays byte-identical to donkuri/lapis
+  /// 1.7.0 `src/styling.css` and a future re-vendor never clobbers this delta.
+  /// Upstream `.def-info` (the "Primary Definition N/M" label above the
+  /// definition box) has no top margin, so on multi-definition cards in the
+  /// desktop layout (`--sentence-position: above`, sentence sits above the def
+  /// box) the label crowds the sentence directly above it (user-reported
+  /// overlap, BUG-056 follow-up). Add breathing room above the label without
+  /// editing the vendored rules; wins over upstream by source order (same
+  /// specificity, later rule). Harmless on mobile (label is not under the
+  /// sentence there) and on single-definition cards (label is hidden).
+  static const String hibikiCssOverride = '''
+/* Hibiki delta — see LapisNoteType.hibikiCssOverride doc. */
+.def-info {
+  margin-top: 0.6em;
+}
+''';
+
   static const AnkiNoteTypeTemplate template = AnkiNoteTypeTemplate(
     name: modelName,
     fields: fields,
     cardName: cardName,
     front: front,
     back: back,
-    css: css,
+    css: '$css\n$hibikiCssOverride',
   );
 }
