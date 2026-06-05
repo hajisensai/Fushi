@@ -20,8 +20,7 @@ class VideoPlayBar extends StatelessWidget {
               onPressed: controller.skipToPrevCue,
             ),
             IconButton(
-              icon: Icon(
-                  controller.isPlaying ? Icons.pause : Icons.play_arrow),
+              icon: Icon(controller.isPlaying ? Icons.pause : Icons.play_arrow),
               onPressed: controller.togglePlayPause,
             ),
             IconButton(
