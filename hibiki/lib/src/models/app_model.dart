@@ -1568,6 +1568,12 @@ class AppModel with ChangeNotifier {
   Future<void> setExperimentalVideoEnabled(bool value) =>
       prefsRepo.setExperimentalVideoEnabled(value);
 
+  /// 启用的 mpv 着色器（JSON 字符串数组；见 video_shader_manager.dart）。
+  String get videoShadersEnabled => prefsRepo.videoShadersEnabled;
+
+  Future<void> setVideoShadersEnabled(String json) =>
+      prefsRepo.setVideoShadersEnabled(json);
+
   bool get reverseNavigationBar => prefsRepo.reverseNavigationBar;
   void toggleReverseNavigationBar() => prefsRepo.toggleReverseNavigationBar();
 

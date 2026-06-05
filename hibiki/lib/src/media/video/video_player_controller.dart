@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:hibiki/src/media/video/video_shader_manager.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:media_kit/media_kit.dart';
@@ -35,6 +36,9 @@ class VideoPlayerController extends ChangeNotifier {
 
   /// 最近一次 [setSpeed] / [load] 之倍速；player 未实例化时供 [speed] getter 回退。
   double _lastSpeed = 1.0;
+
+  /// 当前启用的 mpv 着色器绝对路径（[load] 复用 / [applyShaders] 实时切换）。
+  List<String> _shaderPaths = <String>[];
 
   Timer? _tick;
   StreamSubscription<bool>? _playingSub;
@@ -147,6 +151,18 @@ class VideoPlayerController extends ChangeNotifier {
     _delayMs = delayMs.clamp(-600000, 600000);
   }
 
+  /// 当前启用的着色器绝对路径（设置界面回显用）。
+  List<String> get shaderPaths => List<String>.unmodifiable(_shaderPaths);
+
+  /// 运行时切换 mpv 着色器（设置面板 toggle 即时生效）。未 [load]（无 player）时只记下，
+  /// 下次 [load] 应用。仅桌面 libmpv 真正生效；移动端静默 no-op。
+  Future<void> applyShaders(List<String> absolutePaths) async {
+    _shaderPaths = List<String>.of(absolutePaths);
+    final Player? player = _player;
+    if (player == null) return;
+    await applyShadersToPlayer(player, _shaderPaths);
+  }
+
   /// 加载视频并开始播放准备：实例化 [Player] / [VideoController]、打开视频、
   /// 可选挂载外挂字幕、设置初速、seek 到初始位置、订阅播放态、启动 125ms tick。
   ///
@@ -158,6 +174,7 @@ class VideoPlayerController extends ChangeNotifier {
     int initialPositionMs = 0,
     double initialSpeed = 1.0,
     String? externalSubtitlePath,
+    List<String> shaderPaths = const <String>[],
   }) async {
     _bookUid = bookUid;
     _videoPath = videoFile.path;
@@ -185,6 +202,10 @@ class VideoPlayerController extends ChangeNotifier {
     // 触发暂停而非查词。故一律关 libmpv 字幕，由 overlay 承载所有字幕（外挂 sidecar
     // 与内嵌抽取的 cue 都走 overlay）。externalSubtitlePath 已在上层解析成 cues 传入。
     await player.setSubtitleTrack(SubtitleTrack.no());
+
+    // 应用启用的 mpv 着色器（Anime4K 等；仅桌面 libmpv 生效，移动端静默 no-op）。
+    _shaderPaths = List<String>.of(shaderPaths);
+    await applyShadersToPlayer(player, _shaderPaths);
 
     _lastSpeed = initialSpeed;
     await player.setRate(initialSpeed);

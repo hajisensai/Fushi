@@ -215,6 +215,16 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 启用的 mpv 着色器（JSON 字符串数组的文件名，相对着色器目录）。空串=未启用。
+  /// 解析/编码见 video_shader_manager.dart 的 encode/decodeEnabledShaders。
+  String get videoShadersEnabled =>
+      getPref('video_shaders_enabled', defaultValue: '') as String;
+
+  Future<void> setVideoShadersEnabled(String json) async {
+    await setPref('video_shaders_enabled', json);
+    notifyListeners();
+  }
+
   // ── transcript ───────────────────────────────────────────────────────
 
   bool get isTranscriptPlayerMode =>

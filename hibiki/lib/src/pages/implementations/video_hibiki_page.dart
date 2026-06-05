@@ -17,6 +17,8 @@ import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_player_controller.dart';
+import 'package:hibiki/src/media/video/video_shader_manager.dart';
+import 'package:hibiki/src/pages/implementations/video_shader_dialog.dart';
 import 'package:hibiki/src/media/video/video_sidecar.dart';
 import 'package:hibiki/src/media/video/video_subtitle_overlay.dart';
 import 'package:hibiki/src/media/video/video_subtitle_source.dart';
@@ -376,6 +378,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   }) async {
     final VideoPlayerController controller =
         _controller ?? VideoPlayerController();
+    // 解析启用的 mpv 着色器为绝对路径（桌面 libmpv 生效，移动端最终静默）。
+    final List<String> shaderPaths = await resolveEnabledShaderPaths(
+        decodeEnabledShaders(appModel.videoShadersEnabled));
     try {
       await controller.load(
         bookUid: widget.bookUid,
@@ -384,6 +389,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         initialPositionMs: initialPositionMs,
         initialSpeed: _playbackSpeed,
         externalSubtitlePath: externalSubtitlePath,
+        shaderPaths: shaderPaths,
       );
     } catch (e, stack) {
       debugPrint('[VideoHibikiPage] video load failed: $e\n$stack');
@@ -914,6 +920,23 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                           ),
                       ],
                     ),
+                    const Divider(color: Colors.white24, height: 24),
+                    // ── mpv 着色器（Anime4K 等；桌面 libmpv 生效）──
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          side: const BorderSide(color: Colors.white24),
+                        ),
+                        icon: const Icon(Icons.auto_fix_high_outlined),
+                        label: Text(t.video_setting_shaders),
+                        onPressed: () {
+                          Navigator.pop(ctx);
+                          _openShaderDialog();
+                        },
+                      ),
+                    ),
                   ],
                 ),
               );
@@ -921,6 +944,24 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           ),
         );
       },
+    );
+  }
+
+  /// 打开 mpv 着色器对话框：导入/勾选着色器 → 持久化启用集 → 解析绝对路径 →
+  /// 实时应用到当前播放器（仅桌面 libmpv 生效，移动端静默）。
+  Future<void> _openShaderDialog() async {
+    await showDialog<void>(
+      context: context,
+      builder: (_) => VideoShaderDialog(
+        initialEnabled: decodeEnabledShaders(appModel.videoShadersEnabled),
+        onApply: (List<String> enabledNames) async {
+          await appModel
+              .setVideoShadersEnabled(encodeEnabledShaders(enabledNames));
+          final List<String> paths =
+              await resolveEnabledShaderPaths(enabledNames);
+          await _controller?.applyShaders(paths);
+        },
+      ),
     );
   }
 
