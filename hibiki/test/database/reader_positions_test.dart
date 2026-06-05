@@ -16,14 +16,14 @@ void main() {
 
       await db.upsertReaderPosition(
         ReaderPositionsCompanion.insert(
-          ttuBookId: 42,
+          bookKey: 'book-42',
           sectionIndex: 3,
           normCharOffset: 1500,
           updatedAt: now,
         ),
       );
 
-      final row = await db.getReaderPosition(42);
+      final row = await db.getReaderPosition('book-42');
       expect(row, isNotNull);
       expect(row!.sectionIndex, 3);
       expect(row.normCharOffset, 1500);
@@ -32,7 +32,7 @@ void main() {
     test('getReaderPosition returns null for absent book', () async {
       final db = await _openDb();
 
-      expect(await db.getReaderPosition(999), isNull);
+      expect(await db.getReaderPosition('book-999'), isNull);
     });
 
     test('upsert replaces existing position', () async {
@@ -41,7 +41,7 @@ void main() {
 
       await db.upsertReaderPosition(
         ReaderPositionsCompanion.insert(
-          ttuBookId: 1,
+          bookKey: 'book-1',
           sectionIndex: 0,
           normCharOffset: 0,
           updatedAt: now,
@@ -49,14 +49,14 @@ void main() {
       );
       await db.upsertReaderPosition(
         ReaderPositionsCompanion.insert(
-          ttuBookId: 1,
+          bookKey: 'book-1',
           sectionIndex: 5,
           normCharOffset: 3000,
           updatedAt: now + 1000,
         ),
       );
 
-      final row = await db.getReaderPosition(1);
+      final row = await db.getReaderPosition('book-1');
       expect(row!.sectionIndex, 5);
       expect(row.normCharOffset, 3000);
     });
@@ -66,17 +66,17 @@ void main() {
       final now = DateTime.now().millisecondsSinceEpoch;
       await db.upsertReaderPosition(
         ReaderPositionsCompanion.insert(
-          ttuBookId: 10,
+          bookKey: 'book-10',
           sectionIndex: 0,
           normCharOffset: 0,
           updatedAt: now,
         ),
       );
 
-      final count = await db.deleteReaderPosition(10);
+      final count = await db.deleteReaderPosition('book-10');
 
       expect(count, 1);
-      expect(await db.getReaderPosition(10), isNull);
+      expect(await db.getReaderPosition('book-10'), isNull);
     });
 
     test('ttuCharOffset defaults to -1', () async {
@@ -84,14 +84,14 @@ void main() {
       final now = DateTime.now().millisecondsSinceEpoch;
       await db.upsertReaderPosition(
         ReaderPositionsCompanion.insert(
-          ttuBookId: 7,
+          bookKey: 'book-7',
           sectionIndex: 0,
           normCharOffset: 0,
           updatedAt: now,
         ),
       );
 
-      final row = await db.getReaderPosition(7);
+      final row = await db.getReaderPosition('book-7');
       expect(row!.ttuCharOffset, -1);
     });
   });
@@ -101,8 +101,9 @@ void main() {
       final db = await _openDb();
       final now = DateTime.now().millisecondsSinceEpoch;
 
-      final bookId = await db.insertEpubBook(
+      final bookKey = await db.insertEpubBook(
         EpubBooksCompanion.insert(
+          bookKey: 'Novel',
           title: 'Novel',
           epubPath: '/tmp/novel.epub',
           extractDir: '/tmp/novel',
@@ -114,7 +115,7 @@ void main() {
 
       await db.into(db.bookmarks).insert(
             BookmarksCompanion.insert(
-              ttuBookId: bookId,
+              bookKey: bookKey,
               sectionIndex: 2,
               normCharOffset: 500,
               label: 'Important Part',
@@ -131,8 +132,9 @@ void main() {
     test('deleting epub book cascades to bookmarks', () async {
       final db = await _openDb();
       final now = DateTime.now().millisecondsSinceEpoch;
-      final bookId = await db.insertEpubBook(
+      final bookKey = await db.insertEpubBook(
         EpubBooksCompanion.insert(
+          bookKey: 'Book',
           title: 'Book',
           epubPath: '/p',
           extractDir: '/d',
@@ -143,7 +145,7 @@ void main() {
       );
       await db.into(db.bookmarks).insert(
             BookmarksCompanion.insert(
-              ttuBookId: bookId,
+              bookKey: bookKey,
               sectionIndex: 0,
               normCharOffset: 0,
               label: 'Mark',
@@ -151,7 +153,7 @@ void main() {
             ),
           );
 
-      await db.deleteEpubBook(bookId);
+      await db.deleteEpubBook(bookKey);
 
       final rows = await db.select(db.bookmarks).get();
       expect(rows, isEmpty);

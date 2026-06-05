@@ -4,8 +4,8 @@ import 'package:hibiki_core/hibiki_core.dart';
 
 /// Regression test for the HBK-AUDIT-041 follow-up: deleteEpubBook must purge
 /// audio_cues owned by an SRT book linked to the deleted epub. Those cues are
-/// keyed on srt_books.uid (e.g. "srtbook_..."), NOT on the epub book uid, so a
-/// cascade that only deleted cues by the epub uid left them orphaned.
+/// keyed on srt_books.uid (e.g. "srtbook_..."), NOT on the epub bookKey, so a
+/// cascade that only deleted cues by the epub bookKey left them orphaned.
 void main() {
   late HibikiDatabase db;
 
@@ -14,17 +14,18 @@ void main() {
   });
   tearDown(() => db.close());
 
-  Future<int> cueCount(String bookUid) async {
+  Future<int> cueCount(String bookKey) async {
     final row = await db
         .customSelect('SELECT COUNT(*) AS c FROM audio_cues '
-            "WHERE book_uid = '$bookUid'")
+            "WHERE book_key = '$bookKey'")
         .getSingle();
     return row.read<int>('c');
   }
 
   test('deleteEpubBook also deletes audio_cues owned by a linked SRT book',
       () async {
-    final int epubId = await db.insertEpubBook(EpubBooksCompanion.insert(
+    final String bookKey = await db.insertEpubBook(EpubBooksCompanion.insert(
+      bookKey: 'Book',
       title: 'Book',
       epubPath: '/x.epub',
       extractDir: '/x',
@@ -33,18 +34,17 @@ void main() {
       importedAt: DateTime.now().millisecondsSinceEpoch,
     ));
 
-    // SRT book linked to the epub (ttu_book_id == epubId), cues keyed on its
-    // uid; plus an audiobook keyed on the epub book uid.
+    // SRT book linked to the epub (book_key == bookKey), cues keyed on its
+    // uid; plus an audiobook's cues keyed on the epub bookKey.
     const String srtUid = 'srtbook_test';
-    final String epubUid = buildLegacyBookUid(epubId);
     await db.customStatement(
-      'INSERT INTO srt_books (uid, title, srt_path, imported_at, ttu_book_id) '
+      'INSERT INTO srt_books (uid, title, srt_path, imported_at, book_key) '
       "VALUES (?, 'SRT', '/s.srt', 0, ?)",
-      [srtUid, epubId],
+      [srtUid, bookKey],
     );
-    for (final String owner in <String>[srtUid, epubUid]) {
+    for (final String owner in <String>[srtUid, bookKey]) {
       await db.customStatement(
-        'INSERT INTO audio_cues (book_uid, chapter_href, sentence_index, '
+        'INSERT INTO audio_cues (book_key, chapter_href, sentence_index, '
         'text_fragment_id, cue_text, start_ms, end_ms, audio_file_index) '
         "VALUES (?, 'c.xhtml', 0, 'f', 't', 0, 1, 0)",
         [owner],
@@ -52,12 +52,12 @@ void main() {
     }
 
     expect(await cueCount(srtUid), 1);
-    expect(await cueCount(epubUid), 1);
+    expect(await cueCount(bookKey), 1);
 
-    await db.deleteEpubBook(epubId);
+    await db.deleteEpubBook(bookKey);
 
-    // Both the epub-uid cue and the SRT-uid cue must be gone (no orphans).
+    // Both the epub-bookKey cue and the SRT-uid cue must be gone (no orphans).
     expect(await cueCount(srtUid), 0);
-    expect(await cueCount(epubUid), 0);
+    expect(await cueCount(bookKey), 0);
   });
 }

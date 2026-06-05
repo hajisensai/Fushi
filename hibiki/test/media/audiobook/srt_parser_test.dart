@@ -18,7 +18,7 @@ void main() {
 00:00:08,200 --> 00:00:12,000
 どこで生れたかとんと見当がつかぬ。
 ''',
-        bookUid: 'test/book.srt',
+        bookKey: 'test/book.srt',
       );
 
       expect(cues.length, 3);
@@ -29,7 +29,7 @@ void main() {
       expect(cues[0].text, '吾輩は猫である。');
       expect(cues[0].textFragmentId, '[data-cue-id="0"]');
       expect(cues[0].chapterHref, SrtParser.defaultChapter);
-      expect(cues[0].bookUid, 'test/book.srt');
+      expect(cues[0].bookKey, 'test/book.srt');
       expect(cues[0].audioFileIndex, 0);
 
       expect(cues[1].sentenceIndex, 1);
@@ -51,7 +51,7 @@ void main() {
 これは一行目。
 これは二行目。
 ''',
-        bookUid: 'test/book.srt',
+        bookKey: 'test/book.srt',
       );
 
       expect(cues.length, 1);
@@ -61,7 +61,7 @@ void main() {
     test('带 UTF-8 BOM 的内容正常解析', () {
       final List<AudioCue> cues = SrtParser.parseString(
         content: '\uFEFF1\n00:00:01,000 --> 00:00:02,000\nBOM テスト\n',
-        bookUid: 'test/book.srt',
+        bookKey: 'test/book.srt',
       );
 
       expect(cues.length, 1);
@@ -82,7 +82,7 @@ void main() {
 00:00:03,500 --> 00:00:04,500
 もう一行
 ''',
-        bookUid: 'test/book.srt',
+        bookKey: 'test/book.srt',
       );
 
       // block 2 の空テキストはスキップされ sentenceIndex は連続
@@ -100,7 +100,7 @@ void main() {
 00:00:00,500 --> 00:00:02,000
 カスタム章節
 ''',
-        bookUid: 'test/book.srt',
+        bookKey: 'test/book.srt',
         chapterHref: 'srt://chapter1',
       );
 
@@ -115,7 +115,7 @@ void main() {
 00:00:01.500 --> 00:00:03.750
 ドット区切りテスト
 ''',
-        bookUid: 'test/book.srt',
+        bookKey: 'test/book.srt',
       );
 
       expect(cues.length, 1);
@@ -126,7 +126,7 @@ void main() {
     test('空文件返回空列表', () {
       final List<AudioCue> cues = SrtParser.parseString(
         content: '',
-        bookUid: 'test/book.srt',
+        bookKey: 'test/book.srt',
       );
 
       expect(cues, isEmpty);
@@ -139,7 +139,7 @@ void main() {
 00:00:01,1 --> 00:00:02,12
 ミリ秒補完テスト
 ''',
-        bookUid: 'test/book.srt',
+        bookKey: 'test/book.srt',
       );
 
       expect(cues.length, 1);

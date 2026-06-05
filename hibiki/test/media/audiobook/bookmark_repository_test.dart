@@ -24,7 +24,7 @@ void main() {
       normCharOffset: 1000,
       label: 'first',
       createdAt: DateTime.utc(2026, 5, 15, 1),
-      ttuBookId: 7,
+      bookKey: 'Book',
       bookTitle: 'Book',
     );
     final second = Bookmark(
@@ -32,49 +32,43 @@ void main() {
       normCharOffset: 2000,
       label: 'second',
       createdAt: DateTime.utc(2026, 5, 15, 2),
-      ttuBookId: 7,
+      bookKey: 'Book',
       bookTitle: 'Book',
     );
 
-    final int firstId = await repo.addBookmark(7, first);
-    final int secondId = await repo.addBookmark(7, second);
+    final int firstId = await repo.addBookmark('Book', first);
+    final int secondId = await repo.addBookmark('Book', second);
 
     await repo.removeBookmarkById(secondId);
-    final bookmarks = await repo.getBookmarks(7);
+    final bookmarks = await repo.getBookmarks('Book');
 
     expect(bookmarks, hasLength(1));
     expect(bookmarks.single.id, firstId);
     expect(bookmarks.single.label, 'first');
   });
 
-  test('migrates legacy JSON preference and deletes source key', () async {
-    // bookmarks.ttu_book_id is a FK to epub_books(id); a real legacy bookmark
-    // belongs to an imported book, so seed the backing row.
-    await db.customStatement(
-      'INSERT INTO epub_books '
-      '(id, title, epub_path, extract_dir, chapter_count, chapters_json, '
-      'imported_at) VALUES (9, ?, ?, ?, 1, ?, 0)',
-      ['Legacy Book', '/x.epub', '/x', '[]'],
-    );
+  test('per-book legacy JSON preference drains into rows and is removed',
+      () async {
+    // The instance-level drainer (_migrateLegacyBookmarks) keys on
+    // `bookmarks_<bookKey>` and runs on first getBookmarks(bookKey).
     final legacy = [
       Bookmark(
         sectionIndex: 3,
         normCharOffset: 3000,
         label: 'legacy',
         createdAt: DateTime.utc(2026, 5, 15, 3),
-        ttuBookId: 9,
+        bookKey: 'Legacy Book',
         bookTitle: 'Legacy Book',
       ).toJson(),
     ];
-    await db.setPref('bookmarks_9', jsonEncode(legacy));
+    await db.setPref('bookmarks_Legacy Book', jsonEncode(legacy));
 
-    await db.migrateLegacyBookmarkPreferences();
-    final bookmarks = await repo.getBookmarks(9);
+    final bookmarks = await repo.getBookmarks('Legacy Book');
 
     expect(bookmarks, hasLength(1));
     expect(bookmarks.single.id, isNotNull);
     expect(bookmarks.single.label, 'legacy');
-    expect(await db.getPref('bookmarks_9'), isNull);
+    expect(await db.getPref('bookmarks_Legacy Book'), isNull);
   });
 
   test('cleans up legacy key even when bookmarks already exist', () async {
@@ -84,12 +78,12 @@ void main() {
         normCharOffset: 3000,
         label: 'legacy',
         createdAt: DateTime.utc(2026, 5, 15, 3),
-        ttuBookId: 9,
+        bookKey: 'Legacy Book',
         bookTitle: 'Legacy Book',
       ).toJson(),
     ];
     await repo.addBookmark(
-      9,
+      'Legacy Book',
       Bookmark(
         sectionIndex: 3,
         normCharOffset: 3000,
@@ -97,49 +91,12 @@ void main() {
         createdAt: DateTime.utc(2026, 5, 15, 3),
       ),
     );
-    await db.setPref('bookmarks_9', jsonEncode(legacy));
+    await db.setPref('bookmarks_Legacy Book', jsonEncode(legacy));
 
-    await db.migrateLegacyBookmarkPreferences();
+    final bookmarks = await repo.getBookmarks('Legacy Book');
 
-    expect(await db.getPref('bookmarks_9'), isNull);
-    final bookmarks = await repo.getBookmarks(9);
+    expect(await db.getPref('bookmarks_Legacy Book'), isNull);
     expect(bookmarks, hasLength(1));
     expect(bookmarks.single.label, 'already migrated');
-  });
-
-  test(
-      'skips legacy bookmarks whose book is gone without aborting the '
-      'migration (HBK-AUDIT-007)', () async {
-    // Enforce FK exactly like production (_openDb sets foreign_keys = ON); the
-    // shared in-memory db above runs with FK OFF. With FK ON, an INSERT OR
-    // IGNORE of a bookmark whose ttu_book_id has no epub_books row hits a FK
-    // violation (OR IGNORE does NOT suppress FK) and aborts the transaction.
-    // The fix must skip the orphan before inserting so migration completes and
-    // the source key is still cleaned.
-    final fkDb = HibikiDatabase.forTesting(
-      NativeDatabase.memory(
-        setup: (raw) => raw.execute('PRAGMA foreign_keys = ON'),
-      ),
-    );
-    addTearDown(fkDb.close);
-    final fkRepo = BookmarkRepository(fkDb);
-
-    final legacy = [
-      Bookmark(
-        sectionIndex: 1,
-        normCharOffset: 100,
-        label: 'orphan',
-        createdAt: DateTime.utc(2026, 5, 15, 4),
-        ttuBookId: 42,
-        bookTitle: 'Deleted Book',
-      ).toJson(),
-    ];
-    await fkDb.setPref('bookmarks_42', jsonEncode(legacy));
-
-    // Must not throw (pre-fix: FK violation aborts the whole migration).
-    await fkDb.migrateLegacyBookmarkPreferences();
-
-    expect(await fkRepo.getBookmarks(42), isEmpty);
-    expect(await fkDb.getPref('bookmarks_42'), isNull);
   });
 }

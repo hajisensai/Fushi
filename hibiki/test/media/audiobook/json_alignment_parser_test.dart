@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 
 AudioCue _cue(int startMs, int endMs) => AudioCue()
-  ..bookUid = 'b'
+  ..bookKey = 'b'
   ..chapterHref = 'ch'
   ..sentenceIndex = 0
   ..textFragmentId = ''
@@ -43,11 +43,11 @@ void main() {
 
       final cues = JsonAlignmentParser.parseString(
         content: json,
-        bookUid: 'override/uid',
+        bookKey: 'override/uid',
       );
 
       expect(cues, hasLength(2));
-      expect(cues[0].bookUid, 'override/uid');
+      expect(cues[0].bookKey, 'override/uid');
       expect(cues[0].chapterHref, 'ch01.xhtml');
       expect(cues[0].sentenceIndex, 0);
       expect(cues[0].textFragmentId, '#p1');
@@ -77,7 +77,7 @@ void main() {
 
       final cues = JsonAlignmentParser.parseString(
         content: json,
-        bookUid: 'b',
+        bookKey: 'b',
       );
 
       expect(cues.single.audioFileIndex, 1);
@@ -92,7 +92,7 @@ void main() {
 
       final cues = JsonAlignmentParser.parseString(
         content: json,
-        bookUid: 'b',
+        bookKey: 'b',
       );
 
       expect(cues, hasLength(1));
@@ -110,7 +110,7 @@ void main() {
 
       final cues = JsonAlignmentParser.parseString(
         content: json,
-        bookUid: 'b',
+        bookKey: 'b',
       );
 
       expect(cues, isEmpty);
@@ -123,7 +123,7 @@ void main() {
 
       final cues = JsonAlignmentParser.parseString(
         content: json,
-        bookUid: 'b',
+        bookKey: 'b',
       );
 
       expect(cues, isEmpty);
@@ -136,7 +136,7 @@ void main() {
     setUp(() {
       allCues = [
         AudioCue()
-          ..bookUid = 'b'
+          ..bookKey = 'b'
           ..chapterHref = 'ch02.xhtml'
           ..sentenceIndex = 0
           ..textFragmentId = '#p1'
@@ -145,7 +145,7 @@ void main() {
           ..endMs = 1000
           ..audioFileIndex = 0,
         AudioCue()
-          ..bookUid = 'b'
+          ..bookKey = 'b'
           ..chapterHref = 'ch01.xhtml'
           ..sentenceIndex = 2
           ..textFragmentId = '#p3'
@@ -154,7 +154,7 @@ void main() {
           ..endMs = 3000
           ..audioFileIndex = 0,
         AudioCue()
-          ..bookUid = 'b'
+          ..bookKey = 'b'
           ..chapterHref = 'ch01.xhtml'
           ..sentenceIndex = 0
           ..textFragmentId = '#p1'
@@ -199,7 +199,7 @@ void main() {
     setUp(() {
       cues = [
         AudioCue()
-          ..bookUid = 'b'
+          ..bookKey = 'b'
           ..chapterHref = 'ch'
           ..sentenceIndex = 0
           ..textFragmentId = ''
@@ -208,7 +208,7 @@ void main() {
           ..endMs = 2000
           ..audioFileIndex = 0,
         AudioCue()
-          ..bookUid = 'b'
+          ..bookKey = 'b'
           ..chapterHref = 'ch'
           ..sentenceIndex = 1
           ..textFragmentId = ''
@@ -217,7 +217,7 @@ void main() {
           ..endMs = 4000
           ..audioFileIndex = 0,
         AudioCue()
-          ..bookUid = 'b'
+          ..bookKey = 'b'
           ..chapterHref = 'ch'
           ..sentenceIndex = 2
           ..textFragmentId = ''

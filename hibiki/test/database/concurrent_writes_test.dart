@@ -198,7 +198,7 @@ void main() {
           n,
           (i) => db.upsertReaderPosition(
             ReaderPositionsCompanion.insert(
-              ttuBookId: 1,
+              bookKey: 'book-1',
               sectionIndex: i % 10,
               normCharOffset: i * 100,
               updatedAt: baseUpdatedAt + i,
@@ -207,7 +207,7 @@ void main() {
         ),
       );
 
-      final row = await db.getReaderPosition(1);
+      final row = await db.getReaderPosition('book-1');
       expect(row, isNotNull);
       // Last-write-wins: the final row reflects the i == n-1 writer's values.
       expect(row!.sectionIndex, (n - 1) % 10);
@@ -224,7 +224,7 @@ void main() {
           n,
           (i) => db.upsertReaderPosition(
             ReaderPositionsCompanion.insert(
-              ttuBookId: i,
+              bookKey: 'book-$i',
               sectionIndex: i,
               normCharOffset: i * 100,
               updatedAt: DateTime.now().millisecondsSinceEpoch,
@@ -234,7 +234,7 @@ void main() {
       );
 
       for (int i = 0; i < n; i++) {
-        final row = await db.getReaderPosition(i);
+        final row = await db.getReaderPosition('book-$i');
         expect(row, isNotNull, reason: 'book $i should exist');
       }
     });

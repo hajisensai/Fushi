@@ -20,9 +20,10 @@ Future<HibikiDatabase> _openRealDb() async {
   return db;
 }
 
-Future<int> _insertBook(HibikiDatabase db, String title) async {
+Future<String> _insertBook(HibikiDatabase db, String title) async {
   return db.insertEpubBook(
     EpubBooksCompanion.insert(
+      bookKey: title,
       title: title,
       epubPath: '/tmp/$title.epub',
       extractDir: '/tmp/$title',
@@ -119,7 +120,7 @@ void main() {
       expect(tags.single.name, 'New');
     });
 
-    test('getBookIdsForAnyTag returns books with any matching tag', () async {
+    test('getBookKeysForAnyTag returns books with any matching tag', () async {
       final db = await _openDb();
       final b1 = await _insertBook(db, 'A');
       final b2 = await _insertBook(db, 'B');
@@ -129,12 +130,12 @@ void main() {
       await db.addTagToBook(b1, t1);
       await db.addTagToBook(b2, t2);
 
-      final ids = await db.getBookIdsForAnyTag({t1, t2});
+      final ids = await db.getBookKeysForAnyTag({t1, t2});
       expect(ids, containsAll([b1, b2]));
       expect(ids, isNot(contains(b3)));
     });
 
-    test('getBookIdsForAllTags returns books with all tags', () async {
+    test('getBookKeysForAllTags returns books with all tags', () async {
       final db = await _openDb();
       final b1 = await _insertBook(db, 'A');
       final b2 = await _insertBook(db, 'B');
@@ -144,7 +145,7 @@ void main() {
       await db.addTagToBook(b1, t2);
       await db.addTagToBook(b2, t1);
 
-      final ids = await db.getBookIdsForAllTags({t1, t2});
+      final ids = await db.getBookKeysForAllTags({t1, t2});
       expect(ids, contains(b1));
       expect(ids, isNot(contains(b2)));
     });

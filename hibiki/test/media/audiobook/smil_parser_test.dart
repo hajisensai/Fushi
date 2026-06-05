@@ -22,7 +22,7 @@ void main() {
 
       final cues = SmilParser.parseString(
         content: smil,
-        bookUid: 'book/1',
+        bookKey: 'book/1',
         chapterHref: 'OEBPS/chapter.xhtml',
       );
 
@@ -31,7 +31,7 @@ void main() {
       expect(cues[0].startMs, 0);
       expect(cues[0].endMs, 2500);
       expect(cues[0].sentenceIndex, 0);
-      expect(cues[0].bookUid, 'book/1');
+      expect(cues[0].bookKey, 'book/1');
       expect(cues[0].chapterHref, 'OEBPS/chapter.xhtml');
       expect(cues[1].textFragmentId, '#p2');
       expect(cues[1].startMs, 2500);
@@ -51,7 +51,7 @@ void main() {
 
       final cues = SmilParser.parseString(
         content: smil,
-        bookUid: 'b',
+        bookKey: 'b',
         chapterHref: 'ch.xhtml',
       );
 
@@ -72,7 +72,7 @@ void main() {
 
       final cues = SmilParser.parseString(
         content: smil,
-        bookUid: 'b',
+        bookKey: 'b',
         chapterHref: 'ch.xhtml',
         audioFileMap: {'track01.mp3': 0, 'track02.mp3': 1},
       );
@@ -92,7 +92,7 @@ void main() {
 
       final cues = SmilParser.parseString(
         content: smil,
-        bookUid: 'b',
+        bookKey: 'b',
         chapterHref: 'ch.xhtml',
       );
 
@@ -117,7 +117,7 @@ void main() {
 
       final cues = SmilParser.parseString(
         content: smil,
-        bookUid: 'b',
+        bookKey: 'b',
         chapterHref: 'ch.xhtml',
       );
 
@@ -132,7 +132,7 @@ void main() {
 
       final cues = SmilParser.parseString(
         content: smil,
-        bookUid: 'b',
+        bookKey: 'b',
         chapterHref: 'ch.xhtml',
       );
 
@@ -151,7 +151,7 @@ void main() {
 
       final cues = SmilParser.parseString(
         content: smil,
-        bookUid: 'b',
+        bookKey: 'b',
         chapterHref: 'ch.xhtml',
       );
 
@@ -170,7 +170,7 @@ void main() {
 
       final cues = SmilParser.parseString(
         content: smil,
-        bookUid: 'b',
+        bookKey: 'b',
         chapterHref: 'ch.xhtml',
       );
       expect(cues, hasLength(1));
@@ -190,7 +190,7 @@ void main() {
 
       final cues = SmilParser.parseString(
         content: smil,
-        bookUid: 'b',
+        bookKey: 'b',
         chapterHref: 'ch.xhtml',
       );
       expect(cues, hasLength(1));
@@ -214,7 +214,7 @@ void main() {
 
       final cues = SmilParser.parseString(
         content: smil,
-        bookUid: 'b',
+        bookKey: 'b',
         chapterHref: 'ch.xhtml',
       );
       // Previously these unit-tagged values returned null and the cues were
@@ -233,7 +233,7 @@ void main() {
 
       final cues = SmilParser.parseString(
         content: smil,
-        bookUid: 'b',
+        bookKey: 'b',
         chapterHref: 'ch.xhtml',
       );
       expect(cues, isEmpty);
