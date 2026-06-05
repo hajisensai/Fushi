@@ -1269,5 +1269,10 @@
     "anki_create_lapis_hint": "向 Anki 添加 Lapis 笔记类型和 Lapis 卡组并自动选中。",
     "anki_create_lapis_success": "已创建 Lapis 笔记类型和卡组。",
     "anki_create_lapis_exists": "Lapis 笔记类型和卡组已存在，已选中。",
-    "anki_create_lapis_failed": "无法创建 Lapis 卡组：$error"
+    "anki_create_lapis_failed": "无法创建 Lapis 卡组：$error",
+    "nav_video": "视频",
+    "section_experimental": "实验性功能",
+    "experimental_video": "视频（实验性）",
+    "experimental_video_hint": "在底栏显示「视频」标签页并启用视频导入。视频播放、查词与制卡为实验性功能。",
+    "video_library_empty": "还没有导入视频"
 }

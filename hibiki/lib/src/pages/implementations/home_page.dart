@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:hibiki/src/sync/sync_auto_trigger.dart';
+import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart'
@@ -16,6 +17,22 @@ import 'package:hibiki/src/shortcuts/gamepad_service.dart'
         gamepadMoveFocusInDirection;
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 
+/// 顶层 tab 的逻辑身份（取代写死的整数索引 0/1/2）。视频 tab 仅在实验开关开启时
+/// 进入 [_HomePageState._activeTabs]，故用枚举身份而非位置来切换/路由——插入这个
+/// 条件 tab 不会再打乱「设置/词典」的索引（消除 `==2` / `case 1/2` / `%3` 这类特殊
+/// 情况）。底栏/侧栏只在渲染层把身份映射成位置。
+enum HomeTab { books, video, dictionaries, settings }
+
+/// 纯函数：给定实验视频开关，返回可见顶层 tab 的**视觉顺序**——视频固定插在书架与
+/// 词典之间（用户要求「在书架和词典管理中间」）。提取成顶层函数便于单测条件插入与
+/// 顺序，不必实例化整个 [HomePage]。底栏/侧栏的位置索引由此列表导出。
+List<HomeTab> homeActiveTabs({required bool videoEnabled}) => <HomeTab>[
+      HomeTab.books,
+      if (videoEnabled) HomeTab.video,
+      HomeTab.dictionaries,
+      HomeTab.settings,
+    ];
+
 class HomePage extends BasePage {
   const HomePage({super.key});
 
@@ -27,10 +44,10 @@ class _HomePageState extends BasePageState<HomePage>
     with WidgetsBindingObserver {
   String get appVersion => appModel.packageInfo.version;
 
-  int _currentTab = 0;
+  HomeTab _currentTab = HomeTab.books;
 
   /// 进入「设置」标签前的来源 tab，供设置全屏左上返回箭头切回。
-  int _previousTab = 0;
+  HomeTab _previousTab = HomeTab.books;
   final FocusNode _keyboardFocusNode = FocusNode();
   final ValueNotifier<int> _dictFocusSignal = ValueNotifier<int>(0);
 
@@ -179,36 +196,57 @@ class _HomePageState extends BasePageState<HomePage>
     return KeyEventResult.ignored;
   }
 
-  /// 统一切换顶层 tab：进入「设置」(2) 前记录来源 tab。
+  /// 当前可见的顶层 tab，按视觉顺序：书架 →（视频）→ 词典 → 设置。视频仅在
+  /// 实验开关开启时插入（位于书架与词典之间）。底栏/侧栏的位置索引由此列表导出。
+  List<HomeTab> _activeTabs() =>
+      homeActiveTabs(videoEnabled: appModel.experimentalVideoEnabled);
+
+  /// 渲染用的当前 tab：若 `_currentTab` 已不在可见列表（例如刚关掉实验开关时仍停在
+  /// 视频 tab），回落到书架，避免渲染一个不存在的 tab。`_currentTab` 自身保持不变，
+  /// 下一次 [_selectTab] 会纠正它。
+  HomeTab get _visibleTab {
+    final List<HomeTab> tabs = _activeTabs();
+    return tabs.contains(_currentTab) ? _currentTab : HomeTab.books;
+  }
+
+  /// 统一切换顶层 tab：进入「设置」前记录来源 tab，供设置全屏返回箭头切回。
   /// 所有切 tab 入口（侧栏 / 底栏 / 快捷键）都走这里，保证 _previousTab 一致。
-  void _selectTab(int logicalIndex) {
+  void _selectTab(HomeTab tab) {
     setState(() {
-      if (logicalIndex == 2 && _currentTab != 2) {
+      if (tab == HomeTab.settings && _currentTab != HomeTab.settings) {
         _previousTab = _currentTab;
       }
-      _currentTab = logicalIndex;
+      _currentTab = tab;
     });
+  }
+
+  /// next/prev 快捷键：在当前可见 tab 列表里环形步进（视频开关变化时自动适配长度）。
+  void _cycleTab(int delta) {
+    final List<HomeTab> tabs = _activeTabs();
+    final int current = tabs.indexOf(_visibleTab);
+    final int next = (current + delta) % tabs.length;
+    _selectTab(tabs[(next + tabs.length) % tabs.length]);
   }
 
   KeyEventResult _executeShortcutAction(ShortcutAction action) {
     switch (action) {
       case ShortcutAction.homeTabBooks:
-        _selectTab(0);
+        _selectTab(HomeTab.books);
         return KeyEventResult.handled;
       case ShortcutAction.homeTabDict:
-        _selectTab(1);
+        _selectTab(HomeTab.dictionaries);
         return KeyEventResult.handled;
       case ShortcutAction.homeTabSettings:
-        _selectTab(2);
+        _selectTab(HomeTab.settings);
         return KeyEventResult.handled;
       case ShortcutAction.homeTabNext:
-        _selectTab((_currentTab + 1) % 3);
+        _cycleTab(1);
         return KeyEventResult.handled;
       case ShortcutAction.homeTabPrev:
-        _selectTab((_currentTab + 2) % 3);
+        _cycleTab(-1);
         return KeyEventResult.handled;
       case ShortcutAction.homeFocusSearch:
-        _selectTab(1);
+        _selectTab(HomeTab.dictionaries);
         _dictFocusSignal.value++;
         return KeyEventResult.handled;
       case ShortcutAction.globalBack:
@@ -309,28 +347,42 @@ class _HomePageState extends BasePageState<HomePage>
             )));
   }
 
-  /// The three top-level destinations, shared by the bottom bar and the side
-  /// rail so both render the SAME labels and (selected) icons.
-  List<AdaptiveNavItem> _navItems() => <AdaptiveNavItem>[
-        AdaptiveNavItem(
+  /// 单个 [HomeTab] 的导航项（图标 + 标签）。底栏与侧栏共用，保证两者标签/选中图标一致。
+  AdaptiveNavItem _navItemFor(HomeTab tab) {
+    switch (tab) {
+      case HomeTab.books:
+        return AdaptiveNavItem(
           icon: Icons.menu_book_outlined,
           selectedIcon: Icons.menu_book,
           label: t.books,
-        ),
-        AdaptiveNavItem(
+        );
+      case HomeTab.video:
+        return AdaptiveNavItem(
+          icon: Icons.movie_outlined,
+          selectedIcon: Icons.movie,
+          label: t.nav_video,
+        );
+      case HomeTab.dictionaries:
+        return AdaptiveNavItem(
           icon: Icons.search_outlined,
           selectedIcon: Icons.search,
           label: t.dictionaries,
-        ),
-        AdaptiveNavItem(
+        );
+      case HomeTab.settings:
+        return AdaptiveNavItem(
           icon: Icons.tune_outlined,
           selectedIcon: Icons.tune,
           label: t.settings,
-        ),
-      ];
+        );
+    }
+  }
+
+  /// 可见 tab 列表对应的导航项（与 [_activeTabs] 顺序一致）。
+  List<AdaptiveNavItem> _navItems(List<HomeTab> tabs) =>
+      tabs.map(_navItemFor).toList();
 
   Widget _buildDesktopLayout(WindowSizeClass sizeClass) {
-    if (_currentTab == 2) {
+    if (_visibleTab == HomeTab.settings) {
       // 设置标签（全部设计系统）：隐藏 3 图标侧栏，全屏二栏（内部
       // MaterialSupportingPaneLayout），左上返回箭头切回来源 tab（参考 Mihon
       // 宽屏设置）。Cupertino 桌面也走这里——叶子控件保持 Cupertino 皮肤，但外壳
@@ -349,16 +401,17 @@ class _HomePageState extends BasePageState<HomePage>
       );
     }
 
+    final List<HomeTab> tabs = _activeTabs();
     final bool reversed = appModel.reverseNavigationBar;
-    final List<AdaptiveNavItem> items = _navItems();
+    final List<AdaptiveNavItem> items = _navItems(tabs);
     final List<AdaptiveNavItem> displayItems =
         reversed ? items.reversed.toList() : items;
-    final int visualIndex =
-        reversed ? (items.length - 1 - _currentTab) : _currentTab;
+    final int logical = tabs.indexOf(_visibleTab);
+    final int visualIndex = reversed ? (tabs.length - 1 - logical) : logical;
 
     void selectVisual(int index) {
-      final int logicalIndex = reversed ? (items.length - 1 - index) : index;
-      _selectTab(logicalIndex);
+      final int logicalIndex = reversed ? (tabs.length - 1 - index) : index;
+      _selectTab(tabs[logicalIndex]);
     }
 
     return Scaffold(
@@ -389,12 +442,13 @@ class _HomePageState extends BasePageState<HomePage>
   }
 
   Widget _buildMobileLayout() {
+    final List<HomeTab> tabs = _activeTabs();
     final bool reversed = appModel.reverseNavigationBar;
-    final List<AdaptiveNavItem> items = _navItems();
+    final List<AdaptiveNavItem> items = _navItems(tabs);
     final List<AdaptiveNavItem> displayItems =
         reversed ? items.reversed.toList() : items;
-    final int visualIndex =
-        reversed ? (items.length - 1 - _currentTab) : _currentTab;
+    final int logical = tabs.indexOf(_visibleTab);
+    final int visualIndex = reversed ? (tabs.length - 1 - logical) : logical;
 
     return Scaffold(
       resizeToAvoidBottomInset: false,
@@ -403,9 +457,8 @@ class _HomePageState extends BasePageState<HomePage>
         context: context,
         currentIndex: visualIndex,
         onTap: (int index) {
-          final int logicalIndex =
-              reversed ? (items.length - 1 - index) : index;
-          _selectTab(logicalIndex);
+          final int logicalIndex = reversed ? (tabs.length - 1 - index) : index;
+          _selectTab(tabs[logicalIndex]);
         },
         items: displayItems,
       ),
@@ -413,12 +466,14 @@ class _HomePageState extends BasePageState<HomePage>
   }
 
   Widget buildBody() {
-    switch (_currentTab) {
-      case 1:
+    switch (_visibleTab) {
+      case HomeTab.video:
+        return HomeVideoPage(repo: VideoBookRepository(appModel.database));
+      case HomeTab.dictionaries:
         return HomeDictionaryPage(focusSignal: _dictFocusSignal);
-      case 2:
+      case HomeTab.settings:
         return const HibikiSettingsContent();
-      default:
+      case HomeTab.books:
         return const HomeReaderPage();
     }
   }

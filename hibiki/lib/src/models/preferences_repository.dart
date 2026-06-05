@@ -204,6 +204,17 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 实验性「视频」功能开关：开启后首页出现「视频」底栏 tab，并放出视频导入入口。
+  /// 默认关闭——视频播放/查词/制卡虽已落地，但作为实验功能默认隐藏（见
+  /// docs/specs/2026-06-05-video-subsystem-plan.md）。
+  bool get experimentalVideoEnabled =>
+      getPref('experimental_video_enabled', defaultValue: false) as bool;
+
+  Future<void> setExperimentalVideoEnabled(bool value) async {
+    await setPref('experimental_video_enabled', value);
+    notifyListeners();
+  }
+
   // ── transcript ───────────────────────────────────────────────────────
 
   bool get isTranscriptPlayerMode =>

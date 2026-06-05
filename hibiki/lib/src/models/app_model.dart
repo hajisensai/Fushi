@@ -1562,6 +1562,12 @@ class AppModel with ChangeNotifier {
   Future<void> setCurrentHomeTabIndex(int index) =>
       prefsRepo.setCurrentHomeTabIndex(index);
 
+  /// 实验性「视频」功能开关（首页视频 tab + 视频导入入口）。
+  bool get experimentalVideoEnabled => prefsRepo.experimentalVideoEnabled;
+
+  Future<void> setExperimentalVideoEnabled(bool value) =>
+      prefsRepo.setExperimentalVideoEnabled(value);
+
   bool get reverseNavigationBar => prefsRepo.reverseNavigationBar;
   void toggleReverseNavigationBar() => prefsRepo.toggleReverseNavigationBar();
 

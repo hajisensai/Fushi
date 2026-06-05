@@ -226,9 +226,10 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           ref: ref,
           appModel: appModel,
         ),
-        // 新导入视频入口门控在 kVideoImportEnabled 后（Phase 3）：已导入视频仍
-        // 在书架展示、点开仍可播放查词，仅隐藏新建导入入口。一行可恢复。
-        if (kVideoImportEnabled)
+        // 新导入视频入口：编译期常量 kVideoImportEnabled 或运行时「实验性视频」
+        // 开关任一开启即放出（开关在设置「实验性功能」分区）。已导入视频始终在
+        // 书架展示、点开仍可播放查词，此处仅控制新建导入入口的可见性。
+        if (kVideoImportEnabled || appModel.experimentalVideoEnabled)
           _headerAction(
             tooltip: t.video_import_action,
             icon: Icons.movie_outlined,

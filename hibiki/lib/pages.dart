@@ -14,6 +14,7 @@ export 'src/pages/implementations/open_stash_dialog_page.dart';
 export 'src/pages/implementations/home_dictionary_page.dart';
 export 'src/pages/implementations/history_reader_page.dart';
 export 'src/pages/implementations/home_reader_page.dart';
+export 'src/pages/implementations/home_video_page.dart';
 export 'src/pages/implementations/home_page.dart';
 export 'src/pages/implementations/text_segmentation_dialog_page.dart';
 export 'src/pages/implementations/reader_hibiki_page.dart';
