@@ -2502,6 +2502,14 @@ class AppModel with ChangeNotifier {
   Future<void> setYomitanApiKey(String value) =>
       prefsRepo.setYomitanApiKey(value);
 
+  bool get texthookerEnabled => prefsRepo.texthookerEnabled;
+  Future<void> setTexthookerEnabled(bool value) =>
+      prefsRepo.setTexthookerEnabled(value);
+
+  List<String> get texthookerUrls => prefsRepo.texthookerUrls;
+  Future<void> setTexthookerUrls(List<String> urls) =>
+      prefsRepo.setTexthookerUrls(urls);
+
   Map<String, String> get customDictCSS => prefsRepo.customDictCSS;
   String getCustomCSSForDict(String dictName) =>
       prefsRepo.getCustomCSSForDict(dictName);

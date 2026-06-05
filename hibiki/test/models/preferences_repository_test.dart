@@ -327,6 +327,21 @@ void main() {
       repo2.dispose();
     });
 
+    test('texthooker prefs round-trip', () async {
+      expect(repo.texthookerEnabled, false);
+      expect(repo.texthookerUrls, [
+        'ws://localhost:6677',
+        'ws://localhost:9001',
+        'ws://localhost:2333',
+      ]);
+
+      await repo.setTexthookerEnabled(true);
+      await repo.setTexthookerUrls(['ws://localhost:6677']);
+
+      expect(repo.texthookerEnabled, true);
+      expect(repo.texthookerUrls, ['ws://localhost:6677']);
+    });
+
     test('reverseReaderBottomBar is independent of reverseNavigationBar',
         () async {
       expect(repo.reverseReaderBottomBar, false); // 默认关

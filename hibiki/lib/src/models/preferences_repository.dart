@@ -148,6 +148,36 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ── texthooker ───────────────────────────────────────────────────────
+
+  static const String _texthookerDefaultUrls =
+      'ws://localhost:6677\nws://localhost:9001\nws://localhost:2333';
+
+  bool get texthookerEnabled =>
+      getPref('texthooker_enabled', defaultValue: false) as bool;
+
+  Future<void> setTexthookerEnabled(bool value) async {
+    await setPref('texthooker_enabled', value);
+    notifyListeners();
+  }
+
+  List<String> get texthookerUrls {
+    final String raw = getPref(
+      'texthooker_urls',
+      defaultValue: _texthookerDefaultUrls,
+    ) as String;
+    return raw
+        .split('\n')
+        .map((String s) => s.trim())
+        .where((String s) => s.isNotEmpty)
+        .toList();
+  }
+
+  Future<void> setTexthookerUrls(List<String> urls) async {
+    await setPref('texthooker_urls', urls.join('\n'));
+    notifyListeners();
+  }
+
   final int defaultSearchDebounceDelay = 100;
 
   int get searchDebounceDelay => getPref('auto_search_debounce_delay',
