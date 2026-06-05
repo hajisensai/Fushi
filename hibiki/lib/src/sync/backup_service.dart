@@ -1,7 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
-import 'package:archive/archive.dart';
+import 'package:archive/archive_io.dart';
 import 'package:flutter/foundation.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -100,20 +101,35 @@ class BackupService {
     required String dbDirectory,
     required String appVersion,
     String? dictionaryResourceDirectory,
+    String? booksRootDirectory,
+    String? audiobooksRootDirectory,
   })  : _db = db,
         _dbDirectory = dbDirectory,
         _dictionaryResourceDirectory = dictionaryResourceDirectory,
+        _booksRootDirectory = booksRootDirectory,
+        _audiobooksRootDirectory = audiobooksRootDirectory,
         _appVersion = appVersion;
 
   final HibikiDatabase _db;
   final String _dbDirectory;
   final String? _dictionaryResourceDirectory;
+
+  /// Root of the extracted-books tree (`<appDoc>/hoshi_books`). When provided,
+  /// the full book content (epub + extracted html/images/fonts + covers) is
+  /// packed into the backup; null keeps the legacy db-only export.
+  final String? _booksRootDirectory;
+
+  /// Root of the audiobook-audio tree (`<appDoc>/audiobooks`). When provided,
+  /// audio files are packed into the backup.
+  final String? _audiobooksRootDirectory;
+
   final String _appVersion;
 
   static const String _dbName = 'hibiki.db';
   static const String _metaName = 'backup_meta.json';
   static const String _dictionaryResourcesPrefix = 'dictionaryResources';
-  static const int _maxImportBytes = 512 * 1024 * 1024; // 512 MB
+  static const String _booksPrefix = 'hoshi_books';
+  static const String _audiobooksPrefix = 'audiobooks';
 
   /// Sidecar file holding this device's sync config across an import. Written
   /// BEFORE the destructive DB overwrite so a crash mid-import is recoverable
@@ -158,9 +174,13 @@ class BackupService {
           _dictionaryResourceDirectory == null
               ? null
               : Directory(_dictionaryResourceDirectory);
+      // Full-data backup includes dictionary resources whenever they exist on
+      // disk — no longer gated on dictionary-sync being enabled (the user asked
+      // for everything). Still strip dictionary DB rows when the resource files
+      // are absent, so the restore never resurrects un-queryable ghost
+      // dictionaries.
       final bool includeDictionary =
-          await SyncRepository(_db).isSyncDictionaryEnabled() &&
-              await _hasCompleteDictionaryResources(dictionaryResourceRoot);
+          await _hasCompleteDictionaryResources(dictionaryResourceRoot);
       await _stripCredentials(tmpDir.path);
       if (!includeDictionary) {
         await _stripDictionaryState(tmpDir.path);
@@ -168,32 +188,48 @@ class BackupService {
 
       final books = await _db.getAllEpubBooks();
       final stats = await _db.getAllReadingStatistics();
+
+      // Record the SOURCE-device content roots so import can rebase the stored
+      // absolute paths (epubPath/extractDir/coverPath/audioRoot/...) onto the
+      // importing device's roots. Null roots → legacy db-only backup.
       final meta = BackupMeta(
         appVersion: _appVersion,
         schemaVersion: _db.schemaVersion,
         createdAt: DateTime.now(),
         bookCount: books.length,
         statsCount: stats.length,
+        booksRoot: _booksRootDirectory,
+        audiobooksRoot: _audiobooksRootDirectory,
       );
 
-      final archive = Archive();
-      final dbBytes = await File(cleanDbPath).readAsBytes();
-      archive.addFile(ArchiveFile(_dbName, dbBytes.length, dbBytes));
+      // Build the flat "zip-path → disk-path" map, then stream every file into
+      // the ZIP off the UI isolate. The old path read each file fully into a
+      // single in-memory Archive and ran a synchronous ZipEncoder().encode() on
+      // the UI isolate — that froze the app (ANR) on any non-trivial library.
+      final Map<String, String> files = <String, String>{
+        _dbName: cleanDbPath,
+      };
       if (includeDictionary) {
-        await _addDirectoryToArchive(
-          archive: archive,
-          root: dictionaryResourceRoot!,
-          archivePrefix: _dictionaryResourcesPrefix,
-        );
+        await _collectTreeFiles(
+            dictionaryResourceRoot!, _dictionaryResourcesPrefix, files);
       }
-      final metaBytes = utf8.encode(
-        const JsonEncoder.withIndent('  ').convert(meta.toJson()),
-      );
-      archive.addFile(ArchiveFile(_metaName, metaBytes.length, metaBytes));
+      if (_booksRootDirectory != null) {
+        await _collectTreeFiles(
+            Directory(_booksRootDirectory), _booksPrefix, files);
+      }
+      if (_audiobooksRootDirectory != null) {
+        await _collectTreeFiles(
+            Directory(_audiobooksRootDirectory), _audiobooksPrefix, files);
+      }
 
-      final zipData = ZipEncoder().encode(archive);
-      if (zipData == null) throw StateError('Failed to encode ZIP archive');
-      await File(outputPath).writeAsBytes(zipData);
+      final String metaJson =
+          const JsonEncoder.withIndent('  ').convert(meta.toJson());
+      await _writeBackupZipInIsolate(
+        outputPath: outputPath,
+        metaName: _metaName,
+        metaJson: metaJson,
+        archivePathToSource: files,
+      );
 
       return meta;
     } finally {
@@ -254,13 +290,17 @@ class BackupService {
   }
 
   /// Validate a backup ZIP. Returns metadata if valid.
+  ///
+  /// Streams the central directory via [InputFileStream] instead of reading the
+  /// whole archive into memory — a full-data backup can be many GB (book + audio
+  /// trees), so there is no size cap and the whole file must never be buffered.
+  /// Only the small `backup_meta.json` entry is decompressed; the db presence
+  /// check is metadata-only.
   Future<BackupMeta?> validateBackup(String zipPath) async {
+    InputFileStream? input;
     try {
-      final file = File(zipPath);
-      final size = await file.length();
-      if (size > _maxImportBytes) return null;
-      final bytes = await file.readAsBytes();
-      final archive = ZipDecoder().decodeBytes(bytes);
+      input = InputFileStream(zipPath);
+      final archive = ZipDecoder().decodeBuffer(input);
       final metaFile = archive.findFile(_metaName);
       if (metaFile == null) return null;
       final metaJson = utf8.decode(metaFile.content as List<int>);
@@ -270,6 +310,8 @@ class BackupService {
       return meta;
     } catch (_) {
       return null;
+    } finally {
+      await input?.close();
     }
   }
 
@@ -495,23 +537,60 @@ class BackupService {
     }
   }
 
-  static Future<void> _addDirectoryToArchive({
-    required Archive archive,
-    required Directory root,
-    required String archivePrefix,
-  }) async {
+  /// Walks [root] and adds every file to [into] keyed by its zip path
+  /// (`<archivePrefix>/<relative>`, always posix separators). Does not read file
+  /// contents — only paths — so it is cheap regardless of tree size.
+  static Future<void> _collectTreeFiles(
+    Directory root,
+    String archivePrefix,
+    Map<String, String> into,
+  ) async {
     if (!await root.exists()) return;
     await for (final FileSystemEntity entity in root.list(recursive: true)) {
       if (entity is! File) continue;
       final String relativePath = p.relative(entity.path, from: root.path);
       final String archivePath =
           p.posix.join(archivePrefix, relativePath.replaceAll(r'\', '/'));
-      archive.addFile(ArchiveFile(
-        archivePath,
-        await entity.length(),
-        await entity.readAsBytes(),
-      ));
+      into[archivePath] = entity.path;
     }
+  }
+
+  /// Streams every file in [archivePathToSource] into a ZIP at [outputPath] on a
+  /// background isolate, plus [metaJson] as [metaName]. Uses STORE (no deflate):
+  /// epub/audio are already compressed and a full library can be GB-scale, so
+  /// streaming-store keeps memory flat and the UI isolate free. A mid-way
+  /// failure deletes the half-written archive so it is never mistaken for valid.
+  static Future<void> _writeBackupZipInIsolate({
+    required String outputPath,
+    required String metaName,
+    required String metaJson,
+    required Map<String, String> archivePathToSource,
+  }) async {
+    await Isolate.run(() async {
+      final ZipFileEncoder encoder = ZipFileEncoder();
+      encoder.create(outputPath);
+      try {
+        final List<int> metaBytes = utf8.encode(metaJson);
+        encoder
+            .addArchiveFile(ArchiveFile(metaName, metaBytes.length, metaBytes));
+        for (final MapEntry<String, String> entry
+            in archivePathToSource.entries) {
+          final File file = File(entry.value);
+          if (!file.existsSync()) continue;
+          await encoder.addFile(file, entry.key, ZipFileEncoder.STORE);
+        }
+        encoder.closeSync();
+      } catch (_) {
+        encoder.closeSync();
+        try {
+          final File partial = File(outputPath);
+          if (partial.existsSync()) partial.deleteSync();
+        } catch (_) {
+          // best-effort cleanup; rethrow the real export failure below.
+        }
+        rethrow;
+      }
+    });
   }
 
   Future<bool> _hasCompleteDictionaryResources(Directory? root) async {
