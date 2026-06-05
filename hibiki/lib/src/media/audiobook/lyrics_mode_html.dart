@@ -162,7 +162,10 @@ function scrollToCenter(el, duration) {
 var _currentIdx = -1;
 var _cues = document.querySelectorAll('.cue');
 
-function setCue(index) {
+// scroll === false (audio-follow OFF) updates the current/near highlight but
+// does NOT auto-scroll, so the user can freely scroll the lyrics while playback
+// continues — mirrors the non-lyrics path where `followAudio` gates reveal.
+function setCue(index, scroll) {
   if (index === _currentIdx) return;
   var old = _currentIdx;
   _currentIdx = index;
@@ -176,12 +179,12 @@ function setCue(index) {
     if (d === 0) _cues[i].classList.add('current');
     else _cues[i].classList.add('near-' + d);
   }
-  // 焦点 caret 激活时，播放推进只换高亮，不把屏幕从用户正读的行拽走。
-  if (!window.__lyricsCaretActive) scrollToCenter(_cues[index]);
+  // 焦点 caret 激活时，播放推进只换高亮，不把屏幕从用户正读的行拽走；跟随关闭(scroll===false)时也不滚。
+  if (scroll !== false && !window.__lyricsCaretActive) scrollToCenter(_cues[index]);
 }
 
 // ── Dart bridge ──
-window.__lyricsSetCue = function(index) { setCue(index); };
+window.__lyricsSetCue = function(index, scroll) { setCue(index, scroll); };
 window.__lyricsGetCurrentIndex = function() { return _currentIdx; };
 // 供 hoshiLyricsCaret 行间移动时把目标 cue 居中（复用同一滚动动画）。
 window.__lyricsScrollToCue = function(index) {
