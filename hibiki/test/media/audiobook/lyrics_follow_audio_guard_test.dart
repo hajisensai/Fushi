@@ -19,7 +19,7 @@ import 'package:hibiki_audio/hibiki_audio.dart';
 void main() {
   AudioCue cue(int i) => AudioCue()
     ..id = i + 1
-    ..bookUid = 'book'
+    ..bookKey = 'book'
     ..chapterHref = 'chapter'
     ..sentenceIndex = i
     ..textFragmentId = ''
@@ -40,7 +40,8 @@ void main() {
 
     // setCue 接受 scroll 形参，scrollToCenter 受其门控（关跟随时不滚）。
     expect(html, contains('function setCue(index, scroll)'));
-    expect(html, contains('if (scroll !== false) scrollToCenter'));
+    expect(html,
+        contains('if (scroll !== false && !window.__lyricsCaretActive) scrollToCenter'));
     // 桥接把第二参（followAudio）透传给 setCue。
     expect(html, contains('window.__lyricsSetCue = function(index, scroll)'));
     // 旧码（恒调 scrollToCenter、单参 setCue）下这三条全红——非同义反复。
