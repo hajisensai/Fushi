@@ -143,6 +143,14 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
         _alignmentPath = dropAlign;
         _alignmentName = p.basename(dropAlign);
       }
+      // 有预填时强制走导入表单：书已有完整有声书时 showImportForm 默认为 false
+      // （existing != null && !_patchingAudio）→ 只读视图会静默忽略预填值。
+      // 复用"补音频"语义，让拖入的音频/对齐文件进入可保存的导入表单。
+      final bool hasDropPrefill =
+          (dropAudio != null && dropAudio.isNotEmpty) || dropAlign != null;
+      if (hasDropPrefill) {
+        _patchingAudio = true;
+      }
     });
   }
 
