@@ -20,6 +20,7 @@ import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
 import 'package:hibiki/src/media/video/video_player_controller.dart';
 import 'package:hibiki/src/media/video/video_shader_manager.dart';
+import 'package:hibiki/src/media/video/video_watch_tracker.dart';
 import 'package:hibiki/src/pages/implementations/jimaku_subtitle_dialog.dart';
 import 'package:hibiki/src/pages/implementations/video_shader_dialog.dart';
 import 'package:hibiki/src/media/video/video_sidecar.dart';
@@ -114,6 +115,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 关闭后，能主动把焦点还给 [Video]——否则那些覆盖层关闭后焦点悬空，空格等快捷键失灵
   /// （根因：FilePicker 打开系统对话框抢走焦点，关闭后不会自动归还）。见 [_refocusVideo]。
   final FocusNode _videoFocusNode = FocusNode(debugLabel: 'videoKeyboard');
+
+  /// 观看统计采集器（观看时长 + 字幕字数 + 完成标记）；首次 load 建，dispose 释放。
+  VideoWatchTracker? _watchTracker;
 
   /// 查词浮层栈（与阅读器/词典页同款，由 [DictionaryPageMixin] 管理）。
   final List<NestedPopupEntry> _popupStack = <NestedPopupEntry>[];
@@ -445,6 +449,30 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       _currentSubtitleSource = externalSubtitlePath ?? _currentSubtitleSource;
     });
 
+    // 首次 load 建观看统计采集器；换片复用同一 controller 实例，已 attach 不重建。
+    if (_watchTracker == null) {
+      final HibikiDatabase db = appModel.database;
+      _watchTracker = VideoWatchTracker(
+        title: title,
+        bookUid: widget.bookUid,
+        addStat: (String t, int chars, int ms) => unawaited(
+          db.addVideoWatchStatistic(
+            title: t,
+            dateKey: _todayKey(),
+            subtitleChars: chars,
+            watchTimeMs: ms,
+          ),
+        ),
+        markCompleted: (String uid) =>
+            db.markVideoCompleted(uid, DateTime.now()),
+        addHourly: (String dateKey, int hour, int deltaMs) =>
+            db.addVideoHourlyWatchTime(
+                dateKey: dateKey, hour: hour, deltaMs: deltaMs),
+      )
+        ..attach(controller)
+        ..start();
+    }
+
     // 恢复用户选过的音轨（含多集换集复用）：audioTracks 在 player open 后才填充，
     // 延迟一拍再读，按 id 匹配；找不到（轨不存在/未选过）就跳过保留 libmpv 默认。
     unawaited(_restoreAudioTrack(controller));
@@ -468,6 +496,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   String _encodeEpisodes() => jsonEncode(
         _episodes.map((PlaylistEntry e) => e.toJson()).toList(),
       );
+
+  /// 今日 dateKey（`yyyy-MM-dd`），视频观看统计累加键。
+  String _todayKey() {
+    final DateTime d = DateTime.now();
+    return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+  }
 
   /// 若有持久化音轨偏好 [_currentAudioTrackId]，在 [controller] 的 audioTracks 里
   /// 按 id 匹配并切换。延迟读取以等待 libmpv open 后填充音轨列表。
@@ -519,6 +553,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     }
 
     await widget.repo.updateCurrentEpisode(widget.bookUid, index);
+    // 换集：清空字幕去重集，新集字幕从头计（完成标记按整本书不变）。
+    _watchTracker?.onEpisodeChanged();
     // 把上次选择的字幕偏好带进新集（同类应用：内嵌同轨 / 外挂同语言后缀）。
     await _loadEpisode(
       index,
@@ -579,6 +615,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       entry.dispose();
       _popupOverlayEntry = null;
     }
+    _watchTracker?.dispose();
+    _watchTracker = null;
     _controller?.dispose();
     _videoFocusNode.dispose();
     super.dispose();
