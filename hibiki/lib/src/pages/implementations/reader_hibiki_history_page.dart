@@ -12,6 +12,7 @@ import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:hibiki/src/media/audiobook/book_import_dialog.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
+import 'package:hibiki/src/media/video/video_feature_flags.dart';
 import 'package:hibiki/src/media/video/video_import_dialog.dart';
 import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -225,11 +226,14 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           ref: ref,
           appModel: appModel,
         ),
-        _headerAction(
-          tooltip: t.video_import_action,
-          icon: Icons.movie_outlined,
-          onTap: _openVideoImport,
-        ),
+        // 新导入视频入口门控在 kVideoImportEnabled 后（Phase 3）：已导入视频仍
+        // 在书架展示、点开仍可播放查词，仅隐藏新建导入入口。一行可恢复。
+        if (kVideoImportEnabled)
+          _headerAction(
+            tooltip: t.video_import_action,
+            icon: Icons.movie_outlined,
+            onTap: _openVideoImport,
+          ),
         _headerAction(
           tooltip: t.collections,
           icon: Icons.collections_bookmark_outlined,
