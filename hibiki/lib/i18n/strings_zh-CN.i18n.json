@@ -1290,5 +1290,6 @@
     "video_jimaku_no_results": "没有找到字幕",
     "video_jimaku_no_key": "请先填写 Jimaku API key",
     "video_jimaku_download_failed": "下载失败",
-    "video_jimaku_downloaded": "字幕已下载并应用"
+    "video_jimaku_downloaded": "字幕已下载并应用",
+    "shortcut_action_audiobook_seek_clicked": "跳转音频到点击的句子"
 }

@@ -48,7 +48,11 @@ enum ShortcutAction {
   // Audiobook
   audiobookPlayPause(ShortcutScope.audiobook, 'audiobook_play_pause'),
   audiobookNextSentence(ShortcutScope.audiobook, 'audiobook_next_sentence'),
-  audiobookPrevSentence(ShortcutScope.audiobook, 'audiobook_prev_sentence');
+  audiobookPrevSentence(ShortcutScope.audiobook, 'audiobook_prev_sentence'),
+  // 鼠标中键点句 → 跳到该句并播放。位置型动作，运行时不走
+  // _executeShortcutAction，而是 onPointerSeek 经 resolveMouse 判定后定位执行。
+  audiobookSeekToClickedSentence(
+      ShortcutScope.audiobook, 'audiobook_seek_clicked_sentence');
 
   const ShortcutAction(this.scope, this.key);
 

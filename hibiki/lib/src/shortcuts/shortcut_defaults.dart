@@ -135,6 +135,11 @@ class ShortcutDefaults {
     ShortcutAction.audiobookPrevSentence: _kb([
       _key(LogicalKeyboardKey.arrowLeft, {ModifierKey.ctrl}),
     ]),
+    // 中键点句 → 跳到该句并播放。鼠标键是位置型动作，运行时不走
+    // _executeShortcutAction，而是 onPointerSeek 经 resolveMouse 判定后定位执行。
+    ShortcutAction.audiobookSeekToClickedSentence: const ShortcutBindingSet(
+      mouseBindings: [MouseBinding(1)],
+    ),
   };
 
   static final Map<ShortcutAction, ShortcutBindingSet> _macOS = {
@@ -150,6 +155,7 @@ class ShortcutDefaults {
           return b;
         }).toList(growable: false),
         gamepadBindings: entry.value.gamepadBindings,
+        mouseBindings: entry.value.mouseBindings,
       ),
   };
 
@@ -166,6 +172,8 @@ class ShortcutDefaults {
           case ShortcutScope.audiobook:
             return ShortcutBindingSet(
               gamepadBindings: desktop.gamepadBindings,
+              // Android 可接鼠标，保留中键 seek 绑定（移动端无害）。
+              mouseBindings: desktop.mouseBindings,
             );
           case ShortcutScope.home:
           case ShortcutScope.global:

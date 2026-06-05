@@ -244,5 +244,22 @@ void main() {
         contains(GamepadButton.thumbRight),
       );
     });
+
+    test(
+        'seek-to-clicked-sentence defaults to middle mouse on desktop & mobile',
+        () {
+      for (final p in const <TargetPlatform>[
+        TargetPlatform.windows,
+        TargetPlatform.linux,
+        TargetPlatform.macOS,
+        TargetPlatform.android,
+        TargetPlatform.iOS,
+      ]) {
+        final set = ShortcutDefaults.forPlatform(
+            p)[ShortcutAction.audiobookSeekToClickedSentence];
+        expect(set, isNotNull, reason: '$p');
+        expect(set!.mouseBindings, const [MouseBinding(1)], reason: '$p');
+      }
+    });
   });
 }

@@ -48,6 +48,8 @@ String _actionLabel(ShortcutAction action) {
       return t.shortcut_action_audiobook_next_sentence;
     case ShortcutAction.audiobookPrevSentence:
       return t.shortcut_action_audiobook_prev_sentence;
+    case ShortcutAction.audiobookSeekToClickedSentence:
+      return t.shortcut_action_audiobook_seek_clicked;
   }
 }
 

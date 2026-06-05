@@ -114,6 +114,21 @@ class HibikiShortcutRegistry extends ChangeNotifier {
     return null;
   }
 
+  ShortcutAction? resolveMouse(
+    int button, {
+    required ShortcutScope scope,
+  }) {
+    final target = MouseBinding(button);
+    for (final action in ShortcutAction.actionsForScope(scope)) {
+      final bindings = _bindings[action];
+      if (bindings == null) continue;
+      for (final mb in bindings.mouseBindings) {
+        if (mb == target) return action;
+      }
+    }
+    return null;
+  }
+
   ShortcutAction? hasKeyboardConflict(
     ShortcutScope scope,
     InputBinding binding, {
