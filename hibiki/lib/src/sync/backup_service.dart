@@ -1,11 +1,40 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
-import 'package:archive/archive.dart';
+import 'package:archive/archive_io.dart';
 import 'package:flutter/foundation.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
+
+/// Rewrites an absolute [oldPath] that lives under [oldRoot] so it lives under
+/// [newRoot] instead, preserving the sub-path. Returns [oldPath] verbatim when
+/// it is not under [oldRoot] (already local, or an unrelated location).
+///
+/// A full-data backup stores file paths captured on the SOURCE device. On the
+/// importing device the app directories differ (iOS reassigns the container
+/// UUID on every reinstall), so the stored absolute paths would not resolve.
+/// Import rebases every stored path from the backup's recorded root to this
+/// device's matching root. Separators are normalized so `/` vs `\` differences
+/// between the compared strings don't defeat the prefix match.
+String rebasePath(String oldPath, String oldRoot, String newRoot) {
+  String stripTrailing(String s) =>
+      (s.endsWith('/') || s.endsWith('\\')) ? s.substring(0, s.length - 1) : s;
+  // Normalize separators ONLY for the prefix comparison; the returned path
+  // keeps the source path's original separators (a POSIX backup restored on a
+  // POSIX host must not gain Windows separators just because p.join would, and
+  // vice-versa). So we slice the original oldPath rather than rebuild via join.
+  final String nrOld = stripTrailing(oldRoot.replaceAll('\\', '/'));
+  final String npOld = oldPath.replaceAll('\\', '/');
+  if (npOld == nrOld) return stripTrailing(newRoot);
+  // Require a separator boundary so "/a/books_extra" is not treated as under
+  // "/a/books". replaceAll preserves length, so nrOld.length indexes the
+  // original oldPath correctly.
+  if (!npOld.startsWith('$nrOld/')) return oldPath;
+  final String suffix = oldPath.substring(nrOld.length); // keeps leading sep
+  return stripTrailing(newRoot) + suffix;
+}
 
 class BackupMeta {
   BackupMeta({
@@ -14,6 +43,8 @@ class BackupMeta {
     required this.createdAt,
     required this.bookCount,
     required this.statsCount,
+    this.booksRoot,
+    this.audiobooksRoot,
   });
 
   final String appVersion;
@@ -22,12 +53,24 @@ class BackupMeta {
   final int bookCount;
   final int statsCount;
 
+  /// Absolute root of the extracted-books tree on the SOURCE device
+  /// (`<appDoc>/hoshi_books`), captured so import can rebase stored book paths
+  /// to this device's root. Null for legacy (db-only) backups → import skips
+  /// path rebasing.
+  final String? booksRoot;
+
+  /// Absolute root of the audiobook-audio tree on the SOURCE device
+  /// (`<appDoc>/audiobooks`). Null for legacy backups.
+  final String? audiobooksRoot;
+
   Map<String, dynamic> toJson() => {
         'appVersion': appVersion,
         'schemaVersion': schemaVersion,
         'createdAt': createdAt.toIso8601String(),
         'bookCount': bookCount,
         'statsCount': statsCount,
+        if (booksRoot != null) 'booksRoot': booksRoot,
+        if (audiobooksRoot != null) 'audiobooksRoot': audiobooksRoot,
       };
 
   factory BackupMeta.fromJson(Map<String, dynamic> json) => BackupMeta(
@@ -37,6 +80,8 @@ class BackupMeta {
         // Optional for backward compatibility with older backups.
         bookCount: json['bookCount'] as int? ?? 0,
         statsCount: json['statsCount'] as int? ?? 0,
+        booksRoot: json['booksRoot'] as String?,
+        audiobooksRoot: json['audiobooksRoot'] as String?,
       );
 
   static BackupMeta? tryParse(String source) {
@@ -56,20 +101,35 @@ class BackupService {
     required String dbDirectory,
     required String appVersion,
     String? dictionaryResourceDirectory,
+    String? booksRootDirectory,
+    String? audiobooksRootDirectory,
   })  : _db = db,
         _dbDirectory = dbDirectory,
         _dictionaryResourceDirectory = dictionaryResourceDirectory,
+        _booksRootDirectory = booksRootDirectory,
+        _audiobooksRootDirectory = audiobooksRootDirectory,
         _appVersion = appVersion;
 
   final HibikiDatabase _db;
   final String _dbDirectory;
   final String? _dictionaryResourceDirectory;
+
+  /// Root of the extracted-books tree (`<appDoc>/hoshi_books`). When provided,
+  /// the full book content (epub + extracted html/images/fonts + covers) is
+  /// packed into the backup; null keeps the legacy db-only export.
+  final String? _booksRootDirectory;
+
+  /// Root of the audiobook-audio tree (`<appDoc>/audiobooks`). When provided,
+  /// audio files are packed into the backup.
+  final String? _audiobooksRootDirectory;
+
   final String _appVersion;
 
   static const String _dbName = 'hibiki.db';
   static const String _metaName = 'backup_meta.json';
   static const String _dictionaryResourcesPrefix = 'dictionaryResources';
-  static const int _maxImportBytes = 512 * 1024 * 1024; // 512 MB
+  static const String _booksPrefix = 'hoshi_books';
+  static const String _audiobooksPrefix = 'audiobooks';
 
   /// Sidecar file holding this device's sync config across an import. Written
   /// BEFORE the destructive DB overwrite so a crash mid-import is recoverable
@@ -114,9 +174,13 @@ class BackupService {
           _dictionaryResourceDirectory == null
               ? null
               : Directory(_dictionaryResourceDirectory);
+      // Full-data backup includes dictionary resources whenever they exist on
+      // disk — no longer gated on dictionary-sync being enabled (the user asked
+      // for everything). Still strip dictionary DB rows when the resource files
+      // are absent, so the restore never resurrects un-queryable ghost
+      // dictionaries.
       final bool includeDictionary =
-          await SyncRepository(_db).isSyncDictionaryEnabled() &&
-              await _hasCompleteDictionaryResources(dictionaryResourceRoot);
+          await _hasCompleteDictionaryResources(dictionaryResourceRoot);
       await _stripCredentials(tmpDir.path);
       if (!includeDictionary) {
         await _stripDictionaryState(tmpDir.path);
@@ -124,32 +188,48 @@ class BackupService {
 
       final books = await _db.getAllEpubBooks();
       final stats = await _db.getAllReadingStatistics();
+
+      // Record the SOURCE-device content roots so import can rebase the stored
+      // absolute paths (epubPath/extractDir/coverPath/audioRoot/...) onto the
+      // importing device's roots. Null roots → legacy db-only backup.
       final meta = BackupMeta(
         appVersion: _appVersion,
         schemaVersion: _db.schemaVersion,
         createdAt: DateTime.now(),
         bookCount: books.length,
         statsCount: stats.length,
+        booksRoot: _booksRootDirectory,
+        audiobooksRoot: _audiobooksRootDirectory,
       );
 
-      final archive = Archive();
-      final dbBytes = await File(cleanDbPath).readAsBytes();
-      archive.addFile(ArchiveFile(_dbName, dbBytes.length, dbBytes));
+      // Build the flat "zip-path → disk-path" map, then stream every file into
+      // the ZIP off the UI isolate. The old path read each file fully into a
+      // single in-memory Archive and ran a synchronous ZipEncoder().encode() on
+      // the UI isolate — that froze the app (ANR) on any non-trivial library.
+      final Map<String, String> files = <String, String>{
+        _dbName: cleanDbPath,
+      };
       if (includeDictionary) {
-        await _addDirectoryToArchive(
-          archive: archive,
-          root: dictionaryResourceRoot!,
-          archivePrefix: _dictionaryResourcesPrefix,
-        );
+        await _collectTreeFiles(
+            dictionaryResourceRoot!, _dictionaryResourcesPrefix, files);
       }
-      final metaBytes = utf8.encode(
-        const JsonEncoder.withIndent('  ').convert(meta.toJson()),
-      );
-      archive.addFile(ArchiveFile(_metaName, metaBytes.length, metaBytes));
+      if (_booksRootDirectory != null) {
+        await _collectTreeFiles(
+            Directory(_booksRootDirectory), _booksPrefix, files);
+      }
+      if (_audiobooksRootDirectory != null) {
+        await _collectTreeFiles(
+            Directory(_audiobooksRootDirectory), _audiobooksPrefix, files);
+      }
 
-      final zipData = ZipEncoder().encode(archive);
-      if (zipData == null) throw StateError('Failed to encode ZIP archive');
-      await File(outputPath).writeAsBytes(zipData);
+      final String metaJson =
+          const JsonEncoder.withIndent('  ').convert(meta.toJson());
+      await _writeBackupZipInIsolate(
+        outputPath: outputPath,
+        metaName: _metaName,
+        metaJson: metaJson,
+        archivePathToSource: files,
+      );
 
       return meta;
     } finally {
@@ -210,13 +290,17 @@ class BackupService {
   }
 
   /// Validate a backup ZIP. Returns metadata if valid.
+  ///
+  /// Streams the central directory via [InputFileStream] instead of reading the
+  /// whole archive into memory — a full-data backup can be many GB (book + audio
+  /// trees), so there is no size cap and the whole file must never be buffered.
+  /// Only the small `backup_meta.json` entry is decompressed; the db presence
+  /// check is metadata-only.
   Future<BackupMeta?> validateBackup(String zipPath) async {
+    InputFileStream? input;
     try {
-      final file = File(zipPath);
-      final size = await file.length();
-      if (size > _maxImportBytes) return null;
-      final bytes = await file.readAsBytes();
-      final archive = ZipDecoder().decodeBytes(bytes);
+      input = InputFileStream(zipPath);
+      final archive = ZipDecoder().decodeBuffer(input);
       final metaFile = archive.findFile(_metaName);
       if (metaFile == null) return null;
       final metaJson = utf8.decode(metaFile.content as List<int>);
@@ -224,8 +308,14 @@ class BackupService {
       if (meta == null) return null;
       if (archive.findFile(_dbName) == null) return null;
       return meta;
-    } catch (_) {
+    } catch (e, st) {
+      // A null result tells the UI "invalid backup". Surface the real reason
+      // (corrupt zip / read error / OOM) so it is not silently indistinguishable
+      // from a genuinely malformed archive (review W4).
+      debugPrint('BackupService.validateBackup failed for $zipPath: $e\n$st');
       return null;
+    } finally {
+      await input?.close();
     }
   }
 
@@ -263,78 +353,142 @@ class BackupService {
     required String zipPath,
     bool importSettings = true,
     String? dictionaryResourceDirectory,
+    String? booksRootDirectory,
+    String? audiobooksRootDirectory,
   }) async {
     final dbPath = p.join(dbDirectory, _dbName);
-    final bytes = await File(zipPath).readAsBytes();
-    final archive = ZipDecoder().decodeBytes(bytes);
-    final dbFile = archive.findFile(_dbName);
-    if (dbFile == null) throw StateError('No $_dbName in backup archive');
-    final String? dictionaryRestoreDirectory = dictionaryResourceDirectory;
-    List<MapEntry<ArchiveFile, String>>? dictionaryRestorePlan;
-    if (dictionaryRestoreDirectory != null) {
-      dictionaryRestorePlan = _buildDictionaryRestorePlan(
-        archive: archive,
-        dictionaryResourceDirectory: dictionaryRestoreDirectory,
-      );
-    }
+    // Stream the central directory instead of buffering the whole (GB-scale)
+    // archive in memory. Each entry's bytes are read lazily on `.content`; the
+    // stream stays open until every read completes (closed in `finally`).
+    final InputFileStream input = InputFileStream(zipPath);
+    try {
+      final archive = ZipDecoder().decodeBuffer(input);
+      final dbFile = archive.findFile(_dbName);
+      if (dbFile == null) throw StateError('No $_dbName in backup archive');
 
-    final sidecar = File(p.join(dbDirectory, _preserveSidecar));
-    final String bakPath = '$dbPath.pre-restore.bak';
-    final currentDb = File(dbPath);
-    final bool haveCurrent = currentDb.existsSync();
+      // Parse the source-device content roots so book/audio paths can be
+      // rebased onto this device after the trees are restored.
+      BackupMeta? meta;
+      final ArchiveFile? metaFile = archive.findFile(_metaName);
+      if (metaFile != null) {
+        meta = BackupMeta.tryParse(utf8.decode(metaFile.content as List<int>));
+      }
 
-    // 1) Snapshot the current DB (crash safety) + record what to preserve.
-    //    Skipped on a fresh install (no current DB) → backup applied verbatim,
-    //    so the toggle is moot there.
-    Map<String, String> preservedSync = const <String, String>{};
-    if (haveCurrent) {
-      if (importSettings) {
-        preservedSync = await _readDeviceLocalPrefs(dbDirectory);
-        if (preservedSync.isNotEmpty) {
-          await sidecar.writeAsString(jsonEncode(
-              <String, dynamic>{'mode': 'prefs', 'prefs': preservedSync}));
+      final String? dictionaryRestoreDirectory = dictionaryResourceDirectory;
+      List<MapEntry<ArchiveFile, String>>? dictionaryRestorePlan;
+      if (dictionaryRestoreDirectory != null) {
+        dictionaryRestorePlan = _buildDictionaryRestorePlan(
+          archive: archive,
+          dictionaryResourceDirectory: dictionaryRestoreDirectory,
+        );
+      }
+
+      final sidecar = File(p.join(dbDirectory, _preserveSidecar));
+      final String bakPath = '$dbPath.pre-restore.bak';
+      final currentDb = File(dbPath);
+      final bool haveCurrent = currentDb.existsSync();
+
+      // 1) Snapshot the current DB (crash safety) + record what to preserve.
+      //    Skipped on a fresh install (no current DB) → backup applied verbatim,
+      //    so the toggle is moot there.
+      Map<String, String> preservedSync = const <String, String>{};
+      if (haveCurrent) {
+        if (importSettings) {
+          preservedSync = await _readDeviceLocalPrefs(dbDirectory);
+          if (preservedSync.isNotEmpty) {
+            await sidecar.writeAsString(jsonEncode(
+                <String, dynamic>{'mode': 'prefs', 'prefs': preservedSync}));
+          }
+        } else {
+          await sidecar
+              .writeAsString(jsonEncode(<String, dynamic>{'mode': 'settings'}));
         }
-      } else {
-        await sidecar
-            .writeAsString(jsonEncode(<String, dynamic>{'mode': 'settings'}));
+        await currentDb.copy(bakPath);
       }
-      await currentDb.copy(bakPath);
-    }
 
-    // Must delete -wal/-shm AFTER reading prefs (step 1 opened+closed a WAL
-    // connection) and BEFORE overwriting the main .db: leftover WAL frames from
-    // the old DB would otherwise be replayed against the imported file and
-    // corrupt it.
-    final walFile = File('$dbPath-wal');
-    if (walFile.existsSync()) await walFile.delete();
-    final shmFile = File('$dbPath-shm');
-    if (shmFile.existsSync()) await shmFile.delete();
+      // Must delete -wal/-shm AFTER reading prefs (step 1 opened+closed a WAL
+      // connection) and BEFORE overwriting the main .db: leftover WAL frames
+      // from the old DB would otherwise be replayed against the imported file
+      // and corrupt it.
+      final walFile = File('$dbPath-wal');
+      if (walFile.existsSync()) await walFile.delete();
+      final shmFile = File('$dbPath-shm');
+      if (shmFile.existsSync()) await shmFile.delete();
 
-    // 2) Overwrite with the backup DB bytes.
-    await currentDb.writeAsBytes(dbFile.content as List<int>);
+      // 2) Overwrite with the backup DB bytes.
+      await currentDb.writeAsBytes(dbFile.content as List<int>);
 
-    if (dictionaryRestorePlan != null && dictionaryRestoreDirectory != null) {
-      await _restoreDictionaryResources(
-        restorePlan: dictionaryRestorePlan,
-        dictionaryResourceDirectory: dictionaryRestoreDirectory,
-      );
-    }
-
-    // 3) Restore what must stay on this device — inline, not deferred to
-    //    startup, so the common path never depends on bak surviving a restart.
-    if (importSettings) {
-      // Re-apply device-local sync config (preferences is schema-stable).
-      if (preservedSync.isNotEmpty) {
-        await _applyPreservedConfig(dbDirectory, preservedSync);
+      if (dictionaryRestorePlan != null && dictionaryRestoreDirectory != null) {
+        await _restoreDictionaryResources(
+          restorePlan: dictionaryRestorePlan,
+          dictionaryResourceDirectory: dictionaryRestoreDirectory,
+        );
       }
-    } else if (haveCurrent) {
-      // Keep this device's whole settings layer.
-      await _restoreSettingsLayer(dbDirectory);
-    }
 
-    // 4) Success: drop the sidecar and the pre-restore copy (no disk leak).
-    await _safeDelete(sidecar.path);
-    await _safeDelete(bakPath);
+      // 2b) Restore the book + audiobook content trees (full-data backup).
+      //     PREPARE both (write to sibling `.import-tmp` dirs) BEFORE COMMITTING
+      //     either (fast rename-swap), so a failure during the GB-scale write
+      //     phase swaps nothing and leaves both existing trees intact — a user's
+      //     whole library must never be half-destroyed. Only runs when the
+      //     caller supplies the roots AND the backup carries that tree.
+      final List<String> toCommit = <String>[];
+      try {
+        if (booksRootDirectory != null &&
+            await _prepareTreeRestore(
+                archive, _booksPrefix, booksRootDirectory)) {
+          toCommit.add(booksRootDirectory);
+        }
+        if (audiobooksRootDirectory != null &&
+            await _prepareTreeRestore(
+                archive, _audiobooksPrefix, audiobooksRootDirectory)) {
+          toCommit.add(audiobooksRootDirectory);
+        }
+      } catch (_) {
+        // A write failed: drop every staged temp dir; no tree was swapped.
+        if (booksRootDirectory != null) {
+          await _abortPreparedTree(booksRootDirectory);
+        }
+        if (audiobooksRootDirectory != null) {
+          await _abortPreparedTree(audiobooksRootDirectory);
+        }
+        rethrow;
+      }
+      // All writes succeeded → commit each prepared tree (fast renames).
+      for (final String root in toCommit) {
+        await _commitPreparedTree(root);
+      }
+
+      // 3) Restore what must stay on this device — inline, not deferred to
+      //    startup, so the common path never depends on bak surviving a restart.
+      if (importSettings) {
+        // Re-apply device-local sync config (preferences is schema-stable).
+        if (preservedSync.isNotEmpty) {
+          await _applyPreservedConfig(dbDirectory, preservedSync);
+        }
+      } else if (haveCurrent) {
+        // Keep this device's whole settings layer.
+        await _restoreSettingsLayer(dbDirectory);
+      }
+
+      // 3b) Rebase the imported DB's stored absolute paths (which point at the
+      //     SOURCE device's roots) onto this device's roots. Books/audiobooks
+      //     are content, so they come from the backup in BOTH import modes →
+      //     always rebase. No-op for a legacy backup (meta has no roots).
+      if (meta != null) {
+        await _rebaseContentPaths(
+          dbDirectory: dbDirectory,
+          meta: meta,
+          newBooksRoot: booksRootDirectory,
+          newAudiobooksRoot: audiobooksRootDirectory,
+        );
+      }
+
+      // 4) Success: drop the sidecar and the pre-restore copy (no disk leak).
+      await _safeDelete(sidecar.path);
+      await _safeDelete(bakPath);
+    } finally {
+      await input.close();
+    }
   }
 
   /// Finish a pending import at startup, before any sync code reads prefs.
@@ -451,23 +605,60 @@ class BackupService {
     }
   }
 
-  static Future<void> _addDirectoryToArchive({
-    required Archive archive,
-    required Directory root,
-    required String archivePrefix,
-  }) async {
+  /// Walks [root] and adds every file to [into] keyed by its zip path
+  /// (`<archivePrefix>/<relative>`, always posix separators). Does not read file
+  /// contents — only paths — so it is cheap regardless of tree size.
+  static Future<void> _collectTreeFiles(
+    Directory root,
+    String archivePrefix,
+    Map<String, String> into,
+  ) async {
     if (!await root.exists()) return;
     await for (final FileSystemEntity entity in root.list(recursive: true)) {
       if (entity is! File) continue;
       final String relativePath = p.relative(entity.path, from: root.path);
       final String archivePath =
           p.posix.join(archivePrefix, relativePath.replaceAll(r'\', '/'));
-      archive.addFile(ArchiveFile(
-        archivePath,
-        await entity.length(),
-        await entity.readAsBytes(),
-      ));
+      into[archivePath] = entity.path;
     }
+  }
+
+  /// Streams every file in [archivePathToSource] into a ZIP at [outputPath] on a
+  /// background isolate, plus [metaJson] as [metaName]. Uses STORE (no deflate):
+  /// epub/audio are already compressed and a full library can be GB-scale, so
+  /// streaming-store keeps memory flat and the UI isolate free. A mid-way
+  /// failure deletes the half-written archive so it is never mistaken for valid.
+  static Future<void> _writeBackupZipInIsolate({
+    required String outputPath,
+    required String metaName,
+    required String metaJson,
+    required Map<String, String> archivePathToSource,
+  }) async {
+    await Isolate.run(() async {
+      final ZipFileEncoder encoder = ZipFileEncoder();
+      encoder.create(outputPath);
+      try {
+        final List<int> metaBytes = utf8.encode(metaJson);
+        encoder
+            .addArchiveFile(ArchiveFile(metaName, metaBytes.length, metaBytes));
+        for (final MapEntry<String, String> entry
+            in archivePathToSource.entries) {
+          final File file = File(entry.value);
+          if (!file.existsSync()) continue;
+          await encoder.addFile(file, entry.key, ZipFileEncoder.STORE);
+        }
+        encoder.closeSync();
+      } catch (_) {
+        encoder.closeSync();
+        try {
+          final File partial = File(outputPath);
+          if (partial.existsSync()) partial.deleteSync();
+        } catch (_) {
+          // best-effort cleanup; rethrow the real export failure below.
+        }
+        rethrow;
+      }
+    });
   }
 
   Future<bool> _hasCompleteDictionaryResources(Directory? root) async {
@@ -552,6 +743,213 @@ class BackupService {
         flush: true,
       );
     }
+  }
+
+  /// Files in [archive] under `<prefix>/`, validated against path traversal and
+  /// mapped to absolute targets under [targetRootPath]. Mirrors the dictionary
+  /// plan's safety checks (reject absolute / `..` escapes, `p.isWithin` gate).
+  static List<MapEntry<ArchiveFile, String>> _buildTreeRestorePlan({
+    required Archive archive,
+    required String prefix,
+    required String targetRootPath,
+  }) {
+    final Directory targetRoot = Directory(targetRootPath);
+    final String canonicalRoot = p.canonicalize(targetRoot.path);
+    final List<MapEntry<ArchiveFile, String>> plan =
+        <MapEntry<ArchiveFile, String>>[];
+    for (final ArchiveFile file in archive.files) {
+      if (!file.isFile) continue;
+      final String rawName = file.name.replaceAll(r'\', '/');
+      if (!rawName.startsWith('$prefix/')) continue;
+      final String relativePath = rawName.substring(prefix.length + 1);
+      final String normalizedRelative = p.posix.normalize(relativePath);
+      if (relativePath.isEmpty ||
+          p.posix.isAbsolute(relativePath) ||
+          normalizedRelative == '..' ||
+          normalizedRelative.startsWith('../')) {
+        throw FormatException('Invalid backup content path: ${file.name}');
+      }
+      final String targetPath =
+          p.normalize(p.join(targetRoot.path, normalizedRelative));
+      final String canonicalTarget = p.canonicalize(targetPath);
+      if (canonicalTarget != canonicalRoot &&
+          !p.isWithin(canonicalRoot, canonicalTarget)) {
+        throw FormatException('Invalid backup content path: ${file.name}');
+      }
+      plan.add(MapEntry<ArchiveFile, String>(file, targetPath));
+    }
+    return plan;
+  }
+
+  static String _importTmpPath(String root) => '$root.import-tmp';
+  static String _importOldPath(String root) => '$root.import-old';
+
+  /// Removes any stale `.import-tmp` / `.import-old` siblings left by a prior
+  /// import that crashed mid-swap. Called on entry to every prepare so a stale
+  /// `.import-old` can never be mistaken for a valid rollback target by a later
+  /// import (review W1).
+  static Future<void> _clearImportLeftovers(String targetRootPath) async {
+    for (final String path in <String>[
+      _importTmpPath(targetRootPath),
+      _importOldPath(targetRootPath),
+    ]) {
+      final Directory d = Directory(path);
+      if (await d.exists()) await d.delete(recursive: true);
+    }
+  }
+
+  /// PHASE 1 of the content-tree restore: write every file under `<prefix>/`
+  /// into the sibling `<root>.import-tmp` (NO swap yet). Returns true when there
+  /// is something staged to commit; false when the backup carries no files under
+  /// [prefix] (db-only / audio-less backup) so the existing tree is left alone.
+  ///
+  /// Splitting write (slow, GB-scale, failure-prone) from the swap (fast rename)
+  /// lets the caller stage ALL trees before committing ANY — a write failure
+  /// then swaps nothing and leaves every existing tree intact (review W2).
+  static Future<bool> _prepareTreeRestore(
+    Archive archive,
+    String prefix,
+    String targetRootPath,
+  ) async {
+    final String tmpRoot = _importTmpPath(targetRootPath);
+    final List<MapEntry<ArchiveFile, String>> plan = _buildTreeRestorePlan(
+      archive: archive,
+      prefix: prefix,
+      targetRootPath: tmpRoot,
+    );
+    await _clearImportLeftovers(targetRootPath);
+    if (plan.isEmpty) return false;
+
+    final Directory tmpDir = Directory(tmpRoot);
+    await tmpDir.create(recursive: true);
+    try {
+      for (final MapEntry<ArchiveFile, String> entry in plan) {
+        final File dest = File(entry.value);
+        dest.parent.createSync(recursive: true);
+        await dest.writeAsBytes(entry.key.content as List<int>, flush: true);
+      }
+    } catch (_) {
+      if (await tmpDir.exists()) await tmpDir.delete(recursive: true);
+      rethrow; // nothing swapped; existing tree untouched
+    }
+    return true;
+  }
+
+  /// PHASE 2: swap the staged `<root>.import-tmp` into place. tmp and target are
+  /// siblings → rename is atomic on the same filesystem. Caller invokes this for
+  /// each prepared tree back-to-back; only the (rare) rename failure between two
+  /// trees leaves a cross-tree half-state, which is far smaller than the old
+  /// write-between-swaps window.
+  static Future<void> _commitPreparedTree(String targetRootPath) async {
+    final String asideRoot = _importOldPath(targetRootPath);
+    final Directory aside = Directory(asideRoot);
+    final Directory target = Directory(targetRootPath);
+    final Directory tmpDir = Directory(_importTmpPath(targetRootPath));
+    if (await aside.exists()) await aside.delete(recursive: true);
+    if (await target.exists()) await target.rename(asideRoot);
+    try {
+      await tmpDir.rename(targetRootPath);
+    } catch (_) {
+      // Roll back: put the old tree back if the new one didn't land.
+      if (await aside.exists() && !await target.exists()) {
+        await aside.rename(targetRootPath);
+      }
+      rethrow;
+    }
+    if (await aside.exists()) await aside.delete(recursive: true);
+  }
+
+  /// Drops a staged-but-not-committed `<root>.import-tmp` (idempotent).
+  static Future<void> _abortPreparedTree(String targetRootPath) async {
+    final Directory tmpDir = Directory(_importTmpPath(targetRootPath));
+    if (await tmpDir.exists()) await tmpDir.delete(recursive: true);
+  }
+
+  /// Rebases the imported DB's stored absolute content paths from the backup's
+  /// source roots ([BackupMeta.booksRoot] / [BackupMeta.audiobooksRoot]) onto
+  /// this device's [newBooksRoot] / [newAudiobooksRoot]. No-op for a legacy
+  /// backup (meta has no roots). Cover paths can live under EITHER tree (epub
+  /// covers in hoshi_books, audiobook covers in audiobooks), so they try both.
+  static Future<void> _rebaseContentPaths({
+    required String dbDirectory,
+    required BackupMeta meta,
+    required String? newBooksRoot,
+    required String? newAudiobooksRoot,
+  }) async {
+    final String? oldBooks = meta.booksRoot;
+    final String? oldAudio = meta.audiobooksRoot;
+    final bool canBooks = oldBooks != null && newBooksRoot != null;
+    final bool canAudio = oldAudio != null && newAudiobooksRoot != null;
+    if (!canBooks && !canAudio) return;
+
+    final HibikiDatabase db = HibikiDatabase(dbDirectory);
+    try {
+      if (canBooks) {
+        for (final EpubBookRow b in await db.getAllEpubBooks()) {
+          await db.updateEpubBookContentPaths(
+            b.bookKey,
+            epubPath: rebasePath(b.epubPath, oldBooks, newBooksRoot),
+            extractDir: rebasePath(b.extractDir, oldBooks, newBooksRoot),
+            coverPath: b.coverPath == null
+                ? null
+                : _rebaseEither(b.coverPath!, oldBooks, newBooksRoot, oldAudio,
+                    newAudiobooksRoot),
+          );
+        }
+      }
+      if (canAudio) {
+        for (final AudiobookRow a in await db.getAllAudiobooks()) {
+          // Rebase each path inside audioPathsJson. A malformed value (corrupt
+          // row, not a JSON string-list) must not abort the whole import — keep
+          // it as-is and move on (review W3).
+          String? rebasedJson = a.audioPathsJson;
+          if (a.audioPathsJson != null) {
+            try {
+              final dynamic decoded = jsonDecode(a.audioPathsJson!);
+              if (decoded is List) {
+                rebasedJson = jsonEncode(decoded
+                    .whereType<String>()
+                    .map((s) => rebasePath(s, oldAudio, newAudiobooksRoot))
+                    .toList());
+              }
+            } catch (e) {
+              debugPrint('BackupService: skipped rebasing audioPathsJson for '
+                  '${a.bookKey}: $e');
+            }
+          }
+          await db.updateAudiobookPaths(
+            a.bookKey,
+            audioRoot: a.audioRoot == null
+                ? null
+                : rebasePath(a.audioRoot!, oldAudio, newAudiobooksRoot),
+            audioPathsJson: rebasedJson,
+            alignmentPath:
+                rebasePath(a.alignmentPath, oldAudio, newAudiobooksRoot),
+          );
+        }
+      }
+      await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
+    } finally {
+      await db.close();
+    }
+  }
+
+  /// Rebases [path] trying the books mapping first, then the audiobooks mapping.
+  /// A cover written under either tree resolves; one not under either is
+  /// returned unchanged.
+  static String _rebaseEither(
+    String path,
+    String oldBooks,
+    String newBooks,
+    String? oldAudio,
+    String? newAudio,
+  ) {
+    final String viaBooks = rebasePath(path, oldBooks, newBooks);
+    if (viaBooks != path) return viaBooks;
+    if (oldAudio != null && newAudio != null) {
+      return rebasePath(path, oldAudio, newAudio);
+    }
+    return path;
   }
 
   static Future<void> _safeDelete(String path) async {

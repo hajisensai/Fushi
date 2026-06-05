@@ -811,6 +811,12 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
         dbDirectory: appModel.databaseDirectory.path,
         dictionaryResourceDirectory: appModel.dictionaryResourceDirectory.path,
         appVersion: appModel.packageInfo.version,
+        // Full-data backup: pack the book + audiobook content trees too. Roots
+        // are derived the same way the app lays them out under the documents
+        // dir (hoshi_books / audiobooks).
+        booksRootDirectory: p.join(appModel.appDirectory.path, 'hoshi_books'),
+        audiobooksRootDirectory:
+            p.join(appModel.appDirectory.path, 'audiobooks'),
       );
 
       final tmpDir = await getTemporaryDirectory();
@@ -951,6 +957,11 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
         zipPath: filePath,
         importSettings: importSettings,
         dictionaryResourceDirectory: appModel.dictionaryResourceDirectory.path,
+        // Full-data restore: extract the content trees and rebase the DB's
+        // absolute paths onto this device's roots.
+        booksRootDirectory: p.join(appModel.appDirectory.path, 'hoshi_books'),
+        audiobooksRootDirectory:
+            p.join(appModel.appDirectory.path, 'audiobooks'),
       );
 
       if (mounted) {

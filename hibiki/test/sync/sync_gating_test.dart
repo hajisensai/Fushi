@@ -286,8 +286,12 @@ void main() {
     });
   });
 
-  group('exportBackup honours the dictionary gate', () {
-    test('disabled omits dictionaryResources; enabled includes it', () async {
+  group('exportBackup includes dictionary resources whenever present', () {
+    // Full-data backup packs everything that exists on disk: the dictionary
+    // resources are no longer gated on the sync-dictionary toggle. (Absence of
+    // the resource files still strips the dictionary DB rows — covered in
+    // backup_service_test.dart.)
+    test('included regardless of the sync-dictionary toggle', () async {
       final Directory dbDir =
           await Directory.systemTemp.createTemp('t4_dict_db_');
       final Directory dictDir =
@@ -314,14 +318,17 @@ void main() {
           appVersion: '1.0.0',
         );
 
+        // Toggle OFF: full-data backup still includes the resources (the
+        // sync-dictionary gate no longer applies to local backup).
         await SyncRepository(onDiskDb).setSyncDictionaryEnabled(false);
         final String offPath = '${outDir.path}/off.zip';
         await service.exportBackup(offPath);
         final offArchive =
             ZipDecoder().decodeBytes(await File(offPath).readAsBytes());
         expect(offArchive.findFile('dictionaryResources/JMdict/blobs.bin'),
-            isNull);
+            isNotNull);
 
+        // Toggle ON: also included.
         await SyncRepository(onDiskDb).setSyncDictionaryEnabled(true);
         final String onPath = '${outDir.path}/on.zip';
         await service.exportBackup(onPath);
