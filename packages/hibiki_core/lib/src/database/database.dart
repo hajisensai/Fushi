@@ -1422,7 +1422,7 @@ class HibikiDatabase extends _$HibikiDatabase {
           book_title TEXT,
           page_in_chapter INTEGER,
           total_pages_in_chapter INTEGER)''');
-      await customStatement('''
+        await customStatement('''
         INSERT INTO bookmarks_new
           (id, book_key, section_index, norm_char_offset, label, created_at,
            book_title, page_in_chapter, total_pages_in_chapter)
@@ -1466,7 +1466,7 @@ class HibikiDatabase extends _$HibikiDatabase {
           cover_path TEXT,
           imported_at INTEGER NOT NULL,
           book_key TEXT NOT NULL DEFAULT '')''');
-      await customStatement('''
+        await customStatement('''
         INSERT INTO srt_books_new
           (id, uid, title, author, audio_root, audio_paths_json, srt_path,
            cover_path, imported_at, book_key)
@@ -1495,7 +1495,7 @@ class HibikiDatabase extends _$HibikiDatabase {
           health_measured_at INTEGER,
           health_reason TEXT,
           follow_audio INTEGER)''');
-      await customStatement('''
+        await customStatement('''
         INSERT INTO audiobooks_new
           (id, book_key, audio_root, audio_paths_json, alignment_format,
            alignment_path, health_kind_raw, match_rate_pct, health_measured_at,
@@ -1530,8 +1530,8 @@ class HibikiDatabase extends _$HibikiDatabase {
           start_ms INTEGER NOT NULL,
           end_ms INTEGER NOT NULL,
           audio_file_index INTEGER NOT NULL)''');
-      // 9a. non-audiobook-uid cues (srt-owned) carried over verbatim.
-      await customStatement('''
+        // 9a. non-audiobook-uid cues (srt-owned) carried over verbatim.
+        await customStatement('''
         INSERT INTO audio_cues_new
           (id, book_key, chapter_href, sentence_index, text_fragment_id,
            cue_text, start_ms, end_ms, audio_file_index)
@@ -1540,8 +1540,8 @@ class HibikiDatabase extends _$HibikiDatabase {
                ac.audio_file_index
         FROM audio_cues ac
         WHERE ac.book_uid NOT LIKE '$_kLegacyUidPrefix%' ''');
-      // 9b. audiobook-uid cues translated through the map.
-      await customStatement('''
+        // 9b. audiobook-uid cues translated through the map.
+        await customStatement('''
         INSERT INTO audio_cues_new
           (id, book_key, chapter_href, sentence_index, text_fragment_id,
            cue_text, start_ms, end_ms, audio_file_index)
@@ -1564,7 +1564,7 @@ class HibikiDatabase extends _$HibikiDatabase {
         CREATE TABLE book_profiles_new (
           book_key TEXT NOT NULL PRIMARY KEY,
           profile_id INTEGER NOT NULL REFERENCES profiles (id) ON DELETE CASCADE)''');
-      await customStatement('''
+        await customStatement('''
         INSERT INTO book_profiles_new (book_key, profile_id)
         SELECT m.book_key, bp.profile_id
         FROM book_profiles bp

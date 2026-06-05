@@ -316,8 +316,7 @@ void main() {
     expect(second.errors, isEmpty);
   });
 
-  test('audiobook package syncs and binds to the target device book',
-      () async {
+  test('audiobook package syncs and binds to the target device book', () async {
     final FakeAssetStore store = FakeAssetStore();
     final FakeSyncBackend backend = FakeSyncBackend(store);
     final Directory tmp = Directory('${work.path}/tmp')..createSync();

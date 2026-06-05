@@ -844,7 +844,8 @@ void main() {
         chaptersJson: '[]',
         importedAt: 2,
       ));
-      final String backupBookId = (await srcDb.getAllEpubBooks()).single.bookKey;
+      final String backupBookId =
+          (await srcDb.getAllEpubBooks()).single.bookKey;
       await srcDb.setPrefTyped<int>('audiobook_pos_$backupBookId', 4242);
       final zipDir = await Directory.systemTemp.createTemp('hibiki_keep_zip_');
       addTearDown(() => zipDir.delete(recursive: true));

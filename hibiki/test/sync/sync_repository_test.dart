@@ -178,7 +178,8 @@ void main() {
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
-      expect(await repo.getAudiobookPosition('book-7'), 0); // default when unset
+      expect(
+          await repo.getAudiobookPosition('book-7'), 0); // default when unset
       await repo.setAudiobookPosition('book-7', 1234);
       expect(await repo.getAudiobookPosition('book-7'), 1234);
     });

@@ -346,7 +346,8 @@ void main() {
 
     // Conflict book: both sides off base.
     final EpubBookRow conflictBook = await _seedBook(db, 'ConflictBook');
-    await _seedPosition(db, conflictBook.bookKey, updatedAt: 120, fraction: 0.6);
+    await _seedPosition(db, conflictBook.bookKey,
+        updatedAt: 120, fraction: 0.6);
     await db.setSyncBaseline(
         sanitizeTtuFilename('ConflictBook'), 'progress', 50);
 
@@ -383,7 +384,8 @@ void main() {
 
     // Conflict book: both sides off base → manual choice required.
     final EpubBookRow conflictBook = await _seedBook(db, 'ConflictBook');
-    await _seedPosition(db, conflictBook.bookKey, updatedAt: 120, fraction: 0.6);
+    await _seedPosition(db, conflictBook.bookKey,
+        updatedAt: 120, fraction: 0.6);
     await db.setSyncBaseline(
         sanitizeTtuFilename('ConflictBook'), 'progress', 50);
 
