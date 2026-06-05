@@ -308,39 +308,45 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       AnkiConnectService service, String url) async {
     try {
       File? audioFile;
-      if (url.startsWith('file://')) {
-        audioFile = File(url.replaceFirst('file://', ''));
-      } else if (url.startsWith('/')) {
-        audioFile = File(url);
-      } else if (url.startsWith('http')) {
-        final client = HttpClient();
-        try {
-          final request = await client.getUrl(Uri.parse(url));
-          final response = await request.close();
-          // A non-200 returns an HTML/JSON error body; writing it verbatim to
-          // .mp3 would embed a broken "audio" file into the card
-          // (HBK-AUDIT-019).
-          if (response.statusCode != 200) {
-            debugPrint(
-                'AnkiConnectRepository._storeRemoteAudio: HTTP ${response.statusCode} for $url');
-            return null;
+      switch (AnkiAudioRef.classify(url)) {
+        case AnkiAudioRefKind.empty:
+          return null;
+        case AnkiAudioRefKind.localFile:
+          // file:// URI or a bare absolute path (Unix `/…` or Windows `C:\…`).
+          audioFile = File(AnkiAudioRef.localPath(url));
+        case AnkiAudioRefKind.remoteUrl:
+          final client = HttpClient();
+          try {
+            final request = await client.getUrl(Uri.parse(url));
+            final response = await request.close();
+            // A non-200 returns an HTML/JSON error body; writing it verbatim to
+            // .mp3 would embed a broken "audio" file into the card
+            // (HBK-AUDIT-019).
+            if (response.statusCode != 200) {
+              debugPrint(
+                  'AnkiConnectRepository._storeRemoteAudio: HTTP ${response.statusCode} for $url');
+              return null;
+            }
+            final bytes =
+                await response.fold<List<int>>([], (a, b) => a..addAll(b));
+            final cacheDir =
+                Directory('${Directory.systemTemp.path}/anki-media');
+            if (!cacheDir.existsSync()) cacheDir.createSync(recursive: true);
+            final urlHash = url.hashCode.toUnsigned(32).toRadixString(16);
+            // HBK-AUDIT-062: derive the real extension from the response
+            // Content-Type (falling back to the URL path, then mp3) so non-mp3
+            // audio is not mislabeled as .mp3 in Anki.
+            final ext = _audioExtension(response.headers.contentType, url);
+            audioFile = File('${cacheDir.path}/hibiki_audio_$urlHash.$ext');
+            await audioFile.writeAsBytes(bytes);
+          } finally {
+            client.close();
           }
-          final bytes =
-              await response.fold<List<int>>([], (a, b) => a..addAll(b));
-          final cacheDir = Directory('${Directory.systemTemp.path}/anki-media');
-          if (!cacheDir.existsSync()) cacheDir.createSync(recursive: true);
-          final urlHash = url.hashCode.toUnsigned(32).toRadixString(16);
-          // HBK-AUDIT-062: derive the real extension from the response
-          // Content-Type (falling back to the URL path, then mp3) so non-mp3
-          // audio is not mislabeled as .mp3 in Anki.
-          final ext = _audioExtension(response.headers.contentType, url);
-          audioFile = File('${cacheDir.path}/hibiki_audio_$urlHash.$ext');
-          await audioFile.writeAsBytes(bytes);
-        } finally {
-          client.close();
-        }
       }
-      if (audioFile == null || !audioFile.existsSync()) return null;
+      // Every switch branch above either returns or assigns audioFile, so it is
+      // non-null here; only existence can still fail (missing local file or a
+      // download that produced no file).
+      if (!audioFile.existsSync()) return null;
       final bytes = await audioFile.readAsBytes();
       final filename = audioFile.uri.pathSegments.last;
       await service.storeMediaFile(

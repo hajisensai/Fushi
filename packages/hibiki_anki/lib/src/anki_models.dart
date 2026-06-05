@@ -437,6 +437,35 @@ String mimeTypeForPath(String path) {
   }
 }
 
+/// Kind of audio reference resolved by [WordAudioResolver] and handed to the
+/// repo media-store paths.
+enum AnkiAudioRefKind { empty, remoteUrl, localFile }
+
+/// Classifies a word-audio reference for Anki media storage, decided purely
+/// from its string form so the repo audio paths are unit-testable.
+///
+/// `http(s)://…` is a remote URL to download; **everything else** is a local
+/// file: a `file://` URI **or** a bare absolute path, Unix (`/…`) **or**
+/// Windows (`C:\…`). The repo media-store helpers used to branch on
+/// `file://` / `/` / `http` only and silently dropped Windows drive-letter
+/// paths, so local word pronunciation never reached the card on Windows
+/// (sibling of BUG-046). Treating any non-URL ref as a file removes that
+/// special case instead of bolting on another `startsWith` branch.
+class AnkiAudioRef {
+  const AnkiAudioRef._();
+
+  static AnkiAudioRefKind classify(String ref) {
+    if (ref.isEmpty) return AnkiAudioRefKind.empty;
+    if (ref.startsWith('http')) return AnkiAudioRefKind.remoteUrl;
+    return AnkiAudioRefKind.localFile;
+  }
+
+  /// Resolves a [AnkiAudioRefKind.localFile] ref to a filesystem path,
+  /// decoding `file://` URIs and returning bare paths unchanged.
+  static String localPath(String ref) =>
+      ref.startsWith('file://') ? Uri.parse(ref).toFilePath() : ref;
+}
+
 String ankiInlineMediaReference(String addMediaResult) {
   final imageSrc = RegExp(r'''<img\s+[^>]*src=["']([^"']+)["'][^>]*>''')
       .firstMatch(addMediaResult);

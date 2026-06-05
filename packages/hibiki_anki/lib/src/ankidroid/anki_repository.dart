@@ -316,34 +316,39 @@ class AnkiRepository extends BaseAnkiRepository {
   Future<String?> _addRemoteAudio(String url) async {
     try {
       File? audioFile;
-      if (url.startsWith('file://')) {
-        audioFile = File(url.replaceFirst('file://', ''));
-      } else if (url.startsWith('/')) {
-        audioFile = File(url);
-      } else if (url.startsWith('http')) {
-        final client = HttpClient();
-        try {
-          final request = await client.getUrl(Uri.parse(url));
-          final response = await request.close();
-          // A non-200 returns an HTML/JSON error body; writing it verbatim to
-          // .mp3 would embed a broken "audio" file into the card
-          // (HBK-AUDIT-019).
-          if (response.statusCode != 200) {
-            debugPrint(
-                'AnkiRepository._addRemoteAudio: HTTP ${response.statusCode} for $url');
-            return null;
+      switch (AnkiAudioRef.classify(url)) {
+        case AnkiAudioRefKind.empty:
+          return null;
+        case AnkiAudioRefKind.localFile:
+          // file:// URI or a bare absolute path (Unix `/…` or Windows `C:\…`).
+          audioFile = File(AnkiAudioRef.localPath(url));
+        case AnkiAudioRefKind.remoteUrl:
+          final client = HttpClient();
+          try {
+            final request = await client.getUrl(Uri.parse(url));
+            final response = await request.close();
+            // A non-200 returns an HTML/JSON error body; writing it verbatim to
+            // .mp3 would embed a broken "audio" file into the card
+            // (HBK-AUDIT-019).
+            if (response.statusCode != 200) {
+              debugPrint(
+                  'AnkiRepository._addRemoteAudio: HTTP ${response.statusCode} for $url');
+              return null;
+            }
+            final bytes =
+                await response.fold<List<int>>([], (a, b) => a..addAll(b));
+            final cacheDir = await _mediaCacheDir();
+            final urlHash = url.hashCode.toUnsigned(32).toRadixString(16);
+            audioFile = File('${cacheDir.path}/hibiki_audio_$urlHash.mp3');
+            await audioFile.writeAsBytes(bytes);
+          } finally {
+            client.close();
           }
-          final bytes =
-              await response.fold<List<int>>([], (a, b) => a..addAll(b));
-          final cacheDir = await _mediaCacheDir();
-          final urlHash = url.hashCode.toUnsigned(32).toRadixString(16);
-          audioFile = File('${cacheDir.path}/hibiki_audio_$urlHash.mp3');
-          await audioFile.writeAsBytes(bytes);
-        } finally {
-          client.close();
-        }
       }
-      if (audioFile == null || !audioFile.existsSync()) return null;
+      // Every switch branch above either returns or assigns audioFile, so it is
+      // non-null here; only existence can still fail (missing local file or a
+      // download that produced no file).
+      if (!audioFile.existsSync()) return null;
       return _addMediaFile(
           audioFile.path, audioFile.uri.pathSegments.last, 'audio/mpeg');
     } catch (e, stack) {
