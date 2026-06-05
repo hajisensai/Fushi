@@ -123,6 +123,7 @@ dependencies:
   record: 6.0.0
   brotli: ^0.6.0
   bonsoir: ^7.1.1
+  web_socket_channel: ^3.0.0
 dependency_overrides:
   flutter_inappwebview_windows:
     path: ../packages/flutter_inappwebview_windows
