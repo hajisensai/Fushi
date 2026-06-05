@@ -81,9 +81,14 @@ class ErrorLogService extends ChangeNotifier with FrameSafeNotifier {
 
   /// 在调用 native 词典导入 FFI 之前**同步**落盘一条面包屑。[detail] 应能唯一
   /// 标识本次导入（如词典文件名）。必须同步，否则进程在异步 flush 前就已崩溃。
+  ///
+  /// 写入内容带时间戳：用户「正常强杀」恰好命中某本 FFI 执行中时，下次启动会
+  /// 把残留误报为崩溃（与真硬崩在文件层不可区分）；带上时间戳让人工读日志时
+  /// 能判断这条残留有多旧，区分「刚导一半被杀」和「很久以前的残留」。
   void markImportStart(String detail) {
     try {
-      _breadcrumbFile?.writeAsStringSync(detail, flush: true);
+      _breadcrumbFile?.writeAsStringSync('[${DateTime.now()}] $detail',
+          flush: true);
     } catch (e) {
       debugPrint('[ErrorLogService] markImportStart failed: $e');
     }
