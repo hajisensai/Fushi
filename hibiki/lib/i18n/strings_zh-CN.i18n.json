@@ -1226,5 +1226,6 @@
     "yomitan_api_server": "Yomitan API 服务器",
     "yomitan_api_server_hint": "让 yomitan-api 客户端查询 Hibiki 词典（端口 19633）",
     "yomitan_api_port": "Yomitan API 端口",
-    "yomitan_api_key": "Yomitan API 密钥（可选）"
+    "yomitan_api_key": "Yomitan API 密钥（可选）",
+    "texthooker": "文本钩子"
 }

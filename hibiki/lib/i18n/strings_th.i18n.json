@@ -1226,5 +1226,6 @@
     "yomitan_api_server": "Yomitan API server",
     "yomitan_api_server_hint": "Let yomitan-api clients query Hibiki's dictionaries (port 19633)",
     "yomitan_api_port": "Yomitan API port",
-    "yomitan_api_key": "Yomitan API key (optional)"
+    "yomitan_api_key": "Yomitan API key (optional)",
+    "texthooker": "Texthooker"
 }
