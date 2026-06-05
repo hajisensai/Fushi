@@ -53,7 +53,8 @@ void main() {
     );
   });
 
-  test('textStyle.fontFamily is the user custom font or system default (no '
+  test(
+      'textStyle.fontFamily is the user custom font or system default (no '
       'Japanese pin)', () {
     expect(
       textStyleSource,
