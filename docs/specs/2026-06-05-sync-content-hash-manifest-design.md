@@ -29,16 +29,16 @@
 
 ### 目标
 
-- **G1（防损坏 = 完整性保证）**：下载完成后用 manifest 里的 md5 校验文件，不符则丢弃重试，绝不污染本地。**这是唯一的数据完整性保证，与 mtime 无关**——无论方向怎么判，落地的数据一定完整未损坏。
+- **G1（防损坏 = 完整性保证）**：下载完成后用 manifest 里的 md5 校验文件，不符则拒绝落地、记错误，绝不污染本地。**这是唯一的数据完整性保证，与 mtime 无关**——无论方向怎么判，落地的数据一定完整未损坏。
 - **G2（内容更新传播 = 尽力而为的最新性）**：同名但内容不同的大资产，按"修改时间新的胜"自动覆盖，覆盖前先落临时文件校验、通过才原子替换。**mtime 是依赖设备时钟的启发式**：时钟回拨等极端情况下可能判错方向（拿到较旧但**仍完整**的版本），但绝不会损坏数据。要 100% "永远最新" 只能弹窗让人选，已与用户确认选 A（自动、不打扰），接受此取舍。
-- **G3（全后端一致）**：机制不依赖任一后端的原生 hash 能力。
-- **G4（大文件不重复算 hash）**：仅二期需要——比对"本地已存在大资产 vs 远端"时，本地 md5 按 `(path,size,mtime)` 缓存，文件未变不重读。一期不需要缓存（见 §4、§6）。
+- **G3（全后端一致）**：核心机制不依赖任一后端的原生 hash 能力；原生 hash 仅作为可选的上传端加速校验。
+- **G4（云端完整性）**：见 §7，四层防线保证坏数据不会被任何设备用上。
 
 ### 非目标
 
 - 不做块级/增量同步（rsync 式 delta）；整文件粒度。
 - 不为大文件内容冲突做交互式弹窗（A：mtime 自动胜，已与用户确认）。
-- 不改小 JSON（progress / stats / audiobook position）的现有时间戳同步机制。
+- 不改小 JSON（progress / stats / 有声书位置）的**时间戳同步机制**本身（仅删除其开关，见 §8）。
 - 不传播删除（保持现有 union 不删语义）。
 
 ## 3. 核心机制：我们自己拥有的 sidecar manifest
@@ -55,20 +55,14 @@
 
 - `v`：schema 版本，便于演进。
 - `md5`：资产文件内容的 md5（hex）。
-- `size`：字节数（md5 之前的廉价预筛）。
-- `mtime`：**上传方写入时的本地资产文件修改时间戳（毫秒）**，作为 G2 的"谁更新"判据。注意这是"资产被生成/导出的时间"，不是文件传到云端的时间。
+- `size`：字节数（md5 之前的廉价预筛 + 截断检测）。
+- `mtime`：**上传方写入时的本地资产文件修改时间戳（毫秒）**，G2 的"谁更新"判据。是"资产被生成/导出的时间"，不是文件传到云端的时间。
 
-> 为什么不用现有的 `AssetEntry.sizeBytes` 或后端 mtime：WebDAV PROPFIND 不返回大小、各后端 mtime 语义不一（上传时间 vs 修改时间），不可移植。manifest 把这三个值变成我们自己写、自己读的数据，消除后端差异。
+> 为什么不用 `AssetEntry.sizeBytes` 或后端 mtime：WebDAV PROPFIND 不返回大小、各后端 mtime 语义不一，不可移植。manifest 把这三个值变成我们自己写自己读的数据，消除后端差异。
 
 ### 3.2 manifest 命名约定
 
-`<assetName>.manifest.json`，例如：
-
-- 词典包 `物書堂.hibikidict` → `物書堂.hibikidict.manifest.json`
-- 有声书包 `audiobook.hibikiaudio` → `audiobook.hibikiaudio.manifest.json`
-- 书 epub `content.epub` → `content.epub.manifest.json`
-
-manifest 自身在 union 的名字集合里要被**排除**（`isReservedSyncFolderName` 同理新增 `.manifest.json` 后缀过滤），不能被当成一个待同步资产。
+`<assetName>.manifest.json`（如 `物書堂.hibikidict.manifest.json`、`audiobook.hibikiaudio.manifest.json`、`content.epub.manifest.json`）。manifest 自身在 union 名字集合里**排除**（`isReservedSyncFolderName` 新增 `.manifest.json` 后缀过滤），不能被当成待同步资产。
 
 ## 4. 本地 md5 计算与缓存
 
@@ -77,98 +71,111 @@ manifest 自身在 union 的名字集合里要被**排除**（`isReservedSyncFol
 ```dart
 /// 流式计算文件 md5（不整文件进内存），返回小写 hex。
 Future<String> computeFileMd5(File file);
-```
 
-实现用 `package:crypto` 的 `md5.bind(file.openRead())`，瓶颈是把整个文件读一遍的磁盘 IO（小文件微秒级，但大资产可达数百 MB，手机闪存上是数百 ms 级），不是 CPU。
-
-**一期不需要缓存**：只在"刚下载的临时文件"和"刚导出的临时文件"上算 md5，这两个文件本来就在手上/必须读，零额外成本。
-
-**二期才引入缓存**：比对"本地已存在的大资产 vs 远端"时，若每次自动同步都把所有本地大文件重读一遍 md5，对大书库是数 GB 重复 IO。届时加：
-
-```dart
 /// 带缓存的 md5：缓存键 (绝对路径, size, mtimeMs)；命中直接返回，
 /// 未命中或 size/mtime 变化时重算并写缓存。
 Future<String> cachedFileMd5(File file, ContentHashCache cache);
 ```
 
-缓存落 Drift（`preferences` 表或新窄表 `content_hash_cache(path,size,mtime,md5)`，二期实现计划定）。键含 size+mtime，文件一改自然失效。本质就是"记住上次算的值，文件没动就不重读"。
+- 实现用 `package:crypto` 的 `md5.bind(file.openRead())`，瓶颈是**把整个文件读一遍的磁盘 IO**（小文件微秒级，但大资产可达数百 MB，手机闪存上是数百 ms 级），不是 CPU。
+- **临时文件（刚下载/刚导出）直接 `computeFileMd5`，无需缓存**——本来就在手上必须读。
+- **本地已存在的大资产用 `cachedFileMd5`**：内容更新判定（§6）要比对它们 vs 远端，若每次自动同步都重读所有本地大文件做 md5，对大书库是数 GB 重复 IO。缓存键含 size+mtime，文件一改自然失效；本质是"记住上次算的值，文件没动就不重读"。
+- 缓存落 Drift（新窄表 `content_hash_cache(path, size, mtime, md5)` 或复用 `preferences`，实现计划定）。
 
 ## 5. 改动触点（全部在编排器层）
 
-所有 push/pull 都经过 `sync_orchestrator.dart` 的统一接缝（`_backend.putAsset` / `_backend.getAsset`），manifest 收口成两个私有 helper：
+所有 push/pull 都经过 `sync_orchestrator.dart` 的统一接缝（`_backend.putAsset` / `_backend.getAsset`），manifest 收口成私有 helper：
 
 ```dart
-/// push 资产后立即写 manifest（md5 取自刚导出的临时文件）。
+/// push 资产 → 成功后写 manifest（md5/size/mtime） → 若后端支持原生 hash，回比一次。
 Future<void> _putAssetWithManifest(String ns, String name, File file, {onProgress});
 
-/// pull：下载到临时文件 → 读远端 manifest → 校验 md5 → 通过才返回 true。
-/// 校验失败删临时文件、上抛或记 error，绝不交给上层 import。
+/// pull：下载到临时文件 → 读远端 manifest → 校验 size+md5 → 通过才返回 true。
+/// 校验失败删临时文件、记 error，绝不交给上层 import。远端无 manifest（旧数据）降级跳过校验。
 Future<bool> _getAssetVerified(AssetEntry asset, String manifestId, File tmp, {onProgress});
 ```
 
-涉及的同步路径：书 epub 的 push / pull（`sync_orchestrator.importRemoteBooks` + `sync_manager` 中的书内容导入/导出触点，实现计划逐一定位）、`syncDictionaries`、`syncLocalAudioPackages`、`syncAudiobookPackages`。规则统一：所有 `putAsset` 调用点换成 `_putAssetWithManifest`，所有 `getAsset` 调用点换成 `_getAssetVerified`。书 epub 散落在 `sync_manager` 的具体函数（`_importContentIfMissing` 等）需在计划阶段逐一确认后挂接，不在本设计写死。
+涉及的同步路径：书 epub 的 push / pull（`sync_orchestrator.importRemoteBooks` + `sync_manager` 中书内容导入/导出触点，计划阶段逐一定位）、`syncDictionaries`、`syncLocalAudioPackages`、`syncAudiobookPackages`。规则统一：所有 `putAsset` 调用点换 `_putAssetWithManifest`，所有 `getAsset` 换 `_getAssetVerified`。
 
-## 6. 分两期实施
-
-### 一期（G1 防损坏 + 地基，低风险，无覆盖语义）
-
-1. `sync_content_hash.dart`：流式 md5 + `(path,size,mtime)` 缓存。
-2. push 侧：每次 `putAsset` 后写 `<name>.manifest.json`。
-3. pull 侧：下载到临时文件后，读远端 manifest，先比 size 再比 md5；不符 → 丢弃临时文件、记 error、不 import。
-4. union 名字集合排除 `*.manifest.json`。
-5. **行为不变点**：仍是 union（两边都有仍跳过）；只是 pull 多了一道校验、push 多写一个小文件。向后兼容：远端**没有** manifest 的旧资产，pull 时校验降级为"跳过校验"（不能因旧数据没 manifest 就判损坏）。
-
-一期交付后：损坏/截断能被发现并重试；已有同名资产行为不变。
-
-### 二期（G2 内容更新传播，A=mtime 胜，原子覆盖）
+## 6. 同步决策（单一交付，含内容更新传播）
 
 把四个 `sync*` 的"两边都有 → 跳过"改为：
 
 ```text
+远端有、本地无 → pull（下载→校验→import）
+本地有、远端无 → push（导出→上传→写 manifest）
 两边同名都有：
   读远端 manifest.md5 与本地 cachedFileMd5：
-    相同        → 跳过（内容一致，比现在的"同名即跳过"更可信）
+    相同        → 跳过（内容一致，比"同名即跳过"更可信）
     不同：
       远端 mtime 更新 → pull 到临时文件 → md5 校验 → 通过才【原子重导入】覆盖本地
       本地 mtime 更新 → 重新导出 → putAsset + 覆盖远端 manifest
-      mtime 相等       → 确定性 tiebreak：md5 字典序大的一方胜（按上面对应方向覆盖）
+      mtime 相等       → 确定性 tiebreak：md5 字典序大的一方胜（按对应方向覆盖）
 ```
 
-> **为什么不是"平手跳过"**：跳过会让两边永远停在不一致状态。`mtime 相等且 md5 不同` 在现实中近乎不可能（两设备独立生成同名异容资产却撞同一毫秒），这里只需一个**确定性、无状态、两端都会算出同一答案**的 tiebreak（md5 字典序）保证系统**必然收敛到一致**，而不是引入一个 divergent 特例。
+> **为什么不是"平手跳过"**：跳过会让两边永远不一致。`mtime 相等且 md5 不同` 现实中近乎不可能，这里只需一个**确定性、无状态、两端算出同一答案**的 tiebreak（md5 字典序）保证系统**必然收敛**，而不是引入一个 divergent 特例。
 
-"原子重导入覆盖本地"按资产类型分别落地（这是二期的真实复杂度，每类一个子任务 + 测试）：
+"原子重导入覆盖本地"按资产类型分别落地（每类一个子任务 + 测试）：
 
 - **词典**：导入到临时资源目录 → 成功后替换正式目录 + 更新 DB 行；失败回滚，不破坏现有词典。
-- **有声书包**：重新 import 覆盖该 book 的 audio DB（已有 `bookUidOverride` 重键路径可复用）。
+- **有声书包**：重新 import 覆盖该 book 的 audio DB（复用已有 `bookUidOverride` 重键路径）。
 - **本地音频库**：覆盖该 displayName 的库 DB。
-- **书 epub**：替换解压目录的 epub 内容；**阅读进度/统计独立存储，不被书本覆盖牵连**（这是选 A 的前提，需在测试中守护）。
+- **书 epub**：替换解压目录的 epub 内容；**阅读进度/统计独立存储，不被书本覆盖牵连**（选 A 的前提，测试守护）。
 
-mtime 来源：manifest.mtime（上传方写入时的资产文件修改时间）。本地侧用资产源文件的实际 mtime（词典资源目录、audio DB 等的代表性 mtime；实现计划为每类定义"代表 mtime"）。
+mtime 来源：manifest.mtime（上传方写入时的资产源文件修改时间）；本地侧用资产源文件的代表性 mtime（词典资源目录 / audio DB 等，每类定义"代表 mtime"）。
 
-## 7. 错误处理
+## 7. 云端完整性四层防线（G4）
 
-- 下载 md5 校验失败：删临时文件，`report.errors` 记 `"<name>: content hash mismatch"`，本期内**不**自动无限重试（下次同步再来一次）；不污染本地。
+回答"云端数据怎么保证完整未损坏"——从弱到强：
+
+1. **manifest 写在内容之后（commit 标记）**：内容整文件传完**成功后才写 manifest.json**。"传一半"的文件永远没有配套 manifest，不被误当好数据。
+2. **上传后查 size（所有后端，廉价）**：上传后用列目录/HEAD 的大小与 manifest.size 比，**截断（最常见损坏）当场发现**，全后端支持。
+3. **原生 hash 回比（仅 Drive/Dropbox/OneDrive，廉价）**：上传后从元数据白拿服务器算的 hash 与我们的 md5 比一次，内容级损坏在上传端确认；无原生 hash 的后端降级到第 2 层。
+4. **下载端 md5 校验（所有后端，终极保证）**：任何设备下载后用 manifest.md5 校验，对不上拒绝落地。**坏数据永远不会被任何设备用上。**
+
+无原生 hash 的后端无法在上传端 100% 确认内容级正确（TLS/SSH 传输层已有完整性校验，飞行中损坏极罕见），但截断在上传端能查、内容损坏在下载端必被挡。这是不依赖各后端 hash 能力还能给的最强保证。
+
+第 2、3 层收口成一个后端接口方法 `verifyRemoteAsset(assetId, expectedMd5, expectedSize)`：有原生 hash 的实现比 hash，没有的只比 size。特例被封在这一个方法里，不外泄。
+
+## 8. 附带清理：删除"同步有声书位置"开关
+
+与本设计同属同步清理：删掉 `sync.audiobook` 开关，**有声书位置永远同步**（小 JSON、几十字节，没有"不同步"的合理场景，开关只是多余的认知负担）。
+
+- 删 `sync_settings_schema.dart` 的 `SettingsSwitchItem(id: 'sync.audiobook')`（line 152-162）+ `_SyncSettingsState.syncAudioBook` 字段及其 `load()`。
+- `sync_auto_trigger.dart` 两处 `syncAudioBookPosition: await repo.isSyncAudioBookEnabled()` → 恒 `true`。
+- `sync_orchestrator.dart` 的 `syncAudioBookPosition` 门控恒为开（可直接移除该 gate 参数，位置无条件同步；牵动 `sync_manager` 的 `syncAudioBook` 分支一并简化）。
+- i18n：`dart run tool/i18n_sync.dart --remove sync_audiobook`，再 `dart run slang` + `dart format`。
+- `SyncRepository.isSyncAudioBookEnabled/setSyncAudioBookEnabled` + 持久化键 `sync_audiobook_enabled`：移除访问器；旧持久化值无害遗留，不做迁移。
+- 测试：删 `sync_gating_test.dart:215` 的位置开关测试；`sync_orchestrator_test` / `sync_orchestrator_conflict_test` 中传 `syncAudioBookPosition: false` 的调用按"位置恒同步"更新或移除该参数。
+
+> **注意**：只删"有声书**位置**"开关（`sync.audiobook`）。"有声书**文件包**"开关（`sync.audiobook_files`，大文件、默认关）是另一回事，保留不动。
+
+## 9. 错误处理
+
+- 下载 md5 校验失败：删临时文件，`report.errors` 记 `"<name>: content hash mismatch"`，本轮不自动无限重试（下次同步再来）；不污染本地。
 - 远端缺 manifest（旧数据）：pull 校验降级跳过，push 侧顺手补写 manifest（自愈）。
 - manifest 解析失败/字段缺失：当作"无 manifest"降级处理，不抛。
-- md5 计算 IO 错误：上抛到 `report.errors`，跳过该资产，不中断整轮同步。
+- md5 计算 / verifyRemote IO 错误：上抛到 `report.errors`，跳过该资产，不中断整轮同步。
 
-## 8. 测试策略
+## 10. 测试策略
 
-- **纯函数**：`sync_content_hash` 的 md5 正确性——可在 host 跑。二期再加缓存命中/失效（size/mtime 变更触发重算）测试。
-- **决策逻辑**：抽一个纯函数 `decideAssetAction({localMd5, localMtime, remoteManifest})` 返回 `skip/pullOverwrite/pushOverwrite/pullNew/pushNew`，单测全分支（同 `resolveProgressSync` 范式）；专门覆盖"mtime 相等 → md5 字典序 tiebreak 两端算出同一方向"的收敛性。
-- **编排器集成**：用现有 in-memory / fake backend 测试套验证：
-  - 一期：损坏的远端资产（manifest.md5 与内容不符）被拒绝 import；旧无-manifest 资产仍可 pull。
-  - 二期：同名 md5 不同时按 mtime 覆盖正确方向；epub 覆盖后阅读进度保留（守护测试）。
+- **纯函数**：`sync_content_hash` 的 md5 正确性 + 缓存命中/失效（size/mtime 变更触发重算）——可在 host 跑。
+- **决策逻辑**：纯函数 `decideAssetAction({localMd5, localMtime, remoteManifest})` 返回 `skip/pullOverwrite/pushOverwrite/pullNew/pushNew`，单测全分支（同 `resolveProgressSync` 范式）；专门覆盖"mtime 相等 → md5 字典序 tiebreak 两端算出同一方向"的收敛性。
+- **编排器集成**（现有 in-memory / fake backend 测试套）：
+  - 损坏的远端资产（manifest.md5 与内容不符）被拒绝 import；旧无-manifest 资产仍可 pull。
+  - 同名 md5 不同时按 mtime 覆盖正确方向；epub 覆盖后阅读进度保留（守护测试）。
+  - 上传后 size/原生 hash 回比：fake backend 模拟截断 → 上传端报错。
 - **源码守卫**：扫描确保四个 `sync*` 的 pull 都走 `_getAssetVerified`、push 都走 `_putAssetWithManifest`，防止新增同步路径漏挂校验。
+- **清理回归**：有声书位置在无开关时仍正确同步（位置恒 gate-on 的集成断言）。
 
-## 9. 向后兼容
+## 11. 向后兼容
 
 - 旧远端数据无 manifest：pull 降级跳过校验、push 自愈补写，不报损坏。新名字 `hibiki-data` 根（见 2026-06-05 改名）下从零重建时本就带 manifest。
-- 一期纯增量（多一个小文件 + 一道校验），不改变哪些资产被同步。
-- 二期改变 union 语义（开始传播内容更新），是行为变更点——需在 PR 说明并以测试守护进度不被牵连。
+- union 语义变化（开始传播内容更新）是行为变更点——PR 说明 + 测试守护进度不被牵连。
+- 删有声书位置开关：旧持久化键遗留无害，不迁移。
 
-## 10. 风险
+## 12. 风险
 
-- **二期覆盖语义**是最大风险点：重导入若中途失败必须回滚，不能让本地处于半覆盖状态——这正是"先写临时文件、校验通过再原子替换"的理由。
-- 大文件 md5 成本：一期只 hash 本就在手的临时文件（零额外成本）；二期靠 §4 缓存消除稳态重算，首次/变更后仍要全量读一遍文件（IO 成本，不可避免，但只一次）。
-- mtime 可信度：依赖各设备时钟。时钟回拨可能误判方向——但只影响"拿到哪版"，不影响完整性（md5 兜底）；mtime 相等的退化情形用确定性 md5 字典序 tiebreak 保证收敛，不留 divergent 状态。
+- **覆盖/重导入语义**是最大风险点：重导入若中途失败必须回滚，不能让本地处于半覆盖状态——这正是"先写临时文件、校验通过再原子替换"的理由。
+- 大文件 md5 成本：临时文件本就要读（零额外）；本地已存在大资产靠 §4 缓存消除稳态重算，首次/变更后仍要全量读一遍（IO 成本，不可避免，但只一次）。
+- mtime 可信度：依赖各设备时钟。时钟回拨只影响"拿到哪版"，不影响完整性（md5 兜底）；mtime 相等的退化情形用确定性 md5 字典序 tiebreak 保证收敛，不留 divergent 状态。
