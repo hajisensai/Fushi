@@ -129,6 +129,10 @@ class MaterialSettingsRenderer implements SettingsRenderer {
           },
         );
 
+    // 整页正文逃生口（见 SettingsDestination.body）：接在所有 schema section 之后，
+    // 与它们共享同一个滚动容器与内边距。
+    final Widget? bodyWidget = destination.body?.call(settingsContext);
+
     // Embedded in a PARENT scrollable (cupertino CustomScrollView, the desktop
     // settings SingleChildScrollView, the reader quick-settings sheet): a
     // shrink-wrapped ListView must lay out every child to measure its own height,
@@ -152,8 +156,9 @@ class MaterialSettingsRenderer implements SettingsRenderer {
             ? const NeverScrollableScrollPhysics()
             : null,
         padding: padding,
-        itemCount: sections.length,
-        itemBuilder: (BuildContext context, int index) => section(index),
+        itemCount: sections.length + (bodyWidget != null ? 1 : 0),
+        itemBuilder: (BuildContext context, int index) =>
+            index < sections.length ? section(index) : bodyWidget!,
       );
     }
 
@@ -174,6 +179,7 @@ class MaterialSettingsRenderer implements SettingsRenderer {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           for (int index = 0; index < sections.length; index++) section(index),
+          if (bodyWidget != null) bodyWidget,
         ],
       ),
     );

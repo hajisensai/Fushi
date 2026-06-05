@@ -4,8 +4,10 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   final Map<String, List<String>> migratedPages = <String, List<String>>{
+    // anki_settings_page.dart 现在导出的是无脚手架的 AnkiSettingsBody（直接平铺
+    // 进「制卡」设置 destination，见 SettingsDestination.body），因此不再含
+    // AdaptiveSettingsScaffold；仍用 AdaptiveSettingsSection 组织正文。
     'anki_settings_page.dart': <String>[
-      'AdaptiveSettingsScaffold',
       'AdaptiveSettingsSection',
     ],
     'switch_settings_page.dart': <String>[

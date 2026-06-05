@@ -124,6 +124,10 @@ class CupertinoSettingsRenderer implements SettingsRenderer {
           },
         );
 
+    // 整页正文逃生口（见 SettingsDestination.body）：接在所有 schema section 之后，
+    // 与它们共享同一个滚动容器与内边距。
+    final Widget? bodyWidget = destination.body?.call(settingsContext);
+
     // shrinkWrap：嵌在外层 sliver / SingleChildScrollView 里（buildDetailPage 的
     // CustomScrollView 复用此路径），由父滚动；shrinkWrap ListView 必须布局全部子项
     // 来量自身高度，extent 已精确，禁用自身滚动即可。
@@ -133,8 +137,9 @@ class CupertinoSettingsRenderer implements SettingsRenderer {
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
         padding: padding,
-        itemCount: sections.length,
-        itemBuilder: (BuildContext context, int index) => section(index),
+        itemCount: sections.length + (bodyWidget != null ? 1 : 0),
+        itemBuilder: (BuildContext context, int index) =>
+            index < sections.length ? section(index) : bodyWidget!,
       );
     }
 
@@ -150,6 +155,7 @@ class CupertinoSettingsRenderer implements SettingsRenderer {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           for (int index = 0; index < sections.length; index++) section(index),
+          if (bodyWidget != null) bodyWidget,
         ],
       ),
     );

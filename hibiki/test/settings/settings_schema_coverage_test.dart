@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki_core/hibiki_core.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
@@ -105,6 +106,12 @@ void main() {
   testWidgets(
       'all settings destinations: focus-driven, change persists and takes effect',
       (WidgetTester tester) async {
+    // cardCreation 详情页现在内联渲染 AnkiSettingsBody（扁平化后不再藏在子路由
+    // 后），它经 ankiViewModelProvider → BaseAnkiRepository 调
+    // SharedPreferences.getInstance()；host 无插件实现会抛 MissingPluginException。
+    // mock 空初值让其确定性成功，不依赖异步异常逃逸 takeException 窗口。
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+
     final HibikiDatabase db =
         HibikiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);

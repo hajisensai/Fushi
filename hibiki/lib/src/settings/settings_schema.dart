@@ -184,15 +184,12 @@ SettingsDestination _profilesDestination() {
             icon: Icons.person_outline,
             builder: buildProfilePickerRow,
           ),
-          SettingsNavigationItem(
-            id: 'profiles.management',
-            title: t.profile_management,
-            icon: Icons.manage_accounts_outlined,
-            builder: (_) => const ProfileManagementPage(),
-          ),
         ],
       ),
     ],
+    // 平铺：原本「配置管理」是一层独立路由子页，现在把其正文直接接在「配置」快速
+    // 选择器下方，点一次设置就能管理 Profile，不再多跳一层。
+    body: (_) => const ProfileManagementBody(),
   );
 }
 
@@ -996,30 +993,11 @@ SettingsDestination _cardCreationDestination() {
     title: t.settings_destination_card_creation,
     summary: t.anki_settings_label,
     icon: Icons.style_outlined,
-    sections: <SettingsSection>[
-      SettingsSection(
-        title: t.anki_settings_label,
-        items: <SettingsItem>[
-          SettingsNavigationItem(
-            id: 'card_creation.anki',
-            title: t.anki_settings_label,
-            icon: Icons.style_outlined,
-            builder: (_) => const AnkiSettingsPage(),
-          ),
-          SettingsSwitchItem(
-            id: 'card_creation.auto_add_book_name_to_tags',
-            title: t.auto_add_book_name_to_tags,
-            icon: Icons.label_outline,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.autoAddBookNameToTags,
-            onChanged: (SettingsContext settingsContext, bool value) {
-              settingsContext.appModel.toggleAutoAddBookNameToTags();
-              settingsContext.refresh();
-            },
-          ),
-        ],
-      ),
-    ],
+    // 平铺：原本「Anki 设置」是一层独立路由子页、和「自动添加书名到标签」开关并列；
+    // 现在整段 Anki 正文（含该开关，见 AnkiSettingsBody 页尾）直接平铺进本页，点一次
+    // 就看到全部 Anki 配置，不再多跳一层。
+    sections: const <SettingsSection>[],
+    body: (_) => const AnkiSettingsBody(),
   );
 }
 

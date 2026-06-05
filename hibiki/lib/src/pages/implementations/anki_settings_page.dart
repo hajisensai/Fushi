@@ -1,21 +1,36 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:hibiki/pages.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hibiki/models.dart';
 import 'package:hibiki/utils.dart';
 
 import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/profile/profile_selector.dart';
 
-class AnkiSettingsPage extends BasePage {
-  const AnkiSettingsPage({super.key});
+/// Anki 设置正文（无脚手架）。直接平铺进「制卡」设置 destination 详情页
+/// （见 `SettingsDestination.body`），不再藏在一层独立路由子页里。返回一个
+/// [Column]，自身不带 `Scaffold` / 独立滚动——外层设置渲染器已提供滚动与内边距。
+///
+/// 末尾并入了原本挂在「制卡」分组里、与 Anki 子菜单并列的「自动添加书名到标签」
+/// 开关，使整页就是完整的 Anki 配置入口。
+///
+/// 刻意用轻量 [ConsumerState]（而非 `BasePageState`）：`BasePageState.initState`
+/// 会 `ref.read(creatorProvider)`，而本 body 现在会在设置 schema 覆盖率 harness
+/// 里被直接渲染（不再藏在路由后），不引入 creator 依赖更稳。
+class AnkiSettingsBody extends ConsumerStatefulWidget {
+  const AnkiSettingsBody({super.key});
 
   @override
-  BasePageState<AnkiSettingsPage> createState() => _AnkiSettingsPageState();
+  ConsumerState<AnkiSettingsBody> createState() => _AnkiSettingsBodyState();
 }
 
-class _AnkiSettingsPageState extends BasePageState<AnkiSettingsPage> {
+class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
+  AppModel get appModel => ref.watch(appProvider);
+  ThemeData get theme => Theme.of(context);
+  TextTheme get textTheme => theme.textTheme;
+
   @override
   Widget build(BuildContext context) {
     final uiState = ref.watch(ankiViewModelProvider);
@@ -23,8 +38,8 @@ class _AnkiSettingsPageState extends BasePageState<AnkiSettingsPage> {
     final settings = uiState.settings;
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
 
-    return AdaptiveSettingsScaffold(
-      title: Text(t.anki_settings_label),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         AdaptiveSettingsSection(
           children: [
@@ -121,6 +136,22 @@ class _AnkiSettingsPageState extends BasePageState<AnkiSettingsPage> {
             ],
           ),
         ],
+        // 「自动添加书名到标签」——原本是「制卡」分组里 Anki 子菜单之外的独立开关；
+        // 现在 Anki 正文已平铺进本页，把它并入页尾与其它制卡偏好同区。标题保持
+        // `t.auto_add_book_name_to_tags` 不变，覆盖率测试的 accounting 键沿用。
+        AdaptiveSettingsSection(
+          children: [
+            AdaptiveSettingsSwitchRow(
+              title: t.auto_add_book_name_to_tags,
+              icon: Icons.label_outline,
+              value: appModel.autoAddBookNameToTags,
+              onChanged: (bool value) {
+                appModel.toggleAutoAddBookNameToTags();
+                setState(() {});
+              },
+            ),
+          ],
+        ),
       ],
     );
   }

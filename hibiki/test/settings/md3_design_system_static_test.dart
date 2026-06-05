@@ -1958,9 +1958,11 @@ void main() {
     final String profileSource = File(
       'lib/src/pages/implementations/profile_management_page.dart',
     ).readAsStringSync();
+    // Profile 管理正文已抽到 ProfileManagementBody（无脚手架，可平铺进「配置方案」
+    // 设置页）；tokens.spacing 等设计令牌的用法随之移到该 body state。
     final String profileState = _sectionSource(
       profileSource,
-      'class _ProfileManagementPageState',
+      'class _ProfileManagementBodyState',
       'class _ProfileActionButton',
     );
     expect(profileState, contains('HibikiDesignTokens.of(context)'));

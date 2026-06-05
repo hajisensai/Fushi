@@ -57,6 +57,7 @@ class SettingsDestination {
     required this.sections,
     this.summary,
     this.visible,
+    this.body,
   });
 
   final SettingsDestinationId id;
@@ -65,6 +66,13 @@ class SettingsDestination {
   final String? summary;
   final SettingsVisibility? visible;
   final List<SettingsSection> sections;
+
+  /// 可选的「整页正文」逃生口：非空时，渲染器在渲染完 [sections] 后把
+  /// `body(context)` 接在同一个滚动容器里。用于把原本藏在子级菜单（独立路由
+  /// 页）的复杂正文——Anki 设置、Profile 管理——直接平铺进本 destination 详情页，
+  /// 消掉一层多余跳转。返回的 widget 必须自带 [AdaptiveSettingsSection] 布局且
+  /// **不得**自带脚手架/独立滚动（外层渲染器已提供滚动与内边距）。
+  final SettingsItemBuilder? body;
 
   bool isVisible(SettingsContext context) => visible?.call(context) ?? true;
 

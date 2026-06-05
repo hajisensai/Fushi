@@ -1,11 +1,16 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/profile/profile_view_model.dart';
 
 /// Full-screen page for managing profiles, media-type bindings,
 /// and per-profile settings.
+///
+/// 薄壳：只负责套上脚手架与标题；正文全在 [ProfileManagementBody]，以便同一份
+/// 正文既能作为独立路由页（`AppModel.showProfilesMenu`），又能直接平铺进「配置
+/// 方案」设置 destination（见 `SettingsDestination.body`），消掉一层子菜单跳转。
 class ProfileManagementPage extends BasePage {
   const ProfileManagementPage({super.key});
 
@@ -17,63 +22,105 @@ class ProfileManagementPage extends BasePage {
 class _ProfileManagementPageState extends BasePageState<ProfileManagementPage> {
   @override
   Widget build(BuildContext context) {
+    return AdaptiveSettingsScaffold(
+      title: Text(t.profile_management),
+      children: const [ProfileManagementBody()],
+    );
+  }
+}
+
+/// Profile 管理正文（无脚手架）。返回一个 [Column]，自身不带 `Scaffold` / 独立
+/// 滚动——外层（脚手架或设置渲染器）已提供滚动与内边距。
+///
+/// 原页面的 AppBar「+新建」操作在这里下沉成正文顶部的「新建配置」行，使内嵌进
+/// 设置页时也能新建（设置详情页没有 AppBar 操作槽）。
+class ProfileManagementBody extends ConsumerStatefulWidget {
+  const ProfileManagementBody({super.key});
+
+  @override
+  ConsumerState<ProfileManagementBody> createState() =>
+      _ProfileManagementBodyState();
+}
+
+class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
+  @override
+  Widget build(BuildContext context) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final uiState = ref.watch(profileViewModelProvider);
     final vm = ref.read(profileViewModelProvider.notifier);
 
-    return AdaptiveSettingsScaffold(
-      title: Text(t.profile_management),
-      actions: [
-        _ProfileActionButton(
-          materialIcon: Icons.add,
-          cupertinoIcon: CupertinoIcons.add,
-          tooltip: t.profile_create,
-          onPressed: () => _showCreateDialog(vm),
+    if (uiState.isLoading) {
+      return Padding(
+        padding: EdgeInsets.symmetric(vertical: tokens.spacing.page * 3),
+        child: Center(
+          child: SizedBox(
+            width: 36,
+            height: 36,
+            child: adaptiveIndicator(
+              context: context,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // 标题留空：内嵌进「配置方案」设置页时，上方 schema 的「配置」picker 节
+        // 已带「配置」标题，这里再挂一次会重复；作为独立路由页（showProfilesMenu）
+        // 时脚手架标题已是「配置管理」，本节作为其延续也无需再重复表头。
+        AdaptiveSettingsSection(
+          children: [
+            _buildCreateRow(vm),
+            ..._buildProfileRows(uiState, vm),
+          ],
+        ),
+        AdaptiveSettingsSection(
+          title: t.profile_media_type_bindings,
+          children: [
+            _buildMediaTypeRow(
+              t.profile_media_epub,
+              'epub',
+              uiState,
+              vm,
+            ),
+            _buildMediaTypeRow(
+              t.profile_media_srtbook,
+              'srtbook',
+              uiState,
+              vm,
+            ),
+            _buildMediaTypeRow(
+              t.profile_media_audiobook,
+              'audiobook',
+              uiState,
+              vm,
+            ),
+            _buildMediaTypeRow(
+              t.profile_media_lyrics,
+              'lyrics',
+              uiState,
+              vm,
+            ),
+          ],
         ),
       ],
-      children: uiState.isLoading
-          ? [
-              Padding(
-                padding:
-                    EdgeInsets.symmetric(vertical: tokens.spacing.page * 3),
-                child: buildLoading(),
-              ),
-            ]
-          : [
-              AdaptiveSettingsSection(
-                title: t.profile_label,
-                children: _buildProfileRows(uiState, vm),
-              ),
-              AdaptiveSettingsSection(
-                title: t.profile_media_type_bindings,
-                children: [
-                  _buildMediaTypeRow(
-                    t.profile_media_epub,
-                    'epub',
-                    uiState,
-                    vm,
-                  ),
-                  _buildMediaTypeRow(
-                    t.profile_media_srtbook,
-                    'srtbook',
-                    uiState,
-                    vm,
-                  ),
-                  _buildMediaTypeRow(
-                    t.profile_media_audiobook,
-                    'audiobook',
-                    uiState,
-                    vm,
-                  ),
-                  _buildMediaTypeRow(
-                    t.profile_media_lyrics,
-                    'lyrics',
-                    uiState,
-                    vm,
-                  ),
-                ],
-              ),
-            ],
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Create row (replaces the original AppBar "+" action)
+  // ---------------------------------------------------------------------------
+
+  Widget _buildCreateRow(ProfileViewModel vm) {
+    final bool cupertino = isCupertinoPlatform(context);
+    return AdaptiveSettingsRow(
+      icon: cupertino ? CupertinoIcons.add : Icons.add,
+      showIcon: true,
+      title: t.profile_create,
+      onTap: () => _showCreateDialog(vm),
     );
   }
 
