@@ -19,6 +19,7 @@ import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_player_controller.dart';
 import 'package:hibiki/src/media/video/video_sidecar.dart';
 import 'package:hibiki/src/media/video/video_subtitle_overlay.dart';
+import 'package:hibiki/src/media/video/video_subtitle_source.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_native.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
@@ -55,6 +56,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage> {
   /// 当前集索引（[_episodes] 下标）；单视频恒 0。
   int _currentEpisode = 0;
 
+  /// 当前播放的视频文件绝对路径（枚举字幕源用）；未 load 时为 null。
+  String? _currentVideoPath;
+
+  /// 当前选中的字幕源持久化值（外挂路径 / `embedded:<n>` / null=关闭）；
+  /// 用于字幕源菜单高亮当前项。
+  String? _currentSubtitleSource;
+
   bool get _isPlaylist => _episodes.length > 1;
 
   AppModel get appModel => ref.read(appProvider);
@@ -71,6 +79,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage> {
       if (mounted) setState(() => _failed = true);
       return;
     }
+
+    // 记录持久化的字幕源（菜单高亮当前项用）。
+    _currentSubtitleSource = row.subtitleSource;
 
     // 解析播放列表（若有）。非空则按 currentEpisode 载对应集；否则走单视频路径。
     final String? playlistJson = row.playlistJson;
@@ -204,6 +215,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage> {
       _controller = controller;
       _title = title;
       _failed = false;
+      _currentVideoPath = videoPath;
+      // 外挂字幕路径即持久化值；内嵌自动加载（externalSubtitlePath==null）时
+      // 当前选中由 _currentSubtitleSource 保留（菜单切换时再写）。
+      _currentSubtitleSource = externalSubtitlePath ?? _currentSubtitleSource;
     });
   }
 
@@ -378,14 +393,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage> {
         const Spacer(),
         MaterialDesktopCustomButton(
           icon: const Icon(Icons.subtitles),
-          onPressed: () => _showTrackMenu(
-            controller.subtitleTracks
-                .map((SubtitleTrack tr) => (
-                      label: _trackLabel(tr.title, tr.language, tr.id),
-                      onSelected: () => controller.selectSubtitleTrack(tr),
-                    ))
-                .toList(),
-          ),
+          onPressed: () => _showSubtitleSourceMenu(controller),
         ),
         MaterialDesktopCustomButton(
           icon: const Icon(Icons.audiotrack),
@@ -422,6 +430,98 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage> {
             .toList(),
       ),
     );
+  }
+
+  /// 弹「字幕源」菜单：枚举当前视频的全部字幕源（内嵌轨 + 同目录外挂文件）+
+  /// 顶部「关闭字幕」项。选某源 → 解析成 cue → 切 overlay + 持久化 + SnackBar。
+  ///
+  /// 这是运行时覆盖；默认 load 行为（自动 sidecar 优先 + 内嵌兜底）不变。
+  Future<void> _showSubtitleSourceMenu(
+    VideoPlayerController controller,
+  ) async {
+    final String? videoPath = _currentVideoPath;
+    if (videoPath == null) return;
+
+    final List<SubtitleSource> sources =
+        await listAllSubtitleSources(videoPath);
+    if (!mounted) return;
+
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.black87,
+      isScrollControlled: true,
+      builder: (BuildContext ctx) => SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(ctx).size.height * 0.7,
+          ),
+          child: ListView(
+            shrinkWrap: true,
+            children: <Widget>[
+              ListTile(
+                textColor: Colors.white,
+                leading: const Icon(Icons.subtitles_off, color: Colors.white),
+                title: Text(t.video_subtitle_off),
+                selected: _currentSubtitleSource == null,
+                selectedColor: Theme.of(ctx).colorScheme.primary,
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _selectSubtitleOff(controller);
+                },
+              ),
+              for (final SubtitleSource source in sources)
+                ListTile(
+                  textColor: Colors.white,
+                  leading: Icon(
+                    source.isEmbedded ? Icons.movie : Icons.subtitles,
+                    color: Colors.white,
+                  ),
+                  title: Text(source.label),
+                  selected: source.matchesPersisted(_currentSubtitleSource),
+                  selectedColor: Theme.of(ctx).colorScheme.primary,
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _selectSubtitleSource(controller, source);
+                  },
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 选中某字幕源：加载 cue → 切 overlay → 持久化 → SnackBar。
+  Future<void> _selectSubtitleSource(
+    VideoPlayerController controller,
+    SubtitleSource source,
+  ) async {
+    final String? videoPath = _currentVideoPath;
+    if (videoPath == null) return;
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+
+    final List<AudioCue> cues =
+        await loadCuesForSource(source, videoPath, widget.bookUid);
+    controller.setCues(cues);
+    // 选了文本字幕源就关掉 libmpv 画面字幕，避免与可点 overlay 双重渲染。
+    await controller.selectSubtitleTrack(SubtitleTrack.no());
+
+    final String persisted = source.toPersistedValue();
+    await widget.repo.updateSubtitleSource(widget.bookUid, persisted);
+    if (!mounted) return;
+    setState(() => _currentSubtitleSource = persisted);
+    messenger.showSnackBar(SnackBar(
+      content: Text(t.video_subtitle_switched(label: source.label)),
+    ));
+  }
+
+  /// 关闭字幕：清空 cue overlay + 关 libmpv 字幕轨 + 持久化 null。
+  Future<void> _selectSubtitleOff(VideoPlayerController controller) async {
+    controller.setCues(const <AudioCue>[]);
+    await controller.selectSubtitleTrack(SubtitleTrack.no());
+    await widget.repo.updateSubtitleSource(widget.bookUid, null);
+    if (!mounted) return;
+    setState(() => _currentSubtitleSource = null);
   }
 
   String _trackLabel(String? title, String? language, String id) {

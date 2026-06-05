@@ -1257,5 +1257,8 @@
     "video_import_pick_playlist": "Pick m3u8 playlist",
     "video_episode_list": "Episodes",
     "video_prev_episode": "Previous episode",
-    "video_next_episode": "Next episode"
+    "video_next_episode": "Next episode",
+    "video_subtitle_source": "Subtitle source",
+    "video_subtitle_off": "Turn off subtitles",
+    "video_subtitle_switched": "Subtitle: $label"
 }

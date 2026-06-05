@@ -22,6 +22,10 @@ class VideoBookRepository {
   Future<void> updateCurrentEpisode(String bookUid, int episodeIndex) =>
       _db.updateVideoBookEpisode(bookUid, episodeIndex);
 
+  /// 更新用户选中的字幕源（外挂存路径；内嵌存 `embedded:<n>`；关闭存 null）。
+  Future<void> updateSubtitleSource(String bookUid, String? subtitleSource) =>
+      _db.updateVideoBookSubtitleSource(bookUid, subtitleSource);
+
   Future<void> saveCues({
     required String bookUid,
     required List<AudioCue> cues,

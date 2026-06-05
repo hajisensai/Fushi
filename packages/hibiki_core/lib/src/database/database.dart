@@ -590,6 +590,12 @@ class HibikiDatabase extends _$HibikiDatabase {
       (update(videoBooks)..where((t) => t.bookUid.equals(bookUid)))
           .write(VideoBooksCompanion(currentEpisode: Value(episodeIndex)));
 
+  /// 更新用户选中的字幕源（外挂存路径；内嵌存 `embedded:<n>`；关闭存 null）。
+  Future<void> updateVideoBookSubtitleSource(
+          String bookUid, String? subtitleSource) =>
+      (update(videoBooks)..where((t) => t.bookUid.equals(bookUid)))
+          .write(VideoBooksCompanion(subtitleSource: Value(subtitleSource)));
+
   // ── audio cues ──────────────────────────────────────────────────
   Future<List<AudioCueRow>> getCuesForChapter(
           String bookUid, String chapterHref) =>
