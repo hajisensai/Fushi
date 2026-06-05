@@ -64,7 +64,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
 
   Future<Map<String, _AudiobookInfo>> _loadAllAudiobookInfo() async {
     final repo = AudiobookRepository(appModel.database);
-    final allAudiobooks = await repo.buildBookUidMap();
+    final allAudiobooks = await repo.buildBookKeyMap();
     final result = <String, _AudiobookInfo>{};
     final healthFutures = <String, Future<AudiobookHealth>>{};
     for (final entry in allAudiobooks.entries) {
@@ -84,8 +84,8 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     return result;
   }
 
-  _AudiobookInfo _getAudiobookInfo(String bookUid) {
-    return _batchAudiobookInfoResult[bookUid] ??
+  _AudiobookInfo _getAudiobookInfo(String bookKey) {
+    return _batchAudiobookInfoResult[bookKey] ??
         const _AudiobookInfo(
             hasAudiobook: false, healthKind: HealthKind.notApplicable);
   }
@@ -134,7 +134,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   Widget build(BuildContext context) {
     final AsyncValue<List<MediaItem>> books =
         ref.watch(hibikiBooksProvider(appModel.targetLanguage));
-    final AsyncValue<Set<int>?> filteredIds =
+    final AsyncValue<Set<String>?> filteredIds =
         ref.watch(filteredBookIdsProvider);
     final allTags = ref.watch(allTagsProvider);
 
@@ -148,14 +148,14 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
             child: books.when(
               data: (bookList) {
                 _batchAudiobookInfoFuture ??= _loadAllAudiobookInfo();
-                final Set<int>? filterSet = filteredIds.valueOrNull;
+                final Set<String>? filterSet = filteredIds.valueOrNull;
                 final List<MediaItem> filtered;
                 if (filterSet == null) {
                   filtered = bookList;
                 } else {
                   filtered = bookList.where((item) {
-                    final int? id = _parseBookId(item.mediaIdentifier);
-                    return id != null && filterSet.contains(id);
+                    final String? key = _parseBookKey(item.mediaIdentifier);
+                    return key != null && filterSet.contains(key);
                   }).toList();
                 }
                 return FutureBuilder<Map<String, _AudiobookInfo>>(
@@ -193,7 +193,6 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   Widget _buildPageHeader() {
     return HibikiPageHeader(
       title: t.books,
-      subtitle: mediaSource.getLocalisedDescription(appModel),
       actions: <Widget>[
         mediaSource.buildBookImportButton(
           context: context,
@@ -261,14 +260,14 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     ref.invalidate(allTagsProvider);
   }
 
-  Future<void> _addTagToBook(int bookId, BookTagRow tag) async {
+  Future<void> _addTagToBook(String bookKey, BookTagRow tag) async {
     final existing = ref.read(bookTagMapProvider).valueOrNull;
-    final alreadyHas = existing?[bookId]?.any((t) => t.id == tag.id) ?? false;
+    final alreadyHas = existing?[bookKey]?.any((t) => t.id == tag.id) ?? false;
     if (alreadyHas) {
       HibikiToast.show(msg: t.tag_already_on_book(name: tag.name));
       return;
     }
-    await ref.read(appProvider).database.addTagToBook(bookId, tag.id);
+    await ref.read(appProvider).database.addTagToBook(bookKey, tag.id);
     ref.invalidate(bookTagMapProvider);
     ref.invalidate(filteredBookIdsProvider);
     if (mounted) {
@@ -292,10 +291,10 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     }
   }
 
-  Widget? _buildTagLabels(int bookId) {
+  Widget? _buildTagLabels(String bookKey) {
     final tagMap = ref.watch(bookTagMapProvider).valueOrNull;
     if (tagMap == null) return null;
-    final tags = tagMap[bookId];
+    final tags = tagMap[bookKey];
     if (tags == null || tags.isEmpty) return null;
     return _adaptiveTagColumn(tags);
   }
@@ -367,15 +366,15 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   Widget _buildBodyWithSrtBooks(
       List<MediaItem> books, List<SrtBook> allSrtBooks) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    final Set<int> srtTtuIds = {
+    final Set<String> srtBookKeys = {
       for (final b in allSrtBooks)
-        if (b.ttuBookId > 0) b.ttuBookId,
+        if (b.bookKey.isNotEmpty) b.bookKey,
     };
-    final List<MediaItem> epubBooks = srtTtuIds.isEmpty
+    final List<MediaItem> epubBooks = srtBookKeys.isEmpty
         ? books
         : books.where((item) {
-            final int? id = _parseBookId(item.mediaIdentifier);
-            return id == null || !srtTtuIds.contains(id);
+            final String? key = _parseBookKey(item.mediaIdentifier);
+            return key == null || !srtBookKeys.contains(key);
           }).toList();
 
     final bool hasActiveFilter = ref.read(selectedTagIdsProvider).isNotEmpty;
@@ -525,7 +524,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     final tagWidget = book.id != null ? _buildSrtBookTagLabels(book.id!) : null;
     final int? srtBookId = book.id;
     return _bookCardShell(
-      cardKey: ValueKey<String>('srt_entry_${book.ttuBookId}'),
+      cardKey: ValueKey<String>('srt_entry_${book.uid}'),
       focusId: HibikiFocusId('reader-shelf-srt-${book.uid}'),
       selectionKey: selKey,
       dragBookId: srtBookId,
@@ -590,7 +589,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     Key? cardKey,
     HibikiFocusId? focusId,
     String? selectionKey,
-    int? dragBookId,
+    Object? dragBookId,
     void Function(BookTagRow tag)? onTagDropped,
   }) {
     final bool selected =
@@ -732,7 +731,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
 
   MediaItem _srtBookMediaItem(SrtBook book) {
     return MediaItem(
-      mediaIdentifier: ReaderHibikiSource.mediaIdentifierFor(book.ttuBookId),
+      mediaIdentifier: ReaderHibikiSource.mediaIdentifierFor(book.bookKey),
       title: book.title,
       mediaTypeIdentifier: ReaderHibikiSource.instance.mediaType.uniqueKey,
       mediaSourceIdentifier: ReaderHibikiSource.instance.uniqueKey,
@@ -746,7 +745,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   }
 
   void _openSrtBook(SrtBook book) {
-    if (book.ttuBookId <= 0) {
+    if (book.bookKey.isEmpty) {
       HibikiToast.show(msg: t.srt_epub_not_ready);
       return;
     }
@@ -755,7 +754,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       adaptivePageRoute<void>(
         builder: (_) => HibikiAppUiScaleNeutralizer(
           child: ReaderHibikiPage(
-            bookId: book.ttuBookId,
+            bookKey: book.bookKey,
             item: _srtBookMediaItem(book),
           ),
         ),
@@ -765,7 +764,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
 
   List<DialogAction> _srtExtraActions(
       BuildContext dialogContext, SrtBook book) {
-    final int bookId = book.ttuBookId;
+    final String bookKey = book.bookKey;
     final MediaItem item = _srtBookMediaItem(book);
     return [
       DialogDangerAction(
@@ -789,21 +788,21 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           icon: Icons.sell_outlined,
           onPressed: () => _openSrtBookTagPicker(book.id!),
         ),
-      if (bookId > 0) ...[
+      if (bookKey.isNotEmpty) ...[
         DialogQuickAction(
           label: t.audio_import,
           icon: Icons.headphones_outlined,
-          onPressed: () => _openAudioImport(item, bookId),
+          onPressed: () => _openAudioImport(item, bookKey),
         ),
         DialogListAction(
           label: t.profile_book_profile,
-          onPressed: () => _openBookProfilePicker(item, bookId),
+          onPressed: () => _openBookProfilePicker(item, bookKey),
         ),
         DialogListAction(
           label: t.book_css_editor_edit_css,
           onPressed: () {
             Navigator.pop(dialogContext);
-            _openCssEditor(bookId);
+            _openCssEditor(bookKey);
           },
         ),
       ],
@@ -937,21 +936,21 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         final SrtBookRepository repo = SrtBookRepository(appModel.database);
         final SrtBook? book = await repo.findByUid(uid);
         if (book != null) {
-          if (book.ttuBookId > 0) {
+          if (book.bookKey.isNotEmpty) {
             await ReaderHibikiSource.instance.deleteBook(
               db: appModel.database,
-              bookId: book.ttuBookId,
+              bookKey: book.bookKey,
             );
           }
           await repo.delete(uid);
           deleted++;
         }
       } else {
-        final int? bookId = _parseBookId(key);
-        if (bookId != null) {
+        final String? bookKey = _parseBookKey(key);
+        if (bookKey != null) {
           final bool ok = await ReaderHibikiSource.instance.deleteBook(
             db: appModel.database,
-            bookId: bookId,
+            bookKey: bookKey,
           );
           if (ok) deleted++;
         }
@@ -978,7 +977,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         allTags: allTags,
         selectedKeys: _selectedKeys,
         database: appModel.database,
-        parseBookId: _parseBookId,
+        parseBookKey: _parseBookKey,
       ),
     );
     if (!mounted) return;
@@ -999,10 +998,10 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     );
     if (confirmed != true || !mounted) return;
 
-    if (book.ttuBookId > 0) {
+    if (book.bookKey.isNotEmpty) {
       await ReaderHibikiSource.instance.deleteBook(
         db: appModel.database,
-        bookId: book.ttuBookId,
+        bookKey: book.bookKey,
       );
     }
     await SrtBookRepository(appModel.database).delete(book.uid);
@@ -1053,12 +1052,14 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   Widget buildMediaItemContent(MediaItem item) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final double overlayInset = tokens.spacing.gap * 0.75;
-    final info = _getAudiobookInfo(item.uniqueKey);
+    final String? bookKey = _parseBookKey(item.mediaIdentifier);
+    // Audiobook info is keyed by the book's bookKey (the Audiobooks table key),
+    // NOT the MediaItem.uniqueKey (which is the source-prefixed identifier).
+    final info = _getAudiobookInfo(bookKey ?? '');
     final bool hasAudiobook = info.hasAudiobook;
     final HealthKind healthKind = info.healthKind;
 
-    final int? bookId = _parseBookId(item.mediaIdentifier);
-    final tagWidget = bookId != null ? _buildTagLabels(bookId) : null;
+    final tagWidget = bookKey != null ? _buildTagLabels(bookKey) : null;
 
     return Stack(
       fit: StackFit.expand,
@@ -1104,13 +1105,14 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
 
   @override
   Widget buildMediaItem(MediaItem item) {
-    final int? bookId = _parseBookId(item.mediaIdentifier);
+    final String? bookKey = _parseBookKey(item.mediaIdentifier);
     return _bookCardShell(
       cardKey: ValueKey<String>('book_entry_${item.mediaIdentifier}'),
       focusId: HibikiFocusId('reader-shelf-book-${item.mediaIdentifier}'),
       selectionKey: item.mediaIdentifier,
-      dragBookId: bookId,
-      onTagDropped: bookId == null ? null : (tag) => _addTagToBook(bookId, tag),
+      dragBookId: bookKey,
+      onTagDropped:
+          bookKey == null ? null : (tag) => _addTagToBook(bookKey, tag),
       onTap: () async {
         final MediaSource source = item.getMediaSource(appModel: appModel);
         await appModel.openMedia(
@@ -1179,40 +1181,40 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
 
   @override
   List<DialogAction> extraActions(MediaItem item) {
-    final int? bookId = _parseBookId(item.mediaIdentifier);
-    if (bookId == null) return const [];
+    final String? bookKey = _parseBookKey(item.mediaIdentifier);
+    if (bookKey == null) return const [];
     return <DialogAction>[
       DialogDangerAction(
         label: t.dialog_delete,
-        onPressed: () => _confirmDeleteEpub(item, bookId),
+        onPressed: () => _confirmDeleteEpub(item, bookKey),
       ),
       DialogQuickAction(
         label: t.view_illustrations,
         icon: Icons.image_outlined,
-        onPressed: () => _openIllustrations(item, bookId),
+        onPressed: () => _openIllustrations(item, bookKey),
       ),
       DialogQuickAction(
         label: t.audiobook_import,
         icon: Icons.headphones_outlined,
-        onPressed: () => _openAudiobookImport(item, bookId),
+        onPressed: () => _openAudiobookImport(item, bookKey),
       ),
       DialogQuickAction(
         label: t.tag_label,
         icon: Icons.sell_outlined,
-        onPressed: () => _openTagPicker(bookId),
+        onPressed: () => _openTagPicker(bookKey),
       ),
       DialogListAction(
         label: t.profile_book_profile,
-        onPressed: () => _openBookProfilePicker(item, bookId),
+        onPressed: () => _openBookProfilePicker(item, bookKey),
       ),
       DialogListAction(
         label: t.book_css_editor_edit_css,
-        onPressed: () => _openCssEditor(bookId),
+        onPressed: () => _openCssEditor(bookKey),
       ),
     ];
   }
 
-  Future<void> _confirmDeleteEpub(MediaItem item, int bookId) async {
+  Future<void> _confirmDeleteEpub(MediaItem item, String bookKey) async {
     Navigator.pop(context);
     final bool? confirmed = await showAppDialog<bool>(
       context: context,
@@ -1226,7 +1228,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
 
     final bool ok = await ReaderHibikiSource.instance.deleteBook(
       db: appModel.database,
-      bookId: bookId,
+      bookKey: bookKey,
     );
     if (!mounted) return;
     if (!ok) {
@@ -1238,30 +1240,34 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     setState(() {});
   }
 
-  int? _parseBookId(String mediaIdentifier) =>
-      ReaderHibikiSource.parseBookId(mediaIdentifier);
+  String? _parseBookKey(String mediaIdentifier) =>
+      ReaderHibikiSource.parseBookKey(mediaIdentifier);
 
-  void _openIllustrations(MediaItem item, int bookId) {
+  Future<void> _openIllustrations(MediaItem item, String bookKey) async {
     Navigator.pop(context);
+    final EpubBookRow? row = await appModel.database.getEpubBook(bookKey);
+    if (!mounted || row == null) return;
     Navigator.push(
       context,
       adaptivePageRoute(
         builder: (_) => IllustrationsViewerPage(
           bookTitle: item.title,
-          bookId: bookId,
+          extractDir: row.extractDir,
         ),
       ),
     );
   }
 
-  Future<void> _openAudioImport(MediaItem item, int bookId) async {
+  Future<void> _openAudioImport(MediaItem item, String bookKey) async {
     Navigator.pop(context);
+    final EpubBookRow? row = await appModel.database.getEpubBook(bookKey);
+    if (!mounted) return;
     await showAppDialog<bool>(
       context: context,
       builder: (_) => AudiobookImportDialog(
-        bookUid: item.uniqueKey,
+        bookKey: bookKey,
         repo: AudiobookRepository(appModel.database),
-        ttuBookId: bookId,
+        extractDir: row?.extractDir,
         audioOnly: true,
       ),
     );
@@ -1270,14 +1276,16 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     }
   }
 
-  Future<void> _openAudiobookImport(MediaItem item, int bookId) async {
+  Future<void> _openAudiobookImport(MediaItem item, String bookKey) async {
     Navigator.pop(context);
+    final EpubBookRow? row = await appModel.database.getEpubBook(bookKey);
+    if (!mounted) return;
     await showAppDialog<bool>(
       context: context,
       builder: (_) => AudiobookImportDialog(
-        bookUid: item.uniqueKey,
+        bookKey: bookKey,
         repo: AudiobookRepository(appModel.database),
-        ttuBookId: bookId,
+        extractDir: row?.extractDir,
       ),
     );
     if (mounted) {
@@ -1285,11 +1293,11 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     }
   }
 
-  void _openTagPicker(int bookId) {
+  void _openTagPicker(String bookKey) {
     Navigator.pop(context);
     Navigator.push(
       context,
-      adaptivePageRoute(builder: (_) => TagPickerPage(bookId: bookId)),
+      adaptivePageRoute(builder: (_) => TagPickerPage(bookKey: bookKey)),
     ).then((_) {
       ref.invalidate(bookTagMapProvider);
       ref.invalidate(filteredBookIdsProvider);
@@ -1302,7 +1310,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     Navigator.push(
       context,
       adaptivePageRoute(
-        builder: (_) => TagPickerPage(bookId: srtBookId, isSrtBook: true),
+        builder: (_) => TagPickerPage(srtBookId: srtBookId, isSrtBook: true),
       ),
     ).then((_) {
       ref.invalidate(srtBookTagMapProvider);
@@ -1311,8 +1319,10 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     });
   }
 
-  Future<void> _openCssEditor(int bookId) async {
-    final bool exists = await EpubStorage.bookExists(bookId);
+  Future<void> _openCssEditor(String bookKey) async {
+    final EpubBookRow? row = await appModel.database.getEpubBook(bookKey);
+    final String extractDir = row?.extractDir ?? '';
+    final bool exists = await EpubStorage.bookDirExists(extractDir);
     if (!exists) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1321,7 +1331,6 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       }
       return;
     }
-    final String extractDir = await EpubStorage.bookPath(bookId);
     if (mounted) {
       await Navigator.push(
         context,
@@ -1332,9 +1341,9 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     }
   }
 
-  void _openBookProfilePicker(MediaItem item, int bookId) {
+  void _openBookProfilePicker(MediaItem item, String bookKey) {
     Navigator.pop(context);
-    final String bookUid = item.uniqueKey;
+    final String bookUid = bookKey;
     final ProfileRepository profileRepo = ref.read(profileRepositoryProvider);
     final ProfileUiState profileState = ref.read(profileViewModelProvider);
 
@@ -1523,7 +1532,11 @@ class BookDragTarget extends StatefulWidget {
     required this.child,
     super.key,
   });
-  final int bookId;
+
+  /// Drag-target identity marker (EPUB bookKey String or SRT srtBookId int).
+  /// Only used to distinguish targets; the drop action is carried by
+  /// [onTagDropped], so the concrete type is irrelevant here.
+  final Object bookId;
   final void Function(BookTagRow tag) onTagDropped;
   final Widget child;
 
@@ -1889,13 +1902,13 @@ class _BatchTagPickerDialog extends StatefulWidget {
     required this.allTags,
     required this.selectedKeys,
     required this.database,
-    required this.parseBookId,
+    required this.parseBookKey,
   });
 
   final List<BookTagRow> allTags;
   final Set<String> selectedKeys;
   final HibikiDatabase database;
-  final int? Function(String) parseBookId;
+  final String? Function(String) parseBookKey;
 
   @override
   State<_BatchTagPickerDialog> createState() => _BatchTagPickerDialogState();
@@ -1909,30 +1922,30 @@ class _BatchTagPickerDialogState extends State<_BatchTagPickerDialog> {
     final tr = Translations.of(context);
     final db = widget.database;
 
-    final List<int> epubBookIds = [];
+    final List<String> epubBookKeys = [];
     final List<String> srtUids = [];
     for (final key in widget.selectedKeys) {
       if (key.startsWith('srt_')) {
         srtUids.add(key.substring(4));
       } else {
-        final int? id = widget.parseBookId(key);
-        if (id != null) epubBookIds.add(id);
+        final String? bookKey = widget.parseBookKey(key);
+        if (bookKey != null) epubBookKeys.add(bookKey);
       }
     }
 
     final List<int> srtBookIds = await _resolveSrtBookIds(srtUids);
 
     for (final tagId in _addTagIds) {
-      for (final bookId in epubBookIds) {
-        await db.addTagToBook(bookId, tagId);
+      for (final bookKey in epubBookKeys) {
+        await db.addTagToBook(bookKey, tagId);
       }
       for (final srtId in srtBookIds) {
         await db.addTagToSrtBook(srtId, tagId);
       }
     }
     for (final tagId in _removeTagIds) {
-      for (final bookId in epubBookIds) {
-        await db.removeTagFromBook(bookId, tagId);
+      for (final bookKey in epubBookKeys) {
+        await db.removeTagFromBook(bookKey, tagId);
       }
       for (final srtId in srtBookIds) {
         await db.removeTagFromSrtBook(srtId, tagId);

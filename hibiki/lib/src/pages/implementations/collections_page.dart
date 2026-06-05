@@ -15,11 +15,11 @@ import 'package:hibiki/src/shortcuts/gamepad_service.dart'
 enum _CollectionType { bookmark, sentence }
 
 MediaItem buildCollectionReaderMediaItem({
-  required int ttuId,
+  required String bookKey,
   required String title,
 }) {
   return MediaItem(
-    mediaIdentifier: ReaderHibikiSource.mediaIdentifierFor(ttuId),
+    mediaIdentifier: ReaderHibikiSource.mediaIdentifierFor(bookKey),
     title: title,
     mediaTypeIdentifier: ReaderHibikiSource.instance.mediaType.uniqueKey,
     mediaSourceIdentifier: ReaderHibikiSource.instance.uniqueKey,
@@ -35,7 +35,7 @@ class _CollectionItem {
     required this.type,
     required this.createdAt,
     this.bookTitle,
-    this.ttuBookId,
+    this.bookKey,
     this.label,
     this.text,
     this.chapterLabel,
@@ -49,7 +49,7 @@ class _CollectionItem {
   final _CollectionType type;
   final DateTime createdAt;
   final String? bookTitle;
-  final int? ttuBookId;
+  final String? bookKey;
   final String? label;
   final String? text;
   final String? chapterLabel;
@@ -70,9 +70,9 @@ class CollectionsPage extends BasePage {
 class _CollectionsPageState extends BasePageState<CollectionsPage> {
   bool _loading = true;
   List<_CollectionItem> _items = [];
-  Map<int, String> _bookTitleMap = {};
-  Map<int, List<AudioCue>> _cueMap = {};
-  Map<int, List<File>> _audioFileMap = {};
+  Map<String, String> _bookTitleMap = {};
+  Map<String, List<AudioCue>> _cueMap = {};
+  Map<String, List<File>> _audioFileMap = {};
   bool _playingAudio = false;
   final _dateFmt = DateFormat('MM/dd HH:mm');
 
@@ -95,10 +95,10 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     final allFavorites = await favoriteRepo.getAll();
 
     final srtBooks = await srtBookRepo.listAll();
-    final bookTitleMap = <int, String>{};
+    final bookTitleMap = <String, String>{};
     for (final b in srtBooks) {
-      if (b.ttuBookId > 0) {
-        bookTitleMap[b.ttuBookId] = b.title;
+      if (b.bookKey.isNotEmpty) {
+        bookTitleMap[b.bookKey] = b.title;
       }
     }
 
@@ -108,8 +108,9 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       items.add(_CollectionItem(
         type: _CollectionType.bookmark,
         createdAt: bm.createdAt,
-        bookTitle: bm.bookTitle ?? bookTitleMap[bm.ttuBookId],
-        ttuBookId: bm.ttuBookId,
+        bookTitle: bm.bookTitle ??
+            (bm.bookKey != null ? bookTitleMap[bm.bookKey] : null),
+        bookKey: bm.bookKey,
         label: bm.label,
         sectionIndex: bm.sectionIndex,
         normCharOffset: bm.normCharOffset,
@@ -122,7 +123,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
         type: _CollectionType.sentence,
         createdAt: fav.createdAt,
         bookTitle: fav.bookTitle,
-        ttuBookId: fav.ttuBookId,
+        bookKey: fav.bookKey,
         text: fav.text,
         chapterLabel: fav.chapterLabel,
         sectionIndex: fav.sectionIndex,
@@ -134,26 +135,26 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
 
     items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
-    final allTtuIds = <int>{};
+    final allBookKeys = <String>{};
     for (final bm in allBookmarks) {
-      if (bm.ttuBookId != null && bm.ttuBookId! > 0) {
-        allTtuIds.add(bm.ttuBookId!);
+      if (bm.bookKey != null && bm.bookKey!.isNotEmpty) {
+        allBookKeys.add(bm.bookKey!);
       }
     }
     for (final fav in allFavorites) {
-      if (fav.ttuBookId != null && fav.ttuBookId! > 0) {
-        allTtuIds.add(fav.ttuBookId!);
+      if (fav.bookKey != null && fav.bookKey!.isNotEmpty) {
+        allBookKeys.add(fav.bookKey!);
       }
     }
 
-    final cueMap = <int, List<AudioCue>>{};
-    final audioFileMap = <int, List<File>>{};
+    final cueMap = <String, List<AudioCue>>{};
+    final audioFileMap = <String, List<File>>{};
 
-    final audiobookByTtuId = await abRepo.buildTtuBookIdMap();
+    final audiobookByKey = await abRepo.buildBookKeyMap();
 
-    for (final ttuId in allTtuIds) {
+    for (final bookKey in allBookKeys) {
       // SrtBook
-      final srtBook = await srtBookRepo.findByTtuBookId(ttuId);
+      final srtBook = await srtBookRepo.findByBookKey(bookKey);
       if (srtBook != null) {
         final cues = await srtBookRepo.cuesFor(srtBook.uid);
         if (cues.isNotEmpty) {
@@ -162,18 +163,18 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
             audioRoot: srtBook.audioRoot,
           );
           if (audioFiles.isNotEmpty) {
-            cueMap[ttuId] = cues;
-            audioFileMap[ttuId] = audioFiles;
+            cueMap[bookKey] = cues;
+            audioFileMap[bookKey] = audioFiles;
             continue;
           }
         }
       }
 
       // Audiobook (Sasayaki)
-      final ab = audiobookByTtuId[ttuId];
+      final ab = audiobookByKey[bookKey];
       if (ab == null) continue;
 
-      final cues = await abRepo.cuesForBook(ab.bookUid);
+      final cues = await abRepo.cuesForBook(ab.bookKey);
       if (cues.isEmpty) continue;
 
       final audioFiles = await _resolveAudioFiles(
@@ -182,8 +183,8 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       );
       if (audioFiles.isEmpty) continue;
 
-      cueMap[ttuId] = cues;
-      audioFileMap[ttuId] = audioFiles;
+      cueMap[bookKey] = cues;
+      audioFileMap[bookKey] = audioFiles;
     }
 
     if (mounted) {
@@ -198,13 +199,13 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   }
 
   void _openBook(_CollectionItem item) {
-    final int? ttuId = item.ttuBookId;
-    if (ttuId == null || ttuId <= 0) return;
+    final String? bookKey = item.bookKey;
+    if (bookKey == null || bookKey.isEmpty) return;
 
-    final String title = _bookTitleMap[ttuId] ?? item.bookTitle ?? '';
+    final String title = _bookTitleMap[bookKey] ?? item.bookTitle ?? '';
 
     final MediaItem mediaItem = buildCollectionReaderMediaItem(
-      ttuId: ttuId,
+      bookKey: bookKey,
       title: title,
     );
 
@@ -263,19 +264,19 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   }
 
   Future<void> _playItemAudio(_CollectionItem item) async {
-    final int? ttuId = item.ttuBookId;
-    if (ttuId == null || ttuId <= 0) {
+    final String? bookKey = item.bookKey;
+    if (bookKey == null || bookKey.isEmpty) {
       HibikiToast.show(msg: t.srt_audio_unresolved);
       return;
     }
 
-    final List<File>? audioFiles = _audioFileMap[ttuId];
+    final List<File>? audioFiles = _audioFileMap[bookKey];
     if (audioFiles == null || audioFiles.isEmpty) {
       HibikiToast.show(msg: t.srt_audio_unresolved);
       return;
     }
 
-    final List<AudioCue>? cues = _cueMap[ttuId];
+    final List<AudioCue>? cues = _cueMap[bookKey];
     if (cues == null || cues.isEmpty) {
       HibikiToast.show(msg: t.srt_audio_unresolved);
       return;
@@ -321,15 +322,15 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   Future<void> _deleteItem(_CollectionItem item) async {
     final db = appModel.database;
     if (item.type == _CollectionType.bookmark) {
-      final ttuId = item.ttuBookId;
-      if (ttuId == null || ttuId <= 0) return;
+      final bookKey = item.bookKey;
+      if (bookKey == null || bookKey.isEmpty) return;
       final repo = BookmarkRepository(db);
       final bookmarkId = item.bookmarkId;
       if (bookmarkId != null) {
         await repo.removeBookmarkById(bookmarkId);
       } else {
         await repo.removeBookmarkMatching(
-          ttuId,
+          bookKey,
           sectionIndex: item.sectionIndex ?? 0,
           normCharOffset: item.normCharOffset ?? 0,
           createdAt: item.createdAt,
@@ -344,13 +345,13 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   }
 
   bool _hasAudio(_CollectionItem item) {
-    return _cueMap.containsKey(item.ttuBookId) &&
-        _audioFileMap.containsKey(item.ttuBookId);
+    return _cueMap.containsKey(item.bookKey) &&
+        _audioFileMap.containsKey(item.bookKey);
   }
 
   Future<void> _showItemDialog(_CollectionItem item) async {
     final isBookmark = item.type == _CollectionType.bookmark;
-    final canNavigate = item.ttuBookId != null && item.ttuBookId! > 0;
+    final canNavigate = item.bookKey != null && item.bookKey!.isNotEmpty;
     final hasAudio = _hasAudio(item);
     final displayTitle = isBookmark ? (item.label ?? '') : (item.text ?? '');
     final cs = Theme.of(context).colorScheme;
@@ -453,10 +454,10 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       ].where((s) => s != null && s.isNotEmpty).join(' · ');
     }
 
-    final canNavigate = item.ttuBookId != null && item.ttuBookId! > 0;
+    final canNavigate = item.bookKey != null && item.bookKey!.isNotEmpty;
 
     final key = isBookmark
-        ? 'bm_${item.ttuBookId}_${item.createdAt.microsecondsSinceEpoch}'
+        ? 'bm_${item.bookKey}_${item.createdAt.microsecondsSinceEpoch}'
         : 'fav_${item.favoriteId}';
 
     return Dismissible(

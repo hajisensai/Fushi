@@ -7,12 +7,19 @@ import 'package:hibiki/src/pages/implementations/tag_management_page.dart';
 import 'package:hibiki/utils.dart';
 
 class TagPickerPage extends ConsumerStatefulWidget {
+  /// EPUB 书：传 [bookKey]（书的主键）；SRT 书：传 [srtBookId]（srt_books 自增主键）
+  /// 且 [isSrtBook] = true。两者互斥，按 [isSrtBook] 分派。
   const TagPickerPage({
-    required this.bookId,
+    this.bookKey,
+    this.srtBookId,
     this.isSrtBook = false,
     super.key,
-  });
-  final int bookId;
+  }) : assert(
+          isSrtBook ? srtBookId != null : bookKey != null,
+          'bookKey is required for EPUB books, srtBookId for SRT books',
+        );
+  final String? bookKey;
+  final int? srtBookId;
   final bool isSrtBook;
 
   @override
@@ -34,8 +41,8 @@ class _TagPickerPageState extends ConsumerState<TagPickerPage> {
   Future<void> _load() async {
     final allTags = await _db.getAllTags();
     final bookTags = widget.isSrtBook
-        ? await _db.getTagsForSrtBook(widget.bookId)
-        : await _db.getTagsForBook(widget.bookId);
+        ? await _db.getTagsForSrtBook(widget.srtBookId!)
+        : await _db.getTagsForBook(widget.bookKey!);
     if (mounted) {
       setState(() {
         _allTags = allTags;
@@ -47,13 +54,13 @@ class _TagPickerPageState extends ConsumerState<TagPickerPage> {
   Future<void> _toggle(int tagId, bool selected) async {
     if (selected) {
       widget.isSrtBook
-          ? await _db.addTagToSrtBook(widget.bookId, tagId)
-          : await _db.addTagToBook(widget.bookId, tagId);
+          ? await _db.addTagToSrtBook(widget.srtBookId!, tagId)
+          : await _db.addTagToBook(widget.bookKey!, tagId);
       setState(() => _selectedTagIds.add(tagId));
     } else {
       widget.isSrtBook
-          ? await _db.removeTagFromSrtBook(widget.bookId, tagId)
-          : await _db.removeTagFromBook(widget.bookId, tagId);
+          ? await _db.removeTagFromSrtBook(widget.srtBookId!, tagId)
+          : await _db.removeTagFromBook(widget.bookKey!, tagId);
       setState(() => _selectedTagIds.remove(tagId));
     }
   }
@@ -72,8 +79,8 @@ class _TagPickerPageState extends ConsumerState<TagPickerPage> {
     try {
       final newId = await _db.createTag(result.name, result.color);
       widget.isSrtBook
-          ? await _db.addTagToSrtBook(widget.bookId, newId)
-          : await _db.addTagToBook(widget.bookId, newId);
+          ? await _db.addTagToSrtBook(widget.srtBookId!, newId)
+          : await _db.addTagToBook(widget.bookKey!, newId);
       await _load();
     } on SqliteException catch (e) {
       if (e.extendedResultCode == 2067 && mounted) {

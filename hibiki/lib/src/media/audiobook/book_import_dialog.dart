@@ -14,8 +14,6 @@ import 'package:hibiki/src/epub/epub_book.dart';
 import 'package:hibiki/src/epub/book_title_conflict.dart';
 import 'package:hibiki/src/epub/epub_importer.dart';
 import 'package:hibiki/src/epub/epub_parser.dart';
-import 'package:hibiki/src/epub/epub_storage.dart';
-import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/utils.dart';
 
 /// 统一"导入书"对话框。EPUB、字幕、音频可按需组合，一次导入。
@@ -441,20 +439,24 @@ class _BookImportDialogState extends State<BookImportDialog> {
     }
   }
 
-  Future<void> _applyCoverToEpub(int bookId, {String? sourcePath}) async {
+  Future<void> _applyCoverToEpub(String bookKey, {String? sourcePath}) async {
     final String source = sourcePath ?? _coverPath!;
-    final String extractDir = await EpubStorage.bookDirectory(bookId);
+    // Locate the extracted dir via the stored extract_dir column (the on-disk
+    // folder name may still be a legacy int id; the column is the truth).
+    final EpubBookRow? row = await widget.db.getEpubBook(bookKey);
+    if (row == null) return;
+    final String extractDir = row.extractDir;
     final String ext = p.extension(source);
     final String dest = p.join(extractDir, 'cover$ext');
     await File(source).copy(dest);
     await (widget.db.update(widget.db.epubBooks)
-          ..where((tbl) => tbl.id.equals(bookId)))
+          ..where((tbl) => tbl.bookKey.equals(bookKey)))
         .write(EpubBooksCompanion(coverPath: Value('cover$ext')));
   }
 
-  Future<bool> _epubHasCover(int bookId) async {
+  Future<bool> _epubHasCover(String bookKey) async {
     final row = await (widget.db.select(widget.db.epubBooks)
-          ..where((tbl) => tbl.id.equals(bookId)))
+          ..where((tbl) => tbl.bookKey.equals(bookKey)))
         .getSingleOrNull();
     return row?.coverPath != null;
   }
@@ -569,7 +571,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
     );
     debugPrint('[hibiki-import] subtitleBook: parsed ${cues.length} cues');
 
-    int bookId = 0;
+    String bookKey = '';
     if (cues.isNotEmpty) {
       try {
         _reportProgress(0.3, t.import_step_building_epub);
@@ -582,14 +584,14 @@ class _BookImportDialogState extends State<BookImportDialog> {
           author: author,
         );
         _reportProgress(0.5, t.import_step_importing_epub);
-        bookId = await EpubImporter.importFromPath(
+        bookKey = await EpubImporter.importFromPath(
           db: widget.db,
           filePath: epubPath,
           fileName: '${title.replaceAll(RegExp(r'[^\w\s\-]'), '')}.epub',
           onDuplicateTitle: _onDuplicateTitle,
         );
         debugPrint(
-            '[hibiki-import] subtitleBook: EPUB import done, id=$bookId');
+            '[hibiki-import] subtitleBook: EPUB import done, key=$bookKey');
       } on DuplicateImportCancelledException {
         // 取消必须冒泡到顶层中止整次导入，不能被吞成 bookId=0 继续。
         rethrow;
@@ -631,7 +633,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
       ..title = title
       ..srtPath = persistedSrt
       ..importedAt = DateTime.now().millisecondsSinceEpoch
-      ..ttuBookId = bookId;
+      ..bookKey = bookKey;
     if (persistedAudioPaths.isNotEmpty) {
       book.audioPaths = persistedAudioPaths;
     }
@@ -647,7 +649,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
     }
 
     debugPrint('[hibiki-import] SrtBook save: uid=$uid title="$title" '
-        'bookId=$bookId cues=${cues.length}');
+        'bookKey=$bookKey cues=${cues.length}');
 
     await widget.repo.save(book);
     await widget.repo.saveCues(uid: uid, cues: cues);
@@ -659,7 +661,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
 
     _reportProgress(0.2, t.import_step_reading);
     final String ext = p.extension(_epubPath!).toLowerCase();
-    final int bookId;
+    final String bookKey;
     if (TextToEpub.isSupported(_epubPath!) ||
         (ext != '.epub' && ext != '.zip')) {
       _reportProgress(0.3, t.import_step_converting_epub);
@@ -668,7 +670,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
       final String filename =
           '${title.replaceAll(RegExp(r'[^\w\s\-]'), '')}.epub';
       _reportProgress(0.5, t.import_step_importing_epub);
-      bookId = await EpubImporter.import(
+      bookKey = await EpubImporter.import(
         db: widget.db,
         bytes: bytes,
         fileName: filename,
@@ -676,7 +678,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
       );
     } else {
       _reportProgress(0.5, t.import_step_importing_epub);
-      bookId = await EpubImporter.importFromPath(
+      bookKey = await EpubImporter.importFromPath(
         db: widget.db,
         filePath: _epubPath!,
         fileName: _epubName ?? p.basename(_epubPath!),
@@ -684,15 +686,15 @@ class _BookImportDialogState extends State<BookImportDialog> {
       );
     }
 
-    await _applyBestCoverToEpub(bookId);
+    await _applyBestCoverToEpub(bookKey);
     _reportProgress(1, t.import_step_done);
   }
 
-  Future<void> _applyBestCoverToEpub(int bookId) async {
+  Future<void> _applyBestCoverToEpub(String bookKey) async {
     if (_coverPath != null) {
-      await _applyCoverToEpub(bookId);
-    } else if (_audioCoverPath != null && !(await _epubHasCover(bookId))) {
-      await _applyCoverToEpub(bookId, sourcePath: _audioCoverPath);
+      await _applyCoverToEpub(bookKey);
+    } else if (_audioCoverPath != null && !(await _epubHasCover(bookKey))) {
+      await _applyCoverToEpub(bookKey, sourcePath: _audioCoverPath);
     }
   }
 
@@ -700,7 +702,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
     final File epubFile = File(_epubPath!);
 
     _reportProgress(0.05, t.import_step_reading);
-    final int bookId;
+    final String bookKey;
     if (TextToEpub.isSupported(_epubPath!)) {
       _reportProgress(0.1, t.import_step_converting_epub);
       final Uint8List importBytes =
@@ -708,7 +710,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
       final String importFilename =
           '${title.replaceAll(RegExp(r'[^\w\s\-]'), '')}.epub';
       _reportProgress(0.2, t.import_step_importing_epub);
-      bookId = await EpubImporter.import(
+      bookKey = await EpubImporter.import(
         db: widget.db,
         bytes: importBytes,
         fileName: importFilename,
@@ -716,7 +718,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
       );
     } else {
       _reportProgress(0.2, t.import_step_importing_epub);
-      bookId = await EpubImporter.importFromPath(
+      bookKey = await EpubImporter.importFromPath(
         db: widget.db,
         filePath: _epubPath!,
         fileName: _epubName ?? p.basename(_epubPath!),
@@ -724,12 +726,13 @@ class _BookImportDialogState extends State<BookImportDialog> {
       );
     }
 
-    await _applyBestCoverToEpub(bookId);
+    await _applyBestCoverToEpub(bookKey);
 
     _reportProgress(0.35, t.import_step_reading_idb);
     List<EpubSection> sections = const <EpubSection>[];
     try {
-      final String extractDir = await EpubStorage.bookDirectory(bookId);
+      final EpubBookRow? bookRow = await widget.db.getEpubBook(bookKey);
+      final String extractDir = bookRow?.extractDir ?? '';
       final EpubBook epubBook = EpubParser.parseFromExtracted(extractDir);
       sections = List<EpubSection>.generate(
         epubBook.chapters.length,
@@ -743,13 +746,11 @@ class _BookImportDialogState extends State<BookImportDialog> {
       ErrorLogService.instance.log('BookImportDialog.parseEpub', e, stack);
       debugPrint('[hibiki-import] parseFromExtracted failed: $e');
     }
-    final String bookUid = ReaderHibikiSource.bookUidFor(bookId);
-
     _reportProgress(0.45, t.import_step_parsing);
     final String ext = _subtitlePath!.split('.').last.toLowerCase();
     final List<AudioCue> cues = await _parseCuesWithIndex(
       File(_subtitlePath!),
-      bookUid,
+      bookKey,
       0,
     );
     AudiobookHealth health;
@@ -794,7 +795,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
     }
 
     _reportProgress(0.8, t.import_step_persisting);
-    final Directory persistDir = await _ensurePersistDir(bookUid);
+    final Directory persistDir = await _ensurePersistDir(bookKey);
     final String persistedSrt = await AudiobookStorage.persistFileWithProgress(
       File(_subtitlePath!),
       persistDir,
@@ -821,7 +822,7 @@ class _BookImportDialogState extends State<BookImportDialog> {
 
     _reportProgress(0.9, t.import_step_saving);
     final Audiobook audiobook = Audiobook()
-      ..bookUid = bookUid
+      ..bookKey = bookKey
       ..alignmentFormat = ext
       ..alignmentPath = persistedSrt;
     if (persistedAudioPaths.isNotEmpty) {
@@ -831,11 +832,11 @@ class _BookImportDialogState extends State<BookImportDialog> {
 
     await widget.audiobookRepo.saveAudiobook(audiobook);
     await widget.audiobookRepo.saveCues(
-      bookUid: bookUid,
+      bookKey: bookKey,
       cues: cues,
     );
     await widget.audiobookRepo.updateHealthOverlay(
-      bookUid: bookUid,
+      bookKey: bookKey,
       health: health,
     );
     _reportProgress(1, t.import_step_done);
@@ -859,24 +860,24 @@ class _BookImportDialogState extends State<BookImportDialog> {
 
   Future<List<AudioCue>> _parseCuesWithIndex(
     File file,
-    String bookUid,
+    String bookKey,
     int audioFileIndex,
   ) {
     final String ext = file.path.split('.').last.toLowerCase();
     switch (ext) {
       case 'lrc':
         return LrcParser.parse(
-            lrcFile: file, bookUid: bookUid, audioFileIndex: audioFileIndex);
+            lrcFile: file, bookKey: bookKey, audioFileIndex: audioFileIndex);
       case 'vtt':
         return VttParser.parse(
-            vttFile: file, bookUid: bookUid, audioFileIndex: audioFileIndex);
+            vttFile: file, bookKey: bookKey, audioFileIndex: audioFileIndex);
       case 'ass':
       case 'ssa':
         return AssParser.parse(
-            assFile: file, bookUid: bookUid, audioFileIndex: audioFileIndex);
+            assFile: file, bookKey: bookKey, audioFileIndex: audioFileIndex);
       default:
         return SrtParser.parse(
-            srtFile: file, bookUid: bookUid, audioFileIndex: audioFileIndex);
+            srtFile: file, bookKey: bookKey, audioFileIndex: audioFileIndex);
     }
   }
 
