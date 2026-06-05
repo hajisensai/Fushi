@@ -47,7 +47,7 @@
 - 当 `positionMs / durationMs ≥ 0.9` 且该视频 `VideoBooks.completedAt` 为 null 时，首次写入完成时间戳。
 - 时间戳天然去重（只记首次完成，重看不重复计）。
 
-## 5. 数据存储（`packages/hibiki_core`，schema v20 → v21）
+## 5. 数据存储（`packages/hibiki_core`，schema v21 → v22）
 
 ### 5.1 新表 `VideoWatchStatistics`（对照 `ReadingStatistics`）
 | 字段 | 类型 | 说明 |
@@ -82,9 +82,10 @@
 - `markVideoCompleted(bookUid, completedAt)`：仅当当前 `completedAt` 为 null 时写入（幂等首次）。
 - 完成数不新增 count 方法：统计页用现有 `VideoBookRepository.listAll()` 读各行 `completedAt`，在页面侧按时间戳落入今日 / 周 / 月 / 全部区间计数（天然去重）。
 
-### 5.5 迁移 v21
-- 建 `VideoWatchStatistics`、`VideoHourlyLogs` 两表。
-- `VideoBooks` `addColumn(completedAt)`（无损，既有行为 null）。
+### 5.5 迁移 v21 → v22（基底当前 schema 已是 v21）
+- `schemaVersion` 21 → 22；新增 `if (from < 22) { ... }` 步骤。
+- 建 `VideoWatchStatistics`、`VideoHourlyLogs` 两表（`m.createTable`，带 `_tableExists` 守卫避免 fresh DB 重建）。
+- `VideoBooks` `addColumn(completedAt)`（带 `_columnExists` 守卫，无损，既有行为 null）。
 
 ## 6. 统计页面 `VideoStatisticsPage`
 
@@ -121,7 +122,7 @@
 
 ## 9. 测试（TDD，最强可落地层）
 
-- **DB**：`VideoWatchStatistics` / `VideoHourlyLogs` CRUD（累加 upsert）、`markVideoCompleted` 幂等、v21 迁移（含 `completedAt` addColumn 无损、既有 `VideoBooks` 行保留）。
+- **DB**：`VideoWatchStatistics` / `VideoHourlyLogs` CRUD（累加 upsert）、`markVideoCompleted` 幂等、v22 迁移（含 `completedAt` addColumn 无损、既有 `VideoBooks` 行保留）。
 - **`VideoWatchTracker` 纯逻辑**：暂停不计时、跨小时 / 跨天拆分、cue 字数单调前进（来回不重复）、完成阈值 0.9 边界。
 - **统计页聚合纯函数**：今日 / 周 / 月 / 全部累加、按视频排行排序、完成数按时间戳分桶。
 - **入口 widget**：视频页统计按钮存在且导航到 `VideoStatisticsPage`。
