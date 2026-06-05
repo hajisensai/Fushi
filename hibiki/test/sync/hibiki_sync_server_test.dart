@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/sync/hibiki_remote_lookup_service.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
+import 'package:hibiki/src/sync/sync_utils.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 
 void main() {
@@ -17,7 +18,7 @@ void main() {
       tempDir = await Directory.systemTemp.createTemp('hibiki_server_test_');
       final syncDataDir = Directory('${tempDir.path}/sync-data');
       await syncDataDir.create();
-      final rootDir = Directory('${syncDataDir.path}/ttu-reader-data');
+      final rootDir = Directory('${syncDataDir.path}/$kSyncRootFolderName');
       await rootDir.create();
       final bookDir = Directory('${rootDir.path}/TestBook');
       await bookDir.create();
@@ -63,7 +64,7 @@ void main() {
       final client = HttpClient();
       final request = await client.openUrl(
         'PROPFIND',
-        Uri.parse('http://localhost:${server.port}/ttu-reader-data/'),
+        Uri.parse('http://localhost:${server.port}/$kSyncRootFolderName/'),
       );
       request.headers.set('Depth', '0');
       final response = await request.close();
@@ -77,7 +78,7 @@ void main() {
       final client = HttpClient();
       final request = await client.openUrl(
         'PROPFIND',
-        Uri.parse('http://localhost:${server.port}/ttu-reader-data/'),
+        Uri.parse('http://localhost:${server.port}/$kSyncRootFolderName/'),
       );
       request.headers.set('Authorization',
           'Basic ${base64Encode(utf8.encode('hibiki:wrongtoken'))}');
@@ -93,7 +94,7 @@ void main() {
       final client = HttpClient();
       final request = await client.openUrl(
         'PROPFIND',
-        Uri.parse('http://localhost:${server.port}/ttu-reader-data/'),
+        Uri.parse('http://localhost:${server.port}/$kSyncRootFolderName/'),
       );
       request.headers.set('Authorization',
           'Basic ${base64Encode(utf8.encode('hibiki:$token'))}');
@@ -109,7 +110,7 @@ void main() {
       await server.start();
       final client = HttpClient();
       final request = await client.getUrl(Uri.parse(
-        'http://localhost:${server.port}/ttu-reader-data/TestBook/progress_1234_0.5.json',
+        'http://localhost:${server.port}/$kSyncRootFolderName/TestBook/progress_1234_0.5.json',
       ));
       request.headers.set('Authorization',
           'Basic ${base64Encode(utf8.encode('hibiki:$token'))}');
@@ -127,7 +128,7 @@ void main() {
       final request = await client.openUrl(
         'PUT',
         Uri.parse(
-            'http://localhost:${server.port}/ttu-reader-data/TestBook/test.json'),
+            'http://localhost:${server.port}/$kSyncRootFolderName/TestBook/test.json'),
       );
       request.headers.set('Authorization',
           'Basic ${base64Encode(utf8.encode('hibiki:$token'))}');
@@ -137,8 +138,8 @@ void main() {
       await response.drain<void>();
       expect(response.statusCode, 201);
 
-      final file =
-          File('${tempDir.path}/sync-data/ttu-reader-data/TestBook/test.json');
+      final file = File(
+          '${tempDir.path}/sync-data/$kSyncRootFolderName/TestBook/test.json');
       expect(file.existsSync(), isTrue);
       expect(jsonDecode(file.readAsStringSync()), {'hello': 'world'});
       client.close();
@@ -147,7 +148,7 @@ void main() {
     test('DELETE removes file', () async {
       await server.start();
       final testFile = File(
-          '${tempDir.path}/sync-data/ttu-reader-data/TestBook/to_delete.json');
+          '${tempDir.path}/sync-data/$kSyncRootFolderName/TestBook/to_delete.json');
       await testFile.writeAsString('{}');
       expect(testFile.existsSync(), isTrue);
 
@@ -155,7 +156,7 @@ void main() {
       final request = await client.openUrl(
         'DELETE',
         Uri.parse(
-            'http://localhost:${server.port}/ttu-reader-data/TestBook/to_delete.json'),
+            'http://localhost:${server.port}/$kSyncRootFolderName/TestBook/to_delete.json'),
       );
       request.headers.set('Authorization',
           'Basic ${base64Encode(utf8.encode('hibiki:$token'))}');
@@ -171,7 +172,8 @@ void main() {
       final client = HttpClient();
       final request = await client.openUrl(
         'MKCOL',
-        Uri.parse('http://localhost:${server.port}/ttu-reader-data/NewBook/'),
+        Uri.parse(
+            'http://localhost:${server.port}/$kSyncRootFolderName/NewBook/'),
       );
       request.headers.set('Authorization',
           'Basic ${base64Encode(utf8.encode('hibiki:$token'))}');
@@ -179,7 +181,7 @@ void main() {
       await response.drain<void>();
       expect(response.statusCode, 201);
       expect(
-        Directory('${tempDir.path}/sync-data/ttu-reader-data/NewBook')
+        Directory('${tempDir.path}/sync-data/$kSyncRootFolderName/NewBook')
             .existsSync(),
         isTrue,
       );
@@ -191,7 +193,7 @@ void main() {
       final client = HttpClient();
       for (final path in [
         '/../../../etc/passwd',
-        '/ttu-reader-data/../../etc/passwd',
+        '/$kSyncRootFolderName/../../etc/passwd',
         '/%2e%2e/%2e%2e/etc/passwd',
       ]) {
         final request = await client.getUrl(
@@ -213,7 +215,7 @@ void main() {
       final request = await client.openUrl(
         'HEAD',
         Uri.parse(
-            'http://localhost:${server.port}/ttu-reader-data/TestBook/progress_1234_0.5.json'),
+            'http://localhost:${server.port}/$kSyncRootFolderName/TestBook/progress_1234_0.5.json'),
       );
       request.headers.set('Authorization',
           'Basic ${base64Encode(utf8.encode('hibiki:$token'))}');

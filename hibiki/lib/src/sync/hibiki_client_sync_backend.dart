@@ -206,7 +206,7 @@ class HibikiClientSyncBackend extends SyncBackend {
     await _ensureResolved();
     if (_rootFolderId != null) return _rootFolderId!;
 
-    final path = '${_ops!.baseUrl}/ttu-reader-data/';
+    final path = '${_ops!.baseUrl}/$kSyncRootFolderName/';
     await _ops!.ensureCollection(path);
     _rootFolderId = path;
     return path;
@@ -439,7 +439,7 @@ class HibikiClientSyncBackend extends SyncBackend {
   @override
   Future<String> ensureNamespace(String name) async {
     await _ensureResolved();
-    final root = '${_ops!.baseUrl}/ttu-reader-data/';
+    final root = '${_ops!.baseUrl}/$kSyncRootFolderName/';
     final path = '$root${Uri.encodeComponent(name)}/';
     await _ops!.ensureCollection(path);
     return path;

@@ -28,16 +28,18 @@ class FtpSyncBackend extends SyncBackend {
   String _homeDir = '/';
 
   /// Sync root, anchored UNDER the login home — never the raw server root. A
-  /// chrooted server reports PWD '/', so this reproduces the legacy
-  /// '/ttu-reader-data' exactly (no data move); a normal server reports the
-  /// real home, so the folder lands there instead of failing at '/'.
+  /// chrooted server reports PWD '/', so this lands at '/$kSyncRootFolderName';
+  /// a normal server reports the real home, so the folder lands there instead
+  /// of failing at '/'.
   String get _rootPath => ftpRootPath(_homeDir);
 
   /// Pure helper for [_rootPath]; exposed for testing.
   @visibleForTesting
   static String ftpRootPath(String home) {
     final String trimmed = home.replaceAll(RegExp(r'/+$'), '');
-    return trimmed.isEmpty ? '/ttu-reader-data' : '$trimmed/ttu-reader-data';
+    return trimmed.isEmpty
+        ? '/$kSyncRootFolderName'
+        : '$trimmed/$kSyncRootFolderName';
   }
 
   /// Normalize a PWD reply into a clean directory path (strip surrounding

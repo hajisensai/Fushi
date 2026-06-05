@@ -12,6 +12,7 @@
 import 'dart:io';
 
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
+import 'package:hibiki/src/sync/sync_utils.dart';
 
 Future<void> main(List<String> args) async {
   final int port = args.isNotEmpty ? int.parse(args.first) : 38765;
@@ -20,7 +21,7 @@ Future<void> main(List<String> args) async {
   final Directory dir = Directory.systemTemp.createTempSync('hibiki_p2p_host_');
   // Seed the served root + one book so an authenticated PROPFIND lists content.
   final Directory book =
-      Directory('${dir.path}/sync-data/ttu-reader-data/InteropBook');
+      Directory('${dir.path}/sync-data/$kSyncRootFolderName/InteropBook');
   book.createSync(recursive: true);
   File('${book.path}/progress_1234_0.5.json')
       .writeAsStringSync('{"dataId":0,"exploredCharCount":500,"progress":0.5,'
