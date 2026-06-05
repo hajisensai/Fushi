@@ -7,7 +7,7 @@ void main() {
   group('Audiobook', () {
     test('keeps persisted audio paths in cue order', () {
       final audiobook = Audiobook()
-        ..bookUid = 'book'
+        ..bookKey = 'book'
         ..audioPaths = <String>[
           r'C:\books\track10.mp3',
           r'C:\books\track2.mp3',
@@ -23,7 +23,7 @@ void main() {
 
     test('keeps Dolby container extensions in cue order', () {
       final audiobook = Audiobook()
-        ..bookUid = 'book'
+        ..bookKey = 'book'
         ..audioPaths = <String>[
           r'C:\books\chapter2.eac3',
           r'C:\books\chapter1.ac3',
@@ -39,14 +39,14 @@ void main() {
   group('AudioCue', () {
     test('validates audio file index against sorted audio paths', () {
       final audiobook = Audiobook()
-        ..bookUid = 'book'
+        ..bookKey = 'book'
         ..audioPaths = <String>[
           r'C:\books\track10.mp3',
           r'C:\books\track2.mp3',
           r'C:\books\track1.mp3',
         ];
       final cue = AudioCue()
-        ..bookUid = 'book'
+        ..bookKey = 'book'
         ..chapterHref = 'chapter'
         ..sentenceIndex = 0
         ..textFragmentId = 'cue'
