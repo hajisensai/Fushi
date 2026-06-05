@@ -58,6 +58,7 @@ import 'package:hibiki/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent, GamepadLongPressIntent;
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 import 'package:hibiki/src/shortcuts/reader_caret_router.dart';
+import 'package:hibiki/src/shortcuts/reader_space_override.dart';
 
 /// Which WebView surface the char-level reading cursor lives on. The cursor is
 /// on the reader content, or — after a dictionary lookup — on the top popup,
@@ -3563,7 +3564,17 @@ window.flutter_inappwebview.callHandler('spreadReady');
       modifiers.add(ModifierKey.meta);
     }
 
-    ShortcutAction? action = appModel.shortcutRegistry.resolveKeyboard(
+    // 有声书激活时，无修饰 Space 改作播放/暂停（媒体播放器惯例），先于
+    // reader scope 的「翻页」解析，否则 Space 永远被 reader scope 抢成翻页
+    // （翻页仍可用方向键/PageDown；Shift+Space 后退翻页、Ctrl+Space 原义不变）。
+    final ShortcutAction? spaceOverride = resolveReaderSpaceOverride(
+      key: event.logicalKey,
+      modifiers: modifiers,
+      hasActiveAudiobook: _audiobookController != null &&
+          _audiobookController!.chapterCueCount > 0,
+    );
+    ShortcutAction? action = spaceOverride ??
+        appModel.shortcutRegistry.resolveKeyboard(
           event.logicalKey,
           modifiers: modifiers,
           scope: ShortcutScope.reader,

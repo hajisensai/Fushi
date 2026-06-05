@@ -13,6 +13,13 @@
 
 ---
 
+## BUG-062 · 阅读器有声书场景下按空格翻页（应为播放/暂停）
+- **报告**：2026-06-05（用户：「焦点在书籍的时候，按空格会翻页，修复，应该是暂停才对」）。采番注：动手前 `docs/BUGS.md` 最大号 BUG-059，本条取 062（与同轮 A/B 连号，编号可能被并发 agent 抢，以提交为准）。
+- **真实性**：✅ **真 bug（scope 解析顺序使 Space 永远被翻页抢占）**。`reader_hibiki_page.dart:_handleKeyEvent` 先 `resolveKeyboard(scope: reader)` 再 `audiobook`（`:3566-3575`）；默认绑定 `shortcut_defaults.dart:54` Space=`readerPageForward`、`:122-123` `audiobookPlayPause`=Ctrl+Space。故有声书激活时按裸 Space 命中 reader scope 的翻页，播放/暂停被埋在 Ctrl+Space，与媒体播放器惯例（Space=播放/暂停）相悖。
+- **[x] ① 已修复** — 根因修（在解析前插一层窄覆写，而非改全局默认绑定破坏纯阅读翻页）：新增纯函数 `hibiki/lib/src/shortcuts/reader_space_override.dart::resolveReaderSpaceOverride`——仅当「有声书激活（`chapterCueCount>0`）+ 无任何修饰键 + 是 Space」时返回 `audiobookPlayPause`，其余返回 null 不覆写。`_handleKeyEvent` 在 `resolveKeyboard` 前调用它（`spaceOverride ?? reader ?? audiobook`）。翻页仍可用方向键/PageDown；Shift+Space 后退翻页、Ctrl+Space 原义不变；纯阅读（无音频）Space 仍翻页。`flutter analyze` 0 issue。
+- **[x] ② 已加自动化测试** — `hibiki/test/reader/reader_space_pause_test.dart`（纯函数行为测试 5 例）：有声书+裸 Space→`audiobookPlayPause`；无有声书→null；Shift+Space→null；Ctrl+Space→null；非 Space→null。全绿。
+- **备注**：键位/有声书类。**真机肉眼复测原始失败路径待用户**（桌面/带键盘或手柄：打开有声书，按 Space 应暂停/播放而非翻页）。
+
 ## BUG-059 · 导入文件夹词典时被「强制 ZIP64」打包的词典报 `Exception: unsupported format or failed to open file`（native 手写 ZIP 解析器不支持 per-entry ZIP64 扩展字段）
 - **报告**：2026-06-05（用户：导入文件夹词典选 `D:\辞典\` 批量导入，进度走到 `14/14` 报 `Exception: unsupported format or failed to open file`，截图 + 调用栈 `DictionaryImportManager.importFromFile:259`；用户最初指认 `D:\辞典\大辞泉` 失败）。
 - **真实性**：✅ **真 bug（native ZIP 解析器缺 per-entry ZIP64 支持，撞 `0xFFFFFFFF` 哨兵即放弃）**。沿真实代码路径 + 真实样本定位：① `importFromDirectory`（`dictionary_import_manager.dart:68`）`listSync()` **非递归**，只导 `D:\辞典\` 顶层 **14 个 zip**——`大辞泉` 是子文件夹、根本没被导入，用户指认有误。② 真凶是顶层 14 个里唯一解析失败的 `（大修館）明鏡国語辞典［第二版］.zip`（9.8MB，**非 >4GB**）。报错串全工程唯一来源 `native/hoshidicts/hoshidicts_src/importer.cpp:1085`（`zip.open()` 返 false）。③ 把 `Zip::parse_central_directory`（`zip.cpp:116`）逐字节移植到 Python 跑 14 个文件：13 个 OK，仅明镜 `e0 ZIP64sentinel` FAIL。Python 健壮 `zipfile` 能正常打开明镜（6 条目：common.css/meikyo2.mdx 等，含 `.mdx`=MDict），证明文件合法。④ 根因 **`native/hoshidicts/hoshidicts_src/zip/zip.cpp:174`（旧）**：该 zip 被打包工具**强制 ZIP64**（即使小文件，EOCD 的 `cd_offset` 与每条目的 comp/uncomp/local-header offset 都是 `0xFFFFFFFF` 哨兵，真值在中央目录条目的 `0x0001` 扩展字段里）。解析器对 ZIP64 EOCD（总数/目录偏移）已处理（zip.cpp:133-139），但 per-entry 一遇哨兵就 `return false` → `zip.open` 失败 → 报错。（旁证：UTF-8 路径修复 BUG-045 已在 DLL 内 `CreateFileW`，非此因。）
