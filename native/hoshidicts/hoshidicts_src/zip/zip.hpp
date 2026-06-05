@@ -7,6 +7,10 @@
 
 #include "../memory/memory.hpp"
 
+// Sizes are 64-bit to hold values resolved from a ZIP64 0x0001 extra field.
+// Downstream (has_entry_payload / read / read_media / libdeflate) consumes them
+// as size_t; on a 32-bit ABI that assumes individual entries stay <4GB, which
+// holds for dictionary archives (they are forced-ZIP64 for layout, not size).
 struct ZipEntry {
   std::string name;
   uint16_t compression_method;

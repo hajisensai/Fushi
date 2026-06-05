@@ -223,6 +223,10 @@ bool Zip::parse_central_directory() {
 
     e.name.assign(reinterpret_cast<const char*>(base + pos + 46), name_len);
 
+    // lfh_offset is 64-bit (it may carry a resolved ZIP64 value). Reject any
+    // out-of-range offset here, BEFORE in_bounds() narrows it to size_t -- on a
+    // 32-bit ABI (armeabi-v7a) that narrowing could otherwise wrap a >4GB
+    // offset into a small in-bounds value. Do not remove this guard.
     if (lfh_offset > file.size) {
       return false;
     }
