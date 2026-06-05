@@ -47,6 +47,16 @@ class VideoPlayerController extends ChangeNotifier {
   /// 上次持久化时的整秒位置；用于 [_maybeSavePosition] 节流到每秒至多一次。
   int _lastSavedSec = -1;
 
+  /// 恢复 seek 的目标位置（毫秒）；非 null 表示「正在恢复上次进度，seek 尚未落地」。
+  ///
+  /// media_kit 在 `open(play:false)` 刚返回时 player 常未就绪（position/duration 仍
+  /// 为 0），此刻 [load] 发出的 seek 会被丢弃；随后 125ms tick 读到 0 会经
+  /// [_maybeSavePosition] 把 **0 持久化、覆盖掉真实进度**，导致「每次进去都回到 0」。
+  /// 设此守护后，三个写入点（tick / [flushPosition] / [_forceSavePositionSync]）在
+  /// position 追上目标（容差 1.5s）之前一律不写，position 追上后由 [_isRestoringPast]
+  /// 清除守护、恢复正常持久化。
+  int? _restoreTargetMs;
+
   /// 位置持久化回调：整秒变化时调用，由上层（repository）落库。
   Future<void> Function(String bookUid, int positionMs)? onPositionWrite;
 
@@ -178,8 +188,17 @@ class VideoPlayerController extends ChangeNotifier {
 
     _lastSpeed = initialSpeed;
     await player.setRate(initialSpeed);
+    // 恢复上次位置。media_kit 在 open(play:false) 后 player 未必立即可 seek（内部
+    // position 仍 0），此时 seek 会被丢弃，随后 tick 读到 0 会把真实进度覆盖成 0。
+    // 故：① 设 _restoreTargetMs 守护，seek 落地前禁止任何写入点用过渡期小值覆盖；
+    //     ② 等 player 可 seek（duration ready）再 seek，让恢复真正生效。
     if (initialPositionMs > 0) {
+      _restoreTargetMs = initialPositionMs;
+      await _waitUntilSeekable(player);
+      if (_player != player) return; // 等待期间换片：放弃这次恢复
       await player.seek(Duration(milliseconds: initialPositionMs));
+    } else {
+      _restoreTargetMs = null;
     }
 
     // 订阅播放态翻转（包括播完自动暂停、焦点丢失），即时刷新 UI 图标。
@@ -285,10 +304,41 @@ class VideoPlayerController extends ChangeNotifier {
   @visibleForTesting
   void debugUpdateCueForPosition(int posMs) => updateCueForPosition(posMs);
 
+  /// 等 [player] 进入可 seek 状态（`duration > 0` 表示已解析媒体头）。
+  ///
+  /// media_kit 在 `open(play:false)` 刚返回时常 duration/position 仍为 0，此刻 seek
+  /// 会被丢弃；等首个非零 duration 再 seek 才可靠。最多等 5 秒，超时则尽力 seek
+  /// （[_restoreTargetMs] 守护兜底，不会因没落地而把真实进度覆盖成 0）。
+  Future<void> _waitUntilSeekable(Player player) async {
+    if (player.state.duration > Duration.zero) return;
+    try {
+      await player.stream.duration
+          .firstWhere((Duration d) => d > Duration.zero)
+          .timeout(const Duration(seconds: 5));
+    } catch (_) {
+      // 超时/异常：尽力继续 seek。
+    }
+  }
+
+  /// 恢复 seek 是否尚未落地：[_restoreTargetMs] 非 null 且当前 [posMs] 还在目标之前
+  /// （过渡期小值/0）时返回 true，调用方应跳过持久化以免覆盖真实进度。position 追上
+  /// 目标（容差 1.5s）后清除守护并返回 false，恢复正常持久化。
+  bool _isRestoringPast(int posMs) {
+    final int? target = _restoreTargetMs;
+    if (target == null) return false;
+    if (posMs >= target - 1500) {
+      _restoreTargetMs = null;
+      return false;
+    }
+    return true;
+  }
+
   /// 整秒变化且 [_bookUid] 非空时，异步触发位置持久化（每秒至多一次）。
   void _maybeSavePosition(int posMs) {
     final String? bookUid = _bookUid;
     if (bookUid == null) return;
+    // 恢复 seek 未落地：当前 position 是过渡期小值，写它会覆盖真实进度。跳过。
+    if (_isRestoringPast(posMs)) return;
     final int sec = posMs ~/ 1000;
     if (sec == _lastSavedSec) return;
     _lastSavedSec = sec;
@@ -311,6 +361,8 @@ class VideoPlayerController extends ChangeNotifier {
     final String? bookUid = _bookUid;
     final int? posMs = positionMs;
     if (bookUid == null || posMs == null) return;
+    // 恢复 seek 未落地：退出瞬间的 position 仍是过渡期小值，写它会覆盖真实进度。跳过。
+    if (_isRestoringPast(posMs)) return;
     _lastSavedSec = posMs ~/ 1000;
     await onPositionWrite?.call(bookUid, posMs);
   }
@@ -385,6 +437,8 @@ class VideoPlayerController extends ChangeNotifier {
     final String? bookUid = _bookUid;
     final int? posMs = positionMs;
     if (bookUid == null || posMs == null) return;
+    // 恢复 seek 未落地：dispose 瞬间的 position 仍是过渡期小值，勿覆盖真实进度。
+    if (_isRestoringPast(posMs)) return;
     _lastSavedSec = posMs ~/ 1000;
     unawaited(onPositionWrite?.call(bookUid, posMs));
   }
