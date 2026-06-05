@@ -49,6 +49,8 @@ LazyDatabase _openDb(String dbDirectory) {
   SyncBaselines,
   VideoBooks,
   VideoBookTagMappings,
+  VideoWatchStatistics,
+  VideoHourlyLogs,
 ])
 class HibikiDatabase extends _$HibikiDatabase {
   final String _dbDirectory;
@@ -58,7 +60,7 @@ class HibikiDatabase extends _$HibikiDatabase {
   HibikiDatabase.forTesting(super.e) : _dbDirectory = '';
 
   @override
-  int get schemaVersion => 21;
+  int get schemaVersion => 22;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -304,6 +306,20 @@ class HibikiDatabase extends _$HibikiDatabase {
             // already built by onCreate's createAll) doesn't recreate it.
             if (!await _tableExists('video_book_tag_mappings')) {
               await m.createTable(videoBookTagMappings);
+            }
+          }
+          if (from < 22) {
+            // 视频统计：两张独立表 + video_books.completed_at 列。与阅读统计完全
+            // 隔离，不碰 reading_statistics。fresh DB 已由 onCreate 的 createAll
+            // 建好，故用 _tableExists / _columnExists 守卫避免重复创建。
+            if (!await _tableExists('video_watch_statistics')) {
+              await m.createTable(videoWatchStatistics);
+            }
+            if (!await _tableExists('video_hourly_logs')) {
+              await m.createTable(videoHourlyLogs);
+            }
+            if (!await _columnExists('video_books', 'completed_at')) {
+              await m.addColumn(videoBooks, videoBooks.completedAt);
             }
           }
         },
@@ -952,6 +968,78 @@ class HibikiDatabase extends _$HibikiDatabase {
   Future<List<ReadingHourlyLogRow>> getHourlyLogsForDate(String dateKey) =>
       (select(readingHourlyLogs)..where((t) => t.dateKey.equals(dateKey)))
           .get();
+
+  // ── video watch statistics ──────────────────────────────────────
+  /// ACCUMULATE：把 [subtitleChars]/[watchTimeMs] 累加到 (title, dateKey) 现有
+  /// 总量。对照 [addReadingStatistic]，但视频专用、与阅读统计隔离。
+  Future<void> addVideoWatchStatistic({
+    required String title,
+    required String dateKey,
+    required int subtitleChars,
+    required int watchTimeMs,
+  }) =>
+      transaction(() async {
+        final existing = await (select(videoWatchStatistics)
+              ..where((t) => t.title.equals(title) & t.dateKey.equals(dateKey)))
+            .getSingleOrNull();
+        if (existing != null) {
+          await (update(videoWatchStatistics)
+                ..where((t) => t.id.equals(existing.id)))
+              .write(VideoWatchStatisticsCompanion(
+            subtitleChars: Value(existing.subtitleChars + subtitleChars),
+            watchTimeMs: Value(existing.watchTimeMs + watchTimeMs),
+            lastModified: Value(DateTime.now().millisecondsSinceEpoch),
+          ));
+        } else {
+          await into(videoWatchStatistics).insert(
+            VideoWatchStatisticsCompanion.insert(
+              title: title,
+              dateKey: dateKey,
+              subtitleChars: subtitleChars,
+              watchTimeMs: watchTimeMs,
+              lastModified: DateTime.now().millisecondsSinceEpoch,
+            ),
+          );
+        }
+      });
+
+  Future<List<VideoWatchStatisticRow>> getAllVideoWatchStatistics() =>
+      select(videoWatchStatistics).get();
+
+  // ── video hourly logs ───────────────────────────────────────────
+  Future<void> addVideoHourlyWatchTime({
+    required String dateKey,
+    required int hour,
+    required int deltaMs,
+  }) =>
+      transaction(() async {
+        final existing = await (select(videoHourlyLogs)
+              ..where((t) => t.dateKey.equals(dateKey) & t.hour.equals(hour)))
+            .getSingleOrNull();
+        if (existing != null) {
+          await (update(videoHourlyLogs)..where((t) => t.id.equals(existing.id)))
+              .write(VideoHourlyLogsCompanion(
+            watchTimeMs: Value(existing.watchTimeMs + deltaMs),
+          ));
+        } else {
+          await into(videoHourlyLogs).insert(
+            VideoHourlyLogsCompanion.insert(
+              dateKey: dateKey,
+              hour: hour,
+              watchTimeMs: deltaMs,
+            ),
+          );
+        }
+      });
+
+  Future<List<VideoHourlyLogRow>> getVideoHourlyLogsForDate(String dateKey) =>
+      (select(videoHourlyLogs)..where((t) => t.dateKey.equals(dateKey))).get();
+
+  /// 仅当当前 completed_at 为 null 时写入（幂等首次完成；重看不覆盖）。
+  Future<void> markVideoCompleted(String bookUid, DateTime completedAt) =>
+      (update(videoBooks)
+            ..where((t) => t.bookUid.equals(bookUid) & t.completedAt.isNull()))
+          .write(VideoBooksCompanion(completedAt: Value(completedAt)));
 
   // ── dictionary metadata ─────────────────────────────────────────
   Future<List<DictionaryMetaRow>> getAllDictionaryMetadata() =>

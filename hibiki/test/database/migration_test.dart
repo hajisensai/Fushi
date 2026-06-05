@@ -87,12 +87,50 @@ Future<HibikiDatabase> _openV20DbWithoutVideoTagMappings() async {
   return db;
 }
 
+/// Opens a `user_version = 21` database that has a book_uid-keyed video_books
+/// table (WITHOUT completed_at) and no video stats tables, forcing the real
+/// `if (from < 22)` onUpgrade branch (create two stats tables + addColumn
+/// completed_at) to run.
+Future<HibikiDatabase> _openV21DbWithoutVideoStats() async {
+  final db = HibikiDatabase.forTesting(
+    NativeDatabase.memory(
+      setup: (rawDb) {
+        // Realistic v21 video_books: book_uid PK, full v17 column set, but no
+        // completed_at (added in v22) and no video stats tables.
+        rawDb.execute(
+          'CREATE TABLE video_books ('
+          'book_uid TEXT NOT NULL PRIMARY KEY, '
+          'title TEXT NOT NULL, '
+          'video_path TEXT NOT NULL, '
+          'subtitle_source TEXT, '
+          'subtitle_format TEXT, '
+          'embedded_subtitle_track INTEGER, '
+          'cover_path TEXT, '
+          'last_position_ms INTEGER NOT NULL DEFAULT 0, '
+          'imported_at INTEGER, '
+          'playlist_json TEXT, '
+          'current_episode INTEGER NOT NULL DEFAULT 0, '
+          'audio_track_id TEXT, '
+          'delay_ms INTEGER NOT NULL DEFAULT 0)',
+        );
+        rawDb.execute(
+          'INSERT INTO video_books(book_uid, title, video_path, last_position_ms) '
+          "VALUES('video/seed', 'Seed', '/abs/seed.mp4', 4242)",
+        );
+        rawDb.execute('PRAGMA user_version = 21');
+      },
+    ),
+  );
+  addTearDown(db.close);
+  return db;
+}
+
 void main() {
   group('Database schema', () {
     test('fresh database has expected schema version', () async {
       final db = await _openDb();
       final version = await db.customSelect('PRAGMA user_version').getSingle();
-      expect(version.data['user_version'], 21);
+      expect(version.data['user_version'], 22);
     });
 
     test('all expected tables exist', () async {
@@ -126,6 +164,8 @@ void main() {
           'sync_baselines',
           'video_books',
           'video_book_tag_mappings',
+          'video_watch_statistics',
+          'video_hourly_logs',
         ]),
       );
     });
@@ -147,7 +187,7 @@ void main() {
       // The upgrade ladder bumped the schema to the current version (a v14 DB
       // walks the full ladder past 15 to the latest schema).
       final version = await db.customSelect('PRAGMA user_version').getSingle();
-      expect(version.read<int>('user_version'), 21);
+      expect(version.read<int>('user_version'), 22);
 
       // The newly-migrated table exists and querying an absent baseline does
       // not throw.
@@ -165,7 +205,7 @@ void main() {
 
       // The upgrade ladder bumped the schema to the current version.
       final version = await db.customSelect('PRAGMA user_version').getSingle();
-      expect(version.read<int>('user_version'), 21);
+      expect(version.read<int>('user_version'), 22);
 
       // The table carries the full v17 column set (no stepwise add-column
       // ladder remains).
@@ -208,7 +248,7 @@ void main() {
       final db = await _openV20DbWithoutVideoTagMappings();
 
       final version = await db.customSelect('PRAGMA user_version').getSingle();
-      expect(version.read<int>('user_version'), 21);
+      expect(version.read<int>('user_version'), 22);
 
       // The new mapping table exists and shares the BookTags pool: tag the
       // seeded video book and read it back.
@@ -217,6 +257,46 @@ void main() {
       final tags = await db.getTagsForVideoBook('video/seed');
       expect(tags, hasLength(1));
       expect(tags.single.name, 'Migrated');
+    });
+
+    test('real v21->v22 upgrade adds video stats tables + completed_at losslessly',
+        () async {
+      // A v21 DB has video_books (no completed_at) and no video stats tables;
+      // opening it must drive the from<22 onUpgrade branch.
+      final db = await _openV21DbWithoutVideoStats();
+
+      final version = await db.customSelect('PRAGMA user_version').getSingle();
+      expect(version.read<int>('user_version'), 22);
+
+      // The pre-existing video_books row survived the migration, with the new
+      // completed_at column defaulting to null (lossless add-column).
+      final row = await db.getVideoBookByBookUid('video/seed');
+      expect(row, isNotNull);
+      expect(row!.title, 'Seed');
+      expect(row.lastPositionMs, 4242);
+      expect(row.completedAt, isNull);
+
+      // The two new stats tables are usable.
+      await db.addVideoWatchStatistic(
+          title: 'Seed',
+          dateKey: '2026-06-06',
+          subtitleChars: 12,
+          watchTimeMs: 3000);
+      final stats = await db.getAllVideoWatchStatistics();
+      expect(stats, hasLength(1));
+      expect(stats.single.subtitleChars, 12);
+
+      await db.addVideoHourlyWatchTime(
+          dateKey: '2026-06-06', hour: 8, deltaMs: 500);
+      final hourly = await db.getVideoHourlyLogsForDate('2026-06-06');
+      expect(hourly, hasLength(1));
+      expect(hourly.single.watchTimeMs, 500);
+
+      // markVideoCompleted works on the migrated row.
+      final ts = DateTime(2026, 6, 6, 20);
+      await db.markVideoCompleted('video/seed', ts);
+      final completed = await db.getVideoBookByBookUid('video/seed');
+      expect(completed!.completedAt, ts);
     });
 
     test('video_book_tag_mappings references video_books and book_tags',

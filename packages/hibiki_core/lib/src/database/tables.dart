@@ -155,6 +155,36 @@ class ReadingHourlyLogs extends Table {
       ];
 }
 
+// ── video_watch_statistics ──────────────────────────────────────────
+@DataClassName('VideoWatchStatisticRow')
+class VideoWatchStatistics extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get title => text()();
+  TextColumn get dateKey => text()();
+  IntColumn get subtitleChars => integer()();
+  IntColumn get watchTimeMs => integer()();
+  IntColumn get lastModified => integer()();
+
+  @override
+  List<Set<Column>> get uniqueKeys => [
+        {title, dateKey},
+      ];
+}
+
+// ── video_hourly_logs ───────────────────────────────────────────────
+@DataClassName('VideoHourlyLogRow')
+class VideoHourlyLogs extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get dateKey => text()();
+  IntColumn get hour => integer()();
+  IntColumn get watchTimeMs => integer()();
+
+  @override
+  List<Set<Column>> get uniqueKeys => [
+        {dateKey, hour},
+      ];
+}
+
 // ── preferences (key-value) ─────────────────────────────���───────────
 @DataClassName('PreferenceRow')
 class Preferences extends Table {
@@ -340,6 +370,9 @@ class VideoBooks extends Table {
   /// 音画延迟（毫秒）：正值=画面先于文字，查 cue 时把位置往回拨，让字幕与画面对齐。
   /// 跨重启保留；多集播放列表换集时复用同一值（手动校准一次全片受用）。
   IntColumn get delayMs => integer().withDefault(const Constant(0))();
+
+  /// 视频首次播放进度 ≥ 90% 的时间戳（完成标记）；null = 未完成。统计去重计数用。
+  DateTimeColumn get completedAt => dateTime().nullable()();
 
   @override
   Set<Column> get primaryKey => {bookUid};

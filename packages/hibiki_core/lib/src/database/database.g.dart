@@ -8330,6 +8330,12 @@ class $VideoBooksTable extends VideoBooks
       type: DriftSqlType.int,
       requiredDuringInsert: false,
       defaultValue: const Constant(0));
+  static const VerificationMeta _completedAtMeta =
+      const VerificationMeta('completedAt');
+  @override
+  late final GeneratedColumn<DateTime> completedAt = GeneratedColumn<DateTime>(
+      'completed_at', aliasedName, true,
+      type: DriftSqlType.dateTime, requiredDuringInsert: false);
   @override
   List<GeneratedColumn> get $columns => [
         bookUid,
@@ -8344,7 +8350,8 @@ class $VideoBooksTable extends VideoBooks
         playlistJson,
         currentEpisode,
         audioTrackId,
-        delayMs
+        delayMs,
+        completedAt
       ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -8430,6 +8437,12 @@ class $VideoBooksTable extends VideoBooks
       context.handle(_delayMsMeta,
           delayMs.isAcceptableOrUnknown(data['delay_ms']!, _delayMsMeta));
     }
+    if (data.containsKey('completed_at')) {
+      context.handle(
+          _completedAtMeta,
+          completedAt.isAcceptableOrUnknown(
+              data['completed_at']!, _completedAtMeta));
+    }
     return context;
   }
 
@@ -8465,6 +8478,8 @@ class $VideoBooksTable extends VideoBooks
           .read(DriftSqlType.string, data['${effectivePrefix}audio_track_id']),
       delayMs: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}delay_ms'])!,
+      completedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}completed_at']),
     );
   }
 
@@ -8498,6 +8513,9 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
   /// 音画延迟（毫秒）：正值=画面先于文字，查 cue 时把位置往回拨，让字幕与画面对齐。
   /// 跨重启保留；多集播放列表换集时复用同一值（手动校准一次全片受用）。
   final int delayMs;
+
+  /// 视频首次播放进度 ≥ 90% 的时间戳（完成标记）；null = 未完成。统计去重计数用。
+  final DateTime? completedAt;
   const VideoBookRow(
       {required this.bookUid,
       required this.title,
@@ -8511,7 +8529,8 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       this.playlistJson,
       required this.currentEpisode,
       this.audioTrackId,
-      required this.delayMs});
+      required this.delayMs,
+      this.completedAt});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -8542,6 +8561,9 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       map['audio_track_id'] = Variable<String>(audioTrackId);
     }
     map['delay_ms'] = Variable<int>(delayMs);
+    if (!nullToAbsent || completedAt != null) {
+      map['completed_at'] = Variable<DateTime>(completedAt);
+    }
     return map;
   }
 
@@ -8574,6 +8596,9 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
           ? const Value.absent()
           : Value(audioTrackId),
       delayMs: Value(delayMs),
+      completedAt: completedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(completedAt),
     );
   }
 
@@ -8595,6 +8620,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       currentEpisode: serializer.fromJson<int>(json['currentEpisode']),
       audioTrackId: serializer.fromJson<String?>(json['audioTrackId']),
       delayMs: serializer.fromJson<int>(json['delayMs']),
+      completedAt: serializer.fromJson<DateTime?>(json['completedAt']),
     );
   }
   @override
@@ -8614,6 +8640,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       'currentEpisode': serializer.toJson<int>(currentEpisode),
       'audioTrackId': serializer.toJson<String?>(audioTrackId),
       'delayMs': serializer.toJson<int>(delayMs),
+      'completedAt': serializer.toJson<DateTime?>(completedAt),
     };
   }
 
@@ -8630,7 +8657,8 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
           Value<String?> playlistJson = const Value.absent(),
           int? currentEpisode,
           Value<String?> audioTrackId = const Value.absent(),
-          int? delayMs}) =>
+          int? delayMs,
+          Value<DateTime?> completedAt = const Value.absent()}) =>
       VideoBookRow(
         bookUid: bookUid ?? this.bookUid,
         title: title ?? this.title,
@@ -8651,6 +8679,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
         audioTrackId:
             audioTrackId.present ? audioTrackId.value : this.audioTrackId,
         delayMs: delayMs ?? this.delayMs,
+        completedAt: completedAt.present ? completedAt.value : this.completedAt,
       );
   VideoBookRow copyWithCompanion(VideoBooksCompanion data) {
     return VideoBookRow(
@@ -8682,6 +8711,8 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
           ? data.audioTrackId.value
           : this.audioTrackId,
       delayMs: data.delayMs.present ? data.delayMs.value : this.delayMs,
+      completedAt:
+          data.completedAt.present ? data.completedAt.value : this.completedAt,
     );
   }
 
@@ -8700,7 +8731,8 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
           ..write('playlistJson: $playlistJson, ')
           ..write('currentEpisode: $currentEpisode, ')
           ..write('audioTrackId: $audioTrackId, ')
-          ..write('delayMs: $delayMs')
+          ..write('delayMs: $delayMs, ')
+          ..write('completedAt: $completedAt')
           ..write(')'))
         .toString();
   }
@@ -8719,7 +8751,8 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       playlistJson,
       currentEpisode,
       audioTrackId,
-      delayMs);
+      delayMs,
+      completedAt);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -8736,7 +8769,8 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
           other.playlistJson == this.playlistJson &&
           other.currentEpisode == this.currentEpisode &&
           other.audioTrackId == this.audioTrackId &&
-          other.delayMs == this.delayMs);
+          other.delayMs == this.delayMs &&
+          other.completedAt == this.completedAt);
 }
 
 class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
@@ -8753,6 +8787,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
   final Value<int> currentEpisode;
   final Value<String?> audioTrackId;
   final Value<int> delayMs;
+  final Value<DateTime?> completedAt;
   final Value<int> rowid;
   const VideoBooksCompanion({
     this.bookUid = const Value.absent(),
@@ -8768,6 +8803,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
     this.currentEpisode = const Value.absent(),
     this.audioTrackId = const Value.absent(),
     this.delayMs = const Value.absent(),
+    this.completedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   VideoBooksCompanion.insert({
@@ -8784,6 +8820,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
     this.currentEpisode = const Value.absent(),
     this.audioTrackId = const Value.absent(),
     this.delayMs = const Value.absent(),
+    this.completedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   })  : bookUid = Value(bookUid),
         title = Value(title),
@@ -8802,6 +8839,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
     Expression<int>? currentEpisode,
     Expression<String>? audioTrackId,
     Expression<int>? delayMs,
+    Expression<DateTime>? completedAt,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -8819,6 +8857,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
       if (currentEpisode != null) 'current_episode': currentEpisode,
       if (audioTrackId != null) 'audio_track_id': audioTrackId,
       if (delayMs != null) 'delay_ms': delayMs,
+      if (completedAt != null) 'completed_at': completedAt,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -8837,6 +8876,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
       Value<int>? currentEpisode,
       Value<String?>? audioTrackId,
       Value<int>? delayMs,
+      Value<DateTime?>? completedAt,
       Value<int>? rowid}) {
     return VideoBooksCompanion(
       bookUid: bookUid ?? this.bookUid,
@@ -8853,6 +8893,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
       currentEpisode: currentEpisode ?? this.currentEpisode,
       audioTrackId: audioTrackId ?? this.audioTrackId,
       delayMs: delayMs ?? this.delayMs,
+      completedAt: completedAt ?? this.completedAt,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -8900,6 +8941,9 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
     if (delayMs.present) {
       map['delay_ms'] = Variable<int>(delayMs.value);
     }
+    if (completedAt.present) {
+      map['completed_at'] = Variable<DateTime>(completedAt.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -8922,6 +8966,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
           ..write('currentEpisode: $currentEpisode, ')
           ..write('audioTrackId: $audioTrackId, ')
           ..write('delayMs: $delayMs, ')
+          ..write('completedAt: $completedAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -9162,6 +9207,625 @@ class VideoBookTagMappingsCompanion
   }
 }
 
+class $VideoWatchStatisticsTable extends VideoWatchStatistics
+    with TableInfo<$VideoWatchStatisticsTable, VideoWatchStatisticRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $VideoWatchStatisticsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+      'id', aliasedName, false,
+      hasAutoIncrement: true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
+  static const VerificationMeta _titleMeta = const VerificationMeta('title');
+  @override
+  late final GeneratedColumn<String> title = GeneratedColumn<String>(
+      'title', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _dateKeyMeta =
+      const VerificationMeta('dateKey');
+  @override
+  late final GeneratedColumn<String> dateKey = GeneratedColumn<String>(
+      'date_key', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _subtitleCharsMeta =
+      const VerificationMeta('subtitleChars');
+  @override
+  late final GeneratedColumn<int> subtitleChars = GeneratedColumn<int>(
+      'subtitle_chars', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _watchTimeMsMeta =
+      const VerificationMeta('watchTimeMs');
+  @override
+  late final GeneratedColumn<int> watchTimeMs = GeneratedColumn<int>(
+      'watch_time_ms', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _lastModifiedMeta =
+      const VerificationMeta('lastModified');
+  @override
+  late final GeneratedColumn<int> lastModified = GeneratedColumn<int>(
+      'last_modified', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  @override
+  List<GeneratedColumn> get $columns =>
+      [id, title, dateKey, subtitleChars, watchTimeMs, lastModified];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'video_watch_statistics';
+  @override
+  VerificationContext validateIntegrity(
+      Insertable<VideoWatchStatisticRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('title')) {
+      context.handle(
+          _titleMeta, title.isAcceptableOrUnknown(data['title']!, _titleMeta));
+    } else if (isInserting) {
+      context.missing(_titleMeta);
+    }
+    if (data.containsKey('date_key')) {
+      context.handle(_dateKeyMeta,
+          dateKey.isAcceptableOrUnknown(data['date_key']!, _dateKeyMeta));
+    } else if (isInserting) {
+      context.missing(_dateKeyMeta);
+    }
+    if (data.containsKey('subtitle_chars')) {
+      context.handle(
+          _subtitleCharsMeta,
+          subtitleChars.isAcceptableOrUnknown(
+              data['subtitle_chars']!, _subtitleCharsMeta));
+    } else if (isInserting) {
+      context.missing(_subtitleCharsMeta);
+    }
+    if (data.containsKey('watch_time_ms')) {
+      context.handle(
+          _watchTimeMsMeta,
+          watchTimeMs.isAcceptableOrUnknown(
+              data['watch_time_ms']!, _watchTimeMsMeta));
+    } else if (isInserting) {
+      context.missing(_watchTimeMsMeta);
+    }
+    if (data.containsKey('last_modified')) {
+      context.handle(
+          _lastModifiedMeta,
+          lastModified.isAcceptableOrUnknown(
+              data['last_modified']!, _lastModifiedMeta));
+    } else if (isInserting) {
+      context.missing(_lastModifiedMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  List<Set<GeneratedColumn>> get uniqueKeys => [
+        {title, dateKey},
+      ];
+  @override
+  VideoWatchStatisticRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return VideoWatchStatisticRow(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
+      title: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}title'])!,
+      dateKey: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}date_key'])!,
+      subtitleChars: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}subtitle_chars'])!,
+      watchTimeMs: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}watch_time_ms'])!,
+      lastModified: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}last_modified'])!,
+    );
+  }
+
+  @override
+  $VideoWatchStatisticsTable createAlias(String alias) {
+    return $VideoWatchStatisticsTable(attachedDatabase, alias);
+  }
+}
+
+class VideoWatchStatisticRow extends DataClass
+    implements Insertable<VideoWatchStatisticRow> {
+  final int id;
+  final String title;
+  final String dateKey;
+  final int subtitleChars;
+  final int watchTimeMs;
+  final int lastModified;
+  const VideoWatchStatisticRow(
+      {required this.id,
+      required this.title,
+      required this.dateKey,
+      required this.subtitleChars,
+      required this.watchTimeMs,
+      required this.lastModified});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['title'] = Variable<String>(title);
+    map['date_key'] = Variable<String>(dateKey);
+    map['subtitle_chars'] = Variable<int>(subtitleChars);
+    map['watch_time_ms'] = Variable<int>(watchTimeMs);
+    map['last_modified'] = Variable<int>(lastModified);
+    return map;
+  }
+
+  VideoWatchStatisticsCompanion toCompanion(bool nullToAbsent) {
+    return VideoWatchStatisticsCompanion(
+      id: Value(id),
+      title: Value(title),
+      dateKey: Value(dateKey),
+      subtitleChars: Value(subtitleChars),
+      watchTimeMs: Value(watchTimeMs),
+      lastModified: Value(lastModified),
+    );
+  }
+
+  factory VideoWatchStatisticRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return VideoWatchStatisticRow(
+      id: serializer.fromJson<int>(json['id']),
+      title: serializer.fromJson<String>(json['title']),
+      dateKey: serializer.fromJson<String>(json['dateKey']),
+      subtitleChars: serializer.fromJson<int>(json['subtitleChars']),
+      watchTimeMs: serializer.fromJson<int>(json['watchTimeMs']),
+      lastModified: serializer.fromJson<int>(json['lastModified']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'title': serializer.toJson<String>(title),
+      'dateKey': serializer.toJson<String>(dateKey),
+      'subtitleChars': serializer.toJson<int>(subtitleChars),
+      'watchTimeMs': serializer.toJson<int>(watchTimeMs),
+      'lastModified': serializer.toJson<int>(lastModified),
+    };
+  }
+
+  VideoWatchStatisticRow copyWith(
+          {int? id,
+          String? title,
+          String? dateKey,
+          int? subtitleChars,
+          int? watchTimeMs,
+          int? lastModified}) =>
+      VideoWatchStatisticRow(
+        id: id ?? this.id,
+        title: title ?? this.title,
+        dateKey: dateKey ?? this.dateKey,
+        subtitleChars: subtitleChars ?? this.subtitleChars,
+        watchTimeMs: watchTimeMs ?? this.watchTimeMs,
+        lastModified: lastModified ?? this.lastModified,
+      );
+  VideoWatchStatisticRow copyWithCompanion(VideoWatchStatisticsCompanion data) {
+    return VideoWatchStatisticRow(
+      id: data.id.present ? data.id.value : this.id,
+      title: data.title.present ? data.title.value : this.title,
+      dateKey: data.dateKey.present ? data.dateKey.value : this.dateKey,
+      subtitleChars: data.subtitleChars.present
+          ? data.subtitleChars.value
+          : this.subtitleChars,
+      watchTimeMs:
+          data.watchTimeMs.present ? data.watchTimeMs.value : this.watchTimeMs,
+      lastModified: data.lastModified.present
+          ? data.lastModified.value
+          : this.lastModified,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('VideoWatchStatisticRow(')
+          ..write('id: $id, ')
+          ..write('title: $title, ')
+          ..write('dateKey: $dateKey, ')
+          ..write('subtitleChars: $subtitleChars, ')
+          ..write('watchTimeMs: $watchTimeMs, ')
+          ..write('lastModified: $lastModified')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(id, title, dateKey, subtitleChars, watchTimeMs, lastModified);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is VideoWatchStatisticRow &&
+          other.id == this.id &&
+          other.title == this.title &&
+          other.dateKey == this.dateKey &&
+          other.subtitleChars == this.subtitleChars &&
+          other.watchTimeMs == this.watchTimeMs &&
+          other.lastModified == this.lastModified);
+}
+
+class VideoWatchStatisticsCompanion
+    extends UpdateCompanion<VideoWatchStatisticRow> {
+  final Value<int> id;
+  final Value<String> title;
+  final Value<String> dateKey;
+  final Value<int> subtitleChars;
+  final Value<int> watchTimeMs;
+  final Value<int> lastModified;
+  const VideoWatchStatisticsCompanion({
+    this.id = const Value.absent(),
+    this.title = const Value.absent(),
+    this.dateKey = const Value.absent(),
+    this.subtitleChars = const Value.absent(),
+    this.watchTimeMs = const Value.absent(),
+    this.lastModified = const Value.absent(),
+  });
+  VideoWatchStatisticsCompanion.insert({
+    this.id = const Value.absent(),
+    required String title,
+    required String dateKey,
+    required int subtitleChars,
+    required int watchTimeMs,
+    required int lastModified,
+  })  : title = Value(title),
+        dateKey = Value(dateKey),
+        subtitleChars = Value(subtitleChars),
+        watchTimeMs = Value(watchTimeMs),
+        lastModified = Value(lastModified);
+  static Insertable<VideoWatchStatisticRow> custom({
+    Expression<int>? id,
+    Expression<String>? title,
+    Expression<String>? dateKey,
+    Expression<int>? subtitleChars,
+    Expression<int>? watchTimeMs,
+    Expression<int>? lastModified,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (title != null) 'title': title,
+      if (dateKey != null) 'date_key': dateKey,
+      if (subtitleChars != null) 'subtitle_chars': subtitleChars,
+      if (watchTimeMs != null) 'watch_time_ms': watchTimeMs,
+      if (lastModified != null) 'last_modified': lastModified,
+    });
+  }
+
+  VideoWatchStatisticsCompanion copyWith(
+      {Value<int>? id,
+      Value<String>? title,
+      Value<String>? dateKey,
+      Value<int>? subtitleChars,
+      Value<int>? watchTimeMs,
+      Value<int>? lastModified}) {
+    return VideoWatchStatisticsCompanion(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      dateKey: dateKey ?? this.dateKey,
+      subtitleChars: subtitleChars ?? this.subtitleChars,
+      watchTimeMs: watchTimeMs ?? this.watchTimeMs,
+      lastModified: lastModified ?? this.lastModified,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (title.present) {
+      map['title'] = Variable<String>(title.value);
+    }
+    if (dateKey.present) {
+      map['date_key'] = Variable<String>(dateKey.value);
+    }
+    if (subtitleChars.present) {
+      map['subtitle_chars'] = Variable<int>(subtitleChars.value);
+    }
+    if (watchTimeMs.present) {
+      map['watch_time_ms'] = Variable<int>(watchTimeMs.value);
+    }
+    if (lastModified.present) {
+      map['last_modified'] = Variable<int>(lastModified.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('VideoWatchStatisticsCompanion(')
+          ..write('id: $id, ')
+          ..write('title: $title, ')
+          ..write('dateKey: $dateKey, ')
+          ..write('subtitleChars: $subtitleChars, ')
+          ..write('watchTimeMs: $watchTimeMs, ')
+          ..write('lastModified: $lastModified')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $VideoHourlyLogsTable extends VideoHourlyLogs
+    with TableInfo<$VideoHourlyLogsTable, VideoHourlyLogRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $VideoHourlyLogsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+      'id', aliasedName, false,
+      hasAutoIncrement: true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
+  static const VerificationMeta _dateKeyMeta =
+      const VerificationMeta('dateKey');
+  @override
+  late final GeneratedColumn<String> dateKey = GeneratedColumn<String>(
+      'date_key', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _hourMeta = const VerificationMeta('hour');
+  @override
+  late final GeneratedColumn<int> hour = GeneratedColumn<int>(
+      'hour', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _watchTimeMsMeta =
+      const VerificationMeta('watchTimeMs');
+  @override
+  late final GeneratedColumn<int> watchTimeMs = GeneratedColumn<int>(
+      'watch_time_ms', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  @override
+  List<GeneratedColumn> get $columns => [id, dateKey, hour, watchTimeMs];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'video_hourly_logs';
+  @override
+  VerificationContext validateIntegrity(Insertable<VideoHourlyLogRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('date_key')) {
+      context.handle(_dateKeyMeta,
+          dateKey.isAcceptableOrUnknown(data['date_key']!, _dateKeyMeta));
+    } else if (isInserting) {
+      context.missing(_dateKeyMeta);
+    }
+    if (data.containsKey('hour')) {
+      context.handle(
+          _hourMeta, hour.isAcceptableOrUnknown(data['hour']!, _hourMeta));
+    } else if (isInserting) {
+      context.missing(_hourMeta);
+    }
+    if (data.containsKey('watch_time_ms')) {
+      context.handle(
+          _watchTimeMsMeta,
+          watchTimeMs.isAcceptableOrUnknown(
+              data['watch_time_ms']!, _watchTimeMsMeta));
+    } else if (isInserting) {
+      context.missing(_watchTimeMsMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  List<Set<GeneratedColumn>> get uniqueKeys => [
+        {dateKey, hour},
+      ];
+  @override
+  VideoHourlyLogRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return VideoHourlyLogRow(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
+      dateKey: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}date_key'])!,
+      hour: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}hour'])!,
+      watchTimeMs: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}watch_time_ms'])!,
+    );
+  }
+
+  @override
+  $VideoHourlyLogsTable createAlias(String alias) {
+    return $VideoHourlyLogsTable(attachedDatabase, alias);
+  }
+}
+
+class VideoHourlyLogRow extends DataClass
+    implements Insertable<VideoHourlyLogRow> {
+  final int id;
+  final String dateKey;
+  final int hour;
+  final int watchTimeMs;
+  const VideoHourlyLogRow(
+      {required this.id,
+      required this.dateKey,
+      required this.hour,
+      required this.watchTimeMs});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['date_key'] = Variable<String>(dateKey);
+    map['hour'] = Variable<int>(hour);
+    map['watch_time_ms'] = Variable<int>(watchTimeMs);
+    return map;
+  }
+
+  VideoHourlyLogsCompanion toCompanion(bool nullToAbsent) {
+    return VideoHourlyLogsCompanion(
+      id: Value(id),
+      dateKey: Value(dateKey),
+      hour: Value(hour),
+      watchTimeMs: Value(watchTimeMs),
+    );
+  }
+
+  factory VideoHourlyLogRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return VideoHourlyLogRow(
+      id: serializer.fromJson<int>(json['id']),
+      dateKey: serializer.fromJson<String>(json['dateKey']),
+      hour: serializer.fromJson<int>(json['hour']),
+      watchTimeMs: serializer.fromJson<int>(json['watchTimeMs']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'dateKey': serializer.toJson<String>(dateKey),
+      'hour': serializer.toJson<int>(hour),
+      'watchTimeMs': serializer.toJson<int>(watchTimeMs),
+    };
+  }
+
+  VideoHourlyLogRow copyWith(
+          {int? id, String? dateKey, int? hour, int? watchTimeMs}) =>
+      VideoHourlyLogRow(
+        id: id ?? this.id,
+        dateKey: dateKey ?? this.dateKey,
+        hour: hour ?? this.hour,
+        watchTimeMs: watchTimeMs ?? this.watchTimeMs,
+      );
+  VideoHourlyLogRow copyWithCompanion(VideoHourlyLogsCompanion data) {
+    return VideoHourlyLogRow(
+      id: data.id.present ? data.id.value : this.id,
+      dateKey: data.dateKey.present ? data.dateKey.value : this.dateKey,
+      hour: data.hour.present ? data.hour.value : this.hour,
+      watchTimeMs:
+          data.watchTimeMs.present ? data.watchTimeMs.value : this.watchTimeMs,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('VideoHourlyLogRow(')
+          ..write('id: $id, ')
+          ..write('dateKey: $dateKey, ')
+          ..write('hour: $hour, ')
+          ..write('watchTimeMs: $watchTimeMs')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, dateKey, hour, watchTimeMs);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is VideoHourlyLogRow &&
+          other.id == this.id &&
+          other.dateKey == this.dateKey &&
+          other.hour == this.hour &&
+          other.watchTimeMs == this.watchTimeMs);
+}
+
+class VideoHourlyLogsCompanion extends UpdateCompanion<VideoHourlyLogRow> {
+  final Value<int> id;
+  final Value<String> dateKey;
+  final Value<int> hour;
+  final Value<int> watchTimeMs;
+  const VideoHourlyLogsCompanion({
+    this.id = const Value.absent(),
+    this.dateKey = const Value.absent(),
+    this.hour = const Value.absent(),
+    this.watchTimeMs = const Value.absent(),
+  });
+  VideoHourlyLogsCompanion.insert({
+    this.id = const Value.absent(),
+    required String dateKey,
+    required int hour,
+    required int watchTimeMs,
+  })  : dateKey = Value(dateKey),
+        hour = Value(hour),
+        watchTimeMs = Value(watchTimeMs);
+  static Insertable<VideoHourlyLogRow> custom({
+    Expression<int>? id,
+    Expression<String>? dateKey,
+    Expression<int>? hour,
+    Expression<int>? watchTimeMs,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (dateKey != null) 'date_key': dateKey,
+      if (hour != null) 'hour': hour,
+      if (watchTimeMs != null) 'watch_time_ms': watchTimeMs,
+    });
+  }
+
+  VideoHourlyLogsCompanion copyWith(
+      {Value<int>? id,
+      Value<String>? dateKey,
+      Value<int>? hour,
+      Value<int>? watchTimeMs}) {
+    return VideoHourlyLogsCompanion(
+      id: id ?? this.id,
+      dateKey: dateKey ?? this.dateKey,
+      hour: hour ?? this.hour,
+      watchTimeMs: watchTimeMs ?? this.watchTimeMs,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (dateKey.present) {
+      map['date_key'] = Variable<String>(dateKey.value);
+    }
+    if (hour.present) {
+      map['hour'] = Variable<int>(hour.value);
+    }
+    if (watchTimeMs.present) {
+      map['watch_time_ms'] = Variable<int>(watchTimeMs.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('VideoHourlyLogsCompanion(')
+          ..write('id: $id, ')
+          ..write('dateKey: $dateKey, ')
+          ..write('hour: $hour, ')
+          ..write('watchTimeMs: $watchTimeMs')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$HibikiDatabase extends GeneratedDatabase {
   _$HibikiDatabase(QueryExecutor e) : super(e);
   $HibikiDatabaseManager get managers => $HibikiDatabaseManager(this);
@@ -9200,6 +9864,10 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
   late final $VideoBooksTable videoBooks = $VideoBooksTable(this);
   late final $VideoBookTagMappingsTable videoBookTagMappings =
       $VideoBookTagMappingsTable(this);
+  late final $VideoWatchStatisticsTable videoWatchStatistics =
+      $VideoWatchStatisticsTable(this);
+  late final $VideoHourlyLogsTable videoHourlyLogs =
+      $VideoHourlyLogsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -9228,7 +9896,9 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
         bookProfiles,
         syncBaselines,
         videoBooks,
-        videoBookTagMappings
+        videoBookTagMappings,
+        videoWatchStatistics,
+        videoHourlyLogs
       ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules(
@@ -15075,6 +15745,7 @@ typedef $$VideoBooksTableCreateCompanionBuilder = VideoBooksCompanion Function({
   Value<int> currentEpisode,
   Value<String?> audioTrackId,
   Value<int> delayMs,
+  Value<DateTime?> completedAt,
   Value<int> rowid,
 });
 typedef $$VideoBooksTableUpdateCompanionBuilder = VideoBooksCompanion Function({
@@ -15091,6 +15762,7 @@ typedef $$VideoBooksTableUpdateCompanionBuilder = VideoBooksCompanion Function({
   Value<int> currentEpisode,
   Value<String?> audioTrackId,
   Value<int> delayMs,
+  Value<DateTime?> completedAt,
   Value<int> rowid,
 });
 
@@ -15172,6 +15844,9 @@ class $$VideoBooksTableFilterComposer
   ColumnFilters<int> get delayMs => $composableBuilder(
       column: $table.delayMs, builder: (column) => ColumnFilters(column));
 
+  ColumnFilters<DateTime> get completedAt => $composableBuilder(
+      column: $table.completedAt, builder: (column) => ColumnFilters(column));
+
   Expression<bool> videoBookTagMappingsRefs(
       Expression<bool> Function($$VideoBookTagMappingsTableFilterComposer f)
           f) {
@@ -15249,6 +15924,9 @@ class $$VideoBooksTableOrderingComposer
 
   ColumnOrderings<int> get delayMs => $composableBuilder(
       column: $table.delayMs, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<DateTime> get completedAt => $composableBuilder(
+      column: $table.completedAt, builder: (column) => ColumnOrderings(column));
 }
 
 class $$VideoBooksTableAnnotationComposer
@@ -15298,6 +15976,9 @@ class $$VideoBooksTableAnnotationComposer
 
   GeneratedColumn<int> get delayMs =>
       $composableBuilder(column: $table.delayMs, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get completedAt => $composableBuilder(
+      column: $table.completedAt, builder: (column) => column);
 
   Expression<T> videoBookTagMappingsRefs<T extends Object>(
       Expression<T> Function($$VideoBookTagMappingsTableAnnotationComposer a)
@@ -15359,6 +16040,7 @@ class $$VideoBooksTableTableManager extends RootTableManager<
             Value<int> currentEpisode = const Value.absent(),
             Value<String?> audioTrackId = const Value.absent(),
             Value<int> delayMs = const Value.absent(),
+            Value<DateTime?> completedAt = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
               VideoBooksCompanion(
@@ -15375,6 +16057,7 @@ class $$VideoBooksTableTableManager extends RootTableManager<
             currentEpisode: currentEpisode,
             audioTrackId: audioTrackId,
             delayMs: delayMs,
+            completedAt: completedAt,
             rowid: rowid,
           ),
           createCompanionCallback: ({
@@ -15391,6 +16074,7 @@ class $$VideoBooksTableTableManager extends RootTableManager<
             Value<int> currentEpisode = const Value.absent(),
             Value<String?> audioTrackId = const Value.absent(),
             Value<int> delayMs = const Value.absent(),
+            Value<DateTime?> completedAt = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
               VideoBooksCompanion.insert(
@@ -15407,6 +16091,7 @@ class $$VideoBooksTableTableManager extends RootTableManager<
             currentEpisode: currentEpisode,
             audioTrackId: audioTrackId,
             delayMs: delayMs,
+            completedAt: completedAt,
             rowid: rowid,
           ),
           withReferenceMapper: (p0) => p0
@@ -15778,6 +16463,349 @@ typedef $$VideoBookTagMappingsTableProcessedTableManager
         (VideoBookTagMappingRow, $$VideoBookTagMappingsTableReferences),
         VideoBookTagMappingRow,
         PrefetchHooks Function({bool videoBookUid, bool tagId})>;
+typedef $$VideoWatchStatisticsTableCreateCompanionBuilder
+    = VideoWatchStatisticsCompanion Function({
+  Value<int> id,
+  required String title,
+  required String dateKey,
+  required int subtitleChars,
+  required int watchTimeMs,
+  required int lastModified,
+});
+typedef $$VideoWatchStatisticsTableUpdateCompanionBuilder
+    = VideoWatchStatisticsCompanion Function({
+  Value<int> id,
+  Value<String> title,
+  Value<String> dateKey,
+  Value<int> subtitleChars,
+  Value<int> watchTimeMs,
+  Value<int> lastModified,
+});
+
+class $$VideoWatchStatisticsTableFilterComposer
+    extends Composer<_$HibikiDatabase, $VideoWatchStatisticsTable> {
+  $$VideoWatchStatisticsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get title => $composableBuilder(
+      column: $table.title, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get dateKey => $composableBuilder(
+      column: $table.dateKey, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get subtitleChars => $composableBuilder(
+      column: $table.subtitleChars, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get watchTimeMs => $composableBuilder(
+      column: $table.watchTimeMs, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get lastModified => $composableBuilder(
+      column: $table.lastModified, builder: (column) => ColumnFilters(column));
+}
+
+class $$VideoWatchStatisticsTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $VideoWatchStatisticsTable> {
+  $$VideoWatchStatisticsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get title => $composableBuilder(
+      column: $table.title, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get dateKey => $composableBuilder(
+      column: $table.dateKey, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get subtitleChars => $composableBuilder(
+      column: $table.subtitleChars,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get watchTimeMs => $composableBuilder(
+      column: $table.watchTimeMs, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get lastModified => $composableBuilder(
+      column: $table.lastModified,
+      builder: (column) => ColumnOrderings(column));
+}
+
+class $$VideoWatchStatisticsTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $VideoWatchStatisticsTable> {
+  $$VideoWatchStatisticsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get title =>
+      $composableBuilder(column: $table.title, builder: (column) => column);
+
+  GeneratedColumn<String> get dateKey =>
+      $composableBuilder(column: $table.dateKey, builder: (column) => column);
+
+  GeneratedColumn<int> get subtitleChars => $composableBuilder(
+      column: $table.subtitleChars, builder: (column) => column);
+
+  GeneratedColumn<int> get watchTimeMs => $composableBuilder(
+      column: $table.watchTimeMs, builder: (column) => column);
+
+  GeneratedColumn<int> get lastModified => $composableBuilder(
+      column: $table.lastModified, builder: (column) => column);
+}
+
+class $$VideoWatchStatisticsTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $VideoWatchStatisticsTable,
+    VideoWatchStatisticRow,
+    $$VideoWatchStatisticsTableFilterComposer,
+    $$VideoWatchStatisticsTableOrderingComposer,
+    $$VideoWatchStatisticsTableAnnotationComposer,
+    $$VideoWatchStatisticsTableCreateCompanionBuilder,
+    $$VideoWatchStatisticsTableUpdateCompanionBuilder,
+    (
+      VideoWatchStatisticRow,
+      BaseReferences<_$HibikiDatabase, $VideoWatchStatisticsTable,
+          VideoWatchStatisticRow>
+    ),
+    VideoWatchStatisticRow,
+    PrefetchHooks Function()> {
+  $$VideoWatchStatisticsTableTableManager(
+      _$HibikiDatabase db, $VideoWatchStatisticsTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$VideoWatchStatisticsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$VideoWatchStatisticsTableOrderingComposer(
+                  $db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$VideoWatchStatisticsTableAnnotationComposer(
+                  $db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<String> title = const Value.absent(),
+            Value<String> dateKey = const Value.absent(),
+            Value<int> subtitleChars = const Value.absent(),
+            Value<int> watchTimeMs = const Value.absent(),
+            Value<int> lastModified = const Value.absent(),
+          }) =>
+              VideoWatchStatisticsCompanion(
+            id: id,
+            title: title,
+            dateKey: dateKey,
+            subtitleChars: subtitleChars,
+            watchTimeMs: watchTimeMs,
+            lastModified: lastModified,
+          ),
+          createCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            required String title,
+            required String dateKey,
+            required int subtitleChars,
+            required int watchTimeMs,
+            required int lastModified,
+          }) =>
+              VideoWatchStatisticsCompanion.insert(
+            id: id,
+            title: title,
+            dateKey: dateKey,
+            subtitleChars: subtitleChars,
+            watchTimeMs: watchTimeMs,
+            lastModified: lastModified,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$VideoWatchStatisticsTableProcessedTableManager
+    = ProcessedTableManager<
+        _$HibikiDatabase,
+        $VideoWatchStatisticsTable,
+        VideoWatchStatisticRow,
+        $$VideoWatchStatisticsTableFilterComposer,
+        $$VideoWatchStatisticsTableOrderingComposer,
+        $$VideoWatchStatisticsTableAnnotationComposer,
+        $$VideoWatchStatisticsTableCreateCompanionBuilder,
+        $$VideoWatchStatisticsTableUpdateCompanionBuilder,
+        (
+          VideoWatchStatisticRow,
+          BaseReferences<_$HibikiDatabase, $VideoWatchStatisticsTable,
+              VideoWatchStatisticRow>
+        ),
+        VideoWatchStatisticRow,
+        PrefetchHooks Function()>;
+typedef $$VideoHourlyLogsTableCreateCompanionBuilder = VideoHourlyLogsCompanion
+    Function({
+  Value<int> id,
+  required String dateKey,
+  required int hour,
+  required int watchTimeMs,
+});
+typedef $$VideoHourlyLogsTableUpdateCompanionBuilder = VideoHourlyLogsCompanion
+    Function({
+  Value<int> id,
+  Value<String> dateKey,
+  Value<int> hour,
+  Value<int> watchTimeMs,
+});
+
+class $$VideoHourlyLogsTableFilterComposer
+    extends Composer<_$HibikiDatabase, $VideoHourlyLogsTable> {
+  $$VideoHourlyLogsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get dateKey => $composableBuilder(
+      column: $table.dateKey, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get hour => $composableBuilder(
+      column: $table.hour, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get watchTimeMs => $composableBuilder(
+      column: $table.watchTimeMs, builder: (column) => ColumnFilters(column));
+}
+
+class $$VideoHourlyLogsTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $VideoHourlyLogsTable> {
+  $$VideoHourlyLogsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get dateKey => $composableBuilder(
+      column: $table.dateKey, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get hour => $composableBuilder(
+      column: $table.hour, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get watchTimeMs => $composableBuilder(
+      column: $table.watchTimeMs, builder: (column) => ColumnOrderings(column));
+}
+
+class $$VideoHourlyLogsTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $VideoHourlyLogsTable> {
+  $$VideoHourlyLogsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get dateKey =>
+      $composableBuilder(column: $table.dateKey, builder: (column) => column);
+
+  GeneratedColumn<int> get hour =>
+      $composableBuilder(column: $table.hour, builder: (column) => column);
+
+  GeneratedColumn<int> get watchTimeMs => $composableBuilder(
+      column: $table.watchTimeMs, builder: (column) => column);
+}
+
+class $$VideoHourlyLogsTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $VideoHourlyLogsTable,
+    VideoHourlyLogRow,
+    $$VideoHourlyLogsTableFilterComposer,
+    $$VideoHourlyLogsTableOrderingComposer,
+    $$VideoHourlyLogsTableAnnotationComposer,
+    $$VideoHourlyLogsTableCreateCompanionBuilder,
+    $$VideoHourlyLogsTableUpdateCompanionBuilder,
+    (
+      VideoHourlyLogRow,
+      BaseReferences<_$HibikiDatabase, $VideoHourlyLogsTable, VideoHourlyLogRow>
+    ),
+    VideoHourlyLogRow,
+    PrefetchHooks Function()> {
+  $$VideoHourlyLogsTableTableManager(
+      _$HibikiDatabase db, $VideoHourlyLogsTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$VideoHourlyLogsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$VideoHourlyLogsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$VideoHourlyLogsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<String> dateKey = const Value.absent(),
+            Value<int> hour = const Value.absent(),
+            Value<int> watchTimeMs = const Value.absent(),
+          }) =>
+              VideoHourlyLogsCompanion(
+            id: id,
+            dateKey: dateKey,
+            hour: hour,
+            watchTimeMs: watchTimeMs,
+          ),
+          createCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            required String dateKey,
+            required int hour,
+            required int watchTimeMs,
+          }) =>
+              VideoHourlyLogsCompanion.insert(
+            id: id,
+            dateKey: dateKey,
+            hour: hour,
+            watchTimeMs: watchTimeMs,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$VideoHourlyLogsTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $VideoHourlyLogsTable,
+    VideoHourlyLogRow,
+    $$VideoHourlyLogsTableFilterComposer,
+    $$VideoHourlyLogsTableOrderingComposer,
+    $$VideoHourlyLogsTableAnnotationComposer,
+    $$VideoHourlyLogsTableCreateCompanionBuilder,
+    $$VideoHourlyLogsTableUpdateCompanionBuilder,
+    (
+      VideoHourlyLogRow,
+      BaseReferences<_$HibikiDatabase, $VideoHourlyLogsTable, VideoHourlyLogRow>
+    ),
+    VideoHourlyLogRow,
+    PrefetchHooks Function()>;
 
 class $HibikiDatabaseManager {
   final _$HibikiDatabase _db;
@@ -15830,4 +16858,8 @@ class $HibikiDatabaseManager {
       $$VideoBooksTableTableManager(_db, _db.videoBooks);
   $$VideoBookTagMappingsTableTableManager get videoBookTagMappings =>
       $$VideoBookTagMappingsTableTableManager(_db, _db.videoBookTagMappings);
+  $$VideoWatchStatisticsTableTableManager get videoWatchStatistics =>
+      $$VideoWatchStatisticsTableTableManager(_db, _db.videoWatchStatistics);
+  $$VideoHourlyLogsTableTableManager get videoHourlyLogs =>
+      $$VideoHourlyLogsTableTableManager(_db, _db.videoHourlyLogs);
 }
