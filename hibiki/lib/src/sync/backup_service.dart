@@ -7,6 +7,34 @@ import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
 
+/// Rewrites an absolute [oldPath] that lives under [oldRoot] so it lives under
+/// [newRoot] instead, preserving the sub-path. Returns [oldPath] verbatim when
+/// it is not under [oldRoot] (already local, or an unrelated location).
+///
+/// A full-data backup stores file paths captured on the SOURCE device. On the
+/// importing device the app directories differ (iOS reassigns the container
+/// UUID on every reinstall), so the stored absolute paths would not resolve.
+/// Import rebases every stored path from the backup's recorded root to this
+/// device's matching root. Separators are normalized so `/` vs `\` differences
+/// between the compared strings don't defeat the prefix match.
+String rebasePath(String oldPath, String oldRoot, String newRoot) {
+  String stripTrailing(String s) =>
+      (s.endsWith('/') || s.endsWith('\\')) ? s.substring(0, s.length - 1) : s;
+  // Normalize separators ONLY for the prefix comparison; the returned path
+  // keeps the source path's original separators (a POSIX backup restored on a
+  // POSIX host must not gain Windows separators just because p.join would, and
+  // vice-versa). So we slice the original oldPath rather than rebuild via join.
+  final String nrOld = stripTrailing(oldRoot.replaceAll('\\', '/'));
+  final String npOld = oldPath.replaceAll('\\', '/');
+  if (npOld == nrOld) return stripTrailing(newRoot);
+  // Require a separator boundary so "/a/books_extra" is not treated as under
+  // "/a/books". replaceAll preserves length, so nrOld.length indexes the
+  // original oldPath correctly.
+  if (!npOld.startsWith('$nrOld/')) return oldPath;
+  final String suffix = oldPath.substring(nrOld.length); // keeps leading sep
+  return stripTrailing(newRoot) + suffix;
+}
+
 class BackupMeta {
   BackupMeta({
     required this.appVersion,
