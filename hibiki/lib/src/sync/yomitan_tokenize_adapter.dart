@@ -5,26 +5,29 @@ typedef Tokenizer = List<String> Function(String text);
 typedef ReadingResolver = String Function(String word);
 
 /// 把分词结果包装成 yomitan-api `tokenize` 单条响应形状。
-/// 形状：`{ id, source, dictionary, index, content: [{text, reading}] }`。
+/// 形状：`{ id:"scan", source:<parser>, dictionary:null, index,
+/// content: [[{text, reading}], ...] }`（content 二维：每段一个数组）。
+/// headwords（首段精简词条）按文档可省略，本版省略（宽松取舍）。
 Map<String, dynamic> buildYomitanTokenizeResponse({
   required String text,
   required int index,
   required Tokenizer tokenize,
   required ReadingResolver readingOf,
+  String parser = 'scanning-parser',
 }) {
-  final List<Map<String, dynamic>> content = <Map<String, dynamic>>[];
+  final List<List<Map<String, dynamic>>> content =
+      <List<Map<String, dynamic>>>[];
   if (text.isNotEmpty) {
     for (final String seg in tokenize(text)) {
-      content.add(<String, dynamic>{
-        'text': seg,
-        'reading': readingOf(seg),
-      });
+      content.add(<Map<String, dynamic>>[
+        <String, dynamic>{'text': seg, 'reading': readingOf(seg)},
+      ]);
     }
   }
   return <String, dynamic>{
-    'id': index,
-    'source': text,
-    'dictionary': 'Hibiki',
+    'id': 'scan',
+    'source': parser,
+    'dictionary': null,
     'index': index,
     'content': content,
   };

@@ -3,7 +3,7 @@ import 'package:hibiki/src/sync/yomitan_tokenize_adapter.dart';
 
 void main() {
   group('buildYomitanTokenizeResponse', () {
-    test('wraps segments with index and content', () {
+    test('wraps each segment in its own array (yomitan 2D content)', () {
       List<String> fakeTokenizer(String t) => ['日本語', 'は', '難しい'];
       String fakeReading(String w) => w == '日本語' ? 'にほんご' : '';
 
@@ -14,12 +14,18 @@ void main() {
         readingOf: fakeReading,
       );
 
+      expect(out['id'], 'scan');
+      expect(out['source'], 'scanning-parser');
+      expect(out['dictionary'], isNull);
       expect(out['index'], 0);
+
       final content = out['content'] as List;
       expect(content.length, 3);
-      expect((content[0] as Map)['text'], '日本語');
-      expect((content[0] as Map)['reading'], 'にほんご');
-      expect((content[1] as Map)['reading'], '');
+      final firstSeg = content[0] as List;
+      expect(firstSeg.length, 1);
+      expect((firstSeg[0] as Map)['text'], '日本語');
+      expect((firstSeg[0] as Map)['reading'], 'にほんご');
+      expect(((content[1] as List)[0] as Map)['reading'], '');
     });
 
     test('empty text yields empty content', () {
