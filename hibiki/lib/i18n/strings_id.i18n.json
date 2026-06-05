@@ -1291,5 +1291,7 @@
     "video_jimaku_no_key": "Enter your Jimaku API key first",
     "video_jimaku_download_failed": "Download failed",
     "video_jimaku_downloaded": "Subtitle downloaded and applied",
+    "video_delete_title": "Delete Video",
+    "video_delete_confirm": "Delete 『$title』? This cannot be undone.",
     "shortcut_action_audiobook_seek_clicked": "Seek audio to clicked sentence"
 }

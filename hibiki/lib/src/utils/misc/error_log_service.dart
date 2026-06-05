@@ -41,9 +41,16 @@ class ErrorLogService extends ChangeNotifier with FrameSafeNotifier {
   File? _logFile;
   String _persistedLog = '';
 
+  /// 导入面包屑文件：在每本词典调 native FFI 前**同步**写入，返回后清空。
+  /// native 硬崩溃（访问违例 / 栈溢出）会绕过 Dart try/catch 直接带崩进程，
+  /// 异步日志缓冲来不及落盘；这个文件因为同步写入而能存活崩溃，下次启动
+  /// 把残留内容折进错误日志，即可定位是哪本词典把进程带崩的。
+  File? _breadcrumbFile;
+
   Future<void> init() async {
     final dir = await getApplicationDocumentsDirectory();
     _logFile = File('${dir.path}/error_log.txt');
+    _breadcrumbFile = File('${dir.path}/import_crash_breadcrumb.txt');
     try {
       if (await _logFile!.exists()) {
         var content = await _logFile!.readAsString();
@@ -60,6 +67,60 @@ class ErrorLogService extends ChangeNotifier with FrameSafeNotifier {
     } catch (e) {
       debugPrint('[ErrorLogService] init failed: $e');
     }
+    // 崩溃恢复：上次有面包屑残留 = 那本词典的 native 导入没返回就崩了。
+    try {
+      final String? culprit = readAndClearBreadcrumb(_breadcrumbFile!);
+      if (culprit != null) {
+        log('DictImport.crashRecovered',
+            '上次词典导入疑似让 app 崩溃（native 进程级，Dart 无法捕获）：$culprit');
+      }
+    } catch (e) {
+      debugPrint('[ErrorLogService] breadcrumb recovery failed: $e');
+    }
+  }
+
+  /// 在调用 native 词典导入 FFI 之前**同步**落盘一条面包屑。[detail] 应能唯一
+  /// 标识本次导入（如词典文件名）。必须同步，否则进程在异步 flush 前就已崩溃。
+  ///
+  /// 写入内容带时间戳：用户「正常强杀」恰好命中某本 FFI 执行中时，下次启动会
+  /// 把残留误报为崩溃（与真硬崩在文件层不可区分）；带上时间戳让人工读日志时
+  /// 能判断这条残留有多旧，区分「刚导一半被杀」和「很久以前的残留」。
+  void markImportStart(String detail) {
+    try {
+      _breadcrumbFile?.writeAsStringSync('[${DateTime.now()}] $detail',
+          flush: true);
+    } catch (e) {
+      debugPrint('[ErrorLogService] markImportStart failed: $e');
+    }
+  }
+
+  /// native 导入正常返回（成功或被捕获的失败）后清掉面包屑。
+  void markImportEnd() {
+    try {
+      final f = _breadcrumbFile;
+      if (f != null && f.existsSync()) f.deleteSync();
+    } catch (e) {
+      debugPrint('[ErrorLogService] markImportEnd failed: $e');
+    }
+  }
+
+  /// 读取并删除面包屑文件，返回其内容（空 / 不存在返回 null）。纯文件操作，
+  /// 便于单测注入临时文件。
+  @visibleForTesting
+  static String? readAndClearBreadcrumb(File f) {
+    if (!f.existsSync()) return null;
+    String content;
+    try {
+      content = f.readAsStringSync().trim();
+    } catch (_) {
+      return null;
+    }
+    try {
+      f.deleteSync();
+    } catch (_) {
+      // 删不掉就留着，下次启动再试；不影响本次恢复。
+    }
+    return content.isEmpty ? null : content;
   }
 
   void log(String source, Object error, [StackTrace? stack]) {

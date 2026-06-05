@@ -58,6 +58,29 @@ String videoCoverFileName(String bookUid) {
   return '$safe.jpg';
 }
 
+/// 用用户挑选的图片 [pickedPath] 覆盖 [bookUid] 的封面：拷到持久化
+/// `video_covers/<uid>.jpg` → **驱逐旧解码缓存** → 落库 `coverPath`，返回目标路径。
+///
+/// 书架/视频库长按菜单「设置封面」共用此入口（消除两处手抄）。封面写到与导入
+/// 时自动截图同一路径（同一 [videoCoverFileName]），所以 DB 里的 `coverPath`
+/// 字符串不变；而 [FileImage] 按 `(path, scale)` 而非内容/mtime 缓存解码，覆盖
+/// 同名文件后必须 `imageCache.evict` 掉旧条目，否则 UI 重建时命中旧解码、用户
+/// 重设封面后看到的还是旧图（直到缓存淘汰或重启）。
+Future<String> setVideoCoverFromPickedFile({
+  required VideoBookRepository repo,
+  required String bookUid,
+  required String pickedPath,
+}) async {
+  final Directory docs = await getApplicationDocumentsDirectory();
+  final Directory coverDir = Directory(p.join(docs.path, 'video_covers'));
+  await coverDir.create(recursive: true);
+  final String dest = p.join(coverDir.path, videoCoverFileName(bookUid));
+  await File(pickedPath).copy(dest);
+  PaintingBinding.instance.imageCache.evict(FileImage(File(dest)));
+  await repo.updateCover(bookUid, dest);
+  return dest;
+}
+
 /// 提取 [videoPath] 的书架封面存进 app 文档目录的
 /// `video_covers/<sanitized bookUid>.jpg`（持久路径，非 temp），返回封面绝对
 /// 路径；ffmpeg 缺失（移动端）/失败时返回 null（导入仍成功，书架显示占位）。

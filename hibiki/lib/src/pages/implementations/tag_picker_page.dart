@@ -7,19 +7,23 @@ import 'package:hibiki/src/pages/implementations/tag_management_page.dart';
 import 'package:hibiki/utils.dart';
 
 class TagPickerPage extends ConsumerStatefulWidget {
-  /// EPUB 书：传 [bookKey]（书的主键）；SRT 书：传 [srtBookId]（srt_books 自增主键）
-  /// 且 [isSrtBook] = true。两者互斥，按 [isSrtBook] 分派。
+  /// 三种媒体三选一，共用同一标签池，按非空字段分派：
+  /// EPUB 书传 [bookKey]（书主键）；SRT 书传 [srtBookId]（自增主键）且
+  /// [isSrtBook]=true；视频书传 [videoBookUid]（video_books 的 book_uid）。
   const TagPickerPage({
     this.bookKey,
     this.srtBookId,
+    this.videoBookUid,
     this.isSrtBook = false,
     super.key,
   }) : assert(
-          isSrtBook ? srtBookId != null : bookKey != null,
-          'bookKey is required for EPUB books, srtBookId for SRT books',
+          videoBookUid != null ||
+              (isSrtBook ? srtBookId != null : bookKey != null),
+          'bookKey for EPUB, srtBookId for SRT, videoBookUid for video',
         );
   final String? bookKey;
   final int? srtBookId;
+  final String? videoBookUid;
   final bool isSrtBook;
 
   @override
@@ -38,11 +42,34 @@ class _TagPickerPageState extends ConsumerState<TagPickerPage> {
 
   HibikiDatabase get _db => ref.read(appProvider).database;
 
+  bool get _isVideo => widget.videoBookUid != null;
+
+  /// 读当前媒体已挂的标签（按媒体类型分派到对应 DB 查询）。
+  Future<List<BookTagRow>> _currentTags() {
+    if (_isVideo) return _db.getTagsForVideoBook(widget.videoBookUid!);
+    if (widget.isSrtBook) return _db.getTagsForSrtBook(widget.srtBookId!);
+    return _db.getTagsForBook(widget.bookKey!);
+  }
+
+  Future<void> _addTag(int tagId) {
+    if (_isVideo) return _db.addTagToVideoBook(widget.videoBookUid!, tagId);
+    if (widget.isSrtBook) return _db.addTagToSrtBook(widget.srtBookId!, tagId);
+    return _db.addTagToBook(widget.bookKey!, tagId);
+  }
+
+  Future<void> _removeTag(int tagId) {
+    if (_isVideo) {
+      return _db.removeTagFromVideoBook(widget.videoBookUid!, tagId);
+    }
+    if (widget.isSrtBook) {
+      return _db.removeTagFromSrtBook(widget.srtBookId!, tagId);
+    }
+    return _db.removeTagFromBook(widget.bookKey!, tagId);
+  }
+
   Future<void> _load() async {
     final allTags = await _db.getAllTags();
-    final bookTags = widget.isSrtBook
-        ? await _db.getTagsForSrtBook(widget.srtBookId!)
-        : await _db.getTagsForBook(widget.bookKey!);
+    final bookTags = await _currentTags();
     if (mounted) {
       setState(() {
         _allTags = allTags;
@@ -53,14 +80,10 @@ class _TagPickerPageState extends ConsumerState<TagPickerPage> {
 
   Future<void> _toggle(int tagId, bool selected) async {
     if (selected) {
-      widget.isSrtBook
-          ? await _db.addTagToSrtBook(widget.srtBookId!, tagId)
-          : await _db.addTagToBook(widget.bookKey!, tagId);
+      await _addTag(tagId);
       setState(() => _selectedTagIds.add(tagId));
     } else {
-      widget.isSrtBook
-          ? await _db.removeTagFromSrtBook(widget.srtBookId!, tagId)
-          : await _db.removeTagFromBook(widget.bookKey!, tagId);
+      await _removeTag(tagId);
       setState(() => _selectedTagIds.remove(tagId));
     }
   }
@@ -78,9 +101,7 @@ class _TagPickerPageState extends ConsumerState<TagPickerPage> {
     if (result == null) return;
     try {
       final newId = await _db.createTag(result.name, result.color);
-      widget.isSrtBook
-          ? await _db.addTagToSrtBook(widget.srtBookId!, newId)
-          : await _db.addTagToBook(widget.bookKey!, newId);
+      await _addTag(newId);
       await _load();
     } on SqliteException catch (e) {
       if (e.extendedResultCode == 2067 && mounted) {

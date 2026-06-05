@@ -619,12 +619,39 @@ class AppModel with ChangeNotifier {
   }
 
   /// Get the app-wide text style.
-  TextStyle get textStyle => TextStyle(
-        fontFamily: appFontFamily ?? targetLanguage.defaultFontFamily,
-        fontFeatures: const [FontFeature('liga', 0)],
-        locale: targetLanguage.locale,
-        textBaseline: targetLanguage.textBaseline,
-      );
+  ///
+  /// The UI font follows the *display* language ([appLocale]), not the pinned
+  /// Japanese reading language ([targetLanguage]). With no user custom font,
+  /// [fontFamily] is left null so the platform resolves the correct regional
+  /// glyphs for the UI locale (e.g. Simplified-Chinese glyphs for `zh-CN`)
+  /// instead of the Japanese kanji variants the old `NotoSansJP` + `ja`-locale
+  /// pin forced on every Material platform. Japanese reader/dictionary content
+  /// renders in WebView with its own CSS font, so it is unaffected by this
+  /// app-chrome style.
+  TextStyle get textStyle {
+    final Locale uiLocale = appLocale;
+    return TextStyle(
+      fontFamily: appFontFamily,
+      fontFeatures: const [FontFeature('liga', 0)],
+      locale: uiLocale,
+      textBaseline: _isIdeographicLocale(uiLocale)
+          ? TextBaseline.ideographic
+          : TextBaseline.alphabetic,
+    );
+  }
+
+  /// CJK locales sit on the ideographic baseline; every other script uses the
+  /// alphabetic baseline. Drives [textStyle]'s [TextStyle.textBaseline].
+  static bool _isIdeographicLocale(Locale locale) {
+    switch (locale.languageCode) {
+      case 'ja':
+      case 'zh':
+      case 'ko':
+        return true;
+      default:
+        return false;
+    }
+  }
 
   /// This override is a workaround required to theme the app-wide [TextTheme]
   /// based on the [Locale] and [TextBaseline] of the active target language.

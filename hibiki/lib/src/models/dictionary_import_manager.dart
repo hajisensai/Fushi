@@ -148,10 +148,17 @@ class DictionaryImportManager {
         }
         tempOutputDir.createSync(recursive: true);
 
-        final result = await importDictionaryViaHoshidicts(
-          zipPath: tempZipPath,
-          outputDir: tempOutputDir.path,
-        );
+        ErrorLogService.instance
+            .markImportStart('native 词典导入(目录)未返回：${directory.path}');
+        final HoshiImportResult result;
+        try {
+          result = await importDictionaryViaHoshidicts(
+            zipPath: tempZipPath,
+            outputDir: tempOutputDir.path,
+          );
+        } finally {
+          ErrorLogService.instance.markImportEnd();
+        }
 
         if (!result.success) {
           throw Exception(
@@ -250,10 +257,16 @@ class DictionaryImportManager {
       }
       tempOutputDir.createSync(recursive: true);
 
-      final result = await importDictionaryViaHoshidicts(
-        zipPath: file.path,
-        outputDir: tempOutputDir.path,
-      );
+      ErrorLogService.instance.markImportStart('native 词典导入未返回：${file.path}');
+      final HoshiImportResult result;
+      try {
+        result = await importDictionaryViaHoshidicts(
+          zipPath: file.path,
+          outputDir: tempOutputDir.path,
+        );
+      } finally {
+        ErrorLogService.instance.markImportEnd();
+      }
 
       if (!result.success) {
         throw Exception(

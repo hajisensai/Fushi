@@ -48,6 +48,7 @@ LazyDatabase _openDb(String dbDirectory) {
   BookProfiles,
   SyncBaselines,
   VideoBooks,
+  VideoBookTagMappings,
 ])
 class HibikiDatabase extends _$HibikiDatabase {
   final String _dbDirectory;
@@ -57,7 +58,7 @@ class HibikiDatabase extends _$HibikiDatabase {
   HibikiDatabase.forTesting(super.e) : _dbDirectory = '';
 
   @override
-  int get schemaVersion => 20;
+  int get schemaVersion => 21;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -294,6 +295,15 @@ class HibikiDatabase extends _$HibikiDatabase {
             }
             if (!await _tableExists('video_books')) {
               await m.createTable(videoBooks);
+            }
+          }
+          if (from < 21) {
+            // video_book_tag_mappings: lets video books share the same BookTags
+            // pool as EPUB/SRT books. video_books is guaranteed to exist by the
+            // from<20 convergence above (FK target). Guard so a fresh DB (table
+            // already built by onCreate's createAll) doesn't recreate it.
+            if (!await _tableExists('video_book_tag_mappings')) {
+              await m.createTable(videoBookTagMappings);
             }
           }
         },
@@ -768,6 +778,16 @@ class HibikiDatabase extends _$HibikiDatabase {
           String bookUid, String? audioTrackId) =>
       (update(videoBooks)..where((t) => t.bookUid.equals(bookUid)))
           .write(VideoBooksCompanion(audioTrackId: Value(audioTrackId)));
+
+  /// 更新视频封面图绝对路径（用户在书架/视频库长按菜单手动设置）。
+  Future<void> updateVideoBookCover(String bookUid, String coverPath) =>
+      (update(videoBooks)..where((t) => t.bookUid.equals(bookUid)))
+          .write(VideoBooksCompanion(coverPath: Value(coverPath)));
+
+  /// 删除视频书：FK `onDelete: cascade` 自动清掉它在
+  /// video_book_tag_mappings 的标签映射（cue 在 audio_cues，按需另清）。
+  Future<void> deleteVideoBook(String bookUid) =>
+      (delete(videoBooks)..where((t) => t.bookUid.equals(bookUid))).go();
 
   // ── audio cues ──────────────────────────────────────────────────
   // [bookKey] is the owner key: either an audiobook bookKey OR an srt_books.uid
@@ -1270,6 +1290,85 @@ class HibikiDatabase extends _$HibikiDatabase {
       variables: variables,
     ).get();
     return rows.map((row) => row.read<int>('srt_book_id')).toSet();
+  }
+
+  // ── video book tags ─────────────────────────────────────────────
+  // 视频书复用共享 BookTags 标签池，映射经 video_book_tag_mappings。
+  // 全套镜像 SRT 标签 API，键从 srtBookId(int) 换成 videoBookUid(String)。
+
+  Future<List<BookTagRow>> getTagsForVideoBook(String videoBookUid) {
+    final query = select(bookTags).join([
+      innerJoin(
+        videoBookTagMappings,
+        videoBookTagMappings.tagId.equalsExp(bookTags.id),
+      ),
+    ])
+      ..where(videoBookTagMappings.videoBookUid.equals(videoBookUid))
+      ..orderBy([OrderingTerm.asc(bookTags.createdAt)]);
+    return query.map((row) => row.readTable(bookTags)).get();
+  }
+
+  Future<void> addTagToVideoBook(String videoBookUid, int tagId) =>
+      into(videoBookTagMappings).insert(
+        VideoBookTagMappingsCompanion.insert(
+          videoBookUid: videoBookUid,
+          tagId: tagId,
+        ),
+        mode: InsertMode.insertOrIgnore,
+      );
+
+  Future<void> removeTagFromVideoBook(String videoBookUid, int tagId) =>
+      (delete(videoBookTagMappings)
+            ..where((t) =>
+                t.videoBookUid.equals(videoBookUid) & t.tagId.equals(tagId)))
+          .go();
+
+  Future<void> setTagsForVideoBook(String videoBookUid, Set<int> tagIds) =>
+      transaction(() async {
+        final existing = await (select(videoBookTagMappings)
+              ..where((t) => t.videoBookUid.equals(videoBookUid)))
+            .get();
+        final existingTagIds = existing.map((e) => e.tagId).toSet();
+
+        final toRemove = existingTagIds.difference(tagIds);
+        final toAdd = tagIds.difference(existingTagIds);
+
+        for (final tagId in toRemove) {
+          await (delete(videoBookTagMappings)
+                ..where((t) =>
+                    t.videoBookUid.equals(videoBookUid) &
+                    t.tagId.equals(tagId)))
+              .go();
+        }
+        for (final tagId in toAdd) {
+          await into(videoBookTagMappings).insert(
+            VideoBookTagMappingsCompanion.insert(
+              videoBookUid: videoBookUid,
+              tagId: tagId,
+            ),
+          );
+        }
+      });
+
+  Future<List<VideoBookTagMappingRow>> getAllVideoBookTagMappings() =>
+      select(videoBookTagMappings).get();
+
+  Future<Set<String>> getVideoBookUidsForAllTags(Set<int> tagIds) async {
+    if (tagIds.isEmpty) return {};
+    final tagCount = tagIds.length;
+    final placeholders = List.generate(tagCount, (_) => '?').join(',');
+    final variables = <Variable>[
+      ...tagIds.map((id) => Variable<int>(id)),
+      Variable<int>(tagCount),
+    ];
+    final rows = await customSelect(
+      'SELECT video_book_uid FROM video_book_tag_mappings '
+      'WHERE tag_id IN ($placeholders) '
+      'GROUP BY video_book_uid '
+      'HAVING COUNT(DISTINCT tag_id) = ?',
+      variables: variables,
+    ).get();
+    return rows.map((row) => row.read<String>('video_book_uid')).toSet();
   }
 
   // ── profiles ──────────────────────────────────────────────────────
