@@ -23,7 +23,7 @@
 | 功能核心 | 一键创建 Lapis note type **+ 默认 deck** |
 | 平台范围 | 全平台（安卓 + 桌面 + iOS） |
 | 模板保真度 | **vendor donkuri/lapis v1.7.0 原版** front/back/styling 三文件 |
-| deck 默认名 | `Mining`（社区惯例；可后续配置） |
+| deck 默认名 | `Lapis`（与 note type 同名；可后续配置） |
 | 旧死代码 | 删除 `anki_integration.dart` 里 `Term/Meaning` 错误 schema 路径 |
 
 ## 2. 关键事实与约束
@@ -105,7 +105,7 @@
 /// (GPL-3.0, https://github.com/donkuri/lapis). 安卓与桌面共用此源。
 class LapisNoteTypeSpec {
   static const String modelName = 'Lapis';
-  static const String defaultDeckName = 'Mining';
+  static const String defaultDeckName = 'Lapis';
   static const String cardTemplateName = 'Card 1';
   static const List<String> fields = <String>[ /* 22 字段按序 */ ];
   static const String front = r'''...''';   // vendored v1.7.0
@@ -167,7 +167,7 @@ Future<LapisSetupResult> createLapisSetup();
 1. `repo.createNoteType(LapisNoteTypeSpec → AnkiNoteTypeTemplate)`（幂等）。
 2. `repo.createDeck(LapisNoteTypeSpec.defaultDeckName)`（幂等）。
 3. `repo.fetchConfiguration()` 重新拉取 decks/models/fields。
-4. `selectNoteType('Lapis')` + `selectDeck('Mining')`。
+4. `selectNoteType('Lapis')` + `selectDeck('Lapis')`。
 5. `LapisPreset.applyDefaults` 写字段映射（默认含 book-cover / sasayaki-audio）。
 6. 持久化 settings。
 7. 返回 `created`（本次新建）/ `alreadyExisted`（已存在仍选中应用）/ `failed(reason)`。
@@ -230,7 +230,7 @@ Future<LapisSetupResult> createLapisSetup();
 ## 9. 非目标（YAGNI）
 
 - 不做 Lapis 模板版本升级/检测（vendor 固定 v1.7.0 快照；上游更新由后续手动 bump）。
-- 不做 deck 名自定义 UI（默认 `Mining`，后续需要再加）。
+- 不做 deck 名自定义 UI（默认 `Lapis`，后续需要再加）。
 - 不做 Yomitan card format 自动写入（Hibiki 自身制卡管线已直接填字段，
   无需配置外部 Yomitan）。
 - 不动制卡运行时渲染逻辑（`AnkiHandlebarRenderer` 不变）。
