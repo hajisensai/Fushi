@@ -22,4 +22,14 @@ void main() {
     await TexthookerWsClientHost.instance.stop();
     expect(TexthookerWsClientHost.instance.isRunning, false);
   });
+
+  test('restart keeps running with new urls', () async {
+    TexthookerWsClientHost.instance.start(<String>['ws://127.0.0.1:59998']);
+    expect(TexthookerWsClientHost.instance.isRunning, true);
+    await TexthookerWsClientHost.instance
+        .restart(<String>['ws://127.0.0.1:59997']);
+    expect(TexthookerWsClientHost.instance.isRunning, true);
+    await TexthookerWsClientHost.instance.stop();
+    expect(TexthookerWsClientHost.instance.isRunning, false);
+  });
 }
