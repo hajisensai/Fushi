@@ -388,6 +388,21 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
     line-height: 1;
 }
 
+/* Wiktionary "form-of"/non-lemma glossary: an array of [term, [tag, ...]] pairs
+   rendered one per line (see renderTaggedTermPairs in popup.js, BUG-057). The
+   term and its tag chips sit on the same baseline; pairs stack with breathing
+   room so they read as a list, not a jammed run like "时Hyōgai时alt-of…". */
+.form-of-list {
+    margin: 2px 0;
+}
+
+.form-of-item {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    margin: 2px 0;
+}
+
 .gloss-sc-table-container {
     display: block;
     overflow-x: auto;
