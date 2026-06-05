@@ -12,11 +12,6 @@ import 'package:hibiki/src/sync/hibiki_sync_server.dart'
 import 'package:hibiki/src/sync/yomitan_term_entries_adapter.dart';
 import 'package:hibiki/src/sync/yomitan_tokenize_adapter.dart';
 
-export 'package:hibiki/src/sync/hibiki_remote_lookup_service.dart'
-    show HibikiRemoteLookupService, RemoteAudioLookup;
-export 'package:hibiki/src/sync/yomitan_tokenize_adapter.dart'
-    show Tokenizer, ReadingResolver;
-
 /// yomitan-api 默认端口（Kuuuube/yomitan-api）。
 const int kYomitanApiDefaultPort = 19633;
 

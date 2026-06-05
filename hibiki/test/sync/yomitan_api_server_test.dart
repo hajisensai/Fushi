@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
+import 'package:hibiki/src/sync/hibiki_remote_lookup_service.dart';
 import 'package:hibiki/src/sync/yomitan_api_server.dart';
 
 class _FakeLookup implements HibikiRemoteLookupService {
@@ -129,5 +130,52 @@ void main() {
     final withKey =
         await _post(port, '/termEntries', {'term': 'わかる'}, apiKey: 'secret');
     expect(withKey.statusCode, 200);
+  });
+
+  test('yomitanVersion is constant', () async {
+    server = YomitanApiServer(
+        port: 19738,
+        lookupService: _FakeLookup(),
+        tokenizer: (t) => [t],
+        readingResolver: (w) => '');
+    await server.start();
+    final resp = await _post(19738, '/yomitanVersion', null);
+    final body = jsonDecode(await resp.transform(utf8.decoder).join());
+    expect(body['version'], '0.0.0.0');
+  });
+
+  test('tokenize returns 2D content with readings', () async {
+    server = YomitanApiServer(
+        port: 19739,
+        lookupService: _FakeLookup(),
+        tokenizer: (t) => ['日本語', 'は', '難しい'],
+        readingResolver: (w) => w == '日本語' ? 'にほんご' : '');
+    await server.start();
+    final resp = await _post(19739, '/tokenize', {'text': '日本語は難しい'});
+    expect(resp.statusCode, 200);
+    final body = jsonDecode(await resp.transform(utf8.decoder).join());
+    expect(body['id'], 'scan');
+    final content = body['content'] as List;
+    expect(content.length, 3);
+    final firstSeg = content[0] as List; // 二维：每段一个数组
+    expect((firstSeg[0] as Map)['text'], '日本語');
+    expect((firstSeg[0] as Map)['reading'], 'にほんご');
+  });
+
+  test('tokenize with array text returns array of results', () async {
+    server = YomitanApiServer(
+        port: 19740,
+        lookupService: _FakeLookup(),
+        tokenizer: (t) => [t],
+        readingResolver: (w) => '');
+    await server.start();
+    final resp = await _post(19740, '/tokenize', {
+      'text': ['あ', 'い']
+    });
+    final body = jsonDecode(await resp.transform(utf8.decoder).join());
+    expect(body, isA<List>());
+    expect((body as List).length, 2);
+    expect(body[0]['index'], 0);
+    expect(body[1]['index'], 1);
   });
 }
