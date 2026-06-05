@@ -1810,7 +1810,7 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget> {
               itemBuilder: (BuildContext context, int index) {
                 final HibikiClientUrl u = _urls[index];
                 final bool? ok = _reachable[u.url];
-                return ReorderableDelayedDragStartListener(
+                return HibikiReorderDragListener(
                   key: ValueKey<String>(u.url),
                   index: index,
                   child: HibikiListItem(

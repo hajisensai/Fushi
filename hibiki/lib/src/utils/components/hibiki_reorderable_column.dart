@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 /// 行内容构造器：返回**不含任何拖拽监听**的纯行内容（开关/按钮照常可点）。
@@ -10,8 +11,15 @@ typedef HibikiReorderKeyBuilder = Key Function(int index);
 /// 「item[from] 移到最终下标 to」——调用方实现为 `removeAt(from); insert(to, item)`。
 typedef HibikiReorderCallback = void Function(int from, int to);
 
-/// 自实现的竖向「长按拖拽重排」列表，专为运行在祖先 [Transform.scale]
+/// 自实现的竖向「拖拽重排」列表，专为运行在祖先 [Transform.scale]
 /// （`HibikiAppUiScale` 的浏览器式整体缩放）之下而设计。
+///
+/// **起拖时机按输入设备区分**（修「Win 端鼠标必须长按等待才能拖动排序」）：
+/// - 鼠标 / 触控板 / 触控笔等精确指针 → [ImmediateMultiDragGestureRecognizer]，
+///   按下左键移动即拖（桌面用户「按住左键就能拖」的预期）。
+/// - 触摸屏 → [DelayedMultiDragGestureRecognizer]（默认 `kLongPressTimeout` ~500ms），
+///   保留长按起拖，快速滑动仍交给外层列表滚动。
+/// 旧实现用 `GestureDetector.onLongPress*`，对所有平台一律强制长按，桌面鼠标也得等。
 ///
 /// **为什么不用 `ReorderableListView`**：Flutter SDK 的拖拽代理
 /// （`reorderable_list.dart` 的 `_DragItemProxy`）用「全局坐标 − overlay 原点」的
@@ -41,8 +49,8 @@ class HibikiReorderableColumn extends StatefulWidget {
   final HibikiReorderItemBuilder itemBuilder;
   final HibikiReorderKeyBuilder keyForIndex;
 
-  /// 「item[from] 移到最终下标 to」。长按拖拽采用默认 `kLongPressTimeout`（约 500ms），
-  /// 与 `ReorderableDelayedDragStartListener` 一致：快速滑动交给外层滚动，按住再拖才重排。
+  /// 「item[from] 移到最终下标 to」。起拖时机按输入设备区分（见类注释）：
+  /// 鼠标等精确指针按下即拖，触摸屏长按（`kLongPressTimeout`）再拖。
   final HibikiReorderCallback onReorder;
 
   @override
@@ -212,6 +220,28 @@ class _HibikiReorderableColumnState extends State<HibikiReorderableColumn> {
     );
   }
 
+  /// 鼠标/触控板/触控笔等**精确指针**：按下移动即拖（桌面「按住左键就能拖」）。
+  static const Set<PointerDeviceKind> _immediateDragDevices =
+      <PointerDeviceKind>{
+    PointerDeviceKind.mouse,
+    PointerDeviceKind.trackpad,
+    PointerDeviceKind.stylus,
+    PointerDeviceKind.invertedStylus,
+    PointerDeviceKind.unknown,
+  };
+
+  /// 触摸屏：长按起拖（避免与列表滚动争用，快速滑动仍交给滚动）。
+  static const Set<PointerDeviceKind> _delayedDragDevices = <PointerDeviceKind>{
+    PointerDeviceKind.touch,
+  };
+
+  /// 两套 MultiDrag 识别器共用的起拖入口：识别器一旦在手势竞技场胜出就回调，
+  /// 返回 [_ReorderDrag] 把后续 update/end/cancel 桥接到全局坐标拖拽逻辑。
+  Drag _onMultiDragStart(int original, Offset globalPosition) {
+    _startDrag(original, globalPosition);
+    return _ReorderDrag(onUpdate: _updateDrag, onEnd: _endDrag);
+  }
+
   Widget _buildSlot(int original) {
     final Widget content = KeyedSubtree(
       key: _rowKeys[original],
@@ -221,18 +251,54 @@ class _HibikiReorderableColumnState extends State<HibikiReorderableColumn> {
     final Widget slot = _dragOriginal == original
         ? Opacity(opacity: 0.0, child: content)
         : content;
-    // 稳定 key（行身份）：拖拽中 _display 重排时，Flutter 据此保留同一 GestureDetector
-    // 元素与其活跃的长按识别器，拖拽不中断。
-    return GestureDetector(
+    // 稳定 key（行身份）：拖拽中 _display 重排时，Flutter 据此保留同一
+    // RawGestureDetector 元素与其活跃的识别器，拖拽不中断。
+    return RawGestureDetector(
       key: widget.keyForIndex(original),
       behavior: HitTestBehavior.translucent,
-      onLongPressStart: (LongPressStartDetails d) =>
-          _startDrag(original, d.globalPosition),
-      onLongPressMoveUpdate: (LongPressMoveUpdateDetails d) =>
-          _updateDrag(d.globalPosition),
-      onLongPressEnd: (_) => _endDrag(),
-      onLongPressCancel: _endDrag,
+      gestures: <Type, GestureRecognizerFactory>{
+        // 鼠标等精确指针：按下即拖（修 Win 端必须长按等待才能排序）。
+        ImmediateMultiDragGestureRecognizer:
+            GestureRecognizerFactoryWithHandlers<
+                ImmediateMultiDragGestureRecognizer>(
+          () => ImmediateMultiDragGestureRecognizer(
+              supportedDevices: _immediateDragDevices),
+          (ImmediateMultiDragGestureRecognizer instance) {
+            instance.onStart =
+                (Offset position) => _onMultiDragStart(original, position);
+          },
+        ),
+        // 触摸屏：长按再拖。
+        DelayedMultiDragGestureRecognizer: GestureRecognizerFactoryWithHandlers<
+            DelayedMultiDragGestureRecognizer>(
+          () => DelayedMultiDragGestureRecognizer(
+              supportedDevices: _delayedDragDevices),
+          (DelayedMultiDragGestureRecognizer instance) {
+            instance.onStart =
+                (Offset position) => _onMultiDragStart(original, position);
+          },
+        ),
+      },
       child: slot,
     );
   }
+}
+
+/// 把 [MultiDragGestureRecognizer] 的拖拽回调桥接到 [_HibikiReorderableColumnState]
+/// 的全局坐标拖拽逻辑（`_startDrag`/`_updateDrag`/`_endDrag` 都吃全局坐标，
+/// 内部再用 `globalToLocal` 消祖先缩放）。
+class _ReorderDrag extends Drag {
+  _ReorderDrag({required this.onUpdate, required this.onEnd});
+
+  final void Function(Offset globalPosition) onUpdate;
+  final VoidCallback onEnd;
+
+  @override
+  void update(DragUpdateDetails details) => onUpdate(details.globalPosition);
+
+  @override
+  void end(DragEndDetails details) => onEnd();
+
+  @override
+  void cancel() => onEnd();
 }

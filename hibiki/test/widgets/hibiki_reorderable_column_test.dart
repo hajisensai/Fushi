@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/utils/app_ui_scale.dart';
@@ -15,7 +16,7 @@ class _Harness extends StatefulWidget {
 }
 
 class _HarnessState extends State<_Harness> {
-  late List<String> _items = List<String>.of(widget.items);
+  late final List<String> _items = List<String>.of(widget.items);
 
   @override
   Widget build(BuildContext context) {
@@ -174,5 +175,55 @@ void main() {
 
     expect(calls, isEmpty);
     expect(order, <String>['A', 'B', 'C']);
+  });
+
+  testWidgets(
+      'mouse press-and-drag reorders immediately WITHOUT a long-press hold '
+      '(the Windows fix — desktop pointers must not wait ~500ms)', (
+    WidgetTester tester,
+  ) async {
+    final List<int> calls = <int>[];
+    final List<String> order = <String>['A', 'B', 'C'];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 300,
+              child: _Harness(
+                items: order,
+                onReorder: (int from, int to) {
+                  final String item = order.removeAt(from);
+                  order.insert(to, item);
+                  calls.add(from);
+                },
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final Offset start = tester.getCenter(find.text('A'));
+    final Offset next = tester.getCenter(find.text('B'));
+    // 鼠标按下后立即移动（不长按、不等待）：ImmediateMultiDragGestureRecognizer
+    // 越过 slop 即接管 → 直接进入拖拽并重排。这正是旧 onLongPress 实现做不到的。
+    final TestGesture gesture = await tester.startGesture(
+      start,
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pump();
+    await gesture.moveTo(Offset.lerp(start, next, 0.6)!);
+    await tester.pump();
+    await gesture.moveTo(next);
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(calls, isNotEmpty,
+        reason: 'a mouse drag must reorder without any long-press hold');
+    expect(order.indexOf('A'), greaterThan(order.indexOf('B')));
+    expect(order.length, 3);
   });
 }
