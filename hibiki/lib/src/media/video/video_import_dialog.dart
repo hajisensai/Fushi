@@ -1,13 +1,27 @@
+import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
+
+/// 为 m3u8 播放列表生成稳定 bookUid：`video/playlist/<文件名_短哈希>`。
+///
+/// 纯函数（抽出便于单测）：取文件 basename 做可读前缀 + 全路径 sha1 前 12 位，
+/// 兼顾可读性与跨同名文件唯一性。
+String playlistBookUid(String m3u8Path) {
+  final String base = p.basenameWithoutExtension(m3u8Path);
+  final String digest =
+      sha1.convert(utf8.encode(m3u8Path)).toString().substring(0, 12);
+  return 'video/playlist/${base}_$digest';
+}
 
 /// 按字幕扩展名路由到对应解析器，返回按 [AudioCue.startMs] 升序排序的 cue。
 ///
@@ -109,6 +123,53 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
     setState(() => _subtitlePath = path);
   }
 
+  /// 选 m3u8 播放列表 → 解析多集 → 建一个 playlist VideoBook（不复制视频，存
+  /// 绝对路径）→ pop 回 bookUid。第一集作为初始 videoPath，sidecar 字幕在播放页
+  /// 按集动态加载（不在导入时解析全部 cue）。
+  Future<void> _pickPlaylist() async {
+    final FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const <String>['m3u8', 'm3u'],
+      allowMultiple: false,
+    );
+    final String? m3u8Path = result?.files.single.path;
+    if (m3u8Path == null) return;
+
+    setState(() => _busy = true);
+    try {
+      final String content = await readTextWithEncoding(File(m3u8Path));
+      final String baseDir = p.dirname(m3u8Path);
+      final List<PlaylistEntry> entries =
+          parseM3u8(content: content, baseDir: baseDir);
+      if (entries.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(t.video_file_error_content)),
+          );
+        }
+        return;
+      }
+
+      final String bookUid = playlistBookUid(m3u8Path);
+      final String playlistJson = jsonEncode(
+        entries.map((PlaylistEntry e) => e.toJson()).toList(),
+      );
+      await widget.repo.saveVideoBook(VideoBooksCompanion(
+        bookUid: Value(bookUid),
+        title: Value(p.basenameWithoutExtension(m3u8Path)),
+        videoPath: Value(entries.first.path),
+        playlistJson: Value(playlistJson),
+        currentEpisode: const Value<int>(0),
+        importedAt: Value(DateTime.now()),
+      ));
+
+      if (!mounted) return;
+      Navigator.pop(context, bookUid);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _doImport() async {
     if (!_canImport) return;
     final String videoPath = _videoPath!;
@@ -119,10 +180,8 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
 
       if (subtitlePath != null) {
         // 选了外挂字幕：解析为 cue，写元数据 + cue 列表。
-        final String format = p
-            .extension(subtitlePath)
-            .replaceFirst('.', '')
-            .toLowerCase();
+        final String format =
+            p.extension(subtitlePath).replaceFirst('.', '').toLowerCase();
         final String content = await readTextWithEncoding(File(subtitlePath));
         final List<AudioCue> cues = parseSubtitleCues(
           content: content,
@@ -168,6 +227,16 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
+          FilledButton.tonalIcon(
+            onPressed: _busy ? null : _pickPlaylist,
+            icon: const Icon(Icons.playlist_play),
+            label: Text(
+              t.video_import_pick_playlist,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Divider(height: 16),
           OutlinedButton.icon(
             onPressed: _busy ? null : _pickVideo,
             icon: const Icon(Icons.movie_outlined),

@@ -58,7 +58,7 @@ class HibikiDatabase extends _$HibikiDatabase {
   HibikiDatabase.forTesting(super.e) : _dbDirectory = '';
 
   @override
-  int get schemaVersion => 16;
+  int get schemaVersion => 17;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -227,6 +227,19 @@ class HibikiDatabase extends _$HibikiDatabase {
           }
           if (from < 16) {
             await m.createTable(videoBooks);
+          }
+          if (from < 17) {
+            // Guard each addColumn: a pre-v16 DB hits the from<16 createTable
+            // branch first, which builds video_books from the *current* schema
+            // (already including these columns) — re-adding them would throw
+            // "duplicate column". Only a genuine v16 DB (table predates the
+            // columns) needs the ALTER.
+            if (!await _columnExists('video_books', 'playlist_json')) {
+              await m.addColumn(videoBooks, videoBooks.playlistJson);
+            }
+            if (!await _columnExists('video_books', 'current_episode')) {
+              await m.addColumn(videoBooks, videoBooks.currentEpisode);
+            }
           }
         },
         onCreate: (m) async {
@@ -572,6 +585,10 @@ class HibikiDatabase extends _$HibikiDatabase {
   Future<void> updateVideoBookPosition(String bookUid, int positionMs) =>
       (update(videoBooks)..where((t) => t.bookUid.equals(bookUid)))
           .write(VideoBooksCompanion(lastPositionMs: Value(positionMs)));
+
+  Future<void> updateVideoBookEpisode(String bookUid, int episodeIndex) =>
+      (update(videoBooks)..where((t) => t.bookUid.equals(bookUid)))
+          .write(VideoBooksCompanion(currentEpisode: Value(episodeIndex)));
 
   // ── audio cues ──────────────────────────────────────────────────
   Future<List<AudioCueRow>> getCuesForChapter(

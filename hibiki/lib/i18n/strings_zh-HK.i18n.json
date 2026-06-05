@@ -1252,5 +1252,10 @@
     "video_import_confirm": "Import",
     "shelf_video_section": "Videos",
     "video_import_action": "Import video",
-    "video_import_subtitle_optional": "Optional (uses the video's embedded subtitles if not selected)"
+    "video_import_subtitle_optional": "Optional (uses the video's embedded subtitles if not selected)",
+    "video_import_playlist": "Import playlist (m3u8)",
+    "video_import_pick_playlist": "Pick m3u8 playlist",
+    "video_episode_list": "Episodes",
+    "video_prev_episode": "Previous episode",
+    "video_next_episode": "Next episode"
 }

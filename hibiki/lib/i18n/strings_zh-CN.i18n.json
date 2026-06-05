@@ -1252,5 +1252,10 @@
     "video_import_confirm": "导入",
     "shelf_video_section": "视频",
     "video_import_action": "导入视频",
-    "video_import_subtitle_optional": "可选（不选则使用视频内嵌字幕）"
+    "video_import_subtitle_optional": "可选（不选则使用视频内嵌字幕）",
+    "video_import_playlist": "导入播放列表 (m3u8)",
+    "video_import_pick_playlist": "选择 m3u8 播放列表",
+    "video_episode_list": "选集",
+    "video_prev_episode": "上一集",
+    "video_next_episode": "下一集"
 }

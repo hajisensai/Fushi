@@ -14,8 +14,10 @@ import 'package:path_provider/path_provider.dart';
 
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
+import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_player_controller.dart';
+import 'package:hibiki/src/media/video/video_sidecar.dart';
 import 'package:hibiki/src/media/video/video_subtitle_overlay.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_native.dart';
@@ -47,6 +49,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage> {
   bool _failed = false;
   String? _title;
 
+  /// 多集播放列表（单视频导入时为空）。
+  List<PlaylistEntry> _episodes = const <PlaylistEntry>[];
+
+  /// 当前集索引（[_episodes] 下标）；单视频恒 0。
+  int _currentEpisode = 0;
+
+  bool get _isPlaylist => _episodes.length > 1;
+
   AppModel get appModel => ref.read(appProvider);
 
   @override
@@ -61,32 +71,190 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage> {
       if (mounted) setState(() => _failed = true);
       return;
     }
-    final List<AudioCue> cues = await widget.repo.loadCues(widget.bookUid);
-    final VideoPlayerController controller = VideoPlayerController();
+
+    // 解析播放列表（若有）。非空则按 currentEpisode 载对应集；否则走单视频路径。
+    final String? playlistJson = row.playlistJson;
+    if (playlistJson != null && playlistJson.isNotEmpty) {
+      final List<dynamic> raw = jsonDecode(playlistJson) as List<dynamic>;
+      _episodes = raw
+          .map((dynamic e) => PlaylistEntry.fromJson(e as Map<String, dynamic>))
+          .toList();
+    }
+
+    if (_episodes.isNotEmpty) {
+      final int idx = row.currentEpisode.clamp(0, _episodes.length - 1);
+      await _loadEpisode(
+        idx,
+        initialPositionMs: row.lastPositionMs,
+        subtitleSource: row.subtitleSource,
+      );
+      return;
+    }
+
+    // 单视频路径（无播放列表）。
+    await _loadSingle(row);
+  }
+
+  /// 载入单视频（无播放列表）：优先用 DB 已存 cue；无则探测 sidecar 字幕。
+  Future<void> _loadSingle(VideoBookRow row) async {
+    List<AudioCue> cues = await widget.repo.loadCues(widget.bookUid);
+    String? externalSub = row.subtitleSource;
+    if (cues.isEmpty && externalSub == null) {
+      final ({String path, List<AudioCue> cues})? sidecar =
+          await _detectSidecar(row.videoPath, widget.bookUid);
+      if (sidecar != null) {
+        cues = sidecar.cues;
+        externalSub = sidecar.path;
+      }
+    }
+    await _applyLoad(
+      videoPath: row.videoPath,
+      cues: cues,
+      title: row.title,
+      initialPositionMs: row.lastPositionMs,
+      externalSubtitlePath: externalSub,
+    );
+  }
+
+  /// 载入播放列表第 [index] 集：用该集 videoPath + 自动探测的 sidecar 字幕。
+  ///
+  /// cue 不存 DB——每集 load 时按 sidecar 文件动态解析（播放列表各集字幕是外部
+  /// 文件，本就随磁盘存在；存 DB 只会与磁盘真相重复且引入跨集 book_uid 错配）。
+  Future<void> _loadEpisode(
+    int index, {
+    int initialPositionMs = 0,
+    String? subtitleSource,
+  }) async {
+    if (index < 0 || index >= _episodes.length) return;
+    final PlaylistEntry episode = _episodes[index];
+
+    List<AudioCue> cues = const <AudioCue>[];
+    String? externalSub = subtitleSource;
+    final ({String path, List<AudioCue> cues})? sidecar =
+        await _detectSidecar(episode.path, widget.bookUid);
+    if (sidecar != null) {
+      cues = sidecar.cues;
+      externalSub = sidecar.path;
+    }
+
+    _currentEpisode = index;
+    await _applyLoad(
+      videoPath: episode.path,
+      cues: cues,
+      title: episode.title,
+      initialPositionMs: initialPositionMs,
+      externalSubtitlePath: externalSub,
+    );
+  }
+
+  /// 探测视频同目录 sidecar 字幕并解析为 cue（无则 null）。
+  ///
+  /// 优先级 `.ja.srt > .ja.ass > .srt > .ass`（见 [findSidecarSubtitle]）；按
+  /// 扩展名路由 [SrtParser] / [AssParser]。IO + 解析失败静默返回 null。
+  Future<({String path, List<AudioCue> cues})?> _detectSidecar(
+    String videoPath,
+    String bookUid,
+  ) async {
+    final String? sidecarPath = findSidecarSubtitle(videoPath);
+    if (sidecarPath == null) return null;
+    try {
+      final String text = await readTextWithEncoding(File(sidecarPath));
+      final List<AudioCue> cues = sidecarPath.toLowerCase().endsWith('.ass')
+          ? AssParser.parseString(content: text, bookUid: bookUid)
+          : SrtParser.parseString(content: text, bookUid: bookUid);
+      if (cues.isEmpty) return null;
+      return (path: sidecarPath, cues: cues);
+    } catch (e) {
+      debugPrint('[VideoHibikiPage] sidecar parse failed: $e');
+      return null;
+    }
+  }
+
+  /// 共享 load 装配：复用或新建 controller，载入视频 + cue，挂位置持久化回调。
+  Future<void> _applyLoad({
+    required String videoPath,
+    required List<AudioCue> cues,
+    required String title,
+    required int initialPositionMs,
+    String? externalSubtitlePath,
+  }) async {
+    final VideoPlayerController controller =
+        _controller ?? VideoPlayerController();
     try {
       await controller.load(
         bookUid: widget.bookUid,
-        videoFile: File(row.videoPath),
+        videoFile: File(videoPath),
         cues: cues,
-        initialPositionMs: row.lastPositionMs,
-        externalSubtitlePath: row.subtitleSource,
+        initialPositionMs: initialPositionMs,
+        externalSubtitlePath: externalSubtitlePath,
       );
     } catch (e, stack) {
       debugPrint('[VideoHibikiPage] video load failed: $e\n$stack');
-      controller.dispose();
+      if (_controller == null) controller.dispose();
       if (mounted) setState(() => _failed = true);
       return;
     }
     controller.onPositionWrite =
         (String uid, int posMs) => widget.repo.updatePosition(uid, posMs);
     if (!mounted) {
-      controller.dispose();
+      if (_controller == null) controller.dispose();
       return;
     }
     setState(() {
       _controller = controller;
-      _title = row.title;
+      _title = title;
+      _failed = false;
     });
+  }
+
+  /// 切到第 [index] 集：持久化 currentEpisode（位置归零）+ 重新 load 新集字幕。
+  Future<void> _switchEpisode(int index) async {
+    if (index < 0 || index >= _episodes.length) return;
+    if (index == _currentEpisode) return;
+    await widget.repo.updateCurrentEpisode(widget.bookUid, index);
+    // 切集从头播：位置归零（避免把上一集的进度套到新集）。
+    await widget.repo.updatePosition(widget.bookUid, 0);
+    await _loadEpisode(index, initialPositionMs: 0);
+  }
+
+  void _showEpisodeList() {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.black87,
+      isScrollControlled: true,
+      builder: (BuildContext ctx) => SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(ctx).size.height * 0.7,
+          ),
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: _episodes.length,
+            itemBuilder: (BuildContext _, int i) {
+              final bool selected = i == _currentEpisode;
+              return ListTile(
+                selected: selected,
+                selectedColor: Theme.of(ctx).colorScheme.primary,
+                textColor: Colors.white,
+                leading: selected
+                    ? const Icon(Icons.play_arrow)
+                    : Text('${i + 1}',
+                        style: const TextStyle(color: Colors.white70)),
+                title: Text(
+                  _episodes[i].title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _switchEpisode(i);
+                },
+              );
+            },
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -271,6 +439,29 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage> {
       backgroundColor: cs.surface,
       appBar: AppBar(
         title: Text(_title ?? ''),
+        actions: _isPlaylist
+            ? <Widget>[
+                IconButton(
+                  tooltip: t.video_prev_episode,
+                  icon: const Icon(Icons.skip_previous),
+                  onPressed: _currentEpisode > 0
+                      ? () => _switchEpisode(_currentEpisode - 1)
+                      : null,
+                ),
+                IconButton(
+                  tooltip: t.video_next_episode,
+                  icon: const Icon(Icons.skip_next),
+                  onPressed: _currentEpisode < _episodes.length - 1
+                      ? () => _switchEpisode(_currentEpisode + 1)
+                      : null,
+                ),
+                IconButton(
+                  tooltip: t.video_episode_list,
+                  icon: const Icon(Icons.playlist_play),
+                  onPressed: _showEpisodeList,
+                ),
+              ]
+            : null,
       ),
       body: _failed
           ? Center(

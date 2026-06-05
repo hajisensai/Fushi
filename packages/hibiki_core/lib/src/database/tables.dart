@@ -319,4 +319,10 @@ class VideoBooks extends Table {
   TextColumn get coverPath => text().nullable()();
   IntColumn get lastPositionMs => integer().withDefault(const Constant(0))();
   DateTimeColumn get importedAt => dateTime().nullable()();
+
+  /// m3u8 多集播放列表 JSON：`[{title,path}]`（绝对路径）。单视频导入时为 null。
+  TextColumn get playlistJson => text().nullable()();
+
+  /// 当前播放到的集索引（对应 [playlistJson] 数组下标）；单视频恒 0。
+  IntColumn get currentEpisode => integer().withDefault(const Constant(0))();
 }

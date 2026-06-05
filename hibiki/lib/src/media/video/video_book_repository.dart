@@ -18,6 +18,10 @@ class VideoBookRepository {
   Future<void> updatePosition(String bookUid, int positionMs) =>
       _db.updateVideoBookPosition(bookUid, positionMs);
 
+  /// 更新播放列表当前集索引（多集导航切集后持久化）。
+  Future<void> updateCurrentEpisode(String bookUid, int episodeIndex) =>
+      _db.updateVideoBookEpisode(bookUid, episodeIndex);
+
   Future<void> saveCues({
     required String bookUid,
     required List<AudioCue> cues,
