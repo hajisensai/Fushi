@@ -295,6 +295,26 @@ class VideoPlayerController extends ChangeNotifier {
     unawaited(onPositionWrite?.call(bookUid, posMs));
   }
 
+  /// 强制把**当前**播放位置经 [onPositionWrite] 写一次并 **await 到落库**，
+  /// 绕过 [_maybeSavePosition] 的整秒节流。
+  ///
+  /// 周期保存只在整秒边界写，又是 fire-and-forget；用户退出（pop/dispose）那一刻
+  /// 的最后几百毫秒进度（同一整秒内）会被节流吞掉，导致「退出再进没回到上次位置」。
+  /// 退出前调本方法把退出瞬间的位置可靠写穿（对齐有声书
+  /// [AudiobookPlayerController.flushPosition]）。
+  ///
+  /// 必须在 [Player] 仍存活时调用（[positionMs] 读 `_player.state.position`）：
+  /// [VideoHibikiPage.dispose] 先 `flushPosition()` 再 `dispose()`；换集前
+  /// （[_switchEpisode]）也调一次记录当前集精确进度。未 [load]（无 player /
+  /// 无 bookUid）时 no-op 安全。
+  Future<void> flushPosition() async {
+    final String? bookUid = _bookUid;
+    final int? posMs = positionMs;
+    if (bookUid == null || posMs == null) return;
+    _lastSavedSec = posMs ~/ 1000;
+    await onPositionWrite?.call(bookUid, posMs);
+  }
+
   /// 开始播放（未 load 时 no-op 安全）。
   Future<void> play() async {
     await _player?.play();
@@ -344,6 +364,11 @@ class VideoPlayerController extends ChangeNotifier {
 
   @override
   void dispose() {
+    // 退出前强制记录当前位置：周期保存的整秒节流会吞掉退出瞬间同一整秒内的最后
+    // 几百毫秒进度。这里在 [_player] 仍存活时同步读位置并 fire-and-forget 写一次
+    // （绕过节流），保证「退出再进恢复到上次位置」。可 await 的可靠落库由
+    // [VideoHibikiPage.dispose] 在调用本方法前先 [flushPosition] 完成。
+    _forceSavePositionSync();
     _tick?.cancel();
     _tick = null;
     unawaited(_playingSub?.cancel());
@@ -352,5 +377,15 @@ class VideoPlayerController extends ChangeNotifier {
     _player = null;
     _videoController = null;
     super.dispose();
+  }
+
+  /// 同步强制写一次当前位置（绕过整秒节流），供 [dispose] 兜底调用。
+  /// [onPositionWrite] 的写库 Future 在此 fire-and-forget（dispose 不能 await）。
+  void _forceSavePositionSync() {
+    final String? bookUid = _bookUid;
+    final int? posMs = positionMs;
+    if (bookUid == null || posMs == null) return;
+    _lastSavedSec = posMs ~/ 1000;
+    unawaited(onPositionWrite?.call(bookUid, posMs));
   }
 }

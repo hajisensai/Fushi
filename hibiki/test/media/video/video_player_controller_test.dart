@@ -80,6 +80,28 @@ void main() {
     });
   });
 
+  group('VideoPlayerController flushPosition', () {
+    test('is a no-op (no write) before load — no player, no bookUid', () async {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      final List<int> writes = <int>[];
+      c.onPositionWrite = (String uid, int ms) async => writes.add(ms);
+      await c.flushPosition();
+      expect(writes, isEmpty,
+          reason: 'no player/bookUid before load → nothing to flush');
+    });
+
+    test('dispose does not write a position before load', () async {
+      final c = VideoPlayerController();
+      final List<int> writes = <int>[];
+      c.onPositionWrite = (String uid, int ms) async => writes.add(ms);
+      c.dispose();
+      // Give any (incorrectly) scheduled fire-and-forget write a chance to run.
+      await Future<void>.delayed(Duration.zero);
+      expect(writes, isEmpty);
+    });
+  });
+
   group('VideoPlayerController audio track mapping', () {
     test('currentAudioStreamIndex is null before load (no player)', () {
       // 未 load 时无 libmpv player：制卡裁音频走 ffmpeg 默认音轨（不加 -map）。

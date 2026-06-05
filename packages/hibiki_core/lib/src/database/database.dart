@@ -598,6 +598,14 @@ class HibikiDatabase extends _$HibikiDatabase {
 
   Future<List<VideoBookRow>> allVideoBooks() => select(videoBooks).get();
 
+  /// 删除一本视频书：连同它的字幕 cue（audioCues 同 bookUid）一并删，单事务保证
+  /// 不留孤儿 cue。幂等：不存在的 bookUid 删 0 行不报错。
+  Future<void> deleteVideoBook(String bookUid) => transaction(() async {
+        await (delete(audioCues)..where((t) => t.bookUid.equals(bookUid))).go();
+        await (delete(videoBooks)..where((t) => t.bookUid.equals(bookUid)))
+            .go();
+      });
+
   Future<void> updateVideoBookPosition(String bookUid, int positionMs) =>
       (update(videoBooks)..where((t) => t.bookUid.equals(bookUid)))
           .write(VideoBooksCompanion(lastPositionMs: Value(positionMs)));
@@ -607,7 +615,8 @@ class HibikiDatabase extends _$HibikiDatabase {
           .write(VideoBooksCompanion(currentEpisode: Value(episodeIndex)));
 
   /// 回写整段播放列表 JSON（各集 positionMs 改变时持久化每集进度）。
-  Future<void> updateVideoBookPlaylistJson(String bookUid, String playlistJson) =>
+  Future<void> updateVideoBookPlaylistJson(
+          String bookUid, String playlistJson) =>
       (update(videoBooks)..where((t) => t.bookUid.equals(bookUid)))
           .write(VideoBooksCompanion(playlistJson: Value(playlistJson)));
 

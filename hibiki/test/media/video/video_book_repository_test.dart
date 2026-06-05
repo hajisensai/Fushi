@@ -75,6 +75,71 @@ void main() {
     expect(row!.playlistJson, updated);
   });
 
+  test('delete removes the video book and its cues (idempotent)', () async {
+    final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final repo = VideoBookRepository(db);
+
+    await repo.saveVideoBook(const VideoBooksCompanion(
+      bookUid: Value('video/del'),
+      title: Value('Del'),
+      videoPath: Value('/del.mkv'),
+    ));
+    final cue = AudioCue()
+      ..bookUid = 'video/del'
+      ..chapterHref = 'video://default'
+      ..sentenceIndex = 0
+      ..textFragmentId = ''
+      ..text = 'x'
+      ..startMs = 0
+      ..endMs = 1000
+      ..audioFileIndex = 0;
+    await repo.saveCues(bookUid: 'video/del', cues: [cue]);
+
+    // A second book must survive the targeted delete.
+    await repo.saveVideoBook(const VideoBooksCompanion(
+      bookUid: Value('video/keep'),
+      title: Value('Keep'),
+      videoPath: Value('/keep.mkv'),
+    ));
+
+    await repo.delete('video/del');
+
+    expect(await repo.getByBookUid('video/del'), isNull);
+    expect(await repo.loadCues('video/del'), isEmpty);
+    expect((await repo.getByBookUid('video/keep'))!.title, 'Keep');
+
+    // Idempotent: deleting again (and an unknown uid) does not throw.
+    await repo.delete('video/del');
+    await repo.delete('video/never-existed');
+    expect(await repo.listAll(), hasLength(1));
+  });
+
+  test('per-episode position survives a playlistJson round-trip via repo',
+      () async {
+    // Mirrors the exit-flush path: VideoHibikiPage._persistPosition encodes the
+    // updated _episodes back to playlistJson; on re-open _init reads
+    // entry.positionMs and seeks there. This locks the persistence half.
+    final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final repo = VideoBookRepository(db);
+    await repo.saveVideoBook(const VideoBooksCompanion(
+      bookUid: Value('video/playlist/p'),
+      title: Value('PL'),
+      videoPath: Value('/e0.mkv'),
+      playlistJson: Value('[{"title":"e0","path":"/e0.mkv","positionMs":0},'
+          '{"title":"e1","path":"/e1.mkv","positionMs":0}]'),
+    ));
+
+    // Simulate the exit flush of episode 1 at 42_500ms.
+    const String flushed = '[{"title":"e0","path":"/e0.mkv","positionMs":0},'
+        '{"title":"e1","path":"/e1.mkv","positionMs":42500}]';
+    await repo.updatePlaylistJson('video/playlist/p', flushed);
+
+    expect(
+        (await repo.getByBookUid('video/playlist/p'))!.playlistJson, flushed);
+  });
+
   test('updateDelayMs round-trips the A/V delay', () async {
     final db = HibikiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);

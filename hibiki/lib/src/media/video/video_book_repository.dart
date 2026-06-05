@@ -15,6 +15,10 @@ class VideoBookRepository {
 
   Future<List<VideoBookRow>> listAll() => _db.allVideoBooks();
 
+  /// 删除一本视频书及其字幕 cue（幂等）。视频文件本身不删（只存绝对路径引用，
+  /// 用户磁盘上的原片不归我们管）；封面缩略图删除由调用方按需处理。
+  Future<void> delete(String bookUid) => _db.deleteVideoBook(bookUid);
+
   Future<void> updatePosition(String bookUid, int positionMs) =>
       _db.updateVideoBookPosition(bookUid, positionMs);
 

@@ -1265,5 +1265,7 @@
     "video_settings_title": "播放设置",
     "video_setting_av_delay": "音画延迟",
     "video_setting_av_delay_hint": "正数 = 画面先于文字（向回拨字幕）；负数 = 画面滞后。",
-    "video_setting_speed": "播放速度"
+    "video_setting_speed": "播放速度",
+    "video_delete_title": "删除视频",
+    "video_delete_confirm": "删除『$title』？此操作无法撤销。"
 }

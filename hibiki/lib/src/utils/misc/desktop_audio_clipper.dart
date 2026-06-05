@@ -109,6 +109,92 @@ Future<String?> extractEmbeddedCoverViaFfmpeg({
   }
 }
 
+/// Builds the ffmpeg argument list to extract the **embedded cover art** of a
+/// video container (e.g. an mkv with a `cover.jpg`/`cover.png` attachment, or an
+/// mp4 with an `attached_pic` poster) into [outputPath]. Pure (no IO) so it is
+/// unit-testable.
+///
+/// `-map 0:v:disp:attached_pic` selects **only** the video stream(s) whose
+/// disposition is `attached_pic` — the cover art. Crucially there is **no**
+/// trailing `?`: when the input has no cover art the map matches no stream and
+/// ffmpeg exits non-zero **without writing any file**, so the caller can tell
+/// "no embedded cover" apart from "extracted a cover" and fall back to a frame
+/// grab. (A trailing `?` would make ffmpeg silently fall through to the main
+/// video's first frame, defeating the prefer-embedded distinction.)
+///
+/// Matroska stores cover art as a file **attachment** (`filename=cover.*`,
+/// `mimetype=image/*`); ffmpeg surfaces it as a video stream tagged
+/// `(attached pic)` with the `attached_pic` disposition, which this selector
+/// matches. `-vcodec copy` is intentionally **not** used: re-encoding to the
+/// output extension (jpg) normalises png/webp/etc. covers to a uniform thumbnail
+/// the shelf can display, same as the frame-grab path.
+List<String> buildFfmpegEmbeddedCoverArgs({
+  required String inputPath,
+  required String outputPath,
+}) {
+  return <String>[
+    '-y',
+    '-i',
+    inputPath,
+    '-an',
+    '-map',
+    '0:v:disp:attached_pic',
+    '-frames:v',
+    '1',
+    '-update',
+    '1',
+    outputPath,
+  ];
+}
+
+/// Extracts the **embedded cover art** of the video [inputPath] into
+/// [outputPath] via ffmpeg (see [buildFfmpegEmbeddedCoverArgs]). Returns
+/// [outputPath] if a cover was written, else null — null specifically means
+/// "this container has no embedded cover art" (the map matched no stream), so
+/// the import flow falls back to [extractVideoFrameViaFfmpeg].
+///
+/// Mirrors [extractVideoFrameViaFfmpeg]: bounded timeout, drops partial output
+/// on timeout, never throws for the caller (no ffmpeg on mobile / no cover both
+/// yield null, not a crash). A non-zero ffmpeg exit (no matching cover stream)
+/// is treated as "no cover", not fatal.
+Future<String?> extractEmbeddedVideoCoverViaFfmpeg({
+  required String inputPath,
+  required String outputPath,
+}) async {
+  if (!File(inputPath).existsSync()) return null;
+  final File output = File(outputPath);
+  try {
+    output.parent.createSync(recursive: true);
+    final int? code = await _runFfmpeg(
+      buildFfmpegEmbeddedCoverArgs(
+        inputPath: inputPath,
+        outputPath: outputPath,
+      ),
+      const Duration(seconds: 30),
+    );
+    if (code == null) {
+      if (output.existsSync()) {
+        try {
+          output.deleteSync();
+        } catch (_) {}
+      }
+      return null;
+    }
+    // No-cover containers exit non-zero ("Stream map matches no streams") and
+    // write nothing; rely on the output file to discriminate.
+    if (output.existsSync() && output.lengthSync() > 0) return outputPath;
+    return null;
+  } on ProcessException catch (e, stack) {
+    ErrorLogService.instance
+        .log('extractEmbeddedVideoCoverViaFfmpeg', e, stack);
+    return null;
+  } catch (e, stack) {
+    ErrorLogService.instance
+        .log('extractEmbeddedVideoCoverViaFfmpeg', e, stack);
+    return null;
+  }
+}
+
 /// Builds the ffmpeg argument list to grab a single frame from [inputPath] at
 /// [atSeconds] (input seek, fast) and write it to [outputPath] (the output
 /// extension, e.g. `.jpg`, picks the encoder). Pure (no IO) so it is
