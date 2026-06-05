@@ -31,7 +31,7 @@ void main() {
     test('fresh database has expected schema version', () async {
       final db = await _openDb();
       final version = await db.customSelect('PRAGMA user_version').getSingle();
-      expect(version.data['user_version'], 15);
+      expect(version.data['user_version'], 16);
     });
 
     test('all expected tables exist', () async {
@@ -83,7 +83,7 @@ void main() {
 
       // The upgrade ladder bumped the schema to the current version.
       final version = await db.customSelect('PRAGMA user_version').getSingle();
-      expect(version.read<int>('user_version'), 15);
+      expect(version.read<int>('user_version'), 16);
 
       // The newly-migrated table exists and querying an absent baseline does
       // not throw.
@@ -117,12 +117,12 @@ void main() {
       expect(colNames, containsAll(['epub_path', 'extract_dir']));
     });
 
-    test('audio_cues has book_uid and chapter_href columns', () async {
+    test('audio_cues has book_key and chapter_href columns', () async {
       final db = await _openDb();
       final cols =
           await db.customSelect("PRAGMA table_info('audio_cues')").get();
       final colNames = cols.map((r) => r.data['name'] as String).toSet();
-      expect(colNames, containsAll(['book_uid', 'chapter_href']));
+      expect(colNames, containsAll(['book_key', 'chapter_href']));
     });
 
     test('reading_statistics has date_key and characters_read columns',

@@ -132,10 +132,17 @@ class HibikiDatabase extends _$HibikiDatabase {
             );
           }
           if (from < 10) {
-            await customStatement(
-              'DELETE FROM book_tag_mappings '
-              'WHERE book_id NOT IN (SELECT id FROM epub_books)',
-            );
+            // The book_id orphan cleanup references the legacy `book_id`
+            // column. A DB whose book_tag_mappings was created fresh later in
+            // this same ladder (via m.createTable with the current v16
+            // `book_key` schema) has no `book_id` column, so guard on it — the
+            // v16 step re-derives the mapping under `book_key` anyway.
+            if (await _columnExists('book_tag_mappings', 'book_id')) {
+              await customStatement(
+                'DELETE FROM book_tag_mappings '
+                'WHERE book_id NOT IN (SELECT id FROM epub_books)',
+              );
+            }
             await customStatement(
               'DELETE FROM book_tag_mappings '
               'WHERE tag_id NOT IN (SELECT id FROM book_tags)',
@@ -155,10 +162,16 @@ class HibikiDatabase extends _$HibikiDatabase {
           }
           if (from < 11) {
             await m.createTable(bookmarks);
-            await customStatement(
-              'CREATE INDEX IF NOT EXISTS idx_bookmarks_ttu_book_id_created '
-              'ON bookmarks (ttu_book_id, created_at DESC)',
-            );
+            // bookmarks is created via m.createTable using the CURRENT (v16)
+            // generated schema (column `book_key`, not legacy `ttu_book_id`),
+            // so only create the legacy-named index when that column actually
+            // exists. The v16 step recreates it under `book_key`.
+            if (await _columnExists('bookmarks', 'ttu_book_id')) {
+              await customStatement(
+                'CREATE INDEX IF NOT EXISTS idx_bookmarks_ttu_book_id_created '
+                'ON bookmarks (ttu_book_id, created_at DESC)',
+              );
+            }
             await migrateLegacyBookmarkPreferences();
           }
           if (from < 12) {
@@ -171,8 +184,14 @@ class HibikiDatabase extends _$HibikiDatabase {
               return row.read<int>('c') > 0;
             }
 
+            // These orphan cleanups reference legacy int columns
+            // (ttu_book_id / book_uid). A DB whose tables were created fresh
+            // earlier in this ladder uses the v16 `book_key` schema and lacks
+            // those columns, so each is additionally column-guarded; the v16
+            // step re-runs the equivalent cleanup against `book_key`.
             if (await tableExists('reader_positions') &&
-                await tableExists('epub_books')) {
+                await tableExists('epub_books') &&
+                await _columnExists('reader_positions', 'ttu_book_id')) {
               await customStatement(
                 'DELETE FROM reader_positions '
                 'WHERE ttu_book_id NOT IN (SELECT id FROM epub_books)',
@@ -182,7 +201,8 @@ class HibikiDatabase extends _$HibikiDatabase {
             // books keep ttu_book_id = 0 and are preserved). Run BEFORE the
             // audio_cues cleanup so cues of removed srt_books become orphans.
             if (await tableExists('srt_books') &&
-                await tableExists('epub_books')) {
+                await tableExists('epub_books') &&
+                await _columnExists('srt_books', 'ttu_book_id')) {
               await customStatement(
                 'DELETE FROM srt_books '
                 'WHERE ttu_book_id > 0 '
@@ -195,7 +215,9 @@ class HibikiDatabase extends _$HibikiDatabase {
             // book's cues on upgrade (data loss, HBK-AUDIT-001).
             if (await tableExists('audio_cues') &&
                 await tableExists('audiobooks') &&
-                await tableExists('srt_books')) {
+                await tableExists('srt_books') &&
+                await _columnExists('audio_cues', 'book_uid') &&
+                await _columnExists('audiobooks', 'book_uid')) {
               await customStatement(
                 'DELETE FROM audio_cues '
                 'WHERE book_uid NOT IN (SELECT book_uid FROM audiobooks) '
@@ -203,7 +225,8 @@ class HibikiDatabase extends _$HibikiDatabase {
               );
             }
             if (await tableExists('bookmarks') &&
-                await tableExists('epub_books')) {
+                await tableExists('epub_books') &&
+                await _columnExists('bookmarks', 'ttu_book_id')) {
               await customStatement(
                 'DELETE FROM bookmarks '
                 'WHERE ttu_book_id NOT IN (SELECT id FROM epub_books)',
@@ -307,6 +330,14 @@ class HibikiDatabase extends _$HibikiDatabase {
   /// (book_uid / ttu_book_id / book_id) column names that still exist before
   /// the v16 book-key migration rebuilds those tables. The v16 step recreates
   /// these under the new book_key column names via [_ensureIndexes].
+  ///
+  /// Each entry is `[table, sql, requiredColumn?]`. When [requiredColumn] is
+  /// present it is also column-guarded: a DB that arrives at this step with its
+  /// book tables already created fresh under the v16 schema (e.g. a pre-v11 DB
+  /// where the from<11 ladder step ran `createTable` with the current
+  /// generated `book_key` columns) does NOT have the legacy `ttu_book_id` /
+  /// `book_uid` / `book_id` column, so creating the legacy-named index would
+  /// throw "no such column". The v16 step recreates these under `book_key`.
   Future<void> _ensureLegacyIndexesV14() async {
     const List<List<String>> indexes = <List<String>>[
       [
@@ -324,7 +355,8 @@ class HibikiDatabase extends _$HibikiDatabase {
       [
         'bookmarks',
         'CREATE INDEX IF NOT EXISTS idx_bookmarks_ttu_book_id_created '
-            'ON bookmarks (ttu_book_id, created_at DESC)'
+            'ON bookmarks (ttu_book_id, created_at DESC)',
+        'ttu_book_id'
       ],
       [
         'media_items',
@@ -339,7 +371,8 @@ class HibikiDatabase extends _$HibikiDatabase {
       [
         'audio_cues',
         'CREATE INDEX IF NOT EXISTS idx_audio_cues_book_uid '
-            'ON audio_cues (book_uid)'
+            'ON audio_cues (book_uid)',
+        'book_uid'
       ],
       [
         'search_history_items',
@@ -349,23 +382,28 @@ class HibikiDatabase extends _$HibikiDatabase {
       [
         'audiobooks',
         'CREATE INDEX IF NOT EXISTS idx_audiobooks_book_uid '
-            'ON audiobooks (book_uid)'
+            'ON audiobooks (book_uid)',
+        'book_uid'
       ],
       [
         'srt_books',
         'CREATE INDEX IF NOT EXISTS idx_srt_books_ttu_book_id '
-            'ON srt_books (ttu_book_id)'
+            'ON srt_books (ttu_book_id)',
+        'ttu_book_id'
       ],
       [
         'book_tag_mappings',
         'CREATE INDEX IF NOT EXISTS idx_book_tag_mappings_book_id '
-            'ON book_tag_mappings (book_id)'
+            'ON book_tag_mappings (book_id)',
+        'book_id'
       ],
     ];
     for (final List<String> entry in indexes) {
-      if (await _tableExists(entry[0])) {
-        await customStatement(entry[1]);
+      if (!await _tableExists(entry[0])) continue;
+      if (entry.length > 2 && !await _columnExists(entry[0], entry[2])) {
+        continue;
       }
+      await customStatement(entry[1]);
     }
   }
 
@@ -1275,6 +1313,18 @@ class HibikiDatabase extends _$HibikiDatabase {
   /// cleanly. Throwing anywhere here rolls back the entire migration.
   Future<void> _runBookKeyMigrationBodyV16() async {
     {
+      // Guard: only run the re-key when epub_books still carries the legacy
+      // autoincrement `id` column. A DB reaching this step with epub_books
+      // already created fresh under the v16 generated schema (its PK is
+      // `book_key`, no `id`) — e.g. a pre-v5 DB whose from<5 ladder step ran
+      // m.createTable(epubBooks) — is already on the target shape, so the whole
+      // re-key is a no-op. This also covers synthetic/partial seeds with no
+      // epub_books at all (_columnExists implies the table exists). A genuine
+      // pre-v16 DB has the int `id` column, so real upgrades still migrate.
+      if (!await _columnExists('epub_books', 'id')) {
+        return;
+      }
+
       // 1. Read (id, title); compute key + dedup collisions deterministically.
       final List<QueryRow> books =
           await customSelect('SELECT id, title FROM epub_books ORDER BY id')
@@ -1330,8 +1380,17 @@ class HibikiDatabase extends _$HibikiDatabase {
       await customStatement('DROP TABLE epub_books');
       await customStatement('ALTER TABLE epub_books_new RENAME TO epub_books');
 
+      // Each relation table is rebuilt ONLY if it still carries its legacy
+      // int/uid column. A DB that reached this step with a table already
+      // created fresh under the current v16 generated schema (e.g. a pre-v11 DB
+      // whose from<11 ladder step ran m.createTable) already has `book_key` and
+      // must be left untouched — rebuilding it would JOIN on a non-existent
+      // legacy column. Synthetic/partial seeds that lack the table entirely are
+      // likewise skipped (column check implies table check).
+
       // 4. reader_positions: ttu_book_id INT UNIQUE -> book_key TEXT UNIQUE.
-      await customStatement('''
+      if (await _columnExists('reader_positions', 'ttu_book_id')) {
+        await customStatement('''
         CREATE TABLE reader_positions_new (
           id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
           book_key TEXT NOT NULL UNIQUE,
@@ -1339,18 +1398,20 @@ class HibikiDatabase extends _$HibikiDatabase {
           norm_char_offset INTEGER NOT NULL,
           ttu_char_offset INTEGER NOT NULL DEFAULT -1,
           updated_at INTEGER NOT NULL)''');
-      await customStatement('''
+        await customStatement('''
         INSERT INTO reader_positions_new
           (book_key, section_index, norm_char_offset, ttu_char_offset, updated_at)
         SELECT m.book_key, rp.section_index, rp.norm_char_offset,
                rp.ttu_char_offset, rp.updated_at
         FROM reader_positions rp JOIN _id_key_map m ON m.old_id = rp.ttu_book_id''');
-      await customStatement('DROP TABLE reader_positions');
-      await customStatement(
-          'ALTER TABLE reader_positions_new RENAME TO reader_positions');
+        await customStatement('DROP TABLE reader_positions');
+        await customStatement(
+            'ALTER TABLE reader_positions_new RENAME TO reader_positions');
+      }
 
       // 5. bookmarks: ttu_book_id INT FK -> book_key TEXT FK (cascade).
-      await customStatement('''
+      if (await _columnExists('bookmarks', 'ttu_book_id')) {
+        await customStatement('''
         CREATE TABLE bookmarks_new (
           id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
           book_key TEXT NOT NULL REFERENCES epub_books (book_key) ON DELETE CASCADE,
@@ -1369,27 +1430,31 @@ class HibikiDatabase extends _$HibikiDatabase {
                bm.label, bm.created_at, bm.book_title, bm.page_in_chapter,
                bm.total_pages_in_chapter
         FROM bookmarks bm JOIN _id_key_map m ON m.old_id = bm.ttu_book_id''');
-      await customStatement('DROP TABLE bookmarks');
-      await customStatement('ALTER TABLE bookmarks_new RENAME TO bookmarks');
+        await customStatement('DROP TABLE bookmarks');
+        await customStatement('ALTER TABLE bookmarks_new RENAME TO bookmarks');
+      }
 
       // 6. book_tag_mappings: book_id INT FK -> book_key TEXT FK (cascade).
-      await customStatement('''
+      if (await _columnExists('book_tag_mappings', 'book_id')) {
+        await customStatement('''
         CREATE TABLE book_tag_mappings_new (
           id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
           book_key TEXT NOT NULL REFERENCES epub_books (book_key) ON DELETE CASCADE,
           tag_id INTEGER NOT NULL REFERENCES book_tags (id) ON DELETE CASCADE,
           UNIQUE (book_key, tag_id))''');
-      await customStatement('''
+        await customStatement('''
         INSERT INTO book_tag_mappings_new (id, book_key, tag_id)
         SELECT btm.id, m.book_key, btm.tag_id
         FROM book_tag_mappings btm JOIN _id_key_map m ON m.old_id = btm.book_id''');
-      await customStatement('DROP TABLE book_tag_mappings');
-      await customStatement(
-          'ALTER TABLE book_tag_mappings_new RENAME TO book_tag_mappings');
+        await customStatement('DROP TABLE book_tag_mappings');
+        await customStatement(
+            'ALTER TABLE book_tag_mappings_new RENAME TO book_tag_mappings');
+      }
 
       // 7. srt_books: ttu_book_id INT (0 = standalone) -> book_key TEXT ('').
       //    LEFT JOIN so standalone rows (no mapped epub) keep '' sentinel.
-      await customStatement('''
+      if (await _columnExists('srt_books', 'ttu_book_id')) {
+        await customStatement('''
         CREATE TABLE srt_books_new (
           id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
           uid TEXT NOT NULL UNIQUE,
@@ -1409,13 +1474,15 @@ class HibikiDatabase extends _$HibikiDatabase {
                sb.audio_paths_json, sb.srt_path, sb.cover_path, sb.imported_at,
                COALESCE(m.book_key, '')
         FROM srt_books sb LEFT JOIN _id_key_map m ON m.old_id = sb.ttu_book_id''');
-      await customStatement('DROP TABLE srt_books');
-      await customStatement('ALTER TABLE srt_books_new RENAME TO srt_books');
+        await customStatement('DROP TABLE srt_books');
+        await customStatement('ALTER TABLE srt_books_new RENAME TO srt_books');
+      }
 
       // 8. audiobooks: book_uid 'reader_ttu/hoshi://book/<id>' -> book_key.
       //    Extract <id>, JOIN map. Rows whose uid doesn't map are dropped
       //    (orphan audiobooks — their epub is gone; v12 already pruned cues).
-      await customStatement('''
+      if (await _columnExists('audiobooks', 'book_uid')) {
+        await customStatement('''
         CREATE TABLE audiobooks_new (
           id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
           book_key TEXT NOT NULL UNIQUE,
@@ -1442,14 +1509,17 @@ class HibikiDatabase extends _$HibikiDatabase {
           ON m.old_id = CAST(
                substr(ab.book_uid, ${_kLegacyUidPrefix.length + 1}) AS INTEGER)
         WHERE ab.book_uid LIKE '$_kLegacyUidPrefix%' ''');
-      await customStatement('DROP TABLE audiobooks');
-      await customStatement('ALTER TABLE audiobooks_new RENAME TO audiobooks');
+        await customStatement('DROP TABLE audiobooks');
+        await customStatement(
+            'ALTER TABLE audiobooks_new RENAME TO audiobooks');
+      }
 
       // 9. audio_cues: book_uid owns EITHER an audiobook uid OR an srt_books.uid.
       //    Rename column to book_key; translate ONLY the audiobook-uid rows
       //    ('reader_ttu/hoshi://book/<id>'), leaving srt uids untouched. Drop
       //    audiobook-uid cues whose id no longer maps (orphans).
-      await customStatement('''
+      if (await _columnExists('audio_cues', 'book_uid')) {
+        await customStatement('''
         CREATE TABLE audio_cues_new (
           id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
           book_key TEXT NOT NULL,
@@ -1483,11 +1553,14 @@ class HibikiDatabase extends _$HibikiDatabase {
           ON m.old_id = CAST(
                substr(ac.book_uid, ${_kLegacyUidPrefix.length + 1}) AS INTEGER)
         WHERE ac.book_uid LIKE '$_kLegacyUidPrefix%' ''');
-      await customStatement('DROP TABLE audio_cues');
-      await customStatement('ALTER TABLE audio_cues_new RENAME TO audio_cues');
+        await customStatement('DROP TABLE audio_cues');
+        await customStatement(
+            'ALTER TABLE audio_cues_new RENAME TO audio_cues');
+      }
 
       // 10. book_profiles: book_uid PK 'reader_ttu/hoshi://book/<id>' -> book_key.
-      await customStatement('''
+      if (await _columnExists('book_profiles', 'book_uid')) {
+        await customStatement('''
         CREATE TABLE book_profiles_new (
           book_key TEXT NOT NULL PRIMARY KEY,
           profile_id INTEGER NOT NULL REFERENCES profiles (id) ON DELETE CASCADE)''');
@@ -1499,16 +1572,21 @@ class HibikiDatabase extends _$HibikiDatabase {
           ON m.old_id = CAST(
                substr(bp.book_uid, ${_kLegacyUidPrefix.length + 1}) AS INTEGER)
         WHERE bp.book_uid LIKE '$_kLegacyUidPrefix%' ''');
-      await customStatement('DROP TABLE book_profiles');
-      await customStatement(
-          'ALTER TABLE book_profiles_new RENAME TO book_profiles');
+        await customStatement('DROP TABLE book_profiles');
+        await customStatement(
+            'ALTER TABLE book_profiles_new RENAME TO book_profiles');
+      }
 
       // 11. media_items identifier/unique_key: hoshi://book/<id> -> /<key>.
+      // media_items is a v1 baseline table (created only in onCreate), so a
+      // synthetic/partial legacy seed that starts mid-ladder may lack it.
       const String kIdentPrefix = 'hoshi://book/';
-      final List<QueryRow> items = await customSelect(
-        "SELECT id, media_identifier, unique_key FROM media_items "
-        "WHERE media_identifier LIKE 'hoshi://book/%'",
-      ).get();
+      final List<QueryRow> items = await _tableExists('media_items')
+          ? await customSelect(
+              "SELECT id, media_identifier, unique_key FROM media_items "
+              "WHERE media_identifier LIKE 'hoshi://book/%'",
+            ).get()
+          : const <QueryRow>[];
       for (final QueryRow it in items) {
         final String mid = it.read<String>('media_identifier');
         final int? oldId = int.tryParse(mid.substring(kIdentPrefix.length));
