@@ -11,12 +11,38 @@ void main() {
     expect(src, contains('with DictionaryPageMixin'));
     expect(src, contains('pushNestedPopup('));
     expect(src, contains('popNestedPopupAt('));
-    expect(src, contains('buildNestedPopupLayer('));
-    expect(src, contains('_stack.removeRange(1, _stack.length)'));
     expect(src, contains('onTextSelected:'));
     expect(src, contains('onLinkClick:'));
     expect(src, contains('PopScope'));
     expect(src, contains('_popAt(_stack.length - 1)'));
     expect(src, contains('PopupChannel.instance.finishPopup()'));
+    // 重选/链接下钻时截断当前层之后的栈（按层 index 截断，base/nested 统一）。
+    expect(src, contains('_stack.removeRange(index + 1, _stack.length)'));
+  });
+
+  test(
+      'BUG-051: nested popup layers render full-size (not the reader '
+      'float-near-selection sub-card)', () {
+    final String src = File(pagePath).readAsStringSync();
+    // app 外查词窗口已是约束卡片：下钻层必须满卡渲染（Positioned.fill），
+    // 不能再用全屏阅读器语义的 buildNestedPopupLayer / calcPopupPosition
+    // 把子弹窗压成小窗。
+    expect(src, contains('Positioned.fill'));
+    expect(src, isNot(contains('buildNestedPopupLayer(')),
+        reason: '下钻层改为满卡渲染，不再复用阅读器的贴选区小浮卡');
+    expect(src, isNot(contains('calcPopupPosition')), reason: '满卡渲染无需按选区定位');
+    // 嵌套层不透明铺满盖住下层（base 透明，nested 用词典色/页面色）。
+    expect(src, contains('swipeDismissible: !isBase'));
+    expect(src, contains('? Colors.transparent'));
+  });
+
+  test(
+      'BUG-051: outer card swipe-to-close is gated to the base layer so a '
+      'nested swipe does not drag the whole window', () {
+    final String src = File(pagePath).readAsStringSync();
+    // 栈深 > 1（已下钻）时整卡外层横滑停用，避免 Listener 冒泡连带平移整卡；
+    // 嵌套层各自横滑只返回上一层。
+    expect(src, contains('if (_stack.length > 1) return card;'));
+    expect(src, contains('() => _popAt(index)'));
   });
 }
