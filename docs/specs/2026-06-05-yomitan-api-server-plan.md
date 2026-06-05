@@ -1027,37 +1027,82 @@ SettingsSwitchItem(
   value: (SettingsContext c) => c.appModel.yomitanApiServerEnabled,
   onChanged: (SettingsContext c, bool value) async {
     await c.appModel.setYomitanApiServerEnabled(value);
+    if (value) {
+      await c.appModel.startYomitanApiServer();
+    } else {
+      await c.appModel.stopYomitanApiServer();
+    }
     c.refresh();
   },
 ),
 ```
 
-- [ ] **Step 3: 接线启停**
+- [ ] **Step 3: 接线启停（AppModel 持有 manager）**
 
-在持有 server 的设置 State（仿 `sync_settings_schema.dart` 的 server 字段 + `_startServer`/`_stopServer`）加 `YomitanApiServerManager` 字段，监听 `yomitanApiServerEnabled`：开→`mgr.start(port: appModel.yomitanApiPort, apiKey: appModel.yomitanApiKey)`，catch `SyncServerPortInUseException` 时回滚开关（仿 `_disableAfterStartFailure`）；关→`mgr.stop()`。tokenizer/readingResolver：
+server 生命周期挂在 `AppModel`（全局状态拥有者，能拿到 `createRemoteLookupService` + `JapaneseLanguage` + `HoshiDicts`），不放进 settings State——比 sync server 简单，无 LAN 配对/广播等复杂状态。在 `app_model.dart` 加：
 
 ```dart
-final lang = JapaneseLanguage();
-final mgr = YomitanApiServerManager(
-  lookupService: appModel.createRemoteLookupService(),
-  tokenizer: lang.textToWords,
-  readingResolver: (String w) {
-    if (!HoshiDicts.isInitialized) return '';
-    final r = HoshiDicts.instance.lookup(w, maxResults: 1);
-    return r.isEmpty ? '' : r.first.term.reading;
-  },
-);
+  YomitanApiServerManager? _yomitanServerManager;
+
+  YomitanApiServerManager _ensureYomitanManager() {
+    return _yomitanServerManager ??= YomitanApiServerManager(
+      lookupService: createRemoteLookupService(),
+      tokenizer: JapaneseLanguage().textToWords,
+      readingResolver: (String w) {
+        if (!HoshiDicts.isInitialized) return '';
+        final List<HoshiLookupResult> r =
+            HoshiDicts.instance.lookup(w, maxResults: 1);
+        return r.isEmpty ? '' : r.first.term.reading;
+      },
+    );
+  }
+
+  Future<void> startYomitanApiServer() async {
+    try {
+      await _ensureYomitanManager()
+          .start(port: yomitanApiPort, apiKey: yomitanApiKey);
+    } on SyncServerPortInUseException {
+      // 端口占用：回滚开关，避免卡在"已开但没起来"。
+      await setYomitanApiServerEnabled(false);
+      rethrow; // 让设置 UI 能 toast 提示（onChanged 外层可 catch 显示）
+    }
+  }
+
+  Future<void> stopYomitanApiServer() async {
+    await _yomitanServerManager?.stop();
+  }
 ```
 
-- [ ] **Step 4: 验证**
+import 所需类型：`YomitanApiServerManager`、`SyncServerPortInUseException`、`JapaneseLanguage`/`HoshiDicts`/`HoshiLookupResult`（后三者来自 `package:hibiki_dictionary/hibiki_dictionary.dart`，AppModel 应已 import）。onChanged 外层可按现有设置 toast 范式 catch `SyncServerPortInUseException` 提示端口占用（与 sync server 的 `t.sync_server_port_in_use` 同款，可复用该 i18n key）。
+
+- [ ] **Step 4: 开机自启**
+
+在 AppModel 初始化流程**尾部**（词典引擎初始化之后、与其它子系统启动同级处；找现有初始化收尾位置，仿已有"启动时按偏好恢复"的写法）加：
+
+```dart
+    if (yomitanApiServerEnabled) {
+      // server 可先起；查词/读音在引擎未就绪时各自降级为空，不阻塞启动。
+      unawaited(startYomitanApiServer().catchError((Object _) {}));
+    }
+```
+
+（`unawaited` 来自 `dart:async`；若 AppModel 初始化已是 async 且适合 await，也可 `await`，但不要让端口占用异常中断整个 app 初始化——故 catchError 吞掉，开关回滚已在 `startYomitanApiServer` 内处理。）
+
+- [ ] **Step 5: 端口/API key 编辑 UI（按现有控件能力裁量）**
+
+先查 `settings_destination.dart` 有没有可编辑文本/数字的 schema 项类型（如 `SettingsTextItem`/`SettingsTextFieldItem` 之类）：
+- **有** → 在开关下加两行：端口（数字，写 `setYomitanApiPort`）+ API key（文本，写 `setYomitanApiKey`），改完若 server 正在跑则 `stop`+`start` 重启生效。i18n 用 Step 1 的 `yomitan_api_port`/`yomitan_api_key`。
+- **没有现成可编辑项类型** → 本版只做开关，端口/key 走偏好默认值（19633/空），在报告里说明端口/key 编辑 UI 留作后续（不要为这个新造 schema 控件类型，避免 over-build）。
+
+- [ ] **Step 6: 验证**
 
 Run（在 `hibiki/`）: `dart format . && flutter analyze && flutter test test/sync/ test/models/preferences_repository_test.dart`
 Expected: analyze 0 issues；相关测试全绿。
 
-- [ ] **Step 5: 提交**
+- [ ] **Step 7: 提交**
 
 ```bash
-git add hibiki/lib/src/settings/settings_schema.dart hibiki/lib/i18n/ hibiki/lib/src/sync/
+git add hibiki/lib/src/settings/settings_schema.dart hibiki/lib/i18n/ hibiki/lib/src/models/app_model.dart hibiki/lib/src/sync/
 git commit -m "feat(yomitan): wire yomitan-api server settings + lifecycle"
 ```
 
