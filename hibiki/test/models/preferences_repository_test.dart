@@ -340,6 +340,13 @@ void main() {
 
       expect(repo.texthookerEnabled, true);
       expect(repo.texthookerUrls, ['ws://localhost:6677']);
+
+      // 跨实例 reload，验换行编码经 DB 字符串往返后能正确 split 回 List
+      final repo2 = PreferencesRepository(db);
+      await repo2.loadFromDb();
+      expect(repo2.texthookerEnabled, true);
+      expect(repo2.texthookerUrls, ['ws://localhost:6677']);
+      repo2.dispose();
     });
 
     test('reverseReaderBottomBar is independent of reverseNavigationBar',
