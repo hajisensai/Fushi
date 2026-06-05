@@ -611,7 +611,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       cardKey: ValueKey<String>('video_entry_${book.bookUid}'),
       focusId: HibikiFocusId('reader-shelf-video-${book.bookUid}'),
       onTap: () => _openVideoBook(book),
-      onLongPress: () => _showVideoBookDialog(book),
+      onLongPress: () => _openVideoBook(book),
       child: Stack(
         fit: StackFit.expand,
         children: [
@@ -1094,45 +1094,6 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     ref.invalidate(srtBookTagMapProvider);
     ref.invalidate(filteredBookIdsProvider);
     ref.invalidate(filteredSrtBookIdsProvider);
-  }
-
-  /// 视频书长按：直接弹删除确认（视频书无富媒体动作，故不走
-  /// [MediaItemDialogPage]，用与 SRT/批量删除同款的 [ReaderHistoryDeleteDialog]）。
-  Future<void> _showVideoBookDialog(VideoBookRow book) async {
-    final bool? confirmed = await showAppDialog<bool>(
-      context: context,
-      builder: (ctx) => ReaderHistoryDeleteDialog(
-        title: t.video_delete_title,
-        message: t.video_delete_confirm(title: book.title),
-        onConfirm: () => Navigator.pop(ctx, true),
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-    await _deleteVideoBook(book);
-  }
-
-  /// 删除视频书：**先**乐观地从内存列表 [_videoBooks] 同步移除该项并
-  /// `setState`，**再**异步删 DB。
-  ///
-  /// 视频书格渲染的数据源是同步的 [_videoBooks]（非 FutureBuilder）；若先删 DB
-  /// 再 `_refreshVideoBooks()`（重跑异步 `_loadVideoBooks`），格子会一直渲染旧
-  /// [_videoBooks] 直到 future 完成——被删的卡片先消失又「闪回」再消失。乐观移除
-  /// 让卡片**立即**消失、不回弹（删除确认后视觉即时一致），DB 删除在后台完成。
-  Future<void> _deleteVideoBook(VideoBookRow book) async {
-    setState(() {
-      _videoBooks = _videoBooks
-          .where((VideoBookRow b) => b.bookUid != book.bookUid)
-          .toList(growable: false);
-    });
-    await _videoRepo.delete(book.bookUid);
-    // 删除封面缩略图（best-effort；删不掉不影响 DB 一致性）。
-    final String? cover = book.coverPath;
-    if (cover != null) {
-      try {
-        final File coverFile = File(cover);
-        if (coverFile.existsSync()) coverFile.deleteSync();
-      } catch (_) {}
-    }
   }
 
   Future<void> _confirmDeleteSrtBook(SrtBook book) async {

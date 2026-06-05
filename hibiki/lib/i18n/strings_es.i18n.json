@@ -1265,7 +1265,5 @@
     "video_settings_title": "Player settings",
     "video_setting_av_delay": "A/V delay",
     "video_setting_av_delay_hint": "Positive = picture leads text (shift cues back); negative = picture lags.",
-    "video_setting_speed": "Playback speed",
-    "video_delete_title": "Delete Video",
-    "video_delete_confirm": "Delete 『$title』? This cannot be undone."
+    "video_setting_speed": "Playback speed"
 }

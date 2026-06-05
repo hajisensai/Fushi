@@ -75,46 +75,6 @@ void main() {
     expect(row!.playlistJson, updated);
   });
 
-  test('delete removes the video book and its cues (idempotent)', () async {
-    final db = HibikiDatabase.forTesting(NativeDatabase.memory());
-    addTearDown(db.close);
-    final repo = VideoBookRepository(db);
-
-    await repo.saveVideoBook(const VideoBooksCompanion(
-      bookUid: Value('video/del'),
-      title: Value('Del'),
-      videoPath: Value('/del.mkv'),
-    ));
-    final cue = AudioCue()
-      ..bookUid = 'video/del'
-      ..chapterHref = 'video://default'
-      ..sentenceIndex = 0
-      ..textFragmentId = ''
-      ..text = 'x'
-      ..startMs = 0
-      ..endMs = 1000
-      ..audioFileIndex = 0;
-    await repo.saveCues(bookUid: 'video/del', cues: [cue]);
-
-    // A second book must survive the targeted delete.
-    await repo.saveVideoBook(const VideoBooksCompanion(
-      bookUid: Value('video/keep'),
-      title: Value('Keep'),
-      videoPath: Value('/keep.mkv'),
-    ));
-
-    await repo.delete('video/del');
-
-    expect(await repo.getByBookUid('video/del'), isNull);
-    expect(await repo.loadCues('video/del'), isEmpty);
-    expect((await repo.getByBookUid('video/keep'))!.title, 'Keep');
-
-    // Idempotent: deleting again (and an unknown uid) does not throw.
-    await repo.delete('video/del');
-    await repo.delete('video/never-existed');
-    expect(await repo.listAll(), hasLength(1));
-  });
-
   test('per-episode position survives a playlistJson round-trip via repo',
       () async {
     // Mirrors the exit-flush path: VideoHibikiPage._persistPosition encodes the
