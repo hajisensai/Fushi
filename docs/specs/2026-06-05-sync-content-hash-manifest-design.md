@@ -95,7 +95,12 @@ Future<void> _putAssetWithManifest(String ns, String name, File file, {onProgres
 Future<bool> _getAssetVerified(AssetEntry asset, String manifestId, File tmp, {onProgress});
 ```
 
-涉及的同步路径：书 epub 的 push / pull（`sync_orchestrator.importRemoteBooks` + `sync_manager` 中书内容导入/导出触点，计划阶段逐一定位）、`syncDictionaries`、`syncLocalAudioPackages`、`syncAudiobookPackages`。规则统一：所有 `putAsset` 调用点换 `_putAssetWithManifest`，所有 `getAsset` 换 `_getAssetVerified`。
+**两套传输原语都要挂**（调查实证，不止一套）：
+
+1. **Asset-store 族**（`putAsset`/`getAsset`/`putJsonAsset`/`getJsonAsset`/`listChildren`/`findAsset`）——词典、本地音频、有声书包，以及 `importRemoteBookFolder` 读 epub。manifest 用 `putJsonAsset`/`getJsonAsset` + `findAsset("<name>.manifest.json")` 读写。
+2. **Content-file 族**（`SyncBackend.uploadContentFile`/`downloadContentFile`/`findContentFile`）——`sync_manager._exportContentIfMissing` 推 epub + 每本书的音频文件、`_importContentIfMissing` 拉它们。每个内容文件各配一个 `<fileName>.manifest.json`，上传后写、下载后校验。**注意书可能有多个内容文件（epub + N 个音频），每个独立 manifest。**
+
+涉及方法：`sync_manager._exportContentIfMissing`/`_importContentIfMissing`（content-file 族）、`importRemoteBookFolder`、`syncDictionaries`、`syncLocalAudioPackages`、`syncAudiobookPackages`（asset-store 族）。规则统一：每个上传点上传成功后写 manifest，每个下载点下载后校验 size+md5。
 
 ## 6. 同步决策（单一交付，含内容更新传播）
 
@@ -115,14 +120,15 @@ Future<bool> _getAssetVerified(AssetEntry asset, String manifestId, File tmp, {o
 
 > **为什么不是"平手跳过"**：跳过会让两边永远不一致。`mtime 相等且 md5 不同` 现实中近乎不可能，这里只需一个**确定性、无状态、两端算出同一答案**的 tiebreak（md5 字典序）保证系统**必然收敛**，而不是引入一个 divergent 特例。
 
-"原子重导入覆盖本地"按资产类型分别落地（每类一个子任务 + 测试）：
+"覆盖本地"按资产类型分别落地，三类天生 upsert/可删重导、一类（epub）必须新写在地路径——因为各类导入器对"同名已存在"的处理差异巨大（调查实证）：
 
-- **词典**：导入到临时资源目录 → 成功后替换正式目录 + 更新 DB 行；失败回滚，不破坏现有词典。
-- **有声书包**：重新 import 覆盖该 book 的 audio DB（复用已有 `bookUidOverride` 重键路径）。
-- **本地音频库**：覆盖该 displayName 的库 DB。
-- **书 epub**：替换解压目录的 epub 内容；**阅读进度/统计独立存储，不被书本覆盖牵连**（选 A 的前提，测试守护）。
+- **词典 ✅ 开箱即用**：`importDictionaryPackage` 已是 `upsertDictionaryMeta`（PK=`name`）+ 覆盖同名资源目录。pull-overwrite = 下载新包 → md5 校验 → 直接重调 `importDictionaryPackage`，同名整行+目录覆盖，无关联数据断链。
+- **有声书包 ✅ 开箱即用**：`importAudioDatabasePackage(bookUidOverride: 本机 bookUid, ttuBookIdOverride: book.id)` 已是 `upsertAudiobook`(bookUid) + `upsertSrtBook`(uid) + `replaceCuesForBook`（先删后插）。pull-overwrite 直接重调，按 bookUid 覆盖、cue 整体替换。
+- **本地音频库 ⚠️ 加删重导**：`AppModel.importSyncedLocalAudioDb` 现在是"同 displayName 静默跳过"，无覆盖分支。新增 `replaceSyncedLocalAudioDb(displayName, contents)`：先移除该 displayName 的旧 `AudioSourceConfig` + 旧 db 文件，再走现有导入。本地音频不被任何 id 引用，删重导安全。
+- **书 epub ❗ 必须新写在地路径**：`EpubImporter` 唯一写库路径是 `insert` 新自增 id，同名只加后缀/取消（`resolveBookTitleConflict`），**绝不覆盖**；且阅读进度（`ReaderPositions.ttuBookId`=book.id）、书签、有声书（bookUid）、cue、srt、`audiobook_pos_*`、Profile 绑定、标签映射**全部绑死 book.id**。删旧+重导会换 id → 上述全断链丢失。故新增 `EpubImporter.reimportInPlace(db, bookId, filePath)`：把新 epub 重解压进**同一** `hoshi_books/<bookId>/` 目录（先清旧内容）、重算 chaptersJson/chapterCount/tocJson/coverPath、`update` 现有 EpubBooks 行，**保留 book.id 与 title**。借鉴先例：`_applyCoverToEpub`（copy 进 `bookDirectory(bookId)` + update 列）、`updateEpubBookPath`、`BookCssRepository`（证明书目录可安全原地改写）。
+  - **进度等关联数据**：因 book.id 不变，全部保持链接。章节结构变化可能让已保存的 `section + normCharOffset` 落点轻微漂移（位置仍在、不丢，只是内容变了后不保证逐字对齐）——这是"内容真的变了"的合理代价，测试守护"进度行不被删除"。
 
-mtime 来源：manifest.mtime（上传方写入时的资产源文件修改时间）；本地侧用资产源文件的代表性 mtime（词典资源目录 / audio DB 等，每类定义"代表 mtime"）。
+**mtime 来源**：manifest.mtime（上传方写入时的资产源文件修改时间）。本地侧"代表 mtime"每类定义：epub=`hoshi_books/<id>/` 代表文件或行 updatedAt；词典=资源目录；有声书/本地音频=对应 db 文件 mtime（实现计划逐类定）。
 
 ## 7. 云端完整性四层防线（G4）
 
