@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
+import 'package:hibiki_audio/hibiki_audio.dart';
 
 void main() {
   group('classifyDroppedFiles', () {
@@ -55,5 +56,20 @@ void main() {
       expect(classifyDroppedFiles([]).hasAny, isFalse);
       expect(classifyDroppedFiles(['/x/a.epub']).hasAny, isTrue);
     });
+  });
+
+  test(
+      'kDragAudioExtensions stays in sync with AudiobookStorage.audioExtensions',
+      () {
+    // AudiobookStorage 用带点小写扩展名；本表不带点。规整后比较。
+    final Set<String> storage = AudiobookStorage.audioExtensions
+        .map((String e) => e.replaceFirst('.', ''))
+        .toSet();
+    expect(
+      kDragAudioExtensions,
+      equals(storage),
+      reason:
+          '音频扩展名漂移：更新 kDragAudioExtensions 与 AudiobookStorage.audioExtensions 保持一致',
+    );
   });
 }
