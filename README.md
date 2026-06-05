@@ -7,8 +7,8 @@
   <a href="https://hdjsadgfwtg.github.io/hibiki/"><b>GitHub Pages</b></a>
 </p>
 
-<p align="center">Android 多语言沉浸式阅读器</p>
-<p align="center">EPUB · 词典 · Anki · 有声书同步</p>
+<p align="center">多平台 · 多语言沉浸式阅读器</p>
+<p align="center">EPUB 阅读 · 划词查词 · Anki 制卡 · 有声书同步</p>
 
 <p align="center">
   <a href="docs/readme/README.en.md">English</a> · <a href="docs/readme/README.ja.md">日本語</a> · <a href="docs/readme/README.ko.md">한국어</a> · <a href="docs/readme/README.es.md">Español</a> · <a href="docs/readme/README.fr.md">Français</a> · <a href="docs/readme/README.de.md">Deutsch</a> · <a href="docs/readme/README.pt-BR.md">Português</a> · <a href="docs/readme/README.ru.md">Русский</a> · <a href="docs/readme/README.it.md">Italiano</a> · <a href="docs/readme/README.nl.md">Nederlands</a> · <a href="docs/readme/README.tr.md">Türkçe</a> · <a href="docs/readme/README.vi.md">Tiếng Việt</a> · <a href="docs/readme/README.th.md">ภาษาไทย</a> · <a href="docs/readme/README.id.md">Bahasa Indonesia</a> · <a href="docs/readme/README.ar.md">العربية</a> · <a href="docs/readme/README.zh-Hant.md">繁體中文</a>
@@ -18,27 +18,38 @@
 
 ## 简介
 
-**hibiki** 是一款支持 17 种语言的 Android 沉浸式阅读应用。
+**hibiki** 是一款多平台沉浸式阅读应用：在 EPUB 正文里点按即查词、选词即分析，并把生词一键做成 Anki 卡片。它以日语沉浸式学习起家，词典查询现已覆盖 [Yomitan](https://github.com/yomidevs/yomitan) 的全部变换语言（去屈折 + 查词前文本归一化），界面本地化为 17 种语言。
+
+## 截图
+
+<p align="center">
+  <img src="docs/static-assets/screenshots/hibiki-readme-home.png" alt="书架" width="240">
+  &nbsp;
+  <img src="docs/static-assets/screenshots/hibiki-readme-dictionaries.png" alt="词典管理" width="240">
+  &nbsp;
+  <img src="docs/static-assets/screenshots/hibiki-readme-settings.png" alt="设置与主题" width="240">
+</p>
+<p align="center"><sub>书架 · 词典管理 · 设置与主题</sub></p>
 
 ## 功能
 
 ### EPUB 阅读
 - WebView 渲染 EPUB（[Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader) 衍生的分页引擎）
 - 点按即查词，选词即分析
-- 自定义字体、主题（明/暗）
-- 阅读统计与书签
 - 连续滚动 / 分页两种模式
+- 自定义字体、主题（明 / 暗 / 纯黑 / 自定义）
+- 阅读统计与书签
 
 ### 词典
-- 导入 [Yomitan](https://github.com/yomidevs/yomitan) 格式词典（原 Yomichan）
-- 支持音调标注与词频信息
-- 多词典并行查询、搜索历史
-- Ve 词形还原 
+- 导入多种格式词典：**Yomitan**（原 Yomichan）/ **ABBYY Lingvo (DSL)** / **MDict (MDX)** / **StarDict** / **Migaku**
+- 多语言词形还原（Yomitan 变换表）+ 查词前文本归一化（大小写 / 变音符 / 阿拉伯 harakat），按码点驱动、无需切换语言
+- 音调标注与词频信息
+- 多词典并行查询、子来源优先级与启停、搜索历史
 
 ### Anki 制卡
 - 一键导出至 [AnkiDroid](https://github.com/ankidroid/Anki-Android)
-- 自动填充上下文句子
-- 支持录音、截图裁剪
+- 内置 [Lapis](https://github.com/donkuri/lapis) 笔记类型 schema（vendored 1.7.0），可在 App 内直接创建对应卡片模板与牌组
+- 自动填充上下文句子，支持录音、截图裁剪
 - 多导出配置（Profile）、自定义字段映射
 - 快速操作（Quick Actions）一步制卡
 
@@ -53,10 +64,11 @@
 - 多用户配置（Profile）
 - 无痕模式
 - 从其他应用分享文本直接查词
+- 设备间同步（书籍 / 词典 / 有声书 / 阅读进度）
 
 ## 支持语言
 
-界面支持以下语言：
+界面本地化为以下 17 种语言：
 
 | 语言 | 代码 |
 |---|---|
@@ -78,15 +90,17 @@
 | Türkçe | `tr` |
 | العربية | `ar` |
 
+> 词典查词的语言由导入的词典与 Yomitan 变换表决定，与界面语言相互独立。
+
 ## 技术栈
 
 | 层 | 技术 |
 |---|---|
 | 框架 | Flutter 3.41.6（Dart SDK `>=3.5.0 <4.0.0`） |
-| 平台 | Android / iOS / macOS / Windows / Linux（Material 3 + Cupertino 自适应） |
+| 平台 | Android / Windows（iOS / macOS / Linux 后续支持；Material 3 + Cupertino 自适应） |
 | 阅读器 | WebView 分页引擎（[Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader) 衍生） |
 | 存储 | Drift（SQLite，WAL）+ hoshidicts（C++ FFI 词典引擎） |
-| NLP | Ve（词形还原） |
+| NLP | Ve（日语分词）/ Yomitan 变换表（多语言词形还原） |
 | 制卡 | AnkiDroid API |
 | 国际化 | Slang（17 种语言） |
 | 最低版本 | Android 7.0（API 24） |
@@ -182,6 +196,7 @@ hibiki/                      # 仓库根（Melos workspace: hibiki_workspace）
 │   │   └── main.dart
 │   └── android/             # Android 工程（manifest、native hoshidicts）
 ├── packages/                # 内部 package + flutter_inappwebview_windows(fork) + gamepads_android_stub
+├── native/                  # hoshidicts C++ 词典引擎（FFI）
 ├── third_party/             # vendored 补丁包（dependency_overrides 指向）
 ├── ci/                      # 构建补丁与集成测试脚本
 ├── tool/                    # bootstrap / i18n_sync 等脚本
@@ -199,7 +214,8 @@ hibiki/                      # 仓库根（Melos workspace: hibiki_workspace）
 | [Sasayaki](https://github.com/Manhhao/Hoshi-Reader/blob/develop/SASAYAKI.md) | 有声书同步方案 |
 | [ttu Ebook Reader](https://github.com/ttu-ttu/ebook-reader) | EPUB 渲染引擎 |
 | [kamperemu/ebook-reader](https://github.com/kamperemu/ebook-reader) | ttu 社区维护版（SvelteKit v2），hibiki fork 的上游基准 |
-| [Yomitan](https://github.com/yomidevs/yomitan) | 词典格式来源 |
+| [Yomitan](https://github.com/yomidevs/yomitan) | 词典格式与变换表来源 |
+| [Lapis](https://github.com/donkuri/lapis) | Anki 笔记类型 |
 
 ## 许可证
 
