@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 
 import '../anki_models.dart';
 import '../base_anki_repository.dart';
+import '../lapis_note_type.dart';
 import 'ankiconnect_service.dart';
 
 class AnkiConnectRepository extends BaseAnkiRepository {
@@ -260,6 +261,24 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       debugPrint('AnkiConnectRepository.isDuplicate: $e\n$stack');
       return false;
     }
+  }
+
+  @override
+  Future<bool> createNoteType(AnkiNoteTypeTemplate template) async {
+    final service = await _getService();
+    final existing = await service.getModelNames();
+    if (existing.contains(template.name)) return false;
+    await service.createModel(template);
+    return true;
+  }
+
+  @override
+  Future<bool> createDeck(String name) async {
+    final service = await _getService();
+    final existing = await service.getDeckNames();
+    if (existing.contains(name)) return false;
+    await service.createDeck(name);
+    return true;
   }
 
   Future<String?> _storeLocalMedia(
