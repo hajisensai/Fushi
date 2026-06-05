@@ -1873,11 +1873,11 @@ class $AudiobooksTable extends Audiobooks
       requiredDuringInsert: false,
       defaultConstraints:
           GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
-  static const VerificationMeta _bookUidMeta =
-      const VerificationMeta('bookUid');
+  static const VerificationMeta _bookKeyMeta =
+      const VerificationMeta('bookKey');
   @override
-  late final GeneratedColumn<String> bookUid = GeneratedColumn<String>(
-      'book_uid', aliasedName, false,
+  late final GeneratedColumn<String> bookKey = GeneratedColumn<String>(
+      'book_key', aliasedName, false,
       type: DriftSqlType.string,
       requiredDuringInsert: true,
       defaultConstraints: GeneratedColumn.constraintIsAlways('UNIQUE'));
@@ -1941,7 +1941,7 @@ class $AudiobooksTable extends Audiobooks
   @override
   List<GeneratedColumn> get $columns => [
         id,
-        bookUid,
+        bookKey,
         audioRoot,
         audioPathsJson,
         alignmentFormat,
@@ -1965,11 +1965,11 @@ class $AudiobooksTable extends Audiobooks
     if (data.containsKey('id')) {
       context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
     }
-    if (data.containsKey('book_uid')) {
-      context.handle(_bookUidMeta,
-          bookUid.isAcceptableOrUnknown(data['book_uid']!, _bookUidMeta));
+    if (data.containsKey('book_key')) {
+      context.handle(_bookKeyMeta,
+          bookKey.isAcceptableOrUnknown(data['book_key']!, _bookKeyMeta));
     } else if (isInserting) {
-      context.missing(_bookUidMeta);
+      context.missing(_bookKeyMeta);
     }
     if (data.containsKey('audio_root')) {
       context.handle(_audioRootMeta,
@@ -2038,8 +2038,8 @@ class $AudiobooksTable extends Audiobooks
     return AudiobookRow(
       id: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
-      bookUid: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}book_uid'])!,
+      bookKey: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}book_key'])!,
       audioRoot: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}audio_root']),
       audioPathsJson: attachedDatabase.typeMapping.read(
@@ -2069,7 +2069,7 @@ class $AudiobooksTable extends Audiobooks
 
 class AudiobookRow extends DataClass implements Insertable<AudiobookRow> {
   final int id;
-  final String bookUid;
+  final String bookKey;
   final String? audioRoot;
   final String? audioPathsJson;
   final String alignmentFormat;
@@ -2081,7 +2081,7 @@ class AudiobookRow extends DataClass implements Insertable<AudiobookRow> {
   final bool? followAudio;
   const AudiobookRow(
       {required this.id,
-      required this.bookUid,
+      required this.bookKey,
       this.audioRoot,
       this.audioPathsJson,
       required this.alignmentFormat,
@@ -2095,7 +2095,7 @@ class AudiobookRow extends DataClass implements Insertable<AudiobookRow> {
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['id'] = Variable<int>(id);
-    map['book_uid'] = Variable<String>(bookUid);
+    map['book_key'] = Variable<String>(bookKey);
     if (!nullToAbsent || audioRoot != null) {
       map['audio_root'] = Variable<String>(audioRoot);
     }
@@ -2125,7 +2125,7 @@ class AudiobookRow extends DataClass implements Insertable<AudiobookRow> {
   AudiobooksCompanion toCompanion(bool nullToAbsent) {
     return AudiobooksCompanion(
       id: Value(id),
-      bookUid: Value(bookUid),
+      bookKey: Value(bookKey),
       audioRoot: audioRoot == null && nullToAbsent
           ? const Value.absent()
           : Value(audioRoot),
@@ -2157,7 +2157,7 @@ class AudiobookRow extends DataClass implements Insertable<AudiobookRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return AudiobookRow(
       id: serializer.fromJson<int>(json['id']),
-      bookUid: serializer.fromJson<String>(json['bookUid']),
+      bookKey: serializer.fromJson<String>(json['bookKey']),
       audioRoot: serializer.fromJson<String?>(json['audioRoot']),
       audioPathsJson: serializer.fromJson<String?>(json['audioPathsJson']),
       alignmentFormat: serializer.fromJson<String>(json['alignmentFormat']),
@@ -2175,7 +2175,7 @@ class AudiobookRow extends DataClass implements Insertable<AudiobookRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<int>(id),
-      'bookUid': serializer.toJson<String>(bookUid),
+      'bookKey': serializer.toJson<String>(bookKey),
       'audioRoot': serializer.toJson<String?>(audioRoot),
       'audioPathsJson': serializer.toJson<String?>(audioPathsJson),
       'alignmentFormat': serializer.toJson<String>(alignmentFormat),
@@ -2190,7 +2190,7 @@ class AudiobookRow extends DataClass implements Insertable<AudiobookRow> {
 
   AudiobookRow copyWith(
           {int? id,
-          String? bookUid,
+          String? bookKey,
           Value<String?> audioRoot = const Value.absent(),
           Value<String?> audioPathsJson = const Value.absent(),
           String? alignmentFormat,
@@ -2202,7 +2202,7 @@ class AudiobookRow extends DataClass implements Insertable<AudiobookRow> {
           Value<bool?> followAudio = const Value.absent()}) =>
       AudiobookRow(
         id: id ?? this.id,
-        bookUid: bookUid ?? this.bookUid,
+        bookKey: bookKey ?? this.bookKey,
         audioRoot: audioRoot.present ? audioRoot.value : this.audioRoot,
         audioPathsJson:
             audioPathsJson.present ? audioPathsJson.value : this.audioPathsJson,
@@ -2222,7 +2222,7 @@ class AudiobookRow extends DataClass implements Insertable<AudiobookRow> {
   AudiobookRow copyWithCompanion(AudiobooksCompanion data) {
     return AudiobookRow(
       id: data.id.present ? data.id.value : this.id,
-      bookUid: data.bookUid.present ? data.bookUid.value : this.bookUid,
+      bookKey: data.bookKey.present ? data.bookKey.value : this.bookKey,
       audioRoot: data.audioRoot.present ? data.audioRoot.value : this.audioRoot,
       audioPathsJson: data.audioPathsJson.present
           ? data.audioPathsJson.value
@@ -2254,7 +2254,7 @@ class AudiobookRow extends DataClass implements Insertable<AudiobookRow> {
   String toString() {
     return (StringBuffer('AudiobookRow(')
           ..write('id: $id, ')
-          ..write('bookUid: $bookUid, ')
+          ..write('bookKey: $bookKey, ')
           ..write('audioRoot: $audioRoot, ')
           ..write('audioPathsJson: $audioPathsJson, ')
           ..write('alignmentFormat: $alignmentFormat, ')
@@ -2271,7 +2271,7 @@ class AudiobookRow extends DataClass implements Insertable<AudiobookRow> {
   @override
   int get hashCode => Object.hash(
       id,
-      bookUid,
+      bookKey,
       audioRoot,
       audioPathsJson,
       alignmentFormat,
@@ -2286,7 +2286,7 @@ class AudiobookRow extends DataClass implements Insertable<AudiobookRow> {
       identical(this, other) ||
       (other is AudiobookRow &&
           other.id == this.id &&
-          other.bookUid == this.bookUid &&
+          other.bookKey == this.bookKey &&
           other.audioRoot == this.audioRoot &&
           other.audioPathsJson == this.audioPathsJson &&
           other.alignmentFormat == this.alignmentFormat &&
@@ -2300,7 +2300,7 @@ class AudiobookRow extends DataClass implements Insertable<AudiobookRow> {
 
 class AudiobooksCompanion extends UpdateCompanion<AudiobookRow> {
   final Value<int> id;
-  final Value<String> bookUid;
+  final Value<String> bookKey;
   final Value<String?> audioRoot;
   final Value<String?> audioPathsJson;
   final Value<String> alignmentFormat;
@@ -2312,7 +2312,7 @@ class AudiobooksCompanion extends UpdateCompanion<AudiobookRow> {
   final Value<bool?> followAudio;
   const AudiobooksCompanion({
     this.id = const Value.absent(),
-    this.bookUid = const Value.absent(),
+    this.bookKey = const Value.absent(),
     this.audioRoot = const Value.absent(),
     this.audioPathsJson = const Value.absent(),
     this.alignmentFormat = const Value.absent(),
@@ -2325,7 +2325,7 @@ class AudiobooksCompanion extends UpdateCompanion<AudiobookRow> {
   });
   AudiobooksCompanion.insert({
     this.id = const Value.absent(),
-    required String bookUid,
+    required String bookKey,
     this.audioRoot = const Value.absent(),
     this.audioPathsJson = const Value.absent(),
     required String alignmentFormat,
@@ -2335,12 +2335,12 @@ class AudiobooksCompanion extends UpdateCompanion<AudiobookRow> {
     this.healthMeasuredAt = const Value.absent(),
     this.healthReason = const Value.absent(),
     this.followAudio = const Value.absent(),
-  })  : bookUid = Value(bookUid),
+  })  : bookKey = Value(bookKey),
         alignmentFormat = Value(alignmentFormat),
         alignmentPath = Value(alignmentPath);
   static Insertable<AudiobookRow> custom({
     Expression<int>? id,
-    Expression<String>? bookUid,
+    Expression<String>? bookKey,
     Expression<String>? audioRoot,
     Expression<String>? audioPathsJson,
     Expression<String>? alignmentFormat,
@@ -2353,7 +2353,7 @@ class AudiobooksCompanion extends UpdateCompanion<AudiobookRow> {
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
-      if (bookUid != null) 'book_uid': bookUid,
+      if (bookKey != null) 'book_key': bookKey,
       if (audioRoot != null) 'audio_root': audioRoot,
       if (audioPathsJson != null) 'audio_paths_json': audioPathsJson,
       if (alignmentFormat != null) 'alignment_format': alignmentFormat,
@@ -2368,7 +2368,7 @@ class AudiobooksCompanion extends UpdateCompanion<AudiobookRow> {
 
   AudiobooksCompanion copyWith(
       {Value<int>? id,
-      Value<String>? bookUid,
+      Value<String>? bookKey,
       Value<String?>? audioRoot,
       Value<String?>? audioPathsJson,
       Value<String>? alignmentFormat,
@@ -2380,7 +2380,7 @@ class AudiobooksCompanion extends UpdateCompanion<AudiobookRow> {
       Value<bool?>? followAudio}) {
     return AudiobooksCompanion(
       id: id ?? this.id,
-      bookUid: bookUid ?? this.bookUid,
+      bookKey: bookKey ?? this.bookKey,
       audioRoot: audioRoot ?? this.audioRoot,
       audioPathsJson: audioPathsJson ?? this.audioPathsJson,
       alignmentFormat: alignmentFormat ?? this.alignmentFormat,
@@ -2399,8 +2399,8 @@ class AudiobooksCompanion extends UpdateCompanion<AudiobookRow> {
     if (id.present) {
       map['id'] = Variable<int>(id.value);
     }
-    if (bookUid.present) {
-      map['book_uid'] = Variable<String>(bookUid.value);
+    if (bookKey.present) {
+      map['book_key'] = Variable<String>(bookKey.value);
     }
     if (audioRoot.present) {
       map['audio_root'] = Variable<String>(audioRoot.value);
@@ -2436,7 +2436,7 @@ class AudiobooksCompanion extends UpdateCompanion<AudiobookRow> {
   String toString() {
     return (StringBuffer('AudiobooksCompanion(')
           ..write('id: $id, ')
-          ..write('bookUid: $bookUid, ')
+          ..write('bookKey: $bookKey, ')
           ..write('audioRoot: $audioRoot, ')
           ..write('audioPathsJson: $audioPathsJson, ')
           ..write('alignmentFormat: $alignmentFormat, ')
@@ -2466,11 +2466,11 @@ class $AudioCuesTable extends AudioCues
       requiredDuringInsert: false,
       defaultConstraints:
           GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
-  static const VerificationMeta _bookUidMeta =
-      const VerificationMeta('bookUid');
+  static const VerificationMeta _bookKeyMeta =
+      const VerificationMeta('bookKey');
   @override
-  late final GeneratedColumn<String> bookUid = GeneratedColumn<String>(
-      'book_uid', aliasedName, false,
+  late final GeneratedColumn<String> bookKey = GeneratedColumn<String>(
+      'book_key', aliasedName, false,
       type: DriftSqlType.string, requiredDuringInsert: true);
   static const VerificationMeta _chapterHrefMeta =
       const VerificationMeta('chapterHref');
@@ -2516,7 +2516,7 @@ class $AudioCuesTable extends AudioCues
   @override
   List<GeneratedColumn> get $columns => [
         id,
-        bookUid,
+        bookKey,
         chapterHref,
         sentenceIndex,
         textFragmentId,
@@ -2538,11 +2538,11 @@ class $AudioCuesTable extends AudioCues
     if (data.containsKey('id')) {
       context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
     }
-    if (data.containsKey('book_uid')) {
-      context.handle(_bookUidMeta,
-          bookUid.isAcceptableOrUnknown(data['book_uid']!, _bookUidMeta));
+    if (data.containsKey('book_key')) {
+      context.handle(_bookKeyMeta,
+          bookKey.isAcceptableOrUnknown(data['book_key']!, _bookKeyMeta));
     } else if (isInserting) {
-      context.missing(_bookUidMeta);
+      context.missing(_bookKeyMeta);
     }
     if (data.containsKey('chapter_href')) {
       context.handle(
@@ -2605,8 +2605,8 @@ class $AudioCuesTable extends AudioCues
     return AudioCueRow(
       id: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
-      bookUid: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}book_uid'])!,
+      bookKey: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}book_key'])!,
       chapterHref: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}chapter_href'])!,
       sentenceIndex: attachedDatabase.typeMapping
@@ -2632,7 +2632,7 @@ class $AudioCuesTable extends AudioCues
 
 class AudioCueRow extends DataClass implements Insertable<AudioCueRow> {
   final int id;
-  final String bookUid;
+  final String bookKey;
   final String chapterHref;
   final int sentenceIndex;
   final String textFragmentId;
@@ -2642,7 +2642,7 @@ class AudioCueRow extends DataClass implements Insertable<AudioCueRow> {
   final int audioFileIndex;
   const AudioCueRow(
       {required this.id,
-      required this.bookUid,
+      required this.bookKey,
       required this.chapterHref,
       required this.sentenceIndex,
       required this.textFragmentId,
@@ -2654,7 +2654,7 @@ class AudioCueRow extends DataClass implements Insertable<AudioCueRow> {
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['id'] = Variable<int>(id);
-    map['book_uid'] = Variable<String>(bookUid);
+    map['book_key'] = Variable<String>(bookKey);
     map['chapter_href'] = Variable<String>(chapterHref);
     map['sentence_index'] = Variable<int>(sentenceIndex);
     map['text_fragment_id'] = Variable<String>(textFragmentId);
@@ -2668,7 +2668,7 @@ class AudioCueRow extends DataClass implements Insertable<AudioCueRow> {
   AudioCuesCompanion toCompanion(bool nullToAbsent) {
     return AudioCuesCompanion(
       id: Value(id),
-      bookUid: Value(bookUid),
+      bookKey: Value(bookKey),
       chapterHref: Value(chapterHref),
       sentenceIndex: Value(sentenceIndex),
       textFragmentId: Value(textFragmentId),
@@ -2684,7 +2684,7 @@ class AudioCueRow extends DataClass implements Insertable<AudioCueRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return AudioCueRow(
       id: serializer.fromJson<int>(json['id']),
-      bookUid: serializer.fromJson<String>(json['bookUid']),
+      bookKey: serializer.fromJson<String>(json['bookKey']),
       chapterHref: serializer.fromJson<String>(json['chapterHref']),
       sentenceIndex: serializer.fromJson<int>(json['sentenceIndex']),
       textFragmentId: serializer.fromJson<String>(json['textFragmentId']),
@@ -2699,7 +2699,7 @@ class AudioCueRow extends DataClass implements Insertable<AudioCueRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<int>(id),
-      'bookUid': serializer.toJson<String>(bookUid),
+      'bookKey': serializer.toJson<String>(bookKey),
       'chapterHref': serializer.toJson<String>(chapterHref),
       'sentenceIndex': serializer.toJson<int>(sentenceIndex),
       'textFragmentId': serializer.toJson<String>(textFragmentId),
@@ -2712,7 +2712,7 @@ class AudioCueRow extends DataClass implements Insertable<AudioCueRow> {
 
   AudioCueRow copyWith(
           {int? id,
-          String? bookUid,
+          String? bookKey,
           String? chapterHref,
           int? sentenceIndex,
           String? textFragmentId,
@@ -2722,7 +2722,7 @@ class AudioCueRow extends DataClass implements Insertable<AudioCueRow> {
           int? audioFileIndex}) =>
       AudioCueRow(
         id: id ?? this.id,
-        bookUid: bookUid ?? this.bookUid,
+        bookKey: bookKey ?? this.bookKey,
         chapterHref: chapterHref ?? this.chapterHref,
         sentenceIndex: sentenceIndex ?? this.sentenceIndex,
         textFragmentId: textFragmentId ?? this.textFragmentId,
@@ -2734,7 +2734,7 @@ class AudioCueRow extends DataClass implements Insertable<AudioCueRow> {
   AudioCueRow copyWithCompanion(AudioCuesCompanion data) {
     return AudioCueRow(
       id: data.id.present ? data.id.value : this.id,
-      bookUid: data.bookUid.present ? data.bookUid.value : this.bookUid,
+      bookKey: data.bookKey.present ? data.bookKey.value : this.bookKey,
       chapterHref:
           data.chapterHref.present ? data.chapterHref.value : this.chapterHref,
       sentenceIndex: data.sentenceIndex.present
@@ -2756,7 +2756,7 @@ class AudioCueRow extends DataClass implements Insertable<AudioCueRow> {
   String toString() {
     return (StringBuffer('AudioCueRow(')
           ..write('id: $id, ')
-          ..write('bookUid: $bookUid, ')
+          ..write('bookKey: $bookKey, ')
           ..write('chapterHref: $chapterHref, ')
           ..write('sentenceIndex: $sentenceIndex, ')
           ..write('textFragmentId: $textFragmentId, ')
@@ -2769,14 +2769,14 @@ class AudioCueRow extends DataClass implements Insertable<AudioCueRow> {
   }
 
   @override
-  int get hashCode => Object.hash(id, bookUid, chapterHref, sentenceIndex,
+  int get hashCode => Object.hash(id, bookKey, chapterHref, sentenceIndex,
       textFragmentId, cueText, startMs, endMs, audioFileIndex);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is AudioCueRow &&
           other.id == this.id &&
-          other.bookUid == this.bookUid &&
+          other.bookKey == this.bookKey &&
           other.chapterHref == this.chapterHref &&
           other.sentenceIndex == this.sentenceIndex &&
           other.textFragmentId == this.textFragmentId &&
@@ -2788,7 +2788,7 @@ class AudioCueRow extends DataClass implements Insertable<AudioCueRow> {
 
 class AudioCuesCompanion extends UpdateCompanion<AudioCueRow> {
   final Value<int> id;
-  final Value<String> bookUid;
+  final Value<String> bookKey;
   final Value<String> chapterHref;
   final Value<int> sentenceIndex;
   final Value<String> textFragmentId;
@@ -2798,7 +2798,7 @@ class AudioCuesCompanion extends UpdateCompanion<AudioCueRow> {
   final Value<int> audioFileIndex;
   const AudioCuesCompanion({
     this.id = const Value.absent(),
-    this.bookUid = const Value.absent(),
+    this.bookKey = const Value.absent(),
     this.chapterHref = const Value.absent(),
     this.sentenceIndex = const Value.absent(),
     this.textFragmentId = const Value.absent(),
@@ -2809,7 +2809,7 @@ class AudioCuesCompanion extends UpdateCompanion<AudioCueRow> {
   });
   AudioCuesCompanion.insert({
     this.id = const Value.absent(),
-    required String bookUid,
+    required String bookKey,
     required String chapterHref,
     required int sentenceIndex,
     required String textFragmentId,
@@ -2817,7 +2817,7 @@ class AudioCuesCompanion extends UpdateCompanion<AudioCueRow> {
     required int startMs,
     required int endMs,
     required int audioFileIndex,
-  })  : bookUid = Value(bookUid),
+  })  : bookKey = Value(bookKey),
         chapterHref = Value(chapterHref),
         sentenceIndex = Value(sentenceIndex),
         textFragmentId = Value(textFragmentId),
@@ -2827,7 +2827,7 @@ class AudioCuesCompanion extends UpdateCompanion<AudioCueRow> {
         audioFileIndex = Value(audioFileIndex);
   static Insertable<AudioCueRow> custom({
     Expression<int>? id,
-    Expression<String>? bookUid,
+    Expression<String>? bookKey,
     Expression<String>? chapterHref,
     Expression<int>? sentenceIndex,
     Expression<String>? textFragmentId,
@@ -2838,7 +2838,7 @@ class AudioCuesCompanion extends UpdateCompanion<AudioCueRow> {
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
-      if (bookUid != null) 'book_uid': bookUid,
+      if (bookKey != null) 'book_key': bookKey,
       if (chapterHref != null) 'chapter_href': chapterHref,
       if (sentenceIndex != null) 'sentence_index': sentenceIndex,
       if (textFragmentId != null) 'text_fragment_id': textFragmentId,
@@ -2851,7 +2851,7 @@ class AudioCuesCompanion extends UpdateCompanion<AudioCueRow> {
 
   AudioCuesCompanion copyWith(
       {Value<int>? id,
-      Value<String>? bookUid,
+      Value<String>? bookKey,
       Value<String>? chapterHref,
       Value<int>? sentenceIndex,
       Value<String>? textFragmentId,
@@ -2861,7 +2861,7 @@ class AudioCuesCompanion extends UpdateCompanion<AudioCueRow> {
       Value<int>? audioFileIndex}) {
     return AudioCuesCompanion(
       id: id ?? this.id,
-      bookUid: bookUid ?? this.bookUid,
+      bookKey: bookKey ?? this.bookKey,
       chapterHref: chapterHref ?? this.chapterHref,
       sentenceIndex: sentenceIndex ?? this.sentenceIndex,
       textFragmentId: textFragmentId ?? this.textFragmentId,
@@ -2878,8 +2878,8 @@ class AudioCuesCompanion extends UpdateCompanion<AudioCueRow> {
     if (id.present) {
       map['id'] = Variable<int>(id.value);
     }
-    if (bookUid.present) {
-      map['book_uid'] = Variable<String>(bookUid.value);
+    if (bookKey.present) {
+      map['book_key'] = Variable<String>(bookKey.value);
     }
     if (chapterHref.present) {
       map['chapter_href'] = Variable<String>(chapterHref.value);
@@ -2909,7 +2909,7 @@ class AudioCuesCompanion extends UpdateCompanion<AudioCueRow> {
   String toString() {
     return (StringBuffer('AudioCuesCompanion(')
           ..write('id: $id, ')
-          ..write('bookUid: $bookUid, ')
+          ..write('bookKey: $bookKey, ')
           ..write('chapterHref: $chapterHref, ')
           ..write('sentenceIndex: $sentenceIndex, ')
           ..write('textFragmentId: $textFragmentId, ')
@@ -2984,14 +2984,14 @@ class $SrtBooksTable extends SrtBooks
   late final GeneratedColumn<int> importedAt = GeneratedColumn<int>(
       'imported_at', aliasedName, false,
       type: DriftSqlType.int, requiredDuringInsert: true);
-  static const VerificationMeta _ttuBookIdMeta =
-      const VerificationMeta('ttuBookId');
+  static const VerificationMeta _bookKeyMeta =
+      const VerificationMeta('bookKey');
   @override
-  late final GeneratedColumn<int> ttuBookId = GeneratedColumn<int>(
-      'ttu_book_id', aliasedName, false,
-      type: DriftSqlType.int,
+  late final GeneratedColumn<String> bookKey = GeneratedColumn<String>(
+      'book_key', aliasedName, false,
+      type: DriftSqlType.string,
       requiredDuringInsert: false,
-      defaultValue: const Constant(0));
+      defaultValue: const Constant(''));
   @override
   List<GeneratedColumn> get $columns => [
         id,
@@ -3003,7 +3003,7 @@ class $SrtBooksTable extends SrtBooks
         srtPath,
         coverPath,
         importedAt,
-        ttuBookId
+        bookKey
       ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -3062,11 +3062,9 @@ class $SrtBooksTable extends SrtBooks
     } else if (isInserting) {
       context.missing(_importedAtMeta);
     }
-    if (data.containsKey('ttu_book_id')) {
-      context.handle(
-          _ttuBookIdMeta,
-          ttuBookId.isAcceptableOrUnknown(
-              data['ttu_book_id']!, _ttuBookIdMeta));
+    if (data.containsKey('book_key')) {
+      context.handle(_bookKeyMeta,
+          bookKey.isAcceptableOrUnknown(data['book_key']!, _bookKeyMeta));
     }
     return context;
   }
@@ -3095,8 +3093,8 @@ class $SrtBooksTable extends SrtBooks
           .read(DriftSqlType.string, data['${effectivePrefix}cover_path']),
       importedAt: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}imported_at'])!,
-      ttuBookId: attachedDatabase.typeMapping
-          .read(DriftSqlType.int, data['${effectivePrefix}ttu_book_id'])!,
+      bookKey: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}book_key'])!,
     );
   }
 
@@ -3116,7 +3114,7 @@ class SrtBookRow extends DataClass implements Insertable<SrtBookRow> {
   final String srtPath;
   final String? coverPath;
   final int importedAt;
-  final int ttuBookId;
+  final String bookKey;
   const SrtBookRow(
       {required this.id,
       required this.uid,
@@ -3127,7 +3125,7 @@ class SrtBookRow extends DataClass implements Insertable<SrtBookRow> {
       required this.srtPath,
       this.coverPath,
       required this.importedAt,
-      required this.ttuBookId});
+      required this.bookKey});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -3148,7 +3146,7 @@ class SrtBookRow extends DataClass implements Insertable<SrtBookRow> {
       map['cover_path'] = Variable<String>(coverPath);
     }
     map['imported_at'] = Variable<int>(importedAt);
-    map['ttu_book_id'] = Variable<int>(ttuBookId);
+    map['book_key'] = Variable<String>(bookKey);
     return map;
   }
 
@@ -3170,7 +3168,7 @@ class SrtBookRow extends DataClass implements Insertable<SrtBookRow> {
           ? const Value.absent()
           : Value(coverPath),
       importedAt: Value(importedAt),
-      ttuBookId: Value(ttuBookId),
+      bookKey: Value(bookKey),
     );
   }
 
@@ -3187,7 +3185,7 @@ class SrtBookRow extends DataClass implements Insertable<SrtBookRow> {
       srtPath: serializer.fromJson<String>(json['srtPath']),
       coverPath: serializer.fromJson<String?>(json['coverPath']),
       importedAt: serializer.fromJson<int>(json['importedAt']),
-      ttuBookId: serializer.fromJson<int>(json['ttuBookId']),
+      bookKey: serializer.fromJson<String>(json['bookKey']),
     );
   }
   @override
@@ -3203,7 +3201,7 @@ class SrtBookRow extends DataClass implements Insertable<SrtBookRow> {
       'srtPath': serializer.toJson<String>(srtPath),
       'coverPath': serializer.toJson<String?>(coverPath),
       'importedAt': serializer.toJson<int>(importedAt),
-      'ttuBookId': serializer.toJson<int>(ttuBookId),
+      'bookKey': serializer.toJson<String>(bookKey),
     };
   }
 
@@ -3217,7 +3215,7 @@ class SrtBookRow extends DataClass implements Insertable<SrtBookRow> {
           String? srtPath,
           Value<String?> coverPath = const Value.absent(),
           int? importedAt,
-          int? ttuBookId}) =>
+          String? bookKey}) =>
       SrtBookRow(
         id: id ?? this.id,
         uid: uid ?? this.uid,
@@ -3229,7 +3227,7 @@ class SrtBookRow extends DataClass implements Insertable<SrtBookRow> {
         srtPath: srtPath ?? this.srtPath,
         coverPath: coverPath.present ? coverPath.value : this.coverPath,
         importedAt: importedAt ?? this.importedAt,
-        ttuBookId: ttuBookId ?? this.ttuBookId,
+        bookKey: bookKey ?? this.bookKey,
       );
   SrtBookRow copyWithCompanion(SrtBooksCompanion data) {
     return SrtBookRow(
@@ -3245,7 +3243,7 @@ class SrtBookRow extends DataClass implements Insertable<SrtBookRow> {
       coverPath: data.coverPath.present ? data.coverPath.value : this.coverPath,
       importedAt:
           data.importedAt.present ? data.importedAt.value : this.importedAt,
-      ttuBookId: data.ttuBookId.present ? data.ttuBookId.value : this.ttuBookId,
+      bookKey: data.bookKey.present ? data.bookKey.value : this.bookKey,
     );
   }
 
@@ -3261,14 +3259,14 @@ class SrtBookRow extends DataClass implements Insertable<SrtBookRow> {
           ..write('srtPath: $srtPath, ')
           ..write('coverPath: $coverPath, ')
           ..write('importedAt: $importedAt, ')
-          ..write('ttuBookId: $ttuBookId')
+          ..write('bookKey: $bookKey')
           ..write(')'))
         .toString();
   }
 
   @override
   int get hashCode => Object.hash(id, uid, title, author, audioRoot,
-      audioPathsJson, srtPath, coverPath, importedAt, ttuBookId);
+      audioPathsJson, srtPath, coverPath, importedAt, bookKey);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -3282,7 +3280,7 @@ class SrtBookRow extends DataClass implements Insertable<SrtBookRow> {
           other.srtPath == this.srtPath &&
           other.coverPath == this.coverPath &&
           other.importedAt == this.importedAt &&
-          other.ttuBookId == this.ttuBookId);
+          other.bookKey == this.bookKey);
 }
 
 class SrtBooksCompanion extends UpdateCompanion<SrtBookRow> {
@@ -3295,7 +3293,7 @@ class SrtBooksCompanion extends UpdateCompanion<SrtBookRow> {
   final Value<String> srtPath;
   final Value<String?> coverPath;
   final Value<int> importedAt;
-  final Value<int> ttuBookId;
+  final Value<String> bookKey;
   const SrtBooksCompanion({
     this.id = const Value.absent(),
     this.uid = const Value.absent(),
@@ -3306,7 +3304,7 @@ class SrtBooksCompanion extends UpdateCompanion<SrtBookRow> {
     this.srtPath = const Value.absent(),
     this.coverPath = const Value.absent(),
     this.importedAt = const Value.absent(),
-    this.ttuBookId = const Value.absent(),
+    this.bookKey = const Value.absent(),
   });
   SrtBooksCompanion.insert({
     this.id = const Value.absent(),
@@ -3318,7 +3316,7 @@ class SrtBooksCompanion extends UpdateCompanion<SrtBookRow> {
     required String srtPath,
     this.coverPath = const Value.absent(),
     required int importedAt,
-    this.ttuBookId = const Value.absent(),
+    this.bookKey = const Value.absent(),
   })  : uid = Value(uid),
         title = Value(title),
         srtPath = Value(srtPath),
@@ -3333,7 +3331,7 @@ class SrtBooksCompanion extends UpdateCompanion<SrtBookRow> {
     Expression<String>? srtPath,
     Expression<String>? coverPath,
     Expression<int>? importedAt,
-    Expression<int>? ttuBookId,
+    Expression<String>? bookKey,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -3345,7 +3343,7 @@ class SrtBooksCompanion extends UpdateCompanion<SrtBookRow> {
       if (srtPath != null) 'srt_path': srtPath,
       if (coverPath != null) 'cover_path': coverPath,
       if (importedAt != null) 'imported_at': importedAt,
-      if (ttuBookId != null) 'ttu_book_id': ttuBookId,
+      if (bookKey != null) 'book_key': bookKey,
     });
   }
 
@@ -3359,7 +3357,7 @@ class SrtBooksCompanion extends UpdateCompanion<SrtBookRow> {
       Value<String>? srtPath,
       Value<String?>? coverPath,
       Value<int>? importedAt,
-      Value<int>? ttuBookId}) {
+      Value<String>? bookKey}) {
     return SrtBooksCompanion(
       id: id ?? this.id,
       uid: uid ?? this.uid,
@@ -3370,7 +3368,7 @@ class SrtBooksCompanion extends UpdateCompanion<SrtBookRow> {
       srtPath: srtPath ?? this.srtPath,
       coverPath: coverPath ?? this.coverPath,
       importedAt: importedAt ?? this.importedAt,
-      ttuBookId: ttuBookId ?? this.ttuBookId,
+      bookKey: bookKey ?? this.bookKey,
     );
   }
 
@@ -3404,8 +3402,8 @@ class SrtBooksCompanion extends UpdateCompanion<SrtBookRow> {
     if (importedAt.present) {
       map['imported_at'] = Variable<int>(importedAt.value);
     }
-    if (ttuBookId.present) {
-      map['ttu_book_id'] = Variable<int>(ttuBookId.value);
+    if (bookKey.present) {
+      map['book_key'] = Variable<String>(bookKey.value);
     }
     return map;
   }
@@ -3422,7 +3420,7 @@ class SrtBooksCompanion extends UpdateCompanion<SrtBookRow> {
           ..write('srtPath: $srtPath, ')
           ..write('coverPath: $coverPath, ')
           ..write('importedAt: $importedAt, ')
-          ..write('ttuBookId: $ttuBookId')
+          ..write('bookKey: $bookKey')
           ..write(')'))
         .toString();
   }
@@ -3443,12 +3441,12 @@ class $ReaderPositionsTable extends ReaderPositions
       requiredDuringInsert: false,
       defaultConstraints:
           GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
-  static const VerificationMeta _ttuBookIdMeta =
-      const VerificationMeta('ttuBookId');
+  static const VerificationMeta _bookKeyMeta =
+      const VerificationMeta('bookKey');
   @override
-  late final GeneratedColumn<int> ttuBookId = GeneratedColumn<int>(
-      'ttu_book_id', aliasedName, false,
-      type: DriftSqlType.int,
+  late final GeneratedColumn<String> bookKey = GeneratedColumn<String>(
+      'book_key', aliasedName, false,
+      type: DriftSqlType.string,
       requiredDuringInsert: true,
       defaultConstraints: GeneratedColumn.constraintIsAlways('UNIQUE'));
   static const VerificationMeta _sectionIndexMeta =
@@ -3479,7 +3477,7 @@ class $ReaderPositionsTable extends ReaderPositions
       type: DriftSqlType.int, requiredDuringInsert: true);
   @override
   List<GeneratedColumn> get $columns =>
-      [id, ttuBookId, sectionIndex, normCharOffset, ttuCharOffset, updatedAt];
+      [id, bookKey, sectionIndex, normCharOffset, ttuCharOffset, updatedAt];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -3493,13 +3491,11 @@ class $ReaderPositionsTable extends ReaderPositions
     if (data.containsKey('id')) {
       context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
     }
-    if (data.containsKey('ttu_book_id')) {
-      context.handle(
-          _ttuBookIdMeta,
-          ttuBookId.isAcceptableOrUnknown(
-              data['ttu_book_id']!, _ttuBookIdMeta));
+    if (data.containsKey('book_key')) {
+      context.handle(_bookKeyMeta,
+          bookKey.isAcceptableOrUnknown(data['book_key']!, _bookKeyMeta));
     } else if (isInserting) {
-      context.missing(_ttuBookIdMeta);
+      context.missing(_bookKeyMeta);
     }
     if (data.containsKey('section_index')) {
       context.handle(
@@ -3540,8 +3536,8 @@ class $ReaderPositionsTable extends ReaderPositions
     return ReaderPositionRow(
       id: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
-      ttuBookId: attachedDatabase.typeMapping
-          .read(DriftSqlType.int, data['${effectivePrefix}ttu_book_id'])!,
+      bookKey: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}book_key'])!,
       sectionIndex: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}section_index'])!,
       normCharOffset: attachedDatabase.typeMapping
@@ -3562,14 +3558,14 @@ class $ReaderPositionsTable extends ReaderPositions
 class ReaderPositionRow extends DataClass
     implements Insertable<ReaderPositionRow> {
   final int id;
-  final int ttuBookId;
+  final String bookKey;
   final int sectionIndex;
   final int normCharOffset;
   final int ttuCharOffset;
   final int updatedAt;
   const ReaderPositionRow(
       {required this.id,
-      required this.ttuBookId,
+      required this.bookKey,
       required this.sectionIndex,
       required this.normCharOffset,
       required this.ttuCharOffset,
@@ -3578,7 +3574,7 @@ class ReaderPositionRow extends DataClass
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['id'] = Variable<int>(id);
-    map['ttu_book_id'] = Variable<int>(ttuBookId);
+    map['book_key'] = Variable<String>(bookKey);
     map['section_index'] = Variable<int>(sectionIndex);
     map['norm_char_offset'] = Variable<int>(normCharOffset);
     map['ttu_char_offset'] = Variable<int>(ttuCharOffset);
@@ -3589,7 +3585,7 @@ class ReaderPositionRow extends DataClass
   ReaderPositionsCompanion toCompanion(bool nullToAbsent) {
     return ReaderPositionsCompanion(
       id: Value(id),
-      ttuBookId: Value(ttuBookId),
+      bookKey: Value(bookKey),
       sectionIndex: Value(sectionIndex),
       normCharOffset: Value(normCharOffset),
       ttuCharOffset: Value(ttuCharOffset),
@@ -3602,7 +3598,7 @@ class ReaderPositionRow extends DataClass
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return ReaderPositionRow(
       id: serializer.fromJson<int>(json['id']),
-      ttuBookId: serializer.fromJson<int>(json['ttuBookId']),
+      bookKey: serializer.fromJson<String>(json['bookKey']),
       sectionIndex: serializer.fromJson<int>(json['sectionIndex']),
       normCharOffset: serializer.fromJson<int>(json['normCharOffset']),
       ttuCharOffset: serializer.fromJson<int>(json['ttuCharOffset']),
@@ -3614,7 +3610,7 @@ class ReaderPositionRow extends DataClass
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<int>(id),
-      'ttuBookId': serializer.toJson<int>(ttuBookId),
+      'bookKey': serializer.toJson<String>(bookKey),
       'sectionIndex': serializer.toJson<int>(sectionIndex),
       'normCharOffset': serializer.toJson<int>(normCharOffset),
       'ttuCharOffset': serializer.toJson<int>(ttuCharOffset),
@@ -3624,14 +3620,14 @@ class ReaderPositionRow extends DataClass
 
   ReaderPositionRow copyWith(
           {int? id,
-          int? ttuBookId,
+          String? bookKey,
           int? sectionIndex,
           int? normCharOffset,
           int? ttuCharOffset,
           int? updatedAt}) =>
       ReaderPositionRow(
         id: id ?? this.id,
-        ttuBookId: ttuBookId ?? this.ttuBookId,
+        bookKey: bookKey ?? this.bookKey,
         sectionIndex: sectionIndex ?? this.sectionIndex,
         normCharOffset: normCharOffset ?? this.normCharOffset,
         ttuCharOffset: ttuCharOffset ?? this.ttuCharOffset,
@@ -3640,7 +3636,7 @@ class ReaderPositionRow extends DataClass
   ReaderPositionRow copyWithCompanion(ReaderPositionsCompanion data) {
     return ReaderPositionRow(
       id: data.id.present ? data.id.value : this.id,
-      ttuBookId: data.ttuBookId.present ? data.ttuBookId.value : this.ttuBookId,
+      bookKey: data.bookKey.present ? data.bookKey.value : this.bookKey,
       sectionIndex: data.sectionIndex.present
           ? data.sectionIndex.value
           : this.sectionIndex,
@@ -3658,7 +3654,7 @@ class ReaderPositionRow extends DataClass
   String toString() {
     return (StringBuffer('ReaderPositionRow(')
           ..write('id: $id, ')
-          ..write('ttuBookId: $ttuBookId, ')
+          ..write('bookKey: $bookKey, ')
           ..write('sectionIndex: $sectionIndex, ')
           ..write('normCharOffset: $normCharOffset, ')
           ..write('ttuCharOffset: $ttuCharOffset, ')
@@ -3669,13 +3665,13 @@ class ReaderPositionRow extends DataClass
 
   @override
   int get hashCode => Object.hash(
-      id, ttuBookId, sectionIndex, normCharOffset, ttuCharOffset, updatedAt);
+      id, bookKey, sectionIndex, normCharOffset, ttuCharOffset, updatedAt);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is ReaderPositionRow &&
           other.id == this.id &&
-          other.ttuBookId == this.ttuBookId &&
+          other.bookKey == this.bookKey &&
           other.sectionIndex == this.sectionIndex &&
           other.normCharOffset == this.normCharOffset &&
           other.ttuCharOffset == this.ttuCharOffset &&
@@ -3684,14 +3680,14 @@ class ReaderPositionRow extends DataClass
 
 class ReaderPositionsCompanion extends UpdateCompanion<ReaderPositionRow> {
   final Value<int> id;
-  final Value<int> ttuBookId;
+  final Value<String> bookKey;
   final Value<int> sectionIndex;
   final Value<int> normCharOffset;
   final Value<int> ttuCharOffset;
   final Value<int> updatedAt;
   const ReaderPositionsCompanion({
     this.id = const Value.absent(),
-    this.ttuBookId = const Value.absent(),
+    this.bookKey = const Value.absent(),
     this.sectionIndex = const Value.absent(),
     this.normCharOffset = const Value.absent(),
     this.ttuCharOffset = const Value.absent(),
@@ -3699,18 +3695,18 @@ class ReaderPositionsCompanion extends UpdateCompanion<ReaderPositionRow> {
   });
   ReaderPositionsCompanion.insert({
     this.id = const Value.absent(),
-    required int ttuBookId,
+    required String bookKey,
     required int sectionIndex,
     required int normCharOffset,
     this.ttuCharOffset = const Value.absent(),
     required int updatedAt,
-  })  : ttuBookId = Value(ttuBookId),
+  })  : bookKey = Value(bookKey),
         sectionIndex = Value(sectionIndex),
         normCharOffset = Value(normCharOffset),
         updatedAt = Value(updatedAt);
   static Insertable<ReaderPositionRow> custom({
     Expression<int>? id,
-    Expression<int>? ttuBookId,
+    Expression<String>? bookKey,
     Expression<int>? sectionIndex,
     Expression<int>? normCharOffset,
     Expression<int>? ttuCharOffset,
@@ -3718,7 +3714,7 @@ class ReaderPositionsCompanion extends UpdateCompanion<ReaderPositionRow> {
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
-      if (ttuBookId != null) 'ttu_book_id': ttuBookId,
+      if (bookKey != null) 'book_key': bookKey,
       if (sectionIndex != null) 'section_index': sectionIndex,
       if (normCharOffset != null) 'norm_char_offset': normCharOffset,
       if (ttuCharOffset != null) 'ttu_char_offset': ttuCharOffset,
@@ -3728,14 +3724,14 @@ class ReaderPositionsCompanion extends UpdateCompanion<ReaderPositionRow> {
 
   ReaderPositionsCompanion copyWith(
       {Value<int>? id,
-      Value<int>? ttuBookId,
+      Value<String>? bookKey,
       Value<int>? sectionIndex,
       Value<int>? normCharOffset,
       Value<int>? ttuCharOffset,
       Value<int>? updatedAt}) {
     return ReaderPositionsCompanion(
       id: id ?? this.id,
-      ttuBookId: ttuBookId ?? this.ttuBookId,
+      bookKey: bookKey ?? this.bookKey,
       sectionIndex: sectionIndex ?? this.sectionIndex,
       normCharOffset: normCharOffset ?? this.normCharOffset,
       ttuCharOffset: ttuCharOffset ?? this.ttuCharOffset,
@@ -3749,8 +3745,8 @@ class ReaderPositionsCompanion extends UpdateCompanion<ReaderPositionRow> {
     if (id.present) {
       map['id'] = Variable<int>(id.value);
     }
-    if (ttuBookId.present) {
-      map['ttu_book_id'] = Variable<int>(ttuBookId.value);
+    if (bookKey.present) {
+      map['book_key'] = Variable<String>(bookKey.value);
     }
     if (sectionIndex.present) {
       map['section_index'] = Variable<int>(sectionIndex.value);
@@ -3771,7 +3767,7 @@ class ReaderPositionsCompanion extends UpdateCompanion<ReaderPositionRow> {
   String toString() {
     return (StringBuffer('ReaderPositionsCompanion(')
           ..write('id: $id, ')
-          ..write('ttuBookId: $ttuBookId, ')
+          ..write('bookKey: $bookKey, ')
           ..write('sectionIndex: $sectionIndex, ')
           ..write('normCharOffset: $normCharOffset, ')
           ..write('ttuCharOffset: $ttuCharOffset, ')
@@ -3787,15 +3783,12 @@ class $EpubBooksTable extends EpubBooks
   final GeneratedDatabase attachedDatabase;
   final String? _alias;
   $EpubBooksTable(this.attachedDatabase, [this._alias]);
-  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  static const VerificationMeta _bookKeyMeta =
+      const VerificationMeta('bookKey');
   @override
-  late final GeneratedColumn<int> id = GeneratedColumn<int>(
-      'id', aliasedName, false,
-      hasAutoIncrement: true,
-      type: DriftSqlType.int,
-      requiredDuringInsert: false,
-      defaultConstraints:
-          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
+  late final GeneratedColumn<String> bookKey = GeneratedColumn<String>(
+      'book_key', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
   static const VerificationMeta _titleMeta = const VerificationMeta('title');
   @override
   late final GeneratedColumn<String> title = GeneratedColumn<String>(
@@ -3856,7 +3849,7 @@ class $EpubBooksTable extends EpubBooks
       type: DriftSqlType.int, requiredDuringInsert: true);
   @override
   List<GeneratedColumn> get $columns => [
-        id,
+        bookKey,
         title,
         author,
         coverPath,
@@ -3878,8 +3871,11 @@ class $EpubBooksTable extends EpubBooks
       {bool isInserting = false}) {
     final context = VerificationContext();
     final data = instance.toColumns(true);
-    if (data.containsKey('id')) {
-      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    if (data.containsKey('book_key')) {
+      context.handle(_bookKeyMeta,
+          bookKey.isAcceptableOrUnknown(data['book_key']!, _bookKeyMeta));
+    } else if (isInserting) {
+      context.missing(_bookKeyMeta);
     }
     if (data.containsKey('title')) {
       context.handle(
@@ -3947,13 +3943,13 @@ class $EpubBooksTable extends EpubBooks
   }
 
   @override
-  Set<GeneratedColumn> get $primaryKey => {id};
+  Set<GeneratedColumn> get $primaryKey => {bookKey};
   @override
   EpubBookRow map(Map<String, dynamic> data, {String? tablePrefix}) {
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
     return EpubBookRow(
-      id: attachedDatabase.typeMapping
-          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
+      bookKey: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}book_key'])!,
       title: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}title'])!,
       author: attachedDatabase.typeMapping
@@ -3984,7 +3980,7 @@ class $EpubBooksTable extends EpubBooks
 }
 
 class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
-  final int id;
+  final String bookKey;
   final String title;
   final String? author;
   final String? coverPath;
@@ -3996,7 +3992,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
   final String? sourceMetadata;
   final int importedAt;
   const EpubBookRow(
-      {required this.id,
+      {required this.bookKey,
       required this.title,
       this.author,
       this.coverPath,
@@ -4010,7 +4006,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
-    map['id'] = Variable<int>(id);
+    map['book_key'] = Variable<String>(bookKey);
     map['title'] = Variable<String>(title);
     if (!nullToAbsent || author != null) {
       map['author'] = Variable<String>(author);
@@ -4034,7 +4030,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
 
   EpubBooksCompanion toCompanion(bool nullToAbsent) {
     return EpubBooksCompanion(
-      id: Value(id),
+      bookKey: Value(bookKey),
       title: Value(title),
       author:
           author == null && nullToAbsent ? const Value.absent() : Value(author),
@@ -4059,7 +4055,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
       {ValueSerializer? serializer}) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return EpubBookRow(
-      id: serializer.fromJson<int>(json['id']),
+      bookKey: serializer.fromJson<String>(json['bookKey']),
       title: serializer.fromJson<String>(json['title']),
       author: serializer.fromJson<String?>(json['author']),
       coverPath: serializer.fromJson<String?>(json['coverPath']),
@@ -4076,7 +4072,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
   Map<String, dynamic> toJson({ValueSerializer? serializer}) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
-      'id': serializer.toJson<int>(id),
+      'bookKey': serializer.toJson<String>(bookKey),
       'title': serializer.toJson<String>(title),
       'author': serializer.toJson<String?>(author),
       'coverPath': serializer.toJson<String?>(coverPath),
@@ -4091,7 +4087,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
   }
 
   EpubBookRow copyWith(
-          {int? id,
+          {String? bookKey,
           String? title,
           Value<String?> author = const Value.absent(),
           Value<String?> coverPath = const Value.absent(),
@@ -4103,7 +4099,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
           Value<String?> sourceMetadata = const Value.absent(),
           int? importedAt}) =>
       EpubBookRow(
-        id: id ?? this.id,
+        bookKey: bookKey ?? this.bookKey,
         title: title ?? this.title,
         author: author.present ? author.value : this.author,
         coverPath: coverPath.present ? coverPath.value : this.coverPath,
@@ -4118,7 +4114,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
       );
   EpubBookRow copyWithCompanion(EpubBooksCompanion data) {
     return EpubBookRow(
-      id: data.id.present ? data.id.value : this.id,
+      bookKey: data.bookKey.present ? data.bookKey.value : this.bookKey,
       title: data.title.present ? data.title.value : this.title,
       author: data.author.present ? data.author.value : this.author,
       coverPath: data.coverPath.present ? data.coverPath.value : this.coverPath,
@@ -4143,7 +4139,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
   @override
   String toString() {
     return (StringBuffer('EpubBookRow(')
-          ..write('id: $id, ')
+          ..write('bookKey: $bookKey, ')
           ..write('title: $title, ')
           ..write('author: $author, ')
           ..write('coverPath: $coverPath, ')
@@ -4160,7 +4156,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
 
   @override
   int get hashCode => Object.hash(
-      id,
+      bookKey,
       title,
       author,
       coverPath,
@@ -4175,7 +4171,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is EpubBookRow &&
-          other.id == this.id &&
+          other.bookKey == this.bookKey &&
           other.title == this.title &&
           other.author == this.author &&
           other.coverPath == this.coverPath &&
@@ -4189,7 +4185,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
 }
 
 class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
-  final Value<int> id;
+  final Value<String> bookKey;
   final Value<String> title;
   final Value<String?> author;
   final Value<String?> coverPath;
@@ -4200,8 +4196,9 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
   final Value<String?> tocJson;
   final Value<String?> sourceMetadata;
   final Value<int> importedAt;
+  final Value<int> rowid;
   const EpubBooksCompanion({
-    this.id = const Value.absent(),
+    this.bookKey = const Value.absent(),
     this.title = const Value.absent(),
     this.author = const Value.absent(),
     this.coverPath = const Value.absent(),
@@ -4212,9 +4209,10 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
     this.tocJson = const Value.absent(),
     this.sourceMetadata = const Value.absent(),
     this.importedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
   });
   EpubBooksCompanion.insert({
-    this.id = const Value.absent(),
+    required String bookKey,
     required String title,
     this.author = const Value.absent(),
     this.coverPath = const Value.absent(),
@@ -4225,14 +4223,16 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
     this.tocJson = const Value.absent(),
     this.sourceMetadata = const Value.absent(),
     required int importedAt,
-  })  : title = Value(title),
+    this.rowid = const Value.absent(),
+  })  : bookKey = Value(bookKey),
+        title = Value(title),
         epubPath = Value(epubPath),
         extractDir = Value(extractDir),
         chapterCount = Value(chapterCount),
         chaptersJson = Value(chaptersJson),
         importedAt = Value(importedAt);
   static Insertable<EpubBookRow> custom({
-    Expression<int>? id,
+    Expression<String>? bookKey,
     Expression<String>? title,
     Expression<String>? author,
     Expression<String>? coverPath,
@@ -4243,9 +4243,10 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
     Expression<String>? tocJson,
     Expression<String>? sourceMetadata,
     Expression<int>? importedAt,
+    Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
-      if (id != null) 'id': id,
+      if (bookKey != null) 'book_key': bookKey,
       if (title != null) 'title': title,
       if (author != null) 'author': author,
       if (coverPath != null) 'cover_path': coverPath,
@@ -4256,11 +4257,12 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
       if (tocJson != null) 'toc_json': tocJson,
       if (sourceMetadata != null) 'source_metadata': sourceMetadata,
       if (importedAt != null) 'imported_at': importedAt,
+      if (rowid != null) 'rowid': rowid,
     });
   }
 
   EpubBooksCompanion copyWith(
-      {Value<int>? id,
+      {Value<String>? bookKey,
       Value<String>? title,
       Value<String?>? author,
       Value<String?>? coverPath,
@@ -4270,9 +4272,10 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
       Value<String>? chaptersJson,
       Value<String?>? tocJson,
       Value<String?>? sourceMetadata,
-      Value<int>? importedAt}) {
+      Value<int>? importedAt,
+      Value<int>? rowid}) {
     return EpubBooksCompanion(
-      id: id ?? this.id,
+      bookKey: bookKey ?? this.bookKey,
       title: title ?? this.title,
       author: author ?? this.author,
       coverPath: coverPath ?? this.coverPath,
@@ -4283,14 +4286,15 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
       tocJson: tocJson ?? this.tocJson,
       sourceMetadata: sourceMetadata ?? this.sourceMetadata,
       importedAt: importedAt ?? this.importedAt,
+      rowid: rowid ?? this.rowid,
     );
   }
 
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
-    if (id.present) {
-      map['id'] = Variable<int>(id.value);
+    if (bookKey.present) {
+      map['book_key'] = Variable<String>(bookKey.value);
     }
     if (title.present) {
       map['title'] = Variable<String>(title.value);
@@ -4322,13 +4326,16 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
     if (importedAt.present) {
       map['imported_at'] = Variable<int>(importedAt.value);
     }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
     return map;
   }
 
   @override
   String toString() {
     return (StringBuffer('EpubBooksCompanion(')
-          ..write('id: $id, ')
+          ..write('bookKey: $bookKey, ')
           ..write('title: $title, ')
           ..write('author: $author, ')
           ..write('coverPath: $coverPath, ')
@@ -4338,7 +4345,8 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
           ..write('chaptersJson: $chaptersJson, ')
           ..write('tocJson: $tocJson, ')
           ..write('sourceMetadata: $sourceMetadata, ')
-          ..write('importedAt: $importedAt')
+          ..write('importedAt: $importedAt, ')
+          ..write('rowid: $rowid')
           ..write(')'))
         .toString();
   }
@@ -4359,15 +4367,15 @@ class $BookmarksTable extends Bookmarks
       requiredDuringInsert: false,
       defaultConstraints:
           GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
-  static const VerificationMeta _ttuBookIdMeta =
-      const VerificationMeta('ttuBookId');
+  static const VerificationMeta _bookKeyMeta =
+      const VerificationMeta('bookKey');
   @override
-  late final GeneratedColumn<int> ttuBookId = GeneratedColumn<int>(
-      'ttu_book_id', aliasedName, false,
-      type: DriftSqlType.int,
+  late final GeneratedColumn<String> bookKey = GeneratedColumn<String>(
+      'book_key', aliasedName, false,
+      type: DriftSqlType.string,
       requiredDuringInsert: true,
       defaultConstraints: GeneratedColumn.constraintIsAlways(
-          'REFERENCES epub_books (id) ON DELETE CASCADE'));
+          'REFERENCES epub_books (book_key) ON DELETE CASCADE'));
   static const VerificationMeta _sectionIndexMeta =
       const VerificationMeta('sectionIndex');
   @override
@@ -4412,7 +4420,7 @@ class $BookmarksTable extends Bookmarks
   @override
   List<GeneratedColumn> get $columns => [
         id,
-        ttuBookId,
+        bookKey,
         sectionIndex,
         normCharOffset,
         label,
@@ -4434,13 +4442,11 @@ class $BookmarksTable extends Bookmarks
     if (data.containsKey('id')) {
       context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
     }
-    if (data.containsKey('ttu_book_id')) {
-      context.handle(
-          _ttuBookIdMeta,
-          ttuBookId.isAcceptableOrUnknown(
-              data['ttu_book_id']!, _ttuBookIdMeta));
+    if (data.containsKey('book_key')) {
+      context.handle(_bookKeyMeta,
+          bookKey.isAcceptableOrUnknown(data['book_key']!, _bookKeyMeta));
     } else if (isInserting) {
-      context.missing(_ttuBookIdMeta);
+      context.missing(_bookKeyMeta);
     }
     if (data.containsKey('section_index')) {
       context.handle(
@@ -4497,8 +4503,8 @@ class $BookmarksTable extends Bookmarks
     return BookmarkRow(
       id: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
-      ttuBookId: attachedDatabase.typeMapping
-          .read(DriftSqlType.int, data['${effectivePrefix}ttu_book_id'])!,
+      bookKey: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}book_key'])!,
       sectionIndex: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}section_index'])!,
       normCharOffset: attachedDatabase.typeMapping
@@ -4524,7 +4530,7 @@ class $BookmarksTable extends Bookmarks
 
 class BookmarkRow extends DataClass implements Insertable<BookmarkRow> {
   final int id;
-  final int ttuBookId;
+  final String bookKey;
   final int sectionIndex;
   final int normCharOffset;
   final String label;
@@ -4534,7 +4540,7 @@ class BookmarkRow extends DataClass implements Insertable<BookmarkRow> {
   final int? totalPagesInChapter;
   const BookmarkRow(
       {required this.id,
-      required this.ttuBookId,
+      required this.bookKey,
       required this.sectionIndex,
       required this.normCharOffset,
       required this.label,
@@ -4546,7 +4552,7 @@ class BookmarkRow extends DataClass implements Insertable<BookmarkRow> {
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['id'] = Variable<int>(id);
-    map['ttu_book_id'] = Variable<int>(ttuBookId);
+    map['book_key'] = Variable<String>(bookKey);
     map['section_index'] = Variable<int>(sectionIndex);
     map['norm_char_offset'] = Variable<int>(normCharOffset);
     map['label'] = Variable<String>(label);
@@ -4566,7 +4572,7 @@ class BookmarkRow extends DataClass implements Insertable<BookmarkRow> {
   BookmarksCompanion toCompanion(bool nullToAbsent) {
     return BookmarksCompanion(
       id: Value(id),
-      ttuBookId: Value(ttuBookId),
+      bookKey: Value(bookKey),
       sectionIndex: Value(sectionIndex),
       normCharOffset: Value(normCharOffset),
       label: Value(label),
@@ -4588,7 +4594,7 @@ class BookmarkRow extends DataClass implements Insertable<BookmarkRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return BookmarkRow(
       id: serializer.fromJson<int>(json['id']),
-      ttuBookId: serializer.fromJson<int>(json['ttuBookId']),
+      bookKey: serializer.fromJson<String>(json['bookKey']),
       sectionIndex: serializer.fromJson<int>(json['sectionIndex']),
       normCharOffset: serializer.fromJson<int>(json['normCharOffset']),
       label: serializer.fromJson<String>(json['label']),
@@ -4604,7 +4610,7 @@ class BookmarkRow extends DataClass implements Insertable<BookmarkRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<int>(id),
-      'ttuBookId': serializer.toJson<int>(ttuBookId),
+      'bookKey': serializer.toJson<String>(bookKey),
       'sectionIndex': serializer.toJson<int>(sectionIndex),
       'normCharOffset': serializer.toJson<int>(normCharOffset),
       'label': serializer.toJson<String>(label),
@@ -4617,7 +4623,7 @@ class BookmarkRow extends DataClass implements Insertable<BookmarkRow> {
 
   BookmarkRow copyWith(
           {int? id,
-          int? ttuBookId,
+          String? bookKey,
           int? sectionIndex,
           int? normCharOffset,
           String? label,
@@ -4627,7 +4633,7 @@ class BookmarkRow extends DataClass implements Insertable<BookmarkRow> {
           Value<int?> totalPagesInChapter = const Value.absent()}) =>
       BookmarkRow(
         id: id ?? this.id,
-        ttuBookId: ttuBookId ?? this.ttuBookId,
+        bookKey: bookKey ?? this.bookKey,
         sectionIndex: sectionIndex ?? this.sectionIndex,
         normCharOffset: normCharOffset ?? this.normCharOffset,
         label: label ?? this.label,
@@ -4642,7 +4648,7 @@ class BookmarkRow extends DataClass implements Insertable<BookmarkRow> {
   BookmarkRow copyWithCompanion(BookmarksCompanion data) {
     return BookmarkRow(
       id: data.id.present ? data.id.value : this.id,
-      ttuBookId: data.ttuBookId.present ? data.ttuBookId.value : this.ttuBookId,
+      bookKey: data.bookKey.present ? data.bookKey.value : this.bookKey,
       sectionIndex: data.sectionIndex.present
           ? data.sectionIndex.value
           : this.sectionIndex,
@@ -4665,7 +4671,7 @@ class BookmarkRow extends DataClass implements Insertable<BookmarkRow> {
   String toString() {
     return (StringBuffer('BookmarkRow(')
           ..write('id: $id, ')
-          ..write('ttuBookId: $ttuBookId, ')
+          ..write('bookKey: $bookKey, ')
           ..write('sectionIndex: $sectionIndex, ')
           ..write('normCharOffset: $normCharOffset, ')
           ..write('label: $label, ')
@@ -4678,14 +4684,14 @@ class BookmarkRow extends DataClass implements Insertable<BookmarkRow> {
   }
 
   @override
-  int get hashCode => Object.hash(id, ttuBookId, sectionIndex, normCharOffset,
+  int get hashCode => Object.hash(id, bookKey, sectionIndex, normCharOffset,
       label, createdAt, bookTitle, pageInChapter, totalPagesInChapter);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is BookmarkRow &&
           other.id == this.id &&
-          other.ttuBookId == this.ttuBookId &&
+          other.bookKey == this.bookKey &&
           other.sectionIndex == this.sectionIndex &&
           other.normCharOffset == this.normCharOffset &&
           other.label == this.label &&
@@ -4697,7 +4703,7 @@ class BookmarkRow extends DataClass implements Insertable<BookmarkRow> {
 
 class BookmarksCompanion extends UpdateCompanion<BookmarkRow> {
   final Value<int> id;
-  final Value<int> ttuBookId;
+  final Value<String> bookKey;
   final Value<int> sectionIndex;
   final Value<int> normCharOffset;
   final Value<String> label;
@@ -4707,7 +4713,7 @@ class BookmarksCompanion extends UpdateCompanion<BookmarkRow> {
   final Value<int?> totalPagesInChapter;
   const BookmarksCompanion({
     this.id = const Value.absent(),
-    this.ttuBookId = const Value.absent(),
+    this.bookKey = const Value.absent(),
     this.sectionIndex = const Value.absent(),
     this.normCharOffset = const Value.absent(),
     this.label = const Value.absent(),
@@ -4718,7 +4724,7 @@ class BookmarksCompanion extends UpdateCompanion<BookmarkRow> {
   });
   BookmarksCompanion.insert({
     this.id = const Value.absent(),
-    required int ttuBookId,
+    required String bookKey,
     required int sectionIndex,
     required int normCharOffset,
     required String label,
@@ -4726,14 +4732,14 @@ class BookmarksCompanion extends UpdateCompanion<BookmarkRow> {
     this.bookTitle = const Value.absent(),
     this.pageInChapter = const Value.absent(),
     this.totalPagesInChapter = const Value.absent(),
-  })  : ttuBookId = Value(ttuBookId),
+  })  : bookKey = Value(bookKey),
         sectionIndex = Value(sectionIndex),
         normCharOffset = Value(normCharOffset),
         label = Value(label),
         createdAt = Value(createdAt);
   static Insertable<BookmarkRow> custom({
     Expression<int>? id,
-    Expression<int>? ttuBookId,
+    Expression<String>? bookKey,
     Expression<int>? sectionIndex,
     Expression<int>? normCharOffset,
     Expression<String>? label,
@@ -4744,7 +4750,7 @@ class BookmarksCompanion extends UpdateCompanion<BookmarkRow> {
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
-      if (ttuBookId != null) 'ttu_book_id': ttuBookId,
+      if (bookKey != null) 'book_key': bookKey,
       if (sectionIndex != null) 'section_index': sectionIndex,
       if (normCharOffset != null) 'norm_char_offset': normCharOffset,
       if (label != null) 'label': label,
@@ -4758,7 +4764,7 @@ class BookmarksCompanion extends UpdateCompanion<BookmarkRow> {
 
   BookmarksCompanion copyWith(
       {Value<int>? id,
-      Value<int>? ttuBookId,
+      Value<String>? bookKey,
       Value<int>? sectionIndex,
       Value<int>? normCharOffset,
       Value<String>? label,
@@ -4768,7 +4774,7 @@ class BookmarksCompanion extends UpdateCompanion<BookmarkRow> {
       Value<int?>? totalPagesInChapter}) {
     return BookmarksCompanion(
       id: id ?? this.id,
-      ttuBookId: ttuBookId ?? this.ttuBookId,
+      bookKey: bookKey ?? this.bookKey,
       sectionIndex: sectionIndex ?? this.sectionIndex,
       normCharOffset: normCharOffset ?? this.normCharOffset,
       label: label ?? this.label,
@@ -4785,8 +4791,8 @@ class BookmarksCompanion extends UpdateCompanion<BookmarkRow> {
     if (id.present) {
       map['id'] = Variable<int>(id.value);
     }
-    if (ttuBookId.present) {
-      map['ttu_book_id'] = Variable<int>(ttuBookId.value);
+    if (bookKey.present) {
+      map['book_key'] = Variable<String>(bookKey.value);
     }
     if (sectionIndex.present) {
       map['section_index'] = Variable<int>(sectionIndex.value);
@@ -4816,7 +4822,7 @@ class BookmarksCompanion extends UpdateCompanion<BookmarkRow> {
   String toString() {
     return (StringBuffer('BookmarksCompanion(')
           ..write('id: $id, ')
-          ..write('ttuBookId: $ttuBookId, ')
+          ..write('bookKey: $bookKey, ')
           ..write('sectionIndex: $sectionIndex, ')
           ..write('normCharOffset: $normCharOffset, ')
           ..write('label: $label, ')
@@ -6599,14 +6605,15 @@ class $BookTagMappingsTable extends BookTagMappings
       requiredDuringInsert: false,
       defaultConstraints:
           GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
-  static const VerificationMeta _bookIdMeta = const VerificationMeta('bookId');
+  static const VerificationMeta _bookKeyMeta =
+      const VerificationMeta('bookKey');
   @override
-  late final GeneratedColumn<int> bookId = GeneratedColumn<int>(
-      'book_id', aliasedName, false,
-      type: DriftSqlType.int,
+  late final GeneratedColumn<String> bookKey = GeneratedColumn<String>(
+      'book_key', aliasedName, false,
+      type: DriftSqlType.string,
       requiredDuringInsert: true,
       defaultConstraints: GeneratedColumn.constraintIsAlways(
-          'REFERENCES epub_books (id) ON DELETE CASCADE'));
+          'REFERENCES epub_books (book_key) ON DELETE CASCADE'));
   static const VerificationMeta _tagIdMeta = const VerificationMeta('tagId');
   @override
   late final GeneratedColumn<int> tagId = GeneratedColumn<int>(
@@ -6616,7 +6623,7 @@ class $BookTagMappingsTable extends BookTagMappings
       defaultConstraints: GeneratedColumn.constraintIsAlways(
           'REFERENCES book_tags (id) ON DELETE CASCADE'));
   @override
-  List<GeneratedColumn> get $columns => [id, bookId, tagId];
+  List<GeneratedColumn> get $columns => [id, bookKey, tagId];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -6630,11 +6637,11 @@ class $BookTagMappingsTable extends BookTagMappings
     if (data.containsKey('id')) {
       context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
     }
-    if (data.containsKey('book_id')) {
-      context.handle(_bookIdMeta,
-          bookId.isAcceptableOrUnknown(data['book_id']!, _bookIdMeta));
+    if (data.containsKey('book_key')) {
+      context.handle(_bookKeyMeta,
+          bookKey.isAcceptableOrUnknown(data['book_key']!, _bookKeyMeta));
     } else if (isInserting) {
-      context.missing(_bookIdMeta);
+      context.missing(_bookKeyMeta);
     }
     if (data.containsKey('tag_id')) {
       context.handle(
@@ -6649,7 +6656,7 @@ class $BookTagMappingsTable extends BookTagMappings
   Set<GeneratedColumn> get $primaryKey => {id};
   @override
   List<Set<GeneratedColumn>> get uniqueKeys => [
-        {bookId, tagId},
+        {bookKey, tagId},
       ];
   @override
   BookTagMappingRow map(Map<String, dynamic> data, {String? tablePrefix}) {
@@ -6657,8 +6664,8 @@ class $BookTagMappingsTable extends BookTagMappings
     return BookTagMappingRow(
       id: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
-      bookId: attachedDatabase.typeMapping
-          .read(DriftSqlType.int, data['${effectivePrefix}book_id'])!,
+      bookKey: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}book_key'])!,
       tagId: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}tag_id'])!,
     );
@@ -6673,15 +6680,15 @@ class $BookTagMappingsTable extends BookTagMappings
 class BookTagMappingRow extends DataClass
     implements Insertable<BookTagMappingRow> {
   final int id;
-  final int bookId;
+  final String bookKey;
   final int tagId;
   const BookTagMappingRow(
-      {required this.id, required this.bookId, required this.tagId});
+      {required this.id, required this.bookKey, required this.tagId});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['id'] = Variable<int>(id);
-    map['book_id'] = Variable<int>(bookId);
+    map['book_key'] = Variable<String>(bookKey);
     map['tag_id'] = Variable<int>(tagId);
     return map;
   }
@@ -6689,7 +6696,7 @@ class BookTagMappingRow extends DataClass
   BookTagMappingsCompanion toCompanion(bool nullToAbsent) {
     return BookTagMappingsCompanion(
       id: Value(id),
-      bookId: Value(bookId),
+      bookKey: Value(bookKey),
       tagId: Value(tagId),
     );
   }
@@ -6699,7 +6706,7 @@ class BookTagMappingRow extends DataClass
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return BookTagMappingRow(
       id: serializer.fromJson<int>(json['id']),
-      bookId: serializer.fromJson<int>(json['bookId']),
+      bookKey: serializer.fromJson<String>(json['bookKey']),
       tagId: serializer.fromJson<int>(json['tagId']),
     );
   }
@@ -6708,21 +6715,21 @@ class BookTagMappingRow extends DataClass
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<int>(id),
-      'bookId': serializer.toJson<int>(bookId),
+      'bookKey': serializer.toJson<String>(bookKey),
       'tagId': serializer.toJson<int>(tagId),
     };
   }
 
-  BookTagMappingRow copyWith({int? id, int? bookId, int? tagId}) =>
+  BookTagMappingRow copyWith({int? id, String? bookKey, int? tagId}) =>
       BookTagMappingRow(
         id: id ?? this.id,
-        bookId: bookId ?? this.bookId,
+        bookKey: bookKey ?? this.bookKey,
         tagId: tagId ?? this.tagId,
       );
   BookTagMappingRow copyWithCompanion(BookTagMappingsCompanion data) {
     return BookTagMappingRow(
       id: data.id.present ? data.id.value : this.id,
-      bookId: data.bookId.present ? data.bookId.value : this.bookId,
+      bookKey: data.bookKey.present ? data.bookKey.value : this.bookKey,
       tagId: data.tagId.present ? data.tagId.value : this.tagId,
     );
   }
@@ -6731,55 +6738,55 @@ class BookTagMappingRow extends DataClass
   String toString() {
     return (StringBuffer('BookTagMappingRow(')
           ..write('id: $id, ')
-          ..write('bookId: $bookId, ')
+          ..write('bookKey: $bookKey, ')
           ..write('tagId: $tagId')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, bookId, tagId);
+  int get hashCode => Object.hash(id, bookKey, tagId);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is BookTagMappingRow &&
           other.id == this.id &&
-          other.bookId == this.bookId &&
+          other.bookKey == this.bookKey &&
           other.tagId == this.tagId);
 }
 
 class BookTagMappingsCompanion extends UpdateCompanion<BookTagMappingRow> {
   final Value<int> id;
-  final Value<int> bookId;
+  final Value<String> bookKey;
   final Value<int> tagId;
   const BookTagMappingsCompanion({
     this.id = const Value.absent(),
-    this.bookId = const Value.absent(),
+    this.bookKey = const Value.absent(),
     this.tagId = const Value.absent(),
   });
   BookTagMappingsCompanion.insert({
     this.id = const Value.absent(),
-    required int bookId,
+    required String bookKey,
     required int tagId,
-  })  : bookId = Value(bookId),
+  })  : bookKey = Value(bookKey),
         tagId = Value(tagId);
   static Insertable<BookTagMappingRow> custom({
     Expression<int>? id,
-    Expression<int>? bookId,
+    Expression<String>? bookKey,
     Expression<int>? tagId,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
-      if (bookId != null) 'book_id': bookId,
+      if (bookKey != null) 'book_key': bookKey,
       if (tagId != null) 'tag_id': tagId,
     });
   }
 
   BookTagMappingsCompanion copyWith(
-      {Value<int>? id, Value<int>? bookId, Value<int>? tagId}) {
+      {Value<int>? id, Value<String>? bookKey, Value<int>? tagId}) {
     return BookTagMappingsCompanion(
       id: id ?? this.id,
-      bookId: bookId ?? this.bookId,
+      bookKey: bookKey ?? this.bookKey,
       tagId: tagId ?? this.tagId,
     );
   }
@@ -6790,8 +6797,8 @@ class BookTagMappingsCompanion extends UpdateCompanion<BookTagMappingRow> {
     if (id.present) {
       map['id'] = Variable<int>(id.value);
     }
-    if (bookId.present) {
-      map['book_id'] = Variable<int>(bookId.value);
+    if (bookKey.present) {
+      map['book_key'] = Variable<String>(bookKey.value);
     }
     if (tagId.present) {
       map['tag_id'] = Variable<int>(tagId.value);
@@ -6803,7 +6810,7 @@ class BookTagMappingsCompanion extends UpdateCompanion<BookTagMappingRow> {
   String toString() {
     return (StringBuffer('BookTagMappingsCompanion(')
           ..write('id: $id, ')
-          ..write('bookId: $bookId, ')
+          ..write('bookKey: $bookKey, ')
           ..write('tagId: $tagId')
           ..write(')'))
         .toString();
@@ -7808,11 +7815,11 @@ class $BookProfilesTable extends BookProfiles
   final GeneratedDatabase attachedDatabase;
   final String? _alias;
   $BookProfilesTable(this.attachedDatabase, [this._alias]);
-  static const VerificationMeta _bookUidMeta =
-      const VerificationMeta('bookUid');
+  static const VerificationMeta _bookKeyMeta =
+      const VerificationMeta('bookKey');
   @override
-  late final GeneratedColumn<String> bookUid = GeneratedColumn<String>(
-      'book_uid', aliasedName, false,
+  late final GeneratedColumn<String> bookKey = GeneratedColumn<String>(
+      'book_key', aliasedName, false,
       type: DriftSqlType.string, requiredDuringInsert: true);
   static const VerificationMeta _profileIdMeta =
       const VerificationMeta('profileId');
@@ -7824,7 +7831,7 @@ class $BookProfilesTable extends BookProfiles
       defaultConstraints: GeneratedColumn.constraintIsAlways(
           'REFERENCES profiles (id) ON DELETE CASCADE'));
   @override
-  List<GeneratedColumn> get $columns => [bookUid, profileId];
+  List<GeneratedColumn> get $columns => [bookKey, profileId];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -7835,11 +7842,11 @@ class $BookProfilesTable extends BookProfiles
       {bool isInserting = false}) {
     final context = VerificationContext();
     final data = instance.toColumns(true);
-    if (data.containsKey('book_uid')) {
-      context.handle(_bookUidMeta,
-          bookUid.isAcceptableOrUnknown(data['book_uid']!, _bookUidMeta));
+    if (data.containsKey('book_key')) {
+      context.handle(_bookKeyMeta,
+          bookKey.isAcceptableOrUnknown(data['book_key']!, _bookKeyMeta));
     } else if (isInserting) {
-      context.missing(_bookUidMeta);
+      context.missing(_bookKeyMeta);
     }
     if (data.containsKey('profile_id')) {
       context.handle(_profileIdMeta,
@@ -7851,13 +7858,13 @@ class $BookProfilesTable extends BookProfiles
   }
 
   @override
-  Set<GeneratedColumn> get $primaryKey => {bookUid};
+  Set<GeneratedColumn> get $primaryKey => {bookKey};
   @override
   BookProfileRow map(Map<String, dynamic> data, {String? tablePrefix}) {
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
     return BookProfileRow(
-      bookUid: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}book_uid'])!,
+      bookKey: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}book_key'])!,
       profileId: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}profile_id'])!,
     );
@@ -7870,20 +7877,20 @@ class $BookProfilesTable extends BookProfiles
 }
 
 class BookProfileRow extends DataClass implements Insertable<BookProfileRow> {
-  final String bookUid;
+  final String bookKey;
   final int profileId;
-  const BookProfileRow({required this.bookUid, required this.profileId});
+  const BookProfileRow({required this.bookKey, required this.profileId});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
-    map['book_uid'] = Variable<String>(bookUid);
+    map['book_key'] = Variable<String>(bookKey);
     map['profile_id'] = Variable<int>(profileId);
     return map;
   }
 
   BookProfilesCompanion toCompanion(bool nullToAbsent) {
     return BookProfilesCompanion(
-      bookUid: Value(bookUid),
+      bookKey: Value(bookKey),
       profileId: Value(profileId),
     );
   }
@@ -7892,7 +7899,7 @@ class BookProfileRow extends DataClass implements Insertable<BookProfileRow> {
       {ValueSerializer? serializer}) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return BookProfileRow(
-      bookUid: serializer.fromJson<String>(json['bookUid']),
+      bookKey: serializer.fromJson<String>(json['bookKey']),
       profileId: serializer.fromJson<int>(json['profileId']),
     );
   }
@@ -7900,18 +7907,18 @@ class BookProfileRow extends DataClass implements Insertable<BookProfileRow> {
   Map<String, dynamic> toJson({ValueSerializer? serializer}) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
-      'bookUid': serializer.toJson<String>(bookUid),
+      'bookKey': serializer.toJson<String>(bookKey),
       'profileId': serializer.toJson<int>(profileId),
     };
   }
 
-  BookProfileRow copyWith({String? bookUid, int? profileId}) => BookProfileRow(
-        bookUid: bookUid ?? this.bookUid,
+  BookProfileRow copyWith({String? bookKey, int? profileId}) => BookProfileRow(
+        bookKey: bookKey ?? this.bookKey,
         profileId: profileId ?? this.profileId,
       );
   BookProfileRow copyWithCompanion(BookProfilesCompanion data) {
     return BookProfileRow(
-      bookUid: data.bookUid.present ? data.bookUid.value : this.bookUid,
+      bookKey: data.bookKey.present ? data.bookKey.value : this.bookKey,
       profileId: data.profileId.present ? data.profileId.value : this.profileId,
     );
   }
@@ -7919,53 +7926,53 @@ class BookProfileRow extends DataClass implements Insertable<BookProfileRow> {
   @override
   String toString() {
     return (StringBuffer('BookProfileRow(')
-          ..write('bookUid: $bookUid, ')
+          ..write('bookKey: $bookKey, ')
           ..write('profileId: $profileId')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(bookUid, profileId);
+  int get hashCode => Object.hash(bookKey, profileId);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is BookProfileRow &&
-          other.bookUid == this.bookUid &&
+          other.bookKey == this.bookKey &&
           other.profileId == this.profileId);
 }
 
 class BookProfilesCompanion extends UpdateCompanion<BookProfileRow> {
-  final Value<String> bookUid;
+  final Value<String> bookKey;
   final Value<int> profileId;
   final Value<int> rowid;
   const BookProfilesCompanion({
-    this.bookUid = const Value.absent(),
+    this.bookKey = const Value.absent(),
     this.profileId = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   BookProfilesCompanion.insert({
-    required String bookUid,
+    required String bookKey,
     required int profileId,
     this.rowid = const Value.absent(),
-  })  : bookUid = Value(bookUid),
+  })  : bookKey = Value(bookKey),
         profileId = Value(profileId);
   static Insertable<BookProfileRow> custom({
-    Expression<String>? bookUid,
+    Expression<String>? bookKey,
     Expression<int>? profileId,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
-      if (bookUid != null) 'book_uid': bookUid,
+      if (bookKey != null) 'book_key': bookKey,
       if (profileId != null) 'profile_id': profileId,
       if (rowid != null) 'rowid': rowid,
     });
   }
 
   BookProfilesCompanion copyWith(
-      {Value<String>? bookUid, Value<int>? profileId, Value<int>? rowid}) {
+      {Value<String>? bookKey, Value<int>? profileId, Value<int>? rowid}) {
     return BookProfilesCompanion(
-      bookUid: bookUid ?? this.bookUid,
+      bookKey: bookKey ?? this.bookKey,
       profileId: profileId ?? this.profileId,
       rowid: rowid ?? this.rowid,
     );
@@ -7974,8 +7981,8 @@ class BookProfilesCompanion extends UpdateCompanion<BookProfileRow> {
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
-    if (bookUid.present) {
-      map['book_uid'] = Variable<String>(bookUid.value);
+    if (bookKey.present) {
+      map['book_key'] = Variable<String>(bookKey.value);
     }
     if (profileId.present) {
       map['profile_id'] = Variable<int>(profileId.value);
@@ -7989,7 +7996,7 @@ class BookProfilesCompanion extends UpdateCompanion<BookProfileRow> {
   @override
   String toString() {
     return (StringBuffer('BookProfilesCompanion(')
-          ..write('bookUid: $bookUid, ')
+          ..write('bookKey: $bookKey, ')
           ..write('profileId: $profileId, ')
           ..write('rowid: $rowid')
           ..write(')'))
@@ -8240,23 +8247,12 @@ class $VideoBooksTable extends VideoBooks
   final GeneratedDatabase attachedDatabase;
   final String? _alias;
   $VideoBooksTable(this.attachedDatabase, [this._alias]);
-  static const VerificationMeta _idMeta = const VerificationMeta('id');
-  @override
-  late final GeneratedColumn<int> id = GeneratedColumn<int>(
-      'id', aliasedName, false,
-      hasAutoIncrement: true,
-      type: DriftSqlType.int,
-      requiredDuringInsert: false,
-      defaultConstraints:
-          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
   static const VerificationMeta _bookUidMeta =
       const VerificationMeta('bookUid');
   @override
   late final GeneratedColumn<String> bookUid = GeneratedColumn<String>(
       'book_uid', aliasedName, false,
-      type: DriftSqlType.string,
-      requiredDuringInsert: true,
-      defaultConstraints: GeneratedColumn.constraintIsAlways('UNIQUE'));
+      type: DriftSqlType.string, requiredDuringInsert: true);
   static const VerificationMeta _titleMeta = const VerificationMeta('title');
   @override
   late final GeneratedColumn<String> title = GeneratedColumn<String>(
@@ -8336,7 +8332,6 @@ class $VideoBooksTable extends VideoBooks
       defaultValue: const Constant(0));
   @override
   List<GeneratedColumn> get $columns => [
-        id,
         bookUid,
         title,
         videoPath,
@@ -8361,9 +8356,6 @@ class $VideoBooksTable extends VideoBooks
       {bool isInserting = false}) {
     final context = VerificationContext();
     final data = instance.toColumns(true);
-    if (data.containsKey('id')) {
-      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
-    }
     if (data.containsKey('book_uid')) {
       context.handle(_bookUidMeta,
           bookUid.isAcceptableOrUnknown(data['book_uid']!, _bookUidMeta));
@@ -8442,13 +8434,11 @@ class $VideoBooksTable extends VideoBooks
   }
 
   @override
-  Set<GeneratedColumn> get $primaryKey => {id};
+  Set<GeneratedColumn> get $primaryKey => {bookUid};
   @override
   VideoBookRow map(Map<String, dynamic> data, {String? tablePrefix}) {
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
     return VideoBookRow(
-      id: attachedDatabase.typeMapping
-          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
       bookUid: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}book_uid'])!,
       title: attachedDatabase.typeMapping
@@ -8485,7 +8475,6 @@ class $VideoBooksTable extends VideoBooks
 }
 
 class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
-  final int id;
   final String bookUid;
   final String title;
   final String videoPath;
@@ -8510,8 +8499,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
   /// 跨重启保留；多集播放列表换集时复用同一值（手动校准一次全片受用）。
   final int delayMs;
   const VideoBookRow(
-      {required this.id,
-      required this.bookUid,
+      {required this.bookUid,
       required this.title,
       required this.videoPath,
       this.subtitleSource,
@@ -8527,7 +8515,6 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
-    map['id'] = Variable<int>(id);
     map['book_uid'] = Variable<String>(bookUid);
     map['title'] = Variable<String>(title);
     map['video_path'] = Variable<String>(videoPath);
@@ -8560,7 +8547,6 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
 
   VideoBooksCompanion toCompanion(bool nullToAbsent) {
     return VideoBooksCompanion(
-      id: Value(id),
       bookUid: Value(bookUid),
       title: Value(title),
       videoPath: Value(videoPath),
@@ -8595,7 +8581,6 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       {ValueSerializer? serializer}) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return VideoBookRow(
-      id: serializer.fromJson<int>(json['id']),
       bookUid: serializer.fromJson<String>(json['bookUid']),
       title: serializer.fromJson<String>(json['title']),
       videoPath: serializer.fromJson<String>(json['videoPath']),
@@ -8616,7 +8601,6 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
   Map<String, dynamic> toJson({ValueSerializer? serializer}) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
-      'id': serializer.toJson<int>(id),
       'bookUid': serializer.toJson<String>(bookUid),
       'title': serializer.toJson<String>(title),
       'videoPath': serializer.toJson<String>(videoPath),
@@ -8634,8 +8618,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
   }
 
   VideoBookRow copyWith(
-          {int? id,
-          String? bookUid,
+          {String? bookUid,
           String? title,
           String? videoPath,
           Value<String?> subtitleSource = const Value.absent(),
@@ -8649,7 +8632,6 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
           Value<String?> audioTrackId = const Value.absent(),
           int? delayMs}) =>
       VideoBookRow(
-        id: id ?? this.id,
         bookUid: bookUid ?? this.bookUid,
         title: title ?? this.title,
         videoPath: videoPath ?? this.videoPath,
@@ -8672,7 +8654,6 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       );
   VideoBookRow copyWithCompanion(VideoBooksCompanion data) {
     return VideoBookRow(
-      id: data.id.present ? data.id.value : this.id,
       bookUid: data.bookUid.present ? data.bookUid.value : this.bookUid,
       title: data.title.present ? data.title.value : this.title,
       videoPath: data.videoPath.present ? data.videoPath.value : this.videoPath,
@@ -8707,7 +8688,6 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
   @override
   String toString() {
     return (StringBuffer('VideoBookRow(')
-          ..write('id: $id, ')
           ..write('bookUid: $bookUid, ')
           ..write('title: $title, ')
           ..write('videoPath: $videoPath, ')
@@ -8727,7 +8707,6 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
 
   @override
   int get hashCode => Object.hash(
-      id,
       bookUid,
       title,
       videoPath,
@@ -8745,7 +8724,6 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is VideoBookRow &&
-          other.id == this.id &&
           other.bookUid == this.bookUid &&
           other.title == this.title &&
           other.videoPath == this.videoPath &&
@@ -8762,7 +8740,6 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
 }
 
 class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
-  final Value<int> id;
   final Value<String> bookUid;
   final Value<String> title;
   final Value<String> videoPath;
@@ -8776,8 +8753,8 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
   final Value<int> currentEpisode;
   final Value<String?> audioTrackId;
   final Value<int> delayMs;
+  final Value<int> rowid;
   const VideoBooksCompanion({
-    this.id = const Value.absent(),
     this.bookUid = const Value.absent(),
     this.title = const Value.absent(),
     this.videoPath = const Value.absent(),
@@ -8791,9 +8768,9 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
     this.currentEpisode = const Value.absent(),
     this.audioTrackId = const Value.absent(),
     this.delayMs = const Value.absent(),
+    this.rowid = const Value.absent(),
   });
   VideoBooksCompanion.insert({
-    this.id = const Value.absent(),
     required String bookUid,
     required String title,
     required String videoPath,
@@ -8807,11 +8784,11 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
     this.currentEpisode = const Value.absent(),
     this.audioTrackId = const Value.absent(),
     this.delayMs = const Value.absent(),
+    this.rowid = const Value.absent(),
   })  : bookUid = Value(bookUid),
         title = Value(title),
         videoPath = Value(videoPath);
   static Insertable<VideoBookRow> custom({
-    Expression<int>? id,
     Expression<String>? bookUid,
     Expression<String>? title,
     Expression<String>? videoPath,
@@ -8825,9 +8802,9 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
     Expression<int>? currentEpisode,
     Expression<String>? audioTrackId,
     Expression<int>? delayMs,
+    Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
-      if (id != null) 'id': id,
       if (bookUid != null) 'book_uid': bookUid,
       if (title != null) 'title': title,
       if (videoPath != null) 'video_path': videoPath,
@@ -8842,12 +8819,12 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
       if (currentEpisode != null) 'current_episode': currentEpisode,
       if (audioTrackId != null) 'audio_track_id': audioTrackId,
       if (delayMs != null) 'delay_ms': delayMs,
+      if (rowid != null) 'rowid': rowid,
     });
   }
 
   VideoBooksCompanion copyWith(
-      {Value<int>? id,
-      Value<String>? bookUid,
+      {Value<String>? bookUid,
       Value<String>? title,
       Value<String>? videoPath,
       Value<String?>? subtitleSource,
@@ -8859,9 +8836,9 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
       Value<String?>? playlistJson,
       Value<int>? currentEpisode,
       Value<String?>? audioTrackId,
-      Value<int>? delayMs}) {
+      Value<int>? delayMs,
+      Value<int>? rowid}) {
     return VideoBooksCompanion(
-      id: id ?? this.id,
       bookUid: bookUid ?? this.bookUid,
       title: title ?? this.title,
       videoPath: videoPath ?? this.videoPath,
@@ -8876,15 +8853,13 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
       currentEpisode: currentEpisode ?? this.currentEpisode,
       audioTrackId: audioTrackId ?? this.audioTrackId,
       delayMs: delayMs ?? this.delayMs,
+      rowid: rowid ?? this.rowid,
     );
   }
 
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
-    if (id.present) {
-      map['id'] = Variable<int>(id.value);
-    }
     if (bookUid.present) {
       map['book_uid'] = Variable<String>(bookUid.value);
     }
@@ -8925,13 +8900,15 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
     if (delayMs.present) {
       map['delay_ms'] = Variable<int>(delayMs.value);
     }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
     return map;
   }
 
   @override
   String toString() {
     return (StringBuffer('VideoBooksCompanion(')
-          ..write('id: $id, ')
           ..write('bookUid: $bookUid, ')
           ..write('title: $title, ')
           ..write('videoPath: $videoPath, ')
@@ -8944,7 +8921,8 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
           ..write('playlistJson: $playlistJson, ')
           ..write('currentEpisode: $currentEpisode, ')
           ..write('audioTrackId: $audioTrackId, ')
-          ..write('delayMs: $delayMs')
+          ..write('delayMs: $delayMs, ')
+          ..write('rowid: $rowid')
           ..write(')'))
         .toString();
   }
@@ -9923,7 +9901,7 @@ typedef $$SearchHistoryItemsTableProcessedTableManager = ProcessedTableManager<
     PrefetchHooks Function()>;
 typedef $$AudiobooksTableCreateCompanionBuilder = AudiobooksCompanion Function({
   Value<int> id,
-  required String bookUid,
+  required String bookKey,
   Value<String?> audioRoot,
   Value<String?> audioPathsJson,
   required String alignmentFormat,
@@ -9936,7 +9914,7 @@ typedef $$AudiobooksTableCreateCompanionBuilder = AudiobooksCompanion Function({
 });
 typedef $$AudiobooksTableUpdateCompanionBuilder = AudiobooksCompanion Function({
   Value<int> id,
-  Value<String> bookUid,
+  Value<String> bookKey,
   Value<String?> audioRoot,
   Value<String?> audioPathsJson,
   Value<String> alignmentFormat,
@@ -9960,8 +9938,8 @@ class $$AudiobooksTableFilterComposer
   ColumnFilters<int> get id => $composableBuilder(
       column: $table.id, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<String> get bookUid => $composableBuilder(
-      column: $table.bookUid, builder: (column) => ColumnFilters(column));
+  ColumnFilters<String> get bookKey => $composableBuilder(
+      column: $table.bookKey, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<String> get audioRoot => $composableBuilder(
       column: $table.audioRoot, builder: (column) => ColumnFilters(column));
@@ -10006,8 +9984,8 @@ class $$AudiobooksTableOrderingComposer
   ColumnOrderings<int> get id => $composableBuilder(
       column: $table.id, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<String> get bookUid => $composableBuilder(
-      column: $table.bookUid, builder: (column) => ColumnOrderings(column));
+  ColumnOrderings<String> get bookKey => $composableBuilder(
+      column: $table.bookKey, builder: (column) => ColumnOrderings(column));
 
   ColumnOrderings<String> get audioRoot => $composableBuilder(
       column: $table.audioRoot, builder: (column) => ColumnOrderings(column));
@@ -10056,8 +10034,8 @@ class $$AudiobooksTableAnnotationComposer
   GeneratedColumn<int> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
 
-  GeneratedColumn<String> get bookUid =>
-      $composableBuilder(column: $table.bookUid, builder: (column) => column);
+  GeneratedColumn<String> get bookKey =>
+      $composableBuilder(column: $table.bookKey, builder: (column) => column);
 
   GeneratedColumn<String> get audioRoot =>
       $composableBuilder(column: $table.audioRoot, builder: (column) => column);
@@ -10114,7 +10092,7 @@ class $$AudiobooksTableTableManager extends RootTableManager<
               $$AudiobooksTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback: ({
             Value<int> id = const Value.absent(),
-            Value<String> bookUid = const Value.absent(),
+            Value<String> bookKey = const Value.absent(),
             Value<String?> audioRoot = const Value.absent(),
             Value<String?> audioPathsJson = const Value.absent(),
             Value<String> alignmentFormat = const Value.absent(),
@@ -10127,7 +10105,7 @@ class $$AudiobooksTableTableManager extends RootTableManager<
           }) =>
               AudiobooksCompanion(
             id: id,
-            bookUid: bookUid,
+            bookKey: bookKey,
             audioRoot: audioRoot,
             audioPathsJson: audioPathsJson,
             alignmentFormat: alignmentFormat,
@@ -10140,7 +10118,7 @@ class $$AudiobooksTableTableManager extends RootTableManager<
           ),
           createCompanionCallback: ({
             Value<int> id = const Value.absent(),
-            required String bookUid,
+            required String bookKey,
             Value<String?> audioRoot = const Value.absent(),
             Value<String?> audioPathsJson = const Value.absent(),
             required String alignmentFormat,
@@ -10153,7 +10131,7 @@ class $$AudiobooksTableTableManager extends RootTableManager<
           }) =>
               AudiobooksCompanion.insert(
             id: id,
-            bookUid: bookUid,
+            bookKey: bookKey,
             audioRoot: audioRoot,
             audioPathsJson: audioPathsJson,
             alignmentFormat: alignmentFormat,
@@ -10188,7 +10166,7 @@ typedef $$AudiobooksTableProcessedTableManager = ProcessedTableManager<
     PrefetchHooks Function()>;
 typedef $$AudioCuesTableCreateCompanionBuilder = AudioCuesCompanion Function({
   Value<int> id,
-  required String bookUid,
+  required String bookKey,
   required String chapterHref,
   required int sentenceIndex,
   required String textFragmentId,
@@ -10199,7 +10177,7 @@ typedef $$AudioCuesTableCreateCompanionBuilder = AudioCuesCompanion Function({
 });
 typedef $$AudioCuesTableUpdateCompanionBuilder = AudioCuesCompanion Function({
   Value<int> id,
-  Value<String> bookUid,
+  Value<String> bookKey,
   Value<String> chapterHref,
   Value<int> sentenceIndex,
   Value<String> textFragmentId,
@@ -10221,8 +10199,8 @@ class $$AudioCuesTableFilterComposer
   ColumnFilters<int> get id => $composableBuilder(
       column: $table.id, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<String> get bookUid => $composableBuilder(
-      column: $table.bookUid, builder: (column) => ColumnFilters(column));
+  ColumnFilters<String> get bookKey => $composableBuilder(
+      column: $table.bookKey, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<String> get chapterHref => $composableBuilder(
       column: $table.chapterHref, builder: (column) => ColumnFilters(column));
@@ -10260,8 +10238,8 @@ class $$AudioCuesTableOrderingComposer
   ColumnOrderings<int> get id => $composableBuilder(
       column: $table.id, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<String> get bookUid => $composableBuilder(
-      column: $table.bookUid, builder: (column) => ColumnOrderings(column));
+  ColumnOrderings<String> get bookKey => $composableBuilder(
+      column: $table.bookKey, builder: (column) => ColumnOrderings(column));
 
   ColumnOrderings<String> get chapterHref => $composableBuilder(
       column: $table.chapterHref, builder: (column) => ColumnOrderings(column));
@@ -10300,8 +10278,8 @@ class $$AudioCuesTableAnnotationComposer
   GeneratedColumn<int> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
 
-  GeneratedColumn<String> get bookUid =>
-      $composableBuilder(column: $table.bookUid, builder: (column) => column);
+  GeneratedColumn<String> get bookKey =>
+      $composableBuilder(column: $table.bookKey, builder: (column) => column);
 
   GeneratedColumn<String> get chapterHref => $composableBuilder(
       column: $table.chapterHref, builder: (column) => column);
@@ -10352,7 +10330,7 @@ class $$AudioCuesTableTableManager extends RootTableManager<
               $$AudioCuesTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback: ({
             Value<int> id = const Value.absent(),
-            Value<String> bookUid = const Value.absent(),
+            Value<String> bookKey = const Value.absent(),
             Value<String> chapterHref = const Value.absent(),
             Value<int> sentenceIndex = const Value.absent(),
             Value<String> textFragmentId = const Value.absent(),
@@ -10363,7 +10341,7 @@ class $$AudioCuesTableTableManager extends RootTableManager<
           }) =>
               AudioCuesCompanion(
             id: id,
-            bookUid: bookUid,
+            bookKey: bookKey,
             chapterHref: chapterHref,
             sentenceIndex: sentenceIndex,
             textFragmentId: textFragmentId,
@@ -10374,7 +10352,7 @@ class $$AudioCuesTableTableManager extends RootTableManager<
           ),
           createCompanionCallback: ({
             Value<int> id = const Value.absent(),
-            required String bookUid,
+            required String bookKey,
             required String chapterHref,
             required int sentenceIndex,
             required String textFragmentId,
@@ -10385,7 +10363,7 @@ class $$AudioCuesTableTableManager extends RootTableManager<
           }) =>
               AudioCuesCompanion.insert(
             id: id,
-            bookUid: bookUid,
+            bookKey: bookKey,
             chapterHref: chapterHref,
             sentenceIndex: sentenceIndex,
             textFragmentId: textFragmentId,
@@ -10426,7 +10404,7 @@ typedef $$SrtBooksTableCreateCompanionBuilder = SrtBooksCompanion Function({
   required String srtPath,
   Value<String?> coverPath,
   required int importedAt,
-  Value<int> ttuBookId,
+  Value<String> bookKey,
 });
 typedef $$SrtBooksTableUpdateCompanionBuilder = SrtBooksCompanion Function({
   Value<int> id,
@@ -10438,7 +10416,7 @@ typedef $$SrtBooksTableUpdateCompanionBuilder = SrtBooksCompanion Function({
   Value<String> srtPath,
   Value<String?> coverPath,
   Value<int> importedAt,
-  Value<int> ttuBookId,
+  Value<String> bookKey,
 });
 
 final class $$SrtBooksTableReferences
@@ -10501,8 +10479,8 @@ class $$SrtBooksTableFilterComposer
   ColumnFilters<int> get importedAt => $composableBuilder(
       column: $table.importedAt, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<int> get ttuBookId => $composableBuilder(
-      column: $table.ttuBookId, builder: (column) => ColumnFilters(column));
+  ColumnFilters<String> get bookKey => $composableBuilder(
+      column: $table.bookKey, builder: (column) => ColumnFilters(column));
 
   Expression<bool> srtBookTagMappingsRefs(
       Expression<bool> Function($$SrtBookTagMappingsTableFilterComposer f) f) {
@@ -10563,8 +10541,8 @@ class $$SrtBooksTableOrderingComposer
   ColumnOrderings<int> get importedAt => $composableBuilder(
       column: $table.importedAt, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<int> get ttuBookId => $composableBuilder(
-      column: $table.ttuBookId, builder: (column) => ColumnOrderings(column));
+  ColumnOrderings<String> get bookKey => $composableBuilder(
+      column: $table.bookKey, builder: (column) => ColumnOrderings(column));
 }
 
 class $$SrtBooksTableAnnotationComposer
@@ -10603,8 +10581,8 @@ class $$SrtBooksTableAnnotationComposer
   GeneratedColumn<int> get importedAt => $composableBuilder(
       column: $table.importedAt, builder: (column) => column);
 
-  GeneratedColumn<int> get ttuBookId =>
-      $composableBuilder(column: $table.ttuBookId, builder: (column) => column);
+  GeneratedColumn<String> get bookKey =>
+      $composableBuilder(column: $table.bookKey, builder: (column) => column);
 
   Expression<T> srtBookTagMappingsRefs<T extends Object>(
       Expression<T> Function($$SrtBookTagMappingsTableAnnotationComposer a) f) {
@@ -10661,7 +10639,7 @@ class $$SrtBooksTableTableManager extends RootTableManager<
             Value<String> srtPath = const Value.absent(),
             Value<String?> coverPath = const Value.absent(),
             Value<int> importedAt = const Value.absent(),
-            Value<int> ttuBookId = const Value.absent(),
+            Value<String> bookKey = const Value.absent(),
           }) =>
               SrtBooksCompanion(
             id: id,
@@ -10673,7 +10651,7 @@ class $$SrtBooksTableTableManager extends RootTableManager<
             srtPath: srtPath,
             coverPath: coverPath,
             importedAt: importedAt,
-            ttuBookId: ttuBookId,
+            bookKey: bookKey,
           ),
           createCompanionCallback: ({
             Value<int> id = const Value.absent(),
@@ -10685,7 +10663,7 @@ class $$SrtBooksTableTableManager extends RootTableManager<
             required String srtPath,
             Value<String?> coverPath = const Value.absent(),
             required int importedAt,
-            Value<int> ttuBookId = const Value.absent(),
+            Value<String> bookKey = const Value.absent(),
           }) =>
               SrtBooksCompanion.insert(
             id: id,
@@ -10697,7 +10675,7 @@ class $$SrtBooksTableTableManager extends RootTableManager<
             srtPath: srtPath,
             coverPath: coverPath,
             importedAt: importedAt,
-            ttuBookId: ttuBookId,
+            bookKey: bookKey,
           ),
           withReferenceMapper: (p0) => p0
               .map((e) =>
@@ -10747,7 +10725,7 @@ typedef $$SrtBooksTableProcessedTableManager = ProcessedTableManager<
 typedef $$ReaderPositionsTableCreateCompanionBuilder = ReaderPositionsCompanion
     Function({
   Value<int> id,
-  required int ttuBookId,
+  required String bookKey,
   required int sectionIndex,
   required int normCharOffset,
   Value<int> ttuCharOffset,
@@ -10756,7 +10734,7 @@ typedef $$ReaderPositionsTableCreateCompanionBuilder = ReaderPositionsCompanion
 typedef $$ReaderPositionsTableUpdateCompanionBuilder = ReaderPositionsCompanion
     Function({
   Value<int> id,
-  Value<int> ttuBookId,
+  Value<String> bookKey,
   Value<int> sectionIndex,
   Value<int> normCharOffset,
   Value<int> ttuCharOffset,
@@ -10775,8 +10753,8 @@ class $$ReaderPositionsTableFilterComposer
   ColumnFilters<int> get id => $composableBuilder(
       column: $table.id, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<int> get ttuBookId => $composableBuilder(
-      column: $table.ttuBookId, builder: (column) => ColumnFilters(column));
+  ColumnFilters<String> get bookKey => $composableBuilder(
+      column: $table.bookKey, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<int> get sectionIndex => $composableBuilder(
       column: $table.sectionIndex, builder: (column) => ColumnFilters(column));
@@ -10804,8 +10782,8 @@ class $$ReaderPositionsTableOrderingComposer
   ColumnOrderings<int> get id => $composableBuilder(
       column: $table.id, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<int> get ttuBookId => $composableBuilder(
-      column: $table.ttuBookId, builder: (column) => ColumnOrderings(column));
+  ColumnOrderings<String> get bookKey => $composableBuilder(
+      column: $table.bookKey, builder: (column) => ColumnOrderings(column));
 
   ColumnOrderings<int> get sectionIndex => $composableBuilder(
       column: $table.sectionIndex,
@@ -10835,8 +10813,8 @@ class $$ReaderPositionsTableAnnotationComposer
   GeneratedColumn<int> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
 
-  GeneratedColumn<int> get ttuBookId =>
-      $composableBuilder(column: $table.ttuBookId, builder: (column) => column);
+  GeneratedColumn<String> get bookKey =>
+      $composableBuilder(column: $table.bookKey, builder: (column) => column);
 
   GeneratedColumn<int> get sectionIndex => $composableBuilder(
       column: $table.sectionIndex, builder: (column) => column);
@@ -10879,7 +10857,7 @@ class $$ReaderPositionsTableTableManager extends RootTableManager<
               $$ReaderPositionsTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback: ({
             Value<int> id = const Value.absent(),
-            Value<int> ttuBookId = const Value.absent(),
+            Value<String> bookKey = const Value.absent(),
             Value<int> sectionIndex = const Value.absent(),
             Value<int> normCharOffset = const Value.absent(),
             Value<int> ttuCharOffset = const Value.absent(),
@@ -10887,7 +10865,7 @@ class $$ReaderPositionsTableTableManager extends RootTableManager<
           }) =>
               ReaderPositionsCompanion(
             id: id,
-            ttuBookId: ttuBookId,
+            bookKey: bookKey,
             sectionIndex: sectionIndex,
             normCharOffset: normCharOffset,
             ttuCharOffset: ttuCharOffset,
@@ -10895,7 +10873,7 @@ class $$ReaderPositionsTableTableManager extends RootTableManager<
           ),
           createCompanionCallback: ({
             Value<int> id = const Value.absent(),
-            required int ttuBookId,
+            required String bookKey,
             required int sectionIndex,
             required int normCharOffset,
             Value<int> ttuCharOffset = const Value.absent(),
@@ -10903,7 +10881,7 @@ class $$ReaderPositionsTableTableManager extends RootTableManager<
           }) =>
               ReaderPositionsCompanion.insert(
             id: id,
-            ttuBookId: ttuBookId,
+            bookKey: bookKey,
             sectionIndex: sectionIndex,
             normCharOffset: normCharOffset,
             ttuCharOffset: ttuCharOffset,
@@ -10932,7 +10910,7 @@ typedef $$ReaderPositionsTableProcessedTableManager = ProcessedTableManager<
     ReaderPositionRow,
     PrefetchHooks Function()>;
 typedef $$EpubBooksTableCreateCompanionBuilder = EpubBooksCompanion Function({
-  Value<int> id,
+  required String bookKey,
   required String title,
   Value<String?> author,
   Value<String?> coverPath,
@@ -10943,9 +10921,10 @@ typedef $$EpubBooksTableCreateCompanionBuilder = EpubBooksCompanion Function({
   Value<String?> tocJson,
   Value<String?> sourceMetadata,
   required int importedAt,
+  Value<int> rowid,
 });
 typedef $$EpubBooksTableUpdateCompanionBuilder = EpubBooksCompanion Function({
-  Value<int> id,
+  Value<String> bookKey,
   Value<String> title,
   Value<String?> author,
   Value<String?> coverPath,
@@ -10956,6 +10935,7 @@ typedef $$EpubBooksTableUpdateCompanionBuilder = EpubBooksCompanion Function({
   Value<String?> tocJson,
   Value<String?> sourceMetadata,
   Value<int> importedAt,
+  Value<int> rowid,
 });
 
 final class $$EpubBooksTableReferences
@@ -10966,11 +10946,11 @@ final class $$EpubBooksTableReferences
       _bookmarksRefsTable(_$HibikiDatabase db) => MultiTypedResultKey.fromTable(
           db.bookmarks,
           aliasName:
-              $_aliasNameGenerator(db.epubBooks.id, db.bookmarks.ttuBookId));
+              $_aliasNameGenerator(db.epubBooks.bookKey, db.bookmarks.bookKey));
 
   $$BookmarksTableProcessedTableManager get bookmarksRefs {
-    final manager = $$BookmarksTableTableManager($_db, $_db.bookmarks)
-        .filter((f) => f.ttuBookId.id.sqlEquals($_itemColumn<int>('id')!));
+    final manager = $$BookmarksTableTableManager($_db, $_db.bookmarks).filter(
+        (f) => f.bookKey.bookKey.sqlEquals($_itemColumn<String>('book_key')!));
 
     final cache = $_typedResult.readTableOrNull(_bookmarksRefsTable($_db));
     return ProcessedTableManager(
@@ -10981,12 +10961,13 @@ final class $$EpubBooksTableReferences
       _bookTagMappingsRefsTable(_$HibikiDatabase db) =>
           MultiTypedResultKey.fromTable(db.bookTagMappings,
               aliasName: $_aliasNameGenerator(
-                  db.epubBooks.id, db.bookTagMappings.bookId));
+                  db.epubBooks.bookKey, db.bookTagMappings.bookKey));
 
   $$BookTagMappingsTableProcessedTableManager get bookTagMappingsRefs {
     final manager =
-        $$BookTagMappingsTableTableManager($_db, $_db.bookTagMappings)
-            .filter((f) => f.bookId.id.sqlEquals($_itemColumn<int>('id')!));
+        $$BookTagMappingsTableTableManager($_db, $_db.bookTagMappings).filter(
+            (f) =>
+                f.bookKey.bookKey.sqlEquals($_itemColumn<String>('book_key')!));
 
     final cache =
         $_typedResult.readTableOrNull(_bookTagMappingsRefsTable($_db));
@@ -11004,8 +10985,8 @@ class $$EpubBooksTableFilterComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  ColumnFilters<int> get id => $composableBuilder(
-      column: $table.id, builder: (column) => ColumnFilters(column));
+  ColumnFilters<String> get bookKey => $composableBuilder(
+      column: $table.bookKey, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<String> get title => $composableBuilder(
       column: $table.title, builder: (column) => ColumnFilters(column));
@@ -11042,9 +11023,9 @@ class $$EpubBooksTableFilterComposer
       Expression<bool> Function($$BookmarksTableFilterComposer f) f) {
     final $$BookmarksTableFilterComposer composer = $composerBuilder(
         composer: this,
-        getCurrentColumn: (t) => t.id,
+        getCurrentColumn: (t) => t.bookKey,
         referencedTable: $db.bookmarks,
-        getReferencedColumn: (t) => t.ttuBookId,
+        getReferencedColumn: (t) => t.bookKey,
         builder: (joinBuilder,
                 {$addJoinBuilderToRootComposer,
                 $removeJoinBuilderFromRootComposer}) =>
@@ -11063,9 +11044,9 @@ class $$EpubBooksTableFilterComposer
       Expression<bool> Function($$BookTagMappingsTableFilterComposer f) f) {
     final $$BookTagMappingsTableFilterComposer composer = $composerBuilder(
         composer: this,
-        getCurrentColumn: (t) => t.id,
+        getCurrentColumn: (t) => t.bookKey,
         referencedTable: $db.bookTagMappings,
-        getReferencedColumn: (t) => t.bookId,
+        getReferencedColumn: (t) => t.bookKey,
         builder: (joinBuilder,
                 {$addJoinBuilderToRootComposer,
                 $removeJoinBuilderFromRootComposer}) =>
@@ -11090,8 +11071,8 @@ class $$EpubBooksTableOrderingComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  ColumnOrderings<int> get id => $composableBuilder(
-      column: $table.id, builder: (column) => ColumnOrderings(column));
+  ColumnOrderings<String> get bookKey => $composableBuilder(
+      column: $table.bookKey, builder: (column) => ColumnOrderings(column));
 
   ColumnOrderings<String> get title => $composableBuilder(
       column: $table.title, builder: (column) => ColumnOrderings(column));
@@ -11136,8 +11117,8 @@ class $$EpubBooksTableAnnotationComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  GeneratedColumn<int> get id =>
-      $composableBuilder(column: $table.id, builder: (column) => column);
+  GeneratedColumn<String> get bookKey =>
+      $composableBuilder(column: $table.bookKey, builder: (column) => column);
 
   GeneratedColumn<String> get title =>
       $composableBuilder(column: $table.title, builder: (column) => column);
@@ -11173,9 +11154,9 @@ class $$EpubBooksTableAnnotationComposer
       Expression<T> Function($$BookmarksTableAnnotationComposer a) f) {
     final $$BookmarksTableAnnotationComposer composer = $composerBuilder(
         composer: this,
-        getCurrentColumn: (t) => t.id,
+        getCurrentColumn: (t) => t.bookKey,
         referencedTable: $db.bookmarks,
-        getReferencedColumn: (t) => t.ttuBookId,
+        getReferencedColumn: (t) => t.bookKey,
         builder: (joinBuilder,
                 {$addJoinBuilderToRootComposer,
                 $removeJoinBuilderFromRootComposer}) =>
@@ -11194,9 +11175,9 @@ class $$EpubBooksTableAnnotationComposer
       Expression<T> Function($$BookTagMappingsTableAnnotationComposer a) f) {
     final $$BookTagMappingsTableAnnotationComposer composer = $composerBuilder(
         composer: this,
-        getCurrentColumn: (t) => t.id,
+        getCurrentColumn: (t) => t.bookKey,
         referencedTable: $db.bookTagMappings,
-        getReferencedColumn: (t) => t.bookId,
+        getReferencedColumn: (t) => t.bookKey,
         builder: (joinBuilder,
                 {$addJoinBuilderToRootComposer,
                 $removeJoinBuilderFromRootComposer}) =>
@@ -11235,7 +11216,7 @@ class $$EpubBooksTableTableManager extends RootTableManager<
           createComputedFieldComposer: () =>
               $$EpubBooksTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback: ({
-            Value<int> id = const Value.absent(),
+            Value<String> bookKey = const Value.absent(),
             Value<String> title = const Value.absent(),
             Value<String?> author = const Value.absent(),
             Value<String?> coverPath = const Value.absent(),
@@ -11246,9 +11227,10 @@ class $$EpubBooksTableTableManager extends RootTableManager<
             Value<String?> tocJson = const Value.absent(),
             Value<String?> sourceMetadata = const Value.absent(),
             Value<int> importedAt = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
           }) =>
               EpubBooksCompanion(
-            id: id,
+            bookKey: bookKey,
             title: title,
             author: author,
             coverPath: coverPath,
@@ -11259,9 +11241,10 @@ class $$EpubBooksTableTableManager extends RootTableManager<
             tocJson: tocJson,
             sourceMetadata: sourceMetadata,
             importedAt: importedAt,
+            rowid: rowid,
           ),
           createCompanionCallback: ({
-            Value<int> id = const Value.absent(),
+            required String bookKey,
             required String title,
             Value<String?> author = const Value.absent(),
             Value<String?> coverPath = const Value.absent(),
@@ -11272,9 +11255,10 @@ class $$EpubBooksTableTableManager extends RootTableManager<
             Value<String?> tocJson = const Value.absent(),
             Value<String?> sourceMetadata = const Value.absent(),
             required int importedAt,
+            Value<int> rowid = const Value.absent(),
           }) =>
               EpubBooksCompanion.insert(
-            id: id,
+            bookKey: bookKey,
             title: title,
             author: author,
             coverPath: coverPath,
@@ -11285,6 +11269,7 @@ class $$EpubBooksTableTableManager extends RootTableManager<
             tocJson: tocJson,
             sourceMetadata: sourceMetadata,
             importedAt: importedAt,
+            rowid: rowid,
           ),
           withReferenceMapper: (p0) => p0
               .map((e) => (
@@ -11314,7 +11299,7 @@ class $$EpubBooksTableTableManager extends RootTableManager<
                                 .bookmarksRefs,
                         referencedItemsForCurrentItem:
                             (item, referencedItems) => referencedItems
-                                .where((e) => e.ttuBookId == item.id),
+                                .where((e) => e.bookKey == item.bookKey),
                         typedResults: items),
                   if (bookTagMappingsRefs)
                     await $_getPrefetchedData<EpubBookRow, $EpubBooksTable,
@@ -11325,9 +11310,9 @@ class $$EpubBooksTableTableManager extends RootTableManager<
                         managerFromTypedResult: (p0) =>
                             $$EpubBooksTableReferences(db, table, p0)
                                 .bookTagMappingsRefs,
-                        referencedItemsForCurrentItem: (item,
-                                referencedItems) =>
-                            referencedItems.where((e) => e.bookId == item.id),
+                        referencedItemsForCurrentItem:
+                            (item, referencedItems) => referencedItems
+                                .where((e) => e.bookKey == item.bookKey),
                         typedResults: items)
                 ];
               },
@@ -11350,7 +11335,7 @@ typedef $$EpubBooksTableProcessedTableManager = ProcessedTableManager<
     PrefetchHooks Function({bool bookmarksRefs, bool bookTagMappingsRefs})>;
 typedef $$BookmarksTableCreateCompanionBuilder = BookmarksCompanion Function({
   Value<int> id,
-  required int ttuBookId,
+  required String bookKey,
   required int sectionIndex,
   required int normCharOffset,
   required String label,
@@ -11361,7 +11346,7 @@ typedef $$BookmarksTableCreateCompanionBuilder = BookmarksCompanion Function({
 });
 typedef $$BookmarksTableUpdateCompanionBuilder = BookmarksCompanion Function({
   Value<int> id,
-  Value<int> ttuBookId,
+  Value<String> bookKey,
   Value<int> sectionIndex,
   Value<int> normCharOffset,
   Value<String> label,
@@ -11375,16 +11360,16 @@ final class $$BookmarksTableReferences
     extends BaseReferences<_$HibikiDatabase, $BookmarksTable, BookmarkRow> {
   $$BookmarksTableReferences(super.$_db, super.$_table, super.$_typedResult);
 
-  static $EpubBooksTable _ttuBookIdTable(_$HibikiDatabase db) =>
+  static $EpubBooksTable _bookKeyTable(_$HibikiDatabase db) =>
       db.epubBooks.createAlias(
-          $_aliasNameGenerator(db.bookmarks.ttuBookId, db.epubBooks.id));
+          $_aliasNameGenerator(db.bookmarks.bookKey, db.epubBooks.bookKey));
 
-  $$EpubBooksTableProcessedTableManager get ttuBookId {
-    final $_column = $_itemColumn<int>('ttu_book_id')!;
+  $$EpubBooksTableProcessedTableManager get bookKey {
+    final $_column = $_itemColumn<String>('book_key')!;
 
     final manager = $$EpubBooksTableTableManager($_db, $_db.epubBooks)
-        .filter((f) => f.id.sqlEquals($_column));
-    final item = $_typedResult.readTableOrNull(_ttuBookIdTable($_db));
+        .filter((f) => f.bookKey.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_bookKeyTable($_db));
     if (item == null) return manager;
     return ProcessedTableManager(
         manager.$state.copyWith(prefetchedData: [item]));
@@ -11426,12 +11411,12 @@ class $$BookmarksTableFilterComposer
       column: $table.totalPagesInChapter,
       builder: (column) => ColumnFilters(column));
 
-  $$EpubBooksTableFilterComposer get ttuBookId {
+  $$EpubBooksTableFilterComposer get bookKey {
     final $$EpubBooksTableFilterComposer composer = $composerBuilder(
         composer: this,
-        getCurrentColumn: (t) => t.ttuBookId,
+        getCurrentColumn: (t) => t.bookKey,
         referencedTable: $db.epubBooks,
-        getReferencedColumn: (t) => t.id,
+        getReferencedColumn: (t) => t.bookKey,
         builder: (joinBuilder,
                 {$addJoinBuilderToRootComposer,
                 $removeJoinBuilderFromRootComposer}) =>
@@ -11484,12 +11469,12 @@ class $$BookmarksTableOrderingComposer
       column: $table.totalPagesInChapter,
       builder: (column) => ColumnOrderings(column));
 
-  $$EpubBooksTableOrderingComposer get ttuBookId {
+  $$EpubBooksTableOrderingComposer get bookKey {
     final $$EpubBooksTableOrderingComposer composer = $composerBuilder(
         composer: this,
-        getCurrentColumn: (t) => t.ttuBookId,
+        getCurrentColumn: (t) => t.bookKey,
         referencedTable: $db.epubBooks,
-        getReferencedColumn: (t) => t.id,
+        getReferencedColumn: (t) => t.bookKey,
         builder: (joinBuilder,
                 {$addJoinBuilderToRootComposer,
                 $removeJoinBuilderFromRootComposer}) =>
@@ -11538,12 +11523,12 @@ class $$BookmarksTableAnnotationComposer
   GeneratedColumn<int> get totalPagesInChapter => $composableBuilder(
       column: $table.totalPagesInChapter, builder: (column) => column);
 
-  $$EpubBooksTableAnnotationComposer get ttuBookId {
+  $$EpubBooksTableAnnotationComposer get bookKey {
     final $$EpubBooksTableAnnotationComposer composer = $composerBuilder(
         composer: this,
-        getCurrentColumn: (t) => t.ttuBookId,
+        getCurrentColumn: (t) => t.bookKey,
         referencedTable: $db.epubBooks,
-        getReferencedColumn: (t) => t.id,
+        getReferencedColumn: (t) => t.bookKey,
         builder: (joinBuilder,
                 {$addJoinBuilderToRootComposer,
                 $removeJoinBuilderFromRootComposer}) =>
@@ -11570,7 +11555,7 @@ class $$BookmarksTableTableManager extends RootTableManager<
     $$BookmarksTableUpdateCompanionBuilder,
     (BookmarkRow, $$BookmarksTableReferences),
     BookmarkRow,
-    PrefetchHooks Function({bool ttuBookId})> {
+    PrefetchHooks Function({bool bookKey})> {
   $$BookmarksTableTableManager(_$HibikiDatabase db, $BookmarksTable table)
       : super(TableManagerState(
           db: db,
@@ -11583,7 +11568,7 @@ class $$BookmarksTableTableManager extends RootTableManager<
               $$BookmarksTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback: ({
             Value<int> id = const Value.absent(),
-            Value<int> ttuBookId = const Value.absent(),
+            Value<String> bookKey = const Value.absent(),
             Value<int> sectionIndex = const Value.absent(),
             Value<int> normCharOffset = const Value.absent(),
             Value<String> label = const Value.absent(),
@@ -11594,7 +11579,7 @@ class $$BookmarksTableTableManager extends RootTableManager<
           }) =>
               BookmarksCompanion(
             id: id,
-            ttuBookId: ttuBookId,
+            bookKey: bookKey,
             sectionIndex: sectionIndex,
             normCharOffset: normCharOffset,
             label: label,
@@ -11605,7 +11590,7 @@ class $$BookmarksTableTableManager extends RootTableManager<
           ),
           createCompanionCallback: ({
             Value<int> id = const Value.absent(),
-            required int ttuBookId,
+            required String bookKey,
             required int sectionIndex,
             required int normCharOffset,
             required String label,
@@ -11616,7 +11601,7 @@ class $$BookmarksTableTableManager extends RootTableManager<
           }) =>
               BookmarksCompanion.insert(
             id: id,
-            ttuBookId: ttuBookId,
+            bookKey: bookKey,
             sectionIndex: sectionIndex,
             normCharOffset: normCharOffset,
             label: label,
@@ -11631,7 +11616,7 @@ class $$BookmarksTableTableManager extends RootTableManager<
                     $$BookmarksTableReferences(db, table, e)
                   ))
               .toList(),
-          prefetchHooksCallback: ({ttuBookId = false}) {
+          prefetchHooksCallback: ({bookKey = false}) {
             return PrefetchHooks(
               db: db,
               explicitlyWatchedTables: [],
@@ -11648,14 +11633,14 @@ class $$BookmarksTableTableManager extends RootTableManager<
                       dynamic,
                       dynamic,
                       dynamic>>(state) {
-                if (ttuBookId) {
+                if (bookKey) {
                   state = state.withJoin(
                     currentTable: table,
-                    currentColumn: table.ttuBookId,
+                    currentColumn: table.bookKey,
                     referencedTable:
-                        $$BookmarksTableReferences._ttuBookIdTable(db),
+                        $$BookmarksTableReferences._bookKeyTable(db),
                     referencedColumn:
-                        $$BookmarksTableReferences._ttuBookIdTable(db).id,
+                        $$BookmarksTableReferences._bookKeyTable(db).bookKey,
                   ) as T;
                 }
 
@@ -11680,7 +11665,7 @@ typedef $$BookmarksTableProcessedTableManager = ProcessedTableManager<
     $$BookmarksTableUpdateCompanionBuilder,
     (BookmarkRow, $$BookmarksTableReferences),
     BookmarkRow,
-    PrefetchHooks Function({bool ttuBookId})>;
+    PrefetchHooks Function({bool bookKey})>;
 typedef $$ReadingStatisticsTableCreateCompanionBuilder
     = ReadingStatisticsCompanion Function({
   Value<int> id,
@@ -12840,13 +12825,13 @@ typedef $$BookTagsTableProcessedTableManager = ProcessedTableManager<
 typedef $$BookTagMappingsTableCreateCompanionBuilder = BookTagMappingsCompanion
     Function({
   Value<int> id,
-  required int bookId,
+  required String bookKey,
   required int tagId,
 });
 typedef $$BookTagMappingsTableUpdateCompanionBuilder = BookTagMappingsCompanion
     Function({
   Value<int> id,
-  Value<int> bookId,
+  Value<String> bookKey,
   Value<int> tagId,
 });
 
@@ -12855,16 +12840,16 @@ final class $$BookTagMappingsTableReferences extends BaseReferences<
   $$BookTagMappingsTableReferences(
       super.$_db, super.$_table, super.$_typedResult);
 
-  static $EpubBooksTable _bookIdTable(_$HibikiDatabase db) =>
-      db.epubBooks.createAlias(
-          $_aliasNameGenerator(db.bookTagMappings.bookId, db.epubBooks.id));
+  static $EpubBooksTable _bookKeyTable(_$HibikiDatabase db) =>
+      db.epubBooks.createAlias($_aliasNameGenerator(
+          db.bookTagMappings.bookKey, db.epubBooks.bookKey));
 
-  $$EpubBooksTableProcessedTableManager get bookId {
-    final $_column = $_itemColumn<int>('book_id')!;
+  $$EpubBooksTableProcessedTableManager get bookKey {
+    final $_column = $_itemColumn<String>('book_key')!;
 
     final manager = $$EpubBooksTableTableManager($_db, $_db.epubBooks)
-        .filter((f) => f.id.sqlEquals($_column));
-    final item = $_typedResult.readTableOrNull(_bookIdTable($_db));
+        .filter((f) => f.bookKey.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_bookKeyTable($_db));
     if (item == null) return manager;
     return ProcessedTableManager(
         manager.$state.copyWith(prefetchedData: [item]));
@@ -12898,12 +12883,12 @@ class $$BookTagMappingsTableFilterComposer
   ColumnFilters<int> get id => $composableBuilder(
       column: $table.id, builder: (column) => ColumnFilters(column));
 
-  $$EpubBooksTableFilterComposer get bookId {
+  $$EpubBooksTableFilterComposer get bookKey {
     final $$EpubBooksTableFilterComposer composer = $composerBuilder(
         composer: this,
-        getCurrentColumn: (t) => t.bookId,
+        getCurrentColumn: (t) => t.bookKey,
         referencedTable: $db.epubBooks,
-        getReferencedColumn: (t) => t.id,
+        getReferencedColumn: (t) => t.bookKey,
         builder: (joinBuilder,
                 {$addJoinBuilderToRootComposer,
                 $removeJoinBuilderFromRootComposer}) =>
@@ -12951,12 +12936,12 @@ class $$BookTagMappingsTableOrderingComposer
   ColumnOrderings<int> get id => $composableBuilder(
       column: $table.id, builder: (column) => ColumnOrderings(column));
 
-  $$EpubBooksTableOrderingComposer get bookId {
+  $$EpubBooksTableOrderingComposer get bookKey {
     final $$EpubBooksTableOrderingComposer composer = $composerBuilder(
         composer: this,
-        getCurrentColumn: (t) => t.bookId,
+        getCurrentColumn: (t) => t.bookKey,
         referencedTable: $db.epubBooks,
-        getReferencedColumn: (t) => t.id,
+        getReferencedColumn: (t) => t.bookKey,
         builder: (joinBuilder,
                 {$addJoinBuilderToRootComposer,
                 $removeJoinBuilderFromRootComposer}) =>
@@ -13004,12 +12989,12 @@ class $$BookTagMappingsTableAnnotationComposer
   GeneratedColumn<int> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
 
-  $$EpubBooksTableAnnotationComposer get bookId {
+  $$EpubBooksTableAnnotationComposer get bookKey {
     final $$EpubBooksTableAnnotationComposer composer = $composerBuilder(
         composer: this,
-        getCurrentColumn: (t) => t.bookId,
+        getCurrentColumn: (t) => t.bookKey,
         referencedTable: $db.epubBooks,
-        getReferencedColumn: (t) => t.id,
+        getReferencedColumn: (t) => t.bookKey,
         builder: (joinBuilder,
                 {$addJoinBuilderToRootComposer,
                 $removeJoinBuilderFromRootComposer}) =>
@@ -13056,7 +13041,7 @@ class $$BookTagMappingsTableTableManager extends RootTableManager<
     $$BookTagMappingsTableUpdateCompanionBuilder,
     (BookTagMappingRow, $$BookTagMappingsTableReferences),
     BookTagMappingRow,
-    PrefetchHooks Function({bool bookId, bool tagId})> {
+    PrefetchHooks Function({bool bookKey, bool tagId})> {
   $$BookTagMappingsTableTableManager(
       _$HibikiDatabase db, $BookTagMappingsTable table)
       : super(TableManagerState(
@@ -13070,22 +13055,22 @@ class $$BookTagMappingsTableTableManager extends RootTableManager<
               $$BookTagMappingsTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback: ({
             Value<int> id = const Value.absent(),
-            Value<int> bookId = const Value.absent(),
+            Value<String> bookKey = const Value.absent(),
             Value<int> tagId = const Value.absent(),
           }) =>
               BookTagMappingsCompanion(
             id: id,
-            bookId: bookId,
+            bookKey: bookKey,
             tagId: tagId,
           ),
           createCompanionCallback: ({
             Value<int> id = const Value.absent(),
-            required int bookId,
+            required String bookKey,
             required int tagId,
           }) =>
               BookTagMappingsCompanion.insert(
             id: id,
-            bookId: bookId,
+            bookKey: bookKey,
             tagId: tagId,
           ),
           withReferenceMapper: (p0) => p0
@@ -13094,7 +13079,7 @@ class $$BookTagMappingsTableTableManager extends RootTableManager<
                     $$BookTagMappingsTableReferences(db, table, e)
                   ))
               .toList(),
-          prefetchHooksCallback: ({bookId = false, tagId = false}) {
+          prefetchHooksCallback: ({bookKey = false, tagId = false}) {
             return PrefetchHooks(
               db: db,
               explicitlyWatchedTables: [],
@@ -13111,14 +13096,15 @@ class $$BookTagMappingsTableTableManager extends RootTableManager<
                       dynamic,
                       dynamic,
                       dynamic>>(state) {
-                if (bookId) {
+                if (bookKey) {
                   state = state.withJoin(
                     currentTable: table,
-                    currentColumn: table.bookId,
+                    currentColumn: table.bookKey,
                     referencedTable:
-                        $$BookTagMappingsTableReferences._bookIdTable(db),
-                    referencedColumn:
-                        $$BookTagMappingsTableReferences._bookIdTable(db).id,
+                        $$BookTagMappingsTableReferences._bookKeyTable(db),
+                    referencedColumn: $$BookTagMappingsTableReferences
+                        ._bookKeyTable(db)
+                        .bookKey,
                   ) as T;
                 }
                 if (tagId) {
@@ -13153,7 +13139,7 @@ typedef $$BookTagMappingsTableProcessedTableManager = ProcessedTableManager<
     $$BookTagMappingsTableUpdateCompanionBuilder,
     (BookTagMappingRow, $$BookTagMappingsTableReferences),
     BookTagMappingRow,
-    PrefetchHooks Function({bool bookId, bool tagId})>;
+    PrefetchHooks Function({bool bookKey, bool tagId})>;
 typedef $$SrtBookTagMappingsTableCreateCompanionBuilder
     = SrtBookTagMappingsCompanion Function({
   Value<int> id,
@@ -14368,13 +14354,13 @@ typedef $$MediaTypeProfilesTableProcessedTableManager = ProcessedTableManager<
     PrefetchHooks Function({bool profileId})>;
 typedef $$BookProfilesTableCreateCompanionBuilder = BookProfilesCompanion
     Function({
-  required String bookUid,
+  required String bookKey,
   required int profileId,
   Value<int> rowid,
 });
 typedef $$BookProfilesTableUpdateCompanionBuilder = BookProfilesCompanion
     Function({
-  Value<String> bookUid,
+  Value<String> bookKey,
   Value<int> profileId,
   Value<int> rowid,
 });
@@ -14408,8 +14394,8 @@ class $$BookProfilesTableFilterComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  ColumnFilters<String> get bookUid => $composableBuilder(
-      column: $table.bookUid, builder: (column) => ColumnFilters(column));
+  ColumnFilters<String> get bookKey => $composableBuilder(
+      column: $table.bookKey, builder: (column) => ColumnFilters(column));
 
   $$ProfilesTableFilterComposer get profileId {
     final $$ProfilesTableFilterComposer composer = $composerBuilder(
@@ -14441,8 +14427,8 @@ class $$BookProfilesTableOrderingComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  ColumnOrderings<String> get bookUid => $composableBuilder(
-      column: $table.bookUid, builder: (column) => ColumnOrderings(column));
+  ColumnOrderings<String> get bookKey => $composableBuilder(
+      column: $table.bookKey, builder: (column) => ColumnOrderings(column));
 
   $$ProfilesTableOrderingComposer get profileId {
     final $$ProfilesTableOrderingComposer composer = $composerBuilder(
@@ -14474,8 +14460,8 @@ class $$BookProfilesTableAnnotationComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  GeneratedColumn<String> get bookUid =>
-      $composableBuilder(column: $table.bookUid, builder: (column) => column);
+  GeneratedColumn<String> get bookKey =>
+      $composableBuilder(column: $table.bookKey, builder: (column) => column);
 
   $$ProfilesTableAnnotationComposer get profileId {
     final $$ProfilesTableAnnotationComposer composer = $composerBuilder(
@@ -14521,22 +14507,22 @@ class $$BookProfilesTableTableManager extends RootTableManager<
           createComputedFieldComposer: () =>
               $$BookProfilesTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback: ({
-            Value<String> bookUid = const Value.absent(),
+            Value<String> bookKey = const Value.absent(),
             Value<int> profileId = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
               BookProfilesCompanion(
-            bookUid: bookUid,
+            bookKey: bookKey,
             profileId: profileId,
             rowid: rowid,
           ),
           createCompanionCallback: ({
-            required String bookUid,
+            required String bookKey,
             required int profileId,
             Value<int> rowid = const Value.absent(),
           }) =>
               BookProfilesCompanion.insert(
-            bookUid: bookUid,
+            bookKey: bookKey,
             profileId: profileId,
             rowid: rowid,
           ),
@@ -14741,7 +14727,6 @@ typedef $$SyncBaselinesTableProcessedTableManager = ProcessedTableManager<
     SyncBaselineRow,
     PrefetchHooks Function()>;
 typedef $$VideoBooksTableCreateCompanionBuilder = VideoBooksCompanion Function({
-  Value<int> id,
   required String bookUid,
   required String title,
   required String videoPath,
@@ -14755,9 +14740,9 @@ typedef $$VideoBooksTableCreateCompanionBuilder = VideoBooksCompanion Function({
   Value<int> currentEpisode,
   Value<String?> audioTrackId,
   Value<int> delayMs,
+  Value<int> rowid,
 });
 typedef $$VideoBooksTableUpdateCompanionBuilder = VideoBooksCompanion Function({
-  Value<int> id,
   Value<String> bookUid,
   Value<String> title,
   Value<String> videoPath,
@@ -14771,6 +14756,7 @@ typedef $$VideoBooksTableUpdateCompanionBuilder = VideoBooksCompanion Function({
   Value<int> currentEpisode,
   Value<String?> audioTrackId,
   Value<int> delayMs,
+  Value<int> rowid,
 });
 
 class $$VideoBooksTableFilterComposer
@@ -14782,9 +14768,6 @@ class $$VideoBooksTableFilterComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  ColumnFilters<int> get id => $composableBuilder(
-      column: $table.id, builder: (column) => ColumnFilters(column));
-
   ColumnFilters<String> get bookUid => $composableBuilder(
       column: $table.bookUid, builder: (column) => ColumnFilters(column));
 
@@ -14839,9 +14822,6 @@ class $$VideoBooksTableOrderingComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  ColumnOrderings<int> get id => $composableBuilder(
-      column: $table.id, builder: (column) => ColumnOrderings(column));
-
   ColumnOrderings<String> get bookUid => $composableBuilder(
       column: $table.bookUid, builder: (column) => ColumnOrderings(column));
 
@@ -14898,9 +14878,6 @@ class $$VideoBooksTableAnnotationComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  GeneratedColumn<int> get id =>
-      $composableBuilder(column: $table.id, builder: (column) => column);
-
   GeneratedColumn<String> get bookUid =>
       $composableBuilder(column: $table.bookUid, builder: (column) => column);
 
@@ -14967,7 +14944,6 @@ class $$VideoBooksTableTableManager extends RootTableManager<
           createComputedFieldComposer: () =>
               $$VideoBooksTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback: ({
-            Value<int> id = const Value.absent(),
             Value<String> bookUid = const Value.absent(),
             Value<String> title = const Value.absent(),
             Value<String> videoPath = const Value.absent(),
@@ -14981,9 +14957,9 @@ class $$VideoBooksTableTableManager extends RootTableManager<
             Value<int> currentEpisode = const Value.absent(),
             Value<String?> audioTrackId = const Value.absent(),
             Value<int> delayMs = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
           }) =>
               VideoBooksCompanion(
-            id: id,
             bookUid: bookUid,
             title: title,
             videoPath: videoPath,
@@ -14997,9 +14973,9 @@ class $$VideoBooksTableTableManager extends RootTableManager<
             currentEpisode: currentEpisode,
             audioTrackId: audioTrackId,
             delayMs: delayMs,
+            rowid: rowid,
           ),
           createCompanionCallback: ({
-            Value<int> id = const Value.absent(),
             required String bookUid,
             required String title,
             required String videoPath,
@@ -15013,9 +14989,9 @@ class $$VideoBooksTableTableManager extends RootTableManager<
             Value<int> currentEpisode = const Value.absent(),
             Value<String?> audioTrackId = const Value.absent(),
             Value<int> delayMs = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
           }) =>
               VideoBooksCompanion.insert(
-            id: id,
             bookUid: bookUid,
             title: title,
             videoPath: videoPath,
@@ -15029,6 +15005,7 @@ class $$VideoBooksTableTableManager extends RootTableManager<
             currentEpisode: currentEpisode,
             audioTrackId: audioTrackId,
             delayMs: delayMs,
+            rowid: rowid,
           ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))

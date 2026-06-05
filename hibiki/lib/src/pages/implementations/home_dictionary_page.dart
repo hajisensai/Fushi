@@ -428,41 +428,47 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
   // ── search results with nested popups ──────────────────────────────
 
   Widget _buildSearchResultBody() {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final Size screen = Size(constraints.maxWidth, constraints.maxHeight);
-        return Stack(
-          children: [
-            const SizedBox.shrink(
-              key: ValueKey<String>('home_dictionary_result_evidence'),
-            ),
-            DictionaryPopupWebView(
-              result: _result!,
-              onTextSelected: (text, localRect) {
-                _pushNestedPopup(text, localRect, replaceStack: true);
-              },
-              onLinkClick: (query, localRect) {
-                _pushNestedPopup(query, localRect, replaceStack: true);
-              },
-              onMineEntry: onMineEntry,
-              onDuplicateCheck: checkDuplicate,
-              onScrolledToBottom: _allLoaded ? null : _loadMore,
-            ),
-            if (_popupStack.isNotEmpty)
-              Positioned.fill(
-                child: GestureDetector(
-                  behavior: HitTestBehavior.translucent,
-                  onTap: () => _popNestedPopupAt(0),
-                  child: Container(
-                    color: Colors.transparent,
+    // 根因修复（BUG-054）：查词结果区是 DictionaryPopupWebView + 同坐标系嵌套弹窗的
+    // Stack，必须整块在中和器下渲染（净缩放=1），否则被全局「界面大小」的 FittedBox
+    // 拉糊。中和器包在 LayoutBuilder 外层 → 内层 constraints/screen 都是真实视口几何，
+    // WebView 与弹窗共用同一坐标系，selectionRect 定位不错位。
+    return HibikiAppUiScaleNeutralizer(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final Size screen = Size(constraints.maxWidth, constraints.maxHeight);
+          return Stack(
+            children: [
+              const SizedBox.shrink(
+                key: ValueKey<String>('home_dictionary_result_evidence'),
+              ),
+              DictionaryPopupWebView(
+                result: _result!,
+                onTextSelected: (text, localRect) {
+                  _pushNestedPopup(text, localRect, replaceStack: true);
+                },
+                onLinkClick: (query, localRect) {
+                  _pushNestedPopup(query, localRect, replaceStack: true);
+                },
+                onMineEntry: onMineEntry,
+                onDuplicateCheck: checkDuplicate,
+                onScrolledToBottom: _allLoaded ? null : _loadMore,
+              ),
+              if (_popupStack.isNotEmpty)
+                Positioned.fill(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.translucent,
+                    onTap: () => _popNestedPopupAt(0),
+                    child: Container(
+                      color: Colors.transparent,
+                    ),
                   ),
                 ),
-              ),
-            for (int i = 0; i < _popupStack.length; i++)
-              _buildNestedPopupLayer(i, screen),
-          ],
-        );
-      },
+              for (int i = 0; i < _popupStack.length; i++)
+                _buildNestedPopupLayer(i, screen),
+            ],
+          );
+        },
+      ),
     );
   }
 

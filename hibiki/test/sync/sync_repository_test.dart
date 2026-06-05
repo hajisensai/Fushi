@@ -178,9 +178,10 @@ void main() {
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
-      expect(await repo.getAudiobookPosition(7), 0); // default when unset
-      await repo.setAudiobookPosition(7, 1234);
-      expect(await repo.getAudiobookPosition(7), 1234);
+      expect(
+          await repo.getAudiobookPosition('book-7'), 0); // default when unset
+      await repo.setAudiobookPosition('book-7', 1234);
+      expect(await repo.getAudiobookPosition('book-7'), 1234);
     });
 
     test('uses the exact legacy key so old values read back identically',
@@ -190,12 +191,12 @@ void main() {
       final SyncRepository repo = SyncRepository(db);
 
       // Value written by older code paths (raw key + typed int codec).
-      await db.setPrefTyped<int>('audiobook_pos_7', 9);
-      expect(await repo.getAudiobookPosition(7), 9);
+      await db.setPrefTyped<int>('audiobook_pos_book-7', 9);
+      expect(await repo.getAudiobookPosition('book-7'), 9);
 
       // And the new setter writes to the same key the legacy readers use.
-      await repo.setAudiobookPosition(7, 55);
-      expect(await db.getPrefTyped<int>('audiobook_pos_7', 0), 55);
+      await repo.setAudiobookPosition('book-7', 55);
+      expect(await db.getPrefTyped<int>('audiobook_pos_book-7', 0), 55);
     });
   });
 

@@ -3,6 +3,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
+import 'package:hibiki/src/sync/sync_utils.dart';
 import 'package:hibiki/src/sync/webdav_ops.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
@@ -61,7 +62,7 @@ void main() {
         (String u, String t) async => u.contains('wan'));
 
     await backend.restoreAuth(repo);
-    backend.restoreCache(rootFolderId: 'http://lan:8765/ttu-reader-data/');
+    backend.restoreCache(rootFolderId: 'http://lan:8765/$kSyncRootFolderName/');
     await backend.ensureResolved();
 
     expect(backend.activeBaseUrl, WebDavOps.normalizeUrl('http://wan:8765'));
@@ -80,11 +81,11 @@ void main() {
         HibikiClientSyncBackend.withProbe((String u, String t) async => true);
 
     await backend.restoreAuth(repo);
-    backend.restoreCache(rootFolderId: 'http://lan:8765/ttu-reader-data/');
+    backend.restoreCache(rootFolderId: 'http://lan:8765/$kSyncRootFolderName/');
     await backend.ensureResolved();
 
     expect(backend.activeBaseUrl, WebDavOps.normalizeUrl('http://lan:8765'));
-    expect(backend.cachedRootFolderId, 'http://lan:8765/ttu-reader-data/');
+    expect(backend.cachedRootFolderId, 'http://lan:8765/$kSyncRootFolderName/');
   });
 
   test(

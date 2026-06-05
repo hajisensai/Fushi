@@ -83,14 +83,14 @@ void main() {
       // the reader is the paginated chapter view. Tapping a pre-existing shelf
       // book is unsafe: one with a saved audiobook reopens in lyrics mode, which
       // loads the lyrics page (not a chapter) and never injects window.hoshiCaret.
-      final int bookId = await _seedTestBook(tester, appModel);
+      final String bookKey = await _seedTestBook(tester, appModel);
       final navTargets = findPrimaryNavigationTargets();
       if (navTargets.isNotEmpty) {
         await tester.tap(navTargets.first);
         await tester.pumpAndSettle();
       }
       final String seededKey =
-          'book_entry_${ReaderHibikiSource.mediaIdentifierFor(bookId)}';
+          'book_entry_${ReaderHibikiSource.mediaIdentifierFor(bookKey)}';
       final Finder seededEntry = find.byKey(ValueKey<String>(seededKey));
       for (int i = 0; i < 40 && seededEntry.evaluate().isEmpty; i++) {
         await tester.pump(const Duration(milliseconds: 500));
@@ -321,9 +321,9 @@ ArchiveFile _jsonFile(String name, Object json) {
   return ArchiveFile(name, bytes.length, bytes);
 }
 
-Future<int> _seedTestBook(WidgetTester tester, AppModel appModel) async {
+Future<String> _seedTestBook(WidgetTester tester, AppModel appModel) async {
   final Uint8List bytes = EpubGenerator().generate();
-  final int bookId = await EpubImporter.import(
+  final String bookKey = await EpubImporter.import(
     db: appModel.database,
     bytes: bytes,
     fileName: 'test_popup_caret.epub',
@@ -333,5 +333,5 @@ Future<int> _seedTestBook(WidgetTester tester, AppModel appModel) async {
   );
   container.invalidate(hibikiBooksProvider(appModel.targetLanguage));
   await tester.pumpAndSettle();
-  return bookId;
+  return bookKey;
 }

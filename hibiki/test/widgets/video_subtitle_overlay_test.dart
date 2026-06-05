@@ -7,7 +7,7 @@ import 'package:hibiki_audio/hibiki_audio.dart';
 import 'widget_test_helpers.dart';
 
 AudioCue _cue(String t, int s, int e) => AudioCue()
-  ..bookUid = 'video/1'
+  ..bookKey = 'video/1'
   ..chapterHref = 'video://default'
   ..sentenceIndex = 0
   ..textFragmentId = ''

@@ -136,8 +136,6 @@
     "error_standard_profile_name_content": "Standart profil yeniden adlandırılamaz.",
     "error_ankidroid_api": "AnkiDroid hatası",
     "error_ankidroid_api_content": "AnkiDroid ile iletişimde bir sorun oluştu.\n\nAnkiDroid arka plan hizmetinin etkin olduğundan ve tüm ilgili uygulama izinlerinin verildiğinden emin olun.",
-    "info_standard_model": "Standart kart türü eklendi",
-    "info_standard_model_content": "『hibiki Kinomoto』 AnkiDroid'a yeni bir kart türü olarak eklendi.\n\nFarklı bir kart türü veya alan sırası kullanan kurulumlar yeni bir dışa aktarma profili ekleyerek kullanılabilir.",
     "error_model_missing": "Eksik kart türü",
     "error_model_missing_content": "Seçili profilin karşılık gelen kart türü eksik.\n\nProfil silinecek ve standart profil seçildi.",
     "error_model_changed": "Kart türü değişti",
@@ -1265,5 +1263,11 @@
     "video_settings_title": "Player settings",
     "video_setting_av_delay": "A/V delay",
     "video_setting_av_delay_hint": "Positive = picture leads text (shift cues back); negative = picture lags.",
-    "video_setting_speed": "Playback speed"
+    "video_setting_speed": "Playback speed",
+    "sync_compare_no_content": "Cloud data only — no book to download",
+    "anki_create_lapis": "Create Lapis deck",
+    "anki_create_lapis_hint": "Adds the Lapis note type and a Lapis deck to Anki, then selects them.",
+    "anki_create_lapis_success": "Lapis note type and deck created.",
+    "anki_create_lapis_exists": "Lapis note type and deck already exist — selected them.",
+    "anki_create_lapis_failed": "Could not create Lapis deck: $error"
 }

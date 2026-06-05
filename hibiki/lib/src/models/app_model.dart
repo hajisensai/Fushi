@@ -734,8 +734,6 @@ class AppModel with ChangeNotifier {
     final List<Language> availableLanguages = List<Language>.unmodifiable(
       [
         JapaneseLanguage.instance,
-        EnglishLanguage.instance,
-        ChineseLanguage.instance,
       ],
     );
 
@@ -1487,14 +1485,11 @@ class AppModel with ChangeNotifier {
         linkColor: linkColor,
       );
 
-  /// Get the target language from persisted preferences.
-  Language get targetLanguage {
-    String defaultLocaleTag = languages.values.first.locale.toLanguageTag();
-    String localeTag =
-        _getPref('target_language', defaultValue: defaultLocaleTag);
-
-    return languages[localeTag]!;
-  }
+  /// The lookup/segmentation language. Only one language is registered
+  /// (Japanese) and there is no picker, so this returns the sole registered
+  /// language directly — no persisted `target_language` pref, no map lookup
+  /// that could miss and crash.
+  Language get targetLanguage => languages.values.first;
 
   String get lastSelectedDeckName => prefsRepo.lastSelectedDeckName;
 
@@ -1534,16 +1529,6 @@ class AppModel with ChangeNotifier {
   }
 
   String? get lastSelectedModel => prefsRepo.lastSelectedModel;
-
-  /// Persist a new target language in preferences.
-  Future<void> setTargetLanguage(Language language) async {
-    String localeTag = language.locale.toLanguageTag();
-    await _setPref('target_language', localeTag);
-
-    language.initialise();
-
-    notifyListeners();
-  }
 
   /// Persist a new app locale in preferences. Restarts the app so every
   /// widget re-resolves [t] with the new locale (Method A lookups don't
@@ -1895,9 +1880,6 @@ class AppModel with ChangeNotifier {
 
   Future<void> requestAnkidroidPermissions() =>
       ankiIntegration.requestPermissions();
-
-  Future<void> addDefaultModelIfMissing() =>
-      ankiIntegration.addDefaultModelIfMissing(_ctx);
 
   Future<List<String>> getDecks() => ankiIntegration.getDecks(_ctx);
 

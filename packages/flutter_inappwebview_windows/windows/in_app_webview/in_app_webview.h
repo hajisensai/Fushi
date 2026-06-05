@@ -2,6 +2,9 @@
 #define FLUTTER_INAPPWEBVIEW_PLUGIN_IN_APP_WEBVIEW_H_
 
 #include <functional>
+#include <map>
+#include <set>
+#include <string>
 #include <WebView2.h>
 #include <wil/com.h>
 #include <windows.ui.composition.desktop.h>
@@ -183,6 +186,8 @@ namespace flutter_inappwebview_plugin
     }
 
     static bool isSslError(const COREWEBVIEW2_WEB_ERROR_STATUS& webErrorStatus);
+    void rememberMainFrameInjectedOk(const std::string& rawUrl);
+    bool consumeMainFrameInjectedOk(const std::string& rawUrl);
   private:
     // custom_platform_view
     winrt::com_ptr<ABI::Windows::UI::Composition::IVisual> surface_;
@@ -193,6 +198,9 @@ namespace flutter_inappwebview_plugin
     VirtualKeyState virtualKeys_;
 
     std::map<UINT64, std::shared_ptr<NavigationAction>> navigationActions_ = {};
+    // 已被 shouldInterceptRequest 注入 2xx 响应的主框架 document URL（去 fragment）。
+    // 用于 NavigationCompleted 纠正 hoshi.local 这类自定义拦截域的 DNS 假失败。
+    std::set<std::string> mainFrameInjectedOkUrls_ = {};
     std::shared_ptr<NavigationAction> lastNavigationAction_;
     bool isLoading_ = false;
     std::string pageFrameId_;

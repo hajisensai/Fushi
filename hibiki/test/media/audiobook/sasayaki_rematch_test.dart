@@ -24,7 +24,7 @@ void main() {
   group('SasayakiRematch.isEligible', () {
     Audiobook makeAb({String format = '', String path = ''}) {
       return Audiobook()
-        ..bookUid = 'test-book'
+        ..bookKey = 'test-book'
         ..alignmentFormat = format
         ..alignmentPath = path;
     }

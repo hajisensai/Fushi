@@ -714,7 +714,7 @@ void main() {
     ).readAsStringSync();
     final String srtCardChrome = _functionSource(
       source,
-      'Widget? _buildTagLabels(int bookId)',
+      'Widget? _buildTagLabels(String bookKey)',
       '  Widget _buildSrtCover(SrtBook book)',
     );
     final String epubCardChrome = _functionSource(
@@ -1144,33 +1144,19 @@ void main() {
     final String apiFlow = _functionSource(
       source,
       'Future<void> showApiMessage(BuildContext? ctx) async',
-      '  Future<void> addDefaultModelIfMissing(BuildContext? ctx) async',
-    );
-    final String modelFlow = _functionSource(
-      source,
-      'Future<void> addDefaultModelIfMissing(BuildContext? ctx) async',
       '  Future<List<String>> getDecks(BuildContext? ctx) async',
     );
     final String apiDialog = _sectionSource(
       source,
       'class AnkiApiMessageDialog',
-      'class AnkiDefaultModelDialog',
-    );
-    final String modelDialog = _sectionSource(
-      source,
-      'class AnkiDefaultModelDialog',
       source.length,
     );
 
     expect(apiFlow, contains('AnkiApiMessageDialog('));
-    expect(modelFlow, contains('AnkiDefaultModelDialog('));
     expect(apiFlow, isNot(contains('adaptiveAlertDialog(')));
-    expect(modelFlow, isNot(contains('adaptiveAlertDialog(')));
-    for (final String dialogSource in <String>[apiDialog, modelDialog]) {
-      expect(dialogSource, contains('HibikiDialogFrame('));
-      expect(dialogSource, contains('HibikiModalSheetFrame('));
-      expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
-    }
+    expect(apiDialog, contains('HibikiDialogFrame('));
+    expect(apiDialog, contains('HibikiModalSheetFrame('));
+    expect(apiDialog, isNot(contains('adaptiveAlertDialog(')));
   });
 
   test('update checker dialogs use shared MD3 dialog chrome', () {

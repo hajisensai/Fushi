@@ -161,8 +161,10 @@ void main() {
   test('deleting an epub book cascades tag mappings', () async {
     final db = await _openRealDb();
     final now = DateTime.now().millisecondsSinceEpoch;
-    final bookId = await db.into(db.epubBooks).insert(
+    const String bookKey = 'Book';
+    await db.into(db.epubBooks).insert(
           EpubBooksCompanion.insert(
+            bookKey: bookKey,
             title: 'Book',
             epubPath: '/tmp/book.epub',
             extractDir: '/tmp/book',
@@ -178,10 +180,11 @@ void main() {
           ),
         );
     await db.into(db.bookTagMappings).insert(
-          BookTagMappingsCompanion.insert(bookId: bookId, tagId: tagId),
+          BookTagMappingsCompanion.insert(bookKey: bookKey, tagId: tagId),
         );
 
-    await (db.delete(db.epubBooks)..where((t) => t.id.equals(bookId))).go();
+    await (db.delete(db.epubBooks)..where((t) => t.bookKey.equals(bookKey)))
+        .go();
 
     expect(await _count(db, 'book_tag_mappings'), 0);
   });

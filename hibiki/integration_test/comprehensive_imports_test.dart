@@ -35,8 +35,8 @@ void main() {
       final bool dictSeeded = await seedDictionary(tester);
       expect(dictSeeded, isTrue, reason: 'dictionary fixture must import');
 
-      final int bookId = await seedReaderBook(tester);
-      expect(bookId, greaterThan(0));
+      final String bookKey = await seedReaderBook(tester);
+      expect(bookKey, isNotEmpty);
       expect(findBookEntries(), findsWidgets);
 
       final ProviderContainer container = ProviderScope.containerOf(

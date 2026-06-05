@@ -152,8 +152,6 @@
     "error_standard_profile_name_content": "无法重命名标准配置。",
     "error_ankidroid_api": "AnkiDroid 错误",
     "error_ankidroid_api_content": "与 AnkiDroid 通信时出错。\n\n请确认 AnkiDroid 的后台服务已启用，并已授予所需权限。",
-    "info_standard_model": "已添加标准卡片类型",
-    "info_standard_model_content": "『hibiki Kinomoto』已作为新卡片类型添加至 AnkiDroid。\n\n如需使用其他卡片类型或字段顺序，可新建导出配置。",
     "error_model_missing": "缺少卡片类型",
     "error_model_missing_content": "当前配置对应的卡片类型已不存在。\n\n该配置将被删除，并自动切换到标准配置。",
     "error_model_changed": "卡片类型已变更",
@@ -1265,5 +1263,11 @@
     "video_settings_title": "播放设置",
     "video_setting_av_delay": "音画延迟",
     "video_setting_av_delay_hint": "正数 = 画面先于文字（向回拨字幕）；负数 = 画面滞后。",
-    "video_setting_speed": "播放速度"
+    "video_setting_speed": "播放速度",
+    "sync_compare_no_content": "仅云端数据，无可下载书籍",
+    "anki_create_lapis": "创建 Lapis 卡组",
+    "anki_create_lapis_hint": "向 Anki 添加 Lapis 笔记类型和 Lapis 卡组并自动选中。",
+    "anki_create_lapis_success": "已创建 Lapis 笔记类型和卡组。",
+    "anki_create_lapis_exists": "Lapis 笔记类型和卡组已存在，已选中。",
+    "anki_create_lapis_failed": "无法创建 Lapis 卡组：$error"
 }

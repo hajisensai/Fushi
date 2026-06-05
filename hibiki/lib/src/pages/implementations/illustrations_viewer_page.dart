@@ -3,7 +3,6 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
-import 'package:hibiki/src/epub/epub_storage.dart';
 import 'package:hibiki/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent;
 import 'package:hibiki/src/shortcuts/input_binding.dart' show GamepadButton;
@@ -12,12 +11,14 @@ import 'package:hibiki/utils.dart';
 class IllustrationsViewerPage extends StatefulWidget {
   const IllustrationsViewerPage({
     required this.bookTitle,
-    required this.bookId,
+    required this.extractDir,
     super.key,
   });
 
   final String bookTitle;
-  final int bookId;
+
+  /// The book's on-disk extracted directory (`EpubBooks.extractDir`).
+  final String extractDir;
 
   @override
   State<IllustrationsViewerPage> createState() =>
@@ -47,7 +48,7 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
 
   Future<void> _extractImages() async {
     try {
-      final String extractDir = await EpubStorage.bookDirectory(widget.bookId);
+      final String extractDir = widget.extractDir;
       final Directory dir = Directory(extractDir);
       if (!dir.existsSync()) {
         if (mounted) {

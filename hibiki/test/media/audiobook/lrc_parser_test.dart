@@ -13,7 +13,7 @@ void main() {
 [00:04.50]名前はまだない。
 [00:08.20]どこで生れたかとんと見当がつかぬ。
 ''',
-        bookUid: 'test/book.lrc',
+        bookKey: 'test/book.lrc',
       );
 
       expect(cues.length, 3);
@@ -24,7 +24,7 @@ void main() {
       expect(cues[0].text, '吾輩は猫である。');
       expect(cues[0].textFragmentId, '[data-cue-id="0"]');
       expect(cues[0].chapterHref, LrcParser.defaultChapter);
-      expect(cues[0].bookUid, 'test/book.lrc');
+      expect(cues[0].bookKey, 'test/book.lrc');
       expect(cues[0].audioFileIndex, 0);
 
       expect(cues[1].sentenceIndex, 1);
@@ -48,7 +48,7 @@ void main() {
 [by:Creator]
 [00:01.00]テキスト行のみ
 ''',
-        bookUid: 'test/book.lrc',
+        bookKey: 'test/book.lrc',
       );
 
       expect(cues.length, 1);
@@ -60,7 +60,7 @@ void main() {
         content: '''
 [00:01.00][00:10.00]リフレイン歌詞
 ''',
-        bookUid: 'test/book.lrc',
+        bookKey: 'test/book.lrc',
       );
 
       expect(cues.length, 2);
@@ -76,7 +76,7 @@ void main() {
         content: '''
 [00:01.00]<00:01.00>吾輩<00:01.50>は<00:01.80>猫
 ''',
-        bookUid: 'test/book.lrc',
+        bookKey: 'test/book.lrc',
       );
 
       expect(cues.length, 1);
@@ -88,7 +88,7 @@ void main() {
         content: '''
 [01:02:03.45]長時間ファイル
 ''',
-        bookUid: 'test/book.lrc',
+        bookKey: 'test/book.lrc',
       );
 
       expect(cues.length, 1);
@@ -99,7 +99,7 @@ void main() {
     test('带 UTF-8 BOM 的内容正常解析', () {
       final List<AudioCue> cues = LrcParser.parseString(
         content: '\uFEFF[00:01.00]BOM テスト\n',
-        bookUid: 'test/book.lrc',
+        bookKey: 'test/book.lrc',
       );
 
       expect(cues.length, 1);
@@ -109,7 +109,7 @@ void main() {
     test('空文件返回空列表', () {
       final List<AudioCue> cues = LrcParser.parseString(
         content: '',
-        bookUid: 'test/book.lrc',
+        bookKey: 'test/book.lrc',
       );
 
       expect(cues, isEmpty);
@@ -122,7 +122,7 @@ void main() {
     test('lastCueDurationMs 可自定义', () {
       final List<AudioCue> cues = LrcParser.parseString(
         content: '[00:05.00]テスト\n',
-        bookUid: 'test/book.lrc',
+        bookKey: 'test/book.lrc',
         lastCueDurationMs: 3000,
       );
 
@@ -133,7 +133,7 @@ void main() {
     test('逗号分隔毫秒也能解析', () {
       final List<AudioCue> cues = LrcParser.parseString(
         content: '[00:01,50]コンマ区切り\n',
-        bookUid: 'test/book.lrc',
+        bookKey: 'test/book.lrc',
       );
 
       expect(cues.length, 1);

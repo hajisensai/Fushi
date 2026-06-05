@@ -82,7 +82,7 @@ L'interface prend en charge les langues suivantes :
 
 | Couche | Technologie |
 |---|---|
-| Framework | Flutter 3.41.6 (Dart SDK `>=3.5.0 <4.0.0`) |
+| Framework | Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`) |
 | Plateforme | Android / iOS / macOS / Windows / Linux (Material 3 + Cupertino adaptatif) |
 | Lecteur | Moteur de pagination WebView (dérivé de [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader)) |
 | Stockage | Drift (SQLite, WAL) + hoshidicts (moteur de dictionnaires C++ FFI) |
@@ -110,7 +110,7 @@ flutter build apk --release --target-platform android-arm64 --split-per-abi
 
 ## Dépendances et patchs
 
-Ce projet est verrouillé sur Flutter 3.41.6 ; certaines dépendances en amont ne sont pas encore adaptées. Les corrections suivent deux voies : ① les packages qui doivent servir d'entrée de build et être reproduits de façon cohérente entre machines sont directement vendorés sous `third_party/` et référencés via `dependency_overrides` (`network_to_file_image` / `carousel_slider` / `fading_edge_scrollview` / `flutter_inappwebview_android`, **aucun** patch de pub cache nécessaire) ; ② les autres packages sont corrigés dans le code source du pub cache par `ci/apply-patches.sh`. Détails du mécanisme dans [docs/agent/build.md](../agent/build.md). Les tableaux dépliables ci-dessous sont une liste historique groupée par modification ; en cas de chevauchement avec le mécanisme ①, la version vendorée fait foi.
+Ce projet est verrouillé sur Flutter 3.44.0 ; certaines dépendances en amont ne sont pas encore adaptées. Les corrections suivent deux voies : ① les packages qui doivent servir d'entrée de build et être reproduits de façon cohérente entre machines sont directement vendorés sous `third_party/` et référencés via `dependency_overrides` (`network_to_file_image` / `carousel_slider` / `fading_edge_scrollview` / `flutter_inappwebview_android`, **aucun** patch de pub cache nécessaire) ; ② les autres packages sont corrigés dans le code source du pub cache par `ci/apply-patches.sh`. Détails du mécanisme dans [docs/agent/build.md](../agent/build.md). Les tableaux dépliables ci-dessous sont une liste historique groupée par modification ; en cas de chevauchement avec le mécanisme ①, la version vendorée fait foi.
 
 <details>
 <summary><b>Patchs de changements d'API Flutter</b></summary>
@@ -130,7 +130,7 @@ Ce projet est verrouillé sur Flutter 3.41.6 ; certaines dépendances en amont n
 <details>
 <summary><b>Patchs de suppression de l'embedding v1</b></summary>
 
-Flutter 3.41.6 a entièrement supprimé l'API d'embedding v1 (`PluginRegistry.Registrar`). Les plugins suivants nécessitent la suppression des références correspondantes :
+Flutter 3.44.0 a entièrement supprimé l'API d'embedding v1 (`PluginRegistry.Registrar`). Les plugins suivants nécessitent la suppression des références correspondantes :
 
 `flutter_plugin_android_lifecycle` · `file_picker` · `flutter_inappwebview` · `fluttertoast` · `image_picker_android` · `mecab_dart` · `permission_handler_android` · `url_launcher_android` · `path_provider_android` · `sqflite` · `record_mp3_plus`
 

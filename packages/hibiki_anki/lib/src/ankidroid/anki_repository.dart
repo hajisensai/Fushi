@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../anki_models.dart';
 import '../base_anki_repository.dart';
+import '../lapis_note_type.dart';
 
 class AnkiRepository extends BaseAnkiRepository {
   static const _channel = MethodChannel('app.hibiki.reader/anki');
@@ -264,6 +265,36 @@ class AnkiRepository extends BaseAnkiRepository {
       debugPrint('AnkiRepository.isDuplicate: $e\n$stack');
       return false;
     }
+  }
+
+  @override
+  Future<bool> createNoteType(AnkiNoteTypeTemplate template) async {
+    await _channel.invokeMethod('requestAnkidroidPermissions');
+    final models = await _channel.invokeMethod('getModelList') as Map?;
+    final exists =
+        models?.values.any((v) => v?.toString() == template.name) ?? false;
+    if (exists) return false;
+    await _channel.invokeMethod('createNoteType', <String, dynamic>{
+      'noteTypeName': template.name,
+      'noteTypeFields': template.fields,
+      'cardName': template.cardName,
+      'front': template.front,
+      'back': template.back,
+      'css': template.css,
+    });
+    return true;
+  }
+
+  @override
+  Future<bool> createDeck(String name) async {
+    await _channel.invokeMethod('requestAnkidroidPermissions');
+    final decks = await _channel.invokeMethod('getDecks') as Map?;
+    final exists = decks?.values.any((v) => v?.toString() == name) ?? false;
+    if (exists) return false;
+    await _channel.invokeMethod('createDeck', <String, dynamic>{
+      'deckName': name,
+    });
+    return true;
   }
 
   Future<String?> _addCoverImage(String path) async {

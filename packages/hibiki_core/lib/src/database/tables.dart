@@ -57,7 +57,7 @@ class SearchHistoryItems extends Table {
 @DataClassName('AudiobookRow')
 class Audiobooks extends Table {
   IntColumn get id => integer().autoIncrement()();
-  TextColumn get bookUid => text().unique()();
+  TextColumn get bookKey => text().unique()();
   TextColumn get audioRoot => text().nullable()();
   TextColumn get audioPathsJson => text().nullable()();
   TextColumn get alignmentFormat => text()();
@@ -73,7 +73,7 @@ class Audiobooks extends Table {
 @DataClassName('AudioCueRow')
 class AudioCues extends Table {
   IntColumn get id => integer().autoIncrement()();
-  TextColumn get bookUid => text()();
+  TextColumn get bookKey => text()();
   TextColumn get chapterHref => text()();
   IntColumn get sentenceIndex => integer()();
   TextColumn get textFragmentId => text()();
@@ -95,14 +95,15 @@ class SrtBooks extends Table {
   TextColumn get srtPath => text()();
   TextColumn get coverPath => text().nullable()();
   IntColumn get importedAt => integer()();
-  IntColumn get ttuBookId => integer().withDefault(const Constant(0))();
+  // Standalone SRT books (no backing epub) use the empty-string sentinel.
+  TextColumn get bookKey => text().withDefault(const Constant(''))();
 }
 
 // ── reader_positions ────────────────────────────────────────────────
 @DataClassName('ReaderPositionRow')
 class ReaderPositions extends Table {
   IntColumn get id => integer().autoIncrement()();
-  IntColumn get ttuBookId => integer().unique()();
+  TextColumn get bookKey => text().unique()();
   IntColumn get sectionIndex => integer()();
   IntColumn get normCharOffset => integer()();
   IntColumn get ttuCharOffset => integer().withDefault(const Constant(-1))();
@@ -113,8 +114,8 @@ class ReaderPositions extends Table {
 @DataClassName('BookmarkRow')
 class Bookmarks extends Table {
   IntColumn get id => integer().autoIncrement()();
-  IntColumn get ttuBookId =>
-      integer().references(EpubBooks, #id, onDelete: KeyAction.cascade)();
+  TextColumn get bookKey =>
+      text().references(EpubBooks, #bookKey, onDelete: KeyAction.cascade)();
   IntColumn get sectionIndex => integer()();
   IntColumn get normCharOffset => integer()();
   TextColumn get label => text()();
@@ -192,7 +193,8 @@ class DictionaryHistory extends Table {
 // ── epub_books ─────────────────────────────────────────────────────
 @DataClassName('EpubBookRow')
 class EpubBooks extends Table {
-  IntColumn get id => integer().autoIncrement()();
+  // bookKey = sanitizeTtuFilename(title): the cross-device book identity.
+  TextColumn get bookKey => text()();
   TextColumn get title => text()();
   TextColumn get author => text().nullable()();
   TextColumn get coverPath => text().nullable()();
@@ -203,6 +205,9 @@ class EpubBooks extends Table {
   TextColumn get tocJson => text().nullable()();
   TextColumn get sourceMetadata => text().nullable()();
   IntColumn get importedAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => {bookKey};
 }
 
 // ── book_tags ──────────────────────────────────────────────────────
@@ -220,14 +225,14 @@ class BookTags extends Table {
 @DataClassName('BookTagMappingRow')
 class BookTagMappings extends Table {
   IntColumn get id => integer().autoIncrement()();
-  IntColumn get bookId =>
-      integer().references(EpubBooks, #id, onDelete: KeyAction.cascade)();
+  TextColumn get bookKey =>
+      text().references(EpubBooks, #bookKey, onDelete: KeyAction.cascade)();
   IntColumn get tagId =>
       integer().references(BookTags, #id, onDelete: KeyAction.cascade)();
 
   @override
   List<Set<Column>> get uniqueKeys => [
-        {bookId, tagId},
+        {bookKey, tagId},
       ];
 }
 
@@ -285,12 +290,12 @@ class MediaTypeProfiles extends Table {
 // ── book_profiles ───────────────────────────────────────────────────
 @DataClassName('BookProfileRow')
 class BookProfiles extends Table {
-  TextColumn get bookUid => text()();
+  TextColumn get bookKey => text()();
   IntColumn get profileId =>
       integer().references(Profiles, #id, onDelete: KeyAction.cascade)();
 
   @override
-  Set<Column> get primaryKey => {bookUid};
+  Set<Column> get primaryKey => {bookKey};
 }
 
 // ── sync_baselines ──────────────────────────────────────────────────
@@ -309,8 +314,10 @@ class SyncBaselines extends Table {
 // ── video_books ─────────────────────────────────────────────────────
 @DataClassName('VideoBookRow')
 class VideoBooks extends Table {
-  IntColumn get id => integer().autoIncrement()();
-  TextColumn get bookUid => text().unique()();
+  // Primary key is book_uid (content-derived), aligned with the name-PK model
+  // (EpubBooks keys on bookKey). No autoincrement id: a video book's identity
+  // is its book_uid so it stays stable across devices/reimports.
+  TextColumn get bookUid => text()();
   TextColumn get title => text()();
   TextColumn get videoPath => text()();
   TextColumn get subtitleSource => text().nullable()();
@@ -333,4 +340,7 @@ class VideoBooks extends Table {
   /// 音画延迟（毫秒）：正值=画面先于文字，查 cue 时把位置往回拨，让字幕与画面对齐。
   /// 跨重启保留；多集播放列表换集时复用同一值（手动校准一次全片受用）。
   IntColumn get delayMs => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column> get primaryKey => {bookUid};
 }

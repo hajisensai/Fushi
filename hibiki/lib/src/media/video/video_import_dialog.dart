@@ -79,14 +79,14 @@ List<AudioCue> parseSubtitleCues({
   final List<AudioCue> cues;
   switch (normalized) {
     case 'srt':
-      cues = SrtParser.parseString(content: content, bookUid: bookUid);
+      cues = SrtParser.parseString(content: content, bookKey: bookUid);
       break;
     case 'vtt':
-      cues = VttParser.parseString(content: content, bookUid: bookUid);
+      cues = VttParser.parseString(content: content, bookKey: bookUid);
       break;
     case 'ass':
     case 'ssa':
-      cues = AssParser.parseString(content: content, bookUid: bookUid);
+      cues = AssParser.parseString(content: content, bookKey: bookUid);
       break;
     default:
       throw ArgumentError.value(

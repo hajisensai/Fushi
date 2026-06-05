@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import '../anki_service.dart';
+import '../lapis_note_type.dart';
 
 class AnkiConnectService implements AnkiService {
   final String host;
@@ -13,11 +14,14 @@ class AnkiConnectService implements AnkiService {
   /// "valid api key must be provided". Empty means no key (the default).
   final String apiKey;
 
+  final http.Client _client;
+
   AnkiConnectService({
     this.host = 'localhost',
     this.port = 8765,
     this.apiKey = '',
-  });
+    http.Client? client,
+  }) : _client = client ?? http.Client();
 
   static const _timeout = Duration(seconds: 10);
 
@@ -31,7 +35,7 @@ class AnkiConnectService implements AnkiService {
       // not expect the field, and sending an empty one is needless.
       if (apiKey.isNotEmpty) 'key': apiKey,
     });
-    final response = await http.post(
+    final response = await _client.post(
       Uri.parse('http://$host:$port'),
       body: body,
       headers: {'Content-Type': 'application/json'},
@@ -178,6 +182,26 @@ class AnkiConnectService implements AnkiService {
       if (data != null) 'data': data,
       if (path != null) 'path': path,
     });
+  }
+
+  Future<void> createModel(AnkiNoteTypeTemplate template) async {
+    await _request('createModel', {
+      'modelName': template.name,
+      'inOrderFields': template.fields,
+      'css': template.css,
+      'isCloze': false,
+      'cardTemplates': [
+        {
+          'Name': template.cardName,
+          'Front': template.front,
+          'Back': template.back,
+        },
+      ],
+    });
+  }
+
+  Future<void> createDeck(String name) async {
+    await _request('createDeck', {'deck': name});
   }
 }
 

@@ -35,21 +35,6 @@ class AnkiIntegration {
     );
   }
 
-  Future<void> addDefaultModelIfMissing(BuildContext? ctx) async {
-    if (!Platform.isAndroid) return;
-    List<String> models = await getModelList(ctx);
-    if (!models.contains('Lapis')) {
-      methodChannel.invokeMethod('addDefaultModel');
-      if (ctx == null || !ctx.mounted) return;
-      await showAppDialog(
-        context: ctx,
-        builder: (context) => AnkiDefaultModelDialog(
-          onClose: () => Navigator.pop(context),
-        ),
-      );
-    }
-  }
-
   Future<List<String>> getDecks(BuildContext? ctx) async {
     try {
       Map<dynamic, dynamic> result =
@@ -142,54 +127,6 @@ class AnkiApiMessageDialog extends StatelessWidget {
               onPressed: onLaunch,
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-@visibleForTesting
-class AnkiDefaultModelDialog extends StatelessWidget {
-  const AnkiDefaultModelDialog({
-    required this.onClose,
-    super.key,
-  });
-
-  final VoidCallback onClose;
-
-  @override
-  Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-
-    return HibikiDialogFrame(
-      maxWidth: 460,
-      maxHeightFactor: 0.76,
-      child: HibikiModalSheetFrame(
-        title: t.info_standard_model,
-        leadingIcon: Icons.note_add_outlined,
-        bodyPadding: EdgeInsets.fromLTRB(
-          tokens.spacing.card,
-          0,
-          tokens.spacing.card,
-          tokens.spacing.gap,
-        ),
-        footerPadding: EdgeInsets.fromLTRB(
-          tokens.spacing.card,
-          tokens.spacing.gap,
-          tokens.spacing.card,
-          tokens.spacing.card,
-        ),
-        body: Text(
-          t.info_standard_model_content,
-          style: tokens.type.listSubtitle,
-        ),
-        footer: Align(
-          alignment: Alignment.centerRight,
-          child: adaptiveDialogAction(
-            context: context,
-            child: Text(t.dialog_close),
-            onPressed: onClose,
-          ),
         ),
       ),
     );

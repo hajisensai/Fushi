@@ -136,8 +136,6 @@
     "error_standard_profile_name_content": "لا يمكن إعادة تسمية الملف الشخصي القياسي.",
     "error_ankidroid_api": "خطأ في AnkiDroid",
     "error_ankidroid_api_content": "حدث خطأ في التواصل مع AnkiDroid.\n\nتأكد من أن خدمة AnkiDroid الخلفية نشطة وتم منح جميع الأذونات المطلوبة.",
-    "info_standard_model": "تمت إضافة نوع البطاقة القياسي",
-    "info_standard_model_content": "تمت إضافة『hibiki Kinomoto』إلى AnkiDroid كنوع بطاقة جديد.\n\nيمكن استخدام أنواع بطاقات أخرى بإضافة ملف شخصي تصدير جديد.",
     "error_model_missing": "نوع البطاقة مفقود",
     "error_model_missing_content": "نوع البطاقة المرتبط بالملف الشخصي المحدد مفقود.\n\nسيتم حذف الملف الشخصي والتبديل إلى الملف القياسي.",
     "error_model_changed": "تغيّر نوع البطاقة",
@@ -1265,5 +1263,11 @@
     "video_settings_title": "Player settings",
     "video_setting_av_delay": "A/V delay",
     "video_setting_av_delay_hint": "Positive = picture leads text (shift cues back); negative = picture lags.",
-    "video_setting_speed": "Playback speed"
+    "video_setting_speed": "Playback speed",
+    "sync_compare_no_content": "Cloud data only — no book to download",
+    "anki_create_lapis": "Create Lapis deck",
+    "anki_create_lapis_hint": "Adds the Lapis note type and a Lapis deck to Anki, then selects them.",
+    "anki_create_lapis_success": "Lapis note type and deck created.",
+    "anki_create_lapis_exists": "Lapis note type and deck already exist — selected them.",
+    "anki_create_lapis_failed": "Could not create Lapis deck: $error"
 }

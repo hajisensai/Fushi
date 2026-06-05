@@ -38,6 +38,7 @@ void main() {
     await srcRepo.setAutoSyncEnabled(false); // backup's behavior flag
     await srcRepo.setRootFolderId('backup-root');
     await srcDb.insertEpubBook(EpubBooksCompanion.insert(
+      bookKey: 'かがみの孤城',
       title: 'かがみの孤城',
       epubPath: '/fake/kagami.epub',
       extractDir: '/fake/extract',

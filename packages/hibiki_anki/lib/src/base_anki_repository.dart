@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'anki_models.dart';
+import 'lapis_note_type.dart';
 import 'lapis_preset.dart';
 
 abstract class BaseAnkiRepository {
@@ -44,6 +45,15 @@ abstract class BaseAnkiRepository {
   });
 
   Future<bool> isDuplicate(String expression, String reading);
+
+  /// Create [template] as a note type in the backend. Idempotent: returns
+  /// `false` if a note type with that name already exists (no-op), `true` if
+  /// newly created. Throws on backend failure (not-reachable, permission).
+  Future<bool> createNoteType(AnkiNoteTypeTemplate template);
+
+  /// Create a deck by [name]. Idempotent: returns `false` if it already
+  /// exists, `true` if newly created. Throws on backend failure.
+  Future<bool> createDeck(String name);
 
   @protected
   AnkiDeck selectDeckAfterFetch(List<AnkiDeck> decks, AnkiSettings current) =>

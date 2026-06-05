@@ -88,19 +88,27 @@ void DictionaryQuery::add_dict(const std::string& path, DictionaryType type) {
   }
 
   Dictionary dict;
-  Index index;
   {
     std::ifstream index_in(hoshi::fs_path(path + "/index.json"), std::ios::binary);
     if (!index_in) {
       return;
     }
     std::string index_buf((std::istreambuf_iterator<char>(index_in)), {});
+    Index index;
     if (glz::read_json(index, index_buf)) {
       return;
     }
+    // Index::title is a std::string_view into index_buf (glaze parses strings
+    // zero-copy). It MUST be copied into the owned dict.name *before* index_buf
+    // leaves this scope. Reading index.title after the buffer was freed was a
+    // use-after-free: the recycled heap chunk had its leading bytes overwritten
+    // by an allocator free-list pointer, so dict.name became
+    // "<garbage prefix> + <tail of title>" — rendered as U+FFFD (garbled
+    // dictionary labels in the popup). Keep the copy inside the buffer's scope.
+    dict.name = index.title.empty()
+                    ? hoshi::fs_to_utf8(hoshi::fs_path(path).stem())
+                    : std::string(index.title);
   }
-
-  dict.name = index.title.empty() ? hoshi::fs_to_utf8(hoshi::fs_path(path).stem()) : index.title;
   if (std::filesystem::exists(hoshi::fs_path(path + "/styles.css"))) {
     std::ifstream f(hoshi::fs_path(path + "/styles.css"));
     dict.styles = std::string(std::istreambuf_iterator<char>(f), {});

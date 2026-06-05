@@ -82,7 +82,7 @@ Die Oberfläche unterstützt folgende Sprachen:
 
 | Schicht | Technologie |
 |---|---|
-| Framework | Flutter 3.41.6 (Dart SDK `>=3.5.0 <4.0.0`) |
+| Framework | Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`) |
 | Plattform | Android / iOS / macOS / Windows / Linux (Material 3 + Cupertino adaptiv) |
 | Reader | WebView-Seitenumbruch-Engine (abgeleitet von [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader)) |
 | Speicher | Drift (SQLite, WAL) + hoshidicts (C++ FFI Wörterbuch-Engine) |
@@ -110,7 +110,7 @@ flutter build apk --release --target-platform android-arm64 --split-per-abi
 
 ## Abhängigkeiten und Patches
 
-Dieses Projekt ist auf Flutter 3.41.6 festgelegt; einige Upstream-Abhängigkeiten sind noch nicht angepasst. Die Korrekturen laufen über zwei Wege: ① Pakete, die als Build-Eingabe maschinenübergreifend konsistent reproduzierbar sein müssen, werden direkt unter `third_party/` vendort und per `dependency_overrides` referenziert (`network_to_file_image` / `carousel_slider` / `fading_edge_scrollview` / `flutter_inappwebview_android`, **kein** Pub-Cache-Patch nötig); ② die übrigen Pakete werden von `ci/apply-patches.sh` im Pub-Cache-Quellcode gepatcht. Mechanismus-Details siehe [docs/agent/build.md](../agent/build.md). Die folgenden Klapptabellen sind eine nach Änderung gruppierte historische Liste; bei Überschneidung mit Mechanismus ① gilt die vendorte Version.
+Dieses Projekt ist auf Flutter 3.44.0 festgelegt; einige Upstream-Abhängigkeiten sind noch nicht angepasst. Die Korrekturen laufen über zwei Wege: ① Pakete, die als Build-Eingabe maschinenübergreifend konsistent reproduzierbar sein müssen, werden direkt unter `third_party/` vendort und per `dependency_overrides` referenziert (`network_to_file_image` / `carousel_slider` / `fading_edge_scrollview` / `flutter_inappwebview_android`, **kein** Pub-Cache-Patch nötig); ② die übrigen Pakete werden von `ci/apply-patches.sh` im Pub-Cache-Quellcode gepatcht. Mechanismus-Details siehe [docs/agent/build.md](../agent/build.md). Die folgenden Klapptabellen sind eine nach Änderung gruppierte historische Liste; bei Überschneidung mit Mechanismus ① gilt die vendorte Version.
 
 <details>
 <summary><b>Flutter-API-Änderungspatches</b></summary>
@@ -130,7 +130,7 @@ Dieses Projekt ist auf Flutter 3.41.6 festgelegt; einige Upstream-Abhängigkeite
 <details>
 <summary><b>v1-Embedding-Entfernungspatches</b></summary>
 
-Flutter 3.41.6 hat die v1-Embedding-API (`PluginRegistry.Registrar`) vollständig entfernt. Die folgenden Plugins erfordern das Entfernen der entsprechenden Referenzen:
+Flutter 3.44.0 hat die v1-Embedding-API (`PluginRegistry.Registrar`) vollständig entfernt. Die folgenden Plugins erfordern das Entfernen der entsprechenden Referenzen:
 
 `flutter_plugin_android_lifecycle` · `file_picker` · `flutter_inappwebview` · `fluttertoast` · `image_picker_android` · `mecab_dart` · `permission_handler_android` · `url_launcher_android` · `path_provider_android` · `sqflite` · `record_mp3_plus`
 

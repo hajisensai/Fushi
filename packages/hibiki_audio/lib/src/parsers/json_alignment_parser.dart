@@ -9,7 +9,7 @@ import 'text_file_io.dart';
 /// JSON 格式示例：
 /// ```json
 /// {
-///   "bookUid": "reader/path/to/book.epub",
+///   "bookKey": "reader/path/to/book.epub",
 ///   "audio": ["audio/ch01.mp3", "audio/ch02.mp3"],
 ///   "cues": [
 ///     {
@@ -29,19 +29,19 @@ class JsonAlignmentParser {
   ///
   /// 走 [readTextWithEncoding] 自动识别编码，以防对齐 JSON 被用 CP932 保存。
   ///
-  /// [bookUid] 用于覆盖 JSON 中的 bookUid 字段（以实际加载的书为准）。
+  /// [bookKey] 用于覆盖 JSON 中的 bookKey 字段（以实际加载的书为准）。
   static Future<List<AudioCue>> parse({
     required File jsonFile,
-    required String bookUid,
+    required String bookKey,
   }) async {
     final String content = await readTextWithEncoding(jsonFile);
-    return parseString(content: content, bookUid: bookUid);
+    return parseString(content: content, bookKey: bookKey);
   }
 
   /// 解析 JSON 对齐字符串并返回所有 [AudioCue]。纯函数，测试入口。
   static List<AudioCue> parseString({
     required String content,
-    required String bookUid,
+    required String bookKey,
   }) {
     final Map<String, dynamic> json =
         jsonDecode(content) as Map<String, dynamic>;
@@ -62,7 +62,7 @@ class JsonAlignmentParser {
       final String text = c['text'] as String? ?? '';
 
       final AudioCue cue = AudioCue()
-        ..bookUid = bookUid
+        ..bookKey = bookKey
         ..chapterHref = chapter
         ..sentenceIndex = sentenceIndex
         ..textFragmentId = selector

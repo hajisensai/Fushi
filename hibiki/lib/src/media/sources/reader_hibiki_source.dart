@@ -48,9 +48,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
 
   static const String kHost = 'hoshi.local';
 
-  static String mediaIdentifierFor(int bookId) => 'hoshi://book/$bookId';
-
-  static String bookUidFor(int bookId) => buildLegacyBookUid(bookId);
+  static String mediaIdentifierFor(String bookKey) => 'hoshi://book/$bookKey';
 
   // HBK-AUDIT-127: percent-encode the href when building the URL so it is
   // symmetric with the consumer side, which decodes the whole post-'/epub/'
@@ -65,16 +63,21 @@ class ReaderHibikiSource extends ReaderMediaSource {
 
   static String fontUrl(String path) => ReaderCustomFontCss.fontUrl(path);
 
-  static int? parseBookId(String identifier) {
+  /// Parse `hoshi://book/<bookKey>` back to the bookKey. Returns null for an
+  /// unparseable identifier. The bookKey is the sanitized title (the EpubBooks
+  /// primary key); legacy `hoshi://book/<int>` identifiers were rewritten to
+  /// the key form by the v16 migration, so no int branch is needed.
+  static String? parseBookKey(String identifier) {
     final Uri? uri = Uri.tryParse(identifier);
     if (uri == null) return null;
     if (uri.scheme == 'hoshi' &&
         uri.host == 'book' &&
         uri.pathSegments.isNotEmpty) {
-      return int.tryParse(uri.pathSegments[0]);
+      // pathSegments are percent-decoded by Uri; rejoin in case a sanitized
+      // key itself contained an encoded '/' (it never does — sanitize escapes
+      // '/' — but be defensive and keep the full remainder).
+      return uri.pathSegments.join('/');
     }
-    final Match? legacy = RegExp(r'[?&]id=(\d+)').firstMatch(identifier);
-    if (legacy != null) return int.tryParse(legacy.group(1)!);
     return null;
   }
 
@@ -108,34 +111,32 @@ class ReaderHibikiSource extends ReaderMediaSource {
     MediaItem? item,
     Bookmark? initialBookmarkJump,
   }) {
-    final int bookId = _extractBookId(item?.mediaIdentifier ?? '');
+    final String bookKey = _extractBookKey(item?.mediaIdentifier ?? '');
     return HibikiAppUiScaleNeutralizer(
       child: ReaderHibikiPage(
         item: item,
-        bookId: bookId,
+        bookKey: bookKey,
         initialBookmarkJump: initialBookmarkJump,
       ),
     );
   }
 
-  // HBK-AUDIT-126: parseBookId returns null for an empty/unknown identifier.
-  // Previously this silently coerced null to the 0 sentinel, launching the
-  // reader against bookUidFor(0) (a nonexistent book) and hiding genuine
-  // identifier corruption behind an empty/error reader screen. We now log the
-  // failure so the corruption is observable instead of swallowed; the 0
-  // sentinel remains only because ReaderHibikiPage.bookId is a non-null int and
-  // ReaderHibikiPage already renders an empty/error state for an unknown id.
-  static int _extractBookId(String identifier) {
-    final int? bookId = parseBookId(identifier);
-    if (bookId == null) {
+  // HBK-AUDIT-126: parseBookKey returns null for an empty/unknown identifier.
+  // We log the failure so the corruption is observable instead of swallowed;
+  // an empty-string sentinel remains only because ReaderHibikiPage.bookKey is a
+  // non-null String and ReaderHibikiPage already renders an empty/error state
+  // for an unknown key.
+  static String _extractBookKey(String identifier) {
+    final String? bookKey = parseBookKey(identifier);
+    if (bookKey == null) {
       ErrorLogService.instance.log(
-        'ReaderHibikiSource._extractBookId',
+        'ReaderHibikiSource._extractBookKey',
         'unparseable media identifier: "$identifier"',
         StackTrace.current,
       );
-      return 0;
+      return '';
     }
-    return bookId;
+    return bookKey;
   }
 
   @override
@@ -230,7 +231,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
       duration = totalChars;
     }
 
-    final pos = await posRepo.findByTtuBookId(book.id);
+    final pos = await posRepo.findByBookKey(book.bookKey);
     if (pos != null && sectionChars.isNotEmpty) {
       final int clampedSection =
           pos.sectionIndex.clamp(0, sectionChars.length - 1);
@@ -244,7 +245,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
     final String? imageUrl = await _resolveCoverUrl(book);
 
     return MediaItem(
-      mediaIdentifier: mediaIdentifierFor(book.id),
+      mediaIdentifier: mediaIdentifierFor(book.bookKey),
       title: book.title,
       imageUrl: imageUrl,
       mediaTypeIdentifier: mediaType.uniqueKey,
@@ -294,33 +295,37 @@ class ReaderHibikiSource extends ReaderMediaSource {
   /// cleared regardless (HBK-AUDIT-040).
   Future<bool> deleteBook({
     required HibikiDatabase db,
-    required int bookId,
+    required String bookKey,
     AppModel? appModel,
   }) async {
     try {
-      final String bookUid = bookUidFor(bookId);
-
       // HBK-AUDIT-041: db.deleteEpubBook removes every associated DB row
       // (readerPositions, bookmarks, srtBooks, audioCues, audiobooks for the
-      // same bookUid) inside one transaction. Previously deleteBook ALSO
+      // same bookKey) inside one transaction. Previously deleteBook ALSO
       // deleted the audiobook/srt rows via the repos, double-deleting the same
       // rows and splitting the deletion across non-atomic layers. We now let
       // the transaction own all row deletes and only run the non-redundant
       // on-disk cleanups (deletePersistDir, extracted dir) afterwards.
       //
-      // The srt uid must be resolved BEFORE the transaction, because
-      // deleteEpubBook deletes the srtBooks row it lives on.
+      // The book's on-disk extract dir and the srt uid must be resolved BEFORE
+      // the transaction, because deleteEpubBook deletes the rows they live on.
+      final EpubBookRow? bookRow = await db.getEpubBook(bookKey);
       final SrtBookRepository srtRepo = SrtBookRepository(db);
-      final SrtBook? srt = await srtRepo.findByTtuBookId(bookId);
+      final SrtBook? srt = await srtRepo.findByBookKey(bookKey);
 
-      await db.deleteEpubBook(bookId);
+      await db.deleteEpubBook(bookKey);
 
-      // On-disk cleanups (not covered by the DB transaction).
-      await AudiobookStorage.deletePersistDir(bookUid);
+      // On-disk cleanups (not covered by the DB transaction). The audiobook
+      // persist dir is keyed by the book's own key now (no legacy uid).
+      await AudiobookStorage.deletePersistDir(bookKey);
       if (srt != null) {
         await AudiobookStorage.deletePersistDir(srt.uid);
       }
-      await EpubStorage.deleteBook(bookId);
+      // Locate the extracted dir by the stored extract_dir column (the on-disk
+      // folder name may still be the legacy int id; the column is the truth).
+      if (bookRow != null) {
+        await EpubStorage.deleteBookDir(bookRow.extractDir);
+      }
 
       // HBK-AUDIT-040: these books are created with canDelete:false, so the
       // generic AppModel.deleteMediaItem cleanup (clearOverrideValues) never
@@ -328,7 +333,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
       // override thumbnail file when an AppModel is available, so renamed/
       // recovered books do not leave orphaned override rows/files behind.
       final MediaItem item = MediaItem(
-        mediaIdentifier: mediaIdentifierFor(bookId),
+        mediaIdentifier: mediaIdentifierFor(bookKey),
         title: '',
         mediaTypeIdentifier: mediaType.uniqueKey,
         mediaSourceIdentifier: uniqueKey,

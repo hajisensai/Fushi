@@ -256,7 +256,7 @@ class VideoPlayerController extends ChangeNotifier {
       }
       final String text = await readTextWithEncoding(File(extracted));
       final List<AudioCue> cues =
-          AssParser.parseString(content: text, bookUid: bookUid);
+          AssParser.parseString(content: text, bookKey: bookUid);
       if (cues.isEmpty) {
         debugPrint('[video-embedded-sub] parsed 0 cues from embedded track');
         return;

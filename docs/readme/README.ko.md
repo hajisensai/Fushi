@@ -82,7 +82,7 @@
 
 | 계층 | 기술 |
 |---|---|
-| 프레임워크 | Flutter 3.41.6 (Dart SDK `>=3.5.0 <4.0.0`) |
+| 프레임워크 | Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`) |
 | 플랫폼 | Android / iOS / macOS / Windows / Linux (Material 3 + Cupertino 적응형) |
 | 리더 | WebView 페이지네이션 엔진 ([Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader)에서 파생) |
 | 스토리지 | Drift (SQLite, WAL) + hoshidicts (C++ FFI 사전 엔진) |
@@ -110,7 +110,7 @@ flutter build apk --release --target-platform android-arm64 --split-per-abi
 
 ## 의존성 및 패치
 
-이 프로젝트는 Flutter 3.41.6으로 고정되어 있으며, 일부 업스트림 의존성은 아직 호환되지 않습니다. 패치는 두 가지 메커니즘으로 나뉩니다: ① 빌드 입력으로 필요하고 머신 간에 일관되게 재현해야 하는 패키지는 `third_party/`에 직접 vendor하고 `dependency_overrides`로 지정합니다 (`network_to_file_image` / `carousel_slider` / `fading_edge_scrollview` / `flutter_inappwebview_android`, pub-cache 패치 **불필요**); ② 나머지 패키지는 `ci/apply-patches.sh`가 pub cache 소스를 패치합니다. 메커니즘 세부 사항은 [docs/agent/build.md](../agent/build.md)를 참조하세요. 아래 접기 표는 변경 내용별로 분류한 과거 목록이며, 메커니즘 ①과 겹치는 패키지는 vendored 버전이 우선합니다.
+이 프로젝트는 Flutter 3.44.0으로 고정되어 있으며, 일부 업스트림 의존성은 아직 호환되지 않습니다. 패치는 두 가지 메커니즘으로 나뉩니다: ① 빌드 입력으로 필요하고 머신 간에 일관되게 재현해야 하는 패키지는 `third_party/`에 직접 vendor하고 `dependency_overrides`로 지정합니다 (`network_to_file_image` / `carousel_slider` / `fading_edge_scrollview` / `flutter_inappwebview_android`, pub-cache 패치 **불필요**); ② 나머지 패키지는 `ci/apply-patches.sh`가 pub cache 소스를 패치합니다. 메커니즘 세부 사항은 [docs/agent/build.md](../agent/build.md)를 참조하세요. 아래 접기 표는 변경 내용별로 분류한 과거 목록이며, 메커니즘 ①과 겹치는 패키지는 vendored 버전이 우선합니다.
 
 <details>
 <summary><b>Flutter API 변경 패치</b></summary>
@@ -130,7 +130,7 @@ flutter build apk --release --target-platform android-arm64 --split-per-abi
 <details>
 <summary><b>v1 Embedding 제거 패치</b></summary>
 
-Flutter 3.41.6에서는 v1 embedding API (`PluginRegistry.Registrar`)가 완전히 제거되었습니다. 다음 플러그인에서 관련 참조를 삭제해야 합니다:
+Flutter 3.44.0에서는 v1 embedding API (`PluginRegistry.Registrar`)가 완전히 제거되었습니다. 다음 플러그인에서 관련 참조를 삭제해야 합니다:
 
 `flutter_plugin_android_lifecycle` · `file_picker` · `flutter_inappwebview` · `fluttertoast` · `image_picker_android` · `mecab_dart` · `permission_handler_android` · `url_launcher_android` · `path_provider_android` · `sqflite` · `record_mp3_plus`
 

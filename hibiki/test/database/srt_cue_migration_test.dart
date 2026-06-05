@@ -132,11 +132,14 @@ CREATE TABLE audio_cues (
   return db;
 }
 
-Future<int> _cueCount(HibikiDatabase db, String bookUid) async {
-  // bookUid is a test-controlled literal; safe to interpolate.
+Future<int> _cueCount(HibikiDatabase db, String bookKey) async {
+  // After v16 the audio_cues owner column is book_key. The seed's srt-owned and
+  // non-legacy-uid audiobook cues carry their owner string over verbatim, so
+  // these literals are unchanged. bookKey is a test-controlled literal; safe to
+  // interpolate.
   final row = await db
       .customSelect('SELECT COUNT(*) AS c FROM audio_cues '
-          "WHERE book_uid = '$bookUid'")
+          "WHERE book_key = '$bookKey'")
       .getSingle();
   return row.read<int>('c');
 }

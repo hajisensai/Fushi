@@ -36,7 +36,7 @@ class OneDriveSyncBackend extends SyncBackend {
       'https://login.microsoftonline.com/common/oauth2/v2.0/authorize';
   static const _apiBase = 'https://graph.microsoft.com/v1.0';
   static const _scopes = 'Files.ReadWrite.All User.Read offline_access';
-  static const _rootFolderName = 'ttu-reader-data';
+  static const _rootFolderName = kSyncRootFolderName;
 
   String? _accessToken;
   String? _refreshToken;

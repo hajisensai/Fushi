@@ -14,93 +14,72 @@ class AudiobookRepository {
 
   // ── audiobook CRUD ──────────────────────────────────────────────
 
-  Future<Audiobook?> findByBookUid(String bookUid) async {
-    final row = await _db.getAudiobookByBookUid(bookUid);
+  Future<Audiobook?> findByBookKey(String bookKey) async {
+    final row = await _db.getAudiobookByBookKey(bookKey);
     if (row == null) return null;
     return _rowToAudiobook(row);
   }
 
-  Future<Map<String, Audiobook>> buildBookUidMap() async {
+  Future<Map<String, Audiobook>> buildBookKeyMap() async {
     final rows = await _db.getAllAudiobooks();
-    return {for (final row in rows) row.bookUid: _rowToAudiobook(row)};
-  }
-
-  Future<Audiobook?> findByTtuBookId(int ttuBookId) async {
-    final map = await buildTtuBookIdMap();
-    return map[ttuBookId];
-  }
-
-  Future<Map<int, Audiobook>> buildTtuBookIdMap() async {
-    final rows = await _db.getAllAudiobooks();
-    final map = <int, Audiobook>{};
-    for (final row in rows) {
-      final raw = row.bookUid;
-      final toParse =
-          raw.contains('/') ? raw.substring(raw.indexOf('/') + 1) : raw;
-      final uri = Uri.tryParse(toParse);
-      final id = int.tryParse(uri?.queryParameters['id'] ?? '');
-      if (id != null && id > 0) {
-        map.putIfAbsent(id, () => _rowToAudiobook(row));
-      }
-    }
-    return map;
+    return {for (final row in rows) row.bookKey: _rowToAudiobook(row)};
   }
 
   Future<List<AudioCue>> cuesForChapter({
-    required String bookUid,
+    required String bookKey,
     required String chapterHref,
   }) async {
-    final rows = await _db.getCuesForChapter(bookUid, chapterHref);
+    final rows = await _db.getCuesForChapter(bookKey, chapterHref);
     return rows.map(AudioCue.fromRow).toList();
   }
 
-  Future<List<AudioCue>> cuesForBook(String bookUid) async {
-    final rows = await _db.getCuesForBook(bookUid);
+  Future<List<AudioCue>> cuesForBook(String bookKey) async {
+    final rows = await _db.getCuesForBook(bookKey);
     return rows.map(AudioCue.fromRow).toList();
   }
 
   Future<AudioCue?> findCue({
-    required String bookUid,
+    required String bookKey,
     required String chapterHref,
     required int sentenceIndex,
   }) async {
-    final row = await _db.findCue(bookUid, chapterHref, sentenceIndex);
+    final row = await _db.findCue(bookKey, chapterHref, sentenceIndex);
     if (row == null) return null;
     return AudioCue.fromRow(row);
   }
 
   Future<void> saveCues({
-    required String bookUid,
+    required String bookKey,
     required List<AudioCue> cues,
   }) async {
     await _db.replaceCuesForBook(
-        bookUid, cues.map(AudioCue.toCompanion).toList());
+        bookKey, cues.map(AudioCue.toCompanion).toList());
   }
 
   Future<void> saveAudiobook(Audiobook audiobook) async {
     await _db.upsertAudiobook(_audiobookToCompanion(audiobook));
-    debugPrint('[hibiki-audiobook] saveAudiobook bookUid=${audiobook.bookUid}');
+    debugPrint('[hibiki-audiobook] saveAudiobook bookKey=${audiobook.bookKey}');
   }
 
-  Future<void> deleteAudiobook(String bookUid) async {
-    // deleteAudiobookByBookUid 内部已先删 audioCues 再删 audiobooks。
-    await _db.deleteAudiobookByBookUid(bookUid);
-    await AudiobookStorage.deletePersistDir(bookUid);
+  Future<void> deleteAudiobook(String bookKey) async {
+    // deleteAudiobookByBookKey 内部已先删 audioCues 再删 audiobooks。
+    await _db.deleteAudiobookByBookKey(bookKey);
+    await AudiobookStorage.deletePersistDir(bookKey);
   }
 
   // ── playback position (preferences) ────────────────────────────
 
   static const String _kPositionMsKeyPrefix = 'audiobook_pos_';
 
-  Future<int> readPositionMs(String bookUid) async {
-    return _db.getPrefTyped('$_kPositionMsKeyPrefix$bookUid', 0);
+  Future<int> readPositionMs(String bookKey) async {
+    return _db.getPrefTyped('$_kPositionMsKeyPrefix$bookKey', 0);
   }
 
   Future<void> updatePositionMs({
-    required String bookUid,
+    required String bookKey,
     required int positionMs,
   }) =>
-      _db.setPrefTyped('$_kPositionMsKeyPrefix$bookUid', positionMs);
+      _db.setPrefTyped('$_kPositionMsKeyPrefix$bookKey', positionMs);
 
   // ── follow audio (preferences) ─────────────────────────────────
 
@@ -111,66 +90,66 @@ class AudiobookRepository {
   static const String _kImagePauseSecKeyPrefix = 'audiobook_image_pause_';
   static const String _kHealthOverlayKeyPrefix = 'audiobook_health_overlay_';
 
-  Future<bool> readFollowAudio(String bookUid) async {
-    return _db.getPrefTyped('$_kFollowAudioKeyPrefix$bookUid', true);
+  Future<bool> readFollowAudio(String bookKey) async {
+    return _db.getPrefTyped('$_kFollowAudioKeyPrefix$bookKey', true);
   }
 
   Future<void> updateFollowAudio({
-    required String bookUid,
+    required String bookKey,
     required bool value,
   }) =>
-      _db.setPrefTyped('$_kFollowAudioKeyPrefix$bookUid', value);
+      _db.setPrefTyped('$_kFollowAudioKeyPrefix$bookKey', value);
 
-  Future<int> readDelayMs(String bookUid) async {
-    return _db.getPrefTyped('$_kDelayMsKeyPrefix$bookUid', 0);
+  Future<int> readDelayMs(String bookKey) async {
+    return _db.getPrefTyped('$_kDelayMsKeyPrefix$bookKey', 0);
   }
 
   Future<void> updateDelayMs({
-    required String bookUid,
+    required String bookKey,
     required int ms,
   }) =>
-      _db.setPrefTyped('$_kDelayMsKeyPrefix$bookUid', ms);
+      _db.setPrefTyped('$_kDelayMsKeyPrefix$bookKey', ms);
 
-  Future<double> readSpeed(String bookUid) async {
-    final raw = await _db.getPref('$_kSpeedKeyPrefix$bookUid');
+  Future<double> readSpeed(String bookKey) async {
+    final raw = await _db.getPref('$_kSpeedKeyPrefix$bookKey');
     if (raw == null) return 1.0;
     return double.tryParse(raw) ?? 1.0;
   }
 
   Future<void> updateSpeed({
-    required String bookUid,
+    required String bookKey,
     required double speed,
   }) =>
-      _db.setPref('$_kSpeedKeyPrefix$bookUid', speed.toString());
+      _db.setPref('$_kSpeedKeyPrefix$bookKey', speed.toString());
 
-  Future<double> readVolume(String bookUid) async {
-    final raw = await _db.getPref('$_kVolumeKeyPrefix$bookUid');
+  Future<double> readVolume(String bookKey) async {
+    final raw = await _db.getPref('$_kVolumeKeyPrefix$bookKey');
     if (raw == null) return 1.0;
     return double.tryParse(raw) ?? 1.0;
   }
 
   Future<void> updateVolume({
-    required String bookUid,
+    required String bookKey,
     required double volume,
   }) =>
-      _db.setPref('$_kVolumeKeyPrefix$bookUid', volume.toString());
+      _db.setPref('$_kVolumeKeyPrefix$bookKey', volume.toString());
 
   // ── image pause ─────────────────────────────────────────────────
 
-  Future<int> readImagePauseSec(String bookUid) async {
-    return _db.getPrefTyped('$_kImagePauseSecKeyPrefix$bookUid', 0);
+  Future<int> readImagePauseSec(String bookKey) async {
+    return _db.getPrefTyped('$_kImagePauseSecKeyPrefix$bookKey', 0);
   }
 
   Future<void> updateImagePauseSec({
-    required String bookUid,
+    required String bookKey,
     required int sec,
   }) =>
-      _db.setPrefTyped('$_kImagePauseSecKeyPrefix$bookUid', sec);
+      _db.setPrefTyped('$_kImagePauseSecKeyPrefix$bookKey', sec);
 
   // ── health overlay ──────────────────────────────────────────────
 
-  Future<AudiobookHealth?> readHealthOverlay(String bookUid) async {
-    final raw = await _db.getPref('$_kHealthOverlayKeyPrefix$bookUid');
+  Future<AudiobookHealth?> readHealthOverlay(String bookKey) async {
+    final raw = await _db.getPref('$_kHealthOverlayKeyPrefix$bookKey');
     if (raw == null || raw.isEmpty) return null;
     try {
       final m = jsonDecode(raw) as Map<String, dynamic>;
@@ -198,7 +177,7 @@ class AudiobookRepository {
   }
 
   Future<void> updateHealthOverlay({
-    required String bookUid,
+    required String bookKey,
     required AudiobookHealth health,
   }) async {
     final m = <String, dynamic>{
@@ -207,11 +186,11 @@ class AudiobookRepository {
       'reason': health.reason,
       'at': health.measuredAt.millisecondsSinceEpoch,
     };
-    await _db.setPref('$_kHealthOverlayKeyPrefix$bookUid', jsonEncode(m));
+    await _db.setPref('$_kHealthOverlayKeyPrefix$bookKey', jsonEncode(m));
   }
 
   Future<AudiobookHealth> resolveHealth(Audiobook ab) async {
-    final overlay = await readHealthOverlay(ab.bookUid);
+    final overlay = await readHealthOverlay(ab.bookKey);
     if (overlay != null) return overlay;
     return AudiobookHealth.fromAudiobook(ab);
   }
@@ -221,7 +200,7 @@ class AudiobookRepository {
   static Audiobook _rowToAudiobook(AudiobookRow r) {
     final ab = Audiobook();
     ab.id = r.id;
-    ab.bookUid = r.bookUid;
+    ab.bookKey = r.bookKey;
     ab.audioRoot = r.audioRoot;
     ab.audioPaths = r.audioPathsJson != null
         ? (jsonDecode(r.audioPathsJson!) as List).cast<String>()
@@ -238,7 +217,7 @@ class AudiobookRepository {
 
   static AudiobooksCompanion _audiobookToCompanion(Audiobook ab) {
     return AudiobooksCompanion(
-      bookUid: Value(ab.bookUid),
+      bookKey: Value(ab.bookKey),
       audioRoot: Value(ab.audioRoot),
       audioPathsJson:
           Value(ab.audioPaths != null ? jsonEncode(ab.audioPaths) : null),

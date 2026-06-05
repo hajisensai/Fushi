@@ -2,6 +2,7 @@ import 'dart:developer' as developer;
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/models/local_audio_manager.dart';
 import 'package:hibiki/src/sync/sync_asset_package_service.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
@@ -14,7 +15,7 @@ import 'package:hibiki/src/sync/ttu_models.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
-final _bookIdPattern = RegExp(r'hoshi://book/(\d+)');
+final _bookKeyPattern = RegExp(r'hoshi://book/(.+)');
 
 int _activeSyncs = 0;
 final ValueNotifier<bool> syncInProgress = ValueNotifier<bool>(false);
@@ -219,8 +220,8 @@ Future<void> _runAutoSync({
   required ScaffoldMessengerState? messenger,
   SyncReportCallback? onReport,
 }) async {
-  final match = _bookIdPattern.firstMatch(mediaIdentifier);
-  if (match == null) return;
+  final String? bookKey = ReaderHibikiSource.parseBookKey(mediaIdentifier);
+  if (bookKey == null || !_bookKeyPattern.hasMatch(mediaIdentifier)) return;
   if (_syncingIds.contains('__all__')) return;
   if (!_syncingIds.add(mediaIdentifier)) return;
 
@@ -239,8 +240,7 @@ Future<void> _runAutoSync({
       await backend.restoreAuth(repo);
       if (!await backend.isAuthenticated) return;
 
-      final bookId = int.parse(match.group(1)!);
-      final book = await db.getEpubBook(bookId);
+      final book = await db.getEpubBook(bookKey);
       if (book == null) return;
 
       final syncStats = await repo.isSyncStatsEnabled();

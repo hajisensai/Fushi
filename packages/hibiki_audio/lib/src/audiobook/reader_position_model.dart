@@ -6,9 +6,8 @@
 class ReaderPosition {
   int? id;
 
-  /// EpubBooks.id（书的主键），按书一条。
-  /// 列名沿用 `ttuBookId` 保持数据库兼容，语义上是通用的 bookId。
-  late int ttuBookId;
+  /// EpubBooks.bookKey（书的主键 = sanitize 后的标题），按书一条。
+  late String bookKey;
 
   /// EPUB spine 章节 index（0-based）。
   late int sectionIndex;

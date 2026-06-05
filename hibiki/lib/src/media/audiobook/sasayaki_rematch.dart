@@ -5,7 +5,6 @@ import 'package:hibiki/src/media/audiobook/audiobook_import_dialog.dart'
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki/src/epub/epub_book.dart';
 import 'package:hibiki/src/epub/epub_parser.dart';
-import 'package:hibiki/src/epub/epub_storage.dart';
 import 'package:hibiki/utils.dart';
 
 /// Sasayaki 重匹配入口，被 [AudiobookImportDialog]（已附加视图）和书架
@@ -49,21 +48,21 @@ class SasayakiRematch {
     required BuildContext context,
     required Audiobook ab,
     required AudiobookRepository repo,
-    required int ttuBookId,
+    required String extractDir,
     void Function(bool running)? onRunningChanged,
   }) async {
-    if (ttuBookId <= 0) {
+    if (extractDir.isEmpty) {
       HibikiToast.show(msg: t.ttu_not_bound_cannot_rematch);
       return null;
     }
-    final AudiobookHealth? overlay = await repo.readHealthOverlay(ab.bookUid);
+    final AudiobookHealth? overlay = await repo.readHealthOverlay(ab.bookKey);
     if (!context.mounted) return null;
     final _MatchParams? picked = await _pickMatchParams(
       context: context,
       previousReason: overlay?.reason,
       repo: repo,
-      bookUid: ab.bookUid,
-      ttuBookId: ttuBookId,
+      bookKey: ab.bookKey,
+      extractDir: extractDir,
     );
     if (picked == null) {
       return false;
@@ -73,7 +72,7 @@ class SasayakiRematch {
       await _run(
         ab: ab,
         repo: repo,
-        ttuBookId: ttuBookId,
+        extractDir: extractDir,
         searchWindow: picked.window,
         similarityThreshold: picked.threshold,
       );
@@ -87,8 +86,8 @@ class SasayakiRematch {
     required BuildContext context,
     required String? previousReason,
     required AudiobookRepository repo,
-    required String bookUid,
-    required int ttuBookId,
+    required String bookKey,
+    required String extractDir,
   }) async {
     int window = EpubSrtMatcher.defaultSearchWindow;
     double threshold = EpubSrtMatcher.defaultSimilarityThreshold;
@@ -118,9 +117,9 @@ class SasayakiRematch {
         setSheet(() => autoBusy = true);
         try {
           probedSections ??= await _loadSections(
-            ttuBookId: ttuBookId,
+            extractDir: extractDir,
           );
-          probedCues ??= await repo.cuesForBook(bookUid);
+          probedCues ??= await repo.cuesForBook(bookKey);
           final int? best = await runAutoProbe(
             sections: probedSections ?? const <EpubSection>[],
             cues: probedCues ?? const <AudioCue>[],
@@ -230,10 +229,9 @@ class SasayakiRematch {
   }
 
   static Future<List<EpubSection>> _loadSections({
-    required int ttuBookId,
+    required String extractDir,
   }) async {
     try {
-      final String extractDir = await EpubStorage.bookDirectory(ttuBookId);
       final EpubBook book = EpubParser.parseFromExtracted(extractDir);
       return List<EpubSection>.generate(
         book.chapters.length,
@@ -253,17 +251,16 @@ class SasayakiRematch {
   static Future<void> _run({
     required Audiobook ab,
     required AudiobookRepository repo,
-    required int ttuBookId,
+    required String extractDir,
     required int searchWindow,
     double similarityThreshold = EpubSrtMatcher.defaultSimilarityThreshold,
   }) async {
     try {
-      final List<AudioCue> cues = await repo.cuesForBook(ab.bookUid);
+      final List<AudioCue> cues = await repo.cuesForBook(ab.bookKey);
       if (cues.isEmpty) {
         HibikiToast.show(msg: t.sasayaki_no_stored_cues);
         return;
       }
-      final String extractDir = await EpubStorage.bookDirectory(ttuBookId);
       final EpubBook book = EpubParser.parseFromExtracted(extractDir);
       final List<EpubSection> sections = List<EpubSection>.generate(
         book.chapters.length,
@@ -285,7 +282,7 @@ class SasayakiRematch {
       );
       SasayakiMatchCodec.applyToCues(cues: cues, result: result);
       await repo.saveCues(
-        bookUid: ab.bookUid,
+        bookKey: ab.bookKey,
         cues: cues,
       );
       final int pct = (result.matchRate * 100).round();
@@ -294,7 +291,7 @@ class SasayakiRematch {
         reason: '${result.matchedCues}/${result.totalCues} cues matched '
             '(window=$searchWindow threshold=$similarityThreshold)',
       );
-      await repo.updateHealthOverlay(bookUid: ab.bookUid, health: health);
+      await repo.updateHealthOverlay(bookKey: ab.bookKey, health: health);
       HibikiToast.show(
         msg: t.sasayaki_rematch_result(pct: pct, window: searchWindow),
       );

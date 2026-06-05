@@ -805,7 +805,7 @@ class AdaptiveSettingsPickerRow<T> extends StatelessWidget {
   }
 }
 
-class AdaptiveSettingsTextField extends StatelessWidget {
+class AdaptiveSettingsTextField extends StatefulWidget {
   const AdaptiveSettingsTextField({
     super.key,
     this.controller,
@@ -818,6 +818,7 @@ class AdaptiveSettingsTextField extends StatelessWidget {
     this.onChanged,
     this.onSubmitted,
     this.suffixIcon,
+    this.focusId,
   }) : assert(controller == null || initialValue == null);
 
   final TextEditingController? controller;
@@ -831,19 +832,40 @@ class AdaptiveSettingsTextField extends StatelessWidget {
   final ValueChanged<String>? onSubmitted;
   final Widget? suffixIcon;
 
+  /// Explicit geometric-focus id; when null a stable per-instance fallback is
+  /// used so the field is always a directional-navigation anchor (see below).
+  final HibikiFocusId? focusId;
+
+  @override
+  State<AdaptiveSettingsTextField> createState() =>
+      _AdaptiveSettingsTextFieldState();
+}
+
+class _AdaptiveSettingsTextFieldState extends State<AdaptiveSettingsTextField> {
+  // A settings text field MUST register with the directional focus controller,
+  // otherwise it is invisible to geometric navigation: when an arrow key escapes
+  // the focused (single-line) field, [HibikiFocusController.move] cannot locate
+  // the active entry and dead-reckons to the FIRST registered row — which can
+  // sit ABOVE the field, so Down jumps up (BUG-048). [HibikiTextField] only
+  // registers when given a focusId, so we always supply one. The id is owned by
+  // the State (stable across rebuilds), mirroring [_SettingsRowFocusTarget].
+  late final HibikiFocusId _fallbackFocusId =
+      HibikiFocusId('settings-textfield-${identityHashCode(this)}');
+
   @override
   Widget build(BuildContext context) {
     return HibikiTextField(
-      controller: controller,
-      focusNode: focusNode,
-      initialValue: initialValue,
-      hintText: hintText,
-      labelText: labelText,
-      keyboardType: keyboardType,
-      textInputAction: textInputAction,
-      onChanged: onChanged,
-      onSubmitted: onSubmitted,
-      suffixIcon: suffixIcon,
+      controller: widget.controller,
+      focusNode: widget.focusNode,
+      initialValue: widget.initialValue,
+      hintText: widget.hintText,
+      labelText: widget.labelText,
+      keyboardType: widget.keyboardType,
+      textInputAction: widget.textInputAction,
+      onChanged: widget.onChanged,
+      onSubmitted: widget.onSubmitted,
+      suffixIcon: widget.suffixIcon,
+      focusId: widget.focusId ?? _fallbackFocusId,
     );
   }
 }

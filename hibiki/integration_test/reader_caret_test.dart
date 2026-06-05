@@ -54,7 +54,7 @@ void main() {
       // in lyrics mode (_lyricsMode restored from its saved state), which loads
       // the lyrics page instead of a chapter and never injects window.hoshiCaret
       // — a stale shelf book is exactly what made this test spuriously fail.
-      final int bookId = await _seedTestBook(tester);
+      final String bookKey = await _seedTestBook(tester);
       final navTargets = findPrimaryNavigationTargets();
       if (navTargets.isNotEmpty) {
         await tester.tap(navTargets.first);
@@ -64,7 +64,7 @@ void main() {
       // Shelf entries key off the media identifier (hoshi://book/<id>), not the
       // raw row id — see reader_hibiki_history_page.dart `book_entry_<mediaId>`.
       final String seededKey =
-          'book_entry_${ReaderHibikiSource.mediaIdentifierFor(bookId)}';
+          'book_entry_${ReaderHibikiSource.mediaIdentifierFor(bookKey)}';
       final Finder seededEntry = find.byKey(ValueKey<String>(seededKey));
       for (int i = 0; i < 40 && seededEntry.evaluate().isEmpty; i++) {
         await tester.pump(const Duration(milliseconds: 500));
@@ -346,7 +346,7 @@ void main() {
   });
 }
 
-Future<int> _seedTestBook(WidgetTester tester) async {
+Future<String> _seedTestBook(WidgetTester tester) async {
   final ProviderContainer container = ProviderScope.containerOf(
     tester.element(find.byType(MaterialApp).first),
   );
@@ -358,14 +358,14 @@ Future<int> _seedTestBook(WidgetTester tester) async {
       reason: 'AppModel must be initialised before importing a book');
 
   final Uint8List bytes = EpubGenerator().generate();
-  final int bookId = await EpubImporter.import(
+  final String bookKey = await EpubImporter.import(
     db: appModel.database,
     bytes: bytes,
     fileName: 'test_caret.epub',
   );
-  debugPrint('[CARET] Imported test EPUB as book id=$bookId');
+  debugPrint('[CARET] Imported test EPUB as book key=$bookKey');
 
   container.invalidate(hibikiBooksProvider(appModel.targetLanguage));
   await tester.pumpAndSettle();
-  return bookId;
+  return bookKey;
 }

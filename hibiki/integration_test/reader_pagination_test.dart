@@ -350,12 +350,12 @@ Future<void> _seedTestBook(WidgetTester tester) async {
       reason: 'AppModel must be initialised before importing a book');
 
   final Uint8List bytes = EpubGenerator().generate();
-  final int bookId = await EpubImporter.import(
+  final String bookKey = await EpubImporter.import(
     db: appModel.database,
     bytes: bytes,
     fileName: 'test_pagination.epub',
   );
-  debugPrint('[M1] Imported test EPUB as book id=$bookId');
+  debugPrint('[M1] Imported test EPUB as book key=$bookKey');
 
   container.invalidate(hibikiBooksProvider(appModel.targetLanguage));
   await tester.pumpAndSettle();

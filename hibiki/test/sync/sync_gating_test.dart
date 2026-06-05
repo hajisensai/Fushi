@@ -164,6 +164,7 @@ class _RecordingExportBackend implements SyncBackend {
 
 Future<EpubBookRow> _seedBookWithPosition(HibikiDatabase db) async {
   await db.insertEpubBook(EpubBooksCompanion.insert(
+    bookKey: 'Book',
     title: 'Book',
     epubPath: '/fake/book.epub',
     extractDir: '/fake/extract',
@@ -173,7 +174,7 @@ Future<EpubBookRow> _seedBookWithPosition(HibikiDatabase db) async {
   ));
   final EpubBookRow book = (await db.getAllEpubBooks()).single;
   await db.upsertReaderPosition(ReaderPositionsCompanion(
-    ttuBookId: Value(book.id),
+    bookKey: Value(book.bookKey),
     sectionIndex: const Value(0),
     normCharOffset: const Value(5000),
     ttuCharOffset: const Value(-1),

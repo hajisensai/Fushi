@@ -138,7 +138,7 @@ String _cssBlock(String css, String selectorWithBrace) {
 AudioCue _cue(int index) {
   return AudioCue()
     ..id = index + 1
-    ..bookUid = 'book'
+    ..bookKey = 'book'
     ..chapterHref = 'chapter'
     ..sentenceIndex = index
     ..textFragmentId = ''

@@ -177,6 +177,7 @@ DriveFile _progressFile(int timestampMs, double fraction) => DriveFile(
 
 Future<EpubBookRow> _seedBook(HibikiDatabase db, String title) async {
   await db.insertEpubBook(EpubBooksCompanion.insert(
+    bookKey: title,
     title: title,
     epubPath: '/fake/book.epub',
     extractDir: '/fake/extract',
@@ -189,13 +190,13 @@ Future<EpubBookRow> _seedBook(HibikiDatabase db, String title) async {
 
 Future<void> _seedPosition(
   HibikiDatabase db,
-  int bookId, {
+  String bookKey, {
   required int updatedAt,
   required double fraction,
 }) async {
   final int normOffset = (fraction * 10000).round();
   await db.upsertReaderPosition(ReaderPositionsCompanion(
-    ttuBookId: Value(bookId),
+    bookKey: Value(bookKey),
     sectionIndex: const Value(0),
     normCharOffset: Value(normOffset),
     ttuCharOffset: const Value(-1),
@@ -244,7 +245,7 @@ void main() {
 
     final EpubBookRow book = await _seedBook(db, title);
     // Local at ts 120, remote at ts 100, base 50 → both moved off base → fork.
-    await _seedPosition(db, book.id, updatedAt: 120, fraction: 0.6);
+    await _seedPosition(db, book.bookKey, updatedAt: 120, fraction: 0.6);
     await db.setSyncBaseline(assetKey, 'progress', 50);
 
     final _FakeSyncBackend backend = _FakeSyncBackend(
@@ -274,7 +275,7 @@ void main() {
     // Nothing was written: no export, base untouched, local position intact.
     expect(backend.exportedProgress, isNull);
     expect(await db.getSyncBaseline(assetKey, 'progress'), 50);
-    final ReaderPositionRow pos = (await db.getReaderPosition(book.id))!;
+    final ReaderPositionRow pos = (await db.getReaderPosition(book.bookKey))!;
     expect(pos.updatedAt, 120);
 
     // Fingerprint embeds both versions so a later edit on either side reopens.
@@ -288,7 +289,7 @@ void main() {
 
     final EpubBookRow book = await _seedBook(db, title);
     // Local == base 50, only remote moved → clean import, not a fork.
-    await _seedPosition(db, book.id, updatedAt: 50, fraction: 0.3);
+    await _seedPosition(db, book.bookKey, updatedAt: 50, fraction: 0.3);
     await db.setSyncBaseline(assetKey, 'progress', 50);
 
     final _FakeSyncBackend backend = _FakeSyncBackend(

@@ -16,11 +16,11 @@ class SftpSyncBackend extends SyncBackend {
   static final SftpSyncBackend instance = SftpSyncBackend._();
 
   /// Sync root folder, RELATIVE to the SFTP login directory (the user's home),
-  /// never the server filesystem root. An absolute '/ttu-reader-data' fails on
-  /// a normal non-chrooted sshd (permission denied at '/'). The name is kept
-  /// identical to the other backends so one library syncs across them.
+  /// never the server filesystem root. An absolute '/hibiki-data' fails on
+  /// a normal non-chrooted sshd (permission denied at '/'). The name is shared
+  /// via [kSyncRootFolderName] so one library syncs across every backend.
   @visibleForTesting
-  static const String rootFolderName = 'ttu-reader-data';
+  static const String rootFolderName = kSyncRootFolderName;
 
   final _opLock = AsyncMutex();
   SSHClient? _sshClient;

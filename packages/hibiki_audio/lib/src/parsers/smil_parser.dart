@@ -24,20 +24,20 @@ class SmilParser {
   ///
   /// 走 [readTextWithEncoding] 自动识别编码。
   ///
-  /// [bookUid]       对应 MediaItem.uniqueKey。
+  /// [bookKey]       对应 MediaItem.uniqueKey。
   /// [chapterHref]   EPUB spine item 路径，如 'OEBPS/ch01.xhtml'。
   /// [audioFileMap]  将音频 src（相对 SMIL 文件）映射到 audioFileIndex。
   ///                 若为 null，则所有 cue 的 audioFileIndex = 0。
   static Future<List<AudioCue>> parse({
     required File smilFile,
-    required String bookUid,
+    required String bookKey,
     required String chapterHref,
     Map<String, int>? audioFileMap,
   }) async {
     final String content = await readTextWithEncoding(smilFile);
     return parseString(
       content: content,
-      bookUid: bookUid,
+      bookKey: bookKey,
       chapterHref: chapterHref,
       audioFileMap: audioFileMap,
     );
@@ -46,7 +46,7 @@ class SmilParser {
   /// 解析 SMIL 字符串并返回 [AudioCue] 列表。纯函数，测试入口。
   static List<AudioCue> parseString({
     required String content,
-    required String bookUid,
+    required String bookKey,
     required String chapterHref,
     Map<String, int>? audioFileMap,
   }) {
@@ -81,7 +81,7 @@ class SmilParser {
       final int fileIndex = audioFileMap?[audioSrc] ?? 0;
 
       final AudioCue cue = AudioCue()
-        ..bookUid = bookUid
+        ..bookKey = bookKey
         ..chapterHref = chapterHref
         ..sentenceIndex = sentenceIndex
         ..textFragmentId = fragmentId

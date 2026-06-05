@@ -4,7 +4,7 @@ import 'package:hibiki/src/media/audiobook/lyrics_mode_html.dart';
 
 void main() {
   AudioCue cue(int i, String text) => AudioCue()
-    ..bookUid = 'b'
+    ..bookKey = 'b'
     ..chapterHref = 'c'
     ..sentenceIndex = i
     ..textFragmentId = 'frag-$i'

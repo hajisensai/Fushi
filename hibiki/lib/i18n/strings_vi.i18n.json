@@ -136,8 +136,6 @@
     "error_standard_profile_name_content": "Không thể đổi tên hồ sơ mặc định.",
     "error_ankidroid_api": "Lỗi AnkiDroid",
     "error_ankidroid_api_content": "Đã xảy ra lỗi khi giao tiếp với AnkiDroid.\n\nHãy đảm bảo dịch vụ nền AnkiDroid đang hoạt động và tất cả quyền ứng dụng liên quan đã được cấp.",
-    "info_standard_model": "Đã thêm loại thẻ mặc định",
-    "info_standard_model_content": "『hibiki Kinomoto』 đã được thêm vào AnkiDroid như một loại thẻ mới.\n\nCác thiết lập sử dụng loại thẻ hoặc thứ tự trường khác có thể được sử dụng bằng cách thêm hồ sơ xuất mới.",
     "error_model_missing": "Thiếu loại thẻ",
     "error_model_missing_content": "Loại thẻ tương ứng của hồ sơ đang chọn bị thiếu.\n\nHồ sơ sẽ bị xóa và hồ sơ mặc định đã được chọn thay thế.",
     "error_model_changed": "Loại thẻ đã thay đổi",
@@ -1265,5 +1263,11 @@
     "video_settings_title": "Player settings",
     "video_setting_av_delay": "A/V delay",
     "video_setting_av_delay_hint": "Positive = picture leads text (shift cues back); negative = picture lags.",
-    "video_setting_speed": "Playback speed"
+    "video_setting_speed": "Playback speed",
+    "sync_compare_no_content": "Cloud data only — no book to download",
+    "anki_create_lapis": "Create Lapis deck",
+    "anki_create_lapis_hint": "Adds the Lapis note type and a Lapis deck to Anki, then selects them.",
+    "anki_create_lapis_success": "Lapis note type and deck created.",
+    "anki_create_lapis_exists": "Lapis note type and deck already exist — selected them.",
+    "anki_create_lapis_failed": "Could not create Lapis deck: $error"
 }

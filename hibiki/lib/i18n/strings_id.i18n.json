@@ -136,8 +136,6 @@
     "error_standard_profile_name_content": "Tidak dapat mengganti nama profil standar.",
     "error_ankidroid_api": "Error AnkiDroid",
     "error_ankidroid_api_content": "Terjadi masalah saat berkomunikasi dengan AnkiDroid.\n\nPastikan layanan latar belakang AnkiDroid aktif dan semua izin aplikasi yang diperlukan telah diberikan.",
-    "info_standard_model": "Tipe kartu standar ditambahkan",
-    "info_standard_model_content": "『hibiki Kinomoto』telah ditambahkan ke AnkiDroid sebagai tipe kartu baru.\n\nPengaturan yang menggunakan tipe kartu atau urutan field berbeda dapat ditambahkan melalui profil ekspor baru.",
     "error_model_missing": "Tipe kartu tidak ditemukan",
     "error_model_missing_content": "Tipe kartu yang sesuai dengan profil yang dipilih tidak ditemukan.\n\nProfil akan dihapus, dan profil standar telah dipilih sebagai gantinya.",
     "error_model_changed": "Tipe kartu berubah",
@@ -1265,5 +1263,11 @@
     "video_settings_title": "Player settings",
     "video_setting_av_delay": "A/V delay",
     "video_setting_av_delay_hint": "Positive = picture leads text (shift cues back); negative = picture lags.",
-    "video_setting_speed": "Playback speed"
+    "video_setting_speed": "Playback speed",
+    "sync_compare_no_content": "Cloud data only — no book to download",
+    "anki_create_lapis": "Create Lapis deck",
+    "anki_create_lapis_hint": "Adds the Lapis note type and a Lapis deck to Anki, then selects them.",
+    "anki_create_lapis_success": "Lapis note type and deck created.",
+    "anki_create_lapis_exists": "Lapis note type and deck already exist — selected them.",
+    "anki_create_lapis_failed": "Could not create Lapis deck: $error"
 }

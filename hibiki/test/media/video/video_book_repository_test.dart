@@ -18,7 +18,7 @@ void main() {
       videoPath: Value('/v.mp4'),
     ));
     final cue = AudioCue()
-      ..bookUid = 'video/1'
+      ..bookKey = 'video/1'
       ..chapterHref = 'video://default'
       ..sentenceIndex = 0
       ..textFragmentId = ''

@@ -18,7 +18,7 @@ import 'package:url_launcher/url_launcher.dart';
 /// Dropbox sync backend via Dropbox API v2.
 ///
 /// Auth: OAuth 2.0 PKCE flow.
-/// Folder IDs are path strings like `/ttu-reader-data/BookTitle`.
+/// Folder IDs are path strings like `/hibiki-data/BookTitle`.
 class DropboxSyncBackend extends SyncBackend {
   DropboxSyncBackend._();
   static final DropboxSyncBackend instance = DropboxSyncBackend._();
@@ -34,7 +34,7 @@ class DropboxSyncBackend extends SyncBackend {
   static const _tokenEndpoint = 'https://api.dropboxapi.com/oauth2/token';
   static const _apiBase = 'https://api.dropboxapi.com/2';
   static const _contentBase = 'https://content.dropboxapi.com/2';
-  static const _rootFolderPath = '/ttu-reader-data';
+  static const _rootFolderPath = '/$kSyncRootFolderName';
 
   String? _accessToken;
   String? _refreshToken;

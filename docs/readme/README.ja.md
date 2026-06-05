@@ -82,7 +82,7 @@
 
 | レイヤー | 技術 |
 |---|---|
-| フレームワーク | Flutter 3.41.6（Dart SDK `>=3.5.0 <4.0.0`） |
+| フレームワーク | Flutter 3.44.0（Dart SDK `>=3.5.0 <4.0.0`） |
 | プラットフォーム | Android / iOS / macOS / Windows / Linux（Material 3 + Cupertino アダプティブ） |
 | リーダー | WebView ページングエンジン（[Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader) 由来） |
 | ストレージ | Drift (SQLite、WAL) + hoshidicts (C++ FFI 辞書エンジン) |
@@ -110,7 +110,7 @@ flutter build apk --release --target-platform android-arm64 --split-per-abi
 
 ## 依存関係とパッチ
 
-本プロジェクトは Flutter 3.41.6 に固定されており、一部の上流依存パッケージはまだ未対応です。パッチは 2 つの仕組みに分かれます：① ビルド入力として必要でマシン間で一貫して再現すべきパッケージは `third_party/` に直接 vendor し `dependency_overrides` で指定します（`network_to_file_image` / `carousel_slider` / `fading_edge_scrollview` / `flutter_inappwebview_android`、pub-cache パッチは**不要**）；② その他のパッケージは `ci/apply-patches.sh` が pub cache のソースをパッチします。仕組みの詳細は [docs/agent/build.md](../agent/build.md) を参照してください。下の折りたたみ表は変更内容で分類した歴史的なリストで、仕組み①と重複するパッケージは vendored 版が優先されます。
+本プロジェクトは Flutter 3.44.0 に固定されており、一部の上流依存パッケージはまだ未対応です。パッチは 2 つの仕組みに分かれます：① ビルド入力として必要でマシン間で一貫して再現すべきパッケージは `third_party/` に直接 vendor し `dependency_overrides` で指定します（`network_to_file_image` / `carousel_slider` / `fading_edge_scrollview` / `flutter_inappwebview_android`、pub-cache パッチは**不要**）；② その他のパッケージは `ci/apply-patches.sh` が pub cache のソースをパッチします。仕組みの詳細は [docs/agent/build.md](../agent/build.md) を参照してください。下の折りたたみ表は変更内容で分類した歴史的なリストで、仕組み①と重複するパッケージは vendored 版が優先されます。
 
 <details>
 <summary><b>Flutter API 変更パッチ</b></summary>
@@ -130,7 +130,7 @@ flutter build apk --release --target-platform android-arm64 --split-per-abi
 <details>
 <summary><b>v1 Embedding 削除パッチ</b></summary>
 
-Flutter 3.41.6 では v1 embedding API（`PluginRegistry.Registrar`）が完全に削除されました。以下のプラグインから関連する参照を削除する必要があります：
+Flutter 3.44.0 では v1 embedding API（`PluginRegistry.Registrar`）が完全に削除されました。以下のプラグインから関連する参照を削除する必要があります：
 
 `flutter_plugin_android_lifecycle` · `file_picker` · `flutter_inappwebview` · `fluttertoast` · `image_picker_android` · `mecab_dart` · `permission_handler_android` · `url_launcher_android` · `path_provider_android` · `sqflite` · `record_mp3_plus`
 

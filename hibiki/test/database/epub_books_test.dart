@@ -1,4 +1,4 @@
-﻿import 'package:drift/native.dart';
+import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
@@ -12,6 +12,7 @@ EpubBooksCompanion _book({
   String title = 'Test Book',
 }) {
   return EpubBooksCompanion.insert(
+    bookKey: title,
     title: title,
     epubPath: '/tmp/$title.epub',
     extractDir: '/tmp/$title',
@@ -23,29 +24,29 @@ EpubBooksCompanion _book({
 
 void main() {
   group('EpubBooks table', () {
-    test('insertEpubBook returns auto-incremented id', () async {
+    test('insertEpubBook returns the bookKey', () async {
       final db = await _openDb();
 
-      final id = await db.insertEpubBook(_book());
+      final key = await db.insertEpubBook(_book(title: 'My Novel'));
 
-      expect(id, greaterThan(0));
+      expect(key, 'My Novel');
     });
 
-    test('getEpubBook retrieves by id', () async {
+    test('getEpubBook retrieves by bookKey', () async {
       final db = await _openDb();
-      final id = await db.insertEpubBook(_book(title: 'My Novel'));
+      final key = await db.insertEpubBook(_book(title: 'My Novel'));
 
-      final row = await db.getEpubBook(id);
+      final row = await db.getEpubBook(key);
 
       expect(row, isNotNull);
       expect(row!.title, 'My Novel');
       expect(row.chapterCount, 3);
     });
 
-    test('getEpubBook returns null for absent id', () async {
+    test('getEpubBook returns null for absent key', () async {
       final db = await _openDb();
 
-      expect(await db.getEpubBook(999), isNull);
+      expect(await db.getEpubBook('nope'), isNull);
     });
 
     test('getAllEpubBooks returns all inserted books', () async {
@@ -58,44 +59,43 @@ void main() {
       expect(all, hasLength(2));
     });
 
-    test('updateEpubBookTitle changes only the title', () async {
+    test('updateEpubBookTitle is unsupported (rename = re-key)', () async {
       final db = await _openDb();
-      final id = await db.insertEpubBook(_book(title: 'Old'));
+      final key = await db.insertEpubBook(_book(title: 'Old'));
 
-      await db.updateEpubBookTitle(id, 'New');
-
-      final row = await db.getEpubBook(id);
-      expect(row!.title, 'New');
-      expect(row.chapterCount, 3);
+      expect(() => db.updateEpubBookTitle(key, 'New'),
+          throwsA(isA<UnsupportedError>()));
     });
 
     test('updateEpubBookPath changes the epub path', () async {
       final db = await _openDb();
-      final id = await db.insertEpubBook(_book());
+      final key = await db.insertEpubBook(_book());
 
-      await db.updateEpubBookPath(id, '/new/path.epub');
+      await db.updateEpubBookPath(key, '/new/path.epub');
 
-      final row = await db.getEpubBook(id);
+      final row = await db.getEpubBook(key);
       expect(row!.epubPath, '/new/path.epub');
     });
 
     test('deleteEpubBook removes the row', () async {
       final db = await _openDb();
-      final id = await db.insertEpubBook(_book());
+      final key = await db.insertEpubBook(_book());
 
-      final deleted = await db.deleteEpubBook(id);
+      final deleted = await db.deleteEpubBook(key);
 
       expect(deleted, 1);
-      expect(await db.getEpubBook(id), isNull);
+      expect(await db.getEpubBook(key), isNull);
     });
 
-    test('insertEpubBookOrIgnore silently ignores duplicate', () async {
+    test('insertEpubBookOrIgnore silently ignores duplicate key', () async {
       final db = await _openDb();
       await db.insertEpubBook(_book(title: 'Unique'));
 
-      final id2 = await db.insertEpubBookOrIgnore(_book(title: 'Unique2'));
+      // Same bookKey → ignored, no throw.
+      await db.insertEpubBookOrIgnore(_book(title: 'Unique'));
 
-      expect(id2, greaterThan(0));
+      final all = await db.getAllEpubBooks();
+      expect(all, hasLength(1));
     });
   });
 }

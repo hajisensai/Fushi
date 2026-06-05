@@ -20,7 +20,7 @@ WEBVTT
 00:00:08.200 --> 00:00:12.000
 どこで生れたかとんと見当がつかぬ。
 ''',
-        bookUid: 'test/book.vtt',
+        bookKey: 'test/book.vtt',
       );
 
       expect(cues.length, 3);
@@ -41,7 +41,7 @@ WEBVTT
 01:30.500 --> 02:15.000
 短尺度タイムコード
 ''',
-        bookUid: 'test/book.vtt',
+        bookKey: 'test/book.vtt',
       );
 
       expect(cues.length, 1);
@@ -57,7 +57,7 @@ WEBVTT
 00:00:01.000 --> 00:00:04.000 align:left position:20%
 位置指令テスト
 ''',
-        bookUid: 'test/book.vtt',
+        bookKey: 'test/book.vtt',
       );
 
       expect(cues.length, 1);
@@ -78,7 +78,7 @@ STYLE
 00:00:01.000 --> 00:00:03.000
 本文
 ''',
-        bookUid: 'test/book.vtt',
+        bookKey: 'test/book.vtt',
       );
 
       expect(cues.length, 1);
@@ -93,7 +93,7 @@ WEBVTT
 00:00:01.000 --> 00:00:03.000
 <b>太字</b>と<i>斜体</i>と<c.color>カラー</c.color>
 ''',
-        bookUid: 'test/book.vtt',
+        bookKey: 'test/book.vtt',
       );
 
       expect(cues.length, 1);
@@ -103,7 +103,7 @@ WEBVTT
     test('带 UTF-8 BOM 的内容正常解析', () {
       final List<AudioCue> cues = VttParser.parseString(
         content: '\uFEFFWEBVTT\n\n00:00:01.000 --> 00:00:02.000\nBOM テスト\n',
-        bookUid: 'test/book.vtt',
+        bookKey: 'test/book.vtt',
       );
 
       expect(cues.length, 1);
@@ -113,7 +113,7 @@ WEBVTT
     test('空文件返回空列表', () {
       final List<AudioCue> cues = VttParser.parseString(
         content: 'WEBVTT\n',
-        bookUid: 'test/book.vtt',
+        bookKey: 'test/book.vtt',
       );
 
       expect(cues, isEmpty);

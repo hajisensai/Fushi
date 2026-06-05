@@ -206,7 +206,7 @@ class SyncManager {
 
     final syncFiles = await _backend.listSyncFiles(folderId);
 
-    final localPosition = await _db.getReaderPosition(book.id);
+    final localPosition = await _db.getReaderPosition(book.bookKey);
     final chapters = parseChaptersJson(book.chaptersJson);
 
     // HBK-AUDIT-047: compute the local progress fraction so a timestamp tie
@@ -440,7 +440,7 @@ class SyncManager {
       chapters: chapters,
     );
     await _db.upsertReaderPosition(ReaderPositionsCompanion(
-      ttuBookId: Value(book.id),
+      bookKey: Value(book.bookKey),
       sectionIndex: Value(pos.sectionIndex),
       normCharOffset: Value(pos.normCharOffset),
       ttuCharOffset: Value(remoteProgress.exploredCharCount),
@@ -459,7 +459,7 @@ class SyncManager {
     if (syncAudioBook && audioBookFileId != null) {
       final remoteAudio = await _backend.getAudioBookFile(audioBookFileId);
       final posMs = (remoteAudio.playbackPositionSec * 1000).round();
-      await _repo.setAudiobookPosition(book.id, posMs);
+      await _repo.setAudiobookPosition(book.bookKey, posMs);
     }
 
     // Import EPUB file if content sync is enabled and local file is missing
@@ -555,7 +555,7 @@ class SyncManager {
 
       // Export audiobook position
       if (syncAudioBook) {
-        final posMs = await _repo.getAudiobookPosition(book.id);
+        final posMs = await _repo.getAudiobookPosition(book.bookKey);
         if (posMs > 0) {
           final audioBook = TtuAudioBook(
             title: book.title,
@@ -572,7 +572,7 @@ class SyncManager {
 
       // Update local record: store exported exploredChars for dirty-flag cache
       await _db.upsertReaderPosition(ReaderPositionsCompanion(
-        ttuBookId: Value(book.id),
+        bookKey: Value(book.bookKey),
         sectionIndex: Value(localPosition.sectionIndex),
         normCharOffset: Value(localPosition.normCharOffset),
         ttuCharOffset: Value(exploredChars),
@@ -614,7 +614,7 @@ class SyncManager {
     }
 
     // Export audio files
-    final audioPaths = await _resolveAudioPaths(book.id);
+    final audioPaths = await _resolveAudioPaths(book.bookKey);
     for (final audioPath in audioPaths) {
       final audioFile = File(audioPath);
       if (!audioFile.existsSync()) continue;
@@ -651,7 +651,7 @@ class SyncManager {
     }
 
     // Import audio files
-    final audioPaths = await _resolveAudioPaths(book.id);
+    final audioPaths = await _resolveAudioPaths(book.bookKey);
     for (final audioPath in audioPaths) {
       if (File(audioPath).existsSync()) continue;
       final audioName = p.basename(audioPath);
@@ -683,9 +683,8 @@ class SyncManager {
     '.mp4',
   };
 
-  Future<List<String>> _resolveAudioPaths(int bookId) async {
-    final bookUid = buildLegacyBookUid(bookId);
-    final row = await _db.getAudiobookByBookUid(bookUid);
+  Future<List<String>> _resolveAudioPaths(String bookKey) async {
+    final row = await _db.getAudiobookByBookKey(bookKey);
     if (row == null) return const [];
 
     if (row.audioPathsJson != null) {
@@ -698,7 +697,7 @@ class SyncManager {
           return decoded.whereType<String>().toList();
         }
       } on FormatException catch (e) {
-        debugPrint('[sync] audioPathsJson decode failed for book $bookId: $e');
+        debugPrint('[sync] audioPathsJson decode failed for book $bookKey: $e');
       }
     }
 

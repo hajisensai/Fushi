@@ -98,10 +98,10 @@ AudioCue _cue({
   required int startMs,
   required int endMs,
   required String text,
-  String bookUid = 'test-book',
+  String bookKey = 'test-book',
 }) {
   return AudioCue()
-    ..bookUid = bookUid
+    ..bookKey = bookKey
     ..chapterHref = 'srt://default'
     ..sentenceIndex = idx
     ..textFragmentId = 'srt://$idx'

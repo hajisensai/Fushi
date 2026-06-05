@@ -29,20 +29,4 @@ void main() {
     expect(find.text(t.error_ankidroid_api), findsOneWidget);
     expect(find.text(t.dialog_launch_ankidroid), findsOneWidget);
   });
-
-  testWidgets('Anki default model dialog fits a compact desktop window', (
-    WidgetTester tester,
-  ) async {
-    tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(320, 240);
-    addTearDown(tester.view.reset);
-
-    await tester.pumpWidget(
-      buildApp(AnkiDefaultModelDialog(onClose: () {})),
-    );
-
-    expect(tester.takeException(), isNull);
-    expect(find.text(t.info_standard_model), findsOneWidget);
-    expect(find.text(t.dialog_close), findsOneWidget);
-  });
 }

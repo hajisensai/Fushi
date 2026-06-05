@@ -82,7 +82,7 @@ Antarmuka mendukung bahasa-bahasa berikut:
 
 | Lapisan | Teknologi |
 |---|---|
-| Framework | Flutter 3.41.6 (Dart SDK `>=3.5.0 <4.0.0`) |
+| Framework | Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`) |
 | Platform | Android / iOS / macOS / Windows / Linux (adaptif Material 3 + Cupertino) |
 | Pembaca | Mesin paginasi WebView (turunan dari [Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader)) |
 | Penyimpanan | Drift (SQLite, WAL) + hoshidicts (mesin kamus C++ FFI) |
@@ -112,7 +112,7 @@ flutter build apk --release --target-platform android-arm64 --split-per-abi
 
 ## Dependensi & Patch
 
-Proyek ini dikunci ke Flutter 3.41.6, beberapa dependensi upstream belum diadaptasi. Patching dibagi menjadi dua mekanisme: ① paket yang perlu menjadi input build dan direproduksi konsisten antar mesin di-vendor langsung ke `third_party/` dan ditunjuk dengan `dependency_overrides` (`network_to_file_image` / `carousel_slider` / `fading_edge_scrollview` / `flutter_inappwebview_android`, **tanpa** patch pub-cache); ② paket selebihnya dipatch sumbernya di pub cache oleh `ci/apply-patches.sh`. Detail mekanisme lihat [docs/agent/build.md](../agent/build.md). Tabel lipat di bawah adalah daftar historis yang dikelompokkan berdasarkan perubahan; untuk paket yang tumpang tindih dengan mekanisme ①, versi vendored yang berlaku.
+Proyek ini dikunci ke Flutter 3.44.0, beberapa dependensi upstream belum diadaptasi. Patching dibagi menjadi dua mekanisme: ① paket yang perlu menjadi input build dan direproduksi konsisten antar mesin di-vendor langsung ke `third_party/` dan ditunjuk dengan `dependency_overrides` (`network_to_file_image` / `carousel_slider` / `fading_edge_scrollview` / `flutter_inappwebview_android`, **tanpa** patch pub-cache); ② paket selebihnya dipatch sumbernya di pub cache oleh `ci/apply-patches.sh`. Detail mekanisme lihat [docs/agent/build.md](../agent/build.md). Tabel lipat di bawah adalah daftar historis yang dikelompokkan berdasarkan perubahan; untuk paket yang tumpang tindih dengan mekanisme ①, versi vendored yang berlaku.
 
 <details>
 <summary><b>Patch Perubahan Flutter API</b></summary>
@@ -132,7 +132,7 @@ Proyek ini dikunci ke Flutter 3.41.6, beberapa dependensi upstream belum diadapt
 <details>
 <summary><b>Patch Penghapusan v1 Embedding</b></summary>
 
-Flutter 3.41.6 sepenuhnya menghapus v1 embedding API (`PluginRegistry.Registrar`). Plugin berikut perlu referensi terkait dihapus:
+Flutter 3.44.0 sepenuhnya menghapus v1 embedding API (`PluginRegistry.Registrar`). Plugin berikut perlu referensi terkait dihapus:
 
 `flutter_plugin_android_lifecycle` · `file_picker` · `flutter_inappwebview` · `fluttertoast` · `image_picker_android` · `mecab_dart` · `permission_handler_android` · `url_launcher_android` · `path_provider_android` · `sqflite` · `record_mp3_plus`
 

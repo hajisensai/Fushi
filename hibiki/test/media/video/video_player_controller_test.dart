@@ -3,7 +3,7 @@ import 'package:hibiki/src/media/video/video_player_controller.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 
 AudioCue _cue(int i, int s, int e) => AudioCue()
-  ..bookUid = 'video/1'
+  ..bookKey = 'video/1'
   ..chapterHref = 'video://default'
   ..sentenceIndex = i
   ..textFragmentId = ''

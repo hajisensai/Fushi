@@ -215,6 +215,7 @@ class _RemoteBook {
 
 Future<EpubBookRow> _seedBook(HibikiDatabase db, String title) async {
   await db.insertEpubBook(EpubBooksCompanion.insert(
+    bookKey: title,
     title: title,
     epubPath: '/fake/$title.epub',
     extractDir: '/fake/$title',
@@ -227,13 +228,13 @@ Future<EpubBookRow> _seedBook(HibikiDatabase db, String title) async {
 
 Future<void> _seedPosition(
   HibikiDatabase db,
-  int bookId, {
+  String bookKey, {
   required int updatedAt,
   required double fraction,
 }) async {
   final int normOffset = (fraction * 10000).round();
   await db.upsertReaderPosition(ReaderPositionsCompanion(
-    ttuBookId: Value(bookId),
+    bookKey: Value(bookKey),
     sectionIndex: const Value(0),
     normCharOffset: Value(normOffset),
     ttuCharOffset: const Value(-1),
@@ -263,7 +264,7 @@ void main() {
   Future<(HibikiDatabase, _FakeSyncBackend)> seedForkedLibrary() async {
     final HibikiDatabase db = _memDb();
     final EpubBookRow book = await _seedBook(db, 'BookA');
-    await _seedPosition(db, book.id, updatedAt: 120, fraction: 0.6);
+    await _seedPosition(db, book.bookKey, updatedAt: 120, fraction: 0.6);
     await db.setSyncBaseline(sanitizeTtuFilename('BookA'), 'progress', 50);
     final _FakeSyncBackend fake = _FakeSyncBackend(
       remoteBooks: <String, _RemoteBook>{

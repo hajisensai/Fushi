@@ -7,7 +7,7 @@ AudioCue _cue({
   required int endMs,
 }) {
   return AudioCue()
-    ..bookUid = 'b'
+    ..bookKey = 'b'
     ..chapterHref = 'c'
     ..sentenceIndex = 0
     ..textFragmentId = '#s'

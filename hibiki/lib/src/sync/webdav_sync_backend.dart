@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
+import 'package:hibiki/src/sync/sync_utils.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 import 'package:hibiki/src/sync/webdav_ops.dart';
@@ -78,7 +79,7 @@ class WebDavSyncBackend extends SyncBackend {
   Future<String> findOrCreateRootFolder() async {
     if (_rootFolderId != null) return _rootFolderId!;
 
-    final path = '${_ops!.baseUrl}/ttu-reader-data/';
+    final path = '${_ops!.baseUrl}/$kSyncRootFolderName/';
     await _ops!.ensureCollection(path);
     _rootFolderId = path;
     return path;
@@ -307,7 +308,7 @@ class WebDavSyncBackend extends SyncBackend {
 
   @override
   Future<String> ensureNamespace(String name) async {
-    final root = '${_ops!.baseUrl}/ttu-reader-data/';
+    final root = '${_ops!.baseUrl}/$kSyncRootFolderName/';
     final path = '$root${Uri.encodeComponent(name)}/';
     await _ops!.ensureCollection(path);
     return path;

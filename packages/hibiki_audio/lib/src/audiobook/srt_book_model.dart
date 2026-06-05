@@ -32,6 +32,6 @@ class SrtBook {
   /// 导入时间戳（milliseconds since epoch），用于书架排序。
   late int importedAt;
 
-  /// EpubBooks.id（Drift/SQLite）中的 book ID（0 表示尚未导入 EPUB）。
-  int ttuBookId = 0;
+  /// 关联的 EpubBooks.bookKey（空串表示 standalone SRT，不依赖 EPUB）。
+  String bookKey = '';
 }

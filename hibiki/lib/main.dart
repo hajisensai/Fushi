@@ -86,7 +86,7 @@ void popupMain() {
 /// opening a video with Hibiki (file association / drag-onto-exe / CLI) lands the
 /// video path here. We stash the first supported video path for the widget tree
 /// to act on once the app has finished initialising.
-void main(List<String> args) {
+void main([List<String> args = const <String>[]]) {
   // 桌面端：从 args 里挑出外部打开的视频路径（仅 Windows runner 会传 argv）。
   if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
     final String? videoArg = firstExternalVideoArg(args);

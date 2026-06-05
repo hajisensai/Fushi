@@ -2,36 +2,33 @@ import 'package:drift/drift.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'reader_position_model.dart';
 
-/// 阅读位置持久化。
-///
-/// 参数名 `ttuBookId` 沿用旧列名保持数据库兼容，
-/// 语义上等同于 `EpubBooks.id`（书的主键）。
+/// 阅读位置持久化。键为书的 `bookKey`（EpubBooks 主键 = sanitize 后的标题）。
 class ReaderPositionRepository {
   const ReaderPositionRepository(this._db);
 
   final HibikiDatabase _db;
 
-  Future<ReaderPosition?> findByTtuBookId(int ttuBookId) async {
-    final row = await _db.getReaderPosition(ttuBookId);
+  Future<ReaderPosition?> findByBookKey(String bookKey) async {
+    final row = await _db.getReaderPosition(bookKey);
     if (row == null) return null;
     return _rowToModel(row);
   }
 
   Future<void> save({
-    required int ttuBookId,
+    required String bookKey,
     required int sectionIndex,
     required int normCharOffset,
     int? ttuCharOffset,
   }) async {
     final ReaderPositionRow? existing =
-        ttuCharOffset == null ? await _db.getReaderPosition(ttuBookId) : null;
+        ttuCharOffset == null ? await _db.getReaderPosition(bookKey) : null;
     final Value<int> ttuCharOffsetValue = ttuCharOffset != null
         ? Value(ttuCharOffset)
         : existing == null || existing.sectionIndex == sectionIndex
             ? const Value.absent()
             : const Value(-1);
     await _db.upsertReaderPosition(ReaderPositionsCompanion(
-      ttuBookId: Value(ttuBookId),
+      bookKey: Value(bookKey),
       sectionIndex: Value(sectionIndex),
       normCharOffset: Value(normCharOffset),
       ttuCharOffset: ttuCharOffsetValue,
@@ -39,12 +36,12 @@ class ReaderPositionRepository {
     ));
   }
 
-  Future<void> delete(int ttuBookId) => _db.deleteReaderPosition(ttuBookId);
+  Future<void> delete(String bookKey) => _db.deleteReaderPosition(bookKey);
 
   static ReaderPosition _rowToModel(ReaderPositionRow r) {
     final pos = ReaderPosition();
     pos.id = r.id;
-    pos.ttuBookId = r.ttuBookId;
+    pos.bookKey = r.bookKey;
     pos.sectionIndex = r.sectionIndex;
     pos.normCharOffset = r.normCharOffset;
     pos.ttuCharOffset = r.ttuCharOffset >= 0 ? r.ttuCharOffset : null;

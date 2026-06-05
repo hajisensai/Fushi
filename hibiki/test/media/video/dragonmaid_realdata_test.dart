@@ -47,7 +47,7 @@ void main() {
     // ③ 解析日文 cue，打印前 3 条供肉眼确认。
     final String subText = await readTextWithEncoding(File(sidecar));
     final List<AudioCue> cues =
-        SrtParser.parseString(content: subText, bookUid: 'probe');
+        SrtParser.parseString(content: subText, bookKey: 'probe');
     expect(cues.length, greaterThan(0));
     // ignore: avoid_print
     print('[dragonmaid] entries=${entries.length} '

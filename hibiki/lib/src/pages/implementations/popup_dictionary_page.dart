@@ -107,7 +107,13 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
         }
       },
       child: HibikiOverlayScaffold(
-        body: _buildOuterContainer(),
+        // 根因修复（BUG-054）：弹窗词典窗口经 popup_main 同样套了 HibikiAppUiScale，
+        // 其 DictionaryPopupLayer→DictionaryPopupWebView 会被 FittedBox 拉糊。整页在
+        // 中和器下渲染（净缩放=1），WebView 走原生密度、其上的关闭遮罩/嵌套层共用
+        // 同一真实坐标系。
+        body: HibikiAppUiScaleNeutralizer(
+          child: _buildOuterContainer(),
+        ),
       ),
     );
   }
@@ -157,18 +163,15 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
         children: [
           _buildSearchBar(),
           Divider(height: 1, thickness: 1, color: tokens.surfaces.outline),
-          Expanded(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final screen =
-                    Size(constraints.maxWidth, constraints.maxHeight);
-                return _buildStack(context, screen);
-              },
-            ),
-          ),
+          Expanded(child: _buildStack(context)),
         ],
       ),
     );
+    // 基础层（栈深 1）用整卡横滑关闭窗口；一旦下钻到嵌套层，外层横滑必须停用——
+    // SwipeDismissWrapper 基于 Listener，指针移动会同时派发到所有祖先 Listener，
+    // 外层若仍在，横滑嵌套层会连带平移整张卡片（BUG-051 的第二症状）。
+    // 嵌套层各自持有横滑（仅返回上一层），故此处只在基础层套外层横滑。
+    if (_stack.length > 1) return card;
     return SwipeDismissWrapper(
       sensitivity: ReaderHibikiSource.instance.dismissSwipeSensitivity,
       onDismiss: _close,
@@ -185,30 +188,25 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     );
   }
 
-  Widget _buildStack(BuildContext context, Size screen) {
+  Widget _buildStack(BuildContext context) {
     if (_stack.isEmpty) return const SizedBox.shrink();
 
     return Stack(
       children: [
-        for (int i = 0; i < _stack.length; i++) _buildLayer(context, i, screen),
+        for (int i = 0; i < _stack.length; i++) _buildLayer(context, i),
       ],
     );
   }
 
-  Widget _buildLayer(BuildContext context, int index, Size screen) {
-    if (index > 0) {
-      return buildNestedPopupLayer(
-        index: index,
-        screen: screen,
-        popupStack: _stack,
-        onPush: (text, rect) => _pushSearch(text, rect),
-        onPop: _popAt,
-      );
-    }
-
-    // index == 0: full-size base layer (popup-specific)
-    final entry = _stack[0];
-    final isDark =
+  /// app 外查词窗口本身已是一张约束卡片，下钻层不再用「贴选区的小浮卡」
+  /// （那是全屏阅读器内 `buildNestedPopupLayer` 的语义，套进小卡里会被压成小窗），
+  /// 而是与基础层一样满卡渲染、不透明覆盖下层（BUG-051 的第一症状）。
+  /// 基础层（index 0）透明、横滑交由整卡外层；嵌套层不透明、自带横滑返回上一层。
+  Widget _buildLayer(BuildContext context, int index) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final NestedPopupEntry entry = _stack[index];
+    final bool isBase = index == 0;
+    final bool isDark =
         (appModel.overrideDictionaryTheme ?? Theme.of(context)).brightness ==
             Brightness.dark;
     return Positioned.fill(
@@ -218,22 +216,24 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
         webViewKey: entry.webViewKey,
         isDark: isDark,
         showBorder: false,
-        swipeDismissible: false,
-        overrideFillColor: Colors.transparent,
-        onDismiss: _close,
-        onTapOutside: _close,
+        swipeDismissible: !isBase,
+        overrideFillColor: isBase
+            ? Colors.transparent
+            : (appModel.overrideDictionaryColor ?? tokens.surfaces.page),
+        onDismiss: isBase ? _close : () => _popAt(index),
+        onTapOutside: isBase ? _close : () => _popAt(index),
         onScrolledToBottom: entry.allLoaded
             ? null
             : () => loadMoreForEntry(entry: entry, popupStack: _stack),
         onTextSelected: (text, localRect) {
-          if (_stack.length > 1) {
-            setState(() => _stack.removeRange(1, _stack.length));
+          if (_stack.length > index + 1) {
+            setState(() => _stack.removeRange(index + 1, _stack.length));
           }
           _pushSearch(text, localRect);
         },
         onLinkClick: (query, localRect) {
-          if (_stack.length > 1) {
-            setState(() => _stack.removeRange(1, _stack.length));
+          if (_stack.length > index + 1) {
+            setState(() => _stack.removeRange(index + 1, _stack.length));
           }
           _pushSearch(query, localRect);
         },

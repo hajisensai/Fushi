@@ -9,7 +9,7 @@ AudioCue _cue({
   String text = '',
 }) {
   return AudioCue()
-    ..bookUid = 'book1'
+    ..bookKey = 'book1'
     ..chapterHref = ''
     ..sentenceIndex = 0
     ..textFragmentId = textFragmentId

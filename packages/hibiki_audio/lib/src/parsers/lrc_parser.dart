@@ -44,12 +44,12 @@ class LrcParser {
   ///
   /// 走 [readTextWithEncoding] 自动识别编码，兼容 Shift-JIS / CP932 等非 UTF-8 源。
   ///
-  /// [bookUid]            对应 MediaItem.uniqueKey。
+  /// [bookKey]            对应 MediaItem.uniqueKey。
   /// [chapterHref]        章节标识，默认 [defaultChapter]（单章节策略）。
   /// [lastCueDurationMs]  最后一条 cue 的持续时长（毫秒），默认 5000。
   static Future<List<AudioCue>> parse({
     required File lrcFile,
-    required String bookUid,
+    required String bookKey,
     String chapterHref = defaultChapter,
     int lastCueDurationMs = 5000,
     int audioFileIndex = 0,
@@ -57,7 +57,7 @@ class LrcParser {
     final String content = await readTextWithEncoding(lrcFile);
     return parseString(
       content: content,
-      bookUid: bookUid,
+      bookKey: bookKey,
       chapterHref: chapterHref,
       lastCueDurationMs: lastCueDurationMs,
       audioFileIndex: audioFileIndex,
@@ -67,7 +67,7 @@ class LrcParser {
   /// 解析 LRC 文本字符串并返回 [AudioCue] 列表。纯函数，测试入口。
   static List<AudioCue> parseString({
     required String content,
-    required String bookUid,
+    required String bookKey,
     String chapterHref = defaultChapter,
     int lastCueDurationMs = 5000,
     int audioFileIndex = 0,
@@ -123,7 +123,7 @@ class LrcParser {
           : startMs + lastCueDurationMs;
 
       final AudioCue cue = AudioCue()
-        ..bookUid = bookUid
+        ..bookKey = bookKey
         ..chapterHref = chapterHref
         ..sentenceIndex = i
         ..textFragmentId = '[data-cue-id="$i"]'

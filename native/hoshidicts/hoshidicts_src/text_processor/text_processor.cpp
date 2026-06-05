@@ -116,17 +116,98 @@ std::u32string katakana_to_hiragana(const std::u32string& text) {
   return result;
 }
 
+// Unicode 范围小写（码点驱动，无语言门控）。覆盖 18 张 Yomitan 变换表里高频、
+// 规则性强的双大小写脚本：ASCII / Latin-1 Supplement / 希腊 / 西里尔。其余脚本字符
+// 天然落到 else 保持原样。土耳其 i/İ、立陶宛等特殊 casing 规则不在覆盖内（见计划风险节）。
 std::u32string to_lowercase(const std::u32string& text) {
   std::u32string result;
   result.reserve(text.size());
   for (char32_t c : text) {
-    if (c >= U'A' && c <= U'Z') {
-      result += static_cast<char32_t>(c + 32);
-    } else {
+    if (c >= 0x0041 && c <= 0x005A) {  // ASCII A–Z
+      c = static_cast<char32_t>(c + 0x20);
+    } else if ((c >= 0x00C0 && c <= 0x00D6) ||  // Latin-1 À–Ö
+               (c >= 0x00D8 && c <= 0x00DE)) {   // Latin-1 Ø–Þ
+      c = static_cast<char32_t>(c + 0x20);
+    } else if ((c >= 0x0391 && c <= 0x03A1) ||  // 希腊 Α–Ρ
+               (c >= 0x03A3 && c <= 0x03AB)) {   // 希腊 Σ–Ϋ（跳过未分配的 0x03A2）
+      c = static_cast<char32_t>(c + 0x20);
+    } else if (c >= 0x0410 && c <= 0x042F) {  // 西里尔 А–Я
+      c = static_cast<char32_t>(c + 0x20);
+    } else if (c >= 0x0400 && c <= 0x040F) {  // 西里尔 Ѐ–Џ
+      c = static_cast<char32_t>(c + 0x50);
+    }
+    result += c;
+  }
+  return result;
+}
+
+// P2：删除组合记号 / 阿拉伯 harakat·tatweel / 希伯来点。纯删除，对非目标脚本是 no-op。
+bool is_combining_to_strip(char32_t c) {
+  return (c >= 0x0300 && c <= 0x036F) ||  // 组合变音符
+         (c >= 0x064B && c <= 0x065F) ||  // 阿拉伯 harakat 等
+         (c == 0x0670) ||                 // 阿拉伯上标 alef
+         (c == 0x0640) ||                 // 阿拉伯 tatweel（连接符）
+         (c >= 0x0591 && c <= 0x05BD) ||  // 希伯来 cantillation/points
+         (c == 0x05BF) || (c == 0x05C1) || (c == 0x05C2) || (c == 0x05C4) ||
+         (c == 0x05C5) || (c == 0x05C7);  // 希伯来余项点
+}
+
+std::u32string strip_combining(const std::u32string& text) {
+  std::u32string result;
+  result.reserve(text.size());
+  for (char32_t c : text) {
+    if (!is_combining_to_strip(c)) {
       result += c;
     }
   }
   return result;
+}
+
+// P3：预合成拉丁变音字母 → ASCII 基字母（curated，覆盖 Latin-1 Supplement）。
+// 处理“预合成”文本（实际文本主流）；P2 处理“已分解”文本。两者互补、互不依赖。
+// 不折叠 ß/Æ/Œ 等会改变长度的连字，保留原样。Latin Extended-A 暂未覆盖（见计划风险节）。
+char32_t precomposed_base(char32_t c) {
+  switch (c) {
+    case 0x00C0: case 0x00C1: case 0x00C2: case 0x00C3: case 0x00C4: case 0x00C5: return U'A';
+    case 0x00C7: return U'C';
+    case 0x00C8: case 0x00C9: case 0x00CA: case 0x00CB: return U'E';
+    case 0x00CC: case 0x00CD: case 0x00CE: case 0x00CF: return U'I';
+    case 0x00D1: return U'N';
+    case 0x00D2: case 0x00D3: case 0x00D4: case 0x00D5: case 0x00D6: case 0x00D8: return U'O';
+    case 0x00D9: case 0x00DA: case 0x00DB: case 0x00DC: return U'U';
+    case 0x00DD: return U'Y';
+    case 0x00E0: case 0x00E1: case 0x00E2: case 0x00E3: case 0x00E4: case 0x00E5: return U'a';
+    case 0x00E7: return U'c';
+    case 0x00E8: case 0x00E9: case 0x00EA: case 0x00EB: return U'e';
+    case 0x00EC: case 0x00ED: case 0x00EE: case 0x00EF: return U'i';
+    case 0x00F1: return U'n';
+    case 0x00F2: case 0x00F3: case 0x00F4: case 0x00F5: case 0x00F6: case 0x00F8: return U'o';
+    case 0x00F9: case 0x00FA: case 0x00FB: case 0x00FC: return U'u';
+    case 0x00FD: case 0x00FF: return U'y';
+    default: return c;
+  }
+}
+
+std::u32string strip_precomposed(const std::u32string& text) {
+  std::u32string result;
+  result.reserve(text.size());
+  for (char32_t c : text) {
+    result += precomposed_base(c);
+  }
+  return result;
+}
+
+// P2 + P3 作为两个独立 {0,1} 处理器，靠 process() 的变体扇出自然组合
+// （既分解、又预合成的词会得到各自变体）。
+std::vector<TextProcessor> get_diacritic_removal_processors() {
+  return {
+      {.options = {0, 1}, .process = [](const std::u32string& text, int opt) -> std::u32string {
+         return opt == 1 ? strip_combining(text) : text;
+       }},
+      {.options = {0, 1}, .process = [](const std::u32string& text, int opt) -> std::u32string {
+         return opt == 1 ? strip_precomposed(text) : text;
+       }},
+  };
 }
 
 std::vector<TextProcessor> get_english_processors() {
@@ -166,6 +247,8 @@ std::vector<TextVariant> text_processor::process(const std::string& src) {
   auto all_processors = get_japanese_processors();
   auto en_processors = get_english_processors();
   all_processors.insert(all_processors.end(), en_processors.begin(), en_processors.end());
+  auto dia_processors = get_diacritic_removal_processors();
+  all_processors.insert(all_processors.end(), dia_processors.begin(), dia_processors.end());
 
   for (const auto& processor : all_processors) {
     std::map<std::u32string, int> next;

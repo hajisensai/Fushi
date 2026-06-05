@@ -120,13 +120,15 @@ List<AudioCue> parseSubtitleContent(
   required String content,
   required String bookUid,
 }) {
+  // AudioCue is keyed by `bookKey` (name-PK rename); a video book's owner key
+  // for its cues is its own book_uid, so pass bookUid as the cue's bookKey.
   switch (format) {
     case SubtitleFormat.srt:
-      return SrtParser.parseString(content: content, bookUid: bookUid);
+      return SrtParser.parseString(content: content, bookKey: bookUid);
     case SubtitleFormat.ass:
-      return AssParser.parseString(content: content, bookUid: bookUid);
+      return AssParser.parseString(content: content, bookKey: bookUid);
     case SubtitleFormat.vtt:
-      return VttParser.parseString(content: content, bookUid: bookUid);
+      return VttParser.parseString(content: content, bookKey: bookUid);
   }
 }
 

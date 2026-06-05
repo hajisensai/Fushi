@@ -10,7 +10,7 @@ class Bookmark {
         normCharOffset: json['normCharOffset'] as int,
         label: json['label'] as String,
         createdAt: DateTime.parse(json['createdAt'] as String),
-        ttuBookId: json['ttuBookId'] as int?,
+        bookKey: json['bookKey'] as String?,
         bookTitle: json['bookTitle'] as String?,
         pageInChapter: json['pageInChapter'] as int?,
         totalPagesInChapter: json['totalPagesInChapter'] as int?,
@@ -21,7 +21,7 @@ class Bookmark {
     required this.label,
     required this.createdAt,
     this.id,
-    this.ttuBookId,
+    this.bookKey,
     this.bookTitle,
     this.pageInChapter,
     this.totalPagesInChapter,
@@ -33,7 +33,7 @@ class Bookmark {
         normCharOffset: row.normCharOffset,
         label: row.label,
         createdAt: DateTime.fromMillisecondsSinceEpoch(row.createdAt),
-        ttuBookId: row.ttuBookId,
+        bookKey: row.bookKey,
         bookTitle: row.bookTitle,
         pageInChapter: row.pageInChapter,
         totalPagesInChapter: row.totalPagesInChapter,
@@ -44,7 +44,7 @@ class Bookmark {
   final int normCharOffset;
   final String label;
   final DateTime createdAt;
-  final int? ttuBookId;
+  final String? bookKey;
   final String? bookTitle;
   final int? pageInChapter;
   final int? totalPagesInChapter;
@@ -55,7 +55,7 @@ class Bookmark {
         'normCharOffset': normCharOffset,
         'label': label,
         'createdAt': createdAt.toIso8601String(),
-        if (ttuBookId != null) 'ttuBookId': ttuBookId,
+        if (bookKey != null) 'bookKey': bookKey,
         if (bookTitle != null) 'bookTitle': bookTitle,
         if (pageInChapter != null) 'pageInChapter': pageInChapter,
         if (totalPagesInChapter != null)
@@ -68,21 +68,21 @@ class BookmarkRepository {
 
   final HibikiDatabase _db;
 
-  String _key(int ttuBookId) => 'bookmarks_$ttuBookId';
+  String _key(String bookKey) => 'bookmarks_$bookKey';
 
-  Future<List<Bookmark>> getBookmarks(int ttuBookId) async {
-    await _migrateLegacyBookmarks(ttuBookId);
+  Future<List<Bookmark>> getBookmarks(String bookKey) async {
+    await _migrateLegacyBookmarks(bookKey);
     final rows = await (_db.select(_db.bookmarks)
-          ..where((tbl) => tbl.ttuBookId.equals(ttuBookId))
+          ..where((tbl) => tbl.bookKey.equals(bookKey))
           ..orderBy([(tbl) => OrderingTerm.desc(tbl.createdAt)]))
         .get();
     return rows.map(Bookmark.fromRow).toList();
   }
 
-  Future<int> addBookmark(int ttuBookId, Bookmark bookmark) async {
+  Future<int> addBookmark(String bookKey, Bookmark bookmark) async {
     return _db.into(_db.bookmarks).insert(
           BookmarksCompanion.insert(
-            ttuBookId: ttuBookId,
+            bookKey: bookKey,
             sectionIndex: bookmark.sectionIndex,
             normCharOffset: bookmark.normCharOffset,
             label: bookmark.label,
@@ -98,8 +98,8 @@ class BookmarkRepository {
     await (_db.delete(_db.bookmarks)..where((tbl) => tbl.id.equals(id))).go();
   }
 
-  Future<void> removeBookmark(int ttuBookId, int index) async {
-    final bookmarks = await getBookmarks(ttuBookId);
+  Future<void> removeBookmark(String bookKey, int index) async {
+    final bookmarks = await getBookmarks(bookKey);
     if (index < 0 || index >= bookmarks.length) return;
     final int? id = bookmarks[index].id;
     if (id == null) return;
@@ -107,25 +107,25 @@ class BookmarkRepository {
   }
 
   Future<void> removeBookmarkMatching(
-    int ttuBookId, {
+    String bookKey, {
     required int sectionIndex,
     required int normCharOffset,
     required DateTime createdAt,
   }) async {
     await (_db.delete(_db.bookmarks)
           ..where((tbl) =>
-              tbl.ttuBookId.equals(ttuBookId) &
+              tbl.bookKey.equals(bookKey) &
               tbl.sectionIndex.equals(sectionIndex) &
               tbl.normCharOffset.equals(normCharOffset) &
               tbl.createdAt.equals(createdAt.millisecondsSinceEpoch)))
         .go();
   }
 
-  Future<void> _migrateLegacyBookmarks(int ttuBookId) async {
-    final raw = await _db.getPref(_key(ttuBookId));
+  Future<void> _migrateLegacyBookmarks(String bookKey) async {
+    final raw = await _db.getPref(_key(bookKey));
     if (raw == null || raw.isEmpty) return;
     final existing = await (_db.selectOnly(_db.bookmarks)
-          ..where(_db.bookmarks.ttuBookId.equals(ttuBookId))
+          ..where(_db.bookmarks.bookKey.equals(bookKey))
           ..addColumns([_db.bookmarks.id.count()]))
         .map((row) => row.read(_db.bookmarks.id.count()) ?? 0)
         .getSingle();
@@ -134,20 +134,20 @@ class BookmarkRepository {
       try {
         list = jsonDecode(raw) as List<dynamic>;
       } catch (_) {
-        await _db.deletePref(_key(ttuBookId));
+        await _db.deletePref(_key(bookKey));
         return;
       }
       for (final dynamic e in list) {
         if (e is! Map<String, dynamic>) continue;
         final bookmark = Bookmark.fromJson(e);
         await addBookmark(
-          ttuBookId,
+          bookKey,
           Bookmark(
             sectionIndex: bookmark.sectionIndex,
             normCharOffset: bookmark.normCharOffset,
             label: bookmark.label,
             createdAt: bookmark.createdAt,
-            ttuBookId: bookmark.ttuBookId ?? ttuBookId,
+            bookKey: bookmark.bookKey ?? bookKey,
             pageInChapter: bookmark.pageInChapter,
             totalPagesInChapter: bookmark.totalPagesInChapter,
             bookTitle: bookmark.bookTitle,
@@ -155,7 +155,7 @@ class BookmarkRepository {
         );
       }
     }
-    await _db.deletePref(_key(ttuBookId));
+    await _db.deletePref(_key(bookKey));
   }
 
   Future<List<Bookmark>> getAllBookmarks() async {
@@ -167,9 +167,9 @@ class BookmarkRepository {
   }
 
   Future<void> importLegacyBookmark(
-    int ttuBookId,
+    String bookKey,
     Bookmark bookmark,
   ) async {
-    await addBookmark(ttuBookId, bookmark);
+    await addBookmark(bookKey, bookmark);
   }
 }

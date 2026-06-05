@@ -8,9 +8,9 @@ Future<HibikiDatabase> _openDb() async {
   return db;
 }
 
-AudiobooksCompanion _audiobook({String bookUid = 'book/1'}) {
+AudiobooksCompanion _audiobook({String bookKey = 'book/1'}) {
   return AudiobooksCompanion.insert(
-    bookUid: bookUid,
+    bookKey: bookKey,
     alignmentFormat: 'srt',
     alignmentPath: '/tmp/align.srt',
   );
@@ -23,45 +23,45 @@ void main() {
 
       await db.upsertAudiobook(_audiobook());
 
-      final row = await db.getAudiobookByBookUid('book/1');
+      final row = await db.getAudiobookByBookKey('book/1');
       expect(row, isNotNull);
       expect(row!.alignmentFormat, 'srt');
     });
 
-    test('getAudiobookByBookUid returns null for absent uid', () async {
+    test('getAudiobookByBookKey returns null for absent uid', () async {
       final db = await _openDb();
 
-      expect(await db.getAudiobookByBookUid('missing'), isNull);
+      expect(await db.getAudiobookByBookKey('missing'), isNull);
     });
 
     test('upsert replaces existing audiobook', () async {
       final db = await _openDb();
       await db.upsertAudiobook(_audiobook());
       await db.upsertAudiobook(AudiobooksCompanion.insert(
-        bookUid: 'book/1',
+        bookKey: 'book/1',
         alignmentFormat: 'vtt',
         alignmentPath: '/tmp/new.vtt',
       ));
 
-      final row = await db.getAudiobookByBookUid('book/1');
+      final row = await db.getAudiobookByBookKey('book/1');
       expect(row!.alignmentFormat, 'vtt');
     });
 
     test('getAllAudiobooks returns all', () async {
       final db = await _openDb();
-      await db.upsertAudiobook(_audiobook(bookUid: 'a'));
-      await db.upsertAudiobook(_audiobook(bookUid: 'b'));
+      await db.upsertAudiobook(_audiobook(bookKey: 'a'));
+      await db.upsertAudiobook(_audiobook(bookKey: 'b'));
 
       expect(await db.getAllAudiobooks(), hasLength(2));
     });
 
-    test('deleteAudiobookByBookUid removes the row', () async {
+    test('deleteAudiobookByBookKey removes the row', () async {
       final db = await _openDb();
       await db.upsertAudiobook(_audiobook());
 
-      final count = await db.deleteAudiobookByBookUid('book/1');
+      final count = await db.deleteAudiobookByBookKey('book/1');
       expect(count, 1);
-      expect(await db.getAudiobookByBookUid('book/1'), isNull);
+      expect(await db.getAudiobookByBookKey('book/1'), isNull);
     });
   });
 
@@ -71,7 +71,7 @@ void main() {
       final db = await _openDb();
       final cues = [
         AudioCuesCompanion.insert(
-          bookUid: 'b1',
+          bookKey: 'b1',
           chapterHref: 'ch1.xhtml',
           sentenceIndex: 0,
           textFragmentId: 'p1s1',
@@ -81,7 +81,7 @@ void main() {
           audioFileIndex: 0,
         ),
         AudioCuesCompanion.insert(
-          bookUid: 'b1',
+          bookKey: 'b1',
           chapterHref: 'ch1.xhtml',
           sentenceIndex: 1,
           textFragmentId: 'p1s2',
@@ -102,7 +102,7 @@ void main() {
       final db = await _openDb();
       await db.replaceCuesForBook('b1', [
         AudioCuesCompanion.insert(
-          bookUid: 'b1',
+          bookKey: 'b1',
           chapterHref: 'ch1.xhtml',
           sentenceIndex: 0,
           textFragmentId: 'f1',
@@ -112,7 +112,7 @@ void main() {
           audioFileIndex: 0,
         ),
         AudioCuesCompanion.insert(
-          bookUid: 'b1',
+          bookKey: 'b1',
           chapterHref: 'ch2.xhtml',
           sentenceIndex: 0,
           textFragmentId: 'f2',
@@ -132,7 +132,7 @@ void main() {
       final db = await _openDb();
       await db.replaceCuesForBook('b1', [
         AudioCuesCompanion.insert(
-          bookUid: 'b1',
+          bookKey: 'b1',
           chapterHref: 'ch1.xhtml',
           sentenceIndex: 3,
           textFragmentId: 'f3',
@@ -158,7 +158,7 @@ void main() {
       final db = await _openDb();
       await db.replaceCuesForBook('b1', [
         AudioCuesCompanion.insert(
-          bookUid: 'b1',
+          bookKey: 'b1',
           chapterHref: 'ch1.xhtml',
           sentenceIndex: 0,
           textFragmentId: 'old',
@@ -171,7 +171,7 @@ void main() {
 
       await db.replaceCuesForBook('b1', [
         AudioCuesCompanion.insert(
-          bookUid: 'b1',
+          bookKey: 'b1',
           chapterHref: 'ch1.xhtml',
           sentenceIndex: 0,
           textFragmentId: 'new',

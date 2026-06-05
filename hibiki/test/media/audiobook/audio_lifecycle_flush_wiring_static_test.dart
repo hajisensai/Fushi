@@ -32,7 +32,8 @@ void main() {
     // `=> repo.updatePositionMs(...)` / `=> abRepo.updatePositionMs(...)`：
     // 用箭头转发返回 Future<void>，flushPosition 才能 await 到落库。
     expect(
-      RegExp(r'onPositionWrite = \([^)]*\) =>\s*\w+\.updatePositionMs\(')
+      RegExp(r'onPositionWrite =\s*\([^)]*\) =>\s*\w+\.updatePositionMs\(',
+              dotAll: true)
           .allMatches(src)
           .length,
       greaterThanOrEqualTo(2),

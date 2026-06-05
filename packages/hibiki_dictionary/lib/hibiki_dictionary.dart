@@ -19,8 +19,6 @@ export 'src/language/language.dart';
 export 'src/language/language_utils.dart';
 export 'src/language/ruby_text.dart';
 export 'src/language/implementations/japanese_language.dart';
-export 'src/language/implementations/english_language.dart';
-export 'src/language/implementations/chinese_language.dart';
 export 'src/models/dictionary_entry.dart';
 export 'src/models/dictionary_operations_params.dart';
 export 'src/models/dictionary_search_result.dart';

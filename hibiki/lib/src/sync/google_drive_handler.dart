@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:googleapis/drive/v3.dart' as drive;
 import 'package:hibiki/src/sync/google_drive_auth.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
+import 'package:hibiki/src/sync/sync_utils.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 
@@ -93,7 +94,7 @@ class GoogleDriveHandler {
     return _call((api) async {
       final list = await api.files.list(
         q: "trashed=false and mimeType='application/vnd.google-apps.folder' "
-            "and name='ttu-reader-data'",
+            "and name='$kSyncRootFolderName'",
         $fields: 'files(id,name)',
       );
 
@@ -104,7 +105,7 @@ class GoogleDriveHandler {
 
       final created = await api.files.create(
         drive.File()
-          ..name = 'ttu-reader-data'
+          ..name = kSyncRootFolderName
           ..mimeType = 'application/vnd.google-apps.folder',
       );
       _rootFolderId = created.id!;

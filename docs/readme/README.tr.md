@@ -82,7 +82,7 @@ Arayüz aşağıdaki dilleri destekler:
 
 | Katman | Teknoloji |
 |---|---|
-| Çerçeve | Flutter 3.41.6 (Dart SDK `>=3.5.0 <4.0.0`) |
+| Çerçeve | Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`) |
 | Platform | Android / iOS / macOS / Windows / Linux (Material 3 + Cupertino uyarlanabilir) |
 | Okuyucu | WebView sayfalama motoru ([Hoshi Reader](https://github.com/Manhhao/Hoshi-Reader) türevi) |
 | Depolama | Drift (SQLite, WAL) + hoshidicts (C++ FFI sözlük motoru) |
@@ -110,7 +110,7 @@ flutter build apk --release --target-platform android-arm64 --split-per-abi
 
 ## Bağımlılıklar ve yamalar
 
-Bu proje Flutter 3.41.6'ya kilitlenmiştir ve bazı upstream bağımlılıkları henüz uyarlanmamıştır. Yamalar iki yoldan gider: ① derleme girdisi olması ve makineler arasında birebir yeniden üretilmesi gereken paketler `third_party/` altına vendored edilir ve `dependency_overrides` ile gösterilir (`network_to_file_image` / `carousel_slider` / `fading_edge_scrollview` / `flutter_inappwebview_android`, pub-cache yaması **gerektirmez**); ② diğer paketler `ci/apply-patches.sh` tarafından pub cache kaynak kodunda yamalanır. Mekanizma ayrıntıları için [docs/agent/build.md](../agent/build.md) bölümüne bakın. Aşağıdaki katlanabilir tablolar değişikliğe göre düzenlenmiş tarihsel bir listedir; mekanizma ① ile çakışan paketlerde vendored sürüm geçerlidir.
+Bu proje Flutter 3.44.0'ya kilitlenmiştir ve bazı upstream bağımlılıkları henüz uyarlanmamıştır. Yamalar iki yoldan gider: ① derleme girdisi olması ve makineler arasında birebir yeniden üretilmesi gereken paketler `third_party/` altına vendored edilir ve `dependency_overrides` ile gösterilir (`network_to_file_image` / `carousel_slider` / `fading_edge_scrollview` / `flutter_inappwebview_android`, pub-cache yaması **gerektirmez**); ② diğer paketler `ci/apply-patches.sh` tarafından pub cache kaynak kodunda yamalanır. Mekanizma ayrıntıları için [docs/agent/build.md](../agent/build.md) bölümüne bakın. Aşağıdaki katlanabilir tablolar değişikliğe göre düzenlenmiş tarihsel bir listedir; mekanizma ① ile çakışan paketlerde vendored sürüm geçerlidir.
 
 <details>
 <summary><b>Flutter API değişiklik yamaları</b></summary>
@@ -130,7 +130,7 @@ Bu proje Flutter 3.41.6'ya kilitlenmiştir ve bazı upstream bağımlılıkları
 <details>
 <summary><b>v1 Embedding kaldırma yamaları</b></summary>
 
-Flutter 3.41.6, v1 embedding API'sini (`PluginRegistry.Registrar`) tamamen kaldırmıştır. Aşağıdaki eklentilerin ilgili referanslarının silinmesi gerekmektedir:
+Flutter 3.44.0, v1 embedding API'sini (`PluginRegistry.Registrar`) tamamen kaldırmıştır. Aşağıdaki eklentilerin ilgili referanslarının silinmesi gerekmektedir:
 
 `flutter_plugin_android_lifecycle` · `file_picker` · `flutter_inappwebview` · `fluttertoast` · `image_picker_android` · `mecab_dart` · `permission_handler_android` · `url_launcher_android` · `path_provider_android` · `sqflite` · `record_mp3_plus`
 

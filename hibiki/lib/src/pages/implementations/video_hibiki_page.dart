@@ -356,8 +356,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     try {
       final String text = await readTextWithEncoding(File(sidecarPath));
       final List<AudioCue> cues = sidecarPath.toLowerCase().endsWith('.ass')
-          ? AssParser.parseString(content: text, bookUid: bookUid)
-          : SrtParser.parseString(content: text, bookUid: bookUid);
+          ? AssParser.parseString(content: text, bookKey: bookUid)
+          : SrtParser.parseString(content: text, bookKey: bookUid);
       if (cues.isEmpty) return null;
       return (path: sidecarPath, cues: cues);
     } catch (e) {

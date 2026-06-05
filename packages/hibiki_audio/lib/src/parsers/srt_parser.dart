@@ -26,14 +26,14 @@ class SrtParser {
   /// 日文字幕常见 Shift-JIS / CP932 编码，读文件走 [readTextWithEncoding]
   /// 自动识别，避免 UTF-8 严格解码时抛 [FormatException]。
   ///
-  /// [bookUid]     对应 MediaItem.uniqueKey。
+  /// [bookKey]     对应 MediaItem.uniqueKey。
   /// [chapterHref] 章节标识，默认 [defaultChapter]（单章节策略）。
   ///
   /// 每条 cue 的 [AudioCue.textFragmentId] 格式为 `[data-cue-id="<sentenceIndex>"]`，
   /// 供 [AudiobookBridge] 以 CSS selector 定位 WebView 内的 span 元素。
   static Future<List<AudioCue>> parse({
     required File srtFile,
-    required String bookUid,
+    required String bookKey,
     String chapterHref = defaultChapter,
     int audioFileIndex = 0,
   }) async {
@@ -41,14 +41,14 @@ class SrtParser {
     if (content.length > 1024 * 1024) {
       return compute(_parseStringIsolate, <String, dynamic>{
         'content': content,
-        'bookUid': bookUid,
+        'bookKey': bookKey,
         'chapterHref': chapterHref,
         'audioFileIndex': audioFileIndex,
       });
     }
     return parseString(
       content: content,
-      bookUid: bookUid,
+      bookKey: bookKey,
       chapterHref: chapterHref,
       audioFileIndex: audioFileIndex,
     );
@@ -57,7 +57,7 @@ class SrtParser {
   static List<AudioCue> _parseStringIsolate(Map<String, dynamic> args) {
     return parseString(
       content: args['content'] as String,
-      bookUid: args['bookUid'] as String,
+      bookKey: args['bookKey'] as String,
       chapterHref: args['chapterHref'] as String,
       audioFileIndex: args['audioFileIndex'] as int,
     );
@@ -66,7 +66,7 @@ class SrtParser {
   /// 解析 SRT 文本字符串并返回 [AudioCue] 列表。纯函数，测试入口。
   static List<AudioCue> parseString({
     required String content,
-    required String bookUid,
+    required String bookKey,
     String chapterHref = defaultChapter,
     int audioFileIndex = 0,
   }) {
@@ -114,7 +114,7 @@ class SrtParser {
       }
 
       final AudioCue cue = AudioCue()
-        ..bookUid = bookUid
+        ..bookKey = bookKey
         ..chapterHref = chapterHref
         ..sentenceIndex = sentenceIndex
         ..textFragmentId = '[data-cue-id="$sentenceIndex"]'

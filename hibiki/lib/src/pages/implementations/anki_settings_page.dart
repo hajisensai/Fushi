@@ -34,6 +34,7 @@ class _AnkiSettingsPageState extends BasePageState<AnkiSettingsPage> {
               trailing: const ProfileSelector(),
             ),
             _buildFetchTile(uiState, vm),
+            _buildCreateLapisTile(uiState, vm),
           ],
         ),
         if (!Platform.isAndroid)
@@ -142,6 +143,39 @@ class _AnkiSettingsPageState extends BasePageState<AnkiSettingsPage> {
           : null,
       onTap: uiState.isFetching ? null : () => vm.fetchConfiguration(),
     );
+  }
+
+  Widget _buildCreateLapisTile(AnkiUiState uiState, AnkiViewModel vm) {
+    return AdaptiveSettingsRow(
+      icon: Icons.note_add_outlined,
+      showIcon: true,
+      title: t.anki_create_lapis,
+      subtitle: t.anki_create_lapis_hint,
+      trailing: uiState.isFetching
+          ? SizedBox(
+              width: 20,
+              height: 20,
+              child: adaptiveIndicator(context: context, strokeWidth: 2),
+            )
+          : null,
+      onTap: uiState.isFetching ? null : () => _runCreateLapis(vm),
+    );
+  }
+
+  Future<void> _runCreateLapis(AnkiViewModel vm) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final result = await vm.createLapisSetup();
+    if (!mounted) return;
+    final String message;
+    switch (result.outcome) {
+      case LapisSetupOutcome.created:
+        message = t.anki_create_lapis_success;
+      case LapisSetupOutcome.alreadyExisted:
+        message = t.anki_create_lapis_exists;
+      case LapisSetupOutcome.failed:
+        message = t.anki_create_lapis_failed(error: result.message ?? '');
+    }
+    messenger.showSnackBar(SnackBar(content: Text(message)));
   }
 
   Widget _buildDeckDropdown(AnkiSettings settings, AnkiViewModel vm) {

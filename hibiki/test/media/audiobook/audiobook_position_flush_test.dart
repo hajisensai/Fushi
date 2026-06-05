@@ -23,7 +23,7 @@ void main() {
 
   AudioCue cue(int startMs) => AudioCue()
     ..id = startMs
-    ..bookUid = 'book'
+    ..bookKey = 'book'
     ..chapterHref = 'chapter'
     ..sentenceIndex = startMs ~/ 1000
     ..textFragmentId = 'cue-$startMs'
@@ -33,7 +33,7 @@ void main() {
     ..audioFileIndex = 0;
 
   Audiobook ab() => Audiobook()
-    ..bookUid = 'book'
+    ..bookKey = 'book'
     ..audioPaths = const <String>[]
     ..audioRoot = null
     ..alignmentFormat = 'srt'
