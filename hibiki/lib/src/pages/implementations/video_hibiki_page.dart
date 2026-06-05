@@ -789,6 +789,50 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     );
   }
 
+  /// media_kit 移动控制主题（Android/iOS）：[AdaptiveVideoControls] 在移动端渲染
+  /// [MaterialVideoControls]（读本主题），桌面端渲染 [MaterialDesktopVideoControls]
+  /// （读 [MaterialDesktopVideoControlsTheme]），两套互斥，故两层主题都配置安全。
+  ///
+  /// 移动端全屏走 media_kit 独立 root 路由、丢掉 Scaffold AppBar，故把字幕、音轨、
+  /// 设置（playlist 时再加剧集）入口全放进 [topButtonBar]，保证普通与全屏都可达。
+  MaterialVideoControlsThemeData _mobileControlsTheme(
+    VideoPlayerController controller,
+  ) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    return MaterialVideoControlsThemeData(
+      seekBarPositionColor: cs.primary,
+      seekBarThumbColor: cs.primary,
+      buttonBarButtonColor: Colors.white,
+      topButtonBar: <Widget>[
+        const Spacer(),
+        if (_isPlaylist)
+          MaterialCustomButton(
+            icon: const Icon(Icons.playlist_play),
+            onPressed: _showEpisodeList,
+          ),
+        MaterialCustomButton(
+          icon: const Icon(Icons.subtitles),
+          onPressed: () => _showSubtitleSourceMenu(controller),
+        ),
+        MaterialCustomButton(
+          icon: const Icon(Icons.audiotrack),
+          onPressed: () => _showTrackMenu(
+            controller.audioTracks
+                .map((AudioTrack tr) => (
+                      label: _trackLabel(tr.title, tr.language, tr.id),
+                      onSelected: () => _selectAudioTrack(controller, tr),
+                    ))
+                .toList(),
+          ),
+        ),
+        MaterialCustomButton(
+          icon: const Icon(Icons.tune),
+          onPressed: _showPlayerSettings,
+        ),
+      ],
+    );
+  }
+
   void _showTrackMenu(
     List<({String label, VoidCallback onSelected})> tracks,
   ) {
@@ -1224,21 +1268,29 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     VideoController videoController,
   ) {
     WidgetsBinding.instance.addPostFrameCallback((_) => _syncPopupOverlay());
-    return MaterialDesktopVideoControlsTheme(
-      normal: _desktopControlsTheme(controller),
-      fullscreen: _desktopControlsTheme(controller),
-      child: Video(
-        controller: videoController,
-        // 用本页持有的 FocusNode 替换 Video 内置的匿名节点，以便覆盖层（对话框 /
-        // bottom sheet / 文件选择器）关闭后能主动把键盘焦点还给它，恢复空格等内置
-        // 快捷键（见 [_refocusVideo]）。
-        focusNode: _videoFocusNode,
-        // 视频不满屏时的 letterbox/pillarbox 填充色吃主题 surface（默认黑边换成
-        // 跟随主题的中性底色，与 Scaffold 背景一致，深浅主题统一）。
-        fill: Theme.of(context).colorScheme.surface,
-        // 字幕 overlay 包进 controls builder：media_kit 全屏推独立 root 路由并复用
-        // 同一 controls，故 overlay 随全屏一起进路由，全屏时字幕仍显示且可点查词。
-        controls: (VideoState state) => _buildVideoControls(state, controller),
+    // 两层主题嵌套：[AdaptiveVideoControls] 按平台互斥择一渲染（桌面读 Desktop
+    // 主题、移动读 Material 主题），故同时提供两套互不干扰，让字幕/音轨/设置入口
+    // 在桌面、移动、全屏三种场景都可达。嵌套顺序不影响——各自被对应平台 controls 读取。
+    return MaterialVideoControlsTheme(
+      normal: _mobileControlsTheme(controller),
+      fullscreen: _mobileControlsTheme(controller),
+      child: MaterialDesktopVideoControlsTheme(
+        normal: _desktopControlsTheme(controller),
+        fullscreen: _desktopControlsTheme(controller),
+        child: Video(
+          controller: videoController,
+          // 用本页持有的 FocusNode 替换 Video 内置的匿名节点，以便覆盖层（对话框 /
+          // bottom sheet / 文件选择器）关闭后能主动把键盘焦点还给它，恢复空格等内置
+          // 快捷键（见 [_refocusVideo]）。
+          focusNode: _videoFocusNode,
+          // 视频不满屏时的 letterbox/pillarbox 填充色吃主题 surface（默认黑边换成
+          // 跟随主题的中性底色，与 Scaffold 背景一致，深浅主题统一）。
+          fill: Theme.of(context).colorScheme.surface,
+          // 字幕 overlay 包进 controls builder：media_kit 全屏推独立 root 路由并复用
+          // 同一 controls，故 overlay 随全屏一起进路由，全屏时字幕仍显示且可点查词。
+          controls: (VideoState state) =>
+              _buildVideoControls(state, controller),
+        ),
       ),
     );
   }
