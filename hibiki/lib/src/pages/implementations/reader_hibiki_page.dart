@@ -1675,7 +1675,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     var r = window.hoshiReader;
     if (!r || !('paginationMetrics' in r)) return;
     _wheelTimer = setTimeout(function() { _wheelTimer = null; }, 250);
-    var forward = (e.deltaY > 0 || e.deltaX > 0);
+    var forward = (e.deltaY < 0 || e.deltaX > 0);
     window.flutter_inappwebview.callHandler('onSwipe', forward ? 'left' : 'right');
     e.preventDefault();
   }, {passive: false});
