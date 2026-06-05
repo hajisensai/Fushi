@@ -14,6 +14,12 @@ import 'package:hibiki/src/shortcuts/gamepad_service.dart'
         gamepadMoveFocusInDirection;
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 
+/// 顶层 tab 数量：书架 / 词典 / texthooker / 设置。
+const int kHomeTabCount = 4;
+
+/// 设置 tab 的逻辑索引（末位）。
+const int kHomeSettingsTabIndex = 3;
+
 class HomePage extends BasePage {
   const HomePage({super.key});
 
@@ -181,11 +187,12 @@ class _HomePageState extends BasePageState<HomePage>
     return c != null && c.widget is EditableText;
   }
 
-  /// 统一切换顶层 tab：进入「设置」(2) 前记录来源 tab。
+  /// 统一切换顶层 tab：进入「设置」前记录来源 tab。
   /// 所有切 tab 入口（侧栏 / 底栏 / 快捷键）都走这里，保证 _previousTab 一致。
   void _selectTab(int logicalIndex) {
     setState(() {
-      if (logicalIndex == 2 && _currentTab != 2) {
+      if (logicalIndex == kHomeSettingsTabIndex &&
+          _currentTab != kHomeSettingsTabIndex) {
         _previousTab = _currentTab;
       }
       _currentTab = logicalIndex;
@@ -201,13 +208,13 @@ class _HomePageState extends BasePageState<HomePage>
         _selectTab(1);
         return KeyEventResult.handled;
       case ShortcutAction.homeTabSettings:
-        _selectTab(2);
+        _selectTab(kHomeSettingsTabIndex);
         return KeyEventResult.handled;
       case ShortcutAction.homeTabNext:
-        _selectTab((_currentTab + 1) % 3);
+        _selectTab((_currentTab + 1) % kHomeTabCount);
         return KeyEventResult.handled;
       case ShortcutAction.homeTabPrev:
-        _selectTab((_currentTab + 2) % 3);
+        _selectTab((_currentTab + kHomeTabCount - 1) % kHomeTabCount);
         return KeyEventResult.handled;
       case ShortcutAction.homeFocusSearch:
         _selectTab(1);
@@ -325,6 +332,11 @@ class _HomePageState extends BasePageState<HomePage>
           label: t.dictionaries,
         ),
         AdaptiveNavItem(
+          icon: Icons.sensors_outlined,
+          selectedIcon: Icons.sensors,
+          label: t.texthooker,
+        ),
+        AdaptiveNavItem(
           icon: Icons.tune_outlined,
           selectedIcon: Icons.tune,
           label: t.settings,
@@ -332,7 +344,7 @@ class _HomePageState extends BasePageState<HomePage>
       ];
 
   Widget _buildDesktopLayout(WindowSizeClass sizeClass) {
-    if (_currentTab == 2) {
+    if (_currentTab == kHomeSettingsTabIndex) {
       // 设置标签（全部设计系统）：隐藏 3 图标侧栏，全屏二栏（内部
       // MaterialSupportingPaneLayout），左上返回箭头切回来源 tab（参考 Mihon
       // 宽屏设置）。Cupertino 桌面也走这里——叶子控件保持 Cupertino 皮肤，但外壳
@@ -419,6 +431,8 @@ class _HomePageState extends BasePageState<HomePage>
       case 1:
         return HomeDictionaryPage(focusSignal: _dictFocusSignal);
       case 2:
+        return const TexthookerPage();
+      case 3:
         return const HibikiSettingsContent();
       default:
         return const HomeReaderPage();
