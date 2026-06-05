@@ -53,6 +53,13 @@ public class AnkiChannelHandler {
                 final String preferredName = call.argument("preferredName");
                 final String mimeType = call.argument("mimeType");
                 final AddContentApi api = new AddContentApi(activity);
+                final ArrayList<String> noteTypeFields = call.argument("noteTypeFields");
+                final String noteTypeName = call.argument("noteTypeName");
+                final String cardName = call.argument("cardName");
+                final String front = call.argument("front");
+                final String back = call.argument("back");
+                final String css = call.argument("css");
+                final String deckName = call.argument("deckName");
 
                 switch (call.method) {
                     case "addNote":
@@ -135,9 +142,37 @@ public class AnkiChannelHandler {
                             }
                         }
                         break;
-                    case "addDefaultModel":
-                        addDefaultModel();
-                        result.success(null);
+                    case "createNoteType":
+                        if (noteTypeName == null || noteTypeFields == null
+                                || noteTypeFields.isEmpty()) {
+                            result.error("MISSING_ARG",
+                                "noteTypeName and noteTypeFields are required", null);
+                        } else if (requirePermission(result)) {
+                            try {
+                                createNoteType(noteTypeName, noteTypeFields,
+                                    cardName, front, back, css);
+                                result.success(null);
+                            } catch (Exception e) {
+                                result.error("CREATE_MODEL_FAILED",
+                                    e.getMessage(), null);
+                            }
+                        }
+                        break;
+                    case "createDeck":
+                        if (deckName == null) {
+                            result.error("MISSING_ARG",
+                                "deckName is required", null);
+                        } else if (requirePermission(result)) {
+                            try {
+                                if (ankiDroid.findDeckIdByName(deckName) == null) {
+                                    api.addNewDeck(deckName);
+                                }
+                                result.success(null);
+                            } catch (Exception e) {
+                                result.error("CREATE_DECK_FAILED",
+                                    e.getMessage(), null);
+                            }
+                        }
                         break;
                     case "requestAnkidroidPermissions":
                         if (ankiDroid.shouldRequestPermission()) {
@@ -240,38 +275,21 @@ public class AnkiChannelHandler {
         return false;
     }
 
-    private void addDefaultModel() {
+    private void createNoteType(String name, ArrayList<String> fields,
+                                String cardName, String front, String back,
+                                String css) {
         final AddContentApi api = new AddContentApi(activity);
-
-        long modelId;
-        if (modelExists("Lapis")) {
-            modelId = ankiDroid.findModelIdByName("Lapis", 17);
-        } else {
-            modelId = api.addNewCustomModel("Lapis",
-                new String[] {
-                    "Term", "Reading", "Furigana", "Sentence",
-                    "Cloze Before", "Cloze Inside", "Cloze After",
-                    "Meaning", "Expanded Meaning", "Collapsed Meaning",
-                    "Notes", "Context", "Frequency", "Pitch Accent",
-                    "Image", "Term Audio", "Sentence Audio",
-                },
-                new String[] {
-                    "Lapis"
-                },
-                new String[] {
-                    "<div id=\"word\">{{Term}}</div>"
-                },
-                new String[] {
-                    "<div id=\"word\">{{#Furigana}}{{furigana:Furigana}}{{/Furigana}}{{^Furigana}}{{Term}}{{/Furigana}}</div>{{#Pitch Accent}}{{Pitch Accent}}{{/Pitch Accent}}\n{{#Image}}<div class=\"image\">{{Image}}</div>{{/Image}}\n{{#Term Audio}}{{Term Audio}}{{/Term Audio}}{{#Sentence Audio}}{{Sentence Audio}}{{/Sentence Audio}}\n<div id=\"sentence\">{{#Cloze Inside}}{{Cloze Before}}<span class=\"cloze\">{{Cloze Inside}}</span>{{Cloze After}}{{/Cloze Inside}}{{^Cloze Inside}}{{Sentence}}{{/Cloze Inside}}</div>\n{{#Meaning}}<p><small>{{Meaning}}</small></p>{{/Meaning}}\n{{#Expanded Meaning}}<p><small>{{Expanded Meaning}}</small></p>{{/Expanded Meaning}}{{#Collapsed Meaning}}<details><summary></summary><p><small>{{Collapsed Meaning}}</small></p></details><br>\n{{/Collapsed Meaning}}"
-                },
-                ".card {\n  font-family: \"Helvetica Neue\", Arial, sans-serif;\n  font-size: 16px;\n  text-align: center;\n  color: #333333;\n  background-color: #F6F6F6;\n  border-radius: 12px;\n  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.2);\n  padding: 24px;\n  margin: 12px;\n  border: 1px solid #D9D9D9;\n}\n\n#word {\n  font-size: 30px;\n  font-weight: bold;\n  margin-bottom: 16px;\n}\n\n.details-summary {\n  cursor: pointer;\n  font-size: 16px;\n  text-shadow: 1px 1px #ffffff;\n  display: flex;\n  justify-content: space-between;\n  align-items: center;\n  margin-bottom: 16px;\n}\n\n.details-summary:hover {\n  color: #6495ED;\n}\n\n.details-summary:hover .arrow {\n  transform: translateX(4px);\n}\n\n.arrow {\n  fill: #777777;\n  transition: transform 0.2s ease-in-out;\n  margin-right: 8px;\n}\n\n.image img {\n  max-width: 100%;\n  height: 150px;\n  border-radius: 12px;\n  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.2);\n  margin-top: 8px;\n  transition: height 0.2s ease-in-out;\n}\n\n.image:hover img {\n  height: auto;\n}\n\n.furigana {\n  font-size: 22px;\n  font-weight: bold;\n  line-height: 1.4;\n  margin-bottom: 16px;\n  text-shadow: 1px 1px #ffffff;\n}\n\n.meaning {\n  font-size: 18px;\n  line-height: 1.6;\n  margin-bottom: 16px;\n  text-shadow: 1px 1px #ffffff;\n}\n\n.cloze {\n  font-weight: 900\n}\n\n#sentence {\n  font-size: 20px;\n  line-height: 1.6;\n  margin-top: 16px;\n} \n\n.pitch {\n  border-top: solid red 2px;\n  padding-top: 1px;\n}\n\n.pitch_end {\n  border-color: red;\n  border-right: solid red 2px;\n  border-top: solid red 2px;  \n  line-height: 1px;\n  margin-right: 1px;\n  padding-right: 1px;\n  padding-top:1px;\n}",
-                    null,
-                    null
-                    );
-        }
-    }
-
-    private boolean modelExists(String name) {
-        return ankiDroid.findModelIdByName(name, 17) != null;
+        // Idempotent: a model with this name + field count already exists.
+        if (ankiDroid.findModelIdByName(name, fields.size()) != null) return;
+        api.addNewCustomModel(
+            name,
+            fields.toArray(new String[0]),
+            new String[] { cardName },
+            new String[] { front },
+            new String[] { back },
+            css,
+            null,
+            null
+        );
     }
 }
