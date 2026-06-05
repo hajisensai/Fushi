@@ -1311,5 +1311,11 @@
     "popup_max_height": "查词窗口最大高度",
     "wheel_page_turn_interval": "滚轮翻页间隔",
     "import_sidecar_subtitle": "已自动挂载字幕：$name",
-    "import_sidecar_audio": "已自动挂载 $count 个音频"
+    "import_sidecar_audio": "已自动挂载 $count 个音频",
+    "video_statistics": "视频统计",
+    "video_stat_by_video": "按视频",
+    "video_stat_subtitle_chars": "字幕字数",
+    "video_stat_watch_time": "观看时长",
+    "video_stat_completed": "已完成",
+    "video_stat_no_data": "暂无视频统计数据"
 }

@@ -1311,5 +1311,11 @@
     "popup_max_height": "Popup max height",
     "wheel_page_turn_interval": "Mouse wheel page-turn interval",
     "import_sidecar_subtitle": "Auto-attached subtitle: $name",
-    "import_sidecar_audio": "Auto-attached $count audio file(s)"
+    "import_sidecar_audio": "Auto-attached $count audio file(s)",
+    "video_statistics": "Video Statistics",
+    "video_stat_by_video": "By Video",
+    "video_stat_subtitle_chars": "Subtitle Characters",
+    "video_stat_watch_time": "Watch Time",
+    "video_stat_completed": "Completed",
+    "video_stat_no_data": "No video statistics yet"
 }
