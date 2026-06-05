@@ -9,6 +9,7 @@ import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 import 'package:hibiki/src/sync/sync_settings_schema.dart';
+import 'package:hibiki/src/sync/texthooker_ws_client_host.dart';
 import 'package:hibiki/utils.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -904,6 +905,24 @@ SettingsDestination _lookupDestination() {
                 }
               } else {
                 await settingsContext.appModel.stopYomitanApiServer();
+              }
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'lookup.texthooker',
+            title: t.texthooker_enabled,
+            subtitle: t.texthooker_enabled_hint,
+            icon: Icons.sensors_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.texthookerEnabled,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setTexthookerEnabled(value);
+              if (value) {
+                TexthookerWsClientHost.instance
+                    .start(settingsContext.appModel.texthookerUrls);
+              } else {
+                await TexthookerWsClientHost.instance.stop();
               }
               settingsContext.refresh();
             },

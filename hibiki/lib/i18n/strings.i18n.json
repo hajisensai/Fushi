@@ -1227,5 +1227,7 @@
     "yomitan_api_server_hint": "Let yomitan-api clients query Hibiki's dictionaries (port 19633)",
     "yomitan_api_port": "Yomitan API port",
     "yomitan_api_key": "Yomitan API key (optional)",
-    "texthooker": "Texthooker"
+    "texthooker": "Texthooker",
+    "texthooker_enabled": "Texthooker (receive text)",
+    "texthooker_enabled_hint": "Connect to Textractor/mpv/agent and look up incoming text"
 }

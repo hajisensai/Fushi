@@ -48,6 +48,7 @@ import 'package:hibiki/src/models/anki_integration.dart';
 import 'package:hibiki/src/sync/hibiki_remote_lookup_client.dart';
 import 'package:hibiki/src/sync/hibiki_remote_lookup_service.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
+import 'package:hibiki/src/sync/texthooker_ws_client_host.dart';
 import 'package:hibiki/src/sync/yomitan_api_server_manager.dart';
 import 'package:hibiki/src/shortcuts/gamepad_service.dart';
 import 'package:hibiki/src/shortcuts/shortcut_preferences.dart';
@@ -1215,6 +1216,9 @@ class AppModel with ChangeNotifier {
       if (showFloatingDict) setShowFloatingDict(false);
       if (yomitanApiServerEnabled) {
         unawaited(startYomitanApiServer().catchError((Object _) {}));
+      }
+      if (texthookerEnabled) {
+        TexthookerWsClientHost.instance.start(texthookerUrls);
       }
       notifyListeners();
     } catch (e, stack) {
