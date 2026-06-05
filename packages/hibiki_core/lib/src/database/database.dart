@@ -58,7 +58,7 @@ class HibikiDatabase extends _$HibikiDatabase {
   HibikiDatabase.forTesting(super.e) : _dbDirectory = '';
 
   @override
-  int get schemaVersion => 17;
+  int get schemaVersion => 18;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -239,6 +239,14 @@ class HibikiDatabase extends _$HibikiDatabase {
             }
             if (!await _columnExists('video_books', 'current_episode')) {
               await m.addColumn(videoBooks, videoBooks.currentEpisode);
+            }
+          }
+          if (from < 18) {
+            // Same guard rationale as the from<17 branch: a pre-v16 DB rebuilds
+            // video_books from the current schema (already including this
+            // column), so only a genuine pre-v18 table needs the ALTER.
+            if (!await _columnExists('video_books', 'audio_track_id')) {
+              await m.addColumn(videoBooks, videoBooks.audioTrackId);
             }
           }
         },
@@ -595,6 +603,12 @@ class HibikiDatabase extends _$HibikiDatabase {
           String bookUid, String? subtitleSource) =>
       (update(videoBooks)..where((t) => t.bookUid.equals(bookUid)))
           .write(VideoBooksCompanion(subtitleSource: Value(subtitleSource)));
+
+  /// 更新用户选中的音轨 id（libmpv `AudioTrack.id`；清除存 null）。
+  Future<void> updateVideoBookAudioTrackId(
+          String bookUid, String? audioTrackId) =>
+      (update(videoBooks)..where((t) => t.bookUid.equals(bookUid)))
+          .write(VideoBooksCompanion(audioTrackId: Value(audioTrackId)));
 
   // ── audio cues ──────────────────────────────────────────────────
   Future<List<AudioCueRow>> getCuesForChapter(

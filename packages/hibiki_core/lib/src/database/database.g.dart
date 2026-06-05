@@ -8320,6 +8320,12 @@ class $VideoBooksTable extends VideoBooks
       type: DriftSqlType.int,
       requiredDuringInsert: false,
       defaultValue: const Constant(0));
+  static const VerificationMeta _audioTrackIdMeta =
+      const VerificationMeta('audioTrackId');
+  @override
+  late final GeneratedColumn<String> audioTrackId = GeneratedColumn<String>(
+      'audio_track_id', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
   @override
   List<GeneratedColumn> get $columns => [
         id,
@@ -8333,7 +8339,8 @@ class $VideoBooksTable extends VideoBooks
         lastPositionMs,
         importedAt,
         playlistJson,
-        currentEpisode
+        currentEpisode,
+        audioTrackId
       ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -8412,6 +8419,12 @@ class $VideoBooksTable extends VideoBooks
           currentEpisode.isAcceptableOrUnknown(
               data['current_episode']!, _currentEpisodeMeta));
     }
+    if (data.containsKey('audio_track_id')) {
+      context.handle(
+          _audioTrackIdMeta,
+          audioTrackId.isAcceptableOrUnknown(
+              data['audio_track_id']!, _audioTrackIdMeta));
+    }
     return context;
   }
 
@@ -8445,6 +8458,8 @@ class $VideoBooksTable extends VideoBooks
           .read(DriftSqlType.string, data['${effectivePrefix}playlist_json']),
       currentEpisode: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}current_episode'])!,
+      audioTrackId: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}audio_track_id']),
     );
   }
 
@@ -8471,6 +8486,10 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
 
   /// 当前播放到的集索引（对应 [playlistJson] 数组下标）；单视频恒 0。
   final int currentEpisode;
+
+  /// 用户选中的音轨（libmpv `AudioTrack.id`）；null=未选过，跟随 libmpv 默认。
+  /// 多集播放列表换集时复用同一值（如选了日语音轨，每集都用日语）。
+  final String? audioTrackId;
   const VideoBookRow(
       {required this.id,
       required this.bookUid,
@@ -8483,7 +8502,8 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       required this.lastPositionMs,
       this.importedAt,
       this.playlistJson,
-      required this.currentEpisode});
+      required this.currentEpisode,
+      this.audioTrackId});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -8511,6 +8531,9 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       map['playlist_json'] = Variable<String>(playlistJson);
     }
     map['current_episode'] = Variable<int>(currentEpisode);
+    if (!nullToAbsent || audioTrackId != null) {
+      map['audio_track_id'] = Variable<String>(audioTrackId);
+    }
     return map;
   }
 
@@ -8540,6 +8563,9 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
           ? const Value.absent()
           : Value(playlistJson),
       currentEpisode: Value(currentEpisode),
+      audioTrackId: audioTrackId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(audioTrackId),
     );
   }
 
@@ -8560,6 +8586,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       importedAt: serializer.fromJson<DateTime?>(json['importedAt']),
       playlistJson: serializer.fromJson<String?>(json['playlistJson']),
       currentEpisode: serializer.fromJson<int>(json['currentEpisode']),
+      audioTrackId: serializer.fromJson<String?>(json['audioTrackId']),
     );
   }
   @override
@@ -8578,6 +8605,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       'importedAt': serializer.toJson<DateTime?>(importedAt),
       'playlistJson': serializer.toJson<String?>(playlistJson),
       'currentEpisode': serializer.toJson<int>(currentEpisode),
+      'audioTrackId': serializer.toJson<String?>(audioTrackId),
     };
   }
 
@@ -8593,7 +8621,8 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
           int? lastPositionMs,
           Value<DateTime?> importedAt = const Value.absent(),
           Value<String?> playlistJson = const Value.absent(),
-          int? currentEpisode}) =>
+          int? currentEpisode,
+          Value<String?> audioTrackId = const Value.absent()}) =>
       VideoBookRow(
         id: id ?? this.id,
         bookUid: bookUid ?? this.bookUid,
@@ -8612,6 +8641,8 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
         playlistJson:
             playlistJson.present ? playlistJson.value : this.playlistJson,
         currentEpisode: currentEpisode ?? this.currentEpisode,
+        audioTrackId:
+            audioTrackId.present ? audioTrackId.value : this.audioTrackId,
       );
   VideoBookRow copyWithCompanion(VideoBooksCompanion data) {
     return VideoBookRow(
@@ -8640,6 +8671,9 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       currentEpisode: data.currentEpisode.present
           ? data.currentEpisode.value
           : this.currentEpisode,
+      audioTrackId: data.audioTrackId.present
+          ? data.audioTrackId.value
+          : this.audioTrackId,
     );
   }
 
@@ -8657,7 +8691,8 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
           ..write('lastPositionMs: $lastPositionMs, ')
           ..write('importedAt: $importedAt, ')
           ..write('playlistJson: $playlistJson, ')
-          ..write('currentEpisode: $currentEpisode')
+          ..write('currentEpisode: $currentEpisode, ')
+          ..write('audioTrackId: $audioTrackId')
           ..write(')'))
         .toString();
   }
@@ -8675,7 +8710,8 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       lastPositionMs,
       importedAt,
       playlistJson,
-      currentEpisode);
+      currentEpisode,
+      audioTrackId);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -8691,7 +8727,8 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
           other.lastPositionMs == this.lastPositionMs &&
           other.importedAt == this.importedAt &&
           other.playlistJson == this.playlistJson &&
-          other.currentEpisode == this.currentEpisode);
+          other.currentEpisode == this.currentEpisode &&
+          other.audioTrackId == this.audioTrackId);
 }
 
 class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
@@ -8707,6 +8744,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
   final Value<DateTime?> importedAt;
   final Value<String?> playlistJson;
   final Value<int> currentEpisode;
+  final Value<String?> audioTrackId;
   const VideoBooksCompanion({
     this.id = const Value.absent(),
     this.bookUid = const Value.absent(),
@@ -8720,6 +8758,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
     this.importedAt = const Value.absent(),
     this.playlistJson = const Value.absent(),
     this.currentEpisode = const Value.absent(),
+    this.audioTrackId = const Value.absent(),
   });
   VideoBooksCompanion.insert({
     this.id = const Value.absent(),
@@ -8734,6 +8773,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
     this.importedAt = const Value.absent(),
     this.playlistJson = const Value.absent(),
     this.currentEpisode = const Value.absent(),
+    this.audioTrackId = const Value.absent(),
   })  : bookUid = Value(bookUid),
         title = Value(title),
         videoPath = Value(videoPath);
@@ -8750,6 +8790,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
     Expression<DateTime>? importedAt,
     Expression<String>? playlistJson,
     Expression<int>? currentEpisode,
+    Expression<String>? audioTrackId,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -8765,6 +8806,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
       if (importedAt != null) 'imported_at': importedAt,
       if (playlistJson != null) 'playlist_json': playlistJson,
       if (currentEpisode != null) 'current_episode': currentEpisode,
+      if (audioTrackId != null) 'audio_track_id': audioTrackId,
     });
   }
 
@@ -8780,7 +8822,8 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
       Value<int>? lastPositionMs,
       Value<DateTime?>? importedAt,
       Value<String?>? playlistJson,
-      Value<int>? currentEpisode}) {
+      Value<int>? currentEpisode,
+      Value<String?>? audioTrackId}) {
     return VideoBooksCompanion(
       id: id ?? this.id,
       bookUid: bookUid ?? this.bookUid,
@@ -8795,6 +8838,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
       importedAt: importedAt ?? this.importedAt,
       playlistJson: playlistJson ?? this.playlistJson,
       currentEpisode: currentEpisode ?? this.currentEpisode,
+      audioTrackId: audioTrackId ?? this.audioTrackId,
     );
   }
 
@@ -8838,6 +8882,9 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
     if (currentEpisode.present) {
       map['current_episode'] = Variable<int>(currentEpisode.value);
     }
+    if (audioTrackId.present) {
+      map['audio_track_id'] = Variable<String>(audioTrackId.value);
+    }
     return map;
   }
 
@@ -8855,7 +8902,8 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
           ..write('lastPositionMs: $lastPositionMs, ')
           ..write('importedAt: $importedAt, ')
           ..write('playlistJson: $playlistJson, ')
-          ..write('currentEpisode: $currentEpisode')
+          ..write('currentEpisode: $currentEpisode, ')
+          ..write('audioTrackId: $audioTrackId')
           ..write(')'))
         .toString();
   }
@@ -14664,6 +14712,7 @@ typedef $$VideoBooksTableCreateCompanionBuilder = VideoBooksCompanion Function({
   Value<DateTime?> importedAt,
   Value<String?> playlistJson,
   Value<int> currentEpisode,
+  Value<String?> audioTrackId,
 });
 typedef $$VideoBooksTableUpdateCompanionBuilder = VideoBooksCompanion Function({
   Value<int> id,
@@ -14678,6 +14727,7 @@ typedef $$VideoBooksTableUpdateCompanionBuilder = VideoBooksCompanion Function({
   Value<DateTime?> importedAt,
   Value<String?> playlistJson,
   Value<int> currentEpisode,
+  Value<String?> audioTrackId,
 });
 
 class $$VideoBooksTableFilterComposer
@@ -14729,6 +14779,9 @@ class $$VideoBooksTableFilterComposer
   ColumnFilters<int> get currentEpisode => $composableBuilder(
       column: $table.currentEpisode,
       builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get audioTrackId => $composableBuilder(
+      column: $table.audioTrackId, builder: (column) => ColumnFilters(column));
 }
 
 class $$VideoBooksTableOrderingComposer
@@ -14781,6 +14834,10 @@ class $$VideoBooksTableOrderingComposer
   ColumnOrderings<int> get currentEpisode => $composableBuilder(
       column: $table.currentEpisode,
       builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get audioTrackId => $composableBuilder(
+      column: $table.audioTrackId,
+      builder: (column) => ColumnOrderings(column));
 }
 
 class $$VideoBooksTableAnnotationComposer
@@ -14827,6 +14884,9 @@ class $$VideoBooksTableAnnotationComposer
 
   GeneratedColumn<int> get currentEpisode => $composableBuilder(
       column: $table.currentEpisode, builder: (column) => column);
+
+  GeneratedColumn<String> get audioTrackId => $composableBuilder(
+      column: $table.audioTrackId, builder: (column) => column);
 }
 
 class $$VideoBooksTableTableManager extends RootTableManager<
@@ -14867,6 +14927,7 @@ class $$VideoBooksTableTableManager extends RootTableManager<
             Value<DateTime?> importedAt = const Value.absent(),
             Value<String?> playlistJson = const Value.absent(),
             Value<int> currentEpisode = const Value.absent(),
+            Value<String?> audioTrackId = const Value.absent(),
           }) =>
               VideoBooksCompanion(
             id: id,
@@ -14881,6 +14942,7 @@ class $$VideoBooksTableTableManager extends RootTableManager<
             importedAt: importedAt,
             playlistJson: playlistJson,
             currentEpisode: currentEpisode,
+            audioTrackId: audioTrackId,
           ),
           createCompanionCallback: ({
             Value<int> id = const Value.absent(),
@@ -14895,6 +14957,7 @@ class $$VideoBooksTableTableManager extends RootTableManager<
             Value<DateTime?> importedAt = const Value.absent(),
             Value<String?> playlistJson = const Value.absent(),
             Value<int> currentEpisode = const Value.absent(),
+            Value<String?> audioTrackId = const Value.absent(),
           }) =>
               VideoBooksCompanion.insert(
             id: id,
@@ -14909,6 +14972,7 @@ class $$VideoBooksTableTableManager extends RootTableManager<
             importedAt: importedAt,
             playlistJson: playlistJson,
             currentEpisode: currentEpisode,
+            audioTrackId: audioTrackId,
           ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))

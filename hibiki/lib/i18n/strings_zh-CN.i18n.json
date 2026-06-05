@@ -1260,5 +1260,6 @@
     "video_next_episode": "下一集",
     "video_subtitle_source": "字幕来源",
     "video_subtitle_off": "关闭字幕",
-    "video_subtitle_switched": "已切换字幕：$label"
+    "video_subtitle_switched": "已切换字幕：$label",
+    "video_audio_track_switched": "音轨: $label"
 }

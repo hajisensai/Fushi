@@ -26,6 +26,10 @@ class VideoBookRepository {
   Future<void> updateSubtitleSource(String bookUid, String? subtitleSource) =>
       _db.updateVideoBookSubtitleSource(bookUid, subtitleSource);
 
+  /// 更新用户选中的音轨 id（libmpv `AudioTrack.id`；清除存 null）。
+  Future<void> updateAudioTrackId(String bookUid, String? audioTrackId) =>
+      _db.updateVideoBookAudioTrackId(bookUid, audioTrackId);
+
   Future<void> saveCues({
     required String bookUid,
     required List<AudioCue> cues,

@@ -81,12 +81,50 @@ Future<HibikiDatabase> _openV16DbWithLegacyVideoBooks() async {
   return db;
 }
 
+/// Opens a `user_version = 17` database whose video_books table has the v17
+/// shape (no audio_track_id column), forcing the real `if (from < 18)
+/// addColumn(audioTrackId)` onUpgrade branch to add it.
+Future<HibikiDatabase> _openV17DbWithLegacyVideoBooks() async {
+  final db = HibikiDatabase.forTesting(
+    NativeDatabase.memory(
+      setup: (rawDb) {
+        // Recreate the v17 video_books shape (before audio_track_id existed:
+        // it already has playlist_json / current_episode from v17). The
+        // from<18 branch must add exactly audio_track_id via addColumn.
+        rawDb.execute('''
+          CREATE TABLE video_books (
+            id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+            book_uid TEXT NOT NULL UNIQUE,
+            title TEXT NOT NULL,
+            video_path TEXT NOT NULL,
+            subtitle_source TEXT NULL,
+            subtitle_format TEXT NULL,
+            embedded_subtitle_track INTEGER NULL,
+            cover_path TEXT NULL,
+            last_position_ms INTEGER NOT NULL DEFAULT 0,
+            imported_at INTEGER NULL,
+            playlist_json TEXT NULL,
+            current_episode INTEGER NOT NULL DEFAULT 0
+          )
+        ''');
+        rawDb.execute(
+          "INSERT INTO video_books (book_uid, title, video_path) "
+          "VALUES ('video/legacy17', 'Legacy17', '/abs/legacy17.mp4')",
+        );
+        rawDb.execute('PRAGMA user_version = 17');
+      },
+    ),
+  );
+  addTearDown(db.close);
+  return db;
+}
+
 void main() {
   group('Database schema', () {
     test('fresh database has expected schema version', () async {
       final db = await _openDb();
       final version = await db.customSelect('PRAGMA user_version').getSingle();
-      expect(version.data['user_version'], 17);
+      expect(version.data['user_version'], 18);
     });
 
     test('all expected tables exist', () async {
@@ -140,7 +178,7 @@ void main() {
       // The upgrade ladder bumped the schema to the current version (a v14 DB
       // walks the full ladder past 15 to the latest schema).
       final version = await db.customSelect('PRAGMA user_version').getSingle();
-      expect(version.read<int>('user_version'), 17);
+      expect(version.read<int>('user_version'), 18);
 
       // The newly-migrated table exists and querying an absent baseline does
       // not throw.
@@ -155,7 +193,7 @@ void main() {
 
       // The upgrade ladder bumped the schema to the current version.
       final version = await db.customSelect('PRAGMA user_version').getSingle();
-      expect(version.read<int>('user_version'), 17);
+      expect(version.read<int>('user_version'), 18);
 
       // The newly-migrated table exists and is usable: upsert then read back.
       await db.upsertVideoBook(const VideoBooksCompanion(
@@ -176,7 +214,7 @@ void main() {
       final db = await _openV16DbWithLegacyVideoBooks();
 
       final version = await db.customSelect('PRAGMA user_version').getSingle();
-      expect(version.read<int>('user_version'), 17);
+      expect(version.read<int>('user_version'), 18);
 
       // Both new columns exist on the migrated table.
       final cols =
@@ -195,6 +233,31 @@ void main() {
       await db.updateVideoBookEpisode('video/legacy', 3);
       final updated = await db.getVideoBookByBookUid('video/legacy');
       expect(updated!.currentEpisode, 3);
+    });
+
+    test('real v17->v18 upgrade adds audio_track_id column', () async {
+      // A v17 video_books table predates audio_track_id; opening must drive the
+      // from<18 branch (addColumn), preserving existing rows.
+      final db = await _openV17DbWithLegacyVideoBooks();
+
+      final version = await db.customSelect('PRAGMA user_version').getSingle();
+      expect(version.read<int>('user_version'), 18);
+
+      // The new column exists on the migrated table.
+      final cols =
+          await db.customSelect("PRAGMA table_info('video_books')").get();
+      final colNames = cols.map((r) => r.data['name'] as String).toSet();
+      expect(colNames, contains('audio_track_id'));
+
+      // The pre-existing row survives with a null audio_track_id default.
+      final legacy = await db.getVideoBookByBookUid('video/legacy17');
+      expect(legacy, isNotNull);
+      expect(legacy!.audioTrackId, isNull);
+
+      // The new column is writable end-to-end via the new helper.
+      await db.updateVideoBookAudioTrackId('video/legacy17', '3');
+      final updated = await db.getVideoBookByBookUid('video/legacy17');
+      expect(updated!.audioTrackId, '3');
     });
 
     test('preferences table has key and value columns', () async {

@@ -325,4 +325,8 @@ class VideoBooks extends Table {
 
   /// 当前播放到的集索引（对应 [playlistJson] 数组下标）；单视频恒 0。
   IntColumn get currentEpisode => integer().withDefault(const Constant(0))();
+
+  /// 用户选中的音轨（libmpv `AudioTrack.id`）；null=未选过，跟随 libmpv 默认。
+  /// 多集播放列表换集时复用同一值（如选了日语音轨，每集都用日语）。
+  TextColumn get audioTrackId => text().nullable()();
 }

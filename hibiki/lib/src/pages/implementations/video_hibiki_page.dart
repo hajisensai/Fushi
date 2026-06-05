@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -63,6 +64,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage> {
   /// 用于字幕源菜单高亮当前项。
   String? _currentSubtitleSource;
 
+  /// 当前选中的音轨 id（libmpv `AudioTrack.id`）；null=未选过跟随默认。
+  /// 多集换集时复用同一值（用户选了日语音轨，每集都用日语）。
+  String? _currentAudioTrackId;
+
   bool get _isPlaylist => _episodes.length > 1;
 
   AppModel get appModel => ref.read(appProvider);
@@ -80,8 +85,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage> {
       return;
     }
 
-    // 记录持久化的字幕源（菜单高亮当前项用）。
+    // 记录持久化的字幕源（菜单高亮当前项用）+ 音轨偏好（换集复用）。
     _currentSubtitleSource = row.subtitleSource;
+    _currentAudioTrackId = row.audioTrackId;
 
     // 解析播放列表（若有）。非空则按 currentEpisode 载对应集；否则走单视频路径。
     final String? playlistJson = row.playlistJson;
@@ -106,16 +112,34 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage> {
     await _loadSingle(row);
   }
 
-  /// 载入单视频（无播放列表）：优先用 DB 已存 cue；无则探测 sidecar 字幕。
+  /// 载入单视频（无播放列表）：优先用 DB 已存 cue；否则先尝试恢复用户上次选的
+  /// 字幕源（[row.subtitleSource] 跨重启保留），无匹配再退默认 sidecar 探测。
   Future<void> _loadSingle(VideoBookRow row) async {
     List<AudioCue> cues = await widget.repo.loadCues(widget.bookUid);
     String? externalSub = row.subtitleSource;
-    if (cues.isEmpty && externalSub == null) {
-      final ({String path, List<AudioCue> cues})? sidecar =
-          await _detectSidecar(row.videoPath, widget.bookUid);
-      if (sidecar != null) {
-        cues = sidecar.cues;
-        externalSub = sidecar.path;
+
+    if (cues.isEmpty) {
+      // ① 优先恢复持久化的字幕源（精确匹配本视频的同一源）。
+      if (row.subtitleSource != null && row.subtitleSource!.isNotEmpty) {
+        final ({String persisted, List<AudioCue> cues})? restored =
+            await _restorePersistedSubtitle(
+          videoPath: row.videoPath,
+          persisted: row.subtitleSource,
+          crossEpisode: false,
+        );
+        if (restored != null) {
+          cues = restored.cues;
+          externalSub = restored.persisted;
+        }
+      }
+      // ② 无持久化 / 无匹配：退默认 sidecar 探测。
+      if (cues.isEmpty && externalSub == null) {
+        final ({String path, List<AudioCue> cues})? sidecar =
+            await _detectSidecar(row.videoPath, widget.bookUid);
+        if (sidecar != null) {
+          cues = sidecar.cues;
+          externalSub = sidecar.path;
+        }
       }
     }
     await _applyLoad(
@@ -127,10 +151,53 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage> {
     );
   }
 
-  /// 载入播放列表第 [index] 集：用该集 videoPath + 自动探测的 sidecar 字幕。
+  /// 尝试用持久化偏好 [persisted] 在 [videoPath] 的可用字幕源里选一个并加载 cue。
   ///
-  /// cue 不存 DB——每集 load 时按 sidecar 文件动态解析（播放列表各集字幕是外部
-  /// 文件，本就随磁盘存在；存 DB 只会与磁盘真相重复且引入跨集 book_uid 错配）。
+  /// [crossEpisode]=false（单视频重启恢复）：用 [SubtitleSource.matchesPersisted]
+  /// 精确匹配同一源。[crossEpisode]=true（播放列表换集）：用
+  /// [pickEpisodeSubtitleSource] 按「同类偏好」（内嵌同 streamIndex / 外挂同语言
+  /// 后缀）从新集源里选。
+  ///
+  /// 返回所选源的「实际持久化值 + 解析出的 cue」；无匹配 / 解析空 cue 返回 null
+  /// （调用方退默认 sidecar）。返回的 persisted 用作 [_applyLoad] 的
+  /// externalSubtitlePath（内嵌源也走 `embedded:<n>` 字符串，与既有约定一致）。
+  Future<({String persisted, List<AudioCue> cues})?> _restorePersistedSubtitle({
+    required String videoPath,
+    required String? persisted,
+    required bool crossEpisode,
+  }) async {
+    if (persisted == null || persisted.isEmpty) return null;
+    final List<SubtitleSource> sources =
+        await listAllSubtitleSources(videoPath);
+    if (sources.isEmpty) return null;
+
+    final SubtitleSource? chosen = crossEpisode
+        ? pickEpisodeSubtitleSource(persisted, sources)
+        : _firstMatching(sources, persisted);
+    if (chosen == null) return null;
+
+    final List<AudioCue> cues =
+        await loadCuesForSource(chosen, videoPath, widget.bookUid);
+    if (cues.isEmpty) return null;
+    return (persisted: chosen.toPersistedValue(), cues: cues);
+  }
+
+  /// 在 [sources] 中找第一个 [matchesPersisted] 命中的源（精确恢复用）。
+  SubtitleSource? _firstMatching(
+    List<SubtitleSource> sources,
+    String persisted,
+  ) {
+    for (final SubtitleSource s in sources) {
+      if (s.matchesPersisted(persisted)) return s;
+    }
+    return null;
+  }
+
+  /// 载入播放列表第 [index] 集：先按上次选择的「同类偏好」选新集字幕源
+  /// （[subtitleSource] 是上次持久化的偏好），无匹配再退默认 sidecar 探测。
+  ///
+  /// cue 不存 DB——每集 load 时按文件动态解析（播放列表各集字幕是外部文件，本就随
+  /// 磁盘存在；存 DB 只会与磁盘真相重复且引入跨集 book_uid 错配）。
   Future<void> _loadEpisode(
     int index, {
     int initialPositionMs = 0,
@@ -140,12 +207,30 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage> {
     final PlaylistEntry episode = _episodes[index];
 
     List<AudioCue> cues = const <AudioCue>[];
-    String? externalSub = subtitleSource;
-    final ({String path, List<AudioCue> cues})? sidecar =
-        await _detectSidecar(episode.path, widget.bookUid);
-    if (sidecar != null) {
-      cues = sidecar.cues;
-      externalSub = sidecar.path;
+    String? externalSub;
+
+    // ① 按上次偏好（同类）选新集字幕源：内嵌同 streamIndex / 外挂同语言后缀。
+    if (subtitleSource != null && subtitleSource.isNotEmpty) {
+      final ({String persisted, List<AudioCue> cues})? restored =
+          await _restorePersistedSubtitle(
+        videoPath: episode.path,
+        persisted: subtitleSource,
+        crossEpisode: true,
+      );
+      if (restored != null) {
+        cues = restored.cues;
+        externalSub = restored.persisted;
+      }
+    }
+
+    // ② 无偏好 / 无匹配：退默认 sidecar 探测。
+    if (cues.isEmpty) {
+      final ({String path, List<AudioCue> cues})? sidecar =
+          await _detectSidecar(episode.path, widget.bookUid);
+      if (sidecar != null) {
+        cues = sidecar.cues;
+        externalSub = sidecar.path;
+      }
     }
 
     _currentEpisode = index;
@@ -220,6 +305,42 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage> {
       // 当前选中由 _currentSubtitleSource 保留（菜单切换时再写）。
       _currentSubtitleSource = externalSubtitlePath ?? _currentSubtitleSource;
     });
+
+    // 恢复用户选过的音轨（含多集换集复用）：audioTracks 在 player open 后才填充，
+    // 延迟一拍再读，按 id 匹配；找不到（轨不存在/未选过）就跳过保留 libmpv 默认。
+    unawaited(_restoreAudioTrack(controller));
+  }
+
+  /// 若有持久化音轨偏好 [_currentAudioTrackId]，在 [controller] 的 audioTracks 里
+  /// 按 id 匹配并切换。延迟读取以等待 libmpv open 后填充音轨列表。
+  Future<void> _restoreAudioTrack(VideoPlayerController controller) async {
+    final String? wantId = _currentAudioTrackId;
+    if (wantId == null || wantId.isEmpty) return;
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    if (!mounted || _controller != controller) return;
+    for (final AudioTrack track in controller.audioTracks) {
+      if (track.id == wantId) {
+        await controller.selectAudioTrack(track);
+        return;
+      }
+    }
+  }
+
+  /// 选中某音轨：切轨 + 持久化 id（换集复用）+ SnackBar。
+  Future<void> _selectAudioTrack(
+    VideoPlayerController controller,
+    AudioTrack track,
+  ) async {
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    await controller.selectAudioTrack(track);
+    await widget.repo.updateAudioTrackId(widget.bookUid, track.id);
+    if (!mounted) return;
+    setState(() => _currentAudioTrackId = track.id);
+    messenger.showSnackBar(SnackBar(
+      content: Text(t.video_audio_track_switched(
+        label: _trackLabel(track.title, track.language, track.id),
+      )),
+    ));
   }
 
   /// 切到第 [index] 集：持久化 currentEpisode（位置归零）+ 重新 load 新集字幕。
@@ -229,7 +350,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage> {
     await widget.repo.updateCurrentEpisode(widget.bookUid, index);
     // 切集从头播：位置归零（避免把上一集的进度套到新集）。
     await widget.repo.updatePosition(widget.bookUid, 0);
-    await _loadEpisode(index, initialPositionMs: 0);
+    // 把上次选择的字幕偏好带进新集（同类应用：内嵌同轨 / 外挂同语言后缀）。
+    await _loadEpisode(
+      index,
+      initialPositionMs: 0,
+      subtitleSource: _currentSubtitleSource,
+    );
   }
 
   void _showEpisodeList() {
@@ -401,7 +527,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage> {
             controller.audioTracks
                 .map((AudioTrack tr) => (
                       label: _trackLabel(tr.title, tr.language, tr.id),
-                      onSelected: () => controller.selectAudioTrack(tr),
+                      onSelected: () => _selectAudioTrack(controller, tr),
                     ))
                 .toList(),
           ),

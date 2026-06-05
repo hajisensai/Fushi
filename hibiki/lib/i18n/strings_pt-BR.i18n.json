@@ -1260,5 +1260,6 @@
     "video_next_episode": "Next episode",
     "video_subtitle_source": "Subtitle source",
     "video_subtitle_off": "Turn off subtitles",
-    "video_subtitle_switched": "Subtitle: $label"
+    "video_subtitle_switched": "Subtitle: $label",
+    "video_audio_track_switched": "Audio track: $label"
 }

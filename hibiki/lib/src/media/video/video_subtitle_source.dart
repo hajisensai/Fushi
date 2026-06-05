@@ -218,10 +218,85 @@ const Set<String> _externalSubtitleExtensions = <String>{
   '.vtt',
 };
 
-/// 枚举 [videoPath] 的全部字幕源：① 内嵌轨 ② 同目录外挂字幕文件。
+/// **纯函数**：从目录文件名列表 [dirFiles] 中挑出与 [videoBaseNoExt] **同前缀**的
+/// 外挂字幕文件名（大小写不敏感），按 [dirFiles] 原序返回原始文件名。
 ///
-/// 返回合并列表（内嵌在前，外挂在后）。外挂只收 srt/ass/ssa/vtt（含 `.ja.srt`
-/// 等带语言后缀）。目录读取失败时只返回内嵌部分。
+/// 「同前缀」= 文件名（小写）以 `<videoBaseNoExt>` 开头，且扩展名 ∈
+/// {srt,ass,ssa,vtt}。即 `S01E01.mkv`（base=`S01E01`）只挑 `S01E01.srt` /
+/// `S01E01.ja.srt` / `S01E01.en.srt`，**不挑** `S01E02.ja.srt`。这样换集/同目录混放
+/// 多集字幕时，字幕菜单只列当前集的字幕，不被别集刷屏。
+///
+/// 不碰文件系统，可单测。
+List<String> pickSameNameSubs(String videoBaseNoExt, List<String> dirFiles) {
+  final String baseLower = videoBaseNoExt.toLowerCase();
+  final List<String> matched = <String>[];
+  for (final String name in dirFiles) {
+    final String nameLower = name.toLowerCase();
+    if (!nameLower.startsWith(baseLower)) continue;
+    final String ext = p.extension(nameLower);
+    if (!_externalSubtitleExtensions.contains(ext)) continue;
+    matched.add(name);
+  }
+  return matched;
+}
+
+/// **纯函数**：换集时按「同类偏好」从新集可用字幕源 [sources] 里挑一个。
+///
+/// [lastPersisted] 是上一集持久化的字幕源（外挂路径 / `embedded:<n>` / null）。
+/// 规则：
+/// - null（无偏好）→ 返回 null（调用方走默认 sidecar 检测）。
+/// - `embedded:<n>` → 优先新集同 streamIndex 的内嵌轨；无则回退第一个内嵌轨；
+///   无内嵌轨则 null。
+/// - 外挂路径 → 取其语言/扩展名后缀（如 `.ja.srt` / `.ass`），优先新集同后缀的
+///   外挂源；无同后缀则回退新集第一个外挂源；无外挂源则 null。
+///
+/// 不碰文件系统，可单测。
+SubtitleSource? pickEpisodeSubtitleSource(
+  String? lastPersisted,
+  List<SubtitleSource> sources,
+) {
+  if (lastPersisted == null || lastPersisted.isEmpty) return null;
+  if (sources.isEmpty) return null;
+
+  final List<SubtitleSource> embedded =
+      sources.where((SubtitleSource s) => s.isEmbedded).toList();
+  final List<SubtitleSource> external =
+      sources.where((SubtitleSource s) => !s.isEmbedded).toList();
+
+  if (lastPersisted.startsWith(SubtitleSource.embeddedPrefix)) {
+    final int? wantIndex = int.tryParse(
+      lastPersisted.substring(SubtitleSource.embeddedPrefix.length),
+    );
+    for (final SubtitleSource s in embedded) {
+      if (s.streamIndex == wantIndex) return s;
+    }
+    return embedded.isNotEmpty ? embedded.first : null;
+  }
+
+  // 外挂偏好：按「语言+扩展名」后缀匹配（去掉同名 base 前缀后剩下的尾巴）。
+  final String wantSuffix = _externalSubtitleSuffix(lastPersisted);
+  for (final SubtitleSource s in external) {
+    if (_externalSubtitleSuffix(s.externalPath!) == wantSuffix) return s;
+  }
+  return external.isNotEmpty ? external.first : null;
+}
+
+/// 取外挂字幕路径的「语言+扩展名」后缀（小写），用于换集同类匹配。
+///
+/// `S01E01.ja.srt` → `.ja.srt`；`S01E01.ass` → `.ass`。规则：basename 去掉首个
+/// `.` 之前的主名后剩下的全部（含中间语言段），保证 `.ja.srt` 与 `.srt` 区分开。
+String _externalSubtitleSuffix(String path) {
+  final String name = p.basename(path).toLowerCase();
+  final int firstDot = name.indexOf('.');
+  if (firstDot < 0) return '';
+  return name.substring(firstDot);
+}
+
+/// 枚举 [videoPath] 的全部字幕源：① 内嵌轨 ② 同目录**同名前缀**外挂字幕文件。
+///
+/// 返回合并列表（内嵌在前，外挂在后）。外挂只收与视频同 basename（去扩展名）前缀的
+/// srt/ass/ssa/vtt（含 `.ja.srt` 等带语言后缀），见 [pickSameNameSubs]——别集字幕
+/// 不列。目录读取失败时只返回内嵌部分。
 Future<List<SubtitleSource>> listAllSubtitleSources(String videoPath) async {
   final List<SubtitleSource> sources = <SubtitleSource>[];
 
@@ -237,19 +312,20 @@ Future<List<SubtitleSource>> listAllSubtitleSources(String videoPath) async {
     ));
   }
 
-  // ② 同目录外挂字幕文件。
+  // ② 同目录、与当前视频同名前缀的外挂字幕文件。
   final String dir = p.dirname(videoPath);
+  final String videoBaseNoExt = p.basenameWithoutExtension(videoPath);
   final Directory directory = Directory(dir);
   if (directory.existsSync()) {
     try {
-      final List<File> files =
-          directory.listSync(followLinks: false).whereType<File>().toList();
-      for (final File f in files) {
-        final String name = p.basename(f.path);
-        final String ext = p.extension(name).toLowerCase();
-        if (!_externalSubtitleExtensions.contains(ext)) continue;
+      final List<String> dirFiles = directory
+          .listSync(followLinks: false)
+          .whereType<File>()
+          .map((File f) => p.basename(f.path))
+          .toList();
+      for (final String name in pickSameNameSubs(videoBaseNoExt, dirFiles)) {
         sources.add(SubtitleSource.external(
-          externalPath: p.normalize(f.path),
+          externalPath: p.normalize(p.join(dir, name)),
           label: name,
         ));
       }
