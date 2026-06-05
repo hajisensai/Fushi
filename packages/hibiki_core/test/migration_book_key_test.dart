@@ -16,6 +16,11 @@ HibikiDatabase _openMigratedFromV15() {
   return HibikiDatabase.forTesting(
     NativeDatabase.memory(
       setup: (raw) {
+        // Mirror the production _openDb setup: FK enforcement ON. Without this
+        // the memory DB runs FK-OFF by default, so any FK assertion below
+        // (cascade-on-delete, foreign_key_check) would be vacuous. The seed
+        // INSERTs respect FK order (parents before children).
+        raw.execute('PRAGMA foreign_keys = ON');
         // ── epub_books (v15: int id PK) ──────────────────────────────
         raw.execute('''
 CREATE TABLE epub_books (
@@ -254,10 +259,26 @@ CREATE TABLE reading_statistics (
   last_statistic_modified INTEGER NOT NULL,
   UNIQUE (title, date_key)
 )''');
+        // 'Solo*Book' → sanitized key 'Solo~ttu-star~Book' (sanitize-char
+        // coverage). The next two rows have DIFFERENT bare titles that
+        // sanitize to the SAME key on the SAME date_key, so the migration
+        // merges them additively:
+        //   'Book A.'            → 'Book A~ttu-dend~' (trailing-dot sentinel)
+        //   'Book A~ttu-dend~'   → 'Book A~ttu-dend~' (already-sentinel literal)
+        // (% transcoding is reversible and never collides, so the trailing
+        // dot/space sentinels are the realistic merge trigger.) The seed
+        // UNIQUE(title, date_key) is on the BARE title, so these two coexist
+        // pre-migration; only the sanitized key collides. A third row with the
+        // same sanitized key but a DIFFERENT date_key stays a separate row —
+        // merge is strictly per (sanitized title, date_key).
         raw.execute(
           "INSERT INTO reading_statistics "
           "(title, date_key, characters_read, reading_time_ms, last_statistic_modified) "
-          "VALUES ('Solo*Book', '2026-01-01', 500, 60000, 5)",
+          "VALUES "
+          "('Solo*Book', '2026-01-01', 500, 60000, 5),"
+          "('Book A.', '2026-01-02', 100, 10000, 11),"
+          "('Book A~ttu-dend~', '2026-01-02', 200, 20000, 9),"
+          "('Book A.', '2026-01-03', 50, 5000, 7)",
         );
 
         // Other v1-baseline tables not present in this seed are rebuilt by
@@ -368,10 +389,23 @@ void main() {
         <String>{'hoshi://book/Book A', 'hoshi://book/Book A (2)'});
     expect(mi.first.read<String>('unique_key'), 'hoshi://book/Book A');
 
-    // ── reading_statistics title aligned to sanitized key ─────────────
+    // ── reading_statistics title aligned to sanitized key + merged ────
+    // 'Solo*Book' → 'Solo~ttu-star~Book' (untouched). The two 2026-01-02 rows
+    // whose bare titles sanitize to the SAME key merge additively
+    // (100+200=300); the 2026-01-03 row stays separate (merge is strictly per
+    // (sanitized title, date_key)).
     final stats = await db.getAllReadingStatistics();
-    expect(stats.single.title, 'Solo~ttu-star~Book');
-    expect(stats.single.charactersRead, 500);
+    expect(stats.length, 3);
+    final solo = stats.firstWhere((s) => s.title == 'Solo~ttu-star~Book');
+    expect(solo.charactersRead, 500);
+    final merged0102 = stats.firstWhere(
+        (s) => s.title == 'Book A~ttu-dend~' && s.dateKey == '2026-01-02');
+    expect(merged0102.charactersRead, 300);
+    expect(merged0102.readingTimeMs, 30000);
+    expect(merged0102.lastStatisticModified, 11);
+    final separate0103 = stats.firstWhere(
+        (s) => s.title == 'Book A~ttu-dend~' && s.dateKey == '2026-01-03');
+    expect(separate0103.charactersRead, 50);
 
     // ── FK cascade: deleting a book clears its reading data ───────────
     await db.deleteEpubBook('Book A');

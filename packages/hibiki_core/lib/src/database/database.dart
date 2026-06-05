@@ -866,9 +866,11 @@ class HibikiDatabase extends _$HibikiDatabase {
   Future<int> deleteEpubBook(String bookKey) => transaction(() async {
         await (delete(readerPositions)..where((t) => t.bookKey.equals(bookKey)))
             .go();
-        // bookmarks / book_tag_mappings cascade via FK on epub_books(bookKey),
-        // but we run with foreign_keys ON only at runtime; delete explicitly to
-        // be order-independent and self-documenting.
+        // bookmarks / book_tag_mappings declare ON DELETE CASCADE on
+        // epub_books(bookKey), but we delete them explicitly rather than rely on
+        // the cascade: this stays correct regardless of the runtime
+        // foreign_keys pragma state and documents the full set of dependent
+        // rows in one place.
         await (delete(bookmarks)..where((t) => t.bookKey.equals(bookKey))).go();
         // SRT books linked to this epub key their cues on srt_books.uid, NOT
         // the epub bookKey, so delete those cues before dropping the srt rows.
@@ -1246,11 +1248,33 @@ class HibikiDatabase extends _$HibikiDatabase {
 
   /// Re-keys every book + all reading data from the autoincrement int id to
   /// bookKey = sanitizeTtuFilename(title). Lossless: builds an id→key map (with
-  /// dedup), then rebuilds each table by JOINing through that map. Runs inside
-  /// the migration's implicit transaction with foreign_keys OFF.
+  /// dedup), then rebuilds each table by JOINing through that map.
+  ///
+  /// Atomicity is the iron rule here — this rewrites user data. drift does NOT
+  /// wrap onUpgrade in a transaction by default, so the whole migration body
+  /// runs inside an EXPLICIT `transaction()`: it either fully commits or fully
+  /// rolls back, leaving user_version at 15 for a safe retry on next launch.
+  /// `PRAGMA foreign_keys` is a no-op inside a transaction (SQLite rule), so the
+  /// OFF/ON toggles sit OUTSIDE `transaction()`, per drift's "migrations and
+  /// foreign keys" guidance. A `foreign_key_check` at the end aborts (rolls
+  /// back) the whole migration if any FK relation was left dangling.
   Future<void> _migrateBookKeyV16(Migrator m) async {
     await customStatement('PRAGMA foreign_keys = OFF');
     try {
+      await transaction(() async {
+        await _runBookKeyMigrationBodyV16();
+      });
+    } finally {
+      await customStatement('PRAGMA foreign_keys = ON');
+    }
+  }
+
+  /// The full v16 re-key work, run inside the explicit transaction opened by
+  /// [_migrateBookKeyV16]. Extracted so the transaction boundary and the
+  /// foreign_keys OFF/ON toggles (which must stay outside any transaction) read
+  /// cleanly. Throwing anywhere here rolls back the entire migration.
+  Future<void> _runBookKeyMigrationBodyV16() async {
+    {
       // 1. Read (id, title); compute key + dedup collisions deterministically.
       final List<QueryRow> books =
           await customSelect('SELECT id, title FROM epub_books ORDER BY id')
@@ -1512,8 +1536,16 @@ class HibikiDatabase extends _$HibikiDatabase {
       await _ensureIndexes();
 
       await customStatement('DROP TABLE _id_key_map');
-    } finally {
-      await customStatement('PRAGMA foreign_keys = ON');
+
+      // 15. Integrity gate: any dangling FK relation means the re-key was
+      //     lossy/wrong. Throw to roll back the whole transaction (FK checks
+      //     are deferred while foreign_keys=OFF, so this runs them explicitly).
+      final List<QueryRow> violations =
+          await customSelect('PRAGMA foreign_key_check').get();
+      if (violations.isNotEmpty) {
+        throw StateError(
+            'book-key migration left FK violations: ${violations.length}');
+      }
     }
   }
 
@@ -1628,6 +1660,16 @@ class HibikiDatabase extends _$HibikiDatabase {
   /// Rewrites reading_statistics.title from the bare title to the sanitized
   /// bookKey domain so stats join the new identity. Rows that collapse to the
   /// same (sanitized title, date_key) are merged additively.
+  ///
+  /// CONTRACT / known follow-up: reading_statistics is keyed by `title`, not by
+  /// a book id — same-title books have always shared a stats row, so merging
+  /// here is a pre-existing property, not new behaviour introduced by this
+  /// migration. After this step the stored title equals `_sanitizeBookKey(title)`
+  /// (the bookKey domain), but runtime stats writes STILL use the bare title.
+  /// Milestone 2 (the runtime-sweep pass) switches those writes to key by
+  /// bookKey; until then a stale bare-title write would create a parallel row.
+  /// That divergence is bounded and intentionally accepted for milestone 1 —
+  /// milestone 2 aligns the two.
   Future<void> _migrateReadingStatsTitlesV16() async {
     if (!await _tableExists('reading_statistics')) return;
     final List<QueryRow> rows = await customSelect(
@@ -1651,7 +1693,6 @@ class HibikiDatabase extends _$HibikiDatabase {
         merged[groupKey] = _StatAccum(
           keepId: id,
           title: sanitized,
-          dateKey: dateKey,
           chars: chars,
           timeMs: timeMs,
           lastMod: lastMod,
@@ -1689,7 +1730,6 @@ class _StatAccum {
   _StatAccum({
     required this.keepId,
     required this.title,
-    required this.dateKey,
     required this.chars,
     required this.timeMs,
     required this.lastMod,
@@ -1697,7 +1737,6 @@ class _StatAccum {
 
   final int keepId;
   final String title;
-  final String dateKey;
   int chars;
   int timeMs;
   int lastMod;
