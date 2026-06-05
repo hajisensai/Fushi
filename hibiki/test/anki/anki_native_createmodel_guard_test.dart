@@ -30,4 +30,15 @@ void main() {
       expect(repo, contains('noteTypeFields'));
     });
   });
+
+  group('settings page wires the Create Lapis action', () {
+    final page = File(
+      'lib/src/pages/implementations/anki_settings_page.dart',
+    ).readAsStringSync();
+
+    test('calls createLapisSetup and uses the i18n label', () {
+      expect(page, contains('createLapisSetup()'));
+      expect(page, contains('t.anki_create_lapis'));
+    });
+  });
 }
