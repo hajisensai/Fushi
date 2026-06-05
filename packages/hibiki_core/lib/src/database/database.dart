@@ -5,7 +5,6 @@ import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:path/path.dart' as p;
 
-import '../legacy_book_uid.dart';
 import 'pref_codec.dart';
 import 'tables.dart';
 
@@ -57,7 +56,7 @@ class HibikiDatabase extends _$HibikiDatabase {
   HibikiDatabase.forTesting(super.e) : _dbDirectory = '';
 
   @override
-  int get schemaVersion => 15;
+  int get schemaVersion => 16;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -218,11 +217,17 @@ class HibikiDatabase extends _$HibikiDatabase {
             // Indexes were previously (re)created in beforeOpen on every open
             // (12 extra sqlite_master probes per launch). Create them once on
             // upgrade so existing DBs gain any missing index; fresh DBs get
-            // them in onCreate.
-            await _ensureIndexes();
+            // them in onCreate. This runs on the PRE-v16 schema, so it uses the
+            // OLD column names (book_uid / ttu_book_id / book_id). The v16 step
+            // below rebuilds those tables and recreates the indexes under the
+            // new book_key column names via _ensureIndexes().
+            await _ensureLegacyIndexesV14();
           }
           if (from < 15) {
             await m.createTable(syncBaselines);
+          }
+          if (from < 16) {
+            await _migrateBookKeyV16(m);
           }
         },
         onCreate: (m) async {
@@ -237,6 +242,72 @@ class HibikiDatabase extends _$HibikiDatabase {
   /// legacy DB may lack some v1 baseline tables (those are created only in
   /// onCreate, never in the onUpgrade ladder).
   Future<void> _ensureIndexes() async {
+    const List<List<String>> indexes = <List<String>>[
+      [
+        'profile_settings',
+        'CREATE INDEX IF NOT EXISTS idx_profile_settings_profile ON profile_settings (profile_id)'
+      ],
+      [
+        'media_type_profiles',
+        'CREATE INDEX IF NOT EXISTS idx_media_type_profiles_profile ON media_type_profiles (profile_id)'
+      ],
+      [
+        'book_profiles',
+        'CREATE INDEX IF NOT EXISTS idx_book_profiles_profile ON book_profiles (profile_id)'
+      ],
+      [
+        'bookmarks',
+        'CREATE INDEX IF NOT EXISTS idx_bookmarks_book_key_created '
+            'ON bookmarks (book_key, created_at DESC)'
+      ],
+      [
+        'media_items',
+        'CREATE INDEX IF NOT EXISTS idx_media_items_type '
+            'ON media_items (media_type_identifier)'
+      ],
+      [
+        'media_items',
+        'CREATE INDEX IF NOT EXISTS idx_media_items_source '
+            'ON media_items (media_source_identifier)'
+      ],
+      [
+        'audio_cues',
+        'CREATE INDEX IF NOT EXISTS idx_audio_cues_book_key '
+            'ON audio_cues (book_key)'
+      ],
+      [
+        'search_history_items',
+        'CREATE INDEX IF NOT EXISTS idx_search_history_key '
+            'ON search_history_items (history_key)'
+      ],
+      [
+        'audiobooks',
+        'CREATE INDEX IF NOT EXISTS idx_audiobooks_book_key '
+            'ON audiobooks (book_key)'
+      ],
+      [
+        'srt_books',
+        'CREATE INDEX IF NOT EXISTS idx_srt_books_book_key '
+            'ON srt_books (book_key)'
+      ],
+      [
+        'book_tag_mappings',
+        'CREATE INDEX IF NOT EXISTS idx_book_tag_mappings_book_key '
+            'ON book_tag_mappings (book_key)'
+      ],
+    ];
+    for (final List<String> entry in indexes) {
+      if (await _tableExists(entry[0])) {
+        await customStatement(entry[1]);
+      }
+    }
+  }
+
+  /// PRE-v16 index creation for the from<14 upgrade step. Mirrors the old
+  /// (book_uid / ttu_book_id / book_id) column names that still exist before
+  /// the v16 book-key migration rebuilds those tables. The v16 step recreates
+  /// these under the new book_key column names via [_ensureIndexes].
+  Future<void> _ensureLegacyIndexesV14() async {
     const List<List<String>> indexes = <List<String>>[
       [
         'profile_settings',
@@ -363,6 +434,14 @@ class HibikiDatabase extends _$HibikiDatabase {
     if (!await _tableExists('bookmarks')) {
       return;
     }
+    // Legacy `bookmarks_<int>` prefs predate the v16 book-key migration and key
+    // on the int ttu_book_id column. After v16 that column is gone (renamed to
+    // book_key) and the v16 prefs migration already drained/re-keyed these, so
+    // this drainer is a no-op on the post-v16 schema. Guard on the column so it
+    // only runs against the pre-v16 schema it understands.
+    if (!await _columnExists('bookmarks', 'ttu_book_id')) {
+      return;
+    }
     final Map<String, String> allPrefs = await getAllPrefs();
     await transaction(() async {
       for (final MapEntry<String, String> entry in allPrefs.entries) {
@@ -370,11 +449,11 @@ class HibikiDatabase extends _$HibikiDatabase {
         final int? ttuBookId =
             int.tryParse(entry.key.substring('bookmarks_'.length));
         if (ttuBookId == null || entry.value.isEmpty) continue;
-        final int existing = await (selectOnly(bookmarks)
-              ..where(bookmarks.ttuBookId.equals(ttuBookId))
-              ..addColumns([bookmarks.id.count()]))
-            .map((row) => row.read(bookmarks.id.count()) ?? 0)
-            .getSingle();
+        final QueryRow countRow = await customSelect(
+          'SELECT COUNT(*) AS c FROM bookmarks WHERE ttu_book_id = ?',
+          variables: [Variable<int>(ttuBookId)],
+        ).getSingle();
+        final int existing = countRow.read<int>('c');
         if (existing == 0) {
           List<dynamic> list;
           try {
@@ -538,33 +617,35 @@ class HibikiDatabase extends _$HibikiDatabase {
   }
 
   // ── audiobooks ──────────────────────────────────────────────────
-  Future<AudiobookRow?> getAudiobookByBookUid(String bookUid) =>
-      (select(audiobooks)..where((t) => t.bookUid.equals(bookUid)))
+  Future<AudiobookRow?> getAudiobookByBookKey(String bookKey) =>
+      (select(audiobooks)..where((t) => t.bookKey.equals(bookKey)))
           .getSingleOrNull();
 
   Future<List<AudiobookRow>> getAllAudiobooks() => select(audiobooks).get();
 
   Future<void> upsertAudiobook(AudiobooksCompanion ab) =>
       into(audiobooks).insert(ab,
-          onConflict: DoUpdate((_) => ab, target: [audiobooks.bookUid]));
+          onConflict: DoUpdate((_) => ab, target: [audiobooks.bookKey]));
 
-  Future<int> deleteAudiobookByBookUid(String bookUid) => transaction(() async {
-        await (delete(audioCues)..where((t) => t.bookUid.equals(bookUid))).go();
-        return (delete(audiobooks)..where((t) => t.bookUid.equals(bookUid)))
+  Future<int> deleteAudiobookByBookKey(String bookKey) => transaction(() async {
+        await (delete(audioCues)..where((t) => t.bookKey.equals(bookKey))).go();
+        return (delete(audiobooks)..where((t) => t.bookKey.equals(bookKey)))
             .go();
       });
 
   // ── audio cues ──────────────────────────────────────────────────
+  // [bookKey] is the owner key: either an audiobook bookKey OR an srt_books.uid
+  // (SRT books still key their cues on their own uid string).
   Future<List<AudioCueRow>> getCuesForChapter(
-          String bookUid, String chapterHref) =>
+          String bookKey, String chapterHref) =>
       (select(audioCues)
             ..where((t) =>
-                t.bookUid.equals(bookUid) & t.chapterHref.equals(chapterHref))
+                t.bookKey.equals(bookKey) & t.chapterHref.equals(chapterHref))
             ..orderBy([(t) => OrderingTerm.asc(t.sentenceIndex)]))
           .get();
 
-  Future<List<AudioCueRow>> getCuesForBook(String bookUid) => (select(audioCues)
-        ..where((t) => t.bookUid.equals(bookUid))
+  Future<List<AudioCueRow>> getCuesForBook(String bookKey) => (select(audioCues)
+        ..where((t) => t.bookKey.equals(bookKey))
         ..orderBy([
           (t) => OrderingTerm.asc(t.audioFileIndex),
           (t) => OrderingTerm.asc(t.startMs),
@@ -573,18 +654,18 @@ class HibikiDatabase extends _$HibikiDatabase {
       .get();
 
   Future<AudioCueRow?> findCue(
-          String bookUid, String chapterHref, int sentenceIndex) =>
+          String bookKey, String chapterHref, int sentenceIndex) =>
       (select(audioCues)
             ..where((t) =>
-                t.bookUid.equals(bookUid) &
+                t.bookKey.equals(bookKey) &
                 t.chapterHref.equals(chapterHref) &
                 t.sentenceIndex.equals(sentenceIndex)))
           .getSingleOrNull();
 
   Future<void> replaceCuesForBook(
-          String bookUid, List<AudioCuesCompanion> cues) =>
+          String bookKey, List<AudioCuesCompanion> cues) =>
       transaction(() async {
-        await (delete(audioCues)..where((t) => t.bookUid.equals(bookUid))).go();
+        await (delete(audioCues)..where((t) => t.bookKey.equals(bookKey))).go();
         await batch((b) {
           for (final c in cues) {
             b.insert(audioCues, c);
@@ -600,21 +681,21 @@ class HibikiDatabase extends _$HibikiDatabase {
   Future<SrtBookRow?> getSrtBookByUid(String uid) =>
       (select(srtBooks)..where((t) => t.uid.equals(uid))).getSingleOrNull();
 
-  Future<SrtBookRow?> getSrtBookByTtuBookId(int ttuBookId) =>
-      (select(srtBooks)..where((t) => t.ttuBookId.equals(ttuBookId)))
+  Future<SrtBookRow?> getSrtBookByBookKey(String bookKey) =>
+      (select(srtBooks)..where((t) => t.bookKey.equals(bookKey)))
           .getSingleOrNull();
 
   Future<void> upsertSrtBook(SrtBooksCompanion book) =>
       into(srtBooks).insertOnConflictUpdate(book);
 
   Future<void> deleteSrtBookByUid(String uid) => transaction(() async {
-        await (delete(audioCues)..where((t) => t.bookUid.equals(uid))).go();
+        await (delete(audioCues)..where((t) => t.bookKey.equals(uid))).go();
         await (delete(srtBooks)..where((t) => t.uid.equals(uid))).go();
       });
 
   // ── reader positions ────────────────────────────────────────────
-  Future<ReaderPositionRow?> getReaderPosition(int ttuBookId) =>
-      (select(readerPositions)..where((t) => t.ttuBookId.equals(ttuBookId)))
+  Future<ReaderPositionRow?> getReaderPosition(String bookKey) =>
+      (select(readerPositions)..where((t) => t.bookKey.equals(bookKey)))
           .getSingleOrNull();
 
   Future<void> upsertReaderPosition(ReaderPositionsCompanion pos) =>
@@ -622,13 +703,12 @@ class HibikiDatabase extends _$HibikiDatabase {
         pos,
         onConflict: DoUpdate(
           (old) => pos,
-          target: [readerPositions.ttuBookId],
+          target: [readerPositions.bookKey],
         ),
       );
 
-  Future<int> deleteReaderPosition(int ttuBookId) =>
-      (delete(readerPositions)..where((t) => t.ttuBookId.equals(ttuBookId)))
-          .go();
+  Future<int> deleteReaderPosition(String bookKey) =>
+      (delete(readerPositions)..where((t) => t.bookKey.equals(bookKey))).go();
 
   // ── reading statistics ──────────────────────────────────────────
   /// OVERWRITE semantics: sets the row for (title, dateKey) to the absolute
@@ -753,45 +833,62 @@ class HibikiDatabase extends _$HibikiDatabase {
       (select(epubBooks)..orderBy([(t) => OrderingTerm.desc(t.importedAt)]))
           .get();
 
-  Future<EpubBookRow?> getEpubBook(int id) =>
-      (select(epubBooks)..where((t) => t.id.equals(id))).getSingleOrNull();
+  Future<EpubBookRow?> getEpubBook(String bookKey) =>
+      (select(epubBooks)..where((t) => t.bookKey.equals(bookKey)))
+          .getSingleOrNull();
 
-  Future<int> insertEpubBook(EpubBooksCompanion book) =>
-      into(epubBooks).insert(book);
+  /// Inserts a book; returns its bookKey (the primary key) on success.
+  Future<String> insertEpubBook(EpubBooksCompanion book) async {
+    await into(epubBooks).insert(book);
+    return book.bookKey.value;
+  }
 
-  Future<int> insertEpubBookOrIgnore(EpubBooksCompanion book) =>
+  Future<void> insertEpubBookOrIgnore(EpubBooksCompanion book) =>
       into(epubBooks).insert(book, mode: InsertMode.insertOrIgnore);
 
-  Future<void> updateEpubBookTitle(int bookId, String title) =>
-      (update(epubBooks)..where((t) => t.id.equals(bookId)))
-          .write(EpubBooksCompanion(title: Value(title)));
+  /// Renaming a book changes its primary key (bookKey = sanitized title) and
+  /// therefore would orphan every related row keyed by the old bookKey. A safe
+  /// rename must cascade the new key across all relation tables + prefs, which
+  /// is intentionally NOT supported in this phase. Disable in-book rename until
+  /// the cascading-rename task lands.
+  Future<void> updateEpubBookTitle(String bookKey, String title) {
+    throw UnsupportedError(
+      'In-book rename changes the primary key (bookKey = sanitized title); '
+      'a cascading re-key of all related reading data is required and is '
+      'deferred to a later phase. See book-identity-name-key plan.',
+    );
+  }
 
-  Future<void> updateEpubBookPath(int bookId, String epubPath) =>
-      (update(epubBooks)..where((t) => t.id.equals(bookId)))
+  Future<void> updateEpubBookPath(String bookKey, String epubPath) =>
+      (update(epubBooks)..where((t) => t.bookKey.equals(bookKey)))
           .write(EpubBooksCompanion(epubPath: Value(epubPath)));
 
-  Future<int> deleteEpubBook(int id) => transaction(() async {
-        await (delete(readerPositions)..where((t) => t.ttuBookId.equals(id)))
+  Future<int> deleteEpubBook(String bookKey) => transaction(() async {
+        await (delete(readerPositions)..where((t) => t.bookKey.equals(bookKey)))
             .go();
-        await (delete(bookmarks)..where((t) => t.ttuBookId.equals(id))).go();
+        // bookmarks / book_tag_mappings cascade via FK on epub_books(bookKey),
+        // but we run with foreign_keys ON only at runtime; delete explicitly to
+        // be order-independent and self-documenting.
+        await (delete(bookmarks)..where((t) => t.bookKey.equals(bookKey))).go();
         // SRT books linked to this epub key their cues on srt_books.uid, NOT
-        // the epub book uid, so delete those cues before dropping the srt rows.
+        // the epub bookKey, so delete those cues before dropping the srt rows.
         // (HBK-AUDIT-041 follow-up: deleteEpubBook owns the full cascade; the
         // reader source no longer deletes these rows itself.)
         final List<String> srtUids = await (selectOnly(srtBooks)
               ..addColumns([srtBooks.uid])
-              ..where(srtBooks.ttuBookId.equals(id)))
+              ..where(srtBooks.bookKey.equals(bookKey)))
             .map((r) => r.read(srtBooks.uid)!)
             .get();
         for (final String uid in srtUids) {
-          await (delete(audioCues)..where((t) => t.bookUid.equals(uid))).go();
+          await (delete(audioCues)..where((t) => t.bookKey.equals(uid))).go();
         }
-        await (delete(srtBooks)..where((t) => t.ttuBookId.equals(id))).go();
-        final String bookUid = buildLegacyBookUid(id);
-        await (delete(audioCues)..where((t) => t.bookUid.equals(bookUid))).go();
-        await (delete(audiobooks)..where((t) => t.bookUid.equals(bookUid)))
+        await (delete(srtBooks)..where((t) => t.bookKey.equals(bookKey))).go();
+        // Audiobook + its cues are keyed directly by bookKey now.
+        await (delete(audioCues)..where((t) => t.bookKey.equals(bookKey))).go();
+        await (delete(audiobooks)..where((t) => t.bookKey.equals(bookKey)))
             .go();
-        return (delete(epubBooks)..where((t) => t.id.equals(id))).go();
+        return (delete(epubBooks)..where((t) => t.bookKey.equals(bookKey)))
+            .go();
       });
 
   // ── book tags ───────────────────────────────────────────────────
@@ -802,25 +899,25 @@ class HibikiDatabase extends _$HibikiDatabase {
         ]))
       .get();
 
-  Future<List<BookTagRow>> getTagsForBook(int bookId) {
+  Future<List<BookTagRow>> getTagsForBook(String bookKey) {
     final query = select(bookTags).join([
       innerJoin(
         bookTagMappings,
         bookTagMappings.tagId.equalsExp(bookTags.id),
       ),
     ])
-      ..where(bookTagMappings.bookId.equals(bookId))
+      ..where(bookTagMappings.bookKey.equals(bookKey))
       ..orderBy([OrderingTerm.asc(bookTags.createdAt)]);
     return query.map((row) => row.readTable(bookTags)).get();
   }
 
-  Future<Set<int>> getBookIdsForAnyTag(Set<int> tagIds) async {
+  Future<Set<String>> getBookKeysForAnyTag(Set<int> tagIds) async {
     if (tagIds.isEmpty) return {};
     final query = selectOnly(bookTagMappings)
-      ..addColumns([bookTagMappings.bookId])
+      ..addColumns([bookTagMappings.bookKey])
       ..where(bookTagMappings.tagId.isIn(tagIds));
     final rows = await query.get();
-    return rows.map((row) => row.read(bookTagMappings.bookId)!).toSet();
+    return rows.map((row) => row.read(bookTagMappings.bookKey)!).toSet();
   }
 
   Future<int> createTag(String name, int colorValue) async {
@@ -850,10 +947,10 @@ class HibikiDatabase extends _$HibikiDatabase {
   Future<int> deleteTag(int id) =>
       (delete(bookTags)..where((t) => t.id.equals(id))).go();
 
-  Future<void> setTagsForBook(int bookId, Set<int> tagIds) =>
+  Future<void> setTagsForBook(String bookKey, Set<int> tagIds) =>
       transaction(() async {
         final existing = await (select(bookTagMappings)
-              ..where((t) => t.bookId.equals(bookId)))
+              ..where((t) => t.bookKey.equals(bookKey)))
             .get();
         final existingTagIds = existing.map((e) => e.tagId).toSet();
 
@@ -862,31 +959,32 @@ class HibikiDatabase extends _$HibikiDatabase {
 
         for (final tagId in toRemove) {
           await (delete(bookTagMappings)
-                ..where((t) => t.bookId.equals(bookId) & t.tagId.equals(tagId)))
+                ..where(
+                    (t) => t.bookKey.equals(bookKey) & t.tagId.equals(tagId)))
               .go();
         }
         for (final tagId in toAdd) {
           await into(bookTagMappings).insert(
             BookTagMappingsCompanion.insert(
-              bookId: bookId,
+              bookKey: bookKey,
               tagId: tagId,
             ),
           );
         }
       });
 
-  Future<void> addTagToBook(int bookId, int tagId) =>
+  Future<void> addTagToBook(String bookKey, int tagId) =>
       into(bookTagMappings).insert(
-        BookTagMappingsCompanion.insert(bookId: bookId, tagId: tagId),
+        BookTagMappingsCompanion.insert(bookKey: bookKey, tagId: tagId),
         mode: InsertMode.insertOrIgnore,
       );
 
-  Future<void> removeTagFromBook(int bookId, int tagId) =>
+  Future<void> removeTagFromBook(String bookKey, int tagId) =>
       (delete(bookTagMappings)
-            ..where((t) => t.bookId.equals(bookId) & t.tagId.equals(tagId)))
+            ..where((t) => t.bookKey.equals(bookKey) & t.tagId.equals(tagId)))
           .go();
 
-  Future<Set<int>> getBookIdsForAllTags(Set<int> tagIds) async {
+  Future<Set<String>> getBookKeysForAllTags(Set<int> tagIds) async {
     if (tagIds.isEmpty) return {};
     final tagCount = tagIds.length;
     final placeholders = List.generate(tagCount, (_) => '?').join(',');
@@ -895,13 +993,13 @@ class HibikiDatabase extends _$HibikiDatabase {
       Variable<int>(tagCount),
     ];
     final rows = await customSelect(
-      'SELECT book_id FROM book_tag_mappings '
+      'SELECT book_key FROM book_tag_mappings '
       'WHERE tag_id IN ($placeholders) '
-      'GROUP BY book_id '
+      'GROUP BY book_key '
       'HAVING COUNT(DISTINCT tag_id) = ?',
       variables: variables,
     ).get();
-    return rows.map((row) => row.read<int>('book_id')).toSet();
+    return rows.map((row) => row.read<String>('book_key')).toSet();
   }
 
   Future<List<BookTagMappingRow>> getAllBookTagMappings() =>
@@ -1074,20 +1172,20 @@ class HibikiDatabase extends _$HibikiDatabase {
           .go();
 
   // ── book profiles ────────────────────────────────────────────────
-  Future<BookProfileRow?> getBookProfile(String bookUid) =>
-      (select(bookProfiles)..where((t) => t.bookUid.equals(bookUid)))
+  Future<BookProfileRow?> getBookProfile(String bookKey) =>
+      (select(bookProfiles)..where((t) => t.bookKey.equals(bookKey)))
           .getSingleOrNull();
 
-  Future<void> setBookProfile(String bookUid, int profileId) =>
+  Future<void> setBookProfile(String bookKey, int profileId) =>
       into(bookProfiles).insertOnConflictUpdate(
         BookProfilesCompanion.insert(
-          bookUid: bookUid,
+          bookKey: bookKey,
           profileId: profileId,
         ),
       );
 
-  Future<int> deleteBookProfile(String bookUid) =>
-      (delete(bookProfiles)..where((t) => t.bookUid.equals(bookUid))).go();
+  Future<int> deleteBookProfile(String bookKey) =>
+      (delete(bookProfiles)..where((t) => t.bookKey.equals(bookKey))).go();
 
   // ── sync baselines ──────────────────────────────────────────────
   /// 读某资产某维度的基线版本；无记录返回 null。
@@ -1114,4 +1212,494 @@ class HibikiDatabase extends _$HibikiDatabase {
   /// 删某资产所有维度基线（删书时 GC，可选调用）。
   Future<void> deleteSyncBaselines(String assetKey) =>
       (delete(syncBaselines)..where((t) => t.assetKey.equals(assetKey))).go();
+
+  // ── v16 book-key migration ──────────────────────────────────────
+  // Legacy uid prefix that wrapped the int book id in audiobooks/audio_cues/
+  // book_profiles and in the uid-style audiobook_pos_ prefs. Single literal so
+  // the migration's int-extraction matches what buildLegacyBookUid produced.
+  static const String _kLegacyUidPrefix = 'reader_ttu/hoshi://book/';
+
+  /// VERBATIM copy of `sanitizeTtuFilename` from
+  /// hibiki/lib/src/sync/ttu_filename.dart. hibiki_core cannot depend on the
+  /// app package, so the body is inlined here. Both MUST stay byte-identical:
+  /// the migrated bookKey has to equal the key sync/folder code derives from
+  /// the same title, or cross-device identity drifts. A source guard
+  /// (book_key_guard_test) locks the two bodies together.
+  static String _sanitizeBookKey(String title) {
+    String result = title;
+    if (result.endsWith(' ')) {
+      result = '${result.substring(0, result.length - 1)}~ttu-spc~';
+    }
+    if (result.endsWith('.')) {
+      result = '${result.substring(0, result.length - 1)}~ttu-dend~';
+    }
+    result = result.replaceAll('*', '~ttu-star~');
+    result = result.replaceAllMapped(
+      RegExp(r'[/?\<>\\:|%"]'),
+      (match) => match[0]!
+          .codeUnits
+          .map((c) => '%${c.toRadixString(16).toUpperCase().padLeft(2, '0')}')
+          .join(),
+    );
+    return result;
+  }
+
+  /// Re-keys every book + all reading data from the autoincrement int id to
+  /// bookKey = sanitizeTtuFilename(title). Lossless: builds an id→key map (with
+  /// dedup), then rebuilds each table by JOINing through that map. Runs inside
+  /// the migration's implicit transaction with foreign_keys OFF.
+  Future<void> _migrateBookKeyV16(Migrator m) async {
+    await customStatement('PRAGMA foreign_keys = OFF');
+    try {
+      // 1. Read (id, title); compute key + dedup collisions deterministically.
+      final List<QueryRow> books =
+          await customSelect('SELECT id, title FROM epub_books ORDER BY id')
+              .get();
+      final Map<int, String> idToKey = <int, String>{};
+      final Set<String> used = <String>{};
+      for (final QueryRow r in books) {
+        final int id = r.read<int>('id');
+        String key = _sanitizeBookKey(r.read<String>('title'));
+        if (used.contains(key)) {
+          for (int i = 2;; i++) {
+            final String candidate = '$key ($i)';
+            if (!used.contains(candidate)) {
+              key = candidate;
+              break;
+            }
+          }
+        }
+        used.add(key);
+        idToKey[id] = key;
+      }
+
+      // 2. Temp map table (old_id -> book_key).
+      await customStatement('DROP TABLE IF EXISTS _id_key_map');
+      await customStatement(
+          'CREATE TABLE _id_key_map (old_id INTEGER PRIMARY KEY, book_key TEXT NOT NULL)');
+      for (final MapEntry<int, String> e in idToKey.entries) {
+        await customStatement(
+            'INSERT INTO _id_key_map (old_id, book_key) VALUES (?, ?)',
+            <Object?>[e.key, e.value]);
+      }
+
+      // 3. epub_books: id PK -> book_key PK.
+      await customStatement('''
+        CREATE TABLE epub_books_new (
+          book_key TEXT NOT NULL PRIMARY KEY,
+          title TEXT NOT NULL,
+          author TEXT,
+          cover_path TEXT,
+          epub_path TEXT NOT NULL,
+          extract_dir TEXT NOT NULL,
+          chapter_count INTEGER NOT NULL,
+          chapters_json TEXT NOT NULL,
+          toc_json TEXT,
+          source_metadata TEXT,
+          imported_at INTEGER NOT NULL)''');
+      await customStatement('''
+        INSERT INTO epub_books_new
+        SELECT m.book_key, b.title, b.author, b.cover_path, b.epub_path,
+               b.extract_dir, b.chapter_count, b.chapters_json, b.toc_json,
+               b.source_metadata, b.imported_at
+        FROM epub_books b JOIN _id_key_map m ON m.old_id = b.id''');
+      await customStatement('DROP TABLE epub_books');
+      await customStatement('ALTER TABLE epub_books_new RENAME TO epub_books');
+
+      // 4. reader_positions: ttu_book_id INT UNIQUE -> book_key TEXT UNIQUE.
+      await customStatement('''
+        CREATE TABLE reader_positions_new (
+          id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+          book_key TEXT NOT NULL UNIQUE,
+          section_index INTEGER NOT NULL,
+          norm_char_offset INTEGER NOT NULL,
+          ttu_char_offset INTEGER NOT NULL DEFAULT -1,
+          updated_at INTEGER NOT NULL)''');
+      await customStatement('''
+        INSERT INTO reader_positions_new
+          (book_key, section_index, norm_char_offset, ttu_char_offset, updated_at)
+        SELECT m.book_key, rp.section_index, rp.norm_char_offset,
+               rp.ttu_char_offset, rp.updated_at
+        FROM reader_positions rp JOIN _id_key_map m ON m.old_id = rp.ttu_book_id''');
+      await customStatement('DROP TABLE reader_positions');
+      await customStatement(
+          'ALTER TABLE reader_positions_new RENAME TO reader_positions');
+
+      // 5. bookmarks: ttu_book_id INT FK -> book_key TEXT FK (cascade).
+      await customStatement('''
+        CREATE TABLE bookmarks_new (
+          id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+          book_key TEXT NOT NULL REFERENCES epub_books (book_key) ON DELETE CASCADE,
+          section_index INTEGER NOT NULL,
+          norm_char_offset INTEGER NOT NULL,
+          label TEXT NOT NULL,
+          created_at INTEGER NOT NULL,
+          book_title TEXT,
+          page_in_chapter INTEGER,
+          total_pages_in_chapter INTEGER)''');
+      await customStatement('''
+        INSERT INTO bookmarks_new
+          (id, book_key, section_index, norm_char_offset, label, created_at,
+           book_title, page_in_chapter, total_pages_in_chapter)
+        SELECT bm.id, m.book_key, bm.section_index, bm.norm_char_offset,
+               bm.label, bm.created_at, bm.book_title, bm.page_in_chapter,
+               bm.total_pages_in_chapter
+        FROM bookmarks bm JOIN _id_key_map m ON m.old_id = bm.ttu_book_id''');
+      await customStatement('DROP TABLE bookmarks');
+      await customStatement('ALTER TABLE bookmarks_new RENAME TO bookmarks');
+
+      // 6. book_tag_mappings: book_id INT FK -> book_key TEXT FK (cascade).
+      await customStatement('''
+        CREATE TABLE book_tag_mappings_new (
+          id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+          book_key TEXT NOT NULL REFERENCES epub_books (book_key) ON DELETE CASCADE,
+          tag_id INTEGER NOT NULL REFERENCES book_tags (id) ON DELETE CASCADE,
+          UNIQUE (book_key, tag_id))''');
+      await customStatement('''
+        INSERT INTO book_tag_mappings_new (id, book_key, tag_id)
+        SELECT btm.id, m.book_key, btm.tag_id
+        FROM book_tag_mappings btm JOIN _id_key_map m ON m.old_id = btm.book_id''');
+      await customStatement('DROP TABLE book_tag_mappings');
+      await customStatement(
+          'ALTER TABLE book_tag_mappings_new RENAME TO book_tag_mappings');
+
+      // 7. srt_books: ttu_book_id INT (0 = standalone) -> book_key TEXT ('').
+      //    LEFT JOIN so standalone rows (no mapped epub) keep '' sentinel.
+      await customStatement('''
+        CREATE TABLE srt_books_new (
+          id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+          uid TEXT NOT NULL UNIQUE,
+          title TEXT NOT NULL,
+          author TEXT,
+          audio_root TEXT,
+          audio_paths_json TEXT,
+          srt_path TEXT NOT NULL,
+          cover_path TEXT,
+          imported_at INTEGER NOT NULL,
+          book_key TEXT NOT NULL DEFAULT '')''');
+      await customStatement('''
+        INSERT INTO srt_books_new
+          (id, uid, title, author, audio_root, audio_paths_json, srt_path,
+           cover_path, imported_at, book_key)
+        SELECT sb.id, sb.uid, sb.title, sb.author, sb.audio_root,
+               sb.audio_paths_json, sb.srt_path, sb.cover_path, sb.imported_at,
+               COALESCE(m.book_key, '')
+        FROM srt_books sb LEFT JOIN _id_key_map m ON m.old_id = sb.ttu_book_id''');
+      await customStatement('DROP TABLE srt_books');
+      await customStatement('ALTER TABLE srt_books_new RENAME TO srt_books');
+
+      // 8. audiobooks: book_uid 'reader_ttu/hoshi://book/<id>' -> book_key.
+      //    Extract <id>, JOIN map. Rows whose uid doesn't map are dropped
+      //    (orphan audiobooks — their epub is gone; v12 already pruned cues).
+      await customStatement('''
+        CREATE TABLE audiobooks_new (
+          id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+          book_key TEXT NOT NULL UNIQUE,
+          audio_root TEXT,
+          audio_paths_json TEXT,
+          alignment_format TEXT NOT NULL,
+          alignment_path TEXT NOT NULL,
+          health_kind_raw TEXT,
+          match_rate_pct INTEGER,
+          health_measured_at INTEGER,
+          health_reason TEXT,
+          follow_audio INTEGER)''');
+      await customStatement('''
+        INSERT INTO audiobooks_new
+          (id, book_key, audio_root, audio_paths_json, alignment_format,
+           alignment_path, health_kind_raw, match_rate_pct, health_measured_at,
+           health_reason, follow_audio)
+        SELECT ab.id, m.book_key, ab.audio_root, ab.audio_paths_json,
+               ab.alignment_format, ab.alignment_path, ab.health_kind_raw,
+               ab.match_rate_pct, ab.health_measured_at, ab.health_reason,
+               ab.follow_audio
+        FROM audiobooks ab
+        JOIN _id_key_map m
+          ON m.old_id = CAST(
+               substr(ab.book_uid, ${_kLegacyUidPrefix.length + 1}) AS INTEGER)
+        WHERE ab.book_uid LIKE '$_kLegacyUidPrefix%' ''');
+      await customStatement('DROP TABLE audiobooks');
+      await customStatement('ALTER TABLE audiobooks_new RENAME TO audiobooks');
+
+      // 9. audio_cues: book_uid owns EITHER an audiobook uid OR an srt_books.uid.
+      //    Rename column to book_key; translate ONLY the audiobook-uid rows
+      //    ('reader_ttu/hoshi://book/<id>'), leaving srt uids untouched. Drop
+      //    audiobook-uid cues whose id no longer maps (orphans).
+      await customStatement('''
+        CREATE TABLE audio_cues_new (
+          id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+          book_key TEXT NOT NULL,
+          chapter_href TEXT NOT NULL,
+          sentence_index INTEGER NOT NULL,
+          text_fragment_id TEXT NOT NULL,
+          cue_text TEXT NOT NULL,
+          start_ms INTEGER NOT NULL,
+          end_ms INTEGER NOT NULL,
+          audio_file_index INTEGER NOT NULL)''');
+      // 9a. non-audiobook-uid cues (srt-owned) carried over verbatim.
+      await customStatement('''
+        INSERT INTO audio_cues_new
+          (id, book_key, chapter_href, sentence_index, text_fragment_id,
+           cue_text, start_ms, end_ms, audio_file_index)
+        SELECT ac.id, ac.book_uid, ac.chapter_href, ac.sentence_index,
+               ac.text_fragment_id, ac.cue_text, ac.start_ms, ac.end_ms,
+               ac.audio_file_index
+        FROM audio_cues ac
+        WHERE ac.book_uid NOT LIKE '$_kLegacyUidPrefix%' ''');
+      // 9b. audiobook-uid cues translated through the map.
+      await customStatement('''
+        INSERT INTO audio_cues_new
+          (id, book_key, chapter_href, sentence_index, text_fragment_id,
+           cue_text, start_ms, end_ms, audio_file_index)
+        SELECT ac.id, m.book_key, ac.chapter_href, ac.sentence_index,
+               ac.text_fragment_id, ac.cue_text, ac.start_ms, ac.end_ms,
+               ac.audio_file_index
+        FROM audio_cues ac
+        JOIN _id_key_map m
+          ON m.old_id = CAST(
+               substr(ac.book_uid, ${_kLegacyUidPrefix.length + 1}) AS INTEGER)
+        WHERE ac.book_uid LIKE '$_kLegacyUidPrefix%' ''');
+      await customStatement('DROP TABLE audio_cues');
+      await customStatement('ALTER TABLE audio_cues_new RENAME TO audio_cues');
+
+      // 10. book_profiles: book_uid PK 'reader_ttu/hoshi://book/<id>' -> book_key.
+      await customStatement('''
+        CREATE TABLE book_profiles_new (
+          book_key TEXT NOT NULL PRIMARY KEY,
+          profile_id INTEGER NOT NULL REFERENCES profiles (id) ON DELETE CASCADE)''');
+      await customStatement('''
+        INSERT INTO book_profiles_new (book_key, profile_id)
+        SELECT m.book_key, bp.profile_id
+        FROM book_profiles bp
+        JOIN _id_key_map m
+          ON m.old_id = CAST(
+               substr(bp.book_uid, ${_kLegacyUidPrefix.length + 1}) AS INTEGER)
+        WHERE bp.book_uid LIKE '$_kLegacyUidPrefix%' ''');
+      await customStatement('DROP TABLE book_profiles');
+      await customStatement(
+          'ALTER TABLE book_profiles_new RENAME TO book_profiles');
+
+      // 11. media_items identifier/unique_key: hoshi://book/<id> -> /<key>.
+      const String kIdentPrefix = 'hoshi://book/';
+      final List<QueryRow> items = await customSelect(
+        "SELECT id, media_identifier, unique_key FROM media_items "
+        "WHERE media_identifier LIKE 'hoshi://book/%'",
+      ).get();
+      for (final QueryRow it in items) {
+        final String mid = it.read<String>('media_identifier');
+        final int? oldId = int.tryParse(mid.substring(kIdentPrefix.length));
+        final String? key = oldId == null ? null : idToKey[oldId];
+        if (key == null) continue;
+        await customStatement(
+          'UPDATE media_items SET media_identifier = ?, unique_key = ? '
+          'WHERE id = ?',
+          <Object?>[
+            '$kIdentPrefix$key',
+            '$kIdentPrefix$key',
+            it.read<int>('id'),
+          ],
+        );
+      }
+
+      // 12. preferences re-key (two audiobook_pos key spaces merge to one).
+      await _migrateBookKeyPrefsV16(idToKey);
+
+      // 13. reading_statistics: align bare title -> sanitized key, merging
+      //     rows that collapse to the same (title, date_key).
+      await _migrateReadingStatsTitlesV16();
+
+      // 14. Recreate indexes under the new book_key column names.
+      await _ensureIndexes();
+
+      await customStatement('DROP TABLE _id_key_map');
+    } finally {
+      await customStatement('PRAGMA foreign_keys = ON');
+    }
+  }
+
+  /// Re-keys all per-book preferences from int id / legacy uid to bookKey.
+  /// The two audiobook_pos_ key spaces (int-style from SyncRepository and
+  /// uid-style from AudiobookRepository's realtime writes) merge; on conflict
+  /// the uid-style value wins (it is the live player write).
+  Future<void> _migrateBookKeyPrefsV16(Map<int, String> idToKey) async {
+    if (!await _tableExists('preferences')) return;
+    final List<QueryRow> rows =
+        await customSelect('SELECT key, value FROM preferences').get();
+
+    // Resolved new key -> value, with a priority flag so uid-style audiobook_pos
+    // wins over int-style on collision.
+    final Map<String, String> resolved = <String, String>{};
+    final Set<String> uidWonPos = <String>{};
+    final Set<String> oldKeysToDelete = <String>{};
+
+    // Prefixes whose suffix is the legacy uid string (reader_ttu/hoshi://book/<id>).
+    const List<String> uidPrefixes = <String>[
+      'audiobook_pos_',
+      'audiobook_follow_',
+      'audiobook_delay_',
+      'audiobook_speed_',
+      'audiobook_volume_',
+      'audiobook_image_pause_',
+      'audiobook_health_overlay_',
+    ];
+
+    String? mapUidSuffix(String suffix) {
+      if (!suffix.startsWith(_kLegacyUidPrefix)) return null;
+      final int? oldId =
+          int.tryParse(suffix.substring(_kLegacyUidPrefix.length));
+      if (oldId == null) return null;
+      return idToKey[oldId];
+    }
+
+    for (final QueryRow r in rows) {
+      final String key = r.read<String>('key');
+      final String value = r.read<String>('value');
+
+      // audiobook_pos_ has TWO suffix shapes: bare int (SyncRepository) or the
+      // legacy uid (AudiobookRepository). Handle it explicitly so both merge.
+      if (key.startsWith('audiobook_pos_')) {
+        final String suffix = key.substring('audiobook_pos_'.length);
+        String? newKeyKey;
+        bool isUid = false;
+        if (suffix.startsWith(_kLegacyUidPrefix)) {
+          final String? bk = mapUidSuffix(suffix);
+          if (bk != null) {
+            newKeyKey = 'audiobook_pos_$bk';
+            isUid = true;
+          }
+        } else {
+          final int? oldId = int.tryParse(suffix);
+          final String? bk = oldId == null ? null : idToKey[oldId];
+          if (bk != null) newKeyKey = 'audiobook_pos_$bk';
+        }
+        if (newKeyKey != null) {
+          oldKeysToDelete.add(key);
+          if (isUid) {
+            resolved[newKeyKey] = value;
+            uidWonPos.add(newKeyKey);
+          } else if (!uidWonPos.contains(newKeyKey)) {
+            resolved[newKeyKey] = value;
+          }
+        }
+        continue;
+      }
+
+      // bookmarks_<int> (BookmarkRepository / migrateLegacyBookmarkPreferences
+      // normally consumes these into the table, but re-key any leftover).
+      if (key.startsWith('bookmarks_')) {
+        final String suffix = key.substring('bookmarks_'.length);
+        final int? oldId = int.tryParse(suffix);
+        final String? bk = oldId == null ? null : idToKey[oldId];
+        if (bk != null) {
+          oldKeysToDelete.add(key);
+          resolved['bookmarks_$bk'] = value;
+        }
+        continue;
+      }
+
+      // Remaining uid-suffix prefixes.
+      for (final String prefix in uidPrefixes) {
+        if (prefix == 'audiobook_pos_') continue; // handled above
+        if (!key.startsWith(prefix)) continue;
+        final String suffix = key.substring(prefix.length);
+        final String? bk = mapUidSuffix(suffix);
+        if (bk != null) {
+          oldKeysToDelete.add(key);
+          resolved['$prefix$bk'] = value;
+        }
+        break;
+      }
+    }
+
+    // Delete old keys first, then write resolved new keys (uid-priority applied).
+    for (final String k in oldKeysToDelete) {
+      await customStatement(
+          'DELETE FROM preferences WHERE key = ?', <Object?>[k]);
+    }
+    for (final MapEntry<String, String> e in resolved.entries) {
+      await customStatement(
+        'INSERT INTO preferences (key, value) VALUES (?, ?) '
+        'ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+        <Object?>[e.key, e.value],
+      );
+    }
+  }
+
+  /// Rewrites reading_statistics.title from the bare title to the sanitized
+  /// bookKey domain so stats join the new identity. Rows that collapse to the
+  /// same (sanitized title, date_key) are merged additively.
+  Future<void> _migrateReadingStatsTitlesV16() async {
+    if (!await _tableExists('reading_statistics')) return;
+    final List<QueryRow> rows = await customSelect(
+            'SELECT id, title, date_key, characters_read, reading_time_ms, '
+            'last_statistic_modified FROM reading_statistics')
+        .get();
+
+    // Group target (sanitizedTitle, dateKey) -> accumulated values + the row id
+    // we keep (smallest id) and the row ids we delete (merged away).
+    final Map<String, _StatAccum> merged = <String, _StatAccum>{};
+    for (final QueryRow r in rows) {
+      final int id = r.read<int>('id');
+      final String sanitized = _sanitizeBookKey(r.read<String>('title'));
+      final String dateKey = r.read<String>('date_key');
+      final String groupKey = '$sanitized $dateKey';
+      final int chars = r.read<int>('characters_read');
+      final int timeMs = r.read<int>('reading_time_ms');
+      final int lastMod = r.read<int>('last_statistic_modified');
+      final _StatAccum? acc = merged[groupKey];
+      if (acc == null) {
+        merged[groupKey] = _StatAccum(
+          keepId: id,
+          title: sanitized,
+          dateKey: dateKey,
+          chars: chars,
+          timeMs: timeMs,
+          lastMod: lastMod,
+        );
+      } else {
+        acc.chars += chars;
+        acc.timeMs += timeMs;
+        if (lastMod > acc.lastMod) acc.lastMod = lastMod;
+        acc.deleteIds.add(id);
+      }
+    }
+
+    for (final _StatAccum acc in merged.values) {
+      for (final int delId in acc.deleteIds) {
+        await customStatement(
+            'DELETE FROM reading_statistics WHERE id = ?', <Object?>[delId]);
+      }
+      await customStatement(
+        'UPDATE reading_statistics SET title = ?, characters_read = ?, '
+        'reading_time_ms = ?, last_statistic_modified = ? WHERE id = ?',
+        <Object?>[
+          acc.title,
+          acc.chars,
+          acc.timeMs,
+          acc.lastMod,
+          acc.keepId,
+        ],
+      );
+    }
+  }
+}
+
+/// Mutable accumulator for reading_statistics merge during v16 migration.
+class _StatAccum {
+  _StatAccum({
+    required this.keepId,
+    required this.title,
+    required this.dateKey,
+    required this.chars,
+    required this.timeMs,
+    required this.lastMod,
+  });
+
+  final int keepId;
+  final String title;
+  final String dateKey;
+  int chars;
+  int timeMs;
+  int lastMod;
+  final List<int> deleteIds = <int>[];
 }
