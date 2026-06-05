@@ -358,12 +358,18 @@ window.__hoshiAnnotate = function(chapterHref) {
     );
   }
 
-  /// 对齐 iOS Sasayaki 的 applySasayakiCues。
-  static Future<void> applySasayakiCues(
-    InAppWebViewController controller, {
-    required int sectionIndex,
-    required List<AudioCue> cues,
-  }) async {
+  /// 构造传给 WebView 的 sasayaki cue payload。
+  ///
+  /// 除了匹配时算出的归一化偏移（`start`/`length`，现降级为**提示位置**），
+  /// 还带上 cue 自身的原文 `text`：运行时 JS 用它在**实时 DOM** 的归一化文本里
+  /// 就近、单调地重新定位高亮，从而摆脱「匹配坐标系（package:html）」与
+  /// 「渲染坐标系（浏览器 DOM）」逐字不一致导致的累积偏移（BUG-060）。
+  /// 纯函数，可单测。
+  @visibleForTesting
+  static List<Map<String, dynamic>> buildSasayakiPayload(
+    List<AudioCue> cues,
+    int sectionIndex,
+  ) {
     final List<Map<String, dynamic>> payload = <Map<String, dynamic>>[];
     for (final AudioCue cue in cues) {
       final SasayakiFragment? frag =
@@ -378,8 +384,20 @@ window.__hoshiAnnotate = function(chapterHref) {
         'id': cue.textFragmentId,
         'start': frag.normCharStart,
         'length': frag.normCharEnd - frag.normCharStart,
+        'text': cue.text,
       });
     }
+    return payload;
+  }
+
+  /// 对齐 iOS Sasayaki 的 applySasayakiCues。
+  static Future<void> applySasayakiCues(
+    InAppWebViewController controller, {
+    required int sectionIndex,
+    required List<AudioCue> cues,
+  }) async {
+    final List<Map<String, dynamic>> payload =
+        buildSasayakiPayload(cues, sectionIndex);
     if (payload.isEmpty) {
       return;
     }

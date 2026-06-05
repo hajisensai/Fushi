@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/services.dart';
 import 'package:hibiki/src/reader/reader_content_styles.dart';
 
@@ -11,8 +12,86 @@ enum ReaderNavigationDirection {
   final String jsValue;
 }
 
+/// 一条 sasayaki cue 的运行时定位输入：归一化原文 [needle]、匹配时算出的
+/// 归一化偏移提示 [hint]、提示长度 [length]（仅在未命中回落时用于推进游标）。
+class SasayakiCueHint {
+  const SasayakiCueHint({
+    required this.needle,
+    required this.hint,
+    required this.length,
+  });
+
+  final String needle;
+  final int hint;
+  final int length;
+}
+
 class ReaderPaginationScripts {
   ReaderPaginationScripts._();
+
+  /// sasayaki 高亮就近重定位的搜索半径（归一化字符）。整句 needle 很长，
+  /// 半径内出现同一整句重复的概率极低；半径限制 + 单调游标 ⇒ 不会跳到远处
+  /// 重复句（BUG-060 用户担心的「来回跳动」）。
+  static const int kSasayakiSearchWindow = 256;
+
+  /// 把 cue 的归一化偏移（提示）+ 原文，映射成在 [fullNorm]（实时 DOM 的
+  /// 归一化文本）里的解析起点。这是 JS `collectSasayakiCueRanges` 搜索逻辑的
+  /// 纯 Dart 影子，供单测验证「漂移自愈 / 不跳远处重复 / 未命中回落提示」三
+  /// 不变量；JS 侧实现同一算法（见同文件脚本字符串 + 源码守卫测试）。
+  ///
+  /// 规则：单调游标 `cursor` 只增不减；每条 cue 在 `[max(cursor, hint-window),
+  /// hint+window]` 内取**离 hint 最近**的整句出现位置（对齐既有
+  /// scrollToSearchMatch 的就近策略）；窗口内无命中则回落到裁剪后的 hint。
+  @visibleForTesting
+  static List<int> resolveCueNormStartsForTesting({
+    required String fullNorm,
+    required List<SasayakiCueHint> cues,
+    int window = kSasayakiSearchWindow,
+  }) {
+    final List<int> out = <int>[];
+    int cursor = 0;
+    for (final SasayakiCueHint c in cues) {
+      final String needle = c.needle;
+      final int hint = c.hint;
+      int resolved;
+      if (needle.isNotEmpty) {
+        final int lo = cursor > (hint - window) ? cursor : (hint - window);
+        final int start = lo < 0 ? 0 : lo;
+        int best = -1;
+        int bestDist = 1 << 30;
+        if (start <= fullNorm.length) {
+          int from = start;
+          while (true) {
+            final int i = fullNorm.indexOf(needle, from);
+            if (i < 0 || i > hint + window) {
+              break;
+            }
+            final int d = (i - hint).abs();
+            if (d < bestDist) {
+              bestDist = d;
+              best = i;
+            }
+            from = i + 1;
+          }
+        }
+        if (best >= 0) {
+          resolved = best;
+          cursor = best + needle.length;
+        } else {
+          resolved = _clampInt(hint, cursor, fullNorm.length);
+          cursor = resolved + c.length;
+        }
+      } else {
+        resolved = _clampInt(hint, cursor, fullNorm.length);
+        cursor = resolved + c.length;
+      }
+      out.add(resolved);
+    }
+    return out;
+  }
+
+  static int _clampInt(int v, int lo, int hi) =>
+      v < lo ? lo : (v > hi ? hi : v);
 
   static String paginateInvocation(ReaderNavigationDirection direction) =>
       "window.hoshiReader && window.hoshiReader.paginate('${direction.jsValue}')";
@@ -233,63 +312,100 @@ class ReaderPaginationScripts {
     this.nodeStartOffsets = offsets;
     if (this.paginationMetrics !== undefined) this.paginationMetrics = null;
   },
-  collectSasayakiCueRanges: function(cues) {
-    var cueRanges = new Map();
-    if (!cues.length) return [];
-    var index = 0;
-    var current = cues[0];
-    var start = current.start;
-    var end = start + current.length;
-    var cursor = 0;
-    var segment = null;
-    var flushSegment = function(node) {
-      if (!segment) return;
-      var ranges = cueRanges.get(segment.id) || [];
-      ranges.push({ node: node, start: segment.start, end: segment.end });
-      cueRanges.set(segment.id, ranges);
-      segment = null;
-    };
-    var advanceCue = function() {
-      index += 1;
-      current = cues[index];
-      if (current) {
-        start = current.start;
-        end = start + current.length;
-      }
-    };
+  buildSasayakiNormIndex: function() {
+    // 一次性遍历 DOM 文本节点（createWalker 跳过振假名 rt/rp），构建归一化
+    // 全文 full 与反查表 map：map[k] = {node,start,end}（第 k 个归一化字符在其
+    // 文本节点内的原始 UTF-16 偏移区间）。归一化口径 = isMatchableChar，与
+    // normalizeText 完全一致（白名单：假名/汉字/字母数字）。
     var walker = this.createWalker();
     var node;
-    while (current && (node = walker.nextNode())) {
+    var map = [];
+    var full = '';
+    while (node = walker.nextNode()) {
       var text = node.textContent;
       var i = 0;
-      while (i < text.length && current) {
-        var char = String.fromCodePoint(text.codePointAt(i));
-        var next = i + char.length;
-        if (this.isMatchableChar(char)) {
-          if (cursor >= start && cursor < end) {
-            if (!segment) {
-              segment = { id: current.id, start: i, end: next };
-            } else {
-              segment.end = next;
-            }
-          } else {
-            flushSegment(node);
-          }
-          cursor += 1;
-          if (cursor === end) {
-            flushSegment(node);
-            advanceCue();
-          }
-        } else if (segment) {
-          segment.end = next;
+      var chunk = '';
+      while (i < text.length) {
+        var ch = String.fromCodePoint(text.codePointAt(i));
+        var next = i + ch.length;
+        if (this.isMatchableChar(ch)) {
+          map.push({ node: node, start: i, end: next });
+          chunk += ch;
         }
         i = next;
       }
-      flushSegment(node);
+      full += chunk;
     }
-    return cues.map(function(cue) {
-      return { id: cue.id, ranges: cueRanges.get(cue.id) || [] };
-    });
+    return { full: full, map: map };
+  },
+  rangesForNormSpan: function(map, normStart, normLen) {
+    // 把归一化区间 [normStart, normStart+normLen) 映射成按文本节点分组的 DOM
+    // 子区间；同一节点内被跨过的非匹配字符（标点等）一并纳入（保持原视觉）。
+    var ranges = [];
+    if (normLen <= 0 || normStart < 0 || normStart >= map.length) return ranges;
+    var endEx = Math.min(normStart + normLen, map.length);
+    var curNode = null, curStart = 0, curEnd = 0;
+    for (var k = normStart; k < endEx; k++) {
+      var e = map[k];
+      if (e.node !== curNode) {
+        if (curNode) ranges.push({ node: curNode, start: curStart, end: curEnd });
+        curNode = e.node; curStart = e.start; curEnd = e.end;
+      } else {
+        curEnd = e.end;
+      }
+    }
+    if (curNode) ranges.push({ node: curNode, start: curStart, end: curEnd });
+    return ranges;
+  },
+  collectSasayakiCueRanges: function(cues) {
+    // BUG-060：高亮坐标由实时 DOM 权威定位。匹配时算出的 start/length 仅作
+    // 「提示」，运行时用 cue 原文 text 在实时 DOM 的归一化全文里就近、单调地
+    // 重新定位 —— 摆脱 package:html(匹配坐标系) 与浏览器 DOM(渲染坐标系) 逐字
+    // 不一致导致的累积偏移。不变量：① 游标 cursor 单调不回退；② 搜索窗口有界
+    // (整句 needle + 半径 WINDOW)，不跳远处重复句；③ 窗口内取离 hint 最近者；
+    // ④ 未命中回落提示偏移，绝不空高亮。与 Dart 影子
+    // ReaderPaginationScripts.resolveCueNormStartsForTesting 同算法。
+    var out = [];
+    if (!cues.length) return out;
+    var idx = this.buildSasayakiNormIndex();
+    var full = idx.full;
+    var map = idx.map;
+    var WINDOW = 256;
+    var cursor = 0;
+    for (var ci = 0; ci < cues.length; ci++) {
+      var cue = cues[ci];
+      var needle = this.normalizeText(cue.text || '');
+      var hint = (typeof cue.start === 'number') ? cue.start : cursor;
+      var len = (typeof cue.length === 'number') ? cue.length : 0;
+      var normLen = needle.length;
+      var resolved = -1;
+      if (normLen > 0) {
+        var lo = cursor > (hint - WINDOW) ? cursor : (hint - WINDOW);
+        var startAt = lo < 0 ? 0 : lo;
+        var best = -1, bestDist = 1 << 30;
+        if (startAt <= full.length) {
+          var from = startAt;
+          while (true) {
+            var p = full.indexOf(needle, from);
+            if (p < 0 || p > hint + WINDOW) break;
+            var d = Math.abs(p - hint);
+            if (d < bestDist) { bestDist = d; best = p; }
+            from = p + 1;
+          }
+        }
+        if (best >= 0) { resolved = best; cursor = best + normLen; }
+      }
+      var spanStart, spanLen;
+      if (resolved >= 0) {
+        spanStart = resolved; spanLen = normLen;
+      } else {
+        spanStart = hint < cursor ? cursor : (hint > map.length ? map.length : hint);
+        spanLen = len;
+        cursor = spanStart + len;
+      }
+      out.push({ id: cue.id, ranges: this.rangesForNormSpan(map, spanStart, spanLen) });
+    }
+    return out;
   },
   applySasayakiCues: function(cues) {
     if (window.hoshiSelection) window.hoshiSelection.clearSelection();
