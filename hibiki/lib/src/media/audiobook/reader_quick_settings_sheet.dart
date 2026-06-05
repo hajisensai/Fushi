@@ -54,6 +54,7 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
     this.onPageMarginChanged,
     this.isHibikiReader = false,
     this.epubBook,
+    this.chapterLabel,
     this.onStyleChanged,
     this.lyricsMode = false,
     this.onToggleLyricsMode,
@@ -109,6 +110,9 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
   final bool isHibikiReader;
 
   final EpubBook? epubBook;
+
+  /// 当前章节名（由阅读器页面经 TOC 反查得到），用于阅读进度区块展示。
+  final String? chapterLabel;
 
   final String? extractDir;
   final Future<void> Function()? onReloadChapter;
@@ -550,7 +554,13 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
     }
 
     final AudiobookPlayerController? ctrl = widget.controller;
-    if (lines.isEmpty && ctrl == null) return const SizedBox.shrink();
+    final String? rawTitle = widget.epubBook?.title.trim();
+    final String? rawChapter = widget.chapterLabel?.trim();
+    final bool hasTitle = rawTitle != null && rawTitle.isNotEmpty;
+    final bool hasChapter = rawChapter != null && rawChapter.isNotEmpty;
+    if (lines.isEmpty && ctrl == null && !hasTitle && !hasChapter) {
+      return const SizedBox.shrink();
+    }
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -559,6 +569,18 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
           t.reading_progress,
           padding: EdgeInsets.only(bottom: tokens.spacing.gap),
         ),
+        if (hasTitle)
+          Text(
+            rawTitle,
+            style: theme.textTheme.titleSmall,
+          ),
+        if (hasChapter)
+          Text(
+            rawChapter,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
         for (final String line in lines)
           Text(line, style: theme.textTheme.bodyMedium),
         if (ctrl != null) _buildAudioProgressLine(theme, ctrl),

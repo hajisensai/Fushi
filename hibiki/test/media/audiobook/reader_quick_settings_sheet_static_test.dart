@@ -216,6 +216,34 @@ void main() {
     expect(playBarSource, isNot(contains('class AudiobookSettingsSheet')));
   });
 
+  test('reading progress section shows book title and current chapter name',
+      () {
+    final String source =
+        File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
+            .readAsStringSync();
+
+    // sheet 暴露 chapterLabel 入参，承载阅读器页面反查出的当前章节名。
+    expect(source, contains('final String? chapterLabel;'));
+
+    final String progressSource = _between(
+      source,
+      '  Widget _buildProgressSection(ThemeData theme)',
+      '  Widget _buildAudioProgressLine(',
+    );
+    // 阅读进度区块在数字进度行之上额外渲染书名（epubBook.title）与章节名。
+    expect(progressSource, contains('widget.epubBook?.title'));
+    expect(progressSource, contains('widget.chapterLabel'));
+    // 书名/章节名为空时不渲染空行。
+    expect(progressSource, contains('hasTitle'));
+    expect(progressSource, contains('hasChapter'));
+
+    // 阅读器页面把当前章节名喂给 sheet。
+    final String readerSource =
+        File('lib/src/pages/implementations/reader_hibiki_page.dart')
+            .readAsStringSync();
+    expect(readerSource, contains('chapterLabel: _currentChapterLabel()'));
+  });
+
   test('reader page uses shared MD3 dialog frame for desktop quick settings',
       () {
     final String readerSource =

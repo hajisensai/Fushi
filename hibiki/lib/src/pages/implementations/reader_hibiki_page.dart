@@ -4822,6 +4822,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
           _jumpToGlobalCharOffset(globalOffset);
         },
         epubBook: _book,
+        chapterLabel: _currentChapterLabel(),
         onSearchJump: (BookSearchResult result, String query) async {
           if (_book == null || _controller == null) return;
           if (result.sectionIndex != _currentChapter) {
