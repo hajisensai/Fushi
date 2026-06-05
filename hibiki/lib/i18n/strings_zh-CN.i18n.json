@@ -1246,5 +1246,10 @@
     "sync_progress_dictionaries": "同步词典",
     "sync_progress_local_audio": "同步本地音频",
     "sync_progress_audiobooks": "同步有声书",
-    "sync_compare_no_content": "仅云端数据，无可下载书籍"
+    "sync_compare_no_content": "仅云端数据，无可下载书籍",
+    "anki_create_lapis": "创建 Lapis 卡组",
+    "anki_create_lapis_hint": "向 Anki 添加 Lapis 笔记类型和 Lapis 卡组并自动选中。",
+    "anki_create_lapis_success": "已创建 Lapis 笔记类型和卡组。",
+    "anki_create_lapis_exists": "Lapis 笔记类型和卡组已存在，已选中。",
+    "anki_create_lapis_failed": "无法创建 Lapis 卡组：$error"
 }

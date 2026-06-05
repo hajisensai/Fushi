@@ -1246,5 +1246,10 @@
     "sync_progress_dictionaries": "Syncing dictionaries",
     "sync_progress_local_audio": "Syncing local audio",
     "sync_progress_audiobooks": "Syncing audiobooks",
-    "sync_compare_no_content": "Cloud data only — no book to download"
+    "sync_compare_no_content": "Cloud data only — no book to download",
+    "anki_create_lapis": "Create Lapis deck",
+    "anki_create_lapis_hint": "Adds the Lapis note type and a Lapis deck to Anki, then selects them.",
+    "anki_create_lapis_success": "Lapis note type and deck created.",
+    "anki_create_lapis_exists": "Lapis note type and deck already exist — selected them.",
+    "anki_create_lapis_failed": "Could not create Lapis deck: $error"
 }
