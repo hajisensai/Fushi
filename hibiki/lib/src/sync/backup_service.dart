@@ -42,6 +42,8 @@ class BackupMeta {
     required this.createdAt,
     required this.bookCount,
     required this.statsCount,
+    this.booksRoot,
+    this.audiobooksRoot,
   });
 
   final String appVersion;
@@ -50,12 +52,24 @@ class BackupMeta {
   final int bookCount;
   final int statsCount;
 
+  /// Absolute root of the extracted-books tree on the SOURCE device
+  /// (`<appDoc>/hoshi_books`), captured so import can rebase stored book paths
+  /// to this device's root. Null for legacy (db-only) backups → import skips
+  /// path rebasing.
+  final String? booksRoot;
+
+  /// Absolute root of the audiobook-audio tree on the SOURCE device
+  /// (`<appDoc>/audiobooks`). Null for legacy backups.
+  final String? audiobooksRoot;
+
   Map<String, dynamic> toJson() => {
         'appVersion': appVersion,
         'schemaVersion': schemaVersion,
         'createdAt': createdAt.toIso8601String(),
         'bookCount': bookCount,
         'statsCount': statsCount,
+        if (booksRoot != null) 'booksRoot': booksRoot,
+        if (audiobooksRoot != null) 'audiobooksRoot': audiobooksRoot,
       };
 
   factory BackupMeta.fromJson(Map<String, dynamic> json) => BackupMeta(
@@ -65,6 +79,8 @@ class BackupMeta {
         // Optional for backward compatibility with older backups.
         bookCount: json['bookCount'] as int? ?? 0,
         statsCount: json['statsCount'] as int? ?? 0,
+        booksRoot: json['booksRoot'] as String?,
+        audiobooksRoot: json['audiobooksRoot'] as String?,
       );
 
   static BackupMeta? tryParse(String source) {

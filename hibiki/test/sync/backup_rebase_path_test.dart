@@ -53,4 +53,34 @@ void main() {
       );
     });
   });
+
+  group('BackupMeta content roots', () {
+    test('round-trips booksRoot/audiobooksRoot through json', () {
+      final m = BackupMeta(
+        appVersion: '1.0',
+        schemaVersion: 16,
+        createdAt: DateTime(2026, 6, 5),
+        bookCount: 2,
+        statsCount: 0,
+        booksRoot: '/old/app/hoshi_books',
+        audiobooksRoot: '/old/app/audiobooks',
+      );
+      final back = BackupMeta.fromJson(m.toJson());
+      expect(back.booksRoot, '/old/app/hoshi_books');
+      expect(back.audiobooksRoot, '/old/app/audiobooks');
+    });
+
+    test('tolerates a legacy (db-only) backup with no roots → null', () {
+      final legacy = BackupMeta.fromJson(<String, dynamic>{
+        'appVersion': '0.9',
+        'schemaVersion': 14,
+        'createdAt': DateTime(2026).toIso8601String(),
+      });
+      expect(legacy.booksRoot, isNull);
+      expect(legacy.audiobooksRoot, isNull);
+      // And a meta without roots must not emit the keys.
+      expect(legacy.toJson().containsKey('booksRoot'), isFalse);
+      expect(legacy.toJson().containsKey('audiobooksRoot'), isFalse);
+    });
+  });
 }
