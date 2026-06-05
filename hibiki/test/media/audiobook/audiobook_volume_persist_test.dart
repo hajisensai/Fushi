@@ -27,8 +27,8 @@ void main() {
     // 未写过时回退默认 1.0。
     expect(await repo.readVolume('book-A'), 1.0);
 
-    await repo.updateVolume(bookUid: 'book-A', volume: 0.4);
-    await repo.updateVolume(bookUid: 'book-B', volume: 1.7);
+    await repo.updateVolume(bookKey: 'book-A', volume: 0.4);
+    await repo.updateVolume(bookKey: 'book-B', volume: 1.7);
 
     expect(await repo.readVolume('book-A'), closeTo(0.4, 1e-9));
     expect(await repo.readVolume('book-B'), closeTo(1.7, 1e-9));
@@ -36,7 +36,7 @@ void main() {
     expect(await repo.readVolume('book-C'), 1.0);
 
     // 覆写后读回最新值。
-    await repo.updateVolume(bookUid: 'book-A', volume: 1.0);
+    await repo.updateVolume(bookKey: 'book-A', volume: 1.0);
     expect(await repo.readVolume('book-A'), 1.0);
   });
 }

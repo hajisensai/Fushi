@@ -234,6 +234,7 @@ void main() {
       try {
         // Insert a book so the metadata has a real count
         await onDiskDb.insertEpubBook(EpubBooksCompanion.insert(
+          bookKey: 'Test Book',
           title: 'Test Book',
           epubPath: '/fake/path.epub',
           extractDir: '/fake/extract',
@@ -628,6 +629,7 @@ void main() {
       final srcDb = HibikiDatabase(srcDir.path);
       try {
         await srcDb.insertEpubBook(EpubBooksCompanion.insert(
+          bookKey: 'かがみの孤城',
           title: 'かがみの孤城',
           epubPath: '/fake/kagami.epub',
           extractDir: '/fake/extract',
@@ -731,6 +733,7 @@ void main() {
       // Content that SHOULD travel with the backup.
       await srcDb.setPrefTyped<bool>('sync_auto_enabled', true);
       await srcDb.insertEpubBook(EpubBooksCompanion.insert(
+        bookKey: 'Keep Me',
         title: 'Keep Me',
         epubPath: '/x.epub',
         extractDir: '/x',
@@ -815,6 +818,7 @@ void main() {
       await curDb.setBookProfile('book-local', localProfileId);
       await curDb.setPref('active_profile_id', localProfileId.toString());
       await curDb.insertEpubBook(EpubBooksCompanion.insert(
+        bookKey: 'LocalBook',
         title: 'LocalBook',
         epubPath: '/l.epub',
         extractDir: '/l',
@@ -832,6 +836,7 @@ void main() {
       await srcDb.insertProfile(ProfilesCompanion.insert(
           name: 'BackupProfile', createdAt: 2, updatedAt: 2));
       await srcDb.insertEpubBook(EpubBooksCompanion.insert(
+        bookKey: 'BackupBook',
         title: 'BackupBook',
         epubPath: '/b.epub',
         extractDir: '/b',
@@ -839,7 +844,7 @@ void main() {
         chaptersJson: '[]',
         importedAt: 2,
       ));
-      final int backupBookId = (await srcDb.getAllEpubBooks()).single.id;
+      final String backupBookId = (await srcDb.getAllEpubBooks()).single.bookKey;
       await srcDb.setPrefTyped<int>('audiobook_pos_$backupBookId', 4242);
       final zipDir = await Directory.systemTemp.createTemp('hibiki_keep_zip_');
       addTearDown(() => zipDir.delete(recursive: true));
@@ -907,6 +912,7 @@ void main() {
       final srcDb = HibikiDatabase(srcDir.path);
       await srcDb.setPref('reader_appearance', 'BACKUP');
       await srcDb.insertEpubBook(EpubBooksCompanion.insert(
+        bookKey: 'BackupBook',
         title: 'BackupBook',
         epubPath: '/b.epub',
         extractDir: '/b',

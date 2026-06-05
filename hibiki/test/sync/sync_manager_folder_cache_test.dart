@@ -161,6 +161,7 @@ void main() {
     await repo.setFolderCache(<String, String>{'Book': 'folder-1'});
 
     await db.insertEpubBook(EpubBooksCompanion.insert(
+      bookKey: 'Book',
       title: 'Book',
       epubPath: '/fake/book.epub',
       extractDir: '/fake/extract',

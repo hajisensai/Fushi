@@ -240,7 +240,7 @@ AudioCue _cue(
 }) {
   return AudioCue()
     ..id = id
-    ..bookUid = 'book'
+    ..bookKey = 'book'
     ..chapterHref = 'chapter'
     ..sentenceIndex = startMs ~/ 1000
     ..textFragmentId = fragmentId ?? 'cue-$startMs'
@@ -252,7 +252,7 @@ AudioCue _cue(
 
 Audiobook _audiobook() {
   return Audiobook()
-    ..bookUid = 'book'
+    ..bookKey = 'book'
     ..audioPaths = const <String>[]
     ..audioRoot = null
     ..alignmentFormat = 'srt'

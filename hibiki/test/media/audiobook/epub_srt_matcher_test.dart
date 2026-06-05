@@ -3,7 +3,7 @@ import 'package:hibiki_audio/hibiki_audio.dart';
 
 AudioCue mkCue(int idx, String text) {
   return AudioCue()
-    ..bookUid = 'test'
+    ..bookKey = 'test'
     ..chapterHref = 'srt://default'
     ..sentenceIndex = idx
     ..textFragmentId = 'srt://$idx'

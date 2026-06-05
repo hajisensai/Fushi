@@ -228,6 +228,7 @@ class _RemoteBook {
 
 Future<EpubBookRow> _seedBook(HibikiDatabase db, String title) async {
   await db.insertEpubBook(EpubBooksCompanion.insert(
+    bookKey: title,
     title: title,
     epubPath: '/fake/$title.epub',
     extractDir: '/fake/$title',
@@ -240,13 +241,13 @@ Future<EpubBookRow> _seedBook(HibikiDatabase db, String title) async {
 
 Future<void> _seedPosition(
   HibikiDatabase db,
-  int bookId, {
+  String bookKey, {
   required int updatedAt,
   required double fraction,
 }) async {
   final int normOffset = (fraction * 10000).round();
   await db.upsertReaderPosition(ReaderPositionsCompanion(
-    ttuBookId: Value(bookId),
+    bookKey: Value(bookKey),
     sectionIndex: const Value(0),
     normCharOffset: Value(normOffset),
     ttuCharOffset: const Value(-1),
@@ -294,7 +295,7 @@ void main() {
 
     final EpubBookRow book = await _seedBook(db, 'BookA');
     // Local sat still at base 100; remote moved to 120 → only remote diverged.
-    await _seedPosition(db, book.id, updatedAt: 100, fraction: 0.5);
+    await _seedPosition(db, book.bookKey, updatedAt: 100, fraction: 0.5);
     await db.setSyncBaseline(sanitizeTtuFilename('BookA'), 'progress', 100);
 
     final _FakeSyncBackend fake = _FakeSyncBackend(
@@ -319,7 +320,7 @@ void main() {
     addTearDown(db.close);
 
     final EpubBookRow book = await _seedBook(db, 'BookA');
-    await _seedPosition(db, book.id, updatedAt: 120, fraction: 0.6);
+    await _seedPosition(db, book.bookKey, updatedAt: 120, fraction: 0.6);
     await db.setSyncBaseline(sanitizeTtuFilename('BookA'), 'progress', 50);
 
     final _FakeSyncBackend fake = _FakeSyncBackend(
@@ -345,13 +346,13 @@ void main() {
 
     // Conflict book: both sides off base.
     final EpubBookRow conflictBook = await _seedBook(db, 'ConflictBook');
-    await _seedPosition(db, conflictBook.id, updatedAt: 120, fraction: 0.6);
+    await _seedPosition(db, conflictBook.bookKey, updatedAt: 120, fraction: 0.6);
     await db.setSyncBaseline(
         sanitizeTtuFilename('ConflictBook'), 'progress', 50);
 
     // Calm book: single-sided (local == base), resolves automatically.
     final EpubBookRow calmBook = await _seedBook(db, 'CalmBook');
-    await _seedPosition(db, calmBook.id, updatedAt: 100, fraction: 0.5);
+    await _seedPosition(db, calmBook.bookKey, updatedAt: 100, fraction: 0.5);
     await db.setSyncBaseline(sanitizeTtuFilename('CalmBook'), 'progress', 100);
 
     final _FakeSyncBackend fake = _FakeSyncBackend(
@@ -382,7 +383,7 @@ void main() {
 
     // Conflict book: both sides off base → manual choice required.
     final EpubBookRow conflictBook = await _seedBook(db, 'ConflictBook');
-    await _seedPosition(db, conflictBook.id, updatedAt: 120, fraction: 0.6);
+    await _seedPosition(db, conflictBook.bookKey, updatedAt: 120, fraction: 0.6);
     await db.setSyncBaseline(
         sanitizeTtuFilename('ConflictBook'), 'progress', 50);
 
@@ -390,7 +391,7 @@ void main() {
     // direction, seeded as useLocal. It is HIDDEN in conflictsOnly mode, so
     // Apply must NOT touch its remote folder. This is the [Important] guard.
     final EpubBookRow calmBook = await _seedBook(db, 'CalmBook');
-    await _seedPosition(db, calmBook.id, updatedAt: 200, fraction: 0.7);
+    await _seedPosition(db, calmBook.bookKey, updatedAt: 200, fraction: 0.7);
     await db.setSyncBaseline(sanitizeTtuFilename('CalmBook'), 'progress', 100);
 
     final _FakeSyncBackend fake = _FakeSyncBackend(
@@ -433,7 +434,7 @@ void main() {
 
     // A library with one non-conflict (single-sided) book and no conflicts.
     final EpubBookRow calmBook = await _seedBook(db, 'CalmBook');
-    await _seedPosition(db, calmBook.id, updatedAt: 200, fraction: 0.7);
+    await _seedPosition(db, calmBook.bookKey, updatedAt: 200, fraction: 0.7);
     await db.setSyncBaseline(sanitizeTtuFilename('CalmBook'), 'progress', 100);
 
     final _FakeSyncBackend fake = _FakeSyncBackend(
@@ -458,7 +459,7 @@ void main() {
     addTearDown(db.close);
 
     final EpubBookRow book = await _seedBook(db, 'BookA');
-    await _seedPosition(db, book.id, updatedAt: 120, fraction: 0.6);
+    await _seedPosition(db, book.bookKey, updatedAt: 120, fraction: 0.6);
     await db.setSyncBaseline(sanitizeTtuFilename('BookA'), 'progress', 50);
 
     final _FakeSyncBackend fake = _FakeSyncBackend(

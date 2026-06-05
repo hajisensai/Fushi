@@ -30,7 +30,7 @@ Future<AppModel> readyAppModel(WidgetTester tester) async {
   return appModel;
 }
 
-Future<int> seedReaderBook(
+Future<String> seedReaderBook(
   WidgetTester tester, {
   String fileName = 'test_library.epub',
 }) async {
@@ -40,12 +40,12 @@ Future<int> seedReaderBook(
   );
 
   final Uint8List bytes = EpubGenerator().generate();
-  final int bookId = await EpubImporter.import(
+  final String bookKey = await EpubImporter.import(
     db: appModel.database,
     bytes: bytes,
     fileName: fileName,
   );
-  debugPrint('[fixture] Seeded reader book id=$bookId ($fileName)');
+  debugPrint('[fixture] Seeded reader book key=$bookKey ($fileName)');
 
   container.invalidate(hibikiBooksProvider(appModel.targetLanguage));
 
@@ -59,11 +59,12 @@ Future<int> seedReaderBook(
     await tester.pump(const Duration(milliseconds: 500));
     if (bookEntries.evaluate().isNotEmpty) {
       debugPrint('[fixture] Book entry visible after ${i * 500}ms');
-      return bookId;
+      return bookKey;
     }
   }
-  debugPrint('[fixture] WARNING: seeded book id=$bookId not visible after 20s');
-  return bookId;
+  debugPrint(
+      '[fixture] WARNING: seeded book key=$bookKey not visible after 20s');
+  return bookKey;
 }
 
 Future<bool> seedDictionary(WidgetTester tester) async {

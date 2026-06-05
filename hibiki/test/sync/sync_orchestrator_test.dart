@@ -316,7 +316,7 @@ void main() {
     expect(second.errors, isEmpty);
   });
 
-  test('audiobook package syncs and re-keys to the target device book',
+  test('audiobook package syncs and binds to the target device book',
       () async {
     final FakeAssetStore store = FakeAssetStore();
     final FakeSyncBackend backend = FakeSyncBackend(store);
@@ -341,10 +341,11 @@ void main() {
           syncLocalAudio: false,
         );
 
-    // ── Source device: book id 1 + its audiobook/srt/cues/files ──
+    // ── Source device: book keyed by title + its audiobook/srt/cues/files ──
     final HibikiDatabase srcDb = _memDb();
     addTearDown(srcDb.close);
-    final int srcId = await srcDb.insertEpubBook(EpubBooksCompanion.insert(
+    final String srcKey = await srcDb.insertEpubBook(EpubBooksCompanion.insert(
+      bookKey: 'MyBook',
       title: 'MyBook',
       epubPath: '/fake/mybook.epub',
       extractDir: '/fake/extract',
@@ -352,30 +353,29 @@ void main() {
       chaptersJson: '[]',
       importedAt: 1,
     ));
-    final String srcUid = buildLegacyBookUid(srcId);
     final File track = File('${srcAudioRoot.path}/track.mp3')
       ..writeAsStringSync('audio');
     final File align = File('${srcAudioRoot.path}/align.srt')
       ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nhi\n');
     await srcDb.upsertAudiobook(AudiobooksCompanion.insert(
-      bookUid: srcUid,
+      bookKey: srcKey,
       audioRoot: Value(srcAudioRoot.path),
       audioPathsJson: Value(jsonEncode(<String>[track.path])),
       alignmentFormat: 'srt',
       alignmentPath: align.path,
     ));
     await srcDb.upsertSrtBook(SrtBooksCompanion.insert(
-      uid: 'srt-$srcId',
+      uid: 'srt-$srcKey',
       title: 'MyBook',
       audioRoot: Value(srcAudioRoot.path),
       audioPathsJson: Value(jsonEncode(<String>[track.path])),
       srtPath: align.path,
       importedAt: 1,
-      ttuBookId: Value(srcId),
+      bookKey: Value(srcKey),
     ));
-    await srcDb.replaceCuesForBook(srcUid, <AudioCuesCompanion>[
+    await srcDb.replaceCuesForBook(srcKey, <AudioCuesCompanion>[
       AudioCuesCompanion.insert(
-        bookUid: srcUid,
+        bookKey: srcKey,
         chapterHref: 'c.xhtml',
         sentenceIndex: 0,
         textFragmentId: 'f0',
@@ -391,19 +391,12 @@ void main() {
     expect(push.errors, isEmpty, reason: push.errors.join(' | '));
     expect(push.audiobooksExported, 1);
 
-    // ── Target device: SAME title but a DIFFERENT book id (seed a throwaway
-    // first so the real book gets id 2) and NO audiobook ──
+    // ── Target device: SAME title → SAME bookKey (stable identity across
+    // devices), NO audiobook yet ──
     final HibikiDatabase tgtDb = _memDb();
     addTearDown(tgtDb.close);
-    await tgtDb.insertEpubBook(EpubBooksCompanion.insert(
-      title: 'Throwaway',
-      epubPath: '/fake/t.epub',
-      extractDir: '/fake/te',
-      chapterCount: 1,
-      chaptersJson: '[]',
-      importedAt: 1,
-    ));
-    final int tgtId = await tgtDb.insertEpubBook(EpubBooksCompanion.insert(
+    final String tgtKey = await tgtDb.insertEpubBook(EpubBooksCompanion.insert(
+      bookKey: 'MyBook',
       title: 'MyBook',
       epubPath: '/fake/mybook.epub',
       extractDir: '/fake/extract2',
@@ -411,20 +404,17 @@ void main() {
       chaptersJson: '[]',
       importedAt: 2,
     ));
-    expect(tgtId, isNot(srcId)); // proves re-keying is actually exercised
+    expect(tgtKey, srcKey); // bookKey is stable across devices
 
     final SyncRunReport pull = SyncRunReport();
     await orch(tgtDb, tgtAudioRoot).syncAudiobookPackages('root', pull);
     expect(pull.errors, isEmpty, reason: pull.errors.join(' | '));
     expect(pull.audiobooksImported, 1);
 
-    // The synced audiobook must resolve via the TARGET device's own bookUid.
-    final String tgtUid = buildLegacyBookUid(tgtId);
-    expect(await tgtDb.getAudiobookByBookUid(tgtUid), isNotNull);
-    expect(await tgtDb.getSrtBookByTtuBookId(tgtId), isNotNull);
-    expect(await tgtDb.getCuesForBook(tgtUid), isNotEmpty);
-    // Source's bookUid must NOT leak as the key on the target.
-    expect(await tgtDb.getAudiobookByBookUid(srcUid), isNull);
+    // The synced audiobook resolves via the shared bookKey on the target.
+    expect(await tgtDb.getAudiobookByBookKey(tgtKey), isNotNull);
+    expect(await tgtDb.getSrtBookByBookKey(tgtKey), isNotNull);
+    expect(await tgtDb.getCuesForBook(tgtKey), isNotEmpty);
   });
 
   group('local audio phase', () {

@@ -82,7 +82,7 @@ void main() {
   group('AudiobookHealth.packInto / fromAudiobook round-trip', () {
     Audiobook makeAb() {
       return Audiobook()
-        ..bookUid = 'test'
+        ..bookKey = 'test'
         ..alignmentFormat = 'srt'
         ..alignmentPath = '/a.srt';
     }

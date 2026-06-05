@@ -156,7 +156,7 @@ void main() {
         ..writeAsStringSync('cover bytes');
 
       await sourceDb.upsertAudiobook(AudiobooksCompanion.insert(
-        bookUid: 'ttu-42',
+        bookKey: 'ttu-42',
         audioRoot: Value(sourceAudio.path),
         audioPathsJson: Value(jsonEncode(<String>[track.path])),
         alignmentFormat: 'srt',
@@ -176,11 +176,11 @@ void main() {
         srtPath: alignment.path,
         coverPath: Value(cover.path),
         importedAt: 1234,
-        ttuBookId: const Value(42),
+        bookKey: const Value('ttu-42'),
       ));
       await sourceDb.replaceCuesForBook('ttu-42', <AudioCuesCompanion>[
         AudioCuesCompanion.insert(
-          bookUid: 'ttu-42',
+          bookKey: 'ttu-42',
           chapterHref: 'chapter.xhtml',
           sentenceIndex: 3,
           textFragmentId: 'frag-3',
@@ -193,7 +193,7 @@ void main() {
 
       final File package = await SyncAssetPackageService(db: sourceDb)
           .exportAudioDatabasePackage(
-        bookUid: 'ttu-42',
+        bookKey: 'ttu-42',
         srtBookUid: 'srt-42',
         outputFile: File(p.join(temp.path, 'audio.hibiki-audio-db.zip')),
       );
@@ -206,7 +206,7 @@ void main() {
       );
 
       final AudiobookRow audiobook =
-          (await targetDb.getAudiobookByBookUid('ttu-42'))!;
+          (await targetDb.getAudiobookByBookKey('ttu-42'))!;
       expect(audiobook.alignmentPath,
           p.join(targetAudio.path, 'ttu-42', 'align.srt'));
       expect(audiobook.audioRoot, p.join(targetAudio.path, 'ttu-42'));
@@ -262,7 +262,7 @@ void main() {
         ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nhello\n');
 
       await sourceDb.upsertAudiobook(AudiobooksCompanion.insert(
-        bookUid: 'ttu-big',
+        bookKey: 'ttu-big',
         audioRoot: Value(sourceAudio.path),
         audioPathsJson: Value(jsonEncode(<String>[track.path])),
         alignmentFormat: 'srt',
@@ -275,11 +275,11 @@ void main() {
         audioPathsJson: Value(jsonEncode(<String>[track.path])),
         srtPath: alignment.path,
         importedAt: 1,
-        ttuBookId: const Value(99),
+        bookKey: const Value('ttu-big'),
       ));
       await sourceDb.replaceCuesForBook('ttu-big', <AudioCuesCompanion>[
         AudioCuesCompanion.insert(
-          bookUid: 'ttu-big',
+          bookKey: 'ttu-big',
           chapterHref: 'chapter.xhtml',
           sentenceIndex: 0,
           textFragmentId: 'frag-0',
@@ -292,7 +292,7 @@ void main() {
 
       final File package = await SyncAssetPackageService(db: sourceDb)
           .exportAudioDatabasePackage(
-        bookUid: 'ttu-big',
+        bookKey: 'ttu-big',
         srtBookUid: 'srt-big',
         outputFile: File(p.join(temp.path, 'big.hibiki-audio-db.zip')),
       );

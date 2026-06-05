@@ -6,13 +6,13 @@ void main() {
   group('buildCollectionReaderMediaItem', () {
     test('generates hoshi URL matching bookshelf format', () {
       final MediaItem opened = buildCollectionReaderMediaItem(
-        ttuId: 42,
+        bookKey: 'MyBook',
         title: 'MyBook',
       );
 
       expect(
         opened.mediaIdentifier,
-        'hoshi://book/42',
+        'hoshi://book/MyBook',
       );
       expect(opened.title, 'MyBook');
       expect(
