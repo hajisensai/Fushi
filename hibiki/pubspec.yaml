@@ -21,6 +21,7 @@ dependencies:
   copy_with_extension: ^5.0.2
   crop_image: ^1.0.4
   dart_mappable: ^4.6.0
+  desktop_drop: ^0.5.0
   device_info_plus: ^9.0.0
   dio: ^5.1.1
   dynamic_color: ^1.7.0
