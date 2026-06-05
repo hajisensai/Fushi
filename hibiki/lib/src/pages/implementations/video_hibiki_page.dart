@@ -46,10 +46,13 @@ import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
 /// 查词浮层用**根 Overlay**（`Overlay.of(context, rootOverlay: true)`）渲染，而非本页
 /// `Stack`——这样全屏（media_kit 推到根 navigator 的独立路由）时浮层也能浮在全屏画面
 /// **之上**，窗口/全屏统一一套。根 Overlay 在 [HibikiAppUiScale] 的 `FittedBox` 之内
-/// （挂在 `MaterialApp.builder`），其坐标空间是缩放后的逻辑画布，与 [calcPopupPosition]
-/// 的 `screen`（取自根 Overlay 自身 constraints）一致；字符 rect 经
-/// [scaledRectToCanvas] 从 `localToGlobal` 的缩放屏幕坐标换算到同一逻辑画布坐标系，
-/// 故界面非 100% 缩放时定位也不偏。
+/// （挂在 `MaterialApp.builder`），其坐标空间是**缩放后的小画布（view/s）**；若浮层直接在
+/// 此渲染，其词典 WebView 会按小画布尺寸栅格化、再被外层 `FittedBox` 拉大 → **字糊**
+/// （与 BUG-039 阅读器同源；BUG-051）。故 [_buildPopupOverlay] 把整棵浮层子树用
+/// [HibikiAppUiScaleNeutralizer] 中和回**真实视口尺寸、净缩放=1**，WebView 按原生像素密度
+/// 渲染 → 清晰。中和后浮层坐标系即真实屏幕空间（净变换=1），与 `localToGlobal` 的字符
+/// rect 同系，故 [_lookupAt] **直接**用该屏幕 rect 定位（不再 ÷s 换算到画布），界面任意
+/// 缩放下定位都不偏。
 class VideoHibikiPage extends ConsumerStatefulWidget {
   const VideoHibikiPage({
     required this.bookUid,
@@ -105,6 +108,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 多集换集时复用同一值（用户选了日语音轨，每集都用日语）。
   String? _currentAudioTrackId;
 
+  /// 音画延迟（毫秒）：字幕 cue 同步偏移，跨重启保留；换集复用同一值。
+  int _delayMs = 0;
+
+  /// 播放倍速：用户在设置面板调，跨重启保留；换集复用同一值（速度记忆）。
+  double _playbackSpeed = 1.0;
+
   bool get _isPlaylist => _episodes.length > 1;
 
   AppModel get appModel => ref.read(appProvider);
@@ -125,9 +134,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       return;
     }
 
-    // 记录持久化的字幕源（菜单高亮当前项用）+ 音轨偏好（换集复用）。
+    // 记录持久化的字幕源（菜单高亮当前项用）+ 音轨偏好（换集复用）+ 音画延迟
+    // （跨重启保留）+ 播放倍速（per-book 偏好，速度记忆）。
     _currentSubtitleSource = row.subtitleSource;
     _currentAudioTrackId = row.audioTrackId;
+    _delayMs = row.delayMs;
+    _playbackSpeed = _readPersistedSpeed();
 
     // 解析播放列表（若有）。非空则按 currentEpisode 载对应集；否则走单视频路径。
     final String? playlistJson = row.playlistJson;
@@ -140,9 +152,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
     if (_episodes.isNotEmpty) {
       final int idx = row.currentEpisode.clamp(0, _episodes.length - 1);
+      // 每集各记自己的进度：恢复到 currentEpisode 那集的 entry.positionMs
+      // （取代旧的「整个 VideoBook 一个 lastPositionMs」）。
       await _loadEpisode(
         idx,
-        initialPositionMs: row.lastPositionMs,
+        initialPositionMs: _episodes[idx].positionMs,
         subtitleSource: row.subtitleSource,
       );
       return;
@@ -150,6 +164,17 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
     // 单视频路径（无播放列表）。
     await _loadSingle(row);
+  }
+
+  /// per-book 播放倍速偏好 key（速度记忆，跨重启保留）。
+  String get _speedPrefKey => 'video_speed_${widget.bookUid}';
+
+  /// 读 per-book 持久化倍速（无则 1.0）。
+  double _readPersistedSpeed() {
+    final double v =
+        (appModel.prefsRepo.getPref(_speedPrefKey, defaultValue: 1.0) as num)
+            .toDouble();
+    return v.clamp(0.25, 4.0);
   }
 
   /// 载入单视频（无播放列表）：优先用 DB 已存 cue；否则先尝试恢复用户上次选的
@@ -324,6 +349,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         videoFile: File(videoPath),
         cues: cues,
         initialPositionMs: initialPositionMs,
+        initialSpeed: _playbackSpeed,
         externalSubtitlePath: externalSubtitlePath,
       );
     } catch (e, stack) {
@@ -332,8 +358,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       if (mounted) setState(() => _failed = true);
       return;
     }
-    controller.onPositionWrite =
-        (String uid, int posMs) => widget.repo.updatePosition(uid, posMs);
+    // 应用持久化的音画延迟（换集复用同一值；load 不重置 delay）。
+    controller.setDelayMs(_delayMs);
+    controller.onPositionWrite = _persistPosition;
     if (!mounted) {
       if (_controller == null) controller.dispose();
       return;
@@ -352,6 +379,25 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // 延迟一拍再读，按 id 匹配；找不到（轨不存在/未选过）就跳过保留 libmpv 默认。
     unawaited(_restoreAudioTrack(controller));
   }
+
+  /// 位置持久化（controller 每秒至多一次回调）。
+  ///
+  /// 播放列表：把进度记到**当前集**的 [PlaylistEntry.positionMs] 并回写整段
+  /// playlistJson（每集各记自己的进度，换集互不干扰）。单视频：仍走
+  /// VideoBook.lastPositionMs 不变。
+  Future<void> _persistPosition(String uid, int posMs) async {
+    if (_episodes.isEmpty) {
+      await widget.repo.updatePosition(uid, posMs);
+      return;
+    }
+    _episodes = updateEntryPosition(_episodes, _currentEpisode, posMs);
+    await widget.repo.updatePlaylistJson(uid, _encodeEpisodes());
+  }
+
+  /// 把当前 [_episodes] 序列化回 playlistJson（带各集 positionMs）。
+  String _encodeEpisodes() => jsonEncode(
+        _episodes.map((PlaylistEntry e) => e.toJson()).toList(),
+      );
 
   /// 若有持久化音轨偏好 [_currentAudioTrackId]，在 [controller] 的 audioTracks 里
   /// 按 id 匹配并切换。延迟读取以等待 libmpv open 后填充音轨列表。
@@ -385,17 +431,28 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     ));
   }
 
-  /// 切到第 [index] 集：持久化 currentEpisode（位置归零）+ 重新 load 新集字幕。
+  /// 切到第 [index] 集：保存当前集进度 → 持久化 currentEpisode → 用**目标集自己
+  /// 保存的进度**作为起播位置（不再归零）+ 重新 load 新集字幕。
+  ///
+  /// 当前集进度由 125ms tick 经 [_persistPosition] 已实时记进 `_episodes[当前集]`
+  /// 并落库；切集前再补记一次当前播放位置（覆盖 tick 整秒节流的尾差），确保下次
+  /// 回到本集精确续播。
   Future<void> _switchEpisode(int index) async {
     if (index < 0 || index >= _episodes.length) return;
     if (index == _currentEpisode) return;
+
+    // 切前补记当前集精确位置（tick 只整秒写，补这一下避免丢尾部几百 ms）。
+    final int? curPos = _controller?.positionMs;
+    if (curPos != null) {
+      _episodes = updateEntryPosition(_episodes, _currentEpisode, curPos);
+      await widget.repo.updatePlaylistJson(widget.bookUid, _encodeEpisodes());
+    }
+
     await widget.repo.updateCurrentEpisode(widget.bookUid, index);
-    // 切集从头播：位置归零（避免把上一集的进度套到新集）。
-    await widget.repo.updatePosition(widget.bookUid, 0);
     // 把上次选择的字幕偏好带进新集（同类应用：内嵌同轨 / 外挂同语言后缀）。
     await _loadEpisode(
       index,
-      initialPositionMs: 0,
+      initialPositionMs: _episodes[index].positionMs,
       subtitleSource: _currentSubtitleSource,
     );
   }
@@ -457,9 +514,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 点字幕第 [graphemeIndex] 个字符：暂停 → 从该位置起取词 → 推入与阅读器/词典页
   /// 同款的 [DictionaryPopupLayer] 浮层（定位到被点字符的屏幕 [charRect] 附近）。
   ///
-  /// [charRect] 来自字符 box 的 `localToGlobal`，处于 [HibikiAppUiScale] 缩放后的屏幕
-  /// 坐标系；浮层渲染在根 Overlay（逻辑画布坐标系），故先经 [scaledRectToCanvas] 按当前
-  /// 界面缩放把 rect 换算到同一坐标系，界面非 100% 时定位才不偏。
+  /// [charRect] 来自字符 box 的 `localToGlobal`，是 [HibikiAppUiScale] 缩放后的**真实
+  /// 屏幕坐标**。浮层子树经 [_buildPopupOverlay] 的 [HibikiAppUiScaleNeutralizer] 中和回
+  /// 真实视口空间（净变换=1），其坐标系即真实屏幕空间，故这里**直接**用 [charRect] 定位、
+  /// 不再换算到缩放画布——界面任意缩放下定位都不偏（BUG-051）。
   ///
   /// 查词/递归查词/单词发音/auto-read/制卡全部走 [DictionaryPageMixin]，与书内一致。
   Future<void> _lookupAt(
@@ -469,10 +527,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   ) async {
     final VideoPlayerController? controller = _controller;
     if (controller == null) return;
-    // 在 await 前、点击当帧读缩放并换算 rect：缩放是即时几何，且避开跨 async 用
-    // BuildContext。
-    final Rect canvasRect =
-        scaledRectToCanvas(charRect, HibikiAppUiScale.of(context));
     await controller.pause();
     final String term = sentence.characters.skip(graphemeIndex).join();
     debugPrint('[video-lookup] tap idx=$graphemeIndex term="$term"');
@@ -480,7 +534,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _lastLookupSentence = sentence;
     await pushNestedPopup(
       query: term,
-      selectionRect: canvasRect,
+      selectionRect: charRect,
       popupStack: _popupStack,
       replaceStack: true,
       autoRead: true,
@@ -499,9 +553,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       popupStack: _popupStack,
       onPush: (String text, Rect rect) {
         // 递归查词不属于某条字幕句：制卡例句仍用最近一次字幕句。
-        // [rect] 已是 overlay 逻辑画布坐标（父浮层 pos + WebView 局部 rect 叠出），
-        // 不再经 [scaledRectToCanvas]——它只用于把 [VideoSubtitleOverlay] 的
-        // `localToGlobal` 屏幕 rect 拉回画布。
+        // [rect] 已是中和后浮层坐标（父浮层 pos + WebView 局部 rect 叠出，均在同一
+        // 真实视口空间），直接复用，无需任何缩放换算。
         pushNestedPopup(
           query: text,
           selectionRect: rect,
@@ -542,28 +595,35 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   }
 
   /// 根 Overlay 里的查词浮层栈内容：透明遮罩（点击关栈）+ 各层 [DictionaryPopupLayer]。
-  /// `screen` 取自根 Overlay 自身约束（逻辑画布坐标系），与 [_lookupAt] 换算后的字符
-  /// rect 同坐标系。
+  ///
+  /// 根 Overlay 在 [HibikiAppUiScale] 的 `FittedBox` 之内＝缩放后的小画布，浮层 WebView
+  /// 在此栅格化再被拉大会字糊（BUG-051）。用 [HibikiAppUiScaleNeutralizer] 把整棵浮层
+  /// 子树中和回真实视口尺寸、净缩放=1，WebView 按原生密度渲染＝清晰。中和后 `screen`
+  /// （内层 [LayoutBuilder] 约束）即真实视口，与 [_lookupAt] 直接传入的 `localToGlobal`
+  /// 屏幕 rect 同坐标系（净变换=1），定位自洽。
   Widget _buildPopupOverlay(BuildContext overlayContext) {
-    return Theme(
-      data: appModel.overrideDictionaryTheme ?? Theme.of(context),
-      child: LayoutBuilder(
-        builder: (BuildContext context, BoxConstraints constraints) {
-          final Size screen = Size(constraints.maxWidth, constraints.maxHeight);
-          return Stack(
-            children: <Widget>[
-              Positioned.fill(
-                child: GestureDetector(
-                  behavior: HitTestBehavior.translucent,
-                  onTap: () => _popNestedPopupAt(0),
-                  child: const ColoredBox(color: Colors.transparent),
+    return HibikiAppUiScaleNeutralizer(
+      child: Theme(
+        data: appModel.overrideDictionaryTheme ?? Theme.of(context),
+        child: LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) {
+            final Size screen =
+                Size(constraints.maxWidth, constraints.maxHeight);
+            return Stack(
+              children: <Widget>[
+                Positioned.fill(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.translucent,
+                    onTap: () => _popNestedPopupAt(0),
+                    child: const ColoredBox(color: Colors.transparent),
+                  ),
                 ),
-              ),
-              for (int i = 0; i < _popupStack.length; i++)
-                _buildNestedPopupLayer(i, screen),
-            ],
-          );
-        },
+                for (int i = 0; i < _popupStack.length; i++)
+                  _buildNestedPopupLayer(i, screen),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
@@ -682,6 +742,151 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                 ))
             .toList(),
       ),
+    );
+  }
+
+  /// 设置音画延迟（毫秒）：即时调 controller（字幕 cue 同步偏移立即生效）+ 持久化
+  /// 到 VideoBook.delayMs（换集复用、跨重启保留）+ 刷新面板显示。
+  Future<void> _setDelayMs(int delayMs) async {
+    final int clamped = delayMs.clamp(-600000, 600000);
+    if (clamped == _delayMs) return;
+    _delayMs = clamped;
+    _controller?.setDelayMs(clamped);
+    await widget.repo.updateDelayMs(widget.bookUid, clamped);
+    if (mounted) setState(() {});
+  }
+
+  /// 设置播放倍速：即时调 controller + 持久化到 per-book 偏好（速度记忆）+ 刷新。
+  Future<void> _setSpeed(double speed) async {
+    final double clamped = speed.clamp(0.25, 4.0).toDouble();
+    if ((clamped - _playbackSpeed).abs() < 0.001) return;
+    _playbackSpeed = clamped;
+    await _controller?.setSpeed(clamped);
+    await appModel.prefsRepo.setPref(_speedPrefKey, clamped);
+    if (mounted) setState(() {});
+  }
+
+  /// 弹视频播放设置面板：音画延迟（±50/±1000ms 步进 + 归零）+ 播放倍速（预设档）。
+  ///
+  /// 参照有声书 [AudiobookPlayBar] 的 A/V Sync 步进设计；面板用 [StatefulBuilder]
+  /// 局部刷新，调用方法即时生效 + 持久化（见 [_setDelayMs] / [_setSpeed]）。
+  void _showPlayerSettings() {
+    const List<double> speedPresets = <double>[0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.black87,
+      isScrollControlled: true,
+      builder: (BuildContext ctx) {
+        final ColorScheme cs = Theme.of(ctx).colorScheme;
+        return SafeArea(
+          child: StatefulBuilder(
+            builder: (BuildContext ctx, StateSetter setSheet) {
+              Future<void> bumpDelay(int delta) async {
+                await _setDelayMs(_delayMs + delta);
+                setSheet(() {});
+              }
+
+              Future<void> pickSpeed(double s) async {
+                await _setSpeed(s);
+                setSheet(() {});
+              }
+
+              return Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      t.video_settings_title,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    // ── 音画延迟 ──
+                    Text(t.video_setting_av_delay,
+                        style: const TextStyle(color: Colors.white70)),
+                    const SizedBox(height: 4),
+                    Text(t.video_setting_av_delay_hint,
+                        style: const TextStyle(
+                            color: Colors.white38, fontSize: 12)),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: <Widget>[
+                        IconButton(
+                          color: Colors.white,
+                          icon: const Icon(Icons.keyboard_double_arrow_left),
+                          tooltip: '-1000ms',
+                          onPressed: () => bumpDelay(-1000),
+                        ),
+                        IconButton(
+                          color: Colors.white,
+                          icon: const Icon(Icons.chevron_left),
+                          tooltip: '-50ms',
+                          onPressed: () => bumpDelay(-50),
+                        ),
+                        GestureDetector(
+                          onTap: _delayMs == 0
+                              ? null
+                              : () async {
+                                  await _setDelayMs(0);
+                                  setSheet(() {});
+                                },
+                          child: SizedBox(
+                            width: 96,
+                            child: Text(
+                              '${_delayMs >= 0 ? '+' : ''}$_delayMs ms',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color:
+                                    _delayMs == 0 ? Colors.white54 : cs.primary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          color: Colors.white,
+                          icon: const Icon(Icons.chevron_right),
+                          tooltip: '+50ms',
+                          onPressed: () => bumpDelay(50),
+                        ),
+                        IconButton(
+                          color: Colors.white,
+                          icon: const Icon(Icons.keyboard_double_arrow_right),
+                          tooltip: '+1000ms',
+                          onPressed: () => bumpDelay(1000),
+                        ),
+                      ],
+                    ),
+                    const Divider(color: Colors.white24, height: 24),
+                    // ── 播放倍速 ──
+                    Text(t.video_setting_speed,
+                        style: const TextStyle(color: Colors.white70)),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      children: <Widget>[
+                        for (final double s in speedPresets)
+                          ChoiceChip(
+                            label: Text('${s}x'),
+                            selected: (s - _playbackSpeed).abs() < 0.001,
+                            onSelected: (_) => pickSpeed(s),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        );
+      },
     );
   }
 
@@ -809,29 +1014,35 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       backgroundColor: cs.surface,
       appBar: AppBar(
         title: Text(_title ?? ''),
-        actions: _isPlaylist
-            ? <Widget>[
-                IconButton(
-                  tooltip: t.video_prev_episode,
-                  icon: const Icon(Icons.skip_previous),
-                  onPressed: _currentEpisode > 0
-                      ? () => _switchEpisode(_currentEpisode - 1)
-                      : null,
-                ),
-                IconButton(
-                  tooltip: t.video_next_episode,
-                  icon: const Icon(Icons.skip_next),
-                  onPressed: _currentEpisode < _episodes.length - 1
-                      ? () => _switchEpisode(_currentEpisode + 1)
-                      : null,
-                ),
-                IconButton(
-                  tooltip: t.video_episode_list,
-                  icon: const Icon(Icons.playlist_play),
-                  onPressed: _showEpisodeList,
-                ),
-              ]
-            : null,
+        actions: <Widget>[
+          if (_isPlaylist) ...<Widget>[
+            IconButton(
+              tooltip: t.video_prev_episode,
+              icon: const Icon(Icons.skip_previous),
+              onPressed: _currentEpisode > 0
+                  ? () => _switchEpisode(_currentEpisode - 1)
+                  : null,
+            ),
+            IconButton(
+              tooltip: t.video_next_episode,
+              icon: const Icon(Icons.skip_next),
+              onPressed: _currentEpisode < _episodes.length - 1
+                  ? () => _switchEpisode(_currentEpisode + 1)
+                  : null,
+            ),
+            IconButton(
+              tooltip: t.video_episode_list,
+              icon: const Icon(Icons.playlist_play),
+              onPressed: _showEpisodeList,
+            ),
+          ],
+          IconButton(
+            tooltip: t.video_settings_title,
+            icon: const Icon(Icons.tune),
+            // controller 未就绪时禁用（无可调对象）。
+            onPressed: controller == null ? null : _showPlayerSettings,
+          ),
+        ],
       ),
       body: _failed
           ? Center(

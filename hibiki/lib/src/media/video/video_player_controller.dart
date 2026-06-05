@@ -33,6 +33,9 @@ class VideoPlayerController extends ChangeNotifier {
   /// 音画延迟（毫秒）：正值表示"视频比文字先播"，查 cue 时把位置往回拨。
   int _delayMs = 0;
 
+  /// 最近一次 [setSpeed] / [load] 之倍速；player 未实例化时供 [speed] getter 回退。
+  double _lastSpeed = 1.0;
+
   Timer? _tick;
   StreamSubscription<bool>? _playingSub;
 
@@ -59,6 +62,16 @@ class VideoPlayerController extends ChangeNotifier {
   String? get videoPath => _videoPath;
 
   bool get isPlaying => _player?.state.playing ?? false;
+
+  /// 当前播放位置（毫秒）；未 [load] 时为 null。换集前用它补记当前集精确进度
+  /// （tick 整秒节流外的尾差）。
+  int? get positionMs => _player?.state.position.inMilliseconds;
+
+  /// 当前音画延迟（毫秒）；设置面板显示用。
+  int get delayMs => _delayMs;
+
+  /// 当前播放倍速；未 [load] 时回退最近一次 [setSpeed] 之值（构造默认 1.0）。
+  double get speed => _player?.state.rate ?? _lastSpeed;
 
   /// 截取当前解码帧为 JPEG 字节（制卡截图用）。未 [load] 返回 null。
   Future<Uint8List?> screenshot() async {
@@ -163,6 +176,7 @@ class VideoPlayerController extends ChangeNotifier {
     // 与内嵌抽取的 cue 都走 overlay）。externalSubtitlePath 已在上层解析成 cues 传入。
     await player.setSubtitleTrack(SubtitleTrack.no());
 
+    _lastSpeed = initialSpeed;
     await player.setRate(initialSpeed);
     if (initialPositionMs > 0) {
       await player.seek(Duration(milliseconds: initialPositionMs));
@@ -301,8 +315,9 @@ class VideoPlayerController extends ChangeNotifier {
     await _player?.seek(Duration(milliseconds: positionMs.clamp(0, 1 << 30)));
   }
 
-  /// 设置播放倍速（未 load 时 no-op 安全）。
+  /// 设置播放倍速（未 load 时也记下 [_lastSpeed]，下次 load 不丢）。
   Future<void> setSpeed(double rate) async {
+    _lastSpeed = rate;
     await _player?.setRate(rate);
   }
 

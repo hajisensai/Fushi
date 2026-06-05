@@ -1261,5 +1261,9 @@
     "video_subtitle_off": "关闭字幕",
     "video_subtitle_switched": "已切换字幕：$label",
     "video_audio_track_switched": "音轨: $label",
-    "video_import_subtitle_optional": "可选外挂字幕（播放时可随时在内嵌/外挂字幕间切换）"
+    "video_import_subtitle_optional": "可选外挂字幕（播放时可随时在内嵌/外挂字幕间切换）",
+    "video_settings_title": "播放设置",
+    "video_setting_av_delay": "音画延迟",
+    "video_setting_av_delay_hint": "正数 = 画面先于文字（向回拨字幕）；负数 = 画面滞后。",
+    "video_setting_speed": "播放速度"
 }

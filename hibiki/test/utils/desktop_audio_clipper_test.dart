@@ -169,6 +169,107 @@ void main() {
     });
   });
 
+  group('buildFfmpegFrameArgs', () {
+    test('grabs one frame at the given second with audio dropped', () {
+      expect(
+        buildFfmpegFrameArgs(
+          inputPath: '/a/in.mkv',
+          outputPath: '/a/thumb.jpg',
+          atSeconds: 10,
+        ),
+        <String>[
+          '-y',
+          '-ss',
+          '10.000',
+          '-i',
+          '/a/in.mkv',
+          '-an',
+          '-frames:v',
+          '1',
+          '-update',
+          '1',
+          '/a/thumb.jpg',
+        ],
+      );
+    });
+
+    test('defaults to t=0 and clamps a negative seek to 0', () {
+      expect(
+        buildFfmpegFrameArgs(inputPath: '/a/in.mp4', outputPath: '/a/t.jpg'),
+        <String>[
+          '-y', '-ss', '0.000', '-i', '/a/in.mp4', //
+          '-an', '-frames:v', '1', '-update', '1', '/a/t.jpg',
+        ],
+      );
+      expect(
+        buildFfmpegFrameArgs(
+          inputPath: '/a/in.mp4',
+          outputPath: '/a/t.jpg',
+          atSeconds: -5,
+        ),
+        contains('0.000'),
+      );
+    });
+  });
+
+  group('extractVideoFrameViaFfmpeg', () {
+    test('returns null when the input file does not exist', () async {
+      expect(
+        await extractVideoFrameViaFfmpeg(
+          inputPath: '/no/such/video.mkv',
+          outputPath: 'x.jpg',
+        ),
+        isNull,
+      );
+    });
+
+    test('grabs a real frame when ffmpeg is available', () async {
+      bool ffmpegPresent;
+      try {
+        final ProcessResult v =
+            await Process.run(resolveFfmpegExecutable(), <String>['-version']);
+        ffmpegPresent = v.exitCode == 0;
+      } catch (_) {
+        ffmpegPresent = false;
+      }
+      if (!ffmpegPresent) {
+        // ignore: avoid_print
+        print('ffmpeg not present; skipping real-frame extraction test');
+        return;
+      }
+
+      final Directory dir =
+          Directory.systemTemp.createTempSync('hibiki_frame_test');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final String video = '${dir.path}/clip.mp4';
+      final String out = '${dir.path}/thumb.jpg';
+      final String ff = resolveFfmpegExecutable();
+
+      // 生成一段 5s 彩色测试视频。
+      final ProcessResult gen = await Process.run(ff, <String>[
+        '-y',
+        '-f',
+        'lavfi',
+        '-i',
+        'testsrc=duration=5:size=64x64:rate=10',
+        '-pix_fmt',
+        'yuv420p',
+        video,
+      ]);
+      expect(gen.exitCode, 0, reason: gen.stderr.toString());
+
+      final String? result = await extractVideoFrameViaFfmpeg(
+        inputPath: video,
+        outputPath: out,
+        atSeconds: 2,
+      );
+
+      expect(result, out);
+      expect(File(out).existsSync(), isTrue);
+      expect(File(out).lengthSync(), greaterThan(0));
+    });
+  });
+
   group('buildFfmpegSubtitleArgs', () {
     test('maps the Nth subtitle stream to the output path', () {
       expect(

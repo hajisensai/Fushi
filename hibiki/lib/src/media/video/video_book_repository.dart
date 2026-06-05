@@ -22,6 +22,14 @@ class VideoBookRepository {
   Future<void> updateCurrentEpisode(String bookUid, int episodeIndex) =>
       _db.updateVideoBookEpisode(bookUid, episodeIndex);
 
+  /// 回写整段播放列表 JSON（各集 positionMs 改变时持久化每集进度）。
+  Future<void> updatePlaylistJson(String bookUid, String playlistJson) =>
+      _db.updateVideoBookPlaylistJson(bookUid, playlistJson);
+
+  /// 更新音画延迟（毫秒）：字幕 cue 同步偏移，跨重启保留。
+  Future<void> updateDelayMs(String bookUid, int delayMs) =>
+      _db.updateVideoBookDelayMs(bookUid, delayMs);
+
   /// 更新用户选中的字幕源（外挂存路径；内嵌存 `embedded:<n>`；关闭存 null）。
   Future<void> updateSubtitleSource(String bookUid, String? subtitleSource) =>
       _db.updateVideoBookSubtitleSource(bookUid, subtitleSource);

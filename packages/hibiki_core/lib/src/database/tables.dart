@@ -329,4 +329,8 @@ class VideoBooks extends Table {
   /// 用户选中的音轨（libmpv `AudioTrack.id`）；null=未选过，跟随 libmpv 默认。
   /// 多集播放列表换集时复用同一值（如选了日语音轨，每集都用日语）。
   TextColumn get audioTrackId => text().nullable()();
+
+  /// 音画延迟（毫秒）：正值=画面先于文字，查 cue 时把位置往回拨，让字幕与画面对齐。
+  /// 跨重启保留；多集播放列表换集时复用同一值（手动校准一次全片受用）。
+  IntColumn get delayMs => integer().withDefault(const Constant(0))();
 }

@@ -1261,5 +1261,9 @@
     "video_subtitle_off": "Turn off subtitles",
     "video_subtitle_switched": "Subtitle: $label",
     "video_audio_track_switched": "Audio track: $label",
-    "video_import_subtitle_optional": "Optional external subtitle (you can switch between embedded/external subtitles anytime during playback)"
+    "video_import_subtitle_optional": "Optional external subtitle (you can switch between embedded/external subtitles anytime during playback)",
+    "video_settings_title": "Player settings",
+    "video_setting_av_delay": "A/V delay",
+    "video_setting_av_delay_hint": "Positive = picture leads text (shift cues back); negative = picture lags.",
+    "video_setting_speed": "Playback speed"
 }

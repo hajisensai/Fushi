@@ -55,4 +55,44 @@ void main() {
     expect(all, hasLength(2));
     expect(all.map((e) => e.bookUid), containsAll(['video/a', 'video/b']));
   });
+
+  test('updatePlaylistJson round-trips per-episode positions', () async {
+    final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final repo = VideoBookRepository(db);
+    await repo.saveVideoBook(const VideoBooksCompanion(
+      bookUid: Value('video/playlist/x'),
+      title: Value('PL'),
+      videoPath: Value('/e0.mkv'),
+      playlistJson: Value('[]'),
+    ));
+
+    const String updated = '[{"title":"e0","path":"/e0.mkv","positionMs":8000},'
+        '{"title":"e1","path":"/e1.mkv","positionMs":3000}]';
+    await repo.updatePlaylistJson('video/playlist/x', updated);
+
+    final row = await repo.getByBookUid('video/playlist/x');
+    expect(row!.playlistJson, updated);
+  });
+
+  test('updateDelayMs round-trips the A/V delay', () async {
+    final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final repo = VideoBookRepository(db);
+    await repo.saveVideoBook(const VideoBooksCompanion(
+      bookUid: Value('video/d'),
+      title: Value('D'),
+      videoPath: Value('/d.mp4'),
+    ));
+
+    // Default is 0; negative and positive both persist.
+    final row0 = await repo.getByBookUid('video/d');
+    expect(row0!.delayMs, 0);
+
+    await repo.updateDelayMs('video/d', -350);
+    expect((await repo.getByBookUid('video/d'))!.delayMs, -350);
+
+    await repo.updateDelayMs('video/d', 1200);
+    expect((await repo.getByBookUid('video/d'))!.delayMs, 1200);
+  });
 }

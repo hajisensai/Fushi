@@ -109,6 +109,80 @@ Future<String?> extractEmbeddedCoverViaFfmpeg({
   }
 }
 
+/// Builds the ffmpeg argument list to grab a single frame from [inputPath] at
+/// [atSeconds] (input seek, fast) and write it to [outputPath] (the output
+/// extension, e.g. `.jpg`, picks the encoder). Pure (no IO) so it is
+/// unit-testable.
+///
+/// `-ss <atSeconds>` precedes `-i` for fast input seeking (a multi-GB episode is
+/// not decoded from 0). [atSeconds] is clamped to >= 0 so a tiny/short video
+/// never seeks negative; seeking past the end yields no frame (the extractor
+/// then reports null). A non-zero default (e.g. 10s) avoids a black intro frame.
+List<String> buildFfmpegFrameArgs({
+  required String inputPath,
+  required String outputPath,
+  double atSeconds = 0.0,
+}) {
+  final double seek = atSeconds < 0 ? 0.0 : atSeconds;
+  return <String>[
+    '-y',
+    '-ss',
+    seek.toStringAsFixed(3),
+    '-i',
+    inputPath,
+    '-an',
+    '-frames:v',
+    '1',
+    '-update',
+    '1',
+    outputPath,
+  ];
+}
+
+/// Grabs a single video frame from [inputPath] at [atSeconds] into [outputPath]
+/// via ffmpeg (used as the shelf cover thumbnail). Returns [outputPath] on
+/// success, or null if the input is missing, ffmpeg is not installed, or no
+/// frame was written (e.g. seek past the end).
+///
+/// Mirrors [extractEmbeddedCoverViaFfmpeg]: bounded timeout, drops partial
+/// output on timeout / failure, never throws for the caller (no ffmpeg on
+/// mobile simply means no thumbnail, not a crash).
+Future<String?> extractVideoFrameViaFfmpeg({
+  required String inputPath,
+  required String outputPath,
+  double atSeconds = 10.0,
+}) async {
+  if (!File(inputPath).existsSync()) return null;
+  final File output = File(outputPath);
+  try {
+    output.parent.createSync(recursive: true);
+    final int? code = await _runFfmpeg(
+      buildFfmpegFrameArgs(
+        inputPath: inputPath,
+        outputPath: outputPath,
+        atSeconds: atSeconds,
+      ),
+      const Duration(seconds: 30),
+    );
+    if (code == null) {
+      if (output.existsSync()) {
+        try {
+          output.deleteSync();
+        } catch (_) {}
+      }
+      return null;
+    }
+    if (output.existsSync() && output.lengthSync() > 0) return outputPath;
+    return null;
+  } on ProcessException catch (e, stack) {
+    ErrorLogService.instance.log('extractVideoFrameViaFfmpeg', e, stack);
+    return null;
+  } catch (e, stack) {
+    ErrorLogService.instance.log('extractVideoFrameViaFfmpeg', e, stack);
+    return null;
+  }
+}
+
 /// Builds the ffmpeg argument list to demux the [streamIndex]-th subtitle track
 /// of [inputPath] into [outputPath]. Pure (no IO) so it is unit-testable.
 ///

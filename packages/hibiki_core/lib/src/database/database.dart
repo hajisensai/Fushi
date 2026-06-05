@@ -58,7 +58,7 @@ class HibikiDatabase extends _$HibikiDatabase {
   HibikiDatabase.forTesting(super.e) : _dbDirectory = '';
 
   @override
-  int get schemaVersion => 18;
+  int get schemaVersion => 19;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -247,6 +247,14 @@ class HibikiDatabase extends _$HibikiDatabase {
             // column), so only a genuine pre-v18 table needs the ALTER.
             if (!await _columnExists('video_books', 'audio_track_id')) {
               await m.addColumn(videoBooks, videoBooks.audioTrackId);
+            }
+          }
+          if (from < 19) {
+            // Same guard rationale: a pre-v16 DB rebuilds video_books from the
+            // current schema (already including delay_ms), so only a genuine
+            // pre-v19 table needs the ALTER.
+            if (!await _columnExists('video_books', 'delay_ms')) {
+              await m.addColumn(videoBooks, videoBooks.delayMs);
             }
           }
         },
@@ -597,6 +605,16 @@ class HibikiDatabase extends _$HibikiDatabase {
   Future<void> updateVideoBookEpisode(String bookUid, int episodeIndex) =>
       (update(videoBooks)..where((t) => t.bookUid.equals(bookUid)))
           .write(VideoBooksCompanion(currentEpisode: Value(episodeIndex)));
+
+  /// 回写整段播放列表 JSON（各集 positionMs 改变时持久化每集进度）。
+  Future<void> updateVideoBookPlaylistJson(String bookUid, String playlistJson) =>
+      (update(videoBooks)..where((t) => t.bookUid.equals(bookUid)))
+          .write(VideoBooksCompanion(playlistJson: Value(playlistJson)));
+
+  /// 更新音画延迟（毫秒）：字幕 cue 同步偏移，跨重启保留。
+  Future<void> updateVideoBookDelayMs(String bookUid, int delayMs) =>
+      (update(videoBooks)..where((t) => t.bookUid.equals(bookUid)))
+          .write(VideoBooksCompanion(delayMs: Value(delayMs)));
 
   /// 更新用户选中的字幕源（外挂存路径；内嵌存 `embedded:<n>`；关闭存 null）。
   Future<void> updateVideoBookSubtitleSource(

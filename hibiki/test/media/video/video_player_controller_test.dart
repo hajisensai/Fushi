@@ -49,6 +49,37 @@ void main() {
     });
   });
 
+  group('VideoPlayerController settings getters (no player)', () {
+    test('delayMs getter reflects setDelayMs and clamps to ±600000', () {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      expect(c.delayMs, 0);
+      c.setDelayMs(250);
+      expect(c.delayMs, 250);
+      c.setDelayMs(-50);
+      expect(c.delayMs, -50);
+      c.setDelayMs(10000000);
+      expect(c.delayMs, 600000);
+      c.setDelayMs(-10000000);
+      expect(c.delayMs, -600000);
+    });
+
+    test('speed getter falls back to last setSpeed when no player', () async {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      expect(c.speed, 1.0);
+      await c.setSpeed(1.5);
+      // 未 load（无 player）时 speed 回退到 _lastSpeed。
+      expect(c.speed, 1.5);
+    });
+
+    test('positionMs is null before load', () {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      expect(c.positionMs, isNull);
+    });
+  });
+
   group('VideoPlayerController audio track mapping', () {
     test('currentAudioStreamIndex is null before load (no player)', () {
       // 未 load 时无 libmpv player：制卡裁音频走 ffmpeg 默认音轨（不加 -map）。

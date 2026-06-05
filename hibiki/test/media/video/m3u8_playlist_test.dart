@@ -94,4 +94,74 @@ plain.mkv
       expect(round.path, '/a/b.mkv');
     });
   });
+
+  group('PlaylistEntry positionMs', () {
+    test('默认 positionMs=0', () {
+      const PlaylistEntry entry = PlaylistEntry(title: 't', path: '/a.mkv');
+      expect(entry.positionMs, 0);
+    });
+
+    test('toJson/fromJson 往返带 positionMs', () {
+      const PlaylistEntry entry =
+          PlaylistEntry(title: 't', path: '/a.mkv', positionMs: 12345);
+      final PlaylistEntry round = PlaylistEntry.fromJson(entry.toJson());
+      expect(round.positionMs, 12345);
+    });
+
+    test('fromJson 兼容旧数据（缺 positionMs 字段回退 0）', () {
+      final PlaylistEntry round = PlaylistEntry.fromJson(
+        <String, dynamic>{'title': 't', 'path': '/a.mkv'},
+      );
+      expect(round.positionMs, 0);
+    });
+
+    test('copyWith 只改 positionMs，保留 title/path', () {
+      const PlaylistEntry entry = PlaylistEntry(title: 't', path: '/a.mkv');
+      final PlaylistEntry next = entry.copyWith(positionMs: 999);
+      expect(next.title, 't');
+      expect(next.path, '/a.mkv');
+      expect(next.positionMs, 999);
+      // 原对象不变（不可变更新）。
+      expect(entry.positionMs, 0);
+    });
+  });
+
+  group('updateEntryPosition', () {
+    final List<PlaylistEntry> base = <PlaylistEntry>[
+      const PlaylistEntry(title: 'e0', path: '/0.mkv'),
+      const PlaylistEntry(title: 'e1', path: '/1.mkv', positionMs: 5000),
+      const PlaylistEntry(title: 'e2', path: '/2.mkv'),
+    ];
+
+    test('更新目标集的 position，其它集不变', () {
+      final List<PlaylistEntry> next = updateEntryPosition(base, 0, 3000);
+      expect(next[0].positionMs, 3000);
+      expect(next[1].positionMs, 5000); // 未动
+      expect(next[2].positionMs, 0);
+    });
+
+    test('切集保存当前集 + 恢复目标集 position 全流程', () {
+      // 在第 0 集播到 8000ms，切到第 1 集（恢复其 5000ms），再回第 0 集应回 8000。
+      List<PlaylistEntry> eps = base;
+      eps = updateEntryPosition(eps, 0, 8000); // 保存当前集（0）进度
+      expect(eps[0].positionMs, 8000);
+      // 目标集（1）原本保存的 position 用作恢复点。
+      expect(eps[1].positionMs, 5000);
+      // 第 1 集播一会儿后再切走，保存第 1 集进度。
+      eps = updateEntryPosition(eps, 1, 9000);
+      expect(eps[1].positionMs, 9000);
+      // 回到第 0 集仍是 8000。
+      expect(eps[0].positionMs, 8000);
+    });
+
+    test('越界 index 原样返回', () {
+      expect(identical(updateEntryPosition(base, -1, 100), base), isTrue);
+      expect(identical(updateEntryPosition(base, 3, 100), base), isTrue);
+    });
+
+    test('负 position clamp 到 0', () {
+      final List<PlaylistEntry> next = updateEntryPosition(base, 2, -50);
+      expect(next[2].positionMs, 0);
+    });
+  });
 }

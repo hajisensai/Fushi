@@ -1,24 +1,58 @@
 import 'package:path/path.dart' as p;
 
-/// 播放列表中的一集：标题 + 视频绝对路径。
+/// 播放列表中的一集：标题 + 视频绝对路径 + 本集自己的播放进度。
 ///
 /// [path] 始终是绝对路径（由 [parseM3u8] 用 baseDir 解析 m3u8 中的相对路径得到，
 /// Windows `\` 已归一化为平台分隔符）。
+///
+/// [positionMs] 记本集自己的播放进度（毫秒，默认 0）；换集时各集互不干扰，下次
+/// 打开播放列表回到 currentEpisode 那集的该位置（取代旧的「整个 VideoBook 一个
+/// lastPositionMs、换集归零」语义）。
 class PlaylistEntry {
-  const PlaylistEntry({required this.title, required this.path});
+  const PlaylistEntry({
+    required this.title,
+    required this.path,
+    this.positionMs = 0,
+  });
 
   final String title;
   final String path;
+  final int positionMs;
+
+  /// 返回一个仅 [positionMs] 改变的副本（不可变更新）。
+  PlaylistEntry copyWith({int? positionMs}) => PlaylistEntry(
+        title: title,
+        path: path,
+        positionMs: positionMs ?? this.positionMs,
+      );
 
   Map<String, dynamic> toJson() => <String, dynamic>{
         'title': title,
         'path': path,
+        'positionMs': positionMs,
       };
 
   factory PlaylistEntry.fromJson(Map<String, dynamic> json) => PlaylistEntry(
         title: json['title'] as String,
         path: json['path'] as String,
+        // 兼容旧 playlistJson（无 positionMs 字段）：缺省回退 0。
+        positionMs: (json['positionMs'] as int?) ?? 0,
       );
+}
+
+/// 把 [entries] 中第 [index] 集的播放进度更新为 [positionMs]，返回新列表
+/// （不可变更新；越界或负位置安全处理）。纯函数，便于单测「切集保存+恢复各集
+/// position」逻辑。
+List<PlaylistEntry> updateEntryPosition(
+  List<PlaylistEntry> entries,
+  int index,
+  int positionMs,
+) {
+  if (index < 0 || index >= entries.length) return entries;
+  final int clamped = positionMs < 0 ? 0 : positionMs;
+  final List<PlaylistEntry> next = List<PlaylistEntry>.of(entries);
+  next[index] = next[index].copyWith(positionMs: clamped);
+  return next;
 }
 
 /// 解析扩展 M3U（m3u8）播放列表为 [PlaylistEntry] 列表（纯函数，无 IO）。

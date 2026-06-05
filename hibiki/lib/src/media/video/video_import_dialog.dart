@@ -7,10 +7,12 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
+import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 
 /// 为 m3u8 播放列表生成稳定 bookUid：`video/playlist/<文件名_短哈希>`。
 ///
@@ -21,6 +23,32 @@ String playlistBookUid(String m3u8Path) {
   final String digest =
       sha1.convert(utf8.encode(m3u8Path)).toString().substring(0, 12);
   return 'video/playlist/${base}_$digest';
+}
+
+/// 由 [bookUid] 生成视频封面文件名（无目录），把路径分隔符与 `:` 等非法字符
+/// 归一成 `_`，避免 `video/playlist/...` 这类带 `/` `:` 的 bookUid 当文件名非法
+/// （尤其 Windows）。纯函数，便于单测。
+String videoCoverFileName(String bookUid) {
+  final String safe = bookUid.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+  return '$safe.jpg';
+}
+
+/// 用 ffmpeg 从 [videoPath] 的 [atSeconds] 处抽一帧存进 app 文档目录的
+/// `video_covers/<sanitized bookUid>.jpg`（持久路径，非 temp），返回封面绝对
+/// 路径；ffmpeg 缺失（移动端）/抽帧失败时返回 null（导入仍成功，书架显示占位）。
+Future<String?> extractVideoCover({
+  required String videoPath,
+  required String bookUid,
+  double atSeconds = 10.0,
+}) async {
+  final Directory docs = await getApplicationDocumentsDirectory();
+  final Directory coverDir = Directory(p.join(docs.path, 'video_covers'));
+  final String outputPath = p.join(coverDir.path, videoCoverFileName(bookUid));
+  return extractVideoFrameViaFfmpeg(
+    inputPath: videoPath,
+    outputPath: outputPath,
+    atSeconds: atSeconds,
+  );
 }
 
 /// 按字幕扩展名路由到对应解析器，返回按 [AudioCue.startMs] 升序排序的 cue。
@@ -154,12 +182,18 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
       final String playlistJson = jsonEncode(
         entries.map((PlaylistEntry e) => e.toJson()).toList(),
       );
+      // 用第一集抽帧做播放列表封面（桌面 ffmpeg；移动端无 ffmpeg 时留空占位）。
+      final String? coverPath = await extractVideoCover(
+        videoPath: entries.first.path,
+        bookUid: bookUid,
+      );
       await widget.repo.saveVideoBook(VideoBooksCompanion(
         bookUid: Value(bookUid),
         title: Value(p.basenameWithoutExtension(m3u8Path)),
         videoPath: Value(entries.first.path),
         playlistJson: Value(playlistJson),
         currentEpisode: const Value<int>(0),
+        coverPath: Value<String?>(coverPath),
         importedAt: Value(DateTime.now()),
       ));
 
@@ -177,6 +211,9 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
     setState(() => _busy = true);
     try {
       final String bookUid = 'video/${p.basename(videoPath)}';
+      // 抽一帧做书架封面（桌面 ffmpeg；移动端无 ffmpeg 时留空占位）。
+      final String? coverPath =
+          await extractVideoCover(videoPath: videoPath, bookUid: bookUid);
 
       if (subtitlePath != null) {
         // 选了外挂字幕：解析为 cue，写元数据 + cue 列表。
@@ -195,6 +232,7 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
           videoPath: Value(videoPath),
           subtitleSource: Value(subtitlePath),
           subtitleFormat: Value(format),
+          coverPath: Value<String?>(coverPath),
           importedAt: Value(DateTime.now()),
         ));
         await widget.repo.saveCues(bookUid: bookUid, cues: cues);
@@ -208,6 +246,7 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
           subtitleSource: const Value<String?>(null),
           subtitleFormat: const Value<String?>(null),
           embeddedSubtitleTrack: const Value<int?>(0),
+          coverPath: Value<String?>(coverPath),
           importedAt: Value(DateTime.now()),
         ));
       }
