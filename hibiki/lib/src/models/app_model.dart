@@ -2485,6 +2485,18 @@ class AppModel with ChangeNotifier {
   Future<void> setRemoteLookupEnabled(bool value) =>
       prefsRepo.setRemoteLookupEnabled(value);
 
+  bool get yomitanApiServerEnabled => prefsRepo.yomitanApiServerEnabled;
+  Future<void> setYomitanApiServerEnabled(bool value) =>
+      prefsRepo.setYomitanApiServerEnabled(value);
+
+  int get yomitanApiPort => prefsRepo.yomitanApiPort;
+  Future<void> setYomitanApiPort(int value) =>
+      prefsRepo.setYomitanApiPort(value);
+
+  String get yomitanApiKey => prefsRepo.yomitanApiKey;
+  Future<void> setYomitanApiKey(String value) =>
+      prefsRepo.setYomitanApiKey(value);
+
   Map<String, String> get customDictCSS => prefsRepo.customDictCSS;
   String getCustomCSSForDict(String dictName) =>
       prefsRepo.getCustomCSSForDict(dictName);

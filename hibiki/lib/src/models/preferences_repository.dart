@@ -122,6 +122,32 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ── yomitan-api server ───────────────────────────────────────────────
+
+  bool get yomitanApiServerEnabled =>
+      getPref('yomitan_api_server_enabled', defaultValue: false) as bool;
+
+  Future<void> setYomitanApiServerEnabled(bool value) async {
+    await setPref('yomitan_api_server_enabled', value);
+    notifyListeners();
+  }
+
+  int get yomitanApiPort =>
+      getPref('yomitan_api_port', defaultValue: 19633) as int;
+
+  Future<void> setYomitanApiPort(int value) async {
+    await setPref('yomitan_api_port', value);
+    notifyListeners();
+  }
+
+  String get yomitanApiKey =>
+      getPref('yomitan_api_key', defaultValue: '') as String;
+
+  Future<void> setYomitanApiKey(String value) async {
+    await setPref('yomitan_api_key', value);
+    notifyListeners();
+  }
+
   final int defaultSearchDebounceDelay = 100;
 
   int get searchDebounceDelay => getPref('auto_search_debounce_delay',

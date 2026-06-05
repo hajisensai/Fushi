@@ -306,6 +306,27 @@ void main() {
       expect(repo.reverseNavigationBar, false);
     });
 
+    test('yomitan api server prefs round-trip', () async {
+      expect(repo.yomitanApiServerEnabled, false);
+      expect(repo.yomitanApiPort, 19633);
+      expect(repo.yomitanApiKey, '');
+
+      await repo.setYomitanApiServerEnabled(true);
+      await repo.setYomitanApiPort(19999);
+      await repo.setYomitanApiKey('k');
+
+      expect(repo.yomitanApiServerEnabled, true);
+      expect(repo.yomitanApiPort, 19999);
+      expect(repo.yomitanApiKey, 'k');
+
+      final repo2 = PreferencesRepository(db);
+      await repo2.loadFromDb();
+      expect(repo2.yomitanApiServerEnabled, true);
+      expect(repo2.yomitanApiPort, 19999);
+      expect(repo2.yomitanApiKey, 'k');
+      repo2.dispose();
+    });
+
     test('reverseReaderBottomBar is independent of reverseNavigationBar',
         () async {
       expect(repo.reverseReaderBottomBar, false); // 默认关
