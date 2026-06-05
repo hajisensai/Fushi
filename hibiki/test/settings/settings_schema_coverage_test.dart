@@ -51,6 +51,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'syncBackup/Sync book files': 'test/sync/sync_gating_test.dart',
   'syncBackup/Sync dictionaries': 'test/sync/sync_gating_test.dart',
   'syncBackup/Sync audiobook files': 'test/sync/sync_orchestrator_test.dart',
+  'syncBackup/Sync local audio': 'test/sync/sync_orchestrator_test.dart',
   // 设备/集成 backlog（消费点真机/WebView/Android-only，widget 测不到）
   'reading/Spread Direction': 'DEVICE: spread page order in WebView',
   'reading/Highlight text on tap': 'DEVICE: WebView onTap lookup',
