@@ -1274,5 +1274,8 @@
     "section_experimental": "实验性功能",
     "experimental_video": "视频（实验性）",
     "experimental_video_hint": "在底栏显示「视频」标签页并启用视频导入。视频播放、查词与制卡为实验性功能。",
-    "video_library_empty": "还没有导入视频"
+    "video_library_empty": "还没有导入视频",
+    "video_import_pick_folder": "导入文件夹（自动分组剧集）",
+    "video_import_folder_empty": "此文件夹里没有视频文件",
+    "video_import_folder_done": "已导入 $count 个系列"
 }

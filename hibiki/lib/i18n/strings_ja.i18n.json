@@ -1274,5 +1274,8 @@
     "section_experimental": "Experimental",
     "experimental_video": "Video (experimental)",
     "experimental_video_hint": "Show the Video tab in the bottom navigation and enable importing videos. Video playback, dictionary lookup and card creation are experimental.",
-    "video_library_empty": "No videos imported yet"
+    "video_library_empty": "No videos imported yet",
+    "video_import_pick_folder": "Import folder (auto-group episodes)",
+    "video_import_folder_empty": "No video files found in this folder",
+    "video_import_folder_done": "Imported $count series"
 }

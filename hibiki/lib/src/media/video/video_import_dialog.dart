@@ -6,6 +6,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
+import 'package:hibiki/src/media/video/video_filename_parser.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
 import 'package:hibiki/utils.dart';
@@ -242,6 +243,81 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
     }
   }
 
+  /// 选一个文件夹 → 扫描顶层视频文件 → 按文件名解析分组（参照 Jellyfin/anitomy，
+  /// 同番归一组、按集号排序）→ 每组建一个 VideoBook（多集=playlist，单集=单片）→
+  /// pop 回最后一个 bookUid。不复制视频，存绝对路径；sidecar 字幕在播放页按集探测。
+  Future<void> _pickFolder() async {
+    final String? dir = await FilePicker.platform.getDirectoryPath();
+    if (dir == null) return;
+
+    setState(() => _busy = true);
+    try {
+      final List<String> videos = listVideoFilesInDirectory(dir);
+      if (videos.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(t.video_import_folder_empty)),
+          );
+        }
+        return;
+      }
+      final List<VideoGroup> groups = groupVideosIntoPlaylists(videos);
+      String? lastBookUid;
+      for (final VideoGroup group in groups) {
+        lastBookUid = await _importGroup(group);
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content: Text(t.video_import_folder_done(count: groups.length))),
+      );
+      Navigator.pop(context, lastBookUid);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// 导入一个系列分组：多集 → playlist VideoBook（身份 `video/playlist/<系列名>`），
+  /// 单集 → 单片 VideoBook（内嵌默认字幕轨）。返回写入的 bookUid。
+  Future<String> _importGroup(VideoGroup group) async {
+    if (group.isPlaylist) {
+      final List<PlaylistEntry> entries = group.episodes
+          .map((VideoEpisode e) => PlaylistEntry(title: e.title, path: e.path))
+          .toList();
+      final String bookUid = await _uniqueBookUid(
+          'video/playlist/${sanitizeTtuFilename(group.series)}');
+      final String playlistJson =
+          jsonEncode(entries.map((PlaylistEntry e) => e.toJson()).toList());
+      final String? coverPath = await extractVideoCover(
+        videoPath: entries.first.path,
+        bookUid: bookUid,
+      );
+      await widget.repo.saveVideoBook(VideoBooksCompanion(
+        bookUid: Value(bookUid),
+        title: Value(group.series),
+        videoPath: Value(entries.first.path),
+        playlistJson: Value(playlistJson),
+        currentEpisode: const Value<int>(0),
+        coverPath: Value<String?>(coverPath),
+        importedAt: Value(DateTime.now()),
+      ));
+      return bookUid;
+    }
+    final VideoEpisode only = group.episodes.first;
+    final String bookUid = await _uniqueBookUid(singleVideoBookUid(only.path));
+    final String? coverPath =
+        await extractVideoCover(videoPath: only.path, bookUid: bookUid);
+    await widget.repo.saveVideoBook(VideoBooksCompanion(
+      bookUid: Value(bookUid),
+      title: Value(p.basenameWithoutExtension(only.path)),
+      videoPath: Value(only.path),
+      embeddedSubtitleTrack: const Value<int?>(0),
+      coverPath: Value<String?>(coverPath),
+      importedAt: Value(DateTime.now()),
+    ));
+    return bookUid;
+  }
+
   /// 用现有 VideoBooks 的 book_uid 集对 [base] 做同名去重（静默加后缀）。
   /// 对齐 EpubImporter 的无回调去重 UX，保证不写入重复主键。
   Future<String> _uniqueBookUid(String base) async {
@@ -314,6 +390,15 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
+          FilledButton.tonalIcon(
+            onPressed: _busy ? null : _pickFolder,
+            icon: const Icon(Icons.create_new_folder_outlined),
+            label: Text(
+              t.video_import_pick_folder,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(height: 8),
           FilledButton.tonalIcon(
             onPressed: _busy ? null : _pickPlaylist,
             icon: const Icon(Icons.playlist_play),

@@ -226,10 +226,10 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           ref: ref,
           appModel: appModel,
         ),
-        // 新导入视频入口：编译期常量 kVideoImportEnabled 或运行时「实验性视频」
-        // 开关任一开启即放出（开关在设置「实验性功能」分区）。已导入视频始终在
-        // 书架展示、点开仍可播放查词，此处仅控制新建导入入口的可见性。
-        if (kVideoImportEnabled || appModel.experimentalVideoEnabled)
+        // 视频导入入口**只属于视频 tab**（HomeVideoPage），书架不放视频导入——
+        // 书架是书的地方。这里保留编译期常量门控（默认关）只为旧调试路径，运行时
+        // 实验开关不再在书架放出视频导入（用户反馈：书架不该有视频导入入口）。
+        if (kVideoImportEnabled)
           _headerAction(
             tooltip: t.video_import_action,
             icon: Icons.movie_outlined,
@@ -427,8 +427,12 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       srtBooks = allSrtBooks;
     }
     // 视频书无标签，标签筛选激活时整组隐藏（与 SRT 同策略）。
+    // 实验视频 tab 启用时，视频归「视频」tab 独占，书架不再显示视频分区（用户反馈：
+    // 书架是书的地方）；开关关闭（无视频 tab）时书架照旧显示，保持向后兼容。
     final List<VideoBookRow> videoBooks =
-        hasActiveFilter ? const [] : _videoBooks;
+        (hasActiveFilter || appModel.experimentalVideoEnabled)
+            ? const []
+            : _videoBooks;
     _visibleEpubBooks = epubBooks;
     _visibleSrtBooks = srtBooks;
     if (epubBooks.isEmpty && srtBooks.isEmpty && videoBooks.isEmpty) {
