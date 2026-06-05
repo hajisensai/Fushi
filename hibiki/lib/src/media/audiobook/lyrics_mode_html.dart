@@ -200,6 +200,17 @@ document.getElementById('lc').addEventListener('click', function(e) {
   }
 });
 
+// ── 中键点句 → seek 到该 cue 并播放（标准 click 不触发中键，单列 mousedown）──
+document.getElementById('lc').addEventListener('mousedown', function(e) {
+  if (e.button === 0) return;
+  var el = e.target.closest('.cue');
+  if (!el) return;
+  e.preventDefault();
+  var idx = parseInt(el.getAttribute('data-cue-index'), 10);
+  if (isNaN(idx)) return;
+  window.flutter_inappwebview.callHandler('onLyricsPointerSeek', e.button, idx);
+});
+
 // ── 歌词模式：覆写 selection 回调，附加 cue 元数据 ──
 (function() {
   var origSelectText = window.hoshiSelection.selectText;

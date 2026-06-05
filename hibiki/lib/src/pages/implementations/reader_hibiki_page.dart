@@ -40,6 +40,7 @@ import 'package:hibiki/src/reader/reader_selection_data.dart';
 import 'package:hibiki/src/reader/reader_selection_scripts.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/src/media/audiobook/floating_lyric_channel.dart';
+import 'package:hibiki/src/media/audiobook/pointer_seek.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
@@ -1666,6 +1667,14 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     if (e.pointerType === 'touch' || e.button !== 0) return;
     _gestureEnd(e.clientX, e.clientY, e);
   }, {passive: false});
+  // 非左键（中键/侧键）：上报 Dart，由 resolveMouse 判定是否绑定「seek 到点击句」。
+  // mousedown 一定触发，preventDefault 压掉中键自动滚动。触屏合成事件 button 恒 0，
+  // 被首行排除，不干扰触摸手势。
+  document.addEventListener('mousedown', function(e) {
+    if (e.button === 0) return;
+    e.preventDefault();
+    window.flutter_inappwebview.callHandler('onPointerSeek', e.button, e.clientX, e.clientY);
+  }, {passive: false});
   document.addEventListener('selectstart', function(e) {
     if (hasStart && (Date.now() - startTime) < 400) e.preventDefault();
   });
@@ -1954,6 +1963,30 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
             if (idx >= 0) {
               _audiobookController!.playCueAndContinue(allCues[idx]);
             }
+          },
+        );
+
+        controller.addJavaScriptHandler(
+          handlerName: 'onPointerSeek',
+          callback: (List<dynamic> args) async {
+            if (args.length < 3 || _audiobookController == null) return;
+            final int button = (args[0] as num?)?.toInt() ?? -1;
+            if (!_isSeekToClickedSentenceButton(button)) return;
+            final double x = _toDouble(args[1]) ?? 0;
+            final double y = _toDouble(args[2]) ?? 0;
+            await _seekToClickedSentence(x, y);
+          },
+        );
+
+        controller.addJavaScriptHandler(
+          handlerName: 'onLyricsPointerSeek',
+          callback: (List<dynamic> args) {
+            if (args.length < 2 || _audiobookController == null) return;
+            final int button = (args[0] as num?)?.toInt() ?? -1;
+            if (!_isSeekToClickedSentenceButton(button)) return;
+            final int idx = (args[1] as num?)?.toInt() ?? -1;
+            if (idx < 0 || idx >= _lyricsCueList.length) return;
+            _audiobookController!.playCueAndContinue(_lyricsCueList[idx]);
           },
         );
       },
@@ -3784,6 +3817,33 @@ window.flutter_inappwebview.callHandler('spreadReady');
     if (button != GamepadButton.a || !_caretActive) return false;
     unawaited(_runCaretAction(CaretAction.longPress));
     return true;
+  }
+
+  /// 单一真相：哪个 DOM 鼠标按钮触发「seek 到点击句」由快捷键注册表决定
+  /// （默认中键）。鼠标键是位置型动作，不进位置无关的 [_executeShortcutAction]。
+  bool _isSeekToClickedSentenceButton(int button) {
+    if (button < 0) return false;
+    return appModel.shortcutRegistry.resolveMouse(
+          button,
+          scope: ShortcutScope.audiobook,
+        ) ==
+        ShortcutAction.audiobookSeekToClickedSentence;
+  }
+
+  /// 正文（Sasayaki 原生 EPUB / 合成书）中键点击 → 经 JS `cueIdAtPoint` 反查所在
+  /// cue → 跳到该句并播放。点空白/无命中静默忽略。
+  Future<void> _seekToClickedSentence(double x, double y) async {
+    final AudiobookPlayerController? controller = _audiobookController;
+    if (controller == null) return;
+    final Object? raw = await _controller?.evaluateJavascript(
+      source: 'window.hoshiReader && window.hoshiReader.cueIdAtPoint'
+          ' ? window.hoshiReader.cueIdAtPoint($x, $y) : null',
+    );
+    if (raw is! String) return;
+    final List<AudioCue>? allCues = _cachedAllCues;
+    if (allCues == null) return;
+    final AudioCue? cue = cueForPointerPayload(raw, allCues);
+    if (cue != null) controller.playCueAndContinue(cue);
   }
 
   KeyEventResult _executeShortcutAction(ShortcutAction action) {
