@@ -327,25 +327,69 @@ class GamepadBinding {
 }
 
 @immutable
+class MouseBinding {
+  const MouseBinding(this.button);
+
+  /// DOM `MouseEvent.button`: 1=middle, 2=right, 3=back, 4=forward.
+  final int button;
+
+  static const Map<int, String> _knownButtons = {
+    1: 'MouseMiddle',
+    2: 'MouseRight',
+    3: 'MouseBack',
+    4: 'MouseForward',
+  };
+
+  String serialize() => _knownButtons[button] ?? 'Mouse$button';
+
+  static MouseBinding? deserialize(String s) {
+    for (final entry in _knownButtons.entries) {
+      if (entry.value == s) return MouseBinding(entry.key);
+    }
+    if (s.startsWith('Mouse')) {
+      final n = int.tryParse(s.substring(5));
+      if (n != null) return MouseBinding(n);
+    }
+    return null;
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MouseBinding && button == other.button;
+
+  @override
+  int get hashCode => button.hashCode;
+
+  @override
+  String toString() => 'MouseBinding(${serialize()})';
+}
+
+@immutable
 class ShortcutBindingSet {
   const ShortcutBindingSet({
     this.keyboardBindings = const [],
     this.gamepadBindings = const [],
+    this.mouseBindings = const [],
   });
 
   final List<InputBinding> keyboardBindings;
   final List<GamepadBinding> gamepadBindings;
+  final List<MouseBinding> mouseBindings;
 
   Map<String, dynamic> toJson() => {
         'keyboard':
             keyboardBindings.map((b) => b.serialize()).toList(growable: false),
         'gamepad':
             gamepadBindings.map((b) => b.serialize()).toList(growable: false),
+        'mouse':
+            mouseBindings.map((b) => b.serialize()).toList(growable: false),
       };
 
   factory ShortcutBindingSet.fromJson(Map<String, dynamic> json) {
     final kbRaw = json['keyboard'];
     final gpRaw = json['gamepad'];
+    final msRaw = json['mouse'];
     return ShortcutBindingSet(
       keyboardBindings: kbRaw is List
           ? kbRaw
@@ -361,15 +405,24 @@ class ShortcutBindingSet {
               .whereType<GamepadBinding>()
               .toList(growable: false)
           : const [],
+      mouseBindings: msRaw is List
+          ? msRaw
+              .cast<String>()
+              .map(MouseBinding.deserialize)
+              .whereType<MouseBinding>()
+              .toList(growable: false)
+          : const [],
     );
   }
 
   ShortcutBindingSet copyWith({
     List<InputBinding>? keyboardBindings,
     List<GamepadBinding>? gamepadBindings,
+    List<MouseBinding>? mouseBindings,
   }) =>
       ShortcutBindingSet(
         keyboardBindings: keyboardBindings ?? this.keyboardBindings,
         gamepadBindings: gamepadBindings ?? this.gamepadBindings,
+        mouseBindings: mouseBindings ?? this.mouseBindings,
       );
 }
