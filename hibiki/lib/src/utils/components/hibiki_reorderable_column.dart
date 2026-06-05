@@ -220,7 +220,25 @@ class _HibikiReorderableColumnState extends State<HibikiReorderableColumn> {
     );
   }
 
+  /// 拖拽被取消（手势竞技场把指针夺走 / 路由销毁 / dispose）：放弃本次重排、
+  /// 复位到原序，**不提交 onReorder**（中间态不是用户意图的最终顺序）。与 `_endDrag`
+  /// 区分，避免取消时误提交一次重排；并守 mounted 防 dispose 期 setState。
+  void _cancelDrag() {
+    if (_dragOriginal == null) return;
+    if (!mounted) {
+      _dragOriginal = null;
+      return;
+    }
+    setState(() {
+      _dragOriginal = null;
+      _display = List<int>.generate(widget.itemCount, (int i) => i);
+    });
+  }
+
   /// 鼠标/触控板/触控笔等**精确指针**：按下移动即拖（桌面「按住左键就能拖」）。
+  /// `unknown`（部分桌面/合成指针）归此组与桌面默认即拖一致；即时识别器仍需越过
+  /// slop 才接管，不会「碰一下就拖飞」。`trackpad` 走的是**单指拖动**指针序列
+  /// （= 模拟左键拖），两指滚动走 `PointerScrollEvent` 不进 MultiDrag 竞技场，不冲突。
   static const Set<PointerDeviceKind> _immediateDragDevices =
       <PointerDeviceKind>{
     PointerDeviceKind.mouse,
@@ -239,7 +257,11 @@ class _HibikiReorderableColumnState extends State<HibikiReorderableColumn> {
   /// 返回 [_ReorderDrag] 把后续 update/end/cancel 桥接到全局坐标拖拽逻辑。
   Drag _onMultiDragStart(int original, Offset globalPosition) {
     _startDrag(original, globalPosition);
-    return _ReorderDrag(onUpdate: _updateDrag, onEnd: _endDrag);
+    return _ReorderDrag(
+      onUpdate: _updateDrag,
+      onEnd: _endDrag,
+      onCancel: _cancelDrag,
+    );
   }
 
   Widget _buildSlot(int original) {
@@ -288,10 +310,15 @@ class _HibikiReorderableColumnState extends State<HibikiReorderableColumn> {
 /// 的全局坐标拖拽逻辑（`_startDrag`/`_updateDrag`/`_endDrag` 都吃全局坐标，
 /// 内部再用 `globalToLocal` 消祖先缩放）。
 class _ReorderDrag extends Drag {
-  _ReorderDrag({required this.onUpdate, required this.onEnd});
+  _ReorderDrag({
+    required this.onUpdate,
+    required this.onEnd,
+    required this.onCancel,
+  });
 
   final void Function(Offset globalPosition) onUpdate;
   final VoidCallback onEnd;
+  final VoidCallback onCancel;
 
   @override
   void update(DragUpdateDetails details) => onUpdate(details.globalPosition);
@@ -299,6 +326,7 @@ class _ReorderDrag extends Drag {
   @override
   void end(DragEndDetails details) => onEnd();
 
+  // 取消 ≠ 结束：放弃本次拖拽、回到原序，不提交 onReorder。
   @override
-  void cancel() => onEnd();
+  void cancel() => onCancel();
 }

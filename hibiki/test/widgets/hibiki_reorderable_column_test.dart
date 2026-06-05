@@ -226,4 +226,48 @@ void main() {
     expect(order.indexOf('A'), greaterThan(order.indexOf('B')));
     expect(order.length, 3);
   });
+
+  testWidgets(
+      'clicking an interactive child in a row fires the child, NOT a reorder '
+      '(immediate drag recognizer must not steal taps)', (
+    WidgetTester tester,
+  ) async {
+    final List<int> reorders = <int>[];
+    final List<String> taps = <String>[];
+    final List<String> order = <String>['A', 'B', 'C'];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 300,
+              child: HibikiReorderableColumn(
+                itemCount: order.length,
+                keyForIndex: (int i) => ValueKey<String>(order[i]),
+                onReorder: (int from, int to) => reorders.add(from),
+                itemBuilder: (BuildContext context, int i) => SizedBox(
+                  height: 60,
+                  child: Center(
+                    child: TextButton(
+                      onPressed: () => taps.add(order[i]),
+                      child: Text('btn-${order[i]}'),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    // 鼠标点击行内按钮（按下→原地抬起，无移动）：应触发按钮 onPressed，不触发重排。
+    await tester.tap(find.text('btn-A'), kind: PointerDeviceKind.mouse);
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(taps, <String>['A'], reason: 'the button tap must go through');
+    expect(reorders, isEmpty, reason: 'a stationary click must not reorder');
+    expect(order, <String>['A', 'B', 'C']);
+  });
 }
