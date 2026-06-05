@@ -1,12 +1,12 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:crypto/crypto.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
+import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
@@ -14,15 +14,39 @@ import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
-/// 为 m3u8 播放列表生成稳定 bookUid：`video/playlist/<文件名_短哈希>`。
+/// 为 m3u8 播放列表生成跨设备稳定 bookUid：`video/playlist/<sanitize(文件名)>`。
 ///
-/// 纯函数（抽出便于单测）：取文件 basename 做可读前缀 + 全路径 sha1 前 12 位，
-/// 兼顾可读性与跨同名文件唯一性。
+/// 纯函数（抽出便于单测）。**只取文件名（去扩展名）经 [sanitizeTtuFilename]
+/// 派生**，与书的身份哲学（`bookKey = sanitizeTtuFilename(title)`）对齐——
+/// 换机器/移动文件夹身份不变，跨设备同步可对齐。同名碰撞交给
+/// [uniqueVideoBookUid] 在导入时加后缀去重，而非把完整绝对路径哈希进身份。
 String playlistBookUid(String m3u8Path) {
   final String base = p.basenameWithoutExtension(m3u8Path);
-  final String digest =
-      sha1.convert(utf8.encode(m3u8Path)).toString().substring(0, 12);
-  return 'video/playlist/${base}_$digest';
+  return 'video/playlist/${sanitizeTtuFilename(base)}';
+}
+
+/// 为单个视频文件生成跨设备稳定 bookUid：`video/<sanitize(文件名去扩展名)>`。
+///
+/// 纯函数。与 [playlistBookUid] 同源：只取文件名经 [sanitizeTtuFilename] 派生，
+/// 不含目录/绝对路径，同名碰撞由 [uniqueVideoBookUid] 加后缀去重。
+String singleVideoBookUid(String videoPath) {
+  final String base = p.basenameWithoutExtension(videoPath);
+  return 'video/${sanitizeTtuFilename(base)}';
+}
+
+/// 同名去重：若 [base] 已在 [existingKeys] 中，返回首个空位的加后缀变体
+/// （`base (2)` / `base (3)`...）；否则原样返回。
+///
+/// 纯函数。照搬 EpubImporter 的**无回调静默加后缀**策略（见
+/// `resolveBookTitleConflict` 的 `_uniqueSuffixedTitle`），保持"本地不出现两个
+/// 同 book_uid 视频"的不变量，供同步/导入安全使用。video 导入对话框无重名提示
+/// 回调基础设施，故采用与 EpubImporter 无回调路径一致的静默后缀 UX。
+String uniqueVideoBookUid(String base, Set<String> existingKeys) {
+  if (!existingKeys.contains(base)) return base;
+  for (int i = 2;; i++) {
+    final String candidate = '$base ($i)';
+    if (!existingKeys.contains(candidate)) return candidate;
+  }
 }
 
 /// 由 [bookUid] 生成视频封面文件名（无目录），把路径分隔符与 `:` 等非法字符
@@ -121,7 +145,9 @@ bool videoImportCanImport({
 /// - 未选字幕：仅写 VideoBooks（标记内嵌默认轨），cue 为空，字幕靠 libmpv 画面
 ///   渲染——cue 级功能（overlay 高亮/句导航）无数据，是 Phase 0 已知降级。
 ///
-/// Phase 0 不处理跨设备同步身份：bookUid 直接用视频文件名（basename）。
+/// 身份：bookUid 由文件名经 [sanitizeTtuFilename] 派生（[playlistBookUid] /
+/// [singleVideoBookUid]），跨设备/换目录稳定；同名碰撞导入时 [uniqueVideoBookUid]
+/// 静默加后缀去重（对齐书的 name-PK 哲学）。
 class VideoImportDialog extends StatefulWidget {
   const VideoImportDialog({required this.repo, super.key});
 
@@ -190,7 +216,7 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
         return;
       }
 
-      final String bookUid = playlistBookUid(m3u8Path);
+      final String bookUid = await _uniqueBookUid(playlistBookUid(m3u8Path));
       final String playlistJson = jsonEncode(
         entries.map((PlaylistEntry e) => e.toJson()).toList(),
       );
@@ -216,13 +242,23 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
     }
   }
 
+  /// 用现有 VideoBooks 的 book_uid 集对 [base] 做同名去重（静默加后缀）。
+  /// 对齐 EpubImporter 的无回调去重 UX，保证不写入重复主键。
+  Future<String> _uniqueBookUid(String base) async {
+    final List<VideoBookRow> existing = await widget.repo.listAll();
+    final Set<String> keys =
+        existing.map((VideoBookRow r) => r.bookUid).toSet();
+    return uniqueVideoBookUid(base, keys);
+  }
+
   Future<void> _doImport() async {
     if (!_canImport) return;
     final String videoPath = _videoPath!;
     final String? subtitlePath = _subtitlePath;
     setState(() => _busy = true);
     try {
-      final String bookUid = 'video/${p.basename(videoPath)}';
+      final String bookUid =
+          await _uniqueBookUid(singleVideoBookUid(videoPath));
       // 抽一帧做书架封面（桌面 ffmpeg；移动端无 ffmpeg 时留空占位）。
       final String? coverPath =
           await extractVideoCover(videoPath: videoPath, bookUid: bookUid);

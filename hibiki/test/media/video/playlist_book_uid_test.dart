@@ -3,21 +3,20 @@ import 'package:hibiki/src/media/video/video_import_dialog.dart';
 
 void main() {
   group('playlistBookUid', () {
-    test('前缀含文件名、稳定、同输入幂等', () {
+    test('文件名经 sanitize 派生、稳定、同输入幂等', () {
       const String path = r'D:\video\Dragon Maid 观看顺序.m3u8';
       final String uid = playlistBookUid(path);
-      expect(uid.startsWith('video/playlist/Dragon Maid 观看顺序_'), isTrue);
+      expect(uid, 'video/playlist/Dragon Maid 观看顺序');
       // 幂等：同一路径恒得同 uid。
       expect(playlistBookUid(path), uid);
     });
 
-    test('不同路径得不同 uid（哈希区分同名）', () {
+    test('同名跨不同路径得相同 uid（去掉路径哈希，跨设备稳定）', () {
       const String a = r'D:\a\list.m3u8';
       const String b = r'D:\b\list.m3u8';
-      expect(playlistBookUid(a), isNot(playlistBookUid(b)));
-      // 但前缀相同（同文件名）。
-      expect(playlistBookUid(a).startsWith('video/playlist/list_'), isTrue);
-      expect(playlistBookUid(b).startsWith('video/playlist/list_'), isTrue);
+      // 身份只看文件名：换目录/换机器不变（去重交给 uniqueVideoBookUid）。
+      expect(playlistBookUid(a), playlistBookUid(b));
+      expect(playlistBookUid(a), 'video/playlist/list');
     });
   });
 
