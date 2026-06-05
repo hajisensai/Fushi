@@ -22,6 +22,7 @@ import 'package:hibiki/src/media/video/video_subtitle_overlay.dart';
 import 'package:hibiki/src/media/video/video_subtitle_source.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_page_mixin.dart';
+import 'package:hibiki/src/utils/app_ui_scale.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
 
 /// 视频页：media_kit 播放器 + 可点击字幕 overlay（点词查词 + 制卡）。
@@ -41,6 +42,14 @@ import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
 /// 全屏：media_kit 全屏是独立 root 路由，复用同一 `controls` builder，故
 /// [VideoSubtitleOverlay] 包进 controls builder（[_buildVideoControls]）随全屏
 /// 一起进路由，保证全屏时字幕仍显示且可点查词。
+///
+/// 查词浮层用**根 Overlay**（`Overlay.of(context, rootOverlay: true)`）渲染，而非本页
+/// `Stack`——这样全屏（media_kit 推到根 navigator 的独立路由）时浮层也能浮在全屏画面
+/// **之上**，窗口/全屏统一一套。根 Overlay 在 [HibikiAppUiScale] 的 `FittedBox` 之内
+/// （挂在 `MaterialApp.builder`），其坐标空间是缩放后的逻辑画布，与 [calcPopupPosition]
+/// 的 `screen`（取自根 Overlay 自身 constraints）一致；字符 rect 经
+/// [scaledRectToCanvas] 从 `localToGlobal` 的缩放屏幕坐标换算到同一逻辑画布坐标系，
+/// 故界面非 100% 缩放时定位也不偏。
 class VideoHibikiPage extends ConsumerStatefulWidget {
   const VideoHibikiPage({
     required this.bookUid,
@@ -63,6 +72,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
   /// 查词浮层栈（与阅读器/词典页同款，由 [DictionaryPageMixin] 管理）。
   final List<NestedPopupEntry> _popupStack = <NestedPopupEntry>[];
+
+  /// 承载查词浮层栈的根 Overlay 入口；非空时浮层栈渲染在根 Overlay（窗口/全屏统一，
+  /// 全屏时浮在 media_kit 全屏路由之上）。栈空时移除、栈变化时 `markNeedsBuild`。
+  OverlayEntry? _popupOverlayEntry;
 
   /// 最近一次查词所在字幕句（整条 cue 文本）；[onMineEntry] 制卡时作 sentence。
   /// 点字符查词时即时记录，确保制卡例句是「点词那一刻的那句字幕」。
@@ -430,12 +443,23 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   @override
   void dispose() {
     _popupStack.clear();
+    final OverlayEntry? entry = _popupOverlayEntry;
+    if (entry != null) {
+      // remove() asserts if already detached（路由先 pop 时根 Overlay 可能已摘除）。
+      if (entry.mounted) entry.remove();
+      entry.dispose();
+      _popupOverlayEntry = null;
+    }
     _controller?.dispose();
     super.dispose();
   }
 
   /// 点字幕第 [graphemeIndex] 个字符：暂停 → 从该位置起取词 → 推入与阅读器/词典页
   /// 同款的 [DictionaryPopupLayer] 浮层（定位到被点字符的屏幕 [charRect] 附近）。
+  ///
+  /// [charRect] 来自字符 box 的 `localToGlobal`，处于 [HibikiAppUiScale] 缩放后的屏幕
+  /// 坐标系；浮层渲染在根 Overlay（逻辑画布坐标系），故先经 [scaledRectToCanvas] 按当前
+  /// 界面缩放把 rect 换算到同一坐标系，界面非 100% 时定位才不偏。
   ///
   /// 查词/递归查词/单词发音/auto-read/制卡全部走 [DictionaryPageMixin]，与书内一致。
   Future<void> _lookupAt(
@@ -445,6 +469,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   ) async {
     final VideoPlayerController? controller = _controller;
     if (controller == null) return;
+    // 在 await 前、点击当帧读缩放并换算 rect：缩放是即时几何，且避开跨 async 用
+    // BuildContext。
+    final Rect canvasRect =
+        scaledRectToCanvas(charRect, HibikiAppUiScale.of(context));
     await controller.pause();
     final String term = sentence.characters.skip(graphemeIndex).join();
     debugPrint('[video-lookup] tap idx=$graphemeIndex term="$term"');
@@ -452,7 +480,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _lastLookupSentence = sentence;
     await pushNestedPopup(
       query: term,
-      selectionRect: charRect,
+      selectionRect: canvasRect,
       popupStack: _popupStack,
       replaceStack: true,
       autoRead: true,
@@ -471,6 +499,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       popupStack: _popupStack,
       onPush: (String text, Rect rect) {
         // 递归查词不属于某条字幕句：制卡例句仍用最近一次字幕句。
+        // [rect] 已是 overlay 逻辑画布坐标（父浮层 pos + WebView 局部 rect 叠出），
+        // 不再经 [scaledRectToCanvas]——它只用于把 [VideoSubtitleOverlay] 的
+        // `localToGlobal` 屏幕 rect 拉回画布。
         pushNestedPopup(
           query: text,
           selectionRect: rect,
@@ -479,6 +510,61 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         );
       },
       onPop: _popNestedPopupAt,
+    );
+  }
+
+  /// 把查词浮层栈同步到根 Overlay：栈非空且未插入则插入、栈空则移除、否则
+  /// `markNeedsBuild` 刷新。在 [build] 的 post-frame 调，使根 Overlay 总是反映
+  /// 当前栈（[DictionaryPageMixin] 的 push/pop 都走 `setState` → 重 build → 本同步）。
+  ///
+  /// 用根 Overlay（而非本页 `Stack`）的原因：media_kit 全屏是推到根 navigator 的独立
+  /// 路由，本页 `Stack` 会被全屏路由盖住；根 Overlay 浮在所有路由之上，窗口/全屏统一。
+  void _syncPopupOverlay() {
+    if (!mounted) return;
+    if (_popupStack.isEmpty) {
+      final OverlayEntry? entry = _popupOverlayEntry;
+      if (entry != null) {
+        if (entry.mounted) entry.remove();
+        entry.dispose();
+        _popupOverlayEntry = null;
+      }
+      return;
+    }
+    if (_popupOverlayEntry != null) {
+      _popupOverlayEntry!.markNeedsBuild();
+      return;
+    }
+    final OverlayState? overlay = Overlay.maybeOf(context, rootOverlay: true);
+    if (overlay == null) return;
+    final OverlayEntry entry = OverlayEntry(builder: _buildPopupOverlay);
+    _popupOverlayEntry = entry;
+    overlay.insert(entry);
+  }
+
+  /// 根 Overlay 里的查词浮层栈内容：透明遮罩（点击关栈）+ 各层 [DictionaryPopupLayer]。
+  /// `screen` 取自根 Overlay 自身约束（逻辑画布坐标系），与 [_lookupAt] 换算后的字符
+  /// rect 同坐标系。
+  Widget _buildPopupOverlay(BuildContext overlayContext) {
+    return Theme(
+      data: appModel.overrideDictionaryTheme ?? Theme.of(context),
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          final Size screen = Size(constraints.maxWidth, constraints.maxHeight);
+          return Stack(
+            children: <Widget>[
+              Positioned.fill(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onTap: () => _popNestedPopupAt(0),
+                  child: const ColoredBox(color: Colors.transparent),
+                ),
+              ),
+              for (int i = 0; i < _popupStack.length; i++)
+                _buildNestedPopupLayer(i, screen),
+            ],
+          );
+        },
+      ),
     );
   }
 
@@ -702,6 +788,23 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     final VideoPlayerController? controller = _controller;
     final VideoController? videoController = controller?.videoController;
     final ColorScheme cs = Theme.of(context).colorScheme;
+    return PopScope(
+      // 浮层栈非空时，back 先关栈（一层一层退）而非直接退出视频页。浮层在根 Overlay，
+      // 退出视频路由不会自动清它，故必须在路由 pop 前拦截。
+      canPop: _popupStack.isEmpty,
+      onPopInvokedWithResult: (bool didPop, Object? _) {
+        if (didPop || _popupStack.isEmpty) return;
+        _popNestedPopupAt(_popupStack.length - 1);
+      },
+      child: _buildScaffold(controller, videoController, cs),
+    );
+  }
+
+  Widget _buildScaffold(
+    VideoPlayerController? controller,
+    VideoController? videoController,
+    ColorScheme cs,
+  ) {
     return Scaffold(
       backgroundColor: cs.surface,
       appBar: AppBar(
@@ -736,45 +839,27 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             )
           : (controller == null || videoController == null)
               ? const Center(child: CircularProgressIndicator())
-              : LayoutBuilder(
-                  builder: (BuildContext context, BoxConstraints constraints) {
-                    final Size screen =
-                        Size(constraints.maxWidth, constraints.maxHeight);
-                    return Stack(
-                      children: <Widget>[
-                        Positioned.fill(
-                          child: MaterialDesktopVideoControlsTheme(
-                            normal: _desktopControlsTheme(controller),
-                            fullscreen: _desktopControlsTheme(controller),
-                            child: Video(
-                              controller: videoController,
-                              // 字幕 overlay 包进 controls builder：media_kit 全屏
-                              // 推独立 root 路由并复用同一 controls，故 overlay 随
-                              // 全屏一起进路由，全屏时字幕仍显示且可点查词。
-                              controls: (VideoState state) =>
-                                  _buildVideoControls(state, controller),
-                            ),
-                          ),
-                        ),
-                        // 查词浮层栈：点遮罩关栈 + 各层 DictionaryPopupLayer。与
-                        // 阅读器/词典页同款（非全屏时叠在本页 Stack；全屏由路由内的
-                        // overlay 承载点击，关栈仍走本页 setState）。
-                        if (_popupStack.isNotEmpty)
-                          Positioned.fill(
-                            child: GestureDetector(
-                              behavior: HitTestBehavior.translucent,
-                              onTap: () => _popNestedPopupAt(0),
-                              child: const ColoredBox(
-                                color: Colors.transparent,
-                              ),
-                            ),
-                          ),
-                        for (int i = 0; i < _popupStack.length; i++)
-                          _buildNestedPopupLayer(i, screen),
-                      ],
-                    );
-                  },
-                ),
+              : _buildVideoBody(controller, videoController),
+    );
+  }
+
+  /// 视频本体：media_kit [Video] + 可点字幕 overlay。查词浮层栈不在这里渲染——它走
+  /// 根 Overlay（[_syncPopupOverlay] / [_buildPopupOverlay]），以便全屏时浮在全屏
+  /// 路由之上。每次 build 在 post-frame 同步根 Overlay 与当前栈。
+  Widget _buildVideoBody(
+    VideoPlayerController controller,
+    VideoController videoController,
+  ) {
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncPopupOverlay());
+    return MaterialDesktopVideoControlsTheme(
+      normal: _desktopControlsTheme(controller),
+      fullscreen: _desktopControlsTheme(controller),
+      child: Video(
+        controller: videoController,
+        // 字幕 overlay 包进 controls builder：media_kit 全屏推独立 root 路由并复用
+        // 同一 controls，故 overlay 随全屏一起进路由，全屏时字幕仍显示且可点查词。
+        controls: (VideoState state) => _buildVideoControls(state, controller),
+      ),
     );
   }
 

@@ -131,6 +131,33 @@ class HibikiAppUiScaleNeutralizer extends StatelessWidget {
   }
 }
 
+/// 把一个来自 [RenderBox.localToGlobal] 的「缩放后屏幕矩形」换算回 [HibikiAppUiScale]
+/// 的**逻辑画布坐标系**（即缩放树内 `LayoutBuilder` 的 constraints / 根 Overlay 所在
+/// 的坐标空间）。
+///
+/// 为什么需要它：非 100% 缩放时 [HibikiAppUiScale] 用 `FittedBox` 把整棵子树从逻辑画布
+/// （`view / s`）映射到物理视口。子树内某个 box 的 `localToGlobal` 返回的是**经过这层
+/// 变换之后**的坐标（≈逻辑坐标 × s），而同一子树里用 `MediaQuery.size` / `LayoutBuilder`
+/// constraints 算出来的「屏幕」尺寸却是逻辑画布尺寸。两者差一个 factor s——直接拿
+/// `localToGlobal` 的 rect 去 [calcPopupPosition] 定位会偏移（界面非 100% 时尤甚）。
+///
+/// 本函数除以 [uiScale] 把矩形拉回逻辑画布，使字符 rect 与浮层定位用同一坐标系。
+/// [uiScale] == 1.0（无缩放）时是恒等返回，行为不变。
+///
+/// 注意：根 Navigator / 根 Overlay 都在 [HibikiAppUiScale] 的 `FittedBox` **之内**
+/// （挂在 `MaterialApp.builder` 里），所以根 Overlay 的坐标空间正是这里的逻辑画布——
+/// 把转换后的 rect 喂给根 Overlay 里的 [calcPopupPosition] 定位是自洽的。
+Rect scaledRectToCanvas(Rect rawRect, double uiScale) {
+  final double s = HibikiAppUiScale.normalize(uiScale);
+  if (s == HibikiAppUiScale.defaultScale) return rawRect;
+  return Rect.fromLTRB(
+    rawRect.left / s,
+    rawRect.top / s,
+    rawRect.right / s,
+    rawRect.bottom / s,
+  );
+}
+
 /// 把 [MediaQueryData] 的几何量按 [factor] 缩放，使 SafeArea / 键盘避让在缩小后的
 /// 逻辑画布里仍然正确。
 MediaQueryData _scaleMediaQuery(MediaQueryData mq, double factor) {
