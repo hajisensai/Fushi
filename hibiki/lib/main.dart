@@ -103,6 +103,12 @@ void main([List<String> args = const <String>[]]) {
     /// starting the application.
     final binding = WidgetsFlutterBinding.ensureInitialized();
     JustAudioMediaKit.title = 'Hibiki';
+    // 关闭 pitch-shift 控制（默认 true）。开启时 media_kit 的 setRate 会在每次调速时
+    // 重写 mpv 的 `af` 音频滤镜图（scaletempo:scale=…）；在 Windows 上播放过程中反复
+    // 重配滤镜图会触发 libmpv 进程级崩溃（有声书拖动倍速闪退，BUG-070）。本 app 从不
+    // 调用 setPitch（无变调 UI），关掉后调速改走 mpv 原生 `speed` 属性（稳定，不重配
+    // 滤镜图），mpv 默认 `audio-pitch-correction=yes` 仍保留音高 → 有声书加速不变调。
+    JustAudioMediaKit.pitch = false;
     JustAudioMediaKit.ensureInitialized();
     MediaKit.ensureInitialized();
 
