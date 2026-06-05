@@ -1,4 +1,4 @@
-import 'dart:convert' show jsonDecode;
+import 'dart:convert' show jsonDecode, utf8;
 import 'dart:ffi';
 import 'dart:isolate';
 
@@ -114,7 +114,23 @@ class HoshiDictStyle {
 /// Converts a possibly-null native UTF-8 pointer to a Dart string, treating
 /// nullptr as '' so a native OOM/error path that left a string field NULL
 /// cannot crash the Dart side with a null dereference (HBK-AUDIT-032/097).
-String _utf8OrEmpty(Pointer<Utf8> p) => p == nullptr ? '' : p.toDartString();
+String _utf8OrEmpty(Pointer<Utf8> p) {
+  if (p == nullptr) return '';
+  try {
+    return p.toDartString();
+  } on FormatException {
+    // 词典数据含非法 UTF-8 字节（非标准编码导入的词典）：容错解码替换非法字节，
+    // 而非让 FormatException 崩掉整个词典初始化 / 查词（getStyles 等触点）。
+    // toDartString 内部是严格 utf8.decode，不支持容错；故手动读到首个 NUL 的
+    // 字节后用 allowMalformed 解码。
+    final Pointer<Uint8> bytes = p.cast<Uint8>();
+    int len = 0;
+    while (bytes[len] != 0) {
+      len++;
+    }
+    return utf8.decode(bytes.asTypedList(len), allowMalformed: true);
+  }
+}
 
 HoshiTermResult _convertTerm(FfiTermResult ffi) {
   final glossaries = <HoshiGlossaryEntry>[];
@@ -454,7 +470,9 @@ class HoshiDicts {
           .lookupPopupJson(_handle!, tp, maxResults, scanLength, maxTerms);
       if (ptr == nullptr) return '[]';
       try {
-        return ptr.toDartString();
+        // 容错解码：词典 popupJson 数据可能含非法 UTF-8 字节（非标准编码导入的
+        // 词典），严格 toDartString 会抛 FormatException 让整个查词失败。
+        return _utf8OrEmpty(ptr);
       } finally {
         _bindings!.freeString(ptr);
       }

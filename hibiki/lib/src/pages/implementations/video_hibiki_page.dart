@@ -417,11 +417,22 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage> {
     final String term = sentence.characters.skip(graphemeIndex).join();
     debugPrint('[video-lookup] tap idx=$graphemeIndex term="$term"');
     if (term.isEmpty) return;
-    final DictionarySearchResult result = await appModel.searchDictionary(
-      searchTerm: term,
-      searchWithWildcards: false,
-      overrideMaximumTerms: appModel.maximumTerms,
-    );
+    final DictionarySearchResult result;
+    try {
+      result = await appModel.searchDictionary(
+        searchTerm: term,
+        searchWithWildcards: false,
+        overrideMaximumTerms: appModel.maximumTerms,
+      );
+    } catch (e, stack) {
+      debugPrint('[video-lookup] searchDictionary FAILED term="$term": $e\n$stack');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('查词出错：$e')),
+        );
+      }
+      return;
+    }
     debugPrint('[video-lookup] entries=${result.entries.length}');
     if (!mounted || result.entries.isEmpty) {
       if (mounted && result.entries.isEmpty) {
