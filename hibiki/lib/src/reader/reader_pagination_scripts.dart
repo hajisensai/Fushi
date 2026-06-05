@@ -479,6 +479,45 @@ class ReaderPaginationScripts {
     }
     return null;
   },
+  // 反查：把屏幕坐标解析到所属 cue 的标识，供中键 seek 用。先认合成书可点的
+  // [data-cue-id]（sentenceIndex），否则用 caret 点在 cueRangesMap / cueWrappers
+  // （键=textFragmentId）里做包含判定。命中回 JSON.stringify({type,id})，无命中
+  // 回 null。复用既有 cue↔DOM 映射，不碰 normChar 反查数学（规避码点代理对错位）。
+  cueIdAtPoint: function(x, y) {
+    var el = document.elementFromPoint(x, y);
+    if (el && el.closest) {
+      var sidEl = el.closest('[data-cue-id]');
+      if (sidEl) {
+        var sid = sidEl.getAttribute('data-cue-id');
+        if (sid !== null) return JSON.stringify({ type: 'sid', id: sid });
+      }
+    }
+    if (!window.hoshiSelection || !window.hoshiSelection.getCaretRange) return null;
+    var caret = window.hoshiSelection.getCaretRange(x, y);
+    if (!caret) return null;
+    var node = caret.startContainer, off = caret.startOffset;
+    var found = null;
+    if (this.cueRangesMap && this.cueRangesMap.size) {
+      this.cueRangesMap.forEach(function(ranges, id) {
+        if (found) return;
+        for (var i = 0; i < ranges.length; i++) {
+          try { if (ranges[i].comparePoint(node, off) === 0) { found = id; break; } }
+          catch (e) {}
+        }
+      });
+      if (found) return JSON.stringify({ type: 'frag', id: found });
+    }
+    if (this.cueWrappers && this.cueWrappers.size) {
+      this.cueWrappers.forEach(function(wrappers, id) {
+        if (found) return;
+        for (var i = 0; i < wrappers.length; i++) {
+          if (wrappers[i].contains(node)) { found = id; break; }
+        }
+      });
+      if (found) return JSON.stringify({ type: 'frag', id: found });
+    }
+    return null;
+  },
   clearSasayakiCue: function() {
     if (!this.activeCueId) return;
     if (window.__hoshiCssHighlightsSupported) {
