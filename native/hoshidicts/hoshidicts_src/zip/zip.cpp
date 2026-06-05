@@ -158,27 +158,74 @@ bool Zip::parse_central_directory() {
 
     ZipEntry e;
     e.compression_method = read_at<uint16_t>(base, pos + 10);
-    e.compressed_size = read_at<uint32_t>(base, pos + 20);
-    e.uncompressed_size = read_at<uint32_t>(base, pos + 24);
+    const uint32_t comp32 = read_at<uint32_t>(base, pos + 20);
+    const uint32_t uncomp32 = read_at<uint32_t>(base, pos + 24);
 
     auto name_len = read_at<uint16_t>(base, pos + 28);
     auto extra_len = read_at<uint16_t>(base, pos + 30);
     auto comment_len = read_at<uint16_t>(base, pos + 32);
 
-    auto lfh_offset = read_at<uint32_t>(base, pos + 42);
+    const uint32_t lfh32 = read_at<uint32_t>(base, pos + 42);
     const size_t entry_size = 46 + static_cast<size_t>(name_len) + extra_len +
                               comment_len;
     if (!in_bounds(file.size, pos, entry_size)) {
       return false;
     }
-    if (e.compressed_size == std::numeric_limits<uint32_t>::max() ||
-        e.uncompressed_size == std::numeric_limits<uint32_t>::max() ||
-        lfh_offset == std::numeric_limits<uint32_t>::max()) {
-      return false;
+
+    e.compressed_size = comp32;
+    e.uncompressed_size = uncomp32;
+    uint64_t lfh_offset = lfh32;
+
+    // ZIP64: any field equal to 0xFFFFFFFF means the real 64-bit value lives in
+    // the central-directory extra block under header id 0x0001. The block packs
+    // ONLY the overflowed fields, in fixed order: uncompressed size, compressed
+    // size, local-header offset. (APPNOTE 4.5.3)
+    constexpr uint32_t kZip64Sentinel = std::numeric_limits<uint32_t>::max();
+    if (comp32 == kZip64Sentinel || uncomp32 == kZip64Sentinel ||
+        lfh32 == kZip64Sentinel) {
+      const size_t extra_base = pos + 46 + name_len;
+      size_t eo = 0;
+      bool resolved = false;
+      while (eo + 4 <= extra_len) {
+        const uint16_t hid = read_at<uint16_t>(base, extra_base + eo);
+        const uint16_t hsz = read_at<uint16_t>(base, extra_base + eo + 2);
+        if (eo + 4 + hsz > extra_len) {
+          break;
+        }
+        if (hid == 0x0001) {
+          size_t fo = extra_base + eo + 4;
+          size_t remaining = hsz;
+          auto take64 = [&](uint64_t& out) -> bool {
+            if (remaining < 8) return false;
+            out = read_at<uint64_t>(base, fo);
+            fo += 8;
+            remaining -= 8;
+            return true;
+          };
+          if (uncomp32 == kZip64Sentinel && !take64(e.uncompressed_size)) {
+            return false;
+          }
+          if (comp32 == kZip64Sentinel && !take64(e.compressed_size)) {
+            return false;
+          }
+          if (lfh32 == kZip64Sentinel && !take64(lfh_offset)) {
+            return false;
+          }
+          resolved = true;
+          break;
+        }
+        eo += 4 + hsz;
+      }
+      if (!resolved) {
+        return false;  // sentinel present but no ZIP64 extra → malformed
+      }
     }
 
     e.name.assign(reinterpret_cast<const char*>(base + pos + 46), name_len);
 
+    if (lfh_offset > file.size) {
+      return false;
+    }
     if (!in_bounds(file.size, lfh_offset, 30)) {
       return false;
     }

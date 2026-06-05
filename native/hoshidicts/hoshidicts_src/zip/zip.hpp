@@ -10,8 +10,8 @@
 struct ZipEntry {
   std::string name;
   uint16_t compression_method;
-  uint32_t compressed_size;
-  uint32_t uncompressed_size;
+  uint64_t compressed_size;    // ZIP64 may store true size via 0x0001 extra
+  uint64_t uncompressed_size;  // ZIP64 may store true size via 0x0001 extra
   size_t data_offset;
 };
 

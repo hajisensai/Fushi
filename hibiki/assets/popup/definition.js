@@ -319,6 +319,46 @@ function appendRichTextLineDef(parent, line) {
     while (frag.firstChild) parent.appendChild(frag.firstChild);
 }
 
+// True for a Yomitan "form-of" glossary item: a [term, [tag, ...]] pair (see
+// the array branch of renderStructuredContent, BUG-057).
+function isTaggedTermPairDef(item) {
+    return Array.isArray(item)
+        && item.length === 2
+        && typeof item[0] === 'string'
+        && Array.isArray(item[1])
+        && item[1].every(tag => typeof tag === 'string');
+}
+
+// Renders an array of [term, [tag, ...]] pairs as a readable list: each pair on
+// its own line, the referenced term followed by its tag chips. Replaces the
+// generic flattening that produced unspaced "时Hyōgai时alt-of…" mojibake.
+function renderTaggedTermPairsDef(parent, pairs) {
+    const list = document.createElement('div');
+    list.classList.add('form-of-list');
+    pairs.forEach(([term, tags]) => {
+        const item = document.createElement('div');
+        item.classList.add('form-of-item');
+        const termEl = document.createElement('span');
+        termEl.classList.add('form-of-term');
+        termEl.textContent = term;
+        termEl.style.marginRight = '4px';
+        item.appendChild(termEl);
+        if (tags.length) {
+            const tagRow = document.createElement('div');
+            tagRow.classList.add('glossary-tags', 'form-of-tags');
+            tags.forEach(tag => {
+                const tagEl = document.createElement('span');
+                tagEl.classList.add('glossary-tag');
+                tagEl.textContent = tag;
+                tagRow.appendChild(tagEl);
+            });
+            item.appendChild(tagRow);
+        }
+        list.appendChild(item);
+    });
+    parent.appendChild(list);
+}
+
 function renderStructuredContent(parent, node, language, dictName, exporting) {
     if (typeof node === 'string') {
         node.split(/\r?\n/).forEach((line, i) => {
@@ -335,6 +375,14 @@ function renderStructuredContent(parent, node, language, dictName, exporting) {
     }
 
     if (Array.isArray(node)) {
+        // Yomitan "form-of"/non-lemma glossary: an array of [term, [tag, ...]]
+        // pairs (e.g. wty-ja-en alt-of entries). The generic flattening below
+        // would emit bare adjacent text nodes with no spacing → mojibake-looking
+        // "时Hyōgai时alt-of…" (BUG-057). Render each pair on its own line.
+        if (node.length > 0 && node.every(isTaggedTermPairDef)) {
+            renderTaggedTermPairsDef(parent, node);
+            return;
+        }
         const isStringArray = node.every(item => typeof item === 'string');
         const insideSpan = parent.tagName === 'SPAN';
         if (isStringArray && node.length > 1 && !insideSpan) {

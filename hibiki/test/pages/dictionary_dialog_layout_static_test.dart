@@ -158,6 +158,28 @@ void main() {
     expect(source, contains('Icons.keyboard_arrow_down'));
   });
 
+  test('per-category empty state matches the all-empty placeholder (BUG-058)',
+      () {
+    final String source =
+        File('lib/src/pages/implementations/dictionary_dialog_page.dart')
+            .readAsStringSync();
+    final int rowStart = source.indexOf('  Widget _buildEmptyCategoryRow() {');
+    final int rowEnd = source.indexOf('  Widget _buildDictionaryTile(');
+
+    expect(rowStart, isNonNegative);
+    expect(rowEnd, greaterThan(rowStart));
+
+    final String rowSource = source.substring(rowStart, rowEnd);
+
+    // The empty-category state (e.g. the Kanji tab with no kanji dictionary)
+    // must use the same centred icon + message placeholder as buildEmptyMessage,
+    // not a cramped left-aligned grey card.
+    expect(rowSource, contains('HibikiPlaceholderMessage'));
+    expect(rowSource, contains('DictionaryMediaType.instance.outlinedIcon'));
+    expect(rowSource, isNot(contains('HibikiCard')));
+    expect(rowSource, isNot(contains('child: Text(')));
+  });
+
   test('dictionary manager surfaces a labeled Material action bar', () {
     final String source =
         File('lib/src/pages/implementations/dictionary_dialog_page.dart')

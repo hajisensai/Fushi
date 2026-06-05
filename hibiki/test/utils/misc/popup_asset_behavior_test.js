@@ -493,6 +493,51 @@ function testStructuredContentTablesUseHorizontalScrollContainer() {
   assert.equal(parent.children[0].children[0].className, 'gloss-sc-table');
 }
 
+// BUG-057: wty-ja-en non-lemma "alt-of" glossaries arrive as an array of
+// [term, [tag, ...]] pairs. The generic array path used to flatten each pair
+// into bare adjacent text nodes with no spacing, rendering as mojibake
+// ("时Hyōgai时alt-of时alternative时kanji"). renderStructuredContent must instead
+// emit one structured list item per pair (term + its tag chips).
+function testFormOfGlossaryArrayRendersSeparatedTermAndTags() {
+  const context = loadPopup();
+  const parent = context.document.createElement('div');
+
+  context.renderStructuredContent(
+    parent,
+    [
+      ['时', ['Hyōgai']],
+      ['时', ['alt-of']],
+      ['时', ['alternative']],
+      ['时', ['kanji']],
+    ],
+    null,
+    'wty-ja-en',
+    false,
+  );
+
+  assert.equal(parent.children.length, 1, 'expected a single wrapping list');
+  const list = parent.children[0];
+  assert.equal(list.className, 'form-of-list');
+  assert.equal(list.children.length, 4, 'expected one item per term/tag pair');
+
+  const first = list.children[0];
+  const term = first.children[0];
+  assert.equal(term.className, 'form-of-term');
+  assert.equal(term.textContent, '时');
+
+  const tagRow = first.children[1];
+  assert.ok(
+    tagRow.className.split(/\s+/).includes('glossary-tags'),
+    'tags should render in a glossary-tags row',
+  );
+  assert.equal(tagRow.children[0].className, 'glossary-tag');
+  assert.equal(tagRow.children[0].textContent, 'Hyōgai');
+
+  // The remaining pairs keep their own term + tag, not a flattened run.
+  assert.equal(list.children[1].children[1].children[0].textContent, 'alt-of');
+  assert.equal(list.children[3].children[1].children[0].textContent, 'kanji');
+}
+
 function testSelectionHighlightReturnsBoundsForPopupPositioning() {
   const source = fs.readFileSync(selectionPath, 'utf8');
 
@@ -521,6 +566,7 @@ testPixelImagesWithBadDeclaredAspectUseNaturalWidthAfterLoad();
 testTappingDefinitionImageOpensLightbox();
 testFrequencyAndPitchSectionsDoNotRenderCrowdedTitles();
 testStructuredContentTablesUseHorizontalScrollContainer();
+testFormOfGlossaryArrayRendersSeparatedTermAndTags();
 testSelectionHighlightReturnsBoundsForPopupPositioning();
 // TODO: testLongPress* tests access document.__listeners.touchstart but popup.js
 // registers touchstart on per-entry summary elements. Rewrite tests to create a

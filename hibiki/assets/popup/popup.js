@@ -957,6 +957,17 @@ function renderStructuredContent(parent, node, language = null, dictName = null,
     }
     
     if (Array.isArray(node)) {
+        // Yomitan "form-of"/non-lemma glossary: an array of [term, [tag, ...]]
+        // pairs (e.g. wty-ja-en alt-of entries arrive as
+        // [["时",["Hyōgai"]],["时",["alt-of"]],...]). The generic flattening
+        // below would emit bare adjacent text nodes with no spacing or styling
+        // → "时Hyōgai时alt-of时alternative时kanji", which reads as mojibake
+        // (BUG-057). Render each pair as its own line: term + tag chips.
+        if (node.length > 0 && node.every(isTaggedTermPair)) {
+            renderTaggedTermPairs(parent, node);
+            return;
+        }
+
         const isStringArray = node.every(item => typeof item === 'string');
         const insideSpan = parent.tagName === 'SPAN';
         if (isStringArray && node.length > 1 && !insideSpan) {
@@ -1093,6 +1104,36 @@ function createGlossaryTags(tags, className = 'glossary-tags') {
         return null;
     }
     return el('div', { className }, tags.map(tag => el('span', { className: 'glossary-tag', textContent: tag })));
+}
+
+// True for a Yomitan "form-of" glossary item: a [term, [tag, ...]] pair where
+// the term is a string and the tags are an array of strings. See the array
+// branch of renderStructuredContent (BUG-057).
+function isTaggedTermPair(item) {
+    return Array.isArray(item)
+        && item.length === 2
+        && typeof item[0] === 'string'
+        && Array.isArray(item[1])
+        && item[1].every(tag => typeof tag === 'string');
+}
+
+// Renders an array of [term, [tag, ...]] pairs as a readable list: each pair on
+// its own line with the referenced term followed by its tag chips. Replaces the
+// generic flattening that produced unspaced "时Hyōgai时alt-of…" mojibake.
+function renderTaggedTermPairs(parent, pairs) {
+    const list = el('div', { className: 'form-of-list' });
+    pairs.forEach(([term, tags]) => {
+        const item = el('div', { className: 'form-of-item' });
+        const termEl = el('span', { className: 'form-of-term', textContent: term });
+        termEl.style.marginRight = '4px';
+        item.appendChild(termEl);
+        const tagRow = createGlossaryTags(tags, 'glossary-tags form-of-tags');
+        if (tagRow) {
+            item.appendChild(tagRow);
+        }
+        list.appendChild(item);
+    });
+    parent.appendChild(list);
 }
 
 function createDeinflectionTag(tag) {

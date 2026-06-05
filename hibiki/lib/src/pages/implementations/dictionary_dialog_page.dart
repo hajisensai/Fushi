@@ -951,16 +951,17 @@ class _DictionaryDialogPageState extends BasePageState {
 
   Widget _buildEmptyCategoryRow() {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return HibikiCard(
+    // Mirror buildEmptyMessage (the all-empty state) so switching to a
+    // dictionary-type tab that happens to have no dictionary of that type reads
+    // the same: a centred icon + message, not a cramped left-aligned grey card
+    // (BUG-058 — inconsistent empty-state styling).
+    return Padding(
       padding: EdgeInsets.symmetric(
-        horizontal: tokens.spacing.gap + tokens.spacing.gap / 2,
-        vertical: tokens.spacing.card + tokens.spacing.gap / 4,
+        vertical: tokens.spacing.card + tokens.spacing.gap,
       ),
-      child: Text(
-        t.dictionaries_menu_empty,
-        style: textTheme.bodyMedium?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
+      child: HibikiPlaceholderMessage(
+        icon: DictionaryMediaType.instance.outlinedIcon,
+        message: t.dictionaries_menu_empty,
       ),
     );
   }
