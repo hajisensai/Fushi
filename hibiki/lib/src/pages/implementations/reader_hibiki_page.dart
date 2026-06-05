@@ -1970,28 +1970,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         if (request.isForMainFrame ?? false) {
           debugPrint('[ReaderHibiki] onReceivedError: ${error.description} '
               'url=${request.url}');
-          // WebView2 on Windows reports NavigationCompleted with isSuccess=false
-          // for intercepted hoshi.local URLs because the domain doesn't resolve
-          // at the network layer, even though shouldInterceptRequest provided a
-          // valid response. The content IS rendered — treat as onLoadStop.
-          if (Platform.isWindows &&
-              request.url.host == ReaderHibikiSource.kHost) {
-            _isNavigatingToChapter = false;
-            final int chapterSnapshot = _currentChapter;
-            if (_lyricsMode) {
-              await _onChapterLoadComplete(controller);
-              return;
-            }
-            final String expectedUrl = _chapterUrl(chapterSnapshot);
-            if (Uri.parse(request.url.toString()).path !=
-                Uri.parse(expectedUrl).path) {
-              debugPrint('[ReaderHibiki] Windows onReceivedError: stale page '
-                  '(expected=$expectedUrl), ignoring');
-              return;
-            }
-            await _onChapterLoadComplete(controller);
-            return;
-          }
+          // Windows 拦截域 (hoshi.local) 的 NavigationCompleted 假失败已在 fork
+          // 引擎层根治（packages/flutter_inappwebview_windows：主框架已注入 2xx
+          // 时按成功走 onLoadStop），此处不再做事后补偿；下面是真实加载失败处理。
           if (_restoreExpectedGeneration != _navigateGeneration) return;
           _isNavigatingToChapter = false;
           _restoreInFlight = false;
