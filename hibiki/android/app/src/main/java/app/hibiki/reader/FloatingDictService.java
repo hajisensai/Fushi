@@ -340,11 +340,17 @@ public class FloatingDictService extends BaseFloatingService {
         new Handler(Looper.getMainLooper()).post(() -> {
             if (resultView != null && (resultView.getText() == null
                     || resultView.getText().length() == 0)) {
+                // 暂时取消无障碍权限的申请：不再引导用户去启用无障碍服务
+                // （服务声明已在 AndroidManifest 中注释掉）。后面恢复无障碍时，
+                // 改回下方被注释的原始提示文案即可。
                 resultView.setText(
                     "Android 13+ restricts clipboard access.\n\n"
-                    + "Enable Hibiki accessibility service in "
-                    + "Settings → Accessibility for automatic text detection,"
-                    + " or use the search bar to look up words manually.");
+                    + "Use the search bar to look up words manually.");
+                // resultView.setText(
+                //     "Android 13+ restricts clipboard access.\n\n"
+                //     + "Enable Hibiki accessibility service in "
+                //     + "Settings → Accessibility for automatic text detection,"
+                //     + " or use the search bar to look up words manually.");
             }
         });
     }
