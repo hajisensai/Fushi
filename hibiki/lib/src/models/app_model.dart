@@ -47,6 +47,8 @@ import 'package:hibiki/src/models/local_audio_source_pref.dart';
 import 'package:hibiki/src/models/anki_integration.dart';
 import 'package:hibiki/src/sync/hibiki_remote_lookup_client.dart';
 import 'package:hibiki/src/sync/hibiki_remote_lookup_service.dart';
+import 'package:hibiki/src/sync/hibiki_sync_server.dart';
+import 'package:hibiki/src/sync/yomitan_api_server_manager.dart';
 import 'package:hibiki/src/shortcuts/gamepad_service.dart';
 import 'package:hibiki/src/shortcuts/shortcut_preferences.dart';
 import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
@@ -1211,6 +1213,9 @@ class AppModel with ChangeNotifier {
       _isInitialised = true;
       _setupFloatingDictHandlers();
       if (showFloatingDict) setShowFloatingDict(false);
+      if (yomitanApiServerEnabled) {
+        unawaited(startYomitanApiServer().catchError((Object _) {}));
+      }
       notifyListeners();
     } catch (e, stack) {
       debugPrint('[Hibiki] init FAILED: $e\n$stack');
@@ -2627,6 +2632,36 @@ class AppModel with ChangeNotifier {
 
   HibikiRemoteLookupService createRemoteLookupService() {
     return _AppModelRemoteLookupService(this);
+  }
+
+  // ── yomitan-api server (lifecycle) ──────────────────────────────────
+  YomitanApiServerManager? _yomitanServerManager;
+
+  YomitanApiServerManager _ensureYomitanManager() {
+    return _yomitanServerManager ??= YomitanApiServerManager(
+      lookupService: createRemoteLookupService(),
+      tokenizer: JapaneseLanguage.instance.textToWords,
+      readingResolver: (String w) {
+        if (!HoshiDicts.isInitialized) return '';
+        final List<HoshiLookupResult> r =
+            HoshiDicts.instance.lookup(w, maxResults: 1);
+        return r.isEmpty ? '' : r.first.term.reading;
+      },
+    );
+  }
+
+  Future<void> startYomitanApiServer() async {
+    try {
+      await _ensureYomitanManager()
+          .start(port: yomitanApiPort, apiKey: yomitanApiKey);
+    } on SyncServerPortInUseException {
+      await setYomitanApiServerEnabled(false);
+      rethrow;
+    }
+  }
+
+  Future<void> stopYomitanApiServer() async {
+    await _yomitanServerManager?.stop();
   }
 
   // ── local audio DB (delegated to LocalAudioManager) ─────────────────

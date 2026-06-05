@@ -7,6 +7,7 @@ import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/settings/settings_actions.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
+import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 import 'package:hibiki/src/sync/sync_settings_schema.dart';
 import 'package:hibiki/utils.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -871,6 +872,39 @@ SettingsDestination _lookupDestination() {
                 settingsContext.appModel.remoteLookupEnabled,
             onChanged: (SettingsContext settingsContext, bool value) async {
               await settingsContext.appModel.setRemoteLookupEnabled(value);
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'lookup.yomitan_api_server',
+            title: t.yomitan_api_server,
+            subtitle: t.yomitan_api_server_hint,
+            icon: Icons.api_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.yomitanApiServerEnabled,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setYomitanApiServerEnabled(value);
+              if (value) {
+                try {
+                  await settingsContext.appModel.startYomitanApiServer();
+                } on SyncServerPortInUseException {
+                  // startYomitanApiServer 已在抛出前把开关复位为 false。
+                  final BuildContext ctx = settingsContext.context;
+                  if (ctx.mounted) {
+                    ScaffoldMessenger.of(ctx).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          t.sync_server_port_in_use(
+                            port: settingsContext.appModel.yomitanApiPort,
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+                }
+              } else {
+                await settingsContext.appModel.stopYomitanApiServer();
+              }
               settingsContext.refresh();
             },
           ),

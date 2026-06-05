@@ -1222,5 +1222,9 @@
     "sync_now_dicts_in": "↓$count dictionaries",
     "sync_now_dicts_out": "↑$count dictionaries",
     "sync_now_audio_in": "↓$count audiobooks",
-    "sync_now_audio_out": "↑$count audiobooks"
+    "sync_now_audio_out": "↑$count audiobooks",
+    "yomitan_api_server": "Yomitan API server",
+    "yomitan_api_server_hint": "Let yomitan-api clients query Hibiki's dictionaries (port 19633)",
+    "yomitan_api_port": "Yomitan API port",
+    "yomitan_api_key": "Yomitan API key (optional)"
 }

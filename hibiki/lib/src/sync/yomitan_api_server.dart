@@ -156,7 +156,9 @@ class YomitanApiServer {
       if (raw.isEmpty) return null;
       final dynamic decoded = jsonDecode(raw);
       if (decoded is Map) return Map<String, dynamic>.from(decoded);
-    } catch (_) {}
+    } catch (_) {
+      // 客户端请求体非法 JSON：当作无 body 处理，由调用方回 400。
+    }
     return null;
   }
 

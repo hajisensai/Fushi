@@ -94,7 +94,9 @@ Map<String, dynamic> _decodeExtra(String extra) {
   try {
     final dynamic decoded = jsonDecode(extra);
     if (decoded is Map) return Map<String, dynamic>.from(decoded);
-  } catch (_) {}
+  } catch (_) {
+    // extra 字段非合法 JSON：退化为空 metadata，不带音高/频率。
+  }
   return <String, dynamic>{};
 }
 
@@ -114,7 +116,9 @@ List<dynamic> _glossaryEntries(String meaning) {
       final dynamic decoded = jsonDecode(meaning);
       if (decoded is List) return decoded;
       return <dynamic>[decoded];
-    } catch (_) {}
+    } catch (_) {
+      // 看似 JSON 但解析失败：退回当作纯文本 glossary。
+    }
   }
   return <dynamic>[meaning];
 }
