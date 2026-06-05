@@ -160,4 +160,52 @@ void main() {
     expect(File(p.join(dstBooks, 'Existing', 'keep.epub')).existsSync(), isTrue,
         reason: 'empty-prefix backup must not delete the existing tree');
   });
+
+  test(
+      'import clears stale .import-old/.import-tmp leftovers from a prior '
+      'crashed import (W1)', () async {
+    // Make a real full backup with one book.
+    final String srcDbDir = p.join(src.path, 'db');
+    final String srcBooks = p.join(src.path, 'hoshi_books');
+    Directory(srcDbDir).createSync(recursive: true);
+    await writeFile(p.join(srcBooks, 'Bk', 'original.epub'), 'EPUB');
+    final srcDb = HibikiDatabase(srcDbDir);
+    await srcDb.insertEpubBook(EpubBooksCompanion.insert(
+      bookKey: 'Bk',
+      title: 'Bk',
+      epubPath: p.join(srcBooks, 'Bk', 'original.epub'),
+      extractDir: p.join(srcBooks, 'Bk'),
+      chapterCount: 1,
+      chaptersJson: '["c"]',
+      importedAt: 0,
+    ));
+    final zipPath = p.join(src.path, 'backup.zip');
+    await BackupService(
+      db: srcDb,
+      dbDirectory: srcDbDir,
+      appVersion: '1.0.0',
+      booksRootDirectory: srcBooks,
+    ).exportBackup(zipPath);
+    await srcDb.close();
+
+    // Destination has stale leftovers from a previously-crashed import.
+    final String dstDbDir = p.join(dst.path, 'db');
+    final String dstBooks = p.join(dst.path, 'hoshi_books');
+    Directory(dstDbDir).createSync(recursive: true);
+    await writeFile(
+        '$dstBooks.import-old${Platform.pathSeparator}junk.txt', 'x');
+    await writeFile(
+        '$dstBooks.import-tmp${Platform.pathSeparator}junk.txt', 'x');
+
+    await BackupService.importBackupFiles(
+      dbDirectory: dstDbDir,
+      zipPath: zipPath,
+      booksRootDirectory: dstBooks,
+    );
+
+    // Book restored; both stale leftover dirs are gone.
+    expect(File(p.join(dstBooks, 'Bk', 'original.epub')).existsSync(), isTrue);
+    expect(Directory('$dstBooks.import-old').existsSync(), isFalse);
+    expect(Directory('$dstBooks.import-tmp').existsSync(), isFalse);
+  });
 }

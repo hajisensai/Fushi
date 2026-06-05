@@ -308,7 +308,11 @@ class BackupService {
       if (meta == null) return null;
       if (archive.findFile(_dbName) == null) return null;
       return meta;
-    } catch (_) {
+    } catch (e, st) {
+      // A null result tells the UI "invalid backup". Surface the real reason
+      // (corrupt zip / read error / OOM) so it is not silently indistinguishable
+      // from a genuinely malformed archive (review W4).
+      debugPrint('BackupService.validateBackup failed for $zipPath: $e\n$st');
       return null;
     } finally {
       await input?.close();
@@ -422,23 +426,36 @@ class BackupService {
       }
 
       // 2b) Restore the book + audiobook content trees (full-data backup).
-      //     Atomic-swap per tree: write to a sibling temp dir, then rename over
-      //     the old tree — a mid-way failure leaves the existing tree intact
-      //     (a user's whole library must never be half-destroyed). Only runs
-      //     when the caller supplies the roots AND the backup carries that tree.
-      if (booksRootDirectory != null) {
-        await _restoreTreeAtomic(
-          archive: archive,
-          prefix: _booksPrefix,
-          targetRootPath: booksRootDirectory,
-        );
+      //     PREPARE both (write to sibling `.import-tmp` dirs) BEFORE COMMITTING
+      //     either (fast rename-swap), so a failure during the GB-scale write
+      //     phase swaps nothing and leaves both existing trees intact — a user's
+      //     whole library must never be half-destroyed. Only runs when the
+      //     caller supplies the roots AND the backup carries that tree.
+      final List<String> toCommit = <String>[];
+      try {
+        if (booksRootDirectory != null &&
+            await _prepareTreeRestore(
+                archive, _booksPrefix, booksRootDirectory)) {
+          toCommit.add(booksRootDirectory);
+        }
+        if (audiobooksRootDirectory != null &&
+            await _prepareTreeRestore(
+                archive, _audiobooksPrefix, audiobooksRootDirectory)) {
+          toCommit.add(audiobooksRootDirectory);
+        }
+      } catch (_) {
+        // A write failed: drop every staged temp dir; no tree was swapped.
+        if (booksRootDirectory != null) {
+          await _abortPreparedTree(booksRootDirectory);
+        }
+        if (audiobooksRootDirectory != null) {
+          await _abortPreparedTree(audiobooksRootDirectory);
+        }
+        rethrow;
       }
-      if (audiobooksRootDirectory != null) {
-        await _restoreTreeAtomic(
-          archive: archive,
-          prefix: _audiobooksPrefix,
-          targetRootPath: audiobooksRootDirectory,
-        );
+      // All writes succeeded → commit each prepared tree (fast renames).
+      for (final String root in toCommit) {
+        await _commitPreparedTree(root);
       }
 
       // 3) Restore what must stay on this device — inline, not deferred to
@@ -764,29 +781,46 @@ class BackupService {
     return plan;
   }
 
-  /// Restores a content tree (`<prefix>/…`) from [archive] to [targetRootPath]
-  /// with an atomic-ish swap so a failure never half-destroys the existing tree:
-  /// write every file into a sibling `…​.import-tmp`, then rename the old tree
-  /// aside, rename tmp into place, and delete the old tree. A write failure
-  /// drops only the temp dir and leaves the existing tree untouched.
+  static String _importTmpPath(String root) => '$root.import-tmp';
+  static String _importOldPath(String root) => '$root.import-old';
+
+  /// Removes any stale `.import-tmp` / `.import-old` siblings left by a prior
+  /// import that crashed mid-swap. Called on entry to every prepare so a stale
+  /// `.import-old` can never be mistaken for a valid rollback target by a later
+  /// import (review W1).
+  static Future<void> _clearImportLeftovers(String targetRootPath) async {
+    for (final String path in <String>[
+      _importTmpPath(targetRootPath),
+      _importOldPath(targetRootPath),
+    ]) {
+      final Directory d = Directory(path);
+      if (await d.exists()) await d.delete(recursive: true);
+    }
+  }
+
+  /// PHASE 1 of the content-tree restore: write every file under `<prefix>/`
+  /// into the sibling `<root>.import-tmp` (NO swap yet). Returns true when there
+  /// is something staged to commit; false when the backup carries no files under
+  /// [prefix] (db-only / audio-less backup) so the existing tree is left alone.
   ///
-  /// No-op when the backup carries no files under [prefix] (e.g. a db-only or
-  /// audio-less backup) so an empty prefix never wipes the device's tree.
-  static Future<void> _restoreTreeAtomic({
-    required Archive archive,
-    required String prefix,
-    required String targetRootPath,
-  }) async {
-    final String tmpRoot = '$targetRootPath.import-tmp';
+  /// Splitting write (slow, GB-scale, failure-prone) from the swap (fast rename)
+  /// lets the caller stage ALL trees before committing ANY — a write failure
+  /// then swaps nothing and leaves every existing tree intact (review W2).
+  static Future<bool> _prepareTreeRestore(
+    Archive archive,
+    String prefix,
+    String targetRootPath,
+  ) async {
+    final String tmpRoot = _importTmpPath(targetRootPath);
     final List<MapEntry<ArchiveFile, String>> plan = _buildTreeRestorePlan(
       archive: archive,
       prefix: prefix,
       targetRootPath: tmpRoot,
     );
-    if (plan.isEmpty) return;
+    await _clearImportLeftovers(targetRootPath);
+    if (plan.isEmpty) return false;
 
     final Directory tmpDir = Directory(tmpRoot);
-    if (await tmpDir.exists()) await tmpDir.delete(recursive: true);
     await tmpDir.create(recursive: true);
     try {
       for (final MapEntry<ArchiveFile, String> entry in plan) {
@@ -796,14 +830,21 @@ class BackupService {
       }
     } catch (_) {
       if (await tmpDir.exists()) await tmpDir.delete(recursive: true);
-      rethrow; // existing tree untouched
+      rethrow; // nothing swapped; existing tree untouched
     }
+    return true;
+  }
 
-    // Swap. tmp and target are siblings (same parent) → rename is atomic on the
-    // same filesystem.
-    final String asideRoot = '$targetRootPath.import-old';
+  /// PHASE 2: swap the staged `<root>.import-tmp` into place. tmp and target are
+  /// siblings → rename is atomic on the same filesystem. Caller invokes this for
+  /// each prepared tree back-to-back; only the (rare) rename failure between two
+  /// trees leaves a cross-tree half-state, which is far smaller than the old
+  /// write-between-swaps window.
+  static Future<void> _commitPreparedTree(String targetRootPath) async {
+    final String asideRoot = _importOldPath(targetRootPath);
     final Directory aside = Directory(asideRoot);
     final Directory target = Directory(targetRootPath);
+    final Directory tmpDir = Directory(_importTmpPath(targetRootPath));
     if (await aside.exists()) await aside.delete(recursive: true);
     if (await target.exists()) await target.rename(asideRoot);
     try {
@@ -816,6 +857,12 @@ class BackupService {
       rethrow;
     }
     if (await aside.exists()) await aside.delete(recursive: true);
+  }
+
+  /// Drops a staged-but-not-committed `<root>.import-tmp` (idempotent).
+  static Future<void> _abortPreparedTree(String targetRootPath) async {
+    final Directory tmpDir = Directory(_importTmpPath(targetRootPath));
+    if (await tmpDir.exists()) await tmpDir.delete(recursive: true);
   }
 
   /// Rebases the imported DB's stored absolute content paths from the backup's
@@ -852,12 +899,24 @@ class BackupService {
       }
       if (canAudio) {
         for (final AudiobookRow a in await db.getAllAudiobooks()) {
-          final String? rebasedJson = a.audioPathsJson == null
-              ? null
-              : jsonEncode((jsonDecode(a.audioPathsJson!) as List)
-                  .whereType<String>()
-                  .map((s) => rebasePath(s, oldAudio, newAudiobooksRoot))
-                  .toList());
+          // Rebase each path inside audioPathsJson. A malformed value (corrupt
+          // row, not a JSON string-list) must not abort the whole import — keep
+          // it as-is and move on (review W3).
+          String? rebasedJson = a.audioPathsJson;
+          if (a.audioPathsJson != null) {
+            try {
+              final dynamic decoded = jsonDecode(a.audioPathsJson!);
+              if (decoded is List) {
+                rebasedJson = jsonEncode(decoded
+                    .whereType<String>()
+                    .map((s) => rebasePath(s, oldAudio, newAudiobooksRoot))
+                    .toList());
+              }
+            } catch (e) {
+              debugPrint('BackupService: skipped rebasing audioPathsJson for '
+                  '${a.bookKey}: $e');
+            }
+          }
           await db.updateAudiobookPaths(
             a.bookKey,
             audioRoot: a.audioRoot == null
