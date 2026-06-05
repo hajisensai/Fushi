@@ -8,7 +8,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki_core/hibiki_core.dart';
-import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:path_provider/path_provider.dart';
@@ -22,16 +21,26 @@ import 'package:hibiki/src/media/video/video_sidecar.dart';
 import 'package:hibiki/src/media/video/video_subtitle_overlay.dart';
 import 'package:hibiki/src/media/video/video_subtitle_source.dart';
 import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/pages/implementations/dictionary_popup_native.dart';
+import 'package:hibiki/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
 
 /// 视频页：media_kit 播放器 + 可点击字幕 overlay（点词查词 + 制卡）。
 ///
 /// 装配：[VideoPlayerController.load] 打开视频 + cue 同步 → [Stack] 叠
 /// [Video]（media_kit 桌面控制：播放/进度/音量/全屏 + 顶栏字幕轨/音轨切换）
-/// 与 [VideoSubtitleOverlay]（逐字符可点）。点字幕字符 → [_lookupAt] 取词查词
-/// → [DictionaryPopupNative] 弹窗 → [_mine] 制卡（截图 coverPath + 字幕音频
-/// sasayakiAudioPath + 例句 sentence，复用现有 Anki 字段，不改 hibiki_anki）。
+/// 与 [VideoSubtitleOverlay]（逐字符可点）。
+///
+/// 查词浮层与阅读器/词典页**统一**：点字幕字符 → [_lookupAt] 经
+/// [DictionaryPageMixin] 的 [pushNestedPopup] 推入 [DictionaryPopupLayer] 浮层
+/// （popup.html WebView，与书内/词典页同款：递归查词 + 单词发音 + auto-read +
+/// 制卡），并用被点字符的屏幕 rect 定位。制卡走 mixin 的 [onMineEntry]——视频页
+/// 覆写它注入视频专属上下文：当前帧截图 coverPath + 当前字幕 cue 的音频片段
+/// （裁**当前选中音轨**）sasayakiAudioPath + 例句 sentence + 单词发音
+/// （popup.js 已把 `{audio}` 写进 fields）。
+///
+/// 全屏：media_kit 全屏是独立 root 路由，复用同一 `controls` builder，故
+/// [VideoSubtitleOverlay] 包进 controls builder（[_buildVideoControls]）随全屏
+/// 一起进路由，保证全屏时字幕仍显示且可点查词。
 class VideoHibikiPage extends ConsumerStatefulWidget {
   const VideoHibikiPage({
     required this.bookUid,
@@ -46,10 +55,25 @@ class VideoHibikiPage extends ConsumerStatefulWidget {
   ConsumerState<VideoHibikiPage> createState() => _VideoHibikiPageState();
 }
 
-class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage> {
+class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
+    with DictionaryPageMixin {
   VideoPlayerController? _controller;
   bool _failed = false;
   String? _title;
+
+  /// 查词浮层栈（与阅读器/词典页同款，由 [DictionaryPageMixin] 管理）。
+  final List<NestedPopupEntry> _popupStack = <NestedPopupEntry>[];
+
+  /// 最近一次查词所在字幕句（整条 cue 文本）；[onMineEntry] 制卡时作 sentence。
+  /// 点字符查词时即时记录，确保制卡例句是「点词那一刻的那句字幕」。
+  String _lastLookupSentence = '';
+
+  // ── DictionaryPageMixin 必需的抽象成员 ──────────────────────────────
+  @override
+  AppModel get mixinAppModel => appModel;
+
+  @override
+  ThemeData get mixinTheme => Theme.of(context);
 
   /// 多集播放列表（单视频导入时为空）。
   List<PlaylistEntry> _episodes = const <PlaylistEntry>[];
@@ -405,67 +429,68 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage> {
 
   @override
   void dispose() {
+    _popupStack.clear();
     _controller?.dispose();
     super.dispose();
   }
 
-  /// 点字幕第 [graphemeIndex] 个字符：暂停 → 从该位置起取词 → 查词 → 弹词典。
-  Future<void> _lookupAt(String sentence, int graphemeIndex) async {
+  /// 点字幕第 [graphemeIndex] 个字符：暂停 → 从该位置起取词 → 推入与阅读器/词典页
+  /// 同款的 [DictionaryPopupLayer] 浮层（定位到被点字符的屏幕 [charRect] 附近）。
+  ///
+  /// 查词/递归查词/单词发音/auto-read/制卡全部走 [DictionaryPageMixin]，与书内一致。
+  Future<void> _lookupAt(
+    String sentence,
+    int graphemeIndex,
+    Rect charRect,
+  ) async {
     final VideoPlayerController? controller = _controller;
     if (controller == null) return;
     await controller.pause();
     final String term = sentence.characters.skip(graphemeIndex).join();
     debugPrint('[video-lookup] tap idx=$graphemeIndex term="$term"');
     if (term.isEmpty) return;
-    final DictionarySearchResult result;
-    try {
-      result = await appModel.searchDictionary(
-        searchTerm: term,
-        searchWithWildcards: false,
-        overrideMaximumTerms: appModel.maximumTerms,
-      );
-    } catch (e, stack) {
-      debugPrint('[video-lookup] searchDictionary FAILED term="$term": $e\n$stack');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('查词出错：$e')),
-        );
-      }
-      return;
-    }
-    debugPrint('[video-lookup] entries=${result.entries.length}');
-    if (!mounted || result.entries.isEmpty) {
-      if (mounted && result.entries.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('未找到该词')),
-        );
-      }
-      return;
-    }
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: const Color(0xF2101010),
-      isScrollControlled: true,
-      builder: (BuildContext ctx) => SafeArea(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(ctx).size.height * 0.6,
-          ),
-          child: DictionaryPopupNative(
-            result: result,
-            onMineEntry: (Map<String, String> fields) =>
-                _mine(fields, sentence),
-          ),
-        ),
-      ),
+    _lastLookupSentence = sentence;
+    await pushNestedPopup(
+      query: term,
+      selectionRect: charRect,
+      popupStack: _popupStack,
+      replaceStack: true,
+      autoRead: true,
     );
   }
 
-  /// 制卡：词典字段 + 当前字幕例句 + 视频截图（coverPath→{book-cover}）
-  /// + 字幕音频片段（sasayakiAudioPath→{sasayaki-audio}）。复用现有 Anki 字段。
-  Future<void> _mine(Map<String, String> fields, String sentence) async {
+  /// 关闭整个查词浮层栈（点遮罩 / 返回时）。
+  void _popNestedPopupAt(int index) {
+    popNestedPopupAt(index, _popupStack);
+  }
+
+  Widget _buildNestedPopupLayer(int index, Size screen) {
+    return buildNestedPopupLayer(
+      index: index,
+      screen: screen,
+      popupStack: _popupStack,
+      onPush: (String text, Rect rect) {
+        // 递归查词不属于某条字幕句：制卡例句仍用最近一次字幕句。
+        pushNestedPopup(
+          query: text,
+          selectionRect: rect,
+          popupStack: _popupStack,
+          autoRead: true,
+        );
+      },
+      onPop: _popNestedPopupAt,
+    );
+  }
+
+  /// 制卡（覆写 [DictionaryPageMixin.onMineEntry]）：在词典 [fields]（已含单词
+  /// 发音 `{audio}`、例句字段等）基础上，注入视频专属上下文——当前帧截图
+  /// coverPath（→`{book-cover}`）+ 当前字幕 cue 的音频片段（裁**当前选中音轨**）
+  /// sasayakiAudioPath（→`{sasayaki-audio}`）+ 例句 sentence。复用现有 Anki 字段。
+  @override
+  Future<bool> onMineEntry(Map<String, String> fields) async {
     final VideoPlayerController? controller = _controller;
-    if (controller == null) return;
+    if (controller == null) return false;
+    final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
     final Directory tmp = await getTemporaryDirectory();
 
     // 视频截图（当前帧）→ coverPath。
@@ -477,7 +502,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage> {
       coverPath = f.path;
     }
 
-    // 当前字幕 cue 的音频片段（桌面 ffmpeg 按时间裁）→ sasayakiAudioPath。
+    // 当前字幕 cue 的音频片段（桌面 ffmpeg 按时间裁，映射到当前选中音轨）
+    // → sasayakiAudioPath。
     String? audioPath;
     final AudioCue? cue = controller.currentCue;
     final String? videoPath = controller.videoPath;
@@ -487,22 +513,22 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage> {
         startMs: cue.startMs,
         endMs: cue.endMs,
         outputPath: '${tmp.path}/video_mine_audio.aac',
+        audioStreamIndex: controller.currentAudioStreamIndex,
       );
     }
 
     final AnkiMiningContext miningContext = AnkiMiningContext(
-      sentence: sentence,
+      sentence: _lastLookupSentence,
       cueSentence: cue?.text,
       documentTitle: _title,
       coverPath: coverPath,
       sasayakiAudioPath: audioPath,
     );
-    final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
     final MineResult result = await repo.mineEntry(
       rawPayloadJson: jsonEncode(fields),
       context: miningContext,
     );
-    if (!mounted) return;
+    if (!context.mounted) return result == MineResult.success;
     final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
     final String message;
     switch (result) {
@@ -516,9 +542,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage> {
       case MineResult.error:
         message = t.card_export_failed;
     }
-    if (!mounted) return;
-    messenger.showSnackBar(SnackBar(content: Text(message)));
-    if (mounted) Navigator.of(context).pop();
+    if (mounted) messenger.showSnackBar(SnackBar(content: Text(message)));
+    return result == MineResult.success;
   }
 
   /// media_kit 桌面控制主题：底部默认控制条（播放/进度/音量/全屏）+ 顶栏
@@ -586,7 +611,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage> {
 
     final List<SubtitleSource> sources =
         await listAllSubtitleSources(videoPath, langCode: _targetLangCode);
-    if (!mounted) return;
+    if (!context.mounted) return;
 
     showModalBottomSheet<void>(
       context: context,
@@ -711,26 +736,65 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage> {
             )
           : (controller == null || videoController == null)
               ? const Center(child: CircularProgressIndicator())
-              : Stack(
-                  children: <Widget>[
-                    Positioned.fill(
-                      child: MaterialDesktopVideoControlsTheme(
-                        normal: _desktopControlsTheme(controller),
-                        fullscreen: _desktopControlsTheme(controller),
-                        child: Video(
-                          controller: videoController,
-                          controls: AdaptiveVideoControls,
+              : LayoutBuilder(
+                  builder: (BuildContext context, BoxConstraints constraints) {
+                    final Size screen =
+                        Size(constraints.maxWidth, constraints.maxHeight);
+                    return Stack(
+                      children: <Widget>[
+                        Positioned.fill(
+                          child: MaterialDesktopVideoControlsTheme(
+                            normal: _desktopControlsTheme(controller),
+                            fullscreen: _desktopControlsTheme(controller),
+                            child: Video(
+                              controller: videoController,
+                              // 字幕 overlay 包进 controls builder：media_kit 全屏
+                              // 推独立 root 路由并复用同一 controls，故 overlay 随
+                              // 全屏一起进路由，全屏时字幕仍显示且可点查词。
+                              controls: (VideoState state) =>
+                                  _buildVideoControls(state, controller),
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
-                    Positioned.fill(
-                      child: VideoSubtitleOverlay(
-                        controller: controller,
-                        onCharTap: _lookupAt,
-                      ),
-                    ),
-                  ],
+                        // 查词浮层栈：点遮罩关栈 + 各层 DictionaryPopupLayer。与
+                        // 阅读器/词典页同款（非全屏时叠在本页 Stack；全屏由路由内的
+                        // overlay 承载点击，关栈仍走本页 setState）。
+                        if (_popupStack.isNotEmpty)
+                          Positioned.fill(
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.translucent,
+                              onTap: () => _popNestedPopupAt(0),
+                              child: const ColoredBox(
+                                color: Colors.transparent,
+                              ),
+                            ),
+                          ),
+                        for (int i = 0; i < _popupStack.length; i++)
+                          _buildNestedPopupLayer(i, screen),
+                      ],
+                    );
+                  },
                 ),
+    );
+  }
+
+  /// media_kit `controls` builder：默认桌面控制条 + 可点字幕 [VideoSubtitleOverlay]
+  /// 叠加。返回的 widget 同时用于普通与全屏路由（media_kit 复用同一 builder），
+  /// 故全屏时字幕一并显示。
+  Widget _buildVideoControls(
+    VideoState state,
+    VideoPlayerController controller,
+  ) {
+    return Stack(
+      children: <Widget>[
+        Positioned.fill(child: AdaptiveVideoControls(state)),
+        Positioned.fill(
+          child: VideoSubtitleOverlay(
+            controller: controller,
+            onCharTap: _lookupAt,
+          ),
+        ),
+      ],
     );
   }
 }

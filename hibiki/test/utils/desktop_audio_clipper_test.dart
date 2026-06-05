@@ -26,6 +26,53 @@ void main() {
         '/a/out.aac',
       ]);
     });
+
+    test('no -map when audioStreamIndex is null (default audio selection)', () {
+      final List<String> args = buildFfmpegClipArgs(
+        inputPath: '/a/in.mkv',
+        startMs: 0,
+        endMs: 1000,
+        outputPath: '/a/out.aac',
+        audioStreamIndex: null,
+      );
+      expect(args.contains('-map'), isFalse);
+    });
+
+    test('no -map when audioStreamIndex is negative', () {
+      final List<String> args = buildFfmpegClipArgs(
+        inputPath: '/a/in.mkv',
+        startMs: 0,
+        endMs: 1000,
+        outputPath: '/a/out.aac',
+        audioStreamIndex: -1,
+      );
+      expect(args.contains('-map'), isFalse);
+    });
+
+    test('maps 0:a:<idx> for the selected audio track', () {
+      final List<String> args = buildFfmpegClipArgs(
+        inputPath: '/a/in.mkv',
+        startMs: 1000,
+        endMs: 2500,
+        outputPath: '/a/out.aac',
+        audioStreamIndex: 1,
+      );
+      expect(args, <String>[
+        '-y',
+        '-ss',
+        '1.000',
+        '-t',
+        '1.500',
+        '-i',
+        '/a/in.mkv',
+        '-vn',
+        '-map',
+        '0:a:1',
+        '-c:a',
+        'aac',
+        '/a/out.aac',
+      ]);
+    });
   });
 
   group('extractAudioSegmentViaFfmpeg', () {

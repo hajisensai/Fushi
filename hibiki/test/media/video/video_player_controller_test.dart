@@ -14,8 +14,7 @@ AudioCue _cue(int i, int s, int e) => AudioCue()
 
 void main() {
   group('VideoPlayerController cue sync', () {
-    test('selects cue by position; gap keeps previous; notifies on change',
-        () {
+    test('selects cue by position; gap keeps previous; notifies on change', () {
       final c = VideoPlayerController();
       addTearDown(c.dispose);
       c.setCues([_cue(0, 0, 1000), _cue(1, 2000, 3000)]);
@@ -47,6 +46,17 @@ void main() {
       c.setDelayMs(600);
       c.debugUpdateCueForPosition(1500); // 1500-600=900 命中 cue0
       expect(c.currentCueIndex, 0);
+    });
+  });
+
+  group('VideoPlayerController audio track mapping', () {
+    test('currentAudioStreamIndex is null before load (no player)', () {
+      // 未 load 时无 libmpv player：制卡裁音频走 ffmpeg 默认音轨（不加 -map）。
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      expect(c.currentAudioStreamIndex, isNull);
+      // audioTracks 同样为空（与 -map 决策一致）。
+      expect(c.audioTracks, isEmpty);
     });
   });
 }

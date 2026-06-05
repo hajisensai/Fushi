@@ -86,6 +86,29 @@ class VideoPlayerController extends ChangeNotifier {
     await _player?.setAudioTrack(track);
   }
 
+  /// 当前选中音轨在「真实音轨列表」中的 0-based 序号（ffmpeg `-map 0:a:<idx>`
+  /// 的 ordinal），用于制卡时把字幕音频片段裁到用户正在听的那条轨。
+  ///
+  /// libmpv 的 `tracks.audio` 是 `[auto, no, real0, real1…]`（demux 顺序），与
+  /// ffmpeg `0:a:N` 的音频流顺序一致；当前选中轨取 `state.track.audio`。返回值是
+  /// 选中轨在「去掉 auto/no 后的真实轨」里的下标。
+  ///
+  /// 返回 null 表示「跟随默认」（未选过具体轨，selected 为 auto/no，或单音轨视频）
+  /// ——此时 ffmpeg 不加 `-map`，用其默认音频选择，与既有行为一致。
+  int? get currentAudioStreamIndex {
+    final Player? player = _player;
+    if (player == null) return null;
+    final AudioTrack selected = player.state.track.audio;
+    if (selected.id == 'auto' || selected.id == 'no') return null;
+    final List<AudioTrack> real = player.state.tracks.audio
+        .where((AudioTrack t) => t.id != 'auto' && t.id != 'no')
+        .toList(growable: false);
+    // 单条真实轨时无需显式映射（ffmpeg 默认就选它），返回 null 保持简单。
+    if (real.length <= 1) return null;
+    final int idx = real.indexWhere((AudioTrack t) => t.id == selected.id);
+    return idx < 0 ? null : idx;
+  }
+
   /// 设置 cue 列表：拷贝并按 startMs 升序排序（[JsonAlignmentParser.findCueIndex]
   /// 要求升序），重置当前 cue 状态。
   void setCues(List<AudioCue> cues) {

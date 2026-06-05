@@ -18,11 +18,19 @@ import 'package:hibiki/src/utils/misc/error_log_service.dart';
 ///
 /// `-ss`/`-t` precede `-i` for fast input seeking (a multi-hour audiobook is not
 /// decoded from 0); audio seeking is frame-accurate enough for sentence clips.
+///
+/// [audioStreamIndex] selects which audio stream to cut (ffmpeg `-map
+/// 0:a:<idx>`, 0-based ordinal among the input's audio streams). null/negative
+/// leaves ffmpeg's default audio-stream selection (the first / default track) —
+/// used for audiobook clips (single audio) and when the user has not switched
+/// the video's audio track. A multi-audio video (e.g. JP + EN dub) passes the
+/// currently-selected track's ordinal so the clip matches what the user hears.
 List<String> buildFfmpegClipArgs({
   required String inputPath,
   required int startMs,
   required int endMs,
   required String outputPath,
+  int? audioStreamIndex,
 }) {
   final double startSeconds = startMs / 1000.0;
   final double durationSeconds = (endMs - startMs) / 1000.0;
@@ -35,6 +43,10 @@ List<String> buildFfmpegClipArgs({
     '-i',
     inputPath,
     '-vn',
+    if (audioStreamIndex != null && audioStreamIndex >= 0) ...<String>[
+      '-map',
+      '0:a:$audioStreamIndex',
+    ],
     '-c:a',
     'aac',
     outputPath,
@@ -206,6 +218,7 @@ Future<String?> extractAudioSegmentViaFfmpeg({
   required int startMs,
   required int endMs,
   required String outputPath,
+  int? audioStreamIndex,
 }) async {
   if (endMs <= startMs) return null;
   if (!File(inputPath).existsSync()) return null;
@@ -221,6 +234,7 @@ Future<String?> extractAudioSegmentViaFfmpeg({
         startMs: startMs,
         endMs: endMs,
         outputPath: outputPath,
+        audioStreamIndex: audioStreamIndex,
       ),
       const Duration(seconds: 120),
     );

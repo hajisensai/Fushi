@@ -25,11 +25,13 @@ void main() {
 
     String? tappedSentence;
     int? tappedIndex;
+    Rect? tappedRect;
     await tester.pumpWidget(buildTestApp(VideoSubtitleOverlay(
       controller: c,
-      onCharTap: (String s, int i) {
+      onCharTap: (String s, int i, Rect rect) {
         tappedSentence = s;
         tappedIndex = i;
+        tappedRect = rect;
       },
     )));
 
@@ -43,6 +45,11 @@ void main() {
     await tester.tap(find.text('e'));
     expect(tappedSentence, 'hello');
     expect(tappedIndex, 1); // 'e' 是第 1 个 grapheme
+    // 浮层定位用：被点字符报告非零屏幕矩形（弹窗据此定位到字符附近）。
+    expect(tappedRect, isNotNull);
+    expect(tappedRect, isNot(Rect.zero));
+    expect(tappedRect!.width, greaterThan(0));
+    expect(tappedRect!.height, greaterThan(0));
 
     c.debugUpdateCueForPosition(2500);
     await tester.pump();
