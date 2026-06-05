@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -346,4 +347,178 @@ void main() {
       expect(body.containsKey('key'), isFalse);
     });
   });
+
+  group('stale keep-alive connection', () {
+    // BUG-065: AnkiConnect's minimal HTTP server closes idle keep-alive
+    // connections. The persistent http.Client can hand a request a dead pooled
+    // connection; the first use fails with a connection-drop error (Windows
+    // errno=10053 "Write failed", POSIX "Connection reset"/"Broken pipe"), so
+    // the user sees an instant failure instead of the 10s timeout. The symptom
+    // was an instant "Cannot connect to AnkiConnect: ClientException with
+    // SocketException: Write failed" on the *second* request of a fetch (the
+    // first `version` probe succeeded). We retry idempotent actions once on a
+    // fresh connection, but NEVER auto-retry addNote/createModel: package:http
+    // wraps the write and the response-header read in one try, so the drop can
+    // surface after the request reached Anki — re-sending could duplicate it.
+
+    /// A MockClient whose handler throws [exception] for the first [failTimes]
+    /// attempts, then serves [okResult], counting every attempt.
+    ({http.Client client, List<int> attempts}) flakyClient({
+      required int failTimes,
+      required Object exception,
+      Object? okResult = const <String>['Default'],
+    }) {
+      final attempts = <int>[];
+      final client = MockClient((http.Request request) async {
+        attempts.add(1);
+        if (attempts.length <= failTimes) {
+          throw exception;
+        }
+        return http.Response(
+          jsonEncode(<String, Object?>{'result': okResult, 'error': null}),
+          200,
+          headers: <String, String>{'content-type': 'application/json'},
+        );
+      });
+      return (client: client, attempts: attempts);
+    }
+
+    Future<T> run<T>(
+        http.Client client, Future<T> Function(AnkiConnectService) body) {
+      return http.runWithClient(
+        () => body(AnkiConnectService(host: '127.0.0.1', port: 8765)),
+        () => client,
+      );
+    }
+
+    test('retries on errno-coded connection drop (osError path)', () async {
+      // Mirrors package:http's _ClientSocketException: implements both
+      // ClientException and SocketException, so the service reads osError. The
+      // message is deliberately opaque to prove the errno (not the text) drives
+      // the decision.
+      final f = flakyClient(
+        failTimes: 1,
+        exception: _FakeClientSocketException(
+          'opaque message',
+          osError: const OSError('Connection aborted', 10053),
+        ),
+      );
+      final decks = await run(f.client, (s) => s.getDeckNames());
+      expect(f.attempts.length, 2, reason: 'initial attempt + one retry');
+      expect(decks, <String>['Default']);
+    });
+
+    test('retries on message-only connection drop (text fallback)', () async {
+      // A plain ClientException with no osError must still be recognised by its
+      // message ("Write failed" — Windows errno=10053).
+      final f = flakyClient(
+        failTimes: 1,
+        exception: http.ClientException(
+            'ClientException with SocketException: Write failed '
+            '(OS Error: ..., errno = 10053), address = localhost, port = 4392'),
+      );
+      final decks = await run(f.client, (s) => s.getDeckNames());
+      expect(f.attempts.length, 2);
+      expect(decks, <String>['Default']);
+    });
+
+    test('retries a "Connection reset" drop for idempotent reads', () async {
+      final f = flakyClient(
+        failTimes: 1,
+        exception: http.ClientException('Connection reset by peer'),
+      );
+      final decks = await run(f.client, (s) => s.getDeckNames());
+      expect(f.attempts.length, 2);
+      expect(decks, <String>['Default']);
+    });
+
+    test('gives up after exactly one retry (does not loop)', () async {
+      final f = flakyClient(
+        failTimes: 99,
+        exception: http.ClientException('Write failed (errno = 10053)'),
+      );
+      await expectLater(
+        run(f.client, (s) => s.getDeckNames()),
+        throwsA(isA<http.ClientException>()),
+      );
+      expect(f.attempts.length, 2,
+          reason: 'initial + one retry, then surfaces');
+    });
+
+    test('does NOT retry a non-connection-drop client error', () async {
+      // "Connection closed before full header" / unrelated failures are not
+      // connection drops; a retry would not help, so surface immediately.
+      final f = flakyClient(
+        failTimes: 99,
+        exception: http.ClientException(
+            'Connection closed before full header was received'),
+      );
+      await expectLater(
+        run(f.client, (s) => s.getDeckNames()),
+        throwsA(isA<http.ClientException>()),
+      );
+      expect(f.attempts.length, 1);
+    });
+
+    test('NEVER retries addNote even on a connection drop (no dup cards)',
+        () async {
+      // The crux of the idempotency gate: a non-idempotent action must not be
+      // re-sent, because the drop could have happened after Anki created the
+      // note. addNote must fail fast with a single attempt.
+      final f = flakyClient(
+        failTimes: 99,
+        exception: http.ClientException('Write failed (errno = 10053)'),
+      );
+      await expectLater(
+        run(
+            f.client,
+            (s) => s.addNote(
+                  deckName: 'D',
+                  modelName: 'M',
+                  fields: const <String, String>{'F': 'v'},
+                )),
+        throwsA(isA<http.ClientException>()),
+      );
+      expect(f.attempts.length, 1, reason: 'addNote is never auto-retried');
+    });
+
+    test('retries the idempotent storeMediaFile on a connection drop',
+        () async {
+      // storeMediaFile overwrites by filename — re-sending is harmless, so it
+      // is retried like the read actions.
+      final f = flakyClient(
+        failTimes: 1,
+        exception: http.ClientException('Broken pipe'),
+        okResult: 'hibiki_audio_abc.mp3',
+      );
+      await run(
+          f.client,
+          (s) =>
+              s.storeMediaFile(filename: 'hibiki_audio_abc.mp3', data: 'QUJD'));
+      expect(f.attempts.length, 2);
+    });
+  });
+}
+
+/// Stand-in for package:http's private `_ClientSocketException`, which
+/// implements both [http.ClientException] and [SocketException] (so callers can
+/// read [osError]). Used to exercise the errno-based retry decision.
+class _FakeClientSocketException
+    implements http.ClientException, SocketException {
+  _FakeClientSocketException(this.message, {this.osError});
+
+  @override
+  final String message;
+  @override
+  final OSError? osError;
+  @override
+  final Uri? uri = null;
+  @override
+  final InternetAddress? address = null;
+  @override
+  final int? port = null;
+
+  @override
+  String toString() => 'ClientException with SocketException: $message'
+      '${osError != null ? ' ($osError)' : ''}';
 }

@@ -58,6 +58,36 @@ Input #0, matroska,webm, from 'S01E01.mkv':
       expect(tracks[2].codec, 'hdmv_pgs_subtitle');
     });
 
+    test('mp4 mov_text 行含 [0x..] 十六进制流 id（新版 ffmpeg）仍解析', () {
+      // 新版 ffmpeg 对 mp4 字幕流多打印一个十六进制流 id：
+      //   Stream #0:1[0x2](und): Subtitle: mov_text (tx3g / 0x67337874)
+      // 旧正则（#\d+:\d+ 后紧跟可选 (lang)）因这个 [0x2] 整条漏掉
+      // → mp4 内封字幕枚举为 0（BUG-071 表面 2/2）。
+      const String stderr = '''
+  Stream #0:0[0x1](und): Video: h264 (High)
+  Stream #0:1[0x2](und): Subtitle: mov_text (tx3g / 0x67337874), 0 kb/s (default)
+''';
+      final List<EmbeddedSubtitleTrack> tracks =
+          parseSubtitleStreamsFromFfmpegLog(stderr);
+      expect(tracks, hasLength(1));
+      expect(tracks[0].streamIndex, 0);
+      expect(tracks[0].language, 'und');
+      expect(tracks[0].codec, 'mov_text');
+    });
+
+    test('mkv 无 [0x..] 与 mp4 有 [0x..] 混合：两条都解析、相对序号递增', () {
+      const String stderr = '''
+  Stream #0:2(jpn): Subtitle: subrip
+  Stream #0:3[0x4](eng): Subtitle: mov_text
+''';
+      final List<EmbeddedSubtitleTrack> tracks =
+          parseSubtitleStreamsFromFfmpegLog(stderr);
+      expect(tracks.map((EmbeddedSubtitleTrack t) => t.codec).toList(),
+          <String>['subrip', 'mov_text']);
+      expect(tracks[0].streamIndex, 0);
+      expect(tracks[1].streamIndex, 1);
+    });
+
     test('无字幕轨返回空列表', () {
       const String stderr = '''
   Stream #0:0: Video: h264
@@ -104,6 +134,20 @@ Input #0, matroska,webm, from 'S01E01.mkv':
     test('图形字幕 codec → null（无法转文本 cue）', () {
       expect(subtitleFormatForCodec('hdmv_pgs_subtitle'), isNull);
       expect(subtitleFormatForCodec('dvd_subtitle'), isNull);
+    });
+    test('更多图形字幕 codec 也 → null（位图，需 OCR）', () {
+      expect(subtitleFormatForCodec('dvb_subtitle'), isNull);
+      expect(subtitleFormatForCodec('xsub'), isNull);
+      expect(subtitleFormatForCodec('pgssub'), isNull);
+    });
+    test('mov_text / tx3g / text（mp4 文本字幕）→ srt（经 ffmpeg 转码，BUG-071）', () {
+      expect(subtitleFormatForCodec('mov_text'), SubtitleFormat.srt);
+      expect(subtitleFormatForCodec('tx3g'), SubtitleFormat.srt);
+      expect(subtitleFormatForCodec('text'), SubtitleFormat.srt);
+    });
+    test('未知文本 codec 默认按 srt 处理（fail-open；真图形轨由 ffmpeg 转码失败兜底空）', () {
+      expect(subtitleFormatForCodec('microdvd'), SubtitleFormat.srt);
+      expect(subtitleFormatForCodec('subviewer'), SubtitleFormat.srt);
     });
   });
 

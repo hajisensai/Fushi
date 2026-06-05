@@ -1157,8 +1157,9 @@ class _FontTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    // 整行长按拖拽重排（不再显示 ☰ 手柄）；上下箭头按钮是无障碍/手柄重排路径。
-    return ReorderableDelayedDragStartListener(
+    // 整行拖拽重排（不再显示 ☰ 手柄）：桌面鼠标按下即拖、移动端长按再拖
+    // （见 HibikiReorderDragListener）；上下箭头按钮是无障碍/手柄重排路径。
+    return HibikiReorderDragListener(
       index: index,
       child: AdaptiveSettingsSwitchActionRow(
         title: name,

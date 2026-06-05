@@ -35,11 +35,10 @@ class AnkiConnectService implements AnkiService {
       // not expect the field, and sending an empty one is needless.
       if (apiKey.isNotEmpty) 'key': apiKey,
     });
-    final response = await _client.post(
-      Uri.parse('http://$host:$port'),
-      body: body,
-      headers: {'Content-Type': 'application/json'},
-    ).timeout(_timeout);
+    final response = await _postWithStaleConnectionRetry(
+      body,
+      idempotent: !_nonIdempotentActions.contains(action),
+    );
     // A process other than AnkiConnect (proxy, captive portal, wrong port)
     // can answer with a non-200 or non-JSON body; surface a clear error
     // instead of an opaque FormatException.
@@ -69,6 +68,79 @@ class AnkiConnectService implements AnkiService {
       throw AnkiConnectException(result['error'].toString());
     }
     return result['result'];
+  }
+
+  /// Actions that mutate Anki state and are NOT safe to re-send. package:http
+  /// wraps the write *and* the response-header read in one try, so a connection
+  /// drop (e.g. "Connection reset") can surface *after* the request reached
+  /// AnkiConnect — re-sending `addNote`/`createModel` would then create a
+  /// duplicate card or hit "model already exists". We never auto-retry these;
+  /// the error is surfaced for the user to retry. Every other action
+  /// (version/deckNames/modelNames/modelFieldNames/findNotes/storeMediaFile/
+  /// createDeck) is idempotent, so re-sending has no side effect.
+  static const Set<String> _nonIdempotentActions = {'addNote', 'createModel'};
+
+  /// Posts [body] to AnkiConnect, retrying exactly once on a dropped connection
+  /// — but only when [idempotent].
+  ///
+  /// BUG-065: AnkiConnect's minimal HTTP server closes idle keep-alive
+  /// connections. The persistent [http.Client] pools connections and can hand a
+  /// request one the server has already closed; the first use fails with a
+  /// connection-drop error (Windows errno=10053 WSAECONNABORTED / 10054
+  /// WSAECONNRESET, POSIX EPIPE/ECONNRESET — surfaced as "Write failed",
+  /// "Connection reset", "Broken pipe"), so the user sees an instant failure
+  /// rather than the 10s timeout. Re-issuing on a fresh connection (the dead one
+  /// is dropped from the pool) fixes it. This is the standard "retry an
+  /// idempotent request on a stale pooled connection" strategy (cf. Go net/http,
+  /// java.net.http): we gate on action idempotency instead of trying to infer
+  /// from the error text whether the request was already delivered, which is not
+  /// reliable. Genuine refusals/timeouts are not connection-drops and fall
+  /// through to the caller (a retry would not help).
+  Future<http.Response> _postWithStaleConnectionRetry(
+    String body, {
+    required bool idempotent,
+  }) async {
+    try {
+      return await _post(body);
+    } on http.ClientException catch (e) {
+      if (!idempotent || !_isConnectionDrop(e)) rethrow;
+      return await _post(body);
+    }
+  }
+
+  Future<http.Response> _post(String body) {
+    return _client.post(
+      Uri.parse('http://$host:$port'),
+      body: body,
+      headers: {'Content-Type': 'application/json'},
+    ).timeout(_timeout);
+  }
+
+  /// True when [e] is a transient connection-drop (stale pooled socket) worth
+  /// one retry on a fresh connection. Prefers the OS error code — an ABI
+  /// constant, stable across platforms and package:http versions — over the
+  /// human-readable message, falling back to text only when no [OSError] is
+  /// available. package:http wraps a dart:io [SocketException] in a type that
+  /// implements both [http.ClientException] and [SocketException], so [osError]
+  /// is usually reachable here.
+  static bool _isConnectionDrop(http.ClientException e) {
+    if (e is SocketException) {
+      final int? code = (e as SocketException).osError?.errorCode;
+      if (code != null) {
+        // Win: 10053 WSAECONNABORTED, 10054 WSAECONNRESET.
+        // POSIX: 32 EPIPE, 104 ECONNRESET (Linux), 54 ECONNRESET (macOS).
+        return code == 10053 ||
+            code == 10054 ||
+            code == 32 ||
+            code == 104 ||
+            code == 54;
+      }
+    }
+    final String message = e.message.toLowerCase();
+    return message.contains('write failed') ||
+        message.contains('connection reset') ||
+        message.contains('broken pipe') ||
+        message.contains('connection aborted');
   }
 
   List<String> _asStringList(dynamic result, String action) {

@@ -344,3 +344,20 @@ class VideoBooks extends Table {
   @override
   Set<Column> get primaryKey => {bookUid};
 }
+
+// ── video_book_tag_mappings ───────────────────────────────────────
+// 视频书 ↔ 标签 多对多映射。标签定义复用共享的 [BookTags]，与 EPUB
+// （[BookTagMappings]）、SRT（[SrtBookTagMappings]）共用同一标签池。
+@DataClassName('VideoBookTagMappingRow')
+class VideoBookTagMappings extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get videoBookUid =>
+      text().references(VideoBooks, #bookUid, onDelete: KeyAction.cascade)();
+  IntColumn get tagId =>
+      integer().references(BookTags, #id, onDelete: KeyAction.cascade)();
+
+  @override
+  List<Set<Column>> get uniqueKeys => [
+        {videoBookUid, tagId},
+      ];
+}

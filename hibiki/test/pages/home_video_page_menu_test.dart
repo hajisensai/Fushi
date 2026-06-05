@@ -1,0 +1,107 @@
+import 'dart:io';
+
+import 'package:drift/drift.dart' show Value;
+import 'package:drift/native.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/i18n/strings.g.dart';
+import 'package:hibiki/models.dart';
+import 'package:hibiki/src/media/video/video_book_repository.dart';
+import 'package:hibiki/src/models/preferences_repository.dart';
+import 'package:hibiki/src/pages/implementations/home_video_page.dart';
+import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
+import 'package:hibiki_core/hibiki_core.dart';
+
+import '../helpers/test_platform_services.dart';
+
+/// HomeVideoPage 行为测试：验证「视频长按弹菜单」与「视频卡渲染共享标签」真生效
+/// （而非只看源码）。AppModel 用 [AppModel.wireDatabaseForTesting] /
+/// [AppModel.wireLocalAudioForTesting] 注入内存库，跳过完整 initialise。
+void main() {
+  final TestWidgetsFlutterBinding binding =
+      TestWidgetsFlutterBinding.ensureInitialized();
+
+  late Directory pathProviderDir;
+  setUpAll(() {
+    pathProviderDir =
+        Directory.systemTemp.createTempSync('hibiki_home_video_pp');
+    binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('plugins.flutter.io/path_provider'),
+      (MethodCall call) async => pathProviderDir.path,
+    );
+  });
+  tearDownAll(() {
+    binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('plugins.flutter.io/path_provider'),
+      null,
+    );
+    if (pathProviderDir.existsSync()) {
+      pathProviderDir.deleteSync(recursive: true);
+    }
+  });
+
+  late HibikiDatabase db;
+  late AppModel appModel;
+
+  setUp(() async {
+    db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    final PreferencesRepository prefs = PreferencesRepository(db);
+    await prefs.loadFromDb();
+    final Directory storeDir =
+        Directory.systemTemp.createTempSync('hibiki_home_video_store');
+    appModel = AppModel(testPlatformServices())
+      ..wireDatabaseForTesting(db)
+      ..wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: storeDir);
+  });
+
+  tearDown(() async {
+    await db.close();
+  });
+
+  Future<void> seedTaggedVideo() async {
+    await db.upsertVideoBook(const VideoBooksCompanion(
+      bookUid: Value('video/1'),
+      title: Value('My Episode'),
+      videoPath: Value('/abs/ep1.mp4'),
+    ));
+    final int tagId = await db.createTag('Anime', 0xFF2196F3);
+    await db.addTagToVideoBook('video/1', tagId);
+  }
+
+  Widget buildApp() => ProviderScope(
+        overrides: <Override>[
+          appProvider.overrideWith((ref) => appModel),
+        ],
+        child: TranslationProvider(
+          child: MaterialApp(
+            home: HomeVideoPage(repo: VideoBookRepository(db)),
+          ),
+        ),
+      );
+
+  testWidgets('视频卡渲染所挂的共享标签 chip', (WidgetTester tester) async {
+    await seedTaggedVideo();
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    expect(find.text('My Episode'), findsOneWidget);
+    // 标签来自共享 BookTags 池，经 video_book_tag_mappings 映射。
+    expect(find.widgetWithText(HibikiTagChip, 'Anime'), findsOneWidget);
+  });
+
+  testWidgets('长按视频卡弹出菜单（标签 / 封面 / 删除）', (WidgetTester tester) async {
+    await seedTaggedVideo();
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    await tester.longPress(find.byType(HibikiCard).first);
+    await tester.pumpAndSettle();
+
+    // 修复前长按 == 打开播放页（无菜单）；现在应弹出三项菜单。
+    expect(find.text(t.tag_label), findsOneWidget);
+    expect(find.text(t.srt_import_pick_cover), findsOneWidget);
+    expect(find.text(t.dialog_delete), findsOneWidget);
+  });
+}

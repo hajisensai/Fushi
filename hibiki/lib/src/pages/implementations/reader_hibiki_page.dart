@@ -1675,7 +1675,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     var r = window.hoshiReader;
     if (!r || !('paginationMetrics' in r)) return;
     _wheelTimer = setTimeout(function() { _wheelTimer = null; }, 250);
-    var forward = (e.deltaY > 0 || e.deltaX > 0);
+    var forward = (e.deltaY < 0 || e.deltaX > 0);
     window.flutter_inappwebview.callHandler('onSwipe', forward ? 'left' : 'right');
     e.preventDefault();
   }, {passive: false});
@@ -4822,6 +4822,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
           _jumpToGlobalCharOffset(globalOffset);
         },
         epubBook: _book,
+        chapterLabel: _currentChapterLabel(),
         onSearchJump: (BookSearchResult result, String query) async {
           if (_book == null || _controller == null) return;
           if (result.sectionIndex != _currentChapter) {

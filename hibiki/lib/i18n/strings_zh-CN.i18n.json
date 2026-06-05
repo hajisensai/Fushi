@@ -1302,5 +1302,8 @@
     "video_shader_preset_mode_a_fast": "适合多数 1080p 动画。GPU 负载较低。",
     "video_shader_preset_mode_b_fast": "适合有重采样伪影的 720p 旧番。",
     "video_shader_preset_mode_c_fast": "适合有压缩涂抹的 480p SD 老番。",
-    "video_shader_preset_mode_a_hq": "1080p 动画最高画质。需要较强 GPU。"
+    "video_shader_preset_mode_a_hq": "1080p 动画最高画质。需要较强 GPU。",
+    "video_delete_title": "删除视频",
+    "video_delete_confirm": "删除『$title』？此操作无法撤销。",
+    "video_subtitle_load_failed": "无法加载该字幕（可能是图形或不支持的字幕轨）：$label"
 }

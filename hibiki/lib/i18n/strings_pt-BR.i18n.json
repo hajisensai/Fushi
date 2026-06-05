@@ -1302,5 +1302,8 @@
     "video_shader_preset_mode_a_fast": "For most 1080p anime. Lighter GPU load.",
     "video_shader_preset_mode_b_fast": "For older 720p anime with resampling artifacts.",
     "video_shader_preset_mode_c_fast": "For old SD (480p) anime with compression smearing.",
-    "video_shader_preset_mode_a_hq": "Highest quality for 1080p anime. Needs a strong GPU."
+    "video_shader_preset_mode_a_hq": "Highest quality for 1080p anime. Needs a strong GPU.",
+    "video_delete_title": "Delete Video",
+    "video_delete_confirm": "Delete 『$title』? This cannot be undone.",
+    "video_subtitle_load_failed": "Couldn't load this subtitle (graphic or unsupported track): $label"
 }
