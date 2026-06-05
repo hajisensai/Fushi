@@ -708,7 +708,7 @@ void main() {
     ).readAsStringSync();
     final String srtCardChrome = _functionSource(
       source,
-      'Widget? _buildTagLabels(int bookId)',
+      'Widget? _buildTagLabels(String bookKey)',
       '  Widget _buildSrtCover(SrtBook book)',
     );
     final String epubCardChrome = _functionSource(
