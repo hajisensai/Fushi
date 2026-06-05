@@ -10,7 +10,9 @@ Rect calcPopupPosition({
   required Size screen,
   double padding = 6.0,
   double maxWidth = 360.0,
-  double maxHeight = 480.0,
+  // 默认与单一真相源（preferences_repository.defaultPopupMaxHeight=360）对齐；
+  // 两个真实调用方都显式传 appModel.popupMaxHeight，此默认仅兜底/测试用。
+  double maxHeight = 360.0,
   double bottomReserve = 0.0,
   double topReserve = 0.0,
 }) {
