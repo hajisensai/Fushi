@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:archive/archive_io.dart';
 import 'package:drift/drift.dart';
 import 'package:flutter/foundation.dart';
 import 'package:hibiki/src/sync/position_converter.dart';
@@ -12,6 +13,33 @@ import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
+
+/// Re-package an extracted book directory back into a single `.epub` at
+/// [outputPath]. Hibiki stores imported books EXTRACTED (the extract dir is a
+/// valid EPUB layout: `mimetype` + `META-INF/` + OPF + content) and keeps no
+/// standalone `.epub` on disk, so content sync must rebuild one to upload
+/// (BUG-081). Entries are rooted at the zip top (`includeDirName: false`) so
+/// `mimetype` / `META-INF` sit at the archive root and the result re-imports
+/// cleanly via [EpubImporter] on the other device.
+///
+/// Returns true if an archive was written; false when [extractDir] is empty or
+/// absent (nothing to package).
+Future<bool> repackageExtractedEpub(
+  String extractDir,
+  String outputPath,
+) async {
+  if (extractDir.isEmpty) return false;
+  final Directory dir = Directory(extractDir);
+  if (!dir.existsSync()) return false;
+  final ZipFileEncoder encoder = ZipFileEncoder();
+  encoder.create(outputPath);
+  try {
+    encoder.addDirectory(dir, includeDirName: false);
+  } finally {
+    encoder.close();
+  }
+  return true;
+}
 
 class SyncBookResult {
   const SyncBookResult({
@@ -598,18 +626,34 @@ class SyncManager {
     required EpubBookRow book,
     required String folderId,
   }) async {
-    // Export EPUB
-    final epubFile = File(book.epubPath);
-    if (epubFile.existsSync()) {
+    // Export EPUB. There is NO standalone .epub on disk — books are stored
+    // extracted, and book.epubPath is only the original filename (it never
+    // resolves to a real file, so the old `File(book.epubPath).existsSync()`
+    // guard silently skipped every upload — BUG-081). Re-package the extracted
+    // directory into a temp .epub and upload that.
+    if (book.extractDir.isNotEmpty && Directory(book.extractDir).existsSync()) {
       final fileName = '${sanitizeTtuFilename(book.title)}.epub';
       final existing = await _backend.findContentFile(folderId, fileName);
       if (existing == null) {
-        await _backend.uploadContentFile(
-          folderId: folderId,
-          fileName: fileName,
-          file: epubFile,
-          onProgress: onContentProgress,
-        );
+        final Directory tmpDir =
+            Directory.systemTemp.createTempSync('hibiki_epub_export');
+        final File epubTmp = File(p.join(tmpDir.path, fileName));
+        try {
+          final bool built =
+              await repackageExtractedEpub(book.extractDir, epubTmp.path);
+          if (built) {
+            await _backend.uploadContentFile(
+              folderId: folderId,
+              fileName: fileName,
+              file: epubTmp,
+              onProgress: onContentProgress,
+            );
+          }
+        } finally {
+          try {
+            tmpDir.deleteSync(recursive: true);
+          } catch (_) {/* best-effort temp cleanup */}
+        }
       }
     }
 
@@ -634,20 +678,20 @@ class SyncManager {
     required EpubBookRow book,
     required String folderId,
   }) async {
-    // Import EPUB
-    if (!File(book.epubPath).existsSync()) {
-      final fileName = '${sanitizeTtuFilename(book.title)}.epub';
-      final remote = await _backend.findContentFile(folderId, fileName);
-      if (remote != null) {
-        final destination = File(book.epubPath);
-        final parentDir = destination.parent;
-        if (!parentDir.existsSync()) parentDir.createSync(recursive: true);
-        await _backend.downloadContentFile(
-          fileId: remote.id,
-          destination: destination,
-          onProgress: onContentProgress,
-        );
-      }
+    // Import EPUB: a locally-present book already has its content in its
+    // extracted directory; there is no standalone .epub to (re)download. The
+    // old code keyed off `File(book.epubPath).existsSync()` — always false for
+    // the bare filename — and downloaded the epub to that bare path, polluting
+    // the process CWD and never re-extracting (BUG-081). Remote-only books are
+    // imported by importRemoteBookFolder, so here we only act when the local
+    // content is genuinely gone; recovery/re-extract is out of scope, so skip
+    // rather than write a stray file.
+    final bool contentPresent =
+        book.extractDir.isNotEmpty && Directory(book.extractDir).existsSync();
+    if (!contentPresent) {
+      debugPrint('[SyncManager] book "${book.title}" content missing locally '
+          '(extractDir gone); skipping epub re-import (remote-book import owns '
+          'recovery).');
     }
 
     // Import audio files
