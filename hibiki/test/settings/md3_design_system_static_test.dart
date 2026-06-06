@@ -682,16 +682,14 @@ void main() {
     expect(tagDropTarget, isNot(contains('BorderRadius.circular(12)')));
   });
 
-  test('reader history tag bar uses shared MD3 tag chips', () {
-    final String source = File(
-      'lib/src/pages/implementations/reader_hibiki_history_page.dart',
+  test('shared tag filter bar uses shared MD3 tag chips', () {
+    // 标签筛选栏已从书架页内联类 _TagBarContent 提取为共享组件
+    // HibikiTagFilterBar（书架 + 视频 tab 共用），此处对整份共享组件文件做约束。
+    final String tagBar = File(
+      'lib/src/pages/implementations/tag_filter_bar.dart',
     ).readAsStringSync();
-    final String tagBar = _functionSource(
-      source,
-      'class _TagBarContent extends ConsumerStatefulWidget',
-      'class BookDragTarget extends StatefulWidget',
-    );
 
+    expect(tagBar, contains('class HibikiTagFilterBar'));
     expect(tagBar, contains('HibikiTagChip('));
     expect(tagBar, contains('HibikiIconButton('));
     expect(tagBar, contains('tokens.spacing'));

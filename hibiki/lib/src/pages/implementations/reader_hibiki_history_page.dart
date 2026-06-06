@@ -18,6 +18,7 @@ import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_feature_flags.dart';
 import 'package:hibiki/src/media/video/video_import_dialog.dart';
+import 'package:hibiki/src/pages/implementations/tag_filter_bar.dart';
 import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/models/app_model.dart';
@@ -225,12 +226,13 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   }
 
   Widget _buildTagBar(List<BookTagRow> allTags) {
-    return _TagBarContent(
+    return HibikiTagFilterBar(
       tags: allTags,
       onToggleFilter: _toggleFilter,
       onReorder: _reorderTags,
       selectionMode: _selectionMode,
       onToggleSelectionMode: _toggleSelectionMode,
+      onTagsChanged: () => ref.invalidate(bookTagMapProvider),
     );
   }
 
@@ -1709,171 +1711,6 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         profiles: profileState.profiles,
         activeProfileName: profileState.activeProfile?.name ?? '',
       ),
-    );
-  }
-}
-
-class _TagBarContent extends ConsumerStatefulWidget {
-  const _TagBarContent({
-    required this.tags,
-    required this.onToggleFilter,
-    required this.onReorder,
-    required this.selectionMode,
-    required this.onToggleSelectionMode,
-  });
-  final List<BookTagRow> tags;
-  final void Function(int tagId) onToggleFilter;
-  final Future<void> Function(int oldIndex, int newIndex) onReorder;
-  final bool selectionMode;
-  final VoidCallback onToggleSelectionMode;
-
-  @override
-  ConsumerState<_TagBarContent> createState() => _TagBarContentState();
-}
-
-class _TagBarContentState extends ConsumerState<_TagBarContent> {
-  @override
-  Widget build(BuildContext context) {
-    final selectedIds = ref.watch(selectedTagIdsProvider);
-    final t = Translations.of(context);
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-
-    final int trailingCount = widget.tags.isEmpty ? 1 : 2;
-
-    return Container(
-      height: tokens.spacing.gap * 5.5,
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(
-            color: tokens.surfaces.outline.withValues(alpha: 0.3),
-          ),
-        ),
-      ),
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: EdgeInsets.symmetric(
-          horizontal: tokens.spacing.rowHorizontal,
-          vertical: tokens.spacing.gap * 0.75,
-        ),
-        itemCount: widget.tags.length + trailingCount,
-        separatorBuilder: (_, __) => SizedBox(width: tokens.spacing.gap * 0.75),
-        itemBuilder: (context, index) {
-          if (index == widget.tags.length + trailingCount - 1) {
-            return _tagBarAction(
-              icon:
-                  widget.selectionMode ? Icons.close : Icons.checklist_outlined,
-              tooltip: widget.selectionMode
-                  ? MaterialLocalizations.of(context).closeButtonTooltip
-                  : t.batch_select,
-              selected: widget.selectionMode,
-              onTap: widget.onToggleSelectionMode,
-            );
-          }
-          if (index == widget.tags.length && widget.tags.isNotEmpty) {
-            return _tagBarAction(
-              icon: Icons.settings_outlined,
-              tooltip: t.tag_manage,
-              onTap: () {
-                Navigator.push(
-                  context,
-                  adaptivePageRoute(builder: (_) => const TagManagementPage()),
-                ).then((_) {
-                  ref.invalidate(allTagsProvider);
-                  ref.invalidate(bookTagMapProvider);
-                });
-              },
-            );
-          }
-          final tag = widget.tags[index];
-          final isSelected = selectedIds.contains(tag.id);
-          if (widget.selectionMode) {
-            return _tagFilterChip(
-              tag: tag,
-              isSelected: isSelected,
-              isDimmed: false,
-              onTap: () => widget.onToggleFilter(tag.id),
-            );
-          }
-          return LongPressDraggable<BookTagRow>(
-            data: tag,
-            feedback: Material(
-              color: Colors.transparent,
-              elevation: 4,
-              shape: RoundedRectangleBorder(
-                borderRadius: tokens.radii.chipRadius,
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: _tagFilterChip(
-                tag: tag,
-                isSelected: true,
-                isDimmed: false,
-              ),
-            ),
-            childWhenDragging: Opacity(
-              opacity: 0.3,
-              child: _tagFilterChip(
-                tag: tag,
-                isSelected: isSelected,
-                isDimmed: false,
-              ),
-            ),
-            child: DragTarget<BookTagRow>(
-              onWillAcceptWithDetails: (details) => details.data.id != tag.id,
-              onAcceptWithDetails: (details) {
-                final draggedTag = details.data;
-                final oldIdx =
-                    widget.tags.indexWhere((t) => t.id == draggedTag.id);
-                final newIdx = widget.tags.indexWhere((t) => t.id == tag.id);
-                if (oldIdx != -1 && newIdx != -1) {
-                  widget.onReorder(oldIdx, newIdx);
-                }
-              },
-              builder: (context, candidateData, rejectedData) {
-                return _tagFilterChip(
-                  tag: tag,
-                  isSelected: isSelected,
-                  isDimmed: candidateData.isNotEmpty,
-                  onTap: () => widget.onToggleFilter(tag.id),
-                );
-              },
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _tagBarAction({
-    required IconData icon,
-    required String tooltip,
-    required VoidCallback onTap,
-    bool selected = false,
-  }) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return HibikiIconButton(
-      icon: icon,
-      tooltip: tooltip,
-      size: tokens.spacing.gap * 2.25,
-      padding: EdgeInsets.all(tokens.spacing.gap * 0.875),
-      enabledColor:
-          selected ? tokens.surfaces.primary : tokens.surfaces.onVariant,
-      onTap: onTap,
-    );
-  }
-
-  Widget _tagFilterChip({
-    required BookTagRow tag,
-    required bool isSelected,
-    required bool isDimmed,
-    VoidCallback? onTap,
-  }) {
-    return HibikiTagChip(
-      label: tag.name,
-      color: Color(tag.colorValue),
-      selected: isSelected,
-      dimmed: isDimmed,
-      tone: HibikiTagChipTone.surface,
-      onTap: onTap,
     );
   }
 }

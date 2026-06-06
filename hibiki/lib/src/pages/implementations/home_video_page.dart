@@ -14,6 +14,7 @@ import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_feature_flags.dart';
 import 'package:hibiki/src/media/video/video_import_dialog.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/pages/implementations/tag_filter_bar.dart';
 import 'package:hibiki/src/pages/implementations/tag_filter_sheet.dart';
 import 'package:hibiki/src/pages/implementations/tag_picker_page.dart';
 import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
@@ -370,61 +371,38 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     );
   }
 
-  /// 标签筛选栏（与书架共用 [selectedTagIdsProvider]）：左侧筛选/管理按钮打开
-  /// 共享 [TagFilterSheet]，右侧横向快速切换标签 chip。无标签时整栏隐藏。
+  /// 标签筛选栏：与书架完全一致——复用 [HibikiTagFilterBar]（内联 chip 点选筛选、
+  /// 长按拖拽重排、末尾「管理标签」齿轮）。共享 [selectedTagIdsProvider] 与书架联动；
+  /// 视频 tab 无批量选择，故不传 onToggleSelectionMode。无标签时整栏隐藏。
   Widget _buildTagFilterBar(List<BookTagRow> tags) {
     if (tags.isEmpty) return const SizedBox.shrink();
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    final Set<int> selected = ref.watch(selectedTagIdsProvider);
-    return SizedBox(
-      height: 48,
-      child: Row(
-        children: <Widget>[
-          IconButton(
-            tooltip: t.tag_filter_title,
-            icon: Icon(
-              selected.isEmpty ? Icons.sell_outlined : Icons.sell,
-              color: selected.isEmpty
-                  ? null
-                  : Theme.of(context).colorScheme.primary,
-            ),
-            onPressed: () => adaptiveModalSheet<void>(
-              context: context,
-              builder: (_) => const TagFilterSheet(),
-            ),
-          ),
-          Expanded(
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: EdgeInsetsDirectional.only(end: tokens.spacing.page),
-              itemCount: tags.length,
-              separatorBuilder: (_, __) => SizedBox(width: tokens.spacing.gap),
-              itemBuilder: (BuildContext context, int i) {
-                final BookTagRow tag = tags[i];
-                return Center(
-                  child: HibikiTagChip(
-                    label: tag.name,
-                    color: Color(tag.colorValue),
-                    selected: selected.contains(tag.id),
-                    tone: HibikiTagChipTone.surface,
-                    onTap: () {
-                      final Set<int> next =
-                          Set<int>.from(ref.read(selectedTagIdsProvider));
-                      if (next.contains(tag.id)) {
-                        next.remove(tag.id);
-                      } else {
-                        next.add(tag.id);
-                      }
-                      ref.read(selectedTagIdsProvider.notifier).state = next;
-                    },
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
+    return HibikiTagFilterBar(
+      tags: tags,
+      onToggleFilter: _toggleFilter,
+      onReorder: _reorderTags,
+      onTagsChanged: () => ref.invalidate(videoBookTagMapProvider),
     );
+  }
+
+  void _toggleFilter(int tagId) {
+    final Set<int> next = Set<int>.from(ref.read(selectedTagIdsProvider));
+    if (next.contains(tagId)) {
+      next.remove(tagId);
+    } else {
+      next.add(tagId);
+    }
+    ref.read(selectedTagIdsProvider.notifier).state = next;
+  }
+
+  Future<void> _reorderTags(int oldIndex, int newIndex) async {
+    final List<BookTagRow>? tags = ref.read(allTagsProvider).valueOrNull;
+    if (tags == null) return;
+    final List<BookTagRow> reordered = List<BookTagRow>.from(tags);
+    final BookTagRow item = reordered.removeAt(oldIndex);
+    reordered.insert(newIndex, item);
+    final List<int> orderedIds = reordered.map((BookTagRow t) => t.id).toList();
+    await ref.read(appProvider).database.reorderTags(orderedIds);
+    ref.invalidate(allTagsProvider);
   }
 
   Widget _buildEmpty() {
