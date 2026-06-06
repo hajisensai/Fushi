@@ -13,6 +13,13 @@
 
 ---
 
+## BUG-080 · Google Drive 同步大文件「进度一点没动 / 超时 / 永远传不完」（单次 multipart 而非分块续传）
+- **报告**：2026-06-06（用户：「我在上传了，进度一点没动」「就不能分块上传吗」「为什么会超时」）。真机 Drive API + 本地 DB 取证定位。
+- **真实性**：✅ **真 bug（沿真实代码 + 真机取证）**。取证：真调用户 Google Drive API + 读本地 DB——本地音频库 `android.db` = **5930 MB（5.8 GB）**，开了「同步本地音频」后 `syncLocalAudioPackages` 要把它打包+上传；另有 2 本有声书/19240 cue 也是 GB 级。所有大资产上传（epub 内容 / 词典 / 有声书 / 本地音频包，经 `putAsset`→）都汇聚到 `google_drive_handler.dart:uploadContentFile`，它调 `api.files.create/update(uploadMedia: media)` **用默认上传选项 = 把整个文件一次性 multipart POST**（`google_drive_handler.dart:481-515`，无 `uploadOptions`）。后果三连：① 5.8GB 单请求在不稳网络上连接一断即 HTTP 超时；② 多 GB 上传可超过 access token ~1h 有效期 → 传到一半 401；③ 外层 `_call` 一报错就重试整个闭包 → `file.openRead()` 重开流**从第 0 字节重传**，无断点续传 → 每次抖动从头来 → **永远传不完、进度一点没动**。googleapis 13.2.0 本就支持 `ResumableUploadOptions`（分块可续传，`drive/v3.dart` 已 re-export，`files.create` 在 `:1325` 对它分流到 resumable uploader），代码却没用。
+- **[x] ① 已修复** — 本提交（自含修复+守卫+本条目）。**根因修（改用分块可续传上传）**：`uploadContentFile` 的 create/update 均传 `uploadOptions: drive.ResumableUploadOptions(numberOfAttempts: 5, chunkSize: 8MB)`。效果：分块上传，单块失败按指数退避重试 5 次（不丢已传块），块与块之间 authenticatedClient 自动刷新 token（解决 1h 过期），网络抖动只损失一块而非从头来 → 大文件能真正传完、进度持续推进。一处改动覆盖全部大资产路径（epub/词典/有声书/本地音频包都走 `uploadContentFile`）。小 JSON（进度/统计）与封面走各自的小上传方法，不动。
+- **[x] ② 已加自动化测试** — `hibiki/test/sync/google_drive_resumable_upload_guard_test.dart`（源码守卫，真实 Drive 上传无法 host 单测）：断言 `uploadContentFile` 用 `ResumableUploadOptions`、create+update 两路都传 `uploadOptions`、且设了显式 `chunkSize`。`test/sync/` 全量 312 绿，analyze 0。
+- **备注**：sync 大文件上传类。代码正确 + 无回归；**真机复测待用户**：开「同步本地音频」后大文件能分块续传、进度推进、最终在 `__local_audio__` 出现（虽 5.8GB 仍慢，但能完成而非永远卡）。**两个独立配套问题**：① epub 仍不上传是另一根因（`existsSync` 对纯文件名恒 false + 磁盘无 .epub，需重打包 `extractDir`，未在本提交）；② 5.8GB 发音库走云盘上传本就低效，更适合走 Hibiki 互联局域网，或后续加体量提示/可跳过。
+
 ## BUG-079 · 同步进度里出现「不存在的词典」+ 内网同步特别慢（词典暂存区孤儿被反复重拉）
 - **报告**：2026-06-06（用户：「hibiki 互联同步的时候会有不存在的词典，显示在进度里面」「内网同步速度还特别慢」「电脑和手机都没那个词典，慢就是慢」）。采番注：本轮 077/078 已占，取 079。
 - **真实性**：✅ **真 bug（幽灵与慢同一根因，沿真实代码路径 + 研究 agent 实证）**。词典同步走「打包推送 + 拉取」经一个中转暂存目录 `__dictionaries__`（**不是**直读对端实时数据）：客户端把本地词典 `exportDictionaryPackage` 成 `<名>.hibikidict` `putAsset` 到后端 `__dictionaries__/`，反向 `getAsset` 拉别人推上去的包（`sync_orchestrator.dart:278-361`；互联时 host 是被动 WebDAV，该目录是 host 磁盘上的真实暂存目录，与 host 实时词典资源目录 `dictionaryResourceDirectory` 不同）。**根因 = union 同步永不删远端**（`sync_orchestrator.dart:89-91`「Deletes are never propagated」）+ **本地删词典 `AppModel.deleteDictionary` 从不碰远端**（`app_model.dart`，原实现只删本地 DB/资源/缓存）。于是任一设备删过的词典，其 `<名>.hibikidict` 永久躺在暂存区 → 每次同步都被判「远端独有」→ 重新下载（包大就慢）+ 尝试导入；若该孤儿包旧/损坏导致导入失败，则**永远进不了本地、每次同步都重下一遍** → 「两台都没这词典却每次都来、还慢」。**幽灵(进度里冒出删过的词典) 与 慢(每次重下大孤儿) 是同一根因。**（远端删除原语 `deleteAsset` 早已存在，但只在手动对比对话框 `sync_compare_dialog.dart:_deleteRemote` 用过，自动同步从不触发。）

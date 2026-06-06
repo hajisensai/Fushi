@@ -498,11 +498,27 @@ class GoogleDriveHandler {
       });
       final media = drive.Media(stream, length, contentType: contentType);
 
+      // Content assets (EPUBs, dictionary / audiobook / local-audio packages)
+      // can be hundreds of MB to multiple GB (a 5.8 GB local-audio DB was seen
+      // in the wild). The default upload is a SINGLE multipart POST of the whole
+      // file: on a flaky link any blip drops the connection (→ timeout) and the
+      // _call retry restarts the stream from byte 0, so a large upload never
+      // completes; a multi-GB upload can also outlive the ~1h access-token
+      // lifetime mid-request → 401. Resumable chunked upload fixes all three:
+      // each chunk is retried with backoff and the token is refreshed between
+      // chunks, so progress is never lost to a single hiccup (BUG-080).
+      final drive.ResumableUploadOptions uploadOptions =
+          drive.ResumableUploadOptions(
+        numberOfAttempts: 5,
+        chunkSize: 8 * 1024 * 1024,
+      );
+
       if (existingId != null) {
         await api.files.update(
           drive.File()..name = fileName,
           existingId,
           uploadMedia: media,
+          uploadOptions: uploadOptions,
         );
       } else {
         await api.files.create(
@@ -510,6 +526,7 @@ class GoogleDriveHandler {
             ..name = fileName
             ..parents = [folderId],
           uploadMedia: media,
+          uploadOptions: uploadOptions,
         );
       }
     });
