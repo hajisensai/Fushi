@@ -16,6 +16,7 @@ import 'package:path_provider/path_provider.dart';
 
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
+import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
@@ -1445,25 +1446,35 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // 两层主题嵌套：[AdaptiveVideoControls] 按平台互斥择一渲染（桌面读 Desktop
     // 主题、移动读 Material 主题），故同时提供两套互不干扰，让字幕/音轨/设置入口
     // 在桌面、移动、全屏三种场景都可达。嵌套顺序不影响——各自被对应平台 controls 读取。
-    return MaterialVideoControlsTheme(
-      normal: _mobileControlsTheme(controller),
-      fullscreen: _mobileControlsTheme(controller),
-      child: MaterialDesktopVideoControlsTheme(
-        normal: _desktopControlsTheme(controller),
-        fullscreen: _desktopControlsTheme(controller),
-        child: Video(
-          controller: videoController,
-          // 用本页持有的 FocusNode 替换 Video 内置的匿名节点，以便覆盖层（对话框 /
-          // bottom sheet / 文件选择器）关闭后能主动把键盘焦点还给它，恢复空格等内置
-          // 快捷键（见 [_refocusVideo]）。
-          focusNode: _videoFocusNode,
-          // 视频不满屏时的 letterbox/pillarbox 填充色吃主题 surface（默认黑边换成
-          // 跟随主题的中性底色，与 Scaffold 背景一致，深浅主题统一）。
-          fill: Theme.of(context).colorScheme.surface,
-          // 字幕 overlay 包进 controls builder：media_kit 全屏推独立 root 路由并复用
-          // 同一 controls，故 overlay 随全屏一起进路由，全屏时字幕仍显示且可点查词。
-          controls: (VideoState state) =>
-              _buildVideoControls(state, controller),
+    return HibikiFileDropTarget(
+      // 拖字幕文件到正在播放的视频上 → 即时挂载（asbplayer 式）。仅桌面三端启用
+      // （HibikiFileDropTarget 内部门控），其余平台透传 child 零开销。只取第一个
+      // 受支持字幕；拖入纯视频/图片等忽略。desktop_drop 不夺焦，无需 _refocusVideo。
+      onDrop: (List<String> paths, Offset _) {
+        final String? sub = firstSubtitlePath(paths);
+        if (sub == null) return;
+        unawaited(_importExternalSubtitle(controller, sub));
+      },
+      child: MaterialVideoControlsTheme(
+        normal: _mobileControlsTheme(controller),
+        fullscreen: _mobileControlsTheme(controller),
+        child: MaterialDesktopVideoControlsTheme(
+          normal: _desktopControlsTheme(controller),
+          fullscreen: _desktopControlsTheme(controller),
+          child: Video(
+            controller: videoController,
+            // 用本页持有的 FocusNode 替换 Video 内置的匿名节点，以便覆盖层（对话框 /
+            // bottom sheet / 文件选择器）关闭后能主动把键盘焦点还给它，恢复空格等内置
+            // 快捷键（见 [_refocusVideo]）。
+            focusNode: _videoFocusNode,
+            // 视频不满屏时的 letterbox/pillarbox 填充色吃主题 surface（默认黑边换成
+            // 跟随主题的中性底色，与 Scaffold 背景一致，深浅主题统一）。
+            fill: Theme.of(context).colorScheme.surface,
+            // 字幕 overlay 包进 controls builder：media_kit 全屏推独立 root 路由并复用
+            // 同一 controls，故 overlay 随全屏一起进路由，全屏时字幕仍显示且可点查词。
+            controls: (VideoState state) =>
+                _buildVideoControls(state, controller),
+          ),
         ),
       ),
     );
