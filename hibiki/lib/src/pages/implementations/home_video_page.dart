@@ -99,6 +99,8 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           subtitlePath:
               files.subtitles.isNotEmpty ? files.subtitles.first : null,
         );
+      case DropIntent.importNewPlaylist:
+        _openPlaylistImportPrefilled(playlistPath: files.playlists.first);
       case DropIntent.attachToVideoCard:
         _openVideoImportPrefilled(
           videoPath: hit!.videoPath,
@@ -128,6 +130,21 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         repo: widget.repo,
         initialVideoPath: videoPath,
         initialSubtitlePath: subtitlePath,
+      ),
+    );
+    if (bookUid != null) _refresh();
+  }
+
+  /// 拖入 m3u8/m3u 播放列表：打开 [VideoImportDialog] 并预填 playlist 路径，对话框
+  /// 自动解析多集落库（与手动点「播放列表」按钮同一路径），关闭后刷新列表。
+  Future<void> _openPlaylistImportPrefilled({
+    required String playlistPath,
+  }) async {
+    final String? bookUid = await showAppDialog<String>(
+      context: context,
+      builder: (_) => VideoImportDialog(
+        repo: widget.repo,
+        initialPlaylistPath: playlistPath,
       ),
     );
     if (bookUid != null) _refresh();
@@ -344,20 +361,18 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
               itemBuilder: (BuildContext context, int i) {
                 final BookTagRow tag = tags[i];
                 return Center(
-                  child: HibikiSelectableChip(
-                    selected: selected.contains(tag.id),
-                    avatar: CircleAvatar(
-                      backgroundColor: Color(tag.colorValue),
-                      radius: 6,
-                    ),
+                  child: HibikiTagChip(
                     label: tag.name,
-                    onSelected: (bool sel) {
+                    color: Color(tag.colorValue),
+                    selected: selected.contains(tag.id),
+                    tone: HibikiTagChipTone.surface,
+                    onTap: () {
                       final Set<int> next =
                           Set<int>.from(ref.read(selectedTagIdsProvider));
-                      if (sel) {
-                        next.add(tag.id);
-                      } else {
+                      if (next.contains(tag.id)) {
                         next.remove(tag.id);
+                      } else {
+                        next.add(tag.id);
                       }
                       ref.read(selectedTagIdsProvider.notifier).state = next;
                     },

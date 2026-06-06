@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
@@ -15,6 +16,7 @@ import 'package:path_provider/path_provider.dart';
 
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
+import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
@@ -1161,6 +1163,18 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                   _openJimakuDialog(controller);
                 },
               ),
+              // 从本地文件导入字幕：FilePicker 选 srt/ass/ssa/vtt → 拷到持久目录 →
+              // 复用 _selectSubtitleSource 应用（解决 sidecar 名对不上 / 字幕在别目录）。
+              ListTile(
+                textColor: Colors.white,
+                leading:
+                    const Icon(Icons.file_open_outlined, color: Colors.white),
+                title: Text(t.video_subtitle_import_file),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _pickAndImportSubtitle(controller);
+                },
+              ),
               const Divider(color: Colors.white24, height: 1),
               ListTile(
                 textColor: Colors.white,
@@ -1232,6 +1246,67 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     }
   }
 
+  /// 弹系统文件选择器挑一个字幕文件（srt/ass/ssa/vtt）→ 经 [_importExternalSubtitle]
+  /// 落盘并应用。FilePicker 会夺走视频键盘焦点，关闭后 [_refocusVideo] 归还。
+  Future<void> _pickAndImportSubtitle(VideoPlayerController controller) async {
+    final FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const <String>['srt', 'vtt', 'ass', 'ssa'],
+      allowMultiple: false,
+    );
+    _refocusVideo();
+    final String? path = result?.files.single.path;
+    if (path == null) return;
+    await _importExternalSubtitle(controller, path);
+  }
+
+  /// 把用户挑选/拖入的外部字幕文件 [srcPath] 拷到持久化
+  /// `<appDocs>/video_subtitles/`（与 Jimaku 下载同目录），构造外挂
+  /// [SubtitleSource] 后经 [_selectSubtitleSource] 应用（复用 cue 解析/切换/
+  /// 持久化/失败提示全链路）。
+  ///
+  /// 拷贝到持久目录而非直接用原路径：原文件可能在临时/缓存区或后续被移动，落盘后
+  /// 持久化的 `subtitleSource` 路径才稳定可恢复。格式不支持或拷贝失败时弹提示、
+  /// 不切换。源路径已在持久目录内时跳过自拷贝（File.copy 自拷会报错）。
+  ///
+  /// 落点是 `video_subtitles/<basename>`：同 basename 直接覆盖，是「当前集导入
+  /// 覆盖」语义，有意不做去重——避免堆积同名副本，且换集恢复按文件名匹配，去重
+  /// 后缀反而干扰匹配。
+  Future<void> _importExternalSubtitle(
+    VideoPlayerController controller,
+    String srcPath,
+  ) async {
+    if (_currentVideoPath == null) return;
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    if (subtitleFormatForPath(srcPath) == null) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(t.video_subtitle_import_unsupported)),
+      );
+      return;
+    }
+    final Directory docs = await getApplicationDocumentsDirectory();
+    final Directory destDir = Directory(p.join(docs.path, 'video_subtitles'));
+    await destDir.create(recursive: true);
+    final String dest = p.join(destDir.path, p.basename(srcPath));
+    if (!p.equals(srcPath, dest)) {
+      try {
+        await File(srcPath).copy(dest);
+      } catch (_) {
+        if (!mounted) return;
+        messenger.showSnackBar(
+          SnackBar(content: Text(t.video_subtitle_import_failed)),
+        );
+        return;
+      }
+    }
+    if (!mounted) return;
+    final SubtitleSource source = SubtitleSource.external(
+      externalPath: dest,
+      label: p.basename(dest),
+    );
+    await _selectSubtitleSource(controller, source);
+  }
+
   /// 选中某字幕源：加载 cue → 切 overlay → 持久化 → SnackBar。
   /// 返回 true 表示字幕真被应用（解析出 cue 并切换/持久化）；false 表示空 cue
   /// 失败（已弹失败提示、未切换、未持久化、未覆盖当前可用字幕）。
@@ -1260,7 +1335,20 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     await controller.selectSubtitleTrack(SubtitleTrack.no());
 
     final String persisted = source.toPersistedValue();
-    await widget.repo.updateSubtitleSource(widget.bookUid, persisted);
+    // BUG-081: 单视频把解析出的 cue 落库，重进时 `_loadSingle` 的 `loadCues`
+    // 直接命中，无需用户再手动加载。cue 与字幕源指针**原子**写入（事务），避免
+    // 半落库导致下次恢复内容与源标签不一致。播放列表各集有意不存 cue（每集外部
+    // 文件按磁盘动态解析，避免跨集 bookUid 错配，见 `_loadEpisode` 注释），故只
+    // 写源指针。
+    if (_episodes.isEmpty) {
+      await widget.repo.saveSubtitleSelection(
+        bookUid: widget.bookUid,
+        subtitleSource: persisted,
+        cues: cues,
+      );
+    } else {
+      await widget.repo.updateSubtitleSource(widget.bookUid, persisted);
+    }
     if (!mounted) return false;
     setState(() => _currentSubtitleSource = persisted);
     messenger.showSnackBar(SnackBar(
@@ -1273,7 +1361,18 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   Future<void> _selectSubtitleOff(VideoPlayerController controller) async {
     controller.setCues(const <AudioCue>[]);
     await controller.selectSubtitleTrack(SubtitleTrack.no());
-    await widget.repo.updateSubtitleSource(widget.bookUid, null);
+    // BUG-081: 关字幕也要清掉单视频已落库的 cue，否则重进时 `loadCues` 命中旧
+    // cue 又把字幕显示回来。cue 与源指针原子清空（事务）。播放列表不入 cue，只
+    // 清源指针。
+    if (_episodes.isEmpty) {
+      await widget.repo.saveSubtitleSelection(
+        bookUid: widget.bookUid,
+        subtitleSource: null,
+        cues: const <AudioCue>[],
+      );
+    } else {
+      await widget.repo.updateSubtitleSource(widget.bookUid, null);
+    }
     if (!mounted) return;
     setState(() => _currentSubtitleSource = null);
   }
@@ -1386,8 +1485,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           // 视频不满屏时的 letterbox/pillarbox 填充色吃主题 surface（默认黑边换成
           // 跟随主题的中性底色，与 Scaffold 背景一致，深浅主题统一）。
           fill: Theme.of(context).colorScheme.surface,
-          // 字幕 overlay 包进 controls builder：media_kit 全屏推独立 root 路由并复用
-          // 同一 controls，故 overlay 随全屏一起进路由，全屏时字幕仍显示且可点查词。
+          // 字幕 overlay + 拖拽挂载都包进 controls builder：media_kit 全屏推独立 root
+          // 路由并复用同一 controls，故 overlay 随全屏一起进路由，全屏时字幕仍显示且
+          // 可点查词、拖字幕也能挂载（见 [_buildVideoControls]）。
           controls: (VideoState state) =>
               _buildVideoControls(state, controller),
         ),
@@ -1402,16 +1502,31 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     VideoState state,
     VideoPlayerController controller,
   ) {
-    return Stack(
-      children: <Widget>[
-        Positioned.fill(child: AdaptiveVideoControls(state)),
-        Positioned.fill(
-          child: VideoSubtitleOverlay(
-            controller: controller,
-            onCharTap: _lookupAt,
+    // 拖字幕文件到正在播放的视频上 → 即时挂载（asbplayer 式）。包在 controls
+    // overlay 层（而非 [_buildVideoBody] 外层）：media_kit 全屏推独立 root 路由、
+    // 复用同一 controls builder，故拖拽目标随全屏一起进路由——窗口与全屏两种场景
+    // 用同一个目标都能挂载（覆盖 overlay 即视频可视区）。仅桌面三端启用
+    // （[HibikiFileDropTarget] 内部门控），其余平台透传 child 零开销。只取第一个
+    // 受支持字幕；拖入纯视频/图片等忽略。desktop_drop 只接管 OS 文件拖放、不吃
+    // Flutter 指针事件，故内层字幕点击查词（onCharTap）不受影响；不夺焦故无需
+    // _refocusVideo。
+    return HibikiFileDropTarget(
+      onDrop: (List<String> paths, Offset _) {
+        final String? sub = firstSubtitlePath(paths);
+        if (sub == null) return;
+        unawaited(_importExternalSubtitle(controller, sub));
+      },
+      child: Stack(
+        children: <Widget>[
+          Positioned.fill(child: AdaptiveVideoControls(state)),
+          Positioned.fill(
+            child: VideoSubtitleOverlay(
+              controller: controller,
+              onCharTap: _lookupAt,
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

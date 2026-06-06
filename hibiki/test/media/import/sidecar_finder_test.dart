@@ -69,6 +69,23 @@ void main() {
       expect(r.audio, <String>['book01.mp3', 'book02.mp3']);
     });
 
+    test('同名 .mp4 不当音频（视频容器，避免误把视频当有声书音轨）', () {
+      final r = selectSidecarNames(
+        mainFileName: 'book.epub',
+        siblingNames: <String>['book.mp4', 'book.srt'],
+      );
+      expect(r.audio, isEmpty);
+      expect(r.subtitle, 'book.srt');
+    });
+
+    test('真音频容器 .m4a / .m4b 仍命中', () {
+      final r = selectSidecarNames(
+        mainFileName: 'book.epub',
+        siblingNames: <String>['book.m4b', 'book 01.m4a'],
+      );
+      expect(r.audio, <String>['book 01.m4a', 'book.m4b']);
+    });
+
     test('大小写不敏感', () {
       final r = selectSidecarNames(
         mainFileName: 'Book.EPUB',

@@ -88,7 +88,15 @@ void main() {
 
     expect(find.text('My Episode'), findsOneWidget);
     // 标签来自共享 BookTags 池，经 video_book_tag_mappings 映射。
-    expect(find.widgetWithText(HibikiTagChip, 'Anime'), findsOneWidget);
+    // 卡片与顶部筛选条现都用同款共享 HibikiTagChip，故按卡片范围定位避免与
+    // 筛选条里的同名标签冲突。
+    expect(
+      find.descendant(
+        of: find.byType(HibikiCard),
+        matching: find.widgetWithText(HibikiTagChip, 'Anime'),
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('长按视频卡弹出菜单（标签 / 封面 / 删除）', (WidgetTester tester) async {

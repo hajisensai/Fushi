@@ -42,6 +42,8 @@ class HibikiReorderableColumn extends StatefulWidget {
     required this.itemBuilder,
     required this.keyForIndex,
     required this.onReorder,
+    this.spacing = 0,
+    this.feedbackBorderRadius,
     super.key,
   });
 
@@ -52,6 +54,17 @@ class HibikiReorderableColumn extends StatefulWidget {
   /// 「item[from] 移到最终下标 to」。起拖时机按输入设备区分（见类注释）：
   /// 鼠标等精确指针按下即拖，触摸屏长按（`kLongPressTimeout`）再拖。
   final HibikiReorderCallback onReorder;
+
+  /// 相邻行之间的间距，由**列表**插入（而非塞进每个 item 自带 padding）。
+  /// 这样拖拽中的浮层复制只包住行内容本身、不会把行间空隙也涂成背景色
+  /// （item 自带 bottom padding 时，浮层的 [Material] 会把空隙连同行一起涂色，
+  /// 表现为「被拖行下方多出一条背景」）。默认 0：行紧贴，行为与历史一致。
+  final double spacing;
+
+  /// 拖拽浮层复制的圆角（裁切到此半径）。给本身是圆角卡片的行（如词典行的
+  /// `HibikiCard`）传卡片半径，使浮层 [Material] 的矩形背景不在圆角处露出底色；
+  /// null 时浮层为直角（与历史一致，适合无自带背景的设置行）。
+  final BorderRadius? feedbackBorderRadius;
 
   @override
   State<HibikiReorderableColumn> createState() =>
@@ -117,21 +130,23 @@ class _HibikiReorderableColumnState extends State<HibikiReorderableColumn> {
 
   double _heightOf(int original) => _heights[original] ?? 0;
 
-  /// display 位置 di 的槽顶（按当前 _display 累加高度）。
+  /// display 位置 di 的槽顶（按当前 _display 累加高度 + 行间距）。
+  /// di 之前有 di 个行间距（每相邻两行一个），故加 `spacing * di`。
   double _slotTop(int di) {
     double top = 0;
     for (int k = 0; k < di; k++) {
       top += _heightOf(_display[k]);
     }
-    return top;
+    return top + widget.spacing * di;
   }
 
   double get _totalHeight {
+    if (_display.isEmpty) return 0;
     double h = 0;
     for (final int oi in _display) {
       h += _heightOf(oi);
     }
-    return h;
+    return h + widget.spacing * (_display.length - 1);
   }
 
   void _startDrag(int original, Offset globalPosition) {
@@ -155,17 +170,21 @@ class _HibikiReorderableColumnState extends State<HibikiReorderableColumn> {
     final double newTop =
         (_localY(globalPosition) - _grabDy).clamp(0.0, maxTop);
 
-    // 浮层中心落在哪个槽 → 目标 display 下标。
+    // 浮层中心落在哪个槽 → 目标 display 下标。用 `<=`（含边界）而非 `<`：
+    // 拖到最顶端时 newTop 被 clamp 到 0，等高行的浮层中心恰好停在第一行中点
+    // （centerY == h/2 == 第一槽中点）。若用严格 `<`，该相等边界判否 → target
+    // 永远到不了 0、被拖行卡在索引 1（非第一项无法拖到第一、且浮层在上而空位在下）。
+    // 含边界后相等即归入当前槽，第一项可达；末项边界对称由默认 length-1 兜底，不受影响。
     final double centerY = newTop + draggedH / 2;
     int target = _display.length - 1;
     double acc = 0;
     for (int di = 0; di < _display.length; di++) {
       final double h = _heightOf(_display[di]);
-      if (centerY < acc + h / 2) {
+      if (centerY <= acc + h / 2) {
         target = di;
         break;
       }
-      acc += h;
+      acc += h + widget.spacing; // 跨到下一槽顶时要算上行间距
     }
 
     final int currentDi = _display.indexOf(dragged);
@@ -199,8 +218,10 @@ class _HibikiReorderableColumnState extends State<HibikiReorderableColumn> {
         Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            for (int di = 0; di < _display.length; di++)
+            for (int di = 0; di < _display.length; di++) ...<Widget>[
+              if (di > 0) SizedBox(height: widget.spacing),
               _buildSlot(_display[di]),
+            ],
           ],
         ),
         if (dragged != null)
@@ -209,9 +230,18 @@ class _HibikiReorderableColumnState extends State<HibikiReorderableColumn> {
             left: 0,
             right: 0,
             child: IgnorePointer(
+              // 浮层只包行内容（不含行间距，间距由上面的 Column 统一插入）；
+              // feedbackBorderRadius 非空时裁成圆角，避免矩形背景在圆角卡片外露底色。
               child: Material(
                 elevation: 6,
                 color: Theme.of(context).colorScheme.surface,
+                shape: widget.feedbackBorderRadius != null
+                    ? RoundedRectangleBorder(
+                        borderRadius: widget.feedbackBorderRadius!)
+                    : null,
+                clipBehavior: widget.feedbackBorderRadius != null
+                    ? Clip.antiAlias
+                    : Clip.none,
                 child: widget.itemBuilder(context, dragged),
               ),
             ),

@@ -1463,20 +1463,30 @@ function createEntryHeader(entry, idx) {
         },
         onclick: async () => {
             mineButton.disabled = true;
-            const isAnkiConnect = await mineEntry(expression, reading, frequencies, pitches, rules, matched, idx, lastSelection);
-            const checkDuplicate = async () => {
-                const wasAdded = await window.flutter_inappwebview.callHandler('duplicateCheck', { expression, reading });
-                mineButton.textContent = wasAdded ? '✓' : '+';
-                if (wasAdded) {
-                    mineButton.classList.add('duplicate');
+            try {
+                const isAnkiConnect = await mineEntry(expression, reading, frequencies, pitches, rules, matched, idx, lastSelection);
+                const checkDuplicate = async () => {
+                    const wasAdded = await window.flutter_inappwebview.callHandler('duplicateCheck', { expression, reading });
+                    mineButton.textContent = wasAdded ? '✓' : '+';
+                    if (wasAdded) {
+                        mineButton.classList.add('duplicate');
+                    }
+                    mineButton.disabled = wasAdded && !window.allowDupes;
+                };
+
+                if (isAnkiConnect) {
+                    await checkDuplicate();
+                } else {
+                    setTimeout(checkDuplicate, 1000);
                 }
-                mineButton.disabled = wasAdded && !window.allowDupes;
-            };
-            
-            if (isAnkiConnect) {
-                await checkDuplicate();
-            } else {
-                setTimeout(checkDuplicate, 1000);
+            } catch (e) {
+                // BUG-077: a rejected mineEntry/duplicateCheck (Dart handler threw,
+                // or a JS payload-builder error) must never leave the button stuck
+                // disabled showing '+' with no feedback. Restore it to a clickable
+                // '+' so the user can see it failed and retry.
+                console.error('mine button: mineEntry failed', e);
+                mineButton.textContent = '+';
+                mineButton.disabled = false;
             }
         }
     });

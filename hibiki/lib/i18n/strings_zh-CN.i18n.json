@@ -1318,6 +1318,10 @@
     "video_stat_watch_time": "观看时长",
     "video_stat_completed": "已完成",
     "video_stat_no_data": "暂无视频统计数据",
+    "video_subtitle_import_file": "导入字幕文件…",
+    "video_subtitle_import_unsupported": "不支持的字幕格式",
+    "video_subtitle_import_failed": "导入字幕失败",
+    "nav_lookup": "查词",
     "sync_server_mode_active": "本机作为同步服务端",
     "sync_server_mode_clients_drive": "由已连接的客户端发起同步，本机无需手动同步"
 }

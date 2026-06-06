@@ -39,6 +39,22 @@ const Set<String> defaultSubtitleExts = <String>{
 /// 如 `book 01` / `book-02` / `book_03` / `book01`，借此收多段、排除 `bookkeeping`。
 final RegExp _multipartSuffix = RegExp(r'^[\s._\-]|^\d');
 
+/// sidecar 专用音频扩展集中要排除的"视频容器"扩展名。
+///
+/// [AudiobookStorage.audioExtensions] 含 `.mp4`（有声书允许纯音频 mp4），但自动挂载
+/// 场景下，书目录里同名的 `book.mp4` 多半是视频版而非音轨——若当音频挂上去会把视频
+/// 误当有声书。故 sidecar 自动识别**排除 `.mp4`**；用户仍可在导入对话框手动选 mp4 音频。
+const Set<String> _sidecarAudioExcludeExts = <String>{'.mp4'};
+
+/// sidecar 音频判定：复用 [AudiobookStorage.isAudioFile] 的音频扩展集，但剔除
+/// [_sidecarAudioExcludeExts]（视频容器）。
+bool _isSidecarAudio(String name) {
+  if (_sidecarAudioExcludeExts.contains(p.extension(name).toLowerCase())) {
+    return false;
+  }
+  return AudiobookStorage.isAudioFile(name);
+}
+
 /// 纯函数核心：从同目录的文件名列表中选出匹配的字幕/音频**文件名**（非路径）。
 ///
 /// 无 IO、无 context，是 sidecar 自动挂载的可测核心。[siblingNames] 是同目录下
@@ -80,7 +96,7 @@ final RegExp _multipartSuffix = RegExp(r'^[\s._\-]|^\d');
     }
 
     // 音频：完全同名 或 同前缀多段。
-    if (wantAudio && AudiobookStorage.isAudioFile(name)) {
+    if (wantAudio && _isSidecarAudio(name)) {
       if (base == stem) {
         audio.add(name);
       } else if (base.startsWith(stem) &&

@@ -366,7 +366,7 @@ class _HomePageState extends BasePageState<HomePage>
         return AdaptiveNavItem(
           icon: Icons.search_outlined,
           selectedIcon: Icons.search,
-          label: t.dictionaries,
+          label: t.nav_lookup,
         );
       case HomeTab.settings:
         return AdaptiveNavItem(

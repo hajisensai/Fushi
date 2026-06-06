@@ -82,12 +82,45 @@ class HibikiDatabase extends _$HibikiDatabase {
                 }
               }
             }
-            for (final table in allTables) {
-              await customStatement(
-                'DROP TABLE IF EXISTS "${table.actualTableName}"',
-              );
+            // Disable FK enforcement for the destructive teardown. Production
+            // opens with `PRAGMA foreign_keys = ON` (see _openDb); dropping
+            // tables in declaration order then drops a parent (epub_books)
+            // before a child whose FK references it (book_tag_mappings), and the
+            // child-table validation fails with "no such table". Because each
+            // DROP auto-commits (this migration is not wrapped in a
+            // transaction), that abort leaves the DB permanently half-dropped —
+            // user_version unchanged, baseline tables gone, every later launch
+            // crashing on the first query. FK off makes teardown order-
+            // independent. (BUG-075)
+            //
+            // This teardown is intentionally NON-atomic: each DROP auto-commits,
+            // and SQLite cannot toggle `PRAGMA foreign_keys` inside a
+            // transaction, so drop+createAll cannot be wrapped in one. The
+            // pre-drop `.bak` snapshot above is the recovery net if createAll
+            // fails partway. Do NOT "fix" this by adding a transaction — that
+            // would silently no-op the FK toggle and reintroduce the crash.
+            await customStatement('PRAGMA foreign_keys = OFF');
+            try {
+              // Drop every table actually present, not just allTables: a
+              // future-schema DB may carry tables this build doesn't know, and a
+              // partially-built DB may carry tables this build's allTables omits.
+              // Enumerating sqlite_master guarantees a clean slate before
+              // createAll regardless of which schema actually wrote the file.
+              final List<QueryRow> existingTables = await customSelect(
+                "SELECT name FROM sqlite_master "
+                "WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
+              ).get();
+              for (final QueryRow row in existingTables) {
+                await customStatement(
+                  'DROP TABLE IF EXISTS "${row.read<String>('name')}"',
+                );
+              }
+              await m.createAll();
+            } finally {
+              // Restore the enforcement the connection was opened with on every
+              // exit path — a createAll failure must not leave FK disabled.
+              await customStatement('PRAGMA foreign_keys = ON');
             }
-            await m.createAll();
             return;
           }
           if (from < 2) {

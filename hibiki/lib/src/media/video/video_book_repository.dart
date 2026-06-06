@@ -55,4 +55,18 @@ class VideoBookRepository {
     final List<AudioCueRow> rows = await _db.getCuesForBook(bookUid);
     return rows.map(AudioCue.fromRow).toList();
   }
+
+  /// 原子地写入「选中字幕源 + 解析出的 cue」（BUG-081，单视频用）。两步合进一个
+  /// 事务，避免 cue 落库但 source 未更新（或反之）导致下次恢复时显示内容与字幕源
+  /// 标签不一致。播放列表不走此路（每集按磁盘动态解析，见 VideoHibikiPage）。
+  Future<void> saveSubtitleSelection({
+    required String bookUid,
+    required String? subtitleSource,
+    required List<AudioCue> cues,
+  }) =>
+      _db.transaction(() async {
+        await _db.replaceCuesForBook(
+            bookUid, cues.map(AudioCue.toCompanion).toList());
+        await _db.updateVideoBookSubtitleSource(bookUid, subtitleSource);
+      });
 }

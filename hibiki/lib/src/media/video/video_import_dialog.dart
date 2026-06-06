@@ -178,12 +178,18 @@ class VideoImportDialog extends StatefulWidget {
     required this.repo,
     this.initialVideoPath,
     this.initialSubtitlePath,
+    this.initialPlaylistPath,
     super.key,
   });
 
   final VideoBookRepository repo;
   final String? initialVideoPath;
   final String? initialSubtitlePath;
+
+  /// 拖入 m3u8/m3u 播放列表时预填的路径。非空时对话框打开后自动走
+  /// [_importPlaylistFromPath] 解析并导入（一次性，无需用户再点确认），与手动
+  /// 点「播放列表」按钮的语义一致——播放列表无可附加的整本字幕/视频可调。
+  final String? initialPlaylistPath;
 
   @override
   State<VideoImportDialog> createState() => _VideoImportDialogState();
@@ -199,6 +205,14 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
     super.initState();
     _videoPath = widget.initialVideoPath;
     _subtitlePath = widget.initialSubtitlePath;
+    // 拖入 m3u8：路径已知，跳过 FilePicker，开窗后直接解析导入（首帧后执行，
+    // 避免在 initState 内同步 setState）。
+    final String? dropped = widget.initialPlaylistPath;
+    if (dropped != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _importPlaylistFromPath(dropped);
+      });
+    }
   }
 
   bool get _canImport => videoImportCanImport(
@@ -247,9 +261,8 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
     setState(() => _subtitlePath = path);
   }
 
-  /// 选 m3u8 播放列表 → 解析多集 → 建一个 playlist VideoBook（不复制视频，存
-  /// 绝对路径）→ pop 回 bookUid。第一集作为初始 videoPath，sidecar 字幕在播放页
-  /// 按集动态加载（不在导入时解析全部 cue）。
+  /// 选 m3u8 播放列表 → 交给 [_importPlaylistFromPath] 解析导入。文件选择与解析
+  /// 拆开，是为了让拖入（路径已知）能复用同一条解析/落库路径，不重复逻辑。
   Future<void> _pickPlaylist() async {
     final FilePickerResult? result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
@@ -258,7 +271,13 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
     );
     final String? m3u8Path = result?.files.single.path;
     if (m3u8Path == null) return;
+    await _importPlaylistFromPath(m3u8Path);
+  }
 
+  /// 解析 [m3u8Path] 多集 → 建一个 playlist VideoBook（不复制视频，存绝对路径）→
+  /// pop 回 bookUid。第一集作为初始 videoPath，sidecar 字幕在播放页按集动态加载
+  /// （不在导入时解析全部 cue）。手动选择与拖入共用此路径。
+  Future<void> _importPlaylistFromPath(String m3u8Path) async {
     setState(() => _busy = true);
     try {
       final String content = await readTextWithEncoding(File(m3u8Path));

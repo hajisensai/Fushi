@@ -1396,6 +1396,10 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       // Degrade gracefully (malformed bytes -> U+FFFD) to match epub_parser's
       // _readText contract (HBK-AUDIT-033) instead of crashing the load.
       String html = utf8.decode(data, allowMalformed: true);
+      // BUG-079: XHTML self-closing raw-text elements (e.g. `<script .../>` with
+      // no `</script>`) swallow the whole body under the HTML5 parser, blanking
+      // the page. Normalize them to paired tags before injecting reader styles.
+      html = ReaderResourceSanitizer.sanitizeXhtml(html);
       final String styleTag = _buildStyleTag();
       const String hideUntilReady =
           '<style id="hoshi-cloak">body{visibility:hidden!important}</style>';

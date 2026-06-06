@@ -229,4 +229,35 @@ WEBVTT
       expect(external.matchesPersisted('embedded:1'), isFalse);
     });
   });
+
+  group('firstSubtitlePath', () {
+    test('从混合路径里挑第一个受支持字幕', () {
+      expect(
+        firstSubtitlePath(<String>[
+          r'C:\v\EP01.mkv',
+          r'C:\v\EP01.ja.srt',
+          r'C:\v\cover.jpg',
+        ]),
+        r'C:\v\EP01.ja.srt',
+      );
+    });
+
+    test('支持 srt/ass/ssa/vtt 四类，大小写不敏感', () {
+      expect(firstSubtitlePath(<String>['/a/x.Srt']), '/a/x.Srt');
+      expect(firstSubtitlePath(<String>['/a/x.ASS']), '/a/x.ASS');
+      expect(firstSubtitlePath(<String>['/a/x.Ssa']), '/a/x.Ssa');
+      expect(firstSubtitlePath(<String>['/a/x.VTT']), '/a/x.VTT');
+    });
+
+    test('无受支持字幕返回 null', () {
+      expect(
+        firstSubtitlePath(<String>['/a/v.mp4', '/a/n.txt', '/a/i.png']),
+        isNull,
+      );
+    });
+
+    test('空列表返回 null', () {
+      expect(firstSubtitlePath(const <String>[]), isNull);
+    });
+  });
 }

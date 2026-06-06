@@ -93,8 +93,30 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     }
   }
 
+  // BUG-077: the popup mine button disables itself and `await`s this Future
+  // (popup.js), so a thrown exception leaves the '+' stuck forever with no
+  // feedback. mineEntry's contract is to *return* a MineResult — guarantee it
+  // here so the caller's switch (toast + button restore) always runs. The inner
+  // body still has unguarded calls (loadSettings, handlebar render, HTML
+  // normalize); this is the single place that converts any escape into
+  // MineResult.error and logs the real cause for diagnosis.
   @override
   Future<MineResult> mineEntry({
+    required String rawPayloadJson,
+    required AnkiMiningContext context,
+  }) async {
+    try {
+      return await _mineEntryInner(
+        rawPayloadJson: rawPayloadJson,
+        context: context,
+      );
+    } catch (e, stack) {
+      debugPrint('AnkiConnectRepository.mineEntry: unhandled $e\n$stack');
+      return MineResult.error;
+    }
+  }
+
+  Future<MineResult> _mineEntryInner({
     required String rawPayloadJson,
     required AnkiMiningContext context,
   }) async {
