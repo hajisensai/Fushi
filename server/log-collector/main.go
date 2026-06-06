@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/json"
+	"html/template"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -154,10 +155,70 @@ func (c Config) rotate() {
 	}
 }
 
-// newServer 装配路由（查看路由在 Task 6 补）。
+func validLogID(id string) bool {
+	return idPattern.MatchString(id)
+}
+
+func (c Config) checkBasicAuth(w http.ResponseWriter, r *http.Request) bool {
+	user, pass, ok := r.BasicAuth()
+	if ok && ctEqual(user, c.BasicUser) && ctEqual(pass, c.BasicPass) {
+		return true
+	}
+	w.Header().Set("WWW-Authenticate", `Basic realm="hibiki-logs", charset="UTF-8"`)
+	http.Error(w, "unauthorized", http.StatusUnauthorized)
+	return false
+}
+
+var listTmpl = template.Must(template.New("list").Parse(`<!doctype html>
+<html><head><meta charset="utf-8"><title>hibiki logs</title></head>
+<body><h1>hibiki logs ({{len .}})</h1><ul>
+{{range .}}<li><a href="/log/{{.}}">{{.}}</a></li>{{end}}
+</ul></body></html>`))
+
+func (c Config) handleList(w http.ResponseWriter, r *http.Request) {
+	securityHeaders(w)
+	if !c.checkBasicAuth(w, r) {
+		return
+	}
+	entries, _ := os.ReadDir(c.DataDir)
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if !e.IsDir() && validLogID(e.Name()) {
+			names = append(names, e.Name())
+		}
+	}
+	sort.Sort(sort.Reverse(sort.StringSlice(names))) // 最新在前
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// html/template 自动转义 names，杜绝列表页 XSS。
+	_ = listTmpl.Execute(w, names)
+}
+
+func (c Config) handleViewLog(w http.ResponseWriter, r *http.Request) {
+	securityHeaders(w)
+	if !c.checkBasicAuth(w, r) {
+		return
+	}
+	id := strings.TrimPrefix(r.URL.Path, "/log/")
+	if !validLogID(id) {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	data, err := os.ReadFile(filepath.Join(c.DataDir, id))
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	// 日志正文一律 text/plain 原样吐 → 浏览器当纯文本，脚本不执行。
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = w.Write(data)
+}
+
+// newServer 装配路由：上传 + Basic Auth 只读查看页。
 func newServer(c Config) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/logs", c.handleUpload)
+	mux.HandleFunc("/log/", c.handleViewLog)
+	mux.HandleFunc("/", c.handleList)
 	return mux
 }
 
