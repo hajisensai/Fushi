@@ -79,9 +79,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
 
         Widget box = DecoratedBox(
           decoration: BoxDecoration(
-            color: widget.textColor == Colors.transparent
-                ? Colors.transparent
-                : Colors.black.withValues(alpha: widget.backgroundOpacity),
+            color: Colors.black.withValues(alpha: widget.backgroundOpacity),
             borderRadius: BorderRadius.circular(6),
           ),
           child: Padding(

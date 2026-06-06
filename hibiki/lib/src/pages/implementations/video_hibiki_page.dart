@@ -1165,10 +1165,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                           min: 12,
                           max: 48,
                           value: _subtitleStyle.fontSize.clamp(12, 48),
-                          onChanged: (double v) => setSheet(() {
+                          onChanged: (double v) {
                             _subtitleStyle =
                                 _subtitleStyle.copyWith(fontSize: v);
-                          }),
+                            setSheet(() {});
+                            if (mounted) setState(() {}); // 背后字幕实时预览
+                          },
                           onChangeEnd: (double v) => _persistSubtitleStyle(
                               _subtitleStyle.copyWith(fontSize: v)),
                         ),
@@ -1183,10 +1185,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                       Expanded(
                         child: Slider(
                           value: _subtitleStyle.backgroundOpacity,
-                          onChanged: (double v) => setSheet(() {
+                          onChanged: (double v) {
                             _subtitleStyle =
                                 _subtitleStyle.copyWith(backgroundOpacity: v);
-                          }),
+                            setSheet(() {});
+                            if (mounted) setState(() {}); // 背后字幕实时预览
+                          },
                           onChangeEnd: (double v) => _persistSubtitleStyle(
                               _subtitleStyle.copyWith(backgroundOpacity: v)),
                         ),
@@ -1203,10 +1207,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                           min: 0,
                           max: 240,
                           value: _subtitleStyle.bottomPadding.clamp(0, 240),
-                          onChanged: (double v) => setSheet(() {
+                          onChanged: (double v) {
                             _subtitleStyle =
                                 _subtitleStyle.copyWith(bottomPadding: v);
-                          }),
+                            setSheet(() {});
+                            if (mounted) setState(() {}); // 背后字幕实时预览
+                          },
                           onChangeEnd: (double v) => _persistSubtitleStyle(
                               _subtitleStyle.copyWith(bottomPadding: v)),
                         ),
@@ -1871,8 +1877,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // 故不与既有快捷键冲突，也不必重建 media_kit 那套含内部 helper 的默认绑定。
     return CallbackShortcuts(
       bindings: <ShortcutActivator, VoidCallback>{
-        const SingleActivator(LogicalKeyboardKey.keyB): () =>
-            unawaited(_toggleSubtitleBlur()),
+        // includeRepeats:false——按住 B 不放时 OS key-repeat 会高频翻转模糊态并反复
+        // 写偏好，只在按下沿触发一次。
+        const SingleActivator(LogicalKeyboardKey.keyB, includeRepeats: false):
+            () => unawaited(_toggleSubtitleBlur()),
       },
       child: MaterialVideoControlsTheme(
         normal: _mobileControlsTheme(controller),
