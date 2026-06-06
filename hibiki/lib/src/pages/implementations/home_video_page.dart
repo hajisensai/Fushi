@@ -361,20 +361,18 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
               itemBuilder: (BuildContext context, int i) {
                 final BookTagRow tag = tags[i];
                 return Center(
-                  child: HibikiSelectableChip(
-                    selected: selected.contains(tag.id),
-                    avatar: CircleAvatar(
-                      backgroundColor: Color(tag.colorValue),
-                      radius: 6,
-                    ),
+                  child: HibikiTagChip(
                     label: tag.name,
-                    onSelected: (bool sel) {
+                    color: Color(tag.colorValue),
+                    selected: selected.contains(tag.id),
+                    tone: HibikiTagChipTone.surface,
+                    onTap: () {
                       final Set<int> next =
                           Set<int>.from(ref.read(selectedTagIdsProvider));
-                      if (sel) {
-                        next.add(tag.id);
-                      } else {
+                      if (next.contains(tag.id)) {
                         next.remove(tag.id);
+                      } else {
+                        next.add(tag.id);
                       }
                       ref.read(selectedTagIdsProvider.notifier).state = next;
                     },
