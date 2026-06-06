@@ -14,7 +14,8 @@ AudioCue _cue(int i, int s, int e) => AudioCue()
 
 void main() {
   group('VideoPlayerController cue sync', () {
-    test('selects cue by position; gap keeps previous; notifies on change', () {
+    test('selects cue by position; gap clears subtitle; notifies on change',
+        () {
       final c = VideoPlayerController();
       addTearDown(c.dispose);
       c.setCues([_cue(0, 0, 1000), _cue(1, 2000, 3000)]);
@@ -26,8 +27,9 @@ void main() {
       expect(c.currentCueIndex, 0);
       expect(c.currentCue!.text, 'line0');
 
-      c.debugUpdateCueForPosition(1500); // gap：保留 cue0
-      expect(c.currentCueIndex, 0);
+      c.debugUpdateCueForPosition(1500); // gap：字幕消失（BUG-073）
+      expect(c.currentCueIndex, -1);
+      expect(c.currentCue, isNull);
 
       c.debugUpdateCueForPosition(2500);
       expect(c.currentCueIndex, 1);
@@ -36,7 +38,58 @@ void main() {
       c.debugUpdateCueForPosition(2600); // 同句不重复通知
       expect(c.currentCueIndex, 1);
 
+      // 500→cue0, 1500→clear, 2500→cue1 = 3 次；2600 同句不通知。
+      expect(notifications, 3);
+    });
+
+    // BUG-073: 视频底部字幕 overlay 与有声书正文跟随高亮语义不同——真实字幕在
+    // 其时间窗结束后（句间静音 gap / 末句之后）必须消失，不能保留上一句。
+    test(
+        'BUG-073: subtitle clears in gap and after last cue; no redundant '
+        'notify while gap is sustained', () {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.setCues([_cue(0, 0, 1000), _cue(1, 2000, 3000)]);
+
+      int notifications = 0;
+      c.addListener(() => notifications++);
+
+      c.debugUpdateCueForPosition(500); // cue0 显示
+      expect(c.currentCue!.text, 'line0');
+      expect(notifications, 1);
+
+      c.debugUpdateCueForPosition(1500); // 句间 gap：清空
+      expect(c.currentCue, isNull);
+      expect(c.currentCueIndex, -1);
       expect(notifications, 2);
+
+      // gap 内多次 tick 不重复 notify（已无字幕）。
+      c.debugUpdateCueForPosition(1600);
+      c.debugUpdateCueForPosition(1900);
+      expect(c.currentCue, isNull);
+      expect(notifications, 2);
+
+      c.debugUpdateCueForPosition(2500); // cue1 显示
+      expect(c.currentCue!.text, 'line1');
+      expect(notifications, 3);
+
+      c.debugUpdateCueForPosition(3500); // 末句之后：清空
+      expect(c.currentCue, isNull);
+      expect(c.currentCueIndex, -1);
+      expect(notifications, 4);
+    });
+
+    test('BUG-073: position before first cue shows no subtitle (no notify)',
+        () {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.setCues([_cue(0, 1000, 2000)]);
+      int notifications = 0;
+      c.addListener(() => notifications++);
+      c.debugUpdateCueForPosition(500); // 早于首句：无字幕
+      expect(c.currentCue, isNull);
+      expect(c.currentCueIndex, -1);
+      expect(notifications, 0); // 本就无字幕，不应 notify
     });
 
     test('delayMs offsets cue lookup', () {

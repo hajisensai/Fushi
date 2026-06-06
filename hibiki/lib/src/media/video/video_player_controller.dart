@@ -10,9 +10,10 @@ import 'package:media_kit_video/media_kit_video.dart';
 
 /// 视频播放控制器：用 media_kit 播放视频，并按字幕 cue 做 125ms 同步高亮。
 ///
-/// cue 选择语义照搬有声书 [AudiobookPlayerController] 的 `_updateCurrentCue`：
-/// endMs 闭区间、gap（[JsonAlignmentParser.findCueIndex] 返回 -1）保留上一句
-/// 高亮、同句不重复 [notifyListeners]、delayMs 扣减位置。
+/// cue 选择语义大体照搬有声书 [AudiobookPlayerController] 的 `_updateCurrentCue`：
+/// endMs 闭区间、同句不重复 [notifyListeners]、delayMs 扣减位置。**关键差异**：
+/// gap（[JsonAlignmentParser.findCueIndex] 返回 -1）时有声书保留上一句正文高亮，
+/// 而视频底部字幕 overlay 必须清空——真实字幕在时间窗结束后就该消失（BUG-073）。
 ///
 /// 与有声书的关键差异：位置来源不是 just_audio 的 positionStream，而是
 /// [Timer.periodic]（125ms）读 `player.state.position`；播放后端是 media_kit
@@ -298,7 +299,8 @@ class VideoPlayerController extends ChangeNotifier {
   /// 2. 空 cues 直接返回。
   /// 3. `effectiveMs = posMs - delayMs`，下界 clamp 到 0。
   /// 4. [JsonAlignmentParser.findCueIndex] 二分定位；返回 -1（gap / 早于首句）
-  ///    时**保留**上一句高亮，直接返回。
+  ///    时**清空**当前字幕（视频字幕在时间窗结束后应消失，BUG-073），仅在确有
+  ///    字幕需清时 [notifyListeners]。
   /// 5. 命中下标与 [_currentCueIndex] 相同时不重复 [notifyListeners]。
   /// 6. 否则更新当前 cue 并通知。
   void updateCueForPosition(int posMs) {
@@ -309,8 +311,18 @@ class VideoPlayerController extends ChangeNotifier {
       cues: _cues,
       positionMs: effectiveMs,
     );
-    // Gap：保持上一条 cue 不清高亮，避免闪烁。
-    if (idx < 0) return;
+    // Gap（两条字幕间的静音）或早于首句：清空当前字幕。视频底部字幕 overlay 与
+    // 有声书的「正文跟随高亮」语义不同——真实字幕在其时间窗 [startMs, endMs] 结束
+    // 后就该消失，不能像高亮那样在 gap 里保留上一句（否则一句播完到下一句开始前
+    // 字幕一直挂着，BUG-073）。findCueIndex 在 gap 返回 -1 正是「让上层清」的契约。
+    // 已无字幕（_currentCueIndex == -1）时直接返回，避免无谓 notify。
+    if (idx < 0) {
+      if (_currentCueIndex == -1) return;
+      _currentCueIndex = -1;
+      _currentCue = null;
+      notifyListeners();
+      return;
+    }
     if (idx == _currentCueIndex) return;
     _currentCueIndex = idx;
     _currentCue = _cues[idx];
