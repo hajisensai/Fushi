@@ -236,6 +236,33 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 视频字幕模糊（听力沉浸）开关：默认关闭。开启后字幕默认打码，悬停/点击显形。
+  bool get videoSubtitleBlur =>
+      getPref('video_subtitle_blur', defaultValue: false) as bool;
+
+  Future<void> setVideoSubtitleBlur(bool value) async {
+    await setPref('video_subtitle_blur', value);
+    notifyListeners();
+  }
+
+  /// 视频字幕外观（JSON；解析见 VideoSubtitleStyle.encode/decode）。空串=默认外观。
+  String get videoSubtitleStyle =>
+      getPref('video_subtitle_style', defaultValue: '') as String;
+
+  Future<void> setVideoSubtitleStyle(String json) async {
+    await setPref('video_subtitle_style', json);
+    notifyListeners();
+  }
+
+  /// 视频 mpv 配置（JSON；解析见 VideoMpvConfig.encode/decode）。空串=默认全 mpv 默认值。
+  String get videoMpvConfig =>
+      getPref('video_mpv_config', defaultValue: '') as String;
+
+  Future<void> setVideoMpvConfig(String json) async {
+    await setPref('video_mpv_config', json);
+    notifyListeners();
+  }
+
   /// Jimaku（jimaku.cc）API key：自动获取日语字幕用（用户在视频字幕菜单里填）。
   String get jimakuApiKey =>
       getPref('jimaku_api_key', defaultValue: '') as String;

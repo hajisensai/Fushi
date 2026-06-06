@@ -1638,6 +1638,24 @@ class AppModel with ChangeNotifier {
   Future<void> setVideoShadersEnabled(String json) =>
       prefsRepo.setVideoShadersEnabled(json);
 
+  /// 视频字幕模糊（听力沉浸）开关；默认关闭。
+  bool get videoSubtitleBlur => prefsRepo.videoSubtitleBlur;
+
+  Future<void> setVideoSubtitleBlur(bool value) =>
+      prefsRepo.setVideoSubtitleBlur(value);
+
+  /// 视频字幕外观（JSON；见 VideoSubtitleStyle）。
+  String get videoSubtitleStyle => prefsRepo.videoSubtitleStyle;
+
+  Future<void> setVideoSubtitleStyle(String json) =>
+      prefsRepo.setVideoSubtitleStyle(json);
+
+  /// 视频 mpv 配置（JSON；见 VideoMpvConfig）。
+  String get videoMpvConfig => prefsRepo.videoMpvConfig;
+
+  Future<void> setVideoMpvConfig(String json) =>
+      prefsRepo.setVideoMpvConfig(json);
+
   /// Jimaku API key（自动获取日语字幕）。
   String get jimakuApiKey => prefsRepo.jimakuApiKey;
 
