@@ -7,12 +7,14 @@ DroppedFiles _files({
   List<String> videos = const [],
   List<String> subtitles = const [],
   List<String> audios = const [],
+  List<String> playlists = const [],
 }) =>
     DroppedFiles(
         books: books,
         videos: videos,
         subtitles: subtitles,
         audios: audios,
+        playlists: playlists,
         unknown: const []);
 
 void main() {
@@ -100,6 +102,36 @@ void main() {
             surface: DropSurface.video,
             files: _files(audios: ['/a.mp3']),
             cardHit: true),
+        DropIntent.ignore,
+      );
+    });
+    test('m3u8 playlist -> importNewPlaylist', () {
+      expect(
+        decideDropIntent(
+            surface: DropSurface.video,
+            files: _files(playlists: ['/a.m3u8']),
+            cardHit: false),
+        DropIntent.importNewPlaylist,
+      );
+    });
+    test('playlist wins over video when both dropped', () {
+      expect(
+        decideDropIntent(
+            surface: DropSurface.video,
+            files: _files(videos: ['/a.mkv'], playlists: ['/a.m3u8']),
+            cardHit: false),
+        DropIntent.importNewPlaylist,
+      );
+    });
+  });
+
+  group('decideDropIntent — playlist on books surface', () {
+    test('m3u8 on books surface -> ignore (playlists are video-only)', () {
+      expect(
+        decideDropIntent(
+            surface: DropSurface.books,
+            files: _files(playlists: ['/a.m3u8']),
+            cardHit: false),
         DropIntent.ignore,
       );
     });

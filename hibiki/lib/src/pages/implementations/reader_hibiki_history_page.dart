@@ -1594,6 +1594,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           SnackBar(content: Text(t.drag_drop_need_card_target)),
         );
       case DropIntent.importNewVideo:
+      case DropIntent.importNewPlaylist:
       case DropIntent.attachToVideoCard:
       case DropIntent.ignore:
         break;

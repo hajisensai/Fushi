@@ -13,6 +13,13 @@
 
 ---
 
+## BUG-076 · .m3u8/.m3u 播放列表无法拖动导入（桌面拖放被静默忽略）
+- **报告**：2026-06-06（用户：「.m3u8 播放列表没办法拖动导入，需要修复」）。采番注：动手时基线最大号 BUG-075，取 076（以提交为准，可能被并发抢）。
+- **真实性**：✅ **真 bug（沿真实代码路径定位）**。桌面拖放经 `HibikiFileDropTarget` → `home_video_page._handleVideoDrop` → `classifyDroppedFiles(paths)` 按扩展名分类 → `decideDropIntent(surface: video, ...)` 决策意图。`drop_classification.dart` 的分类集合 `kDragBook/Video/Subtitle/AudioExtensions` **均不含 `m3u8`/`m3u`**，故拖入的播放列表落进 `unknown`；video 表面的 `decideDropIntent` 只看 `files.videos`/`files.subtitles`（`drop_decision.dart:36-43`），两者皆空 → 返回 `DropIntent.ignore` → `_handleVideoDrop` 的 switch 命中 `ignore` 直接 `break`，拖放被静默丢弃、无任何反馈。而手动「视频导入」对话框里 `_pickPlaylist`（FilePicker 限 `m3u8`/`m3u`）→ `parseM3u8` → 建 playlist VideoBook 这条路径一直存在且正确——缺的只是拖放入口没把 m3u8 路由到它。根因 `hibiki/lib/src/media/drag_drop/drop_classification.dart`（m3u8 未分类）+ `drop_decision.dart:36`（video 表面无 playlist 分支）。
+- **[x] ① 已修复** — 本提交（自含修复+测试+本条目；并发抢号致哈希随 rebase 变动故不内联记录）。**根因修**，按现有「分类→决策→落点」数据流补齐 m3u8 这一类，而非在拖放回调里特判扩展名：① `drop_classification.dart` 新增 `kDragPlaylistExtensions = {m3u8, m3u}` 与 `DroppedFiles.playlists` 字段（`hasAny` 纳入）；② `drop_decision.dart` 新增 `DropIntent.importNewPlaylist`，video 表面**优先**于单视频判定（播放列表比单文件更具体），books 表面忽略；③ `video_import_dialog.dart` 把 `_pickPlaylist` 的「选文件」与「解析落库」拆开，抽出 `_importPlaylistFromPath`，新增 `initialPlaylistPath`，开窗后首帧回调自动走同一条解析/落库路径（与手动点「播放列表」按钮语义一致，无需用户再确认——播放列表无可附加的整本字幕/视频可调）；④ `home_video_page._handleVideoDrop` 新增 `importNewPlaylist` 分支 → `_openPlaylistImportPrefilled`；⑤ `reader_hibiki_history_page._handleShelfDrop` 的 books 表面 switch 补 `importNewPlaylist` 到 break 组保持穷尽。
+- **[x] ② 已加自动化测试** — `hibiki/test/media/drag_drop/drop_classification_test.dart`（m3u8/m3u → playlists 非 unknown/video、大小写不敏感、playlist 计入 hasAny）+ `drop_decision_test.dart`（video 表面 m3u8 → importNewPlaylist、playlist 优先于 video、books 表面 m3u8 → ignore）。`test/media/drag_drop/` 全 32 绿、`test/media/video/` +184 绿（adjacent 无回归）。对话框自动导入路径依赖 `getApplicationDocumentsDirectory()` + ffmpeg 封面抽取，headless 宿主不可靠，故未做 widget 级 IO 测试——bug 本身完全在纯函数分类/决策层，已被上述守卫精确钉死。
+- **备注**：真机/真桌面端把 `.m3u8`（及相对路径多集）拖到视频 tab 复测「自动解析多集 + 建 playlist + 书架出现」**待用户**（后台跑不了 GUI 构建）。
+
 ## BUG-075 · 降级（旧版装到新版之上）路径在 foreign_keys=ON 下 DROP 表崩溃 + 非原子半删毁库
 - **报告**：2026-06-06（用户先报 `no such table: preferences`，恢复 v20 备份后再报 `no such table: main.epub_books / DROP TABLE IF EXISTS "book_tags"`）。采番注：动手时基线最大号 BUG-074，取 075（以提交为准，可能被并发抢）。
 - **真实性**：✅ **真 bug（沿真实代码路径定位 + 在 DB 文件实证 + 测试逐字复现报错）**。`HibikiDatabase.migration` 的降级分支（`packages/hibiki_core/lib/src/database/database.dart` `if (from > to)`）在旧版本 app 打开更高 schema 的 DB 时，按设计「备份旧库到 `.bak.v<from>.<ts>` → DROP 所有表 → `createAll()` 重建空库」。两处致命缺陷：

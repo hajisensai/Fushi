@@ -47,6 +47,22 @@ void main() {
       expect(r.subtitles, ['/x/B.SRT']);
     });
 
+    test('m3u8 / m3u go to playlists (not unknown, not video)', () {
+      final r = classifyDroppedFiles(['/x/a.m3u8', '/x/b.m3u']);
+      expect(r.playlists, ['/x/a.m3u8', '/x/b.m3u']);
+      expect(r.videos, isEmpty);
+      expect(r.unknown, isEmpty);
+    });
+
+    test('m3u8 match is case-insensitive', () {
+      final r = classifyDroppedFiles(['/x/A.M3U8']);
+      expect(r.playlists, ['/x/A.M3U8']);
+    });
+
+    test('playlist counts toward hasAny', () {
+      expect(classifyDroppedFiles(['/x/a.m3u8']).hasAny, isTrue);
+    });
+
     test('unknown extension goes to unknown', () {
       final r = classifyDroppedFiles(['/x/a.zip']);
       expect(r.unknown, ['/x/a.zip']);
