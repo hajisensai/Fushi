@@ -1374,5 +1374,7 @@
     "video_screenshot": "Screenshot",
     "video_screenshot_saved": "Screenshot saved",
     "video_screenshot_failed": "Screenshot failed",
-    "video_experimental_banner": "影片為實驗性功能：播放、查詞與製卡可能尚不穩定。"
+    "video_experimental_banner": "影片為實驗性功能：播放、查詞與製卡可能尚不穩定。",
+    "stat_mined": "Cards mined",
+    "stat_favorited": "Favorited"
 }

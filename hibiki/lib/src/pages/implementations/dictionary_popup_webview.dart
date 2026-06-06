@@ -23,6 +23,8 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
     this.onTapOutside,
     this.onMineEntry,
     this.onDuplicateCheck,
+    this.onFavoriteEntry,
+    this.onFavoriteCheck,
     this.onScrolledToBottom,
     this.onRendered,
   });
@@ -34,6 +36,13 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
   final Future<bool> Function(Map<String, String> fields)? onMineEntry;
   final Future<bool> Function(String expression, String reading)?
       onDuplicateCheck;
+
+  /// 切换收藏：返回切换后的新状态（true=已收藏）。供弹窗「☆/★」按钮回调。
+  final Future<bool> Function(Map<String, String> fields)? onFavoriteEntry;
+
+  /// 查询某词条当前是否已收藏，用于按钮初始 ☆/★ 状态。
+  final Future<bool> Function(String expression, String reading)?
+      onFavoriteCheck;
   final VoidCallback? onScrolledToBottom;
 
   /// Fired after the popup content finishes rendering (the `popupRendered` JS
@@ -575,6 +584,39 @@ class DictionaryPopupWebViewState
               final reading = data['reading']?.toString() ?? '';
               if (expression.isEmpty) return false;
               return widget.onDuplicateCheck!(expression, reading);
+            }
+            return false;
+          },
+        );
+
+        controller.addJavaScriptHandler(
+          handlerName: 'favoriteEntry',
+          callback: (args) async {
+            if (args.isNotEmpty &&
+                args[0] is Map &&
+                widget.onFavoriteEntry != null) {
+              final fields = Map<String, String>.from(
+                (args[0] as Map)
+                    .map((k, v) => MapEntry(k.toString(), v.toString())),
+              );
+              if ((fields['expression'] ?? '').isEmpty) return false;
+              return widget.onFavoriteEntry!(fields);
+            }
+            return false;
+          },
+        );
+
+        controller.addJavaScriptHandler(
+          handlerName: 'favoriteCheck',
+          callback: (args) async {
+            if (args.isNotEmpty &&
+                args[0] is Map &&
+                widget.onFavoriteCheck != null) {
+              final data = args[0] as Map;
+              final expression = data['expression']?.toString() ?? '';
+              final reading = data['reading']?.toString() ?? '';
+              if (expression.isEmpty) return false;
+              return widget.onFavoriteCheck!(expression, reading);
             }
             return false;
           },

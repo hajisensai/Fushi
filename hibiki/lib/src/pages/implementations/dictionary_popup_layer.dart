@@ -84,6 +84,8 @@ class DictionaryPopupLayer extends StatelessWidget {
     required this.onLinkClick,
     required this.onMineEntry,
     required this.onDuplicateCheck,
+    this.onFavoriteEntry,
+    this.onFavoriteCheck,
     this.isSearching = false,
     this.keepWebViewWarm = false,
     this.onTapOutside,
@@ -115,6 +117,9 @@ class DictionaryPopupLayer extends StatelessWidget {
   final Future<bool> Function(Map<String, String> fields) onMineEntry;
   final Future<bool> Function(String expression, String reading)
       onDuplicateCheck;
+  final Future<bool> Function(Map<String, String> fields)? onFavoriteEntry;
+  final Future<bool> Function(String expression, String reading)?
+      onFavoriteCheck;
   final VoidCallback? onTapOutside;
   final VoidCallback? onScrolledToBottom;
   final VoidCallback? onRendered;
@@ -175,6 +180,8 @@ class DictionaryPopupLayer extends StatelessWidget {
             onLinkClick: onLinkClick,
             onMineEntry: onMineEntry,
             onDuplicateCheck: onDuplicateCheck,
+            onFavoriteEntry: onFavoriteEntry,
+            onFavoriteCheck: onFavoriteCheck,
             onScrolledToBottom: onScrolledToBottom,
             onRendered: onRendered,
           ),

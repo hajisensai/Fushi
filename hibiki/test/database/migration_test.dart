@@ -125,12 +125,28 @@ Future<HibikiDatabase> _openV21DbWithoutVideoStats() async {
   return db;
 }
 
+/// Opens a `user_version = 22` database lacking favorite_words / mining_statistics,
+/// forcing the real `if (from < 23)` onUpgrade branch (create both tables) to run.
+/// The activity-stats migration is self-contained (only creates two tables), so a
+/// bare v22 DB is enough to exercise it without seeding other v22 baseline tables.
+Future<HibikiDatabase> _openV22DbWithoutActivityTables() async {
+  final db = HibikiDatabase.forTesting(
+    NativeDatabase.memory(
+      setup: (rawDb) {
+        rawDb.execute('PRAGMA user_version = 22');
+      },
+    ),
+  );
+  addTearDown(db.close);
+  return db;
+}
+
 void main() {
   group('Database schema', () {
     test('fresh database has expected schema version', () async {
       final db = await _openDb();
       final version = await db.customSelect('PRAGMA user_version').getSingle();
-      expect(version.data['user_version'], 22);
+      expect(version.data['user_version'], 23);
     });
 
     test('all expected tables exist', () async {
@@ -166,6 +182,8 @@ void main() {
           'video_book_tag_mappings',
           'video_watch_statistics',
           'video_hourly_logs',
+          'favorite_words',
+          'mining_statistics',
         ]),
       );
     });
@@ -187,7 +205,7 @@ void main() {
       // The upgrade ladder bumped the schema to the current version (a v14 DB
       // walks the full ladder past 15 to the latest schema).
       final version = await db.customSelect('PRAGMA user_version').getSingle();
-      expect(version.read<int>('user_version'), 22);
+      expect(version.read<int>('user_version'), 23);
 
       // The newly-migrated table exists and querying an absent baseline does
       // not throw.
@@ -205,7 +223,7 @@ void main() {
 
       // The upgrade ladder bumped the schema to the current version.
       final version = await db.customSelect('PRAGMA user_version').getSingle();
-      expect(version.read<int>('user_version'), 22);
+      expect(version.read<int>('user_version'), 23);
 
       // The table carries the full v17 column set (no stepwise add-column
       // ladder remains).
@@ -248,7 +266,7 @@ void main() {
       final db = await _openV20DbWithoutVideoTagMappings();
 
       final version = await db.customSelect('PRAGMA user_version').getSingle();
-      expect(version.read<int>('user_version'), 22);
+      expect(version.read<int>('user_version'), 23);
 
       // The new mapping table exists and shares the BookTags pool: tag the
       // seeded video book and read it back.
@@ -259,14 +277,15 @@ void main() {
       expect(tags.single.name, 'Migrated');
     });
 
-    test('real v21->v22 upgrade adds video stats tables + completed_at losslessly',
+    test(
+        'real v21->v22 upgrade adds video stats tables + completed_at losslessly',
         () async {
       // A v21 DB has video_books (no completed_at) and no video stats tables;
       // opening it must drive the from<22 onUpgrade branch.
       final db = await _openV21DbWithoutVideoStats();
 
       final version = await db.customSelect('PRAGMA user_version').getSingle();
-      expect(version.read<int>('user_version'), 22);
+      expect(version.read<int>('user_version'), 23);
 
       // The pre-existing video_books row survived the migration, with the new
       // completed_at column defaulting to null (lossless add-column).
@@ -297,6 +316,57 @@ void main() {
       await db.markVideoCompleted('video/seed', ts);
       final completed = await db.getVideoBookByBookUid('video/seed');
       expect(completed!.completedAt, ts);
+    });
+
+    test(
+        'real v22->v23 upgrade creates usable favorite_words + mining_statistics',
+        () async {
+      // A v22 DB lacks favorite_words / mining_statistics; opening it must drive
+      // the from<23 onUpgrade branch (createTable both) rather than onCreate.
+      final db = await _openV22DbWithoutActivityTables();
+
+      final version = await db.customSelect('PRAGMA user_version').getSingle();
+      expect(version.read<int>('user_version'), 23);
+
+      // 收藏：新增→已存在判定→取消，全链可用。
+      final added = await db.addFavoriteWord(
+        expression: '猫',
+        reading: 'ねこ',
+        glossary: 'cat',
+        sourceType: 'video',
+        dateKey: '2026-06-07',
+      );
+      expect(added, isTrue);
+      final dup = await db.addFavoriteWord(
+        expression: '猫',
+        reading: 'ねこ',
+        glossary: 'cat',
+        sourceType: 'video',
+        dateKey: '2026-06-07',
+      );
+      expect(dup, isFalse, reason: '同 (expression,reading,sourceType) 幂等不重复');
+      expect(
+          await db.isFavoriteWord(
+              expression: '猫', reading: 'ねこ', sourceType: 'video'),
+          isTrue);
+      // 来源隔离：book 来源未收藏。
+      expect(
+          await db.isFavoriteWord(
+              expression: '猫', reading: 'ねこ', sourceType: 'book'),
+          isFalse);
+      expect((await db.getFavoriteWordsBySource('video')), hasLength(1));
+      await db.removeFavoriteWord(
+          expression: '猫', reading: 'ねこ', sourceType: 'video');
+      expect((await db.getFavoriteWordsBySource('video')), isEmpty);
+
+      // 制卡计数：同 (sourceType,dateKey) 累加。
+      await db.addMiningCount(sourceType: 'video', dateKey: '2026-06-07');
+      await db.addMiningCount(
+          sourceType: 'video', dateKey: '2026-06-07', delta: 2);
+      final mined = await db.getMiningStatisticsBySource('video');
+      expect(mined, hasLength(1));
+      expect(mined.single.count, 3);
+      expect(await db.getMiningStatisticsBySource('book'), isEmpty);
     });
 
     test('video_book_tag_mappings references video_books and book_tags',

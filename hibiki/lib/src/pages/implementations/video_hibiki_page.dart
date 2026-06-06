@@ -33,6 +33,7 @@ import 'package:hibiki/src/media/video/video_subtitle_overlay.dart';
 import 'package:hibiki/src/media/video/video_subtitle_source.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_page_mixin.dart';
+import 'package:hibiki/src/pages/implementations/stat_activity.dart';
 import 'package:hibiki/src/utils/app_ui_scale.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
@@ -152,6 +153,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
   @override
   ThemeData get mixinTheme => Theme.of(context);
+
+  // 视频页的收藏/制卡计入视频统计（而非书籍统计）。
+  @override
+  String get dictionarySourceType => kStatSourceVideo;
 
   /// 多集播放列表（单视频导入时为空）。
   List<PlaylistEntry> _episodes = const <PlaylistEntry>[];

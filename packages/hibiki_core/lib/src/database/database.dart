@@ -51,6 +51,8 @@ LazyDatabase _openDb(String dbDirectory) {
   VideoBookTagMappings,
   VideoWatchStatistics,
   VideoHourlyLogs,
+  FavoriteWords,
+  MiningStatistics,
 ])
 class HibikiDatabase extends _$HibikiDatabase {
   final String _dbDirectory;
@@ -60,7 +62,7 @@ class HibikiDatabase extends _$HibikiDatabase {
   HibikiDatabase.forTesting(super.e) : _dbDirectory = '';
 
   @override
-  int get schemaVersion => 22;
+  int get schemaVersion => 23;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -353,6 +355,16 @@ class HibikiDatabase extends _$HibikiDatabase {
             }
             if (!await _columnExists('video_books', 'completed_at')) {
               await m.addColumn(videoBooks, videoBooks.completedAt);
+            }
+          }
+          if (from < 23) {
+            // 收藏词条 + 制卡计数：查词弹窗收藏与制卡计入阅读/视频统计。fresh DB
+            // 已由 onCreate 的 createAll 建好，用 _tableExists 守卫避免重复创建。
+            if (!await _tableExists('favorite_words')) {
+              await m.createTable(favoriteWords);
+            }
+            if (!await _tableExists('mining_statistics')) {
+              await m.createTable(miningStatistics);
             }
           }
         },
@@ -1050,7 +1062,8 @@ class HibikiDatabase extends _$HibikiDatabase {
               ..where((t) => t.dateKey.equals(dateKey) & t.hour.equals(hour)))
             .getSingleOrNull();
         if (existing != null) {
-          await (update(videoHourlyLogs)..where((t) => t.id.equals(existing.id)))
+          await (update(videoHourlyLogs)
+                ..where((t) => t.id.equals(existing.id)))
               .write(VideoHourlyLogsCompanion(
             watchTimeMs: Value(existing.watchTimeMs + deltaMs),
           ));
@@ -1073,6 +1086,104 @@ class HibikiDatabase extends _$HibikiDatabase {
       (update(videoBooks)
             ..where((t) => t.bookUid.equals(bookUid) & t.completedAt.isNull()))
           .write(VideoBooksCompanion(completedAt: Value(completedAt)));
+
+  // ── favorite words ──────────────────────────────────────────────
+  /// 收藏一个词条（幂等：(expression, reading, sourceType) 已存在则跳过）。
+  /// 返回 true 表示这次新增了收藏，false 表示已收藏过。
+  Future<bool> addFavoriteWord({
+    required String expression,
+    required String reading,
+    required String glossary,
+    required String sourceType,
+    required String dateKey,
+  }) =>
+      transaction(() async {
+        final existing = await (select(favoriteWords)
+              ..where((t) =>
+                  t.expression.equals(expression) &
+                  t.reading.equals(reading) &
+                  t.sourceType.equals(sourceType)))
+            .getSingleOrNull();
+        if (existing != null) return false;
+        await into(favoriteWords).insert(
+          FavoriteWordsCompanion.insert(
+            expression: expression,
+            reading: Value(reading),
+            glossary: Value(glossary),
+            sourceType: sourceType,
+            dateKey: dateKey,
+            createdAt: DateTime.now().millisecondsSinceEpoch,
+          ),
+        );
+        return true;
+      });
+
+  /// 取消收藏（按 (expression, reading, sourceType) 删除）。返回删除的行数。
+  Future<int> removeFavoriteWord({
+    required String expression,
+    required String reading,
+    required String sourceType,
+  }) =>
+      (delete(favoriteWords)
+            ..where((t) =>
+                t.expression.equals(expression) &
+                t.reading.equals(reading) &
+                t.sourceType.equals(sourceType)))
+          .go();
+
+  Future<bool> isFavoriteWord({
+    required String expression,
+    required String reading,
+    required String sourceType,
+  }) async {
+    final row = await (select(favoriteWords)
+          ..where((t) =>
+              t.expression.equals(expression) &
+              t.reading.equals(reading) &
+              t.sourceType.equals(sourceType)))
+        .getSingleOrNull();
+    return row != null;
+  }
+
+  /// 取某来源（'book' / 'video'）的全部收藏行，供统计页按 dateKey 分桶计数。
+  Future<List<FavoriteWordRow>> getFavoriteWordsBySource(String sourceType) =>
+      (select(favoriteWords)..where((t) => t.sourceType.equals(sourceType)))
+          .get();
+
+  // ── mining statistics ───────────────────────────────────────────
+  /// 制卡成功计数 +[delta]：累加到 (sourceType, dateKey) 现有计数。
+  Future<void> addMiningCount({
+    required String sourceType,
+    required String dateKey,
+    int delta = 1,
+  }) =>
+      transaction(() async {
+        final existing = await (select(miningStatistics)
+              ..where((t) =>
+                  t.sourceType.equals(sourceType) & t.dateKey.equals(dateKey)))
+            .getSingleOrNull();
+        if (existing != null) {
+          await (update(miningStatistics)
+                ..where((t) => t.id.equals(existing.id)))
+              .write(MiningStatisticsCompanion(
+            count: Value(existing.count + delta),
+          ));
+        } else {
+          await into(miningStatistics).insert(
+            MiningStatisticsCompanion.insert(
+              sourceType: sourceType,
+              dateKey: dateKey,
+              count: Value(delta),
+            ),
+          );
+        }
+      });
+
+  /// 取某来源（'book' / 'video'）的全部制卡计数行，供统计页按 dateKey 分桶。
+  Future<List<MiningStatisticRow>> getMiningStatisticsBySource(
+          String sourceType) =>
+      (select(miningStatistics)..where((t) => t.sourceType.equals(sourceType)))
+          .get();
 
   // ── dictionary metadata ─────────────────────────────────────────
   Future<List<DictionaryMetaRow>> getAllDictionaryMetadata() =>

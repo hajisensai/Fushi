@@ -31,12 +31,13 @@ void main() {
     expect(agg.allMs, 1900);
   });
 
-  test('by-video sorted by chars desc', () {
+  test('by-video sorted by watch time desc (删字数后按 ms 排行)', () {
     final stats = [
-      _row('A', '2026-06-06', 10, 0),
-      _row('B', '2026-06-06', 99, 0),
+      _row('A', '2026-06-06', 99, 1000),
+      _row('B', '2026-06-06', 10, 5000),
     ];
     final agg = computeVideoStats(stats: stats, completed: const [], now: now);
+    // 字数 A 多但观看时长 B 多 → B 排第一。
     expect(agg.byVideo.first.title, 'B');
     expect(agg.byVideo.length, 2);
   });

@@ -394,3 +394,39 @@ class VideoBookTagMappings extends Table {
         {videoBookUid, tagId},
       ];
 }
+
+// ── favorite_words ──────────────────────────────────────────────────
+/// 查词弹窗「收藏」的词条（书内阅读与视频共用同一套，按 [sourceType] 区分）。
+/// 存完整词条（expression/reading/glossary）以支持「再次打开显示已收藏 ✓」的
+/// 去重判定与「取消收藏」删除；同时按 dateKey + sourceType 计入各自统计。
+@DataClassName('FavoriteWordRow')
+class FavoriteWords extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get expression => text()();
+  TextColumn get reading => text().withDefault(const Constant(''))();
+  TextColumn get glossary => text().withDefault(const Constant(''))();
+  TextColumn get sourceType => text()(); // 'book' | 'video'
+  TextColumn get dateKey => text()();
+  IntColumn get createdAt => integer()();
+
+  @override
+  List<Set<Column>> get uniqueKeys => [
+        {expression, reading, sourceType},
+      ];
+}
+
+// ── mining_statistics ───────────────────────────────────────────────
+/// 制卡计数：卡片本体落在 Anki（外部），这里只按 dateKey + sourceType 记成功制卡
+/// 次数，供阅读/视频统计页展示。与时长/字数统计表同构（按日期累加）。
+@DataClassName('MiningStatisticRow')
+class MiningStatistics extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get sourceType => text()(); // 'book' | 'video'
+  TextColumn get dateKey => text()();
+  IntColumn get count => integer().withDefault(const Constant(0))();
+
+  @override
+  List<Set<Column>> get uniqueKeys => [
+        {sourceType, dateKey},
+      ];
+}

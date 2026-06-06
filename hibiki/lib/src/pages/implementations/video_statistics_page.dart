@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
+import 'package:hibiki/src/pages/implementations/stat_activity.dart';
 import 'package:hibiki/src/pages/implementations/stat_charts.dart';
 import 'package:hibiki/src/pages/implementations/video_stat_aggregates.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
 /// 视频统计页：与阅读统计（[ReadingStatisticsPage]）位置对等、形态一致，但数据
-/// 完全隔离（视频专用表）。展示观看时长 + 字幕字数 + 完成视频数。
+/// 完全隔离（视频专用表）。展示观看时长 + 完成视频数 + 制卡/收藏计数（不再展示
+/// 字幕字数：字数仍在 DB 里采集，只是统计页不再呈现）。
 class VideoStatisticsPage extends BasePage {
   const VideoStatisticsPage({super.key});
 
@@ -22,6 +24,10 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
 
   VideoStatsAggregate _agg = VideoStatsAggregate();
   bool _hasData = false;
+
+  // 制卡 / 收藏计数（来源 'video'），按今日/本周/本月/全部分桶。
+  StatActivityBuckets _mined = StatActivityBuckets();
+  StatActivityBuckets _favorited = StatActivityBuckets();
 
   // 今日每小时观看时长（0-23，毫秒）。
   List<int> _hourlyMs = List.filled(24, 0);
@@ -50,12 +56,28 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
           .map((VideoBookRow b) => b.completedAt)
           .whereType<DateTime>()
           .toList();
+      final DateTime now = DateTime.now();
       _agg = computeVideoStats(
         stats: stats,
         completed: completed,
-        now: DateTime.now(),
+        now: now,
       );
-      _hasData = stats.isNotEmpty || completed.isNotEmpty;
+      final List<FavoriteWordRow> favs =
+          await db.getFavoriteWordsBySource(kStatSourceVideo);
+      final List<MiningStatisticRow> mined =
+          await db.getMiningStatisticsBySource(kStatSourceVideo);
+      _favorited = bucketActivityByDateKey(
+        favs.map((FavoriteWordRow f) => (f.dateKey, 1)),
+        now,
+      );
+      _mined = bucketActivityByDateKey(
+        mined.map((MiningStatisticRow m) => (m.dateKey, m.count)),
+        now,
+      );
+      _hasData = stats.isNotEmpty ||
+          completed.isNotEmpty ||
+          favs.isNotEmpty ||
+          mined.isNotEmpty;
       await _loadHourlyData();
     } catch (e, stack) {
       ErrorLogService.instance.log('VideoStatisticsPage.load', e, stack);
@@ -85,13 +107,6 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
     final h = totalMin ~/ 60;
     final m = totalMin % 60;
     return t.stat_format_hours_minutes(h: h, m: m);
-  }
-
-  static String _formatChars(int chars) {
-    if (chars >= 10000) {
-      return t.stat_format_chars_wan(n: (chars / 10000).toStringAsFixed(1));
-    }
-    return t.stat_format_chars(n: chars);
   }
 
   @override
@@ -163,13 +178,13 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
           Row(
             children: [
               Expanded(
-                child: _summaryStatPanel(t.stat_today, _agg.todayChars,
-                    _agg.todayMs, _agg.todayCompleted),
+                child: _summaryStatPanel(t.stat_today, _agg.todayMs,
+                    _agg.todayCompleted, _mined.today, _favorited.today),
               ),
               SizedBox(width: tokens.spacing.gap + tokens.spacing.gap / 2),
               Expanded(
-                child: _summaryStatPanel(t.stat_this_week, _agg.weekChars,
-                    _agg.weekMs, _agg.weekCompleted),
+                child: _summaryStatPanel(t.stat_this_week, _agg.weekMs,
+                    _agg.weekCompleted, _mined.week, _favorited.week),
               ),
             ],
           ),
@@ -177,13 +192,13 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
           Row(
             children: [
               Expanded(
-                child: _summaryStatPanel(t.stat_this_month, _agg.monthChars,
-                    _agg.monthMs, _agg.monthCompleted),
+                child: _summaryStatPanel(t.stat_this_month, _agg.monthMs,
+                    _agg.monthCompleted, _mined.month, _favorited.month),
               ),
               SizedBox(width: tokens.spacing.gap + tokens.spacing.gap / 2),
               Expanded(
-                child: _summaryStatPanel(t.stat_all_time, _agg.allChars,
-                    _agg.allMs, _agg.allCompleted),
+                child: _summaryStatPanel(t.stat_all_time, _agg.allMs,
+                    _agg.allCompleted, _mined.all, _favorited.all),
               ),
             ],
           ),
@@ -192,9 +207,13 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
     );
   }
 
-  Widget _summaryStatPanel(String label, int chars, int ms, int completed) {
+  Widget _summaryStatPanel(
+      String label, int ms, int completed, int mined, int favorited) {
     final colorScheme = Theme.of(context).colorScheme;
     final tokens = HibikiDesignTokens.of(context);
+    final TextStyle? subStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: colorScheme.onSurfaceVariant,
+        );
     return HibikiCard(
       child: Padding(
         padding: EdgeInsets.zero,
@@ -206,21 +225,18 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
                       color: colorScheme.onSurfaceVariant,
                     )),
             SizedBox(height: tokens.spacing.gap),
-            Text(_formatChars(chars),
+            // 删字数后以观看时长为主数字。
+            Text(_formatTime(ms),
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
                       color: colorScheme.onSurface,
                       fontWeight: FontWeight.bold,
                     )),
             SizedBox(height: tokens.spacing.gap / 2),
-            Text('${t.video_stat_watch_time}: ${_formatTime(ms)}',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onSurfaceVariant,
-                    )),
+            Text('${t.video_stat_completed}: $completed', style: subStyle),
             SizedBox(height: tokens.spacing.gap / 2),
-            Text('${t.video_stat_completed}: $completed',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onSurfaceVariant,
-                    )),
+            Text('${t.stat_mined}: $mined', style: subStyle),
+            SizedBox(height: tokens.spacing.gap / 2),
+            Text('${t.stat_favorited}: $favorited', style: subStyle),
           ],
         ),
       ),
@@ -282,6 +298,9 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
                 labelStyle: tokens.type.metadata.copyWith(
                   color: colorScheme.onSurfaceVariant,
                 ),
+                // 删字数后日图画观看时长（ms），纵轴用时长格式（修 `0m` 退化）。
+                valueOf: statMsValue,
+                labelFormatter: formatStatDurationAxis,
               ),
             ),
           ),
@@ -291,9 +310,10 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
   }
 
   Widget _buildVideoTile(VideoStatBookData video) {
-    final maxChars =
-        _agg.byVideo.isEmpty ? 1 : _agg.byVideo.first.chars.clamp(1, 1 << 50);
-    final fraction = video.chars / maxChars;
+    // 按观看时长排行（byVideo 已按 ms 降序），进度条与排行同维度。
+    final maxMs =
+        _agg.byVideo.isEmpty ? 1 : _agg.byVideo.first.ms.clamp(1, 1 << 50);
+    final fraction = video.ms / maxMs;
     final colorScheme = Theme.of(context).colorScheme;
     final tokens = HibikiDesignTokens.of(context);
 
@@ -327,7 +347,7 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
               ),
               SizedBox(width: tokens.spacing.gap + tokens.spacing.gap / 2),
               Text(
-                '${_formatChars(video.chars)} · ${_formatTime(video.ms)}',
+                _formatTime(video.ms),
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: colorScheme.onSurfaceVariant,
                     ),

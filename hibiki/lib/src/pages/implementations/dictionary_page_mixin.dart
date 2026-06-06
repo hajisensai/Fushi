@@ -9,6 +9,7 @@ import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:hibiki/src/pages/implementations/stat_activity.dart';
 import 'package:hibiki/utils.dart';
 
 /// Shared popup entry used by all three dictionary page variants.
@@ -67,6 +68,15 @@ mixin DictionaryPageMixin {
   /// The active ThemeData. Used to determine dark/light mode for popups.
   ThemeData get mixinTheme;
 
+  /// 收藏/制卡计入统计时的来源标识。默认 [kStatSourceBook]（书内阅读、独立查词页
+  /// 都归书籍统计）；视频页覆写为 [kStatSourceVideo]，使收藏/制卡落各自统计。
+  String get dictionarySourceType => kStatSourceBook;
+
+  String _statTodayKey() {
+    final DateTime d = DateTime.now();
+    return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+  }
+
   // ---------------------------------------------------------------------------
   // Concrete helpers
   // ---------------------------------------------------------------------------
@@ -90,6 +100,8 @@ mixin DictionaryPageMixin {
     );
     switch (outcome.result) {
       case MineResult.success:
+        // 制卡成功计入统计（按来源 book/video）。失败不影响制卡结果，吞掉并记日志。
+        unawaited(_recordMined());
         final settings = await repo.loadSettings();
         HibikiToast.show(
           msg: t.card_exported(deck: settings.selectedDeckName ?? ''),
@@ -155,6 +167,58 @@ mixin DictionaryPageMixin {
   Future<bool> checkDuplicate(String expression, String reading) async {
     final repo = ref.read(ankiRepositoryProvider);
     return repo.isDuplicate(expression, reading);
+  }
+
+  /// 把一次成功制卡计入统计（按 [dictionarySourceType]）。
+  Future<void> _recordMined() async {
+    try {
+      await mixinAppModel.database.addMiningCount(
+        sourceType: dictionarySourceType,
+        dateKey: _statTodayKey(),
+      );
+    } catch (e, st) {
+      debugPrint('[hibiki-stats] addMiningCount failed: $e\n$st');
+    }
+  }
+
+  /// 切换收藏当前词条：已收藏则取消，否则收藏。返回切换后的新状态（true=已收藏）。
+  /// 收藏按来源（book/video）落 DB，并计入各自统计。
+  Future<bool> onFavoriteEntry(Map<String, String> fields) async {
+    final String expression = fields['expression'] ?? '';
+    final String reading = fields['reading'] ?? '';
+    if (expression.isEmpty) return false;
+    final db = mixinAppModel.database;
+    final bool already = await db.isFavoriteWord(
+      expression: expression,
+      reading: reading,
+      sourceType: dictionarySourceType,
+    );
+    if (already) {
+      await db.removeFavoriteWord(
+        expression: expression,
+        reading: reading,
+        sourceType: dictionarySourceType,
+      );
+      return false;
+    }
+    await db.addFavoriteWord(
+      expression: expression,
+      reading: reading,
+      glossary: fields['glossary'] ?? '',
+      sourceType: dictionarySourceType,
+      dateKey: _statTodayKey(),
+    );
+    return true;
+  }
+
+  /// 查询某词条当前是否已收藏（供弹窗按钮初始 ☆/★ 状态）。
+  Future<bool> onFavoriteCheck(String expression, String reading) async {
+    if (expression.isEmpty) return false;
+    return mixinAppModel.database.isFavoriteWord(
+      expression: expression,
+      reading: reading,
+      sourceType: dictionarySourceType,
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -225,6 +289,8 @@ mixin DictionaryPageMixin {
           },
           onMineEntry: onMineEntry,
           onDuplicateCheck: checkDuplicate,
+          onFavoriteEntry: onFavoriteEntry,
+          onFavoriteCheck: onFavoriteCheck,
         ),
       ),
     );

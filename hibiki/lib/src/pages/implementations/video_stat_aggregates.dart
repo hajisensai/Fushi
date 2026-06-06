@@ -67,8 +67,8 @@ VideoStatsAggregate computeVideoStats({
     final key = _dateKey(thirtyDaysAgo.add(Duration(days: i)));
     agg.daily.add(dailyMap[key] ?? StatDayData(dateKey: key));
   }
-  agg.byVideo = bookMap.values.toList()
-    ..sort((a, b) => b.chars.compareTo(a.chars));
+  // 删字数后按观看时长排行（字数仍在 DB/聚合里保留，只是不再展示/排序）。
+  agg.byVideo = bookMap.values.toList()..sort((a, b) => b.ms.compareTo(a.ms));
 
   // 完成数按时间戳落入区间（天然去重：completedAt 只记首次）。
   for (final c in completed) {

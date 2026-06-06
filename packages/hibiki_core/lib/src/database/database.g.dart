@@ -9826,6 +9826,652 @@ class VideoHourlyLogsCompanion extends UpdateCompanion<VideoHourlyLogRow> {
   }
 }
 
+class $FavoriteWordsTable extends FavoriteWords
+    with TableInfo<$FavoriteWordsTable, FavoriteWordRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $FavoriteWordsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+      'id', aliasedName, false,
+      hasAutoIncrement: true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
+  static const VerificationMeta _expressionMeta =
+      const VerificationMeta('expression');
+  @override
+  late final GeneratedColumn<String> expression = GeneratedColumn<String>(
+      'expression', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _readingMeta =
+      const VerificationMeta('reading');
+  @override
+  late final GeneratedColumn<String> reading = GeneratedColumn<String>(
+      'reading', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(''));
+  static const VerificationMeta _glossaryMeta =
+      const VerificationMeta('glossary');
+  @override
+  late final GeneratedColumn<String> glossary = GeneratedColumn<String>(
+      'glossary', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(''));
+  static const VerificationMeta _sourceTypeMeta =
+      const VerificationMeta('sourceType');
+  @override
+  late final GeneratedColumn<String> sourceType = GeneratedColumn<String>(
+      'source_type', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _dateKeyMeta =
+      const VerificationMeta('dateKey');
+  @override
+  late final GeneratedColumn<String> dateKey = GeneratedColumn<String>(
+      'date_key', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _createdAtMeta =
+      const VerificationMeta('createdAt');
+  @override
+  late final GeneratedColumn<int> createdAt = GeneratedColumn<int>(
+      'created_at', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  @override
+  List<GeneratedColumn> get $columns =>
+      [id, expression, reading, glossary, sourceType, dateKey, createdAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'favorite_words';
+  @override
+  VerificationContext validateIntegrity(Insertable<FavoriteWordRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('expression')) {
+      context.handle(
+          _expressionMeta,
+          expression.isAcceptableOrUnknown(
+              data['expression']!, _expressionMeta));
+    } else if (isInserting) {
+      context.missing(_expressionMeta);
+    }
+    if (data.containsKey('reading')) {
+      context.handle(_readingMeta,
+          reading.isAcceptableOrUnknown(data['reading']!, _readingMeta));
+    }
+    if (data.containsKey('glossary')) {
+      context.handle(_glossaryMeta,
+          glossary.isAcceptableOrUnknown(data['glossary']!, _glossaryMeta));
+    }
+    if (data.containsKey('source_type')) {
+      context.handle(
+          _sourceTypeMeta,
+          sourceType.isAcceptableOrUnknown(
+              data['source_type']!, _sourceTypeMeta));
+    } else if (isInserting) {
+      context.missing(_sourceTypeMeta);
+    }
+    if (data.containsKey('date_key')) {
+      context.handle(_dateKeyMeta,
+          dateKey.isAcceptableOrUnknown(data['date_key']!, _dateKeyMeta));
+    } else if (isInserting) {
+      context.missing(_dateKeyMeta);
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(_createdAtMeta,
+          createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta));
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  List<Set<GeneratedColumn>> get uniqueKeys => [
+        {expression, reading, sourceType},
+      ];
+  @override
+  FavoriteWordRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return FavoriteWordRow(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
+      expression: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}expression'])!,
+      reading: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}reading'])!,
+      glossary: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}glossary'])!,
+      sourceType: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}source_type'])!,
+      dateKey: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}date_key'])!,
+      createdAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}created_at'])!,
+    );
+  }
+
+  @override
+  $FavoriteWordsTable createAlias(String alias) {
+    return $FavoriteWordsTable(attachedDatabase, alias);
+  }
+}
+
+class FavoriteWordRow extends DataClass implements Insertable<FavoriteWordRow> {
+  final int id;
+  final String expression;
+  final String reading;
+  final String glossary;
+  final String sourceType;
+  final String dateKey;
+  final int createdAt;
+  const FavoriteWordRow(
+      {required this.id,
+      required this.expression,
+      required this.reading,
+      required this.glossary,
+      required this.sourceType,
+      required this.dateKey,
+      required this.createdAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['expression'] = Variable<String>(expression);
+    map['reading'] = Variable<String>(reading);
+    map['glossary'] = Variable<String>(glossary);
+    map['source_type'] = Variable<String>(sourceType);
+    map['date_key'] = Variable<String>(dateKey);
+    map['created_at'] = Variable<int>(createdAt);
+    return map;
+  }
+
+  FavoriteWordsCompanion toCompanion(bool nullToAbsent) {
+    return FavoriteWordsCompanion(
+      id: Value(id),
+      expression: Value(expression),
+      reading: Value(reading),
+      glossary: Value(glossary),
+      sourceType: Value(sourceType),
+      dateKey: Value(dateKey),
+      createdAt: Value(createdAt),
+    );
+  }
+
+  factory FavoriteWordRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return FavoriteWordRow(
+      id: serializer.fromJson<int>(json['id']),
+      expression: serializer.fromJson<String>(json['expression']),
+      reading: serializer.fromJson<String>(json['reading']),
+      glossary: serializer.fromJson<String>(json['glossary']),
+      sourceType: serializer.fromJson<String>(json['sourceType']),
+      dateKey: serializer.fromJson<String>(json['dateKey']),
+      createdAt: serializer.fromJson<int>(json['createdAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'expression': serializer.toJson<String>(expression),
+      'reading': serializer.toJson<String>(reading),
+      'glossary': serializer.toJson<String>(glossary),
+      'sourceType': serializer.toJson<String>(sourceType),
+      'dateKey': serializer.toJson<String>(dateKey),
+      'createdAt': serializer.toJson<int>(createdAt),
+    };
+  }
+
+  FavoriteWordRow copyWith(
+          {int? id,
+          String? expression,
+          String? reading,
+          String? glossary,
+          String? sourceType,
+          String? dateKey,
+          int? createdAt}) =>
+      FavoriteWordRow(
+        id: id ?? this.id,
+        expression: expression ?? this.expression,
+        reading: reading ?? this.reading,
+        glossary: glossary ?? this.glossary,
+        sourceType: sourceType ?? this.sourceType,
+        dateKey: dateKey ?? this.dateKey,
+        createdAt: createdAt ?? this.createdAt,
+      );
+  FavoriteWordRow copyWithCompanion(FavoriteWordsCompanion data) {
+    return FavoriteWordRow(
+      id: data.id.present ? data.id.value : this.id,
+      expression:
+          data.expression.present ? data.expression.value : this.expression,
+      reading: data.reading.present ? data.reading.value : this.reading,
+      glossary: data.glossary.present ? data.glossary.value : this.glossary,
+      sourceType:
+          data.sourceType.present ? data.sourceType.value : this.sourceType,
+      dateKey: data.dateKey.present ? data.dateKey.value : this.dateKey,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('FavoriteWordRow(')
+          ..write('id: $id, ')
+          ..write('expression: $expression, ')
+          ..write('reading: $reading, ')
+          ..write('glossary: $glossary, ')
+          ..write('sourceType: $sourceType, ')
+          ..write('dateKey: $dateKey, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+      id, expression, reading, glossary, sourceType, dateKey, createdAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is FavoriteWordRow &&
+          other.id == this.id &&
+          other.expression == this.expression &&
+          other.reading == this.reading &&
+          other.glossary == this.glossary &&
+          other.sourceType == this.sourceType &&
+          other.dateKey == this.dateKey &&
+          other.createdAt == this.createdAt);
+}
+
+class FavoriteWordsCompanion extends UpdateCompanion<FavoriteWordRow> {
+  final Value<int> id;
+  final Value<String> expression;
+  final Value<String> reading;
+  final Value<String> glossary;
+  final Value<String> sourceType;
+  final Value<String> dateKey;
+  final Value<int> createdAt;
+  const FavoriteWordsCompanion({
+    this.id = const Value.absent(),
+    this.expression = const Value.absent(),
+    this.reading = const Value.absent(),
+    this.glossary = const Value.absent(),
+    this.sourceType = const Value.absent(),
+    this.dateKey = const Value.absent(),
+    this.createdAt = const Value.absent(),
+  });
+  FavoriteWordsCompanion.insert({
+    this.id = const Value.absent(),
+    required String expression,
+    this.reading = const Value.absent(),
+    this.glossary = const Value.absent(),
+    required String sourceType,
+    required String dateKey,
+    required int createdAt,
+  })  : expression = Value(expression),
+        sourceType = Value(sourceType),
+        dateKey = Value(dateKey),
+        createdAt = Value(createdAt);
+  static Insertable<FavoriteWordRow> custom({
+    Expression<int>? id,
+    Expression<String>? expression,
+    Expression<String>? reading,
+    Expression<String>? glossary,
+    Expression<String>? sourceType,
+    Expression<String>? dateKey,
+    Expression<int>? createdAt,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (expression != null) 'expression': expression,
+      if (reading != null) 'reading': reading,
+      if (glossary != null) 'glossary': glossary,
+      if (sourceType != null) 'source_type': sourceType,
+      if (dateKey != null) 'date_key': dateKey,
+      if (createdAt != null) 'created_at': createdAt,
+    });
+  }
+
+  FavoriteWordsCompanion copyWith(
+      {Value<int>? id,
+      Value<String>? expression,
+      Value<String>? reading,
+      Value<String>? glossary,
+      Value<String>? sourceType,
+      Value<String>? dateKey,
+      Value<int>? createdAt}) {
+    return FavoriteWordsCompanion(
+      id: id ?? this.id,
+      expression: expression ?? this.expression,
+      reading: reading ?? this.reading,
+      glossary: glossary ?? this.glossary,
+      sourceType: sourceType ?? this.sourceType,
+      dateKey: dateKey ?? this.dateKey,
+      createdAt: createdAt ?? this.createdAt,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (expression.present) {
+      map['expression'] = Variable<String>(expression.value);
+    }
+    if (reading.present) {
+      map['reading'] = Variable<String>(reading.value);
+    }
+    if (glossary.present) {
+      map['glossary'] = Variable<String>(glossary.value);
+    }
+    if (sourceType.present) {
+      map['source_type'] = Variable<String>(sourceType.value);
+    }
+    if (dateKey.present) {
+      map['date_key'] = Variable<String>(dateKey.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<int>(createdAt.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('FavoriteWordsCompanion(')
+          ..write('id: $id, ')
+          ..write('expression: $expression, ')
+          ..write('reading: $reading, ')
+          ..write('glossary: $glossary, ')
+          ..write('sourceType: $sourceType, ')
+          ..write('dateKey: $dateKey, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $MiningStatisticsTable extends MiningStatistics
+    with TableInfo<$MiningStatisticsTable, MiningStatisticRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MiningStatisticsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+      'id', aliasedName, false,
+      hasAutoIncrement: true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
+  static const VerificationMeta _sourceTypeMeta =
+      const VerificationMeta('sourceType');
+  @override
+  late final GeneratedColumn<String> sourceType = GeneratedColumn<String>(
+      'source_type', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _dateKeyMeta =
+      const VerificationMeta('dateKey');
+  @override
+  late final GeneratedColumn<String> dateKey = GeneratedColumn<String>(
+      'date_key', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _countMeta = const VerificationMeta('count');
+  @override
+  late final GeneratedColumn<int> count = GeneratedColumn<int>(
+      'count', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  @override
+  List<GeneratedColumn> get $columns => [id, sourceType, dateKey, count];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'mining_statistics';
+  @override
+  VerificationContext validateIntegrity(Insertable<MiningStatisticRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('source_type')) {
+      context.handle(
+          _sourceTypeMeta,
+          sourceType.isAcceptableOrUnknown(
+              data['source_type']!, _sourceTypeMeta));
+    } else if (isInserting) {
+      context.missing(_sourceTypeMeta);
+    }
+    if (data.containsKey('date_key')) {
+      context.handle(_dateKeyMeta,
+          dateKey.isAcceptableOrUnknown(data['date_key']!, _dateKeyMeta));
+    } else if (isInserting) {
+      context.missing(_dateKeyMeta);
+    }
+    if (data.containsKey('count')) {
+      context.handle(
+          _countMeta, count.isAcceptableOrUnknown(data['count']!, _countMeta));
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  List<Set<GeneratedColumn>> get uniqueKeys => [
+        {sourceType, dateKey},
+      ];
+  @override
+  MiningStatisticRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MiningStatisticRow(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
+      sourceType: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}source_type'])!,
+      dateKey: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}date_key'])!,
+      count: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}count'])!,
+    );
+  }
+
+  @override
+  $MiningStatisticsTable createAlias(String alias) {
+    return $MiningStatisticsTable(attachedDatabase, alias);
+  }
+}
+
+class MiningStatisticRow extends DataClass
+    implements Insertable<MiningStatisticRow> {
+  final int id;
+  final String sourceType;
+  final String dateKey;
+  final int count;
+  const MiningStatisticRow(
+      {required this.id,
+      required this.sourceType,
+      required this.dateKey,
+      required this.count});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['source_type'] = Variable<String>(sourceType);
+    map['date_key'] = Variable<String>(dateKey);
+    map['count'] = Variable<int>(count);
+    return map;
+  }
+
+  MiningStatisticsCompanion toCompanion(bool nullToAbsent) {
+    return MiningStatisticsCompanion(
+      id: Value(id),
+      sourceType: Value(sourceType),
+      dateKey: Value(dateKey),
+      count: Value(count),
+    );
+  }
+
+  factory MiningStatisticRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MiningStatisticRow(
+      id: serializer.fromJson<int>(json['id']),
+      sourceType: serializer.fromJson<String>(json['sourceType']),
+      dateKey: serializer.fromJson<String>(json['dateKey']),
+      count: serializer.fromJson<int>(json['count']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'sourceType': serializer.toJson<String>(sourceType),
+      'dateKey': serializer.toJson<String>(dateKey),
+      'count': serializer.toJson<int>(count),
+    };
+  }
+
+  MiningStatisticRow copyWith(
+          {int? id, String? sourceType, String? dateKey, int? count}) =>
+      MiningStatisticRow(
+        id: id ?? this.id,
+        sourceType: sourceType ?? this.sourceType,
+        dateKey: dateKey ?? this.dateKey,
+        count: count ?? this.count,
+      );
+  MiningStatisticRow copyWithCompanion(MiningStatisticsCompanion data) {
+    return MiningStatisticRow(
+      id: data.id.present ? data.id.value : this.id,
+      sourceType:
+          data.sourceType.present ? data.sourceType.value : this.sourceType,
+      dateKey: data.dateKey.present ? data.dateKey.value : this.dateKey,
+      count: data.count.present ? data.count.value : this.count,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MiningStatisticRow(')
+          ..write('id: $id, ')
+          ..write('sourceType: $sourceType, ')
+          ..write('dateKey: $dateKey, ')
+          ..write('count: $count')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, sourceType, dateKey, count);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MiningStatisticRow &&
+          other.id == this.id &&
+          other.sourceType == this.sourceType &&
+          other.dateKey == this.dateKey &&
+          other.count == this.count);
+}
+
+class MiningStatisticsCompanion extends UpdateCompanion<MiningStatisticRow> {
+  final Value<int> id;
+  final Value<String> sourceType;
+  final Value<String> dateKey;
+  final Value<int> count;
+  const MiningStatisticsCompanion({
+    this.id = const Value.absent(),
+    this.sourceType = const Value.absent(),
+    this.dateKey = const Value.absent(),
+    this.count = const Value.absent(),
+  });
+  MiningStatisticsCompanion.insert({
+    this.id = const Value.absent(),
+    required String sourceType,
+    required String dateKey,
+    this.count = const Value.absent(),
+  })  : sourceType = Value(sourceType),
+        dateKey = Value(dateKey);
+  static Insertable<MiningStatisticRow> custom({
+    Expression<int>? id,
+    Expression<String>? sourceType,
+    Expression<String>? dateKey,
+    Expression<int>? count,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (sourceType != null) 'source_type': sourceType,
+      if (dateKey != null) 'date_key': dateKey,
+      if (count != null) 'count': count,
+    });
+  }
+
+  MiningStatisticsCompanion copyWith(
+      {Value<int>? id,
+      Value<String>? sourceType,
+      Value<String>? dateKey,
+      Value<int>? count}) {
+    return MiningStatisticsCompanion(
+      id: id ?? this.id,
+      sourceType: sourceType ?? this.sourceType,
+      dateKey: dateKey ?? this.dateKey,
+      count: count ?? this.count,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (sourceType.present) {
+      map['source_type'] = Variable<String>(sourceType.value);
+    }
+    if (dateKey.present) {
+      map['date_key'] = Variable<String>(dateKey.value);
+    }
+    if (count.present) {
+      map['count'] = Variable<int>(count.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MiningStatisticsCompanion(')
+          ..write('id: $id, ')
+          ..write('sourceType: $sourceType, ')
+          ..write('dateKey: $dateKey, ')
+          ..write('count: $count')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$HibikiDatabase extends GeneratedDatabase {
   _$HibikiDatabase(QueryExecutor e) : super(e);
   $HibikiDatabaseManager get managers => $HibikiDatabaseManager(this);
@@ -9868,6 +10514,9 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
       $VideoWatchStatisticsTable(this);
   late final $VideoHourlyLogsTable videoHourlyLogs =
       $VideoHourlyLogsTable(this);
+  late final $FavoriteWordsTable favoriteWords = $FavoriteWordsTable(this);
+  late final $MiningStatisticsTable miningStatistics =
+      $MiningStatisticsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -9898,7 +10547,9 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
         videoBooks,
         videoBookTagMappings,
         videoWatchStatistics,
-        videoHourlyLogs
+        videoHourlyLogs,
+        favoriteWords,
+        miningStatistics
       ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules(
@@ -16806,6 +17457,359 @@ typedef $$VideoHourlyLogsTableProcessedTableManager = ProcessedTableManager<
     ),
     VideoHourlyLogRow,
     PrefetchHooks Function()>;
+typedef $$FavoriteWordsTableCreateCompanionBuilder = FavoriteWordsCompanion
+    Function({
+  Value<int> id,
+  required String expression,
+  Value<String> reading,
+  Value<String> glossary,
+  required String sourceType,
+  required String dateKey,
+  required int createdAt,
+});
+typedef $$FavoriteWordsTableUpdateCompanionBuilder = FavoriteWordsCompanion
+    Function({
+  Value<int> id,
+  Value<String> expression,
+  Value<String> reading,
+  Value<String> glossary,
+  Value<String> sourceType,
+  Value<String> dateKey,
+  Value<int> createdAt,
+});
+
+class $$FavoriteWordsTableFilterComposer
+    extends Composer<_$HibikiDatabase, $FavoriteWordsTable> {
+  $$FavoriteWordsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get expression => $composableBuilder(
+      column: $table.expression, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get reading => $composableBuilder(
+      column: $table.reading, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get glossary => $composableBuilder(
+      column: $table.glossary, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get sourceType => $composableBuilder(
+      column: $table.sourceType, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get dateKey => $composableBuilder(
+      column: $table.dateKey, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnFilters(column));
+}
+
+class $$FavoriteWordsTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $FavoriteWordsTable> {
+  $$FavoriteWordsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get expression => $composableBuilder(
+      column: $table.expression, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get reading => $composableBuilder(
+      column: $table.reading, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get glossary => $composableBuilder(
+      column: $table.glossary, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get sourceType => $composableBuilder(
+      column: $table.sourceType, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get dateKey => $composableBuilder(
+      column: $table.dateKey, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnOrderings(column));
+}
+
+class $$FavoriteWordsTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $FavoriteWordsTable> {
+  $$FavoriteWordsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get expression => $composableBuilder(
+      column: $table.expression, builder: (column) => column);
+
+  GeneratedColumn<String> get reading =>
+      $composableBuilder(column: $table.reading, builder: (column) => column);
+
+  GeneratedColumn<String> get glossary =>
+      $composableBuilder(column: $table.glossary, builder: (column) => column);
+
+  GeneratedColumn<String> get sourceType => $composableBuilder(
+      column: $table.sourceType, builder: (column) => column);
+
+  GeneratedColumn<String> get dateKey =>
+      $composableBuilder(column: $table.dateKey, builder: (column) => column);
+
+  GeneratedColumn<int> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+}
+
+class $$FavoriteWordsTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $FavoriteWordsTable,
+    FavoriteWordRow,
+    $$FavoriteWordsTableFilterComposer,
+    $$FavoriteWordsTableOrderingComposer,
+    $$FavoriteWordsTableAnnotationComposer,
+    $$FavoriteWordsTableCreateCompanionBuilder,
+    $$FavoriteWordsTableUpdateCompanionBuilder,
+    (
+      FavoriteWordRow,
+      BaseReferences<_$HibikiDatabase, $FavoriteWordsTable, FavoriteWordRow>
+    ),
+    FavoriteWordRow,
+    PrefetchHooks Function()> {
+  $$FavoriteWordsTableTableManager(
+      _$HibikiDatabase db, $FavoriteWordsTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$FavoriteWordsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$FavoriteWordsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$FavoriteWordsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<String> expression = const Value.absent(),
+            Value<String> reading = const Value.absent(),
+            Value<String> glossary = const Value.absent(),
+            Value<String> sourceType = const Value.absent(),
+            Value<String> dateKey = const Value.absent(),
+            Value<int> createdAt = const Value.absent(),
+          }) =>
+              FavoriteWordsCompanion(
+            id: id,
+            expression: expression,
+            reading: reading,
+            glossary: glossary,
+            sourceType: sourceType,
+            dateKey: dateKey,
+            createdAt: createdAt,
+          ),
+          createCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            required String expression,
+            Value<String> reading = const Value.absent(),
+            Value<String> glossary = const Value.absent(),
+            required String sourceType,
+            required String dateKey,
+            required int createdAt,
+          }) =>
+              FavoriteWordsCompanion.insert(
+            id: id,
+            expression: expression,
+            reading: reading,
+            glossary: glossary,
+            sourceType: sourceType,
+            dateKey: dateKey,
+            createdAt: createdAt,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$FavoriteWordsTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $FavoriteWordsTable,
+    FavoriteWordRow,
+    $$FavoriteWordsTableFilterComposer,
+    $$FavoriteWordsTableOrderingComposer,
+    $$FavoriteWordsTableAnnotationComposer,
+    $$FavoriteWordsTableCreateCompanionBuilder,
+    $$FavoriteWordsTableUpdateCompanionBuilder,
+    (
+      FavoriteWordRow,
+      BaseReferences<_$HibikiDatabase, $FavoriteWordsTable, FavoriteWordRow>
+    ),
+    FavoriteWordRow,
+    PrefetchHooks Function()>;
+typedef $$MiningStatisticsTableCreateCompanionBuilder
+    = MiningStatisticsCompanion Function({
+  Value<int> id,
+  required String sourceType,
+  required String dateKey,
+  Value<int> count,
+});
+typedef $$MiningStatisticsTableUpdateCompanionBuilder
+    = MiningStatisticsCompanion Function({
+  Value<int> id,
+  Value<String> sourceType,
+  Value<String> dateKey,
+  Value<int> count,
+});
+
+class $$MiningStatisticsTableFilterComposer
+    extends Composer<_$HibikiDatabase, $MiningStatisticsTable> {
+  $$MiningStatisticsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get sourceType => $composableBuilder(
+      column: $table.sourceType, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get dateKey => $composableBuilder(
+      column: $table.dateKey, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get count => $composableBuilder(
+      column: $table.count, builder: (column) => ColumnFilters(column));
+}
+
+class $$MiningStatisticsTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $MiningStatisticsTable> {
+  $$MiningStatisticsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get sourceType => $composableBuilder(
+      column: $table.sourceType, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get dateKey => $composableBuilder(
+      column: $table.dateKey, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get count => $composableBuilder(
+      column: $table.count, builder: (column) => ColumnOrderings(column));
+}
+
+class $$MiningStatisticsTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $MiningStatisticsTable> {
+  $$MiningStatisticsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get sourceType => $composableBuilder(
+      column: $table.sourceType, builder: (column) => column);
+
+  GeneratedColumn<String> get dateKey =>
+      $composableBuilder(column: $table.dateKey, builder: (column) => column);
+
+  GeneratedColumn<int> get count =>
+      $composableBuilder(column: $table.count, builder: (column) => column);
+}
+
+class $$MiningStatisticsTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $MiningStatisticsTable,
+    MiningStatisticRow,
+    $$MiningStatisticsTableFilterComposer,
+    $$MiningStatisticsTableOrderingComposer,
+    $$MiningStatisticsTableAnnotationComposer,
+    $$MiningStatisticsTableCreateCompanionBuilder,
+    $$MiningStatisticsTableUpdateCompanionBuilder,
+    (
+      MiningStatisticRow,
+      BaseReferences<_$HibikiDatabase, $MiningStatisticsTable,
+          MiningStatisticRow>
+    ),
+    MiningStatisticRow,
+    PrefetchHooks Function()> {
+  $$MiningStatisticsTableTableManager(
+      _$HibikiDatabase db, $MiningStatisticsTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MiningStatisticsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$MiningStatisticsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$MiningStatisticsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<String> sourceType = const Value.absent(),
+            Value<String> dateKey = const Value.absent(),
+            Value<int> count = const Value.absent(),
+          }) =>
+              MiningStatisticsCompanion(
+            id: id,
+            sourceType: sourceType,
+            dateKey: dateKey,
+            count: count,
+          ),
+          createCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            required String sourceType,
+            required String dateKey,
+            Value<int> count = const Value.absent(),
+          }) =>
+              MiningStatisticsCompanion.insert(
+            id: id,
+            sourceType: sourceType,
+            dateKey: dateKey,
+            count: count,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$MiningStatisticsTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $MiningStatisticsTable,
+    MiningStatisticRow,
+    $$MiningStatisticsTableFilterComposer,
+    $$MiningStatisticsTableOrderingComposer,
+    $$MiningStatisticsTableAnnotationComposer,
+    $$MiningStatisticsTableCreateCompanionBuilder,
+    $$MiningStatisticsTableUpdateCompanionBuilder,
+    (
+      MiningStatisticRow,
+      BaseReferences<_$HibikiDatabase, $MiningStatisticsTable,
+          MiningStatisticRow>
+    ),
+    MiningStatisticRow,
+    PrefetchHooks Function()>;
 
 class $HibikiDatabaseManager {
   final _$HibikiDatabase _db;
@@ -16862,4 +17866,8 @@ class $HibikiDatabaseManager {
       $$VideoWatchStatisticsTableTableManager(_db, _db.videoWatchStatistics);
   $$VideoHourlyLogsTableTableManager get videoHourlyLogs =>
       $$VideoHourlyLogsTableTableManager(_db, _db.videoHourlyLogs);
+  $$FavoriteWordsTableTableManager get favoriteWords =>
+      $$FavoriteWordsTableTableManager(_db, _db.favoriteWords);
+  $$MiningStatisticsTableTableManager get miningStatistics =>
+      $$MiningStatisticsTableTableManager(_db, _db.miningStatistics);
 }

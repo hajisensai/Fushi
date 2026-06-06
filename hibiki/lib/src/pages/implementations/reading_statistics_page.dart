@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hibiki/pages.dart';
+import 'package:hibiki/src/pages/implementations/stat_activity.dart';
 import 'package:hibiki/src/pages/implementations/stat_charts.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -34,6 +35,10 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   // 今日每小时数据（0-23）
   List<int> _hourlyMs = List.filled(24, 0);
 
+  // 制卡 / 收藏计数（来源 'book'），按今日/本周/本月/全部分桶。
+  StatActivityBuckets _mined = StatActivityBuckets();
+  StatActivityBuckets _favorited = StatActivityBuckets();
+
   // 按书聚合
   List<_BookData> _bookData = [];
 
@@ -56,6 +61,19 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       final db = appModelNoUpdate.database;
       _allStats = await db.getAllReadingStatistics();
       _computeAggregates();
+      final DateTime now = DateTime.now();
+      final List<FavoriteWordRow> favs =
+          await db.getFavoriteWordsBySource(kStatSourceBook);
+      final List<MiningStatisticRow> mined =
+          await db.getMiningStatisticsBySource(kStatSourceBook);
+      _favorited = bucketActivityByDateKey(
+        favs.map((FavoriteWordRow f) => (f.dateKey, 1)),
+        now,
+      );
+      _mined = bucketActivityByDateKey(
+        mined.map((MiningStatisticRow m) => (m.dateKey, m.count)),
+        now,
+      );
       await _loadHourlyData();
     } catch (e, stack) {
       ErrorLogService.instance.log('ReadingStatisticsPage.load', e, stack);
@@ -224,23 +242,24 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
           Row(
             children: [
               Expanded(
-                  child:
-                      _summaryStatPanel(t.stat_today, _todayChars, _todayMs)),
+                  child: _summaryStatPanel(t.stat_today, _todayChars, _todayMs,
+                      _mined.today, _favorited.today)),
               SizedBox(width: tokens.spacing.gap + tokens.spacing.gap / 2),
               Expanded(
-                  child:
-                      _summaryStatPanel(t.stat_this_week, _weekChars, _weekMs)),
+                  child: _summaryStatPanel(t.stat_this_week, _weekChars,
+                      _weekMs, _mined.week, _favorited.week)),
             ],
           ),
           SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
           Row(
             children: [
               Expanded(
-                  child: _summaryStatPanel(
-                      t.stat_this_month, _monthChars, _monthMs)),
+                  child: _summaryStatPanel(t.stat_this_month, _monthChars,
+                      _monthMs, _mined.month, _favorited.month)),
               SizedBox(width: tokens.spacing.gap + tokens.spacing.gap / 2),
               Expanded(
-                  child: _summaryStatPanel(t.stat_all_time, _allChars, _allMs)),
+                  child: _summaryStatPanel(t.stat_all_time, _allChars, _allMs,
+                      _mined.all, _favorited.all)),
             ],
           ),
         ],
@@ -248,9 +267,13 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     );
   }
 
-  Widget _summaryStatPanel(String label, int chars, int ms) {
+  Widget _summaryStatPanel(
+      String label, int chars, int ms, int mined, int favorited) {
     final colorScheme = Theme.of(context).colorScheme;
     final tokens = HibikiDesignTokens.of(context);
+    final TextStyle? subStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: colorScheme.onSurfaceVariant,
+        );
     return HibikiCard(
       child: Padding(
         padding: EdgeInsets.zero,
@@ -268,10 +291,11 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
                       fontWeight: FontWeight.bold,
                     )),
             SizedBox(height: tokens.spacing.gap / 2),
-            Text(_formatTime(ms),
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onSurfaceVariant,
-                    )),
+            Text(_formatTime(ms), style: subStyle),
+            SizedBox(height: tokens.spacing.gap / 2),
+            Text('${t.stat_mined}: $mined', style: subStyle),
+            SizedBox(height: tokens.spacing.gap / 2),
+            Text('${t.stat_favorited}: $favorited', style: subStyle),
           ],
         ),
       ),

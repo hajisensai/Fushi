@@ -9,6 +9,31 @@ class StatDayData {
   int ms = 0;
 }
 
+/// 取 [StatDayData.chars] 作图表值（阅读统计默认）。用顶层静态 tear-off 而非
+/// 闭包，使 [StatBarChartPainter.shouldRepaint] 的函数相等比较稳定（每帧新建的
+/// 闭包恒不相等会导致每帧重绘）。
+int statCharsValue(StatDayData d) => d.chars;
+
+/// 取 [StatDayData.ms] 作图表值（视频统计：删字数后以观看时长为准）。
+int statMsValue(StatDayData d) => d.ms;
+
+/// 把字数格式化为坐标轴标签（万 / k / 原值）。
+String formatStatCharsAxis(int chars) {
+  if (chars >= 10000) return '${(chars / 10000).toStringAsFixed(1)}万';
+  if (chars >= 1000) return '${(chars / 1000).toStringAsFixed(1)}k';
+  return chars.toString();
+}
+
+/// 把毫秒时长格式化为坐标轴标签。不足 1 分钟时回退到秒（如 `30s`）而非整除成
+/// `0m`——后者会让整条纵轴退化成 `0m 0m 0m 0m 0m`（观看时长不足 1 分钟时所有
+/// 刻度都被 `ms ~/ 60000` 取整为 0）。
+String formatStatDurationAxis(int ms) {
+  if (ms >= 3600000) return '${ms ~/ 3600000}h';
+  if (ms >= 60000) return '${ms ~/ 60000}m';
+  if (ms > 0) return '${ms ~/ 1000}s';
+  return '0';
+}
+
 /// 今日按小时柱状图画笔（0-23 小时，值为毫秒）。阅读统计与视频统计共用。
 class StatHourlyChartPainter extends CustomPainter {
   StatHourlyChartPainter({
@@ -24,12 +49,6 @@ class StatHourlyChartPainter extends CustomPainter {
   final Radius barRadius;
   final Color labelColor;
   final TextStyle labelStyle;
-
-  static String _formatMs(int ms) {
-    final minutes = ms ~/ 60000;
-    if (minutes >= 60) return '${minutes ~/ 60}h';
-    return '${minutes}m';
-  }
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -73,7 +92,7 @@ class StatHourlyChartPainter extends CustomPainter {
       final y = chartHeight - (chartHeight * i / yTicks);
       canvas.drawLine(Offset(leftPadding, y), Offset(size.width, y), gridPaint);
       final tp = TextPainter(
-        text: TextSpan(text: _formatMs(value), style: labelStyle),
+        text: TextSpan(text: formatStatDurationAxis(value), style: labelStyle),
         textDirection: TextDirection.ltr,
       )..layout();
       tp.paint(canvas, Offset(leftPadding - tp.width - 4, y - tp.height / 2));
@@ -116,7 +135,9 @@ class StatHourlyChartPainter extends CustomPainter {
       labelStyle != oldDelegate.labelStyle;
 }
 
-/// 最近 N 天柱状图画笔（值为 [StatDayData.chars]）。阅读统计与视频统计共用。
+/// 最近 N 天柱状图画笔。阅读统计默认画字数（[statCharsValue]），视频统计删字数后
+/// 画观看时长（[statMsValue]）。[valueOf] / [labelFormatter] 用顶层静态 tear-off
+/// 传入，使 [shouldRepaint] 的函数相等比较稳定。
 class StatBarChartPainter extends CustomPainter {
   StatBarChartPainter({
     required this.data,
@@ -124,6 +145,8 @@ class StatBarChartPainter extends CustomPainter {
     required this.barRadius,
     required this.labelColor,
     required this.labelStyle,
+    this.valueOf = statCharsValue,
+    this.labelFormatter = formatStatCharsAxis,
   });
 
   final List<StatDayData> data;
@@ -131,20 +154,16 @@ class StatBarChartPainter extends CustomPainter {
   final Radius barRadius;
   final Color labelColor;
   final TextStyle labelStyle;
-
-  static String _formatChars(int chars) {
-    if (chars >= 10000) return '${(chars / 10000).toStringAsFixed(1)}万';
-    if (chars >= 1000) return '${(chars / 1000).toStringAsFixed(1)}k';
-    return chars.toString();
-  }
+  final int Function(StatDayData) valueOf;
+  final String Function(int) labelFormatter;
 
   @override
   void paint(Canvas canvas, Size size) {
     if (data.isEmpty) return;
 
-    final maxChars =
-        data.fold<int>(0, (prev, d) => d.chars > prev ? d.chars : prev);
-    if (maxChars == 0) return;
+    final maxValue =
+        data.fold<int>(0, (prev, d) => valueOf(d) > prev ? valueOf(d) : prev);
+    if (maxValue == 0) return;
 
     const bottomPadding = 20.0;
     const leftPadding = 36.0;
@@ -177,11 +196,11 @@ class StatBarChartPainter extends CustomPainter {
 
     const int yTicks = 4;
     for (int i = 0; i <= yTicks; i++) {
-      final value = (maxChars * i / yTicks).round();
+      final value = (maxValue * i / yTicks).round();
       final y = chartHeight - (chartHeight * i / yTicks);
       canvas.drawLine(Offset(leftPadding, y), Offset(size.width, y), gridPaint);
       final tp = TextPainter(
-        text: TextSpan(text: _formatChars(value), style: labelStyle),
+        text: TextSpan(text: labelFormatter(value), style: labelStyle),
         textDirection: TextDirection.ltr,
       )..layout();
       tp.paint(canvas, Offset(leftPadding - tp.width - 4, y - tp.height / 2));
@@ -190,9 +209,10 @@ class StatBarChartPainter extends CustomPainter {
     for (int i = 0; i < data.length; i++) {
       final d = data[i];
       final x = leftPadding + i * step + gap / 2;
-      final barHeight = (d.chars / maxChars) * chartHeight;
+      final value = valueOf(d);
+      final barHeight = (value / maxValue) * chartHeight;
 
-      if (d.chars > 0) {
+      if (value > 0) {
         final rect = RRect.fromRectAndRadius(
           Rect.fromLTWH(x, chartHeight - barHeight, barWidth, barHeight),
           barRadius,
@@ -222,5 +242,7 @@ class StatBarChartPainter extends CustomPainter {
       barColor != oldDelegate.barColor ||
       barRadius != oldDelegate.barRadius ||
       labelColor != oldDelegate.labelColor ||
-      labelStyle != oldDelegate.labelStyle;
+      labelStyle != oldDelegate.labelStyle ||
+      valueOf != oldDelegate.valueOf ||
+      labelFormatter != oldDelegate.labelFormatter;
 }
