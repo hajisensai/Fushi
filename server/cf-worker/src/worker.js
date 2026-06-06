@@ -81,10 +81,11 @@ export function checkBasicAuth(header, user, pass) {
   return okU && okP;
 }
 
-// 缺任一关键 secret → 返回缺失项（用于 fail-closed）。
+// 缺任一关键 secret 或 D1 binding → 返回缺失项（用于 fail-closed）。
+// 含 DB binding：漏配时返回受控 500，而非到存储层才抛裸 TypeError。
 export function configMissing(env) {
   const missing = [];
-  for (const k of ['UPLOAD_TOKEN', 'BASIC_USER', 'BASIC_PASS']) {
+  for (const k of ['UPLOAD_TOKEN', 'BASIC_USER', 'BASIC_PASS', 'DB']) {
     if (!env || !env[k]) missing.push(k);
   }
   return missing;

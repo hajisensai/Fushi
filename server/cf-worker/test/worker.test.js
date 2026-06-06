@@ -114,9 +114,12 @@ describe('pure helpers', () => {
     expect(checkBasicAuth(null, 'admin', 'secret-pass')).toBe(false);
     expect(checkBasicAuth('Bearer x', 'admin', 'secret-pass')).toBe(false);
   });
-  it('configMissing 抓空 secret', () => {
-    expect(configMissing({ UPLOAD_TOKEN: 'a', BASIC_USER: 'b', BASIC_PASS: 'c' })).toEqual([]);
-    expect(configMissing({}).length).toBe(3);
+  it('configMissing 抓空 secret + 缺 DB binding', () => {
+    expect(
+      configMissing({ UPLOAD_TOKEN: 'a', BASIC_USER: 'b', BASIC_PASS: 'c', DB: {} }),
+    ).toEqual([]);
+    expect(configMissing({}).length).toBe(4); // 3 secret + DB
+    expect(configMissing({ UPLOAD_TOKEN: 'a', BASIC_USER: 'b', BASIC_PASS: 'c' })).toEqual(['DB']);
   });
 });
 
@@ -149,6 +152,26 @@ describe('fetch routes', () => {
       method: 'POST',
       headers: { 'X-Upload-Token': 'good-token', 'Content-Length': String(600 * 1024) },
       body: '{"log":"x"}',
+    });
+    const res = await worker.fetch(req, env);
+    expect(res.status).toBe(413);
+  });
+
+  it('上传超大但无 Content-Length（流式 body）→ 读后字节复核仍 413', async () => {
+    // 用流式 body 让 Content-Length 缺失，绕过头预检，触发 read 后的字节复核分支。
+    const env = fullEnv();
+    const big = new TextEncoder().encode('x'.repeat(600 * 1024));
+    const stream = new ReadableStream({
+      start(c) {
+        c.enqueue(big);
+        c.close();
+      },
+    });
+    const req = new Request('https://logs.example.com/api/logs', {
+      method: 'POST',
+      headers: { 'X-Upload-Token': 'good-token' },
+      body: stream,
+      duplex: 'half',
     });
     const res = await worker.fetch(req, env);
     expect(res.status).toBe(413);
@@ -246,5 +269,20 @@ describe('fetch routes', () => {
     await worker.fetch(uploadReq('good-token', body), env);
     // 4 条插入后保留最近 2 条
     expect(env.DB._rows.size).toBe(2);
+  });
+
+  it('RETAIN 非法值（非数字）→ 回落默认 2000，不误删', async () => {
+    const env = fullEnv({
+      DB: fakeD1({
+        '20260101-000001-android-aaaaaa.txt': '1',
+        '20260101-000002-android-bbbbbb.txt': '2',
+        '20260101-000003-android-cccccc.txt': '3',
+      }),
+      RETAIN: 'not-a-number',
+    });
+    const body = JSON.stringify({ kind: 'error', platform: 'android', log: 'newest' });
+    await worker.fetch(uploadReq('good-token', body), env);
+    // 回落 2000 → 全留（4 条），证明没误回落成 0/小数致清空
+    expect(env.DB._rows.size).toBe(4);
   });
 });
