@@ -1,5 +1,5 @@
 // Hibiki 报错日志接收 Worker（零服务器）。
-// 安全：日志只当字符串存 KV、原样 text/plain 吐回，绝不执行/解释。
+// 安全：日志只当字符串存 D1、原样 text/plain 吐回，绝不执行/解释。
 // 上传验 X-Upload-Token；查看 HTTP Basic Auth；缺 secret 则 fail-closed。
 
 const ID_PATTERN = /^\d{8}-\d{6}-[a-z]+-[a-z0-9]{6}\.txt$/;
@@ -119,6 +119,42 @@ function unauthorized() {
   });
 }
 
+// 存储层：收口 D1 SQL，便于测试用假 DB 注入。
+export const storage = {
+  async put(env, id, content) {
+    await env.DB.prepare(
+      'INSERT OR REPLACE INTO logs (id, content, created) VALUES (?1, ?2, ?3)',
+    )
+      .bind(id, content, new Date().toISOString())
+      .run();
+  },
+  async get(env, id) {
+    const row = await env.DB.prepare('SELECT content FROM logs WHERE id = ?1')
+      .bind(id)
+      .first();
+    return row ? row.content : null;
+  },
+  async listIds(env) {
+    const { results } = await env.DB.prepare(
+      'SELECT id FROM logs ORDER BY id DESC',
+    ).all();
+    return (results || []).map((r) => r.id);
+  },
+  async prune(env, retain) {
+    if (!retain || retain <= 0) return;
+    await env.DB.prepare(
+      'DELETE FROM logs WHERE id NOT IN (SELECT id FROM logs ORDER BY id DESC LIMIT ?1)',
+    )
+      .bind(retain)
+      .run();
+  },
+};
+
+function retainFrom(env) {
+  const n = Number(env.RETAIN);
+  return Number.isFinite(n) && n > 0 ? n : 2000;
+}
+
 async function handleUpload(request, env) {
   if (!timingSafeEqual(request.headers.get('X-Upload-Token'), env.UPLOAD_TOKEN)) {
     return new Response('unauthorized', { status: 401, headers: securityHeaders() });
@@ -138,7 +174,8 @@ async function handleUpload(request, env) {
     return new Response('bad request', { status: 400, headers: securityHeaders() });
   }
   const id = genLogId(new Date(), payload.platform, randCode(6));
-  await env.LOGS.put(id, buildLogContent(payload));
+  await storage.put(env, id, buildLogContent(payload));
+  await storage.prune(env, retainFrom(env));
   return new Response(JSON.stringify({ id }), {
     status: 200,
     headers: securityHeaders({ 'Content-Type': 'application/json; charset=utf-8' }),
@@ -149,14 +186,8 @@ async function handleList(request, env) {
   if (!checkBasicAuth(request.headers.get('Authorization'), env.BASIC_USER, env.BASIC_PASS)) {
     return unauthorized();
   }
-  const ids = [];
-  let cursor;
-  do {
-    const res = await env.LOGS.list({ cursor });
-    for (const k of res.keys) if (validLogID(k.name)) ids.push(k.name);
-    cursor = res.list_complete ? undefined : res.cursor;
-  } while (cursor);
-  ids.sort().reverse(); // 最新在前
+  const ids = (await storage.listIds(env)).filter(validLogID);
+  // listIds 已按 id DESC 排序（最新在前）；仍过白名单防脏数据
   return new Response(renderList(ids), {
     status: 200,
     headers: securityHeaders({ 'Content-Type': 'text/html; charset=utf-8' }),
@@ -170,7 +201,7 @@ async function handleViewLog(request, env, id) {
   if (!validLogID(id)) {
     return new Response('not found', { status: 404, headers: securityHeaders() });
   }
-  const data = await env.LOGS.get(id);
+  const data = await storage.get(env, id);
   if (data === null || data === undefined) {
     return new Response('not found', { status: 404, headers: securityHeaders() });
   }

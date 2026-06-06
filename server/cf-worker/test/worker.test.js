@@ -11,24 +11,40 @@ import worker, {
   validLogID,
 } from '../src/worker.js';
 
-function fakeKV(initial = {}) {
-  const m = new Map(Object.entries(initial));
-  return {
-    async put(k, v) {
-      m.set(k, v);
-    },
-    async get(k) {
-      return m.has(k) ? m.get(k) : null;
-    },
-    async list() {
-      return {
-        keys: [...m.keys()].map((name) => ({ name })),
-        list_complete: true,
-        cursor: undefined,
-      };
-    },
-    _map: m,
-  };
+function fakeD1(initial = {}) {
+  const rows = new Map(Object.entries(initial)); // id -> content
+  function prepare(sql) {
+    let args = [];
+    const stmt = {
+      bind(...a) {
+        args = a;
+        return stmt;
+      },
+      async run() {
+        if (/^INSERT/i.test(sql)) {
+          rows.set(args[0], args[1]);
+        } else if (/^DELETE/i.test(sql)) {
+          const retain = args[0];
+          const keep = new Set(
+            [...rows.keys()].sort().reverse().slice(0, retain),
+          );
+          for (const k of [...rows.keys()]) if (!keep.has(k)) rows.delete(k);
+        }
+        return { success: true };
+      },
+      async first() {
+        // SELECT content FROM logs WHERE id = ?1
+        return rows.has(args[0]) ? { content: rows.get(args[0]) } : null;
+      },
+      async all() {
+        // SELECT id FROM logs ORDER BY id DESC
+        const ids = [...rows.keys()].sort().reverse();
+        return { results: ids.map((id) => ({ id })) };
+      },
+    };
+    return stmt;
+  }
+  return { prepare, _rows: rows };
 }
 
 function fullEnv(over = {}) {
@@ -36,7 +52,7 @@ function fullEnv(over = {}) {
     UPLOAD_TOKEN: 'good-token',
     BASIC_USER: 'admin',
     BASIC_PASS: 'secret-pass',
-    LOGS: fakeKV(),
+    DB: fakeD1(),
     ...over,
   };
 }
@@ -105,7 +121,7 @@ describe('pure helpers', () => {
 });
 
 describe('fetch routes', () => {
-  it('上传 happy path → 200 + id + 落 KV', async () => {
+  it('上传 happy path → 200 + id + 落 DB', async () => {
     const env = fullEnv();
     const body = JSON.stringify({
       kind: 'error',
@@ -119,7 +135,7 @@ describe('fetch routes', () => {
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(validLogID(json.id)).toBe(true);
-    expect(await env.LOGS.get(json.id)).toContain('hello');
+    expect(env.DB._rows.get(json.id)).toContain('hello');
   });
 
   it('上传错 token → 401', async () => {
@@ -139,7 +155,7 @@ describe('fetch routes', () => {
   });
 
   it('缺 secret → fail-closed 500', async () => {
-    const res = await worker.fetch(uploadReq('', '{"log":"x"}'), { LOGS: fakeKV() });
+    const res = await worker.fetch(uploadReq('', '{"log":"x"}'), { DB: fakeD1() });
     expect(res.status).toBe(500);
   });
 
@@ -163,7 +179,7 @@ describe('fetch routes', () => {
   });
 
   it('列表展示已上传 id（且 HTML 转义）', async () => {
-    const env = fullEnv({ LOGS: fakeKV({ '20260606-123456-android-ab12cd.txt': 'x' }) });
+    const env = fullEnv({ DB: fakeD1({ '20260606-123456-android-ab12cd.txt': 'x' }) });
     const req = new Request('https://logs.example.com/', {
       headers: { Authorization: basicHeader('admin', 'secret-pass') },
     });
@@ -175,7 +191,7 @@ describe('fetch routes', () => {
 
   it('看单条 → text/plain 原样 + nosniff + no-store（XSS 惰化）', async () => {
     const env = fullEnv({
-      LOGS: fakeKV({ '20260606-123456-android-ab12cd.txt': '<script>alert(1)</script>' }),
+      DB: fakeD1({ '20260606-123456-android-ab12cd.txt': '<script>alert(1)</script>' }),
     });
     const req = new Request(
       'https://logs.example.com/log/20260606-123456-android-ab12cd.txt',
@@ -190,8 +206,8 @@ describe('fetch routes', () => {
     expect(await res.text()).toBe('<script>alert(1)</script>'); // 原样，未执行
   });
 
-  it('看单条路径穿越/非法 id → 404，不读 KV', async () => {
-    const env = fullEnv({ LOGS: fakeKV({ '20260606-123456-android-ab12cd.txt': 'real' }) });
+  it('看单条路径穿越/非法 id → 404，不读 DB', async () => {
+    const env = fullEnv({ DB: fakeD1({ '20260606-123456-android-ab12cd.txt': 'real' }) });
     const auth = { Authorization: basicHeader('admin', 'secret-pass') };
     for (const p of [
       'https://logs.example.com/log/..%2f..%2fetc%2fpasswd',
@@ -201,5 +217,34 @@ describe('fetch routes', () => {
       const res = await worker.fetch(new Request(p, { headers: auth }), env);
       expect(res.status).toBe(404);
     }
+  });
+
+  it('上传后立刻可在列表看到（强一致）', async () => {
+    const env = fullEnv();
+    const body = JSON.stringify({ kind: 'error', platform: 'android', log: 'fresh' });
+    const up = await worker.fetch(uploadReq('good-token', body), env);
+    const { id } = await up.json();
+    const list = await worker.fetch(
+      new Request('https://logs.example.com/', {
+        headers: { Authorization: basicHeader('admin', 'secret-pass') },
+      }),
+      env,
+    );
+    expect(await list.text()).toContain(id);
+  });
+
+  it('RETAIN 清理只留最近 N 条', async () => {
+    const env = fullEnv({
+      DB: fakeD1({
+        '20260101-000001-android-aaaaaa.txt': '1',
+        '20260101-000002-android-bbbbbb.txt': '2',
+        '20260101-000003-android-cccccc.txt': '3',
+      }),
+      RETAIN: '2',
+    });
+    const body = JSON.stringify({ kind: 'error', platform: 'android', log: 'newest' });
+    await worker.fetch(uploadReq('good-token', body), env);
+    // 4 条插入后保留最近 2 条
+    expect(env.DB._rows.size).toBe(2);
   });
 });
