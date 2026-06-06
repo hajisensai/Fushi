@@ -1395,7 +1395,9 @@ void main() {
       '  // HBK-AUDIT-111:',
     );
 
-    expect(managerEmptyState, contains('HibikiCard('));
+    // 空分类行与全空状态统一成居中的 HibikiPlaceholderMessage（共享 MD3 原语），
+    // 不再是左对齐灰卡 HibikiCard（BUG-058 空状态样式一致化）。
+    expect(managerEmptyState, contains('HibikiPlaceholderMessage('));
     expect(managerEmptyState, isNot(contains('DecoratedBox(')));
     expect(managerEmptyState, isNot(contains('surfaceContainerLowest')));
     expect(managerTile, contains('HibikiCard('));
@@ -1726,8 +1728,11 @@ void main() {
 
     expect(pageSource, contains('ReorderableListView.builder('));
     expect(pageSource, contains('buildDefaultDragHandles: false'));
-    // 不再显示 ☰ 拖拽手柄，改用整行长按拖拽。
-    expect(source, contains('ReorderableDelayedDragStartListener('));
+    // 不再显示 ☰ 拖拽手柄，也不用长按拖拽，改用每行的上/下移动按钮
+    // （onMoveUp / onMoveDown 调 _onReorder），更适配焦点/手柄导航。
+    expect(pageSource, contains('onMoveUp:'));
+    expect(pageSource, contains('onMoveDown:'));
+    expect(source, isNot(contains('ReorderableDelayedDragStartListener(')));
     expect(source, isNot(contains('ReorderableDragStartListener(')));
   });
 
