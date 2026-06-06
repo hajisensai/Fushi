@@ -84,11 +84,13 @@ Flutter App ──POST /api/logs (日志正文 + 元信息)──▶ EdgeOne 域
   - `Future<void> uploadLogToServer({required BuildContext context, required String log, required String kind})`，带完整类型签名。
   - 内部：收集 `PackageInfo`（版本）+ 平台 + 设备型号 + UTC 时间 → 组 JSON → 复用项目现有 HTTP 客户端（`http` 包）POST → 按状态码弹对应 SnackBar。
   - 大小保护：超过阈值在客户端先截断并提示。
-- **配置（`--dart-define` 编译期注入，已落地方案）**：
-  - 入库文件 `hibiki/lib/src/utils/misc/log_upload_config.dart`，`kLogUploadEndpoint` / `kLogUploadToken` 用 `String.fromEnvironment('HIBIKI_LOG_ENDPOINT' / 'HIBIKI_LOG_TOKEN')`，无注入时为空串。
-  - 真实值在构建时注入、不入库：`flutter build ... --dart-define=HIBIKI_LOG_ENDPOINT=https://<EO域名>/api/logs --dart-define=HIBIKI_LOG_TOKEN=<token>`。
-  - **未配置（空串）时，「上传」按钮自动隐藏**（`bool get showUploadLogAction`），保证 fresh clone 能编译、不暴露端点。
-  - 注：此处不采用 `google_oauth_secret` 的「gitignored 文件 + example 模板」范式——那种被 import 的 gitignored 文件在 fresh clone 上会因缺文件而编译失败；`--dart-define` 让配置文件可入库、空值隐藏按钮、clone 即编译，消除该编译特例。
+- **配置（gitignored 真值文件 + 入库模板，仿 `google_oauth_secret`，已落地方案）**：
+  - 真值文件 `hibiki/lib/src/utils/misc/log_upload_secret.dart`（**gitignored，绝不入库**）：只含 `kLogUploadEndpoint` / `kLogUploadToken` 两个常量。
+  - 入库模板 `hibiki/lib/src/utils/misc/log_upload_secret.example.dart`：两常量为空占位 `''`，含填写说明；fresh clone 拷成 `log_upload_secret.dart` 填真值即可。
+  - 入库逻辑 `hibiki/lib/src/utils/misc/log_upload_config.dart`：`import` + `export` 真值文件，集中放 `kMaxLogUploadBytes` / `isLogUploadConfigured` / `showUploadLogAction`（逻辑入库受版本管理，真值不入库）。
+  - **端点为空（未拷真值文件）时「上传」按钮自动隐藏**（`bool get showUploadLogAction`），不暴露端点。
+  - 用户偏好此范式（与项目既有 `google_oauth_secret` 一致），免去每次构建带 `--dart-define`；代价是被 import 的 gitignored 真值文件在未拷模板的 fresh clone 上会编译失败，与 `google_oauth_secret` 同属已接受的约定。
+  - 源码守卫：`log_upload_button_test.dart` 断言入库模板为空占位、不含真实域名/token。
 - **UI 接入**：在 `ErrorLogPage` / `DebugLogPage` 工具栏复制/分享按钮旁加 `HibikiIconButton`（云上传图标），**全平台显示**（区别于「另存为」仅桌面）。
 - **i18n**：用 `hibiki/tool/i18n_sync.dart --add` 增 key（上传中 / 成功(含 id) / 失败 / 超大），17 语言；`dart run slang` 重生成。
 

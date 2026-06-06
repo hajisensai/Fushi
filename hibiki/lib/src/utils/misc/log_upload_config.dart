@@ -1,12 +1,12 @@
-/// 日志上传端点配置。真实值在构建时通过 --dart-define 注入，不入库：
-///   flutter build apk \
-///     --dart-define=HIBIKI_LOG_ENDPOINT=https://logs.example.com/api/logs \
-///     --dart-define=HIBIKI_LOG_TOKEN=<上传token>
-/// 未注入时两常量为空串 → 上传按钮自动隐藏，fresh clone 即可编译。
-const String kLogUploadEndpoint = String.fromEnvironment('HIBIKI_LOG_ENDPOINT');
-const String kLogUploadToken = String.fromEnvironment('HIBIKI_LOG_TOKEN');
+// 日志上传配置。端点/token 不入库：放在 gitignored 的 `log_upload_secret.dart`
+// （仿 `google_oauth_secret`）。拷 `log_upload_secret.example.dart` 为
+// `log_upload_secret.dart` 并填真值；端点留空则「上传」按钮自动隐藏。
+import 'package:hibiki/src/utils/misc/log_upload_secret.dart';
 
-/// 上传单条日志的请求体字节硬上限（与源站/EO 各自上限呼应）。
+export 'package:hibiki/src/utils/misc/log_upload_secret.dart'
+    show kLogUploadEndpoint, kLogUploadToken;
+
+/// 上传单条日志的请求体字节硬上限（与接收端/边缘各自上限呼应）。
 const int kMaxLogUploadBytes = 512 * 1024;
 
 /// 端点是否已配置成可上传的 http(s) 地址（纯函数，便于测试门控）。
@@ -15,5 +15,5 @@ bool isLogUploadConfigured(String endpoint) {
   return e.startsWith('https://') || e.startsWith('http://');
 }
 
-/// 当前构建是否展示「上传」按钮。
+/// 当前构建是否展示「上传」按钮（端点已配置才显示）。
 bool get showUploadLogAction => isLogUploadConfigured(kLogUploadEndpoint);
