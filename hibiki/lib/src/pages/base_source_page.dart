@@ -47,7 +47,31 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
           }
         },
       );
+      _seedWarmPopup();
     });
+  }
+
+  /// BUG-092: seed a single persistent, hidden popup slot on open so its
+  /// [DictionaryPopupWebView] cold-loads popup.html + JS + CSS ONCE while the
+  /// page is idle, and is then reused warm for every lookup — eliminating the
+  /// per-lookup WebView cold-load (the white flash) on the reader / video /
+  /// audiobook surfaces. The reader's pre-lookup [prunePopupStack] and the
+  /// dismiss path both preserve this slot rather than discard it.
+  ///
+  /// Low-memory mode keeps no warm slot (it disposes the popup on close), so it
+  /// is skipped there to honour the memory budget.
+  void _seedWarmPopup() {
+    if (!mounted || appModel.lowMemoryMode) return;
+    if (_popupStack.value.isNotEmpty) return;
+    _popupStack.value = [
+      _PopupStackItem(
+        result: kPopupSearchingPlaceholderResult,
+        selectionRect: Rect.zero,
+        searchTerm: '',
+        visible: false,
+        isWarmSlot: true,
+      ),
+    ];
   }
 
   @override
@@ -369,6 +393,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         child: DictionaryPopupLayer(
           result: item.result,
           webViewKey: item.webViewKey,
+          keepWebViewWarm: item.isWarmSlot,
           isDark: isDark,
           overrideFillColor: appModel.overrideDictionaryColor,
           onDismiss: () => _dismissPopupAt(index),
@@ -488,6 +513,20 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
 
   bool get dictionaryPopupShown => _hasVisiblePopup(_popupStack.value);
 
+  /// Test-only snapshot of the popup stack (BUG-092): lets widget tests assert
+  /// the warm-slot seed/prune/reuse lifecycle without rendering the real
+  /// [DictionaryPopupWebView], which cannot instantiate the platform WebView in
+  /// the unit-test harness.
+  @visibleForTesting
+  List<({bool isWarmSlot, bool visible, GlobalKey<DictionaryPopupWebViewState> webViewKey})>
+      get debugPopupStack => _popupStack.value
+          .map((e) => (
+                isWarmSlot: e.isWarmSlot,
+                visible: e.visible,
+                webViewKey: e.webViewKey,
+              ))
+          .toList();
+
   void onDictionaryDismiss() {
     clearDictionaryResult();
   }
@@ -565,10 +604,27 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
 
   @protected
   void prunePopupStack(int keepCount) {
-    if (_popupStack.value.length > keepCount) {
-      _popupStack.value = keepCount > 0
-          ? _popupStack.value.sublist(0, keepCount)
-          : <_PopupStackItem>[];
+    final stack = _popupStack.value;
+    if (keepCount > 0) {
+      if (stack.length > keepCount) {
+        _popupStack.value = stack.sublist(0, keepCount);
+      }
+      return;
+    }
+    // keepCount <= 0: a fresh top-level lookup is starting. Preserve the
+    // persistent warm slot (index 0) so its already-loaded WebView survives and
+    // the upcoming lookup reuses it warm (BUG-092) — only drop nested children
+    // and hide the slot. Low-memory mode keeps no warm slot, so it clears.
+    if (stack.isEmpty) return;
+    final first = stack.first;
+    if (first.isWarmSlot && !appModel.lowMemoryMode) {
+      first
+        ..visible = false
+        ..selectionRect = Rect.zero;
+      first.webViewKey.currentState?.clearSelection();
+      _popupStack.value = [first];
+    } else {
+      _popupStack.value = <_PopupStackItem>[];
     }
   }
 
@@ -631,12 +687,19 @@ class _PopupStackItem {
     required this.selectionRect,
     required this.searchTerm,
     this.visible = true,
+    this.isWarmSlot = false,
   });
 
   DictionarySearchResult result;
   Rect selectionRect;
   String searchTerm;
   bool visible;
+
+  /// True only for the single persistent warm slot (BUG-092): the popup at stack
+  /// index 0 that keeps its WebView mounted while idle and survives
+  /// [BaseSourcePageState.prunePopupStack] / dismissal so every lookup reuses it.
+  final bool isWarmSlot;
+
   final GlobalKey<DictionaryPopupWebViewState> webViewKey =
       GlobalKey<DictionaryPopupWebViewState>();
 }

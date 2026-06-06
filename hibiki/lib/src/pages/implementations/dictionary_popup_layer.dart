@@ -73,6 +73,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     required this.onMineEntry,
     required this.onDuplicateCheck,
     this.isSearching = false,
+    this.keepWebViewWarm = false,
     this.onTapOutside,
     this.onScrolledToBottom,
     this.onRendered,
@@ -87,6 +88,14 @@ class DictionaryPopupLayer extends StatelessWidget {
 
   final DictionarySearchResult? result;
   final bool isSearching;
+
+  /// When true, the popup's [DictionaryPopupWebView] is mounted (and stays
+  /// mounted) even with no results and not searching — so the WebView cold-loads
+  /// popup.html + JS + CSS ONCE while idle/hidden and is then reused warm for
+  /// every later lookup. Used by the persistent warm slot in
+  /// [BaseSourcePageState] (BUG-092) to kill the per-lookup white flash on the
+  /// reader/video/audiobook surfaces.
+  final bool keepWebViewWarm;
   final GlobalKey<DictionaryPopupWebViewState> webViewKey;
   final VoidCallback onDismiss;
   final void Function(String text, Rect localRect) onTextSelected;
@@ -139,7 +148,11 @@ class DictionaryPopupLayer extends StatelessWidget {
     // flash. Real results are pushed via the WebView's didUpdateWidget when
     // they arrive. A finished search with no results falls through to the
     // placeholder below (no WebView kept).
-    if (hasEntries || isSearching) {
+    //
+    // [keepWebViewWarm] additionally keeps the WebView mounted while idle (no
+    // results, not searching) so a persistent hidden slot can pre-warm it on
+    // open and reuse it warm for every lookup (BUG-092).
+    if (hasEntries || isSearching || keepWebViewWarm) {
       return Stack(
         children: [
           DictionaryPopupWebView(
