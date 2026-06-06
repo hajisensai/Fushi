@@ -13,6 +13,13 @@
 
 ---
 
+## BUG-072 · 视频查词暂停后，关闭查词窗不自动续播
+- **报告**：2026-06-06（用户：「动画现在查词暂停，关闭查词窗后，不会自动继续播放，还得自己手动」）。
+- **真实性**：✅ **真 bug（沿真实代码路径定位）**。视频页 `VideoHibikiPage` 用 [`DictionaryPageMixin`]——不像阅读器 `ReaderHibikiPage`（继承 `BaseSourcePageState`，有 `onAllPopupsDismissed` 钩子）。`_lookupAt`（`hibiki/lib/src/pages/implementations/video_hibiki_page.dart:596`）打开查词浮层时 `await controller.pause()` 暂停了视频，但**全仓库没有任何代码**在浮层栈关闭后恢复播放：关栈的三条路径（遮罩 `onTap`→`_popNestedPopupAt(0)`、返回键 `PopScope`→`_popNestedPopupAt(length-1)`、浮层滑动/Esc→`onDismiss`→`onPop`=`_popNestedPopupAt`）全汇聚到 `_popNestedPopupAt`，而它只 `popNestedPopupAt(index, _popupStack)` 清栈、**不 `play()`**。对照阅读器有 `onAllPopupsDismissed`→`_clearLookupState`→`_audiobookController?.play()`，视频页缺这一环。次生隐患：旧 `_lookupAt` 先 `pause()` 再 `if (term.isEmpty) return`——空词时暂停后不弹浮层，**无浮层可关 → 恢复路径永不触发**（卡暂停）。根因 `hibiki/lib/src/pages/implementations/video_hibiki_page.dart:596`（无条件 pause 且无对称 resume）。
+- **[x] ① 已修复** — 本提交（自含修复+测试+本条目；并发抢号致哈希随 rebase 变动故不内联记录）：① `_lookupAt` 先判空再暂停，且**仅当 `controller.isPlaying`** 才 `pause()` 并置 `_pausedForLookup=true`（查词前本就暂停/递归查词不覆写标记，避免把暂停的视频自动播起来）；② `_popNestedPopupAt` 关栈后据纯函数 `VideoHibikiPage.shouldResumeAfterLookupDismiss(stackEmpty, pausedForLookup)`（两条件与门：整栈已空且本次因查词暂停）恢复 `_controller?.play()` 并清标记——这是覆盖全部关栈路径的唯一汇聚点。
+- **[x] ② 已加自动化测试** — `hibiki/test/pages/video_lookup_resume_static_test.dart`：纯函数两条件与门（栈空+置位→恢复 / 栈非空→不恢复 / 未置位→不恢复）+ 源码接线守卫（`_lookupAt` 仅 `isPlaying` 时暂停并置位且置位在判空 return 之后；`_popNestedPopupAt` 关栈后据纯函数 `play()` 并清标记）。media_kit/libmpv 测试宿主不可用（`VideoPlayerController` 延迟构造 Player），无法纯单测真实播放，故守纯函数+接线两层。全量 +2676 绿（~2 skip）。
+- **备注**：真机/真桌面端用真实视频复测「播放中查词→暂停→关查词窗→自动续播」「查词前已暂停→关窗仍保持暂停」**待用户**。
+
 ## BUG-071 · 视频切换「内封字幕」无字幕显示，外挂字幕正常
 - **报告**：2026-06-06（用户：「切换内封字幕，没有字幕显示，外挂的正常」）。采番注：原拟 BUG-069，提交前连撞并发抢占（069=有声书跨章文字跟随、070=有声书桌面调速闪退、068=app 字体钉死日语），故顺延取 071。
 - **真实性**：✅ **真 bug（两处叠加，均沿真实代码路径 + 真实视频实证）**。内封字幕菜单来自 `listAllSubtitleSources`（跑 `ffmpeg -i` 列举 + `ffmpeg -map 0:s:N` 抽取转 cue），外挂只直接读文件——故 ffmpeg 链路任一环坏只砸内封。本机用 ffmpeg 造 `mkv+ass` / `mkv+subrip` / `mp4+mov_text` 三视频跑 app 完整路径（`listAllSubtitleSources`+`loadCuesForSource`）复现：mkv 文本字幕正常（各 2 cues），**mp4 内封字幕「枚举到 0 个字幕源」**——菜单根本列不出。两处根因：

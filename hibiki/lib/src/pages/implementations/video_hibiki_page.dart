@@ -68,6 +68,17 @@ class VideoHibikiPage extends ConsumerStatefulWidget {
   final String bookUid;
   final VideoBookRepository repo;
 
+  /// 查词浮层关闭后是否应恢复播放：仅当浮层栈**已全部关闭**（[stackEmpty]）且本次确实
+  /// 是因查词而由我们暂停了正在播放的视频（[pausedForLookup]）。两条件缺一不可——关掉
+  /// 递归查词的子层但父层仍在（栈非空）不恢复；查词前本就暂停的视频（未置位）也不恢复。
+  /// 纯函数：与 [_VideoHibikiPageState._popNestedPopupAt] 共用，供单测直接验证（BUG-072）。
+  @visibleForTesting
+  static bool shouldResumeAfterLookupDismiss({
+    required bool stackEmpty,
+    required bool pausedForLookup,
+  }) =>
+      stackEmpty && pausedForLookup;
+
   @override
   ConsumerState<VideoHibikiPage> createState() => _VideoHibikiPageState();
 }
@@ -114,6 +125,16 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 最近一次查词所在字幕句（整条 cue 文本）；[onMineEntry] 制卡时作 sentence。
   /// 点字符查词时即时记录，确保制卡例句是「点词那一刻的那句字幕」。
   String _lastLookupSentence = '';
+
+  /// 「本次查词浮层是我们因查词而主动暂停了正在播放的视频」标记。
+  ///
+  /// 查词暂停 / 关浮层恢复与阅读器 [ReaderHibikiPage] 同源：浮层打开时若视频在播放则
+  /// 暂停（让用户读词），浮层栈**全部关闭**后再自动恢复播放。video 页用
+  /// [DictionaryPageMixin]（没有 reader 的 `onAllPopupsDismissed` 钩子），故用本标记 +
+  /// 在 [_popNestedPopupAt] 这唯一的关栈汇聚点恢复，覆盖遮罩点击 / 返回键 / 浮层
+  /// 滑动·Esc 全部关闭路径。仅当查词前视频确在播放才置位，避免把查词前本就暂停的
+  /// 视频自动播起来；递归查词（已暂停，`isPlaying==false`）不会覆写它（BUG-072）。
+  bool _pausedForLookup = false;
 
   // ── DictionaryPageMixin 必需的抽象成员 ──────────────────────────────
   @override
@@ -593,10 +614,16 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   ) async {
     final VideoPlayerController? controller = _controller;
     if (controller == null) return;
-    await controller.pause();
     final String term = sentence.characters.skip(graphemeIndex).join();
     debugPrint('[video-lookup] tap idx=$graphemeIndex term="$term"');
+    // 先判空再暂停：空词不弹浮层，不能暂停后无浮层可关→恢复路径永不触发（卡暂停）。
     if (term.isEmpty) return;
+    // 仅当视频正在播放才暂停并标记，浮层全关后据此恢复（BUG-072）。查词前本就
+    // 暂停 / 递归查词（已暂停）时 isPlaying==false，不暂停也不覆写标记。
+    if (controller.isPlaying) {
+      await controller.pause();
+      _pausedForLookup = true;
+    }
     _lastLookupSentence = sentence;
     await pushNestedPopup(
       query: term,
@@ -607,9 +634,19 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     );
   }
 
-  /// 关闭整个查词浮层栈（点遮罩 / 返回时）。
+  /// 关闭查词浮层栈中第 [index] 层及其之上（点遮罩 / 返回 / 浮层滑动·Esc 都汇聚到此）。
+  ///
+  /// 关栈后若整栈已空且本次是因查词暂停了播放，则恢复播放——这是恢复播放的唯一汇聚点，
+  /// 覆盖所有关闭路径（BUG-072）。
   void _popNestedPopupAt(int index) {
     popNestedPopupAt(index, _popupStack);
+    if (VideoHibikiPage.shouldResumeAfterLookupDismiss(
+      stackEmpty: _popupStack.isEmpty,
+      pausedForLookup: _pausedForLookup,
+    )) {
+      _pausedForLookup = false;
+      unawaited(_controller?.play());
+    }
   }
 
   Widget _buildNestedPopupLayer(int index, Size screen) {
