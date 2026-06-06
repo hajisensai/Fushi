@@ -43,6 +43,15 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.0'
+      # google_oauth_secret.dart is gitignored (the real client secret lives only
+      # on dev hosts); CI lacks it, so google_drive_auth.dart's import fails to
+      # compile. Stub it from the committed example (placeholder value with no
+      # GOCSPX- prefix, so the no_hardcoded_google_secret guard stays green).
+      - name: Provide gitignored Google OAuth secret stub
+        shell: bash
+        run: |
+          dst=hibiki/lib/src/sync/google_oauth_secret.dart
+          [ -f "$dst" ] || cp hibiki/lib/src/sync/google_oauth_secret.example.dart "$dst"
       - name: Flutter pub get
         working-directory: hibiki
         run: flutter pub get
@@ -58,7 +67,12 @@ jobs:
           profile: pixel_6
           script: bash ci/comprehensive-test.sh --platform=android --only=appSmoke
 
+  # TEMPORARILY DISABLED (per request): Linux build paused. Re-enable by
+  # removing `if: false`. Linux currently failed only on the gitignored OAuth
+  # secret (now stubbed for Android/Windows), so re-enabling needs the same
+  # secret-stub step added back here.
   linux:
+    if: false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -82,7 +96,11 @@ jobs:
         working-directory: hibiki
         run: >-
           flutter build linux --debug
+  # TEMPORARILY DISABLED (per request): macOS build paused. Re-enable by
+  # removing `if: false`. Failed only on the gitignored OAuth secret; add the
+  # secret-stub step back when re-enabling.
   macos:
+    if: false
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -103,7 +121,12 @@ jobs:
       - name: Run macOS comprehensive automation contract
         run: bash ci/comprehensive-test.sh --platform=macos --only=appSmoke
 
+  # TEMPORARILY DISABLED (per request): iOS runs on a macOS runner ("mac"), and
+  # it was independently broken (flutter_native_splash SPM header path), so it is
+  # paused too. Re-enable by removing `if: false` after fixing that and adding
+  # the OAuth secret-stub step back.
   ios:
+    if: false
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -133,6 +156,13 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.0'
+      # See the android job: stub the gitignored OAuth secret so the import
+      # in google_drive_auth.dart compiles.
+      - name: Provide gitignored Google OAuth secret stub
+        shell: bash
+        run: |
+          dst=hibiki/lib/src/sync/google_oauth_secret.dart
+          [ -f "$dst" ] || cp hibiki/lib/src/sync/google_oauth_secret.example.dart "$dst"
       - name: Flutter pub get
         working-directory: hibiki
         run: flutter pub get

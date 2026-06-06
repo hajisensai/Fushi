@@ -52,6 +52,16 @@ jobs:
         sed -i "/maven.*aliyun/d" build.gradle
         sed -i "/maven.*aliyun/d" settings.gradle
 
+    # google_oauth_secret.dart is gitignored (the real client secret lives only
+    # on dev hosts); CI lacks it, so google_drive_auth.dart's import fails
+    # `flutter analyze`. Stub it from the committed example (placeholder value
+    # with no GOCSPX- prefix, so the no_hardcoded_google_secret guard stays green).
+    - name: Provide gitignored Google OAuth secret stub
+      shell: bash
+      run: |
+        dst=hibiki/lib/src/sync/google_oauth_secret.dart
+        [ -f "$dst" ] || cp hibiki/lib/src/sync/google_oauth_secret.example.dart "$dst"
+
     - name: Flutter pub get
       working-directory: hibiki
       run: flutter pub get
