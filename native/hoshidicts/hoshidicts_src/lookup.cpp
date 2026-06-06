@@ -7,6 +7,7 @@
 #include <ranges>
 #include <sstream>
 
+#include "scan/word_scan.hpp"
 #include "text_processor/text_processor.hpp"
 
 namespace {
@@ -42,13 +43,9 @@ int get_freq_value_for_dict(const TermResult& term, const std::string& dict_name
 std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int max_results, size_t scan_length) const {
   std::map<std::pair<std::string, std::string>, LookupResult> result_map;
 
-  size_t text_len = utf8::distance(lookup_string.begin(), lookup_string.end());
-  size_t start = std::min(scan_length, text_len);
-  auto search_str_it = lookup_string.begin();
-  utf8::advance(search_str_it, start, lookup_string.end());
-
-  for (size_t i = std::min(scan_length, text_len); i > 0; i--) {
-    std::string search_str(lookup_string.begin(), search_str_it);
+  // 候选前缀由词边界感知的扫描器生成（对齐 Yomitan searchResolution）：
+  // 空格分词语言不在单词中间切断，CJK 仍逐码点。详见 scan/word_scan.hpp。
+  for (const std::string& search_str : scan_candidates(lookup_string, scan_length)) {
     auto processor_results = text_processor::process(search_str);
     for (auto& variant : processor_results) {
       auto deinflection_results = deinflector_.deinflect(variant.text);
@@ -79,9 +76,6 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
           }
         }
       }
-    }
-    if (i > 1) {
-      utf8::prior(search_str_it, lookup_string.begin());
     }
   }
 

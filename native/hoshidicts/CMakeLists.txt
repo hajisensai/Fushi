@@ -40,6 +40,7 @@ add_library(hoshidicts STATIC
     hoshidicts_src/mdx/mdx_reader.cpp
     hoshidicts_src/stardict/stardict_reader.cpp
     hoshidicts_src/text_processor/text_processor.cpp
+    hoshidicts_src/scan/word_scan.cpp
     hoshidicts_src/deinflector.cpp
     hoshidicts_src/query.cpp
     hoshidicts_src/lookup.cpp
