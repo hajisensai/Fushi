@@ -1373,5 +1373,8 @@
     "video_setting_mpv_raw": "额外 mpv 选项（每行 key=value）",
     "video_setting_mpv_raw_hint": "仅桌面生效；运行时无法应用的项（如 vo、profile）会被忽略。SVP/RIFE 需外部工具，不支持。",
     "video_setting_mpv_reset": "全部恢复默认",
-    "video_jimaku_filter": "筛选结果（如 WEBRip、BD）"
+    "video_jimaku_filter": "筛选结果（如 WEBRip、BD）",
+    "video_screenshot": "截图",
+    "video_screenshot_saved": "截图已保存",
+    "video_screenshot_failed": "截图失败"
 }

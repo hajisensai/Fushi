@@ -13,6 +13,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
@@ -853,8 +854,22 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     return outcome.result == MineResult.success;
   }
 
-  /// media_kit 桌面控制主题：底部默认控制条（播放/进度/音量/全屏）+ 顶栏
-  /// 加字幕轨、音轨切换按钮（点击弹 track 列表，调 libmpv 切轨）。
+  /// 弹音轨菜单（顶栏 ♪ 按钮共用）。
+  void _showAudioTrackMenu(VideoPlayerController controller) {
+    _showTrackMenu(
+      controller.audioTracks
+          .map((AudioTrack tr) => (
+                label: _trackLabel(tr.title, tr.language, tr.id),
+                onSelected: () => _selectAudioTrack(controller, tr),
+              ))
+          .toList(),
+    );
+  }
+
+  /// media_kit 桌面控制主题。底部胶囊条改成居中传输组
+  /// `[−10s][上一句][暂停][下一句][+10s]`（清空中央 primaryButtonBar 避免重复），
+  /// 左端进度、右端全屏；顶栏右侧放 截图/字幕/音轨/倍速/设置 图标（参照截图）。
+  /// 上/下一句走 cue 导航（[VideoPlayerController.skipToPrevCue]/[skipToNextCue]）。
   MaterialDesktopVideoControlsThemeData _desktopControlsTheme(
     VideoPlayerController controller,
   ) {
@@ -863,23 +878,57 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       seekBarPositionColor: cs.primary,
       seekBarThumbColor: cs.primary,
       buttonBarButtonColor: cs.onSurface,
+      primaryButtonBar: const <Widget>[],
       topButtonBar: <Widget>[
         const Spacer(),
+        if (_isPlaylist)
+          MaterialDesktopCustomButton(
+            icon: const Icon(Icons.playlist_play),
+            onPressed: _showEpisodeList,
+          ),
+        MaterialDesktopCustomButton(
+          icon: const Icon(Icons.photo_camera_outlined),
+          onPressed: _saveScreenshot,
+        ),
         MaterialDesktopCustomButton(
           icon: const Icon(Icons.subtitles),
           onPressed: () => _showSubtitleSourceMenu(controller),
         ),
         MaterialDesktopCustomButton(
           icon: const Icon(Icons.audiotrack),
-          onPressed: () => _showTrackMenu(
-            controller.audioTracks
-                .map((AudioTrack tr) => (
-                      label: _trackLabel(tr.title, tr.language, tr.id),
-                      onSelected: () => _selectAudioTrack(controller, tr),
-                    ))
-                .toList(),
-          ),
+          onPressed: () => _showAudioTrackMenu(controller),
         ),
+        MaterialDesktopCustomButton(
+          icon: const Icon(Icons.speed),
+          onPressed: _showSpeedMenu,
+        ),
+        MaterialDesktopCustomButton(
+          icon: const Icon(Icons.tune),
+          onPressed: _showPlayerSettings,
+        ),
+      ],
+      bottomButtonBar: <Widget>[
+        const MaterialDesktopPositionIndicator(),
+        const Spacer(),
+        MaterialDesktopCustomButton(
+          icon: const Icon(Icons.replay_10),
+          onPressed: () => _seekRelative(-10000),
+        ),
+        MaterialDesktopCustomButton(
+          icon: const Icon(Icons.skip_previous),
+          onPressed: () => controller.skipToPrevCue(),
+        ),
+        const MaterialDesktopPlayOrPauseButton(iconSize: 32),
+        MaterialDesktopCustomButton(
+          icon: const Icon(Icons.skip_next),
+          onPressed: () => controller.skipToNextCue(),
+        ),
+        MaterialDesktopCustomButton(
+          icon: const Icon(Icons.forward_10),
+          onPressed: () => _seekRelative(10000),
+        ),
+        const Spacer(),
+        const MaterialDesktopFullscreenButton(),
       ],
     );
   }
@@ -888,8 +937,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// [MaterialVideoControls]（读本主题），桌面端渲染 [MaterialDesktopVideoControls]
   /// （读 [MaterialDesktopVideoControlsTheme]），两套互斥，故两层主题都配置安全。
   ///
-  /// 移动端全屏走 media_kit 独立 root 路由、丢掉 Scaffold AppBar，故把字幕、音轨、
-  /// 设置（playlist 时再加剧集）入口全放进 [topButtonBar]，保证普通与全屏都可达。
+  /// 底部胶囊条与桌面一致：居中 `[−10s][上一句][暂停][下一句][+10s]`，清空中央
+  /// primaryButtonBar；顶栏右侧 截图/字幕/音轨/倍速/设置（playlist 时再加剧集），
+  /// 移动端全屏丢 Scaffold AppBar 故全放顶栏，普通与全屏都可达。
   MaterialVideoControlsThemeData _mobileControlsTheme(
     VideoPlayerController controller,
   ) {
@@ -898,6 +948,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       seekBarPositionColor: cs.primary,
       seekBarThumbColor: cs.primary,
       buttonBarButtonColor: Colors.white,
+      primaryButtonBar: const <Widget>[],
       topButtonBar: <Widget>[
         const Spacer(),
         if (_isPlaylist)
@@ -906,24 +957,48 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             onPressed: _showEpisodeList,
           ),
         MaterialCustomButton(
+          icon: const Icon(Icons.photo_camera_outlined),
+          onPressed: _saveScreenshot,
+        ),
+        MaterialCustomButton(
           icon: const Icon(Icons.subtitles),
           onPressed: () => _showSubtitleSourceMenu(controller),
         ),
         MaterialCustomButton(
           icon: const Icon(Icons.audiotrack),
-          onPressed: () => _showTrackMenu(
-            controller.audioTracks
-                .map((AudioTrack tr) => (
-                      label: _trackLabel(tr.title, tr.language, tr.id),
-                      onSelected: () => _selectAudioTrack(controller, tr),
-                    ))
-                .toList(),
-          ),
+          onPressed: () => _showAudioTrackMenu(controller),
+        ),
+        MaterialCustomButton(
+          icon: const Icon(Icons.speed),
+          onPressed: _showSpeedMenu,
         ),
         MaterialCustomButton(
           icon: const Icon(Icons.tune),
           onPressed: _showPlayerSettings,
         ),
+      ],
+      bottomButtonBar: <Widget>[
+        const MaterialPositionIndicator(),
+        const Spacer(),
+        MaterialCustomButton(
+          icon: const Icon(Icons.replay_10),
+          onPressed: () => _seekRelative(-10000),
+        ),
+        MaterialCustomButton(
+          icon: const Icon(Icons.skip_previous),
+          onPressed: () => controller.skipToPrevCue(),
+        ),
+        const MaterialPlayOrPauseButton(iconSize: 36),
+        MaterialCustomButton(
+          icon: const Icon(Icons.skip_next),
+          onPressed: () => controller.skipToNextCue(),
+        ),
+        MaterialCustomButton(
+          icon: const Icon(Icons.forward_10),
+          onPressed: () => _seekRelative(10000),
+        ),
+        const Spacer(),
+        const MaterialFullscreenButton(),
       ],
     );
   }
@@ -983,6 +1058,94 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   Future<void> _toggleSubtitleBlur() async {
     await appModel.setVideoSubtitleBlur(!appModel.videoSubtitleBlur);
     if (mounted) setState(() {});
+  }
+
+  /// 相对当前位置 seek（±[deltaMs]，底部胶囊条 ±10 秒按钮用）。
+  Future<void> _seekRelative(int deltaMs) async {
+    await _controller?.seekRelative(deltaMs);
+  }
+
+  /// 截当前帧存为图片：桌面弹保存对话框，移动端走系统分享（参照 log_exporter
+  /// 的平台分流）。复用 [VideoPlayerController.screenshot]（制卡同源，JPEG）。
+  Future<void> _saveScreenshot() async {
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    void notify(String message) {
+      if (!mounted) return;
+      messenger.showSnackBar(SnackBar(content: Text(message)));
+    }
+
+    final Uint8List? bytes = await _controller?.screenshot();
+    if (bytes == null) {
+      notify(t.video_screenshot_failed);
+      return;
+    }
+    final String name =
+        'hibiki_${p.basenameWithoutExtension(_currentVideoPath ?? 'video')}.jpg';
+    File? tmp;
+    final bool isDesktop =
+        Platform.isWindows || Platform.isMacOS || Platform.isLinux;
+    try {
+      final Directory tmpDir = await getTemporaryDirectory();
+      tmp = File(p.join(tmpDir.path, name));
+      await tmp.writeAsBytes(bytes);
+      if (isDesktop) {
+        final String? savePath = await FilePicker.platform.saveFile(
+          dialogTitle: t.video_screenshot,
+          fileName: name,
+          type: FileType.custom,
+          allowedExtensions: <String>['jpg'],
+        );
+        if (savePath != null) {
+          await tmp.copy(savePath);
+          notify(t.video_screenshot_saved);
+        }
+      } else {
+        await Share.shareXFiles(
+          <XFile>[XFile(tmp.path, mimeType: 'image/jpeg')],
+          subject: name,
+        );
+      }
+    } catch (_) {
+      notify(t.video_screenshot_failed);
+    } finally {
+      // 桌面端清理临时文件；移动端分享需保留供系统面板异步读取。
+      if (isDesktop && tmp != null) {
+        try {
+          await tmp.delete();
+        } catch (_) {}
+      }
+      _refocusVideo();
+    }
+  }
+
+  /// 弹快捷倍速选择（底部小 sheet，复用 [_setSpeed] 与设置面板同档位）。
+  void _showSpeedMenu() {
+    const List<double> speedPresets = <double>[0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.black87,
+      builder: (BuildContext ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            for (final double s in speedPresets)
+              ListTile(
+                dense: true,
+                textColor: Colors.white,
+                title: Text('${s}x'),
+                trailing: (s - _playbackSpeed).abs() < 0.001
+                    ? Icon(Icons.check,
+                        color: Theme.of(ctx).colorScheme.primary)
+                    : null,
+                onTap: () {
+                  _setSpeed(s);
+                  Navigator.pop(ctx);
+                },
+              ),
+          ],
+        ),
+      ),
+    ).whenComplete(_refocusVideo);
   }
 
   /// 弹视频播放设置面板：音画延迟（±50/±1000ms 步进 + 归零）+ 播放倍速（预设档）。

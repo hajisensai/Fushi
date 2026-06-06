@@ -1373,5 +1373,8 @@
     "video_setting_mpv_raw": "Extra mpv options (one per line, key=value)",
     "video_setting_mpv_raw_hint": "Desktop only; options that cannot apply at runtime (e.g. vo, profile) are ignored. SVP/RIFE need external tools and are not supported.",
     "video_setting_mpv_reset": "Reset all",
-    "video_jimaku_filter": "Filter results (e.g. WEBRip, BD)"
+    "video_jimaku_filter": "Filter results (e.g. WEBRip, BD)",
+    "video_screenshot": "Screenshot",
+    "video_screenshot_saved": "Screenshot saved",
+    "video_screenshot_failed": "Screenshot failed"
 }

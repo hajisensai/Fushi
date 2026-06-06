@@ -72,8 +72,8 @@ void main() {
     );
     expect(
       body,
-      contains('_selectAudioTrack(controller, tr)'),
-      reason: '移动 controls 应有音轨切换入口',
+      contains('_showAudioTrackMenu(controller)'),
+      reason: '移动 controls 应有音轨切换入口（经共享 _showAudioTrackMenu）',
     );
     expect(
       body,
