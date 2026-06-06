@@ -3594,7 +3594,9 @@ window.flutter_inappwebview.callHandler('spreadReady');
         event.logicalKey == LogicalKeyboardKey.arrowDown &&
         _showChrome) {
       _chromeFocusScope.requestFocus();
-      if (_chromeFocusScope.nextFocus()) return KeyEventResult.handled;
+      if (_chromeFocusScope.context != null && _chromeFocusScope.nextFocus()) {
+        return KeyEventResult.handled;
+      }
       // Empty chrome (no focusable child): undo the scope grab so focus isn't
       // stranded on an empty FocusScope, then fall through to shortcut
       // resolution. Mirrors _promoteCaretToChrome's undo.
@@ -4064,7 +4066,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
   void _promoteCaretToChrome() {
     if (!_showChrome) return; // bar hidden — nowhere to go; Down stays a no-op
     _chromeFocusScope.requestFocus();
-    if (_chromeFocusScope.nextFocus()) {
+    if (_chromeFocusScope.context != null && _chromeFocusScope.nextFocus()) {
       _exitCaret(); // hide the reader caret ring; the bar's ring takes over
     } else {
       _focusNode.requestFocus(); // bar had no focusable child — undo
