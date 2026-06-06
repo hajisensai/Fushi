@@ -174,8 +174,7 @@ class VideoMpvConfig {
         gamma: gamma ?? this.gamma,
         hue: hue ?? this.hue,
         audioDelayMs: audioDelayMs ?? this.audioDelayMs,
-        audioPitchCorrection:
-            audioPitchCorrection ?? this.audioPitchCorrection,
+        audioPitchCorrection: audioPitchCorrection ?? this.audioPitchCorrection,
         audioChannels: audioChannels ?? this.audioChannels,
         normalizeDownmix: normalizeDownmix ?? this.normalizeDownmix,
         loopFile: loopFile ?? this.loopFile,
@@ -237,11 +236,11 @@ class VideoMpvConfig {
         videoZoom:
             (d['videoZoom'] is num ? (d['videoZoom'] as num).toDouble() : 0.0)
                 .clamp(-2.0, 2.0),
-        aspectOverride:
-            d['aspectOverride'] is String ? d['aspectOverride'] as String : '-1',
-        panscan:
-            (d['panscan'] is num ? (d['panscan'] as num).toDouble() : 0.0)
-                .clamp(0.0, 1.0),
+        aspectOverride: d['aspectOverride'] is String
+            ? d['aspectOverride'] as String
+            : '-1',
+        panscan: (d['panscan'] is num ? (d['panscan'] as num).toDouble() : 0.0)
+            .clamp(0.0, 1.0),
         brightness: clampInt(d['brightness'], 0, -100, 100),
         contrast: clampInt(d['contrast'], 0, -100, 100),
         saturation: clampInt(d['saturation'], 0, -100, 100),

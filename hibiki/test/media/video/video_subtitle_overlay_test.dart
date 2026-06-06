@@ -31,7 +31,8 @@ Future<void> _pump(WidgetTester tester, Widget child) async {
 void main() {
   testWidgets('blur off: no ImageFiltered around subtitle', (tester) async {
     final VideoPlayerController c = _controllerWithCue('テスト');
-    await _pump(tester, VideoSubtitleOverlay(controller: c, blurEnabled: false));
+    await _pump(
+        tester, VideoSubtitleOverlay(controller: c, blurEnabled: false));
     expect(find.text('テ'), findsOneWidget);
     expect(find.byType(ImageFiltered), findsNothing);
   });

@@ -28,8 +28,8 @@ void main() {
 
   test('decode tolerates empty/garbage -> defaults', () {
     expect(VideoSubtitleStyle.decode('').fontSize, 22);
-    expect(
-        VideoSubtitleStyle.decode('not json').textColor, const Color(0xFFFFFFFF));
+    expect(VideoSubtitleStyle.decode('not json').textColor,
+        const Color(0xFFFFFFFF));
   });
 
   test('decode clamps out-of-range', () {

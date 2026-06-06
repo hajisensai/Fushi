@@ -31,8 +31,7 @@ keep-open=yes
   group('buildMpvProperties', () {
     test('defaults -> neutral values equal to mpv defaults (visually no-op)',
         () {
-      final Map<String, String> m =
-          buildMpvProperties(VideoMpvConfig.defaults);
+      final Map<String, String> m = buildMpvProperties(VideoMpvConfig.defaults);
       expect(m['hwdec'], 'no');
       expect(m['scale'], 'bilinear');
       expect(m['deband'], 'no');
