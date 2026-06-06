@@ -70,14 +70,16 @@ class AnkiConnectService implements AnkiService {
     return result['result'];
   }
 
-  /// Actions that mutate Anki state and are NOT safe to re-send. package:http
-  /// wraps the write *and* the response-header read in one try, so a connection
-  /// drop (e.g. "Connection reset") can surface *after* the request reached
-  /// AnkiConnect — re-sending `addNote`/`createModel` would then create a
-  /// duplicate card or hit "model already exists". We never auto-retry these;
-  /// the error is surfaced for the user to retry. Every other action
-  /// (version/deckNames/modelNames/modelFieldNames/findNotes/storeMediaFile/
-  /// createDeck) is idempotent, so re-sending has no side effect.
+  /// Actions that mutate Anki state and are NOT safe to *blindly* re-send.
+  /// package:http wraps the write *and* the response-header read in one try, so
+  /// a connection drop can surface *after* the request reached AnkiConnect —
+  /// re-sending `addNote`/`createModel` would then create a duplicate card or
+  /// hit "model already exists". So we retry these only on a *pre-delivery
+  /// write failure* (the request provably never left the client — see
+  /// [_isPreDeliveryWriteFailure] / BUG-091), never on a response-phase drop.
+  /// Every other action (version/deckNames/modelNames/modelFieldNames/
+  /// findNotes/storeMediaFile/createDeck) is idempotent, so re-sending on any
+  /// connection drop has no side effect.
   static const Set<String> _nonIdempotentActions = {'addNote', 'createModel'};
 
   /// Posts [body] to AnkiConnect, retrying exactly once on a dropped connection
@@ -92,10 +94,17 @@ class AnkiConnectService implements AnkiService {
   /// rather than the 10s timeout. Re-issuing on a fresh connection (the dead one
   /// is dropped from the pool) fixes it. This is the standard "retry an
   /// idempotent request on a stale pooled connection" strategy (cf. Go net/http,
-  /// java.net.http): we gate on action idempotency instead of trying to infer
-  /// from the error text whether the request was already delivered, which is not
-  /// reliable. Genuine refusals/timeouts are not connection-drops and fall
+  /// java.net.http). Genuine refusals/timeouts are not connection-drops and fall
   /// through to the caller (a retry would not help).
+  ///
+  /// BUG-091: idempotent actions retry on *any* connection drop. Non-idempotent
+  /// actions (addNote/createModel) retry only on a *pre-delivery write failure*
+  /// — when the `write()` itself failed, the request bytes never reached
+  /// AnkiConnect, so no note/model was created and re-sending cannot duplicate.
+  /// A response-phase drop (write succeeded, the read reset) is still surfaced,
+  /// because the server may already have processed the request. This fixes the
+  /// real failure where the first mine after an idle period reuses a stale
+  /// pooled socket → instant "Write failed (errno 10053)" with no retry.
   Future<http.Response> _postWithStaleConnectionRetry(
     String body, {
     required bool idempotent,
@@ -103,9 +112,27 @@ class AnkiConnectService implements AnkiService {
     try {
       return await _post(body);
     } on http.ClientException catch (e) {
-      if (!idempotent || !_isConnectionDrop(e)) rethrow;
+      final bool retryable =
+          idempotent ? _isConnectionDrop(e) : _isPreDeliveryWriteFailure(e);
+      if (!retryable) rethrow;
       return await _post(body);
     }
+  }
+
+  /// True only for a connection drop that happened *while writing the request*,
+  /// proving the server never received a complete request — so re-sending even
+  /// a non-idempotent action (addNote/createModel) cannot create a duplicate.
+  ///
+  /// dart:io raises "Write failed" from the `write()` syscall path and "Broken
+  /// pipe" (EPIPE) when the peer closed its read end mid-write; both mean the
+  /// request was not delivered. A response-phase reset surfaces as "Connection
+  /// reset"/"closed" without the write signature, and is deliberately NOT
+  /// matched here (it could be post-delivery). The errno alone can't tell write
+  /// from read phase, so this gates on the message text — the only reliable
+  /// pre-/post-delivery discriminator.
+  static bool _isPreDeliveryWriteFailure(http.ClientException e) {
+    final String message = e.message.toLowerCase();
+    return message.contains('write failed') || message.contains('broken pipe');
   }
 
   Future<http.Response> _post(String body) {

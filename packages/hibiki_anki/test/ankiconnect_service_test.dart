@@ -357,9 +357,10 @@ void main() {
     // was an instant "Cannot connect to AnkiConnect: ClientException with
     // SocketException: Write failed" on the *second* request of a fetch (the
     // first `version` probe succeeded). We retry idempotent actions once on a
-    // fresh connection, but NEVER auto-retry addNote/createModel: package:http
-    // wraps the write and the response-header read in one try, so the drop can
-    // surface after the request reached Anki — re-sending could duplicate it.
+    // fresh connection. BUG-091: addNote/createModel retry only on a
+    // *pre-delivery write failure* ("Write failed"/"Broken pipe" — the request
+    // never left the client, so no dup), but NOT on a response-phase reset
+    // (which could have happened after Anki processed the request).
 
     /// A MockClient whose handler throws [exception] for the first [failTimes]
     /// attempts, then serves [okResult], counting every attempt.
@@ -460,14 +461,40 @@ void main() {
       expect(f.attempts.length, 1);
     });
 
-    test('NEVER retries addNote even on a connection drop (no dup cards)',
+    test('retries addNote on a pre-delivery write failure (request not sent)',
         () async {
-      // The crux of the idempotency gate: a non-idempotent action must not be
-      // re-sent, because the drop could have happened after Anki created the
-      // note. addNote must fail fast with a single attempt.
+      // BUG-091: this is the real user failure — the first mine after an idle
+      // period reuses a stale pooled socket and the write() fails instantly
+      // ("Write failed", errno 10053). The request never reached Anki, so no
+      // note was created and re-sending on a fresh connection is dup-safe.
+      final f = flakyClient(
+        failTimes: 1,
+        exception: http.ClientException(
+            'ClientException with SocketException: Write failed '
+            '(OS Error: ..., errno = 10053), address = localhost, port = 8765'),
+        okResult: 555,
+      );
+      final int? id = await run(
+        f.client,
+        (s) => s.addNote(
+          deckName: 'D',
+          modelName: 'M',
+          fields: const <String, String>{'F': 'v'},
+        ),
+      );
+      expect(f.attempts.length, 2, reason: 'initial write fails + one retry');
+      expect(id, 555);
+    });
+
+    test(
+        'does NOT retry addNote on a response-phase reset (may be post-delivery)',
+        () async {
+      // A "Connection reset" without a write signature could mean the write
+      // succeeded and Anki already created the note before the read dropped —
+      // re-sending could duplicate. Must fail fast with a single attempt.
       final f = flakyClient(
         failTimes: 99,
-        exception: http.ClientException('Write failed (errno = 10053)'),
+        exception: http.ClientException('Connection reset by peer'),
       );
       await expectLater(
         run(
@@ -479,7 +506,8 @@ void main() {
                 )),
         throwsA(isA<http.ClientException>()),
       );
-      expect(f.attempts.length, 1, reason: 'addNote is never auto-retried');
+      expect(f.attempts.length, 1,
+          reason: 'response-phase drop on addNote is never auto-retried');
     });
 
     test('retries the idempotent storeMediaFile on a connection drop',
