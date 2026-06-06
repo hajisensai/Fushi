@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
@@ -1161,6 +1162,18 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                   _openJimakuDialog(controller);
                 },
               ),
+              // 从本地文件导入字幕：FilePicker 选 srt/ass/ssa/vtt → 拷到持久目录 →
+              // 复用 _selectSubtitleSource 应用（解决 sidecar 名对不上 / 字幕在别目录）。
+              ListTile(
+                textColor: Colors.white,
+                leading:
+                    const Icon(Icons.file_open_outlined, color: Colors.white),
+                title: Text(t.video_subtitle_import_file),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _pickAndImportSubtitle(controller);
+                },
+              ),
               const Divider(color: Colors.white24, height: 1),
               ListTile(
                 textColor: Colors.white,
@@ -1230,6 +1243,67 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         SnackBar(content: Text(t.video_jimaku_downloaded)),
       );
     }
+  }
+
+  /// 弹系统文件选择器挑一个字幕文件（srt/ass/ssa/vtt）→ 经 [_importExternalSubtitle]
+  /// 落盘并应用。FilePicker 会夺走视频键盘焦点，关闭后 [_refocusVideo] 归还。
+  Future<void> _pickAndImportSubtitle(VideoPlayerController controller) async {
+    final FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const <String>['srt', 'vtt', 'ass', 'ssa'],
+      allowMultiple: false,
+    );
+    _refocusVideo();
+    final String? path = result?.files.single.path;
+    if (path == null) return;
+    await _importExternalSubtitle(controller, path);
+  }
+
+  /// 把用户挑选/拖入的外部字幕文件 [srcPath] 拷到持久化
+  /// `<appDocs>/video_subtitles/`（与 Jimaku 下载同目录），构造外挂
+  /// [SubtitleSource] 后经 [_selectSubtitleSource] 应用（复用 cue 解析/切换/
+  /// 持久化/失败提示全链路）。
+  ///
+  /// 拷贝到持久目录而非直接用原路径：原文件可能在临时/缓存区或后续被移动，落盘后
+  /// 持久化的 `subtitleSource` 路径才稳定可恢复。格式不支持或拷贝失败时弹提示、
+  /// 不切换。源路径已在持久目录内时跳过自拷贝（File.copy 自拷会报错）。
+  ///
+  /// 落点是 `video_subtitles/<basename>`：同 basename 直接覆盖，是「当前集导入
+  /// 覆盖」语义，有意不做去重——避免堆积同名副本，且换集恢复按文件名匹配，去重
+  /// 后缀反而干扰匹配。
+  Future<void> _importExternalSubtitle(
+    VideoPlayerController controller,
+    String srcPath,
+  ) async {
+    if (_currentVideoPath == null) return;
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    if (subtitleFormatForPath(srcPath) == null) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(t.video_subtitle_import_unsupported)),
+      );
+      return;
+    }
+    final Directory docs = await getApplicationDocumentsDirectory();
+    final Directory destDir = Directory(p.join(docs.path, 'video_subtitles'));
+    await destDir.create(recursive: true);
+    final String dest = p.join(destDir.path, p.basename(srcPath));
+    if (!p.equals(srcPath, dest)) {
+      try {
+        await File(srcPath).copy(dest);
+      } catch (_) {
+        if (!mounted) return;
+        messenger.showSnackBar(
+          SnackBar(content: Text(t.video_subtitle_import_failed)),
+        );
+        return;
+      }
+    }
+    if (!mounted) return;
+    final SubtitleSource source = SubtitleSource.external(
+      externalPath: dest,
+      label: p.basename(dest),
+    );
+    await _selectSubtitleSource(controller, source);
   }
 
   /// 选中某字幕源：加载 cue → 切 overlay → 持久化 → SnackBar。
