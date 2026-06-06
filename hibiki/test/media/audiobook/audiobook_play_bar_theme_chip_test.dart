@@ -179,6 +179,61 @@ void main() {
     expect(find.byIcon(Icons.arrow_back), findsNothing);
   });
 
+  testWidgets(
+      'wide in-book settings keeps the left pane fixed while the right scrolls '
+      '(BUG-096)', (tester) async {
+    // 用户报：宽窗书内设置「整个页面一块滚动、左边不固定」。根因=frame 外层
+    // SingleChildScrollView 给 master-detail 无界高度 → 左右一块滚。回归锁：矮
+    // 窗口让右详情（布局，行多）必然溢出可滚，拖右 pane 时左父菜单必须纹丝不动。
+    await tester.binding.setSurfaceSize(const Size(1000, 380));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          theme: ThemeData(useMaterial3: true),
+          home: Scaffold(
+            body: Consumer(
+              builder: (context, ref, _) => ReaderQuickSettingsSheet(
+                controller: null,
+                toc: const [],
+                readerProgress: const (1, 3),
+                onJumpSection: (_) async {},
+                onBookmark: () async {},
+                onExitReader: () {},
+                webViewController: _FakeInAppWebViewController(),
+                appModel: _testAppModel(),
+                ref: ref,
+                isHibikiReader: true,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // 选「布局」让右 pane 内容变长（必然超过 380 高 → 可独立滚动）。
+    await tester.tap(find.text(t.section_layout));
+    await tester.pumpAndSettle();
+
+    // 左父菜单里的「外观」分类项作为锚点：只出现在左 pane（右 pane 现是布局）。
+    final Finder leftAnchor = find.text(t.settings_destination_appearance);
+    expect(leftAnchor, findsOneWidget);
+    final Offset leftBefore = tester.getTopLeft(leftAnchor);
+
+    // 在右 pane 区域（x=850，远在左 pane 之外）向上拖：修好后只滚右 pane，
+    // 左父菜单不动；若回归成「一块滚」，这一拖会带着左锚点一起上移。
+    await tester.dragFrom(const Offset(850, 250), const Offset(0, -160));
+    await tester.pump();
+
+    final Offset leftAfter = tester.getTopLeft(leftAnchor);
+    expect(
+      leftAfter,
+      leftBefore,
+      reason: '左父菜单必须固定，不能跟随右详情滚动（BUG-096：整页一块滚）',
+    );
+  });
+
   testWidgets('in-book navigation lists avoid legacy Material tiles',
       (tester) async {
     await tester.pumpWidget(

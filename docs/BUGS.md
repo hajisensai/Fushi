@@ -13,6 +13,13 @@
 
 ---
 
+## BUG-096 · 书内设置（宽窗 master-detail）整张一块滚动、左父菜单不固定
+- **报告**：2026-06-07（用户：「这书籍里的设置……左边不居中、左边不固定住、整个页面一块滚动，好好看看外面的设置」，附截图 `阅读进度` 宽窗 master-detail）。采番注：初记 095，rebase 到 develop 时 095 已被并发提交「视频里查词热槽」占用，改取 096。
+- **真实性**：✅ **真 bug（沿真实渲染路径 + 测试崩溃双重定位）**。书内快捷设置 `reader_quick_settings_sheet.dart` 宽窗（`>=640`）走 `MaterialSupportingPaneLayout`（左父菜单固定 + 右详情独立滚），但整个 sheet 被 `HibikiModalSheetFrame(scrollable: true)` 包了一层**外层 `SingleChildScrollView`**。外层滚动视口给 supporting-pane 布局**无界高度**（`h=Infinity`），`MaterialSupportingPaneLayout` 内部 `Row(crossAxisAlignment.stretch)` 拿到无限高 → **debug 直接 `BoxConstraints forces an infinite height` 崩**（`audiobook_play_bar_theme_chip_test.dart` 的 wide / navigation 两用例预存红即此），**release 不崩但两个 pane 都 shrink-wrap 成内容高、再被外层一块整体滚动** → 左父菜单跟着右详情一起滚、永不固定（=用户「整页一块滚 / 左边不固定」）。对照主页设置 `settings_home_page.dart`：同一 pane 布局放进**有界的 `Expanded`、无外层滚动**，故左固定右独立滚（=用户「外面的设置」该有的样子）。
+- **[x] ① 已修复** — 本提交。根因修（对齐主页设置范式，不补丁）：`HibikiModalSheetFrame` 改 `scrollable: false`，滚动策略下放到 `body` 的 `LayoutBuilder` 按宽/窄各自决定，`bodyPadding` 随之移进 body。宽窗：`SizedBox(height: constraints.maxHeight)`（`maxHeightFactor: 0.80` 保证有界）撑满整张 master-detail → `Row(stretch)` 给两个 pane 紧约束 → 各自的 `SingleChildScrollView` 独立滚动、左父菜单固定。窄窗（含全部手机 bottom sheet）：body 自带 `SingleChildScrollView(padding: bodyPadding)`（键盘 inset 仍随内容滚动），行为与旧 frame-scroll 路径等价。
+- **[x] ② 已加自动化测试** — `hibiki/test/media/audiobook/audiobook_play_bar_theme_chip_test.dart`「wide in-book settings keeps the left pane fixed while the right scrolls (BUG-096)」：矮窗（1000×380）选「布局」让右详情必然溢出，记录左 pane「外观」分类锚点屏幕坐标，在右 pane 区域（x=850，左 pane 之外）向上拖 160px 后断言左锚点坐标纹丝不动（回归成「一块滚」则左锚点会被一起上移 / 或 infinite-height 崩）。同时原预存红的 wide / navigation 两用例随本修复转绿。
+- **备注**：UI 布局类。代码正确 + 单测无回归（该文件 5 绿 + 静态守卫 13 绿，`flutter analyze` 0）；**真机/桌面肉眼复测待用户**：打开书→底栏「设置」（宽窗/桌面），左父菜单固定不动、只右详情滚动，与主页设置一致。
+
 ## BUG-095 · 视频里查词仍每次白屏（白屏≈发音音频时长）：视频走另一套弹窗系统，BUG-093 没覆盖到
 - **报告**：2026-06-06（用户：「视频里面查词要等音频播放完才取消白屏？」）。承接 [[BUG-093]]——该条标题写了「阅读器/视频」，但实际只改了 `BaseSourcePageState`（阅读器/有声书），视频是另一套，没被覆盖。采番注：初记 094，rebase 到 develop 时 094 已被「视频 tab 页头统一」占用，改取 095。
 - **真实性**：✅ **真 bug（沿真实代码路径定位）**。`VideoHibikiPage` 是 `ConsumerStatefulWidget` + `DictionaryPageMixin`（**不**继承 `BaseSourcePageState`），查词走 `_lookupAt → pushNestedPopup(replaceStack: true)`。mixin 的 `pushNestedPopup` 每次 `popupStack.clear()` + 新建 `NestedPopupEntry`（**全新 `webViewKey`**）→ `DictionaryPopupLayer` 的 WebView 每次重建、冷加载 popup.html/JS/CSS → 白屏。而 `_lookupAt` 同时触发 `autoRead`（发音音频）在这个冷加载窗口里播，故用户观感「白屏要等音频播完才消失」（实为白屏时长≈WebView 冷加载时长，恰与发音重叠）。BUG-093 的常驻热槽机制在 `base_source_page`，视频这套 mixin 完全没沾。

@@ -257,47 +257,70 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
       },
       child: HibikiModalSheetFrame(
         maxHeightFactor: 0.80,
-        scrollable: true,
-        bodyPadding: EdgeInsets.fromLTRB(
-          tokens.spacing.page + tokens.spacing.gap / 2,
-          tokens.spacing.gap / 2,
-          tokens.spacing.page + tokens.spacing.gap / 2,
-          tokens.spacing.card +
-              tokens.spacing.gap +
-              MediaQuery.of(context).viewInsets.bottom,
-        ),
+        // 宽窗 master-detail 绝不能套外层滚动：外层 SingleChildScrollView 会给
+        // supporting-pane 布局「无界高度」，MaterialSupportingPaneLayout 的
+        // Row(stretch) 拿到 h=Infinity → debug 直接 infinite-height 崩、release
+        // 不崩但两个 pane 都 shrink-wrap 成内容高，再被外层一块整体滚动（左父菜
+        // 单跟着右详情一起滚、永远不固定）——正是用户骂的「整个页面一块滚动 /
+        // 左边不固定」。主页设置（settings_home_page）把同一 pane 布局放进有界的
+        // Expanded、无外层滚动，所以左固定右独立滚。这里照此：frame 不滚，滚动策
+        // 略下放到 body 按宽/窄各自决定，bodyPadding 也随之移进 body。
+        scrollable: false,
         body: LayoutBuilder(
           builder: (BuildContext context, BoxConstraints constraints) {
             _isWide = constraints.maxWidth >= 640;
+            final EdgeInsets bodyPadding = EdgeInsets.fromLTRB(
+              tokens.spacing.page + tokens.spacing.gap / 2,
+              tokens.spacing.gap / 2,
+              tokens.spacing.page + tokens.spacing.gap / 2,
+              tokens.spacing.card +
+                  tokens.spacing.gap +
+                  MediaQuery.of(context).viewInsets.bottom,
+            );
             if (_isWide) {
               final String selectedId = _subPage ?? 'appearance';
               final Color dividerColor = isCupertinoPlatform(context)
                   ? CupertinoColors.separator.resolveFrom(context)
                   : HibikiDesignTokens.of(context).surfaces.outline;
-              return MaterialSupportingPaneLayout(
-                minSplitWidth: 640,
-                supportingSide: SupportingPaneSide.start,
-                dividerColor: dividerColor,
-                supporting: SingleChildScrollView(
-                  child: _buildWidePane(context, theme, selectedId),
-                ),
-                // KeyedSubtree：按选中 id 编码，切换时整棵右 pane 子树作废重建，
-                // 避免 Flutter 复用上一详情同位置 Element 触发 Switch 圆点 /
-                // Segmented 滑动等复用副作用（同 settings_home_page）。
-                primary: KeyedSubtree(
-                  key: ValueKey<String>(selectedId),
-                  child:
-                      SingleChildScrollView(child: _subPageContent(selectedId)),
+              // 用可用的有界高度撑满整张 master-detail（等价于主页设置把
+              // MaterialSupportingPaneLayout 放进 Expanded）：Row(stretch) 才能给
+              // 两个 pane 紧约束 → 各自的 SingleChildScrollView 独立滚动、左父菜
+              // 单固定不跟随右详情滚动。maxHeightFactor 保证 maxHeight 有界。
+              return SizedBox(
+                height: constraints.maxHeight,
+                child: Padding(
+                  padding: bodyPadding,
+                  child: MaterialSupportingPaneLayout(
+                    minSplitWidth: 640,
+                    supportingSide: SupportingPaneSide.start,
+                    dividerColor: dividerColor,
+                    supporting: SingleChildScrollView(
+                      child: _buildWidePane(context, theme, selectedId),
+                    ),
+                    // KeyedSubtree：按选中 id 编码，切换时整棵右 pane 子树作废重
+                    // 建，避免 Flutter 复用上一详情同位置 Element 触发 Switch 圆点
+                    // / Segmented 滑动等复用副作用（同 settings_home_page）。
+                    primary: KeyedSubtree(
+                      key: ValueKey<String>(selectedId),
+                      child: SingleChildScrollView(
+                        child: _subPageContent(selectedId),
+                      ),
+                    ),
+                  ),
                 ),
               );
             }
             // 窄窗（含全部手机 bottom sheet）：维持现有 push 行为，外观仍内联。
-            return AnimatedSize(
-              duration: const Duration(milliseconds: 200),
-              alignment: Alignment.topCenter,
-              child: _subPage != null
-                  ? _buildSubPage(context, theme)
-                  : _buildMainPage(context, theme),
+            // body 自带滚动视口（padding 含键盘 inset 也随内容一起滚动）。
+            return SingleChildScrollView(
+              padding: bodyPadding,
+              child: AnimatedSize(
+                duration: const Duration(milliseconds: 200),
+                alignment: Alignment.topCenter,
+                child: _subPage != null
+                    ? _buildSubPage(context, theme)
+                    : _buildMainPage(context, theme),
+              ),
             );
           },
         ),
