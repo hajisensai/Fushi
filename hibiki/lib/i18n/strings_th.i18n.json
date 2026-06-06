@@ -1305,5 +1305,6 @@
     "video_shader_preset_mode_a_hq": "Highest quality for 1080p anime. Needs a strong GPU.",
     "video_delete_title": "Delete Video",
     "video_delete_confirm": "Delete 『$title』? This cannot be undone.",
-    "video_subtitle_load_failed": "Couldn't load this subtitle (graphic or unsupported track): $label"
+    "video_subtitle_load_failed": "Couldn't load this subtitle (graphic or unsupported track): $label",
+    "drag_drop_need_card_target": "Drop subtitles or audio onto a book or video"
 }

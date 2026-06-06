@@ -1305,5 +1305,6 @@
     "video_shader_preset_mode_a_hq": "1080p 动画最高画质。需要较强 GPU。",
     "video_delete_title": "删除视频",
     "video_delete_confirm": "删除『$title』？此操作无法撤销。",
-    "video_subtitle_load_failed": "无法加载该字幕（可能是图形或不支持的字幕轨）：$label"
+    "video_subtitle_load_failed": "无法加载该字幕（可能是图形或不支持的字幕轨）：$label",
+    "drag_drop_need_card_target": "请把字幕或音频拖到某本书或某个视频上"
 }
