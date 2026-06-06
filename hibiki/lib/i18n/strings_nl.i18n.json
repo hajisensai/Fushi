@@ -1307,5 +1307,10 @@
     "video_delete_confirm": "Delete 『$title』? This cannot be undone.",
     "video_subtitle_load_failed": "Couldn't load this subtitle (graphic or unsupported track): $label",
     "drag_drop_need_card_target": "Drop subtitles or audio onto a book or video",
-    "shortcut_action_audiobook_seek_clicked": "Seek audio to clicked sentence"
+    "shortcut_action_audiobook_seek_clicked": "Seek audio to clicked sentence",
+    "log_upload_action": "Upload to server",
+    "log_upload_in_progress": "Uploading log…",
+    "log_upload_success": "Log uploaded",
+    "log_upload_failed": "Upload failed",
+    "log_upload_too_large": "Log too large to upload"
 }

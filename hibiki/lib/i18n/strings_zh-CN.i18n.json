@@ -1307,5 +1307,10 @@
     "video_delete_confirm": "删除『$title』？此操作无法撤销。",
     "video_subtitle_load_failed": "无法加载该字幕（可能是图形或不支持的字幕轨）：$label",
     "drag_drop_need_card_target": "请把字幕或音频拖到某本书或某个视频上",
-    "shortcut_action_audiobook_seek_clicked": "跳转音频到点击的句子"
+    "shortcut_action_audiobook_seek_clicked": "跳转音频到点击的句子",
+    "log_upload_action": "上传到服务器",
+    "log_upload_in_progress": "正在上传日志…",
+    "log_upload_success": "日志已上传",
+    "log_upload_failed": "上传失败",
+    "log_upload_too_large": "日志过大，无法上传"
 }
