@@ -17,6 +17,7 @@ import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/tag_filter_sheet.dart';
 import 'package:hibiki/src/pages/implementations/tag_picker_page.dart';
 import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
+import 'package:hibiki/src/pages/implementations/video_statistics_page.dart';
 import 'package:hibiki/utils.dart';
 
 /// 首页「视频」tab 的内容：已导入视频的库（独立于书架的 EPUB/有声书分区）。
@@ -130,6 +131,13 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       ),
     );
     if (bookUid != null) _refresh();
+  }
+
+  void _openStatistics() {
+    Navigator.push(
+      context,
+      adaptivePageRoute<void>(builder: (_) => const VideoStatisticsPage()),
+    );
   }
 
   void _open(VideoBookRow book) {
@@ -253,6 +261,11 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         context: context,
         title: Text(t.nav_video),
         actions: <Widget>[
+          IconButton(
+            tooltip: t.video_statistics,
+            icon: const Icon(Icons.bar_chart_outlined),
+            onPressed: _openStatistics,
+          ),
           if (canImport)
             IconButton(
               tooltip: t.video_import_action,
