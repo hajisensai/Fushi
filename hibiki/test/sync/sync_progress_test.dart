@@ -70,7 +70,18 @@ void main() {
         File('lib/src/sync/sync_auto_trigger.dart').readAsStringSync();
     expect(autoTrigger.contains('SyncProgressCallback? onProgress'), isTrue,
         reason: 'runManualFullSync must forward a progress callback');
-    expect(autoTrigger.contains('onProgress: onProgress'), isTrue);
+    // BUG-101: a single app-wide notifier carries progress for EVERY full sweep
+    // (manual + app-open/background auto), so the settings "立即同步" row's bar
+    // shows even for a sync the row didn't trigger (previously: bare toast).
+    expect(autoTrigger.contains('ValueNotifier<SyncProgress?>'), isTrue,
+        reason: 'an app-wide syncProgress notifier must exist');
+    expect(autoTrigger.contains('syncProgress.value = p'), isTrue,
+        reason:
+            'both the manual and auto sweep must publish progress globally');
+    expect(autoTrigger.contains('onProgress?.call(p)'), isTrue,
+        reason: 'manual sync must still forward to the caller callback');
+    expect(autoTrigger.contains('syncProgress.value = null'), isTrue,
+        reason: 'the global progress must reset when no sync is in flight');
 
     final widget =
         File('lib/src/sync/sync_settings_schema.dart').readAsStringSync();
@@ -78,5 +89,12 @@ void main() {
     expect(
         widget.contains('LinearProgressIndicator(value: p?.fraction)'), isTrue,
         reason: 'the Sync-now row must show an inline progress bar');
+    // BUG-101: the row must reflect the GLOBAL sync state, not a local flag, so
+    // the bar appears even when a background/app-open sync started the run.
+    expect(widget.contains('valueListenable: syncInProgress'), isTrue,
+        reason:
+            'the Sync-now row must listen to the global in-flight notifier');
+    expect(widget.contains('valueListenable: syncProgress'), isTrue,
+        reason: 'the Sync-now row must listen to the global progress notifier');
   });
 }

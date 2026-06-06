@@ -19,6 +19,14 @@ final _bookKeyPattern = RegExp(r'hoshi://book/(.+)');
 
 int _activeSyncs = 0;
 final ValueNotifier<bool> syncInProgress = ValueNotifier<bool>(false);
+
+/// App-wide latest sync progress tick, fed by EVERY full-sweep run (manual
+/// "立即同步" AND the app-open/background auto-sweep). The settings "立即同步" row
+/// reflects this so its inline progress bar shows whenever a sync is in flight —
+/// not only for the run that row triggered (BUG-101). null between runs (and for
+/// the single-book auto-sync path, which has no phase structure → indeterminate).
+final ValueNotifier<SyncProgress?> syncProgress =
+    ValueNotifier<SyncProgress?>(null);
 final Set<String> _syncingIds = {};
 
 // HBK-AUDIT-049: cloud backends (GoogleDrive/Dropbox/OneDrive/WebDAV/SMB) are
@@ -152,6 +160,9 @@ Future<void> _runAutoSyncAll({
         syncLocalAudio: await repo.isSyncLocalAudioEnabled(),
         localAudioEntries: localAudioEntries,
         onLocalAudioImported: onLocalAudioImported,
+        // Publish progress globally so a settings "立即同步" row visible during
+        // the app-open sweep shows the live bar instead of a bare toast.
+        onProgress: (SyncProgress p) => syncProgress.value = p,
       );
       final SyncRunReport report = await orchestrator.run();
       onReport?.call(report, backend);
@@ -166,6 +177,7 @@ Future<void> _runAutoSyncAll({
     _syncingIds.remove('__all__');
     _activeSyncs--;
     syncInProgress.value = _activeSyncs > 0;
+    if (_activeSyncs == 0) syncProgress.value = null;
   }
 }
 
@@ -218,7 +230,12 @@ Future<ManualSyncResult> runManualFullSync({
         syncLocalAudio: await repo.isSyncLocalAudioEnabled(),
         localAudioEntries: localAudioEntries,
         onLocalAudioImported: onLocalAudioImported,
-        onProgress: onProgress,
+        // Publish to the app-wide notifier in addition to the caller's callback,
+        // so any other visible "立即同步" surface reflects the same live bar.
+        onProgress: (SyncProgress p) {
+          syncProgress.value = p;
+          onProgress?.call(p);
+        },
       );
       final SyncRunReport report = await orchestrator.run();
       return ManualSyncResult(ManualSyncOutcome.completed, report);
@@ -227,6 +244,7 @@ Future<ManualSyncResult> runManualFullSync({
     _syncingIds.remove('__all__');
     _activeSyncs--;
     syncInProgress.value = _activeSyncs > 0;
+    if (_activeSyncs == 0) syncProgress.value = null;
   }
 }
 

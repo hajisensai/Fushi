@@ -680,18 +680,14 @@ class _SyncNowWidget extends StatefulWidget {
 }
 
 class _SyncNowWidgetState extends State<_SyncNowWidget> {
-  bool _syncing = false;
-  SyncProgress? _progress;
-
   Future<void> _syncNow() async {
-    // Re-entrant guard: the whole row is a focus target whose Activate (A/Enter,
-    // see [AdaptiveSettingsRow.onTap] below) runs this too, so a second
-    // activation while a sync is in flight must be a no-op.
-    if (_syncing) return;
-    setState(() {
-      _syncing = true;
-      _progress = null;
-    });
+    // Re-entrant / already-in-flight guard: the whole row is a focus target
+    // whose Activate (A/Enter, see [AdaptiveSettingsRow.onTap] below) runs this
+    // too, AND a background/app-open auto-sync may already hold the sweep lock.
+    // In both cases a second trigger is a no-op — the global [syncInProgress]
+    // notifier already drives the inline bar (BUG-101), so there's nothing to do
+    // here but let it run.
+    if (syncInProgress.value) return;
     try {
       final AppModel appModel = widget.settingsContext.appModel;
       final ManualSyncResult result = await runManualFullSync(
@@ -702,9 +698,6 @@ class _SyncNowWidgetState extends State<_SyncNowWidget> {
         tempDir: appModel.temporaryDirectory,
         localAudioEntries: appModel.localAudioDbs,
         onLocalAudioImported: appModel.importSyncedLocalAudioDb,
-        onProgress: (SyncProgress p) {
-          if (mounted) setState(() => _progress = p);
-        },
       );
       if (!mounted) return;
       switch (result.outcome) {
@@ -740,14 +733,10 @@ class _SyncNowWidgetState extends State<_SyncNowWidget> {
           t.sync_error(message: friendlySyncErrorDetail(e)),
         );
       }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _syncing = false;
-          _progress = null;
-        });
-      }
     }
+    // No local teardown: the inline bar is driven by the global [syncInProgress]
+    // / [syncProgress] notifiers, which the sync entry points reset in their own
+    // finally blocks.
   }
 
   /// Localized phase name for the inline progress line.
@@ -777,42 +766,57 @@ class _SyncNowWidgetState extends State<_SyncNowWidget> {
 
   @override
   Widget build(BuildContext context) {
-    final SyncProgress? p = _progress;
-    final AdaptiveSettingsRow row = AdaptiveSettingsRow(
-      title: t.sync_now,
-      subtitle: _syncing && p != null ? _progressLine(p) : t.sync_now_hint,
-      icon: Icons.sync,
-      controlBelow: true,
-      // The action lives on the trailing button; giving the ROW an onTap is what
-      // registers it as a HibikiFocusTarget so gamepad/keyboard directional nav
-      // can reach it and Activate runs the sync (BUG-016). Without it the row was
-      // unreachable and Down from the neighbouring "Compare Data" row jumped
-      // cross-pane to the nav rail.
-      onTap: _syncNow,
-      trailing: _syncing
-          ? const SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          : FilledButton(
-              onPressed: _syncNow,
-              child: Text(t.sync_now),
-            ),
-    );
-    if (!_syncing) return row;
-    // Inline determinate bar below the row (indeterminate when a phase has no
-    // measurable total), matching the compare dialog's Apply progress.
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        row,
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-          child: LinearProgressIndicator(value: p?.fraction),
-        ),
-      ],
+    // Driven by the app-wide notifiers, NOT a local flag: the bar must show for
+    // ANY in-flight sweep — including a background/app-open auto-sync the user
+    // never triggered from this row — instead of only the run this row started
+    // (which used to fall through to a bare "同步进行中" toast, BUG-101).
+    return ValueListenableBuilder<bool>(
+      valueListenable: syncInProgress,
+      builder: (BuildContext context, bool syncing, _) {
+        return ValueListenableBuilder<SyncProgress?>(
+          valueListenable: syncProgress,
+          builder: (BuildContext context, SyncProgress? p, __) {
+            final AdaptiveSettingsRow row = AdaptiveSettingsRow(
+              title: t.sync_now,
+              subtitle:
+                  syncing && p != null ? _progressLine(p) : t.sync_now_hint,
+              icon: Icons.sync,
+              controlBelow: true,
+              // The action lives on the trailing button; giving the ROW an onTap
+              // is what registers it as a HibikiFocusTarget so gamepad/keyboard
+              // directional nav can reach it and Activate runs the sync
+              // (BUG-016). Without it the row was unreachable and Down from the
+              // neighbouring "Compare Data" row jumped cross-pane to the rail.
+              onTap: _syncNow,
+              trailing: syncing
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : FilledButton(
+                      onPressed: _syncNow,
+                      child: Text(t.sync_now),
+                    ),
+            );
+            if (!syncing) return row;
+            // Inline determinate bar below the row (indeterminate when a phase
+            // has no measurable total), matching the compare dialog's Apply
+            // progress.
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                row,
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: LinearProgressIndicator(value: p?.fraction),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 }
