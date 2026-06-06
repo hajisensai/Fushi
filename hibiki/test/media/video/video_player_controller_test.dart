@@ -27,7 +27,7 @@ void main() {
       expect(c.currentCueIndex, 0);
       expect(c.currentCue!.text, 'line0');
 
-      c.debugUpdateCueForPosition(1500); // gap：字幕消失（BUG-073）
+      c.debugUpdateCueForPosition(1500); // gap：字幕消失（BUG-074）
       expect(c.currentCueIndex, -1);
       expect(c.currentCue, isNull);
 
@@ -42,10 +42,10 @@ void main() {
       expect(notifications, 3);
     });
 
-    // BUG-073: 视频底部字幕 overlay 与有声书正文跟随高亮语义不同——真实字幕在
+    // BUG-074: 视频底部字幕 overlay 与有声书正文跟随高亮语义不同——真实字幕在
     // 其时间窗结束后（句间静音 gap / 末句之后）必须消失，不能保留上一句。
     test(
-        'BUG-073: subtitle clears in gap and after last cue; no redundant '
+        'BUG-074: subtitle clears in gap and after last cue; no redundant '
         'notify while gap is sustained', () {
       final c = VideoPlayerController();
       addTearDown(c.dispose);
@@ -79,7 +79,7 @@ void main() {
       expect(notifications, 4);
     });
 
-    test('BUG-073: position before first cue shows no subtitle (no notify)',
+    test('BUG-074: position before first cue shows no subtitle (no notify)',
         () {
       final c = VideoPlayerController();
       addTearDown(c.dispose);
