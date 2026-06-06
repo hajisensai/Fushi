@@ -342,7 +342,11 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
         icon: Icons.palette_outlined,
         label: t.settings_destination_appearance,
       ),
-      (id: 'layout', icon: Icons.auto_stories_outlined, label: t.section_layout),
+      (
+        id: 'layout',
+        icon: Icons.auto_stories_outlined,
+        label: t.section_layout
+      ),
       (
         id: 'behavior',
         icon: Icons.touch_app_outlined,

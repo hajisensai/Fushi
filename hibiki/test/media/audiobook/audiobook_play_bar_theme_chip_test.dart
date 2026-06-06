@@ -64,6 +64,10 @@ void main() {
 
   testWidgets('in-book settings sheet uses adaptive settings rows',
       (tester) async {
+    // 窄窗：< 640 走单列内联 + push（本用例的语义）。宽窗 master-detail 由
+    // 单独的 wide 用例覆盖。
+    await tester.binding.setSurfaceSize(const Size(420, 1600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
       ProviderScope(
         child: MaterialApp(
@@ -128,6 +132,51 @@ void main() {
     );
     expect(find.byType(AdaptiveSettingsStepperRow), findsWidgets);
     expect(find.byType(ListTile), findsNothing);
+  });
+
+  testWidgets('in-book settings shows master-detail on wide windows',
+      (tester) async {
+    // 宽窗：>= 640 走左父菜单 + 右详情同屏（master-detail）。
+    await tester.binding.setSurfaceSize(const Size(1000, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          theme: ThemeData(useMaterial3: true),
+          home: Scaffold(
+            body: Consumer(
+              builder: (context, ref, _) => ReaderQuickSettingsSheet(
+                controller: null,
+                toc: const [],
+                readerProgress: const (1, 3),
+                onJumpSection: (_) async {},
+                onBookmark: () async {},
+                onExitReader: () {},
+                webViewController: _FakeInAppWebViewController(),
+                appModel: _testAppModel(),
+                ref: ref,
+                isHibikiReader: true,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // 左 pane 把外观作为分类（默认选中）+ 右 pane 同屏显示外观详情（主题行）。
+    expect(find.text(t.settings_destination_appearance), findsOneWidget);
+    expect(find.text(t.ttu_theme), findsOneWidget);
+    expect(find.text(t.section_layout), findsOneWidget);
+    // master-detail 无 push：无返回箭头；左 pane 不再用带 chevron 的导航行。
+    expect(find.byIcon(Icons.arrow_back), findsNothing);
+    expect(find.byType(AdaptiveSettingsNavigationRow), findsNothing);
+
+    // 选「布局」→ 右 pane 切到布局详情（schema 投影的分段行），仍无返回箭头。
+    await tester.tap(find.text(t.section_layout));
+    await tester.pumpAndSettle();
+    expect(find.byType(AdaptiveSettingsSegmentedRow<Object>), findsWidgets);
+    expect(find.byIcon(Icons.arrow_back), findsNothing);
   });
 
   testWidgets('in-book navigation lists avoid legacy Material tiles',

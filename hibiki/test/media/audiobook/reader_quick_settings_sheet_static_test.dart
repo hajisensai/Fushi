@@ -26,30 +26,35 @@ void main() {
       '  Widget _buildSubPage(BuildContext context, ThemeData theme)',
     );
 
-    // 外观已平铺到主页，不再有独立的「外观」导航子页入口。
+    // 外观已平铺到主页（窄窗），不再有独立的「外观」导航子页 push 入口。
     expect(mainSource, contains('_buildAppearanceInline(theme)'));
+    // 宽窗 master-detail 用 `id: 'appearance'`（非 `page: 'appearance'` push）。
     expect(source, isNot(contains("page: 'appearance'")));
     expect(source, isNot(contains('Widget _buildQuickControlsSection(')));
 
-    // 平铺区把主题行 + appearance schema 裸行 + 编辑书籍CSS 合并成一张等宽卡
-    // （单个 AdaptiveSettingsSection），编辑书籍CSS 是最后一行而非独立卡。
+    // 窄窗内联包装仍是单张等宽卡（一个 AdaptiveSettingsSection）。
     final String inlineSource = _between(
       source,
       '  Widget _buildAppearanceInline(ThemeData theme)',
-      '  Widget _buildLocationSection(ThemeData theme)',
+      '  List<Widget> _appearanceCardChildren()',
     );
-    expect(
-        inlineSource, contains('buildThemeSelector(_themeSettingsContext())'));
-    expect(inlineSource, contains('ReaderGroup.appearance'));
+    expect('AdaptiveSettingsSection('.allMatches(inlineSource).length, 1);
+
+    // 复用的外观行集合（窄窗内联 + 宽窗右 pane 共用）：主题行 + appearance
+    // schema 裸行 + 编辑书籍CSS（最后一行，非独立卡）。
+    final String cardSource = _between(
+      source,
+      '  List<Widget> _appearanceCardChildren()',
+      '  Widget _buildAppearanceDetail()',
+    );
+    expect(cardSource, contains('buildThemeSelector(_themeSettingsContext())'));
+    expect(cardSource, contains('ReaderGroup.appearance'));
     // appearance schema 行用 buildSectionRows 取「裸行」（非 buildDetailContent
     // 的 ListView+整页内边距），才能与下方导航卡等宽。
-    expect(inlineSource, contains('buildSectionRows('));
-    expect(inlineSource, contains('book_css_editor_edit_css'));
+    expect(cardSource, contains('buildSectionRows('));
+    expect(cardSource, contains('book_css_editor_edit_css'));
     // 主题不再是独立卡：内联区不再用旧的 _buildThemeSelector() 包装方法。
     expect(source, isNot(contains('Widget _buildThemeSelector()')));
-    // 单卡合并：内联区只一个 AdaptiveSettingsSection（编辑书籍CSS 并入其中，
-    // 非独立卡）。
-    expect('AdaptiveSettingsSection('.allMatches(inlineSource).length, 1);
   });
 
   test('reader quick settings sheet uses shared MD3 sheet chrome', () {
@@ -259,10 +264,41 @@ void main() {
     final String desktopSource =
         readerSource.substring(desktopBranch, mobileBranch);
     expect(desktopSource, contains('HibikiDialogFrame('));
-    expect(desktopSource, contains('maxWidth: 520'));
+    // master-detail 需要更宽画布（左父菜单 + 右详情）；520 太窄进不了分栏。
+    expect(desktopSource, contains('maxWidth: 900'));
     expect(desktopSource, contains('maxHeightFactor: 0.80'));
     expect(desktopSource, isNot(contains('=> Dialog(')));
     expect(desktopSource, isNot(contains('ConstrainedBox(')));
+  });
+
+  test('reader quick settings widens into master-detail on wide windows', () {
+    final String source =
+        File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
+            .readAsStringSync();
+
+    // 宽窗用主页同款 supporting-pane（左父菜单 + 右详情），阈值 640。
+    expect(source, contains('MaterialSupportingPaneLayout('));
+    expect(source, contains('SupportingPaneSide.start'));
+    expect(source, contains('minSplitWidth: 640'));
+    expect(source, contains('constraints.maxWidth >= 640'));
+    expect(source, contains('Widget _buildWidePane('));
+    expect(source, contains('_wideCategories()'));
+
+    // 左 pane 把外观纳入分类（默认选中），右 pane 复用同一份子页详情。
+    expect(source, contains("id: 'appearance'"));
+    expect(source, contains("_subPage ?? 'appearance'"));
+    expect(source, contains('_subPageContent(selectedId)'));
+    // 左 pane 分类用带选中态的 MD3 列表项（pill 高亮，无 chevron 误导 push）。
+    expect(source, contains('HibikiListItemSelectedShape.pill'));
+    // 右 pane 详情按选中 id KeyedSubtree，防 Element 复用副作用。
+    expect(source, contains('KeyedSubtree('));
+    expect(source, contains('ValueKey<String>(selectedId)'));
+
+    // 窄窗（含手机 bottom sheet）保留原 push：< 640 仍走主页/子页。
+    expect(source, contains('? _buildSubPage(context, theme)'));
+    expect(source, contains(': _buildMainPage(context, theme)'));
+    // 宽窗下返回键直接关弹窗，不卡在「返回上一级」。
+    expect(source, contains('_subPage == null || _isWide'));
   });
 }
 
