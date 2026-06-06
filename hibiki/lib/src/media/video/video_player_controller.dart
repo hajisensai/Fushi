@@ -444,6 +444,25 @@ class VideoPlayerController extends ChangeNotifier
     await _player?.seek(Duration(milliseconds: positionMs.clamp(0, 1 << 30)));
   }
 
+  /// 相对当前位置 seek（±[deltaMs]，如 ±10 秒），clamp 到 [0, duration]。
+  /// 未 load（无位置）时 no-op 安全。
+  Future<void> seekRelative(int deltaMs) async {
+    final int? pos = positionMs;
+    if (pos == null) return;
+    await seekMs(clampSeekTargetMs(pos, deltaMs, durationMs));
+  }
+
+  /// 纯函数：相对 seek 目标 clamp 到 [0, duration]（duration 未知时只保证 >=0）。
+  /// 抽出便于单测（[seekRelative] 本身需真实 player 无法纯测）。
+  static int clampSeekTargetMs(int posMs, int deltaMs, int? durationMs) {
+    final int target = posMs + deltaMs;
+    if (target < 0) return 0;
+    if (durationMs != null && durationMs > 0 && target > durationMs) {
+      return durationMs;
+    }
+    return target;
+  }
+
   /// 设置播放倍速（未 load 时也记下 [_lastSpeed]，下次 load 不丢）。
   Future<void> setSpeed(double rate) async {
     _lastSpeed = rate;
