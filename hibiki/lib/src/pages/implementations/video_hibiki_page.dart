@@ -937,13 +937,41 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       seekBarThumbColor: cs.primary,
       buttonBarButtonColor: cs.onSurface,
       primaryButtonBar: const <Widget>[],
+      // 视频内顶栏（替代被删的 Scaffold AppBar，BUG-102）：左侧返回 + 标题，右侧
+      // 剧集导航（playlist）+ 截图/字幕/音轨/倍速/设置。
       topButtonBar: <Widget>[
-        const Spacer(),
-        if (_isPlaylist)
+        MaterialDesktopCustomButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.of(context).maybePop(),
+        ),
+        Expanded(
+          child: Text(
+            _title ?? '',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Colors.white, fontSize: 16),
+          ),
+        ),
+        if (_isPlaylist) ...<Widget>[
+          MaterialDesktopCustomButton(
+            icon: const Icon(Icons.skip_previous),
+            onPressed: () {
+              if (_currentEpisode > 0) _switchEpisode(_currentEpisode - 1);
+            },
+          ),
+          MaterialDesktopCustomButton(
+            icon: const Icon(Icons.skip_next),
+            onPressed: () {
+              if (_currentEpisode < _episodes.length - 1) {
+                _switchEpisode(_currentEpisode + 1);
+              }
+            },
+          ),
           MaterialDesktopCustomButton(
             icon: const Icon(Icons.playlist_play),
             onPressed: _showEpisodeList,
           ),
+        ],
         MaterialDesktopCustomButton(
           icon: const Icon(Icons.photo_camera_outlined),
           onPressed: _saveScreenshot,
@@ -1007,13 +1035,42 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       seekBarThumbColor: cs.primary,
       buttonBarButtonColor: Colors.white,
       primaryButtonBar: const <Widget>[],
+      // 视频内顶栏（替代被删的 Scaffold AppBar，BUG-102）：左侧返回 + 标题，右侧
+      // 剧集导航（playlist）+ 截图/字幕/音轨/倍速/设置。移动端全屏本就丢 AppBar，
+      // 现在普通与全屏统一只有这一条顶栏。
       topButtonBar: <Widget>[
-        const Spacer(),
-        if (_isPlaylist)
+        MaterialCustomButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.of(context).maybePop(),
+        ),
+        Expanded(
+          child: Text(
+            _title ?? '',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Colors.white, fontSize: 16),
+          ),
+        ),
+        if (_isPlaylist) ...<Widget>[
+          MaterialCustomButton(
+            icon: const Icon(Icons.skip_previous),
+            onPressed: () {
+              if (_currentEpisode > 0) _switchEpisode(_currentEpisode - 1);
+            },
+          ),
+          MaterialCustomButton(
+            icon: const Icon(Icons.skip_next),
+            onPressed: () {
+              if (_currentEpisode < _episodes.length - 1) {
+                _switchEpisode(_currentEpisode + 1);
+              }
+            },
+          ),
           MaterialCustomButton(
             icon: const Icon(Icons.playlist_play),
             onPressed: _showEpisodeList,
           ),
+        ],
         MaterialCustomButton(
           icon: const Icon(Icons.photo_camera_outlined),
           onPressed: _saveScreenshot,
@@ -2040,40 +2097,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     VideoController? videoController,
     ColorScheme cs,
   ) {
+    // 不再用 Scaffold AppBar：媒体播放器自带「视频内顶栏」（media_kit controls 的
+    // topButtonBar），外层再叠一条 AppBar 等于两条顶栏、互相重复（BUG-102）。改为
+    // 把返回/标题/剧集导航全部并入视频内顶栏（见 [_desktopControlsTheme] /
+    // [_mobileControlsTheme]），与播放控制一起随鼠标/触摸显隐，单一顶栏。
     return Scaffold(
       backgroundColor: cs.surface,
-      appBar: AppBar(
-        title: Text(_title ?? ''),
-        actions: <Widget>[
-          if (_isPlaylist) ...<Widget>[
-            IconButton(
-              tooltip: t.video_prev_episode,
-              icon: const Icon(Icons.skip_previous),
-              onPressed: _currentEpisode > 0
-                  ? () => _switchEpisode(_currentEpisode - 1)
-                  : null,
-            ),
-            IconButton(
-              tooltip: t.video_next_episode,
-              icon: const Icon(Icons.skip_next),
-              onPressed: _currentEpisode < _episodes.length - 1
-                  ? () => _switchEpisode(_currentEpisode + 1)
-                  : null,
-            ),
-            IconButton(
-              tooltip: t.video_episode_list,
-              icon: const Icon(Icons.playlist_play),
-              onPressed: _showEpisodeList,
-            ),
-          ],
-          IconButton(
-            tooltip: t.video_settings_title,
-            icon: const Icon(Icons.tune),
-            // controller 未就绪时禁用（无可调对象）。
-            onPressed: controller == null ? null : _showPlayerSettings,
-          ),
-        ],
-      ),
       body: _failed
           ? Center(
               child: Icon(Icons.error_outline, color: cs.error, size: 48),

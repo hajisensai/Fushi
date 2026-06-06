@@ -13,6 +13,20 @@
 
 ---
 
+## BUG-102 · 视频播放页有两条顶栏（Scaffold AppBar + media_kit 视频内顶栏），重复无意义
+- **报告**：2026-06-07（用户：「视频的顶栏应该删掉，放到视频里面的顶栏，现在两个顶栏意义不大」）。采番注：本条与 BUG-101 同批，初记 098，rebase 到 develop 时 097–100 已被并发提交占用（097=内链白屏、098=弹窗遮挡、099=翻页方向键、100=空格分词查词），改取 102。
+- **真实性**：✅ **真 bug（沿真实渲染路径定位）**。`VideoHibikiPage._buildScaffold`（`video_hibiki_page.dart`）给 `Scaffold` 配了 `appBar: AppBar(title/prev/next/episode/settings)`；而播放器本体 media_kit 的 `Video` controls 自带「视频内顶栏」（`MaterialDesktopVideoControlsThemeData.topButtonBar` / `MaterialVideoControlsThemeData.topButtonBar`，已含截图/字幕/音轨/倍速/设置/剧集列表）。两条顶栏内容大量重复（设置、剧集），上下相邻、互相挤占。
+- **[x] ① 已修复** — 本提交。根因修（删冗余、归一到单一顶栏，不补丁）：删掉 `_buildScaffold` 的 `Scaffold.appBar`，把其独有项（返回箭头、标题、playlist 上/下集）并入桌面与移动两套 controls 主题的 `topButtonBar`——左侧 `arrow_back`（`Navigator.maybePop`）+ `_title`，右侧 playlist 时 `skip_previous`/`skip_next`（切集，guard 在首/末集 no-op）+ 剧集列表，随后接原有截图/字幕/音轨/倍速/设置。两套主题同步改，保证桌面 / 移动 / 全屏三场景都只剩这一条顶栏且随鼠标/触摸显隐。
+- **[x] ② 已加自动化测试** — `hibiki/test/pages/video_single_top_bar_guard_test.dart`（源码守卫，media_kit headless 不可跑视频 widget 测试）：断言源文件不再含 `appBar: AppBar(`、返回按钮 `Navigator.of(context).maybePop()` 与标题 `_title ?? ''` 各 ≥2 处（桌面+移动两套顶栏）。原 `video_mobile_controls_static_test.dart` 4 例随改后仍全绿（字幕/音轨/设置/剧集入口保留）。
+- **备注**：UI 布局类。`flutter analyze` 0 + 相关守卫全绿；**真机/桌面肉眼复测待用户**：进视频播放页只见一条顶栏（在视频上方、鼠标移入/触摸唤出），返回/标题/切集/设置都可达，全屏亦然。
+
+## BUG-101 · 点「立即同步」时若已有后台同步在跑，只弹「同步进行中」吐司、不显示进度条
+- **报告**：2026-06-07（用户：「点击立即同步的时候，显示同步进行中，这同步进行中的情况应该把同步的进度条显示出来」）。采番注：初记 097，rebase 到 develop 时 097–100 已被并发提交占用，改取 101。
+- **真实性**：✅ **真 bug（沿真实状态路径定位）**。`_SyncNowWidget`（`sync_settings_schema.dart`）的内联进度条原本只由**本 widget 自己发起**的那次同步驱动（局部 `_syncing` / `_progress`）。但应用打开/后台自动同步会先占住 `runManualFullSync` 的 `__all__` 扫描锁（`sync_auto_trigger.dart`），此时用户点「立即同步」→ `runManualFullSync` 直接返回 `ManualSyncOutcome.busy` → 只 `_showSnackBar(t.sync_now_busy)`「同步进行中，请稍候」，没有任何进度条。根因=**全程没有一个全局可观察的同步进度**，后台同步的进度对设置页不可见。
+- **[x] ① 已修复** — 本提交。根因修（引入全局进度观察量，不补丁）：`sync_auto_trigger.dart` 新增 app 级 `ValueNotifier<SyncProgress?> syncProgress`，由**每一次全量扫描**喂——`_runAutoSyncAll`（应用打开/后台）给 orchestrator 传 `onProgress: (p) => syncProgress.value = p`，`runManualFullSync` 包一层 `(p){ syncProgress.value = p; onProgress?.call(p); }`，两者 finally 在无在飞同步时 `syncProgress.value = null`。`_SyncNowWidget` 改成纯由全局 `syncInProgress` + `syncProgress` 驱动（`ValueListenableBuilder` 套两层）：**任何**在飞同步（含 widget 没发起的后台/打开扫描）都显示行内进度条（确定值用 `p.fraction`，无 measurable 总数则不确定条）；`_syncNow` 在 `syncInProgress.value` 已为真时直接 no-op（条已可见）。
+- **[x] ② 已加自动化测试** — `hibiki/test/sync/sync_progress_test.dart`「source guard: manual sync threads progress end-to-end」扩展：断言 `sync_auto_trigger.dart` 存在全局 `ValueNotifier<SyncProgress?>`、两扫描都 `syncProgress.value = p`、手动仍 `onProgress?.call(p)`、收尾 `syncProgress.value = null`；`sync_settings_schema.dart` 行监听 `valueListenable: syncInProgress` 与 `valueListenable: syncProgress`。`SyncProgress.fraction` 单元 5 例不变。
+- **备注**：状态/UI 类。`flutter analyze` 0 + 该测试 6 绿；**真机复测待用户**：让后台/打开自动同步在跑时进设置点「立即同步」，应看到进度条（阶段名 + k/N + 大文件百分比）而非只一条吐司。
+
 ## BUG-100 · 阿拉伯语（及一切空格分词语言）查词把单词从中间砍出无关词头：搜 "أمنيات العيد" 出来 "أم"(母亲)
 - **报告**：2026-06-07（用户：「阿拉伯语查词有问题，أمنيات العيد，出来的是 …」+ 截图：查 "أمنيات العيد"(开斋节的祝愿) 结果只出词头 "أم"=母親）。采番注：本条初记 096，rebase 到 develop 时 096–099 已被并发提交占用（096=书内设置 master-detail、097=内链白屏、098=弹窗遮挡、099=翻页方向键），改取 100。
 - **真实性**：✅ **真 bug（沿真实代码路径定位）**。首页「查词」框 → `home_dictionary_page.dart:_search` → `app_model.dart:searchDictionary` → `HoshiDicts.lookup`（**带去屈折的扫描版**，非精确 `query`）→ native `Lookup::lookup`（`native/hoshidicts/hoshidicts_src/lookup.cpp:45-86`）。该扫描器从串首锚定、**每次砍 1 个码点**（`lookup.cpp:50` 循环 + `:84` `utf8::prior`）一路缩到 1，每个长度做精确哈希查询。这对日语（无空格、短词合法）正确，但对阿拉伯/拉丁/西里尔等**空格分词**语言会**在单词中间乱砍**：`"أمنيات"`(6 字母) 被砍到 2 字母 `"أم"` 恰好是词典词头(=母亲) → 命中 → 排序按「匹配最长」选中 → 返回完全无关的 "أم/母親"。等价于搜英文 `mother` 而词典里有 `mo` 就返回 `mo`。`text_processor` 对阿拉伯语只去 harakat/tatweel，与此 bug 无关。
