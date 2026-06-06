@@ -1317,5 +1317,8 @@
     "video_stat_subtitle_chars": "字幕字数",
     "video_stat_watch_time": "观看时长",
     "video_stat_completed": "已完成",
-    "video_stat_no_data": "暂无视频统计数据"
+    "video_stat_no_data": "暂无视频统计数据",
+    "video_subtitle_import_file": "导入字幕文件…",
+    "video_subtitle_import_unsupported": "不支持的字幕格式",
+    "video_subtitle_import_failed": "导入字幕失败"
 }
