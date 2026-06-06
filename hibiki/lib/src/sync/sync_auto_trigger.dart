@@ -41,7 +41,7 @@ final AsyncMutex _autoSyncMutex = AsyncMutex();
 /// mid-sync) re-listed the remote and rewrote the singleton's folder-id cache
 /// while a sync was mutating the same state, which interrupted the sync and made
 /// the compare load slowly or even time out on the contended connection
-/// (BUG-075). Joining the lock makes the later of the two simply wait.
+/// (BUG-083). Joining the lock makes the later of the two simply wait.
 ///
 /// Non-reentrant (see [AsyncMutex]): [body] must NOT call any sync entry point
 /// (or this helper again) that would re-acquire the lock.

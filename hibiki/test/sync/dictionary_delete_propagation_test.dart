@@ -36,7 +36,7 @@ class _RecordingBackend implements SyncBackend {
 }
 
 void main() {
-  group('deleteRemoteDictionaryAsset (BUG-079)', () {
+  group('deleteRemoteDictionaryAsset (BUG-086)', () {
     test('deletes the matching <name>.hibikidict package and reports true',
         () async {
       final _RecordingBackend backend = _RecordingBackend(

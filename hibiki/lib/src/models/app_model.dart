@@ -198,7 +198,7 @@ class AppModel with ChangeNotifier {
   final SyncConflictPrompter syncConflictPrompter = SyncConflictPrompter();
 
   /// App 级 Hibiki LAN 同步服务端宿主：生命周期归 AppModel（整个会话），
-  /// 不再绑在设置页 widget 上——否则切出「同步与备份」页就把服务端关了（BUG-078）。
+  /// 不再绑在设置页 widget 上——否则切出「同步与备份」页就把服务端关了（BUG-085）。
   /// 启动时若用户启用了 host 则自动开，仅在用户关闭开关或退出 app 时停。配对批准
   /// 弹窗经全局 [navigatorKey]，故在任意界面都能弹。
   late final HibikiSyncServerController syncServerController =
@@ -1280,7 +1280,7 @@ class AppModel with ChangeNotifier {
       if (showFloatingDict) setShowFloatingDict(false);
       // Start the LAN sync server now if hosting is enabled, so it runs app-wide
       // for the whole session instead of only while the sync settings page is on
-      // screen (BUG-078). Fire-and-forget: a bind failure self-disables + is
+      // screen (BUG-085). Fire-and-forget: a bind failure self-disables + is
       // logged and must never break app init.
       unawaited(syncServerController.startIfEnabled().then((
         HibikiServerStartOutcome outcome,
@@ -1761,7 +1761,7 @@ class AppModel with ChangeNotifier {
       dictRepo.clearDictionaryResultsCache();
       // Propagate the deletion to the remote sync staging area so the package
       // does not become an orphan that union-sync re-pulls forever (phantom
-      // dictionary + slow sync, BUG-079). Best-effort + serialized with sync;
+      // dictionary + slow sync, BUG-086). Best-effort + serialized with sync;
       // never blocks or fails the local delete.
       unawaited(_propagateDictionaryDeleteToRemote(dictionary.name));
     } catch (e, stack) {
@@ -1773,11 +1773,11 @@ class AppModel with ChangeNotifier {
   }
 
   /// Best-effort removal of a deleted dictionary's package from the remote sync
-  /// staging namespace (BUG-079). Only runs when dictionary sync is enabled and
+  /// staging namespace (BUG-086). Only runs when dictionary sync is enabled and
   /// the backend is configured/authenticated; offline / unconfigured / errors
   /// are swallowed (logged) so a local delete never depends on the network.
   /// Serialized through the sync mutex so it can't race an in-flight sync on the
-  /// singleton backend (the BUG-075 hazard).
+  /// singleton backend (the BUG-083 hazard).
   Future<void> _propagateDictionaryDeleteToRemote(String name) async {
     try {
       final SyncRepository repo = SyncRepository(database);

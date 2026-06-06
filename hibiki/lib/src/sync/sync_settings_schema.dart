@@ -220,7 +220,7 @@ SettingsDestination buildSyncBackupDestination() {
           // passive data source that connected clients pull from / push to, so
           // "sync now" / "compare" resolve to an unconfigured outbound backend
           // and used to misleadingly say "set up sync first". Hide them in
-          // server mode and explain instead (BUG-077).
+          // server mode and explain instead (BUG-084).
           SettingsCustomItem(
             id: 'sync.server_mode_note',
             icon: Icons.router_outlined,
@@ -286,7 +286,7 @@ _SyncSettingsState? _activeSyncState;
 AppModel? _activeSyncOwner;
 
 /// Whether this device is actively HOSTING a Hibiki interconnect server — the
-/// only role with no outbound "sync now" / "compare" (BUG-077). Requires BOTH
+/// only role with no outbound "sync now" / "compare" (BUG-084). Requires BOTH
 /// the persisted host flag AND the interconnect backend: a stale serverEnabled
 /// left over from a past hibikiServer session must NOT gate manual sync on a
 /// cloud backend (observed in the wild: serverEnabled=true while
@@ -1967,7 +1967,7 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
   bool _loaded = false;
 
   // The HibikiSyncServer + LAN broadcast are owned app-wide by
-  // appModel.syncServerController now, NOT by this page (BUG-078). This widget
+  // appModel.syncServerController now, NOT by this page (BUG-085). This widget
   // is a thin view that drives start/stop and reflects its running state.
   HibikiSyncServerController get _serverController =>
       widget.settingsContext.appModel.syncServerController;
@@ -1992,7 +1992,7 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
         .removeListener(_onRoleRevision);
     _portController.dispose();
     // NOTE: do NOT stop the server here. It is owned app-wide by AppModel now
-    // (BUG-078); leaving this settings page must not kill the running host.
+    // (BUG-085); leaving this settings page must not kill the running host.
     super.dispose();
   }
 
@@ -2445,7 +2445,7 @@ class _SyncSettingsState {
     serverEnabled = value;
     roleRevision.value++;
     // Re-evaluate section/item visibility predicates (the manual-sync actions
-    // are gated on serverEnabled, BUG-077) so toggling the host role re-gates
+    // are gated on serverEnabled, BUG-084) so toggling the host role re-gates
     // them live, not just on the next page open.
     _settingsContext.refresh();
   }

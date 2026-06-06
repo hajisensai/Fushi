@@ -418,7 +418,7 @@ Future<void> showSyncCompareDialog(
   // start would otherwise read a not-yet-restored auth state and wrongly report
   // "set up sync first" (mobile google_sign_in / desktop refresh) (BUG-047).
   // Do it under the sync mutex so the auth restore (which can reconnect/clear a
-  // backend's cache) never races an in-flight sync (BUG-075).
+  // backend's cache) never races an in-flight sync (BUG-083).
   final bool authed = await runExclusiveWithSync(() async {
     await backend.restoreAuth(repo);
     return backend.isAuthenticated;
@@ -502,7 +502,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
       // Fetch the remote listing under the sync mutex: this re-lists the remote
       // and rewrites the singleton backend's folder-id cache, so running it
       // concurrently with an in-flight sync corrupted the sync's view and made
-      // this load contend on the same connection (slow / timeout) (BUG-075).
+      // this load contend on the same connection (slow / timeout) (BUG-083).
       final results =
           await runExclusiveWithSync(() => Future.wait(<Future<Object>>[
                 _fetchCompareData(widget.db, widget.backend),
@@ -581,7 +581,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
     try {
       // Apply runs real network writes (downloads/uploads/deletes) on the shared
       // singleton backend, so it must be serialized against any in-flight sync —
-      // same contention that interrupted sync and timed out the load (BUG-075).
+      // same contention that interrupted sync and timed out the load (BUG-083).
       await runExclusiveWithSync(() async {
         final repo = SyncRepository(widget.db);
         final syncStats = await repo.isSyncStatsEnabled();

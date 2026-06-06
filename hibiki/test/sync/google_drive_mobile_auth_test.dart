@@ -59,7 +59,7 @@ void main() {
     final dialog =
         File('lib/src/sync/sync_compare_dialog.dart').readAsStringSync();
     // The auth-state read must be preceded by a restore so a cold-start open
-    // doesn't wrongly report "set up sync first". (BUG-075 moved this restore +
+    // doesn't wrongly report "set up sync first". (BUG-083 moved this restore +
     // read into a runExclusiveWithSync closure so it can't race an in-flight
     // sync; the restore-before-read ordering it guards is unchanged.)
     final restoreAt = dialog.indexOf('await backend.restoreAuth(repo);');

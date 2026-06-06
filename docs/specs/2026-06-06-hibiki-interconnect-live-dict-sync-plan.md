@@ -1,6 +1,6 @@
 # Plan · Hibiki 互联词典「直读对端」同步（废除 `__dictionaries__` 暂存，保持双向）
 
-状态：**待用户审 + 真机验证**（后台环境无法验证 LAN/配对/多播）。关联：BUG-079（A 删除传播，已落地）、本文件 = B。
+状态：**待用户审 + 真机验证**（后台环境无法验证 LAN/配对/多播）。关联：BUG-086（A 删除传播，已落地）、本文件 = B。
 
 ## 1. 背景与动机
 
@@ -8,7 +8,7 @@
 - 客户端 `exportDictionaryPackage` → `<名>.hibikidict` → `putAsset` 到后端 `__dictionaries__/`；反向 `getAsset` 拉取导入（`sync_orchestrator.dart:278-361`）。
 - 对 Hibiki 互联，host 是被动 WebDAV，`__dictionaries__/` 是它磁盘上的真实暂存目录，**和 host 实时词典资源目录 `dictionaryResourceDirectory` 是两个不同目录**。
 
-后果（BUG-079）：union 永不删 + 暂存目录 → 任一设备删过的词典包永久留存 → 每次同步重拉大孤儿（幽灵 + 慢）。A 已用「删除传播」让暂存镜像实时词典缓解。
+后果（BUG-086）：union 永不删 + 暂存目录 → 任一设备删过的词典包永久留存 → 每次同步重拉大孤儿（幽灵 + 慢）。A 已用「删除传播」让暂存镜像实时词典缓解。
 
 **B 的目标**：对 **Hibiki 互联（且仅互联）**，让词典同步**直接对端实时词典**收发，**彻底不经 `__dictionaries__` 暂存** → 结构上就不可能产生暂存孤儿；同时**保持双向**。云后端（GoogleDrive/WebDAV/Dropbox/OneDrive/FTP/SFTP）无「在线对端」，**继续走暂存 + A 的删除传播，不变**。
 
@@ -28,7 +28,7 @@
 - `GET  /api/dictionaries/<name>` → 流式返回 host 现 export 的 `<name>` 词典包（host 用与客户端相同的 `exportDictionaryPackage` 即时打包其实时词典；流式不入内存）。
 - `PUT  /api/dictionaries/<name>` → 接收词典包，host **主动导入**（`importDictionaryPackage` 进 host 自己的 DB + 资源目录）；幂等：已存在同名则按 `contentHash` 决定跳过/覆盖。
 - `DELETE /api/dictionaries/<name>` → host 删除其实时词典（DB + 资源目录），供 A 的删除传播在互联下生效。
-- host 需要能访问词典导入/导出/删除逻辑：当前 `HibikiSyncServer` 不持有 `AppModel`。→ 经 `HibikiSyncServerController`（BUG-078 已让 AppModel 持有它）注入一个 `DictionaryHostService`（封装 export/import/delete + list，复用 `SyncAssetPackageService` 与 `AppModel.deleteDictionary`/import 路径）。**注意并发**：host 导入/删除自己的词典库需与 host 自身可能在跑的同步/查词串行（沿用 `runExclusiveWithSync` 或词典库级锁）。
+- host 需要能访问词典导入/导出/删除逻辑：当前 `HibikiSyncServer` 不持有 `AppModel`。→ 经 `HibikiSyncServerController`（BUG-085 已让 AppModel 持有它）注入一个 `DictionaryHostService`（封装 export/import/delete + list，复用 `SyncAssetPackageService` 与 `AppModel.deleteDictionary`/import 路径）。**注意并发**：host 导入/删除自己的词典库需与 host 自身可能在跑的同步/查词串行（沿用 `runExclusiveWithSync` 或词典库级锁）。
 
 ### 3.2 Client 端：互联专属 live 词典同步
 
@@ -42,7 +42,7 @@ else
 `_syncDictionariesLive`：
 1. `GET /api/dictionaries` 拿对端实时清单；本地 `getAllDictionaryMetadata` 拿本端清单。
 2. 计算 `toPull = 对端有∧本端无`、`toPush = 本端有∧对端无`（union，删除交给 A）。
-3. `toPull`：逐个（**有界并发 batch，顺带修 BUG-079 的 E「慢」剩余部分**）`GET /api/dictionaries/<name>` → `importDictionaryPackage` 本地。
+3. `toPull`：逐个（**有界并发 batch，顺带修 BUG-086 的 E「慢」剩余部分**）`GET /api/dictionaries/<name>` → `importDictionaryPackage` 本地。
 4. `toPush`：逐个 `PUT /api/dictionaries/<name>`（host 主动导入）。
 5. 进度 emit 用干净名（已对齐）。
 6. 全程**不创建、不读写 `__dictionaries__`** → 无暂存、无孤儿。

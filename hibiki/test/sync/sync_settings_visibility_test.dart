@@ -90,7 +90,7 @@ void main() {
           <String>['sync.backup_export', 'sync.backup_import']);
     });
 
-    test('manual-sync actions are gated on server mode (BUG-077)', () {
+    test('manual-sync actions are gated on server mode (BUG-084)', () {
       // A pure Hibiki host has no outbound sync, so "sync now" / "compare" must
       // be hidden in server mode and an explanatory note shown instead — every
       // one of the three carries a visibility predicate (none is unconditional).
@@ -105,7 +105,7 @@ void main() {
           reason: 'the server-mode note shows only while hosting');
     });
 
-    test('the action gates key off the hosting-interconnect role (BUG-077)',
+    test('the action gates key off the hosting-interconnect role (BUG-084)',
         () {
       // Source guard: the gates must branch on _isHostingInterconnect, which
       // requires BOTH serverEnabled AND the hibikiServer backend — so a stale

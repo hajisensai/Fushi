@@ -35,7 +35,7 @@ class HibikiServerStartError extends HibikiServerStartOutcome {
 ///
 /// Previously the [HibikiSyncServer] and [LanBroadcastService] were owned by the
 /// sync-settings page widget, whose `dispose()` stopped them — so simply
-/// navigating away from "Sync & backup" killed the host (BUG-078). This
+/// navigating away from "Sync & backup" killed the host (BUG-085). This
 /// controller is owned by [AppModel] for the whole session (mirroring
 /// [SyncConflictPrompter]); it starts on launch when hosting is enabled and only
 /// stops when the user disables it or the app exits. The settings page becomes a

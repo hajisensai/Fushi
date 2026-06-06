@@ -40,7 +40,7 @@ bool isReservedSyncFolderName(String name) =>
 /// Delete a dictionary's package from the remote `__dictionaries__` staging
 /// namespace, so deleting a dictionary locally also removes its remote copy
 /// instead of leaving an orphan that union-sync re-pulls forever (phantom
-/// dictionary + slow sync, BUG-079). Returns whether a remote package was
+/// dictionary + slow sync, BUG-086). Returns whether a remote package was
 /// actually deleted (false when none was present). The caller serializes this
 /// against in-flight syncs (it mutates the singleton backend's folder cache).
 Future<bool> deleteRemoteDictionaryAsset(

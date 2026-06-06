@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-080: large content uploads (EPUB / dictionary / audiobook / local-audio
+/// BUG-087: large content uploads (EPUB / dictionary / audiobook / local-audio
 /// packages — multi-GB in the wild) must use resumable CHUNKED upload, not a
 /// single multipart POST that a flaky link drops (timeout) and the _call retry
 /// restarts from byte 0, never completing. A real Drive upload can't run in a

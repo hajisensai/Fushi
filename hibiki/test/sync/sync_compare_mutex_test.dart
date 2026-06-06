@@ -64,7 +64,7 @@ void main() {
 
   testWidgets(
       'compare load waits for an in-flight sync to release the shared mutex '
-      '(BUG-075)', (WidgetTester tester) async {
+      '(BUG-083)', (WidgetTester tester) async {
     final HibikiDatabase db = _memDb();
     addTearDown(db.close);
     final _RecordingBackend backend = _RecordingBackend();

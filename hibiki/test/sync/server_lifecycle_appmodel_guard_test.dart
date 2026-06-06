@@ -8,7 +8,7 @@ import 'package:hibiki_core/hibiki_core.dart';
 
 HibikiDatabase _memDb() => HibikiDatabase.forTesting(NativeDatabase.memory());
 
-/// BUG-078: the Hibiki LAN sync server must be owned app-wide by AppModel, not
+/// BUG-085: the Hibiki LAN sync server must be owned app-wide by AppModel, not
 /// by the sync-settings page widget — leaving the page must not kill the host.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -40,7 +40,7 @@ void main() {
     });
   });
 
-  group('source guards: server lifecycle owned by AppModel (BUG-078)', () {
+  group('source guards: server lifecycle owned by AppModel (BUG-085)', () {
     test('the sync-settings page no longer owns or stops the server', () {
       final String schema =
           File('lib/src/sync/sync_settings_schema.dart').readAsStringSync();

@@ -18,7 +18,7 @@ import 'package:path/path.dart' as p;
 /// [outputPath]. Hibiki stores imported books EXTRACTED (the extract dir is a
 /// valid EPUB layout: `mimetype` + `META-INF/` + OPF + content) and keeps no
 /// standalone `.epub` on disk, so content sync must rebuild one to upload
-/// (BUG-081). Entries are rooted at the zip top (`includeDirName: false`) so
+/// (BUG-088). Entries are rooted at the zip top (`includeDirName: false`) so
 /// `mimetype` / `META-INF` sit at the archive root and the result re-imports
 /// cleanly via [EpubImporter] on the other device.
 ///
@@ -629,7 +629,7 @@ class SyncManager {
     // Export EPUB. There is NO standalone .epub on disk — books are stored
     // extracted, and book.epubPath is only the original filename (it never
     // resolves to a real file, so the old `File(book.epubPath).existsSync()`
-    // guard silently skipped every upload — BUG-081). Re-package the extracted
+    // guard silently skipped every upload — BUG-088). Re-package the extracted
     // directory into a temp .epub and upload that.
     if (book.extractDir.isNotEmpty && Directory(book.extractDir).existsSync()) {
       final fileName = '${sanitizeTtuFilename(book.title)}.epub';
@@ -682,7 +682,7 @@ class SyncManager {
     // extracted directory; there is no standalone .epub to (re)download. The
     // old code keyed off `File(book.epubPath).existsSync()` — always false for
     // the bare filename — and downloaded the epub to that bare path, polluting
-    // the process CWD and never re-extracting (BUG-081). Remote-only books are
+    // the process CWD and never re-extracting (BUG-088). Remote-only books are
     // imported by importRemoteBookFolder, so here we only act when the local
     // content is genuinely gone; recovery/re-extract is out of scope, so skip
     // rather than write a stray file.

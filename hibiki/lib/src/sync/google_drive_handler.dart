@@ -506,7 +506,7 @@ class GoogleDriveHandler {
       // completes; a multi-GB upload can also outlive the ~1h access-token
       // lifetime mid-request → 401. Resumable chunked upload fixes all three:
       // each chunk is retried with backoff and the token is refreshed between
-      // chunks, so progress is never lost to a single hiccup (BUG-080).
+      // chunks, so progress is never lost to a single hiccup (BUG-087).
       final drive.ResumableUploadOptions uploadOptions =
           drive.ResumableUploadOptions(
         numberOfAttempts: 5,

@@ -4,7 +4,7 @@ import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/sync/sync_manager.dart';
 
-/// BUG-081: books are stored extracted (no standalone .epub on disk), so
+/// BUG-088: books are stored extracted (no standalone .epub on disk), so
 /// content sync must re-package the extract dir into a valid .epub. Verify the
 /// repackage produces an archive whose EPUB structure sits at the zip root
 /// (so it re-imports cleanly on the other device), and that it no-ops when
