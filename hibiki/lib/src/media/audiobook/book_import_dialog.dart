@@ -9,6 +9,7 @@ import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:path/path.dart' as p;
 import 'package:hibiki/src/media/audiobook/sasayaki_rematch.dart';
 import 'package:hibiki/src/media/audiobook/text_to_epub.dart';
+import 'package:hibiki/src/media/import/sidecar_finder.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/epub/epub_book.dart';
 import 'package:hibiki/src/epub/book_title_conflict.dart';
@@ -322,9 +323,43 @@ class _BookImportDialogState extends State<BookImportDialog> {
                 '');
           }
         });
+        await _autoAttachSidecars(path);
       }
     } finally {
       _pickerActive = false;
+    }
+  }
+
+  /// 选中主书文件后，扫同目录同名字幕/音频自动填进对应行（仅填空、不覆盖
+  /// 用户手选）。音频必须配字幕，故仅在字幕已就位时才填音频。桌面端有效；
+  /// 移动端是缓存副本目录、扫不到兄弟文件，[findSidecars] 静默返回空。
+  Future<void> _autoAttachSidecars(String mainPath) async {
+    final SidecarMatch m = await findSidecars(mainPath);
+    if (!mounted || m.isEmpty) return;
+    bool attachedSub = false;
+    bool attachedAudio = false;
+    setState(() {
+      if (_subtitlePath == null && m.subtitlePath != null) {
+        _subtitlePath = m.subtitlePath;
+        _subtitleName = p.basename(m.subtitlePath!);
+        attachedSub = true;
+      }
+      final bool hasSub = _subtitlePath != null;
+      if (_audioPaths.isEmpty && hasSub && m.audioPaths.isNotEmpty) {
+        _audioPaths = m.audioPaths;
+        attachedAudio = true;
+      }
+    });
+    if (attachedAudio && _coverPath == null) {
+      await _tryExtractAudioCover();
+    }
+    final List<String> parts = <String>[
+      if (attachedSub)
+        t.import_sidecar_subtitle(name: p.basename(_subtitlePath!)),
+      if (attachedAudio) t.import_sidecar_audio(count: _audioPaths.length),
+    ];
+    if (parts.isNotEmpty && mounted) {
+      HibikiToast.show(msg: parts.join(' · '));
     }
   }
 

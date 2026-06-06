@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:drift/drift.dart' show Value;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:hibiki/src/media/import/sidecar_finder.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
@@ -214,6 +215,19 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
     final String? path = result?.files.single.path;
     if (path == null) return;
     setState(() => _videoPath = path);
+    await _autoAttachSubtitle(path);
+  }
+
+  /// 选中视频后扫同目录同名字幕自动填进字幕行（仅填空、不覆盖手选）。视频用
+  /// 内嵌音轨，不接外挂音频，故 `wantAudio: false`。桌面端有效；移动端缓存副本
+  /// 目录扫不到兄弟文件，[findSidecars] 静默返回空。
+  Future<void> _autoAttachSubtitle(String videoPath) async {
+    final SidecarMatch m = await findSidecars(videoPath, wantAudio: false);
+    if (!mounted || m.subtitlePath == null || _subtitlePath != null) return;
+    setState(() => _subtitlePath = m.subtitlePath);
+    HibikiToast.show(
+      msg: t.import_sidecar_subtitle(name: p.basename(m.subtitlePath!)),
+    );
   }
 
   Future<void> _pickSubtitle() async {

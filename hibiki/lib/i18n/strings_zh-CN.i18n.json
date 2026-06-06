@@ -1309,5 +1309,7 @@
     "drag_drop_need_card_target": "请把字幕或音频拖到某本书或某个视频上",
     "shortcut_action_audiobook_seek_clicked": "跳转音频到点击的句子",
     "popup_max_height": "查词窗口最大高度",
-    "wheel_page_turn_interval": "滚轮翻页间隔"
+    "wheel_page_turn_interval": "滚轮翻页间隔",
+    "import_sidecar_subtitle": "已自动挂载字幕：$name",
+    "import_sidecar_audio": "已自动挂载 $count 个音频"
 }
