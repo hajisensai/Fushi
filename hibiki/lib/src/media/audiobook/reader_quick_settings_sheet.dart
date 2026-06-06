@@ -136,6 +136,10 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
 
   String? _subPage;
 
+  /// 最近一次 LayoutBuilder 是否判定为宽窗。供 PopScope.canPop 读取：宽窗
+  /// master-detail 下选中态非 null 也允许直接关闭（不会卡在「返回上一级」）。
+  bool _isWide = false;
+
   late List<Bookmark> _bookmarks = List<Bookmark>.of(widget.bookmarks);
   late List<FavoriteSentence> _favorites =
       List<FavoriteSentence>.of(widget.favoriteSentences);
@@ -243,7 +247,9 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
 
     return PopScope(
-      canPop: _subPage == null,
+      // 宽窗 master-detail：选中态始终有值（默认 appearance），返回键应直接关
+      // 弹窗而非退回「未选中」；窄窗 push 时保留原「先回主页」语义。
+      canPop: _subPage == null || _isWide,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) {
           setState(() => _subPage = null);
@@ -260,15 +266,105 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
               tokens.spacing.gap +
               MediaQuery.of(context).viewInsets.bottom,
         ),
-        body: AnimatedSize(
-          duration: const Duration(milliseconds: 200),
-          alignment: Alignment.topCenter,
-          child: _subPage != null
-              ? _buildSubPage(context, theme)
-              : _buildMainPage(context, theme),
+        body: LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) {
+            _isWide = constraints.maxWidth >= 640;
+            if (_isWide) {
+              final String selectedId = _subPage ?? 'appearance';
+              final Color dividerColor = isCupertinoPlatform(context)
+                  ? CupertinoColors.separator.resolveFrom(context)
+                  : HibikiDesignTokens.of(context).surfaces.outline;
+              return MaterialSupportingPaneLayout(
+                minSplitWidth: 640,
+                supportingSide: SupportingPaneSide.start,
+                dividerColor: dividerColor,
+                supporting: SingleChildScrollView(
+                  child: _buildWidePane(context, theme, selectedId),
+                ),
+                // KeyedSubtree：按选中 id 编码，切换时整棵右 pane 子树作废重建，
+                // 避免 Flutter 复用上一详情同位置 Element 触发 Switch 圆点 /
+                // Segmented 滑动等复用副作用（同 settings_home_page）。
+                primary: KeyedSubtree(
+                  key: ValueKey<String>(selectedId),
+                  child:
+                      SingleChildScrollView(child: _subPageContent(selectedId)),
+                ),
+              );
+            }
+            // 窄窗（含全部手机 bottom sheet）：维持现有 push 行为，外观仍内联。
+            return AnimatedSize(
+              duration: const Duration(milliseconds: 200),
+              alignment: Alignment.topCenter,
+              child: _subPage != null
+                  ? _buildSubPage(context, theme)
+                  : _buildMainPage(context, theme),
+            );
+          },
         ),
       ),
     );
+  }
+
+  /// 宽窗 master-detail 左 pane：进度 + 分类列表（含外观，单选高亮）+ 动作行。
+  Widget _buildWidePane(
+    BuildContext context,
+    ThemeData theme,
+    String selectedId,
+  ) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final double sectionGap = tokens.spacing.gap + tokens.spacing.gap / 2;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildProgressSection(theme),
+        SizedBox(height: sectionGap),
+        for (final cat in _wideCategories())
+          HibikiListItem(
+            selected: cat.id == selectedId,
+            selectedShape: HibikiListItemSelectedShape.pill,
+            leading: Icon(cat.icon),
+            title: Text(cat.label),
+            onTap: () => setState(() => _subPage = cat.id),
+          ),
+        SizedBox(height: sectionGap),
+        _buildActionRow(context),
+      ],
+    );
+  }
+
+  /// 宽窗 master-detail 左 pane 的分类项（id 与 [_subPageContent] 的 case 对齐）。
+  /// audiobook 仅在有 controller 时出现。
+  List<({String id, IconData icon, String label})> _wideCategories() {
+    return <({String id, IconData icon, String label})>[
+      (
+        id: 'appearance',
+        icon: Icons.palette_outlined,
+        label: t.settings_destination_appearance,
+      ),
+      (id: 'layout', icon: Icons.auto_stories_outlined, label: t.section_layout),
+      (
+        id: 'behavior',
+        icon: Icons.touch_app_outlined,
+        label: t.settings_destination_reading_controls,
+      ),
+      (
+        id: 'lookup',
+        icon: Icons.manage_search_outlined,
+        label: t.settings_destination_lookup,
+      ),
+      (
+        id: 'location',
+        icon: Icons.menu_book_outlined,
+        label: t.section_navigation,
+      ),
+      if (widget.controller != null)
+        (
+          id: 'audiobook',
+          icon: Icons.headphones_outlined,
+          label: t.section_audiobook,
+        ),
+    ];
   }
 
   Widget _buildMainPage(BuildContext context, ThemeData theme) {
@@ -321,50 +417,67 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
   Widget _buildSubPage(BuildContext context, ThemeData theme) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final String page = _subPage!;
-    String title;
-    Widget content;
-    switch (page) {
-      case 'layout':
-        title = t.section_layout;
-        // Lyrics mode keeps its bespoke font/margin controls — those are not
-        // schema items (they write lyrics-only `setLyrics*` setters).
-        content = widget.lyricsMode
-            ? _buildLyricsDisplaySection()
-            : _buildReaderGroupContent(ReaderGroup.layout, t.section_layout);
-      case 'behavior':
-        title = t.settings_destination_reading_controls;
-        content = _buildReaderGroupContent(
-          ReaderGroup.behavior,
-          t.settings_destination_reading_controls,
-        );
-      case 'lookup':
-        title = t.settings_destination_lookup;
-        content = _buildReaderGroupContent(
-          ReaderGroup.lookup,
-          t.settings_destination_lookup,
-        );
-      case 'location':
-        title = t.section_navigation;
-        content = _buildLocationSection(theme);
-      case 'audiobook':
-        title = t.section_audiobook;
-        content = _buildAudiobookSettingsSection(theme);
-      default:
-        title = '';
-        content = const SizedBox.shrink();
-    }
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _InBookSettingsHeader(
-          title: title,
+          title: _subPageTitle(page),
           onBack: () => setState(() => _subPage = null),
         ),
         SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
-        content,
+        _subPageContent(page),
       ],
     );
+  }
+
+  /// 某分类的详情内容（不含返回页头）。窄窗 push 子页与宽窗右 pane 共用。
+  Widget _subPageContent(String page) {
+    switch (page) {
+      case 'appearance':
+        return _buildAppearanceDetail();
+      case 'layout':
+        // Lyrics mode keeps its bespoke font/margin controls — those are not
+        // schema items (they write lyrics-only `setLyrics*` setters).
+        return widget.lyricsMode
+            ? _buildLyricsDisplaySection()
+            : _buildReaderGroupContent(ReaderGroup.layout, t.section_layout);
+      case 'behavior':
+        return _buildReaderGroupContent(
+          ReaderGroup.behavior,
+          t.settings_destination_reading_controls,
+        );
+      case 'lookup':
+        return _buildReaderGroupContent(
+          ReaderGroup.lookup,
+          t.settings_destination_lookup,
+        );
+      case 'location':
+        return _buildLocationSection(Theme.of(context));
+      case 'audiobook':
+        return _buildAudiobookSettingsSection(Theme.of(context));
+      default:
+        return const SizedBox.shrink();
+    }
+  }
+
+  String _subPageTitle(String page) {
+    switch (page) {
+      case 'appearance':
+        return t.settings_destination_appearance;
+      case 'layout':
+        return t.section_layout;
+      case 'behavior':
+        return t.settings_destination_reading_controls;
+      case 'lookup':
+        return t.settings_destination_lookup;
+      case 'location':
+        return t.section_navigation;
+      case 'audiobook':
+        return t.section_audiobook;
+      default:
+        return '';
+    }
   }
 
   /// 把某个 [ReaderGroup] 投影成 schema 渲染内容。写路径走 schema item 的
@@ -448,6 +561,23 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
     // 边距（那会让本卡比下方导航卡窄、还自带滚动），从而与下方导航卡等宽。
     // 主题行用自己的 `_themeSettingsContext()` 保留实时换肤 + 词典/歌词联动；
     // appearance 行用普通 `_settingsContext()`。
+    final List<Widget> cardChildren = _appearanceCardChildren();
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SettingsSectionHeader(
+          t.display_settings,
+          padding: EdgeInsets.only(bottom: tokens.spacing.gap),
+        ),
+        AdaptiveSettingsSection(children: cardChildren),
+      ],
+    );
+  }
+
+  /// 外观卡的行集合（主题 + appearance schema 行 + 可选「编辑书籍CSS」行）。
+  /// 内联（窄窗主页）与右 pane 详情（宽窗 master-detail）共用，避免重复。
+  List<Widget> _appearanceCardChildren() {
     final SettingsContext appearanceCtx = _settingsContext();
     final SettingsDestination base = buildReaderGroupDestination(
       appearanceCtx,
@@ -457,7 +587,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
     final SettingsRenderer renderer = isCupertinoPlatform(context)
         ? const CupertinoSettingsRenderer()
         : const MaterialSettingsRenderer();
-    final List<Widget> cardChildren = <Widget>[
+    return <Widget>[
       buildThemeSelector(_themeSettingsContext()),
       for (final SettingsSection section in base.sections)
         ...renderer.buildSectionRows(
@@ -480,17 +610,12 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
           },
         ),
     ];
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SettingsSectionHeader(
-          t.display_settings,
-          padding: EdgeInsets.only(bottom: tokens.spacing.gap),
-        ),
-        AdaptiveSettingsSection(children: cardChildren),
-      ],
-    );
+  }
+
+  /// 宽窗 master-detail 右 pane 的外观详情：仅卡片，无 `display_settings`
+  /// 内联标题（标题已由左 pane 选中项体现）。
+  Widget _buildAppearanceDetail() {
+    return AdaptiveSettingsSection(children: _appearanceCardChildren());
   }
 
   Widget _buildLocationSection(ThemeData theme) {
