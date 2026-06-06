@@ -55,6 +55,14 @@ Rect calcPopupPosition({
   return Rect.fromLTWH(left, top, width, height);
 }
 
+/// Shared empty result used to mount the popup WebView during the search phase
+/// (BUG-080), so popup.html + JS + CSS cold-load in parallel with the FFI
+/// lookup instead of serially after it. A single instance keeps the WebView's
+/// `didUpdateWidget` from re-pushing between search-state rebuilds (it only
+/// re-pushes when the result identity changes to the real result).
+final DictionarySearchResult kPopupSearchingPlaceholderResult =
+    DictionarySearchResult(searchTerm: '');
+
 class DictionaryPopupLayer extends StatelessWidget {
   const DictionaryPopupLayer({
     required this.result,
@@ -120,12 +128,23 @@ class DictionaryPopupLayer extends StatelessWidget {
   Widget _buildBody(BuildContext context) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
 
-    if (result != null && result!.entries.isNotEmpty) {
+    final bool hasEntries = result != null && result!.entries.isNotEmpty;
+
+    // BUG-080: mount the WebView as soon as the lookup starts (while still
+    // searching, before results arrive) so popup.html + JS + CSS cold-load in
+    // PARALLEL with the synchronous FFI lookup instead of serially after it.
+    // The WebView is transparent (settings) and popup.css body background
+    // defaults to `transparent` until results push theme vars, so the empty
+    // preload simply shows the themed popup surface behind the spinner — no
+    // flash. Real results are pushed via the WebView's didUpdateWidget when
+    // they arrive. A finished search with no results falls through to the
+    // placeholder below (no WebView kept).
+    if (hasEntries || isSearching) {
       return Stack(
         children: [
           DictionaryPopupWebView(
             key: webViewKey,
-            result: result!,
+            result: result ?? kPopupSearchingPlaceholderResult,
             onTapOutside: onTapOutside,
             onTextSelected: onTextSelected,
             onLinkClick: onLinkClick,
@@ -143,16 +162,6 @@ class DictionaryPopupLayer extends StatelessWidget {
               ),
             ),
         ],
-      );
-    }
-
-    if (isSearching) {
-      return Center(
-        child: SizedBox(
-          width: 24,
-          height: 24,
-          child: adaptiveIndicator(context: context, strokeWidth: 2.5),
-        ),
       );
     }
 
