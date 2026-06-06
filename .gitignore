@@ -105,3 +105,4 @@ CLAUDE.local.md
 # kept out of git to silence secret scanners and keep a rotated value private.
 # Copy hibiki/lib/src/sync/google_oauth_secret.example.dart to fill it in.
 hibiki/lib/src/sync/google_oauth_secret.dart
+server/cf-worker/node_modules/

@@ -1,0 +1,13 @@
+name = "hibiki-log-collector"
+main = "src/worker.js"
+compatibility_date = "2024-11-01"
+
+# 部署前：wrangler kv namespace create LOGS，把返回的 id 填到下面
+[[kv_namespaces]]
+binding = "LOGS"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
+
+# secrets 不写这里，用 wrangler secret put 设：
+#   wrangler secret put UPLOAD_TOKEN
+#   wrangler secret put BASIC_USER
+#   wrangler secret put BASIC_PASS
