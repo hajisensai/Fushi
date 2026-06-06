@@ -335,8 +335,14 @@ class SyncOrchestrator {
 
     // Pull remote-only dictionaries.
     for (final AssetEntry e in toPull) {
+      // Show the clean dictionary name in progress, matching the push side —
+      // the asset name still carries the `.hibikidict` suffix, which otherwise
+      // surfaces as a "weird" entry in the progress list.
+      final String displayName = e.name.endsWith(_dictionaryAssetSuffix)
+          ? e.name.substring(0, e.name.length - _dictionaryAssetSuffix.length)
+          : e.name;
       _emit(SyncPhase.dictionaries,
-          itemIndex: index, itemTotal: total, title: e.name);
+          itemIndex: index, itemTotal: total, title: displayName);
       File? tmp;
       try {
         tmp = _tmpFile(_dictionaryAssetSuffix);
@@ -344,7 +350,7 @@ class SyncOrchestrator {
             onProgress: (double f) => _emit(SyncPhase.dictionaries,
                 itemIndex: index,
                 itemTotal: total,
-                title: e.name,
+                title: displayName,
                 fileFraction: f));
         await _packages.importDictionaryPackage(
           packageFile: tmp,
