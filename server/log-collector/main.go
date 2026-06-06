@@ -4,6 +4,8 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"html/template"
 	"net/http"
 	"os"
@@ -97,7 +99,8 @@ func (c Config) handleUpload(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, c.MaxBodyBytes)
 	var p uploadPayload
 	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
-		if strings.Contains(err.Error(), "http: request body too large") {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
 			http.Error(w, "too large", http.StatusRequestEntityTooLarge)
 			return
 		}
@@ -222,6 +225,25 @@ func newServer(c Config) http.Handler {
 	return mux
 }
 
+// validateConfig 返回缺失的关键密钥名列表（空 = 配置 OK）。
+// 这些密钥为空会让鉴权/防绕过门 fail-open，必须在启动时拒绝。
+func validateConfig(c Config) []string {
+	var missing []string
+	if c.EOSecret == "" {
+		missing = append(missing, "EO_SECRET")
+	}
+	if c.UploadToken == "" {
+		missing = append(missing, "UPLOAD_TOKEN")
+	}
+	if c.BasicUser == "" {
+		missing = append(missing, "BASIC_USER")
+	}
+	if c.BasicPass == "" {
+		missing = append(missing, "BASIC_PASS")
+	}
+	return missing
+}
+
 func main() {
 	cfg := Config{
 		UploadToken:  os.Getenv("UPLOAD_TOKEN"),
@@ -232,6 +254,11 @@ func main() {
 		MaxBodyBytes: envInt64("MAX_BODY_BYTES", 1<<20),
 		Retain:       int(envInt64("RETAIN", 2000)),
 		ListenAddr:   envOr("LISTEN_ADDR", "127.0.0.1:8787"),
+	}
+	if missing := validateConfig(cfg); len(missing) > 0 {
+		// fail-closed：缺密钥绝不带病启动（空值会让鉴权门洞开）。
+		fmt.Fprintf(os.Stderr, "refusing to start: missing required secrets: %s\n", strings.Join(missing, ", "))
+		os.Exit(1)
 	}
 	srv := &http.Server{
 		Addr:              cfg.ListenAddr,

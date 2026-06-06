@@ -179,16 +179,70 @@ func TestViewLogServedAsPlainText_XSSInert(t *testing.T) {
 
 func TestViewLogRejectsPathTraversal(t *testing.T) {
 	h := newServer(testConfig(t))
-	for _, bad := range []string{
-		"/log/..%2f..%2fetc%2fpasswd",
-		"/log/evil.txt",
-		"/log/20260606-000000-android-ab12cd.txt.bak",
-	} {
+	cases := []struct {
+		path     string
+		wantCode int // 0 表示「只要不是 200 即可」
+	}{
+		{"/log/..%2f..%2fetc%2fpasswd", 0},                                   // ServeMux 清洗 → 3xx，从不读盘
+		{"/log/evil.txt", http.StatusNotFound},                               // 过 validLogID 被拒
+		{"/log/20260606-000000-android-ab12cd.txt.bak", http.StatusNotFound}, // .bak 被锚定正则拒
+	}
+	for _, tc := range cases {
 		w := httptest.NewRecorder()
-		h.ServeHTTP(w, basicAuthReq(http.MethodGet, bad, "admin", "secret-pass"))
+		h.ServeHTTP(w, basicAuthReq(http.MethodGet, tc.path, "admin", "secret-pass"))
 		if w.Code == http.StatusOK {
-			t.Fatalf("traversal/unknown id served: %s", bad)
+			t.Fatalf("%s: served (200), must be rejected", tc.path)
 		}
+		if tc.wantCode != 0 && w.Code != tc.wantCode {
+			t.Fatalf("%s: want %d, got %d", tc.path, tc.wantCode, w.Code)
+		}
+	}
+}
+
+func TestValidateConfigRejectsEmptySecrets(t *testing.T) {
+	full := Config{EOSecret: "a", UploadToken: "b", BasicUser: "c", BasicPass: "d"}
+	if m := validateConfig(full); len(m) != 0 {
+		t.Fatalf("full config should pass, got missing=%v", m)
+	}
+	if m := validateConfig(Config{}); len(m) != 4 {
+		t.Fatalf("empty config should report 4 missing, got %v", m)
+	}
+	// 单缺一项也要被抓
+	noToken := full
+	noToken.UploadToken = ""
+	if m := validateConfig(noToken); len(m) != 1 || m[0] != "UPLOAD_TOKEN" {
+		t.Fatalf("missing token not caught: %v", m)
+	}
+}
+
+func TestUploadRejectsNonPost(t *testing.T) {
+	h := newServer(testConfig(t))
+	r := httptest.NewRequest(http.MethodGet, "/api/logs", nil)
+	r.Header.Set("X-EO-Secret", "eo-shared")
+	r.Header.Set("X-Upload-Token", "good-token")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("want 405, got %d", w.Code)
+	}
+}
+
+func TestUploadLongPlatformFilenameBounded(t *testing.T) {
+	cfg := testConfig(t)
+	h := newServer(cfg)
+	body := `{"kind":"error","platform":"` + strings.Repeat("z", 100) + `","log":"x"}`
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, uploadReq("good-token", "eo-shared", body))
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", w.Code)
+	}
+	entries, _ := os.ReadDir(cfg.DataDir)
+	if len(entries) != 1 {
+		t.Fatalf("want 1 file, got %d", len(entries))
+	}
+	// 文件名仍匹配白名单形状（platform 段被截到 <=16）
+	if !idPattern.MatchString(entries[0].Name()) {
+		t.Fatalf("filename not whitelist-shaped: %q", entries[0].Name())
 	}
 }
 
