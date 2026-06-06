@@ -13,6 +13,14 @@
 
 ---
 
+## BUG-079 · 同步进度里出现「不存在的词典」+ 内网同步特别慢（词典暂存区孤儿被反复重拉）
+- **报告**：2026-06-06（用户：「hibiki 互联同步的时候会有不存在的词典，显示在进度里面」「内网同步速度还特别慢」「电脑和手机都没那个词典，慢就是慢」）。采番注：本轮 077/078 已占，取 079。
+- **真实性**：✅ **真 bug（幽灵与慢同一根因，沿真实代码路径 + 研究 agent 实证）**。词典同步走「打包推送 + 拉取」经一个中转暂存目录 `__dictionaries__`（**不是**直读对端实时数据）：客户端把本地词典 `exportDictionaryPackage` 成 `<名>.hibikidict` `putAsset` 到后端 `__dictionaries__/`，反向 `getAsset` 拉别人推上去的包（`sync_orchestrator.dart:278-361`；互联时 host 是被动 WebDAV，该目录是 host 磁盘上的真实暂存目录，与 host 实时词典资源目录 `dictionaryResourceDirectory` 不同）。**根因 = union 同步永不删远端**（`sync_orchestrator.dart:89-91`「Deletes are never propagated」）+ **本地删词典 `AppModel.deleteDictionary` 从不碰远端**（`app_model.dart`，原实现只删本地 DB/资源/缓存）。于是任一设备删过的词典，其 `<名>.hibikidict` 永久躺在暂存区 → 每次同步都被判「远端独有」→ 重新下载（包大就慢）+ 尝试导入；若该孤儿包旧/损坏导致导入失败，则**永远进不了本地、每次同步都重下一遍** → 「两台都没这词典却每次都来、还慢」。**幽灵(进度里冒出删过的词典) 与 慢(每次重下大孤儿) 是同一根因。**（远端删除原语 `deleteAsset` 早已存在，但只在手动对比对话框 `sync_compare_dialog.dart:_deleteRemote` 用过，自动同步从不触发。）
+- **[x] ① 已修复（A：删除传播，本轮范围）** — 本提交（自含修复+测试+本条目）。**根因修（让删除传播到远端暂存，使暂存镜像实时词典、不再生孤儿）**：① 新增纯助手 `deleteRemoteDictionaryAsset(backend, name)`（`sync_orchestrator.dart`）：`ensureNamespace(__dictionaries__)` → `findAsset('<名>.hibikidict')` → `deleteAsset`，返回是否删到。② `AppModel.deleteDictionary` 删本地成功后 `unawaited(_propagateDictionaryDeleteToRemote(name))`：仅在 `isSyncDictionaryEnabled` 且后端已配置/认证时执行，**经 `runExclusiveWithSync` 串行**（避免重蹈 [[BUG-075]] 的单例 backend 并发竞态），best-effort（离线/未配置/异常全吞并记日志，绝不阻断或失败本地删除）。全 7 后端通用、保持双向 union，不引特例。**顺带**：词典 pull 进度显示去掉 `.hibikidict` 后缀与 push 对齐（已于前一提交 `9ef40db88` 落地）。
+- **[x] ② 已加自动化测试** — `hibiki/test/sync/dictionary_delete_propagation_test.dart`：记录型 fake backend 验 `deleteRemoteDictionaryAsset` ① 命中时按 `<名>.hibikidict` 在 `__dictionaries__` 查并删对应 id 返回 true、② 远端无包时返回 false 且不调 deleteAsset。`test/sync/` + `test/models/` 全量 539 绿，analyze 0。
+- **备注**：sync 类。代码正确 + 无回归；**真机复测待用户**：删词典后远端暂存包同被删、之后同步不再出现该词典、不再变慢。**当前已存在的旧孤儿**（本修复之前产生的）不会被自动清（无法与「别的设备合法拥有的远端词典」区分而误删），**请先用「对比数据(本地vs远端)」对话框手动删掉那只仅远端的孤儿一次**即可止血；此后本修复杜绝再生。**多设备弱点**：删本地即删远端，若另一台仍保留该词典会在它下次同步时重新推回（你当前两台都没有故不触发）；要把删除主动推到「仍保留的另一台」需 [[BUG-080]] 的 B 方案。
+- **B 方案（互联直读对端、废除 `__dictionaries__` 暂存、保持双向）** = 另立计划，见 docs/specs（待用户审；需 host 从被动文件服务器升级为「主动导入收到的词典」才能在无暂存下保持双向，且我无法后台真机验证）。
+
 ## BUG-078 · Hibiki 互联服务端：切出「同步与备份」界面就把服务端关掉了
 - **报告**：2026-06-06（用户：「为什么 hibiki 互联服务端切出同步与备份界面会把服务端关掉」）。采番注：本轮 077 已占，取 078。
 - **真实性**：✅ **真 bug（生命周期归属错误，沿真实代码路径定位）**。`HibikiSyncServer` 与 LAN 广播 `LanBroadcastService` 由**设置页内的 widget `_ServerModeWidgetState` 持有**（`sync_settings_schema.dart` 旧 `_server`/`_broadcast` 字段），其 `dispose()` 调 `_server?.stop()` + `_broadcast?.stop()`——所以一离开「同步与备份」页，widget 销毁就把服务端连同广播一起停了。`lan_discovery_service.dart:174` 注释本就承认「server 生命周期归设置 UI 管（a later task）」是个未完成的临时归属。根因：服务端实例的**所有者应是 app 级长生命周期对象，而非随路由进出销毁的设置页 widget**。

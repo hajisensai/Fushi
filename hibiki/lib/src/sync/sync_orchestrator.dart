@@ -37,6 +37,26 @@ const String _localAudioAssetSuffix = '.hibikiaudiolib';
 bool isReservedSyncFolderName(String name) =>
     name == kSyncDictionaryNamespace || name == kSyncLocalAudioNamespace;
 
+/// Delete a dictionary's package from the remote `__dictionaries__` staging
+/// namespace, so deleting a dictionary locally also removes its remote copy
+/// instead of leaving an orphan that union-sync re-pulls forever (phantom
+/// dictionary + slow sync, BUG-079). Returns whether a remote package was
+/// actually deleted (false when none was present). The caller serializes this
+/// against in-flight syncs (it mutates the singleton backend's folder cache).
+Future<bool> deleteRemoteDictionaryAsset(
+  SyncBackend backend,
+  String dictionaryName,
+) async {
+  final String ns = await backend.ensureNamespace(kSyncDictionaryNamespace);
+  final AssetEntry? asset = await backend.findAsset(
+    ns,
+    '$dictionaryName$_dictionaryAssetSuffix',
+  );
+  if (asset == null) return false;
+  await backend.deleteAsset(asset.id);
+  return true;
+}
+
 /// One sync item judged a genuine fork (both sides moved off the common-ancestor
 /// baseline) and therefore skipped instead of auto-resolved. Carries everything
 /// a later resolution prompt needs, including both versions so [fingerprint] can

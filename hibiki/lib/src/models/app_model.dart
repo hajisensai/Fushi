@@ -37,6 +37,7 @@ import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/sync/backup_service.dart';
 import 'package:hibiki/src/sync/hibiki_server_controller.dart';
 import 'package:hibiki/src/sync/sync_asset_package_service.dart';
+import 'package:hibiki/src/sync/sync_auto_trigger.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_conflict_prompter.dart';
 import 'package:hibiki/src/sync/sync_orchestrator.dart';
@@ -1758,11 +1759,38 @@ class AppModel with ChangeNotifier {
       dictRepo.removeDictionaryFromCache(dictionary.name);
       _rebuildDictPathsCache();
       dictRepo.clearDictionaryResultsCache();
+      // Propagate the deletion to the remote sync staging area so the package
+      // does not become an orphan that union-sync re-pulls forever (phantom
+      // dictionary + slow sync, BUG-079). Best-effort + serialized with sync;
+      // never blocks or fails the local delete.
+      unawaited(_propagateDictionaryDeleteToRemote(dictionary.name));
     } catch (e, stack) {
       ErrorLogService.instance.log('deleteDictionary', e, stack);
       HibikiToast.show(msg: t.dictionary_delete_failed);
     } finally {
       dictionarySearchAgainNotifier.notifyListeners();
+    }
+  }
+
+  /// Best-effort removal of a deleted dictionary's package from the remote sync
+  /// staging namespace (BUG-079). Only runs when dictionary sync is enabled and
+  /// the backend is configured/authenticated; offline / unconfigured / errors
+  /// are swallowed (logged) so a local delete never depends on the network.
+  /// Serialized through the sync mutex so it can't race an in-flight sync on the
+  /// singleton backend (the BUG-075 hazard).
+  Future<void> _propagateDictionaryDeleteToRemote(String name) async {
+    try {
+      final SyncRepository repo = SyncRepository(database);
+      if (!await repo.isSyncDictionaryEnabled()) return;
+      final SyncBackend backend =
+          resolveSyncBackend(await repo.getBackendType());
+      await runExclusiveWithSync(() async {
+        if (!await backend.restoreAuth(repo)) return;
+        if (!await backend.isAuthenticated) return;
+        await deleteRemoteDictionaryAsset(backend, name);
+      });
+    } catch (e, stack) {
+      ErrorLogService.instance.log('deleteDictionary.remote', e, stack);
     }
   }
 
