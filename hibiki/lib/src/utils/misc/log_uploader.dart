@@ -26,14 +26,24 @@ class LogUploadOutcome {
 }
 
 /// 把日志正文截断到 [kMaxLogUploadBytes] 字节内（保留尾部最近内容），
-/// 截断时在头部插入标记。返回 UTF-8 字节数 <= 上限的字符串。
+/// 截断时在头部插入标记。返回的字符串 UTF-8 字节数严格 <= 上限。
+///
+/// 关键：尾部切点可能落在某个多字节字符（如日文/emoji）的中间。直接
+/// `allowMalformed` 解码会把残缺续字节替换成 U+FFFD（3 字节），令结果
+/// 反而超出预算。这里改为把切点向后推进到下一个合法 UTF-8 首字节
+/// （跳过开头的续字节 0b10xxxxxx），保证只取完整字符、不产生替换符，
+/// 从而硬兑现「字节数 <= 上限」契约。
 String _capLogBytes(String log) {
   final List<int> bytes = utf8.encode(log);
   if (bytes.length <= kMaxLogUploadBytes) return log;
   const String marker = '[truncated] 日志过大，仅上传最近部分\n';
   final int budget = kMaxLogUploadBytes - utf8.encode(marker).length;
-  final List<int> tail = bytes.sublist(bytes.length - budget);
-  final String tailStr = utf8.decode(tail, allowMalformed: true);
+  int start = bytes.length - budget;
+  // 续字节高 2 位是 10；向后推进到字符边界（最多跳过 3 个续字节）。
+  while (start < bytes.length && (bytes[start] & 0xC0) == 0x80) {
+    start++;
+  }
+  final String tailStr = utf8.decode(bytes.sublist(start));
   return marker + tailStr;
 }
 

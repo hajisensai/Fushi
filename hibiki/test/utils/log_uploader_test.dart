@@ -68,6 +68,29 @@ void main() {
     expect(sentLog, contains('[truncated]'));
   });
 
+  test('多字节日志截断后字节数仍严格 <= 上限（不被 U+FFFD 膨胀顶破）', () async {
+    late http.Request seen;
+    final MockClient client = MockClient((http.Request req) async {
+      seen = req;
+      return http.Response('{"id":"x"}', 200);
+    });
+    // 全日文（每字符 3 字节），让切点必然落在多字节字符中间，
+    // 遍历所有相位都要保证截断结果不超限、且不含替换符 U+FFFD。
+    for (int pad = 0; pad < 4; pad++) {
+      final String big = ('x' * pad) + ('あ' * (1024 * 1024));
+      final LogUploadOutcome out = await run(client, log: big);
+      expect(out.kind, LogUploadStatus.success);
+      final Map<String, dynamic> body =
+          jsonDecode(seen.body) as Map<String, dynamic>;
+      final String sentLog = body['log'] as String;
+      expect(utf8.encode(sentLog).length, lessThanOrEqualTo(512 * 1024),
+          reason: 'pad=$pad 时截断结果超限');
+      expect(sentLog.contains('�'), isFalse,
+          reason: 'pad=$pad 时出现替换符，说明切点没对齐字符边界');
+      expect(sentLog, contains('[truncated]'));
+    }
+  });
+
   test('401 → unauthorized', () async {
     final MockClient client =
         MockClient((http.Request req) async => http.Response('no', 401));

@@ -84,10 +84,11 @@ Flutter App ──POST /api/logs (日志正文 + 元信息)──▶ EdgeOne 域
   - `Future<void> uploadLogToServer({required BuildContext context, required String log, required String kind})`，带完整类型签名。
   - 内部：收集 `PackageInfo`（版本）+ 平台 + 设备型号 + UTC 时间 → 组 JSON → 复用项目现有 HTTP 客户端（`http` 包）POST → 按状态码弹对应 SnackBar。
   - 大小保护：超过阈值在客户端先截断并提示。
-- **配置（gitignored，仿 `google_oauth_secret`）**：
-  - 入库模板 `hibiki/lib/src/utils/misc/log_upload_config.example.dart`，含 `kLogUploadEndpoint`、`kLogUploadToken` 占位（占位符避免触发硬编码守卫）。
-  - 真值文件 `log_upload_config.dart` 加进 `.gitignore`，不入库。
-  - **未配置（占位值）时，「上传」按钮自动隐藏**（`bool get showUploadLogAction`），保证别人 clone 能编译、不暴露端点。
+- **配置（`--dart-define` 编译期注入，已落地方案）**：
+  - 入库文件 `hibiki/lib/src/utils/misc/log_upload_config.dart`，`kLogUploadEndpoint` / `kLogUploadToken` 用 `String.fromEnvironment('HIBIKI_LOG_ENDPOINT' / 'HIBIKI_LOG_TOKEN')`，无注入时为空串。
+  - 真实值在构建时注入、不入库：`flutter build ... --dart-define=HIBIKI_LOG_ENDPOINT=https://<EO域名>/api/logs --dart-define=HIBIKI_LOG_TOKEN=<token>`。
+  - **未配置（空串）时，「上传」按钮自动隐藏**（`bool get showUploadLogAction`），保证 fresh clone 能编译、不暴露端点。
+  - 注：此处不采用 `google_oauth_secret` 的「gitignored 文件 + example 模板」范式——那种被 import 的 gitignored 文件在 fresh clone 上会因缺文件而编译失败；`--dart-define` 让配置文件可入库、空值隐藏按钮、clone 即编译，消除该编译特例。
 - **UI 接入**：在 `ErrorLogPage` / `DebugLogPage` 工具栏复制/分享按钮旁加 `HibikiIconButton`（云上传图标），**全平台显示**（区别于「另存为」仅桌面）。
 - **i18n**：用 `hibiki/tool/i18n_sync.dart --add` 增 key（上传中 / 成功(含 id) / 失败 / 超大），17 语言；`dart run slang` 重生成。
 
