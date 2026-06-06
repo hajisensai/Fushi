@@ -983,54 +983,54 @@ class _DictionaryDialogPageState extends BasePageState {
     final Color subtitleColor = scheme.onSurfaceVariant;
     // 行内容本身不含拖拽监听：长按拖拽由外层 HibikiReorderableColumn 统一接管
     // （局部坐标，缩放下零偏移），不再用 SDK 的 ReorderableDelayedDragStartListener。
-    return Padding(
-      padding: EdgeInsets.only(bottom: isLast ? 0 : tokens.spacing.rowVertical),
-      child: HibikiCard(
-        padding: EdgeInsets.zero,
-        child: HibikiListItem(
-          minHeight: 70,
-          padding: EdgeInsets.symmetric(
-            horizontal: tokens.spacing.rowHorizontal - tokens.spacing.gap / 2,
-            vertical: tokens.spacing.rowVertical,
+    // 行间距交给 HibikiReorderableColumn 的 spacing（见 _buildDictionaryList），
+    // 此处不再包 bottom padding——否则拖拽浮层会把行间空隙连同卡片一起涂成背景，
+    // 表现为「被拖行下方多出一条背景」（BUG-078 第二症状）。
+    return HibikiCard(
+      padding: EdgeInsets.zero,
+      child: HibikiListItem(
+        minHeight: 70,
+        padding: EdgeInsets.symmetric(
+          horizontal: tokens.spacing.rowHorizontal - tokens.spacing.gap / 2,
+          vertical: tokens.spacing.rowVertical,
+        ),
+        title: Text(
+          dictionary.name,
+          style: textTheme.bodyLarge?.copyWith(
+            color: titleColor,
+            fontWeight: FontWeight.w600,
           ),
-          title: Text(
-            dictionary.name,
-            style: textTheme.bodyLarge?.copyWith(
-              color: titleColor,
-              fontWeight: FontWeight.w600,
+        ),
+        subtitle: Text(
+          _subtitleForDictionary(dictionary, dictionaryFormat),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: textTheme.bodySmall?.copyWith(
+            color: subtitleColor,
+          ),
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Gamepad/keyboard reorder equivalent for the drag handle.
+            HibikiIconButton(
+              icon: Icons.keyboard_arrow_up,
+              size: 18,
+              tooltip: t.move_up,
+              enabled: index > 0,
+              onTap: onMoveUp,
             ),
-          ),
-          subtitle: Text(
-            _subtitleForDictionary(dictionary, dictionaryFormat),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: textTheme.bodySmall?.copyWith(
-              color: subtitleColor,
+            HibikiIconButton(
+              icon: Icons.keyboard_arrow_down,
+              size: 18,
+              tooltip: t.move_down,
+              enabled: !isLast,
+              onTap: onMoveDown,
             ),
-          ),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Gamepad/keyboard reorder equivalent for the drag handle.
-              HibikiIconButton(
-                icon: Icons.keyboard_arrow_up,
-                size: 18,
-                tooltip: t.move_up,
-                enabled: index > 0,
-                onTap: onMoveUp,
-              ),
-              HibikiIconButton(
-                icon: Icons.keyboard_arrow_down,
-                size: 18,
-                tooltip: t.move_down,
-                enabled: !isLast,
-                onTap: onMoveDown,
-              ),
-              _buildDictionaryVisibilityButton(dictionary, enabled),
-              SizedBox(width: tokens.spacing.gap / 2),
-              buildDictionaryTileTrailing(dictionary),
-            ],
-          ),
+            _buildDictionaryVisibilityButton(dictionary, enabled),
+            SizedBox(width: tokens.spacing.gap / 2),
+            buildDictionaryTileTrailing(dictionary),
+          ],
         ),
       ),
     );
@@ -1064,8 +1064,13 @@ class _DictionaryDialogPageState extends BasePageState {
   // （BUG-044）。前者把拖拽反馈渲染在列表自身坐标系、用 globalToLocal 消掉祖先缩放
   // → 任意缩放下都精确跟手、零偏移且视觉一致。上下箭头按钮仍是无障碍/手柄重排路径。
   Widget _buildDictionaryList(List<Dictionary> dictionaries) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return HibikiReorderableColumn(
       itemCount: dictionaries.length,
+      // 行间距由列表统一插入（见 _buildDictionaryTile 不再自带 bottom padding）；
+      // 圆角传卡片半径，让拖拽浮层裁成圆角、不在卡片四角露出底色。
+      spacing: tokens.spacing.rowVertical,
+      feedbackBorderRadius: tokens.radii.cardRadius,
       keyForIndex: (int index) => ValueKey<String>(dictionaries[index].name),
       // HibikiReorderableColumn 的 to 已是最终下标，直接 removeAt(from)/insert(to)。
       onReorder: (int from, int to) =>
