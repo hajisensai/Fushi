@@ -1,7 +1,12 @@
-import 'dart:async';
 import 'dart:io';
 
+import 'package:hibiki/src/media/video/ffmpeg_backend.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
+
+// resolveFfmpegExecutable 已移到 ffmpeg_backend.dart（执行配置的自然归宿）；
+// 从这里 re-export 让既有 importer 与测试仍从本文件解析它。
+export 'package:hibiki/src/media/video/ffmpeg_backend.dart'
+    show resolveFfmpegExecutable;
 
 /// Desktop (Windows/Linux/macOS) audio-clip extraction via ffmpeg.
 ///
@@ -342,32 +347,15 @@ Future<String?> extractEmbeddedSubtitleViaFfmpeg({
   }
 }
 
-/// Resolves the ffmpeg executable: `HIBIKI_FFMPEG` override, else `ffmpeg`.
-String resolveFfmpegExecutable() {
-  final String? override = Platform.environment['HIBIKI_FFMPEG']?.trim();
-  if (override != null && override.isNotEmpty) return override;
-  return 'ffmpeg';
-}
-
-/// Runs ffmpeg with [args], draining both pipes, and kills it if it does not
-/// finish within [timeout]. Returns the exit code, or null on timeout. The
-/// timeout bounds a hung/pathological encode (e.g. an unusually long clip on a
-/// slow machine) so it can never block the mining flow indefinitely. Throws
-/// [ProcessException] if ffmpeg is not installed — callers handle that.
+/// Runs ffmpeg with [args] via the active [FfmpegBackend] and returns the exit
+/// code (null on timeout). Behaviour is unchanged from the historical inline
+/// `Process.start` path — [CliFfmpegBackend] replicates it; a bundled backend
+/// (ffmpeg_kit) slots in transparently on mobile. Throws [ProcessException]
+/// when the CLI ffmpeg is absent — callers handle that.
 Future<int?> _runFfmpeg(List<String> args, Duration timeout) async {
-  final Process process = await Process.start(resolveFfmpegExecutable(), args);
-  // Drain both pipes: a full OS pipe buffer (ffmpeg writes progress to stderr)
-  // would otherwise deadlock the process before it can exit.
-  unawaited(process.stdout.drain<void>());
-  final Future<void> stderrDrained = process.stderr.drain<void>();
-  try {
-    final int code = await process.exitCode.timeout(timeout);
-    await stderrDrained;
-    return code;
-  } on TimeoutException {
-    process.kill(ProcessSignal.sigkill);
-    return null;
-  }
+  final FfmpegRunResult result =
+      await resolveFfmpegBackend().run(args, timeout);
+  return result.returnCode;
 }
 
 /// Cuts `[startMs, endMs)` out of [inputPath] into [outputPath] using ffmpeg.

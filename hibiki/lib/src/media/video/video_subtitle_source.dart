@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:hibiki/src/media/video/ffmpeg_backend.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
 
 /// 视频字幕源统一模型与枚举/加载逻辑。
@@ -215,15 +216,14 @@ Future<List<EmbeddedSubtitleTrack>> listEmbeddedSubtitleTracks(
 ) async {
   if (!File(videoPath).existsSync()) return const <EmbeddedSubtitleTrack>[];
   try {
-    final ProcessResult result = await Process.run(
-      resolveFfmpegExecutable(),
+    // 经统一 FfmpegBackend 跑 `-i`（CLI 后端 = 旧 Process 路径；捆绑后端可在移动端
+    // 工作），解析合并的 stderr 输出。`-i` 无输出文件时退出码非 0，但 stderr 仍含
+    // 完整流信息，故只看 output 不看退出码。
+    final FfmpegRunResult result = await resolveFfmpegBackend().run(
       <String>['-hide_banner', '-i', videoPath],
+      const Duration(seconds: 30),
     );
-    // ffmpeg 把流信息写到 stderr；`-i` 无输出时 stdout 通常为空。
-    final String stderr = result.stderr is String
-        ? result.stderr as String
-        : String.fromCharCodes(result.stderr as List<int>);
-    return parseSubtitleStreamsFromFfmpegLog(stderr);
+    return parseSubtitleStreamsFromFfmpegLog(result.output);
   } on ProcessException {
     // ffmpeg 未安装：优雅降级为无内嵌字幕。
     return const <EmbeddedSubtitleTrack>[];

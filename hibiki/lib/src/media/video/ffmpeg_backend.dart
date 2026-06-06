@@ -1,0 +1,76 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
+/// 一次 ffmpeg 执行的结果。
+///
+/// [returnCode] 为 null 表示超时被强杀；[output] 是合并的 stderr 文本
+/// （ffmpeg 把流信息/进度写 stderr），内嵌字幕「列举」靠解析它。
+class FfmpegRunResult {
+  const FfmpegRunResult({required this.returnCode, required this.output});
+
+  final int? returnCode;
+  final String output;
+
+  bool get isSuccess => returnCode == 0;
+}
+
+/// ffmpeg 执行底座抽象：所有 ffmpeg 调用经它，与「系统 CLI / 捆绑库」实现解耦。
+///
+/// 只有一个原语 [run]——跑一次 ffmpeg，返回退出码 + stderr 文本：
+/// - 5 个 extract 函数（音/视频封面、视频帧、字幕抽取、音频裁剪）只看
+///   [FfmpegRunResult.returnCode] 与产出文件。
+/// - 内嵌字幕「列举」用 `run(['-hide_banner','-i',path])` 拿 [FfmpegRunResult.output]
+///   喂 `parseSubtitleStreamsFromFfmpegLog`，无需独立 probe API（两后端通用）。
+///
+/// 移动端/未装 ffmpeg 的桌面端将由捆绑后端（ffmpeg_kit）实现本接口接入
+/// [resolveFfmpegBackend]；当前仅 [CliFfmpegBackend]。
+abstract class FfmpegBackend {
+  Future<FfmpegRunResult> run(List<String> args, Duration timeout);
+}
+
+/// 解析 ffmpeg 可执行文件：`HIBIKI_FFMPEG`（绝对路径）优先，否则 PATH 上的 `ffmpeg`。
+String resolveFfmpegExecutable() {
+  final String? override = Platform.environment['HIBIKI_FFMPEG']?.trim();
+  if (override != null && override.isNotEmpty) return override;
+  return 'ffmpeg';
+}
+
+/// 系统 ffmpeg（`Process.start`）后端：桌面与 Linux，及任何捆绑后端不可用时的回退。
+///
+/// [run] 复刻原 `_runFfmpeg` 语义：drain stdout 防管道死锁、收集 stderr 作 output、
+/// `exitCode.timeout` 超时则 SIGKILL 返回 `returnCode:null`。ffmpeg 不存在时
+/// `Process.start` 抛 [ProcessException]，**向上传播**（各调用方自行 catch，沿用旧契约）。
+/// stderr 用宽容 UTF-8 解码（`allowMalformed`），绝不因个别非法字节抛错。
+class CliFfmpegBackend implements FfmpegBackend {
+  const CliFfmpegBackend();
+
+  @override
+  Future<FfmpegRunResult> run(List<String> args, Duration timeout) async {
+    final Process process = await Process.start(resolveFfmpegExecutable(), args);
+    // Drain both pipes: a full OS pipe buffer (ffmpeg writes progress to stderr)
+    // would otherwise deadlock the process before it can exit.
+    unawaited(process.stdout.drain<void>());
+    final Future<String> stderrText = process.stderr
+        .transform(const Utf8Decoder(allowMalformed: true))
+        .join();
+    try {
+      final int code = await process.exitCode.timeout(timeout);
+      final String output = await stderrText;
+      return FfmpegRunResult(returnCode: code, output: output);
+    } on TimeoutException {
+      process.kill(ProcessSignal.sigkill);
+      return const FfmpegRunResult(returnCode: null, output: '');
+    }
+  }
+}
+
+FfmpegBackend? _cachedBackend;
+
+/// 进程级单例 ffmpeg 后端选择。
+///
+/// 当前仅系统 CLI 后端（全平台沿用今日行为）。捆绑 `ffmpeg_kit` 后端在引入依赖后
+/// 于此处按平台接入（Android/iOS/macOS/Windows 用 Kit，Linux 与 `HIBIKI_FFMPEG`
+/// 覆盖仍走 CLI）——见 docs/superpowers/plans/2026-06-06-bundle-ffmpeg-allplatform.md。
+FfmpegBackend resolveFfmpegBackend() =>
+    _cachedBackend ??= const CliFfmpegBackend();
