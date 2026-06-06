@@ -8,6 +8,16 @@ import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/media/video/anilist_client.dart';
 import 'package:hibiki/src/media/video/jimaku_client.dart';
 
+/// 按关键词（大小写不敏感子串）筛选列表；空/纯空白关键词原样返回。纯函数，便于单测。
+List<T> filterByKeyword<T>(
+    List<T> items, String keyword, String Function(T) text) {
+  final String kw = keyword.trim().toLowerCase();
+  if (kw.isEmpty) return items;
+  return items
+      .where((T it) => text(it).toLowerCase().contains(kw))
+      .toList(growable: false);
+}
+
 /// 一条可下载的 Jimaku 字幕候选：所属条目名 + 文件。
 class _Candidate {
   const _Candidate({required this.entryName, required this.file});
@@ -55,6 +65,7 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog> {
   bool _searched = false;
   String? _busyName; // 正在下载的文件名
   List<_Candidate> _candidates = const <_Candidate>[];
+  String _filter = ''; // 候选列表二次关键词筛选（asbplayer 式，按 WEBRip/BD 等过滤）
 
   @override
   void dispose() {
@@ -179,33 +190,49 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog> {
                 child: Text(t.video_jimaku_no_results,
                     textAlign: TextAlign.center),
               )
-            else if (_candidates.isNotEmpty)
-              Flexible(
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: _candidates.length,
-                  itemBuilder: (BuildContext context, int i) {
-                    final _Candidate c = _candidates[i];
-                    final bool busy = _busyName == c.file.name;
-                    return ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      dense: true,
-                      leading: const Icon(Icons.subtitles_outlined),
-                      title: Text(c.file.name, overflow: TextOverflow.ellipsis),
-                      subtitle:
-                          Text(c.entryName, overflow: TextOverflow.ellipsis),
-                      trailing: busy
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.download),
-                      onTap: _busyName == null ? () => _download(c) : null,
-                    );
-                  },
+            else if (_candidates.isNotEmpty) ...<Widget>[
+              TextField(
+                decoration: InputDecoration(
+                  labelText: t.video_jimaku_filter,
+                  isDense: true,
+                  prefixIcon: const Icon(Icons.filter_list, size: 18),
                 ),
+                onChanged: (String v) => setState(() => _filter = v),
               ),
+              const SizedBox(height: 8),
+              Flexible(
+                child: Builder(builder: (BuildContext context) {
+                  final List<_Candidate> shown = filterByKeyword(
+                      _candidates, _filter, (_Candidate c) => c.file.name);
+                  return ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: shown.length,
+                    itemBuilder: (BuildContext context, int i) {
+                      final _Candidate c = shown[i];
+                      final bool busy = _busyName == c.file.name;
+                      return ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                        leading: const Icon(Icons.subtitles_outlined),
+                        title:
+                            Text(c.file.name, overflow: TextOverflow.ellipsis),
+                        subtitle:
+                            Text(c.entryName, overflow: TextOverflow.ellipsis),
+                        trailing: busy
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.download),
+                        onTap: _busyName == null ? () => _download(c) : null,
+                      );
+                    },
+                  );
+                }),
+              ),
+            ],
           ],
         ),
       ),
