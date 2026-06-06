@@ -35,6 +35,7 @@ import 'package:hibiki/src/models/dictionary_repository.dart';
 import 'package:hibiki/src/models/media_history_repository.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/sync/backup_service.dart';
+import 'package:hibiki/src/sync/hibiki_server_controller.dart';
 import 'package:hibiki/src/sync/sync_asset_package_service.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_conflict_prompter.dart';
@@ -194,6 +195,18 @@ class AppModel with ChangeNotifier {
   /// 全应用共享的冲突弹窗调度器：三处同步入口（手动 / 关书后 / app 启动）
   /// 共用同一份会话级 snooze + 单飞状态，避免冲突弹窗互相重入或反复打扰。
   final SyncConflictPrompter syncConflictPrompter = SyncConflictPrompter();
+
+  /// App 级 Hibiki LAN 同步服务端宿主：生命周期归 AppModel（整个会话），
+  /// 不再绑在设置页 widget 上——否则切出「同步与备份」页就把服务端关了（BUG-078）。
+  /// 启动时若用户启用了 host 则自动开，仅在用户关闭开关或退出 app 时停。配对批准
+  /// 弹窗经全局 [navigatorKey]，故在任意界面都能弹。
+  late final HibikiSyncServerController syncServerController =
+      HibikiSyncServerController(
+    navigatorKey: navigatorKey,
+    database: () => database,
+    syncDataDir: () => databaseDirectory.path,
+    remoteLookupServiceFactory: createRemoteLookupService,
+  );
 
   /// 自动同步（关书后 / app 启动）拿到报告后，若有冲突则弹解决对话框。
   /// fire-and-forget：present 是 barrier 对话框，不阻塞调用方；异常兜住并记日志，
@@ -1264,6 +1277,29 @@ class AppModel with ChangeNotifier {
       _isInitialised = true;
       _setupFloatingDictHandlers();
       if (showFloatingDict) setShowFloatingDict(false);
+      // Start the LAN sync server now if hosting is enabled, so it runs app-wide
+      // for the whole session instead of only while the sync settings page is on
+      // screen (BUG-078). Fire-and-forget: a bind failure self-disables + is
+      // logged and must never break app init.
+      unawaited(syncServerController.startIfEnabled().then((
+        HibikiServerStartOutcome outcome,
+      ) {
+        if (outcome is HibikiServerPortInUse) {
+          ErrorLogService.instance.log(
+            'AppModel.startSyncServer',
+            'port ${outcome.port} in use',
+            StackTrace.current,
+          );
+        } else if (outcome is HibikiServerStartError) {
+          ErrorLogService.instance.log(
+            'AppModel.startSyncServer',
+            outcome.message,
+            StackTrace.current,
+          );
+        }
+      }).catchError((Object e, StackTrace s) {
+        ErrorLogService.instance.log('AppModel.startSyncServer', e, s);
+      }));
       notifyListeners();
     } catch (e, stack) {
       debugPrint('[Hibiki] init FAILED: $e\n$stack');

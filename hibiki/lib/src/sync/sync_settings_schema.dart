@@ -15,6 +15,7 @@ import 'package:hibiki/src/sync/dropbox_sync_backend.dart';
 import 'package:hibiki/src/sync/ftp_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
 import 'package:hibiki/src/sync/onedrive_sync_backend.dart';
+import 'package:hibiki/src/sync/hibiki_server_controller.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 import 'package:hibiki/src/sync/lan_discovery_service.dart';
 import 'package:hibiki/src/sync/sftp_sync_backend.dart';
@@ -1952,19 +1953,20 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
   bool _enabled = false;
   int _port = SyncRepository.defaultServerPort;
   String? _token;
-  HibikiSyncServer? _server;
-  LanBroadcastService? _broadcast;
   late final TextEditingController _portController;
   bool _loaded = false;
-  // True while a pairing-approval dialog is on screen. A peer must not be able
-  // to stack prompts on the host by hammering /api/pair, so we serve one at a
-  // time and auto-refuse anything that arrives while one is already open.
-  bool _pairDialogOpen = false;
+
+  // The HibikiSyncServer + LAN broadcast are owned app-wide by
+  // appModel.syncServerController now, NOT by this page (BUG-078). This widget
+  // is a thin view that drives start/stop and reflects its running state.
+  HibikiSyncServerController get _serverController =>
+      widget.settingsContext.appModel.syncServerController;
 
   @override
   void initState() {
     super.initState();
     _portController = TextEditingController(text: '$_port');
+    _serverController.addListener(_onServerChanged);
     // Rebuild when the client-connection flag flips so the toggle re-gates.
     _syncSettings(widget.settingsContext)
         .roleRevision
@@ -1974,16 +1976,21 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
 
   @override
   void dispose() {
+    _serverController.removeListener(_onServerChanged);
     _syncSettings(widget.settingsContext)
         .roleRevision
         .removeListener(_onRoleRevision);
     _portController.dispose();
-    _broadcast?.stop();
-    _server?.stop();
+    // NOTE: do NOT stop the server here. It is owned app-wide by AppModel now
+    // (BUG-078); leaving this settings page must not kill the running host.
     super.dispose();
   }
 
   void _onRoleRevision() {
+    if (mounted) setState(() {});
+  }
+
+  void _onServerChanged() {
     if (mounted) setState(() {});
   }
 
@@ -2005,7 +2012,10 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
         _loaded = true;
       });
       _syncSettings(widget.settingsContext).setServerEnabled(enabled);
-      if (enabled) await _startServer();
+      // The app-level controller already starts the host on launch; this is an
+      // idempotent belt-and-suspenders for the rare case the page opens before
+      // that ran. start() no-ops when already running.
+      if (enabled) await _serverController.startIfEnabled();
     }
   }
 
@@ -2031,198 +2041,19 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
     }
   }
 
-  /// A failed bind must not leave the toggle stuck "on" — it would re-fail on
-  /// every launch. Reset to off and persist so the user can change the port
-  /// and re-enable.
-  Future<void> _disableAfterStartFailure() async {
-    await SyncRepository(widget.settingsContext.appModel.database)
-        .setServerEnabled(false);
-    _syncSettings(widget.settingsContext).setServerEnabled(false);
-    if (mounted) setState(() => _enabled = false);
-  }
-
-  Future<void> _startServer() async {
-    if (_server != null && _server!.isRunning) return;
-    final appModel = widget.settingsContext.appModel;
-    _server = HibikiSyncServer(
-      syncDataDir: appModel.databaseDirectory.path,
-      port: _port,
-      token: _token!,
-      allowLan: true,
-      remoteLookupService: appModel.createRemoteLookupService(),
-    )..onPairRequest = _promptPairApproval;
-    try {
-      await _server!.start();
-      // Persist enabled only once the bind actually succeeded, so a failed
-      // start never leaves a stuck "on" flag that re-fails every launch
-      // (HBK-AUDIT-167).
-      await SyncRepository(widget.settingsContext.appModel.database)
-          .setServerEnabled(true);
-      _syncSettings(widget.settingsContext).setServerEnabled(true);
-      // Advertise on the LAN using the ACTUAL bound port so peers discover the
-      // host even when the requested port was 0/auto or differs from _port.
-      await _startBroadcast(_server!.port);
-      if (mounted) setState(() {});
-    } on SyncServerPortInUseException catch (e) {
-      _server = null;
-      await _disableAfterStartFailure();
-      if (mounted) {
-        _showSnackBar(context, t.sync_server_port_in_use(port: e.port));
-      }
-    } catch (e) {
-      _server = null;
-      await _disableAfterStartFailure();
-      if (mounted) {
-        _showSnackBar(
-            context, t.sync_error(message: friendlySyncErrorDetail(e)));
-      }
-    }
-  }
-
-  Future<void> _startBroadcast(int boundPort) async {
-    final SyncRepository repo =
-        SyncRepository(widget.settingsContext.appModel.database);
-    final String deviceId = await repo.getOrCreateDeviceId();
-    _broadcast = LanBroadcastService(
-      deviceName: _deviceName(),
-      deviceId: deviceId,
-      port: boundPort,
-    );
-    await _broadcast!.start();
-  }
-
-  /// Human-readable advertisement name. Platform.localHostname is the machine
-  /// name on desktop; falls back to a generic label on mobile or on error.
-  String _deviceName() {
-    try {
-      final String host = Platform.localHostname;
-      if (host.trim().isNotEmpty) return 'Hibiki · $host';
-    } catch (_) {/* localHostname can throw on some platforms */}
-    return 'Hibiki';
-  }
-
-  /// Server callback: a peer POSTed /api/pair. Ask the host user to allow the
-  /// token handout. Uses the app-wide navigator so the prompt appears even if
-  /// the user has navigated away from the sync page while the server runs.
-  /// Resolves false (refuse) on a stacked request, a missing context, an
-  /// explicit deny, or a 60s no-answer timeout.
-  Future<bool> _promptPairApproval(HibikiPairRequest request) async {
-    if (_pairDialogOpen) return false;
-    final BuildContext? ctx =
-        widget.settingsContext.appModel.navigatorKey.currentContext;
-    if (ctx == null) return false;
-    _pairDialogOpen = true;
-    Timer? autoDeny;
-    try {
-      final bool? approved = await showAppDialog<bool>(
-        context: ctx,
-        builder: (BuildContext dialogCtx) {
-          // Auto-refuse after 60s so a forgotten prompt never leaks the token
-          // and the waiting client gets a deterministic answer.
-          autoDeny ??= Timer(const Duration(seconds: 60), () {
-            if (Navigator.of(dialogCtx).canPop()) {
-              Navigator.pop(dialogCtx, false);
-            }
-          });
-          final HibikiDesignTokens tokens = HibikiDesignTokens.of(dialogCtx);
-          return HibikiDialogFrame(
-            maxWidth: 420,
-            insetPadding: EdgeInsets.symmetric(
-              horizontal: tokens.spacing.card,
-              vertical: tokens.spacing.card,
-            ),
-            scrollable: false,
-            child: HibikiModalSheetFrame(
-              title: t.sync_pair_request_title,
-              scrollable: true,
-              bodyPadding: EdgeInsets.fromLTRB(
-                tokens.spacing.card,
-                0,
-                tokens.spacing.card,
-                tokens.spacing.gap,
-              ),
-              footerPadding: EdgeInsets.fromLTRB(
-                tokens.spacing.card,
-                tokens.spacing.gap,
-                tokens.spacing.card,
-                tokens.spacing.card,
-              ),
-              body: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  Text(t.sync_pair_request_body),
-                  SizedBox(height: tokens.spacing.gap),
-                  Text(
-                    _pairRequesterLabel(request),
-                    style: Theme.of(dialogCtx).textTheme.bodyMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                  ),
-                ],
-              ),
-              footer: Wrap(
-                alignment: WrapAlignment.end,
-                spacing: tokens.spacing.gap,
-                children: <Widget>[
-                  adaptiveDialogAction(
-                    context: dialogCtx,
-                    isDestructiveAction: true,
-                    onPressed: () => Navigator.pop(dialogCtx, false),
-                    child: Text(t.sync_pair_deny),
-                  ),
-                  adaptiveDialogAction(
-                    context: dialogCtx,
-                    isDefaultAction: true,
-                    onPressed: () => Navigator.pop(dialogCtx, true),
-                    child: Text(t.sync_pair_allow),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      );
-      return approved ?? false;
-    } finally {
-      autoDeny?.cancel();
-      _pairDialogOpen = false;
-    }
-  }
-
-  /// "<name> · <ip>" when both are known, else whichever is present, else a
-  /// generic label so the prompt always names a requester.
-  String _pairRequesterLabel(HibikiPairRequest request) {
-    final String name = request.deviceName?.trim() ?? '';
-    final String ip = request.remoteAddress?.trim() ?? '';
-    if (name.isNotEmpty && ip.isNotEmpty) return '$name · $ip';
-    if (name.isNotEmpty) return name;
-    if (ip.isNotEmpty) return ip;
-    return t.sync_pair_unknown_device;
-  }
-
-  Future<void> _stopServer() async {
-    await _broadcast?.stop();
-    _broadcast = null;
-    await _server?.stop();
-    _server = null;
-  }
-
   Future<void> _regenerateToken() async {
     final newToken = HibikiSyncServer.generateToken();
     final repo = SyncRepository(widget.settingsContext.appModel.database);
     await repo.setServerPassword(newToken);
     setState(() => _token = newToken);
-    if (_server != null && _server!.isRunning) {
-      await _stopServer();
-      await _startServer();
-    }
+    // Bounce the running host so the freshly-persisted token takes effect.
+    if (_serverController.isRunning) await _serverController.restart();
   }
 
   @override
   Widget build(BuildContext context) {
     if (!_loaded) return const SizedBox.shrink();
-    final bool running = _server != null && _server!.isRunning;
+    final bool running = _serverController.isRunning;
     // Mutual exclusion: block turning the server ON while this device is a
     // client of a peer. Turning OFF an already-running server stays allowed so
     // the user can always escape (and legacy both-on data can't deadlock).
@@ -2243,19 +2074,38 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
                 ? null
                 : (bool v) async {
                     if (v) {
-                      // Reflect the toggle while starting; _startServer persists
-                      // enabled on success and resets it on failure
+                      // Reflect the toggle while starting; the controller
+                      // persists enabled on success and resets it on failure
                       // (HBK-AUDIT-167).
                       setState(() => _enabled = true);
-                      await _startServer();
+                      final HibikiServerStartOutcome outcome =
+                          await _serverController.start();
+                      if (!mounted) return;
+                      switch (outcome) {
+                        case HibikiServerStarted():
+                          _syncSettings(widget.settingsContext)
+                              .setServerEnabled(true);
+                          setState(() {});
+                        case HibikiServerPortInUse(:final int port):
+                          setState(() => _enabled = false);
+                          _syncSettings(widget.settingsContext)
+                              .setServerEnabled(false);
+                          // this.context (State.context) is guarded by the
+                          // !mounted early-return above.
+                          _showSnackBar(this.context,
+                              t.sync_server_port_in_use(port: port));
+                        case HibikiServerStartError(:final String message):
+                          setState(() => _enabled = false);
+                          _syncSettings(widget.settingsContext)
+                              .setServerEnabled(false);
+                          _showSnackBar(
+                              this.context, t.sync_error(message: message));
+                      }
                     } else {
                       setState(() => _enabled = false);
-                      await SyncRepository(
-                              widget.settingsContext.appModel.database)
-                          .setServerEnabled(false);
                       _syncSettings(widget.settingsContext)
                           .setServerEnabled(false);
-                      await _stopServer();
+                      await _serverController.stop(persistDisabled: true);
                     }
                   },
           ),
@@ -2271,7 +2121,8 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
             if (running)
               Padding(
                 padding: const EdgeInsets.only(top: 4),
-                child: Text('${t.sync_server_running}: ${_server!.port}',
+                child: Text(
+                    '${t.sync_server_running}: ${_serverController.boundPort}',
                     style: Theme.of(context).textTheme.bodySmall),
               ),
             const SizedBox(height: 12),
