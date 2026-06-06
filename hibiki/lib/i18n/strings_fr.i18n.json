@@ -1312,5 +1312,8 @@
     "log_upload_in_progress": "Uploading log…",
     "log_upload_success": "Log uploaded",
     "log_upload_failed": "Upload failed",
-    "log_upload_too_large": "Log too large to upload"
+    "log_upload_too_large": "Log too large to upload",
+    "log_upload_consent_title": "Upload log to server?",
+    "log_upload_consent_body": "The log text (which may include error messages, file paths, and book titles) plus your app version, platform, and device model will be uploaded to the developer's server to help diagnose issues. This only happens when you tap upload — nothing is sent automatically.",
+    "log_upload_consent_agree": "Agree & upload"
 }

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/utils/misc/log_upload_config.dart';
@@ -120,6 +121,39 @@ Future<({String appVersion, String platform, String device})>
   );
 }
 
+/// 日志上传隐私同意标志的持久化键。
+const String kLogUploadConsentKey = 'log_upload_privacy_consent';
+
+/// 确保已获得上传隐私同意：已记住则直接返回 true；否则弹一次性同意对话框，
+/// 用户同意则持久化并返回 true，取消返回 false。可独立 widget 测试。
+Future<bool> ensureLogUploadConsent(BuildContext context) async {
+  final SharedPreferences prefs = await SharedPreferences.getInstance();
+  if (prefs.getBool(kLogUploadConsentKey) ?? false) return true;
+  if (!context.mounted) return false;
+  final bool? agreed = await showAdaptiveDialog<bool>(
+    context: context,
+    builder: (BuildContext ctx) => AlertDialog.adaptive(
+      title: Text(t.log_upload_consent_title),
+      content: Text(t.log_upload_consent_body),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(false),
+          child: Text(t.cancel),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(true),
+          child: Text(t.log_upload_consent_agree),
+        ),
+      ],
+    ),
+  );
+  if (agreed == true) {
+    await prefs.setBool(kLogUploadConsentKey, true);
+    return true;
+  }
+  return false;
+}
+
 /// UI 入口：收集元信息 → 上传 → 按结果弹 SnackBar。
 Future<void> uploadLogToServer({
   required BuildContext context,
@@ -131,6 +165,9 @@ Future<void> uploadLogToServer({
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(message)));
   }
+
+  // 首次上传前征得隐私同意（记住选择）；取消则不上传。
+  if (!await ensureLogUploadConsent(context)) return;
 
   notify(t.log_upload_in_progress);
   final meta = await _collectMeta();
