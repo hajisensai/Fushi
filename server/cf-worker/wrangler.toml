@@ -2,6 +2,12 @@ name = "hibiki-log-collector"
 main = "src/worker.js"
 compatibility_date = "2024-11-01"
 
+# 自定义域名（zone wrds.xyz 需已托管在同一 CF 账号）。
+# 部署时自动创建 DNS 记录 + 边缘证书。
+routes = [
+  { pattern = "logs.wrds.xyz", custom_domain = true },
+]
+
 # 部署前：wrangler d1 create hibiki-logs，把返回的 database_id 填到下面；
 # 再 wrangler d1 execute hibiki-logs --remote --file=schema.sql 建表。
 [[d1_databases]]
