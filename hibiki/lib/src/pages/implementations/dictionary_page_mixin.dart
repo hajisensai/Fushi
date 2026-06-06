@@ -13,12 +13,29 @@ import 'package:hibiki/utils.dart';
 
 /// Shared popup entry used by all three dictionary page variants.
 class NestedPopupEntry {
-  NestedPopupEntry({required this.query, required this.selectionRect});
-  final String query;
-  final Rect selectionRect;
+  NestedPopupEntry({
+    required this.query,
+    required this.selectionRect,
+    this.visible = true,
+    this.isWarmSlot = false,
+  });
+  String query;
+  Rect selectionRect;
   DictionarySearchResult? result;
   bool isSearching = true;
   bool allLoaded = false;
+
+  /// Whether this popup layer is painted/interactive. The persistent warm slot
+  /// (BUG-094) sits hidden (`visible=false`) between lookups so its WebView stays
+  /// loaded; a lookup flips it visible. Non-warm entries are always visible.
+  bool visible;
+
+  /// True only for the single persistent warm slot whose WebView is kept mounted
+  /// (via [DictionaryPopupLayer.keepWebViewWarm]) and reused for every lookup,
+  /// eliminating the per-lookup WebView cold-load (white flash) on surfaces like
+  /// the video player that seed one.
+  final bool isWarmSlot;
+
   final GlobalKey<DictionaryPopupWebViewState> webViewKey =
       GlobalKey<DictionaryPopupWebViewState>();
 }
@@ -169,37 +186,46 @@ mixin DictionaryPageMixin {
       top: pos.top,
       width: pos.width,
       height: pos.height,
-      child: DictionaryPopupLayer(
-        result: entry.result,
-        isSearching: entry.isSearching,
-        webViewKey: entry.webViewKey,
-        isDark: isDark,
-        overrideFillColor: mixinAppModel.overrideDictionaryColor,
-        onDismiss: () => onPop(index),
-        onTapOutside: () => onPop(0),
-        onScrolledToBottom: entry.allLoaded
-            ? null
-            : () => loadMoreForEntry(entry: entry, popupStack: popupStack),
-        onTextSelected: (text, localRect) {
-          final Rect childRect = localRect == Rect.zero
-              ? entry.selectionRect
-              : localRect.shift(Offset(pos.left, pos.top));
-          setState(() {
-            popupStack.removeRange(index + 1, popupStack.length);
-          });
-          onPush(text, childRect);
-        },
-        onLinkClick: (query, localRect) {
-          final Rect childRect = localRect == Rect.zero
-              ? entry.selectionRect
-              : localRect.shift(Offset(pos.left, pos.top));
-          setState(() {
-            popupStack.removeRange(index + 1, popupStack.length);
-          });
-          onPush(query, childRect);
-        },
-        onMineEntry: onMineEntry,
-        onDuplicateCheck: checkDuplicate,
+      // Hidden warm slot (BUG-094) stays in the tree (maintainState) with its
+      // WebView mounted but not painted/interactive; flips visible on lookup.
+      child: Visibility(
+        visible: entry.visible,
+        maintainState: true,
+        maintainAnimation: true,
+        maintainSize: true,
+        child: DictionaryPopupLayer(
+          result: entry.result,
+          isSearching: entry.isSearching,
+          keepWebViewWarm: entry.isWarmSlot,
+          webViewKey: entry.webViewKey,
+          isDark: isDark,
+          overrideFillColor: mixinAppModel.overrideDictionaryColor,
+          onDismiss: () => onPop(index),
+          onTapOutside: () => onPop(0),
+          onScrolledToBottom: entry.allLoaded
+              ? null
+              : () => loadMoreForEntry(entry: entry, popupStack: popupStack),
+          onTextSelected: (text, localRect) {
+            final Rect childRect = localRect == Rect.zero
+                ? entry.selectionRect
+                : localRect.shift(Offset(pos.left, pos.top));
+            setState(() {
+              popupStack.removeRange(index + 1, popupStack.length);
+            });
+            onPush(text, childRect);
+          },
+          onLinkClick: (query, localRect) {
+            final Rect childRect = localRect == Rect.zero
+                ? entry.selectionRect
+                : localRect.shift(Offset(pos.left, pos.top));
+            setState(() {
+              popupStack.removeRange(index + 1, popupStack.length);
+            });
+            onPush(query, childRect);
+          },
+          onMineEntry: onMineEntry,
+          onDuplicateCheck: checkDuplicate,
+        ),
       ),
     );
   }
@@ -215,18 +241,39 @@ mixin DictionaryPageMixin {
     required List<NestedPopupEntry> popupStack,
     bool replaceStack = false,
     bool autoRead = false,
+    bool reuseWarmSlot = false,
   }) async {
     final String trimmed = query.trim();
     if (trimmed.isEmpty) return;
-    final entry = NestedPopupEntry(
-      query: trimmed,
-      selectionRect: fallbackSelectionRect(selectionRect),
-    );
     final int maxTerms = mixinAppModel.maximumTerms;
-    setState(() {
-      if (replaceStack) popupStack.clear();
-      popupStack.add(entry);
-    });
+    final NestedPopupEntry entry;
+    if (reuseWarmSlot && popupStack.isNotEmpty && popupStack.first.isWarmSlot) {
+      // BUG-094: reuse the persistent warm slot's already-loaded WebView in
+      // place (reset its fields, drop nested children) instead of clearing the
+      // stack + building a fresh entry — that recreated the WebView and
+      // cold-loaded popup.html/JS/CSS on every lookup (the white flash).
+      entry = popupStack.first
+        ..query = trimmed
+        ..selectionRect = fallbackSelectionRect(selectionRect)
+        ..result = null
+        ..allLoaded = false
+        ..isSearching = true
+        ..visible = true;
+      setState(() {
+        if (popupStack.length > 1) {
+          popupStack.removeRange(1, popupStack.length);
+        }
+      });
+    } else {
+      entry = NestedPopupEntry(
+        query: trimmed,
+        selectionRect: fallbackSelectionRect(selectionRect),
+      );
+      setState(() {
+        if (replaceStack) popupStack.clear();
+        popupStack.add(entry);
+      });
+    }
     try {
       entry.result = await mixinAppModel.searchDictionary(
         searchTerm: trimmed,

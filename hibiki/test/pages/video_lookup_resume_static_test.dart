@@ -86,7 +86,9 @@ void main() {
       );
       expect(pop.contains('VideoHibikiPage.shouldResumeAfterLookupDismiss('),
           isTrue);
-      expect(pop.contains('stackEmpty: _popupStack.isEmpty'), isTrue);
+      // BUG-094：常驻隐藏热槽使 `_popupStack` 永不为空，故「整栈已空」判定改为
+      // 「无可见弹窗」(!_hasVisiblePopup)——否则关浮层后热槽仍在、恢复永不触发。
+      expect(pop.contains('stackEmpty: !_hasVisiblePopup'), isTrue);
       expect(pop.contains('pausedForLookup: _pausedForLookup'), isTrue);
       expect(pop.contains('_pausedForLookup = false'), isTrue,
           reason: '恢复后必须清标记，否则下次关任意子层都会误续播');

@@ -474,6 +474,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       _currentSubtitleSource = externalSubtitlePath ?? _currentSubtitleSource;
     });
 
+    // 视频就绪后预热查词浮层（BUG-094）：seed 一个常驻隐藏热 WebView，全程复用，
+    // 查词不再每次冷加载白屏。放成功分支（缺书/错误态不预热，无视频无需查词）。
+    _seedWarmPopup();
+
     // 首次 load 建观看统计采集器；换片复用同一 controller 实例，已 attach 不重建。
     if (_watchTracker == null) {
       final HibikiDatabase db = appModel.database;
@@ -689,6 +693,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       selectionRect: charRect,
       popupStack: _popupStack,
       replaceStack: true,
+      reuseWarmSlot: true,
       autoRead: true,
     );
   }
@@ -697,10 +702,59 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   ///
   /// 关栈后若整栈已空且本次是因查词暂停了播放，则恢复播放——这是恢复播放的唯一汇聚点，
   /// 覆盖所有关闭路径（BUG-072）。
+  /// True while any popup layer is actually visible (the persistent warm slot,
+  /// BUG-094, sits hidden in the stack between lookups so it never counts).
+  bool get _hasVisiblePopup => _popupStack.any((e) => e.visible);
+
+  /// Index of the top-most visible popup layer, or -1 when only the hidden warm
+  /// slot remains.
+  int get _topVisiblePopupIndex {
+    for (int i = _popupStack.length - 1; i >= 0; i--) {
+      if (_popupStack[i].visible) return i;
+    }
+    return -1;
+  }
+
+  /// BUG-094: seed one persistent, hidden warm popup slot on open so its
+  /// [DictionaryPopupWebView] cold-loads popup.html/JS/CSS ONCE while idle and
+  /// is reused warm for every lookup — no per-lookup cold-load (white flash) in
+  /// the video player. Low-memory mode keeps no warm slot (disposes on close).
+  void _seedWarmPopup() {
+    if (!mounted || appModel.lowMemoryMode) return;
+    if (_popupStack.isNotEmpty) return;
+    final NestedPopupEntry warm = NestedPopupEntry(
+      query: '',
+      selectionRect: Rect.zero,
+      visible: false,
+      isWarmSlot: true,
+    )..isSearching = false;
+    setState(() => _popupStack.add(warm));
+    _syncPopupOverlay();
+  }
+
   void _popNestedPopupAt(int index) {
-    popNestedPopupAt(index, _popupStack);
+    // Hide-and-keep the warm slot instead of clearing it, so its loaded WebView
+    // survives for the next lookup (BUG-094): closing index 0 hides the warm
+    // slot + drops children; closing a child drops from there up.
+    setState(() {
+      if (index <= 0 &&
+          _popupStack.isNotEmpty &&
+          _popupStack.first.isWarmSlot) {
+        final NestedPopupEntry warm = _popupStack.first..visible = false;
+        warm.webViewKey.currentState?.clearSelection();
+        _popupStack
+          ..clear()
+          ..add(warm);
+      } else if (index <= 0) {
+        _popupStack.clear();
+      } else if (index < _popupStack.length) {
+        _popupStack.removeRange(index, _popupStack.length);
+      }
+    });
     if (VideoHibikiPage.shouldResumeAfterLookupDismiss(
-      stackEmpty: _popupStack.isEmpty,
+      // "Effectively empty" = no visible popup; the hidden warm slot doesn't
+      // block resume.
+      stackEmpty: !_hasVisiblePopup,
       pausedForLookup: _pausedForLookup,
     )) {
       _pausedForLookup = false;
@@ -773,13 +827,17 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                 Size(constraints.maxWidth, constraints.maxHeight);
             return Stack(
               children: <Widget>[
-                Positioned.fill(
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.translucent,
-                    onTap: () => _popNestedPopupAt(0),
-                    child: const ColoredBox(color: Colors.transparent),
+                // Dismiss barrier only while a popup is actually visible; when
+                // only the hidden warm slot (BUG-094) remains it must not
+                // intercept taps meant for the video.
+                if (_hasVisiblePopup)
+                  Positioned.fill(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.translucent,
+                      onTap: () => _popNestedPopupAt(0),
+                      child: const ColoredBox(color: Colors.transparent),
+                    ),
                   ),
-                ),
                 for (int i = 0; i < _popupStack.length; i++)
                   _buildNestedPopupLayer(i, screen),
               ],
@@ -1963,8 +2021,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       canPop: false,
       onPopInvokedWithResult: (bool didPop, Object? _) async {
         if (didPop) return;
-        if (_popupStack.isNotEmpty) {
-          _popNestedPopupAt(_popupStack.length - 1);
+        // Only a VISIBLE popup intercepts back; the persistent hidden warm slot
+        // (BUG-094) keeps the stack non-empty but must not swallow back/exit.
+        if (_hasVisiblePopup) {
+          _popNestedPopupAt(_topVisiblePopupIndex);
           return;
         }
         final NavigatorState nav = Navigator.of(context);
