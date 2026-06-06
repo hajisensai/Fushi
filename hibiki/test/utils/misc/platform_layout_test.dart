@@ -248,5 +248,38 @@ void main() {
       expect(tester.getSize(find.byKey(supportingKey)).width, 360);
       expect(tester.getSize(find.byKey(primaryKey)).width, 919);
     });
+
+    testWidgets(
+      'top-aligns short primary pane content instead of centering it',
+      (WidgetTester tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = const Size(1000, 600);
+        addTearDown(tester.view.reset);
+
+        await tester.pumpWidget(
+          Directionality(
+            textDirection: TextDirection.ltr,
+            child: SizedBox.expand(
+              child: MaterialSupportingPaneLayout(
+                supportingSide: SupportingPaneSide.start,
+                minSplitWidth: 720,
+                // Mirrors the production detail pane: an own-scrolling
+                // SingleChildScrollView whose content is shorter than the pane
+                // (e.g. the audiobook settings destination with only a couple of
+                // visible toggles on desktop).
+                primary: SingleChildScrollView(
+                  child: SizedBox(height: 80, key: childKey),
+                ),
+                supporting: const SizedBox.expand(),
+              ),
+            ),
+          ),
+        );
+
+        // Short content must hug the top of the pane (y == 0), not float to the
+        // vertical center the default Row CrossAxisAlignment.center produced.
+        expect(tester.getTopLeft(find.byKey(childKey)).dy, 0);
+      },
+    );
   });
 }

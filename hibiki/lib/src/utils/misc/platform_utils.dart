@@ -167,6 +167,15 @@ class MaterialSupportingPaneLayout extends StatelessWidget {
         final Widget flexiblePrimary = Expanded(child: primary);
 
         return Row(
+          // stretch (not the Row default center) so each pane gets a tight,
+          // full-height constraint. Under center the panes receive a LOOSE
+          // height, so a detail pane built from an own-scrolling
+          // SingleChildScrollView shrink-wraps to its content and is then
+          // vertically centered — a short settings page (e.g. the audiobook
+          // destination with only a couple of desktop-visible toggles) floated
+          // to the middle instead of hugging the top. A tight height makes the
+          // scroll view fill the pane, so its content stays top-aligned.
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: supportingSide == SupportingPaneSide.start
               ? <Widget>[fixedSupporting, divider, flexiblePrimary]
               : <Widget>[flexiblePrimary, divider, fixedSupporting],

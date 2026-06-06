@@ -13,6 +13,13 @@
 
 ---
 
+## BUG-092 · 宽屏设置：详情面板设置项少时整体垂直居中（应靠上）
+- **报告**：2026-06-06（用户：「设置里面，设置项少的时候不要居中，改成靠上」；追问定位为「听书，右边只有两个配置项在中间」）。采番注：本 worktree 从 origin/develop 建，初记为 089 与 develop 本地 089/090/091 撞号，合并时改 092。
+- **真实性**：✅ **真 bug（布局约束传递错误，沿真实代码路径定位）**。宽屏（≥720）设置走 `settings_home_page.dart:_buildWideLayout` → `MaterialSupportingPaneLayout`（`lib/src/utils/misc/platform_utils.dart:169`），右侧详情面板 = `Expanded(child: buildDetailContent(...))`，正文是 own-scrolling `SingleChildScrollView`（`material_settings_renderer.dart:175`）。根因：该 `MaterialSupportingPaneLayout` 的 `Row` **未设 `crossAxisAlignment`，用默认 `center`**。`Expanded` 只把**主轴(宽度)**约束成紧约束，**交叉轴(高度)** 由 Row 的 `crossAxisAlignment` 决定——`center` 给详情面板**松高度约束(0..行高)**，于是 `SingleChildScrollView` 收缩到内容高度后被 Row **垂直居中**。有声书(听书, `_listeningDestination`)分类里 floating_lyric 几项 `visible: Platform.isAndroid` 在桌面被隐藏，只剩约两项 → 内容矮 → 浮在垂直正中。设置项多时内容高 ≥ 行高被 clamp 撑满，故只有「少的时候」才居中。
+- **[x] ① 已修复** — 本提交（自含修复+测试+本条目）。**根因修（统一约束，消除「短内容浮中间」特殊情况）**：给 `MaterialSupportingPaneLayout` 的 `Row` 加 `crossAxisAlignment: CrossAxisAlignment.stretch`，两个面板都拿到**紧的满高度约束** → `SingleChildScrollView` 填满面板 → 正文顶对齐。不动横向 70/30 分栏、`supportingSide`、断点等任何既有逻辑。
+- **[x] ② 已加自动化测试** — `hibiki/test/utils/misc/platform_layout_test.dart` 新增「top-aligns short primary pane content instead of centering it」：1000×600 视口下 primary = `SingleChildScrollView(child: SizedBox(height:80))`，断言其内容 `getTopLeft(...).dy == 0`（修前实测 260=垂直居中=红，修后 0=绿）。`test/utils/` + `test/pages/` + `test/settings/` 全量 485 绿，analyze 0。
+- **备注**：布局类。代码正确 + 单测无回归；**桌面真机复测待用户**：宽屏进设置选「听书」等少项分类，右侧两项应贴顶而非浮在中间。
+
 ## BUG-091 · 制卡偶发「Write failed errno 10053」失败（Anki 正常）：陈旧 keep-alive 连接上 addNote 不重试
 - **报告**：2026-06-06（用户：Anki 页面一切正常，但制卡偶尔失败；经 [[BUG-089]] 修复后错误日志页捕获到完整堆栈 = `ClientException with SocketException: Write failed (errno=10053)` 于 `addNote`）。采番注：本 worktree 基线最大号 BUG-089，但 BUG-090 已被并发 worktree（fix/win-system-theme-accent · Windows 系统主题强调色，未合 develop）占用，故取 091。
 - **真实性**：✅ **真 bug（沿真实堆栈 + 代码定位，非环境问题）**。根因正是 [[BUG-065]] 描述的陈旧 keep-alive 连接：AnkiConnect 的极简 HTTP server 会关闭空闲 keep-alive 连接，持久 `http.Client` 连接池把请求交给一个已被对端关闭的 socket → 首次使用即报连接断（Win errno 10053 WSAECONNABORTED「Write failed」）。`AnkiConnectService._postWithStaleConnectionRetry`（`ankiconnect_service.dart`）对**幂等**动作会在新连接上重试一次，但 `addNote`/`createModel` 被 `_nonIdempotentActions` 完全排除、**从不重试**（原始 BUG-065 修复怕「写成功后读响应阶段断连」导致重发出重复卡）。后果：用户闲置一段时间后**第一次制卡**复用陈旧连接 → 写失败 → 不重试 → 直接失败，而 Anki 其实完全正常。关键洞察：用户的错误是 **`Write failed`（写系统调用失败）**，证明请求字节**根本没送达**服务器（write() 失败＝未交付，partial write 也是不完整 HTTP 请求、Anki 不会建卡）→ 此情形重发**可证明不会产生重复卡**；原作者担心的是「写成功、读响应阶段 reset」（消息为 "Connection reset/closed"，不含 "Write failed"）那种可能已被处理的情况，二者由消息文本可区分。
