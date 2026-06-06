@@ -29,24 +29,36 @@ Rect calcPopupPosition({
   // 高度直接用 availableHeight（已按 maxHeight 与屏幕可用空间双重 clamp）。
   // 旧实现额外乘 0.5 把高度顶死在半屏，使「弹窗最大高度」设置在半屏以上失效；
   // 去掉后高度设置真正说了算，最高可拉到接近整屏（减边距）。
-  final double height = availableHeight;
+  double height = availableHeight;
 
   final double minLeft = horizontalInset;
   final double maxLeft = screen.width - width - horizontalInset;
   final double minTop = effectiveTop + verticalInset;
-  final double maxTop = effectiveBottom - height - verticalInset;
+  final double maxBottom = effectiveBottom - verticalInset;
 
-  final double spaceBelow =
-      effectiveBottom - selectionRect.bottom - verticalInset;
-  final double spaceAbove = selectionRect.top - effectiveTop - verticalInset;
-  final bool showBelow = spaceBelow >= height || spaceBelow >= spaceAbove;
+  // BUG-098: the popup must never cover the looked-up word. Place it flush
+  // against the selection (above or below) and, when neither side fits the full
+  // height, pick the side with more room and shrink the popup to that room —
+  // so its rect never overlaps [selectionRect]. The old `top.clamp(maxTop)`
+  // pulled a too-tall "below" popup back up over the selection.
+  const double gap = 4.0;
+  final double roomBelow = maxBottom - (selectionRect.bottom + gap);
+  final double roomAbove = (selectionRect.top - gap) - minTop;
+  final bool below = height <= roomBelow
+      ? true
+      : (height <= roomAbove ? false : roomBelow >= roomAbove);
 
   double top;
-  if (showBelow) {
-    top = selectionRect.bottom + 4;
+  if (below) {
+    if (height > roomBelow) height = roomBelow.clamp(0, availableHeight);
+    top = selectionRect.bottom + gap;
   } else {
-    top = selectionRect.top - 4 - height;
+    if (height > roomAbove) height = roomAbove.clamp(0, availableHeight);
+    top = (selectionRect.top - gap) - height;
   }
+  // Final guard: keep the rect on-screen without re-introducing overlap (the
+  // upper bound never drops below minTop / the chosen flush edge).
+  final double maxTop = (maxBottom - height).clamp(minTop, maxBottom);
   top = top.clamp(minTop, maxTop);
 
   double left = selectionRect.left;

@@ -13,6 +13,27 @@
 
 ---
 
+## BUG-099 · 阅读器翻页方向键不跟随阅读方向（竖排 RTL 书「下一页」错绑成右箭头）
+- **报告**：2026-06-07（用户：「从右往左读，默认从右往左翻下一页，下一页是按左箭头；从左往右读，默认从左往右翻下一页，下一页是按右箭头」）。采番注：本轮三条初记 096/097/098，rebase 到 develop 时 096 已被并发提交「书内设置宽窗 master-detail」占用，整体顺延为 097/098/099。
+- **真实性**：✅ **真 bug（键位绑定与阅读方向脱钩，沿真实代码路径定位）**。翻页快捷键由 `ShortcutDefaults`（`shortcut_defaults.dart:50-67`）静态绑定：`readerPageForward`=PageDown/**右箭头**/下箭头/Space，`readerPageBackward`=PageUp/**左箭头**/上箭头/Shift+Space——**右箭头永远=前进**，与书的阅读方向无关。但 JS 分页里 `forward/backward` 是「阅读顺序的下一页/上一页」，物理方向由 writing-mode 决定（`reader_pagination_scripts.dart` `isVertical()`/`vertical-rl`）。竖排 RTL（`vertical-rl`，日文默认，`reader_settings.dart:115` 默认值）从右往左翻，「下一页」物理上在**左**，用户自然按左箭头，却被绑成「上一页」→方向相反。横排 LTR（`horizontal-tb`）右箭头=前进本就正确。
+- **[x] ① 已修复** — 本提交（自含修复+测试+本条目）。**根因修（让裸左右箭头的翻页跟随阅读方向，而非静态写死）**：新增纯函数 `resolveReaderArrowPageTurn({key, modifiers, rtl})`（`reader_space_override.dart`）：仅对**无修饰的裸左/右箭头**按 `rtl` 决定前进/后退（RTL：左=前进、右=后退；LTR 维持右=前进、左=后退），其它键返回 null 交回注册表解析。`reader_hibiki_page._handleKeyEvent`（`reader_hibiki_page.dart:3674` 一带）在 `spaceOverride` 之后、注册表解析之前接入该覆写，`rtl` 取自新 getter `_isRtlReading`（`_settings.writingMode == 'vertical-rl'`，默认 vertical-rl）。上/下箭头、PageUp/PageDown、Space、Ctrl+方向键（有声书句子导航）一律不受影响。
+- **[x] ② 已加自动化测试** — `hibiki/test/reader/reader_space_pause_test.dart` 新增「resolveReaderArrowPageTurn」组：LTR 右=前进/左=后退；RTL 左=前进/右=后退（下一页在左）；带修饰键（Ctrl+方向键）不覆写；上/下/PageDown/Space 不覆写交回默认。
+- **备注**：阅读器键位类。代码正确 + 无回归；**真机/桌面键盘复测待用户**：竖排日文书按左箭头应翻到下一页、右箭头回上一页；切到横排后右箭头=下一页。手柄 D-pad 仍走注册表（本次只改键盘裸左右箭头，符合用户「按箭头」的描述）。
+
+## BUG-098 · 查词弹窗遮挡被查的词（空间不足时弹窗顶边被拉到选区之上）
+- **报告**：2026-06-07（用户：「查词的时候查词弹窗不应该挡住查词的那个文字」）。采番注：见 [[BUG-099]] 采番注，本条由 097 顺延为 098。
+- **真实性**：✅ **真 bug（定位约束错误，沿真实代码路径定位）**。划词弹窗位置由 `calcPopupPosition`（`dictionary_popup_layer.dart:8-56`）算出，拿到了被查词的屏幕矩形 `selectionRect`。原逻辑：`showBelow` 为真时 `top = selectionRect.bottom + 4`，随后 `top = top.clamp(minTop, maxTop)`。当「下方放不下整高弹窗」却仍因 `spaceBelow >= spaceAbove` 选了下方时，`maxTop`（= effectiveBottom - height - inset）会小于 `selectionRect.bottom`，`clamp` 把 top **往上拉到选区之上** → 弹窗盖住被查的词。无任何「弹窗矩形不与选区重叠」的约束。
+- **[x] ① 已修复** — 本提交（自含修复+测试+本条目）。**根因修（消除「短内容被 clamp 拉过选区」的特例，改为永不与选区重叠）**：`calcPopupPosition` 改为先选「能容下整高且不与选区重叠」的一侧（下方 `roomBelow` / 上方 `roomAbove`）；两侧都装不下时取较大一侧，并把弹窗高度**收缩到该侧可用空间**，再贴选区边缘放置（下方 `top=selectionRect.bottom+gap`、上方 `top=selectionRect.top-gap-height`）。最后的 `top.clamp` 上界用 `maxBottom-height`（不再越过贴边），保证既不出屏也不覆盖选区。横向定位（左对齐选区）不动——用户诉求是「不挡住被查的词」，上下不重叠即满足。
+- **[x] ② 已加自动化测试** — `hibiki/test/pages/dictionary_popup_layer_test.dart` 新增「never covers the selection (BUG-098)」组：① 下方紧凑（800×600、选区 250 处、maxHeight 360）断言弹窗顶边 `>= selectionRect.bottom`（旧实现得 234 < 270=覆盖=红，新实现 274=绿）；② 选区靠底放上方断言弹窗底边 `<= selectionRect.top`。既有 8 个 `calcPopupPosition` 用例（宽高 cap、bottomReserve、半屏 cap 移除等）全部无回归。
+- **备注**：弹窗布局类。代码正确 + 单测无回归；**真机复测待用户**：屏幕底部附近查词，弹窗应在选中词上方、不覆盖该词。
+
+## BUG-097 · 书内跳转超链接点击后白屏、不跳转（内部链接被当外部链接交给系统浏览器）
+- **报告**：2026-06-07（用户：「书籍的跳转超链接点了以后会白屏，没跳转」）。采番注：见 [[BUG-099]] 采番注，本条由 096 顺延为 097。
+- **真实性**：✅ **真 bug（沿真实代码路径定位）**。EPUB 内 `<a>` 点击不被选词拦截（`reader_selection_scripts.dart:258` 命中 `<a>` 时 `selectText` 返回 null，放行原生导航）→ 进入 `shouldOverrideUrlLoading`（`reader_hibiki_page.dart:2007`）→ `EpubBook.resolveInternalLink`（`epub_book.dart:88`）解析。两个缺陷叠加：① `resolveInternalLink` 用**严格 `==`** 比对路径（`epub_book.dart:99`），对带 `//`/冗余段或解码不对称的链接会漏判 → 返回 null。② 返回 null 后落到 `_openExternalUrl`（`reader_hibiki_page.dart:2923`），而书内 URL 是 `https://hoshi.local/...`（`reader_hibiki_source.dart:59 epubUrl`），`https` 命中外部 scheme 白名单 → **用系统浏览器打开不存在的 `hoshi.local`（白屏），同时 CANCEL 了书内导航（不跳转）**。正是「白屏、没跳转」。
+- **[x] ① 已修复** — 本提交（自含修复+测试+本条目）。**根因修（双管：内链解析更鲁棒 + 绝不把自家虚拟 host 交给系统浏览器）**：① `resolveInternalLink` 两侧路径都过新静态 helper `_canonicalEpubPath`（`normalizeHref` + `p.posix.normalize`，消除 `//`/`./`/`../` 与斜杠风格不对称），比对前对称规范化。② 新增可测纯函数 `ReaderHibikiSource.isExternalUrl(url)`：`host == kHost` 一律判为**非外部**；`_openExternalUrl` 改为 `if (!ReaderHibikiSource.isExternalUrl(url)) return;`——未解析的内链就停在原页（导航已 CANCEL），绝不弹空白系统浏览器。真正的外部 http/https/mailto/tel（脚注外链）照常外开。
+- **[x] ② 已加自动化测试** — `hibiki/test/epub/epub_book_utils_test.dart` 新增「BUG-097 path normalization」组（`../`/`./`/`//` 内链都能解析到对应章节，不再漏判为外部）+ `hibiki/test/media/sources/reader_hibiki_source_test.dart` 新增「isExternalUrl」组（hoshi.local 书内 URL 永不外开、真正外链外开、非外部 scheme/不可解析不外开）。
+- **备注**：阅读器/WebView 类。`_openExternalUrl` 的 host 守卫**确定性消除了「点内链弹空白浏览器」的白屏**；`resolveInternalLink` 规范化是对称硬化。**真机复测待用户**（CLAUDE.md 验证纪律）：点书内目录/脚注跳转链接应在书内跳转、不再白屏或弹外部浏览器；若个别书仍不跳转（如绝对路径 `/...` 形式的内链），需用户提供该书与设备日志进一步定位。
+
 ## BUG-096 · 书内设置（宽窗 master-detail）整张一块滚动、左父菜单不固定
 - **报告**：2026-06-07（用户：「这书籍里的设置……左边不居中、左边不固定住、整个页面一块滚动，好好看看外面的设置」，附截图 `阅读进度` 宽窗 master-detail）。采番注：初记 095，rebase 到 develop 时 095 已被并发提交「视频里查词热槽」占用，改取 096。
 - **真实性**：✅ **真 bug（沿真实渲染路径 + 测试崩溃双重定位）**。书内快捷设置 `reader_quick_settings_sheet.dart` 宽窗（`>=640`）走 `MaterialSupportingPaneLayout`（左父菜单固定 + 右详情独立滚），但整个 sheet 被 `HibikiModalSheetFrame(scrollable: true)` 包了一层**外层 `SingleChildScrollView`**。外层滚动视口给 supporting-pane 布局**无界高度**（`h=Infinity`），`MaterialSupportingPaneLayout` 内部 `Row(crossAxisAlignment.stretch)` 拿到无限高 → **debug 直接 `BoxConstraints forces an infinite height` 崩**（`audiobook_play_bar_theme_chip_test.dart` 的 wide / navigation 两用例预存红即此），**release 不崩但两个 pane 都 shrink-wrap 成内容高、再被外层一块整体滚动** → 左父菜单跟着右详情一起滚、永不固定（=用户「整页一块滚 / 左边不固定」）。对照主页设置 `settings_home_page.dart`：同一 pane 布局放进**有界的 `Expanded`、无外层滚动**，故左固定右独立滚（=用户「外面的设置」该有的样子）。

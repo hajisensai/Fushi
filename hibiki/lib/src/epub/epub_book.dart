@@ -91,17 +91,30 @@ class EpubBook {
     if (uri.host != ReaderHibikiSource.kHost) return null;
     if (!uri.path.startsWith('/epub/')) return null;
 
-    final String epubPath =
-        Uri.decodeComponent(uri.path.substring('/epub/'.length));
+    final String epubPath = _canonicalEpubPath(
+        Uri.decodeComponent(uri.path.substring('/epub/'.length)));
     final String? fragment = uri.fragment.isNotEmpty ? uri.fragment : null;
 
     for (int i = 0; i < chapters.length; i++) {
-      if (chapters[i].href == epubPath) {
+      if (_canonicalEpubPath(chapters[i].href) == epubPath) {
         return (chapterIndex: i, fragment: fragment);
       }
     }
 
     return null;
+  }
+
+  // BUG-097: the WebView resolves a relative `<a href>` against the current
+  // document URL, so the clicked link's path can carry `./` / `../` / duplicate
+  // slashes that the stored chapter href (canonicalized at parse time) does not.
+  // A strict `==` then missed legitimate internal links → the caller fell back
+  // to opening `https://hoshi.local/...` in the OS browser (blank page) instead
+  // of jumping. Canonicalize both sides (POSIX, slash-style agnostic) so the
+  // comparison is symmetric regardless of redundant path segments.
+  static String _canonicalEpubPath(String path) {
+    final String normalized = normalizeHref(path);
+    if (normalized.isEmpty) return normalized;
+    return p.posix.normalize(normalized);
   }
 }
 

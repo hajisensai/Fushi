@@ -216,6 +216,52 @@ void main() {
               'https://hoshi.local/epub/nonexistent.xhtml'),
           isNull);
     });
+
+    // BUG-097: the WebView resolves a relative `<a href>` against the document
+    // URL, so the clicked link can carry `./` / `../` / duplicate slashes that
+    // the canonicalized stored href does not. These must still resolve (else the
+    // caller opens a blank OS browser for hoshi.local instead of jumping).
+    group('BUG-097 path normalization (../ ./ // resolve, not external)', () {
+      final book = EpubBook(
+        title: 'Test',
+        chapters: [
+          EpubChapter(
+            id: 'ch1',
+            href: 'OEBPS/ch1.xhtml',
+            mediaType: 'application/xhtml+xml',
+            html: '',
+          ),
+          EpubChapter(
+            id: 'ch2',
+            href: 'OEBPS/text/ch2.xhtml',
+            mediaType: 'application/xhtml+xml',
+            html: '',
+          ),
+        ],
+      );
+
+      test('parent-relative (../) link resolves to the chapter', () {
+        final result = book.resolveInternalLink(
+            'https://hoshi.local/epub/OEBPS/text/../ch1.xhtml');
+        expect(result, isNotNull);
+        expect(result!.chapterIndex, 0);
+      });
+
+      test('current-dir (./) link resolves to the chapter', () {
+        final result = book.resolveInternalLink(
+            'https://hoshi.local/epub/OEBPS/./text/ch2.xhtml#frag');
+        expect(result, isNotNull);
+        expect(result!.chapterIndex, 1);
+        expect(result.fragment, 'frag');
+      });
+
+      test('duplicate slashes resolve to the chapter', () {
+        final result = book
+            .resolveInternalLink('https://hoshi.local/epub/OEBPS//ch1.xhtml');
+        expect(result, isNotNull);
+        expect(result!.chapterIndex, 0);
+      });
+    });
   });
 
   group('EpubResource.readBytes', () {

@@ -63,6 +63,19 @@ class ReaderHibikiSource extends ReaderMediaSource {
 
   static String fontUrl(String path) => ReaderCustomFontCss.fontUrl(path);
 
+  // BUG-097: decide whether a navigation URL belongs to the OS browser. Internal
+  // book content lives on the [kHost] virtual host (https://hoshi.local/...), so
+  // an internal link that failed to resolve to a chapter must NEVER be handed to
+  // the OS — that opens a blank page for a non-existent host. Only genuine
+  // external schemes on a different host are external.
+  static bool isExternalUrl(String url) {
+    final Uri? uri = Uri.tryParse(url);
+    if (uri == null) return false;
+    if (uri.host == kHost) return false;
+    const Set<String> externalSchemes = {'http', 'https', 'mailto', 'tel'};
+    return externalSchemes.contains(uri.scheme);
+  }
+
   /// Parse `hoshi://book/<bookKey>` back to the bookKey. Returns null for an
   /// unparseable identifier. The bookKey is the sanitized title (the EpubBooks
   /// primary key); legacy `hoshi://book/<int>` identifiers were rewritten to

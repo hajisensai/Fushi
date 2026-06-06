@@ -176,6 +176,11 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   ReaderSettings? _settings;
   String? _extractDir;
 
+  // BUG-099: true for right-to-left reading (vertical-rl, the Japanese default),
+  // which flips the bare Left/Right arrow page-turn direction.
+  bool get _isRtlReading =>
+      (_settings?.writingMode ?? 'vertical-rl') == 'vertical-rl';
+
   int _currentChapter = 0;
   bool _readerContentReady = false;
   bool _hasEverLoaded = false;
@@ -2923,8 +2928,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   Future<void> _openExternalUrl(String url) async {
     final Uri? uri = Uri.tryParse(url);
     if (uri == null) return;
-    const Set<String> externalSchemes = {'http', 'https', 'mailto', 'tel'};
-    if (!externalSchemes.contains(uri.scheme)) return;
+    // BUG-097: an unresolved internal link (host == kHost) must stay in the
+    // reader — never pop a blank OS browser for our virtual hoshi.local host.
+    if (!ReaderHibikiSource.isExternalUrl(url)) return;
     try {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } catch (e, stack) {
@@ -3670,7 +3676,16 @@ window.flutter_inappwebview.callHandler('spreadReady');
       hasActiveAudiobook: _audiobookController != null &&
           _audiobookController!.chapterCueCount > 0,
     );
+    // BUG-099: bare Left/Right page-turn follows the reading direction (RTL book
+    // advances on Left). Resolved before the registry, which binds Right=forward
+    // unconditionally; null for any other key leaves default resolution intact.
+    final ShortcutAction? arrowOverride = resolveReaderArrowPageTurn(
+      key: event.logicalKey,
+      modifiers: modifiers,
+      rtl: _isRtlReading,
+    );
     ShortcutAction? action = spaceOverride ??
+        arrowOverride ??
         appModel.shortcutRegistry.resolveKeyboard(
           event.logicalKey,
           modifiers: modifiers,

@@ -21,3 +21,31 @@ ShortcutAction? resolveReaderSpaceOverride({
   if (!hasActiveAudiobook) return null;
   return ShortcutAction.audiobookPlayPause;
 }
+
+/// 翻页方向键必须跟随阅读方向（BUG-098）：
+/// - 竖排 RTL（`vertical-rl`，日文默认）：从右往左读，「下一页」在左 → 左箭头前进、
+///   右箭头后退。
+/// - 横排 LTR（`horizontal-tb`）：从左往右读，「下一页」在右 → 右箭头前进、
+///   左箭头后退。
+///
+/// 默认绑定把「右箭头=前进」写死，对 RTL 书方向恰好相反。本函数在注册表解析前
+/// 介入，仅处理「无修饰的裸左/右箭头」；其它键（上/下箭头、PageUp/PageDown、
+/// Space，以及 Ctrl+方向键的有声书句子导航）一律返回 null，交回默认解析不受影响。
+ShortcutAction? resolveReaderArrowPageTurn({
+  required LogicalKeyboardKey key,
+  required Set<ModifierKey> modifiers,
+  required bool rtl,
+}) {
+  if (modifiers.isNotEmpty) return null;
+  if (key == LogicalKeyboardKey.arrowLeft) {
+    return rtl
+        ? ShortcutAction.readerPageForward
+        : ShortcutAction.readerPageBackward;
+  }
+  if (key == LogicalKeyboardKey.arrowRight) {
+    return rtl
+        ? ShortcutAction.readerPageBackward
+        : ShortcutAction.readerPageForward;
+  }
+  return null;
+}

@@ -147,6 +147,39 @@ void main() {
     });
   });
 
+  group('calcPopupPosition never covers the selection (BUG-098)', () {
+    // selection 在垂直中线偏上：下方空间略大于上方但都装不下整高弹窗。旧实现
+    // 走「below」分支后用 top.clamp(maxTop) 把弹窗顶边拉到选区之上 → 盖住选中词。
+    test('tight-fit below: popup top stays at/below the selection bottom', () {
+      const Rect selectionRect = Rect.fromLTWH(100, 250, 40, 20);
+      const Size screen = Size(800, 600);
+      final Rect popupRect = calcPopupPosition(
+        selectionRect: selectionRect,
+        screen: screen,
+        maxHeight: 360,
+      );
+
+      // 弹窗顶边不得越过选区底边（否则覆盖被查的词）。
+      expect(popupRect.top, greaterThanOrEqualTo(selectionRect.bottom));
+      // 仍在屏内。
+      expect(popupRect.bottom, lessThanOrEqualTo(600));
+    });
+
+    test('placed above keeps its bottom at/above the selection top', () {
+      // 选区靠近底部：弹窗放上方，底边不得越过选区顶边。
+      const Rect selectionRect = Rect.fromLTWH(100, 560, 40, 30);
+      const Size screen = Size(800, 600);
+      final Rect popupRect = calcPopupPosition(
+        selectionRect: selectionRect,
+        screen: screen,
+        maxHeight: 360,
+      );
+
+      expect(popupRect.bottom, lessThanOrEqualTo(selectionRect.top));
+      expect(popupRect.top, greaterThanOrEqualTo(0));
+    });
+  });
+
   testWidgets('empty popup layer fits a compact surface without overflow', (
     WidgetTester tester,
   ) async {

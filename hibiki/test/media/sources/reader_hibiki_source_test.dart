@@ -33,6 +33,42 @@ void main() {
     });
   });
 
+  group('ReaderHibikiSource.isExternalUrl (BUG-097 内链不外开)', () {
+    test('内部 hoshi.local 书内 URL 永不当外部链接(未解析时不弹系统浏览器)', () {
+      expect(
+        ReaderHibikiSource.isExternalUrl(
+            'https://hoshi.local/epub/OEBPS/ch2.xhtml'),
+        isFalse,
+      );
+      expect(
+        ReaderHibikiSource.isExternalUrl(
+            'https://hoshi.local/epub/text/note.xhtml#n1'),
+        isFalse,
+      );
+    });
+
+    test('真正的外部 http/https/mailto 链接 → 外部打开', () {
+      expect(
+        ReaderHibikiSource.isExternalUrl('https://example.com/page'),
+        isTrue,
+      );
+      expect(
+        ReaderHibikiSource.isExternalUrl('http://example.com/'),
+        isTrue,
+      );
+      expect(
+        ReaderHibikiSource.isExternalUrl('mailto:a@b.com'),
+        isTrue,
+      );
+    });
+
+    test('非外部 scheme / 无法解析 → 不外开', () {
+      expect(ReaderHibikiSource.isExternalUrl('hoshi://book/foo'), isFalse);
+      expect(ReaderHibikiSource.isExternalUrl('about:blank'), isFalse);
+      expect(ReaderHibikiSource.isExternalUrl('://broken'), isFalse);
+    });
+  });
+
   group('ReaderHibikiSource custom font helpers', () {
     late Directory tempDir;
 
