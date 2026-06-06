@@ -157,6 +157,28 @@ dependency_overrides:
     path: ../third_party/carousel_slider
   fading_edge_scrollview:
     path: ../third_party/fading_edge_scrollview
+  # BUG-073: upstream media_kit_libs_windows_video 1.0.11 pins a 2023-09-24
+  # libmpv whose FFmpeg build cannot decode TrueHD (TrueHD 5.1 movies play with
+  # NO sound — verified the bundled DLL fails `Opening decoder truehd` at
+  # runtime). Vendored fork repoints the CMake download to a maintained
+  # full-FFmpeg libmpv (zhongfly/mpv-winbuild) that decodes TrueHD; see
+  # third_party/media_kit_libs_windows_video/windows/CMakeLists.txt. Same DLL
+  # also backs the audiobook player, so this fixes TrueHD audiobooks too.
+  media_kit_libs_windows_video:
+    path: ../third_party/media_kit_libs_windows_video
+  # BUG-073 (cont.): the SAME TrueHD gap exists on macOS/iOS/Android — media-kit's
+  # "default" FFmpeg flavor enables the truehd demuxer but not its decoder, so
+  # TrueHD audio is silent on every platform, not just Windows. These forks switch
+  # each platform to media-kit's own "full" flavor (which enables all decoders):
+  # darwin v0.7.0 -video-full (macOS/iOS) and android v1.1.11 full-*.jar. Linux
+  # uses the system libmpv (full FFmpeg) and needs no override. See each package's
+  # Makefile / build.gradle for the per-platform repoint + checksums.
+  media_kit_libs_macos_video:
+    path: ../third_party/media_kit_libs_macos_video
+  media_kit_libs_ios_video:
+    path: ../third_party/media_kit_libs_ios_video
+  media_kit_libs_android_video:
+    path: ../third_party/media_kit_libs_android_video
 
 dev_dependencies:
   build_runner: ^2.3.3
