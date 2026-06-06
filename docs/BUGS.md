@@ -13,6 +13,15 @@
 
 ---
 
+## BUG-077 · 制卡「+」点击后永久卡在加号、无任何提示（查词浮窗）
+- **报告**：2026-06-06（用户：「制卡加号点击以后一直卡在加号，没变化」；追问确认：阅读器/视频查词浮窗、完全没有任何 toast、Anki 已配好且正开着）。采番注：动手时基线最大号 BUG-076，取 077（以提交为准，可能被并发抢）。
+- **真实性**：✅ **真 bug（沿真实代码路径定位）**。查词浮窗（WebView，`assets/popup/popup.js`）制卡按钮在 `createEntryHeader`：初始 `disabled:true`，点击时 `onclick` 先 `mineButton.disabled = true`，再 `await mineEntry(...)`（经 `callHandler('mineEntry')` → Dart `onMineFromPopup`/mixin `onMineEntry` → `repo.mineEntry`）。**关键判据**：正常失败（重复/未配置/导出失败）会让 Dart 端 `switch` 命中弹对应 `HibikiToast`，且按钮 ≤1s 后 revert 回 `+`。用户「一直卡 + 一个 toast 都没有」⇒ 非正常失败路径，而是**抛异常/挂起**路径，命中两处结构性缺陷：
+  - **① Dart `mineEntry` 违反契约**：声明返回 `MineResult`，但 `_mineEntryInner` 顶部 `loadSettings()`、`AnkiHandlebarRenderer.render`、`normalizeAnkiDictionaryHtml` 等**未保护**，任一抛出即逃逸出方法 → 调用方 `switch` 被跳过 → 无 toast。（`_storeLocalMedia`/`_storeRemoteAudio`/`_storeDictionaryMedia` 本就各有 try/catch，非元凶。）根因 `packages/hibiki_anki/lib/src/ankiconnect/ankiconnect_repository.dart:96`（及 AnkiDroid `ankidroid/anki_repository.dart:116`）。
+  - **② JS `onclick` 无 try/catch**：`disabled=true` 之后 `await mineEntry(...)` 一旦 reject（Dart 逃逸，或 JS 侧 `mineEntry()` 构造 payload 抛），onclick 异步函数中断，按钮**永久停在 disabled 的 `+`**、无任何恢复。根因 `hibiki/assets/popup/popup.js`（`createEntryHeader` 的 mine `onclick`）。
+- **[x] ① 已修复** — 本提交（自含修复+测试+本条目；并发抢号致哈希随 rebase 变动故不内联记录）。**根因修**两层各归位：① 两个仓库 `mineEntry` 把方法体抽成 `_mineEntryInner`，公开 `mineEntry` 只做一层 try/catch 兜底——`debugPrint` 记录**真实异常**（被 `ErrorLogService` 捕获，便于定位每次必抛那步）、返回 `MineResult.error`，使「返回 MineResult」契约永远成立（失败不再逃逸而是正常 error 分支 → 弹「导出失败」toast）；② popup.js 的 mine `onclick` 整体包 try/catch，任何异常把按钮恢复成可点的 `+`（`disabled=false`），绝不卡死。
+- **[x] ② 已加自动化测试** — `packages/hibiki_anki/test/mine_entry_never_throws_test.dart`（子类覆写 `loadSettings()` 抛异常，断言两后端 `mineEntry` 返回 `MineResult.error` 且 future 不 reject，4 绿）+ `hibiki/test/pages/popup_mine_button_recovers_static_test.dart`（源码守卫：mine `onclick` 含 `try {` / `} catch (e) {` / `mineButton.disabled = false`）。`packages/hibiki_anki` 全量 36 绿、`hibiki/test/anki` + popup 守卫 34 绿、现有 `node popup_asset_behavior_test.js` 仍绿。
+- **备注**：本修复消除「卡死 + 零反馈」这一确切症状，并把底层「每次必抛那步」暴露成「导出失败」toast + 调试日志。若真机点 + 后稳定弹「导出失败」，需用户导出一次 Debug/Error 日志贴出底层异常做最终闭环。真机/真桌面复测**待用户**（后台跑不了 GUI 构建）。
+
 ## BUG-076 · .m3u8/.m3u 播放列表无法拖动导入（桌面拖放被静默忽略）
 - **报告**：2026-06-06（用户：「.m3u8 播放列表没办法拖动导入，需要修复」）。采番注：动手时基线最大号 BUG-075，取 076（以提交为准，可能被并发抢）。
 - **真实性**：✅ **真 bug（沿真实代码路径定位）**。桌面拖放经 `HibikiFileDropTarget` → `home_video_page._handleVideoDrop` → `classifyDroppedFiles(paths)` 按扩展名分类 → `decideDropIntent(surface: video, ...)` 决策意图。`drop_classification.dart` 的分类集合 `kDragBook/Video/Subtitle/AudioExtensions` **均不含 `m3u8`/`m3u`**，故拖入的播放列表落进 `unknown`；video 表面的 `decideDropIntent` 只看 `files.videos`/`files.subtitles`（`drop_decision.dart:36-43`），两者皆空 → 返回 `DropIntent.ignore` → `_handleVideoDrop` 的 switch 命中 `ignore` 直接 `break`，拖放被静默丢弃、无任何反馈。而手动「视频导入」对话框里 `_pickPlaylist`（FilePicker 限 `m3u8`/`m3u`）→ `parseM3u8` → 建 playlist VideoBook 这条路径一直存在且正确——缺的只是拖放入口没把 m3u8 路由到它。根因 `hibiki/lib/src/media/drag_drop/drop_classification.dart`（m3u8 未分类）+ `drop_decision.dart:36`（video 表面无 playlist 分支）。

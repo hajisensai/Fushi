@@ -112,8 +112,27 @@ class AnkiRepository extends BaseAnkiRepository {
     return int.parse(value.toString());
   }
 
+  // BUG-077: mirror AnkiConnectRepository — never let mineEntry throw. The
+  // popup mine button disables itself and awaits this Future; an escape would
+  // hang the '+' with no toast. Convert any unhandled error into
+  // MineResult.error so the caller's switch always runs.
   @override
   Future<MineResult> mineEntry({
+    required String rawPayloadJson,
+    required AnkiMiningContext context,
+  }) async {
+    try {
+      return await _mineEntryInner(
+        rawPayloadJson: rawPayloadJson,
+        context: context,
+      );
+    } catch (e, stack) {
+      debugPrint('AnkiRepository.mineEntry: unhandled $e\n$stack');
+      return MineResult.error;
+    }
+  }
+
+  Future<MineResult> _mineEntryInner({
     required String rawPayloadJson,
     required AnkiMiningContext context,
   }) async {
