@@ -1331,6 +1331,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       return false;
     }
     controller.setCues(cues);
+    // BUG-081: 单视频把解析出的 cue 落库，重进时 `_loadSingle` 的 `loadCues`
+    // 直接命中，无需用户再手动加载。播放列表各集有意不存 DB（每集外部文件按
+    // 磁盘动态解析，避免跨集 bookUid 错配，见 `_loadEpisode` 注释），故仅在
+    // 无播放列表（`_episodes.isEmpty`）时持久化。
+    if (_episodes.isEmpty) {
+      await widget.repo.saveCues(bookUid: widget.bookUid, cues: cues);
+    }
     // 选了文本字幕源就关掉 libmpv 画面字幕，避免与可点 overlay 双重渲染。
     await controller.selectSubtitleTrack(SubtitleTrack.no());
 
@@ -1347,6 +1354,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 关闭字幕：清空 cue overlay + 关 libmpv 字幕轨 + 持久化 null。
   Future<void> _selectSubtitleOff(VideoPlayerController controller) async {
     controller.setCues(const <AudioCue>[]);
+    // BUG-081: 关字幕也要清掉单视频已落库的 cue，否则重进时 `loadCues` 命中旧
+    // cue 又把字幕显示回来。播放列表不入 DB，无需清。
+    if (_episodes.isEmpty) {
+      await widget.repo
+          .saveCues(bookUid: widget.bookUid, cues: const <AudioCue>[]);
+    }
     await controller.selectSubtitleTrack(SubtitleTrack.no());
     await widget.repo.updateSubtitleSource(widget.bookUid, null);
     if (!mounted) return;

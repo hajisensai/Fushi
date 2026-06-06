@@ -13,6 +13,13 @@
 
 ---
 
+## BUG-081 · 视频运行时手动加载字幕后，重进视频字幕丢失、要再手动加载
+- **报告**：2026-06-06（用户：「导入字幕后要给字幕做个持久化，现在重新进入视频字幕又要手动加载」）。采番注：动手时 worktree 基线最大号 BUG-078（本轮同时处理 079/080/082），取 081（以提交为准，可能被并发抢）。
+- **真实性**：✅ **真 bug（沿真实代码路径定位）**。视频播放页所有运行时手动字幕入口（文件导入 / Jimaku 下载 / 拖拽落字幕 / 字幕源菜单选轨）都汇聚到 `_selectSubtitleSource`（`video_hibiki_page.dart:1313`）。它 `controller.setCues(cues)`（仅进内存）+ `repo.updateSubtitleSource(...)`（只存字幕**源路径字符串**），**漏了 `repo.saveCues`**（写 DB cue）。对比初次导入对话框 `video_import_dialog.dart:438` 在 `saveVideoBook` 后**有** `saveCues`——运行时路径不对称地少了这一步。重进视频时 `_loadSingle`（`:266-301`）先 `loadCues`（因从未写入 → 空），cue 为空再退 `_restorePersistedSubtitle` 靠 `listAllSubtitleSources` 枚举字幕源（只枚举内嵌轨 + 视频**同目录同名前缀**外挂文件）；而手动导入的字幕被拷到 `<appDocs>/video_subtitles/<basename>`，**不在视频同目录** → 枚举不到 → 匹配失败 → cue 仍空 → 字幕丢失。根因 `hibiki/lib/src/pages/implementations/video_hibiki_page.dart:1313-1345`（运行时缺 `saveCues`）。
+- **[x] ① 已修复** — 本提交（自含修复+测试+本条目）。**根因修**：在 `_selectSubtitleSource` 的 `setCues` 后补 `await widget.repo.saveCues(bookUid: widget.bookUid, cues: cues)`，与初次导入路径对称；`_selectSubtitleOff` 同步补「清空 DB cue」（否则关字幕后重进 `loadCues` 命中旧 cue 又显示回来）。两处均**门控单视频** `_episodes.isEmpty`——播放列表各集有意不存 DB（每集外部文件按磁盘动态解析，避免跨集 bookUid 错配，见 `_loadEpisode` 注释 `:348-349`）。复用既有 `audioCues` 表 + `replaceCuesForBook` 原语，**不改 schema、不升版**。
+- **[x] ② 已加自动化测试** — `hibiki/test/media/video/video_subtitle_persist_guard_test.dart`（源码守卫 2 例：`_selectSubtitleSource` 含 `_episodes.isEmpty` 门控 + `saveCues(bookUid: widget.bookUid, cues: cues)`；`_selectSubtitleOff` 含门控 + `saveCues` 清空。media_kit headless 不可用故守卫调用点不变式）+ `hibiki/test/media/video/video_book_repository_test.dart` 新增「saveCues 空列表清空 DB cue」锁住关字幕路径（既有 saveCues→loadCues roundtrip 已覆盖存读）。8 绿；`flutter analyze` 0 issue。
+- **备注**：真机/真桌面端「单视频手动加载字幕 → 退出 → 重进字幕自动恢复」「关字幕后重进不复现」复测**待用户**（后台跑不了 GUI 构建）。
+
 ## BUG-082 · 批量导入词典时每个失败项阻塞约 3 秒、无统一汇总
 - **报告**：2026-06-06（用户：「导入词典的时候，失败不等待 3s，统一在最后显示」）。采番注：动手时 worktree 基线最大号 BUG-078（本轮同时处理 079/080/081），取 082（以提交为准，可能被并发抢）。
 - **真实性**：✅ **真 bug（沿真实代码路径定位）**。批量导入两条路径都经 `DictionaryImportManager.importFromFile`：文件多选 → `dictionary_dialog_page.dart:325` 循环；目录多 zip → `dictionary_import_manager.dart:98` 循环。`importFromFile` 的 catch（旧 `dictionary_import_manager.dart:341-352`）在每个失败项上 `progressNotifier.value='$e'` + `Future.delayed(3s)`，内存错误再 `+3s`，最后 `import_failed` `+1s`，**且不 rethrow**。后果：① 每本坏词典卡 3~7 秒；② 上层循环拿不到异常 → 无法收集失败、无法汇总（目录循环 `:110-113` 的 `failedNames` 收集与末尾 summary toast 形同**死代码**；下载循环 `:696` 甚至把导入失败误计 `successCount++`）。`importFromDirectory` 单档（migaku 文件夹）catch（旧 `:224-235`）同款。根因 `hibiki/lib/src/models/dictionary_import_manager.dart:341-352` 与 `:224-235`（逐失败内联 3s 延时 + 吞异常）。
