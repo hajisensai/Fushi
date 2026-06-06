@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/utils/misc/frame_safe_notifier.dart';
+import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:path_provider/path_provider.dart';
 
 class ErrorLogEntry {
@@ -185,4 +186,24 @@ class ErrorLogService extends ChangeNotifier with FrameSafeNotifier {
       debugPrint('[ErrorLogService] clear failed: $e');
     }
   }
+}
+
+/// BUG-089：制卡失败的统一处理。在所有 `MineResult.error` 分支调用：
+/// ① 把**完整诊断**（原始异常 + 栈）写进 [ErrorLogService]（错误日志页可查），
+/// ② 返回给用户看的**简短 toast 文案**（带后端带回的简短原因，无原因则降级到
+///    通用文案）。
+///
+/// 单一真相源：5 个调用点（dictionary_page_mixin / reader_hibiki_page /
+/// floating_dict_page / video_hibiki_page / app_model）都走这里，避免「记日志 +
+/// 文案」逻辑被复制 5 份后各自漂移。[outcome] 应满足 `result == MineResult.error`。
+String logMineFailure(MineOutcome outcome) {
+  ErrorLogService.instance.log(
+    'Anki.mineEntry',
+    outcome.error ?? outcome.errorDetail ?? 'unknown card export error',
+    outcome.stackTrace,
+  );
+  final String? detail = outcome.errorDetail;
+  return detail != null && detail.isNotEmpty
+      ? t.card_export_failed_detail(reason: detail)
+      : t.card_export_failed;
 }

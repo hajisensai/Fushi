@@ -91,11 +91,11 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
   Future<void> _exportToAnki(Map<String, String> fields) async {
     final repo = ref.read(ankiRepositoryProvider);
     const miningContext = AnkiMiningContext(sentence: '');
-    final result = await repo.mineEntry(
+    final outcome = await repo.mineEntry(
       rawPayloadJson: jsonEncode(fields),
       context: miningContext,
     );
-    switch (result) {
+    switch (outcome.result) {
       case MineResult.success:
         final settings = await repo.loadSettings();
         HibikiToast.show(
@@ -107,7 +107,7 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
       case MineResult.notConfigured:
         HibikiToast.show(msg: t.card_export_not_configured);
       case MineResult.error:
-        HibikiToast.show(msg: t.card_export_failed);
+        HibikiToast.show(msg: logMineFailure(outcome));
     }
   }
 

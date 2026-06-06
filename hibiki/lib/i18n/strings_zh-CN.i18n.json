@@ -1323,5 +1323,6 @@
     "video_subtitle_import_failed": "导入字幕失败",
     "nav_lookup": "查词",
     "sync_server_mode_active": "本机作为同步服务端",
-    "sync_server_mode_clients_drive": "由已连接的客户端发起同步，本机无需手动同步"
+    "sync_server_mode_clients_drive": "由已连接的客户端发起同步，本机无需手动同步",
+    "card_export_failed_detail": "导出卡片失败：$reason"
 }

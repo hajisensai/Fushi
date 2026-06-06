@@ -522,3 +522,62 @@ class AnkiFetchError extends AnkiFetchResult {
 }
 
 enum MineResult { success, duplicate, notConfigured, error }
+
+/// 制卡（mineEntry）的结果。
+///
+/// [result] 是分类枚举，所有调用点据此 `switch` 分支（成功/重复/未配置/错误）。
+/// 当 [result] == [MineResult.error] 时，[errorDetail] 带**简短的人类可读原因**
+/// （用于 toast，例如 AnkiConnect 自身返回的错误文本、"字段全空" 等），
+/// [error] / [stackTrace] 带**完整诊断**（由主 app 的 UI 层写入 ErrorLogService）。
+///
+/// BUG-089：旧实现 `mineEntry` 返回裸 `MineResult.error`，把真实失败原因丢在
+/// 各后端的 `debugPrint`（默认不落 ErrorLogService），用户既看不到 toast 原因、
+/// 错误日志页也查不到。hibiki_anki 是独立包、不能直接引用主 app 的
+/// `ErrorLogService`，故把原因作为返回值带出，由主 app 负责记日志 + 展示。
+class MineOutcome {
+  const MineOutcome(
+    this.result, {
+    this.errorDetail,
+    this.error,
+    this.stackTrace,
+  });
+
+  const MineOutcome.success()
+      : result = MineResult.success,
+        errorDetail = null,
+        error = null,
+        stackTrace = null;
+
+  const MineOutcome.duplicate()
+      : result = MineResult.duplicate,
+        errorDetail = null,
+        error = null,
+        stackTrace = null;
+
+  const MineOutcome.notConfigured()
+      : result = MineResult.notConfigured,
+        errorDetail = null,
+        error = null,
+        stackTrace = null;
+
+  /// 失败：[detail] 简短原因（toast），[error]/[stackTrace] 完整诊断（错误日志）。
+  MineOutcome.failure(
+    String detail, {
+    Object? error,
+    StackTrace? stackTrace,
+  })  : result = MineResult.error,
+        errorDetail = detail,
+        error = error,
+        stackTrace = stackTrace;
+
+  final MineResult result;
+
+  /// 仅在 [result] == [MineResult.error] 时非空：简短的人类可读失败原因。
+  final String? errorDetail;
+
+  /// 仅在错误时可能非空：原始异常对象（写入错误日志，含完整信息）。
+  final Object? error;
+
+  /// 仅在错误时可能非空：异常栈（写入错误日志）。
+  final StackTrace? stackTrace;
+}

@@ -2857,11 +2857,11 @@ class AppModel with ChangeNotifier {
           'glossary': DictionaryEntry.meaningToPlainText(meaning),
         };
         try {
-          final MineResult result = await repo.mineEntry(
+          final MineOutcome outcome = await repo.mineEntry(
             rawPayloadJson: jsonEncode(fields),
             context: const AnkiMiningContext(sentence: ''),
           );
-          switch (result) {
+          switch (outcome.result) {
             case MineResult.success:
               final AnkiSettings settings = await repo.loadSettings();
               HibikiToast.show(
@@ -2873,7 +2873,7 @@ class AppModel with ChangeNotifier {
             case MineResult.notConfigured:
               HibikiToast.show(msg: t.card_export_not_configured);
             case MineResult.error:
-              HibikiToast.show(msg: t.card_export_failed);
+              HibikiToast.show(msg: logMineFailure(outcome));
           }
         } catch (e, stack) {
           ErrorLogService.instance.log('FloatingDict.ankiExport', e, stack);

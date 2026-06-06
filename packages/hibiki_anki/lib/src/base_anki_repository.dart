@@ -39,7 +39,7 @@ abstract class BaseAnkiRepository {
 
   Future<AnkiFetchResult> fetchConfiguration();
 
-  Future<MineResult> mineEntry({
+  Future<MineOutcome> mineEntry({
     required String rawPayloadJson,
     required AnkiMiningContext context,
   });

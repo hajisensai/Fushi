@@ -67,11 +67,11 @@ mixin DictionaryPageMixin {
   Future<bool> onMineEntry(Map<String, String> fields) async {
     final repo = ref.read(ankiRepositoryProvider);
     final miningContext = AnkiMiningContext(sentence: fields['sentence'] ?? '');
-    final result = await repo.mineEntry(
+    final outcome = await repo.mineEntry(
       rawPayloadJson: jsonEncode(fields),
       context: miningContext,
     );
-    switch (result) {
+    switch (outcome.result) {
       case MineResult.success:
         final settings = await repo.loadSettings();
         HibikiToast.show(
@@ -87,7 +87,7 @@ mixin DictionaryPageMixin {
         HibikiToast.show(msg: t.card_export_not_configured);
         return false;
       case MineResult.error:
-        HibikiToast.show(msg: t.card_export_failed);
+        HibikiToast.show(msg: logMineFailure(outcome));
         return false;
     }
   }

@@ -69,7 +69,7 @@ void main() {
         'reading': 'とうごうてすと',
         'glossary': 'integration-test entry',
       });
-      final MineResult result = await repo
+      final MineOutcome outcome = await repo
           .mineEntry(
             rawPayloadJson: payloadJson,
             context: const AnkiMiningContext(sentence: '統合テストの文。'),
@@ -79,7 +79,7 @@ void main() {
       // A fresh add returns success; a re-run hits the dupe check. Either proves
       // the full mine -> ContentProvider add path works end-to-end.
       expect(
-        result,
+        outcome.result,
         anyOf(MineResult.success, MineResult.duplicate),
         reason: 'mineEntry must add the card or detect a duplicate, not '
             'fail/notConfigured',

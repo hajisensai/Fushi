@@ -95,13 +95,18 @@ class AnkiConnectRepository extends BaseAnkiRepository {
 
   // BUG-077: the popup mine button disables itself and `await`s this Future
   // (popup.js), so a thrown exception leaves the '+' stuck forever with no
-  // feedback. mineEntry's contract is to *return* a MineResult — guarantee it
+  // feedback. mineEntry's contract is to *return* a MineOutcome — guarantee it
   // here so the caller's switch (toast + button restore) always runs. The inner
   // body still has unguarded calls (loadSettings, handlebar render, HTML
   // normalize); this is the single place that converts any escape into
-  // MineResult.error and logs the real cause for diagnosis.
+  // MineResult.error.
+  //
+  // BUG-089: carry the real cause back to the UI via MineOutcome (errorDetail
+  // for the toast, error/stackTrace for ErrorLogService) instead of swallowing
+  // it in debugPrint, which only surfaces when the user manually enables the
+  // debug log.
   @override
-  Future<MineResult> mineEntry({
+  Future<MineOutcome> mineEntry({
     required String rawPayloadJson,
     required AnkiMiningContext context,
   }) async {
@@ -111,12 +116,15 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         context: context,
       );
     } catch (e, stack) {
-      debugPrint('AnkiConnectRepository.mineEntry: unhandled $e\n$stack');
-      return MineResult.error;
+      return MineOutcome.failure(
+        'AnkiConnect: unexpected error: $e',
+        error: e,
+        stackTrace: stack,
+      );
     }
   }
 
-  Future<MineResult> _mineEntryInner({
+  Future<MineOutcome> _mineEntryInner({
     required String rawPayloadJson,
     required AnkiMiningContext context,
   }) async {
@@ -129,7 +137,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
             ? settings.availableDecks
                 .firstWhereOrNull((d) => d.name == settings.selectedDeckName)
             : null);
-    if (deck == null) return MineResult.notConfigured;
+    if (deck == null) return const MineOutcome.notConfigured();
 
     final noteType = settings.availableNoteTypes
             .firstWhereOrNull((t) => t.id == settings.selectedNoteTypeId) ??
@@ -137,15 +145,18 @@ class AnkiConnectRepository extends BaseAnkiRepository {
             ? settings.availableNoteTypes.firstWhereOrNull(
                 (t) => t.name == settings.selectedNoteTypeName)
             : null);
-    if (noteType == null) return MineResult.notConfigured;
+    if (noteType == null) return const MineOutcome.notConfigured();
 
     final AnkiMiningPayload payload;
     try {
       final json = Map<String, dynamic>.from(jsonDecode(rawPayloadJson) as Map);
       payload = AnkiMiningPayload.fromJson(json);
     } catch (e, stack) {
-      debugPrint('AnkiConnectRepository.mineEntry.parsePayload: $e\n$stack');
-      return MineResult.error;
+      return MineOutcome.failure(
+        'Invalid card data (payload parse failed): $e',
+        error: e,
+        stackTrace: stack,
+      );
     }
 
     final String? coverMediaRef = context.coverPath != null
@@ -225,10 +236,13 @@ class AnkiConnectRepository extends BaseAnkiRepository {
             fieldName: noteType.fields.first,
             fieldValue: firstFieldValue,
           );
-          if (isDupe) return MineResult.duplicate;
+          if (isDupe) return const MineOutcome.duplicate();
         } catch (e, stack) {
-          debugPrint('AnkiConnectRepository.mineEntry.dupeCheck: $e\n$stack');
-          return MineResult.error;
+          return MineOutcome.failure(
+            'Duplicate check failed: $e',
+            error: e,
+            stackTrace: stack,
+          );
         }
       }
     }
@@ -240,9 +254,10 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     // empty, nothing rendered and adding the note would create a blank card
     // reported as success (HBK-AUDIT-018).
     if (fields.isEmpty) {
-      debugPrint(
-          'AnkiConnectRepository.mineEntry: all fields empty, refusing blank note');
-      return MineResult.error;
+      return MineOutcome.failure(
+        'All fields are empty — refusing to create a blank card. '
+        'Check your note type field mappings.',
+      );
     }
     try {
       await service.addNote(
@@ -252,10 +267,13 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         tags: tags,
         allowDuplicate: settings.allowDupes,
       );
-      return MineResult.success;
-    } on AnkiConnectException catch (e) {
-      debugPrint('AnkiConnectRepository.mineEntry.addNote: $e');
-      return MineResult.error;
+      return const MineOutcome.success();
+    } on AnkiConnectException catch (e, stack) {
+      return MineOutcome.failure(
+        'AnkiConnect: ${e.message}',
+        error: e,
+        stackTrace: stack,
+      );
     }
   }
 

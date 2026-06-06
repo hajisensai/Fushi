@@ -1323,5 +1323,6 @@
     "video_subtitle_import_failed": "Failed to import subtitle",
     "nav_lookup": "查詞",
     "sync_server_mode_active": "This device is a sync server",
-    "sync_server_mode_clients_drive": "Connected clients start the sync — no manual sync needed here."
+    "sync_server_mode_clients_drive": "Connected clients start the sync — no manual sync needed here.",
+    "card_export_failed_detail": "匯出卡片失敗：$reason"
 }

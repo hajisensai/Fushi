@@ -2675,12 +2675,12 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       sentenceOffset: _cachedSentenceRange?.offset,
     );
 
-    final MineResult result = await repo.mineEntry(
+    final MineOutcome outcome = await repo.mineEntry(
       rawPayloadJson: jsonEncode(fields),
       context: miningContext,
     );
 
-    switch (result) {
+    switch (outcome.result) {
       case MineResult.success:
         final AnkiSettings settings = await repo.loadSettings();
         HibikiToast.show(
@@ -2696,7 +2696,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         HibikiToast.show(msg: t.card_export_not_configured);
         return false;
       case MineResult.error:
-        HibikiToast.show(msg: t.card_export_failed);
+        HibikiToast.show(msg: logMineFailure(outcome));
         return false;
     }
   }

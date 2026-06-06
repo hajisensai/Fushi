@@ -50,11 +50,11 @@ class _FakeRepo extends BaseAnkiRepository {
   }
 
   @override
-  Future<MineResult> mineEntry({
+  Future<MineOutcome> mineEntry({
     required String rawPayloadJson,
     required AnkiMiningContext context,
   }) async =>
-      MineResult.error;
+      MineOutcome.failure('test stub');
 
   @override
   Future<bool> isDuplicate(String expression, String reading) async => false;

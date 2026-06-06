@@ -32,6 +32,7 @@ import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:hibiki/src/utils/app_ui_scale.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 
 /// 视频页：media_kit 播放器 + 可点击字幕 overlay（点词查词 + 制卡）。
 ///
@@ -821,14 +822,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       coverPath: coverPath,
       sasayakiAudioPath: audioPath,
     );
-    final MineResult result = await repo.mineEntry(
+    final MineOutcome outcome = await repo.mineEntry(
       rawPayloadJson: jsonEncode(fields),
       context: miningContext,
     );
-    if (!context.mounted) return result == MineResult.success;
+    if (!context.mounted) return outcome.result == MineResult.success;
     final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
     final String message;
-    switch (result) {
+    switch (outcome.result) {
       case MineResult.success:
         final AnkiSettings settings = await repo.loadSettings();
         message = t.card_exported(deck: settings.selectedDeckName ?? '');
@@ -837,10 +838,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       case MineResult.notConfigured:
         message = t.card_export_not_configured;
       case MineResult.error:
-        message = t.card_export_failed;
+        message = logMineFailure(outcome);
     }
     if (mounted) messenger.showSnackBar(SnackBar(content: Text(message)));
-    return result == MineResult.success;
+    return outcome.result == MineResult.success;
   }
 
   /// media_kit 桌面控制主题：底部默认控制条（播放/进度/音量/全屏）+ 顶栏

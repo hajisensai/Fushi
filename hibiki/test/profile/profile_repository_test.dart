@@ -23,7 +23,7 @@ class _FakeAnkiRepository extends BaseAnkiRepository {
   Future<AnkiFetchResult> fetchConfiguration() => throw UnimplementedError();
 
   @override
-  Future<MineResult> mineEntry({
+  Future<MineOutcome> mineEntry({
     required String rawPayloadJson,
     required AnkiMiningContext context,
   }) =>

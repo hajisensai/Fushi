@@ -116,8 +116,12 @@ class AnkiRepository extends BaseAnkiRepository {
   // popup mine button disables itself and awaits this Future; an escape would
   // hang the '+' with no toast. Convert any unhandled error into
   // MineResult.error so the caller's switch always runs.
+  //
+  // BUG-089: carry the real cause back to the UI via MineOutcome (errorDetail
+  // for the toast, error/stackTrace for ErrorLogService) instead of swallowing
+  // it in debugPrint.
   @override
-  Future<MineResult> mineEntry({
+  Future<MineOutcome> mineEntry({
     required String rawPayloadJson,
     required AnkiMiningContext context,
   }) async {
@@ -127,12 +131,15 @@ class AnkiRepository extends BaseAnkiRepository {
         context: context,
       );
     } catch (e, stack) {
-      debugPrint('AnkiRepository.mineEntry: unhandled $e\n$stack');
-      return MineResult.error;
+      return MineOutcome.failure(
+        'AnkiDroid: unexpected error: $e',
+        error: e,
+        stackTrace: stack,
+      );
     }
   }
 
-  Future<MineResult> _mineEntryInner({
+  Future<MineOutcome> _mineEntryInner({
     required String rawPayloadJson,
     required AnkiMiningContext context,
   }) async {
@@ -144,7 +151,7 @@ class AnkiRepository extends BaseAnkiRepository {
             ? settings.availableDecks
                 .firstWhereOrNull((d) => d.name == settings.selectedDeckName)
             : null);
-    if (deck == null) return MineResult.notConfigured;
+    if (deck == null) return const MineOutcome.notConfigured();
 
     final noteType = settings.availableNoteTypes
             .firstWhereOrNull((t) => t.id == settings.selectedNoteTypeId) ??
@@ -152,15 +159,18 @@ class AnkiRepository extends BaseAnkiRepository {
             ? settings.availableNoteTypes.firstWhereOrNull(
                 (t) => t.name == settings.selectedNoteTypeName)
             : null);
-    if (noteType == null) return MineResult.notConfigured;
+    if (noteType == null) return const MineOutcome.notConfigured();
 
     final AnkiMiningPayload payload;
     try {
       final json = Map<String, dynamic>.from(jsonDecode(rawPayloadJson) as Map);
       payload = AnkiMiningPayload.fromJson(json);
     } catch (e, stack) {
-      debugPrint('AnkiRepository.mineEntry.parsePayload: $e\n$stack');
-      return MineResult.error;
+      return MineOutcome.failure(
+        'Invalid card data (payload parse failed): $e',
+        error: e,
+        stackTrace: stack,
+      );
     }
 
     final mediaContext = AnkiMiningContext(
@@ -233,7 +243,7 @@ class AnkiRepository extends BaseAnkiRepository {
             'reading': payload.reading,
             'readingFieldIndices': [readingIdx],
           });
-          if (isDupe == true) return MineResult.duplicate;
+          if (isDupe == true) return const MineOutcome.duplicate();
         } catch (e, stack) {
           debugPrint('AnkiRepository.mineEntry.dupeCheck: $e\n$stack');
         }
@@ -245,9 +255,10 @@ class AnkiRepository extends BaseAnkiRepository {
     // that the channel reports as success. Refuse if nothing rendered into any
     // field (HBK-AUDIT-018).
     if (fieldArray.every((v) => v.trim().isEmpty)) {
-      debugPrint(
-          'AnkiRepository.mineEntry: all fields empty, refusing blank note');
-      return MineResult.error;
+      return MineOutcome.failure(
+        'All fields are empty — refusing to create a blank card. '
+        'Check your note type field mappings.',
+      );
     }
     final tags =
         settings.tags.split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList();
@@ -259,10 +270,13 @@ class AnkiRepository extends BaseAnkiRepository {
         'fields': fieldArray,
         'tags': tags,
       });
-      return MineResult.success;
-    } on PlatformException catch (e) {
-      debugPrint('Failed to add note: ${e.message}');
-      return MineResult.error;
+      return const MineOutcome.success();
+    } on PlatformException catch (e, stack) {
+      return MineOutcome.failure(
+        'AnkiDroid: ${e.message ?? e.code}',
+        error: e,
+        stackTrace: stack,
+      );
     }
   }
 
