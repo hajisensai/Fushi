@@ -24,6 +24,32 @@ Color _deriveContainer(Color role, Brightness brightness) {
   return Color.lerp(role, target, brightness == Brightness.dark ? 0.7 : 0.85)!;
 }
 
+/// Resolve the `system-theme` [ColorScheme] from whatever the OS actually
+/// exposed.
+///
+/// `DynamicColorPlugin.getCorePalette()` only returns a non-null [palette] on
+/// Android (it reads `@android:color/system_*`). On Windows / macOS / Linux it
+/// is always null, and the OS theme color is instead exposed through
+/// `getAccentColor()`. The canonical dynamic_color path (see its own
+/// `DynamicColorBuilder`) is therefore: prefer the full [palette]; otherwise
+/// seed from the OS [accent]; and only when the OS exposes neither, fall back
+/// to [fallbackSeed]. Missing this [accent] branch is exactly why `system-theme`
+/// never followed the Windows accent color at startup (BUG-090).
+ColorScheme buildSystemThemeColorScheme({
+  required Brightness brightness,
+  required Color fallbackSeed,
+  CorePalette? palette,
+  Color? accent,
+}) {
+  if (palette != null) {
+    return palette.toColorScheme(brightness: brightness);
+  }
+  return ColorScheme.fromSeed(
+    seedColor: accent ?? fallbackSeed,
+    brightness: brightness,
+  );
+}
+
 ColorScheme buildHibikiColorScheme({
   required Color seedColor,
   required Brightness brightness,
@@ -71,16 +97,35 @@ class ThemeNotifier extends ChangeNotifier {
   final Map<String, String> _prefs = {};
 
   CorePalette? _systemPalette;
+  // OS accent color, the only system-color signal Windows / macOS / Linux
+  // expose (getCorePalette is Android-only there). Used to seed `system-theme`
+  // when [_systemPalette] is null (BUG-090).
+  Color? _systemAccentColor;
 
-  Color? get systemPrimaryColor =>
-      _systemPalette != null ? Color(_systemPalette!.primary.get(40)) : null;
+  Color? get systemPrimaryColor {
+    if (_systemPalette != null) return Color(_systemPalette!.primary.get(40));
+    return _systemAccentColor;
+  }
 
   Future<void> refreshSystemPalette() async {
+    CorePalette? palette;
     try {
-      _systemPalette = await DynamicColorPlugin.getCorePalette();
+      palette = await DynamicColorPlugin.getCorePalette();
     } catch (_) {
-      _systemPalette = null;
+      palette = null;
     }
+    // Android yields a full palette; elsewhere it is null, so fall back to the
+    // OS accent color (the canonical dynamic_color path).
+    Color? accent;
+    if (palette == null) {
+      try {
+        accent = await DynamicColorPlugin.getAccentColor();
+      } catch (_) {
+        accent = null;
+      }
+    }
+    _systemPalette = palette;
+    _systemAccentColor = accent;
     if (appThemeKey == 'system-theme') notifyListeners();
   }
 
@@ -247,8 +292,13 @@ class ThemeNotifier extends ChangeNotifier {
   ThemeData get darkTheme => _buildThemeData(Brightness.dark);
 
   ColorScheme buildColorScheme(Brightness brightness) {
-    if (appThemeKey == 'system-theme' && _systemPalette != null) {
-      return _systemPalette!.toColorScheme(brightness: brightness);
+    if (appThemeKey == 'system-theme') {
+      return buildSystemThemeColorScheme(
+        brightness: brightness,
+        palette: _systemPalette,
+        accent: _systemAccentColor,
+        fallbackSeed: _seedColor,
+      );
     }
     final bool useCustomRoles = appThemeKey == 'custom-theme';
     return buildHibikiColorScheme(
