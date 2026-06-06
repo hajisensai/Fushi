@@ -82,9 +82,6 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   "system/Don't remind me about updates": 'DEVICE: Android-only UpdateChecker',
   'system/Auto-install updates': 'DEVICE: Android-only UpdateChecker install',
   'appearance/Reverse navigation bar': 'WIDGET-TODO: HomePage nav order',
-  // 实验视频开关的「生效」= 首页底栏出现/隐藏视频 tab（在书架与词典之间），
-  // 由专项纯函数 + widget 测试锁定；本处只验证它写穿 DB。
-  'system/Video (experimental)': 'test/pages/home_tab_video_test.dart',
   'reading/Reverse reader bottom bar':
       'DEVICE: reader bottom-bar layout order (like reverse nav bar)',
 };

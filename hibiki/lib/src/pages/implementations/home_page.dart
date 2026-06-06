@@ -361,6 +361,8 @@ class _HomePageState extends BasePageState<HomePage>
           icon: Icons.movie_outlined,
           selectedIcon: Icons.movie,
           label: t.nav_video,
+          // 视频已毕业为常驻 tab，但功能仍为实验性：图标右上角小圆点徽标标记。
+          experimentalBadge: true,
         );
       case HomeTab.dictionaries:
         return AdaptiveNavItem(

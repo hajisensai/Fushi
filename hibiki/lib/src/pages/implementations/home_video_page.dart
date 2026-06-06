@@ -273,30 +273,20 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         kVideoImportEnabled || appModel.experimentalVideoEnabled;
     final List<BookTagRow> allTags =
         ref.watch(allTagsProvider).valueOrNull ?? const <BookTagRow>[];
-    return Scaffold(
-      appBar: adaptiveAppBar(
-        context: context,
-        title: Text(t.nav_video),
-        actions: <Widget>[
-          IconButton(
-            tooltip: t.video_statistics,
-            icon: const Icon(Icons.bar_chart_outlined),
-            onPressed: _openStatistics,
-          ),
-          if (canImport)
-            IconButton(
-              tooltip: t.video_import_action,
-              icon: const Icon(Icons.add),
-              onPressed: _openImport,
-            ),
-        ],
-      ),
-      body: HibikiFileDropTarget(
-        onDrop: _handleVideoDrop,
-        child: CardDropScope<VideoBookRow>(
-          registry: _cardDropRegistry,
+    // 页头/布局与书架 [reader_hibiki_history_page]、词典 [home_dictionary_page]
+    // 统一：不再用自带 Scaffold + adaptiveAppBar（小标题 + 标准 IconButton），改成
+    // DesktopContentLayout + HibikiPageHeader（大标题 + HibikiIconButton），三个
+    // 首页 tab 的标题字号与动作按钮位置因此完全一致。外层 Scaffold 由 HomePage 提供。
+    return HibikiFileDropTarget(
+      onDrop: _handleVideoDrop,
+      child: CardDropScope<VideoBookRow>(
+        registry: _cardDropRegistry,
+        child: DesktopContentLayout(
+          kind: DesktopContentKind.readerShelf,
           child: Column(
             children: <Widget>[
+              if (!isCupertinoPlatform(context)) _buildPageHeader(canImport),
+              _buildExperimentalBanner(context),
               _buildTagFilterBar(allTags),
               Expanded(
                 child: FutureBuilder<List<VideoBookRow>>(
@@ -325,6 +315,57 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  /// 页头：与书架/词典统一，用 [HibikiPageHeader] 大标题 + [HibikiIconButton] 动作
+  /// （统计 + 导入），保证标题字号与按钮位置三 tab 一致。与书架一致仅在非 Cupertino
+  /// 渲染（Cupertino 走平台导航，由 HomePage 外壳承担）。
+  Widget _buildPageHeader(bool canImport) {
+    return HibikiPageHeader(
+      title: t.nav_video,
+      actions: <Widget>[
+        HibikiIconButton(
+          tooltip: t.video_statistics,
+          icon: Icons.bar_chart_outlined,
+          onTap: _openStatistics,
+        ),
+        if (canImport)
+          HibikiIconButton(
+            tooltip: t.video_import_action,
+            icon: Icons.add,
+            onTap: _openImport,
+          ),
+      ],
+    );
+  }
+
+  /// 视频功能毕业为常驻 tab，但播放/查词/制卡仍为实验性：页头下方常驻一条提示
+  /// 横幅，与底栏图标的小圆点徽标呼应。用 secondaryContainer 调性，不抢内容焦点。
+  Widget _buildExperimentalBanner(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      color: colors.secondaryContainer,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      child: Row(
+        children: <Widget>[
+          Icon(
+            Icons.science_outlined,
+            size: 18,
+            color: colors.onSecondaryContainer,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              t.video_experimental_banner,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: colors.onSecondaryContainer,
+                  ),
+            ),
+          ),
+        ],
       ),
     );
   }

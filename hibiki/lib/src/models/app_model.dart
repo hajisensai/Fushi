@@ -1626,11 +1626,11 @@ class AppModel with ChangeNotifier {
   Future<void> setCurrentHomeTabIndex(int index) =>
       prefsRepo.setCurrentHomeTabIndex(index);
 
-  /// 实验性「视频」功能开关（首页视频 tab + 视频导入入口）。
-  bool get experimentalVideoEnabled => prefsRepo.experimentalVideoEnabled;
-
-  Future<void> setExperimentalVideoEnabled(bool value) =>
-      prefsRepo.setExperimentalVideoEnabled(value);
+  /// 「视频」功能现已毕业为常驻：首页底栏永久显示「视频」tab、视频页导入入口
+  /// 永久放出、书架不再重复显示视频分区。功能仍标记为实验性（底栏图标徽标 +
+  /// 视频页提示横幅），但不再受设置开关门控——故此处恒为 true，保持所有调用点
+  /// （home_page 底栏 / home_video_page 导入 / 书架视频区门控）逻辑不变。
+  bool get experimentalVideoEnabled => true;
 
   /// 启用的 mpv 着色器（JSON 字符串数组；见 video_shader_manager.dart）。
   String get videoShadersEnabled => prefsRepo.videoShadersEnabled;

@@ -76,7 +76,12 @@ void main() {
         ],
         child: TranslationProvider(
           child: MaterialApp(
-            home: HomeVideoPage(repo: VideoBookRepository(db)),
+            // HomeVideoPage 不再自带 Scaffold（与书架/词典 tab 统一，运行时挂在
+            // HomePage 的外层 Scaffold 内）；测试照样在 Scaffold 内 pump，
+            // HibikiPageHeader 的 HibikiIconButton(InkWell) 才有 Material 祖先。
+            home: Scaffold(
+              body: HomeVideoPage(repo: VideoBookRepository(db)),
+            ),
           ),
         ),
       );

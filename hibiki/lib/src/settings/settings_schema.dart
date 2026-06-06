@@ -1208,23 +1208,6 @@ SettingsDestination _systemDestination() {
         ],
       ),
       SettingsSection(
-        title: t.section_experimental,
-        items: <SettingsItem>[
-          SettingsSwitchItem(
-            id: 'system.experimental_video',
-            title: t.experimental_video,
-            subtitle: t.experimental_video_hint,
-            icon: Icons.movie_outlined,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.experimentalVideoEnabled,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.setExperimentalVideoEnabled(value);
-              settingsContext.refresh();
-            },
-          ),
-        ],
-      ),
-      SettingsSection(
         title: t.settings_destination_diagnostics,
         items: <SettingsItem>[
           SettingsNavigationItem(

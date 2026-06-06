@@ -12,11 +12,25 @@ class AdaptiveNavItem {
   final IconData icon;
   final IconData? selectedIcon;
   final String label;
+
+  /// 在图标右上角叠加一个 MD3 小圆点徽标（无文字），标记该目的地为「实验性」。
+  /// 底栏与侧栏共用同一渲染，徽标随之一致。
+  final bool experimentalBadge;
+
   const AdaptiveNavItem({
     required this.icon,
     required this.label,
     this.selectedIcon,
+    this.experimentalBadge = false,
   });
+}
+
+/// 当 [item] 标记为实验性时，给其图标 [child] 叠加一个 MD3 小圆点 [Badge]（无 label
+/// 即默认小圆点，用 error 色吸引注意），否则原样返回。底栏（Material/Cupertino）与
+/// 侧栏共用，保证徽标位置/样式一致。
+Widget _maybeBadge({required AdaptiveNavItem item, required Widget child}) {
+  if (!item.experimentalBadge) return child;
+  return Badge(child: child);
 }
 
 /// Marks the root of the self-drawn Material navigation (bottom bar / side rail)
@@ -45,7 +59,7 @@ Widget adaptiveBottomBar({
         onTap: onTap,
         items: items
             .map((AdaptiveNavItem e) => BottomNavigationBarItem(
-                  icon: Icon(e.icon),
+                  icon: _maybeBadge(item: e, child: Icon(e.icon)),
                   label: e.label,
                 ))
             .toList(),
@@ -232,12 +246,15 @@ class _HibikiNavTile extends StatelessWidget {
             color: selected ? colors.secondaryContainer : Colors.transparent,
             borderRadius: HibikiDesignTokens.of(context).radii.controlRadius,
           ),
-          child: Icon(
-            selected ? (item.selectedIcon ?? item.icon) : item.icon,
-            size: 24,
-            color: selected
-                ? colors.onSecondaryContainer
-                : colors.onSurfaceVariant,
+          child: _maybeBadge(
+            item: item,
+            child: Icon(
+              selected ? (item.selectedIcon ?? item.icon) : item.icon,
+              size: 24,
+              color: selected
+                  ? colors.onSecondaryContainer
+                  : colors.onSurfaceVariant,
+            ),
           ),
         ),
         const SizedBox(height: 4),
