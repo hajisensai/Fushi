@@ -4,6 +4,7 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   bonsoir_windows
+  desktop_drop
   dynamic_color
   flutter_inappwebview_windows
   gamepads_windows

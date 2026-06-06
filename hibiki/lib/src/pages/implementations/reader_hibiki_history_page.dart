@@ -11,6 +11,10 @@ import 'package:hibiki/pages.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:hibiki/src/media/audiobook/book_import_dialog.dart';
+import 'package:hibiki/src/media/drag_drop/card_drop_registry.dart';
+import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
+import 'package:hibiki/src/media/drag_drop/drop_decision.dart';
+import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_feature_flags.dart';
 import 'package:hibiki/src/media/video/video_import_dialog.dart';
@@ -65,6 +69,10 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
 
   Future<Map<String, _AudiobookInfo>>? _batchAudiobookInfoFuture;
   Map<String, _AudiobookInfo> _batchAudiobookInfoResult = const {};
+
+  /// 拖拽导入：书卡登记表，范型 = bookKey。书卡经 [CardDropZone] 注册自身屏幕
+  /// 矩形，落点命中后据此找到目标书 key（字幕/音频附加到该书）。
+  final CardDropRegistry<String> _cardDropRegistry = CardDropRegistry<String>();
 
   Future<Map<String, _AudiobookInfo>> _loadAllAudiobookInfo() async {
     final repo = AudiobookRepository(appModel.database);
@@ -160,49 +168,58 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         ref.watch(filteredBookIdsProvider);
     final allTags = ref.watch(allTagsProvider);
 
-    return DesktopContentLayout(
-      kind: DesktopContentKind.readerShelf,
-      child: Column(
-        children: [
-          if (!isCupertinoPlatform(context)) _buildPageHeader(),
-          _buildTagBar(allTags.valueOrNull ?? const []),
-          Expanded(
-            child: books.when(
-              data: (bookList) {
-                _batchAudiobookInfoFuture ??= _loadAllAudiobookInfo();
-                _videoBooksFuture ??= _loadVideoBooks();
-                final Set<String>? filterSet = filteredIds.valueOrNull;
-                final List<MediaItem> filtered;
-                if (filterSet == null) {
-                  filtered = bookList;
-                } else {
-                  filtered = bookList.where((item) {
-                    final String? key = _parseBookKey(item.mediaIdentifier);
-                    return key != null && filterSet.contains(key);
-                  }).toList();
-                }
-                return FutureBuilder<Map<String, _AudiobookInfo>>(
-                  future: _batchAudiobookInfoFuture,
-                  builder: (context, abSnapshot) =>
-                      FutureBuilder<List<VideoBookRow>>(
-                    future: _videoBooksFuture,
-                    builder: (context, videoSnapshot) => buildBody(filtered),
+    return HibikiFileDropTarget(
+      onDrop: _handleShelfDrop,
+      child: CardDropScope<String>(
+        registry: _cardDropRegistry,
+        child: DesktopContentLayout(
+          kind: DesktopContentKind.readerShelf,
+          child: Column(
+            children: [
+              if (!isCupertinoPlatform(context)) _buildPageHeader(),
+              _buildTagBar(allTags.valueOrNull ?? const []),
+              Expanded(
+                child: books.when(
+                  data: (bookList) {
+                    _batchAudiobookInfoFuture ??= _loadAllAudiobookInfo();
+                    _videoBooksFuture ??= _loadVideoBooks();
+                    final Set<String>? filterSet = filteredIds.valueOrNull;
+                    final List<MediaItem> filtered;
+                    if (filterSet == null) {
+                      filtered = bookList;
+                    } else {
+                      filtered = bookList.where((item) {
+                        final String? key = _parseBookKey(item.mediaIdentifier);
+                        return key != null && filterSet.contains(key);
+                      }).toList();
+                    }
+                    return FutureBuilder<Map<String, _AudiobookInfo>>(
+                      future: _batchAudiobookInfoFuture,
+                      builder: (context, abSnapshot) =>
+                          FutureBuilder<List<VideoBookRow>>(
+                        future: _videoBooksFuture,
+                        builder: (context, videoSnapshot) =>
+                            buildBody(filtered),
+                      ),
+                    );
+                  },
+                  error: (error, stack) => buildError(
+                    error: error,
+                    stack: stack,
+                    refresh: () {
+                      _refreshSrtBooks();
+                      ref.invalidate(
+                        hibikiBooksProvider(appModel.targetLanguage),
+                      );
+                    },
                   ),
-                );
-              },
-              error: (error, stack) => buildError(
-                error: error,
-                stack: stack,
-                refresh: () {
-                  _refreshSrtBooks();
-                  ref.invalidate(hibikiBooksProvider(appModel.targetLanguage));
-                },
+                  loading: () => buildLoading(),
+                ),
               ),
-              loading: () => buildLoading(),
-            ),
+              if (_selectionMode) _buildBatchActionBar(),
+            ],
           ),
-          if (_selectionMode) _buildBatchActionBar(),
-        ],
+        ),
       ),
     );
   }
@@ -1350,7 +1367,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   @override
   Widget buildMediaItem(MediaItem item) {
     final String? bookKey = _parseBookKey(item.mediaIdentifier);
-    return _bookCardShell(
+    final Widget card = _bookCardShell(
       cardKey: ValueKey<String>('book_entry_${item.mediaIdentifier}'),
       focusId: HibikiFocusId('reader-shelf-book-${item.mediaIdentifier}'),
       selectionKey: item.mediaIdentifier,
@@ -1380,6 +1397,9 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       },
       child: buildMediaItemContent(item),
     );
+    // 仅 EPUB 书卡作为字幕/音频拖放目标；SRT 卡/视频卡不在 books 表面范围内。
+    if (bookKey == null) return card;
+    return CardDropZone<String>(meta: bookKey, child: card);
   }
 
   Widget _progressBar(MediaItem item) {
@@ -1530,6 +1550,95 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         bookKey: bookKey,
         repo: AudiobookRepository(appModel.database),
         extractDir: row?.extractDir,
+      ),
+    );
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  // ── 拖拽导入（books 表面） ──────────────────────────────────────────────────
+
+  /// 文件拖入书架后的路由：分类 → 命中测试 → 决策 → 打开对应对话框/提示。
+  /// [localPosition] 为相对 [HibikiFileDropTarget] 的局部坐标，需转屏幕坐标
+  /// 后才能与卡片登记表（用屏幕矩形）命中测试。
+  void _handleShelfDrop(List<String> paths, Offset localPosition) {
+    final DroppedFiles files = classifyDroppedFiles(paths);
+    final RenderObject? ro = context.findRenderObject();
+    Offset global = localPosition;
+    if (ro is RenderBox && ro.attached) {
+      global = ro.localToGlobal(localPosition);
+    }
+    final String? hitBookKey = _cardDropRegistry.hitTest(global);
+    final DropIntent intent = decideDropIntent(
+      surface: DropSurface.books,
+      files: files,
+      cardHit: hitBookKey != null,
+    );
+    switch (intent) {
+      case DropIntent.importNewBook:
+        _openBookImportPrefilled(
+          epubPath: files.books.first,
+          subtitlePath:
+              files.subtitles.isNotEmpty ? files.subtitles.first : null,
+        );
+      case DropIntent.attachToBookCard:
+        _openAudiobookPrefilled(
+          bookKey: hitBookKey!,
+          audioPaths: files.audios,
+          alignmentPath:
+              files.subtitles.isNotEmpty ? files.subtitles.first : null,
+        );
+      case DropIntent.needCardTarget:
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(t.drag_drop_need_card_target)),
+        );
+      case DropIntent.importNewVideo:
+      case DropIntent.attachToVideoCard:
+      case DropIntent.ignore:
+        break;
+    }
+  }
+
+  /// 拖入书文件 → 打开 [BookImportDialog]，预填 EPUB（及可选字幕）路径。
+  /// 复用 [ReaderHibikiSource.buildBookImportButton] 的 repo/打开/刷新范式。
+  Future<void> _openBookImportPrefilled({
+    required String epubPath,
+    required String? subtitlePath,
+  }) async {
+    final bool? imported = await showAppDialog<bool>(
+      context: context,
+      builder: (_) => BookImportDialog(
+        repo: SrtBookRepository(appModel.database),
+        audiobookRepo: AudiobookRepository(appModel.database),
+        db: appModel.database,
+        initialEpubPath: epubPath,
+        initialSubtitlePath: subtitlePath,
+      ),
+    );
+    if (imported == true && mounted) {
+      _refreshSrtBooks();
+      ref.invalidate(hibikiBooksProvider(appModel.targetLanguage));
+    }
+  }
+
+  /// 拖入字幕/音频到书卡 → 打开 [AudiobookImportDialog] 附加到该书，预填音频/对齐路径。
+  /// 复用 [_openAudiobookImport] 的 extractDir 取法与刷新范式（此处无外层对话框需 pop）。
+  Future<void> _openAudiobookPrefilled({
+    required String bookKey,
+    required List<String> audioPaths,
+    required String? alignmentPath,
+  }) async {
+    final EpubBookRow? row = await appModel.database.getEpubBook(bookKey);
+    if (!mounted) return;
+    await showAppDialog<bool>(
+      context: context,
+      builder: (_) => AudiobookImportDialog(
+        bookKey: bookKey,
+        repo: AudiobookRepository(appModel.database),
+        extractDir: row?.extractDir,
+        initialAudioPaths: audioPaths.isEmpty ? null : audioPaths,
+        initialAlignmentPath: alignmentPath,
       ),
     );
     if (mounted) {

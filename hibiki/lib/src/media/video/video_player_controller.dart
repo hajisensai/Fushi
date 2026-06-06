@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:hibiki/src/media/video/video_shader_manager.dart';
-import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
+import 'package:hibiki/src/media/video/video_subtitle_source.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
@@ -241,10 +241,18 @@ class VideoPlayerController extends ChangeNotifier {
     }
   }
 
-  /// 桌面端后台抽第一条内嵌字幕轨 → 解析成 cue → [setCues]，触发可点击 overlay。
+  /// 桌面端后台自动抽**第一条可转文本的**内嵌字幕轨 → cue → [setCues]，触发
+  /// 可点击 overlay。
   ///
   /// 仅当无外挂字幕且当前无 cue 时由 [load] 末尾触发（调用方已门控）。移动端跳过
-  /// （ffmpeg 不可用），失败 / 无字幕轨静默返回，保留 libmpv 画面渲染兜底。
+  /// （ffmpeg 不可用），无可用文本轨 / 失败静默返回，保留 libmpv 画面渲染兜底。
+  ///
+  /// **复用字幕菜单同一套 codec 感知逻辑**（[listAllSubtitleSources] +
+  /// [loadCuesForSource]），不再硬编码 `.ass` / [AssParser] / streamIndex 0——
+  /// 否则同一个 mp4（`mov_text`）菜单能出字幕、自动加载却静默失败（BUG-071 同源
+  /// 不一致）。优先选能转文本 cue 的内嵌轨（跳过 pgs 等图形轨），都不行则不自动
+  /// 加载。[listAllSubtitleSources] 的 langCode 只影响外挂字幕排序，这里只取内嵌
+  /// 轨故传固定值。
   ///
   /// 抽字幕较慢（ffmpeg 跑几秒），故 [load] 用 `unawaited` 后台触发不阻塞播放；
   /// 抽完才 [setCues]，overlay 此时才出现。期间若发生重新 [load]（[_videoPath]
@@ -256,44 +264,32 @@ class VideoPlayerController extends ChangeNotifier {
     final String? videoPath = _videoPath;
     if (videoPath == null) return;
 
-    final Directory dir =
-        Directory.systemTemp.createTempSync('hibiki_video_sub');
-    final String outputPath = '${dir.path}/video_embedded_sub.ass';
-    try {
-      final String? extracted = await extractEmbeddedSubtitleViaFfmpeg(
-        inputPath: videoPath,
-        streamIndex: 0,
-        outputPath: outputPath,
-      );
-      if (extracted == null) {
-        debugPrint('[video-embedded-sub] no embedded subtitle track extracted');
-        return;
+    final List<SubtitleSource> sources =
+        await listAllSubtitleSources(videoPath, langCode: 'ja');
+    if (_videoPath != videoPath) return; // 枚举期间换片：丢弃。
+
+    // 第一条「能转文本 cue」的内嵌轨（codec 映射非 null）；跳过图形轨。
+    SubtitleSource? chosen;
+    for (final SubtitleSource s in sources) {
+      if (s.isEmbedded && subtitleFormatForCodec(s.codec ?? '') != null) {
+        chosen = s;
+        break;
       }
-      // 抽字幕期间发生了重新 load（换片）：丢弃过期结果。
-      if (_videoPath != videoPath) {
-        debugPrint(
-            '[video-embedded-sub] discarded stale result (video changed)');
-        return;
-      }
-      final String text = await readTextWithEncoding(File(extracted));
-      final List<AudioCue> cues =
-          AssParser.parseString(content: text, bookKey: bookUid);
-      if (cues.isEmpty) {
-        debugPrint('[video-embedded-sub] parsed 0 cues from embedded track');
-        return;
-      }
-      // 再次校验未换片，再写穿 cue。
-      if (_videoPath != videoPath) {
-        debugPrint('[video-embedded-sub] discarded stale cues (video changed)');
-        return;
-      }
-      debugPrint('[video-embedded-sub] extracted ${cues.length} cues');
-      setCues(cues);
-    } finally {
-      try {
-        dir.deleteSync(recursive: true);
-      } catch (_) {}
     }
+    if (chosen == null) {
+      debugPrint('[video-embedded-sub] no text-capable embedded track');
+      return;
+    }
+
+    final List<AudioCue> cues =
+        await loadCuesForSource(chosen, videoPath, bookUid);
+    if (_videoPath != videoPath) return; // 加载期间换片：丢弃。
+    if (cues.isEmpty) {
+      debugPrint('[video-embedded-sub] parsed 0 cues from embedded track');
+      return;
+    }
+    debugPrint('[video-embedded-sub] extracted ${cues.length} cues');
+    setCues(cues);
   }
 
   /// cue 同步核心：照搬有声书 `_updateCurrentCue` 语义。

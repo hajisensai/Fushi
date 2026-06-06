@@ -97,6 +97,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   bool _failed = false;
   String? _title;
 
+  /// media_kit [Video] 的键盘焦点节点。media_kit 的 `Video` 自带 FocusNode + 内置
+  /// 快捷键（空格=播放/暂停、方向键=快进/快退/音量等）。本页把这个节点提到 State 持有，
+  /// 是为了在任何**会夺走窗口键盘焦点的覆盖层**（对话框 / bottom sheet / 系统文件选择器）
+  /// 关闭后，能主动把焦点还给 [Video]——否则那些覆盖层关闭后焦点悬空，空格等快捷键失灵
+  /// （根因：FilePicker 打开系统对话框抢走焦点，关闭后不会自动归还）。见 [_refocusVideo]。
+  final FocusNode _videoFocusNode = FocusNode(debugLabel: 'videoKeyboard');
+
   /// 查词浮层栈（与阅读器/词典页同款，由 [DictionaryPageMixin] 管理）。
   final List<NestedPopupEntry> _popupStack = <NestedPopupEntry>[];
 
@@ -500,6 +507,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   }
 
   void _showEpisodeList() {
+    // sheet 关闭后把键盘焦点还给 Video（覆盖层夺焦后不会自动归还）。
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.black87,
@@ -536,7 +544,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           ),
         ),
       ),
-    );
+    ).whenComplete(_refocusVideo);
   }
 
   @override
@@ -551,7 +559,22 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       _popupOverlayEntry = null;
     }
     _controller?.dispose();
+    _videoFocusNode.dispose();
     super.dispose();
+  }
+
+  /// 把键盘焦点还给 media_kit [Video]，恢复其内置快捷键（空格=播放/暂停等）。
+  ///
+  /// 在任何会盖在视频上 / 夺走窗口焦点的覆盖层（对话框、bottom sheet、系统文件选择器）
+  /// 关闭后调用——这些覆盖层关闭后 Flutter 不会自动把焦点还给 [Video] 的 FocusNode，
+  /// 导致空格等快捷键失灵（BUG：导入着色器后空格失灵）。统一在覆盖层的 `await` 返回点
+  /// 调用即覆盖全部入口。查词浮层（[_popupStack]）**不**在此 refocus：浮层活动期间用户在
+  /// 查词，不应让空格控制视频；浮层关闭由其自身路径处理。
+  void _refocusVideo() {
+    if (!mounted) return;
+    // 仅当播放器已就绪（Video 已挂载）才请求焦点；否则节点未 attach，requestFocus 无意义。
+    if (_controller == null) return;
+    _videoFocusNode.requestFocus();
   }
 
   /// 点字幕第 [graphemeIndex] 个字符：暂停 → 从该位置起取词 → 推入与阅读器/词典页
@@ -766,9 +789,54 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     );
   }
 
+  /// media_kit 移动控制主题（Android/iOS）：[AdaptiveVideoControls] 在移动端渲染
+  /// [MaterialVideoControls]（读本主题），桌面端渲染 [MaterialDesktopVideoControls]
+  /// （读 [MaterialDesktopVideoControlsTheme]），两套互斥，故两层主题都配置安全。
+  ///
+  /// 移动端全屏走 media_kit 独立 root 路由、丢掉 Scaffold AppBar，故把字幕、音轨、
+  /// 设置（playlist 时再加剧集）入口全放进 [topButtonBar]，保证普通与全屏都可达。
+  MaterialVideoControlsThemeData _mobileControlsTheme(
+    VideoPlayerController controller,
+  ) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    return MaterialVideoControlsThemeData(
+      seekBarPositionColor: cs.primary,
+      seekBarThumbColor: cs.primary,
+      buttonBarButtonColor: Colors.white,
+      topButtonBar: <Widget>[
+        const Spacer(),
+        if (_isPlaylist)
+          MaterialCustomButton(
+            icon: const Icon(Icons.playlist_play),
+            onPressed: _showEpisodeList,
+          ),
+        MaterialCustomButton(
+          icon: const Icon(Icons.subtitles),
+          onPressed: () => _showSubtitleSourceMenu(controller),
+        ),
+        MaterialCustomButton(
+          icon: const Icon(Icons.audiotrack),
+          onPressed: () => _showTrackMenu(
+            controller.audioTracks
+                .map((AudioTrack tr) => (
+                      label: _trackLabel(tr.title, tr.language, tr.id),
+                      onSelected: () => _selectAudioTrack(controller, tr),
+                    ))
+                .toList(),
+          ),
+        ),
+        MaterialCustomButton(
+          icon: const Icon(Icons.tune),
+          onPressed: _showPlayerSettings,
+        ),
+      ],
+    );
+  }
+
   void _showTrackMenu(
     List<({String label, VoidCallback onSelected})> tracks,
   ) {
+    // sheet 关闭后把键盘焦点还给 Video（覆盖层夺焦后不会自动归还）。
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.black87,
@@ -785,7 +853,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                 ))
             .toList(),
       ),
-    );
+    ).whenComplete(_refocusVideo);
   }
 
   /// 设置音画延迟（毫秒）：即时调 controller（字幕 cue 同步偏移立即生效）+ 持久化
@@ -815,6 +883,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 局部刷新，调用方法即时生效 + 持久化（见 [_setDelayMs] / [_setSpeed]）。
   void _showPlayerSettings() {
     const List<double> speedPresets = <double>[0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+    // sheet 关闭后把键盘焦点还给 Video，恢复空格快捷键（覆盖层夺焦后不会自动归还）。
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.black87,
@@ -947,7 +1016,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           ),
         );
       },
-    );
+    ).whenComplete(_refocusVideo);
   }
 
   /// 打开 mpv 着色器对话框：导入/勾选着色器 → 持久化启用集 → 解析绝对路径 →
@@ -966,6 +1035,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         },
       ),
     );
+    // 着色器对话框内含 FilePicker（导入）/ Anime4K 下载，会夺走窗口键盘焦点；
+    // 对话框关闭后把焦点还给 Video，恢复空格快捷键（BUG：导入着色器后空格失灵）。
+    _refocusVideo();
   }
 
   /// 弹「字幕源」菜单：枚举当前视频的全部字幕源（内嵌轨 + 同目录外挂文件）+
@@ -982,6 +1054,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         await listAllSubtitleSources(videoPath, langCode: _targetLangCode);
     if (!context.mounted) return;
 
+    // sheet 关闭后把键盘焦点还给 Video（覆盖层夺焦后不会自动归还）。
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.black87,
@@ -1036,7 +1109,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           ),
         ),
       ),
-    );
+    ).whenComplete(_refocusVideo);
   }
 
   /// 打开「自动获取字幕（Jimaku）」对话框：用番名（文件名解析）搜 → 下载到
@@ -1058,40 +1131,59 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         saveDirectory: saveDir,
       ),
     );
+    // Jimaku 对话框内含联网搜索/下载，会夺焦；关闭后把焦点还给 Video。
+    _refocusVideo();
     if (downloaded == null || !context.mounted) return;
     final SubtitleSource source = SubtitleSource.external(
       externalPath: downloaded,
       label: p.basename(downloaded),
     );
     final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
-    await _selectSubtitleSource(controller, source);
-    messenger.showSnackBar(
-      SnackBar(content: Text(t.video_jimaku_downloaded)),
-    );
+    final bool applied = await _selectSubtitleSource(controller, source);
+    // 仅在字幕真被应用（解析出 cue）时报「已下载并应用」；cue 为空时
+    // _selectSubtitleSource 已弹失败提示，不再叠加误导性的成功提示。
+    if (applied && mounted) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(t.video_jimaku_downloaded)),
+      );
+    }
   }
 
   /// 选中某字幕源：加载 cue → 切 overlay → 持久化 → SnackBar。
-  Future<void> _selectSubtitleSource(
+  /// 返回 true 表示字幕真被应用（解析出 cue 并切换/持久化）；false 表示空 cue
+  /// 失败（已弹失败提示、未切换、未持久化、未覆盖当前可用字幕）。
+  Future<bool> _selectSubtitleSource(
     VideoPlayerController controller,
     SubtitleSource source,
   ) async {
     final String? videoPath = _currentVideoPath;
-    if (videoPath == null) return;
+    if (videoPath == null) return false;
     final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
 
     final List<AudioCue> cues =
         await loadCuesForSource(source, videoPath, widget.bookUid);
+    if (!mounted) return false;
+    // 抽取/解析后无任何 cue（图形字幕、ffmpeg 缺失、轨损坏等）：诚实告知失败，
+    // **不切换、不持久化**——避免谎报「已切换」却空屏，也避免用一个坏内封轨覆盖掉
+    // 当前正常工作的字幕源（下次进来还是空）。
+    if (cues.isEmpty) {
+      messenger.showSnackBar(SnackBar(
+        content: Text(t.video_subtitle_load_failed(label: source.label)),
+      ));
+      return false;
+    }
     controller.setCues(cues);
     // 选了文本字幕源就关掉 libmpv 画面字幕，避免与可点 overlay 双重渲染。
     await controller.selectSubtitleTrack(SubtitleTrack.no());
 
     final String persisted = source.toPersistedValue();
     await widget.repo.updateSubtitleSource(widget.bookUid, persisted);
-    if (!mounted) return;
+    if (!mounted) return false;
     setState(() => _currentSubtitleSource = persisted);
     messenger.showSnackBar(SnackBar(
       content: Text(t.video_subtitle_switched(label: source.label)),
     ));
+    return true;
   }
 
   /// 关闭字幕：清空 cue overlay + 关 libmpv 字幕轨 + 持久化 null。
@@ -1193,17 +1285,29 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     VideoController videoController,
   ) {
     WidgetsBinding.instance.addPostFrameCallback((_) => _syncPopupOverlay());
-    return MaterialDesktopVideoControlsTheme(
-      normal: _desktopControlsTheme(controller),
-      fullscreen: _desktopControlsTheme(controller),
-      child: Video(
-        controller: videoController,
-        // 视频不满屏时的 letterbox/pillarbox 填充色吃主题 surface（默认黑边换成
-        // 跟随主题的中性底色，与 Scaffold 背景一致，深浅主题统一）。
-        fill: Theme.of(context).colorScheme.surface,
-        // 字幕 overlay 包进 controls builder：media_kit 全屏推独立 root 路由并复用
-        // 同一 controls，故 overlay 随全屏一起进路由，全屏时字幕仍显示且可点查词。
-        controls: (VideoState state) => _buildVideoControls(state, controller),
+    // 两层主题嵌套：[AdaptiveVideoControls] 按平台互斥择一渲染（桌面读 Desktop
+    // 主题、移动读 Material 主题），故同时提供两套互不干扰，让字幕/音轨/设置入口
+    // 在桌面、移动、全屏三种场景都可达。嵌套顺序不影响——各自被对应平台 controls 读取。
+    return MaterialVideoControlsTheme(
+      normal: _mobileControlsTheme(controller),
+      fullscreen: _mobileControlsTheme(controller),
+      child: MaterialDesktopVideoControlsTheme(
+        normal: _desktopControlsTheme(controller),
+        fullscreen: _desktopControlsTheme(controller),
+        child: Video(
+          controller: videoController,
+          // 用本页持有的 FocusNode 替换 Video 内置的匿名节点，以便覆盖层（对话框 /
+          // bottom sheet / 文件选择器）关闭后能主动把键盘焦点还给它，恢复空格等内置
+          // 快捷键（见 [_refocusVideo]）。
+          focusNode: _videoFocusNode,
+          // 视频不满屏时的 letterbox/pillarbox 填充色吃主题 surface（默认黑边换成
+          // 跟随主题的中性底色，与 Scaffold 背景一致，深浅主题统一）。
+          fill: Theme.of(context).colorScheme.surface,
+          // 字幕 overlay 包进 controls builder：media_kit 全屏推独立 root 路由并复用
+          // 同一 controls，故 overlay 随全屏一起进路由，全屏时字幕仍显示且可点查词。
+          controls: (VideoState state) =>
+              _buildVideoControls(state, controller),
+        ),
       ),
     );
   }

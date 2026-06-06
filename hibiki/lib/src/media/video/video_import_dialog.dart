@@ -173,9 +173,16 @@ bool videoImportCanImport({
 /// [singleVideoBookUid]），跨设备/换目录稳定；同名碰撞导入时 [uniqueVideoBookUid]
 /// 静默加后缀去重（对齐书的 name-PK 哲学）。
 class VideoImportDialog extends StatefulWidget {
-  const VideoImportDialog({required this.repo, super.key});
+  const VideoImportDialog({
+    required this.repo,
+    this.initialVideoPath,
+    this.initialSubtitlePath,
+    super.key,
+  });
 
   final VideoBookRepository repo;
+  final String? initialVideoPath;
+  final String? initialSubtitlePath;
 
   @override
   State<VideoImportDialog> createState() => _VideoImportDialogState();
@@ -185,6 +192,13 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
   String? _videoPath;
   String? _subtitlePath;
   bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _videoPath = widget.initialVideoPath;
+    _subtitlePath = widget.initialSubtitlePath;
+  }
 
   bool get _canImport => videoImportCanImport(
         videoPath: _videoPath,

@@ -1,0 +1,107 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
+import 'package:hibiki/src/media/drag_drop/drop_decision.dart';
+
+DroppedFiles _files({
+  List<String> books = const [],
+  List<String> videos = const [],
+  List<String> subtitles = const [],
+  List<String> audios = const [],
+}) =>
+    DroppedFiles(
+        books: books,
+        videos: videos,
+        subtitles: subtitles,
+        audios: audios,
+        unknown: const []);
+
+void main() {
+  group('decideDropIntent — books surface', () {
+    test('book file -> importNewBook', () {
+      expect(
+        decideDropIntent(
+            surface: DropSurface.books,
+            files: _files(books: ['/a.epub']),
+            cardHit: false),
+        DropIntent.importNewBook,
+      );
+    });
+    test('subtitle on a card -> attachToBookCard', () {
+      expect(
+        decideDropIntent(
+            surface: DropSurface.books,
+            files: _files(subtitles: ['/a.srt']),
+            cardHit: true),
+        DropIntent.attachToBookCard,
+      );
+    });
+    test('audio not on a card -> needCardTarget', () {
+      expect(
+        decideDropIntent(
+            surface: DropSurface.books,
+            files: _files(audios: ['/a.mp3']),
+            cardHit: false),
+        DropIntent.needCardTarget,
+      );
+    });
+    test('book wins over subtitle when both dropped', () {
+      expect(
+        decideDropIntent(
+            surface: DropSurface.books,
+            files: _files(books: ['/a.epub'], subtitles: ['/a.srt']),
+            cardHit: false),
+        DropIntent.importNewBook,
+      );
+    });
+    test('nothing relevant -> ignore', () {
+      expect(
+        decideDropIntent(
+            surface: DropSurface.books,
+            files: _files(videos: ['/a.mkv']),
+            cardHit: false),
+        DropIntent.ignore,
+      );
+    });
+  });
+
+  group('decideDropIntent — video surface', () {
+    test('video file -> importNewVideo', () {
+      expect(
+        decideDropIntent(
+            surface: DropSurface.video,
+            files: _files(videos: ['/a.mkv']),
+            cardHit: false),
+        DropIntent.importNewVideo,
+      );
+    });
+    test('subtitle on a video card -> attachToVideoCard', () {
+      expect(
+        decideDropIntent(
+            surface: DropSurface.video,
+            files: _files(subtitles: ['/a.srt']),
+            cardHit: true),
+        DropIntent.attachToVideoCard,
+      );
+    });
+    test('subtitle not on a card -> needCardTarget', () {
+      expect(
+        decideDropIntent(
+            surface: DropSurface.video,
+            files: _files(subtitles: ['/a.srt']),
+            cardHit: false),
+        DropIntent.needCardTarget,
+      );
+    });
+    test(
+        'audio-only on video surface -> ignore (video cards do not take audio)',
+        () {
+      expect(
+        decideDropIntent(
+            surface: DropSurface.video,
+            files: _files(audios: ['/a.mp3']),
+            cardHit: true),
+        DropIntent.ignore,
+      );
+    });
+  });
+}

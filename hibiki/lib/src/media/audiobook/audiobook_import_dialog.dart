@@ -21,6 +21,8 @@ class AudiobookImportDialog extends StatefulWidget {
     required this.repo,
     this.extractDir,
     this.audioOnly = false,
+    this.initialAudioPaths,
+    this.initialAlignmentPath,
     super.key,
   });
 
@@ -36,6 +38,12 @@ class AudiobookImportDialog extends StatefulWidget {
   /// When true, only audio files can be imported (alignment row and matcher
   /// settings are hidden). Used for SRT books that already have their own cues.
   final bool audioOnly;
+
+  /// 拖拽导入预填：要附加到该书的音频文件路径（覆盖既有记录的推断音频源）。
+  final List<String>? initialAudioPaths;
+
+  /// 拖拽导入预填：对齐用的字幕/对齐文件路径（覆盖既有 alignmentPath）。
+  final String? initialAlignmentPath;
 
   @override
   State<AudiobookImportDialog> createState() => _AudiobookImportDialogState();
@@ -123,6 +131,25 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog> {
           _patchingAudio = true;
           _alignmentPath = existing.alignmentPath;
         }
+      }
+      // 拖拽导入预填：拖入值覆盖 existing 推断的音频源 / 对齐文件。
+      final List<String>? dropAudio = widget.initialAudioPaths;
+      if (dropAudio != null && dropAudio.isNotEmpty) {
+        _audioPaths = dropAudio;
+        _audioDir = null;
+      }
+      final String? dropAlign = widget.initialAlignmentPath;
+      if (dropAlign != null) {
+        _alignmentPath = dropAlign;
+        _alignmentName = p.basename(dropAlign);
+      }
+      // 有预填时强制走导入表单：书已有完整有声书时 showImportForm 默认为 false
+      // （existing != null && !_patchingAudio）→ 只读视图会静默忽略预填值。
+      // 复用"补音频"语义，让拖入的音频/对齐文件进入可保存的导入表单。
+      final bool hasDropPrefill =
+          (dropAudio != null && dropAudio.isNotEmpty) || dropAlign != null;
+      if (hasDropPrefill) {
+        _patchingAudio = true;
       }
     });
   }

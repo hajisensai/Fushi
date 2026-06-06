@@ -50,8 +50,11 @@ enum SubtitleFormat { srt, ass, vtt }
 /// - codec 取 `Subtitle: ` 之后的第一个 token（如 `ass`、`subrip`、
 ///   `hdmv_pgs_subtitle`），后面的 `(ssa)` / `(forced)` / `(default)` 是
 ///   ffmpeg 附加描述，不并入 codec。
+/// - `#0:1` 与 `(lang)` 之间可能有一段十六进制流 id `[0x2]`（新版 ffmpeg 对
+///   mp4/mov 字幕流会打印它）；这段可选，匹配时跳过，否则 mp4 内封字幕整条漏掉
+///   （枚举为 0）。
 final RegExp _subtitleStreamPattern = RegExp(
-  r'Stream #\d+:\d+(?:\(([^)]+)\))?: Subtitle:\s+([A-Za-z0-9_]+)',
+  r'Stream #\d+:\d+(?:\[0x[0-9a-fA-F]+\])?(?:\(([^)]+)\))?: Subtitle:\s+([A-Za-z0-9_]+)',
 );
 
 /// **纯函数**：解析 `ffmpeg -i <video>` 的 stderr，提取所有内嵌字幕轨。
@@ -96,21 +99,38 @@ SubtitleFormat? subtitleFormatForPath(String path) {
   }
 }
 
-/// 按内嵌轨 codec 判定字幕格式。文本字幕（ass/ssa/subrip/srt/webvtt/vtt）映射到
-/// 对应 parser；图形字幕（pgs/dvd_subtitle 等无法转文本 cue）返回 null。
+/// 按内嵌轨 codec 判定字幕格式。
+///
+/// 设计（**fail-open**，消除「白名单漏一个文本 codec 就静默无字幕」的整类 bug）：
+/// - `ass`/`ssa` → ass、`webvtt`/`vtt` → vtt：原生 parser 保真（保留划词文本质量）。
+/// - **已知图形字幕**（pgs/dvd/dvb/xsub 等位图，无法转文本 cue，需 OCR）→ null。
+/// - **其余一律按文本字幕 → srt**：subrip/srt/mov_text/tx3g/text/microdvd/… 都由
+///   ffmpeg 按 `.srt` 输出扩展名转码成 SubRip，再走 SrtParser（剥 HTML 标签）。
+///   即便某个真图形 codec 不在上面的排除名单里，ffmpeg 也会因「位图无法编码成
+///   srt」抽取失败 → cue 为空（与返回 null 同效，不会引入坏数据）。
+///
+/// 这样 mp4 的 `mov_text`（旧实现漏映射 → null → 切换内封后无字幕）等文本 codec
+/// 一律可用（BUG-071）。
 SubtitleFormat? subtitleFormatForCodec(String codec) {
   switch (codec.toLowerCase()) {
     case 'ass':
     case 'ssa':
       return SubtitleFormat.ass;
-    case 'subrip':
-    case 'srt':
-      return SubtitleFormat.srt;
     case 'webvtt':
     case 'vtt':
       return SubtitleFormat.vtt;
-    default:
+    // 已知图形字幕（位图，需 OCR）：明确不支持，返回 null。
+    case 'hdmv_pgs_subtitle':
+    case 'pgssub':
+    case 'dvd_subtitle':
+    case 'dvdsub':
+    case 'dvb_subtitle':
+    case 'dvbsub':
+    case 'xsub':
       return null;
+    // 其余按文本字幕处理：ffmpeg 转码成 srt，SrtParser 解析。
+    default:
+      return SubtitleFormat.srt;
   }
 }
 

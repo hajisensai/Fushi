@@ -6,6 +6,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
+import 'package:hibiki/src/media/drag_drop/card_drop_registry.dart';
+import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
+import 'package:hibiki/src/media/drag_drop/drop_decision.dart';
+import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_feature_flags.dart';
 import 'package:hibiki/src/media/video/video_import_dialog.dart';
@@ -37,6 +41,11 @@ class HomeVideoPage extends ConsumerStatefulWidget {
 class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   Future<List<VideoBookRow>>? _future;
 
+  /// 视频卡片拖放命中注册表：每张 [CardDropZone] 注册自身几何，拖放时按屏幕坐标
+  /// 命中查找目标视频卡（字幕外挂到该视频）。范型=VideoBookRow。
+  final CardDropRegistry<VideoBookRow> _cardDropRegistry =
+      CardDropRegistry<VideoBookRow>();
+
   @override
   void initState() {
     super.initState();
@@ -61,6 +70,64 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     final String? bookUid = await showAppDialog<String>(
       context: context,
       builder: (_) => VideoImportDialog(repo: widget.repo),
+    );
+    if (bookUid != null) _refresh();
+  }
+
+  /// 拖放到视频 tab 时的处理：分类文件 → 局部坐标转屏幕坐标命中卡片 → 决策意图。
+  ///
+  /// [localPosition] 为相对 [HibikiFileDropTarget] 的局部坐标，需经本页 RenderBox
+  /// 转屏幕坐标后再交给注册表命中（注册表存的是屏幕坐标矩形）。
+  void _handleVideoDrop(List<String> paths, Offset localPosition) {
+    final DroppedFiles files = classifyDroppedFiles(paths);
+    final RenderObject? ro = context.findRenderObject();
+    Offset global = localPosition;
+    if (ro is RenderBox && ro.attached) {
+      global = ro.localToGlobal(localPosition);
+    }
+    final VideoBookRow? hit = _cardDropRegistry.hitTest(global);
+    final DropIntent intent = decideDropIntent(
+      surface: DropSurface.video,
+      files: files,
+      cardHit: hit != null,
+    );
+    switch (intent) {
+      case DropIntent.importNewVideo:
+        _openVideoImportPrefilled(
+          videoPath: files.videos.first,
+          subtitlePath:
+              files.subtitles.isNotEmpty ? files.subtitles.first : null,
+        );
+      case DropIntent.attachToVideoCard:
+        _openVideoImportPrefilled(
+          videoPath: hit!.videoPath,
+          subtitlePath: files.subtitles.first,
+        );
+      case DropIntent.needCardTarget:
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(t.drag_drop_need_card_target)),
+        );
+      case DropIntent.importNewBook:
+      case DropIntent.attachToBookCard:
+      case DropIntent.ignore:
+        break;
+    }
+  }
+
+  /// 复用 [VideoImportDialog] 打开方式，预填视频/字幕路径。新建导入与「附加字幕到
+  /// 已有视频」走同一路径：对话框按文件名派生 bookUid，对同一视频幂等覆盖 cue，
+  /// 用户确认后保存，关闭后刷新列表。
+  Future<void> _openVideoImportPrefilled({
+    required String videoPath,
+    String? subtitlePath,
+  }) async {
+    final String? bookUid = await showAppDialog<String>(
+      context: context,
+      builder: (_) => VideoImportDialog(
+        repo: widget.repo,
+        initialVideoPath: videoPath,
+        initialSubtitlePath: subtitlePath,
+      ),
     );
     if (bookUid != null) _refresh();
   }
@@ -194,33 +261,40 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
             ),
         ],
       ),
-      body: Column(
-        children: <Widget>[
-          _buildTagFilterBar(allTags),
-          Expanded(
-            child: FutureBuilder<List<VideoBookRow>>(
-              future: _future,
-              builder: (BuildContext context,
-                  AsyncSnapshot<List<VideoBookRow>> snapshot) {
-                if (snapshot.connectionState != ConnectionState.done) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                final List<VideoBookRow> all =
-                    snapshot.data ?? const <VideoBookRow>[];
-                final Set<String>? filter =
-                    ref.watch(filteredVideoBookUidsProvider).valueOrNull;
-                final List<VideoBookRow> books = filter == null
-                    ? all
-                    : all
-                        .where((VideoBookRow b) => filter.contains(b.bookUid))
-                        .toList();
-                if (all.isEmpty) return _buildEmpty();
-                if (books.isEmpty) return _buildFilteredEmpty();
-                return _buildGrid(books);
-              },
-            ),
+      body: HibikiFileDropTarget(
+        onDrop: _handleVideoDrop,
+        child: CardDropScope<VideoBookRow>(
+          registry: _cardDropRegistry,
+          child: Column(
+            children: <Widget>[
+              _buildTagFilterBar(allTags),
+              Expanded(
+                child: FutureBuilder<List<VideoBookRow>>(
+                  future: _future,
+                  builder: (BuildContext context,
+                      AsyncSnapshot<List<VideoBookRow>> snapshot) {
+                    if (snapshot.connectionState != ConnectionState.done) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    final List<VideoBookRow> all =
+                        snapshot.data ?? const <VideoBookRow>[];
+                    final Set<String>? filter =
+                        ref.watch(filteredVideoBookUidsProvider).valueOrNull;
+                    final List<VideoBookRow> books = filter == null
+                        ? all
+                        : all
+                            .where(
+                                (VideoBookRow b) => filter.contains(b.bookUid))
+                            .toList();
+                    if (all.isEmpty) return _buildEmpty();
+                    if (books.isEmpty) return _buildFilteredEmpty();
+                    return _buildGrid(books);
+                  },
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -343,39 +417,42 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     final List<BookTagRow> tags =
         ref.watch(videoBookTagMapProvider).valueOrNull?[book.bookUid] ??
             const <BookTagRow>[];
-    return HibikiCard(
-      key: ValueKey<String>('home_video_${book.bookUid}'),
-      focusId: HibikiFocusId('home-video-${book.bookUid}'),
-      padding: EdgeInsets.zero,
-      onTap: () => _open(book),
-      onLongPress: () => _showVideoMenu(book),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Expanded(
-            child: Stack(
-              fit: StackFit.expand,
-              children: <Widget>[
-                _buildCover(book),
-                if (tags.isNotEmpty)
-                  Positioned(
-                    top: 6,
-                    left: 6,
-                    child: _buildTagLabels(tags),
-                  ),
-              ],
+    return CardDropZone<VideoBookRow>(
+      meta: book,
+      child: HibikiCard(
+        key: ValueKey<String>('home_video_${book.bookUid}'),
+        focusId: HibikiFocusId('home-video-${book.bookUid}'),
+        padding: EdgeInsets.zero,
+        onTap: () => _open(book),
+        onLongPress: () => _showVideoMenu(book),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Expanded(
+              child: Stack(
+                fit: StackFit.expand,
+                children: <Widget>[
+                  _buildCover(book),
+                  if (tags.isNotEmpty)
+                    Positioned(
+                      top: 6,
+                      left: 6,
+                      child: _buildTagLabels(tags),
+                    ),
+                ],
+              ),
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-            child: Text(
-              book.title,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodyMedium,
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              child: Text(
+                book.title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
