@@ -7,6 +7,6 @@ compatibility_date = "2024-11-01"
 [[d1_databases]]
 binding = "DB"
 database_name = "hibiki-logs"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "6994ff63-126e-46ff-aee9-eb74b04a9585"
 
 # secrets 用 wrangler secret put 设：UPLOAD_TOKEN / BASIC_USER / BASIC_PASS
