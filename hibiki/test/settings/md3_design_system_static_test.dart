@@ -583,6 +583,9 @@ void main() {
           'Theme preview studio intentionally displays user-selected colors.',
       'lib/src/pages/implementations/reading_statistics_page.dart':
           'Chart and metric preview content keeps small chart typography.',
+      'lib/src/pages/implementations/video_statistics_page.dart':
+          'Video statistics charts/metric bars mirror reading_statistics_page: '
+              'progress-bar track surface is chart content, not page chrome.',
       'lib/src/pages/implementations/dictionary_term_page.dart':
           'Dictionary article surface is content chrome, not ordinary page rows.',
       'lib/src/pages/implementations/dictionary_popup_native.dart':

@@ -101,12 +101,13 @@ void _seedThreeBooks(dynamic rawDb) {
 /// Asserts the post-migration DB is on the unified shape: epub_books name-PK
 /// with [expectedBooks] rows preserved, video_books keyed by book_uid (no
 /// legacy id), and end-to-end usable. The ladder always walks to the current
-/// schemaVersion (now 21 — video_book_tag_mappings landed on top of the v20
-/// convergence), so the version marker is asserted as the live schema version.
+/// schemaVersion (now 22 — video watch-statistics tables landed on top of the
+/// v21 video_book_tag_mappings step), so the version marker is asserted as the
+/// live schema version.
 Future<void> _expectUnifiedV20(HibikiDatabase db,
     {int expectedBooks = 3}) async {
   final version = await db.customSelect('PRAGMA user_version').getSingle();
-  expect(version.read<int>('user_version'), 21);
+  expect(version.read<int>('user_version'), 22);
 
   // epub_books name-PK: book_key present, legacy id gone, book_key is the PK.
   final epubCols =
