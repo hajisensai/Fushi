@@ -143,7 +143,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
 
   Widget _buildPageHeader() {
     return HibikiPageHeader(
-      title: t.dictionaries,
+      title: t.nav_lookup,
       actions: <Widget>[
         HibikiIconButton(
           tooltip: t.clear_dictionary_title,

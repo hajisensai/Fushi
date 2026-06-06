@@ -1320,5 +1320,6 @@
     "video_stat_no_data": "暂无视频统计数据",
     "video_subtitle_import_file": "导入字幕文件…",
     "video_subtitle_import_unsupported": "不支持的字幕格式",
-    "video_subtitle_import_failed": "导入字幕失败"
+    "video_subtitle_import_failed": "导入字幕失败",
+    "nav_lookup": "查词"
 }

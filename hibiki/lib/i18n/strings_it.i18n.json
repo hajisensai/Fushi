@@ -1320,5 +1320,6 @@
     "video_stat_no_data": "No video statistics yet",
     "video_subtitle_import_file": "Import subtitle file…",
     "video_subtitle_import_unsupported": "Unsupported subtitle format",
-    "video_subtitle_import_failed": "Failed to import subtitle"
+    "video_subtitle_import_failed": "Failed to import subtitle",
+    "nav_lookup": "Lookup"
 }
