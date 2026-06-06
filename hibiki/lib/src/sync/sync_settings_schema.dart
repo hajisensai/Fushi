@@ -215,9 +215,26 @@ SettingsDestination buildSyncBackupDestination() {
       SettingsSection(
         title: t.sync_section_actions,
         items: <SettingsItem>[
+          // Hosting as a Hibiki server has no OUTBOUND sync: the host is a
+          // passive data source that connected clients pull from / push to, so
+          // "sync now" / "compare" resolve to an unconfigured outbound backend
+          // and used to misleadingly say "set up sync first". Hide them in
+          // server mode and explain instead (BUG-077).
+          SettingsCustomItem(
+            id: 'sync.server_mode_note',
+            icon: Icons.router_outlined,
+            visible: (SettingsContext ctx) => _syncSettings(ctx).serverEnabled,
+            builder: (SettingsContext ctx) => AdaptiveSettingsRow(
+              title: t.sync_server_mode_active,
+              subtitle: t.sync_server_mode_clients_drive,
+              icon: Icons.router_outlined,
+              controlBelow: true,
+            ),
+          ),
           SettingsCustomItem(
             id: 'sync.sync_now',
             icon: Icons.sync,
+            visible: (SettingsContext ctx) => !_syncSettings(ctx).serverEnabled,
             builder: (SettingsContext ctx) =>
                 _SyncNowWidget(settingsContext: ctx),
           ),
@@ -225,6 +242,7 @@ SettingsDestination buildSyncBackupDestination() {
             id: 'sync.compare',
             title: t.sync_compare,
             icon: Icons.compare_arrows,
+            visible: (SettingsContext ctx) => !_syncSettings(ctx).serverEnabled,
             onTap: (SettingsContext ctx) => showSyncCompareDialog(
               ctx.context,
               ctx.appModel.database,
@@ -2565,6 +2583,10 @@ class _SyncSettingsState {
     if (serverEnabled == value) return;
     serverEnabled = value;
     roleRevision.value++;
+    // Re-evaluate section/item visibility predicates (the manual-sync actions
+    // are gated on serverEnabled, BUG-077) so toggling the host role re-gates
+    // them live, not just on the next page open.
+    _settingsContext.refresh();
   }
 
   void setHasClientConnection(bool value) {

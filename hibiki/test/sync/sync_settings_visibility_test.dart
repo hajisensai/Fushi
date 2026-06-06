@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
@@ -79,10 +81,46 @@ void main() {
         'sync.content',
         'sync.audiobook_files',
       ]);
-      expect(
-          idsOf(dest.sections[3]), <String>['sync.sync_now', 'sync.compare']);
+      expect(idsOf(dest.sections[3]), <String>[
+        'sync.server_mode_note',
+        'sync.sync_now',
+        'sync.compare',
+      ]);
       expect(idsOf(dest.sections[4]),
           <String>['sync.backup_export', 'sync.backup_import']);
+    });
+
+    test('manual-sync actions are gated on server mode (BUG-077)', () {
+      // A pure Hibiki host has no outbound sync, so "sync now" / "compare" must
+      // be hidden in server mode and an explanatory note shown instead — every
+      // one of the three carries a visibility predicate (none is unconditional).
+      final SettingsSection actions = dest.sections[3];
+      SettingsItem byId(String id) =>
+          actions.items.firstWhere((SettingsItem i) => i.id == id);
+      expect(byId('sync.sync_now').visible, isNotNull,
+          reason: 'sync_now must be hidden when hosting as a server');
+      expect(byId('sync.compare').visible, isNotNull,
+          reason: 'compare must be hidden when hosting as a server');
+      expect(byId('sync.server_mode_note').visible, isNotNull,
+          reason: 'the server-mode note shows only while hosting');
+    });
+
+    test('the action gates key off the server-host role (BUG-077)', () {
+      // Source guard: the gates must branch on serverEnabled (the host-role
+      // flag), not on some unrelated state, so a refactor can\'t silently regate
+      // them on the wrong condition.
+      final String src =
+          File('lib/src/sync/sync_settings_schema.dart').readAsStringSync();
+      final int noteAt = src.indexOf("id: 'sync.server_mode_note'");
+      final int nowAt = src.indexOf("id: 'sync.sync_now'");
+      final int compareAt = src.indexOf("id: 'sync.compare'");
+      expect(noteAt, greaterThanOrEqualTo(0));
+      // Each item's `visible:` predicate (within ~200 chars of its id) names
+      // serverEnabled.
+      for (final int at in <int>[noteAt, nowAt, compareAt]) {
+        expect(src.substring(at, at + 200), contains('serverEnabled'),
+            reason: 'manual-sync gate must reference serverEnabled');
+      }
     });
 
     test('the fake SMB config option is gone', () {
