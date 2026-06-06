@@ -488,16 +488,31 @@ String normalizeAnkiDictionaryHtml(String value) {
   return value + _ankiGaijiImageStyle;
 }
 
+// 外字（gaiji）中和样式：把内联外字框（义项序号 ❶❷、［参照］［参考］等）强制收回
+// 到 ~1em 内联尺寸，否则会被正文压重叠。
+//
+// **特异性铁律**：词典自带 CSS 常用更具体的选择器把同一个 `.gloss-image-container`
+// 撑大——明鏡国語辞典 第三版就有一条
+// `.yomitan-glossary [data-dictionary="…"] span[data-sc-img][data-sc-class="gaiji"]
+//  .gloss-image-container{width:15em!important}`（特异性 0,5,1）。本中和样式虽追加在
+// 末尾，但只有当选择器特异性 **不低于** 词典规则时，等特异性才靠靠后的源码顺序取胜；
+// 旧版前缀只有 `.yomitan-glossary [data-sc-img][data-sc-class="gaiji"] …`（0,4,0）反被
+// 词典压住→外字框 15em 撑爆重叠正文。故现在每条规则做到 (0,6,1)（前缀
+// `.yomitan-glossary [data-dictionary]` + 完整 `span[data-sc-img][data-sc-class="gaiji"]
+//  .gloss-image-link` 后代链），稳压词典 (0,5,1)。守卫见
+// test/anki/anki_gaiji_style_test.dart。
+const _ankiGaijiSel =
+    '.yomitan-glossary [data-dictionary] span[data-sc-img][data-sc-class="gaiji"]';
 const _ankiGaijiImageStyle = '<style>'
-    '.yomitan-glossary [data-sc-img][data-sc-class="gaiji"]'
+    '$_ankiGaijiSel'
     '{display:inline!important;white-space:nowrap!important;vertical-align:baseline!important}'
-    '.yomitan-glossary [data-sc-img][data-sc-class="gaiji"] .gloss-image-link'
+    '$_ankiGaijiSel .gloss-image-link'
     '{display:inline-block!important;vertical-align:text-bottom!important;max-width:1.2em!important}'
-    '.yomitan-glossary [data-sc-img][data-sc-class="gaiji"] .gloss-image-container'
+    '$_ankiGaijiSel .gloss-image-link .gloss-image-container'
     '{display:inline-block!important;width:1em!important;height:1em!important;max-width:1em!important;max-height:1em!important;vertical-align:text-bottom!important;font-size:1em!important}'
-    '.yomitan-glossary [data-sc-img][data-sc-class="gaiji"] .gloss-image-sizer'
+    '$_ankiGaijiSel .gloss-image-link .gloss-image-sizer'
     '{display:none!important}'
-    '.yomitan-glossary [data-sc-img][data-sc-class="gaiji"] .gloss-image'
+    '$_ankiGaijiSel .gloss-image-link .gloss-image'
     '{position:static!important;width:1em!important;height:1em!important;vertical-align:text-bottom!important}'
     '</style>';
 
