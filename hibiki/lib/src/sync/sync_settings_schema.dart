@@ -224,7 +224,7 @@ SettingsDestination buildSyncBackupDestination() {
           SettingsCustomItem(
             id: 'sync.server_mode_note',
             icon: Icons.router_outlined,
-            visible: (SettingsContext ctx) => _syncSettings(ctx).serverEnabled,
+            visible: (SettingsContext ctx) => _isHostingInterconnect(ctx),
             builder: (SettingsContext ctx) => AdaptiveSettingsRow(
               title: t.sync_server_mode_active,
               subtitle: t.sync_server_mode_clients_drive,
@@ -235,7 +235,7 @@ SettingsDestination buildSyncBackupDestination() {
           SettingsCustomItem(
             id: 'sync.sync_now',
             icon: Icons.sync,
-            visible: (SettingsContext ctx) => !_syncSettings(ctx).serverEnabled,
+            visible: (SettingsContext ctx) => !_isHostingInterconnect(ctx),
             builder: (SettingsContext ctx) =>
                 _SyncNowWidget(settingsContext: ctx),
           ),
@@ -243,7 +243,7 @@ SettingsDestination buildSyncBackupDestination() {
             id: 'sync.compare',
             title: t.sync_compare,
             icon: Icons.compare_arrows,
-            visible: (SettingsContext ctx) => !_syncSettings(ctx).serverEnabled,
+            visible: (SettingsContext ctx) => !_isHostingInterconnect(ctx),
             onTap: (SettingsContext ctx) => showSyncCompareDialog(
               ctx.context,
               ctx.appModel.database,
@@ -284,6 +284,16 @@ SettingsDestination buildSyncBackupDestination() {
 // dispose 而失效，从根本上消除 "重建即回退默认值" 的竞态窗口。
 _SyncSettingsState? _activeSyncState;
 AppModel? _activeSyncOwner;
+
+/// Whether this device is actively HOSTING a Hibiki interconnect server — the
+/// only role with no outbound "sync now" / "compare" (BUG-077). Requires BOTH
+/// the persisted host flag AND the interconnect backend: a stale serverEnabled
+/// left over from a past hibikiServer session must NOT gate manual sync on a
+/// cloud backend (observed in the wild: serverEnabled=true while
+/// backendType=googleDrive, which would otherwise hide sync-now on Drive).
+bool _isHostingInterconnect(SettingsContext ctx) =>
+    _syncSettings(ctx).serverEnabled &&
+    _syncSettings(ctx).backendType == SyncBackendType.hibikiServer;
 
 _SyncSettingsState _syncSettings(SettingsContext ctx) {
   final AppModel owner = ctx.appModel;
