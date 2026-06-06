@@ -605,6 +605,9 @@ void main() {
       'lib/src/media/video/video_subtitle_overlay.dart':
           'Video subtitle overlay renders caption content (fixed '
               'white-on-black caption radius/size), not ordinary page chrome.',
+      'lib/src/media/video/video_subtitle_style.dart':
+          'Subtitle appearance model holds user-configurable caption font '
+              'size (content), defaults mirror the allowlisted overlay caption.',
       'lib/src/pages/implementations/video_hibiki_page.dart':
           'Video player page chrome (track-switch menu, media controls) '
               'follows media-page rules like reader/audiobook.',
