@@ -10,6 +10,21 @@ bool shouldMarkCompleted(int? positionMs, int? durationMs, bool already) {
   return positionMs / durationMs >= 0.9;
 }
 
+/// 单次 flush 允许的最大观看窗口。观看时长由 [VideoWatchTracker] 的 60s 定时器驱动，
+/// 正常窗口 ≈ 60s。超过此上限说明定时器跨越了**非连续前台播放窗口**（app 后台挂起 /
+/// 系统睡眠 / 长 GC 停顿致定时器被冻结后一次性补发），该段是否真在播放未知。
+const Duration kMaxWatchGap = Duration(seconds: 120);
+
+/// 纯谓词：[start]..[now] 是否是一次正常的连续播放窗口。
+///
+/// 过滤异常大间隔（见 [kMaxWatchGap]）：返回 false 时调用方应整窗丢弃、不累加观看时长，
+/// 避免把后台挂起 / 熄屏 / 睡眠时长凭空计入。同时保证 [splitWatchTime] 永远只看到
+/// ≤ [kMaxWatchGap] 的输入——单次至多跨一个小时/天边界，其单边界拆桶假设始终成立。
+bool isContinuousWatchGap(DateTime start, DateTime now) {
+  final Duration d = now.difference(start);
+  return d > Duration.zero && d <= kMaxWatchGap;
+}
+
 /// 把 [start]..[now] 的观看时长按小时/天边界拆成 (dateKey, hour, ms) 桶。
 /// 对照 ReadingTimeTracker._flush，但抽成纯函数便于单测。
 List<(String, int, int)> splitWatchTime(DateTime start, DateTime now) {
@@ -38,7 +53,9 @@ String _dateKey(DateTime d) =>
 ///
 /// 三类回调由上层（页面）注入，统一落 DB：
 /// - [_addStat]：把一条增量（字幕字数或观看时长，另一维度传 0）累加进
-///   (title, 今日) 行。
+///   (title, dateKey) 行。**dateKey 由本采集器决定**（字幕字数用当下日期；观看时长
+///   用 [splitWatchTime] 各桶各自日期），上层回调直接透传，不得另算「今日」——否则
+///   跨午夜的 flush 会与 [_addHourly] 的小时日志日归属不一致。
 /// - [_addHourly]：把观看时长增量累加进 (dateKey, hour) 小时日志（可空：无需小时
 ///   统计的场景/测试传 null）。
 /// - [_markCompleted]：首次进度达阈值时标记该 bookUid 完成（幂等由 DB 层保证）。
@@ -46,7 +63,8 @@ class VideoWatchTracker {
   VideoWatchTracker({
     required this.title,
     required this.bookUid,
-    required void Function(String title, int subtitleChars, int watchTimeMs)
+    required void Function(
+            String title, String dateKey, int subtitleChars, int watchTimeMs)
         addStat,
     required Future<void> Function(String bookUid) markCompleted,
     Future<void> Function(String dateKey, int hour, int deltaMs)? addHourly,
@@ -56,9 +74,12 @@ class VideoWatchTracker {
 
   final String title;
   final String bookUid;
-  final void Function(String title, int subtitleChars, int watchTimeMs) _addStat;
+  final void Function(
+          String title, String dateKey, int subtitleChars, int watchTimeMs)
+      _addStat;
   final Future<void> Function(String bookUid) _markCompleted;
-  final Future<void> Function(String dateKey, int hour, int deltaMs)? _addHourly;
+  final Future<void> Function(String dateKey, int hour, int deltaMs)?
+      _addHourly;
 
   static const Duration _interval = Duration(seconds: 60);
 
@@ -111,7 +132,7 @@ class VideoWatchTracker {
       final int chars = text.runes.length;
       if (chars > 0) {
         debugSubtitleChars += chars;
-        _addStat(title, chars, 0);
+        _addStat(title, _dateKey(DateTime.now()), chars, 0);
       }
     }
   }
@@ -123,14 +144,15 @@ class VideoWatchTracker {
     _tickStart = now;
     if (s == null || start == null) return;
 
-    if (s.isPlaying) {
-      final List<(String, int, int)> buckets = splitWatchTime(start, now);
-      int totalMs = 0;
-      for (final (String dateKey, int hour, int ms) in buckets) {
-        totalMs += ms;
+    // 仅在连续前台播放窗口内累加：[isContinuousWatchGap] 过滤异常大间隔（后台挂起 /
+    // 系统睡眠 / 长 GC 停顿致定时器跨越非播放窗口），整窗丢弃而非凭空计入观看时长，
+    // 并保证 [splitWatchTime] 输入恒 ≤ kMaxWatchGap（单次至多跨一个边界）。
+    if (s.isPlaying && isContinuousWatchGap(start, now)) {
+      for (final (String dateKey, int hour, int ms)
+          in splitWatchTime(start, now)) {
         _addHourly?.call(dateKey, hour, ms);
+        _addStat(title, dateKey, 0, ms); // 逐桶配各自 dateKey：跨午夜正确归两天
       }
-      if (totalMs > 0) _addStat(title, 0, totalMs);
     }
 
     if (shouldMarkCompleted(s.positionMs, s.durationMs, _completed)) {

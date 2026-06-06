@@ -190,10 +190,22 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// `_syncAndFlushPosition`）。
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.inactive ||
-        state == AppLifecycleState.paused ||
-        state == AppLifecycleState.hidden) {
-      unawaited(_controller?.flushPosition());
+    switch (state) {
+      case AppLifecycleState.inactive:
+        // inactive 仅瞬态过渡（通知栏下拉 / 多任务切换）：落库即可，不停观看计时
+        // （频繁误停丢真实时长）；clamp（[isContinuousWatchGap]）兜底任何残留异常间隔。
+        unawaited(_controller?.flushPosition());
+      case AppLifecycleState.paused:
+      case AppLifecycleState.hidden:
+        // 真后台 / 熄屏：落库 + 暂停观看计时器，避免把后台时长计入。stop() 内部先 flush
+        // 退出瞬间的部分窗口（≤60s）再 cancel，不丢已观看时长。
+        unawaited(_controller?.flushPosition());
+        _watchTracker?.stop();
+      case AppLifecycleState.resumed:
+        // 回前台：重启观看计时器（start() 重置 _tickStart=now，下一窗从此刻起算）。
+        _watchTracker?.start();
+      case AppLifecycleState.detached:
+        break;
     }
   }
 
@@ -455,10 +467,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       _watchTracker = VideoWatchTracker(
         title: title,
         bookUid: widget.bookUid,
-        addStat: (String t, int chars, int ms) => unawaited(
+        // dateKey 由采集器决定（字幕字数=当下日期；观看时长=各桶各自日期），直接透传，
+        // 不在此另算「今日」——否则跨午夜的 flush 会与小时日志的日归属不一致。
+        addStat: (String t, String dateKey, int chars, int ms) => unawaited(
           db.addVideoWatchStatistic(
             title: t,
-            dateKey: _todayKey(),
+            dateKey: dateKey,
             subtitleChars: chars,
             watchTimeMs: ms,
           ),
@@ -496,12 +510,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   String _encodeEpisodes() => jsonEncode(
         _episodes.map((PlaylistEntry e) => e.toJson()).toList(),
       );
-
-  /// 今日 dateKey（`yyyy-MM-dd`），视频观看统计累加键。
-  String _todayKey() {
-    final DateTime d = DateTime.now();
-    return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-  }
 
   /// 若有持久化音轨偏好 [_currentAudioTrackId]，在 [controller] 的 audioTracks 里
   /// 按 id 匹配并切换。延迟读取以等待 libmpv open 后填充音轨列表。

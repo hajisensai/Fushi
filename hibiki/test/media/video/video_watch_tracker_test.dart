@@ -53,6 +53,13 @@ void main() {
       expect(r[0].$2, 9);
       expect(r[1].$2, 10);
     });
+    test('crossing midnight splits into two days', () {
+      final r = splitWatchTime(
+          DateTime(2026, 6, 6, 23, 59, 50), DateTime(2026, 6, 7, 0, 0, 10));
+      expect(r.length, 2);
+      expect(r[0], ('2026-06-06', 23, 10000));
+      expect(r[1], ('2026-06-07', 0, 10000));
+    });
     test('zero or negative elapsed yields empty', () {
       expect(
           splitWatchTime(
@@ -61,23 +68,52 @@ void main() {
     });
   });
 
+  group('isContinuousWatchGap (clamp anomalous timer gaps)', () {
+    test('normal ~60s window is continuous', () {
+      expect(
+          isContinuousWatchGap(
+              DateTime(2026, 6, 6, 9, 0, 0), DateTime(2026, 6, 6, 9, 1, 0)),
+          isTrue);
+    });
+    test('boundary at exactly kMaxWatchGap is still continuous', () {
+      final DateTime s = DateTime(2026, 6, 6, 9, 0, 0);
+      expect(isContinuousWatchGap(s, s.add(kMaxWatchGap)), isTrue);
+    });
+    test('gap beyond kMaxWatchGap (suspend/sleep) is discarded', () {
+      final DateTime s = DateTime(2026, 6, 6, 9, 0, 0);
+      expect(isContinuousWatchGap(s, s.add(const Duration(hours: 3))), isFalse);
+      expect(
+          isContinuousWatchGap(
+              s, s.add(kMaxWatchGap + const Duration(seconds: 1))),
+          isFalse);
+    });
+    test('zero / negative gap is not continuous', () {
+      final DateTime s = DateTime(2026, 6, 6, 9, 0, 0);
+      expect(isContinuousWatchGap(s, s), isFalse);
+      expect(isContinuousWatchGap(s, s.subtract(const Duration(seconds: 5))),
+          isFalse);
+    });
+  });
+
   group('subtitle char counting (monotonic dedup per episode)', () {
     late _FakeSource src;
     late VideoWatchTracker tracker;
-    late List<(String, int, int)> recorded;
+    late List<(String, String, int, int)> recorded;
     setUp(() {
-      recorded = <(String, int, int)>[];
+      recorded = <(String, String, int, int)>[];
       src = _FakeSource();
       tracker = VideoWatchTracker(
         title: 'A',
         bookUid: 'u1',
-        addStat: (title, chars, ms) => recorded.add((title, chars, ms)),
+        addStat: (title, dateKey, chars, ms) =>
+            recorded.add((title, dateKey, chars, ms)),
         markCompleted: (_) async {},
       )..attach(src);
     });
     tearDown(() => tracker.dispose());
 
-    test('counts a new cue once; re-seek to same cue does not double-count', () {
+    test('counts a new cue once; re-seek to same cue does not double-count',
+        () {
       src.currentCueIndex = 0;
       src.currentCue = _cue('あいう'); // 3
       src.emit();
@@ -88,6 +124,17 @@ void main() {
       src.currentCue = _cue('あいう');
       src.emit();
       expect(tracker.debugSubtitleChars, 7);
+    });
+
+    test('addStat receives a yyyy-MM-dd dateKey for subtitle chars', () {
+      src.currentCueIndex = 0;
+      src.currentCue = _cue('あいう');
+      src.emit();
+      expect(recorded, hasLength(1));
+      expect(recorded.single.$1, 'A'); // title
+      expect(recorded.single.$2, matches(r'^\d{4}-\d{2}-\d{2}$')); // dateKey
+      expect(recorded.single.$3, 3); // chars
+      expect(recorded.single.$4, 0); // watchTimeMs（字幕路径不计时长）
     });
 
     test('onEpisodeChanged resets dedup set', () {
