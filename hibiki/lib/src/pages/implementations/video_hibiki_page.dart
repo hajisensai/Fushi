@@ -1,10 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
@@ -20,8 +20,10 @@ import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
+import 'package:hibiki/src/media/video/video_mpv_config.dart';
 import 'package:hibiki/src/media/video/video_player_controller.dart';
 import 'package:hibiki/src/media/video/video_shader_manager.dart';
+import 'package:hibiki/src/media/video/video_subtitle_style.dart';
 import 'package:hibiki/src/media/video/video_watch_tracker.dart';
 import 'package:hibiki/src/pages/implementations/jimaku_subtitle_dialog.dart';
 import 'package:hibiki/src/pages/implementations/video_shader_dialog.dart';
@@ -173,6 +175,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 播放倍速：用户在设置面板调，跨重启保留；换集复用同一值（速度记忆）。
   double _playbackSpeed = 1.0;
 
+  /// 当前字幕外观（全局偏好快照；设置面板改动后刷新）。
+  VideoSubtitleStyle _subtitleStyle = VideoSubtitleStyle.defaults;
+
   bool get _isPlaylist => _episodes.length > 1;
 
   AppModel get appModel => ref.read(appProvider);
@@ -225,6 +230,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _currentAudioTrackId = row.audioTrackId;
     _delayMs = row.delayMs;
     _playbackSpeed = _readPersistedSpeed();
+    _subtitleStyle = VideoSubtitleStyle.decode(appModel.videoSubtitleStyle);
 
     // 解析播放列表（若有）。非空则按 currentEpisode 载对应集；否则走单视频路径。
     final String? playlistJson = row.playlistJson;
@@ -431,6 +437,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // 解析启用的 mpv 着色器为绝对路径（桌面 libmpv 生效，移动端最终静默）。
     final List<String> shaderPaths = await resolveEnabledShaderPaths(
         decodeEnabledShaders(appModel.videoShadersEnabled));
+    final VideoMpvConfig mpvConfig =
+        VideoMpvConfig.decode(appModel.videoMpvConfig);
     try {
       await controller.load(
         bookUid: widget.bookUid,
@@ -440,6 +448,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         initialSpeed: _playbackSpeed,
         externalSubtitlePath: externalSubtitlePath,
         shaderPaths: shaderPaths,
+        mpvConfig: mpvConfig,
       );
     } catch (e, stack) {
       debugPrint('[VideoHibikiPage] video load failed: $e\n$stack');
@@ -963,6 +972,19 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     if (mounted) setState(() {});
   }
 
+  /// 持久化字幕外观并刷新 overlay（纯 Flutter overlay，不碰 mpv）。
+  Future<void> _persistSubtitleStyle(VideoSubtitleStyle style) async {
+    _subtitleStyle = style;
+    await appModel.setVideoSubtitleStyle(VideoSubtitleStyle.encode(style));
+    if (mounted) setState(() {});
+  }
+
+  /// 切换字幕模糊（'B' 热键 + 设置面板共用）。
+  Future<void> _toggleSubtitleBlur() async {
+    await appModel.setVideoSubtitleBlur(!appModel.videoSubtitleBlur);
+    if (mounted) setState(() {});
+  }
+
   /// 弹视频播放设置面板：音画延迟（±50/±1000ms 步进 + 归零）+ 播放倍速（预设档）。
   ///
   /// 参照有声书 [AudiobookPlayBar] 的 A/V Sync 步进设计；面板用 [StatefulBuilder]
@@ -1095,6 +1117,112 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                         },
                       ),
                     ),
+                    const SizedBox(height: 8),
+                    // ── mpv 视频配置（解码/画质/画面/色彩/音频/播放 + 原始 conf）──
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          side: const BorderSide(color: Colors.white24),
+                        ),
+                        icon: const Icon(Icons.tune),
+                        label: Text(t.video_setting_mpv_open),
+                        onPressed: () {
+                          Navigator.pop(ctx);
+                          _openMpvConfigDialog();
+                        },
+                      ),
+                    ),
+                    const Divider(color: Colors.white24, height: 24),
+                    // ── 字幕模糊（听力沉浸；默认关）──
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      activeColor: cs.primary,
+                      title: Text(t.video_setting_subtitle_blur,
+                          style: const TextStyle(color: Colors.white)),
+                      subtitle: Text(t.video_setting_subtitle_blur_hint,
+                          style: const TextStyle(
+                              color: Colors.white38, fontSize: 12)),
+                      value: appModel.videoSubtitleBlur,
+                      onChanged: (bool v) async {
+                        await _toggleSubtitleBlur();
+                        setSheet(() {});
+                      },
+                    ),
+                    const Divider(color: Colors.white24, height: 24),
+                    // ── 字幕外观 ──
+                    Text(t.video_setting_subtitle_appearance,
+                        style: const TextStyle(color: Colors.white70)),
+                    Row(children: <Widget>[
+                      SizedBox(
+                        width: 96,
+                        child: Text(t.video_setting_subtitle_font_size,
+                            style: const TextStyle(color: Colors.white54)),
+                      ),
+                      Expanded(
+                        child: Slider(
+                          min: 12,
+                          max: 48,
+                          value: _subtitleStyle.fontSize.clamp(12, 48),
+                          onChanged: (double v) => setSheet(() {
+                            _subtitleStyle =
+                                _subtitleStyle.copyWith(fontSize: v);
+                          }),
+                          onChangeEnd: (double v) => _persistSubtitleStyle(
+                              _subtitleStyle.copyWith(fontSize: v)),
+                        ),
+                      ),
+                    ]),
+                    Row(children: <Widget>[
+                      SizedBox(
+                        width: 96,
+                        child: Text(t.video_setting_subtitle_bg_opacity,
+                            style: const TextStyle(color: Colors.white54)),
+                      ),
+                      Expanded(
+                        child: Slider(
+                          value: _subtitleStyle.backgroundOpacity,
+                          onChanged: (double v) => setSheet(() {
+                            _subtitleStyle =
+                                _subtitleStyle.copyWith(backgroundOpacity: v);
+                          }),
+                          onChangeEnd: (double v) => _persistSubtitleStyle(
+                              _subtitleStyle.copyWith(backgroundOpacity: v)),
+                        ),
+                      ),
+                    ]),
+                    Row(children: <Widget>[
+                      SizedBox(
+                        width: 96,
+                        child: Text(t.video_setting_subtitle_position,
+                            style: const TextStyle(color: Colors.white54)),
+                      ),
+                      Expanded(
+                        child: Slider(
+                          min: 0,
+                          max: 240,
+                          value: _subtitleStyle.bottomPadding.clamp(0, 240),
+                          onChanged: (double v) => setSheet(() {
+                            _subtitleStyle =
+                                _subtitleStyle.copyWith(bottomPadding: v);
+                          }),
+                          onChangeEnd: (double v) => _persistSubtitleStyle(
+                              _subtitleStyle.copyWith(bottomPadding: v)),
+                        ),
+                      ),
+                    ]),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: () {
+                          _persistSubtitleStyle(VideoSubtitleStyle.defaults);
+                          setSheet(() {});
+                        },
+                        child: Text(t.video_setting_subtitle_reset,
+                            style: TextStyle(color: cs.primary)),
+                      ),
+                    ),
                   ],
                 ),
               );
@@ -1123,6 +1251,273 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     );
     // 着色器对话框内含 FilePicker（导入）/ Anime4K 下载，会夺走窗口键盘焦点；
     // 对话框关闭后把焦点还给 Video，恢复空格快捷键（BUG：导入着色器后空格失灵）。
+    _refocusVideo();
+  }
+
+  /// 打开 mpv 视频配置对话框：成体系的解码/画质/画面/色彩/音频/播放分组 + 原始
+  /// mpv.conf 框 → 保存时持久化 + 实时应用到当前播放器（桌面 libmpv 生效，移动端/
+  /// 不支持属性静默 no-op）。
+  Future<void> _openMpvConfigDialog() async {
+    VideoMpvConfig cfg = VideoMpvConfig.decode(appModel.videoMpvConfig);
+    final TextEditingController rawCtrl =
+        TextEditingController(text: cfg.rawConf);
+    await showDialog<void>(
+      context: context,
+      builder: (BuildContext dctx) => StatefulBuilder(
+        builder: (BuildContext dctx, StateSetter setD) {
+          Widget header(String text) => Padding(
+                padding: const EdgeInsets.only(top: 12, bottom: 2),
+                child: Text(text,
+                    style: Theme.of(dctx)
+                        .textTheme
+                        .labelLarge
+                        ?.copyWith(color: Theme.of(dctx).colorScheme.primary)),
+              );
+          Widget toggle(String label, bool value, ValueChanged<bool> onCh) =>
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                title: Text(label),
+                value: value,
+                onChanged: (bool v) => setD(() => onCh(v)),
+              );
+          Widget eqSlider(String label, int value, ValueChanged<int> onCh) =>
+              Row(
+                children: <Widget>[
+                  SizedBox(width: 84, child: Text(label)),
+                  Expanded(
+                    child: Slider(
+                      min: -100,
+                      max: 100,
+                      divisions: 200,
+                      label: '$value',
+                      value: value.toDouble(),
+                      onChanged: (double v) => setD(() => onCh(v.round())),
+                    ),
+                  ),
+                  SizedBox(width: 36, child: Text('$value')),
+                ],
+              );
+
+          return AlertDialog(
+            title: Text(t.video_setting_mpv),
+            content: SizedBox(
+              width: 440,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    // ── 解码 ──
+                    header(t.video_setting_mpv_group_decode),
+                    DropdownButtonFormField<String>(
+                      initialValue: cfg.hwdec,
+                      decoration: InputDecoration(
+                          labelText: t.video_setting_mpv_hwdec, isDense: true),
+                      items: <DropdownMenuItem<String>>[
+                        DropdownMenuItem<String>(
+                            value: 'no',
+                            child: Text(t.video_setting_mpv_hwdec_off)),
+                        DropdownMenuItem<String>(
+                            value: 'auto-safe',
+                            child: Text(t.video_setting_mpv_hwdec_auto)),
+                        DropdownMenuItem<String>(
+                            value: 'auto-copy',
+                            child: Text(t.video_setting_mpv_hwdec_copy)),
+                      ],
+                      onChanged: (String? v) =>
+                          setD(() => cfg = cfg.copyWith(hwdec: v ?? 'no')),
+                    ),
+                    // ── 画质 ──
+                    header(t.video_setting_mpv_group_quality),
+                    toggle(t.video_setting_mpv_high_quality, cfg.highQuality,
+                        (bool v) => cfg = cfg.copyWith(highQuality: v)),
+                    toggle(t.video_setting_mpv_deband, cfg.deband,
+                        (bool v) => cfg = cfg.copyWith(deband: v)),
+                    toggle(t.video_setting_mpv_dither, cfg.dither,
+                        (bool v) => cfg = cfg.copyWith(dither: v)),
+                    toggle(t.video_setting_mpv_interpolation, cfg.interpolation,
+                        (bool v) => cfg = cfg.copyWith(interpolation: v)),
+                    toggle(t.video_setting_mpv_deinterlace, cfg.deinterlace,
+                        (bool v) => cfg = cfg.copyWith(deinterlace: v)),
+                    toggle(t.video_setting_mpv_sigmoid, cfg.sigmoidUpscaling,
+                        (bool v) => cfg = cfg.copyWith(sigmoidUpscaling: v)),
+                    toggle(
+                        t.video_setting_mpv_correct_downscale,
+                        cfg.correctDownscaling,
+                        (bool v) => cfg = cfg.copyWith(correctDownscaling: v)),
+                    // ── 画面几何 ──
+                    header(t.video_setting_mpv_group_geometry),
+                    DropdownButtonFormField<int>(
+                      initialValue: cfg.videoRotate,
+                      decoration: InputDecoration(
+                          labelText: t.video_setting_mpv_rotate, isDense: true),
+                      items: const <int>[0, 90, 180, 270]
+                          .map((int d) => DropdownMenuItem<int>(
+                              value: d, child: Text('$d°')))
+                          .toList(),
+                      onChanged: (int? v) =>
+                          setD(() => cfg = cfg.copyWith(videoRotate: v ?? 0)),
+                    ),
+                    DropdownButtonFormField<String>(
+                      initialValue: cfg.aspectOverride,
+                      decoration: InputDecoration(
+                          labelText: t.video_setting_mpv_aspect, isDense: true),
+                      items: <DropdownMenuItem<String>>[
+                        DropdownMenuItem<String>(
+                            value: '-1',
+                            child: Text(t.video_setting_mpv_aspect_auto)),
+                        const DropdownMenuItem<String>(
+                            value: '16:9', child: Text('16:9')),
+                        const DropdownMenuItem<String>(
+                            value: '4:3', child: Text('4:3')),
+                        const DropdownMenuItem<String>(
+                            value: '2.35:1', child: Text('2.35:1')),
+                        const DropdownMenuItem<String>(
+                            value: '1:1', child: Text('1:1')),
+                      ],
+                      onChanged: (String? v) => setD(
+                          () => cfg = cfg.copyWith(aspectOverride: v ?? '-1')),
+                    ),
+                    Row(children: <Widget>[
+                      SizedBox(
+                          width: 84, child: Text(t.video_setting_mpv_zoom)),
+                      Expanded(
+                        child: Slider(
+                          min: -2,
+                          max: 2,
+                          divisions: 40,
+                          label: cfg.videoZoom.toStringAsFixed(2),
+                          value: cfg.videoZoom,
+                          onChanged: (double v) =>
+                              setD(() => cfg = cfg.copyWith(videoZoom: v)),
+                        ),
+                      ),
+                    ]),
+                    Row(children: <Widget>[
+                      SizedBox(
+                          width: 84, child: Text(t.video_setting_mpv_panscan)),
+                      Expanded(
+                        child: Slider(
+                          min: 0,
+                          max: 1,
+                          divisions: 20,
+                          label: cfg.panscan.toStringAsFixed(2),
+                          value: cfg.panscan,
+                          onChanged: (double v) =>
+                              setD(() => cfg = cfg.copyWith(panscan: v)),
+                        ),
+                      ),
+                    ]),
+                    // ── 色彩均衡 ──
+                    header(t.video_setting_mpv_group_color),
+                    eqSlider(t.video_setting_mpv_brightness, cfg.brightness,
+                        (int v) => cfg = cfg.copyWith(brightness: v)),
+                    eqSlider(t.video_setting_mpv_contrast, cfg.contrast,
+                        (int v) => cfg = cfg.copyWith(contrast: v)),
+                    eqSlider(t.video_setting_mpv_saturation, cfg.saturation,
+                        (int v) => cfg = cfg.copyWith(saturation: v)),
+                    eqSlider(t.video_setting_mpv_gamma, cfg.gamma,
+                        (int v) => cfg = cfg.copyWith(gamma: v)),
+                    eqSlider(t.video_setting_mpv_hue, cfg.hue,
+                        (int v) => cfg = cfg.copyWith(hue: v)),
+                    // ── 音频 ──
+                    header(t.video_setting_mpv_group_audio),
+                    Row(children: <Widget>[
+                      SizedBox(
+                          width: 84,
+                          child: Text(t.video_setting_mpv_audio_delay)),
+                      Expanded(
+                        child: Slider(
+                          min: -2000,
+                          max: 2000,
+                          divisions: 80,
+                          label: '${cfg.audioDelayMs}',
+                          value: cfg.audioDelayMs.toDouble().clamp(-2000, 2000),
+                          onChanged: (double v) => setD(() =>
+                              cfg = cfg.copyWith(audioDelayMs: v.round())),
+                        ),
+                      ),
+                      SizedBox(width: 44, child: Text('${cfg.audioDelayMs}')),
+                    ]),
+                    toggle(
+                        t.video_setting_mpv_pitch,
+                        cfg.audioPitchCorrection,
+                        (bool v) =>
+                            cfg = cfg.copyWith(audioPitchCorrection: v)),
+                    DropdownButtonFormField<String>(
+                      initialValue: cfg.audioChannels,
+                      decoration: InputDecoration(
+                          labelText: t.video_setting_mpv_channels,
+                          isDense: true),
+                      items: <DropdownMenuItem<String>>[
+                        DropdownMenuItem<String>(
+                            value: 'auto-safe',
+                            child: Text(t.video_setting_mpv_channels_auto)),
+                        DropdownMenuItem<String>(
+                            value: 'stereo',
+                            child: Text(t.video_setting_mpv_channels_stereo)),
+                        DropdownMenuItem<String>(
+                            value: 'mono',
+                            child: Text(t.video_setting_mpv_channels_mono)),
+                      ],
+                      onChanged: (String? v) => setD(() =>
+                          cfg = cfg.copyWith(audioChannels: v ?? 'auto-safe')),
+                    ),
+                    toggle(t.video_setting_mpv_normalize, cfg.normalizeDownmix,
+                        (bool v) => cfg = cfg.copyWith(normalizeDownmix: v)),
+                    // ── 播放 ──
+                    header(t.video_setting_mpv_group_playback),
+                    toggle(t.video_setting_mpv_loop, cfg.loopFile,
+                        (bool v) => cfg = cfg.copyWith(loopFile: v)),
+                    // ── 高级：原始 mpv.conf ──
+                    header(t.video_setting_mpv_group_advanced),
+                    TextField(
+                      controller: rawCtrl,
+                      minLines: 3,
+                      maxLines: 8,
+                      style: const TextStyle(
+                          fontFamily: 'monospace', fontSize: 13),
+                      decoration: InputDecoration(
+                        labelText: t.video_setting_mpv_raw,
+                        helperText: t.video_setting_mpv_raw_hint,
+                        helperMaxLines: 4,
+                        border: const OutlineInputBorder(),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () {
+                  rawCtrl.clear();
+                  setD(() => cfg = VideoMpvConfig.defaults);
+                },
+                child: Text(t.video_setting_mpv_reset),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(dctx),
+                child: Text(t.dialog_cancel),
+              ),
+              FilledButton(
+                onPressed: () async {
+                  final VideoMpvConfig finalCfg =
+                      cfg.copyWith(rawConf: rawCtrl.text);
+                  await appModel
+                      .setVideoMpvConfig(VideoMpvConfig.encode(finalCfg));
+                  await _controller?.applyMpvConfig(finalCfg);
+                  if (dctx.mounted) Navigator.pop(dctx);
+                },
+                child: Text(t.dialog_save),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    rawCtrl.dispose();
     _refocusVideo();
   }
 
@@ -1471,26 +1866,35 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // 两层主题嵌套：[AdaptiveVideoControls] 按平台互斥择一渲染（桌面读 Desktop
     // 主题、移动读 Material 主题），故同时提供两套互不干扰，让字幕/音轨/设置入口
     // 在桌面、移动、全屏三种场景都可达。嵌套顺序不影响——各自被对应平台 controls 读取。
-    return MaterialVideoControlsTheme(
-      normal: _mobileControlsTheme(controller),
-      fullscreen: _mobileControlsTheme(controller),
-      child: MaterialDesktopVideoControlsTheme(
-        normal: _desktopControlsTheme(controller),
-        fullscreen: _desktopControlsTheme(controller),
-        child: Video(
-          controller: videoController,
-          // 用本页持有的 FocusNode 替换 Video 内置的匿名节点，以便覆盖层（对话框 /
-          // bottom sheet / 文件选择器）关闭后能主动把键盘焦点还给它，恢复空格等内置
-          // 快捷键（见 [_refocusVideo]）。
-          focusNode: _videoFocusNode,
-          // 视频不满屏时的 letterbox/pillarbox 填充色吃主题 surface（默认黑边换成
-          // 跟随主题的中性底色，与 Scaffold 背景一致，深浅主题统一）。
-          fill: Theme.of(context).colorScheme.surface,
-          // 字幕 overlay + 拖拽挂载都包进 controls builder：media_kit 全屏推独立 root
-          // 路由并复用同一 controls，故 overlay 随全屏一起进路由，全屏时字幕仍显示且
-          // 可点查词、拖字幕也能挂载（见 [_buildVideoControls]）。
-          controls: (VideoState state) =>
-              _buildVideoControls(state, controller),
+    // 'B' 切换字幕模糊（asbplayer 同款热键）。包在 media_kit 内层 CallbackShortcuts
+    // 之外：内层已消费空格/方向键/F 等，'B' 不在其默认绑定里 → 未被消费会冒泡到这层，
+    // 故不与既有快捷键冲突，也不必重建 media_kit 那套含内部 helper 的默认绑定。
+    return CallbackShortcuts(
+      bindings: <ShortcutActivator, VoidCallback>{
+        const SingleActivator(LogicalKeyboardKey.keyB): () =>
+            unawaited(_toggleSubtitleBlur()),
+      },
+      child: MaterialVideoControlsTheme(
+        normal: _mobileControlsTheme(controller),
+        fullscreen: _mobileControlsTheme(controller),
+        child: MaterialDesktopVideoControlsTheme(
+          normal: _desktopControlsTheme(controller),
+          fullscreen: _desktopControlsTheme(controller),
+          child: Video(
+            controller: videoController,
+            // 用本页持有的 FocusNode 替换 Video 内置的匿名节点，以便覆盖层（对话框 /
+            // bottom sheet / 文件选择器）关闭后能主动把键盘焦点还给它，恢复空格等内置
+            // 快捷键（见 [_refocusVideo]）。
+            focusNode: _videoFocusNode,
+            // 视频不满屏时的 letterbox/pillarbox 填充色吃主题 surface（默认黑边换成
+            // 跟随主题的中性底色，与 Scaffold 背景一致，深浅主题统一）。
+            fill: Theme.of(context).colorScheme.surface,
+            // 字幕 overlay + 拖拽挂载都包进 controls builder：media_kit 全屏推独立 root
+            // 路由并复用同一 controls，故 overlay 随全屏一起进路由，全屏时字幕仍显示且
+            // 可点查词、拖字幕也能挂载（见 [_buildVideoControls]）。
+            controls: (VideoState state) =>
+                _buildVideoControls(state, controller),
+          ),
         ),
       ),
     );
@@ -1524,6 +1928,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             child: VideoSubtitleOverlay(
               controller: controller,
               onCharTap: _lookupAt,
+              blurEnabled: appModel.videoSubtitleBlur,
+              fontSize: _subtitleStyle.fontSize,
+              textColor: _subtitleStyle.textColor,
+              backgroundOpacity: _subtitleStyle.backgroundOpacity,
+              bottomPadding: _subtitleStyle.bottomPadding,
             ),
           ),
         ],

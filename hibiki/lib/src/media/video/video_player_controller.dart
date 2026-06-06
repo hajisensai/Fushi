@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:hibiki/src/media/video/video_mpv_config.dart';
 import 'package:hibiki/src/media/video/video_playback_source.dart';
 import 'package:hibiki/src/media/video/video_shader_manager.dart';
 import 'package:hibiki/src/media/video/video_subtitle_source.dart';
@@ -42,6 +43,9 @@ class VideoPlayerController extends ChangeNotifier
 
   /// 当前启用的 mpv 着色器绝对路径（[load] 复用 / [applyShaders] 实时切换）。
   List<String> _shaderPaths = <String>[];
+
+  /// 当前 mpv 配置（[load] 复用 / [applyMpvConfig] 实时切换）。
+  VideoMpvConfig _mpvConfig = VideoMpvConfig.defaults;
 
   Timer? _tick;
   StreamSubscription<bool>? _playingSub;
@@ -174,6 +178,15 @@ class VideoPlayerController extends ChangeNotifier
     await applyShadersToPlayer(player, _shaderPaths);
   }
 
+  /// 运行时应用 mpv 配置（设置面板改动即时生效）。未 [load] 时只记下，下次 [load]
+  /// 应用。仅桌面 libmpv 真正生效；移动端/不支持的属性静默 no-op。
+  Future<void> applyMpvConfig(VideoMpvConfig config) async {
+    _mpvConfig = config;
+    final Player? player = _player;
+    if (player == null) return;
+    await applyMpvConfigToPlayer(player, config);
+  }
+
   /// 加载视频并开始播放准备：实例化 [Player] / [VideoController]、打开视频、
   /// 可选挂载外挂字幕、设置初速、seek 到初始位置、订阅播放态、启动 125ms tick。
   ///
@@ -186,6 +199,7 @@ class VideoPlayerController extends ChangeNotifier
     double initialSpeed = 1.0,
     String? externalSubtitlePath,
     List<String> shaderPaths = const <String>[],
+    VideoMpvConfig mpvConfig = VideoMpvConfig.defaults,
   }) async {
     _bookUid = bookUid;
     _videoPath = videoFile.path;
@@ -217,6 +231,10 @@ class VideoPlayerController extends ChangeNotifier
     // 应用启用的 mpv 着色器（Anime4K 等；仅桌面 libmpv 生效，移动端静默 no-op）。
     _shaderPaths = List<String>.of(shaderPaths);
     await applyShadersToPlayer(player, _shaderPaths);
+
+    // 应用 mpv 画质/解码配置（桌面 libmpv 生效；移动端/不支持属性静默 no-op）。
+    _mpvConfig = mpvConfig;
+    await applyMpvConfigToPlayer(player, _mpvConfig);
 
     _lastSpeed = initialSpeed;
     await player.setRate(initialSpeed);
