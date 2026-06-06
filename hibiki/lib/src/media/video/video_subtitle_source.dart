@@ -100,6 +100,18 @@ SubtitleFormat? subtitleFormatForPath(String path) {
   }
 }
 
+/// 从一组拖入文件路径 [paths] 中挑出第一个受支持的字幕文件
+/// （srt/ass/ssa/vtt），无则 null。
+///
+/// **纯函数**：复用 [subtitleFormatForPath] 判定扩展名（DRY），供视频播放页
+/// 拖拽落地时过滤——用户可能一次拖入视频+字幕+图片，只取第一个能解析的字幕。
+String? firstSubtitlePath(List<String> paths) {
+  for (final String path in paths) {
+    if (subtitleFormatForPath(path) != null) return path;
+  }
+  return null;
+}
+
 /// 按内嵌轨 codec 判定字幕格式。
 ///
 /// 设计（**fail-open**，消除「白名单漏一个文本 codec 就静默无字幕」的整类 bug）：
