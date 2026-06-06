@@ -6,6 +6,31 @@ class ReaderResourceSanitizer {
     multiLine: true,
   );
 
+  // Raw-text / escapable-raw-text HTML elements: when an EPUB ships them in
+  // self-closing XHTML form (e.g. `<script .../>`) but the bytes are parsed as
+  // text/html, the HTML5 tokenizer ignores the self-closing slash, enters the
+  // element's "raw text" content model, and swallows everything up to the next
+  // matching close tag — which never comes — blanking the whole page (BUG-079).
+  // Convert those self-closing forms into explicit paired tags so the parser
+  // closes them immediately and the body renders. Genuine void elements
+  // (<br/>, <img/>, …) are NOT in this set and are left untouched.
+  static final RegExp _selfClosingRawTextPattern = RegExp(
+    r'<(script|style|textarea|title|iframe|noscript|noframes|xmp|noembed)'
+    r'\b([^>]*?)\s*/\s*>',
+    caseSensitive: false,
+  );
+
+  /// Normalizes XHTML served as text/html so self-closing raw-text elements do
+  /// not swallow the document body. Returns the input unchanged when no such
+  /// element is present.
+  static String sanitizeXhtml(String html) {
+    return html.replaceAllMapped(_selfClosingRawTextPattern, (m) {
+      final String tag = m.group(1)!;
+      final String attrs = m.group(2)!;
+      return '<$tag$attrs></$tag>';
+    });
+  }
+
   static String sanitizeCss(String css) {
     return css.replaceAllMapped(_epubPropertyPattern, (m) {
       final String indent = m.group(1)!;
