@@ -14,9 +14,14 @@ class ReaderResourceSanitizer {
   // Convert those self-closing forms into explicit paired tags so the parser
   // closes them immediately and the body renders. Genuine void elements
   // (<br/>, <img/>, …) are NOT in this set and are left untouched.
+  // The attribute portion matches whole quoted strings ("…" / '…') as single
+  // tokens so a literal `/>` *inside* an attribute value (e.g.
+  // `<script data-x="a/>b"></script>`) is NOT mistaken for the tag's
+  // self-closing end — only a real trailing `/>` outside any quote triggers the
+  // rewrite. Unquoted chars exclude `>`/quotes.
   static final RegExp _selfClosingRawTextPattern = RegExp(
     r'<(script|style|textarea|title|iframe|noscript|noframes|xmp|noembed)'
-    r'\b([^>]*?)\s*/\s*>',
+    '\\b((?:"[^"]*"|\'[^\']*\'|[^>"\'])*?)\\s*/\\s*>',
     caseSensitive: false,
   );
 

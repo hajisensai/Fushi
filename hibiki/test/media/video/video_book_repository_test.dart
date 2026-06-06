@@ -66,6 +66,45 @@ void main() {
     expect(await repo.loadCues('video/off'), isEmpty);
   });
 
+  test('saveSubtitleSelection writes cues + source atomically (BUG-081/W1)',
+      () async {
+    final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final repo = VideoBookRepository(db);
+    await repo.saveVideoBook(const VideoBooksCompanion(
+      bookUid: Value('video/sel'),
+      title: Value('Sel'),
+      videoPath: Value('/sel.mp4'),
+    ));
+    final cue = AudioCue()
+      ..bookKey = 'video/sel'
+      ..chapterHref = 'video://default'
+      ..sentenceIndex = 0
+      ..textFragmentId = ''
+      ..text = 'yo'
+      ..startMs = 0
+      ..endMs = 1000
+      ..audioFileIndex = 0;
+
+    await repo.saveSubtitleSelection(
+      bookUid: 'video/sel',
+      subtitleSource: '/subs/sel.ass',
+      cues: [cue],
+    );
+    expect(await repo.loadCues('video/sel'), hasLength(1));
+    expect((await repo.getByBookUid('video/sel'))!.subtitleSource,
+        '/subs/sel.ass');
+
+    // Turning off clears both in one transaction.
+    await repo.saveSubtitleSelection(
+      bookUid: 'video/sel',
+      subtitleSource: null,
+      cues: const [],
+    );
+    expect(await repo.loadCues('video/sel'), isEmpty);
+    expect((await repo.getByBookUid('video/sel'))!.subtitleSource, isNull);
+  });
+
   test('listAll returns all video books', () async {
     final db = HibikiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);

@@ -58,6 +58,23 @@ void main() {
       expect(out, equals('<script src="x.js"></script>'));
     });
 
+    test('does not corrupt a paired tag whose attribute value contains "/>"',
+        () {
+      // The self-closing detector must not mistake a literal `/>` inside a
+      // quoted attribute value for the tag's own self-closing end.
+      const String input =
+          '<head><script data-x="a/>b"></script></head><body>x</body>';
+      final String out = ReaderResourceSanitizer.sanitizeXhtml(input);
+      expect(out, equals(input),
+          reason: 'a paired tag with "/>" inside an attribute is unchanged');
+    });
+
+    test('still expands a genuine self-close after a quoted attr value', () {
+      const String input = '<script src="a/b.js"/>';
+      final String out = ReaderResourceSanitizer.sanitizeXhtml(input);
+      expect(out, equals('<script src="a/b.js"></script>'));
+    });
+
     test('does not touch genuine void elements like <br/> and <img/>', () {
       const String input = '<body><br/><img src="x.png"/></body>';
       final String out = ReaderResourceSanitizer.sanitizeXhtml(input);

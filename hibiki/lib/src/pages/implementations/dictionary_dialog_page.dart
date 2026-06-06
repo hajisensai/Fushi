@@ -787,6 +787,7 @@ class _DictionaryDialogPageState extends BasePageState {
     }
 
     bool hadMemoryError = false;
+    String? folderImportError;
 
     try {
       await appModel.importDictionaryFromDirectory(
@@ -806,8 +807,9 @@ class _DictionaryDialogPageState extends BasePageState {
     } catch (e, stack) {
       ErrorLogService.instance.log('DictionaryDialog.folderImport', e, stack);
       debugPrint('[Dictionary Import] folder import error: $e');
-      progressNotifier.value = '$e';
-      await Future.delayed(const Duration(seconds: 3));
+      // BUG-082: don't block 3s here either — capture and toast after the
+      // progress dialog closes, consistent with the multi-file path.
+      folderImportError = '$e';
     } finally {
       final Directory? cleanupDir = pickedDirectory.cleanupDir;
       if (cleanupDir != null && cleanupDir.existsSync()) {
@@ -817,6 +819,13 @@ class _DictionaryDialogPageState extends BasePageState {
 
     if (mounted) {
       Navigator.pop(context);
+    }
+
+    if (folderImportError != null) {
+      HibikiToast.show(
+        msg: folderImportError,
+        toastLength: Toast.LENGTH_LONG,
+      );
     }
 
     if (hadMemoryError && mounted) {

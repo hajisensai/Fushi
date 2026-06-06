@@ -40,5 +40,13 @@ void main() {
       expect(dialog.contains('formatImportFailureSummary'), isTrue,
           reason: 'and present them via the shared summary formatter');
     });
+
+    test('no import path (including folder import) blocks 3 seconds', () {
+      // W2: the single-folder import catch used to keep a 3s dwell even after
+      // the manager dropped its delays. No dictionary import path may block 3s.
+      expect(dialog.contains('Duration(seconds: 3)'), isFalse,
+          reason:
+              'folder import must surface failures via toast, not a 3s wait');
+    });
   });
 }

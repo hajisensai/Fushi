@@ -25,16 +25,18 @@ void main() {
     return src.substring(start, end);
   }
 
-  test('_selectSubtitleSource persists cues for single videos', () {
+  test(
+      '_selectSubtitleSource persists cues+source atomically for single videos',
+      () {
     final String body = region(
       'Future<bool> _selectSubtitleSource(',
       'Future<void> _selectSubtitleOff(',
     );
     expect(body.contains('_episodes.isEmpty'), isTrue,
         reason: 'cue persistence must be gated to single videos');
-    expect(
-        body.contains('saveCues(bookUid: widget.bookUid, cues: cues)'), isTrue,
-        reason: 'parsed cues must be saved so re-open restores them');
+    expect(body.contains('saveSubtitleSelection('), isTrue,
+        reason: 'parsed cues + source must be saved atomically (W1) so re-open '
+            'restores them consistently');
   });
 
   test('_selectSubtitleOff clears persisted cues for single videos', () {
@@ -43,7 +45,7 @@ void main() {
       'String _trackLabel(',
     );
     expect(body.contains('_episodes.isEmpty'), isTrue);
-    expect(body.contains('saveCues('), isTrue,
+    expect(body.contains('saveSubtitleSelection('), isTrue,
         reason: 'turning subtitles off must clear DB cues, else they return');
   });
 }
