@@ -13,6 +13,13 @@
 
 ---
 
+## BUG-082 · 批量导入词典时每个失败项阻塞约 3 秒、无统一汇总
+- **报告**：2026-06-06（用户：「导入词典的时候，失败不等待 3s，统一在最后显示」）。采番注：动手时 worktree 基线最大号 BUG-078（本轮同时处理 079/080/081），取 082（以提交为准，可能被并发抢）。
+- **真实性**：✅ **真 bug（沿真实代码路径定位）**。批量导入两条路径都经 `DictionaryImportManager.importFromFile`：文件多选 → `dictionary_dialog_page.dart:325` 循环；目录多 zip → `dictionary_import_manager.dart:98` 循环。`importFromFile` 的 catch（旧 `dictionary_import_manager.dart:341-352`）在每个失败项上 `progressNotifier.value='$e'` + `Future.delayed(3s)`，内存错误再 `+3s`，最后 `import_failed` `+1s`，**且不 rethrow**。后果：① 每本坏词典卡 3~7 秒；② 上层循环拿不到异常 → 无法收集失败、无法汇总（目录循环 `:110-113` 的 `failedNames` 收集与末尾 summary toast 形同**死代码**；下载循环 `:696` 甚至把导入失败误计 `successCount++`）。`importFromDirectory` 单档（migaku 文件夹）catch（旧 `:224-235`）同款。根因 `hibiki/lib/src/models/dictionary_import_manager.dart:341-352` 与 `:224-235`（逐失败内联 3s 延时 + 吞异常）。
+- **[x] ① 已修复** — 本提交（自含修复+测试+本条目）。**根因修**：两处 catch 删除全部 `Future.delayed(3s/3s/1s)`，改为「内存错误只触发一次 `onMemoryError`，随即抛出类型化 `DictionaryImportException(cause, isMemoryError)`」；批量调用方收集失败项、循环结束后用新增静态 `formatImportFailureSummary`（单条/多条不同措辞，文件批量与目录批量共用）统一弹一条 `HibikiToast`。文件多选循环（`dictionary_dialog_page.dart`）补 try/catch 收集 `failedNames` + 末尾汇总。目录批量循环与下载循环的现成 try/catch 因 rethrow 而**复活**（下载循环不再把失败误计成功——顺带修掉 latent bug）。不再阻塞、不再吞异常掩盖症状。
+- **[x] ② 已加自动化测试** — `hibiki/test/models/dictionary_import_failure_summary_test.dart`（4 例：单失败只点名一本、多失败一条消息列全部并逗号连接；`DictionaryImportException` 携带 cause/内存标志/默认 false）+ `hibiki/test/models/dictionary_import_no_delay_guard_test.dart`（源码守卫 4 例：manager 无 `Duration(seconds: 3)`、含 `throw DictionaryImportException`、有 `formatImportFailureSummary`；dialog 批量循环含 `failedNames` + 调汇总）。8 绿；`flutter analyze` 3 改动文件 0 issue。
+- **备注**：真机/真桌面端连导几本含坏词典复测「不逐个卡 3 秒、末尾一条汇总列出失败名」**待用户**（后台跑不了 GUI 构建）。
+
 ## BUG-079 · 某些日文 EPUB（Kadokawa/BookWalker 导出）正文整页空白
 - **报告**：2026-06-06（用户：「`Ｒｅ：ゼロから始める異世界生活23.epub` 打开书籍内容的地方是空白的」）。采番注：动手时 worktree 基线最大号 BUG-078，取 079（以提交为准，可能被并发抢）。
 - **真实性**：✅ **真 bug（沿真实代码路径 + 真实 epub 实证定位）**。书已成功打开（目录解析正常，否则会弹 "book file not found" 并 `pop()`），故失败在**渲染层**。阅读器经 `shouldInterceptRequest` 把章节 xhtml 当 `text/html` 提供给 WebView（`epub_book.dart:fallbackMimeType` 把 `.xhtml`→`text/html`）。实测该 epub 26 个 xhtml **每个**的 `<head>` 都含一个自闭合且全文无闭合标签的 `<script xmlns="…" type="text/javascript" src="../../js/kobo.js"/>`（`<script` 出现 1 次、`</script>` 出现 0 次）。在 XHTML（XML）下 `<script/>` 是合法自闭合，但作为 `text/html` 走 HTML5 解析器时自闭合斜杠被忽略，`<script>` 进入 "script data" 原始文本状态，必须遇到字面 `</script>` 才结束——全文没有——于是**从该标签到文件末尾（含 `</head>`、整个 `<body>` 正文）全被当脚本文本吞掉，不渲染** → 整页空白。Kadokawa/BookWalker 导出的日文轻小说基本都是这种 kobo span + 自闭合 script 结构，属高频场景。根因 `hibiki/lib/src/pages/implementations/reader_hibiki_page.dart:1398`（注入 reader 样式前未对 XHTML 自闭合 raw-text 元素做规范化）。

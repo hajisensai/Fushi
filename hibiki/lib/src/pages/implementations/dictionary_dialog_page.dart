@@ -7,6 +7,7 @@ import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
+import 'package:hibiki/src/models/dictionary_import_manager.dart';
 import 'package:hibiki/src/models/dictionary_repository.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/utils.dart';
@@ -320,6 +321,7 @@ class _DictionaryDialogPageState extends BasePageState {
         .toList();
 
     bool hadMemoryError = false;
+    final List<String> failedNames = [];
 
     totalNotifier.value = dictFiles.length;
     for (int i = 0; i < dictFiles.length; i++) {
@@ -328,19 +330,26 @@ class _DictionaryDialogPageState extends BasePageState {
       PlatformFile platformFile = dictFiles[i];
       File file = File(platformFile.path!);
 
-      await appModel.importDictionary(
-        progressNotifier: progressNotifier,
-        file: file,
-        cssFiles: cssFiles,
-        onImportSuccess: () {
-          if (!mounted) return;
-          _selectedType = appModel.dictionaries.last.type;
-          setState(() {});
-        },
-        onMemoryError: () {
-          hadMemoryError = true;
-        },
-      );
+      // BUG-082: collect per-file failures (no 3s block each) and show one
+      // summary after the loop instead of dwelling on every failed import.
+      try {
+        await appModel.importDictionary(
+          progressNotifier: progressNotifier,
+          file: file,
+          cssFiles: cssFiles,
+          onImportSuccess: () {
+            if (!mounted) return;
+            _selectedType = appModel.dictionaries.last.type;
+            setState(() {});
+          },
+          onMemoryError: () {
+            hadMemoryError = true;
+          },
+        );
+      } catch (e, stack) {
+        ErrorLogService.instance.log('DictionaryDialog.fileImport', e, stack);
+        failedNames.add(path.basenameWithoutExtension(file.path));
+      }
     }
 
     if (Platform.isAndroid || Platform.isIOS) {
@@ -349,6 +358,13 @@ class _DictionaryDialogPageState extends BasePageState {
 
     if (mounted) {
       Navigator.pop(context);
+    }
+
+    if (failedNames.isNotEmpty) {
+      HibikiToast.show(
+        msg: DictionaryImportManager.formatImportFailureSummary(failedNames),
+        toastLength: Toast.LENGTH_LONG,
+      );
     }
 
     if (hadMemoryError && mounted) {

@@ -113,10 +113,9 @@ class DictionaryImportManager {
         }
       }
       if (failedNames.isNotEmpty) {
-        final String summary = failedNames.length == 1
-            ? '${t.srt_import_error}: ${failedNames.first}'
-            : '${t.dict_import_failed_summary(n: failedNames.length)}\n${failedNames.join(', ')}';
-        HibikiToast.show(msg: summary, toastLength: Toast.LENGTH_LONG);
+        HibikiToast.show(
+            msg: formatImportFailureSummary(failedNames),
+            toastLength: Toast.LENGTH_LONG);
       }
       return;
     }
@@ -223,15 +222,11 @@ class DictionaryImportManager {
       }
     } catch (e, stack) {
       ErrorLogService.instance.log('DictImport(dir)', e, stack);
-      progressNotifier.value = '$e';
-      await Future.delayed(const Duration(seconds: 3));
-      if (_isMemoryError(e) && !lowMemoryMode) {
-        progressNotifier.value = t.low_memory_mode_suggestion;
-        await Future.delayed(const Duration(seconds: 3));
-        onMemoryError?.call();
-      }
-      progressNotifier.value = t.import_failed;
-      await Future.delayed(const Duration(seconds: 1));
+      // BUG-082: do not block 3s per failure; signal the memory case once and
+      // rethrow so the caller can report the failure.
+      final bool mem = _isMemoryError(e) && !lowMemoryMode;
+      if (mem) onMemoryError?.call();
+      throw DictionaryImportException(e, isMemoryError: mem);
     }
   }
 
@@ -340,15 +335,12 @@ class DictionaryImportManager {
       onImportSuccess();
     } catch (e, stack) {
       ErrorLogService.instance.log('DictImport(file)', e, stack);
-      progressNotifier.value = '$e';
-      await Future.delayed(const Duration(seconds: 3));
-      if (_isMemoryError(e) && !lowMemoryMode) {
-        progressNotifier.value = t.low_memory_mode_suggestion;
-        await Future.delayed(const Duration(seconds: 3));
-        onMemoryError?.call();
-      }
-      progressNotifier.value = t.import_failed;
-      await Future.delayed(const Duration(seconds: 1));
+      // BUG-082: do not block 3s per failed dictionary. Signal the memory case
+      // once and rethrow a typed exception so the batch caller can collect the
+      // failure and show a single summary at the end.
+      final bool mem = _isMemoryError(e) && !lowMemoryMode;
+      if (mem) onMemoryError?.call();
+      throw DictionaryImportException(e, isMemoryError: mem);
     }
   }
 
@@ -497,9 +489,34 @@ class DictionaryImportManager {
     final msg = e.toString().toLowerCase();
     return e is OutOfMemoryError || msg.contains('out of memory');
   }
+
+  /// 批量导入结束后，把失败的词典名汇总成一条提示文案（单条/多条不同措辞）。
+  /// 供文件批量与目录批量两条路径复用，统一在循环结束后一次性展示（BUG-082）。
+  static String formatImportFailureSummary(List<String> failedNames) {
+    if (failedNames.length == 1) {
+      return '${t.srt_import_error}: ${failedNames.first}';
+    }
+    return '${t.dict_import_failed_summary(n: failedNames.length)}\n'
+        '${failedNames.join(', ')}';
+  }
 }
 
 enum _UpdateDecision { newDictionary, alreadyUpToDate, replaceOldVersion }
+
+/// 单本词典导入失败时抛出的类型化异常，携带「是否内存不足」标志。
+///
+/// BUG-082：旧实现在每个失败项的 catch 里 `Future.delayed(3s)` 阻塞、且**不**
+/// 重抛，导致批量导入逐个卡 3 秒、上层无法汇总。改为不阻塞、抛出本异常，由
+/// 批量调用方收集失败项并在循环结束后统一展示，内存不足提示也只触发一次。
+class DictionaryImportException implements Exception {
+  DictionaryImportException(this.cause, {this.isMemoryError = false});
+
+  final Object cause;
+  final bool isMemoryError;
+
+  @override
+  String toString() => cause.toString();
+}
 
 /// [DictionaryImportManager.publishImportedDir] 的发布方式：直接 rename 成功，
 /// 或重试用尽后回退到复制+删源。
