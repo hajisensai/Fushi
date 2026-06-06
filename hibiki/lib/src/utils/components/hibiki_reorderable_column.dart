@@ -155,13 +155,17 @@ class _HibikiReorderableColumnState extends State<HibikiReorderableColumn> {
     final double newTop =
         (_localY(globalPosition) - _grabDy).clamp(0.0, maxTop);
 
-    // 浮层中心落在哪个槽 → 目标 display 下标。
+    // 浮层中心落在哪个槽 → 目标 display 下标。用 `<=`（含边界）而非 `<`：
+    // 拖到最顶端时 newTop 被 clamp 到 0，等高行的浮层中心恰好停在第一行中点
+    // （centerY == h/2 == 第一槽中点）。若用严格 `<`，该相等边界判否 → target
+    // 永远到不了 0、被拖行卡在索引 1（非第一项无法拖到第一、且浮层在上而空位在下）。
+    // 含边界后相等即归入当前槽，第一项可达；末项边界对称由默认 length-1 兜底，不受影响。
     final double centerY = newTop + draggedH / 2;
     int target = _display.length - 1;
     double acc = 0;
     for (int di = 0; di < _display.length; di++) {
       final double h = _heightOf(_display[di]);
-      if (centerY < acc + h / 2) {
+      if (centerY <= acc + h / 2) {
         target = di;
         break;
       }

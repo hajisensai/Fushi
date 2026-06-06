@@ -60,7 +60,67 @@ Future<List<int>> _dragRowDownPastNext(
   return readOrder();
 }
 
+/// 把 [label] 行从当前位置一路拖到列表最顶端（越过第一行中点），用于验证
+/// 「拖到第一个」。鼠标即时拖（不需长按），移动到第一行 [firstLabel] 的中心上方，
+/// 此时被拖行顶部被 clamp 到 0、其中心恰好落在第一行中点——正是等高行能否进入
+/// 索引 0 的边界。
+Future<void> _dragRowToTop(
+  WidgetTester tester, {
+  required String label,
+  required String firstLabel,
+}) async {
+  final Offset start = tester.getCenter(find.text(label));
+  final Offset first = tester.getCenter(find.text(firstLabel));
+  final TestGesture gesture = await tester.startGesture(
+    start,
+    kind: PointerDeviceKind.mouse,
+  );
+  await tester.pump();
+  // 分两步往上拖，最终落到第一行中心（再往上 clamp 不变，已是边界）。
+  await gesture.moveTo(Offset.lerp(start, first, 0.6)!);
+  await tester.pump();
+  await gesture.moveTo(first);
+  await tester.pump();
+  await gesture.up();
+  await tester.pumpAndSettle();
+}
+
 void main() {
+  testWidgets(
+      'drag the LAST row to the very top lands it at index 0 (BUG: equal-'
+      'height rows could never reach the first slot — strict < midpoint test)',
+      (WidgetTester tester) async {
+    final List<int> calls = <int>[];
+    final List<String> order = <String>['A', 'B', 'C'];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 300,
+              child: _Harness(
+                items: order,
+                onReorder: (int from, int to) {
+                  final String item = order.removeAt(from);
+                  order.insert(to, item);
+                  calls.add(from);
+                },
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await _dragRowToTop(tester, label: 'C', firstLabel: 'A');
+
+    expect(tester.takeException(), isNull);
+    expect(calls, isNotEmpty, reason: 'a reorder should have fired');
+    // C 被拖到最顶端：必须真正排到第一个，而不是卡在第二位（旧 bug 的表现）。
+    expect(order, <String>['C', 'A', 'B'],
+        reason: 'the dragged row must reach index 0, not stall at index 1');
+  });
+
   testWidgets('long-press drag reorders at default scale', (
     WidgetTester tester,
   ) async {

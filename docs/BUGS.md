@@ -13,6 +13,13 @@
 
 ---
 
+## BUG-078 · 非第一个词典/音频来源无法拖到第一位（等高行的拖拽中点判定漏掉索引 0）
+- **报告**：2026-06-06（用户：「非第一个词典无法拖到第一个，那个拖动以后框选显示有问题，感觉是在下方」）。采番注：动手时 worktree 基线最大号 BUG-076，本地 develop 已有 BUG-077，故取 078（以提交为准，可能被并发抢）。
+- **真实性**：✅ **真 bug（沿真实代码路径定位 + 测试逐字复现）**。词典列表（`dictionary_dialog_page.dart:_buildDictionaryList`）与音频来源列表（`dictionary_settings_dialog_page.dart:_buildSourceList`）都用自实现的 `HibikiReorderableColumn`（局部坐标拖拽，缩放下零偏移）。拖拽中目标位置由 `_updateDrag`（`hibiki/lib/src/utils/components/hibiki_reorderable_column.dart:158-169`）按「浮层中心落在哪个槽」算：`centerY = newTop + draggedH/2`，而 `newTop = (localY - grabDy).clamp(0.0, maxTop)`。拖到最顶端时 `newTop` 被 clamp 到 `0`，于是 `centerY` 的最小值恒为 `draggedH/2`。命中循环用**严格** `if (centerY < acc + h/2)`：对 `di=0`（`acc=0`）即 `draggedH/2 < h0/2`。词典/音频来源行**等高**（`h0 == draggedH`），该式恒为 `false` → `target` 永远到不了 `0`、被拖行只能停在索引 1。这就是「非第一个拖不到第一个」。同一根因还解释第二症状：拖到顶时浮层 `_feedbackTop=0` 渲染在最上方，但被拖行的透明空位卡在 display 索引 1（下一行位置）——**浮层在上、空位在下**，即「框选显示…感觉在下方」。根因 `hibiki/lib/src/utils/components/hibiki_reorderable_column.dart:164`（中点命中用严格 `<`，与 `newTop` 的 clamp 下界叠加，在等高行排除了索引 0）。
+- **[x] ① 已修复** — 本提交（自含修复+测试+本条目；并发抢号致哈希随 rebase 变动故不内联记录）。**根因修**：`_updateDrag` 的中点命中判定 `<` 改为 `<=`（含边界）。等高行拖到顶时 `centerY == h0/2 == 第一槽中点`，含边界后相等即归入当前槽 → 第一项可达、浮层与空位对齐；末项边界对称由循环外的默认 `target = length-1` 兜底，不受影响；中段拖拽仅在「中心恰好落在某槽中点」这一极少数相等点改变归属方向，非回归。不在回调里特判「拖到顶」之类的特例分支，消除症状而非掩盖。
+- **[x] ② 已加自动化测试** — `hibiki/test/widgets/hibiki_reorderable_column_test.dart` 新增「drag the LAST row to the very top lands it at index 0」：3 行等高（60px）`HibikiReorderableColumn`，鼠标即时拖把末行 C 拖到第一行 A 的中心（此处 `newTop` 被 clamp 到 0、`centerY` 恰为第一槽中点，正是 bug 的边界），断言 `order == ['C','A','B']`（真正到索引 0，而非卡在索引 1）。未修时该用例红（停在 `['A','C','B']`），修后绿；同文件原 5 个用例 + 相邻 `gamepad_reorder` / `hibiki_reorder_drag_listener` / `audio_sources_dialog` / `local_audio_sources` / `dictionary_dialog_layout_static` 共 40 绿，无回归。
+- **备注**：纯 widget 行为，桌面/移动真机肉眼复测「把非首位词典拖到第一、浮层与落点对齐」**待用户**（后台跑不了 GUI 构建）。
+
 ## BUG-077 · 制卡「+」点击后永久卡在加号、无任何提示（查词浮窗）
 - **报告**：2026-06-06（用户：「制卡加号点击以后一直卡在加号，没变化」；追问确认：阅读器/视频查词浮窗、完全没有任何 toast、Anki 已配好且正开着）。采番注：动手时基线最大号 BUG-076，取 077（以提交为准，可能被并发抢）。
 - **真实性**：✅ **真 bug（沿真实代码路径定位）**。查词浮窗（WebView，`assets/popup/popup.js`）制卡按钮在 `createEntryHeader`：初始 `disabled:true`，点击时 `onclick` 先 `mineButton.disabled = true`，再 `await mineEntry(...)`（经 `callHandler('mineEntry')` → Dart `onMineFromPopup`/mixin `onMineEntry` → `repo.mineEntry`）。**关键判据**：正常失败（重复/未配置/导出失败）会让 Dart 端 `switch` 命中弹对应 `HibikiToast`，且按钮 ≤1s 后 revert 回 `+`。用户「一直卡 + 一个 toast 都没有」⇒ 非正常失败路径，而是**抛异常/挂起**路径，命中两处结构性缺陷：
