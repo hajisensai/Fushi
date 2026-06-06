@@ -213,6 +213,16 @@ async function handleViewLog(request, env, id) {
   });
 }
 
+// 在随机密钥前缀下解析出真实路由路径；前缀不匹配返回 null（→404，连存在都不暴露）。
+// 未配 ROUTE_PREFIX 时按原路径（向后兼容）。
+export function routePath(pathname, prefix) {
+  if (!prefix) return pathname;
+  const p = prefix.startsWith('/') ? prefix : '/' + prefix;
+  if (pathname === p) return '/';
+  if (pathname.startsWith(p + '/')) return pathname.slice(p.length) || '/';
+  return null;
+}
+
 export default {
   async fetch(request, env) {
     // fail-closed：缺关键 secret 绝不带病服务（空 secret 会让鉴权门洞开）。
@@ -220,25 +230,30 @@ export default {
       return new Response('server misconfigured', { status: 500, headers: securityHeaders() });
     }
     const url = new URL(request.url);
-    if (url.pathname === '/api/logs') {
+    // 随机密钥前缀：猜不中前缀（含裸域名）一律 404，不暴露服务存在。
+    const path = routePath(url.pathname, env.ROUTE_PREFIX);
+    if (path === null) {
+      return new Response('not found', { status: 404, headers: securityHeaders() });
+    }
+    if (path === '/api/logs') {
       if (request.method !== 'POST') {
         return new Response('method not allowed', { status: 405, headers: securityHeaders() });
       }
       return handleUpload(request, env);
     }
-    if (url.pathname.startsWith('/log/')) {
+    if (path.startsWith('/log/')) {
       if (request.method !== 'GET') {
         return new Response('method not allowed', { status: 405, headers: securityHeaders() });
       }
       let id;
       try {
-        id = decodeURIComponent(url.pathname.slice('/log/'.length));
+        id = decodeURIComponent(path.slice('/log/'.length));
       } catch {
         return new Response('not found', { status: 404, headers: securityHeaders() });
       }
       return handleViewLog(request, env, id);
     }
-    if (url.pathname === '/') {
+    if (path === '/') {
       if (request.method !== 'GET') {
         return new Response('method not allowed', { status: 405, headers: securityHeaders() });
       }

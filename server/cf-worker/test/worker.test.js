@@ -6,6 +6,7 @@ import worker, {
   escapeHtml,
   genLogId,
   randCode,
+  routePath,
   sanitizePlatform,
   timingSafeEqual,
   validLogID,
@@ -284,5 +285,58 @@ describe('fetch routes', () => {
     await worker.fetch(uploadReq('good-token', body), env);
     // 回落 2000 → 全留（4 条），证明没误回落成 0/小数致清空
     expect(env.DB._rows.size).toBe(4);
+  });
+});
+
+describe('随机密钥路径前缀 ROUTE_PREFIX', () => {
+  it('routePath：未配前缀按原路径', () => {
+    expect(routePath('/api/logs', undefined)).toBe('/api/logs');
+    expect(routePath('/', '')).toBe('/');
+  });
+  it('routePath：配了前缀只放行前缀下，其余 null', () => {
+    expect(routePath('/s3cr3t', 's3cr3t')).toBe('/');
+    expect(routePath('/s3cr3t/', 's3cr3t')).toBe('/');
+    expect(routePath('/s3cr3t/api/logs', 's3cr3t')).toBe('/api/logs');
+    expect(routePath('/s3cr3t/log/x.txt', 's3cr3t')).toBe('/log/x.txt');
+    expect(routePath('/', 's3cr3t')).toBe(null); // 裸根
+    expect(routePath('/api/logs', 's3cr3t')).toBe(null); // 无前缀直访
+    expect(routePath('/wrong/api/logs', 's3cr3t')).toBe(null);
+    expect(routePath('/s3cr3tXX', 's3cr3t')).toBe(null); // 前缀须完整边界
+  });
+
+  it('裸域名 / 无前缀直访 → 404（不暴露服务存在）', async () => {
+    const env = fullEnv({ ROUTE_PREFIX: 's3cr3t' });
+    const auth = { Authorization: basicHeader('admin', 'secret-pass') };
+    for (const p of [
+      'https://logs.example.com/',
+      'https://logs.example.com/api/logs',
+      'https://logs.example.com/log/20260606-123456-android-ab12cd.txt',
+      'https://logs.example.com/wrong/',
+    ]) {
+      const res = await worker.fetch(new Request(p, { headers: auth }), env);
+      expect(res.status).toBe(404);
+    }
+  });
+
+  it('正确前缀下：上传 + 带密码看列表都正常', async () => {
+    const env = fullEnv({ ROUTE_PREFIX: 's3cr3t' });
+    const up = await worker.fetch(
+      new Request('https://logs.example.com/s3cr3t/api/logs', {
+        method: 'POST',
+        headers: { 'X-Upload-Token': 'good-token', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind: 'error', platform: 'android', log: 'prefixed' }),
+      }),
+      env,
+    );
+    expect(up.status).toBe(200);
+    const { id } = await up.json();
+    const list = await worker.fetch(
+      new Request('https://logs.example.com/s3cr3t/', {
+        headers: { Authorization: basicHeader('admin', 'secret-pass') },
+      }),
+      env,
+    );
+    expect(list.status).toBe(200);
+    expect(await list.text()).toContain(id);
   });
 });
