@@ -59,13 +59,18 @@ void main() {
     final dialog =
         File('lib/src/sync/sync_compare_dialog.dart').readAsStringSync();
     // The auth-state read must be preceded by a restore so a cold-start open
-    // doesn't wrongly report "set up sync first".
+    // doesn't wrongly report "set up sync first". (BUG-075 moved this restore +
+    // read into a runExclusiveWithSync closure so it can't race an in-flight
+    // sync; the restore-before-read ordering it guards is unchanged.)
     final restoreAt = dialog.indexOf('await backend.restoreAuth(repo);');
-    final gateAt = dialog.indexOf('if (!await backend.isAuthenticated)');
+    final readAt = dialog.indexOf('return backend.isAuthenticated;');
+    final gateAt = dialog.indexOf('if (!authed)');
     expect(restoreAt, greaterThanOrEqualTo(0),
         reason: 'showSyncCompareDialog must restoreAuth first (BUG-047).');
-    expect(gateAt, greaterThan(restoreAt),
-        reason: 'restoreAuth must run before the isAuthenticated gate '
+    expect(readAt, greaterThan(restoreAt),
+        reason: 'restoreAuth must run before the isAuthenticated read '
             '(BUG-047).');
+    expect(gateAt, greaterThan(readAt),
+        reason: 'the gate must branch on the restored auth state (BUG-047).');
   });
 }

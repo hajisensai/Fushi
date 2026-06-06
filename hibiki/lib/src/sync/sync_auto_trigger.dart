@@ -32,6 +32,22 @@ final Set<String> _syncingIds = {};
 // triggers before they queue on the mutex.
 final AsyncMutex _autoSyncMutex = AsyncMutex();
 
+/// Run [body] under the same app-wide mutex that serializes every auto/manual
+/// sync run, so operations that touch the shared singleton backend from OUTSIDE
+/// the sync pipeline — chiefly the local-vs-remote compare / conflict dialog's
+/// network fetch and apply — can never run concurrently with an in-flight sync.
+///
+/// Without this, opening compare (or the conflict prompter auto-popping it
+/// mid-sync) re-listed the remote and rewrote the singleton's folder-id cache
+/// while a sync was mutating the same state, which interrupted the sync and made
+/// the compare load slowly or even time out on the contended connection
+/// (BUG-075). Joining the lock makes the later of the two simply wait.
+///
+/// Non-reentrant (see [AsyncMutex]): [body] must NOT call any sync entry point
+/// (or this helper again) that would re-acquire the lock.
+Future<T> runExclusiveWithSync<T>(Future<T> Function() body) =>
+    _autoSyncMutex.withLock(body);
+
 /// Fired after an auto-sync run produced a [SyncRunReport], carrying the
 /// already-resolved+authenticated [SyncBackend] so the caller can drive a
 /// conflict-resolution dialog without re-resolving/re-authing. Only invoked when

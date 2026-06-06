@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:hibiki/src/epub/book_title_conflict.dart';
 import 'package:hibiki/src/sync/position_converter.dart';
+import 'package:hibiki/src/sync/sync_auto_trigger.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_error_messages.dart';
@@ -416,8 +417,13 @@ Future<void> showSyncCompareDialog(
   // Rehydrate the saved session first — opening compare straight after a cold
   // start would otherwise read a not-yet-restored auth state and wrongly report
   // "set up sync first" (mobile google_sign_in / desktop refresh) (BUG-047).
-  await backend.restoreAuth(repo);
-  if (!await backend.isAuthenticated) {
+  // Do it under the sync mutex so the auth restore (which can reconnect/clear a
+  // backend's cache) never races an in-flight sync (BUG-075).
+  final bool authed = await runExclusiveWithSync(() async {
+    await backend.restoreAuth(repo);
+    return backend.isAuthenticated;
+  });
+  if (!authed) {
     if (!context.mounted) return;
     // The compare precondition is "a sync target is configured" — not an
     // account login. The Hibiki interconnect (and WebDAV/FTP/SFTP) have no
@@ -493,14 +499,19 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
     try {
       final repo = SyncRepository(widget.db);
       final bool dictSyncOn = await repo.isSyncDictionaryEnabled();
-      final results = await Future.wait(<Future<Object>>[
-        _fetchCompareData(widget.db, widget.backend),
-        _fetchDictEntries(
-          widget.db,
-          widget.backend,
-          includeLocalOnly: dictSyncOn,
-        ),
-      ]);
+      // Fetch the remote listing under the sync mutex: this re-lists the remote
+      // and rewrites the singleton backend's folder-id cache, so running it
+      // concurrently with an in-flight sync corrupted the sync's view and made
+      // this load contend on the same connection (slow / timeout) (BUG-075).
+      final results =
+          await runExclusiveWithSync(() => Future.wait(<Future<Object>>[
+                _fetchCompareData(widget.db, widget.backend),
+                _fetchDictEntries(
+                  widget.db,
+                  widget.backend,
+                  includeLocalOnly: dictSyncOn,
+                ),
+              ]));
       final entries = results[0] as List<SyncCompareEntry>;
       final dicts = results[1] as List<SyncDictEntry>;
       final choices = <String, SyncChoice>{};
@@ -568,117 +579,122 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
       _progressLabel = null;
     });
     try {
-      final repo = SyncRepository(widget.db);
-      final syncStats = await repo.isSyncStatsEnabled();
-      final syncAudioBook = await repo.isSyncAudioBookEnabled();
-      final syncContent = await repo.isSyncContentEnabled();
+      // Apply runs real network writes (downloads/uploads/deletes) on the shared
+      // singleton backend, so it must be serialized against any in-flight sync —
+      // same contention that interrupted sync and timed out the load (BUG-075).
+      await runExclusiveWithSync(() async {
+        final repo = SyncRepository(widget.db);
+        final syncStats = await repo.isSyncStatsEnabled();
+        final syncAudioBook = await repo.isSyncAudioBookEnabled();
+        final syncContent = await repo.isSyncContentEnabled();
 
-      var done = 0;
-      // Blend per-file transfer fraction into the overall book progress so the
-      // bar advances smoothly during large content downloads/uploads.
-      final manager = SyncManager(
-        db: widget.db,
-        backend: widget.backend,
-        onContentProgress: (fraction) {
-          if (mounted && total > 0) {
-            setState(
-                () => _progress = (done + fraction.clamp(0.0, 1.0)) / total);
+        var done = 0;
+        // Blend per-file transfer fraction into the overall book progress so the
+        // bar advances smoothly during large content downloads/uploads.
+        final manager = SyncManager(
+          db: widget.db,
+          backend: widget.backend,
+          onContentProgress: (fraction) {
+            if (mounted && total > 0) {
+              setState(
+                  () => _progress = (done + fraction.clamp(0.0, 1.0)) / total);
+            }
+          },
+        );
+
+        int applied = 0;
+        final errors = <String>[];
+        for (final entry in actionable) {
+          final choice = _choices[entry.title]!;
+
+          if (entry.bookKey == null) {
+            // remote-only：下载并导入本地（显式用户动作，不受 syncContent 门控）。
+            if (mounted) {
+              setState(() {
+                _progressLabel = '(${done + 1}/$total) ${entry.title}';
+                _progress = done / total;
+              });
+            }
+            try {
+              final bool imported = await importRemoteBookFolder(
+                db: widget.db,
+                backend: widget.backend,
+                folderId: entry.remoteFolderId!,
+                tempDir: _resolveTempDir(),
+              );
+              if (imported) applied++;
+            } on DuplicateImportCancelledException {
+              // 良性：本机已有同名书，跳过。
+            } catch (e) {
+              errors.add(entry.title);
+              developer.log(
+                'Failed to download "${entry.title}"',
+                error: e,
+                name: 'SyncCompare',
+              );
+            }
+            done++;
+            if (mounted) setState(() => _progress = done / total);
+            continue;
           }
-        },
-      );
 
-      int applied = 0;
-      final errors = <String>[];
-      for (final entry in actionable) {
-        final choice = _choices[entry.title]!;
+          final book = await widget.db.getEpubBook(entry.bookKey!);
+          if (book == null) {
+            done++;
+            continue;
+          }
 
-        if (entry.bookKey == null) {
-          // remote-only：下载并导入本地（显式用户动作，不受 syncContent 门控）。
           if (mounted) {
             setState(() {
               _progressLabel = '(${done + 1}/$total) ${entry.title}';
               _progress = done / total;
             });
           }
+
+          final direction = choice == SyncChoice.useLocal
+              ? SyncDirection.exportToTtu
+              : SyncDirection.importFromTtu;
+
           try {
-            final bool imported = await importRemoteBookFolder(
-              db: widget.db,
-              backend: widget.backend,
-              folderId: entry.remoteFolderId!,
-              tempDir: _resolveTempDir(),
+            final result = await manager.syncBook(
+              book: book,
+              direction: direction,
+              syncStats: syncStats,
+              statsSyncMode: StatisticsSyncMode.merge,
+              syncAudioBook: syncAudioBook,
+              syncContent: syncContent,
             );
-            if (imported) applied++;
-          } on DuplicateImportCancelledException {
-            // 良性：本机已有同名书，跳过。
+            switch (classifySyncApply(result)) {
+              case SyncApplyOutcome.applied:
+                applied++;
+              case SyncApplyOutcome.failed:
+                errors.add(entry.title);
+              case SyncApplyOutcome.noop:
+                // 良性跳过（无可传输内容）：既不计成功也不报错，避免误报「同步错误」。
+                break;
+            }
           } catch (e) {
             errors.add(entry.title);
             developer.log(
-              'Failed to download "${entry.title}"',
+              'Failed to sync "${entry.title}"',
               error: e,
               name: 'SyncCompare',
             );
           }
           done++;
           if (mounted) setState(() => _progress = done / total);
-          continue;
-        }
-
-        final book = await widget.db.getEpubBook(entry.bookKey!);
-        if (book == null) {
-          done++;
-          continue;
         }
 
         if (mounted) {
-          setState(() {
-            _progressLabel = '(${done + 1}/$total) ${entry.title}';
-            _progress = done / total;
-          });
-        }
-
-        final direction = choice == SyncChoice.useLocal
-            ? SyncDirection.exportToTtu
-            : SyncDirection.importFromTtu;
-
-        try {
-          final result = await manager.syncBook(
-            book: book,
-            direction: direction,
-            syncStats: syncStats,
-            statsSyncMode: StatisticsSyncMode.merge,
-            syncAudioBook: syncAudioBook,
-            syncContent: syncContent,
-          );
-          switch (classifySyncApply(result)) {
-            case SyncApplyOutcome.applied:
-              applied++;
-            case SyncApplyOutcome.failed:
-              errors.add(entry.title);
-            case SyncApplyOutcome.noop:
-              // 良性跳过（无可传输内容）：既不计成功也不报错，避免误报「同步错误」。
-              break;
+          if (errors.isNotEmpty) {
+            showSyncMessage(
+              context,
+              t.sync_error(message: errors.join(', ')),
+            );
           }
-        } catch (e) {
-          errors.add(entry.title);
-          developer.log(
-            'Failed to sync "${entry.title}"',
-            error: e,
-            name: 'SyncCompare',
-          );
+          Navigator.pop(context, applied);
         }
-        done++;
-        if (mounted) setState(() => _progress = done / total);
-      }
-
-      if (mounted) {
-        if (errors.isNotEmpty) {
-          showSyncMessage(
-            context,
-            t.sync_error(message: errors.join(', ')),
-          );
-        }
-        Navigator.pop(context, applied);
-      }
+      });
     } catch (e) {
       if (mounted) {
         setState(() {
