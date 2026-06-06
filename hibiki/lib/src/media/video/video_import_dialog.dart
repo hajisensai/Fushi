@@ -222,7 +222,13 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
   /// 内嵌音轨，不接外挂音频，故 `wantAudio: false`。桌面端有效；移动端缓存副本
   /// 目录扫不到兄弟文件，[findSidecars] 静默返回空。
   Future<void> _autoAttachSubtitle(String videoPath) async {
-    final SidecarMatch m = await findSidecars(videoPath, wantAudio: false);
+    // 字幕集合与手选白名单（_pickSubtitle）一致，去掉 lrc——避免自动挂载接受
+    // 一种手动选择会拒绝的格式。
+    final SidecarMatch m = await findSidecars(
+      videoPath,
+      wantAudio: false,
+      subtitleExts: const <String>{'srt', 'vtt', 'ass', 'ssa'},
+    );
     if (!mounted || m.subtitlePath == null || _subtitlePath != null) return;
     setState(() => _subtitlePath = m.subtitlePath);
     HibikiToast.show(

@@ -88,6 +88,34 @@ void main() {
       expect(r.audio, isEmpty);
     });
 
+    test('subtitleExts 收紧后不收 lrc（视频路径）', () {
+      final r = selectSidecarNames(
+        mainFileName: 'video.mkv',
+        siblingNames: <String>['video.lrc', 'video.srt'],
+        wantAudio: false,
+        subtitleExts: const <String>{'srt', 'vtt', 'ass', 'ssa'},
+      );
+      expect(r.subtitle, 'video.srt');
+    });
+
+    test('subtitleExts 收紧后只有 lrc 则字幕为空', () {
+      final r = selectSidecarNames(
+        mainFileName: 'video.mkv',
+        siblingNames: <String>['video.lrc'],
+        wantAudio: false,
+        subtitleExts: const <String>{'srt', 'vtt', 'ass', 'ssa'},
+      );
+      expect(r.subtitle, isNull);
+    });
+
+    test('默认含 lrc（书籍路径）', () {
+      final r = selectSidecarNames(
+        mainFileName: 'book.epub',
+        siblingNames: <String>['book.lrc'],
+      );
+      expect(r.subtitle, 'book.lrc');
+    });
+
     test('无命中返回空', () {
       final r = selectSidecarNames(
         mainFileName: 'book.epub',

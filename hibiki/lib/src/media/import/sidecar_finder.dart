@@ -25,7 +25,15 @@ const List<String> _subtitleExtPriority = <String>[
   'lrc'
 ];
 
-const Set<String> _subtitleExtSet = <String>{'srt', 'vtt', 'ass', 'ssa', 'lrc'};
+/// 默认字幕扩展集（书籍导入用，含 lrc）。视频导入传入不含 lrc 的子集，与视频
+/// 手选字幕白名单（srt/vtt/ass/ssa）保持一致——避免"自动挂载接受手选拒绝的格式"。
+const Set<String> defaultSubtitleExts = <String>{
+  'srt',
+  'vtt',
+  'ass',
+  'ssa',
+  'lrc'
+};
 
 /// 同前缀多段音频判定：stem 之后的余部以分隔符（空白/`.`/`_`/`-`）或数字开头，
 /// 如 `book 01` / `book-02` / `book_03` / `book01`，借此收多段、排除 `bookkeeping`。
@@ -44,6 +52,7 @@ final RegExp _multipartSuffix = RegExp(r'^[\s._\-]|^\d');
   required String mainFileName,
   required List<String> siblingNames,
   bool wantAudio = true,
+  Set<String> subtitleExts = defaultSubtitleExts,
 }) {
   final String stem = p.basenameWithoutExtension(mainFileName).toLowerCase();
   if (stem.isEmpty) return (subtitle: null, audio: const <String>[]);
@@ -59,7 +68,7 @@ final RegExp _multipartSuffix = RegExp(r'^[\s._\-]|^\d');
     final String base = p.basenameWithoutExtension(name).toLowerCase();
 
     // 字幕：要求完全同名。
-    if (_subtitleExtSet.contains(ext)) {
+    if (subtitleExts.contains(ext)) {
       if (base == stem) {
         final int rank = _subtitleExtPriority.indexOf(ext);
         if (rank >= 0 && rank < bestSubtitleRank) {
@@ -92,6 +101,7 @@ final RegExp _multipartSuffix = RegExp(r'^[\s._\-]|^\d');
 Future<SidecarMatch> findSidecars(
   String mainFilePath, {
   bool wantAudio = true,
+  Set<String> subtitleExts = defaultSubtitleExts,
 }) async {
   try {
     final Directory dir = File(mainFilePath).parent;
@@ -106,6 +116,7 @@ Future<SidecarMatch> findSidecars(
       mainFileName: p.basename(mainFilePath),
       siblingNames: names,
       wantAudio: wantAudio,
+      subtitleExts: subtitleExts,
     );
 
     return SidecarMatch(
