@@ -1,0 +1,25 @@
+[Unit]
+Description=Hibiki log collector
+After=network.target
+
+[Service]
+Type=simple
+User=hibiki-logs
+Group=hibiki-logs
+# 真实密钥放 /etc/hibiki-logs.env（chmod 600，不入库）
+EnvironmentFile=/etc/hibiki-logs.env
+ExecStart=/usr/local/bin/hibiki-log-collector
+Restart=on-failure
+RestartSec=2
+
+# 最小权限加固：只能写数据目录，碰不到系统其它地方
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/lib/hibiki-logs
+RestrictAddressFamilies=AF_INET AF_INET6
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target
