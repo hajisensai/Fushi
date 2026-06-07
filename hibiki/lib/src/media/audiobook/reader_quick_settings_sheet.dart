@@ -294,8 +294,23 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
                     minSplitWidth: 640,
                     supportingSide: SupportingPaneSide.start,
                     dividerColor: dividerColor,
-                    supporting: SingleChildScrollView(
-                      child: _buildWidePane(context, theme, selectedId),
+                    // 左父菜单项不多时垂直居中（progress/分类/动作整体居中），
+                    // 不再让「阅读进度」死贴顶端；内容超过 pane 高度时
+                    // ConstrainedBox 的 minHeight 被内容满足，照常滚动。
+                    supporting: LayoutBuilder(
+                      builder: (
+                        BuildContext context,
+                        BoxConstraints paneConstraints,
+                      ) {
+                        return SingleChildScrollView(
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(
+                              minHeight: paneConstraints.maxHeight,
+                            ),
+                            child: _buildWidePane(context, theme, selectedId),
+                          ),
+                        );
+                      },
                     ),
                     // KeyedSubtree：按选中 id 编码，切换时整棵右 pane 子树作废重
                     // 建，避免 Flutter 复用上一详情同位置 Element 触发 Switch 圆点
@@ -338,6 +353,9 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
     final double sectionGap = tokens.spacing.gap + tokens.spacing.gap / 2;
     return Column(
       mainAxisSize: MainAxisSize.min,
+      // 在 supporting pane 的 minHeight 约束下垂直居中（项少时整体居中、
+      // 不贴顶；项多溢出时退化为自然顶端布局 + 外层滚动）。
+      mainAxisAlignment: MainAxisAlignment.center,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildProgressSection(theme),
