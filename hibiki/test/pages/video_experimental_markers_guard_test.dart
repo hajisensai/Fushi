@@ -50,16 +50,16 @@ void main() {
       expect(navSrc.contains('_maybeBadge('), isTrue);
     });
 
-    test('视频 tab 导航项标记为实验性（experimentalBadge: true）', () {
-      // 锚定到 HomeTab.video 分支：截取该 case 到下一个 case 之间，确保 badge 挂在
-      // 视频项而非别的 tab。
+    test('视频 tab 导航项不再带实验性小圆点徽标（底栏小红点已移除）', () {
+      // 锚定到 HomeTab.video 分支：截取该 case 到下一个 case 之间，确保断言落在
+      // 视频项而非别的 tab。用户要求去掉视频底栏小红点。
       final int videoAt = homeSrc.indexOf('case HomeTab.video:');
       expect(videoAt, greaterThan(0), reason: '应有 HomeTab.video 导航项');
       final int nextCaseAt = homeSrc.indexOf('case HomeTab.', videoAt + 10);
       final String videoCase = homeSrc.substring(
           videoAt, nextCaseAt > 0 ? nextCaseAt : homeSrc.length);
-      expect(videoCase.contains('experimentalBadge: true'), isTrue,
-          reason: '视频 tab 导航项必须带实验性徽标');
+      expect(videoCase.contains('experimentalBadge'), isFalse,
+          reason: '视频 tab 不应再带实验性徽标（底栏小红点已移除）');
     });
   });
 
