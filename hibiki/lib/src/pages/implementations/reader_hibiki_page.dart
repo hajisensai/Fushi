@@ -32,6 +32,7 @@ import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart'
 import 'package:hibiki/src/profile/profile_repository.dart';
 import 'package:hibiki/src/profile/profile_view_model.dart';
 import 'package:hibiki/src/reader/reader_caret_scripts.dart';
+import 'package:hibiki/src/reader/reader_chrome_scaler.dart';
 import 'package:hibiki/src/reader/reader_lyrics_caret_scripts.dart';
 import 'package:hibiki/src/reader/reader_content_styles.dart';
 import 'package:hibiki/src/reader/reader_resource_sanitizer.dart';
@@ -192,7 +193,17 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   double _stableTopInset = 0;
   double _stableBottomInset = 0;
 
-  static const double _readerChromeHeight = 56;
+  /// 底栏内容行的自然（未缩放）高度。
+  static const double _readerChromeBaseHeight = 56;
+
+  /// 阅读器底栏的隐形界面缩放系数：取自全局 appUiScale（阅读器子树被中和器改写成
+  /// 1.0，故不能用 HibikiAppUiScale.of）。在 build 里读 appModel 会随缩放变化重建。
+  double get _readerChromeScale => appModel.appUiScale;
+
+  /// 缩放后底栏在屏高度。所有把底栏高度喂给 WebView/光标/焦点环/正文预留的地方都
+  /// 走这个 getter，保证视觉高度与预留高度恒等。
+  double get _readerChromeHeight =>
+      ReaderChromeScaler.scaledHeight(_readerChromeBaseHeight, _readerChromeScale);
   static const double _infoFontSize = 12;
 
   int? _progressCurrentChars;
@@ -4647,14 +4658,18 @@ window.flutter_inappwebview.callHandler('spreadReady');
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                AudiobookPlayBar(
-                  controller: ctrl,
-                  skipActionSeconds:
-                      ReaderHibikiSource.instance.skipActionSeconds,
-                  onOpenSettings: _showAppearanceSheet,
-                  backgroundColor: _themeBackgroundColor(),
-                  foregroundColor: _themeTextColor(),
-                  reversed: appModel.reverseReaderBottomBar,
+                ReaderChromeScaler(
+                  scale: _readerChromeScale,
+                  baseHeight: _readerChromeBaseHeight,
+                  child: AudiobookPlayBar(
+                    controller: ctrl,
+                    skipActionSeconds:
+                        ReaderHibikiSource.instance.skipActionSeconds,
+                    onOpenSettings: _showAppearanceSheet,
+                    backgroundColor: _themeBackgroundColor(),
+                    foregroundColor: _themeTextColor(),
+                    reversed: appModel.reverseReaderBottomBar,
+                  ),
                 ),
                 ColoredBox(
                   color: _themeBackgroundColor(),
@@ -4698,14 +4713,20 @@ window.flutter_inappwebview.callHandler('spreadReady');
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            ColoredBox(
-              color: _themeBackgroundColor(),
-              child: SizedBox(
-                height: _readerChromeHeight,
-                child: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: tokens.spacing.gap),
-                  child: Row(
-                    children: reversed ? barItems.reversed.toList() : barItems,
+            ReaderChromeScaler(
+              scale: _readerChromeScale,
+              baseHeight: _readerChromeBaseHeight,
+              child: ColoredBox(
+                color: _themeBackgroundColor(),
+                child: SizedBox(
+                  height: _readerChromeBaseHeight,
+                  child: Padding(
+                    padding:
+                        EdgeInsets.symmetric(horizontal: tokens.spacing.gap),
+                    child: Row(
+                      children:
+                          reversed ? barItems.reversed.toList() : barItems,
+                    ),
                   ),
                 ),
               ),
