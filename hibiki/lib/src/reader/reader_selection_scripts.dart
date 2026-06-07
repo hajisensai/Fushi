@@ -98,6 +98,7 @@ window.__hoshiCssHighlightsSupported = !!(window.CSS && CSS.highlights && window
 window.hoshiSelection = {
   selection: null,
   highlightWrappers: [],
+  selectionRubyElements: [],
   scanDelimiters: '。、！？…‥「」『』（）()【】〈〉《》〔〕｛｝{}［］[]・：；:;，,.─\n\r"\'“”‘’«»‹›',
   sentenceDelimiters: '。！？.!?\n\r',
   trailingSentenceChars: '。、！？…‥」』）)】〉》〕｝}］]',
@@ -113,6 +114,17 @@ window.hoshiSelection = {
   isFurigana: function(node) {
     var el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
     return !!(el && el.closest('rt, rp'));
+  },
+  rubyForNode: function(node) {
+    var el = node && node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+    return el && el.closest ? el.closest('ruby') : null;
+  },
+  clearSelectionRubyHighlights: function() {
+    if (!this.selectionRubyElements || !this.selectionRubyElements.length) return;
+    this.selectionRubyElements.forEach(function(ruby) {
+      ruby.classList.remove('hoshi-selection-ruby-active');
+    });
+    this.selectionRubyElements = [];
   },
   findParagraph: function(node) {
     var el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
@@ -385,15 +397,26 @@ window.hoshiSelection = {
       }
     }
     if (window.__hoshiCssHighlightsSupported) {
+      // BUG-110：<ruby> 内的字不放进 ::highlight（竖排下 ::highlight 把 ruby 基字盒
+      // 画两遍 → 半透明叠加成深色带遮字），改给 <ruby> 元素加 class 单次绘背景。
       var highlights = [];
+      this.clearSelectionRubyHighlights();
       for (var i = 0; i < trimmedRanges.length; i++) {
         var seg = trimmedRanges[i];
+        var ruby = this.rubyForNode(seg.node);
+        if (ruby) {
+          if (this.selectionRubyElements.indexOf(ruby) < 0) {
+            ruby.classList.add('hoshi-selection-ruby-active');
+            this.selectionRubyElements.push(ruby);
+          }
+          continue;
+        }
         var range = document.createRange();
         range.setStart(seg.node, seg.start);
         range.setEnd(seg.node, seg.end);
         highlights.push(range);
       }
-      CSS.highlights.set('hoshi-selection', new Highlight(...highlights));
+      CSS.highlights.set('hoshi-selection', highlights.length ? new Highlight(...highlights) : new Highlight());
     } else {
       this.clearHighlightWrappers();
       var range = document.createRange();
@@ -467,6 +490,7 @@ window.hoshiSelection = {
     window.getSelection()?.removeAllRanges();
     if (window.__hoshiCssHighlightsSupported) {
       CSS.highlights.delete('hoshi-selection');
+      this.clearSelectionRubyHighlights();
     } else {
       this.clearHighlightWrappers();
     }

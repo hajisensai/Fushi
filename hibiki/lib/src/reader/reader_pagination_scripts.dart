@@ -217,6 +217,7 @@ class ReaderPaginationScripts {
   static const String _sharedJs = r'''
   cueWrappers: new Map(),
   cueRangesMap: new Map(),
+  cueRubyElements: new Map(),
   activeCueId: null,
   ttuRegexNegated: /[^0-9A-Za-z○◯々-〇〻ぁ-ゖゝ-ゟァ-ヺー-ヿ０-９Ａ-Ｚａ-ｚｦ-ﾝ\u{2E80}-\u{2EFF}\u{2F00}-\u{2FDF}\u{3400}-\u{4DBF}\u{4E00}-\u{9FFF}\u{F900}-\u{FAFF}\u{20000}-\u{2A6DF}\u{2A700}-\u{2EBE0}\u{2F800}-\u{2FA1F}\u{30000}-\u{323AF}]+/gimu,
   ttuRegex: /[0-9A-Za-z○◯々-〇〻ぁ-ゖゝ-ゟァ-ヺー-ヿ０-９Ａ-Ｚａ-ｚｦ-ﾝ\u{2E80}-\u{2EFF}\u{2F00}-\u{2FDF}\u{3400}-\u{4DBF}\u{4E00}-\u{9FFF}\u{F900}-\u{FAFF}\u{20000}-\u{2A6DF}\u{2A700}-\u{2EBE0}\u{2F800}-\u{2FA1F}\u{30000}-\u{323AF}]/iu,
@@ -417,12 +418,22 @@ class ReaderPaginationScripts {
     this.resetSasayakiCues();
     var cueSegments = this.collectSasayakiCueRanges(cues);
     if (window.__hoshiCssHighlightsSupported) {
+      // BUG-110：在 <ruby> 内的节点不放进 ::highlight range（竖排下 ::highlight 会把
+      // ruby 基字盒画两遍 → 半透明叠加成深色带遮字）；改把 <ruby> 元素本身收集起来，
+      // 高亮时给它加 class（背景画在元素上、只画一遍）。普通文字仍走 ::highlight。
+      // 移植自 Hoshi-Reader-Android buildSasayakiHighlightRanges。
       for (var i = 0; i < cueSegments.length; i++) {
         var id = cueSegments[i].id;
         var segments = cueSegments[i].ranges;
         if (!segments.length) continue;
         var ranges = [];
+        var rubyElements = [];
         for (var j = 0; j < segments.length; j++) {
+          var ruby = this.rubyForNode(segments[j].node);
+          if (ruby) {
+            if (rubyElements.indexOf(ruby) < 0) rubyElements.push(ruby);
+            continue;
+          }
           try {
             var r = document.createRange();
             r.setStart(segments[j].node, segments[j].start);
@@ -431,6 +442,7 @@ class ReaderPaginationScripts {
           } catch (e) {}
         }
         if (ranges.length) this.cueRangesMap.set(id, ranges);
+        if (rubyElements.length) this.cueRubyElements.set(id, rubyElements);
       }
     } else {
       var range = document.createRange();
@@ -454,18 +466,30 @@ class ReaderPaginationScripts {
       this.buildNodeOffsets();
     }
   },
+  rubyForNode: function(node) {
+    var el = node && node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+    return el && el.closest ? el.closest('ruby') : null;
+  },
   highlightSasayakiCue: function(cueId, reveal) {
     this.clearSasayakiCue();
     if (window.__hoshiCssHighlightsSupported) {
-      var ranges = this.cueRangesMap.get(cueId);
-      if (!ranges || !ranges.length) return null;
+      var ranges = this.cueRangesMap.get(cueId) || [];
+      var rubyElements = this.cueRubyElements.get(cueId) || [];
+      if (!ranges.length && !rubyElements.length) return null;
       this.activeCueId = cueId;
-      CSS.highlights.set('hoshi-sasayaki', new Highlight(...ranges));
-      if (reveal && ranges[0]) {
-        if (this.scrollToRange) {
-          if (this.scrollToRange(ranges[0])) return this.calculateProgress();
-        } else if (this.scrollToTarget) {
-          if (this.scrollToTarget(ranges[0])) return this.calculateProgress();
+      if (ranges.length) CSS.highlights.set('hoshi-sasayaki', new Highlight(...ranges));
+      // ruby 元素用 class 高亮（背景画在元素上，避免 ::highlight 对 ruby 双绘，BUG-110）
+      rubyElements.forEach(function(ruby) { ruby.classList.add('hoshi-sasayaki-ruby-active'); });
+      if (reveal) {
+        var anchor = ranges.length ? ranges[0] : null;
+        if (anchor) {
+          if (this.scrollToRange) {
+            if (this.scrollToRange(anchor)) return this.calculateProgress();
+          } else if (this.scrollToTarget) {
+            if (this.scrollToTarget(anchor)) return this.calculateProgress();
+          }
+        } else if (rubyElements[0] && this.revealElement) {
+          if (this.revealElement(rubyElements[0])) return this.calculateProgress();
         }
       }
     } else {
@@ -507,6 +531,15 @@ class ReaderPaginationScripts {
       });
       if (found) return JSON.stringify({ type: 'frag', id: found });
     }
+    if (this.cueRubyElements && this.cueRubyElements.size) {
+      this.cueRubyElements.forEach(function(rubyElements, id) {
+        if (found) return;
+        for (var i = 0; i < rubyElements.length; i++) {
+          if (rubyElements[i].contains(node)) { found = id; break; }
+        }
+      });
+      if (found) return JSON.stringify({ type: 'frag', id: found });
+    }
     if (this.cueWrappers && this.cueWrappers.size) {
       this.cueWrappers.forEach(function(wrappers, id) {
         if (found) return;
@@ -522,6 +555,8 @@ class ReaderPaginationScripts {
     if (!this.activeCueId) return;
     if (window.__hoshiCssHighlightsSupported) {
       CSS.highlights.delete('hoshi-sasayaki');
+      var rubyElements = this.cueRubyElements.get(this.activeCueId) || [];
+      rubyElements.forEach(function(ruby) { ruby.classList.remove('hoshi-sasayaki-ruby-active'); });
     } else {
       var wrappers = this.cueWrappers.get(this.activeCueId) || [];
       wrappers.forEach(function(wrapper) { wrapper.classList.remove('hoshi-sasayaki-active'); });
@@ -532,6 +567,10 @@ class ReaderPaginationScripts {
     if (window.hoshiSelection) window.hoshiSelection.clearSelection();
     if (window.__hoshiCssHighlightsSupported) {
       CSS.highlights.delete('hoshi-sasayaki');
+      this.cueRubyElements.forEach(function(rubyElements) {
+        rubyElements.forEach(function(ruby) { ruby.classList.remove('hoshi-sasayaki-ruby-active'); });
+      });
+      this.cueRubyElements.clear();
       this.cueRangesMap.clear();
     } else {
       var self = this;

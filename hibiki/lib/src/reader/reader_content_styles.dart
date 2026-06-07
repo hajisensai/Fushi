@@ -278,6 +278,12 @@ ruby > rt, ruby > rp {
   background-color: ${selectionColor ?? colors.selectionColor};
   color: inherit;
 }
+/* BUG-110：<ruby> 内的字不走 ::highlight（竖排下会双绘成深色带），改给 ruby 元素
+   加 class，背景画在元素上只画一遍。移植自 Hoshi-Reader-Android。 */
+ruby.hoshi-selection-ruby-active {
+  background-color: ${selectionColor ?? colors.selectionColor} !important;
+  color: inherit;
+}
 ::highlight(hoshi-hl-yellow) {
   background-color: var(--hoshi-hl-yellow, rgba(255,220,0,0.35));
 }
@@ -300,6 +306,11 @@ ruby > rt, ruby > rp {
 ::highlight(hoshi-sasayaki) {
   color: var(--hoshi-sasayaki-text-color);
   background-color: var(--hoshi-sasayaki-background-color);
+}
+/* BUG-110：sasayaki 跟随高亮里 <ruby> 元素用 class（不走 ::highlight，避免竖排双绘）。 */
+ruby.hoshi-sasayaki-ruby-active {
+  color: var(--hoshi-sasayaki-text-color) !important;
+  background-color: var(--hoshi-sasayaki-background-color) !important;
 }
 ::highlight(hoshi-search) {
   background-color: rgba(255, 200, 0, 0.45);

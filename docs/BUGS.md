@@ -53,6 +53,12 @@
 - **[ ] ① 未修复** — 用户决定：不 stub（Windows 无 Android 那种引擎 key 通道，stub 会丢手柄导航），**另开一轮专门调研**。正确修法 = vendor 插件 + 重写线程生命周期（join 式停线程后再释放/置空 g_gameInput + 原子化标志 + 修野指针）+ 把事件 marshal 回平台线程，需手柄真机验证。
 - **[ ] ② 未加测试**
 - **备注**：teardown 低频（关 app 时），优先级低于 BUG-113；按键期 channel 崩为另一向量。待 vendor 轮次。
+## BUG-110 · 竖排书有声书跟随/查词高亮在振假名(ruby)字上出现深色带遮字
+- **报告**：2026-06-07（用户：「书籍高亮的时候会被挡住文字的一部分」，截图为竖排明朝体；后续确认「没查词的时候也挡、查词和音频高亮都会挡」「关闭振假名显示还是挡」，并指向参考实现 Hoshi-Reader-Android 新版做法）。
+- **真实性**：✅ **真 bug（真机 `getClientRects` 取证）**。在 hibiki 调试版里加临时红框诊断（把 `::highlight` 用的 range 的 `getClientRects()` 逐矩形描框 + 打坐标日志），用户真机复现后日志实证：竖排下对含 `<ruby>` 的 cue/选区，`::highlight()` 把 ruby 基字矩形**重复绘制**——例 `range#0 "話題を切り替かえるよ" rects=5 [1555,318 71x50] [1555,318 71x50] [1611,318 33x50] ...`，`[1555,318 71x50]` **同一矩形出现两次**（第二块是 ruby 容器/基字盒重叠），半透明背景叠加两层 → 深色带；`[1611,…]` 是振假名那块单独凸出。根因是浏览器 `::highlight()` 对 `<ruby>` 的渲染（基字盒重复），**与 range 怎么拆/合无关**（试过合并成单一 Range 仍重复绘制，无效）。本地用同引擎 Edge 复刻阅读器 CSS（多列+`line-box-contain`+vpal+ruby）反而干净 → 触发与具体书的 ruby 结构/字体相关，故靠真机诊断定位。
+- **[x] ① 已修复** — 本提交。根因修（移植参考实现 Hoshi-Reader-Android `buildSasayakiHighlightRanges`，非补丁）：cue / 选区里位于 `<ruby>` 内的节点**不放进 `::highlight` range**（用新增 `rubyForNode` 分流），改把 `<ruby>` 元素本身收集到 `cueRubyElements` / `selectionRubyElements`，高亮时给元素加 class（`hoshi-sasayaki-ruby-active` / `hoshi-selection-ruby-active`），背景画在元素上**只画一遍**消除双绘；普通文字仍走 `::highlight`。清除（`clearSasayakiCue`/`resetSasayakiCues`/`clearSelection`）同步移除 class；`cueIdAtPoint`（中键 seek 反查）补 `cueRubyElements` 命中。CSS 新增两条 `ruby.*-ruby-active` 背景规则。代价：振假名(ruby)现在也被同色高亮覆盖（同一词一起高亮，视觉无害）。
+- **[x] ② 已加自动化测试** — `hibiki/test/reader/ruby_highlight_guard_test.dart`（源码守卫：断言 pagination/selection 用 `rubyForNode` 分流 + `cueRubyElements`/`clearSelectionRubyHighlights` + 两个 `*-ruby-active` class，CSS 有对应 `ruby.*-ruby-active` 背景规则；`::highlight` 真渲染 headless 不可跑）。
+- **备注**：reader/WebView/高亮类。`flutter analyze` 0 + reader 测试 243 绿。**已真机验证**：用户在 Windows 调试版（本会话编译）竖排书里播放有声书跟随 + 查带振假名的词，深色带消失，确认「ok 好了」。
 
 ## BUG-109 · 阅读器切换主题/字体时正文「翻页」（当前阅读位置跳到相邻页）
 - **报告**：2026-06-07（用户：「切换主题、字体的时候文字会翻页」，与高亮遮挡同批；高亮遮挡问题另记 BUG-110）。采番注：初记 108，rebase 到 develop 时 108 已被并发提交「查词弹窗 ruby 重叠」占用，改取 109。
