@@ -12,6 +12,14 @@ on:
       ffmpeg_ref:
         description: "FFmpeg git tag/branch"
         default: "n7.1"
+  # Temporary validation trigger while this new workflow is not yet present on
+  # the default branch. Remove before merging; workflow_dispatch then suffices.
+  push:
+    branches:
+      - worktree-card-glossary-and-video-subtitle-fixes
+    paths:
+      - ".github/workflows/ffmpeg-min.yml"
+      - "tool/ffmpeg-min/**"
 
 jobs:
   build:
