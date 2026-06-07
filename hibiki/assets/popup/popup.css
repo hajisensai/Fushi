@@ -445,6 +445,21 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
     padding: 0 8px;
 }
 
+/* Furigana inside dictionary glossary bodies (BUG-108). The compact
+   line-height (1.4) used for entries reserves no vertical room for a
+   <ruby>'s <rt> annotation, so the furigana overflows upward and overlaps
+   the kanji on the line above (e.g. 明鏡's related-word lists, where every
+   line carries ruby). Raising the line-height on the inline <ruby> grows
+   only the line boxes that actually contain ruby — plain non-ruby lines keep
+   the tight 1.4 spacing. The headword keeps its own .expression rt rule. */
+:where(.glossary-group, .glossary-content) ruby {
+    line-height: 2;
+}
+
+:where(.glossary-group, .glossary-content) rt {
+    font-size: 0.5em;
+}
+
 .dict-label {
     font-size: 10px;
     opacity: 0.7;
