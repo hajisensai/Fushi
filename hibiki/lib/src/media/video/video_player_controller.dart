@@ -50,6 +50,10 @@ class VideoPlayerController extends ChangeNotifier
   Timer? _tick;
   StreamSubscription<bool>? _playingSub;
 
+  /// 视频原始分辨率变化订阅（用于字幕 \pos letterbox 映射在分辨率到位后重定位）。
+  StreamSubscription<int?>? _widthSub;
+  StreamSubscription<int?>? _heightSub;
+
   String? _bookUid;
 
   /// 视频文件绝对路径；制卡时按 cue 时间裁字幕音频片段用。
@@ -95,6 +99,10 @@ class VideoPlayerController extends ChangeNotifier
   /// 媒体总时长（毫秒）；未 [load] / 未解析媒体头时为 null。
   @override
   int? get durationMs => _player?.state.duration.inMilliseconds;
+
+  /// 视频原始分辨率（字幕 `\pos` letterbox 映射用）；未解码时为 null。
+  int? get videoWidth => _player?.state.width;
+  int? get videoHeight => _player?.state.height;
 
   /// 当前音画延迟（毫秒）；设置面板显示用。
   int get delayMs => _delayMs;
@@ -211,6 +219,10 @@ class VideoPlayerController extends ChangeNotifier
     _tick = null;
     await _playingSub?.cancel();
     _playingSub = null;
+    await _widthSub?.cancel();
+    _widthSub = null;
+    await _heightSub?.cancel();
+    _heightSub = null;
     await _player?.dispose();
 
     final Player player = Player();
@@ -255,6 +267,10 @@ class VideoPlayerController extends ChangeNotifier
     _playingSub = player.stream.playing.listen((_) {
       notifyListeners();
     });
+
+    // 订阅视频原始分辨率变化：解码出分辨率后让 overlay 重新做 \pos letterbox 映射。
+    _widthSub = player.stream.width.listen((_) => notifyListeners());
+    _heightSub = player.stream.height.listen((_) => notifyListeners());
 
     // 125ms 周期读位置，驱动 cue 同步（对齐有声书 createPositionStream 的节奏）。
     _tick = Timer.periodic(const Duration(milliseconds: 125), (_) {
@@ -501,6 +517,10 @@ class VideoPlayerController extends ChangeNotifier
     _tick = null;
     unawaited(_playingSub?.cancel());
     _playingSub = null;
+    unawaited(_widthSub?.cancel());
+    _widthSub = null;
+    unawaited(_heightSub?.cancel());
+    _heightSub = null;
     unawaited(_player?.dispose());
     _player = null;
     _videoController = null;

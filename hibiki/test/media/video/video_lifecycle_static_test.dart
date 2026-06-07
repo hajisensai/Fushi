@@ -38,6 +38,17 @@ void main() {
       expect(body!.group(1), contains('await onPositionWrite?.call('),
           reason: 'flushPosition 必须 await 到真正落库（durability）');
     });
+
+    test('exposes video width/height and subscribes to stream (BUG-105)', () {
+      expect(src.contains('get videoWidth'), isTrue,
+          reason: 'overlay 的 \\pos 映射需要视频原始宽度');
+      expect(src.contains('get videoHeight'), isTrue,
+          reason: 'overlay 的 \\pos 映射需要视频原始高度');
+      expect(src.contains('stream.width'), isTrue,
+          reason: '分辨率到位后须 notify 让 overlay 重定位 \\pos');
+      expect(src.contains('stream.height'), isTrue,
+          reason: '分辨率到位后须 notify 让 overlay 重定位 \\pos');
+    });
   });
 
   // 真正的断点是**页面层**：controller.dispose() 里的 `_forceSavePositionSync()`
