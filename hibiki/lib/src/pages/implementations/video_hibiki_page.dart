@@ -28,6 +28,7 @@ import 'package:hibiki/src/media/video/video_subtitle_style.dart';
 import 'package:hibiki/src/media/video/video_watch_tracker.dart';
 import 'package:hibiki/src/pages/implementations/jimaku_subtitle_dialog.dart';
 import 'package:hibiki/src/pages/implementations/video_shader_dialog.dart';
+import 'package:hibiki/src/media/video/video_quick_settings_sheet.dart';
 import 'package:hibiki/src/media/video/video_sidecar.dart';
 import 'package:hibiki/src/media/video/video_subtitle_overlay.dart';
 import 'package:hibiki/src/media/video/video_subtitle_source.dart';
@@ -37,6 +38,10 @@ import 'package:hibiki/src/pages/implementations/stat_activity.dart';
 import 'package:hibiki/src/utils/app_ui_scale.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
+import 'package:hibiki/src/utils/misc/platform_utils.dart';
+import 'package:hibiki/src/utils/misc/show_app_dialog.dart';
+import 'package:hibiki/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 
 /// 视频页：media_kit 播放器 + 可点击字幕 overlay（点词查词 + 制卡）。
 ///
@@ -1268,258 +1273,45 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     ).whenComplete(_refocusVideo);
   }
 
-  /// 弹视频播放设置面板：音画延迟（±50/±1000ms 步进 + 归零）+ 播放倍速（预设档）。
-  ///
-  /// 参照有声书 [AudiobookPlayBar] 的 A/V Sync 步进设计；面板用 [StatefulBuilder]
-  /// 局部刷新，调用方法即时生效 + 持久化（见 [_setDelayMs] / [_setSpeed]）。
+  /// 弹视频播放设置面板：与阅读器同款 master-detail（宽窗左分类固定 + 右详情独立
+  /// 滚动，窄窗降级单列 push）。桌面经 [HibikiDialogFrame]（maxWidth 900）进入分栏，
+  /// 移动端走 bottom sheet。所有项都不是 schema 项，经回调即时生效 + 持久化 + 实时
+  /// 预览（见 [_setDelayMs] / [_setSpeed] / [_persistSubtitleStyle]）。关闭后把键盘
+  /// 焦点还给 Video（覆盖层夺焦后不会自动归还），恢复空格等快捷键。
   void _showPlayerSettings() {
-    const List<double> speedPresets = <double>[0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
-    // sheet 关闭后把键盘焦点还给 Video，恢复空格快捷键（覆盖层夺焦后不会自动归还）。
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.black87,
-      isScrollControlled: true,
-      builder: (BuildContext ctx) {
-        final ColorScheme cs = Theme.of(ctx).colorScheme;
-        return SafeArea(
-          child: StatefulBuilder(
-            builder: (BuildContext ctx, StateSetter setSheet) {
-              Future<void> bumpDelay(int delta) async {
-                await _setDelayMs(_delayMs + delta);
-                setSheet(() {});
-              }
-
-              Future<void> pickSpeed(double s) async {
-                await _setSpeed(s);
-                setSheet(() {});
-              }
-
-              return Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      t.video_settings_title,
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    // ── 音画延迟 ──
-                    Text(t.video_setting_av_delay,
-                        style: const TextStyle(color: Colors.white70)),
-                    const SizedBox(height: 4),
-                    Text(t.video_setting_av_delay_hint,
-                        style: const TextStyle(
-                            color: Colors.white38, fontSize: 12)),
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: <Widget>[
-                        IconButton(
-                          color: Colors.white,
-                          icon: const Icon(Icons.keyboard_double_arrow_left),
-                          tooltip: '-1000ms',
-                          onPressed: () => bumpDelay(-1000),
-                        ),
-                        IconButton(
-                          color: Colors.white,
-                          icon: const Icon(Icons.chevron_left),
-                          tooltip: '-50ms',
-                          onPressed: () => bumpDelay(-50),
-                        ),
-                        GestureDetector(
-                          onTap: _delayMs == 0
-                              ? null
-                              : () async {
-                                  await _setDelayMs(0);
-                                  setSheet(() {});
-                                },
-                          child: SizedBox(
-                            width: 96,
-                            child: Text(
-                              '${_delayMs >= 0 ? '+' : ''}$_delayMs ms',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color:
-                                    _delayMs == 0 ? Colors.white54 : cs.primary,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ),
-                        IconButton(
-                          color: Colors.white,
-                          icon: const Icon(Icons.chevron_right),
-                          tooltip: '+50ms',
-                          onPressed: () => bumpDelay(50),
-                        ),
-                        IconButton(
-                          color: Colors.white,
-                          icon: const Icon(Icons.keyboard_double_arrow_right),
-                          tooltip: '+1000ms',
-                          onPressed: () => bumpDelay(1000),
-                        ),
-                      ],
-                    ),
-                    const Divider(color: Colors.white24, height: 24),
-                    // ── 播放倍速 ──
-                    Text(t.video_setting_speed,
-                        style: const TextStyle(color: Colors.white70)),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      children: <Widget>[
-                        for (final double s in speedPresets)
-                          ChoiceChip(
-                            label: Text('${s}x'),
-                            selected: (s - _playbackSpeed).abs() < 0.001,
-                            onSelected: (_) => pickSpeed(s),
-                          ),
-                      ],
-                    ),
-                    const Divider(color: Colors.white24, height: 24),
-                    // ── mpv 着色器（Anime4K 等；桌面 libmpv 生效）──
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.white,
-                          side: const BorderSide(color: Colors.white24),
-                        ),
-                        icon: const Icon(Icons.auto_fix_high_outlined),
-                        label: Text(t.video_setting_shaders),
-                        onPressed: () {
-                          Navigator.pop(ctx);
-                          _openShaderDialog();
-                        },
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    // ── mpv 视频配置（解码/画质/画面/色彩/音频/播放 + 原始 conf）──
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.white,
-                          side: const BorderSide(color: Colors.white24),
-                        ),
-                        icon: const Icon(Icons.tune),
-                        label: Text(t.video_setting_mpv_open),
-                        onPressed: () {
-                          Navigator.pop(ctx);
-                          _openMpvConfigDialog();
-                        },
-                      ),
-                    ),
-                    const Divider(color: Colors.white24, height: 24),
-                    // ── 字幕模糊（听力沉浸；默认关）──
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      activeColor: cs.primary,
-                      title: Text(t.video_setting_subtitle_blur,
-                          style: const TextStyle(color: Colors.white)),
-                      subtitle: Text(t.video_setting_subtitle_blur_hint,
-                          style: const TextStyle(
-                              color: Colors.white38, fontSize: 12)),
-                      value: appModel.videoSubtitleBlur,
-                      onChanged: (bool v) async {
-                        await _toggleSubtitleBlur();
-                        setSheet(() {});
-                      },
-                    ),
-                    const Divider(color: Colors.white24, height: 24),
-                    // ── 字幕外观 ──
-                    Text(t.video_setting_subtitle_appearance,
-                        style: const TextStyle(color: Colors.white70)),
-                    Row(children: <Widget>[
-                      SizedBox(
-                        width: 96,
-                        child: Text(t.video_setting_subtitle_font_size,
-                            style: const TextStyle(color: Colors.white54)),
-                      ),
-                      Expanded(
-                        child: Slider(
-                          min: 12,
-                          max: 48,
-                          value: _subtitleStyle.fontSize.clamp(12, 48),
-                          onChanged: (double v) {
-                            _subtitleStyle =
-                                _subtitleStyle.copyWith(fontSize: v);
-                            setSheet(() {});
-                            if (mounted) setState(() {}); // 背后字幕实时预览
-                          },
-                          onChangeEnd: (double v) => _persistSubtitleStyle(
-                              _subtitleStyle.copyWith(fontSize: v)),
-                        ),
-                      ),
-                    ]),
-                    Row(children: <Widget>[
-                      SizedBox(
-                        width: 96,
-                        child: Text(t.video_setting_subtitle_bg_opacity,
-                            style: const TextStyle(color: Colors.white54)),
-                      ),
-                      Expanded(
-                        child: Slider(
-                          value: _subtitleStyle.backgroundOpacity,
-                          onChanged: (double v) {
-                            _subtitleStyle =
-                                _subtitleStyle.copyWith(backgroundOpacity: v);
-                            setSheet(() {});
-                            if (mounted) setState(() {}); // 背后字幕实时预览
-                          },
-                          onChangeEnd: (double v) => _persistSubtitleStyle(
-                              _subtitleStyle.copyWith(backgroundOpacity: v)),
-                        ),
-                      ),
-                    ]),
-                    Row(children: <Widget>[
-                      SizedBox(
-                        width: 96,
-                        child: Text(t.video_setting_subtitle_position,
-                            style: const TextStyle(color: Colors.white54)),
-                      ),
-                      Expanded(
-                        child: Slider(
-                          min: 0,
-                          max: 240,
-                          value: _subtitleStyle.bottomPadding.clamp(0, 240),
-                          onChanged: (double v) {
-                            _subtitleStyle =
-                                _subtitleStyle.copyWith(bottomPadding: v);
-                            setSheet(() {});
-                            if (mounted) setState(() {}); // 背后字幕实时预览
-                          },
-                          onChangeEnd: (double v) => _persistSubtitleStyle(
-                              _subtitleStyle.copyWith(bottomPadding: v)),
-                        ),
-                      ),
-                    ]),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton(
-                        onPressed: () {
-                          _persistSubtitleStyle(VideoSubtitleStyle.defaults);
-                          setSheet(() {});
-                        },
-                        child: Text(t.video_setting_subtitle_reset,
-                            style: TextStyle(color: cs.primary)),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
-        );
+    final Widget sheet = VideoQuickSettingsSheet(
+      initialDelayMs: _delayMs,
+      initialSpeed: _playbackSpeed,
+      initialSubtitleBlur: appModel.videoSubtitleBlur,
+      initialSubtitleStyle: _subtitleStyle,
+      onSetDelay: _setDelayMs,
+      onSetSpeed: _setSpeed,
+      onToggleSubtitleBlur: _toggleSubtitleBlur,
+      onSubtitleStylePreview: (VideoSubtitleStyle s) {
+        if (mounted) setState(() => _subtitleStyle = s);
       },
-    ).whenComplete(_refocusVideo);
+      onSubtitleStyleCommit: _persistSubtitleStyle,
+      onOpenShaders: _openShaderDialog,
+      onOpenMpvConfig: _openMpvConfigDialog,
+    );
+    if (isDesktopPlatform) {
+      showAppDialog<void>(
+        context: context,
+        builder: (_) => HibikiDialogFrame(
+          // master-detail（左父菜单 + 右详情）需要更宽画布；窄于 640 的窗口由面板
+          // 内部 LayoutBuilder 自动降级回单列 push（同阅读器）。
+          maxWidth: 900,
+          maxHeightFactor: 0.80,
+          scrollable: false,
+          child: sheet,
+        ),
+      ).whenComplete(_refocusVideo);
+    } else {
+      adaptiveModalSheet<void>(
+        context: context,
+        builder: (_) => sheet,
+      ).whenComplete(_refocusVideo);
+    }
   }
 
   /// 打开 mpv 着色器对话框：导入/勾选着色器 → 持久化启用集 → 解析绝对路径 →

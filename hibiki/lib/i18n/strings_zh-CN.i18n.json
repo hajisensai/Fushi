@@ -1376,5 +1376,9 @@
     "video_screenshot_failed": "截图失败",
     "video_experimental_banner": "视频为实验性功能：播放、查词与制卡可能尚不稳定。",
     "stat_mined": "制卡",
-    "stat_favorited": "收藏"
+    "stat_favorited": "收藏",
+    "video_settings_cat_playback": "播放",
+    "video_settings_cat_shaders": "着色器",
+    "video_settings_cat_mpv": "mpv",
+    "video_settings_cat_subtitle": "字幕"
 }
