@@ -1693,6 +1693,25 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       }
     }
   }
+  // BUG-117: intercept internal <a> link clicks in JS and route them through
+  // Dart's paginated navigation. shouldOverrideUrlLoading does NOT fire for
+  // clicks on the flutter_inappwebview_windows fork, so relying on it let link
+  // clicks navigate the WebView natively (bypassing pagination → stale chapter
+  // → broken page). Capturing the click here + preventDefault works on every
+  // platform; a.href is the browser-resolved absolute URL. Selection/tap
+  // gestures already skip <a> (selectText bails), so there is no conflict.
+  document.addEventListener('click', function(e) {
+    var a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
+    if (!a) return;
+    var href = a.getAttribute('href');
+    if (!href || href.charAt(0) === ' ') return;
+    var lower = href.toLowerCase();
+    if (lower.indexOf('javascript:') === 0) return;
+    e.preventDefault();
+    if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+      window.flutter_inappwebview.callHandler('onInternalLink', a.href);
+    }
+  }, true);
   document.addEventListener('touchstart', function(e) {
     var t = e.touches[0]; _gestureStart(t.clientX, t.clientY);
   }, {passive: true});
@@ -1887,6 +1906,19 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
           callback: (_) => _onRestoreComplete(),
         );
 
+        // BUG-117: primary internal-link path. The JS click interceptor (in the
+        // reader setup script) preventDefaults <a> clicks and forwards the
+        // browser-resolved absolute href here, so link navigation works on every
+        // platform — including the Windows fork, whose shouldOverrideUrlLoading
+        // never fires for clicks.
+        controller.addJavaScriptHandler(
+          handlerName: 'onInternalLink',
+          callback: (args) async {
+            if (args.isEmpty) return;
+            await _handleInternalLinkUrl(args[0] as String);
+          },
+        );
+
         controller.addJavaScriptHandler(
           handlerName: 'onTap',
           callback: (args) {
@@ -2045,24 +2077,15 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         if (_isNavigatingToChapter) {
           return NavigationActionPolicy.ALLOW;
         }
-        final ({int chapterIndex, String? fragment})? link =
-            _book?.resolveInternalLink(url);
-        if (link != null) {
-          // HBK-AUDIT-038: a same-document anchor (e.g. href="#note1") resolves
-          // to the current chapter's path plus a fragment. Reloading the whole
-          // chapter just to scroll to an in-page anchor causes a visible flash
-          // and loses scroll context — jump in place instead of reloading.
-          if (link.chapterIndex == _currentChapter && link.fragment != null) {
-            _jumpToFragmentInPlace(link.fragment!);
-          } else {
-            _navigateToChapterWithFragment(link.chapterIndex, link.fragment);
-          }
-          return NavigationActionPolicy.CANCEL;
-        }
-        // HBK-AUDIT-038: external links (http/https/mailto) used to fall through
-        // to a blanket CANCEL and were silently swallowed. Route real external
-        // schemes to the OS handler so footnote/source links work.
-        await _openExternalUrl(url);
+        // BUG-117: shouldOverrideUrlLoading is NOT invoked for <a> clicks on the
+        // flutter_inappwebview_windows fork (the WebView2 NavigationStarting hook
+        // is unwired), so internal links navigated the WebView natively, bypassing
+        // our paginated navigation — _currentChapter went stale and onLoadStop
+        // then dropped the page as "stale", leaving the reader broken. Link clicks
+        // are now intercepted in JS (onInternalLink handler) on every platform, so
+        // this callback is only a fallback for non-click navigations (still fires
+        // on mobile). Both paths funnel through _handleInternalLinkUrl.
+        await _handleInternalLinkUrl(url);
         return NavigationActionPolicy.CANCEL;
       },
       onLoadStop: (controller, url) async {
@@ -2893,6 +2916,33 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         ) ??
         false;
     return success && _currentChapter == index;
+  }
+
+  // BUG-117: shared internal-link handler. Called both from the JS click
+  // interceptor (onInternalLink — the primary path, fires on every platform)
+  // and from shouldOverrideUrlLoading (fallback for non-click navigations).
+  // [url] is the browser-resolved absolute URL of the clicked <a> (or the
+  // navigation target). Internal book links jump within the reader; genuine
+  // external schemes go to the OS handler; an unresolved hoshi.local link stays
+  // put (never pops a blank OS browser — see _openExternalUrl / BUG-097).
+  Future<void> _handleInternalLinkUrl(String url) async {
+    if (url.isEmpty) return;
+    final ({int chapterIndex, String? fragment})? link =
+        _book?.resolveInternalLink(url);
+    if (link != null) {
+      // HBK-AUDIT-038: a same-document anchor (e.g. href="#note1") resolves to
+      // the current chapter's path plus a fragment. Jump in place instead of
+      // reloading the whole chapter (avoids a visible flash + lost scroll).
+      if (link.chapterIndex == _currentChapter && link.fragment != null) {
+        await _jumpToFragmentInPlace(link.fragment!);
+      } else {
+        await _navigateToChapterWithFragment(link.chapterIndex, link.fragment);
+      }
+      return;
+    }
+    // HBK-AUDIT-038: route genuine external schemes (http/https/mailto/tel on a
+    // foreign host) to the OS; _openExternalUrl no-ops for our own virtual host.
+    await _openExternalUrl(url);
   }
 
   Future<void> _navigateToChapterWithFragment(
