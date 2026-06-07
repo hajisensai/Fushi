@@ -45,7 +45,9 @@ PROTOCOLS="file,pipe"
 
 EXTRA_CONFIG=""
 case "$(uname -s)" in
-  MINGW*|MSYS*) EXTRA_CONFIG="--target-os=mingw32 --arch=x86_64" ;;
+  # Windows：静态链接，把 libwinpthread/zlib/libgcc 等折进 exe → 发布单文件，
+  # 不依赖 MSYS2 mingw64 运行时 DLL（用户机没有 MSYS2）。
+  MINGW*|MSYS*) EXTRA_CONFIG="--target-os=mingw32 --arch=x86_64 --extra-ldflags=-static --pkg-config-flags=--static" ;;
 esac
 
 ./configure \
