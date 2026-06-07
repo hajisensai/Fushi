@@ -348,12 +348,12 @@ class _HomePageState extends BasePageState<HomePage>
                 ),
               ),
             )));
-    // 桌面剪贴板查词 overlay 叠在整个首页之上（仅桌面）。
+    // 桌面剪贴板/热键查词监听器（仅桌面）：零布局，触发时 push 完整查词页面。
     if (!DesktopLookupService.isDesktop) return home;
     return Stack(
       children: <Widget>[
         home,
-        const Positioned.fill(child: DesktopLookupOverlay()),
+        const DesktopLookupOverlay(),
       ],
     );
   }

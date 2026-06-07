@@ -5,6 +5,7 @@ import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/sync/desktop_lookup_service.dart';
 import 'package:hibiki/src/pages/implementations/desktop_lookup_overlay.dart';
+import 'package:hibiki/src/pages/implementations/popup_dictionary_page.dart';
 import 'package:hibiki/src/utils/spacing.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -31,30 +32,40 @@ void main() {
   });
 
   testWidgets(
-      'idle overlay takes zero layout; pending clipboard text seeds the '
-      'editable search field and is closeable', (tester) async {
+      'idle listener renders zero layout and pushes a full lookup page with a '
+      'top-left back button when clipboard text arrives', (tester) async {
     final AppModel appModel = AppModel(testPlatformServices());
     await tester.pumpWidget(_buildTestApp(
       appModel: appModel,
       home: const Scaffold(body: DesktopLookupOverlay()),
     ));
     await tester.pump();
-    // 平时（无 pendingText）overlay 不渲染任何查词界面，只是 SizedBox.shrink。
-    expect(find.byType(TextField), findsNothing);
-    expect(find.byIcon(Icons.close), findsNothing);
 
-    // 剪贴板文本到达：顶部搜索框预填该文本（与正式查词窗一致的可编辑搜索框），
-    // 并出现关闭按钮。auto-search 因 AppModel 未初始化被守卫跳过（不触 WebView/DB）。
+    // 平时（无 pendingText）监听器零布局，不渲染任何查词界面 / 不 push 任何页面。
+    expect(find.byType(PopupDictionaryPage), findsNothing);
+    expect(
+      find.byKey(const ValueKey<String>('desktop_lookup_back_button')),
+      findsNothing,
+    );
+
+    // 剪贴板文本到达：push 一个完整查词页面（复用 PopupDictionaryPage），
+    // 左上角带返回按钮；auto-search 因 AppModel 未初始化被守卫跳过（不触 WebView/DB）。
     DesktopLookupService.instance.submitText('見る');
-    await tester.pump();
-    await tester.pump(); // 排空 _maybeAutoSearch 的 postFrameCallback。
-    expect(find.byType(TextField), findsOneWidget);
-    expect(find.text('見る'), findsOneWidget); // EditableText 渲染 controller 值。
-    expect(find.byIcon(Icons.close), findsOneWidget);
+    await tester.pump(); // 触发 _onPending → push
+    await tester.pump(const Duration(milliseconds: 350)); // 排空路由过渡动画
+    expect(find.byType(PopupDictionaryPage), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('desktop_lookup_back_button')),
+      findsOneWidget,
+    );
+    // push 后 pendingText 已清，避免重复 push。
+    expect(DesktopLookupService.instance.pendingText, isNull);
 
-    await tester.tap(find.byIcon(Icons.close));
-    await tester.pump();
-    expect(find.byType(TextField), findsNothing);
-    expect(find.byIcon(Icons.close), findsNothing);
+    // 左上角返回按钮可关闭整页，回到首页。
+    await tester.tap(
+      find.byKey(const ValueKey<String>('desktop_lookup_back_button')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(PopupDictionaryPage), findsNothing);
   });
 }

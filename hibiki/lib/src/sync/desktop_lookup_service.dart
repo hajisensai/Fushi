@@ -9,9 +9,21 @@ import 'package:window_manager/window_manager.dart';
 
 import 'package:hibiki/src/sync/clipboard_dedupe.dart';
 
+/// 给定窗口聚焦态，剪贴板自动监听是否应触发查词。
+///
+/// app 在前台（聚焦）时复制 = 本 app 内部复制（制卡、选词复制等），不弹；
+/// 只有 Hibiki 不在前台（用户在别的 app 复制）时，剪贴板变化才触发查词。
+/// 纯函数，便于单测（见 desktop_lookup_service_test.dart）。
+bool shouldTriggerOnClipboard(bool focused) => !focused;
+
 /// 桌面剪贴板 + 全局热键查词触发器。单例 ChangeNotifier（仿 TexthookerService）。
 /// 监听系统剪贴板变化与全局热键 → 去重 → 设 pendingText + 唤主窗前台。
-class DesktopLookupService extends ChangeNotifier with ClipboardListener {
+///
+/// 窗口聚焦跟踪（[WindowListener]）用于区分「app 内复制」与「外部 app 复制」：
+/// 仅外部复制才自动弹查词；全局热键不受聚焦过滤约束（用户在别的 app 按热键
+/// 查当前剪贴板属正常用法，即便随后 Hibiki 抢到前台）。
+class DesktopLookupService extends ChangeNotifier
+    with ClipboardListener, WindowListener {
   DesktopLookupService._();
   static final DesktopLookupService instance = DesktopLookupService._();
 
@@ -23,6 +35,7 @@ class DesktopLookupService extends ChangeNotifier with ClipboardListener {
   String? _lastText;
   bool _running = false;
   bool _alwaysOnTop = false;
+  bool _focused = true;
   HotKey? _hotKey;
 
   bool get isRunning => _running;
@@ -50,6 +63,9 @@ class DesktopLookupService extends ChangeNotifier with ClipboardListener {
     if (!isDesktop || _running) return;
     _running = true;
     _alwaysOnTop = alwaysOnTop;
+    windowManager.addListener(this);
+    // 初始聚焦态：窗口可能尚未在前台（如开机自启），以平台真实状态为准。
+    _focused = await windowManager.isFocused();
     clipboardWatcher.addListener(this);
     await clipboardWatcher.start();
     _hotKey = HotKey(
@@ -63,11 +79,18 @@ class DesktopLookupService extends ChangeNotifier with ClipboardListener {
   Future<void> stop() async {
     if (!_running) return;
     _running = false;
+    windowManager.removeListener(this);
     clipboardWatcher.removeListener(this);
     await clipboardWatcher.stop();
     await hotKeyManager.unregisterAll();
     _hotKey = null;
   }
+
+  @override
+  void onWindowFocus() => _focused = true;
+
+  @override
+  void onWindowBlur() => _focused = false;
 
   /// clipboard_watcher 的 [ClipboardListener.onClipboardChanged] 返回 `void`，
   /// 故异步读取剪贴板的工作下放到不等待的 [_handleClipboardChange]。
@@ -77,6 +100,8 @@ class DesktopLookupService extends ChangeNotifier with ClipboardListener {
   }
 
   Future<void> _handleClipboardChange() async {
+    // app 在前台 = 本 app 内复制（制卡/选词复制），不弹查词。
+    if (!shouldTriggerOnClipboard(_focused)) return;
     final ClipboardData? d = await Clipboard.getData(Clipboard.kTextPlain);
     final String text = d?.text ?? '';
     if (text.trim().isEmpty) return;

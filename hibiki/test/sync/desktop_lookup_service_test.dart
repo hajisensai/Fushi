@@ -24,4 +24,11 @@ void main() {
     DesktopLookupService.instance.clearPending();
     expect(DesktopLookupService.instance.pendingText, isNull);
   });
+
+  test('shouldTriggerOnClipboard: app 内复制(聚焦)不触发, 外部复制(失焦)触发', () {
+    // Hibiki 在前台聚焦 = 本 app 内复制（制卡/选词复制），不弹查词。
+    expect(shouldTriggerOnClipboard(true), isFalse);
+    // Hibiki 不在前台 = 用户在别的 app 复制，剪贴板变化触发查词。
+    expect(shouldTriggerOnClipboard(false), isTrue);
+  });
 }
