@@ -82,6 +82,22 @@ class VideoHibikiPage extends ConsumerStatefulWidget {
   final String bookUid;
   final VideoBookRepository repo;
 
+  /// 打开视频播放页的**唯一入口**：在路由层用 [HibikiAppUiScaleNeutralizer] 把整页中和
+  /// （与阅读器 [ReaderHibikiSource.buildLaunchPage] 同范式）。
+  ///
+  /// 根因（用户报「视频没画面」）：全局 [HibikiAppUiScale] 用 `FittedBox(BoxFit.fill)` 把
+  /// 整棵子树渲染进一个缩放画布再拉大；media_kit 的 [Video] 在桌面是平台 Texture，落在
+  /// 缩放画布里会被栅格化再放大 → 糊甚至空白（无画面）。阅读器早已在路由层中和，视频页
+  /// 此前三个 push 点都漏了这层 → 用户调过界面缩放后视频就没画面。统一收口到这里，让
+  /// [Video] 的 Texture 落在净缩放=1 的真实视口、按原生密度渲染，并杜绝再漏第四处。
+  static Widget neutralized({
+    required String bookUid,
+    required VideoBookRepository repo,
+  }) =>
+      HibikiAppUiScaleNeutralizer(
+        child: VideoHibikiPage(bookUid: bookUid, repo: repo),
+      );
+
   /// 查词浮层关闭后是否应恢复播放：仅当浮层栈**已全部关闭**（[stackEmpty]）且本次确实
   /// 是因查词而由我们暂停了正在播放的视频（[pausedForLookup]）。两条件缺一不可——关掉
   /// 递归查词的子层但父层仍在（栈非空）不恢复；查词前本就暂停的视频（未置位）也不恢复。
@@ -697,7 +713,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _popup.clear();
+    // 先把根 Overlay 浮层 entry 摘除/释放，再 clear 浮层栈：entry 一旦移除就不会再被
+    // 根 Overlay 重建 _buildPopupOverlay，杜绝销毁期用失效 State 重建浮层（退视频红屏）。
     final OverlayEntry? entry = _popupOverlayEntry;
     if (entry != null) {
       // remove() asserts if already detached（路由先 pop 时根 Overlay 可能已摘除）。
@@ -705,6 +722,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       entry.dispose();
       _popupOverlayEntry = null;
     }
+    _popup.clear();
     _watchTracker?.dispose();
     _watchTracker = null;
     _controller?.dispose();
@@ -891,9 +909,15 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// （内层 [LayoutBuilder] 约束）即真实视口，与 [_lookupAt] 直接传入的 `localToGlobal`
   /// 屏幕 rect 同坐标系（净变换=1），定位自洽。
   Widget _buildPopupOverlay(BuildContext overlayContext) {
+    // 这个 entry 插在根 Overlay（跨路由生存，比本页 State 活得久）。退出视频 / 退全屏
+    // 时根 Overlay 可能在本 State 已 deactivate/dispose 之后重建此 entry——彼时再读
+    // State 的 `context` / `appModel`(ref.read) 会抛异常 → Flutter ErrorWidget 红屏
+    // （用户报「退视频红屏」）。故：State 失效就不渲染浮层；Theme 也改用 entry 自己的
+    // `overlayContext`（与本 entry 同寿命）而非借用更短命的 State `context`。
+    if (!mounted) return const SizedBox.shrink();
     return HibikiAppUiScaleNeutralizer(
       child: Theme(
-        data: appModel.overrideDictionaryTheme ?? Theme.of(context),
+        data: appModel.overrideDictionaryTheme ?? Theme.of(overlayContext),
         child: LayoutBuilder(
           builder: (BuildContext context, BoxConstraints constraints) {
             final Size screen =

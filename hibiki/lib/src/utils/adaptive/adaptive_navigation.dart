@@ -151,16 +151,33 @@ class _MaterialNavCluster extends StatelessWidget {
           child: Column(
             children: <Widget>[
               if (leading != null) leading!,
+              // 矮窗口下所有 tile 的总高可能超过可用高度：直接放进 Column 会 RenderFlex
+              // 溢出（左侧导航底部 overflow）。改用 SingleChildScrollView 让 tile 在窗口
+              // 过矮时滚动；ConstrainedBox(minHeight: 视口高) + IntrinsicHeight 保证窗口
+              // 够高时内容仍按 center 垂直居中（撑满视口才能 center），只有真的放不下才滚。
               Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: <Widget>[
-                    for (final Widget tile in tiles)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 6),
-                        child: tile,
+                child: LayoutBuilder(
+                  builder: (BuildContext context, BoxConstraints constraints) {
+                    return SingleChildScrollView(
+                      child: ConstrainedBox(
+                        constraints:
+                            BoxConstraints(minHeight: constraints.maxHeight),
+                        child: IntrinsicHeight(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: <Widget>[
+                              for (final Widget tile in tiles)
+                                Padding(
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 6),
+                                  child: tile,
+                                ),
+                            ],
+                          ),
+                        ),
                       ),
-                  ],
+                    );
+                  },
                 ),
               ),
             ],
