@@ -455,7 +455,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
                 onDuplicateCheck: checkDuplicate,
                 onScrolledToBottom: _allLoaded ? null : _loadMore,
               ),
-              if (_popup.entries.isNotEmpty)
+              if (_popup.entries.isNotEmpty || _popup.isSearchingUi)
                 Positioned.fill(
                   child: GestureDetector(
                     behavior: HitTestBehavior.translucent,
@@ -464,6 +464,12 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
                       color: Colors.transparent,
                     ),
                   ),
+                ),
+              // 搜索期加载占位卡（搜索→就绪才显示，与书内同观感）。
+              if (_popup.isSearchingUi && _popup.pendingRect != null)
+                buildPopupLoadingPlaceholder(
+                  rect: _popup.pendingRect!,
+                  screen: screen,
                 ),
               for (int i = 0; i < _popup.entries.length; i++)
                 _buildNestedPopupLayer(i, screen),

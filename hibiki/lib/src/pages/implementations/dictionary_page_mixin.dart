@@ -266,14 +266,54 @@ mixin DictionaryPageMixin {
     );
   }
 
+  /// 搜索期加载占位卡（「搜索→就绪才显示」模式）：在选中词 [rect] 处画一张与弹窗
+  /// 同色的小卡 + 顶部进度条，全程不露空 WebView（与书内 base_source_page 同观感）。
+  /// 宿主在 [DictionaryPopupController.isSearchingUi] 为真时渲染。
+  Widget buildPopupLoadingPlaceholder({
+    required Rect rect,
+    required Size screen,
+  }) {
+    final Rect pos = calcPopupPosition(
+      selectionRect: rect,
+      screen: screen,
+      maxWidth: mixinAppModel.popupMaxWidth * mixinAppModel.appUiScale,
+      maxHeight: mixinAppModel.popupMaxHeight * mixinAppModel.appUiScale,
+    );
+    final ColorScheme cs =
+        (mixinAppModel.overrideDictionaryTheme ?? mixinTheme).colorScheme;
+    final Color fill = mixinAppModel.overrideDictionaryColor ?? cs.surface;
+    return Positioned(
+      left: pos.left,
+      top: pos.top,
+      width: pos.width,
+      height: pos.height,
+      child: HibikiPopupSurface(
+        color: fill,
+        child: Column(
+          children: <Widget>[
+            LinearProgressIndicator(
+              backgroundColor: Colors.transparent,
+              color: cs.primary,
+              minHeight: 2.75,
+            ),
+            const Expanded(child: SizedBox.shrink()),
+          ],
+        ),
+      ),
+    );
+  }
+
   /// Searches [query] and opens a popup via [controller].
   ///
   /// Top-level lookups ([replaceStack] or [reuseWarmSlot]) reuse the warm slot /
   /// replace the stack; otherwise a nested child layer is pushed. The mixin
-  /// surfaces (video / home / standalone) show the target while searching
-  /// (`visible: true`); the empty/cold WebView is covered by
-  /// [DictionaryPopupLayer]'s loading cover. If [autoRead] is true and results
-  /// are found, the first entry's audio is played automatically.
+  /// All surfaces use the reader's model — **search → reveal only when results
+  /// are ready** ([revealWhileSearching] `false`): the popup target stays hidden
+  /// during the lookup and the host paints a lightweight loading placeholder at
+  /// [DictionaryPopupController.pendingRect] (see [buildPopupLoadingPlaceholder]),
+  /// so a blank/cold WebView is never shown. (Set [revealWhileSearching] `true`
+  /// to keep the old reveal-during-search behaviour.) If [autoRead] is true and
+  /// results are found, the first entry's audio is played automatically.
   Future<void> pushNestedPopup({
     required String query,
     required Rect selectionRect,
@@ -281,18 +321,22 @@ mixin DictionaryPageMixin {
     bool replaceStack = false,
     bool autoRead = false,
     bool reuseWarmSlot = false,
+    bool revealWhileSearching = false,
   }) async {
     final String trimmed = query.trim();
     if (trimmed.isEmpty) return;
     final Stopwatch swPush = Stopwatch()..start();
     final int maxTerms = mixinAppModel.maximumTerms;
+    final Rect rect = fallbackSelectionRect(selectionRect);
     final DictionaryPopupEntry entry = controller.beginTop(
       term: trimmed,
-      rect: fallbackSelectionRect(selectionRect),
+      rect: rect,
       reuseWarmSlot: reuseWarmSlot,
       replaceStack: replaceStack,
-      visible: true,
+      visible: revealWhileSearching,
     );
+    // 搜索期占位：搜索→就绪才显示（reveal 模式）下，宿主据此画加载占位卡。
+    controller.beginSearchUi(rect);
     setState(() {});
     late final DictionarySearchResult result;
     try {
@@ -305,15 +349,21 @@ mixin DictionaryPageMixin {
           '${swPush.elapsedMilliseconds}ms reuseWarm=$reuseWarmSlot '
           'entries=${result.entries.length} "$trimmed"');
       if (mounted && controller.entries.contains(entry)) {
-        setState(() => controller.fillResult(
-              entry,
-              result: result,
-              allLoaded: result.entries.length < maxTerms,
-            ));
+        setState(() {
+          controller.fillResult(
+            entry,
+            result: result,
+            allLoaded: result.entries.length < maxTerms,
+          );
+          controller.show(entry);
+        });
       }
     } finally {
-      if (mounted && controller.entries.contains(entry) && entry.isSearching) {
-        setState(() => entry.isSearching = false);
+      if (mounted && controller.entries.contains(entry)) {
+        setState(() {
+          entry.isSearching = false;
+          controller.endSearchUi();
+        });
       }
     }
     if (!mounted || !controller.entries.contains(entry)) return;

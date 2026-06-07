@@ -65,6 +65,27 @@ class DictionaryPopupController extends ChangeNotifier {
     return -1;
   }
 
+  // ── 搜索期 UI（「搜索→就绪才显示」模式）───────────────────────────────
+  // 弹窗目标搜索期隐藏，宿主据这两个字段在选中词位置画轻量加载占位卡，
+  // 全程不显示空 WebView（与书内 base_source_page 同观感）。
+  bool _searchingUi = false;
+  bool get isSearchingUi => _searchingUi;
+  Rect? _pendingRect;
+  Rect? get pendingRect => _pendingRect;
+
+  void beginSearchUi(Rect rect) {
+    _searchingUi = true;
+    _pendingRect = rect;
+    notifyListeners();
+  }
+
+  void endSearchUi() {
+    if (!_searchingUi && _pendingRect == null) return;
+    _searchingUi = false;
+    _pendingRect = null;
+    notifyListeners();
+  }
+
   /// 开页 seed 一个常驻隐藏热槽，使其 WebView 冷加载一次后全程复用。
   /// [seedResult] 让宿主放一个占位结果（书内放 kPopupSearchingPlaceholderResult）。
   void seedWarmSlot({DictionarySearchResult? seedResult}) {

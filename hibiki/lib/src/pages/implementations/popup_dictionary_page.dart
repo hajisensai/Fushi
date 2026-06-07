@@ -70,6 +70,9 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       selectionRect: selectionRect,
       controller: _popup,
       autoRead: true,
+      // 独立查词窗是整窗卡片（非贴选区小浮卡），搜索期保持卡片显示、空白由
+      // DictionaryPopupLayer 的加载盖板兜住——不走「搜索期隐藏 + anchored 占位卡」。
+      revealWhileSearching: true,
     );
   }
 

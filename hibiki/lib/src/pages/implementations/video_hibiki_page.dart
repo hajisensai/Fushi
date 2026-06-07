@@ -900,10 +900,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                 Size(constraints.maxWidth, constraints.maxHeight);
             return Stack(
               children: <Widget>[
-                // Dismiss barrier only while a popup is actually visible; when
-                // only the hidden warm slot (BUG-094) remains it must not
-                // intercept taps meant for the video.
-                if (_hasVisiblePopup)
+                // Dismiss barrier while a popup is visible OR a lookup is
+                // searching (搜索→就绪才显示：搜索期浮层还没显示，barrier 仍要拦点击
+                // 并支持点同句另一字切换查词)。仅剩隐藏热槽时不拦，放行给视频。
+                if (_hasVisiblePopup || _popup.isSearchingUi)
                   Positioned.fill(
                     child: GestureDetector(
                       behavior: HitTestBehavior.translucent,
@@ -913,6 +913,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                           _onDismissBarrierTap(d.globalPosition),
                       child: const ColoredBox(color: Colors.transparent),
                     ),
+                  ),
+                // 搜索期加载占位卡（与书内同观感：就绪才显示真正浮层）。
+                if (_popup.isSearchingUi && _popup.pendingRect != null)
+                  buildPopupLoadingPlaceholder(
+                    rect: _popup.pendingRect!,
+                    screen: screen,
                   ),
                 for (int i = 0; i < _popup.entries.length; i++)
                   _buildNestedPopupLayer(i, screen),
