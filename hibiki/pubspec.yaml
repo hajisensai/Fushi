@@ -124,6 +124,9 @@ dependencies:
   brotli: ^0.6.0
   bonsoir: ^7.1.1
   web_socket_channel: ^3.0.0
+  clipboard_watcher: ^0.3.0
+  hotkey_manager: ^0.2.3
+  window_manager: ^0.5.1
 dependency_overrides:
   flutter_inappwebview_windows:
     path: ../packages/flutter_inappwebview_windows
