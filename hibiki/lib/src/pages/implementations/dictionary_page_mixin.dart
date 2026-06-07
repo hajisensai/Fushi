@@ -311,6 +311,7 @@ mixin DictionaryPageMixin {
   }) async {
     final String trimmed = query.trim();
     if (trimmed.isEmpty) return;
+    final Stopwatch swPush = Stopwatch()..start();
     final int maxTerms = mixinAppModel.maximumTerms;
     final NestedPopupEntry entry;
     if (reuseWarmSlot && popupStack.isNotEmpty && popupStack.first.isWarmSlot) {
@@ -347,6 +348,9 @@ mixin DictionaryPageMixin {
         overrideMaximumTerms: maxTerms,
       );
       entry.allLoaded = (entry.result?.entries.length ?? 0) < maxTerms;
+      debugPrint('[dict-perf] pushNestedPopup search done in '
+          '${swPush.elapsedMilliseconds}ms reuseWarm=$reuseWarmSlot '
+          'entries=${entry.result?.entries.length ?? 0} "$trimmed"');
     } finally {
       if (mounted && popupStack.contains(entry)) {
         setState(() => entry.isSearching = false);

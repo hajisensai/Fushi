@@ -698,15 +698,19 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   ) async {
     final VideoPlayerController? controller = _controller;
     if (controller == null) return;
+    final Stopwatch swLookup = Stopwatch()..start();
     final String term = sentence.characters.skip(graphemeIndex).join();
     debugPrint('[video-lookup] tap idx=$graphemeIndex term="$term"');
     // 先判空再暂停：空词不弹浮层，不能暂停后无浮层可关→恢复路径永不触发（卡暂停）。
     if (term.isEmpty) return;
     // 仅当视频正在播放才暂停并标记，浮层全关后据此恢复（BUG-072）。查词前本就
     // 暂停 / 递归查词（已暂停）时 isPlaying==false，不暂停也不覆写标记。
+    // 性能（弹窗弹出慢）：暂停是副作用，不该卡住弹窗推送。media_kit/libmpv 的
+    // pause() 在桌面有 IPC 往返延迟，原先 `await` 把第一次查词的弹窗整整推迟一个
+    // 暂停耗时。改为先置标记、fire-and-forget 暂停，弹窗立刻推。
     if (controller.isPlaying) {
-      await controller.pause();
       _pausedForLookup = true;
+      unawaited(controller.pause());
     }
     _lastLookupSentence = sentence;
     await pushNestedPopup(
@@ -717,6 +721,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       reuseWarmSlot: true,
       autoRead: true,
     );
+    debugPrint(
+        '[video-lookup] popup ready in ${swLookup.elapsedMilliseconds}ms term="$term"');
   }
 
   /// 关闭查词浮层栈中第 [index] 层及其之上（点遮罩 / 返回 / 浮层滑动·Esc 都汇聚到此）。
@@ -770,6 +776,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   }
 
   void _popNestedPopupAt(int index) {
+    debugPrint('[video-lookup] dismiss popup index=$index '
+        'visibleTop=$_topVisiblePopupIndex');
     // Hide-and-keep the warm slot instead of clearing it, so its loaded WebView
     // survives for the next lookup (BUG-094): closing index 0 hides the warm
     // slot + drops children; closing a child drops from there up.

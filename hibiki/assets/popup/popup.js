@@ -302,8 +302,11 @@ function openImageLightbox(imageUrl, alt) {
     image.alt = alt || '';
     overlay.appendChild(image);
 
+    // 点灯箱任何位置（含图片本身）都关闭：放大图 max-width/height:100% 几乎铺满
+    // 视口，用户必然点图片关闭。早先给图片 stopPropagation 拦掉了遮罩的关闭，导致
+    // 只有四周 16px 边距能关＝「关不掉」（BUG-107）。预览无任何图内交互，故让整个
+    // 灯箱统一 tap-to-close。
     overlay.addEventListener('click', () => closeImageLightbox());
-    image.addEventListener('click', (event) => event.stopPropagation());
 
     document.body.appendChild(overlay);
 }

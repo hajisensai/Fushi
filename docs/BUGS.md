@@ -13,6 +13,13 @@
 
 ---
 
+## BUG-107 · 查词弹窗点图片放大后关不掉
+- **报告**：2026-06-07（用户：「查词弹窗点图片以后，关不掉这个放大的图片了」，截图为明鏡词条里 ➡ 字形图被放大铺满弹窗）。
+- **真实性**：✅ **真 bug（沿真实代码路径 + 截图定位）**。点词典图片走 `popup.js:enableDefinitionImagePreview`→`openImageLightbox`，创建 `.dict-image-lightbox`（`popup.css:320` `position:fixed;inset:0;rgba(0,0,0,.82);cursor:zoom-out`，里面一张 `max-width/height:100%` 的放大图，几乎铺满 WebView 视口）。遮罩本身 `overlay.addEventListener('click',closeImageLightbox)` 可关，但根因在 `popup.js:306` 又给图片本身加了 `image.addEventListener('click', e => e.stopPropagation())`——放大图铺满视口，用户必然点到图片，stopPropagation 拦掉遮罩关闭 → 只有点四周 16px padding 边距才能关 → 大图时几乎无边距可点＝「关不掉」。预览无任何图内交互（缩放/平移都没有），这行纯属拦了不该拦的。
+- **[x] ① 已修复** — 本提交。根因修（消除特例，非补丁）：删掉 `openImageLightbox` 里 `image.addEventListener('click', stopPropagation)`，让整个灯箱统一 tap-to-close（点图片本身也关）。caret 流程只依赖「点图片**打开**灯箱」（`reader_caret_scripts.dart:305` A 键 bubbles img.click→openImageLightbox），不受影响。
+- **[x] ② 已加自动化测试** — `hibiki/test/pages/popup_image_lightbox_close_guard_test.dart`（源码守卫：扫 `openImageLightbox` 函数体断言遮罩 click→closeImageLightbox 存在、且函数体内**不含** `stopPropagation`；WebView 内 JS DOM 行为 headless 不可跑）。
+- **备注**：词典 WebView/UI 类。`flutter analyze` 0 + 全量 flutter test 绿。**桌面/真机肉眼复测待用户**：查含图片的词条（如明鏡 ➡ 字形），点图片放大，再点放大图任意处应立即关闭。
+
 ## BUG-106 · 桌面端视频播放鼠标光标不自动隐藏
 - **报告**：2026-06-07（用户：「视频播放鼠标是不是没有自动隐藏」）。
 - **真实性**：✅ **真 bug（沿真实渲染路径定位）**。视频控制条用 media_kit 的 `MaterialDesktopVideoControlsThemeData`（`video_hibiki_page.dart` `_desktopControlsTheme`），鼠标自动隐藏由 `hideMouseOnControlsRemoval` 开关控制，media_kit 默认 **false**（`media_kit_video-2.0.1/.../material_desktop.dart:192`；仅 `hideMouseOnControlsRemoval && !mount` 时光标才变 `SystemMouseCursors.none`，见 :660-661）。本项目从未设此字段 → 控制条 3s 后自动隐藏但鼠标光标常驻。移动端无光标概念不受影响。
