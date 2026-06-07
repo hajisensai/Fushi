@@ -2,7 +2,9 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
+import 'package:hibiki/src/media/video/subtitle_pos_mapping.dart';
 import 'package:hibiki/src/media/video/video_player_controller.dart';
+import 'package:hibiki_audio/hibiki_audio.dart';
 
 /// 视频底部当前句字幕 overlay；监听 [VideoPlayerController.currentCue]。
 ///
@@ -74,6 +76,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
       builder: (BuildContext context, _) {
         final String text = widget.controller.currentCue?.text ?? '';
         if (text.isEmpty) return const SizedBox.shrink();
+        final SubtitleMarkup? markup = widget.controller.currentCue?.markup;
         final List<String> chars = text.characters.toList(growable: false);
         final bool blurred = widget.blurEnabled && !_revealed;
 
@@ -100,11 +103,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
                               ),
                       child: Text(
                         chars[i],
-                        style: TextStyle(
-                          color: widget.textColor,
-                          fontSize: widget.fontSize,
-                          height: 1.3,
-                        ),
+                        style: _styleForGrapheme(i, markup),
                       ),
                     ),
                   ),
@@ -143,15 +142,120 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
               )
             : box;
 
-        return Align(
-          alignment: Alignment.bottomCenter,
-          child: Padding(
-            padding: EdgeInsets.only(bottom: widget.bottomPadding),
-            child: hoverable,
-          ),
+        return LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) {
+            final Size container = constraints.biggest;
+            final Offset? posScreen = _posScreen(markup, container);
+            if (posScreen != null) {
+              // \pos 绝对定位：把字幕盒的 \an 锚点精确落到映射坐标。
+              final SubtitleAnchor anchor = markup!.anchor ??
+                  const SubtitleAnchor(
+                      SubtitleVAlign.bottom, SubtitleHAlign.center);
+              return Stack(
+                children: <Widget>[
+                  Positioned(
+                    left: posScreen.dx,
+                    top: posScreen.dy,
+                    child: FractionalTranslation(
+                      translation: Offset(
+                        -_hFrac(anchor.horizontal),
+                        -_vFrac(anchor.vertical),
+                      ),
+                      child: hoverable,
+                    ),
+                  ),
+                ],
+              );
+            }
+            // 无 \pos：按 \an 锚点对齐（anchor==null → 历史底居中，像素级不变）。
+            return Align(
+              alignment: _alignFor(markup?.anchor),
+              child: Padding(
+                padding: _paddingFor(markup?.anchor),
+                child: hoverable,
+              ),
+            );
+          },
         );
       },
     );
+  }
+
+  /// 合并外观默认与覆盖第 [i] 个 grapheme 的 span 样式。
+  TextStyle _styleForGrapheme(int i, SubtitleMarkup? markup) {
+    final TextStyle base = TextStyle(
+      color: widget.textColor,
+      fontSize: widget.fontSize,
+      height: 1.3,
+    );
+    SubtitleSpan? span;
+    if (markup != null) {
+      for (final SubtitleSpan s in markup.spans) {
+        if (i >= s.startGrapheme && i < s.endGrapheme) {
+          span = s;
+          break;
+        }
+      }
+    }
+    if (span == null) return base;
+    final List<TextDecoration> decos = <TextDecoration>[];
+    if (span.underline) decos.add(TextDecoration.underline);
+    if (span.strike) decos.add(TextDecoration.lineThrough);
+    return base.copyWith(
+      fontStyle: span.italic ? FontStyle.italic : null,
+      fontWeight: span.bold ? FontWeight.bold : null,
+      color: span.colorArgb != null ? Color(span.colorArgb!) : null,
+      fontSize: span.fontSizePx ?? widget.fontSize,
+      decoration: decos.isEmpty ? null : TextDecoration.combine(decos),
+    );
+  }
+
+  /// \pos 映射到容器局部坐标；无 \pos 或视频未解码返回 null（走 anchor 对齐）。
+  Offset? _posScreen(SubtitleMarkup? markup, Size container) {
+    final SubtitlePos? pf = markup?.posFraction;
+    if (pf == null) return null;
+    final int? w = widget.controller.videoWidth;
+    final int? h = widget.controller.videoHeight;
+    if (w == null || h == null) return null;
+    return mapPosFractionToContainer(pf, w, h, container);
+  }
+
+  static double _hFrac(SubtitleHAlign h) => switch (h) {
+        SubtitleHAlign.left => 0,
+        SubtitleHAlign.center => 0.5,
+        SubtitleHAlign.right => 1,
+      };
+
+  static double _vFrac(SubtitleVAlign v) => switch (v) {
+        SubtitleVAlign.top => 0,
+        SubtitleVAlign.middle => 0.5,
+        SubtitleVAlign.bottom => 1,
+      };
+
+  /// anchor → Align 对齐（无 \pos 时用）。null=历史底居中。
+  Alignment _alignFor(SubtitleAnchor? a) {
+    if (a == null) return Alignment.bottomCenter;
+    final double x = switch (a.horizontal) {
+      SubtitleHAlign.left => -1,
+      SubtitleHAlign.center => 0,
+      SubtitleHAlign.right => 1,
+    };
+    final double y = switch (a.vertical) {
+      SubtitleVAlign.top => -1,
+      SubtitleVAlign.middle => 0,
+      SubtitleVAlign.bottom => 1,
+    };
+    return Alignment(x, y);
+  }
+
+  /// 顶部锚点用顶部 padding、底部用现有 bottomPadding、中部不加。
+  EdgeInsets _paddingFor(SubtitleAnchor? a) {
+    final SubtitleVAlign v = a?.vertical ?? SubtitleVAlign.bottom;
+    return switch (v) {
+      SubtitleVAlign.bottom => EdgeInsets.only(bottom: widget.bottomPadding),
+      SubtitleVAlign.top => EdgeInsets.only(top: widget.bottomPadding),
+      SubtitleVAlign.middle => EdgeInsets.zero,
+    };
   }
 
   /// 把 [charContext] 对应字符的局部布局矩形转成全局屏幕矩形（弹窗定位用）。
