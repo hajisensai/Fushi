@@ -101,10 +101,9 @@ docs/TODO.md
 AGENTS.local.md
 CLAUDE.local.md
 
-# Google Desktop OAuth client secret — non-confidential by Google's design but
-# kept out of git to silence secret scanners and keep a rotated value private.
-# Copy hibiki/lib/src/sync/google_oauth_secret.example.dart to fill it in.
-hibiki/lib/src/sync/google_oauth_secret.dart
+# 注：google_oauth_secret.dart / log_upload_secret.dart 现已入库（带占位/空默认值，
+# 保证任何 clone/worktree 直接可编译）；本机真值用 `git update-index --skip-worktree`
+# 隐藏，不再 gitignore（否则 worktree 缺文件编译失败）。详见各文件头说明。
 hibiki-windows-x64.zip
 server/cf-worker/node_modules/
 
@@ -112,6 +111,3 @@ server/cf-worker/node_modules/
 server/cf-worker/DEPLOYMENT_SECRETS.local.md
 *.local.md
 .dev.vars
-
-# 日志上传端点/token 真值（本地，绝不入库；拷 .example 填）
-hibiki/lib/src/utils/misc/log_upload_secret.dart

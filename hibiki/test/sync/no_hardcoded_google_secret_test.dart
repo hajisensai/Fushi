@@ -8,10 +8,11 @@ import 'package:flutter_test/flutter_test.dart';
 /// non-confidential (it ships in the binary), but committing the value lets
 /// scanners re-flag it on every push and keeps a rotated value public.
 ///
-/// The real value now lives only in `lib/src/sync/google_oauth_secret.dart`,
-/// which is gitignored; the committed `.example.dart` template carries a
-/// non-`GOCSPX-` placeholder. This guard fails if a `GOCSPX-` secret reappears
-/// in any committed Dart source under lib/.
+/// `lib/src/sync/google_oauth_secret.dart` is now committed with a non-`GOCSPX-`
+/// placeholder default (so every clone/worktree compiles); the real desktop
+/// value is filled locally and hidden via `git update-index --skip-worktree`,
+/// so it is excluded from this scan by basename. This guard fails if a
+/// `GOCSPX-` secret reappears in any OTHER committed Dart source under lib/.
 void main() {
   test('no hardcoded GOCSPX- Google OAuth secret in committed lib/ sources',
       () {

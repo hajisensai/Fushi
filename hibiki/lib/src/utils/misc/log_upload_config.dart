@@ -1,6 +1,6 @@
-// 日志上传配置。端点/token 不入库：放在 gitignored 的 `log_upload_secret.dart`
-// （仿 `google_oauth_secret`）。拷 `log_upload_secret.example.dart` 为
-// `log_upload_secret.dart` 并填真值；端点留空则「上传」按钮自动隐藏。
+// 日志上传配置。端点/token 的默认空值入库在 `log_upload_secret.dart`（保证可编译）；
+// 真值只在本机填该文件并 `git update-index --skip-worktree` 隐藏，不入库。
+// 端点留空则「上传」按钮自动隐藏。
 import 'package:hibiki/src/utils/misc/log_upload_secret.dart';
 
 export 'package:hibiki/src/utils/misc/log_upload_secret.dart'
