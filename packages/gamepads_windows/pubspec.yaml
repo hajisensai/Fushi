@@ -1,0 +1,33 @@
+# Vendored fork of gamepads_windows 0.3.0+1 (pub.dev) carrying Hibiki's crash
+# fixes for BUG-116. Pinned here via dependency_overrides (path:) in
+# hibiki/pubspec.yaml — see packages/gamepads_android_stub for the sibling
+# override that no-ops the Android implementation. Upstream is unmaintained for
+# these defects (teardown use-after-free + channel calls off the platform
+# thread + data races + a wild callback-token pointer), so the patches live in
+# windows/gamepad.{h,cpp} and windows/gamepads_windows_plugin.{h,cpp} below.
+name: gamepads_windows
+publish_to: none
+description: Windows implementation of gamepads, a Flutter plugin to handle gamepad input across multiple platforms.
+version: 0.3.0+1
+homepage: https://github.com/flame-engine/gamepads
+repository: https://github.com/flame-engine/gamepads/tree/main/packages/gamepads_windows
+
+flutter:
+  plugin:
+    implements: gamepads
+    platforms:
+      windows:
+        pluginClass: GamepadsWindowsPluginCApi
+
+environment:
+  sdk: ">=3.5.0 <4.0.0"
+  flutter: ">=3.24.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  gamepads_platform_interface: ^0.1.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter

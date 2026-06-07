@@ -153,6 +153,17 @@ dependency_overrides:
   # with a Dart-only no-op so no native ActivityAware plugin is registered.
   gamepads_android:
     path: ../packages/gamepads_android_stub
+  # BUG-116: the pub plugin gamepads_windows 0.3.0+1 crashes — its polling
+  # thread is detached and keeps calling GetCurrentReading on g_gameInput AFTER
+  # stop() Releases it (teardown use-after-free at FlutterDesktopViewController
+  # Destroy), emits events by calling the Flutter MethodChannel directly off the
+  # polling thread (channel must be platform-thread only), races on plain-bool
+  # flags, and registers its device callback through an uninitialized wild
+  # pointer. Vendored fork fixes all four (join-then-release threads, marshal
+  # events to the platform thread via a message-only window, atomic flags,
+  # value-typed callback token). Keep until upstream carries the fix.
+  gamepads_windows:
+    path: ../packages/gamepads_windows
   # Vendored third-party packages carrying Flutter 3.x API-compat patches that
   # are not published on pub.dev. Previously these lived only as hand-edits in
   # each dev's pub-cache, so a clean checkout failed to build (e.g. on iOS):

@@ -1,0 +1,4 @@
+# Vendored native-only plugin (no Dart sources). Standalone analysis options so
+# we don't depend on flame_lint, which is not a Hibiki dependency.
+linter:
+  rules: {}

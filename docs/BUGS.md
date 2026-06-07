@@ -54,12 +54,16 @@
 - **[x] ② 已加自动化测试** — `hibiki/test/sync/texthooker_ws_client_test.dart`（`runZonedGuarded` + fake channel：ready/stream 均抛错，断言无错误逃逸到 zone 且仍排程重连）。
 - **备注**：`flutter test test/sync/texthooker_ws_client_test.dart` 全绿（含原有两用例）。
 
-## BUG-116 · gamepads_windows 手柄插件 teardown 崩溃 + 后台线程调 channel（待修）
+## BUG-116 · gamepads_windows 手柄插件 teardown 崩溃 + 后台线程调 channel
 - **报告**：2026-06-07（排查 BUG-113 时在 WER/转储发现的第二个独立崩溃桶：故障模块 `gamepads_windows_plugin.dll` c0000005，21:31，栈底 `FlutterDesktopViewControllerDestroy`=app 销毁期）。
 - **真实性**：✅ **真 bug（源码确认多处缺陷）**。pub 插件 `gamepads_windows-0.3.0+1` 的 `windows/gamepad.cpp`：① `stop()` 释放 `g_gameInput` 后**不置空**，detach 的 `read_gamepad` 轮询线程仍 `g_gameInput->GetCurrentReading()`→对已释放 COM use-after-free（即此 teardown 栈）；② `emit_gamepad_event` 从 detach 读线程直接 `channel->InvokeMethod`，违反 Flutter「channel 仅平台线程」约束（按键即可能崩，比 teardown 更频繁）；③ `stop_thread`/`alive` 裸 bool 跨线程数据竞争；④ `deviceCallbackToken` 未初始化野指针。
-- **[ ] ① 未修复** — 用户决定：不 stub（Windows 无 Android 那种引擎 key 通道，stub 会丢手柄导航），**另开一轮专门调研**。正确修法 = vendor 插件 + 重写线程生命周期（join 式停线程后再释放/置空 g_gameInput + 原子化标志 + 修野指针）+ 把事件 marshal 回平台线程，需手柄真机验证。
-- **[ ] ② 未加测试**
-- **备注**：teardown 低频（关 app 时），优先级低于 BUG-113；按键期 channel 崩为另一向量。待 vendor 轮次。
+- **[x] ① 已修复** — 本提交。不 stub（Windows 无 Android 那种引擎 key 通道，stub 会丢手柄导航），改 **vendor 插件**到 `packages/gamepads_windows`（pub `0.3.0+1` 的 fork，`hibiki/pubspec.yaml` 用 `dependency_overrides` 的 `path:` 指向，照 `gamepads_android_stub` 范式）。四处根因修：
+  - **①线程生命周期**：`read_gamepad` 线程改 **OWNED**（`GamepadData::thread`，不再 `detach`）；`stop()`/`on_gamepad_disconnected` 统一走 `join_and_destroy`——先 `stop_thread=true` → `join()` → 才 `Release()` 并**置空** `g_gameInput`，根除「线程对已释放 COM 调 GetCurrentReading」的 teardown UAF。线程不再自删，所有权归 join 的 owner。另对 device `AddRef`/`Release` 保活轮询期间的设备（次生 UAF）。
+  - **②channel 跨线程**：新增 message-only 窗口（`HWND_MESSAGE`，平台线程建）；`emit_gamepad_event`（轮询线程）只把事件**拷贝**入队 + `PostMessage`，平台线程 `WndProc`→`drain_event_queue` 才 `channel->InvokeMethod`，满足「平台通道仅平台线程」。事件拷值不持 `GamepadData*`，避免 drain 时指针已释放。
+  - **③数据竞争**：`stop_thread` 改 `std::atomic<bool>`；删除裸 bool `alive`（自删信号随 join 模型移除）。
+  - **④野指针**：`deviceCallbackToken` 改值类型并初始化，`RegisterDeviceCallback` 传 `&deviceCallbackToken`、`UnregisterCallback` 读回。`stop()` 先 `UnregisterCallback` 阻断新回调再 join，`gamepads` 列表加 `std::mutex`。
+- **[x] ② 已加测试** — `hibiki/test/shortcuts/gamepads_windows_crash_guard_test.dart`（源码扫描守卫：native C++ 无 GameInput.h/无真手柄 headless 跑不到，故断言 4 处修复的代码契约——OWNED 线程 + join、Release 后置空、`read_gamepad` 体内不自删、事件经 `PostMessage`/`drain_event_queue` marshal 且 `emit_gamepad_event` 体内无 `InvokeMethod`、`std::atomic` 标志、值类型 token、device AddRef、override 接线）。
+- **备注**：`flutter build windows --debug` 通过（vendored `gamepads_windows_plugin.dll` 编译链接 + 打包进 runner，无错）；守卫测试 7 绿。teardown 低频（关 app 时），按键期 channel 崩为更高频向量，二者均已根治。**手柄真机验证待用户**（headless 无法插真手柄走 GameInput 路径）。
 ## BUG-110 · 竖排书有声书跟随/查词高亮在振假名(ruby)字上出现深色带遮字
 - **报告**：2026-06-07（用户：「书籍高亮的时候会被挡住文字的一部分」，截图为竖排明朝体；后续确认「没查词的时候也挡、查词和音频高亮都会挡」「关闭振假名显示还是挡」，并指向参考实现 Hoshi-Reader-Android 新版做法）。
 - **真实性**：✅ **真 bug（真机 `getClientRects` 取证）**。在 hibiki 调试版里加临时红框诊断（把 `::highlight` 用的 range 的 `getClientRects()` 逐矩形描框 + 打坐标日志），用户真机复现后日志实证：竖排下对含 `<ruby>` 的 cue/选区，`::highlight()` 把 ruby 基字矩形**重复绘制**——例 `range#0 "話題を切り替かえるよ" rects=5 [1555,318 71x50] [1555,318 71x50] [1611,318 33x50] ...`，`[1555,318 71x50]` **同一矩形出现两次**（第二块是 ruby 容器/基字盒重叠），半透明背景叠加两层 → 深色带；`[1611,…]` 是振假名那块单独凸出。根因是浏览器 `::highlight()` 对 `<ruby>` 的渲染（基字盒重复），**与 range 怎么拆/合无关**（试过合并成单一 Range 仍重复绘制，无效）。本地用同引擎 Edge 复刻阅读器 CSS（多列+`line-box-contain`+vpal+ruby）反而干净 → 触发与具体书的 ruby 结构/字体相关，故靠真机诊断定位。
