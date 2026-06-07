@@ -898,7 +898,8 @@ SettingsDestination _lookupDestination() {
           SettingsSwitchItem(
             id: 'lookup.yomitan_api_server',
             title: t.yomitan_api_server,
-            subtitle: t.yomitan_api_server_hint,
+            subtitle:
+                t.yomitan_api_server_hint + t.settings_experimental_suffix,
             icon: Icons.api_outlined,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.yomitanApiServerEnabled,
@@ -931,7 +932,8 @@ SettingsDestination _lookupDestination() {
           SettingsSwitchItem(
             id: 'lookup.texthooker',
             title: t.texthooker_enabled,
-            subtitle: t.texthooker_enabled_hint,
+            subtitle:
+                t.texthooker_enabled_hint + t.settings_experimental_suffix,
             icon: Icons.sensors_outlined,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.texthookerEnabled,
@@ -949,7 +951,8 @@ SettingsDestination _lookupDestination() {
           SettingsSwitchItem(
             id: 'lookup.desktop_clipboard',
             title: t.desktop_clipboard_enabled,
-            subtitle: t.desktop_clipboard_enabled_hint,
+            subtitle: t.desktop_clipboard_enabled_hint +
+                t.settings_experimental_suffix,
             icon: Icons.content_paste_search,
             visible: (SettingsContext settingsContext) =>
                 DesktopLookupService.isDesktop,

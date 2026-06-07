@@ -81,14 +81,50 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       ),
       body: Stack(
         children: <Widget>[
-          ListView.builder(
-            controller: _scroll,
-            padding: const EdgeInsets.all(12),
-            itemCount: lines.length,
-            itemBuilder: (BuildContext context, int i) =>
-                _TexthookerLine(text: lines[i], onWordTap: _onWordTap),
+          Column(
+            children: <Widget>[
+              _buildExperimentalBanner(context),
+              Expanded(
+                child: ListView.builder(
+                  controller: _scroll,
+                  padding: const EdgeInsets.all(12),
+                  itemCount: lines.length,
+                  itemBuilder: (BuildContext context, int i) =>
+                      _TexthookerLine(text: lines[i], onWordTap: _onWordTap),
+                ),
+              ),
+            ],
           ),
           ..._buildPopups(context),
+        ],
+      ),
+    );
+  }
+
+  /// texthooker 为实验性功能：页头下方常驻一条提示横幅，复用视频 tab
+  /// （[HomeVideoPage]）同款 secondaryContainer 调性与 textTheme，不抢内容焦点。
+  Widget _buildExperimentalBanner(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      color: colors.secondaryContainer,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      child: Row(
+        children: <Widget>[
+          Icon(
+            Icons.science_outlined,
+            size: 18,
+            color: colors.onSecondaryContainer,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              t.texthooker_experimental_banner,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: colors.onSecondaryContainer,
+                  ),
+            ),
+          ),
         ],
       ),
     );
