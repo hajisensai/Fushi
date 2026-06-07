@@ -4,6 +4,7 @@ import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_page_mixin.dart';
+import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:hibiki/src/sync/texthooker_service.dart';
 import 'package:hibiki/utils.dart';
 
@@ -21,7 +22,7 @@ class TexthookerPage extends ConsumerStatefulWidget {
 
 class _TexthookerPageState extends ConsumerState<TexthookerPage>
     with DictionaryPageMixin {
-  final List<NestedPopupEntry> _popupStack = <NestedPopupEntry>[];
+  final List<DictionaryPopupEntry> _popupStack = <DictionaryPopupEntry>[];
   final ScrollController _scroll = ScrollController();
 
   /// 仅在点击 span 触发查词/挖词时求值，渲染文本行本身不触发 AppModel 创建。

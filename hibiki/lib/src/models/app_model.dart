@@ -3042,11 +3042,11 @@ class _AppModelRemoteLookupService
   }) async {
     final BaseAnkiRepository repo =
         _appModel.platformServices.createAnkiRepository();
-    final MineResult result = await repo.mineEntry(
+    final MineOutcome outcome = await repo.mineEntry(
       rawPayloadJson: jsonEncode(fields),
       context: AnkiMiningContext(sentence: sentence),
     );
-    return result.name;
+    return outcome.result.name;
   }
 
   @override

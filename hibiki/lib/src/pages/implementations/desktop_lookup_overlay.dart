@@ -5,6 +5,7 @@ import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/sync/desktop_lookup_service.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_page_mixin.dart';
+import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:hibiki/utils.dart';
 
 /// 桌面剪贴板查词 overlay：订阅 [DesktopLookupService.pendingText]，
@@ -18,7 +19,7 @@ class DesktopLookupOverlay extends ConsumerStatefulWidget {
 
 class _DesktopLookupOverlayState extends ConsumerState<DesktopLookupOverlay>
     with DictionaryPageMixin {
-  final List<NestedPopupEntry> _popupStack = <NestedPopupEntry>[];
+  final List<DictionaryPopupEntry> _popupStack = <DictionaryPopupEntry>[];
 
   @override
   AppModel get mixinAppModel => ref.read(appProvider);
