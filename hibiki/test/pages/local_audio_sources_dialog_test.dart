@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/models/local_audio_source_pref.dart';
 import 'package:hibiki/src/pages/implementations/local_audio_sources_dialog.dart';
 import 'package:hibiki/utils.dart';

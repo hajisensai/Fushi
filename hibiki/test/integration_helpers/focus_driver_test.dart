@@ -6,13 +6,12 @@ import '../../integration_test/helpers/focus_driver.dart';
 void main() {
   testWidgets('reachAll traverses every focusable button via Tab',
       (tester) async {
-    int activatedIndex = -1;
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
         body: Column(children: <Widget>[
           for (int i = 0; i < 3; i++)
             TextButton(
-              onPressed: () => activatedIndex = i,
+              onPressed: () {},
               child: Text('btn$i'),
             ),
         ]),

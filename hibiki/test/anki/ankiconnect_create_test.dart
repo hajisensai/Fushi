@@ -3,7 +3,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/testing.dart';
 import 'package:http/http.dart' as http;
 import 'package:hibiki_anki/hibiki_anki.dart';
-import 'package:hibiki_anki/src/ankiconnect/ankiconnect_service.dart';
 
 void main() {
   test('createModel sends correct AnkiConnect v6 payload', () async {

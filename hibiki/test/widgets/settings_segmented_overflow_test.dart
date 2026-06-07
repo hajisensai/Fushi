@@ -23,8 +23,8 @@ void main() {
   // Verbose labels so the strip is intrinsically wide (~700-800px): wide enough
   // that a ≈50/50 inline split must scroll it, yet narrower than the panes used
   // below — the exact regime where the inline split clipped segments.
-  final List<ButtonSegment<String>> designSystemSegments =
-      const <ButtonSegment<String>>[
+  const List<ButtonSegment<String>> designSystemSegments =
+      <ButtonSegment<String>>[
     ButtonSegment<String>(value: 'auto', label: Text('Automatic')),
     ButtonSegment<String>(value: 'material', label: Text('Material Design 3')),
     ButtonSegment<String>(value: 'cupertino', label: Text('iOS (Cupertino)')),

@@ -181,6 +181,7 @@ void main() {
     expect(hostKey.currentState!.debugPopupStack, hasLength(1));
     expect(hostKey.currentState!.debugPopupStack.single.isWarmSlot, isFalse);
 
+    // ignore: invalid_use_of_protected_member  — 测试直接驱动受保护的清栈逻辑
     hostKey.currentState!.prunePopupStack(0);
     expect(hostKey.currentState!.debugPopupStack, isEmpty);
   });

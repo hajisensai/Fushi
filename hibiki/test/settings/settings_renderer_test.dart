@@ -508,7 +508,7 @@ void main() {
   // <String> 经 `as SettingsSegmentedItem<Object>` 转型，闭包静态读
   // `segmented.onChanged` 会因函数参数逆变抛 _TypeError（书写方向/视图模式/振
   // 假名等改一下就崩）。两个渲染器都用 dynamic 调用绕开。
-  SettingsDestination _segmentedFixture(void Function(String) onValue) {
+  SettingsDestination segmentedFixture(void Function(String) onValue) {
     return SettingsDestination(
       id: SettingsDestinationId.appearance,
       title: 'Appearance',
@@ -540,7 +540,7 @@ void main() {
       builder: (SettingsContext sctx) => MaterialSettingsRenderer()
           .buildDetailPage(
               settingsContext: sctx,
-              destination: _segmentedFixture((String v) => received = v)),
+              destination: segmentedFixture((String v) => received = v)),
     ));
     await tester.tap(find.text('On'));
     await tester.pumpAndSettle();
@@ -557,7 +557,7 @@ void main() {
       builder: (SettingsContext sctx) => CupertinoSettingsRenderer()
           .buildDetailPage(
               settingsContext: sctx,
-              destination: _segmentedFixture((String v) => received = v)),
+              destination: segmentedFixture((String v) => received = v)),
     ));
     await tester.tap(find.text('On'));
     await tester.pumpAndSettle();

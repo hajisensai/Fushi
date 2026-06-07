@@ -18,7 +18,7 @@ void main() {
     } catch (_) {}
   });
 
-  Directory _fakeExtractedBook() {
+  Directory fakeExtractedBook() {
     final Directory d = Directory('${tmp.path}/extracted')..createSync();
     File('${d.path}/mimetype').writeAsStringSync('application/epub+zip');
     Directory('${d.path}/META-INF').createSync();
@@ -33,7 +33,7 @@ void main() {
 
   test('repackages an extracted book into a root-rooted EPUB archive',
       () async {
-    final Directory src = _fakeExtractedBook();
+    final Directory src = fakeExtractedBook();
     final String out = '${tmp.path}/book.epub';
 
     final bool built = await repackageExtractedEpub(src.path, out);

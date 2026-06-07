@@ -136,30 +136,33 @@ void main() {
               '(network unavailable?) — skipping disk assertion');
         }
 
-        // ── ① 打开着色器对话框（夺焦）→ 关闭 → 空格恢复播放 ──
-        // 用 showDialog 打开着色器对话框（与 app 的 _openShaderDialog 同 API），它会把
-        // 窗口键盘焦点从 Video 移走；关闭后 Video 的 _videoFocusNode 应能重新接管。
+        // ── ① 打开着色器视图（夺焦）→ 关闭 → 空格恢复播放 ──
+        // 着色器管理已从独立对话框改为内嵌 VideoShaderManagerView（嵌进设置面板）；
+        // 这里用 showDialog 把同一个内嵌视图临时弹成浮层，复现「焦点被夺走的浮层
+        // 打开 → 关闭」场景：关闭后 Video 的 _videoFocusNode 应能重新接管键盘焦点。
         unawaited(showDialog<void>(
           context: tester.element(find.byType(VideoHibikiPage)),
-          builder: (_) => VideoShaderDialog(
-            initialEnabled: const <String>[],
-            onApply: (List<String> _) async {},
+          builder: (_) => Dialog(
+            child: VideoShaderManagerView(
+              initialEnabled: const <String>[],
+              onApply: (List<String> _) async {},
+            ),
           ),
         ));
-        await tester.pump(); // 启动对话框路由
+        await tester.pump(); // 启动浮层路由
         await tester.pump(const Duration(milliseconds: 400));
-        // 确认对话框真打开了（夺走窗口焦点）。
-        expect(find.byType(VideoShaderDialog), findsOneWidget);
+        // 确认浮层真打开了（夺走窗口焦点）。
+        expect(find.byType(VideoShaderManagerView), findsOneWidget);
 
-        // 对话框打开期间，窗口键盘焦点不在 Video 上（被对话框子树占据）。
+        // 浮层打开期间，窗口键盘焦点不在 Video 上（被浮层子树占据）。
         final FocusNode? duringDialog = FocusManager.instance.primaryFocus;
         debugPrint('[video-shader] focus during dialog: '
             '${duringDialog?.debugLabel}');
 
-        // 关闭对话框。
-        Navigator.of(tester.element(find.byType(VideoShaderDialog))).pop();
+        // 关闭浮层。
+        Navigator.of(tester.element(find.byType(VideoShaderManagerView))).pop();
         await tester.pumpAndSettle(const Duration(milliseconds: 200));
-        expect(find.byType(VideoShaderDialog), findsNothing);
+        expect(find.byType(VideoShaderManagerView), findsNothing);
 
         // 记录空格前的播放位置（应为静止——初始未播放）。
         final int? posBefore = hooks().debugPositionMs;

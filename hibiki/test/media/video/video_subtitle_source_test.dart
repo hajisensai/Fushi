@@ -298,7 +298,7 @@ WEBVTT
     });
 
     test('27GB REMUX 远超旧 30s（实测单趟 demux ~20s，给足裕量）', () {
-      final int gb27 = 27 * 1024 * 1024 * 1024;
+      const int gb27 = 27 * 1024 * 1024 * 1024;
       final int seconds = subtitleExtractTimeoutForBytes(gb27).inSeconds;
       // 60 + 27*8 = 276s。
       expect(seconds, 276);
@@ -306,7 +306,7 @@ WEBVTT
     });
 
     test('超大文件夹紧到 1200s 上限', () {
-      final int gb1000 = 1000 * 1024 * 1024 * 1024;
+      const int gb1000 = 1000 * 1024 * 1024 * 1024;
       expect(subtitleExtractTimeoutForBytes(gb1000).inSeconds, 1200);
     });
 

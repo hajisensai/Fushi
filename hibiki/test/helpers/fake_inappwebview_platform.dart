@@ -1,4 +1,5 @@
 import 'package:flutter/widgets.dart';
+// ignore: depend_on_referenced_packages  — 测试桩需直接实现该平台接口（flutter_inappwebview 的传递依赖）
 import 'package:flutter_inappwebview_platform_interface/flutter_inappwebview_platform_interface.dart';
 
 /// Registers a no-op [InAppWebViewPlatform] so widget trees that contain an
