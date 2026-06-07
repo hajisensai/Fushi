@@ -200,15 +200,15 @@ mixin DictionaryPageMixin {
   // ---------------------------------------------------------------------------
 
   /// Builds the [Positioned] popup layer widget for the entry at [index] in
-  /// [popupStack].
+  /// [controller].entries.
   Widget buildNestedPopupLayer({
     required int index,
     required Size screen,
-    required List<DictionaryPopupEntry> popupStack,
+    required DictionaryPopupController controller,
     required void Function(String text, Rect selectionRect) onPush,
     required void Function(int index) onPop,
   }) {
-    final DictionaryPopupEntry entry = popupStack[index];
+    final DictionaryPopupEntry entry = controller.entries[index];
     final Rect pos = calcPopupPosition(
       selectionRect: entry.selectionRect,
       screen: screen,
@@ -242,23 +242,19 @@ mixin DictionaryPageMixin {
           onTapOutside: () => onPop(0),
           onScrolledToBottom: entry.allLoaded
               ? null
-              : () => loadMoreForEntry(entry: entry, popupStack: popupStack),
+              : () => loadMoreForEntry(entry: entry, controller: controller),
           onTextSelected: (text, localRect) {
             final Rect childRect = localRect == Rect.zero
                 ? entry.selectionRect
                 : localRect.shift(Offset(pos.left, pos.top));
-            setState(() {
-              popupStack.removeRange(index + 1, popupStack.length);
-            });
+            setState(() => controller.truncateTo(index + 1));
             onPush(text, childRect);
           },
           onLinkClick: (query, localRect) {
             final Rect childRect = localRect == Rect.zero
                 ? entry.selectionRect
                 : localRect.shift(Offset(pos.left, pos.top));
-            setState(() {
-              popupStack.removeRange(index + 1, popupStack.length);
-            });
+            setState(() => controller.truncateTo(index + 1));
             onPush(query, childRect);
           },
           onMineEntry: onMineEntry,
@@ -270,15 +266,18 @@ mixin DictionaryPageMixin {
     );
   }
 
-  /// Searches [query] and pushes a new [DictionaryPopupEntry] onto [popupStack].
+  /// Searches [query] and opens a popup via [controller].
   ///
-  /// If [replaceStack] is true the existing stack is cleared first.
-  /// If [autoRead] is true and results are found, the first entry's audio is
-  /// played automatically.
+  /// Top-level lookups ([replaceStack] or [reuseWarmSlot]) reuse the warm slot /
+  /// replace the stack; otherwise a nested child layer is pushed. The mixin
+  /// surfaces (video / home / standalone) show the target while searching
+  /// (`visible: true`); the empty/cold WebView is covered by
+  /// [DictionaryPopupLayer]'s loading cover. If [autoRead] is true and results
+  /// are found, the first entry's audio is played automatically.
   Future<void> pushNestedPopup({
     required String query,
     required Rect selectionRect,
-    required List<DictionaryPopupEntry> popupStack,
+    required DictionaryPopupController controller,
     bool replaceStack = false,
     bool autoRead = false,
     bool reuseWarmSlot = false,
@@ -287,52 +286,38 @@ mixin DictionaryPageMixin {
     if (trimmed.isEmpty) return;
     final Stopwatch swPush = Stopwatch()..start();
     final int maxTerms = mixinAppModel.maximumTerms;
-    final DictionaryPopupEntry entry;
-    if (reuseWarmSlot && popupStack.isNotEmpty && popupStack.first.isWarmSlot) {
-      // BUG-094: reuse the persistent warm slot's already-loaded WebView in
-      // place (reset its fields, drop nested children) instead of clearing the
-      // stack + building a fresh entry — that recreated the WebView and
-      // cold-loaded popup.html/JS/CSS on every lookup (the white flash).
-      entry = popupStack.first
-        ..searchTerm = trimmed
-        ..selectionRect = fallbackSelectionRect(selectionRect)
-        ..result = null
-        ..allLoaded = false
-        ..isSearching = true
-        ..visible = true;
-      setState(() {
-        if (popupStack.length > 1) {
-          popupStack.removeRange(1, popupStack.length);
-        }
-      });
-    } else {
-      entry = DictionaryPopupEntry(
-        searchTerm: trimmed,
-        selectionRect: fallbackSelectionRect(selectionRect),
-      )..isSearching = true;
-      setState(() {
-        if (replaceStack) popupStack.clear();
-        popupStack.add(entry);
-      });
-    }
+    final DictionaryPopupEntry entry = controller.beginTop(
+      term: trimmed,
+      rect: fallbackSelectionRect(selectionRect),
+      reuseWarmSlot: reuseWarmSlot,
+      replaceStack: replaceStack,
+      visible: true,
+    );
+    setState(() {});
+    late final DictionarySearchResult result;
     try {
-      entry.result = await mixinAppModel.searchDictionary(
+      result = await mixinAppModel.searchDictionary(
         searchTerm: trimmed,
         searchWithWildcards: true,
         overrideMaximumTerms: maxTerms,
       );
-      entry.allLoaded = (entry.result?.entries.length ?? 0) < maxTerms;
       debugPrint('[dict-perf] pushNestedPopup search done in '
           '${swPush.elapsedMilliseconds}ms reuseWarm=$reuseWarmSlot '
-          'entries=${entry.result?.entries.length ?? 0} "$trimmed"');
+          'entries=${result.entries.length} "$trimmed"');
+      if (mounted && controller.entries.contains(entry)) {
+        setState(() => controller.fillResult(
+              entry,
+              result: result,
+              allLoaded: result.entries.length < maxTerms,
+            ));
+      }
     } finally {
-      if (mounted && popupStack.contains(entry)) {
+      if (mounted && controller.entries.contains(entry) && entry.isSearching) {
         setState(() => entry.isSearching = false);
       }
     }
-    if (!mounted || !popupStack.contains(entry)) return;
-    final DictionarySearchResult? result = entry.result;
-    if (result != null && result.entries.isNotEmpty) {
+    if (!mounted || !controller.entries.contains(entry)) return;
+    if (result.entries.isNotEmpty) {
       mixinAppModel.addToSearchHistory(
         historyKey: DictionaryMediaType.instance.uniqueKey,
         searchTerm: trimmed,
@@ -349,38 +334,37 @@ mixin DictionaryPageMixin {
 
   Future<void> loadMoreForEntry({
     required DictionaryPopupEntry entry,
-    required List<DictionaryPopupEntry> popupStack,
+    required DictionaryPopupController controller,
   }) async {
     if (entry.allLoaded || entry.isSearching || entry.result == null) return;
     final int current = entry.result!.entries.length;
     final int newMax = current + mixinAppModel.maximumTerms;
     setState(() => entry.isSearching = true);
     try {
-      entry.result = await mixinAppModel.searchDictionary(
+      final DictionarySearchResult result =
+          await mixinAppModel.searchDictionary(
         searchTerm: entry.searchTerm,
         searchWithWildcards: true,
         overrideMaximumTerms: newMax,
       );
-      entry.allLoaded = (entry.result?.entries.length ?? 0) < newMax;
+      if (mounted && controller.entries.contains(entry)) {
+        setState(() => controller.fillResult(
+              entry,
+              result: result,
+              allLoaded: result.entries.length < newMax,
+            ));
+      }
     } finally {
-      if (mounted && popupStack.contains(entry)) {
+      if (mounted && controller.entries.contains(entry) && entry.isSearching) {
         setState(() => entry.isSearching = false);
       }
     }
   }
 
-  /// Pops the popup at [index].
-  ///
-  /// When [index] is 0 the entire stack is cleared; otherwise all entries from
-  /// [index] onward are removed.
-  void popNestedPopupAt(int index, List<DictionaryPopupEntry> popupStack) {
-    if (index < 0 || index >= popupStack.length) return;
-    setState(() {
-      if (index == 0) {
-        popupStack.clear();
-      } else {
-        popupStack.removeRange(index, popupStack.length);
-      }
-    });
+  /// Pops the popup at [index] via [controller] (index 0 hides-and-keeps any
+  /// warm slot / clears otherwise; deeper indices drop that layer and above).
+  void popNestedPopupAt(int index, DictionaryPopupController controller) {
+    if (index < 0 || index >= controller.entries.length) return;
+    setState(() => controller.dismissAt(index));
   }
 }

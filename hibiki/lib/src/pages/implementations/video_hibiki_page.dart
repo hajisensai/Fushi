@@ -139,8 +139,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 观看统计采集器（观看时长 + 字幕字数 + 完成标记）；首次 load 建，dispose 释放。
   VideoWatchTracker? _watchTracker;
 
-  /// 查词浮层栈（与阅读器/词典页同款，由 [DictionaryPageMixin] 管理）。
-  final List<DictionaryPopupEntry> _popupStack = <DictionaryPopupEntry>[];
+  /// 查词浮层栈（与阅读器/词典页同款，由共享 [DictionaryPopupController] 管理）。
+  /// 在 initState 安全读取一次 lowMemory 构造——不可放字段初始化器懒读 appModel，
+  /// 否则首次访问可能落在 dispose/deactivate 的 postframe（element 树不稳定）→ ref.read 抛错。
+  late final DictionaryPopupController _popup;
 
   /// 字幕字符命中句柄：查词浮层的 dismiss barrier 用它反查「点到的是不是另一个字幕
   /// 字符」，是则切换查词、保持暂停（见 [_onDismissBarrierTap] / [VideoSubtitleHitTester]）。
@@ -222,6 +224,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   @override
   void initState() {
     super.initState();
+    // 不在 initState 读 appModel.lowMemoryMode（它读 prefsRepo，未初始化会抛；
+    // 错误态 smoke 用未初始化 AppModel）。先建空 controller，真实 lowMemory 留到
+    // _seedWarmPopup（成功路径、必已初始化）再设——与 base_source_page 同范式。
+    _popup = DictionaryPopupController(lowMemory: false);
     WidgetsBinding.instance.addObserver(this);
     _init();
   }
@@ -691,7 +697,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _popupStack.clear();
+    _popup.clear();
     final OverlayEntry? entry = _popupOverlayEntry;
     if (entry != null) {
       // remove() asserts if already detached（路由先 pop 时根 Overlay 可能已摘除）。
@@ -711,7 +717,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 在任何会盖在视频上 / 夺走窗口焦点的覆盖层（对话框、bottom sheet、系统文件选择器）
   /// 关闭后调用——这些覆盖层关闭后 Flutter 不会自动把焦点还给 [Video] 的 FocusNode，
   /// 导致空格等快捷键失灵（BUG：导入着色器后空格失灵）。统一在覆盖层的 `await` 返回点
-  /// 调用即覆盖全部入口。查词浮层（[_popupStack]）**不**在此 refocus：浮层活动期间用户在
+  /// 调用即覆盖全部入口。查词浮层（[_popup]）**不**在此 refocus：浮层活动期间用户在
   /// 查词，不应让空格控制视频；浮层关闭由其自身路径处理。
   void _refocusVideo() {
     if (!mounted) return;
@@ -754,7 +760,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     await pushNestedPopup(
       query: term,
       selectionRect: charRect,
-      popupStack: _popupStack,
+      controller: _popup,
       replaceStack: true,
       reuseWarmSlot: true,
       autoRead: true,
@@ -769,31 +775,22 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 覆盖所有关闭路径（BUG-072）。
   /// True while any popup layer is actually visible (the persistent warm slot,
   /// BUG-094, sits hidden in the stack between lookups so it never counts).
-  bool get _hasVisiblePopup => _popupStack.any((e) => e.visible);
+  bool get _hasVisiblePopup => _popup.hasVisiblePopup;
 
   /// Index of the top-most visible popup layer, or -1 when only the hidden warm
   /// slot remains.
-  int get _topVisiblePopupIndex {
-    for (int i = _popupStack.length - 1; i >= 0; i--) {
-      if (_popupStack[i].visible) return i;
-    }
-    return -1;
-  }
+  int get _topVisiblePopupIndex => _popup.lastVisibleIndex;
 
   /// BUG-094: seed one persistent, hidden warm popup slot on open so its
   /// [DictionaryPopupWebView] cold-loads popup.html/JS/CSS ONCE while idle and
   /// is reused warm for every lookup — no per-lookup cold-load (white flash) in
   /// the video player. Low-memory mode keeps no warm slot (disposes on close).
   void _seedWarmPopup() {
-    if (!mounted || appModel.lowMemoryMode) return;
-    if (_popupStack.isNotEmpty) return;
-    final DictionaryPopupEntry warm = DictionaryPopupEntry(
-      searchTerm: '',
-      selectionRect: Rect.zero,
-      visible: false,
-      isWarmSlot: true,
-    )..isSearching = false;
-    setState(() => _popupStack.add(warm));
+    if (!mounted) return;
+    // 成功路径调用，此刻 AppModel 必已初始化 → 安全读取真实 lowMemory 设入 controller
+    // （seedWarmSlot/dismissAt 据此决定是否保留热槽）。
+    _popup.lowMemory = appModel.lowMemoryMode;
+    setState(() => _popup.seedWarmSlot());
     _syncPopupOverlay();
   }
 
@@ -819,21 +816,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // Hide-and-keep the warm slot instead of clearing it, so its loaded WebView
     // survives for the next lookup (BUG-094): closing index 0 hides the warm
     // slot + drops children; closing a child drops from there up.
-    setState(() {
-      if (index <= 0 &&
-          _popupStack.isNotEmpty &&
-          _popupStack.first.isWarmSlot) {
-        final DictionaryPopupEntry warm = _popupStack.first..visible = false;
-        warm.webViewKey.currentState?.clearSelection();
-        _popupStack
-          ..clear()
-          ..add(warm);
-      } else if (index <= 0) {
-        _popupStack.clear();
-      } else if (index < _popupStack.length) {
-        _popupStack.removeRange(index, _popupStack.length);
-      }
-    });
+    // controller.dismissAt 已实现「index 0 保留并隐藏热槽 / 否则裁该层及之上」；
+    // 这里额外清掉热槽 WebView 的选区（原 UI 副作用）。
+    if (index <= 0 &&
+        _popup.entries.isNotEmpty &&
+        _popup.entries.first.isWarmSlot) {
+      _popup.entries.first.webViewKey.currentState?.clearSelection();
+    }
+    setState(() => _popup.dismissAt(index));
     if (VideoHibikiPage.shouldResumeAfterLookupDismiss(
       // "Effectively empty" = no visible popup; the hidden warm slot doesn't
       // block resume.
@@ -849,7 +839,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     return buildNestedPopupLayer(
       index: index,
       screen: screen,
-      popupStack: _popupStack,
+      controller: _popup,
       onPush: (String text, Rect rect) {
         // 递归查词不属于某条字幕句：制卡例句仍用最近一次字幕句。
         // [rect] 已是中和后浮层坐标（父浮层 pos + WebView 局部 rect 叠出，均在同一
@@ -857,7 +847,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         pushNestedPopup(
           query: text,
           selectionRect: rect,
-          popupStack: _popupStack,
+          controller: _popup,
           autoRead: true,
         );
       },
@@ -873,7 +863,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 路由，本页 `Stack` 会被全屏路由盖住；根 Overlay 浮在所有路由之上，窗口/全屏统一。
   void _syncPopupOverlay() {
     if (!mounted) return;
-    if (_popupStack.isEmpty) {
+    if (_popup.entries.isEmpty) {
       final OverlayEntry? entry = _popupOverlayEntry;
       if (entry != null) {
         if (entry.mounted) entry.remove();
@@ -924,7 +914,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                       child: const ColoredBox(color: Colors.transparent),
                     ),
                   ),
-                for (int i = 0; i < _popupStack.length; i++)
+                for (int i = 0; i < _popup.entries.length; i++)
                   _buildNestedPopupLayer(i, screen),
               ],
             );

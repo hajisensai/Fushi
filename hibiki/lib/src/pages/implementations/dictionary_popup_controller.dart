@@ -22,7 +22,7 @@ class DictionaryPopupEntry {
   /// 但 WebView 仍挂载预热；一次查词把它翻为可见。
   bool visible;
 
-  /// 该层是否正在（增量/分页）搜索中，供 load-more 态。
+  /// 该层是否正在（增量/分页）搜索中。
   bool isSearching = false;
 
   /// 是否已无更多结果可加载（分页到底）。
@@ -35,105 +35,155 @@ class DictionaryPopupEntry {
       GlobalKey<DictionaryPopupWebViewState>();
 }
 
-/// 与 UI 无关的查词弹窗栈控制器：书内（base_source_page）、视频、首页查词 tab、
-/// 安卓独立查词窗共用同一份栈逻辑（消除「同一个 bug 两处各修一遍」的根因）。
+/// 与 UI 无关的查词弹窗**栈原语**：书内（base_source_page）、视频、首页查词 tab、
+/// 安卓独立查词窗共用同一份栈操作（消除「同一个 bug 两处各修一遍」的根因）。
 ///
-/// 时序统一为「**搜索 → 结果就绪才把浮层设为可见**」：搜索期只暴露 [isSearching] +
-/// [pendingRect] 供宿主画轻量加载占位，**从不显示空 WebView**（视频原先「先显示空槽
-/// 再搜索」是白屏根因）。
+/// **设计原则（保各表面现有行为）**：controller 只管「栈/热槽/复用/裁剪/填结果/
+/// 显示/关栈」这些**机制**；「搜索期目标层是否立即可见」由宿主用 [visible] 参数自选——
+/// 视频/首页/独立窗用 `visible:true`（搜索期即显示，空白由 DictionaryPopupLayer 的
+/// 加载盖板兜住），书内用 `visible:false`（就绪才 [show]，搜索期另画轻量占位）。两条
+/// 路径共用同一套原语，零行为变更。
 class DictionaryPopupController extends ChangeNotifier {
   DictionaryPopupController({required this.lowMemory});
 
-  /// 低内存模式不保留常驻热槽（关栈即清空，释放 WebView）。
-  final bool lowMemory;
+  /// 低内存模式不保留常驻热槽（关栈即清空，释放 WebView）。可变：宿主在 appModel
+  /// 已初始化的安全时机（seed 前）设入真实值，避免在 State.initState 里过早读
+  /// prefsRepo（未初始化会抛）。
+  bool lowMemory;
 
   final List<DictionaryPopupEntry> _entries = <DictionaryPopupEntry>[];
   List<DictionaryPopupEntry> get entries => List.unmodifiable(_entries);
 
-  bool _isSearching = false;
-  bool get isSearching => _isSearching;
-
-  Rect? _pendingRect;
-  Rect? get pendingRect => _pendingRect;
-
-  /// 当前这次搜索要落入的目标条目（顶层=复用热槽/首条，嵌套=新压入的末条）。
-  DictionaryPopupEntry? _searchTarget;
-
   bool get hasVisiblePopup =>
       _entries.any((DictionaryPopupEntry e) => e.visible);
 
+  /// 最顶层**可见**条目的下标，无可见层返回 -1（常驻隐藏热槽不算）。
+  int get lastVisibleIndex {
+    for (int i = _entries.length - 1; i >= 0; i--) {
+      if (_entries[i].visible) return i;
+    }
+    return -1;
+  }
+
   /// 开页 seed 一个常驻隐藏热槽，使其 WebView 冷加载一次后全程复用。
-  void seedWarmSlot() {
+  /// [seedResult] 让宿主放一个占位结果（书内放 kPopupSearchingPlaceholderResult）。
+  void seedWarmSlot({DictionarySearchResult? seedResult}) {
     if (lowMemory || _entries.isNotEmpty) return;
     _entries.add(DictionaryPopupEntry(
       searchTerm: '',
       selectionRect: Rect.zero,
+      result: seedResult,
       visible: false,
       isWarmSlot: true,
     ));
     notifyListeners();
   }
 
-  /// 顶层查词开始：丢弃所有子层、复用首条（热槽）作为目标并标记搜索中。
-  /// 目标条目此刻**仍隐藏**，待 [revealResult] 才显示——搜索期靠 [isSearching] +
-  /// [pendingRect] 画占位。
-  void beginSearch(Rect selectionRect, String term) {
-    _isSearching = true;
-    _pendingRect = selectionRect;
-    if (_entries.isNotEmpty) {
+  /// 顶层查词目标：能复用常驻热槽（首条且 isWarmSlot）就原地复用并丢弃子层；
+  /// 否则按 [replaceStack] 决定是否清栈再压一条新目标。返回目标条目。
+  /// [visible] 决定搜索期目标是否立即可见（见类注释）。
+  DictionaryPopupEntry beginTop({
+    required String term,
+    required Rect rect,
+    required bool reuseWarmSlot,
+    required bool replaceStack,
+    required bool visible,
+    DictionarySearchResult? initialResult,
+  }) {
+    final DictionaryPopupEntry e;
+    if (reuseWarmSlot && _entries.isNotEmpty && _entries.first.isWarmSlot) {
       if (_entries.length > 1) {
         _entries.removeRange(1, _entries.length);
       }
-      final DictionaryPopupEntry e = _entries.first
+      e = _entries.first
         ..searchTerm = term
-        ..selectionRect = selectionRect
-        ..isSearching = true;
-      _searchTarget = e;
+        ..selectionRect = rect
+        ..result = initialResult
+        ..allLoaded = false
+        ..isSearching = true
+        ..visible = visible;
     } else {
-      final DictionaryPopupEntry e = DictionaryPopupEntry(
+      if (replaceStack) _entries.clear();
+      e = DictionaryPopupEntry(
         searchTerm: term,
-        selectionRect: selectionRect,
-        visible: false,
+        selectionRect: rect,
+        result: initialResult,
+        visible: visible,
       )..isSearching = true;
       _entries.add(e);
-      _searchTarget = e;
+    }
+    notifyListeners();
+    return e;
+  }
+
+  /// 嵌套查词目标：先把 [parentIndex] 之后的更深子层裁掉，再压入一条新目标。
+  DictionaryPopupEntry pushChild({
+    required String term,
+    required Rect rect,
+    required int parentIndex,
+    required bool visible,
+  }) {
+    truncateTo(parentIndex + 1);
+    final DictionaryPopupEntry e = DictionaryPopupEntry(
+      searchTerm: term,
+      selectionRect: rect,
+      visible: visible,
+    )..isSearching = true;
+    _entries.add(e);
+    notifyListeners();
+    return e;
+  }
+
+  /// 裁到只剩前 [length] 层（用于丢弃更深的嵌套层）。
+  void truncateTo(int length) {
+    if (length < 0) length = 0;
+    if (_entries.length > length) {
+      _entries.removeRange(length, _entries.length);
+      notifyListeners();
+    }
+  }
+
+  /// 顶层新查词前的预清理：保留常驻隐藏热槽、丢弃其余（低内存则清空）。
+  /// 对应 base_source_page 旧 `prunePopupStack(0)`。
+  void pruneToWarmSlot() {
+    if (_entries.isEmpty) return;
+    final DictionaryPopupEntry first = _entries.first;
+    if (first.isWarmSlot && !lowMemory) {
+      first
+        ..visible = false
+        ..selectionRect = Rect.zero;
+      _entries
+        ..clear()
+        ..add(first);
+    } else {
+      _entries.clear();
     }
     notifyListeners();
   }
 
-  /// 嵌套查词（在已显示的浮层里点词/链接）：压入一个新的隐藏目标条目。
-  void pushChild(Rect selectionRect, String term) {
-    _isSearching = true;
-    _pendingRect = selectionRect;
-    final DictionaryPopupEntry e = DictionaryPopupEntry(
-      searchTerm: term,
-      selectionRect: selectionRect,
-      visible: false,
-    )..isSearching = true;
-    _entries.add(e);
-    _searchTarget = e;
+  /// 清空整个栈（宿主重置/销毁用；不保留热槽）。
+  void clear() {
+    if (_entries.isEmpty) return;
+    _entries.clear();
     notifyListeners();
   }
 
-  /// 结果就绪：把结果填入当前搜索目标条目并设为可见（顶层/嵌套通用）。
-  void revealResult({
+  /// 把结果填进 [e]（不改 visible），供「就绪才显示」与「延迟显示」两条路径。
+  void fillResult(
+    DictionaryPopupEntry e, {
     required DictionarySearchResult? result,
     required bool allLoaded,
   }) {
-    _isSearching = false;
-    _pendingRect = null;
-    DictionaryPopupEntry? e = _searchTarget;
-    e ??= _entries.isNotEmpty ? _entries.last : null;
-    if (e == null) {
-      e = DictionaryPopupEntry(searchTerm: '', selectionRect: Rect.zero);
-      _entries.add(e);
-    }
     e
       ..result = result
       ..allLoaded = allLoaded
-      ..visible = true
       ..isSearching = false;
-    _searchTarget = null;
+    notifyListeners();
+  }
+
+  /// 显示 [e]（搜索→就绪才显示路径在 [fillResult] 后调用）。
+  void show(DictionaryPopupEntry e) {
+    e.visible = true;
     notifyListeners();
   }
 
@@ -157,9 +207,6 @@ class DictionaryPopupController extends ChangeNotifier {
     } else {
       _entries.removeRange(index, _entries.length);
     }
-    _isSearching = false;
-    _pendingRect = null;
-    _searchTarget = null;
     notifyListeners();
   }
 }

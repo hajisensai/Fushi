@@ -2,97 +2,164 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
 
-/// Unit tests for the shared [DictionaryPopupController] — the single source of
-/// truth for the dictionary popup stack across the reader / audiobook / video /
-/// home tab / standalone window (unification plan
+/// Unit tests for the shared [DictionaryPopupController] — the single set of
+/// stack primitives across the reader / audiobook / video / home tab /
+/// standalone window (unification plan
 /// docs/specs/2026-06-07-dictionary-popup-unification-plan.md). Pure logic, no
-/// WebView rendering.
+/// WebView rendering. The controller only owns the stack mechanism; whether a
+/// search-target is visible while searching is the host's choice (`visible`).
 void main() {
-  test('seedWarmSlot 放一个隐藏的常驻热槽', () {
+  test('seedWarmSlot 放一个隐藏的常驻热槽（幂等、低内存跳过）', () {
     final c = DictionaryPopupController(lowMemory: false);
+    c.seedWarmSlot();
     c.seedWarmSlot();
     expect(c.entries.length, 1);
     expect(c.entries.first.isWarmSlot, true);
     expect(c.entries.first.visible, false);
     expect(c.hasVisiblePopup, false);
+
+    final lm = DictionaryPopupController(lowMemory: true)..seedWarmSlot();
+    expect(lm.entries, isEmpty);
   });
 
-  test('seedWarmSlot 幂等：重复调用不重复 seed', () {
-    final c = DictionaryPopupController(lowMemory: false);
-    c.seedWarmSlot();
-    c.seedWarmSlot();
-    expect(c.entries.length, 1);
-  });
-
-  test('lowMemory 不 seed 热槽', () {
-    final c = DictionaryPopupController(lowMemory: true);
-    c.seedWarmSlot();
-    expect(c.entries, isEmpty);
-  });
-
-  test('reveal 把结果填进热槽并设可见（搜索→就绪才显示）', () {
+  test('beginTop 复用热槽（视频：搜索期即可见）', () {
     final c = DictionaryPopupController(lowMemory: false)..seedWarmSlot();
-    c.beginSearch(const Rect.fromLTWH(1, 2, 3, 4), 'あ');
-    expect(c.entries.first.visible, false, reason: '搜索期热槽仍隐藏');
-    expect(c.isSearching, true);
-    expect(c.pendingRect, const Rect.fromLTWH(1, 2, 3, 4));
+    final e = c.beginTop(
+      term: 'あ',
+      rect: const Rect.fromLTWH(1, 2, 3, 4),
+      reuseWarmSlot: true,
+      replaceStack: false,
+      visible: true,
+    );
+    expect(c.entries.length, 1);
+    expect(identical(e, c.entries.first), true);
+    expect(e.visible, true);
+    expect(e.isSearching, true);
+    expect(e.searchTerm, 'あ');
+  });
 
-    c.revealResult(result: null, allLoaded: true);
-    expect(c.isSearching, false);
-    expect(c.pendingRect, isNull);
-    expect(c.entries.first.visible, true);
+  test('beginTop 书内：搜索期隐藏，就绪 fillResult + show 才显示', () {
+    final c = DictionaryPopupController(lowMemory: false)..seedWarmSlot();
+    final e = c.beginTop(
+      term: 'あ',
+      rect: Rect.zero,
+      reuseWarmSlot: true,
+      replaceStack: false,
+      visible: false,
+    );
+    expect(e.visible, false, reason: '搜索期隐藏（书内另画占位）');
+    c.fillResult(e, result: null, allLoaded: true);
+    expect(e.visible, false, reason: 'fillResult 不改 visible（支持延迟显示）');
+    expect(e.isSearching, false);
+    c.show(e);
+    expect(e.visible, true);
     expect(c.hasVisiblePopup, true);
   });
 
-  test('无热槽时 reveal 也能落到一个条目（首页/独立窗冷开场景）', () {
-    final c = DictionaryPopupController(lowMemory: true); // 不 seed
-    c.beginSearch(Rect.zero, 'あ');
-    c.revealResult(result: null, allLoaded: true);
+  test('beginTop replaceStack 无热槽时清栈压新条', () {
+    final c = DictionaryPopupController(lowMemory: true);
+    c.beginTop(
+      term: 'x',
+      rect: Rect.zero,
+      reuseWarmSlot: false,
+      replaceStack: true,
+      visible: true,
+    );
+    c.beginTop(
+      term: 'y',
+      rect: Rect.zero,
+      reuseWarmSlot: false,
+      replaceStack: true,
+      visible: true,
+    );
     expect(c.entries.length, 1);
-    expect(c.entries.first.visible, true);
+    expect(c.entries.first.searchTerm, 'y');
   });
 
-  test('dismiss(0) 隐藏并保留热槽（非清空）', () {
+  test('pushChild 先裁深层再压新嵌套层', () {
     final c = DictionaryPopupController(lowMemory: false)..seedWarmSlot();
-    c.beginSearch(Rect.zero, 'あ');
-    c.revealResult(result: null, allLoaded: true);
+    c.beginTop(
+        term: 'a',
+        rect: Rect.zero,
+        reuseWarmSlot: true,
+        replaceStack: false,
+        visible: true);
+    c.pushChild(term: 'b', rect: Rect.zero, parentIndex: 0, visible: true);
+    expect(c.entries.length, 2);
+    // 从第 0 层再次下钻：第 1 层及之上被裁掉，压入新的。
+    c.pushChild(term: 'c', rect: Rect.zero, parentIndex: 0, visible: true);
+    expect(c.entries.length, 2);
+    expect(c.entries.last.searchTerm, 'c');
+  });
 
+  test('lastVisibleIndex 忽略隐藏热槽', () {
+    final c = DictionaryPopupController(lowMemory: false)..seedWarmSlot();
+    expect(c.lastVisibleIndex, -1);
+    final e = c.beginTop(
+        term: 'a',
+        rect: Rect.zero,
+        reuseWarmSlot: true,
+        replaceStack: false,
+        visible: false);
+    expect(c.lastVisibleIndex, -1, reason: '隐藏不算');
+    c.show(e);
+    expect(c.lastVisibleIndex, 0);
+  });
+
+  test('dismissAt(0) 隐藏并保留热槽；低内存清空', () {
+    final c = DictionaryPopupController(lowMemory: false)..seedWarmSlot();
+    final e = c.beginTop(
+        term: 'a',
+        rect: Rect.zero,
+        reuseWarmSlot: true,
+        replaceStack: false,
+        visible: true);
+    c.fillResult(e, result: null, allLoaded: true);
     c.dismissAt(0);
     expect(c.entries.length, 1);
     expect(c.entries.first.isWarmSlot, true);
     expect(c.entries.first.visible, false);
-    expect(c.hasVisiblePopup, false);
+
+    final lm = DictionaryPopupController(lowMemory: true);
+    lm.beginTop(
+        term: 'a',
+        rect: Rect.zero,
+        reuseWarmSlot: false,
+        replaceStack: true,
+        visible: true);
+    lm.dismissAt(0);
+    expect(lm.entries, isEmpty);
   });
 
-  test('lowMemory 下 dismiss(0) 清空（不保留热槽）', () {
-    final c = DictionaryPopupController(lowMemory: true);
-    c.beginSearch(Rect.zero, 'あ');
-    c.revealResult(result: null, allLoaded: true);
-    c.dismissAt(0);
-    expect(c.entries, isEmpty);
-  });
-
-  test('dismiss(非0) 只裁掉该层及其之上，保留下层', () {
+  test('dismissAt(非0) 只裁该层及之上', () {
     final c = DictionaryPopupController(lowMemory: false)..seedWarmSlot();
-    c.beginSearch(Rect.zero, 'あ');
-    c.revealResult(result: null, allLoaded: true);
-    c.pushChild(const Rect.fromLTWH(5, 5, 1, 1), 'い');
-    c.revealResult(result: null, allLoaded: true);
+    final e = c.beginTop(
+        term: 'a',
+        rect: Rect.zero,
+        reuseWarmSlot: true,
+        replaceStack: false,
+        visible: true);
+    c.fillResult(e, result: null, allLoaded: true);
+    c.pushChild(term: 'b', rect: Rect.zero, parentIndex: 0, visible: true);
     expect(c.entries.length, 2);
-
     c.dismissAt(1);
     expect(c.entries.length, 1);
     expect(c.entries.first.visible, true);
   });
 
-  test('notifyListeners 在状态变化时触发', () {
-    final c = DictionaryPopupController(lowMemory: false);
-    int n = 0;
-    c.addListener(() => n++);
-    c.seedWarmSlot();
-    c.beginSearch(Rect.zero, 'あ');
-    c.revealResult(result: null, allLoaded: true);
-    c.dismissAt(0);
-    expect(n, greaterThanOrEqualTo(4));
+  test('pruneToWarmSlot 保留隐藏热槽丢弃其余', () {
+    final c = DictionaryPopupController(lowMemory: false)..seedWarmSlot();
+    final e = c.beginTop(
+        term: 'a',
+        rect: Rect.zero,
+        reuseWarmSlot: true,
+        replaceStack: false,
+        visible: true);
+    c.fillResult(e, result: null, allLoaded: true);
+    c.pushChild(term: 'b', rect: Rect.zero, parentIndex: 0, visible: true);
+    c.pruneToWarmSlot();
+    expect(c.entries.length, 1);
+    expect(c.entries.first.isWarmSlot, true);
+    expect(c.entries.first.visible, false);
   });
 }
