@@ -208,6 +208,7 @@ class VideoPlayerController extends ChangeNotifier
     String? externalSubtitlePath,
     List<String> shaderPaths = const <String>[],
     VideoMpvConfig mpvConfig = VideoMpvConfig.defaults,
+    bool autoPlay = false,
   }) async {
     _bookUid = bookUid;
     _videoPath = videoFile.path;
@@ -278,6 +279,13 @@ class VideoPlayerController extends ChangeNotifier
       if (p == null) return;
       updateCueForPosition(p.state.position.inMilliseconds);
     });
+
+    // 自动播放：进页面/换集后直接开播（用户偏好）。放在恢复 seek **之后**（否则
+    // 先从 0 起播再跳到恢复位置，产生可见闪跳），且放在订阅播放态之后（让
+    // stream.playing 监听捕获到起播事件、即时刷新 UI）。换片守卫同上。
+    if (autoPlay && _player == player) {
+      await player.play();
+    }
 
     // 无外挂字幕且无 cue 时，桌面端后台抽内嵌字幕轨成可点击 cue（不阻塞首帧）。
     if ((externalSubtitlePath == null || externalSubtitlePath.isEmpty) &&

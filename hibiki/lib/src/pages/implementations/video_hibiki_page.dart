@@ -128,6 +128,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// （根因：FilePicker 打开系统对话框抢走焦点，关闭后不会自动归还）。见 [_refocusVideo]。
   final FocusNode _videoFocusNode = FocusNode(debugLabel: 'videoKeyboard');
 
+  /// media_kit controls 子树内的 [BuildContext]（在 [_buildVideoControls] 用 [Builder]
+  /// 捕获）。覆盖默认键盘快捷键时，全屏相关 helper（[isFullscreen]/[toggleFullscreen]/
+  /// [exitFullscreen]）必须用 controls 子树内的 context 才能找到 media_kit 的
+  /// `FullscreenInheritedWidget` / `VideoStateInheritedWidget`——本页 build 的 context 是
+  /// 它们的祖先，传进去会查不到。故捕获一个后代 context 供 Escape/F 快捷键用。
+  BuildContext? _videoControlsContext;
+
   /// 观看统计采集器（观看时长 + 字幕字数 + 完成标记）；首次 load 建，dispose 释放。
   VideoWatchTracker? _watchTracker;
 
@@ -460,6 +467,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         externalSubtitlePath: externalSubtitlePath,
         shaderPaths: shaderPaths,
         mpvConfig: mpvConfig,
+        autoPlay: true,
       );
     } catch (e, stack) {
       debugPrint('[VideoHibikiPage] video load failed: $e\n$stack');
@@ -602,7 +610,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // sheet 关闭后把键盘焦点还给 Video（覆盖层夺焦后不会自动归还）。
     showModalBottomSheet<void>(
       context: context,
-      backgroundColor: Colors.black87,
       isScrollControlled: true,
       builder: (BuildContext ctx) => SafeArea(
         child: ConstrainedBox(
@@ -617,11 +624,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
               return ListTile(
                 selected: selected,
                 selectedColor: Theme.of(ctx).colorScheme.primary,
-                textColor: Colors.white,
                 leading: selected
                     ? const Icon(Icons.play_arrow)
                     : Text('${i + 1}',
-                        style: const TextStyle(color: Colors.white70)),
+                        style: TextStyle(
+                            color: Theme.of(ctx).colorScheme.onSurfaceVariant)),
                 title: Text(
                   _episodes[i].title,
                   maxLines: 2,
@@ -934,6 +941,84 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     );
   }
 
+  /// 退出/返回汇聚点：浮层栈有可见层先关栈（一层层退），否则 await 落库后真正
+  /// pop 路由。[PopScope] 与 Escape 快捷键共用，保证两条退出路径行为一致。
+  ///
+  /// 只有 VISIBLE 浮层拦截 back；常驻隐藏的热槽（BUG-094）让栈非空但不得吞掉退出。
+  Future<void> _handleBackOrExit() async {
+    if (_hasVisiblePopup) {
+      _popNestedPopupAt(_topVisiblePopupIndex);
+      return;
+    }
+    final NavigatorState nav = Navigator.of(context);
+    await _controller?.flushPosition();
+    if (mounted) nav.pop();
+  }
+
+  /// 桌面键盘快捷键，整表覆盖 media_kit 默认（[MaterialDesktopVideoControlsThemeData.
+  /// keyboardShortcuts] 是整表替换、无合并）。覆盖动机：
+  /// ① 默认 Escape 只 `exitFullscreen`，非全屏时是空操作 → 用户按 Esc 退不出视频页
+  ///    （本页 [PopScope] 自管退出，但收不到事件：media_kit 的 CallbackShortcuts 在
+  ///    本页外层 CallbackShortcuts 的内层，先吞掉 Escape）。改为非全屏退页、全屏退
+  ///    全屏。
+  /// ② 默认左右方向键是 ±2 秒 seek，用户要「上下句字幕」（无 cue 时回退 ±10 秒）。
+  /// 其余键（空格/媒体键/音量/J·I/F）按 media_kit 默认语义用底层 [Player] 重建，避免
+  /// 覆盖后丢默认行为。全屏相关 helper 需 controls 子树内 context，用 [_videoControlsContext]。
+  Map<ShortcutActivator, VoidCallback> _videoKeyboardShortcuts(
+    VideoPlayerController controller,
+  ) {
+    Player? player() => controller.videoController?.player;
+    return <ShortcutActivator, VoidCallback>{
+      const SingleActivator(LogicalKeyboardKey.space): () =>
+          player()?.playOrPause(),
+      const SingleActivator(LogicalKeyboardKey.mediaPlay): () =>
+          player()?.play(),
+      const SingleActivator(LogicalKeyboardKey.mediaPause): () =>
+          player()?.pause(),
+      const SingleActivator(LogicalKeyboardKey.mediaPlayPause): () =>
+          player()?.playOrPause(),
+      // 左右方向键 = 上下句字幕（无字幕 cue 时回退 ±10 秒 seek）。
+      const SingleActivator(LogicalKeyboardKey.arrowLeft): () => unawaited(
+            controller.cues.isEmpty
+                ? controller.seekRelative(-10000)
+                : controller.skipToPrevCue(),
+          ),
+      const SingleActivator(LogicalKeyboardKey.arrowRight): () => unawaited(
+            controller.cues.isEmpty
+                ? controller.seekRelative(10000)
+                : controller.skipToNextCue(),
+          ),
+      // J / I = ±10 秒（保留 media_kit 默认 seek 行为，10 秒粒度）。
+      const SingleActivator(LogicalKeyboardKey.keyJ): () =>
+          unawaited(controller.seekRelative(-10000)),
+      const SingleActivator(LogicalKeyboardKey.keyI): () =>
+          unawaited(controller.seekRelative(10000)),
+      // 上下方向键 = 音量 ±5（保留 media_kit 默认）。
+      const SingleActivator(LogicalKeyboardKey.arrowUp): () {
+        final Player? p = player();
+        if (p != null) p.setVolume((p.state.volume + 5.0).clamp(0.0, 100.0));
+      },
+      const SingleActivator(LogicalKeyboardKey.arrowDown): () {
+        final Player? p = player();
+        if (p != null) p.setVolume((p.state.volume - 5.0).clamp(0.0, 100.0));
+      },
+      // F = 切换全屏（保留 media_kit 默认；需 controls 子树内 context）。
+      const SingleActivator(LogicalKeyboardKey.keyF): () {
+        final BuildContext? ctx = _videoControlsContext;
+        if (ctx != null && ctx.mounted) toggleFullscreen(ctx);
+      },
+      // Escape：全屏时退全屏（沿用 media_kit 语义），否则退出视频页（核心修复）。
+      const SingleActivator(LogicalKeyboardKey.escape): () {
+        final BuildContext? ctx = _videoControlsContext;
+        if (ctx != null && ctx.mounted && isFullscreen(ctx)) {
+          unawaited(exitFullscreen(ctx));
+        } else {
+          unawaited(_handleBackOrExit());
+        }
+      },
+    };
+  }
+
   /// media_kit 桌面控制主题。底部胶囊条改成居中传输组
   /// `[−10s][上一句][暂停][下一句][+10s]`（清空中央 primaryButtonBar 避免重复），
   /// 左端进度、右端全屏；顶栏右侧放 截图/字幕/音轨/倍速/设置 图标（参照截图）。
@@ -947,7 +1032,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       hideMouseOnControlsRemoval: true,
       seekBarPositionColor: cs.primary,
       seekBarThumbColor: cs.primary,
-      buttonBarButtonColor: cs.onSurface,
+      buttonBarButtonColor: cs.primary,
+      keyboardShortcuts: _videoKeyboardShortcuts(controller),
       primaryButtonBar: const <Widget>[],
       // 视频内顶栏（替代被删的 Scaffold AppBar，BUG-102）：左侧返回 + 标题，右侧
       // 剧集导航（playlist）+ 截图/字幕/音轨/倍速/设置。
@@ -1045,7 +1131,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     return MaterialVideoControlsThemeData(
       seekBarPositionColor: cs.primary,
       seekBarThumbColor: cs.primary,
-      buttonBarButtonColor: Colors.white,
+      buttonBarButtonColor: cs.primary,
       primaryButtonBar: const <Widget>[],
       // 视频内顶栏（替代被删的 Scaffold AppBar，BUG-102）：左侧返回 + 标题，右侧
       // 剧集导航（playlist）+ 截图/字幕/音轨/倍速/设置。移动端全屏本就丢 AppBar，
@@ -1136,12 +1222,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // sheet 关闭后把键盘焦点还给 Video（覆盖层夺焦后不会自动归还）。
     showModalBottomSheet<void>(
       context: context,
-      backgroundColor: Colors.black87,
       builder: (BuildContext ctx) => ListView(
         shrinkWrap: true,
         children: tracks
             .map((({String label, VoidCallback onSelected}) o) => ListTile(
-                  textColor: Colors.white,
                   title: Text(o.label),
                   onTap: () {
                     o.onSelected();
@@ -1250,7 +1334,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     const List<double> speedPresets = <double>[0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
     showModalBottomSheet<void>(
       context: context,
-      backgroundColor: Colors.black87,
       builder: (BuildContext ctx) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1258,7 +1341,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             for (final double s in speedPresets)
               ListTile(
                 dense: true,
-                textColor: Colors.white,
                 title: Text('${s}x'),
                 trailing: (s - _playbackSpeed).abs() < 0.001
                     ? Icon(Icons.check,
@@ -1621,7 +1703,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // sheet 关闭后把键盘焦点还给 Video（覆盖层夺焦后不会自动归还）。
     showModalBottomSheet<void>(
       context: context,
-      backgroundColor: Colors.black87,
       isScrollControlled: true,
       builder: (BuildContext ctx) => SafeArea(
         child: ConstrainedBox(
@@ -1633,9 +1714,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             children: <Widget>[
               // 自动获取字幕（Jimaku）：用番名搜 → 下载 → 应用为外挂源。
               ListTile(
-                textColor: Colors.white,
-                leading: const Icon(Icons.cloud_download_outlined,
-                    color: Colors.white),
+                leading: const Icon(Icons.cloud_download_outlined),
                 title: Text(t.video_jimaku_fetch),
                 onTap: () {
                   Navigator.pop(ctx);
@@ -1645,19 +1724,16 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
               // 从本地文件导入字幕：FilePicker 选 srt/ass/ssa/vtt → 拷到持久目录 →
               // 复用 _selectSubtitleSource 应用（解决 sidecar 名对不上 / 字幕在别目录）。
               ListTile(
-                textColor: Colors.white,
-                leading:
-                    const Icon(Icons.file_open_outlined, color: Colors.white),
+                leading: const Icon(Icons.file_open_outlined),
                 title: Text(t.video_subtitle_import_file),
                 onTap: () {
                   Navigator.pop(ctx);
                   _pickAndImportSubtitle(controller);
                 },
               ),
-              const Divider(color: Colors.white24, height: 1),
+              const Divider(height: 1),
               ListTile(
-                textColor: Colors.white,
-                leading: const Icon(Icons.subtitles_off, color: Colors.white),
+                leading: const Icon(Icons.subtitles_off),
                 title: Text(t.video_subtitle_off),
                 selected: _currentSubtitleSource == null,
                 selectedColor: Theme.of(ctx).colorScheme.primary,
@@ -1668,10 +1744,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
               ),
               for (final SubtitleSource source in sources)
                 ListTile(
-                  textColor: Colors.white,
                   leading: Icon(
                     source.isEmbedded ? Icons.movie : Icons.subtitles,
-                    color: Colors.white,
                   ),
                   title: Text(source.label),
                   selected: source.matchesPersisted(_currentSubtitleSource),
@@ -1907,15 +1981,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       canPop: false,
       onPopInvokedWithResult: (bool didPop, Object? _) async {
         if (didPop) return;
-        // Only a VISIBLE popup intercepts back; the persistent hidden warm slot
-        // (BUG-094) keeps the stack non-empty but must not swallow back/exit.
-        if (_hasVisiblePopup) {
-          _popNestedPopupAt(_topVisiblePopupIndex);
-          return;
-        }
-        final NavigatorState nav = Navigator.of(context);
-        await _controller?.flushPosition();
-        if (mounted) nav.pop();
+        await _handleBackOrExit();
       },
       child: _buildScaffold(controller, videoController, cs),
     );
@@ -2012,7 +2078,18 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       },
       child: Stack(
         children: <Widget>[
-          Positioned.fill(child: AdaptiveVideoControls(state)),
+          // Builder 捕获 media_kit controls 子树内的 context（[_videoControlsContext]），
+          // 供覆盖后的键盘快捷键调用全屏 helper（isFullscreen/toggle/exitFullscreen）——
+          // 本页 build context 是它们的祖先，找不到 media_kit 的 Fullscreen/VideoState
+          // InheritedWidget。全屏复用同一 builder，故全屏路由会重新捕获其子树 context。
+          Positioned.fill(
+            child: Builder(
+              builder: (BuildContext controlsContext) {
+                _videoControlsContext = controlsContext;
+                return AdaptiveVideoControls(state);
+              },
+            ),
+          ),
           Positioned.fill(
             child: VideoSubtitleOverlay(
               controller: controller,

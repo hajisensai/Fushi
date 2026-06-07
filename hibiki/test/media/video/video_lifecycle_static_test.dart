@@ -67,13 +67,24 @@ void main() {
           reason: '页面必须自管退出（canPop:false），才能在 pop 前 await 落库');
     });
 
-    test('pop handler awaits flushPosition() before manually popping the route',
+    test('pop handler delegates to _handleBackOrExit (PopScope/Esc 共用汇聚点)',
         () {
+      // PopScope 与 Escape 快捷键共用 _handleBackOrExit，保证两条退出路径一致。
       final RegExpMatch? body = RegExp(
         r'onPopInvokedWithResult: \(bool didPop, Object\? _\) async \{(.*?)\n      \},',
         dotAll: true,
       ).firstMatch(page);
       expect(body, isNotNull, reason: '找不到 onPopInvokedWithResult 异步处理体');
+      expect(body!.group(1), contains('_handleBackOrExit()'),
+          reason: 'onPop 必须委托给退出汇聚点 _handleBackOrExit');
+    });
+
+    test('_handleBackOrExit awaits flushPosition() before manually popping', () {
+      final RegExpMatch? body = RegExp(
+        r'Future<void> _handleBackOrExit\(\) async \{(.*?)\n  \}',
+        dotAll: true,
+      ).firstMatch(page);
+      expect(body, isNotNull, reason: '找不到 _handleBackOrExit 方法体');
       final String b = body!.group(1)!;
       final int flushAt = b.indexOf('await _controller?.flushPosition()');
       final int popAt = b.indexOf('nav.pop()');
