@@ -2,6 +2,7 @@ import 'dart:io';
 
 import '../audiobook/audiobook_model.dart';
 import 'srt_parser.dart';
+import 'subtitle_markup.dart';
 import 'text_file_io.dart';
 
 /// 解析 WebVTT（.vtt）字幕文件，产出 [AudioCue] 列表。
@@ -105,7 +106,9 @@ class VttParser {
 
       final String rawText =
           lines.skip(timeLineIdx + 1).where((l) => l.isNotEmpty).join(' ');
-      final String text = _stripTags(rawText);
+      // 先剥 VTT/HTML 标签，再交 markup 解析 ASS override 块（两者正交）。
+      final SubtitleMarkup markup = parseSubtitleMarkup(_stripTags(rawText));
+      final String text = markup.plainText;
       if (text.isEmpty) {
         continue;
       }
@@ -117,6 +120,7 @@ class VttParser {
           ..sentenceIndex = sentenceIndex
           ..textFragmentId = '[data-cue-id="$sentenceIndex"]'
           ..text = text
+          ..markup = markup
           ..startMs = times.$1
           ..endMs = times.$2
           ..audioFileIndex = audioFileIndex,
