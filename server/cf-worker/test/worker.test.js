@@ -5,7 +5,10 @@ import worker, {
   configMissing,
   escapeHtml,
   genLogId,
+  linkBase,
+  parseLogId,
   randCode,
+  renderList,
   routePath,
   sanitizePlatform,
   timingSafeEqual,
@@ -97,6 +100,29 @@ describe('pure helpers', () => {
   });
   it('escapeHtml 转义', () => {
     expect(escapeHtml('<script>')).toBe('&lt;script&gt;');
+  });
+  it('parseLogId 拆出时间/平台/rand，非法返回 null', () => {
+    expect(parseLogId('20260606-123456-android-ab12cd.txt')).toEqual({
+      date: '2026-06-06',
+      time: '12:34:56',
+      platform: 'android',
+      rand: 'ab12cd',
+    });
+    expect(parseLogId('evil.txt')).toBe(null);
+    expect(parseLogId('../../etc/passwd')).toBe(null);
+  });
+  it('linkBase：无前缀空串，有前缀补斜杠', () => {
+    expect(linkBase(undefined)).toBe('');
+    expect(linkBase('')).toBe('');
+    expect(linkBase('ec70')).toBe('/ec70');
+    expect(linkBase('/ec70')).toBe('/ec70');
+  });
+  it('renderList：链接带前缀 + 空状态 + HTML 转义', () => {
+    const html = renderList(['20260606-123456-android-ab12cd.txt'], '/ec70');
+    expect(html).toContain('href="/ec70/log/20260606-123456-android-ab12cd.txt"');
+    expect(html).toContain('android'); // 平台徽章
+    expect(html).toContain('ab12cd'); // rand 作链接文字
+    expect(renderList([], '/ec70')).toContain('还没有日志');
   });
   it('buildLogContent 去换行注入 + 保留正文', () => {
     const c = buildLogContent({ kind: 'a\nb', platform: 'android', log: 'line1\nline2' });
@@ -337,6 +363,13 @@ describe('随机密钥路径前缀 ROUTE_PREFIX', () => {
       env,
     );
     expect(list.status).toBe(200);
-    expect(await list.text()).toContain(id);
+    const listHtml = await list.text();
+    expect(listHtml).toContain(id);
+    // BUG 修复：列表链接必须带前缀，否则点开丢前缀 → 404。
+    expect(listHtml).toContain(`href="/s3cr3t/log/${id}"`);
+    // 列表页 CSP 放开 style-src 以渲染内联样式，但仍不放开 script-src。
+    const csp = list.headers.get('Content-Security-Policy');
+    expect(csp).toContain("style-src 'unsafe-inline'");
+    expect(csp).not.toContain('script-src');
   });
 });

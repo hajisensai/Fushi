@@ -101,13 +101,124 @@ function securityHeaders(extra = {}) {
   };
 }
 
-export function renderList(ids) {
-  const items = ids
-    .map((id) => `<li><a href="/log/${escapeHtml(id)}">${escapeHtml(id)}</a></li>`)
-    .join('\n');
+// 列表页用内联 <style>，CSP 需放开 style-src（仍不放开 script-src）。
+// 日志正文走 text/plain，沿用严格 securityHeaders 不受影响。
+function htmlSecurityHeaders() {
+  return securityHeaders({
+    'Content-Type': 'text/html; charset=utf-8',
+    'Content-Security-Policy':
+      "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'",
+  });
+}
+
+// ROUTE_PREFIX → 链接前缀段（"/ec70..."）；未配前缀为 ""。
+export function linkBase(prefix) {
+  if (!prefix) return '';
+  return prefix.startsWith('/') ? prefix : '/' + prefix;
+}
+
+// 把白名单 id（YYYYMMDD-HHMMSS-platform-rand.txt）拆成可读字段；不匹配返回 null。
+export function parseLogId(id) {
+  const m = String(id).match(
+    /^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})-([a-z]+)-([a-z0-9]{6})\.txt$/,
+  );
+  if (!m) return null;
+  const [, y, mo, d, h, mi, s, platform, rand] = m;
+  return {
+    date: `${y}-${mo}-${d}`,
+    time: `${h}:${mi}:${s}`,
+    platform,
+    rand,
+  };
+}
+
+// 平台 → 徽章配色（背景/前景）。未知平台回落中性灰，消除「未列平台就没样式」特例。
+const PLATFORM_COLORS = {
+  android: ['#1b3a2a', '#7ee2a8'],
+  ios: ['#1b2c45', '#8fb8ff'],
+  macos: ['#33323a', '#cfcad8'],
+  windows: ['#10303a', '#6fd6f0'],
+  linux: ['#3a2f12', '#f0c969'],
+  web: ['#2b1b40', '#c79bff'],
+  unknown: ['#2a2a30', '#9aa0aa'],
+};
+
+function platformBadge(platform) {
+  const key = Object.prototype.hasOwnProperty.call(PLATFORM_COLORS, platform)
+    ? platform
+    : 'unknown';
+  const [bg, fg] = PLATFORM_COLORS[key];
   return (
-    `<!doctype html>\n<html><head><meta charset="utf-8"><title>hibiki logs</title></head>\n` +
-    `<body><h1>hibiki logs (${ids.length})</h1><ul>\n${items}\n</ul></body></html>`
+    `<span class="badge" style="background:${bg};color:${fg}">` +
+    `${escapeHtml(platform)}</span>`
+  );
+}
+
+const LIST_STYLE = `
+:root{color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:#0e0e11;color:#e6e6ea;
+  font:15px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:880px;margin:0 auto;padding:32px 20px 64px}
+header{display:flex;align-items:baseline;gap:12px;margin-bottom:24px;
+  padding-bottom:16px;border-bottom:1px solid #26262e}
+h1{margin:0;font-size:22px;font-weight:650;letter-spacing:.2px}
+.count{font-size:13px;color:#9aa0aa;background:#1a1a20;
+  padding:2px 10px;border-radius:999px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+thead th{text-align:left;font-weight:550;color:#8a8f99;font-size:12px;
+  text-transform:uppercase;letter-spacing:.6px;padding:0 12px 10px}
+tbody tr{border-top:1px solid #1d1d24}
+tbody tr:hover{background:#16161c}
+td{padding:11px 12px;vertical-align:middle}
+td.ts{white-space:nowrap;color:#cfd2d8;font-variant-numeric:tabular-nums}
+td.ts .date{color:#80858f;font-size:12px;margin-right:8px}
+.badge{display:inline-block;font-size:12px;font-weight:600;
+  padding:2px 9px;border-radius:6px;letter-spacing:.3px}
+a.id{color:#8fb8ff;text-decoration:none;font-family:ui-monospace,
+  SFMono-Regular,Menlo,Consolas,monospace;font-size:13px}
+a.id:hover{text-decoration:underline}
+.empty{text-align:center;color:#80858f;padding:64px 0}
+footer{margin-top:28px;color:#5c606a;font-size:12px;text-align:center}
+`;
+
+// linkBase：前缀路径段（如 "/ec70..."）；无前缀为 ""。链接须带住前缀，否则点开 404。
+export function renderList(ids, linkBase = '') {
+  const rows = ids
+    .map((id) => {
+      const meta = parseLogId(id);
+      const href = `${linkBase}/log/${escapeHtml(id)}`;
+      if (!meta) {
+        return (
+          `<tr><td class="ts">—</td><td>${platformBadge('unknown')}</td>` +
+          `<td><a class="id" href="${href}">${escapeHtml(id)}</a></td></tr>`
+        );
+      }
+      return (
+        `<tr>` +
+        `<td class="ts"><span class="date">${meta.date}</span>${meta.time}` +
+        `<span class="date" style="margin-left:6px">UTC</span></td>` +
+        `<td>${platformBadge(meta.platform)}</td>` +
+        `<td><a class="id" href="${href}">${escapeHtml(meta.rand)}</a></td>` +
+        `</tr>`
+      );
+    })
+    .join('\n');
+  const body =
+    ids.length === 0
+      ? `<div class="empty">还没有日志</div>`
+      : `<table><thead><tr><th>时间</th><th>平台</th><th>日志</th></tr></thead>\n` +
+        `<tbody>\n${rows}\n</tbody></table>`;
+  return (
+    `<!doctype html>\n<html lang="zh"><head><meta charset="utf-8">` +
+    `<meta name="viewport" content="width=device-width,initial-scale=1">` +
+    `<meta name="robots" content="noindex,nofollow">` +
+    `<title>Hibiki 日志</title><style>${LIST_STYLE}</style></head>\n` +
+    `<body><div class="wrap">` +
+    `<header><h1>Hibiki 报错日志</h1><span class="count">${ids.length}</span></header>` +
+    `${body}` +
+    `<footer>时间为 UTC · 点条目看原文</footer>` +
+    `</div></body></html>`
   );
 }
 
@@ -189,9 +300,9 @@ async function handleList(request, env) {
   }
   const ids = (await storage.listIds(env)).filter(validLogID);
   // listIds 已按 id DESC 排序（最新在前）；仍过白名单防脏数据
-  return new Response(renderList(ids), {
+  return new Response(renderList(ids, linkBase(env.ROUTE_PREFIX)), {
     status: 200,
-    headers: securityHeaders({ 'Content-Type': 'text/html; charset=utf-8' }),
+    headers: htmlSecurityHeaders(),
   });
 }
 
