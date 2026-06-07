@@ -181,6 +181,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 当前集索引（[_episodes] 下标）；单视频恒 0。
   int _currentEpisode = 0;
 
+  /// 底部菜单（剧集/轨道/倍速/设置/字幕源）重入守卫：为真时已有一个 sheet 在开/在显，
+  /// 快速重复点击不再叠开第二个。开 sheet 前置真，sheet 关闭（whenComplete）或异步早
+  /// 返回时复位。修「点菜单/字幕点快了弹出两个」。
+  bool _videoSheetOpen = false;
+
   /// 换集加载代际计数：每次 [_loadEpisode] 自增并捕获本次序号；其慢路径（ffmpeg
   /// 枚举字幕源 + 解析 cue）跑完后若序号已被后续切集取代，则放弃应用，避免「播放中
   /// 途快速切集时旧的慢加载落地后覆盖新集字幕/视频」（用户报：切到第4集字幕/音画
@@ -572,17 +577,24 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       );
 
   /// 若有持久化音轨偏好 [_currentAudioTrackId]，在 [controller] 的 audioTracks 里
-  /// 按 id 匹配并切换。延迟读取以等待 libmpv open 后填充音轨列表。
+  /// 按 id 匹配并切换，恢复用户上次选的音轨（退出重进 / 换集复用）。
+  ///
+  /// audioTracks 在 libmpv `open` 后才**逐步**填充，时机随设备/首帧不定。旧实现固定
+  /// 等 300ms 后**单次**匹配，列表此刻常仍为空 → 匹配不到、且不重试 → 用户报「音频
+  /// 切换退出重进又得重新弄」。改为**有界轮询**：每 200ms 重试，最多 ~4s，直到列表里
+  /// 出现目标轨再切；期间换片/卸载（`_controller != controller`）即放弃。
   Future<void> _restoreAudioTrack(VideoPlayerController controller) async {
     final String? wantId = _currentAudioTrackId;
     if (wantId == null || wantId.isEmpty) return;
-    await Future<void>.delayed(const Duration(milliseconds: 300));
-    if (!mounted || _controller != controller) return;
-    for (final AudioTrack track in controller.audioTracks) {
-      if (track.id == wantId) {
-        await controller.selectAudioTrack(track);
-        return;
+    for (int attempt = 0; attempt < 20; attempt++) {
+      if (!mounted || _controller != controller) return;
+      for (final AudioTrack track in controller.audioTracks) {
+        if (track.id == wantId) {
+          await controller.selectAudioTrack(track);
+          return;
+        }
       }
+      await Future<void>.delayed(const Duration(milliseconds: 200));
     }
   }
 
@@ -632,6 +644,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   }
 
   void _showEpisodeList() {
+    if (_videoSheetOpen) return;
+    _videoSheetOpen = true;
     // sheet 关闭后把键盘焦点还给 Video（覆盖层夺焦后不会自动归还）。
     showModalBottomSheet<void>(
       context: context,
@@ -668,7 +682,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           ),
         ),
       ),
-    ).whenComplete(_refocusVideo);
+    ).whenComplete(() {
+      _videoSheetOpen = false;
+      _refocusVideo();
+    });
   }
 
   @override
@@ -1284,6 +1301,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   void _showTrackMenu(
     List<({String label, VoidCallback onSelected})> tracks,
   ) {
+    if (_videoSheetOpen) return;
+    _videoSheetOpen = true;
     // sheet 关闭后把键盘焦点还给 Video（覆盖层夺焦后不会自动归还）。
     showModalBottomSheet<void>(
       context: context,
@@ -1299,7 +1318,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                 ))
             .toList(),
       ),
-    ).whenComplete(_refocusVideo);
+    ).whenComplete(() {
+      _videoSheetOpen = false;
+      _refocusVideo();
+    });
   }
 
   /// 设置音画延迟（毫秒）：即时调 controller（字幕 cue 同步偏移立即生效）+ 持久化
@@ -1396,6 +1418,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
   /// 弹快捷倍速选择（底部小 sheet，复用 [_setSpeed] 与设置面板同档位）。
   void _showSpeedMenu() {
+    if (_videoSheetOpen) return;
+    _videoSheetOpen = true;
     const List<double> speedPresets = <double>[0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
     showModalBottomSheet<void>(
       context: context,
@@ -1419,7 +1443,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           ],
         ),
       ),
-    ).whenComplete(_refocusVideo);
+    ).whenComplete(() {
+      _videoSheetOpen = false;
+      _refocusVideo();
+    });
   }
 
   /// 弹视频播放设置面板：与阅读器同款 master-detail（宽窗左分类固定 + 右详情独立
@@ -1428,6 +1455,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 预览（见 [_setDelayMs] / [_setSpeed] / [_persistSubtitleStyle]）。关闭后把键盘
   /// 焦点还给 Video（覆盖层夺焦后不会自动归还），恢复空格等快捷键。
   void _showPlayerSettings() {
+    if (_videoSheetOpen) return;
+    _videoSheetOpen = true;
     final Widget sheet = VideoQuickSettingsSheet(
       initialDelayMs: _delayMs,
       initialSpeed: _playbackSpeed,
@@ -1454,12 +1483,18 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           scrollable: false,
           child: sheet,
         ),
-      ).whenComplete(_refocusVideo);
+      ).whenComplete(() {
+        _videoSheetOpen = false;
+        _refocusVideo();
+      });
     } else {
       adaptiveModalSheet<void>(
         context: context,
         builder: (_) => sheet,
-      ).whenComplete(_refocusVideo);
+      ).whenComplete(() {
+        _videoSheetOpen = false;
+        _refocusVideo();
+      });
     }
   }
 
@@ -1758,12 +1793,20 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   Future<void> _showSubtitleSourceMenu(
     VideoPlayerController controller,
   ) async {
+    if (_videoSheetOpen) return;
+    _videoSheetOpen = true;
     final String? videoPath = _currentVideoPath;
-    if (videoPath == null) return;
+    if (videoPath == null) {
+      _videoSheetOpen = false;
+      return;
+    }
 
     final List<SubtitleSource> sources =
         await listAllSubtitleSources(videoPath, langCode: _targetLangCode);
-    if (!context.mounted) return;
+    if (!context.mounted) {
+      _videoSheetOpen = false;
+      return;
+    }
 
     // sheet 关闭后把键盘焦点还给 Video（覆盖层夺焦后不会自动归还）。
     showModalBottomSheet<void>(
@@ -1824,7 +1867,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           ),
         ),
       ),
-    ).whenComplete(_refocusVideo);
+    ).whenComplete(() {
+      _videoSheetOpen = false;
+      _refocusVideo();
+    });
   }
 
   /// 打开「自动获取字幕（Jimaku）」对话框：用番名（文件名解析）搜 → 下载到

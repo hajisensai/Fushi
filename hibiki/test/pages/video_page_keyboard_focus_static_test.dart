@@ -39,15 +39,17 @@ void main() {
   });
 
   test('每个会夺焦的覆盖层关闭后都归还焦点', () {
-    // bottom sheet 们用 .whenComplete(_refocusVideo) 链；showDialog/picker 用直接调用。
-    final int whenComplete =
-        '.whenComplete(_refocusVideo)'.allMatches(src).length;
-    // 至少覆盖：播放设置 sheet、字幕源 sheet、音轨 sheet、剧集列表 sheet。
-    expect(whenComplete, greaterThanOrEqualTo(4),
-        reason: '所有 showModalBottomSheet 关闭后都应 _refocusVideo');
-    // 着色器对话框（含 FilePicker/Anime4K 下载）与 Jimaku 对话框关闭后也归还焦点。
-    final int directCalls = '_refocusVideo();'.allMatches(src).length;
-    expect(directCalls, greaterThanOrEqualTo(2),
-        reason: 'showDialog（着色器 / Jimaku）关闭后也应直接 _refocusVideo()');
+    // bottom sheet 们的 whenComplete 现为闭包 `() { _videoSheetOpen = false;
+    // _refocusVideo(); }`（兼做重入守卫复位，见 video_menu_guard_test）；
+    // showDialog/picker 仍直接调用。统计所有 _refocusVideo() 调用点覆盖 5 个 sheet +
+    // 着色器/Jimaku 对话框。
+    final int refocusCalls = '_refocusVideo();'.allMatches(src).length;
+    expect(refocusCalls, greaterThanOrEqualTo(6),
+        reason: '所有夺焦覆盖层（5 个 sheet + 着色器/Jimaku 对话框）关闭后都应 _refocusVideo()');
+    // sheet 关闭回调里必须同时复位重入守卫，否则守卫卡死再也开不了菜单。
+    final int guardReset =
+        '_videoSheetOpen = false;'.allMatches(src).length;
+    expect(guardReset, greaterThanOrEqualTo(5),
+        reason: '每个 sheet 的 whenComplete 必须复位 _videoSheetOpen');
   });
 }
