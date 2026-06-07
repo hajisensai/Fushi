@@ -234,4 +234,80 @@ void main() {
     expect(find.byType(SwipeDismissWrapper), findsNothing);
     expect(find.byType(HibikiPopupSurface), findsOneWidget);
   });
+
+  group('calcPopupPosition vertical writing avoids the current column', () {
+    const Size screen = Size(1000, 800);
+
+    test('vertical-rl prefers the already-read (right) side of the column', () {
+      const Rect sel = Rect.fromLTWH(480, 300, 30, 30);
+      final Rect popup = calcPopupPosition(
+        selectionRect: sel,
+        screen: screen,
+        maxWidth: 360,
+        maxHeight: 360,
+        verticalWriting: true,
+      );
+      expect(popup.left, greaterThanOrEqualTo(sel.right),
+          reason: '竖排弹窗须在当前列右侧，不压列');
+      expect(popup.right, lessThanOrEqualTo(screen.width));
+    });
+
+    test('falls to the left side when the right has no room', () {
+      const Rect sel = Rect.fromLTWH(960, 300, 30, 30);
+      final Rect popup = calcPopupPosition(
+        selectionRect: sel,
+        screen: screen,
+        maxWidth: 360,
+        maxHeight: 360,
+        verticalWriting: true,
+      );
+      expect(popup.right, lessThanOrEqualTo(sel.left),
+          reason: '右侧无空间时弹窗须落在当前列左侧');
+      expect(popup.left, greaterThanOrEqualTo(0));
+    });
+
+    test('never horizontally overlaps the selection column', () {
+      const Rect sel = Rect.fromLTWH(500, 200, 28, 120);
+      final Rect popup = calcPopupPosition(
+        selectionRect: sel,
+        screen: screen,
+        maxWidth: 360,
+        maxHeight: 360,
+        verticalWriting: true,
+      );
+      final bool onRight = popup.left >= sel.right;
+      final bool onLeft = popup.right <= sel.left;
+      expect(onRight || onLeft, isTrue, reason: '弹窗与当前列不得水平重叠');
+    });
+
+    test('stays within vertical reserves in vertical mode', () {
+      const Rect sel = Rect.fromLTWH(480, 10, 30, 30);
+      final Rect popup = calcPopupPosition(
+        selectionRect: sel,
+        screen: screen,
+        maxWidth: 360,
+        maxHeight: 360,
+        topReserve: 100,
+        bottomReserve: 120,
+        verticalWriting: true,
+      );
+      expect(popup.top, greaterThanOrEqualTo(100), reason: '竖直方向仍须避让顶部预留');
+      expect(popup.bottom, lessThanOrEqualTo(screen.height - 120),
+          reason: '竖直方向仍须避让底部预留');
+    });
+
+    test('horizontal mode unchanged: still placed above/below selection', () {
+      const Rect sel = Rect.fromLTWH(400, 380, 60, 24);
+      final Rect popup = calcPopupPosition(
+        selectionRect: sel,
+        screen: screen,
+        maxWidth: 360,
+        maxHeight: 360,
+        verticalWriting: false,
+      );
+      final bool below = popup.top >= sel.bottom;
+      final bool above = popup.bottom <= sel.top;
+      expect(below || above, isTrue, reason: '横排须维持上/下放置，避开当前行');
+    });
+  });
 }

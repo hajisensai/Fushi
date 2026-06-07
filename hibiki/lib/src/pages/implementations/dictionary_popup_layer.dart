@@ -15,6 +15,9 @@ Rect calcPopupPosition({
   double maxHeight = 360.0,
   double bottomReserve = 0.0,
   double topReserve = 0.0,
+
+  /// 竖排（vertical-rl）时把弹窗放在当前列的左/右侧而非上/下，避免压住正在读的列。
+  bool verticalWriting = false,
 }) {
   final double reserve = bottomReserve.clamp(0, screen.height);
   final double effectiveTop = topReserve.clamp(0, screen.height);
@@ -35,13 +38,42 @@ Rect calcPopupPosition({
   final double maxLeft = screen.width - width - horizontalInset;
   final double minTop = effectiveTop + verticalInset;
   final double maxBottom = effectiveBottom - verticalInset;
+  final double maxRight = screen.width - horizontalInset;
+
+  const double gap = 4.0;
+
+  if (verticalWriting) {
+    // 竖排 vertical-rl：右→左读，右侧是已读列。优先把弹窗贴当前列右侧（盖已读、
+    // 不挡左边还没读的下一列）；右侧放不下才退到左侧。竖直方向锚到选区顶端往下铺，
+    // 与列并排——不与 selectionRect 水平重叠即不压当前列。
+    double width = availableWidth;
+    double height = availableHeight;
+    final double roomRight = maxRight - (selectionRect.right + gap);
+    final double roomLeft = (selectionRect.left - gap) - minLeft;
+    final bool right = width <= roomRight
+        ? true
+        : (width <= roomLeft ? false : roomRight >= roomLeft);
+    double left;
+    if (right) {
+      if (width > roomRight) width = roomRight.clamp(0, availableWidth);
+      left = selectionRect.right + gap;
+    } else {
+      if (width > roomLeft) width = roomLeft.clamp(0, availableWidth);
+      left = (selectionRect.left - gap) - width;
+    }
+    final double maxLeftV = (maxRight - width).clamp(minLeft, maxRight);
+    left = left.clamp(minLeft, maxLeftV);
+
+    final double maxTopV = (maxBottom - height).clamp(minTop, maxBottom);
+    final double top = selectionRect.top.clamp(minTop, maxTopV);
+    return Rect.fromLTWH(left, top, width, height);
+  }
 
   // BUG-098: the popup must never cover the looked-up word. Place it flush
   // against the selection (above or below) and, when neither side fits the full
   // height, pick the side with more room and shrink the popup to that room —
   // so its rect never overlaps [selectionRect]. The old `top.clamp(maxTop)`
   // pulled a too-tall "below" popup back up over the selection.
-  const double gap = 4.0;
   final double roomBelow = maxBottom - (selectionRect.bottom + gap);
   final double roomAbove = (selectionRect.top - gap) - minTop;
   final bool below = height <= roomBelow
