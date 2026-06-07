@@ -46,3 +46,19 @@
 
 ## 执行方式
 建议 superpowers:subagent-driven-development，按四条线的 plan 逐 task（新文件搬入+适配 + 集成点重打 + TDD + 双审），全程在 yomitan-interop-v23 分支，频繁提交。完成后 final 审 + 真机验证（外部 yomitan-api 客户端 / Textractor 推文本 / Chrome 扩展 / 桌面热键剪贴板）。
+
+---
+## 进展更新（2026-06-07，已合并 develop）
+- 四条线 + 降级保护 + 适配已 **fast-forward 合并进 develop**（develop=27e3117d4 起，后续修复 30f8b048a）。worktree 分支 yomitan-interop-v23 = develop。
+- **数据库降级保护上线**（4d3215df3）：DB 比代码新时拒绝打开+提醒，不再 DROP 重建。根除了两次数据事故的元凶（onUpgrade 的 if(from>to) DROP 重建）。
+- 两次 DB 事故已恢复（5书/2有声书/3视频/18词典/历史进度偏好）；用户库现完好。
+- 视频无画面/退出红屏/底部溢出：develop 并发已修（7ed3d16a4）。
+- 已修真机 bug（30f8b048a）：texthooker WS 无源时静默不刷屏（await channel.ready）；视频/texthooker 查词 deactivated widget 崩溃（mixinAppModel 缓存 late final _appModel）。
+- yomitan server 经 curl 确认健康（19633 serverVersion/termEntries/tokenize 全 200）。mpv「没连上」=工具连错通道：2333/9001/6677 是 texthooker WS 文本推送端口（需源当 server 推），19633 才是 yomitan-api HTTP 查词。mpv 查词工具应配 19633。
+- 浏览器扩展装在 D:\APP\hibiki-browser-extension（已启用），待配 options(host/port/token, port别0) + 开 Hibiki 互联 server。
+
+## 待做（新会话做，context 已满）
+1. **合并文本钩子+剪贴板为一个功能**（用户决定）：剪贴板/热键 + WS 统一为一套「外部文本查词」。
+2. **剪贴板查词用统一查词页**：一个页面、不叠页面（点词同页更新，别 push nested）、**不自动朗读**（autoRead:false）。当前 desktop_lookup_overlay 是 push PopupDictionaryPage（会叠 nested popup + 可能 autoRead），需改。
+3. 移除/合并：texthooker tab（TexthookerPage）、desktop_lookup_overlay、DesktopLookupService、TexthookerWsClient 之间去重，统一 UI。
+4. 真机回归：视频查词关页不崩、texthooker 无源不刷屏、剪贴板合并后体验、mpv 改连 19633、扩展配置后取词。
