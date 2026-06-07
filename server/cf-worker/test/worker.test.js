@@ -9,6 +9,7 @@ import worker, {
   parseLogId,
   randCode,
   renderList,
+  renderLog,
   routePath,
   sanitizePlatform,
   timingSafeEqual,
@@ -239,7 +240,7 @@ describe('fetch routes', () => {
     expect(await res.text()).toContain('20260606-123456-android-ab12cd.txt');
   });
 
-  it('看单条 → text/plain 原样 + nosniff + no-store（XSS 惰化）', async () => {
+  it('看单条 → 深色 HTML，正文转义 + nosniff + no-store + CSP 拦脚本（XSS 惰化）', async () => {
     const env = fullEnv({
       DB: fakeD1({ '20260606-123456-android-ab12cd.txt': '<script>alert(1)</script>' }),
     });
@@ -249,11 +250,21 @@ describe('fetch routes', () => {
     );
     const res = await worker.fetch(req, env);
     expect(res.status).toBe(200);
-    expect(res.headers.get('Content-Type')).toContain('text/plain');
-    expect(res.headers.get('Content-Type')).not.toContain('html');
+    expect(res.headers.get('Content-Type')).toContain('text/html');
     expect(res.headers.get('X-Content-Type-Options')).toBe('nosniff');
     expect(res.headers.get('Cache-Control')).toBe('no-store');
-    expect(await res.text()).toBe('<script>alert(1)</script>'); // 原样，未执行
+    const csp = res.headers.get('Content-Security-Policy');
+    expect(csp).toContain("style-src 'unsafe-inline'");
+    expect(csp).not.toContain('script-src'); // default-src 'none' 拦死脚本
+    const html = await res.text();
+    expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;'); // 转义后当文本
+    expect(html).not.toContain('<script>alert(1)</script>'); // 绝不原样注入 → 不执行
+  });
+
+  it('renderLog：正文转义 + 返回链接带前缀', () => {
+    const html = renderLog('a<b>&"c', '20260606-123456-android-ab12cd.txt', '/ec70');
+    expect(html).toContain('a&lt;b&gt;&amp;&quot;c'); // 正文转义
+    expect(html).toContain('href="/ec70/"'); // 返回列表带前缀
   });
 
   it('看单条路径穿越/非法 id → 404，不读 DB', async () => {

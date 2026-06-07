@@ -222,6 +222,37 @@ export function renderList(ids, linkBase = '') {
   );
 }
 
+const LOG_STYLE = `
+:root{color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:#0e0e11;color:#d6d9df;
+  font:13.5px/1.65 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.bar{position:sticky;top:0;z-index:1;background:#14141a;
+  border-bottom:1px solid #26262e;padding:12px 18px;
+  display:flex;align-items:center;gap:14px;
+  font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.bar a{color:#8fb8ff;text-decoration:none;font-size:14px;white-space:nowrap}
+.bar a:hover{text-decoration:underline}
+.bar .id{color:#9aa0aa;font-size:12.5px;font-family:ui-monospace,Consolas,monospace;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+pre{margin:0;padding:18px 20px 64px;white-space:pre-wrap;word-break:break-word;
+  tab-size:2;color:#d6d9df}
+`;
+
+// 日志正文转义后嵌入 <pre>：脚本被转义成文本不执行，CSP 又不放开 script-src，双层惰化 XSS。
+// 深色背景 + 浅色文字，解决 text/plain 在浏览器深色模式下黑底黑字看不清。
+export function renderLog(content, id, linkBase = '') {
+  return (
+    `<!doctype html>\n<html lang="zh"><head><meta charset="utf-8">` +
+    `<meta name="viewport" content="width=device-width,initial-scale=1">` +
+    `<meta name="robots" content="noindex,nofollow">` +
+    `<title>${escapeHtml(id)}</title><style>${LOG_STYLE}</style></head>\n` +
+    `<body><div class="bar"><a href="${linkBase}/">← 返回列表</a>` +
+    `<span class="id">${escapeHtml(id)}</span></div>` +
+    `<pre>${escapeHtml(content)}</pre></body></html>`
+  );
+}
+
 function unauthorized() {
   return new Response('unauthorized', {
     status: 401,
@@ -317,10 +348,10 @@ async function handleViewLog(request, env, id) {
   if (data === null || data === undefined) {
     return new Response('not found', { status: 404, headers: securityHeaders() });
   }
-  // 日志正文一律 text/plain 原样吐 → 浏览器当纯文本，脚本不执行。
-  return new Response(data, {
+  // 日志正文转义后嵌入深色 HTML（脚本被转义+CSP 拦 script-src 双层惰化），可读且不执行。
+  return new Response(renderLog(data, id, linkBase(env.ROUTE_PREFIX)), {
     status: 200,
-    headers: securityHeaders({ 'Content-Type': 'text/plain; charset=utf-8' }),
+    headers: htmlSecurityHeaders(),
   });
 }
 

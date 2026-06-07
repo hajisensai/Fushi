@@ -10,8 +10,8 @@ CF 边缘上的报错日志接收端点，**零服务器、免备案、免费额
 
 - **上传**：验 `X-Upload-Token`（与 secret 常数时间比较）。
 - **查看**：HTTP Basic Auth（列表 `/` 与单条 `/log/<id>`）。
-- **日志只存取不执行**：正文一律以 `text/plain; charset=utf-8` 原样吐回，浏览器当纯文本，脚本不执行；并发 `X-Content-Type-Options: nosniff` / `Content-Security-Policy: default-src 'none'` / `Cache-Control: no-store`。
-- **列表 HTML 转义**：列表页对 id 做 HTML 转义，杜绝注入。
+- **日志只存取不执行**：单条日志正文经 HTML 转义后嵌入深色 `<pre>`（脚本被转义成文本不执行），CSP 不放开 `script-src`（`default-src 'none'` 拦死脚本），双层惰化 XSS；改 HTML 渲染是为修复 `text/plain` 在浏览器深色模式下黑底黑字看不清。并发 `X-Content-Type-Options: nosniff` / `Cache-Control: no-store`。
+- **列表 / 日志页 HTML 转义**：列表对 id、单条对正文均做 HTML 转义，杜绝注入；两页 CSP 仅放开 `style-src 'unsafe-inline'`（渲染内联样式），不放开 `script-src`。
 - **白名单 id**：读取前过 `^\d{8}-\d{6}-[a-z]+-[a-z0-9]{6}\.txt$` 正则；D1 用参数化查询（`?1` 绑定），无字符串拼接，SQL 注入与路径穿越天然不存在，但仍做白名单兜底。
 - **fail-closed**：缺任一关键 secret（`UPLOAD_TOKEN`/`BASIC_USER`/`BASIC_PASS`）时整体返回 500，绝不带病服务（避免空 secret 让鉴权门洞开）。
 - **限大小**：先看 `Content-Length`，再读 body 后用 `TextEncoder` 复核字节数，超 512KB 返回 413（防客户端少报 Content-Length）。
