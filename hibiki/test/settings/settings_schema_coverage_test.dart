@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/native.dart';
@@ -290,6 +291,19 @@ void main() {
     await readerSettings.refreshFromDb();
     final bool globallyRestored =
         _mapsEqual(initial, Map<String, String>.from(await db.getAllPrefs()));
+
+    // 「Yomitan API server」开关被焦点遍历真切到 ON 时会 shelf_io.serve 绑定一个
+    // 真实 HttpServer，它带一个 2 分钟 idleTimeout 周期 Timer。全局还原只写回 DB
+    // pref，不会停服 → 该 Timer 残留，触发测试结束的「A Timer is still pending」
+    // 断言（原 develop 基线红）。必须在**测试 body 内**（FakeAsync 区、pending-
+    // timer 校验之前）停服；放 addTearDown 太晚（teardown 在 timer 校验之后跑）。
+    // stopYomitanApiServer() 是 async，但调用它会**同步**求值到 HttpServer.close()
+    // ——close() 在第一个 await 挂起前就同步取消了 idleTimeout Timer。故只需触发调
+    // 用、不能 await 它（await 真 socket-close 的 I/O Future 在 FakeAsync 区会死锁；
+    // 用 tester.runAsync 又会冲掉无关的 image-cache 真异步引出 path_provider
+    // MissingPluginException）。socket 真关闭随后在真实事件循环兑现，与本断言无关。
+    // 仅 Yomitan 留 Timer（texthooker/clipboard 切 ON 不留 fake Timer），故只停它。
+    unawaited(appModel.stopYomitanApiServer());
 
     for (final ItemVerdict v in verdicts) {
       debugPrint('[schema-coverage] ${_describe(v)}');
