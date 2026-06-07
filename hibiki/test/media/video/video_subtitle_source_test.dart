@@ -260,4 +260,62 @@ WEBVTT
       expect(firstSubtitlePath(const <String>[]), isNull);
     });
   });
+
+  group('embeddedSubtitleCacheKey（BUG-104 缓存键）', () {
+    test('同名+同尺寸+同 mtime → 同键（命中缓存）', () {
+      expect(
+        embeddedSubtitleCacheKey('movie', 27000000000, 1700000000000),
+        embeddedSubtitleCacheKey('movie', 27000000000, 1700000000000),
+      );
+    });
+
+    test('文件被原地替换（尺寸或 mtime 变）→ 键变（不吃旧缓存）', () {
+      final String base = embeddedSubtitleCacheKey('movie', 1000, 111);
+      expect(embeddedSubtitleCacheKey('movie', 2000, 111), isNot(base));
+      expect(embeddedSubtitleCacheKey('movie', 1000, 222), isNot(base));
+    });
+
+    test('基名里的非法目录字符折叠为下划线', () {
+      final String key =
+          embeddedSubtitleCacheKey('My Movie:S01 (BD)/x', 10, 20);
+      expect(key, isNot(contains(' ')));
+      expect(key, isNot(contains(':')));
+      expect(key, isNot(contains('/')));
+      expect(key, isNot(contains('(')));
+      expect(key, startsWith('My_Movie_S01_'));
+      expect(key, endsWith('_10_20'));
+    });
+  });
+
+  group('subtitleExtractTimeoutForBytes（BUG-104 超时按体积放宽）', () {
+    test('小文件取 ~60s 下限（不再是固定 30s 静默失败）', () {
+      expect(subtitleExtractTimeoutForBytes(0).inSeconds, 60);
+      // 100MB ≈ 0.1GB → 60 + 0.1*8 ≈ 61s，紧贴下限、远超旧 30s。
+      final int small =
+          subtitleExtractTimeoutForBytes(100 * 1024 * 1024).inSeconds;
+      expect(small, inInclusiveRange(60, 61));
+      expect(small, greaterThan(30));
+    });
+
+    test('27GB REMUX 远超旧 30s（实测单趟 demux ~20s，给足裕量）', () {
+      final int gb27 = 27 * 1024 * 1024 * 1024;
+      final int seconds = subtitleExtractTimeoutForBytes(gb27).inSeconds;
+      // 60 + 27*8 = 276s。
+      expect(seconds, 276);
+      expect(seconds, greaterThan(30));
+    });
+
+    test('超大文件夹紧到 1200s 上限', () {
+      final int gb1000 = 1000 * 1024 * 1024 * 1024;
+      expect(subtitleExtractTimeoutForBytes(gb1000).inSeconds, 1200);
+    });
+
+    test('随体积单调不减', () {
+      final int t1 =
+          subtitleExtractTimeoutForBytes(5 * 1024 * 1024 * 1024).inSeconds;
+      final int t2 =
+          subtitleExtractTimeoutForBytes(50 * 1024 * 1024 * 1024).inSeconds;
+      expect(t2, greaterThanOrEqualTo(t1));
+    });
+  });
 }

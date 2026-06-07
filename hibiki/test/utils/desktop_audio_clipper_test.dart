@@ -474,6 +474,135 @@ void main() {
     });
   });
 
+  group('buildFfmpegMultiSubtitleArgs (BUG-104 单趟多轨)', () {
+    test('单 -i + 每轨一对 -map 0:s:N out，按 streamIndex 升序', () {
+      final List<String> args = buildFfmpegMultiSubtitleArgs(
+        inputPath: '/v/movie.mkv',
+        outputs: <int, String>{
+          3: '/c/sub_3.srt',
+          0: '/c/sub_0.srt',
+          1: '/c/sub_1.ass',
+        },
+      );
+      expect(args, <String>[
+        '-y',
+        '-i',
+        '/v/movie.mkv',
+        '-map',
+        '0:s:0',
+        '/c/sub_0.srt',
+        '-map',
+        '0:s:1',
+        '/c/sub_1.ass',
+        '-map',
+        '0:s:3',
+        '/c/sub_3.srt',
+      ]);
+      // 关键：整批只有一个 -i（单次 demux 读穿容器），不是每轨一个输入。
+      expect(args.where((String a) => a == '-i').length, 1);
+    });
+
+    test('空 outputs → 只剩 -y -i（无 -map）', () {
+      final List<String> args = buildFfmpegMultiSubtitleArgs(
+        inputPath: '/v/x.mkv',
+        outputs: const <int, String>{},
+      );
+      expect(args, <String>['-y', '-i', '/v/x.mkv']);
+    });
+  });
+
+  group('extractEmbeddedSubtitlesViaFfmpeg (BUG-104 单趟全轨缓存)', () {
+    test('returns empty when the input file does not exist', () async {
+      expect(
+        await extractEmbeddedSubtitlesViaFfmpeg(
+          inputPath: '/no/such/input.mkv',
+          outputs: <int, String>{0: 'x.srt'},
+        ),
+        isEmpty,
+      );
+    });
+
+    test('returns empty when no outputs requested', () async {
+      expect(
+        await extractEmbeddedSubtitlesViaFfmpeg(
+          inputPath: '/no/such/input.mkv',
+          outputs: const <int, String>{},
+        ),
+        isEmpty,
+      );
+    });
+
+    test('extracts MULTIPLE embedded tracks in one pass when ffmpeg available',
+        () async {
+      bool ffmpegPresent;
+      try {
+        final ProcessResult v =
+            await Process.run(resolveFfmpegExecutable(), <String>['-version']);
+        ffmpegPresent = v.exitCode == 0;
+      } catch (_) {
+        ffmpegPresent = false;
+      }
+      if (!ffmpegPresent) {
+        // ignore: avoid_print
+        print('ffmpeg not present; skipping multi-subtitle extraction test');
+        return;
+      }
+
+      final Directory dir =
+          Directory.systemTemp.createTempSync('hibiki_multisub_test');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final String srtA = '${dir.path}/a.srt';
+      final String srtB = '${dir.path}/b.srt';
+      final String video = '${dir.path}/twosubs.mkv';
+      final String ff = resolveFfmpegExecutable();
+
+      File(srtA).writeAsStringSync(
+        '1\n00:00:00,500 --> 00:00:02,000\n吾輩は猫である。\n',
+      );
+      File(srtB).writeAsStringSync(
+        '1\n00:00:00,500 --> 00:00:02,000\n名前はまだない。\n',
+      );
+      // 一个视频 + 两条字幕轨（相对序号 0/1）。
+      final ProcessResult mux = await Process.run(ff, <String>[
+        '-y',
+        '-f',
+        'lavfi',
+        '-i',
+        'color=black:s=64x64:d=5',
+        '-i',
+        srtA,
+        '-i',
+        srtB,
+        '-map',
+        '0:v',
+        '-map',
+        '1',
+        '-map',
+        '2',
+        '-c:v',
+        'libx264',
+        '-c:s',
+        'srt',
+        video,
+      ]);
+      expect(mux.exitCode, 0, reason: mux.stderr.toString());
+
+      final String out0 = '${dir.path}/sub_0.srt';
+      final String out1 = '${dir.path}/sub_1.srt';
+      final Map<int, String> written = await extractEmbeddedSubtitlesViaFfmpeg(
+        inputPath: video,
+        outputs: <int, String>{0: out0, 1: out1},
+      );
+
+      // 单趟抽出两条轨，二者都落盘且非空。
+      expect(written.keys.toSet(), <int>{0, 1});
+      expect(File(out0).existsSync(), isTrue);
+      expect(File(out0).lengthSync(), greaterThan(0));
+      expect(File(out1).existsSync(), isTrue);
+      expect(File(out1).lengthSync(), greaterThan(0));
+    });
+  });
+
   group('extractEmbeddedCoverViaFfmpeg', () {
     test('returns null when the audio file does not exist', () async {
       expect(

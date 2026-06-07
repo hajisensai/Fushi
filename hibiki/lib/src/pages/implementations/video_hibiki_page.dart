@@ -1784,6 +1784,28 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     await _selectSubtitleSource(controller, source);
   }
 
+  /// 字幕抽取加载遮罩当前是否已弹出（防重复 push / 防错 pop）。
+  bool _subtitleLoadingShown = false;
+
+  /// 弹出不可关的字幕抽取加载遮罩（BUG-104：大容器内嵌字幕 demux 可达数十秒）。
+  void _showSubtitleLoadingOverlay() {
+    if (_subtitleLoadingShown || !mounted) return;
+    _subtitleLoadingShown = true;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.black54,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+  }
+
+  /// 关闭字幕抽取加载遮罩。配对 [_showSubtitleLoadingOverlay]，幂等。
+  void _hideSubtitleLoadingOverlay() {
+    if (!_subtitleLoadingShown) return;
+    _subtitleLoadingShown = false;
+    if (mounted) Navigator.of(context, rootNavigator: true).pop();
+  }
+
   /// 选中某字幕源：加载 cue → 切 overlay → 持久化 → SnackBar。
   /// 返回 true 表示字幕真被应用（解析出 cue 并切换/持久化）；false 表示空 cue
   /// 失败（已弹失败提示、未切换、未持久化、未覆盖当前可用字幕）。
@@ -1795,8 +1817,16 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     if (videoPath == null) return false;
     final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
 
-    final List<AudioCue> cues =
-        await loadCuesForSource(source, videoPath, widget.bookUid);
+    // BUG-104: 内嵌字幕要从容器里 demux 抽取，大文件（如 27GB REMUX）首次可达
+    // ~20s。期间给一个不可关的加载遮罩，否则底栏菜单一关、画面字幕没变，用户会以为
+    // 「点了没反应、没切换过去」。抽取走单趟全轨缓存，同一视频后续切换瞬时命中。
+    _showSubtitleLoadingOverlay();
+    final List<AudioCue> cues;
+    try {
+      cues = await loadCuesForSource(source, videoPath, widget.bookUid);
+    } finally {
+      _hideSubtitleLoadingOverlay();
+    }
     if (!mounted) return false;
     // 抽取/解析后无任何 cue（图形字幕、ffmpeg 缺失、轨损坏等）：诚实告知失败，
     // **不切换、不持久化**——避免谎报「已切换」却空屏，也避免用一个坏内封轨覆盖掉

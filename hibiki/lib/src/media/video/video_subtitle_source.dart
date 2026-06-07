@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:path/path.dart' as p;
 
@@ -426,25 +427,136 @@ Future<List<AudioCue>> _loadEmbeddedCues(
   final SubtitleFormat? format = subtitleFormatForCodec(source.codec ?? '');
   if (format == null) return const <AudioCue>[];
 
-  final Directory tempDir =
-      Directory.systemTemp.createTempSync('hibiki_video_sub_src');
-  final String outputPath = p.join(tempDir.path, 'embedded${_ext(format)}');
+  // BUG-104: extracting one embedded subtitle out of a multi-GB interleaved
+  // container costs a full read of the file (~20s for a 27GB BluRay REMUX),
+  // with no UI feedback the user reads as "switching didn't work". Pay that read
+  // **once** by demuxing all text tracks into a per-video cache the first time
+  // any track is needed; every later switch is an instant cached-file read.
+  final int index = source.streamIndex!;
+  final Directory cacheDir = embeddedSubtitleCacheDir(videoPath);
+  final File cached = File(p.join(cacheDir.path, 'sub_$index${_ext(format)}'));
+
+  if (!(cached.existsSync() && cached.lengthSync() > 0)) {
+    await _ensureAllEmbeddedSubtitlesExtracted(videoPath, cacheDir);
+  }
+  if (!(cached.existsSync() && cached.lengthSync() > 0)) {
+    return const <AudioCue>[];
+  }
   try {
-    final String? extracted = await extractEmbeddedSubtitleViaFfmpeg(
-      inputPath: videoPath,
-      streamIndex: source.streamIndex!,
-      outputPath: outputPath,
-    );
-    if (extracted == null) return const <AudioCue>[];
-    final String text = await readTextWithEncoding(File(extracted));
+    final String text = await readTextWithEncoding(cached);
     return parseSubtitleContent(format, content: text, bookUid: bookUid);
   } catch (_) {
     return const <AudioCue>[];
-  } finally {
-    try {
-      tempDir.deleteSync(recursive: true);
-    } catch (_) {}
   }
+}
+
+/// In-flight extract-all futures keyed by cache dir, so two near-simultaneous
+/// switches (or initial load + a quick switch) don't both re-demux the file.
+final Map<String, Future<void>> _embeddedExtractInFlight =
+    <String, Future<void>>{};
+
+/// Ensures every text embedded subtitle track of [videoPath] is demuxed into
+/// [cacheDir] (single ffmpeg pass). Idempotent and de-duplicated across
+/// concurrent callers. Returns when extraction finished (or immediately if a
+/// peer call is already doing it).
+Future<void> _ensureAllEmbeddedSubtitlesExtracted(
+  String videoPath,
+  Directory cacheDir,
+) {
+  final String key = cacheDir.path;
+  final Future<void>? existing = _embeddedExtractInFlight[key];
+  if (existing != null) return existing;
+  final Future<void> fut =
+      _extractAllEmbeddedSubtitles(videoPath, cacheDir).whenComplete(() {
+    _embeddedExtractInFlight.remove(key);
+  });
+  _embeddedExtractInFlight[key] = fut;
+  return fut;
+}
+
+Future<void> _extractAllEmbeddedSubtitles(
+  String videoPath,
+  Directory cacheDir,
+) async {
+  final List<EmbeddedSubtitleTrack> tracks =
+      await listEmbeddedSubtitleTracks(videoPath);
+  // Only text tracks (graphic pgs/dvd → null format) get extracted; cache file
+  // name carries the parser-deciding extension.
+  final Map<int, String> outputs = <int, String>{};
+  for (final EmbeddedSubtitleTrack track in tracks) {
+    final SubtitleFormat? fmt = subtitleFormatForCodec(track.codec);
+    if (fmt == null) continue;
+    outputs[track.streamIndex] =
+        p.join(cacheDir.path, 'sub_${track.streamIndex}${_ext(fmt)}');
+  }
+  if (outputs.isEmpty) return;
+  try {
+    cacheDir.createSync(recursive: true);
+  } catch (_) {
+    return;
+  }
+  await extractEmbeddedSubtitlesViaFfmpeg(
+    inputPath: videoPath,
+    outputs: outputs,
+    timeout: subtitleExtractTimeoutForBytes(_fileSizeOrZero(videoPath)),
+  );
+}
+
+int _fileSizeOrZero(String path) {
+  try {
+    return File(path).lengthSync();
+  } catch (_) {
+    return 0;
+  }
+}
+
+/// **Pure**: the on-disk cache key for a video's extracted embedded subtitles.
+///
+/// Keyed by base name + byte size + mtime millis so replacing a file in place
+/// (same path, new content) misses the stale cache. Non-`[A-Za-z0-9_.-]` chars
+/// in the base name are collapsed to `_` to stay a valid directory segment.
+@visibleForTesting
+String embeddedSubtitleCacheKey(
+  String videoBaseNoExt,
+  int sizeBytes,
+  int mtimeMs,
+) {
+  final String safe =
+      videoBaseNoExt.replaceAll(RegExp(r'[^A-Za-z0-9_.-]'), '_');
+  return '${safe}_${sizeBytes}_$mtimeMs';
+}
+
+/// The cache directory (under the OS temp dir) holding [videoPath]'s extracted
+/// embedded subtitle tracks. Stat failures fall back to a path-only key.
+Directory embeddedSubtitleCacheDir(String videoPath) {
+  final String base = p.basenameWithoutExtension(videoPath);
+  int size = 0;
+  int mtimeMs = 0;
+  try {
+    final FileStat stat = File(videoPath).statSync();
+    size = stat.size;
+    mtimeMs = stat.modified.millisecondsSinceEpoch;
+  } catch (_) {
+    // statSync failed (deleted/locked): fall back to a stable path hash so we
+    // still cache within the session.
+    mtimeMs = videoPath.hashCode;
+  }
+  final String key = embeddedSubtitleCacheKey(base, size, mtimeMs);
+  return Directory(
+    p.join(Directory.systemTemp.path, 'hibiki_vsub_cache', key),
+  );
+}
+
+/// **Pure**: how long to allow a single extract-all pass given the container's
+/// byte size. The read time of an interleaved container grows with its size, so
+/// a fixed 30s timeout silently fails on big REMUX files (and worse under
+/// playback I/O contention). Base 60s + 8s/GB, clamped to [60s, 1200s]: a 27GB
+/// REMUX gets ~276s of headroom instead of timing out at 30s (BUG-104).
+@visibleForTesting
+Duration subtitleExtractTimeoutForBytes(int sizeBytes) {
+  final double gb = sizeBytes / (1024 * 1024 * 1024);
+  final int seconds = (60 + gb * 8).clamp(60, 1200).round();
+  return Duration(seconds: seconds);
 }
 
 Future<List<AudioCue>> _loadExternalCues(

@@ -347,6 +347,87 @@ Future<String?> extractEmbeddedSubtitleViaFfmpeg({
   }
 }
 
+/// Builds the ffmpeg argument list to demux MANY embedded subtitle tracks of
+/// [inputPath] in a **single pass** — one `-i`, then `-map 0:s:i out_i` repeated.
+/// Pure (no IO) so it is unit-testable.
+///
+/// [outputs] maps each subtitle relative stream index (`-map 0:s:N`) to its
+/// output path; the path extension drives ffmpeg's output muxer (`.srt`→SubRip,
+/// `.ass`→ASS…). Maps are emitted in ascending stream-index order for
+/// deterministic args. The whole point: an interleaved multi-GB container is
+/// read **once** for every track at once (the read dominates wall-clock), so
+/// extracting 8 tracks costs the same as extracting one — switching among tracks
+/// no longer re-reads the file each time (BUG-104).
+List<String> buildFfmpegMultiSubtitleArgs({
+  required String inputPath,
+  required Map<int, String> outputs,
+}) {
+  final List<String> args = <String>['-y', '-i', inputPath];
+  final List<int> indices = outputs.keys.toList()..sort();
+  for (final int idx in indices) {
+    args.addAll(<String>['-map', '0:s:$idx', outputs[idx]!]);
+  }
+  return args;
+}
+
+/// Demuxes ALL requested embedded subtitle tracks of [inputPath] in one ffmpeg
+/// pass (see [buildFfmpegMultiSubtitleArgs]). Returns the subset of [outputs]
+/// actually written (file exists and non-empty); a partially-failed batch (one
+/// corrupt track) still yields the tracks that succeeded rather than dropping
+/// everything.
+///
+/// [timeout] bounds a hung demux. Unlike single-clip encodes, the read time of a
+/// big interleaved container grows with its size, so callers pass a size-scaled
+/// timeout (see `subtitleExtractTimeoutForBytes`). Never throws for the caller:
+/// missing input / absent ffmpeg / error all yield an empty map (no-subtitle
+/// fallback, not a crash).
+Future<Map<int, String>> extractEmbeddedSubtitlesViaFfmpeg({
+  required String inputPath,
+  required Map<int, String> outputs,
+  Duration timeout = const Duration(seconds: 180),
+}) async {
+  if (outputs.isEmpty) return const <int, String>{};
+  if (!File(inputPath).existsSync()) return const <int, String>{};
+  try {
+    for (final String out in outputs.values) {
+      File(out).parent.createSync(recursive: true);
+    }
+    final int? code = await _runFfmpeg(
+      buildFfmpegMultiSubtitleArgs(inputPath: inputPath, outputs: outputs),
+      timeout,
+    );
+    // Filter by what actually landed: even a non-zero exit (one bad track) can
+    // leave the other tracks written — keep them, drop empty stubs.
+    final Map<int, String> written = <int, String>{};
+    outputs.forEach((int idx, String out) {
+      final File f = File(out);
+      if (f.existsSync() && f.lengthSync() > 0) {
+        written[idx] = out;
+      } else if (f.existsSync()) {
+        try {
+          f.deleteSync();
+        } catch (_) {}
+      }
+    });
+    if (written.isEmpty) {
+      ErrorLogService.instance.log(
+        'extractEmbeddedSubtitlesViaFfmpeg',
+        code == null
+            ? 'ffmpeg timed out'
+            : 'ffmpeg exit $code, no tracks written',
+        StackTrace.current,
+      );
+    }
+    return written;
+  } on ProcessException catch (e, stack) {
+    ErrorLogService.instance.log('extractEmbeddedSubtitlesViaFfmpeg', e, stack);
+    return const <int, String>{};
+  } catch (e, stack) {
+    ErrorLogService.instance.log('extractEmbeddedSubtitlesViaFfmpeg', e, stack);
+    return const <int, String>{};
+  }
+}
+
 /// Runs ffmpeg with [args] via the active [FfmpegBackend] and returns the exit
 /// code (null on timeout). Behaviour is unchanged from the historical inline
 /// `Process.start` path — [CliFfmpegBackend] replicates it; a bundled backend
