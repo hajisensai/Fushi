@@ -69,6 +69,8 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'INTEGRATION: yomitan-api server lifecycle (test/sync/yomitan_api_server_manager_test.dart)',
   'lookup/Texthooker (receive text)':
       'INTEGRATION: texthooker WS client lifecycle (test/sync/texthooker_ws_client_host_test.dart)',
+  'lookup/Desktop clipboard lookup':
+      'DEVICE: clipboard watcher + hotkey lifecycle (test/sync/desktop_lookup_service_test.dart)',
   'lookup/Auto read word on lookup': 'DEVICE: TTS auto-read',
   'lookup/Collapse dictionaries': 'DEVICE: popup.js collapse',
   'lookup/Show expression tags': 'DEVICE: popup.js expression tags',

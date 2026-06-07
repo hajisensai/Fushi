@@ -48,6 +48,7 @@ import 'package:hibiki/src/models/anki_integration.dart';
 import 'package:hibiki/src/sync/hibiki_remote_lookup_client.dart';
 import 'package:hibiki/src/sync/hibiki_remote_lookup_service.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
+import 'package:hibiki/src/sync/desktop_lookup_service.dart';
 import 'package:hibiki/src/sync/texthooker_ws_client_host.dart';
 import 'package:hibiki/src/sync/yomitan_api_server_manager.dart';
 import 'package:hibiki/src/shortcuts/gamepad_service.dart';
@@ -1219,6 +1220,11 @@ class AppModel with ChangeNotifier {
       }
       if (texthookerEnabled) {
         TexthookerWsClientHost.instance.start(texthookerUrls);
+      }
+      if (desktopClipboardEnabled && DesktopLookupService.isDesktop) {
+        unawaited(DesktopLookupService.instance
+            .start(alwaysOnTop: desktopClipboardAlwaysOnTop)
+            .catchError((Object _) {}));
       }
       notifyListeners();
     } catch (e, stack) {
@@ -2851,8 +2857,8 @@ class _AppModelRemoteLookupService
     required Map<String, String> fields,
     required String sentence,
   }) async {
-    final BaseAnkiRepository repo = _appModel.platformServices
-        .createAnkiRepository();
+    final BaseAnkiRepository repo =
+        _appModel.platformServices.createAnkiRepository();
     final MineResult result = await repo.mineEntry(
       rawPayloadJson: jsonEncode(fields),
       context: AnkiMiningContext(sentence: sentence),

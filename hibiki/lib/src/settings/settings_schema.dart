@@ -7,6 +7,7 @@ import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/settings/settings_actions.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
+import 'package:hibiki/src/sync/desktop_lookup_service.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 import 'package:hibiki/src/sync/sync_settings_schema.dart';
 import 'package:hibiki/src/sync/texthooker_ws_client_host.dart';
@@ -923,6 +924,28 @@ SettingsDestination _lookupDestination() {
                     .start(settingsContext.appModel.texthookerUrls);
               } else {
                 await TexthookerWsClientHost.instance.stop();
+              }
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'lookup.desktop_clipboard',
+            title: t.desktop_clipboard_enabled,
+            subtitle: t.desktop_clipboard_enabled_hint,
+            icon: Icons.content_paste_search,
+            visible: (SettingsContext settingsContext) =>
+                DesktopLookupService.isDesktop,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.desktopClipboardEnabled,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setDesktopClipboardEnabled(value);
+              if (value) {
+                await DesktopLookupService.instance.start(
+                  alwaysOnTop:
+                      settingsContext.appModel.desktopClipboardAlwaysOnTop,
+                );
+              } else {
+                await DesktopLookupService.instance.stop();
               }
               settingsContext.refresh();
             },
