@@ -249,6 +249,31 @@ void main() {
       expect(tester.getSize(find.byKey(primaryKey)).width, 919);
     });
 
+    testWidgets('uses an explicit supporting pane width when provided', (
+      WidgetTester tester,
+    ) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(900, 300);
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(
+        const Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox.expand(
+            child: MaterialSupportingPaneLayout(
+              minSplitWidth: 640,
+              supportingWidth: 248,
+              primary: SizedBox.expand(key: primaryKey),
+              supporting: SizedBox.expand(key: supportingKey),
+            ),
+          ),
+        ),
+      );
+
+      expect(tester.getSize(find.byKey(supportingKey)).width, 248);
+      expect(tester.getSize(find.byKey(primaryKey)).width, 651);
+    });
+
     testWidgets(
       'top-aligns short primary pane content instead of centering it',
       (WidgetTester tester) async {

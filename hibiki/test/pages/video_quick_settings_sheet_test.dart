@@ -51,6 +51,34 @@ void main() {
     // master-detail 无 push：无返回箭头。
     expect(find.byIcon(Icons.arrow_back), findsNothing);
 
+    final Finder layout = find.byType(MaterialSupportingPaneLayout);
+    final Finder divider = find.descendant(
+      of: layout,
+      matching: find.byType(VerticalDivider),
+    );
+    expect(
+      tester.getTopLeft(divider).dx - tester.getTopLeft(layout).dx,
+      248,
+    );
+
+    final List<SingleChildScrollView> paneScrollViews = tester
+        .widgetList<SingleChildScrollView>(
+          find.descendant(
+            of: layout,
+            matching: find.byType(SingleChildScrollView),
+          ),
+        )
+        .take(2)
+        .toList();
+    expect(paneScrollViews, hasLength(2));
+    final EdgeInsets supportingPadding =
+        paneScrollViews.first.padding! as EdgeInsets;
+    final EdgeInsets primaryPadding =
+        paneScrollViews.last.padding! as EdgeInsets;
+    expect(supportingPadding.left, supportingPadding.right);
+    expect(primaryPadding.left, primaryPadding.right);
+    expect(supportingPadding.left, primaryPadding.left);
+
     // 选「字幕」→ 右 pane 切到字幕详情，仍无返回箭头。
     await tester.tap(find.text(t.video_settings_cat_subtitle));
     await tester.pumpAndSettle();
@@ -79,8 +107,7 @@ void main() {
     await tester.pump();
 
     final Offset after = tester.getTopLeft(leftAnchor.first);
-    expect(after, before,
-        reason: '左父菜单必须固定，不能跟随右详情滚动');
+    expect(after, before, reason: '左父菜单必须固定，不能跟随右详情滚动');
   });
 
   testWidgets('narrow video settings pushes detail sub-pages', (tester) async {

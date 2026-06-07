@@ -280,7 +280,10 @@ void main() {
     expect(source, contains('MaterialSupportingPaneLayout('));
     expect(source, contains('SupportingPaneSide.start'));
     expect(source, contains('minSplitWidth: 640'));
+    expect(source, contains('supportingWidth: 248'));
     expect(source, contains('constraints.maxWidth >= 640'));
+    expect(source, contains('padding: wideSupportingPadding'));
+    expect(source, contains('padding: widePrimaryPadding'));
     expect(source, contains('Widget _buildWidePane('));
     expect(source, contains('_wideCategories()'));
 

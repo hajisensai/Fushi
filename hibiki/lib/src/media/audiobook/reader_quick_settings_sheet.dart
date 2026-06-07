@@ -269,57 +269,77 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
         body: LayoutBuilder(
           builder: (BuildContext context, BoxConstraints constraints) {
             _isWide = constraints.maxWidth >= 640;
+            final double viewInsetsBottom =
+                MediaQuery.of(context).viewInsets.bottom;
             final EdgeInsets bodyPadding = EdgeInsets.fromLTRB(
               tokens.spacing.page + tokens.spacing.gap / 2,
               tokens.spacing.gap / 2,
               tokens.spacing.page + tokens.spacing.gap / 2,
-              tokens.spacing.card +
-                  tokens.spacing.gap +
-                  MediaQuery.of(context).viewInsets.bottom,
+              tokens.spacing.card + tokens.spacing.gap + viewInsetsBottom,
             );
             if (_isWide) {
               final String selectedId = _subPage ?? 'appearance';
               final Color dividerColor = isCupertinoPlatform(context)
                   ? CupertinoColors.separator.resolveFrom(context)
                   : HibikiDesignTokens.of(context).surfaces.outline;
+              final double wideHorizontalInset =
+                  tokens.spacing.page + tokens.spacing.gap / 2;
+              final EdgeInsets wideSupportingPadding = EdgeInsets.fromLTRB(
+                wideHorizontalInset,
+                tokens.spacing.gap / 2,
+                wideHorizontalInset,
+                tokens.spacing.card + tokens.spacing.gap + viewInsetsBottom,
+              );
+              final EdgeInsets widePrimaryPadding = EdgeInsets.fromLTRB(
+                wideHorizontalInset,
+                tokens.spacing.gap / 2,
+                wideHorizontalInset,
+                tokens.spacing.card + tokens.spacing.gap + viewInsetsBottom,
+              );
               // 用可用的有界高度撑满整张 master-detail（等价于主页设置把
               // MaterialSupportingPaneLayout 放进 Expanded）：Row(stretch) 才能给
               // 两个 pane 紧约束 → 各自的 SingleChildScrollView 独立滚动、左父菜
               // 单固定不跟随右详情滚动。maxHeightFactor 保证 maxHeight 有界。
               return SizedBox(
                 height: constraints.maxHeight,
-                child: Padding(
-                  padding: bodyPadding,
-                  child: MaterialSupportingPaneLayout(
-                    minSplitWidth: 640,
-                    supportingSide: SupportingPaneSide.start,
-                    dividerColor: dividerColor,
-                    // 左父菜单项不多时垂直居中（progress/分类/动作整体居中），
-                    // 不再让「阅读进度」死贴顶端；内容超过 pane 高度时
-                    // ConstrainedBox 的 minHeight 被内容满足，照常滚动。
-                    supporting: LayoutBuilder(
-                      builder: (
-                        BuildContext context,
-                        BoxConstraints paneConstraints,
-                      ) {
-                        return SingleChildScrollView(
-                          child: ConstrainedBox(
-                            constraints: BoxConstraints(
-                              minHeight: paneConstraints.maxHeight,
-                            ),
-                            child: _buildWidePane(context, theme, selectedId),
+                child: MaterialSupportingPaneLayout(
+                  minSplitWidth: 640,
+                  supportingWidth: 248,
+                  supportingSide: SupportingPaneSide.start,
+                  dividerColor: dividerColor,
+                  // 左父菜单项不多时垂直居中（progress/分类/动作整体居中），
+                  // 不再让「阅读进度」死贴顶端；内容超过 pane 高度时
+                  // ConstrainedBox 的 minHeight 被内容满足，照常滚动。
+                  supporting: LayoutBuilder(
+                    builder: (
+                      BuildContext context,
+                      BoxConstraints paneConstraints,
+                    ) {
+                      final double minContentHeight =
+                          paneConstraints.maxHeight >
+                                  wideSupportingPadding.vertical
+                              ? paneConstraints.maxHeight -
+                                  wideSupportingPadding.vertical
+                              : 0;
+                      return SingleChildScrollView(
+                        padding: wideSupportingPadding,
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            minHeight: minContentHeight,
                           ),
-                        );
-                      },
-                    ),
-                    // KeyedSubtree：按选中 id 编码，切换时整棵右 pane 子树作废重
-                    // 建，避免 Flutter 复用上一详情同位置 Element 触发 Switch 圆点
-                    // / Segmented 滑动等复用副作用（同 settings_home_page）。
-                    primary: KeyedSubtree(
-                      key: ValueKey<String>(selectedId),
-                      child: SingleChildScrollView(
-                        child: _subPageContent(selectedId),
-                      ),
+                          child: _buildWidePane(context, theme, selectedId),
+                        ),
+                      );
+                    },
+                  ),
+                  // KeyedSubtree：按选中 id 编码，切换时整棵右 pane 子树作废重
+                  // 建，避免 Flutter 复用上一详情同位置 Element 触发 Switch 圆点
+                  // / Segmented 滑动等复用副作用（同 settings_home_page）。
+                  primary: KeyedSubtree(
+                    key: ValueKey<String>(selectedId),
+                    child: SingleChildScrollView(
+                      padding: widePrimaryPadding,
+                      child: _subPageContent(selectedId),
                     ),
                   ),
                 ),

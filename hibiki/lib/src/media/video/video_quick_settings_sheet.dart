@@ -110,35 +110,49 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
         body: LayoutBuilder(
           builder: (BuildContext context, BoxConstraints constraints) {
             _isWide = constraints.maxWidth >= 640;
+            final double viewInsetsBottom =
+                MediaQuery.of(context).viewInsets.bottom;
             final EdgeInsets bodyPadding = EdgeInsets.fromLTRB(
               tokens.spacing.page + tokens.spacing.gap / 2,
               tokens.spacing.gap / 2,
               tokens.spacing.page + tokens.spacing.gap / 2,
-              tokens.spacing.card +
-                  tokens.spacing.gap +
-                  MediaQuery.of(context).viewInsets.bottom,
+              tokens.spacing.card + tokens.spacing.gap + viewInsetsBottom,
             );
             if (_isWide) {
               final String selectedId = _subPage ?? 'playback';
               final Color dividerColor = isCupertinoPlatform(context)
                   ? CupertinoColors.separator.resolveFrom(context)
                   : tokens.surfaces.outline;
+              final double wideHorizontalInset =
+                  tokens.spacing.page + tokens.spacing.gap / 2;
+              final EdgeInsets wideSupportingPadding = EdgeInsets.fromLTRB(
+                wideHorizontalInset,
+                tokens.spacing.gap / 2,
+                wideHorizontalInset,
+                tokens.spacing.card + tokens.spacing.gap + viewInsetsBottom,
+              );
+              final EdgeInsets widePrimaryPadding = EdgeInsets.fromLTRB(
+                wideHorizontalInset,
+                tokens.spacing.gap / 2,
+                wideHorizontalInset,
+                tokens.spacing.card + tokens.spacing.gap + viewInsetsBottom,
+              );
               return SizedBox(
                 height: constraints.maxHeight,
-                child: Padding(
-                  padding: bodyPadding,
-                  child: MaterialSupportingPaneLayout(
-                    minSplitWidth: 640,
-                    supportingSide: SupportingPaneSide.start,
-                    dividerColor: dividerColor,
-                    supporting: SingleChildScrollView(
-                      child: _buildWidePane(theme, selectedId),
-                    ),
-                    primary: KeyedSubtree(
-                      key: ValueKey<String>(selectedId),
-                      child: SingleChildScrollView(
-                        child: _subPageContent(selectedId),
-                      ),
+                child: MaterialSupportingPaneLayout(
+                  minSplitWidth: 640,
+                  supportingWidth: 248,
+                  supportingSide: SupportingPaneSide.start,
+                  dividerColor: dividerColor,
+                  supporting: SingleChildScrollView(
+                    padding: wideSupportingPadding,
+                    child: _buildWidePane(theme, selectedId),
+                  ),
+                  primary: KeyedSubtree(
+                    key: ValueKey<String>(selectedId),
+                    child: SingleChildScrollView(
+                      padding: widePrimaryPadding,
+                      child: _subPageContent(selectedId),
                     ),
                   ),
                 ),
