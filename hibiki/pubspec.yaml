@@ -134,6 +134,10 @@ dependencies:
   # 选 min：字幕 demux/转码、gif 编码、aac 编码、各路解码（含 opus/h264/hevc）均为
   # ffmpeg 内置，无需 GPL 的 x264/x265，体积最小。
   ffmpeg_kit_flutter_new_min: ^3.1.0
+  web_socket_channel: ^3.0.0
+  clipboard_watcher: ^0.3.0
+  hotkey_manager: ^0.2.3
+  window_manager: ^0.5.1
 dependency_overrides:
   flutter_inappwebview_windows:
     path: ../packages/flutter_inappwebview_windows

@@ -122,6 +122,80 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ── yomitan-api server ───────────────────────────────────────────────
+
+  bool get yomitanApiServerEnabled =>
+      getPref('yomitan_api_server_enabled', defaultValue: false) as bool;
+
+  Future<void> setYomitanApiServerEnabled(bool value) async {
+    await setPref('yomitan_api_server_enabled', value);
+    notifyListeners();
+  }
+
+  int get yomitanApiPort =>
+      getPref('yomitan_api_port', defaultValue: 19633) as int;
+
+  Future<void> setYomitanApiPort(int value) async {
+    await setPref('yomitan_api_port', value);
+    notifyListeners();
+  }
+
+  String get yomitanApiKey =>
+      getPref('yomitan_api_key', defaultValue: '') as String;
+
+  Future<void> setYomitanApiKey(String value) async {
+    await setPref('yomitan_api_key', value);
+    notifyListeners();
+  }
+
+  // ── texthooker ───────────────────────────────────────────────────────
+
+  static const String _texthookerDefaultUrls =
+      'ws://localhost:6677\nws://localhost:9001\nws://localhost:2333';
+
+  bool get texthookerEnabled =>
+      getPref('texthooker_enabled', defaultValue: false) as bool;
+
+  Future<void> setTexthookerEnabled(bool value) async {
+    await setPref('texthooker_enabled', value);
+    notifyListeners();
+  }
+
+  List<String> get texthookerUrls {
+    final String raw = getPref(
+      'texthooker_urls',
+      defaultValue: _texthookerDefaultUrls,
+    ) as String;
+    return raw
+        .split('\n')
+        .map((String s) => s.trim())
+        .where((String s) => s.isNotEmpty)
+        .toList();
+  }
+
+  Future<void> setTexthookerUrls(List<String> urls) async {
+    await setPref('texthooker_urls', urls.join('\n'));
+    notifyListeners();
+  }
+
+  // ── desktop clipboard lookup ─────────────────────────────────────────
+
+  bool get desktopClipboardEnabled =>
+      getPref('desktop_clipboard_enabled', defaultValue: false) as bool;
+
+  Future<void> setDesktopClipboardEnabled(bool value) async {
+    await setPref('desktop_clipboard_enabled', value);
+    notifyListeners();
+  }
+
+  bool get desktopClipboardAlwaysOnTop =>
+      getPref('desktop_clipboard_always_on_top', defaultValue: false) as bool;
+
+  Future<void> setDesktopClipboardAlwaysOnTop(bool value) async {
+    await setPref('desktop_clipboard_always_on_top', value);
+    notifyListeners();
+  }
+
   final int defaultSearchDebounceDelay = 100;
 
   int get searchDebounceDelay => getPref('auto_search_debounce_delay',

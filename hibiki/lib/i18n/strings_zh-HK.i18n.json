@@ -1388,5 +1388,15 @@
     "log_upload_too_large": "Log too large to upload",
     "log_upload_consent_title": "Upload log to server?",
     "log_upload_consent_body": "The log text (which may include error messages, file paths, and book titles) plus your app version, platform, and device model will be uploaded to the developer's server to help diagnose issues. This only happens when you tap upload — nothing is sent automatically.",
-    "log_upload_consent_agree": "Agree & upload"
+    "log_upload_consent_agree": "Agree & upload",
+    "texthooker": "Texthooker",
+    "texthooker_enabled": "Texthooker (receive text)",
+    "texthooker_enabled_hint": "Connect to Textractor/mpv/agent and look up incoming text",
+    "yomitan_api_server": "Yomitan API server",
+    "yomitan_api_server_hint": "Let yomitan-api clients query Hibiki's dictionaries (port 19633)",
+    "yomitan_api_port": "Yomitan API port",
+    "yomitan_api_key": "Yomitan API key (optional)",
+    "desktop_clipboard_enabled": "Desktop clipboard lookup",
+    "desktop_clipboard_enabled_hint": "Watch clipboard + global hotkey to pop a lookup window (desktop)",
+    "desktop_clipboard_always_on_top": "Keep lookup window on top"
 }

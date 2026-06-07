@@ -53,6 +53,10 @@ import 'package:hibiki/src/models/local_audio_source_pref.dart';
 import 'package:hibiki/src/models/anki_integration.dart';
 import 'package:hibiki/src/sync/hibiki_remote_lookup_client.dart';
 import 'package:hibiki/src/sync/hibiki_remote_lookup_service.dart';
+import 'package:hibiki/src/sync/hibiki_sync_server.dart';
+import 'package:hibiki/src/sync/desktop_lookup_service.dart';
+import 'package:hibiki/src/sync/texthooker_ws_client_host.dart';
+import 'package:hibiki/src/sync/yomitan_api_server_manager.dart';
 import 'package:hibiki/src/shortcuts/gamepad_service.dart';
 import 'package:hibiki/src/shortcuts/shortcut_preferences.dart';
 import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
@@ -207,6 +211,8 @@ class AppModel with ChangeNotifier {
     database: () => database,
     syncDataDir: () => databaseDirectory.path,
     remoteLookupServiceFactory: createRemoteLookupService,
+    miningServiceFactory: createRemoteMiningService,
+    historyServiceFactory: createRemoteHistoryService,
   );
 
   /// 自动同步（关书后 / app 启动）拿到报告后，若有冲突则弹解决对话框。
@@ -1301,6 +1307,17 @@ class AppModel with ChangeNotifier {
       }).catchError((Object e, StackTrace s) {
         ErrorLogService.instance.log('AppModel.startSyncServer', e, s);
       }));
+      if (yomitanApiServerEnabled) {
+        unawaited(startYomitanApiServer().catchError((Object _) {}));
+      }
+      if (texthookerEnabled) {
+        TexthookerWsClientHost.instance.start(texthookerUrls);
+      }
+      if (desktopClipboardEnabled && DesktopLookupService.isDesktop) {
+        unawaited(DesktopLookupService.instance
+            .start(alwaysOnTop: desktopClipboardAlwaysOnTop)
+            .catchError((Object _) {}));
+      }
       notifyListeners();
     } catch (e, stack) {
       debugPrint('[Hibiki] init FAILED: $e\n$stack');
@@ -2625,6 +2642,33 @@ class AppModel with ChangeNotifier {
   Future<void> setRemoteLookupEnabled(bool value) =>
       prefsRepo.setRemoteLookupEnabled(value);
 
+  bool get yomitanApiServerEnabled => prefsRepo.yomitanApiServerEnabled;
+  Future<void> setYomitanApiServerEnabled(bool value) =>
+      prefsRepo.setYomitanApiServerEnabled(value);
+
+  int get yomitanApiPort => prefsRepo.yomitanApiPort;
+  Future<void> setYomitanApiPort(int value) =>
+      prefsRepo.setYomitanApiPort(value);
+
+  String get yomitanApiKey => prefsRepo.yomitanApiKey;
+  Future<void> setYomitanApiKey(String value) =>
+      prefsRepo.setYomitanApiKey(value);
+
+  bool get texthookerEnabled => prefsRepo.texthookerEnabled;
+  Future<void> setTexthookerEnabled(bool value) =>
+      prefsRepo.setTexthookerEnabled(value);
+
+  List<String> get texthookerUrls => prefsRepo.texthookerUrls;
+  Future<void> setTexthookerUrls(List<String> urls) =>
+      prefsRepo.setTexthookerUrls(urls);
+
+  bool get desktopClipboardEnabled => prefsRepo.desktopClipboardEnabled;
+  Future<void> setDesktopClipboardEnabled(bool v) =>
+      prefsRepo.setDesktopClipboardEnabled(v);
+  bool get desktopClipboardAlwaysOnTop => prefsRepo.desktopClipboardAlwaysOnTop;
+  Future<void> setDesktopClipboardAlwaysOnTop(bool v) =>
+      prefsRepo.setDesktopClipboardAlwaysOnTop(v);
+
   Map<String, String> get customDictCSS => prefsRepo.customDictCSS;
   String getCustomCSSForDict(String dictName) =>
       prefsRepo.getCustomCSSForDict(dictName);
@@ -2765,6 +2809,44 @@ class AppModel with ChangeNotifier {
 
   HibikiRemoteLookupService createRemoteLookupService() {
     return _AppModelRemoteLookupService(this);
+  }
+
+  HibikiRemoteMiningService createRemoteMiningService() {
+    return _AppModelRemoteLookupService(this);
+  }
+
+  HibikiRemoteHistoryService createRemoteHistoryService() {
+    return _AppModelRemoteLookupService(this);
+  }
+
+  // ── yomitan-api server (lifecycle) ──────────────────────────────────
+  YomitanApiServerManager? _yomitanServerManager;
+
+  YomitanApiServerManager _ensureYomitanManager() {
+    return _yomitanServerManager ??= YomitanApiServerManager(
+      lookupService: createRemoteLookupService(),
+      tokenizer: JapaneseLanguage.instance.textToWords,
+      readingResolver: (String w) {
+        if (!HoshiDicts.isInitialized) return '';
+        final List<HoshiLookupResult> r =
+            HoshiDicts.instance.lookup(w, maxResults: 1);
+        return r.isEmpty ? '' : r.first.term.reading;
+      },
+    );
+  }
+
+  Future<void> startYomitanApiServer() async {
+    try {
+      await _ensureYomitanManager()
+          .start(port: yomitanApiPort, apiKey: yomitanApiKey);
+    } on SyncServerPortInUseException {
+      await setYomitanApiServerEnabled(false);
+      rethrow;
+    }
+  }
+
+  Future<void> stopYomitanApiServer() async {
+    await _yomitanServerManager?.stop();
   }
 
   // ── local audio DB (delegated to LocalAudioManager) ─────────────────
@@ -2944,10 +3026,40 @@ class AppModel with ChangeNotifier {
   }
 }
 
-class _AppModelRemoteLookupService implements HibikiRemoteLookupService {
+class _AppModelRemoteLookupService
+    implements
+        HibikiRemoteLookupService,
+        HibikiRemoteMiningService,
+        HibikiRemoteHistoryService {
   const _AppModelRemoteLookupService(this._appModel);
 
   final AppModel _appModel;
+
+  @override
+  Future<String> mineEntry({
+    required Map<String, String> fields,
+    required String sentence,
+  }) async {
+    final BaseAnkiRepository repo =
+        _appModel.platformServices.createAnkiRepository();
+    final MineResult result = await repo.mineEntry(
+      rawPayloadJson: jsonEncode(fields),
+      context: AnkiMiningContext(sentence: sentence),
+    );
+    return result.name;
+  }
+
+  @override
+  void recordHistory(DictionarySearchResult result) {
+    _appModel.mediaHistoryRepo.addToSearchHistory(
+      historyKey: DictionaryMediaType.instance.uniqueKey,
+      searchTerm: result.searchTerm,
+    );
+    _appModel.dictRepo.addHistoryResult(
+      result,
+      _appModel.maximumDictionaryHistoryItems,
+    );
+  }
 
   @override
   Future<DictionarySearchResult?> searchDictionary({

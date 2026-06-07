@@ -4,17 +4,21 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   bonsoir_windows
+  clipboard_watcher
   desktop_drop
   dynamic_color
   flutter_inappwebview_windows
   gamepads_windows
+  hotkey_manager_windows
   media_kit_libs_windows_video
   media_kit_video
   permission_handler_windows
   record_windows
+  screen_retriever_windows
   share_plus
   sqlite3_flutter_libs
   url_launcher_windows
+  window_manager
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST

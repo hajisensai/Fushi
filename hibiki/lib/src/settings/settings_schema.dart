@@ -7,7 +7,10 @@ import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/settings/settings_actions.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
+import 'package:hibiki/src/sync/desktop_lookup_service.dart';
+import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 import 'package:hibiki/src/sync/sync_settings_schema.dart';
+import 'package:hibiki/src/sync/texthooker_ws_client_host.dart';
 import 'package:hibiki/src/utils/misc/platform_updater.dart';
 import 'package:hibiki/utils.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -889,6 +892,79 @@ SettingsDestination _lookupDestination() {
                 settingsContext.appModel.remoteLookupEnabled,
             onChanged: (SettingsContext settingsContext, bool value) async {
               await settingsContext.appModel.setRemoteLookupEnabled(value);
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'lookup.yomitan_api_server',
+            title: t.yomitan_api_server,
+            subtitle: t.yomitan_api_server_hint,
+            icon: Icons.api_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.yomitanApiServerEnabled,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setYomitanApiServerEnabled(value);
+              if (value) {
+                try {
+                  await settingsContext.appModel.startYomitanApiServer();
+                } on SyncServerPortInUseException {
+                  // startYomitanApiServer 已在抛出前把开关复位为 false。
+                  final BuildContext ctx = settingsContext.context;
+                  if (ctx.mounted) {
+                    ScaffoldMessenger.of(ctx).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          t.sync_server_port_in_use(
+                            port: settingsContext.appModel.yomitanApiPort,
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+                }
+              } else {
+                await settingsContext.appModel.stopYomitanApiServer();
+              }
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'lookup.texthooker',
+            title: t.texthooker_enabled,
+            subtitle: t.texthooker_enabled_hint,
+            icon: Icons.sensors_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.texthookerEnabled,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setTexthookerEnabled(value);
+              if (value) {
+                TexthookerWsClientHost.instance
+                    .start(settingsContext.appModel.texthookerUrls);
+              } else {
+                await TexthookerWsClientHost.instance.stop();
+              }
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'lookup.desktop_clipboard',
+            title: t.desktop_clipboard_enabled,
+            subtitle: t.desktop_clipboard_enabled_hint,
+            icon: Icons.content_paste_search,
+            visible: (SettingsContext settingsContext) =>
+                DesktopLookupService.isDesktop,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.desktopClipboardEnabled,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setDesktopClipboardEnabled(value);
+              if (value) {
+                await DesktopLookupService.instance.start(
+                  alwaysOnTop:
+                      settingsContext.appModel.desktopClipboardAlwaysOnTop,
+                );
+              } else {
+                await DesktopLookupService.instance.stop();
+              }
               settingsContext.refresh();
             },
           ),

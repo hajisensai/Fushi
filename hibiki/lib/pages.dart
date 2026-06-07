@@ -1,5 +1,7 @@
 export 'src/pages/implementations/blur_options_dialog_page.dart';
 export 'src/pages/implementations/crop_image_dialog_page.dart';
+export 'src/pages/implementations/texthooker_page.dart';
+export 'src/pages/implementations/desktop_lookup_overlay.dart';
 export 'src/pages/implementations/example_sentences_dialog_page.dart';
 export 'src/pages/implementations/dictionary_term_page.dart';
 export 'src/pages/implementations/dictionary_entry_page.dart';

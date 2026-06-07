@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:hibiki/src/sync/sync_auto_trigger.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
+import 'package:hibiki/src/sync/desktop_lookup_service.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart'
@@ -20,16 +21,18 @@ import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 /// 顶层 tab 的逻辑身份（取代写死的整数索引 0/1/2）。视频 tab 仅在实验开关开启时
 /// 进入 [_HomePageState._activeTabs]，故用枚举身份而非位置来切换/路由——插入这个
 /// 条件 tab 不会再打乱「设置/词典」的索引（消除 `==2` / `case 1/2` / `%3` 这类特殊
-/// 情况）。底栏/侧栏只在渲染层把身份映射成位置。
-enum HomeTab { books, video, dictionaries, settings }
+/// 情况）。底栏/侧栏只在渲染层把身份映射成位置。texthooker 紧邻设置之前。
+enum HomeTab { books, video, dictionaries, texthooker, settings }
 
 /// 纯函数：给定实验视频开关，返回可见顶层 tab 的**视觉顺序**——视频固定插在书架与
-/// 词典之间（用户要求「在书架和词典管理中间」）。提取成顶层函数便于单测条件插入与
-/// 顺序，不必实例化整个 [HomePage]。底栏/侧栏的位置索引由此列表导出。
+/// 词典之间（用户要求「在书架和词典管理中间」），texthooker 固定在词典与设置之间。
+/// 提取成顶层函数便于单测条件插入与顺序，不必实例化整个 [HomePage]。底栏/侧栏的
+/// 位置索引由此列表导出。
 List<HomeTab> homeActiveTabs({required bool videoEnabled}) => <HomeTab>[
       HomeTab.books,
       if (videoEnabled) HomeTab.video,
       HomeTab.dictionaries,
+      HomeTab.texthooker,
       HomeTab.settings,
     ];
 
@@ -280,7 +283,7 @@ class _HomePageState extends BasePageState<HomePage>
       return const SizedBox.shrink();
     }
 
-    return ValueListenableBuilder<bool>(
+    final Widget home = ValueListenableBuilder<bool>(
         valueListenable: syncInProgress,
         builder: (context, syncing, child) => PopScope(
               canPop: !syncing,
@@ -345,6 +348,14 @@ class _HomePageState extends BasePageState<HomePage>
                 ),
               ),
             )));
+    // 桌面剪贴板查词 overlay 叠在整个首页之上（仅桌面）。
+    if (!DesktopLookupService.isDesktop) return home;
+    return Stack(
+      children: <Widget>[
+        home,
+        const Positioned.fill(child: DesktopLookupOverlay()),
+      ],
+    );
   }
 
   /// 单个 [HomeTab] 的导航项（图标 + 标签）。底栏与侧栏共用，保证两者标签/选中图标一致。
@@ -369,6 +380,12 @@ class _HomePageState extends BasePageState<HomePage>
           icon: Icons.search_outlined,
           selectedIcon: Icons.search,
           label: t.nav_lookup,
+        );
+      case HomeTab.texthooker:
+        return AdaptiveNavItem(
+          icon: Icons.sensors_outlined,
+          selectedIcon: Icons.sensors,
+          label: t.texthooker,
         );
       case HomeTab.settings:
         return AdaptiveNavItem(
@@ -473,6 +490,8 @@ class _HomePageState extends BasePageState<HomePage>
         return HomeVideoPage(repo: VideoBookRepository(appModel.database));
       case HomeTab.dictionaries:
         return HomeDictionaryPage(focusSignal: _dictFocusSignal);
+      case HomeTab.texthooker:
+        return const TexthookerPage();
       case HomeTab.settings:
         return const HibikiSettingsContent();
       case HomeTab.books:

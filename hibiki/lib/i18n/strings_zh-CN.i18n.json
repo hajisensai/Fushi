@@ -1388,5 +1388,15 @@
     "log_upload_too_large": "日志过大，无法上传",
     "log_upload_consent_title": "上传日志到服务器？",
     "log_upload_consent_body": "日志正文（可能包含错误信息、文件路径、书名等）以及 App 版本、平台、设备型号会上传到开发者的服务器，用于诊断问题。仅在你点上传时发生，不会自动发送。",
-    "log_upload_consent_agree": "同意并上传"
+    "log_upload_consent_agree": "同意并上传",
+    "texthooker": "文本钩子",
+    "texthooker_enabled": "文本钩子（接收文本）",
+    "texthooker_enabled_hint": "连接 Textractor/mpv/agent 并查询收到的文本",
+    "yomitan_api_server": "Yomitan API 服务器",
+    "yomitan_api_server_hint": "让 yomitan-api 客户端查询 Hibiki 词典（端口 19633）",
+    "yomitan_api_port": "Yomitan API 端口",
+    "yomitan_api_key": "Yomitan API 密钥（可选）",
+    "desktop_clipboard_enabled": "桌面剪贴板查词",
+    "desktop_clipboard_enabled_hint": "监听剪贴板+全局热键弹出查词窗（桌面）",
+    "desktop_clipboard_always_on_top": "查词时窗口置顶"
 }

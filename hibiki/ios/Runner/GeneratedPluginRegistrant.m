@@ -30,6 +30,12 @@
 @import bonsoir_darwin;
 #endif
 
+#if __has_include(<clipboard_watcher/ClipboardWatcherPlugin.h>)
+#import <clipboard_watcher/ClipboardWatcherPlugin.h>
+#else
+@import clipboard_watcher;
+#endif
+
 #if __has_include(<device_info_plus/FPPDeviceInfoPlusPlugin.h>)
 #import <device_info_plus/FPPDeviceInfoPlusPlugin.h>
 #else
@@ -223,6 +229,7 @@
   [AudioServicePlugin registerWithRegistrar:[registry registrarForPlugin:@"AudioServicePlugin"]];
   [AudioSessionPlugin registerWithRegistrar:[registry registrarForPlugin:@"AudioSessionPlugin"]];
   [SwiftBonsoirPlugin registerWithRegistrar:[registry registrarForPlugin:@"SwiftBonsoirPlugin"]];
+  [ClipboardWatcherPlugin registerWithRegistrar:[registry registrarForPlugin:@"ClipboardWatcherPlugin"]];
   [FPPDeviceInfoPlusPlugin registerWithRegistrar:[registry registrarForPlugin:@"FPPDeviceInfoPlusPlugin"]];
   [DocumentFileSavePlusPlugin registerWithRegistrar:[registry registrarForPlugin:@"DocumentFileSavePlusPlugin"]];
   [LaunchexternalappPlugin registerWithRegistrar:[registry registrarForPlugin:@"LaunchexternalappPlugin"]];

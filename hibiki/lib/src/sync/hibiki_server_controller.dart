@@ -49,15 +49,21 @@ class HibikiSyncServerController extends ChangeNotifier {
     required HibikiDatabase Function() database,
     required String Function() syncDataDir,
     required HibikiRemoteLookupService Function() remoteLookupServiceFactory,
+    HibikiRemoteMiningService Function()? miningServiceFactory,
+    HibikiRemoteHistoryService Function()? historyServiceFactory,
   })  : _navigatorKey = navigatorKey,
         _database = database,
         _syncDataDir = syncDataDir,
-        _remoteLookupServiceFactory = remoteLookupServiceFactory;
+        _remoteLookupServiceFactory = remoteLookupServiceFactory,
+        _miningServiceFactory = miningServiceFactory,
+        _historyServiceFactory = historyServiceFactory;
 
   final GlobalKey<NavigatorState> _navigatorKey;
   final HibikiDatabase Function() _database;
   final String Function() _syncDataDir;
   final HibikiRemoteLookupService Function() _remoteLookupServiceFactory;
+  final HibikiRemoteMiningService Function()? _miningServiceFactory;
+  final HibikiRemoteHistoryService Function()? _historyServiceFactory;
 
   HibikiSyncServer? _server;
   LanBroadcastService? _broadcast;
@@ -97,6 +103,8 @@ class HibikiSyncServerController extends ChangeNotifier {
       token: token,
       allowLan: true,
       remoteLookupService: _remoteLookupServiceFactory(),
+      miningService: _miningServiceFactory?.call(),
+      historyService: _historyServiceFactory?.call(),
     )..onPairRequest = _promptPairApproval;
     try {
       await server.start();

@@ -320,6 +320,63 @@ void main() {
       expect(repo.reverseNavigationBar, false);
     });
 
+    test('yomitan api server prefs round-trip', () async {
+      expect(repo.yomitanApiServerEnabled, false);
+      expect(repo.yomitanApiPort, 19633);
+      expect(repo.yomitanApiKey, '');
+
+      await repo.setYomitanApiServerEnabled(true);
+      await repo.setYomitanApiPort(19999);
+      await repo.setYomitanApiKey('k');
+
+      expect(repo.yomitanApiServerEnabled, true);
+      expect(repo.yomitanApiPort, 19999);
+      expect(repo.yomitanApiKey, 'k');
+
+      final repo2 = PreferencesRepository(db);
+      await repo2.loadFromDb();
+      expect(repo2.yomitanApiServerEnabled, true);
+      expect(repo2.yomitanApiPort, 19999);
+      expect(repo2.yomitanApiKey, 'k');
+      repo2.dispose();
+    });
+
+    test('texthooker prefs round-trip', () async {
+      expect(repo.texthookerEnabled, false);
+      expect(repo.texthookerUrls, [
+        'ws://localhost:6677',
+        'ws://localhost:9001',
+        'ws://localhost:2333',
+      ]);
+
+      await repo.setTexthookerEnabled(true);
+      await repo.setTexthookerUrls(['ws://localhost:6677']);
+
+      expect(repo.texthookerEnabled, true);
+      expect(repo.texthookerUrls, ['ws://localhost:6677']);
+
+      // 跨实例 reload，验换行编码经 DB 字符串往返后能正确 split 回 List
+      final repo2 = PreferencesRepository(db);
+      await repo2.loadFromDb();
+      expect(repo2.texthookerEnabled, true);
+      expect(repo2.texthookerUrls, ['ws://localhost:6677']);
+      repo2.dispose();
+    });
+
+    test('desktop clipboard prefs round-trip', () async {
+      expect(repo.desktopClipboardEnabled, false);
+      expect(repo.desktopClipboardAlwaysOnTop, false);
+      await repo.setDesktopClipboardEnabled(true);
+      await repo.setDesktopClipboardAlwaysOnTop(true);
+      expect(repo.desktopClipboardEnabled, true);
+      expect(repo.desktopClipboardAlwaysOnTop, true);
+      final repo2 = PreferencesRepository(db);
+      await repo2.loadFromDb();
+      expect(repo2.desktopClipboardEnabled, true);
+      expect(repo2.desktopClipboardAlwaysOnTop, true);
+      repo2.dispose();
+    });
+
     test('reverseReaderBottomBar is independent of reverseNavigationBar',
         () async {
       expect(repo.reverseReaderBottomBar, false); // 默认关
