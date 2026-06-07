@@ -311,9 +311,9 @@ class VideoPlayerController extends ChangeNotifier
   /// 抽完才 [setCues]，overlay 此时才出现。期间若发生重新 [load]（[_videoPath]
   /// 变化）则丢弃旧结果，避免把上一段视频的字幕错挂到新视频。
   Future<void> _loadEmbeddedSubtitleIfNeeded({required String bookUid}) async {
-    if (!(Platform.isWindows || Platform.isMacOS || Platform.isLinux)) {
-      return;
-    }
+    // 桌面走系统 ffmpeg、移动端走捆绑 ffmpeg-kit（见 resolveFfmpegBackend），两端都能
+    // 抽内封字幕，故不再按平台门控（早先「移动端无 ffmpeg」的限制已随捆绑解除）。
+    // 真无 ffmpeg 时 listAllSubtitleSources 返回空、优雅降级，不会出错。
     final String? videoPath = _videoPath;
     if (videoPath == null) return;
 

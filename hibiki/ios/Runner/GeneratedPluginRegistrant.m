@@ -54,6 +54,12 @@
 @import external_path;
 #endif
 
+#if __has_include(<ffmpeg_kit_flutter_new_min/FFmpegKitFlutterPlugin.h>)
+#import <ffmpeg_kit_flutter_new_min/FFmpegKitFlutterPlugin.h>
+#else
+@import ffmpeg_kit_flutter_new_min;
+#endif
+
 #if __has_include(<file_picker/FilePickerPlugin.h>)
 #import <file_picker/FilePickerPlugin.h>
 #else
@@ -221,6 +227,7 @@
   [DocumentFileSavePlusPlugin registerWithRegistrar:[registry registrarForPlugin:@"DocumentFileSavePlusPlugin"]];
   [LaunchexternalappPlugin registerWithRegistrar:[registry registrarForPlugin:@"LaunchexternalappPlugin"]];
   [ExternalPathPlugin registerWithRegistrar:[registry registrarForPlugin:@"ExternalPathPlugin"]];
+  [FFmpegKitFlutterPlugin registerWithRegistrar:[registry registrarForPlugin:@"FFmpegKitFlutterPlugin"]];
   [FilePickerPlugin registerWithRegistrar:[registry registrarForPlugin:@"FilePickerPlugin"]];
   [FlutterArchivePlugin registerWithRegistrar:[registry registrarForPlugin:@"FlutterArchivePlugin"]];
   [FlutterCharsetDetectorPlugin registerWithRegistrar:[registry registrarForPlugin:@"FlutterCharsetDetectorPlugin"]];

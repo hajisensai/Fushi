@@ -949,8 +949,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     final String? videoPath = controller.videoPath;
 
     // 视频卡片封面 → coverPath（→`{book-cover}`）：优先把**当前 cue 时间段**导出成
-    // 循环 GIF（用户要的「cue 时间段的动图」，比制卡瞬间的随机暂停帧更贴所学这句），
-    // ffmpeg 不可用（移动端无 CLI ffmpeg）/ 无 cue / 导出失败时回退当前帧截图。
+    // 循环 GIF（用户要的「cue 时间段的动图」，比制卡瞬间的随机暂停帧更贴所学这句）。
+    // 桌面走系统 ffmpeg、移动端走捆绑 ffmpeg-kit（resolveFfmpegBackend）；无 cue /
+    // 导出失败（ffmpeg 真不可用等）时回退当前帧截图。
     String? coverPath;
     if (cue != null && videoPath != null && cue.endMs > cue.startMs) {
       coverPath = await extractClipGifViaFfmpeg(

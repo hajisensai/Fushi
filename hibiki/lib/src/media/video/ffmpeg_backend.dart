@@ -2,6 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:ffmpeg_kit_flutter_new_min/ffmpeg_kit.dart';
+import 'package:ffmpeg_kit_flutter_new_min/return_code.dart';
+
 /// 一次 ffmpeg 执行的结果。
 ///
 /// [returnCode] 为 null 表示超时被强杀；[output] 是合并的 stderr 文本
@@ -65,12 +68,45 @@ class CliFfmpegBackend implements FfmpegBackend {
   }
 }
 
+/// 捆绑 ffmpeg（`ffmpeg_kit_flutter_new_min`）后端：移动端（Android/iOS）无系统 CLI
+/// ffmpeg，改经 ffmpeg-kit 跑同一套命令，让移动端复用桌面的全部 ffmpeg 功能（内封
+/// 字幕枚举/抽取、cue 动图、句子音频裁剪、视频帧）——与 [CliFfmpegBackend] **同契约**，
+/// 5 个 extract 函数 + 字幕枚举零改动。
+///
+/// `executeWithArguments` 同步执行（await 到会话结束），随后 [getReturnCode] /
+/// [getOutput]（= 合并日志，喂 `parseSubtitleStreamsFromFfmpegLog`）即就绪。超时用
+/// `.timeout` + [FFmpegKit.cancel]（调用方串行，cancel-all 安全）。min(LGPL) 变体内置
+/// 字幕 demux/转码、gif/aac 编码与各路解码（opus/h264/hevc…），不含 GPL 的 x264。
+class KitFfmpegBackend implements FfmpegBackend {
+  const KitFfmpegBackend();
+
+  @override
+  Future<FfmpegRunResult> run(List<String> args, Duration timeout) async {
+    try {
+      final session =
+          await FFmpegKit.executeWithArguments(args).timeout(timeout);
+      final ReturnCode? rc = await session.getReturnCode();
+      final String output = (await session.getOutput()) ?? '';
+      return FfmpegRunResult(returnCode: rc?.getValue(), output: output);
+    } on TimeoutException {
+      await FFmpegKit.cancel();
+      return const FfmpegRunResult(returnCode: null, output: '');
+    }
+  }
+}
+
 FfmpegBackend? _cachedBackend;
 
 /// 进程级单例 ffmpeg 后端选择。
 ///
-/// 当前仅系统 CLI 后端（全平台沿用今日行为）。捆绑 `ffmpeg_kit` 后端在引入依赖后
-/// 于此处按平台接入（Android/iOS/macOS/Windows 用 Kit，Linux 与 `HIBIKI_FFMPEG`
-/// 覆盖仍走 CLI）——见 docs/superpowers/plans/2026-06-06-bundle-ffmpeg-allplatform.md。
-FfmpegBackend resolveFfmpegBackend() =>
-    _cachedBackend ??= const CliFfmpegBackend();
+/// - `HIBIKI_FFMPEG` 覆盖（绝对路径）→ 系统 CLI（开发/特殊部署，优先）。
+/// - Android / iOS → 捆绑 [KitFfmpegBackend]（移动端无系统 ffmpeg）。
+/// - 桌面（Windows/macOS/Linux）→ 系统 CLI（沿用今日行为，打包/用户提供 ffmpeg）。
+FfmpegBackend resolveFfmpegBackend() => _cachedBackend ??= _selectBackend();
+
+FfmpegBackend _selectBackend() {
+  final String? override = Platform.environment['HIBIKI_FFMPEG']?.trim();
+  if (override != null && override.isNotEmpty) return const CliFfmpegBackend();
+  if (Platform.isAndroid || Platform.isIOS) return const KitFfmpegBackend();
+  return const CliFfmpegBackend();
+}
