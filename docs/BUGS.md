@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 117 条。点号进各自文件。
+> 共 118 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-118](bugs/BUG-118-anki-gaiji-card-image-missing.md) | ✅ | ✅ | 视频/书内查词制卡：词义外字(gaiji)图在 AnkiConnect 卡片上不显示 |
 | [BUG-117](bugs/BUG-117.md) | ✅ | ✅ | 书内跳转超链接点击「只加遮罩、不跳转」（Windows fork 不触发 shouldOverrideUrlLoading） |
 | [BUG-116](bugs/BUG-116.md) | ✅ | ✅ | gamepads_windows 手柄插件 teardown 崩溃 + 后台线程调 channel |
 | [BUG-115](bugs/BUG-115.md) | ✅ | ✅ | texthooker WebSocket 连接失败异常逃逸 zone（错误日志刷屏） |
