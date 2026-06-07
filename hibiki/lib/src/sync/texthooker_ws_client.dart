@@ -59,6 +59,15 @@ class TexthookerWsClient {
       _scheduleRetry(url);
       return;
     }
+    // BUG-115：`IOWebSocketChannel.connect` 是惰性的——握手/连接失败（典型是
+    // texthooker server 未监听时的 ECONNREFUSED）会作为**未处理的异步错误**落在
+    // `ready` future 上逃逸到全局 zone（被记成 UncaughtZone 噪音，按重连周期每
+    // 几秒刷三条）。这里显式吞掉 `ready` 的错误；真正的重连仍由下面 stream 的
+    // onError/onDone 驱动，避免重复 scheduleRetry。
+    unawaited(channel.ready.then<void>(
+      (_) {},
+      onError: (Object _) {},
+    ));
     final StreamSubscription<dynamic> sub = channel.stream.listen(
       (dynamic data) => _service.appendLine(parseTexthookerMessage('$data')),
       onError: (Object _) => _scheduleRetry(url),

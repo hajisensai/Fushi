@@ -99,12 +99,36 @@ namespace flutter_inappwebview_plugin
   {
     if (is_running_) {
       is_running_ = false;
-      frame_pool_->remove_FrameArrived(on_frame_arrived_token_);
-      auto closable =
-        capture_session_.try_as<ABI::Windows::Foundation::IClosable>();
-      assert(closable);
-      closable->Close();
-      capture_session_ = nullptr;
+      if (frame_pool_) {
+        frame_pool_->remove_FrameArrived(on_frame_arrived_token_);
+      }
+      if (capture_session_) {
+        auto session_closable =
+          capture_session_.try_as<ABI::Windows::Foundation::IClosable>();
+        if (session_closable) {
+          session_closable->Close();
+        }
+        capture_session_ = nullptr;
+      }
+      // BUG-113: Close() and release the capture frame pool here, not only at
+      // member destruction. An un-Closed Direct3D11CaptureFramePool keeps its
+      // FrameArrived/Present machinery alive on the owning DispatcherQueue (the
+      // UI thread). When this bridge is torn down (e.g. the dictionary-popup
+      // WebView2 is destroyed after tapping mine), a frame that was already
+      // queued onto the UI message loop before remove_FrameArrived still
+      // dispatches — but now into freed state — so GraphicsCapture's internal
+      // event list invokes a delegate whose target pointer is NULL:
+      //   GraphicsCapture!...FirePresentEvent -> event::operator() -> mov [rcx]
+      // with rcx==0 => access violation c0000005. Closing the pool severs that
+      // event source synchronously, so no late frame can fire post-teardown.
+      if (frame_pool_) {
+        auto pool_closable =
+          frame_pool_.try_as<ABI::Windows::Foundation::IClosable>();
+        if (pool_closable) {
+          pool_closable->Close();
+        }
+        frame_pool_ = nullptr;
+      }
     }
   }
 

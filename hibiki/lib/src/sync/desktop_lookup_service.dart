@@ -102,20 +102,38 @@ class DesktopLookupService extends ChangeNotifier
   Future<void> _handleClipboardChange() async {
     // app 在前台 = 本 app 内复制（制卡/选词复制），不弹查词。
     if (!shouldTriggerOnClipboard(_focused)) return;
-    final ClipboardData? d = await Clipboard.getData(Clipboard.kTextPlain);
-    final String text = d?.text ?? '';
-    if (text.trim().isEmpty) return;
+    final String? text = await _readClipboardText();
+    if (text == null || text.trim().isEmpty) return;
     submitText(text);
     await _bringToFront();
   }
 
   Future<void> _onHotKey() async {
-    final ClipboardData? d = await Clipboard.getData(Clipboard.kTextPlain);
-    final String text = d?.text ?? '';
-    if (text.trim().isEmpty) return;
+    final String? text = await _readClipboardText();
+    if (text == null || text.trim().isEmpty) return;
     _lastText = null; // 热键强制查（即便与上次相同）
     submitText(text);
     await _bringToFront();
+  }
+
+  /// BUG-114：Windows 剪贴板是全局独占资源——刚复制的进程可能仍持有句柄，
+  /// 此刻 `OpenClipboard` 会失败（errno 5 / "Unable to open clipboard"），
+  /// `Clipboard.getData` 抛 [PlatformException]。`_handleClipboardChange` 经
+  /// `unawaited` 发射，异常会逃逸到全局 zone（被记成 UncaughtZone 噪音）。
+  ///
+  /// 这是不可控的平台竞态：做有界重试（占用方通常毫秒级释放），仍失败则放弃
+  /// 本次剪贴板变化而不是把异常往外抛。返回 null 表示读取失败。
+  Future<String?> _readClipboardText() async {
+    for (int attempt = 0; attempt < 3; attempt++) {
+      try {
+        final ClipboardData? d = await Clipboard.getData(Clipboard.kTextPlain);
+        return d?.text ?? '';
+      } on PlatformException {
+        if (attempt == 2) return null;
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      }
+    }
+    return null;
   }
 
   Future<void> _bringToFront() async {

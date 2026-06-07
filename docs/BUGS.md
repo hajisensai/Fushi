@@ -26,6 +26,34 @@
 - **[x] ② 已加自动化测试** — `hibiki/test/media/audiobook/paused_skip_transient_jumpback_test.dart`：真控制器 + hanging just_audio fake（暂停态），`skipToCue` 后经新增 `@visibleForTesting debugUpdateCueForPosition` 注入旧位置瞬态 tick，断言权威 cue 不被覆盖（下一句/上一句两用例 + 源码守卫断言抑制段存在）。撤掉修复行实测红：下一句 cue 1000→0、上一句 1000→2000，精确复现用户描述。
 - **备注**：有声书播放类。`dart analyze` 改动文件 0 issue + `flutter test test/media/audiobook/` 全量 322 绿（含 BUG-061 抑制窗用例不回归）。**真机/桌面肉眼复测待用户**：有声书暂停后点前进/后退（按句模式），高亮应一次性落到目标句、不回弹/不乱跳。
 
+## BUG-113 · 查词点制卡按钮闪退（Windows，看视频/有声书时高频）
+- **报告**：2026-06-07（用户：「闪退了，你看看」，随后补「我好像在查词点制卡按钮」「在看视频/有声书」）。运行环境 = release `build/windows/x64/runner/Release/hibiki.exe`（0.4.1.32）。
+- **真实性**：✅ **真 bug（崩溃转储 + 调用栈确认，非推测）**。WER 故障模块 `GraphicsCapture.dll`，异常 `c0000005`；cdb 解析 `CrashDumps/hibiki.exe.105288.dmp`（22:22，桶 `abb1ae49…` 22:05/22:22 反复出现=高频）崩溃线程栈：`GraphicsCapture!TypedEventHandler<Direct3D11CaptureFramePool,…>::operator()+0x15`（`mov rax,[rcx]`，rcx=NULL）← `event::operator()` ← `Direct3D11CaptureFramePool::FirePresentEvent`，跑在主 UI 线程 CoreMessaging 派发循环里。根因在 vendored fork `flutter_inappwebview_windows`：Windows 上查词弹窗是 WebView2，经 `custom_platform_view/texture_bridge.cc` 用 Windows.Graphics.Capture 把离屏 WebView2 visual 抓成 Flutter 纹理。`StopInternal()`（`texture_bridge.cc:98`）拆除时只 `remove_FrameArrived` + 关 session，**从不 `Close()` 也不置空 `frame_pool_`**（帧池只随成员析构释放）。弹窗 WebView2 销毁（点制卡后关/重建弹窗→`~TextureBridge`）时，一条在 `remove_FrameArrived` 之前已派发到 UI 消息队列的 FrameArrived 仍执行——但目标 `TextureBridge` 已释放→帧池内部事件列表回调空目标→AV。
+- **[x] ① 已修复** — 本提交。根因修（在拆除点同步切断帧池事件源，非补丁）：`StopInternal()` 在关 session 后追加 `frame_pool_.try_as<IClosable>()->Close()` 并 `frame_pool_ = nullptr`，使关闭后无迟到帧能再 fire；同时把原 `assert(closable)` + 裸解引用改成 null-safe 守卫（释放期更稳）。子类 `TextureBridgeGpu::StopInternal` 仅在基类后重置 `surface_`，不受影响；`OnFrameArrived` 入口 `is_running_` 门控保证置空后不再触 `frame_pool_`。
+- **[x] ② 已加自动化测试** — `hibiki/test/widgets/texture_bridge_stop_guard_test.dart`（源码守卫：断言 `texture_bridge.cc` 的 StopInternal 含 `pool_closable`/`frame_pool_ = nullptr`/`BUG-113` 注释；真实图形崩溃 headless 不可跑）。
+- **备注**：native/WebView2/Windows-only。`flutter analyze` 改动 Dart 0 issue；native 改动**需 Windows 重编**（用户自行 `flutter build windows`）后**真机肉眼复测原始失败路径**：看视频/有声书→查词→反复点制卡，不再闪退。
+
+## BUG-114 · 桌面剪贴板被占用时未捕获 PlatformException 逃逸 zone
+- **报告**：2026-06-07（随 BUG-113 错误日志暴露：`DesktopLookupService._handleClipboardChange` 抛 `PlatformException(Clipboard error, Unable to open clipboard, 5)`，多条 UncaughtZone）。
+- **真实性**：✅ **真 bug**。`desktop_lookup_service.dart:105` 在 `onClipboardChanged` 经 `unawaited(_handleClipboardChange())` 发射后立刻 `Clipboard.getData`。Windows 剪贴板是全局独占资源，刚复制的进程可能仍持句柄→`OpenClipboard` 失败 errno 5（`ERROR_ACCESS_DENIED`）→`Clipboard.getData` 抛 `PlatformException`，而 `_handleClipboardChange` 无 try/catch 且 fire-and-forget→逃逸到全局 zone（记成 UncaughtZone 噪音）。`_onHotKey` 同理。
+- **[x] ① 已修复** — 本提交。根因修（外部平台竞态做有界重试 + 兜底，符合 CLAUDE.md「不可控平台限制下允许临时兼容层」）：抽 `_readClipboardText()` 把 `Clipboard.getData` 包进 3 次重试（2×50ms 退避，占用方通常毫秒级释放），仍失败返回 null→放弃本次剪贴板变化而非外抛；`_handleClipboardChange`/`_onHotKey` 改走它。
+- **[x] ② 已加自动化测试** — `hibiki/test/sync/desktop_lookup_service_test.dart`（`testWidgets`：mock `Clipboard.getData` 抛 PlatformException，断言异常不逃逸 + `pendingText` 仍 null 不误触查词）。
+- **备注**：`flutter test test/sync/desktop_lookup_service_test.dart` 全绿。桌面真机复测：外部 app 高频复制时不再刷错误日志。
+
+## BUG-115 · texthooker WebSocket 连接失败异常逃逸 zone（错误日志刷屏）
+- **报告**：2026-06-07（随 BUG-113 错误日志暴露：大量 `WebSocketChannelException: SocketException ... 远程计算机拒绝网络连接 errno=1225`，每重连周期一批）。
+- **真实性**：✅ **真 bug**。texthooker server 未监听时，`TexthookerWsClient._connect`（`texthooker_ws_client.dart`）经 `IOWebSocketChannel.connect` 惰性连接，握手失败（ECONNREFUSED）作为**未处理异步错误**落在 channel 的 `ready` future 上逃逸到全局 zone——`.listen(onError:)` 只接 stream 侧，接不到 `ready` 侧。固定退避每 3 秒 × 多 URL 永久刷屏。
+- **[x] ① 已修复** — 本提交。根因修：`_connect` 显式给 `channel.ready` 挂 `.then(onError:)` no-op 吞掉连接建立失败；真正的重连仍由 stream 的 onError/onDone 驱动（不重复 scheduleRetry）。
+- **[x] ② 已加自动化测试** — `hibiki/test/sync/texthooker_ws_client_test.dart`（`runZonedGuarded` + fake channel：ready/stream 均抛错，断言无错误逃逸到 zone 且仍排程重连）。
+- **备注**：`flutter test test/sync/texthooker_ws_client_test.dart` 全绿（含原有两用例）。
+
+## BUG-116 · gamepads_windows 手柄插件 teardown 崩溃 + 后台线程调 channel（待修）
+- **报告**：2026-06-07（排查 BUG-113 时在 WER/转储发现的第二个独立崩溃桶：故障模块 `gamepads_windows_plugin.dll` c0000005，21:31，栈底 `FlutterDesktopViewControllerDestroy`=app 销毁期）。
+- **真实性**：✅ **真 bug（源码确认多处缺陷）**。pub 插件 `gamepads_windows-0.3.0+1` 的 `windows/gamepad.cpp`：① `stop()` 释放 `g_gameInput` 后**不置空**，detach 的 `read_gamepad` 轮询线程仍 `g_gameInput->GetCurrentReading()`→对已释放 COM use-after-free（即此 teardown 栈）；② `emit_gamepad_event` 从 detach 读线程直接 `channel->InvokeMethod`，违反 Flutter「channel 仅平台线程」约束（按键即可能崩，比 teardown 更频繁）；③ `stop_thread`/`alive` 裸 bool 跨线程数据竞争；④ `deviceCallbackToken` 未初始化野指针。
+- **[ ] ① 未修复** — 用户决定：不 stub（Windows 无 Android 那种引擎 key 通道，stub 会丢手柄导航），**另开一轮专门调研**。正确修法 = vendor 插件 + 重写线程生命周期（join 式停线程后再释放/置空 g_gameInput + 原子化标志 + 修野指针）+ 把事件 marshal 回平台线程，需手柄真机验证。
+- **[ ] ② 未加测试**
+- **备注**：teardown 低频（关 app 时），优先级低于 BUG-113；按键期 channel 崩为另一向量。待 vendor 轮次。
+
 ## BUG-109 · 阅读器切换主题/字体时正文「翻页」（当前阅读位置跳到相邻页）
 - **报告**：2026-06-07（用户：「切换主题、字体的时候文字会翻页」，与高亮遮挡同批；高亮遮挡问题另记 BUG-110）。采番注：初记 108，rebase 到 develop 时 108 已被并发提交「查词弹窗 ruby 重叠」占用，改取 109。
 - **真实性**：✅ **真 bug（沿真实代码路径定位）**。切字号/字体/主题 live 变更最终都进 `reader_hibiki_page.dart` 的 `_applyStylesLive` → JS `ReaderPaginationScripts` 分页 shell 的 `reanchorAfterStyleChange`（`reader_pagination_scripts.dart:1214`）。旧实现按**粗粒度进度分数**重锚：reflow 前 `calculateProgress()`（已读字符/总字符），换样式后 rAF `scrollToProgressPaged(progress)` → `findNodeAtProgress`（`Math.ceil(总字×progress)` 反推节点）→ `alignToPage` 取整到分页边界。字体/主题改变后字形宽度与列宽变化，同一进度分数反推出的字符落点 + 取整后落到**相邻页边界** → 表现为「翻页」。同文件 `setChromeInsets`（:1117）早已用**精确字符偏移**重锚（`getFirstVisibleCharOffset()` → `scrollToCharOffset(charOffset, scrollBefore)`，HBK-REG-004 验证），但 `reanchorAfterStyleChange` 没复用，这就是精度损失的根因。
