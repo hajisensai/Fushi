@@ -1380,5 +1380,13 @@
     "video_settings_cat_playback": "播放",
     "video_settings_cat_shaders": "着色器",
     "video_settings_cat_mpv": "mpv",
-    "video_settings_cat_subtitle": "字幕"
+    "video_settings_cat_subtitle": "字幕",
+    "log_upload_action": "上传到服务器",
+    "log_upload_in_progress": "正在上传日志…",
+    "log_upload_success": "日志已上传",
+    "log_upload_failed": "上传失败",
+    "log_upload_too_large": "日志过大，无法上传",
+    "log_upload_consent_title": "上传日志到服务器？",
+    "log_upload_consent_body": "日志正文（可能包含错误信息、文件路径、书名等）以及 App 版本、平台、设备型号会上传到开发者的服务器，用于诊断问题。仅在你点上传时发生，不会自动发送。",
+    "log_upload_consent_agree": "同意并上传"
 }

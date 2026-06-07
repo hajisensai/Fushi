@@ -1,0 +1,13 @@
+{
+  "name": "hibiki-log-collector-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.8",
+    "wrangler": "^3.90.0"
+  }
+}

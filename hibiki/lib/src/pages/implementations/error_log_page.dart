@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:hibiki/src/utils/misc/log_exporter.dart';
+import 'package:hibiki/src/utils/misc/log_upload_config.dart';
+import 'package:hibiki/src/utils/misc/log_uploader.dart';
 import 'package:hibiki/utils.dart';
 
 class ErrorLogPage extends StatelessWidget {
@@ -42,6 +44,16 @@ class ErrorLogPage extends StatelessWidget {
             Share.shareXFiles([xFile], subject: t.error_log_share_subject);
           },
         ),
+        if (showUploadLogAction)
+          HibikiIconButton(
+            icon: Icons.cloud_upload_outlined,
+            tooltip: t.log_upload_action,
+            onTap: () => uploadLogToServer(
+              context: context,
+              log: log,
+              kind: 'error',
+            ),
+          ),
         if (showSaveLogAction)
           HibikiIconButton(
             icon: Icons.save_alt_outlined,

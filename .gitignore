@@ -106,3 +106,12 @@ CLAUDE.local.md
 # Copy hibiki/lib/src/sync/google_oauth_secret.example.dart to fill it in.
 hibiki/lib/src/sync/google_oauth_secret.dart
 hibiki-windows-x64.zip
+server/cf-worker/node_modules/
+
+# CF Worker 部署密钥（本地，绝不入库）
+server/cf-worker/DEPLOYMENT_SECRETS.local.md
+*.local.md
+.dev.vars
+
+# 日志上传端点/token 真值（本地，绝不入库；拷 .example 填）
+hibiki/lib/src/utils/misc/log_upload_secret.dart
