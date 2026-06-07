@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:hibiki_core/hibiki_core.dart';
+import '../parsers/subtitle_markup.dart';
 import 'audiobook_health.dart' show HealthKind;
 
 /// 有声书元数据。一本 EPUB 可挂载 0..1 个有声书。
@@ -87,6 +88,10 @@ class AudioCue {
 
   /// 多段音频时的文件下标（对应 [Audiobook] audioRoot 下按名称排序的文件列表）。
   late int audioFileIndex;
+
+  /// 解析时附带的行内样式 markup（仅视频字幕渲染用，瞬态、不持久化）。
+  /// 由各文本字幕 parser 在 [parseSubtitleMarkup] 后填充；DB 往返不携带。
+  SubtitleMarkup? markup;
 
   File? resolveAudioFile(List<File> audioFiles) {
     if (audioFileIndex < 0 || audioFileIndex >= audioFiles.length) {
