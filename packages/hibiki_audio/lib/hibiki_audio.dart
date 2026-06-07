@@ -8,6 +8,7 @@ export 'src/parsers/ass_parser.dart';
 export 'src/parsers/smil_parser.dart';
 export 'src/parsers/json_alignment_parser.dart';
 export 'src/parsers/text_file_io.dart';
+export 'src/parsers/subtitle_markup.dart';
 
 // Audiobook core
 export 'src/audiobook/audiobook_model.dart';
