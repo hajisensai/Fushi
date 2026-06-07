@@ -22,7 +22,8 @@ class TexthookerPage extends ConsumerStatefulWidget {
 
 class _TexthookerPageState extends ConsumerState<TexthookerPage>
     with DictionaryPageMixin {
-  final List<DictionaryPopupEntry> _popupStack = <DictionaryPopupEntry>[];
+  final DictionaryPopupController _popup =
+      DictionaryPopupController(lowMemory: false);
   final ScrollController _scroll = ScrollController();
 
   /// 仅在点击 span 触发查词/挖词时求值，渲染文本行本身不触发 AppModel 创建。
@@ -41,6 +42,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   @override
   void dispose() {
     TexthookerService.instance.removeListener(_onLines);
+    _popup.dispose();
     _scroll.dispose();
     super.dispose();
   }
@@ -59,7 +61,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     pushNestedPopup(
       query: word,
       selectionRect: rect,
-      popupStack: _popupStack,
+      controller: _popup,
       replaceStack: true,
       autoRead: true,
     );
@@ -133,17 +135,23 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   List<Widget> _buildPopups(BuildContext context) {
     final Size screen = MediaQuery.sizeOf(context);
     return <Widget>[
-      for (int i = 0; i < _popupStack.length; i++)
+      // 搜索期加载占位卡（搜索→就绪才显示，与首页查词同观感）。
+      if (_popup.isSearchingUi && _popup.pendingRect != null)
+        buildPopupLoadingPlaceholder(
+          rect: _popup.pendingRect!,
+          screen: screen,
+        ),
+      for (int i = 0; i < _popup.entries.length; i++)
         buildNestedPopupLayer(
           index: i,
           screen: screen,
-          popupStack: _popupStack,
+          controller: _popup,
           onPush: (String text, Rect rect) => pushNestedPopup(
             query: text,
             selectionRect: rect,
-            popupStack: _popupStack,
+            controller: _popup,
           ),
-          onPop: (int index) => popNestedPopupAt(index, _popupStack),
+          onPop: (int index) => popNestedPopupAt(index, _popup),
         ),
     ];
   }
