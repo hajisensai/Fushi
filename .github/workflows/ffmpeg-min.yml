@@ -85,6 +85,7 @@ jobs:
         run: Get-Item out/bin/ffmpeg.exe | Select-Object Name, Length
 
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: ${{ matrix.artifact }}
           path: |

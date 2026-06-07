@@ -88,8 +88,10 @@ run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -y \
   -f lavfi -i "sine=frequency=550:duration=2" -c:a eac3 "$WORK/tone.eac3"
 run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -y \
   -f lavfi -i "sine=frequency=770:duration=2" -c:a wmav2 "$WORK/tone.wma"
+run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -y \
+  -f lavfi -i "sine=frequency=990:duration=2" -c:a pcm_f32le "$WORK/tone.wav"
 
-# M4A with attached cover art.
+# M4A files with the common JPEG and PNG attached-cover codecs.
 run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -y \
   -f lavfi -i "color=red:size=64x64:duration=1" \
   -frames:v 1 "$WORK/cover.png"
@@ -99,6 +101,12 @@ run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -y \
   -map 0:a -map 1:v \
   -c:a aac -c:v mjpeg -disposition:v attached_pic \
   -shortest "$WORK/covered.m4a"
+run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -y \
+  -f lavfi -i "sine=frequency=880:duration=2" \
+  -f lavfi -i "color=blue:size=64x64:duration=1" \
+  -map 0:a -map 1:v \
+  -c:a aac -c:v png -frames:v 1 -disposition:v attached_pic \
+  "$WORK/covered-png.m4a"
 
 echo "[ffmpeg-min-smoke] probing and extracting embedded subtitles"
 if "$FFMPEG_MIN" -hide_banner -i "$WORK/h264-movtext.mp4" \
@@ -135,7 +143,8 @@ for input in \
   "$WORK/h264-ass.mkv" \
   "$WORK/tone.ac3" \
   "$WORK/tone.eac3" \
-  "$WORK/tone.wma"; do
+  "$WORK/tone.wma" \
+  "$WORK/tone.wav"; do
   stem="$(basename "$input")"
   run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
     -ss 0.100 -t 0.800 -i "$input" -vn -c:a aac "$WORK/$stem.aac"
@@ -144,8 +153,13 @@ done
 
 echo "[ffmpeg-min-smoke] extracting attached cover"
 run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
-  -i "$WORK/covered.m4a" -an -frames:v 1 -update 1 "$WORK/cover.jpg"
+  -i "$WORK/covered.m4a" -an -map 0:v:disp:attached_pic \
+  -frames:v 1 -update 1 "$WORK/cover.jpg"
 assert_nonempty "$WORK/cover.jpg"
+run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
+  -i "$WORK/covered-png.m4a" -an -map 0:v:disp:attached_pic \
+  -frames:v 1 -update 1 "$WORK/cover-png.jpg"
+assert_nonempty "$WORK/cover-png.jpg"
 
 # Validate generated outputs with the full host build.
 for output in \
@@ -156,7 +170,9 @@ for output in \
   "$WORK/tone.ac3.aac" \
   "$WORK/tone.eac3.aac" \
   "$WORK/tone.wma.aac" \
-  "$WORK/cover.jpg"; do
+  "$WORK/tone.wav.aac" \
+  "$WORK/cover.jpg" \
+  "$WORK/cover-png.jpg"; do
   run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -i "$output" -f null -
 done
 

@@ -34,12 +34,12 @@ fi
 cd "$SRC"
 
 # 组件白名单（覆盖 Hibiki 四类命令；按需在调优清单里增删）。
-DEMUXERS="matroska,mov,mpegts,avi,srt,ass,webvtt,aac,mp3,flac,wav,ogg,m4v"
-DECODERS="h264,hevc,av1,vp9,vp8,mpeg4,mpeg2video,mjpeg,opus,aac,ac3,eac3,vorbis,flac,mp3,pcm_s16le,pcm_s16be,pcm_s24le,ass,ssa,subrip,webvtt,mov_text,text"
+DEMUXERS="matroska,mov,mpegts,mpegps,mpegvideo,avi,flv,rm,asf,srt,ass,webvtt,aac,ac3,eac3,mp3,flac,wav,ogg,m4v"
+DECODERS="h264,hevc,av1,vp9,vp8,mpeg4,mpeg2video,mpeg1video,flv,rv10,rv20,rv30,rv40,theora,wmv1,wmv2,wmv3,vc1,msmpeg4v1,msmpeg4v2,msmpeg4v3,mjpeg,png,webp,opus,aac,ac3,eac3,vorbis,flac,mp3,mp2,alac,dca,truehd,mlp,cook,sipr,ra_144,ra_288,wmav1,wmav2,wmapro,wmalossless,wmavoice,pcm_s8,pcm_u8,pcm_s16le,pcm_s16be,pcm_u16le,pcm_u16be,pcm_s24le,pcm_s24be,pcm_u24le,pcm_u24be,pcm_s32le,pcm_s32be,pcm_u32le,pcm_u32be,pcm_f32le,pcm_f32be,pcm_f64le,pcm_f64be,pcm_alaw,pcm_mulaw,ass,ssa,subrip,webvtt,movtext,text"
 ENCODERS="gif,aac,mjpeg,png,ass,ssa,subrip,webvtt"
 MUXERS="gif,adts,image2,mjpeg,srt,ass,webvtt"
-FILTERS="scale,fps,palettegen,paletteuse,format,aformat,aresample,anull,null,copy,setpts,asetpts"
-PARSERS="h264,hevc,av1,vp9,vp8,mpeg4video,mpegvideo,aac,ac3,vorbis,opus,flac,mjpeg"
+FILTERS="scale,fps,split,palettegen,paletteuse,format,aformat,aresample,anull,null,copy,setpts,asetpts"
+PARSERS="h264,hevc,av1,vp9,vp8,mpeg4video,mpegvideo,vc1,aac,aac_latm,ac3,dca,mlp,mpegaudio,vorbis,opus,flac,mjpeg,png,webp"
 BSFS="aac_adtstoasc,h264_mp4toannexb,hevc_mp4toannexb"
 PROTOCOLS="file,pipe"
 
