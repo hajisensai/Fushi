@@ -208,26 +208,17 @@ class AnkiRepository extends BaseAnkiRepository {
       dictionaryMedia: payload.dictionaryMedia,
     );
 
-    final dictionaryMediaTags = <String, String>{};
-    for (final media in payload.dictionaryMedia) {
-      final tag = await _addDictionaryMedia(media);
-      if (tag != null && tag.isNotEmpty) {
-        dictionaryMediaTags[media.filename] = tag;
-      }
-    }
+    final dictionaryMediaTags = await buildDictionaryMediaTags(
+      payload.dictionaryMedia,
+      _addDictionaryMedia,
+    );
 
-    final fields = <String, String>{};
-    for (final entry in settings.fieldMappings.entries) {
-      var value =
-          AnkiHandlebarRenderer.render(entry.value, mediaPayload, mediaContext);
-      for (final mediaEntry in dictionaryMediaTags.entries) {
-        value = value.replaceAll(mediaEntry.key, mediaEntry.value);
-      }
-      value = normalizeAnkiDictionaryHtml(value);
-      if (value.trim().isNotEmpty) {
-        fields[entry.key] = value;
-      }
-    }
+    final fields = buildMinedFields(
+      fieldMappings: settings.fieldMappings,
+      payload: mediaPayload,
+      context: mediaContext,
+      dictionaryMediaTags: dictionaryMediaTags,
+    );
 
     if (!settings.allowDupes) {
       final firstFieldValue = noteType.fields.isNotEmpty

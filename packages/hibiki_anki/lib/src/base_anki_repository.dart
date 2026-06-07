@@ -94,4 +94,56 @@ abstract class BaseAnkiRepository {
     return current.selectedNoteTypeName?.toLowerCase().contains('lapis') ??
         false;
   }
+
+  // ── 词典媒体（gaiji 外字）嵌入：两 backend 共用，杜绝两份实现漂移 ──────────────
+
+  /// 把每条词典媒体（gaiji 外字等）存进 Anki，返回「占位符 → **裸媒体引用**」映射。
+  ///
+  /// - 键 = popup.js 注入到义项 HTML 里的占位符文件名（`hoshi_dict_N.ext`，即
+  ///   [DictionaryMedia.filename]）。
+  /// - 值 = [storeBareRef] 返回的**裸文件名**（如 `real.svg`），**不是** `<img src>` 标签。
+  ///
+  /// 关键不变式：值必须是裸文件名。导出的义项 HTML 已经是
+  /// `<img class="gloss-image" src="hoshi_dict_N.ext">`，[buildMinedFields] 用
+  /// `replaceAll` 把 `src` 里的占位符替换成真实文件名。若值是完整 `<img src="real.svg">`
+  /// 标签，会被塞进 `src="..."` 里变成 `<img src="<img src="real.svg">">` 的嵌套坏图，
+  /// Anki 卡片上外字不显示（AnkiConnect 旧实现的 BUG，AnkiDroid 经
+  /// [ankiInlineMediaReference] 裸化故正常；本统一令两端同契约）。
+  @protected
+  Future<Map<String, String>> buildDictionaryMediaTags(
+    List<DictionaryMedia> media,
+    Future<String?> Function(DictionaryMedia media) storeBareRef,
+  ) async {
+    final tags = <String, String>{};
+    for (final m in media) {
+      final ref = await storeBareRef(m);
+      if (ref != null && ref.isNotEmpty) {
+        tags[m.filename] = ref;
+      }
+    }
+    return tags;
+  }
+
+  /// 按 [fieldMappings] 渲染卡片字段：模板渲染 → 替换词典媒体占位符 → HTML 规范化。
+  /// 两 backend 共用同一逻辑（原先在两个 repo 各有一份 byte 级重复实现）。
+  @protected
+  Map<String, String> buildMinedFields({
+    required Map<String, String> fieldMappings,
+    required AnkiMiningPayload payload,
+    required AnkiMiningContext context,
+    required Map<String, String> dictionaryMediaTags,
+  }) {
+    final fields = <String, String>{};
+    for (final entry in fieldMappings.entries) {
+      var value = AnkiHandlebarRenderer.render(entry.value, payload, context);
+      for (final mediaEntry in dictionaryMediaTags.entries) {
+        value = value.replaceAll(mediaEntry.key, mediaEntry.value);
+      }
+      value = normalizeAnkiDictionaryHtml(value);
+      if (value.trim().isNotEmpty) {
+        fields[entry.key] = value;
+      }
+    }
+    return fields;
+  }
 }

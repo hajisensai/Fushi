@@ -201,26 +201,17 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       dictionaryMedia: payload.dictionaryMedia,
     );
 
-    final dictionaryMediaTags = <String, String>{};
-    for (final media in payload.dictionaryMedia) {
-      final tag = await _storeDictionaryMedia(service, media);
-      if (tag != null && tag.isNotEmpty) {
-        dictionaryMediaTags[media.filename] = tag;
-      }
-    }
+    final dictionaryMediaTags = await buildDictionaryMediaTags(
+      payload.dictionaryMedia,
+      (media) => _storeDictionaryMedia(service, media),
+    );
 
-    final fields = <String, String>{};
-    for (final entry in settings.fieldMappings.entries) {
-      var value =
-          AnkiHandlebarRenderer.render(entry.value, mediaPayload, mediaContext);
-      for (final mediaEntry in dictionaryMediaTags.entries) {
-        value = value.replaceAll(mediaEntry.key, mediaEntry.value);
-      }
-      value = normalizeAnkiDictionaryHtml(value);
-      if (value.trim().isNotEmpty) {
-        fields[entry.key] = value;
-      }
-    }
+    final fields = buildMinedFields(
+      fieldMappings: settings.fieldMappings,
+      payload: mediaPayload,
+      context: mediaContext,
+      dictionaryMediaTags: dictionaryMediaTags,
+    );
 
     if (!settings.allowDupes) {
       final firstFieldValue = noteType.fields.isNotEmpty
@@ -448,9 +439,16 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         filename: filename,
         data: base64Encode(bytes),
       );
+      // 返回**裸文件名**（与 AnkiDroid 经 ankiInlineMediaReference 对称）。义项 HTML
+      // 已是 <img src="hoshi_dict_N.ext">，buildMinedFields 用 replaceAll 把 src 里的占位符
+      // 替换成真实文件名；这里若返回完整 <img>/[sound:] 标签会嵌进 src 成
+      // <img src="<img src=...>"> 嵌套坏图（外字不显示）。两端共用 ankiInlineMediaReference
+      // 这一裸化单一真相，杜绝再次漂移回完整标签。
       final mime = mimeTypeForPath(filename);
-      if (mime.startsWith('audio/')) return '[sound:$filename]';
-      return '<img src="$filename">';
+      final wrapped = mime.startsWith('audio/')
+          ? '[sound:$filename]'
+          : '<img src="$filename">';
+      return ankiInlineMediaReference(wrapped);
     } catch (e, stack) {
       debugPrint('AnkiConnectRepository._storeDictionaryMedia: $e\n$stack');
       return null;
