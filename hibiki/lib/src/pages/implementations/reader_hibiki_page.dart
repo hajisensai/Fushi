@@ -264,6 +264,13 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   bool _showChrome = true;
   double _lastSyncedWidth = 0;
   double _lastSyncedHeight = 0;
+  // BUG-111: 记录最近一次 setup 脚本注入 JS 时实际用作 dartPageWidth/Height 的尺寸
+  // （= 当时 MediaQuery 读到的视口）。content-ready 后必须用它作为「已分页基线」喂给
+  // _syncPageSize，而不是用 content-ready 那一刻的当前 MediaQuery——否则初始重排校验
+  // 永远 no-op（见 _onRestoreComplete）。界面缩放(scale!=1.0)未 settle 时初始分页宽度
+  // 会偏窄，靠这条基线让 content-ready 后的 _syncPageSize 检出差异并重排。
+  double _paginatedWidth = 0;
+  double _paginatedHeight = 0;
   double _displayedProgress = 0;
 
   final FocusNode _focusNode = FocusNode();
@@ -1147,6 +1154,11 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     final bool widthChanged = _lastSyncedWidth > 0 && w != _lastSyncedWidth;
     final bool heightChanged = (h - _lastSyncedHeight).abs() >= 1;
     if (!widthChanged && !heightChanged) return;
+    // BUG-111: 诊断——窗口/缩放 settle 或 resize 后，把真实视口与已分页基线比对。
+    // 若 content-ready 后这里报 widthChanged，说明初始分页宽度偏窄、正在自动重排铺满。
+    debugPrint('[ReaderHibiki] _syncPageSize w=$w h=$h '
+        'paginated=$_paginatedWidth x $_paginatedHeight '
+        'widthChanged=$widthChanged heightChanged=$heightChanged');
     _lastSyncedWidth = w;
     _lastSyncedHeight = h;
 
@@ -1591,6 +1603,10 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     final ReaderSettings s = _settings!;
     final String selectionJs = ReaderSelectionScripts.source();
     final Size screenSize = MediaQuery.of(context).size;
+    // BUG-111: 这就是 JS 分页用的权威宽高（dartPageWidth/Height）。记下来作为
+    // content-ready 后的「已分页基线」，供 _syncPageSize 与 settle 后的真实视口比对。
+    _paginatedWidth = screenSize.width;
+    _paginatedHeight = screenSize.height;
     final String paginationJs = _stripScriptTags(
       ReaderPaginationScripts.shellScript(
         initialProgress: _initialProgress,
@@ -2146,9 +2162,10 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       await HighlightBridge.inject(controller);
       await _applyChapterHighlights();
       if (!mounted || _navigateGeneration != gen) return;
-      final Size screenSync = MediaQuery.of(context).size;
-      _lastSyncedWidth = screenSync.width;
-      _lastSyncedHeight = screenSync.height;
+      // BUG-111: 基线取「JS 实际分页用的尺寸」(_paginatedWidth/Height)，不是当前
+      // MediaQuery——这样后续 resize 才与真正生效的版面宽度比对。
+      _lastSyncedWidth = _paginatedWidth;
+      _lastSyncedHeight = _paginatedHeight;
     } catch (e, stack) {
       ErrorLogService.instance
           .log('ReaderHibiki._onChapterLoadComplete', e, stack);
@@ -2242,9 +2259,13 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     _restoreCompleter = null;
 
     if (!_readerContentReady) {
-      final Size screen = MediaQuery.of(context).size;
-      _lastSyncedWidth = screen.width;
-      _lastSyncedHeight = screen.height;
+      // BUG-111: 基线必须是「JS 实际分页用的宽高」(_paginatedWidth/Height)，
+      // 不能用 content-ready 这一刻的当前 MediaQuery——否则下面 postFrame 的
+      // _syncPageSize 比对的是同一个值，width/height 差永远为 0、初始重排校验恒
+      // no-op。改用 _paginatedWidth 后：若界面缩放(scale!=1.0)未 settle 致初始
+      // 分页偏窄，settle 后的真实视口宽与基线不等 → _syncPageSize 重新分页铺满。
+      _lastSyncedWidth = _paginatedWidth;
+      _lastSyncedHeight = _paginatedHeight;
       setState(() {
         _readerContentReady = true;
         _hasEverLoaded = true;
