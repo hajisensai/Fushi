@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
+import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:hibiki/src/utils/spacing.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
@@ -56,7 +57,7 @@ class MixinHostPage extends ConsumerStatefulWidget {
 
 class MixinHostPageState extends ConsumerState<MixinHostPage>
     with DictionaryPageMixin {
-  final List<NestedPopupEntry> stack = <NestedPopupEntry>[];
+  final List<DictionaryPopupEntry> stack = <DictionaryPopupEntry>[];
 
   @override
   AppModel get mixinAppModel => ref.read(appProvider);
@@ -66,8 +67,8 @@ class MixinHostPageState extends ConsumerState<MixinHostPage>
 
   /// Mirror VideoHibikiPage._seedWarmPopup.
   void seedWarmSlot() {
-    final NestedPopupEntry warm = NestedPopupEntry(
-      query: '',
+    final DictionaryPopupEntry warm = DictionaryPopupEntry(
+      searchTerm: '',
       selectionRect: Rect.zero,
       visible: false,
       isWarmSlot: true,

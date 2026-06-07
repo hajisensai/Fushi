@@ -6,6 +6,7 @@ import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
+import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:hibiki/src/sync/sync_auto_trigger.dart';
@@ -64,7 +65,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     if (!mounted || appModel.lowMemoryMode) return;
     if (_popupStack.value.isNotEmpty) return;
     _popupStack.value = [
-      _PopupStackItem(
+      DictionaryPopupEntry(
         result: kPopupSearchingPlaceholderResult,
         selectionRect: Rect.zero,
         searchTerm: '',
@@ -89,8 +90,8 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   /// Allows customisation of opacity of dictionary entries.
   double get dictionaryEntryOpacity => 1;
 
-  final ValueNotifier<List<_PopupStackItem>> _popupStack =
-      ValueNotifier<List<_PopupStackItem>>([]);
+  final ValueNotifier<List<DictionaryPopupEntry>> _popupStack =
+      ValueNotifier<List<DictionaryPopupEntry>>([]);
 
   final ValueNotifier<bool> _isSearchingNotifier = ValueNotifier<bool>(false);
 
@@ -135,7 +136,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   /// Action to perform within the source page upon closing the media.
   Future<void> onSourcePagePop() async {}
 
-  _PopupStackItem? _deferredPopupItem;
+  DictionaryPopupEntry? _deferredPopupItem;
   int _deferredGeneration = 0;
 
   Future<int> searchDictionaryResult({
@@ -370,7 +371,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   }
 
   Widget _buildPopupLayer(
-    List<_PopupStackItem> stack,
+    List<DictionaryPopupEntry> stack,
     int index,
     Size screen, {
     required bool isTop,
@@ -579,7 +580,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   DictionarySearchResult? get currentResult =>
       _lastVisiblePopup(_popupStack.value)?.result;
 
-  _PopupStackItem _buildSearchPopupItem({
+  DictionaryPopupEntry _buildSearchPopupItem({
     required DictionarySearchResult result,
     required Rect selectionRect,
     required String searchTerm,
@@ -587,7 +588,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   }) {
     final reusable = _reusableHiddenTopPopup();
     if (reusable == null) {
-      return _PopupStackItem(
+      return DictionaryPopupEntry(
         result: result,
         selectionRect: selectionRect,
         searchTerm: searchTerm,
@@ -624,20 +625,20 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       first.webViewKey.currentState?.clearSelection();
       _popupStack.value = [first];
     } else {
-      _popupStack.value = <_PopupStackItem>[];
+      _popupStack.value = <DictionaryPopupEntry>[];
     }
   }
 
-  void _showPopupItem(_PopupStackItem item) {
+  void _showPopupItem(DictionaryPopupEntry item) {
     final stack = _popupStack.value;
     if (stack.contains(item)) {
-      _popupStack.value = List<_PopupStackItem>.of(stack);
+      _popupStack.value = List<DictionaryPopupEntry>.of(stack);
     } else {
       _popupStack.value = [...stack, item];
     }
   }
 
-  _PopupStackItem? _reusableHiddenTopPopup() {
+  DictionaryPopupEntry? _reusableHiddenTopPopup() {
     final stack = _popupStack.value;
     if (appModel.lowMemoryMode || stack.length != 1 || stack.first.visible) {
       return null;
@@ -645,18 +646,18 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     return stack.first;
   }
 
-  bool _hasVisiblePopup(List<_PopupStackItem> stack) {
+  bool _hasVisiblePopup(List<DictionaryPopupEntry> stack) {
     return stack.any((item) => item.visible);
   }
 
-  int _lastVisiblePopupIndex(List<_PopupStackItem> stack) {
+  int _lastVisiblePopupIndex(List<DictionaryPopupEntry> stack) {
     for (int i = stack.length - 1; i >= 0; i--) {
       if (stack[i].visible) return i;
     }
     return -1;
   }
 
-  _PopupStackItem? _lastVisiblePopup(List<_PopupStackItem> stack) {
+  DictionaryPopupEntry? _lastVisiblePopup(List<DictionaryPopupEntry> stack) {
     final index = _lastVisiblePopupIndex(stack);
     if (index < 0) return null;
     return stack[index];
@@ -679,27 +680,4 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
 
   /// Performs an action after closing the Card Creator.
   void onCreatorClose() {}
-}
-
-class _PopupStackItem {
-  _PopupStackItem({
-    required this.result,
-    required this.selectionRect,
-    required this.searchTerm,
-    this.visible = true,
-    this.isWarmSlot = false,
-  });
-
-  DictionarySearchResult result;
-  Rect selectionRect;
-  String searchTerm;
-  bool visible;
-
-  /// True only for the single persistent warm slot (BUG-092): the popup at stack
-  /// index 0 that keeps its WebView mounted while idle and survives
-  /// [BaseSourcePageState.prunePopupStack] / dismissal so every lookup reuses it.
-  final bool isWarmSlot;
-
-  final GlobalKey<DictionaryPopupWebViewState> webViewKey =
-      GlobalKey<DictionaryPopupWebViewState>();
 }

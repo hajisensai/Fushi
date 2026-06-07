@@ -7,39 +7,13 @@ import 'package:hibiki/media.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
+import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
-import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:hibiki/src/pages/implementations/stat_activity.dart';
 import 'package:hibiki/utils.dart';
 
-/// Shared popup entry used by all three dictionary page variants.
-class NestedPopupEntry {
-  NestedPopupEntry({
-    required this.query,
-    required this.selectionRect,
-    this.visible = true,
-    this.isWarmSlot = false,
-  });
-  String query;
-  Rect selectionRect;
-  DictionarySearchResult? result;
-  bool isSearching = true;
-  bool allLoaded = false;
-
-  /// Whether this popup layer is painted/interactive. The persistent warm slot
-  /// (BUG-094) sits hidden (`visible=false`) between lookups so its WebView stays
-  /// loaded; a lookup flips it visible. Non-warm entries are always visible.
-  bool visible;
-
-  /// True only for the single persistent warm slot whose WebView is kept mounted
-  /// (via [DictionaryPopupLayer.keepWebViewWarm]) and reused for every lookup,
-  /// eliminating the per-lookup WebView cold-load (white flash) on surfaces like
-  /// the video player that seed one.
-  final bool isWarmSlot;
-
-  final GlobalKey<DictionaryPopupWebViewState> webViewKey =
-      GlobalKey<DictionaryPopupWebViewState>();
-}
+// 弹窗条目统一为共享的 [DictionaryPopupEntry]（见 dictionary_popup_controller.dart）；
+// 旧的 NestedPopupEntry / _PopupStackItem 两份重复类型已收口为它一个。
 
 /// Non-generic mixin that consolidates the popup stack management, Anki mining,
 /// and audio auto-read logic shared across PopupDictionaryPage
@@ -230,11 +204,11 @@ mixin DictionaryPageMixin {
   Widget buildNestedPopupLayer({
     required int index,
     required Size screen,
-    required List<NestedPopupEntry> popupStack,
+    required List<DictionaryPopupEntry> popupStack,
     required void Function(String text, Rect selectionRect) onPush,
     required void Function(int index) onPop,
   }) {
-    final NestedPopupEntry entry = popupStack[index];
+    final DictionaryPopupEntry entry = popupStack[index];
     final Rect pos = calcPopupPosition(
       selectionRect: entry.selectionRect,
       screen: screen,
@@ -296,7 +270,7 @@ mixin DictionaryPageMixin {
     );
   }
 
-  /// Searches [query] and pushes a new [NestedPopupEntry] onto [popupStack].
+  /// Searches [query] and pushes a new [DictionaryPopupEntry] onto [popupStack].
   ///
   /// If [replaceStack] is true the existing stack is cleared first.
   /// If [autoRead] is true and results are found, the first entry's audio is
@@ -304,7 +278,7 @@ mixin DictionaryPageMixin {
   Future<void> pushNestedPopup({
     required String query,
     required Rect selectionRect,
-    required List<NestedPopupEntry> popupStack,
+    required List<DictionaryPopupEntry> popupStack,
     bool replaceStack = false,
     bool autoRead = false,
     bool reuseWarmSlot = false,
@@ -313,14 +287,14 @@ mixin DictionaryPageMixin {
     if (trimmed.isEmpty) return;
     final Stopwatch swPush = Stopwatch()..start();
     final int maxTerms = mixinAppModel.maximumTerms;
-    final NestedPopupEntry entry;
+    final DictionaryPopupEntry entry;
     if (reuseWarmSlot && popupStack.isNotEmpty && popupStack.first.isWarmSlot) {
       // BUG-094: reuse the persistent warm slot's already-loaded WebView in
       // place (reset its fields, drop nested children) instead of clearing the
       // stack + building a fresh entry — that recreated the WebView and
       // cold-loaded popup.html/JS/CSS on every lookup (the white flash).
       entry = popupStack.first
-        ..query = trimmed
+        ..searchTerm = trimmed
         ..selectionRect = fallbackSelectionRect(selectionRect)
         ..result = null
         ..allLoaded = false
@@ -332,10 +306,10 @@ mixin DictionaryPageMixin {
         }
       });
     } else {
-      entry = NestedPopupEntry(
-        query: trimmed,
+      entry = DictionaryPopupEntry(
+        searchTerm: trimmed,
         selectionRect: fallbackSelectionRect(selectionRect),
-      );
+      )..isSearching = true;
       setState(() {
         if (replaceStack) popupStack.clear();
         popupStack.add(entry);
@@ -374,8 +348,8 @@ mixin DictionaryPageMixin {
   }
 
   Future<void> loadMoreForEntry({
-    required NestedPopupEntry entry,
-    required List<NestedPopupEntry> popupStack,
+    required DictionaryPopupEntry entry,
+    required List<DictionaryPopupEntry> popupStack,
   }) async {
     if (entry.allLoaded || entry.isSearching || entry.result == null) return;
     final int current = entry.result!.entries.length;
@@ -383,7 +357,7 @@ mixin DictionaryPageMixin {
     setState(() => entry.isSearching = true);
     try {
       entry.result = await mixinAppModel.searchDictionary(
-        searchTerm: entry.query,
+        searchTerm: entry.searchTerm,
         searchWithWildcards: true,
         overrideMaximumTerms: newMax,
       );
@@ -399,7 +373,7 @@ mixin DictionaryPageMixin {
   ///
   /// When [index] is 0 the entire stack is cleared; otherwise all entries from
   /// [index] onward are removed.
-  void popNestedPopupAt(int index, List<NestedPopupEntry> popupStack) {
+  void popNestedPopupAt(int index, List<DictionaryPopupEntry> popupStack) {
     if (index < 0 || index >= popupStack.length) return;
     setState(() {
       if (index == 0) {

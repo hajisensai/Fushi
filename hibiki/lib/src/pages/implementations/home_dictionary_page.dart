@@ -5,6 +5,7 @@ import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
+import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:hibiki/utils.dart';
@@ -34,7 +35,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
   final FocusNode _searchFocusNode = FocusNode();
 
   DictionarySearchResult? _result;
-  final List<NestedPopupEntry> _popupStack = [];
+  final List<DictionaryPopupEntry> _popupStack = [];
 
   bool _isSearching = false;
   String _lastQuery = '';

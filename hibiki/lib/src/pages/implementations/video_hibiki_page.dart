@@ -33,6 +33,7 @@ import 'package:hibiki/src/media/video/video_sidecar.dart';
 import 'package:hibiki/src/media/video/video_subtitle_overlay.dart';
 import 'package:hibiki/src/media/video/video_subtitle_source.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:hibiki/src/pages/implementations/stat_activity.dart';
 import 'package:hibiki/src/utils/app_ui_scale.dart';
@@ -139,7 +140,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   VideoWatchTracker? _watchTracker;
 
   /// 查词浮层栈（与阅读器/词典页同款，由 [DictionaryPageMixin] 管理）。
-  final List<NestedPopupEntry> _popupStack = <NestedPopupEntry>[];
+  final List<DictionaryPopupEntry> _popupStack = <DictionaryPopupEntry>[];
 
   /// 字幕字符命中句柄：查词浮层的 dismiss barrier 用它反查「点到的是不是另一个字幕
   /// 字符」，是则切换查词、保持暂停（见 [_onDismissBarrierTap] / [VideoSubtitleHitTester]）。
@@ -749,8 +750,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   void _seedWarmPopup() {
     if (!mounted || appModel.lowMemoryMode) return;
     if (_popupStack.isNotEmpty) return;
-    final NestedPopupEntry warm = NestedPopupEntry(
-      query: '',
+    final DictionaryPopupEntry warm = DictionaryPopupEntry(
+      searchTerm: '',
       selectionRect: Rect.zero,
       visible: false,
       isWarmSlot: true,
@@ -785,7 +786,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       if (index <= 0 &&
           _popupStack.isNotEmpty &&
           _popupStack.first.isWarmSlot) {
-        final NestedPopupEntry warm = _popupStack.first..visible = false;
+        final DictionaryPopupEntry warm = _popupStack.first..visible = false;
         warm.webViewKey.currentState?.clearSelection();
         _popupStack
           ..clear()

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
+import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:hibiki/src/utils/misc/popup_channel.dart';
@@ -29,7 +30,7 @@ class PopupDictionaryPage extends ConsumerStatefulWidget {
 
 class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     with DictionaryPageMixin {
-  final List<NestedPopupEntry> _stack = [];
+  final List<DictionaryPopupEntry> _stack = [];
   bool _isClosing = false;
 
   late final TextEditingController _searchController;
@@ -204,7 +205,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   /// 基础层（index 0）透明、横滑交由整卡外层；嵌套层不透明、自带横滑返回上一层。
   Widget _buildLayer(BuildContext context, int index) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    final NestedPopupEntry entry = _stack[index];
+    final DictionaryPopupEntry entry = _stack[index];
     final bool isBase = index == 0;
     final bool isDark =
         (appModel.overrideDictionaryTheme ?? Theme.of(context)).brightness ==
