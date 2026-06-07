@@ -2514,6 +2514,13 @@ class AppModel with ChangeNotifier {
   Future<void> setTexthookerUrls(List<String> urls) =>
       prefsRepo.setTexthookerUrls(urls);
 
+  bool get desktopClipboardEnabled => prefsRepo.desktopClipboardEnabled;
+  Future<void> setDesktopClipboardEnabled(bool v) =>
+      prefsRepo.setDesktopClipboardEnabled(v);
+  bool get desktopClipboardAlwaysOnTop => prefsRepo.desktopClipboardAlwaysOnTop;
+  Future<void> setDesktopClipboardAlwaysOnTop(bool v) =>
+      prefsRepo.setDesktopClipboardAlwaysOnTop(v);
+
   Map<String, String> get customDictCSS => prefsRepo.customDictCSS;
   String getCustomCSSForDict(String dictName) =>
       prefsRepo.getCustomCSSForDict(dictName);

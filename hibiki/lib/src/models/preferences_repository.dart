@@ -178,6 +178,24 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ── desktop clipboard lookup ─────────────────────────────────────────
+
+  bool get desktopClipboardEnabled =>
+      getPref('desktop_clipboard_enabled', defaultValue: false) as bool;
+
+  Future<void> setDesktopClipboardEnabled(bool value) async {
+    await setPref('desktop_clipboard_enabled', value);
+    notifyListeners();
+  }
+
+  bool get desktopClipboardAlwaysOnTop =>
+      getPref('desktop_clipboard_always_on_top', defaultValue: false) as bool;
+
+  Future<void> setDesktopClipboardAlwaysOnTop(bool value) async {
+    await setPref('desktop_clipboard_always_on_top', value);
+    notifyListeners();
+  }
+
   final int defaultSearchDebounceDelay = 100;
 
   int get searchDebounceDelay => getPref('auto_search_debounce_delay',

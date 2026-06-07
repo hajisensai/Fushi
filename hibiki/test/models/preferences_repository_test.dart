@@ -349,6 +349,20 @@ void main() {
       repo2.dispose();
     });
 
+    test('desktop clipboard prefs round-trip', () async {
+      expect(repo.desktopClipboardEnabled, false);
+      expect(repo.desktopClipboardAlwaysOnTop, false);
+      await repo.setDesktopClipboardEnabled(true);
+      await repo.setDesktopClipboardAlwaysOnTop(true);
+      expect(repo.desktopClipboardEnabled, true);
+      expect(repo.desktopClipboardAlwaysOnTop, true);
+      final repo2 = PreferencesRepository(db);
+      await repo2.loadFromDb();
+      expect(repo2.desktopClipboardEnabled, true);
+      expect(repo2.desktopClipboardAlwaysOnTop, true);
+      repo2.dispose();
+    });
+
     test('reverseReaderBottomBar is independent of reverseNavigationBar',
         () async {
       expect(repo.reverseReaderBottomBar, false); // 默认关
