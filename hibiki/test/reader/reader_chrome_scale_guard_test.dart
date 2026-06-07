@@ -14,11 +14,15 @@ void main() {
 
   test('_readerChromeHeight is a scaled getter, not a const 56', () {
     final String src = reader.readAsStringSync();
+    // 容忍 dart format 的换行/空白：用允许任意空白的正则匹配，而非脆弱的整串匹配。
     expect(
-        src.contains('static const double _readerChromeHeight = 56'), isFalse,
+        RegExp(r'static\s+const\s+double\s+_readerChromeHeight\s*=\s*56')
+            .hasMatch(src),
+        isFalse,
         reason: '底栏高度必须随 appUiScale 缩放，不能写死 56');
     expect(
-        src.contains('ReaderChromeScaler.scaledHeight(_readerChromeBaseHeight'),
+        RegExp(r'_readerChromeHeight\s*=>\s*ReaderChromeScaler\.scaledHeight\(\s*_readerChromeBaseHeight')
+            .hasMatch(src),
         isTrue,
         reason:
             '_readerChromeHeight getter 必须走 ReaderChromeScaler.scaledHeight');

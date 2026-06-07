@@ -202,8 +202,8 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
   /// 缩放后底栏在屏高度。所有把底栏高度喂给 WebView/光标/焦点环/正文预留的地方都
   /// 走这个 getter，保证视觉高度与预留高度恒等。
-  double get _readerChromeHeight =>
-      ReaderChromeScaler.scaledHeight(_readerChromeBaseHeight, _readerChromeScale);
+  double get _readerChromeHeight => ReaderChromeScaler.scaledHeight(
+      _readerChromeBaseHeight, _readerChromeScale);
   static const double _infoFontSize = 12;
 
   int? _progressCurrentChars;
