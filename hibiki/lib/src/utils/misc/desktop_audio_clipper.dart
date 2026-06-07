@@ -274,6 +274,97 @@ Future<String?> extractVideoFrameViaFfmpeg({
   }
 }
 
+/// 视频制卡用：把 `[startMs, endMs)` 这段 cue 时间窗导出成**循环动图 GIF**
+/// （用户要的「cue 时间段的动图」而非单帧截图）。纯函数（无 IO），可单测。
+///
+/// 单次 ffmpeg 调用内做两遍调色板（`palettegen`/`paletteuse`）以避免低质抖动：
+/// `fps=[fps],scale=[width]:-2:lanczos,split → palettegen → paletteuse`。
+/// `-2` 让高度按宽度等比且取偶（gif 编码要求偶数维度）。`-ss`/`-t` 置于 `-i` 前做
+/// 快速输入定位（多 GB 剧集不从 0 解码）。时长 clamp 到 `(0, maxDurationMs]`：cue 太长
+/// 时只取前段，避免 gif 体积/耗时爆炸；endMs<=startMs 时调用方应已拦截。
+List<String> buildFfmpegClipGifArgs({
+  required String inputPath,
+  required int startMs,
+  required int endMs,
+  required String outputPath,
+  int fps = 12,
+  int width = 480,
+  int maxDurationMs = 10000,
+}) {
+  final double startSeconds = (startMs < 0 ? 0 : startMs) / 1000.0;
+  final int rawDur = endMs - startMs;
+  final int clampedDur =
+      rawDur > maxDurationMs ? maxDurationMs : (rawDur < 1 ? 1 : rawDur);
+  final double durationSeconds = clampedDur / 1000.0;
+  final String filter = 'fps=$fps,scale=$width:-2:flags=lanczos,'
+      'split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse';
+  return <String>[
+    '-y',
+    '-ss',
+    startSeconds.toStringAsFixed(3),
+    '-t',
+    durationSeconds.toStringAsFixed(3),
+    '-i',
+    inputPath,
+    '-an',
+    '-filter_complex',
+    filter,
+    '-loop',
+    '0',
+    outputPath,
+  ];
+}
+
+/// 把 [inputPath] 的 `[startMs, endMs)` 段导出成循环 GIF 到 [outputPath]（见
+/// [buildFfmpegClipGifArgs]）。成功返回 [outputPath]，否则 null（范围非法 / 输入缺失 /
+/// ffmpeg 不存在（移动端无 CLI ffmpeg）/ 编码无输出）——调用方据此回退单帧截图。
+///
+/// 镜像 [extractAudioSegmentViaFfmpeg]：有界超时、失败/超时清理半成品、对调用方不抛。
+Future<String?> extractClipGifViaFfmpeg({
+  required String inputPath,
+  required int startMs,
+  required int endMs,
+  required String outputPath,
+}) async {
+  if (endMs <= startMs) return null;
+  if (!File(inputPath).existsSync()) return null;
+
+  final File output = File(outputPath);
+  try {
+    output.parent.createSync(recursive: true);
+    final int? code = await _runFfmpeg(
+      buildFfmpegClipGifArgs(
+        inputPath: inputPath,
+        startMs: startMs,
+        endMs: endMs,
+        outputPath: outputPath,
+      ),
+      const Duration(seconds: 120),
+    );
+    if (code == 0 && output.existsSync() && output.lengthSync() > 0) {
+      return outputPath;
+    }
+    if (output.existsSync()) {
+      try {
+        output.deleteSync();
+      } catch (_) {}
+    }
+    ErrorLogService.instance.log(
+      'extractClipGifViaFfmpeg',
+      code == null ? 'ffmpeg timed out' : 'ffmpeg exit $code',
+      StackTrace.current,
+    );
+    return null;
+  } on ProcessException catch (e, stack) {
+    // 移动端无 CLI ffmpeg：优雅回退（调用方改用单帧截图）。
+    ErrorLogService.instance.log('extractClipGifViaFfmpeg', e, stack);
+    return null;
+  } catch (e, stack) {
+    ErrorLogService.instance.log('extractClipGifViaFfmpeg', e, stack);
+    return null;
+  }
+}
+
 /// Builds the ffmpeg argument list to demux the [streamIndex]-th subtitle track
 /// of [inputPath] into [outputPath]. Pure (no IO) so it is unit-testable.
 ///

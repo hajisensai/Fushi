@@ -928,20 +928,33 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
     final Directory tmp = await getTemporaryDirectory();
 
-    // 视频截图（当前帧）→ coverPath。
+    final AudioCue? cue = controller.currentCue;
+    final String? videoPath = controller.videoPath;
+
+    // 视频卡片封面 → coverPath（→`{book-cover}`）：优先把**当前 cue 时间段**导出成
+    // 循环 GIF（用户要的「cue 时间段的动图」，比制卡瞬间的随机暂停帧更贴所学这句），
+    // ffmpeg 不可用（移动端无 CLI ffmpeg）/ 无 cue / 导出失败时回退当前帧截图。
     String? coverPath;
-    final Uint8List? shot = await controller.screenshot();
-    if (shot != null && shot.isNotEmpty) {
-      final File f = File('${tmp.path}/video_mine_shot.jpg');
-      await f.writeAsBytes(shot);
-      coverPath = f.path;
+    if (cue != null && videoPath != null && cue.endMs > cue.startMs) {
+      coverPath = await extractClipGifViaFfmpeg(
+        inputPath: videoPath,
+        startMs: cue.startMs,
+        endMs: cue.endMs,
+        outputPath: '${tmp.path}/video_mine_clip.gif',
+      );
+    }
+    if (coverPath == null) {
+      final Uint8List? shot = await controller.screenshot();
+      if (shot != null && shot.isNotEmpty) {
+        final File f = File('${tmp.path}/video_mine_shot.jpg');
+        await f.writeAsBytes(shot);
+        coverPath = f.path;
+      }
     }
 
     // 当前字幕 cue 的音频片段（桌面 ffmpeg 按时间裁，映射到当前选中音轨）
     // → sasayakiAudioPath。
     String? audioPath;
-    final AudioCue? cue = controller.currentCue;
-    final String? videoPath = controller.videoPath;
     if (cue != null && videoPath != null) {
       audioPath = await extractAudioSegmentViaFfmpeg(
         inputPath: videoPath,
