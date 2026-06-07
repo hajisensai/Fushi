@@ -62,17 +62,10 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   /// Low-memory mode keeps no warm slot (it disposes the popup on close), so it
   /// is skipped there to honour the memory budget.
   void _seedWarmPopup() {
-    if (!mounted || appModel.lowMemoryMode) return;
-    if (_popupStack.value.isNotEmpty) return;
-    _popupStack.value = [
-      DictionaryPopupEntry(
-        result: kPopupSearchingPlaceholderResult,
-        selectionRect: Rect.zero,
-        searchTerm: '',
-        visible: false,
-        isWarmSlot: true,
-      ),
-    ];
+    if (!mounted) return;
+    // 此刻 AppModel 已初始化（源页开页在 init 之后）→ 安全设真实 lowMemory。
+    _popup.lowMemory = appModel.lowMemoryMode;
+    _popup.seedWarmSlot(seedResult: kPopupSearchingPlaceholderResult);
   }
 
   @override
@@ -90,8 +83,8 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   /// Allows customisation of opacity of dictionary entries.
   double get dictionaryEntryOpacity => 1;
 
-  final ValueNotifier<List<DictionaryPopupEntry>> _popupStack =
-      ValueNotifier<List<DictionaryPopupEntry>>([]);
+  final DictionaryPopupController _popup =
+      DictionaryPopupController(lowMemory: false);
 
   final ValueNotifier<bool> _isSearchingNotifier = ValueNotifier<bool>(false);
 
@@ -99,7 +92,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
 
   int _searchGeneration = 0;
 
-  bool get isDictionaryShown => _hasVisiblePopup(_popupStack.value);
+  bool get isDictionaryShown => _hasVisiblePopup(_popup.entries);
 
   @protected
   void onDismissBarrierHover(PointerHoverEvent event) {}
@@ -169,18 +162,25 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
 
       appModel.addToDictionaryHistory(result: dictionaryResult);
 
-      final item = _buildSearchPopupItem(
-        result: dictionaryResult,
-        selectionRect: selectionRect,
-        searchTerm: searchTerm,
-        visible: !deferDisplay,
+      // 复用条件与旧 _reusableHiddenTopPopup 等价：栈恰为 [单个隐藏热槽] 时原地复用，
+      // 否则（嵌套等）追加新层。reuse=false 时 beginTop 直接 append。
+      final bool reuse = _popup.entries.length == 1 &&
+          _popup.entries.first.isWarmSlot &&
+          !_popup.entries.first.visible;
+      final DictionaryPopupEntry item = _popup.beginTop(
+        term: searchTerm,
+        rect: selectionRect,
+        reuseWarmSlot: reuse,
+        replaceStack: false,
+        visible: false,
       );
+      _popup.fillResult(item, result: dictionaryResult, allLoaded: true);
 
       if (deferDisplay) {
         _deferredPopupItem = item;
         _deferredGeneration = gen;
       } else {
-        _showPopupItem(item);
+        _popup.show(item);
       }
 
       debugPrint(
@@ -220,8 +220,8 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       if (selectionRect != null) {
         item.selectionRect = selectionRect;
       }
-      item.visible = true;
-      _showPopupItem(item);
+      // item 已在栈内（beginTop 时加入，隐藏）；show 翻为可见并通知重建。
+      _popup.show(item);
     }
     if (_searchGeneration == gen) {
       _isSearchingNotifier.value = false;
@@ -296,7 +296,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   /// 默认 false（视频/有声书横排字幕、首页等非竖排表面不变）。
   bool get popupVerticalWriting => false;
   late final Listenable _popupListenable =
-      Listenable.merge([_popupStack, _isSearchingNotifier]);
+      Listenable.merge([_popup, _isSearchingNotifier]);
 
   Widget buildDictionary() {
     return Theme(
@@ -304,7 +304,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       child: AnimatedBuilder(
         animation: _popupListenable,
         builder: (context, _) {
-          final stack = _popupStack.value;
+          final stack = _popup.entries;
           final searching = _isSearchingNotifier.value;
           if (stack.isEmpty && !searching) return const SizedBox.shrink();
           final hasVisiblePopup = _hasVisiblePopup(stack);
@@ -449,25 +449,21 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     _isSearchingNotifier.value = false;
     _deferredPopupItem = null;
     if (index > 0) {
-      final parent = _popupStack.value[index - 1];
+      final parent = _popup.entries[index - 1];
       parent.webViewKey.currentState?.clearSelection();
     }
     if (index == 0) {
-      if (_popupStack.value.isNotEmpty && !appModel.lowMemoryMode) {
-        final top = _popupStack.value.first;
-        top
-          ..visible = false
-          ..selectionRect = Rect.zero;
-        top.webViewKey.currentState?.clearSelection();
-        _popupStack.value = [top];
-      } else {
-        _popupStack.value = [];
+      _popup.lowMemory = appModel.lowMemoryMode;
+      // 关栈前清掉热槽 WebView 选区（仅保留热槽的分支需要）。
+      if (_popup.entries.isNotEmpty && _popup.entries.first.isWarmSlot) {
+        _popup.entries.first.webViewKey.currentState?.clearSelection();
       }
+      _popup.dismissAt(0);
       appModel.currentMediaSource?.clearCurrentSentence();
       appModel.currentMediaSource?.clearExtraData();
       onAllPopupsDismissed();
     } else {
-      _popupStack.value = _popupStack.value.sublist(0, index);
+      _popup.dismissAt(index);
       onDictionaryStackChanged();
     }
   }
@@ -490,17 +486,17 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   /// popup is visible.
   @protected
   DictionaryPopupWebViewState? get topPopupState =>
-      _lastVisiblePopup(_popupStack.value)?.webViewKey.currentState;
+      _lastVisiblePopup(_popup.entries)?.webViewKey.currentState;
 
   /// Index of the top-most visible popup in the stack, or -1.
   @protected
-  int get topVisiblePopupIndex => _lastVisiblePopupIndex(_popupStack.value);
+  int get topVisiblePopupIndex => _lastVisiblePopupIndex(_popup.entries);
 
   /// Dismiss only the top-most visible popup (one layer), leaving any parent
   /// popup in place — used by the cursor's B/Esc "back one layer".
   @protected
   void dismissTopPopup() {
-    final int index = _lastVisiblePopupIndex(_popupStack.value);
+    final int index = _lastVisiblePopupIndex(_popup.entries);
     if (index >= 0) _dismissPopupAt(index);
   }
 
@@ -517,7 +513,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     );
   }
 
-  bool get dictionaryPopupShown => _hasVisiblePopup(_popupStack.value);
+  bool get dictionaryPopupShown => _hasVisiblePopup(_popup.entries);
 
   /// Test-only snapshot of the popup stack (BUG-092): lets widget tests assert
   /// the warm-slot seed/prune/reuse lifecycle without rendering the real
@@ -525,7 +521,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   /// the unit-test harness.
   @visibleForTesting
   List<({bool isWarmSlot, bool visible, GlobalKey<DictionaryPopupWebViewState> webViewKey})>
-      get debugPopupStack => _popupStack.value
+      get debugPopupStack => _popup.entries
           .map((e) => (
                 isWarmSlot: e.isWarmSlot,
                 visible: e.visible,
@@ -583,72 +579,24 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   }
 
   DictionarySearchResult? get currentResult =>
-      _lastVisiblePopup(_popupStack.value)?.result;
-
-  DictionaryPopupEntry _buildSearchPopupItem({
-    required DictionarySearchResult result,
-    required Rect selectionRect,
-    required String searchTerm,
-    required bool visible,
-  }) {
-    final reusable = _reusableHiddenTopPopup();
-    if (reusable == null) {
-      return DictionaryPopupEntry(
-        result: result,
-        selectionRect: selectionRect,
-        searchTerm: searchTerm,
-        visible: visible,
-      );
-    }
-    reusable
-      ..result = result
-      ..selectionRect = selectionRect
-      ..searchTerm = searchTerm
-      ..visible = visible;
-    return reusable;
-  }
+      _lastVisiblePopup(_popup.entries)?.result;
 
   @protected
   void prunePopupStack(int keepCount) {
-    final stack = _popupStack.value;
     if (keepCount > 0) {
-      if (stack.length > keepCount) {
-        _popupStack.value = stack.sublist(0, keepCount);
-      }
+      _popup.truncateTo(keepCount);
       return;
     }
     // keepCount <= 0: a fresh top-level lookup is starting. Preserve the
     // persistent warm slot (index 0) so its already-loaded WebView survives and
     // the upcoming lookup reuses it warm (BUG-092) — only drop nested children
     // and hide the slot. Low-memory mode keeps no warm slot, so it clears.
-    if (stack.isEmpty) return;
-    final first = stack.first;
-    if (first.isWarmSlot && !appModel.lowMemoryMode) {
-      first
-        ..visible = false
-        ..selectionRect = Rect.zero;
-      first.webViewKey.currentState?.clearSelection();
-      _popupStack.value = [first];
-    } else {
-      _popupStack.value = <DictionaryPopupEntry>[];
+    if (_popup.entries.isEmpty) return;
+    _popup.lowMemory = appModel.lowMemoryMode;
+    if (_popup.entries.first.isWarmSlot && !appModel.lowMemoryMode) {
+      _popup.entries.first.webViewKey.currentState?.clearSelection();
     }
-  }
-
-  void _showPopupItem(DictionaryPopupEntry item) {
-    final stack = _popupStack.value;
-    if (stack.contains(item)) {
-      _popupStack.value = List<DictionaryPopupEntry>.of(stack);
-    } else {
-      _popupStack.value = [...stack, item];
-    }
-  }
-
-  DictionaryPopupEntry? _reusableHiddenTopPopup() {
-    final stack = _popupStack.value;
-    if (appModel.lowMemoryMode || stack.length != 1 || stack.first.visible) {
-      return null;
-    }
-    return stack.first;
+    _popup.pruneToWarmSlot();
   }
 
   bool _hasVisiblePopup(List<DictionaryPopupEntry> stack) {
