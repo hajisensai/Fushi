@@ -12,7 +12,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         const r = await fetch(base + '/api/lookup/dictionary', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
-          body: JSON.stringify({ term: msg.term, record: true }),
+          body: JSON.stringify({ term: msg.term, record: msg.record === true }),
         });
         sendResponse({ ok: r.ok, status: r.status, data: r.ok ? await r.json() : null });
       } else if (msg.type === 'mine') {
