@@ -1937,7 +1937,7 @@ class _HibikiPopupMenuItemContent extends StatelessWidget {
   }
 }
 
-class HibikiLogPanel extends StatelessWidget {
+class HibikiLogPanel extends StatefulWidget {
   const HibikiLogPanel({
     required this.log,
     required this.shareAction,
@@ -1948,6 +1948,34 @@ class HibikiLogPanel extends StatelessWidget {
   final ValueChanged<String> shareAction;
 
   @override
+  State<HibikiLogPanel> createState() => _HibikiLogPanelState();
+}
+
+class _HibikiLogPanelState extends State<HibikiLogPanel> {
+  // BUG-119：日志正文用只读 TextField 而非 SingleChildScrollView+SelectableText。
+  // 后者把整段 log 渲染成非滚动的 SelectableText（全高），外层 SingleChildScrollView
+  // 提供滚动；鼠标拖拽选区时内层 EditableText 会对祖先 Scrollable 调 bringIntoView，
+  // 把视口强行拉回选区 extent/caret，造成「按住选区往上滑就被拽回」。改用只读
+  // TextField 让 EditableText 自己当唯一滚动器：选区拖拽的边缘自动滚动走它自己的
+  // scroll controller，没有外层 SingleChildScrollView 来抢/拽，消除嵌套滚动冲突。
+  late final TextEditingController _controller =
+      TextEditingController(text: widget.log);
+
+  @override
+  void didUpdateWidget(covariant HibikiLogPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.log != widget.log) {
+      _controller.text = widget.log;
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return SafeArea(
@@ -1955,21 +1983,29 @@ class HibikiLogPanel extends StatelessWidget {
       child: Padding(
         padding: EdgeInsets.all(tokens.spacing.page),
         child: HibikiCard(
-          padding: EdgeInsets.all(tokens.spacing.card),
-          child: SingleChildScrollView(
-            child: SelectableText(
-              log,
-              style: tokens.type.metadata.copyWith(
-                color: tokens.surfaces.onSurface,
-                fontFamily: 'monospace',
-              ),
-              selectionControls: HibikiTextSelectionControls(
-                shareAction: shareAction,
-                allowCopy: true,
-                allowCut: false,
-                allowPaste: false,
-                allowSelectAll: true,
-              ),
+          padding: EdgeInsets.zero,
+          child: TextField(
+            controller: _controller,
+            readOnly: true,
+            maxLines: null,
+            expands: true,
+            textAlignVertical: TextAlignVertical.top,
+            style: tokens.type.metadata.copyWith(
+              color: tokens.surfaces.onSurface,
+              fontFamily: 'monospace',
+            ),
+            selectionControls: HibikiTextSelectionControls(
+              shareAction: widget.shareAction,
+              allowCopy: true,
+              allowCut: false,
+              allowPaste: false,
+              allowSelectAll: true,
+            ),
+            decoration: InputDecoration(
+              border: InputBorder.none,
+              enabledBorder: InputBorder.none,
+              focusedBorder: InputBorder.none,
+              contentPadding: EdgeInsets.all(tokens.spacing.card),
             ),
           ),
         ),
