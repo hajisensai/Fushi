@@ -803,6 +803,15 @@ class AudiobookPlayerController extends ChangeNotifier {
     // cue 推进 / 跨章 / reveal，直到真实位置到达目标（BUG-061）。落定的那一
     // tick 清旗后继续往下按正常逻辑处理。
     if (_explicitSeekInFlight) {
+      // 暂停态：skipToCue/playCueOnce 已把目标 cue 作为权威值写入 _currentCue，
+      // 但 `seek(index:)` 仍会吐瞬态位置（旧位置 / 0 / 旧章首）。此时没有真实
+      // 播放推进，而 reached 判据（posMs >= target-容差）会被两种瞬态误判为
+      // 「落定」：① 前向 seek 时停在本句末尾、旧位置已落进 target-容差窗内；
+      // ② 后向 seek（上一句）时旧位置本就高于 target。一旦误判清旗，就会用瞬态
+      // 旧位置 findCueIndex 重解析，把权威 cue 覆盖回旧句——表现为「暂停后点
+      // 下一句又跳回当前句 / 上一句乱跳」。暂停时一律抑制瞬态、保留权威 cue、
+      // 不清旗；待用户按播放、首帧真实到达 target 后再走下面的正常落定逻辑。
+      if (!_player.playing) return;
       if (reachedExplicitSeekTargetForTesting(
         currentFileIndex: _player.currentIndex ?? 0,
         posMs: posMs,
@@ -1189,6 +1198,11 @@ class AudiobookPlayerController extends ChangeNotifier {
     return currentFileIndex == targetFileIndex &&
         posMs >= targetMs - toleranceMs;
   }
+
+  /// 测试钩子：直接以指定位置驱动一次 [_updateCurrentCue]，模拟 positionStream
+  /// 的一帧 tick（含显式 seek 加载期的瞬态位置）。生产代码不调用。
+  @visibleForTesting
+  void debugUpdateCueForPosition(int posMs) => _updateCurrentCue(posMs);
 
   @visibleForTesting
   static int? positionMsForCueForTesting({
