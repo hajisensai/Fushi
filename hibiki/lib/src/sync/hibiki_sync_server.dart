@@ -71,12 +71,14 @@ class HibikiSyncServer {
     bool allowLan = false,
     HibikiRemoteLookupService? remoteLookupService,
     HibikiRemoteMiningService? miningService,
+    HibikiRemoteHistoryService? historyService,
   })  : syncDataDir = p.join(syncDataDir, 'sync-data'),
         _requestedPort = port,
         _token = token,
         _allowLan = allowLan,
         _remoteLookupService = remoteLookupService,
-        _miningService = miningService;
+        _miningService = miningService,
+        _historyService = historyService;
 
   final String syncDataDir;
   final int _requestedPort;
@@ -84,6 +86,7 @@ class HibikiSyncServer {
   final bool _allowLan;
   final HibikiRemoteLookupService? _remoteLookupService;
   final HibikiRemoteMiningService? _miningService;
+  final HibikiRemoteHistoryService? _historyService;
   final Map<String, _RemoteAudioToken> _remoteAudioTokens =
       <String, _RemoteAudioToken>{};
   HttpServer? _server;
@@ -292,6 +295,11 @@ class HibikiSyncServer {
       wildcards: wildcards,
       maximumTerms: maximumTerms,
     );
+
+    final HibikiRemoteHistoryService? hist = _historyService;
+    if (result != null && hist != null && (body['record'] as bool? ?? false)) {
+      hist.recordHistory(result);
+    }
 
     return _jsonResponse(<String, dynamic>{
       'type': 'dictionaryResult',

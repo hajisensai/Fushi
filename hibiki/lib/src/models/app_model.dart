@@ -2650,6 +2650,10 @@ class AppModel with ChangeNotifier {
     return _AppModelRemoteLookupService(this);
   }
 
+  HibikiRemoteHistoryService createRemoteHistoryService() {
+    return _AppModelRemoteLookupService(this);
+  }
+
   // ── yomitan-api server (lifecycle) ──────────────────────────────────
   YomitanApiServerManager? _yomitanServerManager;
 
@@ -2827,7 +2831,10 @@ class AppModel with ChangeNotifier {
 }
 
 class _AppModelRemoteLookupService
-    implements HibikiRemoteLookupService, HibikiRemoteMiningService {
+    implements
+        HibikiRemoteLookupService,
+        HibikiRemoteMiningService,
+        HibikiRemoteHistoryService {
   const _AppModelRemoteLookupService(this._appModel);
 
   final AppModel _appModel;
@@ -2844,6 +2851,18 @@ class _AppModelRemoteLookupService
       context: AnkiMiningContext(sentence: sentence),
     );
     return result.name;
+  }
+
+  @override
+  void recordHistory(DictionarySearchResult result) {
+    _appModel.mediaHistoryRepo.addToSearchHistory(
+      historyKey: DictionaryMediaType.instance.uniqueKey,
+      searchTerm: result.searchTerm,
+    );
+    _appModel.dictRepo.addHistoryResult(
+      result,
+      _appModel.maximumDictionaryHistoryItems,
+    );
   }
 
   @override

@@ -24,6 +24,11 @@ abstract class HibikiRemoteMiningService {
   });
 }
 
+/// 把一次查词结果写入 Hibiki 查词历史（无 UI 副作用）。浏览器扩展 record 用。
+abstract class HibikiRemoteHistoryService {
+  void recordHistory(DictionarySearchResult result);
+}
+
 class RemoteAudioLookup {
   const RemoteAudioLookup({
     required this.bytes,
