@@ -32,11 +32,41 @@ abstract class FfmpegBackend {
   Future<FfmpegRunResult> run(List<String> args, Duration timeout);
 }
 
-/// 解析 ffmpeg 可执行文件：`HIBIKI_FFMPEG`（绝对路径）优先，否则 PATH 上的 `ffmpeg`。
-String resolveFfmpegExecutable() {
-  final String? override = Platform.environment['HIBIKI_FFMPEG']?.trim();
-  if (override != null && override.isNotEmpty) return override;
+/// 解析 ffmpeg 可执行文件（桌面 [CliFfmpegBackend] 用）。优先级：
+/// 1. `HIBIKI_FFMPEG`（绝对路径，显式覆盖，开发/特殊部署）；
+/// 2. **app 程序旁捆绑的 `ffmpeg(.exe)`**（打包时塞进各桌面产物 → 开箱即用，不依赖
+///    用户自己装 ffmpeg；否则没装 ffmpeg 的电脑会丢内封字幕/cue 动图/制卡音频）；
+/// 3. 回退系统 PATH 上的 `ffmpeg`。
+String resolveFfmpegExecutable() => resolveFfmpegExecutableFrom(
+      override: Platform.environment['HIBIKI_FFMPEG'],
+      bundledPath: _bundledFfmpegPath(),
+    );
+
+/// 纯函数：按「覆盖 > 捆绑 > PATH」决定 ffmpeg 可执行（便于单测优先级）。
+String resolveFfmpegExecutableFrom({
+  required String? override,
+  required String? bundledPath,
+}) {
+  final String? o = override?.trim();
+  if (o != null && o.isNotEmpty) return o;
+  if (bundledPath != null && bundledPath.isNotEmpty) return bundledPath;
   return 'ffmpeg';
+}
+
+/// app 可执行文件同目录下的捆绑 ffmpeg 路径（存在才返回，否则 null）。
+///
+/// Windows 找 `ffmpeg.exe`，其余找 `ffmpeg`。`Platform.resolvedExecutable` 是
+/// 本进程的可执行文件：Windows `…\Hibiki\hibiki.exe` → 找 `…\Hibiki\ffmpeg.exe`；
+/// macOS `Hibiki.app/Contents/MacOS/Hibiki` → 找同目录 `ffmpeg`；Linux 同理。
+/// 任何异常（沙箱/只读/解析失败）静默返回 null，回退 PATH。
+String? _bundledFfmpegPath() {
+  try {
+    final String exeDir = File(Platform.resolvedExecutable).parent.path;
+    final String name = Platform.isWindows ? 'ffmpeg.exe' : 'ffmpeg';
+    final File candidate = File('$exeDir${Platform.pathSeparator}$name');
+    if (candidate.existsSync()) return candidate.path;
+  } catch (_) {}
+  return null;
 }
 
 /// 系统 ffmpeg（`Process.start`）后端：桌面与 Linux，及任何捆绑后端不可用时的回退。
