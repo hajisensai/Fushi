@@ -608,6 +608,10 @@ void main() {
       'lib/src/media/video/video_subtitle_style.dart':
           'Subtitle appearance model holds user-configurable caption font '
               'size (content), defaults mirror the allowlisted overlay caption.',
+      'lib/src/media/video/video_quick_settings_sheet.dart':
+          'Video quick settings sheet (media-page chrome like reader/audiobook) '
+              'drives the user-configurable subtitle caption font size '
+              '(_style.copyWith(fontSize:)), which is content, not page chrome.',
       'lib/src/pages/implementations/video_hibiki_page.dart':
           'Video player page chrome (track-switch menu, media controls) '
               'follows media-page rules like reader/audiobook.',

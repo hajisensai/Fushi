@@ -183,9 +183,13 @@ void main() {
       'wide in-book settings keeps the left pane fixed while the right scrolls '
       '(BUG-096)', (tester) async {
     // 用户报：宽窗书内设置「整个页面一块滚动、左边不固定」。根因=frame 外层
-    // SingleChildScrollView 给 master-detail 无界高度 → 左右一块滚。回归锁：矮
-    // 窗口让右详情（布局，行多）必然溢出可滚，拖右 pane 时左父菜单必须纹丝不动。
-    await tester.binding.setSurfaceSize(const Size(1000, 380));
+    // SingleChildScrollView 给 master-detail 无界高度 → 左右一块滚。回归锁：让右
+    // 详情（布局，行多）溢出可滚，拖右 pane 时左父菜单必须纹丝不动。
+    //
+    // 高度取 760（够 reader 左父菜单放下 → 进 master-detail）：左父菜单更高
+    // （进度+5分类+动作），太矮（如旧的 380）会触发「左栏溢出回退 push」的新
+    // 行为而非分栏（push 回退本身另有 video 用例覆盖）。
+    await tester.binding.setSurfaceSize(const Size(1000, 760));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
       ProviderScope(

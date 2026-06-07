@@ -88,6 +88,23 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
   /// 最近一次 LayoutBuilder 是否判定为宽窗（供 PopScope.canPop 读取）。
   bool _isWide = false;
 
+  /// 宽窗左父菜单的滚动控制器：用于 post-frame 检测内容是否在可用高度内放不下
+  /// （maxScrollExtent>0=出现滚动条），据此回退窄窗 push。
+  final ScrollController _supportingScrollController = ScrollController();
+
+  /// 宽窗左父菜单在当前可用高度下是否溢出（出现滚动条）。true 时回退 push。
+  bool _supportingOverflowsWide = false;
+
+  /// 上次溢出探测对应的可用高度键。高度变化时重置 [_supportingOverflowsWide]
+  /// 乐观重试宽窗，避免「一旦回退 push 就再也回不到宽窗」的死循环。
+  double? _wideProbeHeight;
+
+  @override
+  void dispose() {
+    _supportingScrollController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
@@ -109,7 +126,15 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
         scrollable: false,
         body: LayoutBuilder(
           builder: (BuildContext context, BoxConstraints constraints) {
-            _isWide = constraints.maxWidth >= 640;
+            final bool wantWide = constraints.maxWidth >= 640;
+            // 可用高度变化时重置溢出判定，乐观重试宽窗（防止一旦回退 push 就再也
+            // 回不到宽窗）。
+            if (_wideProbeHeight != constraints.maxHeight) {
+              _wideProbeHeight = constraints.maxHeight;
+              _supportingOverflowsWide = false;
+            }
+            // 窄到左父菜单在可用高度内放不下时回退 push（出现滚动条 = 体验差）。
+            _isWide = wantWide && !_supportingOverflowsWide;
             final double viewInsetsBottom =
                 MediaQuery.of(context).viewInsets.bottom;
             final EdgeInsets bodyPadding = EdgeInsets.fromLTRB(
@@ -137,14 +162,26 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
                 wideHorizontalInset,
                 tokens.spacing.card + tokens.spacing.gap + viewInsetsBottom,
               );
+              // 渲染后探测左父菜单是否溢出；溢出则回退 push（高度变化时已重置，
+              // 这里只「乐观宽窗 → 发现溢出再回退」一次）。
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!mounted) return;
+                if (_supportingScrollController.hasClients &&
+                    _supportingScrollController.position.maxScrollExtent >
+                        0.5 &&
+                    !_supportingOverflowsWide) {
+                  setState(() => _supportingOverflowsWide = true);
+                }
+              });
               return SizedBox(
                 height: constraints.maxHeight,
                 child: MaterialSupportingPaneLayout(
                   minSplitWidth: 640,
-                  supportingWidth: 248,
+                  supportingWidth: kHibikiSettingsSupportingPaneWidth,
                   supportingSide: SupportingPaneSide.start,
                   dividerColor: dividerColor,
                   supporting: SingleChildScrollView(
+                    controller: _supportingScrollController,
                     padding: wideSupportingPadding,
                     child: _buildWidePane(theme, selectedId),
                   ),

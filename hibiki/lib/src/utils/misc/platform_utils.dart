@@ -97,6 +97,11 @@ double supportingPaneWidthForLayout(double width) {
   return (width * 0.3).clamp(280.0, 360.0);
 }
 
+/// 书籍 / 视频快捷设置宽窗 master-detail 左父菜单的固定宽度。比
+/// [supportingPaneWidthForLayout] 更窄，给右侧详情留更多空间。窄到左父菜单内容
+/// 在可用高度内放不下（出现滚动条）时，由各 sheet 回退到窄窗 push 模式。
+const double kHibikiSettingsSupportingPaneWidth = 208.0;
+
 class DesktopContentLayout extends StatelessWidget {
   const DesktopContentLayout({
     required this.kind,

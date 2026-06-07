@@ -13,11 +13,21 @@ void main() {
     expect(src.contains('if (verticalWriting)'), isTrue, reason: '必须保留竖排放置分支');
   });
 
-  test('base_source_page exposes popupVerticalWriting and threads it', () {
+  test('base_source_page exposes popupVerticalWriting and threads it per layer',
+      () {
     final String src = read('lib/src/pages/base_source_page.dart');
     expect(src.contains('bool get popupVerticalWriting'), isTrue);
-    expect(src.contains('verticalWriting: popupVerticalWriting'), isTrue,
-        reason: '_calculatePopupPosition 必须把写排方向透传给 calcPopupPosition');
+    // 竖排避让只对顶层成立：嵌套层（index>0）选区来自横排弹窗内部，必须强制横排。
+    expect(
+        RegExp(r'_layerVerticalWriting\(int index\)\s*=>\s*index == 0 && '
+                r'popupVerticalWriting')
+            .hasMatch(src),
+        isTrue,
+        reason: '_layerVerticalWriting 必须仅在顶层（index 0）取竖排避让');
+    expect(src.contains('verticalWriting: _layerVerticalWriting('), isTrue,
+        reason: '_calculatePopupPosition 必须按层级而非无脑透传 popupVerticalWriting');
+    expect(src.contains('verticalWriting: popupVerticalWriting'), isFalse,
+        reason: '不得再把书的竖排无脑套到所有层（含嵌套横排弹窗）');
   });
 
   test('reader overrides popupVerticalWriting from writingMode', () {

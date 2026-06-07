@@ -51,10 +51,16 @@ void main() {
     expect(source, contains('scrollable: false'));
     expect(source, contains('MaterialSupportingPaneLayout('));
     expect(source, contains('minSplitWidth: 640'));
-    expect(source, contains('supportingWidth: 248'));
+    // 左父菜单收窄到共享常量（旧硬编码 248）。
+    expect(source,
+        contains('supportingWidth: kHibikiSettingsSupportingPaneWidth'));
     expect(source, contains('SupportingPaneSide.start'));
     expect(source, contains('height: constraints.maxHeight'));
     expect(source, contains('constraints.maxWidth >= 640'));
+    // 左父菜单在可用高度内放不下（出现滚动条）时回退窄窗 push。
+    expect(source, contains('_supportingScrollController'));
+    expect(source, contains('maxScrollExtent'));
+    expect(source, contains('_isWide = wantWide && !_supportingOverflowsWide'));
     expect(source, contains('padding: wideSupportingPadding'));
     expect(source, contains('padding: widePrimaryPadding'));
     // 左父菜单单选高亮（pill），无 chevron 误导 push。

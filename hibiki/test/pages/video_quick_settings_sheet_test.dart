@@ -56,9 +56,10 @@ void main() {
       of: layout,
       matching: find.byType(VerticalDivider),
     );
+    // 左父菜单收窄到共享常量（旧硬编码 248）。
     expect(
       tester.getTopLeft(divider).dx - tester.getTopLeft(layout).dx,
-      248,
+      kHibikiSettingsSupportingPaneWidth,
     );
 
     final List<SingleChildScrollView> paneScrollViews = tester
@@ -108,6 +109,30 @@ void main() {
 
     final Offset after = tester.getTopLeft(leftAnchor.first);
     expect(after, before, reason: '左父菜单必须固定，不能跟随右详情滚动');
+  });
+
+  testWidgets(
+      'wide-but-short video settings falls back to push when the left pane '
+      'would scroll', (tester) async {
+    // 宽度够分栏（>=640），但可用高度被压到左父菜单（标题+4分类）放不下：
+    // 应回退窄窗 push（不再显示 master-detail 右详情）。
+    await tester.binding.setSurfaceSize(const Size(1000, 150));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await _pump(tester, _sheet());
+    // 让 post-frame 溢出探测触发 setState 回退后稳定。
+    await tester.pumpAndSettle();
+
+    // 回退 push 主页：默认 playback 详情（音画延迟）不再随分栏展开。
+    expect(find.text(t.video_setting_av_delay), findsNothing,
+        reason: '左父菜单溢出时应回退 push，而非保持 master-detail 显示右详情');
+    // push 主页仍列出分类导航行。
+    expect(find.text(t.video_settings_cat_playback), findsOneWidget);
+
+    // 点分类 → push 子页 + 返回箭头（证明走的是窄窗 push 语义）。
+    await tester.tap(find.text(t.video_settings_cat_playback));
+    await tester.pumpAndSettle();
+    expect(find.text(t.video_setting_av_delay), findsOneWidget);
+    expect(find.byIcon(Icons.arrow_back), findsOneWidget);
   });
 
   testWidgets('narrow video settings pushes detail sub-pages', (tester) async {

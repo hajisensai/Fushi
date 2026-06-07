@@ -280,7 +280,9 @@ void main() {
     expect(source, contains('MaterialSupportingPaneLayout('));
     expect(source, contains('SupportingPaneSide.start'));
     expect(source, contains('minSplitWidth: 640'));
-    expect(source, contains('supportingWidth: 248'));
+    // 左父菜单收窄到共享常量（不再硬编码 248）。
+    expect(source,
+        contains('supportingWidth: kHibikiSettingsSupportingPaneWidth'));
     expect(source, contains('constraints.maxWidth >= 640'));
     expect(source, contains('padding: wideSupportingPadding'));
     expect(source, contains('padding: widePrimaryPadding'));
@@ -302,6 +304,26 @@ void main() {
     expect(source, contains(': _buildMainPage(context, theme)'));
     // 宽窗下返回键直接关弹窗，不卡在「返回上一级」。
     expect(source, contains('_subPage == null || _isWide'));
+  });
+
+  test('reader quick settings narrows the left pane and falls back on overflow',
+      () {
+    final String source =
+        File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
+            .readAsStringSync();
+
+    // 左父菜单用更窄的固定宽度（共享常量），不再吃硬编码 248。
+    expect(source,
+        contains('supportingWidth: kHibikiSettingsSupportingPaneWidth'));
+
+    // 左父菜单在可用高度内放不下（出现滚动条）时回退窄窗 push：
+    // 探测 maxScrollExtent，置溢出标志，并以 `!溢出` 收窄宽窗判定。
+    expect(source, contains('_supportingScrollController'));
+    expect(source, contains('maxScrollExtent'));
+    expect(source, contains('_supportingOverflowsWide'));
+    expect(source, contains('_isWide = wantWide && !_supportingOverflowsWide'));
+    // 高度变化时重置溢出标志，乐观重试宽窗（避免一旦回退就回不去）。
+    expect(source, contains('_wideProbeHeight'));
   });
 }
 

@@ -349,7 +349,13 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   }
 
   Widget _buildLoadingPlaceholder(Size screen) {
-    final pos = _calculatePopupPosition(_pendingSelectionRect!, screen);
+    // 加载占位只在「顶层」搜索期出现（嵌套搜索时父弹窗仍 visible，hasVisiblePopup
+    // 为真，不显示占位），故按 index 0 取竖排避让。
+    final pos = _calculatePopupPosition(
+      _pendingSelectionRect!,
+      screen,
+      verticalWriting: _layerVerticalWriting(0),
+    );
     final effectiveCs = (appModel.overrideDictionaryTheme ?? theme).colorScheme;
     final fillColor = appModel.overrideDictionaryColor ?? effectiveCs.surface;
 
@@ -381,7 +387,11 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     required bool isTop,
   }) {
     final item = stack[index];
-    final pos = _calculatePopupPosition(item.selectionRect, screen);
+    final pos = _calculatePopupPosition(
+      item.selectionRect,
+      screen,
+      verticalWriting: _layerVerticalWriting(index),
+    );
     final isDark = (appModel.overrideDictionaryTheme ?? theme).brightness ==
         Brightness.dark;
 
@@ -407,8 +417,11 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
           headerWidget: index == 0 ? buildPopupAudioControls() : null,
           overlayWidget: isTop ? buildDictionaryLoading() : null,
           onTextSelected: (text, localRect) async {
-            final parentPos =
-                _calculatePopupPosition(item.selectionRect, screen);
+            final parentPos = _calculatePopupPosition(
+              item.selectionRect,
+              screen,
+              verticalWriting: _layerVerticalWriting(index),
+            );
             final childRect = localRect == Rect.zero
                 ? item.selectionRect
                 : localRect.shift(Offset(parentPos.left, parentPos.top));
@@ -422,8 +435,11 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
             }
           },
           onLinkClick: (query, localRect) async {
-            final parentPos =
-                _calculatePopupPosition(item.selectionRect, screen);
+            final parentPos = _calculatePopupPosition(
+              item.selectionRect,
+              screen,
+              verticalWriting: _layerVerticalWriting(index),
+            );
             final childRect = localRect == Rect.zero
                 ? item.selectionRect
                 : localRect.shift(Offset(parentPos.left, parentPos.top));
@@ -500,7 +516,17 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     if (index >= 0) _dismissPopupAt(index);
   }
 
-  Rect _calculatePopupPosition(Rect sel, Size screen) {
+  /// 竖排避让（放当前列左/右侧而非上/下）只对**顶层弹窗**成立：顶层选区来自
+  /// 书面文字，可能是竖排列。嵌套层（index>0）的选区来自上一层弹窗内部，而弹
+  /// 窗内容（assets/popup/*）恒为横排，必须按横排上下避让——不能继承外层书的
+  /// 竖排设定。
+  bool _layerVerticalWriting(int index) => index == 0 && popupVerticalWriting;
+
+  Rect _calculatePopupPosition(
+    Rect sel,
+    Size screen, {
+    bool verticalWriting = false,
+  }) {
     return calcPopupPosition(
       selectionRect: sel,
       screen: screen,
@@ -509,7 +535,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       maxHeight: popupMaxHeight,
       bottomReserve: popupBottomReserve,
       topReserve: popupTopReserve,
-      verticalWriting: popupVerticalWriting,
+      verticalWriting: verticalWriting,
     );
   }
 
