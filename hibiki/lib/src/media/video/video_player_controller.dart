@@ -215,7 +215,12 @@ class VideoPlayerController extends ChangeNotifier
     debugPrint('[video-load] cues=${cues.length} path=${videoFile.path}');
     setCues(cues);
 
-    // 重复 load：先释放上一次的 tick / 订阅 / player，避免泄漏。
+    // 重复 load（换集）：取消上一次的 tick / 订阅，但**复用同一 Player /
+    // VideoController**，不 dispose 重建。复用是关键（BUG-120）——media_kit 全屏是推到
+    // 根 navigator 的独立路由，绑定的是「进入全屏那一刻」的 VideoController 实例；若每次
+    // 换集 dispose+new VideoController，全屏路由仍绑在旧（已 dispose）实例上 → 全屏换集
+    // 黑屏、00:00（退全屏看窗口侧新实例才正常）。复用后只 player.open 换片，全屏路由始终
+    // 绑同一实例 → 新视频正常渲染；也是 media_kit 切播放列表的正规姿势。
     _tick?.cancel();
     _tick = null;
     await _playingSub?.cancel();
@@ -224,11 +229,12 @@ class VideoPlayerController extends ChangeNotifier
     _widthSub = null;
     await _heightSub?.cancel();
     _heightSub = null;
-    await _player?.dispose();
 
-    final Player player = Player();
-    _player = player;
-    _videoController = VideoController(player);
+    final Player player = _player ?? Player();
+    if (_player == null) {
+      _player = player;
+      _videoController = VideoController(player);
+    }
 
     await player.open(
       Media(videoFile.uri.toString()),

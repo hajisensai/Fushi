@@ -1,0 +1,10 @@
+## BUG-120 · 全屏下切集黑屏 00:00 + 左上标题不刷新（media_kit 全屏独立路由快照）
+- **报告**：2026-06-08（用户：「视频切换集数的时候有问题」，截图为全屏下第04话黑屏 `00:00/00:00`；追加「退出全屏以后正常了」「但是左上角还是之前的04，而不是正经的标题」）。
+- **真实性**：✅ **真 bug（沿真实代码路径定位）**。media_kit 全屏是**推到根 navigator 的独立 root 路由**，进入全屏那一刻它**快照式捕获**当时的 `VideoController` 实例与控制条主题（`MaterialDesktopVideoControlsThemeData`，含 `topButtonBar` 里的标题字符串）；页面 `setState` 不会重建全屏路由。两个症状同源：
+  - **黑屏 00:00**：`video_player_controller.dart:218-236`（旧）每次重复 load（换集）都 `_player?.dispose()` → `new Player()` → **`new VideoController(player)`** 重建。全屏路由仍绑在旧（已 dispose）的 VideoController 上 → 黑屏、进度 0。退出全屏看的是窗口侧 `_buildVideoBody` 用新 `controller.videoController` 重建的 Video，故正常。（字幕 overlay 能正常显示是因为它监听的是**稳定的**外层 `VideoPlayerController`，逻辑自洽。）
+  - **标题停在旧集**：标题在 `_desktopControlsTheme`/`_mobileControlsTheme` 构建时把 `Text(_title ?? '')` 的**字符串固定**进 theme。全屏路由持有进入时的 theme 快照，`setState(_title=新)` 不更新它。
+- **[x] ① 已修复** — 本提交。根因修（消除「重建实例」与「快照固定值」两个特例，非补丁）：
+  - **复用 Player/VideoController**：`load()` 改为 `final player = _player ?? Player();`，仅首次建 `VideoController`，之后 `player.open(新媒体)` 换片。全屏路由始终绑同一实例 → 新视频在全屏正常渲染、进度正常；也是 media_kit 切播放列表的正规姿势。skip 按钮闭包读的是 `this._currentEpisode` 字段（运行时取值），不受影响。根因 `file:line`：`hibiki/lib/src/media/video/video_player_controller.dart:218`（重复 load 段）。
+  - **标题响应式**：新增 `ValueNotifier<String?> _titleNotifier`，`_applyLoad` 里 `_titleNotifier.value = title`；两套控制条主题的标题 `Text` 改用 `ValueListenableBuilder<String?>` 监听——它在全屏路由内也随 notifier 变化自重建，标题跟上。根因 `file:line`：`hibiki/lib/src/pages/implementations/video_hibiki_page.dart`（顶栏标题 + `_applyLoad`）。
+- **[x] ② 已加自动化测试** — `hibiki/test/pages/video_fullscreen_episode_guard_static_test.dart`（源码扫描守卫；全屏黑屏/真实 libmpv 渲染 headless 不可复现）：断言 `load()` 用 `_player ?? Player()` 复用、不再每次 `await _player?.dispose()` + `new VideoController` 重建；顶栏标题用 `ValueListenableBuilder` + `_titleNotifier`、`_applyLoad` 写 `_titleNotifier.value`、`dispose` 释放 notifier。
+- **备注**：视频播放/全屏类。`dart format` + `flutter test` 见提交。**全屏切集真机肉眼复测待用户**：桌面/移动全屏下点上/下一集 → 画面与进度即时切到新集、左上标题刷新成新集标题；退全屏不回归。

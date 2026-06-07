@@ -45,8 +45,13 @@ void main() {
       src,
       contains('Widget _buildPopupOverlay(BuildContext overlayContext) {\n'),
     );
-    expect(src, contains('if (!mounted) return const SizedBox.shrink();'),
-        reason: 'State 失效后根 Overlay 重建浮层不得触碰失效 context/appModel');
+    // BUG-121 强化：仅 !mounted 不够——deactivate（未 unmount）期 mounted 仍为 true，
+    // 但同帧 layout 阶段 LayoutBuilder 重建仍会做失效祖先查找。守卫并入 _overlayInert。
+    expect(
+        src,
+        contains(
+            'if (!mounted || _overlayInert) return const SizedBox.shrink();'),
+        reason: 'State 失效/销毁期根 Overlay 重建浮层不得触碰失效 context/appModel');
     // Theme 读 entry 自身的 overlayContext，而非更短命的 State context。
     expect(src, contains('Theme.of(overlayContext)'));
 

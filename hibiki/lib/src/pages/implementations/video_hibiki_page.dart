@@ -137,6 +137,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   bool _failed = false;
   String? _title;
 
+  /// 顶栏标题的响应式来源（BUG-120）。顶栏文字渲染在 media_kit 控制条主题里，全屏是
+  /// 推到根 navigator 的独立路由、进入时**快照捕获**当时的主题（含标题字符串），页面
+  /// `setState` 不会重建全屏路由 → 全屏换集后标题停在旧集。改用 [ValueNotifier] + 顶栏
+  /// `ValueListenableBuilder` 监听：它在全屏路由内也会随 notifier 变化自重建，标题跟上。
+  final ValueNotifier<String?> _titleNotifier = ValueNotifier<String?>(null);
+
   /// media_kit [Video] 的键盘焦点节点。media_kit 的 `Video` 自带 FocusNode + 内置
   /// 快捷键（空格=播放/暂停、方向键=快进/快退/音量等）。本页把这个节点提到 State 持有，
   /// 是为了在任何**会夺走窗口键盘焦点的覆盖层**（对话框 / bottom sheet / 系统文件选择器）
@@ -533,6 +539,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       if (_controller == null) controller.dispose();
       return;
     }
+    // 标题先推给响应式 notifier，让全屏路由顶栏（不随页面 setState 重建）也跟上（BUG-120）。
+    _titleNotifier.value = title;
     setState(() {
       _controller = controller;
       _title = title;
@@ -726,7 +734,29 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _watchTracker = null;
     _controller?.dispose();
     _videoFocusNode.dispose();
+    _titleNotifier.dispose();
     super.dispose();
+  }
+
+  /// 退出视频 / 退全屏的销毁期保护（BUG-121）。根 Overlay 的查词浮层 entry 跨路由生存，
+  /// 比本 State 活得久；路由 pop 当帧本 State 先 `deactivate`，随后**同帧 layout 阶段**
+  /// 根 Overlay 的 [LayoutBuilder] 仍会重建 entry → 内层经 `appModel`(ref.read) / `mixinTheme`
+  /// (Theme.of) 做祖先查找，而 deactivated element 上的查找不安全 → 抛异常红屏。
+  /// `OverlayEntry.remove()` 在 build/layout 阶段会延迟到 post-frame，摘除来不及拦本帧；
+  /// 故置位此标志，让浮层 builder 在销毁期一律空渲染（[_buildPopupOverlay]）。
+  bool _overlayInert = false;
+
+  @override
+  void deactivate() {
+    _overlayInert = true;
+    super.deactivate();
+  }
+
+  @override
+  void activate() {
+    super.activate();
+    // GlobalKey 重挂等重新激活场景：恢复正常渲染，下次 build 的 _syncPopupOverlay 重建浮层。
+    _overlayInert = false;
   }
 
   /// 把键盘焦点还给 media_kit [Video]，恢复其内置快捷键（空格=播放/暂停等）。
@@ -913,12 +943,16 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // State 的 `context` / `appModel`(ref.read) 会抛异常 → Flutter ErrorWidget 红屏
     // （用户报「退视频红屏」）。故：State 失效就不渲染浮层；Theme 也改用 entry 自己的
     // `overlayContext`（与本 entry 同寿命）而非借用更短命的 State `context`。
-    if (!mounted) return const SizedBox.shrink();
+    if (!mounted || _overlayInert) return const SizedBox.shrink();
     return HibikiAppUiScaleNeutralizer(
       child: Theme(
         data: appModel.overrideDictionaryTheme ?? Theme.of(overlayContext),
         child: LayoutBuilder(
           builder: (BuildContext context, BoxConstraints constraints) {
+            // LayoutBuilder 的 builder 在 layout 阶段运行，可能晚于本 State 的 deactivate
+            // （退视频/退全屏同帧）；此刻读 appModel(ref.read)/mixinTheme 会做失效祖先查找
+            // 抛异常红屏（BUG-121）。销毁期标志置位则空渲染兜底。
+            if (!mounted || _overlayInert) return const SizedBox.shrink();
             final Size screen =
                 Size(constraints.maxWidth, constraints.maxHeight);
             return Stack(
@@ -1145,11 +1179,16 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           onPressed: () => Navigator.of(context).maybePop(),
         ),
         Expanded(
-          child: Text(
-            _title ?? '',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: Colors.white, fontSize: 16),
+          // 标题走 ValueListenableBuilder（BUG-120）：全屏路由不随页面 setState 重建，
+          // 监听 _titleNotifier 才能在全屏换集后刷新标题。
+          child: ValueListenableBuilder<String?>(
+            valueListenable: _titleNotifier,
+            builder: (BuildContext _, String? title, __) => Text(
+              title ?? '',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: Colors.white, fontSize: 16),
+            ),
           ),
         ),
         if (_isPlaylist) ...<Widget>[
@@ -1244,11 +1283,16 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           onPressed: () => Navigator.of(context).maybePop(),
         ),
         Expanded(
-          child: Text(
-            _title ?? '',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: Colors.white, fontSize: 16),
+          // 标题走 ValueListenableBuilder（BUG-120）：全屏路由不随页面 setState 重建，
+          // 监听 _titleNotifier 才能在全屏换集后刷新标题。
+          child: ValueListenableBuilder<String?>(
+            valueListenable: _titleNotifier,
+            builder: (BuildContext _, String? title, __) => Text(
+              title ?? '',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: Colors.white, fontSize: 16),
+            ),
           ),
         ),
         if (_isPlaylist) ...<Widget>[

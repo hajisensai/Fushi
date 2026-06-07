@@ -41,12 +41,14 @@ void main() {
     );
   });
 
-  test('标题进入视频内顶栏', () {
-    // 顶栏左侧显示书名/集名（原 AppBar 的 title 迁移到这里）。
+  test('标题进入视频内顶栏（响应式，全屏可刷新）', () {
+    // 顶栏左侧显示书名/集名（原 AppBar 的 title 迁移到这里）。标题改用
+    // ValueListenableBuilder 监听 _titleNotifier，全屏独立路由不随页面 setState 重建
+    // 时也能刷新（BUG-120）；桌面 + 移动两套主题各一处。
     expect(
-      "_title ?? ''".allMatches(src).length,
+      'valueListenable: _titleNotifier'.allMatches(src).length,
       greaterThanOrEqualTo(2),
-      reason: '桌面与移动顶栏都应显示标题（原 AppBar 的 title 迁移到内顶栏）',
+      reason: '桌面与移动顶栏都应用 ValueListenableBuilder 显示响应式标题（BUG-120）',
     );
   });
 }
