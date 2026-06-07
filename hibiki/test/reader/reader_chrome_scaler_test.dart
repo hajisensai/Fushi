@@ -43,6 +43,9 @@ void main() {
       );
       final Size size = tester.getSize(find.byKey(const ValueKey('content')));
       expect(size.height, 56);
+      // Passthrough means no scaling wrapper: scale 1.0 must not wrap the
+      // child in a FittedBox.
+      expect(find.byType(FittedBox), findsNothing);
     });
 
     testWidgets('scale 1.5 renders box at base*scale height, full width',
@@ -66,9 +69,10 @@ void main() {
       expect(outer.height, closeTo(84, 0.5));
       expect(outer.width, closeTo(300, 0.5));
     });
+  });
 
-    testWidgets('uses default scale guards (defaultScale constant)',
-        (tester) async {
+  group('ReaderChromeScaler defaultScale contract', () {
+    test('defaultScale constant is 1.0 (passthrough relies on it)', () {
       expect(HibikiAppUiScale.defaultScale, 1.0);
     });
   });
