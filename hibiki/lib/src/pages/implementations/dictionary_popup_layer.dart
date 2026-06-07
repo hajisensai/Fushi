@@ -139,7 +139,7 @@ class DictionaryPopupLayer extends StatelessWidget {
       color: fillColor,
       showBorder: showBorder,
       clipBehavior: showBorder ? Clip.antiAlias : Clip.none,
-      child: _buildContent(context),
+      child: _buildContent(context, fillColor),
     );
 
     if (!swipeDismissible) return content;
@@ -151,7 +151,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     );
   }
 
-  Widget _buildBody(BuildContext context) {
+  Widget _buildBody(BuildContext context, Color fillColor) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
 
     final bool hasEntries = result != null && result!.entries.isNotEmpty;
@@ -185,12 +185,27 @@ class DictionaryPopupLayer extends StatelessWidget {
             onScrolledToBottom: onScrolledToBottom,
             onRendered: onRendered,
           ),
-          if (isSearching)
-            Center(
-              child: SizedBox(
-                width: 24,
-                height: 24,
-                child: adaptiveIndicator(context: context, strokeWidth: 2.5),
+          // 搜索期且还没有词条时，用一层不透明主题色盖板（带进度条）盖住 WebView。
+          // 视频（mixin reuseWarmSlot）会在结果就绪前就把热槽设为可见，此刻 WebView
+          // 是空载——Windows 的 inappwebview fork 不完全尊重 transparentBackground，
+          // 会露出白底（用户报「白屏等一会才出字」）。盖板把这段空白替换成与弹窗同色的
+          // 加载态，待词条到达即撤掉露出已渲染内容。书内查词结果就绪后才可见
+          // （那时 hasEntries=true 不触发）、分页 load-more 有词条也不触发，故只对
+          // 视频这条「可见+搜索中+无词条」路径生效，四个表面共用同一组件、观感一致。
+          if (isSearching && !hasEntries)
+            Positioned.fill(
+              child: ColoredBox(
+                color: fillColor,
+                child: Column(
+                  children: [
+                    LinearProgressIndicator(
+                      backgroundColor: Colors.transparent,
+                      color: Theme.of(context).colorScheme.primary,
+                      minHeight: 2.75,
+                    ),
+                    const Expanded(child: SizedBox.shrink()),
+                  ],
+                ),
               ),
             ),
         ],
@@ -212,8 +227,8 @@ class DictionaryPopupLayer extends StatelessWidget {
     );
   }
 
-  Widget _buildContent(BuildContext context) {
-    Widget body = _buildBody(context);
+  Widget _buildContent(BuildContext context, Color fillColor) {
+    Widget body = _buildBody(context, fillColor);
     if (overlayWidget != null) {
       body = Stack(
         children: [
