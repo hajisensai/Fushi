@@ -28,5 +28,10 @@ void main() {
             .hasMatch(src),
         isTrue,
         reason: 'reader 必须用 _settings.writingMode 决定竖排避让');
+    expect(src.contains('_lyricsMode'), isTrue);
+    // getter 必须用 !_lyricsMode 门控，歌词模式（横排渲染）不套竖排避让
+    expect(RegExp(r'popupVerticalWriting\s*=>\s*!_lyricsMode').hasMatch(src),
+        isTrue,
+        reason: '歌词模式恒横排，popupVerticalWriting 必须 !_lyricsMode 门控');
   });
 }

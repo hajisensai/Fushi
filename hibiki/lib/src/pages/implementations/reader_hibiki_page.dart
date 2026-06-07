@@ -328,7 +328,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
   @override
   bool get popupVerticalWriting =>
-      _settings?.writingMode.startsWith('vertical') ?? false;
+      !_lyricsMode && (_settings?.writingMode.startsWith('vertical') ?? false);
 
   @override
   void initState() {
