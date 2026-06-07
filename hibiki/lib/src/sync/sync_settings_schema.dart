@@ -1909,6 +1909,7 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
       token: _token!,
       allowLan: true,
       remoteLookupService: appModel.createRemoteLookupService(),
+      miningService: appModel.createRemoteMiningService(),
     )..onPairRequest = _promptPairApproval;
     try {
       await _server!.start();

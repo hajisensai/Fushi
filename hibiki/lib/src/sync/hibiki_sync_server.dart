@@ -70,17 +70,20 @@ class HibikiSyncServer {
     required String token,
     bool allowLan = false,
     HibikiRemoteLookupService? remoteLookupService,
+    HibikiRemoteMiningService? miningService,
   })  : syncDataDir = p.join(syncDataDir, 'sync-data'),
         _requestedPort = port,
         _token = token,
         _allowLan = allowLan,
-        _remoteLookupService = remoteLookupService;
+        _remoteLookupService = remoteLookupService,
+        _miningService = miningService;
 
   final String syncDataDir;
   final int _requestedPort;
   final String _token;
   final bool _allowLan;
   final HibikiRemoteLookupService? _remoteLookupService;
+  final HibikiRemoteMiningService? _miningService;
   final Map<String, _RemoteAudioToken> _remoteAudioTokens =
       <String, _RemoteAudioToken>{};
   HttpServer? _server;
@@ -176,6 +179,10 @@ class HibikiSyncServer {
     }
     if (reqPath.startsWith('/api/lookup/')) {
       return _handleLookupApi(request, method, reqPath);
+    }
+    if (reqPath == '/api/mine') {
+      if (method != 'POST') return shelf.Response(405);
+      return _handleMine(request);
     }
 
     final fsPath = p.canonicalize(p.join(syncDataDir, reqPath.substring(1)));
@@ -345,6 +352,21 @@ class HibikiSyncServer {
         'url': null,
         'contentType': null,
       });
+
+  Future<shelf.Response> _handleMine(shelf.Request request) async {
+    final HibikiRemoteMiningService? svc = _miningService;
+    if (svc == null) return shelf.Response.notFound('Mining off');
+    final Map<String, dynamic>? body = await _readJsonObject(request);
+    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
+    final dynamic rawFields = body['fields'];
+    if (rawFields is! Map) return shelf.Response(400, body: 'Missing fields');
+    final Map<String, String> fields = rawFields.map(
+        (dynamic k, dynamic v) => MapEntry(k.toString(), v?.toString() ?? ''));
+    final String sentence =
+        body['sentence']?.toString() ?? fields['sentence'] ?? '';
+    final String result = await svc.mineEntry(fields: fields, sentence: sentence);
+    return _jsonResponse(<String, dynamic>{'result': result});
+  }
 
   Future<Map<String, dynamic>?> _readJsonObject(shelf.Request request) async {
     try {
