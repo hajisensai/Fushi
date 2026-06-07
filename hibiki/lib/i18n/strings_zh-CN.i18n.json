@@ -1402,5 +1402,9 @@
     "texthooker_experimental_banner": "文本钩子为实验性功能：实时文本、查词与制卡可能尚不稳定。",
     "settings_experimental_suffix": "（实验性，可能不稳定）",
     "db_downgrade_title": "请更新 Hibiki",
-    "db_downgrade_message": "此数据库由更新版本的 Hibiki 创建（schema v$dbVersion）。当前应用版本过旧（v$appVersion）。已阻止打开以保护你的数据。请更新应用后重试。"
+    "db_downgrade_message": "此数据库由更新版本的 Hibiki 创建（schema v$dbVersion）。当前应用版本过旧（v$appVersion）。已阻止打开以保护你的数据。请更新应用后重试。",
+    "video_shader_import_from_mpv": "从本机 mpv 导入",
+    "video_shader_mpv_not_found": "未发现本机 mpv 着色器",
+    "video_shader_mpv_pick_title": "从 mpv 导入着色器",
+    "video_shader_import_done": "已导入 $count 个着色器"
 }

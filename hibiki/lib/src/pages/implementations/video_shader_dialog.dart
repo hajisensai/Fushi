@@ -1,19 +1,24 @@
 import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
 
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/media/video/video_shader_downloader.dart';
 import 'package:hibiki/src/media/video/video_shader_manager.dart';
 
-/// mpv 着色器管理对话框：导入 `.glsl`/`.hook` 着色器、一键下载 Anime4K 推荐预设、
-/// 勾选启用、即时应用。
+/// mpv 着色器内嵌管理视图：导入 `.glsl`/`.hook`、从本机 mpv 发现导入、一键下载
+/// Anime4K 推荐预设、勾选启用、即时应用。直接嵌进视频设置面板的「着色器」详情 pane
+/// （不再弹独立设置对话框，与书籍设置同款内嵌范式）。
 ///
 /// 自身只管文件列表与勾选状态；启用集（按文件名）经 [onApply] 上报给视频页，由其
-/// 持久化 + 解析成绝对路径 + 调 [VideoPlayerController.applyShaders] 实时生效（仅桌面
+/// 持久化 + 解析成绝对路径 + 调 `VideoPlayerController.applyShaders` 实时生效（仅桌面
 /// libmpv，移动端静默）。勾选顺序按目录列表顺序，保证着色器叠加顺序稳定。
-class VideoShaderDialog extends StatefulWidget {
-  const VideoShaderDialog({
+///
+/// 「下载 Anime4K」「从本机 mpv 导入」「导入文件」是**瞬时动作**（弹临时选择/进度对话框
+/// 或系统文件选择器），不是设置子页面——它们完成后回到本内嵌视图。
+class VideoShaderManagerView extends StatefulWidget {
+  const VideoShaderManagerView({
     required this.initialEnabled,
     required this.onApply,
     super.key,
@@ -26,10 +31,10 @@ class VideoShaderDialog extends StatefulWidget {
   final Future<void> Function(List<String> enabledNames) onApply;
 
   @override
-  State<VideoShaderDialog> createState() => _VideoShaderDialogState();
+  State<VideoShaderManagerView> createState() => _VideoShaderManagerViewState();
 }
 
-class _VideoShaderDialogState extends State<VideoShaderDialog> {
+class _VideoShaderManagerViewState extends State<VideoShaderManagerView> {
   late final Set<String> _enabled = widget.initialEnabled.toSet();
   List<String> _files = const <String>[];
   bool _loading = true;
@@ -61,6 +66,36 @@ class _VideoShaderDialogState extends State<VideoShaderDialog> {
       if (path != null) await importShaderFile(path);
     }
     await _refresh();
+  }
+
+  /// 从本机 mpv 安装发现着色器（扫 mpv 配置目录的 `shaders/`）→ 多选导入到
+  /// mpv_shaders。扫不到（移动端/未装 mpv）提示「未发现本机 mpv」。
+  Future<void> _importFromMpv() async {
+    final List<String> found = await discoverLocalMpvShaders();
+    if (!mounted) return;
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    if (found.isEmpty) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(t.video_shader_mpv_not_found)),
+      );
+      return;
+    }
+    final List<String>? picked = await showDialog<List<String>>(
+      context: context,
+      builder: (_) => _MpvShaderPickerDialog(
+        discovered: found,
+        alreadyImported: _files.toSet(),
+      ),
+    );
+    if (picked == null || picked.isEmpty || !mounted) return;
+    for (final String path in picked) {
+      await importShaderFile(path);
+    }
+    await _refresh();
+    if (!mounted) return;
+    messenger.showSnackBar(
+      SnackBar(content: Text(t.video_shader_import_done(count: picked.length))),
+    );
   }
 
   Future<void> _toggle(String name, bool on) async {
@@ -165,72 +200,149 @@ class _VideoShaderDialogState extends State<VideoShaderDialog> {
 
   @override
   Widget build(BuildContext context) {
+    if (_loading) {
+      return const SizedBox(
+        height: 80,
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Text(
+          t.video_setting_shaders_hint,
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        const SizedBox(height: 12),
+        // 三个瞬时动作入口（不是设置子页面）：一键下载 Anime4K / 从本机 mpv 发现导入 /
+        // 系统文件选择器导入。完成后回到本内嵌视图并刷新列表。
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: <Widget>[
+            OutlinedButton.icon(
+              icon: const Icon(Icons.download_outlined, size: 18),
+              label: Text(t.video_shader_download_anime4k),
+              onPressed: _openAnime4kDownload,
+            ),
+            OutlinedButton.icon(
+              icon: const Icon(Icons.travel_explore_outlined, size: 18),
+              label: Text(t.video_shader_import_from_mpv),
+              onPressed: _importFromMpv,
+            ),
+            OutlinedButton.icon(
+              icon: const Icon(Icons.add, size: 18),
+              label: Text(t.video_shader_import),
+              onPressed: _import,
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (_files.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Text(
+              t.video_shaders_empty,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          )
+        else
+          // 内嵌进设置 pane（外层已是可滚动列）：直接 Column 罗列，不再套 ListView/
+          // Flexible（那会向无界高度索要 viewport，在内嵌场景里崩）。
+          for (final String name in _files)
+            CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              title: Text(name, overflow: TextOverflow.ellipsis),
+              value: _enabled.contains(name),
+              onChanged: (bool? v) => _toggle(name, v ?? false),
+            ),
+      ],
+    );
+  }
+}
+
+/// 从本机 mpv 发现的着色器多选导入对话框：列出绝对路径的 basename，已在 mpv_shaders
+/// 里的标「已导入」并禁选；点「导入」pop 回选中的绝对路径列表，取消 pop null。
+class _MpvShaderPickerDialog extends StatefulWidget {
+  const _MpvShaderPickerDialog({
+    required this.discovered,
+    required this.alreadyImported,
+  });
+
+  /// 发现到的着色器绝对路径。
+  final List<String> discovered;
+
+  /// 已在 mpv_shaders 目录里的文件名（basename），用于标「已导入」并禁选。
+  final Set<String> alreadyImported;
+
+  @override
+  State<_MpvShaderPickerDialog> createState() => _MpvShaderPickerDialogState();
+}
+
+class _MpvShaderPickerDialogState extends State<_MpvShaderPickerDialog> {
+  // 默认勾选所有尚未导入的；已导入的不勾（也禁选）。
+  late final Set<String> _selected = <String>{
+    for (final String path in widget.discovered)
+      if (!widget.alreadyImported.contains(p.basename(path))) path,
+  };
+
+  @override
+  Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(t.video_setting_shaders),
+      title: Text(t.video_shader_mpv_pick_title),
       content: SizedBox(
-        width: 360,
-        child: _loading
-            ? const SizedBox(
-                height: 80,
-                child: Center(child: CircularProgressIndicator()),
-              )
-            : Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+        width: 380,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
                 children: <Widget>[
-                  Text(
-                    t.video_setting_shaders_hint,
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                  const SizedBox(height: 8),
-                  // Anime4K 一键下载入口：选预设 → 多镜像下载 → 自动加入下方列表。
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: OutlinedButton.icon(
-                      icon: const Icon(Icons.download_outlined, size: 18),
-                      label: Text(t.video_shader_download_anime4k),
-                      onPressed: _openAnime4kDownload,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  if (_files.isEmpty)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      child: Text(
-                        t.video_shaders_empty,
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.bodyMedium,
-                      ),
-                    )
-                  else
-                    Flexible(
-                      child: ListView(
-                        shrinkWrap: true,
-                        children: <Widget>[
-                          for (final String name in _files)
-                            CheckboxListTile(
-                              contentPadding: EdgeInsets.zero,
-                              dense: true,
-                              title:
-                                  Text(name, overflow: TextOverflow.ellipsis),
-                              value: _enabled.contains(name),
-                              onChanged: (bool? v) => _toggle(name, v ?? false),
-                            ),
-                        ],
-                      ),
-                    ),
+                  for (final String path in widget.discovered)
+                    () {
+                      final String name = p.basename(path);
+                      final bool imported =
+                          widget.alreadyImported.contains(name);
+                      return CheckboxListTile(
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                        title: Text(name, overflow: TextOverflow.ellipsis),
+                        subtitle: imported
+                            ? Text(t.video_shader_downloaded_label)
+                            : null,
+                        value: imported || _selected.contains(path),
+                        onChanged: imported
+                            ? null
+                            : (bool? v) => setState(() {
+                                  if (v ?? false) {
+                                    _selected.add(path);
+                                  } else {
+                                    _selected.remove(path);
+                                  }
+                                }),
+                      );
+                    }(),
                 ],
               ),
+            ),
+          ],
+        ),
       ),
       actions: <Widget>[
-        TextButton.icon(
-          icon: const Icon(Icons.add),
-          label: Text(t.video_shader_import),
-          onPressed: _import,
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(t.dialog_cancel),
         ),
         FilledButton(
-          onPressed: () => Navigator.pop(context),
-          child: Text(t.dialog_close),
+          onPressed: _selected.isEmpty
+              ? null
+              : () => Navigator.pop(context, _selected.toList()),
+          child: Text(t.video_shader_import),
         ),
       ],
     );

@@ -1,7 +1,9 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
+import 'package:hibiki/src/media/video/video_mpv_config.dart';
 import 'package:hibiki/src/media/video/video_subtitle_style.dart';
+import 'package:hibiki/src/pages/implementations/video_shader_dialog.dart';
 import 'package:hibiki/utils.dart';
 
 /// 视频播放设置面板：与阅读器 `ReaderQuickSettingsSheet` 同款 master-detail
@@ -22,8 +24,10 @@ class VideoQuickSettingsSheet extends StatefulWidget {
     required this.onToggleSubtitleBlur,
     required this.onSubtitleStylePreview,
     required this.onSubtitleStyleCommit,
-    required this.onOpenShaders,
-    required this.onOpenMpvConfig,
+    required this.initialShadersEnabled,
+    required this.onApplyShaders,
+    required this.initialMpvConfig,
+    required this.onMpvConfigChanged,
     super.key,
   });
 
@@ -54,11 +58,17 @@ class VideoQuickSettingsSheet extends StatefulWidget {
   /// 字幕外观定稿（拖动结束 / 重置）时落盘。
   final Future<void> Function(VideoSubtitleStyle style) onSubtitleStyleCommit;
 
-  /// 打开 mpv 着色器对话框（调用方应已关闭本面板）。
-  final VoidCallback onOpenShaders;
+  /// 初始启用的着色器文件名集合（内嵌着色器视图的初值）。
+  final List<String> initialShadersEnabled;
 
-  /// 打开 mpv 视频配置对话框（调用方应已关闭本面板）。
-  final VoidCallback onOpenMpvConfig;
+  /// 着色器勾选变化时回调：持久化启用集 + 解析绝对路径 + 实时应用（调用方负责）。
+  final Future<void> Function(List<String> enabledNames) onApplyShaders;
+
+  /// 初始 mpv 配置（内嵌 mpv 配置详情的初值）。
+  final VideoMpvConfig initialMpvConfig;
+
+  /// mpv 配置任一项变化时回调：持久化 + 实时应用到播放器（即改即生效）。
+  final Future<void> Function(VideoMpvConfig config) onMpvConfigChanged;
 
   @override
   State<VideoQuickSettingsSheet> createState() =>
@@ -82,6 +92,16 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
   late bool _blur = widget.initialSubtitleBlur;
   late VideoSubtitleStyle _style = widget.initialSubtitleStyle;
 
+  /// mpv 配置（内嵌详情即改即生效，本地权威 + 回调持久化/实时应用）。
+  late VideoMpvConfig _mpvConfig = widget.initialMpvConfig;
+
+  /// 当前启用的着色器文件名（内嵌着色器视图 onApply 回写，供切分类后重入回显）。
+  late List<String> _shadersEnabled = widget.initialShadersEnabled;
+
+  /// 原始 mpv.conf 文本框控制器（高级逃生口，多行；本地权威经 [_commitMpv] 落盘+应用）。
+  late final TextEditingController _rawConfController =
+      TextEditingController(text: widget.initialMpvConfig.rawConf);
+
   /// 窄窗 push 选中的子页 id；null = 主页。宽窗下恒有选中（默认 playback）。
   String? _subPage;
 
@@ -102,6 +122,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
   @override
   void dispose() {
     _supportingScrollController.dispose();
+    _rawConfController.dispose();
     super.dispose();
   }
 
@@ -447,35 +468,278 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
     return best;
   }
 
-  // ── 着色器 / mpv：导航到既有对话框 ─────────────────────────────────────
+  // ── 着色器：内嵌管理视图（导入/发现/下载/勾选，不再弹独立对话框）────────
   Widget _buildShadersDetail() {
-    return AdaptiveSettingsSection(
-      children: <Widget>[
-        AdaptiveSettingsNavigationRow(
-          title: t.video_setting_shaders,
-          subtitle: t.video_setting_shaders_hint,
-          icon: Icons.auto_fix_high_outlined,
-          showIcon: true,
-          onTap: () {
-            Navigator.of(context).pop();
-            widget.onOpenShaders();
-          },
-        ),
-      ],
+    return VideoShaderManagerView(
+      // 切到别的分类再回来会重建本视图（宽窗 KeyedSubtree），用本地权威值回显。
+      initialEnabled: _shadersEnabled,
+      onApply: (List<String> names) async {
+        setState(() => _shadersEnabled = names);
+        await widget.onApplyShaders(names);
+      },
     );
   }
 
+  /// mpv 配置改一项即落盘 + 实时应用（与倍速/字幕同款即改即生效，去掉保存/取消模态）。
+  void _commitMpv(VideoMpvConfig next) {
+    setState(() => _mpvConfig = next);
+    widget.onMpvConfigChanged(next);
+  }
+
+  AdaptiveSettingsSwitchRow _mpvSwitch(
+    String title,
+    bool value,
+    VideoMpvConfig Function(bool v) apply, {
+    required IconData icon,
+  }) {
+    return AdaptiveSettingsSwitchRow(
+      title: title,
+      icon: icon,
+      value: value,
+      onChanged: (bool v) => _commitMpv(apply(v)),
+    );
+  }
+
+  /// 色彩均衡 / 数值滑条（-min..max，divisions 全程整数）：拖动即 commit。
+  AdaptiveSettingsSliderRow _mpvIntSlider(
+    String title,
+    IconData icon,
+    int value,
+    int min,
+    int max,
+    VideoMpvConfig Function(int v) apply,
+  ) {
+    return AdaptiveSettingsSliderRow(
+      title: title,
+      icon: icon,
+      min: min.toDouble(),
+      max: max.toDouble(),
+      divisions: max - min,
+      value: value.toDouble().clamp(min.toDouble(), max.toDouble()),
+      label: '$value',
+      onChanged: (double v) => _commitMpv(apply(v.round())),
+    );
+  }
+
+  // ── mpv：成体系配置内嵌详情（解码/画质/几何/色彩/音频/播放 + 原始 conf + 重置）──
   Widget _buildMpvDetail() {
-    return AdaptiveSettingsSection(
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final VideoMpvConfig c = _mpvConfig;
+    final double gap = tokens.spacing.gap;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        AdaptiveSettingsNavigationRow(
-          title: t.video_setting_mpv_open,
-          icon: Icons.tune,
-          showIcon: true,
-          onTap: () {
-            Navigator.of(context).pop();
-            widget.onOpenMpvConfig();
-          },
+        // 解码
+        AdaptiveSettingsSection(
+          title: t.video_setting_mpv_group_decode,
+          children: <Widget>[
+            AdaptiveSettingsPickerRow<String>(
+              title: t.video_setting_mpv_hwdec,
+              icon: Icons.memory_outlined,
+              selected: c.hwdec,
+              options: <AdaptiveSettingsPickerOption<String>>[
+                AdaptiveSettingsPickerOption<String>(
+                    value: 'no', label: t.video_setting_mpv_hwdec_off),
+                AdaptiveSettingsPickerOption<String>(
+                    value: 'auto-safe', label: t.video_setting_mpv_hwdec_auto),
+                AdaptiveSettingsPickerOption<String>(
+                    value: 'auto-copy', label: t.video_setting_mpv_hwdec_copy),
+              ],
+              onChanged: (String v) => _commitMpv(c.copyWith(hwdec: v)),
+            ),
+          ],
+        ),
+        SizedBox(height: gap),
+        // 画质
+        AdaptiveSettingsSection(
+          title: t.video_setting_mpv_group_quality,
+          children: <Widget>[
+            _mpvSwitch(t.video_setting_mpv_high_quality, c.highQuality,
+                (bool v) => c.copyWith(highQuality: v),
+                icon: Icons.high_quality_outlined),
+            _mpvSwitch(t.video_setting_mpv_deband, c.deband,
+                (bool v) => c.copyWith(deband: v),
+                icon: Icons.gradient_outlined),
+            _mpvSwitch(t.video_setting_mpv_dither, c.dither,
+                (bool v) => c.copyWith(dither: v),
+                icon: Icons.grain_outlined),
+            _mpvSwitch(t.video_setting_mpv_interpolation, c.interpolation,
+                (bool v) => c.copyWith(interpolation: v),
+                icon: Icons.animation_outlined),
+            _mpvSwitch(t.video_setting_mpv_deinterlace, c.deinterlace,
+                (bool v) => c.copyWith(deinterlace: v),
+                icon: Icons.view_stream_outlined),
+            _mpvSwitch(t.video_setting_mpv_sigmoid, c.sigmoidUpscaling,
+                (bool v) => c.copyWith(sigmoidUpscaling: v),
+                icon: Icons.show_chart_outlined),
+            _mpvSwitch(
+                t.video_setting_mpv_correct_downscale,
+                c.correctDownscaling,
+                (bool v) => c.copyWith(correctDownscaling: v),
+                icon: Icons.photo_size_select_small_outlined),
+          ],
+        ),
+        SizedBox(height: gap),
+        // 画面几何
+        AdaptiveSettingsSection(
+          title: t.video_setting_mpv_group_geometry,
+          children: <Widget>[
+            AdaptiveSettingsPickerRow<int>(
+              title: t.video_setting_mpv_rotate,
+              icon: Icons.screen_rotation_outlined,
+              selected: c.videoRotate,
+              options: const <AdaptiveSettingsPickerOption<int>>[
+                AdaptiveSettingsPickerOption<int>(value: 0, label: '0°'),
+                AdaptiveSettingsPickerOption<int>(value: 90, label: '90°'),
+                AdaptiveSettingsPickerOption<int>(value: 180, label: '180°'),
+                AdaptiveSettingsPickerOption<int>(value: 270, label: '270°'),
+              ],
+              onChanged: (int v) => _commitMpv(c.copyWith(videoRotate: v)),
+            ),
+            AdaptiveSettingsPickerRow<String>(
+              title: t.video_setting_mpv_aspect,
+              icon: Icons.aspect_ratio_outlined,
+              selected: c.aspectOverride,
+              options: <AdaptiveSettingsPickerOption<String>>[
+                AdaptiveSettingsPickerOption<String>(
+                    value: '-1', label: t.video_setting_mpv_aspect_auto),
+                const AdaptiveSettingsPickerOption<String>(
+                    value: '16:9', label: '16:9'),
+                const AdaptiveSettingsPickerOption<String>(
+                    value: '4:3', label: '4:3'),
+                const AdaptiveSettingsPickerOption<String>(
+                    value: '2.35:1', label: '2.35:1'),
+                const AdaptiveSettingsPickerOption<String>(
+                    value: '1:1', label: '1:1'),
+              ],
+              onChanged: (String v) =>
+                  _commitMpv(c.copyWith(aspectOverride: v)),
+            ),
+            AdaptiveSettingsSliderRow(
+              title: t.video_setting_mpv_zoom,
+              icon: Icons.zoom_out_map_outlined,
+              min: -2,
+              max: 2,
+              divisions: 40,
+              value: c.videoZoom.clamp(-2.0, 2.0),
+              label: c.videoZoom.toStringAsFixed(2),
+              onChanged: (double v) => _commitMpv(c.copyWith(videoZoom: v)),
+            ),
+            AdaptiveSettingsSliderRow(
+              title: t.video_setting_mpv_panscan,
+              icon: Icons.crop_outlined,
+              divisions: 20,
+              value: c.panscan.clamp(0.0, 1.0),
+              label: c.panscan.toStringAsFixed(2),
+              onChanged: (double v) => _commitMpv(c.copyWith(panscan: v)),
+            ),
+          ],
+        ),
+        SizedBox(height: gap),
+        // 色彩均衡
+        AdaptiveSettingsSection(
+          title: t.video_setting_mpv_group_color,
+          children: <Widget>[
+            _mpvIntSlider(
+                t.video_setting_mpv_brightness,
+                Icons.brightness_6_outlined,
+                c.brightness,
+                -100,
+                100,
+                (int v) => c.copyWith(brightness: v)),
+            _mpvIntSlider(t.video_setting_mpv_contrast, Icons.contrast_outlined,
+                c.contrast, -100, 100, (int v) => c.copyWith(contrast: v)),
+            _mpvIntSlider(
+                t.video_setting_mpv_saturation,
+                Icons.invert_colors_outlined,
+                c.saturation,
+                -100,
+                100,
+                (int v) => c.copyWith(saturation: v)),
+            _mpvIntSlider(t.video_setting_mpv_gamma, Icons.tonality_outlined,
+                c.gamma, -100, 100, (int v) => c.copyWith(gamma: v)),
+            _mpvIntSlider(t.video_setting_mpv_hue, Icons.colorize_outlined,
+                c.hue, -100, 100, (int v) => c.copyWith(hue: v)),
+          ],
+        ),
+        SizedBox(height: gap),
+        // 音频
+        AdaptiveSettingsSection(
+          title: t.video_setting_mpv_group_audio,
+          children: <Widget>[
+            _mpvIntSlider(
+                t.video_setting_mpv_audio_delay,
+                Icons.av_timer_outlined,
+                c.audioDelayMs,
+                -2000,
+                2000,
+                (int v) => c.copyWith(audioDelayMs: v)),
+            _mpvSwitch(t.video_setting_mpv_pitch, c.audioPitchCorrection,
+                (bool v) => c.copyWith(audioPitchCorrection: v),
+                icon: Icons.graphic_eq_outlined),
+            AdaptiveSettingsPickerRow<String>(
+              title: t.video_setting_mpv_channels,
+              icon: Icons.surround_sound_outlined,
+              selected: c.audioChannels,
+              options: <AdaptiveSettingsPickerOption<String>>[
+                AdaptiveSettingsPickerOption<String>(
+                    value: 'auto-safe',
+                    label: t.video_setting_mpv_channels_auto),
+                AdaptiveSettingsPickerOption<String>(
+                    value: 'stereo',
+                    label: t.video_setting_mpv_channels_stereo),
+                AdaptiveSettingsPickerOption<String>(
+                    value: 'mono', label: t.video_setting_mpv_channels_mono),
+              ],
+              onChanged: (String v) => _commitMpv(c.copyWith(audioChannels: v)),
+            ),
+            _mpvSwitch(t.video_setting_mpv_normalize, c.normalizeDownmix,
+                (bool v) => c.copyWith(normalizeDownmix: v),
+                icon: Icons.compress_outlined),
+          ],
+        ),
+        SizedBox(height: gap),
+        // 播放
+        AdaptiveSettingsSection(
+          title: t.video_setting_mpv_group_playback,
+          children: <Widget>[
+            _mpvSwitch(t.video_setting_mpv_loop, c.loopFile,
+                (bool v) => c.copyWith(loopFile: v),
+                icon: Icons.repeat_outlined),
+          ],
+        ),
+        SizedBox(height: gap),
+        // 高级：原始 mpv.conf（多行逃生口，AdaptiveSettingsTextField 不支持多行故用原生）
+        SettingsSectionHeader(t.video_setting_mpv_group_advanced),
+        SizedBox(height: gap / 2),
+        TextField(
+          controller: _rawConfController,
+          minLines: 3,
+          maxLines: 8,
+          style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+          decoration: InputDecoration(
+            labelText: t.video_setting_mpv_raw,
+            helperText: t.video_setting_mpv_raw_hint,
+            helperMaxLines: 4,
+            border: const OutlineInputBorder(),
+          ),
+          onChanged: (String v) => _commitMpv(c.copyWith(rawConf: v)),
+        ),
+        SizedBox(height: gap),
+        // 重置：全部回 mpv 默认（含清空原始 conf 框）。
+        AdaptiveSettingsSection(
+          children: <Widget>[
+            AdaptiveSettingsRow(
+              title: t.video_setting_mpv_reset,
+              icon: Icons.restart_alt_outlined,
+              showIcon: true,
+              onTap: () {
+                _rawConfController.clear();
+                _commitMpv(VideoMpvConfig.defaults);
+              },
+            ),
+          ],
         ),
       ],
     );

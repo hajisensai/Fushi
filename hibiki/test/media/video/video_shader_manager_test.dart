@@ -66,6 +66,93 @@ void main() {
     });
   });
 
+  group('mpvConfigDirCandidates', () {
+    test('Windows：MPV_HOME 优先，再 %APPDATA%\\mpv', () {
+      final List<String> dirs = mpvConfigDirCandidates(
+        env: <String, String>{
+          'MPV_HOME': r'C:\custom\mpv',
+          'APPDATA': r'C:\Users\me\AppData\Roaming',
+        },
+        isWindows: true,
+        isMacOS: false,
+      );
+      expect(dirs.first, r'C:\custom\mpv');
+      expect(dirs.length, 2);
+    });
+
+    test('Windows：无 MPV_HOME 只回 %APPDATA%\\mpv', () {
+      final List<String> dirs = mpvConfigDirCandidates(
+        env: <String, String>{'APPDATA': r'C:\Users\me\AppData\Roaming'},
+        isWindows: true,
+        isMacOS: false,
+      );
+      expect(dirs, <String>[p.join(r'C:\Users\me\AppData\Roaming', 'mpv')]);
+    });
+
+    test('Linux：XDG_CONFIG_HOME 设了则用它，不回退 ~/.config', () {
+      final List<String> dirs = mpvConfigDirCandidates(
+        env: <String, String>{
+          'XDG_CONFIG_HOME': '/home/me/.cfg',
+          'HOME': '/home/me',
+        },
+        isWindows: false,
+        isMacOS: false,
+      );
+      expect(dirs, <String>[p.join('/home/me/.cfg', 'mpv')]);
+    });
+
+    test('Linux：无 XDG → ~/.config/mpv', () {
+      final List<String> dirs = mpvConfigDirCandidates(
+        env: <String, String>{'HOME': '/home/me'},
+        isWindows: false,
+        isMacOS: false,
+      );
+      expect(dirs, <String>[p.join('/home/me', '.config', 'mpv')]);
+    });
+
+    test('macOS：追加 ~/Library/Application Support/mpv', () {
+      final List<String> dirs = mpvConfigDirCandidates(
+        env: <String, String>{'HOME': '/Users/me'},
+        isWindows: false,
+        isMacOS: true,
+      );
+      expect(dirs, <String>[
+        p.join('/Users/me', '.config', 'mpv'),
+        p.join('/Users/me', 'Library', 'Application Support', 'mpv'),
+      ]);
+    });
+
+    test('空环境 → 空候选', () {
+      expect(
+        mpvConfigDirCandidates(
+            env: const <String, String>{}, isWindows: false, isMacOS: false),
+        isEmpty,
+      );
+    });
+  });
+
+  group('discoverMpvShadersIn', () {
+    late Directory cfgDir;
+    setUp(() => cfgDir = Directory.systemTemp.createTempSync('mpv_cfg_'));
+    tearDown(() => cfgDir.deleteSync(recursive: true));
+
+    test('扫 shaders/ 子目录下 .glsl/.hook，绝对路径按名排序', () {
+      final Directory shaders = Directory(p.join(cfgDir.path, 'shaders'))
+        ..createSync();
+      File(p.join(shaders.path, 'Zoom.glsl')).writeAsStringSync('//');
+      File(p.join(shaders.path, 'Anime4K.hook')).writeAsStringSync('//');
+      File(p.join(shaders.path, 'notes.txt')).writeAsStringSync('x');
+      expect(discoverMpvShadersIn(cfgDir), <String>[
+        p.join(shaders.path, 'Anime4K.hook'),
+        p.join(shaders.path, 'Zoom.glsl'),
+      ]);
+    });
+
+    test('无 shaders/ 子目录 → 空', () {
+      expect(discoverMpvShadersIn(cfgDir), isEmpty);
+    });
+  });
+
   group('resolveShaderPathsIn', () {
     late Directory dir;
     setUp(() => dir = Directory.systemTemp.createTempSync('shader_resolve_'));

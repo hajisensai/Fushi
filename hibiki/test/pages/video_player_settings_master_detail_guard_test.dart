@@ -21,7 +21,7 @@ void main() {
     final String method = _between(
       source,
       'void _showPlayerSettings() {',
-      '_openShaderDialog() async {',
+      '_showSubtitleSourceMenu(',
     );
 
     // 用共享面板 + 与阅读器一致的呈现（桌面分栏宽画布 / 移动 bottom sheet）。
@@ -32,12 +32,26 @@ void main() {
     expect(method, contains('adaptiveModalSheet<void>('));
     expect(method, contains('isDesktopPlatform'));
 
+    // 着色器/mpv 配置改为面板内嵌：构造面板时直接喂初值 + 内嵌回调，不再弹独立对话框。
+    expect(method, contains('initialShadersEnabled:'));
+    expect(method, contains('onApplyShaders:'));
+    expect(method, contains('initialMpvConfig:'));
+    expect(method, contains('onMpvConfigChanged:'));
+
     // 旧 bespoke 深色单列面板已移除（防回归）。
     expect(method, isNot(contains('showModalBottomSheet')),
         reason: '播放设置不再走 bespoke bottom sheet');
     expect(method, isNot(contains('Colors.black87')));
     expect(method, isNot(contains('StatefulBuilder')));
     expect(method, isNot(contains('ChoiceChip')));
+
+    // 着色器/mpv 不再弹独立对话框（防回归到旧的 pop 面板 + 二级对话框）。
+    expect(source, isNot(contains('_openShaderDialog')),
+        reason: '着色器改为面板内嵌，不再有独立对话框方法');
+    expect(source, isNot(contains('_openMpvConfigDialog')),
+        reason: 'mpv 配置改为面板内嵌，不再有独立对话框方法');
+    expect(source, isNot(contains('VideoShaderDialog(')),
+        reason: '着色器改用内嵌 VideoShaderManagerView');
   });
 
   test('VideoQuickSettingsSheet mirrors the reader master-detail skeleton', () {
@@ -77,5 +91,15 @@ void main() {
     ]) {
       expect(source, contains(id), reason: 'missing category $id');
     }
+
+    // 着色器/mpv 详情改为面板内嵌（不再用 NavigationRow pop 面板再弹对话框）。
+    expect(source, contains('VideoShaderManagerView('),
+        reason: '着色器详情内嵌 VideoShaderManagerView');
+    expect(source, contains('AdaptiveSettingsPickerRow<String>('),
+        reason: 'mpv 配置内嵌成 AdaptiveSettings 行（hwdec/aspect/channels 用 picker）');
+    expect(source, contains('VideoMpvConfig.defaults'),
+        reason: 'mpv 内嵌详情含「重置默认」');
+    expect(source, isNot(contains('widget.onOpenShaders')));
+    expect(source, isNot(contains('widget.onOpenMpvConfig')));
   });
 }

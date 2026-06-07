@@ -87,6 +87,84 @@ Future<List<String>> resolveEnabledShaderPaths(
   return resolveShaderPathsIn(await mpvShaderDirectory(), enabledNames);
 }
 
+/// 本机 mpv 配置目录的候选路径（按优先级），用于发现用户已有的着色器。纯函数
+/// （注入 [env] 与平台标志），便于单测。
+///
+/// 优先级：`MPV_HOME`（mpv 官方支持的覆盖变量，全平台）→ 平台默认配置目录。
+/// - Windows：`%APPDATA%\mpv`（mpv / mpv.net 默认）。
+/// - 类 Unix：`$XDG_CONFIG_HOME/mpv`（设了则用它，符合 XDG 语义）否则 `~/.config/mpv`。
+/// - macOS：再追加 `~/Library/Application Support/mpv`（部分安装放这里）。
+List<String> mpvConfigDirCandidates({
+  required Map<String, String> env,
+  required bool isWindows,
+  required bool isMacOS,
+}) {
+  final List<String> out = <String>[];
+  void add(String? path) {
+    if (path == null || path.isEmpty) return;
+    if (!out.contains(path)) out.add(path);
+  }
+
+  add(env['MPV_HOME']);
+
+  if (isWindows) {
+    final String? appData = env['APPDATA'];
+    if (appData != null && appData.isNotEmpty) add(p.join(appData, 'mpv'));
+    return out;
+  }
+
+  final String? xdg = env['XDG_CONFIG_HOME'];
+  final String? home = env['HOME'];
+  if (xdg != null && xdg.isNotEmpty) {
+    add(p.join(xdg, 'mpv'));
+  } else if (home != null && home.isNotEmpty) {
+    add(p.join(home, '.config', 'mpv'));
+  }
+  if (isMacOS && home != null && home.isNotEmpty) {
+    add(p.join(home, 'Library', 'Application Support', 'mpv'));
+  }
+  return out;
+}
+
+/// 扫 [mpvConfigDir] 下 `shaders/` 子目录里的着色器文件（绝对路径，按名排序）。纯函数。
+/// mpv 配置约定写 `glsl-shaders=~~/shaders/xxx.glsl`，故着色器惯例放在 `shaders/` 子目录。
+List<String> discoverMpvShadersIn(Directory mpvConfigDir) {
+  final Directory shaderDir = Directory(p.join(mpvConfigDir.path, 'shaders'));
+  if (!shaderDir.existsSync()) return const <String>[];
+  final List<String> out = <String>[];
+  for (final FileSystemEntity e in shaderDir.listSync(followLinks: false)) {
+    if (e is! File) continue;
+    if (kShaderExtensions.contains(p.extension(e.path).toLowerCase())) {
+      out.add(e.path);
+    }
+  }
+  out.sort();
+  return out;
+}
+
+/// 发现本机 mpv 安装里已有的着色器（绝对路径，按 basename 去重保序）。
+///
+/// 用 [Platform.environment] / [Platform.isWindows] 解析 [mpvConfigDirCandidates]，
+/// 取存在的目录扫其 `shaders/`。移动端 / 未装 mpv → 候选目录都不存在 → 空列表
+/// （天然降级，UI 提示「未发现本机 mpv」）。
+Future<List<String>> discoverLocalMpvShaders() async {
+  final List<String> candidates = mpvConfigDirCandidates(
+    env: Platform.environment,
+    isWindows: Platform.isWindows,
+    isMacOS: Platform.isMacOS,
+  );
+  final List<String> out = <String>[];
+  final Set<String> seenNames = <String>{};
+  for (final String dirPath in candidates) {
+    final Directory dir = Directory(dirPath);
+    if (!dir.existsSync()) continue;
+    for (final String shaderPath in discoverMpvShadersIn(dir)) {
+      if (seenNames.add(p.basename(shaderPath))) out.add(shaderPath);
+    }
+  }
+  return out;
+}
+
 /// 把 [absolutePaths] 着色器应用到 media_kit [player]（仅 libmpv 后端/桌面生效）。
 ///
 /// 先把 `glsl-shaders` 清空，再逐个 `glsl-shaders-append`——用 append 规避
