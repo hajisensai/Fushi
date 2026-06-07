@@ -302,22 +302,26 @@ void main() {
     });
 
     test(
-        'paginated re-anchor captures progress, invalidates metrics, '
-        'serialises via _reanchorPending and re-snaps to a page boundary', () {
+        'paginated re-anchor captures precise char offset, invalidates '
+        'metrics, serialises via _reanchorPending and re-snaps via '
+        'scrollToCharOffset (BUG-109)', () {
       final int idx = paginated.indexOf('reanchorAfterStyleChange =');
       expect(idx, greaterThanOrEqualTo(0));
       // 取方法体（到下一处 window.hoshiReader. 赋值之前，足够覆盖本方法）。
       final int next = paginated.indexOf('window.hoshiReader.', idx + 1);
       final String body =
           paginated.substring(idx, next < 0 ? paginated.length : next);
-      expect(body, contains('calculateProgress()'),
-          reason: '必须在重排前捕捉阅读进度，否则无法回到同一页');
+      // BUG-109：分页重锚改用精确字符偏移（对齐 setChromeInsets），不再用粗粒度
+      // 进度分数 —— 后者重排后 alignToPage 取整会落到相邻页，切主题/字体「翻页」。
+      expect(body, contains('getFirstVisibleCharOffset()'),
+          reason: '必须在重排前用 getFirstVisibleCharOffset 精确捕捉首个可见字符（BUG-109）');
       expect(body, contains('this.paginationMetrics = null'),
           reason: '字体变更后分页 metrics 失效，不置空会用旧 progressStops 算错页');
       expect(body, contains('_reanchorPending'),
           reason: '必须复用既有 in-flight 串行标志，避免与 chrome-inset/页尺寸重锚打架');
-      expect(body, contains('scrollToProgressPaged'),
-          reason: 'rAF 内必须重新对齐到分页边界（顺带 lockRootViewport 清 root 滚动）');
+      expect(body, contains('scrollToCharOffset('),
+          reason: 'rAF 内必须用 scrollToCharOffset 落到该字符真实所在页（BUG-109），'
+              '勿退回 scrollToProgressPaged 的进度分数对齐');
     });
 
     test('continuous re-anchor captures progress and re-scrolls', () {

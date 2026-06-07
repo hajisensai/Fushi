@@ -13,6 +13,13 @@
 
 ---
 
+## BUG-109 · 阅读器切换主题/字体时正文「翻页」（当前阅读位置跳到相邻页）
+- **报告**：2026-06-07（用户：「切换主题、字体的时候文字会翻页」，与高亮遮挡同批；高亮遮挡问题另记 BUG-110）。采番注：初记 108，rebase 到 develop 时 108 已被并发提交「查词弹窗 ruby 重叠」占用，改取 109。
+- **真实性**：✅ **真 bug（沿真实代码路径定位）**。切字号/字体/主题 live 变更最终都进 `reader_hibiki_page.dart` 的 `_applyStylesLive` → JS `ReaderPaginationScripts` 分页 shell 的 `reanchorAfterStyleChange`（`reader_pagination_scripts.dart:1214`）。旧实现按**粗粒度进度分数**重锚：reflow 前 `calculateProgress()`（已读字符/总字符），换样式后 rAF `scrollToProgressPaged(progress)` → `findNodeAtProgress`（`Math.ceil(总字×progress)` 反推节点）→ `alignToPage` 取整到分页边界。字体/主题改变后字形宽度与列宽变化，同一进度分数反推出的字符落点 + 取整后落到**相邻页边界** → 表现为「翻页」。同文件 `setChromeInsets`（:1117）早已用**精确字符偏移**重锚（`getFirstVisibleCharOffset()` → `scrollToCharOffset(charOffset, scrollBefore)`，HBK-REG-004 验证），但 `reanchorAfterStyleChange` 没复用，这就是精度损失的根因。
+- **[x] ① 已修复** — 本提交。根因修（对齐成熟路径、复用现成精确锚定，非补丁）：分页版 `reanchorAfterStyleChange` 改为 reflow 前 `getFirstVisibleCharOffset()` 捕捉首个可见字符 + `getPagePosition` 记原页位，换样式失效 metrics 后 rAF `scrollToCharOffset(charOffset, scrollBefore)` 落到该字符真实所在页，并用 `scrollBefore` 作 page-stable hint（±1 列保持原页）抑制微小重排的可见跳动。连续模式 `reanchorAfterStyleChange`（:1524）走 `scrollToProgressContinuous`（无分页边界对齐，progress 恢复本就合理）**不动**。共用 `_reanchorPending` 串行标志不变（与 chrome-inset/页尺寸重锚互斥，HBK-REG-004）。
+- **[x] ② 已加自动化测试** — `hibiki/test/reader/reanchor_charoffset_guard_test.dart`（源码守卫：截取 `reanchorAfterStyleChange` 函数体，断言用 `getFirstVisibleCharOffset`/`scrollToCharOffset`、不含 `scrollToProgressPaged(`/`calculateProgress(` 调用、传 `getPagePosition` hint；JS 真行为需真 WebView headless 不可跑）；并更新 `reader_pagination_scripts_test.dart` 的分页 BUG-023 用例断言为精确锚定（连续模式用例不变）。
+- **备注**：reader/WebView/分页类。`flutter analyze` 改动文件 0 issue + 全量 flutter test 通过（唯一失败 `video_quick_settings_sheet.dart` MD3 守卫为 develop 既存红、并发非本功能，与本改动无关）。**真机/桌面肉眼复测待用户**：阅读器中切换主题与字体，正文应停留原位不翻页（允许 ±1 列内的极小回流）。
+
 ## BUG-108 · 查词弹窗义项里的振假名(ruby)与漢字重叠
 - **报告**：2026-06-07（用户：「查词窗口里的 品格和下面的假名重叠了」，截图为明鏡「◆品格◆」关联词列表，大仰/仰々しい 等词的 `<rt>` 振假名压在上一行漢字上）。
 - **真实性**：✅ **真 bug（沿真实渲染路径 + 截图定位）**。词典义项正文里的振假名走 `<ruby><rt>`（headword 经 `popup.js:buildFuriganaEl`，义项正文经 `renderStructuredContent`/`sanitizeInlineHtml`，落在 `.glossary-group > div[data-dictionary]` / `.glossary-content` 容器）。根因：`assets/popup/popup.css` 里**唯一**的 ruby 规则是 `.expression rt`（仅 headword，`popup.css:110`），义项正文的 ruby/rt **没有任何行高预留**——容器用固定数值 `line-height: 1.4`（`popup.css:368`/`.glossary-content` 无 line-height）。WebKit/Blink 在 line-height 为固定倍数时**不为 ruby 标注额外加 leading**，`<rt>` 便向上溢出压到上一行漢字。明鏡的关联词列表每行都带 ruby，故重叠尤其明显。

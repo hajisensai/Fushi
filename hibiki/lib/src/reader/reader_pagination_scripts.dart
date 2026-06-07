@@ -1212,25 +1212,35 @@ window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
   });
 };
 window.hoshiReader.reanchorAfterStyleChange = function(styleEl, css) {
-  // 外部 live CSS 变更（字体大小 / 行间 / 余白）会让 body 重新分页排版。必须像
-  // updatePageSize 一样「重排前捕捉进度 → 换样式 → 失效 metrics → rAF 重锚到分页
-  // 边界」，否则 body 停在重排前的错位滚动量、且重排过程残留的 root scrollTop 不被
-  // 清掉，最上一行被裁。共用 _reanchorPending 串行标志，避免与 chrome-inset / 页尺寸
-  // 重锚互相打架（见 setChromeInsets / updatePageSize，HBK-REG-004 / BUG-023）。
+  // 外部 live CSS 变更（字体大小 / 字体 / 主题 / 行间 / 余白）会让 body 重新分页
+  // 排版。必须「重排前捕捉位置 → 换样式 → 失效 metrics → rAF 重锚」，否则 body 停在
+  // 重排前的错位滚动量、且重排过程残留的 root scrollTop 不被清掉，最上一行被裁
+  // （BUG-023）。
+  //
+  // BUG-109：重锚必须用**精确字符偏移**（getFirstVisibleCharOffset →
+  // scrollToCharOffset），对齐同文件 setChromeInsets 的成熟路径，而非粗粒度进度分数
+  // （calculateProgress → scrollToProgressPaged）。进度分数 = 已读字符/总字符，重排后
+  // 字形宽度与列宽变化 → 同一分数反推出的字符落点 + alignToPage 取整落到相邻页边界
+  // → 切主题/字体「翻页」。getFirstVisibleCharOffset 锚到首个可见字符的真实所在页，
+  // 并用 scrollBefore 作 page-stable hint（±1 列保持原页）抑制微小重排的可见跳动。
+  //
+  // 共用 _reanchorPending 串行标志，避免与 chrome-inset / 页尺寸重锚互相打架
+  // （见 setChromeInsets / updatePageSize，HBK-REG-004）。
   if (!this.didInitialize) { styleEl.textContent = css; return; }
   var inFlight = this._reanchorPending === true;
-  var progress = inFlight ? 0 : this.calculateProgress();
+  var charOffset = inFlight ? -1 : this.getFirstVisibleCharOffset();
+  var scrollBefore = inFlight ? 0 : this.getPagePosition(this.getScrollContext());
   styleEl.textContent = css;
   this.paginationMetrics = null;
   var cs = this._contentSize();
   document.documentElement.style.setProperty('--hoshi-image-max-width', Math.max(1, Math.floor(cs.w * $imageWidthRatio)) + 'px');
   document.documentElement.style.setProperty('--hoshi-image-max-height', Math.max(1, cs.h) + 'px');
-  if (inFlight) return;
+  if (inFlight || charOffset < 0) return;
   this._reanchorPending = true;
   var self = this;
   requestAnimationFrame(function() {
     try {
-      self.scrollToProgressPaged(self.getScrollContext(), progress);
+      self.scrollToCharOffset(charOffset, scrollBefore);
     } finally {
       self._reanchorPending = false;
     }
