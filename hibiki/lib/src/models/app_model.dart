@@ -303,6 +303,13 @@ class AppModel with ChangeNotifier {
   String? get initError => _initError;
   String? _initError;
 
+  /// Non-null when init was refused because the on-disk DB was created by a
+  /// NEWER build of Hibiki than this one (downgrade protection). The UI shows a
+  /// dedicated "update your app" notice with NO retry button — retry would fail
+  /// identically and this is not a transient error. The DB file is left intact.
+  HibikiDatabaseDowngradeException? get downgradeError => _downgradeError;
+  HibikiDatabaseDowngradeException? _downgradeError;
+
   /// Clears the error state and re-runs [initialise].
   Future<void> retryInitialise() async {
     // A previous attempt may have partially initialised resources. Tear down
@@ -323,6 +330,7 @@ class AppModel with ChangeNotifier {
       _databaseOpened = false;
     }
     _initError = null;
+    _downgradeError = null;
     _isInitialised = false;
     notifyListeners();
     await initialise();
@@ -1318,6 +1326,16 @@ class AppModel with ChangeNotifier {
             .start(alwaysOnTop: desktopClipboardAlwaysOnTop)
             .catchError((Object _) {}));
       }
+      notifyListeners();
+    } on HibikiDatabaseDowngradeException catch (e, stack) {
+      // The DB is newer than this build. drift refused to open it WITHOUT
+      // touching the file (no DROP / migration ran). Surface a dedicated,
+      // non-retryable notice instead of the generic init-error screen, and
+      // STOP — never continue init, never delete or rebuild the DB.
+      debugPrint('[Hibiki] init REFUSED (DB downgrade): $e\n$stack');
+      ErrorLogService.instance.log('AppModel.initialise.downgrade', e, stack);
+      _downgradeError = e;
+      _initError = '$e';
       notifyListeners();
     } catch (e, stack) {
       debugPrint('[Hibiki] init FAILED: $e\n$stack');

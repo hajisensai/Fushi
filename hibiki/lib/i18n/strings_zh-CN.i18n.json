@@ -1400,5 +1400,7 @@
     "desktop_clipboard_enabled_hint": "监听剪贴板+全局热键弹出查词窗（桌面）",
     "desktop_clipboard_always_on_top": "查词时窗口置顶",
     "texthooker_experimental_banner": "文本钩子为实验性功能：实时文本、查词与制卡可能尚不稳定。",
-    "settings_experimental_suffix": "（实验性，可能不稳定）"
+    "settings_experimental_suffix": "（实验性，可能不稳定）",
+    "db_downgrade_title": "请更新 Hibiki",
+    "db_downgrade_message": "此数据库由更新版本的 Hibiki 创建（schema v$dbVersion）。当前应用版本过旧（v$appVersion）。已阻止打开以保护你的数据。请更新应用后重试。"
 }

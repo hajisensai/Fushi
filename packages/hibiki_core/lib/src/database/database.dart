@@ -10,6 +10,31 @@ import 'tables.dart';
 
 part 'database.g.dart';
 
+/// Thrown when the on-disk database was created by a NEWER build of Hibiki than
+/// the one currently running (`db user_version > code schemaVersion`).
+///
+/// 降级保护：当用户用旧版应用打开由新版创建的库时，绝不 DROP/迁移/重建，而是抛出此
+/// 异常让打开失败、事务回滚、库文件原样保留，并由 UI 提示用户更新应用。这是修复
+/// 「旧 app 启动把用户数据库降级破坏」整类事故的根因拦截。
+class HibikiDatabaseDowngradeException implements Exception {
+  /// The schema version stored in the on-disk DB file (created by a newer app).
+  final int dbVersion;
+
+  /// The schema version this (older) build of the code knows about.
+  final int appSchemaVersion;
+
+  const HibikiDatabaseDowngradeException({
+    required this.dbVersion,
+    required this.appSchemaVersion,
+  });
+
+  @override
+  String toString() =>
+      'HibikiDatabaseDowngradeException: database was created by a newer '
+      'version of Hibiki (schema v$dbVersion); this app only understands '
+      'schema v$appSchemaVersion. Opening was refused to protect your data.';
+}
+
 LazyDatabase _openDb(String dbDirectory) {
   return LazyDatabase(() async {
     final file = File(p.join(dbDirectory, 'hibiki.db'));
@@ -55,11 +80,8 @@ LazyDatabase _openDb(String dbDirectory) {
   MiningStatistics,
 ])
 class HibikiDatabase extends _$HibikiDatabase {
-  final String _dbDirectory;
-  HibikiDatabase(String dbDirectory)
-      : _dbDirectory = dbDirectory,
-        super(_openDb(dbDirectory));
-  HibikiDatabase.forTesting(super.e) : _dbDirectory = '';
+  HibikiDatabase(String dbDirectory) : super(_openDb(dbDirectory));
+  HibikiDatabase.forTesting(super.e);
 
   @override
   int get schemaVersion => 23;
@@ -68,62 +90,21 @@ class HibikiDatabase extends _$HibikiDatabase {
   MigrationStrategy get migration => MigrationStrategy(
         onUpgrade: (m, from, to) async {
           if (from > to) {
-            if (_dbDirectory.isNotEmpty) {
-              // Back up before the destructive drop-and-recreate. A failed
-              // backup MUST abort the downgrade (let the error propagate)
-              // rather than proceed to wipe user data. Timestamped suffix so
-              // repeat downgrades from the same version don't clobber an
-              // earlier backup.
-              final String base = p.join(_dbDirectory, 'hibiki.db');
-              final String suffix =
-                  '.bak.v$from.${DateTime.now().millisecondsSinceEpoch}';
-              for (final String ext in ['', '-wal', '-shm']) {
-                final File src = File('$base$ext');
-                if (await src.exists()) {
-                  await src.copy('$base$ext$suffix');
-                }
-              }
-            }
-            // Disable FK enforcement for the destructive teardown. Production
-            // opens with `PRAGMA foreign_keys = ON` (see _openDb); dropping
-            // tables in declaration order then drops a parent (epub_books)
-            // before a child whose FK references it (book_tag_mappings), and the
-            // child-table validation fails with "no such table". Because each
-            // DROP auto-commits (this migration is not wrapped in a
-            // transaction), that abort leaves the DB permanently half-dropped —
-            // user_version unchanged, baseline tables gone, every later launch
-            // crashing on the first query. FK off makes teardown order-
-            // independent. (BUG-075)
-            //
-            // This teardown is intentionally NON-atomic: each DROP auto-commits,
-            // and SQLite cannot toggle `PRAGMA foreign_keys` inside a
-            // transaction, so drop+createAll cannot be wrapped in one. The
-            // pre-drop `.bak` snapshot above is the recovery net if createAll
-            // fails partway. Do NOT "fix" this by adding a transaction — that
-            // would silently no-op the FK toggle and reintroduce the crash.
-            await customStatement('PRAGMA foreign_keys = OFF');
-            try {
-              // Drop every table actually present, not just allTables: a
-              // future-schema DB may carry tables this build doesn't know, and a
-              // partially-built DB may carry tables this build's allTables omits.
-              // Enumerating sqlite_master guarantees a clean slate before
-              // createAll regardless of which schema actually wrote the file.
-              final List<QueryRow> existingTables = await customSelect(
-                "SELECT name FROM sqlite_master "
-                "WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
-              ).get();
-              for (final QueryRow row in existingTables) {
-                await customStatement(
-                  'DROP TABLE IF EXISTS "${row.read<String>('name')}"',
-                );
-              }
-              await m.createAll();
-            } finally {
-              // Restore the enforcement the connection was opened with on every
-              // exit path — a createAll failure must not leave FK disabled.
-              await customStatement('PRAGMA foreign_keys = ON');
-            }
-            return;
+            // DOWNGRADE PROTECTION (root-cause fix for the recurring "old app
+            // downgrades & destroys the user DB" incidents). drift dispatches
+            // onUpgrade whenever the stored user_version != code schemaVersion,
+            // INCLUDING when the DB is NEWER than the code (from > to). This is
+            // the EARLIEST hook drift gives us, and it runs BEFORE any DROP /
+            // migration / customStatement below. We refuse the open here by
+            // throwing, which aborts beforeOpen: drift never advances
+            // user_version and the DB file is left byte-for-byte intact. NEVER
+            // drop / migrate / rebuild in this branch — a previous build did
+            // exactly that and wiped users' libraries twice. The app layer
+            // catches this exception and shows an "update your app" notice.
+            throw HibikiDatabaseDowngradeException(
+              dbVersion: from,
+              appSchemaVersion: to,
+            );
           }
           if (from < 2) {
             if (!await _columnExists('dictionary_metadata', 'type')) {
@@ -371,6 +352,23 @@ class HibikiDatabase extends _$HibikiDatabase {
         onCreate: (m) async {
           await m.createAll();
           await _ensureIndexes();
+        },
+        beforeOpen: (details) async {
+          // Second, belt-and-suspenders downgrade guard. drift calls beforeOpen
+          // on every open with the on-disk version (`versionBefore`, null for a
+          // freshly created DB) and the code version (`versionNow`). On a real
+          // downgrade onUpgrade already threw above (hadUpgrade is true when
+          // versionBefore != versionNow), but if that branch is ever weakened
+          // this independent check still refuses the open before any query runs.
+          // No DROP / migration here — just throw to abort the open with the DB
+          // untouched.
+          final int? before = details.versionBefore;
+          if (before != null && before > schemaVersion) {
+            throw HibikiDatabaseDowngradeException(
+              dbVersion: before,
+              appSchemaVersion: schemaVersion,
+            );
+          }
         },
       );
 

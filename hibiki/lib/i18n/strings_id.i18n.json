@@ -1400,5 +1400,7 @@
     "desktop_clipboard_enabled_hint": "Watch clipboard + global hotkey to pop a lookup window (desktop)",
     "desktop_clipboard_always_on_top": "Keep lookup window on top",
     "texthooker_experimental_banner": "Texthooker is experimental — live text, lookup and card creation may be unstable.",
-    "settings_experimental_suffix": " (experimental, may be unstable)"
+    "settings_experimental_suffix": " (experimental, may be unstable)",
+    "db_downgrade_title": "Update Hibiki",
+    "db_downgrade_message": "This database was created by a newer version of Hibiki (schema v$dbVersion). Your current app is too old (v$appVersion). Opening was blocked to protect your data. Please update the app and try again."
 }

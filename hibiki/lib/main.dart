@@ -458,6 +458,61 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
     //
     // Use system brightness to match the native splash and avoid a white
     // flash when the user has dark mode enabled.
+    // Downgrade protection: the on-disk DB was created by a newer build. Show a
+    // dedicated, NON-retryable "update your app" notice (no Retry button —
+    // retrying re-runs init and fails identically; the DB is intentionally left
+    // untouched). Checked BEFORE the generic init-error screen.
+    final downgrade = appModel.downgradeError;
+    if (downgrade != null) {
+      final brightness =
+          WidgetsBinding.instance.platformDispatcher.platformBrightness;
+      final cs = ColorScheme.fromSeed(
+        seedColor: const Color(0xFF1F4959),
+        brightness: brightness,
+      );
+      return TranslationProvider(
+        child: MaterialApp(
+          debugShowCheckedModeBanner: false,
+          theme: ThemeData(useMaterial3: true, colorScheme: cs),
+          home: Scaffold(
+            backgroundColor: _savedSplashColor,
+            body: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.system_update, size: 48, color: cs.primary),
+                    const SizedBox(height: 16),
+                    Text(
+                      t.db_downgrade_title,
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: cs.onSurface,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      t.db_downgrade_message(
+                        dbVersion: downgrade.dbVersion,
+                        appVersion: downgrade.appSchemaVersion,
+                      ),
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: cs.onSurfaceVariant,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
     if (appModel.initError != null) {
       final brightness =
           WidgetsBinding.instance.platformDispatcher.platformBrightness;
