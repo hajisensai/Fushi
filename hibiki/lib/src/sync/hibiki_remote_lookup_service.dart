@@ -15,6 +15,15 @@ abstract class HibikiRemoteLookupService {
   });
 }
 
+/// 浏览器扩展挖词的窄接口（与查词分离，避免 server 直接依赖 AnkiRepository）。
+abstract class HibikiRemoteMiningService {
+  /// 返回 MineResult.name（'success'|'duplicate'|'notConfigured'|'error'）。
+  Future<String> mineEntry({
+    required Map<String, String> fields,
+    required String sentence,
+  });
+}
+
 class RemoteAudioLookup {
   const RemoteAudioLookup({
     required this.bytes,

@@ -2646,6 +2646,10 @@ class AppModel with ChangeNotifier {
     return _AppModelRemoteLookupService(this);
   }
 
+  HibikiRemoteMiningService createRemoteMiningService() {
+    return _AppModelRemoteLookupService(this);
+  }
+
   // ── yomitan-api server (lifecycle) ──────────────────────────────────
   YomitanApiServerManager? _yomitanServerManager;
 
@@ -2822,10 +2826,25 @@ class AppModel with ChangeNotifier {
   }
 }
 
-class _AppModelRemoteLookupService implements HibikiRemoteLookupService {
+class _AppModelRemoteLookupService
+    implements HibikiRemoteLookupService, HibikiRemoteMiningService {
   const _AppModelRemoteLookupService(this._appModel);
 
   final AppModel _appModel;
+
+  @override
+  Future<String> mineEntry({
+    required Map<String, String> fields,
+    required String sentence,
+  }) async {
+    final BaseAnkiRepository repo = _appModel.platformServices
+        .createAnkiRepository();
+    final MineResult result = await repo.mineEntry(
+      rawPayloadJson: jsonEncode(fields),
+      context: AnkiMiningContext(sentence: sentence),
+    );
+    return result.name;
+  }
 
   @override
   Future<DictionarySearchResult?> searchDictionary({
