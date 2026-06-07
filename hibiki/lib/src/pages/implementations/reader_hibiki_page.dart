@@ -327,6 +327,10 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   double get popupTopReserve => _stableTopInset;
 
   @override
+  bool get popupVerticalWriting =>
+      _settings?.writingMode.startsWith('vertical') ?? false;
+
+  @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);

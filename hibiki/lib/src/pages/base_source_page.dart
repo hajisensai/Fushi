@@ -291,6 +291,10 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   double get popupPadding => 6;
   double get popupBottomReserve => 0;
   double get popupTopReserve => 0;
+
+  /// 竖排表面（reader vertical-rl）查词时让弹窗放当前列左/右侧而非上/下。
+  /// 默认 false（视频/有声书横排字幕、首页等非竖排表面不变）。
+  bool get popupVerticalWriting => false;
   late final Listenable _popupListenable =
       Listenable.merge([_popupStack, _isSearchingNotifier]);
 
@@ -509,6 +513,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       maxHeight: popupMaxHeight,
       bottomReserve: popupBottomReserve,
       topReserve: popupTopReserve,
+      verticalWriting: popupVerticalWriting,
     );
   }
 
