@@ -61,6 +61,25 @@ void main() {
     expect(popupRect.bottom, lessThanOrEqualTo(48));
   });
 
+  test('dual reserves exceeding screen height do not throw (both modes)', () {
+    const Size screen = Size(400, 300);
+    const Rect sel = Rect.fromLTWH(180, 140, 30, 30);
+    for (final bool vertical in <bool>[false, true]) {
+      final Rect popup = calcPopupPosition(
+        selectionRect: sel,
+        screen: screen,
+        maxWidth: 360,
+        maxHeight: 360,
+        topReserve: 250,
+        bottomReserve: 250, // 250+250 > 300
+        verticalWriting: vertical,
+      );
+      expect(popup.width, greaterThanOrEqualTo(0));
+      expect(popup.height, greaterThanOrEqualTo(0));
+      expect(popup.left.isFinite && popup.top.isFinite, isTrue);
+    }
+  });
+
   group('calcPopupPosition maxWidth constraint', () {
     const Rect selectionRect = Rect.fromLTWH(400, 300, 40, 24);
     const Size screen = Size(1920, 1080);

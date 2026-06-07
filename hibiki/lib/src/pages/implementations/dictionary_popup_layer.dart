@@ -28,17 +28,14 @@ Rect calcPopupPosition({
       (screen.width - horizontalInset * 2).clamp(0, maxWidth);
   final double availableHeight =
       (effectiveBottom - effectiveTop - verticalInset * 2).clamp(0, maxHeight);
-  final double width = availableWidth;
-  // 高度直接用 availableHeight（已按 maxHeight 与屏幕可用空间双重 clamp）。
-  // 旧实现额外乘 0.5 把高度顶死在半屏，使「弹窗最大高度」设置在半屏以上失效；
-  // 去掉后高度设置真正说了算，最高可拉到接近整屏（减边距）。
-  double height = availableHeight;
-
   final double minLeft = horizontalInset;
-  final double maxLeft = screen.width - width - horizontalInset;
   final double minTop = effectiveTop + verticalInset;
   final double maxBottom = effectiveBottom - verticalInset;
   final double maxRight = screen.width - horizontalInset;
+
+  // 当 top+bottom 预留合计超过屏高时 minTop 会越过 maxBottom，使后续 clamp 上下界
+  // 反转抛错；夹住 minTop 不超过 maxBottom，两分支共用。
+  final double safeMinTop = minTop.clamp(0, maxBottom).toDouble();
 
   const double gap = 4.0;
 
@@ -64,10 +61,17 @@ Rect calcPopupPosition({
     final double maxLeftV = (maxRight - width).clamp(minLeft, maxRight);
     left = left.clamp(minLeft, maxLeftV);
 
-    final double maxTopV = (maxBottom - height).clamp(minTop, maxBottom);
-    final double top = selectionRect.top.clamp(minTop, maxTopV);
+    final double maxTopV = (maxBottom - height).clamp(safeMinTop, maxBottom);
+    final double top = selectionRect.top.clamp(safeMinTop, maxTopV);
     return Rect.fromLTWH(left, top, width, height);
   }
+
+  final double width = availableWidth;
+  // 高度直接用 availableHeight（已按 maxHeight 与屏幕可用空间双重 clamp）。
+  // 旧实现额外乘 0.5 把高度顶死在半屏，使「弹窗最大高度」设置在半屏以上失效；
+  // 去掉后高度设置真正说了算，最高可拉到接近整屏（减边距）。
+  double height = availableHeight;
+  final double maxLeft = screen.width - width - horizontalInset;
 
   // BUG-098: the popup must never cover the looked-up word. Place it flush
   // against the selection (above or below) and, when neither side fits the full
@@ -75,7 +79,7 @@ Rect calcPopupPosition({
   // so its rect never overlaps [selectionRect]. The old `top.clamp(maxTop)`
   // pulled a too-tall "below" popup back up over the selection.
   final double roomBelow = maxBottom - (selectionRect.bottom + gap);
-  final double roomAbove = (selectionRect.top - gap) - minTop;
+  final double roomAbove = (selectionRect.top - gap) - safeMinTop;
   final bool below = height <= roomBelow
       ? true
       : (height <= roomAbove ? false : roomBelow >= roomAbove);
@@ -90,8 +94,8 @@ Rect calcPopupPosition({
   }
   // Final guard: keep the rect on-screen without re-introducing overlap (the
   // upper bound never drops below minTop / the chosen flush edge).
-  final double maxTop = (maxBottom - height).clamp(minTop, maxBottom);
-  top = top.clamp(minTop, maxTop);
+  final double maxTop = (maxBottom - height).clamp(safeMinTop, maxBottom);
+  top = top.clamp(safeMinTop, maxTop);
 
   double left = selectionRect.left;
   left = left.clamp(minLeft, maxLeft);
