@@ -3,11 +3,15 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
+  clipboard_watcher
   dynamic_color
   gamepads_linux
+  hotkey_manager_linux
   record_linux
+  screen_retriever_linux
   sqlite3_flutter_libs
   url_launcher_linux
+  window_manager
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST
