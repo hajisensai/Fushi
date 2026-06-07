@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
@@ -435,6 +436,28 @@ String mimeTypeForPath(String path) {
     default:
       return 'application/octet-stream';
   }
+}
+
+/// 制卡时词典媒体（gaiji 外字、词典内嵌图等）落盘缓存目录。
+///
+/// 流程：主 app 在收到 JS `mineEntry` 负载后，把每个 [DictionaryMedia] 的字节
+/// （`HoshiDicts.getMediaFile`）写到这个目录；两个 Anki repo（AnkiConnect /
+/// AnkiDroid）再从这里 **按同一命名** 读出并 storeMediaFile。writer 与 reader
+/// 必须共用 [ankiDictionaryMediaCacheDirPath] + [ankiDictionaryMediaCacheFilename]，
+/// 否则文件名对不上 → repo 读不到 → 卡片留下未替换的 `hoshi_dict_N.ext` 坏图。
+String ankiDictionaryMediaCacheDirPath() =>
+    '${Directory.systemTemp.path}/anki-media';
+
+/// 词典媒体在缓存目录中的文件名：`hibiki_dict_<path.hashCode>.<ext>`。
+///
+/// 无扩展名（path 不含 `.` 或以 `.` 结尾）时回退 `bin`（HBK-AUDIT-062：旧
+/// `split('.').last` 在无点时返回整串当扩展名）。
+String ankiDictionaryMediaCacheFilename(String path) {
+  final lastDot = path.lastIndexOf('.');
+  final ext = (lastDot >= 0 && lastDot < path.length - 1)
+      ? path.substring(lastDot + 1)
+      : 'bin';
+  return 'hibiki_dict_${path.hashCode}.$ext';
 }
 
 /// Kind of audio reference resolved by [WordAudioResolver] and handed to the

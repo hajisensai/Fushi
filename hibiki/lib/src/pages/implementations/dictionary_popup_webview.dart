@@ -377,6 +377,12 @@ class DictionaryPopupWebViewState
       document.documentElement.style.zoom = '${popupZoom.toStringAsFixed(4)}';
       window.audioSources = $audioSourcesJson;
       window.needsAudio = true;
+      // 启用制卡时词典媒体（gaiji 外字）嵌入：popup.js 据此把外字渲染成
+      // <img src="hoshi_dict_N.ext"> 并登记到 dictionaryMedia 负载，制卡处理器
+      // (mineEntry handler) 再 writeDictionaryMediaCache 落盘供 repo 嵌进卡片。
+      // 此前该 flag 全代码库从未注入→恒 falsy→外字恒退化成 alt 文本（明鏡义项序号
+      // 显示成烂 alt「3分の2」）。
+      window.embedMedia = true;
       window.deduplicatePitchAccents = $deduplicatePitch;
       window.harmonicFrequency = $harmonicFreq;
       window.showExpressionTags = $showExprTags;
@@ -567,6 +573,9 @@ class DictionaryPopupWebViewState
                 (args[0] as Map)
                     .map((k, v) => MapEntry(k.toString(), v.toString())),
               );
+              // 落盘词典媒体（gaiji）字节供 repo 嵌进卡片；必须在 onMineEntry
+              // （→repo.mineEntry 读缓存）之前完成。空/无媒体时内部直接返回。
+              await writeDictionaryMediaCache(fields['dictionaryMedia'] ?? '');
               return widget.onMineEntry!(fields);
             }
             return false;

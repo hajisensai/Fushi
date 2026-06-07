@@ -393,8 +393,9 @@ class AnkiRepository extends BaseAnkiRepository {
   Future<String?> _addDictionaryMedia(DictionaryMedia media) async {
     try {
       final cacheDir = await _mediaCacheDir();
-      final ext = media.path.split('.').last;
-      final filename = 'hibiki_dict_${media.path.hashCode}.$ext';
+      // 命名与主 app 的 writeDictionaryMediaCache 共用同一 helper（防漂移；也修了旧
+      // split('.').last 在无扩展名时把整串当扩展名的边角）。
+      final filename = ankiDictionaryMediaCacheFilename(media.path);
       final file = File('${cacheDir.path}/$filename');
       if (!file.existsSync()) return null;
       final result =

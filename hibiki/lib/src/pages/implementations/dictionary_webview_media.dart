@@ -1,11 +1,66 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 
 const List<String> dictionaryMediaCustomSchemes = <String>[
   'image',
   'dictmedia',
 ];
+
+/// 制卡前把 JS 负载里的词典媒体（gaiji 外字等）字节落盘到 Anki 媒体缓存目录，
+/// 供 [BaseAnkiRepository] 的 storeMediaFile 读取嵌进卡片。
+///
+/// 背景：popup.js 在 `window.embedMedia` 为真时把外字渲染成
+/// `<img src="hoshi_dict_N.ext">` 并在负载 `dictionaryMedia`
+/// （`[{dictionary, path, filename}]` 的 JSON 串）里登记。两个 Anki repo 从
+/// [ankiDictionaryMediaCacheDirPath]/[ankiDictionaryMediaCacheFilename] 读字节再
+/// storeMediaFile + 把字段里的 `hoshi_dict_N.ext` 替换成真实媒体引用。**但此前没有
+/// 任何地方写这个缓存**（`image://` 服务只把字节喂给页面显示、不落盘），故媒体永远
+/// 读不到、外字退化成 alt 文本（明鏡义项序号显示成烂 alt「3分の2」）。本函数补上写缓存
+/// 这一环：用 [HoshiDicts.getMediaFile] 取字节、按与 repo 共用的命名写盘。
+///
+/// 幂等：已存在的缓存文件跳过。HoshiDicts 未初始化 / 字节取不到 / 写盘失败均静默跳过
+/// （该条媒体退回 alt 文本，不阻断制卡）。
+Future<void> writeDictionaryMediaCache(String dictionaryMediaJson) async {
+  if (dictionaryMediaJson.isEmpty || dictionaryMediaJson == '[]') return;
+  if (!HoshiDicts.isInitialized) return;
+  final List<dynamic> entries;
+  try {
+    entries = jsonDecode(dictionaryMediaJson) as List<dynamic>;
+  } catch (_) {
+    return;
+  }
+  if (entries.isEmpty) return;
+
+  final Directory dir = Directory(ankiDictionaryMediaCacheDirPath());
+  try {
+    if (!dir.existsSync()) dir.createSync(recursive: true);
+  } catch (_) {
+    return;
+  }
+
+  for (final dynamic raw in entries) {
+    if (raw is! Map) continue;
+    final String dict = raw['dictionary']?.toString() ?? '';
+    final String path = raw['path']?.toString() ?? '';
+    if (dict.isEmpty || path.isEmpty) continue;
+    final File file =
+        File('${dir.path}/${ankiDictionaryMediaCacheFilename(path)}');
+    if (file.existsSync()) continue; // 幂等：已缓存。
+    try {
+      final Uint8List? bytes = HoshiDicts.instance.getMediaFile(dict, path);
+      if (bytes != null && bytes.isNotEmpty) {
+        await file.writeAsBytes(bytes, flush: true);
+      }
+    } catch (e) {
+      debugPrint('[DictionaryMedia] cache write failed for $dict/$path: $e');
+    }
+  }
+}
 
 WebResourceResponse? dictionaryMediaWebResourceResponse(Uri url) {
   final _DictionaryMediaResponse? response = _dictionaryMediaResponse(url);
