@@ -1,0 +1,69 @@
+# 构建 Hibiki 桌面用的「精简 ffmpeg」（~10MB 量级，LGPL，仅含 Hibiki 调用的组件）。
+# 产物 ffmpeg(.exe) 放到 app 程序旁即被 resolveFfmpegExecutable() 优先选用
+# （见 hibiki/lib/src/media/video/ffmpeg_backend.dart）。
+#
+# ⚠️ v0 脚手架：手动触发，先验证三平台能编出可用 ffmpeg、再接进 release-desktop.yml
+# 打包。configure 白名单调优清单见 docs/specs/2026-06-07-ffmpeg-min-build-pipeline.md。
+name: ffmpeg-min
+
+on:
+  workflow_dispatch:
+    inputs:
+      ffmpeg_ref:
+        description: "FFmpeg git tag/branch"
+        default: "n7.1"
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: ffmpeg-min-linux-x64
+          - os: macos-latest
+            artifact: ffmpeg-min-macos
+          - os: windows-latest
+            artifact: ffmpeg-min-windows-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install deps (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y nasm yasm pkg-config zlib1g-dev
+
+      - name: Install deps (macOS)
+        if: runner.os == 'macOS'
+        run: brew install nasm pkg-config
+
+      - name: Setup MSYS2 (Windows)
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            base-devel git
+            mingw-w64-x86_64-gcc mingw-w64-x86_64-nasm
+            mingw-w64-x86_64-pkgconf mingw-w64-x86_64-zlib
+
+      - name: Build (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: FFMPEG_REF="${{ github.event.inputs.ffmpeg_ref }}" OUT="$PWD/out" bash tool/ffmpeg-min/build-ffmpeg-min.sh
+
+      - name: Build (Windows / MSYS2)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: FFMPEG_REF="${{ github.event.inputs.ffmpeg_ref }}" OUT="$PWD/out" bash tool/ffmpeg-min/build-ffmpeg-min.sh
+
+      - name: Report size
+        run: ls -la out/bin || dir out\bin
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            out/bin/ffmpeg
+            out/bin/ffmpeg.exe
+          if-no-files-found: warn

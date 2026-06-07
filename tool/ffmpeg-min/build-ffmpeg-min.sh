@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# 构建 Hibiki 桌面用的「精简 ffmpeg」（~10MB 量级），只含 Hibiki 实际调用的组件：
+#   - 内封字幕枚举/抽取（-i 探测 + -map 0:s:N 转 srt/ass/vtt）
+#   - cue 动图（fps,scale,palettegen,paletteuse → gif）
+#   - 句子音频片段（解码 → aac/adts）
+#   - 视频帧/封面（-frames:v 1 → jpg/png）
+#
+# 只解码 + 用 native gif/aac/mjpeg 编码 → 不需要任何 GPL 外部编码器（x264 等），
+# 故 LGPL（不传 --enable-gpl），体积与许可都更干净。
+#
+# 用法：
+#   FFMPEG_REF=n7.1 OUT=$PWD/out ./build-ffmpeg-min.sh
+# 产物：$OUT/bin/ffmpeg(.exe)。把它放到 app 程序旁即被
+# resolveFfmpegExecutable()（lib/src/media/video/ffmpeg_backend.dart）优先选用。
+#
+# 平台：
+#   - Linux / macOS：原生 toolchain（gcc/clang + make + nasm/yasm + pkg-config）。
+#   - Windows：在 MSYS2 mingw64 shell 里跑本脚本（需 base-devel + mingw-w64-x86_64-{gcc,nasm,pkg-config}）。
+#
+# ⚠️ 本脚本是 v0 脚手架：configure 精简白名单需在真实构建上「编译 + 用真实视频跑通
+# 四类命令」迭代收敛（漏一个 decoder/parser/bsf/filter → 某些视频运行时失败）。
+# 调优清单见 docs/specs/2026-06-07-ffmpeg-min-build-pipeline.md。
+set -euo pipefail
+
+FFMPEG_REF="${FFMPEG_REF:-n7.1}"
+OUT="${OUT:-$PWD/ffmpeg-min-out}"
+SRC="${SRC:-$PWD/ffmpeg-src}"
+JOBS="${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}"
+
+if [ ! -d "$SRC/.git" ]; then
+  echo "[ffmpeg-min] clone FFmpeg @ $FFMPEG_REF"
+  git clone --depth 1 --branch "$FFMPEG_REF" https://github.com/FFmpeg/FFmpeg.git "$SRC"
+fi
+cd "$SRC"
+
+# 组件白名单（覆盖 Hibiki 四类命令；按需在调优清单里增删）。
+DEMUXERS="matroska,mov,mpegts,avi,srt,ass,webvtt,aac,mp3,flac,wav,ogg,m4v"
+DECODERS="h264,hevc,av1,vp9,vp8,mpeg4,mpeg2video,mjpeg,opus,aac,ac3,eac3,vorbis,flac,mp3,pcm_s16le,pcm_s16be,pcm_s24le,ass,ssa,subrip,webvtt,mov_text,text"
+ENCODERS="gif,aac,mjpeg,png,ass,ssa,subrip,webvtt"
+MUXERS="gif,adts,image2,mjpeg,srt,ass,webvtt"
+FILTERS="scale,fps,palettegen,paletteuse,format,aformat,aresample,anull,null,copy,setpts,asetpts"
+PARSERS="h264,hevc,av1,vp9,vp8,mpeg4video,mpegvideo,aac,ac3,vorbis,opus,flac,mjpeg"
+BSFS="aac_adtstoasc,h264_mp4toannexb,hevc_mp4toannexb"
+PROTOCOLS="file,pipe"
+
+EXTRA_CONFIG=""
+case "$(uname -s)" in
+  MINGW*|MSYS*) EXTRA_CONFIG="--target-os=mingw32 --arch=x86_64" ;;
+esac
+
+./configure \
+  --prefix="$OUT" \
+  --disable-everything \
+  --disable-doc --disable-htmlpages --disable-manpages --disable-podpages --disable-txtpages \
+  --disable-network --disable-autodetect --disable-debug \
+  --disable-ffplay --disable-ffprobe \
+  --enable-ffmpeg \
+  --enable-small --enable-zlib \
+  --enable-avcodec --enable-avformat --enable-avfilter \
+  --enable-swscale --enable-swresample \
+  --enable-demuxer="$DEMUXERS" \
+  --enable-decoder="$DECODERS" \
+  --enable-encoder="$ENCODERS" \
+  --enable-muxer="$MUXERS" \
+  --enable-filter="$FILTERS" \
+  --enable-parser="$PARSERS" \
+  --enable-bsf="$BSFS" \
+  --enable-protocol="$PROTOCOLS" \
+  $EXTRA_CONFIG
+
+make -j"$JOBS"
+make install
+
+echo "[ffmpeg-min] done →"
+ls -la "$OUT/bin/" 2>/dev/null || true
