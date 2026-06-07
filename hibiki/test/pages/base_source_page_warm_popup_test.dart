@@ -195,12 +195,15 @@ void main() {
     // base_source_page passes the warm flag to the popup layer.
     expect(base.contains('keepWebViewWarm: item.isWarmSlot'), isTrue,
         reason: 'warm slot must request a persistently mounted WebView');
-    // base_source_page seeds the warm slot on open.
-    expect(base.contains('isWarmSlot: true'), isTrue,
-        reason: 'a persistent warm slot must be seeded');
-    // prunePopupStack preserves the warm slot instead of discarding it.
-    expect(base.contains('first.isWarmSlot'), isTrue,
+    // base_source_page seeds the warm slot on open via the shared controller.
+    expect(base.contains('_popup.seedWarmSlot('), isTrue,
+        reason: 'a persistent warm slot must be seeded via the controller');
+    // prunePopupStack preserves the warm slot instead of discarding it
+    // (delegated to the controller's pruneToWarmSlot).
+    expect(base.contains('pruneToWarmSlot()'), isTrue,
         reason: 'prunePopupStack(0) must preserve the warm slot');
+    expect(base.contains('first.isWarmSlot'), isTrue,
+        reason: 'warm-slot reuse condition keys off isWarmSlot');
     // The popup layer actually mounts the WebView when keepWebViewWarm is set.
     expect(
         layer.contains('hasEntries || isSearching || keepWebViewWarm'), isTrue,

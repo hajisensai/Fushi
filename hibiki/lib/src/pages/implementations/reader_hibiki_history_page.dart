@@ -699,8 +699,8 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     Navigator.push(
       context,
       adaptivePageRoute<void>(
-        builder: (_) =>
-            VideoHibikiPage(bookUid: book.bookUid, repo: _videoRepo),
+        builder: (_) => VideoHibikiPage.neutralized(
+            bookUid: book.bookUid, repo: _videoRepo),
       ),
     );
   }

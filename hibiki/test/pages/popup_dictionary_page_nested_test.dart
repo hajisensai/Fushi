@@ -14,10 +14,10 @@ void main() {
     expect(src, contains('onTextSelected:'));
     expect(src, contains('onLinkClick:'));
     expect(src, contains('PopScope'));
-    expect(src, contains('_popAt(_stack.length - 1)'));
+    expect(src, contains('_popAt(_popup.entries.length - 1)'));
     expect(src, contains('PopupChannel.instance.finishPopup()'));
     // 重选/链接下钻时截断当前层之后的栈（按层 index 截断，base/nested 统一）。
-    expect(src, contains('_stack.removeRange(index + 1, _stack.length)'));
+    expect(src, contains('_popup.truncateTo(index + 1)'));
   });
 
   test(
@@ -42,7 +42,7 @@ void main() {
     final String src = File(pagePath).readAsStringSync();
     // 栈深 > 1（已下钻）时整卡外层横滑停用，避免 Listener 冒泡连带平移整卡；
     // 嵌套层各自横滑只返回上一层。
-    expect(src, contains('if (_stack.length > 1) return card;'));
+    expect(src, contains('if (_popup.entries.length > 1) return card;'));
     expect(src, contains('() => _popAt(index)'));
   });
 }

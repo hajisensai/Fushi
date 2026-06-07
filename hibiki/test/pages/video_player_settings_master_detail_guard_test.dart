@@ -51,9 +51,12 @@ void main() {
     expect(source, contains('scrollable: false'));
     expect(source, contains('MaterialSupportingPaneLayout('));
     expect(source, contains('minSplitWidth: 640'));
+    expect(source, contains('supportingWidth: 248'));
     expect(source, contains('SupportingPaneSide.start'));
     expect(source, contains('height: constraints.maxHeight'));
     expect(source, contains('constraints.maxWidth >= 640'));
+    expect(source, contains('padding: wideSupportingPadding'));
+    expect(source, contains('padding: widePrimaryPadding'));
     // 左父菜单单选高亮（pill），无 chevron 误导 push。
     expect(source, contains('HibikiListItemSelectedShape.pill'));
     // 右 pane 按选中 id KeyedSubtree，防 Element 复用副作用。

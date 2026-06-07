@@ -162,8 +162,8 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     Navigator.push(
       context,
       adaptivePageRoute<void>(
-        builder: (_) =>
-            VideoHibikiPage(bookUid: book.bookUid, repo: widget.repo),
+        builder: (_) => VideoHibikiPage.neutralized(
+            bookUid: book.bookUid, repo: widget.repo),
       ),
     );
   }

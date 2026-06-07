@@ -35,7 +35,8 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
   final FocusNode _searchFocusNode = FocusNode();
 
   DictionarySearchResult? _result;
-  final List<DictionaryPopupEntry> _popupStack = [];
+  final DictionaryPopupController _popup =
+      DictionaryPopupController(lowMemory: false);
 
   bool _isSearching = false;
   String _lastQuery = '';
@@ -106,7 +107,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
 
   void _clearSearch() {
     _controller.clear();
-    _popupStack.clear();
+    _popup.clear();
     _result = null;
     _isSearching = false;
     _lastQuery = '';
@@ -120,11 +121,11 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: !_hasActiveQuery && _popupStack.isEmpty,
+      canPop: !_hasActiveQuery && _popup.entries.isEmpty,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) return;
-        if (_popupStack.isNotEmpty) {
-          _popNestedPopupAt(_popupStack.length - 1);
+        if (_popup.entries.isNotEmpty) {
+          _popNestedPopupAt(_popup.entries.length - 1);
         } else if (_hasActiveQuery) {
           _clearSearch();
         }
@@ -338,7 +339,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
       // _loadMore will set _allLoaded if nothing new comes back.
       _allLoaded = cached.entries.isEmpty;
       _lastQuery = cached.searchTerm.trim();
-      _popupStack.clear();
+      _popup.clear();
     });
   }
 
@@ -375,7 +376,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
     if (mounted) {
       setState(() {
         _isSearching = true;
-        _popupStack.clear();
+        _popup.clear();
       });
     }
 
@@ -454,7 +455,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
                 onDuplicateCheck: checkDuplicate,
                 onScrolledToBottom: _allLoaded ? null : _loadMore,
               ),
-              if (_popupStack.isNotEmpty)
+              if (_popup.entries.isNotEmpty || _popup.isSearchingUi)
                 Positioned.fill(
                   child: GestureDetector(
                     behavior: HitTestBehavior.translucent,
@@ -464,7 +465,13 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
                     ),
                   ),
                 ),
-              for (int i = 0; i < _popupStack.length; i++)
+              // 搜索期加载占位卡（搜索→就绪才显示，与书内同观感）。
+              if (_popup.isSearchingUi && _popup.pendingRect != null)
+                buildPopupLoadingPlaceholder(
+                  rect: _popup.pendingRect!,
+                  screen: screen,
+                ),
+              for (int i = 0; i < _popup.entries.length; i++)
                 _buildNestedPopupLayer(i, screen),
             ],
           );
@@ -481,21 +488,21 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
     return pushNestedPopup(
       query: query,
       selectionRect: selectionRect,
-      popupStack: _popupStack,
+      controller: _popup,
       replaceStack: replaceStack,
       autoRead: true,
     );
   }
 
   void _popNestedPopupAt(int index) {
-    popNestedPopupAt(index, _popupStack);
+    popNestedPopupAt(index, _popup);
   }
 
   Widget _buildNestedPopupLayer(int index, Size screen) {
     return buildNestedPopupLayer(
       index: index,
       screen: screen,
-      popupStack: _popupStack,
+      controller: _popup,
       onPush: (text, rect) => _pushNestedPopup(text, rect),
       onPop: _popNestedPopupAt,
     );

@@ -136,6 +136,7 @@ class MaterialSupportingPaneLayout extends StatelessWidget {
     super.key,
     this.supportingSide = SupportingPaneSide.end,
     this.minSplitWidth = 840,
+    this.supportingWidth,
     this.dividerColor,
   });
 
@@ -143,6 +144,7 @@ class MaterialSupportingPaneLayout extends StatelessWidget {
   final Widget supporting;
   final SupportingPaneSide supportingSide;
   final double minSplitWidth;
+  final double? supportingWidth;
   final Color? dividerColor;
 
   @override
@@ -151,7 +153,7 @@ class MaterialSupportingPaneLayout extends StatelessWidget {
       builder: (BuildContext context, BoxConstraints constraints) {
         if (constraints.maxWidth < minSplitWidth) return primary;
 
-        final double supportingWidth =
+        final double resolvedSupportingWidth = supportingWidth ??
             supportingPaneWidthForLayout(constraints.maxWidth);
         final Color resolvedDividerColor =
             dividerColor ?? Theme.of(context).dividerColor;
@@ -161,7 +163,7 @@ class MaterialSupportingPaneLayout extends StatelessWidget {
           color: resolvedDividerColor,
         );
         final Widget fixedSupporting = SizedBox(
-          width: supportingWidth,
+          width: resolvedSupportingWidth,
           child: supporting,
         );
         final Widget flexiblePrimary = Expanded(child: primary);

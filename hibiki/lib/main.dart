@@ -444,7 +444,8 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
     if (!mounted) return;
     await navigator.push(
       adaptivePageRoute<void>(
-        builder: (_) => VideoHibikiPage(bookUid: bookUid, repo: repo),
+        builder: (_) =>
+            VideoHibikiPage.neutralized(bookUid: bookUid, repo: repo),
       ),
     );
   }
