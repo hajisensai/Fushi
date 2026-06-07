@@ -319,7 +319,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
   bool get _isPlaylist => _episodes.length > 1;
 
-  AppModel get appModel => ref.read(appProvider);
+  /// 缓存的 [AppModel] 引用。`appProvider` 是单例（实例不变），在 [initState] 一次
+  /// 性读取并缓存。**不能**每次 `ref.read(appProvider)`：浮层层（[buildNestedPopupLayer]）
+  /// 在 `LayoutBuilder` 回调里访问 `mixinAppModel`，而 widget 失活（deactivated）后
+  /// `ref.read` 会抛「Looking up a deactivated widget's ancestor is unsafe」。缓存实例
+  /// 后即使 widget 已失活也安全（BUG: 视频查词关页时崩溃）。
+  late final AppModel _appModel = ref.read(appProvider);
+
+  AppModel get appModel => _appModel;
 
   bool get _isRemote => widget.remoteInfo != null;
 

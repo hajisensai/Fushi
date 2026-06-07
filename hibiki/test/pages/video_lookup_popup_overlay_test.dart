@@ -188,4 +188,24 @@ void main() {
         File('lib/src/utils/app_ui_scale.dart').readAsStringSync();
     expect(util.contains('scaledRectToCanvas'), isFalse);
   });
+
+  test(
+      'appModel is cached in initState, not ref.read on every access '
+      '(deactivated-widget crash guard)', () {
+    // 根因：buildNestedPopupLayer 在 LayoutBuilder 回调里访问 mixinAppModel；
+    // 若 appModel 每次 `ref.read(appProvider)`，widget 失活（关页/查词关栈）后
+    // 访问会抛「Looking up a deactivated widget's ancestor is unsafe」。
+    // 修法：在 initState 期间一次性 `late final AppModel _appModel = ...`，
+    // getter 返回缓存实例（appProvider 为单例，实例不变）。
+    final String page = File(
+      'lib/src/pages/implementations/video_hibiki_page.dart',
+    ).readAsStringSync();
+    expect(page.contains('late final AppModel _appModel'), isTrue,
+        reason: 'appModel 必须在 initState 缓存，失活后访问才安全');
+    expect(page.contains('AppModel get appModel => _appModel;'), isTrue,
+        reason: 'appModel getter 返回缓存实例，不得每次 ref.read');
+    // 不得残留「每次 ref.read(appProvider)」作为 appModel/mixinAppModel 后端。
+    expect(page.contains('get appModel => ref.read(appProvider)'), isFalse,
+        reason: '每次 ref.read 在 widget 失活时崩溃');
+  });
 }

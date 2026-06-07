@@ -26,9 +26,13 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       DictionaryPopupController(lowMemory: false);
   final ScrollController _scroll = ScrollController();
 
-  /// 仅在点击 span 触发查词/挖词时求值，渲染文本行本身不触发 AppModel 创建。
+  /// 缓存的 [AppModel] 引用（`appProvider` 为单例，实例不变）。在 [initState] 一次性
+  /// 读取：浮层层在 `LayoutBuilder` 回调里访问 `mixinAppModel`，widget 失活后再
+  /// `ref.read` 会抛「deactivated widget's ancestor」（与视频页同源），缓存实例规避。
+  late final AppModel _appModel = ref.read(appProvider);
+
   @override
-  AppModel get mixinAppModel => ref.read(appProvider);
+  AppModel get mixinAppModel => _appModel;
 
   @override
   ThemeData get mixinTheme => Theme.of(context);

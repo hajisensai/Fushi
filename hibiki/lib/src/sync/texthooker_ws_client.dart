@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import 'package:hibiki/src/sync/texthooker_message.dart';
@@ -45,31 +46,37 @@ class TexthookerWsClient {
     if (_running) return;
     _running = true;
     for (final String url in _urls) {
-      _connect(url);
+      unawaited(_connect(url));
     }
   }
 
-  void _connect(String url) {
+  Future<void> _connect(String url) async {
     if (!_running) return;
     final WebSocketChannel channel;
     try {
       channel = _channelFactory(url);
-    } catch (_) {
-      // 连接构造失败（如非法 URL / 端口未监听）：退避后重试。
-      _scheduleRetry(url);
+    } catch (error) {
+      // 连接构造失败（如非法 URL）：退避后重试，绝不上抛。
+      _onConnectFailure(url, error);
       return;
     }
-    // BUG-115：`IOWebSocketChannel.connect` 是惰性的——握手/连接失败（典型是
-    // texthooker server 未监听时的 ECONNREFUSED）会作为**未处理的异步错误**落在
-    // `ready` future 上逃逸到全局 zone（被记成 UncaughtZone 噪音，按重连周期每
-    // 几秒刷三条）。这里显式吞掉 `ready` 的错误；真正的重连仍由下面 stream 的
-    // onError/onDone 驱动，避免重复 scheduleRetry。
-    unawaited(channel.ready.then<void>(
-      (_) {},
-      onError: (Object _) {},
-    ));
+    // 关键：[IOWebSocketChannel.connect] 是惰性的，连接建立阶段的失败
+    //（用户没开 Textractor/mpv 的 WS 源时「Connection closed before full
+    // header was received」）通过 [WebSocketChannel.ready] 这个 Future 抛出。
+    // 若不 await/catch 它，rejection 会逃逸到 UncaughtZone 刷屏（真机 bug）。
+    // 这里静默吞掉连接失败并退避重试，stream 的 onError 仅兜底「连上后中途
+    // 断线」。
+    try {
+      await channel.ready;
+    } catch (error) {
+      _onConnectFailure(url, error);
+      return;
+    }
+    // ready 期间可能已被 stop()：不再监听。
+    if (!_running) return;
     final StreamSubscription<dynamic> sub = channel.stream.listen(
       (dynamic data) => _service.appendLine(parseTexthookerMessage('$data')),
+      // 连上后中途断线：退避重连，同样不上抛。
       onError: (Object _) => _scheduleRetry(url),
       onDone: () => _scheduleRetry(url),
       cancelOnError: true,
@@ -77,9 +84,18 @@ class TexthookerWsClient {
     _subs.add(sub);
   }
 
+  /// 连接失败统一处理：可选一行调试日志 + 退避重试，绝不把异常上抛到
+  /// UncaughtZone。
+  void _onConnectFailure(String url, Object error) {
+    if (kDebugMode) {
+      debugPrint('[texthooker] WS connect failed ($url): $error; retrying');
+    }
+    _scheduleRetry(url);
+  }
+
   void _scheduleRetry(String url) {
     if (!_running) return;
-    final Timer t = Timer(_retryDelay, () => _connect(url));
+    final Timer t = Timer(_retryDelay, () => unawaited(_connect(url)));
     _retryTimers.add(t);
   }
 

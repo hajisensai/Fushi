@@ -53,6 +53,37 @@ void main() {
     await server.close(force: true);
   });
 
+  test('connecting to a dead port stays running and never throws', () async {
+    // 占一个端口再立刻关掉，得到一个确定没人监听的端口号——连它必失败
+    //（IOWebSocketChannel.connect 惰性，失败经 channel.ready 抛出）。
+    final probe = await HttpServer.bind('127.0.0.1', 0);
+    final int deadPort = probe.port;
+    await probe.close(force: true);
+    final String deadUrl = 'ws://127.0.0.1:$deadPort';
+
+    // runZonedGuarded 捕获任何逃逸到 UncaughtZone 的异常——本修复要求连接
+    // 失败绝不上抛。
+    final List<Object> uncaught = <Object>[];
+    late final TexthookerWsClient client;
+    await runZonedGuarded(() async {
+      client = TexthookerWsClient(
+        urls: [deadUrl],
+        service: TexthookerService.instance,
+        channelFactory: (String u) => IOWebSocketChannel.connect(Uri.parse(u)),
+        retryDelay: const Duration(milliseconds: 50),
+      );
+      client.start();
+      // 等足够久让首次连接失败 + 至少一次退避重连发生。
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+    }, (Object error, StackTrace stack) => uncaught.add(error));
+
+    expect(uncaught, isEmpty, reason: '连接失败不得逃逸到 UncaughtZone：$uncaught');
+    expect(client.isRunning, true, reason: '连不上应安静重试，仍保持 running');
+
+    await client.stop();
+    expect(client.isRunning, false);
+  });
+
   test('connection state exposes running flag', () async {
     final client = TexthookerWsClient(
       urls: const <String>[],
