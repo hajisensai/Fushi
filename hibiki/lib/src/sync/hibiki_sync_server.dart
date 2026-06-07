@@ -372,7 +372,8 @@ class HibikiSyncServer {
         (dynamic k, dynamic v) => MapEntry(k.toString(), v?.toString() ?? ''));
     final String sentence =
         body['sentence']?.toString() ?? fields['sentence'] ?? '';
-    final String result = await svc.mineEntry(fields: fields, sentence: sentence);
+    final String result =
+        await svc.mineEntry(fields: fields, sentence: sentence);
     return _jsonResponse(<String, dynamic>{'result': result});
   }
 

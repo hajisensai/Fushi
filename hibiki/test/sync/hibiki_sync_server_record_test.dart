@@ -11,15 +11,18 @@ class _StubLookup implements HibikiRemoteLookupService {
       {required String term,
       required bool wildcards,
       required int maximumTerms}) async {
-    return DictionarySearchResult(searchTerm: term, entries: [
-      DictionaryEntry(
-          dictionaryName: 'D',
-          word: term,
-          reading: term,
-          meaning: 'm',
-          extra: '{}',
-          popularity: 0)
-    ], bestLength: term.length);
+    return DictionarySearchResult(
+        searchTerm: term,
+        entries: [
+          DictionaryEntry(
+              dictionaryName: 'D',
+              word: term,
+              reading: term,
+              meaning: 'm',
+              extra: '{}',
+              popularity: 0)
+        ],
+        bestLength: term.length);
   }
 
   @override

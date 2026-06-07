@@ -20,8 +20,8 @@ Future<HttpClientResponse> _post(
     int port, String path, Object body, String token) async {
   final c = HttpClient();
   final r = await c.post('127.0.0.1', port, path);
-  r.headers
-      .set('authorization', 'Basic ${base64Encode(utf8.encode('hibiki:$token'))}');
+  r.headers.set(
+      'authorization', 'Basic ${base64Encode(utf8.encode('hibiki:$token'))}');
   r.headers.contentType = ContentType.json;
   r.write(jsonEncode(body));
   return r.close();
