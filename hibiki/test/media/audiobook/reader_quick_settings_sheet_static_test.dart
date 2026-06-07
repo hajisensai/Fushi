@@ -276,14 +276,15 @@ void main() {
         File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
             .readAsStringSync();
 
-    // 宽窗用主页同款 supporting-pane（左父菜单 + 右详情），阈值 640。
+    // 宽窗用主页同款 supporting-pane（左父菜单 + 右详情），阈值走共享常量。
     expect(source, contains('MaterialSupportingPaneLayout('));
     expect(source, contains('SupportingPaneSide.start'));
-    expect(source, contains('minSplitWidth: 640'));
+    expect(source, contains('minSplitWidth: kHibikiSettingsWideThreshold'));
     // 左父菜单收窄到共享常量（不再硬编码 248）。
     expect(source,
         contains('supportingWidth: kHibikiSettingsSupportingPaneWidth'));
-    expect(source, contains('constraints.maxWidth >= 640'));
+    expect(source,
+        contains('constraints.maxWidth >= kHibikiSettingsWideThreshold'));
     expect(source, contains('padding: wideSupportingPadding'));
     expect(source, contains('padding: widePrimaryPadding'));
     expect(source, contains('Widget _buildWidePane('));
@@ -306,8 +307,7 @@ void main() {
     expect(source, contains('_subPage == null || _isWide'));
   });
 
-  test('reader quick settings narrows the left pane and falls back on overflow',
-      () {
+  test('reader quick settings uses a deterministic width+height gate', () {
     final String source =
         File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
             .readAsStringSync();
@@ -316,14 +316,33 @@ void main() {
     expect(source,
         contains('supportingWidth: kHibikiSettingsSupportingPaneWidth'));
 
-    // 左父菜单在可用高度内放不下（出现滚动条）时回退窄窗 push：
-    // 探测 maxScrollExtent，置溢出标志，并以 `!溢出` 收窄宽窗判定。
-    expect(source, contains('_supportingScrollController'));
-    expect(source, contains('maxScrollExtent'));
-    expect(source, contains('_supportingOverflowsWide'));
-    expect(source, contains('_isWide = wantWide && !_supportingOverflowsWide'));
-    // 高度变化时重置溢出标志，乐观重试宽窗（避免一旦回退就回不去）。
-    expect(source, contains('_wideProbeHeight'));
+    // 确定性几何判据：宽且高都 >= 共享常量阈值才进宽窗（与视频设置同条件，同设备
+    // 同尺寸下书籍/视频必然一致）。
+    expect(source,
+        contains('constraints.maxWidth >= kHibikiSettingsWideThreshold'));
+    expect(source,
+        contains('constraints.maxHeight >= kHibikiSettingsWideMinHeight'));
+
+    // 旧的「post-frame 测左父菜单内容溢出回退」已移除（会随内容高度发散 → 同设备
+    // 两种表现）。
+    expect(source, isNot(contains('_supportingOverflowsWide')));
+    expect(source, isNot(contains('_supportingScrollController')));
+    expect(source, isNot(contains('_wideProbeHeight')));
+  });
+
+  test('reader wide pane drops progress; it moves into the appearance detail',
+      () {
+    final String source =
+        File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
+            .readAsStringSync();
+
+    // 左父菜单做矮：阅读进度从左 pane 移到右侧外观详情顶部（_buildWidePrimary），
+    // 左栏只留分类导航 + 动作，让更多窗口能进宽窗。
+    expect(source, contains('Widget _buildWidePrimary('));
+    expect(source, contains('_buildProgressSection(theme)'));
+    // 右 pane 渲染走 _buildWidePrimary（默认外观顶部并入进度），不再直接铺
+    // _subPageContent。
+    expect(source, contains('_buildWidePrimary(context, theme, selectedId)'));
   });
 }
 

@@ -95,7 +95,8 @@ void main() {
   testWidgets(
       'wide video settings keeps the left pane fixed while the right scrolls',
       (tester) async {
-    await tester.binding.setSurfaceSize(const Size(1000, 380));
+    // 高度取 500（>= kHibikiSettingsWideMinHeight=440 → 进宽窗），右详情行多仍可滚。
+    await tester.binding.setSurfaceSize(const Size(1000, 500));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await _pump(tester, _sheet());
 
@@ -116,19 +117,19 @@ void main() {
   });
 
   testWidgets(
-      'wide-but-short video settings falls back to push when the left pane '
-      'would scroll', (tester) async {
-    // 宽度够分栏（>=640），但可用高度被压到左父菜单（标题+4分类）放不下：
-    // 应回退窄窗 push（不再显示 master-detail 右详情）。
+      'wide-but-short video settings falls back to push below the min height',
+      (tester) async {
+    // 宽度够分栏（>= kHibikiSettingsWideThreshold=560），但可用高度低于
+    // kHibikiSettingsWideMinHeight=440：确定性几何判据应回退窄窗 push（与书籍
+    // 设置同条件，不出滚动条）。
     await tester.binding.setSurfaceSize(const Size(1000, 150));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await _pump(tester, _sheet());
-    // 让 post-frame 溢出探测触发 setState 回退后稳定。
     await tester.pumpAndSettle();
 
     // 回退 push 主页：默认 playback 详情（音画延迟）不再随分栏展开。
     expect(find.text(t.video_setting_av_delay), findsNothing,
-        reason: '左父菜单溢出时应回退 push，而非保持 master-detail 显示右详情');
+        reason: '高度低于阈值时应回退 push，而非保持 master-detail 显示右详情');
     // push 主页仍列出分类导航行。
     expect(find.text(t.video_settings_cat_playback), findsOneWidget);
 

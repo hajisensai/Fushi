@@ -138,14 +138,8 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
 
   /// 最近一次 LayoutBuilder 是否判定为宽窗。供 PopScope.canPop 读取：宽窗
   /// master-detail 下选中态非 null 也允许直接关闭（不会卡在「返回上一级」）。
+  /// 纯按窗口宽高确定性判定（>= 共享常量阈值），与视频设置同条件。
   bool _isWide = false;
-
-  /// 宽窗左父菜单滚动控制器 + 溢出回退状态（与视频设置同源）：左父菜单内容在
-  /// 当前可用高度内放不下（maxScrollExtent>0=出现滚动条）时回退窄窗 push；高度
-  /// 变化时重置乐观重试，避免一旦回退就再也回不到宽窗。
-  final ScrollController _supportingScrollController = ScrollController();
-  bool _supportingOverflowsWide = false;
-  double? _wideProbeHeight;
 
   late List<Bookmark> _bookmarks = List<Bookmark>.of(widget.bookmarks);
   late List<FavoriteSentence> _favorites =
@@ -163,7 +157,6 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
   void dispose() {
     _searchController.dispose();
     _charJumpController.dispose();
-    _supportingScrollController.dispose();
     super.dispose();
   }
 
@@ -276,14 +269,12 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
         scrollable: false,
         body: LayoutBuilder(
           builder: (BuildContext context, BoxConstraints constraints) {
-            final bool wantWide = constraints.maxWidth >= 640;
-            // 可用高度变化时重置溢出判定，乐观重试宽窗。
-            if (_wideProbeHeight != constraints.maxHeight) {
-              _wideProbeHeight = constraints.maxHeight;
-              _supportingOverflowsWide = false;
-            }
-            // 窄到左父菜单在可用高度内放不下时回退 push（出现滚动条 = 体验差）。
-            _isWide = wantWide && !_supportingOverflowsWide;
+            // 确定性几何判据（与视频设置同一组常量）：宽且高都够才进宽窗
+            // master-detail，否则窄窗 push。不测内容高度 → 同设备同尺寸下书籍与
+            // 视频表现一致，且高度不足时直接 push 而非出滚动条。左父菜单已把阅读
+            // 进度并入右侧外观详情、只留分类导航 + 动作，足够矮放得下。
+            _isWide = constraints.maxWidth >= kHibikiSettingsWideThreshold &&
+                constraints.maxHeight >= kHibikiSettingsWideMinHeight;
             final double viewInsetsBottom =
                 MediaQuery.of(context).viewInsets.bottom;
             final EdgeInsets bodyPadding = EdgeInsets.fromLTRB(
@@ -315,20 +306,10 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
               // MaterialSupportingPaneLayout 放进 Expanded）：Row(stretch) 才能给
               // 两个 pane 紧约束 → 各自的 SingleChildScrollView 独立滚动、左父菜
               // 单固定不跟随右详情滚动。maxHeightFactor 保证 maxHeight 有界。
-              // 渲染后探测左父菜单是否溢出；溢出则回退 push（高度变化时已重置）。
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (!mounted) return;
-                if (_supportingScrollController.hasClients &&
-                    _supportingScrollController.position.maxScrollExtent >
-                        0.5 &&
-                    !_supportingOverflowsWide) {
-                  setState(() => _supportingOverflowsWide = true);
-                }
-              });
               return SizedBox(
                 height: constraints.maxHeight,
                 child: MaterialSupportingPaneLayout(
-                  minSplitWidth: 640,
+                  minSplitWidth: kHibikiSettingsWideThreshold,
                   supportingWidth: kHibikiSettingsSupportingPaneWidth,
                   supportingSide: SupportingPaneSide.start,
                   dividerColor: dividerColor,
@@ -347,7 +328,6 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
                                   wideSupportingPadding.vertical
                               : 0;
                       return SingleChildScrollView(
-                        controller: _supportingScrollController,
                         padding: wideSupportingPadding,
                         child: ConstrainedBox(
                           constraints: BoxConstraints(
@@ -365,7 +345,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
                     key: ValueKey<String>(selectedId),
                     child: SingleChildScrollView(
                       padding: widePrimaryPadding,
-                      child: _subPageContent(selectedId),
+                      child: _buildWidePrimary(context, theme, selectedId),
                     ),
                   ),
                 ),
@@ -397,15 +377,13 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
   ) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final double sectionGap = tokens.spacing.gap + tokens.spacing.gap / 2;
+    // 左父菜单只留「分类导航 + 动作」，做矮以让更多窗口进宽窗（阅读进度已移到右侧
+    // 外观详情顶部，见 [_buildWidePrimary]）。项少时整体垂直居中、不贴顶。
     return Column(
       mainAxisSize: MainAxisSize.min,
-      // 在 supporting pane 的 minHeight 约束下垂直居中（项少时整体居中、
-      // 不贴顶；项多溢出时退化为自然顶端布局 + 外层滚动）。
       mainAxisAlignment: MainAxisAlignment.center,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildProgressSection(theme),
-        SizedBox(height: sectionGap),
         for (final cat in _wideCategories())
           HibikiListItem(
             selected: cat.id == selectedId,
@@ -416,6 +394,32 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
           ),
         SizedBox(height: sectionGap),
         _buildActionRow(context),
+      ],
+    );
+  }
+
+  /// 宽窗右详情：默认外观分类顶部并入阅读进度（左父菜单不再单列进度，借此把左栏
+  /// 做矮、更多窗口能进宽窗）。其余分类只渲染各自详情。
+  Widget _buildWidePrimary(
+    BuildContext context,
+    ThemeData theme,
+    String selectedId,
+  ) {
+    if (selectedId != 'appearance') {
+      return _subPageContent(selectedId);
+    }
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final double sectionGap = tokens.spacing.gap + tokens.spacing.gap / 2;
+    final Widget progress = _buildProgressSection(theme);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (progress is! SizedBox) ...[
+          progress,
+          SizedBox(height: sectionGap),
+        ],
+        _subPageContent(selectedId),
       ],
     );
   }

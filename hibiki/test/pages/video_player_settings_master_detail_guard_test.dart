@@ -64,17 +64,20 @@ void main() {
     expect(source, contains('HibikiModalSheetFrame('));
     expect(source, contains('scrollable: false'));
     expect(source, contains('MaterialSupportingPaneLayout('));
-    expect(source, contains('minSplitWidth: 640'));
+    expect(source, contains('minSplitWidth: kHibikiSettingsWideThreshold'));
     // 左父菜单收窄到共享常量（旧硬编码 248）。
     expect(source,
         contains('supportingWidth: kHibikiSettingsSupportingPaneWidth'));
     expect(source, contains('SupportingPaneSide.start'));
     expect(source, contains('height: constraints.maxHeight'));
-    expect(source, contains('constraints.maxWidth >= 640'));
-    // 左父菜单在可用高度内放不下（出现滚动条）时回退窄窗 push。
-    expect(source, contains('_supportingScrollController'));
-    expect(source, contains('maxScrollExtent'));
-    expect(source, contains('_isWide = wantWide && !_supportingOverflowsWide'));
+    // 确定性几何判据：宽且高都 >= 共享常量阈值才进宽窗（与书籍设置同条件）。
+    expect(source,
+        contains('constraints.maxWidth >= kHibikiSettingsWideThreshold'));
+    expect(source,
+        contains('constraints.maxHeight >= kHibikiSettingsWideMinHeight'));
+    // 旧的「post-frame 测内容溢出回退」已移除（会随内容高度发散 → 同设备两种表现）。
+    expect(source, isNot(contains('_supportingOverflowsWide')));
+    expect(source, isNot(contains('_supportingScrollController')));
     expect(source, contains('padding: wideSupportingPadding'));
     expect(source, contains('padding: widePrimaryPadding'));
     // 左父菜单单选高亮（pill），无 chevron 误导 push。
