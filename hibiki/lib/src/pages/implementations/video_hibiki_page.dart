@@ -181,6 +181,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 当前集索引（[_episodes] 下标）；单视频恒 0。
   int _currentEpisode = 0;
 
+  /// 换集加载代际计数：每次 [_loadEpisode] 自增并捕获本次序号；其慢路径（ffmpeg
+  /// 枚举字幕源 + 解析 cue）跑完后若序号已被后续切集取代，则放弃应用，避免「播放中
+  /// 途快速切集时旧的慢加载落地后覆盖新集字幕/视频」（用户报：切到第4集字幕/音画
+  /// 对不上，疑似中途切换；本机不可复现，加此守卫兜底竞态）。
+  int _episodeLoadSeq = 0;
+
   /// 当前播放的视频文件绝对路径（枚举字幕源用）；未 load 时为 null。
   String? _currentVideoPath;
 
@@ -384,6 +390,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   }) async {
     if (index < 0 || index >= _episodes.length) return;
     final PlaylistEntry episode = _episodes[index];
+    // 本次加载的代际序号；慢路径跑完后据此判断是否已被后续切集取代。
+    final int seq = ++_episodeLoadSeq;
 
     List<AudioCue> cues = const <AudioCue>[];
     String? externalSub;
@@ -411,6 +419,18 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         externalSub = sidecar.path;
       }
     }
+
+    // 慢路径（ffmpeg 枚举 + cue 解析）期间若已被后续切集取代，放弃应用避免覆盖新集。
+    if (seq != _episodeLoadSeq || !mounted) {
+      debugPrint('[video-episode] superseded: ep$index seq=$seq '
+          'cur=$_episodeLoadSeq — skip apply');
+      return;
+    }
+    // 诊断（用户报「切到第4集字幕/音画对不上」，本机不可复现）：记录实际选中的字幕源
+    // 与解析出的 cue 数 + 首句，便于真机切集后回看日志锁定是否选错源/空 cue/错集。
+    debugPrint('[video-episode] load ep$index "${episode.title}" '
+        'path=${episode.path} subSrc=$externalSub cues=${cues.length}'
+        '${cues.isNotEmpty ? ' first=[${cues.first.startMs}ms]${cues.first.text}' : ''}');
 
     _currentEpisode = index;
     await _applyLoad(
