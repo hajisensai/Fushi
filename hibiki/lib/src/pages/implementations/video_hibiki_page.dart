@@ -943,6 +943,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   ) {
     final ColorScheme cs = Theme.of(context).colorScheme;
     return MaterialDesktopVideoControlsThemeData(
+      // 控制条 3s 后自动隐藏时一并隐藏鼠标光标（默认 false 会让光标常驻，BUG-106）。
+      hideMouseOnControlsRemoval: true,
       seekBarPositionColor: cs.primary,
       seekBarThumbColor: cs.primary,
       buttonBarButtonColor: cs.onSurface,
