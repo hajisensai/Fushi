@@ -141,6 +141,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 查词浮层栈（与阅读器/词典页同款，由 [DictionaryPageMixin] 管理）。
   final List<NestedPopupEntry> _popupStack = <NestedPopupEntry>[];
 
+  /// 字幕字符命中句柄：查词浮层的 dismiss barrier 用它反查「点到的是不是另一个字幕
+  /// 字符」，是则切换查词、保持暂停（见 [_onDismissBarrierTap] / [VideoSubtitleHitTester]）。
+  final VideoSubtitleHitTester _subtitleHitTester = VideoSubtitleHitTester();
+
   /// 承载查词浮层栈的根 Overlay 入口；非空时浮层栈渲染在根 Overlay（窗口/全屏统一，
   /// 全屏时浮在 media_kit 全屏路由之上）。栈空时移除、栈变化时 `markNeedsBuild`。
   OverlayEntry? _popupOverlayEntry;
@@ -749,6 +753,22 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _syncPopupOverlay();
   }
 
+  /// 查词浮层打开时，点根 Overlay 全屏 dismiss barrier 的处理：若点到了同句的另一个
+  /// 字幕字符，则**切换查词**（对该字符走 [_lookupAt]：已暂停故不重复暂停、不清
+  /// [_pausedForLookup]，`replaceStack` 替换可见浮层）→ 保持暂停、弹窗切到新词；否则
+  /// 点的是空白/控件区，[_popNestedPopupAt] 关栈并据 [_pausedForLookup] 恢复播放。
+  ///
+  /// 根因（用户报）：barrier 全屏盖在字幕之上、抢走点击 → 点同句第二个词只会关栈+恢复
+  /// 播放，查不了第二个词。barrier 先反查字幕字符命中即可「点词换词、保持暂停」。
+  void _onDismissBarrierTap(Offset globalPos) {
+    final SubtitleCharHit? hit = _subtitleHitTester.hitTest(globalPos);
+    if (hit != null) {
+      unawaited(_lookupAt(hit.sentence, hit.graphemeIndex, hit.charRect));
+      return;
+    }
+    _popNestedPopupAt(0);
+  }
+
   void _popNestedPopupAt(int index) {
     // Hide-and-keep the warm slot instead of clearing it, so its loaded WebView
     // survives for the next lookup (BUG-094): closing index 0 hides the warm
@@ -851,7 +871,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                   Positioned.fill(
                     child: GestureDetector(
                       behavior: HitTestBehavior.translucent,
-                      onTap: () => _popNestedPopupAt(0),
+                      // onTapUp（带坐标）而非 onTap：点到同句另一个字幕字符时切换查词
+                      // 并保持暂停，点其它区域才 dismiss + 恢复（见 _onDismissBarrierTap）。
+                      onTapUp: (TapUpDetails d) =>
+                          _onDismissBarrierTap(d.globalPosition),
                       child: const ColoredBox(color: Colors.transparent),
                     ),
                   ),
@@ -2094,6 +2117,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             child: VideoSubtitleOverlay(
               controller: controller,
               onCharTap: _lookupAt,
+              hitTester: _subtitleHitTester,
               blurEnabled: appModel.videoSubtitleBlur,
               fontSize: _subtitleStyle.fontSize,
               textColor: _subtitleStyle.textColor,

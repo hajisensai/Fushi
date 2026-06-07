@@ -6,6 +6,27 @@ import 'package:hibiki/src/media/video/subtitle_pos_mapping.dart';
 import 'package:hibiki/src/media/video/video_player_controller.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 
+/// 命中字幕某字符的结果：整条字幕、被点 grapheme 下标、该字符的全局屏幕矩形。
+/// 与 [VideoSubtitleOverlay.onCharTap] 的回调三元组同构。
+typedef SubtitleCharHit = ({String sentence, int graphemeIndex, Rect charRect});
+
+/// 给上层（查词浮层的 dismiss barrier）按全局坐标反查「点到的是哪个字幕字符」用的
+/// 句柄。[VideoSubtitleOverlay] 在 build 时把自己的命中实现绑进来；上层持有同一个
+/// 句柄对象、调 [hitTest]。常驻句柄、最近一次 build 的 overlay 覆盖绑定（全屏复用
+/// 同一字幕 overlay 组件，故全屏路由会重新绑定其命中实现）。
+///
+/// 存在动机：查词浮层打开时，根 Overlay 的全屏 dismiss barrier 盖在字幕之上、会吞掉
+/// 点击 → 点同句第二个词只会关栈+恢复播放，查不了第二个词。让 barrier 先用本句柄反查
+/// 是否点到了字幕字符，是则切换查词（保持暂停），否则才 dismiss。
+class VideoSubtitleHitTester {
+  SubtitleCharHit? Function(Offset globalPos)? _impl;
+
+  void bindHitTest(SubtitleCharHit? Function(Offset globalPos) impl) =>
+      _impl = impl;
+
+  SubtitleCharHit? hitTest(Offset globalPos) => _impl?.call(globalPos);
+}
+
 /// 视频底部当前句字幕 overlay；监听 [VideoPlayerController.currentCue]。
 ///
 /// 字幕逐字符可点击：点击第 [int] 个 grapheme 时回调
@@ -20,6 +41,7 @@ class VideoSubtitleOverlay extends StatefulWidget {
   const VideoSubtitleOverlay({
     required this.controller,
     this.onCharTap,
+    this.hitTester,
     this.blurEnabled = false,
     this.fontSize = 22,
     this.textColor = Colors.white,
@@ -34,6 +56,10 @@ class VideoSubtitleOverlay extends StatefulWidget {
   /// [charRect] 为被点字符在全局坐标系下的矩形（弹窗定位用）。
   final void Function(String sentence, int graphemeIndex, Rect charRect)?
       onCharTap;
+
+  /// 可选的字符命中句柄：build 时把按全局坐标反查字符的实现绑进来，供查词浮层的
+  /// dismiss barrier「点同句换词保持暂停」用（见 [VideoSubtitleHitTester]）。
+  final VideoSubtitleHitTester? hitTester;
 
   /// 听力沉浸：字幕默认模糊，悬停/点击显形。
   final bool blurEnabled;
@@ -57,6 +83,27 @@ class VideoSubtitleOverlay extends StatefulWidget {
 class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
   bool _revealed = false;
 
+  /// 当前句各字符的 [BuildContext]（每帧 build 重建，下标==grapheme 下标），供
+  /// [_charHitTest] 按全局坐标反查命中的字符。
+  final List<BuildContext> _charContexts = <BuildContext>[];
+
+  /// 当前句文本与模糊态快照，供 [_charHitTest] 在 build 之外读取。
+  String _currentText = '';
+  bool _currentBlurred = false;
+
+  /// 按全局坐标反查命中的字幕字符；模糊态/空句返回 null（与点击行为一致：模糊时不
+  /// 查词）。供 [VideoSubtitleHitTester] 绑定。
+  SubtitleCharHit? _charHitTest(Offset globalPos) {
+    if (_currentBlurred || _currentText.isEmpty) return null;
+    for (int i = 0; i < _charContexts.length; i++) {
+      final Rect r = _globalRectOf(_charContexts[i]);
+      if (r != Rect.zero && r.contains(globalPos)) {
+        return (sentence: _currentText, graphemeIndex: i, charRect: r);
+      }
+    }
+    return null;
+  }
+
   @override
   void didUpdateWidget(VideoSubtitleOverlay oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -74,11 +121,20 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
     return AnimatedBuilder(
       animation: widget.controller,
       builder: (BuildContext context, _) {
+        // 每帧重置字符命中状态并（重新）绑定句柄——空句也要绑定，使浮层打开但当前
+        // 无字幕时 hitTest 返回 null（barrier 走 dismiss）。
+        _charContexts.clear();
         final String text = widget.controller.currentCue?.text ?? '';
-        if (text.isEmpty) return const SizedBox.shrink();
+        _currentText = text;
+        widget.hitTester?.bindHitTest(_charHitTest);
+        if (text.isEmpty) {
+          _currentBlurred = false;
+          return const SizedBox.shrink();
+        }
         final SubtitleMarkup? markup = widget.controller.currentCue?.markup;
         final List<String> chars = text.characters.toList(growable: false);
         final bool blurred = widget.blurEnabled && !_revealed;
+        _currentBlurred = blurred;
 
         Widget box = DecoratedBox(
           decoration: BoxDecoration(
@@ -92,20 +148,24 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
               children: <Widget>[
                 for (int i = 0; i < chars.length; i++)
                   Builder(
-                    builder: (BuildContext charContext) => GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: widget.onCharTap == null
-                          ? null
-                          : () => widget.onCharTap!(
-                                text,
-                                i,
-                                _globalRectOf(charContext),
-                              ),
-                      child: Text(
-                        chars[i],
-                        style: _styleForGrapheme(i, markup),
-                      ),
-                    ),
+                    builder: (BuildContext charContext) {
+                      // 登记字符 context（下标==i==grapheme 下标）供全局坐标反查。
+                      _charContexts.add(charContext);
+                      return GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: widget.onCharTap == null
+                            ? null
+                            : () => widget.onCharTap!(
+                                  text,
+                                  i,
+                                  _globalRectOf(charContext),
+                                ),
+                        child: Text(
+                          chars[i],
+                          style: _styleForGrapheme(i, markup),
+                        ),
+                      );
+                    },
                   ),
               ],
             ),

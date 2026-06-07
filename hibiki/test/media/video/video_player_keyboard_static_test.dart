@@ -73,6 +73,38 @@ void main() {
     });
   });
 
+  group('查词浮层打开时点同句另一个词：切换查词、保持暂停', () {
+    final String page =
+        read('lib/src/pages/implementations/video_hibiki_page.dart');
+
+    test('dismiss barrier 走 onTapUp → _onDismissBarrierTap（带坐标判定）', () {
+      expect(page.contains('onTapUp: (TapUpDetails d) =>'), isTrue);
+      expect(page.contains('_onDismissBarrierTap(d.globalPosition)'), isTrue,
+          reason: 'barrier 需带坐标判定，而非无脑 _popNestedPopupAt');
+    });
+
+    test('_onDismissBarrierTap：命中字符则 _lookupAt（不关栈不恢复），否则 dismiss', () {
+      final RegExpMatch? body = RegExp(
+        r'void _onDismissBarrierTap\(Offset globalPos\) \{(.*?)\n  \}',
+        dotAll: true,
+      ).firstMatch(page);
+      expect(body, isNotNull, reason: '找不到 _onDismissBarrierTap 方法体');
+      final String b = body!.group(1)!;
+      final int hitAt = b.indexOf('_subtitleHitTester.hitTest(globalPos)');
+      final int lookupAt = b.indexOf('_lookupAt(');
+      final int popAt = b.indexOf('_popNestedPopupAt(0)');
+      expect(hitAt, greaterThanOrEqualTo(0), reason: '需先反查字幕字符命中');
+      expect(lookupAt, greaterThan(hitAt),
+          reason: '命中字符后切换查词（保持暂停：_lookupAt 已暂停不再暂停、不清标记）');
+      expect(popAt, greaterThan(lookupAt),
+          reason: '未命中字符才 dismiss + 恢复');
+    });
+
+    test('字幕 overlay 绑定 _subtitleHitTester', () {
+      expect(page.contains('hitTester: _subtitleHitTester'), isTrue);
+    });
+  });
+
   group('进页面/换集自动播放', () {
     final String controller =
         read('lib/src/media/video/video_player_controller.dart');
