@@ -39,11 +39,11 @@ jobs:
 
       - name: Install deps (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y nasm yasm pkg-config zlib1g-dev
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg nasm yasm pkg-config zlib1g-dev
 
       - name: Install deps (macOS)
         if: runner.os == 'macOS'
-        run: brew install nasm pkg-config
+        run: brew install ffmpeg nasm pkg-config
 
       - name: Setup MSYS2 (Windows)
         if: runner.os == 'Windows'
@@ -55,6 +55,7 @@ jobs:
             base-devel git
             mingw-w64-x86_64-gcc mingw-w64-x86_64-nasm
             mingw-w64-x86_64-pkgconf mingw-w64-x86_64-zlib
+            mingw-w64-x86_64-ffmpeg
 
       - name: Build (Linux/macOS)
         if: runner.os != 'Windows'
@@ -65,8 +66,23 @@ jobs:
         shell: msys2 {0}
         run: FFMPEG_REF="${{ github.event.inputs.ffmpeg_ref }}" OUT="$PWD/out" bash tool/ffmpeg-min/build-ffmpeg-min.sh
 
-      - name: Report size
-        run: ls -la out/bin || dir out\bin
+      - name: Smoke test (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: FFMPEG_MIN="$PWD/out/bin/ffmpeg" bash tool/ffmpeg-min/smoke-test.sh
+
+      - name: Smoke test (Windows / MSYS2)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: FFMPEG_MIN="$PWD/out/bin/ffmpeg.exe" bash tool/ffmpeg-min/smoke-test.sh
+
+      - name: Report size (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: ls -lh out/bin/ffmpeg
+
+      - name: Report size (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Get-Item out/bin/ffmpeg.exe | Select-Object Name, Length
 
       - uses: actions/upload-artifact@v4
         with:
