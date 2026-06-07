@@ -13,6 +13,20 @@
 
 ---
 
+## BUG-106 · 桌面端视频播放鼠标光标不自动隐藏
+- **报告**：2026-06-07（用户：「视频播放鼠标是不是没有自动隐藏」）。
+- **真实性**：✅ **真 bug（沿真实渲染路径定位）**。视频控制条用 media_kit 的 `MaterialDesktopVideoControlsThemeData`（`video_hibiki_page.dart` `_desktopControlsTheme`），鼠标自动隐藏由 `hideMouseOnControlsRemoval` 开关控制，media_kit 默认 **false**（`media_kit_video-2.0.1/.../material_desktop.dart:192`；仅 `hideMouseOnControlsRemoval && !mount` 时光标才变 `SystemMouseCursors.none`，见 :660-661）。本项目从未设此字段 → 控制条 3s 后自动隐藏但鼠标光标常驻。移动端无光标概念不受影响。
+- **[x] ① 已修复** — 本轮提交 `ec32e069a`。根因修：`_desktopControlsTheme` 的 `MaterialDesktopVideoControlsThemeData` 加 `hideMouseOnControlsRemoval: true`。
+- **[x] ② 已加自动化测试** — `hibiki/test/pages/video_mouse_autohide_guard_test.dart`（源码守卫：断言含 `hideMouseOnControlsRemoval: true`；media_kit headless 不可跑视频 widget）。
+- **备注**：UI 类。`flutter analyze` 0 + 全量 flutter test 绿。**桌面肉眼复测待用户**：播放后静止约 3s，鼠标光标应隐藏，移动鼠标即恢复。
+
+## BUG-105 · 视频字幕把 ASS 标签当文本显示（`{\an8}` 等控制码漏出），应解析渲染其语义
+- **报告**：2026-06-07（用户：「视频字幕显示有问题」，截图为 `{\an8}（カンナ）ふわぁ~`；进一步要求「改成支持标签语法，而不是剔除」，并选定保真度=静态可见子集 + 保留逐字查词，`\pos` 真做）。
+- **真实性**：✅ **真 bug（沿真实代码路径定位）**。`{\an8}` 是 ASS override tag（顶部居中对齐），属控制码不该显示。根因：含 ASS 残留标签的外挂 `.srt`（fansub 常见）走 `SrtParser`，内封 `mov_text/subrip` 经 ffmpeg 转 srt 也可能保留标签；而 `srt_parser.dart:161 _stripHtml` / `vtt_parser.dart:148 _stripTags` 只剥 `<...>` HTML 标签、不剥 ASS `{...}` 覆盖块（只有 `AssParser` 旧 `_overrideTag` 会剥）。用户诉求升级为**解析渲染**标签语义而非剔除。
+- **[x] ① 已修复** — 本轮提交 `16c0f87a7`(markup 解析器)/`3e3d2532e`(AudioCue 字段)/`dbff63a3c`(srt)/`2f991393f`(vtt)/`8015ff498`(ass+PlayRes)/`056fe2341`(\pos 映射)/`d918e5052`(controller 宽高)/`1a3822fe5`(overlay 渲染)。根因修（分层、保留查词、无 DB 迁移）：①新增纯函数 `parseSubtitleMarkup`（`packages/hibiki_audio/lib/src/parsers/subtitle_markup.dart`，纯 Dart、颜色 int ARGB）解析 `\an1-9`/`\pos`/`\i\b\u\s`/`\c\1c`/`\fs`/`\N\h`，产出 tag-free `plainText` + grapheme 偏移 `spans` + `anchor`/`posFraction`，不支持标签（卡拉OK/动画/绘图/旋转缩放等）静默删除；②`AudioCue` 加瞬态 `markup` 字段（不持久化）；③srt/vtt/ass 三 parser 统一经 markup 得纯文本（**副作用红利**：srt/vtt 现在也剥 `{...}`，原 leak 顺带根治），ass 补读 `[Script Info]` 的 `PlayResX/Y` 归一化 `\pos`；④`subtitle_pos_mapping.dart` 纯函数把归一化 `\pos` 经 BoxFit.contain letterbox 映射到容器坐标；⑤`VideoPlayerController` 暴露 `videoWidth/Height` 并订阅 `stream.width/height`；⑥`video_subtitle_overlay.dart` 按 `anchor`→`Align`、`\pos`→`Stack+Positioned+FractionalTranslation` 锚点对齐、`spans`→逐 grapheme `TextStyle`，**逐字查词 + 模糊沉浸完全保留**，`cue.text` 永远纯文本（查词/制卡安全）。无 markup 的 cue 走 anchor=null → 底居中，像素级不变。
+- **[x] ② 已加自动化测试** — `hibiki/test/media/audiobook/subtitle_markup_test.dart`（7 例：`{\an8}` 剥离+锚点、italic span、bold+underline+color BGR→ARGB+fs、`\N\h`、`\pos` 归一化、卡拉OK/动画/绘图被删、无标签）；`srt_parser_test.dart`/`vtt_parser_test.dart`/`ass_parser_test.dart`（各补 leak 守卫 + ass 读 PlayRes/\pos）；`hibiki/test/media/video/subtitle_pos_mapping_test.dart`（letterbox/等比/未解码 null）；`video_lifecycle_static_test.dart`（controller 暴露宽高+订阅源码守卫）；`hibiki/test/media/video/video_subtitle_overlay_markup_test.dart`（widget：an8 顶对齐+查词传纯文本与正确 grapheme 索引、italic 渲染、无 markup 底居中向后兼容）。
+- **备注**：播放/字幕渲染类。设计文档 `docs/specs/2026-06-07-video-ass-markup-design.md`。`flutter analyze` 改动文件 0 issue + 全量 flutter test 绿。**真机/桌面肉眼复测待用户**：播含 `\an8`/斜体/`\pos` 的字幕，标签语义正确渲染、不再显示控制码；逐字点击查词命中正确字。
+
 ## BUG-104 · 大容器（27GB BluRay REMUX）切换内嵌字幕「点了没切换过去」
 - **报告**：2026-06-07（用户：「`...TrueHD.5.1-ManualMux.mkv` 这个的内嵌字幕点击以后没切换过去」）。采番注：初记 103，rebase 到 develop 时 103 已被并发提交「视频统计纵坐标 0m」占用，改取 104。
 - **真实性**：✅ **真 bug（沿真实代码路径 + 真实文件实测定位）**。先排除「图形字幕」假设：`ffmpeg -i` 实测该 mkv 的 8 条内嵌字幕**全是 `subrip (srt)` 文本字幕**（含 `#0:6 jpn`），`subtitleFormatForCodec('subrip')→srt`，本应可解析；我实测抽 jpn 轨得到合法日文 srt（138KB）。真根因是**性能+零反馈+固定超时**：① 点击走 `video_hibiki_page.dart:_selectSubtitleSource` **同步 await** `loadCuesForSource`→`_loadEmbeddedCues`→`extractEmbeddedSubtitleViaFfmpeg`（`ffmpeg -map 0:s:N`）。② 27GB 是**交错容器**，抽**任一条**字幕都要 ffmpeg 读穿整个时间轴——实测**单条 ~19–20s**（纯 I/O，CPU≈0）。③ 点击后底栏菜单 `Navigator.pop` 立即关闭，**整段 ~20s 无任何加载提示**，画面字幕不变 → 用户读作「没切换过去」。④ `desktop_audio_clipper.dart:316` 写死 **30s 超时**；播放时 media_kit 正读同一文件，I/O 争用把 20s 推过 30s → 返回 null → cue 空 → 黑底「加载失败」吐司（易错过）→ 仍「没切换」。

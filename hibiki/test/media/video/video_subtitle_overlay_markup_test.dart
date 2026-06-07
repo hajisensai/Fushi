@@ -45,8 +45,7 @@ void main() {
     await tester.pump();
 
     // 顶部锚点：字幕盒落在 overlay 上半部。
-    final Rect overlayRect =
-        tester.getRect(find.byType(VideoSubtitleOverlay));
+    final Rect overlayRect = tester.getRect(find.byType(VideoSubtitleOverlay));
     final Offset boxCenter = tester.getCenter(find.text('プ'));
     expect(boxCenter.dy, lessThan(overlayRect.center.dy));
 
@@ -85,8 +84,7 @@ void main() {
       home: Scaffold(body: VideoSubtitleOverlay(controller: c)),
     ));
     await tester.pump();
-    final Rect overlayRect =
-        tester.getRect(find.byType(VideoSubtitleOverlay));
+    final Rect overlayRect = tester.getRect(find.byType(VideoSubtitleOverlay));
     final Offset boxCenter = tester.getCenter(find.text('そ'));
     expect(boxCenter.dy, greaterThan(overlayRect.center.dy)); // 底部
   });
