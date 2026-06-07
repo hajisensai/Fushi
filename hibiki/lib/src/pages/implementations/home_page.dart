@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:hibiki/src/sync/sync_auto_trigger.dart';
+import 'package:hibiki/src/sync/desktop_lookup_service.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart'
@@ -251,7 +252,7 @@ class _HomePageState extends BasePageState<HomePage>
       return const SizedBox.shrink();
     }
 
-    return ValueListenableBuilder<bool>(
+    final Widget home = ValueListenableBuilder<bool>(
         valueListenable: syncInProgress,
         builder: (context, syncing, child) => PopScope(
               canPop: !syncing,
@@ -316,6 +317,14 @@ class _HomePageState extends BasePageState<HomePage>
                 ),
               ),
             )));
+    // 桌面剪贴板查词 overlay 叠在整个首页之上（仅桌面）。
+    if (!DesktopLookupService.isDesktop) return home;
+    return Stack(
+      children: <Widget>[
+        home,
+        const Positioned.fill(child: DesktopLookupOverlay()),
+      ],
+    );
   }
 
   /// The three top-level destinations, shared by the bottom bar and the side
