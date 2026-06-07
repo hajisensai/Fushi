@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 
 import '../audiobook/audiobook_model.dart';
+import 'subtitle_markup.dart';
 import 'text_file_io.dart';
 
 /// 解析 SubRip（.srt）字幕文件，产出 [AudioCue] 列表。
@@ -107,7 +108,9 @@ class SrtParser {
       final int timeLineIndex = lines.indexOf(timeLine);
       final String rawText =
           lines.skip(timeLineIndex + 1).where((l) => l.isNotEmpty).join(' ');
-      final String text = _stripHtml(rawText);
+      // 先剥 HTML 标签，再交 markup 解析 ASS override 块（两者正交）。
+      final SubtitleMarkup markup = parseSubtitleMarkup(_stripHtml(rawText));
+      final String text = markup.plainText;
 
       if (text.isEmpty) {
         continue;
@@ -119,6 +122,7 @@ class SrtParser {
         ..sentenceIndex = sentenceIndex
         ..textFragmentId = '[data-cue-id="$sentenceIndex"]'
         ..text = text
+        ..markup = markup
         ..startMs = times.$1
         ..endMs = times.$2
         ..audioFileIndex = audioFileIndex;

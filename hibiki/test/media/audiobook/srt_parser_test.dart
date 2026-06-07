@@ -146,5 +146,16 @@ void main() {
       expect(cues[0].startMs, 1100); // 1,1  → 00:00:01.100
       expect(cues[0].endMs, 2120); // 2,12 → 00:00:02.120
     });
+
+    test('strips ASS override tags leaked into SRT (BUG-105)', () {
+      const String srt = '1\n'
+          '00:00:01,000 --> 00:00:04,000\n'
+          r'{\an8}（カンナ）ふわぁ~'
+          '\n';
+      final List<AudioCue> cues =
+          SrtParser.parseString(content: srt, bookKey: 'b');
+      expect(cues.single.text, '（カンナ）ふわぁ~');
+      expect(cues.single.markup?.anchor?.vertical, SubtitleVAlign.top);
+    });
   });
 }
