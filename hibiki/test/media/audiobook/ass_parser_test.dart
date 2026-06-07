@@ -120,5 +120,33 @@ ${header}Dialogue: 0,0:00:01.67,0:00:03.00,Default,,0,0,0,,厘秒テスト
     test('defaultChapter 与 SrtParser 共用同一值', () {
       expect(AssParser.defaultChapter, SrtParser.defaultChapter);
     });
+
+    test('reads PlayRes and normalizes \\pos; fills markup (BUG-105)', () {
+      const String ass = '[Script Info]\n'
+          'PlayResX: 1920\n'
+          'PlayResY: 1080\n'
+          '\n'
+          '[Events]\n'
+          'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n'
+          r'Dialogue: 0,0:00:01.00,0:00:04.00,Default,,0,0,0,,{\pos(960,540)}やあ'
+          '\n';
+      final List<AudioCue> cues =
+          AssParser.parseString(content: ass, bookKey: 'b');
+      expect(cues.single.text, 'やあ');
+      expect(cues.single.markup?.posFraction?.xFraction, closeTo(0.5, 1e-9));
+      expect(cues.single.markup?.posFraction?.yFraction, closeTo(0.5, 1e-9));
+    });
+
+    test('strips {\\an8} override into plain text + anchor (BUG-105)', () {
+      const String ass = '[Events]\n'
+          'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n'
+          r'Dialogue: 0,0:00:01.00,0:00:04.00,Default,,0,0,0,,{\an8}（カンナ）ふわぁ~'
+          '\n';
+      final List<AudioCue> cues =
+          AssParser.parseString(content: ass, bookKey: 'b');
+      expect(cues.single.text, '（カンナ）ふわぁ~');
+      expect(cues.single.markup?.anchor?.vertical, SubtitleVAlign.top);
+      expect(cues.single.markup?.anchor?.horizontal, SubtitleHAlign.center);
+    });
   });
 }

@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../audiobook/audiobook_model.dart';
 import 'srt_parser.dart';
+import 'subtitle_markup.dart';
 import 'text_file_io.dart';
 
 /// 解析 ASS/SSA（.ass / .ssa）字幕文件，产出 [AudioCue] 列表。
@@ -32,9 +33,6 @@ import 'text_file_io.dart';
 class AssParser {
   /// 与 [SrtParser.defaultChapter] 共用同一章节标识。
   static const String defaultChapter = SrtParser.defaultChapter;
-
-  /// ASS 覆盖标签：`{\an8}`、`{\k50\kf100}` 等。
-  static final RegExp _overrideTag = RegExp(r'\{[^}]*\}');
 
   /// 读取 [assFile]（.ass 或 .ssa）并返回 [AudioCue] 列表。
   ///
@@ -88,11 +86,14 @@ class AssParser {
     int startCol = -1;
     int endCol = -1;
     int textCol = -1;
+    // 脚本坐标系分辨率（[Script Info]），仅用于把 \pos 归一化；缺省按 ASS 规范 384×288。
+    double? playResX;
+    double? playResY;
 
-    // 收集 (startMs, endMs?, text)，最后按 startMs 排序。
+    // 收集 (startMs, endMs?, text, markup)，最后按 startMs 排序。
     // endMs 为 null 表示 End 列缺失/无法解析，留待排序后用下一条 cue 的
     // startMs 推断（HBK-AUDIT-067），而不是当场伪造固定的 5s 时长。
-    final List<(int, int?, String)> rawCues = [];
+    final List<(int, int?, String, SubtitleMarkup)> rawCues = [];
 
     for (final String line in lines) {
       final String trimmed = line.trim();
@@ -107,6 +108,13 @@ class AssParser {
         break;
       }
       if (!inEvents) {
+        // [Script Info] 里捕获 PlayResX/Y（供 \pos 归一化）。
+        final String low = trimmed.toLowerCase();
+        if (low.startsWith('playresx:')) {
+          playResX = double.tryParse(trimmed.substring(9).trim());
+        } else if (low.startsWith('playresy:')) {
+          playResY = double.tryParse(trimmed.substring(9).trim());
+        }
         continue;
       }
 
@@ -146,12 +154,19 @@ class AssParser {
 
         // Text 列及其后所有列重新拼合（Text 本身可能含逗号）
         final String rawText = parts.sublist(textCol).join(',');
-        final String text = _cleanText(rawText);
+        // markup 负责剥离 {...} override 块、转换 \N/\n/\h 软换行，并解析
+        // \an/\pos/行内样式；缺 PlayRes 时按 ASS 规范回退 384×288。
+        final SubtitleMarkup markup = parseSubtitleMarkup(
+          rawText,
+          playResX: playResX ?? 384,
+          playResY: playResY ?? 288,
+        );
+        final String text = markup.plainText;
         if (text.isEmpty) {
           continue;
         }
 
-        rawCues.add((startMs, endMs, text));
+        rawCues.add((startMs, endMs, text, markup));
       }
     }
 
@@ -162,7 +177,8 @@ class AssParser {
     // （HBK-AUDIT-067）。
     final List<AudioCue> cues = [];
     for (int i = 0; i < rawCues.length; i++) {
-      final (int start, int? rawEnd, String text) = rawCues[i];
+      final (int start, int? rawEnd, String text, SubtitleMarkup markup) =
+          rawCues[i];
       final int fallbackEnd =
           i + 1 < rawCues.length ? rawCues[i + 1].$1 : start + 5000;
       final int end = rawEnd ?? fallbackEnd;
@@ -179,6 +195,7 @@ class AssParser {
         ..sentenceIndex = cues.length
         ..textFragmentId = '[data-cue-id="${cues.length}"]'
         ..text = text
+        ..markup = markup
         ..startMs = start
         ..endMs = end
         ..audioFileIndex = audioFileIndex);
@@ -201,15 +218,5 @@ class AssParser {
         am * 60000 +
         as_ * 1000 +
         int.parse(m.group(4)!) * 10; // 厘秒 → 毫秒
-  }
-
-  /// 剥离 ASS 覆盖标签，并将软换行符转为空格。
-  static String _cleanText(String text) {
-    return text
-        .replaceAll(_overrideTag, '')
-        .replaceAll(r'\N', ' ')
-        .replaceAll(r'\n', ' ')
-        .replaceAll(r'\h', ' ')
-        .trim();
   }
 }
