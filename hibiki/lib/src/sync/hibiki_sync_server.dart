@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/hibiki_remote_lookup_service.dart';
 import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart' as shelf;
@@ -72,13 +74,15 @@ class HibikiSyncServer {
     HibikiRemoteLookupService? remoteLookupService,
     HibikiRemoteMiningService? miningService,
     HibikiRemoteHistoryService? historyService,
+    HibikiLibraryHostService? libraryService,
   })  : syncDataDir = p.join(syncDataDir, 'sync-data'),
         _requestedPort = port,
         _token = token,
         _allowLan = allowLan,
         _remoteLookupService = remoteLookupService,
         _miningService = miningService,
-        _historyService = historyService;
+        _historyService = historyService,
+        _libraryService = libraryService;
 
   final String syncDataDir;
   final int _requestedPort;
@@ -87,6 +91,7 @@ class HibikiSyncServer {
   final HibikiRemoteLookupService? _remoteLookupService;
   final HibikiRemoteMiningService? _miningService;
   final HibikiRemoteHistoryService? _historyService;
+  final HibikiLibraryHostService? _libraryService;
   final Map<String, _RemoteAudioToken> _remoteAudioTokens =
       <String, _RemoteAudioToken>{};
   HttpServer? _server;
@@ -199,6 +204,14 @@ class HibikiSyncServer {
     if (reqPath == '/api/mine') {
       if (method != 'POST') return shelf.Response(405);
       return _handleMine(request);
+    }
+    if (reqPath == '/api/capabilities') {
+      if (method != 'GET') return shelf.Response(405);
+      return _handleCapabilities();
+    }
+    if (reqPath == '/api/library/dictionaries' ||
+        reqPath.startsWith('/api/library/dictionaries/')) {
+      return _handleLibraryDictionaries(request, method, reqPath);
     }
 
     // 真实读写路径：只做词法规整、**保留原始大小写**。p.canonicalize 在
@@ -395,6 +408,102 @@ class HibikiSyncServer {
     final String result =
         await svc.mineEntry(fields: fields, sentence: sentence);
     return _jsonResponse(<String, dynamic>{'result': result});
+  }
+
+  shelf.Response _handleCapabilities() {
+    final bool dict = _libraryService != null;
+    return _jsonResponse(<String, dynamic>{
+      'liveLibrary': <String, dynamic>{
+        'dictionaries': dict,
+        'books': false,
+        'audio': false,
+      },
+    });
+  }
+
+  Future<shelf.Response> _handleLibraryDictionaries(
+    shelf.Request request,
+    String method,
+    String reqPath,
+  ) async {
+    final HibikiLibraryHostService? svc = _libraryService;
+    if (svc == null) return shelf.Response.notFound('Library service off');
+
+    if (reqPath == '/api/library/dictionaries') {
+      if (method != 'GET') return shelf.Response(405);
+      final List<RemoteDictionaryInfo> list = await svc.listDictionaries();
+      return shelf.Response.ok(
+        jsonEncode(<Map<String, Object?>>[
+          for (final RemoteDictionaryInfo d in list) d.toJson()
+        ]),
+        headers: <String, String>{'Content-Type': 'application/json'},
+      );
+    }
+
+    final String name = Uri.decodeComponent(
+        reqPath.substring('/api/library/dictionaries/'.length));
+    if (name.isEmpty) {
+      return shelf.Response.notFound('Missing dictionary name');
+    }
+
+    switch (method) {
+      case 'GET':
+        File file;
+        try {
+          file = await svc.exportDictionary(name);
+        } on StateError {
+          return shelf.Response.notFound('Dictionary not found');
+        }
+        final int length = file.lengthSync();
+        final Stream<List<int>> body = file.openRead().transform(
+          StreamTransformer<List<int>, List<int>>.fromHandlers(
+            handleDone: (EventSink<List<int>> out) {
+              out.close();
+              try {
+                file.parent.deleteSync(recursive: true);
+              } catch (_) {
+                // best-effort temp cleanup
+              }
+            },
+          ),
+        );
+        return shelf.Response.ok(body, headers: <String, String>{
+          'Content-Type': 'application/octet-stream',
+          'Content-Length': '$length',
+        });
+
+      case 'PUT':
+        final Directory tmpDir =
+            Directory.systemTemp.createTempSync('hibiki_dict_in');
+        final File tmp = File(p.join(tmpDir.path, '$name.hibikidict'));
+        final IOSink sink = tmp.openWrite();
+        try {
+          await request.read().forEach(sink.add);
+          await sink.close();
+          await svc.importDictionary(tmp);
+          return shelf.Response(200);
+        } catch (e) {
+          try {
+            await sink.close();
+          } catch (_) {
+            // best-effort
+          }
+          return shelf.Response(500, body: 'Import failed: $e');
+        } finally {
+          try {
+            tmpDir.deleteSync(recursive: true);
+          } catch (_) {
+            // best-effort
+          }
+        }
+
+      case 'DELETE':
+        await svc.deleteDictionary(name);
+        return shelf.Response(204);
+
+      default:
+        return shelf.Response(405);
+    }
   }
 
   Future<Map<String, dynamic>?> _readJsonObject(shelf.Request request) async {
