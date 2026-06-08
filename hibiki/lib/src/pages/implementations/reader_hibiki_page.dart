@@ -5378,20 +5378,6 @@ window.flutter_inappwebview.callHandler('spreadReady');
 
   // ── Top Progress Bar ──────────────────────────────────────────────
 
-  Color _infoTextColor() {
-    final String theme = appModel.appThemeKey;
-    switch (theme) {
-      case 'gray-theme':
-      case 'dark-theme':
-      case 'black-theme':
-        return const Color(0x99FFFFFF);
-      case 'ecru-theme':
-        return const Color(0x7A5C5448);
-      default:
-        return const Color(0x8A000000);
-    }
-  }
-
   Widget _buildTopProgressBar() {
     if (_lyricsMode || !_showTopProgress) {
       return const SizedBox.shrink();
@@ -5399,7 +5385,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
 
     final double ratio =
         (_progressCurrentChars! / _progressTotalChars!).clamp(0.0, 1.0);
-    final Color infoColor = _infoTextColor();
+    final Color infoColor = _themeTextColor();
 
     return Positioned(
       top: _stableTopInset,
