@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -929,6 +930,11 @@ SettingsDestination _lookupDestination() {
               settingsContext.refresh();
             },
           ),
+          SettingsCustomItem(
+            id: 'lookup.yomitan_api_key',
+            icon: Icons.key_outlined,
+            builder: _buildYomitanApiKeyField,
+          ),
           SettingsSwitchItem(
             id: 'lookup.texthooker',
             title: t.texthooker_enabled,
@@ -1343,6 +1349,42 @@ String _selectedUpdateChannel(SettingsContext settingsContext) {
   return 'stable';
 }
 
+Widget _buildYomitanApiKeyField(SettingsContext settingsContext) {
+  return _SettingsTextField(
+    title: t.yomitan_api_key,
+    icon: Icons.key_outlined,
+    initialValue: settingsContext.appModel.yomitanApiKey,
+    obscureText: true,
+    keyboardType: TextInputType.visiblePassword,
+    onChanged: (String value) async {
+      await settingsContext.appModel.setYomitanApiKey(value);
+      await _restartYomitanApiServerIfEnabled(settingsContext);
+    },
+  );
+}
+
+Future<void> _restartYomitanApiServerIfEnabled(
+  SettingsContext settingsContext,
+) async {
+  if (!settingsContext.appModel.yomitanApiServerEnabled) return;
+  await settingsContext.appModel.stopYomitanApiServer();
+  try {
+    await settingsContext.appModel.startYomitanApiServer();
+  } on SyncServerPortInUseException {
+    final BuildContext ctx = settingsContext.context;
+    if (!ctx.mounted) return;
+    ScaffoldMessenger.of(ctx).showSnackBar(
+      SnackBar(
+        content: Text(
+          t.sync_server_port_in_use(
+            port: settingsContext.appModel.yomitanApiPort,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 Widget _buildSearchDebounceField(SettingsContext settingsContext) {
   final AppModel appModel = settingsContext.appModel;
   return _SettingsNumberField(
@@ -1409,6 +1451,75 @@ Widget _buildMaximumTermsField(SettingsContext settingsContext) {
       settingsContext.refresh();
     },
   );
+}
+
+class _SettingsTextField extends StatefulWidget {
+  const _SettingsTextField({
+    required this.title,
+    required this.icon,
+    required this.initialValue,
+    required this.onChanged,
+    this.obscureText = false,
+    this.keyboardType = TextInputType.text,
+  });
+
+  final String title;
+  final IconData icon;
+  final String initialValue;
+  final bool obscureText;
+  final TextInputType keyboardType;
+  final Future<void> Function(String value) onChanged;
+
+  @override
+  State<_SettingsTextField> createState() => _SettingsTextFieldState();
+}
+
+class _SettingsTextFieldState extends State<_SettingsTextField> {
+  late final TextEditingController _controller;
+  Timer? _debounce;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialValue);
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _scheduleChanged(String value) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 500), () {
+      unawaited(widget.onChanged(value));
+    });
+  }
+
+  void _submit(String value) {
+    _debounce?.cancel();
+    unawaited(widget.onChanged(value));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AdaptiveSettingsRow(
+      title: widget.title,
+      icon: widget.icon,
+      controlBelow: true,
+      trailing: AdaptiveSettingsTextField(
+        controller: _controller,
+        obscureText: widget.obscureText,
+        keyboardType: widget.keyboardType,
+        textInputAction: TextInputAction.done,
+        labelText: widget.title,
+        onChanged: _scheduleChanged,
+        onSubmitted: _submit,
+      ),
+    );
+  }
 }
 
 class _SettingsNumberField extends StatefulWidget {

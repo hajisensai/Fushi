@@ -813,6 +813,7 @@ class AdaptiveSettingsTextField extends StatefulWidget {
     this.initialValue,
     this.hintText,
     this.labelText,
+    this.obscureText = false,
     this.keyboardType = TextInputType.text,
     this.textInputAction,
     this.onChanged,
@@ -826,6 +827,7 @@ class AdaptiveSettingsTextField extends StatefulWidget {
   final String? initialValue;
   final String? hintText;
   final String? labelText;
+  final bool obscureText;
   final TextInputType keyboardType;
   final TextInputAction? textInputAction;
   final ValueChanged<String>? onChanged;
@@ -860,6 +862,7 @@ class _AdaptiveSettingsTextFieldState extends State<AdaptiveSettingsTextField> {
       initialValue: widget.initialValue,
       hintText: widget.hintText,
       labelText: widget.labelText,
+      obscureText: widget.obscureText,
       keyboardType: widget.keyboardType,
       textInputAction: widget.textInputAction,
       onChanged: widget.onChanged,

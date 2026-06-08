@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
+import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/models/theme_notifier.dart';
 import 'package:hibiki/src/settings/cupertino_settings_renderer.dart';
 import 'package:hibiki/src/settings/material_settings_renderer.dart';
@@ -141,8 +142,10 @@ Widget _harness({
   required Widget Function(SettingsContext) builder,
   CupertinoThemeData? cupertinoTheme,
   String designSystem = 'auto',
+  AppModel? appModel,
+  HibikiDatabase? database,
 }) {
-  final HibikiDatabase db = _testDb();
+  final HibikiDatabase db = database ?? _testDb();
   final ThemeNotifier themeNotifier = ThemeNotifier(db, () => const TextTheme())
     ..loadFromPrefsSnapshot(<String, String>{
       'design_system': PrefCodec.encode(designSystem),
@@ -150,16 +153,16 @@ Widget _harness({
       'brightness_mode': PrefCodec.encode('system'),
       'custom_theme_seed': PrefCodec.encode(0xFF1F4959),
     });
-  final AppModel appModel = _RendererTestAppModel()
-    ..themeNotifier = themeNotifier;
+  final AppModel resolvedAppModel = appModel ?? _RendererTestAppModel();
+  resolvedAppModel.themeNotifier = themeNotifier;
   addTearDown(() async {
     themeNotifier.dispose();
-    await db.close();
+    if (database == null) await db.close();
   });
 
   return ProviderScope(
     overrides: <Override>[
-      appProvider.overrideWith((Ref ref) => appModel),
+      appProvider.overrideWith((Ref ref) => resolvedAppModel),
     ],
     child: MaterialApp(
       theme: ThemeData(
@@ -173,6 +176,23 @@ Widget _harness({
       home: _buildHome(cupertinoTheme, builder),
     ),
   );
+}
+
+Future<AppModel> _prefsBackedAppModel(HibikiDatabase db) async {
+  final PreferencesRepository prefsRepo = PreferencesRepository(db);
+  await prefsRepo.loadFromDb();
+  final Directory tempDir =
+      Directory.systemTemp.createTempSync('hibiki_settings_renderer_');
+  addTearDown(() async {
+    if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
+  });
+
+  return _RendererTestAppModel()
+    ..wireLocalAudioForTesting(
+      prefsRepo: prefsRepo,
+      databaseDirectory: tempDir,
+    )
+    ..wireDatabaseForTesting(db);
 }
 
 void main() {
@@ -396,6 +416,49 @@ void main() {
       ),
       findsOneWidget,
     );
+  });
+
+  testWidgets('lookup settings can edit the Yomitan API key', (
+    WidgetTester tester,
+  ) async {
+    final HibikiDatabase db = _testDb();
+    addTearDown(db.close);
+    final AppModel appModel = await _prefsBackedAppModel(db);
+
+    await tester.pumpWidget(
+      _harness(
+        platform: TargetPlatform.android,
+        database: db,
+        appModel: appModel,
+        builder: (SettingsContext settingsContext) {
+          final SettingsDestination lookup =
+              buildSettingsSchema(settingsContext).firstWhere(
+            (SettingsDestination destination) =>
+                destination.id == SettingsDestinationId.lookup,
+          );
+          return MaterialSettingsRenderer().buildDetailPage(
+            settingsContext: settingsContext,
+            destination: lookup,
+          );
+        },
+      ),
+    );
+
+    final Finder field = find.descendant(
+      of: find.widgetWithText(AdaptiveSettingsRow, t.yomitan_api_key),
+      matching: find.byType(TextFormField),
+    );
+    expect(field, findsOneWidget);
+    final EditableText editable = tester.widget<EditableText>(
+      find.descendant(of: field, matching: find.byType(EditableText)),
+    );
+    expect(editable.obscureText, isTrue);
+
+    await tester.enterText(field, 'mpv-token');
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pumpAndSettle();
+
+    expect(appModel.yomitanApiKey, 'mpv-token');
   });
 
   testWidgets('app UI scale slider commits only on drag end, not during drag',
