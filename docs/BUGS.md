@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 134 条。点号进各自文件。
+> 共 135 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-138](bugs/BUG-138-interconnect-live-export-invalid-items.md) | ✅ | ✅ | Hibiki互联导出书籍包结构错误且有声书列表暴露孤儿行 |
 | [BUG-137](bugs/BUG-137-interconnect-sync-not-visible.md) | ✅ | ✅ | Hibiki互联同步后手机端内容不刷新且失败缺少明细 |
 | [BUG-136](bugs/BUG-136-reader-esc-after-gesture-pageturn.md) | ✅ | ✅ | 翻页(手势/滚轮)后 ESC 不退出书籍 |
 | [BUG-135](bugs/BUG-135-video-warm-popup-eats-touches.md) | ✅ | ✅ | 手机热WebView吞掉视频控制条触摸（顶栏/底栏点了没反应） |
