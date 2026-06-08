@@ -8,6 +8,7 @@ import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:hibiki/src/utils/components/clipboard_lookup_text_panel.dart';
 import 'package:hibiki/utils.dart';
 
 /// The body content for the Dictionary tab in the main menu.
@@ -47,6 +48,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
   String _lastQuery = '';
   bool _allLoaded = false;
   Timer? _debounceTimer;
+  String _externalLookupText = '';
 
   bool _historyWritten = false;
 
@@ -86,6 +88,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
     final ({int seq, String text})? req = channel?.value;
     if (req == null || req.seq == _lastConsumedQuerySeq) return;
     _lastConsumedQuerySeq = req.seq;
+    _externalLookupText = req.text;
     channel!.value = null;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _search(req.text, autoRead: false);
@@ -145,6 +148,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
     _isSearching = false;
     _lastQuery = '';
     _allLoaded = false;
+    _externalLookupText = '';
     _searchFocusNode.unfocus();
     setState(() {});
   }
@@ -493,6 +497,18 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
                 onDuplicateCheck: checkDuplicate,
                 onScrolledToBottom: _allLoaded ? null : _loadMore,
               ),
+              if (_externalLookupText.trim().isNotEmpty)
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: ClipboardLookupTextPanel(
+                    text: _externalLookupText,
+                    onLookup: (String query, Rect localRect) {
+                      _pushNestedPopup(query, localRect, replaceStack: true);
+                    },
+                  ),
+                ),
               if (_popup.entries.isNotEmpty || _popup.isSearchingUi)
                 Positioned.fill(
                   child: GestureDetector(
