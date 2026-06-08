@@ -34,13 +34,13 @@
 |---|---|---|
 | `reachAll()` | `Tab` | 遍历当前页可达焦点；**Tab 本身会把懒加载列表滚动 + 构建出屏外的行**（所以别用 `find.byType(X).first` 硬定位——页顶可能没有目标控件） |
 | `focusWidget(finder)` | `Tab` | Tab 到焦点落进 finder 子树 |
-| `activate()` | `Space` | 激活开关 / 按钮 |
+| `activate()` | `Enter` | 激活开关 / 按钮（**确认不走空格**——App 已把裸空格中和为 `DoNothingIntent`，焦点确认统一 Enter / 手柄 A，见 `lib/src/shortcuts/global_navigation.dart`） |
 | `adjust(steps:)` | `←/→` 方向键 | 加减（Slider/Stepper/Segmented 是 `_GamepadAdjustableValue` 单一焦点停靠点，不用 Space） |
 
 **标准操作模式**（见 `integration_test/comprehensive_settings_test.dart` 与 widget 层 `test/settings/settings_schema_coverage_test.dart`）：
-`Tab` 遍历 → 对落到的每个控件**检测类型**（向上遍历 widget 祖先找 `AdaptiveSettings{Switch,Slider,Stepper,Segmented}Row`）→ **按类型驱动**（Switch→`Space`，可调→方向键）→ 断言**真写穿 DB / 真生效**（不只点几下）→ **还原** prefs（不动用户真实设置）。
+`Tab` 遍历 → 对落到的每个控件**检测类型**（向上遍历 widget 祖先找 `AdaptiveSettings{Switch,Slider,Stepper,Segmented}Row`）→ **按类型驱动**（Switch→`Enter`，可调→方向键）→ 断言**真写穿 DB / 真生效**（不只点几下）→ **还原** prefs（不动用户真实设置）。
 
-**激活键的平台差异**：app 主激活是手柄 `gameButtonA`——模拟器（Android）能合成它；**桌面（Windows/Mac）合不出**（无物理键映射，`sendKeyEvent(gameButtonA)` 抛 "not found in windows physical key map"）→ 桌面用 `Enter`/`Space`。`Tab` 与方向键到处都行，优先用它们。
+**激活键的平台差异**：app 主激活是手柄 `gameButtonA`——模拟器（Android）能合成它；**桌面（Windows/Mac）合不出**（无物理键映射，`sendKeyEvent(gameButtonA)` 抛 "not found in windows physical key map"）→ 桌面用 `Enter`（**不要用 `Space`**：App 已把裸空格中和为 `DoNothingIntent`，焦点确认不再走空格）。`Tab` 与方向键到处都行，优先用它们。
 
 **为何能离屏后台跑**：合成按键走 Flutter 框架（不走 OS），与窗口是否在前台无关。桌面 runner 认环境变量 `HIBIKI_TEST_HIDDEN` 把窗口停到屏外 + 不抢前台（`windows/runner/win32_window.cpp` / `macos/Runner/MainFlutterWindow.swift`），不挡你用电脑。
 

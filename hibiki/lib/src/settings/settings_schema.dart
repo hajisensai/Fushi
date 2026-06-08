@@ -1273,6 +1273,20 @@ SettingsDestination _systemDestination() {
               settingsContext.refresh();
             },
           ),
+          SettingsSwitchItem(
+            id: 'system.focus_navigation',
+            title: t.focus_navigation_enabled,
+            subtitle: t.focus_navigation_enabled_hint +
+                t.settings_experimental_suffix,
+            icon: Icons.gamepad_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.experimentalFocusNavigationEnabled,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel
+                  .setExperimentalFocusNavigationEnabled(value);
+              settingsContext.refresh();
+            },
+          ),
           SettingsActionItem(
             id: 'system.github',
             title: t.options_github,

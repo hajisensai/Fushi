@@ -148,6 +148,19 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ── 实验性：键盘/手柄焦点导航 ──────────────────────────────────────────
+  // 整套自定义焦点导航（HibikiFocusRoot/Ring + 手柄/方向键焦点移动）默认关闭，
+  // 关闭时回退到 Flutter 原生焦点遍历。空格不再确认焦点的行为不受此开关影响。
+
+  bool get experimentalFocusNavigationEnabled =>
+      getPref('experimental_focus_navigation_enabled', defaultValue: false)
+          as bool;
+
+  Future<void> setExperimentalFocusNavigationEnabled(bool value) async {
+    await setPref('experimental_focus_navigation_enabled', value);
+    notifyListeners();
+  }
+
   // ── texthooker ───────────────────────────────────────────────────────
 
   static const String _texthookerDefaultUrls =

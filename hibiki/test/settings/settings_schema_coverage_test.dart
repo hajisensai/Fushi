@@ -45,6 +45,8 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'cardCreation/Auto-add book title to tags':
       'test/creator/tags_field_auto_add_book_test.dart',
   'system/Low Memory Mode': 'test/models/app_model_low_memory_mode_test.dart',
+  'system/Keyboard & gamepad focus navigation':
+      'test/shortcuts/global_space_no_activate_test.dart + main.dart 门控安装 HibikiFocusRoot/Ring',
   'reading/Swipe dismiss sensitivity':
       'test/widgets/swipe_dismiss_wrapper_test.dart',
   'system/Enable debug log': 'test/utils/misc/debug_log_service_test.dart',

@@ -659,14 +659,18 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
                   hibikiCupertinoTheme(cs, fontFamily: appModel.appFontFamily),
               child: HibikiAppUiScale(
                 scale: appModel.appUiScale,
-                // Universal gamepad/keyboard navigation: a visible focus ring for
-                // observability, wrapping a global gamepad-B back/dismiss intent.
-                child: HibikiFocusRoot(
-                  child: HibikiFocusRing(
-                    child: wrapWithGlobalNavigation(
-                      navigatorKey: appModel.navigatorKey,
-                      child: child!,
-                    ),
+                // 实验性「键盘/手柄焦点导航」总开关（默认关闭）。开启时安装
+                // HibikiFocusRoot（焦点控制器）+ HibikiFocusRing（可见焦点环），并让
+                // wrapWithGlobalNavigation 处理手柄/方向键移焦与手柄 B 返回；关闭时
+                // 一律不挂，App 回退到 Flutter 原生焦点遍历。无论开关如何，
+                // wrapWithGlobalNavigation 始终保留 Escape 退页与「空格不确认焦点」。
+                child: _wrapFocusNavigation(
+                  enabled: appModel.experimentalFocusNavigationEnabled,
+                  child: wrapWithGlobalNavigation(
+                    navigatorKey: appModel.navigatorKey,
+                    focusNavigationEnabled:
+                        appModel.experimentalFocusNavigationEnabled,
+                    child: child!,
                   ),
                 ),
               ),
@@ -687,4 +691,12 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
 
   /// The current locale, dependent on the active target language.
   Locale get locale => appModel.targetLanguage.locale;
+}
+
+/// 按实验开关决定是否包裹自定义焦点导航层（[HibikiFocusRoot] 焦点控制器 +
+/// [HibikiFocusRing] 可见焦点环）。关闭（默认）时原样返回 [child]，App 走 Flutter
+/// 原生焦点遍历——各组件在缺少 HibikiFocusRoot 时会自动降级到 FocusableActionDetector。
+Widget _wrapFocusNavigation({required bool enabled, required Widget child}) {
+  if (!enabled) return child;
+  return HibikiFocusRoot(child: HibikiFocusRing(child: child));
 }

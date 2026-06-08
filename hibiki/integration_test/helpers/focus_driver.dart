@@ -99,8 +99,9 @@ class FocusDriver {
     return targetInsideFocus;
   }
 
-  /// 激活当前焦点控件（Switch/按钮）。
-  Future<void> activate() => _key(LogicalKeyboardKey.space);
+  /// 激活当前焦点控件（Switch/按钮）。确认键统一用 Enter——App 已把裸空格中和为
+  /// DoNothingIntent（焦点确认不走空格，见 global_navigation.dart），手柄 A 同义。
+  Future<void> activate() => _key(LogicalKeyboardKey.enter);
 
   /// 对当前焦点控件用方向键加/减 N 步（Slider/Stepper/Segmented）。
   Future<void> adjust({

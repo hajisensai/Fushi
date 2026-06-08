@@ -134,28 +134,43 @@ bool _caretKeepsArrow(EditableText editable, TraversalDirection dir) {
 ///   hardware Escape matters, and it is harmless elsewhere. Popups keep the
 ///   framework's own Escape handling.
 /// * The gamepad B button triggers a global back/dismiss.
+/// * [focusNavigationEnabled] 为实验性「键盘/手柄焦点导航」总开关（默认关闭，见
+///   AppModel.experimentalFocusNavigationEnabled）。仅它控制手柄按钮分发、方向键
+///   移焦、以及手柄 B 返回；关闭时这些一律不挂，App 回退到 Flutter 原生焦点遍历。
+///   与焦点导航无关、始终生效的两件事不受其影响：
+///     * Escape 退出整页层级（桌面键盘惯例）；
+///     * 裸空格中和为 [DoNothingIntent]，使焦点确认永不走空格（确认键统一 Enter /
+///       手柄 A，由框架默认提供）。空格被更近作用域消费（阅读器翻页 / 视频·有声书
+///       播放暂停 / 文本框输入空格）时根本到不了这里，故不受影响。
 Widget wrapWithGlobalNavigation({
   required GlobalKey<NavigatorState> navigatorKey,
   required Widget child,
+  bool focusNavigationEnabled = true,
 }) {
+  final Map<ShortcutActivator, Intent> shortcuts = <ShortcutActivator, Intent>{
+    const SingleActivator(LogicalKeyboardKey.space): const DoNothingIntent(),
+    if (focusNavigationEnabled)
+      const SingleActivator(LogicalKeyboardKey.gameButtonB):
+          const HibikiPopIntent(),
+  };
   // Outermost: observes Escape that bubbled past every deeper handler. It never
   // takes focus or a tab stop — it only listens.
   return Focus(
     canRequestFocus: false,
     skipTraversal: true,
     onKeyEvent: (FocusNode node, KeyEvent event) {
-      final KeyEventResult gamepadResult =
-          dispatchNativeGamepadButtonIntent(event);
-      if (gamepadResult == KeyEventResult.handled) return gamepadResult;
-      final KeyEventResult arrowResult =
-          _handleGlobalArrowFocus(navigatorKey, event);
-      if (arrowResult == KeyEventResult.handled) return arrowResult;
+      if (focusNavigationEnabled) {
+        final KeyEventResult gamepadResult =
+            dispatchNativeGamepadButtonIntent(event);
+        if (gamepadResult == KeyEventResult.handled) return gamepadResult;
+        final KeyEventResult arrowResult =
+            _handleGlobalArrowFocus(navigatorKey, event);
+        if (arrowResult == KeyEventResult.handled) return arrowResult;
+      }
       return _handleGlobalEscape(navigatorKey, event);
     },
     child: Shortcuts(
-      shortcuts: const <ShortcutActivator, Intent>{
-        SingleActivator(LogicalKeyboardKey.gameButtonB): HibikiPopIntent(),
-      },
+      shortcuts: shortcuts,
       child: Actions(
         actions: <Type, Action<Intent>>{
           HibikiPopIntent: HibikiPopAction(navigatorKey),

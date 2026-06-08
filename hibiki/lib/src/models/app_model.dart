@@ -2672,6 +2672,13 @@ class AppModel with ChangeNotifier {
   Future<void> setYomitanApiKey(String value) =>
       prefsRepo.setYomitanApiKey(value);
 
+  /// 实验性：整套键盘/手柄焦点导航是否启用（默认 false）。关闭时 main.dart 不安装
+  /// HibikiFocusRoot/Ring，App 回退到 Flutter 原生焦点遍历。
+  bool get experimentalFocusNavigationEnabled =>
+      prefsRepo.experimentalFocusNavigationEnabled;
+  Future<void> setExperimentalFocusNavigationEnabled(bool value) =>
+      prefsRepo.setExperimentalFocusNavigationEnabled(value);
+
   bool get texthookerEnabled => prefsRepo.texthookerEnabled;
   Future<void> setTexthookerEnabled(bool value) =>
       prefsRepo.setTexthookerEnabled(value);
