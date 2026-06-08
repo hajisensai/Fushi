@@ -57,8 +57,7 @@ void main() {
   late _FakeLibraryService lib;
   const String token = 'test-token';
   late String base;
-  String authHeader() =>
-      'Basic ${base64Encode(utf8.encode('hibiki:$token'))}';
+  String authHeader() => 'Basic ${base64Encode(utf8.encode('hibiki:$token'))}';
 
   setUp(() async {
     lib = _FakeLibraryService();
@@ -184,8 +183,8 @@ void main() {
     final HttpClient c = HttpClient();
 
     // DELETE with path-traversal → must NOT reach lib.deletedBooks.
-    final HttpClientRequest delReq = await c
-        .deleteUrl(Uri.parse('$base/api/library/books/%2e%2e%2fevil'));
+    final HttpClientRequest delReq =
+        await c.deleteUrl(Uri.parse('$base/api/library/books/%2e%2e%2fevil'));
     delReq.headers.set('authorization', authHeader());
     final HttpClientResponse delRes = await delReq.close();
     expect(delRes.statusCode, 403,
@@ -195,8 +194,8 @@ void main() {
         reason: 'no deletion must occur for a traversal title');
 
     // GET with path-traversal → must also be 403.
-    final HttpClientRequest getReq = await c
-        .getUrl(Uri.parse('$base/api/library/books/%2e%2e%2fevil'));
+    final HttpClientRequest getReq =
+        await c.getUrl(Uri.parse('$base/api/library/books/%2e%2e%2fevil'));
     getReq.headers.set('authorization', authHeader());
     final HttpClientResponse getRes = await getReq.close();
     expect(getRes.statusCode, 403,
@@ -240,11 +239,9 @@ void main() {
         await c.getUrl(Uri.parse('$base/api/library/books/$encoded'));
     req.headers.set('authorization', authHeader());
     final HttpClientResponse res = await req.close();
-    expect(res.statusCode, 200,
-        reason: 'GET 三体 应返回 200，双重解码会致 500');
+    expect(res.statusCode, 200, reason: 'GET 三体 应返回 200，双重解码会致 500');
     final String body = await res.transform(utf8.decoder).join();
-    expect(body, 'EPUB:三体',
-        reason: 'server 应以正确 CJK 书名（三体）调用 exportBook');
+    expect(body, 'EPUB:三体', reason: 'server 应以正确 CJK 书名（三体）调用 exportBook');
     c.close();
   });
 
@@ -256,8 +253,7 @@ void main() {
     req.headers.set('authorization', authHeader());
     req.add(utf8.encode('EPUB:三体'));
     final HttpClientResponse res = await req.close();
-    expect(res.statusCode, anyOf(200, 201, 204),
-        reason: 'PUT 三体 应成功（2xx）');
+    expect(res.statusCode, anyOf(200, 201, 204), reason: 'PUT 三体 应成功（2xx）');
     expect(lib.importedBooks, contains('EPUB:三体'),
         reason: 'importBook 应被以正确内容调用');
     c.close();

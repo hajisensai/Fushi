@@ -92,7 +92,8 @@ void main() {
   setUp(() async {
     lib = _FakeLibraryService();
     server = HibikiSyncServer(
-      syncDataDir: Directory.systemTemp.createTempSync('hbk_live_book_srv').path,
+      syncDataDir:
+          Directory.systemTemp.createTempSync('hbk_live_book_srv').path,
       port: 0,
       token: token,
       allowLan: false,
