@@ -700,8 +700,7 @@ class HibikiSyncServer {
       case 'PUT':
         final Directory tmpDir =
             Directory.systemTemp.createTempSync('hibiki_localaudio_in');
-        final File tmp =
-            File(p.join(tmpDir.path, '$displayName.localaudio'));
+        final File tmp = File(p.join(tmpDir.path, '$displayName.localaudio'));
         final IOSink sink = tmp.openWrite();
         try {
           await request.read().forEach(sink.add);
@@ -752,8 +751,7 @@ class HibikiSyncServer {
     }
 
     // reqPath 已在 _handleRequest 经 Uri.decodeFull 解码，此处无需再解码。
-    final String bookKey =
-        reqPath.substring('/api/library/audiobooks/'.length);
+    final String bookKey = reqPath.substring('/api/library/audiobooks/'.length);
     if (bookKey.isEmpty) {
       return shelf.Response.notFound('Missing bookKey');
     }

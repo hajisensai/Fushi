@@ -27,8 +27,7 @@ class _FakeLibraryService implements HibikiLibraryHostService {
 
   @override
   Future<File> exportLocalAudio(String displayName) async {
-    final Directory tmp =
-        Directory.systemTemp.createTempSync('hbk_fake_audio');
+    final Directory tmp = Directory.systemTemp.createTempSync('hbk_fake_audio');
     final File f = File('${tmp.path}/$displayName.localaudio');
     f.writeAsStringSync('AUDIO:$displayName');
     return f;
@@ -51,13 +50,11 @@ class _FakeLibraryService implements HibikiLibraryHostService {
   final List<String> audiobookImported = <String>[];
 
   @override
-  Future<List<RemoteAudiobookInfo>> listAudiobooks() async =>
-      audiobookEntries;
+  Future<List<RemoteAudiobookInfo>> listAudiobooks() async => audiobookEntries;
 
   @override
   Future<File> exportAudiobook(String bookKey) async {
-    final Directory tmp =
-        Directory.systemTemp.createTempSync('hbk_fake_ab');
+    final Directory tmp = Directory.systemTemp.createTempSync('hbk_fake_ab');
     final File f = File('${tmp.path}/$bookKey.audiobook');
     f.writeAsStringSync('AUDIOBOOK:$bookKey');
     return f;
@@ -65,7 +62,7 @@ class _FakeLibraryService implements HibikiLibraryHostService {
 
   @override
   Future<void> importAudiobook(File packageFile,
-      {String? bookKeyOverride}) async =>
+          {String? bookKeyOverride}) async =>
       audiobookImported.add(await packageFile.readAsString());
 
   @override
@@ -173,11 +170,11 @@ void main() {
 
   // ── getRemoteLocalAudio ───────────────────────────────────────────────────
 
-  test('getRemoteLocalAudio downloads audio bytes to destination file', () async {
+  test('getRemoteLocalAudio downloads audio bytes to destination file',
+      () async {
     final HibikiClientSyncBackend backend =
         await _buildBackend(base: base, token: token);
-    final Directory tmp =
-        Directory.systemTemp.createTempSync('hbk_audio_dl');
+    final Directory tmp = Directory.systemTemp.createTempSync('hbk_audio_dl');
     final File dest = File('${tmp.path}/nhk.localaudio');
     addTearDown(() => tmp.deleteSync(recursive: true));
 
@@ -192,8 +189,7 @@ void main() {
   test('putRemoteLocalAudio uploads CJK-named audio to host', () async {
     final HibikiClientSyncBackend backend =
         await _buildBackend(base: base, token: token);
-    final Directory tmp =
-        Directory.systemTemp.createTempSync('hbk_audio_ul');
+    final Directory tmp = Directory.systemTemp.createTempSync('hbk_audio_ul');
     final File src = File('${tmp.path}/日本語音源.localaudio');
     src.writeAsStringSync('AUDIO:日本語音源');
     addTearDown(() => tmp.deleteSync(recursive: true));
@@ -238,8 +234,7 @@ void main() {
   test('getRemoteLocalAudio reports progress callback', () async {
     final HibikiClientSyncBackend backend =
         await _buildBackend(base: base, token: token);
-    final Directory tmp =
-        Directory.systemTemp.createTempSync('hbk_audio_prog');
+    final Directory tmp = Directory.systemTemp.createTempSync('hbk_audio_prog');
     final File dest = File('${tmp.path}/nhk_prog.localaudio');
     addTearDown(() => tmp.deleteSync(recursive: true));
 
@@ -279,8 +274,7 @@ void main() {
       () async {
     final HibikiClientSyncBackend backend =
         await _buildBackend(base: base, token: token);
-    final Directory tmp =
-        Directory.systemTemp.createTempSync('hbk_ab_dl');
+    final Directory tmp = Directory.systemTemp.createTempSync('hbk_ab_dl');
     final File dest = File('${tmp.path}/neko_audio.audiobook');
     addTearDown(() => tmp.deleteSync(recursive: true));
 
@@ -295,8 +289,7 @@ void main() {
   test('putRemoteAudiobook uploads CJK-named audiobook to host', () async {
     final HibikiClientSyncBackend backend =
         await _buildBackend(base: base, token: token);
-    final Directory tmp =
-        Directory.systemTemp.createTempSync('hbk_ab_ul');
+    final Directory tmp = Directory.systemTemp.createTempSync('hbk_ab_ul');
     final File src = File('${tmp.path}/新着有声書.audiobook');
     src.writeAsStringSync('AUDIOBOOK:新着有声書');
     addTearDown(() => tmp.deleteSync(recursive: true));
@@ -341,8 +334,7 @@ void main() {
   test('getRemoteAudiobook reports progress callback', () async {
     final HibikiClientSyncBackend backend =
         await _buildBackend(base: base, token: token);
-    final Directory tmp =
-        Directory.systemTemp.createTempSync('hbk_ab_prog');
+    final Directory tmp = Directory.systemTemp.createTempSync('hbk_ab_prog');
     final File dest = File('${tmp.path}/neko_prog.audiobook');
     addTearDown(() => tmp.deleteSync(recursive: true));
 

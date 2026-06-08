@@ -814,8 +814,8 @@ class HibikiClientSyncBackend extends SyncBackend {
     );
     final HttpClientResponse res = await req.close();
     await res.drain<void>();
-    _ops!.checkStatus(
-        res.statusCode, 'DELETE /api/library/audiobooks/$bookKey');
+    _ops!
+        .checkStatus(res.statusCode, 'DELETE /api/library/audiobooks/$bookKey');
   }
 
   // ── Test connection ───────────────────────────────────────────────

@@ -238,8 +238,10 @@ void main() {
       hostDbFile = File(p.join(hostAudioDir.path, 'nhk_radio.db'));
       // SQLite 文件头 magic（前 16 字节）：足以让文件非空并通过 existsSync 检查。
       hostDbFile.writeAsBytesSync(
-          <int>[0x53, 0x51, 0x4c, 0x69, 0x74, 0x65, 0x20, 0x66, // "SQLite f"
-               0x6f, 0x72, 0x6d, 0x61, 0x74, 0x20, 0x33, 0x00], // "ormat 3\0"
+        <int>[
+          0x53, 0x51, 0x4c, 0x69, 0x74, 0x65, 0x20, 0x66, // "SQLite f"
+          0x6f, 0x72, 0x6d, 0x61, 0x74, 0x20, 0x33, 0x00
+        ], // "ormat 3\0"
       );
 
       final List<LocalAudioDbEntry> hostEntries = <LocalAudioDbEntry>[
@@ -314,9 +316,24 @@ void main() {
       final Directory localAudioDir =
           Directory(p.join(work.path, 'local_audio'))..createSync();
       final File localDbFile = File(p.join(localAudioDir.path, 'local_lib.db'));
-      localDbFile.writeAsBytesSync(
-          <int>[0x53, 0x51, 0x4c, 0x69, 0x74, 0x65, 0x20, 0x66,
-               0x6f, 0x72, 0x6d, 0x61, 0x74, 0x20, 0x33, 0x00]);
+      localDbFile.writeAsBytesSync(<int>[
+        0x53,
+        0x51,
+        0x4c,
+        0x69,
+        0x74,
+        0x65,
+        0x20,
+        0x66,
+        0x6f,
+        0x72,
+        0x6d,
+        0x61,
+        0x74,
+        0x20,
+        0x33,
+        0x00
+      ]);
 
       final List<LocalAudioDbEntry> localEntries = <LocalAudioDbEntry>[
         LocalAudioDbEntry(
@@ -348,8 +365,7 @@ void main() {
       expect(report.localAudioExported, 1, reason: 'Local ライブラリ 应被推送到 host');
     });
 
-    test('live 路径不经 __local_audio__ 暂存目录（服务端 sync-data 下无该目录）',
-        () async {
+    test('live 路径不经 __local_audio__ 暂存目录（服务端 sync-data 下无该目录）', () async {
       final HibikiDatabase localDb = _memDb();
       addTearDown(localDb.close);
 
@@ -370,8 +386,7 @@ void main() {
       await orch.syncLocalAudioLiveForTest(report, backend);
 
       // live 路径绕过暂存：server sync-data 目录下不应出现 __local_audio__ 目录。
-      final String syncDataDir =
-          p.join(work.path, 'server_data', 'sync-data');
+      final String syncDataDir = p.join(work.path, 'server_data', 'sync-data');
       if (Directory(syncDataDir).existsSync()) {
         final List<FileSystemEntity> children =
             Directory(syncDataDir).listSync();
@@ -509,9 +524,8 @@ void main() {
         ),
       );
 
-      final File localSrtFile =
-          File(p.join(work.path, 'local_audio.srt'))
-            ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\ntest\n');
+      final File localSrtFile = File(p.join(work.path, 'local_audio.srt'))
+        ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\ntest\n');
 
       await localDb.upsertSrtBook(
         SrtBooksCompanion.insert(

@@ -54,8 +54,7 @@ class _FakeLibraryService implements HibikiLibraryHostService {
         .any((RemoteLocalAudioInfo a) => a.displayName == displayName)) {
       throw StateError('local audio not found: $displayName');
     }
-    final Directory tmp =
-        Directory.systemTemp.createTempSync('hbk_la_exp');
+    final Directory tmp = Directory.systemTemp.createTempSync('hbk_la_exp');
     final File f = File('${tmp.path}/$displayName.localaudio');
     f.writeAsBytesSync(utf8.encode('LOCALAUDIO:$displayName'));
     return f;
@@ -80,8 +79,7 @@ class _FakeLibraryService implements HibikiLibraryHostService {
   final List<(String, String?)> importedAudiobooks = <(String, String?)>[];
 
   @override
-  Future<List<RemoteAudiobookInfo>> listAudiobooks() async =>
-      audiobookEntries;
+  Future<List<RemoteAudiobookInfo>> listAudiobooks() async => audiobookEntries;
 
   @override
   Future<File> exportAudiobook(String bookKey) async {
@@ -89,8 +87,7 @@ class _FakeLibraryService implements HibikiLibraryHostService {
         .any((RemoteAudiobookInfo ab) => ab.bookKey == bookKey)) {
       throw StateError('audiobook not found: $bookKey');
     }
-    final Directory tmp =
-        Directory.systemTemp.createTempSync('hbk_ab_exp');
+    final Directory tmp = Directory.systemTemp.createTempSync('hbk_ab_exp');
     final File f = File('${tmp.path}/$bookKey.audiobook');
     f.writeAsBytesSync(utf8.encode('AUDIOBOOK:$bookKey'));
     return f;
@@ -99,8 +96,7 @@ class _FakeLibraryService implements HibikiLibraryHostService {
   @override
   Future<void> importAudiobook(File packageFile,
       {String? bookKeyOverride}) async {
-    importedAudiobooks
-        .add((await packageFile.readAsString(), bookKeyOverride));
+    importedAudiobooks.add((await packageFile.readAsString(), bookKeyOverride));
   }
 
   @override
@@ -113,14 +109,12 @@ void main() {
   late _FakeLibraryService lib;
   const String token = 'test-token-audio';
   late String base;
-  String authHeader() =>
-      'Basic ${base64Encode(utf8.encode('hibiki:$token'))}';
+  String authHeader() => 'Basic ${base64Encode(utf8.encode('hibiki:$token'))}';
 
   setUp(() async {
     lib = _FakeLibraryService();
     server = HibikiSyncServer(
-      syncDataDir:
-          Directory.systemTemp.createTempSync('hbk_audio_srv').path,
+      syncDataDir: Directory.systemTemp.createTempSync('hbk_audio_srv').path,
       port: 0,
       token: token,
       allowLan: false,
@@ -169,8 +163,7 @@ void main() {
       final HttpClientResponse res = await req.close();
       expect(res.statusCode, 200);
       final List<dynamic> json =
-          jsonDecode(await res.transform(utf8.decoder).join())
-              as List<dynamic>;
+          jsonDecode(await res.transform(utf8.decoder).join()) as List<dynamic>;
       expect(json.length, 1);
       final Map<dynamic, dynamic> first = json.first as Map<dynamic, dynamic>;
       expect(first['displayName'], 'NHK');
@@ -194,8 +187,8 @@ void main() {
 
     test('GET /api/library/localaudio/<missing> returns 404', () async {
       final HttpClient c = HttpClient();
-      final HttpClientRequest req = await c
-          .getUrl(Uri.parse('$base/api/library/localaudio/NoSuchEntry'));
+      final HttpClientRequest req =
+          await c.getUrl(Uri.parse('$base/api/library/localaudio/NoSuchEntry'));
       req.headers.set('authorization', authHeader());
       final HttpClientResponse res = await req.close();
       expect(res.statusCode, 404);
@@ -249,8 +242,8 @@ void main() {
     test('path-traversal displayName is rejected with 403', () async {
       final HttpClient c = HttpClient();
 
-      final HttpClientRequest delReq = await c.deleteUrl(
-          Uri.parse('$base/api/library/localaudio/%2e%2e%2fevil'));
+      final HttpClientRequest delReq = await c
+          .deleteUrl(Uri.parse('$base/api/library/localaudio/%2e%2e%2fevil'));
       delReq.headers.set('authorization', authHeader());
       final HttpClientResponse delRes = await delReq.close();
       expect(delRes.statusCode, 403,
@@ -274,8 +267,7 @@ void main() {
 
     test('localaudio endpoints return 404 when no service injected', () async {
       final HibikiSyncServer bare = HibikiSyncServer(
-        syncDataDir:
-            Directory.systemTemp.createTempSync('hbk_la_bare').path,
+        syncDataDir: Directory.systemTemp.createTempSync('hbk_la_bare').path,
         port: 0,
         token: token,
         allowLan: false,
@@ -306,8 +298,7 @@ void main() {
           await c.getUrl(Uri.parse('$base/api/library/localaudio/$encoded'));
       req.headers.set('authorization', authHeader());
       final HttpClientResponse res = await req.close();
-      expect(res.statusCode, 200,
-          reason: 'GET 日本語音声 应返回 200，双重解码会致 500');
+      expect(res.statusCode, 200, reason: 'GET 日本語音声 应返回 200，双重解码会致 500');
       final String body = await res.transform(utf8.decoder).join();
       expect(body, 'LOCALAUDIO:日本語音声',
           reason: 'server 应以正确 CJK 名调用 exportLocalAudio');
@@ -319,8 +310,8 @@ void main() {
           .add(const RemoteLocalAudioInfo(displayName: '日本語音声'));
       final HttpClient c = HttpClient();
       final String encoded = Uri.encodeComponent('日本語音声');
-      final HttpClientRequest req = await c
-          .deleteUrl(Uri.parse('$base/api/library/localaudio/$encoded'));
+      final HttpClientRequest req =
+          await c.deleteUrl(Uri.parse('$base/api/library/localaudio/$encoded'));
       req.headers.set('authorization', authHeader());
       final HttpClientResponse res = await req.close();
       expect(res.statusCode, anyOf(200, 204));
@@ -345,8 +336,7 @@ void main() {
       final HttpClientResponse res = await req.close();
       expect(res.statusCode, 200);
       final List<dynamic> json =
-          jsonDecode(await res.transform(utf8.decoder).join())
-              as List<dynamic>;
+          jsonDecode(await res.transform(utf8.decoder).join()) as List<dynamic>;
       expect(json.length, 1);
       final Map<dynamic, dynamic> first = json.first as Map<dynamic, dynamic>;
       expect(first['bookKey'], 'sample_book');
@@ -382,11 +372,12 @@ void main() {
 
     // ── PUT（含 bookKeyOverride 断言）────────────────────────────────────────
 
-    test('PUT /api/library/audiobooks/<key> imports body and passes bookKeyOverride',
+    test(
+        'PUT /api/library/audiobooks/<key> imports body and passes bookKeyOverride',
         () async {
       final HttpClient c = HttpClient();
-      final HttpClientRequest req = await c
-          .putUrl(Uri.parse('$base/api/library/audiobooks/new_book'));
+      final HttpClientRequest req =
+          await c.putUrl(Uri.parse('$base/api/library/audiobooks/new_book'));
       req.headers.set('authorization', authHeader());
       req.add(utf8.encode('AUDIOBOOK:new_book'));
       final HttpClientResponse res = await req.close();
@@ -432,8 +423,8 @@ void main() {
     test('path-traversal bookKey is rejected with 403', () async {
       final HttpClient c = HttpClient();
 
-      final HttpClientRequest delReq = await c.deleteUrl(
-          Uri.parse('$base/api/library/audiobooks/%2e%2e%2fevil'));
+      final HttpClientRequest delReq = await c
+          .deleteUrl(Uri.parse('$base/api/library/audiobooks/%2e%2e%2fevil'));
       delReq.headers.set('authorization', authHeader());
       final HttpClientResponse delRes = await delReq.close();
       expect(delRes.statusCode, 403,
@@ -457,8 +448,7 @@ void main() {
 
     test('audiobooks endpoints return 404 when no service injected', () async {
       final HibikiSyncServer bare = HibikiSyncServer(
-        syncDataDir:
-            Directory.systemTemp.createTempSync('hbk_ab_bare').path,
+        syncDataDir: Directory.systemTemp.createTempSync('hbk_ab_bare').path,
         port: 0,
         token: token,
         allowLan: false,
@@ -489,8 +479,7 @@ void main() {
           await c.getUrl(Uri.parse('$base/api/library/audiobooks/$encoded'));
       req.headers.set('authorization', authHeader());
       final HttpClientResponse res = await req.close();
-      expect(res.statusCode, 200,
-          reason: 'GET 三体有声书 应返回 200，双重解码会致 500');
+      expect(res.statusCode, 200, reason: 'GET 三体有声书 应返回 200，双重解码会致 500');
       final String body = await res.transform(utf8.decoder).join();
       expect(body, 'AUDIOBOOK:三体有声书',
           reason: 'server 应以正确 CJK key 调用 exportAudiobook');
@@ -520,8 +509,8 @@ void main() {
           .add(const RemoteAudiobookInfo(bookKey: '三体有声书', title: '三体'));
       final HttpClient c = HttpClient();
       final String encoded = Uri.encodeComponent('三体有声书');
-      final HttpClientRequest req = await c
-          .deleteUrl(Uri.parse('$base/api/library/audiobooks/$encoded'));
+      final HttpClientRequest req =
+          await c.deleteUrl(Uri.parse('$base/api/library/audiobooks/$encoded'));
       req.headers.set('authorization', authHeader());
       final HttpClientResponse res = await req.close();
       expect(res.statusCode, anyOf(200, 204));
