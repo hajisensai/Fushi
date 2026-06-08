@@ -71,6 +71,14 @@ void main() {
       );
     });
 
+    test('stableProgressInvocation returns null during reanchor', () {
+      expect(
+        ReaderPaginationScripts.stableProgressInvocation(),
+        'window.hoshiReader && !window.hoshiReader._reanchorPending '
+        '? window.hoshiReader.calculateProgress() : null',
+      );
+    });
+
     test('updatePageSizeInvocation', () {
       expect(
         ReaderPaginationScripts.updatePageSizeInvocation(360.0, 640.0),

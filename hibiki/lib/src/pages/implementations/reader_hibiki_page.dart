@@ -3624,6 +3624,39 @@ window.flutter_inappwebview.callHandler('spreadReady');
     }
   }
 
+  Future<void> _syncPositionFromWebViewProgress() async {
+    if (_controller == null ||
+        _lyricsMode ||
+        !_readerContentReady ||
+        _restoreInFlight) {
+      return;
+    }
+
+    final dynamic result;
+    try {
+      result = await _controller!.evaluateJavascript(
+        source: ReaderPaginationScripts.stableProgressInvocation(),
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log(
+        'ReaderHibiki.syncPositionFromWebViewProgress.eval',
+        e,
+        stack,
+      );
+      debugPrint('[ReaderHibiki] syncPositionFromWebViewProgress failed: $e');
+      return;
+    }
+    if (!mounted) return;
+
+    final double? progress = _toDouble(result);
+    if (progress == null) return;
+
+    final double clamped = progress.clamp(0.0, 1.0).toDouble();
+    _displayedProgress = clamped;
+    _lastProgressSection = _currentChapter;
+    _lastProgressValue = clamped;
+  }
+
   void _debouncedSavePosition(double progress) {
     _debouncedSaveReaderPosition(_currentChapter, progress);
   }
@@ -3709,6 +3742,8 @@ window.flutter_inappwebview.callHandler('spreadReady');
   Future<void> _syncAndFlushPosition() async {
     if (_lyricsMode) {
       _syncPositionFromCurrentCue();
+    } else {
+      await _syncPositionFromWebViewProgress();
     }
     await _flushPosition();
     await _audiobookController?.flushPosition();
@@ -4592,7 +4627,8 @@ window.flutter_inappwebview.callHandler('spreadReady');
     );
     if (!mounted || _controller == null) return;
     if (_didScroll(result)) {
-      _refreshProgress();
+      await _refreshProgress();
+      if (!mounted || _controller == null) return;
       await _caretReanchor(direction);
     } else {
       _handlePageTurnLimit(direction.jsValue);

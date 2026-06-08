@@ -99,6 +99,10 @@ class ReaderPaginationScripts {
   static String progressInvocation() =>
       'window.hoshiReader && window.hoshiReader.calculateProgress()';
 
+  static String stableProgressInvocation() =>
+      'window.hoshiReader && !window.hoshiReader._reanchorPending '
+      '? window.hoshiReader.calculateProgress() : null';
+
   static String updatePageSizeInvocation(double width, double height) =>
       'window.hoshiReader && window.hoshiReader.updatePageSize($width, $height)';
 

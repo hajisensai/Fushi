@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 151 条。点号进各自文件。
+> 共 152 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-155](bugs/BUG-155-reader-exit-position.md) | ✅ | ✅ | 书籍退出重进仍回到上一页 |
 | [BUG-154](bugs/BUG-154-yomitan-api-token-auth.md) | ✅ | ✅ | Yomitan API token authentication rejects compatible clients |
 | [BUG-153](bugs/BUG-153-dictionary-pull-clears-query.md) | ✅ | ✅ | 查词结果下拉释放应清空搜索且保持输入态 |
 | [BUG-152](bugs/BUG-152-reader-toc-chapter-jump.md) | ✅ | ✅ | 阅读器目录页偶发消失且继续读可能跳章节 |
