@@ -432,22 +432,20 @@ class SyncManager {
   }
 
   /// HBK-AUDIT-047: local reading progress as a 0..1 fraction, mirroring the
-  /// fraction embedded in the remote progress filename. Uses the dirty-flag
-  /// cache (`ttuCharOffset`) when valid, otherwise converts the live position.
+  /// fraction embedded in the remote progress filename. BUG-136: 直接由
+  /// `(sectionIndex, normCharOffset)` 换算（旧的 ttuCharOffset 精确缓存列已删，合并到
+  /// 单一阅读位置列；同步精度退化为 normCharOffset 的 0-10000 粒度，可接受）。
   double? _localProgressFraction(
     ReaderPositionRow localPosition,
     List<ChapterCharInfo> chapters,
   ) {
     final int total = totalCharacterCount(chapters);
     if (total <= 0) return null;
-    final int cachedCharOffset = localPosition.ttuCharOffset;
-    final int exploredChars = cachedCharOffset >= 0
-        ? cachedCharOffset
-        : toExploredCharCount(
-            sectionIndex: localPosition.sectionIndex,
-            normCharOffset: localPosition.normCharOffset,
-            chapters: chapters,
-          );
+    final int exploredChars = toExploredCharCount(
+      sectionIndex: localPosition.sectionIndex,
+      normCharOffset: localPosition.normCharOffset,
+      chapters: chapters,
+    );
     return exploredChars / total;
   }
 
@@ -485,7 +483,8 @@ class SyncManager {
       return SyncBookResult(direction: SyncResult.skipped, title: book.title);
     }
 
-    // Import progress — store exploredCharCount in ttuCharOffset for dirty-flag cache
+    // Import progress → (sectionIndex, normCharOffset)。BUG-136: 不再缓存精确
+    // exploredCharCount（ttuCharOffset 列已删）；下次导出由 normCharOffset 重算。
     final pos = fromExploredCharCount(
       exploredCharCount: remoteProgress.exploredCharCount,
       chapters: chapters,
@@ -494,7 +493,6 @@ class SyncManager {
       bookKey: Value(book.bookKey),
       sectionIndex: Value(pos.sectionIndex),
       normCharOffset: Value(pos.normCharOffset),
-      ttuCharOffset: Value(remoteProgress.exploredCharCount),
       updatedAt: Value(remoteProgress.lastBookmarkModified),
     ));
 
@@ -539,30 +537,13 @@ class SyncManager {
 
     // Export progress (only if we have a local reading position)
     if (localPosition != null) {
-      // Dirty-flag cache: reuse stored exploredCharCount if local position is unchanged
-      final cachedCharOffset = localPosition.ttuCharOffset;
-      if (cachedCharOffset >= 0) {
-        final cachedPos = fromExploredCharCount(
-          exploredCharCount: cachedCharOffset,
-          chapters: chapters,
-        );
-        final positionUnchanged = cachedPos.sectionIndex ==
-                localPosition.sectionIndex &&
-            (cachedPos.normCharOffset - localPosition.normCharOffset).abs() < 2;
-        exploredChars = positionUnchanged
-            ? cachedCharOffset
-            : toExploredCharCount(
-                sectionIndex: localPosition.sectionIndex,
-                normCharOffset: localPosition.normCharOffset,
-                chapters: chapters,
-              );
-      } else {
-        exploredChars = toExploredCharCount(
-          sectionIndex: localPosition.sectionIndex,
-          normCharOffset: localPosition.normCharOffset,
-          chapters: chapters,
-        );
-      }
+      // BUG-136: 由 (sectionIndex, normCharOffset) 直接换算（精确缓存列 ttuCharOffset
+      // 已删，合并为单一阅读位置列）。
+      exploredChars = toExploredCharCount(
+        sectionIndex: localPosition.sectionIndex,
+        normCharOffset: localPosition.normCharOffset,
+        chapters: chapters,
+      );
 
       final total = totalCharacterCount(chapters);
       final progress = total > 0 ? exploredChars / total : 0.0;
@@ -616,14 +597,7 @@ class SyncManager {
         }
       }
 
-      // Update local record: store exported exploredChars for dirty-flag cache
-      await _db.upsertReaderPosition(ReaderPositionsCompanion(
-        bookKey: Value(book.bookKey),
-        sectionIndex: Value(localPosition.sectionIndex),
-        normCharOffset: Value(localPosition.normCharOffset),
-        ttuCharOffset: Value(exploredChars),
-        updatedAt: Value(timestampMs),
-      ));
+      // BUG-136: 导出不再回写精确缓存（ttuCharOffset 列已删）；本地阅读位置不变，无需写库。
     }
 
     // Export EPUB file if content sync is enabled

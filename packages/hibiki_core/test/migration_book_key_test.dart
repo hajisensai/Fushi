@@ -328,7 +328,8 @@ void main() {
     expect(p1!.normCharOffset, 5000);
     final p2 = await db.getReaderPosition('Book A (2)');
     expect(p2, isNotNull);
-    expect(p2!.ttuCharOffset, 7);
+    expect(
+        p2!.charOffset, -1); // BUG-136: v24 删 ttu_char_offset，char_offset 默认 -1
 
     // ── bookmarks by bookKey ──────────────────────────────────────────
     final bmA = await db

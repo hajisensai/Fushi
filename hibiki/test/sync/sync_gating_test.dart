@@ -184,7 +184,6 @@ Future<EpubBookRow> _seedBookWithPosition(HibikiDatabase db) async {
     bookKey: Value(book.bookKey),
     sectionIndex: const Value(0),
     normCharOffset: const Value(5000),
-    ttuCharOffset: const Value(-1),
     updatedAt: const Value(1000),
   ));
   await db.setReadingStatistic(ReadingStatisticsCompanion.insert(

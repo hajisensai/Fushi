@@ -250,7 +250,6 @@ Future<void> _seedPosition(
     bookKey: Value(bookKey),
     sectionIndex: const Value(0),
     normCharOffset: Value(normOffset),
-    ttuCharOffset: const Value(-1),
     updatedAt: Value(updatedAt),
   ));
 }

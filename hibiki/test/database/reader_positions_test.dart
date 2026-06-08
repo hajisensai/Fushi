@@ -80,22 +80,6 @@ void main() {
       expect(await db.getReaderPosition('book-10'), isNull);
     });
 
-    test('ttuCharOffset defaults to -1', () async {
-      final db = await _openDb();
-      final now = DateTime.now().millisecondsSinceEpoch;
-      await db.upsertReaderPosition(
-        ReaderPositionsCompanion.insert(
-          bookKey: 'book-7',
-          sectionIndex: 0,
-          normCharOffset: 0,
-          updatedAt: now,
-        ),
-      );
-
-      final row = await db.getReaderPosition('book-7');
-      expect(row!.ttuCharOffset, -1);
-    });
-
     test('charOffset defaults to -1 and round-trips (BUG-136)', () async {
       final db = await _openDb();
       final now = DateTime.now().millisecondsSinceEpoch;
@@ -110,7 +94,7 @@ void main() {
       );
       expect((await db.getReaderPosition('book-co'))!.charOffset, -1);
 
-      // 精确偏移往返；写 char_offset 不动 ttu_char_offset（sync 列保留）。
+      // 精确偏移往返。
       await db.upsertReaderPosition(
         ReaderPositionsCompanion(
           bookKey: const Value('book-co'),
@@ -122,8 +106,6 @@ void main() {
       );
       final row = await db.getReaderPosition('book-co');
       expect(row!.charOffset, 1234);
-      expect(row.ttuCharOffset, -1,
-          reason: 'char_offset 写入不得污染 sync 的 ttu_char_offset');
     });
   });
 

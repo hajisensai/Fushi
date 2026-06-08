@@ -115,8 +115,14 @@ class HibikiDatabase extends _$HibikiDatabase {
             await m.createTable(readingHourlyLogs);
           }
           if (from < 4) {
+            // 历史 v4 加的是 ttu_char_offset；后续 v16 重建仍带它，最终 v24 整列删除
+            // （合并到 char_offset）。表定义已无 ttuCharOffset getter，用 raw SQL 保
+            // 历史列名，让 v16/v24 找得到它。
             if (!await _columnExists('reader_positions', 'ttu_char_offset')) {
-              await m.addColumn(readerPositions, readerPositions.ttuCharOffset);
+              await customStatement(
+                'ALTER TABLE reader_positions '
+                'ADD COLUMN ttu_char_offset INTEGER NOT NULL DEFAULT -1',
+              );
             }
           }
           if (from < 5) {
@@ -349,13 +355,24 @@ class HibikiDatabase extends _$HibikiDatabase {
             }
           }
           if (from < 24) {
-            // BUG-136: 新增 reader_positions.char_offset（section 内精确字符偏移恢复
-            // 锚）。与既有 ttu_char_offset（sync 的全书 exploredCharCount 缓存）范围
-            // 不同，故独立成列、互不覆盖（upsert 各留对方列 absent）。既有行默认 -1
-            // （= 无精确偏移→首次退出再进回退分数，翻一页后 re-save 即精确）。
-            if (await _tableExists('reader_positions') &&
-                !await _columnExists('reader_positions', 'char_offset')) {
-              await m.addColumn(readerPositions, readerPositions.charOffset);
+            // BUG-136: 阅读位置精确字符偏移合并为单一列 char_offset，删除原
+            // ttu_char_offset（sync 精确缓存列——云同步精度退化为 normCharOffset 分数后
+            // 不再需要）。用 ADD/DROP COLUMN（与表里其他列名无关，避免依赖 book_key 是否
+            // 已 re-key；SQLite 3.35+ 支持 DROP COLUMN，bundled sqlite3 够新）。既有行
+            // char_offset 默认 -1（首次退出再进回退分数，翻一页 re-save 即精确）。
+            // partial 测试 DB 无此表 → _tableExists 守卫跳过。
+            if (await _tableExists('reader_positions')) {
+              if (!await _columnExists('reader_positions', 'char_offset')) {
+                await customStatement(
+                  'ALTER TABLE reader_positions '
+                  'ADD COLUMN char_offset INTEGER NOT NULL DEFAULT -1',
+                );
+              }
+              if (await _columnExists('reader_positions', 'ttu_char_offset')) {
+                await customStatement(
+                  'ALTER TABLE reader_positions DROP COLUMN ttu_char_offset',
+                );
+              }
             }
           }
         },
