@@ -23,13 +23,13 @@
 ## 截图
 
 <p align="center">
-  <img src="docs/static-assets/screenshots/hibiki-readme-home.png" alt="书架" width="240">
+  <img src="docs/static-assets/screenshots/hibiki-readme-home.png" alt="书架" width="320">
   &nbsp;
-  <img src="docs/static-assets/screenshots/hibiki-readme-dictionaries.png" alt="词典管理" width="240">
+  <img src="docs/static-assets/screenshots/hibiki-readme-dictionaries.png" alt="查词" width="320">
   &nbsp;
-  <img src="docs/static-assets/screenshots/hibiki-readme-settings.png" alt="设置与主题" width="240">
+  <img src="docs/static-assets/screenshots/hibiki-readme-settings.png" alt="设置与主题" width="320">
 </p>
-<p align="center"><sub>书架 · 词典管理 · 设置与主题</sub></p>
+<p align="center"><sub>书架 · 查词 · 设置与主题</sub></p>
 
 ## 功能
 
