@@ -1,7 +1,7 @@
 ## BUG-136 · 翻页(手势/滚轮)后 ESC 不退出书籍
 - **报告**：2026-06-08（用户：翻页以后，esc 不会退出书籍了）
 - **真实性**：✅ 真 bug — 根因 `hibiki/lib/src/pages/implementations/reader_hibiki_page.dart`（焦点丢失，详见下）
-- **[x] ① 已修复** — 提交 `dc634a2aa`
+- **[x] ① 已修复** — 提交 `407f02c03`
 - **[x] ② 已加自动化测试** — `hibiki/test/pages/reader_esc_focus_reclaim_static_test.dart`（纯谓词单测 4 例 + 源码守卫 6 例，10 绿）
 - **备注**：
 
