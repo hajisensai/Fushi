@@ -39,6 +39,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
   DictionarySearchResult? _result;
   final DictionaryPopupController _popup =
       DictionaryPopupController(lowMemory: false);
+  final GlobalKey _resultStackKey = GlobalKey();
 
   bool _isSearching = false;
   String _lastQuery = '';
@@ -480,60 +481,64 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
     // 拉糊。中和器包在 LayoutBuilder 外层 → 内层 constraints/screen 都是真实视口几何，
     // WebView 与弹窗共用同一坐标系，selectionRect 定位不错位。
     return HibikiAppUiScaleNeutralizer(
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final Size screen = Size(constraints.maxWidth, constraints.maxHeight);
-          return Stack(
-            children: [
-              const SizedBox.shrink(
-                key: ValueKey<String>('home_dictionary_result_evidence'),
-              ),
-              DictionaryPopupWebView(
-                result: _result!,
-                onTextSelected: (text, localRect) {
-                  _pushNestedPopup(text, localRect, replaceStack: true);
-                },
-                onLinkClick: (query, localRect) {
-                  _pushNestedPopup(query, localRect, replaceStack: true);
-                },
-                onMineEntry: onMineEntry,
-                onDuplicateCheck: checkDuplicate,
-                onScrolledToBottom: _allLoaded ? null : _loadMore,
-                onTopPullReleased: _clearSearchFromResultPull,
-              ),
-              if (_externalLookupText.trim().isNotEmpty)
-                Positioned(
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  child: ClipboardLookupTextPanel(
-                    text: _externalLookupText,
-                    onLookup: (String query, Rect localRect) {
-                      _pushNestedPopup(query, localRect, replaceStack: true);
-                    },
-                  ),
-                ),
-              if (_popup.entries.isNotEmpty || _popup.isSearchingUi)
-                Positioned.fill(
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.translucent,
-                    onTap: () => _popNestedPopupAt(0),
-                    child: Container(
-                      color: Colors.transparent,
+      child: Column(
+        children: [
+          if (_externalLookupText.trim().isNotEmpty)
+            ClipboardLookupTextPanel(
+              text: _externalLookupText,
+              coordinateSpaceKey: _resultStackKey,
+              onLookup: (String query, Rect localRect) {
+                _pushNestedPopup(query, localRect, replaceStack: true);
+              },
+            ),
+          Expanded(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final Size screen =
+                    Size(constraints.maxWidth, constraints.maxHeight);
+                return Stack(
+                  key: _resultStackKey,
+                  children: [
+                    const SizedBox.shrink(
+                      key: ValueKey<String>('home_dictionary_result_evidence'),
                     ),
-                  ),
-                ),
-              // 搜索期加载占位卡（搜索→就绪才显示，与书内同观感）。
-              if (_popup.isSearchingUi && _popup.pendingRect != null)
-                buildPopupLoadingPlaceholder(
-                  rect: _popup.pendingRect!,
-                  screen: screen,
-                ),
-              for (int i = 0; i < _popup.entries.length; i++)
-                _buildNestedPopupLayer(i, screen),
-            ],
-          );
-        },
+                    DictionaryPopupWebView(
+                      result: _result!,
+                      onTextSelected: (text, localRect) {
+                        _pushNestedPopup(text, localRect, replaceStack: true);
+                      },
+                      onLinkClick: (query, localRect) {
+                        _pushNestedPopup(query, localRect, replaceStack: true);
+                      },
+                      onMineEntry: onMineEntry,
+                      onDuplicateCheck: checkDuplicate,
+                      onScrolledToBottom: _allLoaded ? null : _loadMore,
+                      onTopPullReleased: _clearSearchFromResultPull,
+                    ),
+                    if (_popup.entries.isNotEmpty || _popup.isSearchingUi)
+                      Positioned.fill(
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.translucent,
+                          onTap: () => _popNestedPopupAt(0),
+                          child: Container(
+                            color: Colors.transparent,
+                          ),
+                        ),
+                      ),
+                    // 搜索期加载占位卡（搜索→就绪才显示，与书内同观感）。
+                    if (_popup.isSearchingUi && _popup.pendingRect != null)
+                      buildPopupLoadingPlaceholder(
+                        rect: _popup.pendingRect!,
+                        screen: screen,
+                      ),
+                    for (int i = 0; i < _popup.entries.length; i++)
+                      _buildNestedPopupLayer(i, screen),
+                  ],
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }

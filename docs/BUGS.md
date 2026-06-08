@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 155 条。点号进各自文件。
+> 共 156 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-159](bugs/BUG-159-dictionary-clipboard-panel-overlap.md) | ✅ | ✅ | 外部查词文本面板不应覆盖查词结果 |
 | [BUG-158](bugs/BUG-158-interconnect-remote-book-manual-download.md) | ✅ | ✅ | Hibiki互联无法下载对端独有书籍 |
 | [BUG-157](bugs/BUG-157-interconnect-remote-video-url.md) | ✅ | ✅ | Hibiki互联远端视频URL被当成本地文件加载 |
 | [BUG-156](bugs/BUG-156-sync-upload-content-no-auto-pull.md) | ✅ | ✅ | 自动同步书籍和有声书文件开关误拉远端独有内容 |

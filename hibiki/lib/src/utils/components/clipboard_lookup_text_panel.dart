@@ -2,17 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderStack;
 
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
-import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 
 class ClipboardLookupTextPanel extends StatelessWidget {
   const ClipboardLookupTextPanel({
     required this.text,
     required this.onLookup,
     super.key,
+    this.coordinateSpaceKey,
   });
 
   final String text;
   final void Function(String query, Rect localRect) onLookup;
+  final GlobalKey? coordinateSpaceKey;
 
   @override
   Widget build(BuildContext context) {
@@ -26,42 +27,39 @@ class ClipboardLookupTextPanel extends StatelessWidget {
         tokens.spacing.page,
         0,
         tokens.spacing.page,
-        tokens.spacing.gap,
+        tokens.spacing.gap / 2,
       ),
-      child: HibikiCard(
-        padding: EdgeInsets.all(tokens.spacing.gap),
-        child: Wrap(
-          spacing: 0,
-          runSpacing: tokens.spacing.gap / 4,
-          children: <Widget>[
-            for (int i = 0; i < chars.length; i++)
-              Builder(
-                builder: (BuildContext charContext) {
-                  return GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () => onLookup(
-                      chars.skip(i).join(),
-                      _localRectOf(context, charContext),
+      child: Wrap(
+        spacing: 0,
+        runSpacing: tokens.spacing.gap / 4,
+        children: <Widget>[
+          for (int i = 0; i < chars.length; i++)
+            Builder(
+              builder: (BuildContext charContext) {
+                return GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => onLookup(
+                    chars.skip(i).join(),
+                    _localRectOf(context, charContext),
+                  ),
+                  child: Text(
+                    chars[i],
+                    style: tokens.type.metadata.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
-                    child: Text(
-                      chars[i],
-                      style: tokens.type.listTitle.copyWith(
-                        color: Theme.of(context).colorScheme.onSurface,
-                      ),
-                    ),
-                  );
-                },
-              ),
-          ],
-        ),
+                  ),
+                );
+              },
+            ),
+        ],
       ),
     );
   }
 
-  static Rect _localRectOf(
-      BuildContext panelContext, BuildContext charContext) {
+  Rect _localRectOf(BuildContext panelContext, BuildContext charContext) {
     final RenderObject? panel =
-        charContext.findAncestorRenderObjectOfType<RenderStack>() ??
+        coordinateSpaceKey?.currentContext?.findRenderObject() ??
+            charContext.findAncestorRenderObjectOfType<RenderStack>() ??
             panelContext.findRenderObject();
     final RenderObject? child = charContext.findRenderObject();
     if (panel is! RenderBox || child is! RenderBox || !child.hasSize) {

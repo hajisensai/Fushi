@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/utils/components/clipboard_lookup_text_panel.dart';
+import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 
 void main() {
   Widget buildSubject({
@@ -67,8 +68,10 @@ void main() {
     await tester.tap(find.text('a'));
 
     expect(rect, isNotNull);
-    expect(rect!.left, greaterThan(40));
-    expect(rect!.top, greaterThan(30));
+    expect(rect!.left, greaterThanOrEqualTo(40));
+    expect(rect!.top, greaterThanOrEqualTo(30));
+    expect(rect!.width, greaterThan(0));
+    expect(rect!.height, greaterThan(0));
   });
 
   testWidgets('blank text renders nothing and cannot trigger lookup',
@@ -85,5 +88,18 @@ void main() {
     expect(find.byType(ClipboardLookupTextPanel), findsOneWidget);
     expect(find.byType(GestureDetector), findsNothing);
     expect(called, isFalse);
+  });
+
+  testWidgets('external lookup text renders as an unframed strip',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      buildSubject(
+        text: 'abcdef',
+        onLookup: (_, __) {},
+      ),
+    );
+
+    expect(find.byType(ClipboardLookupTextPanel), findsOneWidget);
+    expect(find.byType(HibikiCard), findsNothing);
   });
 }
