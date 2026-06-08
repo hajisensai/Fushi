@@ -675,6 +675,149 @@ class HibikiClientSyncBackend extends SyncBackend {
     _ops!.checkStatus(res.statusCode, 'DELETE /api/library/books/$title');
   }
 
+  // ── Live local audio (interconnect-only) ──────────────────────────
+  // 与 live books 对称：直打 /api/library/localaudio，不经 WebDAV 暂存。
+
+  /// 列出对端 host 当前本地音频来源清单（直打 `/api/library/localaudio`）。
+  Future<List<RemoteLocalAudioInfo>> listRemoteLocalAudio() async {
+    await _ensureResolved();
+    final HttpClientRequest req =
+        await _ops!.buildRequest('GET', '$_apiBase/api/library/localaudio');
+    final HttpClientResponse res = await req.close();
+    _ops!.checkStatus(res.statusCode, 'GET /api/library/localaudio');
+    final String body = await res.transform(utf8.decoder).join();
+    final List<dynamic> arr = jsonDecode(body) as List<dynamic>;
+    return <RemoteLocalAudioInfo>[
+      for (final dynamic e in arr)
+        RemoteLocalAudioInfo.fromJson((e as Map).cast<String, Object?>()),
+    ];
+  }
+
+  /// 从对端 host 下载 displayName 为 [displayName] 的本地音频库到 [dest] 文件。
+  Future<void> getRemoteLocalAudio(
+    String displayName,
+    File dest, {
+    void Function(double progress)? onProgress,
+  }) async {
+    await _ensureResolved();
+    await downloadContentFile(
+      fileId:
+          '$_apiBase/api/library/localaudio/${Uri.encodeComponent(displayName)}',
+      destination: dest,
+      onProgress: onProgress,
+    );
+  }
+
+  /// 把本地 [file] 推送到对端 host，导入 displayName 为 [displayName] 的本地音频来源。
+  Future<void> putRemoteLocalAudio(
+    String displayName,
+    File file, {
+    void Function(double progress)? onProgress,
+  }) async {
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'PUT',
+      '$_apiBase/api/library/localaudio/${Uri.encodeComponent(displayName)}',
+    );
+    final int length = await file.length();
+    req.headers.set('Content-Type', 'application/octet-stream');
+    req.headers.set('Content-Length', '$length');
+    int sent = 0;
+    await req.addStream(file.openRead().map((List<int> chunk) {
+      sent += chunk.length;
+      onProgress?.call(length > 0 ? sent / length : 0);
+      return chunk;
+    }));
+    final HttpClientResponse res = await req.close();
+    await res.drain<void>();
+    _ops!.checkStatus(
+        res.statusCode, 'PUT /api/library/localaudio/$displayName');
+  }
+
+  /// 通知对端 host 删除 displayName 为 [displayName] 的本地音频来源。
+  Future<void> deleteRemoteLocalAudio(String displayName) async {
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'DELETE',
+      '$_apiBase/api/library/localaudio/${Uri.encodeComponent(displayName)}',
+    );
+    final HttpClientResponse res = await req.close();
+    await res.drain<void>();
+    _ops!.checkStatus(
+        res.statusCode, 'DELETE /api/library/localaudio/$displayName');
+  }
+
+  // ── Live audiobooks (interconnect-only) ───────────────────────────
+  // 与 live books 对称：直打 /api/library/audiobooks，不经 WebDAV 暂存。
+
+  /// 列出对端 host 当前有声书清单（直打 `/api/library/audiobooks`）。
+  Future<List<RemoteAudiobookInfo>> listRemoteAudiobooks() async {
+    await _ensureResolved();
+    final HttpClientRequest req =
+        await _ops!.buildRequest('GET', '$_apiBase/api/library/audiobooks');
+    final HttpClientResponse res = await req.close();
+    _ops!.checkStatus(res.statusCode, 'GET /api/library/audiobooks');
+    final String body = await res.transform(utf8.decoder).join();
+    final List<dynamic> arr = jsonDecode(body) as List<dynamic>;
+    return <RemoteAudiobookInfo>[
+      for (final dynamic e in arr)
+        RemoteAudiobookInfo.fromJson((e as Map).cast<String, Object?>()),
+    ];
+  }
+
+  /// 从对端 host 下载 bookKey 为 [bookKey] 的有声书到 [dest] 文件。
+  Future<void> getRemoteAudiobook(
+    String bookKey,
+    File dest, {
+    void Function(double progress)? onProgress,
+  }) async {
+    await _ensureResolved();
+    await downloadContentFile(
+      fileId:
+          '$_apiBase/api/library/audiobooks/${Uri.encodeComponent(bookKey)}',
+      destination: dest,
+      onProgress: onProgress,
+    );
+  }
+
+  /// 把本地 [file] 推送到对端 host，导入 bookKey 为 [bookKey] 的有声书。
+  Future<void> putRemoteAudiobook(
+    String bookKey,
+    File file, {
+    void Function(double progress)? onProgress,
+  }) async {
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'PUT',
+      '$_apiBase/api/library/audiobooks/${Uri.encodeComponent(bookKey)}',
+    );
+    final int length = await file.length();
+    req.headers.set('Content-Type', 'application/octet-stream');
+    req.headers.set('Content-Length', '$length');
+    int sent = 0;
+    await req.addStream(file.openRead().map((List<int> chunk) {
+      sent += chunk.length;
+      onProgress?.call(length > 0 ? sent / length : 0);
+      return chunk;
+    }));
+    final HttpClientResponse res = await req.close();
+    await res.drain<void>();
+    _ops!.checkStatus(res.statusCode, 'PUT /api/library/audiobooks/$bookKey');
+  }
+
+  /// 通知对端 host 删除 bookKey 为 [bookKey] 的有声书。
+  Future<void> deleteRemoteAudiobook(String bookKey) async {
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'DELETE',
+      '$_apiBase/api/library/audiobooks/${Uri.encodeComponent(bookKey)}',
+    );
+    final HttpClientResponse res = await req.close();
+    await res.drain<void>();
+    _ops!.checkStatus(
+        res.statusCode, 'DELETE /api/library/audiobooks/$bookKey');
+  }
+
   // ── Test connection ───────────────────────────────────────────────
 
   Future<void> testConnection({
