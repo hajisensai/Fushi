@@ -10,6 +10,15 @@ import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
+@visibleForTesting
+String mediaUriForVideoPath(String path) {
+  final Uri? uri = Uri.tryParse(path);
+  if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
+    return uri.toString();
+  }
+  return File(path).uri.toString();
+}
+
 /// 视频播放控制器：用 media_kit 播放视频，并按字幕 cue 做 125ms 同步高亮。
 ///
 /// cue 选择语义大体照搬有声书 [AudiobookPlayerController] 的 `_updateCurrentCue`：
@@ -297,7 +306,7 @@ class VideoPlayerController extends ChangeNotifier
     }
 
     await player.open(
-      Media(videoFile.uri.toString()),
+      Media(mediaUriForVideoPath(videoFile.path)),
       play: false,
     );
 
