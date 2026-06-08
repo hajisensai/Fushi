@@ -1350,7 +1350,7 @@ String _selectedUpdateChannel(SettingsContext settingsContext) {
 }
 
 Widget _buildYomitanApiKeyField(SettingsContext settingsContext) {
-  return _SettingsTextField(
+  return _SettingsSecretField(
     title: t.yomitan_api_key,
     icon: Icons.key_outlined,
     initialValue: settingsContext.appModel.yomitanApiKey,
@@ -1453,8 +1453,8 @@ Widget _buildMaximumTermsField(SettingsContext settingsContext) {
   );
 }
 
-class _SettingsTextField extends StatefulWidget {
-  const _SettingsTextField({
+class _SettingsSecretField extends StatefulWidget {
+  const _SettingsSecretField({
     required this.title,
     required this.icon,
     required this.initialValue,
@@ -1471,10 +1471,10 @@ class _SettingsTextField extends StatefulWidget {
   final Future<void> Function(String value) onChanged;
 
   @override
-  State<_SettingsTextField> createState() => _SettingsTextFieldState();
+  State<_SettingsSecretField> createState() => _SettingsSecretFieldState();
 }
 
-class _SettingsTextFieldState extends State<_SettingsTextField> {
+class _SettingsSecretFieldState extends State<_SettingsSecretField> {
   late final TextEditingController _controller;
   Timer? _debounce;
 

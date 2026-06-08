@@ -2187,6 +2187,7 @@ String _withoutSharedComponentNames(String source) {
       .replaceAll('HibikiIconButton(', 'HibikiSharedIconControl(')
       .replaceAll('HibikiSearchField(', 'HibikiSharedSearch(')
       .replaceAll('HibikiTextField(', 'HibikiSharedField(')
+      .replaceAll('AdaptiveSettingsTextField(', 'AdaptiveSettingsSharedField(')
       .replaceAll('HibikiOverflowMenu(', 'HibikiSharedOverflow(')
       .replaceAll('HibikiTransientScaffold(', 'HibikiSharedTransient(')
       .replaceAll('HibikiOverlayScaffold(', 'HibikiSharedOverlay(');
