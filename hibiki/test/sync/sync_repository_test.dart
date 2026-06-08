@@ -18,7 +18,7 @@ void main() {
     final SyncRepository repo = SyncRepository(db);
 
     await db.setPref(SyncRepository.syncStatsPreferenceKey, 'false');
-    await db.setPref(SyncRepository.syncAudioBookPreferenceKey, 'true');
+    await db.setPref(SyncRepository.syncAudioBookPreferenceKey, 'false');
     await db.setPref(SyncRepository.syncDictionaryPreferenceKey, 'true');
 
     expect(await repo.isSyncStatsEnabled(), isFalse);
@@ -32,7 +32,7 @@ void main() {
     expect(await db.getPref(SyncRepository.syncStatsPreferenceKey), 'b:true');
     expect(
       await db.getPref(SyncRepository.syncAudioBookPreferenceKey),
-      'b:false',
+      'b:true',
     );
     expect(
       await db.getPref(SyncRepository.syncDictionaryPreferenceKey),

@@ -3,7 +3,8 @@
 /// 用例 A：互联（HibikiClientSyncBackend）+ syncLocalAudio=true
 ///   → 本地音频经 live 端点双向（pull/push），不经 `__local_audio__` 暂存路径。
 /// 用例 B：互联 + syncAudioBookFiles=true
-///   → 有声书包经 live 端点双向（pull/push），不经 `audiobook.hibikiaudio` 书文件夹暂存。
+///   → 有声书包经 live 端点上传本端独有包，不自动拉取远端独有包，
+///     也不经 `audiobook.hibikiaudio` 书文件夹暂存。
 /// 用例 C：互联 + 开关关（syncLocalAudio=false / syncAudioBookFiles=false）
 ///   → 对应 live 方法不被调用（计数器=0）。
 /// 用例 D：云后端（非 HibikiClientSyncBackend）
@@ -401,9 +402,9 @@ void main() {
     });
   });
 
-  // ── 用例 B：互联 live + syncAudioBookFiles=true ──────────────────────────
+  // ── 用例 B：互联 live + syncAudioBookFiles=true（上传语义）───────────────
 
-  group('用例B: 互联 live 路径（syncAudioBookFiles=true）', () {
+  group('用例B: 互联 live 上传路径（syncAudioBookFiles=true）', () {
     late HibikiSyncServer server;
     late HibikiDatabase hostDb;
     late String serverBase;
@@ -479,7 +480,7 @@ void main() {
 
     tearDown(() async => server.stop());
 
-    test('pull：本地无 HostAudioBook 有声书 → 拉取并导入，audiobooksImported=1', () async {
+    test('本地无 HostAudioBook 有声书 → 不自动拉取远端独有有声书', () async {
       final HibikiDatabase localDb = _memDb();
       addTearDown(localDb.close);
 
@@ -498,9 +499,10 @@ void main() {
       await orch.syncAudiobooksLiveForTest(report, backend);
 
       expect(report.errors, isEmpty,
-          reason: 'live pull audiobook 无错误: ${report.errors}');
-      expect(report.audiobooksImported, 1,
-          reason: 'HostAudioBook 有声书应从 host pull 并导入');
+          reason: 'live audiobook upload 无错误: ${report.errors}');
+      expect(report.audiobooksImported, 0,
+          reason: 'Upload audiobook files 不能把远端独有有声书自动拉到本机');
+      expect(await localDb.getAudiobookByBookKey('HostAudioBook'), isNull);
     });
 
     test('push：本地有 LocalAudioBook 有声书，host 无 → 推送到 host', () async {

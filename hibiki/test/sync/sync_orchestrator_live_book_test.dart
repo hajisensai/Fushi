@@ -1,12 +1,12 @@
 /// Task T2.4：orchestrator 书籍内容 live 同步集成测试。
 ///
 /// 用例 A：互联（HibikiClientSyncBackend）+ syncContent=true
-///   → 走 live 端点 pull/push epub，不经书文件夹暂存路径。
+///   → 走 live 端点上传本端 epub，不自动拉取远端独有书，也不经书文件夹暂存路径。
 /// 用例 B：互联 + syncContent=false
 ///   → 不传任何 epub 内容（booksImported=0、无 toPull/toPush 动作），
 ///   但元数据路径仍正常运行。
 /// 用例 C：云后端（非 HibikiClient）+ syncContent=true
-///   → 仍走原 importRemoteBooks（书文件夹暂存，不影响 live 路径）。
+///   → 不走 live 端点；本地已有书仍走 SyncManager 书文件夹路径上传内容/元数据。
 ///
 /// **进度/统计/有声书位置回归**：只检查互联分支把 syncContent=false 传给
 /// SyncManager，已由 sync_manager_* 测试全量覆盖；本文件不重复覆盖
@@ -93,15 +93,11 @@ Future<HibikiClientSyncBackend> _buildClientBackend({
 }
 
 /// 构造只开 syncContent 的 orchestrator（用于书籍内容 live 测试）。
-///
-/// [onBookImported] 注入 fake 导入回调：把 epub 写入 [db] 而不依赖 path_provider
-/// 平台通道（避免 EpubImporter 的 EpubStorage.bookDirectory 拉起 path_provider）。
 SyncOrchestrator _bookOrchestrator({
   required HibikiDatabase db,
   required SyncBackend backend,
   required Directory tmp,
   required bool syncContent,
-  Future<void> Function(String filePath, String fileName)? onBookImported,
 }) =>
     SyncOrchestrator(
       db: db,
@@ -115,7 +111,6 @@ SyncOrchestrator _bookOrchestrator({
       syncAudioBookFiles: false,
       syncDictionary: false,
       syncLocalAudio: false,
-      onBookImported: onBookImported,
     );
 
 // ── Fake staged backend（云路径用，同 sync_orchestrator_live_dict_test.dart）──
@@ -257,9 +252,9 @@ void main() {
     if (work.existsSync()) await work.delete(recursive: true);
   });
 
-  // ── 用例 A：互联 live + syncContent=true ─────────────────────────────────
+  // ── 用例 A：互联 live + syncContent=true（上传语义）──────────────────────
 
-  group('用例A: 互联 live 路径（syncContent=true）', () {
+  group('用例A: 互联 live 上传路径（syncContent=true）', () {
     late HibikiSyncServer server;
     late HibikiDatabase hostDb;
     late String serverBase;
@@ -300,8 +295,7 @@ void main() {
 
     tearDown(() async => server.stop());
 
-    test('pull：本地无 BookY，syncContent=true → 拉到 BookY，booksImported=1',
-        () async {
+    test('本地无 BookY，syncContent=true → 不自动拉取远端独有 BookY', () async {
       // 本地：只有 BookX，没有 BookY
       final HibikiDatabase localDb = _memDb();
       addTearDown(localDb.close);
@@ -313,29 +307,24 @@ void main() {
       final HibikiClientSyncBackend backend =
           await _buildClientBackend(base: serverBase, token: token);
 
-      // client 侧 fake 导入：把下载到的 epub 注册进本地 DB 而不用真实 EpubImporter
-      // （避免 EpubImporter 调用 EpubStorage.bookDirectory 依赖 path_provider）。
-      final List<String> importedTitles = <String>[];
       final SyncOrchestrator orch = _bookOrchestrator(
         db: localDb,
         backend: backend,
         tmp: tmp,
         syncContent: true,
-        onBookImported: (String filePath, String fileName) async {
-          final String title = p.basenameWithoutExtension(fileName);
-          importedTitles.add(title);
-          final String extractDir =
-              p.join(work.path, 'local_extract_${title}_imported');
-          await _seedBook(db: localDb, title: title, extractDir: extractDir);
-        },
       );
       final SyncRunReport report = SyncRunReport();
       await orch.syncBooksContentLiveForTest(report, backend);
 
       expect(report.errors, isEmpty,
-          reason: 'live book pull 无错误: ${report.errors}');
-      expect(report.booksImported, 1, reason: 'BookY 应从 host pull 并导入');
-      expect(importedTitles, contains('BookY'), reason: 'onBookImported 应被调用');
+          reason: 'live book upload 无错误: ${report.errors}');
+      expect(report.booksImported, 0,
+          reason: 'Upload book files 不能把远端独有 BookY 自动拉到本机');
+      final List<EpubBookRow> localBooks = await localDb.getAllEpubBooks();
+      expect(
+        localBooks.map((EpubBookRow b) => b.title),
+        isNot(contains('BookY')),
+      );
     });
 
     test('push：host 无 BookX，syncContent=true → 推送 BookX，且 host 收到 epub',
@@ -356,14 +345,6 @@ void main() {
         backend: backend,
         tmp: tmp,
         syncContent: true,
-        onBookImported: (String filePath, String fileName) async {
-          // push 方向本地 → host；本地无需 pull，这里不应被调用
-          // 但若 host BookY → 本地也在这里处理（round-trip 场景本用例不验证）
-          final String title = p.basenameWithoutExtension(fileName);
-          final String extractDir =
-              p.join(work.path, 'local_extract_${title}_push_imported');
-          await _seedBook(db: localDb, title: title, extractDir: extractDir);
-        },
       );
       final SyncRunReport report = SyncRunReport();
       await orch.syncBooksContentLiveForTest(report, backend);
@@ -379,8 +360,7 @@ void main() {
       );
     });
 
-    test('双向 round-trip：本地 BookX，host BookY → 互换后本地含 BookY、host 含 BookX',
-        () async {
+    test('upload-only：本地 BookX，host BookY → 只推 BookX，不拉 BookY', () async {
       final HibikiDatabase localDb = _memDb();
       addTearDown(localDb.close);
       final String localExtractX = p.join(work.path, 'local_extract_X_rt');
@@ -391,32 +371,27 @@ void main() {
       final HibikiClientSyncBackend backend =
           await _buildClientBackend(base: serverBase, token: token);
 
-      final List<String> importedTitles = <String>[];
       final SyncOrchestrator orch = _bookOrchestrator(
         db: localDb,
         backend: backend,
         tmp: tmp,
         syncContent: true,
-        onBookImported: (String filePath, String fileName) async {
-          final String title = p.basenameWithoutExtension(fileName);
-          importedTitles.add(title);
-          final String extractDir =
-              p.join(work.path, 'local_extract_${title}_rt_imported');
-          await _seedBook(db: localDb, title: title, extractDir: extractDir);
-        },
       );
       final SyncRunReport report = SyncRunReport();
       await orch.syncBooksContentLiveForTest(report, backend);
 
       expect(report.errors, isEmpty,
-          reason: 'round-trip errors: ${report.errors}');
-      expect(report.booksImported, greaterThanOrEqualTo(1),
-          reason: 'BookY 应被 pull');
-      expect(importedTitles, contains('BookY'));
+          reason: 'upload-only errors: ${report.errors}');
+      expect(report.booksImported, 0, reason: 'BookY 不应被自动 pull');
 
       // host 含 BookX
       final List<EpubBookRow> hostBooks = await hostDb.getAllEpubBooks();
       expect(hostBooks.map((EpubBookRow b) => b.title), contains('BookX'));
+      final List<EpubBookRow> localBooks = await localDb.getAllEpubBooks();
+      expect(
+        localBooks.map((EpubBookRow b) => b.title),
+        isNot(contains('BookY')),
+      );
     });
 
     test('live 路径不经 sync-data 书文件夹暂存 epub', () async {
@@ -433,13 +408,6 @@ void main() {
         backend: backend,
         tmp: tmp,
         syncContent: true,
-        onBookImported: (String filePath, String fileName) async {
-          // fake import：不依赖 path_provider
-          final String title = p.basenameWithoutExtension(fileName);
-          final String extractDir =
-              p.join(work.path, 'local_ns_${title}_imported');
-          await _seedBook(db: localDb, title: title, extractDir: extractDir);
-        },
       );
       await orch.syncBooksContentLiveForTest(SyncRunReport(), backend);
 
@@ -510,10 +478,6 @@ void main() {
         backend: backend,
         tmp: tmp,
         syncContent: false,
-        // onBookImported 不应被调用（syncContent=false 完全跳过内容 sync）
-        onBookImported: (String filePath, String fileName) async {
-          fail('onBookImported 不应在 syncContent=false 时被调用');
-        },
       );
       final SyncRunReport report = await orch.run();
 
@@ -523,10 +487,10 @@ void main() {
     });
   });
 
-  // ── 用例 C：云后端仍走原 importRemoteBooks 路径 ──────────────────────────
+  // ── 用例 C：云后端仍走 SyncManager 书文件夹路径 ───────────────────────────
 
-  group('用例C: 云后端（非 HibikiClient）走 staged importRemoteBooks', () {
-    test('FakeSyncBackend + syncContent=true → 不走 live 端点（走旧书文件夹路径）', () async {
+  group('用例C: 云后端（非 HibikiClient）走书文件夹上传路径', () {
+    test('FakeSyncBackend + syncContent=true → 不走 live 端点', () async {
       // 云后端：FakeSyncBackend，listBooks 返回空（模拟无远端书可导入）
       final FakeAssetStore store = FakeAssetStore();
       final _FakeSyncBackend backend = _FakeSyncBackend(store);
@@ -546,11 +510,10 @@ void main() {
       );
       final SyncRunReport report = await orch.run();
 
-      // 云路径：listBooks 返回空，所以 importRemoteBooks 无导入
       // 关键断言：云路径调用了 ensureBookFolder（SyncManager 进度路径走书文件夹）
       // 而非 live 端点（FakeSyncBackend 没有 listRemoteBooks，调用它会抛）
       expect(report.errors, isEmpty, reason: '云后端路径运行无错误: ${report.errors}');
-      // 云路径 booksImported=0（FakeSyncBackend.listBooks 返回空，无远端书）
+      // 云路径不自动拉取远端独有书。
       expect(report.booksImported, 0);
     });
   });

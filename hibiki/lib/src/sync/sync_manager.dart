@@ -513,11 +513,6 @@ class SyncManager {
       await _repo.setAudiobookPosition(book.bookKey, posMs);
     }
 
-    // Import EPUB file if content sync is enabled and local file is missing
-    if (syncContent) {
-      await _importContentIfMissing(book: book, folderId: folderId);
-    }
-
     return SyncBookResult(
       direction: SyncResult.imported,
       title: book.title,
@@ -692,44 +687,6 @@ class SyncManager {
         folderId: folderId,
         fileName: audioName,
         file: audioFile,
-        onProgress: onContentProgress,
-      );
-    }
-  }
-
-  Future<void> _importContentIfMissing({
-    required EpubBookRow book,
-    required String folderId,
-  }) async {
-    // Import EPUB: a locally-present book already has its content in its
-    // extracted directory; there is no standalone .epub to (re)download. The
-    // old code keyed off `File(book.epubPath).existsSync()` — always false for
-    // the bare filename — and downloaded the epub to that bare path, polluting
-    // the process CWD and never re-extracting (BUG-088). Remote-only books are
-    // imported by importRemoteBookFolder, so here we only act when the local
-    // content is genuinely gone; recovery/re-extract is out of scope, so skip
-    // rather than write a stray file.
-    final bool contentPresent =
-        book.extractDir.isNotEmpty && Directory(book.extractDir).existsSync();
-    if (!contentPresent) {
-      debugPrint('[SyncManager] book "${book.title}" content missing locally '
-          '(extractDir gone); skipping epub re-import (remote-book import owns '
-          'recovery).');
-    }
-
-    // Import audio files
-    final audioPaths = await _resolveAudioPaths(book.bookKey);
-    for (final audioPath in audioPaths) {
-      if (File(audioPath).existsSync()) continue;
-      final audioName = p.basename(audioPath);
-      final remote = await _backend.findContentFile(folderId, audioName);
-      if (remote == null) continue;
-      final destination = File(audioPath);
-      final parentDir = destination.parent;
-      if (!parentDir.existsSync()) parentDir.createSync(recursive: true);
-      await _backend.downloadContentFile(
-        fileId: remote.id,
-        destination: destination,
         onProgress: onContentProgress,
       );
     }

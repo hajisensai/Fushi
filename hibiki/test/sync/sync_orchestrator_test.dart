@@ -316,7 +316,8 @@ void main() {
     expect(second.errors, isEmpty);
   });
 
-  test('audiobook package syncs and binds to the target device book', () async {
+  test('audiobook package uploads without pulling remote-only package',
+      () async {
     final FakeAssetStore store = FakeAssetStore();
     final FakeSyncBackend backend = FakeSyncBackend(store);
     final Directory tmp = Directory('${work.path}/tmp')..createSync();
@@ -405,15 +406,24 @@ void main() {
     ));
     expect(tgtKey, srcKey); // bookKey is stable across devices
 
-    final SyncRunReport pull = SyncRunReport();
-    await orch(tgtDb, tgtAudioRoot).syncAudiobookPackages('root', pull);
-    expect(pull.errors, isEmpty, reason: pull.errors.join(' | '));
-    expect(pull.audiobooksImported, 1);
+    final SyncRunReport second = SyncRunReport();
+    await orch(tgtDb, tgtAudioRoot).syncAudiobookPackages('root', second);
+    expect(second.errors, isEmpty, reason: second.errors.join(' | '));
+    expect(second.audiobooksImported, 0,
+        reason: 'Upload audiobook files 不能自动拉取远端独有有声书包');
 
-    // The synced audiobook resolves via the shared bookKey on the target.
-    expect(await tgtDb.getAudiobookByBookKey(tgtKey), isNotNull);
-    expect(await tgtDb.getSrtBookByBookKey(tgtKey), isNotNull);
-    expect(await tgtDb.getCuesForBook(tgtKey), isNotEmpty);
+    // The remote-only package stays remote; explicit manual download is a
+    // separate flow.
+    expect(tgtKey, srcKey); // bookKey is stable across devices
+    expect(await tgtDb.getAudiobookByBookKey(tgtKey), isNull);
+    expect(await tgtDb.getSrtBookByBookKey(tgtKey), isNull);
+    expect(await tgtDb.getCuesForBook(tgtKey), isEmpty);
+
+    final SyncRunReport targetUpload = SyncRunReport();
+    await orch(srcDb, srcAudioRoot).syncAudiobookPackages('root', targetUpload);
+    expect(targetUpload.errors, isEmpty,
+        reason: targetUpload.errors.join(' | '));
+    expect(targetUpload.audiobooksExported, 0, reason: '远端已有包时不重复上传');
   });
 
   group('local audio phase', () {

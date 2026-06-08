@@ -109,18 +109,19 @@ class SyncRunReport {
       localAudioImported > 0;
 }
 
-/// Bidirectional, union-based sync across any [SyncBackend].
+/// Orchestrates sync across any [SyncBackend].
 ///
 /// Layers the three previously-missing capabilities on top of the existing
 /// per-book [SyncManager] (progress / stats / content / audiobook position),
 /// which is left unchanged:
-///   1. import remote-only books (download EPUB → [EpubImporter] → local row);
+///   1. upload local book files when enabled;
 ///   2. dictionary packages (push/pull in the `__dictionaries__` namespace);
-///   3. audiobook packages (push/pull `audiobook.hibikiaudio` per book folder).
+///   3. upload local audiobook packages when enabled.
 ///
-/// Sync is an additive union: present-on-one-side ⇒ copy to the other. Deletes
-/// are never propagated. Large immutable assets (EPUB / audiobook / dictionary)
-/// are skipped when already present on the far side.
+/// File switches are upload-only. Remote-only books/audiobooks are intentionally
+/// left remote until the user explicitly downloads them from the compare or
+/// interconnect UI. Deletes are never propagated. Dictionaries and local-audio
+/// sources remain union-synced because they are separate opt-in sharing pools.
 class SyncOrchestrator {
   SyncOrchestrator({
     required HibikiDatabase db,
@@ -136,20 +137,17 @@ class SyncOrchestrator {
     required this.syncLocalAudio,
     this.localAudioEntries = const <LocalAudioDbEntry>[],
     this.onLocalAudioImported,
-    this.onBookImported,
     this.statsSyncMode = StatisticsSyncMode.merge,
     this.onProgress,
   })  : _db = db,
         _backend = backend,
         _dictionaryResourceRoot = dictionaryResourceRoot,
-        _audioDatabaseRoot = audioDatabaseRoot,
         _tempDir = tempDir,
         _packages = SyncAssetPackageService(db: db);
 
   final HibikiDatabase _db;
   final SyncBackend _backend;
   final Directory _dictionaryResourceRoot;
-  final Directory _audioDatabaseRoot;
   final Directory _tempDir;
   final SyncAssetPackageService _packages;
 
@@ -164,13 +162,6 @@ class SyncOrchestrator {
   final bool syncLocalAudio;
   final List<LocalAudioDbEntry> localAudioEntries;
   final Future<void> Function(LocalAudioPackageContents)? onLocalAudioImported;
-
-  /// 互联 live 书籍 pull 时的 epub 导入回调（[_syncBooksContentLive] 专用）。
-  ///
-  /// 生产传 `(filePath, fileName) => EpubImporter.importFromPath(db: db, filePath: filePath, fileName: fileName)`；
-  /// 为 null 时退回调用 [EpubImporter.importFromPath]（向后兼容，无需更新
-  /// 已有不注入此参数的调用方）。测试注入 fake 回调以避免 path_provider 依赖。
-  final Future<void> Function(String filePath, String fileName)? onBookImported;
 
   final StatisticsSyncMode statsSyncMode;
 
@@ -203,27 +194,24 @@ class SyncOrchestrator {
     return File(p.join(_tempDir.path, 'hibiki_sync_$_tmpCounter$suffix'));
   }
 
-  /// Runs the full bidirectional sweep. Order matters: remote books are
-  /// imported first so the subsequent [SyncManager] sweep and audiobook pull
-  /// see them as local books.
+  /// Runs the full sweep. File-content switches are upload-only: remote-only
+  /// books/audiobooks stay remote until the user explicitly downloads them.
+  /// Existing local books still go through [SyncManager], so progress,
+  /// statistics, and audiobook-position conflicts remain visible.
   Future<SyncRunReport> run() async {
     final SyncRunReport report = SyncRunReport();
     final String root = await _backend.findOrCreateRootFolder();
 
-    // 互联（HibikiClientSyncBackend）书籍内容走 live 端点；
-    // 云后端仍走原 importRemoteBooks（书文件夹暂存路径，不变）。
+    // 书籍文件开关是上传语义：只把本端已有 epub 内容补到远端。
+    // 远端独有书不会在自动同步中导入本机，必须通过 compare/interconnect UI 点击下载。
     final SyncBackend b = _backend;
     final bool isInterconnect = b is HibikiClientSyncBackend;
 
     if (isInterconnect) {
-      // Phase 2 T2.4：互联内容（epub）走 live 端点，仅当 syncContent 开时执行。
+      // 互联内容（epub）走 live 端点，仅当 syncContent 开时执行。
       // 元数据（进度/统计/有声书位置）由下方 SyncManager 以 syncContent=false 处理。
       if (syncContent) {
         await _syncBooksContentLive(report, b);
-      }
-    } else {
-      if (syncContent) {
-        await importRemoteBooks(root, report);
       }
     }
 
@@ -303,10 +291,12 @@ class SyncOrchestrator {
     }
   }
 
-  /// Downloads and imports books that exist on the backend but not locally
-  /// (matched by sanitized title). Requires the remote book folder to carry a
-  /// `.epub` content asset; folders without one (sender had content sync off)
-  /// are skipped.
+  /// Imports remote-only books for explicit/manual download flows.
+  ///
+  /// Automatic sync deliberately does not call this method: the
+  /// `syncContent` setting is "upload book files", not "pull remote-only
+  /// books". Remote folders still need a `.epub` content asset; folders
+  /// without one are skipped.
   Future<void> importRemoteBooks(String root, SyncRunReport report) async {
     final List<DriveFile> remoteFolders = await _backend.listBooks(root);
     final Set<String> localKeys = <String>{
@@ -348,11 +338,11 @@ class SyncOrchestrator {
     }
   }
 
-  /// 互联书籍内容 live 同步（Phase 2 T2.4）。
+  /// 互联书籍内容 live 上传。
   ///
-  /// 直打对端 `/api/library/books` 端点，按 `sanitizeTtuFilename(title)` union：
-  /// - toPull：远端 hasContent && 本端无 → `getRemoteBook` 下载 epub → `EpubImporter` 入库；
-  /// - toPush：本端有 && 远端无 → `repackageExtractedEpub` 重打包 → `putRemoteBook` 上传。
+  /// 直打对端 `/api/library/books` 端点，按 `sanitizeTtuFilename(title)` 只处理
+  /// toPush：本端有 && 远端无 → `repackageExtractedEpub` 重打包 →
+  /// `putRemoteBook` 上传。远端独有书籍留给 compare/interconnect UI 手动下载。
   ///
   /// 仅当 client syncContent 开时由 [run] 调用。进度走 [SyncPhase.books]，
   /// 临时文件 finally 清理，逐项错误进 [report.errors] 不中断整体。
@@ -380,48 +370,14 @@ class SyncOrchestrator {
       remoteKeyHasContent: remoteKeyHasContent,
     );
 
-    // 同时需要 title 原始值用于端点调用（端点按原始 title 寻址）。
-    // toPull 用远端 title；toPush 用本地 title。
-    final Map<String, String> remoteKeyToTitle = <String, String>{
-      for (final RemoteBookInfo r in remoteBooks)
-        sanitizeTtuFilename(r.title): r.title,
-    };
+    // 需要本地 title 原始值用于端点调用（端点按原始 title 寻址）。
     final Map<String, String> localKeyToTitle = <String, String>{
       for (final EpubBookRow b in localBooks)
         sanitizeTtuFilename(b.title): b.title,
     };
 
-    final int total = diff.toPull.length + diff.toPush.length;
+    final int total = diff.toPush.length;
     int index = 0;
-
-    // ── Pull：远端独有且有内容 → 下载并导入 ────────────────────────────────
-    for (final String key in diff.toPull) {
-      final String title = remoteKeyToTitle[key] ?? key;
-      _emit(SyncPhase.books, itemIndex: index, itemTotal: total, title: title);
-      File? tmp;
-      try {
-        tmp = _tmpFile('.epub');
-        await backend.getRemoteBook(
-          title,
-          tmp,
-          onProgress: (double f) => _emit(SyncPhase.books,
-              itemIndex: index,
-              itemTotal: total,
-              title: title,
-              fileFraction: f),
-        );
-        final String fileName = '$title.epub';
-        final Future<void> Function(String, String) importer =
-            onBookImported ?? _defaultBookImporter;
-        await importer(tmp.path, fileName);
-        report.booksImported++;
-      } catch (e) {
-        report.errors.add('live pull book "$title": $e');
-      } finally {
-        _safeDelete(tmp);
-      }
-      index++;
-    }
 
     // ── Push：本端独有 → 重打包并上传 ───────────────────────────────────────
     for (final String key in diff.toPush) {
@@ -469,15 +425,6 @@ class SyncOrchestrator {
       index++;
     }
   }
-
-  /// 默认书籍 epub 导入实现：经 [EpubImporter.importFromPath] 入库。
-  /// 仅在 [onBookImported] 为 null 时使用（生产路径）。
-  Future<void> _defaultBookImporter(String filePath, String fileName) =>
-      EpubImporter.importFromPath(
-        db: _db,
-        filePath: filePath,
-        fileName: fileName,
-      );
 
   /// 测试入口：直接调用 [_syncBooksContentLive]（private 方法对测试文件不可见）。
   @visibleForTesting
@@ -781,11 +728,12 @@ class SyncOrchestrator {
     }
   }
 
-  /// 互联有声书包 live 同步（Phase 3 T3.4）。
+  /// 互联有声书包 live 上传。
   ///
-  /// 直打对端 `/api/library/audiobooks` 端点，按 `bookKey` union：
-  /// - toPull：远端有 ∧ 本端无 → `getRemoteAudiobook` 下载包 → `importAudioDatabasePackage`；
-  /// - toPush：本端有 ∧ 远端无 → `exportAudioDatabasePackage` 打包 → `putRemoteAudiobook`。
+  /// 直打对端 `/api/library/audiobooks` 端点，按 `bookKey` 只处理 toPush：
+  /// 本端有 ∧ 远端无 → `exportAudioDatabasePackage` 打包 → `putRemoteAudiobook`。
+  /// 远端独有有声书包不在自动同步中拉取，避免启用上传开关后把对端独有内容
+  /// 自动塞进本机库。
   ///
   /// 仅当 client syncAudioBookFiles 开且 isInterconnect 时由 [run] 调用。
   /// 进度走 [SyncPhase.audiobooks]，临时文件 finally 清理，逐项错误进 report.errors 不中断。
@@ -809,45 +757,8 @@ class SyncOrchestrator {
       remoteKeys: remoteKeys,
     );
 
-    final Map<String, String?> remoteKeyToTitle = <String, String?>{
-      for (final RemoteAudiobookInfo r in remoteAudiobooks) r.bookKey: r.title,
-    };
-
-    final int total = diff.toPull.length + diff.toPush.length;
+    final int total = diff.toPush.length;
     int index = 0;
-
-    // ── Pull：远端独有 → 下载并导入 ────────────────────────────────────────
-    for (final String key in diff.toPull) {
-      final String displayTitle = remoteKeyToTitle[key] ?? key;
-      _emit(SyncPhase.audiobooks,
-          itemIndex: index, itemTotal: total, title: displayTitle);
-      File? tmp;
-      try {
-        tmp = _tmpFile('.hibikiaudio');
-        await backend.getRemoteAudiobook(
-          key,
-          tmp,
-          onProgress: (double f) => _emit(SyncPhase.audiobooks,
-              itemIndex: index,
-              itemTotal: total,
-              title: displayTitle,
-              fileFraction: f),
-        );
-        // bookKeyOverride = key，绑定到本端的 bookKey（对端 bookKey 应与本端一致，
-        // 因为 bookKey = sanitizeTtuFilename(title) 跨端稳定；显式传以防差异）。
-        await _packages.importAudioDatabasePackage(
-          packageFile: tmp,
-          audioDatabaseRoot: _audioDatabaseRoot,
-          bookKeyOverride: key,
-        );
-        report.audiobooksImported++;
-      } catch (e) {
-        report.errors.add('live pull audiobook "$key": $e');
-      } finally {
-        _safeDelete(tmp);
-      }
-      index++;
-    }
 
     // ── Push：本端独有 → 打包并上传 ─────────────────────────────────────────
     for (final String key in diff.toPush) {
@@ -990,9 +901,10 @@ class SyncOrchestrator {
     }
   }
 
-  /// Union-syncs the audiobook package (`audiobook.hibikiaudio`) inside each
-  /// book's folder. A book missing its audiobook locally but present remotely
-  /// is pulled; a book with a local audiobook absent remotely is pushed.
+  /// Uploads the audiobook package (`audiobook.hibikiaudio`) inside each
+  /// book's folder. A book with a local audiobook absent remotely is pushed;
+  /// a remote package for a local book without audiobook is left untouched for
+  /// explicit manual download flows.
   Future<void> syncAudiobookPackages(String root, SyncRunReport report) async {
     // A real "files transferred" denominator would need a findAsset network
     // round-trip per book before the loop; instead progress is keyed on the
@@ -1032,22 +944,6 @@ class SyncOrchestrator {
                   title: book.title,
                   fileFraction: f));
           report.audiobooksExported++;
-        } else if (!hasLocal && existing != null) {
-          tmp = _tmpFile('.hibikiaudio');
-          await _backend.getAsset(existing.id, tmp,
-              onProgress: (double f) => _emit(SyncPhase.audiobooks,
-                  itemIndex: i,
-                  itemTotal: total,
-                  title: book.title,
-                  fileFraction: f));
-          // Re-key to THIS device's book: bind the package to our resolved
-          // local bookKey so the synced audiobook/cues/srt link to our book.
-          await _packages.importAudioDatabasePackage(
-            packageFile: tmp,
-            audioDatabaseRoot: _audioDatabaseRoot,
-            bookKeyOverride: bookKey,
-          );
-          report.audiobooksImported++;
         }
       } catch (e) {
         report.errors.add('audiobook "${book.title}": $e');

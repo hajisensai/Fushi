@@ -151,17 +151,6 @@ SettingsDestination buildSyncBackupDestination() {
             },
           ),
           SettingsSwitchItem(
-            id: 'sync.audiobook',
-            title: t.sync_audiobook,
-            icon: Icons.headphones_outlined,
-            value: (SettingsContext ctx) => _syncSettings(ctx).syncAudioBook,
-            onChanged: (SettingsContext ctx, bool value) async {
-              _syncSettings(ctx).syncAudioBook = value;
-              await SyncRepository(ctx.appModel.database)
-                  .setSyncAudioBookEnabled(value);
-            },
-          ),
-          SettingsSwitchItem(
             id: 'sync.dictionary',
             title: t.sync_dictionary,
             subtitle: t.sync_dictionary_warning,
@@ -2420,7 +2409,6 @@ class _SyncSettingsState {
   SyncBackendType backendType = SyncBackendType.googleDrive;
   bool autoSync = false;
   bool syncStats = true;
-  bool syncAudioBook = true;
   bool syncDictionary = false;
   bool syncLocalAudio = false;
   bool syncContent = false;
@@ -2468,7 +2456,6 @@ class _SyncSettingsState {
       backendType = await _repo.getBackendType();
       autoSync = await _repo.isAutoSyncEnabled();
       syncStats = await _repo.isSyncStatsEnabled();
-      syncAudioBook = await _repo.isSyncAudioBookEnabled();
       syncDictionary = await _repo.isSyncDictionaryEnabled();
       syncLocalAudio = await _repo.isSyncLocalAudioEnabled();
       syncContent = await _repo.isSyncContentEnabled();

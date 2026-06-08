@@ -52,10 +52,9 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'system/Enable debug log': 'test/utils/misc/debug_log_service_test.dart',
   'syncBackup/Auto Sync': 'test/sync/sync_gating_test.dart',
   'syncBackup/Sync Statistics': 'test/sync/sync_gating_test.dart',
-  'syncBackup/Sync Audiobook Position': 'test/sync/sync_gating_test.dart',
-  'syncBackup/Sync book files': 'test/sync/sync_gating_test.dart',
+  'syncBackup/Upload book files': 'test/sync/sync_gating_test.dart',
   'syncBackup/Sync dictionaries': 'test/sync/sync_gating_test.dart',
-  'syncBackup/Sync audiobook files': 'test/sync/sync_orchestrator_test.dart',
+  'syncBackup/Upload audiobook files': 'test/sync/sync_orchestrator_test.dart',
   'syncBackup/Sync local audio': 'test/sync/sync_orchestrator_test.dart',
   // 设备/集成 backlog（消费点真机/WebView/Android-only，widget 测不到）
   'reading/Spread Direction': 'DEVICE: spread page order in WebView',

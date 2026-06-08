@@ -75,7 +75,6 @@ void main() {
       expect(idsOf(dest.sections[2]), <String>[
         'sync.auto_sync',
         'sync.statistics',
-        'sync.audiobook',
         'sync.dictionary',
         'sync.local_audio',
         'sync.content',

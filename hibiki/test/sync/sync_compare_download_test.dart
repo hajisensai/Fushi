@@ -242,7 +242,7 @@ void main() {
   });
 
   testWidgets(
-      'remote-only book renders a checked download control and Apply '
+      'remote-only book renders a direct download action and tapping it '
       'imports it', (WidgetTester tester) async {
     final HibikiDatabase db = _memDb();
     addTearDown(db.close);
@@ -275,23 +275,22 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // remote-only 条目渲染出「下载」控件，且默认勾选（useRemote）。
+    // remote-only 条目渲染出「下载」动作，但不再默认纳入 Apply 批量对账。
     expect(find.text('RemoteOnlyBook'), findsOneWidget);
     expect(find.text(t.sync_compare_download), findsOneWidget);
-    final Checkbox checkbox =
-        tester.widget<Checkbox>(find.byType(Checkbox).first);
-    expect(checkbox.value, isTrue, reason: 'remote-only 默认勾选下载');
+    expect(find.byType(Checkbox), findsNothing,
+        reason: '远端独有书应像 Hibiki 互联列表一样点行内动作下载，不再用勾选框');
 
-    // Apply 按钮计数为 1（remote-only 计入 actionable）。
-    expect(find.text(t.sync_compare_apply(count: 1)), findsOneWidget);
+    // Apply 按钮计数为 0（remote-only 下载是行内瞬时动作）。
+    expect(find.text(t.sync_compare_apply(count: 0)), findsOneWidget);
 
-    // 点 Apply（widget 测试可用 tap）→ 真走 importRemoteBookFolder。
+    // 点行内下载（widget 测试可用 tap）→ 真走 importRemoteBookFolder。
     // 导入经真实后台 isolate（EpubImporter.compute）+ 真实文件 IO；这些真实
     // 异步只在 runAsync 提供的真实事件循环里推进，fake 时钟的 pump 推不动它，
     // 所以整个「触发 + 等落库」必须在 runAsync 内完成。
     List<EpubBookRow> books = const <EpubBookRow>[];
     await tester.runAsync(() async {
-      await tester.tap(find.text(t.sync_compare_apply(count: 1)));
+      await tester.tap(find.text(t.sync_compare_download));
       for (int i = 0; i < 120; i++) {
         await Future<void>.delayed(const Duration(milliseconds: 50));
         books = await db.getAllEpubBooks();

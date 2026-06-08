@@ -3,6 +3,9 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:hibiki/src/epub/book_title_conflict.dart';
+import 'package:hibiki/src/epub/epub_importer.dart';
+import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
+import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/position_converter.dart';
 import 'package:hibiki/src/sync/sync_auto_trigger.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
@@ -17,6 +20,7 @@ import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_core/hibiki_core.dart';
+import 'package:path/path.dart' as p;
 
 enum SyncChoice { skip, useLocal, useRemote }
 
@@ -25,6 +29,7 @@ class SyncCompareEntry {
     required this.title,
     required this.bookKey,
     this.remoteFolderId,
+    this.remoteLiveTitle,
     this.remoteHasContent = true,
     this.remoteAudioBookId,
     this.localProgress,
@@ -44,6 +49,10 @@ class SyncCompareEntry {
   /// 远端书籍文件夹的原生定位符（删除整本远端书用）；本端独有书为 null。
   final String? remoteFolderId;
 
+  /// Hibiki 互联 live library 里的书名。它没有 WebDAV 书文件夹，下载必须走
+  /// `/api/library/books/<title>`，不能交给 [importRemoteBookFolder]。
+  final String? remoteLiveTitle;
+
   /// 该远端文件夹是否含可下载的 `.epub` 内容。仅对「远端独有」书有意义：为 false
   /// 时是只剩同步元数据的孤儿，不能当可下载书（避免 BUG-049 幽灵下载），但条目保留
   /// 以便删除。本端已有书 / 本端独有书恒为 true（不参与远端下载判定）。
@@ -51,7 +60,9 @@ class SyncCompareEntry {
 
   /// 远端独有且确有内容可下载（[remoteFolderId] 非空且 [remoteHasContent]）。
   bool get isDownloadableRemoteOnly =>
-      bookKey == null && remoteFolderId != null && remoteHasContent;
+      bookKey == null &&
+      (remoteFolderId != null || remoteLiveTitle != null) &&
+      remoteHasContent;
 
   /// 远端有声书资产（audiobook.hibikiaudio）的原生定位符；无远端有声书为 null。
   final String? remoteAudioBookId;
@@ -153,6 +164,8 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
       .where((DriveFile f) => !isReservedSyncFolderName(f.name))
       .toList();
   backend.cacheBookFolderIds(remoteBooks);
+  final List<RemoteBookInfo> liveBooks =
+      backend is HibikiClientSyncBackend ? await backend.listRemoteBooks() : [];
   final localBooks = await db.getAllEpubBooks();
 
   final allTitles = <String>{};
@@ -168,6 +181,11 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
     final cleaned = _unsanitize(f.name);
     if (cleaned != f.name) remoteByTitle[cleaned] = f;
     allTitles.add(cleaned);
+  }
+  final liveByTitle = <String, RemoteBookInfo>{};
+  for (final RemoteBookInfo book in liveBooks) {
+    liveByTitle[book.title] = book;
+    allTitles.add(book.title);
   }
 
   final allStats = await db.getAllReadingStatistics();
@@ -236,6 +254,7 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
     final remoteData = remoteDataMap[title];
     final remote =
         remoteByTitle[title] ?? remoteByTitle[sanitizeTtuFilename(title)];
+    final live = liveByTitle[title];
 
     // Whether this remote book folder actually holds downloadable book content.
     // Only meaningful (and only checked, to save a round-trip) for remote-only
@@ -243,8 +262,10 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
     // only sync metadata, so it must NOT be offered as a download that
     // importRemoteBookFolder can never satisfy — the phantom "download" row
     // that never clears (BUG-049). The row is still kept so it can be deleted.
-    final bool remoteHasContent = (local == null && remote != null)
-        ? await _remoteFolderHasContent(backend, remote.id)
+    final bool remoteHasContent = local == null
+        ? (remote != null
+            ? await _remoteFolderHasContent(backend, remote.id)
+            : (live?.hasContent ?? true))
         : true;
 
     // 跨设备资产身份与 SyncManager 一致：sanitizeTtuFilename(title)。读共同祖先
@@ -256,6 +277,7 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
       title: title,
       bookKey: local?.bookKey,
       remoteFolderId: remote?.id,
+      remoteLiveTitle: live?.title,
       remoteHasContent: remoteHasContent,
       remoteAudioBookId: remoteData?.audioBookId,
       localProgress: localProg,
@@ -517,12 +539,9 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
       final choices = <String, SyncChoice>{};
       for (final e in entries) {
         if (e.bookKey == null) {
-          // remote-only 书：唯一可做的对账是「下载到本机」。仅当远端确有可下载内容
-          // 时才默认勾选下载，匹配用户「点 Apply 应把云端书拉下来」的直觉；只剩同步
-          // 元数据的孤儿默认 skip，不再当永远拉不下来的幽灵（BUG-049）。
-          choices[e.title] = e.isDownloadableRemoteOnly
-              ? SyncChoice.useRemote
-              : SyncChoice.skip;
+          // remote-only 书改成行内点击下载，不再默认纳入 Apply 批量对账。
+          // 只剩同步元数据的孤儿也保持 skip，避免无法完成的幽灵下载（BUG-049）。
+          choices[e.title] = SyncChoice.skip;
         } else if (e.isSynced) {
           choices[e.title] = SyncChoice.skip;
         } else if (e.autoDirection == SyncDirection.importFromTtu) {
@@ -562,7 +581,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
   bool _isActionable(SyncCompareEntry e) {
     final c = _choices[e.title];
     if (c == null || c == SyncChoice.skip) return false;
-    return e.bookKey != null || e.isDownloadableRemoteOnly;
+    return e.bookKey != null;
   }
 
   Future<void> _applyChoices() async {
@@ -705,6 +724,88 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
     }
   }
 
+  Future<bool> _downloadRemoteOnlyBook(SyncCompareEntry entry) async {
+    if (!entry.isDownloadableRemoteOnly) return false;
+    if (entry.remoteLiveTitle != null &&
+        widget.backend is HibikiClientSyncBackend) {
+      final HibikiClientSyncBackend backend =
+          widget.backend as HibikiClientSyncBackend;
+      final Directory dir = _resolveTempDir();
+      if (!dir.existsSync()) dir.createSync(recursive: true);
+      final File tmp = File(
+        p.join(
+          dir.path,
+          'hibiki-compare-${DateTime.now().microsecondsSinceEpoch}.epub',
+        ),
+      );
+      try {
+        await backend.getRemoteBook(entry.remoteLiveTitle!, tmp);
+        await EpubImporter.importFromPath(
+          db: widget.db,
+          filePath: tmp.path,
+          fileName: '${entry.title}.epub',
+        );
+        return true;
+      } finally {
+        try {
+          if (tmp.existsSync()) tmp.deleteSync();
+        } catch (_) {
+          // best-effort temp cleanup
+        }
+      }
+    }
+    final String? folderId = entry.remoteFolderId;
+    if (folderId == null) return false;
+    return importRemoteBookFolder(
+      db: widget.db,
+      backend: widget.backend,
+      folderId: folderId,
+      tempDir: _resolveTempDir(),
+    );
+  }
+
+  Future<void> _downloadRemoteOnlyFromRow(SyncCompareEntry entry) async {
+    if (_applying) return;
+    setState(() {
+      _applying = true;
+      _progress = null;
+      _progressLabel = entry.title;
+    });
+    try {
+      bool imported = false;
+      await runExclusiveWithSync(() async {
+        imported = await _downloadRemoteOnlyBook(entry);
+      });
+      if (!mounted) return;
+      setState(() {
+        _applying = false;
+        _progress = null;
+        _progressLabel = null;
+        if (imported) {
+          _entries?.remove(entry);
+          _choices.remove(entry.title);
+        }
+      });
+    } on DuplicateImportCancelledException {
+      if (mounted) {
+        setState(() {
+          _applying = false;
+          _progress = null;
+          _progressLabel = null;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _applying = false;
+          _progress = null;
+          _progressLabel = null;
+          _error = friendlySyncError(e);
+        });
+      }
+    }
+  }
+
   /// 删除前确认框：用户确认才返回 true。删除是不可逆的远端副作用。
   Future<bool> _confirmDelete(String name) async {
     final bool? ok = await showAppDialog<bool>(
@@ -763,6 +864,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
         title: e.title,
         bookKey: e.bookKey,
         remoteFolderId: e.remoteFolderId,
+        remoteLiveTitle: e.remoteLiveTitle,
         // Carry the content flag: dropping it would reset to the default true
         // and re-expose the phantom download on a content-less orphan after its
         // remote audiobook is deleted (BUG-049 regression).
@@ -876,12 +978,6 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
                       for (final e in _entries!) {
                         if (e.bookKey != null && e.needsManualChoice) {
                           _choices[e.title] = choice;
-                        } else if (e.isDownloadableRemoteOnly) {
-                          // remote-only 只在 useRemote/skip 间切；忽略 useLocal。
-                          // 无内容的孤儿不可下载，不参与批量「全部用远端」。
-                          _choices[e.title] = choice == SyncChoice.useLocal
-                              ? SyncChoice.skip
-                              : choice;
                         }
                       }
                     });
@@ -1076,8 +1172,10 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
             _choiceRow(entry.title, choice, theme),
           ] else if (entry.isDownloadableRemoteOnly) ...[
             const SizedBox(height: 6),
-            _downloadRow(entry.title, choice, theme),
-          ] else if (entry.bookKey == null && entry.remoteFolderId != null) ...[
+            _downloadRow(entry, theme),
+          ] else if (entry.bookKey == null &&
+              (entry.remoteFolderId != null ||
+                  entry.remoteLiveTitle != null)) ...[
             // Orphan remote folder: only sync metadata on the cloud, no book to
             // download. Show why (the delete menu above can clean it up) instead
             // of a download checkbox that could never succeed (BUG-049).
@@ -1093,26 +1191,19 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
     );
   }
 
-  Widget _downloadRow(String title, SyncChoice choice, ThemeData theme) {
-    final bool download = choice == SyncChoice.useRemote;
-    return Row(
-      children: <Widget>[
-        Checkbox(
-          value: download,
-          onChanged: _applying
-              ? null
-              : (bool? v) => setState(() {
-                    _choices[title] =
-                        (v ?? false) ? SyncChoice.useRemote : SyncChoice.skip;
-                  }),
+  Widget _downloadRow(SyncCompareEntry entry, ThemeData theme) {
+    return Align(
+      alignment: AlignmentDirectional.centerStart,
+      child: TextButton.icon(
+        onPressed: _applying ? null : () => _downloadRemoteOnlyFromRow(entry),
+        icon: const Icon(Icons.cloud_download_outlined, size: 16),
+        label: Text(t.sync_compare_download),
+        style: TextButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          minimumSize: const Size(0, 32),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         ),
-        Icon(Icons.cloud_download_outlined,
-            size: 16, color: theme.colorScheme.primary),
-        const SizedBox(width: 4),
-        Text(t.sync_compare_download,
-            style: theme.textTheme.labelMedium
-                ?.copyWith(color: theme.colorScheme.primary)),
-      ],
+      ),
     );
   }
 

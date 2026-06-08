@@ -103,10 +103,9 @@ class SyncRepository {
   Future<void> setSyncStatsEnabled(bool v) =>
       _db.setPrefTyped<bool>(_keySyncStats, v);
 
-  Future<bool> isSyncAudioBookEnabled() =>
-      _db.getPrefTyped<bool>(_keySyncAudioBook, true);
+  Future<bool> isSyncAudioBookEnabled() async => true;
   Future<void> setSyncAudioBookEnabled(bool v) =>
-      _db.setPrefTyped<bool>(_keySyncAudioBook, v);
+      _db.setPrefTyped<bool>(_keySyncAudioBook, true);
 
   Future<bool> isSyncDictionaryEnabled() =>
       _db.getPrefTyped<bool>(_keySyncDictionary, false);

@@ -26,6 +26,7 @@ class _RecordingExportBackend implements SyncBackend {
   int updateStatsCalls = 0;
   int updateProgressCalls = 0;
   int updateAudioBookCalls = 0;
+  int downloadContentCalls = 0;
   String? lastStatsFileId;
   String? lastAudioBookFileId;
 
@@ -137,8 +138,12 @@ class _RecordingExportBackend implements SyncBackend {
   Future<List<DriveFile>> listBooks(String rootFolderId) async =>
       throw UnimplementedError();
   @override
-  Future<TtuProgress> getProgressFile(String fileId) async =>
-      throw UnimplementedError();
+  Future<TtuProgress> getProgressFile(String fileId) async => TtuProgress(
+        dataId: 0,
+        exploredCharCount: 80,
+        progress: 0.8,
+        lastBookmarkModified: 2000,
+      );
   @override
   Future<TtuAudioBook> getAudioBookFile(String fileId) async =>
       throw UnimplementedError();
@@ -155,8 +160,10 @@ class _RecordingExportBackend implements SyncBackend {
     required String fileId,
     required File destination,
     void Function(double progress)? onProgress,
-  }) async =>
-      throw UnimplementedError();
+  }) async {
+    downloadContentCalls++;
+  }
+
   @override
   Future<DriveFile?> findContentFile(String folderId, String fileName) async =>
       throw UnimplementedError();
@@ -213,13 +220,13 @@ void main() {
       expect(await repo.isSyncStatsEnabled(), isFalse);
     });
 
-    test('Sync Audiobook Position defaults on, flips off', () async {
+    test('audiobook position sync is always enabled', () async {
       expect(await repo.isSyncAudioBookEnabled(), isTrue);
       await repo.setSyncAudioBookEnabled(false);
-      expect(await repo.isSyncAudioBookEnabled(), isFalse);
+      expect(await repo.isSyncAudioBookEnabled(), isTrue);
     });
 
-    test('Sync book files (content) defaults off, flips on', () async {
+    test('Upload book files (content) defaults off, flips on', () async {
       expect(await repo.isSyncContentEnabled(), isFalse);
       await repo.setSyncContentEnabled(true);
       expect(await repo.isSyncContentEnabled(), isTrue);
@@ -283,6 +290,38 @@ void main() {
       expect(backend.updateProgressCalls, 1);
       expect(backend.updateStatsCalls, 1);
       expect(backend.lastStatsFileId, 'remote-stats');
+    });
+
+    test('syncContent:true imports remote metadata without downloading files',
+        () async {
+      final HibikiDatabase db = _memDb();
+      addTearDown(db.close);
+      final EpubBookRow book = await _seedBookWithPosition(db);
+
+      final backend = _RecordingExportBackend(
+        remoteFiles: const DriveSyncFiles(
+          progress: DriveFile(
+            id: 'remote-progress',
+            name: 'progress_1_6_2000_0.8.json',
+          ),
+        ),
+      );
+      final manager = SyncManager(db: db, backend: backend);
+
+      final SyncBookResult result = await manager.syncBook(
+        book: book,
+        direction: SyncDirection.importFromTtu,
+        syncStats: false,
+        statsSyncMode: StatisticsSyncMode.merge,
+        syncAudioBook: false,
+        syncContent: true,
+      );
+
+      expect(result.direction, SyncResult.imported);
+      expect(backend.downloadContentCalls, 0,
+          reason: 'Upload book files 不能在导入远端元数据时顺手下载内容文件');
+      final ReaderPositionRow? pos = await db.getReaderPosition(book.bookKey);
+      expect(pos?.updatedAt, 2000, reason: '进度/冲突解决仍应接受远端元数据');
     });
   });
 
