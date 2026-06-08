@@ -259,8 +259,16 @@ class SyncOrchestrator {
     _collectConflicts(bookResults, report);
 
     if (syncDictionary) await syncDictionaries(report);
-    if (syncLocalAudio) await syncLocalAudioPackages(report);
-    if (syncAudioBookFiles) await syncAudiobookPackages(root, report);
+
+    // 互联（HibikiClientSyncBackend）本地音频 + 有声书包走 live 端点；
+    // 云后端仍走原 __local_audio__ 暂存路径（不变）。
+    if (isInterconnect) {
+      if (syncLocalAudio) await _syncLocalAudioLive(report, b);
+      if (syncAudioBookFiles) await _syncAudiobooksLive(report, b);
+    } else {
+      if (syncLocalAudio) await syncLocalAudioPackages(report);
+      if (syncAudioBookFiles) await syncAudiobookPackages(root, report);
+    }
 
     return report;
   }
@@ -470,6 +478,22 @@ class SyncOrchestrator {
   ) =>
       _syncBooksContentLive(report, backend);
 
+  /// 测试入口：直接调用 [_syncLocalAudioLive]。
+  @visibleForTesting
+  Future<void> syncLocalAudioLiveForTest(
+    SyncRunReport report,
+    HibikiClientSyncBackend backend,
+  ) =>
+      _syncLocalAudioLive(report, backend);
+
+  /// 测试入口：直接调用 [_syncAudiobooksLive]。
+  @visibleForTesting
+  Future<void> syncAudiobooksLiveForTest(
+    SyncRunReport report,
+    HibikiClientSyncBackend backend,
+  ) =>
+      _syncAudiobooksLive(report, backend);
+
   /// Union-syncs dictionaries. 互联（HibikiClientSyncBackend）→ 直读对端实时库（无暂存）；
   /// 云后端 → 走现有 __dictionaries__ 暂存路径（不变）。无旧设备故无能力探测。
   Future<void> syncDictionaries(SyncRunReport report) async {
@@ -638,6 +662,212 @@ class SyncOrchestrator {
         report.dictionariesImported++;
       } catch (err) {
         report.errors.add('import dictionary "${e.name}": $err');
+      } finally {
+        _safeDelete(tmp);
+      }
+      index++;
+    }
+  }
+
+  /// 互联本地音频 live 同步（Phase 3 T3.4）。
+  ///
+  /// 直打对端 `/api/library/localaudio` 端点，按 `displayName` union：
+  /// - toPull：远端有 ∧ 本端无 → `getRemoteLocalAudio` 下载包 → `onLocalAudioImported` 注册；
+  /// - toPush：本端有 ∧ 远端无 → `exportLocalAudioPackage` 打包 → `putRemoteLocalAudio` 上传。
+  ///
+  /// 仅当 client syncLocalAudio 开且 isInterconnect 时由 [run] 调用。
+  /// 进度走 [SyncPhase.localAudio]，临时文件 finally 清理，逐项错误进 report.errors 不中断。
+  Future<void> _syncLocalAudioLive(
+    SyncRunReport report,
+    HibikiClientSyncBackend backend,
+  ) async {
+    final List<RemoteLocalAudioInfo> remoteEntries =
+        await backend.listRemoteLocalAudio();
+    final Set<String> localNames = <String>{
+      for (final LocalAudioDbEntry d in localAudioEntries) d.displayName,
+    };
+    final Set<String> remoteNames = <String>{
+      for (final RemoteLocalAudioInfo r in remoteEntries) r.displayName,
+    };
+
+    final LocalAudioSyncDiff diff = computeLocalAudioSyncDiff(
+      localNames: localNames,
+      remoteNames: remoteNames,
+    );
+
+    final int total = diff.toPull.length + diff.toPush.length;
+    int index = 0;
+
+    // ── Pull：远端独有 → 下载并注册 ────────────────────────────────────────
+    for (final String name in diff.toPull) {
+      _emit(SyncPhase.localAudio,
+          itemIndex: index, itemTotal: total, title: name);
+      File? tmp;
+      File? stagingDb;
+      try {
+        tmp = _tmpFile(_localAudioAssetSuffix);
+        await backend.getRemoteLocalAudio(
+          name,
+          tmp,
+          onProgress: (double f) => _emit(SyncPhase.localAudio,
+              itemIndex: index, itemTotal: total, title: name, fileFraction: f),
+        );
+        final LocalAudioPackageContents contents =
+            await _packages.importLocalAudioPackage(
+          packageFile: tmp,
+          stagingDir: _tempDir,
+        );
+        stagingDb = contents.dbFile;
+        if (onLocalAudioImported != null) {
+          await onLocalAudioImported!(contents);
+          report.localAudioImported++;
+        }
+      } catch (e) {
+        report.errors.add('live pull local audio "$name": $e');
+      } finally {
+        _safeDelete(tmp);
+        _safeDelete(stagingDb);
+      }
+      index++;
+    }
+
+    // ── Push：本端独有 → 打包并上传 ─────────────────────────────────────────
+    for (final String name in diff.toPush) {
+      _emit(SyncPhase.localAudio,
+          itemIndex: index, itemTotal: total, title: name);
+      File? tmp;
+      try {
+        final LocalAudioDbEntry? entry =
+            localAudioEntries.cast<LocalAudioDbEntry?>().firstWhere(
+                  (LocalAudioDbEntry? d) => d!.displayName == name,
+                  orElse: () => null,
+                );
+        if (entry == null || !File(entry.path).existsSync()) {
+          report.errors.add(
+              'live push local audio "$name": DB file missing or not found');
+          index++;
+          continue;
+        }
+        tmp = _tmpFile(_localAudioAssetSuffix);
+        await _packages.exportLocalAudioPackage(
+          displayName: entry.displayName,
+          enabled: entry.enabled,
+          sources: entry.sources,
+          dbFile: File(entry.path),
+          outputFile: tmp,
+        );
+        await backend.putRemoteLocalAudio(
+          name,
+          tmp,
+          onProgress: (double f) => _emit(SyncPhase.localAudio,
+              itemIndex: index, itemTotal: total, title: name, fileFraction: f),
+        );
+        report.localAudioExported++;
+      } catch (e) {
+        report.errors.add('live push local audio "$name": $e');
+      } finally {
+        _safeDelete(tmp);
+      }
+      index++;
+    }
+  }
+
+  /// 互联有声书包 live 同步（Phase 3 T3.4）。
+  ///
+  /// 直打对端 `/api/library/audiobooks` 端点，按 `bookKey` union：
+  /// - toPull：远端有 ∧ 本端无 → `getRemoteAudiobook` 下载包 → `importAudioDatabasePackage`；
+  /// - toPush：本端有 ∧ 远端无 → `exportAudioDatabasePackage` 打包 → `putRemoteAudiobook`。
+  ///
+  /// 仅当 client syncAudioBookFiles 开且 isInterconnect 时由 [run] 调用。
+  /// 进度走 [SyncPhase.audiobooks]，临时文件 finally 清理，逐项错误进 report.errors 不中断。
+  Future<void> _syncAudiobooksLive(
+    SyncRunReport report,
+    HibikiClientSyncBackend backend,
+  ) async {
+    final List<RemoteAudiobookInfo> remoteAudiobooks =
+        await backend.listRemoteAudiobooks();
+    final List<AudiobookRow> localAudiobooks = await _db.getAllAudiobooks();
+
+    final Set<String> localKeys = <String>{
+      for (final AudiobookRow ab in localAudiobooks) ab.bookKey,
+    };
+    final Set<String> remoteKeys = <String>{
+      for (final RemoteAudiobookInfo r in remoteAudiobooks) r.bookKey,
+    };
+
+    final AudiobookSyncDiff diff = computeAudiobookSyncDiff(
+      localKeys: localKeys,
+      remoteKeys: remoteKeys,
+    );
+
+    final Map<String, String?> remoteKeyToTitle = <String, String?>{
+      for (final RemoteAudiobookInfo r in remoteAudiobooks) r.bookKey: r.title,
+    };
+
+    final int total = diff.toPull.length + diff.toPush.length;
+    int index = 0;
+
+    // ── Pull：远端独有 → 下载并导入 ────────────────────────────────────────
+    for (final String key in diff.toPull) {
+      final String displayTitle = remoteKeyToTitle[key] ?? key;
+      _emit(SyncPhase.audiobooks,
+          itemIndex: index, itemTotal: total, title: displayTitle);
+      File? tmp;
+      try {
+        tmp = _tmpFile('.hibikiaudio');
+        await backend.getRemoteAudiobook(
+          key,
+          tmp,
+          onProgress: (double f) => _emit(SyncPhase.audiobooks,
+              itemIndex: index,
+              itemTotal: total,
+              title: displayTitle,
+              fileFraction: f),
+        );
+        // bookKeyOverride = key，绑定到本端的 bookKey（对端 bookKey 应与本端一致，
+        // 因为 bookKey = sanitizeTtuFilename(title) 跨端稳定；显式传以防差异）。
+        await _packages.importAudioDatabasePackage(
+          packageFile: tmp,
+          audioDatabaseRoot: _audioDatabaseRoot,
+          bookKeyOverride: key,
+        );
+        report.audiobooksImported++;
+      } catch (e) {
+        report.errors.add('live pull audiobook "$key": $e');
+      } finally {
+        _safeDelete(tmp);
+      }
+      index++;
+    }
+
+    // ── Push：本端独有 → 打包并上传 ─────────────────────────────────────────
+    for (final String key in diff.toPush) {
+      _emit(SyncPhase.audiobooks,
+          itemIndex: index, itemTotal: total, title: key);
+      File? tmp;
+      try {
+        final SrtBookRow? srt = await _db.getSrtBookByBookKey(key);
+        if (srt == null) {
+          report.errors
+              .add('live push audiobook "$key": srtBook not found, skipping');
+          index++;
+          continue;
+        }
+        tmp = _tmpFile('.hibikiaudio');
+        await _packages.exportAudioDatabasePackage(
+          bookKey: key,
+          srtBookUid: srt.uid,
+          outputFile: tmp,
+        );
+        await backend.putRemoteAudiobook(
+          key,
+          tmp,
+          onProgress: (double f) => _emit(SyncPhase.audiobooks,
+              itemIndex: index, itemTotal: total, title: key, fileFraction: f),
+        );
+        report.audiobooksExported++;
+      } catch (e) {
+        report.errors.add('live push audiobook "$key": $e');
       } finally {
         _safeDelete(tmp);
       }

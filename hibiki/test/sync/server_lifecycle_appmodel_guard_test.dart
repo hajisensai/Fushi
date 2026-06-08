@@ -69,6 +69,59 @@ void main() {
     });
   });
 
+  group('source guards: AppModel wires audio params into host service (T3.4)',
+      () {
+    test('AppModel 传 localAudioEntries: 到 AppModelLibraryHostService', () {
+      final String src =
+          File('lib/src/models/app_model.dart').readAsStringSync();
+      expect(src.contains('localAudioEntries:'), isTrue,
+          reason:
+              'AppModel 必须把 localAudioEntries 传给 AppModelLibraryHostService');
+    });
+
+    test('AppModel 传 audioDatabaseRoot: 到 AppModelLibraryHostService', () {
+      final String src =
+          File('lib/src/models/app_model.dart').readAsStringSync();
+      expect(src.contains('audioDatabaseRoot:'), isTrue,
+          reason:
+              'AppModel 必须把 audioDatabaseRoot 传给 AppModelLibraryHostService');
+    });
+
+    test('AppModel 传 onLocalAudioImported: 到 AppModelLibraryHostService', () {
+      final String src =
+          File('lib/src/models/app_model.dart').readAsStringSync();
+      expect(src.contains('onLocalAudioImported:'), isTrue,
+          reason:
+              'AppModel 必须把 onLocalAudioImported 传给 AppModelLibraryHostService');
+    });
+
+    test('AppModel 传 removeLocalAudioEntry: 到 AppModelLibraryHostService', () {
+      final String src =
+          File('lib/src/models/app_model.dart').readAsStringSync();
+      expect(src.contains('removeLocalAudioEntry:'), isTrue,
+          reason:
+              'AppModel 必须传 removeLocalAudioEntry 使 host deleteLocalAudio 真正生效');
+    });
+
+    test(
+        'orchestrator run() 互联分支调用 _syncLocalAudioLive 而非 syncLocalAudioPackages',
+        () {
+      final String src =
+          File('lib/src/sync/sync_orchestrator.dart').readAsStringSync();
+      expect(src.contains('_syncLocalAudioLive('), isTrue,
+          reason: 'orchestrator 必须有 _syncLocalAudioLive live 分流方法');
+      expect(src.contains('_syncAudiobooksLive('), isTrue,
+          reason: 'orchestrator 必须有 _syncAudiobooksLive live 分流方法');
+      // run() 里互联分支必须分流到 live 方法
+      expect(src.contains('if (syncLocalAudio) await _syncLocalAudioLive('),
+          isTrue,
+          reason: '互联分支必须调用 _syncLocalAudioLive');
+      expect(src.contains('if (syncAudioBookFiles) await _syncAudiobooksLive('),
+          isTrue,
+          reason: '互联分支必须调用 _syncAudiobooksLive');
+    });
+  });
+
   group('source guards: server lifecycle owned by AppModel (BUG-085)', () {
     test('the sync-settings page no longer owns or stops the server', () {
       final String schema =

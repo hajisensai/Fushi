@@ -39,6 +39,7 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
     Directory? localAudioStagingDir,
     Future<void> Function(LocalAudioPackageContents)? onLocalAudioImported,
     Directory? audioDatabaseRoot,
+    Future<void> Function(String displayName)? removeLocalAudioEntry,
   })  : _db = db,
         _dictionaryResourceRoot = dictionaryResourceRoot,
         _packages = packages,
@@ -49,7 +50,8 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
         _localAudioEntries = localAudioEntries,
         _localAudioStagingDir = localAudioStagingDir,
         _onLocalAudioImported = onLocalAudioImported,
-        _audioDatabaseRoot = audioDatabaseRoot;
+        _audioDatabaseRoot = audioDatabaseRoot,
+        _removeLocalAudioEntry = removeLocalAudioEntry;
 
   final HibikiDatabase _db;
   final Directory _dictionaryResourceRoot;
@@ -82,6 +84,10 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
   /// importAudiobook 音频文件落盘根目录（可选；null 时 importAudiobook 抛 [UnsupportedError]）。
   /// 生产传 AppModel 的 audioDatabaseRoot。
   final Directory? _audioDatabaseRoot;
+
+  /// deleteLocalAudio 回调（可选；null 时 deleteLocalAudio 仅做名称校验，静默跳过删除）。
+  /// 生产传按 displayName 从 LocalAudioManager 移除条目的回调（T3.4 接线）。
+  final Future<void> Function(String displayName)? _removeLocalAudioEntry;
 
   static const String _dictionaryAssetSuffix = '.hibikidict';
 
@@ -317,15 +323,16 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
 
   /// 从 host 删除 displayName 为 [displayName] 的本地音频来源。
   ///
-  /// 注：本地音频来源的注册信息存于 Preferences（不在 Drift DB），删除应由
-  /// 调用方经 LocalAudioManager 处理；此处提供接口占位，实现为 no-op 并记录
-  /// 预期行为——T3.4 接线时由 AppModel 覆盖或传入回调。
+  /// 注：本地音频来源的注册信息存于 Preferences（不在 Drift DB），删除需经
+  /// [_removeLocalAudioEntry] 回调，生产由 AppModel 注入。回调为 null 时静默
+  /// 跳过实际删除（等同 no-op，保持幂等）。
   /// [displayName] 含路径穿越字符时抛 [ArgumentError]。
   @override
   Future<void> deleteLocalAudio(String displayName) async {
     _assertSafeName(displayName);
-    // 本地音频注册信息由 LocalAudioManager（Preferences）管理，不在 Drift DB 中，
-    // 此基础实现仅做名称安全校验。T3.4 接线时应注入删除回调覆盖此行为。
+    final Future<void> Function(String)? remover = _removeLocalAudioEntry;
+    if (remover == null) return; // 回调未注入：静默跳过（幂等）
+    await _runExclusive(() => remover(displayName));
   }
 
   // ── 有声书包（T3.1）────────────────────────────────────────────────────────

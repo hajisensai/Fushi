@@ -224,6 +224,19 @@ class AppModel with ChangeNotifier {
         dictRepo.clearDictionaryResultsCache();
       },
       runExclusive: runExclusiveWithSync,
+      localAudioEntries: localAudioDbs,
+      localAudioStagingDir: temporaryDirectory,
+      onLocalAudioImported: importSyncedLocalAudioDb,
+      audioDatabaseRoot: Directory('${appDirectory.path}/audiobooks'),
+      removeLocalAudioEntry: (String displayName) async {
+        // 按 displayName 在 LocalAudioManager 中找到对应 index 并删除。
+        // LocalAudioManager.remove(int) 删除 DB 文件 + 从 prefs 移出 + 推 native。
+        final int idx = _localAudioManager.entries
+            .indexWhere((LocalAudioDbEntry e) => e.displayName == displayName);
+        if (idx < 0) return; // 不存在则幂等跳过
+        await _localAudioManager.remove(idx);
+        notifyListeners();
+      },
     ),
   );
 
