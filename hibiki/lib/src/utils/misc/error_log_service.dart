@@ -164,18 +164,6 @@ class ErrorLogService extends ChangeNotifier with FrameSafeNotifier {
     return buf.toString();
   }
 
-  Future<File?> getLogFile() async {
-    if (_logFile == null) return null;
-    try {
-      final content = getFullLog();
-      await _logFile!.writeAsString(content);
-      return _logFile;
-    } catch (e) {
-      debugPrint('[ErrorLogService] getLogFile failed: $e');
-      return null;
-    }
-  }
-
   Future<void> clear() async {
     _entries.clear();
     _persistedLog = '';
