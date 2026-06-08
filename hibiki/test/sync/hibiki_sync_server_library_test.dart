@@ -150,6 +150,57 @@ void main() {
     c.close();
   });
 
+  // ── CJK 词典名（修复前应为红，修复后应为绿）────────────────────────────────
+
+  test('GET /api/library/dictionaries/<CJK-name> 正确解码中文名', () async {
+    // host 预置「明镜」词典（CJK 名）
+    lib.dicts.add(const RemoteDictionaryInfo(name: '明镜', type: 'term'));
+    final HttpClient c = HttpClient();
+    // client 用 Uri.encodeComponent 编码 CJK 名，与 HibikiClientSyncBackend 一致
+    final String encodedName = Uri.encodeComponent('明镜');
+    final HttpClientRequest req = await c.getUrl(
+        Uri.parse('$base/api/library/dictionaries/$encodedName'));
+    req.headers.set('authorization', authHeader());
+    final HttpClientResponse res = await req.close();
+    expect(res.statusCode, 200,
+        reason: 'GET 明镜 应返回 200 而非 5xx（双重解码会致 500/502）');
+    final String body = await res.transform(utf8.decoder).join();
+    expect(body, 'PKG:明镜',
+        reason: 'server 应以正确 CJK 名（明镜）调用 exportDictionary');
+    c.close();
+  });
+
+  test('PUT /api/library/dictionaries/<CJK-name> 以中文名导入', () async {
+    final HttpClient c = HttpClient();
+    final String encodedName = Uri.encodeComponent('新明解');
+    final HttpClientRequest req = await c.putUrl(
+        Uri.parse('$base/api/library/dictionaries/$encodedName'));
+    req.headers.set('authorization', authHeader());
+    req.add(utf8.encode('PKG:新明解'));
+    final HttpClientResponse res = await req.close();
+    expect(res.statusCode, anyOf(200, 201, 204),
+        reason: 'PUT 新明解 应成功（2xx）');
+    // importDictionary 收到的文件内容为 'PKG:新明解'
+    expect(lib.imported, contains('PKG:新明解'),
+        reason: 'importDictionary 应被以正确内容调用');
+    c.close();
+  });
+
+  test('DELETE /api/library/dictionaries/<CJK-name> 以中文名删除', () async {
+    lib.dicts.add(const RemoteDictionaryInfo(name: '明镜', type: 'term'));
+    final HttpClient c = HttpClient();
+    final String encodedName = Uri.encodeComponent('明镜');
+    final HttpClientRequest req = await c.deleteUrl(
+        Uri.parse('$base/api/library/dictionaries/$encodedName'));
+    req.headers.set('authorization', authHeader());
+    final HttpClientResponse res = await req.close();
+    expect(res.statusCode, anyOf(200, 204),
+        reason: 'DELETE 明镜 应成功');
+    expect(lib.deleted, contains('明镜'),
+        reason: 'deleteDictionary 应以解码后中文名「明镜」被调用，而非编码串或乱码');
+    c.close();
+  });
+
   test('library endpoints 404 when no service injected', () async {
     final HibikiSyncServer bare = HibikiSyncServer(
       syncDataDir: Directory.systemTemp.createTempSync().path,

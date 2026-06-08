@@ -5,9 +5,9 @@
 /// 用例 B：非 HibikiClient 后端（FakeSyncBackend）仍走 staged 路径——
 ///   仍会调用 ensureNamespace(__dictionaries__)。
 ///
-/// 注：词典名统一用 ASCII（Meikyo 代替「明镜」）以规避 server 路径双重解码
-/// 对非 ASCII 名称的现有 bug（server 对中文名的 URL 解码有 "Illegal percent
-/// encoding" 问题，属 server 层面的独立 defect，不在 Task 5 修复范围内）。
+/// 词典名使用真实 CJK 名（「明镜」），覆盖 server URI 解码路径。
+/// server 端双重解码 bug 已在 hibiki_sync_server.dart 修复（去掉
+/// _handleLibraryDictionaries 里多余的 Uri.decodeComponent 调用）。
 library;
 
 import 'dart:io';
@@ -244,8 +244,8 @@ void main() {
       hostDb = _memDb();
       hostDictRoot =
           Directory(p.join(work.path, 'host_dicts'))..createSync();
-      // 在 host 上植入词典 Meikyo（ASCII，避免 server URL 双重解码 bug）
-      await _seedDictionary(hostDb, hostDictRoot, 'Meikyo');
+      // 在 host 上植入词典「明镜」（CJK 真实词典名，覆盖 server URI 解码路径）
+      await _seedDictionary(hostDb, hostDictRoot, '明镜');
 
       final AppModelLibraryHostService libSvc = AppModelLibraryHostService(
         db: hostDb,
@@ -268,8 +268,8 @@ void main() {
 
     tearDown(() async => server.stop());
 
-    test('pull：本地无 Meikyo，运行后本地 DB 含 Meikyo', () async {
-      // 本地：有 JMdict，无 Meikyo
+    test('pull：本地无「明镜」，运行后本地 DB 含「明镜」', () async {
+      // 本地：有 JMdict，无「明镜」
       final HibikiDatabase localDb = _memDb();
       addTearDown(localDb.close);
       final Directory localDictRoot =
@@ -288,15 +288,15 @@ void main() {
       expect(report.errors, isEmpty,
           reason: 'live sync should have no errors: ${report.errors}');
       expect(report.dictionariesImported, 1,
-          reason: 'Meikyo 应从 host pull 并导入');
+          reason: '「明镜」应从 host pull 并导入');
 
-      // 本地 DB 现含 Meikyo
+      // 本地 DB 现含「明镜」
       final List<DictionaryMetaRow> local = await localDb.getAllDictionaryMetadata();
-      expect(local.map((DictionaryMetaRow d) => d.name), contains('Meikyo'));
+      expect(local.map((DictionaryMetaRow d) => d.name), contains('明镜'));
     });
 
     test('push：host 无 JMdict，运行后 host DB 含 JMdict', () async {
-      // 本地：有 JMdict，无 Meikyo
+      // 本地：有 JMdict，无「明镜」
       final HibikiDatabase localDb = _memDb();
       addTearDown(localDb.close);
       final Directory localDictRoot =
@@ -346,7 +346,7 @@ void main() {
     });
 
     test('pull+push 双向 union round-trip', () async {
-      // 本地：JMdict；host：Meikyo。运行后本地含 Meikyo，host 含 JMdict。
+      // 本地：JMdict；host：「明镜」。运行后本地含「明镜」，host 含 JMdict。
       final HibikiDatabase localDb = _memDb();
       addTearDown(localDb.close);
       final Directory localDictRoot =
@@ -364,13 +364,13 @@ void main() {
 
       expect(report.errors, isEmpty,
           reason: 'round-trip errors: ${report.errors}');
-      expect(report.dictionariesImported, 1, reason: 'Meikyo 应 pull');
+      expect(report.dictionariesImported, 1, reason: '「明镜」应 pull');
       expect(report.dictionariesExported, 1, reason: 'JMdict 应 push');
 
-      // 本地有「Meikyo」
+      // 本地现有「明镜」
       final List<DictionaryMetaRow> localDicts =
           await localDb.getAllDictionaryMetadata();
-      expect(localDicts.map((DictionaryMetaRow d) => d.name), contains('Meikyo'));
+      expect(localDicts.map((DictionaryMetaRow d) => d.name), contains('明镜'));
 
       // host 有「JMdict」
       final List<DictionaryMetaRow> hostDicts =

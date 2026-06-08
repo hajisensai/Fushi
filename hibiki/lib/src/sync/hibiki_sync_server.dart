@@ -440,8 +440,12 @@ class HibikiSyncServer {
       );
     }
 
-    final String name = Uri.decodeComponent(
-        reqPath.substring('/api/library/dictionaries/'.length));
+    // reqPath 已在 _handleRequest 经 Uri.decodeFull 解码，此处无需再解码。
+    // 原先的 Uri.decodeComponent 调用会对已解码的 CJK 字符再次解析，
+    // 导致 "Illegal percent encoding in URI"（Dart 不接受非 ASCII 作为
+    // decodeComponent 输入）。直接 substring 即可得到正确的词典名。
+    final String name =
+        reqPath.substring('/api/library/dictionaries/'.length);
     if (name.isEmpty) {
       return shelf.Response.notFound('Missing dictionary name');
     }
