@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:hibiki/src/models/local_audio_manager.dart'
     show LocalAudioDbEntry;
+import 'package:hibiki/src/media/video/video_sidecar.dart'
+    show findSidecarSubtitle;
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/sync_asset_package_service.dart';
 import 'package:hibiki/src/sync/sync_manager.dart'
@@ -25,6 +27,7 @@ import 'package:path/path.dart' as p;
 /// | [localAudioStagingDir] | importLocalAudio 解包用临时目录（T3.1）| `Directory.systemTemp` 或应用 temp |
 /// | [onLocalAudioImported] | 注册已解包的本地音频包（T3.1）| `AppModel.importSyncedLocalAudioDb` |
 /// | [audioDatabaseRoot] | importAudiobook 音频文件落盘根目录（T3.1）| AppModel 的 audiobook root |
+/// | [videoSubtitleLangCode] | 视频 sidecar 字幕匹配语言代码（P4-1）| AppModel 目标学习语言 |
 ///
 /// T2/T3 后续接线任务会在 AppModel 初始化时传入真实值。
 class AppModelLibraryHostService implements HibikiLibraryHostService {
@@ -41,6 +44,7 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
     Future<void> Function(LocalAudioPackageContents)? onLocalAudioImported,
     Directory? audioDatabaseRoot,
     Future<void> Function(String displayName)? removeLocalAudioEntry,
+    String videoSubtitleLangCode = 'ja',
   })  : _db = db,
         _dictionaryResourceRoot = dictionaryResourceRoot,
         _packages = packages,
@@ -52,7 +56,8 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
         _localAudioStagingDir = localAudioStagingDir,
         _onLocalAudioImported = onLocalAudioImported,
         _audioDatabaseRoot = audioDatabaseRoot,
-        _removeLocalAudioEntry = removeLocalAudioEntry;
+        _removeLocalAudioEntry = removeLocalAudioEntry,
+        _videoSubtitleLangCode = videoSubtitleLangCode;
 
   final HibikiDatabase _db;
   final Directory _dictionaryResourceRoot;
@@ -89,6 +94,12 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
   /// deleteLocalAudio 回调（可选；null 时 deleteLocalAudio 仅做名称校验，静默跳过删除）。
   /// 生产传按 displayName 从 LocalAudioManager 移除条目的回调（T3.4 接线）。
   final Future<void> Function(String displayName)? _removeLocalAudioEntry;
+
+  // ── 视频（P4-1）──────────────────────────────────────────────────────────────
+
+  /// 视频 sidecar 字幕匹配的目标语言代码（默认 'ja'）。
+  /// 生产传 AppModel.targetLanguage.langCode（P4 接线任务完成后注入真实值）。
+  final String _videoSubtitleLangCode;
 
   static const String _dictionaryAssetSuffix = '.hibikidict';
 
@@ -427,5 +438,94 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
         if (dir.existsSync()) await dir.delete(recursive: true);
       }
     });
+  }
+
+  // ── 视频（P4-1，只读）────────────────────────────────────────────────────────
+
+  /// host 当前视频清单（从 VideoBooks 表读，按 importedAt DESC 排序）。
+  ///
+  /// [sizeBytes] 取 videoPath 对应文件的大小（stat），文件不存在时为 null。
+  /// [durationMs] 目前恒为 null（DB 无 duration 列，后续由 ffprobe/libmpv 填充）。
+  /// [hasSubtitle] 当前视频文件旁能找到外挂字幕时为 true。
+  @override
+  Future<List<RemoteVideoInfo>> listVideos() async {
+    final List<VideoBookRow> rows = await _db.allVideoBooks();
+    // 按 importedAt 降序（null 排最后）
+    rows.sort((VideoBookRow a, VideoBookRow b) {
+      final DateTime? ta = a.importedAt;
+      final DateTime? tb = b.importedAt;
+      if (ta == null && tb == null) return 0;
+      if (ta == null) return 1;
+      if (tb == null) return -1;
+      return tb.compareTo(ta);
+    });
+
+    return <RemoteVideoInfo>[
+      for (final VideoBookRow row in rows)
+        _videoInfoFromRow(row),
+    ];
+  }
+
+  /// 构建单条 [RemoteVideoInfo]（内部辅助，不做 IO 之外的副作用）。
+  RemoteVideoInfo _videoInfoFromRow(VideoBookRow row) {
+    final String videoPath = row.videoPath;
+    int? sizeBytes;
+    bool hasSubtitle = false;
+
+    if (videoPath.isNotEmpty) {
+      final File f = File(videoPath);
+      if (f.existsSync()) {
+        try {
+          sizeBytes = f.lengthSync();
+        } catch (_) {
+          // stat 失败：保守返回 null
+        }
+        // 检查外挂字幕 sidecar
+        final String? sub =
+            findSidecarSubtitle(videoPath, langCode: _videoSubtitleLangCode);
+        hasSubtitle = sub != null && File(sub).existsSync();
+      }
+    }
+
+    return RemoteVideoInfo(
+      id: row.bookUid,
+      title: row.title,
+      sizeBytes: sizeBytes,
+      hasSubtitle: hasSubtitle,
+      // durationMs: 暂为 null，DB 无此列（后续接线任务填充）
+    );
+  }
+
+  /// 按 [id]（即 `VideoBooks.bookUid`）反查真实视频文件。
+  ///
+  /// **只查 DB**，不接受外部文件路径。文件不存在或 id 未知时返回 null。
+  @override
+  Future<File?> resolveVideoFile(String id) async {
+    final VideoBookRow? row = await _db.getVideoBookByBookUid(id);
+    if (row == null) return null;
+    final String path = row.videoPath;
+    if (path.isEmpty) return null;
+    final File f = File(path);
+    return f.existsSync() ? f : null;
+  }
+
+  /// 按 [id] 查找对应视频的外挂字幕文件（sidecar）。
+  ///
+  /// 用 [langCode] 优先匹配带语言标记的字幕（如 `.ja.srt`）；内封字幕不在此列。
+  /// 找不到外挂字幕或视频未知时返回 null。
+  @override
+  Future<File?> resolveVideoSubtitle(
+    String id, {
+    String langCode = 'ja',
+  }) async {
+    final VideoBookRow? row = await _db.getVideoBookByBookUid(id);
+    if (row == null) return null;
+    final String videoPath = row.videoPath;
+    if (videoPath.isEmpty) return null;
+    final String? subPath =
+        findSidecarSubtitle(videoPath, langCode: langCode);
+    if (subPath == null) return null;
+    final File f = File(subPath);
+    return f.existsSync() ? f : null;
   }
 }

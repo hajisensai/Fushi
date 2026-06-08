@@ -1025,6 +1025,41 @@ class HibikiSyncServer {
         return 'image/jpeg';
       case '.png':
         return 'image/png';
+      // ── 视频格式（P4-1）──────────────────────────────────────────────────────
+      case '.mp4':
+      case '.m4v':
+        return 'video/mp4';
+      case '.mkv':
+        return 'video/x-matroska';
+      case '.webm':
+        return 'video/webm';
+      case '.avi':
+        return 'video/x-msvideo';
+      case '.mov':
+        return 'video/quicktime';
+      case '.ts':
+      case '.m2ts':
+      case '.mts':
+        return 'video/mp2t';
+      case '.flv':
+        return 'video/x-flv';
+      case '.wmv':
+        return 'video/x-ms-wmv';
+      case '.mpg':
+      case '.mpeg':
+        return 'video/mpeg';
+      case '.ogv':
+        return 'video/ogg';
+      case '.3gp':
+        return 'video/3gpp';
+      // ── 字幕格式 ──────────────────────────────────────────────────────────────
+      case '.srt':
+        return 'text/plain; charset=utf-8';
+      case '.ass':
+      case '.ssa':
+        return 'text/plain; charset=utf-8';
+      case '.vtt':
+        return 'text/vtt; charset=utf-8';
       default:
         return 'application/octet-stream';
     }
@@ -1034,6 +1069,157 @@ class HibikiSyncServer {
       .replaceAll('&', '&amp;')
       .replaceAll('<', '&lt;')
       .replaceAll('>', '&gt;');
+}
+
+// ── Range 流式传输辅助（P4-1）────────────────────────────────────────────────
+
+/// HTTP `Range: bytes=` 解析结果。
+///
+/// [start] / [end] 均为闭区间（如 `0..99` 表示前 100 字节）。
+/// [unsatisfiable] 为 true 时表示范围越界或格式合法但不可满足（应回 416）。
+class ByteRange {
+  const ByteRange({required this.start, required this.end});
+
+  /// 不可满足的特殊单例（start==-1, end==-1）。
+  static const ByteRange unsatisfiable = ByteRange(start: -1, end: -1);
+
+  final int start;
+  final int end;
+
+  bool get isUnsatisfiable => start == -1 && end == -1;
+
+  /// 区间字节数（闭区间长度）。
+  int get length => isUnsatisfiable ? 0 : end - start + 1;
+
+  @override
+  String toString() =>
+      isUnsatisfiable ? 'ByteRange.unsatisfiable' : 'ByteRange($start-$end)';
+}
+
+/// 纯函数：解析 `Range: bytes=<spec>` 头，返回闭区间 [ByteRange]。
+///
+/// 支持三种合法格式（RFC 7233）：
+/// - `bytes=start-end`：完整范围（两端均含）。
+/// - `bytes=start-`：从 [start] 到文件末尾。
+/// - `bytes=-suffix`：文件最后 [suffix] 字节。
+///
+/// 以下情况返回 [ByteRange.unsatisfiable]（调用方回 416）：
+/// - [rangeHeader] 为 null/空：**不返回 unsatisfiable，返回 null**（表示无 Range 头，
+///   调用方回 200 全量）——通过返回 `null` 区分「无头」与「不可满足」。
+/// - 格式不符（非 `bytes=` 前缀、缺 `-`、非数字）：返回 unsatisfiable。
+/// - suffix=0：返回 unsatisfiable（RFC 7233 §2.1 suffix-length 为 0 无意义）。
+/// - 解析后范围越界（start >= fileLength）：返回 unsatisfiable。
+/// - start > end（规范化后）：返回 unsatisfiable。
+ByteRange? parseByteRange(String? rangeHeader, int fileLength) {
+  if (rangeHeader == null || rangeHeader.isEmpty) return null;
+  if (!rangeHeader.startsWith('bytes=')) return ByteRange.unsatisfiable;
+
+  final String spec = rangeHeader.substring(6).trim(); // 去掉 'bytes='
+  final int dashIdx = spec.indexOf('-');
+  if (dashIdx < 0) return ByteRange.unsatisfiable;
+
+  final String startStr = spec.substring(0, dashIdx).trim();
+  final String endStr = spec.substring(dashIdx + 1).trim();
+
+  int start;
+  int end;
+
+  if (startStr.isEmpty) {
+    // `-suffix` 形式
+    final int? suffix = int.tryParse(endStr);
+    if (suffix == null || suffix <= 0) return ByteRange.unsatisfiable;
+    start = fileLength - suffix;
+    if (start < 0) start = 0;
+    end = fileLength - 1;
+  } else {
+    // `start-` 或 `start-end` 形式
+    final int? parsedStart = int.tryParse(startStr);
+    if (parsedStart == null || parsedStart < 0) {
+      return ByteRange.unsatisfiable;
+    }
+    start = parsedStart;
+
+    if (endStr.isEmpty) {
+      // `start-` 形式
+      end = fileLength - 1;
+    } else {
+      final int? parsedEnd = int.tryParse(endStr);
+      if (parsedEnd == null || parsedEnd < 0) {
+        return ByteRange.unsatisfiable;
+      }
+      // RFC 7233: end 超出文件末尾时钳制到 fileLength-1（不算越界）
+      end = parsedEnd < fileLength ? parsedEnd : fileLength - 1;
+    }
+  }
+
+  // 越界检查：start 超出文件末尾才是真正不可满足
+  if (fileLength == 0 || start >= fileLength) {
+    return ByteRange.unsatisfiable;
+  }
+  if (start > end) return ByteRange.unsatisfiable;
+
+  return ByteRange(start: start, end: end);
+}
+
+/// shelf handler helper：对 [file] 提供 Range 感知流式响应。
+///
+/// - 有合法 `Range` 头 → `206 Partial Content` + `Content-Range` + 字节区间流。
+/// - 无 `Range` 头 → `200 OK` + 全量流。
+/// - 不可满足的 Range → `416 Range Not Satisfiable` + `Content-Range: bytes */total`。
+///
+/// 所有路径均加 `Accept-Ranges: bytes`（告知客户端支持 Range）。
+/// Content-Type 由 [HibikiSyncServer._guessContentType] 按扩展名确定。
+/// 响应体全程流式（`file.openRead(start, end+1)`），不把文件读入内存。
+///
+/// 函数名无下划线前缀（公开），便于测试文件直接导入使用。
+Future<shelf.Response> serveFileWithRange(
+  File file,
+  shelf.Request request,
+) async {
+  if (!file.existsSync()) {
+    return shelf.Response.notFound('File not found');
+  }
+
+  final int fileLength = file.lengthSync();
+  final String contentType = HibikiSyncServer._guessContentType(file.path);
+  final String? rangeHeader = request.headers['range'];
+  final ByteRange? range = parseByteRange(rangeHeader, fileLength);
+
+  // 无 Range 头：200 全量
+  if (range == null) {
+    return shelf.Response.ok(
+      file.openRead(),
+      headers: <String, String>{
+        'Content-Type': contentType,
+        'Content-Length': '$fileLength',
+        'Accept-Ranges': 'bytes',
+      },
+    );
+  }
+
+  // Range 不可满足：416
+  if (range.isUnsatisfiable) {
+    return shelf.Response(
+      416,
+      headers: <String, String>{
+        'Content-Range': 'bytes */$fileLength',
+        'Accept-Ranges': 'bytes',
+      },
+    );
+  }
+
+  // 合法 Range：206 Partial Content
+  final int rangeLength = range.length;
+  return shelf.Response(
+    206,
+    body: file.openRead(range.start, range.end + 1),
+    headers: <String, String>{
+      'Content-Type': contentType,
+      'Content-Length': '$rangeLength',
+      'Content-Range': 'bytes ${range.start}-${range.end}/$fileLength',
+      'Accept-Ranges': 'bytes',
+    },
+  );
 }
 
 class _DavEntry {

@@ -102,6 +102,16 @@ class _FakeLibraryService implements HibikiLibraryHostService {
   @override
   Future<void> deleteAudiobook(String bookKey) async =>
       deletedAudiobooks.add(bookKey);
+
+  // ── video stubs (P4-1) ────────────────────────────────────────────────────
+  @override
+  Future<List<RemoteVideoInfo>> listVideos() async => <RemoteVideoInfo>[];
+
+  @override
+  Future<File?> resolveVideoFile(String id) async => null;
+
+  @override
+  Future<File?> resolveVideoSubtitle(String id, {String langCode = 'ja'}) async => null;
 }
 
 void main() {

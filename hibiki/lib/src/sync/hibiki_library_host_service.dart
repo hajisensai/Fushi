@@ -199,6 +199,52 @@ BookSyncDiff computeBookSyncDiff({
   return BookSyncDiff(toPull: toPull, toPush: toPush);
 }
 
+// ── 视频 ──────────────────────────────────────────────────────────────────────
+
+/// host 实时视频的清单条目（只读，不同步——视频文件通常过大，不走同步管道）。
+///
+/// [id] 即 `VideoBooks.bookUid`，从文件名派生的稳定字符串（如 `video/my_film`
+/// 或 `video/playlist/series`）。host 服务用 id 反查 DB 行拿真实路径，客户端
+/// 持 id 请求流式传输时 **server 只做 DB 查询，绝不接受外部传入的文件路径**。
+///
+/// [sizeBytes] 对单视频是当前集文件大小（字节）；播放列表取第一集大小；
+///             文件不存在或无法 stat 时为 null。
+/// [durationMs] DB 无 duration 列，此字段留给后续任务由 ffprobe/libmpv 填充；
+///              目前恒为 null（占位）。
+/// [hasSubtitle] host 能找到外挂字幕（当前集 sidecar）时为 true；
+///               内封字幕不算，外挂字幕缺失或文件路径未知时为 false。
+class RemoteVideoInfo {
+  const RemoteVideoInfo({
+    required this.id,
+    required this.title,
+    this.sizeBytes,
+    this.hasSubtitle = false,
+    this.durationMs,
+  });
+
+  final String id;
+  final String title;
+  final int? sizeBytes;
+  final bool hasSubtitle;
+  final int? durationMs;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+        'id': id,
+        'title': title,
+        if (sizeBytes != null) 'sizeBytes': sizeBytes,
+        'hasSubtitle': hasSubtitle,
+        if (durationMs != null) 'durationMs': durationMs,
+      };
+
+  static RemoteVideoInfo fromJson(Map<String, Object?> json) => RemoteVideoInfo(
+        id: json['id']?.toString() ?? '',
+        title: json['title']?.toString() ?? '',
+        sizeBytes: (json['sizeBytes'] as num?)?.toInt(),
+        hasSubtitle: json['hasSubtitle'] == true,
+        durationMs: (json['durationMs'] as num?)?.toInt(),
+      );
+}
+
 // ── Abstract service ───────────────────────────────────────────────────────
 
 /// host 侧「库感知」服务：把 host 的实时库即时 export/import/delete/list。
@@ -274,4 +320,24 @@ abstract class HibikiLibraryHostService {
   /// 从 host 删除 bookKey 为 [bookKey] 的有声书（Audiobooks/SrtBooks/AudioCues 行
   /// + 磁盘音频目录）。[bookKey] 含路径穿越字符时抛 [ArgumentError]。
   Future<void> deleteAudiobook(String bookKey);
+
+  // ── 视频（只读，不同步）────────────────────────────────────────────────────────
+
+  /// host 当前视频清单（从 VideoBooks 表读，按 importedAt DESC 排序）。
+  ///
+  /// 只读接口：视频文件通常数 GB，不走同步管道；这里仅供客户端请求流式传输用。
+  Future<List<RemoteVideoInfo>> listVideos();
+
+  /// 按 [id]（即 `VideoBooks.bookUid`）反查真实视频文件。
+  ///
+  /// 实现**只查 DB** 得到 videoPath，然后验证文件存在后返回；文件不存在或 id 未知
+  /// 时返回 null。绝不接受外部任意路径——[id] 只能来自 [listVideos] 返回的条目，
+  /// 防止路径穿越。
+  Future<File?> resolveVideoFile(String id);
+
+  /// 按 [id] 查找对应视频的外挂字幕文件（sidecar）。
+  ///
+  /// 用 [langCode] 优先匹配带语言标记的字幕（如 `.ja.srt`）；内封字幕不在此列。
+  /// 找不到外挂字幕或视频未知时返回 null。
+  Future<File?> resolveVideoSubtitle(String id, {String langCode = 'ja'});
 }
