@@ -57,5 +57,32 @@ void main() {
         reason: 'Fixed mine_sentence_audio.aac reuses one file for all cards.',
       );
     });
+
+    test('pads card sentence audio before exporting the clip', () {
+      final String source = File(
+        'lib/src/pages/implementations/reader_hibiki_page.dart',
+      ).readAsStringSync();
+
+      expect(
+        source,
+        contains('final AudioCue clip = miningSentenceAudioClip(cue);'),
+        reason:
+            'Card sentence audio must use a mining-specific clip window with '
+            'a short tail; raw cue.endMs can cut off the final sound.',
+      );
+      expect(
+        source,
+        contains('endMs: clip.endMs'),
+        reason:
+            'The export call must use the padded clip end, not the raw cue end.',
+      );
+      expect(
+        source,
+        isNot(contains('endMs: cue.endMs,\n        outputPath: outputPath')),
+        reason:
+            'Passing raw cue.endMs to extractAudioSegment regresses the cut-off '
+            'sentence audio bug.',
+      );
+    });
   });
 }

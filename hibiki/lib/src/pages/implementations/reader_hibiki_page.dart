@@ -25,6 +25,7 @@ import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki/src/media/audiobook/highlight_bridge.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_play_bar.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_import_dialog.dart';
+import 'package:hibiki/src/media/audiobook/mining_audio_clip.dart';
 import 'package:hibiki/src/media/audiobook/reader_quick_settings_sheet.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart'
@@ -2765,10 +2766,11 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       sasayakiTempDir =
           Directory.systemTemp.createTempSync('hibiki_mine_sentence_audio_');
       final String outputPath = p.join(sasayakiTempDir.path, 'sentence.aac');
+      final AudioCue clip = miningSentenceAudioClip(cue);
       sasayakiAudioPath = await TtsChannel.instance.extractAudioSegment(
         inputPath: inputFile.path,
-        startMs: cue.startMs,
-        endMs: cue.endMs,
+        startMs: clip.startMs,
+        endMs: clip.endMs,
         outputPath: outputPath,
       );
     }
