@@ -1797,7 +1797,12 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       while (node = walker.nextNode()) total += r.countChars(node.textContent);
     }
     if (total <= 0) return '';
-    return Math.round(p * total) + ',' + total;
+    // BUG-136: 第三段 = section 内精确绝对字符偏移（视口首字符），落 DB char_offset
+    // 作退出再进的恢复锚（成熟 getFirstVisibleCharOffset/scrollToCharOffset 路径）。
+    // caretRangeFromPoint 失败时返 -1 → Dart 当「无精确偏移」回退分数。
+    var off = (typeof r.getFirstVisibleCharOffset === 'function')
+        ? r.getFirstVisibleCharOffset() : -1;
+    return Math.round(p * total) + ',' + total + ',' + off;
   };
   var cloak = document.getElementById('hoshi-cloak');
   if (cloak) cloak.remove();
