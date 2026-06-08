@@ -207,6 +207,67 @@ void main() {
       expect(report.hasFailures, isTrue);
     });
 
+    test('execution report keeps child output quiet by default', () async {
+      final Directory dir = await Directory.systemTemp
+          .createTemp('hibiki_comprehensive_quiet_exec_');
+      addTearDown(() {
+        if (dir.existsSync()) {
+          dir.deleteSync(recursive: true);
+        }
+      });
+
+      bool? streamOutput;
+      await buildExecutionReport(
+        matrix: buildComprehensiveMatrix(),
+        selectedPlatforms: const <TestPlatformId>{TestPlatformId.windows},
+        selectedScenarios: const <ScenarioId>{ScenarioId.appSmoke},
+        hostPlatform: HostPlatformId.windows,
+        outputDir: dir.path,
+        commandRunner: (CommandRequest request) async {
+          streamOutput = request.streamOutput;
+          return const CommandResult(
+            exitCode: 0,
+            stdout: '+1: All tests passed!',
+            stderr: '',
+            duration: Duration(milliseconds: 3),
+          );
+        },
+      );
+
+      expect(streamOutput, isFalse);
+    });
+
+    test('execution report can opt into verbose child output', () async {
+      final Directory dir = await Directory.systemTemp
+          .createTemp('hibiki_comprehensive_verbose_exec_');
+      addTearDown(() {
+        if (dir.existsSync()) {
+          dir.deleteSync(recursive: true);
+        }
+      });
+
+      bool? streamOutput;
+      await buildExecutionReport(
+        matrix: buildComprehensiveMatrix(),
+        selectedPlatforms: const <TestPlatformId>{TestPlatformId.windows},
+        selectedScenarios: const <ScenarioId>{ScenarioId.appSmoke},
+        hostPlatform: HostPlatformId.windows,
+        outputDir: dir.path,
+        streamOutput: true,
+        commandRunner: (CommandRequest request) async {
+          streamOutput = request.streamOutput;
+          return const CommandResult(
+            exitCode: 0,
+            stdout: '+1: All tests passed!',
+            stderr: '',
+            duration: Duration(milliseconds: 3),
+          );
+        },
+      );
+
+      expect(streamOutput, isTrue);
+    });
+
     test('execution fails when a zero-exit command lacks required output',
         () async {
       final Directory dir = await Directory.systemTemp
@@ -237,6 +298,54 @@ void main() {
       expect(entry.status, ScenarioStatus.failed);
       expect(entry.failureReason, contains('Missing required output'));
       expect(entry.failureReason, contains('All tests passed'));
+    });
+
+    test('console failure summary only includes failed and blocked scenarios',
+        () {
+      const ComprehensiveReport report = ComprehensiveReport(
+        entries: <ScenarioReport>[
+          ScenarioReport(
+            platform: TestPlatformId.windows,
+            scenario: ScenarioId.syncP2pRoundtrip,
+            status: ScenarioStatus.passed,
+            commands: <String>['dart test passing.dart'],
+            assertions: <String>['passing assertion'],
+            evidence: <String>['passed.log'],
+          ),
+          ScenarioReport(
+            platform: TestPlatformId.windows,
+            scenario: ScenarioId.readerPagination,
+            status: ScenarioStatus.failed,
+            commands: <String>['flutter test failing.dart'],
+            assertions: <String>['failing assertion'],
+            evidence: <String>[
+              'windows_readerPagination_stdout.log',
+              'windows_readerPagination_stderr.log',
+            ],
+            failureReason: 'Command exited with 1',
+            exitCode: 1,
+          ),
+          ScenarioReport(
+            platform: TestPlatformId.macos,
+            scenario: ScenarioId.appSmoke,
+            status: ScenarioStatus.blocked,
+            commands: <String>['flutter drive app_smoke.dart'],
+            assertions: <String>['smoke assertion'],
+            evidence: <String>['app_smoke.md'],
+            blockedReason: 'macOS runner required',
+          ),
+        ],
+      );
+
+      final String summary = renderComprehensiveFailureSummary(report);
+
+      expect(summary, contains('windows/readerPagination'));
+      expect(summary, contains('Command exited with 1'));
+      expect(summary, contains('windows_readerPagination_stderr.log'));
+      expect(summary, contains('macos/appSmoke'));
+      expect(summary, contains('macOS runner required'));
+      expect(summary, isNot(contains('syncP2pRoundtrip')));
+      expect(summary, isNot(contains('passed.log')));
     });
 
     test('app smoke is the shared android windows macos runtime scenario', () {

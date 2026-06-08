@@ -3,6 +3,7 @@ param(
   [string]$Only = "all",
   [string]$ReportDir = "",
   [switch]$DryRun,
+  [switch]$VerboseOutput,
   [switch]$SkipFixtures
 )
 $ErrorActionPreference = "Stop"
@@ -25,6 +26,9 @@ if ($DryRun) {
 }
 if ($ReportDir) {
   $argsList += "--report-dir=$ReportDir"
+}
+if ($VerboseOutput) {
+  $argsList += "--verbose-output"
 }
 
 Push-Location $AppDir
