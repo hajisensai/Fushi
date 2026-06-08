@@ -94,6 +94,8 @@ class HibikiSyncServer {
   final HibikiLibraryHostService? _libraryService;
   final Map<String, _RemoteAudioToken> _remoteAudioTokens =
       <String, _RemoteAudioToken>{};
+  final Map<String, _VideoStreamToken> _videoStreamTokens =
+      <String, _VideoStreamToken>{};
   HttpServer? _server;
 
   /// Interactive pairing approval. When a client POSTs /api/pair, the server
@@ -157,6 +159,11 @@ class HibikiSyncServer {
         // yet — that is exactly what it is fetching. Gating is done by the
         // pairing window inside _handlePair, not by Basic auth.
         if (request.url.path == 'api/pair') return innerHandler(request);
+        // Video stream paths are exempted from Basic auth to allow media_kit
+        // to play via a plain URL. Token validation happens inside the handler.
+        // Only the /stream sub-path is exempted; /streamurl, /subtitle, and the
+        // video list still require Basic auth.
+        if (_isVideoStreamPath(request.url.path)) return innerHandler(request);
         final auth = request.headers['authorization'];
         if (auth == null || !_validateAuth(auth)) {
           return shelf.Response(401,
@@ -165,6 +172,18 @@ class HibikiSyncServer {
         return innerHandler(request);
       };
     };
+  }
+
+  /// 判断 [urlPath]（即 request.url.path，不含前导 `/`）是否为视频流路径
+  /// （`api/library/videos/<id>/stream`，id 非空，id 可含 `/`）。
+  static bool _isVideoStreamPath(String urlPath) {
+    const String prefix = 'api/library/videos/';
+    const String suffix = '/stream';
+    if (!urlPath.startsWith(prefix)) return false;
+    if (!urlPath.endsWith(suffix)) return false;
+    final String idPart =
+        urlPath.substring(prefix.length, urlPath.length - suffix.length);
+    return idPart.isNotEmpty;
   }
 
   bool _validateAuth(String header) {
@@ -224,6 +243,10 @@ class HibikiSyncServer {
     if (reqPath == '/api/library/audiobooks' ||
         reqPath.startsWith('/api/library/audiobooks/')) {
       return _handleLibraryAudiobooks(request, method, reqPath);
+    }
+    if (reqPath == '/api/library/videos' ||
+        reqPath.startsWith('/api/library/videos/')) {
+      return _handleLibraryVideos(request, method, reqPath);
     }
 
     // 真实读写路径：只做词法规整、**保留原始大小写**。p.canonicalize 在
@@ -429,6 +452,7 @@ class HibikiSyncServer {
         'dictionaries': lib,
         'books': lib,
         'audio': lib,
+        'videos': lib,
       },
     });
   }
@@ -827,6 +851,135 @@ class HibikiSyncServer {
       default:
         return shelf.Response(405);
     }
+  }
+
+  // ── 视频端点（P4-2）──────────────────────────────────────────────────────────
+
+  /// 从视频子路径提取视频 id。
+  ///
+  /// [reqPath] 已经过 Uri.decodeFull 解码（含前导 `/`）。
+  /// 格式为 `/api/library/videos/<id>/<suffix>`，其中：
+  /// - [suffix] 为 `stream`、`streamurl` 或 `subtitle`
+  /// - id 允许包含 `/`（如 `video/my_film`），但不允许 `..`（路径穿越）
+  ///
+  /// 解析失败（id 为空或含 `..`）时返回 null。
+  static String? _extractVideoId(String reqPath, String suffix) {
+    const String prefix = '/api/library/videos/';
+    final String fullSuffix = '/$suffix';
+    if (!reqPath.startsWith(prefix)) return null;
+    if (!reqPath.endsWith(fullSuffix)) return null;
+    final String id =
+        reqPath.substring(prefix.length, reqPath.length - fullSuffix.length);
+    if (id.isEmpty) return null;
+    // 只拒 `..`（路径穿越），允许 `/`（bookUid 形如 video/xxx）
+    if (id.contains('..') || id.contains('\\')) return null;
+    return id;
+  }
+
+  Future<shelf.Response> _handleLibraryVideos(
+    shelf.Request request,
+    String method,
+    String reqPath,
+  ) async {
+    final HibikiLibraryHostService? svc = _libraryService;
+    if (svc == null) return shelf.Response.notFound('Library service off');
+
+    // GET /api/library/videos — 列表（需 Basic 鉴权，中间件已处理）
+    if (reqPath == '/api/library/videos') {
+      if (method != 'GET') return shelf.Response(405);
+      final List<RemoteVideoInfo> list = await svc.listVideos();
+      return shelf.Response.ok(
+        jsonEncode(<Map<String, Object?>>[
+          for (final RemoteVideoInfo v in list) v.toJson()
+        ]),
+        headers: <String, String>{'Content-Type': 'application/json'},
+      );
+    }
+
+    // GET /api/library/videos/<id>/streamurl — 签发短时 token（需 Basic 鉴权）
+    final String? streamUrlId = _extractVideoId(reqPath, 'streamurl');
+    if (streamUrlId != null) {
+      if (method != 'GET') return shelf.Response(405);
+      final File? file = await svc.resolveVideoFile(streamUrlId);
+      if (file == null) return shelf.Response.notFound('Video not found');
+      final String tokenValue = _generateVideoToken();
+      _videoStreamTokens[tokenValue] = _VideoStreamToken(
+        videoId: streamUrlId,
+        createdAt: DateTime.now(),
+      );
+      final String encodedId = Uri.encodeFull(streamUrlId);
+      final Uri streamUri = request.requestedUri.replace(
+        path: '/api/library/videos/$encodedId/stream',
+        queryParameters: <String, String>{'token': tokenValue},
+      );
+      // subtitle URL 不含 token（走 Basic 鉴权）
+      final File? sub = await svc.resolveVideoSubtitle(streamUrlId);
+      final Uri? subtitleUri = sub != null
+          ? request.requestedUri.replace(
+              path: '/api/library/videos/$encodedId/subtitle',
+              queryParameters: <String, String>{},
+            )
+          : null;
+      return _jsonResponse(<String, dynamic>{
+        'url': streamUri.toString(),
+        'subtitleUrl': subtitleUri?.toString(),
+      });
+    }
+
+    // GET /api/library/videos/<id>/stream — 流式传输（豁免 Basic，靠 token 鉴权）
+    final String? streamId = _extractVideoId(reqPath, 'stream');
+    if (streamId != null) {
+      if (method != 'GET') return shelf.Response(405);
+      _pruneVideoTokens();
+      final String? tokenValue = request.url.queryParameters['token'];
+      if (tokenValue == null || tokenValue.isEmpty) {
+        return shelf.Response(401,
+            body: 'Missing token',
+            headers: <String, String>{'Content-Type': 'text/plain'});
+      }
+      final _VideoStreamToken? tok = _videoStreamTokens[tokenValue];
+      if (tok == null || tok.videoId != streamId) {
+        return shelf.Response(403,
+            body: 'Invalid or expired token',
+            headers: <String, String>{'Content-Type': 'text/plain'});
+      }
+      final File? file = await svc.resolveVideoFile(streamId);
+      if (file == null) return shelf.Response.notFound('Video not found');
+      return serveFileWithRange(file, request);
+    }
+
+    // GET /api/library/videos/<id>/subtitle — 字幕（需 Basic 鉴权，中间件已处理）
+    final String? subtitleId = _extractVideoId(reqPath, 'subtitle');
+    if (subtitleId != null) {
+      if (method != 'GET') return shelf.Response(405);
+      final File? sub = await svc.resolveVideoSubtitle(subtitleId);
+      if (sub == null) return shelf.Response.notFound('Subtitle not found');
+      final int length = sub.lengthSync();
+      return shelf.Response.ok(
+        sub.openRead(),
+        headers: <String, String>{
+          'Content-Type': _guessContentType(sub.path),
+          'Content-Length': '$length',
+        },
+      );
+    }
+
+    return shelf.Response.notFound('Not found');
+  }
+
+  String _generateVideoToken() {
+    final Random random = Random.secure();
+    final List<int> bytes = List<int>.generate(24, (_) => random.nextInt(256));
+    return base64UrlEncode(bytes);
+  }
+
+  void _pruneVideoTokens() {
+    // 视频播放时间长，token 有效期设为 6 小时
+    final DateTime cutoff =
+        DateTime.now().subtract(const Duration(hours: 6));
+    _videoStreamTokens.removeWhere(
+      (String _, _VideoStreamToken token) => token.createdAt.isBefore(cutoff),
+    );
   }
 
   Future<Map<String, dynamic>?> _readJsonObject(shelf.Request request) async {
@@ -1245,5 +1398,20 @@ class _RemoteAudioToken {
 
   final Uint8List bytes;
   final String contentType;
+  final DateTime createdAt;
+}
+
+/// 视频流短时 token（P4-2）。
+///
+/// token 绑定到特定 [videoId]，到期时间由 [_pruneVideoTokens] 管控（6 小时）。
+/// 有效期长于音频 token（5 分钟）是因为视频播放时长远超音频片段。
+class _VideoStreamToken {
+  const _VideoStreamToken({
+    required this.videoId,
+    required this.createdAt,
+  });
+
+  /// 绑定的视频 id（即 VideoBooks.bookUid，可含 `/`）。
+  final String videoId;
   final DateTime createdAt;
 }
