@@ -217,6 +217,14 @@ class HibikiSyncServer {
         reqPath.startsWith('/api/library/books/')) {
       return _handleLibraryBooks(request, method, reqPath);
     }
+    if (reqPath == '/api/library/localaudio' ||
+        reqPath.startsWith('/api/library/localaudio/')) {
+      return _handleLibraryLocalAudio(request, method, reqPath);
+    }
+    if (reqPath == '/api/library/audiobooks' ||
+        reqPath.startsWith('/api/library/audiobooks/')) {
+      return _handleLibraryAudiobooks(request, method, reqPath);
+    }
 
     // 真实读写路径：只做词法规整、**保留原始大小写**。p.canonicalize 在
     // 大小写不敏感平台（Windows）会把整条路径小写化，这会让书文件夹名按宿主平台
@@ -420,7 +428,7 @@ class HibikiSyncServer {
       'liveLibrary': <String, dynamic>{
         'dictionaries': lib,
         'books': lib,
-        'audio': false,
+        'audio': lib,
       },
     });
   }
@@ -617,6 +625,205 @@ class HibikiSyncServer {
 
       case 'DELETE':
         await svc.deleteBook(title);
+        return shelf.Response(204);
+
+      default:
+        return shelf.Response(405);
+    }
+  }
+
+  Future<shelf.Response> _handleLibraryLocalAudio(
+    shelf.Request request,
+    String method,
+    String reqPath,
+  ) async {
+    final HibikiLibraryHostService? svc = _libraryService;
+    if (svc == null) return shelf.Response.notFound('Library service off');
+
+    if (reqPath == '/api/library/localaudio') {
+      if (method != 'GET') return shelf.Response(405);
+      final List<RemoteLocalAudioInfo> list = await svc.listLocalAudio();
+      return shelf.Response.ok(
+        jsonEncode(<Map<String, Object?>>[
+          for (final RemoteLocalAudioInfo a in list) a.toJson()
+        ]),
+        headers: <String, String>{'Content-Type': 'application/json'},
+      );
+    }
+
+    // reqPath 已在 _handleRequest 经 Uri.decodeFull 解码，此处无需再解码。
+    final String displayName =
+        reqPath.substring('/api/library/localaudio/'.length);
+    if (displayName.isEmpty) {
+      return shelf.Response.notFound('Missing displayName');
+    }
+    // HBK-AUDIT-012: reject path-traversal attempts.
+    if (displayName.contains('/') ||
+        displayName.contains('\\') ||
+        displayName.contains('..')) {
+      return shelf.Response.forbidden('Invalid displayName');
+    }
+
+    switch (method) {
+      case 'GET':
+        File file;
+        try {
+          file = await svc.exportLocalAudio(displayName);
+        } on StateError {
+          return shelf.Response.notFound('Local audio not found');
+        }
+        final int length = file.lengthSync();
+        final Stream<List<int>> body = file.openRead().transform(
+              StreamTransformer<List<int>, List<int>>.fromHandlers(
+                handleDone: (EventSink<List<int>> out) {
+                  out.close();
+                  try {
+                    file.parent.deleteSync(recursive: true);
+                  } catch (_) {
+                    // best-effort temp cleanup
+                  }
+                },
+                handleError:
+                    (Object e, StackTrace st, EventSink<List<int>> out) {
+                  out.addError(e, st);
+                  try {
+                    file.parent.deleteSync(recursive: true);
+                  } catch (_) {/* best-effort */}
+                },
+              ),
+            );
+        return shelf.Response.ok(body, headers: <String, String>{
+          'Content-Type': 'application/octet-stream',
+          'Content-Length': '$length',
+        });
+
+      case 'PUT':
+        final Directory tmpDir =
+            Directory.systemTemp.createTempSync('hibiki_localaudio_in');
+        final File tmp =
+            File(p.join(tmpDir.path, '$displayName.localaudio'));
+        final IOSink sink = tmp.openWrite();
+        try {
+          await request.read().forEach(sink.add);
+          await sink.close();
+          await svc.importLocalAudio(tmp);
+          return shelf.Response(200);
+        } catch (e) {
+          try {
+            await sink.close();
+          } catch (_) {
+            // best-effort
+          }
+          return shelf.Response(500, body: 'Import failed: $e');
+        } finally {
+          try {
+            tmpDir.deleteSync(recursive: true);
+          } catch (_) {
+            // best-effort
+          }
+        }
+
+      case 'DELETE':
+        await svc.deleteLocalAudio(displayName);
+        return shelf.Response(204);
+
+      default:
+        return shelf.Response(405);
+    }
+  }
+
+  Future<shelf.Response> _handleLibraryAudiobooks(
+    shelf.Request request,
+    String method,
+    String reqPath,
+  ) async {
+    final HibikiLibraryHostService? svc = _libraryService;
+    if (svc == null) return shelf.Response.notFound('Library service off');
+
+    if (reqPath == '/api/library/audiobooks') {
+      if (method != 'GET') return shelf.Response(405);
+      final List<RemoteAudiobookInfo> list = await svc.listAudiobooks();
+      return shelf.Response.ok(
+        jsonEncode(<Map<String, Object?>>[
+          for (final RemoteAudiobookInfo ab in list) ab.toJson()
+        ]),
+        headers: <String, String>{'Content-Type': 'application/json'},
+      );
+    }
+
+    // reqPath 已在 _handleRequest 经 Uri.decodeFull 解码，此处无需再解码。
+    final String bookKey =
+        reqPath.substring('/api/library/audiobooks/'.length);
+    if (bookKey.isEmpty) {
+      return shelf.Response.notFound('Missing bookKey');
+    }
+    // HBK-AUDIT-012: reject path-traversal attempts.
+    if (bookKey.contains('/') ||
+        bookKey.contains('\\') ||
+        bookKey.contains('..')) {
+      return shelf.Response.forbidden('Invalid bookKey');
+    }
+
+    switch (method) {
+      case 'GET':
+        File file;
+        try {
+          file = await svc.exportAudiobook(bookKey);
+        } on StateError {
+          return shelf.Response.notFound('Audiobook not found');
+        }
+        final int length = file.lengthSync();
+        final Stream<List<int>> body = file.openRead().transform(
+              StreamTransformer<List<int>, List<int>>.fromHandlers(
+                handleDone: (EventSink<List<int>> out) {
+                  out.close();
+                  try {
+                    file.parent.deleteSync(recursive: true);
+                  } catch (_) {
+                    // best-effort temp cleanup
+                  }
+                },
+                handleError:
+                    (Object e, StackTrace st, EventSink<List<int>> out) {
+                  out.addError(e, st);
+                  try {
+                    file.parent.deleteSync(recursive: true);
+                  } catch (_) {/* best-effort */}
+                },
+              ),
+            );
+        return shelf.Response.ok(body, headers: <String, String>{
+          'Content-Type': 'application/octet-stream',
+          'Content-Length': '$length',
+        });
+
+      case 'PUT':
+        final Directory tmpDir =
+            Directory.systemTemp.createTempSync('hibiki_audiobook_in');
+        final File tmp = File(p.join(tmpDir.path, '$bookKey.audiobook'));
+        final IOSink sink = tmp.openWrite();
+        try {
+          await request.read().forEach(sink.add);
+          await sink.close();
+          await svc.importAudiobook(tmp, bookKeyOverride: bookKey);
+          return shelf.Response(200);
+        } catch (e) {
+          try {
+            await sink.close();
+          } catch (_) {
+            // best-effort
+          }
+          return shelf.Response(500, body: 'Import failed: $e');
+        } finally {
+          try {
+            tmpDir.deleteSync(recursive: true);
+          } catch (_) {
+            // best-effort
+          }
+        }
+
+      case 'DELETE':
+        await svc.deleteAudiobook(bookKey);
         return shelf.Response(204);
 
       default:
