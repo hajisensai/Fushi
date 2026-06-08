@@ -1,4 +1,4 @@
-﻿import 'package:drift/drift.dart' show Value;
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -122,7 +122,8 @@ void main() {
       );
       final row = await db.getReaderPosition('book-co');
       expect(row!.charOffset, 1234);
-      expect(row.ttuCharOffset, -1, reason: 'char_offset 写入不得污染 sync 的 ttu_char_offset');
+      expect(row.ttuCharOffset, -1,
+          reason: 'char_offset 写入不得污染 sync 的 ttu_char_offset');
     });
   });
 
