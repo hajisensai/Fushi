@@ -367,4 +367,39 @@ WEBVTT
       expect(t2, greaterThanOrEqualTo(t1));
     });
   });
+
+  group('isImportedExternalSubtitlePath (BUG-126)', () {
+    test('app 文档目录里的导入字幕路径 → true（应直接按路径恢复）', () {
+      expect(
+        isImportedExternalSubtitlePath(
+            '/data/app/docs/video_subtitles/Show S01E01.ja.srt'),
+        isTrue,
+      );
+      expect(
+        isImportedExternalSubtitlePath('C:/docs/video_subtitles/movie.ass'),
+        isTrue,
+      );
+    });
+
+    test('内嵌轨指针 embedded:<n> → false（不按路径恢复，走内封枚举）', () {
+      expect(isImportedExternalSubtitlePath('embedded:0'), isFalse);
+      expect(isImportedExternalSubtitlePath('embedded:3'), isFalse);
+    });
+
+    test('空 / 非字幕扩展名 → false', () {
+      expect(isImportedExternalSubtitlePath(''), isFalse);
+      expect(isImportedExternalSubtitlePath('/x/video.mkv'), isFalse);
+      expect(isImportedExternalSubtitlePath('/x/cover.png'), isFalse);
+    });
+
+    test('四种受支持字幕扩展名都识别（大小写不敏感）', () {
+      for (final String ext in <String>['srt', 'ass', 'ssa', 'vtt']) {
+        expect(isImportedExternalSubtitlePath('/d/sub.$ext'), isTrue,
+            reason: ext);
+        expect(isImportedExternalSubtitlePath('/d/SUB.${ext.toUpperCase()}'),
+            isTrue,
+            reason: ext);
+      }
+    });
+  });
 }

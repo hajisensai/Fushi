@@ -391,6 +391,31 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     required bool crossEpisode,
   }) async {
     if (persisted == null || persisted.isEmpty) return null;
+
+    // BUG-126: 用户手动导入 / Jimaku 下载的外挂字幕被拷到 `<appDocs>/video_subtitles/`，
+    // **不在剧集目录里**，而 [listAllSubtitleSources] 只扫视频同目录 + 内封轨 → 播放
+    // 列表换集/重进时匹配不到，导致「退出后字幕又要重新导入」。这类源的持久化值就是
+    // 它自己的绝对路径，且与剧集无关——只要文件还在磁盘上就按路径直接加载，无需经
+    // listAllSubtitleSources 的同目录枚举。单视频路径已由 `_loadSingle` 的 loadCues
+    // 命中、走不到这里；本捷径主要救播放列表（只存源指针不存 cue）。
+    if (isImportedExternalSubtitlePath(persisted) &&
+        File(persisted).existsSync()) {
+      final SubtitleSource external = SubtitleSource.external(
+        externalPath: persisted,
+        label: p.basename(persisted),
+      );
+      final List<AudioCue> cues =
+          await loadCuesForSource(external, videoPath, widget.bookUid);
+      if (cues.isNotEmpty) {
+        return (
+          persisted: external.toPersistedValue(),
+          cues: cues,
+          graphicStreamIndex: null,
+        );
+      }
+      // 文件在但解析空（坏字幕）：落回下面的同目录枚举，别让一个坏导入挡住别的源。
+    }
+
     final List<SubtitleSource> sources =
         await listAllSubtitleSources(videoPath, langCode: _targetLangCode);
     if (sources.isEmpty) return null;
@@ -1196,6 +1221,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     return MaterialDesktopVideoControlsThemeData(
       // 控制条 3s 后自动隐藏时一并隐藏鼠标光标（默认 false 会让光标常驻，BUG-106）。
       hideMouseOnControlsRemoval: true,
+      // 单击画面 = 播放/暂停（media_kit 桌面默认 false，故此前点画面毫无反应，
+      // BUG-124）。字幕字符点击在更上层 [VideoSubtitleOverlay] 的 opaque GestureDetector
+      // 独立处理、不会冒泡到这里，故启用后点字幕仍是查词、点空白区才暂停，不冲突。
+      playAndPauseOnTap: true,
       seekBarPositionColor: cs.primary,
       seekBarThumbColor: cs.primary,
       buttonBarButtonColor: cs.primary,
@@ -1762,11 +1791,30 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 落点是 `video_subtitles/<basename>`：同 basename 直接覆盖，是「当前集导入
   /// 覆盖」语义，有意不做去重——避免堆积同名副本，且换集恢复按文件名匹配，去重
   /// 后缀反而干扰匹配。
+  /// 正在导入中的源路径（去重防护）。窗口模式下页级 + controls 内层两个拖放目标
+  /// 可能对同一次拖放都触发 onDrop（BUG-127）；同一 srcPath 在途时忽略二次调用，
+  /// 避免重复拷贝 / 重复弹加载遮罩 / 重复 SnackBar。
+  final Set<String> _subtitleImportsInFlight = <String>{};
+
   Future<void> _importExternalSubtitle(
     VideoPlayerController controller,
     String srcPath,
   ) async {
     if (_currentVideoPath == null) return;
+    if (_subtitleImportsInFlight.contains(srcPath)) return;
+    _subtitleImportsInFlight.add(srcPath);
+    try {
+      await _importExternalSubtitleInner(controller, srcPath);
+    } finally {
+      _subtitleImportsInFlight.remove(srcPath);
+    }
+  }
+
+  /// [_importExternalSubtitle] 的实体（去重外壳已挡住并发同路径重入）。
+  Future<void> _importExternalSubtitleInner(
+    VideoPlayerController controller,
+    String srcPath,
+  ) async {
     final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
     if (subtitleFormatForPath(srcPath) == null) {
       messenger.showSnackBar(
@@ -1813,10 +1861,19 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   }
 
   /// 关闭字幕抽取加载遮罩。配对 [_showSubtitleLoadingOverlay]，幂等。
+  ///
+  /// 这个遮罩是模态对话框、会夺走键盘焦点；media_kit 关闭覆盖层后**不会**自动把焦点
+  /// 还给 [Video] 的 FocusNode（见 [_refocusVideo]）→ 关掉后空格等快捷键失灵（BUG-125：
+  /// 导入字幕走 _pickAndImportSubtitle→_importExternalSubtitle→_selectSubtitleSource，
+  /// 其中 _pickAndImportSubtitle 的 refocus 发生在本遮罩**之前**，遮罩一关焦点又悬空）。
+  /// 故 pop 后在下一帧（让 pop 自身的焦点变更先落定）主动归还焦点给视频。
   void _hideSubtitleLoadingOverlay() {
     if (!_subtitleLoadingShown) return;
     _subtitleLoadingShown = false;
-    if (mounted) Navigator.of(context, rootNavigator: true).pop();
+    if (mounted) {
+      Navigator.of(context, rootNavigator: true).pop();
+      WidgetsBinding.instance.addPostFrameCallback((_) => _refocusVideo());
+    }
   }
 
   /// 选中某字幕源：加载 cue → 切 overlay → 持久化 → SnackBar。
@@ -1974,7 +2031,28 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             )
           : (controller == null || videoController == null)
               ? const Center(child: CircularProgressIndicator())
-              : _buildVideoBody(controller, videoController),
+              : _pageDropTarget(
+                  controller,
+                  _buildVideoBody(controller, videoController),
+                ),
+    );
+  }
+
+  /// 页级字幕拖放目标（BUG-127）。controls 内层也挂了一个（[_buildVideoControls]）供
+  /// **全屏**用（media_kit 全屏是另推的根路由、复用同一 controls builder）；但窗口
+  /// 模式下那个深埋在 media_kit `Video`→controls 子树里，实测 Windows OS 拖放在视频
+  /// 区「完全没反应」。这里在页面顶层（与书架/视频库同款已验证可用的高层挂载点）再挂
+  /// 一个，保证窗口模式可靠收到拖放；与内层重复触发由 [_importExternalSubtitle] 的
+  /// 去重防护兜住。全屏时本页被全屏路由 Offstage、renderBox 尺寸归零 → 本目标不命中，
+  /// 只剩内层生效，不会双触发。
+  Widget _pageDropTarget(VideoPlayerController controller, Widget child) {
+    return HibikiFileDropTarget(
+      onDrop: (List<String> paths, Offset _) {
+        final String? sub = firstSubtitlePath(paths);
+        if (sub == null) return;
+        unawaited(_importExternalSubtitle(controller, sub));
+      },
+      child: child,
     );
   }
 
