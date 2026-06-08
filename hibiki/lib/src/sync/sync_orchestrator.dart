@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:hibiki/src/epub/epub_importer.dart';
 import 'package:hibiki/src/models/local_audio_manager.dart';
+import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
+import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/sync_asset_package_service.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
@@ -294,8 +296,91 @@ class SyncOrchestrator {
     }
   }
 
-  /// Union-syncs dictionary packages in the `__dictionaries__` namespace.
+  /// Union-syncs dictionaries. 互联（HibikiClientSyncBackend）→ 直读对端实时库（无暂存）；
+  /// 云后端 → 走现有 __dictionaries__ 暂存路径（不变）。无旧设备故无能力探测。
   Future<void> syncDictionaries(SyncRunReport report) async {
+    final SyncBackend b = _backend;
+    if (b is HibikiClientSyncBackend) {
+      await _syncDictionariesLive(report, b);
+      return;
+    }
+    await _syncDictionariesStaged(report);
+  }
+
+  /// 互联直读对端实时词典：按名 union，绝不创建/读写 __dictionaries__。
+  Future<void> _syncDictionariesLive(
+      SyncRunReport report, HibikiClientSyncBackend backend) async {
+    final List<DictionaryMetaRow> localDicts =
+        await _db.getAllDictionaryMetadata();
+    final List<RemoteDictionaryInfo> remoteDicts =
+        await backend.listRemoteDictionaries();
+
+    final DictionarySyncDiff diff = computeDictionarySyncDiff(
+      localNames: <String>{
+        for (final DictionaryMetaRow d in localDicts) d.name
+      },
+      remoteNames: <String>{
+        for (final RemoteDictionaryInfo d in remoteDicts) d.name
+      },
+    );
+
+    final int total = diff.toPull.length + diff.toPush.length;
+    int index = 0;
+
+    for (final String name in diff.toPull) {
+      _emit(SyncPhase.dictionaries,
+          itemIndex: index, itemTotal: total, title: name);
+      File? tmp;
+      try {
+        tmp = _tmpFile(_dictionaryAssetSuffix);
+        await backend.getRemoteDictionary(name, tmp,
+            onProgress: (double f) => _emit(SyncPhase.dictionaries,
+                itemIndex: index,
+                itemTotal: total,
+                title: name,
+                fileFraction: f));
+        await _packages.importDictionaryPackage(
+          packageFile: tmp,
+          dictionaryResourceRoot: _dictionaryResourceRoot,
+        );
+        report.dictionariesImported++;
+      } catch (e) {
+        report.errors.add('pull dictionary "$name": $e');
+      } finally {
+        _safeDelete(tmp);
+      }
+      index++;
+    }
+
+    for (final String name in diff.toPush) {
+      _emit(SyncPhase.dictionaries,
+          itemIndex: index, itemTotal: total, title: name);
+      File? tmp;
+      try {
+        tmp = _tmpFile(_dictionaryAssetSuffix);
+        await _packages.exportDictionaryPackage(
+          dictionaryName: name,
+          dictionaryResourceRoot: _dictionaryResourceRoot,
+          outputFile: tmp,
+        );
+        await backend.putRemoteDictionary(name, tmp,
+            onProgress: (double f) => _emit(SyncPhase.dictionaries,
+                itemIndex: index,
+                itemTotal: total,
+                title: name,
+                fileFraction: f));
+        report.dictionariesExported++;
+      } catch (e) {
+        report.errors.add('push dictionary "$name": $e');
+      } finally {
+        _safeDelete(tmp);
+      }
+      index++;
+    }
+  }
+
+  /// Union-syncs dictionary packages in the `__dictionaries__` namespace.
+  Future<void> _syncDictionariesStaged(SyncRunReport report) async {
     final String ns = await _backend.ensureNamespace(kSyncDictionaryNamespace);
     final List<DictionaryMetaRow> localDicts =
         await _db.getAllDictionaryMetadata();
