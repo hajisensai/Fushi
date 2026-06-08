@@ -606,6 +606,75 @@ class HibikiClientSyncBackend extends SyncBackend {
     _ops!.checkStatus(res.statusCode, 'DELETE /api/library/dictionaries/$name');
   }
 
+  // ── Live books (interconnect-only) ────────────────────────────────
+  // 与 live dictionaries 对称：直打 /api/library/books，不经 WebDAV 暂存。
+
+  /// 列出对端 host 当前书库清单（直打 `/api/library/books`）。
+  Future<List<RemoteBookInfo>> listRemoteBooks() async {
+    await _ensureResolved();
+    final HttpClientRequest req =
+        await _ops!.buildRequest('GET', '$_apiBase/api/library/books');
+    final HttpClientResponse res = await req.close();
+    _ops!.checkStatus(res.statusCode, 'GET /api/library/books');
+    final String body = await res.transform(utf8.decoder).join();
+    final List<dynamic> arr = jsonDecode(body) as List<dynamic>;
+    return <RemoteBookInfo>[
+      for (final dynamic e in arr)
+        RemoteBookInfo.fromJson((e as Map).cast<String, Object?>()),
+    ];
+  }
+
+  /// 从对端 host 下载书名为 [title] 的 EPUB 到 [destination] 文件。
+  Future<void> getRemoteBook(
+    String title,
+    File destination, {
+    void Function(double progress)? onProgress,
+  }) async {
+    await _ensureResolved();
+    await downloadContentFile(
+      fileId: '$_apiBase/api/library/books/${Uri.encodeComponent(title)}',
+      destination: destination,
+      onProgress: onProgress,
+    );
+  }
+
+  /// 把本地 [file]（.epub）推送到对端 host，导入书名为 [title] 的书。
+  Future<void> putRemoteBook(
+    String title,
+    File file, {
+    void Function(double progress)? onProgress,
+  }) async {
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'PUT',
+      '$_apiBase/api/library/books/${Uri.encodeComponent(title)}',
+    );
+    final int length = await file.length();
+    req.headers.set('Content-Type', 'application/epub+zip');
+    req.headers.set('Content-Length', '$length');
+    int sent = 0;
+    await req.addStream(file.openRead().map((List<int> chunk) {
+      sent += chunk.length;
+      onProgress?.call(length > 0 ? sent / length : 0);
+      return chunk;
+    }));
+    final HttpClientResponse res = await req.close();
+    await res.drain<void>();
+    _ops!.checkStatus(res.statusCode, 'PUT /api/library/books/$title');
+  }
+
+  /// 通知对端 host 删除书名为 [title] 的书。
+  Future<void> deleteRemoteBook(String title) async {
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'DELETE',
+      '$_apiBase/api/library/books/${Uri.encodeComponent(title)}',
+    );
+    final HttpClientResponse res = await req.close();
+    await res.drain<void>();
+    _ops!.checkStatus(res.statusCode, 'DELETE /api/library/books/$title');
+  }
+
   // ── Test connection ───────────────────────────────────────────────
 
   Future<void> testConnection({
