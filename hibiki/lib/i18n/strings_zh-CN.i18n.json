@@ -1446,5 +1446,11 @@
     "remote_video_load_failed": "无法加载对端设备视频",
     "remote_video_download_failed": "无法下载对端视频",
     "video_setting_subtitle_font_weight": "字重",
-    "video_setting_subtitle_shadow": "阴影"
+    "video_setting_subtitle_shadow": "阴影",
+    "remote_book_interconnect": "Hibiki 互联",
+    "remote_book_paired_device": "对端设备书籍",
+    "remote_book_download": "下载到本机",
+    "remote_book_downloaded": "已下载对端书籍",
+    "remote_book_load_failed": "无法加载对端设备书籍",
+    "remote_book_download_failed": "无法下载对端书籍"
 }

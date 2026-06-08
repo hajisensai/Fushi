@@ -1446,5 +1446,11 @@
     "remote_video_load_failed": "Could not load paired device videos",
     "remote_video_download_failed": "Could not download remote video",
     "video_setting_subtitle_font_weight": "Font weight",
-    "video_setting_subtitle_shadow": "Shadow"
+    "video_setting_subtitle_shadow": "Shadow",
+    "remote_book_interconnect": "Hibiki P2P",
+    "remote_book_paired_device": "Paired device books",
+    "remote_book_download": "Download to this device",
+    "remote_book_downloaded": "Downloaded remote book",
+    "remote_book_load_failed": "Could not load paired device books",
+    "remote_book_download_failed": "Could not download remote book"
 }

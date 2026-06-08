@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
+import 'package:hibiki/src/sync/remote_book_client.dart';
 import 'package:hibiki/src/sync/remote_video_client.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
@@ -72,7 +73,8 @@ Future<bool> _defaultHibikiProbe(String url, String token) async {
 /// Uses the WebDAV protocol (same as [WebDavSyncBackend]) but stores
 /// credentials in dedicated keys to avoid collision with the user's
 /// standalone WebDAV config.
-class HibikiClientSyncBackend extends SyncBackend implements RemoteVideoClient {
+class HibikiClientSyncBackend extends SyncBackend
+    implements RemoteBookClient, RemoteVideoClient {
   HibikiClientSyncBackend._({HibikiProbe? probe})
       : _probe = probe ?? _defaultHibikiProbe;
   static final HibikiClientSyncBackend instance = HibikiClientSyncBackend._();
@@ -611,6 +613,7 @@ class HibikiClientSyncBackend extends SyncBackend implements RemoteVideoClient {
   // 与 live dictionaries 对称：直打 /api/library/books，不经 WebDAV 暂存。
 
   /// 列出对端 host 当前书库清单（直打 `/api/library/books`）。
+  @override
   Future<List<RemoteBookInfo>> listRemoteBooks() async {
     await _ensureResolved();
     final HttpClientRequest req =
@@ -626,6 +629,7 @@ class HibikiClientSyncBackend extends SyncBackend implements RemoteVideoClient {
   }
 
   /// 从对端 host 下载书名为 [title] 的 EPUB 到 [destination] 文件。
+  @override
   Future<void> getRemoteBook(
     String title,
     File destination, {

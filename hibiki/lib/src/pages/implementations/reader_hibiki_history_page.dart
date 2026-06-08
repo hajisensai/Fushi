@@ -5,10 +5,12 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:transparent_image/transparent_image.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:hibiki/src/epub/epub_importer.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:hibiki/src/media/audiobook/book_import_dialog.dart';
 import 'package:hibiki/src/media/drag_drop/card_drop_registry.dart';
@@ -30,6 +32,12 @@ import 'package:hibiki/src/profile/profile_view_model.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/shortcuts/gamepad_service.dart'
     show GamepadLongPressActions;
+import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
+import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
+import 'package:hibiki/src/sync/remote_book_client.dart';
+import 'package:hibiki/src/sync/sync_backend.dart';
+import 'package:hibiki/src/sync/sync_repository.dart';
+import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/utils.dart';
 
 /// 自适应标签列在给定可用高度下能放几个 chip slot。
@@ -53,7 +61,17 @@ int adaptiveTagSlots({
 }
 
 class ReaderHibikiHistoryPage extends HistoryReaderPage {
-  const ReaderHibikiHistoryPage({super.key});
+  const ReaderHibikiHistoryPage({
+    this.remoteBookClientLoader,
+    this.remoteBookDownloadDestination,
+    this.remoteBookImporter,
+    super.key,
+  });
+
+  final Future<RemoteBookClient?> Function()? remoteBookClientLoader;
+  final Future<File> Function(RemoteBookInfo book)?
+      remoteBookDownloadDestination;
+  final Future<void> Function(File file)? remoteBookImporter;
 
   @override
   BaseHistoryPageState<BaseHistoryPage> createState() =>
@@ -62,6 +80,8 @@ class ReaderHibikiHistoryPage extends HistoryReaderPage {
 
 class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     extends HistoryReaderPageState {
+  ReaderHibikiHistoryPage get _pageWidget => widget as ReaderHibikiHistoryPage;
+
   @override
   MediaType get mediaType => mediaSource.mediaType;
 
@@ -111,6 +131,8 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   // 视频书单独分区：无 Riverpod provider，按需载入 state 并在导入后刷新。
   List<VideoBookRow> _videoBooks = const [];
   Future<List<VideoBookRow>>? _videoBooksFuture;
+  Future<_RemoteBookState?>? _remoteBooksFuture;
+  RemoteBookClient? _remoteBookClient;
 
   VideoBookRepository get _videoRepo => VideoBookRepository(appModel.database);
 
@@ -126,6 +148,44 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     });
   }
 
+  Future<RemoteBookClient?> _resolveRemoteBookClient() async {
+    final Future<RemoteBookClient?> Function()? injected =
+        _pageWidget.remoteBookClientLoader;
+    if (injected != null) return injected();
+
+    final SyncRepository syncRepo = SyncRepository(appModel.database);
+    if (await syncRepo.getBackendType() != SyncBackendType.hibikiServer) {
+      return null;
+    }
+    final HibikiClientSyncBackend backend = HibikiClientSyncBackend.instance;
+    if (!await backend.restoreAuth(syncRepo)) return null;
+    return backend;
+  }
+
+  Future<_RemoteBookState?> _loadRemoteBooks() async {
+    final RemoteBookClient? client = await _resolveRemoteBookClient();
+    _remoteBookClient = client;
+    if (client == null) return null;
+    try {
+      final List<RemoteBookInfo> books = await client.listRemoteBooks();
+      return _RemoteBookState(
+        books: books.where((RemoteBookInfo book) => book.hasContent).toList(),
+      );
+    } catch (e) {
+      debugPrint('[reader-shelf] remote book list failed: $e');
+      return const _RemoteBookState(
+        books: <RemoteBookInfo>[],
+        failed: true,
+      );
+    }
+  }
+
+  void _refreshRemoteBooks() {
+    setState(() {
+      _remoteBooksFuture = _loadRemoteBooks();
+    });
+  }
+
   static double _gridExtent(BuildContext context, BoxConstraints constraints) {
     return readerShelfGridExtentForLayout(
       mediaWidth: MediaQuery.sizeOf(context).width,
@@ -137,6 +197,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     ref.invalidate(srtBooksProvider);
     _batchAudiobookInfoFuture = null;
     _batchAudiobookInfoResult = const {};
+    _refreshRemoteBooks();
   }
 
   void _toggleSelectionMode() {
@@ -184,6 +245,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                   data: (bookList) {
                     _batchAudiobookInfoFuture ??= _loadAllAudiobookInfo();
                     _videoBooksFuture ??= _loadVideoBooks();
+                    _remoteBooksFuture ??= _loadRemoteBooks();
                     final Set<String>? filterSet = filteredIds.valueOrNull;
                     final List<MediaItem> filtered;
                     if (filterSet == null) {
@@ -200,7 +262,11 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                           FutureBuilder<List<VideoBookRow>>(
                         future: _videoBooksFuture,
                         builder: (context, videoSnapshot) =>
-                            buildBody(filtered),
+                            FutureBuilder<_RemoteBookState?>(
+                          future: _remoteBooksFuture,
+                          builder: (context, remoteSnapshot) =>
+                              buildBody(filtered, remoteSnapshot),
+                        ),
                       ),
                     );
                   },
@@ -412,14 +478,20 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     );
   }
 
-  Widget buildBody(List<MediaItem> books) {
+  Widget buildBody(
+    List<MediaItem> books, [
+    AsyncSnapshot<_RemoteBookState?>? remoteSnapshot,
+  ]) {
     final List<SrtBook> srtBooks =
         ref.watch(srtBooksProvider).valueOrNull ?? const [];
-    return _buildBodyWithSrtBooks(books, srtBooks);
+    return _buildBodyWithSrtBooks(books, srtBooks, remoteSnapshot);
   }
 
   Widget _buildBodyWithSrtBooks(
-      List<MediaItem> books, List<SrtBook> allSrtBooks) {
+    List<MediaItem> books,
+    List<SrtBook> allSrtBooks,
+    AsyncSnapshot<_RemoteBookState?>? remoteSnapshot,
+  ) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final Set<String> srtBookKeys = {
       for (final b in allSrtBooks)
@@ -459,7 +531,13 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                 .toList());
     _visibleEpubBooks = epubBooks;
     _visibleSrtBooks = srtBooks;
-    if (epubBooks.isEmpty && srtBooks.isEmpty && videoBooks.isEmpty) {
+    final _RemoteBookState? remoteState = remoteSnapshot?.data;
+    final bool showRemoteBooks = remoteState != null &&
+        (remoteState.failed || remoteState.books.isNotEmpty);
+    if (epubBooks.isEmpty &&
+        srtBooks.isEmpty &&
+        videoBooks.isEmpty &&
+        !showRemoteBooks) {
       return hasActiveFilter
           ? Center(
               child: HibikiPlaceholderMessage(
@@ -480,6 +558,10 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
             physics: desktopAwareScrollPhysics(),
             slivers: [
               SliverToBoxAdapter(child: SizedBox(height: tokens.spacing.gap)),
+              if (showRemoteBooks)
+                SliverToBoxAdapter(
+                  child: _buildRemoteBookSection(remoteState),
+                ),
               if (srtBooks.isNotEmpty) ...[
                 SliverToBoxAdapter(
                     child: _buildSectionHeader(t.srt_books_section)),
@@ -525,6 +607,10 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           ),
           slivers: [
             SliverToBoxAdapter(child: SizedBox(height: tokens.spacing.gap)),
+            if (showRemoteBooks)
+              SliverToBoxAdapter(
+                child: _buildRemoteBookSection(remoteState),
+              ),
             if (srtBooks.isNotEmpty) ...[
               SliverToBoxAdapter(
                   child: _buildSectionHeader(t.srt_books_section)),
@@ -587,6 +673,162 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       ),
     );
   }
+
+  Widget _buildRemoteBookSection(_RemoteBookState state) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final ColorScheme colors = theme.colorScheme;
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsetsDirectional.fromSTEB(
+        tokens.spacing.rowHorizontal * 0.75,
+        tokens.spacing.gap,
+        tokens.spacing.rowHorizontal * 0.75,
+        tokens.spacing.card,
+      ),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: colors.outlineVariant)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(
+                Icons.devices_other_outlined,
+                size: 18,
+                color: colors.primary,
+              ),
+              SizedBox(width: tokens.spacing.gap),
+              Text(t.remote_book_interconnect, style: tokens.type.sectionLabel),
+              SizedBox(width: tokens.spacing.gap),
+              Text(
+                t.remote_book_paired_device,
+                style: textTheme.bodySmall?.copyWith(
+                  color: colors.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+          if (state.failed)
+            Padding(
+              padding: EdgeInsets.only(top: tokens.spacing.gap),
+              child: Text(
+                t.remote_book_load_failed,
+                style: textTheme.bodySmall?.copyWith(color: colors.error),
+              ),
+            )
+          else if (state.books.isNotEmpty) ...<Widget>[
+            SizedBox(height: tokens.spacing.gap),
+            SizedBox(
+              height: 112,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: state.books.length,
+                separatorBuilder: (_, __) =>
+                    SizedBox(width: tokens.spacing.gap),
+                itemBuilder: (BuildContext context, int index) =>
+                    _buildRemoteBookTile(state.books[index]),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRemoteBookTile(RemoteBookInfo book) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final ColorScheme colors = theme.colorScheme;
+    return SizedBox(
+      width: 250,
+      child: HibikiCard(
+        padding: EdgeInsets.all(tokens.spacing.card),
+        child: Row(
+          children: <Widget>[
+            Container(
+              width: 48,
+              height: 64,
+              decoration: BoxDecoration(
+                color: colors.primaryContainer,
+                borderRadius: tokens.radii.cardRadius,
+              ),
+              child: Icon(
+                Icons.menu_book_outlined,
+                color: colors.onPrimaryContainer,
+              ),
+            ),
+            SizedBox(width: tokens.spacing.gap),
+            Expanded(
+              child: Text(
+                book.title,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: textTheme.bodyMedium,
+              ),
+            ),
+            IconButton(
+              key: ValueKey<String>(
+                  'remote_book_download_${_safeRemoteBookKey(book.title)}'),
+              tooltip: t.remote_book_download,
+              icon: const Icon(Icons.download_outlined),
+              onPressed: () => _downloadRemoteBook(book),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _downloadRemoteBook(RemoteBookInfo book) async {
+    final RemoteBookClient? client = _remoteBookClient;
+    if (client == null) return;
+    try {
+      final File dest = await _remoteBookDestination(book);
+      await client.getRemoteBook(book.title, dest);
+      await _importRemoteBookFile(dest);
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('ReaderHibikiHistoryPage.downloadRemoteBook', e, stack);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t.remote_book_download_failed)),
+      );
+      return;
+    }
+    if (!mounted) return;
+    ref.invalidate(hibikiBooksProvider(appModel.targetLanguage));
+    _refreshSrtBooks();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(t.remote_book_downloaded)),
+    );
+  }
+
+  Future<File> _remoteBookDestination(RemoteBookInfo book) async {
+    final Future<File> Function(RemoteBookInfo book)? injected =
+        _pageWidget.remoteBookDownloadDestination;
+    if (injected != null) return injected(book);
+    final Directory temp = await getTemporaryDirectory();
+    final Directory dir = Directory(p.join(temp.path, 'hibiki_remote_books'));
+    await dir.create(recursive: true);
+    return File(p.join(dir.path, '${_safeRemoteBookKey(book.title)}.epub'));
+  }
+
+  Future<void> _importRemoteBookFile(File file) async {
+    final Future<void> Function(File file)? injected =
+        _pageWidget.remoteBookImporter;
+    if (injected != null) {
+      await injected(file);
+      return;
+    }
+    await EpubImporter.importFromPath(
+      db: appModel.database,
+      filePath: file.path,
+      fileName: p.basename(file.path),
+    );
+  }
+
+  String _safeRemoteBookKey(String title) =>
+      sanitizeTtuFilename(title).replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '_');
 
   Widget? _buildSrtBookTagLabels(int srtBookId) {
     final tagMap = ref.watch(srtBookTagMapProvider).valueOrNull;
@@ -2368,4 +2610,14 @@ class _AudiobookInfo {
   const _AudiobookInfo({required this.hasAudiobook, required this.healthKind});
   final bool hasAudiobook;
   final HealthKind healthKind;
+}
+
+class _RemoteBookState {
+  const _RemoteBookState({
+    required this.books,
+    this.failed = false,
+  });
+
+  final List<RemoteBookInfo> books;
+  final bool failed;
 }
