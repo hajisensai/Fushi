@@ -228,6 +228,55 @@ WEBVTT
       expect(external.matchesPersisted(r'D:\v\a.srt'), isTrue);
       expect(external.matchesPersisted('embedded:1'), isFalse);
     });
+
+    test('isGraphicEmbedded：图形内封轨 true，文本/外挂 false（BUG-122）', () {
+      // 图形（位图）内嵌轨：codec 无文本格式映射 → 不能转 cue → 交 libmpv 画面渲染。
+      const SubtitleSource pgs = SubtitleSource.embedded(
+        streamIndex: 0,
+        label: '内封 0: jpn / hdmv_pgs_subtitle',
+        codec: 'hdmv_pgs_subtitle',
+      );
+      expect(pgs.isGraphicEmbedded, isTrue);
+      expect(
+        const SubtitleSource.embedded(
+                streamIndex: 1, label: 'x', codec: 'dvd_subtitle')
+            .isGraphicEmbedded,
+        isTrue,
+      );
+
+      // 文本内嵌轨（ass/subrip/mov_text）：能转 cue → 不是图形轨。
+      expect(
+        const SubtitleSource.embedded(streamIndex: 0, label: 'x', codec: 'ass')
+            .isGraphicEmbedded,
+        isFalse,
+      );
+      expect(
+        const SubtitleSource.embedded(
+                streamIndex: 0, label: 'x', codec: 'subrip')
+            .isGraphicEmbedded,
+        isFalse,
+      );
+      expect(
+        const SubtitleSource.embedded(
+                streamIndex: 0, label: 'x', codec: 'mov_text')
+            .isGraphicEmbedded,
+        isFalse,
+      );
+
+      // 未知/空 codec：fail-open 当文本（subtitleFormatForCodec→srt）→ 非图形。
+      expect(
+        const SubtitleSource.embedded(streamIndex: 0, label: 'x')
+            .isGraphicEmbedded,
+        isFalse,
+      );
+
+      // 外挂源恒非图形（codec 永远 null，但 isEmbedded=false 先短路）。
+      expect(
+        const SubtitleSource.external(externalPath: r'D:\v\a.srt', label: 'a')
+            .isGraphicEmbedded,
+        isFalse,
+      );
+    });
   });
 
   group('firstSubtitlePath', () {

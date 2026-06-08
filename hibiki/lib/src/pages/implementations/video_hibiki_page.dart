@@ -334,12 +334,16 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   Future<void> _loadSingle(VideoBookRow row) async {
     List<AudioCue> cues = await widget.repo.loadCues(widget.bookUid);
     String? externalSub = row.subtitleSource;
+    int? graphicStreamIndex;
 
     if (cues.isEmpty) {
       // ① 优先恢复持久化的字幕源（精确匹配本视频的同一源）。
       if (row.subtitleSource != null && row.subtitleSource!.isNotEmpty) {
-        final ({String persisted, List<AudioCue> cues})? restored =
-            await _restorePersistedSubtitle(
+        final ({
+          String persisted,
+          List<AudioCue> cues,
+          int? graphicStreamIndex
+        })? restored = await _restorePersistedSubtitle(
           videoPath: row.videoPath,
           persisted: row.subtitleSource,
           crossEpisode: false,
@@ -347,6 +351,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         if (restored != null) {
           cues = restored.cues;
           externalSub = restored.persisted;
+          graphicStreamIndex = restored.graphicStreamIndex;
         }
       }
       // ② 无持久化 / 无匹配：退默认 sidecar 探测。
@@ -365,6 +370,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       title: row.title,
       initialPositionMs: row.lastPositionMs,
       externalSubtitlePath: externalSub,
+      renderGraphicStreamIndex: graphicStreamIndex,
     );
   }
 
@@ -378,7 +384,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 返回所选源的「实际持久化值 + 解析出的 cue」；无匹配 / 解析空 cue 返回 null
   /// （调用方退默认 sidecar）。返回的 persisted 用作 [_applyLoad] 的
   /// externalSubtitlePath（内嵌源也走 `embedded:<n>` 字符串，与既有约定一致）。
-  Future<({String persisted, List<AudioCue> cues})?> _restorePersistedSubtitle({
+  Future<({String persisted, List<AudioCue> cues, int? graphicStreamIndex})?>
+      _restorePersistedSubtitle({
     required String videoPath,
     required String? persisted,
     required bool crossEpisode,
@@ -393,10 +400,24 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         : _firstMatching(sources, persisted);
     if (chosen == null) return null;
 
+    // 图形内封轨（PGS 等位图）无文本 cue：返回 graphicStreamIndex，让 [_applyLoad]
+    // 经 libmpv 画面渲染恢复（不走 loadCues→空→误退 sidecar）（BUG-122）。
+    if (chosen.isGraphicEmbedded) {
+      return (
+        persisted: chosen.toPersistedValue(),
+        cues: const <AudioCue>[],
+        graphicStreamIndex: chosen.streamIndex,
+      );
+    }
+
     final List<AudioCue> cues =
         await loadCuesForSource(chosen, videoPath, widget.bookUid);
     if (cues.isEmpty) return null;
-    return (persisted: chosen.toPersistedValue(), cues: cues);
+    return (
+      persisted: chosen.toPersistedValue(),
+      cues: cues,
+      graphicStreamIndex: null,
+    );
   }
 
   /// 在 [sources] 中找第一个 [matchesPersisted] 命中的源（精确恢复用）。
@@ -427,11 +448,15 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
     List<AudioCue> cues = const <AudioCue>[];
     String? externalSub;
+    int? graphicStreamIndex;
 
     // ① 按上次偏好（同类）选新集字幕源：内嵌同 streamIndex / 外挂同语言后缀。
     if (subtitleSource != null && subtitleSource.isNotEmpty) {
-      final ({String persisted, List<AudioCue> cues})? restored =
-          await _restorePersistedSubtitle(
+      final ({
+        String persisted,
+        List<AudioCue> cues,
+        int? graphicStreamIndex
+      })? restored = await _restorePersistedSubtitle(
         videoPath: episode.path,
         persisted: subtitleSource,
         crossEpisode: true,
@@ -439,11 +464,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       if (restored != null) {
         cues = restored.cues;
         externalSub = restored.persisted;
+        graphicStreamIndex = restored.graphicStreamIndex;
       }
     }
 
-    // ② 无偏好 / 无匹配：退默认 sidecar 探测。
-    if (cues.isEmpty) {
+    // ② 无偏好 / 无匹配：退默认 sidecar 探测。图形轨恢复时 cues 虽空但 externalSub
+    // 已置（embedded:<n>），不能让 sidecar 覆盖掉画面字幕选择（BUG-122）。
+    if (cues.isEmpty && externalSub == null) {
       final ({String path, List<AudioCue> cues})? sidecar =
           await _detectSidecar(episode.path, widget.bookUid);
       if (sidecar != null) {
@@ -471,6 +498,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       title: episode.title,
       initialPositionMs: initialPositionMs,
       externalSubtitlePath: externalSub,
+      renderGraphicStreamIndex: graphicStreamIndex,
     );
   }
 
@@ -506,6 +534,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     required String title,
     required int initialPositionMs,
     String? externalSubtitlePath,
+    int? renderGraphicStreamIndex,
   }) async {
     final VideoPlayerController controller =
         _controller ?? VideoPlayerController();
@@ -522,6 +551,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         initialPositionMs: initialPositionMs,
         initialSpeed: _playbackSpeed,
         externalSubtitlePath: externalSubtitlePath,
+        renderGraphicStreamIndex: renderGraphicStreamIndex,
         shaderPaths: shaderPaths,
         mpvConfig: mpvConfig,
         autoPlay: true,
@@ -1641,10 +1671,17 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
               ),
               for (final SubtitleSource source in sources)
                 ListTile(
+                  // 图形内封轨（PGS/DVD 等位图）用不同图标 + 副标题点明「画面显示·不可
+                  // 查词」，让用户在点击前就分辨哪条能查词、哪条只是画面字幕（BUG-122）。
                   leading: Icon(
-                    source.isEmbedded ? Icons.movie : Icons.subtitles,
+                    source.isGraphicEmbedded
+                        ? Icons.image_outlined
+                        : (source.isEmbedded ? Icons.movie : Icons.subtitles),
                   ),
                   title: Text(source.label),
+                  subtitle: source.isGraphicEmbedded
+                      ? Text(t.video_subtitle_graphic_hint)
+                      : null,
                   selected: source.matchesPersisted(_currentSubtitleSource),
                   selectedColor: Theme.of(ctx).colorScheme.primary,
                   onTap: () {
@@ -1792,6 +1829,39 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     final String? videoPath = _currentVideoPath;
     if (videoPath == null) return false;
     final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+
+    // BUG-122: 图形内封轨（PGS/DVD 等位图）无法转文本 cue（ffmpeg 抽 srt 直接报
+    // bitmap→bitmap 拒绝），交给 libmpv 当画面字幕渲染：看得到、不可逐字查词。瞬时
+    // 切轨、无需抽取，故不走加载遮罩 / loadCuesForSource。
+    if (source.isGraphicEmbedded) {
+      final bool shown =
+          await controller.selectEmbeddedGraphicTrack(source.streamIndex!);
+      if (!mounted) return false;
+      if (!shown) {
+        messenger.showSnackBar(SnackBar(
+          content: Text(t.video_subtitle_load_failed(label: source.label)),
+        ));
+        return false;
+      }
+      final String persisted = source.toPersistedValue();
+      // 图形轨没有 cue，只落源指针（单视频也清掉旧 cue，避免上次文本 cue 残留把
+      // overlay 又显示回来）；播放列表各集只存源指针，与文本分支一致。
+      if (_episodes.isEmpty) {
+        await widget.repo.saveSubtitleSelection(
+          bookUid: widget.bookUid,
+          subtitleSource: persisted,
+          cues: const <AudioCue>[],
+        );
+      } else {
+        await widget.repo.updateSubtitleSource(widget.bookUid, persisted);
+      }
+      if (!mounted) return false;
+      setState(() => _currentSubtitleSource = persisted);
+      messenger.showSnackBar(SnackBar(
+        content: Text(t.video_subtitle_graphic_shown(label: source.label)),
+      ));
+      return true;
+    }
 
     // BUG-104: 内嵌字幕要从容器里 demux 抽取，大文件（如 27GB REMUX）首次可达
     // ~20s。期间给一个不可关的加载遮罩，否则底栏菜单一关、画面字幕没变，用户会以为

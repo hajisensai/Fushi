@@ -127,6 +127,44 @@ class VideoPlayerController extends ChangeNotifier
     await _player?.setSubtitleTrack(track);
   }
 
+  /// 把内嵌**图形**字幕轨（PGS/DVD 等位图，无法转文本 cue）交给 libmpv 当画面字幕
+  /// 渲染——用户看得到字幕（不可逐字查词，BUG-122 选定的兜底）。
+  ///
+  /// [streamIndex] 是 ffmpeg `-map 0:s:N` 的相对序号，映射到 libmpv
+  /// `tracks.subtitle`（`[auto, no, real0, real1…]` demux 顺序，去 auto/no 后第 N
+  /// 条，与 [currentAudioStreamIndex] 同范式）。等字幕轨列表就绪后选轨并清空可点
+  /// overlay（图形轨无文本）。选中返回 true；未 [load] / 轨未就绪 / 序号越界返回
+  /// false（调用方据此提示失败）。
+  Future<bool> selectEmbeddedGraphicTrack(int streamIndex) async {
+    final Player? player = _player;
+    if (player == null) return false;
+    await _waitUntilSubtitleTracksReady(player);
+    if (_player != player) return false; // 等待期间换片/销毁。
+    final List<SubtitleTrack> real = player.state.tracks.subtitle
+        .where((SubtitleTrack t) => t.id != 'auto' && t.id != 'no')
+        .toList(growable: false);
+    if (streamIndex < 0 || streamIndex >= real.length) return false;
+    // 图形字幕走 libmpv 画面渲染，清掉可点 overlay（无文本可查词）。
+    setCues(const <AudioCue>[]);
+    await player.setSubtitleTrack(real[streamIndex]);
+    return true;
+  }
+
+  /// 等 [player] 的字幕轨列表出现至少一条真实轨（`open` 后解析容器需要时间）。
+  /// 最多等 5 秒；已就绪立即返回，超时尽力继续（调用方自行判越界）。
+  Future<void> _waitUntilSubtitleTracksReady(Player player) async {
+    bool hasReal(List<SubtitleTrack> subs) =>
+        subs.any((SubtitleTrack t) => t.id != 'auto' && t.id != 'no');
+    if (hasReal(player.state.tracks.subtitle)) return;
+    try {
+      await player.stream.tracks
+          .firstWhere((Tracks t) => hasReal(t.subtitle))
+          .timeout(const Duration(seconds: 5));
+    } catch (_) {
+      // 超时/异常：尽力继续（real 越界时 selectEmbeddedGraphicTrack 返 false）。
+    }
+  }
+
   /// 当前视频可用的音轨；未 [load] 时为空。
   List<AudioTrack> get audioTracks =>
       _player?.state.tracks.audio ?? const <AudioTrack>[];
@@ -206,6 +244,7 @@ class VideoPlayerController extends ChangeNotifier
     int initialPositionMs = 0,
     double initialSpeed = 1.0,
     String? externalSubtitlePath,
+    int? renderGraphicStreamIndex,
     List<String> shaderPaths = const <String>[],
     VideoMpvConfig mpvConfig = VideoMpvConfig.defaults,
     bool autoPlay = false,
@@ -293,9 +332,14 @@ class VideoPlayerController extends ChangeNotifier
       await player.play();
     }
 
-    // 无外挂字幕且无 cue 时，桌面端后台抽内嵌字幕轨成可点击 cue（不阻塞首帧）。
-    if ((externalSubtitlePath == null || externalSubtitlePath.isEmpty) &&
+    // 恢复「图形内封字幕」选择（BUG-122）：上次选的是 PGS 等位图轨，没有文本 cue，
+    // 交给 libmpv 当画面字幕渲染。不阻塞首帧（轨列表 open 后才就绪，方法内等待）。
+    // 与下面的「抽文本 cue 自动加载」互斥——图形轨没有可抽的文本。
+    if (renderGraphicStreamIndex != null) {
+      unawaited(selectEmbeddedGraphicTrack(renderGraphicStreamIndex));
+    } else if ((externalSubtitlePath == null || externalSubtitlePath.isEmpty) &&
         cues.isEmpty) {
+      // 无外挂字幕且无 cue 时，桌面端后台抽内嵌文本字幕轨成可点击 cue（不阻塞首帧）。
       unawaited(_loadEmbeddedSubtitleIfNeeded(bookUid: bookUid));
     }
   }

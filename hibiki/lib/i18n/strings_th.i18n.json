@@ -1406,5 +1406,7 @@
     "video_shader_import_from_mpv": "Import from local mpv",
     "video_shader_mpv_not_found": "No local mpv shaders found",
     "video_shader_mpv_pick_title": "Import shaders from mpv",
-    "video_shader_import_done": "Imported $count shader(s)"
+    "video_shader_import_done": "Imported $count shader(s)",
+    "video_subtitle_graphic_hint": "Graphic subtitle · shown on video · no word lookup",
+    "video_subtitle_graphic_shown": "Graphic subtitle shown on video (no word lookup): $label"
 }

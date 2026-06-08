@@ -1406,5 +1406,7 @@
     "video_shader_import_from_mpv": "从本机 mpv 导入",
     "video_shader_mpv_not_found": "未发现本机 mpv 着色器",
     "video_shader_mpv_pick_title": "从 mpv 导入着色器",
-    "video_shader_import_done": "已导入 $count 个着色器"
+    "video_shader_import_done": "已导入 $count 个着色器",
+    "video_subtitle_graphic_hint": "图形字幕 · 画面显示 · 不可查词",
+    "video_subtitle_graphic_shown": "已显示图形字幕（画面显示，不可查词）：$label"
 }

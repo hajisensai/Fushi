@@ -217,6 +217,15 @@ class SubtitleSource {
     if (persisted == null) return false;
     return toPersistedValue() == persisted;
   }
+
+  /// 是否「图形（位图）内嵌轨」：内嵌轨且 codec 无文本格式映射
+  /// （pgs/dvd/dvb/xsub 等），即 [subtitleFormatForCodec] 返回 null。
+  ///
+  /// 图形字幕没有文字数据、不做 OCR 就无法转可查词 cue（ffmpeg 抽 srt 直接报
+  /// `bitmap to bitmap` 拒绝）。这类轨只能交给 libmpv 当画面字幕渲染（看得到、
+  /// 不可逐字查词），故菜单要区分标注、选中走不同分支（不抽 cue）。外挂源恒 false。
+  bool get isGraphicEmbedded =>
+      isEmbedded && subtitleFormatForCodec(codec ?? '') == null;
 }
 
 /// 跑 `ffmpeg -i <videoPath>` 并解析 stderr 得到所有内嵌字幕轨（IO 包装）。
@@ -391,9 +400,12 @@ Future<List<SubtitleSource>> listAllSubtitleSources(
   return sources;
 }
 
-/// 内嵌轨菜单标签：`内嵌 N: lang / codec`（lang 缺省省略）。
+/// 内嵌轨菜单标签：`内封 N: lang / codec`（lang 缺省省略）。
+///
+/// 用「内封」而非「内嵌」：容器内封装的软字幕（mkv/mp4 的字幕流）业界叫**内封**；
+/// 「内嵌」在字幕圈指烧进画面像素的硬字幕。早先误用「内嵌」会让用户误判（BUG-122）。
 String _embeddedLabel(EmbeddedSubtitleTrack track) {
-  final StringBuffer sb = StringBuffer('内嵌 ${track.streamIndex}: ');
+  final StringBuffer sb = StringBuffer('内封 ${track.streamIndex}: ');
   if ((track.language ?? '').isNotEmpty) {
     sb.write('${track.language} / ');
   }
