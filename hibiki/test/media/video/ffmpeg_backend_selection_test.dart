@@ -4,33 +4,35 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// 源码守卫：ffmpeg 后端选择的平台路由。
 ///
-/// BUG-NNN：第三方 `ffmpeg_kit_flutter_new_min` 的 `libffmpegkit_abidetect.so` 在
-/// Android 16/API 36 上 `JNI_OnLoad` 返回非法版本，且在 `onAttachedToActivity` 强制
-/// 加载 → app 启动即崩（Dart 拦不住）。改走自编 libffmpeg + FFI（[FfiFfmpegBackend]）。
-/// 这里钉死：①不再依赖 ffmpeg_kit ②移动端路由到 FfiFfmpegBackend ③桌面仍 CLI
-/// ④两后端共用 runFfmpegProcess（不重复 drain/超时逻辑）。
-/// 实际执行需真机验证（原生 libffmpeg），故源码层守卫路由不被回退。
+/// BUG-122：第三方预编译 `ffmpeg_kit_flutter_new_min` 的 `libffmpegkit_abidetect.so`
+/// 在 Android 16/API 36 上 `JNI_OnLoad` 返回非法版本，且在 `onAttachedToActivity`
+/// 强制加载 → app 启动即崩（Dart 拦不住）。改用「自编」ffmpeg-kit（arthenica 源码 +
+/// NDK r25 重编最小变体，vendored 于 third_party/ffmpeg_kit_flutter，android 用自编
+/// AAR），经 [KitFfmpegBackend] 接入。这里钉死：①用 ffmpeg_kit_flutter（非崩溃的
+/// _new_min）②移动端路由 KitFfmpegBackend ③桌面仍 CLI ④两后端共用 runFfmpegProcess
+/// ⑤android build.gradle 用本地自编 AAR、不再拉 maven 预编译。实际原生执行需真机验证。
 void main() {
   final String src =
       File('lib/src/media/video/ffmpeg_backend.dart').readAsStringSync();
 
-  test('不再依赖崩溃的 ffmpeg_kit', () {
-    expect(src.contains('ffmpeg_kit_flutter'), isFalse);
-    expect(src.contains('FFmpegKit'), isFalse);
-    expect(src.contains('KitFfmpegBackend'), isFalse);
+  test('不再依赖崩溃的预编译 ffmpeg_kit_flutter_new_min', () {
+    expect(src.contains('ffmpeg_kit_flutter_new'), isFalse);
+    final String pubspec = File('pubspec.yaml').readAsStringSync();
+    expect(pubspec.contains('ffmpeg_kit_flutter_new'), isFalse);
   });
 
-  test('存在 FfiFfmpegBackend（移动端进程内自编 ffmpeg）', () {
-    expect(src, contains('class FfiFfmpegBackend implements FfmpegBackend'));
+  test('用自编 ffmpeg-kit：KitFfmpegBackend + ffmpeg_kit_flutter API', () {
+    expect(src, contains("import 'package:ffmpeg_kit_flutter/ffmpeg_kit.dart'"));
+    expect(src, contains('class KitFfmpegBackend implements FfmpegBackend'));
+    expect(src, contains('FFmpegKit.executeWithArguments'));
   });
 
   test('两后端共用顶层 runFfmpegProcess（drain/超时只此一处）', () {
     expect(src, contains('Future<FfmpegRunResult> runFfmpegProcess('));
-    // SIGKILL 的真实调用（非注释）只应出现在共享函数里一次。
     expect('ProcessSignal.sigkill'.allMatches(src).length, 1);
   });
 
-  test('Android/iOS 路由到 FfiFfmpegBackend，桌面仍 CLI', () {
+  test('Android/iOS 路由到 KitFfmpegBackend，桌面仍 CLI', () {
     final RegExpMatch? body = RegExp(
       r'FfmpegBackend _selectBackend\(\) \{(.*?)\n\}',
       dotAll: true,
@@ -39,14 +41,25 @@ void main() {
     final String b = body!.group(1)!;
     expect(b.contains('Platform.isAndroid || Platform.isIOS'), isTrue,
         reason: '移动端必须分流到自编后端');
-    expect(b.contains('FfiFfmpegBackend()'), isTrue);
-    // HIBIKI_FFMPEG 覆盖与桌面回退仍走 CLI。
+    expect(b.contains('KitFfmpegBackend()'), isTrue);
     expect(b.contains('HIBIKI_FFMPEG'), isTrue);
     expect(b.contains('CliFfmpegBackend()'), isTrue);
   });
 
-  test('pubspec 不再含 ffmpeg_kit 依赖', () {
-    final String pubspec = File('pubspec.yaml').readAsStringSync();
-    expect(pubspec.contains('ffmpeg_kit_flutter'), isFalse);
+  test('vendored 包用本地自编 AAR（不拉 maven 预编译）', () {
+    final File gradle =
+        File('../third_party/ffmpeg_kit_flutter/android/build.gradle');
+    expect(gradle.existsSync(), isTrue,
+        reason: 'vendored ffmpeg_kit_flutter 应存在');
+    final String g = gradle.readAsStringSync();
+    expect(g.contains("implementation(name: 'ffmpeg-kit', ext: 'aar')"), isTrue);
+    expect(g.contains("com.arthenica:ffmpeg-kit-https"), isFalse,
+        reason: '不再拉 maven 预编译');
+    expect(
+      File('../third_party/ffmpeg_kit_flutter/android/libs/ffmpeg-kit.aar')
+          .existsSync(),
+      isTrue,
+      reason: '自编 AAR 应 vendored',
+    );
   });
 }

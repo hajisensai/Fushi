@@ -1,0 +1,64 @@
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.1.0'
+    }
+}
+
+// Hibiki: 冻结「本插件 libs 目录」绝对路径——在 allprojects 闭包里 project.projectDir
+// 会被每个消费工程（含 :app）各自求值成自己的 libs，导致找不到 AAR；此处先抓住插件
+// 自身目录。
+def ffmpegKitVendorLibs = "${projectDir}/libs"
+
+rootProject.allprojects {
+    repositories {
+        google()
+        mavenCentral()
+        // Hibiki: 自编最小 ffmpeg-kit AAR（arthenica 源码 NDK r25 重编，修 API36 崩溃）
+        flatDir { dirs ffmpegKitVendorLibs }
+    }
+}
+
+apply plugin: 'com.android.library'
+
+android {
+    // Conditional for compatibility with AGP <4.2.
+    if (project.android.hasProperty("namespace")) {
+        namespace 'com.arthenica.ffmpegkit.flutter'
+    }
+
+    compileSdkVersion 33
+
+    defaultConfig {
+        minSdkVersion 24
+        targetSdkVersion 33
+        versionCode 603
+        versionName "6.0.3"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+    lintOptions {
+        disable 'GradleCompatible'
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
+
+dependencies {
+    implementation 'androidx.annotation:annotation:1.5.0'
+    // Hibiki: 用本地自编 AAR 替代上游 maven 预编译 ffmpeg-kit 依赖
+    // （旧 NDK 预编译在 Android16 JNI_OnLoad 崩溃，见 BUG-122）。
+    implementation(name: 'ffmpeg-kit', ext: 'aar')
+    // ffmpeg-kit 的 Java 类依赖 smart-exception（原 maven AAR 传递带入，换自编 AAR 后需显式声明）
+    implementation 'com.arthenica:smart-exception-java:0.2.1'
+}

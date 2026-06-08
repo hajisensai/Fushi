@@ -2,6 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:ffmpeg_kit_flutter/ffmpeg_kit.dart';
+import 'package:ffmpeg_kit_flutter/return_code.dart';
+
 /// 一次 ffmpeg 执行的结果。
 ///
 /// [returnCode] 为 null 表示超时被强杀；[output] 是合并的 stderr 文本
@@ -23,8 +26,8 @@ class FfmpegRunResult {
 /// - 内嵌字幕「列举」用 `run(['-hide_banner','-i',path])` 拿 [FfmpegRunResult.output]
 ///   喂 `parseSubtitleStreamsFromFfmpegLog`，无需独立 probe API（两后端通用）。
 ///
-/// 实现：桌面 [CliFfmpegBackend]（系统/捆绑 ffmpeg CLI）、移动端 [FfiFfmpegBackend]
-/// （进程内自编 libffmpeg）。经 [resolveFfmpegBackend] 按平台分流。
+/// 实现：桌面 [CliFfmpegBackend]（系统/捆绑 ffmpeg CLI）、移动端 [KitFfmpegBackend]
+/// （进程内自编 ffmpeg-kit）。经 [resolveFfmpegBackend] 按平台分流。
 abstract class FfmpegBackend {
   Future<FfmpegRunResult> run(List<String> args, Duration timeout);
 }
@@ -104,33 +107,32 @@ class CliFfmpegBackend implements FfmpegBackend {
       runFfmpegProcess(resolveFfmpegExecutable(), args, timeout);
 }
 
-/// 移动端（Android/iOS）后端：进程内 FFI 调用自编 libffmpeg（与桌面同一份 ffmpeg
-/// 源 + 同一套最小 configure，仅产物从 CLI exe 换成库）。移动端无系统 CLI ffmpeg、
-/// iOS 沙箱更禁止 exec 子进程，故唯一可行路径是把 ffmpeg 链成库（Android `.so` /
-/// iOS xcframework）+ `dart:ffi` 调暴露的可重入 `ffmpeg_main`。
+/// 移动端（Android/iOS）后端：进程内调用「自编」的 ffmpeg-kit（arthenica 源码 +
+/// NDK r25 重编的最小变体，无外部 GPL 库），经其 `package:ffmpeg_kit_flutter` API 跑
+/// 同一套 ffmpeg 命令。替代崩溃的第三方预编译 ffmpeg-kit 变体（其
+/// `libffmpegkit_abidetect.so` 在 Android 16/API36 JNI_OnLoad 返回非法版本，启动即崩，
+/// BUG-122）。自编 AAR vendored 在 third_party/ffmpeg_kit_flutter/android/libs。
 ///
 /// 与 [CliFfmpegBackend] **同契约**（args→退出码+合并日志），5 个 extract 函数 +
-/// 字幕枚举零改动。
-///
-/// ⚠️ 当前为 Phase 1 占位：原生 libffmpeg 尚未捆绑，[run] 直接抛 [ProcessException]
-/// → 各调用方既有 catch 捕获 → 移动端 ffmpeg 功能优雅降级（与未引入捆绑 ffmpeg 前
-/// 一致），**但 app 不再因第三方 ffmpeg_kit 原生库在 Android 启动崩溃**。Phase 2/3
-/// 出 libffmpeg 库 + FFI 绑定后填实 [run]（见
-/// docs/superpowers/plans/2026-06-08-android-self-built-ffmpeg.md）。
-class FfiFfmpegBackend implements FfmpegBackend {
-  const FfiFfmpegBackend();
+/// （替代的崩溃包是第三方预编译 ffmpeg-kit 变体，见 BUG-122）。
+/// 字幕枚举零改动。`executeWithArguments` await 到会话结束，随后 [FFmpegSession.getReturnCode]
+/// / [FFmpegSession.getOutput]（= 合并日志，喂 `parseSubtitleStreamsFromFfmpegLog`）就绪；
+/// 超时用 `.timeout` + [FFmpegKit.cancel]（调用方串行，cancel-all 安全）。
+class KitFfmpegBackend implements FfmpegBackend {
+  const KitFfmpegBackend();
 
   @override
-  Future<FfmpegRunResult> run(List<String> args, Duration timeout) {
-    // Phase 2/3 will DynamicLibrary.open the bundled libffmpeg and FFI-call its
-    // re-entrant ffmpeg_main here. Until then, signal "ffmpeg unavailable" via
-    // the same ProcessException contract callers already degrade on.
-    throw const ProcessException(
-      'libffmpeg',
-      <String>[],
-      'bundled ffmpeg (FFI) not yet available on mobile',
-      -1,
-    );
+  Future<FfmpegRunResult> run(List<String> args, Duration timeout) async {
+    try {
+      final session =
+          await FFmpegKit.executeWithArguments(args).timeout(timeout);
+      final ReturnCode? rc = await session.getReturnCode();
+      final String output = (await session.getOutput()) ?? '';
+      return FfmpegRunResult(returnCode: rc?.getValue(), output: output);
+    } on TimeoutException {
+      await FFmpegKit.cancel();
+      return const FfmpegRunResult(returnCode: null, output: '');
+    }
   }
 }
 
@@ -139,14 +141,14 @@ FfmpegBackend? _cachedBackend;
 /// 进程级单例 ffmpeg 后端选择。
 ///
 /// - `HIBIKI_FFMPEG` 覆盖（绝对路径）→ 系统 CLI（开发/特殊部署，优先）。
-/// - Android / iOS → [FfiFfmpegBackend]（进程内自编 libffmpeg；移动端无系统 ffmpeg
-///   且 iOS 禁 exec）。
+/// - Android / iOS → [KitFfmpegBackend]（进程内自编 ffmpeg-kit；移动端无系统 ffmpeg
+///   且 iOS 禁 exec 子进程）。
 /// - 桌面（Windows/macOS/Linux）→ 系统 CLI（打包/用户提供 ffmpeg）。
 FfmpegBackend resolveFfmpegBackend() => _cachedBackend ??= _selectBackend();
 
 FfmpegBackend _selectBackend() {
   final String? override = Platform.environment['HIBIKI_FFMPEG']?.trim();
   if (override != null && override.isNotEmpty) return const CliFfmpegBackend();
-  if (Platform.isAndroid || Platform.isIOS) return const FfiFfmpegBackend();
+  if (Platform.isAndroid || Platform.isIOS) return const KitFfmpegBackend();
   return const CliFfmpegBackend();
 }
