@@ -57,7 +57,8 @@ void main() {
           reason: 'AppModel 必须把 libraryServiceFactory 传给 controller');
     });
 
-    test('_propagateDictionaryDeleteToRemote routes live backend via '
+    test(
+        '_propagateDictionaryDeleteToRemote routes live backend via '
         'backend.deleteRemoteDictionary', () {
       final String src =
           File('lib/src/models/app_model.dart').readAsStringSync();

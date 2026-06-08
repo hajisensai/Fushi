@@ -126,8 +126,7 @@ void main() {
       const String token = 'test-token-propagate';
       final _FakeLibraryService lib = _FakeLibraryService();
       final HibikiSyncServer server = HibikiSyncServer(
-        syncDataDir:
-            Directory.systemTemp.createTempSync('hbk_del_prop').path,
+        syncDataDir: Directory.systemTemp.createTempSync('hbk_del_prop').path,
         port: 0,
         token: token,
         allowLan: false,
@@ -146,8 +145,7 @@ void main() {
       await backend.deleteRemoteDictionary('Genius');
 
       expect(lib.deleted, contains('Genius'),
-          reason:
-              'host 库服务必须收到删除，验证 live DELETE 端点而非暂存路径');
+          reason: 'host 库服务必须收到删除，验证 live DELETE 端点而非暂存路径');
     });
   });
 }

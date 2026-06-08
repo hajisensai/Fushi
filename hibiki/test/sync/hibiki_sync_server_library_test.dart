@@ -16,8 +16,8 @@ class _FakeLibraryService implements HibikiLibraryHostService {
 
   @override
   Future<File> exportDictionary(String name) async {
-    final File f = File(
-        '${Directory.systemTemp.createTempSync().path}/$name.hibikidict');
+    final File f =
+        File('${Directory.systemTemp.createTempSync().path}/$name.hibikidict');
     f.writeAsStringSync('PKG:$name');
     return f;
   }
@@ -59,8 +59,9 @@ void main() {
     req.headers.set('authorization', authHeader());
     final HttpClientResponse res = await req.close();
     expect(res.statusCode, 200);
-    final Map<String, dynamic> json = jsonDecode(
-        await res.transform(utf8.decoder).join()) as Map<String, dynamic>;
+    final Map<String, dynamic> json =
+        jsonDecode(await res.transform(utf8.decoder).join())
+            as Map<String, dynamic>;
     expect((json['liveLibrary'] as Map)['dictionaries'], true);
     c.close();
   });
@@ -128,8 +129,8 @@ void main() {
     final HttpClient c = HttpClient();
 
     // DELETE with path-traversal → must NOT reach lib.deleted.
-    final HttpClientRequest delReq = await c.deleteUrl(
-        Uri.parse('$base/api/library/dictionaries/%2e%2e%2fevil'));
+    final HttpClientRequest delReq = await c
+        .deleteUrl(Uri.parse('$base/api/library/dictionaries/%2e%2e%2fevil'));
     delReq.headers.set('authorization', authHeader());
     final HttpClientResponse delRes = await delReq.close();
     expect(delRes.statusCode, 403,
@@ -139,8 +140,8 @@ void main() {
         reason: 'no deletion must occur for a traversal name');
 
     // GET with path-traversal → must also be 403.
-    final HttpClientRequest getReq = await c.getUrl(
-        Uri.parse('$base/api/library/dictionaries/%2e%2e%2fevil'));
+    final HttpClientRequest getReq = await c
+        .getUrl(Uri.parse('$base/api/library/dictionaries/%2e%2e%2fevil'));
     getReq.headers.set('authorization', authHeader());
     final HttpClientResponse getRes = await getReq.close();
     expect(getRes.statusCode, 403,
@@ -158,28 +159,26 @@ void main() {
     final HttpClient c = HttpClient();
     // client 用 Uri.encodeComponent 编码 CJK 名，与 HibikiClientSyncBackend 一致
     final String encodedName = Uri.encodeComponent('明镜');
-    final HttpClientRequest req = await c.getUrl(
-        Uri.parse('$base/api/library/dictionaries/$encodedName'));
+    final HttpClientRequest req = await c
+        .getUrl(Uri.parse('$base/api/library/dictionaries/$encodedName'));
     req.headers.set('authorization', authHeader());
     final HttpClientResponse res = await req.close();
     expect(res.statusCode, 200,
         reason: 'GET 明镜 应返回 200 而非 5xx（双重解码会致 500/502）');
     final String body = await res.transform(utf8.decoder).join();
-    expect(body, 'PKG:明镜',
-        reason: 'server 应以正确 CJK 名（明镜）调用 exportDictionary');
+    expect(body, 'PKG:明镜', reason: 'server 应以正确 CJK 名（明镜）调用 exportDictionary');
     c.close();
   });
 
   test('PUT /api/library/dictionaries/<CJK-name> 以中文名导入', () async {
     final HttpClient c = HttpClient();
     final String encodedName = Uri.encodeComponent('新明解');
-    final HttpClientRequest req = await c.putUrl(
-        Uri.parse('$base/api/library/dictionaries/$encodedName'));
+    final HttpClientRequest req = await c
+        .putUrl(Uri.parse('$base/api/library/dictionaries/$encodedName'));
     req.headers.set('authorization', authHeader());
     req.add(utf8.encode('PKG:新明解'));
     final HttpClientResponse res = await req.close();
-    expect(res.statusCode, anyOf(200, 201, 204),
-        reason: 'PUT 新明解 应成功（2xx）');
+    expect(res.statusCode, anyOf(200, 201, 204), reason: 'PUT 新明解 应成功（2xx）');
     // importDictionary 收到的文件内容为 'PKG:新明解'
     expect(lib.imported, contains('PKG:新明解'),
         reason: 'importDictionary 应被以正确内容调用');
@@ -190,12 +189,11 @@ void main() {
     lib.dicts.add(const RemoteDictionaryInfo(name: '明镜', type: 'term'));
     final HttpClient c = HttpClient();
     final String encodedName = Uri.encodeComponent('明镜');
-    final HttpClientRequest req = await c.deleteUrl(
-        Uri.parse('$base/api/library/dictionaries/$encodedName'));
+    final HttpClientRequest req = await c
+        .deleteUrl(Uri.parse('$base/api/library/dictionaries/$encodedName'));
     req.headers.set('authorization', authHeader());
     final HttpClientResponse res = await req.close();
-    expect(res.statusCode, anyOf(200, 204),
-        reason: 'DELETE 明镜 应成功');
+    expect(res.statusCode, anyOf(200, 204), reason: 'DELETE 明镜 应成功');
     expect(lib.deleted, contains('明镜'),
         reason: 'deleteDictionary 应以解码后中文名「明镜」被调用，而非编码串或乱码');
     c.close();
@@ -210,10 +208,10 @@ void main() {
     );
     await bare.start();
     final HttpClient c = HttpClient();
-    final HttpClientRequest req = await c.getUrl(Uri.parse(
-        'http://127.0.0.1:${bare.port}/api/library/dictionaries'));
-    req.headers.set('authorization',
-        'Basic ${base64Encode(utf8.encode('hibiki:$token'))}');
+    final HttpClientRequest req = await c.getUrl(
+        Uri.parse('http://127.0.0.1:${bare.port}/api/library/dictionaries'));
+    req.headers.set(
+        'authorization', 'Basic ${base64Encode(utf8.encode('hibiki:$token'))}');
     final HttpClientResponse res = await req.close();
     expect(res.statusCode, 404);
     c.close();

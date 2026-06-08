@@ -444,8 +444,7 @@ class HibikiSyncServer {
     // 原先的 Uri.decodeComponent 调用会对已解码的 CJK 字符再次解析，
     // 导致 "Illegal percent encoding in URI"（Dart 不接受非 ASCII 作为
     // decodeComponent 输入）。直接 substring 即可得到正确的词典名。
-    final String name =
-        reqPath.substring('/api/library/dictionaries/'.length);
+    final String name = reqPath.substring('/api/library/dictionaries/'.length);
     if (name.isEmpty) {
       return shelf.Response.notFound('Missing dictionary name');
     }
@@ -467,23 +466,24 @@ class HibikiSyncServer {
         }
         final int length = file.lengthSync();
         final Stream<List<int>> body = file.openRead().transform(
-          StreamTransformer<List<int>, List<int>>.fromHandlers(
-            handleDone: (EventSink<List<int>> out) {
-              out.close();
-              try {
-                file.parent.deleteSync(recursive: true);
-              } catch (_) {
-                // best-effort temp cleanup
-              }
-            },
-            handleError: (Object e, StackTrace st, EventSink<List<int>> out) {
-              out.addError(e, st);
-              try {
-                file.parent.deleteSync(recursive: true);
-              } catch (_) {/* best-effort */}
-            },
-          ),
-        );
+              StreamTransformer<List<int>, List<int>>.fromHandlers(
+                handleDone: (EventSink<List<int>> out) {
+                  out.close();
+                  try {
+                    file.parent.deleteSync(recursive: true);
+                  } catch (_) {
+                    // best-effort temp cleanup
+                  }
+                },
+                handleError:
+                    (Object e, StackTrace st, EventSink<List<int>> out) {
+                  out.addError(e, st);
+                  try {
+                    file.parent.deleteSync(recursive: true);
+                  } catch (_) {/* best-effort */}
+                },
+              ),
+            );
         return shelf.Response.ok(body, headers: <String, String>{
           'Content-Type': 'application/octet-stream',
           'Content-Length': '$length',

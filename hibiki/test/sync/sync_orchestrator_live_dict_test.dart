@@ -242,8 +242,7 @@ void main() {
     setUp(() async {
       // host 侧：真实 DB + 资源目录 + AppModelLibraryHostService
       hostDb = _memDb();
-      hostDictRoot =
-          Directory(p.join(work.path, 'host_dicts'))..createSync();
+      hostDictRoot = Directory(p.join(work.path, 'host_dicts'))..createSync();
       // 在 host 上植入词典「明镜」（CJK 真实词典名，覆盖 server URI 解码路径）
       await _seedDictionary(hostDb, hostDictRoot, '明镜');
 
@@ -276,7 +275,8 @@ void main() {
           Directory(p.join(work.path, 'local_dicts_pull'))..createSync();
       await _seedDictionary(localDb, localDictRoot, 'JMdict');
 
-      final Directory tmp = Directory(p.join(work.path, 'tmp_pull'))..createSync();
+      final Directory tmp = Directory(p.join(work.path, 'tmp_pull'))
+        ..createSync();
       final HibikiClientSyncBackend backend =
           await _buildClientBackend(base: serverBase, token: token);
 
@@ -287,11 +287,11 @@ void main() {
 
       expect(report.errors, isEmpty,
           reason: 'live sync should have no errors: ${report.errors}');
-      expect(report.dictionariesImported, 1,
-          reason: '「明镜」应从 host pull 并导入');
+      expect(report.dictionariesImported, 1, reason: '「明镜」应从 host pull 并导入');
 
       // 本地 DB 现含「明镜」
-      final List<DictionaryMetaRow> local = await localDb.getAllDictionaryMetadata();
+      final List<DictionaryMetaRow> local =
+          await localDb.getAllDictionaryMetadata();
       expect(local.map((DictionaryMetaRow d) => d.name), contains('明镜'));
     });
 
@@ -303,7 +303,8 @@ void main() {
           Directory(p.join(work.path, 'local_dicts_push'))..createSync();
       await _seedDictionary(localDb, localDictRoot, 'JMdict');
 
-      final Directory tmp = Directory(p.join(work.path, 'tmp_push'))..createSync();
+      final Directory tmp = Directory(p.join(work.path, 'tmp_push'))
+        ..createSync();
       final HibikiClientSyncBackend backend =
           await _buildClientBackend(base: serverBase, token: token);
 
@@ -312,15 +313,14 @@ void main() {
       final SyncRunReport report = SyncRunReport();
       await orch.syncDictionaries(report);
 
-      expect(report.errors, isEmpty,
-          reason: 'push errors: ${report.errors}');
-      expect(report.dictionariesExported, 1,
-          reason: 'JMdict 应推送到 host');
+      expect(report.errors, isEmpty, reason: 'push errors: ${report.errors}');
+      expect(report.dictionariesExported, 1, reason: 'JMdict 应推送到 host');
 
       // host DB 现含 JMdict
       final List<DictionaryMetaRow> hostDicts =
           await hostDb.getAllDictionaryMetadata();
-      expect(hostDicts.map((DictionaryMetaRow d) => d.name), contains('JMdict'));
+      expect(
+          hostDicts.map((DictionaryMetaRow d) => d.name), contains('JMdict'));
     });
 
     test('live 路径不创建 __dictionaries__ 文件夹', () async {
@@ -353,7 +353,8 @@ void main() {
           Directory(p.join(work.path, 'local_dicts_rt'))..createSync();
       await _seedDictionary(localDb, localDictRoot, 'JMdict');
 
-      final Directory tmp = Directory(p.join(work.path, 'tmp_rt'))..createSync();
+      final Directory tmp = Directory(p.join(work.path, 'tmp_rt'))
+        ..createSync();
       final HibikiClientSyncBackend backend =
           await _buildClientBackend(base: serverBase, token: token);
 
@@ -375,7 +376,8 @@ void main() {
       // host 有「JMdict」
       final List<DictionaryMetaRow> hostDicts =
           await hostDb.getAllDictionaryMetadata();
-      expect(hostDicts.map((DictionaryMetaRow d) => d.name), contains('JMdict'));
+      expect(
+          hostDicts.map((DictionaryMetaRow d) => d.name), contains('JMdict'));
 
       // 无暂存目录
       final String syncDataDir = p.join(work.path, 'server_data', 'sync-data');
@@ -410,8 +412,7 @@ void main() {
       await orch.syncDictionaries(report);
 
       // staged 路径会 push 词典到 __dictionaries__ 暂存命名空间
-      expect(report.dictionariesExported, 1,
-          reason: '非互联后端应走 staged 路径 push');
+      expect(report.dictionariesExported, 1, reason: '非互联后端应走 staged 路径 push');
       expect(report.errors, isEmpty);
 
       // 验证 __dictionaries__ 命名空间确实被创建（staged 路径的特征）

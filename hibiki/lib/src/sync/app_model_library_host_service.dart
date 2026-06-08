@@ -51,8 +51,7 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
 
     final Directory tmpDir =
         Directory.systemTemp.createTempSync('hibiki_dict_export');
-    final File out =
-        File(p.join(tmpDir.path, '$name$_dictionaryAssetSuffix'));
+    final File out = File(p.join(tmpDir.path, '$name$_dictionaryAssetSuffix'));
     await _packages.exportDictionaryPackage(
       dictionaryName: name,
       dictionaryResourceRoot: _dictionaryResourceRoot,

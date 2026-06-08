@@ -7,7 +7,8 @@ class RemoteDictionaryInfo {
   final String name;
   final String type;
 
-  Map<String, Object?> toJson() => <String, Object?>{'name': name, 'type': type};
+  Map<String, Object?> toJson() =>
+      <String, Object?>{'name': name, 'type': type};
 
   static RemoteDictionaryInfo fromJson(Map<String, Object?> json) =>
       RemoteDictionaryInfo(

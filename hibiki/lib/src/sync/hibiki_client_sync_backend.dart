@@ -563,8 +563,7 @@ class HibikiClientSyncBackend extends SyncBackend {
   }) async {
     await _ensureResolved();
     await downloadContentFile(
-      fileId:
-          '$_apiBase/api/library/dictionaries/${Uri.encodeComponent(name)}',
+      fileId: '$_apiBase/api/library/dictionaries/${Uri.encodeComponent(name)}',
       destination: destination,
       onProgress: onProgress,
     );

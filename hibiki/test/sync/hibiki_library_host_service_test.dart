@@ -47,7 +47,8 @@ void main() {
       tmp.deleteSync(recursive: true);
     });
 
-    test('list reflects DictionaryMeta; export builds a package; delete removes',
+    test(
+        'list reflects DictionaryMeta; export builds a package; delete removes',
         () async {
       await db.upsertDictionaryMeta(DictionaryMetadataCompanion.insert(
         name: 'JMdict',

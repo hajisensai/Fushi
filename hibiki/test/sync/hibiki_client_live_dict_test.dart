@@ -104,8 +104,7 @@ void main() {
       () async {
     final HibikiClientSyncBackend backend =
         await _buildBackend(base: base, token: token);
-    final Directory tmp =
-        Directory.systemTemp.createTempSync('hbk_live_dl');
+    final Directory tmp = Directory.systemTemp.createTempSync('hbk_live_dl');
     final File dest = File('${tmp.path}/JMdict.hibikidict');
     addTearDown(() => tmp.deleteSync(recursive: true));
 
@@ -120,8 +119,7 @@ void main() {
   test('putRemoteDictionary uploads file content to host', () async {
     final HibikiClientSyncBackend backend =
         await _buildBackend(base: base, token: token);
-    final Directory tmp =
-        Directory.systemTemp.createTempSync('hbk_live_ul');
+    final Directory tmp = Directory.systemTemp.createTempSync('hbk_live_ul');
     final File src = File('${tmp.path}/NHK.hibikidict');
     src.writeAsStringSync('PKG:NHK');
     addTearDown(() => tmp.deleteSync(recursive: true));
@@ -144,7 +142,8 @@ void main() {
 
   // ── auth guard ────────────────────────────────────────────────────────────
 
-  test('listRemoteDictionaries with wrong token throws SyncAuthError', () async {
+  test('listRemoteDictionaries with wrong token throws SyncAuthError',
+      () async {
     final HibikiDatabase db = _testDb();
     final SyncRepository repo = SyncRepository(db);
     await repo.setHibikiClientUrls(<HibikiClientUrl>[
@@ -170,8 +169,7 @@ void main() {
   test('getRemoteDictionary reports progress callback', () async {
     final HibikiClientSyncBackend backend =
         await _buildBackend(base: base, token: token);
-    final Directory tmp =
-        Directory.systemTemp.createTempSync('hbk_live_prog');
+    final Directory tmp = Directory.systemTemp.createTempSync('hbk_live_prog');
     final File dest = File('${tmp.path}/JMdict.hibikidict');
     addTearDown(() => tmp.deleteSync(recursive: true));
 
