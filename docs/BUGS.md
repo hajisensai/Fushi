@@ -27,13 +27,19 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 143 条。点号进各自文件。
+> 共 149 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-146](bugs/BUG-146-reader-toc-chapter-jump.md) | ✅ | ✅ | 阅读器目录页偶发消失且继续读可能跳章节 |
-| [BUG-145](bugs/BUG-145-floating-lyric-initial-theme.md) | ✅ | ✅ | 悬浮字幕首次开启先显示默认底色 |
-| [BUG-144](bugs/BUG-144-floating-lyric-lock-control.md) | ✅ | ✅ | 悬浮字幕锁定位置误锁播放控制 |
+| [BUG-152](bugs/BUG-152-reader-toc-chapter-jump.md) | ✅ | ✅ | 阅读器目录页偶发消失且继续读可能跳章节 |
+| [BUG-151](bugs/BUG-151-floating-lyric-initial-theme.md) | ✅ | ✅ | 悬浮字幕首次开启先显示默认底色 |
+| [BUG-150](bugs/BUG-150-floating-lyric-lock-control.md) | ✅ | ✅ | 悬浮字幕锁定位置误锁播放控制 |
+| [BUG-149](bugs/BUG-149-book-card-sentence-audio-tail.md) | ✅ | ✅ | 书籍制卡整句音频句尾被截断 |
+| [BUG-148](bugs/BUG-148-video-controls-width.md) | ✅ | ✅ | 视频底栏压缩不应只限定移动端 |
+| [BUG-147](bugs/BUG-147-video-mobile-bottom-width.md) | ✅ | ✅ | 手机视频宽屏底栏不应丢失10秒跳转 |
+| [BUG-146](bugs/BUG-146-android-popup-registrant-dev-plugin.md) | ✅ | ✅ | Android release 构建把 integration_test 注册进 popup 引擎 |
+| [BUG-145](bugs/BUG-145-video-mobile-controls-no-more.md) | ✅ | ✅ | 手机视频控制条取消三点并压缩底栏按钮 |
+| [BUG-144](bugs/BUG-144-audiobook-mining-audio.md) | ✅ | ✅ | 有声书查词制卡词条音频复用旧词且句子音频/句子上下文错位 |
 | [BUG-143](bugs/BUG-143-floating-lyric-lock-icon.md) | ✅ | ✅ | 浮动歌词锁定态显示开锁图标 |
 | [BUG-142](bugs/BUG-142-desktop-clipboard-foreground.md) | ✅ | ✅ | 桌面剪贴板自动查词在未开始真实搜索前抢前台 |
 | [BUG-141](bugs/BUG-141-dictionary-popup-scroll-reset.md) | ✅ | ✅ | 查词弹窗下次查词滚动位置未重置 |

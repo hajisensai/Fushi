@@ -107,6 +107,39 @@ void writeComprehensiveReport(ComprehensiveReport report, String outputDir) {
   );
 }
 
+String renderComprehensiveFailureSummary(ComprehensiveReport report) {
+  final Iterable<ScenarioReport> failures = report.entries.where(
+    (ScenarioReport entry) {
+      return entry.status == ScenarioStatus.failed ||
+          entry.status == ScenarioStatus.blocked;
+    },
+  );
+  if (failures.isEmpty) return '';
+
+  final StringBuffer buffer = StringBuffer()
+    ..writeln('Comprehensive test failures:');
+  for (final ScenarioReport entry in failures) {
+    buffer
+      ..writeln(
+        '- ${entry.platform.name}/${entry.scenario.name}: '
+        '${entry.status.name}',
+      );
+    if (entry.failureReason.isNotEmpty) {
+      buffer.writeln('  reason: ${entry.failureReason}');
+    }
+    if (entry.blockedReason.isNotEmpty) {
+      buffer.writeln('  reason: ${entry.blockedReason}');
+    }
+    if (entry.exitCode != null) {
+      buffer.writeln('  exitCode: ${entry.exitCode}');
+    }
+    if (entry.evidence.isNotEmpty) {
+      buffer.writeln('  evidence: ${entry.evidence.join(' | ')}');
+    }
+  }
+  return buffer.toString().trimRight();
+}
+
 String _renderMarkdown(ComprehensiveReport report) {
   final StringBuffer buffer = StringBuffer()
     ..writeln('# Hibiki Comprehensive Test Report')

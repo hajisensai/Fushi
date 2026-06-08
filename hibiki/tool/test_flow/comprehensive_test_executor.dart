@@ -28,6 +28,7 @@ class CommandRequest {
     required this.invocation,
     required this.workingDirectory,
     required this.outputDir,
+    required this.streamOutput,
   });
 
   final TestPlatformId platform;
@@ -36,6 +37,7 @@ class CommandRequest {
   final CommandInvocation invocation;
   final String workingDirectory;
   final String outputDir;
+  final bool streamOutput;
 }
 
 class CommandResult {
@@ -89,6 +91,7 @@ Future<ComprehensiveReport> buildExecutionReport({
   required String outputDir,
   String workingDirectory = '.',
   ComprehensiveCommandRunner commandRunner = runProcessCommand,
+  bool streamOutput = false,
 }) async {
   final Directory dir = Directory(outputDir)..createSync(recursive: true);
   final List<ScenarioReport> entries = <ScenarioReport>[];
@@ -130,6 +133,7 @@ Future<ComprehensiveReport> buildExecutionReport({
           invocation: invocation,
           workingDirectory: workingDirectory,
           outputDir: dir.path,
+          streamOutput: streamOutput,
         ));
         durationMs += result.duration.inMilliseconds;
 
@@ -225,14 +229,10 @@ String _outputForExpectation(
 
 Future<CommandResult> runProcessCommand(CommandRequest request) async {
   final Stopwatch stopwatch = Stopwatch()..start();
-  // Stream the child's stdout/stderr to the console AS IT RUNS while also
-  // capturing it for the output-expectation checks. Process.run buffers
-  // everything and only the captured copy reached the report dir under
+  // Default to keeping child output in report artifacts. `streamOutput` is a
+  // diagnostic escape hatch for jobs where live logs are more useful than a
+  // concise failure summary.
   // .codex-test/ — which CI never uploads — so a failing `flutter drive`
-  // (e.g. the Android appSmoke contract) showed nothing but its exit code in
-  // the Actions log. Mirroring live to the console makes the real failure
-  // visible there. utf8 with allowMalformed so a stray non-UTF8 byte from a
-  // native log line can't abort decoding mid-stream.
   final Process process = await Process.start(
     request.invocation.executable,
     request.invocation.args,
@@ -248,12 +248,16 @@ Future<CommandResult> runProcessCommand(CommandRequest request) async {
   final Future<void> stdoutDone =
       process.stdout.transform(decoder).forEach((String chunk) {
     outBuffer.write(chunk);
-    stdout.write(chunk);
+    if (request.streamOutput) {
+      stdout.write(chunk);
+    }
   });
   final Future<void> stderrDone =
       process.stderr.transform(decoder).forEach((String chunk) {
     errBuffer.write(chunk);
-    stderr.write(chunk);
+    if (request.streamOutput) {
+      stderr.write(chunk);
+    }
   });
 
   final int exitCode = await process.exitCode;

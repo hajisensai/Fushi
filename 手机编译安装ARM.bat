@@ -21,6 +21,7 @@ set "REPO=D:\APP\vs_claude_code\hibiki"
 set "APP=%REPO%\hibiki"
 set "FLUTTER=D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat"
 set "APK=%APP%\build\app\outputs\flutter-apk\app-release.apk"
+set "ANDROID_REGISTRANT=%APP%\android\app\src\main\java\io\flutter\plugins\GeneratedPluginRegistrant.java"
 set "IP=192.168.1.50"
 set "PORT="
 set "TARGET="
@@ -101,6 +102,16 @@ if defined DOCLEAN (
 echo [DEPS] flutter pub get ...
 call "%FLUTTER%" pub get
 if errorlevel 1 ( echo [ERROR] pub get failed. & goto :end )
+
+rem Flutter test tooling can leave a dev-only registrant that breaks release javac.
+if exist "%ANDROID_REGISTRANT%" (
+  findstr /c:"integration_test" "%ANDROID_REGISTRANT%" >nul 2>nul
+  if not errorlevel 1 (
+    echo [CLEAN] removing stale Android plugin registrant with integration_test ...
+    del /f /q "%ANDROID_REGISTRANT%"
+    if errorlevel 1 ( echo [ERROR] failed to remove stale Android plugin registrant. & goto :end )
+  )
+)
 
 echo [BUILD] flutter build apk --target-platform android-arm64 --release ...
 call "%FLUTTER%" build apk --target-platform android-arm64 --release

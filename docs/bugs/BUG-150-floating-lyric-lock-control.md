@@ -1,4 +1,4 @@
-## BUG-144 · 悬浮字幕锁定位置误锁播放控制
+## BUG-150 · 悬浮字幕锁定位置误锁播放控制
 - **报告**：2026-06-09（用户：「把字幕的移动锁定和点击查词的开关分开吗，适配不想不小心移动字幕但是想保持能查词/调进度的场景」。）
 - **真实性**：✅ 真 bug。Android 悬浮字幕的锁定态由 `FloatingLyricService.isDragLocked()` 暴露给 `BaseFloatingService.setupDragListener()`，旧实现一进触摸回调就 `if (isDragLocked()) return true;`，会把整块 overlay 的点击事件吃掉；同时 `FloatingLyricService.onControlClick()` 在锁定时拦截除锁按钮外的播放控制，导致“锁位置”实际变成“锁全部交互”。
 - **[x] ① 已修复** — `BaseFloatingService` 只在移动阶段禁止更新/保存位置，普通 tap 仍进入 `onOverlayTapped()`；`FloatingLyricService` 去掉锁定态对上一句/播放/下一句/关闭按钮的拦截，并新增独立 `clickLookupEnabled` 开关。

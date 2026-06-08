@@ -2,10 +2,10 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-134 source guard: 手机视频顶栏过去硬塞 6~8 个图标，窄屏溢出/挤压 → 右侧
-/// 图标被裁剪点不到（用户报「图标看得到但点了没反应」）。改为标准手机交互：顶栏
-/// 只留 剧集列表(播放列表时) + ⋮ 更多，其余收进底部 sheet。media_kit 无 headless，
-/// 锁调用点不变式。
+/// BUG-134/147 follow-up source guard: mobile video controls must not depend
+/// on a top-right overflow menu. Ten-second seek buttons are gated by available
+/// width, not by platform, so narrow desktop windows and narrow phones compact
+/// the same way while wide controls keep the buttons.
 void main() {
   final String src =
       File('lib/src/pages/implementations/video_hibiki_page.dart')
@@ -19,44 +19,89 @@ void main() {
     return src.substring(start, end);
   }
 
-  test('移动顶栏自适应：宽屏平铺全部图标，窄屏收进 ⋮ 更多', () {
+  test('mobile top bar exposes actions directly without a more menu', () {
     final String body = region(
       'MaterialVideoControlsThemeData _mobileControlsTheme(',
       'void _showTrackMenu(',
     );
-    final String topBar = region2(body);
-    expect(topBar.contains('roomy'), isTrue, reason: '顶栏应按可用宽度(roomy)自适应');
-    expect(body.contains('MediaQuery.of(context).size.width >= 600'), isTrue,
-        reason: '用宽度阈值判定 roomy（横屏/平板平铺，竖屏收起）');
-    expect(topBar.contains('Icons.more_vert'), isTrue, reason: '窄屏需有 ⋮ 更多入口');
-    expect(topBar.contains('_showMobileMoreMenu('), isTrue,
-        reason: '⋮ 打开移动更多菜单');
-    // 宽屏分支平铺全部次级图标（用户要求横屏能全展开）。
+    final String topBar = topButtonBarRegion(body);
+    expect(topBar.contains('Icons.more_vert'), isFalse,
+        reason: 'mobile top bar should not depend on an overflow menu');
+    expect(topBar.contains('_showMobileMoreMenu('), isFalse,
+        reason: 'mobile more menu entry should stay removed');
+    expect(topBar.contains('MediaQuery.of(context).size.width >= 600'), isFalse,
+        reason:
+            'top bar should not branch into narrow more menu / wide inline');
+    expect(topBar.contains('Icons.subtitles'), isTrue,
+        reason: 'subtitle source must be directly tappable in the top bar');
+    expect(topBar.contains('Icons.audiotrack'), isTrue,
+        reason: 'audio track must be directly tappable in the top bar');
+    expect(topBar.contains('Icons.tune'), isTrue,
+        reason: 'settings must be directly tappable in the top bar');
     expect(topBar.contains('Icons.photo_camera_outlined'), isTrue,
-        reason: '宽屏分支平铺截图');
-    expect(topBar.contains('Icons.audiotrack'), isTrue, reason: '宽屏分支平铺音轨');
-    expect(topBar.contains('Icons.tune'), isTrue, reason: '宽屏分支平铺设置');
+        reason: 'screenshot action must remain directly tappable');
+    expect(topBar.contains('Icons.speed'), isFalse,
+        reason:
+            'speed remains reachable from settings without crowding top bar');
   });
 
-  test('_showMobileMoreMenu 派发到全部 6 个既有 handler', () {
-    final String menu = region(
-      'Future<void> _showMobileMoreMenu(',
-      'Widget _moreTile(',
+  test('video bottom bars are compact by available width, not platform', () {
+    final String desktopBody = region(
+      'MaterialDesktopVideoControlsThemeData _desktopControlsTheme(',
+      'MaterialVideoControlsThemeData _mobileControlsTheme(',
     );
-    expect(menu.contains('_saveScreenshot()'), isTrue);
-    expect(menu.contains('_showSubtitleSourceMenu(controller)'), isTrue);
-    expect(menu.contains('_showAudioTrackMenu(controller)'), isTrue);
-    expect(menu.contains('_showSpeedMenu()'), isTrue);
-    expect(menu.contains('_showEpisodeList()'), isTrue);
-    expect(menu.contains('_showPlayerSettings()'), isTrue);
+    final String mobileBody = region(
+      'MaterialVideoControlsThemeData _mobileControlsTheme(',
+      'void _showTrackMenu(',
+    );
+    expect(
+      src.contains('bool _hasRoomyVideoBottomBar() =>'),
+      isTrue,
+      reason: 'bottom bar width check should be shared, not mobile-only',
+    );
+    expect(src.contains('MediaQuery.of(context).size.width >= 600'), isTrue,
+        reason: 'bottom bar should branch by available width');
+
+    expectBottomBarUsesWidthGate(desktopBody, 'desktop');
+    expectBottomBarUsesWidthGate(mobileBody, 'mobile');
   });
 }
 
-/// 取 _mobileControlsTheme body 里 topButtonBar 那一段（到 bottomButtonBar 前）。
-String region2(String mobileBody) {
-  final int top = mobileBody.indexOf('topButtonBar:');
-  final int bottom = mobileBody.indexOf('bottomButtonBar:');
+void expectBottomBarUsesWidthGate(String methodBody, String label) {
+  final String bottomBar = bottomButtonBarRegion(methodBody);
+  expect(
+    methodBody
+        .contains('final bool roomyBottomBar = _hasRoomyVideoBottomBar();'),
+    isTrue,
+    reason: '$label controls should use the shared width predicate',
+  );
+  expect(bottomBar.contains('if (roomyBottomBar)'), isTrue,
+      reason: '$label controls should hide 10s buttons only on narrow widths');
+  expect(bottomBar.contains('PositionIndicator'), isTrue);
+  expect(bottomBar.contains('PlayOrPauseButton'), isTrue);
+  expect(bottomBar.contains('FullscreenButton'), isTrue);
+  expect(bottomBar.contains('Icons.replay_10'), isTrue,
+      reason: '$label controls should keep -10s when width allows');
+  expect(bottomBar.contains('Icons.forward_10'), isTrue,
+      reason: '$label controls should keep +10s when width allows');
+  expect(bottomBar.contains('Icons.skip_previous'), isTrue,
+      reason: '$label controls should keep previous subtitle cue');
+  expect(bottomBar.contains('Icons.skip_next'), isTrue,
+      reason: '$label controls should keep next subtitle cue');
+}
+
+String topButtonBarRegion(String methodBody) {
+  final int top = methodBody.indexOf('topButtonBar:');
+  final int bottom = methodBody.indexOf('bottomButtonBar:');
   expect(top, greaterThanOrEqualTo(0), reason: 'missing topButtonBar');
   expect(bottom, greaterThan(top), reason: 'missing bottomButtonBar');
-  return mobileBody.substring(top, bottom);
+  return methodBody.substring(top, bottom);
+}
+
+String bottomButtonBarRegion(String methodBody) {
+  final int bottom = methodBody.indexOf('bottomButtonBar:');
+  final int end = methodBody.indexOf('],', bottom);
+  expect(bottom, greaterThanOrEqualTo(0), reason: 'missing bottomButtonBar');
+  expect(end, greaterThan(bottom), reason: 'missing bottomButtonBar end');
+  return methodBody.substring(bottom, end);
 }

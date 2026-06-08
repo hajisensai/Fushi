@@ -49,6 +49,19 @@ class FakeElement {
     this.alt = '';
   }
 
+  get innerHTML() {
+    if (this.children.length === 0) {
+      return this.textContent;
+    }
+    return this.children.map((child) => child.innerHTML ?? child.textContent ?? '').join('');
+  }
+
+  set innerHTML(value) {
+    this.children = [];
+    this.childNodes = this.children;
+    this.textContent = String(value);
+  }
+
   appendChild(child) {
     this.children.push(child);
     child.parentElement = this;
@@ -559,6 +572,66 @@ function testSelectionHighlightReturnsBoundsForPopupPositioning() {
   );
 }
 
+async function testMineEntryDoesNotReuseAudioFromPreviousExpression() {
+  const context = loadPopup();
+  const resolved = [];
+  const mined = [];
+  context.window.audioSources = ['https://audio.example/?term={term}'];
+  context.window.needsAudio = true;
+  context.window.lookupEntries = [
+    {
+      expression: '猫',
+      reading: 'ねこ',
+      glossaries: [
+        {
+          dictionary: 'dict',
+          content: {tag: 'span', content: 'cat'},
+          definitionTags: '',
+          termTags: '',
+        },
+      ],
+    },
+  ];
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name === 'resolveWordAudio') {
+      resolved.push(payload);
+      return Promise.resolve(`audio://${payload.expression}`);
+    }
+    if (name === 'mineEntry') {
+      mined.push(payload);
+      return Promise.resolve(true);
+    }
+    return Promise.resolve(true);
+  };
+
+  await context.mineEntry('猫', 'ねこ', [], [], [], '猫', 0, '猫');
+  context.window.lookupEntries = [
+    {
+      expression: '犬',
+      reading: 'いぬ',
+      glossaries: [
+        {
+          dictionary: 'dict',
+          content: {tag: 'span', content: 'dog'},
+          definitionTags: '',
+          termTags: '',
+        },
+      ],
+    },
+  ];
+  await context.mineEntry('犬', 'いぬ', [], [], [], '犬', 0, '犬');
+
+  assert.deepEqual(
+    resolved.map((entry) => entry.expression),
+    ['猫', '犬'],
+    'a new expression at the same popup index must resolve its own audio',
+  );
+  assert.deepEqual(
+    mined.map((entry) => entry.audio),
+    ['audio://猫', 'audio://犬'],
+  );
+}
+
 testEmSizedWideImagesUseHorizontalScrollWrapper();
 testLargeRasterImagesMarkedAsEmUseNaturalWidthAfterLoad();
 testExplicitContentImageDimensionsDefaultToPixelUnits();
@@ -574,3 +647,8 @@ testSelectionHighlightReturnsBoundsForPopupPositioning();
 // testLongPressTimerSurvivesEarlyTouchEnd();
 // testRepeatedTouchStartDoesNotCancelPendingLongPress();
 // testLongPressFallsBackFromElementToTextNode();
+
+testMineEntryDoesNotReuseAudioFromPreviousExpression().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

@@ -1,4 +1,4 @@
-## BUG-146 · 阅读器目录页偶发消失且继续读可能跳章节
+## BUG-152 · 阅读器目录页偶发消失且继续读可能跳章节
 - **报告**：2026-06-09（用户：在开头目录多滑几下后，目录显示/消失和后续跳章节概率触发；目录页点击章节后左右滑动也可能只跳章节；进一步确认“能一直跳完”的变量是开了字幕。）
 - **真实性**：✅ 真 bug。根因不是 EPUB 目录解析丢失，而是有声书字幕 cue 的 follow-audio 自动跨章覆盖了用户手动 reader 导航：`AudiobookPlayerController._updateCurrentCue()` 在同一 cue 未变化但 reader 当前章不同步时会补发 `_maybeEmitCrossChapter()`，`ReaderHibikiPage` 的 TOC/内部链接/搜索/书签/左右边界翻章旧路径没有标记“这是用户手动导航”，因此章节 restore 完成后 `notifySectionRestoreCompleted()` 立刻按当前音频 cue 再次跨章，表现为目录跳到章节、左右滑动只跳章，字幕开启时更稳定触发。另有放大因素：`ReaderHibikiPage._onCueChanged()` 在 cue 章节和当前 reader 章节不一致时仍 `_syncPositionFromCurrentCue()`，会把阅读位置保存成音频 cue 所在章。
 - **[x] ① 已修复** — `AudiobookPlayerController` 新增 `noteManualReaderNavigation()` 和 `_manualReaderOverrideCue`，手动导航后在同一 cue 未变化期间抑制自动 cross-chapter；显式 `snapReaderToAudio()`、播放/跳句会清除该抑制，保留主动跟随音频能力。`ReaderHibikiPage` 在 TOC、内部链接、搜索、书签、收藏、进度跳转和章节边界翻页入口传入 `manual: true`；cue 与当前章节不一致时不再保存 reader 位置。

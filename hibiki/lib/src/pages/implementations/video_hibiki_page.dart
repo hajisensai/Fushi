@@ -124,9 +124,6 @@ abstract class VideoHibikiTestHooks {
   Future<void> debugPlay();
 }
 
-/// 移动端「更多」菜单的动作项（顶栏 ⋮ → 底部 sheet 选一个 → 派发到对应 handler）。
-enum _VideoMoreAction { screenshot, subtitle, audio, speed, episodes, settings }
-
 class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     with DictionaryPageMixin, WidgetsBindingObserver
     implements VideoHibikiTestHooks {
@@ -1246,6 +1243,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     VideoPlayerController controller,
   ) {
     final ColorScheme cs = Theme.of(context).colorScheme;
+    final bool roomyBottomBar = _hasRoomyVideoBottomBar();
     return MaterialDesktopVideoControlsThemeData(
       // 控制条 3s 后自动隐藏时一并隐藏鼠标光标（默认 false 会让光标常驻，BUG-106）。
       hideMouseOnControlsRemoval: true,
@@ -1329,10 +1327,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       bottomButtonBar: <Widget>[
         const MaterialDesktopPositionIndicator(),
         const Spacer(),
-        MaterialDesktopCustomButton(
-          icon: const Icon(Icons.replay_10),
-          onPressed: () => _seekRelative(-10000),
-        ),
+        if (roomyBottomBar)
+          MaterialDesktopCustomButton(
+            icon: const Icon(Icons.replay_10),
+            onPressed: () => _seekRelative(-10000),
+          ),
         MaterialDesktopCustomButton(
           icon: const Icon(Icons.skip_previous),
           onPressed: () => controller.skipToPrevCue(),
@@ -1342,10 +1341,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           icon: const Icon(Icons.skip_next),
           onPressed: () => controller.skipToNextCue(),
         ),
-        MaterialDesktopCustomButton(
-          icon: const Icon(Icons.forward_10),
-          onPressed: () => _seekRelative(10000),
-        ),
+        if (roomyBottomBar)
+          MaterialDesktopCustomButton(
+            icon: const Icon(Icons.forward_10),
+            onPressed: () => _seekRelative(10000),
+          ),
         const Spacer(),
         const MaterialDesktopFullscreenButton(),
       ],
@@ -1356,25 +1356,20 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// [MaterialVideoControls]（读本主题），桌面端渲染 [MaterialDesktopVideoControls]
   /// （读 [MaterialDesktopVideoControlsTheme]），两套互斥，故两层主题都配置安全。
   ///
-  /// 底部胶囊条与桌面一致：居中 `[−10s][上一句][暂停][下一句][+10s]`，清空中央
-  /// primaryButtonBar；顶栏右侧 截图/字幕/音轨/倍速/设置（playlist 时再加剧集），
-  /// 移动端全屏丢 Scaffold AppBar 故全放顶栏，普通与全屏都可达。
+  /// 手机控制条：顶栏直接暴露截图、字幕、音轨、设置等常用入口，不再依赖右上角「⋮」
+  /// 小目标；底栏窄屏时隐藏 10 秒跳转，宽屏/横屏/平板仍保留。
   MaterialVideoControlsThemeData _mobileControlsTheme(
     VideoPlayerController controller,
   ) {
     final ColorScheme cs = Theme.of(context).colorScheme;
-    // 顶栏图标按可用宽度自适应（BUG-134）：横屏/平板（≥600dp）有空间，平铺全部
-    // 截图/字幕/音轨/倍速/设置（用户要求横屏能全展开）；竖屏窄屏收进「⋮ 更多」底部
-    // sheet，避免硬塞 6+ 图标溢出到屏外点不到。方向变化触发 build → 本主题重算切换。
-    final bool roomy = MediaQuery.of(context).size.width >= 600;
+    final bool roomyBottomBar = _hasRoomyVideoBottomBar();
     return MaterialVideoControlsThemeData(
       seekBarPositionColor: cs.primary,
       seekBarThumbColor: cs.primary,
       buttonBarButtonColor: cs.primary,
       primaryButtonBar: const <Widget>[],
-      // 视频内顶栏（替代被删的 Scaffold AppBar，BUG-102）：左侧返回 + 标题，右侧
-      // 剧集导航（playlist）+ 截图/字幕/音轨/倍速/设置。移动端全屏本就丢 AppBar，
-      // 现在普通与全屏统一只有这一条顶栏。
+      // 视频内顶栏（替代被删的 Scaffold AppBar，BUG-102）：左侧返回 + 标题，
+      // 右侧只放手机上最常用且需要直接命中的入口。倍速仍可从设置进入。
       topButtonBar: <Widget>[
         MaterialCustomButton(
           icon: const Icon(Icons.arrow_back),
@@ -1399,41 +1394,31 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             icon: const Icon(Icons.playlist_play),
             onPressed: _showEpisodeList,
           ),
-        // 宽屏（横屏/平板）平铺全部次级图标；窄屏（竖屏）收进 ⋮ 更多。
-        if (roomy) ...<Widget>[
-          MaterialCustomButton(
-            icon: const Icon(Icons.photo_camera_outlined),
-            onPressed: _saveScreenshot,
-          ),
-          MaterialCustomButton(
-            icon: const Icon(Icons.subtitles),
-            onPressed: () => _showSubtitleSourceMenu(controller),
-          ),
-          MaterialCustomButton(
-            icon: const Icon(Icons.audiotrack),
-            onPressed: () => _showAudioTrackMenu(controller),
-          ),
-          MaterialCustomButton(
-            icon: const Icon(Icons.speed),
-            onPressed: _showSpeedMenu,
-          ),
-          MaterialCustomButton(
-            icon: const Icon(Icons.tune),
-            onPressed: _showPlayerSettings,
-          ),
-        ] else
-          MaterialCustomButton(
-            icon: const Icon(Icons.more_vert),
-            onPressed: () => _showMobileMoreMenu(controller),
-          ),
+        MaterialCustomButton(
+          icon: const Icon(Icons.photo_camera_outlined),
+          onPressed: _saveScreenshot,
+        ),
+        MaterialCustomButton(
+          icon: const Icon(Icons.subtitles),
+          onPressed: () => _showSubtitleSourceMenu(controller),
+        ),
+        MaterialCustomButton(
+          icon: const Icon(Icons.audiotrack),
+          onPressed: () => _showAudioTrackMenu(controller),
+        ),
+        MaterialCustomButton(
+          icon: const Icon(Icons.tune),
+          onPressed: _showPlayerSettings,
+        ),
       ],
       bottomButtonBar: <Widget>[
         const MaterialPositionIndicator(),
         const Spacer(),
-        MaterialCustomButton(
-          icon: const Icon(Icons.replay_10),
-          onPressed: () => _seekRelative(-10000),
-        ),
+        if (roomyBottomBar)
+          MaterialCustomButton(
+            icon: const Icon(Icons.replay_10),
+            onPressed: () => _seekRelative(-10000),
+          ),
         MaterialCustomButton(
           icon: const Icon(Icons.skip_previous),
           onPressed: () => controller.skipToPrevCue(),
@@ -1443,15 +1428,18 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           icon: const Icon(Icons.skip_next),
           onPressed: () => controller.skipToNextCue(),
         ),
-        MaterialCustomButton(
-          icon: const Icon(Icons.forward_10),
-          onPressed: () => _seekRelative(10000),
-        ),
+        if (roomyBottomBar)
+          MaterialCustomButton(
+            icon: const Icon(Icons.forward_10),
+            onPressed: () => _seekRelative(10000),
+          ),
         const Spacer(),
         const MaterialFullscreenButton(),
       ],
     );
   }
+
+  bool _hasRoomyVideoBottomBar() => MediaQuery.of(context).size.width >= 600;
 
   void _showTrackMenu(
     List<({String label, VoidCallback onSelected})> tracks,
@@ -1477,71 +1465,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       _videoSheetOpen = false;
       _refocusVideo();
     });
-  }
-
-  /// 移动端「更多」菜单（BUG：手机顶栏硬塞 6+ 图标在窄屏溢出/挤压 → 右侧图标被裁剪
-  /// 点不到、操作难受）。改为标准手机做法：顶栏只留返回/标题/⋮，把截图/字幕/音轨/
-  /// 倍速/剧集/设置收进底部 sheet（一项一行，触控目标大）。每项经
-  /// `Navigator.pop(ctx, action)` 返回选择，**等本 sheet 完全关闭后再**派发到既有
-  /// handler——避免与各 handler 共享的 `_videoSheetOpen` 守卫竞争（本 sheet 先复位）。
-  Future<void> _showMobileMoreMenu(VideoPlayerController controller) async {
-    if (_videoSheetOpen) return;
-    _videoSheetOpen = true;
-    final _VideoMoreAction? action =
-        await showModalBottomSheet<_VideoMoreAction>(
-      context: context,
-      builder: (BuildContext ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            _moreTile(ctx, Icons.photo_camera_outlined, t.video_screenshot,
-                _VideoMoreAction.screenshot),
-            _moreTile(ctx, Icons.subtitles, t.video_subtitle_source,
-                _VideoMoreAction.subtitle),
-            _moreTile(ctx, Icons.audiotrack, t.video_audio_track,
-                _VideoMoreAction.audio),
-            _moreTile(
-                ctx, Icons.speed, t.playback_speed, _VideoMoreAction.speed),
-            if (_isPlaylist)
-              _moreTile(ctx, Icons.playlist_play, t.video_episode_list,
-                  _VideoMoreAction.episodes),
-            _moreTile(ctx, Icons.tune, t.video_settings_title,
-                _VideoMoreAction.settings),
-          ],
-        ),
-      ),
-    );
-    _videoSheetOpen = false;
-    _refocusVideo();
-    if (action == null || !mounted) return;
-    switch (action) {
-      case _VideoMoreAction.screenshot:
-        await _saveScreenshot();
-      case _VideoMoreAction.subtitle:
-        await _showSubtitleSourceMenu(controller);
-      case _VideoMoreAction.audio:
-        _showAudioTrackMenu(controller);
-      case _VideoMoreAction.speed:
-        _showSpeedMenu();
-      case _VideoMoreAction.episodes:
-        _showEpisodeList();
-      case _VideoMoreAction.settings:
-        _showPlayerSettings();
-    }
-  }
-
-  /// 「更多」菜单一行：图标 + 标签 → pop 回选择项。
-  Widget _moreTile(
-    BuildContext ctx,
-    IconData icon,
-    String label,
-    _VideoMoreAction action,
-  ) {
-    return ListTile(
-      leading: Icon(icon),
-      title: Text(label),
-      onTap: () => Navigator.pop(ctx, action),
-    );
   }
 
   /// 设置音画延迟（毫秒）：即时调 controller（字幕 cue 同步偏移立即生效）+ 持久化

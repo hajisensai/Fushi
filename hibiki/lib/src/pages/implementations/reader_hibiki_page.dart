@@ -25,6 +25,7 @@ import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki/src/media/audiobook/highlight_bridge.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_play_bar.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_import_dialog.dart';
+import 'package:hibiki/src/media/audiobook/mining_audio_clip.dart';
 import 'package:hibiki/src/media/audiobook/reader_quick_settings_sheet.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart'
@@ -2663,6 +2664,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   AudioCue? _lookupCue;
   ({int offset, int length, String text})? _cachedSelectionRange;
   ({int offset, int length})? _cachedSentenceRange;
+  int? _cachedSentenceOffset;
   bool _currentSentenceIsFavorited = false;
 
   int get _lookupSectionIndex {
@@ -2736,6 +2738,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     _lookupCue = null;
     _cachedSelectionRange = null;
     _cachedSentenceRange = null;
+    _cachedSentenceOffset = null;
     _currentSentenceIsFavorited = false;
     appModel.currentMediaSource?.clearCurrentCueSentence();
     super.clearDictionaryResult();
@@ -2754,18 +2757,21 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     }
 
     String? sasayakiAudioPath;
+    Directory? sasayakiTempDir;
     final AudioCue? cue = _lookupCue;
     final List<File>? audioFiles = _audiobookController?.audioFiles;
     if (cue != null &&
         audioFiles != null &&
         cue.audioFileIndex < audioFiles.length) {
       final File inputFile = audioFiles[cue.audioFileIndex];
-      final String outputPath =
-          '${Directory.systemTemp.path}/mine_sentence_audio.aac';
+      sasayakiTempDir =
+          Directory.systemTemp.createTempSync('hibiki_mine_sentence_audio_');
+      final String outputPath = p.join(sasayakiTempDir.path, 'sentence.aac');
+      final AudioCue clip = miningSentenceAudioClip(cue);
       sasayakiAudioPath = await TtsChannel.instance.extractAudioSegment(
         inputPath: inputFile.path,
-        startMs: cue.startMs,
-        endMs: cue.endMs,
+        startMs: clip.startMs,
+        endMs: clip.endMs,
         outputPath: outputPath,
       );
     }
@@ -2779,13 +2785,25 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       documentTitle: _book?.title,
       coverPath: coverPath,
       sasayakiAudioPath: sasayakiAudioPath,
-      sentenceOffset: _cachedSentenceRange?.offset,
+      sentenceOffset: _cachedSentenceOffset,
     );
 
-    final MineOutcome outcome = await repo.mineEntry(
-      rawPayloadJson: jsonEncode(fields),
-      context: miningContext,
-    );
+    final MineOutcome outcome;
+    try {
+      outcome = await repo.mineEntry(
+        rawPayloadJson: jsonEncode(fields),
+        context: miningContext,
+      );
+    } finally {
+      if (sasayakiTempDir != null && sasayakiTempDir.existsSync()) {
+        try {
+          sasayakiTempDir.deleteSync(recursive: true);
+        } catch (e, stack) {
+          ErrorLogService.instance
+              .log('ReaderHibiki.mineEntry.cleanupAudio', e, stack);
+        }
+      }
+    }
 
     switch (outcome.result) {
       case MineResult.success:
@@ -3398,6 +3416,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
     appModel.currentMediaSource?.setCurrentSentence(
       selection: HibikiTextSelection(text: data.sentence),
     );
+    _cachedSentenceOffset = data.sentenceOffset;
 
     if (_lyricsMode) {
       _lookupCue = null;
@@ -5434,20 +5453,6 @@ window.flutter_inappwebview.callHandler('spreadReady');
 
   // ── Top Progress Bar ──────────────────────────────────────────────
 
-  Color _infoTextColor() {
-    final String theme = appModel.appThemeKey;
-    switch (theme) {
-      case 'gray-theme':
-      case 'dark-theme':
-      case 'black-theme':
-        return const Color(0x99FFFFFF);
-      case 'ecru-theme':
-        return const Color(0x7A5C5448);
-      default:
-        return const Color(0x8A000000);
-    }
-  }
-
   Widget _buildTopProgressBar() {
     if (_lyricsMode || !_showTopProgress) {
       return const SizedBox.shrink();
@@ -5455,7 +5460,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
 
     final double ratio =
         (_progressCurrentChars! / _progressTotalChars!).clamp(0.0, 1.0);
-    final Color infoColor = _infoTextColor();
+    final Color infoColor = _themeTextColor();
 
     return Positioned(
       top: _stableTopInset,

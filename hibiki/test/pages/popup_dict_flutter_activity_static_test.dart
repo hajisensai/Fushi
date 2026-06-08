@@ -10,7 +10,8 @@ void main() {
     final String src = File(holderPath).readAsStringSync();
     expect(src,
         contains('FlutterEngine(context.applicationContext, null, false)'));
-    expect(src, contains('GeneratedPluginRegistrant.registerWith(engine)'));
+    expect(src, contains('FloatingDictPluginRegistrant.registerWith(engine)'));
+    expect(src, isNot(contains('GeneratedPluginRegistrant')));
     expect(src, contains('"popupMain"'));
     expect(src, contains('executeDartEntrypoint'));
     expect(src, contains('FlutterEngineCache.getInstance()'));
@@ -67,6 +68,13 @@ void main() {
     expect(tIdx, greaterThan(pIdx));
     expect(uIdx, greaterThan(tIdx));
     expect(src, contains('PopupEngineHolder.setOnFinish(null)'));
+  });
+
+  test('phone release install script drops stale dev plugin registrant', () {
+    final String src = File('../手机编译安装ARM.bat').readAsStringSync();
+    expect(src, contains('GeneratedPluginRegistrant.java'));
+    expect(src, contains('integration_test'));
+    expect(src, contains('del /f /q "%ANDROID_REGISTRANT%"'));
   });
 }
 
