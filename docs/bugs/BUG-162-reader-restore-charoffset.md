@@ -31,6 +31,11 @@
   initialCharOffset。+ `hibiki/test/database/reader_positions_test.dart` 加 `char_offset` 默认/往返 DB 测试。
   全量 `flutter test` 3174 绿（2 golden 门控 skipped）+ hibiki_core 绿，含 v23→v24（ADD char_offset / DROP
   ttu_char_offset）迁移、sync 测试、BUG-109 reanchor 守卫未回归。
+- **关联修复（合并后遗留精度）**：`6465788e8` —— 合并删 ttuCharOffset 精确缓存后，「导入云端位置→未移动→
+  下次同步」会因 dirty-flag tie-break 用裸 `1e-6` 分数比对（比 normCharOffset 存储分辨率还细）误判位置不同，
+  多余重导出把云端 `exploredCharCount` 改写成二次换算近似（差几个字符）。根因修：`_determineSyncDirection`
+  先把远端分数经 `_quantizeToStorageGrid` 投影到本地存储网格再比，「未移动」稳定判 `synced` 不重导出。
+  回归测试 `sync_gating_test.dart`（验红验绿）。
 - **备注**：真机复测待用户——分页/连续 × 横排/竖排，翻到中段→退出→重进应落回同页（旧存档首次回退分数属
   预期，翻一页 re-save 后即精确）。`_reloadWithCurrentSettings` 全量重载仍沿用粗粒度分数重锚（与改前一致、
   未回归），精确化是后续可做增量。
