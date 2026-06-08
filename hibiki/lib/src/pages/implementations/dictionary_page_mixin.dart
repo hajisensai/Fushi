@@ -219,9 +219,20 @@ mixin DictionaryPageMixin {
     final bool isDark =
         (mixinAppModel.overrideDictionaryTheme ?? mixinTheme).brightness ==
             Brightness.dark;
+    // BUG-129: 隐藏的常驻热槽（BUG-094，`visible:false`）若停在它算出的位置
+    // （seed 时 selectionRect=Rect.zero → 屏幕左上一大片），其 Android `InAppWebView`
+    // 是**原生平台视图**，即使被 [Visibility] 的 `Opacity(0)+IgnorePointer` 包住也
+    // 照样截获触摸——`IgnorePointer` 只挡 Flutter 命中测试，挡不住原生 view → 盖住的
+    // 视频控制条（顶栏/底栏）点击全被吃掉、毫无反应（手机特有，桌面 webview 无此问题）。
+    // 把隐藏热槽**移到屏幕右外侧**（仍保持真实尺寸继续冷加载预热，宿主 Stack 用
+    // `Clip.none` 不裁掉它），既不盖任何控件、又保留 BUG-094 的预热。可见（真查词）时
+    // 用真实 pos，行为完全不变。
+    final bool parked = !entry.visible;
+    final double layerLeft = parked ? screen.width + 8 : pos.left;
+    final double layerTop = parked ? 0 : pos.top;
     return Positioned(
-      left: pos.left,
-      top: pos.top,
+      left: layerLeft,
+      top: layerTop,
       width: pos.width,
       height: pos.height,
       // Hidden warm slot (BUG-094) stays in the tree (maintainState) with its

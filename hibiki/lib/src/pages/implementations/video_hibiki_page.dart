@@ -1033,6 +1033,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             final Size screen =
                 Size(constraints.maxWidth, constraints.maxHeight);
             return Stack(
+              // BUG-129: 隐藏热槽被停到屏幕右外侧（buildNestedPopupLayer），默认
+              // Clip.hardEdge 会把它裁掉 → 原生 WebView 可能不再渲染、丢失预热。用
+              // Clip.none 让它在屏外照常栅格化保持温热（不盖任何控件）。
+              clipBehavior: Clip.none,
               children: <Widget>[
                 // Dismiss barrier while a popup is visible OR a lookup is
                 // searching (搜索→就绪才显示：搜索期浮层还没显示，barrier 仍要拦点击
@@ -1349,6 +1353,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     VideoPlayerController controller,
   ) {
     final ColorScheme cs = Theme.of(context).colorScheme;
+    // 顶栏图标按可用宽度自适应（BUG-128）：横屏/平板（≥600dp）有空间，平铺全部
+    // 截图/字幕/音轨/倍速/设置（用户要求横屏能全展开）；竖屏窄屏收进「⋮ 更多」底部
+    // sheet，避免硬塞 6+ 图标溢出到屏外点不到。方向变化触发 build → 本主题重算切换。
+    final bool roomy = MediaQuery.of(context).size.width >= 600;
     return MaterialVideoControlsThemeData(
       seekBarPositionColor: cs.primary,
       seekBarThumbColor: cs.primary,
@@ -1375,18 +1383,39 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             ),
           ),
         ),
-        // 手机窄屏：顶栏只留「剧集列表(播放列表时)」+「⋮ 更多」两个尾部图标，避免
-        // 旧版硬塞 6+ 图标在窄屏溢出/挤压导致右侧图标被裁剪点不到（BUG-128）。其余
-        // 截图/字幕/音轨/倍速/设置全部收进 ⋮ 的底部 sheet（标准手机交互）。
+        // 剧集列表（播放列表时）两端常驻。
         if (_isPlaylist)
           MaterialCustomButton(
             icon: const Icon(Icons.playlist_play),
             onPressed: _showEpisodeList,
           ),
-        MaterialCustomButton(
-          icon: const Icon(Icons.more_vert),
-          onPressed: () => _showMobileMoreMenu(controller),
-        ),
+        // 宽屏（横屏/平板）平铺全部次级图标；窄屏（竖屏）收进 ⋮ 更多。
+        if (roomy) ...<Widget>[
+          MaterialCustomButton(
+            icon: const Icon(Icons.photo_camera_outlined),
+            onPressed: _saveScreenshot,
+          ),
+          MaterialCustomButton(
+            icon: const Icon(Icons.subtitles),
+            onPressed: () => _showSubtitleSourceMenu(controller),
+          ),
+          MaterialCustomButton(
+            icon: const Icon(Icons.audiotrack),
+            onPressed: () => _showAudioTrackMenu(controller),
+          ),
+          MaterialCustomButton(
+            icon: const Icon(Icons.speed),
+            onPressed: _showSpeedMenu,
+          ),
+          MaterialCustomButton(
+            icon: const Icon(Icons.tune),
+            onPressed: _showPlayerSettings,
+          ),
+        ] else
+          MaterialCustomButton(
+            icon: const Icon(Icons.more_vert),
+            onPressed: () => _showMobileMoreMenu(controller),
+          ),
       ],
       bottomButtonBar: <Widget>[
         const MaterialPositionIndicator(),

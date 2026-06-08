@@ -317,6 +317,9 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
             builder: (context, constraints) {
               final screen = Size(constraints.maxWidth, constraints.maxHeight);
               return Stack(
+                // BUG-129: 隐藏热槽停到屏幕右外侧（_buildPopupLayer），Clip.none 让它
+                // 在屏外照常预热、又不裁掉（默认 hardEdge 会裁，原生 WebView 失温）。
+                clipBehavior: Clip.none,
                 children: [
                   if (hasVisiblePopup || searching)
                     Positioned.fill(
@@ -395,9 +398,16 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     final isDark = (appModel.overrideDictionaryTheme ?? theme).brightness ==
         Brightness.dark;
 
+    // BUG-129: 隐藏热槽（warm slot，visible:false）的 Android 原生 WebView 即使被
+    // Visibility 的 Opacity(0)+IgnorePointer 包住也会截获触摸，盖住正文/控件点击。
+    // 停到屏幕右外侧（保持真实尺寸继续预热，Stack 用 Clip.none 不裁）即可放掉触摸。
+    final bool parked = !item.visible;
+    final double layerLeft = parked ? screen.width + 8 : pos.left;
+    final double layerTop = parked ? 0 : pos.top;
+
     return Positioned(
-      left: pos.left,
-      top: pos.top,
+      left: layerLeft,
+      top: layerTop,
       width: pos.width,
       height: pos.height,
       child: Visibility(

@@ -27,11 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 130 条。点号进各自文件。
+> 共 131 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-128](bugs/BUG-128-video-mobile-topbar-overflow.md) | ✅ | ✅ | 手机视频顶栏按钮溢出点不到 |
+| [BUG-129](bugs/BUG-129-video-warm-popup-eats-touches.md) | ✅ | ✅ | 手机热WebView吞掉视频控制条触摸（顶栏/底栏点了没反应） |
+| [BUG-128](bugs/BUG-128-video-mobile-topbar-overflow.md) | ✅ | ✅ | 手机视频顶栏竖屏溢出（自适应布局） |
 | [BUG-127](bugs/BUG-127-video-subtitle-drag-noop.md) | ✅ | ✅ | 视频画面拖入字幕无反应 |
 | [BUG-126](bugs/BUG-126-video-playlist-subtitle-lost.md) | ✅ | ✅ | 退出后导入的字幕未绑定视频丢失 |
 | [BUG-125](bugs/BUG-125-video-import-keyboard-focus.md) | ✅ | ✅ | 导入字幕后键盘快捷键失灵 |

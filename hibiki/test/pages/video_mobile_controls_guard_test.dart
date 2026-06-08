@@ -19,23 +19,23 @@ void main() {
     return src.substring(start, end);
   }
 
-  test('移动顶栏改用 ⋮ 更多菜单，不再直接平铺 6+ 图标', () {
+  test('移动顶栏自适应：宽屏平铺全部图标，窄屏收进 ⋮ 更多', () {
     final String body = region(
       'MaterialVideoControlsThemeData _mobileControlsTheme(',
       'void _showTrackMenu(',
     );
     final String topBar = region2(body);
-    // 顶栏有「更多」入口。
-    expect(topBar.contains('Icons.more_vert'), isTrue, reason: '移动顶栏需有 ⋮ 更多入口');
+    expect(topBar.contains('roomy'), isTrue, reason: '顶栏应按可用宽度(roomy)自适应');
+    expect(body.contains('MediaQuery.of(context).size.width >= 600'), isTrue,
+        reason: '用宽度阈值判定 roomy（横屏/平板平铺，竖屏收起）');
+    expect(topBar.contains('Icons.more_vert'), isTrue, reason: '窄屏需有 ⋮ 更多入口');
     expect(topBar.contains('_showMobileMoreMenu('), isTrue,
         reason: '⋮ 打开移动更多菜单');
-    // 顶栏不再直接放这些次级动作图标（已收进 ⋮ sheet），否则窄屏溢出回归。
-    expect(topBar.contains('Icons.photo_camera_outlined'), isFalse,
-        reason: '截图应收进 ⋮ sheet，不在移动顶栏直接平铺');
-    expect(topBar.contains('Icons.audiotrack'), isFalse,
-        reason: '音轨应收进 ⋮ sheet');
-    expect(topBar.contains('Icons.speed'), isFalse, reason: '倍速应收进 ⋮ sheet');
-    expect(topBar.contains('Icons.tune'), isFalse, reason: '设置应收进 ⋮ sheet');
+    // 宽屏分支平铺全部次级图标（用户要求横屏能全展开）。
+    expect(topBar.contains('Icons.photo_camera_outlined'), isTrue,
+        reason: '宽屏分支平铺截图');
+    expect(topBar.contains('Icons.audiotrack'), isTrue, reason: '宽屏分支平铺音轨');
+    expect(topBar.contains('Icons.tune'), isTrue, reason: '宽屏分支平铺设置');
   });
 
   test('_showMobileMoreMenu 派发到全部 6 个既有 handler', () {
