@@ -135,5 +135,29 @@ void main() {
       expect(ReaderCaretRouter.isEnterTriggerGamepad(GamepadButton.dpadRight),
           isFalse);
     });
+
+    test('global focus navigation switch gates cursor entry', () {
+      expect(
+        ReaderCaretRouter.isEnterTriggerKeyboard(
+          LogicalKeyboardKey.enter,
+          focusNavEnabled: false,
+        ),
+        isFalse,
+      );
+      expect(
+        ReaderCaretRouter.isEnterTriggerKeyboard(
+          LogicalKeyboardKey.gameButtonA,
+          focusNavEnabled: false,
+        ),
+        isFalse,
+      );
+      expect(
+        ReaderCaretRouter.isEnterTriggerGamepad(
+          GamepadButton.a,
+          focusNavEnabled: false,
+        ),
+        isFalse,
+      );
+    });
   });
 }
