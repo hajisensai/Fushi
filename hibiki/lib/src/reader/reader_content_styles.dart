@@ -284,6 +284,13 @@ ruby.hoshi-selection-ruby-active {
   background-color: ${selectionColor ?? colors.selectionColor} !important;
   color: inherit;
 }
+/* BUG-123：<ruby> 元素盒子含基字列与振假名(<rt>)列，整块涂背景会把振假名列/行也涂上，
+   令带 ruby 的字高亮比相邻无 ruby 的字更宽/更高（视觉“双重高亮”）。用不透明阅读器背景色
+   遮住从 ruby 背景透上来的高亮 tint，使查词高亮只剩基字列、与普通文字一致。 */
+ruby.hoshi-selection-ruby-active > rt,
+ruby.hoshi-selection-ruby-active > rp {
+  background-color: ${colors.backgroundColor} !important;
+}
 ::highlight(hoshi-hl-yellow) {
   background-color: var(--hoshi-hl-yellow, rgba(255,220,0,0.35));
 }
