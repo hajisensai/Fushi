@@ -83,4 +83,19 @@ void main() {
     expect(importOuter.contains('_subtitleImportsInFlight'), isTrue,
         reason: '同一 srcPath 在途时必须忽略二次调用，避免重复导入/重复提示（BUG-127）');
   });
+
+  test('视频通知走 mpv 式角标 OSD，不再用 Material SnackBar', () {
+    expect(src.contains('void _showOsd('), isTrue,
+        reason: '视频内通知应走左上角 OSD（_showOsd），取代从底部弹出遮挡控制条的 SnackBar');
+    expect(src.contains('showSnackBar('), isFalse,
+        reason: '视频页不应再有 showSnackBar(...) 调用——通知统一走 _showOsd（mpv 式角标）');
+    final int osdStart = src.indexOf('Widget _buildOsdOverlay() {');
+    expect(osdStart, greaterThanOrEqualTo(0),
+        reason: 'OSD 层 _buildOsdOverlay 必须存在并挂进 controls overlay');
+    final String osd = src.substring(osdStart);
+    expect(osd.contains('IgnorePointer'), isTrue,
+        reason: 'OSD 必须 IgnorePointer 包裹，绝不拦截点击（单击暂停/拖放/字幕查词）');
+    expect(osd.contains('_osdNotifier'), isTrue,
+        reason: 'OSD 监听 _osdNotifier 渲染当前消息');
+  });
 }

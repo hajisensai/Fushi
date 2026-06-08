@@ -143,6 +143,26 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// `ValueListenableBuilder` 监听：它在全屏路由内也会随 notifier 变化自重建，标题跟上。
   final ValueNotifier<String?> _titleNotifier = ValueNotifier<String?>(null);
 
+  /// 视频内角标通知（mpv 式 OSD）。取代会从屏幕底部弹出、遮挡控制条、且与 mpv 等
+  /// 播放器观感割裂的 Material SnackBar（用户要求改成 mpv 那样的左上角短暂提示）。
+  /// null=不显示。渲染在 [_buildVideoControls] 的 controls overlay 里，故窗口/全屏
+  /// 都显示；[IgnorePointer] 包裹，绝不拦截点击（不破坏单击暂停 / 拖放 / 字幕查词）。
+  final ValueNotifier<String?> _osdNotifier = ValueNotifier<String?>(null);
+
+  /// OSD 自动消失定时器（每次 [_showOsd] 重置）。
+  Timer? _osdTimer;
+
+  /// 在视频左上角短暂显示一条 OSD 通知（约 2.6s 后自动消失）。mounted-safe，可在
+  /// `await` 之后直接调（取代各处 `ScaffoldMessenger.showSnackBar`）。
+  void _showOsd(String message) {
+    if (!mounted) return;
+    _osdNotifier.value = message;
+    _osdTimer?.cancel();
+    _osdTimer = Timer(const Duration(milliseconds: 2600), () {
+      _osdNotifier.value = null;
+    });
+  }
+
   /// media_kit [Video] 的键盘焦点节点。media_kit 的 `Video` 自带 FocusNode + 内置
   /// 快捷键（空格=播放/暂停、方向键=快进/快退/音量等）。本页把这个节点提到 State 持有，
   /// 是为了在任何**会夺走窗口键盘焦点的覆盖层**（对话框 / bottom sheet / 系统文件选择器）
@@ -687,15 +707,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     VideoPlayerController controller,
     AudioTrack track,
   ) async {
-    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
     await controller.selectAudioTrack(track);
     await widget.repo.updateAudioTrackId(widget.bookUid, track.id);
     if (!mounted) return;
     setState(() => _currentAudioTrackId = track.id);
-    messenger.showSnackBar(SnackBar(
-      content: Text(t.video_audio_track_switched(
-        label: _trackLabel(track.title, track.language, track.id),
-      )),
+    _showOsd(t.video_audio_track_switched(
+      label: _trackLabel(track.title, track.language, track.id),
     ));
   }
 
@@ -790,6 +807,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _controller?.dispose();
     _videoFocusNode.dispose();
     _titleNotifier.dispose();
+    _osdTimer?.cancel();
+    _osdNotifier.dispose();
     super.dispose();
   }
 
@@ -1103,7 +1122,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       context: miningContext,
     );
     if (!context.mounted) return outcome.result == MineResult.success;
-    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
     final String message;
     switch (outcome.result) {
       case MineResult.success:
@@ -1116,7 +1134,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       case MineResult.error:
         message = logMineFailure(outcome);
     }
-    if (mounted) messenger.showSnackBar(SnackBar(content: Text(message)));
+    _showOsd(message);
     return outcome.result == MineResult.success;
   }
 
@@ -1489,15 +1507,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 截当前帧存为图片：桌面弹保存对话框，移动端走系统分享（参照 log_exporter
   /// 的平台分流）。复用 [VideoPlayerController.screenshot]（制卡同源，JPEG）。
   Future<void> _saveScreenshot() async {
-    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
-    void notify(String message) {
-      if (!mounted) return;
-      messenger.showSnackBar(SnackBar(content: Text(message)));
-    }
-
     final Uint8List? bytes = await _controller?.screenshot();
     if (bytes == null) {
-      notify(t.video_screenshot_failed);
+      _showOsd(t.video_screenshot_failed);
       return;
     }
     final String name =
@@ -1518,7 +1530,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         );
         if (savePath != null) {
           await tmp.copy(savePath);
-          notify(t.video_screenshot_saved);
+          _showOsd(t.video_screenshot_saved);
         }
       } else {
         await Share.shareXFiles(
@@ -1527,7 +1539,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         );
       }
     } catch (_) {
-      notify(t.video_screenshot_failed);
+      _showOsd(t.video_screenshot_failed);
     } finally {
       // 桌面端清理临时文件；移动端分享需保留供系统面板异步读取。
       if (isDesktop && tmp != null) {
@@ -1754,14 +1766,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       externalPath: downloaded,
       label: p.basename(downloaded),
     );
-    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
     final bool applied = await _selectSubtitleSource(controller, source);
     // 仅在字幕真被应用（解析出 cue）时报「已下载并应用」；cue 为空时
     // _selectSubtitleSource 已弹失败提示，不再叠加误导性的成功提示。
     if (applied && mounted) {
-      messenger.showSnackBar(
-        SnackBar(content: Text(t.video_jimaku_downloaded)),
-      );
+      _showOsd(t.video_jimaku_downloaded);
     }
   }
 
@@ -1815,11 +1824,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     VideoPlayerController controller,
     String srcPath,
   ) async {
-    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
     if (subtitleFormatForPath(srcPath) == null) {
-      messenger.showSnackBar(
-        SnackBar(content: Text(t.video_subtitle_import_unsupported)),
-      );
+      _showOsd(t.video_subtitle_import_unsupported);
       return;
     }
     final Directory docs = await getApplicationDocumentsDirectory();
@@ -1831,9 +1837,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         await File(srcPath).copy(dest);
       } catch (_) {
         if (!mounted) return;
-        messenger.showSnackBar(
-          SnackBar(content: Text(t.video_subtitle_import_failed)),
-        );
+        _showOsd(t.video_subtitle_import_failed);
         return;
       }
     }
@@ -1885,7 +1889,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   ) async {
     final String? videoPath = _currentVideoPath;
     if (videoPath == null) return false;
-    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
 
     // BUG-122: 图形内封轨（PGS/DVD 等位图）无法转文本 cue（ffmpeg 抽 srt 直接报
     // bitmap→bitmap 拒绝），交给 libmpv 当画面字幕渲染：看得到、不可逐字查词。瞬时
@@ -1895,9 +1898,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           await controller.selectEmbeddedGraphicTrack(source.streamIndex!);
       if (!mounted) return false;
       if (!shown) {
-        messenger.showSnackBar(SnackBar(
-          content: Text(t.video_subtitle_load_failed(label: source.label)),
-        ));
+        _showOsd(t.video_subtitle_load_failed(label: source.label));
         return false;
       }
       final String persisted = source.toPersistedValue();
@@ -1914,9 +1915,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       }
       if (!mounted) return false;
       setState(() => _currentSubtitleSource = persisted);
-      messenger.showSnackBar(SnackBar(
-        content: Text(t.video_subtitle_graphic_shown(label: source.label)),
-      ));
+      _showOsd(t.video_subtitle_graphic_shown(label: source.label));
       return true;
     }
 
@@ -1935,9 +1934,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // **不切换、不持久化**——避免谎报「已切换」却空屏，也避免用一个坏内封轨覆盖掉
     // 当前正常工作的字幕源（下次进来还是空）。
     if (cues.isEmpty) {
-      messenger.showSnackBar(SnackBar(
-        content: Text(t.video_subtitle_load_failed(label: source.label)),
-      ));
+      _showOsd(t.video_subtitle_load_failed(label: source.label));
       return false;
     }
     controller.setCues(cues);
@@ -1961,9 +1958,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     }
     if (!mounted) return false;
     setState(() => _currentSubtitleSource = persisted);
-    messenger.showSnackBar(SnackBar(
-      content: Text(t.video_subtitle_switched(label: source.label)),
-    ));
+    _showOsd(t.video_subtitle_switched(label: source.label));
     return true;
   }
 
@@ -2150,7 +2145,56 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
               bottomPadding: _subtitleStyle.bottomPadding,
             ),
           ),
+          _buildOsdOverlay(),
         ],
+      ),
+    );
+  }
+
+  /// mpv 式左上角 OSD 通知层。监听 [_osdNotifier]，非空时淡入一条圆角半透明提示，
+  /// 2.6s 后自动淡出。[IgnorePointer] 确保它从不拦截点击（单击暂停 / 拖放 / 字幕
+  /// 查词都不受影响）。放在控制条上方一点（避开顶栏返回/标题），窗口与全屏复用。
+  Widget _buildOsdOverlay() {
+    return Positioned(
+      top: 0,
+      left: 0,
+      right: 0,
+      child: SafeArea(
+        child: IgnorePointer(
+          child: Align(
+            alignment: Alignment.topLeft,
+            child: Padding(
+              padding: const EdgeInsets.only(left: 16, top: 52),
+              child: ValueListenableBuilder<String?>(
+                valueListenable: _osdNotifier,
+                builder: (BuildContext _, String? message, __) {
+                  return AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 180),
+                    child: message == null
+                        ? const SizedBox.shrink()
+                        : Container(
+                            key: ValueKey<String>(message),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 7),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.72),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              message,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                                height: 1.2,
+                              ),
+                            ),
+                          ),
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
