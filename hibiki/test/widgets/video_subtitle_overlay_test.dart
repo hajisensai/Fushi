@@ -66,15 +66,18 @@ void main() {
     expect(find.text('h'), findsNothing); // 未推进位置，无 current cue
   });
 
-  testWidgets('uses asbplayer-style bold text shadow without subtitle box',
+  testWidgets(
+      'uses themed asbplayer-style bold text shadow without subtitle box',
       (tester) async {
     final c = VideoPlayerController();
     addTearDown(c.dispose);
     c.setCues([_cue('A', 0, 1000)]);
+    const Color themedSubtitleColor = Color(0xFF00AA88);
 
     await tester.pumpWidget(buildTestApp(VideoSubtitleOverlay(
       controller: c,
       fontSize: 36,
+      textColor: themedSubtitleColor,
       backgroundOpacity: 0,
       bottomPadding: 75,
       fontFamily: 'ReaderFont',
@@ -88,6 +91,7 @@ void main() {
     expect(decoration.color, Colors.transparent);
 
     final Text text = tester.widget(find.text('A'));
+    expect(text.style!.color, themedSubtitleColor);
     expect(text.style!.fontSize, 36);
     expect(text.style!.fontWeight, FontWeight.w700);
     expect(text.style!.fontFamily, 'ReaderFont');

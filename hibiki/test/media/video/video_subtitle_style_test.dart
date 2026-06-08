@@ -6,9 +6,16 @@ void main() {
   test('default matches asbplayer subtitle look', () {
     const VideoSubtitleStyle s = VideoSubtitleStyle.defaults;
     expect(s.fontSize, 36);
-    expect(s.textColor, const Color(0xFFFFFFFF));
+    expect(s.textColor, isNull);
     expect(s.backgroundOpacity, closeTo(0.0, 1e-9));
     expect(s.bottomPadding, 75);
+  });
+
+  test('empty color means subtitle text follows the active theme', () {
+    const VideoSubtitleStyle s = VideoSubtitleStyle.defaults;
+    const Color themeColor = Color(0xFF112233);
+
+    expect(s.resolveTextColor(themeColor), themeColor);
   });
 
   test('encode/decode round-trips', () {
@@ -28,8 +35,7 @@ void main() {
 
   test('decode tolerates empty/garbage -> defaults', () {
     expect(VideoSubtitleStyle.decode('').fontSize, 36);
-    expect(VideoSubtitleStyle.decode('not json').textColor,
-        const Color(0xFFFFFFFF));
+    expect(VideoSubtitleStyle.decode('not json').textColor, isNull);
   });
 
   test('decode clamps out-of-range', () {

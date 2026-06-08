@@ -15,13 +15,13 @@ class VideoSubtitleStyle {
   /// asbplayer-style defaults: 36px bold white text, no box, black shadow.
   static const VideoSubtitleStyle defaults = VideoSubtitleStyle(
     fontSize: 36,
-    textColor: Color(0xFFFFFFFF),
+    textColor: null,
     backgroundOpacity: 0,
     bottomPadding: 75,
   );
 
   final double fontSize;
-  final Color textColor;
+  final Color? textColor;
   final double backgroundOpacity;
   final double bottomPadding;
 
@@ -39,10 +39,12 @@ class VideoSubtitleStyle {
     );
   }
 
+  Color resolveTextColor(Color themeColor) => textColor ?? themeColor;
+
   /// 编码为持久化 JSON 字符串。纯函数。
   static String encode(VideoSubtitleStyle s) => jsonEncode(<String, dynamic>{
         'fontSize': s.fontSize,
-        'textColor': s.textColor.toARGB32(),
+        'textColor': s.textColor?.toARGB32(),
         'backgroundOpacity': s.backgroundOpacity,
         'bottomPadding': s.bottomPadding,
       });
@@ -54,11 +56,11 @@ class VideoSubtitleStyle {
       final dynamic d = jsonDecode(json);
       if (d is! Map) return defaults;
       double num2d(Object? v, double fb) => v is num ? v.toDouble() : fb;
-      final int argb =
-          d['textColor'] is num ? (d['textColor'] as num).toInt() : 0xFFFFFFFF;
+      final int? argb =
+          d['textColor'] is num ? (d['textColor'] as num).toInt() : null;
       return VideoSubtitleStyle(
         fontSize: num2d(d['fontSize'], defaults.fontSize).clamp(10, 72),
-        textColor: Color(argb),
+        textColor: argb == null || argb == 0xFFFFFFFF ? null : Color(argb),
         backgroundOpacity: num2d(
           d['backgroundOpacity'],
           defaults.backgroundOpacity,

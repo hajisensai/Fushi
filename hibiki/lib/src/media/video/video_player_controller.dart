@@ -50,6 +50,7 @@ class VideoPlayerController extends ChangeNotifier
   /// 最近一次 [setSpeed] / [load] 之倍速；player 未实例化时供 [speed] getter 回退。
   double _lastSpeed = 1.0;
   double _lastVolume = 100.0;
+  bool _muted = false;
   bool _pauseAtSubtitleEnd = false;
   Future<void> Function()? _pauseAtSubtitleEndOverride;
 
@@ -123,6 +124,8 @@ class VideoPlayerController extends ChangeNotifier
   double get speed => _player?.state.rate ?? _lastSpeed;
 
   double get volume => _player?.state.volume ?? _lastVolume;
+
+  bool get muted => _muted;
 
   /// 截取当前解码帧为 JPEG 字节（制卡截图用）。未 [load] 返回 null。
   Future<Uint8List?> screenshot() async {
@@ -559,6 +562,28 @@ class VideoPlayerController extends ChangeNotifier
     await _player?.pause();
   }
 
+  Future<void> playOrPause() async {
+    await _player?.playOrPause();
+  }
+
+  Future<void> _mpvCommand(List<String> command) async {
+    final dynamic native = _player?.platform;
+    if (native == null) return;
+    try {
+      await native.command(command);
+    } catch (_) {
+      // Non-libmpv backends or unsupported commands are best-effort no-ops.
+    }
+  }
+
+  /// mpv-style single-frame stepping. mpv requires playback to be paused first.
+  Future<void> frameStep({required bool forward}) async {
+    await pause();
+    await _mpvCommand(<String>[
+      forward ? 'frame-step' : 'frame-back-step',
+    ]);
+  }
+
   void setPauseAtSubtitleEnd(bool enabled) {
     _pauseAtSubtitleEnd = enabled;
   }
@@ -605,7 +630,14 @@ class VideoPlayerController extends ChangeNotifier
 
   Future<void> setVolume(double value) async {
     _lastVolume = value.clamp(0.0, 100.0).toDouble();
+    if (_lastVolume > 0) _muted = false;
     await _player?.setVolume(_lastVolume);
+  }
+
+  Future<bool> toggleMute() async {
+    _muted = !_muted;
+    await _player?.setVolume(_muted ? 0.0 : _lastVolume);
+    return _muted;
   }
 
   /// 跳到指定 cue 的起始位置。

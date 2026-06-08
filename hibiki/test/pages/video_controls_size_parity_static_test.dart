@@ -11,7 +11,7 @@ void main() {
     expect(source, contains('static const double _videoControlIconSize = 32'));
     expect(
         source, contains('static const double _videoPlayPauseIconSize = 36'));
-    expect(source, contains('static const TextStyle _videoControlTitleStyle'));
+    expect(source, contains('TextStyle _videoControlTitleStyle(ColorScheme'));
     expect(
       '_videoControlIconSize'.allMatches(source).length,
       greaterThanOrEqualTo(10),

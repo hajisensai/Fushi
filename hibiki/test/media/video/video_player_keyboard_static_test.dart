@@ -116,6 +116,34 @@ void main() {
       expect(page.contains('_adjustSpeed(_speedStep)'), isTrue);
       expect(page.contains('_adjustSpeed(-_speedStep)'), isTrue);
     });
+
+    test('mpv-style common playback shortcuts are mapped where supported', () {
+      expect(b.contains('LogicalKeyboardKey.keyP'), isTrue,
+          reason: 'mpv default: p toggles play/pause');
+      expect(b.contains('LogicalKeyboardKey.digit9'), isTrue,
+          reason: 'mpv default: 9 decreases volume');
+      expect(b.contains('LogicalKeyboardKey.digit0'), isTrue,
+          reason: 'mpv default: 0 increases volume');
+      expect(b.contains('LogicalKeyboardKey.keyM'), isTrue,
+          reason: 'mpv default: m toggles mute');
+      expect(b.contains('LogicalKeyboardKey.bracketLeft'), isTrue,
+          reason: 'mpv default: [ decreases speed');
+      expect(b.contains('LogicalKeyboardKey.bracketRight'), isTrue,
+          reason: 'mpv default: ] increases speed');
+      expect(b.contains('LogicalKeyboardKey.backspace'), isTrue,
+          reason: 'mpv default: Backspace resets speed');
+      expect(b.contains('LogicalKeyboardKey.comma'), isTrue,
+          reason: 'mpv default: , steps one frame backward');
+      expect(b.contains('LogicalKeyboardKey.period'), isTrue,
+          reason: 'mpv default: . steps one frame forward');
+      expect(b.contains('LogicalKeyboardKey.keyS'), isTrue,
+          reason: 'mpv default: s takes a screenshot');
+      expect(page.contains('_toggleMute()'), isTrue);
+      expect(page.contains('_setSpeed(1.0)'), isTrue);
+      expect(page.contains('frameStep(forward: false)'), isTrue);
+      expect(page.contains('frameStep(forward: true)'), isTrue);
+      expect(page.contains('_saveScreenshot()'), isTrue);
+    });
   });
 
   group('查词浮层打开时点同句另一个词：切换查词、保持暂停', () {

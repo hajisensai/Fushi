@@ -44,7 +44,7 @@ class VideoSubtitleOverlay extends StatefulWidget {
     this.hitTester,
     this.blurEnabled = false,
     this.fontSize = 36,
-    this.textColor = Colors.white,
+    this.textColor,
     this.backgroundOpacity = 0,
     this.bottomPadding = 75,
     this.fontFamily,
@@ -69,7 +69,7 @@ class VideoSubtitleOverlay extends StatefulWidget {
   final double fontSize;
 
   /// 字幕文字颜色（外观设置）。
-  final Color textColor;
+  final Color? textColor;
 
   /// 字幕背景不透明度 0..1（外观设置；历史值 0.54 = Colors.black54）。
   final double backgroundOpacity;
@@ -251,7 +251,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
   /// 合并外观默认与覆盖第 [i] 个 grapheme 的 span 样式。
   TextStyle _styleForGrapheme(int i, SubtitleMarkup? markup) {
     final TextStyle base = TextStyle(
-      color: widget.textColor,
+      color: widget.textColor ?? Theme.of(context).colorScheme.onSurface,
       fontSize: widget.fontSize,
       height: 1.3,
       fontFamily: widget.fontFamily,

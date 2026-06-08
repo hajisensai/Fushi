@@ -158,15 +158,26 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     implements VideoHibikiTestHooks {
   static const double _videoControlIconSize = 32;
   static const double _videoPlayPauseIconSize = 36;
-  static const TextStyle _videoControlTitleStyle = TextStyle(
-    color: Colors.white,
-    fontSize: 16,
-  );
   static const int _subtitleOffsetStepMs = 100;
   static const double _volumeStep = 5.0;
 
   int get _asbSeekMs => _asbConfig.seekSeconds * 1000;
   double get _speedStep => _asbConfig.speedStep;
+
+  ColorScheme _videoChromeColorScheme(BuildContext context) =>
+      Theme.of(context).colorScheme;
+
+  TextStyle _videoControlTitleStyle(ColorScheme cs) => TextStyle(
+        color: cs.onSurface,
+        fontSize: 16,
+      );
+
+  Color _subtitleTextColor(ColorScheme cs) => cs.onSurface;
+
+  Color _osdSurfaceColor(ColorScheme cs) =>
+      cs.inverseSurface.withValues(alpha: 0.82);
+
+  Color _osdTextColor(ColorScheme cs) => cs.onInverseSurface;
 
   @override
   int? get debugPositionMs => _controller?.positionMs;
@@ -1298,16 +1309,17 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   Map<ShortcutActivator, VoidCallback> _videoKeyboardShortcuts(
     VideoPlayerController controller,
   ) {
-    Player? player() => controller.videoController?.player;
     return <ShortcutActivator, VoidCallback>{
       const SingleActivator(LogicalKeyboardKey.space): () =>
-          player()?.playOrPause(),
+          unawaited(controller.playOrPause()),
+      const SingleActivator(LogicalKeyboardKey.keyP): () =>
+          unawaited(controller.playOrPause()),
       const SingleActivator(LogicalKeyboardKey.mediaPlay): () =>
-          player()?.play(),
+          unawaited(controller.play()),
       const SingleActivator(LogicalKeyboardKey.mediaPause): () =>
-          player()?.pause(),
+          unawaited(controller.pause()),
       const SingleActivator(LogicalKeyboardKey.mediaPlayPause): () =>
-          player()?.playOrPause(),
+          unawaited(controller.playOrPause()),
       // 左右方向键 = 上下句字幕（无字幕 cue 时回退 asbplayer 默认 ±3 秒 seek）。
       const SingleActivator(LogicalKeyboardKey.arrowLeft): () => unawaited(
             controller.cues.isEmpty
@@ -1337,10 +1349,28 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           unawaited(_adjustVolume(_volumeStep)),
       const SingleActivator(LogicalKeyboardKey.arrowDown): () =>
           unawaited(_adjustVolume(-_volumeStep)),
+      const SingleActivator(LogicalKeyboardKey.digit9): () =>
+          unawaited(_adjustVolume(-_volumeStep)),
+      const SingleActivator(LogicalKeyboardKey.digit0): () =>
+          unawaited(_adjustVolume(_volumeStep)),
+      const SingleActivator(LogicalKeyboardKey.keyM): () =>
+          unawaited(_toggleMute()),
       const SingleActivator(LogicalKeyboardKey.equal): () =>
           unawaited(_adjustSpeed(_speedStep)),
       const SingleActivator(LogicalKeyboardKey.minus): () =>
           unawaited(_adjustSpeed(-_speedStep)),
+      const SingleActivator(LogicalKeyboardKey.bracketLeft): () =>
+          unawaited(_adjustSpeed(-_speedStep)),
+      const SingleActivator(LogicalKeyboardKey.bracketRight): () =>
+          unawaited(_adjustSpeed(_speedStep)),
+      const SingleActivator(LogicalKeyboardKey.backspace): () =>
+          unawaited(_setSpeed(1.0)),
+      const SingleActivator(LogicalKeyboardKey.comma): () =>
+          unawaited(controller.frameStep(forward: false)),
+      const SingleActivator(LogicalKeyboardKey.period): () =>
+          unawaited(controller.frameStep(forward: true)),
+      const SingleActivator(LogicalKeyboardKey.keyS): () =>
+          unawaited(_saveScreenshot()),
       // F = 切换全屏（保留 media_kit 默认；需 controls 子树内 context）。
       const SingleActivator(LogicalKeyboardKey.keyF): () {
         final BuildContext? ctx = _videoControlsContext;
@@ -1395,7 +1425,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
               title ?? '',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: _videoControlTitleStyle,
+              style: _videoControlTitleStyle(_videoChromeColorScheme(context)),
             ),
           ),
         ),
@@ -1512,7 +1542,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
               title ?? '',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: _videoControlTitleStyle,
+              style: _videoControlTitleStyle(_videoChromeColorScheme(context)),
             ),
           ),
         ),
@@ -1631,6 +1661,15 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     final double next = (controller.volume + delta).clamp(0.0, 100.0);
     await controller.setVolume(next);
     if (mounted) _showOsd('${t.audio_volume}: ${next.round()}%');
+  }
+
+  Future<void> _toggleMute() async {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return;
+    final bool muted = await controller.toggleMute();
+    if (mounted) {
+      _showOsd('${t.audio_volume}: ${muted ? 0 : controller.volume.round()}%');
+    }
   }
 
   /// 设置播放倍速：即时调 controller + 持久化到 per-book 偏好（速度记忆）+ 刷新。
@@ -2383,7 +2422,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
               hitTester: _subtitleHitTester,
               blurEnabled: appModel.videoSubtitleBlur,
               fontSize: _subtitleStyle.fontSize,
-              textColor: _subtitleStyle.textColor,
+              textColor: _subtitleStyle.resolveTextColor(
+                  _subtitleTextColor(_videoChromeColorScheme(context))),
               backgroundOpacity: _subtitleStyle.backgroundOpacity,
               bottomPadding: _subtitleStyle.bottomPadding,
               fontFamily: appModel.appFontFamily,
@@ -2399,6 +2439,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 2.6s 后自动淡出。[IgnorePointer] 确保它从不拦截点击（单击暂停 / 拖放 / 字幕
   /// 查词都不受影响）。放在控制条上方一点（避开顶栏返回/标题），窗口与全屏复用。
   Widget _buildOsdOverlay() {
+    final ColorScheme cs = _videoChromeColorScheme(context);
     return Positioned(
       top: 0,
       left: 0,
@@ -2421,13 +2462,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 12, vertical: 7),
                             decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.72),
+                              color: _osdSurfaceColor(cs),
                               borderRadius: BorderRadius.circular(6),
                             ),
                             child: Text(
                               message,
-                              style: const TextStyle(
-                                color: Colors.white,
+                              style: TextStyle(
+                                color: _osdTextColor(cs),
                                 fontSize: 14,
                                 height: 1.2,
                               ),

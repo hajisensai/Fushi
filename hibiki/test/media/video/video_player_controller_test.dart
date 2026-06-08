@@ -156,6 +156,32 @@ void main() {
       expect(c.speed, 1.5);
     });
 
+    test('mute toggles without constructing a player and preserves volume',
+        () async {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+
+      await c.setVolume(42);
+      expect(c.volume, 42);
+      expect(c.muted, isFalse);
+
+      expect(await c.toggleMute(), isTrue);
+      expect(c.muted, isTrue);
+      expect(c.volume, 42);
+
+      expect(await c.toggleMute(), isFalse);
+      expect(c.muted, isFalse);
+      expect(c.volume, 42);
+    });
+
+    test('frameStep is a safe no-op before load', () async {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+
+      await c.frameStep(forward: true);
+      await c.frameStep(forward: false);
+    });
+
     test('positionMs is null before load', () {
       final c = VideoPlayerController();
       addTearDown(c.dispose);
