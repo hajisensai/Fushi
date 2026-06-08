@@ -124,6 +124,9 @@ abstract class VideoHibikiTestHooks {
   Future<void> debugPlay();
 }
 
+/// 移动端「更多」菜单的动作项（顶栏 ⋮ → 底部 sheet 选一个 → 派发到对应 handler）。
+enum _VideoMoreAction { screenshot, subtitle, audio, speed, episodes, settings }
+
 class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     with DictionaryPageMixin, WidgetsBindingObserver
     implements VideoHibikiTestHooks {
@@ -1372,45 +1375,17 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             ),
           ),
         ),
-        if (_isPlaylist) ...<Widget>[
-          MaterialCustomButton(
-            icon: const Icon(Icons.skip_previous),
-            onPressed: () {
-              if (_currentEpisode > 0) _switchEpisode(_currentEpisode - 1);
-            },
-          ),
-          MaterialCustomButton(
-            icon: const Icon(Icons.skip_next),
-            onPressed: () {
-              if (_currentEpisode < _episodes.length - 1) {
-                _switchEpisode(_currentEpisode + 1);
-              }
-            },
-          ),
+        // 手机窄屏：顶栏只留「剧集列表(播放列表时)」+「⋮ 更多」两个尾部图标，避免
+        // 旧版硬塞 6+ 图标在窄屏溢出/挤压导致右侧图标被裁剪点不到（BUG-128）。其余
+        // 截图/字幕/音轨/倍速/设置全部收进 ⋮ 的底部 sheet（标准手机交互）。
+        if (_isPlaylist)
           MaterialCustomButton(
             icon: const Icon(Icons.playlist_play),
             onPressed: _showEpisodeList,
           ),
-        ],
         MaterialCustomButton(
-          icon: const Icon(Icons.photo_camera_outlined),
-          onPressed: _saveScreenshot,
-        ),
-        MaterialCustomButton(
-          icon: const Icon(Icons.subtitles),
-          onPressed: () => _showSubtitleSourceMenu(controller),
-        ),
-        MaterialCustomButton(
-          icon: const Icon(Icons.audiotrack),
-          onPressed: () => _showAudioTrackMenu(controller),
-        ),
-        MaterialCustomButton(
-          icon: const Icon(Icons.speed),
-          onPressed: _showSpeedMenu,
-        ),
-        MaterialCustomButton(
-          icon: const Icon(Icons.tune),
-          onPressed: _showPlayerSettings,
+          icon: const Icon(Icons.more_vert),
+          onPressed: () => _showMobileMoreMenu(controller),
         ),
       ],
       bottomButtonBar: <Widget>[
@@ -1463,6 +1438,71 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       _videoSheetOpen = false;
       _refocusVideo();
     });
+  }
+
+  /// 移动端「更多」菜单（BUG：手机顶栏硬塞 6+ 图标在窄屏溢出/挤压 → 右侧图标被裁剪
+  /// 点不到、操作难受）。改为标准手机做法：顶栏只留返回/标题/⋮，把截图/字幕/音轨/
+  /// 倍速/剧集/设置收进底部 sheet（一项一行，触控目标大）。每项经
+  /// `Navigator.pop(ctx, action)` 返回选择，**等本 sheet 完全关闭后再**派发到既有
+  /// handler——避免与各 handler 共享的 `_videoSheetOpen` 守卫竞争（本 sheet 先复位）。
+  Future<void> _showMobileMoreMenu(VideoPlayerController controller) async {
+    if (_videoSheetOpen) return;
+    _videoSheetOpen = true;
+    final _VideoMoreAction? action =
+        await showModalBottomSheet<_VideoMoreAction>(
+      context: context,
+      builder: (BuildContext ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            _moreTile(ctx, Icons.photo_camera_outlined, t.video_screenshot,
+                _VideoMoreAction.screenshot),
+            _moreTile(ctx, Icons.subtitles, t.video_subtitle_source,
+                _VideoMoreAction.subtitle),
+            _moreTile(ctx, Icons.audiotrack, t.video_audio_track,
+                _VideoMoreAction.audio),
+            _moreTile(
+                ctx, Icons.speed, t.playback_speed, _VideoMoreAction.speed),
+            if (_isPlaylist)
+              _moreTile(ctx, Icons.playlist_play, t.video_episode_list,
+                  _VideoMoreAction.episodes),
+            _moreTile(ctx, Icons.tune, t.video_settings_title,
+                _VideoMoreAction.settings),
+          ],
+        ),
+      ),
+    );
+    _videoSheetOpen = false;
+    _refocusVideo();
+    if (action == null || !mounted) return;
+    switch (action) {
+      case _VideoMoreAction.screenshot:
+        await _saveScreenshot();
+      case _VideoMoreAction.subtitle:
+        await _showSubtitleSourceMenu(controller);
+      case _VideoMoreAction.audio:
+        _showAudioTrackMenu(controller);
+      case _VideoMoreAction.speed:
+        _showSpeedMenu();
+      case _VideoMoreAction.episodes:
+        _showEpisodeList();
+      case _VideoMoreAction.settings:
+        _showPlayerSettings();
+    }
+  }
+
+  /// 「更多」菜单一行：图标 + 标签 → pop 回选择项。
+  Widget _moreTile(
+    BuildContext ctx,
+    IconData icon,
+    String label,
+    _VideoMoreAction action,
+  ) {
+    return ListTile(
+      leading: Icon(icon),
+      title: Text(label),
+      onTap: () => Navigator.pop(ctx, action),
+    );
   }
 
   /// 设置音画延迟（毫秒）：即时调 controller（字幕 cue 同步偏移立即生效）+ 持久化

@@ -1413,5 +1413,7 @@
     "focus_navigation_enabled_hint": "用方向键或手柄移动焦点并显示焦点环。",
     "video_rename": "重命名",
     "video_rename_hint": "标题",
-    "video_playlist_episodes": "$count 集"
+    "video_playlist_episodes": "$count 集",
+    "video_audio_track": "音轨",
+    "video_more": "更多"
 }

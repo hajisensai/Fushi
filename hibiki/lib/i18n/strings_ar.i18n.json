@@ -1413,5 +1413,7 @@
     "focus_navigation_enabled_hint": "Move focus with arrow keys or a gamepad and show a focus ring.",
     "video_rename": "Rename",
     "video_rename_hint": "Title",
-    "video_playlist_episodes": "$count eps"
+    "video_playlist_episodes": "$count eps",
+    "video_audio_track": "Audio track",
+    "video_more": "More"
 }
