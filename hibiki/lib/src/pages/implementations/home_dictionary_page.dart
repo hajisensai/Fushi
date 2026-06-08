@@ -8,6 +8,7 @@ import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:hibiki/src/sync/desktop_lookup_service.dart';
 import 'package:hibiki/src/utils/components/clipboard_lookup_text_panel.dart';
 import 'package:hibiki/utils.dart';
 
@@ -90,7 +91,9 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
     _lastConsumedQuerySeq = req.seq;
     _externalLookupText = req.text;
     channel!.value = null;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      await DesktopLookupService.instance.bringPendingLookupToFront();
       if (mounted) _search(req.text, autoRead: false);
     });
   }

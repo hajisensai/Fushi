@@ -46,6 +46,8 @@ void main() {
     // 通过 externalQuery 信号把词下传给查词页。
     expect(src.contains('externalQuery'), isTrue,
         reason: 'home_page 通过 externalQuery 信号把命中词下传给查词页');
+    expect(src.contains('service 唤前台'), isFalse,
+        reason: '不能再假设 service 发现剪贴板文本时已唤前台');
   });
 
   test('HomeDictionaryPage 外部查词入口预填并触发查询、且不自动朗读', () {
@@ -60,11 +62,34 @@ void main() {
     // 外部查词路径显式不朗读（用户要求「不自动读」）。
     expect(src.contains('autoRead: false'), isTrue,
         reason: '剪贴板/热键查词路径必须显式 autoRead: false，不自动发音');
+    expect(src.contains('bringPendingLookupToFront'), isTrue,
+        reason: '只有查词页实际消费外部查询、准备搜索时才可唤窗口前台');
     // autoRead 默认仍沿用 autoReadOnLookup（不破坏正常输入查词的朗读行为）。
     expect(
         src.contains(
             'autoRead ?? ReaderHibikiSource.instance.autoReadOnLookup'),
         isTrue,
         reason: '默认必须沿用 autoReadOnLookup，向后兼容正常查词的朗读');
+  });
+
+  test('DesktopLookupService 只排队命中词，不在剪贴板回调里抢前台', () {
+    final String src = read('lib/src/sync/desktop_lookup_service.dart');
+    final int clipboardStart =
+        src.indexOf('Future<void> _handleClipboardChange');
+    final int hotKeyStart = src.indexOf('Future<void> _onHotKey');
+    final int readStart = src.indexOf('Future<String?> _readClipboardText');
+    expect(clipboardStart, isNonNegative);
+    expect(hotKeyStart, isNonNegative);
+    expect(readStart, isNonNegative);
+    final String clipboardBody = src.substring(clipboardStart, hotKeyStart);
+    final String hotKeyBody = src.substring(hotKeyStart, readStart);
+    expect(clipboardBody.contains('submitText(text)'), isTrue,
+        reason: '剪贴板命中仍要排队查词请求');
+    expect(hotKeyBody.contains('submitText(text)'), isTrue,
+        reason: '热键命中仍要排队查词请求');
+    expect(clipboardBody.contains('bringPendingLookupToFront'), isFalse,
+        reason: '剪贴板变化不能在 UI 尚未消费/搜索前抢前台');
+    expect(hotKeyBody.contains('bringPendingLookupToFront'), isFalse,
+        reason: '热键也走同一消费路径，避免未开始搜索就抢前台');
   });
 }

@@ -6,6 +6,12 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUp(() => DesktopLookupService.instance.debugReset());
+  tearDown(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, null);
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(const MethodChannel('window_manager'), null);
+  });
 
   test('submitText sets pendingText and notifies, deduped', () {
     int n = 0;
@@ -69,7 +75,43 @@ void main() {
 
     expect(escaped, isNull); // 异常没有逃逸
     expect(svc.pendingText, isNull); // 读取失败 → 没有误提交查词
+  });
 
-    messenger.setMockMethodCallHandler(SystemChannels.platform, null);
+  testWidgets('clipboard hit queues lookup but waits for UI before foreground',
+      (WidgetTester tester) async {
+    final List<String> windowCalls = <String>[];
+    final TestDefaultBinaryMessenger messenger =
+        tester.binding.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(SystemChannels.platform,
+        (MethodCall call) async {
+      if (call.method == 'Clipboard.getData') {
+        return <String, Object?>{'text': '  見る  '};
+      }
+      return null;
+    });
+    messenger.setMockMethodCallHandler(const MethodChannel('window_manager'),
+        (MethodCall call) async {
+      windowCalls.add(call.method);
+      if (call.method == 'isFocused') return false;
+      if (call.method == 'isMinimized') return false;
+      return null;
+    });
+
+    final DesktopLookupService svc = DesktopLookupService.instance;
+    svc.debugReset();
+    svc.onWindowBlur();
+
+    await tester.runAsync(() async {
+      svc.onClipboardChanged();
+      await Future<void>.delayed(Duration.zero);
+    });
+
+    expect(svc.pendingText, '見る');
+    expect(windowCalls, isNot(contains('show')));
+    expect(windowCalls, isNot(contains('focus')));
+
+    await svc.bringPendingLookupToFront();
+
+    expect(windowCalls, containsAllInOrder(<String>['show', 'focus']));
   });
 }

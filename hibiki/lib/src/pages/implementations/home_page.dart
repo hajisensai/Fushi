@@ -116,7 +116,7 @@ class _HomePageState extends BasePageState<HomePage>
 
   /// 剪贴板/热键命中：清 pending（避免重复触发同一段文本）→ 切到查词 tab → 把命中词
   /// 推到 [_dictExternalQuery]，由 HomeDictionaryPage 预填并查询（不自动朗读）。
-  /// service 唤前台（window_manager show/focus）已在 DesktopLookupService 内完成。
+  /// 真正唤前台延迟到查词页消费请求并开始搜索时，避免任意剪贴板变化抢前台。
   void _onDesktopLookupPending() {
     final String? text = DesktopLookupService.instance.pendingText;
     if (text == null) return;

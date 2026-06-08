@@ -17,7 +17,10 @@ import 'package:hibiki/src/sync/clipboard_dedupe.dart';
 bool shouldTriggerOnClipboard(bool focused) => !focused;
 
 /// 桌面剪贴板 + 全局热键查词触发器。单例 ChangeNotifier（仿 TexthookerService）。
-/// 监听系统剪贴板变化与全局热键 → 去重 → 设 pendingText + 唤主窗前台。
+/// 监听系统剪贴板变化与全局热键 → 去重 → 设 pendingText。
+///
+/// 这里不直接唤主窗前台：只有词典页实际消费 [pendingText] 并开始搜索时，
+/// 才由 UI 调用 [bringPendingLookupToFront]，避免任意剪贴板变化抢前台。
 ///
 /// 窗口聚焦跟踪（[WindowListener]）用于区分「app 内复制」与「外部 app 复制」：
 /// 仅外部复制才自动弹查词；全局热键不受聚焦过滤约束（用户在别的 app 按热键
@@ -105,7 +108,6 @@ class DesktopLookupService extends ChangeNotifier
     final String? text = await _readClipboardText();
     if (text == null || text.trim().isEmpty) return;
     submitText(text);
-    await _bringToFront();
   }
 
   Future<void> _onHotKey() async {
@@ -113,7 +115,6 @@ class DesktopLookupService extends ChangeNotifier
     if (text == null || text.trim().isEmpty) return;
     _lastText = null; // 热键强制查（即便与上次相同）
     submitText(text);
-    await _bringToFront();
   }
 
   /// BUG-114：Windows 剪贴板是全局独占资源——刚复制的进程可能仍持有句柄，
@@ -136,7 +137,7 @@ class DesktopLookupService extends ChangeNotifier
     return null;
   }
 
-  Future<void> _bringToFront() async {
+  Future<void> bringPendingLookupToFront() async {
     if (!isDesktop) return;
     await windowManager.show();
     await windowManager.focus();
