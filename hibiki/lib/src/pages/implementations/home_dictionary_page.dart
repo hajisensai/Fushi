@@ -166,6 +166,8 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
         if (didPop) return;
         if (_popup.entries.isNotEmpty) {
           _popNestedPopupAt(_popup.entries.length - 1);
+        } else if (_searchFocusNode.hasFocus) {
+          _searchFocusNode.unfocus();
         } else if (_hasActiveQuery) {
           _clearSearch();
         }
@@ -218,7 +220,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
               focusNode: _searchFocusNode,
               hintText: t.search_ellipsis,
               onChanged: _onQueryChanged,
-              onSubmitted: _search,
+              onSubmitted: _submitSearch,
             ),
           ),
           if (isCupertinoPlatform(context))
@@ -347,6 +349,11 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
   }
 
   // ── search logic ───────────────────────────────────────────────────
+
+  void _submitSearch(String query) {
+    _searchFocusNode.unfocus();
+    _search(query);
+  }
 
   void _onQueryChanged(String query) {
     _debounceTimer?.cancel();
