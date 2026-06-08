@@ -1425,5 +1425,9 @@
     "video_shader_download_url": "粘贴链接下载",
     "video_shader_url_hint": "粘贴着色器 .glsl 链接（如 GitHub）",
     "video_shader_preset_mode_b_hq": "720p 旧番高画质（重采样伪影），需较强 GPU。",
-    "video_shader_preset_mode_c_hq": "480p SD 老番高画质（压缩涂抹，带去噪），需较强 GPU。"
+    "video_shader_preset_mode_c_hq": "480p SD 老番高画质（压缩涂抹，带去噪），需较强 GPU。",
+    "video_shader_recommended": "推荐着色器",
+    "video_shader_recommended_hint": "除 Anime4K 外的经典放大着色器，不必本机装 mpv。",
+    "video_shader_desc_ravu": "通用亮度放大，轻量快速（r2 更快，r3 更精细）。",
+    "video_shader_desc_nnedi3": "经典神经网络放大，nns 越大质量越高、越吃 GPU。"
 }

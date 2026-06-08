@@ -155,7 +155,8 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView> {
   }
 
   /// 粘贴任意着色器链接（GitHub/直链）下载到 mpv_shaders——不必本机装 mpv（用户诉求）。
-  /// GitHub 链接自动走 jsDelivr/ghfast 镜像（中国可达），内容校验防 404/HTML 占位。
+  /// **直链优先**：先试用户粘的链接本身，跑不通才回退 jsDelivr/ghfast 镜像（中国可达），
+  /// 内容校验防 404/HTML 占位。
   Future<void> _downloadFromUrl() async {
     final TextEditingController urlController = TextEditingController();
     final String? url = await showDialog<String>(
@@ -191,6 +192,35 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView> {
     String? name;
     try {
       name = await downloadShaderFromUrl(trimmed);
+    } catch (_) {
+      name = null;
+    }
+    if (!mounted) return;
+    await _refresh();
+    if (!mounted) return;
+    messenger.showSnackBar(SnackBar(
+      content: Text(name != null
+          ? t.video_shader_download_done(count: 1)
+          : t.video_shader_download_failed),
+    ));
+  }
+
+  /// 打开「推荐着色器」子对话框（Anime4K 之外的经典单文件着色器，如 RAVU/NNEDI3）：
+  /// 选一个 → 直链优先下载（不必装 mpv）→ 刷新列表。
+  Future<void> _openRecommended() async {
+    final RecommendedShader? shader = await showDialog<RecommendedShader>(
+      context: context,
+      builder: (_) =>
+          RecommendedShaderPickerDialog(downloadedFiles: _files.toSet()),
+    );
+    if (shader == null || !mounted) return;
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(
+      SnackBar(content: Text(t.video_shader_downloading)),
+    );
+    String? name;
+    try {
+      name = await downloadShaderFromUrl(shader.url);
     } catch (_) {
       name = null;
     }
@@ -317,6 +347,12 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView> {
               icon: const Icon(Icons.download_outlined, size: 18),
               label: Text(t.video_shader_download_anime4k),
               onPressed: _openAnime4kDownload,
+            ),
+            // 推荐着色器（Anime4K 之外的经典：RAVU/NNEDI3），一键下载。
+            OutlinedButton.icon(
+              icon: const Icon(Icons.auto_awesome_outlined, size: 18),
+              label: Text(t.video_shader_recommended),
+              onPressed: _openRecommended,
             ),
             // 粘贴任意着色器链接下载（不必装 mpv，最灵活）。
             OutlinedButton.icon(
@@ -527,6 +563,71 @@ class Anime4kPresetPickerDialog extends StatelessWidget {
                             ? Icon(Icons.check, color: cs.primary)
                             : const Icon(Icons.download_outlined),
                         onTap: () => Navigator.pop(context, preset),
+                      );
+                    }(),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: <Widget>[
+        FilledButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(t.dialog_close),
+        ),
+      ],
+    );
+  }
+}
+
+/// 「推荐着色器」选择对话框：列出 [kRecommendedShaders]（RAVU/NNEDI3 等单文件经典），
+/// 已下载的标 check 并禁选；点未下载的 pop 回该 [RecommendedShader]，取消 pop null。
+class RecommendedShaderPickerDialog extends StatelessWidget {
+  const RecommendedShaderPickerDialog(
+      {required this.downloadedFiles, super.key});
+
+  /// 已在 mpv_shaders 里的文件名集合（标「已下载」）。
+  final Set<String> downloadedFiles;
+
+  /// 着色器 id → 本地化说明（按系列前缀映射）。
+  static String descriptionFor(String id) {
+    if (id.startsWith('ravu')) return t.video_shader_desc_ravu;
+    if (id.startsWith('nnedi3')) return t.video_shader_desc_nnedi3;
+    return '';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    return AlertDialog(
+      title: Text(t.video_shader_recommended),
+      content: SizedBox(
+        width: 380,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Text(
+              t.video_shader_recommended_hint,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 8),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                children: <Widget>[
+                  for (final RecommendedShader s in kRecommendedShaders)
+                    () {
+                      final bool added = downloadedFiles.contains(s.fileName);
+                      return ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(s.name),
+                        subtitle: Text(descriptionFor(s.id)),
+                        trailing: added
+                            ? Icon(Icons.check, color: cs.primary)
+                            : const Icon(Icons.download_outlined),
+                        onTap: added ? null : () => Navigator.pop(context, s),
                       );
                     }(),
                 ],

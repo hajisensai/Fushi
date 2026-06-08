@@ -249,23 +249,24 @@ void main() {
     });
   });
 
-  group('shaderDownloadUrlsFor（粘链接下载）', () {
-    test('GitHub blob 链接 → jsDelivr/ghfast/raw 三镜像', () {
+  group('shaderDownloadUrlsFor（粘链接下载：直链优先、镜像兜底）', () {
+    test('GitHub blob 链接 → raw 直链优先，再 jsDelivr / ghfast 兜底', () {
       final List<String> urls = shaderDownloadUrlsFor(
           'https://github.com/bloc97/Anime4K/blob/master/glsl/Restore/Anime4K_Restore_CNN_M.glsl');
       expect(urls, <String>[
+        'https://raw.githubusercontent.com/bloc97/Anime4K/master/glsl/Restore/Anime4K_Restore_CNN_M.glsl',
         'https://cdn.jsdelivr.net/gh/bloc97/Anime4K@master/glsl/Restore/Anime4K_Restore_CNN_M.glsl',
         'https://ghfast.top/https://raw.githubusercontent.com/bloc97/Anime4K/master/glsl/Restore/Anime4K_Restore_CNN_M.glsl',
-        'https://raw.githubusercontent.com/bloc97/Anime4K/master/glsl/Restore/Anime4K_Restore_CNN_M.glsl',
       ]);
     });
 
-    test('raw.githubusercontent 链接 → 同三镜像', () {
+    test('raw.githubusercontent 链接 → 直链(原样)优先', () {
       final List<String> urls = shaderDownloadUrlsFor(
           'https://raw.githubusercontent.com/igv/FSRCNN-TensorFlow/master/FSRCNNX_x2_8-0-4-1.glsl');
       expect(urls.first,
-          'https://cdn.jsdelivr.net/gh/igv/FSRCNN-TensorFlow@master/FSRCNNX_x2_8-0-4-1.glsl');
+          'https://raw.githubusercontent.com/igv/FSRCNN-TensorFlow/master/FSRCNNX_x2_8-0-4-1.glsl');
       expect(urls, hasLength(3));
+      expect(urls[1], startsWith('https://cdn.jsdelivr.net/gh/'));
     });
 
     test('非 GitHub 直链 → 原样单条', () {
@@ -295,6 +296,33 @@ void main() {
     test('非法字符折叠为 _', () {
       expect(shaderFileNameFromUrl('https://x.com/a/My Shader.glsl'),
           'My_Shader.glsl');
+    });
+  });
+
+  group('kRecommendedShaders（推荐着色器目录）', () {
+    test('非空，id 唯一', () {
+      expect(kRecommendedShaders, isNotEmpty);
+      final Set<String> ids =
+          kRecommendedShaders.map((RecommendedShader e) => e.id).toSet();
+      expect(ids.length, kRecommendedShaders.length);
+    });
+
+    test('全部是 GitHub raw 单文件直链，fileName 为 .hook/.glsl', () {
+      for (final RecommendedShader s in kRecommendedShaders) {
+        expect(s.url, startsWith('https://raw.githubusercontent.com/'),
+            reason: '${s.id} 用 raw 直链（下载时 shaderDownloadUrlsFor 直链优先+镜像兜底）');
+        final String ext = p.extension(s.fileName).toLowerCase();
+        expect(<String>['.hook', '.glsl'].contains(ext), isTrue,
+            reason: '${s.id} 落盘文件名扩展应是着色器');
+      }
+    });
+
+    test('RAVU/NNEDI3 均来自维护中的 bjin/mpv-prescalers（实测可下）', () {
+      expect(
+        kRecommendedShaders
+            .every((RecommendedShader s) => s.url.contains('mpv-prescalers')),
+        isTrue,
+      );
     });
   });
 
