@@ -421,6 +421,8 @@ class SyncOrchestrator {
             row.extractDir.isEmpty ||
             !Directory(row.extractDir).existsSync()) {
           // 本地内容不可用，跳过（与 importRemoteBooks 对称语义）。
+          report.errors
+              .add('live push book "$title": extractDir missing or empty');
           index++;
           continue;
         }
@@ -428,6 +430,8 @@ class SyncOrchestrator {
         final bool built =
             await repackageExtractedEpub(row.extractDir, tmp.path);
         if (!built) {
+          report.errors
+              .add('live push book "$title": repackage produced no epub');
           index++;
           continue;
         }
