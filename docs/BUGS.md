@@ -31,7 +31,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-138](bugs/BUG-138-focus-popup-navigation.md) | ✅ | ✅ | 查词弹窗焦点系统跳过 header 按钮且 reader caret 绕过总开关 |
+| [BUG-139](bugs/BUG-139-focus-popup-navigation.md) | ✅ | ✅ | 查词弹窗焦点系统跳过 header 按钮且 reader caret 绕过总开关 |
 | [BUG-137](bugs/BUG-137-interconnect-sync-not-visible.md) | ✅ | ✅ | Hibiki互联同步后手机端内容不刷新且失败缺少明细 |
 | [BUG-136](bugs/BUG-136-reader-esc-after-gesture-pageturn.md) | ✅ | ✅ | 翻页(手势/滚轮)后 ESC 不退出书籍 |
 | [BUG-135](bugs/BUG-135-video-warm-popup-eats-touches.md) | ✅ | ✅ | 手机热WebView吞掉视频控制条触摸（顶栏/底栏点了没反应） |

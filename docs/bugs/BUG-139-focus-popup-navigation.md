@@ -1,7 +1,7 @@
-## BUG-138 · 查词弹窗焦点系统跳过 header 按钮且 reader caret 绕过总开关
+## BUG-139 · 查词弹窗焦点系统跳过 header 按钮且 reader caret 绕过总开关
 - **报告**：2026-06-08（用户：完善当前的焦点系统，现在焦点系统有问题，特别是在查词弹窗里面）
 - **真实性**：✅ 真 bug。根因在 `hibiki/lib/src/pages/implementations/reader_hibiki_page.dart` 的查词弹窗 header 控件和 reader/popup caret 输入路由，以及 `hibiki/lib/src/shortcuts/reader_caret_router.dart` 的进入 caret 判定。
-- **[x] ① 已修复** — `53e6b5a1d`
+- **[x] ① 已修复** — `767b62642`
 - **[x] ② 已加自动化测试** — `hibiki/test/pages/reader_popup_focus_static_test.dart` + `hibiki/test/shortcuts/reader_caret_router_test.dart`
 - **备注**：本轮用源码守卫和纯路由单测覆盖；查词弹窗包含真实 WebView，仍建议后续在设备/桌面上肉眼复测原始路径：打开查词弹窗后用方向键/手柄在 header 星标、重播、暂停、从 cue 播放之间移动并激活。
 
