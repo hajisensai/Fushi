@@ -1418,5 +1418,8 @@
     "video_more": "More",
     "video_shader_compare": "Compare original",
     "video_shader_showing_original": "Shaders off (original)",
-    "video_shader_showing_shaded": "Shaders on"
+    "video_shader_showing_shaded": "Shaders on",
+    "video_shader_pick_mpv_dir": "Specify mpv folder",
+    "video_shader_mpv_dir_empty": "No shaders found in that folder",
+    "video_shader_mpv_dir_current": "mpv folder: $path"
 }

@@ -28,6 +28,8 @@ class VideoQuickSettingsSheet extends StatefulWidget {
     required this.onApplyShaders,
     required this.initialMpvConfig,
     required this.onMpvConfigChanged,
+    this.initialMpvShaderDir = '',
+    this.onMpvShaderDirChanged,
     super.key,
   });
 
@@ -64,6 +66,12 @@ class VideoQuickSettingsSheet extends StatefulWidget {
   /// 着色器勾选变化时回调：持久化启用集 + 解析绝对路径 + 实时应用（调用方负责）。
   final Future<void> Function(List<String> enabledNames) onApplyShaders;
 
+  /// 用户上次手动指定的本机 mpv 配置/着色器目录（空=自动）。
+  final String initialMpvShaderDir;
+
+  /// 用户手动指定 mpv 目录后回调（持久化，调用方负责）。
+  final Future<void> Function(String dir)? onMpvShaderDirChanged;
+
   /// 初始 mpv 配置（内嵌 mpv 配置详情的初值）。
   final VideoMpvConfig initialMpvConfig;
 
@@ -97,6 +105,9 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
 
   /// 当前启用的着色器文件名（内嵌着色器视图 onApply 回写，供切分类后重入回显）。
   late List<String> _shadersEnabled = widget.initialShadersEnabled;
+
+  /// 用户手动指定的本机 mpv 目录（内嵌视图回写，供切分类后重入回显）。
+  late String _mpvShaderDir = widget.initialMpvShaderDir;
 
   /// 原始 mpv.conf 文本框控制器（高级逃生口，多行；本地权威经 [_commitMpv] 落盘+应用）。
   late final TextEditingController _rawConfController =
@@ -449,6 +460,11 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
       onApply: (List<String> names) async {
         setState(() => _shadersEnabled = names);
         await widget.onApplyShaders(names);
+      },
+      initialMpvDir: _mpvShaderDir,
+      onMpvDirChanged: (String dir) async {
+        setState(() => _mpvShaderDir = dir);
+        await widget.onMpvShaderDirChanged?.call(dir);
       },
     );
   }

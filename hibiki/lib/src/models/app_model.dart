@@ -1673,6 +1673,12 @@ class AppModel with ChangeNotifier {
   Future<void> setVideoShadersEnabled(String json) =>
       prefsRepo.setVideoShadersEnabled(json);
 
+  /// 用户手动指定的本机 mpv 配置/着色器目录（空=自动）。
+  String get videoMpvShaderDir => prefsRepo.videoMpvShaderDir;
+
+  Future<void> setVideoMpvShaderDir(String dir) =>
+      prefsRepo.setVideoMpvShaderDir(dir);
+
   /// 视频字幕模糊（听力沉浸）开关；默认关闭。
   bool get videoSubtitleBlur => prefsRepo.videoSubtitleBlur;
 

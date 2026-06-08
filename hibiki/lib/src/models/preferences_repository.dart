@@ -312,6 +312,16 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 用户手动指定的本机 mpv 配置/着色器目录（「从本机 mpv 导入」自动找不到时指定后
+  /// 记住，下次优先扫它）。空串=未指定，走自动候选目录。
+  String get videoMpvShaderDir =>
+      getPref('video_mpv_shader_dir', defaultValue: '') as String;
+
+  Future<void> setVideoMpvShaderDir(String dir) async {
+    await setPref('video_mpv_shader_dir', dir);
+    notifyListeners();
+  }
+
   /// 视频字幕模糊（听力沉浸）开关：默认关闭。开启后字幕默认打码，悬停/点击显形。
   bool get videoSubtitleBlur =>
       getPref('video_subtitle_blur', defaultValue: false) as bool;

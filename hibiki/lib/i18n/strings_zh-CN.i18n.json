@@ -1418,5 +1418,8 @@
     "video_more": "更多",
     "video_shader_compare": "对比原画",
     "video_shader_showing_original": "已关着色器（原画）",
-    "video_shader_showing_shaded": "已开着色器"
+    "video_shader_showing_shaded": "已开着色器",
+    "video_shader_pick_mpv_dir": "指定 mpv 目录",
+    "video_shader_mpv_dir_empty": "该目录没找到着色器",
+    "video_shader_mpv_dir_current": "mpv 目录：$path"
 }

@@ -153,6 +153,70 @@ void main() {
     });
   });
 
+  group('discoverShadersInUserDir（手动指定目录）', () {
+    late Directory dir;
+    setUp(() => dir = Directory.systemTemp.createTempSync('mpv_userdir_'));
+    tearDown(() => dir.deleteSync(recursive: true));
+
+    test('用户直接指向 shaders 文件夹：扫该目录本身', () {
+      File(p.join(dir.path, 'A.glsl')).writeAsStringSync('//');
+      File(p.join(dir.path, 'B.hook')).writeAsStringSync('//');
+      File(p.join(dir.path, 'readme.txt')).writeAsStringSync('x');
+      expect(discoverShadersInUserDir(dir), <String>[
+        p.join(dir.path, 'A.glsl'),
+        p.join(dir.path, 'B.hook'),
+      ]);
+    });
+
+    test('用户指向 mpv 配置目录：扫其 shaders/ 子目录', () {
+      final Directory shaders = Directory(p.join(dir.path, 'shaders'))
+        ..createSync();
+      File(p.join(shaders.path, 'Z.glsl')).writeAsStringSync('//');
+      expect(discoverShadersInUserDir(dir), <String>[
+        p.join(shaders.path, 'Z.glsl'),
+      ]);
+    });
+
+    test('目录本身与 shaders/ 都有，按 basename 去重（目录本身优先）', () {
+      File(p.join(dir.path, 'Dup.glsl')).writeAsStringSync('//root');
+      final Directory shaders = Directory(p.join(dir.path, 'shaders'))
+        ..createSync();
+      File(p.join(shaders.path, 'Dup.glsl')).writeAsStringSync('//sub');
+      File(p.join(shaders.path, 'Only.hook')).writeAsStringSync('//');
+      expect(discoverShadersInUserDir(dir), <String>[
+        p.join(dir.path, 'Dup.glsl'), // 目录本身先于 shaders/，去重保留它
+        p.join(shaders.path, 'Only.hook'),
+      ]);
+    });
+
+    test('不存在的目录 → 空', () {
+      expect(
+        discoverShadersInUserDir(Directory(p.join(dir.path, 'nope'))),
+        isEmpty,
+      );
+    });
+  });
+
+  group('discoverLocalMpvShaders overrideDir 优先', () {
+    test('overrideDir 的着色器排在自动候选之前（且按 basename 去重）', () async {
+      final Directory override =
+          Directory.systemTemp.createTempSync('mpv_override_');
+      addTearDown(() => override.deleteSync(recursive: true));
+      File(p.join(override.path, 'Custom.glsl')).writeAsStringSync('//');
+      // 不构造真实自动候选目录（本机可能装了 mpv），只验证 override 的结果出现且在前。
+      final List<String> found =
+          await discoverLocalMpvShaders(overrideDir: override.path);
+      expect(found, isNotEmpty);
+      expect(found.first, p.join(override.path, 'Custom.glsl'),
+          reason: '手动指定目录的着色器应优先');
+    });
+
+    test('overrideDir 为空串时不抛（走自动候选）', () async {
+      final List<String> found = await discoverLocalMpvShaders(overrideDir: '');
+      expect(found, isA<List<String>>());
+    });
+  });
+
   group('resolveShaderPathsIn', () {
     late Directory dir;
     setUp(() => dir = Directory.systemTemp.createTempSync('shader_resolve_'));

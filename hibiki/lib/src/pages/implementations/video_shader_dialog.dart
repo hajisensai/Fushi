@@ -21,6 +21,8 @@ class VideoShaderManagerView extends StatefulWidget {
   const VideoShaderManagerView({
     required this.initialEnabled,
     required this.onApply,
+    this.initialMpvDir = '',
+    this.onMpvDirChanged,
     super.key,
   });
 
@@ -30,12 +32,19 @@ class VideoShaderManagerView extends StatefulWidget {
   /// 勾选变化时回调，参数为按目录顺序排列的启用文件名列表。
   final Future<void> Function(List<String> enabledNames) onApply;
 
+  /// 用户上次手动指定的本机 mpv 配置/着色器目录（空=未指定，走自动候选）。
+  final String initialMpvDir;
+
+  /// 用户手动指定 mpv 目录后回调（持久化，下次优先扫它）。
+  final Future<void> Function(String dir)? onMpvDirChanged;
+
   @override
   State<VideoShaderManagerView> createState() => _VideoShaderManagerViewState();
 }
 
 class _VideoShaderManagerViewState extends State<VideoShaderManagerView> {
   late final Set<String> _enabled = widget.initialEnabled.toSet();
+  late String _mpvDir = widget.initialMpvDir;
   List<String> _files = const <String>[];
   bool _loading = true;
 
@@ -68,18 +77,51 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView> {
     await _refresh();
   }
 
-  /// 从本机 mpv 安装发现着色器（扫 mpv 配置目录的 `shaders/`）→ 多选导入到
-  /// mpv_shaders。扫不到（移动端/未装 mpv）提示「未发现本机 mpv」。
+  /// 从本机 mpv 安装发现着色器（手动指定目录优先，再叠加自动候选目录的 `shaders/`）
+  /// → 多选导入到 mpv_shaders。自动扫不到时**引导手动指定 mpv 目录**（见
+  /// [_pickMpvDirAndSearch]）。
   Future<void> _importFromMpv() async {
-    final List<String> found = await discoverLocalMpvShaders();
+    final List<String> found =
+        await discoverLocalMpvShaders(overrideDir: _mpvDir);
     if (!mounted) return;
-    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
     if (found.isEmpty) {
-      messenger.showSnackBar(
-        SnackBar(content: Text(t.video_shader_mpv_not_found)),
-      );
+      // 自动找不到：直接转入「手动指定目录并搜索」，而不是只弹个失败提示（用户诉求）。
+      await _pickMpvDirAndSearch(autoFallback: true);
       return;
     }
+    await _pickAndImportFrom(found);
+  }
+
+  /// 手动指定本机 mpv 配置/着色器目录 → 扫描 → 多选导入；记住该目录下次优先。
+  /// [autoFallback]=true 表示这是「自动找不到」转过来的（首句提示语略不同）。
+  Future<void> _pickMpvDirAndSearch({bool autoFallback = false}) async {
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    final String? dir = await FilePicker.platform.getDirectoryPath(
+      dialogTitle: t.video_shader_pick_mpv_dir,
+      initialDirectory: _mpvDir.isNotEmpty ? _mpvDir : null,
+    );
+    if (dir == null || !mounted) {
+      if (autoFallback) {
+        messenger.showSnackBar(
+            SnackBar(content: Text(t.video_shader_mpv_not_found)));
+      }
+      return;
+    }
+    setState(() => _mpvDir = dir);
+    await widget.onMpvDirChanged?.call(dir);
+    final List<String> found = await discoverLocalMpvShaders(overrideDir: dir);
+    if (!mounted) return;
+    if (found.isEmpty) {
+      messenger
+          .showSnackBar(SnackBar(content: Text(t.video_shader_mpv_dir_empty)));
+      return;
+    }
+    await _pickAndImportFrom(found);
+  }
+
+  /// 把发现到的着色器列出多选 → 导入选中的到 mpv_shaders → 刷新 + 提示。
+  Future<void> _pickAndImportFrom(List<String> found) async {
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
     final List<String>? picked = await showDialog<List<String>>(
       context: context,
       builder: (_) => _MpvShaderPickerDialog(
@@ -231,6 +273,12 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView> {
               label: Text(t.video_shader_import_from_mpv),
               onPressed: _importFromMpv,
             ),
+            // 手动指定 mpv 配置/着色器目录再搜索（自动找不到时的兜底，也可主动换目录）。
+            OutlinedButton.icon(
+              icon: const Icon(Icons.folder_open_outlined, size: 18),
+              label: Text(t.video_shader_pick_mpv_dir),
+              onPressed: _pickMpvDirAndSearch,
+            ),
             OutlinedButton.icon(
               icon: const Icon(Icons.add, size: 18),
               label: Text(t.video_shader_import),
@@ -238,6 +286,16 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView> {
             ),
           ],
         ),
+        // 已手动指定的 mpv 目录回显（让用户知道当前扫的是哪个目录）。
+        if (_mpvDir.isNotEmpty) ...<Widget>[
+          const SizedBox(height: 6),
+          Text(
+            t.video_shader_mpv_dir_current(path: _mpvDir),
+            style: Theme.of(context).textTheme.bodySmall,
+            overflow: TextOverflow.ellipsis,
+            maxLines: 1,
+          ),
+        ],
         const SizedBox(height: 8),
         if (_files.isEmpty)
           Padding(

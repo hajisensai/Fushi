@@ -142,25 +142,63 @@ List<String> discoverMpvShadersIn(Directory mpvConfigDir) {
   return out;
 }
 
+/// 在用户**手动指定**的目录里发现着色器（绝对路径，按 basename 去重保序）。纯函数。
+///
+/// 兼容两种指法：用户既可能直接指向 `shaders` 文件夹，也可能指向 mpv 配置目录
+/// （着色器在其 `shaders/` 子目录）。故同时扫**该目录本身**与其 `shaders/` 子目录。
+List<String> discoverShadersInUserDir(Directory dir) {
+  if (!dir.existsSync()) return const <String>[];
+  final List<String> out = <String>[];
+  final Set<String> seen = <String>{};
+  void addFrom(Directory d) {
+    if (!d.existsSync()) return;
+    final List<String> files = <String>[];
+    for (final FileSystemEntity e in d.listSync(followLinks: false)) {
+      if (e is! File) continue;
+      if (kShaderExtensions.contains(p.extension(e.path).toLowerCase())) {
+        files.add(e.path);
+      }
+    }
+    files.sort();
+    for (final String f in files) {
+      if (seen.add(p.basename(f))) out.add(f);
+    }
+  }
+
+  addFrom(dir); // 用户直接指向 shaders 文件夹
+  addFrom(Directory(p.join(dir.path, 'shaders'))); // 用户指向 mpv 配置目录
+  return out;
+}
+
 /// 发现本机 mpv 安装里已有的着色器（绝对路径，按 basename 去重保序）。
 ///
-/// 用 [Platform.environment] / [Platform.isWindows] 解析 [mpvConfigDirCandidates]，
-/// 取存在的目录扫其 `shaders/`。移动端 / 未装 mpv → 候选目录都不存在 → 空列表
-/// （天然降级，UI 提示「未发现本机 mpv」）。
-Future<List<String>> discoverLocalMpvShaders() async {
+/// [overrideDir]（用户手动指定的 mpv 配置/着色器目录，非空时）**优先**扫描，再叠加
+/// [Platform.environment] / [Platform.isWindows] 解析的 [mpvConfigDirCandidates] 自动
+/// 候选目录的 `shaders/`。移动端 / 未装 mpv 且无 override → 空列表（天然降级，UI 提示
+/// 「未发现本机 mpv」，并引导手动指定目录）。
+Future<List<String>> discoverLocalMpvShaders({String? overrideDir}) async {
+  final List<String> out = <String>[];
+  final Set<String> seenNames = <String>{};
+  void mergeIn(List<String> paths) {
+    for (final String s in paths) {
+      if (seenNames.add(p.basename(s))) out.add(s);
+    }
+  }
+
+  // 用户手动指定的目录优先。
+  if (overrideDir != null && overrideDir.isNotEmpty) {
+    mergeIn(discoverShadersInUserDir(Directory(overrideDir)));
+  }
+
   final List<String> candidates = mpvConfigDirCandidates(
     env: Platform.environment,
     isWindows: Platform.isWindows,
     isMacOS: Platform.isMacOS,
   );
-  final List<String> out = <String>[];
-  final Set<String> seenNames = <String>{};
   for (final String dirPath in candidates) {
     final Directory dir = Directory(dirPath);
     if (!dir.existsSync()) continue;
-    for (final String shaderPath in discoverMpvShadersIn(dir)) {
-      if (seenNames.add(p.basename(shaderPath))) out.add(shaderPath);
-    }
+    mergeIn(discoverMpvShadersIn(dir));
   }
   return out;
 }

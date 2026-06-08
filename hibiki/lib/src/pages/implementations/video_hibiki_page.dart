@@ -1714,6 +1714,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         await appModel.setVideoMpvConfig(VideoMpvConfig.encode(cfg));
         await _controller?.applyMpvConfig(cfg);
       },
+      // 「从本机 mpv 导入」找不到时用户手动指定的 mpv 目录，记住下次优先扫。
+      initialMpvShaderDir: appModel.videoMpvShaderDir,
+      onMpvShaderDirChanged: (String dir) => appModel.setVideoMpvShaderDir(dir),
     );
     if (isDesktopPlatform) {
       showAppDialog<void>(
