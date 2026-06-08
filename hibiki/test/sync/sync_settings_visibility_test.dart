@@ -131,6 +131,20 @@ void main() {
           reason: 'hosting role must also require the interconnect backend');
     });
 
+    test('server-mode explanatory note uses compact row layout', () {
+      final String src =
+          File('lib/src/sync/sync_settings_schema.dart').readAsStringSync();
+      final int noteAt = src.indexOf("id: 'sync.server_mode_note'");
+      final int syncNowAt = src.indexOf("id: 'sync.sync_now'");
+      expect(noteAt, greaterThanOrEqualTo(0));
+      expect(syncNowAt, greaterThan(noteAt));
+
+      final String noteBlock = src.substring(noteAt, syncNowAt);
+      expect(noteBlock, contains('AdaptiveSettingsRow('));
+      expect(noteBlock, isNot(contains('controlBelow: true')),
+          reason: '说明行没有下方控件，不应预留控件行高度');
+    });
+
     test('the fake SMB config option is gone', () {
       final allIds = dest.sections
           .expand((SettingsSection s) => s.items)

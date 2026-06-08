@@ -229,7 +229,6 @@ SettingsDestination buildSyncBackupDestination() {
               title: t.sync_server_mode_active,
               subtitle: t.sync_server_mode_clients_drive,
               icon: Icons.router_outlined,
-              controlBelow: true,
             ),
           ),
           SettingsCustomItem(
