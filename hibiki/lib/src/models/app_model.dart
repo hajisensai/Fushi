@@ -3018,6 +3018,10 @@ class AppModel with ChangeNotifier {
   Future<void> setFloatingLyricFontSize(double value) =>
       prefsRepo.setFloatingLyricFontSize(value);
 
+  bool get floatingLyricClickLookup => prefsRepo.floatingLyricClickLookup;
+  Future<void> setFloatingLyricClickLookup(bool value) =>
+      prefsRepo.setFloatingLyricClickLookup(value);
+
   bool get showFloatingDict => prefsRepo.showFloatingDict;
 
   Future<void> setShowFloatingDict(bool value) async {

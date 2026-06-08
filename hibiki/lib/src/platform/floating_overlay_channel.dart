@@ -22,10 +22,10 @@ abstract class FloatingOverlayChannel {
   /// natively-thrown [PlatformException] — or a [MissingPluginException] when
   /// the channel is absent — must not propagate as a crash. Both are folded
   /// into the same safe default the [isSupported] gate already returns.
-  Future<T?> _safeInvoke<T>(String method) async {
+  Future<T?> _safeInvoke<T>(String method, [Object? arguments]) async {
     if (!isSupported) return null;
     try {
-      return await channel.invokeMethod<T>(method);
+      return await channel.invokeMethod<T>(method, arguments);
     } on MissingPluginException {
       return null;
     } on PlatformException catch (e) {
@@ -41,8 +41,8 @@ abstract class FloatingOverlayChannel {
     return result ?? false;
   }
 
-  Future<bool> showImpl() async {
-    final bool? result = await _safeInvoke<bool>('show');
+  Future<bool> showImpl([Object? arguments]) async {
+    final bool? result = await _safeInvoke<bool>('show', arguments);
     return result ?? false;
   }
 

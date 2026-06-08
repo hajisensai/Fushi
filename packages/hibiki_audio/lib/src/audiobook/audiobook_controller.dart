@@ -165,6 +165,11 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 调 [notifySectionRestoreCompleted] 清回 false。
   bool _chapterTransition = false;
 
+  /// User-initiated reader navigation temporarily owns the visible section.
+  /// While the audio remains on the exact same cue, follow-audio must not
+  /// immediately cross-chapter back and undo a TOC/link/page-turn jump.
+  AudioCue? _manualReaderOverrideCue;
+
   /// 显式 seek（skipToCue / playCueOnce）进行中：`preload:false` 下跨文件
   /// `seek(index:)` 会触发目标文件异步加载，加载期 positionStream 先吐瞬态
   /// 位置（0 / 旧文件章首），逐 tick 触发 _maybeEmitCrossChapter / reveal，
@@ -536,6 +541,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     // 位置阶段 cue 与 reader 当前章不一致是常态，不应在用户没按播放时
     // 就把 reader 拉到音频章。
     _hasPlayedOnce = true;
+    _manualReaderOverrideCue = null;
     // 用户在图片自动暂停窗口内手动播放：取消待恢复计时器并把视口从插图拉回当前
     // cue（否则计时器到点见已在播放而跳过 snap，视口卡在插图上直到下次 cue 推进）。
     if (_imagePauseTimer != null) {
@@ -602,6 +608,7 @@ class AudiobookPlayerController extends ChangeNotifier {
   }
 
   Future<void> skipToCue(AudioCue cue) async {
+    _manualReaderOverrideCue = null;
     _stopAtPositionMs = null;
     _returnToPosition = null;
     await _loadReady.future;
@@ -883,6 +890,7 @@ class AudiobookPlayerController extends ChangeNotifier {
       }
       return;
     }
+    _manualReaderOverrideCue = null;
     _currentCueIndex = chapterIdx;
     _currentCue = cue;
     _maybeEmitCrossChapter(_currentCue);
@@ -945,6 +953,7 @@ class AudiobookPlayerController extends ChangeNotifier {
       return;
     }
     if (cue == null) return;
+    if (!bypassPlayGuard && _isManualReaderOverrideCue(cue)) return;
     final SasayakiFragment? frag =
         SasayakiMatchCodec.tryDecode(cue.textFragmentId);
     if (frag == null) return;
@@ -1007,6 +1016,14 @@ class AudiobookPlayerController extends ChangeNotifier {
     _chapterTransition = false;
   }
 
+  /// Called by the reader for TOC/link/search/bookmark/page-turn jumps. It lets
+  /// the manually selected reader section stay visible until the audio advances
+  /// to a different cue or the user explicitly asks to follow audio again.
+  void noteManualReaderNavigation() {
+    _chapterTransition = false;
+    _manualReaderOverrideCue = _currentCue;
+  }
+
   /// 翻转 Follow audio 开关并经 [onFollowAudioPersist] 落 Hive。相同值调用
   /// 不 notify 也不写库。持久化失败不回滚内存状态——下次启动时从 Hive
   /// 读回会自动纠偏，比"静默回滚"更易排查。
@@ -1041,6 +1058,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     if (_chapterTransition) return;
     final AudioCue? cue = _currentCue;
     if (cue == null) return;
+    _manualReaderOverrideCue = null;
     _forceNextReveal = true;
     _maybeEmitCrossChapter(cue, bypassPlayGuard: true);
     if (_chapterTransition) return;
@@ -1166,6 +1184,11 @@ class AudiobookPlayerController extends ChangeNotifier {
       if (_isSameCue(allBookCues[i], currentCue)) return i;
     }
     return -1;
+  }
+
+  bool _isManualReaderOverrideCue(AudioCue cue) {
+    final AudioCue? overrideCue = _manualReaderOverrideCue;
+    return overrideCue != null && _isSameCue(overrideCue, cue);
   }
 
   static bool _isSameCue(AudioCue a, AudioCue b) {

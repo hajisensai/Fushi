@@ -1429,5 +1429,7 @@
     "video_shader_recommended": "Recommended shaders",
     "video_shader_recommended_hint": "Classic upscalers besides Anime4K — no local mpv needed.",
     "video_shader_desc_ravu": "General luma upscaler. Light & fast (r2 faster, r3 finer).",
-    "video_shader_desc_nnedi3": "Classic neural upscaler. Higher nns = better quality, heavier GPU."
+    "video_shader_desc_nnedi3": "Classic neural upscaler. Higher nns = better quality, heavier GPU.",
+    "floating_lyric_click_lookup": "Tap floating subtitle to look up",
+    "floating_lyric_click_lookup_hint": "Keep this on with position lock if you still want word lookup."
 }

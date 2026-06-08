@@ -177,5 +177,84 @@ void main() {
         'activeColor': 0xFFABCDEF,
       });
     });
+
+    test('starts overlay with themed style and click lookup state', () async {
+      MethodCall? capturedCall;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+        const MethodChannel(channelName),
+        (call) async {
+          capturedCall = call;
+          return true;
+        },
+      );
+
+      final bool result = await FloatingLyricChannel.show(
+        fontSize: 19,
+        textColor: 0xFF010203,
+        bgColor: 0xCC040506,
+        buttonTextColor: 0xFF070809,
+        buttonBgColor: 0x330A0B0C,
+        highlightColor: 0x80112233,
+        activeColor: 0xFF445566,
+        locked: true,
+        clickLookupEnabled: false,
+      );
+
+      expect(result, isTrue);
+      expect(capturedCall?.method, 'show');
+      expect(capturedCall?.arguments, <String, Object?>{
+        'fontSize': 19.0,
+        'textColor': 0xFF010203,
+        'bgColor': 0xCC040506,
+        'buttonTextColor': 0xFF070809,
+        'buttonBgColor': 0x330A0B0C,
+        'highlightColor': 0x80112233,
+        'activeColor': 0xFF445566,
+        'locked': true,
+        'clickLookupEnabled': false,
+      });
+    });
+
+    test('show does not reset native lock state by default', () async {
+      MethodCall? capturedCall;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+        const MethodChannel(channelName),
+        (call) async {
+          capturedCall = call;
+          return true;
+        },
+      );
+
+      final bool result = await FloatingLyricChannel.show();
+
+      expect(result, isTrue);
+      expect(capturedCall?.method, 'show');
+      expect(capturedCall?.arguments, isA<Map<Object?, Object?>>());
+      expect(
+        capturedCall?.arguments as Map<Object?, Object?>,
+        isNot(containsPair('locked', false)),
+      );
+    });
+
+    test('sends click lookup state to the overlay', () async {
+      MethodCall? capturedCall;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+        const MethodChannel(channelName),
+        (call) async {
+          capturedCall = call;
+          return null;
+        },
+      );
+
+      await FloatingLyricChannel.setClickLookupEnabled(false);
+
+      expect(capturedCall?.method, 'setClickLookupEnabled');
+      expect(capturedCall?.arguments, <String, Object?>{
+        'enabled': false,
+      });
+    });
   });
 }

@@ -573,6 +573,14 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  bool get floatingLyricClickLookup =>
+      getPref('floating_lyric_click_lookup', defaultValue: true) as bool;
+
+  Future<void> setFloatingLyricClickLookup(bool value) async {
+    await setPref('floating_lyric_click_lookup', value);
+    notifyListeners();
+  }
+
   bool get showFloatingDict =>
       getPref('show_floating_dict', defaultValue: false) as bool;
 

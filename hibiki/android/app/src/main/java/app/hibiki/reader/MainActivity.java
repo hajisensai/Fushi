@@ -385,6 +385,7 @@ public class MainActivity extends AudioServiceActivity {
                             result.success(false);
                             return;
                         }
+                        persistFloatingLyricOptions(call.arguments);
                         Intent svc = new Intent(context, FloatingLyricService.class);
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                             startForegroundService(svc);
@@ -417,6 +418,7 @@ public class MainActivity extends AudioServiceActivity {
                         Number highlightColor = call.argument("highlightColor");
                         Number activeColor = call.argument("activeColor");
                         FloatingLyricService svc = FloatingLyricService.getInstance();
+                        persistFloatingLyricOptions(call.arguments);
                         if (svc != null) {
                             svc.updateStyle(
                                     size != null ? size.floatValue() : 16f,
@@ -453,9 +455,21 @@ public class MainActivity extends AudioServiceActivity {
                     }
                     case "setLocked": {
                         Boolean locked = call.argument("locked");
+                        persistFloatingLyricLocked(locked != null && locked);
                         FloatingLyricService svc = FloatingLyricService.getInstance();
                         if (svc != null) {
                             svc.setLocked(locked != null && locked);
+                        }
+                        result.success(null);
+                        break;
+                    }
+                    case "setClickLookupEnabled": {
+                        Boolean enabled = call.argument("enabled");
+                        boolean value = enabled == null || enabled;
+                        persistFloatingLyricClickLookup(value);
+                        FloatingLyricService svc = FloatingLyricService.getInstance();
+                        if (svc != null) {
+                            svc.setClickLookupEnabled(value);
                         }
                         result.success(null);
                         break;
@@ -641,6 +655,63 @@ public class MainActivity extends AudioServiceActivity {
                         break;
                 }
             });
+    }
+
+    private void persistFloatingLyricOptions(Object rawArgs) {
+        if (!(rawArgs instanceof Map)) return;
+        Map<?, ?> args = (Map<?, ?>) rawArgs;
+        SharedPreferences.Editor editor =
+                getSharedPreferences(PreferenceKeys.FILE_FLOATING_LYRIC, MODE_PRIVATE)
+                        .edit();
+        putFloatIfNumber(editor, PreferenceKeys.LYRIC_FONT_SIZE, args.get("fontSize"));
+        putIntIfNumber(editor, PreferenceKeys.LYRIC_TEXT_COLOR, args.get("textColor"));
+        putIntIfNumber(editor, PreferenceKeys.LYRIC_BG_COLOR, args.get("bgColor"));
+        putIntIfNumber(
+                editor, PreferenceKeys.LYRIC_BUTTON_TEXT_COLOR, args.get("buttonTextColor"));
+        putIntIfNumber(editor, PreferenceKeys.LYRIC_BUTTON_BG_COLOR, args.get("buttonBgColor"));
+        putIntIfNumber(editor, PreferenceKeys.LYRIC_HIGHLIGHT_COLOR, args.get("highlightColor"));
+        putIntIfNumber(editor, PreferenceKeys.LYRIC_ACTIVE_COLOR, args.get("activeColor"));
+        putBooleanIfBoolean(editor, PreferenceKeys.LYRIC_LOCKED, args.get("locked"));
+        putBooleanIfBoolean(
+                editor,
+                PreferenceKeys.LYRIC_CLICK_LOOKUP_ENABLED,
+                args.get("clickLookupEnabled"));
+        editor.apply();
+    }
+
+    private void persistFloatingLyricLocked(boolean locked) {
+        getSharedPreferences(PreferenceKeys.FILE_FLOATING_LYRIC, MODE_PRIVATE)
+                .edit()
+                .putBoolean(PreferenceKeys.LYRIC_LOCKED, locked)
+                .apply();
+    }
+
+    private void persistFloatingLyricClickLookup(boolean enabled) {
+        getSharedPreferences(PreferenceKeys.FILE_FLOATING_LYRIC, MODE_PRIVATE)
+                .edit()
+                .putBoolean(PreferenceKeys.LYRIC_CLICK_LOOKUP_ENABLED, enabled)
+                .apply();
+    }
+
+    private static void putFloatIfNumber(
+            SharedPreferences.Editor editor, String key, Object value) {
+        if (value instanceof Number) {
+            editor.putFloat(key, ((Number) value).floatValue());
+        }
+    }
+
+    private static void putIntIfNumber(
+            SharedPreferences.Editor editor, String key, Object value) {
+        if (value instanceof Number) {
+            editor.putInt(key, ((Number) value).intValue());
+        }
+    }
+
+    private static void putBooleanIfBoolean(
+            SharedPreferences.Editor editor, String key, Object value) {
+        if (value instanceof Boolean) {
+            editor.putBoolean(key, (Boolean) value);
+        }
     }
 
     private void copyDocumentTree(DocumentFile srcDir, File destDir) throws Exception {

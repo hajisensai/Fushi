@@ -37,6 +37,16 @@ public final class PreferenceKeys {
      */
     public static final String POS_Y_TOP = "posYTop";
 
+    public static final String LYRIC_FONT_SIZE = "lyricFontSize";
+    public static final String LYRIC_TEXT_COLOR = "lyricTextColor";
+    public static final String LYRIC_BG_COLOR = "lyricBgColor";
+    public static final String LYRIC_BUTTON_TEXT_COLOR = "lyricButtonTextColor";
+    public static final String LYRIC_BUTTON_BG_COLOR = "lyricButtonBgColor";
+    public static final String LYRIC_HIGHLIGHT_COLOR = "lyricHighlightColor";
+    public static final String LYRIC_ACTIVE_COLOR = "lyricActiveColor";
+    public static final String LYRIC_LOCKED = "lyricLocked";
+    public static final String LYRIC_CLICK_LOOKUP_ENABLED = "lyricClickLookupEnabled";
+
     // ── Splash / theme keys (MainActivity) ───────────────────────────────────
 
     /** Stored background colour as a packed ARGB int. */
