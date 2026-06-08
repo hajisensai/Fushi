@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
+import 'package:hibiki/src/media/video/video_asbplayer_config.dart';
 import 'package:hibiki/src/media/video/video_mpv_config.dart';
 import 'package:hibiki/src/media/video/video_subtitle_style.dart';
 import 'package:hibiki/src/pages/implementations/video_shader_dialog.dart';
@@ -24,6 +25,9 @@ class VideoQuickSettingsSheet extends StatefulWidget {
     required this.onToggleSubtitleBlur,
     required this.onSubtitleStylePreview,
     required this.onSubtitleStyleCommit,
+    required this.initialAsbConfig,
+    required this.onAsbConfigChanged,
+    required this.onSubtitleOffsetChanged,
     required this.initialShadersEnabled,
     required this.onApplyShaders,
     required this.initialMpvConfig,
@@ -61,6 +65,12 @@ class VideoQuickSettingsSheet extends StatefulWidget {
 
   /// 字幕外观定稿（拖动结束 / 重置）时落盘。
   final Future<void> Function(VideoSubtitleStyle style) onSubtitleStyleCommit;
+
+  final VideoAsbplayerConfig initialAsbConfig;
+
+  final Future<void> Function(VideoAsbplayerConfig config) onAsbConfigChanged;
+
+  final Future<void> Function(int deltaMs) onSubtitleOffsetChanged;
 
   /// 初始启用的着色器文件名集合（内嵌着色器视图的初值）。
   final List<String> initialShadersEnabled;
@@ -117,6 +127,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
   late double _speed = widget.initialSpeed;
   late bool _blur = widget.initialSubtitleBlur;
   late bool _lockWindowAspectRatio = widget.initialLockWindowAspectRatio;
+  late VideoAsbplayerConfig _asbConfig = widget.initialAsbConfig;
   late VideoSubtitleStyle _style = widget.initialSubtitleStyle;
 
   /// mpv 配置（内嵌详情即改即生效，本地权威 + 回调持久化/实时应用）。
@@ -372,6 +383,9 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
           ),
         _buildDelayRow(),
         _buildSpeedRow(),
+        _buildSeekSecondsRow(),
+        _buildSpeedStepRow(),
+        _buildPauseAtSubtitleEndRow(),
       ],
     );
   }
@@ -383,6 +397,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
     Future<void> bump(int delta) async {
       final int next = (_delayMs + delta).clamp(-600000, 600000);
       setState(() => _delayMs = next);
+      await widget.onSubtitleOffsetChanged(delta);
       await widget.onSetDelay(next);
     }
 
@@ -468,6 +483,52 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
 
   /// segmented 的 selected 必须等于某个档位值；当前倍速若落在档位间（极少见，
   /// 来自旧持久化），取最接近的档位高亮，避免无选中。
+  Widget _buildSeekSecondsRow() {
+    return AdaptiveSettingsStepperRow(
+      title: 'Seek seconds',
+      icon: Icons.keyboard_double_arrow_right_outlined,
+      value: _asbConfig.seekSeconds.toDouble(),
+      step: 1,
+      min: 1,
+      max: 30,
+      format: (double v) => '${v.round()}s',
+      onChanged: (double v) => _commitAsb(
+        _asbConfig.copyWith(seekSeconds: v.round()),
+      ),
+    );
+  }
+
+  Widget _buildSpeedStepRow() {
+    return AdaptiveSettingsStepperRow(
+      title: 'Speed step',
+      icon: Icons.speed_outlined,
+      value: _asbConfig.speedStep,
+      step: 0.05,
+      min: 0.05,
+      max: 0.5,
+      format: (double v) => v.toStringAsFixed(2),
+      onChanged: (double v) => _commitAsb(
+        _asbConfig.copyWith(speedStep: double.parse(v.toStringAsFixed(2))),
+      ),
+    );
+  }
+
+  Widget _buildPauseAtSubtitleEndRow() {
+    return AdaptiveSettingsSwitchRow(
+      title: t.playback_auto_pause,
+      icon: Icons.pause_circle_outline,
+      value: _asbConfig.pauseAtSubtitleEnd,
+      onChanged: (bool value) => _commitAsb(
+        _asbConfig.copyWith(pauseAtSubtitleEnd: value),
+      ),
+    );
+  }
+
+  void _commitAsb(VideoAsbplayerConfig next) {
+    setState(() => _asbConfig = next);
+    widget.onAsbConfigChanged(next);
+  }
+
   double _nearestSpeedPreset() {
     double best = _speedPresets.first;
     double bestDiff = (best - _speed).abs();

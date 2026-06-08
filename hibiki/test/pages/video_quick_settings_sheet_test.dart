@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:hibiki/src/media/video/video_asbplayer_config.dart';
 import 'package:hibiki/src/media/video/video_mpv_config.dart';
 import 'package:hibiki/src/media/video/video_quick_settings_sheet.dart';
 import 'package:hibiki/src/media/video/video_subtitle_style.dart';
@@ -21,6 +22,9 @@ VideoQuickSettingsSheet _sheet({
     onToggleSubtitleBlur: () async {},
     onSubtitleStylePreview: (_) {},
     onSubtitleStyleCommit: (_) async {},
+    initialAsbConfig: VideoAsbplayerConfig.defaults,
+    onAsbConfigChanged: (_) async {},
+    onSubtitleOffsetChanged: (_) async {},
     initialShadersEnabled: const <String>[],
     onApplyShaders: (_) async {},
     initialMpvConfig: VideoMpvConfig.defaults,

@@ -391,6 +391,14 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  String get videoAsbplayerConfig =>
+      getPref('video_asbplayer_config', defaultValue: '') as String;
+
+  Future<void> setVideoAsbplayerConfig(String json) async {
+    await setPref('video_asbplayer_config', json);
+    notifyListeners();
+  }
+
   /// 视频字幕外观（JSON；解析见 VideoSubtitleStyle.encode/decode）。空串=默认外观。
   String get videoSubtitleStyle =>
       getPref('video_subtitle_style', defaultValue: '') as String;

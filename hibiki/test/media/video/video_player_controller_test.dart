@@ -102,6 +102,36 @@ void main() {
     });
   });
 
+  group('VideoPlayerController pause at subtitle end', () {
+    test('pauses once when leaving the active cue', () {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.setCues([_cue(0, 0, 1000), _cue(1, 2000, 3000)]);
+
+      int pauses = 0;
+      c.debugSetPauseAtSubtitleEndForTesting(
+        enabled: true,
+        onPause: () async => pauses++,
+      );
+
+      c.debugUpdateCueForPosition(500);
+      expect(c.currentCueIndex, 0);
+      expect(pauses, 0);
+
+      c.debugUpdateCueForPosition(1500);
+      expect(c.currentCueIndex, -1);
+      expect(pauses, 1);
+
+      c.debugUpdateCueForPosition(1600);
+      c.debugUpdateCueForPosition(1900);
+      expect(pauses, 1, reason: 'sustained gap should not pause repeatedly');
+
+      c.debugUpdateCueForPosition(2500);
+      c.debugUpdateCueForPosition(3500);
+      expect(pauses, 2);
+    });
+  });
+
   group('VideoPlayerController settings getters (no player)', () {
     test('delayMs getter reflects setDelayMs and clamps to ±600000', () {
       final c = VideoPlayerController();

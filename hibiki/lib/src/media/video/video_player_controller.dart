@@ -49,6 +49,9 @@ class VideoPlayerController extends ChangeNotifier
 
   /// 最近一次 [setSpeed] / [load] 之倍速；player 未实例化时供 [speed] getter 回退。
   double _lastSpeed = 1.0;
+  double _lastVolume = 100.0;
+  bool _pauseAtSubtitleEnd = false;
+  Future<void> Function()? _pauseAtSubtitleEndOverride;
 
   /// 当前启用的 mpv 着色器绝对路径（[load] 复用 / [applyShaders] 实时切换）。
   List<String> _shaderPaths = <String>[];
@@ -118,6 +121,8 @@ class VideoPlayerController extends ChangeNotifier
 
   /// 当前播放倍速；未 [load] 时回退最近一次 [setSpeed] 之值（构造默认 1.0）。
   double get speed => _player?.state.rate ?? _lastSpeed;
+
+  double get volume => _player?.state.volume ?? _lastVolume;
 
   /// 截取当前解码帧为 JPEG 字节（制卡截图用）。未 [load] 返回 null。
   Future<Uint8List?> screenshot() async {
@@ -456,6 +461,7 @@ class VideoPlayerController extends ChangeNotifier
     // 已无字幕（_currentCueIndex == -1）时直接返回，避免无谓 notify。
     if (idx < 0) {
       if (_currentCueIndex == -1) return;
+      _pauseForSubtitleEnd();
       _currentCueIndex = -1;
       _currentCue = null;
       notifyListeners();
@@ -470,6 +476,15 @@ class VideoPlayerController extends ChangeNotifier
 
   @visibleForTesting
   void debugUpdateCueForPosition(int posMs) => updateCueForPosition(posMs);
+
+  @visibleForTesting
+  void debugSetPauseAtSubtitleEndForTesting({
+    required bool enabled,
+    required Future<void> Function() onPause,
+  }) {
+    _pauseAtSubtitleEnd = enabled;
+    _pauseAtSubtitleEndOverride = onPause;
+  }
 
   /// 等 [player] 进入可 seek 状态（`duration > 0` 表示已解析媒体头）。
   ///
@@ -544,6 +559,15 @@ class VideoPlayerController extends ChangeNotifier
     await _player?.pause();
   }
 
+  void setPauseAtSubtitleEnd(bool enabled) {
+    _pauseAtSubtitleEnd = enabled;
+  }
+
+  void _pauseForSubtitleEnd() {
+    if (!_pauseAtSubtitleEnd) return;
+    unawaited((_pauseAtSubtitleEndOverride ?? pause).call());
+  }
+
   /// 切换播放/暂停（未 load 时 no-op 安全）。
   Future<void> togglePlayPause() async {
     await _player?.playOrPause();
@@ -577,6 +601,11 @@ class VideoPlayerController extends ChangeNotifier
   Future<void> setSpeed(double rate) async {
     _lastSpeed = rate;
     await _player?.setRate(rate);
+  }
+
+  Future<void> setVolume(double value) async {
+    _lastVolume = value.clamp(0.0, 100.0).toDouble();
+    await _player?.setVolume(_lastVolume);
   }
 
   /// 跳到指定 cue 的起始位置。

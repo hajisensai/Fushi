@@ -39,6 +39,9 @@ void main() {
     expect(method, contains('onMpvConfigChanged:'));
     expect(method, contains('initialLockWindowAspectRatio:'));
     expect(method, contains('onLockWindowAspectRatioChanged:'));
+    expect(method, contains('initialAsbConfig:'));
+    expect(method, contains('onAsbConfigChanged:'));
+    expect(method, contains('onSubtitleOffsetChanged:'));
 
     // 旧 bespoke 深色单列面板已移除（防回归）。
     expect(method, isNot(contains('showModalBottomSheet')),
@@ -108,6 +111,11 @@ void main() {
     expect(source, contains('onLockWindowAspectRatioChanged'));
     expect(source, contains('isDesktopPlatform'));
     expect(source, contains('t.video_setting_mpv_aspect'));
+    expect(source, contains('initialAsbConfig'));
+    expect(source, contains('onAsbConfigChanged'));
+    expect(source, contains('onSubtitleOffsetChanged'));
+    expect(source, contains('pauseAtSubtitleEnd'));
+    expect(source, contains('AdaptiveSettingsStepperRow'));
     expect(source, isNot(contains('widget.onOpenShaders')));
     expect(source, isNot(contains('widget.onOpenMpvConfig')));
   });

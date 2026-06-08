@@ -71,9 +71,11 @@ void main() {
       expect(rightBlock.contains('_asbSeekMs'), isTrue);
     });
 
-    test('A/D match asbplayer backward/forward seek and Shift+F fast-forwards',
-        () {
-      expect(page.contains('static const int _asbSeekMs = 3000'), isTrue);
+    test('A/D and Shift+F use one configured asbplayer seek value', () {
+      expect(page.contains('int get _asbSeekMs =>'), isTrue);
+      expect(page.contains('_asbConfig.seekSeconds * 1000'), isTrue);
+      expect(page.contains('_asbFastSeekMs'), isFalse);
+      expect(page.contains('fastSeekSeconds'), isFalse);
       expect(page.contains('LogicalKeyboardKey.keyA'), isTrue);
       expect(page.contains('seekRelative(-_asbSeekMs)'), isTrue);
       expect(page.contains('LogicalKeyboardKey.keyD'), isTrue);
@@ -84,20 +86,33 @@ void main() {
         ),
         isTrue,
       );
-      expect(page.contains('seekRelative(_asbFastSeekMs)'), isTrue);
+      expect(page.contains('seekRelative(_asbSeekMs)'), isTrue);
     });
 
-    test('subtitle offset has keyboard bindings and 100ms step', () {
+    test('up/down remain volume keys and do not adjust subtitle offset', () {
+      final int up = b.indexOf('LogicalKeyboardKey.arrowUp');
+      final int down = b.indexOf('LogicalKeyboardKey.arrowDown');
+      final int equal = b.indexOf('LogicalKeyboardKey.equal');
+      expect(up, greaterThanOrEqualTo(0));
+      expect(down, greaterThan(up));
+      expect(equal, greaterThan(down));
+      final String arrowBlock = b.substring(up, equal);
+      expect(arrowBlock.contains('_adjustVolume(_volumeStep)'), isTrue);
+      expect(arrowBlock.contains('_adjustVolume(-_volumeStep)'), isTrue);
+      expect(arrowBlock.contains('_adjustSubtitleOffset'), isFalse);
+    });
+
+    test('subtitle offset is a settings control, not an arrow-key binding', () {
       expect(page.contains('static const int _subtitleOffsetStepMs = 100'),
           isTrue);
-      expect(page.contains('_adjustSubtitleOffset(-_subtitleOffsetStepMs)'),
+      expect(page.contains('onSubtitleOffsetChanged: _adjustSubtitleOffset'),
           isTrue);
-      expect(page.contains('_adjustSubtitleOffset(_subtitleOffsetStepMs)'),
-          isTrue);
+      expect(b.contains('_adjustSubtitleOffset'), isFalse);
     });
 
-    test('speed changes in 0.1 steps', () {
-      expect(page.contains('static const double _speedStep = 0.1'), isTrue);
+    test('speed changes by configured asbplayer step', () {
+      expect(page.contains('double get _speedStep => _asbConfig.speedStep'),
+          isTrue);
       expect(page.contains('_adjustSpeed(_speedStep)'), isTrue);
       expect(page.contains('_adjustSpeed(-_speedStep)'), isTrue);
     });

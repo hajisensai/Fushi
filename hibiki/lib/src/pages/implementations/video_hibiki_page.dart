@@ -20,6 +20,7 @@ import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
+import 'package:hibiki/src/media/video/video_asbplayer_config.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
 import 'package:hibiki/src/media/video/video_mpv_config.dart';
@@ -155,10 +156,17 @@ abstract class VideoHibikiTestHooks {
 class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     with DictionaryPageMixin, WidgetsBindingObserver
     implements VideoHibikiTestHooks {
-  static const int _asbSeekMs = 3000;
-  static const int _asbFastSeekMs = 10000;
+  static const double _videoControlIconSize = 32;
+  static const double _videoPlayPauseIconSize = 36;
+  static const TextStyle _videoControlTitleStyle = TextStyle(
+    color: Colors.white,
+    fontSize: 16,
+  );
   static const int _subtitleOffsetStepMs = 100;
-  static const double _speedStep = 0.1;
+  static const double _volumeStep = 5.0;
+
+  int get _asbSeekMs => _asbConfig.seekSeconds * 1000;
+  double get _speedStep => _asbConfig.speedStep;
 
   @override
   int? get debugPositionMs => _controller?.positionMs;
@@ -287,6 +295,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
   /// 当前字幕外观（全局偏好快照；设置面板改动后刷新）。
   VideoSubtitleStyle _subtitleStyle = VideoSubtitleStyle.defaults;
+  VideoAsbplayerConfig _asbConfig = VideoAsbplayerConfig.defaults;
 
   /// 桌面端是否把原生窗口锁定为当前视频比例。移动端窗口不可改尺寸。
   bool _lockWindowAspectRatio = true;
@@ -355,6 +364,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _delayMs = row.delayMs;
     _playbackSpeed = _readPersistedSpeed();
     _subtitleStyle = VideoSubtitleStyle.decode(appModel.videoSubtitleStyle);
+    _asbConfig = VideoAsbplayerConfig.decode(appModel.videoAsbplayerConfig);
     _lockWindowAspectRatio = appModel.videoLockWindowAspectRatio;
 
     // 解析播放列表（若有）。非空则按 currentEpisode 载对应集；否则走单视频路径。
@@ -708,6 +718,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     }
     // 应用持久化的音画延迟（换集复用同一值；load 不重置 delay）。
     controller.setDelayMs(_delayMs);
+    controller.setPauseAtSubtitleEnd(_asbConfig.pauseAtSubtitleEnd);
     controller.onPositionWrite = _isRemote ? null : _persistPosition;
     controller.removeListener(_syncWindowAspectRatioLock);
     controller.addListener(_syncWindowAspectRatioLock);
@@ -1313,19 +1324,19 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       const SingleActivator(LogicalKeyboardKey.keyD): () =>
           unawaited(controller.seekRelative(_asbSeekMs)),
       const SingleActivator(LogicalKeyboardKey.keyF, shift: true): () =>
-          unawaited(controller.seekRelative(_asbFastSeekMs)),
+          unawaited(controller.seekRelative(_asbSeekMs)),
       // C = 着色器「对比原画」旁路切换（B：效果预览/对比；无启用着色器时无视觉变化）。
       const SingleActivator(LogicalKeyboardKey.keyC): () =>
           unawaited(_toggleShaderCompare()),
       // J / I = ±10 秒（保留 media_kit 默认 seek 行为，10 秒粒度）。
       const SingleActivator(LogicalKeyboardKey.keyJ): () =>
-          unawaited(controller.seekRelative(-_asbFastSeekMs)),
+          unawaited(controller.seekRelative(-_asbSeekMs)),
       const SingleActivator(LogicalKeyboardKey.keyI): () =>
-          unawaited(controller.seekRelative(_asbFastSeekMs)),
+          unawaited(controller.seekRelative(_asbSeekMs)),
       const SingleActivator(LogicalKeyboardKey.arrowUp): () =>
-          unawaited(_adjustSubtitleOffset(-_subtitleOffsetStepMs)),
+          unawaited(_adjustVolume(_volumeStep)),
       const SingleActivator(LogicalKeyboardKey.arrowDown): () =>
-          unawaited(_adjustSubtitleOffset(_subtitleOffsetStepMs)),
+          unawaited(_adjustVolume(-_volumeStep)),
       const SingleActivator(LogicalKeyboardKey.equal): () =>
           unawaited(_adjustSpeed(_speedStep)),
       const SingleActivator(LogicalKeyboardKey.minus): () =>
@@ -1372,7 +1383,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       // 剧集导航（playlist）+ 截图/字幕/音轨/倍速/设置。
       topButtonBar: <Widget>[
         MaterialDesktopCustomButton(
-          icon: const Icon(Icons.arrow_back),
+          icon: const Icon(Icons.arrow_back, size: _videoControlIconSize),
           onPressed: () => Navigator.of(context).maybePop(),
         ),
         Expanded(
@@ -1384,19 +1395,19 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
               title ?? '',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Colors.white, fontSize: 16),
+              style: _videoControlTitleStyle,
             ),
           ),
         ),
         if (_isPlaylist) ...<Widget>[
           MaterialDesktopCustomButton(
-            icon: const Icon(Icons.skip_previous),
+            icon: const Icon(Icons.skip_previous, size: _videoControlIconSize),
             onPressed: () {
               if (_currentEpisode > 0) _switchEpisode(_currentEpisode - 1);
             },
           ),
           MaterialDesktopCustomButton(
-            icon: const Icon(Icons.skip_next),
+            icon: const Icon(Icons.skip_next, size: _videoControlIconSize),
             onPressed: () {
               if (_currentEpisode < _episodes.length - 1) {
                 _switchEpisode(_currentEpisode + 1);
@@ -1404,35 +1415,38 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             },
           ),
           MaterialDesktopCustomButton(
-            icon: const Icon(Icons.playlist_play),
+            icon: const Icon(Icons.playlist_play, size: _videoControlIconSize),
             onPressed: _showEpisodeList,
           ),
         ],
         MaterialDesktopCustomButton(
-          icon: const Icon(Icons.photo_camera_outlined),
+          icon: const Icon(
+            Icons.photo_camera_outlined,
+            size: _videoControlIconSize,
+          ),
           onPressed: _saveScreenshot,
         ),
         MaterialDesktopCustomButton(
-          icon: const Icon(Icons.subtitles),
+          icon: const Icon(Icons.subtitles, size: _videoControlIconSize),
           onPressed: () => _showSubtitleSourceMenu(controller),
         ),
         MaterialDesktopCustomButton(
-          icon: const Icon(Icons.audiotrack),
+          icon: const Icon(Icons.audiotrack, size: _videoControlIconSize),
           onPressed: () => _showAudioTrackMenu(controller),
         ),
         MaterialDesktopCustomButton(
-          icon: const Icon(Icons.speed),
+          icon: const Icon(Icons.speed, size: _videoControlIconSize),
           onPressed: _showSpeedMenu,
         ),
         // 着色器「对比原画」：仅在配置了启用着色器时出现，点一下/按 C 切换旁路看原画
         // （B：效果预览/对比）。着色器仅桌面 libmpv 生效，故只在桌面控制条放此按钮。
         if (_hasShadersEnabled)
           MaterialDesktopCustomButton(
-            icon: const Icon(Icons.compare),
+            icon: const Icon(Icons.compare, size: _videoControlIconSize),
             onPressed: _toggleShaderCompare,
           ),
         MaterialDesktopCustomButton(
-          icon: const Icon(Icons.tune),
+          icon: const Icon(Icons.tune, size: _videoControlIconSize),
           onPressed: _showPlayerSettings,
         ),
       ],
@@ -1441,21 +1455,23 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         const Spacer(),
         if (roomyBottomBar)
           MaterialDesktopCustomButton(
-            icon: const Icon(Icons.replay_10),
+            icon: const Icon(Icons.replay_10, size: _videoControlIconSize),
             onPressed: () => _seekRelative(-10000),
           ),
         MaterialDesktopCustomButton(
-          icon: const Icon(Icons.skip_previous),
+          icon: const Icon(Icons.skip_previous, size: _videoControlIconSize),
           onPressed: () => controller.skipToPrevCue(),
         ),
-        const MaterialDesktopPlayOrPauseButton(iconSize: 32),
+        const MaterialDesktopPlayOrPauseButton(
+          iconSize: _videoPlayPauseIconSize,
+        ),
         MaterialDesktopCustomButton(
-          icon: const Icon(Icons.skip_next),
+          icon: const Icon(Icons.skip_next, size: _videoControlIconSize),
           onPressed: () => controller.skipToNextCue(),
         ),
         if (roomyBottomBar)
           MaterialDesktopCustomButton(
-            icon: const Icon(Icons.forward_10),
+            icon: const Icon(Icons.forward_10, size: _videoControlIconSize),
             onPressed: () => _seekRelative(10000),
           ),
         const Spacer(),
@@ -1484,7 +1500,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       // 右侧只放手机上最常用且需要直接命中的入口。倍速仍可从设置进入。
       topButtonBar: <Widget>[
         MaterialCustomButton(
-          icon: const Icon(Icons.arrow_back),
+          icon: const Icon(Icons.arrow_back, size: _videoControlIconSize),
           onPressed: () => Navigator.of(context).maybePop(),
         ),
         Expanded(
@@ -1496,53 +1512,67 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
               title ?? '',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Colors.white, fontSize: 16),
+              style: _videoControlTitleStyle,
             ),
           ),
         ),
         // 剧集列表（播放列表时）两端常驻。
         if (_isPlaylist)
           MaterialCustomButton(
-            icon: const Icon(Icons.playlist_play),
+            icon: const Icon(Icons.playlist_play, size: _videoControlIconSize),
             onPressed: _showEpisodeList,
           ),
-        MaterialCustomButton(
-          icon: const Icon(Icons.photo_camera_outlined),
-          onPressed: _saveScreenshot,
-        ),
-        MaterialCustomButton(
-          icon: const Icon(Icons.subtitles),
-          onPressed: () => _showSubtitleSourceMenu(controller),
-        ),
-        MaterialCustomButton(
-          icon: const Icon(Icons.audiotrack),
-          onPressed: () => _showAudioTrackMenu(controller),
-        ),
-        MaterialCustomButton(
-          icon: const Icon(Icons.tune),
-          onPressed: _showPlayerSettings,
-        ),
+        // 宽屏（横屏/平板）平铺全部次级图标；窄屏（竖屏）收进 ⋮ 更多。
+        if (roomy) ...<Widget>[
+          MaterialCustomButton(
+            icon: const Icon(
+              Icons.photo_camera_outlined,
+              size: _videoControlIconSize,
+            ),
+            onPressed: _saveScreenshot,
+          ),
+          MaterialCustomButton(
+            icon: const Icon(Icons.subtitles, size: _videoControlIconSize),
+            onPressed: () => _showSubtitleSourceMenu(controller),
+          ),
+          MaterialCustomButton(
+            icon: const Icon(Icons.audiotrack, size: _videoControlIconSize),
+            onPressed: () => _showAudioTrackMenu(controller),
+          ),
+          MaterialCustomButton(
+            icon: const Icon(Icons.speed, size: _videoControlIconSize),
+            onPressed: _showSpeedMenu,
+          ),
+          MaterialCustomButton(
+            icon: const Icon(Icons.tune, size: _videoControlIconSize),
+            onPressed: _showPlayerSettings,
+          ),
+        ] else
+          MaterialCustomButton(
+            icon: const Icon(Icons.more_vert, size: _videoControlIconSize),
+            onPressed: () => _showMobileMoreMenu(controller),
+          ),
       ],
       bottomButtonBar: <Widget>[
         const MaterialPositionIndicator(),
         const Spacer(),
         if (roomyBottomBar)
           MaterialCustomButton(
-            icon: const Icon(Icons.replay),
+            icon: const Icon(Icons.replay, size: _videoControlIconSize),
             onPressed: () => _seekRelative(-_asbSeekMs),
           ),
         MaterialCustomButton(
-          icon: const Icon(Icons.skip_previous),
+          icon: const Icon(Icons.skip_previous, size: _videoControlIconSize),
           onPressed: () => controller.skipToPrevCue(),
         ),
-        const MaterialPlayOrPauseButton(iconSize: 36),
+        const MaterialPlayOrPauseButton(iconSize: _videoPlayPauseIconSize),
         MaterialCustomButton(
-          icon: const Icon(Icons.skip_next),
+          icon: const Icon(Icons.skip_next, size: _videoControlIconSize),
           onPressed: () => controller.skipToNextCue(),
         ),
         if (roomyBottomBar)
           MaterialCustomButton(
-            icon: const Icon(Icons.forward),
+            icon: const Icon(Icons.forward, size: _videoControlIconSize),
             onPressed: () => _seekRelative(_asbSeekMs),
           ),
         const Spacer(),
@@ -1591,7 +1621,16 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   }
 
   Future<void> _adjustSubtitleOffset(int deltaMs) async {
+    assert(_subtitleOffsetStepMs > 0);
     await _setDelayMs(_delayMs + deltaMs);
+  }
+
+  Future<void> _adjustVolume(double delta) async {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return;
+    final double next = (controller.volume + delta).clamp(0.0, 100.0);
+    await controller.setVolume(next);
+    if (mounted) _showOsd('${t.audio_volume}: ${next.round()}%');
   }
 
   /// 设置播放倍速：即时调 controller + 持久化到 per-book 偏好（速度记忆）+ 刷新。
@@ -1625,6 +1664,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     } catch (e, stack) {
       ErrorLogService.instance.log('VideoHibiki.windowAspect.clear', e, stack);
     }
+  }
+
+  Future<void> _setAsbConfig(VideoAsbplayerConfig config) async {
+    _asbConfig = config;
+    _controller?.setPauseAtSubtitleEnd(config.pauseAtSubtitleEnd);
+    await appModel.setVideoAsbplayerConfig(VideoAsbplayerConfig.encode(config));
+    if (mounted) setState(() {});
   }
 
   Future<void> _syncWindowAspectRatioLock() async {
@@ -1735,7 +1781,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   void _showSpeedMenu() {
     if (_videoSheetOpen) return;
     _videoSheetOpen = true;
-    const List<double> speedPresets = <double>[0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+    final List<double> speedPresets = _speedMenuPresets();
     showModalBottomSheet<void>(
       context: context,
       builder: (BuildContext ctx) => SafeArea(
@@ -1764,6 +1810,15 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     });
   }
 
+  List<double> _speedMenuPresets() {
+    final Set<double> values = <double>{};
+    for (double speed = 0.5; speed <= 2.0001; speed += _speedStep) {
+      values.add(double.parse(speed.toStringAsFixed(2)));
+    }
+    values.add(1.0);
+    return values.toList()..sort();
+  }
+
   /// 弹视频播放设置面板：与阅读器同款 master-detail（宽窗左分类固定 + 右详情独立
   /// 滚动，窄窗降级单列 push）。桌面经 [HibikiDialogFrame]（maxWidth 900）进入分栏，
   /// 移动端走 bottom sheet。所有项都不是 schema 项，经回调即时生效 + 持久化 + 实时
@@ -1777,9 +1832,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       initialSpeed: _playbackSpeed,
       initialSubtitleBlur: appModel.videoSubtitleBlur,
       initialSubtitleStyle: _subtitleStyle,
+      initialAsbConfig: _asbConfig,
       onSetDelay: _setDelayMs,
       onSetSpeed: _setSpeed,
       onToggleSubtitleBlur: _toggleSubtitleBlur,
+      onAsbConfigChanged: _setAsbConfig,
+      onSubtitleOffsetChanged: _adjustSubtitleOffset,
       onSubtitleStylePreview: (VideoSubtitleStyle s) {
         if (mounted) setState(() => _subtitleStyle = s);
       },

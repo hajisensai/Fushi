@@ -1736,6 +1736,11 @@ class AppModel with ChangeNotifier {
   Future<void> setVideoLockWindowAspectRatio(bool value) =>
       prefsRepo.setVideoLockWindowAspectRatio(value);
 
+  String get videoAsbplayerConfig => prefsRepo.videoAsbplayerConfig;
+
+  Future<void> setVideoAsbplayerConfig(String json) =>
+      prefsRepo.setVideoAsbplayerConfig(json);
+
   /// 视频字幕外观（JSON；见 VideoSubtitleStyle）。
   String get videoSubtitleStyle => prefsRepo.videoSubtitleStyle;
 
