@@ -1410,5 +1410,8 @@
     "video_subtitle_graphic_hint": "图形字幕 · 画面显示 · 不可查词",
     "video_subtitle_graphic_shown": "已显示图形字幕（画面显示，不可查词）：$label",
     "focus_navigation_enabled": "键盘/手柄焦点导航",
-    "focus_navigation_enabled_hint": "用方向键或手柄移动焦点并显示焦点环。"
+    "focus_navigation_enabled_hint": "用方向键或手柄移动焦点并显示焦点环。",
+    "video_rename": "重命名",
+    "video_rename_hint": "标题",
+    "video_playlist_episodes": "$count 集"
 }

@@ -186,4 +186,21 @@ void main() {
     await repo.updateDelayMs('video/d', 1200);
     expect((await repo.getByBookUid('video/d'))!.delayMs, 1200);
   });
+
+  test('updateTitle round-trips the playlist/video title (C 重命名)', () async {
+    final db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final repo = VideoBookRepository(db);
+    await repo.saveVideoBook(const VideoBooksCompanion(
+      bookUid: Value('video/rename'),
+      title: Value('Old Episode Filename'),
+      videoPath: Value('/e0.mkv'),
+    ));
+
+    await repo.updateTitle('video/rename', '我的番剧系列');
+    expect((await repo.getByBookUid('video/rename'))!.title, '我的番剧系列');
+
+    // 其它列不被改名波及（只动 title）。
+    expect((await repo.getByBookUid('video/rename'))!.videoPath, '/e0.mkv');
+  });
 }

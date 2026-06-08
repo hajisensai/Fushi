@@ -10,6 +10,7 @@ import 'package:hibiki/src/media/drag_drop/card_drop_registry.dart';
 import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
 import 'package:hibiki/src/media/drag_drop/drop_decision.dart';
 import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
+import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_feature_flags.dart';
 import 'package:hibiki/src/media/video/video_import_dialog.dart';
@@ -188,6 +189,14 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
               },
             ),
             ListTile(
+              leading: const Icon(Icons.drive_file_rename_outline),
+              title: Text(t.video_rename),
+              onTap: () {
+                Navigator.pop(ctx);
+                _renameVideo(book);
+              },
+            ),
+            ListTile(
               leading: const Icon(Icons.image_outlined),
               title: Text(t.srt_import_pick_cover),
               onTap: () {
@@ -236,6 +245,40 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       bookUid: book.bookUid,
       pickedPath: pickedPath,
     );
+    if (mounted) _refresh();
+  }
+
+  /// 重命名视频/播放列表（C 需求③）：弹输入框预填当前标题 → 落库 → 刷新列表。
+  /// 空白标题不提交（保持原名）。
+  Future<void> _renameVideo(VideoBookRow book) async {
+    final TextEditingController controller =
+        TextEditingController(text: book.title);
+    final String? newTitle = await showAppDialog<String>(
+      context: context,
+      builder: (BuildContext ctx) => AlertDialog(
+        title: Text(t.video_rename),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: InputDecoration(hintText: t.video_rename_hint),
+          onSubmitted: (String v) => Navigator.pop(ctx, v),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(t.dialog_cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, controller.text),
+            child: Text(t.dialog_save),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    final String? trimmed = newTitle?.trim();
+    if (trimmed == null || trimmed.isEmpty || trimmed == book.title) return;
+    await widget.repo.updateTitle(book.bookUid, trimmed);
     if (mounted) _refresh();
   }
 
@@ -464,6 +507,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     final List<BookTagRow> tags =
         ref.watch(videoBookTagMapProvider).valueOrNull?[book.bookUid] ??
             const <BookTagRow>[];
+    final int episodeCount = playlistEpisodeCount(book.playlistJson);
     return CardDropZone<VideoBookRow>(
       meta: book,
       child: HibikiCard(
@@ -486,6 +530,14 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
                       left: 6,
                       child: _buildTagLabels(tags),
                     ),
+                  // 播放列表角标（≥2 集才算播放列表）：右上角「▶ N」徽标，与单视频
+                  // 一眼区分（C 需求②）。
+                  if (episodeCount >= 2)
+                    Positioned(
+                      top: 6,
+                      right: 6,
+                      child: _buildPlaylistBadge(episodeCount),
+                    ),
                 ],
               ),
             ),
@@ -500,6 +552,32 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// 播放列表角标：右上角半透明胶囊「▶ N集」，与单视频卡一眼区分（C 需求②）。
+  Widget _buildPlaylistBadge(int episodeCount) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.62),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          const Icon(Icons.playlist_play, size: 14, color: Colors.white),
+          const SizedBox(width: 3),
+          Text(
+            t.video_playlist_episodes(count: episodeCount),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
       ),
     );
   }

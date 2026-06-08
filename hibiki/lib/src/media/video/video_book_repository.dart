@@ -42,6 +42,10 @@ class VideoBookRepository {
   Future<void> updateCover(String bookUid, String coverPath) =>
       _db.updateVideoBookCover(bookUid, coverPath);
 
+  /// 更新视频/播放列表标题（视频库长按菜单「重命名」）。
+  Future<void> updateTitle(String bookUid, String title) =>
+      _db.updateVideoBookTitle(bookUid, title);
+
   /// 删除视频书（标签映射经 FK cascade 自动清理）。
   Future<void> deleteVideoBook(String bookUid) => _db.deleteVideoBook(bookUid);
 

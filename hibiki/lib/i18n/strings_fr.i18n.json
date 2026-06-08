@@ -1410,5 +1410,8 @@
     "video_subtitle_graphic_hint": "Graphic subtitle · shown on video · no word lookup",
     "video_subtitle_graphic_shown": "Graphic subtitle shown on video (no word lookup): $label",
     "focus_navigation_enabled": "Keyboard & gamepad focus navigation",
-    "focus_navigation_enabled_hint": "Move focus with arrow keys or a gamepad and show a focus ring."
+    "focus_navigation_enabled_hint": "Move focus with arrow keys or a gamepad and show a focus ring.",
+    "video_rename": "Rename",
+    "video_rename_hint": "Title",
+    "video_playlist_episodes": "$count eps"
 }

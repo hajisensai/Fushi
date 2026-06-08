@@ -843,6 +843,12 @@ class HibikiDatabase extends _$HibikiDatabase {
       (update(videoBooks)..where((t) => t.bookUid.equals(bookUid)))
           .write(VideoBooksCompanion(coverPath: Value(coverPath)));
 
+  /// 更新视频/播放列表标题（用户在视频库长按菜单「重命名」）。title 列已存在，
+  /// 无 schema 变更。
+  Future<void> updateVideoBookTitle(String bookUid, String title) =>
+      (update(videoBooks)..where((t) => t.bookUid.equals(bookUid)))
+          .write(VideoBooksCompanion(title: Value(title)));
+
   /// 删除视频书：FK `onDelete: cascade` 自动清掉它在
   /// video_book_tag_mappings 的标签映射（cue 在 audio_cues，按需另清）。
   Future<void> deleteVideoBook(String bookUid) =>

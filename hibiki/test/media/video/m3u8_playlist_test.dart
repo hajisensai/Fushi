@@ -164,4 +164,27 @@ plain.mkv
       expect(next[2].positionMs, 0);
     });
   });
+
+  group('playlistEpisodeCount（卡片角标/单视频区分用）', () {
+    test('null / 空串 → 0（单视频）', () {
+      expect(playlistEpisodeCount(null), 0);
+      expect(playlistEpisodeCount(''), 0);
+    });
+
+    test('多集 JSON → 集数', () {
+      const String json = '[{"title":"E1","path":"/a.mkv","positionMs":0},'
+          '{"title":"E2","path":"/b.mkv","positionMs":0},'
+          '{"title":"E3","path":"/c.mkv","positionMs":0}]';
+      expect(playlistEpisodeCount(json), 3);
+    });
+
+    test('单元素列表 → 1（不算播放列表，<2）', () {
+      expect(playlistEpisodeCount('[{"title":"E1","path":"/a.mkv"}]'), 1);
+    });
+
+    test('坏 JSON → 0（当单视频，不抛）', () {
+      expect(playlistEpisodeCount('{not a list}'), 0);
+      expect(playlistEpisodeCount('garbage'), 0);
+    });
+  });
 }

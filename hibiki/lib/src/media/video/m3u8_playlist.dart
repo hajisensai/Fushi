@@ -1,4 +1,19 @@
+import 'dart:convert';
+
 import 'package:path/path.dart' as p;
+
+/// **纯函数**：从 `VideoBooks.playlistJson` 解析出集数；空 / 非播放列表 / 解析失败
+/// 返回 0。供视频库卡片角标与「单视频 vs 播放列表」区分用——返回 ≥2 即播放列表。
+int playlistEpisodeCount(String? playlistJson) {
+  if (playlistJson == null || playlistJson.isEmpty) return 0;
+  try {
+    final dynamic decoded = jsonDecode(playlistJson);
+    if (decoded is List) return decoded.length;
+  } catch (_) {
+    // 坏 JSON：当单视频处理（返回 0），不抛。
+  }
+  return 0;
+}
 
 /// 播放列表中的一集：标题 + 视频绝对路径 + 本集自己的播放进度。
 ///
