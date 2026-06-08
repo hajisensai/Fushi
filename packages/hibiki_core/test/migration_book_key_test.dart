@@ -298,11 +298,15 @@ void main() {
     final HibikiDatabase db = _openMigratedFromV15();
     addTearDown(db.close);
 
-    // Opening forces the lazy DB to run onUpgrade(15 -> 16).
+    // Opening forces the lazy DB to run onUpgrade(15 -> current). The v16
+    // re-key step runs as part of that ladder; later steps only add tables and
+    // never undo the re-keying, so the losslessness assertions below still hold
+    // at the current schema. Compare against the live schemaVersion so this
+    // never goes stale on a bump.
     final QueryRow ver =
         await db.customSelect('PRAGMA user_version').getSingle();
-    expect(ver.read<int>('user_version'), 16,
-        reason: 'migration must land on schema v16');
+    expect(ver.read<int>('user_version'), db.schemaVersion,
+        reason: 'migration must land on the current schema version');
 
     // ── books: dedup of collided sanitize keys ────────────────────────
     final books = await db.getAllEpubBooks();

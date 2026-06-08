@@ -37,6 +37,10 @@ void main() {
     final String finalDir = p.join(tmpDir.path, 'hoshi_books', '1');
     Directory(tempDir).createSync(recursive: true);
     Directory(finalDir).createSync(recursive: true);
+    // 目标目录非空：POSIX 的 rename(2) 只在目标为空目录时才原子替换并成功（那样不抛，
+    // Linux 上断言假阴性）；放一个文件进去，使 Windows 与 POSIX 都因已存在/ENOTEMPTY
+    // 抛 FileSystemException，跨平台一致复现这个 bug。
+    File(p.join(finalDir, 'occupied')).writeAsStringSync('x');
 
     expect(
       () => Directory(tempDir).renameSync(finalDir),

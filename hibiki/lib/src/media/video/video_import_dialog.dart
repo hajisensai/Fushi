@@ -23,8 +23,21 @@ import 'package:path_provider/path_provider.dart';
 /// 换机器/移动文件夹身份不变，跨设备同步可对齐。同名碰撞交给
 /// [uniqueVideoBookUid] 在导入时加后缀去重，而非把完整绝对路径哈希进身份。
 String playlistBookUid(String m3u8Path) {
-  final String base = p.basenameWithoutExtension(m3u8Path);
+  final String base = _crossPlatformBasenameWithoutExtension(m3u8Path);
   return 'video/playlist/${sanitizeTtuFilename(base)}';
+}
+
+/// 取路径最后一段并去扩展名，**同时把 `/` 和 `\` 都当分隔符**（与宿主平台无关）。
+///
+/// 纯函数。`p.basenameWithoutExtension` 只认宿主平台的分隔符——在 Linux/macOS 上
+/// 不会把 Windows 路径的 `\` 当分隔符，于是 `D:\a\x.mkv` 整串被当文件名，破坏
+/// 「同一文件名跨不同绝对路径/不同机器得相同 bookUid」的身份不变量。这里两种分隔符
+/// 都认，保证 `D:\a\E01.mkv` 与 `/home/u/E01.mkv` 在任何平台都派生出 `E01`。
+String _crossPlatformBasenameWithoutExtension(String path) {
+  final int sep = path.lastIndexOf(RegExp(r'[\\/]'));
+  final String name = sep >= 0 ? path.substring(sep + 1) : path;
+  final int dot = name.lastIndexOf('.');
+  return dot > 0 ? name.substring(0, dot) : name;
 }
 
 /// 为单个视频文件生成跨设备稳定 bookUid：`video/<sanitize(文件名去扩展名)>`。
@@ -32,7 +45,7 @@ String playlistBookUid(String m3u8Path) {
 /// 纯函数。与 [playlistBookUid] 同源：只取文件名经 [sanitizeTtuFilename] 派生，
 /// 不含目录/绝对路径，同名碰撞由 [uniqueVideoBookUid] 加后缀去重。
 String singleVideoBookUid(String videoPath) {
-  final String base = p.basenameWithoutExtension(videoPath);
+  final String base = _crossPlatformBasenameWithoutExtension(videoPath);
   return 'video/${sanitizeTtuFilename(base)}';
 }
 
