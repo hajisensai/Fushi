@@ -213,6 +213,10 @@ class HibikiSyncServer {
         reqPath.startsWith('/api/library/dictionaries/')) {
       return _handleLibraryDictionaries(request, method, reqPath);
     }
+    if (reqPath == '/api/library/books' ||
+        reqPath.startsWith('/api/library/books/')) {
+      return _handleLibraryBooks(request, method, reqPath);
+    }
 
     // 真实读写路径：只做词法规整、**保留原始大小写**。p.canonicalize 在
     // 大小写不敏感平台（Windows）会把整条路径小写化，这会让书文件夹名按宿主平台
@@ -411,11 +415,11 @@ class HibikiSyncServer {
   }
 
   shelf.Response _handleCapabilities() {
-    final bool dict = _libraryService != null;
+    final bool lib = _libraryService != null;
     return _jsonResponse(<String, dynamic>{
       'liveLibrary': <String, dynamic>{
-        'dictionaries': dict,
-        'books': false,
+        'dictionaries': lib,
+        'books': lib,
         'audio': false,
       },
     });
@@ -516,6 +520,103 @@ class HibikiSyncServer {
 
       case 'DELETE':
         await svc.deleteDictionary(name);
+        return shelf.Response(204);
+
+      default:
+        return shelf.Response(405);
+    }
+  }
+
+  Future<shelf.Response> _handleLibraryBooks(
+    shelf.Request request,
+    String method,
+    String reqPath,
+  ) async {
+    final HibikiLibraryHostService? svc = _libraryService;
+    if (svc == null) return shelf.Response.notFound('Library service off');
+
+    if (reqPath == '/api/library/books') {
+      if (method != 'GET') return shelf.Response(405);
+      final List<RemoteBookInfo> list = await svc.listBooks();
+      return shelf.Response.ok(
+        jsonEncode(<Map<String, Object?>>[
+          for (final RemoteBookInfo b in list) b.toJson()
+        ]),
+        headers: <String, String>{'Content-Type': 'application/json'},
+      );
+    }
+
+    // reqPath 已在 _handleRequest 经 Uri.decodeFull 解码，此处无需再解码。
+    final String title = reqPath.substring('/api/library/books/'.length);
+    if (title.isEmpty) {
+      return shelf.Response.notFound('Missing book title');
+    }
+    // HBK-AUDIT-012: reject path-traversal attempts.  Book titles must
+    // never contain path separators or dot-dot sequences.
+    if (title.contains('/') || title.contains('\\') || title.contains('..')) {
+      return shelf.Response.forbidden('Invalid book title');
+    }
+
+    switch (method) {
+      case 'GET':
+        File file;
+        try {
+          file = await svc.exportBook(title);
+        } on StateError {
+          return shelf.Response.notFound('Book not found');
+        }
+        final int length = file.lengthSync();
+        final Stream<List<int>> body = file.openRead().transform(
+              StreamTransformer<List<int>, List<int>>.fromHandlers(
+                handleDone: (EventSink<List<int>> out) {
+                  out.close();
+                  try {
+                    file.parent.deleteSync(recursive: true);
+                  } catch (_) {
+                    // best-effort temp cleanup
+                  }
+                },
+                handleError:
+                    (Object e, StackTrace st, EventSink<List<int>> out) {
+                  out.addError(e, st);
+                  try {
+                    file.parent.deleteSync(recursive: true);
+                  } catch (_) {/* best-effort */}
+                },
+              ),
+            );
+        return shelf.Response.ok(body, headers: <String, String>{
+          'Content-Type': 'application/epub+zip',
+          'Content-Length': '$length',
+        });
+
+      case 'PUT':
+        final Directory tmpDir =
+            Directory.systemTemp.createTempSync('hibiki_book_in');
+        final File tmp = File(p.join(tmpDir.path, '$title.epub'));
+        final IOSink sink = tmp.openWrite();
+        try {
+          await request.read().forEach(sink.add);
+          await sink.close();
+          await svc.importBook(tmp);
+          return shelf.Response(200);
+        } catch (e) {
+          try {
+            await sink.close();
+          } catch (_) {
+            // best-effort
+          }
+          return shelf.Response(500, body: 'Import failed: $e');
+        } finally {
+          try {
+            tmpDir.deleteSync(recursive: true);
+          } catch (_) {
+            // best-effort
+          }
+        }
+
+      case 'DELETE':
+        await svc.deleteBook(title);
         return shelf.Response(204);
 
       default:

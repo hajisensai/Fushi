@@ -28,6 +28,20 @@ class _FakeLibraryService implements HibikiLibraryHostService {
 
   @override
   Future<void> deleteDictionary(String name) async => deleted.add(name);
+
+  // ── books stubs (not exercised in this test file) ──────────────────────────
+  @override
+  Future<List<RemoteBookInfo>> listBooks() async => <RemoteBookInfo>[];
+
+  @override
+  Future<File> exportBook(String title) async =>
+      throw StateError('not used in library dict test');
+
+  @override
+  Future<void> importBook(File epubFile) async {}
+
+  @override
+  Future<void> deleteBook(String title) async {}
 }
 
 void main() {

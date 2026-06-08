@@ -36,6 +36,20 @@ class _FakeLibraryService implements HibikiLibraryHostService {
 
   @override
   Future<void> deleteDictionary(String name) async => deleted.add(name);
+
+  // ── books stubs ────────────────────────────────────────────────────────────
+  @override
+  Future<List<RemoteBookInfo>> listBooks() async => <RemoteBookInfo>[];
+
+  @override
+  Future<File> exportBook(String title) async =>
+      throw UnimplementedError('export not needed in this test');
+
+  @override
+  Future<void> importBook(File epubFile) async {}
+
+  @override
+  Future<void> deleteBook(String title) async {}
 }
 
 // ── helper: 建 SyncRepository + 配置 backend ─────────────────────────────
