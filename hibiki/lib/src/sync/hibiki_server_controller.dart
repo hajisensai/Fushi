@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/hibiki_remote_lookup_service.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 import 'package:hibiki/src/sync/lan_discovery_service.dart';
@@ -51,12 +52,14 @@ class HibikiSyncServerController extends ChangeNotifier {
     required HibikiRemoteLookupService Function() remoteLookupServiceFactory,
     HibikiRemoteMiningService Function()? miningServiceFactory,
     HibikiRemoteHistoryService Function()? historyServiceFactory,
+    HibikiLibraryHostService Function()? libraryServiceFactory,
   })  : _navigatorKey = navigatorKey,
         _database = database,
         _syncDataDir = syncDataDir,
         _remoteLookupServiceFactory = remoteLookupServiceFactory,
         _miningServiceFactory = miningServiceFactory,
-        _historyServiceFactory = historyServiceFactory;
+        _historyServiceFactory = historyServiceFactory,
+        _libraryServiceFactory = libraryServiceFactory;
 
   final GlobalKey<NavigatorState> _navigatorKey;
   final HibikiDatabase Function() _database;
@@ -64,6 +67,7 @@ class HibikiSyncServerController extends ChangeNotifier {
   final HibikiRemoteLookupService Function() _remoteLookupServiceFactory;
   final HibikiRemoteMiningService Function()? _miningServiceFactory;
   final HibikiRemoteHistoryService Function()? _historyServiceFactory;
+  final HibikiLibraryHostService Function()? _libraryServiceFactory;
 
   HibikiSyncServer? _server;
   LanBroadcastService? _broadcast;
@@ -105,6 +109,7 @@ class HibikiSyncServerController extends ChangeNotifier {
       remoteLookupService: _remoteLookupServiceFactory(),
       miningService: _miningServiceFactory?.call(),
       historyService: _historyServiceFactory?.call(),
+      libraryService: _libraryServiceFactory?.call(),
     )..onPairRequest = _promptPairApproval;
     try {
       await server.start();

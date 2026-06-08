@@ -40,6 +40,34 @@ void main() {
     });
   });
 
+  group('source guards: controller wires library service (Task-6)', () {
+    test('controller forwards libraryService into HibikiSyncServer', () {
+      final String src =
+          File('lib/src/sync/hibiki_server_controller.dart').readAsStringSync();
+      expect(src.contains('libraryService:'), isTrue,
+          reason: 'controller 必须把库服务注入 server，否则 host 端点恒 404');
+    });
+
+    test('AppModel wires AppModelLibraryHostService into the controller', () {
+      final String src =
+          File('lib/src/models/app_model.dart').readAsStringSync();
+      expect(src.contains('AppModelLibraryHostService'), isTrue,
+          reason: 'AppModel 必须构造并注入 AppModelLibraryHostService');
+      expect(src.contains('libraryServiceFactory'), isTrue,
+          reason: 'AppModel 必须把 libraryServiceFactory 传给 controller');
+    });
+
+    test('_propagateDictionaryDeleteToRemote routes live backend via '
+        'backend.deleteRemoteDictionary', () {
+      final String src =
+          File('lib/src/models/app_model.dart').readAsStringSync();
+      expect(src.contains('backend.deleteRemoteDictionary'), isTrue,
+          reason: '删除传播必须对 HibikiClientSyncBackend 调 live DELETE 端点');
+      expect(src.contains('backend is HibikiClientSyncBackend'), isTrue,
+          reason: '必须有 is HibikiClientSyncBackend 分流判定');
+    });
+  });
+
   group('source guards: server lifecycle owned by AppModel (BUG-085)', () {
     test('the sync-settings page no longer owns or stops the server', () {
       final String schema =

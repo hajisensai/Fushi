@@ -34,7 +34,9 @@ import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/src/models/dictionary_repository.dart';
 import 'package:hibiki/src/models/media_history_repository.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
+import 'package:hibiki/src/sync/app_model_library_host_service.dart';
 import 'package:hibiki/src/sync/backup_service.dart';
+import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_server_controller.dart';
 import 'package:hibiki/src/sync/sync_asset_package_service.dart';
 import 'package:hibiki/src/sync/sync_auto_trigger.dart';
@@ -213,6 +215,16 @@ class AppModel with ChangeNotifier {
     remoteLookupServiceFactory: createRemoteLookupService,
     miningServiceFactory: createRemoteMiningService,
     historyServiceFactory: createRemoteHistoryService,
+    libraryServiceFactory: () => AppModelLibraryHostService(
+      db: database,
+      dictionaryResourceRoot: dictionaryResourceDirectory,
+      packages: SyncAssetPackageService(db: database),
+      refreshDictionaryCache: () async {
+        await _rebuildDictPathsCacheAsync();
+        dictRepo.clearDictionaryResultsCache();
+      },
+      runExclusive: runExclusiveWithSync,
+    ),
   );
 
   /// 自动同步（关书后 / app 启动）拿到报告后，若有冲突则弹解决对话框。
@@ -1846,6 +1858,11 @@ class AppModel with ChangeNotifier {
       await runExclusiveWithSync(() async {
         if (!await backend.restoreAuth(repo)) return;
         if (!await backend.isAuthenticated) return;
+        // 互联（live）后端直接走 host DELETE 端点；云后端走暂存删除路径。
+        if (backend is HibikiClientSyncBackend) {
+          await backend.deleteRemoteDictionary(name);
+          return;
+        }
         await deleteRemoteDictionaryAsset(backend, name);
       });
     } catch (e, stack) {

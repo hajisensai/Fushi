@@ -1,7 +1,16 @@
+import 'dart:io';
+
+import 'package:drift/drift.dart' hide isNull, isNotNull;
+import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
+import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
+import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_orchestrator.dart';
+import 'package:hibiki/src/sync/sync_repository.dart';
+import 'package:hibiki_core/hibiki_core.dart';
 
 /// Records the namespace/name queried and the id deleted; [present] is what
 /// findAsset returns. Everything else throws (must not be touched).
@@ -35,6 +44,48 @@ class _RecordingBackend implements SyncBackend {
       throw UnimplementedError('unexpected ${invocation.memberName}');
 }
 
+// ── live 分支集成：验证 HibikiClientSyncBackend 路由到 host DELETE 端点 ─────
+
+class _FakeLibraryService implements HibikiLibraryHostService {
+  final List<String> deleted = <String>[];
+
+  @override
+  Future<List<RemoteDictionaryInfo>> listDictionaries() async =>
+      <RemoteDictionaryInfo>[];
+
+  @override
+  Future<File> exportDictionary(String name) async =>
+      throw UnimplementedError('export not needed in this test');
+
+  @override
+  Future<void> importDictionary(File packageFile) async =>
+      throw UnimplementedError('import not needed in this test');
+
+  @override
+  Future<void> deleteDictionary(String name) async => deleted.add(name);
+}
+
+HibikiDatabase _memDb() =>
+    HibikiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
+
+/// 构造一个已认证的 HibikiClientSyncBackend，指向给定 base url。
+Future<HibikiClientSyncBackend> _buildBackend({
+  required String base,
+  required String token,
+}) async {
+  final HibikiDatabase db = _memDb();
+  final SyncRepository repo = SyncRepository(db);
+  await repo.setHibikiClientUrls(<HibikiClientUrl>[
+    HibikiClientUrl(url: base, enabled: true),
+  ]);
+  await repo.setHibikiClientToken(token);
+  final HibikiClientSyncBackend backend =
+      HibikiClientSyncBackend.withProbe((String url, String tok) async => true);
+  await backend.restoreAuth(repo);
+  await backend.authenticate(repo: repo);
+  return backend;
+}
+
 void main() {
   group('deleteRemoteDictionaryAsset (BUG-086)', () {
     test('deletes the matching <name>.hibikidict package and reports true',
@@ -62,6 +113,41 @@ void main() {
       expect(deleted, isFalse);
       expect(backend.deletedId, isNull,
           reason: 'nothing to delete → deleteAsset must not be called');
+    });
+  });
+
+  group('删除传播 live 分支（Task-6）', () {
+    /// 验证当 backend 是 HibikiClientSyncBackend 时，deleteRemoteDictionary
+    /// 确实向 host 发送 DELETE /api/library/dictionaries/<name>，
+    /// 且 host 库服务记录到该删除——不经过暂存 deleteRemoteDictionaryAsset 路径。
+    test(
+        'HibikiClientSyncBackend.deleteRemoteDictionary routes to host DELETE endpoint',
+        () async {
+      const String token = 'test-token-propagate';
+      final _FakeLibraryService lib = _FakeLibraryService();
+      final HibikiSyncServer server = HibikiSyncServer(
+        syncDataDir:
+            Directory.systemTemp.createTempSync('hbk_del_prop').path,
+        port: 0,
+        token: token,
+        allowLan: false,
+        libraryService: lib,
+      );
+      await server.start();
+      addTearDown(server.stop);
+
+      final HibikiClientSyncBackend backend = await _buildBackend(
+        base: 'http://127.0.0.1:${server.port}',
+        token: token,
+      );
+
+      // 直接调 live 方法——这正是分流分支（backend is HibikiClientSyncBackend）
+      // 在 _propagateDictionaryDeleteToRemote 中执行的代码路径。
+      await backend.deleteRemoteDictionary('Genius');
+
+      expect(lib.deleted, contains('Genius'),
+          reason:
+              'host 库服务必须收到删除，验证 live DELETE 端点而非暂存路径');
     });
   });
 }
