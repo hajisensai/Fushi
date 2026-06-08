@@ -324,6 +324,41 @@ void main() {
     });
   });
 
+  group('progress tie-break compares at storage resolution (BUG-136)', () {
+    test('imported-then-unmoved re-sync is synced, not a spurious re-export',
+        () async {
+      final HibikiDatabase db = _memDb();
+      addTearDown(db.close);
+      // 本地 (section 0, norm 5000)，chaptersJson characters=100 →
+      // explored 50 / 100 = 0.5（落在 normCharOffset 存储网格上）；updatedAt=1000。
+      final EpubBookRow book = await _seedBookWithPosition(db);
+
+      // 远端进度文件：同时间戳(1000)，原始分数 0.5005 —— 比本地能存的网格更细，但
+      // 量化到同一网格格（round(0.5005*100)=50 → norm 5000 → 0.5）。修前按裸 1e-6 比会
+      // 误判「位置不同」→ 走 import/export 重传（spurious），把云端原值改写成近似；修后
+      // 先把远端分数投影到存储网格再比 → 相等 → synced，云端原值原样保留。
+      final backend = _RecordingExportBackend(
+        remoteFiles: const DriveSyncFiles(
+          progress: DriveFile(
+              id: 'remote-progress', name: 'progress_1_6_1000_0.5005.json'),
+        ),
+      );
+      final manager = SyncManager(db: db, backend: backend);
+
+      // 自动方向（direction 省略）→ 时间戳撞 tie → 内容 tie-break。
+      final SyncBookResult result = await manager.syncBook(
+        book: book,
+        syncStats: false,
+        statsSyncMode: StatisticsSyncMode.merge,
+        syncAudioBook: false,
+      );
+
+      expect(result.direction, SyncResult.synced);
+      expect(backend.updateProgressCalls, 0,
+          reason: '未移动不得重导出（否则云端 exploredCharCount 被二次换算改写）');
+    });
+  });
+
   group('exportBackup includes dictionary resources whenever present', () {
     // Full-data backup packs everything that exists on disk: the dictionary
     // resources are no longer gated on the sync-dictionary toggle. (Absence of

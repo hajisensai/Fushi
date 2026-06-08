@@ -309,6 +309,7 @@ class SyncManager {
               localUpdatedAt: localPosition?.updatedAt,
               localProgress: localProgress,
               remoteProgressFile: syncFiles.progress,
+              chapters: chapters,
             )
           : res.direction;
     }
@@ -399,6 +400,7 @@ class SyncManager {
     required int? localUpdatedAt,
     required double? localProgress,
     required DriveFile? remoteProgressFile,
+    required List<ChapterCharInfo> chapters,
   }) {
     final int? remoteTimestamp = remoteProgressFile != null
         ? parseProgressTimestamp(remoteProgressFile.name)
@@ -425,10 +427,36 @@ class SyncManager {
     if (localProgress == null || remoteProgress == null) {
       return SyncDirection.synced;
     }
+    // BUG-136: 在我们**实际能存储**的分辨率上比对，而非裸 1e-6 分数。导入后会抄下
+    // 远端时间戳（见 _handleImport），下次同步必然时间戳撞 tie 落到这里；而 localProgress
+    // 是由量化后的 normCharOffset 二次换算来的，与远端文件名里的原始分数会差「< 一个
+    // normCharOffset 步长」——若按 1e-6 比就误判「本地更靠后」→ 多余地原样重导出，把云端
+    // 原值改写成近似（用户报的「差几个字符」）。把远端分数先过同一套存储网格量化，使
+    // 「导入后没动」稳定判为 synced、不重导出，云端原值原样保留。
+    final double remoteOnGrid =
+        _quantizeToStorageGrid(remoteProgress, chapters);
     const double epsilon = 1e-6;
-    final double delta = localProgress - remoteProgress;
+    final double delta = localProgress - remoteOnGrid;
     if (delta.abs() <= epsilon) return SyncDirection.synced;
     return delta > 0 ? SyncDirection.exportToTtu : SyncDirection.importFromTtu;
+  }
+
+  /// BUG-136: 把任意进度分数投影到本地存储网格（`(sectionIndex, normCharOffset)`，
+  /// 章内 0-10000 量化）所能表示的最近分数。本地进度本就走 `toExploredCharCount`
+  /// 落在该网格上，故远端分数过一遍同样的 round-trip 后即可同分辨率比对。
+  double _quantizeToStorageGrid(
+      double fraction, List<ChapterCharInfo> chapters) {
+    final int total = totalCharacterCount(chapters);
+    if (total <= 0) return fraction;
+    final int explored = (fraction * total).round();
+    final pos =
+        fromExploredCharCount(exploredCharCount: explored, chapters: chapters);
+    return toExploredCharCount(
+          sectionIndex: pos.sectionIndex,
+          normCharOffset: pos.normCharOffset,
+          chapters: chapters,
+        ) /
+        total;
   }
 
   /// HBK-AUDIT-047: local reading progress as a 0..1 fraction, mirroring the
