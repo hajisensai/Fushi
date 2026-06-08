@@ -52,6 +52,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:hibiki/src/utils/misc/platform_utils.dart';
 import 'package:hibiki/src/utils/misc/hibiki_color.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
+import 'package:hibiki/src/utils/components/hibiki_icon_button.dart';
 import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 import 'package:hibiki/src/utils/misc/show_app_dialog.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart'
@@ -321,6 +322,11 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   bool get _caretActive => _caretSurface != CaretSurface.none;
   bool get _caretOnReader => _caretSurface == CaretSurface.reader;
   bool get _caretOnLyrics => _caretSurface == CaretSurface.lyrics;
+
+  // The WebView char caret and focus-layer hops are part of the experimental
+  // keyboard/gamepad focus navigation system. Page-turn and media shortcuts stay
+  // active when the switch is off.
+  bool get _focusNavEnabled => appModel.experimentalFocusNavigationEnabled;
 
   // Serializes the cursor's async JS operations. A gamepad D-pad auto-repeats
   // ~9×/s and a move that turns the page (move → _paginate → reanchor) round-
@@ -1271,7 +1277,8 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
                           // app-wide HibikiFocusRing convention (no focus ring in
                           // touch mode). Rebuilt on highlight change via
                           // _onHighlightModeChanged.
-                          final bool show = _focusNode.hasPrimaryFocus &&
+                          final bool show = _focusNavEnabled &&
+                              _focusNode.hasPrimaryFocus &&
                               _caretSurface == CaretSurface.none &&
                               FocusManager.instance.highlightMode ==
                                   FocusHighlightMode.traditional;
@@ -3736,7 +3743,8 @@ window.flutter_inappwebview.callHandler('spreadReady');
       return KeyEventResult.ignored;
     }
 
-    final KeyEventResult? gamepadAResult = _handleGamepadAKeyEvent(event);
+    final KeyEventResult? gamepadAResult =
+        _focusNavEnabled ? _handleGamepadAKeyEvent(event) : null;
     if (gamepadAResult != null) return gamepadAResult;
 
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
@@ -3744,7 +3752,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
     // Char-level reading cursor (book has focus; chrome already returned above).
     // While active, the cursor owns Tab / arrows / A(Enter) / B(Esc) before the
     // registry is consulted. While inactive, A / Enter ENTER the cursor.
-    if (_caretActive) {
+    if (_focusNavEnabled && _caretActive) {
       // LB/RB flip a whole page on the cursor surface, mirroring the polled
       // gamepad branch in _handleGamepadButton. Android gamepads deliver the
       // shoulders here as gameButton key events, mapped back via fromLogicalKey;
@@ -3767,7 +3775,10 @@ window.flutter_inappwebview.callHandler('spreadReady');
         unawaited(_runCaretAction(caretAction));
         return KeyEventResult.handled;
       }
-    } else if (ReaderCaretRouter.isEnterTriggerKeyboard(event.logicalKey)) {
+    } else if (ReaderCaretRouter.isEnterTriggerKeyboard(
+      event.logicalKey,
+      focusNavEnabled: _focusNavEnabled,
+    )) {
       unawaited(_enterCaret());
       return KeyEventResult.handled;
     }
@@ -3777,7 +3788,8 @@ window.flutter_inappwebview.callHandler('spreadReady');
     // (_handleGamepadButton). Without this the keyboard path had no chrome
     // route, so Down resolved to a reader page-turn shortcut and could never
     // reach the bar (BUG-020). Gated on a visible bar that accepts focus.
-    if (!_caretActive &&
+    if (_focusNavEnabled &&
+        !_caretActive &&
         event.logicalKey == LogicalKeyboardKey.arrowDown &&
         _showChrome) {
       _chromeFocusScope.requestFocus();
@@ -3860,7 +3872,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
       _gamepadAHoldTimer = Timer(const Duration(milliseconds: 500), () {
         _gamepadAHoldTimer = null;
         _gamepadALongFired = true;
-        if (!mounted || !_caretActive) return;
+        if (!mounted || !_focusNavEnabled || !_caretActive) return;
         unawaited(_runCaretAction(CaretAction.longPress));
       });
       return KeyEventResult.handled;
@@ -3927,7 +3939,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
       return false;
     }
     // Char-level reading cursor — same contextual routing as the keyboard path.
-    if (_caretActive) {
+    if (_focusNavEnabled && _caretActive) {
       // LB/RB flip a whole page on the cursor surface (popup scrolls, paged
       // reader turns) before the directional caret map — the shoulders are not
       // caret-directional, so they would otherwise fall through to the reader
@@ -3945,7 +3957,10 @@ window.flutter_inappwebview.callHandler('spreadReady');
         unawaited(_runCaretAction(caretAction));
         return true;
       }
-    } else if (ReaderCaretRouter.isEnterTriggerGamepad(button)) {
+    } else if (ReaderCaretRouter.isEnterTriggerGamepad(
+      button,
+      focusNavEnabled: _focusNavEnabled,
+    )) {
       unawaited(_enterCaret());
       return true;
     }
@@ -3953,7 +3968,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
     // (the sibling layer below the reading content). The bar must be visible
     // (its visibility is Y-controlled). D-pad Up/Down are free on the gamepad —
     // page-turn is on RB/LB + D-pad Left/Right — so this never shadows paging.
-    if (button == GamepadButton.dpadDown && _showChrome) {
+    if (_focusNavEnabled && button == GamepadButton.dpadDown && _showChrome) {
       _chromeFocusScope.requestFocus();
       // Only consume Down if focus actually advanced into a bar control. If the
       // bar has no focusable child (nextFocus() == false), fall through so the
@@ -3979,7 +3994,9 @@ window.flutter_inappwebview.callHandler('spreadReady');
   }
 
   bool _handleGamepadLongPress(GamepadButton button) {
-    if (button != GamepadButton.a || !_caretActive) return false;
+    if (!_focusNavEnabled || button != GamepadButton.a || !_caretActive) {
+      return false;
+    }
     unawaited(_runCaretAction(CaretAction.longPress));
     return true;
   }
@@ -5631,49 +5648,56 @@ window.flutter_inappwebview.callHandler('spreadReady');
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            IconButton(
-              icon: Icon(
-                _currentSentenceIsFavorited ? Icons.star : Icons.star_border,
-                size: 20,
-                color: _currentSentenceIsFavorited
-                    ? theme.colorScheme.primary
-                    : null,
-              ),
-              onPressed: _toggleFavoriteSentence,
+            HibikiIconButton(
+              icon:
+                  _currentSentenceIsFavorited ? Icons.star : Icons.star_border,
+              size: 20,
+              enabledColor: _currentSentenceIsFavorited
+                  ? theme.colorScheme.primary
+                  : null,
+              onTap: _toggleFavoriteSentence,
               tooltip: t.action_favorite,
-              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.all(tokens.spacing.gap / 2),
             ),
             if (hasAudio) ...[
               SizedBox(width: tokens.spacing.gap),
-              IconButton(
-                icon: const Icon(Icons.replay_outlined, size: 20),
-                onPressed: hasCue ? () => ctrl.playCueOnce(cue) : null,
-                tooltip: t.repeat_cue,
-                visualDensity: VisualDensity.compact,
-              ),
-              SizedBox(width: tokens.spacing.gap),
-              IconButton(
-                icon: Icon(
-                  ctrl.isPlaying
-                      ? Icons.pause_outlined
-                      : Icons.play_arrow_outlined,
-                  size: 24,
-                ),
-                onPressed: ctrl.togglePlayPause,
-                tooltip: ctrl.isPlaying ? t.pause : t.play,
-                visualDensity: VisualDensity.compact,
-              ),
-              SizedBox(width: tokens.spacing.gap),
-              IconButton(
-                icon: const Icon(Icons.play_circle_outline, size: 20),
-                onPressed: hasCue
+              HibikiIconButton(
+                icon: Icons.replay_outlined,
+                size: 20,
+                onTap: hasCue
                     ? () {
+                        final AudioCue? cue = _lookupCue;
+                        if (cue == null) return;
+                        ctrl.playCueOnce(cue);
+                      }
+                    : null,
+                tooltip: t.repeat_cue,
+                padding: EdgeInsets.all(tokens.spacing.gap / 2),
+              ),
+              SizedBox(width: tokens.spacing.gap),
+              HibikiIconButton(
+                icon: ctrl.isPlaying
+                    ? Icons.pause_outlined
+                    : Icons.play_arrow_outlined,
+                size: 24,
+                onTap: ctrl.togglePlayPause,
+                tooltip: ctrl.isPlaying ? t.pause : t.play,
+                padding: EdgeInsets.all(tokens.spacing.gap / 2),
+              ),
+              SizedBox(width: tokens.spacing.gap),
+              HibikiIconButton(
+                icon: Icons.play_circle_outline,
+                size: 20,
+                onTap: hasCue
+                    ? () {
+                        final AudioCue? cue = _lookupCue;
+                        if (cue == null) return;
                         ctrl.playCueAndContinue(cue);
                         clearDictionaryResult();
                       }
                     : null,
                 tooltip: t.play_from_cue,
-                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.all(tokens.spacing.gap / 2),
               ),
             ],
           ],
