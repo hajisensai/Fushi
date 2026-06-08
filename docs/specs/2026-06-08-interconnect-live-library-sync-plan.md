@@ -17,7 +17,7 @@
 ## 核心约束（决定方案形状，不可违背）
 
 1. **后端无关不破坏**：云后端（GoogleDrive/WebDAV/Dropbox/OneDrive/FTP/SFTP）与旧版 peer **完全走现有暂存路径，零改动**。live 分支仅在 `_backend is HibikiClientSyncBackend && 探测到 host 支持 live` 时进入。（Never break userspace）
-2. **能力探测 + fallback**：旧 host 没有 `/api/capabilities` → 返回 404 → client 当作不支持 → 回退暂存。新旧设备互联必须仍能同步，绝不直接失败。
+2. **无旧设备，互联恒走 live**（用户确认无旧 peer，故不做向后兼容探测/回退——消除为旧设备而设的特例）：分流只按后端类型 `_backend is HibikiClientSyncBackend` 判定，互联永远走 live 端点；client 不探测 `/api/capabilities`。`_syncDictionariesStaged` 暂存路径**仅为云后端（非 HibikiClient）保留**，不再服务互联。若 host 端点意外 404（我们两端同代码、库服务恒注入，正常不会），client live 方法按 `checkStatus` 自然抛错（loud fail，不静默回退），便于发现而非掩盖。
 3. **鉴权复用**：所有 `/api/library/*`、`/api/capabilities` 端点经现有 `_authMiddleware`（HTTP Basic + 配对 token）自动鉴权——它已覆盖除 `api/pair` 外所有路径（`hibiki_sync_server.dart:147-163`），无需新鉴权代码，但要写测试守住「未鉴权 401」。
 4. **host 库变动串行**：host 经端点 import/delete 自己的库，必须与 host 自身可能在跑的同步/查词串行——经 `runExclusiveWithSync`（`sync_auto_trigger.dart:56`）。
 5. **流式不入内存**：export/import 大词典/大书/大音频必须流式（host 端 `file.openRead()`，client 端 `request.addStream` / 边读边写 sink）——复用 `SyncAssetPackageService` 既有 isolate 流式打包与 `HibikiClientSyncBackend.uploadContentFile/downloadContentFile` 的流式范式。
@@ -608,12 +608,10 @@ git commit -m "feat(sync): host live dictionary endpoints + capabilities probe"
 // 经 SyncRepository 配置 setHibikiClientUrls([HibikiClientUrl(url: base, enabled: true)])
 //   + setHibikiClientToken(token)，再 restoreAuth(repo) + authenticate(repo: repo)。
 // 断言：
-//   - supportsLiveDictionaries() == true（capabilities 200）
 //   - listRemoteDictionaries().map((d)=>d.name) 含 'JMdict'
 //   - getRemoteDictionary('JMdict', dest) 写出 'PKG:JMdict'
 //   - putRemoteDictionary('NHK', file) 后 fake.imported contains 'PKG:NHK'
 //   - deleteRemoteDictionary('JMdict') 后 fake.deleted contains 'JMdict'
-//   - 对一个不注入 libraryService 的 server，新建 backend.supportsLiveDictionaries() == false
 // repo 用内存 DB：SyncRepository(HibikiDatabase(NativeDatabase.memory()))；
 // HibikiClientUrl 来自 sync_repository.dart（按其真实构造签名）。
 ```
@@ -628,34 +626,10 @@ Expected: FAIL（live 方法未定义）
 ```dart
   // ── Live library (interconnect-only) ──────────────────────────────
   // host 升级为「库感知」后，client 直读对端实时词典，彻底不经 __dictionaries__。
-  // 旧 host 无 /api/capabilities → 探测非 200 → false → orchestrator 回退暂存。
-
-  bool? _liveDictsCached; // 会话级缓存；clearCache() 复位
+  // 无旧设备，互联恒走 live（无能力探测）；分流由 orchestrator 按后端类型判定。
 
   /// host 根 origin（folder 路径是 `${baseUrl}/$kSyncRootFolderName/`，故 /api 在 `${baseUrl}/api/...`）。
   String get _apiBase => _ops!.baseUrl;
-
-  Future<bool> supportsLiveDictionaries() async {
-    if (_liveDictsCached != null) return _liveDictsCached!;
-    await _ensureResolved();
-    try {
-      final HttpClientRequest req =
-          await _ops!.buildRequest('GET', '$_apiBase/api/capabilities');
-      final HttpClientResponse res = await req.close();
-      if (res.statusCode != 200) {
-        await res.drain<void>();
-        return _liveDictsCached = false;
-      }
-      final String bodyStr = await res.transform(utf8.decoder).join();
-      final Object? json = jsonDecode(bodyStr);
-      final bool ok = json is Map &&
-          json['liveLibrary'] is Map &&
-          (json['liveLibrary'] as Map)['dictionaries'] == true;
-      return _liveDictsCached = ok;
-    } catch (_) {
-      return _liveDictsCached = false;
-    }
-  }
 
   Future<List<RemoteDictionaryInfo>> listRemoteDictionaries() async {
     await _ensureResolved();
@@ -710,9 +684,9 @@ Expected: FAIL（live 方法未定义）
   }
 ```
 
-并在 `clearCache()` 体里加 `_liveDictsCached = null;`；顶部确保 `import 'dart:convert';`、`import 'package:hibiki/src/sync/hibiki_library_host_service.dart';`。
+顶部确保 `import 'dart:convert';`、`import 'package:hibiki/src/sync/hibiki_library_host_service.dart';`。无探测缓存字段、不改 `clearCache()`。
 
-> 校验点：`WebDavOps.buildRequest(method, path)` 接受绝对 URL（既有 `uploadContentFile`/`downloadContentFile` 传绝对 href 已证）。`supportsLiveDictionaries` 自判 statusCode、不调 `checkStatus`，故 404 不被当错误抛。
+> 校验点：`WebDavOps.buildRequest(method, path)` 接受绝对 URL（既有 `uploadContentFile`/`downloadContentFile` 传绝对 href 已证）。
 
 - [ ] **Step 4: 跑绿**
 
@@ -746,8 +720,9 @@ git commit -m "feat(sync): client live dictionary endpoint methods + capability 
 //     - 本地 DB 现含 '明镜'（pull import 成功）
 //     - fake library.imported 含 'JMdict' 的包内容（push 成功）
 //     - server 的 sync-data 目录下【不存在】 __dictionaries__ 文件夹
-// 用例 B（fallback）：server 不注入 libraryService（旧 host）→ 跑后 __dictionaries__ 被创建，
-//   证明回退到 _syncDictionariesStaged，旧路径未破坏。
+// 用例 B（云后端不走 live）：用一个非 HibikiClient 的 fake/内存后端跑 syncDictionaries，
+//   断言仍走 _syncDictionariesStaged（创建 __dictionaries__ 命名空间），证明云后端路径未破坏。
+//   （现有 sync_orchestrator_test.dart 已覆盖 staged 主体，此处只补「互联=live、云=staged」分流断言。）
 ```
 
 - [ ] **Step 2: 跑红**
@@ -762,11 +737,11 @@ Expected: FAIL
 3b. 新增分流入口 + live 实现，顶部加 `import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';`、`import 'package:hibiki/src/sync/hibiki_library_host_service.dart';`：
 
 ```dart
-  /// Union-syncs dictionaries. 互联且 host 支持 live → 直读对端实时库（无暂存）；
-  /// 否则走现有 __dictionaries__ 暂存路径（云后端 + 旧 peer 不变）。
+  /// Union-syncs dictionaries. 互联（HibikiClient）→ 直读对端实时库（无暂存）；
+  /// 云后端 → 走现有 __dictionaries__ 暂存路径（不变）。无旧设备故无能力探测。
   Future<void> syncDictionaries(SyncRunReport report) async {
     final SyncBackend b = _backend;
-    if (b is HibikiClientSyncBackend && await b.supportsLiveDictionaries()) {
+    if (b is HibikiClientSyncBackend) {
       await _syncDictionariesLive(report, b);
       return;
     }
@@ -916,12 +891,11 @@ Expected: FAIL
 3c. `_propagateDictionaryDeleteToRemote(String name)` 现体（用 `deleteRemoteDictionaryAsset(backend, name)`）前加分流：
 
 ```dart
-    if (backend is HibikiClientSyncBackend &&
-        await backend.supportsLiveDictionaries()) {
+    if (backend is HibikiClientSyncBackend) {
       await backend.deleteRemoteDictionary(name);
       return;
     }
-    // 暂存删除路径不变：
+    // 云后端暂存删除路径不变：
     await deleteRemoteDictionaryAsset(backend, name);
 ```
 
@@ -978,12 +952,12 @@ git commit -m "style(sync): dart format for interconnect live dictionary sync"
 
 ## Self-Review（对照核心约束自查）
 
-- **能力探测 + fallback**（约束 2）：Task 3 `/api/capabilities` + Task 4 `supportsLiveDictionaries` 非200→false + Task 5 分流回 `_syncDictionariesStaged` + Task 3「404 when no service」、Task 5 用例 B「旧 host fallback 建 `__dictionaries__`」覆盖。✅
+- **无旧设备，互联恒 live**（约束 2）：Task 5 分流纯按 `is HibikiClientSyncBackend`；云后端走 `_syncDictionariesStaged`（Task 5 用例 B + 现有 `sync_orchestrator_test.dart` 覆盖）。Task 3 `/api/capabilities` 端点保留作信息用途但 client 不依赖它。✅
 - **鉴权**（约束 3）：Task 3「unauthenticated → 401」覆盖（复用现有 `_authMiddleware`，无新鉴权代码）。✅
 - **host 库变动串行**（约束 4）：`AppModelLibraryHostService.importDictionary/deleteDictionary` 经 `_runExclusive`，Task 6 注入 `runExclusiveWithSync`。✅
 - **流式**（约束 5）：host GET `file.openRead()`+Content-Length（transformer onDone 删临时）；PUT `request.read().forEach(sink.add)`；client put `addStream`、get 复用 `downloadContentFile` 边下边写。✅
 - **删除正交**（约束 6）：Task 6 `_propagateDictionaryDeleteToRemote` live 走 `DELETE` 端点，union diff 不推断删除。✅
 - **不破坏云后端/旧 peer**（约束 1）：live 仅 `_backend is HibikiClientSyncBackend && 探测` 才进；`_syncDictionariesStaged` 原样保留；Task 5 回归旧 `sync_orchestrator_test.dart`。✅
-- **类型一致**：`RemoteDictionaryInfo`/`DictionarySyncDiff`/`computeDictionarySyncDiff`/`HibikiLibraryHostService`(listDictionaries/exportDictionary/importDictionary/deleteDictionary)/`AppModelLibraryHostService` 在 Task1-2 定义、Task3-6 一致引用；client 方法名 `supportsLiveDictionaries`/`listRemoteDictionaries`/`getRemoteDictionary`/`putRemoteDictionary`/`deleteRemoteDictionary` 在 Task4 定义、Task5-6 一致引用。✅
+- **类型一致**：`RemoteDictionaryInfo`/`DictionarySyncDiff`/`computeDictionarySyncDiff`/`HibikiLibraryHostService`(listDictionaries/exportDictionary/importDictionary/deleteDictionary)/`AppModelLibraryHostService` 在 Task1-2 定义、Task3-6 一致引用；client 方法名 `listRemoteDictionaries`/`getRemoteDictionary`/`putRemoteDictionary`/`deleteRemoteDictionary` 在 Task4 定义、Task5-6 一致引用（已去掉 `supportsLiveDictionaries` 探测）。✅
 - **占位扫描**：Task 3 GET 临时清理给了最终 transformer 实现；其余步骤含真实代码或明确「执行时按真实类型/方法名校验」的具体校验点（非 TODO）。Phase 2/3 标为「后续独立计划展开」属合法 scope 分解。✅
 - **遗留校验点**（执行时必须确认，已在对应步骤标注）：① `DictionaryMetaRow.type` 可空性；② AppModel 刷新词典缓存的真实方法名；③ `WebDavOps.buildRequest` 接受绝对 URL（既有 content file 路径已证）；④ `HibikiClientUrl` 构造签名（`sync_repository.dart`）；⑤ `SyncOrchestrator` 测试构造参数（`sync_orchestrator_test.dart:150-170`）。
