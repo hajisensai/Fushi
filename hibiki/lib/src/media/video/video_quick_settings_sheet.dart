@@ -28,6 +28,8 @@ class VideoQuickSettingsSheet extends StatefulWidget {
     required this.onApplyShaders,
     required this.initialMpvConfig,
     required this.onMpvConfigChanged,
+    required this.initialLockWindowAspectRatio,
+    required this.onLockWindowAspectRatioChanged,
     this.initialMpvShaderDir = '',
     this.onMpvShaderDirChanged,
     super.key,
@@ -78,6 +80,12 @@ class VideoQuickSettingsSheet extends StatefulWidget {
   /// mpv 配置任一项变化时回调：持久化 + 实时应用到播放器（即改即生效）。
   final Future<void> Function(VideoMpvConfig config) onMpvConfigChanged;
 
+  /// 桌面端是否把原生窗口锁定为视频比例；移动端不显示。
+  final bool initialLockWindowAspectRatio;
+
+  /// 切换桌面窗口比例锁定。
+  final Future<void> Function(bool value) onLockWindowAspectRatioChanged;
+
   @override
   State<VideoQuickSettingsSheet> createState() =>
       _VideoQuickSettingsSheetState();
@@ -86,10 +94,20 @@ class VideoQuickSettingsSheet extends StatefulWidget {
 class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
   static const List<double> _speedPresets = <double>[
     0.5,
-    0.75,
+    0.6,
+    0.7,
+    0.8,
+    0.9,
     1.0,
-    1.25,
+    1.1,
+    1.2,
+    1.3,
+    1.4,
     1.5,
+    1.6,
+    1.7,
+    1.8,
+    1.9,
     2.0,
   ];
 
@@ -98,6 +116,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
   late int _delayMs = widget.initialDelayMs;
   late double _speed = widget.initialSpeed;
   late bool _blur = widget.initialSubtitleBlur;
+  late bool _lockWindowAspectRatio = widget.initialLockWindowAspectRatio;
   late VideoSubtitleStyle _style = widget.initialSubtitleStyle;
 
   /// mpv 配置（内嵌详情即改即生效，本地权威 + 回调持久化/实时应用）。
@@ -341,6 +360,16 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
   Widget _buildPlaybackDetail() {
     return AdaptiveSettingsSection(
       children: <Widget>[
+        if (isDesktopPlatform)
+          AdaptiveSettingsSwitchRow(
+            title: t.video_setting_mpv_aspect,
+            icon: Icons.aspect_ratio_outlined,
+            value: _lockWindowAspectRatio,
+            onChanged: (bool value) async {
+              setState(() => _lockWindowAspectRatio = value);
+              await widget.onLockWindowAspectRatioChanged(value);
+            },
+          ),
         _buildDelayRow(),
         _buildSpeedRow(),
       ],

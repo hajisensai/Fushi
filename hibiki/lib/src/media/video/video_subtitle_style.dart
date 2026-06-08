@@ -12,12 +12,12 @@ class VideoSubtitleStyle {
     required this.bottomPadding,
   });
 
-  /// 历史硬编码外观：fontSize 22 / 白字 / 背景 black54 / 底距 72。
+  /// asbplayer-style defaults: 36px bold white text, no box, black shadow.
   static const VideoSubtitleStyle defaults = VideoSubtitleStyle(
-    fontSize: 22,
+    fontSize: 36,
     textColor: Color(0xFFFFFFFF),
-    backgroundOpacity: 0.54,
-    bottomPadding: 72,
+    backgroundOpacity: 0,
+    bottomPadding: 75,
   );
 
   final double fontSize;
@@ -57,10 +57,14 @@ class VideoSubtitleStyle {
       final int argb =
           d['textColor'] is num ? (d['textColor'] as num).toInt() : 0xFFFFFFFF;
       return VideoSubtitleStyle(
-        fontSize: num2d(d['fontSize'], 22).clamp(10, 72),
+        fontSize: num2d(d['fontSize'], defaults.fontSize).clamp(10, 72),
         textColor: Color(argb),
-        backgroundOpacity: num2d(d['backgroundOpacity'], 0.54).clamp(0.0, 1.0),
-        bottomPadding: num2d(d['bottomPadding'], 72).clamp(0, 400),
+        backgroundOpacity: num2d(
+          d['backgroundOpacity'],
+          defaults.backgroundOpacity,
+        ).clamp(0.0, 1.0),
+        bottomPadding:
+            num2d(d['bottomPadding'], defaults.bottomPadding).clamp(0, 400),
       );
     } catch (_) {
       return defaults;

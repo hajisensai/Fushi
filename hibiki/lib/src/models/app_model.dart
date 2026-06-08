@@ -1730,6 +1730,12 @@ class AppModel with ChangeNotifier {
   Future<void> setVideoSubtitleBlur(bool value) =>
       prefsRepo.setVideoSubtitleBlur(value);
 
+  /// 桌面视频页按视频原始比例锁定原生窗口；默认开启。
+  bool get videoLockWindowAspectRatio => prefsRepo.videoLockWindowAspectRatio;
+
+  Future<void> setVideoLockWindowAspectRatio(bool value) =>
+      prefsRepo.setVideoLockWindowAspectRatio(value);
+
   /// 视频字幕外观（JSON；见 VideoSubtitleStyle）。
   String get videoSubtitleStyle => prefsRepo.videoSubtitleStyle;
 

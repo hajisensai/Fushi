@@ -25,6 +25,8 @@ VideoQuickSettingsSheet _sheet({
     onApplyShaders: (_) async {},
     initialMpvConfig: VideoMpvConfig.defaults,
     onMpvConfigChanged: (VideoMpvConfig c) async => onMpvConfigChanged?.call(c),
+    initialLockWindowAspectRatio: true,
+    onLockWindowAspectRatioChanged: (_) async {},
   );
 }
 

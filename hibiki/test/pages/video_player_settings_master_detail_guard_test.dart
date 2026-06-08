@@ -37,6 +37,8 @@ void main() {
     expect(method, contains('onApplyShaders:'));
     expect(method, contains('initialMpvConfig:'));
     expect(method, contains('onMpvConfigChanged:'));
+    expect(method, contains('initialLockWindowAspectRatio:'));
+    expect(method, contains('onLockWindowAspectRatioChanged:'));
 
     // 旧 bespoke 深色单列面板已移除（防回归）。
     expect(method, isNot(contains('showModalBottomSheet')),
@@ -102,6 +104,10 @@ void main() {
         reason: 'mpv 配置内嵌成 AdaptiveSettings 行（hwdec/aspect/channels 用 picker）');
     expect(source, contains('VideoMpvConfig.defaults'),
         reason: 'mpv 内嵌详情含「重置默认」');
+    expect(source, contains('initialLockWindowAspectRatio'));
+    expect(source, contains('onLockWindowAspectRatioChanged'));
+    expect(source, contains('isDesktopPlatform'));
+    expect(source, contains('t.video_setting_mpv_aspect'));
     expect(source, isNot(contains('widget.onOpenShaders')));
     expect(source, isNot(contains('widget.onOpenMpvConfig')));
   });

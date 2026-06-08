@@ -43,10 +43,11 @@ class VideoSubtitleOverlay extends StatefulWidget {
     this.onCharTap,
     this.hitTester,
     this.blurEnabled = false,
-    this.fontSize = 22,
+    this.fontSize = 36,
     this.textColor = Colors.white,
-    this.backgroundOpacity = 0.54,
-    this.bottomPadding = 72,
+    this.backgroundOpacity = 0,
+    this.bottomPadding = 75,
+    this.fontFamily,
     super.key,
   });
 
@@ -75,6 +76,9 @@ class VideoSubtitleOverlay extends StatefulWidget {
 
   /// 字幕距底部抬升量（避开 media_kit 控制条；外观设置）。
   final double bottomPadding;
+
+  /// 字幕字体。传 null 时走平台默认；视频页传 app-wide reader custom font。
+  final String? fontFamily;
 
   @override
   State<VideoSubtitleOverlay> createState() => _VideoSubtitleOverlayState();
@@ -136,9 +140,12 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
         final bool blurred = widget.blurEnabled && !_revealed;
         _currentBlurred = blurred;
 
+        final Color backgroundColor = widget.backgroundOpacity <= 0
+            ? Colors.transparent
+            : Colors.black.withValues(alpha: widget.backgroundOpacity);
         Widget box = DecoratedBox(
           decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: widget.backgroundOpacity),
+            color: backgroundColor,
             borderRadius: BorderRadius.circular(6),
           ),
           child: Padding(
@@ -247,6 +254,15 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
       color: widget.textColor,
       fontSize: widget.fontSize,
       height: 1.3,
+      fontFamily: widget.fontFamily,
+      fontWeight: FontWeight.w700,
+      shadows: const <Shadow>[
+        Shadow(
+          color: Colors.black,
+          blurRadius: 3,
+          offset: Offset(0, 3),
+        ),
+      ],
     );
     SubtitleSpan? span;
     if (markup != null) {

@@ -45,7 +45,7 @@ void main() {
     });
   });
 
-  group('左右方向键 = 上下句字幕（无 cue 回退 ±10s）', () {
+  group('asbplayer-style playback shortcuts', () {
     final String page =
         read('lib/src/pages/implementations/video_hibiki_page.dart');
     final RegExpMatch body = RegExp(
@@ -54,21 +54,52 @@ void main() {
     ).firstMatch(page)!;
     final String b = body.group(1)!;
 
-    test('arrowLeft 走 skipToPrevCue，无 cue 回退 seekRelative(-10000)', () {
+    test('arrowLeft 走 skipToPrevCue，无 cue 回退 3s', () {
       final int left = b.indexOf('LogicalKeyboardKey.arrowLeft');
       final int right = b.indexOf('LogicalKeyboardKey.arrowRight');
       expect(left, greaterThanOrEqualTo(0));
       final String leftBlock = b.substring(left, right);
       expect(leftBlock.contains('skipToPrevCue()'), isTrue);
       expect(leftBlock.contains('cues.isEmpty'), isTrue);
-      expect(leftBlock.contains('seekRelative(-10000)'), isTrue);
+      expect(leftBlock.contains('-_asbSeekMs'), isTrue);
     });
 
-    test('arrowRight 走 skipToNextCue，无 cue 回退 seekRelative(10000)', () {
+    test('arrowRight 走 skipToNextCue，无 cue 回退 3s', () {
       final int right = b.indexOf('LogicalKeyboardKey.arrowRight');
       final String rightBlock = b.substring(right);
       expect(rightBlock.contains('skipToNextCue()'), isTrue);
-      expect(rightBlock.contains('seekRelative(10000)'), isTrue);
+      expect(rightBlock.contains('_asbSeekMs'), isTrue);
+    });
+
+    test('A/D match asbplayer backward/forward seek and Shift+F fast-forwards',
+        () {
+      expect(page.contains('static const int _asbSeekMs = 3000'), isTrue);
+      expect(page.contains('LogicalKeyboardKey.keyA'), isTrue);
+      expect(page.contains('seekRelative(-_asbSeekMs)'), isTrue);
+      expect(page.contains('LogicalKeyboardKey.keyD'), isTrue);
+      expect(page.contains('seekRelative(_asbSeekMs)'), isTrue);
+      expect(
+        page.contains(
+          'SingleActivator(LogicalKeyboardKey.keyF, shift: true)',
+        ),
+        isTrue,
+      );
+      expect(page.contains('seekRelative(_asbFastSeekMs)'), isTrue);
+    });
+
+    test('subtitle offset has keyboard bindings and 100ms step', () {
+      expect(page.contains('static const int _subtitleOffsetStepMs = 100'),
+          isTrue);
+      expect(page.contains('_adjustSubtitleOffset(-_subtitleOffsetStepMs)'),
+          isTrue);
+      expect(page.contains('_adjustSubtitleOffset(_subtitleOffsetStepMs)'),
+          isTrue);
+    });
+
+    test('speed changes in 0.1 steps', () {
+      expect(page.contains('static const double _speedStep = 0.1'), isTrue);
+      expect(page.contains('_adjustSpeed(_speedStep)'), isTrue);
+      expect(page.contains('_adjustSpeed(-_speedStep)'), isTrue);
     });
   });
 

@@ -14,6 +14,7 @@ import 'package:media_kit_video/media_kit_video.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:window_manager/window_manager.dart';
 
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
@@ -154,6 +155,11 @@ abstract class VideoHibikiTestHooks {
 class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     with DictionaryPageMixin, WidgetsBindingObserver
     implements VideoHibikiTestHooks {
+  static const int _asbSeekMs = 3000;
+  static const int _asbFastSeekMs = 10000;
+  static const int _subtitleOffsetStepMs = 100;
+  static const double _speedStep = 0.1;
+
   @override
   int? get debugPositionMs => _controller?.positionMs;
 
@@ -282,6 +288,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 当前字幕外观（全局偏好快照；设置面板改动后刷新）。
   VideoSubtitleStyle _subtitleStyle = VideoSubtitleStyle.defaults;
 
+  /// 桌面端是否把原生窗口锁定为当前视频比例。移动端窗口不可改尺寸。
+  bool _lockWindowAspectRatio = true;
+  double? _appliedWindowAspectRatio;
+
   bool get _isPlaylist => _episodes.length > 1;
 
   AppModel get appModel => ref.read(appProvider);
@@ -345,6 +355,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _delayMs = row.delayMs;
     _playbackSpeed = _readPersistedSpeed();
     _subtitleStyle = VideoSubtitleStyle.decode(appModel.videoSubtitleStyle);
+    _lockWindowAspectRatio = appModel.videoLockWindowAspectRatio;
 
     // 解析播放列表（若有）。非空则按 currentEpisode 载对应集；否则走单视频路径。
     final String? playlistJson = row.playlistJson;
@@ -698,6 +709,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // 应用持久化的音画延迟（换集复用同一值；load 不重置 delay）。
     controller.setDelayMs(_delayMs);
     controller.onPositionWrite = _isRemote ? null : _persistPosition;
+    controller.removeListener(_syncWindowAspectRatioLock);
+    controller.addListener(_syncWindowAspectRatioLock);
     if (!mounted) {
       if (_controller == null) controller.dispose();
       return;
@@ -713,6 +726,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       // 当前选中由 _currentSubtitleSource 保留（菜单切换时再写）。
       _currentSubtitleSource = externalSubtitlePath ?? _currentSubtitleSource;
     });
+    _syncWindowAspectRatioLock();
 
     // 视频就绪后预热查词浮层（BUG-094）：seed 一个常驻隐藏热 WebView，全程复用，
     // 查词不再每次冷加载白屏。放成功分支（缺书/错误态不预热，无视频无需查词）。
@@ -895,6 +909,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _popup.clear();
     _watchTracker?.dispose();
     _watchTracker = null;
+    _controller?.removeListener(_syncWindowAspectRatioLock);
+    unawaited(_clearWindowAspectRatioLock());
     _controller?.dispose();
     _videoFocusNode.dispose();
     _titleNotifier.dispose();
@@ -1265,8 +1281,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   ///    （本页 [PopScope] 自管退出，但收不到事件：media_kit 的 CallbackShortcuts 在
   ///    本页外层 CallbackShortcuts 的内层，先吞掉 Escape）。改为非全屏退页、全屏退
   ///    全屏。
-  /// ② 默认左右方向键是 ±2 秒 seek，用户要「上下句字幕」（无 cue 时回退 ±10 秒）。
-  /// 其余键（空格/媒体键/音量/J·I/F）按 media_kit 默认语义用底层 [Player] 重建，避免
+  /// ② 默认左右方向键是 ±2 秒 seek，用户要「上下句字幕」（无 cue 时回退 asbplayer 3 秒）。
+  /// 其余键（空格/媒体键/J·I/F）按 media_kit 默认语义用底层 [Player] 重建，避免
   /// 覆盖后丢默认行为。全屏相关 helper 需 controls 子树内 context，用 [_videoControlsContext]。
   Map<ShortcutActivator, VoidCallback> _videoKeyboardShortcuts(
     VideoPlayerController controller,
@@ -1281,34 +1297,39 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           player()?.pause(),
       const SingleActivator(LogicalKeyboardKey.mediaPlayPause): () =>
           player()?.playOrPause(),
-      // 左右方向键 = 上下句字幕（无字幕 cue 时回退 ±10 秒 seek）。
+      // 左右方向键 = 上下句字幕（无字幕 cue 时回退 asbplayer 默认 ±3 秒 seek）。
       const SingleActivator(LogicalKeyboardKey.arrowLeft): () => unawaited(
             controller.cues.isEmpty
-                ? controller.seekRelative(-10000)
+                ? controller.seekRelative(-_asbSeekMs)
                 : controller.skipToPrevCue(),
           ),
       const SingleActivator(LogicalKeyboardKey.arrowRight): () => unawaited(
             controller.cues.isEmpty
-                ? controller.seekRelative(10000)
+                ? controller.seekRelative(_asbSeekMs)
                 : controller.skipToNextCue(),
           ),
+      const SingleActivator(LogicalKeyboardKey.keyA): () =>
+          unawaited(controller.seekRelative(-_asbSeekMs)),
+      const SingleActivator(LogicalKeyboardKey.keyD): () =>
+          unawaited(controller.seekRelative(_asbSeekMs)),
+      const SingleActivator(LogicalKeyboardKey.keyF, shift: true): () =>
+          unawaited(controller.seekRelative(_asbFastSeekMs)),
       // C = 着色器「对比原画」旁路切换（B：效果预览/对比；无启用着色器时无视觉变化）。
       const SingleActivator(LogicalKeyboardKey.keyC): () =>
           unawaited(_toggleShaderCompare()),
       // J / I = ±10 秒（保留 media_kit 默认 seek 行为，10 秒粒度）。
       const SingleActivator(LogicalKeyboardKey.keyJ): () =>
-          unawaited(controller.seekRelative(-10000)),
+          unawaited(controller.seekRelative(-_asbFastSeekMs)),
       const SingleActivator(LogicalKeyboardKey.keyI): () =>
-          unawaited(controller.seekRelative(10000)),
-      // 上下方向键 = 音量 ±5（保留 media_kit 默认）。
-      const SingleActivator(LogicalKeyboardKey.arrowUp): () {
-        final Player? p = player();
-        if (p != null) p.setVolume((p.state.volume + 5.0).clamp(0.0, 100.0));
-      },
-      const SingleActivator(LogicalKeyboardKey.arrowDown): () {
-        final Player? p = player();
-        if (p != null) p.setVolume((p.state.volume - 5.0).clamp(0.0, 100.0));
-      },
+          unawaited(controller.seekRelative(_asbFastSeekMs)),
+      const SingleActivator(LogicalKeyboardKey.arrowUp): () =>
+          unawaited(_adjustSubtitleOffset(-_subtitleOffsetStepMs)),
+      const SingleActivator(LogicalKeyboardKey.arrowDown): () =>
+          unawaited(_adjustSubtitleOffset(_subtitleOffsetStepMs)),
+      const SingleActivator(LogicalKeyboardKey.equal): () =>
+          unawaited(_adjustSpeed(_speedStep)),
+      const SingleActivator(LogicalKeyboardKey.minus): () =>
+          unawaited(_adjustSpeed(-_speedStep)),
       // F = 切换全屏（保留 media_kit 默认；需 controls 子树内 context）。
       const SingleActivator(LogicalKeyboardKey.keyF): () {
         final BuildContext? ctx = _videoControlsContext;
@@ -1507,8 +1528,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         const Spacer(),
         if (roomyBottomBar)
           MaterialCustomButton(
-            icon: const Icon(Icons.replay_10),
-            onPressed: () => _seekRelative(-10000),
+            icon: const Icon(Icons.replay),
+            onPressed: () => _seekRelative(-_asbSeekMs),
           ),
         MaterialCustomButton(
           icon: const Icon(Icons.skip_previous),
@@ -1521,8 +1542,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         ),
         if (roomyBottomBar)
           MaterialCustomButton(
-            icon: const Icon(Icons.forward_10),
-            onPressed: () => _seekRelative(10000),
+            icon: const Icon(Icons.forward),
+            onPressed: () => _seekRelative(_asbSeekMs),
           ),
         const Spacer(),
         const MaterialFullscreenButton(),
@@ -1569,6 +1590,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     if (mounted) setState(() {});
   }
 
+  Future<void> _adjustSubtitleOffset(int deltaMs) async {
+    await _setDelayMs(_delayMs + deltaMs);
+  }
+
   /// 设置播放倍速：即时调 controller + 持久化到 per-book 偏好（速度记忆）+ 刷新。
   Future<void> _setSpeed(double speed) async {
     final double clamped = speed.clamp(0.25, 4.0).toDouble();
@@ -1577,6 +1602,52 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     await _controller?.setSpeed(clamped);
     await appModel.prefsRepo.setPref(_speedPrefKey, clamped);
     if (mounted) setState(() {});
+  }
+
+  Future<void> _adjustSpeed(double delta) async {
+    final double next = ((_playbackSpeed + delta) * 10).round() / 10;
+    await _setSpeed(next);
+  }
+
+  Future<void> _setLockWindowAspectRatio(bool value) async {
+    if (_lockWindowAspectRatio == value) return;
+    _lockWindowAspectRatio = value;
+    await appModel.setVideoLockWindowAspectRatio(value);
+    await _syncWindowAspectRatioLock();
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _clearWindowAspectRatioLock() async {
+    if (!isDesktopPlatform || _appliedWindowAspectRatio == null) return;
+    _appliedWindowAspectRatio = null;
+    try {
+      await windowManager.setAspectRatio(0);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('VideoHibiki.windowAspect.clear', e, stack);
+    }
+  }
+
+  Future<void> _syncWindowAspectRatioLock() async {
+    if (!isDesktopPlatform) return;
+    final VideoPlayerController? controller = _controller;
+    if (!_lockWindowAspectRatio || controller == null) {
+      await _clearWindowAspectRatioLock();
+      return;
+    }
+    final int? width = controller.videoWidth;
+    final int? height = controller.videoHeight;
+    if (width == null || height == null || width <= 0 || height <= 0) return;
+    final double aspectRatio = width / height;
+    if (_appliedWindowAspectRatio != null &&
+        (_appliedWindowAspectRatio! - aspectRatio).abs() < 0.0001) {
+      return;
+    }
+    _appliedWindowAspectRatio = aspectRatio;
+    try {
+      await windowManager.setAspectRatio(aspectRatio);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('VideoHibiki.windowAspect.set', e, stack);
+    }
   }
 
   /// 持久化字幕外观并刷新 overlay（纯 Flutter overlay，不碰 mpv）。
@@ -1608,7 +1679,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         : t.video_shader_showing_shaded);
   }
 
-  /// 相对当前位置 seek（±[deltaMs]，底部胶囊条 ±10 秒按钮用）。
+  /// 相对当前位置 seek（±[deltaMs]，底部胶囊条 / 快捷键共用）。
   Future<void> _seekRelative(int deltaMs) async {
     await _controller?.seekRelative(deltaMs);
   }
@@ -1728,6 +1799,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         await appModel.setVideoMpvConfig(VideoMpvConfig.encode(cfg));
         await _controller?.applyMpvConfig(cfg);
       },
+      initialLockWindowAspectRatio: _lockWindowAspectRatio,
+      onLockWindowAspectRatioChanged: _setLockWindowAspectRatio,
       // 「从本机 mpv 导入」找不到时用户手动指定的 mpv 目录，记住下次优先扫。
       initialMpvShaderDir: appModel.videoMpvShaderDir,
       onMpvShaderDirChanged: (String dir) => appModel.setVideoMpvShaderDir(dir),
@@ -2255,6 +2328,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
               textColor: _subtitleStyle.textColor,
               backgroundOpacity: _subtitleStyle.backgroundOpacity,
               bottomPadding: _subtitleStyle.bottomPadding,
+              fontFamily: appModel.appFontFamily,
             ),
           ),
           _buildOsdOverlay(),

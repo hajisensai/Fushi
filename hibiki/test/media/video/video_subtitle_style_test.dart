@@ -3,12 +3,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/video/video_subtitle_style.dart';
 
 void main() {
-  test('default matches historical hardcoded look', () {
+  test('default matches asbplayer subtitle look', () {
     const VideoSubtitleStyle s = VideoSubtitleStyle.defaults;
-    expect(s.fontSize, 22);
+    expect(s.fontSize, 36);
     expect(s.textColor, const Color(0xFFFFFFFF));
-    expect(s.backgroundOpacity, closeTo(0.54, 1e-9));
-    expect(s.bottomPadding, 72);
+    expect(s.backgroundOpacity, closeTo(0.0, 1e-9));
+    expect(s.bottomPadding, 75);
   });
 
   test('encode/decode round-trips', () {
@@ -27,7 +27,7 @@ void main() {
   });
 
   test('decode tolerates empty/garbage -> defaults', () {
-    expect(VideoSubtitleStyle.decode('').fontSize, 22);
+    expect(VideoSubtitleStyle.decode('').fontSize, 36);
     expect(VideoSubtitleStyle.decode('not json').textColor,
         const Color(0xFFFFFFFF));
   });

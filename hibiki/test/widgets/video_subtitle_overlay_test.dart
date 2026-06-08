@@ -65,4 +65,35 @@ void main() {
     await tester.pump();
     expect(find.text('h'), findsNothing); // 未推进位置，无 current cue
   });
+
+  testWidgets('uses asbplayer-style bold text shadow without subtitle box',
+      (tester) async {
+    final c = VideoPlayerController();
+    addTearDown(c.dispose);
+    c.setCues([_cue('A', 0, 1000)]);
+
+    await tester.pumpWidget(buildTestApp(VideoSubtitleOverlay(
+      controller: c,
+      fontSize: 36,
+      backgroundOpacity: 0,
+      bottomPadding: 75,
+      fontFamily: 'ReaderFont',
+    )));
+
+    c.debugUpdateCueForPosition(500);
+    await tester.pump();
+
+    final DecoratedBox box = tester.widget(find.byType(DecoratedBox));
+    final BoxDecoration decoration = box.decoration as BoxDecoration;
+    expect(decoration.color, Colors.transparent);
+
+    final Text text = tester.widget(find.text('A'));
+    expect(text.style!.fontSize, 36);
+    expect(text.style!.fontWeight, FontWeight.w700);
+    expect(text.style!.fontFamily, 'ReaderFont');
+    expect(text.style!.shadows, isNotNull);
+    expect(text.style!.shadows!.single.color, Colors.black);
+    expect(text.style!.shadows!.single.blurRadius, 3);
+    expect(text.style!.shadows!.single.offset, const Offset(0, 3));
+  });
 }

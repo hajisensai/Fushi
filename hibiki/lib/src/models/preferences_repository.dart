@@ -382,6 +382,15 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 桌面视频页按视频原始比例锁定原生窗口；移动端窗口不可改尺寸，不使用此项。
+  bool get videoLockWindowAspectRatio =>
+      getPref('video_lock_window_aspect_ratio', defaultValue: true) as bool;
+
+  Future<void> setVideoLockWindowAspectRatio(bool value) async {
+    await setPref('video_lock_window_aspect_ratio', value);
+    notifyListeners();
+  }
+
   /// 视频字幕外观（JSON；解析见 VideoSubtitleStyle.encode/decode）。空串=默认外观。
   String get videoSubtitleStyle =>
       getPref('video_subtitle_style', defaultValue: '') as String;
