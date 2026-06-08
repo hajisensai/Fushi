@@ -35,6 +35,8 @@ import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:hibiki/src/pages/implementations/stat_activity.dart';
+import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
+import 'package:hibiki/src/sync/remote_video_client.dart';
 import 'package:hibiki/src/utils/app_ui_scale.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
@@ -76,10 +78,22 @@ class VideoHibikiPage extends ConsumerStatefulWidget {
     required this.bookUid,
     required this.repo,
     super.key,
-  });
+  })  : remoteInfo = null,
+        remoteClient = null;
+
+  VideoHibikiPage.remote({
+    required RemoteVideoInfo info,
+    required this.repo,
+    required RemoteVideoClient client,
+    super.key,
+  })  : bookUid = info.id,
+        remoteInfo = info,
+        remoteClient = client;
 
   final String bookUid;
   final VideoBookRepository repo;
+  final RemoteVideoInfo? remoteInfo;
+  final RemoteVideoClient? remoteClient;
 
   /// 打开视频播放页的**唯一入口**：在路由层用 [HibikiAppUiScaleNeutralizer] 把整页中和
   /// （与阅读器 [ReaderHibikiSource.buildLaunchPage] 同范式）。
@@ -95,6 +109,19 @@ class VideoHibikiPage extends ConsumerStatefulWidget {
   }) =>
       HibikiAppUiScaleNeutralizer(
         child: VideoHibikiPage(bookUid: bookUid, repo: repo),
+      );
+
+  static Widget neutralizedRemote({
+    required RemoteVideoInfo info,
+    required VideoBookRepository repo,
+    required RemoteVideoClient client,
+  }) =>
+      HibikiAppUiScaleNeutralizer(
+        child: VideoHibikiPage.remote(
+          info: info,
+          repo: repo,
+          client: client,
+        ),
       );
 
   /// 查词浮层关闭后是否应恢复播放：仅当浮层栈**已全部关闭**（[stackEmpty]）且本次确实
@@ -259,6 +286,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
   AppModel get appModel => ref.read(appProvider);
 
+  bool get _isRemote => widget.remoteInfo != null;
+
   /// app 当前目标学习语言代码（如 `'ja'`/`'ko'`），用于 sidecar 字幕语言优先检测。
   String get _targetLangCode => appModel.targetLanguage.locale.languageCode;
 
@@ -299,6 +328,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   }
 
   Future<void> _init() async {
+    if (_isRemote) {
+      await _initRemote();
+      return;
+    }
     final VideoBookRow? row = await widget.repo.getByBookUid(widget.bookUid);
     if (row == null) {
       if (mounted) setState(() => _failed = true);
@@ -336,6 +369,44 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
     // 单视频路径（无播放列表）。
     await _loadSingle(row);
+  }
+
+  Future<void> _initRemote() async {
+    final RemoteVideoInfo info = widget.remoteInfo!;
+    final RemoteVideoClient client = widget.remoteClient!;
+    _currentSubtitleSource = null;
+    _currentAudioTrackId = null;
+    _delayMs = 0;
+    _playbackSpeed = _readPersistedSpeed();
+    _subtitleStyle = VideoSubtitleStyle.decode(appModel.videoSubtitleStyle);
+
+    try {
+      final RemoteVideoStreamUrls urls =
+          await client.remoteVideoStreamUrls(info.id);
+      String? externalSub;
+      List<AudioCue> cues = const <AudioCue>[];
+      if (urls.subtitleUrl != null) {
+        final Directory temp = await getTemporaryDirectory();
+        final File subtitle = File(p.join(
+          temp.path,
+          'hibiki_remote_${_safeFileName(info.id)}.srt',
+        ));
+        await client.getRemoteVideoSubtitle(info.id, subtitle);
+        externalSub = subtitle.path;
+        cues = await _loadExternalSubtitleCues(subtitle.path, info.id);
+      }
+      await _applyLoad(
+        videoPath: null,
+        mediaUri: urls.streamUrl,
+        cues: cues,
+        title: info.title,
+        initialPositionMs: 0,
+        externalSubtitlePath: externalSub,
+      );
+    } catch (e, stack) {
+      debugPrint('[VideoHibikiPage] remote video load failed: $e\n$stack');
+      if (mounted) setState(() => _failed = true);
+    }
   }
 
   /// per-book 播放倍速偏好 key（速度记忆，跨重启保留）。
@@ -572,9 +643,25 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     }
   }
 
+  Future<List<AudioCue>> _loadExternalSubtitleCues(
+    String path,
+    String bookUid,
+  ) async {
+    try {
+      final String text = await readTextWithEncoding(File(path));
+      return path.toLowerCase().endsWith('.ass')
+          ? AssParser.parseString(content: text, bookKey: bookUid)
+          : SrtParser.parseString(content: text, bookKey: bookUid);
+    } catch (e) {
+      debugPrint('[VideoHibikiPage] external subtitle parse failed: $e');
+      return const <AudioCue>[];
+    }
+  }
+
   /// 共享 load 装配：复用或新建 controller，载入视频 + cue，挂位置持久化回调。
   Future<void> _applyLoad({
-    required String videoPath,
+    required String? videoPath,
+    String? mediaUri,
     required List<AudioCue> cues,
     required String title,
     required int initialPositionMs,
@@ -591,7 +678,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     try {
       await controller.load(
         bookUid: widget.bookUid,
-        videoFile: File(videoPath),
+        videoFile: videoPath == null ? null : File(videoPath),
+        mediaUri: mediaUri,
         cues: cues,
         initialPositionMs: initialPositionMs,
         initialSpeed: _playbackSpeed,
@@ -609,7 +697,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     }
     // 应用持久化的音画延迟（换集复用同一值；load 不重置 delay）。
     controller.setDelayMs(_delayMs);
-    controller.onPositionWrite = _persistPosition;
+    controller.onPositionWrite = _isRemote ? null : _persistPosition;
     if (!mounted) {
       if (_controller == null) controller.dispose();
       return;
@@ -631,7 +719,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _seedWarmPopup();
 
     // 首次 load 建观看统计采集器；换片复用同一 controller 实例，已 attach 不重建。
-    if (_watchTracker == null) {
+    if (!_isRemote && _watchTracker == null) {
       final HibikiDatabase db = appModel.database;
       _watchTracker = VideoWatchTracker(
         title: title,
@@ -679,6 +767,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   String _encodeEpisodes() => jsonEncode(
         _episodes.map((PlaylistEntry e) => e.toJson()).toList(),
       );
+
+  String _safeFileName(String input) =>
+      input.replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '_');
 
   /// 若有持久化音轨偏好 [_currentAudioTrackId]，在 [controller] 的 audioTracks 里
   /// 按 id 匹配并切换，恢复用户上次选的音轨（退出重进 / 换集复用）。

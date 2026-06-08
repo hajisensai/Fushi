@@ -20,7 +20,14 @@ import 'package:hibiki/src/pages/implementations/tag_filter_sheet.dart';
 import 'package:hibiki/src/pages/implementations/tag_picker_page.dart';
 import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
 import 'package:hibiki/src/pages/implementations/video_statistics_page.dart';
+import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
+import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
+import 'package:hibiki/src/sync/remote_video_client.dart';
+import 'package:hibiki/src/sync/sync_backend.dart';
+import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/utils.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 
 /// 首页「视频」tab 的内容：已导入视频的库（独立于书架的 EPUB/有声书分区）。
 ///
@@ -33,9 +40,17 @@ import 'package:hibiki/utils.dart';
 /// + `video_book_tag_mappings` 映射）。顶部有标签筛选栏（共享 [selectedTagIdsProvider]，
 /// 与书架联动），卡片渲染所挂标签，长按弹菜单（编辑标签 / 设置封面 / 删除）。
 class HomeVideoPage extends ConsumerStatefulWidget {
-  const HomeVideoPage({required this.repo, super.key});
+  const HomeVideoPage({
+    required this.repo,
+    this.remoteVideoClientLoader,
+    this.remoteVideoDownloadDestination,
+    super.key,
+  });
 
   final VideoBookRepository repo;
+  final Future<RemoteVideoClient?> Function()? remoteVideoClientLoader;
+  final Future<File> Function(RemoteVideoInfo video)?
+      remoteVideoDownloadDestination;
 
   @override
   ConsumerState<HomeVideoPage> createState() => _HomeVideoPageState();
@@ -43,6 +58,8 @@ class HomeVideoPage extends ConsumerStatefulWidget {
 
 class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   Future<List<VideoBookRow>>? _future;
+  Future<_RemoteVideoState?>? _remoteFuture;
+  RemoteVideoClient? _remoteVideoClient;
 
   /// 视频卡片拖放命中注册表：每张 [CardDropZone] 注册自身几何，拖放时按屏幕坐标
   /// 命中查找目标视频卡（字幕外挂到该视频）。范型=VideoBookRow。
@@ -53,12 +70,45 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   void initState() {
     super.initState();
     _future = widget.repo.listAll();
+    _remoteFuture = _loadRemoteVideos();
   }
 
   void _refresh() {
     setState(() {
       _future = widget.repo.listAll();
+      _remoteFuture = _loadRemoteVideos();
     });
+  }
+
+  Future<RemoteVideoClient?> _resolveRemoteVideoClient() async {
+    final Future<RemoteVideoClient?> Function()? injected =
+        widget.remoteVideoClientLoader;
+    if (injected != null) return injected();
+
+    final AppModel appModel = ref.read(appProvider);
+    final SyncRepository syncRepo = SyncRepository(appModel.database);
+    if (await syncRepo.getBackendType() != SyncBackendType.hibikiServer) {
+      return null;
+    }
+    final HibikiClientSyncBackend backend = HibikiClientSyncBackend.instance;
+    if (!await backend.restoreAuth(syncRepo)) return null;
+    return backend;
+  }
+
+  Future<_RemoteVideoState?> _loadRemoteVideos() async {
+    final RemoteVideoClient? client = await _resolveRemoteVideoClient();
+    _remoteVideoClient = client;
+    if (client == null) return null;
+    try {
+      final List<RemoteVideoInfo> videos = await client.listRemoteVideos();
+      return _RemoteVideoState(videos: videos);
+    } catch (e) {
+      debugPrint('[home-video] remote video list failed: $e');
+      return const _RemoteVideoState(
+        videos: <RemoteVideoInfo>[],
+        failed: true,
+      );
+    }
   }
 
   /// 标签改动（加/删/换书）后刷新：失效共享标签 provider + 重载视频列表。
@@ -167,6 +217,55 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
             bookUid: book.bookUid, repo: widget.repo),
       ),
     );
+  }
+
+  void _openRemote(RemoteVideoInfo video) {
+    final RemoteVideoClient? client = _remoteVideoClient;
+    if (client == null) return;
+    Navigator.push(
+      context,
+      adaptivePageRoute<void>(
+        builder: (_) => VideoHibikiPage.neutralizedRemote(
+          info: video,
+          repo: widget.repo,
+          client: client,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _downloadRemote(RemoteVideoInfo video) async {
+    final RemoteVideoClient? client = _remoteVideoClient;
+    if (client == null) return;
+    final File dest = await _remoteDownloadDestination(video);
+    try {
+      await client.downloadRemoteVideo(video.id, dest);
+    } catch (e) {
+      debugPrint('[home-video] remote video download failed: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t.remote_video_download_failed)),
+      );
+      return;
+    }
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(t.remote_video_downloaded)),
+    );
+  }
+
+  Future<File> _remoteDownloadDestination(RemoteVideoInfo video) async {
+    final Future<File> Function(RemoteVideoInfo video)? injected =
+        widget.remoteVideoDownloadDestination;
+    if (injected != null) return injected(video);
+    final Directory docs = await getApplicationDocumentsDirectory();
+    final Directory dir = Directory(p.join(docs.path, 'remote_videos'));
+    await dir.create(recursive: true);
+    final String safeTitle =
+        video.title.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+    final String fileName =
+        safeTitle.toLowerCase().endsWith('.mp4') ? safeTitle : '$safeTitle.mp4';
+    return File(p.join(dir.path, fileName));
   }
 
   // ── 长按菜单 ──────────────────────────────────────────────────────
@@ -333,28 +432,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
               _buildExperimentalBanner(context),
               _buildTagFilterBar(allTags),
               Expanded(
-                child: FutureBuilder<List<VideoBookRow>>(
-                  future: _future,
-                  builder: (BuildContext context,
-                      AsyncSnapshot<List<VideoBookRow>> snapshot) {
-                    if (snapshot.connectionState != ConnectionState.done) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-                    final List<VideoBookRow> all =
-                        snapshot.data ?? const <VideoBookRow>[];
-                    final Set<String>? filter =
-                        ref.watch(filteredVideoBookUidsProvider).valueOrNull;
-                    final List<VideoBookRow> books = filter == null
-                        ? all
-                        : all
-                            .where(
-                                (VideoBookRow b) => filter.contains(b.bookUid))
-                            .toList();
-                    if (all.isEmpty) return _buildEmpty();
-                    if (books.isEmpty) return _buildFilteredEmpty();
-                    return _buildGrid(books);
-                  },
-                ),
+                child: _buildVideoLibraryBody(),
               ),
             ],
           ),
@@ -362,6 +440,198 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       ),
     );
   }
+
+  Widget _buildVideoLibraryBody() {
+    return FutureBuilder<List<VideoBookRow>>(
+      future: _future,
+      builder: (BuildContext context, AsyncSnapshot<List<VideoBookRow>> snap) {
+        if (snap.connectionState != ConnectionState.done) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final List<VideoBookRow> all = snap.data ?? const <VideoBookRow>[];
+        final Set<String>? filter =
+            ref.watch(filteredVideoBookUidsProvider).valueOrNull;
+        final List<VideoBookRow> books = filter == null
+            ? all
+            : all
+                .where((VideoBookRow b) => filter.contains(b.bookUid))
+                .toList();
+        return FutureBuilder<_RemoteVideoState?>(
+          future: _remoteFuture,
+          builder: (BuildContext context,
+              AsyncSnapshot<_RemoteVideoState?> remoteSnap) {
+            final Widget local = all.isEmpty
+                ? _buildEmpty()
+                : books.isEmpty
+                    ? _buildFilteredEmpty()
+                    : _buildGrid(books);
+            final Widget remote =
+                _buildRemoteVideoSection(remoteSnap.data, remoteSnap);
+            if (remote is SizedBox && remote.height == 0) return local;
+            return Column(
+              children: <Widget>[
+                remote,
+                Expanded(child: local),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildRemoteVideoSection(
+    _RemoteVideoState? state,
+    AsyncSnapshot<_RemoteVideoState?> snapshot,
+  ) {
+    if (snapshot.connectionState != ConnectionState.done) {
+      return const SizedBox(
+        height: 3,
+        child: LinearProgressIndicator(),
+      );
+    }
+    if (state == null) return const SizedBox.shrink();
+
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final List<RemoteVideoInfo> videos = state.videos;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: colors.outlineVariant)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(Icons.devices_other_outlined,
+                  size: 18, color: colors.primary),
+              const SizedBox(width: 8),
+              Text(
+                t.remote_video_interconnect,
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              const SizedBox(width: 10),
+              Text(
+                t.remote_video_paired_device,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: colors.onSurfaceVariant),
+              ),
+            ],
+          ),
+          if (state.failed)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                t.remote_video_load_failed,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: colors.error),
+              ),
+            )
+          else if (videos.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 10),
+            SizedBox(
+              height: 88,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: videos.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 10),
+                itemBuilder: (BuildContext context, int index) =>
+                    _buildRemoteVideoTile(videos[index]),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRemoteVideoTile(RemoteVideoInfo video) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final String? sizeText = _formatBytes(video.sizeBytes);
+    return SizedBox(
+      width: 260,
+      child: HibikiCard(
+        padding: const EdgeInsets.all(10),
+        child: Row(
+          children: <Widget>[
+            InkWell(
+              borderRadius: BorderRadius.circular(6),
+              onTap: () => _openRemote(video),
+              child: Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: colors.primaryContainer,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Icon(Icons.play_arrow_outlined,
+                    color: colors.onPrimaryContainer),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: InkWell(
+                borderRadius: BorderRadius.circular(6),
+                onTap: () => _openRemote(video),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        video.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                      if (sizeText != null)
+                        Text(
+                          sizeText,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(color: colors.onSurfaceVariant),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            IconButton(
+              key: ValueKey<String>(
+                  'remote_video_download_${_safeRemoteKey(video.id)}'),
+              tooltip: t.remote_video_download,
+              icon: const Icon(Icons.download_outlined),
+              onPressed: () => _downloadRemote(video),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String? _formatBytes(int? bytes) {
+    if (bytes == null || bytes < 0) return null;
+    const int mib = 1024 * 1024;
+    const int gib = 1024 * mib;
+    if (bytes >= gib) return '${(bytes / gib).toStringAsFixed(1)} GB';
+    if (bytes >= mib) return '${(bytes / mib).toStringAsFixed(1)} MB';
+    if (bytes >= 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    return '$bytes B';
+  }
+
+  String _safeRemoteKey(String id) =>
+      id.replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '_');
 
   /// 页头：与书架/词典统一，用 [HibikiPageHeader] 大标题 + [HibikiIconButton] 动作
   /// （统计 + 导入），保证标题字号与按钮位置三 tab 一致。与书架一致仅在非 Cupertino
@@ -623,4 +893,14 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       ),
     );
   }
+}
+
+class _RemoteVideoState {
+  const _RemoteVideoState({
+    required this.videos,
+    this.failed = false,
+  });
+
+  final List<RemoteVideoInfo> videos;
+  final bool failed;
 }

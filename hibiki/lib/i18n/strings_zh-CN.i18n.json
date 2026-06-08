@@ -1438,5 +1438,11 @@
     "desktop_clipboard_window_mode_lookup": "仅查词期间",
     "desktop_clipboard_window_mode_normal": "不置顶",
     "popup_instant_scroll": "查词弹窗瞬时滚动",
-    "popup_instant_scroll_hint": "为墨水屏使用：查词弹窗按固定距离瞬时跳动，不播放滚动动画。"
+    "popup_instant_scroll_hint": "为墨水屏使用：查词弹窗按固定距离瞬时跳动，不播放滚动动画。",
+    "remote_video_interconnect": "Hibiki 互联",
+    "remote_video_paired_device": "对端设备视频",
+    "remote_video_download": "下载到本机",
+    "remote_video_downloaded": "已下载对端视频",
+    "remote_video_load_failed": "无法加载对端设备视频",
+    "remote_video_download_failed": "无法下载对端视频"
 }

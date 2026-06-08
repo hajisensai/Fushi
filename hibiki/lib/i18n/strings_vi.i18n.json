@@ -1438,5 +1438,11 @@
     "desktop_clipboard_window_mode_lookup": "Lookup only",
     "desktop_clipboard_window_mode_normal": "Off",
     "popup_instant_scroll": "Instant popup scroll",
-    "popup_instant_scroll_hint": "Jump the lookup popup by fixed distances without animated scrolling for e-ink screens."
+    "popup_instant_scroll_hint": "Jump the lookup popup by fixed distances without animated scrolling for e-ink screens.",
+    "remote_video_interconnect": "Hibiki P2P",
+    "remote_video_paired_device": "Paired device videos",
+    "remote_video_download": "Download to this device",
+    "remote_video_downloaded": "Downloaded remote video",
+    "remote_video_load_failed": "Could not load paired device videos",
+    "remote_video_download_failed": "Could not download remote video"
 }

@@ -269,7 +269,8 @@ class VideoPlayerController extends ChangeNotifier
   /// 测试宿主无 libmpv，**不要在单测里调用**（会因 `new Player()` 抛）。
   Future<void> load({
     required String bookUid,
-    required File videoFile,
+    File? videoFile,
+    String? mediaUri,
     required List<AudioCue> cues,
     int initialPositionMs = 0,
     double initialSpeed = 1.0,
@@ -279,9 +280,14 @@ class VideoPlayerController extends ChangeNotifier
     VideoMpvConfig mpvConfig = VideoMpvConfig.defaults,
     bool autoPlay = false,
   }) async {
+    assert(
+      (videoFile == null) != (mediaUri == null),
+      'Provide exactly one of videoFile or mediaUri.',
+    );
     _bookUid = bookUid;
-    _videoPath = videoFile.path;
-    debugPrint('[video-load] cues=${cues.length} path=${videoFile.path}');
+    _videoPath = videoFile?.path;
+    final String sourceUri = mediaUri ?? mediaUriForVideoPath(videoFile!.path);
+    debugPrint('[video-load] cues=${cues.length} uri=$sourceUri');
     setCues(cues);
 
     // 重复 load（换集）：取消上一次的 tick / 订阅，但**复用同一 Player /
@@ -306,7 +312,7 @@ class VideoPlayerController extends ChangeNotifier
     }
 
     await player.open(
-      Media(mediaUriForVideoPath(videoFile.path)),
+      Media(sourceUri),
       play: false,
     );
 

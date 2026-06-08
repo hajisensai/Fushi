@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
+import 'package:hibiki/src/sync/remote_video_client.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
@@ -71,7 +72,7 @@ Future<bool> _defaultHibikiProbe(String url, String token) async {
 /// Uses the WebDAV protocol (same as [WebDavSyncBackend]) but stores
 /// credentials in dedicated keys to avoid collision with the user's
 /// standalone WebDAV config.
-class HibikiClientSyncBackend extends SyncBackend {
+class HibikiClientSyncBackend extends SyncBackend implements RemoteVideoClient {
   HibikiClientSyncBackend._({HibikiProbe? probe})
       : _probe = probe ?? _defaultHibikiProbe;
   static final HibikiClientSyncBackend instance = HibikiClientSyncBackend._();
@@ -823,6 +824,7 @@ class HibikiClientSyncBackend extends SyncBackend {
   // token URL，media_kit 可直接播放，不依赖自定义 HTTP header。
 
   /// 列出对端 host 当前视频清单（直打 `/api/library/videos`）。
+  @override
   Future<List<RemoteVideoInfo>> listRemoteVideos() async {
     await _ensureResolved();
     final HttpClientRequest req =
@@ -842,6 +844,7 @@ class HibikiClientSyncBackend extends SyncBackend {
   /// 返回的 [RemoteVideoStreamUrls.streamUrl] 已携带短时 token；播放器不需要
   /// Authorization 头。字幕 URL（若存在）仍是普通受 Basic 鉴权的 API URL，UI
   /// 可先用 [getRemoteVideoSubtitle] 下载到本地后交给现有字幕加载逻辑。
+  @override
   Future<RemoteVideoStreamUrls> remoteVideoStreamUrls(String id) async {
     await _ensureResolved();
     final String encodedId = _encodeVideoId(id);
@@ -860,6 +863,7 @@ class HibikiClientSyncBackend extends SyncBackend {
   Map<String, String> remoteVideoAuthHeaders() => const <String, String>{};
 
   /// 下载对端视频外挂字幕到 [dest]。
+  @override
   Future<void> getRemoteVideoSubtitle(
     String id,
     File dest, {
@@ -877,6 +881,7 @@ class HibikiClientSyncBackend extends SyncBackend {
   ///
   /// 下载走 host 签发的 token stream URL，避免依赖播放器/header 兼容性；失败时
   /// 复用 [downloadContentFile] 同款清理语义，不留下截断文件。
+  @override
   Future<void> downloadRemoteVideo(
     String id,
     File dest, {
