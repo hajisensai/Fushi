@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 141 条。点号进各自文件。
+> 共 142 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-145](bugs/BUG-145-video-mobile-controls-no-more.md) | ✅ | ✅ | 手机视频控制条取消三点并压缩底栏按钮 |
 | [BUG-144](bugs/BUG-144-audiobook-mining-audio.md) | ✅ | ✅ | 有声书查词制卡词条音频复用旧词且句子音频/句子上下文错位 |
 | [BUG-143](bugs/BUG-143-floating-lyric-lock-icon.md) | ✅ | ✅ | 浮动歌词锁定态显示开锁图标 |
 | [BUG-142](bugs/BUG-142-desktop-clipboard-foreground.md) | ✅ | ✅ | 桌面剪贴板自动查词在未开始真实搜索前抢前台 |
