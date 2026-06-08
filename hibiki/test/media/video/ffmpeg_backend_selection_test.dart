@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// 源码守卫：ffmpeg 后端选择的平台路由。
 ///
-/// BUG-122：第三方预编译 `ffmpeg_kit_flutter_new_min` 的 `libffmpegkit_abidetect.so`
+/// BUG-124：第三方预编译 `ffmpeg_kit_flutter_new_min` 的 `libffmpegkit_abidetect.so`
 /// 在 Android 16/API 36 上 `JNI_OnLoad` 返回非法版本，且在 `onAttachedToActivity`
 /// 强制加载 → app 启动即崩（Dart 拦不住）。改用「自编」ffmpeg-kit（arthenica 源码 +
 /// NDK r25 重编最小变体，vendored 于 third_party/ffmpeg_kit_flutter，android 用自编

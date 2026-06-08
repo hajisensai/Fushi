@@ -1,4 +1,4 @@
-## BUG-122 · Android 16 启动闪退：ffmpeg_kit 原生库不兼容 API 36
+## BUG-124 · Android 16 启动闪退：ffmpeg_kit 原生库不兼容 API 36
 - **报告**：2026-06-08（用户：手机打开就闪退）
 - **真实性**：✅ 真 bug。真机 logcat 铁证（OnePlus CPH2747 / Android 16 / API 36 / arm64-v8a / 页大小 4096）：
   ```
