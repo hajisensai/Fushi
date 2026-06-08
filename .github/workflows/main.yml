@@ -81,14 +81,14 @@ jobs:
     # `flutter test`. See hibiki/dart_test.yaml.
     - name: Run unit tests with coverage (main app)
       working-directory: hibiki
-      run: flutter test --coverage --exclude-tags golden
+      run: dart run tool/flutter_test_failures.dart --coverage --exclude-tags golden
 
     - name: Run package tests
       run: |
         for pkg in packages/hibiki_core packages/hibiki_dictionary packages/hibiki_anki packages/hibiki_audio packages/hibiki_platform; do
           if [ -d "$pkg/test" ]; then
             echo "::group::Testing $pkg"
-            (cd "$pkg" && flutter test)
+            (cd "$pkg" && dart ../../hibiki/tool/flutter_test_failures.dart --output-dir=../../.codex-test/flutter-test/$(basename "$pkg"))
             echo "::endgroup::"
           else
             echo "::warning title=No package tests::$pkg has no test/ dir — its code is only covered transitively by the main-app suite"

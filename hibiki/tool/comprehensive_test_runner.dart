@@ -27,12 +27,17 @@ Future<void> main(List<String> args) async {
       selectedScenarios: scenarios,
       hostPlatform: host,
       outputDir: outputDir,
+      streamOutput: options.verboseOutput,
     );
   }
   writeComprehensiveReport(report, outputDir);
 
   stdout.writeln('Comprehensive test report: $outputDir');
   if (report.hasFailures) {
+    final String summary = renderComprehensiveFailureSummary(report);
+    if (summary.isNotEmpty) {
+      stderr.writeln(summary);
+    }
     exitCode = 1;
   }
 }
@@ -52,18 +57,21 @@ class _RunnerOptions {
     required this.scenarios,
     required this.dryRun,
     required this.reportDir,
+    required this.verboseOutput,
   });
 
   final Set<TestPlatformId> platforms;
   final Set<ScenarioId> scenarios;
   final bool dryRun;
   final String? reportDir;
+  final bool verboseOutput;
 
   static _RunnerOptions parse(List<String> args) {
     Set<TestPlatformId> platforms = TestPlatformId.values.toSet();
     Set<ScenarioId> scenarios = ScenarioId.values.toSet();
     bool dryRun = false;
     String? reportDir;
+    bool verboseOutput = false;
 
     for (final String arg in args) {
       if (arg == '--dry-run') {
@@ -74,6 +82,8 @@ class _RunnerOptions {
         scenarios = _parseScenarios(arg.substring('--only='.length));
       } else if (arg.startsWith('--report-dir=')) {
         reportDir = arg.substring('--report-dir='.length);
+      } else if (arg == '--verbose-output') {
+        verboseOutput = true;
       } else {
         stderr.writeln('Unknown argument: $arg');
         exit(64);
@@ -85,6 +95,7 @@ class _RunnerOptions {
       scenarios: scenarios,
       dryRun: dryRun,
       reportDir: reportDir,
+      verboseOutput: verboseOutput,
     );
   }
 
