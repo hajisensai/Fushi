@@ -56,32 +56,54 @@ void main() {
     });
   });
 
-  // BUG-123：整块涂 <ruby> 背景会把 <rt> 振假名列/行一并涂上，令带 ruby 的字高亮
-  // 比相邻无 ruby 的字更宽/更高（“双重高亮”）。修复＝用不透明阅读器背景色遮住
-  // 选区 active ruby 的 rt/rp，使高亮只剩基字列。无头 Chromium 复现+验证；这里守
-  // CSS 结构契约（删掉遮罩规则即红）。
-  group('BUG-123 查词高亮不溢出到振假名列（rt 遮罩）', () {
-    test('CSS：选区 active ruby 的 rt/rp 用阅读器背景色遮罩', () {
+  // BUG-125（取代 BUG-123 的 rt 遮罩）：旧方案用不透明背景色遮住选区 active ruby 的
+  // <rt>，但竖排 jukugo ruby 的振假名盒压在基字右缘上（实测 base 21→91px、rt 76→107px），
+  // 不透明遮罩盖在已绘好的基字之上 → 连基字右缘一起抹掉。改用「查词高亮预合成成不透明色
+  // + priority 叠在音频之上」：无重叠区与半透明像素一致，重叠区覆盖音频灰层 → 单层、
+  // 查词优先、无双重高亮，且不再抹任何字。无头 Chromium 复现+验证；这里守 CSS/JS 结构契约。
+  group('BUG-125 查词高亮不抹字 + 与音频重叠不双重高亮', () {
+    test('CSS：删掉旧的 <rt>/<rp> 不透明遮罩（会抹基字右缘）', () {
       expect(
-        styles,
-        contains('ruby.hoshi-selection-ruby-active > rt'),
-        reason: '须给选区 active ruby 的 <rt> 设遮罩背景，挡住溢出到振假名列的高亮',
+        styles.contains('ruby.hoshi-selection-ruby-active > rt'),
+        isFalse,
+        reason: 'rt 遮罩会抹掉基字右缘，必须删除（BUG-125）',
       );
       expect(
-        styles,
-        contains('ruby.hoshi-selection-ruby-active > rp'),
-        reason: '<rp> 同样要遮罩（无 ruby 渲染回退括注）',
+        styles.contains('ruby.hoshi-selection-ruby-active > rp'),
+        isFalse,
+        reason: 'rp 遮罩同样删除',
       );
-      // 遮罩必须用不透明阅读器背景色（backgroundColor），半透明 selectionColor 挡不住。
-      // 取 rt 选择器到声明块内 background-color 行，断言用的是 backgroundColor 插值。
-      final int rtIdx = styles.indexOf('ruby.hoshi-selection-ruby-active > rt');
-      final int bgIdx = styles.indexOf('background-color', rtIdx);
+    });
+
+    test('CSS：查词高亮用预合成的不透明色（composeOpaqueColor）', () {
+      expect(styles, contains('composeOpaqueColor'),
+          reason: '查词高亮须用合成到背景色的不透明色，重叠区才能覆盖音频层');
+      expect(styles, contains('selectionOpaque'),
+          reason: 'css() 须算出 selectionOpaque 并用于查词高亮各处');
+      // ::highlight(hoshi-selection) 的背景用 selectionOpaque（不是半透明 selectionColor）。
+      final int selIdx = styles.indexOf('::highlight(hoshi-selection)');
+      final int bgIdx = styles.indexOf('background-color', selIdx);
       final int lineEnd = styles.indexOf(';', bgIdx);
-      final String maskDecl = styles.substring(bgIdx, lineEnd);
       expect(
-        maskDecl.contains('colors.backgroundColor'),
+        styles.substring(bgIdx, lineEnd).contains('selectionOpaque'),
         isTrue,
-        reason: 'rt 遮罩须用不透明 backgroundColor，否则遮不住高亮 tint',
+        reason: '::highlight(hoshi-selection) 背景须用 selectionOpaque',
+      );
+    });
+
+    test('CSS：查词+音频同 ruby 重叠时用双类特异性让查词胜出', () {
+      expect(
+        styles,
+        contains('ruby.hoshi-selection-ruby-active.hoshi-sasayaki-ruby-active'),
+        reason: '同一 ruby 带两 class 时须有双类规则让查词不透明色胜出（查词优先）',
+      );
+    });
+
+    test('JS：查词 Highlight 设 priority=1 叠在音频(默认0)之上', () {
+      expect(
+        selection.replaceAll(' ', '').contains('priority=1'),
+        isTrue,
+        reason: '查词 ::highlight 须 priority=1，否则音频可能压在其上致重叠区混色',
       );
     });
   });

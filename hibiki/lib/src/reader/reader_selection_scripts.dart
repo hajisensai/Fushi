@@ -416,7 +416,11 @@ window.hoshiSelection = {
         range.setEnd(seg.node, seg.end);
         highlights.push(range);
       }
-      CSS.highlights.set('hoshi-selection', highlights.length ? new Highlight(...highlights) : new Highlight());
+      var selHl = highlights.length ? new Highlight(...highlights) : new Highlight();
+      // BUG-125：查词高亮 priority=1，叠在音频(sasayaki, 默认 priority=0)之上；
+      // 配合 CSS 里查词用的不透明色，重叠处只显示查词单层（查词优先），无双重高亮。
+      selHl.priority = 1;
+      CSS.highlights.set('hoshi-selection', selHl);
     } else {
       this.clearHighlightWrappers();
       var range = document.createRange();

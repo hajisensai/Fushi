@@ -1,0 +1,15 @@
+## BUG-125 · 高亮遮挡振假名/基字 + 查词音频重叠双重高亮
+- **报告**：2026-06-08（用户：竖排带假名的字，查词/音频高亮时假名/基字被遮一部分；查词+音频重叠时双重高亮）
+- **真实性**：✅ 真 bug。两处根因：
+  - 遮字：`hibiki/lib/src/reader/reader_content_styles.dart:287-293`（原 BUG-123 的 `ruby.hoshi-selection-ruby-active > rt/rp { background-color: backgroundColor }` 不透明遮罩）。竖排 jukugo ruby 的振假名盒压在基字右缘（无头 Chromium 实测：基字 21→91px、`rt` 76→107px，重叠 76→91px），不透明遮罩盖在**已绘好的基字之上** → 把基字右缘约 15px 一并抹掉。遮罩是「拿背景色盖真内容」的错误手段，结构上无法既清掉振假名背后的 tint 又不抹掉其下的基字。
+  - 双重高亮：普通字查词走 `::highlight(hoshi-selection)`、音频走 `::highlight(hoshi-sasayaki)`，两个半透明 register 在重叠字上叠加 → 变深。
+- **[x] ① 已修复** — commit 见下。根因修复（非遮症状）：
+  - 删除 `> rt/rp` 不透明遮罩。
+  - 查词高亮改用**预合成到背景色的不透明色** `composeOpaqueColor(selectionColor, backgroundColor)`（`reader_content_styles.dart`），无重叠区与原半透明像素一致，重叠区覆盖其下音频灰层 → 单层、查词优先、无双重高亮，且不抹任何字。
+  - 查词 `::highlight(hoshi-selection)` 设 `priority=1`（`reader_selection_scripts.dart`），叠在音频（默认 0）之上。
+  - 同一 `<ruby>` 同带查词+音频两 class 时，用双类特异性规则让查词不透明色胜出（查词优先）。
+- **[x] ② 已加自动化测试** — 无头 Chromium 复现/验证几何（base 21→91 / rt 76→107，opaque 覆盖 vs 半透明双层）+：
+  - `hibiki/test/reader/reader_content_styles_test.dart`：`composeOpaqueColor` 合成数学（多用例）、半透明覆盖色被合成不再逐字进 CSS、不透明色透传。
+  - `hibiki/test/reader/ruby_highlight_guard_test.dart`：BUG-125 组守 CSS/JS 结构契约（遮罩已删、查词用 `selectionOpaque`、双类胜出规则、JS `priority=1`）。
+- **备注**：取代原 BUG-123 的 rt 遮罩方案。`::highlight` 在真 WebView 内的 ruby 渲染 headless 不可跑，守结构契约；竖排几何用无头 Chromium 复现。真机/各端复测待用户。
+- **已声明的可接受降级**：不透明色 + priority 只覆盖 CSS Custom Highlight API 主路径（Chromium 105+/WebView2/Android WebView/WKWebView iOS 17.2+，即 `__hoshiCssHighlightsSupported`）。无该 API 的回退路径（`.hoshi-dict-highlight` 与 `.hoshi-sasayaki-active` span 包裹，仅老 iOS<17.2 等少数引擎走）查词+音频重叠不保证查词优先、可能仍轻微叠色——查词色已改不透明缓解，但不专门为该退场引擎再加 span 减法逻辑。基字抹除问题与平台无关已彻底修复。

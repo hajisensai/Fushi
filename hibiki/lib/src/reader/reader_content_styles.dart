@@ -58,6 +58,14 @@ class ReaderContentStyles {
     final _ThemeColors colors = _themeColors(themeOverride ?? settings.theme,
         customBg: customBg, customFg: customFg);
 
+    // 查词高亮用「预合成到背景色的不透明色」：在无重叠区与原半透明色像素一致，
+    // 但在与音频(sasayaki)高亮重叠区会覆盖其下的灰层 → 单层、查词优先、无双重高亮
+    // (BUG-125)。同时去掉旧的 <rt> 不透明遮罩(原 BUG-123)，那个遮罩会连基字右缘一起
+    // 抹掉(竖排 jukugo ruby 的振假名盒压在基字右缘上)。
+    final String selectionBase = selectionColor ?? colors.selectionColor;
+    final String selectionOpaque =
+        composeOpaqueColor(selectionBase, colors.backgroundColor);
+
     final String resolvedFontFaces;
     final String resolvedFontFamily;
     if (fontFaces != null && fontFamily != null) {
@@ -274,22 +282,17 @@ ruby > rt, ruby > rp {
   -webkit-user-select: none;
   user-select: none;
 }
+/* BUG-125：查词高亮用不透明色（见 selectionOpaque 注释）。JS 侧给该 Highlight 设
+   priority=1，使其叠在音频(sasayaki, 默认 priority=0)之上 → 重叠处只显示这一层。 */
 ::highlight(hoshi-selection) {
-  background-color: ${selectionColor ?? colors.selectionColor};
+  background-color: $selectionOpaque;
   color: inherit;
 }
 /* BUG-110：<ruby> 内的字不走 ::highlight（竖排下会双绘成深色带），改给 ruby 元素
    加 class，背景画在元素上只画一遍。移植自 Hoshi-Reader-Android。 */
 ruby.hoshi-selection-ruby-active {
-  background-color: ${selectionColor ?? colors.selectionColor} !important;
+  background-color: $selectionOpaque !important;
   color: inherit;
-}
-/* BUG-123：<ruby> 元素盒子含基字列与振假名(<rt>)列，整块涂背景会把振假名列/行也涂上，
-   令带 ruby 的字高亮比相邻无 ruby 的字更宽/更高（视觉“双重高亮”）。用不透明阅读器背景色
-   遮住从 ruby 背景透上来的高亮 tint，使查词高亮只剩基字列、与普通文字一致。 */
-ruby.hoshi-selection-ruby-active > rt,
-ruby.hoshi-selection-ruby-active > rp {
-  background-color: ${colors.backgroundColor} !important;
 }
 ::highlight(hoshi-hl-yellow) {
   background-color: var(--hoshi-hl-yellow, rgba(255,220,0,0.35));
@@ -307,7 +310,7 @@ ruby.hoshi-selection-ruby-active > rp {
   background-color: var(--hoshi-hl-purple, rgba(170,0,255,0.25));
 }
 .hoshi-dict-highlight {
-  background-color: ${selectionColor ?? colors.selectionColor} !important;
+  background-color: $selectionOpaque !important;
   color: inherit;
 }
 ::highlight(hoshi-sasayaki) {
@@ -318,6 +321,12 @@ ruby.hoshi-selection-ruby-active > rp {
 ruby.hoshi-sasayaki-ruby-active {
   color: var(--hoshi-sasayaki-text-color) !important;
   background-color: var(--hoshi-sasayaki-background-color) !important;
+}
+/* BUG-125：同一 <ruby> 同时带查词+音频两个 class 时（元素只渲染一个背景），用双类
+   高于单类的特异性让查词不透明色胜出 → 重叠的振假名字也只显示查词层（查词优先）。 */
+ruby.hoshi-selection-ruby-active.hoshi-sasayaki-ruby-active {
+  background-color: $selectionOpaque !important;
+  color: inherit !important;
 }
 ::highlight(hoshi-search) {
   background-color: rgba(255, 200, 0, 0.45);
@@ -518,6 +527,58 @@ body.show-all-rt rt {
     }
   }
 
+  /// 把半透明前景色 [fg] 按其 alpha 合成到不透明背景色 [bg] 上，返回等效的不透明
+  /// `rgb(r, g, b)`。查词高亮用它：无重叠区与原半透明色叠在同一背景上像素一致，
+  /// 重叠区则覆盖其下的音频高亮 → 单层、查词优先（BUG-125）。
+  ///
+  /// [fg] 已不透明、或任一颜色无法解析时原样返回 [fg]（回退到旧的半透明行为）。
+  /// 解析支持 `#rgb`/`#rgba`/`#rrggbb`/`#rrggbbaa` 与 `rgb()`/`rgba()`；命名色不解析。
+  static String composeOpaqueColor(String fg, String bg) {
+    final _Rgba? f = _parseColor(fg);
+    final _Rgba? b = _parseColor(bg);
+    if (f == null || b == null || f.a >= 1.0) return fg;
+    int blend(int fc, int bc) =>
+        (f.a * fc + (1 - f.a) * bc).round().clamp(0, 255);
+    return 'rgb(${blend(f.r, b.r)}, ${blend(f.g, b.g)}, ${blend(f.b, b.b)})';
+  }
+
+  /// 解析 `#hex` 或 `rgb()/rgba()` 到 [_Rgba]；解析不了返回 null。
+  static _Rgba? _parseColor(String input) {
+    final String s = input.trim().toLowerCase();
+    if (s.startsWith('#')) {
+      final String h = s.substring(1);
+      int? hx(int start, int len) => int.tryParse(
+            len == 1 ? '${h[start]}${h[start]}' : h.substring(start, start + 2),
+            radix: 16,
+          );
+      if (h.length == 3 || h.length == 4) {
+        final int? r = hx(0, 1), g = hx(1, 1), b = hx(2, 1);
+        if (r == null || g == null || b == null) return null;
+        final double a = h.length == 4 ? (hx(3, 1)! / 255.0) : 1.0;
+        return _Rgba(r, g, b, a);
+      }
+      if (h.length == 6 || h.length == 8) {
+        final int? r = hx(0, 2), g = hx(2, 2), b = hx(4, 2);
+        if (r == null || g == null || b == null) return null;
+        final double a = h.length == 8 ? (hx(6, 2)! / 255.0) : 1.0;
+        return _Rgba(r, g, b, a);
+      }
+      return null;
+    }
+    final RegExpMatch? m = RegExp(r'^rgba?\(([^)]*)\)$').firstMatch(s);
+    if (m == null) return null;
+    final List<String> parts =
+        m.group(1)!.split(',').map((String e) => e.trim()).toList();
+    if (parts.length < 3) return null;
+    final int? r = int.tryParse(parts[0]);
+    final int? g = int.tryParse(parts[1]);
+    final int? b = int.tryParse(parts[2]);
+    if (r == null || g == null || b == null) return null;
+    final double a =
+        parts.length >= 4 ? (double.tryParse(parts[3]) ?? 1.0) : 1.0;
+    return _Rgba(r, g, b, a);
+  }
+
   /// Best-effort luminance check for a custom background so the native scrollbar
   /// picks the matching light/dark bucket. Only `#rgb` / `#rrggbb` are parsed;
   /// anything else (named colours, rgba()) falls back to 'light'.
@@ -543,6 +604,15 @@ body.show-all-rt rt {
     final double luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0;
     return luminance < 0.5;
   }
+}
+
+/// 解析后的 RGBA 颜色分量（[r]/[g]/[b] 为 0-255 整数，[a] 为 0-1 浮点）。
+class _Rgba {
+  const _Rgba(this.r, this.g, this.b, this.a);
+  final int r;
+  final int g;
+  final int b;
+  final double a;
 }
 
 class _ThemeColors {

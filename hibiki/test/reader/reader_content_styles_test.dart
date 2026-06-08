@@ -138,13 +138,72 @@ void main() {
       expect(css, contains('TestFont'));
     });
 
-    test('selection color override appears in css', () async {
+    test('selection color override (opaque) appears verbatim in css', () async {
+      // BUG-125：查词高亮预合成成不透明色；alpha=1 的覆盖色原样透传，故仍逐字出现。
       final ReaderSettings settings = await _defaultSettings();
       final String css = ReaderContentStyles.css(
         settings: settings,
-        selectionColor: 'rgba(255,0,0,0.5)',
+        selectionColor: 'rgb(1, 2, 3)',
       );
-      expect(css, contains('rgba(255,0,0,0.5)'));
+      expect(css, contains('rgb(1, 2, 3)'));
+    });
+
+    test('translucent selection override is blended to opaque (not verbatim)',
+        () async {
+      // 半透明覆盖色会被合成到背景色 → 不再逐字出现原 rgba，且查词高亮处不含半透明。
+      final ReaderSettings settings = await _defaultSettings();
+      final String css = ReaderContentStyles.css(
+        settings: settings,
+        selectionColor: 'rgba(255, 0, 0, 0.5)',
+      );
+      expect(css, isNot(contains('rgba(255, 0, 0, 0.5)')),
+          reason: '半透明查词色须被预合成成不透明 rgb()，不能原样进 CSS');
+    });
+  });
+
+  group('ReaderContentStyles.composeOpaqueColor (BUG-125)', () {
+    test('blends translucent fg over hex bg', () {
+      // 0.5*255 + 0.5*0 = 127.5 → 128;  0.5*0 + 0.5*0 = 0
+      expect(
+        ReaderContentStyles.composeOpaqueColor('rgba(255, 0, 0, 0.5)', '#000'),
+        'rgb(128, 0, 0)',
+      );
+      // over white: r=255, g=128, b=128
+      expect(
+        ReaderContentStyles.composeOpaqueColor(
+            'rgba(255, 0, 0, 0.5)', '#ffffff'),
+        'rgb(255, 128, 128)',
+      );
+    });
+
+    test('opaque fg passes through unchanged', () {
+      expect(
+        ReaderContentStyles.composeOpaqueColor('rgb(10, 20, 30)', '#000'),
+        'rgb(10, 20, 30)',
+      );
+      expect(
+        ReaderContentStyles.composeOpaqueColor('#abcdef', '#000'),
+        '#abcdef',
+      );
+    });
+
+    test('falls back to fg when a color cannot be parsed', () {
+      expect(
+        ReaderContentStyles.composeOpaqueColor('rgba(1,2,3,0.5)', 'tomato'),
+        'rgba(1,2,3,0.5)',
+      );
+      expect(
+        ReaderContentStyles.composeOpaqueColor('not-a-color', '#000'),
+        'not-a-color',
+      );
+    });
+
+    test('parses #rgb shorthand background', () {
+      // #888 -> (136,136,136); fg rgba(0,0,0,0.5) over it -> 68
+      expect(
+        ReaderContentStyles.composeOpaqueColor('rgba(0, 0, 0, 0.5)', '#888'),
+        'rgb(68, 68, 68)',
+      );
     });
   });
 
