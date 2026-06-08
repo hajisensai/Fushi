@@ -128,12 +128,10 @@ dependencies:
   media_kit: ^1.2.6
   media_kit_video: ^2.0.1
   media_kit_libs_video: ^1.0.7
-  # 移动端捆绑 ffmpeg（min/LGPL 变体）：让移动端复用桌面同一套 ffmpeg 管线
-  # （内封字幕抽取/枚举、cue 动图、句子音频裁剪、视频帧），不再因无 CLI ffmpeg 降级。
-  # 经 KitFfmpegBackend 接入 resolveFfmpegBackend()；桌面/Linux 仍走系统 CLI。
-  # 选 min：字幕 demux/转码、gif 编码、aac 编码、各路解码（含 opus/h264/hevc）均为
-  # ffmpeg 内置，无需 GPL 的 x264/x265，体积最小。
-  ffmpeg_kit_flutter_new_min: ^3.1.0
+  # 移动端 ffmpeg 不再用第三方 ffmpeg_kit：其预编译 libffmpegkit_abidetect.so 在
+  # Android 16/API 36 上 JNI_OnLoad 返回非法版本，且在 onAttachedToActivity 强制加载
+  # → app 启动即崩（BUG-NNN）。改走自编 libffmpeg + FFI（FfiFfmpegBackend），与桌面
+  # 同一份 ffmpeg 源。见 docs/superpowers/plans/2026-06-08-android-self-built-ffmpeg.md。
   web_socket_channel: ^3.0.0
   clipboard_watcher: ^0.3.0
   hotkey_manager: ^0.2.3

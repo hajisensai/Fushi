@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 121 条。点号进各自文件。
+> 共 122 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-122](bugs/BUG-122-android-ffmpegkit-launch-crash.md) | ✅ | ✅ | Android 16 启动闪退：ffmpeg_kit 原生库不兼容 API 36 |
 | [BUG-121](bugs/BUG-121-exit-video-redscreen.md) | ✅ | ✅ | 退出视频闪红屏（deactivate 期根 Overlay 浮层重建做失效祖先查找） |
 | [BUG-120](bugs/BUG-120-fullscreen-episode-switch.md) | ✅ | ✅ | 全屏下切集黑屏 00:00 + 左上标题不刷新（media_kit 全屏独立路由快照） |
 | [BUG-119](bugs/BUG-119-log-panel-select-scroll.md) | ✅ | ✅ | 日志页（错误日志/调试日志）按住鼠标选区想上滑复制时视口被拽回 |
