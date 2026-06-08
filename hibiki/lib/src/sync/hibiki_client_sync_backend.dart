@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
@@ -529,6 +531,81 @@ class HibikiClientSyncBackend extends SyncBackend {
 
   static String _stripTrailingSlash(String value) =>
       value.endsWith('/') ? value.substring(0, value.length - 1) : value;
+
+  // ── Live library (interconnect-only) ──────────────────────────────
+  // host 升级为「库感知」后，client 直读对端实时词典，彻底不经 __dictionaries__。
+  // 无旧设备，互联恒走 live（无能力探测）；分流由 orchestrator 按后端类型判定。
+
+  /// host 根 origin（folder 路径是 `${_apiBase}/$kSyncRootFolderName/`，
+  /// 故 /api 端点在 `${_apiBase}/api/...`）。
+  String get _apiBase => _ops!.baseUrl;
+
+  /// 列出对端 host 当前实时词典清单（直打 `/api/library/dictionaries`）。
+  Future<List<RemoteDictionaryInfo>> listRemoteDictionaries() async {
+    await _ensureResolved();
+    final HttpClientRequest req =
+        await _ops!.buildRequest('GET', '$_apiBase/api/library/dictionaries');
+    final HttpClientResponse res = await req.close();
+    _ops!.checkStatus(res.statusCode, 'GET /api/library/dictionaries');
+    final String body = await res.transform(utf8.decoder).join();
+    final List<dynamic> arr = jsonDecode(body) as List<dynamic>;
+    return <RemoteDictionaryInfo>[
+      for (final dynamic e in arr)
+        RemoteDictionaryInfo.fromJson((e as Map).cast<String, Object?>()),
+    ];
+  }
+
+  /// 从对端 host 下载名为 [name] 的词典包到 [destination] 文件。
+  Future<void> getRemoteDictionary(
+    String name,
+    File destination, {
+    void Function(double progress)? onProgress,
+  }) async {
+    await _ensureResolved();
+    await downloadContentFile(
+      fileId:
+          '$_apiBase/api/library/dictionaries/${Uri.encodeComponent(name)}',
+      destination: destination,
+      onProgress: onProgress,
+    );
+  }
+
+  /// 把本地 [file]（.hibikidict 包）推送到对端 host，导入名为 [name] 的词典。
+  Future<void> putRemoteDictionary(
+    String name,
+    File file, {
+    void Function(double progress)? onProgress,
+  }) async {
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'PUT',
+      '$_apiBase/api/library/dictionaries/${Uri.encodeComponent(name)}',
+    );
+    final int length = await file.length();
+    req.headers.set('Content-Type', 'application/octet-stream');
+    req.headers.set('Content-Length', '$length');
+    int sent = 0;
+    await req.addStream(file.openRead().map((List<int> chunk) {
+      sent += chunk.length;
+      onProgress?.call(length > 0 ? sent / length : 0);
+      return chunk;
+    }));
+    final HttpClientResponse res = await req.close();
+    await res.drain<void>();
+    _ops!.checkStatus(res.statusCode, 'PUT /api/library/dictionaries/$name');
+  }
+
+  /// 通知对端 host 删除名为 [name] 的词典。
+  Future<void> deleteRemoteDictionary(String name) async {
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'DELETE',
+      '$_apiBase/api/library/dictionaries/${Uri.encodeComponent(name)}',
+    );
+    final HttpClientResponse res = await req.close();
+    await res.drain<void>();
+    _ops!.checkStatus(res.statusCode, 'DELETE /api/library/dictionaries/$name');
+  }
 
   // ── Test connection ───────────────────────────────────────────────
 
