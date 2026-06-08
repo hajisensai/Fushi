@@ -10,7 +10,8 @@ import 'package:hibiki/src/pages/implementations/home_page.dart';
 void main() {
   group('homeActiveTabs', () {
     test('关闭实验视频：无视频 tab，顺序为 书架→词典→texthooker→设置', () {
-      final List<HomeTab> tabs = homeActiveTabs(videoEnabled: false);
+      final List<HomeTab> tabs =
+          homeActiveTabs(videoEnabled: false, texthookerEnabled: true);
       expect(tabs, <HomeTab>[
         HomeTab.books,
         HomeTab.dictionaries,
@@ -21,7 +22,8 @@ void main() {
     });
 
     test('开启实验视频：视频 tab 出现，顺序为 书架→视频→词典→texthooker→设置', () {
-      final List<HomeTab> tabs = homeActiveTabs(videoEnabled: true);
+      final List<HomeTab> tabs =
+          homeActiveTabs(videoEnabled: true, texthookerEnabled: true);
       expect(tabs, <HomeTab>[
         HomeTab.books,
         HomeTab.video,
@@ -32,7 +34,8 @@ void main() {
     });
 
     test('视频 tab 恰好夹在书架与词典之间（用户要求的位置）', () {
-      final List<HomeTab> tabs = homeActiveTabs(videoEnabled: true);
+      final List<HomeTab> tabs =
+          homeActiveTabs(videoEnabled: true, texthookerEnabled: true);
       final int books = tabs.indexOf(HomeTab.books);
       final int video = tabs.indexOf(HomeTab.video);
       final int dict = tabs.indexOf(HomeTab.dictionaries);
@@ -44,8 +47,10 @@ void main() {
     });
 
     test('开关只增删视频 tab，不动其它 tab 的相对顺序', () {
-      final List<HomeTab> off = homeActiveTabs(videoEnabled: false);
-      final List<HomeTab> on = homeActiveTabs(videoEnabled: true);
+      final List<HomeTab> off =
+          homeActiveTabs(videoEnabled: false, texthookerEnabled: true);
+      final List<HomeTab> on =
+          homeActiveTabs(videoEnabled: true, texthookerEnabled: true);
       // 去掉视频后两者应完全一致（视频是唯一的差异）。
       expect(on.where((HomeTab t) => t != HomeTab.video).toList(), equals(off));
     });

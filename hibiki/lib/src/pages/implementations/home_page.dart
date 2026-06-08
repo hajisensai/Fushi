@@ -24,15 +24,20 @@ import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 /// 情况）。底栏/侧栏只在渲染层把身份映射成位置。texthooker 紧邻设置之前。
 enum HomeTab { books, video, dictionaries, texthooker, settings }
 
-/// 纯函数：给定实验视频开关，返回可见顶层 tab 的**视觉顺序**——视频固定插在书架与
-/// 词典之间（用户要求「在书架和词典管理中间」），texthooker 固定在词典与设置之间。
-/// 提取成顶层函数便于单测条件插入与顺序，不必实例化整个 [HomePage]。底栏/侧栏的
-/// 位置索引由此列表导出。
-List<HomeTab> homeActiveTabs({required bool videoEnabled}) => <HomeTab>[
+/// 纯函数：给定实验视频开关与文本钩子开关，返回可见顶层 tab 的**视觉顺序**——视频
+/// 固定插在书架与词典之间（用户要求「在书架和词典管理中间」），texthooker 仅在文本
+/// 钩子开关开启时出现（用户要求「只有开了文本钩子才会显示」），位置固定在词典与设置
+/// 之间。提取成顶层函数便于单测条件插入与顺序，不必实例化整个 [HomePage]。底栏/侧栏
+/// 的位置索引由此列表导出。
+List<HomeTab> homeActiveTabs({
+  required bool videoEnabled,
+  required bool texthookerEnabled,
+}) =>
+    <HomeTab>[
       HomeTab.books,
       if (videoEnabled) HomeTab.video,
       HomeTab.dictionaries,
-      HomeTab.texthooker,
+      if (texthookerEnabled) HomeTab.texthooker,
       HomeTab.settings,
     ];
 
@@ -224,10 +229,13 @@ class _HomePageState extends BasePageState<HomePage>
     return KeyEventResult.ignored;
   }
 
-  /// 当前可见的顶层 tab，按视觉顺序：书架 →（视频）→ 词典 → 设置。视频仅在
-  /// 实验开关开启时插入（位于书架与词典之间）。底栏/侧栏的位置索引由此列表导出。
-  List<HomeTab> _activeTabs() =>
-      homeActiveTabs(videoEnabled: appModel.experimentalVideoEnabled);
+  /// 当前可见的顶层 tab，按视觉顺序：书架 →（视频）→ 词典 →（文本钩子）→ 设置。
+  /// 视频仅在实验开关开启时插入（位于书架与词典之间）；文本钩子仅在其开关开启时插入
+  /// （位于词典与设置之间）。底栏/侧栏的位置索引由此列表导出。
+  List<HomeTab> _activeTabs() => homeActiveTabs(
+        videoEnabled: appModel.experimentalVideoEnabled,
+        texthookerEnabled: appModel.texthookerEnabled,
+      );
 
   /// 渲染用的当前 tab：若 `_currentTab` 已不在可见列表（例如刚关掉实验开关时仍停在
   /// 视频 tab），回落到书架，避免渲染一个不存在的 tab。`_currentTab` 自身保持不变，
