@@ -445,6 +445,13 @@ class HibikiSyncServer {
     if (name.isEmpty) {
       return shelf.Response.notFound('Missing dictionary name');
     }
+    // HBK-AUDIT-012: reject path-traversal attempts.  Dictionary names must
+    // never contain path separators or dot-dot sequences; if they did they
+    // could escape the dictionary resource root on the host (DELETE being the
+    // most dangerous).  This single gate covers all three methods below.
+    if (name.contains('/') || name.contains('\\') || name.contains('..')) {
+      return shelf.Response.forbidden('Invalid dictionary name');
+    }
 
     switch (method) {
       case 'GET':
@@ -464,6 +471,12 @@ class HibikiSyncServer {
               } catch (_) {
                 // best-effort temp cleanup
               }
+            },
+            handleError: (Object e, StackTrace st, EventSink<List<int>> out) {
+              out.addError(e, st);
+              try {
+                file.parent.deleteSync(recursive: true);
+              } catch (_) {/* best-effort */}
             },
           ),
         );

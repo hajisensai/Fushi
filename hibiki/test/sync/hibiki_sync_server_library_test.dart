@@ -121,6 +121,35 @@ void main() {
     c.close();
   });
 
+  test('path-traversal name is rejected with 403', () async {
+    // %2e%2e%2f decodes to "../" on the server; the HttpClient must not
+    // normalise the path before sending so we use Uri.parse with the raw
+    // percent-encoded string to preserve the dots.
+    final HttpClient c = HttpClient();
+
+    // DELETE with path-traversal → must NOT reach lib.deleted.
+    final HttpClientRequest delReq = await c.deleteUrl(
+        Uri.parse('$base/api/library/dictionaries/%2e%2e%2fevil'));
+    delReq.headers.set('authorization', authHeader());
+    final HttpClientResponse delRes = await delReq.close();
+    expect(delRes.statusCode, 403,
+        reason: 'DELETE with "../evil" must be 403 Forbidden');
+    await delRes.drain<void>();
+    expect(lib.deleted, isEmpty,
+        reason: 'no deletion must occur for a traversal name');
+
+    // GET with path-traversal → must also be 403.
+    final HttpClientRequest getReq = await c.getUrl(
+        Uri.parse('$base/api/library/dictionaries/%2e%2e%2fevil'));
+    getReq.headers.set('authorization', authHeader());
+    final HttpClientResponse getRes = await getReq.close();
+    expect(getRes.statusCode, 403,
+        reason: 'GET with "../evil" must be 403 Forbidden');
+    await getRes.drain<void>();
+
+    c.close();
+  });
+
   test('library endpoints 404 when no service injected', () async {
     final HibikiSyncServer bare = HibikiSyncServer(
       syncDataDir: Directory.systemTemp.createTempSync().path,
