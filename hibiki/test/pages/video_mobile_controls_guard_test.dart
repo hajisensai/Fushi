@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-128 source guard: 手机视频顶栏过去硬塞 6~8 个图标，窄屏溢出/挤压 → 右侧
+/// BUG-134 source guard: 手机视频顶栏过去硬塞 6~8 个图标，窄屏溢出/挤压 → 右侧
 /// 图标被裁剪点不到（用户报「图标看得到但点了没反应」）。改为标准手机交互：顶栏
 /// 只留 剧集列表(播放列表时) + ⋮ 更多，其余收进底部 sheet。media_kit 无 headless，
 /// 锁调用点不变式。

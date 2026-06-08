@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-129 source guard: the seeded hidden warm popup slot (BUG-094) is an
+/// BUG-135 source guard: the seeded hidden warm popup slot (BUG-094) is an
 /// Android `InAppWebView` — a native platform view that eats touches even under
 /// `Visibility`'s `Opacity(0)+IgnorePointer`, killing the video controls (top
 /// bar + bottom bar) it overlaps on mobile. The fix parks the hidden slot fully

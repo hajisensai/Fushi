@@ -219,7 +219,7 @@ mixin DictionaryPageMixin {
     final bool isDark =
         (mixinAppModel.overrideDictionaryTheme ?? mixinTheme).brightness ==
             Brightness.dark;
-    // BUG-129: 隐藏的常驻热槽（BUG-094，`visible:false`）若停在它算出的位置
+    // BUG-135: 隐藏的常驻热槽（BUG-094，`visible:false`）若停在它算出的位置
     // （seed 时 selectionRect=Rect.zero → 屏幕左上一大片），其 Android `InAppWebView`
     // 是**原生平台视图**，即使被 [Visibility] 的 `Opacity(0)+IgnorePointer` 包住也
     // 照样截获触摸——`IgnorePointer` 只挡 Flutter 命中测试，挡不住原生 view → 盖住的

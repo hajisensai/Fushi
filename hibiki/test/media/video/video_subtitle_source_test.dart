@@ -368,7 +368,7 @@ WEBVTT
     });
   });
 
-  group('isImportedExternalSubtitlePath (BUG-126)', () {
+  group('isImportedExternalSubtitlePath (BUG-132)', () {
     test('app 文档目录里的导入字幕路径 → true（应直接按路径恢复）', () {
       expect(
         isImportedExternalSubtitlePath(

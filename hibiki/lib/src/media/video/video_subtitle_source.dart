@@ -105,7 +105,7 @@ SubtitleFormat? subtitleFormatForPath(String path) {
 /// ——即非内嵌（`embedded:`）前缀、且扩展名是受支持字幕格式（srt/ass/ssa/vtt）。
 ///
 /// 这类源（用户手动导入 / Jimaku 下载）被拷到 `<appDocs>/video_subtitles/`，其持久化
-/// 值就是文件绝对路径、与视频/剧集目录无关，恢复时应**直接按路径加载**（BUG-126）；
+/// 值就是文件绝对路径、与视频/剧集目录无关，恢复时应**直接按路径加载**（BUG-132）；
 /// 不能只靠 [listAllSubtitleSources]——它仅扫视频同目录 + 内封轨，扫不到 app 文档目录
 /// 里的导入文件，导致播放列表换集/重进后「字幕又要重新导入」。是否真在磁盘上由调用方
 /// 另查（本函数不碰文件系统，可单测）。

@@ -1,4 +1,4 @@
-## BUG-126 · 退出后导入的字幕未绑定视频丢失
+## BUG-132 · 退出后导入的字幕未绑定视频丢失
 - **报告**：2026-06-08（用户：退出后字幕又要重新自己导入，能不能绑定一下视频 / Windows 桌面）
 - **真实性**：✅ 真 bug（播放列表恢复路径扫不到 app 文档目录里的导入文件），根因 `video_hibiki_page.dart:393 _restorePersistedSubtitle` + `:454 _loadEpisode`。
 

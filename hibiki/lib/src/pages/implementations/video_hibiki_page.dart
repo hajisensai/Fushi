@@ -415,7 +415,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   }) async {
     if (persisted == null || persisted.isEmpty) return null;
 
-    // BUG-126: 用户手动导入 / Jimaku 下载的外挂字幕被拷到 `<appDocs>/video_subtitles/`，
+    // BUG-132: 用户手动导入 / Jimaku 下载的外挂字幕被拷到 `<appDocs>/video_subtitles/`，
     // **不在剧集目录里**，而 [listAllSubtitleSources] 只扫视频同目录 + 内封轨 → 播放
     // 列表换集/重进时匹配不到，导致「退出后字幕又要重新导入」。这类源的持久化值就是
     // 它自己的绝对路径，且与剧集无关——只要文件还在磁盘上就按路径直接加载，无需经
@@ -1033,7 +1033,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             final Size screen =
                 Size(constraints.maxWidth, constraints.maxHeight);
             return Stack(
-              // BUG-129: 隐藏热槽被停到屏幕右外侧（buildNestedPopupLayer），默认
+              // BUG-135: 隐藏热槽被停到屏幕右外侧（buildNestedPopupLayer），默认
               // Clip.hardEdge 会把它裁掉 → 原生 WebView 可能不再渲染、丢失预热。用
               // Clip.none 让它在屏外照常栅格化保持温热（不盖任何控件）。
               clipBehavior: Clip.none,
@@ -1250,7 +1250,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       // 控制条 3s 后自动隐藏时一并隐藏鼠标光标（默认 false 会让光标常驻，BUG-106）。
       hideMouseOnControlsRemoval: true,
       // 单击画面 = 播放/暂停（media_kit 桌面默认 false，故此前点画面毫无反应，
-      // BUG-124）。字幕字符点击在更上层 [VideoSubtitleOverlay] 的 opaque GestureDetector
+      // BUG-130）。字幕字符点击在更上层 [VideoSubtitleOverlay] 的 opaque GestureDetector
       // 独立处理、不会冒泡到这里，故启用后点字幕仍是查词、点空白区才暂停，不冲突。
       playAndPauseOnTap: true,
       seekBarPositionColor: cs.primary,
@@ -1363,7 +1363,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     VideoPlayerController controller,
   ) {
     final ColorScheme cs = Theme.of(context).colorScheme;
-    // 顶栏图标按可用宽度自适应（BUG-128）：横屏/平板（≥600dp）有空间，平铺全部
+    // 顶栏图标按可用宽度自适应（BUG-134）：横屏/平板（≥600dp）有空间，平铺全部
     // 截图/字幕/音轨/倍速/设置（用户要求横屏能全展开）；竖屏窄屏收进「⋮ 更多」底部
     // sheet，避免硬塞 6+ 图标溢出到屏外点不到。方向变化触发 build → 本主题重算切换。
     final bool roomy = MediaQuery.of(context).size.width >= 600;
@@ -1896,7 +1896,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 覆盖」语义，有意不做去重——避免堆积同名副本，且换集恢复按文件名匹配，去重
   /// 后缀反而干扰匹配。
   /// 正在导入中的源路径（去重防护）。窗口模式下页级 + controls 内层两个拖放目标
-  /// 可能对同一次拖放都触发 onDrop（BUG-127）；同一 srcPath 在途时忽略二次调用，
+  /// 可能对同一次拖放都触发 onDrop（BUG-133）；同一 srcPath 在途时忽略二次调用，
   /// 避免重复拷贝 / 重复弹加载遮罩 / 重复 SnackBar。
   final Set<String> _subtitleImportsInFlight = <String>{};
 
@@ -1962,7 +1962,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 关闭字幕抽取加载遮罩。配对 [_showSubtitleLoadingOverlay]，幂等。
   ///
   /// 这个遮罩是模态对话框、会夺走键盘焦点；media_kit 关闭覆盖层后**不会**自动把焦点
-  /// 还给 [Video] 的 FocusNode（见 [_refocusVideo]）→ 关掉后空格等快捷键失灵（BUG-125：
+  /// 还给 [Video] 的 FocusNode（见 [_refocusVideo]）→ 关掉后空格等快捷键失灵（BUG-131：
   /// 导入字幕走 _pickAndImportSubtitle→_importExternalSubtitle→_selectSubtitleSource，
   /// 其中 _pickAndImportSubtitle 的 refocus 发生在本遮罩**之前**，遮罩一关焦点又悬空）。
   /// 故 pop 后在下一帧（让 pop 自身的焦点变更先落定）主动归还焦点给视频。
@@ -2128,7 +2128,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     );
   }
 
-  /// 页级字幕拖放目标（BUG-127）。controls 内层也挂了一个（[_buildVideoControls]）供
+  /// 页级字幕拖放目标（BUG-133）。controls 内层也挂了一个（[_buildVideoControls]）供
   /// **全屏**用（media_kit 全屏是另推的根路由、复用同一 controls builder）；但窗口
   /// 模式下那个深埋在 media_kit `Video`→controls 子树里，实测 Windows OS 拖放在视频
   /// 区「完全没反应」。这里在页面顶层（与书架/视频库同款已验证可用的高层挂载点）再挂

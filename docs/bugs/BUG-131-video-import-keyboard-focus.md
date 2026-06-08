@@ -1,4 +1,4 @@
-## BUG-125 · 导入字幕后键盘快捷键失灵
+## BUG-131 · 导入字幕后键盘快捷键失灵
 - **报告**：2026-06-08（用户：导入字幕那一下还是会快捷键失灵 / Windows 桌面）
 - **真实性**：✅ 真 bug（加载遮罩夺焦后未归还），根因 `video_hibiki_page.dart:1816 _hideSubtitleLoadingOverlay`。
 

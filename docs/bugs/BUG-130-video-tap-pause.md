@@ -1,4 +1,4 @@
-## BUG-124 · 视频点击屏幕不暂停
+## BUG-130 · 视频点击屏幕不暂停
 - **报告**：2026-06-08（用户：点击屏幕也无法暂停 / Windows 桌面）
 - **真实性**：✅ 真 bug（media_kit 桌面控制条默认值未启用），根因 `video_hibiki_page.dart:1217 _desktopControlsTheme`。
 
