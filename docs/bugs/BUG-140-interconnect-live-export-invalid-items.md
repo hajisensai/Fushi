@@ -1,4 +1,4 @@
-## BUG-139 · Hibiki互联导出书籍包结构错误且有声书列表暴露孤儿行
+## BUG-140 · Hibiki互联导出书籍包结构错误且有声书列表暴露孤儿行
 - **报告**：2026-06-08（用户：Hibiki互联手机同步电脑数据时 6 个失败；4 本书报 `Invalid EPUB: missing META-INF/container.xml`，2 本有声书报 `/api/library/audiobooks/...` 404）
 - **真实性**：✅ 真 bug — 书籍导出路径在 `hibiki/lib/src/sync/sync_manager.dart:27-39` 直接打包 `extractDir`，没有校正“外层目录/真实 EPUB 根目录”错位；有声书列表在 `hibiki/lib/src/sync/app_model_library_host_service.dart:342-365` 原本只读 `Audiobooks`，但导出同时要求 `SrtBooks` 行存在，导致列表可见而 GET 404。
 - **[x] ① 已修复** — 提交 `5ec1f7da5`
