@@ -118,11 +118,23 @@ void main([List<String> args = const <String>[]]) {
     JustAudioMediaKit.ensureInitialized();
     MediaKit.ensureInitialized();
 
-    /// Ensure no pop-in for the app icon.
+    /// Ensure no pop-in for the app icon. Precaching is a best-effort
+    /// optimisation: if the decode fails (e.g. the CI software-GPU emulator
+    /// can't decompress the PNG → "Could not decompress image", or low memory),
+    /// it must NOT surface as an unhandled FlutterError — that would both spam
+    /// error reporting on real devices and fail the appSmoke integration test.
+    /// Swallow it via precacheImage's onError; the icon just falls back to a
+    /// one-frame decode-on-demand later.
     binding.addPostFrameCallback((_) async {
       final context = binding.rootElement;
       if (context != null) {
-        precacheImage(const AssetImage('assets/meta/icon.png'), context);
+        precacheImage(
+          const AssetImage('assets/meta/icon.png'),
+          context,
+          onError: (Object error, StackTrace? stack) {
+            debugPrint('[startup] app icon precache skipped: $error');
+          },
+        );
       }
     });
 
