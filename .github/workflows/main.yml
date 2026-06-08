@@ -75,9 +75,13 @@ jobs:
       working-directory: hibiki
       run: flutter analyze
 
+    # Golden image tests are gated to the reference platform (the dev host where
+    # goldens were generated); Linux CI font/raster rendering differs and would
+    # always mismatch, so exclude them here. They still run on a plain local
+    # `flutter test`. See hibiki/dart_test.yaml.
     - name: Run unit tests with coverage (main app)
       working-directory: hibiki
-      run: flutter test --coverage
+      run: flutter test --coverage --exclude-tags golden
 
     - name: Run package tests
       run: |

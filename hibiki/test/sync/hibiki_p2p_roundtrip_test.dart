@@ -68,8 +68,10 @@ void main() {
     expect(await backend.restoreAuth(repo), isTrue);
     final String root2 = await backend.findOrCreateRootFolder();
     final List<DriveFile> books = await backend.listBooks(root2);
-    // sanitizeTtuFilename lowercases → 'testbook'.
-    expect(books.map((DriveFile f) => f.name), contains('testbook'),
+    // sanitizeTtuFilename 不改大小写（只处理尾部空格/点、`*`、非法字符百分号编码），
+    // 故文件夹名保持原标题大小写 'TestBook'。服务器对真实读写路径不再 canonicalize
+    // 小写化（见 hibiki_sync_server 的 fsPath），跨平台一致。
+    expect(books.map((DriveFile f) => f.name), contains('TestBook'),
         reason: 'the uploaded book folder should be visible to another device');
     final String folder2 = await backend.ensureBookFolder(
         bookTitle: 'TestBook', rootFolderId: root2);

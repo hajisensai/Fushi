@@ -1,0 +1,9 @@
+# 测试标签声明。golden 图像测试对字体/光栅渲染敏感，跨平台（Linux CI vs 开发机
+# Windows/macOS）必然像素不一致，故按 Flutter 惯例 gate 到参考平台：CI 用
+# `flutter test --exclude-tags golden` 跳过，开发机本地 `flutter test` 仍校验。
+# realdata 标签标记需要本机真实素材的测试（缺素材时自身 skip）。
+tags:
+  golden:
+    description: Golden image tests; only run on the reference platform.
+  realdata:
+    description: Tests that need real local fixtures; self-skip when absent.

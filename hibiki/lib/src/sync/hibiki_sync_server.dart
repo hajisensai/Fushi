@@ -201,10 +201,17 @@ class HibikiSyncServer {
       return _handleMine(request);
     }
 
-    final fsPath = p.canonicalize(p.join(syncDataDir, reqPath.substring(1)));
+    // 真实读写路径：只做词法规整、**保留原始大小写**。p.canonicalize 在
+    // 大小写不敏感平台（Windows）会把整条路径小写化，这会让书文件夹名按宿主平台
+    // 大小写折叠——同一本书在 Windows host 落成小写、在 Linux/Android host 保留原
+    // 大小写，跨平台同步身份就此错位。故真实文件操作绝不能用 canonicalize 的结果。
+    final fsPath = p.normalize(p.join(syncDataDir, reqPath.substring(1)));
+    // 路径穿越围栏：canonicalize 的大小写折叠/符号链接解析只用于"是否逃出根目录"
+    // 的判定，不参与真实读写，故对身份大小写无影响。
+    final canonicalFsPath = p.canonicalize(fsPath);
     final canonicalRoot = p.canonicalize(syncDataDir);
-    if (fsPath != canonicalRoot &&
-        !fsPath.startsWith('$canonicalRoot${p.separator}')) {
+    if (canonicalFsPath != canonicalRoot &&
+        !canonicalFsPath.startsWith('$canonicalRoot${p.separator}')) {
       return shelf.Response.forbidden('Path traversal denied');
     }
 

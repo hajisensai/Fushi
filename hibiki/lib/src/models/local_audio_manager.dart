@@ -67,6 +67,12 @@ class LocalAudioManager {
   final PreferencesRepository _prefsRepo;
   final Directory _databaseDirectory;
 
+  /// 上一次分配的内部副本时间戳。仅用毫秒时间戳做文件名时，连续两次导入若落在
+  /// 同一毫秒（在快机器/CI 上很常见）会撞出相同 internalPath → 后一个覆盖前一个，
+  /// 两条配置塌成同一 path、身份丢失。这里保证严格单调递增，**毫秒相同也强制 +1**，
+  /// 让每次导入的内部文件名唯一（仍是单段数字，匹配 [pruneOrphans] 的命名正则）。
+  static int _lastImportStamp = 0;
+
   /// 把一个库 entry 转成喂 native 的配置：sourceOrder 只含**启用**的子来源，
   /// 按存储顺序（=优先级）。空 sources → 空 order → native 退回全启用自然序。
   static LocalAudioDbConfig _configFor(LocalAudioDbEntry e) =>
@@ -133,8 +139,10 @@ class LocalAudioManager {
     String sourcePath, {
     required String displayName,
   }) async {
-    final String internalName =
-        'local_audio_${DateTime.now().millisecondsSinceEpoch}.db';
+    int stamp = DateTime.now().millisecondsSinceEpoch;
+    if (stamp <= _lastImportStamp) stamp = _lastImportStamp + 1;
+    _lastImportStamp = stamp;
+    final String internalName = 'local_audio_$stamp.db';
     final String internalPath =
         path.join(_databaseDirectory.path, internalName);
     final File sourceFile = File(sourcePath);
