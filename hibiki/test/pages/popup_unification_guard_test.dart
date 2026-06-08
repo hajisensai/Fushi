@@ -10,7 +10,8 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   String read(String p) => File(p).readAsStringSync();
 
-  test('both stack owners delegate to the shared DictionaryPopupController', () {
+  test('both stack owners delegate to the shared DictionaryPopupController',
+      () {
     final base = read('lib/src/pages/base_source_page.dart');
     final mixin =
         read('lib/src/pages/implementations/dictionary_page_mixin.dart');
@@ -25,9 +26,11 @@ void main() {
     final mixin =
         read('lib/src/pages/implementations/dictionary_page_mixin.dart');
     expect(base.contains('class _PopupStackItem'), isFalse,
-        reason: '_PopupStackItem must be removed (unified DictionaryPopupEntry)');
+        reason:
+            '_PopupStackItem must be removed (unified DictionaryPopupEntry)');
     expect(mixin.contains('class NestedPopupEntry'), isFalse,
-        reason: 'NestedPopupEntry must be removed (unified DictionaryPopupEntry)');
+        reason:
+            'NestedPopupEntry must be removed (unified DictionaryPopupEntry)');
   });
 
   test('the single entry type lives in the controller file', () {

@@ -19,8 +19,7 @@ void main() {
     // Fixed window over the method body (it is ~50 lines); a brace-based end
     // marker is fragile because the multi-line parameter list also closes with
     // "  })".
-    final String body =
-        src.substring(at, (at + 2200).clamp(0, src.length));
+    final String body = src.substring(at, (at + 2200).clamp(0, src.length));
 
     expect(body, contains('ResumableUploadOptions'),
         reason: 'large uploads must be resumable, not single multipart');

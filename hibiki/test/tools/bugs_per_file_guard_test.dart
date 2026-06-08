@@ -32,7 +32,10 @@ void main() {
   group('bug 跟踪 per-file 不变式', () {
     test('docs/BUGS.md 不再含任何 `## BUG-NNN` 正文标题（只放索引表）', () {
       final content = indexFile.readAsStringSync();
-      final stray = _headingRe.allMatches(content).map((m) => 'BUG-${m.group(1)}').toList();
+      final stray = _headingRe
+          .allMatches(content)
+          .map((m) => 'BUG-${m.group(1)}')
+          .toList();
       expect(
         stray,
         isEmpty,
@@ -43,14 +46,10 @@ void main() {
 
     test('docs/bugs/ 每个文件可解析 BUG-NNN 且号唯一', () {
       expect(bugsDir.existsSync(), isTrue, reason: '缺 docs/bugs/ 目录');
-      final files = bugsDir
-          .listSync()
-          .whereType<File>()
-          .where((f) {
-            final n = f.uri.pathSegments.last;
-            return n.endsWith('.md') && !n.startsWith('_');
-          })
-          .toList();
+      final files = bugsDir.listSync().whereType<File>().where((f) {
+        final n = f.uri.pathSegments.last;
+        return n.endsWith('.md') && !n.startsWith('_');
+      }).toList();
       expect(files.length, greaterThanOrEqualTo(100),
           reason: '已迁移过 117 条，文件数异常少说明迁移丢失');
       final byNum = <int, String>{};
@@ -61,7 +60,8 @@ void main() {
         final num = int.parse(m!.group(1)!);
         final prev = byNum[num];
         expect(prev, isNull,
-            reason: '号撞了：BUG-$num 同时在 $prev 与 $name —— 改名其一（dart run tool/bug.dart check 可查）');
+            reason:
+                '号撞了：BUG-$num 同时在 $prev 与 $name —— 改名其一（dart run tool/bug.dart check 可查）');
         byNum[num] = name;
       }
     });
@@ -73,7 +73,8 @@ void main() {
       expect(links, isNotEmpty, reason: '索引表里没有任何 bug 链接，reindex 可能没跑');
       for (final rel in links) {
         expect(File('${bugsDir.path}/$rel').existsSync(), isTrue,
-            reason: '索引指向不存在的文件 docs/bugs/$rel（跑 dart run tool/bug.dart reindex）');
+            reason:
+                '索引指向不存在的文件 docs/bugs/$rel（跑 dart run tool/bug.dart reindex）');
       }
     });
   });

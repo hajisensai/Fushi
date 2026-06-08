@@ -44,8 +44,7 @@ void main() {
   });
 
   test('控制器有图形轨画面渲染入口 + load 恢复参数', () {
-    final String src =
-        read('lib/src/media/video/video_player_controller.dart');
+    final String src = read('lib/src/media/video/video_player_controller.dart');
     expect(
       src.contains('Future<bool> selectEmbeddedGraphicTrack(int streamIndex)'),
       isTrue,
@@ -65,7 +64,8 @@ void main() {
   });
 
   test('视频页：图形轨标注 + 走画面渲染分支（不走加载遮罩）', () {
-    final String src = read('lib/src/pages/implementations/video_hibiki_page.dart');
+    final String src =
+        read('lib/src/pages/implementations/video_hibiki_page.dart');
     // 菜单对图形轨标注。
     expect(src.contains('source.isGraphicEmbedded'), isTrue);
     expect(src.contains('t.video_subtitle_graphic_hint'), isTrue,
@@ -80,7 +80,8 @@ void main() {
   });
 
   test('图形分支在加载遮罩之前 return，不弹遮罩（瞬时切轨）', () {
-    final String src = read('lib/src/pages/implementations/video_hibiki_page.dart');
+    final String src =
+        read('lib/src/pages/implementations/video_hibiki_page.dart');
     final int start = src.indexOf('Future<bool> _selectSubtitleSource(');
     expect(start, greaterThan(-1));
     final int graphicAt = src.indexOf('if (source.isGraphicEmbedded)', start);

@@ -90,7 +90,9 @@ class _FakeLibraryService implements HibikiLibraryHostService {
   Future<File?> resolveVideoFile(String id) async => null;
 
   @override
-  Future<File?> resolveVideoSubtitle(String id, {String langCode = 'ja'}) async => null;
+  Future<File?> resolveVideoSubtitle(String id,
+          {String langCode = 'ja'}) async =>
+      null;
 }
 
 void main() {

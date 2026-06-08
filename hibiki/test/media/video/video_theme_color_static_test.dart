@@ -18,8 +18,7 @@ void main() {
     test('两套控制条主题都用 cs.primary 作为 buttonBarButtonColor', () {
       final int primaryCount =
           'buttonBarButtonColor: cs.primary'.allMatches(page).length;
-      expect(primaryCount, 2,
-          reason: '桌面与移动两套控制条主题都必须用 cs.primary（强调色）');
+      expect(primaryCount, 2, reason: '桌面与移动两套控制条主题都必须用 cs.primary（强调色）');
     });
 
     test('控制条按钮不再用 onSurface / 硬编码白色', () {

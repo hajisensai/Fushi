@@ -23,8 +23,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   test('add_dict copies index.title while index_buf is still in scope', () {
-    final File src =
-        File('../native/hoshidicts/hoshidicts_src/query.cpp');
+    final File src = File('../native/hoshidicts/hoshidicts_src/query.cpp');
     expect(src.existsSync(), isTrue,
         reason: 'query.cpp not found at ${src.absolute.path}');
     final String code = src.readAsStringSync();
@@ -41,8 +40,7 @@ void main() {
 
     final RegExp titleUse = RegExp(r'index\.title');
     final Iterable<Match> uses = titleUse.allMatches(body);
-    expect(uses, isNotEmpty,
-        reason: 'expected add_dict() to read index.title');
+    expect(uses, isNotEmpty, reason: 'expected add_dict() to read index.title');
 
     for (final Match m in uses) {
       expect(m.start, greaterThan(bufDecl),

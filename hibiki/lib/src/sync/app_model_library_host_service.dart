@@ -461,8 +461,7 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
     });
 
     return <RemoteVideoInfo>[
-      for (final VideoBookRow row in rows)
-        _videoInfoFromRow(row),
+      for (final VideoBookRow row in rows) _videoInfoFromRow(row),
     ];
   }
 
@@ -522,8 +521,7 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
     if (row == null) return null;
     final String videoPath = row.videoPath;
     if (videoPath.isEmpty) return null;
-    final String? subPath =
-        findSidecarSubtitle(videoPath, langCode: langCode);
+    final String? subPath = findSidecarSubtitle(videoPath, langCode: langCode);
     if (subPath == null) return null;
     final File f = File(subPath);
     return f.existsSync() ? f : null;

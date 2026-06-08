@@ -17,7 +17,8 @@ Future<bool> _ffmpegAvailable() async {
 void main() {
   group('FfmpegRunResult', () {
     test('isSuccess 仅当 returnCode == 0', () {
-      expect(const FfmpegRunResult(returnCode: 0, output: '').isSuccess, isTrue);
+      expect(
+          const FfmpegRunResult(returnCode: 0, output: '').isSuccess, isTrue);
       expect(
           const FfmpegRunResult(returnCode: 1, output: '').isSuccess, isFalse);
       expect(const FfmpegRunResult(returnCode: null, output: 'x').isSuccess,
@@ -59,8 +60,7 @@ void main() {
       expect(r.isSuccess, isFalse);
     });
 
-    test('ffmpeg 不存在时 run 抛 ProcessException（沿用旧契约，调用方各自 catch）',
-        () async {
+    test('ffmpeg 不存在时 run 抛 ProcessException（沿用旧契约，调用方各自 catch）', () async {
       // 用一个不存在的可执行名强制 ProcessException（不依赖 HIBIKI_FFMPEG）。
       const FfmpegBackend backend = CliFfmpegBackend();
       // 通过临时把可执行解析指向不存在的名字来验证传播；这里直接构造一个必然

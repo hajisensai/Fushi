@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/sync/app_model_library_host_service.dart';
@@ -87,7 +86,8 @@ void main() {
       final String videoPath = p.join(tmp.path, 'show.mkv');
       File(videoPath).writeAsBytesSync(<int>[0]);
       // 创建 ja.srt sidecar
-      File(p.join(tmp.path, 'show.ja.srt')).writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nHello\n');
+      File(p.join(tmp.path, 'show.ja.srt'))
+          .writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nHello\n');
 
       await db.upsertVideoBook(VideoBooksCompanion.insert(
         bookUid: 'video/show',

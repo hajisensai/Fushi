@@ -12,8 +12,8 @@ void main() {
         read('lib/src/pages/implementations/video_hibiki_page.dart');
 
     test('桌面控制主题覆盖 keyboardShortcuts', () {
-      expect(page.contains('keyboardShortcuts: _videoKeyboardShortcuts('),
-          isTrue,
+      expect(
+          page.contains('keyboardShortcuts: _videoKeyboardShortcuts('), isTrue,
           reason: 'media_kit 默认 Escape 只 exitFullscreen，非全屏吞掉 Esc → 必须整表覆盖');
     });
 
@@ -25,8 +25,7 @@ void main() {
       expect(body, isNotNull, reason: '找不到 _videoKeyboardShortcuts 方法体');
       final String b = body!.group(1)!;
       expect(b.contains('LogicalKeyboardKey.escape'), isTrue);
-      expect(b.contains('isFullscreen('), isTrue,
-          reason: '全屏时 Escape 应退全屏');
+      expect(b.contains('isFullscreen('), isTrue, reason: '全屏时 Escape 应退全屏');
       expect(b.contains('exitFullscreen('), isTrue);
       expect(b.contains('_handleBackOrExit()'), isTrue,
           reason: '非全屏时 Escape 应退出视频页');
@@ -96,8 +95,7 @@ void main() {
       expect(hitAt, greaterThanOrEqualTo(0), reason: '需先反查字幕字符命中');
       expect(lookupAt, greaterThan(hitAt),
           reason: '命中字符后切换查词（保持暂停：_lookupAt 已暂停不再暂停、不清标记）');
-      expect(popAt, greaterThan(lookupAt),
-          reason: '未命中字符才 dismiss + 恢复');
+      expect(popAt, greaterThan(lookupAt), reason: '未命中字符才 dismiss + 恢复');
     });
 
     test('字幕 overlay 绑定 _subtitleHitTester', () {
@@ -127,8 +125,7 @@ void main() {
     });
 
     test('页面 _loadVideo 传 autoPlay: true', () {
-      expect(page.contains('autoPlay: true'), isTrue,
-          reason: '进页面/换集后应直接开播');
+      expect(page.contains('autoPlay: true'), isTrue, reason: '进页面/换集后应直接开播');
     });
   });
 }

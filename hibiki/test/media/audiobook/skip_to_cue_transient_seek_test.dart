@@ -68,8 +68,7 @@ void main() {
   // 源码守卫：抑制窗是「立旗(skipToCue/playCueOnce) + 顶部 guard(_updateCurrentCue)」
   // 两段接线，任一段被回归删掉就会让三段跳复发。
   group('explicit-seek suppression wiring guard (BUG-061)', () {
-    test('skipToCue / playCueOnce 起 seek 前都立旗，_updateCurrentCue 顶部按谓词放行',
-        () {
+    test('skipToCue / playCueOnce 起 seek 前都立旗，_updateCurrentCue 顶部按谓词放行', () {
       final String src = File(
         '../packages/hibiki_audio/lib/src/audiobook/audiobook_controller.dart',
       ).readAsStringSync();

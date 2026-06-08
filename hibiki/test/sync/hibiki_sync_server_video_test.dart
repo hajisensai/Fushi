@@ -115,8 +115,7 @@ void main() {
   late _FakeLibraryService lib;
   const String token = 'test-token-video';
   late String base;
-  String authHeader() =>
-      'Basic ${base64Encode(utf8.encode('hibiki:$token'))}';
+  String authHeader() => 'Basic ${base64Encode(utf8.encode('hibiki:$token'))}';
 
   setUp(() async {
     lib = _FakeLibraryService();
@@ -184,7 +183,8 @@ void main() {
 
   // ── streamurl ──────────────────────────────────────────────────────────────
 
-  test('GET /api/library/videos/<id>/streamurl 返回含 token 的 stream url', () async {
+  test('GET /api/library/videos/<id>/streamurl 返回含 token 的 stream url',
+      () async {
     final HttpClient c = HttpClient();
     final String encodedId = Uri.encodeFull(_FakeLibraryService.videoId);
     final HttpClientRequest req = await c
@@ -241,7 +241,8 @@ void main() {
       expect(res.statusCode, 200);
       expect(res.headers.value('accept-ranges'), 'bytes',
           reason: '应携带 Accept-Ranges: bytes');
-      final List<int> body = await res.fold(<int>[], (List<int> a, List<int> b) {
+      final List<int> body =
+          await res.fold(<int>[], (List<int> a, List<int> b) {
         return a..addAll(b);
       });
       expect(body.length, 16, reason: '应返回全部 16 字节');
@@ -250,17 +251,18 @@ void main() {
       c.close();
     });
 
-    test('GET stream 带 Range: bytes=0-3 → 206 + Content-Range + 4 字节', () async {
+    test('GET stream 带 Range: bytes=0-3 → 206 + Content-Range + 4 字节',
+        () async {
       final HttpClient c = HttpClient();
       final String streamUrl = await getStreamUrl(c);
       final HttpClientRequest req = await c.getUrl(Uri.parse(streamUrl));
       req.headers.set('range', 'bytes=0-3');
       final HttpClientResponse res = await req.close();
-      expect(res.statusCode, 206,
-          reason: 'Range 请求应返回 206 Partial Content');
+      expect(res.statusCode, 206, reason: 'Range 请求应返回 206 Partial Content');
       expect(res.headers.value('content-range'), 'bytes 0-3/16',
           reason: 'Content-Range 应为 bytes 0-3/16');
-      final List<int> body = await res.fold(<int>[], (List<int> a, List<int> b) {
+      final List<int> body =
+          await res.fold(<int>[], (List<int> a, List<int> b) {
         return a..addAll(b);
       });
       expect(body.length, 4, reason: 'body 应为 4 字节');
@@ -274,8 +276,7 @@ void main() {
       final HttpClientRequest req = await c.getUrl(Uri.parse(
           '$base/api/library/videos/$encodedId/stream?token=invalid_token_xyz'));
       final HttpClientResponse res = await req.close();
-      expect(res.statusCode, 403,
-          reason: '无效 token 应返回 403，不能泄漏文件内容');
+      expect(res.statusCode, 403, reason: '无效 token 应返回 403，不能泄漏文件内容');
       await res.drain<void>();
       c.close();
     });
@@ -290,8 +291,7 @@ void main() {
       final HttpClientRequest req = await c.getUrl(Uri.parse(
           '$base/api/library/videos/video/other/stream?token=$tokenValue'));
       final HttpClientResponse res = await req.close();
-      expect(res.statusCode, anyOf(403, 404),
-          reason: '合法 token 配错误 id 应被拒绝');
+      expect(res.statusCode, anyOf(403, 404), reason: '合法 token 配错误 id 应被拒绝');
       await res.drain<void>();
       c.close();
     });
@@ -358,8 +358,7 @@ void main() {
         '$base/api/library/videos/${Uri.encodeFull('../evil')}/streamurl'));
     req1.headers.set('authorization', authHeader());
     final HttpClientResponse res1 = await req1.close();
-    expect(res1.statusCode, anyOf(400, 403, 404),
-        reason: '含 .. 的 id 应被拒绝');
+    expect(res1.statusCode, anyOf(400, 403, 404), reason: '含 .. 的 id 应被拒绝');
     await res1.drain<void>();
 
     // subtitle 端点
@@ -393,8 +392,7 @@ void main() {
     req.headers.set(
         'authorization', 'Basic ${base64Encode(utf8.encode('hibiki:$token'))}');
     final HttpClientResponse res = await req.close();
-    expect(res.statusCode, 404,
-        reason: '无 libraryService 时视频列表应返回 404');
+    expect(res.statusCode, 404, reason: '无 libraryService 时视频列表应返回 404');
     await res.drain<void>();
 
     c.close();

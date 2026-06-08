@@ -16,8 +16,9 @@ void main() {
     final String code = source.readAsStringSync();
 
     // 特例的特征：onReceivedError 分支内同时判 Platform.isWindows 与拦截域 host。
-    final bool hasWindowsHostSpecialCase = code.contains('Platform.isWindows') &&
-        code.contains('request.url.host == ReaderHibikiSource.kHost');
+    final bool hasWindowsHostSpecialCase =
+        code.contains('Platform.isWindows') &&
+            code.contains('request.url.host == ReaderHibikiSource.kHost');
     expect(hasWindowsHostSpecialCase, isFalse,
         reason: 'Windows 拦截域假失败应由 fork 引擎层根治，阅读器页不得重新引入特例');
   });

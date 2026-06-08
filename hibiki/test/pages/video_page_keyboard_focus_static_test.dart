@@ -47,8 +47,7 @@ void main() {
     expect(refocusCalls, greaterThanOrEqualTo(6),
         reason: '所有夺焦覆盖层（5 个 sheet + 着色器/Jimaku 对话框）关闭后都应 _refocusVideo()');
     // sheet 关闭回调里必须同时复位重入守卫，否则守卫卡死再也开不了菜单。
-    final int guardReset =
-        '_videoSheetOpen = false;'.allMatches(src).length;
+    final int guardReset = '_videoSheetOpen = false;'.allMatches(src).length;
     expect(guardReset, greaterThanOrEqualTo(5),
         reason: '每个 sheet 的 whenComplete 必须复位 _videoSheetOpen');
   });

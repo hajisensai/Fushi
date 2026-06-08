@@ -975,8 +975,7 @@ class HibikiSyncServer {
 
   void _pruneVideoTokens() {
     // 视频播放时间长，token 有效期设为 6 小时
-    final DateTime cutoff =
-        DateTime.now().subtract(const Duration(hours: 6));
+    final DateTime cutoff = DateTime.now().subtract(const Duration(hours: 6));
     _videoStreamTokens.removeWhere(
       (String _, _VideoStreamToken token) => token.createdAt.isBefore(cutoff),
     );

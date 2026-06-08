@@ -355,8 +355,7 @@ class MouseBinding {
 
   @override
   bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is MouseBinding && button == other.button;
+      identical(this, other) || other is MouseBinding && button == other.button;
 
   @override
   int get hashCode => button.hashCode;

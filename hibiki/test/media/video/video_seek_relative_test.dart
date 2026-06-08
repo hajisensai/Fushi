@@ -18,7 +18,8 @@ void main() {
     });
 
     test('unknown duration only guards lower bound', () {
-      expect(VideoPlayerController.clampSeekTargetMs(58000, 10000, null), 68000);
+      expect(
+          VideoPlayerController.clampSeekTargetMs(58000, 10000, null), 68000);
       expect(VideoPlayerController.clampSeekTargetMs(1000, -10000, null), 0);
     });
 

@@ -9,7 +9,10 @@ void main() {
 
   test('addVideoWatchStatistic accumulates by (title, dateKey)', () async {
     await db.addVideoWatchStatistic(
-        title: 'A', dateKey: '2026-06-06', subtitleChars: 10, watchTimeMs: 1000);
+        title: 'A',
+        dateKey: '2026-06-06',
+        subtitleChars: 10,
+        watchTimeMs: 1000);
     await db.addVideoWatchStatistic(
         title: 'A', dateKey: '2026-06-06', subtitleChars: 5, watchTimeMs: 500);
     final rows = await db.getAllVideoWatchStatistics();
@@ -20,7 +23,10 @@ void main() {
 
   test('addVideoWatchStatistic separate rows for different dateKey', () async {
     await db.addVideoWatchStatistic(
-        title: 'A', dateKey: '2026-06-06', subtitleChars: 10, watchTimeMs: 1000);
+        title: 'A',
+        dateKey: '2026-06-06',
+        subtitleChars: 10,
+        watchTimeMs: 1000);
     await db.addVideoWatchStatistic(
         title: 'A', dateKey: '2026-06-07', subtitleChars: 7, watchTimeMs: 700);
     final rows = await db.getAllVideoWatchStatistics();

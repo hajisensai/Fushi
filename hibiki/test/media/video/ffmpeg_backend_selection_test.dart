@@ -22,7 +22,8 @@ void main() {
   });
 
   test('用自编 ffmpeg-kit：KitFfmpegBackend + ffmpeg_kit_flutter API', () {
-    expect(src, contains("import 'package:ffmpeg_kit_flutter/ffmpeg_kit.dart'"));
+    expect(
+        src, contains('import \'package:ffmpeg_kit_flutter/ffmpeg_kit.dart\''));
     expect(src, contains('class KitFfmpegBackend implements FfmpegBackend'));
     expect(src, contains('FFmpegKit.executeWithArguments'));
   });
@@ -52,8 +53,9 @@ void main() {
     expect(gradle.existsSync(), isTrue,
         reason: 'vendored ffmpeg_kit_flutter 应存在');
     final String g = gradle.readAsStringSync();
-    expect(g.contains("implementation(name: 'ffmpeg-kit', ext: 'aar')"), isTrue);
-    expect(g.contains("com.arthenica:ffmpeg-kit-https"), isFalse,
+    expect(g.contains('implementation(name: \'ffmpeg-kit\', ext: \'aar\')'),
+        isTrue);
+    expect(g.contains('com.arthenica:ffmpeg-kit-https'), isFalse,
         reason: '不再拉 maven 预编译');
     expect(
       File('../third_party/ffmpeg_kit_flutter/android/libs/ffmpeg-kit.aar')

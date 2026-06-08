@@ -245,6 +245,29 @@ class RemoteVideoInfo {
       );
 }
 
+/// client 向 host 申请到的视频播放 URL。
+///
+/// [streamUrl] 是可直接交给播放器的短时 token URL；[subtitleUrl] 仅表示 host 有
+/// 可下载外挂字幕，实际播放器应先通过 client 下载到本地再复用现有字幕路径。
+class RemoteVideoStreamUrls {
+  const RemoteVideoStreamUrls({
+    required this.streamUrl,
+    this.subtitleUrl,
+  });
+
+  final String streamUrl;
+  final String? subtitleUrl;
+
+  static RemoteVideoStreamUrls fromJson(Map<String, Object?> json) {
+    final String streamUrl = json['url']?.toString() ?? '';
+    final String? subtitleUrl = json['subtitleUrl']?.toString();
+    return RemoteVideoStreamUrls(
+      streamUrl: streamUrl,
+      subtitleUrl: subtitleUrl,
+    );
+  }
+}
+
 // ── Abstract service ───────────────────────────────────────────────────────
 
 /// host 侧「库感知」服务：把 host 的实时库即时 export/import/delete/list。

@@ -818,6 +818,122 @@ class HibikiClientSyncBackend extends SyncBackend {
         .checkStatus(res.statusCode, 'DELETE /api/library/audiobooks/$bookKey');
   }
 
+  // ── Remote videos (interconnect-only, read-only) ─────────────────────────
+  // 视频只远程观看/可选下载，不参与双向同步。Host 的 /stream 端点使用短时
+  // token URL，media_kit 可直接播放，不依赖自定义 HTTP header。
+
+  /// 列出对端 host 当前视频清单（直打 `/api/library/videos`）。
+  Future<List<RemoteVideoInfo>> listRemoteVideos() async {
+    await _ensureResolved();
+    final HttpClientRequest req =
+        await _ops!.buildRequest('GET', '$_apiBase/api/library/videos');
+    final HttpClientResponse res = await req.close();
+    _ops!.checkStatus(res.statusCode, 'GET /api/library/videos');
+    final String body = await res.transform(utf8.decoder).join();
+    final List<dynamic> arr = jsonDecode(body) as List<dynamic>;
+    return <RemoteVideoInfo>[
+      for (final dynamic e in arr)
+        RemoteVideoInfo.fromJson((e as Map).cast<String, Object?>()),
+    ];
+  }
+
+  /// 向 host 换取可直接播放的视频 stream URL。
+  ///
+  /// 返回的 [RemoteVideoStreamUrls.streamUrl] 已携带短时 token；播放器不需要
+  /// Authorization 头。字幕 URL（若存在）仍是普通受 Basic 鉴权的 API URL，UI
+  /// 可先用 [getRemoteVideoSubtitle] 下载到本地后交给现有字幕加载逻辑。
+  Future<RemoteVideoStreamUrls> remoteVideoStreamUrls(String id) async {
+    await _ensureResolved();
+    final String encodedId = _encodeVideoId(id);
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'GET',
+      '$_apiBase/api/library/videos/$encodedId/streamurl',
+    );
+    final HttpClientResponse res = await req.close();
+    _ops!.checkStatus(res.statusCode, 'GET /api/library/videos/$id/streamurl');
+    final String body = await res.transform(utf8.decoder).join();
+    final Map<String, dynamic> json = jsonDecode(body) as Map<String, dynamic>;
+    return RemoteVideoStreamUrls.fromJson(json);
+  }
+
+  /// media_kit 兼容接口：当前协议走 token URL，因此无需额外 HTTP headers。
+  Map<String, String> remoteVideoAuthHeaders() => const <String, String>{};
+
+  /// 下载对端视频外挂字幕到 [dest]。
+  Future<void> getRemoteVideoSubtitle(
+    String id,
+    File dest, {
+    void Function(double progress)? onProgress,
+  }) async {
+    await _ensureResolved();
+    await downloadContentFile(
+      fileId: '$_apiBase/api/library/videos/${_encodeVideoId(id)}/subtitle',
+      destination: dest,
+      onProgress: onProgress,
+    );
+  }
+
+  /// 整段下载对端视频到 [dest]（用于 UI 的「下载到本机」）。
+  ///
+  /// 下载走 host 签发的 token stream URL，避免依赖播放器/header 兼容性；失败时
+  /// 复用 [downloadContentFile] 同款清理语义，不留下截断文件。
+  Future<void> downloadRemoteVideo(
+    String id,
+    File dest, {
+    void Function(double progress)? onProgress,
+  }) async {
+    final RemoteVideoStreamUrls urls = await remoteVideoStreamUrls(id);
+    await _downloadPlainUrl(
+      urls.streamUrl,
+      dest,
+      context: 'GET /api/library/videos/$id/stream',
+      onProgress: onProgress,
+    );
+  }
+
+  static String _encodeVideoId(String id) =>
+      id.split('/').map(Uri.encodeComponent).join('/');
+
+  Future<void> _downloadPlainUrl(
+    String url,
+    File destination, {
+    required String context,
+    void Function(double progress)? onProgress,
+  }) async {
+    final HttpClient client = HttpClient();
+    final HttpClientRequest request =
+        await client.openUrl('GET', Uri.parse(url));
+    final HttpClientResponse response = await request.close();
+    try {
+      _ops!.checkStatus(response.statusCode, context);
+      final int contentLength = response.contentLength;
+      final IOSink sink = destination.openWrite();
+      int bytesReceived = 0;
+      bool success = false;
+      try {
+        await for (final List<int> chunk in response) {
+          sink.add(chunk);
+          bytesReceived += chunk.length;
+          if (contentLength > 0) {
+            onProgress?.call(bytesReceived / contentLength);
+          }
+        }
+        success = true;
+      } finally {
+        await sink.close();
+        if (!success) {
+          try {
+            destination.deleteSync();
+          } catch (e) {
+            debugPrint('[hibiki-client] failed to clean up temp file: $e');
+          }
+        }
+      }
+    } finally {
+      client.close(force: true);
+    }
+  }
+
   // ── Test connection ───────────────────────────────────────────────
 
   Future<void> testConnection({
