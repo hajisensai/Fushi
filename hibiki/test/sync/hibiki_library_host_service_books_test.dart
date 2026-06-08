@@ -1,0 +1,341 @@
+import 'dart:io';
+
+import 'package:drift/native.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/sync/app_model_library_host_service.dart';
+import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
+import 'package:hibiki/src/sync/sync_asset_package_service.dart';
+import 'package:hibiki_core/hibiki_core.dart';
+import 'package:path/path.dart' as p;
+
+// ── 辅助 ──────────────────────────────────────────────────────────────────
+
+/// 在 [db] 里插入一本书，同时在 [extractDir] 写入最小 EPUB 结构（让
+/// repackageExtractedEpub 能成功打包）。
+///
+/// 最小 EPUB 需要 `mimetype` 文件（EPUB 规范要求）位于 extractDir 根。
+Future<String> _insertBookWithExtractDir({
+  required HibikiDatabase db,
+  required String title,
+  required String extractDir,
+}) async {
+  Directory(extractDir).createSync(recursive: true);
+  // 写入 mimetype（repackageExtractedEpub 靠它识别 EPUB 格式）
+  File(p.join(extractDir, 'mimetype'))
+      .writeAsStringSync('application/epub+zip');
+  // 写入最小 content.opf（让产出的 zip 非空且可识别）
+  final Directory metaInf = Directory(p.join(extractDir, 'META-INF'))
+    ..createSync();
+  File(p.join(metaInf.path, 'container.xml')).writeAsStringSync(
+    '<?xml version="1.0"?>'
+    '<container version="1.0" xmlns="urn:oasis:schemas:container">'
+    '<rootfiles><rootfile full-path="content.opf"'
+    ' media-type="application/oebps-package+xml"/></rootfiles>'
+    '</container>',
+  );
+  File(p.join(extractDir, 'content.opf')).writeAsStringSync(
+    '<?xml version="1.0"?>'
+    '<package xmlns="http://www.idpf.org/2007/opf" version="2.0">'
+    '<metadata/><manifest/><spine/></package>',
+  );
+
+  return db.insertEpubBook(
+    EpubBooksCompanion.insert(
+      bookKey: title,
+      title: title,
+      epubPath: p.join(extractDir, 'original.epub'),
+      extractDir: extractDir,
+      chapterCount: 1,
+      chaptersJson: '["ch1"]',
+      importedAt: DateTime.now().millisecondsSinceEpoch,
+    ),
+  );
+}
+
+/// 构造一个 [AppModelLibraryHostService]，[importBookFromFile] 为 fake（记录调用）。
+AppModelLibraryHostService _buildSvc({
+  required HibikiDatabase db,
+  List<File>? importedFiles,
+  List<EpubBookRow>? deletedRows,
+}) {
+  return AppModelLibraryHostService(
+    db: db,
+    dictionaryResourceRoot: Directory.systemTemp,
+    packages: SyncAssetPackageService(db: db),
+    refreshDictionaryCache: () async {},
+    runExclusive: (Future<void> Function() body) => body(),
+    importBookFromFile:
+        importedFiles == null ? null : (File f) async => importedFiles.add(f),
+    cleanupBookOnDisk: deletedRows == null
+        ? null
+        : (EpubBookRow row) async => deletedRows.add(row),
+  );
+}
+
+// ── Tests ──────────────────────────────────────────────────────────────────
+
+void main() {
+  // ── computeBookSyncDiff 纯函数 ──────────────────────────────────────────
+  group('computeBookSyncDiff', () {
+    test('远端有内容∧本端无 → toPull；本端有∧远端无 → toPush；共有 → 都不动', () {
+      final BookSyncDiff diff = computeBookSyncDiff(
+        localKeys: <String>{'BookA', 'BookB'},
+        remoteKeyHasContent: <String, bool>{
+          'BookB': true,
+          'BookC': true, // 远端有内容，本端无 → toPull
+        },
+      );
+      expect(diff.toPull, <String>{'BookC'});
+      expect(diff.toPush, <String>{'BookA'});
+    });
+
+    test('远端书 hasContent==false 不进 toPull', () {
+      final BookSyncDiff diff = computeBookSyncDiff(
+        localKeys: <String>{},
+        remoteKeyHasContent: <String, bool>{
+          'EmptyBook': false,
+          'RealBook': true,
+        },
+      );
+      expect(diff.toPull, <String>{'RealBook'});
+      expect(diff.toPull, isNot(contains('EmptyBook')));
+    });
+
+    test('两端均空 → 空 diff', () {
+      final BookSyncDiff diff = computeBookSyncDiff(
+        localKeys: <String>{},
+        remoteKeyHasContent: <String, bool>{},
+      );
+      expect(diff.toPull, isEmpty);
+      expect(diff.toPush, isEmpty);
+    });
+
+    test('本端全在远端 → toPush 为空', () {
+      final BookSyncDiff diff = computeBookSyncDiff(
+        localKeys: <String>{'X', 'Y'},
+        remoteKeyHasContent: <String, bool>{'X': true, 'Y': true, 'Z': true},
+      );
+      expect(diff.toPush, isEmpty);
+      expect(diff.toPull, <String>{'Z'});
+    });
+  });
+
+  // ── RemoteBookInfo JSON round-trip ──────────────────────────────────────
+  group('RemoteBookInfo', () {
+    test('toJson / fromJson round-trip', () {
+      const RemoteBookInfo info =
+          RemoteBookInfo(title: '夏目漱石', hasContent: true);
+      final RemoteBookInfo decoded = RemoteBookInfo.fromJson(info.toJson());
+      expect(decoded.title, info.title);
+      expect(decoded.hasContent, info.hasContent);
+    });
+
+    test('fromJson 缺字段降级为安全默认值', () {
+      final RemoteBookInfo info = RemoteBookInfo.fromJson(<String, Object?>{});
+      expect(info.title, '');
+      expect(info.hasContent, isFalse);
+    });
+  });
+
+  // ── AppModelLibraryHostService 书籍 round-trip ─────────────────────────
+  group('AppModelLibraryHostService books', () {
+    late Directory tmp;
+    late HibikiDatabase db;
+
+    setUp(() {
+      tmp = Directory.systemTemp.createTempSync('hibiki_books_host');
+      db = HibikiDatabase.forTesting(NativeDatabase.memory());
+    });
+
+    tearDown(() async {
+      await db.close();
+      if (tmp.existsSync()) tmp.deleteSync(recursive: true);
+    });
+
+    // ── listBooks ──────────────────────────────────────────────────────────
+    test('listBooks 反映 DB 书库，extractDir 存在时 hasContent==true', () async {
+      final String extractDir = p.join(tmp.path, 'MyBook');
+      await _insertBookWithExtractDir(
+        db: db,
+        title: 'MyBook',
+        extractDir: extractDir,
+      );
+
+      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final List<RemoteBookInfo> list = await svc.listBooks();
+
+      expect(list, hasLength(1));
+      expect(list.first.title, 'MyBook');
+      expect(list.first.hasContent, isTrue);
+    });
+
+    test('listBooks extractDir 不存在时 hasContent==false', () async {
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: 'Ghost',
+          title: 'Ghost',
+          epubPath: '/nonexistent/ghost.epub',
+          extractDir: '/nonexistent/ghost',
+          chapterCount: 0,
+          chaptersJson: '[]',
+          importedAt: 0,
+        ),
+      );
+
+      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final List<RemoteBookInfo> list = await svc.listBooks();
+
+      expect(list.first.hasContent, isFalse);
+    });
+
+    // ── exportBook ─────────────────────────────────────────────────────────
+    test('exportBook 产出非空 .epub 文件', () async {
+      final String extractDir = p.join(tmp.path, 'ExportMe');
+      await _insertBookWithExtractDir(
+        db: db,
+        title: 'ExportMe',
+        extractDir: extractDir,
+      );
+
+      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final File pkg = await svc.exportBook('ExportMe');
+      addTearDown(() => pkg.parent.deleteSync(recursive: true));
+
+      expect(pkg.existsSync(), isTrue);
+      expect(pkg.lengthSync(), greaterThan(0));
+      expect(pkg.path, endsWith('.epub'));
+    });
+
+    test('exportBook 对不存在的书抛 StateError', () async {
+      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      await expectLater(
+        svc.exportBook('NonExistent'),
+        throwsA(isA<StateError>()),
+      );
+    });
+
+    test('exportBook 对 extractDir 不存在的书抛 StateError（无内容）', () async {
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: 'NoContent',
+          title: 'NoContent',
+          epubPath: '/nowhere/nc.epub',
+          extractDir: '/nowhere/nc',
+          chapterCount: 0,
+          chaptersJson: '[]',
+          importedAt: 0,
+        ),
+      );
+
+      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      await expectLater(
+        svc.exportBook('NoContent'),
+        throwsA(isA<StateError>()),
+      );
+    });
+
+    test('exportBook 对 "../evil" 路径穿越抛 ArgumentError', () async {
+      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      await expectLater(
+        svc.exportBook('../evil'),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
+
+    // ── deleteBook ─────────────────────────────────────────────────────────
+    test('deleteBook 后 listBooks 不含该书，extractDir 被删', () async {
+      final String extractDir = p.join(tmp.path, 'DeleteMe');
+      await _insertBookWithExtractDir(
+        db: db,
+        title: 'DeleteMe',
+        extractDir: extractDir,
+      );
+
+      final List<EpubBookRow> deletedRows = <EpubBookRow>[];
+      final AppModelLibraryHostService svc =
+          _buildSvc(db: db, deletedRows: deletedRows);
+
+      await svc.deleteBook('DeleteMe');
+
+      final List<RemoteBookInfo> list = await svc.listBooks();
+      expect(list, isEmpty);
+      expect(Directory(extractDir).existsSync(), isFalse);
+      // cleanupBookOnDisk 回调被调用且拿到了正确 row
+      expect(deletedRows, hasLength(1));
+      expect(deletedRows.first.title, 'DeleteMe');
+    });
+
+    test('deleteBook 不存在的书静默跳过（幂等）', () async {
+      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      // 不抛异常
+      await svc.deleteBook('NonExistent');
+    });
+
+    test('deleteBook 对路径穿越名抛 ArgumentError', () async {
+      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      await expectLater(
+        svc.deleteBook('../evil'),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
+
+    // ── importBook（fake importer 回调）─────────────────────────────────────
+    test('importBook 调用注入的 importer 回调', () async {
+      final List<File> imported = <File>[];
+      final AppModelLibraryHostService svc =
+          _buildSvc(db: db, importedFiles: imported);
+
+      final File fakeEpub = File(p.join(tmp.path, 'fake.epub'))
+        ..writeAsBytesSync(<int>[0, 1, 2]);
+
+      await svc.importBook(fakeEpub);
+
+      expect(imported, hasLength(1));
+      expect(imported.first.path, fakeEpub.path);
+    });
+
+    test('importBook 无回调时抛 UnsupportedError', () async {
+      final AppModelLibraryHostService svc = AppModelLibraryHostService(
+        db: db,
+        dictionaryResourceRoot: Directory.systemTemp,
+        packages: SyncAssetPackageService(db: db),
+        refreshDictionaryCache: () async {},
+        runExclusive: (Future<void> Function() body) => body(),
+        // importBookFromFile 未传 → null
+      );
+
+      final File fakeEpub = File(p.join(tmp.path, 'fake.epub'))
+        ..writeAsBytesSync(<int>[0]);
+
+      await expectLater(
+        svc.importBook(fakeEpub),
+        throwsA(isA<UnsupportedError>()),
+      );
+    });
+
+    // ── round-trip：export → 验内容 → delete ──────────────────────────────
+    test('export 产出可被重识别的 epub zip（包含 mimetype）', () async {
+      final String extractDir = p.join(tmp.path, 'RoundTrip');
+      await _insertBookWithExtractDir(
+        db: db,
+        title: 'RoundTrip',
+        extractDir: extractDir,
+      );
+
+      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final File pkg = await svc.exportBook('RoundTrip');
+      addTearDown(() => pkg.parent.deleteSync(recursive: true));
+
+      // epub 是 zip，magic bytes 为 PK\x03\x04
+      final List<int> magic = pkg.readAsBytesSync().take(4).toList();
+      expect(magic[0], 0x50); // 'P'
+      expect(magic[1], 0x4B); // 'K'
+      expect(magic[2], 0x03);
+      expect(magic[3], 0x04);
+
+      // delete 后清理
+      await svc.deleteBook('RoundTrip');
+      expect(await svc.listBooks(), isEmpty);
+    });
+  });
+}
