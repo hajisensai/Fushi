@@ -31,6 +31,19 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
 
   static const String _dictionaryAssetSuffix = '.hibikidict';
 
+  /// 校验词典名称不含路径穿越字符。
+  ///
+  /// 名称为空、或含 `/`、`\`、`..` 时抛 [ArgumentError]，
+  /// 确保服务层自身也防御路径穿越，不依赖上层端点网关的单点防护。
+  static void _assertSafeName(String name) {
+    if (name.isEmpty ||
+        name.contains('/') ||
+        name.contains('\\') ||
+        name.contains('..')) {
+      throw ArgumentError.value(name, 'name', 'unsafe dictionary name');
+    }
+  }
+
   /// host 当前实时词典清单（从 DictionaryMeta 表读）。
   @override
   Future<List<RemoteDictionaryInfo>> listDictionaries() async {
@@ -43,8 +56,10 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
 
   /// 即时把名为 [name] 的实时词典打包成临时 .hibikidict 文件，返回该文件。
   /// 调用方负责删除返回的临时文件（及其父临时目录）。词典不存在抛 [StateError]。
+  /// 名称含路径穿越字符时抛 [ArgumentError]。
   @override
   Future<File> exportDictionary(String name) async {
+    _assertSafeName(name);
     final List<DictionaryMetaRow> rows = await _db.getAllDictionaryMetadata();
     final bool exists = rows.any((DictionaryMetaRow r) => r.name == name);
     if (!exists) throw StateError('dictionary not found: $name');
@@ -73,8 +88,10 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
   }
 
   /// 从 host 实时库删除名为 [name] 的词典（DB 元数据 + 资源目录）。
+  /// 名称含路径穿越字符时抛 [ArgumentError]。
   @override
   Future<void> deleteDictionary(String name) async {
+    _assertSafeName(name);
     await _runExclusive(() async {
       await _db.deleteDictionaryMeta(name);
       final Directory dir =

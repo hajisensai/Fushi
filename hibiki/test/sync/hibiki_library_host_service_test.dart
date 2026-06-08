@@ -99,5 +99,54 @@ void main() {
         throwsA(isA<StateError>()),
       );
     });
+
+    test('exportDictionary rejects path-traversal names with ArgumentError',
+        () async {
+      final AppModelLibraryHostService svc = AppModelLibraryHostService(
+        db: db,
+        dictionaryResourceRoot: dictRoot,
+        packages: SyncAssetPackageService(db: db),
+        refreshDictionaryCache: () async {},
+        runExclusive: (Future<void> Function() body) => body(),
+      );
+      // '../evil' 含 '..' 应抛 ArgumentError 而非到达 DB 查询
+      await expectLater(
+        svc.exportDictionary('../evil'),
+        throwsA(isA<ArgumentError>()),
+      );
+      // 斜线穿越
+      await expectLater(
+        svc.exportDictionary('foo/bar'),
+        throwsA(isA<ArgumentError>()),
+      );
+      // 反斜线穿越
+      await expectLater(
+        svc.exportDictionary('foo\\bar'),
+        throwsA(isA<ArgumentError>()),
+      );
+      // 空名称
+      await expectLater(
+        svc.exportDictionary(''),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
+
+    test('deleteDictionary rejects path-traversal names with ArgumentError',
+        () async {
+      final AppModelLibraryHostService svc = AppModelLibraryHostService(
+        db: db,
+        dictionaryResourceRoot: dictRoot,
+        packages: SyncAssetPackageService(db: db),
+        refreshDictionaryCache: () async {},
+        runExclusive: (Future<void> Function() body) => body(),
+      );
+      // '../evil' 不应触及 dictRoot 外的路径，应抛 ArgumentError
+      await expectLater(
+        svc.deleteDictionary('../evil'),
+        throwsA(isA<ArgumentError>()),
+      );
+      // 确认 dictRoot 父目录未被删除（穿越目标不存在也应在校验阶段就拦截）
+      expect(dictRoot.existsSync(), isTrue);
+    });
   });
 }
