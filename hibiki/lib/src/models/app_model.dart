@@ -260,6 +260,31 @@ class AppModel with ChangeNotifier {
     });
   }
 
+  /// Refresh app-owned caches and visible home tabs after a sync run imports
+  /// content into this device. Without this, pulled books/dictionaries/audio can
+  /// be in Drift/on disk but stay invisible until a later rebuild or restart.
+  Future<void> refreshAfterSyncRun(SyncRunReport report) async {
+    if (!report.needsLocalLibraryRefresh) return;
+
+    if (report.dictionariesImported > 0) {
+      dictRepo.clearDictionariesCache();
+      await _rebuildDictPathsCacheAsync();
+      dictRepo.clearDictionaryResultsCache();
+      dictionaryMenuNotifier.notifyListeners();
+      dictionarySearchAgainNotifier.notifyListeners();
+    }
+
+    if (report.booksImported > 0 || report.audiobooksImported > 0) {
+      ReaderMediaType.instance.refreshTab();
+    }
+
+    if (report.localAudioImported > 0) {
+      DictionaryMediaType.instance.refreshTab();
+    }
+
+    notifyListeners();
+  }
+
   /// Used for showing dialogs without needing to pass around a [BuildContext].
   GlobalKey<NavigatorState> get navigatorKey => _navigatorKey;
   late final GlobalKey<NavigatorState> _navigatorKey =

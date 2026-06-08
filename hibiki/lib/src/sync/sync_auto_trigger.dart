@@ -66,6 +66,19 @@ typedef SyncReportCallback = void Function(
   SyncBackend backend,
 );
 
+/// Fired after a full sync run mutates the local library. The sync layer stays
+/// UI-agnostic; AppModel uses this hook to refresh caches and visible shelves.
+typedef SyncPostRunCallback = Future<void> Function(SyncRunReport report);
+
+@visibleForTesting
+void logSyncReportErrors(SyncRunReport report) {
+  if (report.errors.isEmpty) return;
+  ErrorLogService.instance.log(
+    'SyncRunReport.errors',
+    report.errors.join('\n'),
+  );
+}
+
 void triggerAutoSyncAfterClose({
   required HibikiDatabase db,
   required String mediaIdentifier,
@@ -102,6 +115,7 @@ void triggerAutoSyncOnAppOpen({
   required Future<void> Function(LocalAudioPackageContents)
       onLocalAudioImported,
   SyncReportCallback? onReport,
+  SyncPostRunCallback? onPostRun,
 }) {
   _runAutoSyncAll(
     db: db,
@@ -111,6 +125,7 @@ void triggerAutoSyncOnAppOpen({
     localAudioEntries: localAudioEntries,
     onLocalAudioImported: onLocalAudioImported,
     onReport: onReport,
+    onPostRun: onPostRun,
   );
 }
 
@@ -125,6 +140,7 @@ Future<void> _runAutoSyncAll({
   required Future<void> Function(LocalAudioPackageContents)
       onLocalAudioImported,
   SyncReportCallback? onReport,
+  SyncPostRunCallback? onPostRun,
 }) async {
   if (!_syncingIds.add('__all__')) return;
 
@@ -165,6 +181,8 @@ Future<void> _runAutoSyncAll({
         onProgress: (SyncProgress p) => syncProgress.value = p,
       );
       final SyncRunReport report = await orchestrator.run();
+      logSyncReportErrors(report);
+      await onPostRun?.call(report);
       onReport?.call(report, backend);
     });
   } catch (e) {
@@ -201,6 +219,7 @@ Future<ManualSyncResult> runManualFullSync({
   required List<LocalAudioDbEntry> localAudioEntries,
   required Future<void> Function(LocalAudioPackageContents)
       onLocalAudioImported,
+  SyncPostRunCallback? onPostRun,
   SyncProgressCallback? onProgress,
 }) async {
   if (!_syncingIds.add('__all__')) {
@@ -238,6 +257,8 @@ Future<ManualSyncResult> runManualFullSync({
         },
       );
       final SyncRunReport report = await orchestrator.run();
+      logSyncReportErrors(report);
+      await onPostRun?.call(report);
       return ManualSyncResult(ManualSyncOutcome.completed, report);
     });
   } finally {

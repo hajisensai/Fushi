@@ -47,4 +47,37 @@ void main() {
       expect(s, contains('2'));
     });
   });
+
+  group('SyncRunReport.needsLocalLibraryRefresh', () {
+    test('is true when sync imported visible local library content', () {
+      expect(
+        (SyncRunReport()..booksImported = 1).needsLocalLibraryRefresh,
+        isTrue,
+      );
+      expect(
+        (SyncRunReport()..dictionariesImported = 1).needsLocalLibraryRefresh,
+        isTrue,
+      );
+      expect(
+        (SyncRunReport()..audiobooksImported = 1).needsLocalLibraryRefresh,
+        isTrue,
+      );
+      expect(
+        (SyncRunReport()..localAudioImported = 1).needsLocalLibraryRefresh,
+        isTrue,
+      );
+    });
+
+    test('is false when sync only exported or changed remote data', () {
+      expect(SyncRunReport().needsLocalLibraryRefresh, isFalse);
+      expect(
+        (SyncRunReport()
+              ..dictionariesExported = 1
+              ..audiobooksExported = 1
+              ..localAudioExported = 1)
+            .needsLocalLibraryRefresh,
+        isFalse,
+      );
+    });
+  });
 }

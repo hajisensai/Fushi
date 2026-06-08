@@ -104,6 +104,7 @@ class _HomePageState extends BasePageState<HomePage>
         tempDir: appModel.temporaryDirectory,
         localAudioEntries: appModel.localAudioDbs,
         onLocalAudioImported: appModel.importSyncedLocalAudioDb,
+        onPostRun: appModel.refreshAfterSyncRun,
         onReport: appModel.presentAutoConflicts,
       );
     });

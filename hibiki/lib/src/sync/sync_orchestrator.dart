@@ -98,6 +98,15 @@ class SyncRunReport {
   int localAudioExported = 0;
   final List<String> errors = <String>[];
   final List<SyncConflict> conflicts = <SyncConflict>[];
+
+  /// True when the run imported data into this device's local library caches or
+  /// visible shelves. Export-only runs mutate the remote side and do not need a
+  /// local refresh.
+  bool get needsLocalLibraryRefresh =>
+      booksImported > 0 ||
+      dictionariesImported > 0 ||
+      audiobooksImported > 0 ||
+      localAudioImported > 0;
 }
 
 /// Bidirectional, union-based sync across any [SyncBackend].

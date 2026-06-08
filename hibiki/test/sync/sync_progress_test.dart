@@ -1,7 +1,10 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/sync/sync_auto_trigger.dart';
+import 'package:hibiki/src/sync/sync_orchestrator.dart';
 import 'package:hibiki/src/sync/sync_progress.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 
 /// Unit + wiring guard for the manual-sync inline progress bar.
 void main() {
@@ -96,5 +99,23 @@ void main() {
             'the Sync-now row must listen to the global in-flight notifier');
     expect(widget.contains('valueListenable: syncProgress'), isTrue,
         reason: 'the Sync-now row must listen to the global progress notifier');
+  });
+
+  test('logSyncReportErrors writes per-item sync failures to error log',
+      () async {
+    await ErrorLogService.instance.clear();
+
+    final SyncRunReport report = SyncRunReport()
+      ..errors.addAll(<String>[
+        'live pull book "BookY": HTTP 500',
+        'pull dictionary "明镜": invalid package',
+      ]);
+
+    logSyncReportErrors(report);
+
+    final String log = ErrorLogService.instance.getFullLog();
+    expect(log, contains('SyncRunReport.errors'));
+    expect(log, contains('live pull book "BookY": HTTP 500'));
+    expect(log, contains('pull dictionary "明镜": invalid package'));
   });
 }

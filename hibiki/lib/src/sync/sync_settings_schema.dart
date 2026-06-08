@@ -698,6 +698,7 @@ class _SyncNowWidgetState extends State<_SyncNowWidget> {
         tempDir: appModel.temporaryDirectory,
         localAudioEntries: appModel.localAudioDbs,
         onLocalAudioImported: appModel.importSyncedLocalAudioDb,
+        onPostRun: appModel.refreshAfterSyncRun,
       );
       if (!mounted) return;
       switch (result.outcome) {
