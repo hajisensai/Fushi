@@ -98,6 +98,21 @@ ReaderCaretMoveOutcome readerCaretMoveOutcome(
   return ReaderCaretMoveOutcome.none;
 }
 
+/// Whether a handled reader-WebView pointer gesture (swipe / wheel / boundary
+/// turn / tap-to-toggle-chrome) should reclaim Flutter keyboard focus for the
+/// reading content. The native WebView captures the OS focus on any pointer
+/// gesture, silently dropping the reader's [FocusNode]; without reclaiming it,
+/// ESC and every reader shortcut stop reaching the page's key handler
+/// (BUG-136 — same failure `onAllPopupsDismissed` repairs after a popup's
+/// WebView steals focus). Returns false when another Flutter focus owner — a
+/// visible dictionary popup, or the bottom chrome bar — legitimately holds it,
+/// so reclaiming never yanks focus away from them.
+bool shouldReclaimReaderFocusAfterGesture({
+  required bool popupVisible,
+  required bool chromeHasFocus,
+}) =>
+    !popupVisible && !chromeHasFocus;
+
 /// 解析结果 + 每章字符数，一次 isolate 往返同时算好，避免把整本书
 /// （含全部章节 HTML）二次序列化进新 isolate 只为数字符。
 class ParsedBookData {
@@ -1926,13 +1941,21 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
             final bool shiftKey = args.length >= 3 && args[2] == true;
             if (!_showChrome && !shiftKey) {
               _toggleChrome();
+              // Tap handed OS focus to the WebView; reclaim it so ESC still
+              // exits after a tap-to-toggle-chrome (BUG-136). _toggleChrome()
+              // here does not move focus to the bar, so the reader keeps it.
+              _reclaimReaderFocusAfterGesture();
               return;
             }
             if (!shiftKey && !ReaderHibikiSource.instance.highlightOnTap) {
+              // Tap consumed without a selection/popup — reclaim reader focus.
+              _reclaimReaderFocusAfterGesture();
               return;
             }
             final double x = _toDouble(args[0]) ?? 0;
             final double y = _toDouble(args[1]) ?? 0;
+            // Selection → onTextSelected → popup, which takes focus itself; do
+            // not reclaim here or we would fight the popup for focus.
             _selectTextAt(x, y);
           },
         );
@@ -1953,6 +1976,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
             if (ReaderHibikiSource.instance.tapEmptyToHideChrome) {
               _toggleChrome();
             }
+            // Tap on empty space handed OS focus to the WebView; reclaim it so
+            // ESC still exits the book afterward (BUG-136).
+            _reclaimReaderFocusAfterGesture();
           },
         );
 
@@ -1960,6 +1986,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
           handlerName: 'onSwipe',
           callback: (List<dynamic> args) {
             if (args.isEmpty || _lyricsMode) return;
+            // The swipe/wheel gesture handed OS focus to the WebView; reclaim it
+            // so ESC still exits the book after a page turn (BUG-136).
+            _reclaimReaderFocusAfterGesture();
             final String dir = args[0] as String;
             final bool invert =
                 ReaderHibikiSource.instance.invertSwipeDirection;
@@ -1979,6 +2008,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
           handlerName: 'onBoundarySwipe',
           callback: (List<dynamic> args) {
             if (args.isEmpty || _lyricsMode) return;
+            // Boundary swipe → chapter turn also stole focus to the WebView
+            // (BUG-136); reclaim it so ESC keeps exiting after a chapter flip.
+            _reclaimReaderFocusAfterGesture();
             final String dir = args[0] as String;
             if (dir == 'forward') {
               _handlePageTurnLimit('forward');
@@ -3232,6 +3264,25 @@ window.flutter_inappwebview.callHandler('spreadReady');
     await _controller!.evaluateJavascript(
       source: ReaderSelectionScripts.selectInvocation(cssX, cssY, maxLength),
     );
+  }
+
+  /// Reclaim Flutter keyboard focus for the reading content after a reader
+  /// WebView pointer gesture (swipe / wheel page-turn, boundary chapter turn,
+  /// tap-to-toggle-chrome). The native WebView grabs the OS focus when the user
+  /// touches it, dropping [_focusNode] so ESC / shortcuts no longer reach
+  /// [_handleKeyEvent] (BUG-136). Mirrors the popup-dismiss reclaim in
+  /// [onAllPopupsDismissed]; the predicate skips it when a popup or the chrome
+  /// bar legitimately owns focus, and it is a harmless no-op for keyboard /
+  /// gamepad turns (those never route through the JS gesture handlers).
+  void _reclaimReaderFocusAfterGesture() {
+    if (!mounted) return;
+    if (!shouldReclaimReaderFocusAfterGesture(
+      popupVisible: isDictionaryShown,
+      chromeHasFocus: _chromeFocusScope.hasFocus,
+    )) {
+      return;
+    }
+    _focusNode.requestFocus();
   }
 
   @override
