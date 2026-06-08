@@ -1436,5 +1436,7 @@
     "desktop_clipboard_window_mode_normal": "Off",
     "desktop_clipboard_window_mode_always": "Always",
     "desktop_clipboard_window_mode_hint": "Controls whether Hibiki stays above other windows. Only watches the clipboard and global hotkey on the lookup tab.",
-    "desktop_clipboard_window_mode_lookup": "Lookup only"
+    "desktop_clipboard_window_mode_lookup": "Lookup only",
+    "popup_instant_scroll": "Instant popup scroll",
+    "popup_instant_scroll_hint": "Jump the lookup popup by fixed distances without animated scrolling for e-ink screens."
 }

@@ -293,6 +293,14 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  bool get popupInstantScroll =>
+      getPref('popup_instant_scroll', defaultValue: false) as bool;
+
+  Future<void> setPopupInstantScroll(bool value) async {
+    await setPref('popup_instant_scroll', value);
+    notifyListeners();
+  }
+
   final int defaultDoubleTapSeekDuration = 5000;
 
   int get doubleTapSeekDuration => getPref('double_tap_seek_duration',

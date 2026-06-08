@@ -2596,6 +2596,10 @@ class AppModel with ChangeNotifier {
   double get popupMaxHeight => prefsRepo.popupMaxHeight;
   void setPopupMaxHeight(double height) => prefsRepo.setPopupMaxHeight(height);
 
+  bool get popupInstantScroll => prefsRepo.popupInstantScroll;
+  Future<void> setPopupInstantScroll(bool value) =>
+      prefsRepo.setPopupInstantScroll(value);
+
   int get defaultDoubleTapSeekDuration =>
       prefsRepo.defaultDoubleTapSeekDuration;
   int get doubleTapSeekDuration => prefsRepo.doubleTapSeekDuration;

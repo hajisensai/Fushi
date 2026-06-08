@@ -174,6 +174,7 @@ class DictionaryPopupWebViewState
 
   Future<void> caretInit() async {
     if (!mounted) return;
+    await _pushInstantScrollPreference();
     // No scopeSelector: the cursor navigates the whole popup (definition body,
     // headword, tags, and interactive controls), so gamepad users can reach
     // every kanji and every clickable control, not just the definition body.
@@ -317,10 +318,19 @@ class DictionaryPopupWebViewState
     // re-inject the variables — no entry re-render. The string compare dedupes
     // unrelated dependency changes (MediaQuery, locale, …).
     if (!_ready || _controller == null) return;
+    unawaited(_pushInstantScrollPreference());
     final String themeVarsJs = _themeVariablesJs();
     if (themeVarsJs == _lastThemeVarsJs) return;
     _lastThemeVarsJs = themeVarsJs;
     _controller!.evaluateJavascript(source: themeVarsJs);
+  }
+
+  Future<void> _pushInstantScrollPreference() async {
+    if (_controller == null || !mounted) return;
+    final bool enabled = ref.read(appProvider).popupInstantScroll;
+    await _controller!.evaluateJavascript(
+      source: ReaderCaretScripts.instantScrollInvocation(enabled),
+    );
   }
 
   /// JS that pushes the theme-derived CSS custom properties + `data-theme`
@@ -391,6 +401,7 @@ class DictionaryPopupWebViewState
     final harmonicFreq = appModel.harmonicFrequency;
     final collapseDict = appModel.collapseDictionaries;
     final showExprTags = appModel.showExpressionTags;
+    final popupInstantScroll = appModel.popupInstantScroll;
     final audioSourcesJson = jsonEncode(appModel.enabledAudioSources);
 
     // MD3 tonal roles + base colours injected so the WebView result surfaces
@@ -411,6 +422,7 @@ class DictionaryPopupWebViewState
     _controller!.evaluateJavascript(source: '''
       $themeVarsJs
       document.documentElement.style.zoom = '${popupZoom.toStringAsFixed(4)}';
+      ${ReaderCaretScripts.instantScrollInvocation(popupInstantScroll)};
       window.__hoshiResetPopupScroll = function() {
         window.scrollTo(0, 0);
         document.documentElement.scrollTop = 0;
@@ -775,9 +787,14 @@ class DictionaryPopupWebViewState
         // Inject the same char caret as the reader (selection.js, a head script,
         // has already defined window.hoshiSelection by load-stop). It stays
         // dormant until the reader hands it the cursor on lookup.
-        controller.evaluateJavascript(source: ReaderCaretScripts.source());
         controller.evaluateJavascript(source: _topPullReleaseJs);
-        _pushResults();
+        controller
+            .evaluateJavascript(source: ReaderCaretScripts.source())
+            .then((_) {
+          if (!mounted) return;
+          unawaited(_pushInstantScrollPreference());
+          _pushResults();
+        });
       },
       onConsoleMessage: (controller, consoleMessage) {
         final msg = consoleMessage.message;

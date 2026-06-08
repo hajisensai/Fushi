@@ -260,6 +260,31 @@ void main() {
     expect(pauseSource, isNot(contains('group: ReaderGroup.behavior')));
   });
 
+  test('popup instant scroll is a global lookup display setting', () {
+    final String schemaSource =
+        readNormalizedSource('lib/src/settings/settings_schema.dart');
+    final int displayStart = schemaSource.indexOf(
+      'title: t.settings_section_lookup_display',
+    );
+    final int cardStart =
+        schemaSource.indexOf('SettingsDestination _cardCreationDestination()');
+    expect(displayStart, isNonNegative);
+    expect(cardStart, greaterThan(displayStart));
+
+    final String displaySource =
+        schemaSource.substring(displayStart, cardStart);
+    expect(displaySource, contains("id: 'lookup.popup_instant_scroll'"));
+    expect(displaySource, contains('t.popup_instant_scroll'));
+    expect(displaySource, contains('popupInstantScroll'));
+    expect(
+      displaySource,
+      isNot(contains('ReaderPlacement(')),
+      reason:
+          'This controls shared lookup popup behavior across reader, video, '
+          'and dictionary surfaces, so it must not become reader-only.',
+    );
+  });
+
   test('reader quick settings reuse the shared theme selector', () {
     final String sheetSource = readNormalizedSource(
         'lib/src/media/audiobook/reader_quick_settings_sheet.dart');

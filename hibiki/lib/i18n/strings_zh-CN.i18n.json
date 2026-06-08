@@ -1436,5 +1436,7 @@
     "desktop_clipboard_window_mode_hint": "控制 Hibiki 是否保持在其他窗口上方；仅在查词界面监听剪贴板和全局热键",
     "desktop_clipboard_window_mode_always": "始终置顶",
     "desktop_clipboard_window_mode_lookup": "仅查词期间",
-    "desktop_clipboard_window_mode_normal": "不置顶"
+    "desktop_clipboard_window_mode_normal": "不置顶",
+    "popup_instant_scroll": "查词弹窗瞬时滚动",
+    "popup_instant_scroll_hint": "为墨水屏使用：查词弹窗按固定距离瞬时跳动，不播放滚动动画。"
 }

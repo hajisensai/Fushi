@@ -42,6 +42,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'reading/Spread Mode': 'test/epub/epub_spread_map_test.dart',
   'lookup/Popup max width': 'test/pages/dictionary_popup_layer_test.dart',
   'lookup/Popup max height': 'test/pages/dictionary_popup_layer_test.dart',
+  'lookup/Instant popup scroll': 'test/reader/reader_caret_scripts_test.dart',
   'cardCreation/Auto-add book title to tags':
       'test/creator/tags_field_auto_add_book_test.dart',
   'system/Low Memory Mode': 'test/models/app_model_low_memory_mode_test.dart',

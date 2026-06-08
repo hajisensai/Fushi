@@ -34,6 +34,10 @@ void main() {
           'JSON.stringify(window.hoshiCaret.scrollPage(true))');
       expect(ReaderCaretScripts.scrollPageInvocation(false),
           'JSON.stringify(window.hoshiCaret.scrollPage(false))');
+      expect(ReaderCaretScripts.instantScrollInvocation(true),
+          'window.hoshiCaret.setInstantScroll(true)');
+      expect(ReaderCaretScripts.instantScrollInvocation(false),
+          'window.hoshiCaret.setInstantScroll(false)');
     });
 
     test('reanchor passes the edge token through', () {
@@ -132,6 +136,7 @@ void main() {
       expect(js, contains('longPress:'));
       expect(js, contains('refresh:'));
       expect(js, contains('init:'));
+      expect(js, contains('setInstantScroll:'));
       expect(js, contains('isActive:'));
     });
 
@@ -159,6 +164,19 @@ void main() {
       // diverge. scrollPage only guards on `active` then delegates.
       expect(js, contains('scrollPage: function(forwardish)'));
       expect(js, contains('return this._pageOrScroll(!!forwardish);'));
+    });
+
+    test('popup scroll can switch to instant movement for e-ink', () {
+      expect(js, contains('instantScroll: false'));
+      expect(js, contains('setInstantScroll: function(value)'));
+      expect(js, contains('_scrollWindowBy: function(dx, dy)'));
+      expect(js, contains("behavior: this.instantScroll ? 'instant' : 'auto'"));
+      expect(
+        js,
+        isNot(contains('window.scrollBy(0, forwardish ? dist : -dist)')),
+        reason: 'Viewport page scroll must go through the shared helper so the '
+            'e-ink preference controls the behavior.',
+      );
     });
 
     test('reader element stops are block illustrations (img.block-img)', () {

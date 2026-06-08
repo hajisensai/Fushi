@@ -47,6 +47,11 @@ class ReaderCaretScripts {
   static String scrollPageInvocation(bool forward) =>
       'JSON.stringify(window.hoshiCaret.scrollPage($forward))';
 
+  /// Toggle popup caret scrolling between the default browser movement and
+  /// explicit instant movement for e-ink screens.
+  static String instantScrollInvocation(bool enabled) =>
+      'window.hoshiCaret.setInstantScroll($enabled)';
+
   /// After a page turn, place the caret at the entering edge of the new page
   /// ([edge] = `forward` → first visible char, `backward` → last visible char).
   static String reanchorInvocation(String edge) =>
@@ -147,6 +152,7 @@ window.hoshiCaret = {
   // cursor inside the definition body (.glossary-content), exactly like the tap
   // path. Empty/null = stop on any text (reader content).
   scopeSelector: null,
+  instantScroll: false,
   _ring: null,
   _memNode: null,
   _memOffset: null,
@@ -662,19 +668,30 @@ window.hoshiCaret = {
     var vp = this._viewport();
     var margin = 48;
     if (vertical) {
-      if (rect.left < vp.left + margin) window.scrollBy(rect.left - vp.left - margin, 0);
-      else if (rect.right > vp.right - margin) window.scrollBy(rect.right - vp.right + margin, 0);
+      if (rect.left < vp.left + margin) this._scrollWindowBy(rect.left - vp.left - margin, 0);
+      else if (rect.right > vp.right - margin) this._scrollWindowBy(rect.right - vp.right + margin, 0);
     } else {
-      if (rect.top < vp.top + margin) window.scrollBy(0, rect.top - vp.top - margin);
-      else if (rect.bottom > vp.bottom - margin) window.scrollBy(0, rect.bottom - vp.bottom + margin);
+      if (rect.top < vp.top + margin) this._scrollWindowBy(0, rect.top - vp.top - margin);
+      else if (rect.bottom > vp.bottom - margin) this._scrollWindowBy(0, rect.bottom - vp.bottom + margin);
     }
   },
   _scrollViewport: function(forwardish) {
     var dist = this._viewportSize() * 0.6;
     if (this._vertical()) {
-      window.scrollBy(forwardish ? -dist : dist, 0); // vertical-rl forward = left
+      this._scrollWindowBy(forwardish ? -dist : dist, 0); // vertical-rl forward = left
     } else {
-      window.scrollBy(0, forwardish ? dist : -dist);
+      this._scrollWindowBy(0, forwardish ? dist : -dist);
+    }
+  },
+  _scrollWindowBy: function(dx, dy) {
+    try {
+      window.scrollBy({
+        left: dx,
+        top: dy,
+        behavior: this.instantScroll ? 'instant' : 'auto'
+      });
+    } catch (e) {
+      window.scrollBy(dx, dy);
     }
   },
 
@@ -750,6 +767,11 @@ window.hoshiCaret = {
       var rect = this._anchorRect();
       if (rect && this._inViewport(rect)) this._drawRing(rect);
     }
+    return true;
+  },
+
+  setInstantScroll: function(value) {
+    this.instantScroll = !!value;
     return true;
   },
 

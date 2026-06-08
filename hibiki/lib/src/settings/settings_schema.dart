@@ -1134,6 +1134,18 @@ SettingsDestination _lookupDestination() {
               settingsContext.refresh();
             },
           ),
+          SettingsSwitchItem(
+            id: 'lookup.popup_instant_scroll',
+            title: t.popup_instant_scroll,
+            subtitle: t.popup_instant_scroll_hint,
+            icon: Icons.animation_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.popupInstantScroll,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setPopupInstantScroll(value);
+              settingsContext.refresh();
+            },
+          ),
         ],
       ),
     ],

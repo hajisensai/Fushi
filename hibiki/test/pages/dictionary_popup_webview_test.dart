@@ -27,6 +27,21 @@ void main() {
             'scroll position instead of jumping back to the top.',
       );
     });
+
+    test('injects popup instant-scroll preference into the caret runtime', () {
+      final source = File(
+        'lib/src/pages/implementations/dictionary_popup_webview.dart',
+      ).readAsStringSync();
+
+      expect(source, contains('appModel.popupInstantScroll'));
+      expect(
+        source,
+        contains('ReaderCaretScripts.instantScrollInvocation('),
+        reason: 'The persisted e-ink setting must be pushed into the popup '
+            'WebView through the shared caret invocation builder so LB/RB and '
+            'edge-follow scroll without animation when enabled.',
+      );
+    });
   });
 
   group('DictionaryPopupWebViewState.buildLookupEntriesJson', () {
