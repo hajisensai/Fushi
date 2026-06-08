@@ -1354,11 +1354,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// （读 [MaterialDesktopVideoControlsTheme]），两套互斥，故两层主题都配置安全。
   ///
   /// 手机控制条：顶栏直接暴露截图、字幕、音轨、设置等常用入口，不再依赖右上角「⋮」
-  /// 小目标；底栏只保留时间、上一句、播放、下一句、全屏，避免 10 秒跳转把按钮挤出屏幕。
+  /// 小目标；底栏窄屏时隐藏 10 秒跳转，宽屏/横屏/平板仍保留。
   MaterialVideoControlsThemeData _mobileControlsTheme(
     VideoPlayerController controller,
   ) {
     final ColorScheme cs = Theme.of(context).colorScheme;
+    final bool roomyBottomBar = MediaQuery.of(context).size.width >= 600;
     return MaterialVideoControlsThemeData(
       seekBarPositionColor: cs.primary,
       seekBarThumbColor: cs.primary,
@@ -1410,6 +1411,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       bottomButtonBar: <Widget>[
         const MaterialPositionIndicator(),
         const Spacer(),
+        if (roomyBottomBar)
+          MaterialCustomButton(
+            icon: const Icon(Icons.replay_10),
+            onPressed: () => _seekRelative(-10000),
+          ),
         MaterialCustomButton(
           icon: const Icon(Icons.skip_previous),
           onPressed: () => controller.skipToPrevCue(),
@@ -1419,6 +1425,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           icon: const Icon(Icons.skip_next),
           onPressed: () => controller.skipToNextCue(),
         ),
+        if (roomyBottomBar)
+          MaterialCustomButton(
+            icon: const Icon(Icons.forward_10),
+            onPressed: () => _seekRelative(10000),
+          ),
         const Spacer(),
         const MaterialFullscreenButton(),
       ],

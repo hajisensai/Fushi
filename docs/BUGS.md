@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 143 条。点号进各自文件。
+> 共 144 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-147](bugs/BUG-147-video-mobile-bottom-width.md) | ✅ | ✅ | 手机视频宽屏底栏不应丢失10秒跳转 |
 | [BUG-146](bugs/BUG-146-android-popup-registrant-dev-plugin.md) | ✅ | ✅ | Android release 构建把 integration_test 注册进 popup 引擎 |
 | [BUG-145](bugs/BUG-145-video-mobile-controls-no-more.md) | ✅ | ✅ | 手机视频控制条取消三点并压缩底栏按钮 |
 | [BUG-144](bugs/BUG-144-audiobook-mining-audio.md) | ✅ | ✅ | 有声书查词制卡词条音频复用旧词且句子音频/句子上下文错位 |

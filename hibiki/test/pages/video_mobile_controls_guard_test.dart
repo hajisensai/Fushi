@@ -2,9 +2,9 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-134 follow-up source guard: mobile video controls must not depend on a
-/// top-right overflow menu, and the bottom bar must stay sparse enough for
-/// touch targets on an unscaled phone viewport.
+/// BUG-134/146 follow-up source guard: mobile video controls must not depend
+/// on a top-right overflow menu. The bottom bar is compact on narrow phones,
+/// but roomy mobile widths should keep ten-second seek buttons.
 void main() {
   final String src =
       File('lib/src/pages/implementations/video_hibiki_page.dart')
@@ -28,8 +28,8 @@ void main() {
         reason: '手机未放大时右上角三点点不到，移动端顶栏不应再依赖更多入口');
     expect(topBar.contains('_showMobileMoreMenu('), isFalse,
         reason: '三点菜单入口已取消，不应留下调用点');
-    expect(body.contains('MediaQuery.of(context).size.width >= 600'), isFalse,
-        reason: '移动端不再做窄屏藏三点/宽屏全展开分支');
+    expect(topBar.contains('MediaQuery.of(context).size.width >= 600'), isFalse,
+        reason: '顶栏不再做窄屏藏三点/宽屏全展开分支');
     expect(topBar.contains('Icons.subtitles'), isTrue, reason: '字幕源必须在顶栏直接可点');
     expect(topBar.contains('Icons.audiotrack'), isTrue, reason: '音轨必须在顶栏直接可点');
     expect(topBar.contains('Icons.tune'), isTrue, reason: '播放器设置必须在顶栏直接可点');
@@ -39,19 +39,28 @@ void main() {
         reason: '倍速可从设置面板进入，不占手机顶栏空间');
   });
 
-  test('mobile bottom bar keeps only core playback controls', () {
+  test('mobile bottom bar is compact only on narrow widths', () {
     final String body = region(
       'MaterialVideoControlsThemeData _mobileControlsTheme(',
       'void _showTrackMenu(',
     );
     final String bottomBar = bottomButtonBarRegion(body);
+    expect(
+      body.contains(
+        'final bool roomyBottomBar = MediaQuery.of(context).size.width >= 600',
+      ),
+      isTrue,
+      reason: '底栏应按宽度判断，不能把横屏/平板/宽屏也一刀切压缩',
+    );
+    expect(bottomBar.contains('if (roomyBottomBar)'), isTrue,
+        reason: '只有窄屏隐藏 10 秒跳转，宽屏移动端应保留');
     expect(bottomBar.contains('MaterialPositionIndicator'), isTrue);
     expect(bottomBar.contains('MaterialPlayOrPauseButton'), isTrue);
     expect(bottomBar.contains('MaterialFullscreenButton'), isTrue);
-    expect(bottomBar.contains('Icons.replay_10'), isFalse,
-        reason: '底栏按钮过多会挤出手机屏幕，10 秒后退不放底栏');
-    expect(bottomBar.contains('Icons.forward_10'), isFalse,
-        reason: '底栏按钮过多会挤出手机屏幕，10 秒前进不放底栏');
+    expect(bottomBar.contains('Icons.replay_10'), isTrue,
+        reason: '宽屏移动端有空间，10 秒后退应保留在底栏');
+    expect(bottomBar.contains('Icons.forward_10'), isTrue,
+        reason: '宽屏移动端有空间，10 秒前进应保留在底栏');
     expect(bottomBar.contains('Icons.skip_previous'), isTrue,
         reason: '看字幕时前一句仍是核心播放控制，保留在底栏');
     expect(bottomBar.contains('Icons.skip_next'), isTrue,
