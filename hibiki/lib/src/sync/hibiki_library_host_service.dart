@@ -1,5 +1,99 @@
 import 'dart:io';
 
+// ── 本地音频 ──────────────────────────────────────────────────────────────────
+
+/// host 实时本地音频来源的清单条目（键 = displayName）。
+///
+/// [displayName] 是用户设置的显示名，用作跨设备 union-key（与 orchestrator
+/// `kSyncLocalAudioNamespace` 的资产名语义一致）。
+class RemoteLocalAudioInfo {
+  const RemoteLocalAudioInfo({required this.displayName});
+
+  final String displayName;
+
+  Map<String, Object?> toJson() =>
+      <String, Object?>{'displayName': displayName};
+
+  static RemoteLocalAudioInfo fromJson(Map<String, Object?> json) =>
+      RemoteLocalAudioInfo(
+        displayName: json['displayName']?.toString() ?? '',
+      );
+}
+
+/// 按 displayName union 的本地音频同步 diff 结果。
+class LocalAudioSyncDiff {
+  const LocalAudioSyncDiff({required this.toPull, required this.toPush});
+
+  /// 对端有 ∧ 本端无 → 需从对端拉取。
+  final Set<String> toPull;
+
+  /// 本端有 ∧ 对端无 → 需推送到对端。
+  final Set<String> toPush;
+}
+
+/// 按 displayName union 计算本地音频同步 diff。
+///
+/// [localNames]  本端已注册的本地音频 displayName 集合。
+/// [remoteNames] 对端已注册的本地音频 displayName 集合。
+LocalAudioSyncDiff computeLocalAudioSyncDiff({
+  required Set<String> localNames,
+  required Set<String> remoteNames,
+}) {
+  return LocalAudioSyncDiff(
+    toPull: remoteNames.difference(localNames),
+    toPush: localNames.difference(remoteNames),
+  );
+}
+
+// ── 有声书包 ──────────────────────────────────────────────────────────────────
+
+/// host 实时有声书的清单条目（键 = bookKey）。
+///
+/// [bookKey] 即 `sanitizeTtuFilename(title)`，在 Audiobooks/SrtBooks/AudioCues 表
+/// 中均以此为外键，跨设备稳定一致。[title] 可选，供显示用（允许 null）。
+class RemoteAudiobookInfo {
+  const RemoteAudiobookInfo({required this.bookKey, this.title});
+
+  final String bookKey;
+  final String? title;
+
+  Map<String, Object?> toJson() =>
+      <String, Object?>{'bookKey': bookKey, 'title': title};
+
+  static RemoteAudiobookInfo fromJson(Map<String, Object?> json) =>
+      RemoteAudiobookInfo(
+        bookKey: json['bookKey']?.toString() ?? '',
+        title: json['title']?.toString(),
+      );
+}
+
+/// 按 bookKey union 的有声书同步 diff 结果。
+class AudiobookSyncDiff {
+  const AudiobookSyncDiff({required this.toPull, required this.toPush});
+
+  /// 对端有 ∧ 本端无 → 需从对端拉取。
+  final Set<String> toPull;
+
+  /// 本端有 ∧ 对端无 → 需推送到对端。
+  final Set<String> toPush;
+}
+
+/// 按 bookKey union 计算有声书同步 diff。
+///
+/// [localKeys]  本端已有有声书的 bookKey 集合。
+/// [remoteKeys] 对端已有有声书的 bookKey 集合。
+AudiobookSyncDiff computeAudiobookSyncDiff({
+  required Set<String> localKeys,
+  required Set<String> remoteKeys,
+}) {
+  return AudiobookSyncDiff(
+    toPull: remoteKeys.difference(localKeys),
+    toPush: localKeys.difference(remoteKeys),
+  );
+}
+
+// ── 词典 ──────────────────────────────────────────────────────────────────────
+
 /// host 实时词典的清单条目（不含 contentHash：Phase 1 按名 union，与现有暂存
 /// 路径同语义，避免引入跨设备哈希一致性的新风险；overwrite-by-hash 列为 follow-up）。
 class RemoteDictionaryInfo {
@@ -141,4 +235,43 @@ abstract class HibikiLibraryHostService {
   /// 从 host 书库删除书名为 [title] 的书（DB 行 + 磁盘目录）。
   /// [title] 含路径穿越字符时抛 [ArgumentError]。
   Future<void> deleteBook(String title);
+
+  // ── 本地音频 ───────────────────────────────────────────────────────────────
+
+  /// host 当前本地音频来源清单（从已注入的 localAudioEntries 取 displayName）。
+  Future<List<RemoteLocalAudioInfo>> listLocalAudio();
+
+  /// 即时把 displayName 为 [displayName] 的本地音频库打包成临时文件，返回该文件。
+  /// 调用方负责删除返回的临时文件（及其父临时目录）。
+  /// [displayName] 含路径穿越字符时抛 [ArgumentError]；
+  /// 找不到该来源或其 DB 文件不存在时抛 [StateError]。
+  Future<File> exportLocalAudio(String displayName);
+
+  /// 把本地音频包文件导入 host（解包 + 注册回调）。
+  /// 实现应调用 [onLocalAudioImported] 回调完成 native 注册；
+  /// 回调为 null 时抛 [UnsupportedError]。
+  Future<void> importLocalAudio(File packageFile);
+
+  /// 从 host 删除 displayName 为 [displayName] 的本地音频来源。
+  /// [displayName] 含路径穿越字符时抛 [ArgumentError]。
+  Future<void> deleteLocalAudio(String displayName);
+
+  // ── 有声书包 ──────────────────────────────────────────────────────────────
+
+  /// host 当前有声书清单（从 Audiobooks 表读）。
+  Future<List<RemoteAudiobookInfo>> listAudiobooks();
+
+  /// 即时把 bookKey 为 [bookKey] 的有声书打包成临时文件，返回该文件。
+  /// 调用方负责删除返回的临时文件（及其父临时目录）。
+  /// [bookKey] 含路径穿越字符时抛 [ArgumentError]；
+  /// 找不到该有声书时抛 [StateError]。
+  Future<File> exportAudiobook(String bookKey);
+
+  /// 把有声书包文件导入 host（解包写 DB + 音频文件）。
+  /// 实现需要 [audioDatabaseRoot] 来确定音频文件落盘目录。
+  Future<void> importAudiobook(File packageFile, {String? bookKeyOverride});
+
+  /// 从 host 删除 bookKey 为 [bookKey] 的有声书（Audiobooks/SrtBooks/AudioCues 行
+  /// + 磁盘音频目录）。[bookKey] 含路径穿越字符时抛 [ArgumentError]。
+  Future<void> deleteAudiobook(String bookKey);
 }

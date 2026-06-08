@@ -50,6 +50,37 @@ class _FakeLibraryService implements HibikiLibraryHostService {
 
   @override
   Future<void> deleteBook(String title) async => deletedBooks.add(title);
+
+  // ── local audio stubs ──────────────────────────────────────────────────────
+  @override
+  Future<List<RemoteLocalAudioInfo>> listLocalAudio() async =>
+      <RemoteLocalAudioInfo>[];
+
+  @override
+  Future<File> exportLocalAudio(String displayName) async =>
+      throw UnimplementedError('not used in books test');
+
+  @override
+  Future<void> importLocalAudio(File packageFile) async {}
+
+  @override
+  Future<void> deleteLocalAudio(String displayName) async {}
+
+  // ── audiobook stubs ────────────────────────────────────────────────────────
+  @override
+  Future<List<RemoteAudiobookInfo>> listAudiobooks() async =>
+      <RemoteAudiobookInfo>[];
+
+  @override
+  Future<File> exportAudiobook(String bookKey) async =>
+      throw UnimplementedError('not used in books test');
+
+  @override
+  Future<void> importAudiobook(File packageFile,
+      {String? bookKeyOverride}) async {}
+
+  @override
+  Future<void> deleteAudiobook(String bookKey) async {}
 }
 
 void main() {
