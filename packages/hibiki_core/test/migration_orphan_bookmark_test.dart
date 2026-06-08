@@ -24,6 +24,8 @@ import 'package:hibiki_core/hibiki_core.dart';
 /// invokes the public drainer directly (user_version = 16 so onUpgrade does NOT
 /// run — the method is self-guarded by table/column probes and is the unit
 /// under test). Seed follows the migration_downgrade_test raw-DB pattern.
+late HibikiDatabase _orphanDb;
+
 HibikiDatabase _openPreV16WithLegacyBookmarkPrefs() {
   // book 1 keeps two bookmarks (one orphan ttuBookId mixed in); book 999 is a
   // pure-orphan pref (no matching epub at all). Real entries must land; orphans
@@ -55,7 +57,7 @@ HibikiDatabase _openPreV16WithLegacyBookmarkPrefs() {
     },
   ]);
 
-  return HibikiDatabase.forTesting(
+  _orphanDb = HibikiDatabase.forTesting(
     NativeDatabase.memory(
       setup: (raw) {
         // FK enforcement ON, mirroring production _openDb. Without it the
@@ -119,11 +121,14 @@ CREATE TABLE preferences (
 
         // Seed as the CURRENT schema version so onUpgrade does NOT run; the
         // drainer is invoked explicitly below and gates itself on the table /
-        // column probes, exercising exactly the pre-v16 orphan path.
-        raw.execute('PRAGMA user_version = 16');
+        // column probes, exercising exactly the pre-v16 orphan path. Use the
+        // live schemaVersion (not a hard-coded 16) so a schema bump can't let
+        // onUpgrade(16 -> current) fire and pre-drain/reshape the seed.
+        raw.execute('PRAGMA user_version = ${_orphanDb.schemaVersion}');
       },
     ),
   );
+  return _orphanDb;
 }
 
 void main() {

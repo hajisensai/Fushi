@@ -223,12 +223,13 @@ void main() {
     final HibikiDatabase db = _openPartialV16Shaped();
     addTearDown(db.close);
 
-    // Opening forces onUpgrade(15 -> 16); the partial-shape guards must not
-    // throw "no such column" on the already-v16 tables.
+    // Opening forces onUpgrade(15 -> current); the partial-shape guards (run in
+    // the from<16 step) must not throw "no such column" on the already-v16
+    // tables. Compare against the live schemaVersion so this never goes stale.
     final QueryRow ver =
         await db.customSelect('PRAGMA user_version').getSingle();
-    expect(ver.read<int>('user_version'), 16,
-        reason: 'mixed-shape DB still lands on v16');
+    expect(ver.read<int>('user_version'), db.schemaVersion,
+        reason: 'mixed-shape DB lands on the current schema');
 
     const String kBookKey = 'Mixed Book';
 
