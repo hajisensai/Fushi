@@ -1431,5 +1431,10 @@
     "video_shader_desc_ravu": "General luma upscaler. Light & fast (r2 faster, r3 finer).",
     "video_shader_desc_nnedi3": "Classic neural upscaler. Higher nns = better quality, heavier GPU.",
     "floating_lyric_click_lookup": "Tap floating subtitle to look up",
-    "floating_lyric_click_lookup_hint": "Keep this on with position lock if you still want word lookup."
+    "floating_lyric_click_lookup_hint": "Keep this on with position lock if you still want word lookup.",
+    "desktop_clipboard_window_mode": "Window pinning",
+    "desktop_clipboard_window_mode_hint": "Controls whether Hibiki stays above other windows; clipboard lookup still only runs on the lookup tab",
+    "desktop_clipboard_window_mode_always": "Always",
+    "desktop_clipboard_window_mode_lookup": "Lookup only",
+    "desktop_clipboard_window_mode_normal": "Off"
 }

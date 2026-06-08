@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:hibiki/models.dart';
+import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/settings/settings_actions.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
@@ -966,14 +967,46 @@ SettingsDestination _lookupDestination() {
                 settingsContext.appModel.desktopClipboardEnabled,
             onChanged: (SettingsContext settingsContext, bool value) async {
               await settingsContext.appModel.setDesktopClipboardEnabled(value);
-              if (value) {
-                await DesktopLookupService.instance.start(
-                  alwaysOnTop:
-                      settingsContext.appModel.desktopClipboardAlwaysOnTop,
-                );
-              } else {
+              if (!value) {
                 await DesktopLookupService.instance.stop();
               }
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSegmentedItem<DesktopClipboardWindowMode>(
+            id: 'lookup.desktop_clipboard_window_mode',
+            title: t.desktop_clipboard_window_mode,
+            subtitle: t.desktop_clipboard_window_mode_hint,
+            icon: Icons.vertical_align_top_outlined,
+            visible: (SettingsContext settingsContext) =>
+                DesktopLookupService.isDesktop &&
+                settingsContext.appModel.desktopClipboardEnabled,
+            options: <SettingsSegmentOption<DesktopClipboardWindowMode>>[
+              SettingsSegmentOption<DesktopClipboardWindowMode>(
+                value: DesktopClipboardWindowMode.normal,
+                label: t.desktop_clipboard_window_mode_normal,
+                tooltip: t.desktop_clipboard_window_mode_normal,
+              ),
+              SettingsSegmentOption<DesktopClipboardWindowMode>(
+                value: DesktopClipboardWindowMode.lookup,
+                label: t.desktop_clipboard_window_mode_lookup,
+                tooltip: t.desktop_clipboard_window_mode_lookup,
+              ),
+              SettingsSegmentOption<DesktopClipboardWindowMode>(
+                value: DesktopClipboardWindowMode.always,
+                label: t.desktop_clipboard_window_mode_always,
+                tooltip: t.desktop_clipboard_window_mode_always,
+              ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.appModel.desktopClipboardWindowMode,
+            onChanged: (
+              SettingsContext settingsContext,
+              DesktopClipboardWindowMode value,
+            ) async {
+              await settingsContext.appModel.setDesktopClipboardWindowMode(
+                value,
+              );
               settingsContext.refresh();
             },
           ),

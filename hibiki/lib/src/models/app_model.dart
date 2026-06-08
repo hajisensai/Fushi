@@ -1371,11 +1371,6 @@ class AppModel with ChangeNotifier {
       if (texthookerEnabled) {
         TexthookerWsClientHost.instance.start(texthookerUrls);
       }
-      if (desktopClipboardEnabled && DesktopLookupService.isDesktop) {
-        unawaited(DesktopLookupService.instance
-            .start(alwaysOnTop: desktopClipboardAlwaysOnTop)
-            .catchError((Object _) {}));
-      }
       notifyListeners();
     } on HibikiDatabaseDowngradeException catch (e, stack) {
       // The DB is newer than this build. drift refused to open it WITHOUT
@@ -2754,6 +2749,15 @@ class AppModel with ChangeNotifier {
   bool get desktopClipboardAlwaysOnTop => prefsRepo.desktopClipboardAlwaysOnTop;
   Future<void> setDesktopClipboardAlwaysOnTop(bool v) =>
       prefsRepo.setDesktopClipboardAlwaysOnTop(v);
+  DesktopClipboardWindowMode get desktopClipboardWindowMode =>
+      prefsRepo.desktopClipboardWindowMode;
+  Future<void> setDesktopClipboardWindowMode(
+      DesktopClipboardWindowMode v) async {
+    await prefsRepo.setDesktopClipboardWindowMode(v);
+    if (DesktopLookupService.isDesktop) {
+      await DesktopLookupService.instance.configureWindowMode(v);
+    }
+  }
 
   Map<String, String> get customDictCSS => prefsRepo.customDictCSS;
   String getCustomCSSForDict(String dictName) =>

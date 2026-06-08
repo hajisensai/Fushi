@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:hibiki/src/sync/sync_auto_trigger.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
-import 'package:hibiki/src/sync/desktop_lookup_service.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart'
@@ -59,22 +58,12 @@ class _HomePageState extends BasePageState<HomePage>
   final FocusNode _keyboardFocusNode = FocusNode();
   final ValueNotifier<int> _dictFocusSignal = ValueNotifier<int>(0);
 
-  /// 桌面剪贴板/热键命中后下传给查词 tab 的「外部查词请求」（携词 + 自增序号）。
-  final ValueNotifier<({int seq, String text})?> _dictExternalQuery =
-      ValueNotifier<({int seq, String text})?>(null);
-  int _dictQuerySeq = 0;
-
   @override
   void initState() {
     super.initState();
 
     WidgetsBinding.instance.addObserver(this);
     appModelNoUpdate.databaseCloseNotifier.addListener(refresh);
-    // 桌面常驻根 State 监听剪贴板/热键查词命中：buildBody 按 tab 单建，查词页不在
-    // 当前 tab 时不存在、收不到 service 通知，故由 home_page 接命中并切到查词 tab。
-    if (DesktopLookupService.isDesktop) {
-      DesktopLookupService.instance.addListener(_onDesktopLookupPending);
-    }
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       appModel.populateDefaultMapping(appModel.targetLanguage);
@@ -114,23 +103,8 @@ class _HomePageState extends BasePageState<HomePage>
     setState(() {});
   }
 
-  /// 剪贴板/热键命中：清 pending（避免重复触发同一段文本）→ 切到查词 tab → 把命中词
-  /// 推到 [_dictExternalQuery]，由 HomeDictionaryPage 预填并查询（不自动朗读）。
-  /// 真正唤前台延迟到查词页消费请求并开始搜索时，避免任意剪贴板变化抢前台。
-  void _onDesktopLookupPending() {
-    final String? text = DesktopLookupService.instance.pendingText;
-    if (text == null) return;
-    DesktopLookupService.instance.clearPending();
-    _selectTab(HomeTab.dictionaries);
-    _dictExternalQuery.value = (seq: ++_dictQuerySeq, text: text);
-  }
-
   @override
   void dispose() {
-    if (DesktopLookupService.isDesktop) {
-      DesktopLookupService.instance.removeListener(_onDesktopLookupPending);
-    }
-    _dictExternalQuery.dispose();
     _dictFocusSignal.dispose();
     _keyboardFocusNode.dispose();
     WidgetsBinding.instance.removeObserver(this);
@@ -382,8 +356,7 @@ class _HomePageState extends BasePageState<HomePage>
                 ),
               ),
             )));
-    // 桌面剪贴板/热键查词不再叠加独立 overlay 页：命中由 [_onDesktopLookupPending]
-    // 切到查词 tab + 预填查询（监听在 initState 注册）。home 树本身无需包裹。
+    // 桌面剪贴板/热键查词不再叠加独立 overlay 页；监听生命周期收窄到查词 tab。
     return home;
   }
 
@@ -518,7 +491,6 @@ class _HomePageState extends BasePageState<HomePage>
       case HomeTab.dictionaries:
         return HomeDictionaryPage(
           focusSignal: _dictFocusSignal,
-          externalQuery: _dictExternalQuery,
         );
       case HomeTab.texthooker:
         return const TexthookerPage();

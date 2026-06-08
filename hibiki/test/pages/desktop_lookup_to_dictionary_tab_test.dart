@@ -28,34 +28,33 @@ void main() {
         reason: 'overlay 文件已删，barrel 不能再导出它');
   });
 
-  test('home_page 监听 DesktopLookupService 并切到查词 tab（而非挂 overlay）', () {
+  test('home_page no longer owns desktop clipboard lookup lifecycle', () {
     final String src = read('lib/src/pages/implementations/home_page.dart');
-    // 不再挂叠加式 overlay。
     expect(src.contains('DesktopLookupOverlay'), isFalse,
         reason: '不再用叠加式 overlay；命中改走切 tab 路径');
-    // 桌面常驻根 State 监听 service（buildBody 按 tab 单建，查词页不在该 tab 时不存在，
-    // 收不到 service 通知，必须由 home_page 接并切 tab）。
-    expect(src.contains('DesktopLookupService.instance.addListener'), isTrue,
-        reason: 'home_page 必须监听 DesktopLookupService 的命中通知');
-    // 命中后切到「查词」tab。
-    expect(src.contains('_selectTab(HomeTab.dictionaries)'), isTrue,
-        reason: '剪贴板/热键命中后应切到首页查词 tab');
-    // 命中后清 pending，避免重复触发同一段文本。
-    expect(src.contains('clearPending'), isTrue,
-        reason: '消费命中文本后必须 clearPending');
-    // 通过 externalQuery 信号把词下传给查词页。
-    expect(src.contains('externalQuery'), isTrue,
-        reason: 'home_page 通过 externalQuery 信号把命中词下传给查词页');
+    expect(src.contains('DesktopLookupService.instance.addListener'), isFalse,
+        reason: '桌面剪贴板查词只能在查词页启用，HomePage 根节点不能常驻监听');
+    expect(src.contains('_onDesktopLookupPending'), isFalse,
+        reason: '不在查词 tab 时不应消费剪贴板命中并自动切 tab');
+    expect(src.contains('externalQuery'), isFalse,
+        reason: '查词页现在直接消费 DesktopLookupService.pendingText');
     expect(src.contains('service 唤前台'), isFalse,
         reason: '不能再假设 service 发现剪贴板文本时已唤前台');
   });
 
-  test('HomeDictionaryPage 外部查词入口预填并触发查询、且不自动朗读', () {
+  test('HomeDictionaryPage owns desktop lookup service only while mounted', () {
     final String src =
         read('lib/src/pages/implementations/home_dictionary_page.dart');
-    // 新增携词的外部查询入口。
-    expect(src.contains('externalQuery'), isTrue,
-        reason: '查词页必须有携词的外部查询入口（剪贴板/热键预填）');
+    expect(src.contains('DesktopLookupService.instance.start'), isTrue,
+        reason: '进入查词页时才允许启动桌面剪贴板/热键监听');
+    expect(src.contains('DesktopLookupService.instance.stop'), isTrue,
+        reason: '离开查词页时必须停止桌面剪贴板/热键监听');
+    expect(src.contains('DesktopLookupService.instance.addListener'), isTrue,
+        reason: '查词页直接消费剪贴板/热键命中');
+    expect(src.contains('DesktopLookupService.instance.removeListener'), isTrue,
+        reason: '查词页 dispose 时必须移除监听');
+    expect(src.contains('desktopClipboardEnabled'), isTrue,
+        reason: '服务启停仍受用户设置控制');
     // _search 支持 autoRead 覆盖（默认 null = 沿用 autoReadOnLookup，向后兼容）。
     expect(src.contains('bool? autoRead'), isTrue,
         reason: '_search 必须支持 autoRead 覆盖参数');
@@ -70,6 +69,33 @@ void main() {
             'autoRead ?? ReaderHibikiSource.instance.autoReadOnLookup'),
         isTrue,
         reason: '默认必须沿用 autoReadOnLookup，向后兼容正常查词的朗读');
+  });
+
+  test('settings expose three desktop window modes with updated copy', () {
+    final String schema = read('lib/src/settings/settings_schema.dart');
+    final String en = read('lib/i18n/strings.i18n.json');
+    final String zh = read('lib/i18n/strings_zh-CN.i18n.json');
+
+    expect(schema.contains('lookup.desktop_clipboard_window_mode'), isTrue,
+        reason: '桌面剪贴板查词必须提供窗口模式三段选择');
+    expect(schema.contains('DesktopClipboardWindowMode.normal'), isTrue,
+        reason: '必须可选择不置顶模式');
+    expect(schema.contains('DesktopClipboardWindowMode.lookup'), isTrue,
+        reason: '必须可选择仅查词期间置顶模式');
+    expect(schema.contains('DesktopClipboardWindowMode.always'), isTrue,
+        reason: '必须可选择始终置顶模式');
+    expect(en.contains('Only watches the clipboard and global hotkey'), isTrue,
+        reason: '英文文案必须说明只在查词页监听');
+    expect(zh.contains('仅在查词界面监听剪贴板和全局热键'), isTrue,
+        reason: '中文文案必须说明只在查词界面启用桌面剪贴板查词');
+    expect(zh.contains('"desktop_clipboard_window_mode": "窗口置顶策略"'), isTrue);
+    expect(
+        zh.contains('"desktop_clipboard_window_mode_normal": "不置顶"'), isTrue);
+    expect(
+        zh.contains('"desktop_clipboard_window_mode_lookup": "仅查词期间"'), isTrue);
+    expect(
+        zh.contains('"desktop_clipboard_window_mode_always": "始终置顶"'), isTrue);
+    expect(zh.contains('剪贴板查词仍只在查词页启用'), isTrue);
   });
 
   test('DesktopLookupService 只排队命中词，不在剪贴板回调里抢前台', () {

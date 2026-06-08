@@ -1431,5 +1431,10 @@
     "video_shader_desc_ravu": "通用亮度放大，轻量快速（r2 更快，r3 更精细）。",
     "video_shader_desc_nnedi3": "经典神经网络放大，nns 越大质量越高、越吃 GPU。",
     "floating_lyric_click_lookup": "点击悬浮字幕查词",
-    "floating_lyric_click_lookup_hint": "锁定悬浮字幕位置时仍可保留点击查词。"
+    "floating_lyric_click_lookup_hint": "锁定悬浮字幕位置时仍可保留点击查词。",
+    "desktop_clipboard_window_mode": "窗口置顶策略",
+    "desktop_clipboard_window_mode_hint": "控制 Hibiki 是否保持在其他窗口上方；剪贴板查词仍只在查词页启用",
+    "desktop_clipboard_window_mode_always": "始终置顶",
+    "desktop_clipboard_window_mode_lookup": "仅查词期间",
+    "desktop_clipboard_window_mode_normal": "不置顶"
 }

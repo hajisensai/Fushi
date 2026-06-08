@@ -365,16 +365,32 @@ void main() {
 
     test('desktop clipboard prefs round-trip', () async {
       expect(repo.desktopClipboardEnabled, false);
-      expect(repo.desktopClipboardAlwaysOnTop, false);
+      expect(
+          repo.desktopClipboardWindowMode, DesktopClipboardWindowMode.normal);
       await repo.setDesktopClipboardEnabled(true);
-      await repo.setDesktopClipboardAlwaysOnTop(true);
+      await repo
+          .setDesktopClipboardWindowMode(DesktopClipboardWindowMode.always);
       expect(repo.desktopClipboardEnabled, true);
-      expect(repo.desktopClipboardAlwaysOnTop, true);
+      expect(
+          repo.desktopClipboardWindowMode, DesktopClipboardWindowMode.always);
       final repo2 = PreferencesRepository(db);
       await repo2.loadFromDb();
       expect(repo2.desktopClipboardEnabled, true);
-      expect(repo2.desktopClipboardAlwaysOnTop, true);
+      expect(
+        repo2.desktopClipboardWindowMode,
+        DesktopClipboardWindowMode.always,
+      );
       repo2.dispose();
+    });
+
+    test('legacy desktop clipboard always-on-top pref maps to lookup mode',
+        () async {
+      await repo.setPref('desktop_clipboard_always_on_top', true);
+
+      expect(
+        repo.desktopClipboardWindowMode,
+        DesktopClipboardWindowMode.lookup,
+      );
     });
 
     test('reverseReaderBottomBar is independent of reverseNavigationBar',

@@ -1,5 +1,6 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/sync/desktop_lookup_service.dart';
 
 void main() {
@@ -114,4 +115,52 @@ void main() {
 
     expect(windowCalls, containsAllInOrder(<String>['show', 'focus']));
   });
+
+  testWidgets('window mode controls always-on-top timing',
+      (WidgetTester tester) async {
+    final List<MethodCall> windowCalls = <MethodCall>[];
+    final TestDefaultBinaryMessenger messenger =
+        tester.binding.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(const MethodChannel('window_manager'),
+        (MethodCall call) async {
+      windowCalls.add(call);
+      if (call.method == 'isMinimized') return false;
+      return null;
+    });
+
+    final DesktopLookupService svc = DesktopLookupService.instance;
+    svc.debugReset();
+
+    await svc.configureWindowMode(DesktopClipboardWindowMode.normal);
+    await svc.bringPendingLookupToFront();
+    expect(
+      windowCalls.where(_setsAlwaysOnTop),
+      isEmpty,
+      reason: '正常应用模式不应在查词时设置置顶',
+    );
+
+    windowCalls.clear();
+    await svc.configureWindowMode(DesktopClipboardWindowMode.lookup);
+    await svc.bringPendingLookupToFront();
+    expect(
+      windowCalls.any(_setsAlwaysOnTop),
+      isTrue,
+      reason: '查词时置顶模式应在查词窗口被唤起时置顶',
+    );
+
+    windowCalls.clear();
+    await svc.configureWindowMode(DesktopClipboardWindowMode.always);
+    expect(
+      windowCalls.any(_setsAlwaysOnTop),
+      isTrue,
+      reason: '置顶模式应立即设置窗口置顶',
+    );
+  });
+}
+
+bool _setsAlwaysOnTop(MethodCall call) {
+  final Object? arguments = call.arguments;
+  return call.method == 'setAlwaysOnTop' &&
+      arguments is Map &&
+      arguments['isAlwaysOnTop'] == true;
 }

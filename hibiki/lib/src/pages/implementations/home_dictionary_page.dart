@@ -14,14 +14,9 @@ import 'package:hibiki/utils.dart';
 
 /// The body content for the Dictionary tab in the main menu.
 class HomeDictionaryPage extends BaseTabPage {
-  const HomeDictionaryPage({super.key, this.focusSignal, this.externalQuery});
+  const HomeDictionaryPage({super.key, this.focusSignal});
 
   final ValueNotifier<int>? focusSignal;
-
-  /// 桌面剪贴板/热键命中后的「外部查词请求」通道：home_page 切到本 tab 后把命中词
-  /// 推到这里，本页预填搜索框并触发查询（不自动朗读）。带自增 [seq] 以便连续命中
-  /// 同一个词也能触发（同 text 的 [ValueNotifier] 相等值不会 notify）。
-  final ValueNotifier<({int seq, String text})?>? externalQuery;
 
   @override
   BaseTabPageState<BaseTabPage> createState() => _HomeDictionaryPageState();
@@ -53,9 +48,6 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
 
   bool _historyWritten = false;
 
-  /// 已消费的外部查词请求序号，避免同一请求被「监听回调 + initState 兜底」重复触发。
-  int _lastConsumedQuerySeq = -1;
-
   @override
   void initState() {
     super.initState();
@@ -65,10 +57,8 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
     _searchFocusNode.addListener(_onFocusChanged);
     final HomeDictionaryPage w = widget as HomeDictionaryPage;
     w.focusSignal?.addListener(_onFocusSignal);
-    w.externalQuery?.addListener(_onExternalQuery);
-    // 兜底：切到本 tab 后本页才挂载，此时 externalQuery 可能已被 home_page 置值，
-    // 监听器不会回放历史值，故挂载时主动消费一次。
-    _consumeExternalQuery();
+    DesktopLookupService.instance.addListener(_onDesktopLookupPending);
+    unawaited(_startDesktopLookupIfEnabled());
   }
 
   void _onFocusSignal() {
@@ -77,24 +67,26 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
     });
   }
 
-  void _onExternalQuery() => _consumeExternalQuery();
+  Future<void> _startDesktopLookupIfEnabled() async {
+    if (!DesktopLookupService.isDesktop || !appModel.desktopClipboardEnabled) {
+      return;
+    }
+    await DesktopLookupService.instance.start(
+      windowMode: appModel.desktopClipboardWindowMode,
+    );
+    if (!mounted) return;
+    _onDesktopLookupPending();
+  }
 
-  /// 消费外部查词请求：预填搜索框并触发查询，显式不自动朗读（与首页查词同一套
-  /// 体验，但剪贴板/热键命中不读音）。消费后把通道置 null（镜像
-  /// [DesktopLookupService.pendingText] 的「消费即清」语义）——否则用户切走再切回
-  /// 查词 tab 时，新挂载的本页会把上一次的剪贴板词重放查询一次。
-  void _consumeExternalQuery() {
-    final ValueNotifier<({int seq, String text})?>? channel =
-        (widget as HomeDictionaryPage).externalQuery;
-    final ({int seq, String text})? req = channel?.value;
-    if (req == null || req.seq == _lastConsumedQuerySeq) return;
-    _lastConsumedQuerySeq = req.seq;
-    _externalLookupText = req.text;
-    channel!.value = null;
+  void _onDesktopLookupPending() {
+    final String? text = DesktopLookupService.instance.pendingText;
+    if (text == null) return;
+    DesktopLookupService.instance.clearPending();
+    _externalLookupText = text;
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
       await DesktopLookupService.instance.bringPendingLookupToFront();
-      if (mounted) _search(req.text, autoRead: false);
+      if (mounted) _search(text, autoRead: false);
     });
   }
 
@@ -130,7 +122,10 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
   void dispose() {
     final HomeDictionaryPage w = widget as HomeDictionaryPage;
     w.focusSignal?.removeListener(_onFocusSignal);
-    w.externalQuery?.removeListener(_onExternalQuery);
+    DesktopLookupService.instance.removeListener(_onDesktopLookupPending);
+    if (DesktopLookupService.isDesktop && appModel.desktopClipboardEnabled) {
+      unawaited(DesktopLookupService.instance.stop());
+    }
     _searchFocusNode.removeListener(_onFocusChanged);
     appModelNoUpdate.dictionarySearchAgainNotifier.removeListener(_searchAgain);
     appModelNoUpdate.dictionaryEntriesNotifier

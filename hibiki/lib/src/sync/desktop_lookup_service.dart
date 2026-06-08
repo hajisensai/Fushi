@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:hotkey_manager/hotkey_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
+import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/sync/clipboard_dedupe.dart';
 
 /// 给定窗口聚焦态，剪贴板自动监听是否应触发查词。
@@ -37,7 +38,7 @@ class DesktopLookupService extends ChangeNotifier
   String? get pendingText => _pendingText;
   String? _lastText;
   bool _running = false;
-  bool _alwaysOnTop = false;
+  DesktopClipboardWindowMode _windowMode = DesktopClipboardWindowMode.normal;
   bool _focused = true;
   HotKey? _hotKey;
 
@@ -62,10 +63,14 @@ class DesktopLookupService extends ChangeNotifier
     _lastText = null;
   }
 
-  Future<void> start({required bool alwaysOnTop}) async {
-    if (!isDesktop || _running) return;
+  Future<void> start({required DesktopClipboardWindowMode windowMode}) async {
+    if (!isDesktop) return;
+    if (_running) {
+      await configureWindowMode(windowMode);
+      return;
+    }
     _running = true;
-    _alwaysOnTop = alwaysOnTop;
+    await configureWindowMode(windowMode);
     windowManager.addListener(this);
     // 初始聚焦态：窗口可能尚未在前台（如开机自启），以平台真实状态为准。
     _focused = await windowManager.isFocused();
@@ -87,6 +92,28 @@ class DesktopLookupService extends ChangeNotifier
     await clipboardWatcher.stop();
     await hotKeyManager.unregisterAll();
     _hotKey = null;
+    if (_windowMode == DesktopClipboardWindowMode.lookup) {
+      await _setAlwaysOnTop(false);
+    }
+  }
+
+  Future<void> configureWindowMode(
+    DesktopClipboardWindowMode windowMode,
+  ) async {
+    _windowMode = windowMode;
+    if (!isDesktop) return;
+    await _setAlwaysOnTop(windowMode == DesktopClipboardWindowMode.always);
+  }
+
+  Future<void> _setAlwaysOnTop(bool value) async {
+    if (!isDesktop) return;
+    try {
+      await windowManager.setAlwaysOnTop(value);
+    } on MissingPluginException {
+      // Widget tests and non-window-manager hosts may not install the plugin.
+    } on PlatformException {
+      // Keep lookup service lifecycle independent from a transient window call.
+    }
   }
 
   @override
@@ -141,6 +168,8 @@ class DesktopLookupService extends ChangeNotifier
     if (!isDesktop) return;
     await windowManager.show();
     await windowManager.focus();
-    if (_alwaysOnTop) await windowManager.setAlwaysOnTop(true);
+    if (_windowMode != DesktopClipboardWindowMode.normal) {
+      await _setAlwaysOnTop(true);
+    }
   }
 }

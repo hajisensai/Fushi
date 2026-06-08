@@ -7,6 +7,24 @@ import 'package:hibiki/src/models/audio_source_config.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/utils/player/blur_options.dart';
 
+enum DesktopClipboardWindowMode {
+  normal('normal'),
+  lookup('lookup'),
+  always('always');
+
+  const DesktopClipboardWindowMode(this.storageValue);
+
+  final String storageValue;
+
+  static DesktopClipboardWindowMode fromStorage(String value) {
+    for (final DesktopClipboardWindowMode mode
+        in DesktopClipboardWindowMode.values) {
+      if (mode.storageValue == value) return mode;
+    }
+    return DesktopClipboardWindowMode.normal;
+  }
+}
+
 class PreferencesRepository extends ChangeNotifier {
   PreferencesRepository(this._db);
 
@@ -202,10 +220,35 @@ class PreferencesRepository extends ChangeNotifier {
   }
 
   bool get desktopClipboardAlwaysOnTop =>
-      getPref('desktop_clipboard_always_on_top', defaultValue: false) as bool;
+      desktopClipboardWindowMode != DesktopClipboardWindowMode.normal;
 
   Future<void> setDesktopClipboardAlwaysOnTop(bool value) async {
-    await setPref('desktop_clipboard_always_on_top', value);
+    await setDesktopClipboardWindowMode(
+      value
+          ? DesktopClipboardWindowMode.lookup
+          : DesktopClipboardWindowMode.normal,
+    );
+  }
+
+  DesktopClipboardWindowMode get desktopClipboardWindowMode {
+    final String saved = getPref(
+      'desktop_clipboard_window_mode',
+      defaultValue: '',
+    ) as String;
+    if (saved.isNotEmpty) {
+      return DesktopClipboardWindowMode.fromStorage(saved);
+    }
+    final bool legacyAlwaysOnTop =
+        getPref('desktop_clipboard_always_on_top', defaultValue: false) as bool;
+    return legacyAlwaysOnTop
+        ? DesktopClipboardWindowMode.lookup
+        : DesktopClipboardWindowMode.normal;
+  }
+
+  Future<void> setDesktopClipboardWindowMode(
+    DesktopClipboardWindowMode value,
+  ) async {
+    await setPref('desktop_clipboard_window_mode', value.storageValue);
     notifyListeners();
   }
 
