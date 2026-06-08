@@ -5,6 +5,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
+import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -160,7 +161,7 @@ void main() {
     // 真实 token 错误由第一次 HTTP 操作暴露。
     await expectLater(
       backend.listRemoteDictionaries(),
-      throwsA(isA<Exception>()),
+      throwsA(isA<SyncAuthError>()),
     );
   });
 
