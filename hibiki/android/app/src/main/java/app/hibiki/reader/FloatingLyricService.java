@@ -103,7 +103,7 @@ public class FloatingLyricService extends BaseFloatingService {
         nextButton = addButton(controls, nextLabel, "nextCue",
                 R.drawable.ic_floating_next);
         lockButton = addButton(controls, lockLabel, "toggleLock",
-                R.drawable.ic_floating_lock);
+                R.drawable.ic_floating_lock_open);
         closeButton = addButton(controls, closeLabel, "close",
                 R.drawable.ic_floating_close);
 
@@ -371,7 +371,7 @@ public class FloatingLyricService extends BaseFloatingService {
     private void applyLockButton() {
         if (lockButton == null) return;
         lockButton.setImageResource(
-                isLocked ? R.drawable.ic_floating_lock_open : R.drawable.ic_floating_lock);
+                isLocked ? R.drawable.ic_floating_lock : R.drawable.ic_floating_lock_open);
         lockButton.setContentDescription(isLocked ? unlockLabel : lockLabel);
         tintIcon(lockButton, isLocked ? activeColor : buttonTextColor);
         lockButton.setBackgroundColor(buttonBgColor);
