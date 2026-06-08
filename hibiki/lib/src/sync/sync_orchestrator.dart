@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:hibiki/src/epub/epub_importer.dart';
 import 'package:hibiki/src/models/local_audio_manager.dart';
 import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
@@ -126,6 +127,7 @@ class SyncOrchestrator {
     required this.syncLocalAudio,
     this.localAudioEntries = const <LocalAudioDbEntry>[],
     this.onLocalAudioImported,
+    this.onBookImported,
     this.statsSyncMode = StatisticsSyncMode.merge,
     this.onProgress,
   })  : _db = db,
@@ -153,6 +155,14 @@ class SyncOrchestrator {
   final bool syncLocalAudio;
   final List<LocalAudioDbEntry> localAudioEntries;
   final Future<void> Function(LocalAudioPackageContents)? onLocalAudioImported;
+
+  /// 互联 live 书籍 pull 时的 epub 导入回调（[_syncBooksContentLive] 专用）。
+  ///
+  /// 生产传 `(filePath, fileName) => EpubImporter.importFromPath(db: db, filePath: filePath, fileName: fileName)`；
+  /// 为 null 时退回调用 [EpubImporter.importFromPath]（向后兼容，无需更新
+  /// 已有不注入此参数的调用方）。测试注入 fake 回调以避免 path_provider 依赖。
+  final Future<void> Function(String filePath, String fileName)? onBookImported;
+
   final StatisticsSyncMode statsSyncMode;
 
   /// Optional progress sink (manual sync only). Null for background auto-sync,
@@ -191,12 +201,37 @@ class SyncOrchestrator {
     final SyncRunReport report = SyncRunReport();
     final String root = await _backend.findOrCreateRootFolder();
 
-    if (syncContent) {
-      await importRemoteBooks(root, report);
+    // 互联（HibikiClientSyncBackend）书籍内容走 live 端点；
+    // 云后端仍走原 importRemoteBooks（书文件夹暂存路径，不变）。
+    final SyncBackend b = _backend;
+    final bool isInterconnect = b is HibikiClientSyncBackend;
+
+    if (isInterconnect) {
+      // Phase 2 T2.4：互联内容（epub）走 live 端点，仅当 syncContent 开时执行。
+      // 元数据（进度/统计/有声书位置）由下方 SyncManager 以 syncContent=false 处理。
+      if (syncContent) {
+        await _syncBooksContentLive(report, b);
+      }
+    } else {
+      if (syncContent) {
+        await importRemoteBooks(root, report);
+      }
     }
 
     // Existing per-book progress / stats / content / audiobook-position sync
     // for every local book (now including any just-imported remote books).
+    //
+    // 互联分支传 syncContent=false：epub 内容已由 _syncBooksContentLive 接管，
+    // 避免 SyncManager 再次经书文件夹路径重复传 epub。
+    // 进度/统计/有声书位置不受 syncContent 影响，仍正常同步。
+    //
+    // 注意：音频文件（有声书 .m4a/.mp3 等）在 SyncManager 里也被 syncContent 门控
+    // （_exportContentIfMissing / _importContentIfMissing 同时处理 epub + 音频）。
+    // 互联下有声书文件走 syncAudioBookFiles（hibikiaudio 包路径），不走此处，
+    // 故互联分支传 syncContent=false 不会丢失音频同步。Phase 3 如需独立接管
+    // 音频文件 live 同步，请参考本方法的分流模式扩展。
+    final bool managerSyncContent = isInterconnect ? false : syncContent;
+
     int readingDone = 0;
     int readingTotal = 0;
     String? readingTitle;
@@ -212,7 +247,7 @@ class SyncOrchestrator {
       syncStats: syncStats,
       statsSyncMode: statsSyncMode,
       syncAudioBook: syncAudioBookPosition,
-      syncContent: syncContent,
+      syncContent: managerSyncContent,
       onBookProgress: (int done, int total, String title) {
         readingDone = done;
         readingTotal = total;
@@ -295,6 +330,141 @@ class SyncOrchestrator {
       }
     }
   }
+
+  /// 互联书籍内容 live 同步（Phase 2 T2.4）。
+  ///
+  /// 直打对端 `/api/library/books` 端点，按 `sanitizeTtuFilename(title)` union：
+  /// - toPull：远端 hasContent && 本端无 → `getRemoteBook` 下载 epub → `EpubImporter` 入库；
+  /// - toPush：本端有 && 远端无 → `repackageExtractedEpub` 重打包 → `putRemoteBook` 上传。
+  ///
+  /// 仅当 client syncContent 开时由 [run] 调用。进度走 [SyncPhase.books]，
+  /// 临时文件 finally 清理，逐项错误进 [report.errors] 不中断整体。
+  ///
+  /// **删除传播**：现有实现不传播书籍删除（SyncManager 云路径同语义）。
+  /// 若后续需要互联书籍删除传播，参考词典删除传播（BUG-086）扩展此方法。
+  Future<void> _syncBooksContentLive(
+    SyncRunReport report,
+    HibikiClientSyncBackend backend,
+  ) async {
+    final List<RemoteBookInfo> remoteBooks = await backend.listRemoteBooks();
+    final List<EpubBookRow> localBooks = await _db.getAllEpubBooks();
+
+    final Set<String> localKeys = <String>{
+      for (final EpubBookRow b in localBooks) sanitizeTtuFilename(b.title),
+    };
+    final Map<String, bool> remoteKeyHasContent = <String, bool>{
+      for (final RemoteBookInfo r in remoteBooks)
+        sanitizeTtuFilename(r.title): r.hasContent,
+    };
+
+    // 按 sanitizeTtuFilename(title) union 计算 diff。
+    final BookSyncDiff diff = computeBookSyncDiff(
+      localKeys: localKeys,
+      remoteKeyHasContent: remoteKeyHasContent,
+    );
+
+    // 同时需要 title 原始值用于端点调用（端点按原始 title 寻址）。
+    // toPull 用远端 title；toPush 用本地 title。
+    final Map<String, String> remoteKeyToTitle = <String, String>{
+      for (final RemoteBookInfo r in remoteBooks)
+        sanitizeTtuFilename(r.title): r.title,
+    };
+    final Map<String, String> localKeyToTitle = <String, String>{
+      for (final EpubBookRow b in localBooks)
+        sanitizeTtuFilename(b.title): b.title,
+    };
+
+    final int total = diff.toPull.length + diff.toPush.length;
+    int index = 0;
+
+    // ── Pull：远端独有且有内容 → 下载并导入 ────────────────────────────────
+    for (final String key in diff.toPull) {
+      final String title = remoteKeyToTitle[key] ?? key;
+      _emit(SyncPhase.books, itemIndex: index, itemTotal: total, title: title);
+      File? tmp;
+      try {
+        tmp = _tmpFile('.epub');
+        await backend.getRemoteBook(
+          title,
+          tmp,
+          onProgress: (double f) => _emit(SyncPhase.books,
+              itemIndex: index,
+              itemTotal: total,
+              title: title,
+              fileFraction: f),
+        );
+        final String fileName = '$title.epub';
+        final Future<void> Function(String, String) importer =
+            onBookImported ?? _defaultBookImporter;
+        await importer(tmp.path, fileName);
+        report.booksImported++;
+      } catch (e) {
+        report.errors.add('live pull book "$title": $e');
+      } finally {
+        _safeDelete(tmp);
+      }
+      index++;
+    }
+
+    // ── Push：本端独有 → 重打包并上传 ───────────────────────────────────────
+    for (final String key in diff.toPush) {
+      final String title = localKeyToTitle[key] ?? key;
+      _emit(SyncPhase.books, itemIndex: index, itemTotal: total, title: title);
+      File? tmp;
+      try {
+        // 找到本地行取 extractDir。
+        final EpubBookRow? row = localBooks.cast<EpubBookRow?>().firstWhere(
+              (EpubBookRow? b) => sanitizeTtuFilename(b!.title) == key,
+              orElse: () => null,
+            );
+        if (row == null ||
+            row.extractDir.isEmpty ||
+            !Directory(row.extractDir).existsSync()) {
+          // 本地内容不可用，跳过（与 importRemoteBooks 对称语义）。
+          index++;
+          continue;
+        }
+        tmp = _tmpFile('.epub');
+        final bool built =
+            await repackageExtractedEpub(row.extractDir, tmp.path);
+        if (!built) {
+          index++;
+          continue;
+        }
+        await backend.putRemoteBook(
+          title,
+          tmp,
+          onProgress: (double f) => _emit(SyncPhase.books,
+              itemIndex: index,
+              itemTotal: total,
+              title: title,
+              fileFraction: f),
+        );
+      } catch (e) {
+        report.errors.add('live push book "$title": $e');
+      } finally {
+        _safeDelete(tmp);
+      }
+      index++;
+    }
+  }
+
+  /// 默认书籍 epub 导入实现：经 [EpubImporter.importFromPath] 入库。
+  /// 仅在 [onBookImported] 为 null 时使用（生产路径）。
+  Future<void> _defaultBookImporter(String filePath, String fileName) =>
+      EpubImporter.importFromPath(
+        db: _db,
+        filePath: filePath,
+        fileName: fileName,
+      );
+
+  /// 测试入口：直接调用 [_syncBooksContentLive]（private 方法对测试文件不可见）。
+  @visibleForTesting
+  Future<void> syncBooksContentLiveForTest(
+    SyncRunReport report,
+    HibikiClientSyncBackend backend,
+  ) =>
+      _syncBooksContentLive(report, backend);
 
   /// Union-syncs dictionaries. 互联（HibikiClientSyncBackend）→ 直读对端实时库（无暂存）；
   /// 云后端 → 走现有 __dictionaries__ 暂存路径（不变）。无旧设备故无能力探测。
