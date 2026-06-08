@@ -106,7 +106,12 @@ class ReaderPositions extends Table {
   TextColumn get bookKey => text().unique()();
   IntColumn get sectionIndex => integer()();
   IntColumn get normCharOffset => integer()();
+  // 名叫 "ttu" 但非死列：sync_manager 用它缓存 **whole-book** exploredCharCount
+  // （跨全书累计字符数）做云同步 dirty-flag / 0..1 进度分数。勿删/勿改语义。
   IntColumn get ttuCharOffset => integer().withDefault(const Constant(-1))();
+  // BUG-136: **section 内**精确绝对字符偏移（退出再进的恢复锚，与上面的全书计数
+  // 范围不同，故独立成列）。-1 = 无精确偏移（恢复回退 normCharOffset 分数）。
+  IntColumn get charOffset => integer().withDefault(const Constant(-1))();
   IntColumn get updatedAt => integer()();
 }
 

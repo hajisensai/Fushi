@@ -84,7 +84,7 @@ class HibikiDatabase extends _$HibikiDatabase {
   HibikiDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 23;
+  int get schemaVersion => 24;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -346,6 +346,16 @@ class HibikiDatabase extends _$HibikiDatabase {
             }
             if (!await _tableExists('mining_statistics')) {
               await m.createTable(miningStatistics);
+            }
+          }
+          if (from < 24) {
+            // BUG-136: 新增 reader_positions.char_offset（section 内精确字符偏移恢复
+            // 锚）。与既有 ttu_char_offset（sync 的全书 exploredCharCount 缓存）范围
+            // 不同，故独立成列、互不覆盖（upsert 各留对方列 absent）。既有行默认 -1
+            // （= 无精确偏移→首次退出再进回退分数，翻一页后 re-save 即精确）。
+            if (await _tableExists('reader_positions') &&
+                !await _columnExists('reader_positions', 'char_offset')) {
+              await m.addColumn(readerPositions, readerPositions.charOffset);
             }
           }
         },

@@ -18,12 +18,12 @@ class ReaderPositionRepository {
     required String bookKey,
     required int sectionIndex,
     required int normCharOffset,
-    int? ttuCharOffset,
+    int? charOffset,
   }) async {
     final ReaderPositionRow? existing =
-        ttuCharOffset == null ? await _db.getReaderPosition(bookKey) : null;
-    final Value<int> ttuCharOffsetValue = ttuCharOffset != null
-        ? Value(ttuCharOffset)
+        charOffset == null ? await _db.getReaderPosition(bookKey) : null;
+    final Value<int> charOffsetValue = charOffset != null
+        ? Value(charOffset)
         : existing == null || existing.sectionIndex == sectionIndex
             ? const Value.absent()
             : const Value(-1);
@@ -31,7 +31,7 @@ class ReaderPositionRepository {
       bookKey: Value(bookKey),
       sectionIndex: Value(sectionIndex),
       normCharOffset: Value(normCharOffset),
-      ttuCharOffset: ttuCharOffsetValue,
+      charOffset: charOffsetValue,
       updatedAt: Value(DateTime.now().millisecondsSinceEpoch),
     ));
   }
@@ -44,7 +44,7 @@ class ReaderPositionRepository {
     pos.bookKey = r.bookKey;
     pos.sectionIndex = r.sectionIndex;
     pos.normCharOffset = r.normCharOffset;
-    pos.ttuCharOffset = r.ttuCharOffset >= 0 ? r.ttuCharOffset : null;
+    pos.charOffset = r.charOffset >= 0 ? r.charOffset : null;
     pos.updatedAt = r.updatedAt;
     return pos;
   }

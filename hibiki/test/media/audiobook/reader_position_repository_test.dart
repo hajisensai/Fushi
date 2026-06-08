@@ -16,16 +16,16 @@ void main() {
     await db.close();
   });
 
-  test('save with ttuCharOffset then same-section null preserves it', () async {
+  test('save with charOffset then same-section null preserves it', () async {
     await repo.save(
       bookKey: 'book-42',
       sectionIndex: 3,
       normCharOffset: 100,
-      ttuCharOffset: 500,
+      charOffset: 500,
     );
     var pos = await repo.findByBookKey('book-42');
     expect(pos, isNotNull);
-    expect(pos!.ttuCharOffset, equals(500));
+    expect(pos!.charOffset, equals(500));
 
     await repo.save(
       bookKey: 'book-42',
@@ -37,16 +37,16 @@ void main() {
     expect(pos!.sectionIndex, equals(3));
     expect(pos.normCharOffset, equals(200),
         reason: 'normCharOffset should update');
-    expect(pos.ttuCharOffset, equals(500),
-        reason: 'same-section null save may preserve ttuCharOffset');
+    expect(pos.charOffset, equals(500),
+        reason: 'same-section null save may preserve charOffset');
   });
 
-  test('cross-section null save invalidates local ttuCharOffset', () async {
+  test('cross-section null save invalidates local charOffset', () async {
     await repo.save(
       bookKey: 'book-42',
       sectionIndex: 3,
       normCharOffset: 100,
-      ttuCharOffset: 500,
+      charOffset: 500,
     );
 
     await repo.save(
@@ -59,25 +59,25 @@ void main() {
     expect(pos!.sectionIndex, equals(4), reason: 'sectionIndex should update');
     expect(pos.normCharOffset, equals(200),
         reason: 'normCharOffset should update');
-    expect(pos.ttuCharOffset, isNull,
-        reason: 'section-local ttuCharOffset must not survive section changes');
+    expect(pos.charOffset, isNull,
+        reason: 'section-local charOffset must not survive section changes');
   });
 
-  test('save with ttuCharOffset then save with new value updates it', () async {
+  test('save with charOffset then save with new value updates it', () async {
     await repo.save(
       bookKey: 'book-42',
       sectionIndex: 3,
       normCharOffset: 100,
-      ttuCharOffset: 500,
+      charOffset: 500,
     );
     await repo.save(
       bookKey: 'book-42',
       sectionIndex: 5,
       normCharOffset: 300,
-      ttuCharOffset: 800,
+      charOffset: 800,
     );
     final pos = await repo.findByBookKey('book-42');
-    expect(pos!.ttuCharOffset, equals(800));
+    expect(pos!.charOffset, equals(800));
   });
 
   test('DB default -1 maps to model null for old data', () async {
@@ -89,7 +89,7 @@ void main() {
         ));
     final pos = await repo.findByBookKey('book-99');
     expect(pos, isNotNull);
-    expect(pos!.ttuCharOffset, isNull,
+    expect(pos!.charOffset, isNull,
         reason: 'DB -1 should map to model null');
   });
 
@@ -112,14 +112,14 @@ void main() {
       bookKey: 'book-7',
       sectionIndex: 5,
       normCharOffset: 3000,
-      ttuCharOffset: 250,
+      charOffset: 250,
     );
     final pos = await repo.findByBookKey('book-7');
     expect(pos, isNotNull);
     expect(pos!.bookKey, 'book-7');
     expect(pos.sectionIndex, 5);
     expect(pos.normCharOffset, 3000);
-    expect(pos.ttuCharOffset, 250);
+    expect(pos.charOffset, 250);
     expect(pos.updatedAt, greaterThan(0));
     expect(pos.id, isNotNull);
   });
@@ -146,11 +146,11 @@ void main() {
     expect(pos2!.sectionIndex, 7);
   });
 
-  test('first save with null ttuCharOffset keeps DB default', () async {
+  test('first save with null charOffset keeps DB default', () async {
     await repo.save(bookKey: 'book-50', sectionIndex: 0, normCharOffset: 100);
     final pos = await repo.findByBookKey('book-50');
-    expect(pos!.ttuCharOffset, isNull,
+    expect(pos!.charOffset, isNull,
         reason:
-            'first save without ttuCharOffset → DB default -1 → model null');
+            'first save without charOffset → DB default -1 → model null');
   });
 }

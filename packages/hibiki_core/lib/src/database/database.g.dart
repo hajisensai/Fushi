@@ -3469,6 +3469,14 @@ class $ReaderPositionsTable extends ReaderPositions
       type: DriftSqlType.int,
       requiredDuringInsert: false,
       defaultValue: const Constant(-1));
+  static const VerificationMeta _charOffsetMeta =
+      const VerificationMeta('charOffset');
+  @override
+  late final GeneratedColumn<int> charOffset = GeneratedColumn<int>(
+      'char_offset', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(-1));
   static const VerificationMeta _updatedAtMeta =
       const VerificationMeta('updatedAt');
   @override
@@ -3476,8 +3484,15 @@ class $ReaderPositionsTable extends ReaderPositions
       'updated_at', aliasedName, false,
       type: DriftSqlType.int, requiredDuringInsert: true);
   @override
-  List<GeneratedColumn> get $columns =>
-      [id, bookKey, sectionIndex, normCharOffset, ttuCharOffset, updatedAt];
+  List<GeneratedColumn> get $columns => [
+        id,
+        bookKey,
+        sectionIndex,
+        normCharOffset,
+        ttuCharOffset,
+        charOffset,
+        updatedAt
+      ];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -3519,6 +3534,12 @@ class $ReaderPositionsTable extends ReaderPositions
           ttuCharOffset.isAcceptableOrUnknown(
               data['ttu_char_offset']!, _ttuCharOffsetMeta));
     }
+    if (data.containsKey('char_offset')) {
+      context.handle(
+          _charOffsetMeta,
+          charOffset.isAcceptableOrUnknown(
+              data['char_offset']!, _charOffsetMeta));
+    }
     if (data.containsKey('updated_at')) {
       context.handle(_updatedAtMeta,
           updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta));
@@ -3544,6 +3565,8 @@ class $ReaderPositionsTable extends ReaderPositions
           .read(DriftSqlType.int, data['${effectivePrefix}norm_char_offset'])!,
       ttuCharOffset: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}ttu_char_offset'])!,
+      charOffset: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}char_offset'])!,
       updatedAt: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}updated_at'])!,
     );
@@ -3562,6 +3585,7 @@ class ReaderPositionRow extends DataClass
   final int sectionIndex;
   final int normCharOffset;
   final int ttuCharOffset;
+  final int charOffset;
   final int updatedAt;
   const ReaderPositionRow(
       {required this.id,
@@ -3569,6 +3593,7 @@ class ReaderPositionRow extends DataClass
       required this.sectionIndex,
       required this.normCharOffset,
       required this.ttuCharOffset,
+      required this.charOffset,
       required this.updatedAt});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -3578,6 +3603,7 @@ class ReaderPositionRow extends DataClass
     map['section_index'] = Variable<int>(sectionIndex);
     map['norm_char_offset'] = Variable<int>(normCharOffset);
     map['ttu_char_offset'] = Variable<int>(ttuCharOffset);
+    map['char_offset'] = Variable<int>(charOffset);
     map['updated_at'] = Variable<int>(updatedAt);
     return map;
   }
@@ -3589,6 +3615,7 @@ class ReaderPositionRow extends DataClass
       sectionIndex: Value(sectionIndex),
       normCharOffset: Value(normCharOffset),
       ttuCharOffset: Value(ttuCharOffset),
+      charOffset: Value(charOffset),
       updatedAt: Value(updatedAt),
     );
   }
@@ -3602,6 +3629,7 @@ class ReaderPositionRow extends DataClass
       sectionIndex: serializer.fromJson<int>(json['sectionIndex']),
       normCharOffset: serializer.fromJson<int>(json['normCharOffset']),
       ttuCharOffset: serializer.fromJson<int>(json['ttuCharOffset']),
+      charOffset: serializer.fromJson<int>(json['charOffset']),
       updatedAt: serializer.fromJson<int>(json['updatedAt']),
     );
   }
@@ -3614,6 +3642,7 @@ class ReaderPositionRow extends DataClass
       'sectionIndex': serializer.toJson<int>(sectionIndex),
       'normCharOffset': serializer.toJson<int>(normCharOffset),
       'ttuCharOffset': serializer.toJson<int>(ttuCharOffset),
+      'charOffset': serializer.toJson<int>(charOffset),
       'updatedAt': serializer.toJson<int>(updatedAt),
     };
   }
@@ -3624,6 +3653,7 @@ class ReaderPositionRow extends DataClass
           int? sectionIndex,
           int? normCharOffset,
           int? ttuCharOffset,
+          int? charOffset,
           int? updatedAt}) =>
       ReaderPositionRow(
         id: id ?? this.id,
@@ -3631,6 +3661,7 @@ class ReaderPositionRow extends DataClass
         sectionIndex: sectionIndex ?? this.sectionIndex,
         normCharOffset: normCharOffset ?? this.normCharOffset,
         ttuCharOffset: ttuCharOffset ?? this.ttuCharOffset,
+        charOffset: charOffset ?? this.charOffset,
         updatedAt: updatedAt ?? this.updatedAt,
       );
   ReaderPositionRow copyWithCompanion(ReaderPositionsCompanion data) {
@@ -3646,6 +3677,8 @@ class ReaderPositionRow extends DataClass
       ttuCharOffset: data.ttuCharOffset.present
           ? data.ttuCharOffset.value
           : this.ttuCharOffset,
+      charOffset:
+          data.charOffset.present ? data.charOffset.value : this.charOffset,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
     );
   }
@@ -3658,14 +3691,15 @@ class ReaderPositionRow extends DataClass
           ..write('sectionIndex: $sectionIndex, ')
           ..write('normCharOffset: $normCharOffset, ')
           ..write('ttuCharOffset: $ttuCharOffset, ')
+          ..write('charOffset: $charOffset, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(
-      id, bookKey, sectionIndex, normCharOffset, ttuCharOffset, updatedAt);
+  int get hashCode => Object.hash(id, bookKey, sectionIndex, normCharOffset,
+      ttuCharOffset, charOffset, updatedAt);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -3675,6 +3709,7 @@ class ReaderPositionRow extends DataClass
           other.sectionIndex == this.sectionIndex &&
           other.normCharOffset == this.normCharOffset &&
           other.ttuCharOffset == this.ttuCharOffset &&
+          other.charOffset == this.charOffset &&
           other.updatedAt == this.updatedAt);
 }
 
@@ -3684,6 +3719,7 @@ class ReaderPositionsCompanion extends UpdateCompanion<ReaderPositionRow> {
   final Value<int> sectionIndex;
   final Value<int> normCharOffset;
   final Value<int> ttuCharOffset;
+  final Value<int> charOffset;
   final Value<int> updatedAt;
   const ReaderPositionsCompanion({
     this.id = const Value.absent(),
@@ -3691,6 +3727,7 @@ class ReaderPositionsCompanion extends UpdateCompanion<ReaderPositionRow> {
     this.sectionIndex = const Value.absent(),
     this.normCharOffset = const Value.absent(),
     this.ttuCharOffset = const Value.absent(),
+    this.charOffset = const Value.absent(),
     this.updatedAt = const Value.absent(),
   });
   ReaderPositionsCompanion.insert({
@@ -3699,6 +3736,7 @@ class ReaderPositionsCompanion extends UpdateCompanion<ReaderPositionRow> {
     required int sectionIndex,
     required int normCharOffset,
     this.ttuCharOffset = const Value.absent(),
+    this.charOffset = const Value.absent(),
     required int updatedAt,
   })  : bookKey = Value(bookKey),
         sectionIndex = Value(sectionIndex),
@@ -3710,6 +3748,7 @@ class ReaderPositionsCompanion extends UpdateCompanion<ReaderPositionRow> {
     Expression<int>? sectionIndex,
     Expression<int>? normCharOffset,
     Expression<int>? ttuCharOffset,
+    Expression<int>? charOffset,
     Expression<int>? updatedAt,
   }) {
     return RawValuesInsertable({
@@ -3718,6 +3757,7 @@ class ReaderPositionsCompanion extends UpdateCompanion<ReaderPositionRow> {
       if (sectionIndex != null) 'section_index': sectionIndex,
       if (normCharOffset != null) 'norm_char_offset': normCharOffset,
       if (ttuCharOffset != null) 'ttu_char_offset': ttuCharOffset,
+      if (charOffset != null) 'char_offset': charOffset,
       if (updatedAt != null) 'updated_at': updatedAt,
     });
   }
@@ -3728,6 +3768,7 @@ class ReaderPositionsCompanion extends UpdateCompanion<ReaderPositionRow> {
       Value<int>? sectionIndex,
       Value<int>? normCharOffset,
       Value<int>? ttuCharOffset,
+      Value<int>? charOffset,
       Value<int>? updatedAt}) {
     return ReaderPositionsCompanion(
       id: id ?? this.id,
@@ -3735,6 +3776,7 @@ class ReaderPositionsCompanion extends UpdateCompanion<ReaderPositionRow> {
       sectionIndex: sectionIndex ?? this.sectionIndex,
       normCharOffset: normCharOffset ?? this.normCharOffset,
       ttuCharOffset: ttuCharOffset ?? this.ttuCharOffset,
+      charOffset: charOffset ?? this.charOffset,
       updatedAt: updatedAt ?? this.updatedAt,
     );
   }
@@ -3757,6 +3799,9 @@ class ReaderPositionsCompanion extends UpdateCompanion<ReaderPositionRow> {
     if (ttuCharOffset.present) {
       map['ttu_char_offset'] = Variable<int>(ttuCharOffset.value);
     }
+    if (charOffset.present) {
+      map['char_offset'] = Variable<int>(charOffset.value);
+    }
     if (updatedAt.present) {
       map['updated_at'] = Variable<int>(updatedAt.value);
     }
@@ -3771,6 +3816,7 @@ class ReaderPositionsCompanion extends UpdateCompanion<ReaderPositionRow> {
           ..write('sectionIndex: $sectionIndex, ')
           ..write('normCharOffset: $normCharOffset, ')
           ..write('ttuCharOffset: $ttuCharOffset, ')
+          ..write('charOffset: $charOffset, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
         .toString();
@@ -12301,6 +12347,7 @@ typedef $$ReaderPositionsTableCreateCompanionBuilder = ReaderPositionsCompanion
   required int sectionIndex,
   required int normCharOffset,
   Value<int> ttuCharOffset,
+  Value<int> charOffset,
   required int updatedAt,
 });
 typedef $$ReaderPositionsTableUpdateCompanionBuilder = ReaderPositionsCompanion
@@ -12310,6 +12357,7 @@ typedef $$ReaderPositionsTableUpdateCompanionBuilder = ReaderPositionsCompanion
   Value<int> sectionIndex,
   Value<int> normCharOffset,
   Value<int> ttuCharOffset,
+  Value<int> charOffset,
   Value<int> updatedAt,
 });
 
@@ -12337,6 +12385,9 @@ class $$ReaderPositionsTableFilterComposer
 
   ColumnFilters<int> get ttuCharOffset => $composableBuilder(
       column: $table.ttuCharOffset, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get charOffset => $composableBuilder(
+      column: $table.charOffset, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<int> get updatedAt => $composableBuilder(
       column: $table.updatedAt, builder: (column) => ColumnFilters(column));
@@ -12369,6 +12420,9 @@ class $$ReaderPositionsTableOrderingComposer
       column: $table.ttuCharOffset,
       builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<int> get charOffset => $composableBuilder(
+      column: $table.charOffset, builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<int> get updatedAt => $composableBuilder(
       column: $table.updatedAt, builder: (column) => ColumnOrderings(column));
 }
@@ -12396,6 +12450,9 @@ class $$ReaderPositionsTableAnnotationComposer
 
   GeneratedColumn<int> get ttuCharOffset => $composableBuilder(
       column: $table.ttuCharOffset, builder: (column) => column);
+
+  GeneratedColumn<int> get charOffset => $composableBuilder(
+      column: $table.charOffset, builder: (column) => column);
 
   GeneratedColumn<int> get updatedAt =>
       $composableBuilder(column: $table.updatedAt, builder: (column) => column);
@@ -12433,6 +12490,7 @@ class $$ReaderPositionsTableTableManager extends RootTableManager<
             Value<int> sectionIndex = const Value.absent(),
             Value<int> normCharOffset = const Value.absent(),
             Value<int> ttuCharOffset = const Value.absent(),
+            Value<int> charOffset = const Value.absent(),
             Value<int> updatedAt = const Value.absent(),
           }) =>
               ReaderPositionsCompanion(
@@ -12441,6 +12499,7 @@ class $$ReaderPositionsTableTableManager extends RootTableManager<
             sectionIndex: sectionIndex,
             normCharOffset: normCharOffset,
             ttuCharOffset: ttuCharOffset,
+            charOffset: charOffset,
             updatedAt: updatedAt,
           ),
           createCompanionCallback: ({
@@ -12449,6 +12508,7 @@ class $$ReaderPositionsTableTableManager extends RootTableManager<
             required int sectionIndex,
             required int normCharOffset,
             Value<int> ttuCharOffset = const Value.absent(),
+            Value<int> charOffset = const Value.absent(),
             required int updatedAt,
           }) =>
               ReaderPositionsCompanion.insert(
@@ -12457,6 +12517,7 @@ class $$ReaderPositionsTableTableManager extends RootTableManager<
             sectionIndex: sectionIndex,
             normCharOffset: normCharOffset,
             ttuCharOffset: ttuCharOffset,
+            charOffset: charOffset,
             updatedAt: updatedAt,
           ),
           withReferenceMapper: (p0) => p0
