@@ -160,4 +160,34 @@ void main() {
       );
     });
   });
+
+  // BUG-161: the reader's char-cursor focus navigation must follow the global
+  // "键盘/手柄焦点导航" switch (experimentalFocusNavigationEnabled, default off).
+  // When focus navigation is disabled, Enter / game A must NOT enter the cursor —
+  // the reader falls back to plain page-turn / shortcut handling.
+  group('ReaderCaretRouter enter triggers gated on focusNavEnabled', () {
+    test('focusNavEnabled:false → Enter / game A do not enter the cursor', () {
+      expect(
+        ReaderCaretRouter.isEnterTriggerKeyboard(LogicalKeyboardKey.enter,
+            focusNavEnabled: false),
+        isFalse,
+      );
+      expect(
+        ReaderCaretRouter.isEnterTriggerKeyboard(LogicalKeyboardKey.gameButtonA,
+            focusNavEnabled: false),
+        isFalse,
+      );
+      expect(
+        ReaderCaretRouter.isEnterTriggerGamepad(GamepadButton.a,
+            focusNavEnabled: false),
+        isFalse,
+      );
+    });
+
+    test('focusNavEnabled defaults true (existing call sites unchanged)', () {
+      expect(ReaderCaretRouter.isEnterTriggerKeyboard(LogicalKeyboardKey.enter),
+          isTrue);
+      expect(ReaderCaretRouter.isEnterTriggerGamepad(GamepadButton.a), isTrue);
+    });
+  });
 }

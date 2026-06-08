@@ -87,6 +87,9 @@ class ReaderCaretRouter {
 
   /// Whether a keyboard key should ENTER the cursor when it is inactive and the
   /// book (not the bottom chrome) holds focus. A / Enter = "activate / enter".
+  ///
+  /// [focusNavEnabled] mirrors the global keyboard/gamepad focus navigation
+  /// switch: when the switch is off, reader caret navigation stays inactive.
   static bool isEnterTriggerKeyboard(
     LogicalKeyboardKey key, {
     bool focusNavEnabled = true,
@@ -96,7 +99,8 @@ class ReaderCaretRouter {
           key == LogicalKeyboardKey.gameButtonA);
 
   /// Whether a gamepad button should ENTER the cursor when it is inactive. Only
-  /// A (the "activate" button) enters; B is reserved for back/dismiss.
+  /// A (the "activate" button) enters; B is reserved for back/dismiss. Gated on
+  /// [focusNavEnabled] the same way as [isEnterTriggerKeyboard].
   static bool isEnterTriggerGamepad(
     GamepadButton button, {
     bool focusNavEnabled = true,

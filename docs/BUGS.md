@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 157 条。点号进各自文件。
+> 共 158 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-161](bugs/BUG-161-reader-focus-nav-switch-ignored.md) | ✅ | ✅ | 阅读器键盘/手柄焦点导航不跟随「键盘/手柄焦点导航」开关 |
 | [BUG-160](bugs/BUG-160-server-enabled-persist.md) | ✅ | ✅ | 同步服务器开关每次启动重置为关闭 |
 | [BUG-159](bugs/BUG-159-dictionary-clipboard-panel-overlap.md) | ✅ | ✅ | 外部查词文本面板不应覆盖查词结果 |
 | [BUG-158](bugs/BUG-158-interconnect-remote-book-manual-download.md) | ✅ | ✅ | Hibiki互联无法下载对端独有书籍 |
