@@ -521,9 +521,9 @@ Future<Map<int, String>> extractEmbeddedSubtitlesViaFfmpeg({
 
 /// Runs ffmpeg with [args] via the active [FfmpegBackend] and returns the exit
 /// code (null on timeout). Behaviour is unchanged from the historical inline
-/// `Process.start` path — [CliFfmpegBackend] replicates it; a bundled backend
-/// (ffmpeg_kit) slots in transparently on mobile. Throws [ProcessException]
-/// when the CLI ffmpeg is absent — callers handle that.
+/// `Process.start` path — [CliFfmpegBackend] replicates it; the mobile
+/// [KitFfmpegBackend] (self-built ffmpeg-kit) slots in transparently. Throws
+/// [ProcessException] when ffmpeg is unavailable — callers handle that.
 Future<int?> _runFfmpeg(List<String> args, Duration timeout) async {
   final FfmpegRunResult result =
       await resolveFfmpegBackend().run(args, timeout);

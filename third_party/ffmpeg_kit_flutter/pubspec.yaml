@@ -1,0 +1,31 @@
+name: ffmpeg_kit_flutter
+description: FFmpeg Kit for Flutter. Supports Android, iOS and macOS platforms.
+repository: https://github.com/arthenica/ffmpeg-kit
+issue_tracker: https://github.com/arthenica/ffmpeg-kit/issues
+homepage: https://github.com/arthenica/ffmpeg-kit
+version: 6.0.3
+
+environment:
+  sdk: ">=2.12.0 <4.0.0"
+  flutter: ">=2.0.0"
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.arthenica.ffmpegkit.flutter
+        pluginClass: FFmpegKitFlutterPlugin
+      ios:
+        pluginClass: FFmpegKitFlutterPlugin
+      # Hibiki: macOS（及其它桌面）走 CliFfmpegBackend（系统/捆绑 ffmpeg CLI），不需要
+      # ffmpeg-kit 原生库；移除 macos 平台声明，避免 macOS 构建去拉已停服的 cocoapods。
+
+dependencies:
+  ffmpeg_kit_flutter_platform_interface: ^0.2.1
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  plugin_platform_interface: ^2.1.5

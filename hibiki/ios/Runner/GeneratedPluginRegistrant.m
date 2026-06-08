@@ -60,10 +60,10 @@
 @import external_path;
 #endif
 
-#if __has_include(<ffmpeg_kit_flutter_new_min/FFmpegKitFlutterPlugin.h>)
-#import <ffmpeg_kit_flutter_new_min/FFmpegKitFlutterPlugin.h>
+#if __has_include(<ffmpeg_kit_flutter/FFmpegKitFlutterPlugin.h>)
+#import <ffmpeg_kit_flutter/FFmpegKitFlutterPlugin.h>
 #else
-@import ffmpeg_kit_flutter_new_min;
+@import ffmpeg_kit_flutter;
 #endif
 
 #if __has_include(<file_picker/FilePickerPlugin.h>)
