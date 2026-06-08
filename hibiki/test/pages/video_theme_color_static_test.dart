@@ -16,8 +16,14 @@ void main() {
     expect(source, contains('_subtitleStyle.resolveTextColor('));
     expect(source, contains('_subtitleStyle.resolveShadowColor('));
     expect(source, contains('_subtitleStyle.resolveBackgroundColor('));
-    expect(source, contains('fontWeight: _subtitleStyle.fontWeight'));
-    expect(source, contains('shadowThickness: _subtitleStyle.shadowThickness'));
+    expect(source, contains('double get _videoUiScale => appModel.appUiScale'));
+    expect(source, contains('_subtitleStyle.resolveFontWeight('));
+    expect(source, contains('_subtitleStyle.resolveShadowThickness('));
+    expect(source, contains('uiScale: _videoUiScale'));
+    expect(source, isNot(contains('HibikiAppUiScale.of(context)')));
+    expect(source, isNot(contains('fontWeight: _subtitleStyle.fontWeight')));
+    expect(source,
+        isNot(contains('shadowThickness: _subtitleStyle.shadowThickness')));
     expect(source, isNot(contains('color: Colors.white')));
     expect(source, isNot(contains('color: Colors.black.withValues')));
   });

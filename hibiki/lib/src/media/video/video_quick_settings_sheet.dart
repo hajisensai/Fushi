@@ -34,6 +34,7 @@ class VideoQuickSettingsSheet extends StatefulWidget {
     required this.onMpvConfigChanged,
     required this.initialLockWindowAspectRatio,
     required this.onLockWindowAspectRatioChanged,
+    this.uiScale = 1.0,
     this.initialMpvShaderDir = '',
     this.onMpvShaderDirChanged,
     super.key,
@@ -95,6 +96,11 @@ class VideoQuickSettingsSheet extends StatefulWidget {
 
   /// 切换桌面窗口比例锁定。
   final Future<void> Function(bool value) onLockWindowAspectRatioChanged;
+
+  /// Actual app UI scale. Video routes neutralize [HibikiAppUiScale] so the
+  /// inherited scale inside the sheet can be 1.0 even when the app setting is
+  /// larger or smaller.
+  final double uiScale;
 
   @override
   State<VideoQuickSettingsSheet> createState() =>
@@ -826,6 +832,11 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
 
   // ── 字幕：模糊 + 外观（字号/背景不透明度/位置 + 重置）─────────────────
   Widget _buildSubtitleDetail() {
+    final double uiScale = HibikiAppUiScale.normalize(widget.uiScale);
+    final int resolvedFontWeight = _style.resolveFontWeight(uiScale);
+    final double resolvedShadowThickness =
+        _style.resolveShadowThickness(uiScale);
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -864,7 +875,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
             AdaptiveSettingsStepperRow(
               title: t.video_setting_subtitle_font_weight,
               icon: Icons.format_bold,
-              value: _style.fontWeight.toDouble(),
+              value: resolvedFontWeight.toDouble(),
               step: 100,
               min: 100,
               max: 900,
@@ -882,8 +893,8 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
               min: 0,
               max: 12,
               divisions: 12,
-              value: _style.shadowThickness.clamp(0, 12),
-              label: '${_style.shadowThickness.round()}px',
+              value: resolvedShadowThickness.clamp(0, 12),
+              label: '${resolvedShadowThickness.round()}px',
               onChanged: (double v) =>
                   _previewStyle(_style.copyWith(shadowThickness: v)),
               onChangeEnd: (double v) => widget

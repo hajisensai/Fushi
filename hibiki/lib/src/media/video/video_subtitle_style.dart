@@ -1,8 +1,13 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:hibiki/src/utils/app_ui_scale.dart';
 
-/// 视频字幕外观（全局偏好）。默认值刻意等于历史硬编码外观，未设置时观感不变。
+/// Video subtitle appearance persisted as app preferences.
+///
+/// The asbplayer visual baseline is resolved at app UI scale 1.0. Weight and
+/// shadow thickness stay nullable so the default can follow the global UI size,
+/// while explicit user choices remain fixed.
 @immutable
 class VideoSubtitleStyle {
   const VideoSubtitleStyle({
@@ -16,13 +21,16 @@ class VideoSubtitleStyle {
     required this.bottomPadding,
   });
 
-  /// asbplayer-style defaults: 36px bold white text, no box, black shadow.
+  static const int defaultFontWeight = 700;
+  static const double defaultShadowThickness = 3;
+
+  /// asbplayer-style defaults: 36px bold themed text, no box, themed shadow.
   static const VideoSubtitleStyle defaults = VideoSubtitleStyle(
     fontSize: 36,
     textColor: null,
-    fontWeight: 700,
+    fontWeight: null,
     shadowColor: null,
-    shadowThickness: 3,
+    shadowThickness: null,
     backgroundColor: null,
     backgroundOpacity: 0,
     bottomPadding: 75,
@@ -30,9 +38,9 @@ class VideoSubtitleStyle {
 
   final double fontSize;
   final Color? textColor;
-  final int fontWeight;
+  final int? fontWeight;
   final Color? shadowColor;
-  final double shadowThickness;
+  final double? shadowThickness;
   final Color? backgroundColor;
   final double backgroundOpacity;
   final double bottomPadding;
@@ -64,8 +72,24 @@ class VideoSubtitleStyle {
   Color resolveBackgroundColor(Color themeColor) =>
       backgroundColor ?? themeColor;
 
-  /// 编码为持久化 JSON 字符串。纯函数。
+  int resolveFontWeight(double uiScale) {
+    if (fontWeight != null) return fontWeight!;
+    final double scale = _normalizeUiScale(uiScale);
+    final int rounded = (defaultFontWeight * scale / 100).round() * 100;
+    if (rounded < 100) return 100;
+    if (rounded > 900) return 900;
+    return rounded;
+  }
+
+  double resolveShadowThickness(double uiScale) {
+    if (shadowThickness != null) return shadowThickness!;
+    return (defaultShadowThickness * _normalizeUiScale(uiScale))
+        .clamp(0, 12)
+        .toDouble();
+  }
+
   static String encode(VideoSubtitleStyle s) => jsonEncode(<String, dynamic>{
+        '_v': 2,
         'fontSize': s.fontSize,
         'textColor': s.textColor?.toARGB32(),
         'fontWeight': s.fontWeight,
@@ -76,21 +100,37 @@ class VideoSubtitleStyle {
         'bottomPadding': s.bottomPadding,
       });
 
-  /// 解码（容错：null/空/非法 → [defaults]；越界 clamp）。纯函数。
   static VideoSubtitleStyle decode(String? json) {
     if (json == null || json.isEmpty) return defaults;
     try {
       final dynamic d = jsonDecode(json);
       if (d is! Map) return defaults;
-      double num2d(Object? v, double fb) => v is num ? v.toDouble() : fb;
-      int num2i(Object? v, int fb) => v is num ? v.round() : fb;
+      final int version = d['_v'] is num ? (d['_v'] as num).round() : 1;
+      double num2d(Object? v, double fallback) =>
+          v is num ? v.toDouble() : fallback;
       int? colorArgb(Object? v) => v is num ? v.toInt() : null;
       int normalizeWeight(Object? v) {
-        final int raw = num2i(v, defaults.fontWeight);
+        final int raw = v is num ? v.round() : defaultFontWeight;
         final int rounded = (raw / 100).round() * 100;
         if (rounded < 100) return 100;
         if (rounded > 900) return 900;
         return rounded;
+      }
+
+      int? readFontWeight(Object? v) {
+        if (v is! num) return null;
+        final int normalized = normalizeWeight(v);
+        return version < 2 && normalized == defaultFontWeight
+            ? null
+            : normalized;
+      }
+
+      double? readShadowThickness(Object? v) {
+        if (v is! num) return null;
+        final double normalized = v.toDouble().clamp(0, 12).toDouble();
+        return version < 2 && normalized == defaultShadowThickness
+            ? null
+            : normalized;
       }
 
       final int? argb =
@@ -100,10 +140,9 @@ class VideoSubtitleStyle {
       return VideoSubtitleStyle(
         fontSize: num2d(d['fontSize'], defaults.fontSize).clamp(10, 72),
         textColor: argb == null || argb == 0xFFFFFFFF ? null : Color(argb),
-        fontWeight: normalizeWeight(d['fontWeight']),
+        fontWeight: readFontWeight(d['fontWeight']),
         shadowColor: shadowArgb == null ? null : Color(shadowArgb),
-        shadowThickness:
-            num2d(d['shadowThickness'], defaults.shadowThickness).clamp(0, 12),
+        shadowThickness: readShadowThickness(d['shadowThickness']),
         backgroundColor: backgroundArgb == null ? null : Color(backgroundArgb),
         backgroundOpacity: num2d(
           d['backgroundOpacity'],
@@ -115,5 +154,9 @@ class VideoSubtitleStyle {
     } catch (_) {
       return defaults;
     }
+  }
+
+  static double _normalizeUiScale(double uiScale) {
+    return HibikiAppUiScale.normalize(uiScale);
   }
 }

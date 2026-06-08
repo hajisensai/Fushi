@@ -11,6 +11,7 @@ VideoQuickSettingsSheet _sheet({
   void Function(int)? onSetDelay,
   void Function(double)? onSetSpeed,
   void Function(VideoMpvConfig)? onMpvConfigChanged,
+  double uiScale = 1.0,
 }) {
   return VideoQuickSettingsSheet(
     initialDelayMs: 0,
@@ -31,6 +32,7 @@ VideoQuickSettingsSheet _sheet({
     onMpvConfigChanged: (VideoMpvConfig c) async => onMpvConfigChanged?.call(c),
     initialLockWindowAspectRatio: true,
     onLockWindowAspectRatioChanged: (_) async {},
+    uiScale: uiScale,
   );
 }
 
@@ -98,6 +100,35 @@ void main() {
     expect(find.text(t.video_setting_subtitle_font_weight), findsOneWidget);
     expect(find.text(t.video_setting_subtitle_shadow), findsOneWidget);
     expect(find.byIcon(Icons.arrow_back), findsNothing);
+  });
+
+  testWidgets('subtitle default weight and shadow preview use app UI scale',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await _pump(tester, _sheet(uiScale: 2.0));
+
+    await tester.tap(find.text(t.video_settings_cat_subtitle));
+    await tester.pumpAndSettle();
+
+    final AdaptiveSettingsStepperRow fontWeightRow =
+        tester.widget<AdaptiveSettingsStepperRow>(
+      find.widgetWithText(
+        AdaptiveSettingsStepperRow,
+        t.video_setting_subtitle_font_weight,
+      ),
+    );
+    expect(fontWeightRow.value, 900);
+
+    final Iterable<AdaptiveSettingsSliderRow> sliders =
+        tester.widgetList<AdaptiveSettingsSliderRow>(
+      find.byType(AdaptiveSettingsSliderRow),
+    );
+    final AdaptiveSettingsSliderRow shadowRow = sliders.singleWhere(
+      (AdaptiveSettingsSliderRow row) =>
+          row.title == t.video_setting_subtitle_shadow,
+    );
+    expect(shadowRow.value, 6);
   });
 
   testWidgets(

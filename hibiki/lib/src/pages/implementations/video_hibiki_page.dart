@@ -175,6 +175,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   Color _subtitleTextColor(ColorScheme cs) => cs.onSurface;
   Color _subtitleShadowColor(ColorScheme cs) => cs.shadow;
   Color _subtitleBackgroundColor(ColorScheme cs) => cs.surface;
+  double get _videoUiScale => appModel.appUiScale;
 
   Color _osdSurfaceColor(ColorScheme cs) =>
       cs.inverseSurface.withValues(alpha: 0.82);
@@ -1873,6 +1874,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       initialSpeed: _playbackSpeed,
       initialSubtitleBlur: appModel.videoSubtitleBlur,
       initialSubtitleStyle: _subtitleStyle,
+      uiScale: _videoUiScale,
       initialAsbConfig: _asbConfig,
       onSetDelay: _setDelayMs,
       onSetSpeed: _setSpeed,
@@ -2426,10 +2428,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
               fontSize: _subtitleStyle.fontSize,
               textColor: _subtitleStyle.resolveTextColor(
                   _subtitleTextColor(_videoChromeColorScheme(context))),
-              fontWeight: _subtitleStyle.fontWeight,
+              fontWeight: _subtitleStyle.resolveFontWeight(_videoUiScale),
               shadowColor: _subtitleStyle.resolveShadowColor(
                   _subtitleShadowColor(_videoChromeColorScheme(context))),
-              shadowThickness: _subtitleStyle.shadowThickness,
+              shadowThickness:
+                  _subtitleStyle.resolveShadowThickness(_videoUiScale),
               backgroundColor: _subtitleStyle.resolveBackgroundColor(
                   _subtitleBackgroundColor(_videoChromeColorScheme(context))),
               backgroundOpacity: _subtitleStyle.backgroundOpacity,

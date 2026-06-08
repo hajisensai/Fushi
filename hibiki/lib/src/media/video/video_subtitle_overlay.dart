@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'package:hibiki/src/media/video/subtitle_pos_mapping.dart';
 import 'package:hibiki/src/media/video/video_player_controller.dart';
+import 'package:hibiki/src/media/video/video_subtitle_style.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 
 /// 命中字幕某字符的结果：整条字幕、被点 grapheme 下标、该字符的全局屏幕矩形。
@@ -45,9 +46,9 @@ class VideoSubtitleOverlay extends StatefulWidget {
     this.blurEnabled = false,
     this.fontSize = 36,
     this.textColor,
-    this.fontWeight = 700,
+    this.fontWeight = VideoSubtitleStyle.defaultFontWeight,
     this.shadowColor,
-    this.shadowThickness = 3,
+    this.shadowThickness = VideoSubtitleStyle.defaultShadowThickness,
     this.backgroundColor,
     this.backgroundOpacity = 0,
     this.bottomPadding = 75,
