@@ -1415,5 +1415,8 @@
     "video_rename_hint": "标题",
     "video_playlist_episodes": "$count 集",
     "video_audio_track": "音轨",
-    "video_more": "更多"
+    "video_more": "更多",
+    "video_shader_compare": "对比原画",
+    "video_shader_showing_original": "已关着色器（原画）",
+    "video_shader_showing_shaded": "已开着色器"
 }

@@ -219,10 +219,31 @@ class VideoPlayerController extends ChangeNotifier
   /// 下次 [load] 应用。仅桌面 libmpv 真正生效；移动端静默 no-op。
   Future<void> applyShaders(List<String> absolutePaths) async {
     _shaderPaths = List<String>.of(absolutePaths);
+    _shadersBypassed = false; // 改动启用集即恢复非旁路，按新集生效。
     final Player? player = _player;
     if (player == null) return;
     await applyShadersToPlayer(player, _shaderPaths);
   }
+
+  /// 着色器「对比原画」旁路态：true 时临时清空 libmpv 着色器（看原画），但**保留**
+  /// 启用集 [_shaderPaths]，恢复时一键贴回。供效果对比用（B：缺效果预览/对比）。
+  bool _shadersBypassed = false;
+  bool get shadersBypassed => _shadersBypassed;
+
+  /// 切换/设置着色器旁路（对比原画）。不改启用集，只切实际喂给 libmpv 的集合。
+  /// 返回切换后的旁路态。无 player 时也记下，下次 [load] 据 [_shadersBypassed] 应用。
+  Future<bool> setShaderBypass(bool bypass) async {
+    _shadersBypassed = bypass;
+    final Player? player = _player;
+    if (player != null) {
+      await applyShadersToPlayer(
+          player, bypass ? const <String>[] : _shaderPaths);
+    }
+    return _shadersBypassed;
+  }
+
+  /// 旁路态翻转（对比按钮/快捷键用）。
+  Future<bool> toggleShaderBypass() => setShaderBypass(!_shadersBypassed);
 
   /// 运行时应用 mpv 配置（设置面板改动即时生效）。未 [load] 时只记下，下次 [load]
   /// 应用。仅桌面 libmpv 真正生效；移动端/不支持的属性静默 no-op。

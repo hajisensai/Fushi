@@ -1204,6 +1204,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                 ? controller.seekRelative(10000)
                 : controller.skipToNextCue(),
           ),
+      // C = 着色器「对比原画」旁路切换（B：效果预览/对比；无启用着色器时无视觉变化）。
+      const SingleActivator(LogicalKeyboardKey.keyC): () =>
+          unawaited(_toggleShaderCompare()),
       // J / I = ±10 秒（保留 media_kit 默认 seek 行为，10 秒粒度）。
       const SingleActivator(LogicalKeyboardKey.keyJ): () =>
           unawaited(controller.seekRelative(-10000)),
@@ -1311,6 +1314,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           icon: const Icon(Icons.speed),
           onPressed: _showSpeedMenu,
         ),
+        // 着色器「对比原画」：仅在配置了启用着色器时出现，点一下/按 C 切换旁路看原画
+        // （B：效果预览/对比）。着色器仅桌面 libmpv 生效，故只在桌面控制条放此按钮。
+        if (_hasShadersEnabled)
+          MaterialDesktopCustomButton(
+            icon: const Icon(Icons.compare),
+            onPressed: _toggleShaderCompare,
+          ),
         MaterialDesktopCustomButton(
           icon: const Icon(Icons.tune),
           onPressed: _showPlayerSettings,
@@ -1566,6 +1576,22 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   Future<void> _toggleSubtitleBlur() async {
     await appModel.setVideoSubtitleBlur(!appModel.videoSubtitleBlur);
     if (mounted) setState(() {});
+  }
+
+  /// 当前是否配置了启用着色器（决定是否显示「对比原画」按钮/快捷键的语义）。
+  bool get _hasShadersEnabled =>
+      decodeEnabledShaders(appModel.videoShadersEnabled).isNotEmpty;
+
+  /// 着色器「对比原画」：切换旁路态（临时关掉着色器看原画，再切回），保留启用集。
+  /// B：缺效果预览/对比——桌面控制条对比按钮 + `C` 快捷键都走这里，OSD 提示当前态。
+  Future<void> _toggleShaderCompare() async {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return;
+    final bool bypassed = await controller.toggleShaderBypass();
+    if (!mounted) return;
+    _showOsd(bypassed
+        ? t.video_shader_showing_original
+        : t.video_shader_showing_shaded);
   }
 
   /// 相对当前位置 seek（±[deltaMs]，底部胶囊条 ±10 秒按钮用）。

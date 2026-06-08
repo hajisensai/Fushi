@@ -165,4 +165,31 @@ void main() {
       expect(c.audioTracks, isEmpty);
     });
   });
+
+  group('着色器对比旁路（B：效果预览/对比）', () {
+    test('toggle 旁路翻转、保留启用集，改启用集复位旁路', () async {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+
+      // 无 player 时 applyShaders/setShaderBypass 只记状态、不抛。
+      await c.applyShaders(<String>['/s/a.glsl', '/s/b.glsl']);
+      expect(c.shaderPaths, <String>['/s/a.glsl', '/s/b.glsl']);
+      expect(c.shadersBypassed, isFalse);
+
+      expect(await c.toggleShaderBypass(), isTrue);
+      expect(c.shadersBypassed, isTrue);
+      // 旁路不改启用集（恢复时贴回）。
+      expect(c.shaderPaths, <String>['/s/a.glsl', '/s/b.glsl']);
+
+      expect(await c.toggleShaderBypass(), isFalse);
+      expect(c.shadersBypassed, isFalse);
+
+      // 旁路态下改启用集 → 复位为非旁路，按新集生效。
+      await c.setShaderBypass(true);
+      expect(c.shadersBypassed, isTrue);
+      await c.applyShaders(<String>['/s/c.glsl']);
+      expect(c.shadersBypassed, isFalse);
+      expect(c.shaderPaths, <String>['/s/c.glsl']);
+    });
+  });
 }
