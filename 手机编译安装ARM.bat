@@ -62,8 +62,8 @@ for /f "tokens=1,2" %%d in ('adb devices') do (
     if defined TARGET (
       if "%%d"=="!TARGET!" set "ONLINE=1"
     ) else (
-      echo %%d | findstr /r /c:"^%IP%:[0-9][0-9]*$" >nul
-      if not errorlevel 1 (
+      set "DEVICE=%%d"
+      if "!DEVICE:~0,13!"=="%IP%:" (
         set /a MATCH_COUNT+=1
         set "TARGET=%%d"
         set "ONLINE=1"
