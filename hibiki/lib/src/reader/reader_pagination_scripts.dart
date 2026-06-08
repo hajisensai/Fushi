@@ -101,7 +101,7 @@ class ReaderPaginationScripts {
 
   static String stableProgressInvocation() =>
       'window.hoshiReader && !window.hoshiReader._reanchorPending '
-      '? window.hoshiReader.calculateProgress() : null';
+      '&& window.hoshiProgressDetails ? window.hoshiProgressDetails() : null';
 
   static String updatePageSizeInvocation(double width, double height) =>
       'window.hoshiReader && window.hoshiReader.updatePageSize($width, $height)';
@@ -184,6 +184,7 @@ class ReaderPaginationScripts {
 
   static String shellScript({
     double initialProgress = 0.0,
+    int initialCharOffset = -1,
     bool continuousMode = false,
     int fontSize = ReaderLayoutDefaults.fontSizePx,
     String? sasayakiCuesJson,
@@ -196,6 +197,7 @@ class ReaderPaginationScripts {
     if (continuousMode) {
       return _continuousShellScript(
         initialProgress: initialProgress,
+        initialCharOffset: initialCharOffset,
         sasayakiCuesJson: sasayakiCuesJson,
         initialFragment: initialFragment,
         chromeTopInset: chromeTopInset,
@@ -206,6 +208,7 @@ class ReaderPaginationScripts {
     }
     return _paginatedShellScript(
       initialProgress: initialProgress,
+      initialCharOffset: initialCharOffset,
       fontSize: fontSize,
       sasayakiCuesJson: sasayakiCuesJson,
       initialFragment: initialFragment,
@@ -735,6 +738,7 @@ if (document.readyState === 'complete') {
 
   static String _paginatedShellScript({
     required double initialProgress,
+    int initialCharOffset = -1,
     int fontSize = ReaderLayoutDefaults.fontSizePx,
     String? sasayakiCuesJson,
     String? initialFragment,
@@ -743,9 +747,13 @@ if (document.readyState === 'complete') {
     double? dartPageWidth,
     double? dartPageHeight,
   }) {
+    // BUG-136: 优先精确字符偏移恢复（restoreToCharOffset），无精确锚（旧存档）才
+    // 回退粗粒度 restoreProgress；书签/fragment 跳转仍走 jumpToFragment。
     final String initialRestoreScript = initialFragment != null
         ? 'window.hoshiReader.jumpToFragment(${_jsStringLiteral(initialFragment)});'
-        : 'window.hoshiReader.restoreProgress($initialProgress);';
+        : (initialCharOffset >= 0
+            ? 'window.hoshiReader.restoreToCharOffset($initialCharOffset);'
+            : 'window.hoshiReader.restoreProgress($initialProgress);');
 
     final String sasayakiInit = sasayakiCuesJson != null
         ? 'window.hoshiReader.applySasayakiCues($sasayakiCuesJson);'
@@ -1009,6 +1017,23 @@ $_sharedJs
     await document.fonts.ready;
     var context = this.getScrollContext();
     this.scrollToProgressPaged(context, progress);
+    var pos = this.getPagePosition(context);
+    var self = this;
+    setTimeout(function() {
+      self.setPagePosition(context, pos);
+      self.registerSnapScroll(pos);
+      setTimeout(function() { self.notifyRestoreComplete(); }, 16);
+    }, 16);
+  },
+  // BUG-136: 退出再进的精确恢复——按 section 内绝对字符偏移落到该字符真实所在页
+  // （成熟 scrollToCharOffset 路径，是「存→取」不动点），替代粗粒度
+  // restoreProgress/scrollToProgressPaged（alignToPage 取整落相邻页）。charOffset<0
+  // （旧存档无精确锚）回退章首；调用方在 initialCharOffset<0 时改走 restoreProgress。
+  restoreToCharOffset: async function(charOffset) {
+    await document.fonts.ready;
+    var context = this.getScrollContext();
+    if (charOffset < 0) { this.scrollToProgressPaged(context, 0); }
+    else { this.scrollToCharOffset(charOffset); }
     var pos = this.getPagePosition(context);
     var self = this;
     setTimeout(function() {
@@ -1297,6 +1322,7 @@ $_sharedInitBoot
 
   static String _continuousShellScript({
     required double initialProgress,
+    int initialCharOffset = -1,
     String? sasayakiCuesJson,
     String? initialFragment,
     double chromeTopInset = 0.0,
@@ -1304,9 +1330,12 @@ $_sharedInitBoot
     double? dartPageWidth,
     double? dartPageHeight,
   }) {
+    // BUG-136: 同分页——优先精确字符偏移恢复，旧存档回退分数。
     final String initialRestoreScript = initialFragment != null
         ? 'window.hoshiReader.jumpToFragment(${_jsStringLiteral(initialFragment)});'
-        : 'window.hoshiReader.restoreProgress($initialProgress);';
+        : (initialCharOffset >= 0
+            ? 'window.hoshiReader.restoreToCharOffset($initialCharOffset);'
+            : 'window.hoshiReader.restoreProgress($initialProgress);');
 
     final String sasayakiInit = sasayakiCuesJson != null
         ? 'window.hoshiReader.applySasayakiCues($sasayakiCuesJson);'
@@ -1452,6 +1481,59 @@ $_sharedJs
     }
     return baseOffset + localChars;
   },
+  // BUG-136: 连续模式按 section 内绝对字符偏移定位（连续滚动语义：把目标字符滚到
+  // 视口首边）。抽自原 setChromeInsets 内联体，供 setChromeInsets 重锚与退出再进
+  // 恢复共用（DRY）。
+  scrollToCharOffset: function(charOffset) {
+    if (charOffset < 0) return;
+    var walker = this.createWalker();
+    var node;
+    var runningOffset = 0;
+    var targetNode = null;
+    while (node = walker.nextNode()) {
+      var nodeChars = this.countChars(node.textContent);
+      if (runningOffset + nodeChars > charOffset) { targetNode = node; break; }
+      runningOffset += nodeChars;
+    }
+    if (!targetNode) return;
+    var remaining = charOffset - runningOffset;
+    var charIdx = 0;
+    var textOffset = 0;
+    var text = targetNode.textContent;
+    for (var i = 0; i < text.length && charIdx < remaining; i++) {
+      var cp = text.codePointAt(i);
+      var ch = String.fromCodePoint(cp);
+      if (this.isMatchableChar(ch)) charIdx++;
+      if (cp > 0xFFFF) i++;
+      textOffset = i + 1;
+    }
+    var range = document.createRange();
+    range.setStart(targetNode, Math.min(textOffset, text.length));
+    range.collapse(true);
+    var rect = range.getBoundingClientRect();
+    var vertical = this.isVertical();
+    var root = document.scrollingElement || document.documentElement;
+    var cs = getComputedStyle(document.body);
+    if (vertical) {
+      var pr = parseFloat(cs.paddingRight) || 0;
+      var targetX = document.body.clientWidth - pr;
+      root.scrollLeft += rect.left - targetX;
+    } else {
+      var pt = parseFloat(cs.paddingTop) || 0;
+      root.scrollTop += rect.top - pt;
+    }
+  },
+  // BUG-136: 退出再进的精确恢复（连续）。charOffset<0（旧存档）回退章首；调用方在
+  // initialCharOffset<0 时改走 restoreProgress（分数）。
+  restoreToCharOffset: async function(charOffset) {
+    await document.fonts.ready;
+    var self = this;
+    if (charOffset < 0) { this.scrollToChapterStart(); }
+    else { this.scrollToCharOffset(charOffset); }
+    setTimeout(function() {
+      setTimeout(function() { self.notifyRestoreComplete(); }, 16);
+    }, 16);
+  },
   setChromeInsets: function(topPx, bottomPx) {
     // See the paginated setChromeInsets: re-anchoring is serialised through the
     // shared _reanchorPending flag so a transiently reset scrollTop (from a
@@ -1467,45 +1549,7 @@ $_sharedJs
     var self = this;
     requestAnimationFrame(function() {
       try {
-        var walker = self.createWalker();
-        var node;
-        var runningOffset = 0;
-        var targetNode = null;
-        while (node = walker.nextNode()) {
-          var nodeChars = self.countChars(node.textContent);
-          if (runningOffset + nodeChars > charOffset) {
-            targetNode = node;
-            break;
-          }
-          runningOffset += nodeChars;
-        }
-        if (!targetNode) return;
-        var remaining = charOffset - runningOffset;
-        var charIdx = 0;
-        var textOffset = 0;
-        var text = targetNode.textContent;
-        for (var i = 0; i < text.length && charIdx < remaining; i++) {
-          var cp = text.codePointAt(i);
-          var ch = String.fromCodePoint(cp);
-          if (self.isMatchableChar(ch)) charIdx++;
-          if (cp > 0xFFFF) i++;
-          textOffset = i + 1;
-        }
-        var range = document.createRange();
-        range.setStart(targetNode, Math.min(textOffset, text.length));
-        range.collapse(true);
-        var rect = range.getBoundingClientRect();
-        var vertical = self.isVertical();
-        var root = document.scrollingElement || document.documentElement;
-        var cs = getComputedStyle(document.body);
-        if (vertical) {
-          var pr = parseFloat(cs.paddingRight) || 0;
-          var targetX = document.body.clientWidth - pr;
-          root.scrollLeft += rect.left - targetX;
-        } else {
-          var pt = parseFloat(cs.paddingTop) || 0;
-          root.scrollTop += rect.top - pt;
-        }
+        self.scrollToCharOffset(charOffset);
       } finally {
         self._reanchorPending = false;
       }

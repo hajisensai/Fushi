@@ -75,7 +75,7 @@ void main() {
       expect(
         ReaderPaginationScripts.stableProgressInvocation(),
         'window.hoshiReader && !window.hoshiReader._reanchorPending '
-        '? window.hoshiReader.calculateProgress() : null',
+        '&& window.hoshiProgressDetails ? window.hoshiProgressDetails() : null',
       );
     });
 

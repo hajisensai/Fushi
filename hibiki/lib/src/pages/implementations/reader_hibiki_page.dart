@@ -205,6 +205,11 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   bool _restoreInFlight = false;
   bool _isNavigatingToChapter = false;
   double _initialProgress = 0;
+  // BUG-136: 退出再进的精确恢复锚（section 内绝对字符偏移）。-1 = 无精确锚（旧
+  // 存档 / 书签跳转）→ 走粗粒度 restoreProgress 分数。
+  int _initialCharOffset = -1;
+  // _refreshProgress 算得的最新精确字符偏移，供退出 flush 与 debounce 保存共用。
+  int _lastProgressCharOffset = -1;
   String? _initialFragment;
 
   double _stableTopInset = 0;
@@ -503,6 +508,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         bm.sectionIndex < _book!.chapters.length) {
       _currentChapter = bm.sectionIndex;
       _initialProgress = bm.normCharOffset / 10000.0;
+      _initialCharOffset = -1; // BUG-136: 书签按 normCharOffset 分数跳转，非 char 锚。
       _lastProgressSection = _currentChapter;
       _lastProgressValue = _initialProgress;
       debugPrint('[ReaderHibiki] restore from bookmark: '
@@ -519,8 +525,11 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
           saved.sectionIndex < _book!.chapters.length) {
         _currentChapter = saved.sectionIndex;
         _initialProgress = saved.normCharOffset / 10000.0;
+        // BUG-136: 有精确锚就用它（restoreToCharOffset 不动点），否则 -1 回退分数。
+        _initialCharOffset = saved.charOffset ?? -1;
         _lastProgressSection = _currentChapter;
         _lastProgressValue = _initialProgress;
+        _lastProgressCharOffset = _initialCharOffset;
       } else {
         _restoreFromCurrentAudioCue();
       }
@@ -1639,6 +1648,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     final String paginationJs = _stripScriptTags(
       ReaderPaginationScripts.shellScript(
         initialProgress: _initialProgress,
+        initialCharOffset: _initialCharOffset,
         continuousMode: s.isContinuousMode,
         fontSize: s.fontSize.round(),
         initialFragment: _initialFragment,
@@ -2991,6 +3001,8 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
     _currentChapter = index;
     _initialProgress = progress;
+    // BUG-136: 翻章是去新位置，无该章精确锚 → -1 走分数，别把上次恢复的锚带进来。
+    _initialCharOffset = -1;
     _displayedProgress = progress;
     _lastProgressSection = index;
     _lastProgressValue = progress;
@@ -3091,6 +3103,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
     _currentChapter = index;
     _initialProgress = 0.0;
+    _initialCharOffset = -1; // BUG-136: 新章/fragment 跳转走分数/fragment，非 char 锚。
     _displayedProgress = 0.0;
     _lastProgressSection = index;
     _lastProgressValue = 0.0;
@@ -3220,6 +3233,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
     _currentChapter = entry.chapterIndex;
     _initialProgress = 0.0;
+    _initialCharOffset = -1; // BUG-136: spread 导航去章首，无 char 锚。
     _displayedProgress = 0.0;
     _lastProgressSection = entry.chapterIndex;
     _lastProgressValue = 0.0;
@@ -3590,13 +3604,17 @@ window.flutter_inappwebview.callHandler('spreadReady');
     if (str.isEmpty) return;
 
     final List<String> parts = str.split(',');
-    if (parts.length != 2) {
+    if (parts.length < 2) {
       // HBK-AUDIT-119: surface bridge format drift instead of silently no-oping.
       debugPrint('[ReaderHibiki] _refreshProgress unexpected result: "$str"');
       return;
     }
     final int? current = int.tryParse(parts[0]);
     final int? total = int.tryParse(parts[1]);
+    // BUG-136: 第三段 = section 内精确字符偏移（hoshiProgressDetails 追加）。旧格式
+    // （两段）或解析失败按 -1（无精确锚）处理。
+    final int charOffset =
+        parts.length >= 3 ? (int.tryParse(parts[2]) ?? -1) : -1;
     if (current == null || total == null || total <= 0) {
       // HBK-AUDIT-119: unparseable / non-positive total — log so drift is visible.
       debugPrint('[ReaderHibiki] _refreshProgress unparseable result: "$str"');
@@ -3607,13 +3625,14 @@ window.flutter_inappwebview.callHandler('spreadReady');
     _displayedProgress = progress;
     _lastProgressSection = _currentChapter;
     _lastProgressValue = progress;
+    _lastProgressCharOffset = charOffset;
     final int absoluteChars = _absoluteCharPosition(progress);
     final int charDiff = absoluteChars - _lastAbsoluteCount;
     if (charDiff > 0) {
       _sessionCharsRead += charDiff;
     }
     _lastAbsoluteCount = absoluteChars;
-    _debouncedSavePosition(progress);
+    _debouncedSavePosition(progress, charOffset);
 
     if (mounted) {
       final int newTotal = _chapterCumulativeChars.isNotEmpty
@@ -3653,20 +3672,42 @@ window.flutter_inappwebview.callHandler('spreadReady');
     }
     if (!mounted) return;
 
-    final double? progress = _toDouble(result);
-    if (progress == null) return;
+    final String str = result.toString().replaceAll('"', '').trim();
+    if (str.isEmpty) return;
 
-    final double clamped = progress.clamp(0.0, 1.0).toDouble();
+    final List<String> parts = str.split(',');
+    if (parts.length < 2) {
+      debugPrint(
+        '[ReaderHibiki] syncPositionFromWebViewProgress unexpected result: '
+        '"$str"',
+      );
+      return;
+    }
+    final int? current = int.tryParse(parts[0]);
+    final int? total = int.tryParse(parts[1]);
+    final int charOffset =
+        parts.length >= 3 ? (int.tryParse(parts[2]) ?? -1) : -1;
+    if (current == null || total == null || total <= 0) {
+      debugPrint(
+        '[ReaderHibiki] syncPositionFromWebViewProgress unparseable result: '
+        '"$str"',
+      );
+      return;
+    }
+
+    final double clamped = (current / total).clamp(0.0, 1.0).toDouble();
     _displayedProgress = clamped;
     _lastProgressSection = _currentChapter;
     _lastProgressValue = clamped;
+    _lastProgressCharOffset = charOffset;
   }
 
-  void _debouncedSavePosition(double progress) {
-    _debouncedSaveReaderPosition(_currentChapter, progress);
+  void _debouncedSavePosition(double progress, int charOffset) {
+    _debouncedSaveReaderPosition(_currentChapter, progress, charOffset);
   }
 
-  void _debouncedSaveReaderPosition(int section, double progress) {
+  void _debouncedSaveReaderPosition(
+      int section, double progress, int charOffset) {
     if (_restoreInFlight) {
       return;
     }
@@ -3677,23 +3718,27 @@ window.flutter_inappwebview.callHandler('spreadReady');
 
     _saveDebounce?.cancel();
     _saveDebounce = Timer(const Duration(milliseconds: 500), () {
-      _persistPosition(section, progress);
+      _persistPosition(section, progress, charOffset);
     });
   }
 
-  Future<void> _persistPosition(int section, double progress) async {
+  Future<void> _persistPosition(
+      int section, double progress, int charOffset) async {
     _lastSavedSection = section;
     _lastSavedProgress = progress;
 
     final int normOffset = (progress * 10000).round();
     debugPrint('[ReaderHibiki] save position: bookKey=${widget.bookKey} '
-        'section=$section normOffset=$normOffset');
+        'section=$section normOffset=$normOffset charOffset=$charOffset');
     final ReaderPositionRepository repo =
         ReaderPositionRepository(appModel.database);
     await repo.save(
       bookKey: widget.bookKey,
       sectionIndex: section,
       normCharOffset: normOffset,
+      // BUG-136: >=0 写精确锚（char_offset 列），<0 传 null → 同 section 保留既有锚、
+      // 跨 section 失效（repo.save 逻辑）。不动 sync 的 ttu_char_offset 列。
+      charOffset: charOffset >= 0 ? charOffset : null,
     );
   }
 
@@ -3710,7 +3755,11 @@ window.flutter_inappwebview.callHandler('spreadReady');
         _lastProgressValue =
             frag.normCharStart / _chapterCharCounts[frag.sectionIndex];
         _lastProgressValue = _lastProgressValue.clamp(0.0, 1.0);
-        _debouncedSaveReaderPosition(_lastProgressSection, _lastProgressValue);
+        // BUG-136: cue 派生位置无 WebView 精确偏移 → -1（恢复走 cue 的 normChar 分数），
+        // 并清陈旧锚，避免后续 flush 把别 section 的偏移误写进来。
+        _lastProgressCharOffset = -1;
+        _debouncedSaveReaderPosition(
+            _lastProgressSection, _lastProgressValue, -1);
       }
       return;
     }
@@ -3725,7 +3774,9 @@ window.flutter_inappwebview.callHandler('spreadReady');
         _lastProgressValue = span > 0
             ? ((cue.sentenceIndex - first) / span).clamp(0.0, 1.0)
             : 0.0;
-        _debouncedSaveReaderPosition(_lastProgressSection, _lastProgressValue);
+        _lastProgressCharOffset = -1;
+        _debouncedSaveReaderPosition(
+            _lastProgressSection, _lastProgressValue, -1);
       }
     }
   }
@@ -3759,7 +3810,8 @@ window.flutter_inappwebview.callHandler('spreadReady');
     if (!_hasEverLoaded || _lastProgressSection < 0) {
       return;
     }
-    await _persistPosition(_lastProgressSection, _lastProgressValue);
+    await _persistPosition(
+        _lastProgressSection, _lastProgressValue, _lastProgressCharOffset);
   }
 
   int _absoluteCharPosition(double progress) {
@@ -5503,6 +5555,9 @@ window.flutter_inappwebview.callHandler('spreadReady');
     if (!mounted || _controller == null) return;
     final double? progress = _toDouble(result);
     _initialProgress = progress ?? 0.0;
+    // BUG-136: full reload 暂沿用粗粒度分数重锚（与改动前一致，不回归）。精确字符
+    // 重锚是后续可做的增量；本次只根治退出再进的持久化恢复。
+    _initialCharOffset = -1;
     _lastProgressSection = _currentChapter;
     _lastProgressValue = _initialProgress;
 

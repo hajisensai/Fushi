@@ -37,4 +37,34 @@ void main() {
     expect(body.contains('getFirstVisibleCharOffset'), isTrue,
         reason: 'hoshiProgressDetails 必须报告精确字符偏移，否则退出再进只能回退粗粒度分数');
   });
+
+  test('分页+连续两条恢复路径都支持精确字符偏移恢复 (BUG-136)', () {
+    // restoreToCharOffset 至少出现在分页与连续各一个定义。
+    final int defs = 'restoreToCharOffset: '.allMatches(jsSrc).length;
+    expect(defs, greaterThanOrEqualTo(2),
+        reason: '分页 + 连续都必须定义 restoreToCharOffset（复用精确 scrollToCharOffset）');
+    expect(jsSrc.contains('initialCharOffset'), isTrue,
+        reason:
+            'shell builder 必须接受 initialCharOffset 并在 >=0 时走 restoreToCharOffset');
+  });
+
+  test('恢复脚本在 initialCharOffset>=0 时优先精确路径 (BUG-136)', () {
+    // 两处 initialRestoreScript 三元都应：有 charOffset 走 restoreToCharOffset，
+    // 否则回退 restoreProgress（旧存档兼容）。
+    final int branches =
+        'restoreToCharOffset(\$initialCharOffset)'.allMatches(jsSrc).length;
+    expect(branches, greaterThanOrEqualTo(2),
+        reason: '分页 + 连续的恢复脚本都必须在 initialCharOffset>=0 时调 restoreToCharOffset');
+  });
+
+  test(
+      'Dart 保存写 char_offset、恢复读 saved.charOffset、setup 传 initialCharOffset (BUG-136)',
+      () {
+    expect(pageSrc.contains('charOffset:'), isTrue,
+        reason: 'repo.save 必须带 charOffset');
+    expect(pageSrc.contains('saved.charOffset'), isTrue,
+        reason: '恢复必须读 saved.charOffset 作精确锚');
+    expect(pageSrc.contains('initialCharOffset:'), isTrue,
+        reason: 'shellScript 必须把 _initialCharOffset 传给 JS');
+  });
 }
