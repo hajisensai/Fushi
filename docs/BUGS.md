@@ -27,7 +27,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 131 条。点号进各自文件。
+> 共 132 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -37,6 +37,7 @@
 | [BUG-132](bugs/BUG-132-video-playlist-subtitle-lost.md) | ✅ | ✅ | 退出后导入的字幕未绑定视频丢失 |
 | [BUG-131](bugs/BUG-131-video-import-keyboard-focus.md) | ✅ | ✅ | 导入字幕后键盘快捷键失灵 |
 | [BUG-130](bugs/BUG-130-video-tap-pause.md) | ✅ | ✅ | 视频点击屏幕不暂停 |
+| [BUG-129](bugs/BUG-129-popup-nested-covers-word.md) | ✅ | ✅ | 嵌套查词弹窗遮挡被查的词 |
 | [BUG-125](bugs/BUG-125-ruby-highlight-mask-erase.md) | ✅ | ✅ | 高亮遮挡振假名/基字 + 查词音频重叠双重高亮 |
 | [BUG-124](bugs/BUG-124-android-ffmpegkit-launch-crash.md) | ✅ | ✅ | Android 16 启动闪退：ffmpeg_kit 原生库不兼容 API 36 |
 | [BUG-123](bugs/BUG-123-vertical-ruby-lookup-highlight-overflow.md) | ✅ | ✅ | 竖排查词高亮溢出到振假名列(双重高亮) |

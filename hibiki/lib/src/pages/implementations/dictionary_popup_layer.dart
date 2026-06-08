@@ -103,6 +103,37 @@ Rect calcPopupPosition({
   return Rect.fromLTWH(left, top, width, height);
 }
 
+/// Maps a word rect reported in the popup WebView's own coordinate space
+/// ([localRect] — CSS px == the WebView's logical px, origin at the WebView's
+/// top-left) to absolute screen coordinates, using the WebView's *live*
+/// rendered geometry via [webViewKey].
+///
+/// BUG-129: a nested lookup must place the child popup against the word the user
+/// actually selected inside the parent popup. The parent popup's `Positioned`
+/// rect is NOT the WebView's origin — the WebView sits below the popup header
+/// (the index-0 audio/favorite controls, ~48px tall) and inside the popup
+/// surface border, and may be scaled by ancestor transforms (appUiScale).
+/// Reconstructing the rect as `localRect.shift(positioned.topLeft)` ignores all
+/// of that, placing the child popup ~header-height above the real word so it
+/// covers the very word being looked up. Asking the rendered WebView's
+/// [RenderBox] where its corners map (`localToGlobal`) walks the real transform
+/// chain, accounting for the header offset, border inset, and any scale in one
+/// shot. Falls back to [fallback] only when the render box is unavailable
+/// (should not happen at selection time — the parent popup is on-screen).
+Rect popupWordScreenRect({
+  required GlobalKey webViewKey,
+  required Rect localRect,
+  required Rect fallback,
+}) {
+  final RenderObject? obj = webViewKey.currentContext?.findRenderObject();
+  if (obj is RenderBox && obj.attached && obj.hasSize) {
+    final Offset topLeft = obj.localToGlobal(localRect.topLeft);
+    final Offset bottomRight = obj.localToGlobal(localRect.bottomRight);
+    return Rect.fromPoints(topLeft, bottomRight);
+  }
+  return fallback;
+}
+
 /// Shared empty result used to mount the popup WebView during the search phase
 /// (BUG-080), so popup.html + JS + CSS cold-load in parallel with the FFI
 /// lookup instead of serially after it. A single instance keeps the WebView's

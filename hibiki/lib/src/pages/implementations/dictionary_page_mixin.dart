@@ -257,14 +257,22 @@ mixin DictionaryPageMixin {
           onTextSelected: (text, localRect) {
             final Rect childRect = localRect == Rect.zero
                 ? entry.selectionRect
-                : localRect.shift(Offset(pos.left, pos.top));
+                : popupWordScreenRect(
+                    webViewKey: entry.webViewKey,
+                    localRect: localRect,
+                    fallback: entry.selectionRect,
+                  );
             setState(() => controller.truncateTo(index + 1));
             onPush(text, childRect);
           },
           onLinkClick: (query, localRect) {
             final Rect childRect = localRect == Rect.zero
                 ? entry.selectionRect
-                : localRect.shift(Offset(pos.left, pos.top));
+                : popupWordScreenRect(
+                    webViewKey: entry.webViewKey,
+                    localRect: localRect,
+                    fallback: entry.selectionRect,
+                  );
             setState(() => controller.truncateTo(index + 1));
             onPush(query, childRect);
           },

@@ -427,14 +427,13 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
           headerWidget: index == 0 ? buildPopupAudioControls() : null,
           overlayWidget: isTop ? buildDictionaryLoading() : null,
           onTextSelected: (text, localRect) async {
-            final parentPos = _calculatePopupPosition(
-              item.selectionRect,
-              screen,
-              verticalWriting: _layerVerticalWriting(index),
-            );
             final childRect = localRect == Rect.zero
                 ? item.selectionRect
-                : localRect.shift(Offset(parentPos.left, parentPos.top));
+                : popupWordScreenRect(
+                    webViewKey: item.webViewKey,
+                    localRect: localRect,
+                    fallback: item.selectionRect,
+                  );
             prunePopupStack(index + 1);
             final count = await searchDictionaryResult(
               searchTerm: text,
@@ -445,14 +444,13 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
             }
           },
           onLinkClick: (query, localRect) async {
-            final parentPos = _calculatePopupPosition(
-              item.selectionRect,
-              screen,
-              verticalWriting: _layerVerticalWriting(index),
-            );
             final childRect = localRect == Rect.zero
                 ? item.selectionRect
-                : localRect.shift(Offset(parentPos.left, parentPos.top));
+                : popupWordScreenRect(
+                    webViewKey: item.webViewKey,
+                    localRect: localRect,
+                    fallback: item.selectionRect,
+                  );
             prunePopupStack(index + 1);
             await searchDictionaryResult(
               searchTerm: query,
