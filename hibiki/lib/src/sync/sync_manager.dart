@@ -28,9 +28,8 @@ Future<bool> repackageExtractedEpub(
   String extractDir,
   String outputPath,
 ) async {
-  if (extractDir.isEmpty) return false;
-  final Directory dir = Directory(extractDir);
-  if (!dir.existsSync()) return false;
+  final Directory? dir = resolveExtractedEpubRoot(extractDir);
+  if (dir == null) return false;
   final ZipFileEncoder encoder = ZipFileEncoder();
   encoder.create(outputPath);
   try {
@@ -40,6 +39,30 @@ Future<bool> repackageExtractedEpub(
   }
   return true;
 }
+
+/// Returns the directory whose root is a valid extracted EPUB layout.
+///
+/// Some older/restored rows can point [extractDir] at a parent directory while
+/// the actual EPUB root lives in its only child. Readers may still work if they
+/// use cached DB paths, but sync export must package the true root so
+/// `META-INF/container.xml` is at the archive top.
+Directory? resolveExtractedEpubRoot(String extractDir) {
+  if (extractDir.isEmpty) return null;
+  final Directory dir = Directory(extractDir);
+  if (!dir.existsSync()) return null;
+  if (_hasEpubContainer(dir)) return dir;
+
+  final List<Directory> children = dir
+      .listSync(followLinks: false)
+      .whereType<Directory>()
+      .where(_hasEpubContainer)
+      .toList();
+  if (children.length == 1) return children.single;
+  return null;
+}
+
+bool _hasEpubContainer(Directory dir) =>
+    File(p.join(dir.path, 'META-INF', 'container.xml')).existsSync();
 
 class SyncBookResult {
   const SyncBookResult({

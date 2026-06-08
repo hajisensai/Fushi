@@ -479,6 +479,19 @@ void main() {
       expect(list.first.bookKey, 'ttu-test');
     });
 
+    test('listAudiobooks 不暴露缺少 SrtBooks 行的孤儿有声书', () async {
+      await db.upsertAudiobook(AudiobooksCompanion.insert(
+        bookKey: 'orphan-audiobook',
+        audioRoot: Value(p.join(tmp.path, 'orphan')),
+        alignmentFormat: 'srt',
+        alignmentPath: p.join(tmp.path, 'orphan.srt'),
+      ));
+
+      final AppModelLibraryHostService svc = _buildSvc(db: db);
+
+      expect(await svc.listAudiobooks(), isEmpty);
+    });
+
     test('listAudiobooks 无有声书时返回空列表', () async {
       final AppModelLibraryHostService svc = _buildSvc(db: db);
       expect(await svc.listAudiobooks(), isEmpty);

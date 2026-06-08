@@ -4,7 +4,8 @@ import 'package:hibiki/src/models/local_audio_manager.dart'
     show LocalAudioDbEntry;
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/sync_asset_package_service.dart';
-import 'package:hibiki/src/sync/sync_manager.dart' show repackageExtractedEpub;
+import 'package:hibiki/src/sync/sync_manager.dart'
+    show repackageExtractedEpub, resolveExtractedEpubRoot;
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
 
@@ -164,7 +165,7 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
   // ── 书籍 ─────────────────────────────────────────────────────────────────
 
   /// host 当前书库清单（从 EpubBooks 表读）。
-  /// [RemoteBookInfo.hasContent] 为 true 当且仅当 extractDir 非空且目录存在。
+  /// [RemoteBookInfo.hasContent] 为 true 当且仅当该书存在可导出的 EPUB 根目录。
   @override
   Future<List<RemoteBookInfo>> listBooks() async {
     final List<EpubBookRow> rows = await _db.getAllEpubBooks();
@@ -172,8 +173,7 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
       for (final EpubBookRow r in rows)
         RemoteBookInfo(
           title: r.title,
-          hasContent:
-              r.extractDir.isNotEmpty && Directory(r.extractDir).existsSync(),
+          hasContent: resolveExtractedEpubRoot(r.extractDir) != null,
         ),
     ];
   }
@@ -193,8 +193,8 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
     if (row == null) {
       throw StateError('book not found: $title');
     }
-    if (row.extractDir.isEmpty || !Directory(row.extractDir).existsSync()) {
-      throw StateError('book has no content: $title');
+    if (resolveExtractedEpubRoot(row.extractDir) == null) {
+      throw StateError('book has no exportable EPUB root: $title');
     }
 
     final Directory tmpDir =
@@ -337,14 +337,17 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
 
   // ── 有声书包（T3.1）────────────────────────────────────────────────────────
 
-  /// host 当前有声书清单（从 Audiobooks 表读）。
+  /// host 当前可导出的有声书清单。
   @override
   Future<List<RemoteAudiobookInfo>> listAudiobooks() async {
     final List<AudiobookRow> rows = await _db.getAllAudiobooks();
-    return <RemoteAudiobookInfo>[
-      for (final AudiobookRow r in rows)
-        RemoteAudiobookInfo(bookKey: r.bookKey),
-    ];
+    final List<RemoteAudiobookInfo> result = <RemoteAudiobookInfo>[];
+    for (final AudiobookRow r in rows) {
+      final SrtBookRow? srt = await _db.getSrtBookByBookKey(r.bookKey);
+      if (srt == null) continue;
+      result.add(RemoteAudiobookInfo(bookKey: r.bookKey, title: srt.title));
+    }
+    return result;
   }
 
   /// 即时把 bookKey 为 [bookKey] 的有声书打包成临时文件，返回该文件。

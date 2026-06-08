@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:archive/archive_io.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/sync/app_model_library_host_service.dart';
@@ -204,6 +205,33 @@ void main() {
       expect(pkg.existsSync(), isTrue);
       expect(pkg.lengthSync(), greaterThan(0));
       expect(pkg.path, endsWith('.epub'));
+    });
+
+    test('exportBook 自动使用 extractDir 下的真实 EPUB 根目录', () async {
+      final String outerDir = p.join(tmp.path, 'NestedExport');
+      final String realEpubRoot = p.join(outerDir, 'EPUB_ROOT');
+      await _insertBookWithExtractDir(
+        db: db,
+        title: 'NestedExport',
+        extractDir: realEpubRoot,
+      );
+      final EpubBookRow row = (await db.getAllEpubBooks()).single;
+      await db.updateEpubBookContentPaths(
+        row.bookKey,
+        extractDir: outerDir,
+      );
+
+      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final List<RemoteBookInfo> list = await svc.listBooks();
+
+      expect(list.single.hasContent, isTrue);
+
+      final File pkg = await svc.exportBook('NestedExport');
+      addTearDown(() => pkg.parent.deleteSync(recursive: true));
+
+      final Archive archive = ZipDecoder().decodeBytes(await pkg.readAsBytes());
+      expect(archive.findFile('META-INF/container.xml'), isNotNull);
+      expect(archive.findFile('EPUB_ROOT/META-INF/container.xml'), isNull);
     });
 
     test('exportBook 对不存在的书抛 StateError', () async {

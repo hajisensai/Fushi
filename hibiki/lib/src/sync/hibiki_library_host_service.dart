@@ -141,7 +141,7 @@ DictionarySyncDiff computeDictionarySyncDiff({
 /// host 实时书籍的清单条目。
 ///
 /// [title]      书名（与 DB `epub_books.title` 列一致）。
-/// [hasContent] extractDir 非空且目录存在时为 true——表示该书可被导出。
+/// [hasContent] 存在可导出的 EPUB 根目录时为 true——表示该书可被导出。
 ///              无内容的书（extractDir 丢失或空）不应被 pull（与 orchestrator
 ///              `importRemoteBooks` 的跳过语义一致）。
 class RemoteBookInfo {
@@ -258,7 +258,7 @@ abstract class HibikiLibraryHostService {
 
   // ── 有声书包 ──────────────────────────────────────────────────────────────
 
-  /// host 当前有声书清单（从 Audiobooks 表读）。
+  /// host 当前可导出的有声书清单。
   Future<List<RemoteAudiobookInfo>> listAudiobooks();
 
   /// 即时把 bookKey 为 [bookKey] 的有声书打包成临时文件，返回该文件。
