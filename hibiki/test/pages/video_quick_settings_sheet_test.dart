@@ -95,6 +95,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text(t.video_setting_subtitle_blur), findsOneWidget);
     expect(find.text(t.video_setting_subtitle_font_size), findsOneWidget);
+    expect(find.text(t.video_setting_subtitle_font_weight), findsOneWidget);
+    expect(find.text(t.video_setting_subtitle_shadow), findsOneWidget);
     expect(find.byIcon(Icons.arrow_back), findsNothing);
   });
 

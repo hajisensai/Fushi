@@ -861,6 +861,34 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
               onChangeEnd: (double v) =>
                   widget.onSubtitleStyleCommit(_style.copyWith(fontSize: v)),
             ),
+            AdaptiveSettingsStepperRow(
+              title: t.video_setting_subtitle_font_weight,
+              icon: Icons.format_bold,
+              value: _style.fontWeight.toDouble(),
+              step: 100,
+              min: 100,
+              max: 900,
+              format: (double v) => v.round().toString(),
+              onChanged: (double v) {
+                final VideoSubtitleStyle next =
+                    _style.copyWith(fontWeight: v.round());
+                _previewStyle(next);
+                widget.onSubtitleStyleCommit(next);
+              },
+            ),
+            AdaptiveSettingsSliderRow(
+              title: t.video_setting_subtitle_shadow,
+              icon: Icons.format_color_text_outlined,
+              min: 0,
+              max: 12,
+              divisions: 12,
+              value: _style.shadowThickness.clamp(0, 12),
+              label: '${_style.shadowThickness.round()}px',
+              onChanged: (double v) =>
+                  _previewStyle(_style.copyWith(shadowThickness: v)),
+              onChangeEnd: (double v) => widget
+                  .onSubtitleStyleCommit(_style.copyWith(shadowThickness: v)),
+            ),
             AdaptiveSettingsSliderRow(
               title: t.video_setting_subtitle_bg_opacity,
               icon: Icons.opacity_outlined,

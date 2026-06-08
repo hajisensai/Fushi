@@ -1444,5 +1444,7 @@
     "remote_video_download": "下载到本机",
     "remote_video_downloaded": "已下载对端视频",
     "remote_video_load_failed": "无法加载对端设备视频",
-    "remote_video_download_failed": "无法下载对端视频"
+    "remote_video_download_failed": "无法下载对端视频",
+    "video_setting_subtitle_font_weight": "字重",
+    "video_setting_subtitle_shadow": "阴影"
 }

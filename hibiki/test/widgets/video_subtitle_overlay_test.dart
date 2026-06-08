@@ -78,6 +78,10 @@ void main() {
       controller: c,
       fontSize: 36,
       textColor: themedSubtitleColor,
+      fontWeight: 500,
+      shadowColor: const Color(0xFF224466),
+      shadowThickness: 6,
+      backgroundColor: const Color(0xFF6688AA),
       backgroundOpacity: 0,
       bottomPadding: 75,
       fontFamily: 'ReaderFont',
@@ -93,11 +97,11 @@ void main() {
     final Text text = tester.widget(find.text('A'));
     expect(text.style!.color, themedSubtitleColor);
     expect(text.style!.fontSize, 36);
-    expect(text.style!.fontWeight, FontWeight.w700);
+    expect(text.style!.fontWeight, FontWeight.w500);
     expect(text.style!.fontFamily, 'ReaderFont');
     expect(text.style!.shadows, isNotNull);
-    expect(text.style!.shadows!.single.color, Colors.black);
-    expect(text.style!.shadows!.single.blurRadius, 3);
-    expect(text.style!.shadows!.single.offset, const Offset(0, 3));
+    expect(text.style!.shadows!.single.color, const Color(0xFF224466));
+    expect(text.style!.shadows!.single.blurRadius, 6);
+    expect(text.style!.shadows!.single.offset, const Offset(0, 6));
   });
 }

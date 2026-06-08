@@ -45,6 +45,10 @@ class VideoSubtitleOverlay extends StatefulWidget {
     this.blurEnabled = false,
     this.fontSize = 36,
     this.textColor,
+    this.fontWeight = 700,
+    this.shadowColor,
+    this.shadowThickness = 3,
+    this.backgroundColor,
     this.backgroundOpacity = 0,
     this.bottomPadding = 75,
     this.fontFamily,
@@ -70,6 +74,18 @@ class VideoSubtitleOverlay extends StatefulWidget {
 
   /// 字幕文字颜色（外观设置）。
   final Color? textColor;
+
+  /// 字幕字重（CSS numeric weight 100..900；asbplayer 默认 700）。
+  final int fontWeight;
+
+  /// 字幕阴影颜色。
+  final Color? shadowColor;
+
+  /// 字幕阴影粗细；asbplayer 默认 3px。
+  final double shadowThickness;
+
+  /// 字幕背景颜色。
+  final Color? backgroundColor;
 
   /// 字幕背景不透明度 0..1（外观设置；历史值 0.54 = Colors.black54）。
   final double backgroundOpacity;
@@ -142,7 +158,8 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
 
         final Color backgroundColor = widget.backgroundOpacity <= 0
             ? Colors.transparent
-            : Colors.black.withValues(alpha: widget.backgroundOpacity);
+            : (widget.backgroundColor ?? Theme.of(context).colorScheme.surface)
+                .withValues(alpha: widget.backgroundOpacity);
         Widget box = DecoratedBox(
           decoration: BoxDecoration(
             color: backgroundColor,
@@ -255,14 +272,17 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
       fontSize: widget.fontSize,
       height: 1.3,
       fontFamily: widget.fontFamily,
-      fontWeight: FontWeight.w700,
-      shadows: const <Shadow>[
-        Shadow(
-          color: Colors.black,
-          blurRadius: 3,
-          offset: Offset(0, 3),
-        ),
-      ],
+      fontWeight: _fontWeight(widget.fontWeight),
+      shadows: widget.shadowThickness <= 0
+          ? const <Shadow>[]
+          : <Shadow>[
+              Shadow(
+                color:
+                    widget.shadowColor ?? Theme.of(context).colorScheme.shadow,
+                blurRadius: widget.shadowThickness,
+                offset: Offset(0, widget.shadowThickness),
+              ),
+            ],
     );
     SubtitleSpan? span;
     if (markup != null) {
@@ -284,6 +304,11 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
       fontSize: span.fontSizePx ?? widget.fontSize,
       decoration: decos.isEmpty ? null : TextDecoration.combine(decos),
     );
+  }
+
+  static FontWeight _fontWeight(int value) {
+    final int index = ((value.clamp(100, 900) ~/ 100).clamp(1, 9)) - 1;
+    return FontWeight.values[index];
   }
 
   /// \pos 映射到容器局部坐标；无 \pos 或视频未解码返回 null（走 anchor 对齐）。

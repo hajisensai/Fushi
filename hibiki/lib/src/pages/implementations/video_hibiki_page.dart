@@ -173,6 +173,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       );
 
   Color _subtitleTextColor(ColorScheme cs) => cs.onSurface;
+  Color _subtitleShadowColor(ColorScheme cs) => cs.shadow;
+  Color _subtitleBackgroundColor(ColorScheme cs) => cs.surface;
 
   Color _osdSurfaceColor(ColorScheme cs) =>
       cs.inverseSurface.withValues(alpha: 0.82);
@@ -2424,6 +2426,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
               fontSize: _subtitleStyle.fontSize,
               textColor: _subtitleStyle.resolveTextColor(
                   _subtitleTextColor(_videoChromeColorScheme(context))),
+              fontWeight: _subtitleStyle.fontWeight,
+              shadowColor: _subtitleStyle.resolveShadowColor(
+                  _subtitleShadowColor(_videoChromeColorScheme(context))),
+              shadowThickness: _subtitleStyle.shadowThickness,
+              backgroundColor: _subtitleStyle.resolveBackgroundColor(
+                  _subtitleBackgroundColor(_videoChromeColorScheme(context))),
               backgroundOpacity: _subtitleStyle.backgroundOpacity,
               bottomPadding: _subtitleStyle.bottomPadding,
               fontFamily: appModel.appFontFamily,
