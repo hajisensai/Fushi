@@ -1437,16 +1437,9 @@ class HibikiPageHeader extends StatelessWidget {
               ),
               if (actions.isNotEmpty) ...<Widget>[
                 SizedBox(width: tokens.spacing.gap),
-                Flexible(
-                  child: Align(
-                    alignment: Alignment.topRight,
-                    child: Wrap(
-                      spacing: tokens.spacing.gap / 2,
-                      runSpacing: tokens.spacing.gap / 2,
-                      alignment: WrapAlignment.end,
-                      children: actions,
-                    ),
-                  ),
+                Align(
+                  alignment: Alignment.topRight,
+                  child: _buildActionRow(tokens),
                 ),
               ],
             ],
@@ -1458,6 +1451,19 @@ class HibikiPageHeader extends StatelessWidget {
             ),
         ],
       ),
+    );
+  }
+
+  Widget _buildActionRow(HibikiDesignTokens tokens) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        for (int index = 0; index < actions.length; index++) ...<Widget>[
+          if (index > 0) SizedBox(width: tokens.spacing.gap / 2),
+          actions[index],
+        ],
+      ],
     );
   }
 }

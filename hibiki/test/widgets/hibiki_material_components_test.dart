@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
+import 'package:hibiki/src/utils/components/hibiki_icon_button.dart';
 import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 
 void main() {
@@ -312,6 +313,51 @@ void main() {
     await tester.tap(find.text('Delete'));
     await tester.pumpAndSettle();
     expect(selected, 1);
+  });
+
+  testWidgets('HibikiPageHeader keeps actions on one row when content fits',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      buildSubject(
+        SizedBox(
+          width: 360,
+          child: HibikiPageHeader(
+            title: '书架',
+            padding: EdgeInsets.zero,
+            actions: <Widget>[
+              HibikiIconButton(
+                tooltip: 'Import',
+                icon: Icons.library_add_outlined,
+                size: 48,
+                onTap: () {},
+              ),
+              HibikiIconButton(
+                tooltip: 'Collections',
+                icon: Icons.collections_bookmark_outlined,
+                size: 48,
+                onTap: () {},
+              ),
+              HibikiIconButton(
+                tooltip: 'Statistics',
+                icon: Icons.bar_chart_outlined,
+                size: 48,
+                onTap: () {},
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    final double importTop =
+        tester.getTopLeft(find.byIcon(Icons.library_add_outlined)).dy;
+    final double collectionsTop =
+        tester.getTopLeft(find.byIcon(Icons.collections_bookmark_outlined)).dy;
+    final double statisticsTop =
+        tester.getTopLeft(find.byIcon(Icons.bar_chart_outlined)).dy;
+
+    expect(collectionsTop, importTop);
+    expect(statisticsTop, importTop);
   });
 
   testWidgets('HibikiBadge uses the shared compact radius',
