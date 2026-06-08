@@ -89,9 +89,14 @@ class HibikiSyncServerController extends ChangeNotifier {
   }
 
   /// Bind the server (idempotent while already running) and advertise on the
-  /// LAN. Persists `serverEnabled=true` only after the bind actually succeeds,
-  /// and resets it to false on failure so a stuck "on" flag never re-fails every
-  /// launch (HBK-AUDIT-167).
+  /// LAN. Persists `serverEnabled=true` after a successful bind.
+  ///
+  /// On failure the user's persistent intent (`serverEnabled`) is deliberately
+  /// preserved so that a transient port conflict (another process holds the port
+  /// at launch) does not permanently erase the user's preference — the next
+  /// launch will retry automatically (BUG-160 / HBK-AUDIT-167 revised).
+  /// The intent is only cleared when the user explicitly disables hosting via
+  /// [stop(persistDisabled: true)].
   Future<HibikiServerStartOutcome> start() async {
     if (isRunning) return const HibikiServerStarted();
     final SyncRepository repo = _repo;
@@ -122,12 +127,15 @@ class HibikiSyncServerController extends ChangeNotifier {
       return const HibikiServerStarted();
     } on SyncServerPortInUseException catch (e) {
       _server = null;
-      await repo.setServerEnabled(false);
+      // Do NOT clear serverEnabled: the bind failure is transient (another
+      // process holds the port).  The intent remains true so the next launch
+      // retries automatically.
       notifyListeners();
       return HibikiServerPortInUse(e.port);
     } catch (e) {
       _server = null;
-      await repo.setServerEnabled(false);
+      // Same rationale: a general error at bind time must not permanently erase
+      // the user's hosting preference.
       notifyListeners();
       return HibikiServerStartError(friendlySyncErrorDetail(e));
     }
