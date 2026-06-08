@@ -1243,6 +1243,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     VideoPlayerController controller,
   ) {
     final ColorScheme cs = Theme.of(context).colorScheme;
+    final bool roomyBottomBar = _hasRoomyVideoBottomBar();
     return MaterialDesktopVideoControlsThemeData(
       // 控制条 3s 后自动隐藏时一并隐藏鼠标光标（默认 false 会让光标常驻，BUG-106）。
       hideMouseOnControlsRemoval: true,
@@ -1326,10 +1327,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       bottomButtonBar: <Widget>[
         const MaterialDesktopPositionIndicator(),
         const Spacer(),
-        MaterialDesktopCustomButton(
-          icon: const Icon(Icons.replay_10),
-          onPressed: () => _seekRelative(-10000),
-        ),
+        if (roomyBottomBar)
+          MaterialDesktopCustomButton(
+            icon: const Icon(Icons.replay_10),
+            onPressed: () => _seekRelative(-10000),
+          ),
         MaterialDesktopCustomButton(
           icon: const Icon(Icons.skip_previous),
           onPressed: () => controller.skipToPrevCue(),
@@ -1339,10 +1341,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           icon: const Icon(Icons.skip_next),
           onPressed: () => controller.skipToNextCue(),
         ),
-        MaterialDesktopCustomButton(
-          icon: const Icon(Icons.forward_10),
-          onPressed: () => _seekRelative(10000),
-        ),
+        if (roomyBottomBar)
+          MaterialDesktopCustomButton(
+            icon: const Icon(Icons.forward_10),
+            onPressed: () => _seekRelative(10000),
+          ),
         const Spacer(),
         const MaterialDesktopFullscreenButton(),
       ],
@@ -1359,7 +1362,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     VideoPlayerController controller,
   ) {
     final ColorScheme cs = Theme.of(context).colorScheme;
-    final bool roomyBottomBar = MediaQuery.of(context).size.width >= 600;
+    final bool roomyBottomBar = _hasRoomyVideoBottomBar();
     return MaterialVideoControlsThemeData(
       seekBarPositionColor: cs.primary,
       seekBarThumbColor: cs.primary,
@@ -1435,6 +1438,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       ],
     );
   }
+
+  bool _hasRoomyVideoBottomBar() => MediaQuery.of(context).size.width >= 600;
 
   void _showTrackMenu(
     List<({String label, VoidCallback onSelected})> tracks,
