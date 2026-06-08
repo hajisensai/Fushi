@@ -66,6 +66,16 @@ jobs:
           arch: x86_64
           profile: pixel_6
           script: bash ci/comprehensive-test.sh --platform=android --only=appSmoke
+      # The comprehensive runner now streams flutter-drive output to the console,
+      # but also upload the full report (per-command stdout/stderr logs + report
+      # .json + screenshots) so a failure is debuggable without re-running.
+      - name: Upload comprehensive test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-comprehensive-report
+          path: .codex-test/comprehensive/
+          if-no-files-found: ignore
 
   # TEMPORARILY DISABLED (per request): Linux build paused. Re-enable by
   # removing `if: false`. Linux currently failed only on the gitignored OAuth

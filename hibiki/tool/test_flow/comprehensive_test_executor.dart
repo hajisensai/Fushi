@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'comprehensive_test_matrix.dart';
@@ -224,18 +225,50 @@ String _outputForExpectation(
 
 Future<CommandResult> runProcessCommand(CommandRequest request) async {
   final Stopwatch stopwatch = Stopwatch()..start();
-  final ProcessResult result = await Process.run(
+  // Stream the child's stdout/stderr to the console AS IT RUNS while also
+  // capturing it for the output-expectation checks. Process.run buffers
+  // everything and only the captured copy reached the report dir under
+  // .codex-test/ — which CI never uploads — so a failing `flutter drive`
+  // (e.g. the Android appSmoke contract) showed nothing but its exit code in
+  // the Actions log. Mirroring live to the console makes the real failure
+  // visible there. utf8 with allowMalformed so a stray non-UTF8 byte from a
+  // native log line can't abort decoding mid-stream.
+  final Process process = await Process.start(
     request.invocation.executable,
     request.invocation.args,
     workingDirectory: request.workingDirectory,
     runInShell: Platform.isWindows,
   );
+
+  final StringBuffer outBuffer = StringBuffer();
+  final StringBuffer errBuffer = StringBuffer();
+  const Utf8Decoder decoder = Utf8Decoder(allowMalformed: true);
+  final String tag = '[${request.platform.name}/${request.scenario.name}] ';
+
+  final Future<void> stdoutDone =
+      process.stdout.transform(decoder).forEach((String chunk) {
+    outBuffer.write(chunk);
+    stdout.write(chunk);
+  });
+  final Future<void> stderrDone =
+      process.stderr.transform(decoder).forEach((String chunk) {
+    errBuffer.write(chunk);
+    stderr.write(chunk);
+  });
+
+  final int exitCode = await process.exitCode;
+  await Future.wait(<Future<void>>[stdoutDone, stderrDone]);
   stopwatch.stop();
 
+  if (exitCode != 0) {
+    stderr.writeln('${tag}exited with $exitCode '
+        '(${request.invocation.displayCommand})');
+  }
+
   return CommandResult(
-    exitCode: result.exitCode,
-    stdout: result.stdout.toString(),
-    stderr: result.stderr.toString(),
+    exitCode: exitCode,
+    stdout: outBuffer.toString(),
+    stderr: errBuffer.toString(),
     duration: stopwatch.elapsed,
   );
 }
