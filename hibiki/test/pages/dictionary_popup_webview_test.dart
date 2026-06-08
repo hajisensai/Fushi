@@ -1,10 +1,34 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 
 void main() {
+  group('dictionary popup scroll lifecycle', () {
+    test('resets viewport scroll before rendering a new lookup', () {
+      final source = File(
+        'lib/src/pages/implementations/dictionary_popup_webview.dart',
+      ).readAsStringSync();
+
+      expect(source, contains('final String beforeRenderJs = isLoadMore'));
+      expect(
+        source,
+        contains('window.__hoshiResetPopupScroll();\n'
+            '          window.renderPopup();'),
+        reason: 'A preserved warm popup WebView keeps its DOM scroll position. '
+            'Fresh lookups must reset before renderPopup replaces the content.',
+      );
+      expect(
+        source,
+        contains("? 'window.updatePopupIncremental();'"),
+        reason: 'Loading more results for the same query must keep the current '
+            'scroll position instead of jumping back to the top.',
+      );
+    });
+  });
+
   group('DictionaryPopupWebViewState.buildLookupEntriesJson', () {
     test('merges frequency and pitch metadata across grouped entries', () {
       final result = DictionarySearchResult(

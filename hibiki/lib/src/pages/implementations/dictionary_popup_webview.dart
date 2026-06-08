@@ -368,13 +368,21 @@ class DictionaryPopupWebViewState
     _lastThemeVarsJs = themeVarsJs;
 
     final bool needsScrollCheck = widget.onScrolledToBottom != null;
-    final String renderCall = isLoadMore
+    final String beforeRenderJs = isLoadMore
         ? 'window.updatePopupIncremental();'
-        : 'window.renderPopup();';
+        : '''
+          window.__hoshiResetPopupScroll();
+          window.renderPopup();
+        ''';
     final swInject = Stopwatch()..start();
     _controller!.evaluateJavascript(source: '''
       $themeVarsJs
       document.documentElement.style.zoom = '${popupZoom.toStringAsFixed(4)}';
+      window.__hoshiResetPopupScroll = function() {
+        window.scrollTo(0, 0);
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
+      };
       window.audioSources = $audioSourcesJson;
       window.needsAudio = true;
       // 启用制卡时词典媒体（gaiji 外字）嵌入：popup.js 据此把外字渲染成
@@ -395,7 +403,7 @@ class DictionaryPopupWebViewState
       window.dictionaryStyles = $stylesJson;
       window.globalDictCSS = ${jsonEncode(appModel.globalDictCSS)};
       window.customDictCSS = ${jsonEncode(appModel.customDictCSS)};
-      $renderCall
+      $beforeRenderJs
       ${needsScrollCheck ? _scrollCheckJs : ""}
     ''').then((_) {
       swInject.stop();
