@@ -123,6 +123,35 @@ const List<Anime4kPreset> kAnime4kPresets = <Anime4kPreset>[
       Anime4kShaderFile('glsl/Upscale/Anime4K_Upscale_CNN_x2_M.glsl'),
     ],
   ),
+  // ── Mode B (HQ)：720p 旧番高画质（重采样伪影），VL 变体 ──
+  Anime4kPreset(
+    id: 'mode_b_hq',
+    name: 'Mode B (HQ)',
+    description: 'High quality for older 720p anime with resampling artifacts.',
+    shaders: <Anime4kShaderFile>[
+      Anime4kShaderFile('glsl/Restore/Anime4K_Clamp_Highlights.glsl'),
+      Anime4kShaderFile('glsl/Restore/Anime4K_Restore_CNN_Soft_VL.glsl'),
+      Anime4kShaderFile('glsl/Upscale/Anime4K_Upscale_CNN_x2_VL.glsl'),
+      Anime4kShaderFile('glsl/Upscale/Anime4K_AutoDownscalePre_x2.glsl'),
+      Anime4kShaderFile('glsl/Upscale/Anime4K_AutoDownscalePre_x4.glsl'),
+      Anime4kShaderFile('glsl/Upscale/Anime4K_Upscale_CNN_x2_M.glsl'),
+    ],
+  ),
+  // ── Mode C (HQ)：480p SD 老番高画质（压缩涂抹），带去噪 VL 变体 ──
+  Anime4kPreset(
+    id: 'mode_c_hq',
+    name: 'Mode C (HQ)',
+    description:
+        'High quality for old SD (480p) anime with compression smearing.',
+    shaders: <Anime4kShaderFile>[
+      Anime4kShaderFile('glsl/Restore/Anime4K_Clamp_Highlights.glsl'),
+      Anime4kShaderFile(
+          'glsl/Upscale+Denoise/Anime4K_Upscale_Denoise_CNN_x2_VL.glsl'),
+      Anime4kShaderFile('glsl/Upscale/Anime4K_AutoDownscalePre_x2.glsl'),
+      Anime4kShaderFile('glsl/Upscale/Anime4K_AutoDownscalePre_x4.glsl'),
+      Anime4kShaderFile('glsl/Upscale/Anime4K_Upscale_CNN_x2_M.glsl'),
+    ],
+  ),
 ];
 
 /// 为仓库相对路径 [repoPath] 生成按优先级排序的下载 URL 列表（主源 + 镜像回退）。纯函数。
@@ -140,6 +169,99 @@ List<String> anime4kMirrorUrls(String repoPath) {
     'https://ghfast.top/https://raw.githubusercontent.com/$repo/$ref/$repoPath',
     'https://raw.githubusercontent.com/$repo/$ref/$repoPath',
   ];
+}
+
+/// **纯函数**：把用户粘贴的着色器链接规整成「按优先级尝试的 URL 列表」。
+///
+/// GitHub 的 `blob`/`raw` 链接 → jsDelivr CDN / ghfast 代理 / raw 官方源（中国可达，
+/// 与 [anime4kMirrorUrls] 同策略）；其它任意直链原样单条返回。让用户从 GitHub/教程里
+/// 复制任意 `.glsl` 链接粘进来即可下，不必本机装 mpv（用户诉求：粘链接下载）。
+List<String> shaderDownloadUrlsFor(String userUrl) {
+  final String url = userUrl.trim();
+  final RegExpMatch? blob =
+      RegExp(r'^https?://github\.com/([^/]+)/([^/]+)/blob/(.+)$')
+          .firstMatch(url);
+  final RegExpMatch? raw =
+      RegExp(r'^https?://raw\.githubusercontent\.com/([^/]+)/([^/]+)/(.+)$')
+          .firstMatch(url);
+  final RegExpMatch? m = blob ?? raw;
+  if (m == null) return <String>[url];
+  final String owner = m.group(1)!;
+  final String repo = m.group(2)!;
+  final String refAndPath = m.group(3)!; // `<ref>/<path...>`
+  return <String>[
+    'https://cdn.jsdelivr.net/gh/$owner/$repo@$refAndPath',
+    'https://ghfast.top/https://raw.githubusercontent.com/$owner/$repo/$refAndPath',
+    'https://raw.githubusercontent.com/$owner/$repo/$refAndPath',
+  ];
+}
+
+/// **纯函数**：从着色器链接推断落盘文件名。取 URL 路径 basename，去查询串/锚点；无
+/// `.glsl`/`.hook` 扩展名则补 `.glsl`；非法字符折叠为 `_`。
+String shaderFileNameFromUrl(String url) {
+  String name = url.trim();
+  final int cut = name.indexOf(RegExp(r'[?#]'));
+  if (cut >= 0) name = name.substring(0, cut);
+  name = name.replaceAll(RegExp(r'/+$'), '');
+  final int slash = name.lastIndexOf('/');
+  if (slash >= 0) name = name.substring(slash + 1);
+  if (name.isEmpty) name = 'shader.glsl';
+  final String ext = p.extension(name).toLowerCase();
+  if (ext != '.glsl' && ext != '.hook') name = '$name.glsl';
+  return name.replaceAll(RegExp(r'[^A-Za-z0-9_.+\-]'), '_');
+}
+
+/// 下载用户粘贴的**单个**着色器链接到 [targetDir]（默认 [mpvShaderDirectory]）。
+///
+/// 按 [shaderDownloadUrlsFor] 顺序尝试镜像/直链，任一成功且 [looksLikeGlslShader] 通过
+/// 即落盘。成功返回落盘文件名；全部失败 / 内容不像着色器 → 返回 null（UI 提示失败）。
+/// [dio] 可注入（测试）；[cancelToken] 取消时 rethrow。
+Future<String?> downloadShaderFromUrl(
+  String url, {
+  Directory? targetDir,
+  Dio? dio,
+  CancelToken? cancelToken,
+  void Function(double? progress)? onProgress,
+}) async {
+  final String trimmed = url.trim();
+  if (trimmed.isEmpty) return null;
+  final Directory dir = targetDir ?? await mpvShaderDirectory();
+  final Dio client = dio ??
+      Dio(BaseOptions(
+        connectTimeout: const Duration(seconds: 15),
+        receiveTimeout: const Duration(minutes: 5),
+        followRedirects: true,
+        maxRedirects: 10,
+        responseType: ResponseType.bytes,
+        headers: const <String, String>{
+          'User-Agent': 'Mozilla/5.0 (Hibiki) Shader-Downloader/1.0',
+          'Accept': '*/*',
+        },
+      ));
+  final String fileName = shaderFileNameFromUrl(trimmed);
+  final String destPath = p.join(dir.path, fileName);
+
+  for (final String u in shaderDownloadUrlsFor(trimmed)) {
+    try {
+      onProgress?.call(null);
+      final Response<List<int>> resp = await client.get<List<int>>(
+        u,
+        cancelToken: cancelToken,
+        options: Options(responseType: ResponseType.bytes),
+        onReceiveProgress: (int received, int total) {
+          onProgress?.call(total > 0 ? received / total : null);
+        },
+      );
+      final List<int> bytes = resp.data ?? const <int>[];
+      if (!looksLikeGlslShader(bytes)) continue; // HTML 错误页 / 404 占位。
+      File(destPath).writeAsBytesSync(bytes, flush: true);
+      return fileName;
+    } on DioError catch (e) {
+      if (e.type == DioErrorType.cancel) rethrow;
+      continue; // 该镜像失败，回退下一个。
+    }
+  }
+  return null;
 }
 
 /// 下载结果：成功/失败的文件数与失败明细（供 UI 提示）。

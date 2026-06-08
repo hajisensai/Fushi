@@ -108,8 +108,16 @@ List<String> mpvConfigDirCandidates({
   add(env['MPV_HOME']);
 
   if (isWindows) {
+    // mpv（默认）、mpv.net（流行 GUI 分支）、LOCALAPPDATA 变体都覆盖到（更正经）。
     final String? appData = env['APPDATA'];
-    if (appData != null && appData.isNotEmpty) add(p.join(appData, 'mpv'));
+    if (appData != null && appData.isNotEmpty) {
+      add(p.join(appData, 'mpv'));
+      add(p.join(appData, 'mpv.net'));
+    }
+    final String? localAppData = env['LOCALAPPDATA'];
+    if (localAppData != null && localAppData.isNotEmpty) {
+      add(p.join(localAppData, 'mpv'));
+    }
     return out;
   }
 
@@ -117,11 +125,36 @@ List<String> mpvConfigDirCandidates({
   final String? home = env['HOME'];
   if (xdg != null && xdg.isNotEmpty) {
     add(p.join(xdg, 'mpv'));
-  } else if (home != null && home.isNotEmpty) {
+  }
+  if (home != null && home.isNotEmpty) {
+    // XDG 设了仍补 ~/.config/mpv（很多人两处都有）。
     add(p.join(home, '.config', 'mpv'));
   }
   if (isMacOS && home != null && home.isNotEmpty) {
     add(p.join(home, 'Library', 'Application Support', 'mpv'));
+  }
+  return out;
+}
+
+/// **纯函数**：从 `PATH` 环境变量里解析出可能的便携版 mpv 配置目录。
+///
+/// 便携版 mpv（解压即用）把配置放在 mpv.exe 同目录的 `portable_config/`（mpv 官方约定）。
+/// 故对 `PATH` 里每个目录给出 `<dir>/portable_config` 候选（存在性由
+/// [discoverLocalMpvShaders] 过滤）。**只给 `portable_config` 子目录、不给 `PATH` 目录
+/// 本身**——否则发现逻辑会去递归扫 `System32` 等系统目录找着色器（极慢）。
+/// [pathSeparator] 注入便于单测（Win `;` / Unix `:`）。
+List<String> mpvPortableConfigCandidates({
+  required Map<String, String> env,
+  required String pathSeparator,
+}) {
+  final String? path = env['PATH'];
+  if (path == null || path.isEmpty) return const <String>[];
+  final List<String> out = <String>[];
+  for (final String entry in path.split(pathSeparator)) {
+    final String dir = entry.trim();
+    if (dir.isEmpty) continue;
+    final String pc = p.join(dir, 'portable_config');
+    if (!out.contains(pc)) out.add(pc);
   }
   return out;
 }
@@ -142,63 +175,82 @@ List<String> discoverMpvShadersIn(Directory mpvConfigDir) {
   return out;
 }
 
-/// 在用户**手动指定**的目录里发现着色器（绝对路径，按 basename 去重保序）。纯函数。
+/// 在 [dir] 下**递归**发现着色器（绝对路径，按 basename 去重保序）。纯函数（只读）。
 ///
-/// 兼容两种指法：用户既可能直接指向 `shaders` 文件夹，也可能指向 mpv 配置目录
-/// （着色器在其 `shaders/` 子目录）。故同时扫**该目录本身**与其 `shaders/` 子目录。
-List<String> discoverShadersInUserDir(Directory dir) {
+/// 「更正经」的发现：不再只盯死 `shaders/` 一层——用户可能直接指向 shaders 文件夹、
+/// 指向 mpv 配置目录（着色器在 `shaders/`）、把着色器散在配置根、或装在 `shaders/<包名>/`
+/// 子目录里，统统递归扫到。深度上限 [maxDepth]（默认 6）防病态深树。按全路径排序后
+/// 按 basename 去重（同名取路径靠前者：配置根 < `shaders/` < 更深，符合直觉）。
+List<String> discoverShadersInUserDir(Directory dir, {int maxDepth = 6}) {
   if (!dir.existsSync()) return const <String>[];
-  final List<String> out = <String>[];
-  final Set<String> seen = <String>{};
-  void addFrom(Directory d) {
-    if (!d.existsSync()) return;
-    final List<String> files = <String>[];
-    for (final FileSystemEntity e in d.listSync(followLinks: false)) {
-      if (e is! File) continue;
-      if (kShaderExtensions.contains(p.extension(e.path).toLowerCase())) {
-        files.add(e.path);
-      }
+  final List<String> files = <String>[];
+  void walk(Directory d, int depth) {
+    if (depth > maxDepth) return;
+    final List<FileSystemEntity> entries;
+    try {
+      entries = d.listSync(followLinks: false);
+    } on FileSystemException {
+      return; // 权限/IO 失败：跳过该子树，不抛。
     }
-    files.sort();
-    for (final String f in files) {
-      if (seen.add(p.basename(f))) out.add(f);
+    for (final FileSystemEntity e in entries) {
+      if (e is File) {
+        if (kShaderExtensions.contains(p.extension(e.path).toLowerCase())) {
+          files.add(e.path);
+        }
+      } else if (e is Directory) {
+        walk(e, depth + 1);
+      }
     }
   }
 
-  addFrom(dir); // 用户直接指向 shaders 文件夹
-  addFrom(Directory(p.join(dir.path, 'shaders'))); // 用户指向 mpv 配置目录
+  walk(dir, 0);
+  files.sort();
+  final List<String> out = <String>[];
+  final Set<String> seen = <String>{};
+  for (final String f in files) {
+    if (seen.add(p.basename(f))) out.add(f);
+  }
   return out;
 }
 
 /// 发现本机 mpv 安装里已有的着色器（绝对路径，按 basename 去重保序）。
 ///
-/// [overrideDir]（用户手动指定的 mpv 配置/着色器目录，非空时）**优先**扫描，再叠加
-/// [Platform.environment] / [Platform.isWindows] 解析的 [mpvConfigDirCandidates] 自动
-/// 候选目录的 `shaders/`。移动端 / 未装 mpv 且无 override → 空列表（天然降级，UI 提示
-/// 「未发现本机 mpv」，并引导手动指定目录）。
+/// 「更正经」的多路探测，按优先级合并去重：
+/// 1. [overrideDir]（用户手动指定）——递归扫，最优先；
+/// 2. [mpvConfigDirCandidates] 标准配置目录（mpv / mpv.net / LOCALAPPDATA / XDG /
+///    ~/.config / /etc/mpv / macOS App Support）——每个递归扫；
+/// 3. [mpvPortableConfigCandidates] 便携版（`PATH` 里 mpv.exe 同目录的 `portable_config`）。
+///
+/// 移动端 / 未装 mpv 且无 override → 空列表（天然降级，UI 引导手动指定目录）。
 Future<List<String>> discoverLocalMpvShaders({String? overrideDir}) async {
   final List<String> out = <String>[];
   final Set<String> seenNames = <String>{};
-  void mergeIn(List<String> paths) {
-    for (final String s in paths) {
+  void mergeDir(String dirPath) {
+    final Directory dir = Directory(dirPath);
+    if (!dir.existsSync()) return;
+    for (final String s in discoverShadersInUserDir(dir)) {
       if (seenNames.add(p.basename(s))) out.add(s);
     }
   }
 
-  // 用户手动指定的目录优先。
-  if (overrideDir != null && overrideDir.isNotEmpty) {
-    mergeIn(discoverShadersInUserDir(Directory(overrideDir)));
-  }
+  // 1) 用户手动指定的目录优先。
+  if (overrideDir != null && overrideDir.isNotEmpty) mergeDir(overrideDir);
 
-  final List<String> candidates = mpvConfigDirCandidates(
+  // 2) 标准配置目录候选。
+  for (final String dirPath in mpvConfigDirCandidates(
     env: Platform.environment,
     isWindows: Platform.isWindows,
     isMacOS: Platform.isMacOS,
-  );
-  for (final String dirPath in candidates) {
-    final Directory dir = Directory(dirPath);
-    if (!dir.existsSync()) continue;
-    mergeIn(discoverMpvShadersIn(dir));
+  )) {
+    mergeDir(dirPath);
+  }
+
+  // 3) 便携版：PATH 里 mpv 同目录的 portable_config。
+  for (final String dirPath in mpvPortableConfigCandidates(
+    env: Platform.environment,
+    pathSeparator: Platform.isWindows ? ';' : ':',
+  )) {
+    mergeDir(dirPath);
   }
   return out;
 }

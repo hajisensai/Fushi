@@ -1421,5 +1421,9 @@
     "video_shader_showing_shaded": "Shaders on",
     "video_shader_pick_mpv_dir": "Specify mpv folder",
     "video_shader_mpv_dir_empty": "No shaders found in that folder",
-    "video_shader_mpv_dir_current": "mpv folder: $path"
+    "video_shader_mpv_dir_current": "mpv folder: $path",
+    "video_shader_download_url": "Download from link",
+    "video_shader_url_hint": "Paste a shader .glsl link (e.g. GitHub)",
+    "video_shader_preset_mode_b_hq": "High quality for older 720p anime with resampling artifacts. Needs a strong GPU.",
+    "video_shader_preset_mode_c_hq": "High quality for old SD (480p) anime with compression smearing. Needs a strong GPU."
 }

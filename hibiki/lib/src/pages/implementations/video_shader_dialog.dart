@@ -154,6 +154,56 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView> {
     await widget.onApply(ordered);
   }
 
+  /// 粘贴任意着色器链接（GitHub/直链）下载到 mpv_shaders——不必本机装 mpv（用户诉求）。
+  /// GitHub 链接自动走 jsDelivr/ghfast 镜像（中国可达），内容校验防 404/HTML 占位。
+  Future<void> _downloadFromUrl() async {
+    final TextEditingController urlController = TextEditingController();
+    final String? url = await showDialog<String>(
+      context: context,
+      builder: (BuildContext ctx) => AlertDialog(
+        title: Text(t.video_shader_download_url),
+        content: TextField(
+          controller: urlController,
+          autofocus: true,
+          keyboardType: TextInputType.url,
+          decoration: InputDecoration(hintText: t.video_shader_url_hint),
+          onSubmitted: (String v) => Navigator.pop(ctx, v),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(t.dialog_cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, urlController.text),
+            child: Text(t.dialog_save),
+          ),
+        ],
+      ),
+    );
+    urlController.dispose();
+    final String? trimmed = url?.trim();
+    if (trimmed == null || trimmed.isEmpty || !mounted) return;
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(
+      SnackBar(content: Text(t.video_shader_downloading)),
+    );
+    String? name;
+    try {
+      name = await downloadShaderFromUrl(trimmed);
+    } catch (_) {
+      name = null;
+    }
+    if (!mounted) return;
+    await _refresh();
+    if (!mounted) return;
+    messenger.showSnackBar(SnackBar(
+      content: Text(name != null
+          ? t.video_shader_download_done(count: 1)
+          : t.video_shader_download_failed),
+    ));
+  }
+
   /// 打开 Anime4K 预设下载子对话框：选预设 → 多镜像逐文件下载（进度）→ 刷新列表。
   Future<void> _openAnime4kDownload() async {
     final Anime4kPreset? preset = await showDialog<Anime4kPreset>(
@@ -267,6 +317,12 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView> {
               icon: const Icon(Icons.download_outlined, size: 18),
               label: Text(t.video_shader_download_anime4k),
               onPressed: _openAnime4kDownload,
+            ),
+            // 粘贴任意着色器链接下载（不必装 mpv，最灵活）。
+            OutlinedButton.icon(
+              icon: const Icon(Icons.link, size: 18),
+              label: Text(t.video_shader_download_url),
+              onPressed: _downloadFromUrl,
             ),
             OutlinedButton.icon(
               icon: const Icon(Icons.travel_explore_outlined, size: 18),
@@ -430,6 +486,10 @@ class Anime4kPresetPickerDialog extends StatelessWidget {
         return t.video_shader_preset_mode_c_fast;
       case 'mode_a_hq':
         return t.video_shader_preset_mode_a_hq;
+      case 'mode_b_hq':
+        return t.video_shader_preset_mode_b_hq;
+      case 'mode_c_hq':
+        return t.video_shader_preset_mode_c_hq;
       default:
         return '';
     }

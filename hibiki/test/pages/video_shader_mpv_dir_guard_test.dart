@@ -36,4 +36,14 @@ void main() {
     expect(page.contains('appModel.setVideoMpvShaderDir('), isTrue,
         reason: '选定目录落库持久化');
   });
+
+  test('着色器视图有「粘贴链接下载」流程（不必装 mpv）', () {
+    final String src =
+        read('lib/src/pages/implementations/video_shader_dialog.dart');
+    expect(src.contains('_downloadFromUrl'), isTrue, reason: '需有粘贴链接下载流程');
+    expect(src.contains('downloadShaderFromUrl('), isTrue,
+        reason: '走 downloadShaderFromUrl（镜像+校验）');
+    expect(src.contains('t.video_shader_download_url'), isTrue,
+        reason: '有粘贴链接下载按钮');
+  });
 }

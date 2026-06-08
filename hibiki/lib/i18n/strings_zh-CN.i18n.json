@@ -1421,5 +1421,9 @@
     "video_shader_showing_shaded": "已开着色器",
     "video_shader_pick_mpv_dir": "指定 mpv 目录",
     "video_shader_mpv_dir_empty": "该目录没找到着色器",
-    "video_shader_mpv_dir_current": "mpv 目录：$path"
+    "video_shader_mpv_dir_current": "mpv 目录：$path",
+    "video_shader_download_url": "粘贴链接下载",
+    "video_shader_url_hint": "粘贴着色器 .glsl 链接（如 GitHub）",
+    "video_shader_preset_mode_b_hq": "720p 旧番高画质（重采样伪影），需较强 GPU。",
+    "video_shader_preset_mode_c_hq": "480p SD 老番高画质（压缩涂抹，带去噪），需较强 GPU。"
 }

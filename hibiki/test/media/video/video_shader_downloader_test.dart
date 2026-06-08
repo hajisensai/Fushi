@@ -77,12 +77,18 @@ void main() {
   });
 
   group('kAnime4kPresets', () {
-    test('四个预设，id 稳定且唯一', () {
-      expect(kAnime4kPresets.length, 4);
+    test('六个预设，id 稳定且唯一（Fast A/B/C + HQ A/B/C）', () {
+      expect(kAnime4kPresets.length, 6);
       final Set<String> ids =
           kAnime4kPresets.map((Anime4kPreset e) => e.id).toSet();
-      expect(ids,
-          <String>{'mode_a_fast', 'mode_b_fast', 'mode_c_fast', 'mode_a_hq'});
+      expect(ids, <String>{
+        'mode_a_fast',
+        'mode_b_fast',
+        'mode_c_fast',
+        'mode_a_hq',
+        'mode_b_hq',
+        'mode_c_hq',
+      });
     });
 
     test('每个预设的 fileNames 去重保序，全部 .glsl', () {
@@ -240,6 +246,64 @@ void main() {
       expect(result.downloaded, <String>['Anime4K_Clamp_Highlights.glsl']);
       // 完全没发请求。
       expect(adapter.requested, isEmpty);
+    });
+  });
+
+  group('shaderDownloadUrlsFor（粘链接下载）', () {
+    test('GitHub blob 链接 → jsDelivr/ghfast/raw 三镜像', () {
+      final List<String> urls = shaderDownloadUrlsFor(
+          'https://github.com/bloc97/Anime4K/blob/master/glsl/Restore/Anime4K_Restore_CNN_M.glsl');
+      expect(urls, <String>[
+        'https://cdn.jsdelivr.net/gh/bloc97/Anime4K@master/glsl/Restore/Anime4K_Restore_CNN_M.glsl',
+        'https://ghfast.top/https://raw.githubusercontent.com/bloc97/Anime4K/master/glsl/Restore/Anime4K_Restore_CNN_M.glsl',
+        'https://raw.githubusercontent.com/bloc97/Anime4K/master/glsl/Restore/Anime4K_Restore_CNN_M.glsl',
+      ]);
+    });
+
+    test('raw.githubusercontent 链接 → 同三镜像', () {
+      final List<String> urls = shaderDownloadUrlsFor(
+          'https://raw.githubusercontent.com/igv/FSRCNN-TensorFlow/master/FSRCNNX_x2_8-0-4-1.glsl');
+      expect(urls.first,
+          'https://cdn.jsdelivr.net/gh/igv/FSRCNN-TensorFlow@master/FSRCNNX_x2_8-0-4-1.glsl');
+      expect(urls, hasLength(3));
+    });
+
+    test('非 GitHub 直链 → 原样单条', () {
+      const String url = 'https://example.com/cool/MyShader.glsl';
+      expect(shaderDownloadUrlsFor(url), <String>[url]);
+    });
+  });
+
+  group('shaderFileNameFromUrl（粘链接下载）', () {
+    test('取 basename', () {
+      expect(
+        shaderFileNameFromUrl(
+            'https://github.com/bloc97/Anime4K/blob/master/glsl/Restore/Anime4K_Restore_CNN_M.glsl'),
+        'Anime4K_Restore_CNN_M.glsl',
+      );
+    });
+
+    test('去查询串/锚点', () {
+      expect(shaderFileNameFromUrl('https://x.com/a/Foo.hook?raw=1#frag'),
+          'Foo.hook');
+    });
+
+    test('无 glsl/hook 扩展名 → 补 .glsl', () {
+      expect(shaderFileNameFromUrl('https://x.com/a/shader'), 'shader.glsl');
+    });
+
+    test('非法字符折叠为 _', () {
+      expect(shaderFileNameFromUrl('https://x.com/a/My Shader.glsl'),
+          'My_Shader.glsl');
+    });
+  });
+
+  group('downloadShaderFromUrl', () {
+    test('空 URL → null（不下载）', () async {
+      final Directory dir =
+          Directory.systemTemp.createTempSync('shader_url_dl_');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      expect(await downloadShaderFromUrl('   ', targetDir: dir), isNull);
     });
   });
 }

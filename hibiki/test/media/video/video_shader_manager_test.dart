@@ -67,7 +67,7 @@ void main() {
   });
 
   group('mpvConfigDirCandidates', () {
-    test('Windows：MPV_HOME 优先，再 %APPDATA%\\mpv', () {
+    test('Windows：MPV_HOME 优先，再 %APPDATA% 的 mpv + mpv.net', () {
       final List<String> dirs = mpvConfigDirCandidates(
         env: <String, String>{
           'MPV_HOME': r'C:\custom\mpv',
@@ -77,19 +77,31 @@ void main() {
         isMacOS: false,
       );
       expect(dirs.first, r'C:\custom\mpv');
-      expect(dirs.length, 2);
+      expect(
+          dirs,
+          containsAll(<String>[
+            p.join(r'C:\Users\me\AppData\Roaming', 'mpv'),
+            p.join(r'C:\Users\me\AppData\Roaming', 'mpv.net'),
+          ]));
     });
 
-    test('Windows：无 MPV_HOME 只回 %APPDATA%\\mpv', () {
+    test('Windows：%APPDATA% 与 %LOCALAPPDATA% 变体都覆盖（更正经）', () {
       final List<String> dirs = mpvConfigDirCandidates(
-        env: <String, String>{'APPDATA': r'C:\Users\me\AppData\Roaming'},
+        env: <String, String>{
+          'APPDATA': r'C:\Users\me\AppData\Roaming',
+          'LOCALAPPDATA': r'C:\Users\me\AppData\Local',
+        },
         isWindows: true,
         isMacOS: false,
       );
-      expect(dirs, <String>[p.join(r'C:\Users\me\AppData\Roaming', 'mpv')]);
+      expect(dirs, <String>[
+        p.join(r'C:\Users\me\AppData\Roaming', 'mpv'),
+        p.join(r'C:\Users\me\AppData\Roaming', 'mpv.net'),
+        p.join(r'C:\Users\me\AppData\Local', 'mpv'),
+      ]);
     });
 
-    test('Linux：XDG_CONFIG_HOME 设了则用它，不回退 ~/.config', () {
+    test('Linux：XDG 设了仍补 ~/.config/mpv（两处都查，更正经）', () {
       final List<String> dirs = mpvConfigDirCandidates(
         env: <String, String>{
           'XDG_CONFIG_HOME': '/home/me/.cfg',
@@ -98,7 +110,10 @@ void main() {
         isWindows: false,
         isMacOS: false,
       );
-      expect(dirs, <String>[p.join('/home/me/.cfg', 'mpv')]);
+      expect(dirs, <String>[
+        p.join('/home/me/.cfg', 'mpv'),
+        p.join('/home/me', '.config', 'mpv'),
+      ]);
     });
 
     test('Linux：无 XDG → ~/.config/mpv', () {
@@ -126,6 +141,31 @@ void main() {
       expect(
         mpvConfigDirCandidates(
             env: const <String, String>{}, isWindows: false, isMacOS: false),
+        isEmpty,
+      );
+    });
+  });
+
+  group('mpvPortableConfigCandidates（便携版 PATH 探测）', () {
+    test('PATH 每个目录给出 <dir>/portable_config（不给目录本身）', () {
+      final List<String> dirs = mpvPortableConfigCandidates(
+        env: <String, String>{
+          'PATH': <String>[r'C:\mpv', r'C:\Windows\System32'].join(';'),
+        },
+        pathSeparator: ';',
+      );
+      expect(dirs, <String>[
+        p.join(r'C:\mpv', 'portable_config'),
+        p.join(r'C:\Windows\System32', 'portable_config'),
+      ]);
+      // 关键：绝不包含 PATH 目录本身（否则发现逻辑会去递归扫 System32）。
+      expect(dirs.contains(r'C:\Windows\System32'), isFalse);
+    });
+
+    test('无 PATH → 空', () {
+      expect(
+        mpvPortableConfigCandidates(
+            env: const <String, String>{}, pathSeparator: ':'),
         isEmpty,
       );
     });
@@ -194,6 +234,20 @@ void main() {
         discoverShadersInUserDir(Directory(p.join(dir.path, 'nope'))),
         isEmpty,
       );
+    });
+
+    test('递归扫嵌套子目录（shaders/<包名>/x.glsl 也找到，更正经）', () {
+      final Directory pack = Directory(p.join(dir.path, 'shaders', 'Anime4K'))
+        ..createSync(recursive: true);
+      File(p.join(pack.path, 'Restore.glsl')).writeAsStringSync('//');
+      File(p.join(dir.path, 'Loose.hook')).writeAsStringSync('//');
+      final List<String> found = discoverShadersInUserDir(dir);
+      expect(
+          found,
+          containsAll(<String>[
+            p.join(dir.path, 'Loose.hook'),
+            p.join(pack.path, 'Restore.glsl'),
+          ]));
     });
   });
 
