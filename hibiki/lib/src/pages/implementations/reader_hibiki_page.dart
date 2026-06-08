@@ -212,6 +212,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   /// 底栏内容行的自然（未缩放）高度。
   static const double _readerChromeBaseHeight = 56;
 
+  /// 查词弹窗顶部四按钮栏的自然（未缩放）高度。
+  static const double _readerPopupHeaderBaseHeight = 48;
+
   /// 阅读器底栏的隐形界面缩放系数：取自全局 appUiScale（阅读器子树被中和器改写成
   /// 1.0，故不能用 HibikiAppUiScale.of）。在 build 里读 appModel 会随缩放变化重建。
   double get _readerChromeScale => appModel.appUiScale;
@@ -5635,72 +5638,80 @@ window.flutter_inappwebview.callHandler('spreadReady');
       final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
       final AudioCue? cue = _lookupCue;
       final bool hasCue = cue != null;
-      return Container(
-        decoration: BoxDecoration(
-          border: Border(
-            bottom: BorderSide(
-              color: theme.dividerColor,
-              width: 0.5,
+      return ReaderChromeScaler(
+        scale: _readerChromeScale,
+        baseHeight: _readerPopupHeaderBaseHeight,
+        child: SizedBox(
+          height: _readerPopupHeaderBaseHeight,
+          child: Container(
+            decoration: BoxDecoration(
+              border: Border(
+                bottom: BorderSide(
+                  color: theme.dividerColor,
+                  width: 0.5,
+                ),
+              ),
+            ),
+            padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 4),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                HibikiIconButton(
+                  icon: _currentSentenceIsFavorited
+                      ? Icons.star
+                      : Icons.star_border,
+                  size: 20,
+                  enabledColor: _currentSentenceIsFavorited
+                      ? theme.colorScheme.primary
+                      : null,
+                  onTap: _toggleFavoriteSentence,
+                  tooltip: t.action_favorite,
+                  padding: EdgeInsets.all(tokens.spacing.gap / 2),
+                ),
+                if (hasAudio) ...[
+                  SizedBox(width: tokens.spacing.gap),
+                  HibikiIconButton(
+                    icon: Icons.replay_outlined,
+                    size: 20,
+                    onTap: hasCue
+                        ? () {
+                            final AudioCue? cue = _lookupCue;
+                            if (cue == null) return;
+                            ctrl.playCueOnce(cue);
+                          }
+                        : null,
+                    tooltip: t.repeat_cue,
+                    padding: EdgeInsets.all(tokens.spacing.gap / 2),
+                  ),
+                  SizedBox(width: tokens.spacing.gap),
+                  HibikiIconButton(
+                    icon: ctrl.isPlaying
+                        ? Icons.pause_outlined
+                        : Icons.play_arrow_outlined,
+                    size: 24,
+                    onTap: ctrl.togglePlayPause,
+                    tooltip: ctrl.isPlaying ? t.pause : t.play,
+                    padding: EdgeInsets.all(tokens.spacing.gap / 2),
+                  ),
+                  SizedBox(width: tokens.spacing.gap),
+                  HibikiIconButton(
+                    icon: Icons.play_circle_outline,
+                    size: 20,
+                    onTap: hasCue
+                        ? () {
+                            final AudioCue? cue = _lookupCue;
+                            if (cue == null) return;
+                            ctrl.playCueAndContinue(cue);
+                            clearDictionaryResult();
+                          }
+                        : null,
+                    tooltip: t.play_from_cue,
+                    padding: EdgeInsets.all(tokens.spacing.gap / 2),
+                  ),
+                ],
+              ],
             ),
           ),
-        ),
-        padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 4),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            HibikiIconButton(
-              icon:
-                  _currentSentenceIsFavorited ? Icons.star : Icons.star_border,
-              size: 20,
-              enabledColor: _currentSentenceIsFavorited
-                  ? theme.colorScheme.primary
-                  : null,
-              onTap: _toggleFavoriteSentence,
-              tooltip: t.action_favorite,
-              padding: EdgeInsets.all(tokens.spacing.gap / 2),
-            ),
-            if (hasAudio) ...[
-              SizedBox(width: tokens.spacing.gap),
-              HibikiIconButton(
-                icon: Icons.replay_outlined,
-                size: 20,
-                onTap: hasCue
-                    ? () {
-                        final AudioCue? cue = _lookupCue;
-                        if (cue == null) return;
-                        ctrl.playCueOnce(cue);
-                      }
-                    : null,
-                tooltip: t.repeat_cue,
-                padding: EdgeInsets.all(tokens.spacing.gap / 2),
-              ),
-              SizedBox(width: tokens.spacing.gap),
-              HibikiIconButton(
-                icon: ctrl.isPlaying
-                    ? Icons.pause_outlined
-                    : Icons.play_arrow_outlined,
-                size: 24,
-                onTap: ctrl.togglePlayPause,
-                tooltip: ctrl.isPlaying ? t.pause : t.play,
-                padding: EdgeInsets.all(tokens.spacing.gap / 2),
-              ),
-              SizedBox(width: tokens.spacing.gap),
-              HibikiIconButton(
-                icon: Icons.play_circle_outline,
-                size: 20,
-                onTap: hasCue
-                    ? () {
-                        final AudioCue? cue = _lookupCue;
-                        if (cue == null) return;
-                        ctrl.playCueAndContinue(cue);
-                        clearDictionaryResult();
-                      }
-                    : null,
-                tooltip: t.play_from_cue,
-                padding: EdgeInsets.all(tokens.spacing.gap / 2),
-              ),
-            ],
-          ],
         ),
       );
     }
