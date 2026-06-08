@@ -2662,6 +2662,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   AudioCue? _lookupCue;
   ({int offset, int length, String text})? _cachedSelectionRange;
   ({int offset, int length})? _cachedSentenceRange;
+  int? _cachedSentenceOffset;
   bool _currentSentenceIsFavorited = false;
 
   int get _lookupSectionIndex {
@@ -2735,6 +2736,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     _lookupCue = null;
     _cachedSelectionRange = null;
     _cachedSentenceRange = null;
+    _cachedSentenceOffset = null;
     _currentSentenceIsFavorited = false;
     appModel.currentMediaSource?.clearCurrentCueSentence();
     super.clearDictionaryResult();
@@ -2753,14 +2755,16 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     }
 
     String? sasayakiAudioPath;
+    Directory? sasayakiTempDir;
     final AudioCue? cue = _lookupCue;
     final List<File>? audioFiles = _audiobookController?.audioFiles;
     if (cue != null &&
         audioFiles != null &&
         cue.audioFileIndex < audioFiles.length) {
       final File inputFile = audioFiles[cue.audioFileIndex];
-      final String outputPath =
-          '${Directory.systemTemp.path}/mine_sentence_audio.aac';
+      sasayakiTempDir =
+          Directory.systemTemp.createTempSync('hibiki_mine_sentence_audio_');
+      final String outputPath = p.join(sasayakiTempDir.path, 'sentence.aac');
       sasayakiAudioPath = await TtsChannel.instance.extractAudioSegment(
         inputPath: inputFile.path,
         startMs: cue.startMs,
@@ -2778,13 +2782,25 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       documentTitle: _book?.title,
       coverPath: coverPath,
       sasayakiAudioPath: sasayakiAudioPath,
-      sentenceOffset: _cachedSentenceRange?.offset,
+      sentenceOffset: _cachedSentenceOffset,
     );
 
-    final MineOutcome outcome = await repo.mineEntry(
-      rawPayloadJson: jsonEncode(fields),
-      context: miningContext,
-    );
+    final MineOutcome outcome;
+    try {
+      outcome = await repo.mineEntry(
+        rawPayloadJson: jsonEncode(fields),
+        context: miningContext,
+      );
+    } finally {
+      if (sasayakiTempDir != null && sasayakiTempDir.existsSync()) {
+        try {
+          sasayakiTempDir.deleteSync(recursive: true);
+        } catch (e, stack) {
+          ErrorLogService.instance
+              .log('ReaderHibiki.mineEntry.cleanupAudio', e, stack);
+        }
+      }
+    }
 
     switch (outcome.result) {
       case MineResult.success:
@@ -3377,6 +3393,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
     appModel.currentMediaSource?.setCurrentSentence(
       selection: HibikiTextSelection(text: data.sentence),
     );
+    _cachedSentenceOffset = data.sentenceOffset;
 
     if (_lyricsMode) {
       _lookupCue = null;
