@@ -5,36 +5,27 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   String read(String path) => File(path).readAsStringSync();
 
-  test('home dictionary submitted lookup releases the search field focus', () {
+  test('home dictionary submitted lookup keeps the search field focused', () {
     final String src =
         read('lib/src/pages/implementations/home_dictionary_page.dart');
 
     expect(
       src,
-      contains('void _submitSearch(String query)'),
-      reason: 'Explicit search submission must leave editing mode before '
-          'showing results; otherwise mobile keeps the keyboard open and '
-          'desktop typing continues to edit the query while browsing meanings.',
+      isNot(contains('void _submitSearch(String query)')),
+      reason: 'Home dictionary lookup is intentionally an input-mode flow: '
+          'mobile should keep the keyboard/search field open and desktop '
+          'typing should stay in the search box after lookup.',
     );
-
-    final int submitStart = src.indexOf('void _submitSearch(String query)');
-    final int queryChangedStart = src.indexOf('void _onQueryChanged');
-    expect(submitStart, isNonNegative);
-    expect(queryChangedStart, greaterThan(submitStart));
-    final String submitBody = src.substring(submitStart, queryChangedStart);
-    expect(submitBody, contains('_searchFocusNode.unfocus();'));
-    expect(submitBody, contains('_search(query'));
 
     final int searchHeaderStart = src.indexOf('Widget _buildSearchHeader()');
     final int bodyStart = src.indexOf('Widget _buildBody()');
     expect(searchHeaderStart, isNonNegative);
     expect(bodyStart, greaterThan(searchHeaderStart));
     final String searchHeader = src.substring(searchHeaderStart, bodyStart);
-    expect(searchHeader, contains('onSubmitted: _submitSearch'));
+    expect(searchHeader, contains('onSubmitted: _search'));
   });
 
-  test('back while dictionary search field is focused only unfocuses first',
-      () {
+  test('back while a dictionary query is active clears the query directly', () {
     final String src =
         read('lib/src/pages/implementations/home_dictionary_page.dart');
 
@@ -46,22 +37,21 @@ void main() {
 
     expect(
       popScope,
-      contains('else if (_searchFocusNode.hasFocus)'),
-      reason: 'The first back/keyboard-dismiss gesture from result browsing '
-          'must only leave input mode. Clearing the query is the second back.',
+      isNot(contains('else if (_searchFocusNode.hasFocus)')),
+      reason: 'Home dictionary result state keeps search input focused; back '
+          'from an active query should clear the query instead of only '
+          'leaving input mode.',
     );
-    expect(popScope, contains('_searchFocusNode.unfocus();'));
-
-    final int unfocusBranch = popScope.indexOf('_searchFocusNode.hasFocus');
     final int clearBranch = popScope.indexOf('else if (_hasActiveQuery)');
-    expect(unfocusBranch, isNonNegative);
-    expect(clearBranch, greaterThan(unfocusBranch));
+    expect(clearBranch, isNonNegative);
+    expect(popScope.substring(clearBranch), contains('_clearSearch();'));
   });
 
-  test('home dictionary result browsing never clears search from drag release',
-      () {
+  test('home dictionary result pull release clears the search query', () {
     final String src =
         read('lib/src/pages/implementations/home_dictionary_page.dart');
+    final String webViewSrc =
+        read('lib/src/pages/implementations/dictionary_popup_webview.dart');
 
     expect(
       src,
@@ -77,11 +67,28 @@ void main() {
     final String resultBody = src.substring(resultBodyStart, pushPopupStart);
 
     expect(
-      resultBody,
-      isNot(contains('_clearSearch')),
-      reason: 'Dragging/pulling the definition WebView must stay in result '
-          'browsing mode and must not route pointer release to the search-clear '
-          'path.',
+        resultBody, contains('onTopPullReleased: _clearSearchFromResultPull'));
+
+    final int clearFromPullStart =
+        src.indexOf('void _clearSearchFromResultPull()');
+    final int buildStart = src.indexOf('// ── build');
+    expect(clearFromPullStart, isNonNegative);
+    expect(buildStart, greaterThan(clearFromPullStart));
+    final String clearFromPull = src.substring(clearFromPullStart, buildStart);
+    expect(
+      clearFromPull,
+      contains('_popup.entries.isNotEmpty || _popup.isSearchingUi'),
+    );
+    expect(clearFromPull, contains('_clearSearch();'));
+
+    expect(webViewSrc, contains('final VoidCallback? onTopPullReleased;'));
+    expect(webViewSrc, contains("handlerName: 'topPullReleased'"));
+    expect(
+      webViewSrc,
+      contains("callHandler('topPullReleased')"),
+      reason: 'The real definition WebView must report a top pull release; '
+          'an outer Flutter scroll wrapper would not reliably receive WebView '
+          'touch drags.',
     );
     expect(
       resultBody,

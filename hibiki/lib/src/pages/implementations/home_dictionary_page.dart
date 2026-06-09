@@ -156,6 +156,11 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
     setState(() {});
   }
 
+  void _clearSearchFromResultPull() {
+    if (_popup.entries.isNotEmpty || _popup.isSearchingUi) return;
+    _clearSearch();
+  }
+
   // ── build ──────────────────────────────────────────────────────────
 
   @override
@@ -166,8 +171,6 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
         if (didPop) return;
         if (_popup.entries.isNotEmpty) {
           _popNestedPopupAt(_popup.entries.length - 1);
-        } else if (_searchFocusNode.hasFocus) {
-          _searchFocusNode.unfocus();
         } else if (_hasActiveQuery) {
           _clearSearch();
         }
@@ -220,7 +223,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
               focusNode: _searchFocusNode,
               hintText: t.search_ellipsis,
               onChanged: _onQueryChanged,
-              onSubmitted: _submitSearch,
+              onSubmitted: _search,
             ),
           ),
           if (isCupertinoPlatform(context))
@@ -349,11 +352,6 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
   }
 
   // ── search logic ───────────────────────────────────────────────────
-
-  void _submitSearch(String query) {
-    _searchFocusNode.unfocus();
-    _search(query);
-  }
 
   void _onQueryChanged(String query) {
     _debounceTimer?.cancel();
@@ -506,6 +504,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
                 onMineEntry: onMineEntry,
                 onDuplicateCheck: checkDuplicate,
                 onScrolledToBottom: _allLoaded ? null : _loadMore,
+                onTopPullReleased: _clearSearchFromResultPull,
               ),
               if (_externalLookupText.trim().isNotEmpty)
                 Positioned(
