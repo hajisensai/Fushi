@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/pages/implementations/reader_hibiki_history_page.dart';
+import 'package:hibiki/src/pages/implementations/book_drag_target.dart';
 
 void main() {
   // Mirrors the real bookshelf card: a margin (HibikiCard) wrapping an

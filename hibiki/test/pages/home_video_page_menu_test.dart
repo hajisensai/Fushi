@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
+import 'package:flutter/gestures.dart';
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -11,6 +12,7 @@ import 'package:hibiki/models.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/pages/implementations/home_video_page.dart';
+import 'package:hibiki/src/pages/implementations/tag_filter_bar.dart';
 import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
@@ -70,6 +72,15 @@ void main() {
     await db.addTagToVideoBook('video/1', tagId);
   }
 
+  Future<int> seedVideoAndLooseTag() async {
+    await db.upsertVideoBook(const VideoBooksCompanion(
+      bookUid: Value('video/1'),
+      title: Value('My Episode'),
+      videoPath: Value('/abs/ep1.mp4'),
+    ));
+    return db.createTag('Anime', 0xFF2196F3);
+  }
+
   Widget buildApp() => ProviderScope(
         overrides: <Override>[
           appProvider.overrideWith((ref) => appModel),
@@ -85,6 +96,26 @@ void main() {
           ),
         ),
       );
+
+  Future<void> dragTopTagToVideoCard(WidgetTester tester) async {
+    final Finder tagChip = find
+        .descendant(
+          of: find.byType(HibikiTagFilterBar),
+          matching: find.widgetWithText(HibikiTagChip, 'Anime'),
+        )
+        .first;
+    final Finder card =
+        find.byKey(const ValueKey<String>('home_video_video/1'));
+
+    final TestGesture gesture = await tester.startGesture(
+      tester.getCenter(tagChip),
+    );
+    await tester.pump(kLongPressTimeout + const Duration(milliseconds: 100));
+    await gesture.moveTo(tester.getCenter(card));
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+  }
 
   testWidgets('视频卡渲染所挂的共享标签 chip', (WidgetTester tester) async {
     await seedTaggedVideo();
@@ -116,5 +147,39 @@ void main() {
     expect(find.text(t.tag_label), findsOneWidget);
     expect(find.text(t.srt_import_pick_cover), findsOneWidget);
     expect(find.text(t.dialog_delete), findsOneWidget);
+  });
+
+  testWidgets('顶部标签可拖到视频卡并写入视频标签映射', (WidgetTester tester) async {
+    final int tagId = await seedVideoAndLooseTag();
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    expect(await db.getTagsForVideoBook('video/1'), isEmpty);
+
+    await dragTopTagToVideoCard(tester);
+
+    final List<BookTagRow> tags = await db.getTagsForVideoBook('video/1');
+    expect(tags.map((BookTagRow tag) => tag.id), contains(tagId));
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('home_video_video/1')),
+        matching: find.widgetWithText(HibikiTagChip, 'Anime'),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('重复拖同一标签到视频卡保持幂等，不新增重复映射', (WidgetTester tester) async {
+    await seedVideoAndLooseTag();
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    await dragTopTagToVideoCard(tester);
+    await dragTopTagToVideoCard(tester);
+
+    final List<VideoBookTagMappingRow> mappings =
+        await db.getAllVideoBookTagMappings();
+    expect(mappings, hasLength(1));
+    expect(mappings.single.videoBookUid, 'video/1');
   });
 }

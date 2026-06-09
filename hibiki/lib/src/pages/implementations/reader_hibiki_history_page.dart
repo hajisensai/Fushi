@@ -20,6 +20,7 @@ import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_feature_flags.dart';
 import 'package:hibiki/src/media/video/video_import_dialog.dart';
+import 'package:hibiki/src/pages/implementations/book_drag_target.dart';
 import 'package:hibiki/src/pages/implementations/tag_filter_bar.dart';
 import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -1980,77 +1981,6 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         profiles: profileState.profiles,
         activeProfileName: profileState.activeProfile?.name ?? '',
       ),
-    );
-  }
-}
-
-@visibleForTesting
-class BookDragTarget extends StatefulWidget {
-  const BookDragTarget({
-    required this.bookId,
-    required this.onTagDropped,
-    required this.child,
-    super.key,
-  });
-
-  /// Drag-target identity marker (EPUB bookKey String or SRT srtBookId int).
-  /// Only used to distinguish targets; the drop action is carried by
-  /// [onTagDropped], so the concrete type is irrelevant here.
-  final Object bookId;
-  final void Function(BookTagRow tag) onTagDropped;
-  final Widget child;
-
-  @override
-  State<BookDragTarget> createState() => _BookDragTargetState();
-}
-
-class _BookDragTargetState extends State<BookDragTarget> {
-  bool _isHovering = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    final Color hoverColor = tokens.surfaces.primary;
-    return DragTarget<BookTagRow>(
-      onWillAcceptWithDetails: (_) => true,
-      onAcceptWithDetails: (details) {
-        setState(() => _isHovering = false);
-        widget.onTagDropped(details.data);
-      },
-      onMove: (_) {
-        if (!_isHovering) setState(() => _isHovering = true);
-      },
-      onLeave: (_) {
-        if (_isHovering) setState(() => _isHovering = false);
-      },
-      builder: (context, candidateData, rejectedData) {
-        return Stack(
-          fit: StackFit.expand,
-          children: [
-            widget.child,
-            if (_isHovering)
-              Positioned.fill(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: hoverColor.withValues(alpha: 0.2),
-                    borderRadius: tokens.radii.cardRadius,
-                    border: Border.all(
-                      color: hoverColor,
-                      width: tokens.spacing.gap / 4,
-                    ),
-                  ),
-                  child: Center(
-                    child: Icon(
-                      Icons.add_circle_outline,
-                      color: hoverColor,
-                      size: tokens.spacing.gap * 4,
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        );
-      },
     );
   }
 }

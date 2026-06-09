@@ -15,6 +15,7 @@ import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_feature_flags.dart';
 import 'package:hibiki/src/media/video/video_import_dialog.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/pages/implementations/book_drag_target.dart';
 import 'package:hibiki/src/pages/implementations/tag_filter_bar.dart';
 import 'package:hibiki/src/pages/implementations/tag_filter_sheet.dart';
 import 'package:hibiki/src/pages/implementations/tag_picker_page.dart';
@@ -333,6 +334,24 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       ),
     );
     if (mounted) _refreshAfterTagChange();
+  }
+
+  Future<void> _addTagToVideoBook(String bookUid, BookTagRow tag) async {
+    final Map<String, List<BookTagRow>>? existing =
+        ref.read(videoBookTagMapProvider).valueOrNull;
+    final bool alreadyHas =
+        existing?[bookUid]?.any((BookTagRow t) => t.id == tag.id) ?? false;
+    if (alreadyHas) {
+      HibikiToast.show(msg: t.tag_already_on_book(name: tag.name));
+      return;
+    }
+
+    await ref.read(appProvider).database.addTagToVideoBook(bookUid, tag.id);
+    ref.invalidate(videoBookTagMapProvider);
+    ref.invalidate(filteredVideoBookUidsProvider);
+    if (mounted) {
+      HibikiToast.show(msg: t.tag_added_to_book(name: tag.name));
+    }
   }
 
   /// 设置封面：选图 → 经共享 [setVideoCoverFromPickedFile]（拷盘 + 驱逐旧缓存 +
@@ -794,8 +813,9 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         ref.watch(videoBookTagMapProvider).valueOrNull?[book.bookUid] ??
             const <BookTagRow>[];
     final int episodeCount = playlistEpisodeCount(book.playlistJson);
-    return CardDropZone<VideoBookRow>(
-      meta: book,
+    final Widget card = BookDragTarget(
+      bookId: book.bookUid,
+      onTagDropped: (BookTagRow tag) => _addTagToVideoBook(book.bookUid, tag),
       child: HibikiCard(
         key: ValueKey<String>('home_video_${book.bookUid}'),
         focusId: HibikiFocusId('home-video-${book.bookUid}'),
@@ -839,6 +859,10 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           ],
         ),
       ),
+    );
+    return CardDropZone<VideoBookRow>(
+      meta: book,
+      child: card,
     );
   }
 
