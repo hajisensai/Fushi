@@ -116,14 +116,13 @@ String renderComprehensiveFailureSummary(ComprehensiveReport report) {
   );
   if (failures.isEmpty) return '';
 
-  final StringBuffer buffer = StringBuffer()
-    ..writeln('Comprehensive test failures:');
+  final StringBuffer buffer = StringBuffer();
+  buffer.writeln('Comprehensive test failures:');
   for (final ScenarioReport entry in failures) {
-    buffer
-      ..writeln(
-        '- ${entry.platform.name}/${entry.scenario.name}: '
-        '${entry.status.name}',
-      );
+    buffer.writeln(
+      '- ${entry.platform.name}/${entry.scenario.name}: '
+      '${entry.status.name}',
+    );
     if (entry.failureReason.isNotEmpty) {
       buffer.writeln('  reason: ${entry.failureReason}');
     }
