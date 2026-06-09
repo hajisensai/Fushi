@@ -1,5 +1,11 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki_audio/hibiki_audio.dart';
+import 'package:hibiki/src/media/video/ffmpeg_backend.dart';
 import 'package:hibiki/src/media/video/video_subtitle_source.dart';
+import 'package:path/path.dart' as p;
 
 void main() {
   group('parseSubtitleStreamsFromFfmpegLog', () {
@@ -402,4 +408,171 @@ WEBVTT
       }
     });
   });
+
+  group('embedded subtitle cache prewarm (TODO-011)', () {
+    late Directory tempDir;
+
+    setUp(() {
+      tempDir = Directory.systemTemp.createTempSync('hibiki_vsub_prewarm_');
+    });
+
+    tearDown(() {
+      setFfmpegBackendForTesting(null);
+      if (tempDir.existsSync()) {
+        tempDir.deleteSync(recursive: true);
+      }
+    });
+
+    test('prewarm extracts all text embedded subtitles without parsing cues',
+        () async {
+      final File video = File(p.join(tempDir.path, 'movie.mkv'))
+        ..writeAsStringSync('fake video bytes');
+      final _FakeFfmpegBackend backend = _FakeFfmpegBackend();
+      setFfmpegBackendForTesting(backend);
+
+      await prewarmEmbeddedSubtitleCache(video.path);
+
+      expect(backend.probeCount, 1);
+      expect(backend.extractCount, 1);
+      expect(backend.extractedSubtitleIndices, <int>[0, 1]);
+      final Directory cacheDir = embeddedSubtitleCacheDir(video.path);
+      expect(File(p.join(cacheDir.path, 'sub_0.srt')).existsSync(), isTrue);
+      expect(File(p.join(cacheDir.path, 'sub_1.ass')).existsSync(), isTrue);
+      expect(
+        File(p.join(cacheDir.path, 'sub_2.srt')).existsSync(),
+        isFalse,
+        reason: 'PGS/image subtitles must not be prewarmed into text overlay.',
+      );
+    });
+
+    test('manual switch reuses a pending background extraction', () async {
+      final File video = File(p.join(tempDir.path, 'pending.mkv'))
+        ..writeAsStringSync('fake video bytes');
+      final _FakeFfmpegBackend backend = _FakeFfmpegBackend.blockingExtract();
+      setFfmpegBackendForTesting(backend);
+
+      final Future<void> prewarm = prewarmEmbeddedSubtitleCache(video.path);
+      await backend.extractStarted.future;
+
+      final Future<List<AudioCue>> manualLoad = loadCuesForSource(
+        const SubtitleSource.embedded(
+          streamIndex: 0,
+          label: '内封 0: jpn / subrip',
+          language: 'jpn',
+          codec: 'subrip',
+        ),
+        video.path,
+        'video_book_x://book/pending',
+      );
+
+      await Future<void>.delayed(Duration.zero);
+      expect(backend.extractCount, 1,
+          reason: 'manual switch should await the pending prewarm task.');
+
+      backend.completeExtract();
+      await prewarm;
+      final List<AudioCue> cues = await manualLoad;
+
+      expect(backend.extractCount, 1);
+      expect(cues, isNotEmpty);
+    });
+
+    test('prewarm failures complete without affecting later manual fallback',
+        () async {
+      final File video = File(p.join(tempDir.path, 'broken.mkv'))
+        ..writeAsStringSync('fake video bytes');
+      final _FakeFfmpegBackend backend =
+          _FakeFfmpegBackend(extractReturnCode: 1, writeOutputs: false);
+      setFfmpegBackendForTesting(backend);
+
+      await prewarmEmbeddedSubtitleCache(video.path);
+
+      final List<AudioCue> cues = await loadCuesForSource(
+        const SubtitleSource.embedded(
+          streamIndex: 0,
+          label: '内封 0: jpn / subrip',
+          language: 'jpn',
+          codec: 'subrip',
+        ),
+        video.path,
+        'video_book_x://book/broken',
+      );
+
+      expect(cues, isEmpty);
+      expect(backend.extractCount, 2,
+          reason: 'failed prewarm must clear in-flight state for fallback.');
+    });
+  });
+}
+
+class _FakeFfmpegBackend implements FfmpegBackend {
+  _FakeFfmpegBackend({
+    this.extractReturnCode = 0,
+    this.writeOutputs = true,
+  }) : _blockExtract = false;
+
+  _FakeFfmpegBackend.blockingExtract()
+      : extractReturnCode = 0,
+        writeOutputs = true,
+        _blockExtract = true;
+
+  final int extractReturnCode;
+  final bool writeOutputs;
+  final bool _blockExtract;
+
+  int probeCount = 0;
+  int extractCount = 0;
+  final List<int> extractedSubtitleIndices = <int>[];
+  final Completer<void> extractStarted = Completer<void>();
+  final Completer<void> _allowExtract = Completer<void>();
+
+  void completeExtract() {
+    if (!_allowExtract.isCompleted) _allowExtract.complete();
+  }
+
+  @override
+  Future<FfmpegRunResult> run(List<String> args, Duration timeout) async {
+    if (args.contains('-hide_banner')) {
+      probeCount++;
+      return const FfmpegRunResult(returnCode: 1, output: '''
+  Stream #0:0: Video: h264
+  Stream #0:1(jpn): Subtitle: subrip (srt) (default)
+  Stream #0:2(eng): Subtitle: ass (ssa)
+  Stream #0:3(jpn): Subtitle: hdmv_pgs_subtitle
+''');
+    }
+
+    extractCount++;
+    if (!extractStarted.isCompleted) extractStarted.complete();
+    if (_blockExtract) await _allowExtract.future;
+
+    for (int i = 0; i < args.length - 2; i++) {
+      if (args[i] == '-map' && args[i + 1].startsWith('0:s:')) {
+        final int index = int.parse(args[i + 1].substring('0:s:'.length));
+        extractedSubtitleIndices.add(index);
+        if (writeOutputs) {
+          final File output = File(args[i + 2]);
+          output.parent.createSync(recursive: true);
+          output.writeAsStringSync(_subtitleTextFor(output.path));
+        }
+      }
+    }
+    return FfmpegRunResult(returnCode: extractReturnCode, output: '');
+  }
+
+  String _subtitleTextFor(String outputPath) {
+    if (outputPath.toLowerCase().endsWith('.ass')) {
+      return '''
+[Script Info]
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,hello
+''';
+    }
+    return '''
+1
+00:00:01,000 --> 00:00:02,000
+こんにちは
+''';
+  }
 }

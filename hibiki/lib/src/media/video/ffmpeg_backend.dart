@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:ffmpeg_kit_flutter/ffmpeg_kit.dart';
 import 'package:ffmpeg_kit_flutter/return_code.dart';
+import 'package:flutter/foundation.dart';
 
 /// 一次 ffmpeg 执行的结果。
 ///
@@ -145,6 +146,11 @@ FfmpegBackend? _cachedBackend;
 ///   且 iOS 禁 exec 子进程）。
 /// - 桌面（Windows/macOS/Linux）→ 系统 CLI（打包/用户提供 ffmpeg）。
 FfmpegBackend resolveFfmpegBackend() => _cachedBackend ??= _selectBackend();
+
+@visibleForTesting
+void setFfmpegBackendForTesting(FfmpegBackend? backend) {
+  _cachedBackend = backend;
+}
 
 FfmpegBackend _selectBackend() {
   final String? override = Platform.environment['HIBIKI_FFMPEG']?.trim();

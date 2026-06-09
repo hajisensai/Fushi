@@ -476,6 +476,26 @@ Future<List<AudioCue>> _loadEmbeddedCues(
   }
 }
 
+/// Pre-extracts text embedded subtitle tracks for [videoPath] into the shared
+/// cache without parsing or applying cues.
+///
+/// Callers should fire-and-forget this after video load. It reuses the same
+/// in-flight extraction as manual switching, so a user selecting a subtitle
+/// while prewarm is still running waits for that task instead of launching a
+/// second full-container read. Failures are swallowed: manual switching keeps
+/// the existing fallback path and user-facing load failure message.
+Future<void> prewarmEmbeddedSubtitleCache(String videoPath) async {
+  try {
+    await _ensureAllEmbeddedSubtitlesExtracted(
+      videoPath,
+      embeddedSubtitleCacheDir(videoPath),
+    );
+  } catch (e, stack) {
+    debugPrint('[VideoSubtitleSource] embedded subtitle prewarm failed: '
+        '$e\n$stack');
+  }
+}
+
 /// In-flight extract-all futures keyed by cache dir, so two near-simultaneous
 /// switches (or initial load + a quick switch) don't both re-demux the file.
 final Map<String, Future<void>> _embeddedExtractInFlight =
@@ -512,8 +532,11 @@ Future<void> _extractAllEmbeddedSubtitles(
   for (final EmbeddedSubtitleTrack track in tracks) {
     final SubtitleFormat? fmt = subtitleFormatForCodec(track.codec);
     if (fmt == null) continue;
-    outputs[track.streamIndex] =
+    final String outputPath =
         p.join(cacheDir.path, 'sub_${track.streamIndex}${_ext(fmt)}');
+    final File cached = File(outputPath);
+    if (cached.existsSync() && cached.lengthSync() > 0) continue;
+    outputs[track.streamIndex] = outputPath;
   }
   if (outputs.isEmpty) return;
   try {

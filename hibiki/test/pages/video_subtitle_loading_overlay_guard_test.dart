@@ -66,4 +66,19 @@ void main() {
   test('防重复弹出/错误 pop 的状态位', () {
     expect(src.contains('bool _subtitleLoadingShown'), isTrue);
   });
+
+  test('_applyLoad 成功打开视频后后台预抽文本内封字幕缓存（TODO-011）', () {
+    final int start = src.indexOf('Future<void> _applyLoad({');
+    expect(start, greaterThan(-1), reason: '应有 _applyLoad 方法');
+    final int seedAt = src.indexOf('_seedWarmPopup();', start);
+    final int watchAt =
+        src.indexOf('if (!_isRemote && _watchTracker == null)', start);
+    final int prewarmAt = src.indexOf(
+        'unawaited(prewarmEmbeddedSubtitleCache(videoPath));', start);
+    expect(prewarmAt, greaterThan(seedAt), reason: '预抽应在视频打开成功后的 warmup 区域触发');
+    expect(prewarmAt, lessThan(watchAt),
+        reason: '预抽不应混进统计初始化，保持 fire-and-forget 入口清晰');
+    expect(src.substring(seedAt, prewarmAt), contains('if (videoPath != null)'),
+        reason: '远程流没有本地容器文件，不应触发内封字幕预抽');
+  });
 }

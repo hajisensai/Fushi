@@ -787,6 +787,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // 视频就绪后预热查词浮层（BUG-094）：seed 一个常驻隐藏热 WebView，全程复用，
     // 查词不再每次冷加载白屏。放成功分支（缺书/错误态不预热，无视频无需查词）。
     _seedWarmPopup();
+    if (videoPath != null) {
+      // TODO-011: large REMUX containers can spend many seconds demuxing text
+      // embedded subtitles on the first switch. Start the shared cache fill
+      // only after playback has opened so UI/video startup is not blocked.
+      unawaited(prewarmEmbeddedSubtitleCache(videoPath));
+    }
 
     // 首次 load 建观看统计采集器；换片复用同一 controller 实例，已 attach 不重建。
     if (!_isRemote && _watchTracker == null) {
