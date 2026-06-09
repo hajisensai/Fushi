@@ -1453,5 +1453,9 @@
     "remote_book_downloaded": "Downloaded remote book",
     "remote_book_load_failed": "Could not load paired device books",
     "remote_book_download_failed": "Could not download remote book",
-    "video_drop_audio_unsupported": "Drop subtitle files onto the current video. Audio files cannot be attached here."
+    "video_drop_audio_unsupported": "Drop subtitle files onto the current video. Audio files cannot be attached here.",
+    "reader_copy_image": "Copy image",
+    "reader_image_file_unavailable": "Image file is unavailable.",
+    "reader_image_copy_failed": "Failed to copy image: ${error}",
+    "reader_image_share_failed": "Failed to share image: ${error}"
 }

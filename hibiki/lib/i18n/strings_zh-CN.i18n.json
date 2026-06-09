@@ -1453,5 +1453,9 @@
     "remote_book_downloaded": "已下载对端书籍",
     "remote_book_load_failed": "无法加载对端设备书籍",
     "remote_book_download_failed": "无法下载对端书籍",
-    "video_drop_audio_unsupported": "请把字幕文件拖到当前视频上。音频文件不能在这里关联。"
+    "video_drop_audio_unsupported": "请把字幕文件拖到当前视频上。音频文件不能在这里关联。",
+    "reader_copy_image": "复制图片",
+    "reader_image_file_unavailable": "图片文件不可用。",
+    "reader_image_copy_failed": "复制图片失败：${error}",
+    "reader_image_share_failed": "分享图片失败：${error}"
 }
