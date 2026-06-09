@@ -59,8 +59,8 @@ void main() {
       expect(repo.popupMaxHeight, 360.0);
     });
 
-    test('popupInstantScroll defaults to false', () {
-      expect(repo.popupInstantScroll, false);
+    test('popupInstantScroll defaults to true', () {
+      expect(repo.popupInstantScroll, true);
     });
 
     test('searchDebounceDelay defaults to 100', () {
@@ -186,11 +186,11 @@ void main() {
     });
 
     test('setPopupInstantScroll round-trips through DB', () async {
-      await repo.setPopupInstantScroll(true);
+      await repo.setPopupInstantScroll(false);
 
       final repo2 = PreferencesRepository(db);
       await repo2.loadFromDb();
-      expect(repo2.popupInstantScroll, true);
+      expect(repo2.popupInstantScroll, false);
       repo2.dispose();
     });
 

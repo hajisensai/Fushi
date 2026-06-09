@@ -33,13 +33,32 @@ void main() {
         'lib/src/pages/implementations/dictionary_popup_webview.dart',
       ).readAsStringSync();
 
+      expect(source, contains('Future<void> _pushInstantScrollPreference()'));
+      expect(
+        source,
+        contains(
+            'final bool enabled = ref.read(appProvider).popupInstantScroll'),
+        reason: 'Theme/dependency changes must re-push the current preference '
+            'into the already-loaded popup WebView.',
+      );
       expect(source, contains('appModel.popupInstantScroll'));
+      expect(source,
+          contains('final popupInstantScroll = appModel.popupInstantScroll'));
       expect(
         source,
         contains('ReaderCaretScripts.instantScrollInvocation('),
         reason: 'The persisted e-ink setting must be pushed into the popup '
             'WebView through the shared caret invocation builder so LB/RB and '
             'edge-follow scroll without animation when enabled.',
+      );
+      expect(
+        source,
+        contains(
+            '      \${ReaderCaretScripts.instantScrollInvocation(popupInstantScroll)};\n'
+            '      window.__hoshiResetPopupScroll = function() {'),
+        reason:
+            'Initial result injection must set the caret scroll mode before '
+            'rendering or resetting the warm popup DOM.',
       );
     });
   });

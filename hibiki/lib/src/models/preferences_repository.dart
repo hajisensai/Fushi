@@ -294,7 +294,7 @@ class PreferencesRepository extends ChangeNotifier {
   }
 
   bool get popupInstantScroll =>
-      getPref('popup_instant_scroll', defaultValue: false) as bool;
+      getPref('popup_instant_scroll', defaultValue: true) as bool;
 
   Future<void> setPopupInstantScroll(bool value) async {
     await setPref('popup_instant_scroll', value);
