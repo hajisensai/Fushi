@@ -1522,44 +1522,33 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             icon: const Icon(Icons.playlist_play, size: _videoControlIconSize),
             onPressed: _showEpisodeList,
           ),
-        // 宽屏（横屏/平板）平铺全部次级图标；窄屏（竖屏）收进 ⋮ 更多。
-        if (roomy) ...<Widget>[
-          MaterialCustomButton(
-            icon: const Icon(
-              Icons.photo_camera_outlined,
-              size: _videoControlIconSize,
-            ),
-            onPressed: _saveScreenshot,
+        MaterialCustomButton(
+          icon: const Icon(
+            Icons.photo_camera_outlined,
+            size: _videoControlIconSize,
           ),
-          MaterialCustomButton(
-            icon: const Icon(Icons.subtitles, size: _videoControlIconSize),
-            onPressed: () => _showSubtitleSourceMenu(controller),
-          ),
-          MaterialCustomButton(
-            icon: const Icon(Icons.audiotrack, size: _videoControlIconSize),
-            onPressed: () => _showAudioTrackMenu(controller),
-          ),
-          MaterialCustomButton(
-            icon: const Icon(Icons.speed, size: _videoControlIconSize),
-            onPressed: _showSpeedMenu,
-          ),
-          MaterialCustomButton(
-            icon: const Icon(Icons.tune, size: _videoControlIconSize),
-            onPressed: _showPlayerSettings,
-          ),
-        ] else
-          MaterialCustomButton(
-            icon: const Icon(Icons.more_vert, size: _videoControlIconSize),
-            onPressed: () => _showMobileMoreMenu(controller),
-          ),
+          onPressed: _saveScreenshot,
+        ),
+        MaterialCustomButton(
+          icon: const Icon(Icons.subtitles, size: _videoControlIconSize),
+          onPressed: () => _showSubtitleSourceMenu(controller),
+        ),
+        MaterialCustomButton(
+          icon: const Icon(Icons.audiotrack, size: _videoControlIconSize),
+          onPressed: () => _showAudioTrackMenu(controller),
+        ),
+        MaterialCustomButton(
+          icon: const Icon(Icons.tune, size: _videoControlIconSize),
+          onPressed: _showPlayerSettings,
+        ),
       ],
       bottomButtonBar: <Widget>[
         const MaterialPositionIndicator(),
         const Spacer(),
         if (roomyBottomBar)
           MaterialCustomButton(
-            icon: const Icon(Icons.replay, size: _videoControlIconSize),
-            onPressed: () => _seekRelative(-_asbSeekMs),
+            icon: const Icon(Icons.replay_10, size: _videoControlIconSize),
+            onPressed: () => _seekRelative(-10000),
           ),
         MaterialCustomButton(
           icon: const Icon(Icons.skip_previous, size: _videoControlIconSize),
@@ -1572,8 +1561,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         ),
         if (roomyBottomBar)
           MaterialCustomButton(
-            icon: const Icon(Icons.forward, size: _videoControlIconSize),
-            onPressed: () => _seekRelative(_asbSeekMs),
+            icon: const Icon(Icons.forward_10, size: _videoControlIconSize),
+            onPressed: () => _seekRelative(10000),
           ),
         const Spacer(),
         const MaterialFullscreenButton(),
