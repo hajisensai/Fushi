@@ -1,4 +1,7 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/utils/components/clipboard_lookup_text_panel.dart';
 import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
@@ -34,6 +37,36 @@ void main() {
     );
 
     await tester.tap(find.text('c'));
+
+    expect(query, 'cdef');
+    expect(rect, isNotNull);
+    expect(rect, isNot(Rect.zero));
+  });
+
+  testWidgets('shift-hover looks up the suffix under the pointer',
+      (WidgetTester tester) async {
+    String? query;
+    Rect? rect;
+
+    await tester.pumpWidget(
+      buildSubject(
+        text: 'abcdef',
+        onLookup: (String value, Rect localRect) {
+          query = value;
+          rect = localRect;
+        },
+      ),
+    );
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    final TestGesture mouse =
+        await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: tester.getCenter(find.text('c')));
+    await tester.pump();
+    await mouse.moveTo(tester.getCenter(find.text('c')));
+    await tester.pump();
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await mouse.removePointer();
 
     expect(query, 'cdef');
     expect(rect, isNotNull);

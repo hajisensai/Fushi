@@ -33,6 +33,21 @@ void main() {
       reason: 'The clipboard text panel must not be stacked over WebView '
           'results; that visually overlaps the first dictionary row.',
     );
+
+    final int panelIndex = resultBody.indexOf('ClipboardLookupTextPanel(');
+    final int neutralizerIndex =
+        resultBody.indexOf('HibikiAppUiScaleNeutralizer(');
+    final int webViewIndex = resultBody.indexOf('DictionaryPopupWebView(');
+    expect(panelIndex, isNonNegative);
+    expect(neutralizerIndex, isNonNegative);
+    expect(webViewIndex, greaterThan(neutralizerIndex));
+    expect(
+      panelIndex,
+      lessThan(neutralizerIndex),
+      reason: 'The external clipboard text panel is regular app UI and must '
+          'stay outside the WebView scale neutralizer so it follows the '
+          'global UI/font size setting.',
+    );
   });
 }
 

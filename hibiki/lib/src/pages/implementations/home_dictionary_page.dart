@@ -476,22 +476,21 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
   // ── search results with nested popups ──────────────────────────────
 
   Widget _buildSearchResultBody() {
-    // 根因修复（BUG-054）：查词结果区是 DictionaryPopupWebView + 同坐标系嵌套弹窗的
-    // Stack，必须整块在中和器下渲染（净缩放=1），否则被全局「界面大小」的 FittedBox
-    // 拉糊。中和器包在 LayoutBuilder 外层 → 内层 constraints/screen 都是真实视口几何，
-    // WebView 与弹窗共用同一坐标系，selectionRect 定位不错位。
-    return HibikiAppUiScaleNeutralizer(
-      child: Column(
-        children: [
-          if (_externalLookupText.trim().isNotEmpty)
-            ClipboardLookupTextPanel(
-              text: _externalLookupText,
-              coordinateSpaceKey: _resultStackKey,
-              onLookup: (String query, Rect localRect) {
-                _pushNestedPopup(query, localRect, replaceStack: true);
-              },
-            ),
-          Expanded(
+    return Column(
+      children: [
+        if (_externalLookupText.trim().isNotEmpty)
+          ClipboardLookupTextPanel(
+            text: _externalLookupText,
+            coordinateSpaceKey: _resultStackKey,
+            onLookup: (String query, Rect localRect) {
+              _pushNestedPopup(query, localRect, replaceStack: true);
+            },
+          ),
+        // 根因修复（BUG-054）：查词结果区是 DictionaryPopupWebView + 同坐标系嵌套弹窗的
+        // Stack，必须整块在中和器下渲染（净缩放=1），否则被全局「界面大小」的 FittedBox
+        // 拉糊。剪贴板文本条是普通 app UI，留在中和器外以继续吃界面大小设置。
+        Expanded(
+          child: HibikiAppUiScaleNeutralizer(
             child: LayoutBuilder(
               builder: (context, constraints) {
                 final Size screen =
@@ -538,8 +537,8 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
               },
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
