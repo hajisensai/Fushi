@@ -1457,5 +1457,6 @@
     "video_shader_section_templates": "着色器模板",
     "video_shader_section_import": "导入着色器",
     "video_shader_section_installed": "已安装着色器",
-    "video_quality_enhancement_hint": "默认使用 mpv 内置高画质缩放；下方选择的着色器只会在开启时应用。"
+    "video_quality_enhancement_hint": "默认使用 mpv 内置高画质缩放；下方选择的着色器只会在开启时应用。",
+    "lookup_audio_volume": "查词音量"
 }

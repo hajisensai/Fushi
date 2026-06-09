@@ -274,7 +274,10 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
 
       // Plays remote URLs and local file paths uniformly, including Windows
       // drive-letter paths (BUG-046).
-      final bool ok = await TtsChannel.instance.playAudioRef(url);
+      final bool ok = await TtsChannel.instance.playAudioRef(
+        url,
+        volume: ReaderHibikiSource.instance.lookupAudioVolumeGain,
+      );
       debugPrint('[hibiki-autoread] play ok=$ok');
     } catch (e, st) {
       debugPrint('[hibiki-autoread] error: $e\n$st');

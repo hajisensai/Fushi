@@ -13,18 +13,20 @@ class DesktopAudioPlayback {
 
   static final AudioPlayer _player = AudioPlayer();
 
-  static Future<bool> playUrl(String url) =>
-      _play(() => _player.setUrl(url), 'playUrl');
+  static Future<bool> playUrl(String url, {double volume = 1.0}) =>
+      _play(() => _player.setUrl(url), 'playUrl', volume);
 
-  static Future<bool> playFile(String path) =>
-      _play(() => _player.setFilePath(path), 'playFile');
+  static Future<bool> playFile(String path, {double volume = 1.0}) =>
+      _play(() => _player.setFilePath(path), 'playFile', volume);
 
   static Future<bool> _play(
     Future<Duration?> Function() load,
     String tag,
+    double volume,
   ) async {
     try {
       await _player.stop();
+      await _player.setVolume(volume.clamp(0.0, 1.0));
       await load();
       // play() completes only when playback finishes; fire-and-forget so the
       // caller (the popup audio button) is not blocked for the clip duration.

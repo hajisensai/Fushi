@@ -131,7 +131,10 @@ mixin DictionaryPageMixin {
         sources: mixinAppModel.audioSourceConfigs,
       );
       if (url == null || url.isEmpty) return;
-      await TtsChannel.instance.playAudioRef(url);
+      await TtsChannel.instance.playAudioRef(
+        url,
+        volume: ReaderHibikiSource.instance.lookupAudioVolumeGain,
+      );
     } catch (e, st) {
       debugPrint('[hibiki-autoread] error: $e\n$st');
     }

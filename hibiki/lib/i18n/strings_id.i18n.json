@@ -1457,5 +1457,6 @@
     "video_shader_section_templates": "Shader templates",
     "video_shader_section_import": "Import shaders",
     "video_shader_section_installed": "Installed shaders",
-    "video_quality_enhancement_hint": "Uses mpv's built-in high-quality scaling by default. Shader choices below only apply while this is on."
+    "video_quality_enhancement_hint": "Uses mpv's built-in high-quality scaling by default. Shader choices below only apply while this is on.",
+    "lookup_audio_volume": "Lookup audio volume"
 }

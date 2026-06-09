@@ -80,6 +80,8 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'lookup/Desktop clipboard lookup':
       'DEVICE: clipboard watcher + hotkey lifecycle (test/sync/desktop_lookup_service_test.dart)',
   'lookup/Auto read word on lookup': 'DEVICE: TTS auto-read',
+  'lookup/Lookup audio volume':
+      'test/reader/lookup_audio_volume_settings_test.dart + test/utils/misc/lookup_audio_volume_wiring_static_test.dart + test/settings/settings_renderer_test.dart',
   'lookup/Collapse dictionaries': 'DEVICE: popup.js collapse',
   'lookup/Show expression tags': 'DEVICE: popup.js expression tags',
   'lookup/Deduplicate pitch accents': 'DEVICE: popup.js pitch dedup',

@@ -1025,13 +1025,32 @@ SettingsDestination _lookupDestination() {
               notifyReaderSettingsChanged(settingsContext);
             },
           ),
+          SettingsSliderItem(
+            id: 'lookup.audio_volume',
+            title: t.lookup_audio_volume,
+            icon: Icons.volume_up_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.lookup,
+              order: 1,
+            ),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.lookupAudioVolume.toDouble(),
+            min: 0,
+            max: 100,
+            divisions: 20,
+            label: (double value) => '${value.round()}%',
+            onChanged: (SettingsContext settingsContext, double value) async {
+              await settingsContext.readerSource.setLookupAudioVolume(value);
+              notifyReaderSettingsChanged(settingsContext);
+            },
+          ),
           SettingsSwitchItem(
             id: 'lookup.pause_on_lookup',
             title: t.pause_on_lookup,
             icon: Icons.pause_circle_outline,
             reader: const ReaderPlacement(
               group: ReaderGroup.lookup,
-              order: 1,
+              order: 2,
             ),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.pauseOnLookup,

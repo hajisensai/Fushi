@@ -469,6 +469,27 @@ class ReaderHibikiSource extends ReaderMediaSource {
     );
   }
 
+  int get lookupAudioVolume {
+    final int raw = readerSettings?.lookupAudioVolume ??
+        getPreference<int>(key: 'lookup_audio_volume', defaultValue: 100);
+    return ReaderSettings.normalizeLookupAudioVolume(raw);
+  }
+
+  double get lookupAudioVolumeGain => lookupAudioVolume / 100.0;
+
+  Future<void> setLookupAudioVolume(num volume) async {
+    final int clamped = ReaderSettings.normalizeLookupAudioVolume(volume);
+    final ReaderSettings? settings = readerSettings;
+    if (settings != null) {
+      await settings.setLookupAudioVolume(clamped);
+      return;
+    }
+    await setPreference<int>(
+      key: 'lookup_audio_volume',
+      value: clamped,
+    );
+  }
+
   bool get pauseOnLookup =>
       getPreference<bool>(key: 'pause_on_lookup', defaultValue: false);
 
