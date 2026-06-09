@@ -1,0 +1,5 @@
+# Paths in this list must not be pushed by tool/sync_to_mac.ps1 when they are
+# touched by local commits. Keep entries repo-relative and slash-separated.
+手机编译安装ARM.bat
+docs/项目负责人提示词 copy
+docs/项目负责人提示词
