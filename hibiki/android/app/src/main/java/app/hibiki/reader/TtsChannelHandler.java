@@ -14,6 +14,8 @@ import androidx.annotation.NonNull;
 
 import java.io.File;
 import java.io.FileOutputStream;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -455,7 +457,9 @@ public class TtsChannelHandler {
                     if (audioCursor != null && audioCursor.moveToFirst()) {
                         byte[] audioData = audioCursor.getBlob(0);
                         String ext = fileArg.endsWith(".opus") ? ".opus" : ".mp3";
-                        File tempFile = new File(cacheDir, "local_audio" + ext);
+                        File tempFile = new File(
+                            cacheDir,
+                            "local_audio_" + localAudioCacheKey(fileArg, sourceArg) + ext);
                         try (FileOutputStream fos = new FileOutputStream(tempFile)) {
                             fos.write(audioData);
                         }
@@ -470,6 +474,26 @@ public class TtsChannelHandler {
                 }
             }
         });
+    }
+
+    private static String localAudioCacheKey(String file, String source) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] bytes = digest.digest((source + "\n" + file)
+                .getBytes(StandardCharsets.UTF_8));
+            String hex = bytesToHex(bytes);
+            return hex.substring(0, Math.min(16, hex.length()));
+        } catch (Exception e) {
+            return Integer.toHexString((source + "\n" + file).hashCode());
+        }
+    }
+
+    private static String bytesToHex(byte[] bytes) {
+        StringBuilder builder = new StringBuilder(bytes.length * 2);
+        for (byte b : bytes) {
+            builder.append(String.format("%02x", b & 0xff));
+        }
+        return builder.toString();
     }
 
     @androidx.annotation.OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)

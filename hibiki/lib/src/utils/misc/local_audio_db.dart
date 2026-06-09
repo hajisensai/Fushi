@@ -123,7 +123,8 @@ class LocalAudioDb {
       if (data is! Uint8List || data.isEmpty) return null;
 
       final String ext = file.endsWith('.opus') ? '.opus' : '.mp3';
-      final File out = File('${cacheDir.path}/local_audio$ext');
+      final String key = _localAudioCacheKey(file: file, source: source);
+      final File out = File('${cacheDir.path}/local_audio_$key$ext');
       out.parent.createSync(recursive: true);
       out.writeAsBytesSync(data);
       return out.path;
@@ -158,4 +159,13 @@ class LocalAudioDb {
     }
     return null;
   }
+}
+
+String _localAudioCacheKey({required String file, required String source}) {
+  int hash = 0x811c9dc5;
+  for (final int codeUnit in '$source\n$file'.codeUnits) {
+    hash ^= codeUnit;
+    hash = (hash * 0x01000193) & 0xffffffff;
+  }
+  return hash.toRadixString(16).padLeft(8, '0');
 }

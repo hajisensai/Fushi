@@ -157,4 +157,37 @@ void main() {
     expect(path, isNotNull);
     expect(path!.endsWith('.opus'), isTrue);
   });
+
+  test('extractBlob keeps different local audio blobs on different paths', () {
+    final Database db = sqlite3.open(dbPath);
+    db.execute("INSERT INTO entries VALUES ('other','','b.mp3','src1')");
+    final PreparedStatement stmt =
+        db.prepare('INSERT INTO android (file, source, data) VALUES (?,?,?)');
+    stmt.execute(<Object?>[
+      'b.mp3',
+      'src1',
+      Uint8List.fromList(<int>[8, 7, 6])
+    ]);
+    stmt.dispose();
+    db.dispose();
+
+    final String? first = LocalAudioDb.extractBlob(
+      dbPath: dbPath,
+      file: 'a.mp3',
+      source: 'src1',
+      cacheDir: dir,
+    );
+    final String? second = LocalAudioDb.extractBlob(
+      dbPath: dbPath,
+      file: 'b.mp3',
+      source: 'src1',
+      cacheDir: dir,
+    );
+
+    expect(first, isNotNull);
+    expect(second, isNotNull);
+    expect(first, isNot(second));
+    expect(File(first!).readAsBytesSync(), <int>[1, 2, 3, 4, 5]);
+    expect(File(second!).readAsBytesSync(), <int>[8, 7, 6]);
+  });
 }

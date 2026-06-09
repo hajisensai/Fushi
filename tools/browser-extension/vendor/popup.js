@@ -19,6 +19,26 @@ const NUMERIC_TAG = /^\d+$/;
 // this might not cover every tag
 const POS_TAGS = new Set(['n', 'adj-i', 'adj-na', 'adj-no', 'v1', 'vk', 'vs', 'vs-i', 'vs-s', 'vz', 'vi', 'vt']);
 const audioUrls = {};
+
+function audioCacheKey(expression, reading) {
+    return `${expression || ''}\u0000${reading || ''}`;
+}
+
+async function resolveCachedAudioUrl(expression, reading, entryIndex) {
+    const key = audioCacheKey(expression, reading);
+    const cached = audioUrls[entryIndex];
+    if (cached?.key === key) {
+        return cached.url;
+    }
+    const url = await fetchAudioUrl(expression, reading);
+    if (url) {
+        audioUrls[entryIndex] = { key, url };
+    } else {
+        delete audioUrls[entryIndex];
+    }
+    return url;
+}
+
 let currentAudio = null;
 let lastSelection = '';
 let currentDictionaryMedia = null;
@@ -830,11 +850,16 @@ async function mineEntry(expression, reading, frequencies, pitches, rules, match
     const pitchPositions = constructPitchPositionHtml(pitches);
     const pitchCategories = constructPitchCategories(pitches, reading, rules);
     
-    if (!audioUrls[idx] && window.audioSources?.length && window.needsAudio) {
-        audioUrls[idx] = await fetchAudioUrl(expression, reading || expression);
+    const audioReading = reading || expression;
+    let audio = '';
+    if (window.audioSources?.length && window.needsAudio) {
+        audio = await resolveCachedAudioUrl(expression, audioReading, idx);
+    } else {
+        const cached = audioUrls[idx];
+        if (cached?.key === audioCacheKey(expression, audioReading)) {
+            audio = cached.url;
+        }
     }
-    
-    const audio = audioUrls[idx] || '';
     
     return await window.flutter_inappwebview.callHandler('mineEntry', {
         expression,
@@ -1328,14 +1353,12 @@ function createAudioButton(expression, reading, entryIndex) {
         className: 'audio-button',
         textContent: '♪',
         onclick: async () => {
-            if (!audioUrls[entryIndex]) {
-                audioUrls[entryIndex] = await fetchAudioUrl(expression, reading);
-            }
-            if (!audioUrls[entryIndex]) {
+            const audioUrl = await resolveCachedAudioUrl(expression, reading || expression, entryIndex);
+            if (!audioUrl) {
                 showAudioError(button);
                 return;
             }
-            if (!await playWordAudio(audioUrls[entryIndex])) {
+            if (!await playWordAudio(audioUrl)) {
                 showAudioError(button);
             }
         }

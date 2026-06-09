@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../anki_models.dart';
 import '../base_anki_repository.dart';
+import '../ankiconnect/ankiconnect_repository.dart';
 import '../lapis_note_type.dart';
 
 class AnkiRepository extends BaseAnkiRepository {
@@ -322,19 +323,37 @@ class AnkiRepository extends BaseAnkiRepository {
   }
 
   Future<String?> _addCoverImage(String path) async {
-    final raw = await _addMediaFile(
-        path,
-        'hibiki_cover_${File(path).uri.pathSegments.last}',
-        mimeTypeForPath(path));
+    final preferredName =
+        await _preferredMediaNameForFile(path, 'hibiki_cover_');
+    if (preferredName == null) return null;
+    final raw = await _addMediaFile(path, preferredName, mimeTypeForPath(path));
     return raw != null
         ? '<img src="${const HtmlEscape().convert(raw)}">'
         : null;
   }
 
   Future<String?> _addSasayakiAudio(String path) async {
-    final raw = await _addMediaFile(
-        path, File(path).uri.pathSegments.last, mimeTypeForPath(path));
+    final preferredName =
+        await _preferredMediaNameForFile(path, 'hibiki_audio_');
+    if (preferredName == null) return null;
+    final raw = await _addMediaFile(path, preferredName, mimeTypeForPath(path));
     return raw != null ? '[sound:$raw]' : null;
+  }
+
+  Future<String?> _preferredMediaNameForFile(
+    String path,
+    String prefix, {
+    String fallbackExtension = 'bin',
+  }) async {
+    final file = File(path);
+    if (!file.existsSync()) return null;
+    final bytes = await file.readAsBytes();
+    return hibikiAnkiMediaFilenameForBytes(
+      prefix: prefix,
+      bytes: bytes,
+      sourceName: file.path,
+      fallbackExtension: fallbackExtension,
+    );
   }
 
   Future<String?> _addRemoteAudio(String url) async {
@@ -345,7 +364,18 @@ class AnkiRepository extends BaseAnkiRepository {
           return null;
         case AnkiAudioRefKind.localFile:
           // file:// URI or a bare absolute path (Unix `/…` or Windows `C:\…`).
-          audioFile = File(AnkiAudioRef.localPath(url));
+          final file = File(AnkiAudioRef.localPath(url));
+          final preferredName = await _preferredMediaNameForFile(
+            file.path,
+            'hibiki_audio_',
+            fallbackExtension: 'mp3',
+          );
+          if (preferredName == null) return null;
+          return _addMediaFile(
+            file.path,
+            preferredName,
+            mimeTypeForPath(preferredName),
+          );
         case AnkiAudioRefKind.remoteUrl:
           final client = HttpClient();
           try {
@@ -362,8 +392,14 @@ class AnkiRepository extends BaseAnkiRepository {
             final bytes =
                 await response.fold<List<int>>([], (a, b) => a..addAll(b));
             final cacheDir = await _mediaCacheDir();
-            final urlHash = url.hashCode.toUnsigned(32).toRadixString(16);
-            audioFile = File('${cacheDir.path}/hibiki_audio_$urlHash.mp3');
+            final ext = _audioExtension(response.headers.contentType, url);
+            final preferredName = hibikiAnkiMediaFilenameForBytes(
+              prefix: 'hibiki_audio_',
+              bytes: bytes,
+              sourceName: url,
+              fallbackExtension: ext,
+            );
+            audioFile = File('${cacheDir.path}/$preferredName');
             await audioFile.writeAsBytes(bytes);
           } finally {
             client.close();
@@ -374,7 +410,10 @@ class AnkiRepository extends BaseAnkiRepository {
       // download that produced no file).
       if (!audioFile.existsSync()) return null;
       return _addMediaFile(
-          audioFile.path, audioFile.uri.pathSegments.last, 'audio/mpeg');
+        audioFile.path,
+        audioFile.uri.pathSegments.last,
+        mimeTypeForPath(audioFile.path),
+      );
     } catch (e, stack) {
       debugPrint('AnkiRepository._addRemoteAudio: $e\n$stack');
       return null;
@@ -418,6 +457,36 @@ class AnkiRepository extends BaseAnkiRepository {
     final dir = Directory('${Directory.systemTemp.path}/anki-media');
     if (!dir.existsSync()) dir.createSync(recursive: true);
     return dir;
+  }
+
+  String _audioExtension(ContentType? contentType, String url) {
+    switch (contentType?.mimeType) {
+      case 'audio/mpeg':
+        return 'mp3';
+      case 'audio/aac':
+        return 'aac';
+      case 'audio/mp4':
+      case 'audio/x-m4a':
+        return 'm4a';
+      case 'audio/wav':
+      case 'audio/x-wav':
+        return 'wav';
+      case 'audio/ogg':
+      case 'audio/opus':
+        return 'ogg';
+      case 'audio/webm':
+        return 'webm';
+      case 'audio/flac':
+      case 'audio/x-flac':
+        return 'flac';
+    }
+    final path = Uri.tryParse(url)?.path ?? url;
+    final lastDot = path.lastIndexOf('.');
+    final lastSlash = path.lastIndexOf('/');
+    if (lastDot > lastSlash && lastDot < path.length - 1) {
+      return path.substring(lastDot + 1).toLowerCase();
+    }
+    return 'mp3';
   }
 
   int _findReadingFieldIndex(
