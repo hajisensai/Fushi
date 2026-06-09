@@ -3,31 +3,128 @@ import 'package:hibiki/src/media/audiobook/mining_audio_clip.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 
 void main() {
-  group('miningSentenceAudioClip', () {
-    test('adds a short tail to card sentence audio exports', () {
-      final AudioCue cue = _cue(startMs: 1000, endMs: 2300);
+  group('miningSentenceAudioRange', () {
+    test('uses the complete sentence range to merge overlapping cues', () {
+      final List<AudioCue> cues = <AudioCue>[
+        _cue(
+          startMs: 1000,
+          endMs: 1600,
+          text: '僕',
+          textFragmentId: _frag(0, 0, 10),
+        ),
+        _cue(
+          startMs: 1600,
+          endMs: 2300,
+          text: 'は',
+          textFragmentId: _frag(0, 10, 20),
+        ),
+        _cue(
+          startMs: 2300,
+          endMs: 4300,
+          text: '学校へ行った',
+          textFragmentId: _frag(0, 20, 60),
+        ),
+        _cue(
+          startMs: 4300,
+          endMs: 5200,
+          text: '次の文',
+          textFragmentId: _frag(0, 60, 80),
+        ),
+      ];
 
-      final AudioCue clip = miningSentenceAudioClip(cue);
+      final AudioPlaybackRange clip = miningSentenceAudioRange(
+        cues: cues,
+        cue: cues[1],
+        sentence: '「僕は学校へ行った。」',
+        sectionIndex: 0,
+        sentenceNormCharOffset: 0,
+        sentenceNormCharLength: 60,
+      );
 
       expect(clip.startMs, 1000);
-      expect(clip.endMs, 2300 + kMiningSentenceAudioTailPaddingMs);
+      expect(clip.endMs, 4300);
     });
 
-    test('keeps invalid one-millisecond fallback ranges valid', () {
-      final AudioCue cue = _cue(startMs: 5000, endMs: 5001);
+    test('expands adjacent cue text contained in the selected sentence', () {
+      final List<AudioCue> cues = <AudioCue>[
+        _cue(startMs: 1000, endMs: 1600, text: '僕'),
+        _cue(startMs: 1600, endMs: 2300, text: 'は'),
+        _cue(startMs: 2300, endMs: 4300, text: '学校へ行った'),
+        _cue(startMs: 4300, endMs: 5200, text: '次の文'),
+      ];
 
-      final AudioCue clip = miningSentenceAudioClip(cue);
+      final AudioPlaybackRange clip = miningSentenceAudioRange(
+        cues: cues,
+        cue: cues[1],
+        sentence: '「僕は学校へ行った。」',
+      );
+
+      expect(clip.startMs, 1000);
+      expect(clip.endMs, 4300);
+    });
+
+    test('expands around the current cue when repeated text lacks positions',
+        () {
+      final List<AudioCue> cues = <AudioCue>[
+        _cue(startMs: 1000, endMs: 1600, text: '僕'),
+        _cue(startMs: 1600, endMs: 2300, text: 'は'),
+        _cue(startMs: 2300, endMs: 4300, text: '学校へ行った'),
+        _cue(startMs: 9000, endMs: 9600, text: '僕'),
+        _cue(startMs: 9600, endMs: 10300, text: 'は'),
+        _cue(startMs: 10300, endMs: 12300, text: '学校へ行った'),
+      ];
+
+      final AudioPlaybackRange clip = miningSentenceAudioRange(
+        cues: cues,
+        cue: cues[4],
+        sentence: '僕は学校へ行った。',
+        sectionIndex: 0,
+        sentenceNormCharOffset: 0,
+        sentenceNormCharLength: 60,
+      );
+
+      expect(clip.startMs, 9000);
+      expect(clip.endMs, 12300);
+    });
+
+    test('falls back to the exact cue range without tail padding', () {
+      final AudioCue cue = _cue(startMs: 5000, endMs: 6200, text: 'は');
+
+      final AudioPlaybackRange clip = miningSentenceAudioRange(
+        cues: <AudioCue>[cue],
+        cue: cue,
+        sentence: '別の文',
+      );
 
       expect(clip.startMs, 5000);
-      expect(clip.endMs, greaterThan(clip.startMs));
+      expect(clip.endMs, 6200);
     });
 
-    test('does not mutate the source cue', () {
-      final AudioCue cue = _cue(startMs: 1000, endMs: 2300);
+    test('applies playback delay by shifting the whole range', () {
+      final AudioCue cue = _cue(startMs: 5000, endMs: 6200, text: 'は');
 
-      miningSentenceAudioClip(cue);
+      final AudioPlaybackRange clip = miningSentenceAudioRange(
+        cues: <AudioCue>[cue],
+        cue: cue,
+        sentence: 'は',
+        delayMs: -250,
+      );
 
-      expect(cue.endMs, 2300);
+      expect(clip.startMs, 4750);
+      expect(clip.endMs, 5950);
+    });
+
+    test('keeps invalid fallback ranges valid', () {
+      final AudioCue cue = _cue(startMs: 5000, endMs: 5000, text: 'は');
+
+      final AudioPlaybackRange clip = miningSentenceAudioRange(
+        cues: <AudioCue>[cue],
+        cue: cue,
+        sentence: '',
+      );
+
+      expect(clip.startMs, 5000);
+      expect(clip.endMs, 5001);
     });
   });
 }
@@ -35,14 +132,23 @@ void main() {
 AudioCue _cue({
   required int startMs,
   required int endMs,
+  String text = '吾輩は猫である。',
+  String textFragmentId = '#s0',
 }) {
   return AudioCue()
     ..bookKey = 'book'
     ..chapterHref = 'chapter.xhtml'
     ..sentenceIndex = 0
-    ..textFragmentId = '#s0'
-    ..text = '吾輩は猫である。'
+    ..textFragmentId = textFragmentId
+    ..text = text
     ..startMs = startMs
     ..endMs = endMs
     ..audioFileIndex = 0;
 }
+
+String _frag(int sectionIndex, int start, int end) =>
+    SasayakiMatchCodec.encodeHit(
+      sectionIndex: sectionIndex,
+      normCharStart: start,
+      normCharEnd: end,
+    );

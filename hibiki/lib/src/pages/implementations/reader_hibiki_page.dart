@@ -2721,6 +2721,41 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     return null;
   }
 
+  List<AudioCue> _sentenceAudioMiningCues(AudioCue cue) {
+    if (_lyricsMode && _lyricsCueList.isNotEmpty) {
+      return _lyricsCueList;
+    }
+
+    final List<AudioCue>? allCues = _cachedAllCues;
+    if (_srtBookUid != null && allCues != null && allCues.isNotEmpty) {
+      final int chapter = _currentChapter;
+      if (_srtChapterRanges != null &&
+          chapter >= 0 &&
+          chapter < _srtChapterRanges!.length) {
+        final (int first, int last) = _srtChapterRanges![chapter];
+        final int safeFirst = first.clamp(0, allCues.length);
+        final int safeLast = (last + 1).clamp(safeFirst, allCues.length);
+        return allCues.sublist(safeFirst, safeLast);
+      }
+      return allCues;
+    }
+
+    final List<AudioCue> sectionCues =
+        _audiobookController?.sasayakiCuesForSection(_lookupSectionIndex) ??
+            const <AudioCue>[];
+    if (sectionCues.isNotEmpty) {
+      return sectionCues;
+    }
+
+    final List<AudioCue> chapterCues =
+        _audiobookController?.chapterCuesSnapshot ?? const <AudioCue>[];
+    if (chapterCues.isNotEmpty) {
+      return chapterCues;
+    }
+
+    return <AudioCue>[cue];
+  }
+
   void _syncCueSentence() {
     final String cueText = _lookupCue?.text ?? '';
     if (cueText.isNotEmpty) {
@@ -2758,21 +2793,30 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     String? sasayakiAudioPath;
     Directory? sasayakiTempDir;
     final AudioCue? cue = _lookupCue;
-    final List<File>? audioFiles = _audiobookController?.audioFiles;
-    if (cue != null &&
-        audioFiles != null &&
-        cue.audioFileIndex < audioFiles.length) {
-      final File inputFile = audioFiles[cue.audioFileIndex];
-      sasayakiTempDir =
-          Directory.systemTemp.createTempSync('hibiki_mine_sentence_audio_');
-      final String outputPath = p.join(sasayakiTempDir.path, 'sentence.aac');
-      final AudioCue clip = miningSentenceAudioClip(cue);
-      sasayakiAudioPath = await TtsChannel.instance.extractAudioSegment(
-        inputPath: inputFile.path,
-        startMs: clip.startMs,
-        endMs: clip.endMs,
-        outputPath: outputPath,
+    final AudiobookPlayerController? audioController = _audiobookController;
+    final List<File>? audioFiles = audioController?.audioFiles;
+    if (cue != null && audioFiles != null) {
+      final AudioPlaybackRange clip = miningSentenceAudioRange(
+        cues: _sentenceAudioMiningCues(cue),
+        cue: cue,
+        sentence: sentence,
+        sectionIndex: _lookupSectionIndex,
+        sentenceNormCharOffset: _cachedSentenceRange?.offset,
+        sentenceNormCharLength: _cachedSentenceRange?.length,
+        delayMs: audioController?.delayMs.value ?? 0,
       );
+      if (clip.audioFileIndex >= 0 && clip.audioFileIndex < audioFiles.length) {
+        final File inputFile = audioFiles[clip.audioFileIndex];
+        sasayakiTempDir =
+            Directory.systemTemp.createTempSync('hibiki_mine_sentence_audio_');
+        final String outputPath = p.join(sasayakiTempDir.path, 'sentence.aac');
+        sasayakiAudioPath = await TtsChannel.instance.extractAudioSegment(
+          inputPath: inputFile.path,
+          startMs: clip.startMs,
+          endMs: clip.endMs,
+          outputPath: outputPath,
+        );
+      }
     }
 
     final String cueSentence =

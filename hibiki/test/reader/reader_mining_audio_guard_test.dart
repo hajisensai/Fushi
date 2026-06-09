@@ -58,30 +58,37 @@ void main() {
       );
     });
 
-    test('pads card sentence audio before exporting the clip', () {
+    test('exports complete sentence audio range instead of padding one cue',
+        () {
       final String source = File(
         'lib/src/pages/implementations/reader_hibiki_page.dart',
       ).readAsStringSync();
 
       expect(
         source,
-        contains('final AudioCue clip = miningSentenceAudioClip(cue);'),
+        contains('final AudioPlaybackRange clip = miningSentenceAudioRange('),
         reason:
-            'Card sentence audio must use a mining-specific clip window with '
-            'a short tail; raw cue.endMs can cut off the final sound.',
+            'Card sentence audio must resolve the selected sentence to a full '
+            'audio range, not export only the lookup cue.',
       );
       expect(
         source,
-        contains('endMs: clip.endMs'),
+        contains('sentenceNormCharOffset: _cachedSentenceRange?.offset'),
         reason:
-            'The export call must use the padded clip end, not the raw cue end.',
+            'The cached JS sentence range is the strongest signal for the full '
+            'sentence audio span.',
       );
       expect(
         source,
-        isNot(contains('endMs: cue.endMs,\n        outputPath: outputPath')),
+        contains('sentenceNormCharLength: _cachedSentenceRange?.length'),
         reason:
-            'Passing raw cue.endMs to extractAudioSegment regresses the cut-off '
-            'sentence audio bug.',
+            'Without sentence length, the reader falls back to a single cue and '
+            'can cut off sentences split across multiple cues.',
+      );
+      expect(
+        source,
+        isNot(contains('kMiningSentenceAudioTailPaddingMs')),
+        reason: 'Fixed tail padding is not a complete-sentence range resolver.',
       );
     });
   });
