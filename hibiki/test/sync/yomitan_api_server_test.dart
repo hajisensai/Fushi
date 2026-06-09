@@ -37,12 +37,18 @@ class _FakeLookup implements HibikiRemoteLookupService {
       null;
 }
 
-Future<HttpClientResponse> _post(int port, String path, Object? body,
-    {String? apiKey}) async {
+Future<HttpClientResponse> _post(
+  int port,
+  String path,
+  Object? body, {
+  String? apiKey,
+  Map<String, String> headers = const <String, String>{},
+}) async {
   final client = HttpClient();
   final req = await client.post('127.0.0.1', port, path);
   req.headers.contentType = ContentType.json;
   if (apiKey != null) req.headers.set('X-API-Key', apiKey);
+  headers.forEach(req.headers.set);
   if (body != null) req.write(jsonEncode(body));
   return req.close();
 }
@@ -130,6 +136,50 @@ void main() {
     final withKey =
         await _post(port, '/termEntries', {'term': 'わかる'}, apiKey: 'secret');
     expect(withKey.statusCode, 200);
+  });
+
+  test('api key accepts compatible token locations', () async {
+    const int port = 19741;
+    server = YomitanApiServer(
+        port: port,
+        lookupService: _FakeLookup(),
+        apiKey: 'secret',
+        tokenizer: (t) => [t],
+        readingResolver: (w) => '');
+    await server.start();
+
+    final bodyApiKey = await _post(port, '/termEntries', {
+      'term': 'わかる',
+      'apiKey': 'secret',
+    });
+    expect(bodyApiKey.statusCode, 200);
+
+    final bodyToken = await _post(port, '/termEntries', {
+      'term': 'わかる',
+      'token': 'secret',
+    });
+    expect(bodyToken.statusCode, 200);
+
+    final queryToken = await _post(
+      port,
+      '/termEntries?token=secret',
+      {'term': 'わかる'},
+    );
+    expect(queryToken.statusCode, 200);
+
+    final bearerToken = await _post(
+      port,
+      '/termEntries',
+      {'term': 'わかる'},
+      headers: <String, String>{'Authorization': 'Bearer secret'},
+    );
+    expect(bearerToken.statusCode, 200);
+
+    final wrongToken = await _post(port, '/termEntries', {
+      'term': 'わかる',
+      'token': 'wrong',
+    });
+    expect(wrongToken.statusCode, 401);
   });
 
   test('yomitanVersion is constant', () async {
