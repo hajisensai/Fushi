@@ -34,6 +34,7 @@ import 'package:hibiki/src/shortcuts/gamepad_service.dart'
     show GamepadLongPressActions;
 import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
+import 'package:hibiki/src/sync/remote_cover_headers.dart';
 import 'package:hibiki/src/sync/remote_book_client.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
@@ -560,7 +561,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
               SliverToBoxAdapter(child: SizedBox(height: tokens.spacing.gap)),
               if (showRemoteBooks)
                 SliverToBoxAdapter(
-                  child: _buildRemoteBookSection(remoteState),
+                  child: _buildRemoteBookSection(remoteState, constraints),
                 ),
               if (srtBooks.isNotEmpty) ...[
                 SliverToBoxAdapter(
@@ -609,7 +610,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
             SliverToBoxAdapter(child: SizedBox(height: tokens.spacing.gap)),
             if (showRemoteBooks)
               SliverToBoxAdapter(
-                child: _buildRemoteBookSection(remoteState),
+                child: _buildRemoteBookSection(remoteState, constraints),
               ),
             if (srtBooks.isNotEmpty) ...[
               SliverToBoxAdapter(
@@ -674,7 +675,10 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     );
   }
 
-  Widget _buildRemoteBookSection(_RemoteBookState state) {
+  Widget _buildRemoteBookSection(
+    _RemoteBookState state,
+    BoxConstraints constraints,
+  ) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final ColorScheme colors = theme.colorScheme;
     return Container(
@@ -719,16 +723,19 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
             )
           else if (state.books.isNotEmpty) ...<Widget>[
             SizedBox(height: tokens.spacing.gap),
-            SizedBox(
-              height: 112,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: state.books.length,
-                separatorBuilder: (_, __) =>
-                    SizedBox(width: tokens.spacing.gap),
-                itemBuilder: (BuildContext context, int index) =>
-                    _buildRemoteBookTile(state.books[index]),
+            GridView.builder(
+              padding: EdgeInsets.zero,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+                maxCrossAxisExtent: _gridExtent(context, constraints),
+                childAspectRatio: mediaSource.aspectRatio,
+                crossAxisSpacing: tokens.spacing.gap,
+                mainAxisSpacing: tokens.spacing.gap,
               ),
+              itemCount: state.books.length,
+              itemBuilder: (BuildContext context, int index) =>
+                  _buildRemoteBookCard(state.books[index]),
             ),
           ],
         ],
@@ -736,47 +743,64 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     );
   }
 
-  Widget _buildRemoteBookTile(RemoteBookInfo book) {
+  Widget _buildRemoteBookCard(RemoteBookInfo book) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    final ColorScheme colors = theme.colorScheme;
-    return SizedBox(
-      width: 250,
-      child: HibikiCard(
-        padding: EdgeInsets.all(tokens.spacing.card),
-        child: Row(
-          children: <Widget>[
-            Container(
-              width: 48,
-              height: 64,
-              decoration: BoxDecoration(
-                color: colors.primaryContainer,
-                borderRadius: tokens.radii.cardRadius,
-              ),
-              child: Icon(
-                Icons.menu_book_outlined,
-                color: colors.onPrimaryContainer,
-              ),
-            ),
-            SizedBox(width: tokens.spacing.gap),
-            Expanded(
-              child: Text(
-                book.title,
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
-                style: textTheme.bodyMedium,
-              ),
-            ),
-            IconButton(
-              key: ValueKey<String>(
-                  'remote_book_download_${_safeRemoteBookKey(book.title)}'),
+    final double overlayInset = tokens.spacing.gap * 0.75;
+    final String safeKey = _safeRemoteBookKey(book.title);
+    return _bookCardShell(
+      cardKey: ValueKey<String>('remote_book_card_$safeKey'),
+      focusId: HibikiFocusId('reader-shelf-remote-book-$safeKey'),
+      onTap: () => _downloadRemoteBook(book),
+      onLongPress: () => _downloadRemoteBook(book),
+      child: Stack(
+        fit: StackFit.expand,
+        children: <Widget>[
+          _buildRemoteBookCover(book),
+          _titleOverlay(book.title),
+          Positioned(
+            top: overlayInset,
+            right: overlayInset,
+            child: IconButton.filledTonal(
+              key: ValueKey<String>('remote_book_download_$safeKey'),
               tooltip: t.remote_book_download,
+              iconSize: 18,
+              visualDensity: VisualDensity.compact,
               icon: const Icon(Icons.download_outlined),
               onPressed: () => _downloadRemoteBook(book),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
+  }
+
+  Widget _buildRemoteBookCover(RemoteBookInfo book) {
+    final String safeKey = _safeRemoteBookKey(book.title);
+    final String? coverPath = book.coverPath;
+    if (coverPath != null && File(coverPath).existsSync()) {
+      return FadeInImage(
+        key: ValueKey<String>('remote_book_cover_$safeKey'),
+        imageErrorBuilder: (_, __, ___) =>
+            _coverPlaceholderIcon(Icons.menu_book_outlined),
+        placeholder: MemoryImage(kTransparentImage),
+        image: FileImage(File(coverPath)),
+        alignment: Alignment.topCenter,
+        fit: BoxFit.fitHeight,
+      );
+    }
+    final String? coverUrl = book.coverUrl;
+    if (coverUrl != null && coverUrl.isNotEmpty) {
+      return Image.network(
+        coverUrl,
+        key: ValueKey<String>('remote_book_cover_$safeKey'),
+        headers: remoteCoverHeadersFor(_remoteBookClient),
+        alignment: Alignment.topCenter,
+        fit: BoxFit.fitHeight,
+        errorBuilder: (_, __, ___) =>
+            _coverPlaceholderIcon(Icons.menu_book_outlined),
+      );
+    }
+    return _coverPlaceholderIcon(Icons.menu_book_outlined);
   }
 
   Future<void> _downloadRemoteBook(RemoteBookInfo book) async {

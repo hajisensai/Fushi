@@ -572,14 +572,34 @@ class HibikiSyncServer {
       final List<RemoteBookInfo> list = await svc.listBooks();
       return shelf.Response.ok(
         jsonEncode(<Map<String, Object?>>[
-          for (final RemoteBookInfo b in list) b.toJson()
+          for (final RemoteBookInfo b in list)
+            _remoteBookJsonForRequest(b, request)
         ]),
         headers: <String, String>{'Content-Type': 'application/json'},
       );
     }
 
     // reqPath 已在 _handleRequest 经 Uri.decodeFull 解码，此处无需再解码。
-    final String title = reqPath.substring('/api/library/books/'.length);
+    const String bookPrefix = '/api/library/books/';
+    const String coverSuffix = '/cover';
+    if (reqPath.startsWith(bookPrefix) && reqPath.endsWith(coverSuffix)) {
+      if (method != 'GET') return shelf.Response(405);
+      final String coverTitle = reqPath.substring(
+          bookPrefix.length, reqPath.length - coverSuffix.length);
+      if (coverTitle.isEmpty) {
+        return shelf.Response.notFound('Missing book title');
+      }
+      if (coverTitle.contains('/') ||
+          coverTitle.contains('\\') ||
+          coverTitle.contains('..')) {
+        return shelf.Response.forbidden('Invalid book title');
+      }
+      final File? cover = await _resolveBookCover(svc, coverTitle);
+      if (cover == null) return shelf.Response.notFound('Book cover not found');
+      return serveFileWithRange(cover, request);
+    }
+
+    final String title = reqPath.substring(bookPrefix.length);
     if (title.isEmpty) {
       return shelf.Response.notFound('Missing book title');
     }
@@ -654,6 +674,34 @@ class HibikiSyncServer {
       default:
         return shelf.Response(405);
     }
+  }
+
+  Map<String, Object?> _remoteBookJsonForRequest(
+    RemoteBookInfo book,
+    shelf.Request request,
+  ) {
+    final Map<String, Object?> json = book.toJson()
+      ..remove('coverUrl')
+      ..remove('hasCover');
+    if (_coverFile(book.coverPath) != null) {
+      json['hasCover'] = true;
+      json['coverUrl'] = request.requestedUri.replace(
+        pathSegments: <String>['api', 'library', 'books', book.title, 'cover'],
+        queryParameters: <String, String>{},
+      ).toString();
+    }
+    return json;
+  }
+
+  Future<File?> _resolveBookCover(
+    HibikiLibraryHostService service,
+    String title,
+  ) async {
+    final List<RemoteBookInfo> books = await service.listBooks();
+    for (final RemoteBookInfo book in books) {
+      if (book.title == title) return _coverFile(book.coverPath);
+    }
+    return null;
   }
 
   Future<shelf.Response> _handleLibraryLocalAudio(
@@ -859,7 +907,7 @@ class HibikiSyncServer {
   ///
   /// [reqPath] 已经过 Uri.decodeFull 解码（含前导 `/`）。
   /// 格式为 `/api/library/videos/<id>/<suffix>`，其中：
-  /// - [suffix] 为 `stream`、`streamurl` 或 `subtitle`
+  /// - [suffix] 为 `stream`、`streamurl`、`subtitle` 或 `cover`
   /// - id 允许包含 `/`（如 `video/my_film`），但不允许 `..`（路径穿越）
   ///
   /// 解析失败（id 为空或含 `..`）时返回 null。
@@ -890,10 +938,22 @@ class HibikiSyncServer {
       final List<RemoteVideoInfo> list = await svc.listVideos();
       return shelf.Response.ok(
         jsonEncode(<Map<String, Object?>>[
-          for (final RemoteVideoInfo v in list) v.toJson()
+          for (final RemoteVideoInfo v in list)
+            _remoteVideoJsonForRequest(v, request)
         ]),
         headers: <String, String>{'Content-Type': 'application/json'},
       );
+    }
+
+    // GET /api/library/videos/<id>/cover — 视频封面（需 Basic 鉴权）
+    final String? coverId = _extractVideoId(reqPath, 'cover');
+    if (coverId != null) {
+      if (method != 'GET') return shelf.Response(405);
+      final File? cover = await _resolveVideoCover(svc, coverId);
+      if (cover == null) {
+        return shelf.Response.notFound('Video cover not found');
+      }
+      return serveFileWithRange(cover, request);
     }
 
     // GET /api/library/videos/<id>/streamurl — 签发短时 token（需 Basic 鉴权）
@@ -965,6 +1025,41 @@ class HibikiSyncServer {
     }
 
     return shelf.Response.notFound('Not found');
+  }
+
+  Map<String, Object?> _remoteVideoJsonForRequest(
+    RemoteVideoInfo video,
+    shelf.Request request,
+  ) {
+    final Map<String, Object?> json = video.toJson()
+      ..remove('coverUrl')
+      ..remove('hasCover');
+    if (_coverFile(video.coverPath) != null) {
+      final String encodedId = Uri.encodeFull(video.id);
+      json['hasCover'] = true;
+      json['coverUrl'] = request.requestedUri.replace(
+        path: '/api/library/videos/$encodedId/cover',
+        queryParameters: <String, String>{},
+      ).toString();
+    }
+    return json;
+  }
+
+  Future<File?> _resolveVideoCover(
+    HibikiLibraryHostService service,
+    String id,
+  ) async {
+    final List<RemoteVideoInfo> videos = await service.listVideos();
+    for (final RemoteVideoInfo video in videos) {
+      if (video.id == id) return _coverFile(video.coverPath);
+    }
+    return null;
+  }
+
+  static File? _coverFile(String? path) {
+    if (path == null || path.isEmpty) return null;
+    final File file = File(path);
+    return file.existsSync() ? file : null;
   }
 
   String _generateVideoToken() {

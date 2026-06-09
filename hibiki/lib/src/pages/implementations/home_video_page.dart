@@ -22,6 +22,7 @@ import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
 import 'package:hibiki/src/pages/implementations/video_statistics_page.dart';
 import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
+import 'package:hibiki/src/sync/remote_cover_headers.dart';
 import 'package:hibiki/src/sync/remote_video_client.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
@@ -536,13 +537,13 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           else if (videos.isNotEmpty) ...<Widget>[
             const SizedBox(height: 10),
             SizedBox(
-              height: 88,
+              height: 200,
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 itemCount: videos.length,
                 separatorBuilder: (_, __) => const SizedBox(width: 10),
                 itemBuilder: (BuildContext context, int index) =>
-                    _buildRemoteVideoTile(videos[index]),
+                    _buildRemoteVideoCard(videos[index]),
               ),
             ),
           ],
@@ -551,68 +552,66 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     );
   }
 
-  Widget _buildRemoteVideoTile(RemoteVideoInfo video) {
-    final ColorScheme colors = Theme.of(context).colorScheme;
-    final String? sizeText = _formatBytes(video.sizeBytes);
+  Widget _buildRemoteVideoCard(RemoteVideoInfo video) {
+    final String safeKey = _safeRemoteKey(video.id);
     return SizedBox(
       width: 260,
       child: HibikiCard(
-        padding: const EdgeInsets.all(10),
-        child: Row(
+        key: ValueKey<String>('remote_video_card_$safeKey'),
+        focusId: HibikiFocusId('home-video-remote-$safeKey'),
+        padding: EdgeInsets.zero,
+        onTap: () => _openRemote(video),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            InkWell(
-              borderRadius: BorderRadius.circular(6),
-              onTap: () => _openRemote(video),
-              child: Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: colors.primaryContainer,
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Icon(Icons.play_arrow_outlined,
-                    color: colors.onPrimaryContainer),
-              ),
-            ),
-            const SizedBox(width: 8),
             Expanded(
-              child: InkWell(
-                borderRadius: BorderRadius.circular(6),
-                onTap: () => _openRemote(video),
-                child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Text(
-                        video.title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodyMedium,
-                      ),
-                      if (sizeText != null)
-                        Text(
-                          sizeText,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodySmall
-                              ?.copyWith(color: colors.onSurfaceVariant),
-                        ),
-                    ],
+              child: Stack(
+                fit: StackFit.expand,
+                children: <Widget>[
+                  _buildRemoteVideoCover(video),
+                  Positioned(
+                    top: 6,
+                    right: 6,
+                    child: IconButton.filledTonal(
+                      key: ValueKey<String>('remote_video_download_$safeKey'),
+                      tooltip: t.remote_video_download,
+                      iconSize: 18,
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(Icons.download_outlined),
+                      onPressed: () => _downloadRemote(video),
+                    ),
                   ),
-                ),
+                  if (video.hasSubtitle)
+                    Positioned(
+                      top: 6,
+                      left: 6,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.62),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(
+                          Icons.subtitles_outlined,
+                          size: 14,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
-            IconButton(
-              key: ValueKey<String>(
-                  'remote_video_download_${_safeRemoteKey(video.id)}'),
-              tooltip: t.remote_video_download,
-              icon: const Icon(Icons.download_outlined),
-              onPressed: () => _downloadRemote(video),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              child: Text(
+                video.title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
             ),
           ],
         ),
@@ -620,14 +619,28 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     );
   }
 
-  String? _formatBytes(int? bytes) {
-    if (bytes == null || bytes < 0) return null;
-    const int mib = 1024 * 1024;
-    const int gib = 1024 * mib;
-    if (bytes >= gib) return '${(bytes / gib).toStringAsFixed(1)} GB';
-    if (bytes >= mib) return '${(bytes / mib).toStringAsFixed(1)} MB';
-    if (bytes >= 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    return '$bytes B';
+  Widget _buildRemoteVideoCover(RemoteVideoInfo video) {
+    final String safeKey = _safeRemoteKey(video.id);
+    final String? coverPath = video.coverPath;
+    if (coverPath != null && File(coverPath).existsSync()) {
+      return Image.file(
+        File(coverPath),
+        key: ValueKey<String>('remote_video_cover_$safeKey'),
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => _coverPlaceholder(),
+      );
+    }
+    final String? coverUrl = video.coverUrl;
+    if (coverUrl != null && coverUrl.isNotEmpty) {
+      return Image.network(
+        coverUrl,
+        key: ValueKey<String>('remote_video_cover_$safeKey'),
+        headers: remoteCoverHeadersFor(_remoteVideoClient),
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => _coverPlaceholder(),
+      );
+    }
+    return _coverPlaceholder();
   }
 
   String _safeRemoteKey(String id) =>

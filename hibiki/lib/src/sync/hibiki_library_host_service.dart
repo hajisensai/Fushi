@@ -145,18 +145,56 @@ DictionarySyncDiff computeDictionarySyncDiff({
 ///              无内容的书（extractDir 丢失或空）不应被 pull（与 orchestrator
 ///              `importRemoteBooks` 的跳过语义一致）。
 class RemoteBookInfo {
-  const RemoteBookInfo({required this.title, required this.hasContent});
+  const RemoteBookInfo({
+    required this.title,
+    required this.hasContent,
+    this.hasCover = false,
+    this.coverUrl,
+    this.coverPath,
+  });
 
   final String title;
   final bool hasContent;
+  final bool hasCover;
+  final String? coverUrl;
+  final String? coverPath;
 
-  Map<String, Object?> toJson() =>
-      <String, Object?>{'title': title, 'hasContent': hasContent};
+  bool get hasDisplayCover =>
+      hasCover || _isNonEmpty(coverUrl) || _isNonEmpty(coverPath);
 
-  static RemoteBookInfo fromJson(Map<String, Object?> json) => RemoteBookInfo(
-        title: json['title']?.toString() ?? '',
-        hasContent: json['hasContent'] == true,
+  Map<String, Object?> toJson() => <String, Object?>{
+        'title': title,
+        'hasContent': hasContent,
+        if (hasDisplayCover) 'hasCover': true,
+        if (_isNonEmpty(coverUrl)) 'coverUrl': coverUrl,
+      };
+
+  RemoteBookInfo copyWith({
+    bool? hasCover,
+    String? coverUrl,
+    String? coverPath,
+  }) =>
+      RemoteBookInfo(
+        title: title,
+        hasContent: hasContent,
+        hasCover: hasCover ?? this.hasCover,
+        coverUrl: coverUrl ?? this.coverUrl,
+        coverPath: coverPath ?? this.coverPath,
       );
+
+  static RemoteBookInfo fromJson(Map<String, Object?> json) {
+    final String? coverUrl = _jsonString(json['coverUrl']);
+    final String? coverPath = _jsonString(json['coverPath']);
+    return RemoteBookInfo(
+      title: json['title']?.toString() ?? '',
+      hasContent: json['hasContent'] == true,
+      hasCover: json['hasCover'] == true ||
+          _isNonEmpty(coverUrl) ||
+          _isNonEmpty(coverPath),
+      coverUrl: coverUrl,
+      coverPath: coverPath,
+    );
+  }
 }
 
 /// 按 `sanitizeTtuFilename(title)` union 的书籍同步 diff 结果。
@@ -220,6 +258,9 @@ class RemoteVideoInfo {
     this.sizeBytes,
     this.hasSubtitle = false,
     this.durationMs,
+    this.hasCover = false,
+    this.coverUrl,
+    this.coverPath,
   });
 
   final String id;
@@ -227,6 +268,12 @@ class RemoteVideoInfo {
   final int? sizeBytes;
   final bool hasSubtitle;
   final int? durationMs;
+  final bool hasCover;
+  final String? coverUrl;
+  final String? coverPath;
+
+  bool get hasDisplayCover =>
+      hasCover || _isNonEmpty(coverUrl) || _isNonEmpty(coverPath);
 
   Map<String, Object?> toJson() => <String, Object?>{
         'id': id,
@@ -234,16 +281,51 @@ class RemoteVideoInfo {
         if (sizeBytes != null) 'sizeBytes': sizeBytes,
         'hasSubtitle': hasSubtitle,
         if (durationMs != null) 'durationMs': durationMs,
+        if (hasDisplayCover) 'hasCover': true,
+        if (_isNonEmpty(coverUrl)) 'coverUrl': coverUrl,
       };
 
-  static RemoteVideoInfo fromJson(Map<String, Object?> json) => RemoteVideoInfo(
-        id: json['id']?.toString() ?? '',
-        title: json['title']?.toString() ?? '',
-        sizeBytes: (json['sizeBytes'] as num?)?.toInt(),
-        hasSubtitle: json['hasSubtitle'] == true,
-        durationMs: (json['durationMs'] as num?)?.toInt(),
+  RemoteVideoInfo copyWith({
+    bool? hasCover,
+    String? coverUrl,
+    String? coverPath,
+  }) =>
+      RemoteVideoInfo(
+        id: id,
+        title: title,
+        sizeBytes: sizeBytes,
+        hasSubtitle: hasSubtitle,
+        durationMs: durationMs,
+        hasCover: hasCover ?? this.hasCover,
+        coverUrl: coverUrl ?? this.coverUrl,
+        coverPath: coverPath ?? this.coverPath,
       );
+
+  static RemoteVideoInfo fromJson(Map<String, Object?> json) {
+    final String? coverUrl = _jsonString(json['coverUrl']);
+    final String? coverPath = _jsonString(json['coverPath']);
+    return RemoteVideoInfo(
+      id: json['id']?.toString() ?? '',
+      title: json['title']?.toString() ?? '',
+      sizeBytes: (json['sizeBytes'] as num?)?.toInt(),
+      hasSubtitle: json['hasSubtitle'] == true,
+      durationMs: (json['durationMs'] as num?)?.toInt(),
+      hasCover: json['hasCover'] == true ||
+          _isNonEmpty(coverUrl) ||
+          _isNonEmpty(coverPath),
+      coverUrl: coverUrl,
+      coverPath: coverPath,
+    );
+  }
 }
+
+String? _jsonString(Object? value) {
+  if (value == null) return null;
+  final String text = value.toString();
+  return text.isEmpty ? null : text;
+}
+
+bool _isNonEmpty(String? value) => value != null && value.isNotEmpty;
 
 /// client 向 host 申请到的视频播放 URL。
 ///

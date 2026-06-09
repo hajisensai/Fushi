@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/remote_book_client.dart';
+import 'package:hibiki/src/sync/remote_cover_headers.dart';
 import 'package:hibiki/src/sync/remote_video_client.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
@@ -74,7 +75,7 @@ Future<bool> _defaultHibikiProbe(String url, String token) async {
 /// credentials in dedicated keys to avoid collision with the user's
 /// standalone WebDAV config.
 class HibikiClientSyncBackend extends SyncBackend
-    implements RemoteBookClient, RemoteVideoClient {
+    implements RemoteBookClient, RemoteVideoClient, RemoteCoverHeadersProvider {
   HibikiClientSyncBackend._({HibikiProbe? probe})
       : _probe = probe ?? _defaultHibikiProbe;
   static final HibikiClientSyncBackend instance = HibikiClientSyncBackend._();
@@ -542,6 +543,15 @@ class HibikiClientSyncBackend extends SyncBackend
   /// host 根 origin（folder 路径是 `${_apiBase}/$kSyncRootFolderName/`，
   /// 故 /api 端点在 `${_apiBase}/api/...`）。
   String get _apiBase => _ops!.baseUrl;
+
+  @override
+  Map<String, String> get remoteCoverHeaders {
+    final String? token = _token;
+    if (token == null || token.isEmpty) return const <String, String>{};
+    return <String, String>{
+      'Authorization': 'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
+    };
+  }
 
   /// 列出对端 host 当前实时词典清单（直打 `/api/library/dictionaries`）。
   Future<List<RemoteDictionaryInfo>> listRemoteDictionaries() async {

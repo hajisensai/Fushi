@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 
+const List<int> _coverBytes = <int>[0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4];
+
 /// Fake service：dict 方法存根（不抛，返回空），books 方法真实记录调用。
 class _FakeLibraryService implements HibikiLibraryHostService {
   // ── dict stubs ──────────────────────────────────────────────────────────────
@@ -151,6 +153,46 @@ void main() {
     final Map<dynamic, dynamic> first = json.first as Map<dynamic, dynamic>;
     expect(first['title'], 'Sample');
     expect(first['hasContent'], true);
+    c.close();
+  });
+
+  test('GET /api/library/books exposes and serves book covers', () async {
+    final File cover = File(
+      '${Directory.systemTemp.createTempSync('hbk_book_cover').path}/cover.png',
+    )..writeAsBytesSync(_coverBytes);
+    lib.books[0] = RemoteBookInfo.fromJson(<String, Object?>{
+      'title': 'Sample',
+      'hasContent': true,
+      'coverPath': cover.path,
+    });
+    addTearDown(() => cover.parent.deleteSync(recursive: true));
+
+    final HttpClient c = HttpClient();
+    final HttpClientRequest listReq =
+        await c.getUrl(Uri.parse('$base/api/library/books'));
+    listReq.headers.set('authorization', authHeader());
+    final HttpClientResponse listRes = await listReq.close();
+    expect(listRes.statusCode, 200);
+    final List<dynamic> json =
+        jsonDecode(await listRes.transform(utf8.decoder).join())
+            as List<dynamic>;
+    final Map<dynamic, dynamic> first = json.first as Map<dynamic, dynamic>;
+    expect(first['hasCover'], true);
+    final Uri coverUri = Uri.parse(first['coverUrl'] as String);
+
+    final HttpClientRequest coverReq = await c.getUrl(coverUri);
+    coverReq.headers.set('authorization', authHeader());
+    final HttpClientResponse coverRes = await coverReq.close();
+    expect(coverRes.statusCode, 200);
+    expect(coverRes.headers.contentType?.mimeType, 'image/png');
+    final List<int> body = await coverRes.fold<List<int>>(
+      <int>[],
+      (List<int> acc, List<int> chunk) {
+        acc.addAll(chunk);
+        return acc;
+      },
+    );
+    expect(body, _coverBytes);
     c.close();
   });
 

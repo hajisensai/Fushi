@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 
+const List<int> _coverBytes = <int>[0x89, 0x50, 0x4e, 0x47, 5, 6, 7, 8];
+
 /// Fake 库服务：视频方法真实、其他方法存根。
 ///
 /// 包含一个 id 含斜杠的视频（bookUid = `video/sample`），指向临时视频文件和字幕文件。
@@ -16,24 +18,27 @@ class _FakeLibraryService implements HibikiLibraryHostService {
     // 创建临时字幕文件
     subtitleFile = File('${tmp.path}/sample.ja.srt');
     subtitleFile.writeAsStringSync('1\n00:00:01,000 --> 00:00:02,000\nテスト\n');
+    coverFile = File('${tmp.path}/sample.png')..writeAsBytesSync(_coverBytes);
   }
 
   static final List<int> _videoBytes = List<int>.generate(16, (int i) => i);
 
   late final File videoFile;
   late final File subtitleFile;
+  late final File coverFile;
 
   /// id 含斜杠，模拟真实 VideoBooks.bookUid
   static const String videoId = 'video/sample';
 
   @override
   Future<List<RemoteVideoInfo>> listVideos() async => <RemoteVideoInfo>[
-        const RemoteVideoInfo(
-          id: videoId,
-          title: 'Sample Video',
-          sizeBytes: 16,
-          hasSubtitle: true,
-        ),
+        RemoteVideoInfo.fromJson(<String, Object?>{
+          'id': videoId,
+          'title': 'Sample Video',
+          'sizeBytes': 16,
+          'hasSubtitle': true,
+          'coverPath': coverFile.path,
+        }),
       ];
 
   @override
@@ -167,6 +172,36 @@ void main() {
     expect(first['id'], 'video/sample', reason: 'id 含斜杠应被正确序列化');
     expect(first['title'], 'Sample Video');
     expect(first['hasSubtitle'], true);
+    c.close();
+  });
+
+  test('GET /api/library/videos exposes and serves video covers', () async {
+    final HttpClient c = HttpClient();
+    final HttpClientRequest listReq =
+        await c.getUrl(Uri.parse('$base/api/library/videos'));
+    listReq.headers.set('authorization', authHeader());
+    final HttpClientResponse listRes = await listReq.close();
+    expect(listRes.statusCode, 200);
+    final List<dynamic> json =
+        jsonDecode(await listRes.transform(utf8.decoder).join())
+            as List<dynamic>;
+    final Map<dynamic, dynamic> first = json.first as Map<dynamic, dynamic>;
+    expect(first['hasCover'], true);
+    final Uri coverUri = Uri.parse(first['coverUrl'] as String);
+
+    final HttpClientRequest coverReq = await c.getUrl(coverUri);
+    coverReq.headers.set('authorization', authHeader());
+    final HttpClientResponse coverRes = await coverReq.close();
+    expect(coverRes.statusCode, 200);
+    expect(coverRes.headers.contentType?.mimeType, 'image/png');
+    final List<int> body = await coverRes.fold<List<int>>(
+      <int>[],
+      (List<int> acc, List<int> chunk) {
+        acc.addAll(chunk);
+        return acc;
+      },
+    );
+    expect(body, _coverBytes);
     c.close();
   });
 

@@ -116,6 +116,11 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
     }
   }
 
+  static String? _existingFilePath(String? path) {
+    if (path == null || path.isEmpty) return null;
+    return File(path).existsSync() ? path : null;
+  }
+
   /// host 当前实时词典清单（从 DictionaryMeta 表读）。
   @override
   Future<List<RemoteDictionaryInfo>> listDictionaries() async {
@@ -180,13 +185,15 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
   @override
   Future<List<RemoteBookInfo>> listBooks() async {
     final List<EpubBookRow> rows = await _db.getAllEpubBooks();
-    return <RemoteBookInfo>[
-      for (final EpubBookRow r in rows)
-        RemoteBookInfo(
-          title: r.title,
-          hasContent: resolveExtractedEpubRoot(r.extractDir) != null,
-        ),
-    ];
+    return rows.map((EpubBookRow r) {
+      final String? coverPath = _existingFilePath(r.coverPath);
+      return RemoteBookInfo(
+        title: r.title,
+        hasContent: resolveExtractedEpubRoot(r.extractDir) != null,
+        hasCover: coverPath != null,
+        coverPath: coverPath,
+      );
+    }).toList();
   }
 
   /// 即时把书名为 [title] 的书 extractDir 重打包成 .epub 临时文件，返回该文件。
@@ -486,12 +493,15 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
       }
     }
 
+    final String? coverPath = _existingFilePath(row.coverPath);
     return RemoteVideoInfo(
       id: row.bookUid,
       title: row.title,
       sizeBytes: sizeBytes,
       hasSubtitle: hasSubtitle,
       // durationMs: 暂为 null，DB 无此列（后续接线任务填充）
+      hasCover: coverPath != null,
+      coverPath: coverPath,
     );
   }
 

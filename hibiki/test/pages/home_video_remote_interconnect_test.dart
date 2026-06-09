@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/native.dart';
@@ -45,6 +46,7 @@ void main() {
   late HibikiDatabase db;
   late AppModel appModel;
   late _FakeRemoteVideoClient remoteClient;
+  late File remoteVideoCover;
 
   setUp(() async {
     db = HibikiDatabase.forTesting(NativeDatabase.memory());
@@ -52,10 +54,12 @@ void main() {
     await prefs.loadFromDb();
     final Directory storeDir =
         Directory.systemTemp.createTempSync('hibiki_remote_video_store');
+    remoteVideoCover = File('${storeDir.path}/remote-video-cover.png')
+      ..writeAsBytesSync(_tinyPngBytes);
     appModel = AppModel(testPlatformServices())
       ..wireDatabaseForTesting(db)
       ..wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: storeDir);
-    remoteClient = _FakeRemoteVideoClient();
+    remoteClient = _FakeRemoteVideoClient(coverPath: remoteVideoCover.path);
   });
 
   tearDown(() async {
@@ -102,6 +106,42 @@ void main() {
     expect(source.toLowerCase(), isNot(contains('computer')));
   });
 
+  testWidgets('remote video uses the video card cover layout',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    final Finder card = find.byKey(
+      const ValueKey<String>('remote_video_card_remote_video-1'),
+    );
+    expect(card, findsOneWidget);
+    expect(
+      find.descendant(
+        of: card,
+        matching: find.byKey(
+          const ValueKey<String>('remote_video_cover_remote_video-1'),
+        ),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('remote video card opens the remote stream path',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(
+      const ValueKey<String>('remote_video_card_remote_video-1'),
+    ));
+    await _pumpUntil(
+      tester,
+      () => remoteClient.streamUrlRequests.isNotEmpty,
+    );
+
+    expect(remoteClient.streamUrlRequests, <String>['remote/video-1']);
+  });
+
   testWidgets('remote video download action downloads to this device',
       (WidgetTester tester) async {
     await tester.pumpWidget(buildApp());
@@ -130,27 +170,32 @@ Future<void> _pumpUntil(
 }
 
 class _FakeRemoteVideoClient implements RemoteVideoClient {
+  _FakeRemoteVideoClient({required this.coverPath});
+
+  final String coverPath;
   final List<String> downloadedIds = <String>[];
+  final List<String> streamUrlRequests = <String>[];
 
   @override
-  Future<List<RemoteVideoInfo>> listRemoteVideos() async =>
-      const <RemoteVideoInfo>[
-        RemoteVideoInfo(
-          id: 'remote/video-1',
-          title: 'Remote Episode',
-          sizeBytes: 1024,
-          hasSubtitle: true,
-        ),
+  Future<List<RemoteVideoInfo>> listRemoteVideos() async => <RemoteVideoInfo>[
+        RemoteVideoInfo.fromJson(<String, Object?>{
+          'id': 'remote/video-1',
+          'title': 'Remote Episode',
+          'sizeBytes': 1024,
+          'hasSubtitle': true,
+          'coverPath': coverPath,
+        }),
       ];
 
   @override
-  Future<RemoteVideoStreamUrls> remoteVideoStreamUrls(String id) async =>
-      const RemoteVideoStreamUrls(
-        streamUrl:
-            'http://127.0.0.1:1/api/library/videos/remote/video-1/stream',
-        subtitleUrl:
-            'http://127.0.0.1:1/api/library/videos/remote/video-1/subtitle',
-      );
+  Future<RemoteVideoStreamUrls> remoteVideoStreamUrls(String id) async {
+    streamUrlRequests.add(id);
+    return const RemoteVideoStreamUrls(
+      streamUrl: 'http://127.0.0.1:1/api/library/videos/remote/video-1/stream',
+      subtitleUrl:
+          'http://127.0.0.1:1/api/library/videos/remote/video-1/subtitle',
+    );
+  }
 
   @override
   Future<void> getRemoteVideoSubtitle(
@@ -173,3 +218,7 @@ class _FakeRemoteVideoClient implements RemoteVideoClient {
     onProgress?.call(1);
   }
 }
+
+final List<int> _tinyPngBytes =
+    base64Decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ'
+        'AAAADUlEQVR42mP8z8BQDwAFgwJ/l5YV3wAAAABJRU5ErkJggg==');

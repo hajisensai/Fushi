@@ -170,6 +170,23 @@ void main() {
       expect(list.first.hasContent, isTrue);
     });
 
+    test('listBooks 标记已有本地封面可供对端展示', () async {
+      final String extractDir = p.join(tmp.path, 'CoveredBook');
+      final String bookKey = await _insertBookWithExtractDir(
+        db: db,
+        title: 'CoveredBook',
+        extractDir: extractDir,
+      );
+      final File cover = File(p.join(tmp.path, 'covered-book.png'))
+        ..writeAsBytesSync(<int>[1, 2, 3, 4]);
+      await db.updateEpubBookContentPaths(bookKey, coverPath: cover.path);
+
+      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final List<RemoteBookInfo> list = await svc.listBooks();
+
+      expect(list.single.toJson()['hasCover'], isTrue);
+    });
+
     test('listBooks extractDir 不存在时 hasContent==false', () async {
       await db.insertEpubBook(
         EpubBooksCompanion.insert(

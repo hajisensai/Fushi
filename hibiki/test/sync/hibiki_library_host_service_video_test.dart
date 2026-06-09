@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/sync/app_model_library_host_service.dart';
@@ -68,6 +69,25 @@ void main() {
       expect(list[0].sizeBytes, 1024);
       expect(list[0].hasSubtitle, isFalse); // 无 sidecar
       expect(list[0].durationMs, isNull); // DB 无 duration 列
+    });
+
+    test('返回视频条目时标记已有本地封面可供对端展示', () async {
+      final File videoFile = File(p.join(tmp.path, 'covered.mp4'))
+        ..writeAsBytesSync(<int>[0]);
+      final File coverFile = File(p.join(tmp.path, 'covered.png'))
+        ..writeAsBytesSync(<int>[1, 2, 3, 4]);
+
+      await db.upsertVideoBook(VideoBooksCompanion.insert(
+        bookUid: 'video/covered',
+        title: 'Covered Video',
+        videoPath: videoFile.path,
+        coverPath: Value<String?>(coverFile.path),
+      ));
+
+      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final List<RemoteVideoInfo> list = await svc.listVideos();
+
+      expect(list.single.toJson()['hasCover'], isTrue);
     });
 
     test('视频文件不存在时 sizeBytes 为 null', () async {

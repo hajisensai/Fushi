@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/native.dart';
@@ -48,6 +49,7 @@ void main() {
   late AppModel appModel;
   late _FakeRemoteBookClient remoteClient;
   late List<File> importedFiles;
+  late File remoteBookCover;
 
   setUp(() async {
     LocaleSettings.setLocale(AppLocale.en);
@@ -56,11 +58,13 @@ void main() {
     await prefs.loadFromDb();
     final Directory storeDir =
         Directory.systemTemp.createTempSync('hibiki_remote_book_store');
+    remoteBookCover = File('${storeDir.path}/remote-book-cover.png')
+      ..writeAsBytesSync(_tinyPngBytes);
     appModel = AppModel(testPlatformServices())
       ..wireDatabaseForTesting(db)
       ..wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: storeDir);
     appModel.populateLanguages();
-    remoteClient = _FakeRemoteBookClient();
+    remoteClient = _FakeRemoteBookClient(coverPath: remoteBookCover.path);
     importedFiles = <File>[];
   });
 
@@ -124,6 +128,28 @@ void main() {
     expect(source.toLowerCase(), isNot(contains('computer')));
   });
 
+  testWidgets('remote book uses the shelf card cover layout',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    final Finder card = find.byKey(
+      const ValueKey<String>('remote_book_card_Remote_Book'),
+    );
+    expect(card, findsOneWidget);
+    expect(
+      find.descendant(
+        of: card,
+        matching: find.byKey(
+          const ValueKey<String>('remote_book_cover_Remote_Book'),
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(find.descendant(of: card, matching: find.byType(AspectRatio)),
+        findsOneWidget);
+  });
+
   testWidgets('remote book download action pulls epub and imports locally',
       (WidgetTester tester) async {
     await tester.pumpWidget(buildApp());
@@ -149,12 +175,18 @@ void main() {
 }
 
 class _FakeRemoteBookClient implements RemoteBookClient {
+  _FakeRemoteBookClient({required this.coverPath});
+
+  final String coverPath;
   final List<String> downloadedTitles = <String>[];
 
   @override
-  Future<List<RemoteBookInfo>> listRemoteBooks() async =>
-      const <RemoteBookInfo>[
-        RemoteBookInfo(title: 'Remote Book', hasContent: true),
+  Future<List<RemoteBookInfo>> listRemoteBooks() async => <RemoteBookInfo>[
+        RemoteBookInfo.fromJson(<String, Object?>{
+          'title': 'Remote Book',
+          'hasContent': true,
+          'coverPath': coverPath,
+        }),
       ];
 
   @override
@@ -168,3 +200,7 @@ class _FakeRemoteBookClient implements RemoteBookClient {
     onProgress?.call(1);
   }
 }
+
+final List<int> _tinyPngBytes =
+    base64Decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ'
+        'AAAADUlEQVR42mP8z8BQDwAFgwJ/l5YV3wAAAABJRU5ErkJggg==');
