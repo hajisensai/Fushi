@@ -3,9 +3,9 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/media/video/video_shader_downloader.dart';
 import 'package:hibiki/src/media/video/video_shader_manager.dart';
+import 'package:hibiki/utils.dart';
 
 /// mpv 着色器内嵌管理视图：导入 `.glsl`/`.hook`、从本机 mpv 发现导入、一键下载
 /// Anime4K 推荐预设、勾选启用、即时应用。直接嵌进视频设置面板的「着色器」详情 pane
@@ -20,6 +20,8 @@ import 'package:hibiki/src/media/video/video_shader_manager.dart';
 class VideoShaderManagerView extends StatefulWidget {
   const VideoShaderManagerView({
     required this.initialEnabled,
+    required this.qualityEnhancementEnabled,
+    required this.onQualityEnhancementChanged,
     required this.onApply,
     this.initialMpvDir = '',
     this.onMpvDirChanged,
@@ -28,6 +30,12 @@ class VideoShaderManagerView extends StatefulWidget {
 
   /// 初始启用的着色器文件名集合。
   final List<String> initialEnabled;
+
+  /// 整个画质增强组是否启用。关闭时保留勾选集，但运行时由调用方旁路 shader。
+  final bool qualityEnhancementEnabled;
+
+  /// 切换画质增强组：调用方负责持久化 mpv 基础增强并即时应用/旁路 shader。
+  final void Function(bool enabled) onQualityEnhancementChanged;
 
   /// 勾选变化时回调，参数为按目录顺序排列的启用文件名列表。
   final Future<void> Function(List<String> enabledNames) onApply;
@@ -328,88 +336,106 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView> {
         child: Center(child: CircularProgressIndicator()),
       );
     }
+    final List<Widget> installedRows = _files.isEmpty
+        ? <Widget>[
+            AdaptiveSettingsRow(
+              title: t.video_shaders_empty,
+              icon: Icons.hourglass_empty_outlined,
+              showIcon: true,
+            ),
+          ]
+        : <Widget>[
+            for (final String name in _files)
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                title: Text(name, overflow: TextOverflow.ellipsis),
+                value: _enabled.contains(name),
+                onChanged: (bool? v) => _toggle(name, v ?? false),
+              ),
+          ];
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        Text(
-          t.video_setting_shaders_hint,
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
-        const SizedBox(height: 12),
-        // 三个瞬时动作入口（不是设置子页面）：一键下载 Anime4K / 从本机 mpv 发现导入 /
-        // 系统文件选择器导入。完成后回到本内嵌视图并刷新列表。
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
+        AdaptiveSettingsSection(
           children: <Widget>[
-            OutlinedButton.icon(
-              icon: const Icon(Icons.download_outlined, size: 18),
-              label: Text(t.video_shader_download_anime4k),
-              onPressed: _openAnime4kDownload,
-            ),
-            // 推荐着色器（Anime4K 之外的经典：RAVU/NNEDI3），一键下载。
-            OutlinedButton.icon(
-              icon: const Icon(Icons.auto_awesome_outlined, size: 18),
-              label: Text(t.video_shader_recommended),
-              onPressed: _openRecommended,
-            ),
-            // 粘贴任意着色器链接下载（不必装 mpv，最灵活）。
-            OutlinedButton.icon(
-              icon: const Icon(Icons.link, size: 18),
-              label: Text(t.video_shader_download_url),
-              onPressed: _downloadFromUrl,
-            ),
-            OutlinedButton.icon(
-              icon: const Icon(Icons.travel_explore_outlined, size: 18),
-              label: Text(t.video_shader_import_from_mpv),
-              onPressed: _importFromMpv,
-            ),
-            // 手动指定 mpv 配置/着色器目录再搜索（自动找不到时的兜底，也可主动换目录）。
-            OutlinedButton.icon(
-              icon: const Icon(Icons.folder_open_outlined, size: 18),
-              label: Text(t.video_shader_pick_mpv_dir),
-              onPressed: _pickMpvDirAndSearch,
-            ),
-            OutlinedButton.icon(
-              icon: const Icon(Icons.add, size: 18),
-              label: Text(t.video_shader_import),
-              onPressed: _import,
+            AdaptiveSettingsSwitchRow(
+              title: t.video_settings_cat_shaders,
+              subtitle: t.video_quality_enhancement_hint,
+              icon: Icons.auto_fix_high_outlined,
+              value: widget.qualityEnhancementEnabled,
+              onChanged: widget.onQualityEnhancementChanged,
             ),
           ],
         ),
-        // 已手动指定的 mpv 目录回显（让用户知道当前扫的是哪个目录）。
-        if (_mpvDir.isNotEmpty) ...<Widget>[
-          const SizedBox(height: 6),
-          Text(
-            t.video_shader_mpv_dir_current(path: _mpvDir),
-            style: Theme.of(context).textTheme.bodySmall,
-            overflow: TextOverflow.ellipsis,
-            maxLines: 1,
-          ),
-        ],
-        const SizedBox(height: 8),
-        if (_files.isEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            child: Text(
-              t.video_shaders_empty,
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyMedium,
+        AdaptiveSettingsSection(
+          title: t.video_shader_section_templates,
+          children: <Widget>[
+            _actionRow(
+              title: t.video_shader_download_anime4k,
+              subtitle: t.video_shader_anime4k_hint,
+              icon: Icons.download_outlined,
+              onTap: _openAnime4kDownload,
             ),
-          )
-        else
-          // 内嵌进设置 pane（外层已是可滚动列）：直接 Column 罗列，不再套 ListView/
-          // Flexible（那会向无界高度索要 viewport，在内嵌场景里崩）。
-          for (final String name in _files)
-            CheckboxListTile(
-              contentPadding: EdgeInsets.zero,
-              dense: true,
-              title: Text(name, overflow: TextOverflow.ellipsis),
-              value: _enabled.contains(name),
-              onChanged: (bool? v) => _toggle(name, v ?? false),
+            _actionRow(
+              title: t.video_shader_recommended,
+              subtitle: t.video_shader_recommended_hint,
+              icon: Icons.auto_awesome_outlined,
+              onTap: _openRecommended,
             ),
+            _actionRow(
+              title: t.video_shader_download_url,
+              subtitle: t.video_shader_url_hint,
+              icon: Icons.link_outlined,
+              onTap: _downloadFromUrl,
+            ),
+          ],
+        ),
+        AdaptiveSettingsSection(
+          title: t.video_shader_section_import,
+          children: <Widget>[
+            _actionRow(
+              title: t.video_shader_import_from_mpv,
+              icon: Icons.travel_explore_outlined,
+              onTap: _importFromMpv,
+            ),
+            _actionRow(
+              title: t.video_shader_pick_mpv_dir,
+              subtitle: _mpvDir.isEmpty
+                  ? null
+                  : t.video_shader_mpv_dir_current(path: _mpvDir),
+              icon: Icons.folder_open_outlined,
+              onTap: _pickMpvDirAndSearch,
+            ),
+            _actionRow(
+              title: t.video_shader_import,
+              icon: Icons.add_outlined,
+              onTap: _import,
+            ),
+          ],
+        ),
+        AdaptiveSettingsSection(
+          title: t.video_shader_section_installed,
+          children: installedRows,
+        ),
       ],
+    );
+  }
+
+  AdaptiveSettingsRow _actionRow({
+    required String title,
+    required IconData icon,
+    required VoidCallback onTap,
+    String? subtitle,
+  }) {
+    return AdaptiveSettingsRow(
+      title: title,
+      subtitle: subtitle,
+      icon: icon,
+      showIcon: true,
+      trailing: const Icon(Icons.chevron_right),
+      onTap: onTap,
     );
   }
 }

@@ -119,4 +119,23 @@ void main() {
     expect(source, isNot(contains('widget.onOpenShaders')));
     expect(source, isNot(contains('widget.onOpenMpvConfig')));
   });
+
+  test('shader manager is grouped instead of a flat action button pile', () {
+    final String source =
+        File('lib/src/pages/implementations/video_shader_dialog.dart')
+            .readAsStringSync();
+    final String buildMethod = _between(
+      source,
+      '  @override\n  Widget build(BuildContext context) {',
+      '/// 从本机 mpv 发现的着色器多选导入对话框',
+    );
+
+    expect(buildMethod, contains('AdaptiveSettingsSection('),
+        reason: '着色器详情应按画质增强 / 模板 / 导入 / 列表分组');
+    expect(buildMethod, contains('video_shader_section_templates'));
+    expect(buildMethod, contains('video_shader_section_import'));
+    expect(buildMethod, contains('video_shader_section_installed'));
+    expect(buildMethod, isNot(contains('Wrap(')),
+        reason: '不能把下载/导入动作作为六个同级按钮堆在顶部');
+  });
 }

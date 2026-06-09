@@ -737,11 +737,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   }) async {
     final VideoPlayerController controller =
         _controller ?? VideoPlayerController();
-    // 解析启用的 mpv 着色器为绝对路径（桌面 libmpv 生效，移动端最终静默）。
-    final List<String> shaderPaths = await resolveEnabledShaderPaths(
-        decodeEnabledShaders(appModel.videoShadersEnabled));
     final VideoMpvConfig mpvConfig =
         VideoMpvConfig.decode(appModel.videoMpvConfig);
+    // 解析启用的 mpv 着色器为绝对路径（桌面 libmpv 生效，移动端最终静默）。
+    // 「画质增强」主开关关闭时保留持久化勾选，但运行时旁路所有 shader。
+    final List<String> shaderPaths = mpvConfig.highQuality
+        ? await resolveEnabledShaderPaths(
+            decodeEnabledShaders(appModel.videoShadersEnabled))
+        : const <String>[];
     try {
       await controller.load(
         bookUid: widget.bookUid,
@@ -1897,14 +1900,22 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       onApplyShaders: (List<String> enabledNames) async {
         await appModel
             .setVideoShadersEnabled(encodeEnabledShaders(enabledNames));
-        final List<String> paths =
-            await resolveEnabledShaderPaths(enabledNames);
+        final VideoMpvConfig cfg =
+            VideoMpvConfig.decode(appModel.videoMpvConfig);
+        final List<String> paths = cfg.highQuality
+            ? await resolveEnabledShaderPaths(enabledNames)
+            : const <String>[];
         await _controller?.applyShaders(paths);
       },
       initialMpvConfig: VideoMpvConfig.decode(appModel.videoMpvConfig),
       onMpvConfigChanged: (VideoMpvConfig cfg) async {
         await appModel.setVideoMpvConfig(VideoMpvConfig.encode(cfg));
         await _controller?.applyMpvConfig(cfg);
+        final List<String> paths = cfg.highQuality
+            ? await resolveEnabledShaderPaths(
+                decodeEnabledShaders(appModel.videoShadersEnabled))
+            : const <String>[];
+        await _controller?.applyShaders(paths);
       },
       initialLockWindowAspectRatio: _lockWindowAspectRatio,
       onLockWindowAspectRatioChanged: _setLockWindowAspectRatio,

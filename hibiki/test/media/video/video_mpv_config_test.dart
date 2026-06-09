@@ -29,12 +29,14 @@ keep-open=yes
   });
 
   group('buildMpvProperties', () {
-    test(
-        'defaults auto-detect hardware decoding while staying visually neutral',
-        () {
+    test('defaults enable conservative built-in image enhancement', () {
       final Map<String, String> m = buildMpvProperties(VideoMpvConfig.defaults);
       expect(m['hwdec'], 'auto-safe');
-      expect(m['scale'], 'bilinear');
+      expect(VideoMpvConfig.defaults.highQuality, isTrue);
+      expect(VideoMpvConfig.decode('').highQuality, isTrue);
+      expect(m['scale'], 'ewa_lanczossharp');
+      expect(m['cscale'], 'ewa_lanczossharp');
+      expect(m['dscale'], 'mitchell');
       expect(m['deband'], 'no');
       expect(m['dither-depth'], 'no');
       expect(m['brightness'], '0');
@@ -173,8 +175,14 @@ keep-open=yes
 
     test('decode empty/garbage -> defaults', () {
       expect(VideoMpvConfig.decode('').hwdec, 'auto-safe');
+      expect(VideoMpvConfig.decode('').highQuality, isTrue);
       expect(VideoMpvConfig.decode('garbage').rawConf, '');
       expect(VideoMpvConfig.decode('garbage').brightness, 0);
+    });
+
+    test('legacy config missing image enhancement migrates to new default', () {
+      final VideoMpvConfig c = VideoMpvConfig.decode('{"hwdec":"auto-safe"}');
+      expect(c.highQuality, isTrue);
     });
 
     test('decode invalid hwdec falls back to automatic safe detection', () {
@@ -192,6 +200,14 @@ keep-open=yes
         VideoMpvConfig.defaults.copyWith(hwdec: 'no'),
       ));
       expect(c.hwdec, 'no');
+    });
+
+    test('encoded explicit image enhancement off remains off', () {
+      final VideoMpvConfig c = VideoMpvConfig.decode(VideoMpvConfig.encode(
+        VideoMpvConfig.defaults.copyWith(highQuality: false),
+      ));
+      expect(c.highQuality, isFalse);
+      expect(buildMpvProperties(c)['scale'], 'bilinear');
     });
 
     test('decode clamps out-of-range color/rotate', () {

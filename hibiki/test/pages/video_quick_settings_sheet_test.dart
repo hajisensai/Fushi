@@ -221,14 +221,14 @@ void main() {
     // 解码/画质/色彩/重置都内嵌在右 pane（不是导航行 → pop → 二级对话框）。
     // hwdec 是 picker 行：DropdownButton 会为测宽离屏复刻一份标题，故 findsWidgets。
     expect(find.text(t.video_setting_mpv_hwdec), findsWidgets);
-    expect(find.text(t.video_setting_mpv_high_quality), findsOneWidget);
+    expect(find.text(t.video_setting_mpv_deband), findsOneWidget);
     expect(find.text(t.video_setting_mpv_brightness), findsOneWidget);
     expect(find.text(t.video_setting_mpv_reset), findsOneWidget);
     // master-detail 内嵌：无返回箭头（不走 push 子页）。
     expect(find.byIcon(Icons.arrow_back), findsNothing);
   });
 
-  testWidgets('mpv high-quality switch drives onMpvConfigChanged live',
+  testWidgets('mpv deband switch drives onMpvConfigChanged live',
       (tester) async {
     await tester.binding.setSurfaceSize(const Size(1000, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -238,11 +238,11 @@ void main() {
     await tester.tap(find.text(t.video_settings_cat_mpv));
     await tester.pumpAndSettle();
 
-    // 切「高画质」开关 → 即改即生效回调（无保存按钮）。
+    // 切「去色带」开关 → 即改即生效回调（无保存按钮）。
     await tester.tap(find.byType(Switch).first);
     await tester.pump();
     expect(committed, isNotNull);
-    expect(committed!.highQuality, isTrue);
+    expect(committed!.deband, isTrue);
   });
 
   testWidgets('delay +50ms button drives the onSetDelay callback',

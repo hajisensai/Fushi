@@ -43,10 +43,10 @@ class VideoMpvConfig {
     required this.rawConf,
   });
 
-  /// 默认配置保持视觉中性；硬件解码默认交给 mpv 安全自动探测。
+  /// 默认配置启用保守的内置高画质缩放；硬件解码默认交给 mpv 安全自动探测。
   static const VideoMpvConfig defaults = VideoMpvConfig(
     hwdec: 'auto-safe',
-    highQuality: false,
+    highQuality: true,
     deband: false,
     dither: false,
     interpolation: false,
@@ -234,7 +234,9 @@ class VideoMpvConfig {
           : 'auto-safe';
       return VideoMpvConfig(
         hwdec: decodedHwdec,
-        highQuality: d['highQuality'] == true,
+        highQuality: d['highQuality'] is bool
+            ? d['highQuality'] as bool
+            : defaults.highQuality,
         deband: d['deband'] == true,
         dither: d['dither'] == true,
         interpolation: d['interpolation'] == true,

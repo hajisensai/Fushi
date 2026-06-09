@@ -1453,5 +1453,9 @@
     "remote_book_downloaded": "Downloaded remote book",
     "remote_book_load_failed": "Could not load paired device books",
     "remote_book_download_failed": "Could not download remote book",
-    "video_drop_audio_unsupported": "Drop subtitle files onto the current video. Audio files cannot be attached here."
+    "video_drop_audio_unsupported": "Drop subtitle files onto the current video. Audio files cannot be attached here.",
+    "video_shader_section_templates": "Shader templates",
+    "video_shader_section_import": "Import shaders",
+    "video_shader_section_installed": "Installed shaders",
+    "video_quality_enhancement_hint": "Uses mpv's built-in high-quality scaling by default. Shader choices below only apply while this is on."
 }

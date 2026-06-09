@@ -1453,5 +1453,9 @@
     "remote_book_downloaded": "已下载对端书籍",
     "remote_book_load_failed": "无法加载对端设备书籍",
     "remote_book_download_failed": "无法下载对端书籍",
-    "video_drop_audio_unsupported": "请把字幕文件拖到当前视频上。音频文件不能在这里关联。"
+    "video_drop_audio_unsupported": "请把字幕文件拖到当前视频上。音频文件不能在这里关联。",
+    "video_shader_section_templates": "着色器模板",
+    "video_shader_section_import": "导入着色器",
+    "video_shader_section_installed": "已安装着色器",
+    "video_quality_enhancement_hint": "默认使用 mpv 内置高画质缩放；下方选择的着色器只会在开启时应用。"
 }

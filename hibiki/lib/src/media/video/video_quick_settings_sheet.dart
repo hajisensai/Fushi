@@ -553,6 +553,10 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
     return VideoShaderManagerView(
       // 切到别的分类再回来会重建本视图（宽窗 KeyedSubtree），用本地权威值回显。
       initialEnabled: _shadersEnabled,
+      qualityEnhancementEnabled: _mpvConfig.highQuality,
+      onQualityEnhancementChanged: (bool value) => _commitMpv(
+        _mpvConfig.copyWith(highQuality: value),
+      ),
       onApply: (List<String> names) async {
         setState(() => _shadersEnabled = names);
         await widget.onApplyShaders(names);
@@ -640,9 +644,6 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
         AdaptiveSettingsSection(
           title: t.video_setting_mpv_group_quality,
           children: <Widget>[
-            _mpvSwitch(t.video_setting_mpv_high_quality, c.highQuality,
-                (bool v) => c.copyWith(highQuality: v),
-                icon: Icons.high_quality_outlined),
             _mpvSwitch(t.video_setting_mpv_deband, c.deband,
                 (bool v) => c.copyWith(deband: v),
                 icon: Icons.gradient_outlined),
