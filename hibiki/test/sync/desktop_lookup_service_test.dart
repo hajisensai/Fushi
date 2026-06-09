@@ -156,6 +156,25 @@ void main() {
       reason: '置顶模式应立即设置窗口置顶',
     );
   });
+
+  testWidgets('foreground platform failure does not escape lookup request',
+      (WidgetTester tester) async {
+    final TestDefaultBinaryMessenger messenger =
+        tester.binding.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(const MethodChannel('window_manager'),
+        (MethodCall call) async {
+      if (call.method == 'isMinimized') return false;
+      if (call.method == 'show') {
+        throw PlatformException(code: 'window-failed');
+      }
+      return null;
+    });
+
+    final DesktopLookupService svc = DesktopLookupService.instance;
+    svc.debugReset();
+
+    await expectLater(svc.bringPendingLookupToFront(), completes);
+  });
 }
 
 bool _setsAlwaysOnTop(MethodCall call) {

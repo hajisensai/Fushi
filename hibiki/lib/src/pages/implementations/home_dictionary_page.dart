@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/models.dart';
@@ -69,11 +70,12 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
   }
 
   Future<void> _startDesktopLookupIfEnabled() async {
-    if (!DesktopLookupService.isDesktop || !appModel.desktopClipboardEnabled) {
+    final AppModel model = appModelNoUpdate;
+    if (!DesktopLookupService.isDesktop || !model.desktopClipboardEnabled) {
       return;
     }
     await DesktopLookupService.instance.start(
-      windowMode: appModel.desktopClipboardWindowMode,
+      windowMode: model.desktopClipboardWindowMode,
     );
     if (!mounted) return;
     _onDesktopLookupPending();
@@ -84,11 +86,19 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
     if (text == null) return;
     DesktopLookupService.instance.clearPending();
     _externalLookupText = text;
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (!mounted) return;
-      await DesktopLookupService.instance.bringPendingLookupToFront();
-      if (mounted) _search(text, autoRead: false);
-    });
+    if (SchedulerBinding.instance.schedulerPhase == SchedulerPhase.idle) {
+      _runDesktopLookup(text);
+    } else {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _runDesktopLookup(text);
+      });
+    }
+  }
+
+  void _runDesktopLookup(String text) {
+    if (!mounted) return;
+    unawaited(DesktopLookupService.instance.bringPendingLookupToFront());
+    if (mounted) _search(text, autoRead: false);
   }
 
   void _onFocusChanged() {
@@ -124,7 +134,8 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
     final HomeDictionaryPage w = widget as HomeDictionaryPage;
     w.focusSignal?.removeListener(_onFocusSignal);
     DesktopLookupService.instance.removeListener(_onDesktopLookupPending);
-    if (DesktopLookupService.isDesktop && appModel.desktopClipboardEnabled) {
+    if (DesktopLookupService.isDesktop &&
+        appModelNoUpdate.desktopClipboardEnabled) {
       unawaited(DesktopLookupService.instance.stop());
     }
     _searchFocusNode.removeListener(_onFocusChanged);

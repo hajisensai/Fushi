@@ -166,8 +166,14 @@ class DesktopLookupService extends ChangeNotifier
 
   Future<void> bringPendingLookupToFront() async {
     if (!isDesktop) return;
-    await windowManager.show();
-    await windowManager.focus();
+    try {
+      await windowManager.show();
+      await windowManager.focus();
+    } on MissingPluginException {
+      return;
+    } on PlatformException {
+      return;
+    }
     if (_windowMode != DesktopClipboardWindowMode.normal) {
       await _setAlwaysOnTop(true);
     }
