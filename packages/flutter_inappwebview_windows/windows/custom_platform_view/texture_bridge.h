@@ -1,5 +1,6 @@
 #pragma once
 
+#include <windows.foundation.h>
 #include <windows.graphics.capture.h>
 #include <wrl.h>
 
@@ -46,6 +47,10 @@ namespace flutter_inappwebview_plugin
     void SetFpsLimit(std::optional<int> max_fps);
 
   protected:
+    typedef ABI::Windows::Foundation::ITypedEventHandler<
+      ABI::Windows::Graphics::Capture::Direct3D11CaptureFramePool*,
+      IInspectable*> FrameArrivedHandler;
+
     struct FrameArrivedCallbackState;
 
     bool is_running_ = false;
@@ -63,6 +68,7 @@ namespace flutter_inappwebview_plugin
 
     winrt::com_ptr<ABI::Windows::Graphics::Capture::IGraphicsCaptureItem>
       capture_item_;
+    Microsoft::WRL::ComPtr<FrameArrivedHandler> frame_arrived_handler_;
     winrt::com_ptr<ABI::Windows::Graphics::Capture::IDirect3D11CaptureFramePool>
       frame_pool_;
     winrt::com_ptr<ABI::Windows::Graphics::Capture::IGraphicsCaptureSession>

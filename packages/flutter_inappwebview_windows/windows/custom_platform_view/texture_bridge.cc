@@ -76,10 +76,7 @@ namespace flutter_inappwebview_plugin
     }
     frame_arrived_state_ = callback_state;
 
-    frame_pool_->add_FrameArrived(
-      Microsoft::WRL::Callback<ABI::Windows::Foundation::ITypedEventHandler<
-      ABI::Windows::Graphics::Capture::Direct3D11CaptureFramePool*,
-      IInspectable*>>(
+    frame_arrived_handler_ = Microsoft::WRL::Callback<FrameArrivedHandler>(
         [callback_state](ABI::Windows::Graphics::Capture::IDirect3D11CaptureFramePool*
           pool,
           IInspectable* args) -> HRESULT
@@ -89,9 +86,9 @@ namespace flutter_inappwebview_plugin
             callback_state->bridge->OnFrameArrived();
           }
           return S_OK;
-        })
-      .Get(),
-          &on_frame_arrived_token_);
+        });
+    frame_pool_->add_FrameArrived(frame_arrived_handler_.Get(),
+      &on_frame_arrived_token_);
 
     if (FAILED(frame_pool_->CreateCaptureSession(capture_item_.get(),
       capture_session_.put()))) {
@@ -145,7 +142,8 @@ namespace flutter_inappwebview_plugin
     // FrameArrived handler here: WGC can still process an already queued
     // FirePresentEvent after removal, and the dump shows that path invoking a
     // null TypedEventHandler target in GraphicsCapture.dll. Instead, invalidate
-    // the shared callback state before StopInternal(), then close/release the
+    // the shared callback state before StopInternal(), keep the registered
+    // delegate COM object alive as a TextureBridge member, then close/release the
     // pool. Late queued events keep the callback object alive long enough to see
     // the invalidated state and return without touching the destroyed bridge.
     if (frame_pool_) {
