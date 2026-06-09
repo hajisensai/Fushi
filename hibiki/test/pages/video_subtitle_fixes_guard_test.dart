@@ -88,17 +88,13 @@ void main() {
     );
     expect(helper.contains('listAllSubtitleSources(videoPath'), isTrue,
         reason: '菜单基础列表仍应来自当前视频的内封轨 + 同目录 sidecar');
+    expect(helper.contains('includeCurrentPersistedSubtitleForMenu('), isTrue,
+        reason: '当前持久化导入字幕的补入逻辑要走可行为测试的 helper');
     expect(
-        helper
-            .contains('isImportedExternalSubtitlePath(currentSubtitleSource)'),
-        isTrue,
+        helper.contains('currentSubtitleSource: currentSubtitleSource'), isTrue,
         reason: '只有持久化值是本地可加载字幕路径时才允许补入菜单');
-    expect(helper.contains('File(currentSubtitleSource).existsSync()'), isTrue,
-        reason: '已丢失的导入字幕文件不能显示在菜单里');
-    expect(helper.contains('loadCuesForSource('), isTrue,
-        reason: '补入菜单前要验证该格式/内容仍能解析，坏字幕不应乱显示');
-    expect(helper.contains('_sameExternalSubtitlePath('), isTrue,
-        reason: '补入前必须用规范化路径去重，避免 Windows 大小写/分隔符造成重复');
+    expect(helper.contains('currentCues: currentCues'), isTrue,
+        reason: '已有 DB cues 的重进路径必须把当前 controller cues 传给菜单 helper');
     expect(helper.contains('Directory('), isFalse,
         reason: 'TODO-016 的保守方案禁止扫描整个 video_subtitles 目录');
   });

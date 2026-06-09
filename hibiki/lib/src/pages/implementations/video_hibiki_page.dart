@@ -612,56 +612,17 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   Future<List<SubtitleSource>> _subtitleSourcesForMenu({
     required String videoPath,
     required String? currentSubtitleSource,
+    required List<AudioCue> currentCues,
   }) async {
     final List<SubtitleSource> sources =
         await listAllSubtitleSources(videoPath, langCode: _targetLangCode);
-    if (currentSubtitleSource == null ||
-        !isImportedExternalSubtitlePath(currentSubtitleSource) ||
-        !File(currentSubtitleSource).existsSync()) {
-      return sources;
-    }
-
-    if (sources.any((SubtitleSource source) =>
-        _sameExternalSubtitlePath(source, currentSubtitleSource))) {
-      return sources;
-    }
-
-    final SubtitleSource source = SubtitleSource.external(
-      externalPath: currentSubtitleSource,
-      label: p.basename(currentSubtitleSource),
+    return includeCurrentPersistedSubtitleForMenu(
+      sources,
+      videoPath: videoPath,
+      bookUid: widget.bookUid,
+      currentSubtitleSource: currentSubtitleSource,
+      currentCues: currentCues,
     );
-    final List<AudioCue> cues =
-        await loadCuesForSource(source, videoPath, widget.bookUid);
-    if (cues.isEmpty) return sources;
-
-    sources.add(source);
-    return sources;
-  }
-
-  bool _subtitleSourceSelectedForMenu(
-    SubtitleSource source,
-    String? currentSubtitleSource,
-  ) {
-    if (source.matchesPersisted(currentSubtitleSource)) return true;
-    if (currentSubtitleSource == null ||
-        !isImportedExternalSubtitlePath(currentSubtitleSource)) {
-      return false;
-    }
-    return _sameExternalSubtitlePath(source, currentSubtitleSource);
-  }
-
-  bool _sameExternalSubtitlePath(
-    SubtitleSource source,
-    String currentSubtitleSource,
-  ) {
-    if (source.isEmbedded || source.externalPath == null) return false;
-    return _subtitlePathKey(source.externalPath!) ==
-        _subtitlePathKey(currentSubtitleSource);
-  }
-
-  String _subtitlePathKey(String path) {
-    final String key = p.canonicalize(path);
-    return Platform.isWindows ? key.toLowerCase() : key;
   }
 
   /// 在 [sources] 中找第一个 [matchesPersisted] 命中的源（精确恢复用）。
@@ -2248,6 +2209,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     final List<SubtitleSource> sources = await _subtitleSourcesForMenu(
       videoPath: videoPath,
       currentSubtitleSource: _currentSubtitleSource,
+      currentCues: controller.cues,
     );
     if (!context.mounted) {
       _videoSheetOpen = false;
@@ -2309,7 +2271,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                   subtitle: source.isGraphicEmbedded
                       ? Text(t.video_subtitle_graphic_hint)
                       : null,
-                  selected: _subtitleSourceSelectedForMenu(
+                  selected: subtitleSourceMatchesPersistedForMenu(
                     source,
                     _currentSubtitleSource,
                   ),

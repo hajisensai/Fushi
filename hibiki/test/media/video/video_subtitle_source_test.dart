@@ -409,6 +409,91 @@ WEBVTT
     });
   });
 
+  group('includeCurrentPersistedSubtitleForMenu (TODO-016)', () {
+    late Directory tempDir;
+    late File video;
+    late File imported;
+
+    setUp(() {
+      tempDir = Directory.systemTemp.createTempSync('hibiki_todo016_menu_');
+      video = File(p.join(tempDir.path, 'Miss Kobayashi S01E01.mkv'))
+        ..writeAsStringSync('fake video bytes');
+      imported = File(p.join(
+        tempDir.path,
+        'video_subtitles',
+        'todo016-imported-reentry.srt',
+      ))
+        ..createSync(recursive: true)
+        ..writeAsStringSync('''
+1
+00:00:00,000 --> 00:00:01,000
+TODO016 imported subtitle survives reopen.
+''');
+    });
+
+    tearDown(() {
+      if (tempDir.existsSync()) {
+        tempDir.deleteSync(recursive: true);
+      }
+    });
+
+    test(
+        'uses already loaded cues as evidence for the current persisted source',
+        () async {
+      final List<SubtitleSource> sources =
+          await includeCurrentPersistedSubtitleForMenu(
+        const <SubtitleSource>[
+          SubtitleSource.embedded(streamIndex: 0, label: '内封 0: eng / ass'),
+        ],
+        videoPath: video.path,
+        bookUid: 'video/todo016',
+        currentSubtitleSource: imported.path,
+        currentCues: <AudioCue>[
+          _cue('video/todo016', 'TODO016 imported subtitle survives reopen.'),
+        ],
+        loadCues: (_, __, ___) {
+          fail('已有 DB cues 时菜单不应再因为二次解析失败隐藏当前持久化字幕源');
+        },
+      );
+
+      expect(sources.map((SubtitleSource s) => s.label),
+          contains('todo016-imported-reentry.srt'));
+    });
+
+    test('parses the current persisted source when no cues are loaded',
+        () async {
+      final List<SubtitleSource> sources =
+          await includeCurrentPersistedSubtitleForMenu(
+        const <SubtitleSource>[],
+        videoPath: video.path,
+        bookUid: 'video/todo016',
+        currentSubtitleSource: imported.path,
+      );
+
+      expect(sources, hasLength(1));
+      expect(sources.single.externalPath, imported.path);
+    });
+
+    test('dedupes an existing source for the same canonical path', () async {
+      final List<SubtitleSource> sources =
+          await includeCurrentPersistedSubtitleForMenu(
+        <SubtitleSource>[
+          SubtitleSource.external(
+            externalPath: p.normalize(imported.path),
+            label: 'already-listed.srt',
+          ),
+        ],
+        videoPath: video.path,
+        bookUid: 'video/todo016',
+        currentSubtitleSource: imported.path,
+        currentCues: <AudioCue>[_cue('video/todo016', 'already loaded')],
+      );
+
+      expect(sources, hasLength(1));
+      expect(sources.single.label, 'already-listed.srt');
+    });
+  });
+
   group('embedded subtitle cache prewarm (TODO-011)', () {
     late Directory tempDir;
 
@@ -503,6 +588,18 @@ WEBVTT
           reason: 'failed prewarm must clear in-flight state for fallback.');
     });
   });
+}
+
+AudioCue _cue(String bookKey, String text) {
+  return AudioCue()
+    ..bookKey = bookKey
+    ..chapterHref = 'video://default'
+    ..sentenceIndex = 0
+    ..textFragmentId = ''
+    ..text = text
+    ..startMs = 0
+    ..endMs = 1000
+    ..audioFileIndex = 0;
 }
 
 class _FakeFfmpegBackend implements FfmpegBackend {

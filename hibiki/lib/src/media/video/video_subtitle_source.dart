@@ -414,6 +414,77 @@ Future<List<SubtitleSource>> listAllSubtitleSources(
   return sources;
 }
 
+typedef SubtitleCueLoader = Future<List<AudioCue>> Function(
+  SubtitleSource source,
+  String videoPath,
+  String bookUid,
+);
+
+/// Adds the currently persisted imported subtitle to a menu source list.
+///
+/// [listAllSubtitleSources] intentionally sees only embedded tracks and sidecar
+/// files next to [videoPath]. User-imported subtitles live in app documents, so
+/// the menu needs this one explicit persisted path. It never scans the import
+/// directory and never adds unrelated historical imports.
+Future<List<SubtitleSource>> includeCurrentPersistedSubtitleForMenu(
+  List<SubtitleSource> sources, {
+  required String videoPath,
+  required String bookUid,
+  required String? currentSubtitleSource,
+  List<AudioCue> currentCues = const <AudioCue>[],
+  SubtitleCueLoader? loadCues,
+}) async {
+  final List<SubtitleSource> result = List<SubtitleSource>.of(sources);
+  if (currentSubtitleSource == null ||
+      !isImportedExternalSubtitlePath(currentSubtitleSource) ||
+      !File(currentSubtitleSource).existsSync()) {
+    return result;
+  }
+
+  if (result.any((SubtitleSource source) =>
+      sameExternalSubtitlePathForMenu(source, currentSubtitleSource))) {
+    return result;
+  }
+
+  final SubtitleSource source = SubtitleSource.external(
+    externalPath: currentSubtitleSource,
+    label: p.basename(currentSubtitleSource),
+  );
+  final bool hasUsableCues = currentCues.isNotEmpty ||
+      (await (loadCues ?? loadCuesForSource)(source, videoPath, bookUid))
+          .isNotEmpty;
+  if (!hasUsableCues) return result;
+
+  result.add(source);
+  return result;
+}
+
+bool subtitleSourceMatchesPersistedForMenu(
+  SubtitleSource source,
+  String? currentSubtitleSource,
+) {
+  if (source.matchesPersisted(currentSubtitleSource)) return true;
+  if (currentSubtitleSource == null ||
+      !isImportedExternalSubtitlePath(currentSubtitleSource)) {
+    return false;
+  }
+  return sameExternalSubtitlePathForMenu(source, currentSubtitleSource);
+}
+
+bool sameExternalSubtitlePathForMenu(
+  SubtitleSource source,
+  String currentSubtitleSource,
+) {
+  if (source.isEmbedded || source.externalPath == null) return false;
+  return _subtitleMenuPathKey(source.externalPath!) ==
+      _subtitleMenuPathKey(currentSubtitleSource);
+}
+
+String _subtitleMenuPathKey(String path) {
+  final String key = p.canonicalize(path);
+  return Platform.isWindows ? key.toLowerCase() : key;
+}
+
 /// 内嵌轨菜单标签：`内封 N: lang / codec`（lang 缺省省略）。
 ///
 /// 用「内封」而非「内嵌」：容器内封装的软字幕（mkv/mp4 的字幕流）业界叫**内封**；
