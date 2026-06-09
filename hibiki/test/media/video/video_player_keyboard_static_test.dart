@@ -10,6 +10,8 @@ void main() {
   group('Escape 退出视频页（覆盖 media_kit 默认）', () {
     final String page =
         read('lib/src/pages/implementations/video_hibiki_page.dart');
+    final String shortcuts =
+        read('lib/src/media/video/video_player_shortcuts.dart');
 
     test('桌面控制主题覆盖 keyboardShortcuts', () {
       expect(
@@ -18,16 +20,12 @@ void main() {
     });
 
     test('Escape 非全屏退页面、全屏退全屏', () {
-      final RegExpMatch? body = RegExp(
-        r'Map<ShortcutActivator, VoidCallback> _videoKeyboardShortcuts\((.*?)\n  \}',
-        dotAll: true,
-      ).firstMatch(page);
-      expect(body, isNotNull, reason: '找不到 _videoKeyboardShortcuts 方法体');
-      final String b = body!.group(1)!;
-      expect(b.contains('LogicalKeyboardKey.escape'), isTrue);
-      expect(b.contains('isFullscreen('), isTrue, reason: '全屏时 Escape 应退全屏');
-      expect(b.contains('exitFullscreen('), isTrue);
-      expect(b.contains('_handleBackOrExit()'), isTrue,
+      expect(shortcuts.contains('LogicalKeyboardKey.escape'), isTrue);
+      expect(page.contains('escape: () {'), isTrue,
+          reason: '页面必须把 Escape action 接入真实退出逻辑');
+      expect(page.contains('isFullscreen('), isTrue, reason: '全屏时 Escape 应退全屏');
+      expect(page.contains('exitFullscreen('), isTrue);
+      expect(page.contains('_handleBackOrExit()'), isTrue,
           reason: '非全屏时 Escape 应退出视频页');
     });
 
@@ -48,27 +46,27 @@ void main() {
   group('asbplayer-style playback shortcuts', () {
     final String page =
         read('lib/src/pages/implementations/video_hibiki_page.dart');
-    final RegExpMatch body = RegExp(
-      r'Map<ShortcutActivator, VoidCallback> _videoKeyboardShortcuts\((.*?)\n  \}',
-      dotAll: true,
-    ).firstMatch(page)!;
-    final String b = body.group(1)!;
+    final String shortcuts =
+        read('lib/src/media/video/video_player_shortcuts.dart');
 
     test('arrowLeft 走 skipToPrevCue，无 cue 回退 3s', () {
-      final int left = b.indexOf('LogicalKeyboardKey.arrowLeft');
-      final int right = b.indexOf('LogicalKeyboardKey.arrowRight');
+      final int left = shortcuts.indexOf('LogicalKeyboardKey.arrowLeft');
+      final int right = shortcuts.indexOf('LogicalKeyboardKey.arrowRight');
       expect(left, greaterThanOrEqualTo(0));
-      final String leftBlock = b.substring(left, right);
-      expect(leftBlock.contains('skipToPrevCue()'), isTrue);
-      expect(leftBlock.contains('cues.isEmpty'), isTrue);
-      expect(leftBlock.contains('-_asbSeekMs'), isTrue);
+      final String leftBlock = shortcuts.substring(left, right);
+      expect(leftBlock.contains('actions.previousSubtitle'), isTrue);
+      expect(page.contains('skipToPrevCue()'), isTrue);
+      expect(page.contains('cues.isEmpty'), isTrue);
+      expect(page.contains('-_asbSeekMs'), isTrue);
     });
 
     test('arrowRight 走 skipToNextCue，无 cue 回退 3s', () {
-      final int right = b.indexOf('LogicalKeyboardKey.arrowRight');
-      final String rightBlock = b.substring(right);
-      expect(rightBlock.contains('skipToNextCue()'), isTrue);
-      expect(rightBlock.contains('_asbSeekMs'), isTrue);
+      final int right = shortcuts.indexOf('LogicalKeyboardKey.arrowRight');
+      expect(right, greaterThanOrEqualTo(0));
+      final String rightBlock = shortcuts.substring(right);
+      expect(rightBlock.contains('actions.nextSubtitle'), isTrue);
+      expect(page.contains('skipToNextCue()'), isTrue);
+      expect(page.contains('_asbSeekMs'), isTrue);
     });
 
     test('A/D and Shift+F use one configured asbplayer seek value', () {
@@ -76,29 +74,28 @@ void main() {
       expect(page.contains('_asbConfig.seekSeconds * 1000'), isTrue);
       expect(page.contains('_asbFastSeekMs'), isFalse);
       expect(page.contains('fastSeekSeconds'), isFalse);
-      expect(page.contains('LogicalKeyboardKey.keyA'), isTrue);
+      expect(shortcuts.contains('LogicalKeyboardKey.keyA'), isTrue);
       expect(page.contains('seekRelative(-_asbSeekMs)'), isTrue);
-      expect(page.contains('LogicalKeyboardKey.keyD'), isTrue);
+      expect(shortcuts.contains('LogicalKeyboardKey.keyD'), isTrue);
       expect(page.contains('seekRelative(_asbSeekMs)'), isTrue);
-      expect(
-        page.contains(
-          'SingleActivator(LogicalKeyboardKey.keyF, shift: true)',
-        ),
-        isTrue,
-      );
+      final int shiftF = shortcuts.indexOf('LogicalKeyboardKey.keyF,');
+      expect(shiftF, greaterThanOrEqualTo(0));
+      expect(shortcuts.indexOf('shift: true', shiftF), greaterThan(shiftF));
       expect(page.contains('seekRelative(_asbSeekMs)'), isTrue);
     });
 
     test('up/down remain volume keys and do not adjust subtitle offset', () {
-      final int up = b.indexOf('LogicalKeyboardKey.arrowUp');
-      final int down = b.indexOf('LogicalKeyboardKey.arrowDown');
-      final int equal = b.indexOf('LogicalKeyboardKey.equal');
+      final int up = shortcuts.indexOf('LogicalKeyboardKey.arrowUp');
+      final int down = shortcuts.indexOf('LogicalKeyboardKey.arrowDown');
+      final int equal = shortcuts.indexOf('LogicalKeyboardKey.equal');
       expect(up, greaterThanOrEqualTo(0));
       expect(down, greaterThan(up));
       expect(equal, greaterThan(down));
-      final String arrowBlock = b.substring(up, equal);
-      expect(arrowBlock.contains('_adjustVolume(_volumeStep)'), isTrue);
-      expect(arrowBlock.contains('_adjustVolume(-_volumeStep)'), isTrue);
+      final String arrowBlock = shortcuts.substring(up, equal);
+      expect(arrowBlock.contains('actions.volumeUp'), isTrue);
+      expect(arrowBlock.contains('actions.volumeDown'), isTrue);
+      expect(page.contains('_adjustVolume(_volumeStep)'), isTrue);
+      expect(page.contains('_adjustVolume(-_volumeStep)'), isTrue);
       expect(arrowBlock.contains('_adjustSubtitleOffset'), isFalse);
     });
 
@@ -107,7 +104,7 @@ void main() {
           isTrue);
       expect(page.contains('onSubtitleOffsetChanged: _adjustSubtitleOffset'),
           isTrue);
-      expect(b.contains('_adjustSubtitleOffset'), isFalse);
+      expect(shortcuts.contains('_adjustSubtitleOffset'), isFalse);
     });
 
     test('speed changes by configured asbplayer step', () {
@@ -118,25 +115,25 @@ void main() {
     });
 
     test('mpv-style common playback shortcuts are mapped where supported', () {
-      expect(b.contains('LogicalKeyboardKey.keyP'), isTrue,
+      expect(shortcuts.contains('LogicalKeyboardKey.keyP'), isTrue,
           reason: 'mpv default: p toggles play/pause');
-      expect(b.contains('LogicalKeyboardKey.digit9'), isTrue,
+      expect(shortcuts.contains('LogicalKeyboardKey.digit9'), isTrue,
           reason: 'mpv default: 9 decreases volume');
-      expect(b.contains('LogicalKeyboardKey.digit0'), isTrue,
+      expect(shortcuts.contains('LogicalKeyboardKey.digit0'), isTrue,
           reason: 'mpv default: 0 increases volume');
-      expect(b.contains('LogicalKeyboardKey.keyM'), isTrue,
+      expect(shortcuts.contains('LogicalKeyboardKey.keyM'), isTrue,
           reason: 'mpv default: m toggles mute');
-      expect(b.contains('LogicalKeyboardKey.bracketLeft'), isTrue,
+      expect(shortcuts.contains('LogicalKeyboardKey.bracketLeft'), isTrue,
           reason: 'mpv default: [ decreases speed');
-      expect(b.contains('LogicalKeyboardKey.bracketRight'), isTrue,
+      expect(shortcuts.contains('LogicalKeyboardKey.bracketRight'), isTrue,
           reason: 'mpv default: ] increases speed');
-      expect(b.contains('LogicalKeyboardKey.backspace'), isTrue,
+      expect(shortcuts.contains('LogicalKeyboardKey.backspace'), isTrue,
           reason: 'mpv default: Backspace resets speed');
-      expect(b.contains('LogicalKeyboardKey.comma'), isTrue,
+      expect(shortcuts.contains('LogicalKeyboardKey.comma'), isTrue,
           reason: 'mpv default: , steps one frame backward');
-      expect(b.contains('LogicalKeyboardKey.period'), isTrue,
+      expect(shortcuts.contains('LogicalKeyboardKey.period'), isTrue,
           reason: 'mpv default: . steps one frame forward');
-      expect(b.contains('LogicalKeyboardKey.keyS'), isTrue,
+      expect(shortcuts.contains('LogicalKeyboardKey.keyS'), isTrue,
           reason: 'mpv default: s takes a screenshot');
       expect(page.contains('_toggleMute()'), isTrue);
       expect(page.contains('_setSpeed(1.0)'), isTrue);

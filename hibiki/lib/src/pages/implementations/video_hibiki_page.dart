@@ -22,9 +22,11 @@ import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/video_asbplayer_config.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
+import 'package:hibiki/src/media/video/video_controls_theme_pair.dart';
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
 import 'package:hibiki/src/media/video/video_mpv_config.dart';
 import 'package:hibiki/src/media/video/video_player_controller.dart';
+import 'package:hibiki/src/media/video/video_player_shortcuts.dart';
 import 'package:hibiki/src/media/video/video_shader_manager.dart';
 import 'package:hibiki/src/media/video/video_subtitle_style.dart';
 import 'package:hibiki/src/media/video/video_watch_tracker.dart';
@@ -1312,83 +1314,48 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   Map<ShortcutActivator, VoidCallback> _videoKeyboardShortcuts(
     VideoPlayerController controller,
   ) {
-    return <ShortcutActivator, VoidCallback>{
-      const SingleActivator(LogicalKeyboardKey.space): () =>
-          unawaited(controller.playOrPause()),
-      const SingleActivator(LogicalKeyboardKey.keyP): () =>
-          unawaited(controller.playOrPause()),
-      const SingleActivator(LogicalKeyboardKey.mediaPlay): () =>
-          unawaited(controller.play()),
-      const SingleActivator(LogicalKeyboardKey.mediaPause): () =>
-          unawaited(controller.pause()),
-      const SingleActivator(LogicalKeyboardKey.mediaPlayPause): () =>
-          unawaited(controller.playOrPause()),
-      // 左右方向键 = 上下句字幕（无字幕 cue 时回退 asbplayer 默认 ±3 秒 seek）。
-      const SingleActivator(LogicalKeyboardKey.arrowLeft): () => unawaited(
-            controller.cues.isEmpty
-                ? controller.seekRelative(-_asbSeekMs)
-                : controller.skipToPrevCue(),
-          ),
-      const SingleActivator(LogicalKeyboardKey.arrowRight): () => unawaited(
-            controller.cues.isEmpty
-                ? controller.seekRelative(_asbSeekMs)
-                : controller.skipToNextCue(),
-          ),
-      const SingleActivator(LogicalKeyboardKey.keyA): () =>
-          unawaited(controller.seekRelative(-_asbSeekMs)),
-      const SingleActivator(LogicalKeyboardKey.keyD): () =>
-          unawaited(controller.seekRelative(_asbSeekMs)),
-      const SingleActivator(LogicalKeyboardKey.keyF, shift: true): () =>
-          unawaited(controller.seekRelative(_asbSeekMs)),
-      // C = 着色器「对比原画」旁路切换（B：效果预览/对比；无启用着色器时无视觉变化）。
-      const SingleActivator(LogicalKeyboardKey.keyC): () =>
-          unawaited(_toggleShaderCompare()),
-      // J / I = ±10 秒（保留 media_kit 默认 seek 行为，10 秒粒度）。
-      const SingleActivator(LogicalKeyboardKey.keyJ): () =>
-          unawaited(controller.seekRelative(-_asbSeekMs)),
-      const SingleActivator(LogicalKeyboardKey.keyI): () =>
-          unawaited(controller.seekRelative(_asbSeekMs)),
-      const SingleActivator(LogicalKeyboardKey.arrowUp): () =>
-          unawaited(_adjustVolume(_volumeStep)),
-      const SingleActivator(LogicalKeyboardKey.arrowDown): () =>
-          unawaited(_adjustVolume(-_volumeStep)),
-      const SingleActivator(LogicalKeyboardKey.digit9): () =>
-          unawaited(_adjustVolume(-_volumeStep)),
-      const SingleActivator(LogicalKeyboardKey.digit0): () =>
-          unawaited(_adjustVolume(_volumeStep)),
-      const SingleActivator(LogicalKeyboardKey.keyM): () =>
-          unawaited(_toggleMute()),
-      const SingleActivator(LogicalKeyboardKey.equal): () =>
-          unawaited(_adjustSpeed(_speedStep)),
-      const SingleActivator(LogicalKeyboardKey.minus): () =>
-          unawaited(_adjustSpeed(-_speedStep)),
-      const SingleActivator(LogicalKeyboardKey.bracketLeft): () =>
-          unawaited(_adjustSpeed(-_speedStep)),
-      const SingleActivator(LogicalKeyboardKey.bracketRight): () =>
-          unawaited(_adjustSpeed(_speedStep)),
-      const SingleActivator(LogicalKeyboardKey.backspace): () =>
-          unawaited(_setSpeed(1.0)),
-      const SingleActivator(LogicalKeyboardKey.comma): () =>
-          unawaited(controller.frameStep(forward: false)),
-      const SingleActivator(LogicalKeyboardKey.period): () =>
-          unawaited(controller.frameStep(forward: true)),
-      const SingleActivator(LogicalKeyboardKey.keyS): () =>
-          unawaited(_saveScreenshot()),
-      // F = 切换全屏（保留 media_kit 默认；需 controls 子树内 context）。
-      const SingleActivator(LogicalKeyboardKey.keyF): () {
-        final BuildContext? ctx = _videoControlsContext;
-        if (ctx != null && ctx.mounted) toggleFullscreen(ctx);
-      },
-      // Escape：全屏时退全屏（沿用 media_kit 语义），否则退出视频页（核心修复）。
-      const SingleActivator(LogicalKeyboardKey.escape): () {
-        final BuildContext? ctx = _videoControlsContext;
-        if (ctx != null && ctx.mounted && isFullscreen(ctx)) {
-          unawaited(exitFullscreen(ctx));
-        } else {
-          unawaited(_handleBackOrExit());
-        }
-      },
-    };
+    return buildVideoPlayerShortcuts(
+      VideoPlayerShortcutActions(
+        togglePlayPause: () => unawaited(controller.playOrPause()),
+        play: () => unawaited(controller.play()),
+        pause: () => unawaited(controller.pause()),
+        // 左右方向键 = 上下句字幕（无字幕 cue 时回退 asbplayer 默认 ±3 秒 seek）。
+        previousSubtitle: () => unawaited(
+          controller.cues.isEmpty
+              ? controller.seekRelative(-_asbSeekMs)
+              : controller.skipToPrevCue(),
+        ),
+        nextSubtitle: () => unawaited(
+          controller.cues.isEmpty
+              ? controller.seekRelative(_asbSeekMs)
+              : controller.skipToNextCue(),
+        ),
+        seekBackward: () => unawaited(controller.seekRelative(-_asbSeekMs)),
+        seekForward: () => unawaited(controller.seekRelative(_asbSeekMs)),
+        toggleShaderCompare: () => unawaited(_toggleShaderCompare()),
+        volumeUp: () => unawaited(_adjustVolume(_volumeStep)),
+        volumeDown: () => unawaited(_adjustVolume(-_volumeStep)),
+        toggleMute: () => unawaited(_toggleMute()),
+        speedUp: () => unawaited(_adjustSpeed(_speedStep)),
+        speedDown: () => unawaited(_adjustSpeed(-_speedStep)),
+        resetSpeed: () => unawaited(_setSpeed(1.0)),
+        previousFrame: () => unawaited(controller.frameStep(forward: false)),
+        nextFrame: () => unawaited(controller.frameStep(forward: true)),
+        screenshot: () => unawaited(_saveScreenshot()),
+        toggleFullscreen: () {
+          final BuildContext? ctx = _videoControlsContext;
+          if (ctx != null && ctx.mounted) toggleFullscreen(ctx);
+        },
+        escape: () {
+          final BuildContext? ctx = _videoControlsContext;
+          if (ctx != null && ctx.mounted && isFullscreen(ctx)) {
+            unawaited(exitFullscreen(ctx));
+          } else {
+            unawaited(_handleBackOrExit());
+          }
+        },
+      ),
+    );
   }
 
   /// media_kit 桌面控制主题。底部胶囊条改成居中传输组
@@ -2345,6 +2312,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     VideoController videoController,
   ) {
     WidgetsBinding.instance.addPostFrameCallback((_) => _syncPopupOverlay());
+    final MaterialVideoControlsThemeData mobileControlsTheme =
+        _mobileControlsTheme(controller);
+    final MaterialDesktopVideoControlsThemeData desktopControlsTheme =
+        _desktopControlsTheme(controller);
     // 两层主题嵌套：[AdaptiveVideoControls] 按平台互斥择一渲染（桌面读 Desktop
     // 主题、移动读 Material 主题），故同时提供两套互不干扰，让字幕/音轨/设置入口
     // 在桌面、移动、全屏三种场景都可达。嵌套顺序不影响——各自被对应平台 controls 读取。
@@ -2358,27 +2329,23 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         const SingleActivator(LogicalKeyboardKey.keyB, includeRepeats: false):
             () => unawaited(_toggleSubtitleBlur()),
       },
-      child: MaterialVideoControlsTheme(
-        normal: _mobileControlsTheme(controller),
-        fullscreen: _mobileControlsTheme(controller),
-        child: MaterialDesktopVideoControlsTheme(
-          normal: _desktopControlsTheme(controller),
-          fullscreen: _desktopControlsTheme(controller),
-          child: Video(
-            controller: videoController,
-            // 用本页持有的 FocusNode 替换 Video 内置的匿名节点，以便覆盖层（对话框 /
-            // bottom sheet / 文件选择器）关闭后能主动把键盘焦点还给它，恢复空格等内置
-            // 快捷键（见 [_refocusVideo]）。
-            focusNode: _videoFocusNode,
-            // 视频不满屏时的 letterbox/pillarbox 填充色吃主题 surface（默认黑边换成
-            // 跟随主题的中性底色，与 Scaffold 背景一致，深浅主题统一）。
-            fill: Theme.of(context).colorScheme.surface,
-            // 字幕 overlay + 拖拽挂载都包进 controls builder：media_kit 全屏推独立 root
-            // 路由并复用同一 controls，故 overlay 随全屏一起进路由，全屏时字幕仍显示且
-            // 可点查词、拖字幕也能挂载（见 [_buildVideoControls]）。
-            controls: (VideoState state) =>
-                _buildVideoControls(state, controller),
-          ),
+      child: VideoControlsThemePair(
+        mobile: mobileControlsTheme,
+        desktop: desktopControlsTheme,
+        child: Video(
+          controller: videoController,
+          // 用本页持有的 FocusNode 替换 Video 内置的匿名节点，以便覆盖层（对话框 /
+          // bottom sheet / 文件选择器）关闭后能主动把键盘焦点还给它，恢复空格等内置
+          // 快捷键（见 [_refocusVideo]）。
+          focusNode: _videoFocusNode,
+          // 视频不满屏时的 letterbox/pillarbox 填充色吃主题 surface（默认黑边换成
+          // 跟随主题的中性底色，与 Scaffold 背景一致，深浅主题统一）。
+          fill: Theme.of(context).colorScheme.surface,
+          // 字幕 overlay + 拖拽挂载都包进 controls builder：media_kit 全屏推独立 root
+          // 路由并复用同一 controls，故 overlay 随全屏一起进路由，全屏时字幕仍显示且
+          // 可点查词、拖字幕也能挂载（见 [_buildVideoControls]）。
+          controls: (VideoState state) =>
+              _buildVideoControls(state, controller),
         ),
       ),
     );

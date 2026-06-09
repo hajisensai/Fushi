@@ -130,6 +130,73 @@ void main() {
       c.debugUpdateCueForPosition(3500);
       expect(pauses, 2);
     });
+
+    test(
+        'pauses at the exact end when playback crosses directly into the next cue',
+        () async {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.setCues([_cue(0, 0, 1000), _cue(1, 1001, 2000)]);
+
+      final List<String> actions = <String>[];
+      c.debugSetPauseAtSubtitleEndForTesting(
+        enabled: true,
+        isPlaying: () => true,
+        onPause: () async => actions.add('pause'),
+        onSeek: (int positionMs) async => actions.add('seek:$positionMs'),
+      );
+
+      c.debugUpdateCueForPosition(900);
+      c.debugUpdateCueForPosition(1125);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(actions, <String>['pause', 'seek:1000']);
+      expect(c.currentCueIndex, 0,
+          reason: 'the completed sentence stays visible at its exact end');
+
+      // The player lands on the previous cue end, then resumes into cue 1.
+      // That must not pause cue 0 a second time.
+      c.debugUpdateCueForPosition(1000);
+      c.debugUpdateCueForPosition(1125);
+      await Future<void>.delayed(Duration.zero);
+      expect(actions, <String>['pause', 'seek:1000']);
+      expect(c.currentCueIndex, 1);
+
+      // Rewinding rearms sentence-end pause for a repeated cue.
+      c.debugUpdateCueForPosition(500);
+      c.debugUpdateCueForPosition(1125);
+      await Future<void>.delayed(Duration.zero);
+      expect(actions, <String>[
+        'pause',
+        'seek:1000',
+        'pause',
+        'seek:1000',
+      ]);
+    });
+
+    test('does not snap a paused manual seek back to the previous cue end',
+        () async {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.setCues([_cue(0, 0, 1000), _cue(1, 1001, 2000)]);
+
+      int pauses = 0;
+      int seeks = 0;
+      c.debugSetPauseAtSubtitleEndForTesting(
+        enabled: true,
+        isPlaying: () => false,
+        onPause: () async => pauses++,
+        onSeek: (_) async => seeks++,
+      );
+
+      c.debugUpdateCueForPosition(900);
+      c.debugUpdateCueForPosition(1125);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(pauses, 0);
+      expect(seeks, 0);
+      expect(c.currentCueIndex, 1);
+    });
   });
 
   group('VideoPlayerController settings getters (no player)', () {
@@ -172,6 +239,24 @@ void main() {
       expect(await c.toggleMute(), isFalse);
       expect(c.muted, isFalse);
       expect(c.volume, 42);
+    });
+
+    test('adjustVolume accumulates from effective output and clamps', () async {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+
+      await c.setVolume(50);
+      expect(await c.adjustVolume(5), 55);
+      expect(await c.adjustVolume(5), 60);
+      expect(await c.adjustVolume(100), 100);
+      expect(await c.adjustVolume(-250), 0);
+
+      await c.setVolume(42);
+      await c.toggleMute();
+      expect(c.muted, isTrue);
+      expect(await c.adjustVolume(5), 5,
+          reason: 'volume-up from mute starts at audible zero');
+      expect(c.muted, isFalse);
     });
 
     test('frameStep is a safe no-op before load', () async {

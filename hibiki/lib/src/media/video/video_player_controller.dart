@@ -53,6 +53,9 @@ class VideoPlayerController extends ChangeNotifier
   bool _muted = false;
   bool _pauseAtSubtitleEnd = false;
   Future<void> Function()? _pauseAtSubtitleEndOverride;
+  bool Function()? _pauseAtSubtitleEndIsPlayingOverride;
+  Future<void> Function(int positionMs)? _pauseAtSubtitleEndSeekOverride;
+  int? _lastSubtitleEndPauseCueIndex;
 
   /// 当前启用的 mpv 着色器绝对路径（[load] 复用 / [applyShaders] 实时切换）。
   List<String> _shaderPaths = <String>[];
@@ -457,6 +460,12 @@ class VideoPlayerController extends ChangeNotifier
       cues: _cues,
       positionMs: effectiveMs,
     );
+    _rearmSubtitleEndPauseIfNeeded(effectiveMs);
+    if (_shouldHoldAtSubtitleEnd(idx, effectiveMs)) {
+      final AudioCue cue = _cues[_currentCueIndex];
+      _pauseAndSeekForSubtitleEnd(cue, _currentCueIndex);
+      return;
+    }
     // Gap（两条字幕间的静音）或早于首句：清空当前字幕。视频底部字幕 overlay 与
     // 有声书的「正文跟随高亮」语义不同——真实字幕在其时间窗 [startMs, endMs] 结束
     // 后就该消失，不能像高亮那样在 gap 里保留上一句（否则一句播完到下一句开始前
@@ -483,10 +492,15 @@ class VideoPlayerController extends ChangeNotifier
   @visibleForTesting
   void debugSetPauseAtSubtitleEndForTesting({
     required bool enabled,
+    bool Function()? isPlaying,
     required Future<void> Function() onPause,
+    Future<void> Function(int positionMs)? onSeek,
   }) {
     _pauseAtSubtitleEnd = enabled;
     _pauseAtSubtitleEndOverride = onPause;
+    _pauseAtSubtitleEndIsPlayingOverride = isPlaying;
+    _pauseAtSubtitleEndSeekOverride = onSeek;
+    _lastSubtitleEndPauseCueIndex = null;
   }
 
   /// 等 [player] 进入可 seek 状态（`duration > 0` 表示已解析媒体头）。
@@ -586,11 +600,56 @@ class VideoPlayerController extends ChangeNotifier
 
   void setPauseAtSubtitleEnd(bool enabled) {
     _pauseAtSubtitleEnd = enabled;
+    if (!enabled) {
+      _lastSubtitleEndPauseCueIndex = null;
+    }
   }
 
   void _pauseForSubtitleEnd() {
     if (!_pauseAtSubtitleEnd) return;
     unawaited((_pauseAtSubtitleEndOverride ?? pause).call());
+  }
+
+  bool _shouldHoldAtSubtitleEnd(int nextCueIndex, int effectiveMs) {
+    if (!_pauseAtSubtitleEnd || nextCueIndex < 0) return false;
+    if (_currentCueIndex < 0 || _currentCueIndex >= _cues.length) {
+      return false;
+    }
+    if (nextCueIndex == _currentCueIndex) return false;
+    final AudioCue cue = _cues[_currentCueIndex];
+    if (effectiveMs <= cue.endMs) return false;
+    if (_lastSubtitleEndPauseCueIndex == _currentCueIndex) return false;
+    return _isPlayingForSubtitleEnd();
+  }
+
+  bool _isPlayingForSubtitleEnd() {
+    final bool Function()? override = _pauseAtSubtitleEndIsPlayingOverride;
+    if (override != null) return override();
+    final Player? player = _player;
+    if (player == null) return true;
+    return player.state.playing;
+  }
+
+  void _pauseAndSeekForSubtitleEnd(AudioCue cue, int cueIndex) {
+    _lastSubtitleEndPauseCueIndex = cueIndex;
+    unawaited(() async {
+      await (_pauseAtSubtitleEndOverride ?? pause).call();
+      final Future<void> Function(int positionMs) seekToEnd =
+          _pauseAtSubtitleEndSeekOverride ?? seekMs;
+      await seekToEnd(cue.endMs);
+    }());
+  }
+
+  void _rearmSubtitleEndPauseIfNeeded(int effectiveMs) {
+    final int? pausedCueIndex = _lastSubtitleEndPauseCueIndex;
+    if (pausedCueIndex == null) return;
+    if (pausedCueIndex < 0 || pausedCueIndex >= _cues.length) {
+      _lastSubtitleEndPauseCueIndex = null;
+      return;
+    }
+    if (effectiveMs < _cues[pausedCueIndex].endMs) {
+      _lastSubtitleEndPauseCueIndex = null;
+    }
   }
 
   /// 切换播放/暂停（未 load 时 no-op 安全）。
@@ -632,6 +691,13 @@ class VideoPlayerController extends ChangeNotifier
     _lastVolume = value.clamp(0.0, 100.0).toDouble();
     if (_lastVolume > 0) _muted = false;
     await _player?.setVolume(_lastVolume);
+  }
+
+  Future<double> adjustVolume(double delta) async {
+    final double base = _muted ? 0.0 : volume;
+    final double next = (base + delta).clamp(0.0, 100.0).toDouble();
+    await setVolume(next);
+    return next;
   }
 
   Future<bool> toggleMute() async {

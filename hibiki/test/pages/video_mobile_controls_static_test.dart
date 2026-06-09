@@ -18,11 +18,18 @@ void main() {
   final File page = File(
     'lib/src/pages/implementations/video_hibiki_page.dart',
   );
+  final File themePair = File(
+    'lib/src/media/video/video_controls_theme_pair.dart',
+  );
 
   late String src;
+  late String themePairSrc;
   setUpAll(() {
     expect(page.existsSync(), isTrue, reason: '视频页源文件应存在');
+    expect(themePair.existsSync(), isTrue,
+        reason: '视频 controls 主题配对 helper 应存在');
     src = page.readAsStringSync();
+    themePairSrc = themePair.readAsStringSync();
   });
 
   test('存在移动端控制主题 _mobileControlsTheme', () {
@@ -37,19 +44,34 @@ void main() {
     // 两套主题互斥被对应平台读取，必须都包上才能桌面/移动/全屏全覆盖。
     expect(
       src,
-      contains('MaterialVideoControlsTheme('),
-      reason: '必须包 MaterialVideoControlsTheme（移动端 controls 读取）',
+      contains('VideoControlsThemePair('),
+      reason: '页面必须通过 VideoControlsThemePair 同时接入移动与桌面 controls 主题',
     );
     expect(
-      src,
+      themePairSrc,
+      contains('MaterialVideoControlsTheme('),
+      reason: 'helper 必须包 MaterialVideoControlsTheme（移动端 controls 读取）',
+    );
+    expect(
+      themePairSrc,
       contains('MaterialDesktopVideoControlsTheme('),
-      reason: '必须保留 MaterialDesktopVideoControlsTheme（桌面端 controls 读取）',
+      reason: 'helper 必须保留 MaterialDesktopVideoControlsTheme（桌面端 controls 读取）',
     );
     // 移动主题的 normal/fullscreen 都用 _mobileControlsTheme（全屏丢 AppBar 也可达）。
     expect(
-      '_mobileControlsTheme(controller)'.allMatches(src).length,
-      greaterThanOrEqualTo(2),
-      reason: '移动主题 normal 与 fullscreen 都应配 _mobileControlsTheme，保证全屏可达',
+      src,
+      contains('mobile: mobileControlsTheme'),
+      reason: '页面应把 _mobileControlsTheme 产物传给 VideoControlsThemePair',
+    );
+    expect(
+      src,
+      contains('desktop: desktopControlsTheme'),
+      reason: '页面应把 _desktopControlsTheme 产物传给 VideoControlsThemePair',
+    );
+    expect(
+      themePairSrc,
+      contains('fullscreen: mobile'),
+      reason: '移动主题 normal/fullscreen 必须同源，保证全屏可达',
     );
   });
 
