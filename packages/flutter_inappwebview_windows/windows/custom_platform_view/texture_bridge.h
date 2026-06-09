@@ -6,6 +6,7 @@
 #include <chrono>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <optional>
 
@@ -45,6 +46,8 @@ namespace flutter_inappwebview_plugin
     void SetFpsLimit(std::optional<int> max_fps);
 
   protected:
+    struct FrameArrivedCallbackState;
+
     bool is_running_ = false;
 
     const GraphicsContext* graphics_context_;
@@ -67,7 +70,9 @@ namespace flutter_inappwebview_plugin
 
     EventRegistrationToken on_closed_token_ = {};
     EventRegistrationToken on_frame_arrived_token_ = {};
+    std::shared_ptr<FrameArrivedCallbackState> frame_arrived_state_;
 
+    void InvalidateFrameArrivedCallback();
     virtual void StopInternal();
     void OnFrameArrived();
     bool ShouldDropFrame();

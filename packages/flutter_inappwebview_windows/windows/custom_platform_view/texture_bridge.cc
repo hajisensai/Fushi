@@ -13,6 +13,12 @@ namespace flutter_inappwebview_plugin
 {
   const int kNumBuffers = 1;
 
+  struct TextureBridge::FrameArrivedCallbackState {
+    std::mutex mutex;
+    TextureBridge* bridge = nullptr;
+    bool active = false;
+  };
+
   TextureBridge::TextureBridge(GraphicsContext* graphics_context,
     ABI::Windows::UI::Composition::IVisual* visual)
     : graphics_context_(graphics_context)
@@ -37,6 +43,7 @@ namespace flutter_inappwebview_plugin
 
   TextureBridge::~TextureBridge()
   {
+    InvalidateFrameArrivedCallback();
     const std::lock_guard<std::mutex> lock(mutex_);
     StopInternal();
     if (capture_item_) {
@@ -61,15 +68,26 @@ namespace flutter_inappwebview_plugin
       kNumBuffers, size);
     assert(frame_pool_);
 
+    auto callback_state = std::make_shared<FrameArrivedCallbackState>();
+    {
+      const std::lock_guard<std::mutex> state_lock(callback_state->mutex);
+      callback_state->bridge = this;
+      callback_state->active = true;
+    }
+    frame_arrived_state_ = callback_state;
+
     frame_pool_->add_FrameArrived(
       Microsoft::WRL::Callback<ABI::Windows::Foundation::ITypedEventHandler<
       ABI::Windows::Graphics::Capture::Direct3D11CaptureFramePool*,
       IInspectable*>>(
-        [this](ABI::Windows::Graphics::Capture::IDirect3D11CaptureFramePool*
+        [callback_state](ABI::Windows::Graphics::Capture::IDirect3D11CaptureFramePool*
           pool,
           IInspectable* args) -> HRESULT
         {
-          OnFrameArrived();
+          const std::lock_guard<std::mutex> state_lock(callback_state->mutex);
+          if (callback_state->active && callback_state->bridge) {
+            callback_state->bridge->OnFrameArrived();
+          }
           return S_OK;
         })
       .Get(),
@@ -91,44 +109,52 @@ namespace flutter_inappwebview_plugin
 
   void TextureBridge::Stop()
   {
+    InvalidateFrameArrivedCallback();
     const std::lock_guard<std::mutex> lock(mutex_);
     StopInternal();
   }
 
+  void TextureBridge::InvalidateFrameArrivedCallback()
+  {
+    auto callback_state = frame_arrived_state_;
+    if (!callback_state) {
+      return;
+    }
+    const std::lock_guard<std::mutex> state_lock(callback_state->mutex);
+    callback_state->active = false;
+    callback_state->bridge = nullptr;
+  }
+
   void TextureBridge::StopInternal()
   {
-    if (is_running_) {
-      is_running_ = false;
-      if (frame_pool_) {
-        frame_pool_->remove_FrameArrived(on_frame_arrived_token_);
+    is_running_ = false;
+    if (capture_session_) {
+      auto session_closable =
+        capture_session_.try_as<ABI::Windows::Foundation::IClosable>();
+      if (session_closable) {
+        session_closable->Close();
       }
-      if (capture_session_) {
-        auto session_closable =
-          capture_session_.try_as<ABI::Windows::Foundation::IClosable>();
-        if (session_closable) {
-          session_closable->Close();
-        }
-        capture_session_ = nullptr;
+      capture_session_ = nullptr;
+    }
+    // BUG-113/BUG-163: Close() and release the capture frame pool here, not only
+    // at member destruction. An un-Closed Direct3D11CaptureFramePool keeps its
+    // FrameArrived/Present machinery alive on the owning DispatcherQueue (the UI
+    // thread). When this bridge is torn down (e.g. the dictionary-popup WebView2
+    // is destroyed after tapping mine), a frame that was already queued onto the
+    // UI message loop can still dispatch after teardown. Do not remove the
+    // FrameArrived handler here: WGC can still process an already queued
+    // FirePresentEvent after removal, and the dump shows that path invoking a
+    // null TypedEventHandler target in GraphicsCapture.dll. Instead, invalidate
+    // the shared callback state before StopInternal(), then close/release the
+    // pool. Late queued events keep the callback object alive long enough to see
+    // the invalidated state and return without touching the destroyed bridge.
+    if (frame_pool_) {
+      auto pool_closable =
+        frame_pool_.try_as<ABI::Windows::Foundation::IClosable>();
+      if (pool_closable) {
+        pool_closable->Close();
       }
-      // BUG-113: Close() and release the capture frame pool here, not only at
-      // member destruction. An un-Closed Direct3D11CaptureFramePool keeps its
-      // FrameArrived/Present machinery alive on the owning DispatcherQueue (the
-      // UI thread). When this bridge is torn down (e.g. the dictionary-popup
-      // WebView2 is destroyed after tapping mine), a frame that was already
-      // queued onto the UI message loop before remove_FrameArrived still
-      // dispatches — but now into freed state — so GraphicsCapture's internal
-      // event list invokes a delegate whose target pointer is NULL:
-      //   GraphicsCapture!...FirePresentEvent -> event::operator() -> mov [rcx]
-      // with rcx==0 => access violation c0000005. Closing the pool severs that
-      // event source synchronously, so no late frame can fire post-teardown.
-      if (frame_pool_) {
-        auto pool_closable =
-          frame_pool_.try_as<ABI::Windows::Foundation::IClosable>();
-        if (pool_closable) {
-          pool_closable->Close();
-        }
-        frame_pool_ = nullptr;
-      }
+      frame_pool_ = nullptr;
     }
   }
 
