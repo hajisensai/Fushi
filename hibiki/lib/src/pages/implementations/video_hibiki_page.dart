@@ -11,8 +11,6 @@ import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
-import 'package:media_kit_video/media_kit_video_controls/src/controls/methods/video_state.dart'
-    as media_kit_video_state;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -1430,12 +1428,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     final contextNotifierValue = inherited.contextNotifier;
     final videoViewParametersNotifierValue =
         inherited.videoViewParametersNotifier;
-    final VideoController controllerValue =
-        media_kit_video_state.controller(context);
+    final VideoController controllerValue = stateValue.widget.controller;
     final Future<void> Function() enterNativeFullscreen =
-        media_kit_video_state.onEnterFullscreen(context) ?? () async {};
+        stateValue.widget.onEnterFullscreen;
     final Future<void> Function() exitNativeFullscreen =
-        media_kit_video_state.onExitFullscreen(context) ?? () async {};
+        stateValue.widget.onExitFullscreen;
     final MaterialVideoControlsTheme? mobileTheme =
         MaterialVideoControlsTheme.maybeOf(context);
     final MaterialDesktopVideoControlsTheme? desktopTheme =

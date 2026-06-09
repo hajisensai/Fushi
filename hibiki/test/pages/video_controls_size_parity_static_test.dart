@@ -77,5 +77,11 @@ void main() {
         reason: 'double-click fullscreen must remain available');
     expect(source, isNot(contains('const MaterialDesktopFullscreenButton()')));
     expect(source, isNot(contains('const MaterialFullscreenButton()')));
+    expect(
+      source,
+      isNot(contains('package:media_kit_video/media_kit_video_controls/src/')),
+      reason:
+          'fullscreen route must use media_kit public exports, not private package internals',
+    );
   });
 }
