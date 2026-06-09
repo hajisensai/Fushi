@@ -350,7 +350,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     ref.invalidate(videoBookTagMapProvider);
     ref.invalidate(filteredVideoBookUidsProvider);
     if (mounted) {
-      HibikiToast.show(msg: t.tag_added_to_book(name: tag.name));
+      HibikiToast.show(msg: t.tag_added_to_video(name: tag.name));
     }
   }
 
