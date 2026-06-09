@@ -426,6 +426,10 @@ typedef SubtitleCueLoader = Future<List<AudioCue>> Function(
 /// files next to [videoPath]. User-imported subtitles live in app documents, so
 /// the menu needs this one explicit persisted path. It never scans the import
 /// directory and never adds unrelated historical imports.
+///
+/// The current persisted import is placed before enumerated tracks. The subtitle
+/// sheet has a capped viewport; appending after embedded tracks can keep the
+/// active import below the initially visible menu items after reopening.
 Future<List<SubtitleSource>> includeCurrentPersistedSubtitleForMenu(
   List<SubtitleSource> sources, {
   required String videoPath,
@@ -455,8 +459,7 @@ Future<List<SubtitleSource>> includeCurrentPersistedSubtitleForMenu(
           .isNotEmpty;
   if (!hasUsableCues) return result;
 
-  result.add(source);
-  return result;
+  return <SubtitleSource>[source, ...result];
 }
 
 bool subtitleSourceMatchesPersistedForMenu(

@@ -456,8 +456,13 @@ TODO016 imported subtitle survives reopen.
         },
       );
 
-      expect(sources.map((SubtitleSource s) => s.label),
-          contains('todo016-imported-reentry.srt'));
+      expect(
+        sources.map((SubtitleSource s) => s.label).toList(),
+        <String>[
+          'todo016-imported-reentry.srt',
+          '内封 0: eng / ass',
+        ],
+      );
     });
 
     test('parses the current persisted source when no cues are loaded',
