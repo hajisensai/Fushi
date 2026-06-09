@@ -8,10 +8,23 @@ void main() {
         File('lib/src/pages/implementations/video_hibiki_page.dart')
             .readAsStringSync();
 
+    expect(source, contains('static const double _videoButtonBarHeight = 56'));
     expect(source, contains('static const double _videoControlIconSize = 32'));
     expect(
         source, contains('static const double _videoPlayPauseIconSize = 36'));
     expect(source, contains('TextStyle _videoControlTitleStyle(ColorScheme'));
+    expect(
+      'buttonBarButtonSize: _videoControlIconSize'.allMatches(source).length,
+      2,
+      reason:
+          'media_kit built-in fullscreen buttons must use the same shared icon size as custom controls',
+    );
+    expect(
+      'buttonBarHeight: _videoButtonBarHeight'.allMatches(source).length,
+      2,
+      reason:
+          'normal and fullscreen controls should share one explicit touch-height source',
+    );
     expect(
       '_videoControlIconSize'.allMatches(source).length,
       greaterThanOrEqualTo(10),

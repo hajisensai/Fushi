@@ -158,6 +158,7 @@ abstract class VideoHibikiTestHooks {
 class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     with DictionaryPageMixin, WidgetsBindingObserver
     implements VideoHibikiTestHooks {
+  static const double _videoButtonBarHeight = 56;
   static const double _videoControlIconSize = 32;
   static const double _videoPlayPauseIconSize = 36;
   static const int _subtitleOffsetStepMs = 100;
@@ -1384,6 +1385,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       seekBarPositionColor: cs.primary,
       seekBarThumbColor: cs.primary,
       buttonBarButtonColor: cs.primary,
+      buttonBarHeight: _videoButtonBarHeight,
+      buttonBarButtonSize: _videoControlIconSize,
       keyboardShortcuts: _videoKeyboardShortcuts(controller),
       primaryButtonBar: const <Widget>[],
       // 视频内顶栏（替代被删的 Scaffold AppBar，BUG-102）：左侧返回 + 标题，右侧
@@ -1502,6 +1505,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       seekBarPositionColor: cs.primary,
       seekBarThumbColor: cs.primary,
       buttonBarButtonColor: cs.primary,
+      buttonBarHeight: _videoButtonBarHeight,
+      buttonBarButtonSize: _videoControlIconSize,
       primaryButtonBar: const <Widget>[],
       // 视频内顶栏（替代被删的 Scaffold AppBar，BUG-102）：左侧返回 + 标题，
       // 右侧只放手机上最常用且需要直接命中的入口。倍速仍可从设置进入。

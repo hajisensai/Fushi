@@ -47,6 +47,15 @@ Future<void> _pump(WidgetTester tester, Widget child) async {
 }
 
 void main() {
+  test('quality enhancement labels stay ordinary user-facing', () {
+    expect(t.video_settings_cat_shaders, 'Image enhancement');
+    expect(t.video_shader_recommended, 'Recommended image enhancements');
+    expect(t.video_shader_preset_mode_a_hq, contains('1080p'));
+    expect(t.video_shader_preset_mode_a_hq.toLowerCase(), contains('quality'));
+    expect(t.video_shader_preset_mode_b_hq, contains('720p'));
+    expect(t.video_shader_preset_mode_c_hq, contains('480p'));
+  });
+
   testWidgets('video settings shows master-detail on wide windows',
       (tester) async {
     await tester.binding.setSurfaceSize(const Size(1000, 800));

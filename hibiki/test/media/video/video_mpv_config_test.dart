@@ -29,10 +29,11 @@ keep-open=yes
   });
 
   group('buildMpvProperties', () {
-    test('defaults -> neutral values equal to mpv defaults (visually no-op)',
+    test(
+        'defaults auto-detect hardware decoding while staying visually neutral',
         () {
       final Map<String, String> m = buildMpvProperties(VideoMpvConfig.defaults);
-      expect(m['hwdec'], 'no');
+      expect(m['hwdec'], 'auto-safe');
       expect(m['scale'], 'bilinear');
       expect(m['deband'], 'no');
       expect(m['dither-depth'], 'no');
@@ -171,9 +172,26 @@ keep-open=yes
     });
 
     test('decode empty/garbage -> defaults', () {
-      expect(VideoMpvConfig.decode('').hwdec, 'no');
+      expect(VideoMpvConfig.decode('').hwdec, 'auto-safe');
       expect(VideoMpvConfig.decode('garbage').rawConf, '');
       expect(VideoMpvConfig.decode('garbage').brightness, 0);
+    });
+
+    test('decode invalid hwdec falls back to automatic safe detection', () {
+      final VideoMpvConfig c = VideoMpvConfig.decode('{"hwdec":"bad"}');
+      expect(c.hwdec, 'auto-safe');
+    });
+
+    test('legacy default hwdec=no migrates to automatic safe detection', () {
+      final VideoMpvConfig c = VideoMpvConfig.decode('{"hwdec":"no"}');
+      expect(c.hwdec, 'auto-safe');
+    });
+
+    test('encoded explicit hwdec off remains off', () {
+      final VideoMpvConfig c = VideoMpvConfig.decode(VideoMpvConfig.encode(
+        VideoMpvConfig.defaults.copyWith(hwdec: 'no'),
+      ));
+      expect(c.hwdec, 'no');
     });
 
     test('decode clamps out-of-range color/rotate', () {

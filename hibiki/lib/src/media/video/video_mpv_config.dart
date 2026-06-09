@@ -15,6 +15,8 @@ import 'package:media_kit/media_kit.dart';
 /// Anime4k（着色器对话框）、SVP/RIFE 帧插值（需外部工具链，非纯 libmpv 属性）。
 @immutable
 class VideoMpvConfig {
+  static const int _schemaVersion = 2;
+
   const VideoMpvConfig({
     required this.hwdec,
     required this.highQuality,
@@ -41,9 +43,9 @@ class VideoMpvConfig {
     required this.rawConf,
   });
 
-  /// 每字段取 mpv 自身默认：默认配置下全量 setProperty 与历史行为视觉等价。
+  /// 默认配置保持视觉中性；硬件解码默认交给 mpv 安全自动探测。
   static const VideoMpvConfig defaults = VideoMpvConfig(
-    hwdec: 'no',
+    hwdec: 'auto-safe',
     highQuality: false,
     deband: false,
     dither: false,
@@ -182,6 +184,7 @@ class VideoMpvConfig {
       );
 
   static String encode(VideoMpvConfig c) => jsonEncode(<String, dynamic>{
+        '_v': _schemaVersion,
         'hwdec': c.hwdec,
         'highQuality': c.highQuality,
         'deband': c.deband,
@@ -212,6 +215,7 @@ class VideoMpvConfig {
     try {
       final dynamic d = jsonDecode(json);
       if (d is! Map) return defaults;
+      final int version = d['_v'] is num ? (d['_v'] as num).toInt() : 1;
       int clampInt(Object? v, int fb, int lo, int hi) =>
           (v is num ? v.toInt() : fb).clamp(lo, hi);
       const Set<int> rotates = <int>{0, 90, 180, 270};
@@ -219,12 +223,17 @@ class VideoMpvConfig {
       const Set<String> channels = <String>{'auto-safe', 'stereo', 'mono'};
       final int rot =
           d['videoRotate'] is num ? (d['videoRotate'] as num).toInt() : 0;
-      final String hw = d['hwdec'] is String ? d['hwdec'] as String : 'no';
+      final String hw =
+          d['hwdec'] is String ? d['hwdec'] as String : defaults.hwdec;
+      String decodedHwdec = hwdecs.contains(hw) ? hw : defaults.hwdec;
+      if (version < _schemaVersion && decodedHwdec == 'no') {
+        decodedHwdec = defaults.hwdec;
+      }
       final String ch = d['audioChannels'] is String
           ? d['audioChannels'] as String
           : 'auto-safe';
       return VideoMpvConfig(
-        hwdec: hwdecs.contains(hw) ? hw : 'no',
+        hwdec: decodedHwdec,
         highQuality: d['highQuality'] == true,
         deband: d['deband'] == true,
         dither: d['dither'] == true,
