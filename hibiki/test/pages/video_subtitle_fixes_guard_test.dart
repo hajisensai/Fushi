@@ -71,6 +71,38 @@ void main() {
         reason: '按路径直接加载应先于 listAllSubtitleSources 同目录枚举');
   });
 
+  test('TODO-016: 字幕菜单只补入当前持久化的导入字幕源', () {
+    final String menu = region(
+      'Future<void> _showSubtitleSourceMenu(',
+      'Future<void> _openJimakuDialog(',
+    );
+    expect(menu.contains('_subtitleSourcesForMenu('), isTrue,
+        reason: '菜单不能只用 listAllSubtitleSources；重进后还要补入当前视频持久化的导入字幕');
+    expect(
+        menu.contains('currentSubtitleSource: _currentSubtitleSource'), isTrue,
+        reason: '只允许把当前视频持久化的字幕源补进菜单，不能扫描历史导入目录');
+
+    final String helper = region(
+      'Future<List<SubtitleSource>> _subtitleSourcesForMenu(',
+      'SubtitleSource? _firstMatching(',
+    );
+    expect(helper.contains('listAllSubtitleSources(videoPath'), isTrue,
+        reason: '菜单基础列表仍应来自当前视频的内封轨 + 同目录 sidecar');
+    expect(
+        helper
+            .contains('isImportedExternalSubtitlePath(currentSubtitleSource)'),
+        isTrue,
+        reason: '只有持久化值是本地可加载字幕路径时才允许补入菜单');
+    expect(helper.contains('File(currentSubtitleSource).existsSync()'), isTrue,
+        reason: '已丢失的导入字幕文件不能显示在菜单里');
+    expect(helper.contains('loadCuesForSource('), isTrue,
+        reason: '补入菜单前要验证该格式/内容仍能解析，坏字幕不应乱显示');
+    expect(helper.contains('_sameExternalSubtitlePath('), isTrue,
+        reason: '补入前必须用规范化路径去重，避免 Windows 大小写/分隔符造成重复');
+    expect(helper.contains('Directory('), isFalse,
+        reason: 'TODO-016 的保守方案禁止扫描整个 video_subtitles 目录');
+  });
+
   test('BUG-133: 视频页有页级拖放目标 + 导入去重防护', () {
     // 页级拖放目标（窗口模式可靠收拖放；内层那个供全屏用）。
     expect(src.contains('Widget _pageDropTarget('), isTrue,
