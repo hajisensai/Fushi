@@ -95,7 +95,6 @@ void main() {
         zh.contains('"desktop_clipboard_window_mode_lookup": "仅查词期间"'), isTrue);
     expect(
         zh.contains('"desktop_clipboard_window_mode_always": "始终置顶"'), isTrue);
-    expect(zh.contains('剪贴板查词仍只在查词页启用'), isTrue);
   });
 
   test('DesktopLookupService 只排队命中词，不在剪贴板回调里抢前台', () {

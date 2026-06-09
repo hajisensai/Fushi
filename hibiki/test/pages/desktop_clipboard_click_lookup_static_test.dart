@@ -17,7 +17,9 @@ void main() {
 
     expect(src, contains('ClipboardLookupTextPanel'));
     expect(src, contains('_externalLookupText'));
-    expect(src, contains('_externalLookupText = req.text'));
+    expect(src, contains('DesktopLookupService.instance.pendingText'));
+    expect(src, contains('DesktopLookupService.instance.clearPending()'));
+    expect(src, contains('_externalLookupText = text'));
     expect(src, contains('_pushNestedPopup(query, localRect'));
     expect(
       resultBody,

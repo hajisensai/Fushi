@@ -1435,6 +1435,6 @@
     "desktop_clipboard_window_mode": "Window pinning",
     "desktop_clipboard_window_mode_normal": "Off",
     "desktop_clipboard_window_mode_always": "Always",
-    "desktop_clipboard_window_mode_hint": "Controls whether Hibiki stays above other windows; clipboard lookup still only runs on the lookup tab",
+    "desktop_clipboard_window_mode_hint": "Controls whether Hibiki stays above other windows. Only watches the clipboard and global hotkey on the lookup tab.",
     "desktop_clipboard_window_mode_lookup": "Lookup only"
 }
