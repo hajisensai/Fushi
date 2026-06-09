@@ -79,6 +79,7 @@ void main() {
     shortcuts[const SingleActivator(LogicalKeyboardKey.arrowRight)]!();
     shortcuts[const SingleActivator(LogicalKeyboardKey.keyA)]!();
     shortcuts[const SingleActivator(LogicalKeyboardKey.keyD)]!();
+    shortcuts[const SingleActivator(LogicalKeyboardKey.keyC)]!();
     shortcuts[const SingleActivator(LogicalKeyboardKey.bracketLeft)]!();
     shortcuts[const SingleActivator(LogicalKeyboardKey.bracketRight)]!();
     shortcuts[const SingleActivator(LogicalKeyboardKey.backspace)]!();
@@ -94,6 +95,7 @@ void main() {
       'nextSubtitle',
       'seekBackward',
       'seekForward',
+      'shader',
       'speedDown',
       'speedUp',
       'resetSpeed',
