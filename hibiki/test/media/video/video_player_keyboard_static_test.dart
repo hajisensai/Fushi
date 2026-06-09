@@ -24,7 +24,8 @@ void main() {
       expect(page.contains('escape: () {'), isTrue,
           reason: '页面必须把 Escape action 接入真实退出逻辑');
       expect(page.contains('isFullscreen('), isTrue, reason: '全屏时 Escape 应退全屏');
-      expect(page.contains('exitFullscreen('), isTrue);
+      expect(page.contains('_exitVideoFullscreen('), isTrue,
+          reason: 'Escape 全屏退出必须走 Hibiki 中和后的 fullscreen helper');
       expect(page.contains('_handleBackOrExit()'), isTrue,
           reason: '非全屏时 Escape 应退出视频页');
     });

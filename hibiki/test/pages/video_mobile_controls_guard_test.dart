@@ -79,7 +79,10 @@ void expectBottomBarUsesWidthGate(String methodBody, String label) {
       reason: '$label controls should hide 10s buttons only on narrow widths');
   expect(bottomBar.contains('PositionIndicator'), isTrue);
   expect(bottomBar.contains('PlayOrPauseButton'), isTrue);
-  expect(bottomBar.contains('FullscreenButton'), isTrue);
+  expect(bottomBar.contains('_buildVolumeButton(controller'), isTrue,
+      reason: '$label bottom bar should expose a volume adjustment entry');
+  expect(bottomBar.contains('_buildFullscreenButton('), isTrue,
+      reason: '$label bottom bar should use Hibiki neutralized fullscreen');
   expect(bottomBar.contains('Icons.replay_10'), isTrue,
       reason: '$label controls should keep -10s when width allows');
   expect(bottomBar.contains('Icons.forward_10'), isTrue,

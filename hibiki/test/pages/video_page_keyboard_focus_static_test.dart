@@ -31,6 +31,19 @@ void main() {
         reason: 'Video 必须用本页持有的 FocusNode，否则覆盖层关闭后无法归还焦点');
   });
 
+  test('视频首次 load 完成后主动把焦点交给 Video', () {
+    final int applyLoad = src.indexOf('Future<void> _applyLoad({');
+    final int persist =
+        src.indexOf('Future<void> _persistPosition(', applyLoad);
+    expect(applyLoad, greaterThanOrEqualTo(0));
+    expect(persist, greaterThan(applyLoad));
+    final String body = src.substring(applyLoad, persist);
+
+    expect(body, contains('WidgetsBinding.instance.addPostFrameCallback'));
+    expect(body, contains('_refocusVideo();'),
+        reason: '非全屏进入视频页后若没有主动聚焦，空格会冒泡到全局 DoNothingIntent 而不是播放/暂停');
+  });
+
   test('存在 _refocusVideo 归还焦点的 helper', () {
     expect(src, contains('void _refocusVideo()'),
         reason: '应有统一的 _refocusVideo() 在覆盖层关闭后归还焦点');

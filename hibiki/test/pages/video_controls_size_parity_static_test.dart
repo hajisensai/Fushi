@@ -43,4 +43,39 @@ void main() {
           'style: const TextStyle(color: Colors.white, fontSize: 16)')),
     );
   });
+
+  test('fullscreen video route is neutralized like the windowed video page',
+      () {
+    final String source =
+        File('lib/src/pages/implementations/video_hibiki_page.dart')
+            .readAsStringSync();
+
+    expect(source, contains('Future<void> _pushNeutralizedVideoFullscreen('),
+        reason:
+            'media_kit default fullscreen route is outside VideoHibikiPage.neutralized; Hibiki must push its own neutralized route');
+    final int helper = source.indexOf(
+      'Future<void> _pushNeutralizedVideoFullscreen(',
+    );
+    expect(helper, greaterThanOrEqualTo(0));
+    final int end = source.indexOf('Widget _buildFullscreenButton(', helper);
+    expect(end, greaterThan(helper));
+    final String helperBody = source.substring(helper, end);
+
+    expect(helperBody, contains('HibikiAppUiScaleNeutralizer('),
+        reason: 'fullscreen route must cancel the app-wide UI scale too');
+    expect(helperBody, contains('VideoStateInheritedWidget('),
+        reason: 'fullscreen route must preserve media_kit video state');
+    expect(helperBody, contains('FullscreenInheritedWidget('),
+        reason:
+            'fullscreen controls must still see media_kit fullscreen context');
+    expect(helperBody, contains('width: null'));
+    expect(helperBody, contains('height: null'));
+    expect(source, contains('toggleFullscreenOnDoublePress: false'),
+        reason:
+            'package default double-click route is unneutralized; Hibiki should replace it with its own double-click handler');
+    expect(source, contains('void _handleVideoPointerUp('),
+        reason: 'double-click fullscreen must remain available');
+    expect(source, isNot(contains('const MaterialDesktopFullscreenButton()')));
+    expect(source, isNot(contains('const MaterialFullscreenButton()')));
+  });
 }

@@ -11,6 +11,8 @@ import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
+import 'package:media_kit_video/media_kit_video_controls/src/controls/methods/video_state.dart'
+    as media_kit_video_state;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -174,6 +176,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   static const double _videoButtonBarHeight = 56;
   static const double _videoControlIconSize = 32;
   static const double _videoPlayPauseIconSize = 36;
+  static const Duration _videoDoubleClickInterval = Duration(milliseconds: 400);
+  static const double _videoDoubleClickSlop = 48;
   static const int _subtitleOffsetStepMs = 100;
   static const double _volumeStep = 5.0;
 
@@ -252,6 +256,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// `FullscreenInheritedWidget` / `VideoStateInheritedWidget`——本页 build 的 context 是
   /// 它们的祖先，传进去会查不到。故捕获一个后代 context 供 Escape/F 快捷键用。
   BuildContext? _videoControlsContext;
+  DateTime? _lastVideoPointerUpAt;
+  Offset? _lastVideoPointerUpPosition;
+  bool _videoFullscreenTransitioning = false;
 
   /// 观看统计采集器（观看时长 + 字幕字数 + 完成标记）；首次 load 建，dispose 释放。
   VideoWatchTracker? _watchTracker;
@@ -785,6 +792,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       // 外挂字幕路径即持久化值；内嵌自动加载（externalSubtitlePath==null）时
       // 当前选中由 _currentSubtitleSource 保留（菜单切换时再写）。
       _currentSubtitleSource = externalSubtitlePath ?? _currentSubtitleSource;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _refocusVideo();
     });
     _syncWindowAspectRatioLock();
 
@@ -1384,12 +1394,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         screenshot: () => unawaited(_saveScreenshot()),
         toggleFullscreen: () {
           final BuildContext? ctx = _videoControlsContext;
-          if (ctx != null && ctx.mounted) toggleFullscreen(ctx);
+          if (ctx != null && ctx.mounted) {
+            unawaited(_toggleVideoFullscreen(ctx));
+          }
         },
         escape: () {
           final BuildContext? ctx = _videoControlsContext;
           if (ctx != null && ctx.mounted && isFullscreen(ctx)) {
-            unawaited(exitFullscreen(ctx));
+            unawaited(_exitVideoFullscreen(ctx));
           } else {
             unawaited(_handleBackOrExit());
           }
@@ -1402,6 +1414,161 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// `[−10s][上一句][暂停][下一句][+10s]`（清空中央 primaryButtonBar 避免重复），
   /// 左端进度、右端全屏；顶栏右侧放 截图/字幕/音轨/倍速/设置 图标（参照截图）。
   /// 上/下一句走 cue 导航（[VideoPlayerController.skipToPrevCue]/[skipToNextCue]）。
+  Future<void> _toggleVideoFullscreen(BuildContext context) {
+    return isFullscreen(context)
+        ? _exitVideoFullscreen(context)
+        : _pushNeutralizedVideoFullscreen(context);
+  }
+
+  Future<void> _pushNeutralizedVideoFullscreen(BuildContext context) async {
+    if (_videoFullscreenTransitioning || isFullscreen(context)) return;
+    if (!context.mounted) return;
+    _videoFullscreenTransitioning = true;
+    final VideoStateInheritedWidget inherited =
+        VideoStateInheritedWidget.of(context);
+    final VideoState stateValue = inherited.state;
+    final contextNotifierValue = inherited.contextNotifier;
+    final videoViewParametersNotifierValue =
+        inherited.videoViewParametersNotifier;
+    final VideoController controllerValue =
+        media_kit_video_state.controller(context);
+    final Future<void> Function() enterNativeFullscreen =
+        media_kit_video_state.onEnterFullscreen(context) ?? () async {};
+    final Future<void> Function() exitNativeFullscreen =
+        media_kit_video_state.onExitFullscreen(context) ?? () async {};
+    final MaterialVideoControlsTheme? mobileTheme =
+        MaterialVideoControlsTheme.maybeOf(context);
+    final MaterialDesktopVideoControlsTheme? desktopTheme =
+        MaterialDesktopVideoControlsTheme.maybeOf(context);
+
+    try {
+      Navigator.of(context, rootNavigator: true).push<void>(
+        PageRouteBuilder<void>(
+          pageBuilder: (_, __, ___) => Material(
+            child: HibikiAppUiScaleNeutralizer(
+              child: MaterialVideoControlsTheme(
+                normal: mobileTheme?.normal ??
+                    kDefaultMaterialVideoControlsThemeData,
+                fullscreen: mobileTheme?.fullscreen ??
+                    kDefaultMaterialVideoControlsThemeDataFullscreen,
+                child: MaterialDesktopVideoControlsTheme(
+                  normal: desktopTheme?.normal ??
+                      kDefaultMaterialDesktopVideoControlsThemeData,
+                  fullscreen: desktopTheme?.fullscreen ??
+                      kDefaultMaterialDesktopVideoControlsThemeDataFullscreen,
+                  child: VideoStateInheritedWidget(
+                    state: stateValue,
+                    contextNotifier: contextNotifierValue,
+                    videoViewParametersNotifier:
+                        videoViewParametersNotifierValue,
+                    disposeNotifiers: false,
+                    child: FullscreenInheritedWidget(
+                      parent: stateValue,
+                      child: VideoStateInheritedWidget(
+                        state: stateValue,
+                        contextNotifier: contextNotifierValue,
+                        videoViewParametersNotifier:
+                            videoViewParametersNotifierValue,
+                        disposeNotifiers: false,
+                        child: ValueListenableBuilder<VideoViewParameters>(
+                          valueListenable: videoViewParametersNotifierValue,
+                          builder: (
+                            BuildContext _,
+                            VideoViewParameters params,
+                            __,
+                          ) {
+                            return Video(
+                              controller: controllerValue,
+                              width: null,
+                              height: null,
+                              fit: params.fit,
+                              fill: params.fill,
+                              alignment: params.alignment,
+                              aspectRatio: params.aspectRatio,
+                              filterQuality: params.filterQuality,
+                              controls: params.controls,
+                              wakelock: false,
+                              subtitleViewConfiguration:
+                                  params.subtitleViewConfiguration,
+                              focusNode: params.focusNode,
+                              onEnterFullscreen: enterNativeFullscreen,
+                              onExitFullscreen: exitNativeFullscreen,
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          transitionDuration: Duration.zero,
+          reverseTransitionDuration: Duration.zero,
+        ),
+      );
+      await enterNativeFullscreen();
+    } finally {
+      _videoFullscreenTransitioning = false;
+      if (mounted) _refocusVideo();
+    }
+  }
+
+  Future<void> _exitVideoFullscreen(BuildContext context) async {
+    if (_videoFullscreenTransitioning || !isFullscreen(context)) return;
+    if (!context.mounted) return;
+    _videoFullscreenTransitioning = true;
+    try {
+      await Navigator.of(context).maybePop();
+      if (context.mounted) {
+        FullscreenInheritedWidget.of(context).parent.refreshView();
+      }
+    } finally {
+      _videoFullscreenTransitioning = false;
+      if (mounted) _refocusVideo();
+    }
+  }
+
+  Widget _buildFullscreenButton({required bool desktop}) {
+    return Builder(
+      builder: (BuildContext buttonContext) {
+        final Widget icon = Icon(
+          isFullscreen(buttonContext)
+              ? Icons.fullscreen_exit
+              : Icons.fullscreen,
+          size: _videoControlIconSize,
+        );
+        return desktop
+            ? MaterialDesktopCustomButton(
+                icon: icon,
+                onPressed: () =>
+                    unawaited(_toggleVideoFullscreen(buttonContext)),
+              )
+            : MaterialCustomButton(
+                icon: icon,
+                onPressed: () =>
+                    unawaited(_toggleVideoFullscreen(buttonContext)),
+              );
+      },
+    );
+  }
+
+  Widget _buildVolumeButton(
+    VideoPlayerController controller, {
+    required bool desktop,
+  }) {
+    if (desktop) {
+      return const MaterialDesktopVolumeButton(
+        iconSize: _videoControlIconSize,
+      );
+    }
+    return MaterialCustomButton(
+      icon:
+          Icon(_volumeIconFor(controller.volume), size: _videoControlIconSize),
+      onPressed: () => _showVolumeMenu(controller),
+    );
+  }
+
   MaterialDesktopVideoControlsThemeData _desktopControlsTheme(
     VideoPlayerController controller,
   ) {
@@ -1414,6 +1581,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       // BUG-130）。字幕字符点击在更上层 [VideoSubtitleOverlay] 的 opaque GestureDetector
       // 独立处理、不会冒泡到这里，故启用后点字幕仍是查词、点空白区才暂停，不冲突。
       playAndPauseOnTap: true,
+      toggleFullscreenOnDoublePress: false,
       seekBarPositionColor: cs.primary,
       seekBarThumbColor: cs.primary,
       buttonBarButtonColor: cs.primary,
@@ -1517,7 +1685,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             onPressed: () => _seekRelative(10000),
           ),
         const Spacer(),
-        const MaterialDesktopFullscreenButton(),
+        _buildVolumeButton(controller, desktop: true),
+        _buildFullscreenButton(desktop: true),
       ],
     );
   }
@@ -1609,7 +1778,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             onPressed: () => _seekRelative(10000),
           ),
         const Spacer(),
-        const MaterialFullscreenButton(),
+        _buildVolumeButton(controller, desktop: false),
+        _buildFullscreenButton(desktop: false),
       ],
     );
   }
@@ -1656,6 +1826,64 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   Future<void> _adjustSubtitleOffset(int deltaMs) async {
     assert(_subtitleOffsetStepMs > 0);
     await _setDelayMs(_delayMs + deltaMs);
+  }
+
+  void _showVolumeMenu(VideoPlayerController controller) {
+    if (_videoSheetOpen) return;
+    _videoSheetOpen = true;
+    double volume = controller.volume.clamp(0.0, 100.0).toDouble();
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (BuildContext ctx) {
+        return StatefulBuilder(
+          builder: (
+            BuildContext ctx,
+            StateSetter setModalState,
+          ) {
+            void setVolume(double value) {
+              final double next = value.clamp(0.0, 100.0).toDouble();
+              setModalState(() => volume = next);
+              unawaited(controller.setVolume(next));
+              if (mounted) _showVolumeOsd(next);
+            }
+
+            return SafeArea(
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                child: Row(
+                  children: <Widget>[
+                    IconButton(
+                      icon: Icon(_volumeIconFor(0)),
+                      onPressed: () => setVolume(0),
+                    ),
+                    Expanded(
+                      child: Slider(
+                        value: volume,
+                        min: 0,
+                        max: 100,
+                        divisions: 20,
+                        onChanged: setVolume,
+                      ),
+                    ),
+                    SizedBox(
+                      width: 48,
+                      child: Text(
+                        '${volume.round()}%',
+                        textAlign: TextAlign.end,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    ).whenComplete(() {
+      _videoSheetOpen = false;
+      _refocusVideo();
+    });
   }
 
   Future<void> _adjustVolume(double delta) async {
@@ -2371,6 +2599,49 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     );
   }
 
+  void _handleVideoPointerUp(PointerUpEvent event) {
+    final BuildContext? controlsContext = _videoControlsContext;
+    if (controlsContext == null ||
+        !controlsContext.mounted ||
+        _isVideoChromePointer(controlsContext, event.position)) {
+      _lastVideoPointerUpAt = null;
+      _lastVideoPointerUpPosition = null;
+      return;
+    }
+
+    final DateTime now = DateTime.now();
+    final DateTime? lastAt = _lastVideoPointerUpAt;
+    final Offset? lastPosition = _lastVideoPointerUpPosition;
+    _lastVideoPointerUpAt = now;
+    _lastVideoPointerUpPosition = event.position;
+    if (lastAt == null || lastPosition == null) return;
+    if (now.difference(lastAt) > _videoDoubleClickInterval) return;
+    if ((event.position - lastPosition).distance > _videoDoubleClickSlop) {
+      return;
+    }
+    _lastVideoPointerUpAt = null;
+    _lastVideoPointerUpPosition = null;
+    unawaited(_toggleVideoFullscreen(controlsContext));
+  }
+
+  bool _isVideoChromePointer(
+      BuildContext controlsContext, Offset globalPosition) {
+    final RenderObject? renderObject = controlsContext.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) return false;
+    final Offset local = renderObject.globalToLocal(globalPosition);
+    if (local.dx < 0 ||
+        local.dy < 0 ||
+        local.dx > renderObject.size.width ||
+        local.dy > renderObject.size.height) {
+      return false;
+    }
+    final EdgeInsets padding = MediaQuery.of(controlsContext).padding;
+    final double topChromeBottom = padding.top + _videoButtonBarHeight;
+    final double bottomChromeTop =
+        renderObject.size.height - padding.bottom - _videoButtonBarHeight;
+    return local.dy <= topChromeBottom || local.dy >= bottomChromeTop;
+  }
+
   /// 视频本体：media_kit [Video] + 可点字幕 overlay。查词浮层栈不在这里渲染——它走
   /// 根 Overlay（[_syncPopupOverlay] / [_buildPopupOverlay]），以便全屏时浮在全屏
   /// 路由之上。每次 build 在 post-frame 同步根 Overlay 与当前栈。
@@ -2437,43 +2708,47 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       onDrop: (List<String> paths, Offset _) {
         _handlePlaybackDrop(controller, paths);
       },
-      child: Stack(
-        children: <Widget>[
-          // Builder 捕获 media_kit controls 子树内的 context（[_videoControlsContext]），
-          // 供覆盖后的键盘快捷键调用全屏 helper（isFullscreen/toggle/exitFullscreen）——
-          // 本页 build context 是它们的祖先，找不到 media_kit 的 Fullscreen/VideoState
-          // InheritedWidget。全屏复用同一 builder，故全屏路由会重新捕获其子树 context。
-          Positioned.fill(
-            child: Builder(
-              builder: (BuildContext controlsContext) {
-                _videoControlsContext = controlsContext;
-                return AdaptiveVideoControls(state);
-              },
+      child: Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerUp: _handleVideoPointerUp,
+        child: Stack(
+          children: <Widget>[
+            // Builder 捕获 media_kit controls 子树内的 context（[_videoControlsContext]），
+            // 供覆盖后的键盘快捷键调用全屏 helper（isFullscreen/toggle/exitFullscreen）——
+            // 本页 build context 是它们的祖先，找不到 media_kit 的 Fullscreen/VideoState
+            // InheritedWidget。全屏复用同一 builder，故全屏路由会重新捕获其子树 context。
+            Positioned.fill(
+              child: Builder(
+                builder: (BuildContext controlsContext) {
+                  _videoControlsContext = controlsContext;
+                  return AdaptiveVideoControls(state);
+                },
+              ),
             ),
-          ),
-          Positioned.fill(
-            child: VideoSubtitleOverlay(
-              controller: controller,
-              onCharTap: _lookupAt,
-              hitTester: _subtitleHitTester,
-              blurEnabled: appModel.videoSubtitleBlur,
-              fontSize: _subtitleStyle.fontSize,
-              textColor: _subtitleStyle.resolveTextColor(
-                  _subtitleTextColor(_videoChromeColorScheme(context))),
-              fontWeight: _subtitleStyle.resolveFontWeight(_videoUiScale),
-              shadowColor: _subtitleStyle.resolveShadowColor(
-                  _subtitleShadowColor(_videoChromeColorScheme(context))),
-              shadowThickness:
-                  _subtitleStyle.resolveShadowThickness(_videoUiScale),
-              backgroundColor: _subtitleStyle.resolveBackgroundColor(
-                  _subtitleBackgroundColor(_videoChromeColorScheme(context))),
-              backgroundOpacity: _subtitleStyle.backgroundOpacity,
-              bottomPadding: _subtitleStyle.bottomPadding,
-              fontFamily: appModel.appFontFamily,
+            Positioned.fill(
+              child: VideoSubtitleOverlay(
+                controller: controller,
+                onCharTap: _lookupAt,
+                hitTester: _subtitleHitTester,
+                blurEnabled: appModel.videoSubtitleBlur,
+                fontSize: _subtitleStyle.fontSize,
+                textColor: _subtitleStyle.resolveTextColor(
+                    _subtitleTextColor(_videoChromeColorScheme(context))),
+                fontWeight: _subtitleStyle.resolveFontWeight(_videoUiScale),
+                shadowColor: _subtitleStyle.resolveShadowColor(
+                    _subtitleShadowColor(_videoChromeColorScheme(context))),
+                shadowThickness:
+                    _subtitleStyle.resolveShadowThickness(_videoUiScale),
+                backgroundColor: _subtitleStyle.resolveBackgroundColor(
+                    _subtitleBackgroundColor(_videoChromeColorScheme(context))),
+                backgroundOpacity: _subtitleStyle.backgroundOpacity,
+                bottomPadding: _subtitleStyle.bottomPadding,
+                fontFamily: appModel.appFontFamily,
+              ),
             ),
-          ),
-          _buildOsdOverlay(),
-        ],
+            _buildOsdOverlay(),
+          ],
+        ),
       ),
     );
   }
