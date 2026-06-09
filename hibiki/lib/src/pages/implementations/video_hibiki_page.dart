@@ -143,6 +143,18 @@ class VideoHibikiPage extends ConsumerStatefulWidget {
   ConsumerState<VideoHibikiPage> createState() => _VideoHibikiPageState();
 }
 
+class _VideoOsdMessage {
+  const _VideoOsdMessage({
+    required this.message,
+    this.icon,
+    this.progress,
+  });
+
+  final String message;
+  final IconData? icon;
+  final double? progress;
+}
+
 /// 集成测试钩子（仅测试用）：对当前 [VideoHibikiPage] 的 [State] 读播放位置 /
 /// 驱动真实播放，验证「退出→再进续播」链路而不暴露页面私有字段。State 以
 /// [VideoHibikiTestHooks] 形式按接口暴露，测试经 `tester.state` 拿到后 `as` 转型。
@@ -205,16 +217,21 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 播放器观感割裂的 Material SnackBar（用户要求改成 mpv 那样的左上角短暂提示）。
   /// null=不显示。渲染在 [_buildVideoControls] 的 controls overlay 里，故窗口/全屏
   /// 都显示；[IgnorePointer] 包裹，绝不拦截点击（不破坏单击暂停 / 拖放 / 字幕查词）。
-  final ValueNotifier<String?> _osdNotifier = ValueNotifier<String?>(null);
+  final ValueNotifier<_VideoOsdMessage?> _osdNotifier =
+      ValueNotifier<_VideoOsdMessage?>(null);
 
   /// OSD 自动消失定时器（每次 [_showOsd] 重置）。
   Timer? _osdTimer;
 
   /// 在视频左上角短暂显示一条 OSD 通知（约 2.6s 后自动消失）。mounted-safe，可在
   /// `await` 之后直接调（取代各处 `ScaffoldMessenger.showSnackBar`）。
-  void _showOsd(String message) {
+  void _showOsd(String message, {IconData? icon, double? progress}) {
     if (!mounted) return;
-    _osdNotifier.value = message;
+    _osdNotifier.value = _VideoOsdMessage(
+      message: message,
+      icon: icon,
+      progress: progress == null ? null : progress.clamp(0.0, 1.0).toDouble(),
+    );
     _osdTimer?.cancel();
     _osdTimer = Timer(const Duration(milliseconds: 2600), () {
       _osdNotifier.value = null;
@@ -254,6 +271,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 最近一次查词所在字幕句（整条 cue 文本）；[onMineEntry] 制卡时作 sentence。
   /// 点字符查词时即时记录，确保制卡例句是「点词那一刻的那句字幕」。
   String _lastLookupSentence = '';
+
+  /// 最近一次字幕查词所在 cue。制卡可能发生在弹窗打开后数秒，此时视频播放位置可能已
+  /// 变化；GIF / sasayaki 音频必须仍然导出点词那句，而不是制卡瞬间的 currentCue。
+  AudioCue? _lastLookupCue;
 
   /// 「本次查词浮层是我们因查词而主动暂停了正在播放的视频」标记。
   ///
@@ -1020,6 +1041,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       unawaited(controller.pause());
     }
     _lastLookupSentence = sentence;
+    _lastLookupCue = controller.currentCue;
     await pushNestedPopup(
       query: term,
       selectionRect: charRect,
@@ -1218,7 +1240,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
     final Directory tmp = await getTemporaryDirectory();
 
-    final AudioCue? cue = controller.currentCue;
+    final AudioCue? cue = _lastLookupCue ?? controller.currentCue;
     final String? videoPath = controller.videoPath;
 
     // 视频卡片封面 → coverPath（→`{book-cover}`）：优先把**当前 cue 时间段**导出成
@@ -1631,7 +1653,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     if (controller == null) return;
     final double next = (controller.volume + delta).clamp(0.0, 100.0);
     await controller.setVolume(next);
-    if (mounted) _showOsd('${t.audio_volume}: ${next.round()}%');
+    if (mounted) _showVolumeOsd(next);
   }
 
   Future<void> _toggleMute() async {
@@ -1639,8 +1661,17 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     if (controller == null) return;
     final bool muted = await controller.toggleMute();
     if (mounted) {
-      _showOsd('${t.audio_volume}: ${muted ? 0 : controller.volume.round()}%');
+      _showVolumeOsd(muted ? 0 : controller.volume);
     }
+  }
+
+  void _showVolumeOsd(double volume) {
+    final double clamped = volume.clamp(0.0, 100.0).toDouble();
+    _showOsd(
+      '${t.audio_volume}: ${clamped.round()}%',
+      icon: _volumeIconFor(clamped),
+      progress: clamped / 100.0,
+    );
   }
 
   /// 设置播放倍速：即时调 controller + 持久化到 per-book 偏好（速度记忆）+ 刷新。
@@ -2429,27 +2460,70 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
             alignment: Alignment.topLeft,
             child: Padding(
               padding: const EdgeInsets.only(left: 16, top: 52),
-              child: ValueListenableBuilder<String?>(
+              child: ValueListenableBuilder<_VideoOsdMessage?>(
                 valueListenable: _osdNotifier,
-                builder: (BuildContext _, String? message, __) {
+                builder: (BuildContext _, _VideoOsdMessage? osd, __) {
                   return AnimatedSwitcher(
                     duration: const Duration(milliseconds: 180),
-                    child: message == null
+                    child: osd == null
                         ? const SizedBox.shrink()
-                        : Container(
-                            key: ValueKey<String>(message),
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 7),
-                            decoration: BoxDecoration(
-                              color: _osdSurfaceColor(cs),
-                              borderRadius: BorderRadius.circular(6),
+                        : ConstrainedBox(
+                            key: ValueKey<String>(osd.message),
+                            constraints: BoxConstraints(
+                              maxWidth: MediaQuery.sizeOf(context).width - 32,
                             ),
-                            child: Text(
-                              message,
-                              style: TextStyle(
-                                color: _osdTextColor(cs),
-                                fontSize: 14,
-                                height: 1.2,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: _osdSurfaceColor(cs),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: <Widget>[
+                                  if (osd.icon != null) ...<Widget>[
+                                    Icon(
+                                      osd.icon,
+                                      size: 18,
+                                      color: _osdTextColor(cs),
+                                    ),
+                                    const SizedBox(width: 8),
+                                  ],
+                                  Flexible(
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: <Widget>[
+                                        Text(
+                                          osd.message,
+                                          style: TextStyle(
+                                            color: _osdTextColor(cs),
+                                            fontSize: 14,
+                                            height: 1.2,
+                                          ),
+                                        ),
+                                        if (osd.progress != null) ...<Widget>[
+                                          const SizedBox(height: 6),
+                                          SizedBox(
+                                            width: 112,
+                                            child: LinearProgressIndicator(
+                                              value: osd.progress,
+                                              minHeight: 3,
+                                              backgroundColor: _osdTextColor(cs)
+                                                  .withValues(alpha: 0.25),
+                                              valueColor:
+                                                  AlwaysStoppedAnimation<Color>(
+                                                _osdTextColor(cs),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ),
@@ -2461,5 +2535,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         ),
       ),
     );
+  }
+
+  IconData _volumeIconFor(double volume) {
+    if (volume <= 0) return Icons.volume_off;
+    if (volume < 50) return Icons.volume_down;
+    return Icons.volume_up;
   }
 }
