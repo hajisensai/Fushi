@@ -111,3 +111,5 @@ server/cf-worker/node_modules/
 server/cf-worker/DEPLOYMENT_SECRETS.local.md
 *.local.md
 .dev.vars
+192.168.1.50
+docs/项目负责人提示词
