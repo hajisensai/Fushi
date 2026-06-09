@@ -22,6 +22,14 @@ void main() {
       'packages/flutter_inappwebview_windows/windows/custom_platform_view/texture_bridge.h',
       '../packages/flutter_inappwebview_windows/windows/custom_platform_view/texture_bridge.h',
     ];
+    final List<String> platformViewSourceCandidates = <String>[
+      'packages/flutter_inappwebview_windows/windows/custom_platform_view/custom_platform_view.cc',
+      '../packages/flutter_inappwebview_windows/windows/custom_platform_view/custom_platform_view.cc',
+    ];
+    final List<String> platformViewHeaderCandidates = <String>[
+      'packages/flutter_inappwebview_windows/windows/custom_platform_view/custom_platform_view.h',
+      '../packages/flutter_inappwebview_windows/windows/custom_platform_view/custom_platform_view.h',
+    ];
     final File? sourceFile = sourceCandidates
         .map(File.new)
         .cast<File?>()
@@ -32,11 +40,28 @@ void main() {
         .cast<File?>()
         .firstWhere((File? f) => f != null && f.existsSync(),
             orElse: () => null);
+    final File? platformViewSourceFile = platformViewSourceCandidates
+        .map(File.new)
+        .cast<File?>()
+        .firstWhere((File? f) => f != null && f.existsSync(),
+            orElse: () => null);
+    final File? platformViewHeaderFile = platformViewHeaderCandidates
+        .map(File.new)
+        .cast<File?>()
+        .firstWhere((File? f) => f != null && f.existsSync(),
+            orElse: () => null);
     expect(sourceFile, isNotNull, reason: 'texture_bridge.cc 未找到（路径变更？）');
     expect(headerFile, isNotNull, reason: 'texture_bridge.h 未找到（路径变更？）');
+    expect(platformViewSourceFile, isNotNull,
+        reason: 'custom_platform_view.cc 未找到（路径变更？）');
+    expect(platformViewHeaderFile, isNotNull,
+        reason: 'custom_platform_view.h 未找到（路径变更？）');
 
     final String src = sourceFile!.readAsStringSync();
     final String header = headerFile!.readAsStringSync();
+    final String platformViewSrc = platformViewSourceFile!.readAsStringSync();
+    final String platformViewHeader =
+        platformViewHeaderFile!.readAsStringSync();
     expect(src.contains('BUG-113'), isTrue, reason: '修复说明注释应保留，标识此处的崩溃根因');
     expect(src.contains('FrameArrivedCallbackState'), isTrue,
         reason: 'FrameArrived 回调必须捕获独立状态，不能只捕获裸 this');
@@ -75,5 +100,34 @@ void main() {
         reason: 'StopInternal 应取 frame_pool_ 的 IClosable 并 Close()');
     expect(src.contains('frame_pool_ = nullptr'), isTrue,
         reason: 'StopInternal 必须置空 frame_pool_，切断后续帧派发');
+    final int destructorStart =
+        platformViewSrc.indexOf('CustomPlatformView::~CustomPlatformView()');
+    final int nextMethodStart = platformViewSrc
+        .indexOf('void CustomPlatformView::RegisterEventHandlers()');
+    expect(destructorStart, greaterThanOrEqualTo(0),
+        reason: 'CustomPlatformView 析构路径必须可审计');
+    expect(nextMethodStart, greaterThan(destructorStart),
+        reason: 'CustomPlatformView 析构路径必须可审计');
+    final String destructorBody =
+        platformViewSrc.substring(destructorStart, nextMethodStart);
+    final int stopIndex = destructorBody.indexOf('texture_bridge_->Stop()');
+    final int unregisterIndex =
+        destructorBody.indexOf('texture_registrar_->UnregisterTexture');
+    expect(stopIndex, greaterThanOrEqualTo(0),
+        reason: '注销 Flutter texture 前必须显式 Stop WGC bridge，避免消息泵中派发迟到帧');
+    expect(unregisterIndex, greaterThanOrEqualTo(0),
+        reason: 'CustomPlatformView 析构应注销 Flutter texture');
+    expect(stopIndex, lessThan(unregisterIndex),
+        reason:
+            'Stop 必须发生在 UnregisterTexture 前；UnregisterTexture 期间可能处理 CoreMessaging 队列里的 WGC FirePresentEvent');
+    final int textureBridgeMemberIndex =
+        platformViewHeader.indexOf('texture_bridge_');
+    final int flutterTextureMemberIndex =
+        platformViewHeader.indexOf('flutter_texture_');
+    expect(textureBridgeMemberIndex, greaterThanOrEqualTo(0));
+    expect(flutterTextureMemberIndex, greaterThanOrEqualTo(0));
+    expect(textureBridgeMemberIndex, lessThan(flutterTextureMemberIndex),
+        reason:
+            'TextureVariant 的回调捕获 TextureBridge 裸指针；成员析构逆序执行，应先销毁 flutter_texture_ 再销毁 texture_bridge_');
   });
 }
