@@ -61,6 +61,7 @@ public class FloatingLyricService extends BaseFloatingService {
     private int highlightColor = FloatingColors.LYRIC_HIGHLIGHT;
     private int activeColor = FloatingColors.LYRIC_ACTIVE;
     private boolean isLocked = false;
+    private boolean clickLookupEnabled = true;
     private boolean isPlaying = false;
     private String currentText = "";
     private int highlightStart = -1;
@@ -143,6 +144,7 @@ public class FloatingLyricService extends BaseFloatingService {
 
     @Override
     public void onCreate() {
+        readInitialState();
         super.onCreate();
         instanceRef = new WeakReference<>(this);
     }
@@ -222,7 +224,19 @@ public class FloatingLyricService extends BaseFloatingService {
 
     public void setLocked(boolean locked) {
         isLocked = locked;
+        getSharedPreferences(PreferenceKeys.FILE_FLOATING_LYRIC, MODE_PRIVATE)
+                .edit()
+                .putBoolean(PreferenceKeys.LYRIC_LOCKED, locked)
+                .apply();
         applyLockButton();
+    }
+
+    public void setClickLookupEnabled(boolean enabled) {
+        clickLookupEnabled = enabled;
+        getSharedPreferences(PreferenceKeys.FILE_FLOATING_LYRIC, MODE_PRIVATE)
+                .edit()
+                .putBoolean(PreferenceKeys.LYRIC_CLICK_LOOKUP_ENABLED, enabled)
+                .apply();
     }
 
     public void setPlaybackState(boolean playing) {
@@ -267,6 +281,7 @@ public class FloatingLyricService extends BaseFloatingService {
     // ── Tap handling ──
 
     private void handleTap(MotionEvent event) {
+        if (!clickLookupEnabled) return;
         if (lyricText == null || currentText == null || currentText.trim().isEmpty()) return;
         int[] loc = new int[2];
         lyricText.getLocationOnScreen(loc);
@@ -314,7 +329,6 @@ public class FloatingLyricService extends BaseFloatingService {
     // ── Control callbacks ──
 
     private void onControlClick(String action) {
-        if (isLocked && !"toggleLock".equals(action)) return;
         if ("close".equals(action)) {
             MainActivity.notifyFloatingLyricEvent("close", null);
             stopSelf();
@@ -399,6 +413,22 @@ public class FloatingLyricService extends BaseFloatingService {
     private void tintIcon(ImageButton btn, int color) {
         Drawable d = btn.getDrawable();
         if (d != null) d.mutate().setTint(color);
+    }
+
+    private void readInitialState() {
+        SharedPreferences prefs =
+                getSharedPreferences(PreferenceKeys.FILE_FLOATING_LYRIC, MODE_PRIVATE);
+        fontSize = prefs.getFloat(PreferenceKeys.LYRIC_FONT_SIZE, fontSize);
+        textColor = prefs.getInt(PreferenceKeys.LYRIC_TEXT_COLOR, textColor);
+        bgColor = prefs.getInt(PreferenceKeys.LYRIC_BG_COLOR, bgColor);
+        buttonTextColor = prefs.getInt(
+                PreferenceKeys.LYRIC_BUTTON_TEXT_COLOR, buttonTextColor);
+        buttonBgColor = prefs.getInt(PreferenceKeys.LYRIC_BUTTON_BG_COLOR, buttonBgColor);
+        highlightColor = prefs.getInt(PreferenceKeys.LYRIC_HIGHLIGHT_COLOR, highlightColor);
+        activeColor = prefs.getInt(PreferenceKeys.LYRIC_ACTIVE_COLOR, activeColor);
+        isLocked = prefs.getBoolean(PreferenceKeys.LYRIC_LOCKED, isLocked);
+        clickLookupEnabled = prefs.getBoolean(
+                PreferenceKeys.LYRIC_CLICK_LOOKUP_ENABLED, clickLookupEnabled);
     }
 
     private void bringAppToFront() {

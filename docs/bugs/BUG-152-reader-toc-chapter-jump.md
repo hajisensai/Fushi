@@ -1,0 +1,6 @@
+## BUG-152 · 阅读器目录页偶发消失且继续读可能跳章节
+- **报告**：2026-06-09（用户：在开头目录多滑几下后，目录显示/消失和后续跳章节概率触发；目录页点击章节后左右滑动也可能只跳章节；进一步确认“能一直跳完”的变量是开了字幕。）
+- **真实性**：✅ 真 bug。根因不是 EPUB 目录解析丢失，而是有声书字幕 cue 的 follow-audio 自动跨章覆盖了用户手动 reader 导航：`AudiobookPlayerController._updateCurrentCue()` 在同一 cue 未变化但 reader 当前章不同步时会补发 `_maybeEmitCrossChapter()`，`ReaderHibikiPage` 的 TOC/内部链接/搜索/书签/左右边界翻章旧路径没有标记“这是用户手动导航”，因此章节 restore 完成后 `notifySectionRestoreCompleted()` 立刻按当前音频 cue 再次跨章，表现为目录跳到章节、左右滑动只跳章，字幕开启时更稳定触发。另有放大因素：`ReaderHibikiPage._onCueChanged()` 在 cue 章节和当前 reader 章节不一致时仍 `_syncPositionFromCurrentCue()`，会把阅读位置保存成音频 cue 所在章。
+- **[x] ① 已修复** — `AudiobookPlayerController` 新增 `noteManualReaderNavigation()` 和 `_manualReaderOverrideCue`，手动导航后在同一 cue 未变化期间抑制自动 cross-chapter；显式 `snapReaderToAudio()`、播放/跳句会清除该抑制，保留主动跟随音频能力。`ReaderHibikiPage` 在 TOC、内部链接、搜索、书签、收藏、进度跳转和章节边界翻页入口传入 `manual: true`；cue 与当前章节不一致时不再保存 reader 位置。
+- **[x] ② 已加自动化测试** — `hibiki/test/media/audiobook/reader_manual_navigation_follow_guard_test.dart` 覆盖 controller 手动导航门控和 reader 手动入口接线；既有 `cross_chapter_follow_recovery_test.dart`、`lyrics_follow_audio_guard_test.dart`、`skip_to_cue_transient_seek_test.dart` 已复跑确认自动跟随和显式跳句路径未回退。
+- **备注**：这是 reader/WebView/有声书联动路径，已做源码守卫和相关单测；仍需 Android 设备按用户原始路径（开字幕、目录页滑动、目录点击章节、左右边界滑动）肉眼复测。

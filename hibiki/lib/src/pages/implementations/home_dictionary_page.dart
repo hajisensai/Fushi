@@ -156,6 +156,11 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
     setState(() {});
   }
 
+  void _clearSearchFromResultPull() {
+    if (_popup.entries.isNotEmpty || _popup.isSearchingUi) return;
+    _clearSearch();
+  }
+
   // ── build ──────────────────────────────────────────────────────────
 
   @override
@@ -499,6 +504,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
                 onMineEntry: onMineEntry,
                 onDuplicateCheck: checkDuplicate,
                 onScrolledToBottom: _allLoaded ? null : _loadMore,
+                onTopPullReleased: _clearSearchFromResultPull,
               ),
               if (_externalLookupText.trim().isNotEmpty)
                 Positioned(

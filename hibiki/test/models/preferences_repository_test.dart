@@ -503,4 +503,20 @@ void main() {
       expect(repo.floatingLyricFontSize, 64.0);
     });
   });
+
+  group('floatingLyricClickLookup', () {
+    test('defaults to true so existing overlays keep lookup behavior', () {
+      expect(repo.floatingLyricClickLookup, true);
+    });
+
+    test('round-trips through DB', () async {
+      await repo.setFloatingLyricClickLookup(false);
+      expect(repo.floatingLyricClickLookup, false);
+
+      final PreferencesRepository repo2 = PreferencesRepository(db);
+      await repo2.loadFromDb();
+      addTearDown(repo2.dispose);
+      expect(repo2.floatingLyricClickLookup, false);
+    });
+  });
 }

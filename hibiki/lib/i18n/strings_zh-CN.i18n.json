@@ -1429,5 +1429,7 @@
     "video_shader_recommended": "推荐着色器",
     "video_shader_recommended_hint": "除 Anime4K 外的经典放大着色器，不必本机装 mpv。",
     "video_shader_desc_ravu": "通用亮度放大，轻量快速（r2 更快，r3 更精细）。",
-    "video_shader_desc_nnedi3": "经典神经网络放大，nns 越大质量越高、越吃 GPU。"
+    "video_shader_desc_nnedi3": "经典神经网络放大，nns 越大质量越高、越吃 GPU。",
+    "floating_lyric_click_lookup": "点击悬浮字幕查词",
+    "floating_lyric_click_lookup_hint": "锁定悬浮字幕位置时仍可保留点击查词。"
 }

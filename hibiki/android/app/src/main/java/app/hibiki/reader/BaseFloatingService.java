@@ -215,7 +215,6 @@ public abstract class BaseFloatingService extends Service {
 
             @Override
             public boolean onTouch(View v, MotionEvent event) {
-                if (isDragLocked()) return true;
                 switch (event.getAction()) {
                     case MotionEvent.ACTION_DOWN:
                         initialX = layoutParams.x;
@@ -231,7 +230,7 @@ public abstract class BaseFloatingService extends Service {
                                 ? (Math.abs(dx) > 10 || Math.abs(dy) > 10)
                                 : (Math.abs(dy) > 10);
                         if (moved) isDragging = true;
-                        if (isDragging) {
+                        if (isDragging && !isDragLocked()) {
                             if (getDragMode() == DragMode.FREE) {
                                 layoutParams.x = initialX + (int) dx;
                             }
@@ -242,7 +241,9 @@ public abstract class BaseFloatingService extends Service {
                     }
                     case MotionEvent.ACTION_UP:
                         if (isDragging) {
-                            savePosition();
+                            if (!isDragLocked()) {
+                                savePosition();
+                            }
                         } else {
                             onOverlayTapped(event);
                         }

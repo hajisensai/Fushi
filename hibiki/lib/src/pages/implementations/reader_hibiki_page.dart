@@ -1196,7 +1196,10 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       if (progress != null && progress > 0) {
         _displayedProgress = progress;
       }
-      await _navigateToChapter(_currentChapter, progress: _displayedProgress);
+      await _navigateToChapter(
+        _currentChapter,
+        progress: _displayedProgress,
+      );
     } else {
       await _controller!.evaluateJavascript(
         source: ReaderPaginationScripts.updatePageSizeInvocation(w, h),
@@ -2601,7 +2604,6 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
           SasayakiMatchCodec.tryDecode(cue.textFragmentId);
       if (frag != null && frag.sectionIndex != _currentChapter) {
         AudiobookBridge.highlight(_controller!);
-        _syncPositionFromCurrentCue();
         _syncFloatingLyric(controller);
         _syncMediaNotification(controller);
         return;
@@ -2614,7 +2616,6 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
           } else {
             AudiobookBridge.highlight(_controller!);
           }
-          _syncPositionFromCurrentCue();
           _syncFloatingLyric(controller);
           _syncMediaNotification(controller);
           return;
@@ -2958,7 +2959,11 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
   // ── Chapter Navigation ────────────────────────────────────────────
 
-  Future<void> _navigateToChapter(int index, {double progress = 0.0}) async {
+  Future<void> _navigateToChapter(
+    int index, {
+    double progress = 0.0,
+    bool manual = false,
+  }) async {
     if (_book == null || index < 0 || index >= _book!.chapters.length) {
       return;
     }
@@ -2966,6 +2971,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       return;
     }
 
+    if (manual) {
+      _audiobookController?.noteManualReaderNavigation();
+    }
     _progressPollTimer?.cancel();
     _flushReadingStats();
 
@@ -3006,8 +3014,11 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     }
   }
 
-  Future<bool> _navigateToChapterAndWait(int index) async {
-    await _navigateToChapter(index);
+  Future<bool> _navigateToChapterAndWait(
+    int index, {
+    bool manual = false,
+  }) async {
+    await _navigateToChapter(index, manual: manual);
     final bool success = await _restoreCompleter?.future.timeout(
           const Duration(seconds: 10),
           onTimeout: () {
@@ -3040,7 +3051,11 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       if (link.chapterIndex == _currentChapter && link.fragment != null) {
         await _jumpToFragmentInPlace(link.fragment!);
       } else {
-        await _navigateToChapterWithFragment(link.chapterIndex, link.fragment);
+        await _navigateToChapterWithFragment(
+          link.chapterIndex,
+          link.fragment,
+          manual: true,
+        );
       }
       return;
     }
@@ -3049,15 +3064,17 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     await _openExternalUrl(url);
   }
 
-  Future<void> _navigateToChapterWithFragment(
-    int index,
-    String? fragment,
-  ) async {
+  Future<void> _navigateToChapterWithFragment(int index, String? fragment,
+      {bool manual = false}) async {
     if (_book == null || index < 0 || index >= _book!.chapters.length) return;
     if (_controller == null) return;
 
     _progressPollTimer?.cancel();
-    _audiobookController?.cancelChapterTransition();
+    if (manual) {
+      _audiobookController?.noteManualReaderNavigation();
+    } else {
+      _audiobookController?.cancelChapterTransition();
+    }
     _flushReadingStats();
 
     final int gen = ++_navigateGeneration;
@@ -3300,7 +3317,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
     if (_book == null) {
       return;
     }
-    _audiobookController?.cancelChapterTransition();
+    _audiobookController?.noteManualReaderNavigation();
 
     if (_spreadMap != null && _settings?.spreadMode != 'off') {
       final int currentVirtual =
@@ -3319,11 +3336,15 @@ window.flutter_inappwebview.callHandler('spreadReady');
 
     if (direction == 'forward') {
       if (_currentChapter < _book!.chapters.length - 1) {
-        _navigateToChapter(_currentChapter + 1);
+        _navigateToChapter(_currentChapter + 1, manual: true);
       }
     } else {
       if (_currentChapter > 0) {
-        _navigateToChapter(_currentChapter - 1, progress: 0.99);
+        _navigateToChapter(
+          _currentChapter - 1,
+          progress: 0.99,
+          manual: true,
+        );
       }
     }
   }
@@ -3728,7 +3749,11 @@ window.flutter_inappwebview.callHandler('spreadReady');
         chapterLen > 0 ? (globalOffset - chapterStart) / chapterLen : 0;
 
     if (targetChapter != _currentChapter) {
-      _navigateToChapter(targetChapter, progress: progress.clamp(0.0, 1.0));
+      _navigateToChapter(
+        targetChapter,
+        progress: progress.clamp(0.0, 1.0),
+        manual: true,
+      );
     } else {
       await _controller!.evaluateJavascript(
         source:
@@ -4675,17 +4700,60 @@ window.flutter_inappwebview.callHandler('spreadReady');
 
   // ── Floating Lyric ─────────────────────────────────────────────────
 
-  Future<void> _applyFloatingLyricStyle() async {
+  ({
+    double fontSize,
+    int textColor,
+    int bgColor,
+    int buttonTextColor,
+    int buttonBgColor,
+    int highlightColor,
+    int activeColor,
+  }) _floatingLyricStyle({double? fontSize}) {
     final Color bg = _themeBackgroundColor();
     final Color fg = _themeTextColor();
     final bool dark = _isReaderThemeDark;
-    await FloatingLyricChannel.updateStyle(
-      fontSize: appModel.floatingLyricFontSize,
+    final Color accent = dark
+        ? HibikiColor.defaultHighlightYellow
+        : Theme.of(context).colorScheme.primary;
+    return (
+      fontSize: fontSize ?? appModel.floatingLyricFontSize,
       textColor: fg.value,
       bgColor: bg.withAlpha(dark ? 230 : 220).value,
       buttonTextColor: fg.value,
       buttonBgColor:
           (dark ? const Color(0x33FFFFFF) : const Color(0x1A000000)).value,
+      highlightColor: accent.withAlpha(128).value,
+      activeColor: accent.value,
+    );
+  }
+
+  Future<bool> _showFloatingLyricWithStyle() {
+    final style = _floatingLyricStyle();
+    return FloatingLyricChannel.show(
+      fontSize: style.fontSize,
+      textColor: style.textColor,
+      bgColor: style.bgColor,
+      buttonTextColor: style.buttonTextColor,
+      buttonBgColor: style.buttonBgColor,
+      highlightColor: style.highlightColor,
+      activeColor: style.activeColor,
+      clickLookupEnabled: appModel.floatingLyricClickLookup,
+    );
+  }
+
+  Future<void> _applyFloatingLyricStyle() async {
+    final style = _floatingLyricStyle();
+    await FloatingLyricChannel.updateStyle(
+      fontSize: style.fontSize,
+      textColor: style.textColor,
+      bgColor: style.bgColor,
+      buttonTextColor: style.buttonTextColor,
+      buttonBgColor: style.buttonBgColor,
+      highlightColor: style.highlightColor,
+      activeColor: style.activeColor,
+    );
+    await FloatingLyricChannel.setClickLookupEnabled(
+      appModel.floatingLyricClickLookup,
     );
     await FloatingLyricChannel.updateLabels(
       previous: t.floating_lyric_previous,
@@ -4698,7 +4766,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
   }
 
   Future<void> _showFloatingLyricOverlay() async {
-    await FloatingLyricChannel.show();
+    await _showFloatingLyricWithStyle();
     await _applyFloatingLyricStyle();
     _setupFloatingLyricHandlers();
   }
@@ -4706,7 +4774,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
   Future<bool> _toggleFloatingLyric() async {
     final bool current = appModel.showFloatingLyric;
     if (!current) {
-      final bool shown = await FloatingLyricChannel.show();
+      final bool shown = await _showFloatingLyricWithStyle();
       if (!shown) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -5085,7 +5153,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
         toc: toc,
         readerProgress: (_currentChapter, _book!.chapters.length),
         onJumpSection: (index) async {
-          _navigateToChapter(index);
+          _navigateToChapter(index, manual: true);
         },
         onBookmark: () async {
           await _addBookmarkAtCurrentPosition();
@@ -5109,18 +5177,21 @@ window.flutter_inappwebview.callHandler('spreadReady');
         floatingLyricFontSize: appModel.floatingLyricFontSize,
         onFloatingLyricFontSizeChanged: (v) async {
           await appModel.setFloatingLyricFontSize(v);
-          final Color bg = _themeBackgroundColor();
-          final Color fg = _themeTextColor();
-          final bool dark = _isReaderThemeDark;
+          final style = _floatingLyricStyle(fontSize: v);
           await FloatingLyricChannel.updateStyle(
-            fontSize: v,
-            textColor: fg.value,
-            bgColor: bg.withAlpha(dark ? 230 : 220).value,
-            buttonTextColor: fg.value,
-            buttonBgColor:
-                (dark ? const Color(0x33FFFFFF) : const Color(0x1A000000))
-                    .value,
+            fontSize: style.fontSize,
+            textColor: style.textColor,
+            bgColor: style.bgColor,
+            buttonTextColor: style.buttonTextColor,
+            buttonBgColor: style.buttonBgColor,
+            highlightColor: style.highlightColor,
+            activeColor: style.activeColor,
           );
+        },
+        floatingLyricClickLookup: appModel.floatingLyricClickLookup,
+        onFloatingLyricClickLookupChanged: (bool value) async {
+          await appModel.setFloatingLyricClickLookup(value);
+          await FloatingLyricChannel.setClickLookupEnabled(value);
         },
         showMediaNotification: appModel.showMediaNotification,
         onToggleMediaNotification: _toggleMediaNotification,
@@ -5136,8 +5207,10 @@ window.flutter_inappwebview.callHandler('spreadReady');
         onSearchJump: (BookSearchResult result, String query) async {
           if (_book == null || _controller == null) return;
           if (result.sectionIndex != _currentChapter) {
-            final bool ok =
-                await _navigateToChapterAndWait(result.sectionIndex);
+            final bool ok = await _navigateToChapterAndWait(
+              result.sectionIndex,
+              manual: true,
+            );
             if (!ok || !mounted || _controller == null) return;
           }
           await _controller!.evaluateJavascript(
@@ -5150,7 +5223,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
         bookmarks: bookmarks,
         onJumpToBookmark: (bm) async {
           if (bm.sectionIndex != _currentChapter) {
-            await _navigateToChapterAndWait(bm.sectionIndex);
+            await _navigateToChapterAndWait(bm.sectionIndex, manual: true);
           }
           if (!mounted || _controller == null) return;
           final double progress = bm.normCharOffset / 10000.0;
@@ -5180,7 +5253,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
         onJumpToFavorite: (fav) async {
           if (fav.sectionIndex == null) return;
           if (fav.sectionIndex != _currentChapter) {
-            await _navigateToChapterAndWait(fav.sectionIndex!);
+            await _navigateToChapterAndWait(fav.sectionIndex!, manual: true);
           }
           if (!mounted || _controller == null) return;
           if (fav.normCharOffset != null) {

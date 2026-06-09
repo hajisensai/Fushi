@@ -104,7 +104,32 @@ class FloatingLyricChannel extends FloatingOverlayChannel {
 
   static Future<bool> canDrawOverlays() => _instance.canDrawOverlaysImpl();
 
-  static Future<bool> show() => _instance.showImpl();
+  static Future<bool> show({
+    double fontSize = 16,
+    int textColor = 0xFFFFFFFF,
+    int bgColor = 0xCC000000,
+    int buttonTextColor = 0xFFFFFFFF,
+    int buttonBgColor = 0x33000000,
+    int highlightColor = 0x80FFD54F,
+    int activeColor = 0xFFFFD54F,
+    bool? locked,
+    bool clickLookupEnabled = true,
+  }) {
+    final Map<String, Object?> arguments = <String, Object?>{
+      'fontSize': fontSize,
+      'textColor': textColor,
+      'bgColor': bgColor,
+      'buttonTextColor': buttonTextColor,
+      'buttonBgColor': buttonBgColor,
+      'highlightColor': highlightColor,
+      'activeColor': activeColor,
+      'clickLookupEnabled': clickLookupEnabled,
+    };
+    if (locked != null) {
+      arguments['locked'] = locked;
+    }
+    return _instance.showImpl(arguments);
+  }
 
   static Future<void> hide() => _instance.hideImpl();
 
@@ -176,5 +201,13 @@ class FloatingLyricChannel extends FloatingOverlayChannel {
   static Future<void> setLocked(bool locked) async {
     if (!_instance.isSupported) return;
     await _instance.channel.invokeMethod<void>('setLocked', {'locked': locked});
+  }
+
+  static Future<void> setClickLookupEnabled(bool enabled) async {
+    if (!_instance.isSupported) return;
+    await _instance.channel.invokeMethod<void>(
+      'setClickLookupEnabled',
+      {'enabled': enabled},
+    );
   }
 }

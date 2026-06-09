@@ -48,6 +48,8 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
     this.onToggleFloatingLyric,
     this.floatingLyricFontSize = 20,
     this.onFloatingLyricFontSizeChanged,
+    this.floatingLyricClickLookup = true,
+    this.onFloatingLyricClickLookupChanged,
     this.onSearchJump,
     this.onJumpToCharOffset,
     this.charProgress,
@@ -93,6 +95,8 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
   final Future<bool> Function()? onToggleFloatingLyric;
   final double floatingLyricFontSize;
   final ValueChanged<double>? onFloatingLyricFontSizeChanged;
+  final bool floatingLyricClickLookup;
+  final ValueChanged<bool>? onFloatingLyricClickLookupChanged;
   final Future<void> Function(BookSearchResult result, String query)?
       onSearchJump;
   final Future<void> Function(int globalCharOffset)? onJumpToCharOffset;
@@ -151,6 +155,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
   // cannot perform, so the rows stay bespoke and call back into the page.
   late bool _localShowFloatingLyric = widget.showFloatingLyric;
   late bool _localShowMediaNotification = widget.showMediaNotification;
+  late bool _localFloatingLyricClickLookup = widget.floatingLyricClickLookup;
   late double _localFloatingLyricFontSize = widget.floatingLyricFontSize;
 
   @override
@@ -1308,6 +1313,16 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
           onChanged: (double value) {
             widget.onFloatingLyricFontSizeChanged?.call(value);
             setState(() => _localFloatingLyricFontSize = value);
+          },
+        ),
+        AdaptiveSettingsSwitchRow(
+          title: t.floating_lyric_click_lookup,
+          subtitle: t.floating_lyric_click_lookup_hint,
+          value: _localFloatingLyricClickLookup,
+          onChanged: (_) {
+            final bool value = !_localFloatingLyricClickLookup;
+            widget.onFloatingLyricClickLookupChanged?.call(value);
+            setState(() => _localFloatingLyricClickLookup = value);
           },
         ),
       ],

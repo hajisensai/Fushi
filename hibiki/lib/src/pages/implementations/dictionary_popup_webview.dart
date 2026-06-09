@@ -26,6 +26,7 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
     this.onFavoriteEntry,
     this.onFavoriteCheck,
     this.onScrolledToBottom,
+    this.onTopPullReleased,
     this.onRendered,
   });
 
@@ -44,6 +45,7 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
   final Future<bool> Function(String expression, String reading)?
       onFavoriteCheck;
   final VoidCallback? onScrolledToBottom;
+  final VoidCallback? onTopPullReleased;
 
   /// Fired after the popup content finishes rendering (the `popupRendered` JS
   /// handler). Used by the reader to hand the char-level cursor to this popup.
@@ -112,6 +114,37 @@ class DictionaryPopupWebViewState
   }
   setTimeout(function(){window.__hoshiScrollCheck(true);},0);
   setTimeout(function(){window.__hoshiScrollCheck(true);},150);
+})();
+''';
+
+  static const String _topPullReleaseJs = '''
+(function(){
+  if(window.__hoshiTopPullInstalled) return;
+  window.__hoshiTopPullInstalled = true;
+  var startY = null;
+  var pulled = false;
+  function atTop(){
+    var st = window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
+    return st <= 0;
+  }
+  window.addEventListener('touchstart', function(e){
+    if(!e.touches || e.touches.length !== 1) return;
+    startY = e.touches[0].clientY;
+    pulled = false;
+  }, {passive: true});
+  window.addEventListener('touchmove', function(e){
+    if(startY === null || !e.touches || e.touches.length !== 1) return;
+    if(atTop() && e.touches[0].clientY - startY > 48) {
+      pulled = true;
+    }
+  }, {passive: true});
+  window.addEventListener('touchend', function(){
+    if(pulled) {
+      window.flutter_inappwebview.callHandler('topPullReleased');
+    }
+    startY = null;
+    pulled = false;
+  }, {passive: true});
 })();
 ''';
 
@@ -565,6 +598,13 @@ class DictionaryPopupWebViewState
         );
 
         controller.addJavaScriptHandler(
+          handlerName: 'topPullReleased',
+          callback: (_) {
+            widget.onTopPullReleased?.call();
+          },
+        );
+
+        controller.addJavaScriptHandler(
           handlerName: 'popupRendered',
           callback: (_) {
             widget.onRendered?.call();
@@ -736,6 +776,7 @@ class DictionaryPopupWebViewState
         // has already defined window.hoshiSelection by load-stop). It stays
         // dormant until the reader hands it the cursor on lookup.
         controller.evaluateJavascript(source: ReaderCaretScripts.source());
+        controller.evaluateJavascript(source: _topPullReleaseJs);
         _pushResults();
       },
       onConsoleMessage: (controller, consoleMessage) {

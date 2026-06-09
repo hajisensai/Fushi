@@ -27,10 +27,15 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 146 条。点号进各自文件。
+> 共 151 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-154](bugs/BUG-154-yomitan-api-token-auth.md) | ✅ | ✅ | Yomitan API token authentication rejects compatible clients |
+| [BUG-153](bugs/BUG-153-dictionary-pull-clears-query.md) | ✅ | ✅ | 查词结果下拉释放应清空搜索且保持输入态 |
+| [BUG-152](bugs/BUG-152-reader-toc-chapter-jump.md) | ✅ | ✅ | 阅读器目录页偶发消失且继续读可能跳章节 |
+| [BUG-151](bugs/BUG-151-floating-lyric-initial-theme.md) | ✅ | ✅ | 悬浮字幕首次开启先显示默认底色 |
+| [BUG-150](bugs/BUG-150-floating-lyric-lock-control.md) | ✅ | ✅ | 悬浮字幕锁定位置误锁播放控制 |
 | [BUG-149](bugs/BUG-149-book-card-sentence-audio-tail.md) | ✅ | ✅ | 书籍制卡整句音频句尾被截断 |
 | [BUG-148](bugs/BUG-148-video-controls-width.md) | ✅ | ✅ | 视频底栏压缩不应只限定移动端 |
 | [BUG-147](bugs/BUG-147-video-mobile-bottom-width.md) | ✅ | ✅ | 手机视频宽屏底栏不应丢失10秒跳转 |

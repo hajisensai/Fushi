@@ -1172,6 +1172,19 @@ SettingsDestination _listeningDestination() {
             },
           ),
           SettingsSwitchItem(
+            id: 'listening.floating_lyric_click_lookup',
+            title: t.floating_lyric_click_lookup,
+            subtitle: t.floating_lyric_click_lookup_hint,
+            icon: Icons.touch_app_outlined,
+            visible: (_) => Platform.isAndroid,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.floatingLyricClickLookup,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setFloatingLyricClickLookup(value);
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSwitchItem(
             id: 'listening.volume_key_sentence_nav',
             title: t.volume_key_sentence_nav,
             icon: Icons.skip_next_outlined,

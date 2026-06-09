@@ -15,8 +15,17 @@ import 'package:hibiki/src/sync/yomitan_tokenize_adapter.dart';
 /// yomitan-api 默认端口（Kuuuube/yomitan-api）。
 const int kYomitanApiDefaultPort = 19633;
 
+const List<String> _apiKeyParameterNames = <String>[
+  'apiKey',
+  'api_key',
+  'key',
+  'token',
+  'yomitanApiKey',
+  'yomitan_api_key',
+];
+
 /// 兼容 `Kuuuube/yomitan-api` 的独立 HTTP server（宽松兼容）。
-/// 只接受 POST；可选 X-API-Key 鉴权；端点 serverVersion/yomitanVersion/
+/// 只接受 POST；可选 API key 鉴权；端点 serverVersion/yomitanVersion/
 /// termEntries/tokenize。查词复用 [HibikiRemoteLookupService]。
 class YomitanApiServer {
   YomitanApiServer({
@@ -71,16 +80,58 @@ class YomitanApiServer {
 
   shelf.Middleware _authMiddleware() {
     return (shelf.Handler inner) {
-      return (shelf.Request request) {
+      return (shelf.Request request) async {
         final String? key = _apiKey;
         if (key == null || key.isEmpty) return inner(request);
-        final String? provided = request.headers['x-api-key'];
-        if (provided != key) {
-          return shelf.Response(401, body: 'Unauthorized');
+
+        final String? provided = _apiKeyFromRequestMetadata(request);
+        if (provided == key) return inner(request);
+
+        final String rawBody = await request.readAsString();
+        final String? bodyKey = _apiKeyFromJsonBody(rawBody);
+        if (bodyKey == key) {
+          return inner(request.change(body: rawBody));
         }
-        return inner(request);
+
+        return shelf.Response(401, body: 'Unauthorized');
       };
     };
+  }
+
+  String? _apiKeyFromRequestMetadata(shelf.Request request) {
+    final String? headerKey = request.headers['x-api-key'];
+    if (headerKey != null) return headerKey;
+
+    final String? authorization = request.headers['authorization'];
+    if (authorization != null) {
+      const String bearerPrefix = 'Bearer ';
+      if (authorization.length > bearerPrefix.length &&
+          authorization.toLowerCase().startsWith(bearerPrefix.toLowerCase())) {
+        return authorization.substring(bearerPrefix.length);
+      }
+      if (!authorization.contains(' ')) return authorization;
+    }
+
+    for (final String name in _apiKeyParameterNames) {
+      final String? value = request.url.queryParameters[name];
+      if (value != null) return value;
+    }
+    return null;
+  }
+
+  String? _apiKeyFromJsonBody(String rawBody) {
+    if (rawBody.isEmpty) return null;
+    try {
+      final dynamic decoded = jsonDecode(rawBody);
+      if (decoded is! Map) return null;
+      for (final String name in _apiKeyParameterNames) {
+        final dynamic value = decoded[name];
+        if (value is String) return value;
+      }
+    } catch (_) {
+      // 鉴权阶段只读取可识别的 JSON token；非法 body 仍按未授权处理。
+    }
+    return null;
   }
 
   Future<shelf.Response> _handleRequest(shelf.Request request) async {
