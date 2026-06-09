@@ -40,6 +40,25 @@ void main() {
 
     _expectExcludedUploadRejected(result);
   }, skip: !Platform.isWindows);
+
+  test('sync_to_mac rejects deletion of a tracked upload exclusion', () async {
+    final Directory workspace = Directory.current.parent;
+    final File script = File(p.join(workspace.path, 'tool', 'sync_to_mac.ps1'));
+    final Directory repo = await _createRepoDeletingTrackedExclusion(
+      remoteBranch: 'feature-delete',
+    );
+
+    final ProcessResult result = await _runSyncToMacDryRun(
+      script: script,
+      repo: repo,
+      branch: 'feature-delete',
+    );
+
+    _expectExcludedUploadRejected(
+      result,
+      expectedPaths: <String>['手机编译安装ARM.bat'],
+    );
+  }, skip: !Platform.isWindows);
 }
 
 Future<Directory> _createRepoWithExcludedCommit({
@@ -95,6 +114,43 @@ Future<Directory> _createRepoWithExcludedCommit({
   return repo;
 }
 
+Future<Directory> _createRepoDeletingTrackedExclusion({
+  required String remoteBranch,
+}) async {
+  final Directory temp =
+      await Directory.systemTemp.createTemp('hibiki_sync_to_mac_delete_guard_');
+
+  final Directory repo = Directory(p.join(temp.path, 'repo'))
+    ..createSync(recursive: true);
+  await _runGit(repo, <String>['init']);
+  await _runGit(repo, <String>['checkout', '-b', remoteBranch]);
+  await _runGit(repo, <String>['config', 'user.email', 'test@example.com']);
+  await _runGit(repo, <String>['config', 'user.name', 'Test User']);
+  await _runGit(repo, <String>['remote', 'add', 'mac', temp.path]);
+
+  File(p.join(repo.path, 'README.md')).writeAsStringSync('base\n');
+  File(p.join(repo.path, '手机编译安装ARM.bat')).writeAsStringSync('tracked\n');
+  await _runGit(repo, <String>['add', '.']);
+  await _runGit(repo, <String>['commit', '-m', 'base with tracked exclusion']);
+  await _runGit(repo, <String>[
+    'update-ref',
+    'refs/remotes/mac/develop',
+    'HEAD',
+  ]);
+  await _runGit(repo, <String>[
+    'update-ref',
+    'refs/remotes/mac/$remoteBranch',
+    'HEAD',
+  ]);
+
+  File(p.join(repo.path, '手机编译安装ARM.bat')).deleteSync();
+  await _runGit(repo, <String>['add', '-u']);
+  await _runGit(repo, <String>['commit', '-m', 'delete tracked exclusion']);
+
+  addTearDown(() => temp.delete(recursive: true));
+  return repo;
+}
+
 Future<ProcessResult> _runSyncToMacDryRun({
   required File script,
   required Directory repo,
@@ -121,13 +177,20 @@ Future<ProcessResult> _runSyncToMacDryRun({
   );
 }
 
-void _expectExcludedUploadRejected(ProcessResult result) {
+void _expectExcludedUploadRejected(
+  ProcessResult result, {
+  List<String> expectedPaths = const <String>[
+    '手机编译安装ARM.bat',
+    'docs/项目负责人提示词 copy',
+    'docs/项目负责人提示词',
+  ],
+}) {
   final String output = '${result.stdout}\n${result.stderr}';
   expect(result.exitCode, isNot(0), reason: output);
   expect(output, contains('excluded from Mac upload'));
-  expect(output, contains('手机编译安装ARM.bat'));
-  expect(output, contains('docs/项目负责人提示词 copy'));
-  expect(output, contains('docs/项目负责人提示词'));
+  for (final String path in expectedPaths) {
+    expect(output, contains(path));
+  }
 }
 
 Future<void> _runGit(Directory repo, List<String> args) async {

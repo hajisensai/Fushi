@@ -144,7 +144,7 @@ function Get-ChangedPathsForPush {
             "core.quotepath=false",
             "diff",
             "--name-only",
-            "--diff-filter=ACMRTUXB",
+            "--diff-filter=ACDMRTUXB",
             "$BaseRef..HEAD"
         )
     } else {
