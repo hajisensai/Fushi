@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-136 回归守卫（源码扫描，沿用 `reanchor_charoffset_guard_test.dart` 的
+/// BUG-162 回归守卫（源码扫描，沿用 `reanchor_charoffset_guard_test.dart` 的
 /// `File(...).readAsStringSync()` + `contains` 模式）。
 ///
 /// 现象：书籍退出再进，阅读位置不是同一个（系统性前移约一页）。
@@ -27,7 +27,7 @@ void main() {
     'lib/src/reader/reader_pagination_scripts.dart',
   ).readAsStringSync();
 
-  test('hoshiProgressDetails 携带 getFirstVisibleCharOffset 精确偏移 (BUG-136)', () {
+  test('hoshiProgressDetails 携带 getFirstVisibleCharOffset 精确偏移 (BUG-162)', () {
     final int start = pageSrc.indexOf('window.hoshiProgressDetails = function');
     expect(start, greaterThanOrEqualTo(0),
         reason: '找不到 hoshiProgressDetails 定义');
@@ -38,7 +38,7 @@ void main() {
         reason: 'hoshiProgressDetails 必须报告精确字符偏移，否则退出再进只能回退粗粒度分数');
   });
 
-  test('分页+连续两条恢复路径都支持精确字符偏移恢复 (BUG-136)', () {
+  test('分页+连续两条恢复路径都支持精确字符偏移恢复 (BUG-162)', () {
     // restoreToCharOffset 至少出现在分页与连续各一个定义。
     final int defs = 'restoreToCharOffset: '.allMatches(jsSrc).length;
     expect(defs, greaterThanOrEqualTo(2),
@@ -48,7 +48,7 @@ void main() {
             'shell builder 必须接受 initialCharOffset 并在 >=0 时走 restoreToCharOffset');
   });
 
-  test('恢复脚本在 initialCharOffset>=0 时优先精确路径 (BUG-136)', () {
+  test('恢复脚本在 initialCharOffset>=0 时优先精确路径 (BUG-162)', () {
     // 两处 initialRestoreScript 三元都应：有 charOffset 走 restoreToCharOffset，
     // 否则回退 restoreProgress（旧存档兼容）。
     final int branches =
@@ -58,7 +58,7 @@ void main() {
   });
 
   test(
-      'Dart 保存写 char_offset、恢复读 saved.charOffset、setup 传 initialCharOffset (BUG-136)',
+      'Dart 保存写 char_offset、恢复读 saved.charOffset、setup 传 initialCharOffset (BUG-162)',
       () {
     expect(pageSrc.contains('charOffset:'), isTrue,
         reason: 'repo.save 必须带 charOffset');

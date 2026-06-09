@@ -106,7 +106,7 @@ class ReaderPositions extends Table {
   TextColumn get bookKey => text().unique()();
   IntColumn get sectionIndex => integer()();
   IntColumn get normCharOffset => integer()();
-  // BUG-136: section 内精确绝对字符偏移（退出再进的恢复锚）。-1 = 无精确偏移
+  // BUG-162: section 内精确绝对字符偏移（退出再进的恢复锚）。-1 = 无精确偏移
   // （恢复回退 normCharOffset 分数）。取代了原 ttuCharOffset（sync 精确缓存列，
   // 已随云同步精度退化为 normCharOffset 分数而删除，合并为单一阅读位置精确列）。
   IntColumn get charOffset => integer().withDefault(const Constant(-1))();

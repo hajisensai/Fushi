@@ -15,7 +15,7 @@ class ReaderPosition {
   /// 章内归一化字符偏移（0-10000 分数基准）。`0` = 章首。书签/收藏/统计仍用它。
   late int normCharOffset;
 
-  /// BUG-136: section 内精确绝对字符偏移（恢复锚）。`null` = 无精确偏移
+  /// BUG-162: section 内精确绝对字符偏移（恢复锚）。`null` = 无精确偏移
   /// （恢复回退 normCharOffset 分数）。退出再进用它做「存→取」不动点。
   int? charOffset;
 

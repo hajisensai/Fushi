@@ -80,7 +80,7 @@ void main() {
       expect(await db.getReaderPosition('book-10'), isNull);
     });
 
-    test('charOffset defaults to -1 and round-trips (BUG-136)', () async {
+    test('charOffset defaults to -1 and round-trips (BUG-162)', () async {
       final db = await _openDb();
       final now = DateTime.now().millisecondsSinceEpoch;
       // 默认 -1（= 无精确偏移）。

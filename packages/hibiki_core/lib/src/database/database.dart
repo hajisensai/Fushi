@@ -355,7 +355,7 @@ class HibikiDatabase extends _$HibikiDatabase {
             }
           }
           if (from < 24) {
-            // BUG-136: 阅读位置精确字符偏移合并为单一列 char_offset，删除原
+            // BUG-162: 阅读位置精确字符偏移合并为单一列 char_offset，删除原
             // ttu_char_offset（sync 精确缓存列——云同步精度退化为 normCharOffset 分数后
             // 不再需要）。用 ADD/DROP COLUMN（与表里其他列名无关，避免依赖 book_key 是否
             // 已 re-key；SQLite 3.35+ 支持 DROP COLUMN，bundled sqlite3 够新）。既有行

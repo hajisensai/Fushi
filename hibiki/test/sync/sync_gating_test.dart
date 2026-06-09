@@ -324,7 +324,7 @@ void main() {
     });
   });
 
-  group('progress tie-break compares at storage resolution (BUG-136)', () {
+  group('progress tie-break compares at storage resolution (BUG-162)', () {
     test('imported-then-unmoved re-sync is synced, not a spurious re-export',
         () async {
       final HibikiDatabase db = _memDb();

@@ -205,7 +205,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   bool _restoreInFlight = false;
   bool _isNavigatingToChapter = false;
   double _initialProgress = 0;
-  // BUG-136: 退出再进的精确恢复锚（section 内绝对字符偏移）。-1 = 无精确锚（旧
+  // BUG-162: 退出再进的精确恢复锚（section 内绝对字符偏移）。-1 = 无精确锚（旧
   // 存档 / 书签跳转）→ 走粗粒度 restoreProgress 分数。
   int _initialCharOffset = -1;
   // _refreshProgress 算得的最新精确字符偏移，供退出 flush 与 debounce 保存共用。
@@ -508,7 +508,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         bm.sectionIndex < _book!.chapters.length) {
       _currentChapter = bm.sectionIndex;
       _initialProgress = bm.normCharOffset / 10000.0;
-      _initialCharOffset = -1; // BUG-136: 书签按 normCharOffset 分数跳转，非 char 锚。
+      _initialCharOffset = -1; // BUG-162: 书签按 normCharOffset 分数跳转，非 char 锚。
       _lastProgressSection = _currentChapter;
       _lastProgressValue = _initialProgress;
       debugPrint('[ReaderHibiki] restore from bookmark: '
@@ -525,7 +525,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
           saved.sectionIndex < _book!.chapters.length) {
         _currentChapter = saved.sectionIndex;
         _initialProgress = saved.normCharOffset / 10000.0;
-        // BUG-136: 有精确锚就用它（restoreToCharOffset 不动点），否则 -1 回退分数。
+        // BUG-162: 有精确锚就用它（restoreToCharOffset 不动点），否则 -1 回退分数。
         _initialCharOffset = saved.charOffset ?? -1;
         _lastProgressSection = _currentChapter;
         _lastProgressValue = _initialProgress;
@@ -1807,7 +1807,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       while (node = walker.nextNode()) total += r.countChars(node.textContent);
     }
     if (total <= 0) return '';
-    // BUG-136: 第三段 = section 内精确绝对字符偏移（视口首字符），落 DB char_offset
+    // BUG-162: 第三段 = section 内精确绝对字符偏移（视口首字符），落 DB char_offset
     // 作退出再进的恢复锚（成熟 getFirstVisibleCharOffset/scrollToCharOffset 路径）。
     // caretRangeFromPoint 失败时返 -1 → Dart 当「无精确偏移」回退分数。
     var off = (typeof r.getFirstVisibleCharOffset === 'function')
@@ -3001,7 +3001,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
     _currentChapter = index;
     _initialProgress = progress;
-    // BUG-136: 翻章是去新位置，无该章精确锚 → -1 走分数，别把上次恢复的锚带进来。
+    // BUG-162: 翻章是去新位置，无该章精确锚 → -1 走分数，别把上次恢复的锚带进来。
     _initialCharOffset = -1;
     _displayedProgress = progress;
     _lastProgressSection = index;
@@ -3103,7 +3103,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
     _currentChapter = index;
     _initialProgress = 0.0;
-    _initialCharOffset = -1; // BUG-136: 新章/fragment 跳转走分数/fragment，非 char 锚。
+    _initialCharOffset = -1; // BUG-162: 新章/fragment 跳转走分数/fragment，非 char 锚。
     _displayedProgress = 0.0;
     _lastProgressSection = index;
     _lastProgressValue = 0.0;
@@ -3233,7 +3233,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
     _currentChapter = entry.chapterIndex;
     _initialProgress = 0.0;
-    _initialCharOffset = -1; // BUG-136: spread 导航去章首，无 char 锚。
+    _initialCharOffset = -1; // BUG-162: spread 导航去章首，无 char 锚。
     _displayedProgress = 0.0;
     _lastProgressSection = entry.chapterIndex;
     _lastProgressValue = 0.0;
@@ -3611,7 +3611,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
     }
     final int? current = int.tryParse(parts[0]);
     final int? total = int.tryParse(parts[1]);
-    // BUG-136: 第三段 = section 内精确字符偏移（hoshiProgressDetails 追加）。旧格式
+    // BUG-162: 第三段 = section 内精确字符偏移（hoshiProgressDetails 追加）。旧格式
     // （两段）或解析失败按 -1（无精确锚）处理。
     final int charOffset =
         parts.length >= 3 ? (int.tryParse(parts[2]) ?? -1) : -1;
@@ -3736,7 +3736,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
       bookKey: widget.bookKey,
       sectionIndex: section,
       normCharOffset: normOffset,
-      // BUG-136: >=0 写精确锚（char_offset 列），<0 传 null → 同 section 保留既有锚、
+      // BUG-162: >=0 写精确锚（char_offset 列），<0 传 null → 同 section 保留既有锚、
       // 跨 section 失效（repo.save 逻辑）。不动 sync 的 ttu_char_offset 列。
       charOffset: charOffset >= 0 ? charOffset : null,
     );
@@ -3755,7 +3755,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
         _lastProgressValue =
             frag.normCharStart / _chapterCharCounts[frag.sectionIndex];
         _lastProgressValue = _lastProgressValue.clamp(0.0, 1.0);
-        // BUG-136: cue 派生位置无 WebView 精确偏移 → -1（恢复走 cue 的 normChar 分数），
+        // BUG-162: cue 派生位置无 WebView 精确偏移 → -1（恢复走 cue 的 normChar 分数），
         // 并清陈旧锚，避免后续 flush 把别 section 的偏移误写进来。
         _lastProgressCharOffset = -1;
         _debouncedSaveReaderPosition(
@@ -5555,7 +5555,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
     if (!mounted || _controller == null) return;
     final double? progress = _toDouble(result);
     _initialProgress = progress ?? 0.0;
-    // BUG-136: full reload 暂沿用粗粒度分数重锚（与改动前一致，不回归）。精确字符
+    // BUG-162: full reload 暂沿用粗粒度分数重锚（与改动前一致，不回归）。精确字符
     // 重锚是后续可做的增量；本次只根治退出再进的持久化恢复。
     _initialCharOffset = -1;
     _lastProgressSection = _currentChapter;

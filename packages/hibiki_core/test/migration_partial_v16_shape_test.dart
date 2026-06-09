@@ -245,7 +245,7 @@ void main() {
     expect(pos!.normCharOffset, 4242,
         reason: 'already-v16 reader_positions skipped (no JOIN), data intact');
     expect(
-        pos.charOffset, -1); // BUG-136: v24 删 ttu_char_offset，char_offset 默认 -1
+        pos.charOffset, -1); // BUG-162: v24 删 ttu_char_offset，char_offset 默认 -1
 
     // ── book_tag_mappings: ALREADY v16 (empty) -> skipped, still usable ──
     // It was skipped (no JOIN on the absent legacy book_id), and survives as a

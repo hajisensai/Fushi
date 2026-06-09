@@ -427,7 +427,7 @@ class SyncManager {
     if (localProgress == null || remoteProgress == null) {
       return SyncDirection.synced;
     }
-    // BUG-136: 在我们**实际能存储**的分辨率上比对，而非裸 1e-6 分数。导入后会抄下
+    // BUG-162: 在我们**实际能存储**的分辨率上比对，而非裸 1e-6 分数。导入后会抄下
     // 远端时间戳（见 _handleImport），下次同步必然时间戳撞 tie 落到这里；而 localProgress
     // 是由量化后的 normCharOffset 二次换算来的，与远端文件名里的原始分数会差「< 一个
     // normCharOffset 步长」——若按 1e-6 比就误判「本地更靠后」→ 多余地原样重导出，把云端
@@ -441,7 +441,7 @@ class SyncManager {
     return delta > 0 ? SyncDirection.exportToTtu : SyncDirection.importFromTtu;
   }
 
-  /// BUG-136: 把任意进度分数投影到本地存储网格（`(sectionIndex, normCharOffset)`，
+  /// BUG-162: 把任意进度分数投影到本地存储网格（`(sectionIndex, normCharOffset)`，
   /// 章内 0-10000 量化）所能表示的最近分数。本地进度本就走 `toExploredCharCount`
   /// 落在该网格上，故远端分数过一遍同样的 round-trip 后即可同分辨率比对。
   double _quantizeToStorageGrid(
@@ -460,7 +460,7 @@ class SyncManager {
   }
 
   /// HBK-AUDIT-047: local reading progress as a 0..1 fraction, mirroring the
-  /// fraction embedded in the remote progress filename. BUG-136: 直接由
+  /// fraction embedded in the remote progress filename. BUG-162: 直接由
   /// `(sectionIndex, normCharOffset)` 换算（旧的 ttuCharOffset 精确缓存列已删，合并到
   /// 单一阅读位置列；同步精度退化为 normCharOffset 的 0-10000 粒度，可接受）。
   double? _localProgressFraction(
@@ -511,7 +511,7 @@ class SyncManager {
       return SyncBookResult(direction: SyncResult.skipped, title: book.title);
     }
 
-    // Import progress → (sectionIndex, normCharOffset)。BUG-136: 不再缓存精确
+    // Import progress → (sectionIndex, normCharOffset)。BUG-162: 不再缓存精确
     // exploredCharCount（ttuCharOffset 列已删）；下次导出由 normCharOffset 重算。
     final pos = fromExploredCharCount(
       exploredCharCount: remoteProgress.exploredCharCount,
@@ -565,7 +565,7 @@ class SyncManager {
 
     // Export progress (only if we have a local reading position)
     if (localPosition != null) {
-      // BUG-136: 由 (sectionIndex, normCharOffset) 直接换算（精确缓存列 ttuCharOffset
+      // BUG-162: 由 (sectionIndex, normCharOffset) 直接换算（精确缓存列 ttuCharOffset
       // 已删，合并为单一阅读位置列）。
       exploredChars = toExploredCharCount(
         sectionIndex: localPosition.sectionIndex,
@@ -625,7 +625,7 @@ class SyncManager {
         }
       }
 
-      // BUG-136: 导出不再回写精确缓存（ttuCharOffset 列已删）；本地阅读位置不变，无需写库。
+      // BUG-162: 导出不再回写精确缓存（ttuCharOffset 列已删）；本地阅读位置不变，无需写库。
     }
 
     // Export EPUB file if content sync is enabled
