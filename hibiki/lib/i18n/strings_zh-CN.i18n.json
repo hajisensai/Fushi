@@ -1452,5 +1452,6 @@
     "remote_book_download": "下载到本机",
     "remote_book_downloaded": "已下载对端书籍",
     "remote_book_load_failed": "无法加载对端设备书籍",
-    "remote_book_download_failed": "无法下载对端书籍"
+    "remote_book_download_failed": "无法下载对端书籍",
+    "video_drop_audio_unsupported": "请把字幕文件拖到当前视频上。音频文件不能在这里关联。"
 }

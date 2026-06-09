@@ -1831,6 +1831,9 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   /// [localPosition] 为相对 [HibikiFileDropTarget] 的局部坐标，需转屏幕坐标
   /// 后才能与卡片登记表（用屏幕矩形）命中测试。
   void _handleShelfDrop(List<String> paths, Offset localPosition) {
+    final ModalRoute<dynamic>? route = ModalRoute.of(context);
+    if (route != null && !route.isCurrent) return;
+
     final DroppedFiles files = classifyDroppedFiles(paths);
     final RenderObject? ro = context.findRenderObject();
     Offset global = localPosition;

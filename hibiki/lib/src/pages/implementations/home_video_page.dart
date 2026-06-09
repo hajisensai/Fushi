@@ -133,6 +133,9 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   /// [localPosition] 为相对 [HibikiFileDropTarget] 的局部坐标，需经本页 RenderBox
   /// 转屏幕坐标后再交给注册表命中（注册表存的是屏幕坐标矩形）。
   void _handleVideoDrop(List<String> paths, Offset localPosition) {
+    final ModalRoute<dynamic>? route = ModalRoute.of(context);
+    if (route != null && !route.isCurrent) return;
+
     final DroppedFiles files = classifyDroppedFiles(paths);
     final RenderObject? ro = context.findRenderObject();
     Offset global = localPosition;

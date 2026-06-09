@@ -18,6 +18,7 @@ import 'package:window_manager/window_manager.dart';
 
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
+import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
 import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/video_asbplayer_config.dart';
@@ -2110,6 +2111,25 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     }
   }
 
+  void _handlePlaybackDrop(
+    VideoPlayerController controller,
+    List<String> paths,
+  ) {
+    final DroppedFiles files = classifyDroppedFiles(paths);
+    final String? sub = firstSubtitlePath(paths);
+    if (sub != null) {
+      unawaited(_importExternalSubtitle(controller, sub));
+      return;
+    }
+    if (files.subtitles.isNotEmpty) {
+      _showOsd(t.video_subtitle_import_unsupported);
+      return;
+    }
+    if (files.audios.isNotEmpty && files.videos.isEmpty) {
+      _showOsd(t.video_drop_audio_unsupported);
+    }
+  }
+
   /// [_importExternalSubtitle] 的实体（去重外壳已挡住并发同路径重入）。
   Future<void> _importExternalSubtitleInner(
     VideoPlayerController controller,
@@ -2334,9 +2354,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   Widget _pageDropTarget(VideoPlayerController controller, Widget child) {
     return HibikiFileDropTarget(
       onDrop: (List<String> paths, Offset _) {
-        final String? sub = firstSubtitlePath(paths);
-        if (sub == null) return;
-        unawaited(_importExternalSubtitle(controller, sub));
+        _handlePlaybackDrop(controller, paths);
       },
       child: child,
     );
@@ -2406,9 +2424,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // _refocusVideo。
     return HibikiFileDropTarget(
       onDrop: (List<String> paths, Offset _) {
-        final String? sub = firstSubtitlePath(paths);
-        if (sub == null) return;
-        unawaited(_importExternalSubtitle(controller, sub));
+        _handlePlaybackDrop(controller, paths);
       },
       child: Stack(
         children: <Widget>[

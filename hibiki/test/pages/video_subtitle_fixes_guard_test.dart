@@ -15,13 +15,20 @@ void main() {
   final String src =
       File('lib/src/pages/implementations/video_hibiki_page.dart')
           .readAsStringSync();
+  final String homeVideoSrc =
+      File('lib/src/pages/implementations/home_video_page.dart')
+          .readAsStringSync();
+  final String shelfSrc =
+      File('lib/src/pages/implementations/reader_hibiki_history_page.dart')
+          .readAsStringSync();
 
-  String region(String startSig, String endSig) {
-    final int start = src.indexOf(startSig);
+  String region(String startSig, String endSig, {String? source}) {
+    final String haystack = source ?? src;
+    final int start = haystack.indexOf(startSig);
     expect(start, greaterThanOrEqualTo(0), reason: 'missing $startSig');
-    final int end = src.indexOf(endSig, start + startSig.length);
+    final int end = haystack.indexOf(endSig, start + startSig.length);
     expect(end, greaterThan(start), reason: 'missing $endSig after $startSig');
-    return src.substring(start, end);
+    return haystack.substring(start, end);
   }
 
   test('BUG-130: 桌面控制条启用单击播放/暂停', () {
@@ -73,7 +80,7 @@ void main() {
       'Widget _buildVideoBody(',
     );
     expect(pageDrop.contains('HibikiFileDropTarget('), isTrue);
-    expect(pageDrop.contains('_importExternalSubtitle('), isTrue);
+    expect(pageDrop.contains('_handlePlaybackDrop('), isTrue);
 
     // 去重防护：页级 + 内层两个目标可能对同一次拖放都触发。
     final String importOuter = region(
@@ -82,6 +89,47 @@ void main() {
     );
     expect(importOuter.contains('_subtitleImportsInFlight'), isTrue,
         reason: '同一 srcPath 在途时必须忽略二次调用，避免重复导入/重复提示（BUG-133）');
+  });
+
+  test('视频播放页拖放提示使用当前视频语义', () {
+    final String playbackDrop = region(
+      'void _handlePlaybackDrop(',
+      'Future<void> _importExternalSubtitleInner(',
+    );
+    final String pageDrop = region(
+      'Widget _pageDropTarget(',
+      'Widget _buildVideoBody(',
+    );
+    expect(playbackDrop.contains('classifyDroppedFiles('), isTrue,
+        reason: '播放页拖放必须先识别字幕/音频，避免把当前视频页误当成库页卡片落点');
+    expect(playbackDrop.contains('_importExternalSubtitle('), isTrue,
+        reason: '受支持字幕应直接导入到当前播放视频');
+    expect(playbackDrop.contains('video_drop_audio_unsupported'), isTrue,
+        reason: '音频文件在播放页应给出当前视频页语义，而不是要求拖到卡片');
+    expect(playbackDrop.contains('drag_drop_need_card_target'), isFalse,
+        reason: '播放页不能复用“某本书或某个视频”这类库页文案');
+    expect(pageDrop.contains('_handlePlaybackDrop('), isTrue,
+        reason: '窗口模式页级 drop target 必须走同一个播放页语义 helper');
+  });
+
+  test('被视频播放页覆盖的库页不再响应同一次文件拖放', () {
+    final String videoDrop = region(
+      'void _handleVideoDrop(',
+      'Future<void> _openVideoImportPrefilled(',
+      source: homeVideoSrc,
+    );
+    expect(videoDrop.contains('ModalRoute.of(context)'), isTrue);
+    expect(videoDrop.contains('!route.isCurrent'), isTrue,
+        reason: '播放页在上层时，视频库页不能继续弹 need-card-target SnackBar');
+
+    final String shelfDrop = region(
+      'void _handleShelfDrop(',
+      'Future<void> _openBookImportPrefilled(',
+      source: shelfSrc,
+    );
+    expect(shelfDrop.contains('ModalRoute.of(context)'), isTrue);
+    expect(shelfDrop.contains('!route.isCurrent'), isTrue,
+        reason: '播放页在上层时，书架页不能继续弹 need-card-target SnackBar');
   });
 
   test('视频通知走 mpv 式角标 OSD，不再用 Material SnackBar', () {
