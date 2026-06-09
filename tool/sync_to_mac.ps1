@@ -95,6 +95,16 @@ function Test-RemoteBranchExists {
     return ($LASTEXITCODE -eq 0)
 }
 
+function Test-GitRefExists {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Ref
+    )
+
+    & git rev-parse --verify --quiet $Ref *> $null
+    return ($LASTEXITCODE -eq 0)
+}
+
 function Normalize-RepoPath {
     param(
         [Parameter(Mandatory = $true)]
@@ -125,28 +135,66 @@ function Get-SyncUploadExclusions {
 
 function Get-ChangedPathsForPush {
     param(
-        [Parameter(Mandatory = $true)]
-        [string]$BaseRef
+        [string]$BaseRef = ""
     )
 
-    $output = Get-GitOutput -Args @(
-        "-c",
-        "core.quotepath=false",
-        "diff",
-        "--name-only",
-        "--diff-filter=ACMRTUXB",
-        "$BaseRef..HEAD"
-    )
+    if ($BaseRef.Length -gt 0) {
+        $output = Get-GitOutput -Args @(
+            "-c",
+            "core.quotepath=false",
+            "diff",
+            "--name-only",
+            "--diff-filter=ACMRTUXB",
+            "$BaseRef..HEAD"
+        )
+    } else {
+        $output = Get-GitOutput -Args @(
+            "-c",
+            "core.quotepath=false",
+            "diff-tree",
+            "--no-commit-id",
+            "--name-only",
+            "-r",
+            "--root",
+            "HEAD"
+        )
+    }
     if ($output.Length -eq 0) {
         return @()
     }
     return @($output -split "\r?\n" | ForEach-Object { Normalize-RepoPath -Path $_ })
 }
 
-function Assert-NoExcludedUploadChanges {
+function Get-CreateBranchComparisonBase {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$BaseRef
+        [string]$Remote
+    )
+
+    $candidates = @(
+        "$Remote/develop",
+        "$Remote/main",
+        "$Remote/master",
+        "origin/develop",
+        "origin/main",
+        "origin/master"
+    )
+    foreach ($candidate in $candidates) {
+        if (Test-GitRefExists -Ref $candidate) {
+            return $candidate
+        }
+    }
+
+    if (Test-GitRefExists -Ref "HEAD^") {
+        return "HEAD^"
+    }
+
+    return ""
+}
+
+function Assert-NoExcludedUploadChanges {
+    param(
+        [string]$BaseRef = ""
     )
 
     $exclusions = @(Get-SyncUploadExclusions)
@@ -183,6 +231,8 @@ Invoke-Git -Args @("fetch", $Remote)
 
 $remoteRef = "$Remote/$Branch"
 if (-not (Test-RemoteBranchExists -RemoteRef $remoteRef)) {
+    $createBaseRef = Get-CreateBranchComparisonBase -Remote $Remote
+    Assert-NoExcludedUploadChanges -BaseRef $createBaseRef
     Invoke-Git -Args @("push", $Remote, "HEAD:$Branch")
     if ($DryRun) {
         Write-Host "Would create $remoteRef from local HEAD."
