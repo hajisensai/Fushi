@@ -222,7 +222,11 @@ void main() {
         schemaSource.substring(readingStart, lookupStart);
 
     expect(appearanceSource, contains('CustomFontsPage'));
-    expect(appearanceSource, contains("id: 'appearance.fonts'"));
+    // TODO-049: the single font entry was split into three independent targets
+    // (software UI / novel body / dictionary), all still under appearance.
+    expect(appearanceSource, contains("id: 'appearance.fonts_app_ui'"));
+    expect(appearanceSource, contains("id: 'appearance.fonts_body'"));
+    expect(appearanceSource, contains("id: 'appearance.fonts_dictionary'"));
     expect(readingSource, isNot(contains('CustomFontsPage')));
   });
 

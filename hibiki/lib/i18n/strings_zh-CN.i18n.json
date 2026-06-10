@@ -1493,5 +1493,8 @@
     "video_shader_section_advanced": "进阶（手动着色器）",
     "video_shader_first_use_download": "一键下载并启用",
     "video_shader_mobile_perf_hint": "手机上着色器仅在标准 GPU 渲染路径下生效，实际效果因机型 GPU 而异；高档位可能掉帧或发热。建议先用低/中档，并在本机确认效果。",
-    "stat_favorited_sentence": "收藏语句"
+    "stat_favorited_sentence": "收藏语句",
+    "font_target_app_ui": "软件系统字体",
+    "font_target_body": "小说正文字体",
+    "font_target_dictionary": "词典字体"
 }

@@ -393,7 +393,11 @@ class _SystemFontPickerPageState extends State<_SystemFontPickerPage> {
 // ── 主页面 ────────────────────────────────────────────────────────────────────
 
 class CustomFontsPage extends BasePage {
-  const CustomFontsPage({super.key});
+  /// TODO-049: which of the three independent font targets this page manages.
+  /// Defaults to [FontTarget.body] so the legacy reader call site is unchanged.
+  const CustomFontsPage({super.key, this.target = FontTarget.body});
+
+  final FontTarget target;
 
   @override
   BasePageState createState() => _CustomFontsPageState();
@@ -406,8 +410,16 @@ class _CustomFontsPageState extends BasePageState {
   // `List<Map<String, dynamic>>` only at the ReaderSettings boundary below.
   List<CustomFontEntry> _fonts = [];
 
-  static List<CustomFontEntry> _entriesFromSettings(ReaderSettings settings) =>
-      settings.customFonts.map(CustomFontEntry.fromMap).toList();
+  FontTarget get _target => (widget as CustomFontsPage).target;
+
+  String get _pageTitle => switch (_target) {
+        FontTarget.appUi => t.font_target_app_ui,
+        FontTarget.body => t.font_target_body,
+        FontTarget.dictionary => t.font_target_dictionary,
+      };
+
+  List<CustomFontEntry> _entriesFromSettings(ReaderSettings settings) =>
+      settings.fontsForTarget(_target).map(CustomFontEntry.fromMap).toList();
 
   @override
   void initState() {
@@ -427,10 +439,19 @@ class _CustomFontsPageState extends BasePageState {
   }
 
   Future<void> _save() async {
-    await _settings!.setCustomFonts(_fonts.map((e) => e.toMap()).toList());
-    // Re-resolve the app-wide UI font so changes here (add / remove / toggle /
-    // reorder) take effect across the whole app, not just the reader.
-    await appModel.refreshAppFont();
+    await _settings!.setFontsForTarget(
+      _target,
+      _fonts.map((e) => e.toMap()).toList(),
+    );
+    // The app-wide UI font is resolved from the appUi target only; re-resolve it
+    // when that target changed. Body/dictionary changes apply live in their own
+    // WebViews (reader CSS / popup font injection) and must NOT clobber the UI
+    // font (TODO-049: the three targets are independent).
+    if (_target == FontTarget.appUi) {
+      await appModel.refreshAppFont();
+    } else if (_target == FontTarget.body) {
+      ReaderHibikiSource.onSettingsChangedLive?.call();
+    }
   }
 
   Directory get _fontsDir {
@@ -878,7 +899,7 @@ class _CustomFontsPageState extends BasePageState {
   @override
   Widget build(BuildContext context) {
     return AdaptiveSettingsScaffold(
-      title: Text(t.custom_fonts),
+      title: Text(_pageTitle),
       children: [
         AdaptiveSettingsSection(
           children: [

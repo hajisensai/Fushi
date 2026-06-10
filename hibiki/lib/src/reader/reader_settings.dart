@@ -5,6 +5,21 @@ import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:path/path.dart' as p;
 
+/// The three independent font targets a user can configure (TODO-049):
+/// 软件系统字体 ([appUi]) / 小说正文字体 ([body]) / 词典字体 ([dictionary]).
+/// Each maps to its own persisted `[{name,path,enabled}]` list; see
+/// [ReaderSettings.fontKeyForTarget].
+enum FontTarget {
+  /// App-wide UI (ThemeData) font — menus, buttons, settings, etc.
+  appUi,
+
+  /// Novel/EPUB body text font, injected into the reader WebView CSS.
+  body,
+
+  /// Dictionary popup (definition/meaning) font.
+  dictionary,
+}
+
 /// All reader display/behavior settings, decoupled from the media source.
 ///
 /// Reads/writes use the same Drift `preferences` table keys as the old
@@ -245,19 +260,74 @@ class ReaderSettings {
   Future<void> setVolumePageTurningSpeed(int v) =>
       _set<int>('volume_page_turning_speed', v);
 
-  // ── Custom fonts ──────────────────────────────────────────────────
+  // ── Custom fonts (three independent targets) ──────────────────────
+  //
+  // TODO-049: 把字体拆成三个相互独立的目标，各存一份独立的 `[{name,path,enabled}]`
+  // 列表。三处共用同一份解析/CSS 逻辑（[customFontCssForEntries]），只是数据来源 key
+  // 不同：
+  //   - 小说正文字体  -> 旧 key `custom_fonts`（语义不变，向后兼容铁律）
+  //   - 软件系统字体  -> 新 key `app_ui_fonts`
+  //   - 词典字体      -> 新 key `dict_fonts`
+  // 新 key 首次缺省时**懒迁移**：复制旧 `custom_fonts` 的值，使已设字体不丢、三处初始
+  // 一致；用户在某一目标改动后，三者各自独立持久化、互不影响。
 
-  List<Map<String, dynamic>> get customFonts {
-    final String raw = _get<String>('custom_fonts', '[]');
+  /// Persistence key for the legacy/body font list. Kept verbatim so existing
+  /// user data migrates automatically.
+  static const String fontKeyBody = 'custom_fonts';
+
+  /// Persistence key for the app-wide UI (ThemeData) font list. New in TODO-049.
+  static const String fontKeyAppUi = 'app_ui_fonts';
+
+  /// Persistence key for the dictionary popup font list. New in TODO-049.
+  static const String fontKeyDictionary = 'dict_fonts';
+
+  /// Parses the persisted JSON array stored under [key] into a font-entry list.
+  /// Malformed/missing data degrades to an empty list (logged), never throws.
+  List<Map<String, dynamic>> _fontListForKey(String key) {
+    final String raw = _get<String>(key, '[]');
     try {
       return (jsonDecode(raw) as List<dynamic>).cast<Map<String, dynamic>>();
     } catch (e, stack) {
-      ErrorLogService.instance.log('ReaderSettings.customFonts', e, stack);
+      ErrorLogService.instance.log('ReaderSettings.fontList:$key', e, stack);
       return <Map<String, dynamic>>[];
     }
   }
 
-  /// CSS font-family string and @font-face declarations for enabled fonts.
+  /// Reads the font list for a NEW target [key], lazily seeding it from the
+  /// legacy body list ([fontKeyBody]) the first time it is accessed while still
+  /// absent. This keeps a user's pre-split font choice intact across all three
+  /// targets on the first run after upgrade, without ever touching the body key.
+  List<Map<String, dynamic>> _fontListMigrated(String key) {
+    if (_cache.containsKey(key)) {
+      return _fontListForKey(key);
+    }
+    final List<Map<String, dynamic>> seed = _fontListForKey(fontKeyBody);
+    // Persist the seed so the new target becomes its own independent source.
+    // An empty seed is still written so subsequent reads short-circuit above and
+    // an empty new target does not keep re-seeding from a later-changed body.
+    _set<String>(key, jsonEncode(seed));
+    return seed;
+  }
+
+  /// Body (novel text) font list -- legacy `custom_fonts` key, unchanged.
+  List<Map<String, dynamic>> get customFonts => _fontListForKey(fontKeyBody);
+
+  /// App-wide UI (ThemeData) font list -- independent `app_ui_fonts` key.
+  List<Map<String, dynamic>> get appUiFonts => _fontListMigrated(fontKeyAppUi);
+
+  /// Dictionary popup font list -- independent `dict_fonts` key.
+  List<Map<String, dynamic>> get dictionaryFonts =>
+      _fontListMigrated(fontKeyDictionary);
+
+  /// Resolves the persisted font list for a [FontTarget].
+  List<Map<String, dynamic>> fontsForTarget(FontTarget target) =>
+      switch (target) {
+        FontTarget.body => customFonts,
+        FontTarget.appUi => appUiFonts,
+        FontTarget.dictionary => dictionaryFonts,
+      };
+
+  /// CSS font-family string and @font-face declarations for the BODY fonts.
   ({String fontFamily, String fontFaces}) buildCustomFontCss() =>
       customFontCssForEntries(customFonts);
 
@@ -285,46 +355,59 @@ class ReaderSettings {
     );
   }
 
+  /// Resolves the persistence key backing a [FontTarget].
+  static String fontKeyForTarget(FontTarget target) => switch (target) {
+        FontTarget.body => fontKeyBody,
+        FontTarget.appUi => fontKeyAppUi,
+        FontTarget.dictionary => fontKeyDictionary,
+      };
+
+  /// Persists the whole list for [target]. The body convenience overload
+  /// [setCustomFonts] preserves the pre-split call sites unchanged.
+  Future<void> setFontsForTarget(
+    FontTarget target,
+    List<Map<String, dynamic>> fonts,
+  ) =>
+      _set<String>(fontKeyForTarget(target), jsonEncode(fonts));
+
   Future<void> setCustomFonts(List<Map<String, dynamic>> fonts) =>
-      _set<String>('custom_fonts', jsonEncode(fonts));
+      setFontsForTarget(FontTarget.body, fonts);
 
-  Future<void> addCustomFont({required String name, String? path}) async {
+  Future<void> addFontForTarget(
+    FontTarget target, {
+    required String name,
+    String? path,
+  }) async {
     final List<Map<String, dynamic>> list =
-        List<Map<String, dynamic>>.from(customFonts);
-    list.add(<String, dynamic>{
-      'name': name,
-      'path': path,
-      'enabled': true,
-    });
-    await setCustomFonts(list);
+        List<Map<String, dynamic>>.from(fontsForTarget(target));
+    list.add(<String, dynamic>{'name': name, 'path': path, 'enabled': true});
+    await setFontsForTarget(target, list);
   }
 
-  Future<void> removeCustomFont(int index) async {
+  Future<void> removeFontForTarget(FontTarget target, int index) async {
     final List<Map<String, dynamic>> list =
-        List<Map<String, dynamic>>.from(customFonts);
-    if (index < 0 || index >= list.length) {
-      return;
-    }
+        List<Map<String, dynamic>>.from(fontsForTarget(target));
+    if (index < 0 || index >= list.length) return;
     list.removeAt(index);
-    await setCustomFonts(list);
+    await setFontsForTarget(target, list);
   }
 
-  Future<void> toggleCustomFont(int index) async {
+  Future<void> toggleFontForTarget(FontTarget target, int index) async {
     final List<Map<String, dynamic>> list =
-        List<Map<String, dynamic>>.from(customFonts);
-    if (index < 0 || index >= list.length) {
-      return;
-    }
+        List<Map<String, dynamic>>.from(fontsForTarget(target));
+    if (index < 0 || index >= list.length) return;
     list[index]['enabled'] = !(list[index]['enabled'] as bool? ?? true);
-    await setCustomFonts(list);
+    await setFontsForTarget(target, list);
   }
 
-  Future<void> reorderCustomFonts(int oldIndex, int newIndex) async {
+  Future<void> reorderFontsForTarget(
+    FontTarget target,
+    int oldIndex,
+    int newIndex,
+  ) async {
     final List<Map<String, dynamic>> list =
-        List<Map<String, dynamic>>.from(customFonts);
-    if (newIndex > oldIndex) {
-      newIndex--;
-    }
+        List<Map<String, dynamic>>.from(fontsForTarget(target));
+    if (newIndex > oldIndex) newIndex--;
     if (oldIndex < 0 ||
         oldIndex >= list.length ||
         newIndex < 0 ||
@@ -333,8 +416,21 @@ class ReaderSettings {
     }
     final Map<String, dynamic> item = list.removeAt(oldIndex);
     list.insert(newIndex, item);
-    await setCustomFonts(list);
+    await setFontsForTarget(target, list);
   }
+
+  // Body-target convenience overloads kept for existing reader call sites.
+  Future<void> addCustomFont({required String name, String? path}) =>
+      addFontForTarget(FontTarget.body, name: name, path: path);
+
+  Future<void> removeCustomFont(int index) =>
+      removeFontForTarget(FontTarget.body, index);
+
+  Future<void> toggleCustomFont(int index) =>
+      toggleFontForTarget(FontTarget.body, index);
+
+  Future<void> reorderCustomFonts(int oldIndex, int newIndex) =>
+      reorderFontsForTarget(FontTarget.body, oldIndex, newIndex);
 }
 
 class ReaderCustomFontCss {

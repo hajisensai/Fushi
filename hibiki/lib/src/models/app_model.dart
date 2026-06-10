@@ -675,7 +675,7 @@ class AppModel with ChangeNotifier {
   /// Blocks creator from processing initial media while player controller is not ready.
   bool blockCreatorInitialMedia = false;
 
-  /// The user's custom app-wide font family, or null to use the language
+  /// The user's custom app-wide UI font family, or null to use the language
   /// default. Resolved and registered with the Flutter engine by
   /// [refreshAppFont]; see [AppFontLoader].
   String? _appFontFamily;
@@ -689,8 +689,10 @@ class AppModel with ChangeNotifier {
   Future<void> refreshAppFont() async {
     final ReaderSettings settings = ReaderSettings(_database);
     await settings.refreshFromDb();
+    // TODO-049: 软件系统字体走独立的 appUiFonts 目标，与小说正文(customFonts)、
+    // 词典字体相互独立。
     final String? family =
-        await AppFontLoader.resolveAndLoad(settings.customFonts);
+        await AppFontLoader.resolveAndLoad(settings.appUiFonts);
     if (family == _appFontFamily) return;
     _appFontFamily = family;
     notifyListeners();
@@ -1285,7 +1287,7 @@ class AppModel with ChangeNotifier {
       // first paint so the global theme uses it without a flash. Reuses the
       // settings just loaded above to avoid a second prefs read.
       _appFontFamily =
-          await AppFontLoader.resolveAndLoad(readerSettings.customFonts);
+          await AppFontLoader.resolveAndLoad(readerSettings.appUiFonts);
       ReaderHibikiSource.readerSettings = readerSettings;
 
       await loadShortcutRegistry(

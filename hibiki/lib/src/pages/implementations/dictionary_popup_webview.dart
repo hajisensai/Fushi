@@ -11,7 +11,10 @@ import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_webview_media.dart';
+import 'package:hibiki/src/reader/dictionary_font_css.dart';
 import 'package:hibiki/src/reader/reader_caret_scripts.dart';
+import 'package:hibiki/src/reader/reader_settings.dart';
+import 'package:path/path.dart' as p;
 import 'package:hibiki/utils.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -411,6 +414,8 @@ class DictionaryPopupWebViewState
     // Shared with the live theme-switch path in didChangeDependencies.
     final String themeVarsJs = _themeVariablesJs();
     _lastThemeVarsJs = themeVarsJs;
+    // TODO-049: 词典字体（独立目标），系统名直接用、导入文件内联成 data: URL。
+    final String fontStyleJs = _dictionaryFontStyleJs(appModel);
 
     final bool needsScrollCheck = widget.onScrolledToBottom != null;
     final String beforeRenderJs = isLoadMore
@@ -422,6 +427,7 @@ class DictionaryPopupWebViewState
     final swInject = Stopwatch()..start();
     _controller!.evaluateJavascript(source: '''
       $themeVarsJs
+      $fontStyleJs
       document.documentElement.style.zoom = '${popupZoom.toStringAsFixed(4)}';
       ${ReaderCaretScripts.instantScrollInvocation(popupInstantScroll)};
       window.__hoshiResetPopupScroll = function() {
@@ -456,6 +462,38 @@ class DictionaryPopupWebViewState
       debugPrint(
           '[dict-perf] evaluateJavascript: ${swInject.elapsedMilliseconds}ms');
     });
+  }
+
+  /// TODO-049: builds a JS snippet that injects the user's DICTIONARY font as a
+  /// `<style id="hoshi-dict-font">` element (system family names + inlined
+  /// `data:` URL `@font-face` for imported files). The selected family is placed
+  /// before the popup.css default via a `font-family ... !important` rule on
+  /// `html, body`, so an empty selection leaves the baked-in default untouched.
+  /// Returns an empty string when no dictionary font is configured.
+  String _dictionaryFontStyleJs(AppModel appModel) {
+    final ReaderSettings? settings = ReaderHibikiSource.readerSettings;
+    if (settings == null) return '';
+    final ({String fontFamily, String fontFaces}) css = DictionaryFontCss.build(
+      settings.dictionaryFonts,
+      allowedDirectories: <String>[
+        p.join(appModel.appDirectory.path, 'custom_fonts'),
+      ],
+    );
+    if (css.fontFamily.isEmpty) return '';
+    final String styleCss = '${css.fontFaces}\n'
+        'html, body { font-family: ${css.fontFamily}, '
+        '"Hiragino Sans", "Hiragino Kaku Gothic ProN", sans-serif !important; }';
+    final String styleJson = jsonEncode(styleCss);
+    return '''
+      (function(){
+        var el = document.getElementById('hoshi-dict-font');
+        if (!el) {
+          el = document.createElement('style');
+          el.id = 'hoshi-dict-font';
+          document.head.appendChild(el);
+        }
+        el.textContent = $styleJson;
+      })();''';
   }
 
   static String _colorToHex(Color c) {

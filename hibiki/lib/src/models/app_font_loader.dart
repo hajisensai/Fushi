@@ -16,8 +16,8 @@ import 'package:path/path.dart' as p;
 /// never touches the Flutter engine. To make a font file usable by Flutter
 /// widgets it must be loaded at runtime through [FontLoader] — there is no
 /// pubspec asset declaration for user files. This helper resolves the first
-/// enabled entry from the persisted `customFonts` list and returns the family
-/// name to feed into `TextStyle.fontFamily`.
+/// enabled entry from the passed font list (TODO-049: the app-wide UI target,
+/// `appUiFonts`) and returns the family name to feed into `TextStyle.fontFamily`.
 class AppFontLoader {
   AppFontLoader._();
 
