@@ -1496,5 +1496,7 @@
     "font_target_app_ui": "System UI Font",
     "font_target_body": "Novel Text Font",
     "font_target_dictionary": "Dictionary Font",
-    "video_setting_subtitle_sync_input": "Offset (ms)"
+    "video_setting_subtitle_sync_input": "Offset (ms)",
+    "video_subtitle_attached_to_video": "Subtitle attached to $title ($count cues)",
+    "video_subtitle_attach_playlist_hint": "Open the playlist to attach a subtitle per episode"
 }

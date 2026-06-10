@@ -12,6 +12,7 @@ import 'package:hibiki/src/media/drag_drop/drop_decision.dart';
 import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
+import 'package:hibiki/src/media/video/video_subtitle_attach.dart';
 import 'package:hibiki/src/media/video/video_feature_flags.dart';
 import 'package:hibiki/src/media/video/video_import_dialog.dart';
 import 'package:hibiki/src/media/video/video_mpv_config.dart';
@@ -176,10 +177,11 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       case DropIntent.importNewPlaylist:
         _openPlaylistImportPrefilled(playlistPath: files.playlists.first);
       case DropIntent.attachToVideoCard:
-        _openVideoImportPrefilled(
-          videoPath: hit!.videoPath,
-          subtitlePath: files.subtitles.first,
-        );
+        // 字幕拖到具体视频卡：直接挂到那张卡所代表的**现有**视频书（不重新导入）。
+        // 旧实现走 _openVideoImportPrefilled→VideoImportDialog._doImport，对已存在
+        // 视频重算 singleVideoBookUid 触发同名去重、建 `video/<name> (2)` 重复条目，
+        // 字幕没挂到原视频（TODO-079 根因）。
+        _attachSubtitleToVideoCard(hit!, files.subtitles.first);
       case DropIntent.needCardTarget:
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(t.drag_drop_need_card_target)),
@@ -191,9 +193,10 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     }
   }
 
-  /// 复用 [VideoImportDialog] 打开方式，预填视频/字幕路径。新建导入与「附加字幕到
-  /// 已有视频」走同一路径：对话框按文件名派生 bookUid，对同一视频幂等覆盖 cue，
-  /// 用户确认后保存，关闭后刷新列表。
+  /// 复用 [VideoImportDialog] 打开方式，预填视频/字幕路径（**新建导入**用）。对话框
+  /// 按文件名派生 bookUid，用户确认后保存，关闭后刷新列表。「把字幕挂到已有视频卡」
+  /// 不走这里——它会对已存在视频重算 bookUid 触发同名去重建重复条目（TODO-079），
+  /// 改走 [_attachSubtitleToVideoCard] 直接对命中卡 bookUid 落库。
   Future<void> _openVideoImportPrefilled({
     required String videoPath,
     String? subtitlePath,
@@ -222,6 +225,43 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       ),
     );
     if (bookUid != null) _refresh();
+  }
+
+  /// 把拖到某张视频卡上的外挂字幕挂到**那张卡代表的现有视频书**（TODO-079）。
+  ///
+  /// 经 [attachSubtitleToVideoBook]：拷盘到 `<appDocs>/video_subtitles/` → 解析 cue →
+  /// 对命中卡 `book.bookUid` 原子 saveSubtitleSelection（源指针 + cue），下次进播放页
+  /// 直接 `loadCues` 命中。不新建视频书、不去重加后缀（修掉旧重复导入路径的 bug）。
+  /// 按结果给 SnackBar 反馈；播放列表卡无单一字幕语义，提示进播放页按集挂。
+  Future<void> _attachSubtitleToVideoCard(
+    VideoBookRow book,
+    String subtitlePath,
+  ) async {
+    final SubtitleAttachResult result = await attachSubtitleToVideoBook(
+      repo: widget.repo,
+      book: book,
+      subtitlePath: subtitlePath,
+    );
+    if (!mounted) return;
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    final String message;
+    switch (result.outcome) {
+      case SubtitleAttachOutcome.attached:
+        message = t.video_subtitle_attached_to_video(
+          title: book.title,
+          count: result.cueCount,
+        );
+        _refresh();
+      case SubtitleAttachOutcome.playlistNeedsPlayer:
+        message = t.video_subtitle_attach_playlist_hint;
+      case SubtitleAttachOutcome.unsupported:
+        message = t.video_subtitle_import_unsupported;
+      case SubtitleAttachOutcome.copyFailed:
+        message = t.video_subtitle_import_failed;
+      case SubtitleAttachOutcome.emptyCues:
+        message = t.video_subtitle_load_failed(label: result.label);
+    }
+    messenger.showSnackBar(SnackBar(content: Text(message)));
   }
 
   void _openStatistics() {
