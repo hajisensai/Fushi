@@ -200,6 +200,9 @@ namespace flutter_inappwebview_plugin
   {
     debugLog("dealloc CustomPlatformView");
     event_sink_ = nullptr;
+    if (texture_bridge_) {
+      texture_bridge_->Stop();
+    }
     texture_registrar_->UnregisterTexture(texture_id_, nullptr);
   }
 
