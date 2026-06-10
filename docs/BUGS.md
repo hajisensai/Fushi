@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 166 条。点号进各自文件。
+> 共 167 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-170](bugs/BUG-170-nested-popup-white-flash.md) | ✅ | ✅ | 第二个嵌套查词弹窗出现白屏一瞬 |
 | [BUG-169](bugs/BUG-169-reader-scroll-skips-two-pages.md) | ✅ | ✅ | 阅读器滚轮/翻页有时一次翻两页（misaligned scroll 经 round 跳页） |
 | [BUG-168](bugs/BUG-168-video-folder-import-no-recursion.md) | ✅ | ✅ | 导入视频文件夹显示无视频(非递归扫描+缺m2ts) |
 | [BUG-167](bugs/BUG-167-nhk-pitch-glossary-not-pitch.md) | 🚧 | 🚧 | NHK发音辞典被读成释义词典（实为glossary格式·无pitch数据·非bug） |

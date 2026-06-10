@@ -71,6 +71,8 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   @override
   void dispose() {
     _creatorActiveStreamSubscription?.cancel();
+    // TODO-058：controller 现持有挂起层兜底 Timer，作为其所有者必须 dispose 取消，防泄漏。
+    _popup.dispose();
     super.dispose();
   }
 
@@ -176,11 +178,19 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       );
       _popup.fillResult(item, result: dictionaryResult, allLoaded: true);
 
+      // TODO-058：嵌套（第二个）查词复用不到热槽，beginTop 会 append 一条**新建
+      // WebView** 的冷层；若就绪即 show，它的 popup.html/JS/CSS 还没冷加载完，一翻
+      // 可见就露白屏一瞬。只有「能复用已预热热槽」或「无词条（走 Flutter 占位，不靠
+      // WebView 渲染）」才立即 show；其余冷层挂起到其 WebView 真正渲染完成（onRendered
+      // → revealRendered）才翻可见。deferDisplay（阅读器手动延迟）路径不变。
+      final bool revealImmediately = reuse || dictionaryResult.entries.isEmpty;
       if (deferDisplay) {
         _deferredPopupItem = item;
         _deferredGeneration = gen;
-      } else {
+      } else if (revealImmediately) {
         _popup.show(item);
+      } else {
+        _popup.markPendingReveal(item);
       }
 
       debugPrint(
@@ -426,7 +436,10 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
           overrideFillColor: appModel.overrideDictionaryColor,
           onDismiss: () => _dismissPopupAt(index),
           onTapOutside: clearDictionaryResult,
-          onRendered: () => onDictionaryPopupRendered(index),
+          onRendered: () => _onPopupLayerRendered(index, item),
+          // TODO-058 fail-safe：弹窗 WebView 加载失败也走同一翻可见入口（加载失败
+          // 也显示，不卡死「点查词什么都不出」）。
+          onRenderError: () => _onPopupLayerRendered(index, item),
           headerWidget: index == 0 ? buildPopupAudioControls() : null,
           overlayWidget: isTop ? buildDictionaryLoading() : null,
           onTextSelected: (text, localRect) async {
@@ -468,6 +481,16 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         ),
       ),
     );
+  }
+
+  /// TODO-058：某弹窗层 WebView 渲染完成（`popupRendered`）。先把挂起的冷层翻为
+  /// 可见（[markPendingReveal] 标记的层等到此刻才显示，杜绝白屏一瞬），再交给
+  /// [onDictionaryPopupRendered]（阅读器据此把字符光标交给刚显示的顶层弹窗）。
+  /// 顺序要紧：先 reveal 再回调，使回调里读到的 [topVisiblePopupIndex] 已是新层。
+  void _onPopupLayerRendered(int index, DictionaryPopupEntry item) {
+    if (!mounted) return;
+    _popup.revealRendered(item);
+    onDictionaryPopupRendered(index);
   }
 
   void _dismissPopupAt(int index) {
@@ -557,14 +580,41 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   /// [DictionaryPopupWebView], which cannot instantiate the platform WebView in
   /// the unit-test harness.
   @visibleForTesting
-  List<({bool isWarmSlot, bool visible, GlobalKey<DictionaryPopupWebViewState> webViewKey})>
-      get debugPopupStack => _popup.entries
-          .map((e) => (
-                isWarmSlot: e.isWarmSlot,
-                visible: e.visible,
-                webViewKey: e.webViewKey,
-              ))
-          .toList();
+  List<
+      ({
+        bool isWarmSlot,
+        bool visible,
+        bool revealOnRender,
+        GlobalKey<DictionaryPopupWebViewState> webViewKey
+      })> get debugPopupStack => _popup.entries
+      .map((e) => (
+            isWarmSlot: e.isWarmSlot,
+            visible: e.visible,
+            revealOnRender: e.revealOnRender,
+            webViewKey: e.webViewKey,
+          ))
+      .toList();
+
+  /// TODO-058 test hook: simulate the WebView at [index] firing `popupRendered`
+  /// (the fake test WebView never fires real lifecycle callbacks). Reveals a
+  /// pending cold layer exactly like the production [DictionaryPopupLayer.onRendered]
+  /// path, so widget tests can assert "nested popup hidden until render".
+  @visibleForTesting
+  void debugFirePopupRendered(int index) {
+    if (index < 0 || index >= _popup.entries.length) return;
+    _onPopupLayerRendered(index, _popup.entries[index]);
+  }
+
+  /// TODO-058 fail-safe test hook: simulate the WebView at [index] firing the
+  /// load-error callback (`onReceivedError` -> [DictionaryPopupLayer.onRenderError]).
+  /// Reveals a pending cold layer exactly like the production error wiring, so
+  /// widget tests can assert "load failure still shows the popup, not stuck hidden".
+  @visibleForTesting
+  void debugFirePopupRenderError(int index) {
+    if (index < 0 || index >= _popup.entries.length) return;
+    // Same reveal entry the onRenderError closure uses in _buildPopupLayer.
+    _onPopupLayerRendered(index, _popup.entries[index]);
+  }
 
   void onDictionaryDismiss() {
     clearDictionaryResult();

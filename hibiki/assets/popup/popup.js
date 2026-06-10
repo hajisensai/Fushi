@@ -1753,10 +1753,23 @@ function applyCustomCSS() {
 
 window._renderGeneration = 0;
 
+// TODO-058 fail-safe: always notify Dart that rendering finished, even when
+// buildEntryElement / postProcessRuby throws. Without this a render exception
+// would swallow the `popupRendered` signal forever, leaving a cold nested popup
+// permanently hidden (pending reveal). Fired exactly once per render.
+function _firePopupRendered() {
+    try {
+        window.flutter_inappwebview.callHandler('popupRendered',
+            document.body.scrollHeight);
+    } catch (e) {
+        console.error('[popup] popupRendered callHandler failed', e);
+    }
+}
+
 window.renderPopup = function() {
     const t0 = performance.now();
     const container = document.getElementById('entries-container');
-    if (!container) return;
+    if (!container) { _firePopupRendered(); return; }
 
     const entries = window.lookupEntries;
     if (!entries || !entries.length) {
@@ -1765,42 +1778,53 @@ window.renderPopup = function() {
             + '<div>' + (window._noResultsMessage || 'No results found.') + '</div>'
             + '</div>';
         window._renderedGlossaryCounts = [];
-        window.flutter_inappwebview.callHandler('popupRendered',
-            document.body.scrollHeight);
+        _firePopupRendered();
         return;
     }
 
     const gen = ++window._renderGeneration;
-    container.innerHTML = '';
 
-    const firstEntry = buildEntryElement(entries[0], 0);
-    container.appendChild(firstEntry);
-    postProcessRuby(firstEntry);
-    applyCustomCSS();
+    try {
+        container.innerHTML = '';
+
+        const firstEntry = buildEntryElement(entries[0], 0);
+        container.appendChild(firstEntry);
+        postProcessRuby(firstEntry);
+        applyCustomCSS();
+    } catch (e) {
+        // 渲染抛错也发信号让 Dart 翻可见（哪怕内容不全），杜绝永久挂起。
+        console.error('[popup] renderPopup first-entry render failed', e);
+        window._renderedGlossaryCounts = [];
+        _firePopupRendered();
+        return;
+    }
 
     if (entries.length === 1) {
         window._renderedGlossaryCounts = [entries[0].glossaries.length];
         console.log('[popup-perf] renderPopup: ' + (performance.now() - t0).toFixed(1) + 'ms entries=1');
-        window.flutter_inappwebview.callHandler('popupRendered',
-            document.body.scrollHeight);
+        _firePopupRendered();
         return;
     }
 
     setTimeout(() => {
         if (gen !== window._renderGeneration) return;
-        const fragment = document.createDocumentFragment();
-        for (let idx = 1; idx < entries.length; idx++) {
-            const entry = entries[idx];
-            if (!entry) continue;
-            fragment.appendChild(document.createElement('hr'));
-            fragment.appendChild(buildEntryElement(entry, idx));
+        try {
+            const fragment = document.createDocumentFragment();
+            for (let idx = 1; idx < entries.length; idx++) {
+                const entry = entries[idx];
+                if (!entry) continue;
+                fragment.appendChild(document.createElement('hr'));
+                fragment.appendChild(buildEntryElement(entry, idx));
+            }
+            container.appendChild(fragment);
+            postProcessRuby(container);
+            window._renderedGlossaryCounts = entries.map(e => e.glossaries.length);
+            console.log('[popup-perf] renderPopup: ' + (performance.now() - t0).toFixed(1) + 'ms entries=' + entries.length);
+        } catch (e) {
+            console.error('[popup] renderPopup rest-entries render failed', e);
         }
-        container.appendChild(fragment);
-        postProcessRuby(container);
-        window._renderedGlossaryCounts = entries.map(e => e.glossaries.length);
-        console.log('[popup-perf] renderPopup: ' + (performance.now() - t0).toFixed(1) + 'ms entries=' + entries.length);
-        window.flutter_inappwebview.callHandler('popupRendered',
-            document.body.scrollHeight);
+        // 无论后续词条渲染成功与否都发信号（首条已在上面渲染好）。
+        _firePopupRendered();
     }, 0);
 };
 

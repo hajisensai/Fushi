@@ -264,6 +264,17 @@ mixin DictionaryPageMixin {
           overrideFillColor: mixinAppModel.overrideDictionaryColor,
           onDismiss: () => onPop(index),
           onTapOutside: () => onPop(0),
+          // TODO-058：该层 WebView 渲染完成 → 翻可见挂起的冷层（消除白屏一瞬）。
+          // 仅当此层处于挂起态（markPendingReveal）才真翻可见并触发重建。
+          onRendered: () {
+            if (!mounted) return;
+            if (controller.revealRendered(entry)) setState(() {});
+          },
+          // TODO-058 fail-safe：WebView 加载失败也走同一翻可见路径（不卡死）。
+          onRenderError: () {
+            if (!mounted) return;
+            if (controller.revealRendered(entry)) setState(() {});
+          },
           onScrolledToBottom: entry.allLoaded
               ? null
               : () => loadMoreForEntry(entry: entry, controller: controller),
@@ -388,7 +399,25 @@ mixin DictionaryPageMixin {
             result: result,
             allLoaded: result.entries.length < maxTerms,
           );
-          controller.show(entry);
+          // TODO-058：嵌套（第二个）查词复用不到热槽 → beginTop append 一条**新建
+          // WebView** 的冷层；就绪即 show 会在其 popup.html/JS/CSS 冷加载完前露白屏
+          // 一瞬。只有「复用已预热热槽」或「无词条（走 Flutter 占位，不靠 WebView
+          // 渲染）」才立即 show；其余冷层挂起到其 WebView 渲染完成（onRendered →
+          // revealRendered）才翻可见，杜绝白屏。
+          final bool revealImmediately =
+              reuseWarmSlot || result.entries.isEmpty;
+          if (revealImmediately) {
+            controller.show(entry);
+          } else {
+            // TODO-058 fail-safe：mixin 宿主（视频/首页）不监听 controller，靠
+            // setState 重建；超时强制翻可见后也要 setState（守 mounted，Timer 后触发）。
+            controller.markPendingReveal(
+              entry,
+              onForcedReveal: () {
+                if (mounted) setState(() {});
+              },
+            );
+          }
         });
       }
     } finally {
