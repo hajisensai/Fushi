@@ -214,7 +214,9 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     );
   }
 
-  void _open(VideoBookRow book) {
+  Future<void> _open(VideoBookRow book) async {
+    await _showAnime4kFirstUsePromptIfNeeded();
+    if (!mounted) return;
     Navigator.push(
       context,
       adaptivePageRoute<void>(
@@ -224,9 +226,11 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     );
   }
 
-  void _openRemote(RemoteVideoInfo video) {
+  Future<void> _openRemote(RemoteVideoInfo video) async {
     final RemoteVideoClient? client = _remoteVideoClient;
     if (client == null) return;
+    await _showAnime4kFirstUsePromptIfNeeded();
+    if (!mounted) return;
     Navigator.push(
       context,
       adaptivePageRoute<void>(
@@ -235,6 +239,26 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           repo: widget.repo,
           client: client,
         ),
+      ),
+    );
+  }
+
+  Future<void> _showAnime4kFirstUsePromptIfNeeded() async {
+    final AppModel appModel = ref.read(appProvider);
+    if (appModel.prefsRepo.videoAnime4kPromptShown) return;
+    await appModel.prefsRepo.setVideoAnime4kPromptShown();
+    if (!mounted) return;
+    await showAppDialog<void>(
+      context: context,
+      builder: (BuildContext ctx) => AlertDialog(
+        title: Text(t.video_shader_first_use_title),
+        content: Text(t.video_shader_first_use_body),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(t.dialog_close),
+          ),
+        ],
       ),
     );
   }

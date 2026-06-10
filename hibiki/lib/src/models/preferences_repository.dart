@@ -28,6 +28,8 @@ enum DesktopClipboardWindowMode {
 class PreferencesRepository extends ChangeNotifier {
   PreferencesRepository(this._db);
 
+  static const String videoAnime4kPromptShownKey = 'video_anime4k_prompt_shown';
+
   final HibikiDatabase _db;
   final Map<String, String> _prefCache = {};
 
@@ -414,6 +416,15 @@ class PreferencesRepository extends ChangeNotifier {
 
   Future<void> setVideoMpvConfig(String json) async {
     await setPref('video_mpv_config', json);
+    notifyListeners();
+  }
+
+  /// Whether the first-use Anime4K recommendation prompt has been shown.
+  bool get videoAnime4kPromptShown =>
+      getPref(videoAnime4kPromptShownKey, defaultValue: false) as bool;
+
+  Future<void> setVideoAnime4kPromptShown() async {
+    await setPref(videoAnime4kPromptShownKey, true);
     notifyListeners();
   }
 

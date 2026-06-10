@@ -1419,7 +1419,7 @@
     "video_shader_compare": "Compare original",
     "video_shader_showing_original": "Shaders off (original)",
     "video_shader_showing_shaded": "Shaders on",
-    "video_shader_pick_mpv_dir": "Specify mpv folder",
+    "video_shader_pick_mpv_dir": "Choose mpv folder",
     "video_shader_mpv_dir_empty": "No shaders found in that folder",
     "video_shader_mpv_dir_current": "mpv folder: $path",
     "video_shader_download_url": "Download from link",
@@ -1427,7 +1427,10 @@
     "video_shader_preset_mode_b_hq": "High quality for older 720p anime with resampling artifacts. Needs a strong GPU.",
     "video_shader_preset_mode_c_hq": "High quality for old SD (480p) anime with compression smearing. Needs a strong GPU.",
     "video_shader_recommended": "Recommended image enhancements",
-    "video_shader_recommended_hint": "Upscaling and clarity presets besides Anime4K — no local mpv setup needed.",
+    "video_shader_classic_recommended": "Download classic recommended shaders",
+    "video_shader_recommended_hint": "Anime4K plus classic upscaling and clarity presets. Download first, then tick installed shaders to enable them.",
+    "video_shader_builtin_mpv_quality": "mpv built-in quality scaling",
+    "video_shader_builtin_mpv_quality_hint": "Default mpv scaling options. External shaders below are still downloaded and enabled separately.",
     "video_shader_desc_ravu": "General luma upscaler. Light & fast (r2 faster, r3 finer).",
     "video_shader_desc_nnedi3": "Classic neural upscaler. Higher nns = better quality, heavier GPU.",
     "floating_lyric_click_lookup": "Tap floating subtitle to look up",
@@ -1456,6 +1459,9 @@
     "video_drop_audio_unsupported": "Drop subtitle files onto the current video. Audio files cannot be attached here.",
     "video_shader_section_templates": "Shader templates",
     "video_shader_section_import": "Import shaders",
+    "video_shader_import_from_mpv_hint": "Search local mpv automatically, or choose an mpv folder when none is found.",
     "video_shader_section_installed": "Installed shaders",
-    "video_quality_enhancement_hint": "Uses mpv's built-in high-quality scaling by default. Shader choices below only apply while this is on."
+    "video_quality_enhancement_hint": "Uses mpv's built-in high-quality scaling by default. Shader choices below only apply while this is on.",
+    "video_shader_first_use_title": "Try Anime4K image enhancement",
+    "video_shader_first_use_body": "For sharper anime playback, open Image enhancement and click Download Anime4K presets. It downloads recommended shaders, then you can tick the installed ones to enable them."
 }
