@@ -673,13 +673,15 @@ void main() {
   });
 
   test('reader history hover overlays use design tokens', () {
+    // BookDragTarget 已从 reader_hibiki_history_page.dart 提取为独立文件
+    // book_drag_target.dart（history 页只剩调用点），守卫跟随到新文件。
     final String source = File(
-      'lib/src/pages/implementations/reader_hibiki_history_page.dart',
+      'lib/src/pages/implementations/book_drag_target.dart',
     ).readAsStringSync();
-    final String tagDropTarget = _functionSource(
+    final String tagDropTarget = _sectionSource(
       source,
       'class BookDragTarget extends StatefulWidget',
-      'class BookProfileDialogContent',
+      source.length,
     );
 
     expect(tagDropTarget, contains('HibikiDesignTokens.of(context)'));
@@ -853,10 +855,14 @@ void main() {
       'Widget _titleOverlay(String title)',
       'Widget _cardBadge({',
     );
-    final String dragTarget = _functionSource(
-      source,
+    // BookDragTarget 已提取到独立文件 book_drag_target.dart，守卫跟随。
+    final String dragSource = File(
+      'lib/src/pages/implementations/book_drag_target.dart',
+    ).readAsStringSync();
+    final String dragTarget = _sectionSource(
+      dragSource,
       'class BookDragTarget extends StatefulWidget',
-      'class ReaderHistoryDeleteDialog',
+      dragSource.length,
     );
 
     expect(titleOverlay, contains('HibikiDesignTokens.of(context)'));
