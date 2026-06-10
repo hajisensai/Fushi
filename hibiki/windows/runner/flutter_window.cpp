@@ -252,8 +252,204 @@ bool FlutterWindow::OnCreate() {
         result->Success();
       });
 
+  RegisterFloatingLyricChannel();
+
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
   return true;
+}
+
+namespace {
+
+// ARGB int arriving from Dart may exceed int32 (opaque colors); accept either.
+uint32_t ArgbFromValue(const flutter::EncodableMap* args, const char* key,
+                        uint32_t fallback) {
+  if (args == nullptr) {
+    return fallback;
+  }
+  const auto it = args->find(flutter::EncodableValue(key));
+  if (it == args->end()) {
+    return fallback;
+  }
+  return static_cast<uint32_t>(it->second.TryGetLongValue().value_or(fallback));
+}
+
+double DoubleFromValue(const flutter::EncodableMap* args, const char* key,
+                       double fallback) {
+  if (args == nullptr) {
+    return fallback;
+  }
+  const auto it = args->find(flutter::EncodableValue(key));
+  if (it == args->end()) {
+    return fallback;
+  }
+  if (const auto* d = std::get_if<double>(&it->second)) {
+    return *d;
+  }
+  if (const auto* i = std::get_if<int32_t>(&it->second)) {
+    return static_cast<double>(*i);
+  }
+  if (const auto* l = std::get_if<int64_t>(&it->second)) {
+    return static_cast<double>(*l);
+  }
+  return fallback;
+}
+
+int IntFromValue(const flutter::EncodableMap* args, const char* key,
+                 int fallback) {
+  if (args == nullptr) {
+    return fallback;
+  }
+  const auto it = args->find(flutter::EncodableValue(key));
+  if (it == args->end()) {
+    return fallback;
+  }
+  return static_cast<int>(it->second.TryGetLongValue().value_or(fallback));
+}
+
+bool BoolFromValue(const flutter::EncodableMap* args, const char* key,
+                   bool fallback) {
+  if (args == nullptr) {
+    return fallback;
+  }
+  const auto it = args->find(flutter::EncodableValue(key));
+  if (it == args->end()) {
+    return fallback;
+  }
+  if (const auto* b = std::get_if<bool>(&it->second)) {
+    return *b;
+  }
+  return fallback;
+}
+
+std::wstring WideFromValue(const flutter::EncodableMap* args, const char* key,
+                           const std::wstring& fallback) {
+  if (args == nullptr) {
+    return fallback;
+  }
+  const auto it = args->find(flutter::EncodableValue(key));
+  if (it == args->end()) {
+    return fallback;
+  }
+  const auto* s = std::get_if<std::string>(&it->second);
+  if (s == nullptr) {
+    return fallback;
+  }
+  if (s->empty()) {
+    return std::wstring();
+  }
+  int size = MultiByteToWideChar(CP_UTF8, 0, s->data(),
+                                 static_cast<int>(s->size()), nullptr, 0);
+  std::wstring result(size, L'\0');
+  MultiByteToWideChar(CP_UTF8, 0, s->data(), static_cast<int>(s->size()),
+                      result.data(), size);
+  return result;
+}
+
+FloatingLyricWindow::Style StyleFromArgs(const flutter::EncodableMap* args) {
+  FloatingLyricWindow::Style style;
+  style.font_size = DoubleFromValue(args, "fontSize", style.font_size);
+  style.text_color = ArgbFromValue(args, "textColor", style.text_color);
+  style.bg_color = ArgbFromValue(args, "bgColor", style.bg_color);
+  style.button_text_color =
+      ArgbFromValue(args, "buttonTextColor", style.button_text_color);
+  style.button_bg_color =
+      ArgbFromValue(args, "buttonBgColor", style.button_bg_color);
+  style.highlight_color =
+      ArgbFromValue(args, "highlightColor", style.highlight_color);
+  style.active_color = ArgbFromValue(args, "activeColor", style.active_color);
+  return style;
+}
+
+}  // namespace
+
+void FlutterWindow::RegisterFloatingLyricChannel() {
+  floating_lyric_window_ = std::make_unique<FloatingLyricWindow>();
+
+  floating_lyric_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(),
+          "app.hibiki.reader/floating_lyric",
+          &flutter::StandardMethodCodec::GetInstance());
+
+  // Native taps -> Dart events (handled by FloatingLyricChannel.setEventHandlers
+  // in the reader page). The window's WndProc runs on this (platform) thread, so
+  // InvokeMethod is safe to call directly from the callbacks.
+  floating_lyric_window_->SetControlCallback(
+      [this](const std::string& action) {
+        floating_lyric_channel_->InvokeMethod(
+            action, std::make_unique<flutter::EncodableValue>());
+      });
+  floating_lyric_window_->SetLookupCallback(
+      [this](const std::string& text, int char_index) {
+        flutter::EncodableMap map{
+            {flutter::EncodableValue("text"), flutter::EncodableValue(text)},
+            {flutter::EncodableValue("index"),
+             flutter::EncodableValue(char_index)},
+        };
+        floating_lyric_channel_->InvokeMethod(
+            "lookupText",
+            std::make_unique<flutter::EncodableValue>(std::move(map)));
+      });
+
+  floating_lyric_channel_->SetMethodCallHandler(
+      [this](const flutter::MethodCall<flutter::EncodableValue>& call,
+             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
+                 result) {
+        const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
+        const std::string& method = call.method_name();
+
+        if (method == "canDrawOverlays") {
+          // The desktop strip is a runner-owned window — no OS overlay
+          // permission exists, so it is always permitted.
+          result->Success(flutter::EncodableValue(true));
+        } else if (method == "show") {
+          floating_lyric_window_->UpdateStyle(StyleFromArgs(args));
+          floating_lyric_window_->SetClickLookupEnabled(
+              BoolFromValue(args, "clickLookupEnabled", true));
+          const bool shown = floating_lyric_window_->Show(GetHandle());
+          result->Success(flutter::EncodableValue(shown));
+        } else if (method == "hide") {
+          floating_lyric_window_->Hide();
+          result->Success();
+        } else if (method == "isShowing") {
+          result->Success(
+              flutter::EncodableValue(floating_lyric_window_->IsShowing()));
+        } else if (method == "updateText") {
+          floating_lyric_window_->UpdateText(WideFromValue(args, "text", L""));
+          result->Success();
+        } else if (method == "highlight") {
+          floating_lyric_window_->Highlight(IntFromValue(args, "start", -1),
+                                            IntFromValue(args, "length", 0));
+          result->Success();
+        } else if (method == "updateStyle") {
+          floating_lyric_window_->UpdateStyle(StyleFromArgs(args));
+          result->Success();
+        } else if (method == "updateLabels") {
+          FloatingLyricWindow::Labels labels;
+          labels.previous = WideFromValue(args, "previous", labels.previous);
+          labels.play_pause =
+              WideFromValue(args, "playPause", labels.play_pause);
+          labels.next = WideFromValue(args, "next", labels.next);
+          labels.close = WideFromValue(args, "close", labels.close);
+          floating_lyric_window_->UpdateLabels(labels);
+          result->Success();
+        } else if (method == "setPlaybackState") {
+          floating_lyric_window_->SetPlaybackState(
+              BoolFromValue(args, "playing", false));
+          result->Success();
+        } else if (method == "setClickLookupEnabled") {
+          floating_lyric_window_->SetClickLookupEnabled(
+              BoolFromValue(args, "enabled", true));
+          result->Success();
+        } else if (method == "setLocked") {
+          // The desktop strip has no lock affordance (it is already an
+          // unobtrusive, drag-to-move overlay); accept the call as a no-op so
+          // the shared Dart contract stays uniform.
+          result->Success();
+        } else {
+          result->NotImplemented();
+        }
+      });
 }
 
 void FlutterWindow::ApplyCaptionColors(uint32_t caption_argb,

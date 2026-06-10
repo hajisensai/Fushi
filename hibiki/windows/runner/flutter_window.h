@@ -8,6 +8,7 @@
 
 #include <memory>
 
+#include "floating_lyric_window.h"
 #include "win32_window.h"
 
 // A window that does nothing but host a Flutter view.
@@ -38,6 +39,15 @@ class FlutterWindow : public Win32Window {
   // Copies decoded reader images to the Windows clipboard as CF_DIB.
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       clipboard_image_channel_;
+
+  // Drives the standalone always-on-top desktop lyric strip (the Windows
+  // counterpart of Android's FloatingLyricService). See floating_lyric_window.h.
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
+      floating_lyric_channel_;
+  std::unique_ptr<FloatingLyricWindow> floating_lyric_window_;
+
+  // Wires the floating_lyric MethodChannel to floating_lyric_window_.
+  void RegisterFloatingLyricChannel();
 
   // Applies DWM caption/text colors to the top-level window. Persists across
   // focus changes, so the unfocused title bar keeps following the app theme.

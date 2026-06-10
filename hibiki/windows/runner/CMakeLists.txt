@@ -3,6 +3,7 @@ project(runner LANGUAGES CXX)
 
 add_executable(${BINARY_NAME} WIN32
   "flutter_window.cpp"
+  "floating_lyric_window.cpp"
   "main.cpp"
   "utils.cpp"
   "win32_window.cpp"
@@ -22,5 +23,8 @@ target_compile_definitions(${BINARY_NAME} PRIVATE
 target_link_libraries(${BINARY_NAME} PRIVATE flutter flutter_wrapper_app)
 # dwmapi: DWM caption/text color theming for the native title bar.
 target_link_libraries(${BINARY_NAME} PRIVATE dwmapi)
+# d2d1 / dwrite: rendering + char hit-testing for the desktop floating lyric
+# strip (floating_lyric_window.cpp).
+target_link_libraries(${BINARY_NAME} PRIVATE d2d1 dwrite)
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 add_dependencies(${BINARY_NAME} flutter_assemble)
