@@ -295,8 +295,12 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  // Default OFF (smooth/animated popup scrolling). Instant (no-animation)
+  // jump scrolling is an e-ink opt-in enabled only by the dedicated lookup
+  // setting. getPref returns this default solely when the key was never set,
+  // so existing users who already toggled the switch keep their stored value.
   bool get popupInstantScroll =>
-      getPref('popup_instant_scroll', defaultValue: true) as bool;
+      getPref('popup_instant_scroll', defaultValue: false) as bool;
 
   Future<void> setPopupInstantScroll(bool value) async {
     await setPref('popup_instant_scroll', value);
