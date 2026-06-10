@@ -96,6 +96,28 @@ class VideoPlayerController extends ChangeNotifier
   /// 清除守护、恢复正常持久化。
   int? _restoreTargetMs;
 
+  /// 恢复守护剩余的宽限观测次数（仅 [_restoreTargetMs] 非空时有意义）。
+  ///
+  /// 旧实现的守护**只**靠「position 追上目标」清除（[_isRestoringPast]）。但 seek 在
+  /// 慢设备 / 大文件 / 软解（Android 尤甚）上可能被 libmpv 丢弃或迟迟不落地：position
+  /// 停在 0 附近从头播 → `posMs >= target-1500` 永不成立 → 守护**永久**不清 → 这一程
+  /// 用户从头看的每一秒进度全被三个写入点跳过，退出时 [flushPosition] 也被跳过 →
+  /// 表现为「安卓视频退出重进既没回到上次位置、这次的进度也没记住」（BUG-179）。
+  ///
+  /// 修法：给守护加一个**有界宽限**。每次写入点观测到「仍未追上目标」就消耗一格；
+  /// 配额耗尽（[_restoreGuardGraceTicks] 格）说明 seek 实际未落地（恢复失败），
+  /// 主动**放弃守护**让后续写入恢复正常——宁可这一程从 0 起记，也不再永久吞掉进度。
+  /// 追上目标（正常恢复）仍立即清守护，配额不消耗到底。每次 [load] 设守护时重置。
+  int _restoreGuardTicksLeft = 0;
+
+  /// 恢复守护的宽限观测次数上限。守护检查 [_isRestoringPast] 由 125ms 周期 tick
+  /// （[updateCueForPosition]→[_maybeSavePosition]）驱动，故配额按 tick 计：
+  /// 80 次 × 125ms ≈ **10 秒** 仍未追上目标，即判定 seek 落地失败、放弃恢复守护。
+  /// 取值需 > [_waitUntilSeekable] 的 5 秒上限，给慢设备留出 open→可 seek→seek 真正
+  /// 反映到 position 的余量；退出路径的 [flushPosition]/[_forceSavePositionSync] 也各
+  /// 消耗一格，配额宽裕到不会因正常退出误判。
+  static const int _restoreGuardGraceTicks = 80;
+
   /// 位置持久化回调：整秒变化时调用，由上层（repository）落库。
   Future<void> Function(String bookUid, int positionMs)? onPositionWrite;
 
@@ -365,11 +387,13 @@ class VideoPlayerController extends ChangeNotifier
     //     ② 等 player 可 seek（duration ready）再 seek，让恢复真正生效。
     if (initialPositionMs > 0) {
       _restoreTargetMs = initialPositionMs;
+      _restoreGuardTicksLeft = _restoreGuardGraceTicks;
       await _waitUntilSeekable(player);
       if (_player != player) return; // 等待期间换片：放弃这次恢复
       await player.seek(Duration(milliseconds: initialPositionMs));
     } else {
       _restoreTargetMs = null;
+      _restoreGuardTicksLeft = 0;
     }
 
     // 订阅播放态翻转（包括播完自动暂停、焦点丢失），即时刷新 UI 图标。
@@ -505,6 +529,34 @@ class VideoPlayerController extends ChangeNotifier
   @visibleForTesting
   void debugUpdateCueForPosition(int posMs) => updateCueForPosition(posMs);
 
+  /// 测试钩子：在**不实例化 [Player]**（宿主无 libmpv）的前提下，把
+  /// [VideoPlayerController] 摆成「load 后正处于恢复 seek 守护中」的状态，以驱动
+  /// [_maybeSavePosition]→[_isRestoringPast] 的位置写入门控逻辑（BUG-179 恢复守护
+  /// 有界宽限）。
+  ///
+  /// [bookUid] 模拟 [load] 设过的书 id（[_maybeSavePosition] 需非空才会写）；
+  /// [restoreTargetMs] 模拟恢复目标（对齐 [load] 里 `_restoreTargetMs = initialPositionMs`），
+  /// 同时按真实 [load] 路径重置宽限配额。设后用 [debugUpdateCueForPosition] 喂位置序列、
+  /// 观测 [onPositionWrite] 的调用即可断言守护的「未追上跳过 / 追上恢复 / 宽限耗尽放弃」。
+  @visibleForTesting
+  void debugPrimeRestoreGuardForTesting({
+    required String bookUid,
+    required int restoreTargetMs,
+  }) {
+    _bookUid = bookUid;
+    _restoreTargetMs = restoreTargetMs;
+    _restoreGuardTicksLeft = _restoreGuardGraceTicks;
+    _lastSavedSec = -1;
+  }
+
+  /// 测试可见：当前恢复守护是否仍生效（[_restoreTargetMs] 非空）。
+  @visibleForTesting
+  bool get debugRestoreGuardActive => _restoreTargetMs != null;
+
+  /// 测试可见：恢复守护的宽限上限（断言用，避免测试硬编码数字与实现漂移）。
+  @visibleForTesting
+  static int get debugRestoreGuardGraceTicks => _restoreGuardGraceTicks;
+
   @visibleForTesting
   void debugSetPauseAtSubtitleEndForTesting({
     required bool enabled,
@@ -536,16 +588,36 @@ class VideoPlayerController extends ChangeNotifier
   }
 
   /// 恢复 seek 是否尚未落地：[_restoreTargetMs] 非 null 且当前 [posMs] 还在目标之前
-  /// （过渡期小值/0）时返回 true，调用方应跳过持久化以免覆盖真实进度。position 追上
-  /// 目标（容差 1.5s）后清除守护并返回 false，恢复正常持久化。
+  /// （过渡期小值/0）时返回 true，调用方应跳过持久化以免覆盖真实进度。
+  ///
+  /// 两条清除路径（任一满足都清守护、恢复正常持久化）：
+  /// 1. **正常恢复**：position 追上目标（容差 1.5s）→ seek 已落地，立即清。
+  /// 2. **恢复失败兜底**（BUG-179）：连续 [_restoreGuardGraceTicks] 次观测仍未追上
+  ///    目标 → 判定 seek 实际未落地（被 libmpv 丢弃 / 慢设备迟迟不就绪，Android 尤甚），
+  ///    主动放弃守护。否则守护会**永久**挡住整程位置写入，导致「这次进度也没记住」。
+  ///    宽限只在「真处于守护中且这次仍没追上」时消耗，正常恢复路径不会触发。
   bool _isRestoringPast(int posMs) {
     final int? target = _restoreTargetMs;
     if (target == null) return false;
     if (posMs >= target - 1500) {
-      _restoreTargetMs = null;
+      _clearRestoreGuard();
+      return false;
+    }
+    // 仍未追上目标：消耗一格宽限；耗尽则放弃守护（seek 落地失败兜底，BUG-179）。
+    if (_restoreGuardTicksLeft > 0) {
+      _restoreGuardTicksLeft--;
+    }
+    if (_restoreGuardTicksLeft <= 0) {
+      _clearRestoreGuard();
       return false;
     }
     return true;
+  }
+
+  /// 清除恢复守护（target + 宽限计数一起归零），让位置写入恢复正常。
+  void _clearRestoreGuard() {
+    _restoreTargetMs = null;
+    _restoreGuardTicksLeft = 0;
   }
 
   /// 整秒变化且 [_bookUid] 非空时，异步触发位置持久化（每秒至多一次）。
