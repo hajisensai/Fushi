@@ -354,19 +354,38 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       );
     }
 
-    final String? coverMediaRef = context.coverPath != null
-        ? await _storeLocalMedia(service, context.coverPath!, 'hibiki_cover_')
-        : null;
-    final String? sasayakiMediaRef = context.sasayakiAudioPath != null
-        ? await _storeLocalMedia(
-            service, context.sasayakiAudioPath!, 'hibiki_audio_')
-        : null;
+    // BUG-166: 制卡慢的根因——封面、句子(sasayaki)音频、单词远程音频、N 条
+    // 词典外字这几路媒体上传彼此独立，过去被串成一条 `await` 链（每路一次
+    // AnkiConnect `storeMediaFile` 往返），一张带封面+音频+外字的卡会累加
+    // 5~8 次串行往返。`storeMediaFile` 是幂等纯写入（文件名由内容 SHA256 决定，
+    // 不同文件互不冲突），并发安全。把互相独立的几路一次性 `Future.wait` 并发，
+    // 总耗时从「各路之和」降到「最慢一路」。isDuplicate / addNote 仍串行在其后
+    // （依赖渲染结果，且 addNote 非幂等，见 _nonIdempotentActions）。
+    final List<Future<dynamic>> mediaFutures = <Future<dynamic>>[
+      context.coverPath != null
+          ? _storeLocalMedia(service, context.coverPath!, 'hibiki_cover_')
+          : Future<String?>.value(null),
+      context.sasayakiAudioPath != null
+          ? _storeLocalMedia(
+              service, context.sasayakiAudioPath!, 'hibiki_audio_')
+          : Future<String?>.value(null),
+      payload.audio.isNotEmpty
+          ? _storeRemoteAudio(service, payload.audio)
+          : Future<String?>.value(null),
+      buildDictionaryMediaTags(
+        payload.dictionaryMedia,
+        (media) => _storeDictionaryMedia(service, media),
+      ),
+    ];
+    final List<dynamic> mediaResults = await Future.wait(mediaFutures);
+    final String? coverMediaRef = mediaResults[0] as String?;
+    final String? sasayakiMediaRef = mediaResults[1] as String?;
+    final String? remoteAudioRef = mediaResults[2] as String?;
+    final Map<String, String> dictionaryMediaTags =
+        mediaResults[3] as Map<String, String>;
 
-    String processedAudio = '';
-    if (payload.audio.isNotEmpty) {
-      final audioRef = await _storeRemoteAudio(service, payload.audio);
-      if (audioRef != null) processedAudio = '[sound:$audioRef]';
-    }
+    final String processedAudio =
+        remoteAudioRef != null ? '[sound:$remoteAudioRef]' : '';
 
     final mediaContext = AnkiMiningContext(
       sentence: context.sentence,
@@ -394,11 +413,6 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       audio: processedAudio,
       selectedDictionary: payload.selectedDictionary,
       dictionaryMedia: payload.dictionaryMedia,
-    );
-
-    final dictionaryMediaTags = await buildDictionaryMediaTags(
-      payload.dictionaryMedia,
-      (media) => _storeDictionaryMedia(service, media),
     );
 
     final fields = buildMinedFields(
@@ -433,8 +447,10 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       }
     }
 
-    final tags =
-        settings.tags.split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList();
+    // BUG/TODO-062: every Hibiki-mined card gets the `hibiki` tag appended to
+    // the user's configured tags (de-duped, order preserved) via the shared
+    // base helper, so both backends behave identically.
+    final tags = buildNoteTags(settings.tags);
 
     // `fields` only holds entries that rendered to a non-empty value; if it is
     // empty, nothing rendered and adding the note would create a blank card
