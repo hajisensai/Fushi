@@ -36,6 +36,35 @@ String rebasePath(String oldPath, String oldRoot, String newRoot) {
   return stripTrailing(newRoot) + suffix;
 }
 
+/// Rebases every file-font `path` inside a persisted font-list JSON string
+/// (`[{name, path, enabled}, ...]`) from [oldRoot] onto [newRoot] via
+/// [rebasePath]. System fonts (`path == null`) and paths not under [oldRoot]
+/// are left untouched. A malformed value (not a JSON list of maps) is returned
+/// verbatim so a corrupt pref never aborts the import.
+///
+/// Custom fonts live under the SOURCE device's `<appDoc>/custom_fonts`; the
+/// importing device's root differs, so the stored absolute paths would not
+/// resolve and the fonts (shown as imported & enabled) would silently never
+/// apply (BUG-183). Import rebases them so the reader/AppFontLoader find them.
+String rebaseFontListJson(String json, String oldRoot, String newRoot) {
+  try {
+    final dynamic decoded = jsonDecode(json);
+    if (decoded is! List) return json;
+    final List<dynamic> out = decoded.map<dynamic>((dynamic e) {
+      if (e is! Map) return e;
+      final Object? path = e['path'];
+      if (path is! String) return e; // system font (null) or odd shape
+      return <String, dynamic>{
+        ...Map<String, dynamic>.from(e),
+        'path': rebasePath(path, oldRoot, newRoot),
+      };
+    }).toList();
+    return jsonEncode(out);
+  } catch (_) {
+    return json; // never throw on a corrupt pref value
+  }
+}
+
 class BackupMeta {
   BackupMeta({
     required this.appVersion,
@@ -45,6 +74,7 @@ class BackupMeta {
     required this.statsCount,
     this.booksRoot,
     this.audiobooksRoot,
+    this.fontsRoot,
   });
 
   final String appVersion;
@@ -63,6 +93,12 @@ class BackupMeta {
   /// (`<appDoc>/audiobooks`). Null for legacy backups.
   final String? audiobooksRoot;
 
+  /// Absolute root of the custom-font tree on the SOURCE device
+  /// (`<appDoc>/custom_fonts`), captured so import can rebase the stored
+  /// font-config paths (`custom_fonts`/`app_ui_fonts`/`dict_fonts` prefs) to
+  /// this device's root. Null for legacy backups → import skips font rebasing.
+  final String? fontsRoot;
+
   Map<String, dynamic> toJson() => {
         'appVersion': appVersion,
         'schemaVersion': schemaVersion,
@@ -71,6 +107,7 @@ class BackupMeta {
         'statsCount': statsCount,
         if (booksRoot != null) 'booksRoot': booksRoot,
         if (audiobooksRoot != null) 'audiobooksRoot': audiobooksRoot,
+        if (fontsRoot != null) 'fontsRoot': fontsRoot,
       };
 
   factory BackupMeta.fromJson(Map<String, dynamic> json) => BackupMeta(
@@ -82,6 +119,7 @@ class BackupMeta {
         statsCount: json['statsCount'] as int? ?? 0,
         booksRoot: json['booksRoot'] as String?,
         audiobooksRoot: json['audiobooksRoot'] as String?,
+        fontsRoot: json['fontsRoot'] as String?,
       );
 
   static BackupMeta? tryParse(String source) {
@@ -103,11 +141,13 @@ class BackupService {
     String? dictionaryResourceDirectory,
     String? booksRootDirectory,
     String? audiobooksRootDirectory,
+    String? fontsRootDirectory,
   })  : _db = db,
         _dbDirectory = dbDirectory,
         _dictionaryResourceDirectory = dictionaryResourceDirectory,
         _booksRootDirectory = booksRootDirectory,
         _audiobooksRootDirectory = audiobooksRootDirectory,
+        _fontsRootDirectory = fontsRootDirectory,
         _appVersion = appVersion;
 
   final HibikiDatabase _db;
@@ -123,6 +163,12 @@ class BackupService {
   /// audio files are packed into the backup.
   final String? _audiobooksRootDirectory;
 
+  /// Root of the custom-font tree (`<appDoc>/custom_fonts`). When provided, the
+  /// imported font files are packed into the backup so they travel with the
+  /// font config (BUG-183: otherwise the config points at files that never
+  /// crossed over).
+  final String? _fontsRootDirectory;
+
   final String _appVersion;
 
   static const String _dbName = 'hibiki.db';
@@ -130,6 +176,16 @@ class BackupService {
   static const String _dictionaryResourcesPrefix = 'dictionaryResources';
   static const String _booksPrefix = 'hoshi_books';
   static const String _audiobooksPrefix = 'audiobooks';
+  static const String _fontsPrefix = 'custom_fonts';
+
+  /// Persisted preference keys (ReaderSettings prefix included) whose JSON
+  /// value is a font list `[{name, path, enabled}]`. Their file paths are
+  /// rebased onto this device's font root on import (BUG-183).
+  static const List<String> _fontPrefKeys = <String>[
+    'src:reader_ttu:custom_fonts',
+    'src:reader_ttu:app_ui_fonts',
+    'src:reader_ttu:dict_fonts',
+  ];
 
   /// Sidecar file holding this device's sync config across an import. Written
   /// BEFORE the destructive DB overwrite so a crash mid-import is recoverable
@@ -200,6 +256,7 @@ class BackupService {
         statsCount: stats.length,
         booksRoot: _booksRootDirectory,
         audiobooksRoot: _audiobooksRootDirectory,
+        fontsRoot: _fontsRootDirectory,
       );
 
       // Build the flat "zip-path → disk-path" map, then stream every file into
@@ -220,6 +277,10 @@ class BackupService {
       if (_audiobooksRootDirectory != null) {
         await _collectTreeFiles(
             Directory(_audiobooksRootDirectory), _audiobooksPrefix, files);
+      }
+      if (_fontsRootDirectory != null) {
+        await _collectTreeFiles(
+            Directory(_fontsRootDirectory), _fontsPrefix, files);
       }
 
       final String metaJson =
@@ -355,6 +416,7 @@ class BackupService {
     String? dictionaryResourceDirectory,
     String? booksRootDirectory,
     String? audiobooksRootDirectory,
+    String? fontsRootDirectory,
   }) async {
     final dbPath = p.join(dbDirectory, _dbName);
     // Stream the central directory instead of buffering the whole (GB-scale)
@@ -443,6 +505,11 @@ class BackupService {
                 archive, _audiobooksPrefix, audiobooksRootDirectory)) {
           toCommit.add(audiobooksRootDirectory);
         }
+        if (fontsRootDirectory != null &&
+            await _prepareTreeRestore(
+                archive, _fontsPrefix, fontsRootDirectory)) {
+          toCommit.add(fontsRootDirectory);
+        }
       } catch (_) {
         // A write failed: drop every staged temp dir; no tree was swapped.
         if (booksRootDirectory != null) {
@@ -450,6 +517,9 @@ class BackupService {
         }
         if (audiobooksRootDirectory != null) {
           await _abortPreparedTree(audiobooksRootDirectory);
+        }
+        if (fontsRootDirectory != null) {
+          await _abortPreparedTree(fontsRootDirectory);
         }
         rethrow;
       }
@@ -480,6 +550,15 @@ class BackupService {
           meta: meta,
           newBooksRoot: booksRootDirectory,
           newAudiobooksRoot: audiobooksRootDirectory,
+        );
+        // Custom-font config is content too (the files come from the backup),
+        // so rebase its stored paths onto this device's font root. No-op for a
+        // legacy backup (meta has no fontsRoot) or a keep-settings import where
+        // the preserved local paths aren't under the source root.
+        await _rebaseFontPaths(
+          dbDirectory: dbDirectory,
+          meta: meta,
+          newFontsRoot: fontsRootDirectory,
         );
       }
 
@@ -927,6 +1006,33 @@ class BackupService {
                 rebasePath(a.alignmentPath, oldAudio, newAudiobooksRoot),
           );
         }
+      }
+      await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
+    } finally {
+      await db.close();
+    }
+  }
+
+  /// Rebases the imported DB's stored custom-font paths from the backup's
+  /// [BackupMeta.fontsRoot] onto this device's [newFontsRoot]. The font config
+  /// lives in the `preferences` table as JSON lists under [_fontPrefKeys];
+  /// each file-font path is rebased via [rebaseFontListJson] (system fonts and
+  /// unrelated paths untouched). No-op when either root is null.
+  static Future<void> _rebaseFontPaths({
+    required String dbDirectory,
+    required BackupMeta meta,
+    required String? newFontsRoot,
+  }) async {
+    final String? oldFonts = meta.fontsRoot;
+    if (oldFonts == null || newFontsRoot == null) return;
+    final HibikiDatabase db = HibikiDatabase(dbDirectory);
+    try {
+      final Map<String, String> prefs = await db.getAllPrefs();
+      for (final String key in _fontPrefKeys) {
+        final String? raw = prefs[key];
+        if (raw == null) continue;
+        final String rebased = rebaseFontListJson(raw, oldFonts, newFontsRoot);
+        if (rebased != raw) await db.setPref(key, rebased);
       }
       await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
     } finally {

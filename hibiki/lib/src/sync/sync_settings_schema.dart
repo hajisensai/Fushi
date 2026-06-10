@@ -845,6 +845,10 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
         booksRootDirectory: p.join(appModel.appDirectory.path, 'hoshi_books'),
         audiobooksRootDirectory:
             p.join(appModel.appDirectory.path, 'audiobooks'),
+        // BUG-183: pack the imported custom fonts so they travel with their
+        // config; otherwise the restored config points at files that never
+        // crossed over and the fonts silently never apply.
+        fontsRootDirectory: p.join(appModel.appDirectory.path, 'custom_fonts'),
       );
 
       final tmpDir = await getTemporaryDirectory();
@@ -990,6 +994,9 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
         booksRootDirectory: p.join(appModel.appDirectory.path, 'hoshi_books'),
         audiobooksRootDirectory:
             p.join(appModel.appDirectory.path, 'audiobooks'),
+        // BUG-183: restore the custom-font files and rebase the stored font
+        // config paths onto this device's root.
+        fontsRootDirectory: p.join(appModel.appDirectory.path, 'custom_fonts'),
       );
 
       if (mounted) {
