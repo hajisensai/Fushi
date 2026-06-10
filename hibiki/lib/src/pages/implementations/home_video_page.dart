@@ -241,8 +241,10 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   Future<void> _openRemote(RemoteVideoInfo video) async {
     final RemoteVideoClient? client = _remoteVideoClient;
     if (client == null) return;
-    await _showAnime4kFirstUsePromptIfNeeded();
-    if (!mounted) return;
+    // 打开远端播放页后再弹首次着色器提示（而非提示阻塞导航）：远端入口的契约是
+    // 「点击立即建立远端流」（home_video_remote_interconnect_test），把一次性的着色器
+    // 提示放到 await 导航前会让远端串流请求永远不发出（TODO-026 回归）。提示是纯信息
+    // 性的（只置 videoAnime4kPromptShown），叠加在已打开的播放页之上即可，不必先于导航。
     Navigator.push(
       context,
       adaptivePageRoute<void>(
@@ -253,6 +255,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         ),
       ),
     );
+    await _showAnime4kFirstUsePromptIfNeeded();
   }
 
   Future<void> _showAnime4kFirstUsePromptIfNeeded() async {

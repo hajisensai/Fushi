@@ -55,11 +55,26 @@ class GoogleDriveAuth {
   static const _placeholderClientSecret =
       'YOUR_GOOGLE_DESKTOP_OAUTH_CLIENT_SECRET';
 
+  /// The committed placeholder secret, exposed so tests can assert the predicate
+  /// rejects exactly this value without re-hardcoding the literal (TODO-045).
+  @visibleForTesting
+  static const String debugPlaceholderClientSecret = _placeholderClientSecret;
+
+  /// Pure predicate: does [secret] look like a real, usable desktop OAuth client
+  /// secret (i.e. not the committed placeholder and not empty)? Split out from
+  /// the [desktopCredentialsConfigured] getter so the rejection logic can be
+  /// unit-tested against the placeholder string directly, instead of depending
+  /// on whichever secret the running machine compiled in — a real GOCSPX- secret
+  /// (any configured desktop build) would otherwise make the placeholder guard
+  /// untestable (TODO-045).
+  @visibleForTesting
+  static bool isDesktopSecretConfigured(String secret) =>
+      secret != _placeholderClientSecret && secret.isNotEmpty;
+
   /// True when this build shipped the placeholder OAuth secret (CI / a clone
   /// that never filled google_oauth_secret.dart). Desktop sign-in cannot work.
   static bool get desktopCredentialsConfigured =>
-      _oauthClientSecret != _placeholderClientSecret &&
-      _oauthClientSecret.isNotEmpty;
+      isDesktopSecretConfigured(_oauthClientSecret);
 
   // iOS 专用 OAuth 客户端（应用类型 = iOS，Bundle ID = app.hibiki.reader）。
   // Android 不读这里：google_sign_in 在 Android 上从 google-services.json 按
