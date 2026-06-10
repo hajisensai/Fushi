@@ -87,6 +87,15 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'lookup/Deduplicate pitch accents': 'DEVICE: popup.js pitch dedup',
   'listening/Show media notification':
       'DEVICE: native AudioHandler notification',
+  // TODO-038: now visible on Windows desktop too (no longer Android-only). The
+  // strip is a runner-owned Win32 window, so the real overlay needs a desktop;
+  // covered by source guards + device backlog.
+  'listening/Floating lyric overlay':
+      'test/media/audiobook/floating_lyric_click_through_guard_test.dart + test/settings/floating_lyric_settings_visibility_guard_test.dart + DEVICE: native always-on-top strip',
+  'listening/Floating subtitle font size':
+      'test/media/audiobook/desktop_floating_lyric_test.dart + DEVICE: native strip font size',
+  'listening/Tap floating subtitle to look up':
+      'test/media/audiobook/floating_lyric_click_through_guard_test.dart + DEVICE: native strip tap lookup',
   'listening/Volume Key Sentence Navigation':
       'DEVICE: native volume-key cue nav',
   'system/Update Channel': 'DEVICE: Android-only UpdateChecker (beta/stable)',

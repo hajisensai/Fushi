@@ -1216,7 +1216,13 @@ SettingsDestination _listeningDestination() {
             title: t.show_floating_lyric,
             subtitle: t.floating_lyric_hint,
             icon: Icons.subtitles_outlined,
-            visible: (_) => Platform.isAndroid,
+            // The strip is the desktop counterpart of the Android overlay
+            // (windows/runner/floating_lyric_window.cpp), so Windows must see
+            // this switch too — gating it to Android hid it from desktop users
+            // and was the "floating subtitle setting missing/permission"
+            // complaint (TODO-038). The Dart channel's isSupported already
+            // allows Android + Windows.
+            visible: (_) => Platform.isAndroid || Platform.isWindows,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.showFloatingLyric,
             onChanged: (SettingsContext settingsContext, bool value) async {
@@ -1228,7 +1234,7 @@ SettingsDestination _listeningDestination() {
             id: 'listening.floating_lyric_font_size',
             title: t.floating_lyric_font_size,
             icon: Icons.format_size,
-            visible: (_) => Platform.isAndroid,
+            visible: (_) => Platform.isAndroid || Platform.isWindows,
             min: 8,
             max: 64,
             step: 1,
@@ -1245,7 +1251,7 @@ SettingsDestination _listeningDestination() {
             title: t.floating_lyric_click_lookup,
             subtitle: t.floating_lyric_click_lookup_hint,
             icon: Icons.touch_app_outlined,
-            visible: (_) => Platform.isAndroid,
+            visible: (_) => Platform.isAndroid || Platform.isWindows,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.floatingLyricClickLookup,
             onChanged: (SettingsContext settingsContext, bool value) async {
