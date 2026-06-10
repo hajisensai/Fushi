@@ -50,9 +50,13 @@ void main() {
     // key off "no VISIBLE popup", not "stack empty" — else BUG-072 resume never
     // fires and back never exits the page.
     expect(src, contains('bool get _hasVisiblePopup'));
-    expect(src, contains('stackEmpty: !_hasVisiblePopup'),
+    // TODO-040 hoisted the emptiness check into a local (shared by resume +
+    // keyboard-focus reclaim); it must still derive from !_hasVisiblePopup.
+    expect(src, contains('final bool stackEmpty = !_hasVisiblePopup;'),
         reason:
             'resume-after-dismiss must treat the hidden warm slot as empty');
+    expect(src, contains('stackEmpty: stackEmpty'),
+        reason: 'resume must key off the visible-popup-derived emptiness');
     expect(src, contains('if (_hasVisiblePopup)'),
         reason: 'back/exit + dismiss barrier must ignore the hidden warm slot');
     expect(src, isNot(contains('stackEmpty: _popup.entries.isEmpty')),

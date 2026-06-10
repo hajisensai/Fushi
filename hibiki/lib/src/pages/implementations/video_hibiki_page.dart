@@ -23,6 +23,7 @@ import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/video_asbplayer_config.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
+import 'package:hibiki/src/media/video/video_controls_focus_gate.dart';
 import 'package:hibiki/src/media/video/video_controls_theme_pair.dart';
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
 import 'package:hibiki/src/media/video/video_mpv_config.dart';
@@ -258,6 +259,23 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   Offset? _lastVideoPointerUpPosition;
   bool _videoFullscreenTransitioning = false;
 
+  /// 全屏路由当前是否在栈上：进全屏置位、全屏路由 future 完成（任意退出路径：
+  /// Esc / F / 按钮 / 双击 / 系统返回）复位。
+  ///
+  /// 这是窗口侧 controls 在全屏期间必须卸载（[VideoControlsFocusGate]）的唯一依据：
+  /// 全屏路由会用**同一个** [_videoFocusNode] 再挂一个 [Focus]，若窗口侧 controls
+  /// 不卸载，退全屏时全屏侧 Focus dispose 的 detach 会把节点从焦点树摘除，窗口侧
+  /// 只剩 stale attachment、永远不再 reparent → 节点永久孤儿、此后所有
+  /// [_refocusVideo]（含每个菜单/对话框关闭后的归还）全部静默失效——这正是
+  /// 「设置/导入/点外部后快捷键失灵」在打过逐点 refocus 补丁后仍复发的共同根因
+  /// （TODO-040/042）。
+  bool _videoFullscreenActive = false;
+
+  /// 当前在栈上的全屏路由（[_videoFullscreenActive] 为真时非 null）。
+  /// [_reclaimVideoFocusIfOwned] 用它判定全屏期间「键盘所有者路由」是否被
+  /// 对话框/遮罩压住（`isCurrent`），避免切窗返回时抢走全屏内对话框的焦点。
+  PageRoute<void>? _videoFullscreenRoute;
+
   /// 观看统计采集器（观看时长 + 字幕字数 + 完成标记）；首次 load 建，dispose 释放。
   VideoWatchTracker? _watchTracker;
 
@@ -398,6 +416,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       case AppLifecycleState.resumed:
         // 回前台：重启观看计时器（start() 重置 _tickStart=now，下一窗从此刻起算）。
         _watchTracker?.start();
+        // 切窗 / 系统对话框返回（TODO-040 ①）：窗口重新激活时若键盘所有权仍属
+        // 本页（页面或其全屏路由是当前路由、无查词浮层），把焦点收回视频——
+        // OS 层焦点丢失后 Flutter 不保证归还到原节点。
+        _reclaimVideoFocusIfOwned();
       case AppLifecycleState.detached:
         break;
     }
@@ -1043,13 +1065,29 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 在任何会盖在视频上 / 夺走窗口焦点的覆盖层（对话框、bottom sheet、系统文件选择器）
   /// 关闭后调用——这些覆盖层关闭后 Flutter 不会自动把焦点还给 [Video] 的 FocusNode，
   /// 导致空格等快捷键失灵（BUG：导入着色器后空格失灵）。统一在覆盖层的 `await` 返回点
-  /// 调用即覆盖全部入口。查词浮层（[_popup]）**不**在此 refocus：浮层活动期间用户在
-  /// 查词，不应让空格控制视频；浮层关闭由其自身路径处理。
+  /// 调用即覆盖全部入口。查词浮层（[_popup]）活动期间不 refocus（用户在查词，不应让
+  /// 空格控制视频）；浮层栈**全空**时由关栈汇聚点 [_popNestedPopupAt] 统一收回。
+  ///
+  /// 前提：[_videoFocusNode] 必须仍在焦点树上。全屏期间窗口侧 controls 经
+  /// [VideoControlsFocusGate] 卸载，保证退全屏后节点被窗口侧重新 attach——否则
+  /// 节点是孤儿时本方法只会静默挂起（这正是 TODO-040 修掉的根因）。
   void _refocusVideo() {
     if (!mounted) return;
     // 仅当播放器已就绪（Video 已挂载）才请求焦点；否则节点未 attach，requestFocus 无意义。
     if (_controller == null) return;
     _videoFocusNode.requestFocus();
+  }
+
+  /// 「视频应当持有键盘」的统一回收判据：键盘所有者路由（窗口模式=本页路由，
+  /// 全屏期间=全屏路由）是当前路由、且无可见查词浮层时，把焦点收回
+  /// [_videoFocusNode]。被设置对话框 / 菜单 / 导入遮罩压住（所有者路由非 current）
+  /// 时不抢焦点——那些覆盖层关闭时各自的 `whenComplete` / `await` 返回点会归还。
+  void _reclaimVideoFocusIfOwned() {
+    if (!mounted || _hasVisiblePopup) return;
+    final ModalRoute<Object?>? owner =
+        _videoFullscreenActive ? _videoFullscreenRoute : ModalRoute.of(context);
+    if (owner != null && !owner.isCurrent) return;
+    _refocusVideo();
   }
 
   /// 点字幕第 [graphemeIndex] 个字符：暂停 → 从该位置起取词 → 推入与阅读器/词典页
@@ -1151,15 +1189,21 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       _popup.entries.first.webViewKey.currentState?.clearSelection();
     }
     setState(() => _popup.dismissAt(index));
+    final bool stackEmpty = !_hasVisiblePopup;
     if (VideoHibikiPage.shouldResumeAfterLookupDismiss(
       // "Effectively empty" = no visible popup; the hidden warm slot doesn't
       // block resume.
-      stackEmpty: !_hasVisiblePopup,
+      stackEmpty: stackEmpty,
       pausedForLookup: _pausedForLookup,
     )) {
       _pausedForLookup = false;
       unawaited(_controller?.play());
     }
+    // 浮层栈全空 = 查词结束，键盘所有权回到视频。浮层 WebView（原生控件）/遮罩
+    // 夺走的焦点不会自动归还；这里与「恢复播放」共用同一个关栈汇聚点，覆盖点遮罩 /
+    // 返回键 / Esc / 滑动全部关闭路径（TODO-040 ①「点了外面后快捷键失灵」的查词
+    // 浮层分支）。
+    if (stackEmpty) _refocusVideo();
   }
 
   Widget _buildNestedPopupLayer(int index, Size screen) {
@@ -1463,60 +1507,61 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         MaterialDesktopVideoControlsTheme.maybeOf(context);
 
     try {
-      Navigator.of(context, rootNavigator: true).push<void>(
-        PageRouteBuilder<void>(
-          pageBuilder: (_, __, ___) => Material(
-            child: HibikiAppUiScaleNeutralizer(
-              child: MaterialVideoControlsTheme(
-                normal: mobileTheme?.normal ??
-                    kDefaultMaterialVideoControlsThemeData,
-                fullscreen: mobileTheme?.fullscreen ??
-                    kDefaultMaterialVideoControlsThemeDataFullscreen,
-                child: MaterialDesktopVideoControlsTheme(
-                  normal: desktopTheme?.normal ??
-                      kDefaultMaterialDesktopVideoControlsThemeData,
-                  fullscreen: desktopTheme?.fullscreen ??
-                      kDefaultMaterialDesktopVideoControlsThemeDataFullscreen,
-                  child: VideoStateInheritedWidget(
-                    state: stateValue,
-                    contextNotifier: contextNotifierValue,
-                    videoViewParametersNotifier:
-                        videoViewParametersNotifierValue,
-                    disposeNotifiers: false,
-                    child: FullscreenInheritedWidget(
-                      parent: stateValue,
-                      child: VideoStateInheritedWidget(
-                        state: stateValue,
-                        contextNotifier: contextNotifierValue,
-                        videoViewParametersNotifier:
-                            videoViewParametersNotifierValue,
-                        disposeNotifiers: false,
-                        child: ValueListenableBuilder<VideoViewParameters>(
-                          valueListenable: videoViewParametersNotifierValue,
-                          builder: (
-                            BuildContext _,
-                            VideoViewParameters params,
-                            __,
-                          ) {
-                            return Video(
-                              controller: controllerValue,
-                              width: null,
-                              height: null,
-                              fit: params.fit,
-                              fill: params.fill,
-                              alignment: params.alignment,
-                              aspectRatio: params.aspectRatio,
-                              filterQuality: params.filterQuality,
-                              controls: params.controls,
-                              wakelock: false,
-                              subtitleViewConfiguration:
-                                  params.subtitleViewConfiguration,
-                              focusNode: params.focusNode,
-                              onEnterFullscreen: enterNativeFullscreen,
-                              onExitFullscreen: exitNativeFullscreen,
-                            );
-                          },
-                        ),
+      // 先置位再 push：同一帧里窗口侧 controls 经 [VideoControlsFocusGate] 卸载、
+      // 全屏侧 controls 挂载，保证共享 [_videoFocusNode] 任意时刻只被一个 Focus
+      // 持有（见 _videoFullscreenActive 的文档）。
+      if (mounted) setState(() => _videoFullscreenActive = true);
+      final PageRouteBuilder<void> fullscreenRoute = PageRouteBuilder<void>(
+        pageBuilder: (_, __, ___) => Material(
+          child: HibikiAppUiScaleNeutralizer(
+            child: MaterialVideoControlsTheme(
+              normal:
+                  mobileTheme?.normal ?? kDefaultMaterialVideoControlsThemeData,
+              fullscreen: mobileTheme?.fullscreen ??
+                  kDefaultMaterialVideoControlsThemeDataFullscreen,
+              child: MaterialDesktopVideoControlsTheme(
+                normal: desktopTheme?.normal ??
+                    kDefaultMaterialDesktopVideoControlsThemeData,
+                fullscreen: desktopTheme?.fullscreen ??
+                    kDefaultMaterialDesktopVideoControlsThemeDataFullscreen,
+                child: VideoStateInheritedWidget(
+                  state: stateValue,
+                  contextNotifier: contextNotifierValue,
+                  videoViewParametersNotifier: videoViewParametersNotifierValue,
+                  disposeNotifiers: false,
+                  child: FullscreenInheritedWidget(
+                    parent: stateValue,
+                    child: VideoStateInheritedWidget(
+                      state: stateValue,
+                      contextNotifier: contextNotifierValue,
+                      videoViewParametersNotifier:
+                          videoViewParametersNotifierValue,
+                      disposeNotifiers: false,
+                      child: ValueListenableBuilder<VideoViewParameters>(
+                        valueListenable: videoViewParametersNotifierValue,
+                        builder: (
+                          BuildContext _,
+                          VideoViewParameters params,
+                          __,
+                        ) {
+                          return Video(
+                            controller: controllerValue,
+                            width: null,
+                            height: null,
+                            fit: params.fit,
+                            fill: params.fill,
+                            alignment: params.alignment,
+                            aspectRatio: params.aspectRatio,
+                            filterQuality: params.filterQuality,
+                            controls: params.controls,
+                            wakelock: false,
+                            subtitleViewConfiguration:
+                                params.subtitleViewConfiguration,
+                            focusNode: params.focusNode,
+                            onEnterFullscreen: enterNativeFullscreen,
+                            onExitFullscreen: exitNativeFullscreen,
+                          );
+                        },
                       ),
                     ),
                   ),
@@ -1524,15 +1569,38 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
               ),
             ),
           ),
-          transitionDuration: Duration.zero,
-          reverseTransitionDuration: Duration.zero,
         ),
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
       );
+      _videoFullscreenRoute = fullscreenRoute;
+      // 全屏路由关闭的唯一汇聚点：Esc / F / 全屏按钮 / 双击 / 系统返回全部
+      // 经由路由 future 完成，无论哪条退出路径都在这里复位 + 归还焦点。
+      Navigator.of(context, rootNavigator: true)
+          .push<void>(fullscreenRoute)
+          .whenComplete(_onVideoFullscreenRouteClosed);
       await enterNativeFullscreen();
     } finally {
       _videoFullscreenTransitioning = false;
-      if (mounted) _refocusVideo();
+      // post-frame：等全屏路由 build 完、共享节点被全屏侧 Focus attach+reparent 之后
+      // 再 requestFocus。同步调用可能跑在路由 build 之前——随后的 reparent 会把
+      // primary focus 丢给全屏路由的 ModalScope，进全屏后快捷键直接死掉（实测见
+      // video_fullscreen_focus_gate_test.dart 的机制复现）。
+      if (mounted) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _refocusVideo());
+      }
     }
+  }
+
+  /// 全屏路由从栈上消失后：复位 [_videoFullscreenActive] 让窗口侧 controls 重挂
+  /// （其 [Focus] 在 initState 重新 attach [_videoFocusNode]），并在重挂完成的
+  /// 下一帧把键盘焦点收回视频。这是所有退全屏路径共用的收口，替代在每个退出
+  /// 入口各补一次 refocus。
+  void _onVideoFullscreenRouteClosed() {
+    _videoFullscreenRoute = null;
+    if (!mounted) return;
+    setState(() => _videoFullscreenActive = false);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _refocusVideo());
   }
 
   Future<void> _exitVideoFullscreen(BuildContext context) async {
@@ -1546,6 +1614,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       }
     } finally {
       _videoFullscreenTransitioning = false;
+      // 焦点归还由 [_onVideoFullscreenRouteClosed]（路由 future 收口）负责：
+      // 此刻窗口侧 controls 可能尚未重挂，节点仍是孤儿，这里 refocus 只是兜底。
       if (mounted) _refocusVideo();
     }
   }
@@ -2753,6 +2823,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   }
 
   void _handleVideoPointerUp(PointerUpEvent event) {
+    // 点视频区任意位置 = 用户把交互意图交还播放器：顺手收回键盘焦点（TODO-040 ①
+    // 「点了外面/焦点丢失后」的恢复路径——与原生播放器一致，点一下画面即恢复键盘）。
+    // 查词浮层打开时点击被根 Overlay barrier 拦截、到不了这里，guard 仅兜底；点
+    // 控制条按钮随后弹出的菜单/对话框会再夺焦，其 whenComplete 自会归还，不冲突。
+    if (!_hasVisiblePopup) _refocusVideo();
     final BuildContext? controlsContext = _videoControlsContext;
     if (controlsContext == null ||
         !controlsContext.mounted ||
@@ -2857,6 +2932,25 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // 受支持字幕；拖入纯视频/图片等忽略。desktop_drop 只接管 OS 文件拖放、不吃
     // Flutter 指针事件，故内层字幕点击查词（onCharTap）不受影响；不夺焦故无需
     // _refocusVideo。
+    //
+    // [VideoControlsFocusGate]：全屏路由在栈上时卸载窗口侧本子树（全屏侧实例因
+    // 能看到 FullscreenInheritedWidget 不受影响），保证共享 [_videoFocusNode]
+    // 任意时刻只被一个 Focus 持有——否则退全屏后节点被摘成永久孤儿、全部快捷键
+    // 死亡（见 gate 的类文档，TODO-040/042 根因）。顺带保证 [_videoControlsContext]
+    // 在全屏期间必是全屏子树的 context（窗口侧 Builder 不再运行），Esc/F 的
+    // isFullscreen 判定不会被窗口侧重建覆写。
+    return VideoControlsFocusGate(
+      fullscreenRouteActive: _videoFullscreenActive,
+      child: _buildVideoControlsInner(state, controller),
+    );
+  }
+
+  /// [_buildVideoControls] 的实体（gate 之内）：拖放目标 + controls + 字幕 overlay
+  /// + OSD。
+  Widget _buildVideoControlsInner(
+    VideoState state,
+    VideoPlayerController controller,
+  ) {
     return HibikiFileDropTarget(
       onDrop: (List<String> paths, Offset _) {
         _handlePlaybackDrop(controller, paths);

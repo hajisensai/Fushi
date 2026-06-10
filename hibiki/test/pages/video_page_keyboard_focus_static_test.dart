@@ -64,4 +64,59 @@ void main() {
     expect(guardReset, greaterThanOrEqualTo(5),
         reason: '每个 sheet 的 whenComplete 必须复位 _videoSheetOpen');
   });
+
+  // ── TODO-040/042：三类「快捷键失灵」的统一修复接线 ────────────────────────
+
+  test('全屏期窗口侧 controls 必须经 VideoControlsFocusGate 卸载（根因修复）', () {
+    // 根因：窗口/全屏两套 controls 共用 _videoFocusNode，退全屏时全屏侧 Focus
+    // dispose 把节点摘成永久孤儿 → 此后所有 _refocusVideo() 静默失效（行为复现见
+    // video_fullscreen_focus_gate_test.dart）。
+    expect(src, contains('VideoControlsFocusGate('),
+        reason: 'controls builder 必须包 VideoControlsFocusGate');
+    expect(src, contains('fullscreenRouteActive: _videoFullscreenActive'),
+        reason: 'gate 必须吃页面级 _videoFullscreenActive 标记');
+    expect(src, contains('bool _videoFullscreenActive = false;'),
+        reason: '页面必须维护「全屏路由在栈上」标记');
+  });
+
+  test('全屏路由关闭走唯一汇聚点：whenComplete 复位标记 + 归还焦点', () {
+    expect(src, contains('.whenComplete(_onVideoFullscreenRouteClosed)'),
+        reason: 'Esc/F/按钮/双击/系统返回全部经路由 future 完成，必须单点收口');
+    final int handler = src.indexOf('void _onVideoFullscreenRouteClosed()');
+    expect(handler, greaterThanOrEqualTo(0));
+    final String body = src.substring(
+        handler, src.indexOf('Future<void> _exitVideoFullscreen', handler));
+    expect(body, contains('_videoFullscreenActive = false'),
+        reason: '退全屏必须复位标记让窗口侧 controls 重挂（节点重新 attach）');
+    expect(body, contains('_refocusVideo()'), reason: '重挂后必须归还键盘焦点');
+  });
+
+  test('查词浮层栈全空时在关栈汇聚点归还焦点（点遮罩/返回/Esc 全路径）', () {
+    final int pop = src.indexOf('void _popNestedPopupAt(int index)');
+    expect(pop, greaterThanOrEqualTo(0));
+    final String body =
+        src.substring(pop, src.indexOf('Widget _buildNestedPopupLayer', pop));
+    expect(body, contains('if (stackEmpty) _refocusVideo();'),
+        reason: '浮层全关后键盘所有权必须回到视频，否则查词一次后空格失灵');
+  });
+
+  test('点视频区收回键盘焦点（焦点意外丢失后的恢复路径）', () {
+    final int handler = src.indexOf('void _handleVideoPointerUp(');
+    expect(handler, greaterThanOrEqualTo(0));
+    final String body = src.substring(
+        handler, src.indexOf('bool _isVideoChromePointer(', handler));
+    expect(body, contains('if (!_hasVisiblePopup) _refocusVideo();'),
+        reason: '点视频画面必须收回键盘（与原生播放器一致），查词浮层期间除外');
+  });
+
+  test('窗口重新激活（切窗返回）时按统一判据收回焦点', () {
+    expect(src, contains('void _reclaimVideoFocusIfOwned()'),
+        reason: '应有统一的「视频应当持有键盘」回收判据');
+    final int lifecycle = src.indexOf('void didChangeAppLifecycleState(');
+    expect(lifecycle, greaterThanOrEqualTo(0));
+    final String body = src.substring(
+        lifecycle, src.indexOf('Future<void> _init()', lifecycle));
+    expect(body, contains('_reclaimVideoFocusIfOwned();'),
+        reason: 'resumed 时若键盘所有权属本页必须收回焦点（TODO-040 ①切窗返回）');
+  });
 }
