@@ -5030,9 +5030,17 @@ window.flutter_inappwebview.callHandler('spreadReady');
       final bool shown = await _showFloatingLyricWithStyle();
       if (!shown) {
         if (mounted) {
+          // Android needs the OS "draw over other apps" permission, so its
+          // failure is a permission prompt. The desktop strip is a runner-owned
+          // window with no such permission, so a failure there means window
+          // creation failed — show the generic hint instead of a false
+          // permission message.
+          final String hint = Platform.isAndroid
+              ? t.floating_lyric_permission_hint
+              : t.floating_lyric_unavailable_hint;
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(t.floating_lyric_permission_hint),
+              content: Text(hint),
               duration: const Duration(seconds: 4),
             ),
           );
@@ -5055,6 +5063,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
 
   void _setupFloatingLyricHandlers() {
     FloatingLyricChannel.setEventHandlers(
+      onLookupText: _lookupFromFloatingLyric,
       onPlayPause: () => _audiobookController?.togglePlayPause(),
       onPreviousCue: () => _audiobookController?.skipToPrevCue(),
       onNextCue: () => _audiobookController?.skipToNextCue(),
@@ -5065,6 +5074,42 @@ window.flutter_inappwebview.callHandler('spreadReady');
       },
       onLockChanged: (bool locked) {},
     );
+  }
+
+  /// Routes a tap on the desktop floating-lyric strip into the in-app
+  /// dictionary popup. The strip is a separate native window with no DOM
+  /// selection, so we segment the tapped word ([Language.wordFromIndex],
+  /// the same extractor the Android popup uses) and show the popup with a
+  /// centre-screen fallback rect — identical to the lyrics-mode path that
+  /// also lacks a WebView selection rect.
+  ///
+  /// On Android the overlay launches its own `PopupDictActivity`, so this
+  /// handler is only exercised by the Windows back-end; it is a no-op when no
+  /// usable word can be segmented.
+  Future<void> _lookupFromFloatingLyric(String text, int index) async {
+    final String trimmed = text.trim();
+    if (trimmed.isEmpty || !mounted) return;
+    final String word =
+        appModel.targetLanguage.wordFromIndex(text: text, index: index).trim();
+    final String searchTerm = word.isNotEmpty ? word : trimmed;
+
+    final Rect selectionRect = Rect.fromCenter(
+      center: Offset(
+        MediaQuery.of(context).size.width / 2,
+        MediaQuery.of(context).size.height / 2,
+      ),
+      width: 1,
+      height: 1,
+    );
+
+    prunePopupStack(0);
+    final int highlightCount = await searchDictionaryResult(
+      searchTerm: searchTerm,
+      selectionRect: selectionRect,
+      deferDisplay: true,
+    );
+    if (!mounted) return;
+    await _highlightAndShowPopup(highlightCount, selectionRect);
   }
 
   void _syncFloatingLyric(AudiobookPlayerController ctrl) {

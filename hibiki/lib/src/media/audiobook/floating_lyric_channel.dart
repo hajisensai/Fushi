@@ -9,7 +9,19 @@ typedef FloatingLyricLookupHandler = void Function(String text, int index);
 typedef FloatingLyricControlHandler = void Function();
 typedef FloatingLyricLockHandler = void Function(bool locked);
 
-/// Android floating subtitle overlay channel.
+/// Floating subtitle overlay channel.
+///
+/// Two native back-ends share the same MethodChannel contract:
+/// - Android: a system overlay window ([FloatingLyricService]) drawn over
+///   other apps, with its own [PopupDictActivity] for tap lookup.
+/// - Windows: a standalone always-on-top layered window in the runner
+///   (`windows/runner/floating_lyric_window.cpp`), a QQ-Music-style desktop
+///   lyric strip that leaves the main Hibiki window untouched. Tap lookup is
+///   routed back over [setEventHandlers]'s `onLookupText` into the in-app
+///   dictionary popup (no second Flutter engine).
+///
+/// macOS / Linux have no native back-end yet, so [isSupported] excludes them
+/// and every outgoing call is short-circuited by [FloatingOverlayChannel].
 class FloatingLyricChannel extends FloatingOverlayChannel {
   FloatingLyricChannel._() : super(HibikiChannels.floatingLyric);
 
@@ -19,7 +31,8 @@ class FloatingLyricChannel extends FloatingOverlayChannel {
   static bool? platformOverride;
 
   @override
-  bool get isSupported => platformOverride ?? Platform.isAndroid;
+  bool get isSupported =>
+      platformOverride ?? (Platform.isAndroid || Platform.isWindows);
 
   static FloatingLyricLookupHandler? _onLookupText;
   static FloatingLyricControlHandler? _onPreviousCue;
