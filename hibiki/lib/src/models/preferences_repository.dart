@@ -574,9 +574,25 @@ class PreferencesRepository extends ChangeNotifier {
           .toList();
       if (configs.isNotEmpty) return _withDefaultAudioSources(configs);
     }
+    // 纯新装（typed config 与 legacy audio_sources 两个 pref 都未写过）下，内置的
+    // 远端音频源（hoshi-reader.manhhaoo worker）默认**关闭**：第三方私有远端服务不
+    // 应未经用户同意就默认参与查词发音。一旦用户存过任一 pref（老用户/已配置过），
+    // 走下面的 legacy 装配，按其保存值原样还原（fromLegacyUrls 默认 enabled，保留
+    // 老用户已启用的 URL，向后兼容）。
+    if (!containsKey('audio_source_configs') && !containsKey('audio_sources')) {
+      return _withDefaultAudioSources(_defaultDisabledRemoteSources());
+    }
     return _withDefaultAudioSources(
       AudioSourceConfig.fromLegacyUrls(audioSources),
     );
+  }
+
+  /// 新装默认远端音频源装配：把 [defaultAudioSources] 的 URL 装成 remoteAudio，但
+  /// 全部标记为 disabled（新装默认不启用第三方远端发音）。
+  List<AudioSourceConfig> _defaultDisabledRemoteSources() {
+    return AudioSourceConfig.fromLegacyUrls(defaultAudioSources)
+        .map((AudioSourceConfig source) => source.copyWith(enabled: false))
+        .toList();
   }
 
   List<AudioSourceConfig> _withDefaultAudioSources(
