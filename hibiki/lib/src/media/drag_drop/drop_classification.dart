@@ -51,6 +51,17 @@ const Set<String> kDragPlaylistExtensions = <String>{
   'm3u',
 };
 
+/// 词典包扩展名（不带点，小写）。= 词典管理页文件选择器实际能导入的格式
+/// （Yomitan/Migaku/mdict/dsl 的 zip + 裸 .dsl/.mdx），见 DictionaryImportManager
+/// 的 detectFormat。`.ifo`/`.css` 不在此列：前者非独立导入单位、后者是随词典的样式
+/// 附件（拖单个 css 不构成一次导入）。词典拖放是词典管理页专属落点，与书架/视频
+/// 表面（books/video）互不影响，故 .zip 在此被识别为词典包而非 unknown。
+const Set<String> kDragDictionaryExtensions = <String>{
+  'zip',
+  'dsl',
+  'mdx',
+};
+
 /// 音频扩展名（不带点，小写）。镜像 AudiobookStorage.audioExtensions（守卫测试钉死同步）。
 const Set<String> kDragAudioExtensions = <String>{
   'mp3',
@@ -76,6 +87,7 @@ class DroppedFiles {
     required this.subtitles,
     required this.audios,
     required this.playlists,
+    required this.dictionaries,
     required this.unknown,
   });
 
@@ -84,6 +96,7 @@ class DroppedFiles {
   final List<String> subtitles;
   final List<String> audios;
   final List<String> playlists;
+  final List<String> dictionaries;
   final List<String> unknown;
 
   /// 是否有任何可被本功能识别（非 unknown）的文件。
@@ -92,7 +105,8 @@ class DroppedFiles {
       videos.isNotEmpty ||
       subtitles.isNotEmpty ||
       audios.isNotEmpty ||
-      playlists.isNotEmpty;
+      playlists.isNotEmpty ||
+      dictionaries.isNotEmpty;
 }
 
 String _ext(String path) {
@@ -108,6 +122,7 @@ DroppedFiles classifyDroppedFiles(List<String> paths) {
   final List<String> subtitles = <String>[];
   final List<String> audios = <String>[];
   final List<String> playlists = <String>[];
+  final List<String> dictionaries = <String>[];
   final List<String> unknown = <String>[];
 
   for (final String path in paths) {
@@ -133,6 +148,10 @@ DroppedFiles classifyDroppedFiles(List<String> paths) {
       audios.add(path);
       matched = true;
     }
+    if (kDragDictionaryExtensions.contains(ext)) {
+      dictionaries.add(path);
+      matched = true;
+    }
     if (!matched) unknown.add(path);
   }
 
@@ -142,6 +161,20 @@ DroppedFiles classifyDroppedFiles(List<String> paths) {
     subtitles: subtitles,
     audios: audios,
     playlists: playlists,
+    dictionaries: dictionaries,
     unknown: unknown,
   );
+}
+
+/// 词典管理页拖放专用分类：从拖入路径里挑出词典包（`.zip`/`.dsl`/`.mdx`）以及同批
+/// 拖入的 `.css` 样式附件，按「先词典包后 css」拼成可直接喂给词典导入器的路径列表。
+/// 纯函数，无副作用，便于单测。无词典包时返回空列表（即便夹带了 css 也不导入——
+/// 单独拖个 css 不构成一次导入，与文件选择器 [_importDictionaryFiles] 同语义）。
+List<String> classifyDroppedFilesForDictionary(List<String> paths) {
+  final DroppedFiles files = classifyDroppedFiles(paths);
+  if (files.dictionaries.isEmpty) return const <String>[];
+  final List<String> cssAttachments = paths
+      .where((String pth) => p.extension(pth).toLowerCase() == '.css')
+      .toList();
+  return <String>[...files.dictionaries, ...cssAttachments];
 }

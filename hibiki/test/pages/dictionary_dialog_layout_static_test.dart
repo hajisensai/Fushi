@@ -204,4 +204,27 @@ void main() {
     // Buttons stay reachable by gamepad/keyboard (single focus stop each).
     expect(source, contains('HibikiActivatableFocusTarget'));
   });
+
+  // TODO-059：词典管理页支持桌面拖放导入。整页包一层 HibikiFileDropTarget，拖入的
+  // 词典包经与「导入词典」按钮同源的 _importDictionaryPaths 导入。守卫这套接线，
+  // 防止后续重构悄悄把拖放摘掉或让它走偏离手动导入的旁路。
+  test('dictionary manager wires desktop drag-drop import (TODO-059)', () {
+    final String source =
+        File('lib/src/pages/implementations/dictionary_dialog_page.dart')
+            .readAsStringSync();
+
+    // 整页被 HibikiFileDropTarget 包裹，drop 回调指向 _handleDictionaryDrop。
+    expect(source, contains('HibikiFileDropTarget('));
+    expect(source, contains('onDrop: _handleDictionaryDrop'));
+
+    // drop 处理走纯分类函数挑词典包，再交给与手动导入同一条 _importDictionaryPaths。
+    expect(source, contains('void _handleDictionaryDrop('));
+    expect(source, contains('classifyDroppedFilesForDictionary(paths)'));
+    expect(source, contains('_importDictionaryPaths(importPaths)'));
+
+    // 文件选择器与拖放共用 _importDictionaryPaths（不另起一条导入旁路）。
+    expect(source, contains('Future<void> _importDictionaryPaths('));
+    expect(source, contains('await _importDictionaryPaths(paths)'));
+    expect(source, contains('appModel.importDictionary('));
+  });
 }

@@ -7,6 +7,8 @@ import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
+import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
+import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/models/dictionary_import_manager.dart';
 import 'package:hibiki/src/models/dictionary_repository.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
@@ -29,20 +31,25 @@ class _DictionaryDialogPageState extends BasePageState {
   Widget build(BuildContext context) {
     final bool cupertino = isCupertinoPlatform(context);
     final bool compact = MediaQuery.sizeOf(context).width < 480;
-    return AdaptiveSettingsScaffold(
-      title: Text(t.dictionaries),
-      // Cupertino (iOS/macOS) keeps its native nav-bar icon actions. Material
-      // (Android/Windows/Linux) empties the app bar and surfaces the same
-      // actions as labeled buttons in an in-page action bar so they read as
-      // normal buttons instead of bare icons.
-      actions: cupertino
-          ? (compact ? _buildMobilePageActions() : _buildDesktopPageActions())
-          : const <Widget>[],
-      children: [
-        if (!cupertino) _buildActionBar(),
-        compact ? _buildDictionaryTypePicker() : _buildCategorySelector(),
-        buildContent(),
-      ],
+    // 桌面三端：整页包一层文件拖放区，把拖入的词典包接到与「导入词典」按钮同源的
+    // 导入路径（TODO-059）。移动端 HibikiFileDropTarget 直接透传 child，零开销。
+    return HibikiFileDropTarget(
+      onDrop: _handleDictionaryDrop,
+      child: AdaptiveSettingsScaffold(
+        title: Text(t.dictionaries),
+        // Cupertino (iOS/macOS) keeps its native nav-bar icon actions. Material
+        // (Android/Windows/Linux) empties the app bar and surfaces the same
+        // actions as labeled buttons in an in-page action bar so they read as
+        // normal buttons instead of bare icons.
+        actions: cupertino
+            ? (compact ? _buildMobilePageActions() : _buildDesktopPageActions())
+            : const <Widget>[],
+        children: [
+          if (!cupertino) _buildActionBar(),
+          compact ? _buildDictionaryTypePicker() : _buildCategorySelector(),
+          buildContent(),
+        ],
+      ),
     );
   }
 
@@ -280,14 +287,6 @@ class _DictionaryDialogPageState extends BasePageState {
   }
 
   Future<void> _importDictionaryFiles() async {
-    ValueNotifier<String> progressNotifier =
-        ValueNotifier<String>(t.import_start);
-    ValueNotifier<int?> countNotifier = ValueNotifier<int?>(null);
-    ValueNotifier<int?> totalNotifier = ValueNotifier<int?>(null);
-    progressNotifier.addListener(() {
-      debugPrint('[Dictionary Import] ${progressNotifier.value}');
-    });
-
     if (Platform.isAndroid || Platform.isIOS) {
       await FilePicker.platform.clearTemporaryFiles();
     }
@@ -301,6 +300,41 @@ class _DictionaryDialogPageState extends BasePageState {
       return;
     }
 
+    final List<String> paths = result.files
+        .map((PlatformFile f) => f.path)
+        .whereType<String>()
+        .toList();
+    await _importDictionaryPaths(paths);
+
+    if (Platform.isAndroid || Platform.isIOS) {
+      await FilePicker.platform.clearTemporaryFiles();
+    }
+  }
+
+  /// 把一组词典文件路径导入。文件选择器与桌面拖放共用这一条路径（与「导入词典」
+  /// 按钮完全同源，不另起炉灶）：把 `.css` 拆成随词典的样式附件，其余按词典包逐个
+  /// 经 [AppModel.importDictionary] 导入，复用同一进度对话框 / 失败汇总 / 内存不足
+  /// 提示。无任何可导入的词典包时直接返回（不弹空进度框）。
+  Future<void> _importDictionaryPaths(List<String> paths) async {
+    final List<File> cssFiles = paths
+        .where((String pth) => pth.toLowerCase().endsWith('.css'))
+        .map((String pth) => File(pth))
+        .toList();
+    final List<File> dictFiles = paths
+        .where((String pth) => !pth.toLowerCase().endsWith('.css'))
+        .map((String pth) => File(pth))
+        .toList();
+
+    if (dictFiles.isEmpty) return;
+
+    final ValueNotifier<String> progressNotifier =
+        ValueNotifier<String>(t.import_start);
+    final ValueNotifier<int?> countNotifier = ValueNotifier<int?>(null);
+    final ValueNotifier<int?> totalNotifier = ValueNotifier<int?>(null);
+    progressNotifier.addListener(() {
+      debugPrint('[Dictionary Import] ${progressNotifier.value}');
+    });
+
     if (!mounted) return;
     showAppDialog(
       context: context,
@@ -312,14 +346,6 @@ class _DictionaryDialogPageState extends BasePageState {
       ),
     );
 
-    final dictFiles = result.files
-        .where((f) => !f.path!.toLowerCase().endsWith('.css'))
-        .toList();
-    final cssFiles = result.files
-        .where((f) => f.path!.toLowerCase().endsWith('.css'))
-        .map((f) => File(f.path!))
-        .toList();
-
     bool hadMemoryError = false;
     final List<String> failedNames = [];
 
@@ -327,8 +353,7 @@ class _DictionaryDialogPageState extends BasePageState {
     for (int i = 0; i < dictFiles.length; i++) {
       countNotifier.value = i + 1;
 
-      PlatformFile platformFile = dictFiles[i];
-      File file = File(platformFile.path!);
+      final File file = dictFiles[i];
 
       // BUG-082: collect per-file failures (no 3s block each) and show one
       // summary after the loop instead of dwelling on every failed import.
@@ -352,10 +377,6 @@ class _DictionaryDialogPageState extends BasePageState {
       }
     }
 
-    if (Platform.isAndroid || Platform.isIOS) {
-      await FilePicker.platform.clearTemporaryFiles();
-    }
-
     if (mounted) {
       Navigator.pop(context);
     }
@@ -373,6 +394,19 @@ class _DictionaryDialogPageState extends BasePageState {
         builder: (context) => const DictionaryLowMemoryDialog(),
       );
     }
+  }
+
+  /// 桌面拖放落地处理：把拖入文件按扩展名分类，取出词典包（`.zip`/`.dsl`/`.mdx`）+
+  /// 同批拖入的 `.css` 样式附件，交给与「导入词典」按钮同源的 [_importDictionaryPaths]。
+  /// 没有词典包则忽略（不打扰用户）；移动端无桌面拖放，[HibikiFileDropTarget] 已直接
+  /// 透传 child，本回调在移动端永不触发。纯分类逻辑见 [classifyDroppedFilesForDictionary]。
+  void _handleDictionaryDrop(List<String> paths, Offset _) {
+    final ModalRoute<dynamic>? route = ModalRoute.of(context);
+    if (route != null && !route.isCurrent) return;
+
+    final List<String> importPaths = classifyDroppedFilesForDictionary(paths);
+    if (importPaths.isEmpty) return;
+    _importDictionaryPaths(importPaths);
   }
 
   String _categoryLabel(DictionaryCategory cat) {

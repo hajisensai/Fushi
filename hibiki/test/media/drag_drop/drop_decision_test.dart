@@ -8,6 +8,7 @@ DroppedFiles _files({
   List<String> subtitles = const [],
   List<String> audios = const [],
   List<String> playlists = const [],
+  List<String> dictionaries = const [],
 }) =>
     DroppedFiles(
         books: books,
@@ -15,6 +16,7 @@ DroppedFiles _files({
         subtitles: subtitles,
         audios: audios,
         playlists: playlists,
+        dictionaries: dictionaries,
         unknown: const []);
 
 void main() {

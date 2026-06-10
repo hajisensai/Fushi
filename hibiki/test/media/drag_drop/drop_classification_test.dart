@@ -64,8 +64,28 @@ void main() {
     });
 
     test('unknown extension goes to unknown', () {
-      final r = classifyDroppedFiles(['/x/a.zip']);
-      expect(r.unknown, ['/x/a.zip']);
+      // .zip/.dsl/.mdx now classify as dictionary packages (TODO-059); use a
+      // genuinely-unhandled extension to exercise the unknown bucket.
+      final r = classifyDroppedFiles(['/x/a.bin']);
+      expect(r.unknown, ['/x/a.bin']);
+      expect(r.dictionaries, isEmpty);
+    });
+
+    test('zip / dsl / mdx classify as dictionary packages (TODO-059)', () {
+      final r = classifyDroppedFiles(['/x/a.zip', '/x/b.dsl', '/x/c.mdx']);
+      expect(r.dictionaries, ['/x/a.zip', '/x/b.dsl', '/x/c.mdx']);
+      expect(r.unknown, isEmpty);
+      expect(r.books, isEmpty);
+      expect(r.hasAny, isTrue);
+    });
+
+    test('dictionary extension match is case-insensitive', () {
+      final r = classifyDroppedFiles(['/x/A.ZIP', '/x/B.Dsl']);
+      expect(r.dictionaries, ['/x/A.ZIP', '/x/B.Dsl']);
+    });
+
+    test('dictionary packages count toward hasAny', () {
+      expect(classifyDroppedFiles(['/x/a.zip']).hasAny, isTrue);
     });
 
     test('isEmpty true when nothing classified into media', () {
