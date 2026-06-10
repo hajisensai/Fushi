@@ -81,6 +81,25 @@ class HibikiFocusController extends ChangeNotifier {
 
   HibikiFocusId? get activeId => _activeId;
 
+  /// Whether the current [FocusManager.primaryFocus] is one of THIS controller's
+  /// registered, focusable targets — i.e. focus actually sits on a directional-
+  /// navigable control we manage, not on some unmanaged sink (e.g. the reader's
+  /// reading-content [FocusNode], a popup scope, or a raw page key-event sink).
+  ///
+  /// The app-wide arrow-repeat handler uses this to decide whether holding an
+  /// arrow should continue moving focus: it must NOT hijack a held arrow while
+  /// focus rests on an unmanaged surface that owns the arrow for its own purpose
+  /// (reader caret / page-turn), only continue movement between real managed
+  /// controls.
+  bool get primaryFocusIsManagedTarget {
+    final FocusNode? primary = FocusManager.instance.primaryFocus;
+    if (primary == null) return false;
+    for (final HibikiFocusTargetEntry entry in _entries.values) {
+      if (identical(entry.focusNode, primary)) return _entryCanFocus(entry);
+    }
+    return false;
+  }
+
   bool get activeIsOnlyFocusableInNearestScrollable {
     final HibikiFocusTargetEntry? active = _currentEntry();
     if (active == null || !active.context.mounted) return false;

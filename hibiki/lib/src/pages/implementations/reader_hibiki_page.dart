@@ -4030,6 +4030,26 @@ window.flutter_inappwebview.callHandler('spreadReady');
         _focusNavEnabled ? _handleGamepadAKeyEvent(event) : null;
     if (gamepadAResult != null) return gamepadAResult;
 
+    // Holding an arrow (or Tab) while the char cursor is active steps the cursor
+    // continuously: the OS auto-repeat (KeyRepeatEvent) drives the SAME caret
+    // MOVE action as the press edge does below, so the cursor advances per
+    // repeat instead of one char per discrete press. Consuming it here also
+    // stops the repeat from bubbling to the app-wide wrapper, which would
+    // otherwise move FOCUS off the reading content ([_focusNode]) instead of
+    // moving the cursor. ONLY movement actions repeat — activate (Enter/A look-
+    // up) and dismissOrExit (Esc/B) must fire once per press, never on auto-
+    // repeat, or a held Enter/Esc would re-look-up / re-exit every frame.
+    if (_focusNavEnabled && _caretActive && event is KeyRepeatEvent) {
+      final CaretAction? repeatCaret = ReaderCaretRouter.decideKeyboard(
+        event.logicalKey,
+        shift: HardwareKeyboard.instance.isShiftPressed,
+      );
+      if (repeatCaret != null && _isRepeatableCaretMove(repeatCaret)) {
+        unawaited(_runCaretAction(repeatCaret));
+        return KeyEventResult.handled;
+      }
+    }
+
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
 
     // Char-level reading cursor (book has focus; chrome already returned above).
@@ -4418,6 +4438,27 @@ window.flutter_inappwebview.callHandler('spreadReady');
       _caretSurface = CaretSurface.none;
       _caretPopupState = null;
     });
+  }
+
+  /// Whether [action] is a cursor MOVEMENT that may fire on keyboard auto-repeat
+  /// (holding the key steps the cursor continuously). Activation / dismissal /
+  /// lookup must stay one-per-press, so only the directional + step actions
+  /// repeat.
+  static bool _isRepeatableCaretMove(CaretAction action) {
+    switch (action) {
+      case CaretAction.stepForward:
+      case CaretAction.stepBackward:
+      case CaretAction.moveUp:
+      case CaretAction.moveDown:
+      case CaretAction.moveLeft:
+      case CaretAction.moveRight:
+        return true;
+      case CaretAction.activate:
+      case CaretAction.lookup:
+      case CaretAction.longPress:
+      case CaretAction.dismissOrExit:
+        return false;
+    }
   }
 
   Future<void> _runCaretAction(CaretAction action) async {
