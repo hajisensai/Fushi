@@ -462,12 +462,18 @@ class _SyncAccountWidgetState extends State<_SyncAccountWidget> {
       final repo = SyncRepository(widget.settingsContext.appModel.database);
       await backend.authenticate(repo: repo);
       await _checkAuth();
-    } on SyncAuthError catch (e) {
+    } on SyncAuthError catch (e, st) {
+      // Persist the full diagnostic (e.g. invalid_client 401 from a CI build
+      // shipping the placeholder secret) to the error log so the real cause is
+      // recoverable later — the snackbar only shows the friendly summary
+      // (TODO-045).
+      ErrorLogService.instance.log('SyncSettings.signIn', e, st);
       if (mounted) {
         _showSnackBar(
             context, t.sync_auth_error(message: friendlySyncErrorDetail(e)));
       }
-    } catch (e) {
+    } catch (e, st) {
+      ErrorLogService.instance.log('SyncSettings.signIn', e, st);
       if (mounted) {
         _showSnackBar(context, friendlySyncError(e));
       }

@@ -1474,5 +1474,7 @@
     "video_shader_first_use_title": "试试 Anime4K 画质增强",
     "video_shader_first_use_body": "想让动画画面更清晰，可以进入“画质增强”并点击“下载 Anime4K 推荐着色器”。下载后在已安装列表里勾选即可启用。",
     "tag_added_to_video": "Tag $name added to video.",
-    "lookup_audio_volume": "Lookup audio volume"
+    "lookup_audio_volume": "Lookup audio volume",
+    "sync_err_invalid_client": "Client credentials are invalid for this build — please update the app.",
+    "sync_err_not_configured": "Google sync credentials are not configured in this build."
 }

@@ -47,6 +47,20 @@ class GoogleDriveAuth {
     defaultValue: kGoogleOAuthClientSecret,
   );
 
+  // The committed default in google_oauth_secret.dart / its .example.dart. A
+  // build that still carries this value has no real desktop OAuth secret, so the
+  // token exchange would fail with `invalid_client` 401 — but only AFTER the
+  // user completed the browser consent flow. We detect it up front to fail fast
+  // with an actionable message instead (TODO-045).
+  static const _placeholderClientSecret =
+      'YOUR_GOOGLE_DESKTOP_OAUTH_CLIENT_SECRET';
+
+  /// True when this build shipped the placeholder OAuth secret (CI / a clone
+  /// that never filled google_oauth_secret.dart). Desktop sign-in cannot work.
+  static bool get desktopCredentialsConfigured =>
+      _oauthClientSecret != _placeholderClientSecret &&
+      _oauthClientSecret.isNotEmpty;
+
   // iOS 专用 OAuth 客户端（应用类型 = iOS，Bundle ID = app.hibiki.reader）。
   // Android 不读这里：google_sign_in 在 Android 上从 google-services.json 按
   // 包名 + 签名 SHA-1 自动解析对应 client，传 null 即可。iOS 必须显式提供
@@ -128,6 +142,17 @@ class GoogleDriveAuth {
       }
       _mobileUser = account;
       return;
+    }
+    // Fail fast when the build has no real desktop OAuth secret (placeholder
+    // shipped, e.g. a CI desktop build): the code exchange would otherwise
+    // succeed in the browser and only then blow up with `invalid_client` 401,
+    // confusing the user with a "sign-in expired" message. The marker string is
+    // matched by sync_error_messages.dart to show sync_err_not_configured
+    // (TODO-045).
+    if (!desktopCredentialsConfigured) {
+      throw GoogleDriveAuthError(
+          'sync_credentials_not_configured: this build has no Google desktop '
+          'OAuth client secret (placeholder shipped)');
     }
     // Desktop: drive the RFC 8252 loopback flow ourselves (same helper as the
     // Dropbox/OneDrive backends) so we fully control the authorization URL.

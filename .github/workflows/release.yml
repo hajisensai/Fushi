@@ -54,13 +54,24 @@ jobs:
 
     # google_oauth_secret.dart is gitignored (the real client secret lives only
     # on dev hosts); CI lacks it, so google_drive_auth.dart's import fails
-    # `flutter analyze`. Stub it from the committed example (placeholder value
-    # with no GOCSPX- prefix, so the no_hardcoded_google_secret guard stays green).
+    # `flutter analyze`. When the GOOGLE_OAUTH_CLIENT_SECRET repo secret is set,
+    # bake the REAL value in so release/CI builds can actually sign in to Google
+    # Drive (otherwise desktop sign-in hits invalid_client 401, TODO-045). When
+    # it is not set, fall back to the committed example (placeholder value, no
+    # GOCSPX- prefix, so the no_hardcoded_google_secret guard stays green).
     - name: Provide gitignored Google OAuth secret stub
       shell: bash
+      env:
+        GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
       run: |
         dst=hibiki/lib/src/sync/google_oauth_secret.dart
-        [ -f "$dst" ] || cp hibiki/lib/src/sync/google_oauth_secret.example.dart "$dst"
+        if [ -n "$GOOGLE_OAUTH_CLIENT_SECRET" ]; then
+          printf 'const String kGoogleOAuthClientSecret =\n    %s;\n' \
+            "$(python3 -c 'import json,os; print(json.dumps(os.environ["GOOGLE_OAUTH_CLIENT_SECRET"]))')" \
+            > "$dst"
+        elif [ ! -f "$dst" ]; then
+          cp hibiki/lib/src/sync/google_oauth_secret.example.dart "$dst"
+        fi
 
     - name: Flutter pub get
       working-directory: hibiki

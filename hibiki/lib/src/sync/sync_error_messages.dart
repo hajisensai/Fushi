@@ -8,10 +8,21 @@ String? _friendlyClause(Object error) {
       error is SyncBackendError ? error.message : _rawMessage(error);
   final String l = msg.toLowerCase();
 
+  // This build has no real OAuth credentials baked in (the placeholder secret
+  // shipped instead of a real one) — caught fail-fast before the browser flow.
+  // Tell the user to get a properly configured build, not "sign in again".
+  // Checked first because the marker is unambiguous (TODO-045).
+  if (l.contains('sync_credentials_not_configured')) {
+    return t.sync_err_not_configured;
+  }
+
   // Configuration / validation problems are not "expired auth" — show the
-  // (usually readable) reason instead of mislabeling them.
+  // (usually readable) raw reason instead of mislabeling them. This gate stays
+  // NARROW: a bare 'credentials' substring used to live here, but it also
+  // swallowed googleapis_auth's "Failed to obtain access credentials. Error:
+  // invalid_client ... 401" (a real auth-config rejection handled below), so it
+  // was dropped — invalid_client now reaches its own branch (TODO-045).
   if (l.contains('not configured') ||
-      l.contains('credentials') ||
       l.contains('requires') ||
       l.contains('missing')) {
     return null;
@@ -19,6 +30,14 @@ String? _friendlyClause(Object error) {
 
   if (l.contains('507') || l.contains('quota')) {
     return t.sync_err_quota;
+  }
+  // invalid_client = the OAuth client_id/secret baked into this build is wrong
+  // (e.g. CI shipped the placeholder secret). It surfaces as a 401 from the
+  // token endpoint, but "sign-in expired" is the wrong fix — the user must
+  // update to a build with valid credentials. Check it BEFORE the generic 401
+  // branch so the more actionable message wins (TODO-045).
+  if (l.contains('invalid_client')) {
+    return t.sync_err_invalid_client;
   }
   // Treat as expired/unauthorized only when the message actually says so;
   // a bare SyncAuthError can also mean "not configured" (handled above).

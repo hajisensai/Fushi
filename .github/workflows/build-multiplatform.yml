@@ -45,13 +45,24 @@ jobs:
           flutter-version: '3.44.0'
       # google_oauth_secret.dart is gitignored (the real client secret lives only
       # on dev hosts); CI lacks it, so google_drive_auth.dart's import fails to
-      # compile. Stub it from the committed example (placeholder value with no
+      # compile. When the GOOGLE_OAUTH_CLIENT_SECRET repo secret is set, bake the
+      # REAL value in so the build can actually sign in to Google Drive
+      # (otherwise desktop sign-in hits invalid_client 401, TODO-045). When it is
+      # not set, fall back to the committed example (placeholder value with no
       # GOCSPX- prefix, so the no_hardcoded_google_secret guard stays green).
       - name: Provide gitignored Google OAuth secret stub
         shell: bash
+        env:
+          GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
         run: |
           dst=hibiki/lib/src/sync/google_oauth_secret.dart
-          [ -f "$dst" ] || cp hibiki/lib/src/sync/google_oauth_secret.example.dart "$dst"
+          if [ -n "$GOOGLE_OAUTH_CLIENT_SECRET" ]; then
+            printf 'const String kGoogleOAuthClientSecret =\n    %s;\n' \
+              "$(python3 -c 'import json,os; print(json.dumps(os.environ["GOOGLE_OAUTH_CLIENT_SECRET"]))')" \
+              > "$dst"
+          elif [ ! -f "$dst" ]; then
+            cp hibiki/lib/src/sync/google_oauth_secret.example.dart "$dst"
+          fi
       - name: Flutter pub get
         working-directory: hibiki
         run: flutter pub get
@@ -166,13 +177,22 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.0'
-      # See the android job: stub the gitignored OAuth secret so the import
-      # in google_drive_auth.dart compiles.
+      # See the android job: bake the real OAuth secret in when the
+      # GOOGLE_OAUTH_CLIENT_SECRET repo secret is set, else stub from the example
+      # so the import in google_drive_auth.dart compiles (TODO-045).
       - name: Provide gitignored Google OAuth secret stub
         shell: bash
+        env:
+          GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
         run: |
           dst=hibiki/lib/src/sync/google_oauth_secret.dart
-          [ -f "$dst" ] || cp hibiki/lib/src/sync/google_oauth_secret.example.dart "$dst"
+          if [ -n "$GOOGLE_OAUTH_CLIENT_SECRET" ]; then
+            printf 'const String kGoogleOAuthClientSecret =\n    %s;\n' \
+              "$(python3 -c 'import json,os; print(json.dumps(os.environ["GOOGLE_OAUTH_CLIENT_SECRET"]))')" \
+              > "$dst"
+          elif [ ! -f "$dst" ]; then
+            cp hibiki/lib/src/sync/google_oauth_secret.example.dart "$dst"
+          fi
       - name: Flutter pub get
         working-directory: hibiki
         run: flutter pub get

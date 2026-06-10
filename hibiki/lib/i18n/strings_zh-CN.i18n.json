@@ -1474,5 +1474,7 @@
     "video_shader_first_use_title": "试试 Anime4K 画质增强",
     "video_shader_first_use_body": "想让动画画面更清晰，可以进入“画质增强”并点击“下载 Anime4K 推荐着色器”。下载后在已安装列表里勾选即可启用。",
     "tag_added_to_video": "标签「$name」已添加到视频。",
-    "lookup_audio_volume": "查词音量"
+    "lookup_audio_volume": "查词音量",
+    "sync_err_invalid_client": "客户端凭据无效，请更新 App。",
+    "sync_err_not_configured": "此构建未配置谷歌同步凭据。"
 }
