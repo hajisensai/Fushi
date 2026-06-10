@@ -1,4 +1,4 @@
-## BUG-179 · 视频字幕默认位置遮挡底部进度条
+## BUG-180 · 视频字幕默认位置遮挡底部进度条
 - **报告**：2026-06-11（用户：字幕默认不要遮盖进度条，除非用户手动调位置 / TODO-089）
 - **真实性**：✅ 真 bug — 根因 `hibiki/lib/src/media/video/video_subtitle_style.dart:49`（默认 `bottomPadding: 75`）+ 渲染 `hibiki/lib/src/media/video/video_subtitle_overlay.dart:357`（`EdgeInsets.only(bottom: widget.bottomPadding)`）。
   - Hibiki 用自绘 `VideoSubtitleOverlay`（**不是** media_kit 内置字幕视图），字幕只按固定 `bottomPadding` 抬升、不随控制条显隐动态上推。
