@@ -354,4 +354,166 @@ void main() {
       expect(c.shaderPaths, <String>['/s/c.glsl']);
     });
   });
+
+  // BUG-175: 句子快进/后退在「句间静音 gap」里的目标索引决策。gap 时
+  // updateCueForPosition 把 currentCueIndex 清成 -1（BUG-074），旧实现裸用
+  // `_currentCueIndex ± 1`：下一句 = -1+1 = 0（恒跳首句起点 = 打回原点 / 进度条圆点
+  // 闪开头）；上一句 = -1-1 = -2（恒越界 no-op = gap 里后退失灵）。新决策按真实
+  // position 二分回退，永不返回负值/原点。
+  group('BUG-175 句子跳转目标索引（gap 不打回原点）', () {
+    final cues = <AudioCue>[
+      _cue(0, 0, 1000),
+      _cue(1, 2000, 3000),
+      _cue(2, 4000, 5000),
+    ];
+
+    group('nextCueIndexFor', () {
+      test('定位到当前 cue：取下一条', () {
+        expect(
+          VideoPlayerController.nextCueIndexFor(
+              cues: cues, currentCueIndex: 0, positionMs: 500),
+          1,
+        );
+        expect(
+          VideoPlayerController.nextCueIndexFor(
+              cues: cues, currentCueIndex: 1, positionMs: 2500),
+          2,
+        );
+      });
+
+      test('已在末句：返回 null（不动）', () {
+        expect(
+          VideoPlayerController.nextCueIndexFor(
+              cues: cues, currentCueIndex: 2, positionMs: 4500),
+          isNull,
+        );
+      });
+
+      test('gap（idx=-1）里 cue0 与 cue1 之间：下一句 = cue1，不打回原点', () {
+        // pos=1500 落在 cue0(0-1000) 与 cue1(2000-3000) 的 gap。旧实现会给 0。
+        expect(
+          VideoPlayerController.nextCueIndexFor(
+              cues: cues, currentCueIndex: -1, positionMs: 1500),
+          1,
+        );
+      });
+
+      test('gap 在 cue1 与 cue2 之间：下一句 = cue2', () {
+        expect(
+          VideoPlayerController.nextCueIndexFor(
+              cues: cues, currentCueIndex: -1, positionMs: 3500),
+          2,
+        );
+      });
+
+      test('早于首句（开头静音）：下一句 = 首句 0', () {
+        // 这里跳 0 是对的（用户本就在 0 之前），但不是「从 gap 打回原点」。
+        final lateStart = <AudioCue>[_cue(0, 1000, 2000), _cue(1, 3000, 4000)];
+        expect(
+          VideoPlayerController.nextCueIndexFor(
+              cues: lateStart, currentCueIndex: -1, positionMs: 200),
+          0,
+        );
+      });
+
+      test('gap 在末句之后：返回 null（已无下一句）', () {
+        expect(
+          VideoPlayerController.nextCueIndexFor(
+              cues: cues, currentCueIndex: -1, positionMs: 9000),
+          isNull,
+        );
+      });
+
+      test('空 cue 列表：null', () {
+        expect(
+          VideoPlayerController.nextCueIndexFor(
+              cues: const <AudioCue>[], currentCueIndex: -1, positionMs: 0),
+          isNull,
+        );
+      });
+    });
+
+    group('prevCueIndexFor', () {
+      test('定位到当前 cue：取前一条', () {
+        expect(
+          VideoPlayerController.prevCueIndexFor(
+              cues: cues, currentCueIndex: 2, positionMs: 4500),
+          1,
+        );
+        expect(
+          VideoPlayerController.prevCueIndexFor(
+              cues: cues, currentCueIndex: 1, positionMs: 2500),
+          0,
+        );
+      });
+
+      test('已在首句：返回 null（不动）', () {
+        expect(
+          VideoPlayerController.prevCueIndexFor(
+              cues: cues, currentCueIndex: 0, positionMs: 500),
+          isNull,
+        );
+      });
+
+      test('gap（idx=-1）在 cue1 与 cue2 之间：上一句 = cue1，不越界 no-op', () {
+        // pos=3500 落在 cue1(2000-3000) 与 cue2(4000-5000) 的 gap。
+        // 旧实现 -1-1=-2 恒 no-op；新决策回退到 gap 之前那条 = cue1。
+        expect(
+          VideoPlayerController.prevCueIndexFor(
+              cues: cues, currentCueIndex: -1, positionMs: 3500),
+          1,
+        );
+      });
+
+      test('gap 在 cue0 与 cue1 之间：上一句 = cue0', () {
+        expect(
+          VideoPlayerController.prevCueIndexFor(
+              cues: cues, currentCueIndex: -1, positionMs: 1500),
+          0,
+        );
+      });
+
+      test('早于首句：上一句落首句 0（不返回负值）', () {
+        final lateStart = <AudioCue>[_cue(0, 1000, 2000), _cue(1, 3000, 4000)];
+        expect(
+          VideoPlayerController.prevCueIndexFor(
+              cues: lateStart, currentCueIndex: -1, positionMs: 200),
+          0,
+        );
+      });
+
+      test('gap 在末句之后：上一句 = 末句', () {
+        expect(
+          VideoPlayerController.prevCueIndexFor(
+              cues: cues, currentCueIndex: -1, positionMs: 9000),
+          2,
+        );
+      });
+
+      test('空 cue 列表：null', () {
+        expect(
+          VideoPlayerController.prevCueIndexFor(
+              cues: const <AudioCue>[], currentCueIndex: -1, positionMs: 0),
+          isNull,
+        );
+      });
+    });
+
+    test('回归：先进句到 cue0、再 update 到 gap 清成 -1，next 不应回 0', () {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.setCues(cues);
+      c.debugUpdateCueForPosition(500); // 定位 cue0
+      expect(c.currentCueIndex, 0);
+      c.debugUpdateCueForPosition(1500); // 进入 gap → -1（BUG-074）
+      expect(c.currentCueIndex, -1);
+      // 此刻按「下一句」：决策必须按 position(1500) 回退到 cue0 再 +1 = cue1，
+      // 绝不能因 -1+1 跳回 cue0（原点）。
+      expect(
+        VideoPlayerController.nextCueIndexFor(
+            cues: c.cues, currentCueIndex: c.currentCueIndex, positionMs: 1500),
+        1,
+      );
+    });
+  });
 }
