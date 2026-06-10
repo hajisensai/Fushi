@@ -317,6 +317,85 @@ void main() {
     });
   });
 
+  // BUG-179：安卓视频退出重进不从上次位置继续。
+  //
+  // 恢复 seek 守护 _restoreTargetMs：seek 落地前禁止三个写入点用过渡期小值（0/小值）
+  // 覆盖真实进度。旧实现的守护**只**靠「position 追上目标」清除；seek 在慢设备 / 软解
+  // （Android 尤甚）上若被 libmpv 丢弃、position 停在 0 附近从头播，守护**永久**不清 →
+  // 这一程进度全被跳过（没回到上次位置，也没记住这次）。修复给守护加有界宽限：连续
+  // _restoreGuardGraceTicks 次仍未追上目标即放弃守护，让写入恢复正常。
+  group('VideoPlayerController BUG-179 恢复守护有界宽限', () {
+    test('正常恢复：position 追上目标后立即清守护、恢复写入', () async {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      final List<int> writes = <int>[];
+      c.onPositionWrite = (String uid, int ms) async => writes.add(ms);
+      c.debugPrimeRestoreGuardForTesting(bookUid: 'v1', restoreTargetMs: 50000);
+
+      // seek 落地前的过渡期小值：被守护跳过，不写。
+      c.debugUpdateCueForPosition(0);
+      c.debugUpdateCueForPosition(1000);
+      expect(writes, isEmpty, reason: '恢复未落地，过渡期小值不得覆盖真实进度');
+      expect(c.debugRestoreGuardActive, isTrue);
+
+      // position 追上目标（容差 1.5s 内）：守护立即清，本次写入放行。
+      c.debugUpdateCueForPosition(49000); // 50000-1500=48500，49000 已追上
+      expect(c.debugRestoreGuardActive, isFalse);
+      expect(writes, <int>[49000]);
+
+      // 守护清除后照常持久化。
+      c.debugUpdateCueForPosition(51000);
+      expect(writes, <int>[49000, 51000]);
+    });
+
+    test('恢复失败兜底：宽限耗尽后放弃守护，从此正常记住进度', () async {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      final List<int> writes = <int>[];
+      c.onPositionWrite = (String uid, int ms) async => writes.add(ms);
+      // 目标设很大（600000ms）：模拟用户上次看到很后面退出。seek 落地失败时 position
+      // 从 0 起、在低位前进，整程都 < target-1500，永远追不上 → 测「宽限兜底」路径。
+      c.debugPrimeRestoreGuardForTesting(
+          bookUid: 'v1', restoreTargetMs: 600000);
+
+      final int grace = VideoPlayerController.debugRestoreGuardGraceTicks;
+      // 喂 grace-1 次「整秒互不相同、始终远低于目标」的位置：每次未追上 → 跳过写入 +
+      // 消耗一格宽限。用 1000..(grace-1)*1000，最大 ~79000 仍远 < 598500。
+      for (int i = 1; i < grace; i++) {
+        c.debugUpdateCueForPosition(i * 1000);
+      }
+      expect(writes, isEmpty, reason: '宽限耗尽前，未追上目标一律跳过写入');
+      expect(c.debugRestoreGuardActive, isTrue, reason: '宽限尚未耗尽，守护仍在');
+
+      // 第 grace 次观测仍未追上 → 宽限耗尽，主动放弃守护（本次仍不写，下一拍起恢复）。
+      c.debugUpdateCueForPosition(grace * 1000);
+      expect(c.debugRestoreGuardActive, isFalse,
+          reason: '宽限耗尽：判定 seek 落地失败，放弃守护');
+
+      // 守护放弃后，用户从头看的进度被正常记住（BUG-179 修复核心）。
+      c.debugUpdateCueForPosition((grace + 5) * 1000);
+      expect(writes, contains((grace + 5) * 1000), reason: '守护放弃后，这一程的进度必须能记住');
+    });
+
+    test('回归：旧实现下该序列永远不写（守护永不清）—— 本测试钉住已修复', () async {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      final List<int> writes = <int>[];
+      c.onPositionWrite = (String uid, int ms) async => writes.add(ms);
+      c.debugPrimeRestoreGuardForTesting(
+          bookUid: 'v1', restoreTargetMs: 600000);
+
+      // 喂远超宽限上限次数、始终远低于目标的位置（旧实现：守护永久挡 → writes 恒空）。
+      for (int i = 0;
+          i < VideoPlayerController.debugRestoreGuardGraceTicks + 30;
+          i++) {
+        c.debugUpdateCueForPosition((i % 5) * 1000); // 在 0..4000 循环，永不接近 600000
+      }
+      expect(c.debugRestoreGuardActive, isFalse, reason: '守护必须已被宽限放弃');
+      expect(writes, isNotEmpty, reason: '放弃守护后写入恢复，进度被记住（旧实现此处为空）');
+    });
+  });
+
   group('VideoPlayerController audio track mapping', () {
     test('currentAudioStreamIndex is null before load (no player)', () {
       // 未 load 时无 libmpv player：制卡裁音频走 ffmpeg 默认音轨（不加 -map）。
