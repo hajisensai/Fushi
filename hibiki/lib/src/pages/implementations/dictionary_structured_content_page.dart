@@ -8,7 +8,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as path;
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/models.dart';
+import 'package:hibiki/media.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_webview_media.dart';
+import 'package:hibiki/src/reader/dictionary_font_css.dart';
+import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/utils.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -120,6 +123,11 @@ class _DictionaryHtmlWidgetState extends ConsumerState<DictionaryHtmlWidget> {
         $isDark
       );
     ''');
+    // TODO-049: 注入独立的词典字体目标（与正文/系统 UI 分开）。
+    final String fontStyleJs = _dictionaryFontStyleJs();
+    if (fontStyleJs.isNotEmpty) {
+      _controller!.evaluateJavascript(source: fontStyleJs);
+    }
   }
 
   @override
@@ -248,6 +256,36 @@ class _DictionaryHtmlWidgetState extends ConsumerState<DictionaryHtmlWidget> {
         },
       ),
     );
+  }
+
+  /// TODO-049: builds the dictionary-font `<style>` injection JS (same approach
+  /// as the popup WebView): system family names + inlined `data:` URL
+  /// `@font-face` for imported files, placed before the popup.css default.
+  String _dictionaryFontStyleJs() {
+    final ReaderSettings? settings = ReaderHibikiSource.readerSettings;
+    if (settings == null) return '';
+    final appModel = ref.read(appProvider);
+    final ({String fontFamily, String fontFaces}) css = DictionaryFontCss.build(
+      settings.dictionaryFonts,
+      allowedDirectories: <String>[
+        path.join(appModel.appDirectory.path, 'custom_fonts'),
+      ],
+    );
+    if (css.fontFamily.isEmpty) return '';
+    final String styleCss = '${css.fontFaces}\n'
+        'html, body { font-family: ${css.fontFamily}, '
+        '"Hiragino Sans", "Hiragino Kaku Gothic ProN", sans-serif !important; }';
+    final String styleJson = jsonEncode(styleCss);
+    return '''
+      (function(){
+        var el = document.getElementById('hoshi-dict-font');
+        if (!el) {
+          el = document.createElement('style');
+          el.id = 'hoshi-dict-font';
+          document.head.appendChild(el);
+        }
+        el.textContent = $styleJson;
+      })();''';
   }
 
   static Future<void> _openExternalLink(String url) async {

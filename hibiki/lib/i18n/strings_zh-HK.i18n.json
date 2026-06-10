@@ -1493,5 +1493,8 @@
     "video_shader_section_advanced": "Advanced (manual shaders)",
     "video_shader_first_use_download": "Download and enable",
     "video_shader_mobile_perf_hint": "On phones, shaders apply only on the standard GPU render path and effectiveness varies by device GPU; higher tiers may drop frames or heat up. Try Low/Medium first and check the result on your device.",
-    "stat_favorited_sentence": "Favorited sentences"
+    "stat_favorited_sentence": "Favorited sentences",
+    "font_target_app_ui": "軟件系統字體",
+    "font_target_body": "小說正文字體",
+    "font_target_dictionary": "詞典字體"
 }
