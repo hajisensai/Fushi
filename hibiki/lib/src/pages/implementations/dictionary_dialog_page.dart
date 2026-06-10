@@ -1086,6 +1086,7 @@ class _DictionaryDialogPageState extends BasePageState {
               enabled: !isLast,
               onTap: onMoveDown,
             ),
+            _buildDictionaryCollapseButton(dictionary),
             _buildDictionaryVisibilityButton(dictionary, enabled),
             SizedBox(width: tokens.spacing.gap / 2),
             buildDictionaryTileTrailing(dictionary),
@@ -1114,6 +1115,26 @@ class _DictionaryDialogPageState extends BasePageState {
           activeTrackColor: scheme.primaryContainer,
         ),
       ),
+    );
+  }
+
+  // TODO-091：把每本词典的「折叠/展开」状态从三点菜单二级提到行内一键开关，使
+  // 20+ 本词典的折叠状态可在列表里一览（图标本身即状态），单击直接切换、无需
+  // 先开菜单再选（对齐用户参考的 hsa 体验）。折叠语义 = 查词弹窗里该词典释义
+  // 默认折叠（见 dictionary_popup_webview 注入 collapsedDictionaryNames）；持久化
+  // 仍走既有 Dictionary.collapsedLanguages（按 targetLanguage 区分），不改后端逻辑。
+  Widget _buildDictionaryCollapseButton(Dictionary dictionary) {
+    final bool collapsed = dictionary.isCollapsed(appModel.targetLanguage);
+    final String tooltip = collapsed ? t.options_expand : t.options_collapse;
+    return HibikiIconButton(
+      // 已折叠 → 展开图标（点了会展开）；已展开 → 折叠图标（点了会折叠）。
+      icon: collapsed ? Icons.unfold_more : Icons.unfold_less,
+      size: 20,
+      tooltip: tooltip,
+      onTap: () {
+        appModel.toggleDictionaryCollapsed(dictionary);
+        setState(() {});
+      },
     );
   }
 
@@ -1241,18 +1262,6 @@ class _DictionaryDialogPageState extends BasePageState {
             : Icons.block,
         action: () {
           _toggleDictionaryHidden(dictionary);
-        },
-      ),
-      buildPopupItem(
-        label: dictionary.isCollapsed(appModel.targetLanguage)
-            ? t.options_expand
-            : t.options_collapse,
-        icon: dictionary.isCollapsed(appModel.targetLanguage)
-            ? Icons.unfold_more
-            : Icons.unfold_less,
-        action: () {
-          appModel.toggleDictionaryCollapsed(dictionary);
-          setState(() {});
         },
       ),
       buildPopupItem(
