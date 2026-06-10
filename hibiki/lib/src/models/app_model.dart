@@ -598,14 +598,22 @@ class AppModel with ChangeNotifier {
     for (final d in dictRepo.dictionaries) {
       final p = path.join(dictionaryResourceDirectory.path, d.name);
       if (!Directory(p).existsSync()) continue;
+      // A disabled (hidden) frequency/pitch dictionary must not be loaded into
+      // the FFI engine at all, otherwise its values keep coming back from
+      // lookupPopupJson and show up in the popup even though the user turned it
+      // off. Term glossaries are filtered at render time (dictionaryNamesByHidden)
+      // so the term bucket stays loaded; only freq/pitch — which surface straight
+      // from the engine with no render-time hidden filter — gate on isHidden
+      // (BUG-177).
+      final bool hidden = d.isHidden(targetLanguage);
       switch (d.type) {
         case DictionaryType.term:
         case DictionaryType.kanji:
           termPaths.add(p);
         case DictionaryType.frequency:
-          freqPaths.add(p);
+          if (!hidden) freqPaths.add(p);
         case DictionaryType.pitch:
-          pitchPaths.add(p);
+          if (!hidden) pitchPaths.add(p);
       }
     }
     // Always rebuild — even with all buckets empty. Deleting the last (or last
@@ -632,14 +640,17 @@ class AppModel with ChangeNotifier {
     for (var i = 0; i < dictList.length; i++) {
       if (!existsResults[i]) continue;
       final p = path.join(dictionaryResourceDirectory.path, dictList[i].name);
+      // Hidden frequency/pitch dictionaries stay out of the engine — see the
+      // sync _rebuildDictPathsCache for the full rationale (BUG-177).
+      final bool hidden = dictList[i].isHidden(targetLanguage);
       switch (dictList[i].type) {
         case DictionaryType.term:
         case DictionaryType.kanji:
           termPaths.add(p);
         case DictionaryType.frequency:
-          freqPaths.add(p);
+          if (!hidden) freqPaths.add(p);
         case DictionaryType.pitch:
-          pitchPaths.add(p);
+          if (!hidden) pitchPaths.add(p);
       }
     }
     // Always rebuild — see _rebuildDictPathsCache: an empty path set must still
@@ -1841,8 +1852,15 @@ class AppModel with ChangeNotifier {
   void toggleDictionaryCollapsed(Dictionary dictionary) => dictRepo
       .toggleDictionaryCollapsed(dictionary, targetLanguage.languageCode);
 
-  void toggleDictionaryHidden(Dictionary dictionary) =>
-      dictRepo.toggleDictionaryHidden(dictionary, targetLanguage.languageCode);
+  void toggleDictionaryHidden(Dictionary dictionary) {
+    dictRepo.toggleDictionaryHidden(dictionary, targetLanguage.languageCode);
+    // toggleDictionaryHidden persists the dict, which fires _onCacheRebuild
+    // (_rebuildDictPathsCache) and reloads the engine WITHOUT the now-hidden
+    // freq/pitch dictionary. But a popupJson cached while the dict was still
+    // enabled would keep showing its values on the next (cache-hit) lookup, so
+    // drop the search caches too — mirrors the delete paths (BUG-171/BUG-177).
+    dictRepo.clearDictionaryResultsCache();
+  }
 
   Future<void> deleteDictionaries() async {
     try {

@@ -498,6 +498,16 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
     margin-top: 2px;
 }
 
+/* When the pitch-accent section sits directly under the frequency section, give
+   it extra breathing room. The first pitch mora's high/low overline
+   (.pronunciation-mora-line, top: -2px) pokes above its line box and, with the
+   tight 2px section gap, butts up against / overlaps the frequency tag on the
+   line above. The adjacent-sibling selector only fires for this exact freq→pitch
+   stack, so a pitch-only entry keeps the compact 2px spacing (BUG-177). */
+.frequency-section + .pitch-section {
+    margin-top: 8px;
+}
+
 .category-body {
     padding: 0;
 }
