@@ -22,6 +22,12 @@ class DictionaryPopupEntry {
   /// 但 WebView 仍挂载预热；一次查词把它翻为可见。
   bool visible;
 
+  /// TODO-058：结果已就绪、但故意保持 `visible=false`，等其 WebView 真正把内容
+  /// 渲染进 DOM（`popupRendered` → `onRendered`）后才翻可见——消除「冷加载 WebView
+  /// 一翻可见就露白屏一瞬」。仅冷启动（新建 WebView）的嵌套/非热槽层需要：热槽
+  /// WebView 已预热渲染就绪，立即可见无白屏。[revealRendered] 命中后清回 false。
+  bool revealOnRender = false;
+
   /// 该层是否正在（增量/分页）搜索中。
   bool isSearching = false;
 
@@ -122,6 +128,7 @@ class DictionaryPopupController extends ChangeNotifier {
         ..result = initialResult
         ..allLoaded = false
         ..isSearching = true
+        ..revealOnRender = false
         ..visible = visible;
     } else {
       if (replaceStack) _entries.clear();
@@ -172,6 +179,7 @@ class DictionaryPopupController extends ChangeNotifier {
     if (first.isWarmSlot && !lowMemory) {
       first
         ..visible = false
+        ..revealOnRender = false
         ..selectionRect = Rect.zero;
       _entries
         ..clear()
@@ -205,7 +213,30 @@ class DictionaryPopupController extends ChangeNotifier {
   /// 显示 [e]（搜索→就绪才显示路径在 [fillResult] 后调用）。
   void show(DictionaryPopupEntry e) {
     e.visible = true;
+    e.revealOnRender = false;
     notifyListeners();
+  }
+
+  /// TODO-058：结果已就绪但**先不显示**——挂起到该层 WebView 渲染完成。
+  /// 用于冷启动（新建 WebView）的嵌套/非热槽层：让其 WebView 在屏外预渲染，
+  /// 待 [revealRendered] 命中（`onRendered` 信号）再翻可见，杜绝白屏一瞬。
+  /// 热槽/有词条但 WebView 已预热的层不走此路（[show] 立即显示即可）。
+  void markPendingReveal(DictionaryPopupEntry e) {
+    e.visible = false;
+    e.revealOnRender = true;
+    notifyListeners();
+  }
+
+  /// TODO-058：某层 WebView 渲染完成（`popupRendered` → `onRendered`）时调用。
+  /// 仅当该层处于挂起状态（[markPendingReveal] 标记的 [revealOnRender]）才翻为可见，
+  /// 并清掉标记；非挂起层（热槽再次渲染、load-more 等）不受影响。返回是否真的翻了可见，
+  /// 让宿主据此决定是否继续后续（如把光标交给刚显示的层）。
+  bool revealRendered(DictionaryPopupEntry e) {
+    if (!e.revealOnRender) return false;
+    e.visible = true;
+    e.revealOnRender = false;
+    notifyListeners();
+    return true;
   }
 
   /// 关闭第 [index] 层及其之上。index==0：保留并隐藏常驻热槽（低内存则清空）；
@@ -217,6 +248,7 @@ class DictionaryPopupController extends ChangeNotifier {
       if (first.isWarmSlot && !lowMemory) {
         first
           ..visible = false
+          ..revealOnRender = false
           ..selectionRect = Rect.zero
           ..isSearching = false;
         _entries

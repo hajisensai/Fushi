@@ -1,0 +1,9 @@
+## BUG-170 · 第二个嵌套查词弹窗出现白屏一瞬
+- **报告**：2026-06-11（用户：飞书巡检表第72行 / TODO-058）
+- **真实性**：✅ 真 bug。第一个查词弹窗复用开页预热的常驻热槽 WebView（已加载 popup.html/JS/CSS），故弹出无白屏；第二个（在弹窗内再查词的嵌套层）复用不到热槽，`beginTop(reuseWarmSlot:false, replaceStack:false)` 会 **append 一条新建 WebView 的冷层**，结果一就绪就 `show()` 翻可见，但此刻它的 WebView 还没冷加载完 popup.html/JS/CSS → 露空/白底一瞬。
+  - 阅读器路径根因：`hibiki/lib/src/pages/base_source_page.dart:170-184`（`searchDictionaryResult`：`beginTop` append 冷层后无条件 `_popup.show(item)`）。
+  - 视频/首页路径同因：`hibiki/lib/src/pages/implementations/dictionary_page_mixin.dart:384-393`（`pushNestedPopup`：`fillResult` 后无条件 `controller.show(entry)`）。
+  - 真实「内容渲染完成」信号一直存在但没被用来 gate 可见性：popup.js `renderPopup()` 渲染完 DOM 后 `callHandler('popupRendered')`（`hibiki/assets/popup/popup.js:1768/1784/1802/1857`）→ `DictionaryPopupWebView.onRendered`（`dictionary_popup_webview.dart:658-663`）。
+- **[x] ① 已修复** — 给 `DictionaryPopupEntry` 加挂起标记 `revealOnRender` + controller `markPendingReveal`/`revealRendered` 状态机（`dictionary_popup_controller.dart`）。冷嵌套层（非热槽、有词条）就绪后改 `markPendingReveal` 留 `visible=false`，让其 WebView 在屏外预渲染，待 `popupRendered`→`onRendered`→`revealRendered` 才翻可见；父弹窗全程保持可见，用户看不到空窗。仅「复用热槽（首弹窗）」或「无词条（走 Flutter 占位卡，不靠 WebView 渲染）」才立即 `show`。阅读器经 `base_source_page.dart` 的 `_onPopupLayerRendered`，视频/首页经 `dictionary_page_mixin.dart` 的 `buildNestedPopupLayer.onRendered`。提交：见分支 `codex/todo-058-nested-popup-flash`。
+- **[x] ② 已加自动化测试** — ①controller 状态机单测 `hibiki/test/pages/dictionary_popup_controller_test.dart`（markPendingReveal 挂起→revealRendered 翻可见、仅挂起层生效、show/复用/隐藏热槽清挂起标记）；②阅读器 widget 行为测试 `hibiki/test/pages/base_source_page_nested_popup_flash_test.dart`（嵌套冷层 `visible:false`+父层保持可见+渲染信号后才翻可见；无词条立即显示）；③源码守卫 `hibiki/test/pages/nested_popup_reveal_on_render_guard_test.dart`（钉住 reader+mixin 两路「visible 由渲染信号驱动」契约）。撤掉修复 widget 测试转红验证。
+- **备注**：真机查词（嵌套两层、视频内嵌套）需用户复测确认白屏消失；安全网=`popupRendered` 是渲染完成的真实信号，正常必触发；`maintainState:true`+屏外停泊保证隐藏的冷 WebView 仍渲染（沿用 BUG-092/135 既有架构）。

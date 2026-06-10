@@ -147,6 +147,87 @@ void main() {
     expect(c.entries.first.visible, true);
   });
 
+  // ── TODO-058：嵌套（第二个）冷层挂起到渲染完成才显示，消除白屏一瞬 ──────────
+  test('markPendingReveal 挂起：fillResult 后先不显示，等 revealRendered', () {
+    final c = DictionaryPopupController(lowMemory: false)..seedWarmSlot();
+    final a = c.beginTop(
+        term: 'a',
+        rect: Rect.zero,
+        reuseWarmSlot: true,
+        replaceStack: false,
+        visible: true);
+    c.fillResult(a, result: null, allLoaded: true);
+    // 嵌套层：append 一条新建 WebView 的冷层。
+    final child =
+        c.pushChild(term: 'b', rect: Rect.zero, parentIndex: 0, visible: false);
+    c.fillResult(child, result: null, allLoaded: true);
+    c.markPendingReveal(child);
+    expect(child.visible, isFalse, reason: '冷层结果就绪也先不显示（避免白屏一瞬）');
+    expect(child.revealOnRender, isTrue, reason: '挂起等渲染信号');
+    expect(c.lastVisibleIndex, 0, reason: '顶层可见仍是父层');
+
+    // WebView 渲染完成信号到达 → 翻可见、清标记。
+    final bool revealed = c.revealRendered(child);
+    expect(revealed, isTrue);
+    expect(child.visible, isTrue);
+    expect(child.revealOnRender, isFalse);
+    expect(c.lastVisibleIndex, 1);
+  });
+
+  test('revealRendered 仅对挂起层生效：非挂起层（热槽再渲染/load-more）不动', () {
+    final c = DictionaryPopupController(lowMemory: false)..seedWarmSlot();
+    final a = c.beginTop(
+        term: 'a',
+        rect: Rect.zero,
+        reuseWarmSlot: true,
+        replaceStack: false,
+        visible: true);
+    c.fillResult(a, result: null, allLoaded: true);
+    // a 立即可见（热槽复用），未挂起 → revealRendered 应是 no-op 返回 false。
+    expect(a.revealOnRender, isFalse);
+    expect(c.revealRendered(a), isFalse);
+    expect(a.visible, isTrue);
+  });
+
+  test('show 清掉挂起标记（幂等收口）', () {
+    final c = DictionaryPopupController(lowMemory: true);
+    final e = c.beginTop(
+        term: 'x',
+        rect: Rect.zero,
+        reuseWarmSlot: false,
+        replaceStack: true,
+        visible: false);
+    c.markPendingReveal(e);
+    expect(e.revealOnRender, isTrue);
+    c.show(e);
+    expect(e.visible, isTrue);
+    expect(e.revealOnRender, isFalse, reason: 'show 直显也清挂起标记');
+  });
+
+  test('复用热槽 / 隐藏热槽都清挂起标记，避免陈旧 revealOnRender 残留', () {
+    final c = DictionaryPopupController(lowMemory: false)..seedWarmSlot();
+    // 让热槽带上一个陈旧挂起标记，再复用。
+    c.entries.first.revealOnRender = true;
+    final e = c.beginTop(
+        term: 'a',
+        rect: Rect.zero,
+        reuseWarmSlot: true,
+        replaceStack: false,
+        visible: true);
+    expect(e.revealOnRender, isFalse, reason: 'beginTop 复用热槽清陈旧挂起');
+
+    // dismissAt(0) 隐藏热槽也清挂起。
+    e.revealOnRender = true;
+    c.dismissAt(0);
+    expect(c.entries.first.isWarmSlot, isTrue);
+    expect(c.entries.first.revealOnRender, isFalse);
+
+    // pruneToWarmSlot 隐藏热槽也清挂起。
+    c.entries.first.revealOnRender = true;
+    c.pruneToWarmSlot();
+    expect(c.entries.first.revealOnRender, isFalse);
+  });
+
   test('pruneToWarmSlot 保留隐藏热槽丢弃其余', () {
     final c = DictionaryPopupController(lowMemory: false)..seedWarmSlot();
     final e = c.beginTop(
