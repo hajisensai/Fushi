@@ -1,4 +1,4 @@
-// BUG-177 source-scan guard.
+// BUG-178 source-scan guard.
 //
 // Root cause: a frequency / pitch dictionary that the user "disabled" in the
 // dictionary manager (the visibility Switch toggles `Dictionary.hiddenLanguages`
@@ -65,7 +65,7 @@ void main() {
     expect(body.contains('isHidden'), isTrue,
         reason: 'the sync path-cache rebuild must consult isHidden(...) so a '
             'disabled frequency/pitch dictionary is not loaded into the FFI '
-            'engine (BUG-177).');
+            'engine (BUG-178).');
   });
 
   test(
@@ -74,7 +74,7 @@ void main() {
     final String body = bodyOf('Future<void> _rebuildDictPathsCacheAsync(');
     expect(body.contains('isHidden'), isTrue,
         reason: 'the async path-cache rebuild must also consult isHidden(...) '
-            'for the same reason (BUG-177).');
+            'for the same reason (BUG-178).');
   });
 
   test(
@@ -84,7 +84,7 @@ void main() {
     expect(body.contains('clearDictionaryResultsCache'), isTrue,
         reason: 'toggling visibility must invalidate cached search results, '
             'otherwise a cached popupJson built while the dictionary was still '
-            'enabled keeps showing its frequency/pitch values (BUG-177). This '
+            'enabled keeps showing its frequency/pitch values (BUG-178). This '
             'mirrors the delete paths that already clear the cache (BUG-171).');
   });
 }
