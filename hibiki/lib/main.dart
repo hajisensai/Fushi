@@ -153,7 +153,11 @@ void main([List<String> args = const <String>[]]) {
       debugPrint('[Hibiki] wakelock disable on startup failed: $e');
     }
     if (Platform.isAndroid || Platform.isIOS) {
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+      // Home/menu shell: hide the Android status bar (keep the nav bar) so the
+      // always-on OS clock/battery strip stops crowding the top-right action
+      // icons (TODO-097). iOS keeps edge-to-edge. Reader/video override this with
+      // immersiveSticky on open and restore it via closeMedia on exit.
+      unawaited(setHomeShellSystemUiMode());
     }
 
     // Match system bar overlays to the platform brightness immediately so the

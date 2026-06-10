@@ -2256,7 +2256,9 @@ class AppModel with ChangeNotifier {
     } catch (e) {
       debugPrint('[Hibiki] wakelock disable failed: $e');
     }
-    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    // Returning to the home/menu shell: hide the Android status bar again
+    // (TODO-097) instead of plain edge-to-edge. iOS/desktop unchanged.
+    await setHomeShellSystemUiMode();
     await mediaSource.onSourceExit(
       appModel: this,
       ref: ref,

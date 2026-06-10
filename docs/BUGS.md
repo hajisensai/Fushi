@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 177 条。点号进各自文件。
+> 共 178 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-181](bugs/BUG-181-android-portrait-statusbar-overlap.md) | ✅ | ✅ | 手机竖屏常驻状态栏挤压首页右上角图标（TODO-097） |
 | [BUG-180](bugs/BUG-180-video-subtitle-default-covers-bar.md) | ✅ | ✅ | 视频字幕默认位置遮挡底部进度条 |
 | [BUG-179](bugs/BUG-179-android-video-resume.md) | ✅ | ✅ | 安卓视频退出重进不从上次位置继续（恢复 seek 失败时守护永久挡住整程位置写入） |
 | [BUG-178](bugs/BUG-178-disabled-freq-dict-shows.md) | ✅ | ✅ | 已禁用的词频辞典查词时仍出现 + 声调与词频间距太小遮挡 |
