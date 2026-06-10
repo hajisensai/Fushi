@@ -63,10 +63,13 @@ class TtsChannel {
     }
   }
 
-  Future<bool> playUrl(String url) async {
-    if (!_isSupported) return DesktopAudioPlayback.playUrl(url);
+  Future<bool> playUrl(String url, {double volume = 1.0}) async {
+    if (!_isSupported) return DesktopAudioPlayback.playUrl(url, volume: volume);
     try {
-      final result = await _channel.invokeMethod('playUrl', {'url': url});
+      final result = await _channel.invokeMethod('playUrl', {
+        'url': url,
+        'volume': volume.clamp(0.0, 1.0),
+      });
       return result == true;
     } catch (e, stack) {
       ErrorLogService.instance.log('TtsChannel.playUrl', e, stack);
@@ -182,11 +185,15 @@ class TtsChannel {
     }
   }
 
-  Future<bool> playFile(String filePath) async {
-    if (!_isSupported) return DesktopAudioPlayback.playFile(filePath);
+  Future<bool> playFile(String filePath, {double volume = 1.0}) async {
+    if (!_isSupported) {
+      return DesktopAudioPlayback.playFile(filePath, volume: volume);
+    }
     try {
-      final result =
-          await _channel.invokeMethod('playFile', {'path': filePath});
+      final result = await _channel.invokeMethod('playFile', {
+        'path': filePath,
+        'volume': volume.clamp(0.0, 1.0),
+      });
       return result == true;
     } catch (e, stack) {
       ErrorLogService.instance.log('TtsChannel.playFile', e, stack);
@@ -217,16 +224,16 @@ class TtsChannel {
   /// platform. Single home for the URL-vs-path branching so no caller
   /// re-hand-rolls it (which is how Windows local audio regressed). Returns
   /// whether playback started.
-  Future<bool> playAudioRef(String ref) async {
+  Future<bool> playAudioRef(String ref, {double volume = 1.0}) async {
     switch (classifyAudioRef(ref)) {
       case ResolvedAudioPlayback.none:
         return false;
       case ResolvedAudioPlayback.url:
-        return playUrl(ref);
+        return playUrl(ref, volume: volume);
       case ResolvedAudioPlayback.file:
         final String path =
             ref.startsWith('file://') ? Uri.parse(ref).toFilePath() : ref;
-        return playFile(path);
+        return playFile(path, volume: volume);
     }
   }
 

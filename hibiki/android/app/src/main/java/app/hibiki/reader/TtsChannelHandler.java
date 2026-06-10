@@ -193,6 +193,7 @@ public class TtsChannelHandler {
 
     private void handlePlayUrl(MethodCall call, MethodChannel.Result result) {
         String url = call.argument("url");
+        float volume = readVolume(call);
         if (url == null || url.isEmpty()) {
             result.success(false);
             return;
@@ -206,6 +207,7 @@ public class TtsChannelHandler {
                     .setUsage(AudioAttributes.USAGE_MEDIA)
                     .build());
             mediaPlayer.setDataSource(url);
+            mediaPlayer.setVolume(volume, volume);
             mediaPlayer.setOnPreparedListener(mp -> mp.start());
             mediaPlayer.setOnCompletionListener(mp -> { mp.release(); mediaPlayer = null; });
             mediaPlayer.setOnErrorListener((mp, what, extra) -> { mp.release(); mediaPlayer = null; return true; });
@@ -219,6 +221,7 @@ public class TtsChannelHandler {
 
     private void handlePlayFile(MethodCall call, MethodChannel.Result result) {
         String filePath = call.argument("path");
+        float volume = readVolume(call);
         if (filePath == null || filePath.isEmpty()) {
             result.success(false);
             return;
@@ -232,6 +235,7 @@ public class TtsChannelHandler {
                     .setUsage(AudioAttributes.USAGE_MEDIA)
                     .build());
             mediaPlayer.setDataSource(filePath);
+            mediaPlayer.setVolume(volume, volume);
             mediaPlayer.setOnPreparedListener(mp -> mp.start());
             mediaPlayer.setOnCompletionListener(mp -> { mp.release(); mediaPlayer = null; });
             mediaPlayer.setOnErrorListener((mp, what, extra) -> { mp.release(); mediaPlayer = null; return true; });
@@ -241,6 +245,12 @@ public class TtsChannelHandler {
             android.util.Log.w("hibiki-audio", "playFile failed", e);
             result.success(false);
         }
+    }
+
+    private float readVolume(MethodCall call) {
+        Number raw = call.argument("volume");
+        if (raw == null) return 1.0f;
+        return Math.max(0.0f, Math.min(1.0f, raw.floatValue()));
     }
 
     private void handleSetLocalAudioDb(MethodCall call, MethodChannel.Result result) {

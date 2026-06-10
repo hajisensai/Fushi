@@ -11,6 +11,7 @@ import 'package:hibiki/models.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/models/theme_notifier.dart';
+import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/src/settings/cupertino_settings_renderer.dart';
 import 'package:hibiki/src/settings/material_settings_renderer.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
@@ -459,6 +460,58 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(appModel.yomitanApiKey, 'mpv-token');
+  });
+
+  testWidgets('lookup settings exposes lookup audio volume slider', (
+    WidgetTester tester,
+  ) async {
+    final HibikiDatabase db = _testDb();
+    addTearDown(db.close);
+    final AppModel appModel = await _prefsBackedAppModel(db);
+    final ReaderSettings readerSettings = ReaderSettings(db);
+    await readerSettings.refreshFromDb();
+    ReaderHibikiSource.readerSettings = readerSettings;
+    addTearDown(() => ReaderHibikiSource.readerSettings = null);
+
+    await tester.pumpWidget(
+      _harness(
+        platform: TargetPlatform.android,
+        database: db,
+        appModel: appModel,
+        builder: (SettingsContext settingsContext) {
+          final SettingsDestination lookup =
+              buildSettingsSchema(settingsContext).firstWhere(
+            (SettingsDestination destination) =>
+                destination.id == SettingsDestinationId.lookup,
+          );
+          return MaterialSettingsRenderer().buildDetailPage(
+            settingsContext: settingsContext,
+            destination: lookup,
+          );
+        },
+      ),
+    );
+
+    Finder sliderFinder() => find.byWidgetPredicate(
+          (Widget widget) =>
+              widget is AdaptiveSettingsSliderRow &&
+              widget.title == t.lookup_audio_volume,
+        );
+
+    expect(find.text(t.lookup_audio_volume), findsOneWidget);
+    expect(sliderFinder(), findsOneWidget);
+    AdaptiveSettingsSliderRow row =
+        tester.widget<AdaptiveSettingsSliderRow>(sliderFinder());
+    expect(row.value, 100);
+    expect(row.min, 0);
+    expect(row.max, 100);
+    expect(row.divisions, 20);
+    expect(row.label, '100%');
+
+    row.onChanged(35);
+    await tester.pump();
+
+    expect(ReaderHibikiSource.instance.lookupAudioVolume, 35);
   });
 
   testWidgets('app UI scale slider commits only on drag end, not during drag',

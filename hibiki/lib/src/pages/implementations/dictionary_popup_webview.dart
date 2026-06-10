@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
+import 'package:hibiki/media.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_webview_media.dart';
 import 'package:hibiki/src/reader/reader_caret_scripts.dart';
@@ -778,7 +779,10 @@ class DictionaryPopupWebViewState
             }
             // Plays remote URLs and local file paths uniformly, including
             // Windows drive-letter paths (BUG-046).
-            return TtsChannel.instance.playAudioRef(url);
+            return TtsChannel.instance.playAudioRef(
+              url,
+              volume: ReaderHibikiSource.instance.lookupAudioVolumeGain,
+            );
           },
         );
       },

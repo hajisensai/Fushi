@@ -204,6 +204,16 @@ class ReaderSettings {
   Future<void> toggleAutoReadOnLookup() =>
       _set<bool>('auto_read_on_lookup', !autoReadOnLookup);
 
+  static int normalizeLookupAudioVolume(num value) =>
+      value.round().clamp(0, 100).toInt();
+
+  int get lookupAudioVolume =>
+      _get<int>('lookup_audio_volume', 100).clamp(0, 100).toInt();
+  Future<void> setLookupAudioVolume(num value) => _set<int>(
+        'lookup_audio_volume',
+        normalizeLookupAudioVolume(value),
+      );
+
   double get dismissSwipeSensitivity =>
       _get<double>('dismiss_swipe_sensitivity', 0.6);
   Future<void> setDismissSwipeSensitivity(double v) =>
