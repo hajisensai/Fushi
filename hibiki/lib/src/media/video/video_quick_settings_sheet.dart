@@ -108,24 +108,12 @@ class VideoQuickSettingsSheet extends StatefulWidget {
 }
 
 class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
-  static const List<double> _speedPresets = <double>[
-    0.5,
-    0.6,
-    0.7,
-    0.8,
-    0.9,
-    1.0,
-    1.1,
-    1.2,
-    1.3,
-    1.4,
-    1.5,
-    1.6,
-    1.7,
-    1.8,
-    1.9,
-    2.0,
-  ];
+  /// 倍速滑条范围/步长：与旧分段档位完全一致（0.5–2.0，0.1 步），持久化语义不变。
+  static const double _speedMin = 0.5;
+  static const double _speedMax = 2.0;
+
+  /// (2.0 - 0.5) / 0.1 = 15 档，保证滑条只落在旧档位值上。
+  static const int _speedDivisions = 15;
 
   // 本地镜像：面板在独立的 dialog/bottom-sheet 路由里，父页面 setState 不会重建它，
   // 故乐观更新本地值（同旧 StatefulBuilder 的语义），再异步回调即时生效 + 落盘。
@@ -466,29 +454,34 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
     );
   }
 
+  /// 倍速：MD3 全长滑条（与其它设置滑条同源 [AdaptiveSettingsSliderRow]，TODO-039，
+  /// 取代旧的 16 段 segmented 条——窄面板下会横向滚动、与设计系统滑条不一致）。
+  /// 范围/步长与旧档位一致（0.5–2.0，0.1 步）；拖动实时回显，松手提交
+  /// [VideoQuickSettingsSheet.onSetSpeed]（键盘/手柄步进经 onChangeEnd 同样提交）。
   Widget _buildSpeedRow() {
-    return AdaptiveSettingsSegmentedRow<double>(
+    final double value = _snapSpeed(_speed);
+    return AdaptiveSettingsSliderRow(
       title: t.video_setting_speed,
       icon: Icons.speed_outlined,
-      controlBelow: true,
-      segments: <ButtonSegment<double>>[
-        for (final double s in _speedPresets)
-          ButtonSegment<double>(
-            value: s,
-            label: Text('${s}x'),
-            tooltip: '${s}x',
-          ),
-      ],
-      selected: _nearestSpeedPreset(),
-      onChanged: (double s) async {
-        setState(() => _speed = s);
-        await widget.onSetSpeed(s);
+      min: _speedMin,
+      max: _speedMax,
+      divisions: _speedDivisions,
+      value: value,
+      label: '${value.toStringAsFixed(1)}x',
+      onChanged: (double v) => setState(() => _speed = _snapSpeed(v)),
+      onChangeEnd: (double v) async {
+        final double snapped = _snapSpeed(v);
+        setState(() => _speed = snapped);
+        await widget.onSetSpeed(snapped);
       },
     );
   }
 
-  /// segmented 的 selected 必须等于某个档位值；当前倍速若落在档位间（极少见，
-  /// 来自旧持久化），取最接近的档位高亮，避免无选中。
+  /// 把滑条浮点值吸附到 0.1 档并夹进范围（消除二进制浮点尾差如 0.7000000000000001，
+  /// 旧持久化的档位间值也归到最近档）。
+  double _snapSpeed(double v) =>
+      ((v * 10).roundToDouble() / 10).clamp(_speedMin, _speedMax).toDouble();
+
   Widget _buildSeekSecondsRow() {
     return AdaptiveSettingsStepperRow(
       title: 'Seek seconds',
@@ -533,19 +526,6 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
   void _commitAsb(VideoAsbplayerConfig next) {
     setState(() => _asbConfig = next);
     widget.onAsbConfigChanged(next);
-  }
-
-  double _nearestSpeedPreset() {
-    double best = _speedPresets.first;
-    double bestDiff = (best - _speed).abs();
-    for (final double s in _speedPresets) {
-      final double diff = (s - _speed).abs();
-      if (diff < bestDiff) {
-        best = s;
-        bestDiff = diff;
-      }
-    }
-    return best;
   }
 
   // ── 着色器：内嵌管理视图（导入/发现/下载/勾选，不再弹独立对话框）────────

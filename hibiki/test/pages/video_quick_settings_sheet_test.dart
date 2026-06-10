@@ -323,4 +323,65 @@ void main() {
     await tester.pump();
     expect(delay, 50);
   });
+
+  // ── TODO-039：倍速改为 MD3 全长滑条（与其它设置滑条同源） ────────────────
+
+  testWidgets('speed row is the shared MD3 slider row (full length)',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await _pump(tester, _sheet());
+
+    // 倍速行用与其它 MD3 滑条同源的 AdaptiveSettingsSliderRow，范围/步长与旧
+    // 分段档位一致（0.5–2.0，0.1 步 = 15 档）。
+    final AdaptiveSettingsSliderRow speedRow =
+        tester.widget<AdaptiveSettingsSliderRow>(
+      find.widgetWithText(AdaptiveSettingsSliderRow, t.video_setting_speed),
+    );
+    expect(speedRow.min, 0.5);
+    expect(speedRow.max, 2.0);
+    expect(speedRow.divisions, 15);
+
+    // playback 详情里唯一的 Slider 就是倍速滑条；量它的实际宽度。
+    final double speedSliderWidth = tester.getSize(find.byType(Slider)).width;
+
+    // 切到「字幕」分类：字号滑条是 app 现有 MD3 滑条的基准。两者必须同宽
+    // （同一全长滑条规范），防止倍速又缩回窄条/分段条。
+    await tester.tap(find.text(t.video_settings_cat_subtitle));
+    await tester.pumpAndSettle();
+    final Finder fontSizeRow = find.widgetWithText(
+      AdaptiveSettingsSliderRow,
+      t.video_setting_subtitle_font_size,
+    );
+    final double fontSliderWidth = tester
+        .getSize(
+          find.descendant(of: fontSizeRow, matching: find.byType(Slider)),
+        )
+        .width;
+    expect(speedSliderWidth, fontSliderWidth,
+        reason: '倍速滑条必须与其它 MD3 设置滑条同宽（全长）');
+  });
+
+  testWidgets('dragging the speed slider commits a snapped speed',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    double? committed;
+    await _pump(tester, _sheet(onSetSpeed: (double v) => committed = v));
+
+    // 从中心拖到最右 → 松手提交 2.0（onChangeEnd 路径，0.1 档吸附后无浮点尾差）。
+    await tester.drag(find.byType(Slider), const Offset(500, 0));
+    await tester.pumpAndSettle();
+    expect(committed, 2.0);
+  });
+
+  test('speed row no longer uses the segmented strip (TODO-039 防回潮)', () {
+    final String src =
+        File('lib/src/media/video/video_quick_settings_sheet.dart')
+            .readAsStringSync();
+    expect(src, isNot(contains('AdaptiveSettingsSegmentedRow<double>')),
+        reason: '倍速不得回退到 16 段 segmented 条');
+    expect(src, isNot(contains('_speedPresets')));
+    expect(src, contains('_speedDivisions = 15'), reason: '滑条档位须与旧 0.1 步档位等价');
+  });
 }
