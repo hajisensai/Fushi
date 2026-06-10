@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 167 条。点号进各自文件。
+> 共 168 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-171](bugs/BUG-171-reader-card-sentence-audio-tts-fallback.md) | ✅ | ✅ | 纯文本书籍制卡无句子音频（Lapis SentenceAudio 空） |
 | [BUG-170](bugs/BUG-170-nested-popup-white-flash.md) | ✅ | ✅ | 第二个嵌套查词弹窗出现白屏一瞬 |
 | [BUG-169](bugs/BUG-169-reader-scroll-skips-two-pages.md) | ✅ | ✅ | 阅读器滚轮/翻页有时一次翻两页（misaligned scroll 经 round 跳页） |
 | [BUG-168](bugs/BUG-168-video-folder-import-no-recursion.md) | ✅ | ✅ | 导入视频文件夹显示无视频(非递归扫描+缺m2ts) |
