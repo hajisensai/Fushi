@@ -1379,6 +1379,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     final String message;
     switch (outcome.result) {
       case MineResult.success:
+        // 制卡成功计入视频统计（dictionarySourceType=video）。本页覆写了
+        // onMineEntry、绕过基类成功分支，故在此显式记账（与 mixin 同一路径）。
+        unawaited(recordMined());
         final AnkiSettings settings = await repo.loadSettings();
         message = t.card_exported(deck: settings.selectedDeckName ?? '');
       case MineResult.duplicate:

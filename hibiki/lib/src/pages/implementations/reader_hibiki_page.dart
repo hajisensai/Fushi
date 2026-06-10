@@ -30,6 +30,7 @@ import 'package:hibiki/src/media/audiobook/reader_quick_settings_sheet.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart'
     show DictionaryPopupWebViewState;
+import 'package:hibiki/src/pages/implementations/stat_activity.dart';
 import 'package:hibiki/src/profile/profile_repository.dart';
 import 'package:hibiki/src/profile/profile_view_model.dart';
 import 'package:hibiki/src/reader/reader_caret_scripts.dart';
@@ -2947,6 +2948,10 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
     switch (outcome.result) {
       case MineResult.success:
+        // 制卡成功计入书籍统计（reader 走 BaseSourcePageState.onMineFromPopup，
+        // 不 mixin DictionaryPageMixin，故直接调 addMiningCount，来源固定 book）。
+        // 失败不影响制卡结果，吞掉并记日志。
+        unawaited(_recordMined());
         final AnkiSettings settings = await repo.loadSettings();
         HibikiToast.show(
           msg: t.card_exported(deck: settings.selectedDeckName ?? ''),
@@ -2963,6 +2968,20 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       case MineResult.error:
         HibikiToast.show(msg: logMineFailure(outcome));
         return false;
+    }
+  }
+
+  /// 把一次成功制卡计入书籍统计。reader 走 [BaseSourcePageState.onMineFromPopup]，
+  /// 不 mixin [DictionaryPageMixin]，故自带本记账（来源固定 [kStatSourceBook]，与
+  /// mixin 的 `recordMined` 同契约：[HibikiDatabase.addMiningCount]）。失败吞掉并记日志。
+  Future<void> _recordMined() async {
+    try {
+      await appModel.database.addMiningCount(
+        sourceType: kStatSourceBook,
+        dateKey: statTodayKey(),
+      );
+    } catch (e, st) {
+      debugPrint('[hibiki-stats] reader addMiningCount failed: $e\n$st');
     }
   }
 

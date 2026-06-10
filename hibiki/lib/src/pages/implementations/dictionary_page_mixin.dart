@@ -46,10 +46,8 @@ mixin DictionaryPageMixin {
   /// 都归书籍统计）；视频页覆写为 [kStatSourceVideo]，使收藏/制卡落各自统计。
   String get dictionarySourceType => kStatSourceBook;
 
-  String _statTodayKey() {
-    final DateTime d = DateTime.now();
-    return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-  }
+  // 今日统计 dateKey 走 stat_activity 的权威实现（statTodayKey），不在此重复格式化。
+  String _statTodayKey() => statTodayKey();
 
   // ---------------------------------------------------------------------------
   // Concrete helpers
@@ -75,7 +73,7 @@ mixin DictionaryPageMixin {
     switch (outcome.result) {
       case MineResult.success:
         // 制卡成功计入统计（按来源 book/video）。失败不影响制卡结果，吞掉并记日志。
-        unawaited(_recordMined());
+        unawaited(recordMined());
         final settings = await repo.loadSettings();
         HibikiToast.show(
           msg: t.card_exported(deck: settings.selectedDeckName ?? ''),
@@ -147,7 +145,12 @@ mixin DictionaryPageMixin {
   }
 
   /// 把一次成功制卡计入统计（按 [dictionarySourceType]）。
-  Future<void> _recordMined() async {
+  ///
+  /// 视频页等覆写 [onMineEntry]、绕过基类成功分支的页面，在自己的成功路径上
+  /// 直接调本方法记账（来源仍走各自的 [dictionarySourceType]），不必复制
+  /// [addMiningCount] 的契约细节。
+  @protected
+  Future<void> recordMined() async {
     try {
       await mixinAppModel.database.addMiningCount(
         sourceType: dictionarySourceType,

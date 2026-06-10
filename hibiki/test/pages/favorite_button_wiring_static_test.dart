@@ -45,7 +45,7 @@ void main() {
         reason: '默认归书籍统计');
     expect(src, contains('Future<bool> onFavoriteEntry('));
     expect(src, contains('Future<bool> onFavoriteCheck('));
-    expect(src, contains('_recordMined()'), reason: '制卡成功应计入统计');
+    expect(src, contains('recordMined()'), reason: '制卡成功应计入统计');
     expect(src, contains('addMiningCount('));
     expect(src, contains('onFavoriteEntry: onFavoriteEntry'),
         reason: 'mixin 要把收藏 handler 接进 layer');
