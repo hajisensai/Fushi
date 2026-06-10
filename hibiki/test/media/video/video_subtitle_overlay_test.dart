@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/video/video_player_controller.dart';
 import 'package:hibiki/src/media/video/video_subtitle_overlay.dart';
+import 'package:hibiki/src/media/video/video_subtitle_style.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 
 AudioCue _cue(String text) {
@@ -29,6 +30,45 @@ Future<void> _pump(WidgetTester tester, Widget child) async {
 }
 
 void main() {
+  group('default position clears the bottom controls bar (TODO-089)', () {
+    testWidgets('default subtitle bottom stays above the controls reserve',
+        (tester) async {
+      // 用户诉求：字幕默认不遮盖底部进度条。默认 overlay（bottomPadding=100）渲染时，
+      // 字幕底缘到容器底的距离必须 >= 控制条预留高度，否则进度条会盖住字幕。
+      final VideoPlayerController c = _controllerWithCue('A');
+      await _pump(tester, VideoSubtitleOverlay(controller: c));
+
+      final Rect overlayRect =
+          tester.getRect(find.byType(VideoSubtitleOverlay));
+      final Rect charRect = tester.getRect(find.text('A'));
+      final double gapFromBottom = overlayRect.bottom - charRect.bottom;
+      expect(
+        gapFromBottom,
+        greaterThanOrEqualTo(kVideoControlsBottomReserve),
+        reason: '字幕底缘距容器底 $gapFromBottom < 控制条预留 '
+            '$kVideoControlsBottomReserve，会被进度条遮挡',
+      );
+    });
+
+    testWidgets(
+        'a manual lower bottomPadding is respected (covers bar by choice)',
+        (tester) async {
+      // 「除非用户手动调位置」：用户显式把字幕放低（20px）时如实尊重，不强制抬升。
+      final VideoPlayerController c = _controllerWithCue('A');
+      await _pump(
+        tester,
+        VideoSubtitleOverlay(controller: c, bottomPadding: 20),
+      );
+
+      final Rect overlayRect =
+          tester.getRect(find.byType(VideoSubtitleOverlay));
+      final Rect charRect = tester.getRect(find.text('A'));
+      final double gapFromBottom = overlayRect.bottom - charRect.bottom;
+      // 字幕被有意放进控制条区：底缘距底应明显小于预留高度（尊重用户值）。
+      expect(gapFromBottom, lessThan(kVideoControlsBottomReserve));
+    });
+  });
+
   testWidgets('blur off: no ImageFiltered around subtitle', (tester) async {
     final VideoPlayerController c = _controllerWithCue('テスト');
     await _pump(

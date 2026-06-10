@@ -10,7 +10,8 @@ void main() {
     expect(s.textColor, const Color(0xFFFFFFFF));
     expect(s.shadowColor, const Color(0xFF000000));
     // 显式白/黑：resolve 时即便给了主题色也不被它覆盖。
-    expect(s.resolveTextColor(const Color(0xFF112233)), const Color(0xFFFFFFFF));
+    expect(
+        s.resolveTextColor(const Color(0xFF112233)), const Color(0xFFFFFFFF));
     expect(
       s.resolveShadowColor(const Color(0xFF112233)),
       const Color(0xFF000000),
@@ -23,7 +24,8 @@ void main() {
     expect(s.resolveShadowThickness(1.0), 5);
     expect(s.backgroundColor, isNull);
     expect(s.backgroundOpacity, closeTo(0.0, 1e-9));
-    expect(s.bottomPadding, 75);
+    // 默认位置上移到控制条之上（TODO-089）：75 -> 100，避开底部进度条。
+    expect(s.bottomPadding, 100);
   });
 
   test('unconfigured weight and shadow follow app UI scale', () {
@@ -69,7 +71,8 @@ void main() {
     expect(s.resolveShadowColor(themeColor), themeColor);
   });
 
-  test('default white/black round-trips and persists explicitly (TODO-051)', () {
+  test('default white/black round-trips and persists explicitly (TODO-051)',
+      () {
     // 新默认（白字黑描边）encode->decode 必须如实存住，不再被「白=折叠成 null」吃掉。
     final VideoSubtitleStyle back = VideoSubtitleStyle.decode(
       VideoSubtitleStyle.encode(VideoSubtitleStyle.defaults),
@@ -159,6 +162,39 @@ void main() {
     expect(s.shadowThickness, isNull);
     expect(s.resolveFontWeight(1.0), 700);
     expect(s.resolveShadowThickness(1.0), 5); // 加大后的默认（TODO-051）。
+  });
+
+  group('default subtitle position clears the bottom controls bar (TODO-089)',
+      () {
+    test('default bottomPadding lifts subtitle clear of the controls reserve',
+        () {
+      // 用户诉求：字幕默认不要遮盖底部进度条/控制条。media_kit 控制条显示时底部
+      // 进度条+按钮条占据 [kVideoControlsBottomReserve] 高度；自绘字幕 overlay 不随
+      // 控制条显隐上推，故默认抬升量必须 >= 该预留高度，否则控制条显示时被盖住。
+      expect(
+        VideoSubtitleStyle.defaults.bottomPadding,
+        greaterThanOrEqualTo(kVideoControlsBottomReserve),
+      );
+    });
+
+    test('controls reserve matches media_kit default bottom bar geometry', () {
+      // 守卫：预留高度 = bottomButtonBarMargin.vertical(42) + buttonBarHeight(56)。
+      // 若 media_kit 升级改了默认布局，这条会提醒重新核对常量。
+      expect(kVideoControlsBottomReserve, 98);
+    });
+
+    test(
+        'an explicit user bottomPadding is honoured verbatim, even below the bar',
+        () {
+      // 「除非用户手动调位置」：用户显式选的任何值（含故意放进控制条区）都如实尊重，
+      // 不被默认避让逻辑改写——模型里就是同一个字段，无「是否手动」分支。
+      final VideoSubtitleStyle back = VideoSubtitleStyle.decode(
+        VideoSubtitleStyle.encode(
+          VideoSubtitleStyle.defaults.copyWith(bottomPadding: 20),
+        ),
+      );
+      expect(back.bottomPadding, 20);
+    });
   });
 
   test('decode clamps out-of-range', () {
