@@ -1,0 +1,9 @@
+## BUG-171 · Windows 自动更新启动安装器崩溃/静默消失
+- **报告**：2026-06-11（用户：飞书巡检表#94 TODO-081「win 点自动更新，会崩溃」）
+- **真实性**：✅ 真 bug（代码路径缺陷）。根因 `hibiki/lib/src/utils/misc/platform_updater.dart:143-155`（修复前的 `WindowsInstaller.runAndExit`）。
+- **根因分析**：Windows 应用内更新链路 `home_page.dart:79 scheduleCheck` → `update_checker.dart _check` → `_downloadAndInstall` → `WindowsUpdater.apply` → `WindowsInstaller.runAndExit`。旧实现把刚下载的 `hibiki-<v>.exe` **不做任何校验**直接喂给 `Process.start`，并随后**无条件** `await Future.delayed(500ms); exit(0)`。两个缺陷：
+  - **未校验下载产物是真 PE 可执行文件**：app 在 GFW 下会回退到 GitHub 代理镜像（`ghfast.top` / `mirror.ghproxy.com`，见 `update_checker.dart _kProxyPrefixes`）。代理可能用 **HTTP 200** 回一个 HTML 限流/错误页，`_writeResponse` 把这堆 HTML 原样写进 `.exe`，再交给 Windows `CreateProcessW` → 行为不可控（`ERROR_BAD_EXE_FORMAT` 等）。
+  - **`exit(0)` 不看安装器是否真启动**：硬编码 500ms 延迟后无条件退出本进程（典型「用延迟掩盖症状」）。一旦安装器启动失败 / 是坏文件，app 窗口瞬间消失、什么也没装、也没有错误提示——用户视角即「崩溃」。
+- **[x] ① 已修复** — `platform_updater.dart`：新增纯函数 `isWindowsExecutableHeader`(`:158`，校验 DOS `MZ` 魔数 0x4D 0x5A) + 异常类 `UpdateInstallerException`(`:145`)；重写 `WindowsInstaller.runAndExit`(`:170`)：先查文件存在→读前 2 字节校验是 PE→不是则删脏文件并抛 `UpdateInstallerException`（上层 `_downloadAndInstall` catch → SnackBar 优雅降级，app 存活）；`Process.start` 包 `on ProcessException` 转 `UpdateInstallerException`；删掉 500ms 魔数延迟，改为 `await Future.delayed(Duration.zero)` 让出一拍后**仅在启动成功后**才 `exit(0)`。提交：见下方 commit 哈希。
+- **[x] ② 已加自动化测试** — `hibiki/test/utils/misc/platform_updater_test.dart` 新增两组：`isWindowsExecutableHeader`（MZ 接受 / HTML 拒绝 / 空·截断拒绝）+ `WindowsInstaller.runAndExit validation`（写入 HTML 假 exe → 抛 `UpdateInstallerException` 且脏文件被清理、进程未 `exit`；文件缺失 → 抛错）。`flutter test test/utils/misc/platform_updater_test.dart` 16/16 绿。
+- **备注**：`Process.start` 真启动安装器 + Inno 静默安装替换 hibiki.exe + 重启、以及 `exit(0)` 本身的 host 副作用无法在单测覆盖，需 **真实 Windows 机器**点更新走原始路径验证（两版本升级、SmartScreen「仍要运行」、代理回退、坏下载降级提示不崩）。BUG 号 171 与并发 worktree(TODO-095) 撞号，集成时由 PM 统一重编号。

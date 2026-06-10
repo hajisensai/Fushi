@@ -140,16 +140,72 @@ class AndroidInstaller {
 List<String> windowsInstallerArgs(String installerPath) =>
     <String>['/VERYSILENT', '/SP-'];
 
+/// Windows 安装器启动/校验失败。被 UpdateChecker 的下载流程 catch → SnackBar 优雅
+/// 降级，绝不让损坏下载或启动失败演化成「app 静默消失」式崩溃。
+class UpdateInstallerException implements Exception {
+  UpdateInstallerException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => 'UpdateInstallerException: $message';
+}
+
+/// 下载产物是否是真正的 Windows 可执行文件：PE 文件以 DOS「MZ」魔数
+/// (0x4D 0x5A) 开头。GFW 下走的 GitHub 代理镜像（ghfast.top / ghproxy）可能用
+/// HTTP 200 回一个 HTML 限流/错误页，被原样写进 `hibiki-<v>.exe`；把这种字节喂给
+/// `Process.start` 在 Windows 上行为不可控（ERROR_BAD_EXE_FORMAT 等），必须先拦掉。
+bool isWindowsExecutableHeader(List<int> header) =>
+    header.length >= 2 && header[0] == 0x4D && header[1] == 0x5A;
+
 class WindowsInstaller {
   /// 启动安装器（分离进程）后退出本进程，让安装器替换运行中的 exe 并重启 app。
+  ///
+  /// 根因修复（Windows 点自动更新崩溃）：
+  /// 1. 先校验下载产物确实是 PE 可执行文件，避免把代理 HTML/截断文件喂给
+  ///    `Process.start`（曾导致行为不可控）。
+  /// 2. 仅当安装器进程**确实启动成功**后才 `exit(0)`；启动失败抛
+  ///    [UpdateInstallerException]（上层 catch → SnackBar），绝不让本进程在没有
+  ///    接班者的情况下静默消失（用户视角即「崩溃」）。
   static Future<void> runAndExit(String installerPath) async {
-    await Process.start(
-      installerPath,
-      windowsInstallerArgs(installerPath),
-      mode: ProcessStartMode.detached,
-    );
-    // 给安装器拿到文件锁的瞬间；随后退出本进程，让其替换 hibiki.exe。
-    await Future<void>.delayed(const Duration(milliseconds: 500));
+    final File installer = File(installerPath);
+    if (!installer.existsSync()) {
+      throw UpdateInstallerException('installer not found: $installerPath');
+    }
+    final List<int> header = await _readHeaderBytes(installer);
+    if (!isWindowsExecutableHeader(header)) {
+      // 下载的不是真正的安装器（多半是代理返回的 HTML/损坏文件）：删掉脏文件，
+      // 抛错让上层提示「更新失败」并保留 app 存活，而不是硬启动一个坏 exe。
+      try {
+        installer.deleteSync();
+      } catch (_) {/* best-effort cleanup */}
+      throw UpdateInstallerException(
+          'downloaded file is not a Windows executable: $installerPath');
+    }
+
+    try {
+      await Process.start(
+        installerPath,
+        windowsInstallerArgs(installerPath),
+        mode: ProcessStartMode.detached,
+      );
+    } on ProcessException catch (e) {
+      throw UpdateInstallerException(
+          'failed to launch installer: ${e.message}');
+    }
+
+    // 安装器已成功启动（分离进程）。把当前进程让出文件锁：让出事件循环一拍，
+    // 随后退出，安装器（AppMutex + CloseApplications）即可替换 hibiki.exe 并重启。
+    await Future<void>.delayed(Duration.zero);
     exit(0);
+  }
+
+  static Future<List<int>> _readHeaderBytes(File file) async {
+    final RandomAccessFile raf = await file.open();
+    try {
+      return await raf.read(2);
+    } finally {
+      await raf.close();
+    }
   }
 }
