@@ -7,9 +7,16 @@ import 'package:path_provider/path_provider.dart';
 
 /// mpv 着色器（Anime4K 等）管理：导入到固定目录、列出、启用集持久化、应用到播放器。
 ///
-/// 着色器经 libmpv 的 `glsl-shaders` 属性生效——media_kit 底层即 libmpv。**仅桌面**
-/// （Windows/macOS/Linux）实测可用；移动端 GPU 着色器性能/兼容性未验证，[applyShadersToPlayer]
-/// 在非 libmpv 后端/属性不支持时静默 no-op（device 验证待用户）。
+/// 着色器经 libmpv 的 `glsl-shaders` 属性生效——media_kit 五平台底层都是 libmpv
+/// （NativePlayer）。**Android/iOS 同样走 libmpv 的 GPU 渲染管线**：media_kit 在
+/// 移动端默认 `vo=gpu` + `gpu-context=android`/`opengl-es=yes`、`hwdec=auto-safe`
+/// （非 `mediacodec_embed` 旁路），故 `glsl-shaders` 在标准渲染路径下生效，不是「移动端
+/// no-op」。依据：media_kit_video 2.0.1
+/// `lib/src/video_controller/android_video_controller/real.dart:151`（`vo ?? 'gpu'`）
+/// 与 `:199-208`（`gpu-context=android` / `opengl-es=yes`），见
+/// `.codex-test/todo-041-shader-tier-research.md` 复核补查。
+/// [applyShadersToPlayer] 只在 `player.platform` 非 libmpv（无 NativePlayer）或属性
+/// 不支持时才静默 no-op；性能/实际增益因机型 GPU 而异（高档可能掉帧/发热）。
 
 /// 着色器文件扩展名。
 const Set<String> kShaderExtensions = <String>{'.glsl', '.hook'};
@@ -255,17 +262,20 @@ Future<List<String>> discoverLocalMpvShaders({String? overrideDir}) async {
   return out;
 }
 
-/// 把 [absolutePaths] 着色器应用到 media_kit [player]（仅 libmpv 后端/桌面生效）。
+/// 把 [absolutePaths] 着色器应用到 media_kit [player]（libmpv 后端，五平台均生效）。
 ///
 /// 先把 `glsl-shaders` 清空，再逐个 `glsl-shaders-append`——用 append 规避
 /// `glsl-shaders` 单串里的**平台路径分隔符差异**（Unix `:` vs Windows `;`，且
-/// Windows 路径含 `:`）。best-effort：`player.platform` 非 libmpv（无 setProperty）
-/// 或属性不支持时静默吞掉（移动端 GPU 着色器后续再放）。
+/// Windows 路径含 `:`）。media_kit 在 Android/iOS 同样是 libmpv + `vo=gpu`（见本文件头
+/// doc 的 media_kit 源码出处），故此处的 `setProperty` 在移动端也写穿、着色器进渲染管线，
+/// **不是移动端 no-op**。best-effort：仅在 `player.platform` 非 libmpv（无 setProperty）
+/// 或属性不支持时静默吞掉。
 Future<void> applyShadersToPlayer(
     Player player, List<String> absolutePaths) async {
-  // media_kit 的原生后端是 NativePlayer（libmpv），暴露 setProperty(name, value)
-  // → mpv_set_property_string。用 dynamic 避免硬耦合 media_kit 内部导出；这是
-  // 外部播放器边界，失败即静默是合理降级（见上方 doc）。
+  // media_kit 的原生后端是 NativePlayer（libmpv），五平台一致，暴露 setProperty(name,
+  // value) → mpv_set_property_string。用 dynamic 避免硬耦合 media_kit 内部导出；这是
+  // 外部播放器边界，失败即静默是合理降级（见上方 doc）。移动端走 vo=gpu 渲染路径，属性
+  // 同样生效，这里不按平台门控。
   final dynamic native = player.platform;
   if (native == null) return;
   try {
@@ -274,6 +284,6 @@ Future<void> applyShadersToPlayer(
       await native.setProperty('glsl-shaders-append', path);
     }
   } catch (_) {
-    // 非 libmpv 后端 / 属性不支持：静默 no-op。
+    // 非 libmpv 后端 / 属性不支持：静默 no-op（非按平台门控——移动端 libmpv 同样生效）。
   }
 }

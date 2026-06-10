@@ -236,7 +236,8 @@ class VideoPlayerController extends ChangeNotifier
   List<String> get shaderPaths => List<String>.unmodifiable(_shaderPaths);
 
   /// 运行时切换 mpv 着色器（设置面板 toggle 即时生效）。未 [load]（无 player）时只记下，
-  /// 下次 [load] 应用。仅桌面 libmpv 真正生效；移动端静默 no-op。
+  /// 下次 [load] 应用。五平台 libmpv 后端均生效（移动端走 vo=gpu 渲染路径，非 no-op；
+  /// 见 [applyShadersToPlayer] doc 的 media_kit 源码出处）；仅非 libmpv 后端 no-op。
   Future<void> applyShaders(List<String> absolutePaths) async {
     _shaderPaths = List<String>.of(absolutePaths);
     _shadersBypassed = false; // 改动启用集即恢复非旁路，按新集生效。
@@ -266,7 +267,7 @@ class VideoPlayerController extends ChangeNotifier
   Future<bool> toggleShaderBypass() => setShaderBypass(!_shadersBypassed);
 
   /// 运行时应用 mpv 配置（设置面板改动即时生效）。未 [load] 时只记下，下次 [load]
-  /// 应用。仅桌面 libmpv 真正生效；移动端/不支持的属性静默 no-op。
+  /// 应用。五平台 libmpv 后端均生效；仅非 libmpv 后端 / 不支持的属性静默 no-op。
   Future<void> applyMpvConfig(VideoMpvConfig config) async {
     _mpvConfig = config;
     final Player? player = _player;
@@ -338,11 +339,13 @@ class VideoPlayerController extends ChangeNotifier
     // 与内嵌抽取的 cue 都走 overlay）。externalSubtitlePath 已在上层解析成 cues 传入。
     await player.setSubtitleTrack(SubtitleTrack.no());
 
-    // 应用启用的 mpv 着色器（Anime4K 等；仅桌面 libmpv 生效，移动端静默 no-op）。
+    // 应用启用的 mpv 着色器（Anime4K 等）。五平台 libmpv 后端均生效——移动端 media_kit
+    // 走 vo=gpu 渲染路径，glsl-shaders 进管线（见 applyShadersToPlayer doc）；仅非 libmpv
+    // 后端 no-op。
     _shaderPaths = List<String>.of(shaderPaths);
     await applyShadersToPlayer(player, _shaderPaths);
 
-    // 应用 mpv 画质/解码配置（桌面 libmpv 生效；移动端/不支持属性静默 no-op）。
+    // 应用 mpv 画质/解码配置（五平台 libmpv 生效；仅非 libmpv 后端 / 不支持属性 no-op）。
     _mpvConfig = mpvConfig;
     await applyMpvConfigToPlayer(player, _mpvConfig);
 

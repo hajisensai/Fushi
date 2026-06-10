@@ -1477,5 +1477,20 @@
     "lookup_audio_volume": "查词音量",
     "sync_err_invalid_client": "客户端凭据无效，请更新 App。",
     "sync_err_not_configured": "此构建未配置谷歌同步凭据。",
-    "floating_lyric_unavailable_hint": "无法显示悬浮字幕窗口。"
+    "floating_lyric_unavailable_hint": "无法显示悬浮字幕窗口。",
+    "video_shader_quality_tier": "画质增强",
+    "video_shader_tier_off": "无",
+    "video_shader_tier_low": "低",
+    "video_shader_tier_medium": "中",
+    "video_shader_tier_high": "高",
+    "video_shader_tier_ultra": "极高",
+    "video_shader_tier_off_hint": "不增强，按原画播放。",
+    "video_shader_tier_low_hint": "mpv 内置锐化缩放（ewa_lanczossharp），零下载、低 GPU 负担。",
+    "video_shader_tier_medium_hint": "Anime4K Fast，适合多数动画，中端 GPU 可跑。",
+    "video_shader_tier_high_hint": "Anime4K HQ，更清晰，需要较强 GPU。",
+    "video_shader_tier_ultra_hint": "ArtCNN C4F32，HD 番最佳画质，需要旗舰 GPU。",
+    "video_shader_tier_custom_hint": "自定义着色器组合。点上方档位可切回预设。",
+    "video_shader_section_advanced": "进阶（手动着色器）",
+    "video_shader_first_use_download": "一键下载并启用",
+    "video_shader_mobile_perf_hint": "手机上着色器仅在标准 GPU 渲染路径下生效，实际效果因机型 GPU 而异；高档位可能掉帧或发热。建议先用低/中档，并在本机确认效果。"
 }

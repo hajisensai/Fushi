@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:hibiki/src/media/video/video_asbplayer_config.dart';
 import 'package:hibiki/src/media/video/video_mpv_config.dart';
 import 'package:hibiki/src/media/video/video_subtitle_style.dart';
+import 'package:hibiki/src/media/video/video_shader_tier.dart';
 import 'package:hibiki/src/pages/implementations/video_shader_dialog.dart';
 import 'package:hibiki/utils.dart';
 
@@ -30,6 +31,7 @@ class VideoQuickSettingsSheet extends StatefulWidget {
     required this.onSubtitleOffsetChanged,
     required this.initialShadersEnabled,
     required this.onApplyShaders,
+    required this.onSelectShaderTier,
     required this.initialMpvConfig,
     required this.onMpvConfigChanged,
     required this.initialLockWindowAspectRatio,
@@ -78,6 +80,14 @@ class VideoQuickSettingsSheet extends StatefulWidget {
 
   /// 着色器勾选变化时回调：持久化启用集 + 解析绝对路径 + 实时应用（调用方负责）。
   final Future<void> Function(List<String> enabledNames) onApplyShaders;
+
+  /// 选画质档位回调：调用方原子持久化「mpv 内置缩放开关 [highQuality] + 启用集
+  /// [enabledNames]」并一次性实时应用（避免分两个回调引入顺序耦合）。[tier] 仅供统计。
+  final Future<void> Function(
+    VideoShaderTier tier,
+    bool highQuality,
+    List<String> enabledNames,
+  ) onSelectShaderTier;
 
   /// 用户上次手动指定的本机 mpv 配置/着色器目录（空=自动）。
   final String initialMpvShaderDir;
@@ -540,6 +550,16 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
       onApply: (List<String> names) async {
         setState(() => _shadersEnabled = names);
         await widget.onApplyShaders(names);
+      },
+      // 一键选档：原子回调由视频页同时落「内置缩放开关 + 启用集」并实时应用；本地同步
+      // 镜像两套权威值，使切分类重入着色器详情时档位高亮 / 勾选状态正确回显。
+      onSelectTier: (VideoShaderTier tier, bool highQuality,
+          List<String> enabledNames) async {
+        setState(() {
+          _mpvConfig = _mpvConfig.copyWith(highQuality: highQuality);
+          _shadersEnabled = enabledNames;
+        });
+        await widget.onSelectShaderTier(tier, highQuality, enabledNames);
       },
       initialMpvDir: _mpvShaderDir,
       onMpvDirChanged: (String dir) async {
