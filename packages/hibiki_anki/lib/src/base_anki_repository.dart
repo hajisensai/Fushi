@@ -95,6 +95,29 @@ abstract class BaseAnkiRepository {
         false;
   }
 
+  // ── note tags：两 backend 共用（杜绝两份漂移） ──────────────────
+
+  /// 标记每张经 Hibiki 制出的卡片的固定 tag。所有 Hibiki 制卡都会带上它，
+  /// 便于用户在 Anki 里按来源筛选/统计。
+  static const String hibikiTag = 'hibiki';
+
+  /// 解析用户配置的 [userTags]（空白分隔），**追加** [hibikiTag] 后去重（保序）。
+  ///
+  /// - 追加而非覆盖：用户已配置的 tag 全部保留，只是额外多一个 `hibiki`。
+  /// - 去重：若用户已手动配置了 `hibiki`，不会出现两个。
+  /// - 两 backend（AnkiConnect / AnkiDroid）共用同一逻辑，避免一端漏加。
+  @protected
+  List<String> buildNoteTags(String userTags) {
+    final seen = <String>{};
+    final result = <String>[];
+    for (final tag in userTags.split(RegExp(r'\s+'))) {
+      if (tag.isEmpty || !seen.add(tag)) continue;
+      result.add(tag);
+    }
+    if (seen.add(hibikiTag)) result.add(hibikiTag);
+    return result;
+  }
+
   // ── 词典媒体（gaiji 外字）嵌入：两 backend 共用，杜绝两份实现漂移 ──────────────
 
   /// 把每条词典媒体（gaiji 外字等）存进 Anki，返回「占位符 → **裸媒体引用**」映射。

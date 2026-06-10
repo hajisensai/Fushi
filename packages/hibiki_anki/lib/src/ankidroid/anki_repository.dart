@@ -174,21 +174,39 @@ class AnkiRepository extends BaseAnkiRepository {
       );
     }
 
+    // BUG-166: 制卡慢的根因——封面、句子(sasayaki)音频、单词远程音频、N 条
+    // 词典外字这几路媒体写入彼此独立，过去被串成一条 `await` 链（每路一次
+    // AnkiDroid `addFileToMedia` 平台通道往返 + 文件读取/SHA256）。它们互不
+    // 依赖，平台通道调用可并发发起；一次性 `Future.wait` 并发，总耗时从「各路
+    // 之和」降到「最慢一路」。dupe 检查 / addNote 仍串行在其后（依赖渲染结果）。
+    final List<Future<dynamic>> mediaFutures = <Future<dynamic>>[
+      context.coverPath != null
+          ? _addCoverImage(context.coverPath!)
+          : Future<String?>.value(null),
+      context.sasayakiAudioPath != null
+          ? _addSasayakiAudio(context.sasayakiAudioPath!)
+          : Future<String?>.value(null),
+      payload.audio.isNotEmpty
+          ? _addRemoteAudio(payload.audio)
+          : Future<String?>.value(null),
+      buildDictionaryMediaTags(payload.dictionaryMedia, _addDictionaryMedia),
+    ];
+    final List<dynamic> mediaResults = await Future.wait(mediaFutures);
+    final String? coverRef = mediaResults[0] as String?;
+    final String? sasayakiRef = mediaResults[1] as String?;
+    final String? rawAudio = mediaResults[2] as String?;
+    final Map<String, String> dictionaryMediaTags =
+        mediaResults[3] as Map<String, String>;
+
     final mediaContext = AnkiMiningContext(
       sentence: context.sentence,
       cueSentence: context.cueSentence,
       documentTitle: context.documentTitle,
-      coverPath: context.coverPath != null
-          ? await _addCoverImage(context.coverPath!)
-          : null,
-      sasayakiAudioPath: context.sasayakiAudioPath != null
-          ? await _addSasayakiAudio(context.sasayakiAudioPath!)
-          : null,
+      coverPath: coverRef,
+      sasayakiAudioPath: sasayakiRef,
       sentenceOffset: context.sentenceOffset,
     );
 
-    final rawAudio =
-        payload.audio.isNotEmpty ? await _addRemoteAudio(payload.audio) : null;
     final processedAudio = rawAudio != null ? '[sound:$rawAudio]' : '';
 
     final mediaPayload = AnkiMiningPayload(
@@ -207,11 +225,6 @@ class AnkiRepository extends BaseAnkiRepository {
       audio: processedAudio,
       selectedDictionary: payload.selectedDictionary,
       dictionaryMedia: payload.dictionaryMedia,
-    );
-
-    final dictionaryMediaTags = await buildDictionaryMediaTags(
-      payload.dictionaryMedia,
-      _addDictionaryMedia,
     );
 
     final fields = buildMinedFields(
@@ -252,8 +265,10 @@ class AnkiRepository extends BaseAnkiRepository {
         'Check your note type field mappings.',
       );
     }
-    final tags =
-        settings.tags.split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList();
+    // TODO-062: append the `hibiki` tag (de-duped, order preserved) to the
+    // user's configured tags via the shared base helper — same behavior as the
+    // AnkiConnect backend.
+    final tags = buildNoteTags(settings.tags);
 
     try {
       await _channel.invokeMethod('addNote', <String, dynamic>{
