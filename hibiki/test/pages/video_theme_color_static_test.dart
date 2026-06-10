@@ -27,4 +27,17 @@ void main() {
     expect(source, isNot(contains('color: Colors.white')));
     expect(source, isNot(contains('color: Colors.black.withValues')));
   });
+
+  test('video letterbox/pillarbox fill is solid black (TODO-053)', () {
+    final String source =
+        File('lib/src/pages/implementations/video_hibiki_page.dart')
+            .readAsStringSync();
+
+    // 播放器画面外围（letterbox/pillarbox）按播放器惯例固定纯黑，不跟随主题 surface。
+    expect(source, contains('fill: Colors.black,'));
+    expect(
+      source,
+      isNot(contains('fill: Theme.of(context).colorScheme.surface')),
+    );
+  });
 }

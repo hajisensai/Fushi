@@ -1790,7 +1790,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     final ColorScheme cs = Theme.of(context).colorScheme;
     final bool roomyBottomBar = _hasRoomyVideoBottomBar();
     return MaterialDesktopVideoControlsThemeData(
-      // 控制条 3s 后自动隐藏时一并隐藏鼠标光标（默认 false 会让光标常驻，BUG-106）。
+      // 无操作 2 秒后控制条自动隐藏（TODO-056，media_kit 默认 3 秒偏长）。
+      controlsHoverDuration: const Duration(seconds: 2),
+      // 控制条隐藏时一并隐藏鼠标光标（默认 false 会让光标常驻，BUG-106）。
       hideMouseOnControlsRemoval: true,
       // 单击画面 = 播放/暂停（media_kit 桌面默认 false，故此前点画面毫无反应，
       // BUG-130）。字幕字符点击在更上层 [VideoSubtitleOverlay] 的 opaque GestureDetector
@@ -1918,6 +1920,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     final ColorScheme cs = Theme.of(context).colorScheme;
     final bool roomyBottomBar = _hasRoomyVideoBottomBar();
     return MaterialVideoControlsThemeData(
+      // 无操作 2 秒后控制条自动隐藏（TODO-056，media_kit 默认 3 秒偏长）。
+      controlsHoverDuration: const Duration(seconds: 2),
       seekBarPositionColor: cs.primary,
       seekBarThumbColor: cs.primary,
       buttonBarButtonColor: cs.primary,
@@ -3056,9 +3060,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           // bottom sheet / 文件选择器）关闭后能主动把键盘焦点还给它，恢复空格等内置
           // 快捷键（见 [_refocusVideo]）。
           focusNode: _videoFocusNode,
-          // 视频不满屏时的 letterbox/pillarbox 填充色吃主题 surface（默认黑边换成
-          // 跟随主题的中性底色，与 Scaffold 背景一致，深浅主题统一）。
-          fill: Theme.of(context).colorScheme.surface,
+          // 视频不满屏时的 letterbox/pillarbox 填充色固定纯黑（TODO-053）：播放器
+          // 画面外围按播放器惯例用黑底，不跟随主题 surface，深浅主题统一为黑。
+          fill: Colors.black,
           // 字幕 overlay + 拖拽挂载都包进 controls builder：media_kit 全屏推独立 root
           // 路由并复用同一 controls，故 overlay 随全屏一起进路由，全屏时字幕仍显示且
           // 可点查词、拖字幕也能挂载（见 [_buildVideoControls]）。
