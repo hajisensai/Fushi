@@ -104,4 +104,56 @@ void main() {
       expect(args, contains('/SP-'));
     });
   });
+
+  group('isWindowsExecutableHeader', () {
+    test('accepts a PE/MZ header', () {
+      // Real Windows executables start with the DOS "MZ" magic (0x4D 0x5A).
+      expect(isWindowsExecutableHeader(<int>[0x4D, 0x5A, 0x90, 0x00]), isTrue);
+    });
+
+    test('rejects an HTML page (proxy error served with HTTP 200)', () {
+      // The app falls back to GitHub proxies (ghfast.top / ghproxy) under the
+      // GFW; those can answer 200 with an HTML notice that gets written to the
+      // .exe. Such bytes must never be treated as a runnable installer.
+      final List<int> html = '<!DOCTYPE html><html>'.codeUnits;
+      expect(isWindowsExecutableHeader(html), isFalse);
+    });
+
+    test('rejects an empty / truncated download', () {
+      expect(isWindowsExecutableHeader(<int>[]), isFalse);
+      expect(isWindowsExecutableHeader(<int>[0x4D]), isFalse);
+    });
+  });
+
+  group('WindowsInstaller.runAndExit validation', () {
+    test('throws instead of launching when the file is not an executable',
+        () async {
+      // Regression for "Windows auto-update crash": a corrupt / proxy-HTML
+      // download must surface an error (caught upstream -> SnackBar) rather
+      // than being fed to Process.start (and then exit(0) vanishing the app).
+      final Directory tmp =
+          await Directory.systemTemp.createTemp('hibiki-update-test');
+      addTearDown(() async {
+        if (tmp.existsSync()) await tmp.delete(recursive: true);
+      });
+      final File bogus = File('${tmp.path}/hibiki-0.4.2-windows-setup.exe');
+      await bogus.writeAsString('<html>rate limited</html>');
+
+      await expectLater(
+        WindowsInstaller.runAndExit(bogus.path),
+        throwsA(isA<UpdateInstallerException>()),
+      );
+      // The corrupt download is cleaned up so it can't be re-run later, and
+      // crucially the process is still alive here -- exit(0) was NOT reached
+      // (otherwise this assertion would never run).
+      expect(bogus.existsSync(), isFalse);
+    });
+
+    test('throws when the installer file is missing', () async {
+      await expectLater(
+        WindowsInstaller.runAndExit('Z:/nope/does-not-exist-installer.exe'),
+        throwsA(isA<UpdateInstallerException>()),
+      );
+    });
+  });
 }
