@@ -23,6 +23,16 @@
 // character index (same contract as Android's getCharIndexAt), which is sent
 // back as a `lookupText` event for the in-app dictionary popup to resolve.
 //
+// Click-through contract (the core of TODO-038): the strip must NOT block the
+// apps underneath it, yet its words must stay tappable for lookup. A plain
+// always-on-top window swallows every click in its rectangle, so by default the
+// strip carries WS_EX_TRANSPARENT and all mouse input falls straight through to
+// whatever is below. A low-frequency WM_TIMER polls the global cursor: while it
+// is over the strip we drop WS_EX_TRANSPARENT so clicks (word lookup + control
+// buttons + drag) land on us; once the cursor leaves we restore it so the
+// desktop is fully usable again. (A transparent window receives no
+// WM_MOUSEMOVE, hence the poll rather than hover messages.)
+//
 // All methods must be called on the thread that owns the message loop (the
 // runner's main thread); the channel handler in flutter_window.cpp guarantees
 // this because MethodChannel callbacks run on the platform thread.
@@ -92,6 +102,16 @@ class FloatingLyricWindow {
   void Render();
   void RequestRender();
 
+  // Click-through management. The strip is created mouse-transparent so the
+  // desktop stays usable; ApplyInteractive() toggles WS_EX_TRANSPARENT and
+  // PollCursorInteractivity() (driven by a WM_TIMER) flips it as the global
+  // cursor enters / leaves the strip rectangle.
+  void ApplyInteractive(bool interactive);
+  void PollCursorInteractivity();
+  bool CursorOverStrip() const;
+  void StartCursorPoll();
+  void StopCursorPoll();
+
   // Geometry of the lyric text area in client (DIP-equivalent physical px),
   // computed during the last Render. Used for tap hit-testing.
   struct TextLayoutRect {
@@ -116,7 +136,14 @@ class FloatingLyricWindow {
   bool playing_ = false;
   bool click_lookup_enabled_ = true;
   bool hovered_ = false;
+  // True while the strip is currently accepting mouse input (WS_EX_TRANSPARENT
+  // cleared). Starts false so a freshly shown strip lets clicks fall through.
+  bool interactive_ = false;
   UINT dpi_ = 96;
+
+  // Timer id for the global-cursor poll that drives click-through toggling.
+  static constexpr UINT_PTR kCursorPollTimerId = 1;
+  static constexpr UINT kCursorPollIntervalMs = 120;
 
   std::wstring text_;
   int highlight_start_ = -1;
