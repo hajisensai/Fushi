@@ -170,6 +170,31 @@ void main() {
       expect(list.first.hasContent, isTrue);
     });
 
+    test('#4 listBooks 把 EPUB 内部相对 href 封面解析成可服务的绝对路径', () async {
+      // 这是真实 EPUB 书的封面存储形式：coverPath = EPUB 内相对 href，封面文件在
+      // extractDir 里。修复前 host 直接 File(相对href).existsSync() 恒 false → 远端
+      // 书卡没封面（#4），视频侧因 coverPath 是绝对路径而不受影响。
+      final String extractDir = p.join(tmp.path, 'HrefBook');
+      final String bookKey = await _insertBookWithExtractDir(
+        db: db,
+        title: 'HrefBook',
+        extractDir: extractDir,
+      );
+      final String coverRel = p.join('OEBPS', 'images', 'cover.jpg');
+      File(p.join(extractDir, coverRel))
+        ..createSync(recursive: true)
+        ..writeAsBytesSync(<int>[1, 2, 3, 4]);
+      // DB 里存的是相对 href（与 EpubImporter 写入 coverHref 一致）。
+      await db.updateEpubBookContentPaths(bookKey, coverPath: coverRel);
+
+      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final List<RemoteBookInfo> list = await svc.listBooks();
+
+      // 解析后是磁盘存在的绝对路径，hasCover==true，server 据此能下发 coverUrl。
+      expect(list.single.coverPath, p.join(extractDir, coverRel));
+      expect(list.single.toJson()['hasCover'], isTrue);
+    });
+
     test('listBooks 标记已有本地封面可供对端展示', () async {
       final String extractDir = p.join(tmp.path, 'CoveredBook');
       final String bookKey = await _insertBookWithExtractDir(

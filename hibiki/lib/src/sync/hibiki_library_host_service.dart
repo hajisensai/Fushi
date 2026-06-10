@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:path/path.dart' as p;
+
 // ── 本地音频 ──────────────────────────────────────────────────────────────────
 
 /// host 实时本地音频来源的清单条目（键 = displayName）。
@@ -237,6 +239,71 @@ BookSyncDiff computeBookSyncDiff({
   return BookSyncDiff(toPull: toPull, toPush: toPush);
 }
 
+/// 把 EPUB 行里持久化的封面 [coverPath]（通常是 **EPUB 内部相对 href**，如
+/// `OEBPS/images/cover.jpg`）解析成磁盘上**存在的绝对文件路径**；没有可用封面
+/// 时返回 null。
+///
+/// 纯函数（除文件存在性探测外无副作用）。host 的 `listBooks` 用它把相对 href 拼到
+/// [extractDir] 再判存在——否则相对 href 被当绝对路径 `File(href).existsSync()` 恒
+/// false，远端书卡永远只有占位图（TODO-033 #4：远端书籍没封面的根因，
+/// TODO-007 只修对了绝对路径的视频侧）。
+///
+/// 探测顺序与 reader_hibiki_source 的封面解析一致：先 [extractDir] + 声明的相对
+/// href（去掉前导 `/`），再回退到约定名 `cover.jpg/jpeg/png`，取首个存在者。
+/// [coverPath] 本身已是存在的绝对路径时（视频侧 / 旧数据）原样返回。
+String? resolveEpubCoverFilePath({
+  required String extractDir,
+  required String? coverPath,
+}) {
+  bool exists(String path) {
+    try {
+      return File(path).existsSync();
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // 已是存在的绝对路径（视频封面就是绝对路径，故视频侧本就正常）：直接用。
+  if (coverPath != null && coverPath.isNotEmpty && exists(coverPath)) {
+    return coverPath;
+  }
+  if (extractDir.isEmpty) return null;
+
+  final List<String> candidates = <String>[];
+  if (coverPath != null && coverPath.isNotEmpty) {
+    String rel = coverPath;
+    if (rel.startsWith('/')) rel = rel.substring(1);
+    candidates.add(p.join(extractDir, rel));
+  }
+  for (final String name in const <String>[
+    'cover.jpg',
+    'cover.jpeg',
+    'cover.png',
+  ]) {
+    candidates.add(p.join(extractDir, name));
+  }
+  for (final String candidate in candidates) {
+    if (exists(candidate)) return candidate;
+  }
+  return null;
+}
+
+/// 从远端书清单 [remote] 里剔除本端已存在的书（按 [localBookKeys] 去重）。
+///
+/// 纯函数。远端书的去重键 = `sanitizeTtuFilename(title)`（与 `EpubBooks.bookKey`
+/// 派生一致，由调用方算好后传入 [keyOf]）。本端已有同 key 的书就不再在「配对设备」
+/// 区重复展示（TODO-033 #6：远端与本地重复同一本书）。
+List<RemoteBookInfo> dedupeRemoteBooks({
+  required List<RemoteBookInfo> remote,
+  required Set<String> localBookKeys,
+  required String Function(String title) keyOf,
+}) {
+  return <RemoteBookInfo>[
+    for (final RemoteBookInfo book in remote)
+      if (!localBookKeys.contains(keyOf(book.title))) book,
+  ];
+}
+
 // ── 视频 ──────────────────────────────────────────────────────────────────────
 
 /// host 实时视频的清单条目（只读，不同步——视频文件通常过大，不走同步管道）。
@@ -348,6 +415,22 @@ class RemoteVideoStreamUrls {
       subtitleUrl: subtitleUrl,
     );
   }
+}
+
+/// 从远端视频清单 [remote] 里剔除本端已存在的视频（按 [localBookUids] 去重）。
+///
+/// 纯函数。视频的跨设备身份就是 [RemoteVideoInfo.id]（= `VideoBooks.bookUid`，
+/// 从文件名经 [sanitizeTtuFilename] 派生，host 与本端同源），故直接按 id 精确去重，
+/// 不必再走标题再派生（标题可能两端不同，bookUid 才是规范同步键）。本端已有同 id 的
+/// 视频就不在「配对设备」区重复展示（TODO-033 #6：远端与本地重复同一视频）。
+List<RemoteVideoInfo> dedupeRemoteVideos({
+  required List<RemoteVideoInfo> remote,
+  required Set<String> localBookUids,
+}) {
+  return <RemoteVideoInfo>[
+    for (final RemoteVideoInfo video in remote)
+      if (!localBookUids.contains(video.id)) video,
+  ];
 }
 
 // ── Abstract service ───────────────────────────────────────────────────────

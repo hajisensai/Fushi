@@ -186,7 +186,12 @@ class AppModelLibraryHostService implements HibikiLibraryHostService {
   Future<List<RemoteBookInfo>> listBooks() async {
     final List<EpubBookRow> rows = await _db.getAllEpubBooks();
     return rows.map((EpubBookRow r) {
-      final String? coverPath = _existingFilePath(r.coverPath);
+      // EPUB 行的 coverPath 是 EPUB 内部相对 href，必须拼 extractDir 才是磁盘真
+      // 路径；直接 _existingFilePath(相对href) 恒 false → 远端书卡没封面（#4）。
+      final String? coverPath = resolveEpubCoverFilePath(
+        extractDir: r.extractDir,
+        coverPath: r.coverPath,
+      );
       return RemoteBookInfo(
         title: r.title,
         hasContent: resolveExtractedEpubRoot(r.extractDir) != null,

@@ -323,6 +323,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 当前播放的视频文件绝对路径（枚举字幕源用）；未 load 时为 null。
   String? _currentVideoPath;
 
+  /// 远端模式（[_isRemote]）下 host 下发并下载到本地临时文件的那条外挂字幕路径；
+  /// 无 host 字幕时为 null。远端没有本地视频文件，字幕菜单不能走 [_currentVideoPath]
+  /// 的同目录枚举（恒 null → 早返回 → 点了没反应，#2），故单独记下这条 host 字幕，
+  /// 让远端字幕菜单可在「关闭 / host 字幕 / 本地导入」三者间切换。
+  String? _remoteSubtitlePath;
+
   /// 当前选中的字幕源持久化值（外挂路径 / `embedded:<n>` / null=关闭）；
   /// 用于字幕源菜单高亮当前项。
   String? _currentSubtitleSource;
@@ -465,6 +471,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         ));
         await client.getRemoteVideoSubtitle(info.id, subtitle);
         externalSub = subtitle.path;
+        _remoteSubtitlePath = subtitle.path;
         cues = await _loadExternalSubtitleCues(subtitle.path, info.id);
       }
       await _applyLoad(
@@ -2200,6 +2207,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   ) async {
     if (_videoSheetOpen) return;
     _videoSheetOpen = true;
+    // #2: 远端模式没有本地视频文件，[_currentVideoPath] 恒 null，原逻辑直接早返回
+    // → 字幕菜单点了没反应。远端走独立菜单（关闭 / host 字幕 / 本地导入），不依赖
+    // 同目录枚举与本地 DB 持久化。内封多轨切换列为 follow-up（远端流当前不枚举内封轨）。
+    if (_isRemote) {
+      _videoSheetOpen = false;
+      await _showRemoteSubtitleMenu(controller);
+      return;
+    }
     final String? videoPath = _currentVideoPath;
     if (videoPath == null) {
       _videoSheetOpen = false;
@@ -2337,6 +2352,124 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     final String? path = result?.files.single.path;
     if (path == null) return;
     await _importExternalSubtitle(controller, path);
+  }
+
+  /// 远端模式专用字幕菜单（#2）。远端视频是网络流、无本地文件、无本地库 DB 行，故：
+  /// - 不走 [_currentVideoPath] 的同目录枚举（远端没有同目录）；
+  /// - 不写本地 [VideoBookRepository]（远端 bookUid 在本地没有对应行）；
+  /// - 仅在内存里切换 cue overlay：关闭 / host 下发的那条外挂字幕 / 本地导入字幕。
+  Future<void> _showRemoteSubtitleMenu(
+    VideoPlayerController controller,
+  ) async {
+    if (_videoSheetOpen) return;
+    _videoSheetOpen = true;
+    if (!context.mounted) {
+      _videoSheetOpen = false;
+      return;
+    }
+    final String? hostSub = _remoteSubtitlePath;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (BuildContext ctx) => SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(ctx).size.height * 0.7,
+          ),
+          child: ListView(
+            shrinkWrap: true,
+            children: <Widget>[
+              ListTile(
+                leading: const Icon(Icons.file_open_outlined),
+                title: Text(t.video_subtitle_import_file),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _pickAndImportRemoteSubtitle(controller);
+                },
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.subtitles_off),
+                title: Text(t.video_subtitle_off),
+                selected: _currentSubtitleSource == null,
+                selectedColor: Theme.of(ctx).colorScheme.primary,
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _clearRemoteSubtitle(controller);
+                },
+              ),
+              if (hostSub != null)
+                ListTile(
+                  leading: const Icon(Icons.cloud_done_outlined),
+                  title: Text(t.video_subtitle_remote_host),
+                  subtitle: Text(p.basename(hostSub)),
+                  selected: _currentSubtitleSource == hostSub,
+                  selectedColor: Theme.of(ctx).colorScheme.primary,
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _applyRemoteSubtitle(controller, hostSub);
+                  },
+                ),
+            ],
+          ),
+        ),
+      ),
+    ).whenComplete(() {
+      _videoSheetOpen = false;
+      _refocusVideo();
+    });
+  }
+
+  /// 远端模式：弹文件选择器挑字幕 → 直接在内存里应用到当前流（不拷盘、不持久化）。
+  Future<void> _pickAndImportRemoteSubtitle(
+    VideoPlayerController controller,
+  ) async {
+    final FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const <String>['srt', 'vtt', 'ass', 'ssa'],
+      allowMultiple: false,
+    );
+    _refocusVideo();
+    final String? path = result?.files.single.path;
+    if (path == null) return;
+    if (subtitleFormatForPath(path) == null) {
+      _showOsd(t.video_subtitle_import_unsupported);
+      return;
+    }
+    await _applyRemoteSubtitle(controller, path);
+  }
+
+  /// 远端模式：把 [path] 字幕文件解析成 cue 并切到 overlay（仅内存，不写本地 DB）。
+  /// 解析空 cue（坏字幕 / 图形轨）时诚实告知失败、不切换。
+  Future<void> _applyRemoteSubtitle(
+    VideoPlayerController controller,
+    String path,
+  ) async {
+    _showSubtitleLoadingOverlay();
+    final List<AudioCue> cues;
+    try {
+      cues = await _loadExternalSubtitleCues(path, widget.bookUid);
+    } finally {
+      _hideSubtitleLoadingOverlay();
+    }
+    if (!mounted) return;
+    if (cues.isEmpty) {
+      _showOsd(t.video_subtitle_load_failed(label: p.basename(path)));
+      return;
+    }
+    controller.setCues(cues);
+    await controller.selectSubtitleTrack(SubtitleTrack.no());
+    if (!mounted) return;
+    setState(() => _currentSubtitleSource = path);
+    _showOsd(t.video_subtitle_switched(label: p.basename(path)));
+  }
+
+  /// 远端模式：关闭字幕（清空 cue overlay + 关 libmpv 字幕轨；仅内存，不写本地 DB）。
+  Future<void> _clearRemoteSubtitle(VideoPlayerController controller) async {
+    controller.setCues(const <AudioCue>[]);
+    await controller.selectSubtitleTrack(SubtitleTrack.no());
+    if (!mounted) return;
+    setState(() => _currentSubtitleSource = null);
   }
 
   /// 把用户挑选/拖入的外部字幕文件 [srcPath] 拷到持久化

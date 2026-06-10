@@ -35,6 +35,7 @@ import 'package:hibiki/src/shortcuts/gamepad_service.dart'
     show GamepadLongPressActions;
 import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
+import 'package:hibiki/src/sync/remote_download_progress_badge.dart';
 import 'package:hibiki/src/sync/remote_cover_headers.dart';
 import 'package:hibiki/src/sync/remote_book_client.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
@@ -136,6 +137,11 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   Future<_RemoteBookState?>? _remoteBooksFuture;
   RemoteBookClient? _remoteBookClient;
 
+  /// 正在下载中的远端书（key = book.title）。值为进度分数 0..1；收到首个
+  /// onProgress 前为 null（不确定进度）。下载期间用它在卡片上替换下载按钮为进度
+  /// 指示（#3：远端下载全程有进行中反馈，不再 await 完才弹一次提示）。
+  final Map<String, double?> _downloadingBooks = <String, double?>{};
+
   VideoBookRepository get _videoRepo => VideoBookRepository(appModel.database);
 
   Future<List<VideoBookRow>> _loadVideoBooks() async {
@@ -170,8 +176,19 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     if (client == null) return null;
     try {
       final List<RemoteBookInfo> books = await client.listRemoteBooks();
+      // #6: 远端与本地是同一本书时（同 bookKey）不在「配对设备」区重复展示。
+      final List<EpubBookRow> localBooks =
+          await appModel.database.getAllEpubBooks();
+      final Set<String> localKeys =
+          localBooks.map((EpubBookRow r) => r.bookKey).toSet();
+      final List<RemoteBookInfo> withContent =
+          books.where((RemoteBookInfo book) => book.hasContent).toList();
       return _RemoteBookState(
-        books: books.where((RemoteBookInfo book) => book.hasContent).toList(),
+        books: dedupeRemoteBooks(
+          remote: withContent,
+          localBookKeys: localKeys,
+          keyOf: sanitizeTtuFilename,
+        ),
       );
     } catch (e) {
       debugPrint('[reader-shelf] remote book list failed: $e');
@@ -761,14 +778,20 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           Positioned(
             top: overlayInset,
             right: overlayInset,
-            child: IconButton.filledTonal(
-              key: ValueKey<String>('remote_book_download_$safeKey'),
-              tooltip: t.remote_book_download,
-              iconSize: 18,
-              visualDensity: VisualDensity.compact,
-              icon: const Icon(Icons.download_outlined),
-              onPressed: () => _downloadRemoteBook(book),
-            ),
+            child: _downloadingBooks.containsKey(book.title)
+                ? RemoteDownloadProgressBadge(
+                    key: ValueKey<String>('remote_book_downloading_$safeKey'),
+                    progress: _downloadingBooks[book.title],
+                    tooltip: t.remote_book_downloading,
+                  )
+                : IconButton.filledTonal(
+                    key: ValueKey<String>('remote_book_download_$safeKey'),
+                    tooltip: t.remote_book_download,
+                    iconSize: 18,
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(Icons.download_outlined),
+                    onPressed: () => _downloadRemoteBook(book),
+                  ),
           ),
         ],
       ),
@@ -806,10 +829,28 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
 
   Future<void> _downloadRemoteBook(RemoteBookInfo book) async {
     final RemoteBookClient? client = _remoteBookClient;
-    if (client == null) return;
+    // #3: 服务不可达 / 未鉴权时给明确提示，不再静默 return（用户点了像没反应）。
+    if (client == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t.remote_book_unavailable)),
+      );
+      return;
+    }
+    // 同一本书已在下载中：忽略重复点击（卡片 tap/长按/按钮都指向这里）。
+    if (_downloadingBooks.containsKey(book.title)) return;
+    // #3: 标记下载中（先置不确定进度），卡片立刻显示进行中反馈。
+    setState(() => _downloadingBooks[book.title] = null);
     try {
       final File dest = await _remoteBookDestination(book);
-      await client.getRemoteBook(book.title, dest);
+      await client.getRemoteBook(
+        book.title,
+        dest,
+        onProgress: (double progress) {
+          if (!mounted) return;
+          setState(() => _downloadingBooks[book.title] = progress);
+        },
+      );
       await _importRemoteBookFile(dest);
     } catch (e, stack) {
       ErrorLogService.instance
@@ -819,6 +860,12 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         SnackBar(content: Text(t.remote_book_download_failed)),
       );
       return;
+    } finally {
+      if (mounted) {
+        setState(() => _downloadingBooks.remove(book.title));
+      } else {
+        _downloadingBooks.remove(book.title);
+      }
     }
     if (!mounted) return;
     ref.invalidate(hibikiBooksProvider(appModel.targetLanguage));

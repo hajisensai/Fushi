@@ -23,6 +23,7 @@ import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
 import 'package:hibiki/src/pages/implementations/video_statistics_page.dart';
 import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
+import 'package:hibiki/src/sync/remote_download_progress_badge.dart';
 import 'package:hibiki/src/sync/remote_cover_headers.dart';
 import 'package:hibiki/src/sync/remote_video_client.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
@@ -62,6 +63,11 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   Future<List<VideoBookRow>>? _future;
   Future<_RemoteVideoState?>? _remoteFuture;
   RemoteVideoClient? _remoteVideoClient;
+
+  /// 正在下载中的远端视频（key = [RemoteVideoInfo.id]）。值为进度分数 0..1；
+  /// 收到首个 onProgress 前为 null（不确定进度）。下载期间用它在卡片上替换下载
+  /// 按钮为进度指示（#3：远端下载全程有进行中反馈，不再 await 完才弹一次提示）。
+  final Map<String, double?> _downloadingVideos = <String, double?>{};
 
   /// 视频卡片拖放命中注册表：每张 [CardDropZone] 注册自身几何，拖放时按屏幕坐标
   /// 命中查找目标视频卡（字幕外挂到该视频）。范型=VideoBookRow。
@@ -103,7 +109,13 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     if (client == null) return null;
     try {
       final List<RemoteVideoInfo> videos = await client.listRemoteVideos();
-      return _RemoteVideoState(videos: videos);
+      // #6: 远端与本地是同一视频时（同 bookUid）不在「配对设备」区重复展示。
+      final List<VideoBookRow> localVideos = await widget.repo.listAll();
+      final Set<String> localUids =
+          localVideos.map((VideoBookRow r) => r.bookUid).toSet();
+      return _RemoteVideoState(
+        videos: dedupeRemoteVideos(remote: videos, localBookUids: localUids),
+      );
     } catch (e) {
       debugPrint('[home-video] remote video list failed: $e');
       return const _RemoteVideoState(
@@ -241,10 +253,28 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
 
   Future<void> _downloadRemote(RemoteVideoInfo video) async {
     final RemoteVideoClient? client = _remoteVideoClient;
-    if (client == null) return;
-    final File dest = await _remoteDownloadDestination(video);
+    // #3: 服务不可达 / 未鉴权时给明确提示，不再静默 return（用户点了像没反应）。
+    if (client == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t.remote_video_unavailable)),
+      );
+      return;
+    }
+    // 同一视频已在下载中：忽略重复点击。
+    if (_downloadingVideos.containsKey(video.id)) return;
+    // #3: 标记下载中（先置不确定进度），卡片立刻显示进行中反馈。
+    setState(() => _downloadingVideos[video.id] = null);
     try {
-      await client.downloadRemoteVideo(video.id, dest);
+      final File dest = await _remoteDownloadDestination(video);
+      await client.downloadRemoteVideo(
+        video.id,
+        dest,
+        onProgress: (double progress) {
+          if (!mounted) return;
+          setState(() => _downloadingVideos[video.id] = progress);
+        },
+      );
     } catch (e) {
       debugPrint('[home-video] remote video download failed: $e');
       if (!mounted) return;
@@ -252,6 +282,12 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         SnackBar(content: Text(t.remote_video_download_failed)),
       );
       return;
+    } finally {
+      if (mounted) {
+        setState(() => _downloadingVideos.remove(video.id));
+      } else {
+        _downloadingVideos.remove(video.id);
+      }
     }
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -594,14 +630,22 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
                   Positioned(
                     top: 6,
                     right: 6,
-                    child: IconButton.filledTonal(
-                      key: ValueKey<String>('remote_video_download_$safeKey'),
-                      tooltip: t.remote_video_download,
-                      iconSize: 18,
-                      visualDensity: VisualDensity.compact,
-                      icon: const Icon(Icons.download_outlined),
-                      onPressed: () => _downloadRemote(video),
-                    ),
+                    child: _downloadingVideos.containsKey(video.id)
+                        ? RemoteDownloadProgressBadge(
+                            key: ValueKey<String>(
+                                'remote_video_downloading_$safeKey'),
+                            progress: _downloadingVideos[video.id],
+                            tooltip: t.remote_video_downloading,
+                          )
+                        : IconButton.filledTonal(
+                            key: ValueKey<String>(
+                                'remote_video_download_$safeKey'),
+                            tooltip: t.remote_video_download,
+                            iconSize: 18,
+                            visualDensity: VisualDensity.compact,
+                            icon: const Icon(Icons.download_outlined),
+                            onPressed: () => _downloadRemote(video),
+                          ),
                   ),
                   if (video.hasSubtitle)
                     Positioned(

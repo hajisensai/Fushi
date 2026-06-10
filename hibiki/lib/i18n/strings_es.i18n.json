@@ -1457,5 +1457,10 @@
     "video_shader_section_templates": "Shader templates",
     "video_shader_section_import": "Import shaders",
     "video_shader_section_installed": "Installed shaders",
-    "video_quality_enhancement_hint": "Uses mpv's built-in high-quality scaling by default. Shader choices below only apply while this is on."
+    "video_quality_enhancement_hint": "Uses mpv's built-in high-quality scaling by default. Shader choices below only apply while this is on.",
+    "remote_video_downloading": "Downloading…",
+    "remote_book_downloading": "Downloading…",
+    "remote_video_unavailable": "Paired device unavailable",
+    "remote_book_unavailable": "Paired device unavailable",
+    "video_subtitle_remote_host": "Paired device subtitle"
 }
