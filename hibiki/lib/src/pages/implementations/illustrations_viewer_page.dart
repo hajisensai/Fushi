@@ -3,10 +3,21 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
+import 'package:share_plus/share_plus.dart';
+import 'package:hibiki/src/epub/epub_book.dart' show fallbackMimeType;
 import 'package:hibiki/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent;
 import 'package:hibiki/src/shortcuts/input_binding.dart' show GamepadButton;
+import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/utils.dart';
+
+/// 一张插画：解码用的字节 + 源磁盘文件（复制/分享需要真实文件路径）。
+class _Illustration {
+  const _Illustration({required this.bytes, required this.file});
+
+  final Uint8List bytes;
+  final File file;
+}
 
 class IllustrationsViewerPage extends StatefulWidget {
   const IllustrationsViewerPage({
@@ -26,7 +37,7 @@ class IllustrationsViewerPage extends StatefulWidget {
 }
 
 class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
-  final List<Uint8List> _images = [];
+  final List<_Illustration> _images = [];
   bool _loading = true;
   String? _error;
 
@@ -73,7 +84,9 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
         try {
           final Uint8List bytes = await file.readAsBytes();
           if (bytes.isNotEmpty) {
-            setState(() => _images.add(bytes));
+            setState(
+              () => _images.add(_Illustration(bytes: bytes, file: file)),
+            );
           }
         } catch (e, stack) {
           ErrorLogService.instance
@@ -157,7 +170,7 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
                 padding: EdgeInsets.zero,
                 onTap: () => _openFullScreen(index),
                 child: Image.memory(
-                  _images[index],
+                  _images[index].bytes,
                   fit: BoxFit.contain,
                   errorBuilder: (_, __, ___) =>
                       const Center(child: Icon(Icons.broken_image_outlined)),
@@ -189,7 +202,7 @@ class _FullScreenGallery extends StatefulWidget {
     required this.initialIndex,
   });
 
-  final List<Uint8List> images;
+  final List<_Illustration> images;
   final int initialIndex;
 
   @override
@@ -260,6 +273,73 @@ class _FullScreenGalleryState extends State<_FullScreenGallery> {
     });
   }
 
+  File _currentFile() => widget.images[_currentIndex].file;
+
+  /// 移动端：长按 / 顶栏分享按钮 → 系统分享面板（复用 TODO-023 范式）。
+  Future<void> _shareCurrentImage() async {
+    final File file = _currentFile();
+    if (!file.existsSync()) {
+      HibikiToast.show(msg: t.reader_image_file_unavailable);
+      return;
+    }
+    try {
+      await Share.shareXFiles(
+        <XFile>[XFile(file.path, mimeType: fallbackMimeType(file.path))],
+        subject: p.basename(file.path),
+      );
+    } catch (e) {
+      HibikiToast.show(msg: t.reader_image_share_failed(error: e));
+    }
+  }
+
+  /// Windows：右键菜单 / 顶栏复制按钮 → 原生剪贴板（复用 TODO-023 channel）。
+  Future<void> _copyCurrentImageToClipboard() async {
+    final File file = _currentFile();
+    if (!file.existsSync()) {
+      HibikiToast.show(msg: t.reader_image_file_unavailable);
+      return;
+    }
+    try {
+      await HibikiChannels.clipboardImage.invokeMethod<void>(
+        'copyImageFile',
+        <String, String>{'path': file.path},
+      );
+      HibikiToast.show(msg: t.copied_to_clipboard);
+    } catch (e) {
+      HibikiToast.show(msg: t.reader_image_copy_failed(error: e));
+    }
+  }
+
+  /// Windows 右键弹出复制菜单（镜像阅读器内联图片的 `_showReaderImageContextMenu`）。
+  Future<void> _showImageContextMenu(Offset globalPosition) async {
+    if (!mounted) return;
+    final RenderBox overlay =
+        Overlay.of(context).context.findRenderObject()! as RenderBox;
+    final String? action = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromRect(
+        Rect.fromLTWH(globalPosition.dx, globalPosition.dy, 1, 1),
+        Offset.zero & overlay.size,
+      ),
+      items: <PopupMenuEntry<String>>[
+        PopupMenuItem<String>(
+          value: 'copy',
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              const Icon(Icons.copy_outlined, size: 18),
+              const SizedBox(width: 12),
+              Text(t.reader_copy_image),
+            ],
+          ),
+        ),
+      ],
+    );
+    if (action == 'copy') {
+      await _copyCurrentImageToClipboard();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -277,26 +357,49 @@ class _FullScreenGalleryState extends State<_FullScreenGallery> {
             current: _currentIndex + 1,
             total: widget.images.length,
           ),
+          actions: <Widget>[
+            if (isWindowsPlatform)
+              IconButton(
+                icon: const Icon(Icons.copy_outlined),
+                tooltip: t.reader_copy_image,
+                onPressed: _copyCurrentImageToClipboard,
+              )
+            else
+              IconButton(
+                icon: const Icon(Icons.share_outlined),
+                tooltip: t.share,
+                onPressed: _shareCurrentImage,
+              ),
+          ],
           body: PageView.builder(
             controller: _pageController,
             itemCount: widget.images.length,
             onPageChanged: _setCurrentIndex,
             itemBuilder: (context, index) {
-              return InteractiveViewer(
+              final Widget image = Image.memory(
+                widget.images[index].bytes,
+                fit: BoxFit.contain,
+                errorBuilder: (_, __, ___) => Icon(
+                  Icons.broken_image_outlined,
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+                  size: 64,
+                ),
+              );
+              final Widget viewer = InteractiveViewer(
                 transformationController: _transformationController,
                 minScale: 0.5,
                 maxScale: 4,
-                child: Center(
-                  child: Image.memory(
-                    widget.images[index],
-                    fit: BoxFit.contain,
-                    errorBuilder: (_, __, ___) => Icon(
-                      Icons.broken_image_outlined,
-                      color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
-                      size: 64,
-                    ),
-                  ),
-                ),
+                child: Center(child: image),
+              );
+              // Windows 右键复制 / 移动端长按分享：仅当前页可操作。
+              return GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onSecondaryTapDown: isWindowsPlatform
+                    ? (TapDownDetails details) =>
+                        _showImageContextMenu(details.globalPosition)
+                    : null,
+                onLongPress: isWindowsPlatform ? null : _shareCurrentImage,
+                child: viewer,
               );
             },
           ),
