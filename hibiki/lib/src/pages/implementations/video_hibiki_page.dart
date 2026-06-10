@@ -49,8 +49,10 @@ import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/utils/misc/platform_utils.dart';
 import 'package:hibiki/src/utils/misc/show_app_dialog.dart';
+import 'package:hibiki/src/utils/misc/hibiki_toast.dart';
 import 'package:hibiki/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
+import 'package:hibiki/src/utils/components/hibiki_icon_button.dart';
 
 /// 视频页：media_kit 播放器 + 可点击字幕 overlay（点词查词 + 制卡）。
 ///
@@ -310,6 +312,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 滑动·Esc 全部关闭路径。仅当查词前视频确在播放才置位，避免把查词前本就暂停的
   /// 视频自动播起来；递归查词（已暂停，`isPlaying==false`）不会覆写它（BUG-072）。
   bool _pausedForLookup = false;
+
+  /// 当前查词所在字幕句是否已被收藏（驱动查词浮层顶部收藏星标的实心/空心）。每次
+  /// [_lookupAt] 成功后据 [_lastLookupSentence] 异步刷新。视频句子收藏走与书内同一
+  /// [FavoriteSentenceRepository]（preferences JSON），来源标 [kFavoriteSentenceSourceVideo]。
+  bool _currentVideoSentenceIsFavorited = false;
 
   // ── DictionaryPageMixin 必需的抽象成员 ──────────────────────────────
   @override
@@ -1133,6 +1140,110 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     );
     debugPrint(
         '[video-lookup] popup ready in ${swLookup.elapsedMilliseconds}ms term="$term"');
+    // 刷新查词浮层顶部收藏星标：判定当前字幕句是否已收藏（异步，不阻塞弹窗）。
+    unawaited(_refreshVideoSentenceFavorite());
+  }
+
+  /// 当前查词字幕句的收藏唯一键：视频句子没有 epub 的 section/offset 坐标，故用
+  /// (text=整句, bookKey=视频 bookUid) 去重，[sectionIndex]/[normCharOffset] 留空。
+  /// [FavoriteSentenceRepository] 的内容匹配两边 null 即按 text+bookKey 比较，天然兼容。
+  Future<void> _refreshVideoSentenceFavorite() async {
+    final String sentence = _lastLookupSentence;
+    if (sentence.isEmpty) {
+      if (mounted && _currentVideoSentenceIsFavorited) {
+        setState(() => _currentVideoSentenceIsFavorited = false);
+      }
+      return;
+    }
+    final bool favorited =
+        await FavoriteSentenceRepository(appModel.database).isFavorited(
+      text: sentence,
+      bookKey: widget.bookUid,
+      sectionIndex: null,
+      normCharOffset: null,
+    );
+    if (mounted && favorited != _currentVideoSentenceIsFavorited) {
+      setState(() => _currentVideoSentenceIsFavorited = favorited);
+    }
+  }
+
+  /// 收藏/取消收藏当前查词所在的字幕句（视频端，TODO-047 ④）。来源标
+  /// [kFavoriteSentenceSourceVideo]、记 [dateKey]=今日键，使其计入视频统计的「收藏语句」
+  /// 卡片，并能在收藏夹页按视频来源展示。不恢复 BUG-123 删除的单词 ☆ 按钮——这是
+  /// 句子收藏星标，与书内 [ReaderHibikiPage] 的 buildPopupAudioControls 星标同语义。
+  Future<void> _toggleFavoriteSentenceForVideo() async {
+    final String sentence = _lastLookupSentence;
+    if (sentence.isEmpty) {
+      HibikiToast.show(msg: t.no_sentence_selected);
+      return;
+    }
+    final FavoriteSentenceRepository repo =
+        FavoriteSentenceRepository(appModel.database);
+    if (_currentVideoSentenceIsFavorited) {
+      await repo.removeByContent(
+        text: sentence,
+        bookKey: widget.bookUid,
+        sectionIndex: null,
+        normCharOffset: null,
+      );
+      if (mounted) setState(() => _currentVideoSentenceIsFavorited = false);
+      HibikiToast.show(msg: t.favorite_removed);
+      return;
+    }
+    await repo.add(
+      FavoriteSentence(
+        // 视频标题尚未加载（_title==null）时回退到 bookUid，保证 bookTitle 永远非空
+        // ——收藏夹页 / 统计页都按 bookTitle 展示来源行，空标题会显示成空白条目。
+        text: sentence,
+        bookTitle: _title ?? widget.bookUid,
+        createdAt: DateTime.now(),
+        bookKey: widget.bookUid,
+        source: kFavoriteSentenceSourceVideo,
+        dateKey: statTodayKey(),
+      ),
+    );
+    if (mounted) setState(() => _currentVideoSentenceIsFavorited = true);
+    HibikiToast.show(msg: t.favorite_added);
+  }
+
+  /// 查词浮层顶部「收藏当前字幕句」星标行（覆写 [DictionaryPageMixin.buildPopupHeaderFor]）。
+  /// 仅顶层（[index] == 0，真查词那句）显示；嵌套递归查词层（index > 0）不属于某条字幕句，
+  /// 返回 null。星标实心=已收藏，空心=未收藏，点击 toggle。
+  @override
+  Widget? buildPopupHeaderFor(int index) {
+    if (index != 0) return null;
+    final ThemeData theme =
+        appModel.overrideDictionaryTheme ?? Theme.of(context);
+    return Material(
+      type: MaterialType.transparency,
+      child: Container(
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(color: theme.dividerColor, width: 0.5),
+          ),
+        ),
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: <Widget>[
+            HibikiIconButton(
+              key: const Key('video_favorite_sentence_button'),
+              // tooltip 用「句子收藏」（已有 i18n），描述按钮职责；不复用 toast 文案
+              // favorite_added/removed——那是动作结果提示，做静态 tooltip 会反向误导。
+              tooltip: t.collection_sentence,
+              icon: _currentVideoSentenceIsFavorited
+                  ? Icons.star
+                  : Icons.star_border,
+              size: 20,
+              enabledColor: _currentVideoSentenceIsFavorited
+                  ? theme.colorScheme.primary
+                  : null,
+              onTap: _toggleFavoriteSentenceForVideo,
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   /// 关闭查词浮层栈中第 [index] 层及其之上（点遮罩 / 返回 / 浮层滑动·Esc 都汇聚到此）。

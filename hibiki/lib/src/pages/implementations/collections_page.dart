@@ -44,6 +44,7 @@ class _CollectionItem {
     this.normCharLength,
     this.bookmarkId,
     this.favoriteId,
+    this.source = kFavoriteSentenceSourceBook,
   });
 
   final _CollectionType type;
@@ -58,6 +59,11 @@ class _CollectionItem {
   final int? normCharLength;
   final int? bookmarkId;
   final String? favoriteId;
+
+  /// 收藏句子来源（[kFavoriteSentenceSourceBook]/`Video`/`Audiobook`/`Lyrics`）。书签恒
+  /// 默认书籍；句子按 [FavoriteSentence.source] 透传。视频来源句子不能当 EPUB 打开
+  /// （bookKey 是视频 bookUid），故据此关掉导航。
+  final String source;
 }
 
 class CollectionsPage extends BasePage {
@@ -130,6 +136,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
         normCharOffset: fav.normCharOffset,
         normCharLength: fav.normCharLength,
         favoriteId: fav.id,
+        source: fav.source,
       ));
     }
 
@@ -351,7 +358,11 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
 
   Future<void> _showItemDialog(_CollectionItem item) async {
     final isBookmark = item.type == _CollectionType.bookmark;
-    final canNavigate = item.bookKey != null && item.bookKey!.isNotEmpty;
+    // 视频来源句子不可当书打开（同 _buildItem），对话框也不放「阅读」按钮。
+    final bool isVideoSentence =
+        !isBookmark && item.source == kFavoriteSentenceSourceVideo;
+    final canNavigate =
+        item.bookKey != null && item.bookKey!.isNotEmpty && !isVideoSentence;
     final hasAudio = _hasAudio(item);
     final displayTitle = isBookmark ? (item.label ?? '') : (item.text ?? '');
     final cs = Theme.of(context).colorScheme;
@@ -443,18 +454,26 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     final String title;
     final String? subtitle;
 
+    final bool isVideoSentence =
+        !isBookmark && item.source == kFavoriteSentenceSourceVideo;
+
     if (isBookmark) {
       title = item.label ?? '';
       subtitle = item.bookTitle;
     } else {
       title = item.text ?? '';
       subtitle = [
+        // 视频来源句子标注「视频」前缀，与书内/有声书来源区分（用现有 nav_video）。
+        if (isVideoSentence) t.nav_video,
         item.bookTitle,
         item.chapterLabel,
       ].where((s) => s != null && s.isNotEmpty).join(' · ');
     }
 
-    final canNavigate = item.bookKey != null && item.bookKey!.isNotEmpty;
+    // 视频来源句子的 bookKey 是视频 bookUid，不能当 EPUB 阅读器打开 —— 关掉导航，
+    // 点击只弹条目菜单（复制/删除）。书内/有声书句子仍可跳回阅读器。
+    final canNavigate =
+        item.bookKey != null && item.bookKey!.isNotEmpty && !isVideoSentence;
 
     final key = isBookmark
         ? 'bm_${item.bookKey}_${item.createdAt.microsecondsSinceEpoch}'

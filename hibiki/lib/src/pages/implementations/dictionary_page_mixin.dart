@@ -46,6 +46,13 @@ mixin DictionaryPageMixin {
   /// 都归书籍统计）；视频页覆写为 [kStatSourceVideo]，使收藏/制卡落各自统计。
   String get dictionarySourceType => kStatSourceBook;
 
+  /// 查词浮层顶部可选的 header 行（如视频「收藏当前字幕句」星标）。默认 null（书内查词
+  /// 已有自己的 [BaseSourcePageState.buildPopupAudioControls]，不走 mixin；独立查词页 /
+  /// 词典页无句子概念，返回 null）。视频页覆写返回顶层（[index] == 0）的句子收藏星标，
+  /// 注入到 [DictionaryPopupLayer.headerWidget]——嵌套递归查词层（index > 0）不属于某条
+  /// 字幕句，覆写方应只对 index == 0 返回非 null。
+  Widget? buildPopupHeaderFor(int index) => null;
+
   // 今日统计 dateKey 走 stat_activity 的权威实现（statTodayKey），不在此重复格式化。
   String _statTodayKey() => statTodayKey();
 
@@ -286,6 +293,7 @@ mixin DictionaryPageMixin {
           onDuplicateCheck: checkDuplicate,
           onFavoriteEntry: onFavoriteEntry,
           onFavoriteCheck: onFavoriteCheck,
+          headerWidget: buildPopupHeaderFor(index),
         ),
       ),
     );

@@ -5,6 +5,7 @@ import 'package:hibiki/src/pages/implementations/stat_activity.dart';
 import 'package:hibiki/src/pages/implementations/stat_charts.dart';
 import 'package:hibiki/src/pages/implementations/video_stat_aggregates.dart';
 import 'package:hibiki/utils.dart';
+import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
 /// 视频统计页：与阅读统计（[ReadingStatisticsPage]）位置对等、形态一致，但数据
@@ -28,6 +29,7 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
   // 制卡 / 收藏计数（来源 'video'），按今日/本周/本月/全部分桶。
   StatActivityBuckets _mined = StatActivityBuckets();
   StatActivityBuckets _favorited = StatActivityBuckets();
+  StatActivityBuckets _favoritedSentences = StatActivityBuckets();
 
   // 今日每小时观看时长（0-23，毫秒）。
   List<int> _hourlyMs = List.filled(24, 0);
@@ -74,10 +76,22 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
         mined.map((MiningStatisticRow m) => (m.dateKey, m.count)),
         now,
       );
+      // 视频来源收藏语句（source==video），旧条目无 dateKey 不参与分桶。
+      final List<FavoriteSentence> favSentences =
+          await FavoriteSentenceRepository(db).getAll();
+      final List<FavoriteSentence> videoFavSentences = favSentences
+          .where((FavoriteSentence s) =>
+              s.source == kFavoriteSentenceSourceVideo && s.dateKey != null)
+          .toList();
+      _favoritedSentences = bucketActivityByDateKey(
+        videoFavSentences.map((FavoriteSentence s) => (s.dateKey!, 1)),
+        now,
+      );
       _hasData = stats.isNotEmpty ||
           completed.isNotEmpty ||
           favs.isNotEmpty ||
-          mined.isNotEmpty;
+          mined.isNotEmpty ||
+          videoFavSentences.isNotEmpty;
       await _loadHourlyData();
     } catch (e, stack) {
       ErrorLogService.instance.log('VideoStatisticsPage.load', e, stack);
@@ -178,13 +192,23 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
           Row(
             children: [
               Expanded(
-                child: _summaryStatPanel(t.stat_today, _agg.todayMs,
-                    _agg.todayCompleted, _mined.today, _favorited.today),
+                child: _summaryStatPanel(
+                    t.stat_today,
+                    _agg.todayMs,
+                    _agg.todayCompleted,
+                    _mined.today,
+                    _favorited.today,
+                    _favoritedSentences.today),
               ),
               SizedBox(width: tokens.spacing.gap + tokens.spacing.gap / 2),
               Expanded(
-                child: _summaryStatPanel(t.stat_this_week, _agg.weekMs,
-                    _agg.weekCompleted, _mined.week, _favorited.week),
+                child: _summaryStatPanel(
+                    t.stat_this_week,
+                    _agg.weekMs,
+                    _agg.weekCompleted,
+                    _mined.week,
+                    _favorited.week,
+                    _favoritedSentences.week),
               ),
             ],
           ),
@@ -192,13 +216,23 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
           Row(
             children: [
               Expanded(
-                child: _summaryStatPanel(t.stat_this_month, _agg.monthMs,
-                    _agg.monthCompleted, _mined.month, _favorited.month),
+                child: _summaryStatPanel(
+                    t.stat_this_month,
+                    _agg.monthMs,
+                    _agg.monthCompleted,
+                    _mined.month,
+                    _favorited.month,
+                    _favoritedSentences.month),
               ),
               SizedBox(width: tokens.spacing.gap + tokens.spacing.gap / 2),
               Expanded(
-                child: _summaryStatPanel(t.stat_all_time, _agg.allMs,
-                    _agg.allCompleted, _mined.all, _favorited.all),
+                child: _summaryStatPanel(
+                    t.stat_all_time,
+                    _agg.allMs,
+                    _agg.allCompleted,
+                    _mined.all,
+                    _favorited.all,
+                    _favoritedSentences.all),
               ),
             ],
           ),
@@ -207,8 +241,8 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
     );
   }
 
-  Widget _summaryStatPanel(
-      String label, int ms, int completed, int mined, int favorited) {
+  Widget _summaryStatPanel(String label, int ms, int completed, int mined,
+      int favorited, int favoritedSentences) {
     final colorScheme = Theme.of(context).colorScheme;
     final tokens = HibikiDesignTokens.of(context);
     final TextStyle? subStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -237,6 +271,9 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
             Text('${t.stat_mined}: $mined', style: subStyle),
             SizedBox(height: tokens.spacing.gap / 2),
             Text('${t.stat_favorited}: $favorited', style: subStyle),
+            SizedBox(height: tokens.spacing.gap / 2),
+            Text('${t.stat_favorited_sentence}: $favoritedSentences',
+                style: subStyle),
           ],
         ),
       ),
