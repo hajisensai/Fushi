@@ -19,6 +19,14 @@ String mediaUriForVideoPath(String path) {
   return File(path).uri.toString();
 }
 
+/// 字幕调轴：把播放位置 [posMs] 按字幕偏移 [delayMs] 平移成「查 cue 用的等效位置」。
+///
+/// 正 [delayMs]＝画面/音频先于文字（字幕显得早了）→ 往回拨位置，让字幕晚出现（整体延后）；
+/// 负 [delayMs]＝字幕晚于画面 → 往前拨位置，让字幕提前。下界 clamp 到 0（位置不为负）。
+/// 纯函数，无副作用，是 [VideoPlayerController.updateCueForPosition] 与单测的共享真相源。
+int effectiveSubtitlePositionMs(int posMs, int delayMs) =>
+    (posMs - delayMs).clamp(0, 1 << 30);
+
 /// 视频播放控制器：用 media_kit 播放视频，并按字幕 cue 做 125ms 同步高亮。
 ///
 /// cue 选择语义大体照搬有声书 [AudiobookPlayerController] 的 `_updateCurrentCue`：
@@ -463,7 +471,7 @@ class VideoPlayerController extends ChangeNotifier
   void updateCueForPosition(int posMs) {
     _maybeSavePosition(posMs);
     if (_cues.isEmpty) return;
-    final int effectiveMs = (posMs - _delayMs).clamp(0, 1 << 30);
+    final int effectiveMs = effectiveSubtitlePositionMs(posMs, _delayMs);
     final int idx = JsonAlignmentParser.findCueIndex(
       cues: _cues,
       positionMs: effectiveMs,

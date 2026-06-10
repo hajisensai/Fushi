@@ -180,7 +180,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   static const double _videoPlayPauseIconSize = 36;
   static const Duration _videoDoubleClickInterval = Duration(milliseconds: 400);
   static const double _videoDoubleClickSlop = 48;
-  static const int _subtitleOffsetStepMs = 100;
   static const double _volumeStep = 5.0;
 
   int get _asbSeekMs => _asbConfig.seekSeconds * 1000;
@@ -2042,11 +2041,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     if (mounted) setState(() {});
   }
 
-  Future<void> _adjustSubtitleOffset(int deltaMs) async {
-    assert(_subtitleOffsetStepMs > 0);
-    await _setDelayMs(_delayMs + deltaMs);
-  }
-
   void _showVolumeMenu(VideoPlayerController controller) {
     if (_videoSheetOpen) return;
     _videoSheetOpen = true;
@@ -2359,7 +2353,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       onSetSpeed: _setSpeed,
       onToggleSubtitleBlur: _toggleSubtitleBlur,
       onAsbConfigChanged: _setAsbConfig,
-      onSubtitleOffsetChanged: _adjustSubtitleOffset,
       onSubtitleStylePreview: (VideoSubtitleStyle s) {
         if (mounted) setState(() => _subtitleStyle = s);
       },

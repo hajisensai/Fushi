@@ -1261,8 +1261,8 @@
     "video_audio_track_switched": "音轨: $label",
     "video_import_subtitle_optional": "可选外挂字幕（播放时可随时在内嵌/外挂字幕间切换）",
     "video_settings_title": "播放设置",
-    "video_setting_av_delay": "音画延迟",
-    "video_setting_av_delay_hint": "正数 = 画面先于文字（向回拨字幕）；负数 = 画面滞后。",
+    "video_setting_av_delay": "字幕调轴",
+    "video_setting_av_delay_hint": "正数 = 字幕延后（字幕整体往后拨）；负数 = 字幕提前。可拖滑条、按 ± 或直接输入数值。",
     "video_setting_speed": "播放速度",
     "sync_compare_no_content": "仅云端数据，无可下载书籍",
     "anki_create_lapis": "创建 Lapis 卡组",
@@ -1354,7 +1354,6 @@
     "video_setting_mpv_panscan": "平移裁切（去黑边）",
     "video_setting_mpv_aspect": "画面比例",
     "video_setting_mpv_aspect_auto": "原始",
-    "video_setting_mpv_audio_delay": "音频延迟 (ms)",
     "video_setting_mpv_pitch": "变速保持音高",
     "video_setting_mpv_channels": "声道",
     "video_setting_mpv_channels_auto": "自动",
@@ -1496,5 +1495,6 @@
     "stat_favorited_sentence": "收藏语句",
     "font_target_app_ui": "软件系统字体",
     "font_target_body": "小说正文字体",
-    "font_target_dictionary": "词典字体"
+    "font_target_dictionary": "词典字体",
+    "video_setting_subtitle_sync_input": "偏移 (ms)"
 }

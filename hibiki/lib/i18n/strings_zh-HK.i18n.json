@@ -1261,8 +1261,8 @@
     "video_audio_track_switched": "Audio track: $label",
     "video_import_subtitle_optional": "Optional external subtitle (you can switch between embedded/external subtitles anytime during playback)",
     "video_settings_title": "Player settings",
-    "video_setting_av_delay": "A/V delay",
-    "video_setting_av_delay_hint": "Positive = picture leads text (shift cues back); negative = picture lags.",
+    "video_setting_av_delay": "字幕調軸",
+    "video_setting_av_delay_hint": "正數 = 字幕延後（字幕整體往後撥）；負數 = 字幕提前。可拖滑桿、按 ± 或直接輸入數值。",
     "video_setting_speed": "Playback speed",
     "sync_compare_no_content": "Cloud data only — no book to download",
     "anki_create_lapis": "Create Lapis deck",
@@ -1354,7 +1354,6 @@
     "video_setting_mpv_panscan": "Pan & scan (crop borders)",
     "video_setting_mpv_aspect": "Aspect ratio",
     "video_setting_mpv_aspect_auto": "Original",
-    "video_setting_mpv_audio_delay": "Audio delay (ms)",
     "video_setting_mpv_pitch": "Preserve pitch when speeding",
     "video_setting_mpv_channels": "Channels",
     "video_setting_mpv_channels_auto": "Auto",
@@ -1496,5 +1495,6 @@
     "stat_favorited_sentence": "Favorited sentences",
     "font_target_app_ui": "軟件系統字體",
     "font_target_body": "小說正文字體",
-    "font_target_dictionary": "詞典字體"
+    "font_target_dictionary": "詞典字體",
+    "video_setting_subtitle_sync_input": "偏移 (ms)"
 }
