@@ -13,30 +13,10 @@ namespace flutter_inappwebview_plugin
 {
   const int kNumBuffers = 1;
 
-  // BUG-163 保序销毁：连续多少个「安静」的 Low 优先级 hop（期间没有任何
-  // FrameArrived fire 过）之后才真正 Close+释放捕获资源。2 = PM 要求的
-  // 「延迟两帧」保底：第 1 个 hop 覆盖 teardown 前已排队的全部
-  // FirePresentEvent，第 2 个 hop 覆盖 teardown 与第 1 个 hop 之间由捕获
-  // 通道线程迟到 post 的事件。
-  constexpr int kCaptureTeardownQuietHops = 2;
-
   struct TextureBridge::FrameArrivedCallbackState {
     std::mutex mutex;
     TextureBridge* bridge = nullptr;
     bool active = false;
-    // 每次 FrameArrived delegate 被 invoke（无论 active 与否）都自增；
-    // 保序销毁 hop 用它判定「上一跳以来是否还有迟到帧 fire」。
-    uint64_t frame_events = 0;
-  };
-
-  // BUG-163：teardown 时捕获资源的延迟销毁 holder。帧池、注册在它身上的
-  // FrameArrived delegate、以及 delegate 捕获的回调状态必须作为一组整体
-  // 活过所有已排队的 FirePresentEvent，之后才能 Close/释放。
-  struct TextureBridge::PendingCaptureTeardown {
-    winrt::com_ptr<ABI::Windows::Graphics::Capture::IDirect3D11CaptureFramePool>
-      frame_pool;
-    Microsoft::WRL::ComPtr<FrameArrivedHandler> frame_arrived_handler;
-    std::shared_ptr<FrameArrivedCallbackState> callback_state;
   };
 
   TextureBridge::TextureBridge(GraphicsContext* graphics_context,
@@ -84,13 +64,7 @@ namespace flutter_inappwebview_plugin
     // BUG-163: 帧池必须用 CreateCaptureFramePool（UI 线程 DispatcherQueue 派发，
     // 渲染管线线程模型与多年稳定版一致）。FreeThreaded 帧池（第四修）已实证
     // 在 Release 构建下纹理不更新（书籍文字全空，2026-06-10 用户验证 v1 无字 /
-    // v2 revert 有字），禁止回潮。崩溃改由下方保序销毁解决。
-    //
-    // 同时捕获本线程的 DispatcherQueue：WGC 把 FirePresentEvent 作为 deferred
-    // call 排进「调用 Create 时的当前线程队列」，teardown 的延迟释放 hop 必须
-    // 排进同一个队列才有保序语义。
-    dispatcher_queue_ = graphics_context_->GetDispatcherQueueForCurrentThread();
-
+    // v2 revert 有字），禁止回潮。崩溃改由下方 ComPtr-release 销毁序解决。
     frame_pool_ = graphics_context_->CreateCaptureFramePool(
       graphics_context_->device(),
       static_cast<ABI::Windows::Graphics::DirectX::DirectXPixelFormat>(
@@ -112,9 +86,9 @@ namespace flutter_inappwebview_plugin
           IInspectable* args) -> HRESULT
         {
           const std::lock_guard<std::mutex> state_lock(callback_state->mutex);
-          // 计数在 active 判定之前：teardown 后的迟到帧也要被保序销毁 hop
-          // 观测到（见 EnqueueCaptureTeardownHop 的 quiet-hop 判定）。
-          callback_state->frame_events++;
+          // teardown 后迟到 fire 的 deferred FirePresentEvent：active 已被
+          // InvalidateFrameArrivedCallback 置 false，安全 no-op 返回，不触碰
+          // 已失效的 bridge（revoke 前后窗口内万一 fire 的兜底防线）。
           if (callback_state->active && callback_state->bridge) {
             callback_state->bridge->OnFrameArrived();
           }
@@ -158,6 +132,47 @@ namespace flutter_inappwebview_plugin
   void TextureBridge::StopInternal()
   {
     is_running_ = false;
+
+    // BUG-113/BUG-163 方向B（ComPtr-release 销毁序）：先同步断源，再释放我们
+    // 持有的 ComPtr，**绝不对帧池显式调用 IClosable::Close()**。
+    //
+    // 崩溃机理（9:34 三防线构建、11:53 仍崩的 dump 实证）：WGC 把每个
+    // FirePresentEvent 作为 deferred call 排进创建帧池线程（UI 线程）的
+    // CoreMessaging DispatcherQueue（dump 栈 DeferredCall::Callback_Dispatch ->
+    // FirePresentEvent；CreateDispatcherQueueController 是 CoreMessaging.dll 的
+    // 导出，Windows.System.DispatcherQueue 与该队列同体）。一个已排队、持帧池
+    // 强引用的 FirePresentEvent 会在 teardown 之后才 fire；旧修在 teardown 当下
+    // Close()/释放，撤销了 WGC 内部 delegate 表/agile-ref，事件遍历到被撤销的
+    // delegate -> null TypedEventHandler -> operator()+0x15 处 c0000005。崩点在
+    // 我们 lambda body 之前，callback_state/持有 handler/析构顺序三防线全部够不着。
+    //
+    // 第五修（drain-hop）的缺陷：以 callback_state->frame_events 计数判定「在途
+    // 帧已排空」，但 revoke 已把我们的 lambda 从 WGC 表移除，计数器对 revoke 后
+    // 在途的 deferred FirePresentEvent 结构性失明 —— 它们不再 invoke 我们的
+    // lambda，frame_events 不再自增，2 跳必然立刻 Close；且 deferred
+    // FirePresentEvent 走 CoreMessaging deferral 轨道，不保证与 TryEnqueue 任务
+    // FIFO 互序。存在「drain 收敛已 Close、仍有 deferral 在 Close 后才 fire」的
+    // 非空窗口。git 史决定性反证：fork 引入前上游 StopInternal 做的正是「同步
+    // remove_FrameArrived 紧跟同步 Close() 帧池」—— 它崩了（BUG-113），崩的是
+    // 紧跟的显式 Close()，不是 revoke。
+    //
+    // ComPtr-release 把概率窗口变成因果不变量，三步：
+    //   1) 先 Close session：停止产生新帧（同步）。
+    //   2) frame_pool_->remove_FrameArrived(token)：同步从 WGC 内部 event delegate
+    //      表移除我们这一项。返回后 WGC 不再向该 token 投递新的 FirePresentEvent。
+    //      此时帧池仍存活、delegate 表内存有效 —— revoke 不留野指针，只把我们的项
+    //      从有效表里摘掉（standard WinRT event 在 remove 时安全修改列表、fire 期
+    //      用快照）。这是 null-delegate 崩溃的根除点。
+    //   3) frame_pool_ = nullptr：仅释放我们这一份 ComPtr 强引用，**不显式 Close**。
+    //      在途 deferred FirePresentEvent 对帧池持强引用（11:53 dump 实证
+    //      「FirePresentEvent 本体跑通帧池还活着」+ WinRT 异步事件 raise 期对
+    //      source 持引用）。因此帧池的真正析构（COM 引用计数归零 -> 内部自然 Close）
+    //      只会发生在最后一个在途 deferral 跑完之后 —— 那一刻已无任何在途事件在
+    //      迭代 delegate 表，不可能出现 Close-while-in-flight。
+    //
+    // 因果不变量：只要我们绝不显式 Close 帧池，「Close（=析构）发生」就在因果上
+    // 必然晚于「所有在途 deferral 释放其强引用」，即所有在途事件已 fire 完。
+    // 没有任何「2 跳已 Close 但仍有 deferral」的赌注窗口。
     if (capture_session_) {
       auto session_closable =
         capture_session_.try_as<ABI::Windows::Foundation::IClosable>();
@@ -166,123 +181,20 @@ namespace flutter_inappwebview_plugin
       }
       capture_session_ = nullptr;
     }
-    // BUG-113/BUG-163 (TODO-031 第五修): 保序销毁——teardown 当下绝不 Close/
-    // 释放帧池，也不注销 FrameArrived 句柄。
-    //
-    // 崩溃机理（9:34 三防线构建 11:53 仍崩的 dump 实证）：WGC 把每个
-    // FirePresentEvent 作为 deferred call 排进创建帧池线程（UI 线程）的
-    // CoreMessaging DispatcherQueue（dump 栈 DeferredCall::Callback_Dispatch →
-    // FirePresentEvent；CreateDispatcherQueueController 本身就是
-    // CoreMessaging.dll 的导出，Windows.System.DispatcherQueue 与该队列同体）。
-    // 一个已排队、持帧池强引用的 FirePresentEvent 会在 teardown 之后才 fire
-    // （FirePresentEvent+0x62 本体跑通了，帧池对象还活着）；但 teardown 当下的
-    // Close()/释放已撤销 WGC 内部 delegate 表/agile-ref，事件遍历到被撤销的
-    // delegate → null TypedEventHandler → 直接 invoke → operator()+0x15 处
-    // c0000005。崩溃点在我们 lambda body 之前，callback_state/持有 handler/
-    // 析构顺序三防线全部够不着。
-    //
-    // 因此把 frame_pool_ / frame_arrived_handler_ / callback_state 的所有权
-    // 整组移交 PendingCaptureTeardown holder，经同一 DispatcherQueue 以 Low
-    // 优先级排释放 hop（ScheduleCaptureTeardown）：已排队事件先于释放执行，
-    // 此时 active=false 安全返回。capture_session_ 已在上方 Close()，新帧
-    // 必然停止，协议必然终止。FrameArrived 注册随帧池 Close 一起失效，
-    // 全程不手动注销该句柄。
-    ScheduleCaptureTeardown();
-  }
 
-  void TextureBridge::ScheduleCaptureTeardown()
-  {
-    if (!frame_pool_) {
-      return;
+    if (frame_pool_ && on_frame_arrived_token_.value != 0) {
+      // 同步 revoke：返回后 WGC 不再向本 token 投递新 FirePresentEvent。
+      // 帧池此刻仍存活，移除只动有效 delegate 表，不产生野指针。
+      frame_pool_->remove_FrameArrived(on_frame_arrived_token_);
+      on_frame_arrived_token_ = {};
     }
-    auto pending = std::make_shared<PendingCaptureTeardown>();
-    pending->frame_pool = std::move(frame_pool_);
-    pending->frame_arrived_handler = std::move(frame_arrived_handler_);
-    pending->callback_state = frame_arrived_state_;
-    // std::move 已把成员置空；显式写出便于审计「帧池已离开 bridge，
-    // bridge 析构不再触碰捕获资源」。
+
+    // 仅释放我们的 ComPtr，绝不显式 Close 帧池：在途 deferral 的强引用会把真正
+    // 析构（-> 自然 Close）延到它跑完。我们的 FrameArrived delegate ComPtr 同理
+    // 只释放。frame_arrived_state_ 保留（active 已被 InvalidateFrameArrivedCallback
+    // 置 false），让 revoke 前后窗口内万一 fire 的 lambda 安全 no-op。
     frame_pool_ = nullptr;
-    EnqueueCaptureTeardownHop(dispatcher_queue_, std::move(pending),
-      kCaptureTeardownQuietHops);
-  }
-
-  // static
-  uint64_t TextureBridge::ReadFrameEventCount(
-    const std::shared_ptr<FrameArrivedCallbackState>& state)
-  {
-    if (!state) {
-      return 0;
-    }
-    const std::lock_guard<std::mutex> state_lock(state->mutex);
-    return state->frame_events;
-  }
-
-  // static
-  void TextureBridge::EnqueueCaptureTeardownHop(
-    winrt::com_ptr<ABI::Windows::System::IDispatcherQueue> dispatcher_queue,
-    std::shared_ptr<PendingCaptureTeardown> pending,
-    int quiet_hops_remaining)
-  {
-    if (!dispatcher_queue) {
-      // 理论上不可达：CreateCaptureFramePool 要求创建线程有 DispatcherQueue
-      // （InAppWebViewManager 构造时已创建 controller）。没有队列就没有
-      // deferred FirePresentEvent，立即释放是安全的。
-      FinalizeCaptureTeardown(pending);
-      return;
-    }
-
-    const uint64_t observed_events = ReadFrameEventCount(pending->callback_state);
-    auto hop = Microsoft::WRL::Callback<ABI::Windows::System::IDispatcherQueueHandler>(
-      [dispatcher_queue, pending, quiet_hops_remaining,
-        observed_events]() -> HRESULT
-      {
-        const uint64_t now = ReadFrameEventCount(pending->callback_state);
-        // 上一跳以来还有迟到帧 fire 过 → 重新从头计安静跳数；
-        // 安静则倒数，归零才真正释放。session 已 Close，事件必然停止，
-        // 计数必然收敛，无 sleep 无轮询。
-        const int next_quiet_hops = now == observed_events
-          ? quiet_hops_remaining - 1
-          : kCaptureTeardownQuietHops;
-        if (next_quiet_hops <= 0) {
-          FinalizeCaptureTeardown(pending);
-        }
-        else {
-          EnqueueCaptureTeardownHop(dispatcher_queue, pending, next_quiet_hops);
-        }
-        return S_OK;
-      });
-
-    // Low 优先级：文档保证队列 serially and in priority order 派发，Low 只在
-    // 没有任何 Normal/High 待处理工作时运行、且会被新进 Normal/High 抢占——
-    // 所以只要队列里还有（哪怕晚于本 hop 入队的）Normal 优先级的
-    // FirePresentEvent，释放就不会执行。不依赖 WGC 用什么优先级 post。
-    boolean enqueued = false;
-    const HRESULT hr = dispatcher_queue->TryEnqueueWithPriority(
-      ABI::Windows::System::DispatcherQueuePriority_Low, hop.Get(), &enqueued);
-    if (FAILED(hr) || !enqueued) {
-      // TryEnqueue 仅在队列 shutdown 后返回 false；shutdown 的队列不再派发
-      // 任何任务（包括已排队的 FirePresentEvent），内联释放安全且不泄漏。
-      FinalizeCaptureTeardown(pending);
-    }
-  }
-
-  // static
-  void TextureBridge::FinalizeCaptureTeardown(
-    const std::shared_ptr<PendingCaptureTeardown>& pending)
-  {
-    if (!pending) {
-      return;
-    }
-    if (pending->frame_pool) {
-      auto pool_closable =
-        pending->frame_pool.try_as<ABI::Windows::Foundation::IClosable>();
-      if (pool_closable) {
-        pool_closable->Close();
-      }
-      pending->frame_pool = nullptr;
-    }
-    pending->frame_arrived_handler = nullptr;
-    pending->callback_state = nullptr;
+    frame_arrived_handler_ = nullptr;
   }
 
   void TextureBridge::OnFrameArrived()
