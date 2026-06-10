@@ -179,6 +179,17 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   static const double _videoButtonBarHeight = 56;
   static const double _videoControlIconSize = 32;
   static const double _videoPlayPauseIconSize = 36;
+
+  /// 移动控制条底部留白基线（BUG-184）：进度条 / 底部按钮条不贴屏幕物理底边。
+  ///
+  /// media_kit 的 [MaterialVideoControlsThemeData] 构造器把 `seekBarMargin` 默认成
+  /// [EdgeInsets.zero]、`bottomButtonBarMargin` 默认成只有左右无底部（与导出常量
+  /// [kDefaultMaterialVideoControlsThemeData] 那套含 `bottom: 42` 的留白不同）。本页
+  /// 直接 new 主题、未传这两个 margin 时，进度条会落在 `bottom: 0` 紧贴屏幕最底——
+  /// 在 Android 上看起来「进度条在最下面」（被手势条/物理边缘吞掉，非控制条惯例位置）。
+  /// 这个基线把进度条与按钮条整体抬离最底，再叠加 [_videoBottomSystemInset] 的系统
+  /// 导航栏/手势栏 inset。
+  static const double _videoBottomChromeBaseline = 24;
   static const Duration _videoDoubleClickInterval = Duration(milliseconds: 400);
   static const double _videoDoubleClickSlop = 48;
 
@@ -1983,9 +1994,26 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   ) {
     final ColorScheme cs = Theme.of(context).colorScheme;
     final bool roomyBottomBar = _hasRoomyVideoBottomBar();
+    // 进度条 / 底部按钮条的底部留白（BUG-184）：基线 + 系统导航栏/手势栏 inset，
+    // 让进度条回到「底部按钮条同一基线、抬离屏幕物理最底」的控制条惯例位置，而不是
+    // 用 media_kit 构造器默认的 `bottom: 0` 贴在屏幕最下面。
+    final double bottomChromeInset =
+        _videoBottomChromeBaseline + _videoBottomSystemInset();
     return MaterialVideoControlsThemeData(
       // 无操作 2 秒后控制条自动隐藏（TODO-056，media_kit 默认 3 秒偏长）。
       controlsHoverDuration: const Duration(seconds: 2),
+      // 进度条留底部空间：不传时 media_kit 构造器默认 EdgeInsets.zero 会贴屏幕最底。
+      seekBarMargin: EdgeInsets.only(
+        left: 16,
+        right: 16,
+        bottom: bottomChromeInset,
+      ),
+      // 底部按钮条与进度条同一底部基线（沿用 media_kit 默认的左右 16/8）。
+      bottomButtonBarMargin: EdgeInsets.only(
+        left: 16,
+        right: 8,
+        bottom: bottomChromeInset,
+      ),
       seekBarPositionColor: cs.primary,
       seekBarThumbColor: cs.primary,
       buttonBarButtonColor: cs.primary,
@@ -2068,6 +2096,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   }
 
   bool _hasRoomyVideoBottomBar() => MediaQuery.of(context).size.width >= 600;
+
+  /// 系统底部安全区 inset（BUG-184）：Android 手势导航条 / 物理导航栏的高度，用来把
+  /// 进度条与底部按钮条抬离系统栏。视频打开后走 immersiveSticky 隐藏导航栏，多数情况下
+  /// 这个值是 0（基线 [_videoBottomChromeBaseline] 仍保证进度条不贴最底）；从屏幕底缘
+  /// 滑出唤回导航条时它转为非零，进度条随之上移避开。读 [MediaQuery.viewPadding]（物理
+  /// 安全区）而非 `padding`（会被 immersive 模式抹平），且不受软键盘弹出影响。
+  double _videoBottomSystemInset() => MediaQuery.of(context).viewPadding.bottom;
 
   void _showTrackMenu(
     List<({String label, VoidCallback onSelected})> tracks,
