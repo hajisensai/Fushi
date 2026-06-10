@@ -40,6 +40,14 @@ void main() {
           'window.hoshiCaret.setInstantScroll(false)');
     });
 
+    test('jumpDict passes the direction boolean through (TODO-070 go-to-dict)',
+        () {
+      expect(ReaderCaretScripts.jumpDictInvocation(true),
+          'JSON.stringify(window.hoshiCaret.jumpDict(true))');
+      expect(ReaderCaretScripts.jumpDictInvocation(false),
+          'JSON.stringify(window.hoshiCaret.jumpDict(false))');
+    });
+
     test('reanchor passes the edge token through', () {
       expect(ReaderCaretScripts.reanchorInvocation('forward'),
           "JSON.stringify(window.hoshiCaret.reanchor('forward'))");
@@ -134,6 +142,7 @@ void main() {
       expect(js, contains('lookup:'));
       expect(js, contains('activate:'));
       expect(js, contains('longPress:'));
+      expect(js, contains('jumpDict:'));
       expect(js, contains('refresh:'));
       expect(js, contains('init:'));
       expect(js, contains('setInstantScroll:'));
@@ -164,6 +173,25 @@ void main() {
       // diverge. scrollPage only guards on `active` then delegates.
       expect(js, contains('scrollPage: function(forwardish)'));
       expect(js, contains('return this._pageOrScroll(!!forwardish);'));
+    });
+
+    test(
+        'jumpDict steps the caret between dictionary section headers (TODO-070)',
+        () {
+      // Yomitan-style "go to dictionary": jumpDict collects every
+      // summary.dict-label, picks the next/previous one relative to the anchor,
+      // and places it as an element stop (reusing _place/_elRect/_scrollIntoView
+      // so the ring hugs the header and A toggles its disclosure). No further
+      // dictionary → blocked; the reader (no dict-label) → blocked, a no-op.
+      expect(js, contains('jumpDict: function(forward)'));
+      expect(js, contains("querySelectorAll('summary.dict-label')"));
+      expect(js, contains('_dictHeaders:'));
+      // Reuses the element-stop placement machinery — no parallel ring code.
+      expect(js, contains('this._scrollIntoView(target.rect);'));
+      expect(js, contains('el: target.el'));
+      // No headers (single-dictionary or empty) blocks instead of throwing.
+      expect(
+          js, contains("if (!headers.length) return { status: 'blocked' };"));
     });
 
     test('popup scroll can switch to instant movement for e-ink', () {

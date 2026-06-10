@@ -39,6 +39,21 @@ void main() {
       );
     });
 
+    test(
+        '] / [ jump to next / previous dictionary section (TODO-070 go-to-dict)',
+        () {
+      expect(
+        ReaderCaretRouter.decideKeyboard(LogicalKeyboardKey.bracketRight,
+            shift: false),
+        CaretAction.jumpDictNext,
+      );
+      expect(
+        ReaderCaretRouter.decideKeyboard(LogicalKeyboardKey.bracketLeft,
+            shift: false),
+        CaretAction.jumpDictPrev,
+      );
+    });
+
     test('Enter / game A activate; Escape / game B dismiss-or-exit', () {
       expect(
         ReaderCaretRouter.decideKeyboard(LogicalKeyboardKey.enter,
@@ -92,6 +107,13 @@ void main() {
           CaretAction.activate);
       expect(ReaderCaretRouter.decideGamepad(GamepadButton.b),
           CaretAction.dismissOrExit);
+    });
+
+    test('RT / LT jump to next / previous dictionary section (TODO-070)', () {
+      expect(ReaderCaretRouter.decideGamepad(GamepadButton.rt),
+          CaretAction.jumpDictNext);
+      expect(ReaderCaretRouter.decideGamepad(GamepadButton.lt),
+          CaretAction.jumpDictPrev);
     });
 
     test('long-press is a distinct caret action for hold-A routing', () {

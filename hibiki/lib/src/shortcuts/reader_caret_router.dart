@@ -31,6 +31,15 @@ enum CaretAction {
   /// [activate] so a dictionary popup summary can mark/unmark a dictionary
   /// without also toggling the disclosure row.
   longPress,
+
+  /// Jump the caret to the NEXT dictionary section header in a multi-dictionary
+  /// popup (Yomitan-style "go to dictionary"). Popup-only; no-op on the reader,
+  /// which has no dictionary sections. Keyboard `]`, gamepad RT.
+  jumpDictNext,
+
+  /// Jump the caret to the PREVIOUS dictionary section header. Keyboard `[`,
+  /// gamepad LT. See [jumpDictNext].
+  jumpDictPrev,
   dismissOrExit,
 }
 
@@ -52,6 +61,12 @@ class ReaderCaretRouter {
     if (key == LogicalKeyboardKey.arrowDown) return CaretAction.moveDown;
     if (key == LogicalKeyboardKey.arrowLeft) return CaretAction.moveLeft;
     if (key == LogicalKeyboardKey.arrowRight) return CaretAction.moveRight;
+    // Jump to the next/previous dictionary section in a multi-dict popup
+    // (Yomitan "go to dictionary"). `]` next, `[` previous — keys a keyboard
+    // user can reach without a chord; the reader ignores them (no dict sections,
+    // so jumpDict no-ops → blocked).
+    if (key == LogicalKeyboardKey.bracketRight) return CaretAction.jumpDictNext;
+    if (key == LogicalKeyboardKey.bracketLeft) return CaretAction.jumpDictPrev;
     if (key == LogicalKeyboardKey.enter ||
         key == LogicalKeyboardKey.gameButtonA) {
       return CaretAction.activate;
@@ -75,6 +90,14 @@ class ReaderCaretRouter {
         return CaretAction.moveLeft;
       case GamepadButton.dpadRight:
         return CaretAction.moveRight;
+      // RT/LT jump to the next/previous dictionary section in a multi-dict
+      // popup (Yomitan "go to dictionary"). The triggers are free while the
+      // caret is active (the popup never paginates, so LB/RB own page-scroll and
+      // the triggers were unused). Reader caret ignores them (no dict sections).
+      case GamepadButton.rt:
+        return CaretAction.jumpDictNext;
+      case GamepadButton.lt:
+        return CaretAction.jumpDictPrev;
       case GamepadButton.a:
         return CaretAction.activate;
       case GamepadButton.b:

@@ -4088,6 +4088,19 @@ window.flutter_inappwebview.callHandler('spreadReady');
         unawaited(_caretScrollPage(false));
         return KeyEventResult.handled;
       }
+      // LT/RT (Android delivers gamepad triggers as gameButton key events) jump
+      // to the previous/next dictionary section on the popup. Routed through the
+      // gamepad map (the keyboard `[`/`]` path is handled below by
+      // decideKeyboard); these trigger logical keys are gamepad-only, so a
+      // desktop keyboard never reaches here.
+      if (shoulder == GamepadButton.lt || shoulder == GamepadButton.rt) {
+        final CaretAction? triggerAction =
+            ReaderCaretRouter.decideGamepad(shoulder!);
+        if (triggerAction != null) {
+          unawaited(_runCaretAction(triggerAction));
+          return KeyEventResult.handled;
+        }
+      }
       final CaretAction? caretAction = ReaderCaretRouter.decideKeyboard(
         event.logicalKey,
         shift: HardwareKeyboard.instance.isShiftPressed,
@@ -4474,6 +4487,10 @@ window.flutter_inappwebview.callHandler('spreadReady');
       case CaretAction.activate:
       case CaretAction.lookup:
       case CaretAction.longPress:
+      // 跳转词典是离散跳整段，每次按一下跳一本，绝不随长按连发（否则一口气
+      // 冲过所有词典段）。
+      case CaretAction.jumpDictNext:
+      case CaretAction.jumpDictPrev:
       case CaretAction.dismissOrExit:
         return false;
     }
@@ -4516,6 +4533,12 @@ window.flutter_inappwebview.callHandler('spreadReady');
           break;
         case CaretAction.longPress:
           await _caretLongPress();
+          break;
+        case CaretAction.jumpDictNext:
+          await _caretJumpDict(true);
+          break;
+        case CaretAction.jumpDictPrev:
+          await _caretJumpDict(false);
           break;
         case CaretAction.dismissOrExit:
           break; // handled above
@@ -4719,6 +4742,16 @@ window.flutter_inappwebview.callHandler('spreadReady');
         source: _caretOnLyrics
             ? ReaderLyricsCaretScripts.longPressInvocation()
             : ReaderCaretScripts.longPressInvocation());
+  }
+
+  /// Jump the cursor to the next/previous dictionary section header in a
+  /// multi-dictionary popup (Yomitan-style "go to dictionary"). Popup-only — the
+  /// reader and lyrics surfaces have no dictionary sections, so the keys/triggers
+  /// no-op there (the JS returns 'blocked'). [forward] true → next dictionary
+  /// below the cursor, false → previous above.
+  Future<void> _caretJumpDict(bool forward) async {
+    if (_caretSurface != CaretSurface.popup) return;
+    await topPopupState?.caretJumpDict(forward);
   }
 
   /// Place the reader cursor at the entering edge of the freshly paginated page.
