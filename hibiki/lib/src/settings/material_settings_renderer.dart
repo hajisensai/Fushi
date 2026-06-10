@@ -354,6 +354,8 @@ class _SettingsSchemaItem extends StatelessWidget {
       max: slider.max,
       divisions: slider.divisions,
       label: slider.label?.call(value),
+      step: slider.step,
+      readout: slider.titleReadout ? slider.label?.call(value) : null,
       onChanged: (double next) async {
         await slider.onChanged(settingsContext, next);
         settingsContext.refresh();

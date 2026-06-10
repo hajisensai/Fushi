@@ -1213,6 +1213,7 @@ class AdaptiveSettingsSliderRow extends StatelessWidget {
     this.label,
     this.onChangeEnd,
     this.step,
+    this.readout,
   });
 
   final String title;
@@ -1231,10 +1232,16 @@ class AdaptiveSettingsSliderRow extends StatelessWidget {
   /// from one division.
   final double? step;
 
+  /// Optional live value readout appended to the displayed title as
+  /// `Title (readout)` — fine-grained steps are pointless without a visible
+  /// readout. Kept separate from [title] so the bare title remains the row's
+  /// stable identity for focus-driven coverage tests and finders.
+  final String? readout;
+
   @override
   Widget build(BuildContext context) {
     return AdaptiveSettingsRow(
-      title: title,
+      title: readout == null ? title : '$title ($readout)',
       subtitle: subtitle,
       icon: icon,
       controlBelow: true,

@@ -1037,7 +1037,12 @@ SettingsDestination _lookupDestination() {
                 settingsContext.readerSource.lookupAudioVolume.toDouble(),
             min: 0,
             max: 100,
-            divisions: 20,
+            // 与有声书音量行（AudiobookVolumeRow）同款粒度契约：拖动 1% 一档
+            // （0–100% 共 100 档），键盘 / 手柄左右键 5% 一步（step 与档位解
+            // 耦——按键也走 1% 的话 0–100% 要按 100 下），标题带实时百分比读数。
+            divisions: 100,
+            step: 5,
+            titleReadout: true,
             label: (double value) => '${value.round()}%',
             onChanged: (SettingsContext settingsContext, double value) async {
               await settingsContext.readerSource.setLookupAudioVolume(value);

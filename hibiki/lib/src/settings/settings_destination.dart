@@ -231,6 +231,8 @@ class SettingsSliderItem extends SettingsItem {
     this.divisions,
     this.label,
     this.onChangeEnd,
+    this.step,
+    this.titleReadout = false,
   });
 
   final double Function(SettingsContext context) value;
@@ -240,6 +242,14 @@ class SettingsSliderItem extends SettingsItem {
   final SettingsDoubleFormatter? label;
   final SettingsValueChanged<double> onChanged;
   final SettingsValueChanged<double>? onChangeEnd;
+
+  /// 键盘 / 手柄左右键单按步进（覆盖默认的「一档 divisions」步进）。
+  /// 用于拖动档位（细）与按键步进（粗）需要解耦的滑条。
+  final double? step;
+
+  /// 为 true 时渲染器在标题后追加实时读数 `(label(value))`，如「音量 (95%)」。
+  /// [title] 本身保持裸标题不变（焦点遍历 / 覆盖测试以裸标题为身份 key）。
+  final bool titleReadout;
 }
 
 class SettingsStepperItem extends SettingsItem {

@@ -498,14 +498,18 @@ void main() {
               widget.title == t.lookup_audio_volume,
         );
 
-    expect(find.text(t.lookup_audio_volume), findsOneWidget);
+    // 标题带实时百分比读数（与有声书音量行同款）；row.title 保持裸标题作身份。
+    expect(find.text('${t.lookup_audio_volume} (100%)'), findsOneWidget);
     expect(sliderFinder(), findsOneWidget);
     AdaptiveSettingsSliderRow row =
         tester.widget<AdaptiveSettingsSliderRow>(sliderFinder());
     expect(row.value, 100);
     expect(row.min, 0);
     expect(row.max, 100);
-    expect(row.divisions, 20);
+    expect(row.divisions, 100,
+        reason: '0–100% 共 100 档 = 拖动 1% 一档（旧 20 档 = 5% 太粗）');
+    expect(row.step, 5, reason: '键盘/手柄左右键 5% 一步，与拖动档位解耦');
+    expect(row.readout, '100%');
     expect(row.label, '100%');
 
     row.onChanged(35);
