@@ -20,6 +20,7 @@ import 'package:hibiki/src/media/video/video_shader_manager.dart';
 import 'package:hibiki/src/media/video/video_shader_tier.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/book_drag_target.dart';
+import 'package:hibiki/src/pages/implementations/collections_page.dart';
 import 'package:hibiki/src/pages/implementations/tag_filter_bar.dart';
 import 'package:hibiki/src/pages/implementations/tag_filter_sheet.dart';
 import 'package:hibiki/src/pages/implementations/tag_picker_page.dart';
@@ -227,6 +228,15 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     Navigator.push(
       context,
       adaptivePageRoute<void>(builder: (_) => const VideoStatisticsPage()),
+    );
+  }
+
+  /// 打开收藏夹页（书签 + 收藏句子，含视频来源的收藏句子，TODO-047 ③a）。与书架页头
+  /// 的收藏夹入口同一 [CollectionsPage]——视频与书架共用一个收藏夹，按来源区分展示。
+  void _openCollections() {
+    Navigator.push(
+      context,
+      adaptivePageRoute<void>(builder: (_) => const CollectionsPage()),
     );
   }
 
@@ -800,6 +810,13 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     return HibikiPageHeader(
       title: t.nav_video,
       actions: <Widget>[
+        // 图标顺序与书架统一：收藏夹 → 统计（书架是 导入/收藏夹/统计，相对顺序一致），
+        // 视频导入按钮保留在末尾（视频 tab 才有导入入口）。
+        HibikiIconButton(
+          tooltip: t.collections,
+          icon: Icons.collections_bookmark_outlined,
+          onTap: _openCollections,
+        ),
         HibikiIconButton(
           tooltip: t.video_statistics,
           icon: Icons.bar_chart_outlined,

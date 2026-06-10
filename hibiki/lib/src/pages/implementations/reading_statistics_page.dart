@@ -3,6 +3,7 @@ import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/pages/implementations/stat_activity.dart';
 import 'package:hibiki/src/pages/implementations/stat_charts.dart';
 import 'package:hibiki/utils.dart';
+import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
 class ReadingStatisticsPage extends BasePage {
@@ -38,6 +39,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   // 制卡 / 收藏计数（来源 'book'），按今日/本周/本月/全部分桶。
   StatActivityBuckets _mined = StatActivityBuckets();
   StatActivityBuckets _favorited = StatActivityBuckets();
+  StatActivityBuckets _favoritedSentences = StatActivityBuckets();
 
   // 按书聚合
   List<_BookData> _bookData = [];
@@ -72,6 +74,17 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       );
       _mined = bucketActivityByDateKey(
         mined.map((MiningStatisticRow m) => (m.dateKey, m.count)),
+        now,
+      );
+      // 收藏语句按 source 分桶：非视频来源（书内 / 有声书 / 歌词）都归阅读统计。
+      // 旧条目无 dateKey（null）→ 不参与按日分桶（whereType 过滤掉）。
+      final List<FavoriteSentence> favSentences =
+          await FavoriteSentenceRepository(db).getAll();
+      _favoritedSentences = bucketActivityByDateKey(
+        favSentences
+            .where((FavoriteSentence s) =>
+                s.source != kFavoriteSentenceSourceVideo && s.dateKey != null)
+            .map((FavoriteSentence s) => (s.dateKey!, 1)),
         now,
       );
       await _loadHourlyData();
@@ -242,24 +255,39 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
           Row(
             children: [
               Expanded(
-                  child: _summaryStatPanel(t.stat_today, _todayChars, _todayMs,
-                      _mined.today, _favorited.today)),
+                  child: _summaryStatPanel(
+                      t.stat_today,
+                      _todayChars,
+                      _todayMs,
+                      _mined.today,
+                      _favorited.today,
+                      _favoritedSentences.today)),
               SizedBox(width: tokens.spacing.gap + tokens.spacing.gap / 2),
               Expanded(
-                  child: _summaryStatPanel(t.stat_this_week, _weekChars,
-                      _weekMs, _mined.week, _favorited.week)),
+                  child: _summaryStatPanel(
+                      t.stat_this_week,
+                      _weekChars,
+                      _weekMs,
+                      _mined.week,
+                      _favorited.week,
+                      _favoritedSentences.week)),
             ],
           ),
           SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
           Row(
             children: [
               Expanded(
-                  child: _summaryStatPanel(t.stat_this_month, _monthChars,
-                      _monthMs, _mined.month, _favorited.month)),
+                  child: _summaryStatPanel(
+                      t.stat_this_month,
+                      _monthChars,
+                      _monthMs,
+                      _mined.month,
+                      _favorited.month,
+                      _favoritedSentences.month)),
               SizedBox(width: tokens.spacing.gap + tokens.spacing.gap / 2),
               Expanded(
                   child: _summaryStatPanel(t.stat_all_time, _allChars, _allMs,
-                      _mined.all, _favorited.all)),
+                      _mined.all, _favorited.all, _favoritedSentences.all)),
             ],
           ),
         ],
@@ -267,8 +295,8 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     );
   }
 
-  Widget _summaryStatPanel(
-      String label, int chars, int ms, int mined, int favorited) {
+  Widget _summaryStatPanel(String label, int chars, int ms, int mined,
+      int favorited, int favoritedSentences) {
     final colorScheme = Theme.of(context).colorScheme;
     final tokens = HibikiDesignTokens.of(context);
     final TextStyle? subStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -296,6 +324,9 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
             Text('${t.stat_mined}: $mined', style: subStyle),
             SizedBox(height: tokens.spacing.gap / 2),
             Text('${t.stat_favorited}: $favorited', style: subStyle),
+            SizedBox(height: tokens.spacing.gap / 2),
+            Text('${t.stat_favorited_sentence}: $favoritedSentences',
+                style: subStyle),
           ],
         ),
       ),
