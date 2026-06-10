@@ -131,12 +131,19 @@ void main() {
     );
 
     expect(buildMethod, contains('AdaptiveSettingsSection('),
-        reason: '着色器详情应按画质增强 / 模板 / 导入 / 列表分组');
-    expect(buildMethod, contains('video_shader_recommended'));
-    expect(buildMethod, contains('video_shader_download_anime4k'));
-    expect(buildMethod, contains('video_shader_section_import'));
+        reason: '着色器详情应按画质档位 / 进阶 / 列表分组');
+    // TODO-041 方案甲'：顶部是五档单选器（无/低/中/高/极高），不再一堆陌生动作堆叠。
+    expect(buildMethod, contains('video_shader_quality_tier'),
+        reason: '着色器详情顶部是画质档位 section');
+    expect(buildMethod, contains('VideoShaderTierSelector('),
+        reason: '五档单选器嵌入档位 section');
+    // 进阶 section 保留经典推荐 + 手动导入，但移除单列 Anime4K 下载入口（诉求 2）。
+    expect(buildMethod, contains('video_shader_section_advanced'));
+    expect(buildMethod, contains('video_shader_classic_recommended'));
     expect(buildMethod, contains('video_shader_section_installed'));
+    expect(buildMethod, isNot(contains('video_shader_download_anime4k')),
+        reason: '诉求 2：不再单列「下载 Anime4K 推荐着色器」入口');
     expect(buildMethod, isNot(contains('Wrap(')),
-        reason: '不能把下载/导入动作作为六个同级按钮堆在顶部');
+        reason: '不能把下载/导入动作作为同级按钮堆在顶部');
   });
 }

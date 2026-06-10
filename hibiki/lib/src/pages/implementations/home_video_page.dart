@@ -14,6 +14,10 @@ import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_feature_flags.dart';
 import 'package:hibiki/src/media/video/video_import_dialog.dart';
+import 'package:hibiki/src/media/video/video_mpv_config.dart';
+import 'package:hibiki/src/media/video/video_shader_downloader.dart';
+import 'package:hibiki/src/media/video/video_shader_manager.dart';
+import 'package:hibiki/src/media/video/video_shader_tier.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/book_drag_target.dart';
 import 'package:hibiki/src/pages/implementations/tag_filter_bar.dart';
@@ -263,19 +267,69 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     if (appModel.prefsRepo.videoAnime4kPromptShown) return;
     await appModel.prefsRepo.setVideoAnime4kPromptShown();
     if (!mounted) return;
-    await showAppDialog<void>(
+    // 首次打开视频的提示：除「知道了」外给一个「一键下载并启用」按钮（用户诉求 4），
+    // 点它即下载推荐画质着色器（「中」档 = Anime4K Fast）并启用，不必自己摸进设置。
+    final bool? download = await showAppDialog<bool>(
       context: context,
       builder: (BuildContext ctx) => AlertDialog(
         title: Text(t.video_shader_first_use_title),
         content: Text(t.video_shader_first_use_body),
         actions: <Widget>[
           TextButton(
-            onPressed: () => Navigator.pop(ctx),
+            onPressed: () => Navigator.pop(ctx, false),
             child: Text(t.dialog_close),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(t.video_shader_first_use_download),
           ),
         ],
       ),
     );
+    if (download == true && mounted) {
+      await _downloadAndEnableDefaultShaderTier();
+    }
+  }
+
+  /// 一键下载并启用「中」档（Anime4K Fast）：下载预设文件到着色器目录，再原子写
+  /// mpv 内置缩放开关（开）+ 启用集（中档着色器），即下次打开视频生效。带 SnackBar 反馈。
+  ///
+  /// 不弹复杂进度对话框（首次提示场景从简）：下载用阻塞 await，开始/结束各一条提示。
+  Future<void> _downloadAndEnableDefaultShaderTier() async {
+    final AppModel appModel = ref.read(appProvider);
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(SnackBar(content: Text(t.video_shader_downloading)));
+    const VideoShaderTier tier = VideoShaderTier.medium;
+    final Anime4kPreset? preset = shaderTierSpec(tier).preset;
+    if (preset == null) return;
+    Anime4kDownloadResult? result;
+    try {
+      result = await downloadAnime4kFiles(preset);
+    } catch (_) {
+      result = null;
+    }
+    if (!mounted) return;
+    if (result == null || result.downloaded.isEmpty) {
+      messenger.showSnackBar(
+          SnackBar(content: Text(t.video_shader_download_failed)));
+      return;
+    }
+    // 从目录现有文件按该档叠加顺序过滤出有序启用集。
+    final List<String> present = await listShaderFiles();
+    final List<String> enabled = orderedEnabledForTier(tier, present.toSet());
+    final VideoMpvConfig cfg =
+        VideoMpvConfig.decode(appModel.videoMpvConfig).copyWith(
+      highQuality: true,
+    );
+    await appModel.setVideoMpvConfig(VideoMpvConfig.encode(cfg));
+    await appModel.setVideoShadersEnabled(encodeEnabledShaders(enabled));
+    if (!mounted) return;
+    messenger.showSnackBar(SnackBar(
+      content: Text(result.allOk
+          ? t.video_shader_download_done(count: result.downloaded.length)
+          : t.video_shader_download_partial(
+              ok: result.downloaded.length, failed: result.failed.length)),
+    ));
   }
 
   Future<void> _downloadRemote(RemoteVideoInfo video) async {

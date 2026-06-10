@@ -148,6 +148,7 @@ void main() {
               qualityEnhancementEnabled: true,
               onQualityEnhancementChanged: (_) {},
               onApply: (List<String> _) async {},
+              onSelectTier: (_, __, ___) async {},
             ),
           ),
         ));

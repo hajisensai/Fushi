@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:hibiki/src/media/video/video_shader_downloader.dart';
 import 'package:hibiki/src/media/video/video_shader_manager.dart';
+import 'package:hibiki/src/media/video/video_shader_tier.dart';
 import 'package:hibiki/utils.dart';
 
 /// mpv 着色器内嵌管理视图：导入 `.glsl`/`.hook`、从本机 mpv 发现导入、一键下载
@@ -23,6 +24,7 @@ class VideoShaderManagerView extends StatefulWidget {
     required this.qualityEnhancementEnabled,
     required this.onQualityEnhancementChanged,
     required this.onApply,
+    required this.onSelectTier,
     this.initialMpvDir = '',
     this.onMpvDirChanged,
     super.key,
@@ -39,6 +41,15 @@ class VideoShaderManagerView extends StatefulWidget {
 
   /// 勾选变化时回调，参数为按目录顺序排列的启用文件名列表。
   final Future<void> Function(List<String> enabledNames) onApply;
+
+  /// 选某画质档位后回调：本视图已把目标状态算好——[highQuality]（mpv 内置缩放开关）
+  /// 与 [enabledNames]（按叠加顺序、已落盘存在的该档着色器集）。调用方一次性持久化这
+  /// 两套状态 + 实时应用（着色器文件已由本视图在回调前下载到目录）。[tier] 仅供日志/统计。
+  final Future<void> Function(
+    VideoShaderTier tier,
+    bool highQuality,
+    List<String> enabledNames,
+  ) onSelectTier;
 
   /// 用户上次手动指定的本机 mpv 配置/着色器目录（空=未指定，走自动候选）。
   final String initialMpvDir;
@@ -242,20 +253,9 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView> {
     ));
   }
 
-  /// 打开 Anime4K 预设下载子对话框：选预设 → 多镜像逐文件下载（进度）→ 刷新列表。
-  Future<void> _openAnime4kDownload() async {
-    final Anime4kPreset? preset = await showDialog<Anime4kPreset>(
-      context: context,
-      builder: (_) => Anime4kPresetPickerDialog(
-        downloadedFiles: _files.toSet(),
-      ),
-    );
-    if (preset == null || !mounted) return;
-    await _downloadPreset(preset);
-  }
-
   /// 下载某预设的全部着色器到 mpv_shaders（进度对话框 + 取消），完成刷新列表 + 提示。
-  Future<void> _downloadPreset(Anime4kPreset preset) async {
+  /// 返回 true 表示该预设的全部文件现已就绪（全部下载成功或已存在），可据此启用该档。
+  Future<bool> _downloadPreset(Anime4kPreset preset) async {
     final ValueNotifier<({int index, int total, double? progress})>
         progressNotifier =
         ValueNotifier<({int index, int total, double? progress})>(
@@ -301,19 +301,19 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView> {
       progressNotifier.dispose();
     }
 
-    if (!mounted) return;
+    if (!mounted) return false;
     // 关闭进度对话框（唯一一次 pop）。
     Navigator.of(context).pop();
     await _refresh();
-    if (!mounted || cancelled) return;
+    if (!mounted || cancelled) return false;
 
     if (error != null) {
       messenger.showSnackBar(
         SnackBar(content: Text(t.video_shader_download_failed)),
       );
-      return;
+      return false;
     }
-    if (result == null) return; // 被取消。
+    if (result == null) return false; // 被取消。
     final String message;
     if (result.allOk) {
       message = t.video_shader_download_done(count: result.downloaded.length);
@@ -326,7 +326,41 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView> {
       message = t.video_shader_download_failed;
     }
     messenger.showSnackBar(SnackBar(content: Text(message)));
+    return result.allOk;
   }
+
+  /// **一键画质档位切换**（用户诉求 1/3/4 的统一入口）：选 [tier] 后——
+  /// 1) 若该档需要 GLSL 且文件未全就绪 → 走 [_downloadPreset] 下载（带进度，可取消）；
+  /// 2) 下载成功 / 无需下载 → 刷新目录，调 [VideoShaderManagerView.onSelectTier]
+  ///    让视频页一次性写「内置缩放开关 + 启用集」并实时应用。
+  /// 下载失败（用户取消 / 网络全挂）则不改档，停在原状态（不留半启用）。
+  Future<void> _selectTier(VideoShaderTier tier) async {
+    final VideoShaderTierSpec spec = shaderTierSpec(tier);
+    final Anime4kPreset? preset = spec.preset;
+    if (preset != null) {
+      final bool alreadyHave = preset.fileNames.every(_files.toSet().contains);
+      if (!alreadyHave) {
+        final bool ok =
+            await _downloadPreset(preset); // 内部已 _refresh 刷新 _files。
+        if (!mounted || !ok) return; // 取消/失败：不切档（不留半启用）。
+      }
+    }
+    // 从目录现有文件按该档叠加顺序过滤出有序启用集（个别下载失败也只启用存在的）。
+    final List<String> enabled = orderedEnabledForTier(tier, _files.toSet());
+    setState(() {
+      _enabled
+        ..clear()
+        ..addAll(enabled);
+    });
+    await widget.onSelectTier(tier, spec.highQuality, enabled);
+    if (mounted) setState(() {}); // 重算当前选中档高亮。
+  }
+
+  /// 当前命中的画质档（据内置缩放开关 + 已启用集反查）；都不命中=用户自定义勾选→null。
+  VideoShaderTier? get _currentTier => tierFromState(
+        highQuality: widget.qualityEnhancementEnabled,
+        enabledShaders: _files.where(_enabled.contains).toList(),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -358,33 +392,43 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
+        // ── 画质档位（无/低/中/高/极高）：一键选档即下载+启用，普通用户唯一需要的入口 ──
         AdaptiveSettingsSection(
-          title: t.video_shader_recommended,
+          title: t.video_shader_quality_tier,
           children: <Widget>[
-            _actionRow(
-              title: t.video_shader_download_anime4k,
-              subtitle: t.video_shader_anime4k_hint,
-              icon: Icons.download_outlined,
-              onTap: _openAnime4kDownload,
+            VideoShaderTierSelector(
+              current: _currentTier,
+              onSelect: _selectTier,
             ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
+              child: Text(
+                _tierHint(),
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+            if (isMobilePlatform)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
+                child: Text(
+                  t.video_shader_mobile_perf_hint,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.tertiary,
+                      ),
+                ),
+              ),
+          ],
+        ),
+        // ── 进阶：经典推荐着色器 + 手动导入/下载（默认折叠观感，给懂的人用）──────
+        AdaptiveSettingsSection(
+          title: t.video_shader_section_advanced,
+          children: <Widget>[
             _actionRow(
               title: t.video_shader_classic_recommended,
               subtitle: t.video_shader_recommended_hint,
               icon: Icons.auto_awesome_outlined,
               onTap: _openRecommended,
             ),
-            AdaptiveSettingsSwitchRow(
-              title: t.video_shader_builtin_mpv_quality,
-              subtitle: t.video_shader_builtin_mpv_quality_hint,
-              icon: Icons.auto_fix_high_outlined,
-              value: widget.qualityEnhancementEnabled,
-              onChanged: widget.onQualityEnhancementChanged,
-            ),
-          ],
-        ),
-        AdaptiveSettingsSection(
-          title: t.video_shader_section_import,
-          children: <Widget>[
             _actionRow(
               title: t.video_shader_import,
               icon: Icons.add_outlined,
@@ -412,6 +456,13 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView> {
         ),
       ],
     );
+  }
+
+  /// 当前档位的一句话说明（自定义勾选状态给「自定义」文案）。
+  String _tierHint() {
+    final VideoShaderTier? tier = _currentTier;
+    if (tier == null) return t.video_shader_tier_custom_hint;
+    return shaderTierLabelDescription(tier);
   }
 
   AdaptiveSettingsRow _actionRow({
@@ -710,6 +761,83 @@ class _Anime4kProgressDialog extends StatelessWidget {
           child: Text(t.dialog_cancel),
         ),
       ],
+    );
+  }
+}
+
+/// 画质档位 i18n 标签（无/低/中/高/极高）。纯映射。
+String shaderTierLabel(VideoShaderTier tier) {
+  switch (tier) {
+    case VideoShaderTier.off:
+      return t.video_shader_tier_off;
+    case VideoShaderTier.low:
+      return t.video_shader_tier_low;
+    case VideoShaderTier.medium:
+      return t.video_shader_tier_medium;
+    case VideoShaderTier.high:
+      return t.video_shader_tier_high;
+    case VideoShaderTier.ultra:
+      return t.video_shader_tier_ultra;
+  }
+}
+
+/// 画质档位一句话说明（选谁用谁，告诉用户该档画质/GPU 取舍）。纯映射。
+String shaderTierLabelDescription(VideoShaderTier tier) {
+  switch (tier) {
+    case VideoShaderTier.off:
+      return t.video_shader_tier_off_hint;
+    case VideoShaderTier.low:
+      return t.video_shader_tier_low_hint;
+    case VideoShaderTier.medium:
+      return t.video_shader_tier_medium_hint;
+    case VideoShaderTier.high:
+      return t.video_shader_tier_high_hint;
+    case VideoShaderTier.ultra:
+      return t.video_shader_tier_ultra_hint;
+  }
+}
+
+/// 画质档位单选器：横排五个分段按钮（无/低/中/高/极高），选中即回调 [onSelect]。
+/// [current]=null（用户手工自定义勾选）时不高亮任何分段，用户仍可点任一档覆盖回标准档。
+///
+/// 用 [SegmentedButton]（MD3 单选）——五档互斥，选一个即整体切换底层两套状态，
+/// 不让用户对着一堆陌生着色器名逐个勾（用户诉求）。窄屏不下时分段按钮自动横向滚动。
+class VideoShaderTierSelector extends StatelessWidget {
+  const VideoShaderTierSelector({
+    required this.current,
+    required this.onSelect,
+    super.key,
+  });
+
+  /// 当前命中的档（null=自定义，不选中任何分段）。
+  final VideoShaderTier? current;
+
+  /// 选某档回调。
+  final Future<void> Function(VideoShaderTier tier) onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: SegmentedButton<VideoShaderTier>(
+        segments: <ButtonSegment<VideoShaderTier>>[
+          for (final VideoShaderTierSpec spec in kVideoShaderTiers)
+            ButtonSegment<VideoShaderTier>(
+              value: spec.tier,
+              label: Text(shaderTierLabel(spec.tier)),
+            ),
+        ],
+        selected:
+            current == null ? <VideoShaderTier>{} : <VideoShaderTier>{current!},
+        emptySelectionAllowed: true,
+        showSelectedIcon: false,
+        multiSelectionEnabled: false,
+        onSelectionChanged: (Set<VideoShaderTier> selection) {
+          if (selection.isEmpty) return;
+          onSelect(selection.first);
+        },
+      ),
     );
   }
 }

@@ -36,6 +36,8 @@ class Anime4kPreset {
     required this.name,
     required this.description,
     required this.shaders,
+    this.repo = 'bloc97/Anime4K',
+    this.ref = 'master',
   });
 
   /// 稳定 id（持久化 / 测试用），如 `mode_a_fast`。
@@ -49,6 +51,12 @@ class Anime4kPreset {
 
   /// 着色器链（按 libmpv 叠加顺序）。
   final List<Anime4kShaderFile> shaders;
+
+  /// 着色器所在 GitHub 仓库 `owner/name`（默认 Anime4K；ArtCNN 等其它 MIT 仓库覆写）。
+  final String repo;
+
+  /// 仓库 ref（分支/标签，默认 master）。
+  final String ref;
 
   /// 本预设涉及的全部落盘文件名（去重，保序）。
   List<String> get fileNames {
@@ -154,6 +162,33 @@ const List<Anime4kPreset> kAnime4kPresets = <Anime4kPreset>[
   ),
 ];
 
+/// ── 画质档位用的 GLSL 预设（无独立数据，复用上面 Anime4K 链 + 新增 ArtCNN）────────
+/// 这三个常量是 [VideoShaderTier]「中/高/极高」三档映射到的着色器集（见
+/// video_shader_tier.dart）；与上面 [kAnime4kPresets] 共享同一下载/落盘/勾选管线。
+
+/// 「中」档：Anime4K Mode A Fast（中低端 GPU 可跑）。直接复用 [kAnime4kPresets] 里的
+/// `mode_a_fast` 着色器链（同文件，避免重复枚举）。
+final Anime4kPreset kAnime4kFastPreset =
+    kAnime4kPresets.firstWhere((Anime4kPreset p) => p.id == 'mode_a_fast');
+
+/// 「高」档：Anime4K Mode A HQ（需较强 GPU）。复用 `mode_a_hq` 链。
+final Anime4kPreset kAnime4kHqPreset =
+    kAnime4kPresets.firstWhere((Anime4kPreset p) => p.id == 'mode_a_hq');
+
+/// 「极高」档：ArtCNN C4F32（Artoriuz/ArtCNN，MIT，2025 最强 HD 番上采样，需旗舰 GPU）。
+/// 单文件 `.glsl`（约 740KB，内含 license 注释 + `//!HOOK` 指令，[looksLikeGlslShader]
+/// 全文扫描可通过）。经 [downloadAnime4kFiles] 同款多镜像下载，repo/ref 由本预设覆写。
+const Anime4kPreset kArtCnnC4F32Preset = Anime4kPreset(
+  id: 'artcnn_c4f32',
+  name: 'ArtCNN C4F32',
+  description: 'Strongest HD anime upscaler (MIT). Needs a flagship GPU.',
+  repo: 'Artoriuz/ArtCNN',
+  ref: 'master',
+  shaders: <Anime4kShaderFile>[
+    Anime4kShaderFile('GLSL/ArtCNN_C4F32.glsl'),
+  ],
+);
+
 /// 一个「推荐着色器」：单文件、来自维护中的权威仓库，一键下载（经 [downloadShaderFromUrl]
 /// 的直链优先 + 镜像兜底）。不必本机装 mpv。
 ///
@@ -222,9 +257,11 @@ const List<RecommendedShader> kRecommendedShaders = <RecommendedShader>[
 /// ③ raw.githubusercontent.com（官方源，可能直连不稳）。app 运行时下载**不走**本机命令行
 /// 代理，故必须靠这些镜像在中国网络环境兜底。逐个尝试，前一个失败回退下一个（见
 /// [downloadAnime4kFiles]）。
-List<String> anime4kMirrorUrls(String repoPath) {
-  const String repo = 'bloc97/Anime4K';
-  const String ref = 'master';
+List<String> anime4kMirrorUrls(
+  String repoPath, {
+  String repo = 'bloc97/Anime4K',
+  String ref = 'master',
+}) {
   // jsDelivr 不需要对路径里的 `+`（如 Upscale+Denoise 目录）做转义，直接用原始路径。
   return <String>[
     'https://cdn.jsdelivr.net/gh/$repo@$ref/$repoPath',
@@ -417,7 +454,8 @@ Future<Anime4kDownloadResult> downloadAnime4kFiles(
       continue;
     }
 
-    final List<String> urls = anime4kMirrorUrls(f.repoPath);
+    final List<String> urls =
+        anime4kMirrorUrls(f.repoPath, repo: preset.repo, ref: preset.ref);
     bool ok = false;
     for (final String url in urls) {
       try {

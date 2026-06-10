@@ -1477,5 +1477,20 @@
     "lookup_audio_volume": "Lookup audio volume",
     "sync_err_invalid_client": "Client credentials are invalid for this build — please update the app.",
     "sync_err_not_configured": "Google sync credentials are not configured in this build.",
-    "floating_lyric_unavailable_hint": "Could not show the floating subtitle window."
+    "floating_lyric_unavailable_hint": "Could not show the floating subtitle window.",
+    "video_shader_quality_tier": "Quality enhancement",
+    "video_shader_tier_off": "Off",
+    "video_shader_tier_low": "Low",
+    "video_shader_tier_medium": "Medium",
+    "video_shader_tier_high": "High",
+    "video_shader_tier_ultra": "Ultra",
+    "video_shader_tier_off_hint": "No enhancement. Plays the original video as-is.",
+    "video_shader_tier_low_hint": "mpv built-in sharpening (ewa_lanczossharp). No download, low GPU load.",
+    "video_shader_tier_medium_hint": "Anime4K Fast. Good for most anime on mid-range GPUs.",
+    "video_shader_tier_high_hint": "Anime4K HQ. Sharper, needs a strong GPU.",
+    "video_shader_tier_ultra_hint": "ArtCNN C4F32. Best quality for HD anime, needs a flagship GPU.",
+    "video_shader_tier_custom_hint": "Custom shader selection. Pick a tier above to switch to a preset.",
+    "video_shader_section_advanced": "Advanced (manual shaders)",
+    "video_shader_mobile_perf_hint": "On phones, shaders run but higher tiers may drop frames or heat up. Try Low/Medium first.",
+    "video_shader_first_use_download": "Download and enable"
 }

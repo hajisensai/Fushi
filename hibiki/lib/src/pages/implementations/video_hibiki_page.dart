@@ -30,6 +30,7 @@ import 'package:hibiki/src/media/video/video_mpv_config.dart';
 import 'package:hibiki/src/media/video/video_player_controller.dart';
 import 'package:hibiki/src/media/video/video_player_shortcuts.dart';
 import 'package:hibiki/src/media/video/video_shader_manager.dart';
+import 'package:hibiki/src/media/video/video_shader_tier.dart';
 import 'package:hibiki/src/media/video/video_subtitle_style.dart';
 import 'package:hibiki/src/media/video/video_watch_tracker.dart';
 import 'package:hibiki/src/pages/implementations/jimaku_subtitle_dialog.dart';
@@ -2083,6 +2084,29 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   bool get _hasShadersEnabled =>
       decodeEnabledShaders(appModel.videoShadersEnabled).isNotEmpty;
 
+  /// **一键画质档位应用**（无/低/中/高/极高）：原子写两套正交状态——mpv 内置缩放开关
+  /// （[highQuality] → videoMpvConfig）+ GLSL 启用集（[enabledNames] →
+  /// videoShadersEnabled），再一次性 applyMpvConfig + applyShaders 实时生效。
+  ///
+  /// 着色器文件已由着色器视图在调用本方法前下载到目录；这里只负责持久化 + 应用。
+  /// highQuality 关时旁路 GLSL（与既有 onApplyShaders/onMpvConfigChanged 同语义）。
+  Future<void> _applyShaderTier(
+    bool highQuality,
+    List<String> enabledNames,
+  ) async {
+    final VideoMpvConfig cfg =
+        VideoMpvConfig.decode(appModel.videoMpvConfig).copyWith(
+      highQuality: highQuality,
+    );
+    await appModel.setVideoMpvConfig(VideoMpvConfig.encode(cfg));
+    await appModel.setVideoShadersEnabled(encodeEnabledShaders(enabledNames));
+    await _controller?.applyMpvConfig(cfg);
+    final List<String> paths = highQuality
+        ? await resolveEnabledShaderPaths(enabledNames)
+        : const <String>[];
+    await _controller?.applyShaders(paths);
+  }
+
   /// 着色器「对比原画」：切换旁路态（临时关掉着色器看原画，再切回），保留启用集。
   /// B：缺效果预览/对比——桌面控制条对比按钮 + `C` 快捷键都走这里，OSD 提示当前态。
   Future<void> _toggleShaderCompare() async {
@@ -2241,6 +2265,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       // 「从本机 mpv 导入」找不到时用户手动指定的 mpv 目录，记住下次优先扫。
       initialMpvShaderDir: appModel.videoMpvShaderDir,
       onMpvShaderDirChanged: (String dir) => appModel.setVideoMpvShaderDir(dir),
+      // 一键画质档位：原子落「mpv 内置缩放开关 + 启用集」并实时应用（着色器文件由
+      // 着色器视图在回调前已下载到目录）。统一在此一处写两套 pref，消除两回调顺序耦合。
+      onSelectShaderTier:
+          (VideoShaderTier tier, bool highQuality, List<String> enabledNames) =>
+              _applyShaderTier(highQuality, enabledNames),
     );
     if (isDesktopPlatform) {
       showAppDialog<void>(

@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:hibiki/src/media/video/video_asbplayer_config.dart';
 import 'package:hibiki/src/media/video/video_mpv_config.dart';
+import 'package:hibiki/src/media/video/video_shader_tier.dart';
 import 'package:hibiki/src/media/video/video_quick_settings_sheet.dart';
 import 'package:hibiki/src/media/video/video_subtitle_style.dart';
 import 'package:hibiki/utils.dart';
@@ -14,6 +15,7 @@ VideoQuickSettingsSheet _sheet({
   void Function(int)? onSetDelay,
   void Function(double)? onSetSpeed,
   void Function(VideoMpvConfig)? onMpvConfigChanged,
+  void Function(VideoShaderTier tier, bool highQuality)? onSelectShaderTier,
   double uiScale = 1.0,
 }) {
   return VideoQuickSettingsSheet(
@@ -31,6 +33,9 @@ VideoQuickSettingsSheet _sheet({
     onSubtitleOffsetChanged: (_) async {},
     initialShadersEnabled: const <String>[],
     onApplyShaders: (_) async {},
+    onSelectShaderTier: (VideoShaderTier tier, bool hq, List<String> _) async {
+      onSelectShaderTier?.call(tier, hq);
+    },
     initialMpvConfig: VideoMpvConfig.defaults,
     onMpvConfigChanged: (VideoMpvConfig c) async => onMpvConfigChanged?.call(c),
     initialLockWindowAspectRatio: true,
@@ -73,24 +78,30 @@ void main() {
     }
   });
 
-  test('quality enhancement labels stay ordinary user-facing', () {
+  test('quality tier labels are the plain 无/低/中/高/极高 selector', () {
     expect(t.video_settings_cat_shaders, 'Image enhancement');
+    expect(t.video_shader_quality_tier, 'Quality enhancement');
+    // 五档面向用户的标签是朴素词，不暴露陌生着色器名。
+    expect(t.video_shader_tier_off, 'Off');
+    expect(t.video_shader_tier_low, 'Low');
+    expect(t.video_shader_tier_medium, 'Medium');
+    expect(t.video_shader_tier_high, 'High');
+    expect(t.video_shader_tier_ultra, 'Ultra');
+    // 档位说明告诉用户取舍（含具体技术名供参考），但选择本身只是五档单选。
+    expect(t.video_shader_tier_low_hint.toLowerCase(),
+        contains('ewa_lanczossharp'));
+    expect(t.video_shader_tier_medium_hint, contains('Anime4K'));
+    expect(t.video_shader_tier_high_hint, contains('Anime4K'));
+    expect(t.video_shader_tier_ultra_hint, contains('ArtCNN'));
+    // 进阶（手动着色器）仍保留经典推荐入口，但不再单列 Anime4K 下载项。
+    expect(t.video_shader_section_advanced, contains('Advanced'));
     expect(t.video_shader_recommended, 'Recommended image enhancements');
-    expect(t.video_shader_recommended_hint.toLowerCase(), contains('anime4k'));
-    expect(t.video_shader_recommended_hint.toLowerCase(),
-        isNot(contains('besides anime4k')));
-    expect(t.video_shader_builtin_mpv_quality, 'mpv built-in quality scaling');
-    expect(
-        t.video_shader_import_from_mpv_hint, contains('choose an mpv folder'));
     expect(t.video_shader_first_use_body, contains('Anime4K'));
-    expect(t.video_shader_preset_mode_a_hq, contains('1080p'));
-    expect(t.video_shader_preset_mode_a_hq.toLowerCase(), contains('quality'));
-    expect(t.video_shader_preset_mode_b_hq, contains('720p'));
-    expect(t.video_shader_preset_mode_c_hq, contains('480p'));
+    expect(t.video_shader_first_use_download, contains('Download'));
   });
 
   testWidgets(
-      'shader settings groups Anime4K under recommended and link download under import',
+      'shader settings shows 5-tier selector on top and removes standalone Anime4K download entry',
       (tester) async {
     await tester.binding.setSurfaceSize(const Size(1000, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -99,26 +110,59 @@ void main() {
     await tester.tap(find.text(t.video_settings_cat_shaders));
     await tester.pumpAndSettle();
 
-    expect(find.text(t.video_shader_section_templates), findsNothing);
-    expect(find.text(t.video_shader_recommended), findsOneWidget);
-    expect(find.text(t.video_shader_builtin_mpv_quality), findsOneWidget);
-    expect(find.text(t.video_settings_cat_shaders), findsOneWidget);
-    expect(find.text(t.video_shader_download_anime4k), findsOneWidget);
+    // 顶部是五档单选器（无/低/中/高/极高）。
+    expect(find.text(t.video_shader_quality_tier), findsOneWidget);
+    expect(find.byType(SegmentedButton<VideoShaderTier>), findsOneWidget);
+    expect(find.text(t.video_shader_tier_off), findsOneWidget);
+    expect(find.text(t.video_shader_tier_low), findsOneWidget);
+    expect(find.text(t.video_shader_tier_medium), findsOneWidget);
+    expect(find.text(t.video_shader_tier_high), findsOneWidget);
+    expect(find.text(t.video_shader_tier_ultra), findsOneWidget);
+
+    // 诉求 2：不再单列「下载 Anime4K 推荐着色器」入口。
+    expect(find.text(t.video_shader_download_anime4k), findsNothing);
+
+    // 进阶 section 仍保留经典推荐 + 手动下载链接（给懂的人），位于档位选择器下方。
+    expect(find.text(t.video_shader_section_advanced), findsOneWidget);
+    expect(find.text(t.video_shader_classic_recommended), findsOneWidget);
     expect(find.text(t.video_shader_download_url), findsOneWidget);
-    expect(find.text(t.video_shader_pick_mpv_dir), findsNothing);
 
-    final double recommendedY =
-        tester.getTopLeft(find.text(t.video_shader_recommended)).dy;
-    final double importY =
-        tester.getTopLeft(find.text(t.video_shader_section_import)).dy;
-    final double anime4kY =
-        tester.getTopLeft(find.text(t.video_shader_download_anime4k)).dy;
-    final double linkY =
-        tester.getTopLeft(find.text(t.video_shader_download_url)).dy;
+    final double tierY =
+        tester.getTopLeft(find.text(t.video_shader_quality_tier)).dy;
+    final double advancedY =
+        tester.getTopLeft(find.text(t.video_shader_section_advanced)).dy;
+    expect(tierY, lessThan(advancedY), reason: '五档选择器在最上，进阶项在其下');
+  });
 
-    expect(anime4kY, greaterThan(recommendedY));
-    expect(anime4kY, lessThan(importY));
-    expect(linkY, greaterThan(importY));
+  testWidgets('selecting a no-download tier (低/无) switches via onSelectTier',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    VideoShaderTier? selectedTier;
+    bool? selectedHq;
+    await _pump(
+      tester,
+      _sheet(onSelectShaderTier: (VideoShaderTier tier, bool hq) {
+        selectedTier = tier;
+        selectedHq = hq;
+      }),
+    );
+
+    await tester.tap(find.text(t.video_settings_cat_shaders));
+    await tester.pumpAndSettle();
+
+    // 初始默认（highQuality=true + 空启用集）已高亮「低」档；先点「无」（值变化触发回调）：
+    // 「无」档零下载——关闭内置缩放 + 空启用集，直接经回调切档、不弹下载框。
+    await tester.tap(find.text(t.video_shader_tier_off));
+    await tester.pumpAndSettle();
+    expect(selectedTier, VideoShaderTier.off);
+    expect(selectedHq, isFalse);
+
+    // 再点「低」（零下载，仅 mpv 内置 scale）：又一次值变化，经回调切回低档。
+    await tester.tap(find.text(t.video_shader_tier_low));
+    await tester.pumpAndSettle();
+    expect(selectedTier, VideoShaderTier.low);
+    expect(selectedHq, isTrue);
   });
 
   testWidgets('video settings shows master-detail on wide windows',
