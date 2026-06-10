@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -180,6 +181,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   static const double _videoPlayPauseIconSize = 36;
   static const Duration _videoDoubleClickInterval = Duration(milliseconds: 400);
   static const double _videoDoubleClickSlop = 48;
+
+  /// 唤醒控制条用的合成 hover 设备 id（[_pokeControlsVisible]）。取一个不与真实
+  /// 鼠标/触控设备号冲突的固定值，使重复派发落在同一逻辑设备上。
+  static const int _syntheticHoverDevice = 0x6869626B; // 'hibk'
   static const double _volumeStep = 5.0;
 
   int get _asbSeekMs => _asbConfig.seekSeconds * 1000;
@@ -1106,6 +1111,52 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _refocusVideo();
   }
 
+  /// 把 media_kit 控制条「唤醒」并重置其自动隐藏计时（BUG-175 ②）。
+  ///
+  /// 根因：media_kit 的 [MaterialDesktopVideoControls] / [MaterialVideoControls]
+  /// 把控制条可见性与隐藏 `Timer`（`controlsHoverDuration`）藏在私有 State 里，**只**
+  /// 在鼠标 `MouseRegion.onHover`/`onEnter` 或拖动进度条时重置；键盘快捷键
+  /// （上下句快进 / ±秒 seek）与编程 seek 都不触发重置 → 用户一直按键快进，控制条
+  /// 仍只活 2 秒就消失，得反复呼出。media_kit 不暴露任何「重置计时」公开 API。
+  ///
+  /// 这里不绕开症状、而是驱动 media_kit **自己设计的**重置路径：往控制条区域中心派发
+  /// 一个合成 [PointerHoverEvent]，命中其 `MouseRegion` → `onHover()` → 重置隐藏
+  /// `Timer` 并翻可见。等价于「用户把鼠标移到了控制条上」，与键盘交互语义一致。
+  /// 仅桌面有 hover 语义（移动端 controls 用 tap 唤起、各按钮 onPressed 自带反馈，
+  /// 无此问题），故仅桌面派发。[_videoControlsContext] 是 controls 子树 context
+  /// （全屏复用同一 builder 时为全屏子树），其 RenderBox 即控制条命中区。
+  void _pokeControlsVisible() {
+    if (!_isDesktopVideoControls) return;
+    final BuildContext? ctx = _videoControlsContext;
+    if (ctx == null || !ctx.mounted) return;
+    final RenderObject? renderObject = ctx.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) return;
+    final Offset center =
+        renderObject.localToGlobal(renderObject.size.center(Offset.zero));
+    GestureBinding.instance.handlePointerEvent(
+      PointerHoverEvent(
+        position: center,
+        // 复用一个稳定的合成设备 id，避免与真实鼠标/触控设备冲突。
+        device: _syntheticHoverDevice,
+        kind: PointerDeviceKind.mouse,
+      ),
+    );
+  }
+
+  /// 是否当前用 media_kit 桌面控制条（仅桌面三端有 hover 自动隐藏语义）。
+  bool get _isDesktopVideoControls {
+    switch (Theme.of(context).platform) {
+      case TargetPlatform.windows:
+      case TargetPlatform.macOS:
+      case TargetPlatform.linux:
+        return true;
+      case TargetPlatform.android:
+      case TargetPlatform.iOS:
+      case TargetPlatform.fuchsia:
+        return false;
+    }
+  }
+
   /// 点字幕第 [graphemeIndex] 个字符：暂停 → 从该位置起取词 → 推入与阅读器/词典页
   /// 同款的 [DictionaryPopupLayer] 浮层（定位到被点字符的屏幕 [charRect] 附近）。
   ///
@@ -1559,18 +1610,32 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         play: () => unawaited(controller.play()),
         pause: () => unawaited(controller.pause()),
         // 左右方向键 = 上下句字幕（无字幕 cue 时回退 asbplayer 默认 ±3 秒 seek）。
-        previousSubtitle: () => unawaited(
-          controller.cues.isEmpty
-              ? controller.seekRelative(-_asbSeekMs)
-              : controller.skipToPrevCue(),
-        ),
-        nextSubtitle: () => unawaited(
-          controller.cues.isEmpty
-              ? controller.seekRelative(_asbSeekMs)
-              : controller.skipToNextCue(),
-        ),
-        seekBackward: () => unawaited(controller.seekRelative(-_asbSeekMs)),
-        seekForward: () => unawaited(controller.seekRelative(_asbSeekMs)),
+        // 每次快进/跳句都唤醒控制条并重置自动隐藏计时（BUG-175 ②）：键盘交互不触发
+        // media_kit 的 hover 重置，不主动 poke 的话控制条只活 2 秒就消失。
+        previousSubtitle: () {
+          _pokeControlsVisible();
+          unawaited(
+            controller.cues.isEmpty
+                ? controller.seekRelative(-_asbSeekMs)
+                : controller.skipToPrevCue(),
+          );
+        },
+        nextSubtitle: () {
+          _pokeControlsVisible();
+          unawaited(
+            controller.cues.isEmpty
+                ? controller.seekRelative(_asbSeekMs)
+                : controller.skipToNextCue(),
+          );
+        },
+        seekBackward: () {
+          _pokeControlsVisible();
+          unawaited(controller.seekRelative(-_asbSeekMs));
+        },
+        seekForward: () {
+          _pokeControlsVisible();
+          unawaited(controller.seekRelative(_asbSeekMs));
+        },
         toggleShaderCompare: () => unawaited(_toggleShaderCompare()),
         volumeUp: () => unawaited(_adjustVolume(_volumeStep)),
         volumeDown: () => unawaited(_adjustVolume(-_volumeStep)),
@@ -1886,14 +1951,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           ),
         MaterialDesktopCustomButton(
           icon: const Icon(Icons.skip_previous, size: _videoControlIconSize),
-          onPressed: () => controller.skipToPrevCue(),
+          onPressed: () => _skipCueAndPokeControls(forward: false),
         ),
         const MaterialDesktopPlayOrPauseButton(
           iconSize: _videoPlayPauseIconSize,
         ),
         MaterialDesktopCustomButton(
           icon: const Icon(Icons.skip_next, size: _videoControlIconSize),
-          onPressed: () => controller.skipToNextCue(),
+          onPressed: () => _skipCueAndPokeControls(forward: true),
         ),
         if (roomyBottomBar)
           MaterialDesktopCustomButton(
@@ -2240,9 +2305,20 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         : t.video_shader_showing_shaded);
   }
 
-  /// 相对当前位置 seek（±[deltaMs]，底部胶囊条 / 快捷键共用）。
+  /// 相对当前位置 seek（±[deltaMs]，底部胶囊条 / 快捷键共用）。每次都唤醒控制条并
+  /// 重置自动隐藏计时（BUG-175 ②；底部 ±10 按钮是 tap，media_kit 也不重置计时）。
   Future<void> _seekRelative(int deltaMs) async {
+    _pokeControlsVisible();
     await _controller?.seekRelative(deltaMs);
+  }
+
+  /// 跳上/下一句并唤醒控制条（底部胶囊条「上/下一句」按钮，BUG-175 ②）。
+  /// [forward] true=下一句、false=上一句。
+  Future<void> _skipCueAndPokeControls({required bool forward}) async {
+    _pokeControlsVisible();
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return;
+    await (forward ? controller.skipToNextCue() : controller.skipToPrevCue());
   }
 
   /// 截当前帧存为图片：桌面弹保存对话框，移动端走系统分享（参照 log_exporter
