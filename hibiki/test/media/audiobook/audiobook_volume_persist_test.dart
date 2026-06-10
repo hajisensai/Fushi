@@ -39,4 +39,18 @@ void main() {
     await repo.updateVolume(bookKey: 'book-A', volume: 1.0);
     expect(await repo.readVolume('book-A'), 1.0);
   });
+
+  test('fine-grained (1%) volume values round-trip unchanged', () async {
+    // 音量滑条细化到 1% 一档（AudiobookVolumeRow.sliderDivisions = 200）后，
+    // 0.87 这类非 10% 网格值也要原样写穿/读回；存储本就是裸 double 字符串，
+    // 旧的 10% 网格存量值（如 0.4）同样继续有效 —— 双向兼容。
+    final HibikiDatabase db = await _openDb();
+    final AudiobookRepository repo = AudiobookRepository(db);
+
+    await repo.updateVolume(bookKey: 'book-fine', volume: 0.87);
+    expect(await repo.readVolume('book-fine'), closeTo(0.87, 1e-9));
+
+    await repo.updateVolume(bookKey: 'book-fine', volume: 1.05);
+    expect(await repo.readVolume('book-fine'), closeTo(1.05, 1e-9));
+  });
 }

@@ -1111,14 +1111,9 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet> {
   }
 
   Widget _buildVolumeSection(AudiobookPlayerController ctrl) {
-    return AdaptiveSettingsSliderRow(
-      title: t.audio_volume,
-      icon: Icons.volume_up_outlined,
-      value: ctrl.volume.clamp(0.0, 2.0),
-      max: 2,
-      // 10% 一档的离散刻度，与「界面大小」等其它 MD3 滑条统一显示刻度点。
-      divisions: 20,
-      onChanged: (v) {
+    return AudiobookVolumeRow(
+      volume: ctrl.volume,
+      onChanged: (double v) {
         ctrl.setVolume(v);
         setState(() {});
       },
@@ -2051,6 +2046,58 @@ class _RepeatIconButtonState extends State<_RepeatIconButton> {
         padding: EdgeInsets.zero,
         onTap: widget.onPressed,
       ),
+    );
+  }
+}
+
+/// 有声书音量行：拖动按 1% 一档吸附，键盘 / 手柄左右键单按 5% 一步。
+///
+/// 粒度拆成两个常量：拖动要「细」（1% 档位足够精修不同书的响度差异），但
+/// 方向键 / D-pad 若也按 1% 走，0–200% 全程要按 200 下，单按步进就退化成
+/// 不可用 —— 所以按键步进固定 5%（仍比旧的 10% 细一倍），经
+/// [AdaptiveSettingsSliderRow.step] 与拖动档位解耦。200 档刻度点过密时
+/// Material Slider 自动不画（SDK 阈值 trackWidth/divisions >= 3*tickWidth），
+/// 轨道保持干净；Cupertino 滑条本就不画刻度。
+///
+/// 独立成公开 widget（而非 sheet 私有方法）是为了让行为测试不实例化
+/// [AudiobookPlayerController]（其构造即持有 just_audio 平台播放器，
+/// headless 测试不可用）就能直接 pump 验证步进 / 档位 / 读数。
+class AudiobookVolumeRow extends StatelessWidget {
+  const AudiobookVolumeRow({
+    required this.volume,
+    required this.onChanged,
+    super.key,
+  });
+
+  /// 音量上限（200%，与 [AudiobookPlayerController.setVolume] 的 clamp 一致）。
+  static const double maxVolume = 2.0;
+
+  /// 拖动吸附档数：0–200% 共 200 档 = 1% 一档。
+  static const int sliderDivisions = 200;
+
+  /// 键盘 / 手柄左右键单按步进：5%。
+  static const double keyStep = 0.05;
+
+  /// 当前音量（0.0–2.0，1.0 = 100%）。
+  final double volume;
+
+  /// 音量变化回调（已按档位吸附 / 步进对齐的值）。
+  final ValueChanged<double> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final double value = volume.clamp(0.0, maxVolume);
+    final String percentLabel = '${(value * 100).round()}%';
+    return AdaptiveSettingsSliderRow(
+      // 与速度行同款的标题实时读数：1%/5% 的细步进没有可见读数等于白调。
+      title: '${t.audio_volume} ($percentLabel)',
+      icon: Icons.volume_up_outlined,
+      value: value,
+      max: maxVolume,
+      divisions: sliderDivisions,
+      label: percentLabel,
+      step: keyStep,
+      onChanged: onChanged,
     );
   }
 }
