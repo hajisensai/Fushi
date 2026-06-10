@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/shortcuts/gamepad_service.dart'
     show
-        arrowTraversalDirection,
+        arrowFocusMoveDirection,
         dispatchNativeGamepadButtonIntent,
         focusedEditableText,
         gamepadMoveFocusInDirection;
@@ -67,42 +67,80 @@ KeyEventResult _handleGlobalEscape(
   return KeyEventResult.handled;
 }
 
-/// Lets keyboard up/down ESCAPE a focused single-line text field — the one
-/// directional-navigation case the framework traps.
+/// App-wide arrow-key focus handling, in two parts (both reached BEFORE
+/// WidgetsApp's [DefaultTextEditingShortcuts]/[DirectionalFocusAction] because
+/// key events bubble up from the focused node and this wrapper is nearer the
+/// focus than WidgetsApp's shortcuts):
 ///
-/// The reported bug ("管理音频来源里按方向键上下动不了"): with the URL text field
-/// focused, up/down do nothing. The framework's [DefaultTextEditingShortcuts]
-/// maps every arrow to a caret intent and the [EditableText] consumes it — even
-/// up/down on a single-line field, where the caret cannot move — so focus is
-/// trapped on the field and never reaches the rows above or the buttons below.
+/// 1. ESCAPE a focused single-line text field — the one directional-navigation
+///    case the framework traps (bug "管理音频来源里按方向键上下动不了"): with the
+///    URL field focused, up/down do nothing because the framework maps every
+///    arrow to a caret intent and the [EditableText] consumes it even up/down on
+///    a single-line field where the caret cannot move. This fires ONLY on the
+///    press edge ([KeyDownEvent]) and ONLY when a single-line field is focused —
+///    one Up/Down leaves the field; repeats would be meaningless since focus is
+///    no longer on the field. left/right and multi-line up/down stay with the
+///    caret.
 ///
-/// This is deliberately the MINIMAL intervention. It only ever fires while a
-/// text field is focused; every other arrow is left untouched, so the existing
-/// owners keep working exactly as before — the home page's directional nav, the
-/// reader's page-turn, sliders/dropdowns, and Flutter's default directional
-/// traversal inside dialogs (which already walks non-field controls fine). The
-/// wrapper sits ABOVE the Navigator yet is reached BEFORE
-/// [DefaultTextEditingShortcuts] (key events bubble up from the focused node, and
-/// this wrapper is nearer the focus than WidgetsApp's shortcuts), so it can claim
-/// the up/down a single-line caret does not need:
-///   * left/right -> always left to the caret;
-///   * up/down in a MULTI-line field -> left to the caret (line navigation);
-///   * up/down in a single-line field -> move focus out of the field, via
-///     [gamepadMoveFocusInDirection] (same bootstrap + reading-order fallback as
-///     the gamepad D-pad, so it never dead-ends mid-list).
+/// 2. CONTINUE directional focus movement on OS auto-repeat ([KeyRepeatEvent])
+///    when NO text field is focused. Holding an arrow advances focus
+///    continuously instead of one step per press. The press edge is deliberately
+///    NOT claimed here (it is left to the page/home/framework owners, so this is
+///    a zero-regression addition); only the repeat is taken so it runs the SAME
+///    [gamepadMoveFocusInDirection] (panel-aware geometry + reading-order
+///    fallback) as the press edge would on home/gamepad — the framework's bare
+///    [DirectionalFocusAction] that would otherwise handle the repeat does not
+///    carry that fallback and dead-ends at row/panel edges. The home page
+///    handles its own repeats and consumes them before they reach here; this
+///    catches every other page (settings, dialogs, reader chrome) uniformly.
 KeyEventResult _handleGlobalArrowFocus(
   GlobalKey<NavigatorState> navigatorKey,
   KeyEvent event,
 ) {
-  if (event is! KeyDownEvent) return KeyEventResult.ignored;
-  final TraversalDirection? dir = arrowTraversalDirection(event.logicalKey);
+  final TraversalDirection? dir = arrowFocusMoveDirection(event);
   if (dir == null) return KeyEventResult.ignored;
   final EditableText? editable = focusedEditableText();
-  // Surgical: only intervene to free a trapped single-line field. With no field
-  // focused, or for an arrow the caret legitimately uses, stay out of the way.
-  if (editable == null || _caretKeepsArrow(editable, dir)) {
+
+  if (editable == null) {
+    // Part 2: no field focused — continue movement on OS auto-repeat ONLY, and
+    // ONLY while focus rests on a real Hibiki-managed control. The managed-target
+    // gate is what keeps this from hijacking a held arrow on a surface that owns
+    // the arrow for itself — the reader's reading content / page-turn and char
+    // cursor (its FocusNode is not a managed target; the reader consumes its own
+    // caret repeats before they reach here). The press edge is left to the
+    // page/framework owners, so this only ADDS repeat continuation, never changes
+    // a single press.
+    if (event is! KeyRepeatEvent) return KeyEventResult.ignored;
+    // Resolve the controller from the FOCUSED context (the HibikiFocusRoot sits
+    // below the Navigator, so navigatorKey.currentContext is ABOVE the scope and
+    // cannot see it; the primary focus is inside the root). No focus / no root →
+    // leave the repeat to the framework (unchanged behaviour).
+    final BuildContext? focusContext =
+        FocusManager.instance.primaryFocus?.context;
+    final HibikiFocusController? controller = focusContext == null
+        ? null
+        : HibikiFocusRoot.maybeControllerOf(focusContext, listen: false);
+    if (controller == null || !controller.primaryFocusIsManagedTarget) {
+      return KeyEventResult.ignored;
+    }
+    return _moveFocusForArrow(navigatorKey, dir);
+  }
+
+  // Part 1: single-line field escape, press edge only.
+  if (event is! KeyDownEvent || _caretKeepsArrow(editable, dir)) {
     return KeyEventResult.ignored;
   }
+  return _moveFocusForArrow(navigatorKey, dir);
+}
+
+/// Moves directional focus one step in [dir] from whichever route is on top,
+/// then ALWAYS consumes the arrow: at a scroll/list edge the move is a no-op but
+/// the arrow has still been "spent" (so it never falls back to the caret or to
+/// the framework's fallback that lacks Hibiki's reading-order step).
+KeyEventResult _moveFocusForArrow(
+  GlobalKey<NavigatorState> navigatorKey,
+  TraversalDirection dir,
+) {
   // Mirror the gamepad service's dispatch context: the focused widget's context
   // when one exists, else the navigator, so directional resolution starts from
   // the right scope inside whichever route is on top.
@@ -110,8 +148,6 @@ KeyEventResult _handleGlobalArrowFocus(
       navigatorKey.currentContext;
   if (context == null) return KeyEventResult.ignored;
   gamepadMoveFocusInDirection(context, dir);
-  // Always consume: at a scroll/list edge the move is a no-op, but the arrow has
-  // still been "spent" leaving the field — never falls back to the caret.
   return KeyEventResult.handled;
 }
 

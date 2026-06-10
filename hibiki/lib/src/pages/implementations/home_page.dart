@@ -11,6 +11,7 @@ import 'package:hibiki/src/shortcuts/input_binding.dart'
 import 'package:hibiki/src/shortcuts/gamepad_service.dart'
     show
         GamepadButtonIntent,
+        arrowFocusMoveDirection,
         arrowTraversalDirection,
         dispatchNativeGamepadButtonIntent,
         focusedEditableText,
@@ -137,6 +138,20 @@ class _HomePageState extends BasePageState<HomePage>
   }
 
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    // Arrow KeyDownEvent OR OS auto-repeat (KeyRepeatEvent) drives a step of
+    // directional focus movement, so holding an arrow advances focus
+    // continuously instead of one step per discrete press. KeyDown also runs the
+    // shortcut/gamepad resolution below (once per press); a repeat must ONLY move
+    // focus — re-resolving a bound shortcut on every repeat would fire it
+    // repeatedly. Skipped while a text field is focused so the field's own caret
+    // keeps the arrows (same guard as the KeyDown arrow branch below).
+    final TraversalDirection? repeatDir =
+        event is KeyRepeatEvent ? arrowFocusMoveDirection(event) : null;
+    if (repeatDir != null) {
+      if (focusedEditableText() != null) return KeyEventResult.ignored;
+      gamepadMoveFocusInDirection(context, repeatDir);
+      return KeyEventResult.handled;
+    }
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
 
     final KeyEventResult focusedGamepadAction =

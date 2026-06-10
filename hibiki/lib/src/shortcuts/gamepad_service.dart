@@ -446,6 +446,29 @@ TraversalDirection? arrowTraversalDirection(LogicalKeyboardKey key) {
   return null;
 }
 
+/// Whether [event] is a keyboard event that should drive a single step of
+/// directional FOCUS movement — i.e. an arrow key on its press edge
+/// ([KeyDownEvent]) OR an OS auto-repeat ([KeyRepeatEvent]).
+///
+/// Holding an arrow key makes the OS emit one [KeyDownEvent] followed by a
+/// stream of [KeyRepeatEvent]s until release; treating BOTH as a move keeps
+/// focus advancing continuously while held instead of one step per discrete
+/// press (“一个字一个字按过去还是太吃手指”). [KeyUpEvent] is excluded so release
+/// does not move. Returns the [TraversalDirection] for the key, or null when the
+/// event/key should not move focus (non-arrow key, or a [KeyUpEvent]).
+///
+/// Both [event] type and the arrow→direction mapping are centralized here so the
+/// home page handler and the app-wide wrapper agree on exactly which keyboard
+/// events continuously move focus — the move itself stays the caller's
+/// [gamepadMoveFocusInDirection], so KeyDown and KeyRepeat share one geometry/
+/// reading-order path (the framework's bare DirectionalFocusAction does NOT
+/// carry Hibiki's reading-order fallback, so relying on it for repeats would
+/// dead-end at row/panel edges where the press edge advanced fine).
+TraversalDirection? arrowFocusMoveDirection(KeyEvent event) {
+  if (event is! KeyDownEvent && event is! KeyRepeatEvent) return null;
+  return arrowTraversalDirection(event.logicalKey);
+}
+
 /// The [EditableText] that currently holds focus, or null when no text field is
 /// focused. Lets callers decide per-direction whether an arrow key should drive
 /// the text caret or move focus (single-line fields don't use up/down).
