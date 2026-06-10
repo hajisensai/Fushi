@@ -61,6 +61,8 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   void dispose() {
     _searchController.dispose();
     _searchFocusNode.dispose();
+    // TODO-058：弹窗 controller 现持有挂起层兜底 Timer，dispose 取消防泄漏。
+    _popup.dispose();
     super.dispose();
   }
 

@@ -32,6 +32,7 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
     this.onScrolledToBottom,
     this.onTopPullReleased,
     this.onRendered,
+    this.onRenderError,
   });
 
   final DictionarySearchResult result;
@@ -54,6 +55,11 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
   /// Fired after the popup content finishes rendering (the `popupRendered` JS
   /// handler). Used by the reader to hand the char-level cursor to this popup.
   final VoidCallback? onRendered;
+
+  /// TODO-058 fail-safe：主框架加载失败（`onReceivedError`）时触发。挂起到
+  /// `popupRendered` 才显示的冷层若加载失败，`popupRendered` 永不会发；宿主据此
+  /// 立即把该层翻可见（加载失败也显示空壳，至少不卡死「点查词什么都不出」）。
+  final VoidCallback? onRenderError;
 
   @override
   ConsumerState<DictionaryPopupWebView> createState() =>
@@ -837,6 +843,17 @@ class DictionaryPopupWebViewState
           unawaited(_pushInstantScrollPreference());
           _pushResults();
         });
+      },
+      onReceivedError: (controller, request, error) {
+        // TODO-058 fail-safe：主框架加载失败（弹窗 WebView 进程异常 / 资源拦截
+        // 失败等）时 `popupRendered` 永不会发，挂起的冷层会永久不可见（点查词什么
+        // 都不出）。这里通知宿主立即把该层翻可见（revealRendered），加载失败也至少
+        // 显示空壳，不卡死。仅主框架失败触发，子资源失败不影响整体可见性。
+        if (request.isForMainFrame ?? false) {
+          debugPrint('[PopupWebView] onReceivedError: ${error.description} '
+              'url=${request.url}');
+          widget.onRenderError?.call();
+        }
       },
       onConsoleMessage: (controller, consoleMessage) {
         final msg = consoleMessage.message;

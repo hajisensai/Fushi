@@ -270,6 +270,11 @@ mixin DictionaryPageMixin {
             if (!mounted) return;
             if (controller.revealRendered(entry)) setState(() {});
           },
+          // TODO-058 fail-safe：WebView 加载失败也走同一翻可见路径（不卡死）。
+          onRenderError: () {
+            if (!mounted) return;
+            if (controller.revealRendered(entry)) setState(() {});
+          },
           onScrolledToBottom: entry.allLoaded
               ? null
               : () => loadMoreForEntry(entry: entry, controller: controller),
@@ -404,7 +409,14 @@ mixin DictionaryPageMixin {
           if (revealImmediately) {
             controller.show(entry);
           } else {
-            controller.markPendingReveal(entry);
+            // TODO-058 fail-safe：mixin 宿主（视频/首页）不监听 controller，靠
+            // setState 重建；超时强制翻可见后也要 setState（守 mounted，Timer 后触发）。
+            controller.markPendingReveal(
+              entry,
+              onForcedReveal: () {
+                if (mounted) setState(() {});
+              },
+            );
           }
         });
       }

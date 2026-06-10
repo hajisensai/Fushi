@@ -71,6 +71,8 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   @override
   void dispose() {
     _creatorActiveStreamSubscription?.cancel();
+    // TODO-058：controller 现持有挂起层兜底 Timer，作为其所有者必须 dispose 取消，防泄漏。
+    _popup.dispose();
     super.dispose();
   }
 
@@ -435,6 +437,9 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
           onDismiss: () => _dismissPopupAt(index),
           onTapOutside: clearDictionaryResult,
           onRendered: () => _onPopupLayerRendered(index, item),
+          // TODO-058 fail-safe：弹窗 WebView 加载失败也走同一翻可见入口（加载失败
+          // 也显示，不卡死「点查词什么都不出」）。
+          onRenderError: () => _onPopupLayerRendered(index, item),
           headerWidget: index == 0 ? buildPopupAudioControls() : null,
           overlayWidget: isTop ? buildDictionaryLoading() : null,
           onTextSelected: (text, localRect) async {
@@ -597,6 +602,17 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   @visibleForTesting
   void debugFirePopupRendered(int index) {
     if (index < 0 || index >= _popup.entries.length) return;
+    _onPopupLayerRendered(index, _popup.entries[index]);
+  }
+
+  /// TODO-058 fail-safe test hook: simulate the WebView at [index] firing the
+  /// load-error callback (`onReceivedError` -> [DictionaryPopupLayer.onRenderError]).
+  /// Reveals a pending cold layer exactly like the production error wiring, so
+  /// widget tests can assert "load failure still shows the popup, not stuck hidden".
+  @visibleForTesting
+  void debugFirePopupRenderError(int index) {
+    if (index < 0 || index >= _popup.entries.length) return;
+    // Same reveal entry the onRenderError closure uses in _buildPopupLayer.
     _onPopupLayerRendered(index, _popup.entries[index]);
   }
 

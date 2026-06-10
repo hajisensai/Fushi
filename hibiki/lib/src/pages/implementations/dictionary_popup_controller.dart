@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
@@ -56,6 +58,20 @@ class DictionaryPopupController extends ChangeNotifier {
   /// 已初始化的安全时机（seed 前）设入真实值，避免在 State.initState 里过早读
   /// prefsRepo（未初始化会抛）。
   bool lowMemory;
+
+  /// TODO-058 fail-safe：挂起层（[markPendingReveal]）等 `popupRendered` 才翻可见。
+  /// 若 WebView 冷加载失败 / `renderPopup()` JS 抛异常 / `callHandler` 因 WebView
+  /// 进程异常失败 → `popupRendered` 永不发，挂起层会**永久** `visible=false`（点查词
+  /// 什么都不出，比白屏一瞬更糟）。该超时是兜底：到时仍未 [revealRendered] 就强制
+  /// 翻可见（退回「最坏白屏一瞬」也好过永不显示）。取足够长，正常渲染远早于它，
+  /// 不影响「就绪才显示」的正常路径。
+  static const Duration kRevealFailsafeTimeout = Duration(milliseconds: 1800);
+
+  /// 每个挂起层一个一次性兜底 Timer。[revealRendered]/[show]/隐藏/裁剪/清栈/[dispose]
+  /// 任何使该层离开挂起态的路径都必须取消并移除其 Timer，避免在已销毁/已显示的
+  /// 条目上回调或泄漏。
+  final Map<DictionaryPopupEntry, Timer> _revealFailsafeTimers =
+      <DictionaryPopupEntry, Timer>{};
 
   final List<DictionaryPopupEntry> _entries = <DictionaryPopupEntry>[];
   List<DictionaryPopupEntry> get entries => List.unmodifiable(_entries);
@@ -122,6 +138,7 @@ class DictionaryPopupController extends ChangeNotifier {
       if (_entries.length > 1) {
         _entries.removeRange(1, _entries.length);
       }
+      _cancelRevealTimer(_entries.first);
       e = _entries.first
         ..searchTerm = term
         ..selectionRect = rect
@@ -166,6 +183,7 @@ class DictionaryPopupController extends ChangeNotifier {
   void truncateTo(int length) {
     if (length < 0) length = 0;
     if (_entries.length > length) {
+      _cancelRevealTimers(_entries.sublist(length));
       _entries.removeRange(length, _entries.length);
       notifyListeners();
     }
@@ -177,6 +195,7 @@ class DictionaryPopupController extends ChangeNotifier {
     if (_entries.isEmpty) return;
     final DictionaryPopupEntry first = _entries.first;
     if (first.isWarmSlot && !lowMemory) {
+      _cancelRevealTimers(_entries);
       first
         ..visible = false
         ..revealOnRender = false
@@ -185,6 +204,7 @@ class DictionaryPopupController extends ChangeNotifier {
         ..clear()
         ..add(first);
     } else {
+      _cancelRevealTimers(_entries);
       _entries.clear();
     }
     notifyListeners();
@@ -193,6 +213,7 @@ class DictionaryPopupController extends ChangeNotifier {
   /// 清空整个栈（宿主重置/销毁用；不保留热槽）。
   void clear() {
     if (_entries.isEmpty) return;
+    _cancelRevealTimers(_entries);
     _entries.clear();
     notifyListeners();
   }
@@ -212,6 +233,7 @@ class DictionaryPopupController extends ChangeNotifier {
 
   /// 显示 [e]（搜索→就绪才显示路径在 [fillResult] 后调用）。
   void show(DictionaryPopupEntry e) {
+    _cancelRevealTimer(e);
     e.visible = true;
     e.revealOnRender = false;
     notifyListeners();
@@ -221,10 +243,42 @@ class DictionaryPopupController extends ChangeNotifier {
   /// 用于冷启动（新建 WebView）的嵌套/非热槽层：让其 WebView 在屏外预渲染，
   /// 待 [revealRendered] 命中（`onRendered` 信号）再翻可见，杜绝白屏一瞬。
   /// 热槽/有词条但 WebView 已预热的层不走此路（[show] 立即显示即可）。
-  void markPendingReveal(DictionaryPopupEntry e) {
+  ///
+  /// [onForcedReveal] 在**超时兜底**强制翻可见后回调（不在正常 [revealRendered]
+  /// 路径调用——那条路有自己的后续）。宿主用它做翻可见后的重建：mixin 路径
+  /// （视频/首页不监听本 controller）传 `setState(() {})`，阅读器路径（监听
+  /// controller，[notifyListeners] 已触发重建）可传 null。[timeout] 默认
+  /// [kRevealFailsafeTimeout]。
+  void markPendingReveal(
+    DictionaryPopupEntry e, {
+    VoidCallback? onForcedReveal,
+    Duration timeout = kRevealFailsafeTimeout,
+  }) {
     e.visible = false;
     e.revealOnRender = true;
+    _cancelRevealTimer(e);
+    _revealFailsafeTimers[e] = Timer(timeout, () {
+      // 到时仍挂起（没收到 popupRendered，也没被显示/裁掉）→ 强制翻可见。
+      _revealFailsafeTimers.remove(e);
+      if (!e.revealOnRender || !_entries.contains(e)) return;
+      e.visible = true;
+      e.revealOnRender = false;
+      notifyListeners();
+      onForcedReveal?.call();
+    });
     notifyListeners();
+  }
+
+  /// 取消并移除 [e] 的兜底 Timer（离开挂起态的所有路径都要调，防回调/泄漏）。
+  void _cancelRevealTimer(DictionaryPopupEntry e) {
+    _revealFailsafeTimers.remove(e)?.cancel();
+  }
+
+  /// 取消并移除一批被裁/被清条目的兜底 Timer。
+  void _cancelRevealTimers(Iterable<DictionaryPopupEntry> removed) {
+    for (final DictionaryPopupEntry e in removed) {
+      _revealFailsafeTimers.remove(e)?.cancel();
+    }
   }
 
   /// TODO-058：某层 WebView 渲染完成（`popupRendered` → `onRendered`）时调用。
@@ -233,6 +287,7 @@ class DictionaryPopupController extends ChangeNotifier {
   /// 让宿主据此决定是否继续后续（如把光标交给刚显示的层）。
   bool revealRendered(DictionaryPopupEntry e) {
     if (!e.revealOnRender) return false;
+    _cancelRevealTimer(e);
     e.visible = true;
     e.revealOnRender = false;
     notifyListeners();
@@ -246,6 +301,7 @@ class DictionaryPopupController extends ChangeNotifier {
     if (index == 0) {
       final DictionaryPopupEntry first = _entries.first;
       if (first.isWarmSlot && !lowMemory) {
+        _cancelRevealTimers(_entries);
         first
           ..visible = false
           ..revealOnRender = false
@@ -255,11 +311,23 @@ class DictionaryPopupController extends ChangeNotifier {
           ..clear()
           ..add(first);
       } else {
+        _cancelRevealTimers(_entries);
         _entries.clear();
       }
     } else {
+      _cancelRevealTimers(_entries.sublist(index));
       _entries.removeRange(index, _entries.length);
     }
     notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    // 防泄漏：销毁时取消所有挂起的兜底 Timer。
+    for (final Timer t in _revealFailsafeTimers.values) {
+      t.cancel();
+    }
+    _revealFailsafeTimers.clear();
+    super.dispose();
   }
 }

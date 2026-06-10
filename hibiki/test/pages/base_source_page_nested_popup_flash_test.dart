@@ -5,6 +5,7 @@ import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/utils/spacing.dart';
+import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 
 import '../helpers/fake_inappwebview_platform.dart';
@@ -204,5 +205,74 @@ void main() {
     // so there is nothing to cold-load -> reveal immediately, no pending.
     expect(stack[1].visible, isTrue);
     expect(stack[1].revealOnRender, isFalse);
+  });
+
+  // ── TODO-058 fail-safe：popupRendered 永不发也不卡死 ──────────────────────
+  testWidgets(
+      'nested cold popup reveals via timeout fail-safe when popupRendered '
+      'never fires (no permanent hidden popup)', (WidgetTester tester) async {
+    final appModel = NestedFlashAppModel(results: <DictionaryEntry>[_entry()]);
+    final hostKey = GlobalKey<NestedFlashHostPageState>();
+
+    await tester.pumpWidget(
+      buildNestedFlashApp(appModel: appModel, hostKey: hostKey),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    await hostKey.currentState!.topSearch('first');
+    await tester.pump();
+    await hostKey.currentState!.nestedSearch('second');
+    await tester.pump();
+
+    var stack = hostKey.currentState!.debugPopupStack;
+    expect(stack, hasLength(2));
+    expect(stack[1].visible, isFalse, reason: '挂起期不可见');
+    expect(stack[1].revealOnRender, isTrue);
+
+    // 故意永不触发 popupRendered（debugFirePopupRendered）：模拟 WebView 加载失败 /
+    // renderPopup 抛异常 / callHandler 失败。超时兜底必须最终把它翻可见。
+    await tester.pump(
+      DictionaryPopupController.kRevealFailsafeTimeout +
+          const Duration(milliseconds: 50),
+    );
+    stack = hostKey.currentState!.debugPopupStack;
+    expect(stack[1].visible, isTrue,
+        reason: 'popupRendered 永不发，超时兜底强制翻可见，不卡死「点查词什么都不出」');
+    expect(stack[1].revealOnRender, isFalse);
+  });
+
+  testWidgets(
+      'nested cold popup reveals on load error (onRenderError) before timeout',
+      (WidgetTester tester) async {
+    final appModel = NestedFlashAppModel(results: <DictionaryEntry>[_entry()]);
+    final hostKey = GlobalKey<NestedFlashHostPageState>();
+
+    await tester.pumpWidget(
+      buildNestedFlashApp(appModel: appModel, hostKey: hostKey),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    await hostKey.currentState!.topSearch('first');
+    await tester.pump();
+    await hostKey.currentState!.nestedSearch('second');
+    await tester.pump();
+
+    var stack = hostKey.currentState!.debugPopupStack;
+    expect(stack[1].visible, isFalse, reason: '挂起等渲染/错误信号');
+
+    // WebView 主框架加载失败 -> onReceivedError -> onRenderError -> 立即翻可见。
+    hostKey.currentState!.debugFirePopupRenderError(1);
+    await tester.pump();
+    stack = hostKey.currentState!.debugPopupStack;
+    expect(stack[1].visible, isTrue, reason: '加载失败也显示，不卡死');
+    expect(stack[1].revealOnRender, isFalse);
+
+    // 让超时窗口过去：错误已取消 Timer，无残留计时器报「Timer still pending」。
+    await tester.pump(
+      DictionaryPopupController.kRevealFailsafeTimeout +
+          const Duration(milliseconds: 50),
+    );
   });
 }

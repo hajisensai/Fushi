@@ -43,11 +43,50 @@ void main() {
     final String mixin = File(
       'lib/src/pages/implementations/dictionary_page_mixin.dart',
     ).readAsStringSync();
-    expect(mixin.contains('controller.markPendingReveal(entry)'), isTrue,
+    expect(mixin.contains('controller.markPendingReveal('), isTrue,
         reason: '冷嵌套层就绪后挂起，不立即 show');
     expect(mixin.contains('controller.revealRendered(entry)'), isTrue,
         reason: 'onRendered 翻可见挂起层');
     expect(mixin.contains('reuseWarmSlot || result.entries.isEmpty'), isTrue,
         reason: '只有复用热槽或无词条才立即 show');
+  });
+
+  // ── TODO-058 fail-safe 守卫：popupRendered 永不发也不卡死 ───────────────────
+  test('controller has a timeout fail-safe Timer for pending reveals', () {
+    final String ctrl = File(
+      'lib/src/pages/implementations/dictionary_popup_controller.dart',
+    ).readAsStringSync();
+    expect(ctrl.contains('kRevealFailsafeTimeout'), isTrue, reason: '挂起层超时常量');
+    expect(ctrl.contains('_revealFailsafeTimers'), isTrue,
+        reason: '每挂起层一个兜底 Timer');
+    expect(ctrl.contains('Timer(timeout'), isTrue, reason: '一次性超时 Timer');
+    expect(ctrl.contains('void dispose()'), isTrue,
+        reason: 'dispose 取消 Timer 防泄漏');
+  });
+
+  test('popup webview surfaces a load-error reveal signal (onRenderError)', () {
+    final String wv = File(
+      'lib/src/pages/implementations/dictionary_popup_webview.dart',
+    ).readAsStringSync();
+    expect(wv.contains('onRenderError'), isTrue, reason: '错误回调字段');
+    expect(wv.contains('onReceivedError:'), isTrue, reason: '主框架加载失败回调');
+    expect(wv.contains('widget.onRenderError?.call()'), isTrue,
+        reason: '加载失败通知宿主翻可见');
+  });
+
+  test('reader/mixin wire onRenderError to the same reveal path', () {
+    final String base =
+        File('lib/src/pages/base_source_page.dart').readAsStringSync();
+    expect(base.contains('onRenderError:'), isTrue,
+        reason: 'reader 把加载失败接到翻可见入口');
+    expect(base.contains('_popup.dispose()'), isTrue,
+        reason: 'reader 作为 controller 所有者 dispose 取消 Timer');
+    final String mixin = File(
+      'lib/src/pages/implementations/dictionary_page_mixin.dart',
+    ).readAsStringSync();
+    expect(mixin.contains('onRenderError:'), isTrue,
+        reason: 'mixin 把加载失败接到翻可见入口');
+    expect(mixin.contains('onForcedReveal:'), isTrue,
+        reason: 'mixin 超时强制翻可见后 setState 重建');
   });
 }

@@ -1,3 +1,5 @@
+// ignore: depend_on_referenced_packages
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
@@ -242,5 +244,122 @@ void main() {
     expect(c.entries.length, 1);
     expect(c.entries.first.isWarmSlot, true);
     expect(c.entries.first.visible, false);
+  });
+
+  // ── TODO-058 fail-safe：popupRendered 永不发时的超时兜底 + Timer 取消/防泄漏 ──
+  test('超时兜底：挂起层未收到 popupRendered，到时强制翻可见', () {
+    fakeAsync((FakeAsync async) {
+      final c = DictionaryPopupController(lowMemory: false)..seedWarmSlot();
+      final a = c.beginTop(
+          term: 'a',
+          rect: Rect.zero,
+          reuseWarmSlot: true,
+          replaceStack: false,
+          visible: true);
+      c.fillResult(a, result: null, allLoaded: true);
+      final child = c.pushChild(
+          term: 'b', rect: Rect.zero, parentIndex: 0, visible: false);
+      c.fillResult(child, result: null, allLoaded: true);
+
+      bool forced = false;
+      c.markPendingReveal(child, onForcedReveal: () => forced = true);
+      expect(child.visible, isFalse, reason: '挂起期不可见');
+      expect(child.revealOnRender, isTrue);
+
+      // 略短于超时：还没翻可见（验证不是立刻显示）。
+      async.elapse(DictionaryPopupController.kRevealFailsafeTimeout -
+          const Duration(milliseconds: 1));
+      expect(child.visible, isFalse, reason: '超时前不显示，不破坏「就绪才显示」正常路径');
+
+      // 跨过超时：强制翻可见 + 回调 + 清挂起标记。
+      async.elapse(const Duration(milliseconds: 2));
+      expect(child.visible, isTrue, reason: 'popupRendered 永不发也最终显示，不卡死');
+      expect(child.revealOnRender, isFalse);
+      expect(forced, isTrue, reason: '强制翻可见后回调宿主重建');
+      expect(c.lastVisibleIndex, 1);
+    });
+  });
+
+  test('revealRendered 先于超时到达：取消 Timer，不再强制翻（无重复/无泄漏）', () {
+    fakeAsync((FakeAsync async) {
+      final c = DictionaryPopupController(lowMemory: false)..seedWarmSlot();
+      final a = c.beginTop(
+          term: 'a',
+          rect: Rect.zero,
+          reuseWarmSlot: true,
+          replaceStack: false,
+          visible: true);
+      c.fillResult(a, result: null, allLoaded: true);
+      final child = c.pushChild(
+          term: 'b', rect: Rect.zero, parentIndex: 0, visible: false);
+      c.fillResult(child, result: null, allLoaded: true);
+
+      bool forced = false;
+      c.markPendingReveal(child, onForcedReveal: () => forced = true);
+      // 渲染信号在超时前到达 → 正常翻可见并取消 Timer。
+      expect(c.revealRendered(child), isTrue);
+      expect(child.visible, isTrue);
+
+      // 跨过超时：onForcedReveal 不应再被调用（Timer 已取消）。
+      async.elapse(DictionaryPopupController.kRevealFailsafeTimeout +
+          const Duration(milliseconds: 10));
+      expect(forced, isFalse, reason: 'Timer 已被 revealRendered 取消，不重复强制');
+      expect(async.pendingTimers, isEmpty, reason: '无残留 Timer 泄漏');
+    });
+  });
+
+  test('show/dismiss/裁剪/dispose 取消挂起 Timer（防泄漏）', () {
+    fakeAsync((FakeAsync async) {
+      // show 取消。
+      final c1 = DictionaryPopupController(lowMemory: true);
+      final e1 = c1.beginTop(
+          term: 'x',
+          rect: Rect.zero,
+          reuseWarmSlot: false,
+          replaceStack: true,
+          visible: false);
+      c1.markPendingReveal(e1);
+      c1.show(e1);
+      expect(async.pendingTimers, isEmpty, reason: 'show 取消 Timer');
+
+      // dismissAt 取消。
+      final c2 = DictionaryPopupController(lowMemory: true);
+      final e2 = c2.beginTop(
+          term: 'y',
+          rect: Rect.zero,
+          reuseWarmSlot: false,
+          replaceStack: true,
+          visible: false);
+      c2.markPendingReveal(e2);
+      c2.dismissAt(0);
+      expect(async.pendingTimers, isEmpty, reason: 'dismissAt 取消 Timer');
+
+      // truncateTo 取消被裁子层。
+      final c3 = DictionaryPopupController(lowMemory: false)..seedWarmSlot();
+      final a3 = c3.beginTop(
+          term: 'a',
+          rect: Rect.zero,
+          reuseWarmSlot: true,
+          replaceStack: false,
+          visible: true);
+      c3.fillResult(a3, result: null, allLoaded: true);
+      final child3 = c3.pushChild(
+          term: 'b', rect: Rect.zero, parentIndex: 0, visible: false);
+      c3.markPendingReveal(child3);
+      c3.truncateTo(1);
+      expect(async.pendingTimers, isEmpty, reason: 'truncateTo 取消被裁层 Timer');
+
+      // dispose 取消全部。
+      final c4 = DictionaryPopupController(lowMemory: true);
+      final e4 = c4.beginTop(
+          term: 'z',
+          rect: Rect.zero,
+          reuseWarmSlot: false,
+          replaceStack: true,
+          visible: false);
+      c4.markPendingReveal(e4);
+      c4.dispose();
+      expect(async.pendingTimers, isEmpty, reason: 'dispose 取消全部 Timer');
+    });
   });
 }
