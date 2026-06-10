@@ -1,0 +1,7 @@
+## BUG-182 · 视频字幕里「の」等字字形与周围字不一致(逐字Text缺CJK fontFamilyFallback)
+- **报告**：2026-06-11（用户：截图 `{\an8}ガス会社の / 事故によるものだと`，其中假名「の」字形与周围字突兀不一致）
+- **真实性**：✅ 真 bug
+- **根因**：`hibiki/lib/src/media/video/video_subtitle_overlay.dart:188-194` 把字幕逐 grapheme 渲染成**各自独立的 `Text`**，每个 `Text` 单独走字体选择；其样式由 `_styleForGrapheme`（同文件 `:270-287`）构建，base `TextStyle` 只设 `fontFamily: widget.fontFamily`（字幕字体来源 `video_hibiki_page.dart:3218` 的 `appModel.appFontFamily` = 用户 TODO-049 设的 app 自定义字体，或为 null 走平台默认），**完全没有 `fontFamilyFallback`**（全仓 `lib/` 内 `fontFamilyFallback` 出现 0 次）。当主字体不含某字形（典型如假名「の」缺字 / 字形为另一种设计）时，引擎对每个孤立 `Text` 各自走「引擎默认 fallback」，相邻字符可能落到不同字体 → 单字字形与周围割裂。
+- **[x] ① 已修复** — 提交 `746d83b73`：在 `video_subtitle_overlay.dart` 新增顶层常量 `_kSubtitleCjkFallback`（覆盖五平台主流日文系统字体的有序回退链：Yu Gothic / Yu Gothic UI / Hiragino Sans / Hiragino Kaku Gothic ProN / Noto Sans CJK JP / Noto Sans JP / Meiryo / MS Gothic），在 `_styleForGrapheme` 的 base `TextStyle` 设 `fontFamilyFallback: _kSubtitleCjkFallback`。引擎按顺序解析、自动跳过当前平台不存在的字体名，故一条列表覆盖全平台无需平台分支；缺字时整段字幕统一落到同一条确定回退链而非各字符随机 fallback。span 覆盖分支走 `base.copyWith(...)` 不传 fontFamilyFallback，自动沿用 base 的回退链。
+- **[x] ② 已加自动化测试** — `hibiki/test/media/video/video_subtitle_font_consistency_test.dart`（4 例 widget 行为）：①每字带相同非空 fontFamilyFallback 链且与「の」一致；②回退链覆盖 Win(Yu Gothic)/Apple(Hiragino Sans)/Android·Linux(Noto Sans) 平台字体；③设自定义字体时每字仍带 fallback；④ASS span 覆盖样式后回退链不丢。撤回修复时全部转红。
+- **备注**：纯视觉一致性最终需真机/各平台字幕肉眼复测（Windows / Android / macOS / iOS 系统日文字体实际存在性）。fontFamilyFallback 是 Flutter 标准的缺字回退机制，引擎忽略不存在的字体名，行为安全。只碰字体不碰 bottomPadding（避开 TODO-089）。

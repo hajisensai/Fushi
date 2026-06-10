@@ -101,6 +101,29 @@ class VideoSubtitleOverlay extends StatefulWidget {
   State<VideoSubtitleOverlay> createState() => _VideoSubtitleOverlayState();
 }
 
+/// 字幕文字的 CJK 日文字体回退链（TODO-088）。
+///
+/// 字幕逐字符渲染成独立 [Text]，每个 [Text] 单独做字体选择。当主字体（用户在
+/// TODO-049 设的 app 自定义字体，或某平台默认字体）不含某个字形时，缺失这条统一
+/// 回退链就会让每个字符各自落到「引擎默认 fallback」——相邻字符可能挑到不同字体，
+/// 单字（典型如假名「の」）字形与周围突兀不一致。
+///
+/// 这里给出覆盖五个出包平台主流系统日文字体的有序列表。Flutter 引擎按顺序解析、
+/// 自动跳过当前平台不存在的字体名，故无需平台分支：
+/// - Windows：`Yu Gothic` / `Yu Gothic UI` / `Meiryo` / `MS Gothic`
+/// - macOS / iOS：`Hiragino Sans` / `Hiragino Kaku Gothic ProN`
+/// - Android / Linux：`Noto Sans CJK JP` / `Noto Sans JP`
+const List<String> _kSubtitleCjkFallback = <String>[
+  'Yu Gothic',
+  'Yu Gothic UI',
+  'Hiragino Sans',
+  'Hiragino Kaku Gothic ProN',
+  'Noto Sans CJK JP',
+  'Noto Sans JP',
+  'Meiryo',
+  'MS Gothic',
+];
+
 class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
   bool _revealed = false;
 
@@ -273,6 +296,11 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay> {
       fontSize: widget.fontSize,
       height: 1.3,
       fontFamily: widget.fontFamily,
+      // 统一的 CJK 日文回退链：主字体（自定义或平台默认）缺某字形（如假名「の」缺字）
+      // 时，引擎按本列表顺序找到第一个存在的系统日文字体，而非各字符独立走引擎默认
+      // fallback（不同字符可能落到不同字体、字形割裂）。引擎自动忽略当前平台不存在的
+      // 项，故一条列表覆盖全平台、无需平台分支（TODO-088）。
+      fontFamilyFallback: _kSubtitleCjkFallback,
       fontWeight: _fontWeight(widget.fontWeight),
       shadows: widget.shadowThickness <= 0
           ? const <Shadow>[]
