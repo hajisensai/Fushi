@@ -35,6 +35,10 @@ class FlutterWindow : public Win32Window {
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       caption_channel_;
 
+  // Copies decoded reader images to the Windows clipboard as CF_DIB.
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
+      clipboard_image_channel_;
+
   // Applies DWM caption/text colors to the top-level window. Persists across
   // focus changes, so the unfocused title bar keeps following the app theme.
   void ApplyCaptionColors(uint32_t caption_argb, uint32_t text_argb);

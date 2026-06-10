@@ -1462,5 +1462,9 @@
     "remote_book_downloading": "Downloading…",
     "remote_video_unavailable": "Paired device unavailable",
     "remote_book_unavailable": "Paired device unavailable",
-    "video_subtitle_remote_host": "Paired device subtitle"
+    "video_subtitle_remote_host": "Paired device subtitle",
+    "reader_copy_image": "Copy image",
+    "reader_image_file_unavailable": "Image file is unavailable.",
+    "reader_image_copy_failed": "Failed to copy image: ${error}",
+    "reader_image_share_failed": "Failed to share image: ${error}"
 }

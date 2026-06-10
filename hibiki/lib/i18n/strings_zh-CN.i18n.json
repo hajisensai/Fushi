@@ -1462,5 +1462,9 @@
     "remote_book_downloading": "正在下载…",
     "remote_video_unavailable": "配对设备不可用",
     "remote_book_unavailable": "配对设备不可用",
-    "video_subtitle_remote_host": "配对设备字幕"
+    "video_subtitle_remote_host": "配对设备字幕",
+    "reader_copy_image": "复制图片",
+    "reader_image_file_unavailable": "图片文件不可用。",
+    "reader_image_copy_failed": "复制图片失败：${error}",
+    "reader_image_share_failed": "分享图片失败：${error}"
 }

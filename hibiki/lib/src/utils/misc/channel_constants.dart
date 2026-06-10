@@ -20,4 +20,6 @@ abstract final class HibikiChannels {
   static const MethodChannel fonts = MethodChannel('$_prefix/fonts');
   static const MethodChannel saf = MethodChannel('$_prefix/saf');
   static const MethodChannel iconSwitch = MethodChannel('$_prefix/icon_switch');
+  static const MethodChannel clipboardImage =
+      MethodChannel('$_prefix/clipboard_image');
 }

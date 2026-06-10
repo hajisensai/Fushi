@@ -46,8 +46,10 @@ import 'package:hibiki/src/media/audiobook/pointer_seek.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
+import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/src/utils/misc/tts_channel.dart';
 import 'package:hibiki/src/utils/misc/volume_key_channel.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:hibiki/src/utils/misc/platform_utils.dart';
@@ -1683,6 +1685,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   $caretInit;
   $furiganaJs
   var startX = 0, startY = 0, startTime = 0, hasStart = false;
+  var imageLongPressTimer = null;
+  var imageLongPressConsumed = false;
+  var imageLongPressStartX = 0, imageLongPressStartY = 0;
   function _gestureStart(x, y) { hasStart = true; startX = x; startY = y; startTime = Date.now(); }
   // Resolve a block illustration under the tap to an absolute image URL, or
   // null when the tap isn't on one. Handles both raster <img> covers/figures
@@ -1707,8 +1712,39 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     }
     return null;
   }
+  function clearImageLongPressTimer() {
+    if (imageLongPressTimer) {
+      clearTimeout(imageLongPressTimer);
+      imageLongPressTimer = null;
+    }
+  }
+  function _imageActionTarget(e) {
+    return (e && e.target) || document.elementFromPoint(
+      e && typeof e.clientX === 'number' ? e.clientX : startX,
+      e && typeof e.clientY === 'number' ? e.clientY : startY
+    );
+  }
+  document.addEventListener('contextmenu', function(e) {
+    var target = _imageActionTarget(e);
+    var imgUrl = _hoshiBlockImageUrl(target);
+    if (!imgUrl) return;
+    e.preventDefault();
+    window.flutter_inappwebview.callHandler(
+      'onImageContextMenu',
+      imgUrl,
+      e.clientX || 0,
+      e.clientY || 0
+    );
+  }, {passive: false});
   function _gestureEnd(x, y, e) {
     if (!hasStart) return;
+    clearImageLongPressTimer();
+    if (imageLongPressConsumed) {
+      imageLongPressConsumed = false;
+      hasStart = false;
+      if (e && e.preventDefault) e.preventDefault();
+      return;
+    }
     hasStart = false;
     var dx = x - startX;
     var dy = y - startY;
@@ -1752,11 +1788,35 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     }
   }, true);
   document.addEventListener('touchstart', function(e) {
-    var t = e.touches[0]; _gestureStart(t.clientX, t.clientY);
+    var t = e.touches[0];
+    imageLongPressConsumed = false;
+    clearImageLongPressTimer();
+    _gestureStart(t.clientX, t.clientY);
+    var imgUrl = _hoshiBlockImageUrl(e.target || document.elementFromPoint(t.clientX, t.clientY));
+    if (!imgUrl) return;
+    imageLongPressStartX = t.clientX;
+    imageLongPressStartY = t.clientY;
+    imageLongPressTimer = setTimeout(function() {
+      imageLongPressTimer = null;
+      imageLongPressConsumed = true;
+      window.flutter_inappwebview.callHandler('onImageLongPress', imgUrl);
+    }, 550);
+  }, {passive: true});
+  document.addEventListener('touchmove', function(e) {
+    if (!imageLongPressTimer || !e.touches || !e.touches.length) return;
+    var t = e.touches[0];
+    var dx = t.clientX - imageLongPressStartX;
+    var dy = t.clientY - imageLongPressStartY;
+    if ((dx * dx + dy * dy) > 144) clearImageLongPressTimer();
   }, {passive: true});
   document.addEventListener('touchend', function(e) {
     var t = e.changedTouches[0]; _gestureEnd(t.clientX, t.clientY, e);
   }, {passive: false});
+  document.addEventListener('touchcancel', function(e) {
+    clearImageLongPressTimer();
+    imageLongPressConsumed = false;
+    hasStart = false;
+  }, {passive: true});
   document.addEventListener('pointerdown', function(e) {
     if (e.pointerType === 'touch' || e.button !== 0) return;
     _gestureStart(e.clientX, e.clientY);
@@ -1770,6 +1830,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   // 被首行排除，不干扰触摸手势。
   document.addEventListener('mousedown', function(e) {
     if (e.button === 0) return;
+    if (e.button === 2 && _hoshiBlockImageUrl(e.target || document.elementFromPoint(e.clientX, e.clientY))) {
+      return;
+    }
     e.preventDefault();
     window.flutter_inappwebview.callHandler('onPointerSeek', e.button, e.clientX, e.clientY);
   }, {passive: false});
@@ -2059,6 +2122,24 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
           callback: (args) {
             if (args.isEmpty) return;
             _openImageViewer(args[0] as String);
+          },
+        );
+
+        controller.addJavaScriptHandler(
+          handlerName: 'onImageContextMenu',
+          callback: (args) async {
+            if (args.isEmpty) return;
+            final double x = args.length > 1 ? (_toDouble(args[1]) ?? 0) : 0;
+            final double y = args.length > 2 ? (_toDouble(args[2]) ?? 0) : 0;
+            await _showReaderImageContextMenu(args[0] as String, Offset(x, y));
+          },
+        );
+
+        controller.addJavaScriptHandler(
+          handlerName: 'onImageLongPress',
+          callback: (args) async {
+            if (args.isEmpty) return;
+            await _shareReaderImage(args[0] as String);
           },
         );
 
@@ -4694,18 +4775,97 @@ window.flutter_inappwebview.callHandler('spreadReady');
 
   // ── Image Viewer ──────────────────────────────────────────────────
 
-  void _openImageViewer(String imgUrl) {
+  File? _readerImageFileForUrl(String imgUrl) {
     final Uri? uri = Uri.tryParse(imgUrl);
-    if (uri == null || _extractDir == null) return;
-    if (uri.host != ReaderHibikiSource.kHost) return;
+    if (uri == null || _extractDir == null) return null;
+    if (uri.host != ReaderHibikiSource.kHost) return null;
+    if (!uri.path.startsWith('/epub/')) return null;
     final String epubPath =
         Uri.decodeComponent(uri.path.substring('/epub/'.length));
-    final String filePath = p.join(_extractDir!, epubPath);
-    if (!p.isWithin(p.canonicalize(_extractDir!), p.canonicalize(filePath))) {
-      return;
+    final String extractRoot = p.canonicalize(_extractDir!);
+    final String filePath = p.canonicalize(p.join(extractRoot, epubPath));
+    if (!p.isWithin(extractRoot, filePath)) {
+      return null;
     }
     final File file = File(filePath);
-    if (!file.existsSync()) return;
+    if (!file.existsSync()) return null;
+    return file;
+  }
+
+  Future<void> _showReaderImageContextMenu(
+    String imgUrl,
+    Offset webViewOffset,
+  ) async {
+    if (!mounted) return;
+    if (!isWindowsPlatform) {
+      await _shareReaderImage(imgUrl);
+      return;
+    }
+    final RenderBox? box = context.findRenderObject() as RenderBox?;
+    final RenderBox overlay =
+        Overlay.of(context).context.findRenderObject()! as RenderBox;
+    final Offset global = box?.localToGlobal(webViewOffset) ?? webViewOffset;
+    final String? action = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromRect(
+        Rect.fromLTWH(global.dx, global.dy, 1, 1),
+        Offset.zero & overlay.size,
+      ),
+      items: <PopupMenuEntry<String>>[
+        PopupMenuItem<String>(
+          value: 'copy',
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              const Icon(Icons.copy_outlined, size: 18),
+              const SizedBox(width: 12),
+              Text(t.reader_copy_image),
+            ],
+          ),
+        ),
+      ],
+    );
+    if (action == 'copy') {
+      await _copyReaderImageToClipboard(imgUrl);
+    }
+  }
+
+  Future<void> _shareReaderImage(String imgUrl) async {
+    final File? file = _readerImageFileForUrl(imgUrl);
+    if (file == null) {
+      HibikiToast.show(msg: t.reader_image_file_unavailable);
+      return;
+    }
+    try {
+      await Share.shareXFiles(
+        <XFile>[XFile(file.path, mimeType: fallbackMimeType(file.path))],
+        subject: p.basename(file.path),
+      );
+    } catch (e) {
+      HibikiToast.show(msg: t.reader_image_share_failed(error: e));
+    }
+  }
+
+  Future<void> _copyReaderImageToClipboard(String imgUrl) async {
+    final File? file = _readerImageFileForUrl(imgUrl);
+    if (file == null) {
+      HibikiToast.show(msg: t.reader_image_file_unavailable);
+      return;
+    }
+    try {
+      await HibikiChannels.clipboardImage.invokeMethod<void>(
+        'copyImageFile',
+        <String, String>{'path': file.path},
+      );
+      HibikiToast.show(msg: t.copied_to_clipboard);
+    } catch (e) {
+      HibikiToast.show(msg: t.reader_image_copy_failed(error: e));
+    }
+  }
+
+  void _openImageViewer(String imgUrl) {
+    final File? file = _readerImageFileForUrl(imgUrl);
+    if (file == null) return;
     Navigator.push(
       context,
       PageRouteBuilder<void>(

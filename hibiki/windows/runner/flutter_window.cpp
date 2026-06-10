@@ -1,11 +1,159 @@
 #include "flutter_window.h"
 
 #include <dwmapi.h>
+#include <wincodec.h>
+#include <windows.h>
+#include <wrl/client.h>
 
+#include <cstdio>
+#include <cstring>
+#include <limits>
 #include <optional>
+#include <string>
 #include <variant>
+#include <vector>
 
 #include "flutter/generated_plugin_registrant.h"
+
+#pragma comment(lib, "windowscodecs.lib")
+
+namespace {
+
+std::wstring Utf8ToWideString(const std::string& value) {
+  if (value.empty()) {
+    return std::wstring();
+  }
+  int size = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, value.data(),
+                                 static_cast<int>(value.size()), nullptr, 0);
+  if (size <= 0) {
+    return std::wstring();
+  }
+  std::wstring result(size, L'\0');
+  MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, value.data(),
+                      static_cast<int>(value.size()), result.data(), size);
+  return result;
+}
+
+std::string HResultMessage(HRESULT hr) {
+  char buffer[128];
+  snprintf(buffer, sizeof(buffer), "HRESULT 0x%08X", static_cast<unsigned>(hr));
+  return std::string(buffer);
+}
+
+std::optional<std::string> CopyImageFileToClipboard(HWND hwnd,
+                                                    const std::wstring& path) {
+  if (hwnd == nullptr) {
+    return std::string("Window handle is unavailable");
+  }
+  if (path.empty()) {
+    return std::string("Image path is empty");
+  }
+
+  using Microsoft::WRL::ComPtr;
+  ComPtr<IWICImagingFactory> factory;
+  HRESULT hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr,
+                                CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory));
+  if (FAILED(hr)) {
+    return std::string("WIC factory creation failed: ") + HResultMessage(hr);
+  }
+
+  ComPtr<IWICBitmapDecoder> decoder;
+  hr = factory->CreateDecoderFromFilename(
+      path.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnLoad,
+      &decoder);
+  if (FAILED(hr)) {
+    return std::string("Image decode failed: ") + HResultMessage(hr);
+  }
+
+  ComPtr<IWICBitmapFrameDecode> frame;
+  hr = decoder->GetFrame(0, &frame);
+  if (FAILED(hr)) {
+    return std::string("Image frame read failed: ") + HResultMessage(hr);
+  }
+
+  ComPtr<IWICFormatConverter> converter;
+  hr = factory->CreateFormatConverter(&converter);
+  if (FAILED(hr)) {
+    return std::string("Image converter creation failed: ") +
+           HResultMessage(hr);
+  }
+  hr = converter->Initialize(frame.Get(), GUID_WICPixelFormat32bppBGRA,
+                             WICBitmapDitherTypeNone, nullptr, 0.0,
+                             WICBitmapPaletteTypeCustom);
+  if (FAILED(hr)) {
+    return std::string("Image conversion failed: ") + HResultMessage(hr);
+  }
+
+  UINT width = 0;
+  UINT height = 0;
+  hr = converter->GetSize(&width, &height);
+  if (FAILED(hr) || width == 0 || height == 0) {
+    return std::string("Image size is invalid");
+  }
+
+  const size_t stride = static_cast<size_t>(width) * 4;
+  const size_t pixel_bytes = stride * static_cast<size_t>(height);
+  if (pixel_bytes == 0 ||
+      pixel_bytes > static_cast<size_t>(std::numeric_limits<DWORD>::max())) {
+    return std::string("Image is too large for the clipboard");
+  }
+
+  std::vector<BYTE> pixels(pixel_bytes);
+  hr = converter->CopyPixels(nullptr, static_cast<UINT>(stride),
+                             static_cast<UINT>(pixel_bytes), pixels.data());
+  if (FAILED(hr)) {
+    return std::string("Image pixel copy failed: ") + HResultMessage(hr);
+  }
+
+  const size_t dib_bytes = sizeof(BITMAPINFOHEADER) + pixel_bytes;
+  HGLOBAL dib = GlobalAlloc(GMEM_MOVEABLE, dib_bytes);
+  if (dib == nullptr) {
+    return std::string("Clipboard memory allocation failed");
+  }
+
+  void* locked = GlobalLock(dib);
+  if (locked == nullptr) {
+    GlobalFree(dib);
+    return std::string("Clipboard memory lock failed");
+  }
+
+  auto* header = static_cast<BITMAPINFOHEADER*>(locked);
+  ZeroMemory(header, sizeof(BITMAPINFOHEADER));
+  header->biSize = sizeof(BITMAPINFOHEADER);
+  header->biWidth = static_cast<LONG>(width);
+  header->biHeight = static_cast<LONG>(height);
+  header->biPlanes = 1;
+  header->biBitCount = 32;
+  header->biCompression = BI_RGB;
+  header->biSizeImage = static_cast<DWORD>(pixel_bytes);
+
+  BYTE* dest = static_cast<BYTE*>(locked) + sizeof(BITMAPINFOHEADER);
+  for (UINT row = 0; row < height; ++row) {
+    const BYTE* source_row =
+        pixels.data() + (static_cast<size_t>(height - 1 - row) * stride);
+    memcpy(dest + (static_cast<size_t>(row) * stride), source_row, stride);
+  }
+  GlobalUnlock(dib);
+
+  if (!OpenClipboard(hwnd)) {
+    GlobalFree(dib);
+    return std::string("OpenClipboard failed");
+  }
+  if (!EmptyClipboard()) {
+    CloseClipboard();
+    GlobalFree(dib);
+    return std::string("EmptyClipboard failed");
+  }
+  if (SetClipboardData(CF_DIB, dib) == nullptr) {
+    CloseClipboard();
+    GlobalFree(dib);
+    return std::string("SetClipboardData(CF_DIB) failed");
+  }
+  CloseClipboard();
+  return std::nullopt;
+}
+
+}  // namespace
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {}
@@ -64,6 +212,44 @@ bool FlutterWindow::OnCreate() {
         } else {
           result->NotImplemented();
         }
+      });
+
+  clipboard_image_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(),
+          "app.hibiki.reader/clipboard_image",
+          &flutter::StandardMethodCodec::GetInstance());
+  clipboard_image_channel_->SetMethodCallHandler(
+      [this](const flutter::MethodCall<flutter::EncodableValue>& call,
+             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
+                 result) {
+        if (call.method_name() != "copyImageFile") {
+          result->NotImplemented();
+          return;
+        }
+        const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
+        if (args == nullptr) {
+          result->Error("bad_args", "Expected a map with an image path");
+          return;
+        }
+        const auto path_it = args->find(flutter::EncodableValue("path"));
+        if (path_it == args->end()) {
+          result->Error("bad_args", "Missing image path");
+          return;
+        }
+        const auto* path = std::get_if<std::string>(&path_it->second);
+        if (path == nullptr) {
+          result->Error("bad_args", "Image path must be a string");
+          return;
+        }
+        const std::wstring wide_path = Utf8ToWideString(*path);
+        const std::optional<std::string> error =
+            CopyImageFileToClipboard(GetHandle(), wide_path);
+        if (error.has_value()) {
+          result->Error("copy_failed", error.value());
+          return;
+        }
+        result->Success();
       });
 
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
