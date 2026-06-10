@@ -106,6 +106,12 @@ void main([List<String> args = const <String>[]]) {
     final binding = WidgetsFlutterBinding.ensureInitialized();
     if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
       await windowManager.ensureInitialized();
+      // Intercept the native window-close signal so we can tear down Bonsoir's
+      // mDNS event sources (LAN broadcast + discovery) BEFORE the Flutter engine
+      // is destroyed. Without this, a queued mDNS event delivered to a torn-down
+      // messenger crashes the process on exit (TODO-036, Windows). The actual
+      // teardown + destroy() runs in [_HoshiReaderAppState.onWindowClose].
+      await windowManager.setPreventClose(true);
       await hotKeyManager.unregisterAll(); // 热重载清理残留全局热键
     }
     JustAudioMediaKit.title = 'Hibiki';
@@ -319,7 +325,7 @@ class HoshiReaderApp extends ConsumerStatefulWidget {
 }
 
 class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, WindowListener {
   final navigatorKey = GlobalKey<NavigatorState>();
   bool _isMainIntent = true;
   StreamSubscription? _intentsSubscription;
@@ -327,11 +333,23 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
   /// 守卫：确保外部打开的视频只被打开一次（[build] 可能多次重建）。
   bool _externalVideoHandled = false;
 
+  /// 守卫：退出清理（停 Bonsoir 事件源）只跑一次，避免 [onWindowClose] 与
+  /// [didChangeAppLifecycleState] 的 `detached` 兜底重复触发。
+  bool _shutdownStarted = false;
+
+  static bool get _isDesktop =>
+      Platform.isWindows || Platform.isLinux || Platform.isMacOS;
+
   @override
   void initState() {
     super.initState();
 
     WidgetsBinding.instance.addObserver(this);
+    // 桌面端监听原生窗口关闭：配合 main() 里的 setPreventClose(true)，在引擎拆除前
+    // 停掉 Bonsoir mDNS 事件源（TODO-036）。
+    if (_isDesktop) {
+      windowManager.addListener(this);
+    }
     HibikiToast.navigatorKey = ref.read(appProvider).navigatorKey;
 
     if (Platform.isAndroid) {
@@ -357,12 +375,50 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       ref.read(appProvider).refreshSystemPalette();
+      return;
+    }
+    // `detached` = the app is about to be terminated (the engine is detaching
+    // from the view). Tear down Bonsoir's mDNS event sources here as a fallback
+    // for platforms/paths that don't go through window_manager's onWindowClose.
+    // Best-effort (the callback isn't awaited by the framework): the primary,
+    // guaranteed path on desktop is [onWindowClose] under setPreventClose(true).
+    if (state == AppLifecycleState.detached) {
+      unawaited(_shutdownSyncSources());
+    }
+  }
+
+  /// 桌面原生窗口关闭信号（main() 已 setPreventClose(true) → 窗口不会自己关）。
+  /// 在引擎拆除前 await 停掉 Bonsoir 事件源，然后显式 destroy() 真正关窗。
+  /// 这是退出期切断 mDNS 事件源的**可靠**路径（TODO-036）。
+  @override
+  void onWindowClose() async {
+    await _shutdownSyncSources();
+    try {
+      await windowManager.destroy();
+    } catch (e) {
+      debugPrint('[Hibiki] window destroy on close failed: $e');
+    }
+  }
+
+  /// 停掉 Bonsoir 的 LAN 广播 + 发现（mDNS 事件源）。幂等：[onWindowClose] 与
+  /// `detached` 兜底可能都触发，只跑一次。
+  Future<void> _shutdownSyncSources() async {
+    if (_shutdownStarted) return;
+    _shutdownStarted = true;
+    try {
+      await ref.read(appProvider).syncServerController.shutdownForExit();
+    } catch (e) {
+      // 退出清理失败不该阻止关窗；记一笔即可（不吞静默）。
+      debugPrint('[Hibiki] sync source shutdown on exit failed: $e');
     }
   }
 
   @override
   void dispose() {
     _intentsSubscription?.cancel();
+    if (_isDesktop) {
+      windowManager.removeListener(this);
+    }
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }

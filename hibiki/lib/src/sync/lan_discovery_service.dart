@@ -74,6 +74,11 @@ class LanDiscoveryService {
       StreamController<List<HibikiDevice>>.broadcast();
   BonsoirDiscovery? _discovery;
   StreamSubscription<BonsoirDiscoveryEvent>? _sub;
+  bool _disposed = false;
+
+  /// True once [dispose] has run, so the app-exit teardown can assert the
+  /// Bonsoir browser was actually stopped before the engine was torn down.
+  bool get isDisposed => _disposed;
 
   Stream<List<HibikiDevice>> get devices => _deviceStream.stream;
   List<HibikiDevice> get currentDevices => _discoveredDevices.values.toList();
@@ -165,6 +170,8 @@ class LanDiscoveryService {
   }
 
   Future<void> dispose() async {
+    if (_disposed) return;
+    _disposed = true;
     await stopDiscovery();
     await _deviceStream.close();
   }

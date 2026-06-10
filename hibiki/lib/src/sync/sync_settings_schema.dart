@@ -2208,7 +2208,14 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget> {
           await SyncRepository(widget.settingsContext.appModel.database)
               .getOrCreateDeviceId();
       if (!mounted) return;
-      _discovery = LanDiscoveryService(deviceId: deviceId);
+      final LanDiscoveryService discovery =
+          LanDiscoveryService(deviceId: deviceId);
+      _discovery = discovery;
+      // Register with the app-level controller so the app-exit hook can stop
+      // this Bonsoir browser before the engine is torn down (TODO-036). The
+      // widget still owns dispose()/unregister for the normal page-close path.
+      widget.settingsContext.appModel.syncServerController
+          .registerDiscovery(discovery);
       await _startScan();
     } catch (e, stack) {
       // Loading the device id (a DB read) can throw; surface it as a scan
@@ -2224,7 +2231,14 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget> {
         .roleRevision
         .removeListener(_onRoleRevision);
     _devicesSub?.cancel();
-    _discovery?.dispose();
+    final LanDiscoveryService? discovery = _discovery;
+    if (discovery != null) {
+      // Drop it from the exit-teardown set first (idempotent) so the controller
+      // never double-disposes an already-disposed browser.
+      widget.settingsContext.appModel.syncServerController
+          .unregisterDiscovery(discovery);
+      discovery.dispose();
+    }
     super.dispose();
   }
 

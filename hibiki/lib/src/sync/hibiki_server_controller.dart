@@ -71,12 +71,57 @@ class HibikiSyncServerController extends ChangeNotifier {
 
   HibikiSyncServer? _server;
   LanBroadcastService? _broadcast;
+  // Active LAN discovery browsers registered for app-exit teardown. Discovery is
+  // owned by the sync-settings page widget (it lives only while that page is
+  // open), but its underlying Bonsoir browser posts mDNS events onto the
+  // process message pump from an OS DNS callback thread. If those events are
+  // still queued when the Flutter engine/messenger is torn down at process exit,
+  // the native bonsoir_windows plugin dereferences a null messenger and the
+  // process crashes (TODO-036). Registering live browsers here lets the
+  // app-exit hook stop them — i.e. DestroyWindow the bonsoir message window and
+  // DnsServiceBrowseCancel — BEFORE the engine is destroyed, cutting the event
+  // source at its root. An [Set.identity] keys on object identity so the same
+  // service registers/unregisters cleanly.
+  final Set<LanDiscoveryService> _activeDiscoveries =
+      Set<LanDiscoveryService>.identity();
   // One pairing prompt at a time: a peer must not be able to stack approval
   // dialogs on the host by hammering /api/pair.
   bool _pairDialogOpen = false;
 
   bool get isRunning => _server?.isRunning ?? false;
   int? get boundPort => _server?.port;
+
+  /// Register a live LAN discovery browser so [shutdownForExit] can stop it
+  /// before the Flutter engine is torn down. Idempotent.
+  void registerDiscovery(LanDiscoveryService discovery) {
+    _activeDiscoveries.add(discovery);
+  }
+
+  /// Drop a discovery browser from the exit-teardown set once its owner has
+  /// already disposed it (e.g. the sync-settings page closed). Idempotent.
+  void unregisterDiscovery(LanDiscoveryService discovery) {
+    _activeDiscoveries.remove(discovery);
+  }
+
+  /// App-exit teardown: stop every Bonsoir event source still alive (the LAN
+  /// broadcast owned here for the whole session, plus any discovery browser the
+  /// settings page registered) so no mDNS event is delivered to a torn-down
+  /// engine/messenger (TODO-036, Windows null-messenger crash). Must be awaited
+  /// on the app-close signal BEFORE the window/engine is destroyed.
+  ///
+  /// Deliberately does NOT persist `serverEnabled=false`: this is an app exit,
+  /// not a user toggle-off, so the next launch restores hosting.
+  Future<void> shutdownForExit() async {
+    // Snapshot first: dispose() mutates the owner's state, and unregister calls
+    // can land mid-iteration.
+    final List<LanDiscoveryService> discoveries =
+        _activeDiscoveries.toList(growable: false);
+    _activeDiscoveries.clear();
+    for (final LanDiscoveryService discovery in discoveries) {
+      await discovery.dispose();
+    }
+    await stop();
+  }
 
   SyncRepository get _repo => SyncRepository(_database());
 
