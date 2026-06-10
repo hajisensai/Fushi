@@ -119,16 +119,41 @@ void main() {
 
     test('onWindowClose awaits the controller teardown before destroy', () {
       final String main = File('lib/main.dart').readAsStringSync();
-      expect(main.contains('syncServerController.shutdownForExit()'), isTrue,
+      expect(
+          RegExp(r'syncServerController\s*\.shutdownForExit\(\)')
+              .hasMatch(main),
+          isTrue,
           reason: 'the exit hook must stop Bonsoir via the app-level '
               'controller');
-      // The teardown call must precede destroy() in onWindowClose so the
-      // event source is dead before the window/engine goes away.
-      final int teardownAt = main.indexOf('_shutdownSyncSources');
-      final int destroyAt = main.indexOf('windowManager.destroy()');
-      expect(teardownAt, greaterThanOrEqualTo(0));
+      // The teardown call must precede destroy() INSIDE onWindowClose so the
+      // event source is dead before the window/engine goes away. Anchor at
+      // the onWindowClose body: a bare indexOf would first match the
+      // detached-fallback call (or a comment) earlier in the file.
+      final int closeAt = main.indexOf('void onWindowClose()');
+      expect(closeAt, greaterThanOrEqualTo(0));
+      final int teardownAt =
+          main.indexOf('await _shutdownSyncSources();', closeAt);
+      final int destroyAt = main.indexOf('windowManager.destroy()', closeAt);
+      expect(teardownAt, greaterThan(closeAt),
+          reason: 'onWindowClose must await the teardown');
       expect(destroyAt, greaterThan(teardownAt),
           reason: 'teardown must run before the window is destroyed');
+    });
+
+    test('exit teardown is bounded by a timeout so close-X can never freeze',
+        () {
+      final String main = File('lib/main.dart').readAsStringSync();
+      final int teardownAt =
+          main.indexOf('Future<void> _shutdownSyncSources()');
+      expect(teardownAt, greaterThanOrEqualTo(0));
+      final String body = main.substring(teardownAt);
+      expect(body.contains('.timeout(const Duration(seconds: 3))'), isTrue,
+          reason: 'a hung bonsoir native stop must not block onWindowClose '
+              'forever: the shutdownForExit await must carry a timeout so '
+              'destroy() always runs (TODO-036 review follow-up)');
+      expect(body.contains('on TimeoutException'), isTrue,
+          reason: 'the timeout must be logged and swallowed, never escape '
+              'the close path');
     });
 
     test('detached lifecycle is a fallback teardown path', () {

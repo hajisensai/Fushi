@@ -80,7 +80,7 @@ class HibikiSyncServerController extends ChangeNotifier {
   // process crashes (TODO-036). Registering live browsers here lets the
   // app-exit hook stop them — i.e. DestroyWindow the bonsoir message window and
   // DnsServiceBrowseCancel — BEFORE the engine is destroyed, cutting the event
-  // source at its root. An [Set.identity] keys on object identity so the same
+  // source at its root. A [Set.identity] keys on object identity so the same
   // service registers/unregisters cleanly.
   final Set<LanDiscoveryService> _activeDiscoveries =
       Set<LanDiscoveryService>.identity();

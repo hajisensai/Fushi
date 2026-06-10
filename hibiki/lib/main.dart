@@ -402,11 +402,21 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
 
   /// 停掉 Bonsoir 的 LAN 广播 + 发现（mDNS 事件源）。幂等：[onWindowClose] 与
   /// `detached` 兜底可能都触发，只跑一次。
+  ///
+  /// 整条清理链路有超时上限：若 bonsoir 原生 stop（method channel）永不归，
+  /// 3 秒后放行让 [onWindowClose] 照常 destroy()，避免点 X 后窗口冻结。
   Future<void> _shutdownSyncSources() async {
     if (_shutdownStarted) return;
     _shutdownStarted = true;
     try {
-      await ref.read(appProvider).syncServerController.shutdownForExit();
+      await ref
+          .read(appProvider)
+          .syncServerController
+          .shutdownForExit()
+          .timeout(const Duration(seconds: 3));
+    } on TimeoutException {
+      debugPrint(
+          '[Hibiki] sync source shutdown on exit timed out; closing anyway');
     } catch (e) {
       // 退出清理失败不该阻止关窗；记一笔即可（不吞静默）。
       debugPrint('[Hibiki] sync source shutdown on exit failed: $e');
