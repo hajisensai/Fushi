@@ -598,8 +598,17 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // 它自己的绝对路径，且与剧集无关——只要文件还在磁盘上就按路径直接加载，无需经
     // listAllSubtitleSources 的同目录枚举。单视频路径已由 `_loadSingle` 的 loadCues
     // 命中、走不到这里；本捷径主要救播放列表（只存源指针不存 cue）。
-    if (isImportedExternalSubtitlePath(persisted) &&
-        File(persisted).existsSync()) {
+    //
+    // BUG-165: 换集（[crossEpisode]）时该捷径必须只接管**真正住在别处的导入字幕**
+    // ——若持久化路径与新集视频**同目录**，那是上一集自带的同目录 sidecar
+    // （如 `EP01.ja.srt`），不能原样沿用到 `EP02`，否则字幕卡在上一集。故换集时改用
+    // [shouldReusePersistedSubtitleAcrossEpisode]（按目录归属区分），同目录 sidecar 落
+    // 回下面的同目录枚举 + [pickEpisodeSubtitleSource] 按新集名重新匹配。单视频恢复
+    // （非换集）同一视频本就该恢复同一字幕，保持原 [isImportedExternalSubtitlePath] 判定。
+    final bool takeImportedShortcut = crossEpisode
+        ? shouldReusePersistedSubtitleAcrossEpisode(persisted, videoPath)
+        : isImportedExternalSubtitlePath(persisted);
+    if (takeImportedShortcut && File(persisted).existsSync()) {
       final SubtitleSource external = SubtitleSource.external(
         externalPath: persisted,
         label: p.basename(persisted),
