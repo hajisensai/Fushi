@@ -1,0 +1,6 @@
+## BUG-171 · 剪贴板查词显示文字太小且居中 (应像 yomitan 正常字号左对齐)
+- **报告**：2026-06-11（用户：）
+- **真实性**：✅ 真 bug（UX 缺陷）。根因 `hibiki/lib/src/utils/components/clipboard_lookup_text_panel.dart:65`（修复前）—— 剪贴板/texthooker 桌面查词条 `ClipboardLookupTextPanel` 逐字 `Text` 用 `tokens.type.metadata`（= `labelMedium` ≈ 12sp 小字）；同时该组件外层 `Padding`→`Wrap` 不约束宽度，挂在 `home_dictionary_page.dart:492` 的 `Column`（默认 `crossAxisAlignment.center`）下，收缩到内容宽度后被居中。
+- **[x] ① 已修复** — `clipboard_lookup_text_panel.dart`：①字号改取正文 `bodyLarge`（≈16sp，与 texthooker `_WordSpan` 同观感、贴近 yomitan 正常词条字号），`color: onSurface`、`height: 1.5`；②外层用 `Align(alignment: Alignment.topLeft)` 替代裸 `Padding`——父级宽度有界时撑满并左对齐，宽度无界（如直接放进只给 left/top 的 `Positioned`）时安全回退到内容宽度，不强行要求无限宽度；对齐由本组件决定，不再依赖父级 `Column` 的 `crossAxisAlignment`。顺带移除已不再用到的 `HibikiDesignTokens` 依赖（间距改用其原解析值 16/4/8/2 字面量保持视觉一致）。提交：见本轮 commit。
+- **[x] ② 已加自动化测试** — `hibiki/test/widgets/clipboard_lookup_text_panel_test.dart` 新增两条回归守卫：`characters render at body-size font, not tiny metadata size`（断言字符字号 == `bodyLarge` 且 > `labelMedium`）、`panel fills width and left-aligns its content`（断言在默认居中的 `Column` 下组件占满父宽、首字符紧贴左内边距、`Align` 对齐为 `topLeft`）。原有 5 条行为/坐标测试保持绿（含此前一度因布局回归失败的 `tap rect ... nearest stack coordinate space`，改用 Align 回退后恢复）。
+- **备注**：纯 Flutter widget 层布局/样式改动，三端共用；真机/桌面剪贴板查词视觉观感待用户复测。未改查词引擎、定位坐标契约（`_localRectOf` 不变）。

@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderStack;
 import 'package:flutter/services.dart';
 
-import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
-
 class ClipboardLookupTextPanel extends StatefulWidget {
   const ClipboardLookupTextPanel({
     required this.text,
@@ -29,48 +27,54 @@ class _ClipboardLookupTextPanelState extends State<ClipboardLookupTextPanel> {
     final String trimmed = widget.text.trim();
     if (trimmed.isEmpty) return const SizedBox.shrink();
 
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final ThemeData theme = Theme.of(context);
     final List<String> chars = trimmed.characters.toList(growable: false);
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        tokens.spacing.page,
-        0,
-        tokens.spacing.page,
-        tokens.spacing.gap / 2,
-      ),
-      child: Wrap(
-        spacing: 0,
-        runSpacing: tokens.spacing.gap / 4,
-        children: <Widget>[
-          for (int i = 0; i < chars.length; i++)
-            Builder(
-              builder: (BuildContext charContext) {
-                return MouseRegion(
-                  cursor: SystemMouseCursors.click,
-                  onHover: (_) => _handleShiftHover(
-                    i,
-                    context,
-                    charContext,
-                  ),
-                  onExit: (_) {
-                    if (_lastShiftHoverIndex == i) {
-                      _lastShiftHoverIndex = null;
-                    }
-                  },
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () => _lookupAt(i, context, charContext),
-                    child: Text(
-                      chars[i],
-                      style: tokens.type.metadata.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
+    // yomitan 观感：正文字号（bodyLarge）左对齐，不再用 metadata 的 labelMedium
+    // 小字。每个字符是独立可点 span，逐字保持原有点击/Shift 悬停查词行为。
+    final TextStyle charStyle =
+        (theme.textTheme.bodyLarge ?? const TextStyle()).copyWith(
+      color: theme.colorScheme.onSurface,
+      height: 1.5,
+    );
+    // 左对齐并占满可用宽度：剪贴板文本条挂在 home_dictionary_page 的 Column 下，
+    // Column 默认 crossAxisAlignment.center 会把收缩到内容宽度的本条居中。
+    // Align(topLeft) 在父级宽度有界时撑满该宽度并把内容钉左上角，宽度无界时
+    // （如直接放进只给 left/top 的 Positioned）安全回退到内容宽度，不强行要求
+    // 无限宽度。对齐由本组件决定，不依赖父级的 crossAxisAlignment。
+    return Align(
+      alignment: Alignment.topLeft,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+        child: Wrap(
+          alignment: WrapAlignment.start,
+          spacing: 0,
+          runSpacing: 2,
+          children: <Widget>[
+            for (int i = 0; i < chars.length; i++)
+              Builder(
+                builder: (BuildContext charContext) {
+                  return MouseRegion(
+                    cursor: SystemMouseCursors.click,
+                    onHover: (_) => _handleShiftHover(
+                      i,
+                      context,
+                      charContext,
                     ),
-                  ),
-                );
-              },
-            ),
-        ],
+                    onExit: (_) {
+                      if (_lastShiftHoverIndex == i) {
+                        _lastShiftHoverIndex = null;
+                      }
+                    },
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => _lookupAt(i, context, charContext),
+                      child: Text(chars[i], style: charStyle),
+                    ),
+                  );
+                },
+              ),
+          ],
+        ),
       ),
     );
   }
