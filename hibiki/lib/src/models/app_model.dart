@@ -608,13 +608,15 @@ class AppModel with ChangeNotifier {
           pitchPaths.add(p);
       }
     }
-    if (termPaths.isNotEmpty || freqPaths.isNotEmpty || pitchPaths.isNotEmpty) {
-      HoshiDicts.initializeTyped(
-        termPaths: termPaths,
-        freqPaths: freqPaths,
-        pitchPaths: pitchPaths,
-      );
-    }
+    // Always rebuild — even with all buckets empty. Deleting the last (or last
+    // of a type) dictionary leaves the path set empty; an empty rebuild yields
+    // an empty-but-fresh engine that drops the deleted dictionary's in-memory
+    // index, so queries stop hitting it without an app restart (BUG-171).
+    HoshiDicts.initializeTyped(
+      termPaths: termPaths,
+      freqPaths: freqPaths,
+      pitchPaths: pitchPaths,
+    );
   }
 
   Future<void> _rebuildDictPathsCacheAsync() async {
@@ -640,13 +642,14 @@ class AppModel with ChangeNotifier {
           pitchPaths.add(p);
       }
     }
-    if (termPaths.isNotEmpty || freqPaths.isNotEmpty || pitchPaths.isNotEmpty) {
-      HoshiDicts.initializeTyped(
-        termPaths: termPaths,
-        freqPaths: freqPaths,
-        pitchPaths: pitchPaths,
-      );
-    }
+    // Always rebuild — see _rebuildDictPathsCache: an empty path set must still
+    // reload into an empty engine so a deleted dictionary stops resolving
+    // (BUG-171).
+    HoshiDicts.initializeTyped(
+      termPaths: termPaths,
+      freqPaths: freqPaths,
+      pitchPaths: pitchPaths,
+    );
   }
 
   List<DictionarySearchResult> get dictionaryHistory =>
@@ -1853,6 +1856,12 @@ class AppModel with ChangeNotifier {
 
       dictRepo.clearDictionariesCache();
       dictRepo.clearDictionaryResultsCache();
+      // Reload the native FFI engine off the now-empty dictionary set so every
+      // previously loaded index is dropped; otherwise queries keep hitting the
+      // deleted dictionaries until the app restarts (BUG-171). With no
+      // dictionaries left this rebuilds into an empty engine that
+      // searchDictionary already degrades to empty results.
+      _rebuildDictPathsCache();
     } catch (e, stack) {
       ErrorLogService.instance.log('deleteDictionaries', e, stack);
       HibikiToast.show(msg: t.dictionaries_delete_failed);
