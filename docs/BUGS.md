@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 179 条。点号进各自文件。
+> 共 180 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-184](bugs/BUG-184-android-video-seekbar-bottom.md) | ✅ | ✅ | 安卓视频进度条贴屏幕最底(移动控制条丢失底部留白margin) |
 | [BUG-182](bugs/BUG-182-video-subtitle-font-fallback.md) | ✅ | ✅ | 视频字幕里「の」等字字形与周围字不一致(逐字Text缺CJK fontFamilyFallback) |
 | [BUG-181](bugs/BUG-181-android-portrait-statusbar-overlap.md) | ✅ | ✅ | 手机竖屏常驻状态栏挤压首页右上角图标（TODO-097） |
 | [BUG-180](bugs/BUG-180-video-subtitle-default-covers-bar.md) | ✅ | ✅ | 视频字幕默认位置遮挡底部进度条 |
