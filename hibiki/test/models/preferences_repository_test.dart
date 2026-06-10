@@ -93,16 +93,52 @@ void main() {
       expect(repo.audioSources, PreferencesRepository.defaultAudioSources);
     });
 
-    test('audioSourceConfigs migrates legacy URL list', () {
+    test(
+        'audioSourceConfigs on a fresh install ships the default remote '
+        'audio source DISABLED (TODO-083)', () {
+      // 纯新装（两个 audio pref 都没写过）：内置远端音频源（manhhaoo worker）
+      // 必须默认关闭，hibikiRemote 也默认关闭。任何源都不应自动启用。
+      final List<AudioSourceConfig> configs = repo.audioSourceConfigs;
       expect(
-        repo.audioSourceConfigs,
+        configs,
         <AudioSourceConfig>[
           AudioSourceConfig.hibikiRemote(),
           ...AudioSourceConfig.fromLegacyUrls(
             PreferencesRepository.defaultAudioSources,
-          ),
+          ).map((AudioSourceConfig s) => s.copyWith(enabled: false)),
         ],
       );
+      // 没有任何源默认启用。
+      expect(
+        configs.where((AudioSourceConfig s) => s.enabled),
+        isEmpty,
+      );
+    });
+
+    test(
+        'a configured user keeps their enabled legacy audio_sources '
+        '(backward compatible, TODO-083)', () async {
+      // 老用户曾保存过 legacy audio_sources（只存已启用的 URL）。即便没有
+      // typed audio_source_configs，这些 URL 必须仍然 enabled，不被新装默认关。
+      repo.setAudioSources(<String>[
+        'https://legacy.test/?term={term}&reading={reading}',
+      ]);
+      // setAudioSources 是 fire-and-forget（void async）：等一个微任务让落盘完成，
+      // 与本文件 'setAudioSources persists list' 用例同范式。
+      await Future<void>.delayed(Duration.zero);
+
+      final PreferencesRepository repo2 = PreferencesRepository(db);
+      await repo2.loadFromDb();
+      final List<AudioSourceConfig> remotes = repo2.audioSourceConfigs
+          .where((AudioSourceConfig s) => s.kind == AudioSourceKind.remoteAudio)
+          .toList();
+      expect(remotes, hasLength(1));
+      expect(
+        remotes.single.url,
+        'https://legacy.test/?term={term}&reading={reading}',
+      );
+      expect(remotes.single.enabled, isTrue);
+      repo2.dispose();
     });
 
     test('blurOptions returns default values', () {
