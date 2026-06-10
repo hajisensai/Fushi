@@ -59,8 +59,10 @@ void main() {
       expect(repo.popupMaxHeight, 360.0);
     });
 
-    test('popupInstantScroll defaults to true', () {
-      expect(repo.popupInstantScroll, true);
+    test('popupInstantScroll defaults to false (smooth/animated scroll)', () {
+      // TODO-076: instant (no-animation) jump scrolling is an e-ink opt-in,
+      // so a fresh / never-toggled install must default to smooth scrolling.
+      expect(repo.popupInstantScroll, false);
     });
 
     test('searchDebounceDelay defaults to 100', () {
@@ -185,12 +187,17 @@ void main() {
       repo2.dispose();
     });
 
-    test('setPopupInstantScroll round-trips through DB', () async {
-      await repo.setPopupInstantScroll(false);
+    test(
+        'setPopupInstantScroll round-trips and preserves a stored true '
+        '(backward compatibility after the default flip to false)', () async {
+      // An existing e-ink user enabled instant scroll before the default
+      // changed to false; their stored value must survive, not fall back to
+      // the new default.
+      await repo.setPopupInstantScroll(true);
 
       final repo2 = PreferencesRepository(db);
       await repo2.loadFromDb();
-      expect(repo2.popupInstantScroll, false);
+      expect(repo2.popupInstantScroll, true);
       repo2.dispose();
     });
 
