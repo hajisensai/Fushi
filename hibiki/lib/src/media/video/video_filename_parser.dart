@@ -55,6 +55,8 @@ const Set<String> kVideoExtensions = <String>{
   '.webm',
   '.m4v',
   '.ts',
+  '.m2ts',
+  '.mts',
   '.flv',
   '.wmv',
   '.mpg',
@@ -62,6 +64,7 @@ const Set<String> kVideoExtensions = <String>{
   '.ogv',
   '.rmvb',
   '.rm',
+  '.vob',
 };
 
 /// 解析视频文件名（可带或不带扩展名）→ [VideoNameInfo]。纯函数，无 IO。
@@ -206,12 +209,22 @@ int _compareEpisodes(VideoEpisode a, VideoEpisode b) {
   return a.title.toLowerCase().compareTo(b.title.toLowerCase());
 }
 
-/// 扫描目录顶层（非递归）里的视频文件，返回绝对路径列表（按名称排序）。仅此函数碰磁盘。
+/// 递归扫描 [directory] 及其所有子目录里的视频文件，返回绝对路径列表
+/// （按名称排序）。仅此函数碰磁盘。
+///
+/// 「导入文件夹」的用户心智模型是「找出这个文件夹里的所有视频」，而视频通常
+/// 按 `番剧名/Season X/E01.mkv`、`电影合集/某电影/movie.mkv` 这类结构组织——
+/// 顶层只有文件夹、没有视频文件。早期只扫顶层（非递归）会让这类目录恒返回空
+/// 列表，导入对话框据此误报「无视频」。改递归遍历后任意嵌套深度的视频都能找到。
+///
+/// [followLinks] 关闭，避免符号链接成环导致无限递归；listSync 自身对无法
+/// 访问的子目录会抛 [FileSystemException]，逐项跳过而非整体失败。
 List<String> listVideoFilesInDirectory(String directory) {
   final Directory dir = Directory(directory);
   if (!dir.existsSync()) return const <String>[];
   final List<String> out = <String>[];
-  for (final FileSystemEntity entity in dir.listSync(followLinks: false)) {
+  for (final FileSystemEntity entity
+      in dir.listSync(recursive: true, followLinks: false)) {
     if (entity is! File) continue;
     final String ext = p.extension(entity.path).toLowerCase();
     if (kVideoExtensions.contains(ext)) out.add(entity.path);

@@ -1,5 +1,8 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
+import 'package:path/path.dart' as p;
 
 void main() {
   group('parseVideoFilename', () {
@@ -117,6 +120,83 @@ void main() {
 
     test('空输入 → 空分组', () {
       expect(groupVideosIntoPlaylists(const <String>[]), isEmpty);
+    });
+  });
+
+  group('listVideoFilesInDirectory', () {
+    late Directory root;
+
+    setUp(() {
+      root = Directory.systemTemp.createTempSync('hibiki_video_scan_');
+    });
+
+    tearDown(() {
+      if (root.existsSync()) root.deleteSync(recursive: true);
+    });
+
+    File touch(String relative) {
+      final File f = File(p.join(root.path, relative));
+      f.parent.createSync(recursive: true);
+      f.writeAsStringSync('x');
+      return f;
+    }
+
+    test('递归扫描子目录中的视频（番剧/季/集 嵌套结构）', () {
+      // 用户真实组织方式：顶层只有文件夹，视频埋在子目录里。
+      final File e01 = touch(p.join('Show', 'Season 1', 'Show S01E01.mkv'));
+      final File e02 = touch(p.join('Show', 'Season 1', 'Show S01E02.mkv'));
+      final File movie = touch(p.join('Movies', 'Some Movie', 'movie.mp4'));
+      touch(p.join('Show', 'Season 1', 'Show S01E01.srt')); // 非视频，忽略
+      touch(p.join('Show', 'cover.jpg')); // 非视频，忽略
+
+      final List<String> found = listVideoFilesInDirectory(root.path);
+
+      expect(
+        found.map(p.normalize).toSet(),
+        <String>{
+          p.normalize(e01.path),
+          p.normalize(e02.path),
+          p.normalize(movie.path),
+        },
+      );
+    });
+
+    test('顶层视频也能扫到（与子目录视频混合）', () {
+      final File top = touch('top.mp4');
+      final File nested = touch(p.join('sub', 'nested.mkv'));
+
+      final List<String> found = listVideoFilesInDirectory(root.path);
+
+      expect(
+        found.map(p.normalize).toSet(),
+        <String>{p.normalize(top.path), p.normalize(nested.path)},
+      );
+    });
+
+    test('蓝光 .m2ts / .ts 扩展名被识别', () {
+      final File m2ts = touch(p.join('BDMV', 'STREAM', '00001.m2ts'));
+      final File ts = touch(p.join('TS', 'episode.ts'));
+
+      final List<String> found = listVideoFilesInDirectory(root.path);
+
+      expect(
+        found.map(p.normalize).toSet(),
+        <String>{p.normalize(m2ts.path), p.normalize(ts.path)},
+      );
+    });
+
+    test('无视频文件 → 空列表', () {
+      touch(p.join('docs', 'readme.txt'));
+      touch('cover.png');
+
+      expect(listVideoFilesInDirectory(root.path), isEmpty);
+    });
+
+    test('不存在的目录 → 空列表', () {
+      expect(
+        listVideoFilesInDirectory(p.join(root.path, 'nope')),
+        isEmpty,
+      );
     });
   });
 }

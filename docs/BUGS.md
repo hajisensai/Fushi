@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 164 条。点号进各自文件。
+> 共 165 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-168](bugs/BUG-168-video-folder-import-no-recursion.md) | ✅ | ✅ | 导入视频文件夹显示无视频(非递归扫描+缺m2ts) |
 | [BUG-167](bugs/BUG-167-nhk-pitch-glossary-not-pitch.md) | 🚧 | 🚧 | NHK发音辞典被读成释义词典（实为glossary格式·无pitch数据·非bug） |
 | [BUG-166](bugs/BUG-166-mining-slow-serial-media.md) | ✅ | ✅ | 制卡慢（约 6 秒）+ 每张卡自动打 hibiki tag |
 | [BUG-165](bugs/BUG-165-episode-subtitle-no-follow.md) | ✅ | ✅ | 播放列表换集字幕不自动跟随对应集 |
