@@ -1,6 +1,7 @@
 import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 // Architecture decision: platform branching uses runtime Platform.is* checks
 // centralized in this file, not Dart conditional imports.
@@ -24,6 +25,34 @@ bool get supportsNativeAudio =>
 bool get supportsFloatingOverlay => Platform.isAndroid;
 
 bool get isWindowsPlatform => Platform.isWindows;
+
+/// Sets the system-UI mode for the **home/menu shell** (book shelf, video,
+/// dictionary search, settings -- everything that is NOT an open media session).
+///
+/// Android phones in portrait have a permanently-visible status bar (the OS
+/// clock/battery strip) that sits directly above Hibiki's top-right action
+/// icons. Even though the home page already wraps its body in a [SafeArea]
+/// (so the icons are not literally clipped), the always-on status bar crowds
+/// the top-right controls and makes them awkward to tap (TODO-097). We hide the
+/// status bar on Android while keeping the navigation/gesture bar, so the top
+/// action row reclaims the strip the OS bar was occupying.
+///
+/// Android: [SystemUiMode.manual] with only [SystemUiOverlay.bottom] enabled --
+/// status bar hidden, navigation/gesture bar kept. Other platforms (iOS keeps
+/// the status bar -- it is expected there and handled via SafeArea; desktop has
+/// no system bars) keep the prior edge-to-edge behaviour. An open book/video
+/// still uses `immersiveSticky` (both bars hidden) on open and the reader
+/// restores its own mode on exit via `AppModel.closeMedia`, which calls back here.
+Future<void> setHomeShellSystemUiMode() async {
+  if (Platform.isAndroid) {
+    await SystemChrome.setEnabledSystemUIMode(
+      SystemUiMode.manual,
+      overlays: <SystemUiOverlay>[SystemUiOverlay.bottom],
+    );
+    return;
+  }
+  await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+}
 
 /// Windows/Linux 桌面用 MD3 的钳制滚动（去掉 iOS 风格回弹）；macOS（Cupertino
 /// 平台，刻意不动）与移动端保持原有可回弹物理。始终保留 AlwaysScrollable 外层，
