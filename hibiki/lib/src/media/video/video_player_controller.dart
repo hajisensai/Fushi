@@ -327,6 +327,11 @@ class VideoPlayerController extends ChangeNotifier
       play: false,
     );
 
+    // 远端 http(s) 直传：注入网络缓存/预读调优（缓解 WiFi 抖动卡顿）。仅网络流生效，
+    // 本地文件 no-op（见 [applyNetworkCachePropertiesToPlayer]）。media_kit 默认
+    // network-timeout=5 / demuxer-max-bytes=32MiB 对局域网 WiFi 流偏紧。
+    await applyNetworkCachePropertiesToPlayer(player, sourceUri);
+
     // 关闭 libmpv 画面字幕渲染——字幕统一走可点击 overlay（cue 同步 + 逐字查词）。
     // mkv 内嵌字幕会被 libmpv 默认渲染成画面像素（不可点）；用户点它会穿透到视频层
     // 触发暂停而非查词。故一律关 libmpv 字幕，由 overlay 承载所有字幕（外挂 sidecar

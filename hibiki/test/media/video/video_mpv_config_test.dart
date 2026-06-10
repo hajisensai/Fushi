@@ -219,4 +219,72 @@ keep-open=yes
       expect(c.videoZoom, lessThanOrEqualTo(2.0));
     });
   });
+
+  group('isNetworkStreamUri (TODO-033 #1)', () {
+    test('http(s) stream URIs are network streams', () {
+      expect(
+        isNetworkStreamUri('http://192.168.1.34:19632/api/library/videos/'
+            'video%2Ffilm/stream?token=abc'),
+        isTrue,
+      );
+      expect(isNetworkStreamUri('https://host/clip.mkv'), isTrue);
+      // 大小写无关（Uri.scheme 归一化，再保险小写比较）。
+      expect(isNetworkStreamUri('HTTP://host/clip.mkv'), isTrue);
+    });
+
+    test('local file URIs / bare paths are NOT network streams', () {
+      // mediaUriForVideoPath 对本地文件产出的就是 file:// URI。
+      expect(isNetworkStreamUri('file:///home/u/clip.mkv'), isFalse);
+      expect(isNetworkStreamUri('file://C:/videos/clip.mp4'), isFalse);
+      // 其它非网络 scheme 也不注入。
+      expect(isNetworkStreamUri('content://media/external/video/1'), isFalse);
+      expect(isNetworkStreamUri(''), isFalse);
+    });
+  });
+
+  group('buildNetworkCacheProperties (TODO-033 #1)', () {
+    test('emits conservative network cache/readahead tuning', () {
+      final Map<String, String> m = buildNetworkCacheProperties();
+      // 流缓存显式开启。
+      expect(m['cache'], 'yes');
+      // 预读时长目标（受字节上限封顶）。
+      expect(m['cache-secs'], '30');
+      // 字节上限是缓存真实约束：128MiB（> media_kit 默认 32MiB）。
+      expect(m['demuxer-max-bytes'], '${128 * 1024 * 1024}');
+      // 向后缓冲（回退 seek 不重拉），取前向一半。
+      expect(m['demuxer-max-back-bytes'], '${64 * 1024 * 1024}');
+      // 容忍 WiFi 抖动：放宽 media_kit 默认 5s 超时到 30s。
+      expect(m['network-timeout'], '30');
+    });
+
+    test('byte caps stay bounded (no runaway memory)', () {
+      final Map<String, String> m = buildNetworkCacheProperties();
+      final int fwd = int.parse(m['demuxer-max-bytes']!);
+      final int back = int.parse(m['demuxer-max-back-bytes']!);
+      // 上界守卫：单段会话总缓冲 <= 256MiB，避免大码率流爆内存。
+      expect(fwd, lessThanOrEqualTo(256 * 1024 * 1024));
+      expect(back, lessThanOrEqualTo(fwd));
+      // 下界守卫：必须比 media_kit 默认 32MiB 大，否则调优无意义。
+      expect(fwd, greaterThan(32 * 1024 * 1024));
+    });
+
+    test('only network-relevant keys are emitted (no codec/scale knobs)', () {
+      final Map<String, String> m = buildNetworkCacheProperties();
+      // 不碰画质/解码/几何属性——那些归 buildMpvProperties 管。
+      expect(m.containsKey('scale'), isFalse);
+      expect(m.containsKey('hwdec'), isFalse);
+      expect(m.containsKey('video-rotate'), isFalse);
+      // 全是网络缓存族属性。
+      expect(
+        m.keys.toSet(),
+        <String>{
+          'cache',
+          'cache-secs',
+          'demuxer-max-bytes',
+          'demuxer-max-back-bytes',
+          'network-timeout',
+        },
+      );
+    });
+  });
 }

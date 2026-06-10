@@ -51,6 +51,34 @@ void main() {
     });
   });
 
+  // 网络缓存调优（TODO-033 #1）：远端 http(s) 直传须在 open 后注入缓存/预读参数，
+  // 缓解 WiFi 抖动卡顿；本地文件不注入（applyNetworkCachePropertiesToPlayer 内按
+  // scheme 门控）。无法纯单测（需真实 libmpv player），故源码层钉死注入位置。
+  group('VideoPlayerController network cache tuning (TODO-033 #1)', () {
+    final String src = read('lib/src/media/video/video_player_controller.dart');
+
+    test('load() injects network cache tuning after player.open', () {
+      // load() 体很长且含嵌套闭包，非贪婪匹配到 `\n  }` 会停在参数列表收尾；改为
+      // 从方法体开头（`}) async {`）截到「关闭 libmpv 画面字幕渲染」这段注释——
+      // open + 注入都在此段内，足够断言注入位置。
+      final int bodyStart =
+          src.indexOf('}) async {', src.indexOf('Future<void> load({'));
+      expect(bodyStart, greaterThanOrEqualTo(0), reason: '找不到 load 方法体');
+      final int bodyEnd = src.indexOf('关闭 libmpv 画面字幕渲染', bodyStart);
+      expect(bodyEnd, greaterThan(bodyStart), reason: '找不到 load 体内的注入段尾界标');
+      final String b = src.substring(bodyStart, bodyEnd);
+      final int openAt = b.indexOf('player.open(');
+      final int injectAt = b.indexOf('applyNetworkCachePropertiesToPlayer(');
+      expect(openAt, greaterThanOrEqualTo(0), reason: 'load 必须 open 媒体');
+      expect(injectAt, greaterThan(openAt),
+          reason: '网络缓存调优必须在 player.open 之后注入（属性作用于已打开的流）');
+      expect(
+          b.contains('applyNetworkCachePropertiesToPlayer(player, sourceUri)'),
+          isTrue,
+          reason: '必须把 sourceUri 透传给注入函数，由其按 scheme 决定是否生效');
+    });
+  });
+
   // 真正的断点是**页面层**：controller.dispose() 里的 `_forceSavePositionSync()`
   // 是 fire-and-forget，与 Navigator 同步销毁 State 竞争、写不完，导致「退出再进
   // 没回到上次位置」。页面必须在路由 pop **之前** await `_controller.flushPosition()`

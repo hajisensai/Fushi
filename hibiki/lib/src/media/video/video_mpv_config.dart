@@ -373,3 +373,67 @@ Future<void> applyMpvConfigToPlayer(
     }
   }
 }
+
+/// 判断 [uri] 是否为 http(s) 网络流（远端直传）。本地 `file://` / 裸路径返回 false。
+///
+/// 远端视频经 host 直传，URI 是 [HibikiSyncServer] 签发的 `http://…/stream?token=…`；
+/// 本地播放是 `File(path).uri`（`file://…`）。仅网络流才需要网络缓存调优，本地文件
+/// 注入这些属性既无收益又可能浪费内存（见 [buildNetworkCacheProperties]）。纯函数。
+bool isNetworkStreamUri(String uri) {
+  final Uri? parsed = Uri.tryParse(uri);
+  if (parsed == null) return false;
+  final String scheme = parsed.scheme.toLowerCase();
+  return scheme == 'http' || scheme == 'https';
+}
+
+/// 构建**网络流**专用的 libmpv 缓存/预读属性 map（`属性名→值`）。纯函数。
+///
+/// 仅用于远端 http(s) 直传（局域网 host → 客户端）；缓解 WiFi 抖动导致的卡顿重缓冲。
+/// **不做转码/降码率**——只调 libmpv 的网络缓冲行为，保守取值避免爆内存。
+///
+/// media_kit 创建 player 时已设 `network-timeout=5` / `cache=yes` /
+/// `demuxer-max-bytes=32MiB`（见 media_kit `native/player/real.dart` 的初始化块）。
+/// 这些默认值对局域网 WiFi 流偏紧：
+///
+/// - `network-timeout=30`：默认 5s 太激进——WiFi 短暂抖动超过 5s 就会撕掉 HTTP 连接
+///   触发整段重连。放宽到 30s，让瞬时停顿靠缓存撑过去而非断流。
+/// - `cache=yes`：显式确认开启流缓存（media_kit 默认已开，远端流再确认一次）。
+/// - `demuxer-max-bytes=128MiB`：缓存的**真实约束**。mpv 文档明确「cache 开启时实际
+///   预读量受 demuxer-max-bytes 限制」；默认 32MiB 在 ~40Mbps REMUX 下只够约 6s，
+///   抖动一下就空。提到 128MiB（~40Mbps 约 25s / 典型 15Mbps 约 68s）给足缓冲。
+///   只一段视频会话用一份缓冲，dispose 即释放，128MiB 桌面/现代移动端可接受。
+/// - `demuxer-max-back-bytes=64MiB`：向后缓冲（往回 seek 不重新拉流），取前向一半。
+/// - `cache-secs=30`：目标预读 30s（受上面字节上限封顶）。mpv 文档：cache 开启时
+///   cache-secs 覆盖 demuxer-readahead-secs，故网络流用 cache-secs 控预读时长（而非
+///   demuxer-readahead-secs——后者在 cache 开启时「基本被忽略」）。
+///
+/// 所有属性均为 libmpv 运行时可设属性（经 `mpv_set_property_string`），由
+/// [applyNetworkCachePropertiesToPlayer] 在 `player.open` 后逐条 best-effort 注入。
+Map<String, String> buildNetworkCacheProperties() {
+  return <String, String>{
+    'cache': 'yes',
+    'cache-secs': '30',
+    'demuxer-max-bytes': '${128 * 1024 * 1024}', // 128 MiB
+    'demuxer-max-back-bytes': '${64 * 1024 * 1024}', // 64 MiB
+    'network-timeout': '30',
+  };
+}
+
+/// 仅对**网络流** [sourceUri]（http/https）把 [buildNetworkCacheProperties] 注入
+/// media_kit [player]（仅 libmpv 后端/桌面生效）。本地文件 [sourceUri] 直接 no-op。
+///
+/// best-effort：与 [applyMpvConfigToPlayer] 同范式，单条属性失败静默吞掉。
+Future<void> applyNetworkCachePropertiesToPlayer(
+    Player player, String sourceUri) async {
+  if (!isNetworkStreamUri(sourceUri)) return;
+  final dynamic native = player.platform;
+  if (native == null) return;
+  final Map<String, String> props = buildNetworkCacheProperties();
+  for (final MapEntry<String, String> e in props.entries) {
+    try {
+      await native.setProperty(e.key, e.value);
+    } catch (_) {
+      // 非 libmpv / 该属性不支持运行时设置：跳过这条，继续下一条。
+    }
+  }
+}
