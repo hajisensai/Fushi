@@ -155,4 +155,34 @@ namespace flutter_inappwebview_plugin
 
     return capture_frame_pool;
   }
+
+  winrt::com_ptr<ABI::Windows::System::IDispatcherQueue>
+    GraphicsContext::GetDispatcherQueueForCurrentThread() const
+  {
+    HSTRING className;
+    HSTRING_HEADER classNameHeader;
+
+    if (FAILED(rohelper_->GetStringReference(
+      RuntimeClass_Windows_System_DispatcherQueue, &className,
+      &classNameHeader))) {
+      return nullptr;
+    }
+
+    winrt::com_ptr<ABI::Windows::System::IDispatcherQueueStatics>
+      dispatcher_queue_statics;
+    if (FAILED(rohelper_->GetActivationFactory(
+      className,
+      __uuidof(ABI::Windows::System::IDispatcherQueueStatics),
+      dispatcher_queue_statics.put_void()))) {
+      return nullptr;
+    }
+
+    winrt::com_ptr<ABI::Windows::System::IDispatcherQueue> dispatcher_queue;
+    if (FAILED(dispatcher_queue_statics->GetForCurrentThread(
+      dispatcher_queue.put()))) {
+      return nullptr;
+    }
+
+    return dispatcher_queue;
+  }
 }

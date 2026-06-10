@@ -2,6 +2,7 @@
 
 #include <windows.foundation.h>
 #include <windows.graphics.capture.h>
+#include <windows.system.h>
 #include <wrl.h>
 
 #include <chrono>
@@ -52,6 +53,9 @@ namespace flutter_inappwebview_plugin
       IInspectable*> FrameArrivedHandler;
 
     struct FrameArrivedCallbackState;
+    // BUG-163: teardown 时帧池/delegate/回调状态的所有权转移目标；
+    // 经 UI 线程 DispatcherQueue 保序延迟释放（见 texture_bridge.cc 注释）。
+    struct PendingCaptureTeardown;
 
     bool is_running_ = false;
 
@@ -77,11 +81,25 @@ namespace flutter_inappwebview_plugin
     EventRegistrationToken on_closed_token_ = {};
     EventRegistrationToken on_frame_arrived_token_ = {};
     std::shared_ptr<FrameArrivedCallbackState> frame_arrived_state_;
+    // WGC 给本线程派发 FirePresentEvent 用的同一个 DispatcherQueue，
+    // 在 Start() 时捕获（与 CreateCaptureFramePool 同线程，队列身份一致）。
+    winrt::com_ptr<ABI::Windows::System::IDispatcherQueue> dispatcher_queue_;
 
     void InvalidateFrameArrivedCallback();
     virtual void StopInternal();
     void OnFrameArrived();
     bool ShouldDropFrame();
+
+    // BUG-163 保序销毁：把捕获资源移交 holder 并排进 DispatcherQueue 延迟释放。
+    void ScheduleCaptureTeardown();
+    static void EnqueueCaptureTeardownHop(
+      winrt::com_ptr<ABI::Windows::System::IDispatcherQueue> dispatcher_queue,
+      std::shared_ptr<PendingCaptureTeardown> pending,
+      int quiet_hops_remaining);
+    static void FinalizeCaptureTeardown(
+      const std::shared_ptr<PendingCaptureTeardown>& pending);
+    static uint64_t ReadFrameEventCount(
+      const std::shared_ptr<FrameArrivedCallbackState>& state);
 
     // corresponds to DXGI_FORMAT_B8G8R8A8_UNORM
     static constexpr auto kPixelFormat = ABI::Windows::Graphics::DirectX::

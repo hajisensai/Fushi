@@ -97,9 +97,9 @@ void main() {
     expect(src.contains('remove_FrameArrived'), isFalse,
         reason: '已排队的 FirePresentEvent 会在 remove 后命中空 delegate；关闭并释放 pool 即可');
     expect(src.contains('pool_closable'), isTrue,
-        reason: 'StopInternal 应取 frame_pool_ 的 IClosable 并 Close()');
+        reason: '帧池最终仍要取 IClosable 并 Close()（在保序销毁 hop 收敛后），不能只靠引用计数');
     expect(src.contains('frame_pool_ = nullptr'), isTrue,
-        reason: 'StopInternal 必须置空 frame_pool_，切断后续帧派发');
+        reason: 'teardown 必须把 frame_pool_ 移出 bridge 并置空，bridge 析构不再触碰捕获资源');
     final int destructorStart =
         platformViewSrc.indexOf('CustomPlatformView::~CustomPlatformView()');
     final int nextMethodStart = platformViewSrc
@@ -129,5 +129,50 @@ void main() {
     expect(textureBridgeMemberIndex, lessThan(flutterTextureMemberIndex),
         reason:
             'TextureVariant 的回调捕获 TextureBridge 裸指针；成员析构逆序执行，应先销毁 flutter_texture_ 再销毁 texture_bridge_');
+
+    // ---- TODO-031 第五修（BUG-163）：保序销毁，禁止 FreeThreaded 回潮 ----
+    //
+    // 第四修把帧池换成 CreateFreeThreadedCaptureFramePool 虽消灭崩溃路径，
+    // 但 Release 构建下 WebView 纹理不再更新（书籍文字全部不显示），
+    // 2026-06-10 用户实证 v1 无字 / v2 revert 有字后被退回。
+    // 渲染管线必须保持 UI 线程 DispatcherQueue 派发的 CreateCaptureFramePool；
+    // 崩溃改由「teardown 资源移交 holder + 同队列 Low 优先级延迟释放」解决：
+    // 已排队的 FirePresentEvent 先于释放执行（队列 serially and in priority
+    // order；Low 只在没有 Normal/High 待处理工作时运行），此时 active=false
+    // 安全返回，之后才 Close+释放帧池/delegate。
+    expect(src.contains('CreateFreeThreadedCaptureFramePool'), isFalse,
+        reason: '禁止 FreeThreaded 帧池回潮：Release 构建下 WebView 纹理全空'
+            '（书籍无字），已被用户实证退回；杀崩溃只能用保序销毁');
+    expect(src.contains('graphics_context_->CreateCaptureFramePool('), isTrue,
+        reason: '必须保持 CreateCaptureFramePool（UI 线程 DispatcherQueue 派发），'
+            '渲染管线线程模型不得改变');
+    expect(src.contains('PendingCaptureTeardown'), isTrue,
+        reason: 'teardown 必须把帧池/delegate/回调状态整组移交延迟销毁 holder，'
+            '让它们活过所有已排队的 FirePresentEvent');
+    expect(src.contains('TryEnqueueWithPriority'), isTrue,
+        reason: 'holder 释放必须经 WGC 派发 FirePresentEvent 的同一个 '
+            'DispatcherQueue 排队，靠队列保序晚于已排队事件执行');
+    expect(src.contains('DispatcherQueuePriority_Low'), isTrue,
+        reason: '释放 hop 必须用 Low 优先级：只要队列里还有 Normal/High 的 '
+            'FirePresentEvent（含晚于 hop 入队的），释放就不会执行');
+    expect(src.contains('kCaptureTeardownQuietHops'), isTrue,
+        reason: '必须保留「连续安静 hop 才释放、有迟到帧重新计数」的收敛协议，'
+            '覆盖 session Close 后捕获通道迟到 post 的事件');
+    final int stopInternalStart =
+        src.indexOf('void TextureBridge::StopInternal()');
+    expect(stopInternalStart, greaterThanOrEqualTo(0),
+        reason: 'TextureBridge::StopInternal 必须可审计');
+    final int stopInternalEnd =
+        src.indexOf('void TextureBridge::', stopInternalStart + 1);
+    expect(stopInternalEnd, greaterThan(stopInternalStart),
+        reason: 'StopInternal 之后应还有其它 TextureBridge 方法定义');
+    final String stopInternalBody =
+        src.substring(stopInternalStart, stopInternalEnd);
+    expect(stopInternalBody.contains('ScheduleCaptureTeardown'), isTrue,
+        reason: 'StopInternal 必须走 ScheduleCaptureTeardown 移交捕获资源');
+    expect(stopInternalBody.contains('pool_closable'), isFalse,
+        reason: 'StopInternal 不得当场 Close 帧池：已排队的 FirePresentEvent '
+            '之后才 fire，会命中被撤销的 WGC delegate 表（11:53 dump 实证三防线'
+            '够不着）；Close 只能发生在保序销毁 hop 收敛之后');
   });
 }
