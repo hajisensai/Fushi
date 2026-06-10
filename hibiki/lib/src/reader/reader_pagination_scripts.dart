@@ -12,6 +12,18 @@ enum ReaderNavigationDirection {
   final String jsValue;
 }
 
+/// `paginate()` 一次翻页的纯数据结果：是否真的滚动了（[scrolled]）以及目标
+/// 滚动量（[targetScroll]，未滚动时为当前对齐页，调用方可忽略）。
+class ReaderPageStep {
+  const ReaderPageStep({required this.scrolled, required this.targetScroll});
+
+  /// 是否在边界内成功翻了一页（false ⇒ 已到首/末页，调用方走 limit 分支）。
+  final bool scrolled;
+
+  /// 翻页后应落到的滚动量（已 clamp 到 [min,max] 整页边界）。
+  final double targetScroll;
+}
+
 /// 一条 sasayaki cue 的运行时定位输入：归一化原文 [needle]、匹配时算出的
 /// 归一化偏移提示 [hint]、提示长度 [length]（仅在未命中回落时用于推进游标）。
 class SasayakiCueHint {
@@ -89,6 +101,52 @@ class ReaderPaginationScripts {
     }
     return out;
   }
+
+  /// JS `window.hoshiReader.paginate` 的纯 Dart 影子，供单测验证「错位不跳页」
+  /// 不变量（BUG-169）。两侧同算法：
+  ///
+  /// - forward → 严格在 [currentScroll] 之后的最近整页边界
+  ///   （`floor(currentScroll/pitch) + 1`）；
+  /// - backward → 严格在 [currentScroll] 之前的最近整页边界
+  ///   （`ceil(currentScroll/pitch) - 1`）。
+  ///
+  /// 当 [currentScroll] 已对齐到整页时与「当前页 ±1」完全等价；当它落在两页之间
+  /// （snap 监听器尚未把它对齐 / pitch 微变导致瞬时错位）时，floor/ceil 也只走一页，
+  /// 不会像旧实现 `round((currentScroll ± pitch)/pitch)` 那样把当前页算成相邻页而跳 2 页。
+  /// 目标值再 clamp 到 [[minAlignedScroll], [maxAlignedScroll]]。
+  @visibleForTesting
+  static ReaderPageStep resolvePaginateStepForTesting({
+    required ReaderNavigationDirection direction,
+    required double currentScroll,
+    required double columnPitch,
+    required double minAlignedScroll,
+    required double maxAlignedScroll,
+  }) {
+    if (columnPitch <= 0) {
+      return ReaderPageStep(scrolled: false, targetScroll: currentScroll);
+    }
+    // 先算出「严格相邻整页边界」再 clamp 到 [min,max]；是否真的翻了一页由 clamp 后
+    // 的目标与当前位置比较得出。这样首/末页判定与步长计算共用同一个 target，不再有
+    // 「currentScroll 错位 → guard 用 cur±pitch 误判已到边界 / round 跳 2 页」的特例。
+    final double target;
+    if (direction == ReaderNavigationDirection.forward) {
+      final int basePage = (currentScroll / columnPitch).floor();
+      target = _clampDouble(
+          (basePage + 1) * columnPitch, minAlignedScroll, maxAlignedScroll);
+      // 已对齐在末页时 target == currentScroll（差值 <=1px 视为同页）→ 无下一页。
+      final bool scrolled = target > currentScroll + 1;
+      return ReaderPageStep(scrolled: scrolled, targetScroll: target);
+    } else {
+      final int basePage = (currentScroll / columnPitch).ceil();
+      target = _clampDouble(
+          (basePage - 1) * columnPitch, minAlignedScroll, maxAlignedScroll);
+      final bool scrolled = target < currentScroll - 1;
+      return ReaderPageStep(scrolled: scrolled, targetScroll: target);
+    }
+  }
+
+  static double _clampDouble(double v, double lo, double hi) =>
+      v < lo ? lo : (v > hi ? hi : v);
 
   static int _clampInt(int v, int lo, int hi) =>
       v < lo ? lo : (v > hi ? hi : v);
@@ -1072,32 +1130,37 @@ $_sharedJs
     var metrics = this.paginationMetrics || this.buildPaginationMetrics();
     var minAlignedScroll = metrics.minScroll;
     var maxAlignedScroll = metrics.maxScroll;
-    var actualScroll = this.getPagePosition(context);
+    var pitch = context.columnPitch;
+    // BUG-169：从可能未对齐的 currentScroll 出发先算「严格相邻整页边界」再 clamp，
+    // 是否真翻页由 clamp 后的 target 与当前位置比较得出（共用同一 target，首/末页
+    // 判定与步长计算一致）。旧实现 forward 用 round((cur+pitch)/pitch)（= round(cur/
+    // pitch)+1），cur 落在两页之间时 round 把当前页算成下一页 → 实际跳 2 页；且 guard
+    // 用 cur+pitch 在末页前一页且 cur 错位时会误判已到边界。floor+1 / ceil-1 在对齐时
+    // 与旧实现等价、错位时永远只走一页。与 Dart 影子 resolvePaginateStepForTesting 同算法。
     if (direction === "forward") {
-      if ((currentScroll + context.columnPitch) <= (maxAlignedScroll + 1)) {
-        var targetForward = Math.round((currentScroll + context.columnPitch) / context.columnPitch) * context.columnPitch;
-        this.setPagePosition(context, targetForward);
-        var afterScroll = this.getPagePosition(context);
-        console.log('[HoshiPagination] paginate FORWARD: before=' + currentScroll
-          + ' target=' + targetForward + ' after=' + afterScroll
-          + ' pitch=' + context.columnPitch + ' drift=' + (afterScroll - targetForward)
-          + ' min=' + minAlignedScroll + ' max=' + maxAlignedScroll);
-        return "scrolled";
-      }
-      return "limit";
+      var targetForward = (Math.floor(currentScroll / pitch) + 1) * pitch;
+      if (targetForward > maxAlignedScroll) targetForward = maxAlignedScroll;
+      if (targetForward < minAlignedScroll) targetForward = minAlignedScroll;
+      if (targetForward <= currentScroll + 1) return "limit";
+      this.setPagePosition(context, targetForward);
+      var afterScrollF = this.getPagePosition(context);
+      console.log('[HoshiPagination] paginate FORWARD: before=' + currentScroll
+        + ' target=' + targetForward + ' after=' + afterScrollF
+        + ' pitch=' + pitch + ' drift=' + (afterScrollF - targetForward)
+        + ' min=' + minAlignedScroll + ' max=' + maxAlignedScroll);
+      return "scrolled";
     } else {
-      if (currentScroll > (minAlignedScroll + 1)) {
-        var targetBack = Math.round((currentScroll - context.columnPitch) / context.columnPitch) * context.columnPitch;
-        targetBack = Math.max(minAlignedScroll, targetBack);
-        this.setPagePosition(context, targetBack);
-        var afterScroll = this.getPagePosition(context);
-        console.log('[HoshiPagination] paginate BACKWARD: before=' + currentScroll
-          + ' target=' + targetBack + ' after=' + afterScroll
-          + ' pitch=' + context.columnPitch + ' drift=' + (afterScroll - targetBack)
-          + ' min=' + minAlignedScroll + ' max=' + maxAlignedScroll);
-        return "scrolled";
-      }
-      return "limit";
+      var targetBack = (Math.ceil(currentScroll / pitch) - 1) * pitch;
+      if (targetBack < minAlignedScroll) targetBack = minAlignedScroll;
+      if (targetBack > maxAlignedScroll) targetBack = maxAlignedScroll;
+      if (targetBack >= currentScroll - 1) return "limit";
+      this.setPagePosition(context, targetBack);
+      var afterScrollB = this.getPagePosition(context);
+      console.log('[HoshiPagination] paginate BACKWARD: before=' + currentScroll
+        + ' target=' + targetBack + ' after=' + afterScrollB
+        + ' pitch=' + pitch + ' drift=' + (afterScrollB - targetBack)
+        + ' min=' + minAlignedScroll + ' max=' + maxAlignedScroll);
+      return "scrolled";
     }
   },
   getFirstVisibleCharOffset: function() {
