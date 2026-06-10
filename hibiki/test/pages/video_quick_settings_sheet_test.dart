@@ -93,6 +93,11 @@ void main() {
     expect(t.video_shader_tier_medium_hint, contains('Anime4K'));
     expect(t.video_shader_tier_high_hint, contains('Anime4K'));
     expect(t.video_shader_tier_ultra_hint, contains('ArtCNN'));
+    // TODO-054: 每档（无除外）标注代表性显卡示例，让用户自识别自己该选哪档。
+    expect(t.video_shader_tier_low_hint, contains('GTX'));
+    expect(t.video_shader_tier_medium_hint, contains('GTX 1660'));
+    expect(t.video_shader_tier_high_hint, contains('RTX 4060'));
+    expect(t.video_shader_tier_ultra_hint, contains('RTX 5090'));
     // 进阶（手动着色器）仍保留经典推荐入口，但不再单列 Anime4K 下载项。
     expect(t.video_shader_section_advanced, contains('Advanced'));
     expect(t.video_shader_recommended, 'Recommended image enhancements');
@@ -246,7 +251,8 @@ void main() {
       (AdaptiveSettingsSliderRow row) =>
           row.title == t.video_setting_subtitle_shadow,
     );
-    expect(shadowRow.value, 6);
+    // 默认阴影粗细 TODO-051 加大到 5px；UI scale 2.0 下预览 = 5 * 2 = 10。
+    expect(shadowRow.value, 10);
   });
 
   testWidgets(

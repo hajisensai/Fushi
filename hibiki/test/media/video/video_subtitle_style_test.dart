@@ -3,15 +3,24 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/video/video_subtitle_style.dart';
 
 void main() {
-  test('default matches asbplayer subtitle look', () {
+  test('default is high-contrast white text + black outline (TODO-051)', () {
     const VideoSubtitleStyle s = VideoSubtitleStyle.defaults;
     expect(s.fontSize, 36);
-    expect(s.textColor, isNull);
+    // 默认不再跟随主题：固定白字 + 黑描边，避免低对比主题下看不清。
+    expect(s.textColor, const Color(0xFFFFFFFF));
+    expect(s.shadowColor, const Color(0xFF000000));
+    // 显式白/黑：resolve 时即便给了主题色也不被它覆盖。
+    expect(s.resolveTextColor(const Color(0xFF112233)), const Color(0xFFFFFFFF));
+    expect(
+      s.resolveShadowColor(const Color(0xFF112233)),
+      const Color(0xFF000000),
+    );
     expect(s.fontWeight, isNull);
     expect(s.resolveFontWeight(1.0), 700);
-    expect(s.shadowColor, isNull);
+    // 阴影粗细加大：默认 3 -> 5（黑描边更明显）。
     expect(s.shadowThickness, isNull);
-    expect(s.resolveShadowThickness(1.0), 3);
+    expect(VideoSubtitleStyle.defaultShadowThickness, 5);
+    expect(s.resolveShadowThickness(1.0), 5);
     expect(s.backgroundColor, isNull);
     expect(s.backgroundOpacity, closeTo(0.0, 1e-9));
     expect(s.bottomPadding, 75);
@@ -21,18 +30,64 @@ void main() {
     const VideoSubtitleStyle s = VideoSubtitleStyle.defaults;
 
     expect(s.resolveFontWeight(2.0), 900);
-    expect(s.resolveShadowThickness(2.0), 6);
+    expect(s.resolveShadowThickness(2.0), 10); // 5 * 2.0
     expect(s.resolveFontWeight(0.5), 400);
-    expect(s.resolveShadowThickness(0.5), 1.5);
+    expect(s.resolveShadowThickness(0.5), 2.5); // 5 * 0.5
   });
 
-  test('empty color means subtitle text follows the active theme', () {
-    const VideoSubtitleStyle s = VideoSubtitleStyle.defaults;
+  test('null color still means follow the active theme (legacy data)', () {
+    // 旧数据（TODO-051 前默认）持久化时颜色为 null = 跟随主题；resolve 仍回退主题色。
+    const VideoSubtitleStyle s = VideoSubtitleStyle(
+      fontSize: 36,
+      textColor: null,
+      fontWeight: null,
+      shadowColor: null,
+      shadowThickness: null,
+      backgroundColor: null,
+      backgroundOpacity: 0,
+      bottomPadding: 75,
+    );
     const Color themeColor = Color(0xFF112233);
 
     expect(s.resolveTextColor(themeColor), themeColor);
     expect(s.resolveShadowColor(themeColor), themeColor);
     expect(s.resolveBackgroundColor(themeColor), themeColor);
+  });
+
+  test('decode of pre-TODO-051 stored data keeps theme-following (back-compat)',
+      () {
+    // 旧版本持久化的就是「跟随主题」的 defaults：textColor/shadowColor 为 null。
+    // 这类老 JSON 反序列化后颜色必须仍是 null（不被新白/黑默认污染），保住旧外观。
+    final VideoSubtitleStyle s = VideoSubtitleStyle.decode(
+      '{"_v":2,"fontSize":36,"textColor":null,"shadowColor":null,'
+      '"backgroundOpacity":0,"bottomPadding":75}',
+    );
+    expect(s.textColor, isNull);
+    expect(s.shadowColor, isNull);
+    const Color themeColor = Color(0xFF445566);
+    expect(s.resolveTextColor(themeColor), themeColor);
+    expect(s.resolveShadowColor(themeColor), themeColor);
+  });
+
+  test('default white/black round-trips and persists explicitly (TODO-051)', () {
+    // 新默认（白字黑描边）encode->decode 必须如实存住，不再被「白=折叠成 null」吃掉。
+    final VideoSubtitleStyle back = VideoSubtitleStyle.decode(
+      VideoSubtitleStyle.encode(VideoSubtitleStyle.defaults),
+    );
+    expect(back.textColor, const Color(0xFFFFFFFF));
+    expect(back.shadowColor, const Color(0xFF000000));
+    // resolve 给主题色也不被覆盖（仍是显式白/黑）。
+    expect(back.resolveTextColor(const Color(0xFF112233)),
+        const Color(0xFFFFFFFF));
+    expect(back.resolveShadowColor(const Color(0xFF112233)),
+        const Color(0xFF000000));
+  });
+
+  test('explicit white text color is no longer folded to null', () {
+    // 用户显式选白色：之前会被折叠成 null（退回主题色）；现在如实保留为白。
+    final VideoSubtitleStyle s =
+        VideoSubtitleStyle.decode('{"_v":2,"textColor":4294967295}');
+    expect(s.textColor, const Color(0xFFFFFFFF));
   });
 
   test('encode/decode round-trips', () {
@@ -86,17 +141,24 @@ void main() {
 
   test('decode tolerates empty/garbage -> defaults', () {
     expect(VideoSubtitleStyle.decode('').fontSize, 36);
-    expect(VideoSubtitleStyle.decode('not json').textColor, isNull);
+    // 垃圾 JSON 回退到新默认（白字），不再是 null=跟随主题。
+    expect(VideoSubtitleStyle.decode('not json').textColor,
+        const Color(0xFFFFFFFF));
+    expect(VideoSubtitleStyle.decode('').textColor, const Color(0xFFFFFFFF));
+    expect(VideoSubtitleStyle.decode('').shadowColor, const Color(0xFF000000));
   });
 
   test('decode migrates stored asb defaults to scale-derived defaults', () {
+    // v1 数据存的是当时硬编码默认（fontWeight 700 / shadowThickness 3px）=「跟随
+    // UI scale」，迁移成 null，让其继续跟随缩放。TODO-051 把默认阴影加大到 5px 后，
+    // 这类「跟随默认」的旧数据 resolve 出新的 5px（享受加大阴影，非钉死在旧 3px）。
     final VideoSubtitleStyle s =
         VideoSubtitleStyle.decode('{"fontWeight":700,"shadowThickness":3}');
 
     expect(s.fontWeight, isNull);
     expect(s.shadowThickness, isNull);
     expect(s.resolveFontWeight(1.0), 700);
-    expect(s.resolveShadowThickness(1.0), 3);
+    expect(s.resolveShadowThickness(1.0), 5); // 加大后的默认（TODO-051）。
   });
 
   test('decode clamps out-of-range', () {
