@@ -113,3 +113,7 @@ server/cf-worker/DEPLOYMENT_SECRETS.local.md
 .dev.vars
 192.168.1.50
 docs/项目负责人提示词
+
+# 本机脚本/草稿，不入库
+docs/项目负责人提示词 copy
+手机编译安装ARM.bat
