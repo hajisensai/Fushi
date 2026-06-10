@@ -91,5 +91,25 @@ void main() {
         reason: 'Fixed tail padding is not a complete-sentence range resolver.',
       );
     });
+
+    test('synthesizes TTS sentence audio fallback when no audiobook clip', () {
+      final String source = File(
+        'lib/src/pages/implementations/reader_hibiki_page.dart',
+      ).readAsStringSync();
+
+      expect(
+        source,
+        contains('shouldSynthesizeSentenceTtsFallback('),
+        reason: 'Plain-text books (no audiobook) must fall back to OS TTS for '
+            'SentenceAudio instead of leaving the field empty.',
+      );
+      expect(
+        source,
+        contains('TtsChannel.instance.ttsToFile('),
+        reason:
+            'The sentence-audio fallback must synthesize the full sentence via '
+            'ttsToFile, mirroring the term-audio TTS fallback.',
+      );
+    });
   });
 }
