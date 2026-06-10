@@ -1472,5 +1472,6 @@
     "video_shader_builtin_mpv_quality_hint": "默认 mpv 缩放选项。下面的外部着色器仍需下载后单独勾选启用。",
     "video_shader_import_from_mpv_hint": "自动搜索本机 mpv；未找到时可手动选择 mpv 目录。",
     "video_shader_first_use_title": "试试 Anime4K 画质增强",
-    "video_shader_first_use_body": "想让动画画面更清晰，可以进入“画质增强”并点击“下载 Anime4K 推荐着色器”。下载后在已安装列表里勾选即可启用。"
+    "video_shader_first_use_body": "想让动画画面更清晰，可以进入“画质增强”并点击“下载 Anime4K 推荐着色器”。下载后在已安装列表里勾选即可启用。",
+    "tag_added_to_video": "标签「$name」已添加到视频。"
 }

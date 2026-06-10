@@ -1040,7 +1040,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     ref.invalidate(videoBookTagMapProvider);
     ref.invalidate(filteredVideoBookUidsProvider);
     if (mounted) {
-      HibikiToast.show(msg: t.tag_added_to_book(name: tag.name));
+      HibikiToast.show(msg: t.tag_added_to_video(name: tag.name));
     }
   }
 

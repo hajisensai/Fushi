@@ -18,6 +18,16 @@ String _read(String relative) {
   return f.readAsStringSync();
 }
 
+String _methodBody(String source, String signature) {
+  final int start = source.indexOf(signature);
+  if (start < 0) {
+    throw StateError('missing method signature: $signature');
+  }
+  final int nextMethod = source.indexOf('\n  Future<void> ', start + 1);
+  if (nextMethod < 0) return source.substring(start);
+  return source.substring(start, nextMethod);
+}
+
 void main() {
   final String homeVideoSrc =
       _read('lib/src/pages/implementations/home_video_page.dart');
@@ -52,6 +62,17 @@ void main() {
       expect(src.contains('filteredVideoBookUidsProvider'), isTrue,
           reason: '网格按标签筛选');
     });
+
+    test('视频拖拽加标签成功提示使用视频文案', () {
+      final String addVideoTagBody = _methodBody(
+        src,
+        'Future<void> _addTagToVideoBook(String bookUid, BookTagRow tag)',
+      );
+
+      expect(addVideoTagBody.contains('tag_added_to_video'), isTrue);
+      expect(addVideoTagBody.contains('tag_added_to_book'), isFalse,
+          reason: '视频加标签成功不能复用“书籍”文案');
+    });
   });
 
   group('书架（reader_hibiki_history_page）视频卡长按菜单 + 标签', () {
@@ -80,6 +101,24 @@ void main() {
         isFalse,
         reason: '不应再用 hasActiveFilter 整组隐藏视频',
       );
+    });
+
+    test('视频拖拽加标签成功提示使用视频文案，书籍入口保留书籍文案', () {
+      final String addVideoTagBody = _methodBody(
+        src,
+        'Future<void> _addTagToVideoBook(String bookUid, BookTagRow tag)',
+      );
+      final String addBookTagBody = _methodBody(
+        src,
+        'Future<void> _addTagToBook(String bookKey, BookTagRow tag)',
+      );
+
+      expect(addVideoTagBody.contains('tag_added_to_video'), isTrue);
+      expect(addVideoTagBody.contains('tag_added_to_book'), isFalse,
+          reason: '书架视频加标签成功不能复用“书籍”文案');
+      expect(addBookTagBody.contains('tag_added_to_book'), isTrue,
+          reason: '普通书籍加标签成功仍然使用书籍文案');
+      expect(addBookTagBody.contains('tag_added_to_video'), isFalse);
     });
   });
 }

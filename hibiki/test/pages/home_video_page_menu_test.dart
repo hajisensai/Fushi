@@ -14,6 +14,7 @@ import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/pages/implementations/home_video_page.dart';
 import 'package:hibiki/src/pages/implementations/tag_filter_bar.dart';
 import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
+import 'package:hibiki/src/utils/misc/hibiki_toast.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -46,8 +47,10 @@ void main() {
 
   late HibikiDatabase db;
   late AppModel appModel;
+  late GlobalKey<NavigatorState> toastNavigatorKey;
 
   setUp(() async {
+    LocaleSettings.setLocale(AppLocale.zhCn);
     db = HibikiDatabase.forTesting(NativeDatabase.memory());
     final PreferencesRepository prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
@@ -56,6 +59,7 @@ void main() {
     appModel = AppModel(testPlatformServices())
       ..wireDatabaseForTesting(db)
       ..wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: storeDir);
+    toastNavigatorKey = GlobalKey<NavigatorState>();
   });
 
   tearDown(() async {
@@ -81,12 +85,13 @@ void main() {
     return db.createTag('Anime', 0xFF2196F3);
   }
 
-  Widget buildApp() => ProviderScope(
+  Widget buildApp({bool captureToasts = false}) => ProviderScope(
         overrides: <Override>[
           appProvider.overrideWith((ref) => appModel),
         ],
         child: TranslationProvider(
           child: MaterialApp(
+            navigatorKey: captureToasts ? toastNavigatorKey : null,
             // HomeVideoPage 不再自带 Scaffold（与书架/词典 tab 统一，运行时挂在
             // HomePage 的外层 Scaffold 内）；测试照样在 Scaffold 内 pump，
             // HibikiPageHeader 的 HibikiIconButton(InkWell) 才有 Material 祖先。
@@ -185,6 +190,19 @@ void main() {
       ),
       findsOneWidget,
     );
+  });
+
+  testWidgets('顶部标签拖到视频卡成功提示使用视频文案', (WidgetTester tester) async {
+    await seedVideoAndLooseTag();
+    HibikiToast.navigatorKey = toastNavigatorKey;
+    await tester.pumpWidget(buildApp(captureToasts: true));
+    await tester.pumpAndSettle();
+
+    await dragTopTagToVideoCard(tester);
+
+    expect(find.text('标签「Anime」已添加到视频。'), findsOneWidget);
+    expect(find.text('标签「Anime」已添加到书籍。'), findsNothing);
+    await tester.pump(const Duration(seconds: 3));
   });
 
   testWidgets('重复拖同一标签到视频卡保持幂等，不新增重复映射', (WidgetTester tester) async {

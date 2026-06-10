@@ -1472,5 +1472,6 @@
     "video_shader_builtin_mpv_quality_hint": "Default mpv scaling options. External shaders below are still downloaded and enabled separately.",
     "video_shader_import_from_mpv_hint": "Search local mpv automatically, or choose an mpv folder when none is found.",
     "video_shader_first_use_title": "Try Anime4K image enhancement",
-    "video_shader_first_use_body": "For sharper anime playback, open Image enhancement and click Download Anime4K presets. It downloads recommended shaders, then you can tick the installed ones to enable them."
+    "video_shader_first_use_body": "For sharper anime playback, open Image enhancement and click Download Anime4K presets. It downloads recommended shaders, then you can tick the installed ones to enable them.",
+    "tag_added_to_video": "Tag $name added to video."
 }
