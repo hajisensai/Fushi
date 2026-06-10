@@ -145,6 +145,8 @@ void main() {
           builder: (_) => Dialog(
             child: VideoShaderManagerView(
               initialEnabled: const <String>[],
+              qualityEnhancementEnabled: true,
+              onQualityEnhancementChanged: (_) {},
               onApply: (List<String> _) async {},
             ),
           ),

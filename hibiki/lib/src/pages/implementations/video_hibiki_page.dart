@@ -233,7 +233,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _osdNotifier.value = _VideoOsdMessage(
       message: message,
       icon: icon,
-      progress: progress == null ? null : progress.clamp(0.0, 1.0).toDouble(),
+      progress: progress?.clamp(0.0, 1.0).toDouble(),
     );
     _osdTimer?.cancel();
     _osdTimer = Timer(const Duration(milliseconds: 2600), () {
