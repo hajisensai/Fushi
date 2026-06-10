@@ -1476,5 +1476,6 @@
     "tag_added_to_video": "标签「$name」已添加到视频。",
     "lookup_audio_volume": "查词音量",
     "sync_err_invalid_client": "客户端凭据无效，请更新 App。",
-    "sync_err_not_configured": "此构建未配置谷歌同步凭据。"
+    "sync_err_not_configured": "此构建未配置谷歌同步凭据。",
+    "floating_lyric_unavailable_hint": "无法显示悬浮字幕窗口。"
 }

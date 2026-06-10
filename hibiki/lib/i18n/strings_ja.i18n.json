@@ -1476,5 +1476,6 @@
     "tag_added_to_video": "Tag $name added to video.",
     "lookup_audio_volume": "Lookup audio volume",
     "sync_err_invalid_client": "Client credentials are invalid for this build — please update the app.",
-    "sync_err_not_configured": "Google sync credentials are not configured in this build."
+    "sync_err_not_configured": "Google sync credentials are not configured in this build.",
+    "floating_lyric_unavailable_hint": "Could not show the floating subtitle window."
 }
