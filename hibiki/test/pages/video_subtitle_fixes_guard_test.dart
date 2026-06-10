@@ -71,6 +71,22 @@ void main() {
         reason: '按路径直接加载应先于 listAllSubtitleSources 同目录枚举');
   });
 
+  test('BUG-165: 换集时导入字幕捷径按目录归属判定（剧集同目录 sidecar 不沿用）', () {
+    final String body = region(
+      'Future<({String persisted, List<AudioCue> cues, int? graphicStreamIndex})?>',
+      'SubtitleSource? _firstMatching(',
+    );
+    // 换集分支必须改用按目录归属区分的判定，而非只看扩展名的
+    // isImportedExternalSubtitlePath——否则上一集同目录 sidecar 会被原样沿用到新集。
+    expect(body.contains('shouldReusePersistedSubtitleAcrossEpisode('), isTrue,
+        reason: '换集（crossEpisode）时捷径必须按目录归属区分导入字幕 vs 剧集同目录 '
+            'sidecar，剧集同目录 sidecar 要落回枚举按新集名重新匹配（BUG-165）');
+    expect(body.contains('crossEpisode'), isTrue,
+        reason: '目录归属判定只能加在换集分支，不影响单视频恢复');
+    // 捷径条件仍要确认文件在磁盘上。
+    expect(body.contains('File(persisted).existsSync()'), isTrue);
+  });
+
   test('TODO-016: 字幕菜单只补入当前持久化的导入字幕源', () {
     final String menu = region(
       'Future<void> _showSubtitleSourceMenu(',

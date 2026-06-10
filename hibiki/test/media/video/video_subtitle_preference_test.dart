@@ -180,4 +180,67 @@ void main() {
       );
     });
   });
+  group('shouldReusePersistedSubtitleAcrossEpisode（换集是否沿用导入字幕）', () {
+    // 真正的导入/下载字幕：住在 <appDocs>/video_subtitles/，与剧集目录无关 → 沿用。
+    test('导入字幕（异目录）→ true（跨集沿用）', () {
+      expect(
+        shouldReusePersistedSubtitleAcrossEpisode(
+          '/home/u/Documents/app/video_subtitles/My Show E01.ja.srt',
+          '/media/Anime/My Show/S01E02.mkv',
+        ),
+        isTrue,
+      );
+    });
+
+    // BUG-165 核心：剧集自带 sidecar 与新集视频同目录 → 不沿用，按新集名重新匹配。
+    test('剧集同目录 sidecar（与新集视频同目录）→ false', () {
+      expect(
+        shouldReusePersistedSubtitleAcrossEpisode(
+          '/media/Anime/My Show/S01E01.ja.srt',
+          '/media/Anime/My Show/S01E02.mkv',
+        ),
+        isFalse,
+      );
+    });
+
+    test('同目录判定对路径分隔符/末尾不规范不敏感（canonicalize）', () {
+      expect(
+        shouldReusePersistedSubtitleAcrossEpisode(
+          '/media/Anime/My Show/./S01E01.ja.srt',
+          '/media/Anime/My Show/sub/../S01E02.mkv',
+        ),
+        isFalse,
+      );
+    });
+
+    test('内嵌源（embedded:<n>）→ false（捷径不接管内嵌）', () {
+      expect(
+        shouldReusePersistedSubtitleAcrossEpisode(
+          'embedded:1',
+          '/media/Anime/My Show/S01E02.mkv',
+        ),
+        isFalse,
+      );
+    });
+
+    test('空持久化值 → false', () {
+      expect(
+        shouldReusePersistedSubtitleAcrossEpisode(
+          '',
+          '/media/Anime/My Show/S01E02.mkv',
+        ),
+        isFalse,
+      );
+    });
+
+    test('非字幕扩展名 → false', () {
+      expect(
+        shouldReusePersistedSubtitleAcrossEpisode(
+          '/media/Anime/My Show/S01E01.txt',
+          '/media/Anime/My Show/S01E02.mkv',
+        ),
+        isFalse,
+      );
+    });
+  });
 }

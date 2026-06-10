@@ -115,6 +115,35 @@ bool isImportedExternalSubtitlePath(String persisted) {
   return subtitleFormatForPath(persisted) != null;
 }
 
+/// **纯函数**：换集时是否应「原样沿用」上一集持久化的外挂字幕路径 [persisted]，
+/// 而非按新集名重新匹配同目录 sidecar。
+///
+/// 背景（BUG-165 / BUG-132）：BUG-132 给播放列表恢复加了「持久化值是显式导入字幕
+/// （[isImportedExternalSubtitlePath]）且文件在磁盘上就按路径直接加载」的捷径，救
+/// 「导入字幕住在 `<appDocs>/video_subtitles/`、不在剧集目录里、换集枚举不到」的丢
+/// 失。但该捷径只看扩展名，把**剧集自带、住在视频同目录**的 sidecar（如上一集
+/// `EP01.ja.srt`）也截下来跨集原样沿用 → 切到 `EP02` 仍显示 `EP01` 字幕（BUG-165）。
+///
+/// 区分依据是**目录归属**，不是扩展名：真正的导入/下载字幕住在独立目录
+/// （video_subtitles 等），与剧集目录无关；剧集自带 sidecar 与新集视频**同目录**。
+/// 规则：
+/// - [persisted] 非导入外挂字幕（内嵌 `embedded:` / 空 / 非字幕扩展名）→ false
+///   （捷径本就不该接管，交给原有同类匹配/枚举）。
+/// - [persisted] 的目录 == 新集视频 [episodeVideoPath] 的目录 → false：这是上一集
+///   的同目录 sidecar，换集应按新集 basename 重新匹配（走 [pickEpisodeSubtitleSource]）。
+/// - 否则（导入字幕，住别处）→ true：与剧集目录无关，跨集沿用同一文件。
+///
+/// 不碰文件系统（是否真在磁盘上由调用方另查），可单测。
+bool shouldReusePersistedSubtitleAcrossEpisode(
+  String persisted,
+  String episodeVideoPath,
+) {
+  if (!isImportedExternalSubtitlePath(persisted)) return false;
+  final String subtitleDir = p.canonicalize(p.dirname(persisted));
+  final String episodeDir = p.canonicalize(p.dirname(episodeVideoPath));
+  return subtitleDir != episodeDir;
+}
+
 /// 从一组拖入文件路径 [paths] 中挑出第一个受支持的字幕文件
 /// （srt/ass/ssa/vtt），无则 null。
 ///
