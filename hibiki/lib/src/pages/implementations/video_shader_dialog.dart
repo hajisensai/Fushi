@@ -13,8 +13,10 @@ import 'package:hibiki/utils.dart';
 /// （不再弹独立设置对话框，与书籍设置同款内嵌范式）。
 ///
 /// 自身只管文件列表与勾选状态；启用集（按文件名）经 [onApply] 上报给视频页，由其
-/// 持久化 + 解析成绝对路径 + 调 `VideoPlayerController.applyShaders` 实时生效（仅桌面
-/// libmpv，移动端静默）。勾选顺序按目录列表顺序，保证着色器叠加顺序稳定。
+/// 持久化 + 解析成绝对路径 + 调 `VideoPlayerController.applyShaders` 实时生效（五平台
+/// libmpv 后端均生效——移动端走 vo=gpu 渲染路径，非 no-op；效果因机型 GPU 而异、高档可能
+/// 掉帧，UI 用 [t.video_shader_mobile_perf_hint] 提示，见 video_shader_manager.dart doc
+/// 的 media_kit 源码出处）。勾选顺序按目录列表顺序，保证着色器叠加顺序稳定。
 ///
 /// 「下载 Anime4K」「从本机 mpv 导入」「导入文件」是**瞬时动作**（弹临时选择/进度对话框
 /// 或系统文件选择器），不是设置子页面——它们完成后回到本内嵌视图。

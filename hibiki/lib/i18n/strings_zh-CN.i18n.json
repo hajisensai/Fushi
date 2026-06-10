@@ -1491,6 +1491,6 @@
     "video_shader_tier_ultra_hint": "ArtCNN C4F32，HD 番最佳画质，需要旗舰 GPU。",
     "video_shader_tier_custom_hint": "自定义着色器组合。点上方档位可切回预设。",
     "video_shader_section_advanced": "进阶（手动着色器）",
-    "video_shader_mobile_perf_hint": "手机上着色器可用，但高档位可能掉帧或发热，建议先用低/中档。",
-    "video_shader_first_use_download": "一键下载并启用"
+    "video_shader_first_use_download": "一键下载并启用",
+    "video_shader_mobile_perf_hint": "手机上着色器仅在标准 GPU 渲染路径下生效，实际效果因机型 GPU 而异；高档位可能掉帧或发热。建议先用低/中档，并在本机确认效果。"
 }
