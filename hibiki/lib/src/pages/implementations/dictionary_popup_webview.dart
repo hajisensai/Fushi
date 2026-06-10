@@ -241,6 +241,17 @@ class DictionaryPopupWebViewState
     return ReaderCaretScripts.moveStatus(raw);
   }
 
+  /// Jump the popup caret to the next/previous dictionary section header
+  /// (Yomitan-style "go to dictionary"). [forward] true jumps to the dictionary
+  /// below the cursor, false above. Returns 'moved' when a header was reached or
+  /// 'blocked' when there is no further dictionary (single-dictionary results or
+  /// already at the last/first section).
+  Future<String> caretJumpDict(bool forward) async {
+    final Object? raw = await _controller?.evaluateJavascript(
+        source: ReaderCaretScripts.jumpDictInvocation(forward));
+    return ReaderCaretScripts.moveStatus(raw);
+  }
+
   Future<void> caretLookup() async {
     await _controller?.evaluateJavascript(
         source: ReaderCaretScripts.lookupInvocation());

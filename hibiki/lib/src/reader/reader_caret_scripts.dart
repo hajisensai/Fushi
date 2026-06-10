@@ -47,6 +47,15 @@ class ReaderCaretScripts {
   static String scrollPageInvocation(bool forward) =>
       'JSON.stringify(window.hoshiCaret.scrollPage($forward))';
 
+  /// Jump the popup caret to the next/previous dictionary section header
+  /// (`summary.dict-label`), Yomitan-style "go to dictionary". [forward] true
+  /// jumps to the next dictionary below the cursor, false to the previous one
+  /// above. Returns the same `{status, rect}` shape as [moveInvocation]
+  /// (`moved`/`blocked`) so callers reuse [moveStatus] / [rectOf]. Popup-only:
+  /// the reader has no dictionary sections, so this no-ops there (`blocked`).
+  static String jumpDictInvocation(bool forward) =>
+      'JSON.stringify(window.hoshiCaret.jumpDict($forward))';
+
   /// Toggle popup caret scrolling between the default browser movement and
   /// explicit instant movement for e-ink screens.
   static String instantScrollInvocation(bool enabled) =>
@@ -898,6 +907,59 @@ window.hoshiCaret = {
   scrollPage: function(forwardish) {
     if (!this.active) return { status: 'blocked' };
     return this._pageOrScroll(!!forwardish);
+  },
+
+  // ── Jump to dictionary section (Yomitan-style "go to dictionary") ──────
+  // Step the caret to the next/previous dictionary section header
+  // (summary.dict-label) so a pure gamepad/keyboard user can skip whole
+  // dictionaries at once instead of D-padding through every line. Forward
+  // jumps to the first dict header whose top is below the current anchor;
+  // backward to the last header whose top is above it (DOM order ties broken by
+  // position, so jumping is deterministic even with multiple stacked sections).
+  // The header is placed as an element stop (the same machinery move() uses for
+  // an interactive stop), so the ring hugs the dict-label and A toggles the
+  // section open/closed exactly as it does after a D-pad landing. Reader-only
+  // surfaces have no summary.dict-label → blocked (no-op). The chosen header is
+  // scrolled fully into view so the cursor follows the jump.
+  _dictHeaders: function() {
+    var out = [];
+    var nodes = document.body.querySelectorAll('summary.dict-label');
+    for (var i = 0; i < nodes.length; i++) {
+      var r = this._elRect(nodes[i]);
+      if (r.width <= 0 || r.height <= 0) continue;
+      out.push({ el: nodes[i], top: r.top, rect: r });
+    }
+    // DOM order already follows visual order top→bottom; sort by top as a guard
+    // for any reflow/transform that reorders rects.
+    out.sort(function(a, b) { return a.top - b.top; });
+    return out;
+  },
+  jumpDict: function(forward) {
+    if (!this.active) return { status: 'blocked' };
+    this._markClickables();
+    var headers = this._dictHeaders();
+    if (!headers.length) return { status: 'blocked' };
+    var anchor = this._anchorRect();
+    // No anchor yet (just entered an empty-text page): jump to the first/last.
+    var refTop = anchor ? (anchor.top + anchor.height / 2) : -Infinity;
+    var eps = 2;
+    var target = null;
+    if (forward) {
+      for (var i = 0; i < headers.length; i++) {
+        if (headers[i].top > refTop + eps) { target = headers[i]; break; }
+      }
+    } else {
+      for (var j = headers.length - 1; j >= 0; j--) {
+        if (headers[j].top < refTop - eps) { target = headers[j]; break; }
+      }
+    }
+    if (!target) return { status: 'blocked' };
+    // The header may sit off the current scroll position; scroll it in and
+    // re-measure before placing, so the ring lands on the visible header.
+    this._scrollIntoView(target.rect);
+    var rect = this._elRect(target.el);
+    this._place({ node: null, offset: 0, el: target.el, rect: rect });
+    return { status: 'moved', rect: this._rectJson(rect) };
   },
 
   refresh: function() {
