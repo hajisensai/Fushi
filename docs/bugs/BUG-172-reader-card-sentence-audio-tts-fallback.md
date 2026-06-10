@@ -1,4 +1,4 @@
-## BUG-171 · 纯文本书籍制卡无句子音频（Lapis SentenceAudio 空）
+## BUG-172 · 纯文本书籍制卡无句子音频（Lapis SentenceAudio 空）
 
 - **报告**：2026-06-11（用户：`ひびき.apkg` 这个卡组制卡的时候没句子音频，修复一下）
 - **真实性**：✅ 真 bug。根因在 `hibiki/lib/src/pages/implementations/reader_hibiki_page.dart:2896`——书籍制卡的句子音频仅当书绑定了有声书音频（`cue != null && audioFiles != null`）时才裁剪生成；纯文本 EPUB（无有声书 / SRT）时 `_lookupCue == null` 且 `_audiobookController == null`（`audioFiles == null`），整个句子音频分支被跳过，`AnkiMiningContext.sasayakiAudioPath` 为 null → `{sasayaki-audio}` 渲染成空 → Lapis `SentenceAudio` 字段留空。**非字段名不匹配，而是纯文本书缺句子音频兜底来源。**

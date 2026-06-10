@@ -1,4 +1,4 @@
-## BUG-171 · 字幕拖到主页视频卡未挂到该视频（重复导入建副本）
+## BUG-173 · 字幕拖到主页视频卡未挂到该视频（重复导入建副本）
 - **报告**：2026-06-11（用户：「请把字幕拖到某个书籍或者视频上，我明明在主页拖到视频上了」）
 - **真实性**：✅ 真 bug。根因 `hibiki/lib/src/pages/implementations/home_video_page.dart:178-182`（旧 `attachToVideoCard` 分支）。
   在主页「视频」tab 把字幕拖到某张视频卡，决策层 `decideDropIntent` 正确返回 `attachToVideoCard`，

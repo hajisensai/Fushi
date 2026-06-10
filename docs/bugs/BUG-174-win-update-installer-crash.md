@@ -1,4 +1,4 @@
-## BUG-171 · Windows 自动更新启动安装器崩溃/静默消失
+## BUG-174 · Windows 自动更新启动安装器崩溃/静默消失
 - **报告**：2026-06-11（用户：飞书巡检表#94 TODO-081「win 点自动更新，会崩溃」）
 - **真实性**：✅ 真 bug（代码路径缺陷）。根因 `hibiki/lib/src/utils/misc/platform_updater.dart:143-155`（修复前的 `WindowsInstaller.runAndExit`）。
 - **根因分析**：Windows 应用内更新链路 `home_page.dart:79 scheduleCheck` → `update_checker.dart _check` → `_downloadAndInstall` → `WindowsUpdater.apply` → `WindowsInstaller.runAndExit`。旧实现把刚下载的 `hibiki-<v>.exe` **不做任何校验**直接喂给 `Process.start`，并随后**无条件** `await Future.delayed(500ms); exit(0)`。两个缺陷：
