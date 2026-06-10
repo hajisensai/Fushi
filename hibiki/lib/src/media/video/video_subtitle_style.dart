@@ -3,6 +3,19 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:hibiki/src/utils/app_ui_scale.dart';
 
+/// media_kit 默认底部控制条（进度条 + 按钮条）在视频底部占据的高度（逻辑像素）。
+///
+/// 来源是 media_kit `MaterialVideoControlsThemeData` 的默认布局：底部按钮条本体
+/// [bottomButtonBarMargin] 的垂直外边距（默认 `bottom: 42`，vertical=42）加上按钮条
+/// 高度（默认 `buttonBarHeight: 56`，Hibiki 两端主题都钉同值）。media_kit 自带字幕
+/// 视图正是用这个量（`subtitleVerticalShiftOffset = padding.bottom + bottomButtonBarMargin.vertical
+/// + buttonBarHeight`）在控制条显示时把字幕上推、避开进度条。
+///
+/// Hibiki 用自绘 `VideoSubtitleOverlay`（非 media_kit 内置字幕视图），不随控制条显隐
+/// 动态上推，故字幕**默认**抬升量必须 >= 本值，否则控制条显示时进度条/按钮条会盖住
+/// 字幕（TODO-089）。Hibiki 的两套控制主题都未覆盖这两项 margin，故走 media_kit 默认。
+const double kVideoControlsBottomReserve = 42 + 56;
+
 /// Video subtitle appearance persisted as app preferences.
 ///
 /// The default is a high-contrast caption look: fixed white text with a thick
@@ -38,6 +51,13 @@ class VideoSubtitleStyle {
   /// colors so subtitles stay legible on any video and don't wash out on
   /// low-contrast themes. [fontWeight]/[shadowThickness] stay null to follow the
   /// global UI scale ([defaultFontWeight] / [defaultShadowThickness] at 1.0).
+  ///
+  /// [bottomPadding] defaults clear of the bottom controls bar: the self-drawn
+  /// [VideoSubtitleOverlay] doesn't shift with the controls, so the default lift
+  /// must be >= [kVideoControlsBottomReserve] or the progress/seek bar covers the
+  /// subtitle when controls are visible (TODO-089). Users who manually pick a
+  /// lower position keep their value verbatim (no "is-manual" branch — it's the
+  /// same field).
   static const VideoSubtitleStyle defaults = VideoSubtitleStyle(
     fontSize: 36,
     textColor: Color(0xFFFFFFFF),
@@ -46,7 +66,8 @@ class VideoSubtitleStyle {
     shadowThickness: null,
     backgroundColor: null,
     backgroundOpacity: 0,
-    bottomPadding: 75,
+    // 100 >= kVideoControlsBottomReserve(98)：默认抬升越过控制条，留 2px 余量。
+    bottomPadding: 100,
   );
 
   final double fontSize;

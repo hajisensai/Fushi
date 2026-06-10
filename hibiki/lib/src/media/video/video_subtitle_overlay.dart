@@ -51,7 +51,7 @@ class VideoSubtitleOverlay extends StatefulWidget {
     this.shadowThickness = VideoSubtitleStyle.defaultShadowThickness,
     this.backgroundColor,
     this.backgroundOpacity = 0,
-    this.bottomPadding = 75,
+    this.bottomPadding = 100,
     this.fontFamily,
     super.key,
   });

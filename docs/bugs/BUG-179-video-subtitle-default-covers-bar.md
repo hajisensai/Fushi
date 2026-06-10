@@ -1,0 +1,12 @@
+## BUG-179 · 视频字幕默认位置遮挡底部进度条
+- **报告**：2026-06-11（用户：字幕默认不要遮盖进度条，除非用户手动调位置 / TODO-089）
+- **真实性**：✅ 真 bug — 根因 `hibiki/lib/src/media/video/video_subtitle_style.dart:49`（默认 `bottomPadding: 75`）+ 渲染 `hibiki/lib/src/media/video/video_subtitle_overlay.dart:357`（`EdgeInsets.only(bottom: widget.bottomPadding)`）。
+  - Hibiki 用自绘 `VideoSubtitleOverlay`（**不是** media_kit 内置字幕视图），字幕只按固定 `bottomPadding` 抬升、不随控制条显隐动态上推。
+  - media_kit 默认底部控制条（进度条 + 按钮条）在视频底部占据 `bottomButtonBarMargin.vertical(42) + buttonBarHeight(56) = 98` 逻辑像素（Hibiki 两套控制主题都未覆盖这两项 margin，走 media_kit 默认；media_kit 自带字幕视图正是用同一量 `subtitleVerticalShiftOffset` 避让）。
+  - 默认抬升 `75 < 98`，故控制条**显示**时进度条/按钮条盖住字幕底缘（控制条隐藏时无遮挡）。
+- **[x] ① 根因修复** — 把控制条底部占用抽成具名常量 `kVideoControlsBottomReserve = 42 + 56`（`video_subtitle_style.dart`，与 media_kit 默认几何同源、可测、可追溯），默认 `bottomPadding` 由 `75` 提到 `100`（>= 98 预留 2px 余量），`VideoSubtitleOverlay` 构造兜底默认同步 `75 -> 100`。用户**手动**调过的任何值原样尊重（模型里就是同一个 `bottomPadding` 字段，无「是否手动」分支 / 特例）。不改 TODO-001/002/051 的颜色/字重/阴影默认。提交：见 codex/todo-089-subtitle-no-cover-bar 单提交（最终哈希以合并后为准）。
+- **[x] ② 自动化测试** —
+  - `hibiki/test/media/video/video_subtitle_style_test.dart`：新增组「default subtitle position clears the bottom controls bar (TODO-089)」——默认 `bottomPadding >= kVideoControlsBottomReserve`、常量 == 98 守卫、用户显式低值 round-trip 原样保留；并更新 TODO-051 默认断言 `75 -> 100`。撤回修复时第一条变红（实测 75 < 98）。
+  - `hibiki/test/media/video/video_subtitle_overlay_test.dart`：新增 widget 组——默认 overlay 渲染时字幕底缘距容器底 >= 控制条预留高度；用户手动 `bottomPadding: 20` 时字幕底缘距底 < 预留高度（尊重手动值）。
+  - 验证：`flutter test test/media/video/ test/widgets/video_subtitle_overlay_test.dart` 402 通过（2 skip）；`flutter analyze`（5 改动文件）No issues。
+- **备注**：残留 — 全屏路由下 media_kit 还会加 `MediaQuery.padding`(SafeArea) 使控制条更高，自绘 overlay 未动态补偿 SafeArea；桌面/横屏底部 SafeArea 多为 0，常态不受影响，真机全屏 + 有底部安全区设备需复测。真机播放复测留用户。
