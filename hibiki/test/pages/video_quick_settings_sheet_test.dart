@@ -17,9 +17,10 @@ VideoQuickSettingsSheet _sheet({
   void Function(VideoMpvConfig)? onMpvConfigChanged,
   void Function(VideoShaderTier tier, bool highQuality)? onSelectShaderTier,
   double uiScale = 1.0,
+  int initialDelayMs = 0,
 }) {
   return VideoQuickSettingsSheet(
-    initialDelayMs: 0,
+    initialDelayMs: initialDelayMs,
     initialSpeed: 1.0,
     initialSubtitleBlur: false,
     initialSubtitleStyle: VideoSubtitleStyle.defaults,
@@ -30,7 +31,6 @@ VideoQuickSettingsSheet _sheet({
     onSubtitleStyleCommit: (_) async {},
     initialAsbConfig: VideoAsbplayerConfig.defaults,
     onAsbConfigChanged: (_) async {},
-    onSubtitleOffsetChanged: (_) async {},
     initialShadersEnabled: const <String>[],
     onApplyShaders: (_) async {},
     onSelectShaderTier: (VideoShaderTier tier, bool hq, List<String> _) async {
@@ -368,6 +368,115 @@ void main() {
     expect(delay, 50);
   });
 
+  // ── TODO-060：字幕调轴（正名 + 滑条 + 数值输入） ───────────────────────────
+
+  test('字幕调轴行用「字幕调轴」名（让用户找得到），不再叫旧的音画延迟', () {
+    expect(t.video_setting_av_delay, 'Subtitle sync');
+    // hint 明确说明可拖滑条 / 按 ± / 直接输入。
+    expect(t.video_setting_av_delay_hint.toLowerCase(), contains('slider'));
+    expect(t.video_setting_subtitle_sync_input, 'Offset (ms)');
+  });
+
+  testWidgets('字幕调轴提供可拉滑条 + 数值输入框（playback 详情）', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await _pump(tester, _sheet(initialDelayMs: 1200));
+
+    // 标题正名为「字幕调轴」。
+    expect(find.text(t.video_setting_av_delay), findsOneWidget);
+
+    // playback 详情里有一条可拉滑条（字幕调轴），把手按当前值定位。
+    final Finder delayRow = find.widgetWithText(
+      AdaptiveSettingsRow,
+      t.video_setting_av_delay,
+    );
+    final Slider slider = tester.widget<Slider>(
+      find.descendant(of: delayRow, matching: find.byType(Slider)),
+    );
+    expect(slider.value, 1200);
+    expect(slider.min, -10000);
+    expect(slider.max, 10000);
+
+    // 还有一个数值输入框（可输入正负 ms），初值回显当前延迟。
+    final Finder field = find.descendant(
+      of: delayRow,
+      matching: find.byType(TextField),
+    );
+    expect(field, findsOneWidget);
+    final TextField tf = tester.widget<TextField>(field);
+    expect(tf.controller!.text, '1200');
+  });
+
+  testWidgets('字幕调轴：在输入框键入正负值提交绝对偏移', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    int? delay;
+    await _pump(tester, _sheet(onSetDelay: (int v) => delay = v));
+
+    final Finder delayRow = find.widgetWithText(
+      AdaptiveSettingsRow,
+      t.video_setting_av_delay,
+    );
+    final Finder field = find.descendant(
+      of: delayRow,
+      matching: find.byType(TextField),
+    );
+    await tester.enterText(field, '-350');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump();
+    expect(delay, -350, reason: '负值代表字幕提前，绝对提交而非叠加');
+  });
+
+  testWidgets('字幕调轴：拖滑条提交吸附到 50ms 档的偏移', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    int? delay;
+    await _pump(tester, _sheet(onSetDelay: (int v) => delay = v));
+
+    final Finder delayRow = find.widgetWithText(
+      AdaptiveSettingsRow,
+      t.video_setting_av_delay,
+    );
+    final Finder slider =
+        find.descendant(of: delayRow, matching: find.byType(Slider));
+    // 从中心向右拖到端点 → 提交一个正的、吸附到 50ms 档的偏移。
+    await tester.drag(slider, const Offset(500, 0));
+    await tester.pumpAndSettle();
+    expect(delay, isNotNull);
+    expect(delay! > 0, isTrue);
+    expect(delay! % 50, 0, reason: '滑条按 50ms 一档');
+  });
+
+  // ── TODO-060：删 mpv「音频延迟」入口（与字幕调轴对用户重复混淆） ─────────
+
+  testWidgets('mpv 音频区不再有「音频延迟」滑条入口', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await _pump(tester, _sheet());
+
+    await tester.tap(find.text(t.video_settings_cat_mpv));
+    await tester.pumpAndSettle();
+
+    // 音频分组仍在（变速保持音高 / 声道 / 归一化），但不再有音频延迟行。
+    expect(find.text(t.video_setting_mpv_group_audio), findsOneWidget);
+    expect(find.text(t.video_setting_mpv_pitch), findsOneWidget);
+  });
+
+  test('源码守卫：mpv 详情不再调音频延迟、字幕调轴提供输入框（TODO-060 防回潮）', () {
+    final String src =
+        File('lib/src/media/video/video_quick_settings_sheet.dart')
+            .readAsStringSync();
+    // mpv 不再有音频延迟入口。
+    expect(src, isNot(contains('video_setting_mpv_audio_delay')),
+        reason: 'mpv「音频延迟」入口必须删除（与字幕调轴对用户重复混淆）');
+    expect(src, isNot(contains('copyWith(audioDelayMs:')),
+        reason: 'mpv 配置不应再有 audioDelayMs 的 UI 提交路径');
+    // 字幕调轴提供滑条 + 数值输入框。
+    expect(src, contains('video_setting_subtitle_sync_input'),
+        reason: '字幕调轴须有数值输入框');
+    expect(src, contains('_commitDelay'), reason: '滑条/按钮/输入框须经统一权威提交');
+  });
+
   // ── TODO-039：倍速改为 MD3 全长滑条（与其它设置滑条同源） ────────────────
 
   testWidgets('speed row is the shared MD3 slider row (full length)',
@@ -386,8 +495,12 @@ void main() {
     expect(speedRow.max, 2.0);
     expect(speedRow.divisions, 15);
 
-    // playback 详情里唯一的 Slider 就是倍速滑条；量它的实际宽度。
-    final double speedSliderWidth = tester.getSize(find.byType(Slider)).width;
+    // playback 详情现有两条滑条（字幕调轴 + 倍速）；定位倍速行内的滑条量宽。
+    final Finder speedSlider = find.descendant(
+      of: find.widgetWithText(AdaptiveSettingsSliderRow, t.video_setting_speed),
+      matching: find.byType(Slider),
+    );
+    final double speedSliderWidth = tester.getSize(speedSlider).width;
 
     // 切到「字幕」分类：字号滑条是 app 现有 MD3 滑条的基准。两者必须同宽
     // （同一全长滑条规范），防止倍速又缩回窄条/分段条。
@@ -413,8 +526,13 @@ void main() {
     double? committed;
     await _pump(tester, _sheet(onSetSpeed: (double v) => committed = v));
 
-    // 从中心拖到最右 → 松手提交 2.0（onChangeEnd 路径，0.1 档吸附后无浮点尾差）。
-    await tester.drag(find.byType(Slider), const Offset(500, 0));
+    // 从中心拖倍速滑条到最右 → 松手提交 2.0（onChangeEnd 路径，0.1 档吸附后无浮点尾差）。
+    // playback 现有两条滑条（字幕调轴 + 倍速），按倍速行定位避免歧义。
+    final Finder speedSlider = find.descendant(
+      of: find.widgetWithText(AdaptiveSettingsSliderRow, t.video_setting_speed),
+      matching: find.byType(Slider),
+    );
+    await tester.drag(speedSlider, const Offset(500, 0));
     await tester.pumpAndSettle();
     expect(committed, 2.0);
   });

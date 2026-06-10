@@ -100,12 +100,17 @@ void main() {
       expect(arrowBlock.contains('_adjustSubtitleOffset'), isFalse);
     });
 
-    test('subtitle offset is a settings control, not an arrow-key binding', () {
-      expect(page.contains('static const int _subtitleOffsetStepMs = 100'),
-          isTrue);
-      expect(page.contains('onSubtitleOffsetChanged: _adjustSubtitleOffset'),
-          isTrue);
-      expect(shortcuts.contains('_adjustSubtitleOffset'), isFalse);
+    test('subtitle sync is a settings control, not an arrow-key binding', () {
+      // TODO-060：字幕调轴改由设置面板的「字幕调轴」行（滑条 + ± 按钮 + 数值输入框）
+      // 经 onSetDelay → _setDelayMs 绝对提交，不再走旧的 _adjustSubtitleOffset 增量
+      // 回调（已删）。字幕调轴绝不能绑到方向键（方向键恒为音量）。
+      expect(page.contains('onSetDelay: _setDelayMs'), isTrue);
+      expect(page.contains('_setDelayMs'), isTrue);
+      expect(shortcuts.contains('_setDelayMs'), isFalse,
+          reason: '字幕调轴不绑方向键，只在设置面板调');
+      // 旧的增量调轴 plumbing 已彻底移除（防回潮）。
+      expect(page.contains('_adjustSubtitleOffset'), isFalse);
+      expect(page.contains('_subtitleOffsetStepMs'), isFalse);
     });
 
     test('speed changes by configured asbplayer step', () {

@@ -41,7 +41,10 @@ void main() {
     expect(method, contains('onLockWindowAspectRatioChanged:'));
     expect(method, contains('initialAsbConfig:'));
     expect(method, contains('onAsbConfigChanged:'));
-    expect(method, contains('onSubtitleOffsetChanged:'));
+    // TODO-060：字幕调轴经 onSetDelay 绝对提交（滑条/±/输入框三处共享）；
+    // 旧的增量 onSubtitleOffsetChanged 已删。
+    expect(method, contains('onSetDelay:'));
+    expect(method, contains('initialDelayMs:'));
 
     // 旧 bespoke 深色单列面板已移除（防回归）。
     expect(method, isNot(contains('showModalBottomSheet')),
@@ -113,7 +116,7 @@ void main() {
     expect(source, contains('t.video_setting_mpv_aspect'));
     expect(source, contains('initialAsbConfig'));
     expect(source, contains('onAsbConfigChanged'));
-    expect(source, contains('onSubtitleOffsetChanged'));
+    expect(source, contains('onSetDelay'));
     expect(source, contains('pauseAtSubtitleEnd'));
     expect(source, contains('AdaptiveSettingsStepperRow'));
     expect(source, isNot(contains('widget.onOpenShaders')));

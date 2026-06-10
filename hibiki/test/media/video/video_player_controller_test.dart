@@ -102,6 +102,27 @@ void main() {
     });
   });
 
+  group('字幕调轴纯函数 effectiveSubtitlePositionMs', () {
+    test('zero offset is identity', () {
+      expect(effectiveSubtitlePositionMs(1234, 0), 1234);
+    });
+
+    test('positive offset shifts the lookup position back (字幕整体延后)', () {
+      // 正偏移＝字幕显得早了 → 往回拨位置，字幕晚出现。
+      expect(effectiveSubtitlePositionMs(1500, 600), 900);
+    });
+
+    test('negative offset shifts the lookup position forward (字幕提前)', () {
+      // 负偏移＝字幕晚于画面 → 往前拨位置，字幕提前。
+      expect(effectiveSubtitlePositionMs(1000, -250), 1250);
+    });
+
+    test('clamps the lower bound to 0 (位置不为负)', () {
+      // posMs - delayMs 为负时夹到 0，不能查出负位置。
+      expect(effectiveSubtitlePositionMs(100, 5000), 0);
+    });
+  });
+
   group('VideoPlayerController pause at subtitle end', () {
     test('pauses once when leaving the active cue', () {
       final c = VideoPlayerController();

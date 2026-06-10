@@ -28,7 +28,6 @@ class VideoQuickSettingsSheet extends StatefulWidget {
     required this.onSubtitleStyleCommit,
     required this.initialAsbConfig,
     required this.onAsbConfigChanged,
-    required this.onSubtitleOffsetChanged,
     required this.initialShadersEnabled,
     required this.onApplyShaders,
     required this.onSelectShaderTier,
@@ -72,8 +71,6 @@ class VideoQuickSettingsSheet extends StatefulWidget {
   final VideoAsbplayerConfig initialAsbConfig;
 
   final Future<void> Function(VideoAsbplayerConfig config) onAsbConfigChanged;
-
-  final Future<void> Function(int deltaMs) onSubtitleOffsetChanged;
 
   /// 初始启用的着色器文件名集合（内嵌着色器视图的初值）。
   final List<String> initialShadersEnabled;
@@ -147,6 +144,20 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
   late final TextEditingController _rawConfController =
       TextEditingController(text: widget.initialMpvConfig.rawConf);
 
+  /// 字幕调轴数值输入框控制器（与滑条/± 按钮共享同一权威 [_delayMs]，经 [_commitDelay]
+  /// 三处同步）。允许用户直接键入正负毫秒值。
+  late final TextEditingController _delayController =
+      TextEditingController(text: '${widget.initialDelayMs}');
+
+  /// 字幕调轴滑条范围（±10 秒，覆盖绝大多数外挂字幕偏移；更大偏移仍可经输入框键入到
+  /// ±600000，与 [VideoPlayerController] 的 clamp 一致）。
+  static const int _subtitleSyncSliderRangeMs = 10000;
+  static const int _subtitleSyncClampMs = 600000;
+
+  /// 拖动字幕调轴滑条时的临时预览值（仅本地回显，松手才 [_commitDelay] 落盘+实时生效），
+  /// 避免每个拖动 tick 都写 DB。null = 未在拖动。
+  int? _delayDragMs;
+
   /// 窄窗 push 选中的子页 id；null = 主页。宽窗下恒有选中（默认 playback）。
   String? _subPage;
 
@@ -157,6 +168,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
   @override
   void dispose() {
     _rawConfController.dispose();
+    _delayController.dispose();
     super.dispose();
   }
 
@@ -394,70 +406,117 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
     );
   }
 
+  /// 字幕调轴权威提交：滑条 / ± 按钮 / 数值输入框三处共享。clamp 到 ±[_subtitleSyncClampMs]
+  /// （与 [VideoPlayerController.setDelayMs] 一致），更新本地 [_delayMs]、可选回写输入框文本、
+  /// 即时回调 [VideoQuickSettingsSheet.onSetDelay] 落盘+实时生效。
+  Future<void> _commitDelay(int next, {bool syncField = true}) async {
+    final int clamped = next.clamp(-_subtitleSyncClampMs, _subtitleSyncClampMs);
+    setState(() => _delayMs = clamped);
+    if (syncField && _delayController.text != '$clamped') {
+      _delayController.text = '$clamped';
+    }
+    await widget.onSetDelay(clamped);
+  }
+
   Widget _buildDelayRow() {
     final ThemeData theme = Theme.of(context);
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    final String label = '${_delayMs >= 0 ? '+' : ''}$_delayMs ms';
-    Future<void> bump(int delta) async {
-      final int next = (_delayMs + delta).clamp(-600000, 600000);
-      setState(() => _delayMs = next);
-      await widget.onSubtitleOffsetChanged(delta);
-      await widget.onSetDelay(next);
-    }
+    // 拖动中显示预览值，否则显示已落盘的权威值。
+    final int shownMs = _delayDragMs ?? _delayMs;
+    final String label = '${shownMs >= 0 ? '+' : ''}$shownMs ms';
+
+    // 滑条只在 ±[_subtitleSyncSliderRangeMs] 内拖（细调常见偏移）；超出范围的当前值
+    // 仍能通过输入框设置，滑条把手 clamp 到端点显示。
+    final double sliderValue = shownMs
+        .clamp(-_subtitleSyncSliderRangeMs, _subtitleSyncSliderRangeMs)
+        .toDouble();
+
+    final Widget buttons = Row(
+      mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: <Widget>[
+        HibikiIconButton(
+          icon: Icons.keyboard_double_arrow_left,
+          tooltip: '-1000ms',
+          padding: EdgeInsets.all(tokens.spacing.gap / 2),
+          onTap: () => _commitDelay(_delayMs - 1000),
+        ),
+        HibikiIconButton(
+          icon: Icons.chevron_left,
+          tooltip: '-50ms',
+          padding: EdgeInsets.all(tokens.spacing.gap / 2),
+          onTap: () => _commitDelay(_delayMs - 50),
+        ),
+        HibikiFocusable(
+          onTap: shownMs == 0 ? null : () => _commitDelay(0),
+          child: SizedBox(
+            width: 84,
+            child: Text(
+              label,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyLarge?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: shownMs == 0
+                    ? theme.colorScheme.onSurfaceVariant
+                    : theme.colorScheme.primary,
+              ),
+            ),
+          ),
+        ),
+        HibikiIconButton(
+          icon: Icons.chevron_right,
+          tooltip: '+50ms',
+          padding: EdgeInsets.all(tokens.spacing.gap / 2),
+          onTap: () => _commitDelay(_delayMs + 50),
+        ),
+        HibikiIconButton(
+          icon: Icons.keyboard_double_arrow_right,
+          tooltip: '+1000ms',
+          padding: EdgeInsets.all(tokens.spacing.gap / 2),
+          onTap: () => _commitDelay(_delayMs + 1000),
+        ),
+      ],
+    );
 
     return AdaptiveSettingsRow(
       title: t.video_setting_av_delay,
       subtitle: t.video_setting_av_delay_hint,
       icon: Icons.sync_outlined,
       controlBelow: true,
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        mainAxisAlignment: MainAxisAlignment.center,
+      trailing: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          HibikiIconButton(
-            icon: Icons.keyboard_double_arrow_left,
-            tooltip: '-1000ms',
-            padding: EdgeInsets.all(tokens.spacing.gap / 2),
-            onTap: () => bump(-1000),
+          // 可拉滑条（细调 ±10s）：拖动只本地预览，松手才落盘+实时生效（避免每 tick 写 DB）。
+          Slider(
+            value: sliderValue,
+            min: -_subtitleSyncSliderRangeMs.toDouble(),
+            max: _subtitleSyncSliderRangeMs.toDouble(),
+            divisions: _subtitleSyncSliderRangeMs ~/ 50, // 50ms 一档
+            label: label,
+            onChanged: (double v) => setState(() => _delayDragMs = v.round()),
+            onChangeEnd: (double v) {
+              setState(() => _delayDragMs = null);
+              _commitDelay(v.round());
+            },
           ),
-          HibikiIconButton(
-            icon: Icons.chevron_left,
-            tooltip: '-50ms',
-            padding: EdgeInsets.all(tokens.spacing.gap / 2),
-            onTap: () => bump(-50),
-          ),
-          HibikiFocusable(
-            onTap: _delayMs == 0
-                ? null
-                : () async {
-                    setState(() => _delayMs = 0);
-                    await widget.onSetDelay(0);
-                  },
-            child: SizedBox(
-              width: 84,
-              child: Text(
-                label,
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodyLarge?.copyWith(
-                  fontWeight: FontWeight.w600,
-                  color: _delayMs == 0
-                      ? theme.colorScheme.onSurfaceVariant
-                      : theme.colorScheme.primary,
-                ),
-              ),
-            ),
-          ),
-          HibikiIconButton(
-            icon: Icons.chevron_right,
-            tooltip: '+50ms',
-            padding: EdgeInsets.all(tokens.spacing.gap / 2),
-            onTap: () => bump(50),
-          ),
-          HibikiIconButton(
-            icon: Icons.keyboard_double_arrow_right,
-            tooltip: '+1000ms',
-            padding: EdgeInsets.all(tokens.spacing.gap / 2),
-            onTap: () => bump(1000),
+          SizedBox(height: tokens.spacing.gap / 2),
+          buttons,
+          SizedBox(height: tokens.spacing.gap / 2),
+          // 数值输入框：可直接键入正负毫秒值（支持超出滑条范围的大偏移）。
+          AdaptiveSettingsTextField(
+            controller: _delayController,
+            labelText: t.video_setting_subtitle_sync_input,
+            keyboardType: const TextInputType.numberWithOptions(signed: true),
+            textInputAction: TextInputAction.done,
+            onSubmitted: (String raw) {
+              final int? parsed = int.tryParse(raw.trim());
+              if (parsed == null) {
+                // 非法输入 → 回退到当前权威值，不改延迟。
+                _delayController.text = '$_delayMs';
+                return;
+              }
+              _commitDelay(parsed);
+            },
           ),
         ],
       ),
@@ -753,14 +812,11 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet> {
         // 音频
         AdaptiveSettingsSection(
           title: t.video_setting_mpv_group_audio,
+          // TODO-060：删掉 mpv「音频延迟」入口——与「播放→字幕调轴」对用户而言重复混淆
+          // （两者都是「延迟 (ms)」滑条，用户分不清）。字幕对不齐统一走字幕调轴
+          // （_buildDelayRow，移字幕 cue）。audioDelayMs model 字段保留作旧配置 decode
+          // 兼容，默认 0 不生效；不再暴露 UI 入口。
           children: <Widget>[
-            _mpvIntSlider(
-                t.video_setting_mpv_audio_delay,
-                Icons.av_timer_outlined,
-                c.audioDelayMs,
-                -2000,
-                2000,
-                (int v) => c.copyWith(audioDelayMs: v)),
             _mpvSwitch(t.video_setting_mpv_pitch, c.audioPitchCorrection,
                 (bool v) => c.copyWith(audioPitchCorrection: v),
                 icon: Icons.graphic_eq_outlined),
