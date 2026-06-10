@@ -149,6 +149,24 @@ void main() {
     expect(find.text(t.dialog_delete), findsOneWidget);
   });
 
+  testWidgets('first video open prompts for Anime4K recommended shaders',
+      (WidgetTester tester) async {
+    await seedTaggedVideo();
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('My Episode'));
+    await tester.pumpAndSettle();
+
+    expect(find.text(t.video_shader_first_use_title), findsOneWidget);
+    expect(find.text(t.video_shader_first_use_body), findsOneWidget);
+    expect(
+      await db.getPref(PreferencesRepository.videoAnime4kPromptShownKey),
+      'b:true',
+    );
+    expect(appModel.prefsRepo.videoAnime4kPromptShown, isTrue);
+  });
+
   testWidgets('顶部标签可拖到视频卡并写入视频标签映射', (WidgetTester tester) async {
     final int tagId = await seedVideoAndLooseTag();
     await tester.pumpWidget(buildApp());

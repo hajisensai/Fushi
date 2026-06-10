@@ -132,7 +132,8 @@ void main() {
 
     expect(buildMethod, contains('AdaptiveSettingsSection('),
         reason: '着色器详情应按画质增强 / 模板 / 导入 / 列表分组');
-    expect(buildMethod, contains('video_shader_section_templates'));
+    expect(buildMethod, contains('video_shader_recommended'));
+    expect(buildMethod, contains('video_shader_download_anime4k'));
     expect(buildMethod, contains('video_shader_section_import'));
     expect(buildMethod, contains('video_shader_section_installed'));
     expect(buildMethod, isNot(contains('Wrap(')),

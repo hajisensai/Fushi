@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:hibiki/src/media/video/video_asbplayer_config.dart';
@@ -47,13 +50,75 @@ Future<void> _pump(WidgetTester tester, Widget child) async {
 }
 
 void main() {
+  final TestWidgetsFlutterBinding binding =
+      TestWidgetsFlutterBinding.ensureInitialized();
+  late Directory shaderTempDir;
+
+  setUp(() {
+    shaderTempDir =
+        Directory.systemTemp.createTempSync('hibiki_video_shader_settings');
+    binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('plugins.flutter.io/path_provider'),
+      (MethodCall call) async => shaderTempDir.path,
+    );
+  });
+
+  tearDown(() {
+    binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('plugins.flutter.io/path_provider'),
+      null,
+    );
+    if (shaderTempDir.existsSync()) {
+      shaderTempDir.deleteSync(recursive: true);
+    }
+  });
+
   test('quality enhancement labels stay ordinary user-facing', () {
     expect(t.video_settings_cat_shaders, 'Image enhancement');
     expect(t.video_shader_recommended, 'Recommended image enhancements');
+    expect(t.video_shader_recommended_hint.toLowerCase(), contains('anime4k'));
+    expect(t.video_shader_recommended_hint.toLowerCase(),
+        isNot(contains('besides anime4k')));
+    expect(t.video_shader_builtin_mpv_quality, 'mpv built-in quality scaling');
+    expect(
+        t.video_shader_import_from_mpv_hint, contains('choose an mpv folder'));
+    expect(t.video_shader_first_use_body, contains('Anime4K'));
     expect(t.video_shader_preset_mode_a_hq, contains('1080p'));
     expect(t.video_shader_preset_mode_a_hq.toLowerCase(), contains('quality'));
     expect(t.video_shader_preset_mode_b_hq, contains('720p'));
     expect(t.video_shader_preset_mode_c_hq, contains('480p'));
+  });
+
+  testWidgets(
+      'shader settings groups Anime4K under recommended and link download under import',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await _pump(tester, _sheet());
+
+    await tester.tap(find.text(t.video_settings_cat_shaders));
+    await tester.pumpAndSettle();
+
+    expect(find.text(t.video_shader_section_templates), findsNothing);
+    expect(find.text(t.video_shader_recommended), findsOneWidget);
+    expect(find.text(t.video_shader_builtin_mpv_quality), findsOneWidget);
+    expect(find.text(t.video_settings_cat_shaders), findsOneWidget);
+    expect(find.text(t.video_shader_download_anime4k), findsOneWidget);
+    expect(find.text(t.video_shader_download_url), findsOneWidget);
+    expect(find.text(t.video_shader_pick_mpv_dir), findsNothing);
+
+    final double recommendedY =
+        tester.getTopLeft(find.text(t.video_shader_recommended)).dy;
+    final double importY =
+        tester.getTopLeft(find.text(t.video_shader_section_import)).dy;
+    final double anime4kY =
+        tester.getTopLeft(find.text(t.video_shader_download_anime4k)).dy;
+    final double linkY =
+        tester.getTopLeft(find.text(t.video_shader_download_url)).dy;
+
+    expect(anime4kY, greaterThan(recommendedY));
+    expect(anime4kY, lessThan(importY));
+    expect(linkY, greaterThan(importY));
   });
 
   testWidgets('video settings shows master-detail on wide windows',

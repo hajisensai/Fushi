@@ -359,18 +359,7 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         AdaptiveSettingsSection(
-          children: <Widget>[
-            AdaptiveSettingsSwitchRow(
-              title: t.video_settings_cat_shaders,
-              subtitle: t.video_quality_enhancement_hint,
-              icon: Icons.auto_fix_high_outlined,
-              value: widget.qualityEnhancementEnabled,
-              onChanged: widget.onQualityEnhancementChanged,
-            ),
-          ],
-        ),
-        AdaptiveSettingsSection(
-          title: t.video_shader_section_templates,
+          title: t.video_shader_recommended,
           children: <Widget>[
             _actionRow(
               title: t.video_shader_download_anime4k,
@@ -379,16 +368,17 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView> {
               onTap: _openAnime4kDownload,
             ),
             _actionRow(
-              title: t.video_shader_recommended,
+              title: t.video_shader_classic_recommended,
               subtitle: t.video_shader_recommended_hint,
               icon: Icons.auto_awesome_outlined,
               onTap: _openRecommended,
             ),
-            _actionRow(
-              title: t.video_shader_download_url,
-              subtitle: t.video_shader_url_hint,
-              icon: Icons.link_outlined,
-              onTap: _downloadFromUrl,
+            AdaptiveSettingsSwitchRow(
+              title: t.video_shader_builtin_mpv_quality,
+              subtitle: t.video_shader_builtin_mpv_quality_hint,
+              icon: Icons.auto_fix_high_outlined,
+              value: widget.qualityEnhancementEnabled,
+              onChanged: widget.onQualityEnhancementChanged,
             ),
           ],
         ),
@@ -396,22 +386,23 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView> {
           title: t.video_shader_section_import,
           children: <Widget>[
             _actionRow(
-              title: t.video_shader_import_from_mpv,
-              icon: Icons.travel_explore_outlined,
-              onTap: _importFromMpv,
-            ),
-            _actionRow(
-              title: t.video_shader_pick_mpv_dir,
-              subtitle: _mpvDir.isEmpty
-                  ? null
-                  : t.video_shader_mpv_dir_current(path: _mpvDir),
-              icon: Icons.folder_open_outlined,
-              onTap: _pickMpvDirAndSearch,
-            ),
-            _actionRow(
               title: t.video_shader_import,
               icon: Icons.add_outlined,
               onTap: _import,
+            ),
+            _actionRow(
+              title: t.video_shader_download_url,
+              subtitle: t.video_shader_url_hint,
+              icon: Icons.link_outlined,
+              onTap: _downloadFromUrl,
+            ),
+            _actionRow(
+              title: t.video_shader_import_from_mpv,
+              subtitle: _mpvDir.isEmpty
+                  ? t.video_shader_import_from_mpv_hint
+                  : t.video_shader_mpv_dir_current(path: _mpvDir),
+              icon: Icons.travel_explore_outlined,
+              onTap: _importFromMpv,
             ),
           ],
         ),
