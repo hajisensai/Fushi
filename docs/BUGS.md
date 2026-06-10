@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 173 条。点号进各自文件。
+> 共 174 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-177](bugs/BUG-177-illustration-viewer-copy-share.md) | ✅ | ✅ | 插画查看器无法右键复制(win)/长按分享(android) |
 | [BUG-176](bugs/BUG-176-video-sentence-seek-origin.md) | ✅ | ✅ | 视频句子快进打回原点 / 进度条圆点闪开头 / 控制条不保持 |
 | [BUG-175](bugs/BUG-175-clipboard-lookup-tiny-centered.md) | ✅ | ✅ | 剪贴板查词显示文字太小且居中 (应像 yomitan 正常字号左对齐) |
 | [BUG-174](bugs/BUG-174-win-update-installer-crash.md) | ✅ | ✅ | Windows 自动更新启动安装器崩溃/静默消失 |
