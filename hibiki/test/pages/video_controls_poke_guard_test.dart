@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// 源码守卫（BUG-175 ②）：控制条自动隐藏计时只在 media_kit 的鼠标 hover/进度条
+/// 源码守卫（BUG-176 ②）：控制条自动隐藏计时只在 media_kit 的鼠标 hover/进度条
 /// 拖动时重置，键盘快进/跳句与底部按钮 tap 都不触发重置 → 控制条只活 2 秒就消失，
 /// 用户「一直快进它也只保持两三秒然后消失」。修复=每次快进/跳句/seek 都
 /// [_pokeControlsVisible] 往控制条区派发合成 hover，驱动 media_kit 自身的重置路径。
@@ -49,7 +49,7 @@ void main() {
       // 入口回调体（到下一个逗号分隔的下一个 action 之前一段）里必须有 poke。
       final String window = src.substring(at, at + 200);
       expect(window.contains('_pokeControlsVisible()'), isTrue,
-          reason: '$entry 回调必须 poke 控制条（BUG-175 ②）');
+          reason: '$entry 回调必须 poke 控制条（BUG-176 ②）');
     }
   });
 

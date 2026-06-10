@@ -355,12 +355,12 @@ void main() {
     });
   });
 
-  // BUG-175: 句子快进/后退在「句间静音 gap」里的目标索引决策。gap 时
+  // BUG-176: 句子快进/后退在「句间静音 gap」里的目标索引决策。gap 时
   // updateCueForPosition 把 currentCueIndex 清成 -1（BUG-074），旧实现裸用
   // `_currentCueIndex ± 1`：下一句 = -1+1 = 0（恒跳首句起点 = 打回原点 / 进度条圆点
   // 闪开头）；上一句 = -1-1 = -2（恒越界 no-op = gap 里后退失灵）。新决策按真实
   // position 二分回退，永不返回负值/原点。
-  group('BUG-175 句子跳转目标索引（gap 不打回原点）', () {
+  group('BUG-176 句子跳转目标索引（gap 不打回原点）', () {
     final cues = <AudioCue>[
       _cue(0, 0, 1000),
       _cue(1, 2000, 3000),

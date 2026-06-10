@@ -1,4 +1,4 @@
-## BUG-175 · 视频句子快进打回原点 / 进度条圆点闪开头 / 控制条不保持
+## BUG-176 · 视频句子快进打回原点 / 进度条圆点闪开头 / 控制条不保持
 - **报告**：2026-06-11（用户：飞书巡检表第109行 / TODO-096）
 - **真实性**：✅ 真 bug，三个症状两处根因。
 
@@ -14,6 +14,6 @@
 
 ### 测试
 - **[x] ② 已加自动化测试**
-  - `hibiki/test/media/video/video_player_controller_test.dart` 新增 group「BUG-175 句子跳转目标索引（gap 不打回原点）」：`nextCueIndexFor`/`prevCueIndexFor` 在「定位到 cue / 已在首末句 / 各 gap（cue0-cue1、cue1-cue2、末句之后、首句之前）/ 空列表」全分支断言目标索引；+ 回归用例「进句到 cue0 → update 到 gap 清 -1 → next 必须按 position 回 cue1 不回 0」。这套用例对旧 `±1` 实现红（gap 时 next 给 0、prev 给 -2 no-op）。
+  - `hibiki/test/media/video/video_player_controller_test.dart` 新增 group「BUG-176 句子跳转目标索引（gap 不打回原点）」：`nextCueIndexFor`/`prevCueIndexFor` 在「定位到 cue / 已在首末句 / 各 gap（cue0-cue1、cue1-cue2、末句之后、首句之前）/ 空列表」全分支断言目标索引；+ 回归用例「进句到 cue0 → update 到 gap 清 -1 → next 必须按 position 回 cue1 不回 0」。这套用例对旧 `±1` 实现红（gap 时 next 给 0、prev 给 -2 no-op）。
   - `hibiki/test/pages/video_controls_poke_guard_test.dart`（源码守卫，media_kit headless 不可跑视频 widget）：钉住 `_pokeControlsVisible` 经 `GestureBinding.handlePointerEvent` 派发 `PointerHoverEvent`、桌面门控、四个键盘入口 + `_seekRelative` + 底部跳句按钮都接了 poke。
 - **备注**：纯函数与源码守卫覆盖根因，但**真机/真模拟器播放快进**（gap 里按句不打回原点、控制条持续快进时不消失）需用户复测留证据（焦点驱动，见 docs/agent/integration-testing.md）。合成 hover 唤醒依赖 media_kit MouseRegion 在桌面对程序派发的 hover 事件正常响应（与真实鼠标移动同管线），桌面三端通用。
