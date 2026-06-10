@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 171 条。点号进各自文件。
+> 共 172 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-175](bugs/BUG-175-clipboard-lookup-tiny-centered.md) | ✅ | ✅ | 剪贴板查词显示文字太小且居中 (应像 yomitan 正常字号左对齐) |
 | [BUG-174](bugs/BUG-174-win-update-installer-crash.md) | ✅ | ✅ | Windows 自动更新启动安装器崩溃/静默消失 |
 | [BUG-173](bugs/BUG-173-subtitle-drop-video-card.md) | ✅ | ✅ | 字幕拖到主页视频卡未挂到该视频（重复导入建副本） |
 | [BUG-172](bugs/BUG-172-reader-card-sentence-audio-tts-fallback.md) | ✅ | ✅ | 纯文本书籍制卡无句子音频（Lapis SentenceAudio 空） |

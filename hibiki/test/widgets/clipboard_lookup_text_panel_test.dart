@@ -136,7 +136,7 @@ void main() {
     expect(find.byType(HibikiCard), findsNothing);
   });
 
-  // BUG-171：剪贴板查词文字「小的可怜」。回归守卫——字号必须是正文级别
+  // BUG-175：剪贴板查词文字「小的可怜」。回归守卫——字号必须是正文级别
   // （bodyLarge≈16），不能退回到 metadata 的 labelMedium（≈12）小字。
   testWidgets('characters render at body-size font, not tiny metadata size',
       (WidgetTester tester) async {
@@ -168,7 +168,7 @@ void main() {
     expect(fontSize, greaterThan(labelMedium));
   });
 
-  // BUG-171：剪贴板查词文字「默认居中了」。回归守卫——本组件占满父级宽度并
+  // BUG-175：剪贴板查词文字「默认居中了」。回归守卫——本组件占满父级宽度并
   // 把内容左对齐，不依赖父级 Column 的 crossAxisAlignment。
   testWidgets('panel fills width and left-aligns its content',
       (WidgetTester tester) async {
