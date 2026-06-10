@@ -27,11 +27,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 162 条。点号进各自文件。
+> 共 164 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-167](bugs/BUG-167-nhk-pitch-glossary-not-pitch.md) | 🚧 | 🚧 | NHK发音辞典被读成释义词典（实为glossary格式·无pitch数据·非bug） |
 | [BUG-166](bugs/BUG-166-mining-slow-serial-media.md) | ✅ | ✅ | 制卡慢（约 6 秒）+ 每张卡自动打 hibiki tag |
+| [BUG-165](bugs/BUG-165-episode-subtitle-no-follow.md) | ✅ | ✅ | 播放列表换集字幕不自动跟随对应集 |
 | [BUG-164](bugs/BUG-164-video-shortcuts-dead-after-overlays.md) | ✅ | ✅ | 视频快捷键失灵：设置/导入/点外部/全屏后空格等失效 |
 | [BUG-163](bugs/BUG-163-desktop-card-crash-late-frame.md) | ✅ | ✅ | 桌面制卡闪退：WebView2 捕获帧迟到事件打进已拆除 delegate |
 | [BUG-162](bugs/BUG-162-reader-restore-charoffset.md) | ✅ | ✅ | 书籍退出再进位置漂移（持久化恢复走粗粒度进度分数而非精确字符偏移） |
