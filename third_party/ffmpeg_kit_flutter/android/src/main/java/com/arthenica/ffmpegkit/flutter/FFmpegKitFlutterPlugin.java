@@ -82,6 +82,7 @@ public class FFmpegKitFlutterPlugin implements FlutterPlugin, ActivityAware, Met
 
     private static final String METHOD_CHANNEL = "flutter.arthenica.com/ffmpeg_kit";
     private static final String EVENT_CHANNEL = "flutter.arthenica.com/ffmpeg_kit_event";
+    private static final String FFMPEG_KIT_UNAVAILABLE = "FFMPEG_KIT_UNAVAILABLE";
 
     // LOG CLASS
     public static final String KEY_LOG_SESSION_ID = "sessionId";
@@ -143,18 +144,41 @@ public class FFmpegKitFlutterPlugin implements FlutterPlugin, ActivityAware, Met
 
     private EventChannel.EventSink eventSink;
     private final FFmpegKitFlutterMethodResultHandler resultHandler;
+    private boolean nativeLibraryAvailable;
+    private String nativeLibraryUnavailableMessage;
 
     public FFmpegKitFlutterPlugin() {
         this.logsEnabled = new AtomicBoolean(false);
         this.statisticsEnabled = new AtomicBoolean(false);
         this.asyncExecutorService = Executors.newFixedThreadPool(asyncConcurrencyLimit);
         this.resultHandler = new FFmpegKitFlutterMethodResultHandler();
+        this.nativeLibraryAvailable = true;
+        this.nativeLibraryUnavailableMessage = null;
 
         Log.d(LIBRARY_NAME, String.format("FFmpegKitFlutterPlugin created %s.", this));
     }
 
     // Hibiki: v1 embedding registerWith(Registrar) 已随 Flutter 3.29+ 移除 Registrar
     // 类而删除（本插件已实现 v2 FlutterPlugin/ActivityAware）。见 BUG-122。
+
+    protected boolean isNativeLibraryAvailable() {
+        try {
+            FFmpegKitConfig.getFFmpegVersion();
+            nativeLibraryUnavailableMessage = null;
+            return true;
+        } catch (final Throwable t) {
+            nativeLibraryUnavailableMessage = String.format(
+                    Locale.getDefault(),
+                    "FFmpegKit native libraries are unavailable on brand: %s, model: %s, device: %s, api level: %d, abis: %s.",
+                    Build.BRAND,
+                    Build.MODEL,
+                    Build.DEVICE,
+                    Build.VERSION.SDK_INT,
+                    String.join(" ", Build.SUPPORTED_ABIS));
+            Log.w(LIBRARY_NAME, nativeLibraryUnavailableMessage, t);
+            return false;
+        }
+    }
 
     protected void registerGlobalCallbacks() {
         FFmpegKitConfig.enableFFmpegSessionCompleteCallback(this::emitSession);
@@ -243,6 +267,11 @@ public class FFmpegKitFlutterPlugin implements FlutterPlugin, ActivityAware, Met
 
     @Override
     public void onMethodCall(@NonNull MethodCall call, @NonNull Result result) {
+        if (!nativeLibraryAvailable) {
+            resultHandler.errorAsync(result, FFMPEG_KIT_UNAVAILABLE, nativeLibraryUnavailableMessage);
+            return;
+        }
+
         final Integer sessionId = call.argument(ARGUMENT_SESSION_ID);
         final Integer waitTimeout = call.argument(ARGUMENT_WAIT_TIMEOUT);
         final List<String> arguments = call.argument(ARGUMENT_ARGUMENTS);
@@ -641,7 +670,10 @@ public class FFmpegKitFlutterPlugin implements FlutterPlugin, ActivityAware, Met
 
     @SuppressWarnings("deprecation")
     protected void init(final BinaryMessenger messenger, final Context context, final Activity activity, final ActivityPluginBinding activityBinding) {
-        registerGlobalCallbacks();
+        nativeLibraryAvailable = isNativeLibraryAvailable();
+        if (nativeLibraryAvailable) {
+            registerGlobalCallbacks();
+        }
 
         if (methodChannel == null) {
             methodChannel = new MethodChannel(messenger, METHOD_CHANNEL);
