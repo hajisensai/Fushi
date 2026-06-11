@@ -30,6 +30,7 @@ void main() {
         toggleFullscreen: () {},
         toggleSubtitleList: () {},
         toggleImmersiveLock: () {},
+        toggleCrossSubtitleRecording: () {},
         escape: () {},
       ),
     );
@@ -74,6 +75,7 @@ void main() {
         toggleFullscreen: () => actions.add('fullscreen'),
         toggleSubtitleList: () => actions.add('subtitleList'),
         toggleImmersiveLock: () => actions.add('lock'),
+        toggleCrossSubtitleRecording: () => actions.add('record'),
         escape: () => actions.add('escape'),
       ),
     );
@@ -137,6 +139,7 @@ void main() {
         toggleFullscreen: () {},
         toggleSubtitleList: () {},
         toggleImmersiveLock: () {},
+        toggleCrossSubtitleRecording: () {},
         escape: () {},
       ),
     );
@@ -183,6 +186,7 @@ void main() {
         toggleFullscreen: () {},
         toggleSubtitleList: () => actions.add('subtitleList'),
         toggleImmersiveLock: () => actions.add('lock'),
+        toggleCrossSubtitleRecording: () => actions.add('record'),
         escape: () {},
       ),
     );
@@ -191,6 +195,8 @@ void main() {
     shortcuts[const SingleActivator(LogicalKeyboardKey.keyL)]!();
     // Shift+L = 锁定 / 沉浸模式 toggle（TODO-101），与裸 L 区分、互不撞键。
     shortcuts[const SingleActivator(LogicalKeyboardKey.keyL, shift: true)]!();
-    expect(actions, <String>['subtitleList', 'lock']);
+    // R = 跨字幕制卡区间录制 toggle（TODO-102），未撞既有键。
+    shortcuts[const SingleActivator(LogicalKeyboardKey.keyR)]!();
+    expect(actions, <String>['subtitleList', 'lock', 'record']);
   });
 }

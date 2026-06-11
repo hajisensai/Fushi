@@ -1519,5 +1519,11 @@
     "swipe_page_turn_sensitivity": "滑动翻页灵敏度",
     "video_immersive_locked": "已进入沉浸模式",
     "video_immersive_unlocked": "已退出沉浸模式",
-    "video_immersive_unlock": "解锁"
+    "video_immersive_unlock": "解锁",
+    "video_cross_subtitle_recording_started": "已开始跨字幕录制",
+    "video_cross_subtitle_recording_badge": "录制中",
+    "video_cross_subtitle_mining": "正在用 $count 句字幕制卡",
+    "video_cross_subtitle_cancelled": "已取消跨字幕录制",
+    "video_cross_subtitle_no_subtitle": "没有可录制的字幕",
+    "video_cross_subtitle_lookup_first": "请先查词制一张卡"
 }

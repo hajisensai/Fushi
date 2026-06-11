@@ -62,8 +62,26 @@ void main() {
     expect(mine, contains('controller.currentCue ??'));
     expect(mine, contains('resolveMiningCueForPosition('),
         reason: 'currentCue 为空（gap/末句后）时须按位置解析，制卡才有句子音频。');
-    expect(mine, contains('startMs: cue.startMs'));
-    expect(mine, contains('endMs: cue.endMs'));
+    // TODO-102 重构后单句制卡把 cue 的时间窗作区间 [clipStartMs, clipEndMs] 传给统一落卡
+    // 链路 _mineVideoCard（与跨字幕共用一条音频/封面抽取链路），故区间来自 cue 的起止。
+    expect(mine, contains('clipStartMs: cue?.startMs ?? 0'),
+        reason: '单句制卡音频区间起点必须是该 cue 的 startMs（经 _mineVideoCard）。');
+    expect(mine, contains('clipEndMs: cue?.endMs ?? 0'),
+        reason: '单句制卡音频区间终点必须是该 cue 的 endMs（经 _mineVideoCard）。');
     expect(mine, contains('cueSentence: cue?.text'));
+  });
+
+  test('TODO-102: _mineVideoCard extracts the passed [clipStartMs, clipEndMs] range', () {
+    // 统一落卡链路把区间端点喂给真实的 ffmpeg 抽取器（单句 = cue 时间窗；跨字幕 = 整段）。
+    final String mineCard = region(
+      'Future<bool> _mineVideoCard(',
+      'void _toggleCrossSubtitleRecording() {',
+    );
+    expect(mineCard, contains('startMs: clipStartMs'),
+        reason: '区间音频/封面起点必须是传入的 clipStartMs。');
+    expect(mineCard, contains('endMs: clipEndMs'),
+        reason: '区间音频/封面终点必须是传入的 clipEndMs。');
+    expect(mineCard, contains('extractAudioSegmentViaFfmpeg('),
+        reason: '区间音频走真实 ffmpeg 抽取器（绝无 TTS）。');
   });
 }

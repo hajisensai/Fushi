@@ -23,6 +23,7 @@ class VideoPlayerShortcutActions {
     required this.toggleFullscreen,
     required this.toggleSubtitleList,
     required this.toggleImmersiveLock,
+    required this.toggleCrossSubtitleRecording,
     required this.escape,
   });
 
@@ -51,6 +52,11 @@ class VideoPlayerShortcutActions {
   /// 翻转锁定 / 沉浸模式（TODO-101，Shift+L）。锁定后控制条按钮不再随鼠标/触摸弹出，
   /// 视频纯画面播放，但查词与快捷键仍可用；再按一次（或点常驻解锁按钮）退出。
   final VoidCallback toggleImmersiveLock;
+
+  /// 翻转跨字幕制卡区间录制（TODO-102，R 键；参考 asbplayer）。第一次按开始记录当前
+  /// 字幕作起始句并继续播放，第二次按以当前句作结束句，把区间内所有字幕文本 + 区间音频
+  /// 合并到一张 Anki 卡。
+  final VoidCallback toggleCrossSubtitleRecording;
   final VoidCallback escape;
 }
 
@@ -101,6 +107,10 @@ Map<ShortcutActivator, VoidCallback> buildVideoPlayerShortcuts(
     // 下所有快捷键仍生效，故此键也用来快速解锁（常驻解锁按钮是默认退出）。
     const SingleActivator(LogicalKeyboardKey.keyL, shift: true):
         actions.toggleImmersiveLock,
+    // 'R' = 翻转跨字幕制卡区间录制（TODO-102；参考 asbplayer 的录制范式）。R(ecord) 此前
+    // 未绑定，不撞既有键（裸 L 字幕列表 / Shift+L 锁定 / S 截图 / C 着色器对比都另有键）。
+    const SingleActivator(LogicalKeyboardKey.keyR):
+        actions.toggleCrossSubtitleRecording,
     const SingleActivator(LogicalKeyboardKey.keyF): actions.toggleFullscreen,
     const SingleActivator(LogicalKeyboardKey.escape): actions.escape,
   };

@@ -1519,5 +1519,11 @@
     "swipe_page_turn_sensitivity": "Swipe page-turn sensitivity",
     "video_immersive_locked": "Immersive mode on",
     "video_immersive_unlocked": "Immersive mode off",
-    "video_immersive_unlock": "Unlock"
+    "video_immersive_unlock": "Unlock",
+    "video_cross_subtitle_recording_started": "Cross-subtitle recording started",
+    "video_cross_subtitle_recording_badge": "Recording",
+    "video_cross_subtitle_mining": "Mining card from $count subtitles",
+    "video_cross_subtitle_cancelled": "Cross-subtitle recording cancelled",
+    "video_cross_subtitle_no_subtitle": "No subtitle to record",
+    "video_cross_subtitle_lookup_first": "Look up a word and mine a card first"
 }

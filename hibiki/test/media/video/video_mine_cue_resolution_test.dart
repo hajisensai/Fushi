@@ -119,4 +119,57 @@ void main() {
       );
     });
   });
+
+  group('resolveMiningCueIndexForPosition (TODO-102 跨字幕区间下标)', () {
+    final List<AudioCue> cues = <AudioCue>[
+      _cue(0, 0, 1000),
+      _cue(1, 2000, 3000),
+      _cue(2, 5000, 6000),
+    ];
+
+    test('显示期命中返回该 cue 下标（跨字幕按下标界定区间）', () {
+      expect(
+        resolveMiningCueIndexForPosition(
+            cues: cues, positionMs: 2500, delayMs: 0),
+        1,
+      );
+    });
+
+    test('gap / 末句后 floor 回退到最近一条已播 cue 的下标', () {
+      // 1500 在 cue0..cue1 gap → floor 回退 cue0（下标 0）。
+      expect(
+        resolveMiningCueIndexForPosition(
+            cues: cues, positionMs: 1500, delayMs: 0),
+        0,
+      );
+      // 6500 在末句之后 → floor 回退 cue2（下标 2）。
+      expect(
+        resolveMiningCueIndexForPosition(
+            cues: cues, positionMs: 6500, delayMs: 0),
+        2,
+      );
+    });
+
+    test('位置早于全部 cue / 空列表返回 -1（一句都没起播）', () {
+      expect(
+        resolveMiningCueIndexForPosition(
+            cues: <AudioCue>[_cue(0, 1000, 2000)], positionMs: 500, delayMs: 0),
+        -1,
+      );
+      expect(
+        resolveMiningCueIndexForPosition(
+            cues: const <AudioCue>[], positionMs: 1234, delayMs: 0),
+        -1,
+      );
+    });
+
+    test('单句版与下标版同源（idx>=0 时返回同一 cue）', () {
+      final int idx = resolveMiningCueIndexForPosition(
+          cues: cues, positionMs: 2500, delayMs: 0);
+      final AudioCue? cue =
+          resolveMiningCueForPosition(cues: cues, positionMs: 2500, delayMs: 0);
+      expect(idx, greaterThanOrEqualTo(0));
+      expect(identical(cue, cues[idx]), isTrue);
+    });
+  });
 }
