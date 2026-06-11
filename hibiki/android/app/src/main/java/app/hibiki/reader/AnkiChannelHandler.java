@@ -242,7 +242,11 @@ public class AnkiChannelHandler {
         }
         long modelId = modelIdObj;
 
-        Set<String> allTags = new HashSet<>(Arrays.asList("Yuuna"));
+        // TODO-115: 旧 Yuuna fork 在此硬编码追加一个名为 Yuuna 的默认 tag（无特殊
+        // 含义，仅旧应用名残留）。已移除——制卡的 `hibiki` 固定标签与 book/anime 分类标签
+        // 现统一由 Dart 端 BaseAnkiRepository.buildNoteTags 计算后经 `tags` 传入，
+        // 与 AnkiConnect 后端对称；这里只透传，不再注入任何后端专属默认 tag。
+        Set<String> allTags = new HashSet<>();
         if (tags != null) {
             allTags.addAll(tags);
         }

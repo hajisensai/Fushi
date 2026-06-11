@@ -82,7 +82,8 @@ const String _payload = '{"expression":"勉強","reading":"べんきょう"}';
 
 void main() {
   group('buildNoteTags appends the hibiki tag (append, de-dupe, order)', () {
-    Future<List<String>> tagsForConnect(String configured) async {
+    Future<List<String>> tagsForConnect(String configured,
+        {AnkiMiningSource? source}) async {
       final service = _RecordingAnkiConnectService();
       final repo = _ConfiguredAnkiConnectRepository(
         service: service,
@@ -90,7 +91,7 @@ void main() {
       );
       final outcome = await repo.mineEntry(
         rawPayloadJson: _payload,
-        context: const AnkiMiningContext(sentence: ''),
+        context: AnkiMiningContext(sentence: '', source: source),
       );
       expect(outcome.result, MineResult.success);
       expect(service.addedTags, hasLength(1));
@@ -144,6 +145,92 @@ void main() {
       );
       expect(outcome.result, MineResult.success);
       expect(addedTags.single, <String>['foo', 'bar', 'hibiki']);
+    });
+  });
+
+  group('TODO-115: source maps to category tag (book/anime), both backends',
+      () {
+    Future<List<String>> tagsForConnect(String configured,
+        {AnkiMiningSource? source}) async {
+      final service = _RecordingAnkiConnectService();
+      final repo = _ConfiguredAnkiConnectRepository(
+        service: service,
+        settings: _settingsWithTags(configured),
+      );
+      final outcome = await repo.mineEntry(
+        rawPayloadJson: _payload,
+        context: AnkiMiningContext(sentence: '', source: source),
+      );
+      expect(outcome.result, MineResult.success);
+      expect(service.addedTags, hasLength(1));
+      return service.addedTags.single;
+    }
+
+    Future<List<String>> tagsForDroid(String configured,
+        {AnkiMiningSource? source}) async {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      const MethodChannel channel = MethodChannel('app.hibiki.reader/anki');
+      final List<List<String>> addedTags = <List<String>>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (MethodCall call) async {
+        switch (call.method) {
+          case 'checkForDuplicates':
+            return false;
+          case 'addNote':
+            final args = Map<String, dynamic>.from(call.arguments as Map);
+            addedTags.add(List<String>.from(args['tags'] as List));
+            return true;
+          default:
+            fail('Unexpected AnkiDroid channel call: ${call.method}');
+        }
+      });
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null);
+      });
+      final repo = _ConfiguredAnkiRepository(_settingsWithTags(configured));
+      final outcome = await repo.mineEntry(
+        rawPayloadJson: _payload,
+        context: AnkiMiningContext(sentence: '', source: source),
+      );
+      expect(outcome.result, MineResult.success);
+      return addedTags.single;
+    }
+
+    test('book source -> appends both hibiki and book (AnkiConnect)', () async {
+      expect(await tagsForConnect('', source: AnkiMiningSource.book),
+          <String>['hibiki', 'book']);
+    });
+
+    test('video source -> appends both hibiki and anime (AnkiConnect)',
+        () async {
+      expect(await tagsForConnect('', source: AnkiMiningSource.video),
+          <String>['hibiki', 'anime']);
+    });
+
+    test('null source -> only hibiki, no category tag (AnkiConnect)', () async {
+      expect(await tagsForConnect('', source: null), <String>['hibiki']);
+    });
+
+    test('user tags preserved, then hibiki, then category (AnkiConnect)',
+        () async {
+      expect(await tagsForConnect('jp::vocab', source: AnkiMiningSource.video),
+          <String>['jp::vocab', 'hibiki', 'anime']);
+    });
+
+    test('a user-configured category tag is not duplicated (AnkiConnect)',
+        () async {
+      expect(await tagsForConnect('book', source: AnkiMiningSource.book),
+          <String>['book', 'hibiki']);
+    });
+
+    test('AnkiDroid backend maps source to the same category tags', () async {
+      expect(await tagsForDroid('', source: AnkiMiningSource.book),
+          <String>['hibiki', 'book']);
+      expect(await tagsForDroid('', source: AnkiMiningSource.video),
+          <String>['hibiki', 'anime']);
+      expect(
+          await tagsForDroid('foo', source: null), <String>['foo', 'hibiki']);
     });
   });
 

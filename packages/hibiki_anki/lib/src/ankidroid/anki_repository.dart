@@ -268,7 +268,7 @@ class AnkiRepository extends BaseAnkiRepository {
     // TODO-062: append the `hibiki` tag (de-duped, order preserved) to the
     // user's configured tags via the shared base helper — same behavior as the
     // AnkiConnect backend.
-    final tags = buildNoteTags(settings.tags);
+    final tags = buildNoteTags(settings.tags, source: context.source);
 
     try {
       await _channel.invokeMethod('addNote', <String, dynamic>{

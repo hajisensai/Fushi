@@ -93,9 +93,19 @@ mixin DictionaryPageMixin {
   /// Mines the current dictionary entry to Anki.
   ///
   /// Shows a Fluttertoast for each outcome and returns `true` on success.
+  /// 把统计来源标识（[kStatSourceBook]/[kStatSourceVideo]）映射成 [AnkiMiningSource]，
+  /// 用于给制出的卡片追加分类标签（书籍→`book`，视频/动漫→`anime`）。未知来源返回
+  /// [AnkiMiningSource.book]（保守归书籍，与默认 [dictionarySourceType] 一致）。
+  AnkiMiningSource get _miningSource => dictionarySourceType == kStatSourceVideo
+      ? AnkiMiningSource.video
+      : AnkiMiningSource.book;
+
   Future<bool> onMineEntry(Map<String, String> fields) async {
     final repo = ref.read(ankiRepositoryProvider);
-    final miningContext = AnkiMiningContext(sentence: fields['sentence'] ?? '');
+    final miningContext = AnkiMiningContext(
+      sentence: fields['sentence'] ?? '',
+      source: _miningSource,
+    );
     final outcome = await repo.mineEntry(
       rawPayloadJson: jsonEncode(fields),
       context: miningContext,

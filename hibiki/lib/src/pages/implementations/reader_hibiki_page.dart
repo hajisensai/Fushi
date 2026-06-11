@@ -2958,6 +2958,8 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       coverPath: coverPath,
       sasayakiAudioPath: sasayakiAudioPath,
       sentenceOffset: _cachedSentenceOffset,
+      // TODO-115: 书籍来源 → 卡片追加 `book` 分类标签（reader 不走 DictionaryPageMixin）。
+      source: AnkiMiningSource.book,
     );
 
     final MineOutcome outcome;

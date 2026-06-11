@@ -252,6 +252,20 @@ class DictionaryMedia {
   final String filename;
 }
 
+/// 制卡来源类别：用于给卡片追加分类标签（书籍 vs 视频/动漫）。
+///
+/// 与 `kStatSourceBook`/`kStatSourceVideo`（主 app 的统计/收藏来源标识）一一对应，
+/// 但 hibiki_anki 是独立包不能依赖主 app，故在此重新声明一个无关枚举；调用方
+/// （reader/video/mixin）在构造 [AnkiMiningContext] 时按各自的 `dictionarySourceType`
+/// 映射进来。`null`（未指定）时不追加任何分类标签，只保留固定的 `hibiki` 标签。
+enum AnkiMiningSource {
+  /// 书籍/EPUB 阅读、独立查词页、有声书 —— 归「书籍」分类标签。
+  book,
+
+  /// 视频/动漫字幕查词 —— 归「动漫」分类标签。
+  video,
+}
+
 class AnkiMiningContext {
   const AnkiMiningContext({
     required this.sentence,
@@ -260,6 +274,7 @@ class AnkiMiningContext {
     this.coverPath,
     this.sasayakiAudioPath,
     this.sentenceOffset,
+    this.source,
   });
   final String sentence;
   final String? cueSentence;
@@ -267,6 +282,9 @@ class AnkiMiningContext {
   final String? coverPath;
   final String? sasayakiAudioPath;
   final int? sentenceOffset;
+
+  /// 制卡来源类别；决定追加哪个分类标签（见 [AnkiMiningSource]）。`null` 时不追加分类标签。
+  final AnkiMiningSource? source;
 }
 
 class AnkiHandlebarRenderer {

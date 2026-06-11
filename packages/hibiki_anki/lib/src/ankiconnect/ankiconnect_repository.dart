@@ -450,7 +450,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     // BUG/TODO-062: every Hibiki-mined card gets the `hibiki` tag appended to
     // the user's configured tags (de-duped, order preserved) via the shared
     // base helper, so both backends behave identically.
-    final tags = buildNoteTags(settings.tags);
+    final tags = buildNoteTags(settings.tags, source: context.source);
 
     // `fields` only holds entries that rendered to a non-empty value; if it is
     // empty, nothing rendered and adding the note would create a blank card

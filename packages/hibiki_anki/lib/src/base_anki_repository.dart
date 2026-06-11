@@ -101,13 +101,35 @@ abstract class BaseAnkiRepository {
   /// 便于用户在 Anki 里按来源筛选/统计。
   static const String hibikiTag = 'hibiki';
 
-  /// 解析用户配置的 [userTags]（空白分隔），**追加** [hibikiTag] 后去重（保序）。
+  /// 书籍来源（EPUB 阅读、独立查词、有声书）的分类标签。
+  static const String bookTag = 'book';
+
+  /// 视频/动漫来源的分类标签。用户口径为「动漫」，故用 `anime`（而非 `video`），
+  /// 与统计来源标识 `kStatSourceVideo`('video') 有意错开。
+  static const String animeTag = 'anime';
+
+  /// 把制卡来源类别映射成分类标签；`null`（未指定来源）时返回 `null`（不追加）。
+  static String? _categoryTagForSource(AnkiMiningSource? source) {
+    switch (source) {
+      case AnkiMiningSource.book:
+        return bookTag;
+      case AnkiMiningSource.video:
+        return animeTag;
+      case null:
+        return null;
+    }
+  }
+
+  /// 解析用户配置的 [userTags]（空白分隔），**追加** [hibikiTag] 与 [source] 对应的
+  /// 分类标签后去重（保序）。
   ///
-  /// - 追加而非覆盖：用户已配置的 tag 全部保留，只是额外多一个 `hibiki`。
-  /// - 去重：若用户已手动配置了 `hibiki`，不会出现两个。
-  /// - 两 backend（AnkiConnect / AnkiDroid）共用同一逻辑，避免一端漏加。
+  /// - 追加而非覆盖：用户已配置的 tag 全部保留，只是额外多 `hibiki` + 分类标签。
+  /// - 顺序：用户 tag → `hibiki` → 分类标签（`book`/`anime`）。
+  /// - 去重：用户若已手动配置了 `hibiki`/`book`/`anime`，不会出现两个。
+  /// - [source] 为 `null`（未指定）时只追加 `hibiki`，不加分类标签。
+  /// - 两 backend（AnkiConnect / AnkiDroid）共用同一逻辑，避免一端漏加或漂移。
   @protected
-  List<String> buildNoteTags(String userTags) {
+  List<String> buildNoteTags(String userTags, {AnkiMiningSource? source}) {
     final seen = <String>{};
     final result = <String>[];
     for (final tag in userTags.split(RegExp(r'\s+'))) {
@@ -115,6 +137,8 @@ abstract class BaseAnkiRepository {
       result.add(tag);
     }
     if (seen.add(hibikiTag)) result.add(hibikiTag);
+    final categoryTag = _categoryTagForSource(source);
+    if (categoryTag != null && seen.add(categoryTag)) result.add(categoryTag);
     return result;
   }
 
