@@ -53,6 +53,7 @@ ColorScheme buildSystemThemeColorScheme({
 ColorScheme buildHibikiColorScheme({
   required Color seedColor,
   required Brightness brightness,
+  DynamicSchemeVariant variant = DynamicSchemeVariant.tonalSpot,
   Color? primary,
   Color? secondary,
   Color? tertiary,
@@ -61,6 +62,7 @@ ColorScheme buildHibikiColorScheme({
   final ColorScheme base = ColorScheme.fromSeed(
     seedColor: seedColor,
     brightness: brightness,
+    dynamicSchemeVariant: variant,
   );
   final Color? secContainer =
       secondary != null ? _deriveContainer(secondary, brightness) : null;
@@ -162,14 +164,46 @@ class ThemeNotifier extends ChangeNotifier {
 
   // ── Theme presets ──────────────────────────────────────────────────
 
-  static const Map<String, ({Color seed, Brightness brightness})> themePresets =
-      {
-    'light-theme': (seed: Color(0xFF1F4959), brightness: Brightness.light),
-    'ecru-theme': (seed: Color(0xFF8B7355), brightness: Brightness.light),
-    'water-theme': (seed: Color(0xFF4A7C8F), brightness: Brightness.light),
-    'gray-theme': (seed: Color(0xFF5C6B73), brightness: Brightness.dark),
-    'dark-theme': (seed: Color(0xFF1F4959), brightness: Brightness.dark),
-    'black-theme': (seed: Color(0xFF263238), brightness: Brightness.dark),
+  static const Map<String,
+          ({Color seed, Brightness brightness, DynamicSchemeVariant variant})>
+      themePresets = {
+    'light-theme': (
+      seed: Color(0xFF1F4959),
+      brightness: Brightness.light,
+      variant: DynamicSchemeVariant.tonalSpot,
+    ),
+    'ecru-theme': (
+      seed: Color(0xFF8B7355),
+      brightness: Brightness.light,
+      variant: DynamicSchemeVariant.tonalSpot,
+    ),
+    'water-theme': (
+      seed: Color(0xFF4A7C8F),
+      brightness: Brightness.light,
+      variant: DynamicSchemeVariant.tonalSpot,
+    ),
+    // The three dark presets share near-identical tonalSpot output (all collapse
+    // to teal #8bd0ef on near-black), so each gets a distinct M3 scheme variant
+    // to stay visibly apart (TODO-100):
+    'gray-theme': (
+      // Neutral: a real neutral-grey primary (~#bac9d1), no teal cast.
+      seed: Color(0xFF5C6B73),
+      brightness: Brightness.dark,
+      variant: DynamicSchemeVariant.neutral,
+    ),
+    'dark-theme': (
+      // TonalSpot: the teal Hibiki brand colour (~#8ad0ee).
+      seed: Color(0xFF1F4959),
+      brightness: Brightness.dark,
+      variant: DynamicSchemeVariant.tonalSpot,
+    ),
+    'black-theme': (
+      // Vibrant indigo: blue-violet primary (~#bac3ff) on a blue-tinted surface;
+      // seed bumped to indigo so vibrant has a hue to express.
+      seed: Color(0xFF3F51B5),
+      brightness: Brightness.dark,
+      variant: DynamicSchemeVariant.vibrant,
+    ),
   };
 
   static const _themeLabelKeys = {
@@ -288,6 +322,14 @@ class ThemeNotifier extends ChangeNotifier {
     return themePresets[appThemeKey]?.seed ?? const Color(0xFF1F4959);
   }
 
+  // The M3 scheme variant for the active preset. Presets differ here so the
+  // three dark presets (gray/dark/black) stay visually distinct (TODO-100);
+  // custom / system fall back to tonalSpot (their own seed/role overrides /
+  // OS palette already differentiate them).
+  DynamicSchemeVariant get _variant {
+    return themePresets[appThemeKey]?.variant ?? DynamicSchemeVariant.tonalSpot;
+  }
+
   ThemeData get theme => _buildThemeData(Brightness.light);
   ThemeData get darkTheme => _buildThemeData(Brightness.dark);
 
@@ -304,6 +346,7 @@ class ThemeNotifier extends ChangeNotifier {
     return buildHibikiColorScheme(
       seedColor: _seedColor,
       brightness: brightness,
+      variant: _variant,
       primary: useCustomRoles ? customThemePrimaryColor : null,
       secondary: useCustomRoles ? customThemeSecondaryColor : null,
       tertiary: useCustomRoles ? customThemeTertiaryColor : null,

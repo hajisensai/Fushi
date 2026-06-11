@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
@@ -1203,25 +1202,35 @@ Color _swatchForegroundFor(Color background) {
       : Colors.black;
 }
 
-/// The colours a [HibikiSchemeSwatch] previews for a generated [ColorScheme]:
-/// [primary, secondary, tertiary, surface]. The first three are the accent
-/// wedges of the inner dot; surface is the rounded card's background. Surface is
-/// included so light vs dark presets sharing one seed stay distinct (their
-/// surfaces, hence card backgrounds, differ).
+/// The four colours a [HibikiSchemeSwatch] previews for a generated
+/// [ColorScheme], in the order the swatch paints them:
+/// `[text, background, button, menu]` =
+/// `[onSurface, surface, primary, surfaceContainerHigh]`.
+///
+/// This answers "what does this theme actually look like?" the way a user
+/// reads a UI: the **text colour** sitting on the **page background** (top-left
+/// triangle, shown as a 「文」glyph) and the **button/accent colour** dropped on
+/// a **popup-menu surface** (bottom-right triangle, shown as a dot). Surface vs
+/// surfaceContainerHigh also keeps light/dark presets that share one seed
+/// distinct (their backgrounds differ), and makes the three dark presets
+/// readable apart at a glance instead of three near-identical dark circles.
 List<Color> hibikiSchemeSwatchColors(ColorScheme scheme) => <Color>[
-      scheme.primary,
-      scheme.secondary,
-      scheme.tertiary,
+      scheme.onSurface,
       scheme.surface,
+      scheme.primary,
+      scheme.surfaceContainerHigh,
     ];
 
-/// A rounded-square swatch — a surface-coloured card holding a small dot split
-/// into three accent wedges (primary/secondary/tertiary) — previewing the real
-/// generated scheme colours instead of a single seed colour. Used by the theme
-/// picker so each swatch accurately predicts the applied theme (background +
-/// accents); a single-colour seed swatch could not (e.g. light/dark presets
-/// share one seed). Single-colour swatches (tag colour, custom-colour preview)
-/// keep using [HibikiColorSwatch].
+/// A rounded-square swatch split on the diagonal to preview the four real
+/// generated scheme colours instead of a single seed colour. The top-left
+/// triangle paints the **page background** with the **text colour** as a 「文」
+/// glyph (text-on-background contrast); the bottom-right triangle paints the
+/// **popup-menu surface** with the **button/accent colour** as a dot
+/// (button-on-menu). Used by the theme picker so each swatch accurately
+/// predicts the applied theme; a single-colour seed swatch could not (e.g.
+/// light/dark presets share one seed, the three dark presets look identical).
+/// Single-colour swatches (tag colour, custom-colour preview) keep using
+/// [HibikiColorSwatch].
 class HibikiSchemeSwatch extends StatelessWidget {
   const HibikiSchemeSwatch({
     required this.colors,
@@ -1235,7 +1244,7 @@ class HibikiSchemeSwatch extends StatelessWidget {
     this.borderColor,
   }) : assert(colors.length == 4, 'scheme swatch needs exactly 4 colours');
 
-  /// [primary, secondary, tertiary, surface] — see [hibikiSchemeSwatchColors].
+  /// `[text, background, button, menu]` — see [hibikiSchemeSwatchColors].
   final List<Color> colors;
   final double size;
   final bool selected;
@@ -1251,21 +1260,24 @@ class HibikiSchemeSwatch extends StatelessWidget {
   Widget build(BuildContext context) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final ColorScheme cs = Theme.of(context).colorScheme;
-    final Color cardSurface = colors[3];
+    final Color textRole = colors[0];
+    final Color backgroundRole = colors[1];
+    final Color menuRole = colors[3];
     final BorderSide borderSide = BorderSide(
       color: selected ? cs.primary : borderColor ?? cs.outlineVariant,
       width: selected ? 3 : 1,
     );
     final Widget? badgeChild =
         selected ? const Icon(Icons.check, size: 14) : overlay;
-    // A surface-filled disc behind the badge keeps the icon legible over the
-    // three accent wedges of the inner dot.
+    // For non-preset swatches (system = auto / custom = palette) a legible
+    // centred badge replaces the diagonal preview's glyph + dot — its disc uses
+    // the menu surface so the icon reads over either triangle.
     final Widget? badge = badgeChild == null
         ? null
         : Container(
             padding: const EdgeInsets.all(3),
             decoration: BoxDecoration(
-              color: cardSurface,
+              color: menuRole,
               shape: BoxShape.circle,
             ),
             child: IconTheme.merge(
@@ -1273,11 +1285,12 @@ class HibikiSchemeSwatch extends StatelessWidget {
               child: badgeChild,
             ),
           );
-    // Rounded-square card filled with the scheme's surface colour; a smaller dot
-    // inside shows the three accent roles (primary/secondary/tertiary). The
-    // selection ring rides the card border — the centred dot never reaches the
-    // edge, so a plain `decoration` border stays visible (no foregroundDecoration
-    // needed, unlike the old full-bleed quadrant circle).
+    // Rounded-square card painted by [_SchemeDiagonalPainter]: top-left triangle
+    // = page background with a text-coloured 「文」 (text-on-background); bottom-
+    // right triangle = popup-menu surface with a button-coloured dot
+    // (button-on-menu). The selection ring rides the card border via `decoration`
+    // (the painter clips to a rounded rect inside the border, so it never paints
+    // over the ring).
     final Widget visual = AnimatedContainer(
       duration: hibikiMd3StateDuration,
       curve: hibikiMd3StateCurve,
@@ -1285,20 +1298,24 @@ class HibikiSchemeSwatch extends StatelessWidget {
       height: size,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: cardSurface,
+        color: backgroundRole,
         borderRadius: tokens.radii.chipRadius,
         border: Border.fromBorderSide(borderSide),
       ),
-      child: SizedBox(
-        width: size * 0.58,
-        height: size * 0.58,
-        child: ClipOval(
-          child: CustomPaint(
-            painter: _SchemeWedgePainter(
-              <Color>[colors[0], colors[1], colors[2]],
-            ),
-            child: badge == null ? null : Center(child: badge),
+      child: ClipRRect(
+        borderRadius: tokens.radii.chipRadius,
+        child: CustomPaint(
+          painter: _SchemeDiagonalPainter(
+            textColor: textRole,
+            backgroundColor: backgroundRole,
+            buttonColor: colors[2],
+            menuColor: menuRole,
+            // The 「文」 glyph (text role on background) is hidden when a badge
+            // takes the centre, but the dot/triangles still convey the palette.
+            showGlyph: badge == null,
+            textDirection: Directionality.of(context),
           ),
+          child: badge == null ? null : Center(child: badge),
         ),
       ),
     );
@@ -1314,30 +1331,84 @@ class HibikiSchemeSwatch extends StatelessWidget {
   }
 }
 
-class _SchemeWedgePainter extends CustomPainter {
-  const _SchemeWedgePainter(this.colors);
+/// Paints the diagonal scheme preview: the canvas is split corner-to-corner
+/// (top-right -> bottom-left) into a top-left triangle filled with
+/// [backgroundColor] (carrying a [textColor] 「文」 glyph) and a bottom-right
+/// triangle filled with [menuColor] (carrying a [buttonColor] dot). This mirrors
+/// how a user reads a theme: text on the page vs a button on a popup menu.
+class _SchemeDiagonalPainter extends CustomPainter {
+  const _SchemeDiagonalPainter({
+    required this.textColor,
+    required this.backgroundColor,
+    required this.buttonColor,
+    required this.menuColor,
+    required this.showGlyph,
+    required this.textDirection,
+  });
 
-  /// [top, bottomLeft, bottomRight] — primary fills the top half, secondary and
-  /// tertiary the two bottom quarters. Surface is the card background, not a
-  /// wedge.
-  final List<Color> colors;
+  final Color textColor;
+  final Color backgroundColor;
+  final Color buttonColor;
+  final Color menuColor;
+  final bool showGlyph;
+  final TextDirection textDirection;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final double mx = size.width / 2;
-    final double my = size.height / 2;
     final Paint paint = Paint()..style = PaintingStyle.fill;
-    paint.color = colors[0];
-    canvas.drawRect(Rect.fromLTRB(0, 0, size.width, my), paint);
-    paint.color = colors[1];
-    canvas.drawRect(Rect.fromLTRB(0, my, mx, size.height), paint);
-    paint.color = colors[2];
-    canvas.drawRect(Rect.fromLTRB(mx, my, size.width, size.height), paint);
+    // Top-left triangle = page background (the card decoration already fills it,
+    // but paint it explicitly so the painter is self-contained / testable).
+    paint.color = backgroundColor;
+    final Path topLeft = Path()
+      ..moveTo(0, 0)
+      ..lineTo(size.width, 0)
+      ..lineTo(0, size.height)
+      ..close();
+    canvas.drawPath(topLeft, paint);
+    // Bottom-right triangle = popup-menu surface.
+    paint.color = menuColor;
+    final Path bottomRight = Path()
+      ..moveTo(size.width, 0)
+      ..lineTo(size.width, size.height)
+      ..lineTo(0, size.height)
+      ..close();
+    canvas.drawPath(bottomRight, paint);
+
+    // Button/accent dot in the bottom-right triangle's centroid.
+    final double dotRadius = size.shortestSide * 0.13;
+    final Offset dotCenter = Offset(size.width * 0.68, size.height * 0.68);
+    paint.color = buttonColor;
+    canvas.drawCircle(dotCenter, dotRadius, paint);
+
+    if (!showGlyph) return;
+    // 「文」 glyph in the top-left triangle, in the text role, to show the real
+    // text-on-background contrast of this theme.
+    final TextPainter tp = TextPainter(
+      text: TextSpan(
+        text: '文',
+        style: TextStyle(
+          color: textColor,
+          fontSize: size.shortestSide * 0.34,
+          height: 1,
+        ),
+      ),
+      textDirection: textDirection,
+    )..layout();
+    tp.paint(
+      canvas,
+      Offset(
+          size.width * 0.30 - tp.width / 2, size.height * 0.30 - tp.height / 2),
+    );
   }
 
   @override
-  bool shouldRepaint(_SchemeWedgePainter oldDelegate) =>
-      !listEquals(oldDelegate.colors, colors);
+  bool shouldRepaint(_SchemeDiagonalPainter oldDelegate) =>
+      oldDelegate.textColor != textColor ||
+      oldDelegate.backgroundColor != backgroundColor ||
+      oldDelegate.buttonColor != buttonColor ||
+      oldDelegate.menuColor != menuColor ||
+      oldDelegate.showGlyph != showGlyph ||
+      oldDelegate.textDirection != textDirection;
 }
 
 class HibikiPreviewSwitch extends StatelessWidget {

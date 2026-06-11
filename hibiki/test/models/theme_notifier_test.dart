@@ -47,6 +47,56 @@ void main() {
     test('themeLabel returns raw key for unknown keys', () {
       expect(ThemeNotifier.themeLabel('unknown-key'), 'unknown-key');
     });
+
+    test('each preset carries a scheme variant', () {
+      for (final entry in ThemeNotifier.themePresets.entries) {
+        expect(
+          entry.value.variant,
+          isA<DynamicSchemeVariant>(),
+          reason: '${entry.key} 缺少 scheme variant 字段',
+        );
+      }
+    });
+
+    test('the three dark presets declare distinct variants (TODO-100)', () {
+      expect(
+        ThemeNotifier.themePresets['gray-theme']!.variant,
+        DynamicSchemeVariant.neutral,
+      );
+      expect(
+        ThemeNotifier.themePresets['dark-theme']!.variant,
+        DynamicSchemeVariant.tonalSpot,
+      );
+      expect(
+        ThemeNotifier.themePresets['black-theme']!.variant,
+        DynamicSchemeVariant.vibrant,
+      );
+    });
+  });
+
+  group('ThemeNotifier dark preset distinctness (TODO-100)', () {
+    // 用户报「三个暗色主题选择时完全看不出差别」：旧实现三个暗色预设经
+    // tonalSpot 全部塌成同一套青色(#8bd0ef)+近黑背景。按预设各自的 variant
+    // 应用后，primary 与 surface 必须各不相同，主题切换才看得出差别。撤掉
+    // variant 接线(buildColorScheme 不传 _variant)本组立即转红。
+    Future<ColorScheme> appliedScheme(String key) async {
+      await notifier.setAppThemeKey(key);
+      return notifier.buildColorScheme(Brightness.dark);
+    }
+
+    test('gray / dark / black applied schemes have distinct primary + surface',
+        () async {
+      final ColorScheme gray = await appliedScheme('gray-theme');
+      final ColorScheme dark = await appliedScheme('dark-theme');
+      final ColorScheme black = await appliedScheme('black-theme');
+
+      expect(gray.primary, isNot(dark.primary));
+      expect(dark.primary, isNot(black.primary));
+      expect(gray.primary, isNot(black.primary));
+
+      expect(gray.surface, isNot(black.surface));
+      expect(dark.surface, isNot(black.surface));
+    });
   });
 
   group('ThemeNotifier defaults', () {

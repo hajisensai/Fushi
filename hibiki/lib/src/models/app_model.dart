@@ -147,6 +147,7 @@ final pipSearchPositionProvider = StateProvider<int>((ref) => 0);
 ColorScheme buildHibikiColorScheme({
   required Color seedColor,
   required Brightness brightness,
+  DynamicSchemeVariant variant = DynamicSchemeVariant.tonalSpot,
   Color? primary,
   Color? secondary,
   Color? tertiary,
@@ -155,6 +156,7 @@ ColorScheme buildHibikiColorScheme({
     theme_notifier.buildHibikiColorScheme(
       seedColor: seedColor,
       brightness: brightness,
+      variant: variant,
       primary: primary,
       secondary: secondary,
       tertiary: tertiary,
@@ -1552,8 +1554,9 @@ class AppModel with ChangeNotifier {
 
   // ── Theme delegates (logic moved to ThemeNotifier) ──────────────────
 
-  static Map<String, ({Color seed, Brightness brightness})> get themePresets =>
-      ThemeNotifier.themePresets;
+  static Map<String,
+          ({Color seed, Brightness brightness, DynamicSchemeVariant variant})>
+      get themePresets => ThemeNotifier.themePresets;
 
   static String themeLabel(String key) => ThemeNotifier.themeLabel(key);
 

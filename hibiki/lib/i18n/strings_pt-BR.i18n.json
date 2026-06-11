@@ -1502,5 +1502,9 @@
     "video_brightness": "Brightness",
     "video_brightness_unsupported": "Brightness control not available on this platform",
     "dict_import_started": "Importing dictionaries in the background...",
-    "dict_import_success_summary": "Imported $n dictionary(s)"
+    "dict_import_success_summary": "Imported $n dictionary(s)",
+    "section_system_theme": "System Theme Color",
+    "section_audiobook_lyrics": "Audiobook & Lyrics",
+    "video_subtitle_color_note": "Subtitle colors are set inside the video player.",
+    "theme_seed_preview_hint": "Swatches below preview the colors actually generated from your seed. To force a specific color as the primary accent, turn on the Primary toggle and pick it explicitly."
 }

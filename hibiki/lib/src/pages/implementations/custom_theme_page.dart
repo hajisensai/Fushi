@@ -445,9 +445,14 @@ class _CustomThemePageState extends BasePageState {
             ),
           ],
         ),
-        // ── 种子色 ──
+        // ── 板块 1：系统主题色（种子色 + 主色）──
+        // TODO-072：把种子色与全局主色归到「系统主题色」一块。
         AdaptiveSettingsSection(
+          title: t.section_system_theme,
           children: [
+            // TODO-071：提示用户色板预览的是种子实际生成的色；想固定某色当主色
+            // 强调色，请打开「主色」开关显式指定（否则灰种子会回退成绿）。
+            _buildHintRow(t.theme_seed_preview_hint),
             AdaptiveSettingsRow(
               title: t.seed_color,
               subtitle: t.seed_color_desc,
@@ -481,11 +486,6 @@ class _CustomThemePageState extends BasePageState {
                 },
               ),
             ),
-          ],
-        ),
-        // ── 主色（音频高亮、按钮、链接等全局强调色）──
-        AdaptiveSettingsSection(
-          children: [
             _buildOptionalColorPicker(
               label: t.color_primary,
               description: t.color_primary_desc,
@@ -505,7 +505,37 @@ class _CustomThemePageState extends BasePageState {
             ),
           ],
         ),
-        // ── 阅读器颜色 ──
+        // ── 板块 2：有声书与歌词（笹語高亮 + 选区高亮）──
+        AdaptiveSettingsSection(
+          title: t.section_audiobook_lyrics,
+          children: [
+            _buildOptionalColorPicker(
+              label: t.color_sasayaki,
+              description: t.color_sasayaki_desc,
+              preview: _buildSasayakiPreview(cs),
+              enabled: _useSasayakiColor,
+              onEnabledChanged: (bool value) =>
+                  setState(() => _useSasayakiColor = value),
+              color: _sasayakiColor!,
+              onChanged: (Color color) =>
+                  setState(() => _sasayakiColor = color),
+              enableAlpha: true,
+            ),
+            _buildOptionalColorPicker(
+              label: t.selection_color,
+              description: t.selection_color_desc,
+              preview: _buildSelectionPreview(cs),
+              enabled: _useSelectionColor,
+              onEnabledChanged: (bool value) =>
+                  setState(() => _useSelectionColor = value),
+              color: _selectionColor!,
+              onChanged: (Color color) =>
+                  setState(() => _selectionColor = color),
+              enableAlpha: true,
+            ),
+          ],
+        ),
+        // ── 板块 3：阅读器文字（字色 + 背景 + 链接）──
         AdaptiveSettingsSection(
           title: t.section_reader_colors,
           children: [
@@ -532,18 +562,6 @@ class _CustomThemePageState extends BasePageState {
               enableAlpha: false,
             ),
             _buildOptionalColorPicker(
-              label: t.selection_color,
-              description: t.selection_color_desc,
-              preview: _buildSelectionPreview(cs),
-              enabled: _useSelectionColor,
-              onEnabledChanged: (bool value) =>
-                  setState(() => _useSelectionColor = value),
-              color: _selectionColor!,
-              onChanged: (Color color) =>
-                  setState(() => _selectionColor = color),
-              enableAlpha: true,
-            ),
-            _buildOptionalColorPicker(
               label: t.color_link,
               description: t.color_link_desc,
               preview: _buildLinkPreview(cs),
@@ -560,20 +578,10 @@ class _CustomThemePageState extends BasePageState {
               onChanged: (Color color) => setState(() => _linkColor = color),
               enableAlpha: false,
             ),
-            _buildOptionalColorPicker(
-              label: t.color_sasayaki,
-              description: t.color_sasayaki_desc,
-              preview: _buildSasayakiPreview(cs),
-              enabled: _useSasayakiColor,
-              onEnabledChanged: (bool value) =>
-                  setState(() => _useSasayakiColor = value),
-              color: _sasayakiColor!,
-              onChanged: (Color color) =>
-                  setState(() => _sasayakiColor = color),
-              enableAlpha: true,
-            ),
           ],
         ),
+        // TODO-072：视频字幕颜色不在此页配置，只放一行说明。
+        _buildNoteRow(t.video_subtitle_color_note),
         // ── 高级选项 ──
         AdaptiveSettingsSection(
           title: t.section_advanced_colors,
@@ -1088,6 +1096,75 @@ class _CustomThemePageState extends BasePageState {
         height: 36,
         label: label,
         textColor: textColor,
+      ),
+    );
+  }
+
+  // ── TODO-071 / TODO-072 提示与说明行 ──
+
+  /// A non-interactive hint row (lightbulb icon + secondary text) used inside a
+  /// settings section to explain a behaviour to the user. TODO-071 uses it to
+  /// tell the user the swatches below preview the seed's *generated* colour and
+  /// how to pin a colour as the primary accent.
+  Widget _buildHintRow(String text) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    return Padding(
+      padding: EdgeInsets.symmetric(
+        horizontal: tokens.spacing.card,
+        vertical: tokens.spacing.gap,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.lightbulb_outline,
+            size: 18,
+            color: cs.primary,
+          ),
+          SizedBox(width: tokens.spacing.gap),
+          Expanded(
+            child: Text(
+              text,
+              style: tokens.type.metadata.copyWith(
+                color: cs.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// A standalone note line (info icon + secondary text) shown between or below
+  /// sections. TODO-072 uses it to point out that subtitle colours live in the
+  /// video player, not on this page.
+  Widget _buildNoteRow(String text) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    return Padding(
+      padding: EdgeInsets.symmetric(
+        horizontal: tokens.spacing.gap,
+        vertical: tokens.spacing.gap / 2,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.info_outline,
+            size: 16,
+            color: cs.onSurfaceVariant,
+          ),
+          SizedBox(width: tokens.spacing.gap),
+          Expanded(
+            child: Text(
+              text,
+              style: tokens.type.metadata.copyWith(
+                color: cs.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

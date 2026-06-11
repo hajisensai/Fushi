@@ -1502,5 +1502,9 @@
     "video_brightness": "亮度",
     "video_brightness_unsupported": "此平台不支持调节屏幕亮度",
     "dict_import_started": "正在后台导入词典…",
-    "dict_import_success_summary": "已导入 $n 本词典"
+    "dict_import_success_summary": "已导入 $n 本词典",
+    "section_system_theme": "系统主题色",
+    "section_audiobook_lyrics": "有声书与歌词",
+    "video_subtitle_color_note": "视频字幕颜色在视频播放器内设置。",
+    "theme_seed_preview_hint": "下方色板预览由种子色实际生成的颜色。想让某个颜色固定作为主色强调色，请打开「主色」开关并显式指定。"
 }

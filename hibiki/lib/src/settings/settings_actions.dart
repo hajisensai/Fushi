@@ -348,12 +348,20 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
           },
         ),
         ...AppModel.themePresets.entries.map(
-          (MapEntry<String, ({Color seed, Brightness brightness})> entry) {
+          (MapEntry<
+                  String,
+                  ({
+                    Color seed,
+                    Brightness brightness,
+                    DynamicSchemeVariant variant
+                  })>
+              entry) {
             return HibikiSchemeSwatch(
               colors: hibikiSchemeSwatchColors(
                 buildHibikiColorScheme(
                   seedColor: entry.value.seed,
                   brightness: entry.value.brightness,
+                  variant: entry.value.variant,
                 ),
               ),
               size: _swatchSize,
