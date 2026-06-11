@@ -140,6 +140,92 @@ class ShortcutDefaults {
     ShortcutAction.audiobookSeekToClickedSentence: const ShortcutBindingSet(
       mouseBindings: [MouseBinding(1)],
     ),
+    // Video player defaults (TODO-134). Mirror the previous hard-coded
+    // buildVideoPlayerShortcuts map exactly so migrating into the registry does
+    // not change any default behaviour (Never break userspace). The video page
+    // resolves only the video scope, so there is no cross-scope shadowing here.
+    ShortcutAction.videoTogglePlayPause: _kb([
+      _key(LogicalKeyboardKey.space),
+      _key(LogicalKeyboardKey.keyP),
+      _key(LogicalKeyboardKey.mediaPlayPause),
+    ]),
+    ShortcutAction.videoPlay: _kb([
+      _key(LogicalKeyboardKey.mediaPlay),
+    ]),
+    ShortcutAction.videoPause: _kb([
+      _key(LogicalKeyboardKey.mediaPause),
+    ]),
+    // Ctrl+Arrow = previous/next subtitle sentence (asbplayer style); bare
+    // arrows are time seek below.
+    ShortcutAction.videoPreviousSubtitle: _kb([
+      _key(LogicalKeyboardKey.arrowLeft, {ModifierKey.ctrl}),
+    ]),
+    ShortcutAction.videoNextSubtitle: _kb([
+      _key(LogicalKeyboardKey.arrowRight, {ModifierKey.ctrl}),
+    ]),
+    ShortcutAction.videoSeekBackward: _kb([
+      _key(LogicalKeyboardKey.arrowLeft),
+      _key(LogicalKeyboardKey.keyA),
+      _key(LogicalKeyboardKey.keyJ),
+    ]),
+    ShortcutAction.videoSeekForward: _kb([
+      _key(LogicalKeyboardKey.arrowRight),
+      _key(LogicalKeyboardKey.keyD),
+      _key(LogicalKeyboardKey.keyI),
+      _key(LogicalKeyboardKey.keyF, {ModifierKey.shift}),
+    ]),
+    ShortcutAction.videoToggleShaderCompare: _kb([
+      _key(LogicalKeyboardKey.keyC),
+    ]),
+    ShortcutAction.videoVolumeUp: _kb([
+      _key(LogicalKeyboardKey.arrowUp),
+      _key(LogicalKeyboardKey.digit0),
+    ]),
+    ShortcutAction.videoVolumeDown: _kb([
+      _key(LogicalKeyboardKey.arrowDown),
+      _key(LogicalKeyboardKey.digit9),
+    ]),
+    ShortcutAction.videoToggleMute: _kb([
+      _key(LogicalKeyboardKey.keyM),
+    ]),
+    ShortcutAction.videoSpeedUp: _kb([
+      _key(LogicalKeyboardKey.bracketRight),
+      _key(LogicalKeyboardKey.equal),
+    ]),
+    ShortcutAction.videoSpeedDown: _kb([
+      _key(LogicalKeyboardKey.bracketLeft),
+      _key(LogicalKeyboardKey.minus),
+    ]),
+    ShortcutAction.videoResetSpeed: _kb([
+      _key(LogicalKeyboardKey.backspace),
+    ]),
+    ShortcutAction.videoPreviousFrame: _kb([
+      _key(LogicalKeyboardKey.comma),
+    ]),
+    ShortcutAction.videoNextFrame: _kb([
+      _key(LogicalKeyboardKey.period),
+    ]),
+    ShortcutAction.videoScreenshot: _kb([
+      _key(LogicalKeyboardKey.keyS),
+    ]),
+    ShortcutAction.videoToggleFullscreen: _kb([
+      _key(LogicalKeyboardKey.keyF),
+    ]),
+    ShortcutAction.videoToggleSubtitleList: _kb([
+      _key(LogicalKeyboardKey.keyL),
+    ]),
+    ShortcutAction.videoToggleImmersiveLock: _kb([
+      _key(LogicalKeyboardKey.keyL, {ModifierKey.shift}),
+    ]),
+    ShortcutAction.videoToggleCrossSubtitleRecording: _kb([
+      _key(LogicalKeyboardKey.keyR),
+    ]),
+    ShortcutAction.videoToggleSubtitleBlur: _kb([
+      _key(LogicalKeyboardKey.keyB),
+    ]),
+    ShortcutAction.videoEscape: _kb([
+      _key(LogicalKeyboardKey.escape),
+    ]),
   };
 
   static final Map<ShortcutAction, ShortcutBindingSet> _macOS = {
@@ -165,6 +251,7 @@ class ShortcutDefaults {
         final desktop = _desktop[action]!;
         switch (action.scope) {
           case ShortcutScope.reader:
+          case ShortcutScope.video:
             return ShortcutBindingSet(
               keyboardBindings: desktop.keyboardBindings,
               gamepadBindings: desktop.gamepadBindings,

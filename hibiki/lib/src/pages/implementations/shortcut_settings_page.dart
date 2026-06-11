@@ -50,6 +50,52 @@ String _actionLabel(ShortcutAction action) {
       return t.shortcut_action_audiobook_prev_sentence;
     case ShortcutAction.audiobookSeekToClickedSentence:
       return t.shortcut_action_audiobook_seek_clicked;
+    case ShortcutAction.videoTogglePlayPause:
+      return t.shortcut_action_video_toggle_play_pause;
+    case ShortcutAction.videoPlay:
+      return t.shortcut_action_video_play;
+    case ShortcutAction.videoPause:
+      return t.shortcut_action_video_pause;
+    case ShortcutAction.videoPreviousSubtitle:
+      return t.shortcut_action_video_previous_subtitle;
+    case ShortcutAction.videoNextSubtitle:
+      return t.shortcut_action_video_next_subtitle;
+    case ShortcutAction.videoSeekBackward:
+      return t.shortcut_action_video_seek_backward;
+    case ShortcutAction.videoSeekForward:
+      return t.shortcut_action_video_seek_forward;
+    case ShortcutAction.videoToggleShaderCompare:
+      return t.shortcut_action_video_toggle_shader_compare;
+    case ShortcutAction.videoVolumeUp:
+      return t.shortcut_action_video_volume_up;
+    case ShortcutAction.videoVolumeDown:
+      return t.shortcut_action_video_volume_down;
+    case ShortcutAction.videoToggleMute:
+      return t.shortcut_action_video_toggle_mute;
+    case ShortcutAction.videoSpeedUp:
+      return t.shortcut_action_video_speed_up;
+    case ShortcutAction.videoSpeedDown:
+      return t.shortcut_action_video_speed_down;
+    case ShortcutAction.videoResetSpeed:
+      return t.shortcut_action_video_reset_speed;
+    case ShortcutAction.videoPreviousFrame:
+      return t.shortcut_action_video_previous_frame;
+    case ShortcutAction.videoNextFrame:
+      return t.shortcut_action_video_next_frame;
+    case ShortcutAction.videoScreenshot:
+      return t.shortcut_action_video_screenshot;
+    case ShortcutAction.videoToggleFullscreen:
+      return t.shortcut_action_video_toggle_fullscreen;
+    case ShortcutAction.videoToggleSubtitleList:
+      return t.shortcut_action_video_toggle_subtitle_list;
+    case ShortcutAction.videoToggleImmersiveLock:
+      return t.shortcut_action_video_toggle_immersive_lock;
+    case ShortcutAction.videoToggleCrossSubtitleRecording:
+      return t.shortcut_action_video_toggle_cross_subtitle_recording;
+    case ShortcutAction.videoToggleSubtitleBlur:
+      return t.shortcut_action_video_toggle_subtitle_blur;
+    case ShortcutAction.videoEscape:
+      return t.shortcut_action_video_escape;
   }
 }
 
@@ -64,6 +110,8 @@ String _scopeLabel(ShortcutScope scope) {
       return t.shortcut_scope_global;
     case ShortcutScope.audiobook:
       return t.shortcut_scope_audiobook;
+    case ShortcutScope.video:
+      return t.shortcut_scope_video;
   }
 }
 

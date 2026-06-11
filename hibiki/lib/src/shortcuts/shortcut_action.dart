@@ -2,7 +2,8 @@ enum ShortcutScope {
   reader,
   home,
   global,
-  audiobook;
+  audiobook,
+  video;
 
   // Scopes that are resolved together on the same page. The reader page
   // resolves reader + audiobook bindings; the home page resolves home + global.
@@ -19,6 +20,11 @@ enum ShortcutScope {
       case home:
       case global:
         return const <ShortcutScope>[home, global];
+      // The video player page is a standalone surface: it resolves only its own
+      // bindings, so the video scope is its own co-active group. Conflict
+      // detection therefore scans just video.
+      case video:
+        return const <ShortcutScope>[video];
     }
   }
 }
@@ -52,7 +58,37 @@ enum ShortcutAction {
   // 鼠标中键点句 → 跳到该句并播放。位置型动作，运行时不走
   // _executeShortcutAction，而是 onPointerSeek 经 resolveMouse 判定后定位执行。
   audiobookSeekToClickedSentence(
-      ShortcutScope.audiobook, 'audiobook_seek_clicked_sentence');
+      ShortcutScope.audiobook, 'audiobook_seek_clicked_sentence'),
+
+  // Video player (TODO-134): migrated out of the hard-coded
+  // buildVideoPlayerShortcuts map so they live in the remappable registry and
+  // show up in the shortcut settings page alongside the other scopes. The
+  // executed behaviour is unchanged; only the key lookup now goes through the
+  // registry. Defaults match the previous asbplayer/mpv-style bindings.
+  videoTogglePlayPause(ShortcutScope.video, 'video_toggle_play_pause'),
+  videoPlay(ShortcutScope.video, 'video_play'),
+  videoPause(ShortcutScope.video, 'video_pause'),
+  videoPreviousSubtitle(ShortcutScope.video, 'video_previous_subtitle'),
+  videoNextSubtitle(ShortcutScope.video, 'video_next_subtitle'),
+  videoSeekBackward(ShortcutScope.video, 'video_seek_backward'),
+  videoSeekForward(ShortcutScope.video, 'video_seek_forward'),
+  videoToggleShaderCompare(ShortcutScope.video, 'video_toggle_shader_compare'),
+  videoVolumeUp(ShortcutScope.video, 'video_volume_up'),
+  videoVolumeDown(ShortcutScope.video, 'video_volume_down'),
+  videoToggleMute(ShortcutScope.video, 'video_toggle_mute'),
+  videoSpeedUp(ShortcutScope.video, 'video_speed_up'),
+  videoSpeedDown(ShortcutScope.video, 'video_speed_down'),
+  videoResetSpeed(ShortcutScope.video, 'video_reset_speed'),
+  videoPreviousFrame(ShortcutScope.video, 'video_previous_frame'),
+  videoNextFrame(ShortcutScope.video, 'video_next_frame'),
+  videoScreenshot(ShortcutScope.video, 'video_screenshot'),
+  videoToggleFullscreen(ShortcutScope.video, 'video_toggle_fullscreen'),
+  videoToggleSubtitleList(ShortcutScope.video, 'video_toggle_subtitle_list'),
+  videoToggleImmersiveLock(ShortcutScope.video, 'video_toggle_immersive_lock'),
+  videoToggleCrossSubtitleRecording(
+      ShortcutScope.video, 'video_toggle_cross_subtitle_recording'),
+  videoToggleSubtitleBlur(ShortcutScope.video, 'video_toggle_subtitle_blur'),
+  videoEscape(ShortcutScope.video, 'video_escape');
 
   const ShortcutAction(this.scope, this.key);
 

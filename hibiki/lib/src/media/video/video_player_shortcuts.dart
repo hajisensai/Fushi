@@ -1,5 +1,7 @@
-import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
+
+import 'package:hibiki/src/shortcuts/shortcut_action.dart';
+import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
 
 class VideoPlayerShortcutActions {
   const VideoPlayerShortcutActions({
@@ -24,6 +26,7 @@ class VideoPlayerShortcutActions {
     required this.toggleSubtitleList,
     required this.toggleImmersiveLock,
     required this.toggleCrossSubtitleRecording,
+    required this.toggleSubtitleBlur,
     required this.escape,
   });
 
@@ -46,72 +49,85 @@ class VideoPlayerShortcutActions {
   final VoidCallback screenshot;
   final VoidCallback toggleFullscreen;
 
-  /// 打开/关闭字幕跳转列表面板（TODO-069，裸 L 键；asbplayer 式 transcript 列表）。
+  /// 打开/关闭字幕跳转列表面板（TODO-069，默认裸 L 键；asbplayer 式 transcript 列表）。
   final VoidCallback toggleSubtitleList;
 
-  /// 翻转锁定 / 沉浸模式（TODO-101，Shift+L）。锁定后控制条按钮不再随鼠标/触摸弹出，
+  /// 翻转锁定 / 沉浸模式（TODO-101，默认 Shift+L）。锁定后控制条按钮不再随鼠标/触摸弹出，
   /// 视频纯画面播放，但查词与快捷键仍可用；再按一次（或点常驻解锁按钮）退出。
   final VoidCallback toggleImmersiveLock;
 
-  /// 翻转跨字幕制卡区间录制（TODO-102，R 键；参考 asbplayer）。第一次按开始记录当前
+  /// 翻转跨字幕制卡区间录制（TODO-102，默认 R 键；参考 asbplayer）。第一次按开始记录当前
   /// 字幕作起始句并继续播放，第二次按以当前句作结束句，把区间内所有字幕文本 + 区间音频
   /// 合并到一张 Anki 卡。
   final VoidCallback toggleCrossSubtitleRecording;
+
+  /// 翻转字幕模糊（默认 B 键，asbplayer 同款）。原本挂在 video 本体内层独立
+  /// CallbackShortcuts，TODO-134 起并入可重映射注册表，与其它视频键统一。
+  final VoidCallback toggleSubtitleBlur;
+
   final VoidCallback escape;
 }
 
-Map<ShortcutActivator, VoidCallback> buildVideoPlayerShortcuts(
+/// Maps each video [ShortcutAction] to the callback that runs it. This is the
+/// single fixed wiring between the (remappable) registry actions and the
+/// concrete player operations; the keys themselves come from the registry so
+/// users can rebind them (TODO-134).
+Map<ShortcutAction, VoidCallback> videoActionCallbacks(
   VideoPlayerShortcutActions actions,
 ) {
-  return <ShortcutActivator, VoidCallback>{
-    const SingleActivator(LogicalKeyboardKey.space): actions.togglePlayPause,
-    const SingleActivator(LogicalKeyboardKey.keyP): actions.togglePlayPause,
-    const SingleActivator(LogicalKeyboardKey.mediaPlay): actions.play,
-    const SingleActivator(LogicalKeyboardKey.mediaPause): actions.pause,
-    const SingleActivator(LogicalKeyboardKey.mediaPlayPause):
-        actions.togglePlayPause,
-    // TODO-090：普通 ←/→ = 时间 seek（±seekSeconds 秒）；Ctrl+←/→ = 上/下一句字幕。
-    // 与 asbplayer 习惯一致：裸方向键管「快进快退」，Ctrl 管「按字幕跳句」。
-    const SingleActivator(LogicalKeyboardKey.arrowLeft): actions.seekBackward,
-    const SingleActivator(LogicalKeyboardKey.arrowRight): actions.seekForward,
-    const SingleActivator(LogicalKeyboardKey.arrowLeft, control: true):
-        actions.previousSubtitle,
-    const SingleActivator(LogicalKeyboardKey.arrowRight, control: true):
-        actions.nextSubtitle,
-    const SingleActivator(LogicalKeyboardKey.keyA): actions.seekBackward,
-    const SingleActivator(LogicalKeyboardKey.keyD): actions.seekForward,
-    const SingleActivator(
-      LogicalKeyboardKey.keyF,
-      shift: true,
-    ): actions.seekForward,
-    const SingleActivator(LogicalKeyboardKey.keyC): actions.toggleShaderCompare,
-    const SingleActivator(LogicalKeyboardKey.keyJ): actions.seekBackward,
-    const SingleActivator(LogicalKeyboardKey.keyI): actions.seekForward,
-    const SingleActivator(LogicalKeyboardKey.arrowUp): actions.volumeUp,
-    const SingleActivator(LogicalKeyboardKey.digit0): actions.volumeUp,
-    const SingleActivator(LogicalKeyboardKey.arrowDown): actions.volumeDown,
-    const SingleActivator(LogicalKeyboardKey.digit9): actions.volumeDown,
-    const SingleActivator(LogicalKeyboardKey.keyM): actions.toggleMute,
-    const SingleActivator(LogicalKeyboardKey.bracketLeft): actions.speedDown,
-    const SingleActivator(LogicalKeyboardKey.minus): actions.speedDown,
-    const SingleActivator(LogicalKeyboardKey.bracketRight): actions.speedUp,
-    const SingleActivator(LogicalKeyboardKey.equal): actions.speedUp,
-    const SingleActivator(LogicalKeyboardKey.backspace): actions.resetSpeed,
-    const SingleActivator(LogicalKeyboardKey.comma): actions.previousFrame,
-    const SingleActivator(LogicalKeyboardKey.period): actions.nextFrame,
-    const SingleActivator(LogicalKeyboardKey.keyS): actions.screenshot,
-    // 'L' = 打开/关闭字幕跳转列表（TODO-069；asbplayer 式 transcript 面板，按一下右侧
-    // 出现字幕句子列表，点句跳到对应画面）。未与既有键冲突（裸 L 此前未绑定）。
-    const SingleActivator(LogicalKeyboardKey.keyL): actions.toggleSubtitleList,
-    // Shift+L = 切换锁定 / 沉浸模式（TODO-101）。与裸 L（字幕列表）区分；锁定态
-    // 下所有快捷键仍生效，故此键也用来快速解锁（常驻解锁按钮是默认退出）。
-    const SingleActivator(LogicalKeyboardKey.keyL, shift: true):
-        actions.toggleImmersiveLock,
-    // 'R' = 翻转跨字幕制卡区间录制（TODO-102；参考 asbplayer 的录制范式）。R(ecord) 此前
-    // 未绑定，不撞既有键（裸 L 字幕列表 / Shift+L 锁定 / S 截图 / C 着色器对比都另有键）。
-    const SingleActivator(LogicalKeyboardKey.keyR):
+  return <ShortcutAction, VoidCallback>{
+    ShortcutAction.videoTogglePlayPause: actions.togglePlayPause,
+    ShortcutAction.videoPlay: actions.play,
+    ShortcutAction.videoPause: actions.pause,
+    ShortcutAction.videoPreviousSubtitle: actions.previousSubtitle,
+    ShortcutAction.videoNextSubtitle: actions.nextSubtitle,
+    ShortcutAction.videoSeekBackward: actions.seekBackward,
+    ShortcutAction.videoSeekForward: actions.seekForward,
+    ShortcutAction.videoToggleShaderCompare: actions.toggleShaderCompare,
+    ShortcutAction.videoVolumeUp: actions.volumeUp,
+    ShortcutAction.videoVolumeDown: actions.volumeDown,
+    ShortcutAction.videoToggleMute: actions.toggleMute,
+    ShortcutAction.videoSpeedUp: actions.speedUp,
+    ShortcutAction.videoSpeedDown: actions.speedDown,
+    ShortcutAction.videoResetSpeed: actions.resetSpeed,
+    ShortcutAction.videoPreviousFrame: actions.previousFrame,
+    ShortcutAction.videoNextFrame: actions.nextFrame,
+    ShortcutAction.videoScreenshot: actions.screenshot,
+    ShortcutAction.videoToggleFullscreen: actions.toggleFullscreen,
+    ShortcutAction.videoToggleSubtitleList: actions.toggleSubtitleList,
+    ShortcutAction.videoToggleImmersiveLock: actions.toggleImmersiveLock,
+    ShortcutAction.videoToggleCrossSubtitleRecording:
         actions.toggleCrossSubtitleRecording,
-    const SingleActivator(LogicalKeyboardKey.keyF): actions.toggleFullscreen,
-    const SingleActivator(LogicalKeyboardKey.escape): actions.escape,
+    ShortcutAction.videoToggleSubtitleBlur: actions.toggleSubtitleBlur,
+    ShortcutAction.videoEscape: actions.escape,
   };
+}
+
+/// Builds the `Map<ShortcutActivator, VoidCallback>` for the video player from
+/// the live registry's video-scope bindings (TODO-134). Every keyboard binding
+/// the user has mapped to a video action becomes a [SingleActivator] pointing
+/// at that action's callback, so rebinding in the shortcut settings page takes
+/// effect immediately. The subtitle-blur toggle stays press-edge-only
+/// (includeRepeats:false) to preserve its previous non-repeating behaviour.
+Map<ShortcutActivator, VoidCallback> buildVideoPlayerShortcutsFromRegistry(
+  HibikiShortcutRegistry registry,
+  VideoPlayerShortcutActions actions,
+) {
+  final Map<ShortcutAction, VoidCallback> callbacks =
+      videoActionCallbacks(actions);
+  final Map<ShortcutActivator, VoidCallback> result =
+      <ShortcutActivator, VoidCallback>{};
+  for (final MapEntry<ShortcutAction, VoidCallback> entry
+      in callbacks.entries) {
+    final ShortcutAction action = entry.key;
+    final bool includeRepeats =
+        action != ShortcutAction.videoToggleSubtitleBlur;
+    for (final binding in registry.bindingsFor(action).keyboardBindings) {
+      // Last writer wins if two actions share a key; the settings UI's conflict
+      // check prevents users from creating that within the video scope, and the
+      // defaults are collision-free.
+      result[binding.toActivator(includeRepeats: includeRepeats)] = entry.value;
+    }
+  }
+  return result;
 }

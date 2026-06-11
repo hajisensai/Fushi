@@ -27,11 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 204 条。点号进各自文件。
+> 共 205 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-208](bugs/BUG-208-reader-bg-ignores-system-light-theme.md) | ✅ | ✅ | 阅读器背景在 system-theme/light-theme 下不吃主题(恒白) |
+| [BUG-207](bugs/BUG-207-shortcut-load-before-source-init.md) | ✅ | 🚧 | 自定义快捷键重启后丢失/不生效(loadShortcutRegistry早于source.initialise) |
 | [BUG-206](bugs/BUG-206-lookup-highlight-multi-select.md) | ✅ | ✅ | 手机查词高亮多选/少选字（错位） |
 | [BUG-205](bugs/BUG-205-desktop-floating-strip-drag-dead.md) | ✅ | ✅ | Windows悬浮字幕条拖不动/无锁按钮/无法缩放 |
 | [BUG-204](bugs/BUG-204-todo-137-chrome-focus-space-no-pause.md) | ✅ | ✅ | 底栏焦点点空格不暂停音频 |

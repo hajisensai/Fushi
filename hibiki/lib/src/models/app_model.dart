@@ -1320,12 +1320,6 @@ class AppModel with ChangeNotifier {
           await AppFontLoader.resolveAndLoad(readerSettings.appUiFonts);
       ReaderHibikiSource.readerSettings = readerSettings;
 
-      await loadShortcutRegistry(
-        shortcutRegistry,
-        ReaderHibikiSource.instance,
-        defaultTargetPlatform,
-      );
-
       // Start polling physical controllers on platforms that need it (desktop);
       // start() is a no-op where the engine already delivers gameButton* keys.
       gamepadService.start();
@@ -1345,6 +1339,20 @@ class AppModel with ChangeNotifier {
               source.initialise(),
         ]),
       ]);
+
+      // BUG-207: load the shortcut registry only AFTER ReaderHibikiSource has
+      // run initialise() (which populates its in-memory preference cache from
+      // the DB). Reading shortcut_bindings_json before the cache is loaded saw
+      // an empty cache -> null -> resetToDefaults, and getPreference's
+      // cache-miss write-through clobbered the saved JSON with 's:null',
+      // permanently dropping the user's custom keys on every launch. Mirrors the
+      // profile-switch path (refreshPrefCache: refresh source caches first, then
+      // loadShortcutRegistry).
+      await loadShortcutRegistry(
+        shortcutRegistry,
+        ReaderHibikiSource.instance,
+        defaultTargetPlatform,
+      );
 
       debugPrint('[Hibiki] init: search preload (parallel)');
       final String warmupChar = targetLanguage.helloWorld.substring(0, 1);

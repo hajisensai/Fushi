@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 
 enum ModifierKey {
   ctrl,
@@ -84,6 +85,9 @@ class InputBinding {
     LogicalKeyboardKey.enter: 'Enter',
     LogicalKeyboardKey.tab: 'Tab',
     LogicalKeyboardKey.backspace: 'Backspace',
+    LogicalKeyboardKey.mediaPlay: 'MediaPlay',
+    LogicalKeyboardKey.mediaPause: 'MediaPause',
+    LogicalKeyboardKey.mediaPlayPause: 'MediaPlayPause',
     LogicalKeyboardKey.delete: 'Delete',
     LogicalKeyboardKey.home: 'Home',
     LogicalKeyboardKey.end: 'End',
@@ -182,6 +186,20 @@ class InputBinding {
         ..._sortedModifierLabels,
         _keyLabel(key),
       ].join('+');
+
+  /// Flutter [SingleActivator] for this binding, so a registry binding can be
+  /// installed into widgets that take a `Map<ShortcutActivator, VoidCallback>`
+  /// (e.g. media_kit's `keyboardShortcuts`). [includeRepeats] is exposed so the
+  /// video player can keep its press-edge-only keys (e.g. subtitle blur toggle)
+  /// non-repeating while everything else honours OS key-repeat.
+  SingleActivator toActivator({bool includeRepeats = true}) => SingleActivator(
+        key,
+        control: modifiers.contains(ModifierKey.ctrl),
+        shift: modifiers.contains(ModifierKey.shift),
+        alt: modifiers.contains(ModifierKey.alt),
+        meta: modifiers.contains(ModifierKey.meta),
+        includeRepeats: includeRepeats,
+      );
 
   static InputBinding? deserialize(String s) {
     if (s.isEmpty) return null;

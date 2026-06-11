@@ -2068,7 +2068,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   Map<ShortcutActivator, VoidCallback> _videoKeyboardShortcuts(
     VideoPlayerController controller,
   ) {
-    return buildVideoPlayerShortcuts(
+    return buildVideoPlayerShortcutsFromRegistry(
+      appModel.shortcutRegistry,
       VideoPlayerShortcutActions(
         togglePlayPause: () => unawaited(controller.playOrPause()),
         play: () => unawaited(controller.play()),
@@ -2128,6 +2129,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         toggleImmersiveLock: _toggleImmersiveLock,
         // 'R' = 翻转跨字幕制卡区间录制（TODO-102）。
         toggleCrossSubtitleRecording: _toggleCrossSubtitleRecording,
+        // 'B' = 翻转字幕模糊（TODO-134：从内层独立 CallbackShortcuts 并入注册表）。
+        toggleSubtitleBlur: () => unawaited(_toggleSubtitleBlur()),
         escape: () {
           // 跨字幕录制中时，Esc 先取消录制（最外层临时态，逐级退出，TODO-102）——不丢用户
           // 这次没录完的区间却误退页/退全屏。取消不制卡（区别于再按 R 结束并制卡）。
@@ -3915,24 +3918,18 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // 两层主题嵌套：[AdaptiveVideoControls] 按平台互斥择一渲染（桌面读 Desktop
     // 主题、移动读 Material 主题），故同时提供两套互不干扰，让字幕/音轨/设置入口
     // 在桌面、移动、全屏三种场景都可达。嵌套顺序不影响——各自被对应平台 controls 读取。
-    // 'B' 切换字幕模糊（asbplayer 同款热键）。包在 media_kit 内层 CallbackShortcuts
-    // 之外：内层已消费空格/方向键/F 等，'B' 不在其默认绑定里 → 未被消费会冒泡到这层，
-    // 故不与既有快捷键冲突，也不必重建 media_kit 那套含内部 helper 的默认绑定。
-    return CallbackShortcuts(
-      bindings: <ShortcutActivator, VoidCallback>{
-        // includeRepeats:false——按住 B 不放时 OS key-repeat 会高频翻转模糊态并反复
-        // 写偏好，只在按下沿触发一次。
-        const SingleActivator(LogicalKeyboardKey.keyB, includeRepeats: false):
-            () => unawaited(_toggleSubtitleBlur()),
-      },
-      child: VideoControlsThemePair(
-        mobile: mobileControlsTheme,
-        desktop: desktopControlsTheme,
-        // 字幕跳转列表「真 push-aside」（TODO-121）：面板可见时把 Video 包进
-        // Row[Expanded(Video), 面板列]，画面真挤窄、不被遮（见 [_videoWithSubtitlePanel]）。
-        child: _videoWithSubtitlePanel(
-          controller,
-          Video(
+    // 'B' 切换字幕模糊（TODO-134）现已并入可重映射注册表（video scope），随其它视频键
+    // 一起经 media_kit 的 keyboardShortcuts 整表安装，不再需要本页内层的独立
+    // CallbackShortcuts；press-edge-only（includeRepeats:false）由
+    // buildVideoPlayerShortcutsFromRegistry 对该 action 保留。
+    return VideoControlsThemePair(
+      mobile: mobileControlsTheme,
+      desktop: desktopControlsTheme,
+      // 字幕跳转列表「真 push-aside」（TODO-121）：面板可见时把 Video 包进
+      // Row[Expanded(Video), 面板列]，画面真挤窄、不被遮（见 [_videoWithSubtitlePanel]）。
+      child: _videoWithSubtitlePanel(
+        controller,
+        Video(
             controller: videoController,
             // 用本页持有的 FocusNode 替换 Video 内置的匿名节点，以便覆盖层（对话框 /
             // bottom sheet / 文件选择器）关闭后能主动把键盘焦点还给它，恢复空格等内置
@@ -3971,8 +3968,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                 _buildVideoControls(state, controller),
           ),
         ),
-      ),
-    );
+      );
   }
 
   /// media_kit `controls` builder：默认桌面控制条 + 可点字幕 [VideoSubtitleOverlay]
