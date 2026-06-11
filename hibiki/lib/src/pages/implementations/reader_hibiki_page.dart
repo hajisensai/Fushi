@@ -119,6 +119,34 @@ bool shouldReclaimReaderFocusAfterGesture({
 }) =>
     !popupVisible && !chromeHasFocus;
 
+/// 视口尺寸变化是否大到需要重排分页（BUG-210 / TODO-146）。
+///
+/// 桌面端用户报「翻页有时跳回章节开头」。根因不在 JS `paginate`（真实 Chromium
+/// 引擎下逐页步进稳健，BUG-169 修复有效），而在 [_ReaderHibikiPageState._syncPageSize]
+/// 的旧判定：宽度用**精确浮点不等** `w != _lastSyncedWidth`（零容差），高度才用
+/// `(h - last).abs() >= 1`（1px 容差）。Windows 桌面（`flutter_inappwebview_windows`
+/// fork 渲染 EPUB）在翻页/重绘时常报 sub-pixel 视口宽抖动，零容差让任意 0.x px 宽差
+/// 都判 `widthChanged` → 走整章重载（`_navigateToChapter` 重新 load + 粗粒度 progress
+/// 恢复）：progress 分辨率低 → 落到错误的、通常更靠前的页（progress<=0 时直接
+/// `scrollToProgressPaged` 回 `contentFirstPageScroll` = 章节开头），即用户感知的
+/// 「翻页跳回章节开头」。
+///
+/// 修复 = 让宽、高用**同一个 1px 容差**判定（消除「宽零容差」这个特例）。真正的
+/// 旋转 / 窗口 resize 宽度大变（远 > 1px）仍照常重排，零破坏。返回 `(width, height)`
+/// 两个布尔，调用方据此分别决定整章重载（宽变）或原地重排（高变）。
+({bool width, bool height}) readerViewportNeedsRepaginate({
+  required double width,
+  required double height,
+  required double lastWidth,
+  required double lastHeight,
+  double tolerancePx = 1.0,
+}) {
+  final bool widthChanged =
+      lastWidth > 0 && (width - lastWidth).abs() >= tolerancePx;
+  final bool heightChanged = (height - lastHeight).abs() >= tolerancePx;
+  return (width: widthChanged, height: heightChanged);
+}
+
 /// 阅读器主题用的四个颜色角色：正文背景、正文字色、私语(振假名/sasayaki)叠色、
 /// 是否暗色。preset 主题在 [_ReaderHibikiPageState._themeMap] 里手调，其余主题
 /// （light-theme / system-theme / 任意未覆盖的 key）由 [resolveReaderThemeColors]
@@ -1399,8 +1427,18 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     final Size screen = MediaQuery.of(context).size;
     final double w = screen.width;
     final double h = screen.height;
-    final bool widthChanged = _lastSyncedWidth > 0 && w != _lastSyncedWidth;
-    final bool heightChanged = (h - _lastSyncedHeight).abs() >= 1;
+    // BUG-210 / TODO-146: 宽、高共用 1px 容差判定（见 readerViewportNeedsRepaginate）。
+    // 旧代码宽度用零容差精确不等，Windows sub-pixel 宽抖动会误触发整章重载 + 粗粒度
+    // progress 恢复，把用户从当前页弹到更靠前的页/章节开头（「翻页跳回章节开头」）。
+    final ({bool width, bool height}) repaginate =
+        readerViewportNeedsRepaginate(
+      width: w,
+      height: h,
+      lastWidth: _lastSyncedWidth,
+      lastHeight: _lastSyncedHeight,
+    );
+    final bool widthChanged = repaginate.width;
+    final bool heightChanged = repaginate.height;
     if (!widthChanged && !heightChanged) return;
     // BUG-111: 诊断——窗口/缩放 settle 或 resize 后，把真实视口与已分页基线比对。
     // 若 content-ready 后这里报 widthChanged，说明初始分页宽度偏窄、正在自动重排铺满。
