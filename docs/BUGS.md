@@ -31,7 +31,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-209](bugs/BUG-209-wgc-graphics-capture-crash.md) | — | — | 手机闪退实为Windows WGC FramePool teardown崩溃 |
+| [BUG-209](bugs/BUG-209-wgc-graphics-capture-crash.md) | ✅ | ✅ | 手机闪退实为Windows WGC FramePool teardown崩溃 |
 | [BUG-208](bugs/BUG-208-reader-bg-ignores-system-light-theme.md) | ✅ | ✅ | 阅读器背景在 system-theme/light-theme 下不吃主题(恒白) |
 | [BUG-207](bugs/BUG-207-shortcut-load-before-source-init.md) | ✅ | ✅ | 自定义快捷键重启后丢失/不生效(loadShortcutRegistry早于source.initialise) |
 | [BUG-206](bugs/BUG-206-lookup-highlight-multi-select.md) | ✅ | ✅ | 手机查词高亮多选/少选字（错位） |
