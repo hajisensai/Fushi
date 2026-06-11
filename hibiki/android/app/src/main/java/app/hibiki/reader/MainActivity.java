@@ -9,6 +9,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.KeyEvent;
+import android.view.WindowManager;
 import androidx.annotation.NonNull;
 import android.net.Uri;
 
@@ -56,6 +57,7 @@ public class MainActivity extends AudioServiceActivity {
     private static final String SPLASH_CHANNEL = ChannelNames.SPLASH;
     private static final String LIFECYCLE_CHANNEL = ChannelNames.LIFECYCLE;
     private static final String ICON_CHANNEL = ChannelNames.ICON_SWITCH;
+    private static final String SCREEN_BRIGHTNESS_CHANNEL = ChannelNames.SCREEN_BRIGHTNESS;
     private static final String SPLASH_PREFS = PreferenceKeys.FILE_SPLASH;
     private static final int SAF_PICK_DIR_REQUEST = 1001;
     private static MethodChannel floatingLyricChannel;
@@ -650,6 +652,69 @@ public class MainActivity extends AudioServiceActivity {
                     case "isCustomShortcutSupported":
                         result.success(IconSwitchHelper.isCustomShortcutSupported(this));
                         break;
+                    default:
+                        result.notImplemented();
+                        break;
+                }
+            });
+
+        // TODO-057: window-level screen brightness for the video player's
+        // left-half vertical drag. We set THIS WINDOW's brightness override
+        // (WindowManager.LayoutParams.screenBrightness in 0..1); it never
+        // touches the system Settings value and is dropped automatically when
+        // the window goes away. restoreBrightness sets it back to
+        // BRIGHTNESS_OVERRIDE_NONE (-1) so the display follows the system again.
+        new MethodChannel(flutterEngine.getDartExecutor().getBinaryMessenger(),
+                SCREEN_BRIGHTNESS_CHANNEL)
+            .setMethodCallHandler((call, result) -> {
+                switch (call.method) {
+                    case "getBrightness": {
+                        runOnUiThread(() -> {
+                            float b = getWindow().getAttributes().screenBrightness;
+                            if (b < 0f) {
+                                // No override set yet: report the current system
+                                // brightness (0..255 -> 0..1) so the drag starts
+                                // from what the user actually sees.
+                                try {
+                                    int sys = Settings.System.getInt(
+                                            getContentResolver(),
+                                            Settings.System.SCREEN_BRIGHTNESS, 128);
+                                    b = sys / 255f;
+                                } catch (Exception e) {
+                                    b = 0.5f;
+                                }
+                            }
+                            result.success((double) b);
+                        });
+                        break;
+                    }
+                    case "setBrightness": {
+                        final Object arg = call.arguments;
+                        if (!(arg instanceof Number)) {
+                            result.error("INVALID_ARG",
+                                "setBrightness requires a number 0..1", null);
+                            break;
+                        }
+                        final float value = Math.max(0f,
+                                Math.min(1f, ((Number) arg).floatValue()));
+                        runOnUiThread(() -> {
+                            WindowManager.LayoutParams lp = getWindow().getAttributes();
+                            lp.screenBrightness = value;
+                            getWindow().setAttributes(lp);
+                            result.success(null);
+                        });
+                        break;
+                    }
+                    case "restoreBrightness": {
+                        runOnUiThread(() -> {
+                            WindowManager.LayoutParams lp = getWindow().getAttributes();
+                            lp.screenBrightness =
+                                    WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE;
+                            getWindow().setAttributes(lp);
+                            result.success(null);
+                        });
+                        break;
+                    }
                     default:
                         result.notImplemented();
                         break;

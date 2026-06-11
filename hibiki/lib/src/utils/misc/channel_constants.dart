@@ -22,4 +22,6 @@ abstract final class HibikiChannels {
   static const MethodChannel iconSwitch = MethodChannel('$_prefix/icon_switch');
   static const MethodChannel clipboardImage =
       MethodChannel('$_prefix/clipboard_image');
+  static const MethodChannel screenBrightness =
+      MethodChannel('$_prefix/screen_brightness');
 }

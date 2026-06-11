@@ -48,6 +48,7 @@ import 'package:hibiki/src/sync/remote_video_client.dart';
 import 'package:hibiki/src/utils/app_ui_scale.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
+import 'package:hibiki/src/platform/screen_brightness_controller.dart';
 import 'package:hibiki/src/utils/misc/platform_utils.dart';
 import 'package:hibiki/src/utils/misc/show_app_dialog.dart';
 import 'package:hibiki/src/utils/misc/hibiki_toast.dart';
@@ -197,6 +198,16 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 鼠标/触控设备号冲突的固定值，使重复派发落在同一逻辑设备上。
   static const int _syntheticHoverDevice = 0x6869626B; // 'hibk'
   static const double _volumeStep = 5.0;
+
+  // TODO-057: 视频左半区竖滑调屏幕亮度、右半区竖滑调音量。手势 + 指示器复用
+  // media_kit 移动控制条内建实现（见 [_mobileControlsTheme] 的 volumeGesture/
+  // brightnessGesture + 回调）；亮度落设备背光经此 controller，桌面诚实门控。
+  final ScreenBrightnessController _brightness =
+      ScreenBrightnessController.instance;
+
+  /// 进入视频时的系统屏幕亮度快照（移动端）。退出播放器 [restore] 写回，防止把
+  /// 用户系统亮度永久留在拖动后的值（iOS 系统级亮度尤其要还原）。null=尚未取到。
+  double? _enterBrightness;
 
   int get _asbSeekMs => _asbConfig.seekSeconds * 1000;
   double get _speedStep => _asbConfig.speedStep;
@@ -416,6 +427,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // _seedWarmPopup（成功路径、必已初始化）再设——与 base_source_page 同范式。
     _popup = DictionaryPopupController(lowMemory: false);
     WidgetsBinding.instance.addObserver(this);
+    // TODO-057: 进入视频即快照系统屏幕亮度（移动端），供亮度手势初值与退出还原；
+    // 桌面 no-op。
+    unawaited(_ensureEnterBrightness());
     _init();
   }
 
@@ -1063,6 +1077,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _watchTracker = null;
     _controller?.removeListener(_syncWindowAspectRatioLock);
     unawaited(_clearWindowAspectRatioLock());
+    // TODO-057: 退出播放器还原屏幕亮度——把进页快照写回（iOS 系统级亮度），未
+    // 取过快照时 Android 侧设回「跟随系统」(-1)。防止把用户系统亮度永久留在拖动后值。
+    unawaited(_brightness.restore(previous: _enterBrightness));
     _controller?.dispose();
     _videoFocusNode.dispose();
     _titleNotifier.dispose();
@@ -2006,6 +2023,21 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     return MaterialVideoControlsThemeData(
       // 无操作 2 秒后控制条自动隐藏（TODO-056，media_kit 默认 3 秒偏长）。
       controlsHoverDuration: const Duration(seconds: 2),
+      // TODO-057: 启用 media_kit 移动控制条内建的「左半区竖滑调亮度 / 右半区竖滑
+      // 调音量」手势（含内建亮度/音量指示器）。仅移动端有此控制条；桌面走
+      // [_desktopControlsTheme]（无此手势，屏幕亮度本就不可控，诚实降级）。不开
+      // seekGesture（横滑 seek 超范围，且与既有 seek 键 085/090 / 双击全屏语义重叠）。
+      // 单击暂停 / 字幕点击查词不受影响：media_kit 的竖直 drag 与 tap 同一手势 arena，
+      // 纯点击时 drag 不启动。亮度回调经 [ScreenBrightnessController]（桌面 no-op）。
+      volumeGesture: _brightness.canControl,
+      brightnessGesture: _brightness.canControl,
+      seekGesture: false,
+      onVolumeChanged: _onMediaKitVolumeChanged,
+      onBrightnessChanged: _onMediaKitBrightnessChanged,
+      initialVolume: (controller.volume / 100.0).clamp(0.0, 1.0).toDouble(),
+      initialBrightness: _enterBrightness,
+      onBrightnessReset: () =>
+          unawaited(_brightness.restore(previous: _enterBrightness)),
       // 进度条留底部空间：不传时 media_kit 构造器默认 EdgeInsets.zero 会贴屏幕最底。
       seekBarMargin: EdgeInsets.only(
         left: 16,
@@ -2227,6 +2259,38 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       icon: _volumeIconFor(clamped),
       progress: clamped / 100.0,
     );
+  }
+
+  /// media_kit 移动控制条的「右半区竖滑调音量」回调（TODO-057）。media_kit
+  /// 已做好区域判定、逐帧累积与 clamp，传入 [value] 为 0..1。我们只把它转成现有
+  /// 音量通道的 0..100 并复用 [VideoPlayerController.setVolume]——与 TODO-044 方向键
+  /// 音量、音量条 UI 同一条 setter，不另开并行状态。OSD 走 media_kit 内置音量指示器。
+  void _onMediaKitVolumeChanged(double value) {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return;
+    final double pct = (value.clamp(0.0, 1.0) * 100.0).toDouble();
+    unawaited(controller.setVolume(pct));
+  }
+
+  /// media_kit 移动控制条的「左半区竖滑调屏幕亮度」回调（TODO-057）。[value] 为
+  /// 0..1，经 [ScreenBrightnessController] 写设备背光（Android 窗口级 / iOS 系统级）。
+  /// 桌面 [ScreenBrightnessController.canControl] 为 false → 静默 no-op（且我们不在
+  /// 桌面控制条启用该手势，见 [_desktopControlsTheme] 不传回调），诚实降级。
+  void _onMediaKitBrightnessChanged(double value) {
+    if (!_brightness.canControl) return;
+    unawaited(_brightness.setBrightness(value));
+  }
+
+  /// 进入视频时取一次系统屏幕亮度快照（移动端）作为亮度手势初值与退出还原值；
+  /// 退出（[dispose]）把它写回，防止把用户系统亮度永久留在拖动后的值。
+  Future<void> _ensureEnterBrightness() async {
+    if (_enterBrightness != null || !_brightness.canControl) return;
+    final double? current = await _brightness.currentBrightness();
+    if (current == null) return;
+    _enterBrightness = current;
+    // 重建让 [_mobileControlsTheme] 把真实 initialBrightness 喂给 media_kit，
+    // 否则首次亮度拖动会从其默认 0.5 起跳（而非用户当前实际亮度）。
+    if (mounted) setState(() {});
   }
 
   /// 设置播放倍速：即时调 controller + 持久化到 per-book 偏好（速度记忆）+ 刷新。

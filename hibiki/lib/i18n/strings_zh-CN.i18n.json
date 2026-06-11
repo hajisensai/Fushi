@@ -1498,5 +1498,7 @@
     "font_target_dictionary": "词典字体",
     "video_setting_subtitle_sync_input": "偏移 (ms)",
     "video_subtitle_attached_to_video": "已为《$title》挂上字幕（$count 句）",
-    "video_subtitle_attach_playlist_hint": "请进入播放页按集挂载字幕"
+    "video_subtitle_attach_playlist_hint": "请进入播放页按集挂载字幕",
+    "video_brightness": "亮度",
+    "video_brightness_unsupported": "此平台不支持调节屏幕亮度"
 }

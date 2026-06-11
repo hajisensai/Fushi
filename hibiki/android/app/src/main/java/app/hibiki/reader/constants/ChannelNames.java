@@ -16,4 +16,5 @@ public final class ChannelNames {
     public static final String FONTS = PREFIX + "/fonts";
     public static final String SAF = PREFIX + "/saf";
     public static final String ICON_SWITCH = PREFIX + "/icon_switch";
+    public static final String SCREEN_BRIGHTNESS = PREFIX + "/screen_brightness";
 }
