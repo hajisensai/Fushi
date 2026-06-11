@@ -123,6 +123,27 @@ class HibikiSyncServerController extends ChangeNotifier {
     await stop();
   }
 
+  /// 进程退出快速变体（TODO-086/BUG-191）：用于即将 `exit(0)` 的快杀路径。
+  /// 对每个 Bonsoir 事件源**同步 await 切断 Dart 订阅**（TODO-036 防崩的关键），
+  /// 但把原生 method-channel stop 改 fire-and-forget——不再像 [shutdownForExit]
+  /// 那样 await 可能不归的原生 stop（根因B：Bonsoir 原生 stop 吃满 3 秒）。
+  /// 随后的 exit(0) 进程级终止会回收原生线程，无需等其完成。broadcast 同理。
+  Future<void> shutdownForExitFast() async {
+    final List<LanDiscoveryService> discoveries =
+        _activeDiscoveries.toList(growable: false);
+    _activeDiscoveries.clear();
+    for (final LanDiscoveryService discovery in discoveries) {
+      await discovery.cutEventSourceForExit();
+    }
+    _broadcast?.cutEventSourceForExit();
+    _broadcast = null;
+    // HTTP 服务器（shelf）无 mDNS 事件源、不触发 TODO-036；其 close 也可能慢，
+    // 同样 fire-and-forget，exit(0) 兜底回收 socket。
+    unawaited(_server?.stop());
+    _server = null;
+    notifyListeners();
+  }
+
   SyncRepository get _repo => SyncRepository(_database());
 
   /// Start the host on launch iff the user previously enabled it. Fire-and-

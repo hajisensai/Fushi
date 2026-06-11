@@ -29,6 +29,7 @@ import 'package:hibiki/src/utils/window_caption_channel.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/shortcuts/global_navigation.dart';
 import 'package:hibiki/src/startup/webview_prewarm.dart';
+import 'package:hibiki/src/startup/exit_flush_registry.dart';
 import 'package:hibiki/src/platform/platform_services.dart';
 import 'package:hibiki/src/platform/platform_providers.dart';
 import 'package:hibiki/src/media/video/external_video.dart';
@@ -108,9 +109,10 @@ void main([List<String> args = const <String>[]]) {
       await windowManager.ensureInitialized();
       // Intercept the native window-close signal so we can tear down Bonsoir's
       // mDNS event sources (LAN broadcast + discovery) BEFORE the Flutter engine
-      // is destroyed. Without this, a queued mDNS event delivered to a torn-down
+      // exits. Without this, a queued mDNS event delivered to a torn-down
       // messenger crashes the process on exit (TODO-036, Windows). The actual
-      // teardown + destroy() runs in [_HoshiReaderAppState.onWindowClose].
+      // event-source cut + fast exit runs in
+      // [_HoshiReaderAppState.onWindowClose] (TODO-086).
       await windowManager.setPreventClose(true);
       await hotKeyManager.unregisterAll(); // 热重载清理残留全局热键
     }
@@ -392,23 +394,64 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
   }
 
   /// 桌面原生窗口关闭信号（main() 已 setPreventClose(true) → 窗口不会自己关）。
-  /// 在引擎拆除前 await 停掉 Bonsoir 事件源，然后显式 destroy() 真正关窗。
-  /// 这是退出期切断 mDNS 事件源的**可靠**路径（TODO-036）。
+  /// 退出期先切断 Bonsoir 事件源（TODO-036 防崩），flush 数据后 exit(0) 快杀，
+  /// 不再同步拆引擎（TODO-086）。详见 [_flushAndExitForWindowClose]。
   @override
   void onWindowClose() async {
-    await _shutdownSyncSources();
-    try {
-      await windowManager.destroy();
-    } catch (e) {
-      debugPrint('[Hibiki] window destroy on close failed: $e');
-    }
+    await _flushAndExitForWindowClose();
   }
 
-  /// 停掉 Bonsoir 的 LAN 广播 + 发现（mDNS 事件源）。幂等：[onWindowClose] 与
-  /// `detached` 兜底可能都触发，只跑一次。
+  /// 桌面关闭快杀路径（TODO-086/BUG-191）。过去这里 await windowManager 的 destroy
+  /// 触发原生 WM_DESTROY → 同步逐插件拆 Flutter 引擎（WebView2 / WGC 捕获 /
+  /// libmpv），每个原生 teardown 几百 ms~秒级、串行叠加成几秒~十几秒卡死 UI 线程
+  /// （用户「关闭要好久」）。改为：① 同步切断 Bonsoir 事件源（TODO-036 防崩）并把
+  /// 原生 stop 后台化（根因B：Bonsoir 原生 stop 不归吃满超时）；② await flush 所有
+  /// 活跃页面尚未落库的阅读位置/统计/观看时长（[ExitFlushRegistry]）；③ close
+  /// database 做 WAL checkpoint，排空后台 isolate 的 pending 写——**这三步保证数据
+  /// 完整性**；④ `exit(0)` 进程级终止，跳过 destroy() 的逐插件同步 teardown，由 OS
+  /// 回收原生资源（WebView2/libmpv/socket），毫秒级返回。
   ///
-  /// 整条清理链路有超时上限：若 bonsoir 原生 stop（method channel）永不归，
-  /// 3 秒后放行让 [onWindowClose] 照常 destroy()，避免点 X 后窗口冻结。
+  /// 不再调用 windowManager 的 destroy：exit(0) 是原子终止，没有「messenger 已拆但
+  /// 进程仍在派发事件」的中间窗口，TODO-036 的崩溃前提随之消失。
+  Future<void> _flushAndExitForWindowClose() async {
+    if (_shutdownStarted) return;
+    _shutdownStarted = true;
+    final AppModel appModel = ref.read(appProvider);
+    // ① 切断 Bonsoir 事件源（事件订阅同步 cancel；原生 stop fire-and-forget）。
+    //    收紧超时到 1.5s：cutEventSourceForExit 不再 await 原生 stop，正常瞬间返回。
+    try {
+      await appModel.syncServerController
+          .shutdownForExitFast()
+          .timeout(const Duration(milliseconds: 1500));
+    } on TimeoutException {
+      debugPrint(
+          '[Hibiki] sync source fast shutdown timed out; exiting anyway');
+    } catch (e) {
+      debugPrint('[Hibiki] sync source fast shutdown failed: $e');
+    }
+    // ② flush 活跃页面 pending 进度/统计（缓存值落库，不碰退出期正在拆的 WebView）。
+    try {
+      await ExitFlushRegistry.instance.flushAll();
+    } catch (e) {
+      debugPrint('[Hibiki] exit flush failed: $e');
+    }
+    // ③ close database：WAL checkpoint + 排空后台 isolate pending 写。退出最后一道
+    //    数据完整性闸门——必须在 exit(0) 之前完成。
+    try {
+      await appModel.closeDatabase();
+    } catch (e) {
+      debugPrint('[Hibiki] database close on exit failed: $e');
+    }
+    // ④ 进程级快杀（desktop lifecycle = exit(0)），跳过 destroy() 的同步插件拆除。
+    await appModel.platformServices.lifecycle.exitApp();
+  }
+
+  /// 停掉 Bonsoir 的 LAN 广播 + 发现（mDNS 事件源）。幂等：与桌面
+  /// [onWindowClose] 共享 [_shutdownStarted]，只跑一次。
+  ///
+  /// 仅作 `detached` 生命周期兜底（移动端 / 不经 window_manager 的退出路径）。桌面
+  /// 点 X 走 [_flushAndExitForWindowClose]（flush + closeDB + exit(0)），不再到这里。
+  /// 超时上限收紧到 1.5s（TODO-086）：原生 stop 不归时放行，避免拖住退出。
   Future<void> _shutdownSyncSources() async {
     if (_shutdownStarted) return;
     _shutdownStarted = true;
@@ -417,12 +460,11 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
           .read(appProvider)
           .syncServerController
           .shutdownForExit()
-          .timeout(const Duration(seconds: 3));
+          .timeout(const Duration(milliseconds: 1500));
     } on TimeoutException {
-      debugPrint(
-          '[Hibiki] sync source shutdown on exit timed out; closing anyway');
+      debugPrint('[Hibiki] sync source shutdown on exit timed out; continuing');
     } catch (e) {
-      // 退出清理失败不该阻止关窗；记一笔即可（不吞静默）。
+      // 退出清理失败不该阻止退出；记一笔即可（不吞静默）。
       debugPrint('[Hibiki] sync source shutdown on exit failed: $e');
     }
   }

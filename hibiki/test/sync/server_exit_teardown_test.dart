@@ -103,7 +103,7 @@ void main() {
               'BEFORE the engine is torn down (TODO-036)');
     });
 
-    test('the app state listens for window close and tears down + destroys',
+    test('the app state handles window close with a fast exit (no destroy)',
         () {
       final String main = File('lib/main.dart').readAsStringSync();
       expect(
@@ -112,45 +112,41 @@ void main() {
               'onWindowClose');
       expect(main.contains('void onWindowClose()'), isTrue,
           reason: 'must handle the native close signal');
-      expect(main.contains('windowManager.destroy()'), isTrue,
-          reason: 'after teardown the window must be explicitly destroyed '
-              '(preventClose stops the default close)');
+      // TODO-086: destroy() syncly tears down the engine plugin-by-plugin =
+      // the multi-second exit hang; the close path now uses exit(0).
+      expect(main.contains('windowManager.destroy()'), isFalse,
+          reason: 'onWindowClose must NOT destroy() (sync engine teardown); '
+              'it must exit(0) instead (TODO-086)');
     });
 
-    test('onWindowClose awaits the controller teardown before destroy', () {
+    test('onWindowClose cuts Bonsoir event source before exit (TODO-036 kept)',
+        () {
       final String main = File('lib/main.dart').readAsStringSync();
-      expect(
-          RegExp(r'syncServerController\s*\.shutdownForExit\(\)')
-              .hasMatch(main),
-          isTrue,
-          reason: 'the exit hook must stop Bonsoir via the app-level '
-              'controller');
-      // The teardown call must precede destroy() INSIDE onWindowClose so the
-      // event source is dead before the window/engine goes away. Anchor at
-      // the onWindowClose body: a bare indexOf would first match the
-      // detached-fallback call (or a comment) earlier in the file.
       final int closeAt = main.indexOf('void onWindowClose()');
       expect(closeAt, greaterThanOrEqualTo(0));
-      final int teardownAt =
-          main.indexOf('await _shutdownSyncSources();', closeAt);
-      final int destroyAt = main.indexOf('windowManager.destroy()', closeAt);
-      expect(teardownAt, greaterThan(closeAt),
-          reason: 'onWindowClose must await the teardown');
-      expect(destroyAt, greaterThan(teardownAt),
-          reason: 'teardown must run before the window is destroyed');
+      final int hookAt = main.indexOf('_flushAndExitForWindowClose() async');
+      expect(hookAt, greaterThan(closeAt));
+      final int cutAt = main.indexOf('shutdownForExitFast()', hookAt);
+      final int exitAt =
+          main.indexOf('platformServices.lifecycle.exitApp()', hookAt);
+      expect(cutAt, greaterThan(hookAt),
+          reason: 'exit must cut the Bonsoir event source (TODO-036)');
+      expect(exitAt, greaterThan(cutAt),
+          reason: 'the event-source cut must run before exit(0)');
     });
 
     test('exit teardown is bounded by a timeout so close-X can never freeze',
         () {
       final String main = File('lib/main.dart').readAsStringSync();
-      final int teardownAt =
-          main.indexOf('Future<void> _shutdownSyncSources()');
-      expect(teardownAt, greaterThanOrEqualTo(0));
-      final String body = main.substring(teardownAt);
-      expect(body.contains('.timeout(const Duration(seconds: 3))'), isTrue,
-          reason: 'a hung bonsoir native stop must not block onWindowClose '
-              'forever: the shutdownForExit await must carry a timeout so '
-              'destroy() always runs (TODO-036 review follow-up)');
+      final int hookAt = main.indexOf('_flushAndExitForWindowClose() async');
+      expect(hookAt, greaterThanOrEqualTo(0));
+      final String body = main.substring(hookAt);
+      // TODO-086: Bonsoir exit timeout tightened from 3s to 1.5s (the fast
+      // variant already backgrounds the native stop).
+      expect(
+          body.contains('.timeout(const Duration(milliseconds: 1500))'), isTrue,
+          reason: 'a hung bonsoir native stop must not block exit forever: '
+              'the fast teardown await must carry a 1.5s timeout (TODO-086)');
       expect(body.contains('on TimeoutException'), isTrue,
           reason: 'the timeout must be logged and swallowed, never escape '
               'the close path');
@@ -175,6 +171,33 @@ void main() {
       expect(schema.contains('.unregisterDiscovery('), isTrue,
           reason: 'the widget must unregister on its own dispose to avoid a '
               'double-dispose');
+    });
+  });
+
+  group('HibikiSyncServerController.shutdownForExitFast (TODO-086)', () {
+    test('cuts every registered discovery event source', () async {
+      final HibikiDatabase db = _memDb();
+      addTearDown(db.close);
+      final HibikiSyncServerController controller = _controller(db);
+      final LanDiscoveryService a = LanDiscoveryService(deviceId: 'a');
+      final LanDiscoveryService b = LanDiscoveryService(deviceId: 'b');
+      controller.registerDiscovery(a);
+      controller.registerDiscovery(b);
+
+      await controller.shutdownForExitFast();
+
+      expect(a.isDisposed, isTrue,
+          reason: 'fast exit must still cut the Bonsoir event source at root');
+      expect(b.isDisposed, isTrue);
+    });
+
+    test('is idempotent and safe with nothing registered', () async {
+      final HibikiDatabase db = _memDb();
+      addTearDown(db.close);
+      final HibikiSyncServerController controller = _controller(db);
+      await controller.shutdownForExitFast();
+      await controller.shutdownForExitFast();
+      expect(controller.isRunning, isFalse);
     });
   });
 }

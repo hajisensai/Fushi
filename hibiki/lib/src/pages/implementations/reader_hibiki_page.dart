@@ -42,6 +42,7 @@ import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
 import 'package:hibiki/src/reader/reader_selection_data.dart';
 import 'package:hibiki/src/reader/reader_selection_scripts.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
+import 'package:hibiki/src/startup/exit_flush_registry.dart';
 import 'package:hibiki/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:hibiki/src/media/audiobook/pointer_seek.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
@@ -248,6 +249,11 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   String? _cachedStyleTag;
 
   Timer? _saveDebounce;
+
+  /// 进程退出 flush 回调引用（TODO-086/BUG-191）：initState 登记到
+  /// [ExitFlushRegistry]，dispose 注销。退出路径统一 await，保证未到 debounce
+  /// 的阅读位置/统计在 exit(0) 前落库。
+  ExitFlushCallback? _exitFlushCallback;
   Timer? _progressPollTimer;
   Timer? _contentReadyTimer;
   Timer? _gamepadAHoldTimer;
@@ -374,6 +380,8 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _exitFlushCallback =
+        ExitFlushRegistry.instance.register(_flushAllForProcessExit);
     // The inset reading-content focus ring only paints in traditional
     // (keyboard/gamepad) highlight mode; rebuild it when the mode flips so it
     // appears/disappears with the input device, not only on focus changes.
@@ -1073,6 +1081,11 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     ReaderHibikiSource.onSettingsChangedLive = null;
     ReaderHibikiSource.onLayoutReloadLive = null;
     FocusManager.instance.removeHighlightModeListener(_onHighlightModeChanged);
+    final ExitFlushCallback? exitFlush = _exitFlushCallback;
+    if (exitFlush != null) {
+      ExitFlushRegistry.instance.unregister(exitFlush);
+      _exitFlushCallback = null;
+    }
     WidgetsBinding.instance.removeObserver(this);
     _progressPollTimer?.cancel();
     _saveDebounce?.cancel();
@@ -3923,6 +3936,22 @@ window.flutter_inappwebview.callHandler('spreadReady');
     await _audiobookController?.flushPosition();
   }
 
+  /// 进程退出统一 flush（TODO-086/BUG-191）。**不**调用
+  /// [_syncPositionFromWebViewProgress]——退出期 WebView2 正在拆除，对它
+  /// `evaluateJavascript` 会挂死整个退出。改用 debounce 已算好缓存的
+  /// `_lastProgress*` 字段直接落库（[_flushPosition]），并把阅读统计 + 有声书
+  /// 播放位置写穿。await 完成后退出路径才会 exit(0)。
+  Future<void> _flushAllForProcessExit() async {
+    if (_lyricsMode) {
+      // 歌词模式可见进度只有音频 cue 位置，先从当前 cue 派生位置再落库
+      // （纯内存计算，不碰 WebView）。
+      _syncPositionFromCurrentCue();
+    }
+    await _flushPosition();
+    await _flushReadingStats();
+    await _audiobookController?.flushPosition();
+  }
+
   Future<void> _flushPosition() async {
     _saveDebounce?.cancel();
     if (!_hasEverLoaded || _lastProgressSection < 0) {
@@ -3972,24 +4001,30 @@ window.flutter_inappwebview.callHandler('spreadReady');
     }
   }
 
-  void _flushReadingStats() {
+  /// 把本 session 累积的字数 + 阅读时长落库。返回的 Future 在 DB 写完成后才完成，
+  /// 供进程退出路径 await（TODO-086/BUG-191）；其余生命周期调用点 fire-and-forget
+  /// （不 await 返回的 Future，行为同旧版）。计数器在发起写之前清零，保证同一段
+  /// 时长/字数不会被重复累加。
+  Future<void> _flushReadingStats() async {
     if (_sessionCharsRead <= 0 || _book == null) return;
     final DateTime now = DateTime.now();
     final int elapsedMs = now.difference(_sessionStartTime).inMilliseconds;
     final String dateKey =
         '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
-    appModel.database
-        .addReadingStatistic(
-      title: _book!.title,
-      dateKey: dateKey,
-      charsRead: _sessionCharsRead,
-      timeMs: elapsedMs,
-    )
-        .catchError((Object e) {
-      debugPrint('[ReaderHibiki] stats flush error: $e');
-    });
+    final int charsRead = _sessionCharsRead;
+    final String title = _book!.title;
     _sessionCharsRead = 0;
     _sessionStartTime = DateTime.now();
+    try {
+      await appModel.database.addReadingStatistic(
+        title: title,
+        dateKey: dateKey,
+        charsRead: charsRead,
+        timeMs: elapsedMs,
+      );
+    } catch (e) {
+      debugPrint('[ReaderHibiki] stats flush error: $e');
+    }
   }
 
   // ── Key Navigation ────────────────────────────────────────────────

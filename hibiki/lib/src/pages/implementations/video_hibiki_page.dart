@@ -29,6 +29,7 @@ import 'package:hibiki/src/media/video/video_controls_theme_pair.dart';
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
 import 'package:hibiki/src/media/video/video_mpv_config.dart';
 import 'package:hibiki/src/media/video/video_player_controller.dart';
+import 'package:hibiki/src/startup/exit_flush_registry.dart';
 import 'package:hibiki/src/media/video/video_player_shortcuts.dart';
 import 'package:hibiki/src/media/video/video_shader_manager.dart';
 import 'package:hibiki/src/media/video/video_shader_tier.dart';
@@ -354,6 +355,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 观看统计采集器（观看时长 + 字幕字数 + 完成标记）；首次 load 建，dispose 释放。
   VideoWatchTracker? _watchTracker;
 
+  /// 进程退出 flush 回调引用（TODO-086/BUG-191）：initState 登记到
+  /// [ExitFlushRegistry]，dispose 注销。保证未落库的播放位置 + 观看统计在
+  /// exit(0) 前写穿。
+  ExitFlushCallback? _exitFlushCallback;
+
   /// 查词浮层栈（与阅读器/词典页同款，由共享 [DictionaryPopupController] 管理）。
   /// 在 initState 安全读取一次 lowMemory 构造——不可放字段初始化器懒读 appModel，
   /// 否则首次访问可能落在 dispose/deactivate 的 postframe（element 树不稳定）→ ref.read 抛错。
@@ -473,6 +479,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // _seedWarmPopup（成功路径、必已初始化）再设——与 base_source_page 同范式。
     _popup = DictionaryPopupController(lowMemory: false);
     WidgetsBinding.instance.addObserver(this);
+    _exitFlushCallback =
+        ExitFlushRegistry.instance.register(_flushAllForProcessExit);
     // TODO-057: 进入视频即快照系统屏幕亮度（移动端），供亮度手势初值与退出还原；
     // 桌面 no-op。
     unawaited(_ensureEnterBrightness());
@@ -506,6 +514,15 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       case AppLifecycleState.detached:
         break;
     }
+  }
+
+  /// 进程退出统一 flush（TODO-086/BUG-191）。把当前播放位置写穿（[flushPosition]
+  /// 读 libmpv position，退出期 player 仍存活，安全），并 stop 观看计时器把退出
+  /// 瞬间的部分观看窗口落库。两步都 await，退出路径据此保证统计/进度在 exit(0)
+  /// 前提交。未 load（无 controller / tracker）时 no-op 安全。
+  Future<void> _flushAllForProcessExit() async {
+    await _controller?.flushPosition();
+    await _watchTracker?.stop();
   }
 
   Future<void> _init() async {
@@ -1109,6 +1126,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    final ExitFlushCallback? exitFlush = _exitFlushCallback;
+    if (exitFlush != null) {
+      ExitFlushRegistry.instance.unregister(exitFlush);
+      _exitFlushCallback = null;
+    }
     // 先把根 Overlay 浮层 entry 摘除/释放，再 clear 浮层栈：entry 一旦移除就不会再被
     // 根 Overlay 重建 _buildPopupOverlay，杜绝销毁期用失效 State 重建浮层（退视频红屏）。
     final OverlayEntry? entry = _popupOverlayEntry;

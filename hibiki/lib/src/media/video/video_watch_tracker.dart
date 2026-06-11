@@ -63,7 +63,7 @@ class VideoWatchTracker {
   VideoWatchTracker({
     required this.title,
     required this.bookUid,
-    required void Function(
+    required FutureOr<void> Function(
             String title, String dateKey, int subtitleChars, int watchTimeMs)
         addStat,
     required Future<void> Function(String bookUid) markCompleted,
@@ -74,7 +74,7 @@ class VideoWatchTracker {
 
   final String title;
   final String bookUid;
-  final void Function(
+  final FutureOr<void> Function(
           String title, String dateKey, int subtitleChars, int watchTimeMs)
       _addStat;
   final Future<void> Function(String bookUid) _markCompleted;
@@ -102,11 +102,13 @@ class VideoWatchTracker {
   void start() {
     if (_timer != null) return;
     _tickStart = DateTime.now();
-    _timer = Timer.periodic(_interval, (_) => _flush());
+    _timer = Timer.periodic(_interval, (_) => unawaited(_flush()));
   }
 
-  void stop() {
-    _flush();
+  /// 停止观看计时（先 flush 退出瞬间的部分窗口再 cancel）。返回的 Future 在那次
+  /// flush 的 DB 写完成后才完成，供进程退出路径 await（TODO-086/BUG-191）。
+  Future<void> stop() async {
+    await _flush();
     _timer?.cancel();
     _timer = null;
     _tickStart = null;
@@ -118,7 +120,7 @@ class VideoWatchTracker {
   }
 
   void dispose() {
-    stop();
+    unawaited(stop());
     _source?.removeListener(_onSourceChanged);
     _source = null;
   }
@@ -132,12 +134,16 @@ class VideoWatchTracker {
       final int chars = text.runes.length;
       if (chars > 0) {
         debugSubtitleChars += chars;
-        _addStat(title, _dateKey(DateTime.now()), chars, 0);
+        unawaited(Future<void>.value(
+            _addStat(title, _dateKey(DateTime.now()), chars, 0)));
       }
     }
   }
 
-  void _flush() {
+  /// 把自上次 tick 起的观看时长落库。返回的 Future 在所有 DB 写完成后才完成，
+  /// 供 [stop]（进而进程退出路径）await（TODO-086/BUG-191）；周期 tick 用
+  /// `unawaited(_flush())` 不阻塞播放。
+  Future<void> _flush() async {
     final VideoPlaybackSource? s = _source;
     final DateTime? start = _tickStart;
     final DateTime now = DateTime.now();
@@ -150,14 +156,15 @@ class VideoWatchTracker {
     if (s.isPlaying && isContinuousWatchGap(start, now)) {
       for (final (String dateKey, int hour, int ms)
           in splitWatchTime(start, now)) {
-        _addHourly?.call(dateKey, hour, ms);
-        _addStat(title, dateKey, 0, ms); // 逐桶配各自 dateKey：跨午夜正确归两天
+        await _addHourly?.call(dateKey, hour, ms);
+        // 逐桶配各自 dateKey：跨午夜正确归两天。
+        await _addStat(title, dateKey, 0, ms);
       }
     }
 
     if (shouldMarkCompleted(s.positionMs, s.durationMs, _completed)) {
       _completed = true;
-      unawaited(_markCompleted(bookUid));
+      await _markCompleted(bookUid);
     }
   }
 }

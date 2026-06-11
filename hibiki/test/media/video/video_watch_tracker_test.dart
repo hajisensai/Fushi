@@ -155,4 +155,33 @@ void main() {
       expect(tracker.debugSubtitleChars, 0);
     });
   });
+
+  group('exit flush awaits async stat writes (TODO-086/BUG-192)', () {
+    test('stop() future completes only after the async stat write commits',
+        () async {
+      final List<int> committed = <int>[];
+      final _FakeSource src = _FakeSource()..isPlaying = true;
+      // addStat 模拟异步落库（后台 isolate 写 Drift）：只有当 tracker 真的 await
+      // 它，stop() 返回时 committed 才非空。撤掉 _flush/stop 的 await（改回
+      // fire-and-forget）会让本断言转红——锁住退出时统计不丢。
+      final VideoWatchTracker tracker = VideoWatchTracker(
+        title: 'A',
+        bookUid: 'u1',
+        addStat: (String t, String dateKey, int chars, int ms) async {
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+          if (ms > 0) committed.add(ms); // 只看观看时长写（chars 路径 ms=0）
+        },
+        markCompleted: (_) async {},
+      )..attach(src);
+
+      tracker.start();
+      // 制造一段连续播放窗口（>0 且 <= kMaxWatchGap）。
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      await tracker.stop();
+
+      expect(committed, isNotEmpty,
+          reason: 'stop() 必须 await 异步统计写——否则 exit(0) 丢观看时长');
+      expect(committed.first, greaterThan(0));
+    });
+  });
 }

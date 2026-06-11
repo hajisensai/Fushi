@@ -175,6 +175,21 @@ class LanDiscoveryService {
     await stopDiscovery();
     await _deviceStream.close();
   }
+
+  /// 进程退出专用快速切断（TODO-086/BUG-191）：**同步 await** 取消 Dart 端事件
+  /// 订阅——这才是 TODO-036 防崩的关键（事件不再派发到引擎/messenger）；bonsoir
+  /// **原生** stop（method channel，可能不归/很慢，根因B）改 fire-and-forget，
+  /// 不阻塞退出。随后 exit(0) 进程级终止会回收原生线程，不依赖原生 stop 完成。
+  Future<void> cutEventSourceForExit() async {
+    if (_disposed) return;
+    _disposed = true;
+    await _sub?.cancel();
+    _sub = null;
+    unawaited(_discovery?.stop());
+    _discovery = null;
+    _discoveredDevices.clear();
+    unawaited(_deviceStream.close());
+  }
 }
 
 /// Advertises this device so peers can discover it. Bound to the running
@@ -216,6 +231,13 @@ class LanBroadcastService {
 
   Future<void> stop() async {
     await _broadcast?.stop();
+    _broadcast = null;
+  }
+
+  /// 进程退出专用（TODO-086/BUG-191）：广播无 Dart 事件订阅（只对外播报），
+  /// 原生 stop 改 fire-and-forget 不阻塞退出；exit(0) 回收原生线程。
+  void cutEventSourceForExit() {
+    unawaited(_broadcast?.stop());
     _broadcast = null;
   }
 }
