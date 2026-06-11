@@ -392,6 +392,18 @@ class VideoPlayerController extends ChangeNotifier
     await _heightSub?.cancel();
     _heightSub = null;
 
+    // 裸 `Player()`：**必须保持 `PlayerConfiguration.pitch == false`（media_kit 默认）**
+    // ——这是视频调速不闪退的根因不变量（TODO-116）。media_kit `setRate` 的分支由
+    // `configuration.pitch` 决定（media_kit-1.2.6 `real.dart:817`）：
+    //   - 开启该配置时：**每次调速**都 `_setPropertyString('af', 'scaletempo:scale=…')`
+    //     重写 libmpv 用户音频滤镜链。这正是有声书在 Win 上反复重配 mpv af 滤镜图崩溃的
+    //     那条路（TODO-070/BUG-070，已用 `JustAudioMediaKit.pitch=false` 修有声书侧）。
+    //   - 关闭（默认）时：只 `_setPropertyDouble('speed', rate)`，不动 af 链 → 安全。
+    // 视频走裸 `Player()`（不经 just_audio / JustAudioMediaKit），保音高靠在 `load` 里
+    // 一次性设的 `audio-pitch-correction=yes`（VideoMpvConfig，[applyMpvConfigToPlayer]），
+    // 与每次调速无关。**切勿**为「保音高」给这里的 `Player()` 传开启该配置的
+    // `PlayerConfiguration`——那会让视频每次调速重写 af 滤镜图、在 Windows 上回归
+    // TODO-070 的调速闪退。守卫：`hibiki/test/media/video/video_speed_pitch_guard_test.dart`。
     final Player player = _player ?? Player();
     if (_player == null) {
       _player = player;

@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 193 条。点号进各自文件。
+> 共 194 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-197](bugs/BUG-197-video-playback-crash-audit.md) | ✅ | ✅ | 视频播放高频闪退全平台根因排查 (TODO-116) |
 | [BUG-196](bugs/BUG-196-focus-nav-volume-gate.md) | ✅ | ✅ | 焦点导航/音量键开关未真正 gate 输入（Tab 仍遍历 + 音量键出焦点框） |
 | [BUG-195](bugs/BUG-195-android-system-focus-highlight.md) | ✅ | ✅ | 三星 OneUI 6.5 系统默认焦点框与 app 自绘焦点环双重重叠 |
 | [BUG-194](bugs/BUG-194-languages-late-init.md) | ✅ | ✅ | LateInitializationError: languages map accessed before populateLanguages during init |
