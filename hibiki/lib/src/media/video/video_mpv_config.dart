@@ -437,3 +437,57 @@ Future<void> applyNetworkCachePropertiesToPlayer(
     }
   }
 }
+
+/// 构建「彻底关闭 libmpv 内置字幕渲染 + 禁止自动重选字幕轨」的属性 map。纯函数。
+///
+/// 根治 TODO-080/092 的双层竞态根因（BUG-190）：[VideoPlayerController.load] 只调一次
+/// `setSubtitleTrack(SubtitleTrack.no())` 不够——libmpv 字幕轨列表是 `player.open` 后
+/// **异步**解析就绪的，而 mpv 默认 `sub-auto=exact` 会在轨就绪后**自动重新选中**内嵌
+/// 字幕轨，覆盖掉先前的 `no()`。被重选的轨经 `sub-visibility=yes` 渲染成画面像素字幕，
+/// 与 media_kit 的内置 `SubtitleView`（也监听 `player.state.subtitle`）一起叠在 Hibiki
+/// 可点 [VideoSubtitleOverlay] 之上 → 字幕透明随机、点字幕穿透落空、横竖屏残留黑底。
+///
+/// 字幕在 Hibiki 一律走可点 overlay（外挂 sidecar 解析成 cue、内嵌文本轨经
+/// `_loadEmbeddedSubtitleIfNeeded` 抽取成 cue），libmpv 不该自己渲染任何字幕：
+/// - `sub-auto=no`：禁止 libmpv 自动加载/选择字幕轨——根治「轨就绪后被自动重选」竞态。
+/// - `sub-visibility=no`：即便某轨仍被选中（含图形 PGS 轨的画面渲染），也不渲染画面字幕。
+///
+/// **例外**：图形内封字幕（PGS/DVD 等位图，[selectEmbeddedGraphicTrack]）必须靠 libmpv
+/// 画面渲染（无文本可查词，BUG-122 兜底），那条路径会自行把 `sub-visibility` 打开，
+/// 故这里的默认抑制不影响它（见 [buildGraphicSubtitleVisibilityProperties]）。
+Map<String, String> buildSubtitleSuppressionProperties() {
+  return <String, String>{
+    'sub-auto': 'no',
+    'sub-visibility': 'no',
+  };
+}
+
+/// 图形内封字幕（PGS 等）走 libmpv 画面渲染时，重新打开画面字幕可见性。纯函数。
+///
+/// 与 [buildSubtitleSuppressionProperties] 配对：默认全程 `sub-visibility=no`（字幕走
+/// 可点 overlay），仅当用户选了**没有文本 cue 的图形轨**（[selectEmbeddedGraphicTrack]）
+/// 时才把可见性打开，让 libmpv 把位图字幕画到画面上。`sub-auto` 仍保持 `no`——轨由代码
+/// 显式 `setSubtitleTrack` 选定，不交给 mpv 自动选。
+Map<String, String> buildGraphicSubtitleVisibilityProperties() {
+  return <String, String>{
+    'sub-visibility': 'yes',
+  };
+}
+
+/// 把 [props]（字幕抑制/可见性属性）逐条 best-effort 注入 media_kit [player]。
+///
+/// 与 [applyMpvConfigToPlayer] / [applyNetworkCachePropertiesToPlayer] 同范式：经
+/// `player.platform`（NativePlayer）的 `setProperty`，仅 libmpv 后端生效；非 libmpv /
+/// 不支持属性单条静默吞掉，不影响播放。
+Future<void> applySubtitleMpvPropertiesToPlayer(
+    Player player, Map<String, String> props) async {
+  final dynamic native = player.platform;
+  if (native == null) return;
+  for (final MapEntry<String, String> e in props.entries) {
+    try {
+      await native.setProperty(e.key, e.value);
+    } catch (_) {
+      // 非 libmpv / 该属性不支持运行时设置：跳过这条，继续下一条。
+    }
+  }
+}

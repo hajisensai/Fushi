@@ -242,6 +242,31 @@ keep-open=yes
     });
   });
 
+  group('buildSubtitleSuppressionProperties (TODO-080/092, BUG-190)', () {
+    test('emits exactly sub-auto=no + sub-visibility=no', () {
+      final Map<String, String> m = buildSubtitleSuppressionProperties();
+      // 禁止 libmpv 自动重选字幕轨（根治异步轨就绪后的自动重选竞态）。
+      expect(m['sub-auto'], 'no');
+      // 即便某轨仍被选中也不渲染画面字幕（字幕走可点 overlay）。
+      expect(m['sub-visibility'], 'no');
+      // 只发这两个 key，不碰画质/解码/几何/网络等属性。
+      expect(m.keys.toSet(), <String>{'sub-auto', 'sub-visibility'});
+    });
+  });
+
+  group('buildGraphicSubtitleVisibilityProperties (BUG-190 图形 PGS 例外)', () {
+    test('reopens only sub-visibility=yes, never touches sub-auto', () {
+      final Map<String, String> m = buildGraphicSubtitleVisibilityProperties();
+      // 图形轨走 libmpv 画面渲染：重新打开可见性。
+      expect(m['sub-visibility'], 'yes');
+      // sub-auto 必须保持「不自动选」——轨由代码显式 setSubtitleTrack 选定，
+      // 这里若重发 sub-auto 会让 mpv 又自动选轨，破坏抑制。
+      expect(m.containsKey('sub-auto'), isFalse);
+      // 只发 sub-visibility 这一个 key。
+      expect(m.keys.toSet(), <String>{'sub-visibility'});
+    });
+  });
+
   group('buildNetworkCacheProperties (TODO-033 #1)', () {
     test('emits conservative network cache/readahead tuning', () {
       final Map<String, String> m = buildNetworkCacheProperties();

@@ -1842,8 +1842,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                             filterQuality: params.filterQuality,
                             controls: params.controls,
                             wakelock: false,
+                            // 全屏路由也显式禁用内置 SubtitleView（TODO-080/092，
+                            // BUG-190）。虽然与窗口侧共享同一
+                            // videoViewParametersNotifier（窗口侧已设 visible:false 会
+                            // 传播过来），但这里不依赖隐式传播，直接覆盖成 visible:false
+                            // 消除「全屏路由快照时窗口侧 didUpdate 尚未把配置写进
+                            // notifier」的时机竞态——字幕在全屏也只由可点 overlay 承载。
                             subtitleViewConfiguration:
-                                params.subtitleViewConfiguration,
+                                const SubtitleViewConfiguration(visible: false),
                             focusNode: params.focusNode,
                             onEnterFullscreen: enterNativeFullscreen,
                             onExitFullscreen: exitNativeFullscreen,
@@ -3308,6 +3314,17 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           // bottom sheet / 文件选择器）关闭后能主动把键盘焦点还给它，恢复空格等内置
           // 快捷键（见 [_refocusVideo]）。
           focusNode: _videoFocusNode,
+          // 禁用 media_kit 内置 SubtitleView（TODO-080/092，BUG-190）：字幕统一由
+          // [VideoSubtitleOverlay] 单层承载（cue 同步 + 逐字查词）。SubtitleView 默认
+          // visible:true，会把 libmpv 解析的字幕渲染成一整块不可点 Text（白字 +
+          // 0xaa000000 半透明黑底），叠在可点 overlay 之上 → 点字幕穿透到 media_kit
+          // 自己的手势层（落句首词/点不到句中/呼出键盘，080-3）、随字幕轨异步刷新时有
+          // 时无（080-1 随机透明）、横竖屏 Video 子树重建时残留黑底（092）。这里显式
+          // visible:false 让 video_texture.dart 的 `if(...visible && ...)` 不渲染
+          // SubtitleView；窗口与全屏共享 videoViewParametersNotifier，全屏路由侧再显式
+          // 覆盖一次（不靠隐式传播，消除快照时机竞态）。
+          subtitleViewConfiguration:
+              const SubtitleViewConfiguration(visible: false),
           // 视频不满屏时的 letterbox/pillarbox 填充色固定纯黑（TODO-053）：播放器
           // 画面外围按播放器惯例用黑底，不跟随主题 surface，深浅主题统一为黑。
           fill: Colors.black,

@@ -236,6 +236,12 @@ class VideoPlayerController extends ChangeNotifier
     // 图形字幕走 libmpv 画面渲染，清掉可点 overlay（无文本可查词）。
     setCues(const <AudioCue>[]);
     await player.setSubtitleTrack(real[streamIndex]);
+    // 图形 PGS 轨是 BUG-190 字幕抑制（sub-visibility=no）的唯一例外：位图字幕没有文本
+    // cue，只能靠 libmpv 画面渲染。显式打开 sub-visibility=yes 覆盖 load 时设的 no，
+    // 否则用户选了图形字幕却看不到（回归 BUG-122）。sub-auto 仍保持 no（轨由这里显式
+    // 选定，不交给 mpv 自动选）。
+    await applySubtitleMpvPropertiesToPlayer(
+        player, buildGraphicSubtitleVisibilityProperties());
     return true;
   }
 
@@ -407,6 +413,15 @@ class VideoPlayerController extends ChangeNotifier
     // 触发暂停而非查词。故一律关 libmpv 字幕，由 overlay 承载所有字幕（外挂 sidecar
     // 与内嵌抽取的 cue 都走 overlay）。externalSubtitlePath 已在上层解析成 cues 传入。
     await player.setSubtitleTrack(SubtitleTrack.no());
+    // 根除「字幕轨异步就绪后被 mpv 自动重选」竞态（TODO-080/092，BUG-190）：上面的
+    // setSubtitleTrack(no()) 只在「调用那一刻」清掉选轨，但字幕轨是 open 后异步解析就绪
+    // 的，mpv 默认 sub-auto=exact 会在轨就绪后自动重选内嵌字幕轨、覆盖掉 no()，再经
+    // sub-visibility 渲染成画面像素字幕，与 media_kit 内置 SubtitleView 一起叠在可点
+    // overlay 上 → 字幕透明随机 / 点字幕穿透落空 / 横竖屏残留黑底。注入 sub-auto=no +
+    // sub-visibility=no 让 libmpv 永不自动选轨、永不画画面字幕（图形 PGS 轨例外，
+    // selectEmbeddedGraphicTrack 内会按需打开 sub-visibility）。
+    await applySubtitleMpvPropertiesToPlayer(
+        player, buildSubtitleSuppressionProperties());
 
     // 应用启用的 mpv 着色器（Anime4K 等）。五平台 libmpv 后端均生效——移动端 media_kit
     // 走 vo=gpu 渲染路径，glsl-shaders 进管线（见 applyShadersToPlayer doc）；仅非 libmpv
