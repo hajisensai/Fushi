@@ -200,7 +200,18 @@ namespace flutter_inappwebview_plugin
   {
     debugLog("dealloc CustomPlatformView");
     event_sink_ = nullptr;
+    // BUG-163/TODO-061：teardown 第一步同步切断「WGC 生产者 -> Flutter texture
+    // registrar 消费者」这条边。frame_available_ 捕获 texture_registrar_ 裸指针 +
+    // texture_id_；若不切断，优雅引擎拆除（FlutterDesktopViewControllerDestroy）或
+    // 中途弹窗销毁期，一个迟到的 WGC 帧仍会 MarkTextureFrameAvailable() 打进正在被
+    // 引擎拆除的 registrar，命中 flutter_windows.dll c0000005（2026-06-11 退出 dump
+    // 实证）。这是第七修「不显式 Close 帧池、靠在途 deferral 强引用收尾」唯一漏掉的
+    // 消费者侧缺口：WGC 侧的 null-delegate 已根除，但消费者边从未断开。置空回调后，
+    // OnFrameArrived 里的 `if (has_frame && frame_available_)` 守卫直接短路，任何迟到
+    // 帧都不再触碰 registrar。先切断、再 Stop（WGC 销毁序见 texture_bridge.cc）、最后
+    // 注销 texture——三步单调缩小 teardown 竞态窗口。
     if (texture_bridge_) {
+      texture_bridge_->SetOnFrameAvailable(nullptr);
       texture_bridge_->Stop();
     }
     texture_registrar_->UnregisterTexture(texture_id_, nullptr);

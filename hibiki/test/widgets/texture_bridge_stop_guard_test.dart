@@ -15,8 +15,17 @@ import 'package:flutter_test/flutter_test.dart';
 /// 的强引用收尾（引用计数归零），即可让 Close 在因果上必然晚于所有在途事件 fire，
 /// 杜绝 Close-while-in-flight。
 ///
+/// TODO-061 第八修补上前七修共同漏掉的**消费者侧**缺口：`frame_available_` 回调
+/// 捕获 `texture_registrar_` 裸指针 + `texture_id_`，从不切断。2026-06-11 退出
+/// dump 实证崩溃已从 GraphicsCapture.dll 移到 flutter_windows.dll!
+/// FlutterDesktopViewControllerDestroy -> MarkExternalTextureFrameAvailable
+/// （rcx=0）——迟到帧把 MarkTextureFrameAvailable() 打进正被引擎拆除的 registrar。
+/// 故 `~CustomPlatformView` 析构第一步必须 `SetOnFrameAvailable(nullptr)`（在
+/// `Stop()` 之前），物理切断「WGC 生产者 -> registrar 消费者」边。
+///
 /// 真实的图形崩溃只能在 Windows 真机重编后复测；此守卫锁「同步 revoke 断源 +
-/// 不显式 Close 帧池」的契约，防止它被回退到显式 Close / drain-hop 押注模型。
+/// 不显式 Close 帧池 + 析构第一步切断 frame_available_」的契约，防止它被回退到
+/// 显式 Close / drain-hop 押注模型，或丢掉消费者侧切断。
 void main() {
   test('BUG-113: TextureBridge teardown makes late FrameArrived callbacks safe',
       () {
@@ -149,6 +158,25 @@ void main() {
     expect(stopIndex, lessThan(unregisterIndex),
         reason:
             'Stop 必须发生在 UnregisterTexture 前；UnregisterTexture 期间可能处理 CoreMessaging 队列里的 WGC FirePresentEvent');
+    // ---- TODO-061 第八修（消费者侧切断）：析构第一步必须切断 frame_available_ ----
+    //
+    // 前七修只控制 WGC 生产者一侧（销毁序 / 不显式 Close 帧池）。2026-06-11 退出 dump
+    // 实证崩溃已从 GraphicsCapture.dll 移到 flutter_windows.dll!
+    // FlutterDesktopViewControllerDestroy -> MarkExternalTextureFrameAvailable
+    // （rcx=0）：迟到的 WGC 帧经 frame_available_ -> MarkTextureFrameAvailable() 打进
+    // 正被引擎拆除的 texture registrar。frame_available_ 捕获 texture_registrar_ 裸
+    // 指针 + texture_id_，从不切断 = 唯一漏掉的消费者边。修复 = 析构第一步同步
+    // SetOnFrameAvailable(nullptr)，且必须在 texture_bridge_->Stop() 之前（先断消费者
+    // 边，再走 WGC 销毁序），Stop 仍在 UnregisterTexture 之前。
+    final int severIndex =
+        destructorBody.indexOf('SetOnFrameAvailable(nullptr)');
+    expect(severIndex, greaterThanOrEqualTo(0),
+        reason: '析构必须切断 frame_available_：置空后 OnFrameArrived 的 '
+            '`if (has_frame && frame_available_)` 短路，迟到帧不再 '
+            'MarkTextureFrameAvailable 打进正在拆除的 Flutter texture registrar');
+    expect(severIndex, lessThan(stopIndex),
+        reason: 'SetOnFrameAvailable(nullptr) 必须在 texture_bridge_->Stop() 之前：'
+            '先物理切断「WGC 生产者 -> registrar 消费者」边，再走 WGC 销毁序');
     final int textureBridgeMemberIndex =
         platformViewHeader.indexOf('texture_bridge_');
     final int flutterTextureMemberIndex =
