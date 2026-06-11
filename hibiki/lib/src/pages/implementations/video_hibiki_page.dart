@@ -1609,7 +1609,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   ///    （本页 [PopScope] 自管退出，但收不到事件：media_kit 的 CallbackShortcuts 在
   ///    本页外层 CallbackShortcuts 的内层，先吞掉 Escape）。改为非全屏退页、全屏退
   ///    全屏。
-  /// ② 默认左右方向键是 ±2 秒 seek，用户要「上下句字幕」（无 cue 时回退 asbplayer 3 秒）。
+  /// ② 普通左右方向键 = 时间 seek（±seekSeconds 秒，TODO-090）；Ctrl+←/→ = 上/下一句
+  ///    字幕。上一句太远（gap > seekSeconds 秒）时 Ctrl+← 退化成回退 seekSeconds 秒（TODO-085）。
   /// 其余键（空格/媒体键/J·I/F）按 media_kit 默认语义用底层 [Player] 重建，避免
   /// 覆盖后丢默认行为。全屏相关 helper 需 controls 子树内 context，用 [_videoControlsContext]。
   Map<ShortcutActivator, VoidCallback> _videoKeyboardShortcuts(
@@ -1620,15 +1621,17 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         togglePlayPause: () => unawaited(controller.playOrPause()),
         play: () => unawaited(controller.play()),
         pause: () => unawaited(controller.pause()),
-        // 左右方向键 = 上下句字幕（无字幕 cue 时回退 asbplayer 默认 ±3 秒 seek）。
-        // 每次快进/跳句都唤醒控制条并重置自动隐藏计时（BUG-175 ②）：键盘交互不触发
+        // Ctrl+←/→ = 上/下一句字幕（TODO-090）。上一句太远时 Ctrl+← 退化成回退
+        // seekSeconds 秒（TODO-085），决策集中在 [skipToPrevCueOrSeekBack]；无 cue
+        // 时也直接当回退键。下一句保持纯句子跳（无 cue 时前进 seekSeconds 秒）。
+        // 每次跳句都唤醒控制条并重置自动隐藏计时（BUG-175 ②）：键盘交互不触发
         // media_kit 的 hover 重置，不主动 poke 的话控制条只活 2 秒就消失。
         previousSubtitle: () {
           _pokeControlsVisible();
           unawaited(
-            controller.cues.isEmpty
-                ? controller.seekRelative(-_asbSeekMs)
-                : controller.skipToPrevCue(),
+            controller.skipToPrevCueOrSeekBack(
+              seekSeconds: _asbConfig.seekSeconds,
+            ),
           );
         },
         nextSubtitle: () {
@@ -1639,6 +1642,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                 : controller.skipToNextCue(),
           );
         },
+        // 普通 ←/→ = 时间 seek（±seekSeconds 秒，TODO-090），与 J/A·I/D 同语义。
         seekBackward: () {
           _pokeControlsVisible();
           unawaited(controller.seekRelative(-_asbSeekMs));

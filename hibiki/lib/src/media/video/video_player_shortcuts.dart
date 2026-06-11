@@ -55,9 +55,14 @@ Map<ShortcutActivator, VoidCallback> buildVideoPlayerShortcuts(
     const SingleActivator(LogicalKeyboardKey.mediaPause): actions.pause,
     const SingleActivator(LogicalKeyboardKey.mediaPlayPause):
         actions.togglePlayPause,
-    const SingleActivator(LogicalKeyboardKey.arrowLeft):
+    // TODO-090：普通 ←/→ = 时间 seek（±seekSeconds 秒）；Ctrl+←/→ = 上/下一句字幕。
+    // 与 asbplayer 习惯一致：裸方向键管「快进快退」，Ctrl 管「按字幕跳句」。
+    const SingleActivator(LogicalKeyboardKey.arrowLeft): actions.seekBackward,
+    const SingleActivator(LogicalKeyboardKey.arrowRight): actions.seekForward,
+    const SingleActivator(LogicalKeyboardKey.arrowLeft, control: true):
         actions.previousSubtitle,
-    const SingleActivator(LogicalKeyboardKey.arrowRight): actions.nextSubtitle,
+    const SingleActivator(LogicalKeyboardKey.arrowRight, control: true):
+        actions.nextSubtitle,
     const SingleActivator(LogicalKeyboardKey.keyA): actions.seekBackward,
     const SingleActivator(LogicalKeyboardKey.keyD): actions.seekForward,
     const SingleActivator(

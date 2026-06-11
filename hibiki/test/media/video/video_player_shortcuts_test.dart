@@ -75,6 +75,7 @@ void main() {
     );
 
     shortcuts[const SingleActivator(LogicalKeyboardKey.space)]!();
+    // 普通 ←/→ = 时间 seek（TODO-090）。
     shortcuts[const SingleActivator(LogicalKeyboardKey.arrowLeft)]!();
     shortcuts[const SingleActivator(LogicalKeyboardKey.arrowRight)]!();
     shortcuts[const SingleActivator(LogicalKeyboardKey.keyA)]!();
@@ -91,8 +92,8 @@ void main() {
 
     expect(actions, <String>[
       'toggle',
-      'previousSubtitle',
-      'nextSubtitle',
+      'seekBackward',
+      'seekForward',
       'seekBackward',
       'seekForward',
       'shader',
@@ -104,6 +105,50 @@ void main() {
       'screenshot',
       'fullscreen',
       'escape',
+    ]);
+  });
+
+  test('TODO-090: plain arrows = time seek, Ctrl+arrows = sentence seek', () {
+    final List<String> actions = <String>[];
+    final Map<ShortcutActivator, VoidCallback> shortcuts =
+        buildVideoPlayerShortcuts(
+      VideoPlayerShortcutActions(
+        togglePlayPause: () {},
+        play: () {},
+        pause: () {},
+        previousSubtitle: () => actions.add('previousSubtitle'),
+        nextSubtitle: () => actions.add('nextSubtitle'),
+        seekBackward: () => actions.add('seekBackward'),
+        seekForward: () => actions.add('seekForward'),
+        toggleShaderCompare: () {},
+        volumeUp: () {},
+        volumeDown: () {},
+        toggleMute: () {},
+        speedUp: () {},
+        speedDown: () {},
+        resetSpeed: () {},
+        previousFrame: () {},
+        nextFrame: () {},
+        screenshot: () {},
+        toggleFullscreen: () {},
+        escape: () {},
+      ),
+    );
+
+    // 普通方向键 → 时间 seek（±秒）。
+    shortcuts[const SingleActivator(LogicalKeyboardKey.arrowLeft)]!();
+    shortcuts[const SingleActivator(LogicalKeyboardKey.arrowRight)]!();
+    // Ctrl+方向键 → 句子跳转（上/下一句字幕）。
+    shortcuts[
+        const SingleActivator(LogicalKeyboardKey.arrowLeft, control: true)]!();
+    shortcuts[
+        const SingleActivator(LogicalKeyboardKey.arrowRight, control: true)]!();
+
+    expect(actions, <String>[
+      'seekBackward',
+      'seekForward',
+      'previousSubtitle',
+      'nextSubtitle',
     ]);
   });
 }

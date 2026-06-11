@@ -27,6 +27,45 @@ String mediaUriForVideoPath(String path) {
 int effectiveSubtitlePositionMs(int posMs, int delayMs) =>
     (posMs - delayMs).clamp(0, 1 << 30);
 
+/// 「上一句」seek 决策结果（TODO-085，[VideoPlayerController.prevSeekDecisionFor] 返回）。
+///
+/// 三态：跳到某条 cue（句子 seek）／回退固定毫秒（时间 seek 退化）／无动作。
+/// 用不可变值对象而非裸 record，便于在 [VideoPlayerController.skipToPrevCue] 与单测中
+/// 明确区分意图。
+@immutable
+class PrevSeekDecision {
+  const PrevSeekDecision._({this.cueIndex, this.timeSeekDeltaMs});
+
+  /// 跳到第 [index] 条 cue（句子 seek）。
+  const PrevSeekDecision.cue(int index) : this._(cueIndex: index);
+
+  /// 回退（或前进）[deltaMs] 毫秒的相对时间 seek（TODO-085 退化分支恒为负）。
+  const PrevSeekDecision.timeSeek(int deltaMs)
+      : this._(timeSeekDeltaMs: deltaMs);
+
+  /// 无可后退的上一句：不动（保持原 no-op 语义）。
+  static const PrevSeekDecision none = PrevSeekDecision._();
+
+  /// 目标 cue 下标；非 null 表示句子 seek。
+  final int? cueIndex;
+
+  /// 相对时间 seek 的毫秒偏移；非 null 表示时间 seek（退化分支）。
+  final int? timeSeekDeltaMs;
+
+  @override
+  bool operator ==(Object other) =>
+      other is PrevSeekDecision &&
+      other.cueIndex == cueIndex &&
+      other.timeSeekDeltaMs == timeSeekDeltaMs;
+
+  @override
+  int get hashCode => Object.hash(cueIndex, timeSeekDeltaMs);
+
+  @override
+  String toString() =>
+      'PrevSeekDecision(cueIndex: $cueIndex, timeSeekDeltaMs: $timeSeekDeltaMs)';
+}
+
 /// 视频播放控制器：用 media_kit 播放视频，并按字幕 cue 做 125ms 同步高亮。
 ///
 /// cue 选择语义大体照搬有声书 [AudiobookPlayerController] 的 `_updateCurrentCue`：
@@ -834,6 +873,31 @@ class VideoPlayerController extends ChangeNotifier
     await skipToCue(_cues[prev]);
   }
 
+  /// 视频键盘 Ctrl+← 用：跳上一句，但**上一句太远时退化成回退 [seekSeconds] 秒**
+  /// （TODO-085）。决策走 [prevSeekDecisionFor]：目标上一句起点距当前位置不超过
+  /// `seekSeconds` 秒就跳句；超过就只回退 `seekSeconds` 秒。底栏「上一句」按钮仍走
+  /// 纯 [skipToPrevCue]（按钮语义不退化）。无 cue / 已在首句时 no-op 安全。
+  Future<void> skipToPrevCueOrSeekBack({required int seekSeconds}) async {
+    if (_cues.isEmpty) {
+      // 无字幕：键盘 ← 本就该当回退键，直接回退 seekSeconds 秒（与页面层「无 cue
+      // 走时间 seek」一致，但这里集中决策便于单测）。
+      await seekRelative(-seekSeconds * 1000);
+      return;
+    }
+    final PrevSeekDecision decision = prevSeekDecisionFor(
+      cues: _cues,
+      currentCueIndex: _currentCueIndex,
+      positionMs: positionMs,
+      seekSeconds: seekSeconds,
+    );
+    if (decision.cueIndex != null) {
+      await skipToCue(_cues[decision.cueIndex!]);
+    } else if (decision.timeSeekDeltaMs != null) {
+      await seekRelative(decision.timeSeekDeltaMs!);
+    }
+    // PrevSeekDecision.none：已在首句，保持 no-op（不强行回退到负位置）。
+  }
+
   /// 纯函数：「下一句」目标索引（[skipToNextCue] 决策，抽出便于单测）。
   ///
   /// - 已定位到当前 cue（`currentCueIndex` 合法）：取它的下一条；已在末句返回 null。
@@ -891,6 +955,41 @@ class VideoPlayerController extends ChangeNotifier
       }
     }
     return lo == 0 ? 0 : lo - 1;
+  }
+
+  /// 纯函数：「上一句」seek 决策（TODO-085）。普通向后跳句时，若目标上一句的
+  /// 起点距当前位置太远（gap 大于 [seekSeconds] 秒），则**退化成回退 [seekSeconds]
+  /// 秒的时间 seek**，而不是一脚跳到很远的上一句 —— 对照用户诉求「如果上一句话距离
+  /// 很远了，左右键就回退到回退 3 秒的模式」。
+  ///
+  /// 决策与 [prevCueIndexFor] 共用「上一句索引」语义，只是在「目标存在但太远」时把
+  /// 句子跳转换成时间回退：
+  /// - 目标上一句存在且其起点距当前位置 `<= seekSeconds*1000` ms：跳到该 cue（句子 seek）。
+  /// - 目标上一句存在但起点距当前位置 `> seekSeconds*1000` ms：返回 [PrevSeekDecision.timeSeek]
+  ///   （回退 `seekSeconds` 秒）。
+  /// - 无上一句（已在首句 / 空列表）：返回 [PrevSeekDecision.none]（保持原 no-op 不强行 seek）。
+  ///
+  /// [seekSeconds] <= 0 时退化阈值失效，永远跳句（防御性，正常配置恒 >= 1）。
+  static PrevSeekDecision prevSeekDecisionFor({
+    required List<AudioCue> cues,
+    required int currentCueIndex,
+    required int? positionMs,
+    required int seekSeconds,
+  }) {
+    final int? prev = prevCueIndexFor(
+      cues: cues,
+      currentCueIndex: currentCueIndex,
+      positionMs: positionMs,
+    );
+    if (prev == null) return PrevSeekDecision.none;
+    if (seekSeconds <= 0) return PrevSeekDecision.cue(prev);
+    final int pos = positionMs ?? 0;
+    final int gapMs = pos - cues[prev].startMs;
+    final int thresholdMs = seekSeconds * 1000;
+    if (gapMs > thresholdMs) {
+      return PrevSeekDecision.timeSeek(-thresholdMs);
+    }
+    return PrevSeekDecision.cue(prev);
   }
 
   /// 二分求「起点 <= [positionMs] 的最后一条 cue」的下标（floor 语义）；位置早于

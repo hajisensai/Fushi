@@ -578,6 +578,107 @@ void main() {
       });
     });
 
+    // TODO-085：Ctrl+← 跳上一句时，若上一句起点距当前位置 > seekSeconds 秒，则退化
+    // 成回退 seekSeconds 秒（不一脚跳到很远的上一句）。
+    group('prevSeekDecisionFor (TODO-085 上句太远回退Xs)', () {
+      // cue0 [0,1000]、cue1 [10000,11000]、cue2 [12000,13000]：cue0↔cue1 之间是
+      // 一段很长的 gap，便于构造「上一句很远」。
+      final farCues = <AudioCue>[
+        _cue(0, 0, 1000),
+        _cue(1, 10000, 11000),
+        _cue(2, 12000, 13000),
+      ];
+
+      test('上一句很近（gap <= Xs）：跳到该 cue（句子 seek）', () {
+        // 当前定位在 cue2(12000)，上一句 = cue1(10000)，距当前 ~2s <= 3s → 跳句。
+        final PrevSeekDecision d = VideoPlayerController.prevSeekDecisionFor(
+          cues: farCues,
+          currentCueIndex: 2,
+          positionMs: 12500,
+          seekSeconds: 3,
+        );
+        expect(d, const PrevSeekDecision.cue(1));
+        expect(d.timeSeekDeltaMs, isNull);
+      });
+
+      test('上一句很远（gap > Xs）：退化成回退 Xs 秒（时间 seek）', () {
+        // 当前定位在 cue1(10000)，上一句 = cue0(0)，距当前 10s > 3s → 不跳到 cue0，
+        // 改回退 3s。
+        final PrevSeekDecision d = VideoPlayerController.prevSeekDecisionFor(
+          cues: farCues,
+          currentCueIndex: 1,
+          positionMs: 10000,
+          seekSeconds: 3,
+        );
+        expect(d, const PrevSeekDecision.timeSeek(-3000));
+        expect(d.cueIndex, isNull);
+      });
+
+      test('gap 里（idx=-1）上一句很远：同样退化回退 Xs', () {
+        // pos=8000 落在 cue0(0-1000) 与 cue1(10000-11000) 的长 gap，
+        // 上一句 = cue0(0)，距当前 8s > 3s → 回退 3s。
+        final PrevSeekDecision d = VideoPlayerController.prevSeekDecisionFor(
+          cues: farCues,
+          currentCueIndex: -1,
+          positionMs: 8000,
+          seekSeconds: 3,
+        );
+        expect(d, const PrevSeekDecision.timeSeek(-3000));
+      });
+
+      test('阈值边界：恰好等于 Xs 仍跳句（> 才退化）', () {
+        // 上一句 = cue0(0)，pos=3000 → gap = 3000 == 3*1000，不 > 阈值 → 跳句。
+        final PrevSeekDecision d = VideoPlayerController.prevSeekDecisionFor(
+          cues: <AudioCue>[_cue(0, 0, 1000), _cue(1, 5000, 6000)],
+          currentCueIndex: 1,
+          positionMs: 3000,
+          seekSeconds: 3,
+        );
+        expect(d, const PrevSeekDecision.cue(0));
+      });
+
+      test('已在首句：none（不强行回退到负位置）', () {
+        final PrevSeekDecision d = VideoPlayerController.prevSeekDecisionFor(
+          cues: farCues,
+          currentCueIndex: 0,
+          positionMs: 500,
+          seekSeconds: 3,
+        );
+        expect(d, PrevSeekDecision.none);
+        expect(d.cueIndex, isNull);
+        expect(d.timeSeekDeltaMs, isNull);
+      });
+
+      test('空 cue 列表：none', () {
+        final PrevSeekDecision d = VideoPlayerController.prevSeekDecisionFor(
+          cues: const <AudioCue>[],
+          currentCueIndex: -1,
+          positionMs: 0,
+          seekSeconds: 3,
+        );
+        expect(d, PrevSeekDecision.none);
+      });
+
+      test('seekSeconds<=0 防御：阈值失效，恒跳句', () {
+        final PrevSeekDecision d = VideoPlayerController.prevSeekDecisionFor(
+          cues: farCues,
+          currentCueIndex: 1,
+          positionMs: 10000,
+          seekSeconds: 0,
+        );
+        expect(d, const PrevSeekDecision.cue(0));
+      });
+
+      test('PrevSeekDecision 值相等性', () {
+        expect(const PrevSeekDecision.cue(2), const PrevSeekDecision.cue(2));
+        expect(const PrevSeekDecision.cue(2) == const PrevSeekDecision.cue(3),
+            isFalse);
+        expect(const PrevSeekDecision.timeSeek(-3000),
+            const PrevSeekDecision.timeSeek(-3000));
+        expect(PrevSeekDecision.none == const PrevSeekDecision.cue(0), isFalse);
+      });
+    });
+
     test('回归：先进句到 cue0、再 update 到 gap 清成 -1，next 不应回 0', () {
       final c = VideoPlayerController();
       addTearDown(c.dispose);

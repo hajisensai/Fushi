@@ -50,24 +50,65 @@ void main() {
     final String shortcuts =
         read('lib/src/media/video/video_player_shortcuts.dart');
 
-    test('arrowLeft 走 skipToPrevCue，无 cue 回退 3s', () {
-      final int left = shortcuts.indexOf('LogicalKeyboardKey.arrowLeft');
-      final int right = shortcuts.indexOf('LogicalKeyboardKey.arrowRight');
-      expect(left, greaterThanOrEqualTo(0));
-      final String leftBlock = shortcuts.substring(left, right);
-      expect(leftBlock.contains('actions.previousSubtitle'), isTrue);
-      expect(page.contains('skipToPrevCue()'), isTrue);
-      expect(page.contains('cues.isEmpty'), isTrue);
-      expect(page.contains('-_asbSeekMs'), isTrue);
+    test('TODO-090：普通 arrowLeft = 时间 seek（seekBackward）', () {
+      // 普通方向键不再绑跳句，改绑 ±秒时间 seek（asbplayer 习惯）。
+      final int left = shortcuts.indexOf('LogicalKeyboardKey.arrowLeft):');
+      expect(left, greaterThanOrEqualTo(0), reason: '普通（无修饰键）arrowLeft 必须存在');
+      final String leftLine =
+          shortcuts.substring(left, shortcuts.indexOf('\n', left));
+      expect(leftLine.contains('actions.seekBackward'), isTrue,
+          reason: '普通 arrowLeft = 时间回退 seek（TODO-090）');
+      // 普通方向键不应绑句子跳转（那是 Ctrl 组合的活）。
+      expect(leftLine.contains('previousSubtitle'), isFalse);
     });
 
-    test('arrowRight 走 skipToNextCue，无 cue 回退 3s', () {
-      final int right = shortcuts.indexOf('LogicalKeyboardKey.arrowRight');
+    test('TODO-090：普通 arrowRight = 时间 seek（seekForward）', () {
+      final int right = shortcuts.indexOf('LogicalKeyboardKey.arrowRight):');
       expect(right, greaterThanOrEqualTo(0));
-      final String rightBlock = shortcuts.substring(right);
-      expect(rightBlock.contains('actions.nextSubtitle'), isTrue);
+      final String rightLine =
+          shortcuts.substring(right, shortcuts.indexOf('\n', right));
+      expect(rightLine.contains('actions.seekForward'), isTrue,
+          reason: '普通 arrowRight = 时间前进 seek（TODO-090）');
+      expect(rightLine.contains('nextSubtitle'), isFalse);
+    });
+
+    test('TODO-090：Ctrl+←/→ = 上/下一句字幕（句子 seek）', () {
+      final int ctrlLeft =
+          shortcuts.indexOf('LogicalKeyboardKey.arrowLeft, control: true');
+      final int ctrlRight =
+          shortcuts.indexOf('LogicalKeyboardKey.arrowRight, control: true');
+      expect(ctrlLeft, greaterThanOrEqualTo(0), reason: 'Ctrl+← 必须绑句子跳转');
+      expect(ctrlRight, greaterThanOrEqualTo(0), reason: 'Ctrl+→ 必须绑句子跳转');
+      expect(shortcuts.indexOf('actions.previousSubtitle', ctrlLeft),
+          greaterThan(ctrlLeft),
+          reason: 'Ctrl+← = previousSubtitle');
+      expect(shortcuts.indexOf('actions.nextSubtitle', ctrlRight),
+          greaterThan(ctrlRight),
+          reason: 'Ctrl+→ = nextSubtitle');
+    });
+
+    test('TODO-085：Ctrl+← 上句太远退化回退 Xs（skipToPrevCueOrSeekBack）', () {
+      // previousSubtitle action 走集中决策方法，内部按 seekSeconds 阈值跳句 or 回退。
+      expect(page.contains('skipToPrevCueOrSeekBack('), isTrue,
+          reason: 'Ctrl+← 必须走含「上句太远回退 Xs」退化的决策方法');
+      expect(page.contains('seekSeconds: _asbConfig.seekSeconds'), isTrue,
+          reason: '退化阈值用配置的 seekSeconds 秒');
+      // 下一句仍纯句子跳（无 cue 才前进 Xs）。
       expect(page.contains('skipToNextCue()'), isTrue);
       expect(page.contains('_asbSeekMs'), isTrue);
+    });
+
+    test('TODO-085 决策纯函数 prevSeekDecisionFor 存在并按 seekSeconds 阈值退化', () {
+      final String controller =
+          read('lib/src/media/video/video_player_controller.dart');
+      expect(
+          controller.contains('static PrevSeekDecision prevSeekDecisionFor('),
+          isTrue);
+      expect(controller.contains('final int thresholdMs = seekSeconds * 1000;'),
+          isTrue,
+          reason: '阈值 = seekSeconds 秒');
+      expect(controller.contains('if (gapMs > thresholdMs)'), isTrue,
+          reason: 'gap 超过阈值才退化成回退 Xs（> 才退化，恰好等于仍跳句）');
     });
 
     test('A/D and Shift+F use one configured asbplayer seek value', () {
