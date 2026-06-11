@@ -2,7 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// TODO-069 字幕跳转列表（asbplayer 式 transcript 面板）的源码守卫。
+/// TODO-069 字幕跳转列表（asbplayer 式 transcript 面板）+ TODO-121 真 push-aside 的
+/// 源码守卫。
 ///
 /// media_kit 跑不了 headless，全屏路由 + 控制条点击也无法在 widget 测试里真实驱动，
 /// 故把面板的接线不变量锁在 `video_hibiki_page.dart` 的调用点（面板渲染逻辑本身由
@@ -15,13 +16,42 @@ void main() {
       File('lib/src/media/video/video_player_shortcuts.dart')
           .readAsStringSync();
 
-  test('字幕跳转面板挂在 controls Stack（窗口/全屏共用一层）', () {
-    // 面板必须挂进 _buildVideoControlsInner 的 Stack（与字幕 overlay 同源），全屏复用
-    // 同一 controls builder 才能在全屏下也出现。
-    expect(src.contains('_buildSubtitleJumpPanel(controller),'), isTrue,
-        reason: '面板未挂进 controls Stack（全屏将看不到字幕跳转列表）');
+  test('字幕跳转面板是真 push-aside（Row 兄弟列，非 controls Stack overlay）', () {
+    // TODO-121：面板不再 overlay 盖画面，而是与 Video 同级排进 Row[Expanded(Video), 面板列]，
+    // 面板可见时画面真挤窄。故旧的「挂进 controls Stack」接线必须移除，改成两路径各自把
+    // Video 包进 _videoWithSubtitlePanel。
+    expect(src.contains('_videoWithSubtitlePanel('), isTrue,
+        reason: '缺 push-aside 包裹器 _videoWithSubtitlePanel');
+    expect(src.contains('Expanded(child: video)'), isTrue,
+        reason: 'push-aside 必须用 Expanded 收窄 Video（真挤窄而非 overlay 遮挡）');
     expect(src.contains('VideoSubtitleJumpPanel('), isTrue,
         reason: '未实例化 VideoSubtitleJumpPanel');
+    // 面板不得再作为 overlay 挂进 controls Stack（那样会盖住画面，正是 TODO-121 要消除的）。
+    expect(src.contains('_buildSubtitleJumpPanel(controller),'), isFalse,
+        reason: '面板仍以 overlay 形式挂在 controls Stack（应改为 Row 兄弟列 push-aside）');
+  });
+
+  test('窗口与全屏两路径都把 Video 包进 push-aside（缩窄两路径都生效）', () {
+    // 窗口侧在 _buildVideoBody 用 _videoWithSubtitlePanel(controller, Video(...))。
+    expect(
+      src.contains('child: _videoWithSubtitlePanel('),
+      isTrue,
+      reason: '窗口路径（_buildVideoBody）未用 push-aside 包裹 Video',
+    );
+    // 全屏侧在自建全屏路由里用 _videoWithSubtitlePanel(playerController, fullscreenVideo)。
+    expect(
+      src.contains('_videoWithSubtitlePanel(') &&
+          src.contains('fullscreenVideo'),
+      isTrue,
+      reason: '全屏路径（_pushNeutralizedVideoFullscreen）未用 push-aside 包裹 Video',
+    );
+    // helper 内部用 Row 把 Video 与面板列排成兄弟（横向挤窄）。
+    final int helperIdx = src.indexOf('Widget _videoWithSubtitlePanel(');
+    expect(helperIdx, greaterThanOrEqualTo(0),
+        reason: '缺 _videoWithSubtitlePanel 定义');
+    final int rowIdx = src.indexOf('return Row(', helperIdx);
+    expect(rowIdx, greaterThanOrEqualTo(0),
+        reason: 'push-aside helper 必须用 Row 把 Video 与面板列排成兄弟');
   });
 
   test('可见性用 ValueNotifier（全屏路由也响应，不靠 setState）', () {
@@ -58,8 +88,7 @@ void main() {
 
   test('L 键映射到打开字幕跳转列表（asbplayer 式，未撞既有键）', () {
     expect(
-      shortcuts.contains(
-          'const SingleActivator(LogicalKeyboardKey.keyL): '
+      shortcuts.contains('const SingleActivator(LogicalKeyboardKey.keyL): '
           'actions.toggleSubtitleList'),
       isTrue,
       reason: '裸 L 键未绑定到 toggleSubtitleList',
@@ -75,16 +104,13 @@ void main() {
     final int retIdx =
         src.indexOf('_subtitleListVisible.value = false;', escIdx);
     final int exitIdx = src.indexOf('_handleBackOrExit()', escIdx);
-    expect(retIdx, greaterThanOrEqualTo(0),
-        reason: 'Esc 未在面板开着时先关面板');
-    expect(retIdx, lessThan(exitIdx),
-        reason: 'Esc 关面板必须排在退页之前（逐级退出）');
+    expect(retIdx, greaterThanOrEqualTo(0), reason: 'Esc 未在面板开着时先关面板');
+    expect(retIdx, lessThan(exitIdx), reason: 'Esc 关面板必须排在退页之前（逐级退出）');
   });
 
   test('桌面与移动控制条都放了字幕列表入口按钮', () {
     const String needle = 'onPressed: _toggleSubtitleJumpList,';
     final int count = needle.allMatches(src).length;
-    expect(count, greaterThanOrEqualTo(2),
-        reason: '桌面 + 移动控制条都应有字幕列表入口按钮');
+    expect(count, greaterThanOrEqualTo(2), reason: '桌面 + 移动控制条都应有字幕列表入口按钮');
   });
 }

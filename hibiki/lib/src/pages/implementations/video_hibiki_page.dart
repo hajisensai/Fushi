@@ -2148,6 +2148,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     final videoViewParametersNotifierValue =
         inherited.videoViewParametersNotifier;
     final VideoController controllerValue = stateValue.widget.controller;
+    // 字幕跳转列表「真 push-aside」（TODO-121）在全屏路由里也要包裹自建的 Video，需本页
+    // 持有的 [VideoPlayerController]（face：cues / currentCueIndex / skipToCue）。全屏只在
+    // 播放中触发、_controller 必非空，缺失则退化为不包面板（画面占满，等价旧全屏）。
+    final VideoPlayerController? playerController = _controller;
     final Future<void> Function() enterNativeFullscreen =
         stateValue.widget.onEnterFullscreen;
     final Future<void> Function() exitNativeFullscreen =
@@ -2195,7 +2199,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                           VideoViewParameters params,
                           __,
                         ) {
-                          return Video(
+                          final Widget fullscreenVideo = Video(
                             controller: controllerValue,
                             width: null,
                             height: null,
@@ -2217,6 +2221,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                             focusNode: params.focusNode,
                             onEnterFullscreen: enterNativeFullscreen,
                             onExitFullscreen: exitNativeFullscreen,
+                          );
+                          // 字幕跳转列表「真 push-aside」（TODO-121）：全屏路由自建的
+                          // Video 同样包进 Row[Expanded(Video), 面板列]，面板可见时全屏
+                          // 画面真挤窄、不被遮（与窗口侧 [_buildVideoBody] 同一 helper）。
+                          if (playerController == null) return fullscreenVideo;
+                          return _videoWithSubtitlePanel(
+                            playerController,
+                            fullscreenVideo,
                           );
                         },
                       ),
@@ -3879,31 +3891,36 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       child: VideoControlsThemePair(
         mobile: mobileControlsTheme,
         desktop: desktopControlsTheme,
-        child: Video(
-          controller: videoController,
-          // 用本页持有的 FocusNode 替换 Video 内置的匿名节点，以便覆盖层（对话框 /
-          // bottom sheet / 文件选择器）关闭后能主动把键盘焦点还给它，恢复空格等内置
-          // 快捷键（见 [_refocusVideo]）。
-          focusNode: _videoFocusNode,
-          // 禁用 media_kit 内置 SubtitleView（TODO-080/092，BUG-190）：字幕统一由
-          // [VideoSubtitleOverlay] 单层承载（cue 同步 + 逐字查词）。SubtitleView 默认
-          // visible:true，会把 libmpv 解析的字幕渲染成一整块不可点 Text（白字 +
-          // 0xaa000000 半透明黑底），叠在可点 overlay 之上 → 点字幕穿透到 media_kit
-          // 自己的手势层（落句首词/点不到句中/呼出键盘，080-3）、随字幕轨异步刷新时有
-          // 时无（080-1 随机透明）、横竖屏 Video 子树重建时残留黑底（092）。这里显式
-          // visible:false 让 video_texture.dart 的 `if(...visible && ...)` 不渲染
-          // SubtitleView；窗口与全屏共享 videoViewParametersNotifier，全屏路由侧再显式
-          // 覆盖一次（不靠隐式传播，消除快照时机竞态）。
-          subtitleViewConfiguration:
-              const SubtitleViewConfiguration(visible: false),
-          // 视频不满屏时的 letterbox/pillarbox 填充色固定纯黑（TODO-053）：播放器
-          // 画面外围按播放器惯例用黑底，不跟随主题 surface，深浅主题统一为黑。
-          fill: Colors.black,
-          // 字幕 overlay + 拖拽挂载都包进 controls builder：media_kit 全屏推独立 root
-          // 路由并复用同一 controls，故 overlay 随全屏一起进路由，全屏时字幕仍显示且
-          // 可点查词、拖字幕也能挂载（见 [_buildVideoControls]）。
-          controls: (VideoState state) =>
-              _buildVideoControls(state, controller),
+        // 字幕跳转列表「真 push-aside」（TODO-121）：面板可见时把 Video 包进
+        // Row[Expanded(Video), 面板列]，画面真挤窄、不被遮（见 [_videoWithSubtitlePanel]）。
+        child: _videoWithSubtitlePanel(
+          controller,
+          Video(
+            controller: videoController,
+            // 用本页持有的 FocusNode 替换 Video 内置的匿名节点，以便覆盖层（对话框 /
+            // bottom sheet / 文件选择器）关闭后能主动把键盘焦点还给它，恢复空格等内置
+            // 快捷键（见 [_refocusVideo]）。
+            focusNode: _videoFocusNode,
+            // 禁用 media_kit 内置 SubtitleView（TODO-080/092，BUG-190）：字幕统一由
+            // [VideoSubtitleOverlay] 单层承载（cue 同步 + 逐字查词）。SubtitleView 默认
+            // visible:true，会把 libmpv 解析的字幕渲染成一整块不可点 Text（白字 +
+            // 0xaa000000 半透明黑底），叠在可点 overlay 之上 → 点字幕穿透到 media_kit
+            // 自己的手势层（落句首词/点不到句中/呼出键盘，080-3）、随字幕轨异步刷新时有
+            // 时无（080-1 随机透明）、横竖屏 Video 子树重建时残留黑底（092）。这里显式
+            // visible:false 让 video_texture.dart 的 `if(...visible && ...)` 不渲染
+            // SubtitleView；窗口与全屏共享 videoViewParametersNotifier，全屏路由侧再显式
+            // 覆盖一次（不靠隐式传播，消除快照时机竞态）。
+            subtitleViewConfiguration:
+                const SubtitleViewConfiguration(visible: false),
+            // 视频不满屏时的 letterbox/pillarbox 填充色固定纯黑（TODO-053）：播放器
+            // 画面外围按播放器惯例用黑底，不跟随主题 surface，深浅主题统一为黑。
+            fill: Colors.black,
+            // 字幕 overlay + 拖拽挂载都包进 controls builder：media_kit 全屏推独立 root
+            // 路由并复用同一 controls，故 overlay 随全屏一起进路由，全屏时字幕仍显示且
+            // 可点查词、拖字幕也能挂载（见 [_buildVideoControls]）。
+            controls: (VideoState state) =>
+                _buildVideoControls(state, controller),
+          ),
         ),
       ),
     );
@@ -4032,7 +4049,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                     fontFamily: appModel.appFontFamily,
                   ),
                 ),
-                _buildSubtitleJumpPanel(controller),
                 _buildOsdOverlay(),
                 _buildLockOverlay(),
                 _buildCrossSubtitleRecordingOverlay(),
@@ -4044,36 +4060,65 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     );
   }
 
-  /// 字幕跳转列表面板层（TODO-069）。贴视频右侧，按 [_subtitleListVisible] 滑入/滑出。
+  /// 把 [video]（media_kit `Video` 控件）与字幕跳转列表面板组成「真 push-aside」横向
+  /// 布局（TODO-121，asbplayer 同款）。面板可见时返回 `Row[Expanded(video), 面板列]`：
+  /// `Expanded` 收窄 `Video` 的 `Container` 宽度 → libmpv 纹理的 `FittedBox` 真正缩窄
+  /// （画面整体左移、不被遮），而面板作为同级兄弟列占右侧固定宽度（不再 overlay 盖画面）。
+  /// 隐藏时面板列宽收成 0、`Video` 占满整行（像素级等价于无面板的旧布局）。
   ///
-  /// 与字幕 overlay 同源放进 controls Stack：media_kit 全屏复用同一 controls builder，
-  /// 故窗口与全屏两种场景共用一层。可见性走 [ValueListenableBuilder]（[_subtitleListVisible]
-  /// 是 [ValueNotifier]，全屏路由也响应）。宽度按界面宽取 ~28%（横屏右侧栏，clamp
-  /// 240..420），不遮挡过多画面（参照 asbplayer / YouTube transcript 侧栏占比）。
-  Widget _buildSubtitleJumpPanel(VideoPlayerController controller) {
+  /// 窗口与全屏两条路径都各自调本函数包裹自己那棵 `Video`（窗口在 [_buildVideoBody]，
+  /// 全屏在 [_pushNeutralizedVideoFullscreen] 自建的全屏路由里）——media_kit 全屏推独立
+  /// root 路由、复用同一 controls builder，但 `Video` 控件由我们两处分别构建，故两路径
+  /// 都能真挤窄、且字幕 overlay（在 `Video` controls 内 `Positioned.fill`）随收窄后的
+  /// `Video` 区自动受限，不会画到被挤走的右侧或飘上面板。
+  ///
+  /// 可见性走 [_subtitleListVisible]（[ValueNotifier]，全屏路由也响应，BUG-120 同源）。
+  /// 面板列宽按界面宽取 ~28%（横屏右侧栏，clamp 240..420），参照 asbplayer / YouTube
+  /// transcript 侧栏占比。
+  Widget _videoWithSubtitlePanel(
+    VideoPlayerController controller,
+    Widget video,
+  ) {
+    return ValueListenableBuilder<bool>(
+      valueListenable: _subtitleListVisible,
+      builder: (BuildContext _, bool visible, __) {
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Expanded(child: video),
+            _subtitleJumpSidePanel(controller, visible),
+          ],
+        );
+      },
+    );
+  }
+
+  /// [_videoWithSubtitlePanel] 的右侧面板列。用 [AnimatedSize] 让列宽在 0 ↔ panelWidth
+  /// 之间平滑伸缩（画面被挤窄/还原也跟着动），可见时渲染 [VideoSubtitleJumpPanel]，隐藏
+  /// 时宽度收成 0（[ClipRect] 裁掉收缩中溢出的内容，避免动画期文字越界）。[OverflowBox]
+  /// 把面板内容固定在 panelWidth、不随收缩中的列宽被挤压，故伸缩动画里文字布局稳定。
+  Widget _subtitleJumpSidePanel(
+    VideoPlayerController controller,
+    bool visible,
+  ) {
     final ColorScheme cs = _videoChromeColorScheme(context);
     final double screenWidth = MediaQuery.sizeOf(context).width;
     final double panelWidth = (screenWidth * 0.28).clamp(240.0, 420.0);
-    return Positioned(
-      top: 0,
-      right: 0,
-      bottom: 0,
-      child: SafeArea(
-        child: ValueListenableBuilder<bool>(
-          valueListenable: _subtitleListVisible,
-          builder: (BuildContext _, bool visible, __) {
-            return AnimatedSwitcher(
-              duration: const Duration(milliseconds: 200),
-              transitionBuilder: (Widget child, Animation<double> anim) =>
-                  SlideTransition(
-                position: Tween<Offset>(
-                  begin: const Offset(1, 0),
-                  end: Offset.zero,
-                ).animate(anim),
-                child: child,
-              ),
-              child: visible
-                  ? VideoSubtitleJumpPanel(
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOut,
+      alignment: Alignment.centerLeft,
+      child: SizedBox(
+        width: visible ? panelWidth : 0,
+        child: visible
+            ? ClipRect(
+                child: OverflowBox(
+                  alignment: Alignment.centerLeft,
+                  minWidth: panelWidth,
+                  maxWidth: panelWidth,
+                  child: SafeArea(
+                    left: false,
+                    child: VideoSubtitleJumpPanel(
                       key: const ValueKey<String>('video-subtitle-jump-panel'),
                       controller: controller,
                       onTapCue: _handleSubtitleJumpTap,
@@ -4083,11 +4128,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                       emptyHint: t.video_subtitle_list_empty,
                       fontSize: 14 * _videoUiScale,
                       width: panelWidth,
-                    )
-                  : const SizedBox.shrink(),
-            );
-          },
-        ),
+                    ),
+                  ),
+                ),
+              )
+            : const SizedBox.shrink(),
       ),
     );
   }
