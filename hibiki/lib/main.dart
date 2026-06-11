@@ -30,6 +30,7 @@ import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/shortcuts/global_navigation.dart';
 import 'package:hibiki/src/startup/webview_prewarm.dart';
 import 'package:hibiki/src/startup/exit_flush_registry.dart';
+import 'package:hibiki/src/sync/book_exit_sync_scope.dart';
 import 'package:hibiki/src/platform/platform_services.dart';
 import 'package:hibiki/src/platform/platform_providers.dart';
 import 'package:hibiki/src/media/video/external_video.dart';
@@ -434,6 +435,18 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
       await ExitFlushRegistry.instance.flushAll();
     } catch (e) {
       debugPrint('[Hibiki] exit flush failed: $e');
+    }
+    // ②' TODO-132 诉求B：有界 drain 退出书 fire-and-forget 触发的、仍在飞的 app-scope
+    //    关书同步（[BookExitSyncScope]）。退出书 export 与页面生命周期解耦后会继续
+    //    在后台跑；若用户「退出书后立刻杀应用」，给这些远端传输一个有上限的机会跑完，
+    //    避免内容/统计 export 被进程终止打成半截（与 132A/BUG-201 baseline 原子化互补）。
+    //    syncContent 默认关时只剩小 JSON，几乎瞬间返回；卡住也由 drain 上限放行，
+    //    绝不无限拖住退出。drain 自身不抛（退出清理失败不阻止退出）。
+    try {
+      await BookExitSyncScope.instance
+          .drain(timeout: const Duration(seconds: 5));
+    } catch (e) {
+      debugPrint('[Hibiki] book-exit sync drain failed: $e');
     }
     // ③ close database：WAL checkpoint + 排空后台 isolate pending 写。退出最后一道
     //    数据完整性闸门——必须在 exit(0) 之前完成。
