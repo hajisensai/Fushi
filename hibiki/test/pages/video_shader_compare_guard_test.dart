@@ -2,9 +2,12 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// B（缺效果预览/对比）source guard: 视频页接「着色器对比原画」——桌面控制条对比
-/// 按钮（仅有启用着色器时出现）+ `C` 快捷键，都切换 controller 的旁路态（保留启用集）。
-/// 着色器仅桌面 libmpv 生效，故对比按钮只在桌面控制条。
+/// B（缺效果预览/对比）source guard: 视频页接「着色器对比原画」——`C` 快捷键 + 右键
+/// 菜单项（仅有启用着色器时出现），都切换 controller 的旁路态（保留启用集）。
+///
+/// TODO-127：对比按钮已移出控制条（顶栏只放最常直接命中的入口；着色器对比属配置类
+/// 操作，改从右键菜单 / 快捷键 / 设置进入）。`_toggleShaderCompare` 逻辑、`C` 快捷键、
+/// 右键菜单项均保留——只删控制条上的那枚按钮。
 void main() {
   final String pageSrc =
       File('lib/src/pages/implementations/video_hibiki_page.dart')
@@ -12,6 +15,16 @@ void main() {
   final String shortcutsSrc =
       File('lib/src/media/video/video_player_shortcuts.dart')
           .readAsStringSync();
+
+  /// 截出两套 controls 主题方法体（桌面 + 移动），用于断言「控制条里没有对比按钮」。
+  String controlsThemes() {
+    final int start = pageSrc.indexOf('MaterialDesktopVideoControlsThemeData');
+    final int end = pageSrc.indexOf('void _showTrackMenu(');
+    expect(start, greaterThanOrEqualTo(0), reason: '需有桌面 controls 主题');
+    expect(end, greaterThan(start),
+        reason: '需有 _showTrackMenu 作为 controls 段终点');
+    return pageSrc.substring(start, end);
+  }
 
   test('有 _toggleShaderCompare 走 controller.toggleShaderBypass + OSD', () {
     final int start =
@@ -23,11 +36,19 @@ void main() {
     expect(body.contains('_showOsd('), isTrue, reason: '对比切换有 OSD 提示当前态');
   });
 
-  test('桌面控制条仅在有启用着色器时显示对比按钮', () {
+  test('控制条不再放着色器对比按钮（TODO-127；改从右键菜单 / 快捷键 / 设置进入）', () {
+    final String controls = controlsThemes();
+    expect(controls.contains('Icons.compare'), isFalse,
+        reason: '对比按钮应已移出桌面 / 移动控制条');
+    expect(controls.contains('onPressed: _toggleShaderCompare'), isFalse,
+        reason: '控制条不应再直接挂 _toggleShaderCompare 按钮');
+  });
+
+  test('右键菜单仍在启用着色器时提供对比项（保留可达性）', () {
     expect(pageSrc.contains('if (_hasShadersEnabled)'), isTrue,
-        reason: '对比按钮按是否配置启用着色器条件显示');
+        reason: '对比项按是否配置启用着色器条件显示');
     expect(pageSrc.contains('Icons.compare'), isTrue,
-        reason: '对比按钮用 compare 图标');
+        reason: '对比项仍用 compare 图标（右键菜单）');
     expect(
         pageSrc.contains('decodeEnabledShaders(appModel.videoShadersEnabled)'),
         isTrue,

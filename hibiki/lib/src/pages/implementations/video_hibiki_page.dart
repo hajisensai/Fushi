@@ -2461,7 +2461,15 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           icon: Icon(Icons.subtitles, size: _videoControlIconSize),
           onPressed: () => _showSubtitleSourceMenu(controller),
         ),
-        // 字幕跳转列表（TODO-069；裸 L 键同此入口）。
+        // 跨字幕制卡（TODO-102；参考 asbplayer）：点开始录、再点结束，区间文本+音频成一张卡。
+        _buildCrossSubtitleRecordButton(desktop: true),
+        MaterialDesktopCustomButton(
+          icon: Icon(Icons.audiotrack, size: _videoControlIconSize),
+          onPressed: () => _showAudioTrackMenu(controller),
+        ),
+        // 字幕跳转列表（TODO-069；裸 L 键同此入口）。倒数第二、紧挨设置按钮左侧
+        // （TODO-127）：倍速 / 着色器对比按钮已移出控制条（改从右键菜单 / 快捷键 /
+        // 设置进入），字幕列表是顶栏最常直接命中的入口，故放在设置（tune）左边。
         MaterialDesktopCustomButton(
           icon: Icon(
             Icons.format_list_bulleted,
@@ -2469,23 +2477,6 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           ),
           onPressed: _toggleSubtitleJumpList,
         ),
-        // 跨字幕制卡（TODO-102；参考 asbplayer）：点开始录、再点结束，区间文本+音频成一张卡。
-        _buildCrossSubtitleRecordButton(desktop: true),
-        MaterialDesktopCustomButton(
-          icon: Icon(Icons.audiotrack, size: _videoControlIconSize),
-          onPressed: () => _showAudioTrackMenu(controller),
-        ),
-        MaterialDesktopCustomButton(
-          icon: Icon(Icons.speed, size: _videoControlIconSize),
-          onPressed: _showSpeedMenu,
-        ),
-        // 着色器「对比原画」：仅在配置了启用着色器时出现，点一下/按 C 切换旁路看原画
-        // （B：效果预览/对比）。着色器仅桌面 libmpv 生效，故只在桌面控制条放此按钮。
-        if (_hasShadersEnabled)
-          MaterialDesktopCustomButton(
-            icon: Icon(Icons.compare, size: _videoControlIconSize),
-            onPressed: _toggleShaderCompare,
-          ),
         MaterialDesktopCustomButton(
           icon: Icon(Icons.tune, size: _videoControlIconSize),
           onPressed: _showPlayerSettings,
@@ -2622,19 +2613,20 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           icon: Icon(Icons.subtitles, size: _videoControlIconSize),
           onPressed: () => _showSubtitleSourceMenu(controller),
         ),
-        // 字幕跳转列表（TODO-069）。
+        // 跨字幕制卡（TODO-102；参考 asbplayer）。
+        _buildCrossSubtitleRecordButton(desktop: false),
+        MaterialCustomButton(
+          icon: Icon(Icons.audiotrack, size: _videoControlIconSize),
+          onPressed: () => _showAudioTrackMenu(controller),
+        ),
+        // 字幕跳转列表（TODO-069）。倒数第二、紧挨设置按钮左侧（TODO-127）：与桌面
+        // 控制条顺序一致，字幕列表是顶栏最常直接命中的入口，放在设置（tune）左边。
         MaterialCustomButton(
           icon: Icon(
             Icons.format_list_bulleted,
             size: _videoControlIconSize,
           ),
           onPressed: _toggleSubtitleJumpList,
-        ),
-        // 跨字幕制卡（TODO-102；参考 asbplayer）。
-        _buildCrossSubtitleRecordButton(desktop: false),
-        MaterialCustomButton(
-          icon: Icon(Icons.audiotrack, size: _videoControlIconSize),
-          onPressed: () => _showAudioTrackMenu(controller),
         ),
         MaterialCustomButton(
           icon: Icon(Icons.tune, size: _videoControlIconSize),
@@ -2703,20 +2695,32 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   ) {
     if (_videoSheetOpen) return;
     _videoSheetOpen = true;
-    // sheet 关闭后把键盘焦点还给 Video（覆盖层夺焦后不会自动归还）。
+    // sheet 关闭后把键盘焦点还给 Video（覆盖层夺焦后不会自动归还）。音轨 / 字幕轨条目
+    // 数不定，横屏 / 多轨时整列可超过半屏高，故同 [_showSpeedMenu] 走 isScrollControlled
+    // + maxHeight 约束 + 可滚动 ListView，避免末尾轨道被裁（TODO-127）。
     showModalBottomSheet<void>(
       context: context,
-      builder: (BuildContext ctx) => ListView(
-        shrinkWrap: true,
-        children: tracks
-            .map((({String label, VoidCallback onSelected}) o) => ListTile(
-                  title: Text(o.label),
-                  onTap: () {
-                    o.onSelected();
-                    Navigator.pop(ctx);
-                  },
-                ))
-            .toList(),
+      isScrollControlled: true,
+      builder: (BuildContext ctx) => SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(ctx).size.height * 0.7,
+          ),
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: tracks.length,
+            itemBuilder: (BuildContext _, int i) {
+              final ({String label, VoidCallback onSelected}) o = tracks[i];
+              return ListTile(
+                title: Text(o.label),
+                onTap: () {
+                  o.onSelected();
+                  Navigator.pop(ctx);
+                },
+              );
+            },
+          ),
+        ),
       ),
     ).whenComplete(() {
       _videoSheetOpen = false;
@@ -3061,18 +3065,28 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   }
 
   /// 弹快捷倍速选择（底部小 sheet，复用 [_setSpeed] 与设置面板同档位）。
+  ///
+  /// 档位由 [_speedMenuPresets] 按 [_speedStep] 生成（默认 0.5..2.0 步进 0.1，约 16 项），
+  /// 横屏 / 小屏时整列可超过半屏高。故走 `isScrollControlled` + maxHeight 约束 +
+  /// 可滚动 [ListView]（参考 [_showEpisodeList]），底部档位不再被裁（TODO-127）。
   void _showSpeedMenu() {
     if (_videoSheetOpen) return;
     _videoSheetOpen = true;
     final List<double> speedPresets = _speedMenuPresets();
     showModalBottomSheet<void>(
       context: context,
+      isScrollControlled: true,
       builder: (BuildContext ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            for (final double s in speedPresets)
-              ListTile(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(ctx).size.height * 0.7,
+          ),
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: speedPresets.length,
+            itemBuilder: (BuildContext _, int i) {
+              final double s = speedPresets[i];
+              return ListTile(
                 dense: true,
                 title: Text('${s}x'),
                 trailing: (s - _playbackSpeed).abs() < 0.001
@@ -3083,8 +3097,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
                   _setSpeed(s);
                   Navigator.pop(ctx);
                 },
-              ),
-          ],
+              );
+            },
+          ),
         ),
       ),
     ).whenComplete(() {
