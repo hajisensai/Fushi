@@ -119,6 +119,23 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
             children: _buildFieldMappings(settings, vm),
           ),
           AdaptiveSettingsSection(
+            title: t.anki_tag_default_section,
+            children: [
+              AdaptiveSettingsSwitchRow(
+                title: t.anki_tag_include_hibiki,
+                subtitle: t.anki_tag_include_hibiki_hint,
+                value: settings.tagIncludeHibiki,
+                onChanged: vm.updateTagIncludeHibiki,
+              ),
+              AdaptiveSettingsSwitchRow(
+                title: t.anki_tag_include_category,
+                subtitle: t.anki_tag_include_category_hint,
+                value: settings.tagIncludeCategory,
+                onChanged: vm.updateTagIncludeCategory,
+              ),
+            ],
+          ),
+          AdaptiveSettingsSection(
             children: [
               _buildTagsInput(settings, vm),
               AdaptiveSettingsSwitchRow(

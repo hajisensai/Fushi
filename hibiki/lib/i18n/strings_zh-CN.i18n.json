@@ -1530,5 +1530,10 @@
     "video_menu_fullscreen": "切换全屏",
     "video_menu_lock": "沉浸 / 锁定模式",
     "video_menu_cross_subtitle": "跨字幕制卡",
-    "video_menu_subtitle_track": "字幕轨"
+    "video_menu_subtitle_track": "字幕轨",
+    "anki_tag_default_section": "默认标签",
+    "anki_tag_include_hibiki": "添加「hibiki」标签",
+    "anki_tag_include_hibiki_hint": "为每张 Hibiki 制出的卡片打上标记",
+    "anki_tag_include_category": "添加来源分类标签",
+    "anki_tag_include_category_hint": "书籍标「book」、视频标「anime」"
 }

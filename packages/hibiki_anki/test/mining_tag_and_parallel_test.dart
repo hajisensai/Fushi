@@ -234,6 +234,135 @@ void main() {
     });
   });
 
+  group(
+      'TODO-117: default tags are togglable (hibiki / category), both backends',
+      () {
+    // 经完整 mineEntry 路径断言开关真透传到 buildNoteTags（守卫透传链，不只是纯函数）。
+    Future<List<String>> tagsForConnect(
+      String configured, {
+      AnkiMiningSource? source,
+      bool includeHibiki = true,
+      bool includeCategory = true,
+    }) async {
+      final service = _RecordingAnkiConnectService();
+      final repo = _ConfiguredAnkiConnectRepository(
+        service: service,
+        settings: _settingsWithTags(configured).copyWith(
+          tagIncludeHibiki: includeHibiki,
+          tagIncludeCategory: includeCategory,
+        ),
+      );
+      final outcome = await repo.mineEntry(
+        rawPayloadJson: _payload,
+        context: AnkiMiningContext(sentence: '', source: source),
+      );
+      expect(outcome.result, MineResult.success);
+      return service.addedTags.single;
+    }
+
+    Future<List<String>> tagsForDroid(
+      String configured, {
+      AnkiMiningSource? source,
+      bool includeHibiki = true,
+      bool includeCategory = true,
+    }) async {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      const MethodChannel channel = MethodChannel('app.hibiki.reader/anki');
+      final List<List<String>> addedTags = <List<String>>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (MethodCall call) async {
+        switch (call.method) {
+          case 'checkForDuplicates':
+            return false;
+          case 'addNote':
+            final args = Map<String, dynamic>.from(call.arguments as Map);
+            addedTags.add(List<String>.from(args['tags'] as List));
+            return true;
+          default:
+            fail('Unexpected AnkiDroid channel call: ${call.method}');
+        }
+      });
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null);
+      });
+      final repo = _ConfiguredAnkiRepository(
+        _settingsWithTags(configured).copyWith(
+          tagIncludeHibiki: includeHibiki,
+          tagIncludeCategory: includeCategory,
+        ),
+      );
+      final outcome = await repo.mineEntry(
+        rawPayloadJson: _payload,
+        context: AnkiMiningContext(sentence: '', source: source),
+      );
+      expect(outcome.result, MineResult.success);
+      return addedTags.single;
+    }
+
+    test('defaults all on == TODO-115 behaviour (backward compatible)',
+        () async {
+      // hibiki + category 都默认 true：等价 TODO-115 现状。
+      expect(await tagsForConnect('jp', source: AnkiMiningSource.book),
+          <String>['jp', 'hibiki', 'book']);
+      expect(await tagsForDroid('jp', source: AnkiMiningSource.video),
+          <String>['jp', 'hibiki', 'anime']);
+    });
+
+    test('hibiki switch off -> hibiki tag dropped, category kept', () async {
+      expect(
+        await tagsForConnect('jp',
+            source: AnkiMiningSource.book, includeHibiki: false),
+        <String>['jp', 'book'],
+      );
+      expect(
+        await tagsForDroid('jp',
+            source: AnkiMiningSource.video, includeHibiki: false),
+        <String>['jp', 'anime'],
+      );
+    });
+
+    test('category switch off -> category tag dropped, hibiki kept', () async {
+      expect(
+        await tagsForConnect('jp',
+            source: AnkiMiningSource.book, includeCategory: false),
+        <String>['jp', 'hibiki'],
+      );
+      expect(
+        await tagsForDroid('jp',
+            source: AnkiMiningSource.video, includeCategory: false),
+        <String>['jp', 'hibiki'],
+      );
+    });
+
+    test('both switches off -> only the user custom tags remain', () async {
+      expect(
+        await tagsForConnect('jp mined',
+            source: AnkiMiningSource.book,
+            includeHibiki: false,
+            includeCategory: false),
+        <String>['jp', 'mined'],
+      );
+      expect(
+        await tagsForConnect('',
+            source: AnkiMiningSource.video,
+            includeHibiki: false,
+            includeCategory: false),
+        <String>[],
+      );
+    });
+
+    test('custom DIY tags are appended (and de-duped) regardless of switches',
+        () async {
+      // 自定义标签即 settings.tags：保序追加，与默认 hibiki 去重。
+      expect(
+        await tagsForConnect('mydeck hibiki extra',
+            source: AnkiMiningSource.book),
+        <String>['mydeck', 'hibiki', 'extra', 'book'],
+      );
+    });
+  });
+
   group('media uploads run in parallel (timing proof for the 6s fix)', () {
     late Directory dir;
 

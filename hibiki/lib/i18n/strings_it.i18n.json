@@ -1530,5 +1530,10 @@
     "video_menu_fullscreen": "Toggle fullscreen",
     "video_menu_lock": "Immersive / lock mode",
     "video_menu_cross_subtitle": "Cross-subtitle mining",
-    "video_menu_subtitle_track": "Subtitle track"
+    "video_menu_subtitle_track": "Subtitle track",
+    "anki_tag_default_section": "Default tags",
+    "anki_tag_include_hibiki": "Add \"hibiki\" tag",
+    "anki_tag_include_hibiki_hint": "Mark every card mined by Hibiki",
+    "anki_tag_include_category": "Add source category tag",
+    "anki_tag_include_category_hint": "Books get \"book\", videos get \"anime\""
 }

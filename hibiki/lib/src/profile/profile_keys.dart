@@ -49,6 +49,8 @@ class ProfileKeys {
         'selectedNoteTypeName': s.selectedNoteTypeName ?? '',
         'fieldMappings': jsonEncode(s.fieldMappings),
         'tags': s.tags,
+        'tagIncludeHibiki': s.tagIncludeHibiki.toString(),
+        'tagIncludeCategory': s.tagIncludeCategory.toString(),
         'allowDupes': s.allowDupes.toString(),
         'compactGlossaries': s.compactGlossaries.toString(),
         'embedMedia': s.embedMedia.toString(),
@@ -74,6 +76,12 @@ class ProfileKeys {
       fieldMappings:
           _parseFieldMappings(m['fieldMappings'], current.fieldMappings),
       tags: m['tags'] ?? '',
+      tagIncludeHibiki: m.containsKey('tagIncludeHibiki')
+          ? m['tagIncludeHibiki'] == 'true'
+          : true,
+      tagIncludeCategory: m.containsKey('tagIncludeCategory')
+          ? m['tagIncludeCategory'] == 'true'
+          : true,
       allowDupes: m['allowDupes'] == 'true',
       compactGlossaries: m['compactGlossaries'] == 'true',
       embedMedia:

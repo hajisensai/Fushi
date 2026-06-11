@@ -44,6 +44,8 @@ class AnkiSettings {
     this.availableNoteTypes = const [],
     this.fieldMappings = const {},
     this.tags = '',
+    this.tagIncludeHibiki = true,
+    this.tagIncludeCategory = true,
     this.allowDupes = false,
     this.compactGlossaries = false,
     this.embedMedia = true,
@@ -68,6 +70,8 @@ class AnkiSettings {
         fieldMappings:
             Map<String, String>.from(json['fieldMappings'] as Map? ?? {}),
         tags: json['tags'] as String? ?? '',
+        tagIncludeHibiki: json['tagIncludeHibiki'] as bool? ?? true,
+        tagIncludeCategory: json['tagIncludeCategory'] as bool? ?? true,
         allowDupes: json['allowDupes'] as bool? ?? false,
         compactGlossaries: json['compactGlossaries'] as bool? ?? false,
         embedMedia: json['embedMedia'] as bool? ?? true,
@@ -83,6 +87,14 @@ class AnkiSettings {
   final List<AnkiNoteType> availableNoteTypes;
   final Map<String, String> fieldMappings;
   final String tags;
+
+  /// 是否给每张 Hibiki 制出的卡片追加固定的 `hibiki` 默认标签（TODO-117 开关）。
+  /// 默认 `true`（保持 TODO-115/062 现状）。
+  final bool tagIncludeHibiki;
+
+  /// 是否按制卡来源追加分类默认标签（书籍→`book` / 视频→`anime`，TODO-117 开关）。
+  /// 默认 `true`（保持 TODO-115 现状）。来源为 `null` 时本就不追加分类标签。
+  final bool tagIncludeCategory;
   final bool allowDupes;
   final bool compactGlossaries;
   final bool embedMedia;
@@ -108,6 +120,8 @@ class AnkiSettings {
     List<AnkiNoteType>? availableNoteTypes,
     Map<String, String>? fieldMappings,
     String? tags,
+    bool? tagIncludeHibiki,
+    bool? tagIncludeCategory,
     bool? allowDupes,
     bool? compactGlossaries,
     bool? embedMedia,
@@ -124,6 +138,8 @@ class AnkiSettings {
         availableNoteTypes: availableNoteTypes ?? this.availableNoteTypes,
         fieldMappings: fieldMappings ?? this.fieldMappings,
         tags: tags ?? this.tags,
+        tagIncludeHibiki: tagIncludeHibiki ?? this.tagIncludeHibiki,
+        tagIncludeCategory: tagIncludeCategory ?? this.tagIncludeCategory,
         allowDupes: allowDupes ?? this.allowDupes,
         compactGlossaries: compactGlossaries ?? this.compactGlossaries,
         embedMedia: embedMedia ?? this.embedMedia,
@@ -142,6 +158,8 @@ class AnkiSettings {
             availableNoteTypes.map((t) => t.toJson()).toList(),
         'fieldMappings': fieldMappings,
         'tags': tags,
+        'tagIncludeHibiki': tagIncludeHibiki,
+        'tagIncludeCategory': tagIncludeCategory,
         'allowDupes': allowDupes,
         'compactGlossaries': compactGlossaries,
         'embedMedia': embedMedia,

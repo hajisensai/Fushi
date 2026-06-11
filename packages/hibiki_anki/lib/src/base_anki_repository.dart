@@ -120,25 +120,35 @@ abstract class BaseAnkiRepository {
     }
   }
 
-  /// 解析用户配置的 [userTags]（空白分隔），**追加** [hibikiTag] 与 [source] 对应的
-  /// 分类标签后去重（保序）。
+  /// 解析用户配置的 [userTags]（空白分隔，即用户自定义 DIY 标签），按开关
+  /// **追加** [hibikiTag] 与 [source] 对应的分类标签后去重（保序）。
   ///
-  /// - 追加而非覆盖：用户已配置的 tag 全部保留，只是额外多 `hibiki` + 分类标签。
+  /// - 追加而非覆盖：用户已配置的 tag 全部保留，只是按开关额外多 `hibiki` + 分类标签。
   /// - 顺序：用户 tag → `hibiki` → 分类标签（`book`/`anime`）。
   /// - 去重：用户若已手动配置了 `hibiki`/`book`/`anime`，不会出现两个。
-  /// - [source] 为 `null`（未指定）时只追加 `hibiki`，不加分类标签。
+  /// - [includeHibiki]（TODO-117 开关）为 `false` 时不追加 `hibiki`。
+  /// - [includeCategory]（TODO-117 开关）为 `false` 时不追加分类标签；为 `true` 但
+  ///   [source] 为 `null`（未指定来源，如独立查词/悬浮窗）时本就没有分类标签可加。
+  /// - 两个开关默认 `true`，等价 TODO-115/062 的固定行为（Never break userspace）。
   /// - 两 backend（AnkiConnect / AnkiDroid）共用同一逻辑，避免一端漏加或漂移。
   @protected
-  List<String> buildNoteTags(String userTags, {AnkiMiningSource? source}) {
+  List<String> buildNoteTags(
+    String userTags, {
+    AnkiMiningSource? source,
+    bool includeHibiki = true,
+    bool includeCategory = true,
+  }) {
     final seen = <String>{};
     final result = <String>[];
     for (final tag in userTags.split(RegExp(r'\s+'))) {
       if (tag.isEmpty || !seen.add(tag)) continue;
       result.add(tag);
     }
-    if (seen.add(hibikiTag)) result.add(hibikiTag);
-    final categoryTag = _categoryTagForSource(source);
-    if (categoryTag != null && seen.add(categoryTag)) result.add(categoryTag);
+    if (includeHibiki && seen.add(hibikiTag)) result.add(hibikiTag);
+    if (includeCategory) {
+      final categoryTag = _categoryTagForSource(source);
+      if (categoryTag != null && seen.add(categoryTag)) result.add(categoryTag);
+    }
     return result;
   }
 
