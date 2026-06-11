@@ -335,8 +335,18 @@ class SyncManager {
 
     switch (syncDir) {
       case SyncDirection.importFromTtu:
-        final SyncBookResult result = await _handleImport(
+        // BUG-201: the progress baseline is written INSIDE _handleImport, right
+        // after the authoritative progress transfer lands (the reader-position
+        // upsert) — not here after the method returns. Persisting it here left a
+        // kill-window spanning the stats/audio/content transfers that follow the
+        // progress write: if the process died after the remote progress was
+        // applied but before the (then post-return) baseline write, the baseline
+        // stayed at the stale common ancestor while local+remote had both moved
+        // off it → the next app-open sweep read a genuine fork and surfaced a
+        // false conflict. `assetKey` is passed in so the handler owns the write.
+        return await _handleImport(
           book: book,
+          assetKey: assetKey,
           folderId: folderId,
           chapters: chapters,
           progressFileId: progressFileId,
@@ -347,25 +357,20 @@ class SyncManager {
           syncAudioBook: syncAudioBook,
           syncContent: syncContent,
         );
-        // Base = remote progress timestamp = the updatedAt import wrote locally
-        // (_handleImport stores remoteProgress.lastBookmarkModified, which
-        // equals the remote filename timestamp). Both sides now agree on it.
-        // Written on both auto and manual (compare useRemote→import) paths so a
-        // resolved conflict's new common ancestor is recorded and the divergence
-        // stops reading as a conflict next time.
-        if (result.direction == SyncResult.imported &&
-            remoteTimestamp != null) {
-          await _db.setSyncBaseline(assetKey, 'progress', remoteTimestamp);
-        }
-        return result;
 
       case SyncDirection.exportToTtu:
         if (localPosition == null && !syncContent) {
           return SyncBookResult(
               direction: SyncResult.skipped, title: book.title);
         }
-        final SyncBookResult result = await _handleExport(
+        // BUG-201: see _handleImport above — the export baseline is written
+        // inside _handleExport immediately after the remote progress file
+        // upload returns (so once remote == localPosition.updatedAt, that value
+        // is recorded as the new common ancestor before any further await) — not
+        // after the trailing stats/audio/content uploads + method return.
+        return await _handleExport(
           book: book,
+          assetKey: assetKey,
           folderId: folderId,
           chapters: chapters,
           localPosition: localPosition,
@@ -377,17 +382,6 @@ class SyncManager {
           statsSyncMode: statsSyncMode,
           syncContent: syncContent,
         );
-        // Base = the timestamp _handleExport wrote into the remote progress
-        // file, which is localPosition.updatedAt (also written back locally).
-        // Only persist when a position was actually exported. Written on both
-        // auto and manual (compare useLocal→export) paths so a resolved
-        // conflict's new common ancestor is recorded.
-        if (result.direction == SyncResult.exported &&
-            localPosition?.updatedAt != null) {
-          await _db.setSyncBaseline(
-              assetKey, 'progress', localPosition!.updatedAt);
-        }
-        return result;
 
       case SyncDirection.synced:
         return SyncBookResult(direction: SyncResult.synced, title: book.title);
@@ -493,6 +487,7 @@ class SyncManager {
 
   Future<SyncBookResult> _handleImport({
     required EpubBookRow book,
+    required String assetKey,
     required String folderId,
     required List<ChapterCharInfo> chapters,
     required String? progressFileId,
@@ -524,6 +519,20 @@ class SyncManager {
       updatedAt: Value(remoteProgress.lastBookmarkModified),
     ));
 
+    // BUG-201: the authoritative progress transfer is the upsert above — after
+    // it, local.updatedAt == remoteProgress.lastBookmarkModified == the remote
+    // progress filename timestamp, so both sides agree on that value and it is
+    // the new common ancestor. Record the baseline NOW, before the (network)
+    // stats/audio imports below, so a process kill in those trailing transfers
+    // can never leave a stale baseline that a later sweep reads as a fork
+    // (false "本地远端冲突" on app re-open). Two consecutive local Drift writes
+    // with no await between them ≈ atomic; the only un-recoverable gap shrinks
+    // to that, instead of spanning every trailing remote call. Written on both
+    // the auto path and the manual (compare useRemote→import) path so a
+    // user-resolved conflict's new ancestor is also persisted here.
+    await _db.setSyncBaseline(
+        assetKey, 'progress', remoteProgress.lastBookmarkModified);
+
     // Import statistics
     if (syncStats && statsFileId != null) {
       final remoteStats = await _backend.getStatsFile(statsFileId);
@@ -550,6 +559,7 @@ class SyncManager {
 
   Future<SyncBookResult> _handleExport({
     required EpubBookRow book,
+    required String assetKey,
     required String folderId,
     required List<ChapterCharInfo> chapters,
     required ReaderPositionRow? localPosition,
@@ -589,6 +599,20 @@ class SyncManager {
         fileId: progressFileId,
         progress: ttuProgress,
       );
+
+      // BUG-201: the call above is the authoritative remote progress transfer —
+      // once it returns, remote == timestampMs (== localPosition.updatedAt),
+      // which the export also wrote back locally, so that value is now the
+      // common ancestor. Persist the baseline NOW, before the (network)
+      // stats/audio/content uploads below, so a process kill during those
+      // trailing transfers can never leave a stale baseline that a later
+      // app-open sweep reads as a fork (the reported false "本地远端冲突" after
+      // exiting a book then killing the app). The remaining un-recoverable gap
+      // is just this single local Drift write right after the await returns,
+      // not the whole tail of remote calls. Written on both the auto path and
+      // the manual (compare useLocal→export) path so a user-resolved conflict's
+      // new ancestor is also recorded.
+      await _db.setSyncBaseline(assetKey, 'progress', timestampMs);
 
       // Export statistics
       if (syncStats) {

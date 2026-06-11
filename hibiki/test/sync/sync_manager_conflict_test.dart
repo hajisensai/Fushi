@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_manager.dart';
+import 'package:hibiki/src/sync/sync_progress_resolver.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
@@ -21,7 +22,11 @@ HibikiDatabase _testDb() =>
 /// `TtuProgress` payload that an import reads / an export writes. Everything
 /// else is a no-op stub so the manager can run the real direction logic.
 class _FakeSyncBackend implements SyncBackend {
-  _FakeSyncBackend({this.remoteProgressFile, this.remoteProgress});
+  _FakeSyncBackend({
+    this.remoteProgressFile,
+    this.remoteProgress,
+    this.crashOnStatsUpload = false,
+  });
 
   /// Remote progress file metadata (name → timestamp/fraction). Null = absent.
   DriveFile? remoteProgressFile;
@@ -31,6 +36,13 @@ class _FakeSyncBackend implements SyncBackend {
 
   /// Captured export write so a test can assert what was pushed.
   TtuProgress? exportedProgress;
+
+  /// BUG-201: when true, [updateStatsFile] throws — simulating the process
+  /// dying (or any failure) in a TRAILING remote transfer that runs AFTER the
+  /// authoritative progress upload inside `_handleExport`. The progress baseline
+  /// must already be persisted by then, so the simulated crash must not leave a
+  /// stale common ancestor that a later sweep reads as a false conflict.
+  bool crashOnStatsUpload;
 
   @override
   Future<String> findOrCreateRootFolder() async => 'root';
@@ -117,7 +129,12 @@ class _FakeSyncBackend implements SyncBackend {
     required String folderId,
     required String? fileId,
     required List<TtuStatistics> stats,
-  }) async {}
+  }) async {
+    if (crashOnStatsUpload) {
+      throw StateError('simulated crash in trailing stats upload (BUG-201)');
+    }
+  }
+
   @override
   Future<void> updateAudioBookFile({
     required String folderId,
@@ -319,5 +336,76 @@ void main() {
     final ReaderPositionRow pos = (await db.getReaderPosition(book.bookKey))!;
     expect(pos.updatedAt, 100);
     expect(await db.getSyncBaseline(assetKey, 'progress'), 100);
+  });
+
+  // BUG-201: 退出书触发的 fire-and-forget 同步先把本地进度上传到远端，再写
+  // baseline。若 baseline 写在尾部 stats/audio/content 传输之后，进程在「远端进度
+  // 已落地 but baseline 未写」之间被杀 → baseline 停在旧值，下次开 app 全量 sweep
+  // 看到 local 与 remote 都偏离旧 baseline → resolveProgressSync 判 isConflict →
+  // 假「本地远端冲突」。修复后 baseline 紧贴权威进度传输（updateProgressFile 返回
+  // 后立即写），尾部传输崩溃也不会留下陈旧 baseline。
+  test(
+      'BUG-201: progress baseline lands with the progress upload, even when a '
+      'trailing transfer crashes → no false conflict on re-open', () async {
+    final HibikiDatabase db = _testDb();
+    addTearDown(db.close);
+
+    final EpubBookRow book = await _seedBook(db, title);
+    // Local moved past the old common ancestor (50) → this is an export.
+    await _seedPosition(db, book.bookKey, updatedAt: 120, fraction: 0.6);
+    await db.setSyncBaseline(assetKey, 'progress', 50);
+
+    // Seed a local reading statistic so the export's merged stats are non-empty
+    // and the (crashing) updateStatsFile tail actually runs after the progress
+    // upload — i.e. a real trailing-transfer failure, not a skipped one.
+    await db.setReadingStatistic(ReadingStatisticsCompanion(
+      title: Value(title),
+      dateKey: const Value('2026-06-11'),
+      charactersRead: const Value(600),
+      readingTimeMs: const Value(60000),
+      lastStatisticModified: const Value(120),
+    ));
+
+    // Remote still at the old ancestor, plus a remote stats file so the export
+    // reaches the (crashing) stats-upload tail AFTER the progress upload.
+    final backend = _FakeSyncBackend(
+      remoteProgressFile: _progressFile(50, 0.3),
+      remoteProgress: TtuProgress(
+        dataId: 0,
+        exploredCharCount: 300,
+        progress: 0.3,
+        lastBookmarkModified: 50,
+      ),
+      crashOnStatsUpload: true,
+    );
+    final manager = SyncManager(db: db, backend: backend);
+
+    // Stats sync ON so the trailing stats upload runs (and crashes).
+    final SyncBookResult result = await manager.syncBook(
+      book: book,
+      syncStats: true,
+      statsSyncMode: StatisticsSyncMode.merge,
+      syncAudioBook: false,
+    );
+
+    // The trailing crash is swallowed into a skipped+error result (the progress
+    // already landed remotely before it), so this is NOT reported as a conflict.
+    expect(result.direction, SyncResult.skipped);
+    expect(result.error, isNotNull);
+
+    // Root assertion: the authoritative progress was uploaded (remote == 120)
+    // AND the baseline advanced to 120 BEFORE the trailing crash — so a later
+    // app-open sweep sees local==remote==base==120 (synced), never a fork.
+    expect(backend.exportedProgress!.lastBookmarkModified, 120);
+    expect(await db.getSyncBaseline(assetKey, 'progress'), 120);
+
+    // Prove the simulated "next app-open sweep" does NOT see a conflict:
+    // local==120, remote==120 (what we just uploaded), base==120.
+    final ProgressResolution reopen = resolveProgressSync(
+      local: 120,
+      remote: 120,
+      base: await db.getSyncBaseline(assetKey, 'progress'),
+    );
+    expect(reopen.isConflict, isFalse);
   });
 }
