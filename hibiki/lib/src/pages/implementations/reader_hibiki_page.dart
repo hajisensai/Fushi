@@ -49,7 +49,6 @@ import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
 import 'package:hibiki/src/utils/misc/tts_channel.dart';
-import 'package:hibiki/src/pages/implementations/reader_sentence_audio_fallback.dart';
 import 'package:hibiki/src/utils/misc/volume_key_channel.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -2916,23 +2915,6 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
           outputPath: outputPath,
         );
       }
-    }
-
-    // 纯文本书（无有声书 / SRT 绑定）没有真实句子音频源 → 用 OS TTS 为整句合成
-    // 句子音频兜底，填进 Lapis `SentenceAudio`（TODO-104）。与单词音频已用的
-    // ttsToFile 兜底（local_audio_enhancement.dart）对称：macOS say / Windows SAPI /
-    // Android 原生 TTS 成功则有声，Linux / 无日语 voice / 失败返回 null → 字段仍空
-    // （优雅降级，与修复前一致）。有声书路径已得到真实音频，此处不触发（不覆盖真人音）。
-    if (shouldSynthesizeSentenceTtsFallback(
-      realSentenceAudioPath: sasayakiAudioPath,
-      sentence: sentence,
-    )) {
-      sasayakiTempDir ??=
-          Directory.systemTemp.createTempSync('hibiki_mine_sentence_audio_');
-      final String ttsOutputPath =
-          p.join(sasayakiTempDir.path, 'sentence_tts.wav');
-      sasayakiAudioPath =
-          await TtsChannel.instance.ttsToFile(sentence, ttsOutputPath);
     }
 
     final String cueSentence =
