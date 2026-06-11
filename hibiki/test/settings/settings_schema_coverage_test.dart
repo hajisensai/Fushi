@@ -67,6 +67,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'reading/Tap empty area to hide controls':
       'DEVICE: WebView onTapEmpty chrome',
   'reading/Invert swipe page turn direction': 'DEVICE: WebView swipe direction',
+  // TODO-120: 反转键盘方向键翻页方向——生效点在 reader 键盘处理器（纯函数
+  // resolveReaderArrowPageTurn 的 reverse 参数），由专项纯函数测试覆盖。
+  'reading/Reverse arrow-key page turn direction':
+      'test/reader/reader_space_pause_test.dart',
   'reading/Volume key page turning speed': 'DEVICE: native volume-key throttle',
   'reading/Mouse wheel page-turn interval':
       'DEVICE: WebView wheel page-turn throttle',

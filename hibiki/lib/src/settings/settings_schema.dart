@@ -732,6 +732,22 @@ SettingsDestination _readingDestination() {
               notifyReaderSettingsChanged(settingsContext);
             },
           ),
+          // TODO-120: 反转键盘方向键翻页方向（仅键盘方向键，与滑动反转独立）。
+          SettingsSwitchItem(
+            id: 'reading_controls.reverse_arrow_page_turn',
+            title: t.reverse_arrow_page_turn,
+            icon: Icons.swap_horiz_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 3,
+            ),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.reverseArrowPageTurn,
+            onChanged: (SettingsContext settingsContext, bool value) {
+              settingsContext.readerSource.toggleReverseArrowPageTurn();
+              notifyReaderSettingsChanged(settingsContext);
+            },
+          ),
           SettingsSliderItem(
             id: 'reading_controls.volume_page_turning_speed',
             title: t.volume_button_turning_speed,

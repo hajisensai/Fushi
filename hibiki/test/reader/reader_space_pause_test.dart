@@ -140,4 +140,125 @@ void main() {
       }
     });
   });
+
+  group('resolveReaderArrowPageTurn (TODO-120 反转键盘方向键翻页方向开关)', () {
+    test('开关关(reverse:false) → 保持现有方向（LTR 右进/左退）', () {
+      expect(
+        resolveReaderArrowPageTurn(
+          key: LogicalKeyboardKey.arrowRight,
+          modifiers: const <ModifierKey>{},
+          rtl: false,
+          reverse: false,
+        ),
+        ShortcutAction.readerPageForward,
+      );
+      expect(
+        resolveReaderArrowPageTurn(
+          key: LogicalKeyboardKey.arrowLeft,
+          modifiers: const <ModifierKey>{},
+          rtl: false,
+          reverse: false,
+        ),
+        ShortcutAction.readerPageBackward,
+      );
+    });
+
+    test('开关开(reverse:true) → 反转（LTR：左进/右退）', () {
+      expect(
+        resolveReaderArrowPageTurn(
+          key: LogicalKeyboardKey.arrowLeft,
+          modifiers: const <ModifierKey>{},
+          rtl: false,
+          reverse: true,
+        ),
+        ShortcutAction.readerPageForward,
+      );
+      expect(
+        resolveReaderArrowPageTurn(
+          key: LogicalKeyboardKey.arrowRight,
+          modifiers: const <ModifierKey>{},
+          rtl: false,
+          reverse: true,
+        ),
+        ShortcutAction.readerPageBackward,
+      );
+    });
+
+    test('开关关(reverse:false) → RTL 保持现有方向（左进/右退）', () {
+      expect(
+        resolveReaderArrowPageTurn(
+          key: LogicalKeyboardKey.arrowLeft,
+          modifiers: const <ModifierKey>{},
+          rtl: true,
+          reverse: false,
+        ),
+        ShortcutAction.readerPageForward,
+      );
+      expect(
+        resolveReaderArrowPageTurn(
+          key: LogicalKeyboardKey.arrowRight,
+          modifiers: const <ModifierKey>{},
+          rtl: true,
+          reverse: false,
+        ),
+        ShortcutAction.readerPageBackward,
+      );
+    });
+
+    test('开关开(reverse:true) → RTL 也整体反转（右进/左退）', () {
+      expect(
+        resolveReaderArrowPageTurn(
+          key: LogicalKeyboardKey.arrowRight,
+          modifiers: const <ModifierKey>{},
+          rtl: true,
+          reverse: true,
+        ),
+        ShortcutAction.readerPageForward,
+      );
+      expect(
+        resolveReaderArrowPageTurn(
+          key: LogicalKeyboardKey.arrowLeft,
+          modifiers: const <ModifierKey>{},
+          rtl: true,
+          reverse: true,
+        ),
+        ShortcutAction.readerPageBackward,
+      );
+    });
+
+    test('reverse 默认值为 false（不传与传 false 等价）', () {
+      for (final bool rtl in <bool>[true, false]) {
+        for (final LogicalKeyboardKey key in <LogicalKeyboardKey>[
+          LogicalKeyboardKey.arrowLeft,
+          LogicalKeyboardKey.arrowRight,
+        ]) {
+          expect(
+            resolveReaderArrowPageTurn(
+              key: key,
+              modifiers: const <ModifierKey>{},
+              rtl: rtl,
+            ),
+            resolveReaderArrowPageTurn(
+              key: key,
+              modifiers: const <ModifierKey>{},
+              rtl: rtl,
+              reverse: false,
+            ),
+          );
+        }
+      }
+    });
+
+    test('带修饰键时 reverse 也不覆写(交回默认)', () {
+      expect(
+        resolveReaderArrowPageTurn(
+          key: LogicalKeyboardKey.arrowRight,
+          modifiers: const <ModifierKey>{ModifierKey.ctrl},
+          rtl: false,
+          reverse: true,
+        ),
+        isNull,
+      );
+    });
+  });
 }

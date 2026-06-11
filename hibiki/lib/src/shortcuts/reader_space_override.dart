@@ -31,19 +31,26 @@ ShortcutAction? resolveReaderSpaceOverride({
 /// 默认绑定把「右箭头=前进」写死，对 RTL 书方向恰好相反。本函数在注册表解析前
 /// 介入，仅处理「无修饰的裸左/右箭头」；其它键（上/下箭头、PageUp/PageDown、
 /// Space，以及 Ctrl+方向键的有声书句子导航）一律返回 null，交回默认解析不受影响。
+///
+/// [reverse]（TODO-120 用户开关 `reverse_arrow_page_turn`，默认 false）只对**最终
+/// 方向**整体取反：先按阅读方向（[rtl]）算出前进/后退，再在开关打开时把前进/后退对调。
+/// 这样无论 LTR 还是 RTL，开关都把当前行为整体反过来（左↔右互换），与 RTL 自动判定
+/// 正交叠加，不引入特殊分支。
 ShortcutAction? resolveReaderArrowPageTurn({
   required LogicalKeyboardKey key,
   required Set<ModifierKey> modifiers,
   required bool rtl,
+  bool reverse = false,
 }) {
   if (modifiers.isNotEmpty) return null;
+  final bool leftIsForward = rtl ^ reverse;
   if (key == LogicalKeyboardKey.arrowLeft) {
-    return rtl
+    return leftIsForward
         ? ShortcutAction.readerPageForward
         : ShortcutAction.readerPageBackward;
   }
   if (key == LogicalKeyboardKey.arrowRight) {
-    return rtl
+    return leftIsForward
         ? ShortcutAction.readerPageBackward
         : ShortcutAction.readerPageForward;
   }

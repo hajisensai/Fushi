@@ -4345,6 +4345,7 @@ window.flutter_inappwebview.callHandler('spreadReady');
       key: event.logicalKey,
       modifiers: modifiers,
       rtl: _isRtlReading,
+      reverse: ReaderHibikiSource.instance.reverseArrowPageTurn,
     );
     ShortcutAction? action = spaceOverride ??
         arrowOverride ??

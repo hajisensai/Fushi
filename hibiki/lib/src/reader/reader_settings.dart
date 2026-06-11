@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -287,6 +287,12 @@ class ReaderSettings {
   bool get invertSwipeDirection => _get<bool>('invert_swipe_direction', true);
   Future<void> toggleInvertSwipeDirection() =>
       _set<bool>('invert_swipe_direction', !invertSwipeDirection);
+
+  // TODO-120: 反转键盘方向键翻页方向（仅键盘方向键，与滑动反转独立）。
+  // 默认 false = 现有行为（方向键跟随阅读方向）；true = 在最终方向上整体取反。
+  bool get reverseArrowPageTurn => _get<bool>('reverse_arrow_page_turn', false);
+  Future<void> toggleReverseArrowPageTurn() =>
+      _set<bool>('reverse_arrow_page_turn', !reverseArrowPageTurn);
 
   int get volumePageTurningSpeed => _get<int>('volume_page_turning_speed', 100);
   Future<void> setVolumePageTurningSpeed(int v) =>

@@ -453,6 +453,26 @@ class ReaderHibikiSource extends ReaderMediaSource {
     );
   }
 
+  // TODO-120: 反转键盘方向键翻页方向（仅键盘方向键），默认 false。
+  bool get reverseArrowPageTurn =>
+      readerSettings?.reverseArrowPageTurn ??
+      getPreference<bool>(
+        key: 'reverse_arrow_page_turn',
+        defaultValue: false,
+      );
+
+  void toggleReverseArrowPageTurn() async {
+    final ReaderSettings? settings = readerSettings;
+    if (settings != null) {
+      await settings.toggleReverseArrowPageTurn();
+      return;
+    }
+    await setPreference<bool>(
+      key: 'reverse_arrow_page_turn',
+      value: !reverseArrowPageTurn,
+    );
+  }
+
   // TODO-080B: read through THIS source's profile-aware preference cache
   // ([_preferences], reloaded by AppModel.refreshPrefCache on every profile
   // switch) instead of the reader-page-owned static [readerSettings] snapshot.
